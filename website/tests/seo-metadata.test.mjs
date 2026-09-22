@@ -75,7 +75,7 @@ describe('website SEO metadata', () => {
       assert.ok(page.title.length > 10);
       assert.ok(page.description.length >= 50 && page.description.length <= 160);
       assert.match(page.canonicalPath, /^\/(?:pricing|privacy|terms)?$/);
-      assert.match(page.imagePath, /^\/og\/helpin-[a-z-]+\.png$/);
+      assert.match(page.imagePath, /^\/og\/helpin-[a-z0-9-]+\.png$/);
       assert.match(page.imageAlt, /Helpin/);
       assert.equal(metadata.alternates?.canonical, page.canonicalPath);
       assert.equal(metadata.openGraph?.url, page.canonicalPath);
@@ -113,7 +113,7 @@ describe('website SEO metadata', () => {
     for (const path of previewRoutes) {
       const metadata = previewMetadata('Helpin — ' + path, path);
       const image = metadata.openGraph.images[0];
-      assert.match(image.url, /-green\.png$/);
+      assert.match(image.url, /-green-v2\.png$/);
       assert.equal(metadata.twitter.images[0].url, image.url);
       assert.equal(metadata.robots.index, false);
       assert.ok(existsSync(new URL('../public' + image.url, import.meta.url)));
@@ -122,11 +122,12 @@ describe('website SEO metadata', () => {
 
   it('ships social images as optimized 1200 by 630 PNG files', () => {
     const images = [
-      '../public/og/helpin-home-green.png',
-      '../public/og/helpin-pricing-green.png',
-      '../public/og/helpin-privacy-green.png',
-      '../public/og/helpin-terms-green.png',
-      ...previewRoutes.filter(path => path !== '/new').map(path => '../public/og/helpin-' + path.split('/').at(-1) + '-green.png'),
+      '../public/og/helpin-home-green-v2.png',
+      '../public/og/helpin-new-home-green-v2.png',
+      '../public/og/helpin-pricing-green-v2.png',
+      '../public/og/helpin-privacy-green-v2.png',
+      '../public/og/helpin-terms-green-v2.png',
+      ...previewRoutes.filter(path => path !== '/new').map(path => '../public/og/helpin-' + path.split('/').at(-1) + '-green-v2.png'),
       '../../frontend/public/og/helpin-app.png',
       '../../frontend/public/og/helpin-shared-document.png',
     ];

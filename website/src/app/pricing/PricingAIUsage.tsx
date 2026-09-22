@@ -4,9 +4,6 @@ import {
   KeyRound,
   UserRound,
   Server,
-  RefreshCw,
-  SlidersHorizontal,
-  ReceiptText,
 } from "lucide-react";
 import { AI_PRICING } from "@/generated/aiPricing";
 import { GITHUB_URL, SectionHead } from "../new/_components/ui";
@@ -29,7 +26,7 @@ export function AIUsage() {
         <SectionHead
           eyebrow="Choose how your agents work"
           title={"Match the AI\nto the job."}
-          lede="An account summary and a code review need different kinds of work. Choose the model and connection that fit the task, alongside the tools and approvals you give the agent."
+          lede="Choose managed AI, an approved provider connection, or personal access where enabled. Match the model to the task."
         />
         <div
           className="pricing-ai-providers"
@@ -96,6 +93,14 @@ export function AIUsage() {
             </span>
           </article>
         </div>
+        <div className="pricing-usage-summary">
+          <p><strong>Monthly allowance.</strong> Renews monthly, without carryover—even with annual billing.</p>
+          <p><strong>Extra usage is optional.</strong> Opt-in, metered overage. No prepaid blocks.</p>
+          <p><strong>Provider billing is separate.</strong> Cloud platform and paid-tool fees still apply. Community self-hosting has no Helpin token or tool fees.</p>
+        </div>
+        <details className="pricing-ai-charges" id="ai-usage-charges">
+          <summary><span><strong>Models, allowances, and usage rates</strong><small>Compare model profiles and check the billing details.</small></span></summary>
+          <div>
         <div className="pricing-ai-models">
           <div className="pricing-ai-models-heading">
             <div>
@@ -126,40 +131,6 @@ export function AIUsage() {
             ))}
           </div>
         </div>
-        <p className="pricing-note">Choose deliberately. More demanding work does not always need the same model as an everyday question.</p>
-        <div className="pricing-ai-billing">
-          <h3>Understand what is included—and what costs extra.</h3>
-          <div>
-            {[
-              {
-                Icon: RefreshCw,
-                title: "Monthly allowance",
-                text: "Renews monthly, without carryover—even with annual billing.",
-              },
-              {
-                Icon: SlidersHorizontal,
-                title: "Additional usage",
-                text: "Opt-in, metered overage. No prepaid blocks.",
-              },
-              {
-                Icon: ReceiptText,
-                title: "Connected-provider charges",
-                text: "Provider billing is separate from Cloud platform and paid-tool fees. Community self-hosting has no Helpin token or tool fees.",
-              },
-            ].map(({ Icon, title, text }) => (
-              <article key={title}>
-                <span className="pricing-ai-billing-icon"><Icon size={20} strokeWidth={1.5} aria-hidden="true" /></span>
-                <div>
-                  <h4>{title}</h4>
-                  <p>{text}</p>
-                </div>
-              </article>
-            ))}
-          </div>
-        </div>
-        <details className="pricing-ai-charges" id="ai-usage-charges">
-          <summary><span><strong>Review AI usage and charges</strong><small>Monthly allowances, token rates, and overage.</small></span></summary>
-          <div>
             <h3>Monthly AI allowance</h3>
             <p>Your plan includes the monthly AI budget below, in USD. Unlimited teammates does not mean unlimited AI usage.</p>
             <div className="pricing-rate-scroll" tabIndex={0} role="region" aria-label="Monthly AI allowance by billing period">

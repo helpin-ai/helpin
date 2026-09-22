@@ -80,6 +80,5 @@ export function SDKWidget() {
       {!ready && <div className="sdk-widget-fallback"><img src="/brand/helpin-icon-ink.svg" width={28} height={28} alt="" /><strong>Talk to your team</strong><p>Open a conversation from your application, then keep talking in the Helpin widget.</p><noscript>Enable JavaScript to try the widget.</noscript></div>}
       <div className="sdk-widget-mount" ref={target} />
     </div>
-    <p className="sdk-widget-note">Interactive preview · Messages are not sent.</p>
   </div>;
 }

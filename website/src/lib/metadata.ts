@@ -16,15 +16,15 @@ export const PAGE_SEO = {
     description:
       'Helpin connects projects, support, sales, and docs with AI agents that plan, build, triage, and follow up across every team.',
     canonicalPath: '/',
-    imagePath: '/og/helpin-home-green.png',
-    imageAlt: 'Helpin — AI agents that do more than answer.',
+    imagePath: '/og/helpin-home-green-v2.png',
+    imageAlt: 'Helpin — Bring every team together. Put AI agents to work.',
   },
   pricing: {
     title: 'Pricing — Open source and Helpin Cloud',
     description:
       'Self-host the open-source product or choose Helpin Cloud with unlimited teammates and monthly AI usage. Compare plans, hosting and Enterprise licensing.',
     canonicalPath: '/pricing',
-    imagePath: '/og/helpin-pricing-green.png',
+    imagePath: '/og/helpin-pricing-green-v2.png',
     imageAlt: 'Helpin pricing — One platform. Your whole team, connected.',
   },
   privacy: {
@@ -32,7 +32,7 @@ export const PAGE_SEO = {
     description:
       'Learn how Helpin collects, protects, and processes information across the website and connected workspace.',
     canonicalPath: '/privacy',
-    imagePath: '/og/helpin-privacy-green.png',
+    imagePath: '/og/helpin-privacy-green-v2.png',
     imageAlt: 'Privacy at Helpin',
   },
   terms: {
@@ -40,7 +40,7 @@ export const PAGE_SEO = {
     description:
       'Read the terms governing access to and use of the Helpin website, workspace, AI agents, and connected services.',
     canonicalPath: '/terms',
-    imagePath: '/og/helpin-terms-green.png',
+    imagePath: '/og/helpin-terms-green-v2.png',
     imageAlt: 'Helpin Terms of Service',
   },
 } as const satisfies Record<string, PageSeo>;

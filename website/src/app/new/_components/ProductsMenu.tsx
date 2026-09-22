@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useBentoPlayback } from './useBentoPlayback';
 import Link from 'next/link';
-import { ArrowRight, BookOpen, Bot, Building2, Check, ChevronRight, FileText, Kanban, MessagesSquare, Pause, Play, UserRound, Video } from 'lucide-react';
+import { ArrowRight, BookOpen, Bot, Building2, ChevronRight, FileText, Kanban, MessagesSquare, Pause, Play, UserRound, Video } from 'lucide-react';
 import './products-menu.css';
 
 export const PRODUCTS = [
@@ -52,7 +52,6 @@ export function AskAgentMenuCard() {
       </div>
       <span className="nav-products-agent-copy"><b>Ask Agent</b><span>Your workspace assistant. Ask questions, investigate issues, and coordinate specialist agents using customer history.</span></span>
       <span className="nav-products-agent-cta">See Ask Agent in action<ArrowRight size={15} aria-hidden="true" /></span>
-      <span className="nav-agent-benefits">{['Faster answers', 'Less context switching', 'Happier customers'].map(item => <span key={item}><Check size={11} aria-hidden="true"/>{item}</span>)}</span>
     </Link>
     <button className="nav-agent-playback" type="button" aria-label={`${paused ? 'Play' : 'Pause'} Ask Agent menu animation`} aria-pressed={paused} onClick={() => setPaused(value => !value)}>{paused ? <Play size={12}/> : <Pause size={12}/>}</button>
   </div>;

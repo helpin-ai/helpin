@@ -38,9 +38,6 @@
 .hp3 .nav-products-agent-cta{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;margin-top:auto;padding:12px 10px;border-radius:999px;background:#a4ebc0;color:#103924;font-size:12px;font-weight:600;line-height:1.5}
 .hp3 .nav-products-agent-cta svg{flex:none;transition:transform .16s ease}
 .hp3 .nav-products-agent-link:hover .nav-products-agent-cta svg{transform:translateX(3px)}
-.hp3 .nav-agent-benefits{display:flex;flex-wrap:wrap;gap:8px 12px;width:100%;justify-content:space-between;font-size:8px;line-height:1.5;color:var(--on-dark-muted)}
-.hp3 .nav-agent-benefits>span{display:flex;align-items:center;gap:4px}
-.hp3 .nav-agent-benefits svg{color:var(--on-dark-accent);background:#254c37;border-radius:50%;padding:1px;flex:none}
 .hp3 .nav-products-explore{display:flex;flex-direction:column;gap:3px;border-radius:4px;font-size:12px;font-weight:500;color:var(--t2)}
 .hp3 .nav-products-explore>span{display:flex;align-items:center;gap:8px}
 .hp3 .nav-products-explore small{font-size:11px;font-weight:400;color:var(--t3)}
