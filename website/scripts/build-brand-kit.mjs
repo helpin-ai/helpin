@@ -1,13 +1,11 @@
 // Run from any directory: node website/scripts/build-brand-kit.mjs
 // Export existing vector artwork without redrawing it or depending on installed fonts.
 import { readFile, writeFile, mkdir, copyFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
+import sharp from 'sharp';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
-const require = createRequire(import.meta.url);
-const sharp = require(require.resolve('sharp', { paths: [dirname(require.resolve('next'))] }));
 const website = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const brand = resolve(website, 'public/brand');
 const kit = resolve(brand, 'kit');

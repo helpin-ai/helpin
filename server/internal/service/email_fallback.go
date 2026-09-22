@@ -3859,14 +3859,6 @@ func inboundEmailAddress(payload model.PostmarkInboundPayload) string {
 	return strings.TrimSpace(payload.From)
 }
 
-func inboundEffectiveCustomerEmail(payload model.PostmarkInboundPayload) string {
-	_, replyToEmail, _ := inboundReplyToAddress(payload)
-	if replyToEmail != "" {
-		return replyToEmail
-	}
-	return inboundEmailAddress(payload)
-}
-
 func inboundReplyToAddress(payload model.PostmarkInboundPayload) (raw, emailAddress, displayName string) {
 	raw = strings.TrimSpace(payload.ReplyTo)
 	if raw == "" {
