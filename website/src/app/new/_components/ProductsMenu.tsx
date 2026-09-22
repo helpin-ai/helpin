@@ -44,7 +44,6 @@ export function ProductsMenu() {
     <div className="nav-products-main">
       <div className="nav-products-intro"><span>Explore the platform</span><h2>Everything you need to build exceptional customer experiences</h2><p>An integrated platform powered by AI and your customer history.</p></div>
       <div className="nav-products-grid">{PRODUCTS.map(item => <ProductLink item={item} key={item.label} />)}</div>
-      <div className="nav-products-footer"><Link className="nav-products-explore" href="/new/product"><span>Explore the platform<ArrowRight size={14} aria-hidden="true" /></span><small>See how it all works together.</small></Link></div>
     </div>
     <AskAgentMenuCard/>
   </>;
