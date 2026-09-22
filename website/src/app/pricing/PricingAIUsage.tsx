@@ -160,27 +160,26 @@ export function AIUsage() {
         <details className="pricing-ai-charges" id="ai-usage-charges">
           <summary><span><strong>Review AI usage and charges</strong><small>Monthly allowances, token rates, and overage.</small></span></summary>
           <div>
-            <h3>Your included allowance</h3>
-            <p>The allowance is a USD-valued budget for Helpin AI charges, not a fixed number of messages or runs. It is included in your subscription. Unlimited teammates does not mean unlimited AI usage.</p>
+            <h3>Monthly AI allowance</h3>
+            <p>Your plan includes the monthly AI budget below, in USD. Unlimited teammates does not mean unlimited AI usage.</p>
             <div className="pricing-rate-scroll" tabIndex={0} role="region" aria-label="Monthly AI allowance by billing period">
               <table><caption>Included each month, by billing period</caption><thead><tr><th scope="col">Plan</th><th scope="col">Monthly billing</th><th scope="col">Annual billing</th></tr></thead><tbody>
                 {(["starter", "growth"] as const).map(plan => <tr key={plan}><th scope="row">{plan === "starter" ? "Starter" : "Growth"}</th>{(["monthly", "annual"] as const).map(interval => <td key={interval}>{usd(AI_PRICING.plans.find(item => item.plan === plan && item.billing_interval === interval)!.allowance_microusd)}</td>)}</tr>)}
               </tbody></table>
             </div>
-            <p>Annual subscriptions still renew their AI allowance monthly. Unused allowance does not carry forward. The 14-day Growth trial includes {usd(AI_PRICING.plans.find(item => item.billing_interval === "trial")!.allowance_microusd)} for the trial period. After the trial, your chosen plan’s capacity and agent capabilities apply.</p>
-            <h3>How managed AI consumes the allowance</h3>
-            <p>Tokens are the units of content a model processes and generates. Multiply each token count by its rate below, divide by one million, then add any paid-tool charges. Cached input uses its corresponding cache rate; reasoning tokens use the output rate. Charges reduce your remaining allowance.</p>
+            <p>Renews monthly on all plans, without carryover. The 14-day Growth trial includes {usd(AI_PRICING.plans.find(item => item.billing_interval === "trial")!.allowance_microusd)} total; your chosen plan’s limits and capabilities apply afterward.</p>
+            <h3>Managed AI rates</h3>
+            <p>Usage charges = tokens × the applicable rate ÷ 1,000,000, plus paid-tool charges. These charges reduce your allowance.</p>
             <div className="pricing-rate-scroll" tabIndex={0} role="region" aria-label="Managed AI token rates">
               <table><caption>USD per one million tokens · Pricing effective {AI_PRICING.effective_date}</caption><thead><tr><th scope="col">Profile</th><th scope="col">Input</th><th scope="col">Cache read</th><th scope="col">Cache write</th><th scope="col">Output / reasoning</th></tr></thead><tbody>
                 {AI_PRICING.tiers.map(tier => <tr key={tier.key}><th scope="row">{tier.label}</th><td>{usd(tier.rates.input_microusd_per_million)}</td><td>{usd(tier.rates.cache_read_microusd_per_million)}</td><td>{usd(tier.rates.cache_write_microusd_per_million)}</td><td>{usd(tier.rates.output_microusd_per_million)}</td></tr>)}
               </tbody></table>
             </div>
-            <p>For example, one million uncached input tokens and one million output tokens on Small consume {usd(AI_PRICING.tiers[0].rates.input_microusd_per_million + AI_PRICING.tiers[0].rates.output_microusd_per_million)} of the allowance, before any paid-tool charges.</p>
             <h3>When the allowance runs out</h3>
-            <p>Without overage enabled, new paid AI work is blocked when the remaining allowance cannot cover it. Work already in progress reserves part of the allowance. Wait for the monthly renewal or enable optional overage to continue paid AI work.</p>
-            <p>With overage enabled, the same usage rates apply. Only charges above the included allowance are billed, settled monthly and rounded to the nearest cent. No prepaid blocks. Applicable taxes are extra.</p>
+            <p><strong>Overage off:</strong> New paid AI work stops when the available allowance is insufficient. Active work reserves allowance. Resume after renewal or enable overage.</p>
+            <p><strong>Overage on:</strong> Excess usage is billed monthly at the same rates, rounded to cents. No prepaid blocks; taxes extra.</p>
             <h3>Connected providers and paid tools</h3>
-            <p>Your provider bills its usage separately. Cloud provider-key connections use the platform’s configured flat rate per million tokens, with paid tools charged separately; review your workspace’s configured fees before use. Community self-hosting has no Helpin token or tool fees.</p>
+            <p>Your provider bills separately. Cloud adds its configured per-million-token platform fee and paid-tool charges—check workspace rates. Community self-hosting has no Helpin token or tool fees.</p>
           </div>
         </details>
       </div>
