@@ -8,7 +8,10 @@ export default function nextConfig(phase: string): NextConfig {
     output: development ? undefined : 'export',
     // Static export always builds through .next, even with a custom distDir
     // (which Next treats as the export destination). Isolate the dev cache.
-    distDir: development ? '.next-dev' : (process.env.NEXT_DIST_DIR ?? '.next'),
+    // Set NEXT_DEV_DIST_DIR per server when running multiple previews.
+    distDir: development
+      ? (process.env.NEXT_DEV_DIST_DIR ?? '.next-dev')
+      : (process.env.NEXT_DIST_DIR ?? '.next'),
     images: {
       formats: ['image/avif', 'image/webp'],
     },
