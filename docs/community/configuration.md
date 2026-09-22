@@ -8,7 +8,9 @@ retains conservative authentication defaults.
 
 | Setting | Behavior |
 | --- | --- |
-| `HELPIN_ENABLED_MODULES` | Comma-separated product surfaces. Community defaults to `support,docs,agents`; Enterprise defaults to all modules. Support requires Docs. Workspace roles remain in force. |
+| `HELPIN_ENABLED_MODULES` | Comma-separated product surfaces. Both editions default to all modules: `support,docs,agents,pm,crm,automation`. Support requires Docs. Workspace roles remain in force. Upgrading an installation whose value is still the Community 0.1 default `support,docs,agents` switches it to the new default; any other value is kept. |
+| `CRM_ENCRYPTION_KEY`, `GIT_OAUTH_ENCRYPTION_KEY` | Generated 32-byte hex keys. The first encrypts CRM mail and calendar tokens and is the fallback key for TOTP and PM import secrets; the second encrypts stored Git provider tokens. Keep them stable and back them up with the databases. `helpin upgrade` generates them when an older `.env` lacks them. |
+| `SETUP_SUCCESS_ENABLED` | Optional. Controls the workspace Setup guide. Empty uses the edition default: on in Community, off in Enterprise. Set `false` to hide it. |
 | `AUTH_EMAIL_VERIFICATION_REQUIRED` | Defaults to `true`. Set `false` for local Community signup without mail. Enterprise rejects `false`. This never marks an email verified. |
 | `DEMO_VIEWER_EMAIL` | Optional. Email of an existing account that visitors of `/demo` are signed in as without a password. Give it the `viewer` role in one workspace only, no 2FA, not a platform admin. Every non-read API request from this account is rejected with `demo_read_only`. Empty disables `/demo`. |
 | `DEMO_REQUIRE_EMAIL` | Defaults to `false`. When `true`, visitors must enter their own email before the demo session is issued. |

@@ -17,6 +17,7 @@ import {
   shouldContinueToInviteStepAfterWorkspaceCreate,
   shouldShowWorkspaceOnboardingOrganizationSelector,
   shouldUseFullPageWorkspaceOnboarding,
+  workspaceCreatedDestination,
 } from '@/lib/workspaceOnboardingMode';
 import {
   ONBOARDING_USE_CASE_OPTIONS,
@@ -24,7 +25,7 @@ import {
   trackWorkspaceOnboardingUseCases,
   type WorkspaceOnboardingUseCase,
 } from '@/lib/workspaceOnboardingUseCases';
-import { isSetupSuccessEnabled } from '@/lib/featureFlags';
+import { useSetupGuideEnabled } from '@/hooks/useSetupGuideEnabled';
 import { WorkspaceSelector } from '@/components/workspace/WorkspaceSelector';
 import { HelpinLogo } from '@/components/layout/HelpinLogo';
 import type { OrganizationWithRole } from '@/lib/types';
@@ -187,6 +188,7 @@ export default function Workspaces({ dedicatedOnboarding = false }: { dedicatedO
   const { data: organizations = [], isLoading: orgsLoading } = useOrganizations();
   const navigate = useNavigate();
   const { user, signOut } = useAuthStore();
+  const setupGuideEnabled = useSetupGuideEnabled();
   const { currentOrganization, setCurrentOrganization } = useOrganizationStore();
   const { data: allWorkspaces = [], isLoading: wsLoading } = useWorkspaces();
   const createOrgMutation = useCreateOrganization();
@@ -601,7 +603,7 @@ export default function Workspaces({ dedicatedOnboarding = false }: { dedicatedO
     const ws = workspaceOverride ?? createdWorkspace;
     setDialogOpen(false);
     if (ws) {
-      void navigate({ to: isFullPageOnboarding && isSetupSuccessEnabled() ? `/w/${ws.slug}/setup` : `/w/${ws.slug}/pm/my-work` });
+      void navigate({ to: workspaceCreatedDestination({ slug: ws.slug, setupGuideEnabled }) });
     }
     setTimeout(resetWorkspaceDialog, 300);
   };

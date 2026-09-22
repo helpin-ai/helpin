@@ -39,8 +39,11 @@ type Config struct {
 	// DemoRequireEmail makes the visitor email mandatory on POST /api/auth/demo.
 	DemoRequireEmail bool
 	// DemoLeadWebhookURL receives a JSON POST for every visitor email captured.
-	DemoLeadWebhookURL    string
-	EnabledModules        []model.ModuleID
+	DemoLeadWebhookURL string
+	EnabledModules     []model.ModuleID
+	// SetupGuideEnabled gates the workspace Setup guide (SETUP_SUCCESS_ENABLED;
+	// unset uses the edition default: on in Community, off in Enterprise).
+	SetupGuideEnabled     bool
 	DatabaseURL           string
 	JWTSecret             string
 	Port                  string
@@ -302,6 +305,10 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	setupGuideEnabled, err := deployment.SetupGuidePolicy(os.Getenv("SETUP_SUCCESS_ENABLED"))
+	if err != nil {
+		return nil, err
+	}
 
 	appBaseURL := os.Getenv("APP_BASE_URL")
 	if appBaseURL == "" {
@@ -397,6 +404,7 @@ func Load() (*Config, error) {
 		RunAutoMigrate:                         parseBoolEnvDefaultTrue(os.Getenv("RUN_AUTO_MIGRATE")),
 		CORSOrigins:                            corsOrigins,
 		EnabledModules:                         enabledModules,
+		SetupGuideEnabled:                      setupGuideEnabled,
 		PublicWidgetURL:                        publicWidgetURL,
 		PublicSDKURL:                           publicSDKURL,
 		EmailVerificationRequired:              emailVerificationRequired,

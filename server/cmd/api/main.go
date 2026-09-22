@@ -1548,7 +1548,7 @@ func main() {
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
 	workspaceService.SetProductAnalyticsService(productAnalytics)
 	setupService := service.NewSetupService(setupRepo)
-	setupSuccessEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv("SETUP_SUCCESS_ENABLED")), "true")
+	setupSuccessEnabled := cfg.SetupGuideEnabled
 	if setupSuccessEnabled {
 		workspaceService.SetSetupInitializer(setupService)
 	}
@@ -1887,6 +1887,7 @@ func main() {
 	handlers.AIConnection.SetKnowledgeConfiguration(cfg.OpenAIAPIKey != "", cfg.OpenAIEmbeddingModel, supportLLMRouter.ConfiguredChatProviders())
 	handlers.Docs.SetPublicWidgetURLs(cfg.PublicWidgetURL, cfg.PublicSDKURL)
 	handlers.Auth.SetPublicWidgetURLs(cfg.PublicWidgetURL, cfg.PublicSDKURL)
+	handlers.Auth.SetSetupGuideEnabled(setupSuccessEnabled)
 	handlers.Docs.SetHelpcenterAISearchService(helpcenterAISearchService)
 	handlers.Docs.SetAPIReferenceService(docsAPIReferenceService)
 

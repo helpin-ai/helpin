@@ -8,6 +8,10 @@ const WidgetIdentityMode = "enforced"
 // DefaultModules is the edition’s default product surface.
 const DefaultModules = "pm,docs,crm,support,automation,agents"
 
+// SetupGuideDefault applies when SETUP_SUCCESS_ENABLED is unset. Enterprise keeps
+// the Setup guide off unless SETUP_SUCCESS_ENABLED opts in.
+const SetupGuideDefault = false
+
 // AllowUnverifiedSignup permits an explicit local/operator auth policy.
 const AllowUnverifiedSignup = false
 

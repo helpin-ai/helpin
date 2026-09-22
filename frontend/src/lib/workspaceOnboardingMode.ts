@@ -69,3 +69,18 @@ export function shouldClearWorkspaceCreateSearchAfterDialogOpen({
 }) {
   return Boolean(create) && !isFullPageOnboarding;
 }
+
+/**
+ * Where the owner lands after creating a workspace. Whenever the API serves the
+ * Setup guide, every new workspace opens it (dialog or full-page onboarding);
+ * otherwise the owner lands on My Work.
+ */
+export function workspaceCreatedDestination({
+  slug,
+  setupGuideEnabled,
+}: {
+  slug: string;
+  setupGuideEnabled: boolean;
+}) {
+  return setupGuideEnabled ? `/w/${slug}/setup` : `/w/${slug}/pm/my-work`;
+}

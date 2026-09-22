@@ -8,7 +8,11 @@ package deployment
 const WidgetIdentityMode = "report_only"
 
 // DefaultModules is the edition’s default product surface.
-const DefaultModules = "support,docs,agents"
+const DefaultModules = "support,docs,agents,pm,crm,automation"
+
+// SetupGuideDefault applies when SETUP_SUCCESS_ENABLED is unset. Community shows
+// the workspace Setup guide unless the operator disables it.
+const SetupGuideDefault = true
 
 // AllowUnverifiedSignup permits an explicit local/operator auth policy.
 const AllowUnverifiedSignup = true

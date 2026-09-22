@@ -14,8 +14,8 @@ For the product-facing explanation of flows and agents, see
 [how automation works](automation-product-model.md).
 
 For repository work, see [coding-agent execution](coding-agent-execution.md).
-PM and CRM targets require those modules; Community 0.1 beta enables support,
-docs, and agents by default.
+PM and CRM targets require those modules; Community enables every module by
+default.
 
 **Source review:** 2026-09-18. The launch and policy references below describe this checkout. Agent Runtime is a separate component; its deployed adapters, browser lifecycle, and external service configuration were not exercised by this review.
 

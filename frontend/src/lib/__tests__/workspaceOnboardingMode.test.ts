@@ -6,6 +6,7 @@ import {
   shouldContinueToInviteStepAfterWorkspaceCreate,
   shouldShowWorkspaceOnboardingOrganizationSelector,
   shouldUseFullPageWorkspaceOnboarding,
+  workspaceCreatedDestination,
 } from '../workspaceOnboardingMode';
 
 describe('workspaceOnboardingMode', () => {
@@ -101,5 +102,13 @@ describe('workspaceOnboardingMode', () => {
       create: false,
       isFullPageOnboarding: false,
     })).toBe(false);
+  });
+
+  it('opens the Setup guide after creating any workspace when the API serves it', () => {
+    expect(workspaceCreatedDestination({ slug: 'acme', setupGuideEnabled: true })).toBe('/w/acme/setup');
+  });
+
+  it('lands on My Work after workspace creation when the Setup guide is off', () => {
+    expect(workspaceCreatedDestination({ slug: 'acme', setupGuideEnabled: false })).toBe('/w/acme/pm/my-work');
   });
 });

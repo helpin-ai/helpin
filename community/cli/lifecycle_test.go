@@ -276,6 +276,33 @@ func TestUpgradeCompatibilityAndEnvironment(t *testing.T) {
 	if values["JWT_SECRET"] != "preserve" || values["NEW_SECRET"] != "new" || values["OPTIONAL"] != "value" {
 		t.Fatal(values)
 	}
+	// A pristine 0.1 module default follows the new release default and newly
+	// introduced generated keys are added; a customized module list is kept.
+	allModules := "support,docs,agents,pm,crm,automation"
+	put(t, old, "HELPIN_ENABLED_MODULES=support,docs,agents\nJWT_SECRET=preserve\n")
+	put(t, target, "HELPIN_ENABLED_MODULES="+allModules+"\nJWT_SECRET=rotate\nCRM_ENCRYPTION_KEY=generated-crm\nGIT_OAUTH_ENCRYPTION_KEY=generated-git\n")
+	if err := mergeUpgradeEnvironment(old, target); err != nil {
+		t.Fatal(err)
+	}
+	merged := get(t, target)
+	values = envValues(merged)
+	if values["HELPIN_ENABLED_MODULES"] != allModules || values["JWT_SECRET"] != "preserve" || values["CRM_ENCRYPTION_KEY"] != "generated-crm" || values["GIT_OAUTH_ENCRYPTION_KEY"] != "generated-git" {
+		t.Fatal(merged)
+	}
+	if strings.Count(merged, "HELPIN_ENABLED_MODULES=") != 1 {
+		t.Fatal("module default duplicated:", merged)
+	}
+	for _, custom := range []string{"support,docs", "support,docs,agents,crm", "docs,support,agents"} {
+		put(t, old, "HELPIN_ENABLED_MODULES="+custom+"\nCRM_ENCRYPTION_KEY=existing\n")
+		put(t, target, "HELPIN_ENABLED_MODULES="+allModules+"\nCRM_ENCRYPTION_KEY=rotate\n")
+		if err := mergeUpgradeEnvironment(old, target); err != nil {
+			t.Fatal(err)
+		}
+		values = envValues(get(t, target))
+		if values["HELPIN_ENABLED_MODULES"] != custom || values["CRM_ENCRYPTION_KEY"] != "existing" {
+			t.Fatal(custom, values)
+		}
+	}
 	config := composeConfig{Name: "project", Volumes: map[string]composeVolume{"data": {Name: "project_data"}}, Services: map[string]composeService{"postgres": {Image: "old"}}}
 	nextConfig := config
 	nextConfig.Services = map[string]composeService{"postgres": {Image: "new"}}
