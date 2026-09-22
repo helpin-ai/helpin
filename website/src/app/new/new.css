@@ -878,8 +878,10 @@
   33.333%,65.333% { transform: translateY(-240px); }
   66.667%,100% { transform: translateY(-480px); }
 }
-.hp3 .cr-scene[data-playing="true"] .cr-character { animation: cr-stream-in .16s linear var(--cr-delay) both; }
-@keyframes cr-stream-in { from { opacity: 0; } to { opacity: 1; } }
+/* Stream characters by fill-opacity, not opacity: opacity would give each of the ~300 SVG
+   characters its own compositor layer. Backwards fill ends each animation once it finishes. */
+.hp3 .cr-scene[data-playing="true"] .cr-character { animation: cr-stream-in .16s linear var(--cr-delay) backwards; }
+@keyframes cr-stream-in { from { fill-opacity: 0; } to { fill-opacity: 1; } }
 @keyframes cr-character { from { visibility: hidden; } to { visibility: visible; } }
 @keyframes cr-dot { from { transform: translateY(2px); } to { transform: translateY(-2px); } }
 @keyframes cr-thinking { 0%,100% { opacity: 0; } 1%,99% { opacity: 1; } }
