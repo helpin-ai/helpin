@@ -44,7 +44,7 @@
 .hp3 .pf-dependency p{margin:14px 0;font-size:11px;line-height:1.6;color:#a4afa7}
 .hp3 .pf-customer{display:flex;align-items:flex-start;gap:8px;border-top:1px solid #3b453b;padding-top:14px;color:#a4afa7;font-size:10px;line-height:1.6}.hp3 .pf-customer svg{margin-top:2px}.hp3 .pf-customer strong{display:block;color:#c8d2cb;font-size:10px;font-weight:500;margin-bottom:4px}
 .hp3 .pf-context-note{position:absolute;right:0;top:62px;width:36%;padding:35px 25px;text-align:center;transition:opacity .4s,transform .4s}.hp3 .pf-context-note[data-visible=false]{opacity:0;transform:translateY(10px);pointer-events:none}
-.hp3 .pf-note-icon{display:grid;place-items:center;width:54px;height:54px;margin:0 auto 20px;border:1px solid #394a3e;border-radius:12px;background:#243128;color:#a7c2ae}
+.hp3 .pf-note-icon{display:grid;place-items:center;width:54px;height:54px;margin:0 auto 20px;border:1px solid rgba(196,216,204,.14);border-radius:12px;background:var(--art-dark-raised);color:#a7c2ae}
 .hp3 .pf-context-note>strong{font-size:17px;font-weight:500}.hp3 .pf-context-note p{font-size:12px;line-height:1.8;color:#a4afa7;margin:12px 0 22px}.hp3 .pf-context-note>span:last-child{display:inline-flex;align-items:center;gap:6px;font-size:10px;color:#acc6b3}
 .hp3 .pf-ask{position:absolute;right:0;top:0;width:38%;height:532px;display:flex;flex-direction:column;border:1px solid #465047;border-radius:12px;background:#202520;box-shadow:0 16px 45px #0005;transition:opacity .5s,transform .5s cubic-bezier(.22,1,.36,1)}
 .hp3 .pf-ask[data-visible=false]{opacity:0;transform:translateY(18px);pointer-events:none}
