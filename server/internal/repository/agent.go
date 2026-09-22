@@ -974,6 +974,7 @@ func (r *AgentRunMessageRepository) ListDockChatTurnThroughMessage(
 		Model(&model.AgentRunMessage{}).
 		Select("COALESCE(MAX(dock_chat_sequence), 0) AS sequence").
 		Where("workspace_id = ? AND dock_chat_id = ? AND role = ? AND dock_chat_sequence < ? AND delivery_status <> ?", workspaceID, dockChatID, "user", *target.DockChatSequence, "failed").
+		Where("COALESCE(message_type, '') NOT IN ?", []string{"approval", "approval_request_resolution", "review_checkpoint_resolution"}).
 		Scan(&previous).Error; err != nil {
 		return nil, fmt.Errorf("find dock chat work boundary: %w", err)
 	}

@@ -7,7 +7,8 @@ import { TranscriptSegmentView, type TranscriptSegment } from '@/components/agen
 import { DisclosureChevron } from '@/components/agents/transcript/DisclosureChevron';
 import { describeToolCall } from '@/components/pm/CodingSession/toolCallPresentation';
 import { formatCodingSessionElapsed } from '@/components/pm/CodingSession/codingSessionPresentation';
-import type { AgentRunPauseReason } from '@/lib/pmTypes';
+import type { AgentRunPauseReason, CodingSessionActor, CodingSessionTranscriptMessage } from '@/lib/pmTypes';
+import { DockDecisionRow } from './DockDecisionRow';
 import type { DockWorkingGroupEntry } from './dockWorkingGroups';
 import styles from './DockActivityTimeline.module.css';
 
@@ -64,7 +65,9 @@ function ActivityRow({ segment, active }: { segment: TranscriptSegment; active: 
   );
 }
 
-export function DockActivityTimeline({ group, runStatus, pauseReason }: { group: DockWorkingGroupEntry; runStatus?: string; pauseReason?: AgentRunPauseReason }) {
+type ResolveActor = (message: CodingSessionTranscriptMessage) => CodingSessionActor | null;
+
+export function DockActivityTimeline({ group, runStatus, pauseReason, resolveActor }: { group: DockWorkingGroupEntry; runStatus?: string; pauseReason?: AgentRunPauseReason; resolveActor?: ResolveActor }) {
   const failed = group.segments.some(segment => segment.kind === 'tool' && segment.toolCall.status === 'failed');
   const [expanded, setExpanded] = useState(group.active || failed);
   const [wasActive, setWasActive] = useState(group.active);
@@ -119,15 +122,17 @@ export function DockActivityTimeline({ group, runStatus, pauseReason }: { group:
       </button>
       {contentMounted && <div id={detailsId} className={styles.disclosure} data-open={expanded} aria-hidden={!expanded} inert={!expanded}>
         <div className={styles.disclosureInner}>
-          <div className={styles.history}><DockActivitySteps segments={group.segments} active={group.active} /></div>
+          <div className={styles.history}><DockActivitySteps segments={group.segments} active={group.active} resolveActor={resolveActor} /></div>
         </div>
       </div>}
     </section>
   );
 }
 
-export function DockActivitySteps({ segments, active = false }: { segments: TranscriptSegment[]; active?: boolean }) {
+export function DockActivitySteps({ segments, active = false, resolveActor }: { segments: TranscriptSegment[]; active?: boolean; resolveActor?: ResolveActor }) {
   return <ol className={styles.list} aria-label="Activity steps">
-    {segments.filter(segment => segment.kind !== 'assistant' || !segment.final).map(segment => <ActivityRow key={segment.kind === 'tool' ? segment.toolCall.tool_call_id : segment.kind === 'assistant' ? segment.messageId ?? segment.id.replace(/^live:/, '') : segment.kind === 'reasoning' ? segment.reasoning.message_id : segment.id} segment={segment} active={active} />)}
+    {segments.filter(segment => segment.kind !== 'assistant' || !segment.final).map(segment => segment.kind === 'review_decision'
+      ? <li key={segment.id} className="relative"><DockDecisionRow message={segment.message} actor={resolveActor?.(segment.message) ?? null} timeline /></li>
+      : <ActivityRow key={segment.kind === 'tool' ? segment.toolCall.tool_call_id : segment.kind === 'assistant' ? segment.messageId ?? segment.id.replace(/^live:/, '') : segment.kind === 'reasoning' ? segment.reasoning.message_id : segment.id} segment={segment} active={active} />)}
   </ol>;
 }

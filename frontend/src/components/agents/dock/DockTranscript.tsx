@@ -101,10 +101,12 @@ function DockWorkDisclosure({
   workspaceId,
   chatId,
   summary,
+  resolveActor,
 }: {
   workspaceId: string;
   chatId: string;
   summary: NonNullable<CodingSessionTranscriptMessage['dock_work_summary']>;
+  resolveActor: (message: CodingSessionTranscriptMessage) => CodingSessionActor | null;
 }) {
   const timelineView = useDockStore(state => state.transcriptView === 'timeline');
   const cacheKey = `${workspaceId}:${chatId}:${summary.message_id}`;
@@ -140,7 +142,8 @@ function DockWorkDisclosure({
 
   const workStream = messages ? mergePersistedChatMessages(null, messages) : null;
   const workSegments = workStream ? collectSegments(workStream, { includeLive: false, include: DOCK_WORKING_SEGMENT_KINDS })
-    .filter(segment => segment.kind === 'tool' || segment.kind === 'reasoning'
+    .map((segment): TranscriptSegment => segment.kind === 'user' && segment.message.message_type === 'approval' ? { ...segment, kind: 'review_decision' } : segment)
+    .filter(segment => segment.kind === 'tool' || segment.kind === 'reasoning' || segment.kind === 'review_decision'
       || (segment.kind === 'assistant' && !segment.final && !!segment.content.trim())) : null;
   const hasDetails = workSegments ? workSegments.length > 0 : summary.activity_count > 0;
   const Summary = hasDetails ? 'button' : 'div';
@@ -162,7 +165,7 @@ function DockWorkDisclosure({
             </button>
           ) : null}
           {workStream && timelineView ? (
-            <DockActivitySteps segments={workSegments ?? []} />
+            <DockActivitySteps segments={workSegments ?? []} resolveActor={resolveActor} />
           ) : workStream ? (
             <DockTranscript
               stream={workStream}
@@ -252,6 +255,9 @@ export function DockTranscript({
       avatar_background_color: member.avatar_background_color,
     }]),
   );
+  const resolveDecisionActor = (message: CodingSessionTranscriptMessage) =>
+    actorsById.get(message.resolver_user_id ?? message.actor_user_id ?? '')
+      ?? fallbackActor ?? (user ? { id: user.id, email: user.email, full_name: user.full_name } : null);
   const segments = stream ? collectSegments(stream, {
     includeLive: useRuntimeTimeline,
     runtimeActive: active,
@@ -288,19 +294,8 @@ export function DockTranscript({
   }
   const latestAssistantSegmentId = segments[finalAssistantIndex(segments, !active)]?.id;
   const sequences = transcriptSegmentSequences(stream);
-  const activityBoundaries = new Set<string>();
-  for (const item of subAgentRuns) {
-    const createdAt = Date.parse(item.createdAt);
-    const boundary = segments.find(segment => {
-      const time = segmentTimestamp(segment, times);
-      const sequence = segmentSequence(segment, sequences);
-      return (Number.isFinite(createdAt) && time !== null && time > createdAt)
-        || (item.resultSequence !== undefined && sequence !== null && sequence >= item.resultSequence);
-    });
-    if (boundary) activityBoundaries.add(boundary.id);
-  }
   const workingTimeline = timelineView
-    ? buildDockActivityTimeline(segments, active, segment => segmentTimestamp(segment, times), activityBoundaries)
+    ? buildDockActivityTimeline(segments, active, segment => segmentTimestamp(segment, times))
     : compactAssistantProgress
     ? buildDockWorkingTimeline(segments, active, {
         collapseCompletedWork: completedRun || segments.some((segment) => segment.kind === 'assistant' && segment.final),
@@ -401,6 +396,7 @@ export function DockTranscript({
               workspaceId={workspaceId}
               chatId={chatId}
               summary={entry.segment.message.dock_work_summary}
+              resolveActor={resolveDecisionActor}
             /></Fragment>
           );
         }
@@ -417,14 +413,13 @@ export function DockTranscript({
               data-assistant-presentation={assistantPresentation?.presentation}
               data-final-response-separator={assistantPresentation?.separator ? 'true' : undefined}
             >
-              {entry.segment.kind === 'review_decision' ? (
+              {workingGroup && timelineView ? (
+                <DockActivityTimeline group={workingGroup} runStatus={runStatus} pauseReason={pauseReason} resolveActor={resolveDecisionActor} />
+              ) : entry.segment.kind === 'review_decision' ? (
                 <DockDecisionRow
                   message={entry.segment.message}
-                  actor={actorsById.get(entry.segment.message.resolver_user_id ?? entry.segment.message.actor_user_id ?? '')
-                    ?? fallbackActor ?? (user ? { id: user.id, email: user.email, full_name: user.full_name } : null)}
+                  actor={resolveDecisionActor(entry.segment.message)}
                 />
-              ) : workingGroup && timelineView ? (
-                <DockActivityTimeline group={workingGroup} runStatus={runStatus} pauseReason={pauseReason} />
               ) : workingGroup ? (
                 <DockWorkingGroup
                   id={workingGroup.key}

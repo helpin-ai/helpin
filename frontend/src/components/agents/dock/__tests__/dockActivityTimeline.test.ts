@@ -36,16 +36,30 @@ describe('activity timeline', () => {
     expect(buildDockActivityTimeline([answer], true, times)).toMatchObject([{ kind: 'segment', segment: answer }]);
     expect(buildDockActivityTimeline([progress], false, times)).toMatchObject([{ kind: 'working_group', completed: false }]);
   });
-  it('keeps user questions and review decisions outside activity groups', () => {
+  it('keeps review decisions in the same activity and starts fresh for an actual user message', () => {
     const user: TranscriptSegment = { kind: 'user', id: 'user', message: { event_id: 'user', role: 'user', content: 'Continue?', timestamp: '', sequence_no: 1 } };
     const review: TranscriptSegment = { ...user, kind: 'review_decision', id: 'review' };
     const result = buildDockActivityTimeline([progress, review, tool, user, final], false, times);
-    expect(result.map(entry => entry.kind === 'segment' ? entry.segment.kind : entry.kind)).toEqual(['working_group', 'review_decision', 'working_group', 'user', 'assistant']);
+    expect(result.map(entry => entry.kind === 'segment' ? entry.segment.kind : entry.kind)).toEqual(['working_group', 'user', 'assistant']);
+    expect(result[0]).toMatchObject({ segments: [progress, review, tool] });
   });
-  it('splits activity at a delegated-run boundary without dropping any events', () => {
-    const result = buildDockActivityTimeline([progress, tool, final], false, times, new Set(['search']));
-    expect(result.map(entry => entry.kind)).toEqual(['working_group', 'working_group', 'segment']);
+  it('keeps the full turn in one activity without dropping any events', () => {
+    const result = buildDockActivityTimeline([progress, tool, final], false, times);
+    expect(result.map(entry => entry.kind)).toEqual(['working_group', 'segment']);
     expect(result.flatMap(entry => entry.kind === 'working_group' ? entry.segments : [entry.segment])).toEqual([progress, tool, final]);
+  });
+  it('keeps late tool metadata in the activity before the final answer', () => {
+    expect(buildDockActivityTimeline([progress, final, tool], false, times)).toMatchObject([
+      { kind: 'working_group', completed: true, segments: [progress, tool] },
+      { kind: 'segment', segment: final },
+    ]);
+  });
+  it('does not promote legacy narration to a final when followed by an approval', () => {
+    const decision: TranscriptSegment = { kind: 'review_decision', id: 'decision', message: { role: 'user', event_id: 'decision', content: 'Approved.', timestamp: '', sequence_no: 2 } };
+    const narration = { ...progress, progress: undefined };
+    expect(buildDockActivityTimeline([narration, decision], false, times)).toMatchObject([
+      { kind: 'working_group', completed: false, segments: [narration, decision] },
+    ]);
   });
   it('keeps the summary identity when live progress is persisted', () => {
     const live = { ...progress, id: 'live:progress', messageId: 'message-1' } as TranscriptSegment;
