@@ -22,28 +22,35 @@ const COLORS = {
 
 const variants = [
   {
-    output: resolve(websiteRoot, 'public/og/helpin-home-green.png'),
+    output: resolve(websiteRoot, 'public/og/helpin-home-green-v2.png'),
+    eyebrow: 'THE HELPIN PLATFORM',
+    headline: ['Bring every team', 'together. Put AI', 'agents to work.'],
+    support: 'Support, projects, CRM and docs. Connected by AI agents.',
+    visual: 'connected',
+  },
+  {
+    output: resolve(websiteRoot, 'public/og/helpin-new-home-green-v2.png'),
     eyebrow: 'ONE CUSTOMER HISTORY',
     headline: ['AI agents that do', 'more than answer.'],
     support: 'A shared workspace for your team and AI agents.',
     visual: 'connected',
   },
   {
-    output: resolve(websiteRoot, 'public/og/helpin-pricing-green.png'),
+    output: resolve(websiteRoot, 'public/og/helpin-pricing-green-v2.png'),
     eyebrow: 'HELPIN PRICING',
     headline: ['One platform.', 'Your whole team,', 'connected.'],
     support: 'Choose Helpin Cloud or self-host on your infrastructure.',
     visual: 'pricing',
   },
   {
-    output: resolve(websiteRoot, 'public/og/helpin-privacy-green.png'),
+    output: resolve(websiteRoot, 'public/og/helpin-privacy-green-v2.png'),
     eyebrow: 'TRUST & PRIVACY',
     headline: ['Privacy at Helpin'],
     support: 'How we protect and process your information.',
     visual: 'privacy',
   },
   {
-    output: resolve(websiteRoot, 'public/og/helpin-terms-green.png'),
+    output: resolve(websiteRoot, 'public/og/helpin-terms-green-v2.png'),
     eyebrow: 'LEGAL',
     headline: ['Helpin Terms', 'of Service'],
     support: 'Clear terms for a connected workspace.',
@@ -78,7 +85,7 @@ const productCards = [
   ['branding', 'THE HELPIN BRAND', ['One customer history.'], 'A shared workspace for your team and AI agents.'],
 ];
 for (const [slug, eyebrow, headline, support] of productCards) {
-  variants.push({ output: resolve(websiteRoot, `public/og/helpin-${slug}-green.png`), eyebrow, headline, support, visual: 'connected' });
+  variants.push({ output: resolve(websiteRoot, `public/og/helpin-${slug}-green-v2.png`), eyebrow, headline, support, visual: 'connected' });
 }
 // Instrument Sans: Google Fonts static TTFs, bundled for deterministic offline builds.
 // Source: https://fonts.google.com/specimen/Instrument+Sans (SIL OFL in assets/instrument-sans).
@@ -97,17 +104,30 @@ function brand() {
   }, 'Helpin'));
 }
 
-function connectedVisual() {
-  return h('div', { style: { display: 'flex', flexDirection: 'column', width: 340, padding: '28px', borderRadius: 20, background: '#0B2119', border: '1px solid #365B47' } },
-    h('div', { style: { display: 'flex', color: '#9CDBB3', fontSize: 14, letterSpacing: '2px', marginBottom: 22 } }, 'ONE CUSTOMER HISTORY'),
-    ...[['01', 'Customer question', 'Docs, history and connected tools'], ['02', 'A task. A fix.', 'Your team and agents at work'], ['03', 'Customer follow-up', 'The conversation stays attached']].map(([number, title, detail], index) => h('div', { key: number, style: { display: 'flex', flexDirection: 'column', padding: '19px 18px', marginTop: index ? 12 : 0, borderRadius: 10, background: '#193A2B', border: '1px solid #365B47' } },
-      h('div', { style: { display: 'flex', gap: 12, alignItems: 'center', color: '#EDF5EF', fontSize: 21, fontWeight: 600 } }, h('span', {style: {color: '#9CDBB3', fontSize: 13}}, number), title),
+const PRODUCT_STEPS = {
+  'customer-support': ['CUSTOMER SUPPORT', [['Customer history', 'Earlier messages and linked work'], ['An informed answer', 'Your team and agents investigate'], ['A useful follow-up', 'Keep the customer informed']]],
+  projects: ['PLAN TO DELIVERY', [['Plan the work', 'Roadmaps, sprints and objectives'], ['Build with context', 'Requirements and customer history'], ['Review and deliver', 'Keep the next step in view']]],
+  crm: ['THE CUSTOMER RELATIONSHIP', [['Know the account', 'Conversations and linked work'], ['Review the deal', 'Owners, stages and next steps'], ['Follow through', 'An update grounded in history']]],
+  meetings: ['AFTER THE CONVERSATION', [['Capture the call', 'Return to what was said'], ['Review decisions', 'Commitments and open questions'], ['Prepare next steps', 'Tasks and follow-ups to review']]],
+  knowledge: ['KNOWLEDGE THAT HELPS', [['Publish useful guides', 'Help articles and product docs'], ['Find the answer', 'Search and source-linked answers'], ['Review an update', 'Keep guidance close to the product']]],
+  'ai-agents': ['SPECIALISTS, CONNECTED', [['Ask Agent', 'Start with a question or a task'], ['Specialist agents', 'Investigate, plan and prepare'], ['Your controls', 'Selected tools and approvals']]],
+  developers: ['CONNECT YOUR PRODUCT', [['SDKs and APIs', 'Connect support and customer data'], ['MCP connections', 'Give agents selected tools'], ['Events and workflows', 'Start the work you configure']]],
+  'self-hosting': ['ON YOUR INFRASTRUCTURE', [['The whole product', 'Support, projects, CRM and more'], ['Your deployment', 'Install and inspect with the CLI'], ['Your connections', 'Choose supported providers']]],
+};
+
+function connectedVisual(variant) {
+  const slug = variant.output.split('helpin-').at(-1).replace('-green-v2.png', '');
+  const [label, steps] = PRODUCT_STEPS[slug] ?? ['ONE CUSTOMER HISTORY', [['Customer question', 'Docs, history and connected tools'], ['A task. A fix.', 'Your team and agents at work'], ['Customer follow-up', 'The conversation stays attached']]];
+  return h('div', { style: { display: 'flex', flexDirection: 'column', width: 360, flexShrink: 0, padding: '28px', borderRadius: 20, background: '#0B2119', border: '1px solid #365B47' } },
+    h('div', { style: { display: 'flex', color: '#9CDBB3', fontSize: 14, letterSpacing: '2px', marginBottom: 22 } }, label),
+    ...steps.map(([title, detail], index) => h('div', { key: title, style: { display: 'flex', flexDirection: 'column', padding: '19px 18px', marginTop: index ? 12 : 0, borderRadius: 10, background: '#193A2B', border: '1px solid #365B47' } },
+      h('div', { style: { display: 'flex', gap: 12, alignItems: 'center', color: '#EDF5EF', fontSize: 21, fontWeight: 600 } }, h('span', {style: {color: '#9CDBB3', fontSize: 13}}, String(index + 1).padStart(2, '0')), title),
       h('div', { style: { display: 'flex', color: '#B2C6BA', fontSize: 14, marginTop: 8 } }, detail))))
 }
 
 function pricingVisual() {
   return h('div', {
-    style: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: 390 },
+    style: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: 360, flexShrink: 0 },
   },
   h('div', { style: { display: 'flex', fontSize: 72, lineHeight: 0.95, color: COLORS.accent, fontWeight: 700, letterSpacing: '-2px' } }, 'NO SEAT'),
   h('div', { style: { display: 'flex', fontSize: 72, lineHeight: 0.95, color: COLORS.accent, fontWeight: 700, letterSpacing: '-2px' } }, 'LIMITS'),
@@ -184,8 +204,8 @@ function documentVisual() {
   h('div', { style: { display: 'flex', width: 112, height: 6, borderRadius: 3, background: COLORS.line } })));
 }
 
-function visual(type) {
-  if (type === 'connected') return connectedVisual();
+function visual(type, variant) {
+  if (type === 'connected') return connectedVisual(variant);
   if (type === 'pricing') return pricingVisual();
   if (type === 'privacy' || type === 'terms') return legalVisual(type);
   if (type === 'app') return appVisual();
@@ -207,19 +227,19 @@ function image(variant) {
   h('div', {
     style: { display: 'flex', position: 'absolute', left: 72, right: 72, top: 148, bottom: 58, alignItems: 'center', justifyContent: 'space-between' },
   },
-  h('div', { style: { display: 'flex', flexDirection: 'column', width: 650 } },
+  h('div', { style: { display: 'flex', flexDirection: 'column', width: 620, flexShrink: 0 } },
     h('div', { style: { display: 'flex', marginBottom: 22, fontSize: 17, fontWeight: 700, letterSpacing: '2.4px', color: COLORS.accent } }, variant.eyebrow),
-    h('div', { style: { display: 'flex', flexDirection: 'column', fontSize: 58, lineHeight: 1.08, fontWeight: 600, letterSpacing: '-1.8px' } },
+    h('div', { style: { display: 'flex', flexDirection: 'column', fontSize: 56, lineHeight: 1.08, fontWeight: 600, letterSpacing: '-1.8px' } },
       ...variant.headline.map((line) => h('div', { key: line, style: { display: 'flex' } }, line)),
     ),
     h('div', { style: { display: 'flex', marginTop: 26, fontSize: 21, lineHeight: 1.5, color: COLORS.muted } }, variant.support),
   ),
-  visual(variant.visual)),
+  visual(variant.visual, variant)),
   h('div', { style: { display: 'flex', position: 'absolute', left: 72, bottom: 34, width: 70, height: 5, borderRadius: 3, background: COLORS.accent } }));
 }
 
 const selectedVariants = process.env.HELPIN_OG_VARIANT
-  ? variants.filter((variant) => variant.output.includes(`helpin-${process.env.HELPIN_OG_VARIANT}.png`) || variant.output.includes(`helpin-${process.env.HELPIN_OG_VARIANT}-green.png`))
+  ? variants.filter((variant) => variant.output.includes(`helpin-${process.env.HELPIN_OG_VARIANT}.png`) || variant.output.includes(`helpin-${process.env.HELPIN_OG_VARIANT}-green-v2.png`))
   : process.env.HELPIN_OG_WEBSITE_ONLY ? variants.filter(variant => variant.output.startsWith(websiteRoot)) : variants;
 
 for (const variant of selectedVariants) {
