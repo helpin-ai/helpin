@@ -197,6 +197,8 @@
 
 /* Model choice and usage: quiet surfaces, explicit connection and billing details. */
 .hp3 .pricing-ai-section { background: var(--bg2); }
+.hp3 .pricing-ai-section > .wrap > .sec-head { margin-inline: auto; text-align: center; }
+.hp3 .pricing-ai-section > .wrap > .sec-head .lede { margin-inline: auto; }
 .hp3 .pricing-ai-section>.wrap,.hp3 .pricing-comparison>.wrap { max-width: 1120px; }
 .hp3 .pricing-ai-providers { display: flex; justify-content: center; flex-wrap: wrap; gap: 20px 36px; margin: -12px 0 46px; }
 .hp3 .pricing-ai-providers>span { display: inline-flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 500; color: var(--t2); }
