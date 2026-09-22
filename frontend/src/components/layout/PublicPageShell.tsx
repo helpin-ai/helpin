@@ -17,7 +17,6 @@ export function PublicPageShell({ children }: PublicPageShellProps) {
         </header>
         <main className="public-page-content">{children}</main>
         <footer className="public-page-footer">
-          <span>© {new Date().getFullYear()} Helpin</span>
           <span>Made for working together.</span>
         </footer>
       </div>
