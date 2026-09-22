@@ -90,6 +90,15 @@ esac
         self.assertNotEqual(self.run_installer().returncode, 0)
         self.assertFalse((self.destination / 'helpin').exists())
 
+    def test_unavailable_public_releases_explains_failure_and_preserves_cli(self):
+        self.env.pop('HELPIN_VERSION')
+        (self.destination / 'helpin').write_bytes(b'previous')
+        self.tool('curl', '#!/bin/sh\nexit 22\n')
+        result = self.run_installer()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('public Community releases are unavailable', result.stderr)
+        self.assertEqual((self.destination / 'helpin').read_bytes(), b'previous')
+
     def test_website_serves_identical_bootstrap(self):
         self.assertEqual((ROOT / 'website/public/install.sh').read_bytes(),
                          (ROOT / 'community/install.sh').read_bytes())

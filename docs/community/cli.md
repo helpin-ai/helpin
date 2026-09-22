@@ -118,6 +118,9 @@ assets or artifacts from a trusted source.
 | `helpin logs [service...]` | Follows logs, initially showing the last 150 lines |
 | `helpin configure` | Updates local/server URL and port settings; preserves secrets and optional settings |
 | `helpin doctor` | Checks Docker, Compose configuration, required services, API readiness, HTTPS, and secret file permissions |
+| `helpin backup` | Stops services, snapshots the bundle and all named volumes, then resumes previously running services |
+| `helpin restore` | Verifies a backup and restores the original release/data/keys into a new directory and new volumes |
+| `helpin upgrade` | Verifies a compatible target release, creates a recovery backup, applies migrations, and checks readiness |
 | `helpin version` | Prints the CLI version |
 
 Every installation command accepts `--dir`. Put options before service names:
@@ -134,9 +137,43 @@ file containing the process ID. After a killed command, verify that process is
 no longer running before removing a stale lock. Never delete a live lock.
 
 Back up the data and encryption keys as described in [backups](backups.md).
-Never run `docker compose down -v` on data you intend to keep. There is no
-`helpin upgrade` command yet: tested cross-version upgrades remain a separate
-release requirement. Replacing the CLI executable does not upgrade the stack.
+Never run `docker compose down -v` on data you intend to keep. Replacing the CLI
+executable does not upgrade the stack.
+
+## Upgrade an installation
+
+Use an explicit published release tag (replace the example with a real tag):
+
+```sh
+helpin upgrade --dir /srv/helpin --version community-v0.2.0 --backup /srv/pre-upgrade-backup
+```
+
+Without `--version`, upgrade discovers the newest published Community release,
+including prereleases, independently of the CLI's own version. It never skips
+an incompatible newest release silently: select a compatible tag explicitly.
+Previously downloaded bundles use `--bundle` and `--checksum`, as for install.
+The command asks before downtime; use `--yes` for unattended operation.
+
+The target's `release.json` must list the installed tag in `upgrade_from` and
+include an HTTPS `upgrade_evidence` record. Releases without this declaration
+remain installable but cannot be upgrade targets. Maintainers must verify each
+full-stack upgrade/recovery path before declaring it; fixture tests alone do not
+establish production compatibility.
+
+Upgrade requires a healthy current stack, a clean Helpin migration ledger, an
+unchanged release checksum inventory, and the same volume layout and infrastructure
+images. Local edits to managed bundle files or additional files must be reconciled
+first. Keep operator settings in `.env`, `apps.json`, and `Caddyfile`; upgrade
+preserves those files and merges newly introduced environment defaults without
+rotating existing keys. Changes to PostgreSQL, Redis, NATS, Garage, or Temporal
+images require a separate migration procedure.
+
+The CLI fetches target images before downtime, creates a consistent backup, then
+replaces the bundle and starts the target services. It checks migrations, service
+health, and API readiness. A failure stops the target services and prints recovery
+instructions using the pre-upgrade backup. Follow [backup and recovery](backups.md)
+to restore into a new installation. Recovery is explicit and preserves the failed
+installation for inspection; there is no automatic schema downgrade.
 
 ## Build and release the CLI
 
@@ -150,7 +187,8 @@ go build -o /tmp/helpin .
 
 The Community CLI workflow tests Linux amd64, Linux arm64, and macOS ARM runners.
 Linux jobs also exercise the compiled CLI against an isolated real Compose
-fixture, including configuration, restart, stop/start, and persistent data.
+fixture, including configuration, restart, stop/start, backup/restore, compatible
+upgrade, and recovery after a migration mutates data and fails.
 Run that check with `python3 community/cli/acceptance.py` from the repository
 root after making `alpine:3.20` available locally. Set `TMPDIR` to a filesystem
 with at least 20 GiB free if your default temporary filesystem is smaller.
@@ -158,11 +196,17 @@ The fixture exercises the installer; it is not full-application acceptance.
 The candidate workflow tests the CLI, cross-compiles Linux/macOS amd64/arm64,
 and attaches binaries, individual checksums, and the bootstrap to the candidate.
 Packaging records their hashes in `release.json`; promotion re-verifies them
-and publishes those exact assets without rebuilding. Container acceptance
+and publishes those exact assets without rebuilding. It refuses a repository
+that is not anonymously readable and verifies anonymous asset downloads after
+publication. A post-publication access failure fails the workflow without deleting
+the release; repair access before announcing it. Container acceptance
 continues through the existing native Community release gates.
 
 The canonical bootstrap is `community/install.sh`; its identical website copy
 is `website/public/install.sh`, served as `/install.sh` by the existing website
 build. Tests reject drift. Publishing a candidate, promoting it, and deploying
 the website are separate operations and remain subject to the existing
-publication gate. No `get.helpin.ai` DNS record is required for this route.
+publication gate. Candidate inputs `upgrade_from` and `upgrade_evidence` record
+reviewed full-stack upgrade/recovery paths; leave them empty for install-only
+releases. The public repository and container images must be downloadable without
+maintainer credentials. No `get.helpin.ai` DNS record is required for this route.
