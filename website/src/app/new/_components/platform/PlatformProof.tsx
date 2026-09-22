@@ -4,7 +4,7 @@ import { useId, useState } from 'react';
 import Link from 'next/link';
 import { ProductPreview } from '../product-previews';
 import './platform-product-previews.css';
-import { ArrowRight, BookOpen, Bot, Braces, Building2, Check, FolderKanban, LockKeyhole, MessagesSquare, Video } from 'lucide-react';
+import { ArrowRight, BookOpen, Bot, Building2, FolderKanban, MessagesSquare, Video } from 'lucide-react';
 
 const PRODUCTS = [
   { name: 'Support', preview: 'inbox', Icon: MessagesSquare, title: 'Answer with the earlier conversation in view.', body: 'Handle chat and email together. Give teammates and agents the history to investigate the question and hand it over without starting again.', href: '/new/products/customer-support' },
@@ -40,14 +40,4 @@ export function CodeContent({code}:{code:string}) {
   // Local presentation only: preserve exact whitespace and copied source.
   const expression = /(\/\/[^\n]*|'[^'\n]*'|"[^"\n]*"|\b(?:import|from|const|export|function|return|true|false|await)\b)/g;
   return <>{code.split('\n').map((line, index) => <span className="platform-code-line" key={index}><span className="platform-line-number" aria-hidden="true">{index + 1}</span><span>{line.split(expression).map((part, token) => <span key={token} className={part.startsWith('//') ? 'code-comment' : /^['"]/.test(part) ? 'code-string' : /^(import|from|const|export|function|return|true|false|await)$/.test(part) ? 'code-keyword' : undefined}>{part}</span>)}{'\n'}</span></span>)}</>;
-}
-
-export function WorkspaceAPIExample() {
-  return <div className="workspace-api-example">
-    <div className="workspace-api-heading"><Braces size={17}/><strong>Work with authorized workspace data.</strong><span><LockKeyhole size={12}/>Authenticated</span></div>
-    <div className="workspace-api-endpoint"><span>GET</span><code>/api/workspaces</code></div>
-    <div className="workspace-api-auth"><span>Authorization</span><code>Bearer &lt;session_access_token&gt;</code></div>
-    <div className="workspace-api-response"><span className="platform-micro"><Check size={12}/>EXAMPLE RESPONSE · SELECTED FIELDS</span><pre tabIndex={0} aria-label="Example workspace response"><code><CodeContent code={'[\n  {\n    "name": "OrbitDesk",\n    "slug": "orbitdesk",\n    "role": "member"\n  }\n]'}/></code></pre></div>
-    <div className="workspace-api-note"><LockKeyhole size={14}/><p>Results depend on the authenticated user’s access.</p></div>
-  </div>;
 }
