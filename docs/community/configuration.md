@@ -21,6 +21,14 @@ retains conservative authentication defaults.
 | `SMTP_TLS_MODE` | `starttls` by default; `tls` for implicit TLS; explicit `none` only for an unauthenticated trusted local relay. Credentials require TLS and AUTH PLAIN; LOGIN-only SMTP servers are unsupported. TLS certificates are verified. |
 | `POSTMARK_APP_SERVER_TOKEN`, `POSTMARK_APP_FROM_EMAIL` | Optional alternative application-mail provider. |
 
+`helpin install` and `helpin configure` can write the SMTP settings for you
+(see the [CLI guide](cli.md)). Workspace administrators can send a test email
+to their own address with `POST /api/workspaces/{id}/email/test` (at most one
+every 30 seconds and five per hour per user). The result is recorded, and the
+`email_outbound` capability reports `ready` only after a successful test of the
+current mail settings; changing the host, port, username, sender, or TLS mode
+requires a new test.
+
 SMTP sends invitations, password reset, optional verification and application
 notifications. It does **not** enable support reply threading or inbound mail;
 those integrations still use optional Postmark. Without application mail, local

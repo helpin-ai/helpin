@@ -1896,6 +1896,12 @@ func main() {
 	handlers.SupportInboxWidget.SetPublicOrigin(cfg.PublicWidgetURL)
 	supportEmbeddingModel := llm.SupportEmbeddingModel(cfg.OpenAIAPIKey, cfg.OpenRouterAPIKey, cfg.OpenAIEmbeddingModel)
 	handlers.AIConnection.SetKnowledgeConfiguration(supportEmbeddingModel != "", supportEmbeddingModel, supportLLMRouter.ConfiguredChatProviders())
+	handlers.Capability = newCapabilityHandler(db, cfg, capabilityWiring{
+		appEmail: appEmailClient, emailDiagnostics: emailDiagnosticsConfig,
+		aiConnectionsEnabled: aiConnectionService.Enabled(), chatProviders: supportLLMRouter.ConfiguredChatProviders(),
+		embeddingModel: supportEmbeddingModel, storage: s3Client, temporal: temporalClient,
+		gitHubAppConfigured: githubAppClient.Configured,
+	})
 	handlers.Docs.SetPublicWidgetURLs(cfg.PublicWidgetURL, cfg.PublicSDKURL)
 	handlers.Auth.SetPublicWidgetURLs(cfg.PublicWidgetURL, cfg.PublicSDKURL)
 	handlers.Auth.SetSetupGuideEnabled(setupSuccessEnabled)

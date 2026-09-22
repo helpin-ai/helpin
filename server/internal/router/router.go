@@ -38,6 +38,7 @@ type Handlers struct {
 	Organization        *handler.OrganizationHandler
 	Workspace           *handler.WorkspaceHandler
 	Setup               *handler.SetupHandler
+	Capability          *handler.CapabilityHandler
 	Edition             EditionRoutes
 	Settings            *handler.SettingsHandler
 	Automation          *handler.AutomationHandler
@@ -337,6 +338,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Post("/mcp/oauth/revoke", h.MCP.RevokeToken)
 		}
 		r.Get("/health", h.Health.Check)
+		if h.Capability != nil {
+			// Operator tooling (helpin doctor) authenticates with the internal secret.
+			r.With(middleware.RequireInternalAPISecret).Get("/instance/capabilities", h.Capability.Instance)
+		}
 		if h.Edition != nil {
 			h.Edition.RegisterPublic(r)
 		}
@@ -687,6 +692,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				if h.GitHubApp != nil {
 					r.With(requirePerm(authorization.PermSettingsRead)).Get("/github/app-status", h.GitHubApp.Status)
 					r.With(authorization.RequireOwner(authz)).Post("/github/app-manifest", h.GitHubApp.CreateManifest)
+				}
+				if h.Capability != nil {
+					r.Get("/capabilities", h.Capability.Workspace)
+					r.With(requirePerm(authorization.PermWorkspaceUpdate)).Post("/email/test", h.Capability.SendTestEmail)
 				}
 				r.With(requirePerm(authorization.PermWorkspaceMembersManage)).Put("/members/{memberId}", h.Workspace.UpdateMember)
 				r.With(requirePerm(authorization.PermWorkspaceMembersManage)).Delete("/members/{memberId}", h.Workspace.RemoveMember)

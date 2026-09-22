@@ -43,6 +43,16 @@ test('install generates independent stable secrets and never executes dotenv con
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
+test('settings written by helpin install/configure reach the API and worker', async () => {
+  const example = await readFile(new URL('.env.example', root), 'utf8');
+  const compose = await readFile(new URL('compose.yaml', root), 'utf8');
+  for (const key of ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USERNAME', 'SMTP_PASSWORD', 'SMTP_FROM', 'SMTP_TLS_MODE',
+    'OPENROUTER_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'INTERNAL_API_SECRET']) {
+    assert.match(example, new RegExp(`^${key}=`, 'm'), `${key} missing from .env.example`);
+    assert.match(compose, new RegExp(`\\$\\{${key}[:}]`), `${key} not passed by compose.yaml`);
+  }
+});
+
 test('bundle launch and event contracts agree with the Runtime template', async () => {
   const compose = await readFile(new URL('compose.yaml', root), 'utf8');
   const app = JSON.parse(await readFile(new URL('apps.example.json', root), 'utf8')).apps[0];

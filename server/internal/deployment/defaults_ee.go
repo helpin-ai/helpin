@@ -2,6 +2,9 @@
 
 package deployment
 
+// EditionName identifies the edition in operator-facing status responses.
+const EditionName = "enterprise"
+
 // WidgetIdentityMode retains the SaaS default for new installations.
 const WidgetIdentityMode = "enforced"
 

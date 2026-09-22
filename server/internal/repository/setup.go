@@ -210,6 +210,30 @@ func (r *SetupRepository) GetEvidence(ctx context.Context, workspaceID string) (
 	return r.GetEvidenceSince(ctx, workspaceID, time.Unix(0, 0).UTC())
 }
 
+// VerifiedWidgetInstallationCount counts active widget installations whose
+// workspace has served at least one visitor session. Configuration alone is not
+// evidence that the widget runs on a website.
+func (r *SetupRepository) VerifiedWidgetInstallationCount(ctx context.Context, workspaceID string) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Table("support_widget_installations AS installs").
+		Joins("JOIN support_widget_sessions AS sessions ON sessions.workspace_id = installs.workspace_id").
+		Where("installs.workspace_id = ? AND installs.active = true", workspaceID).
+		Distinct("installs.id").Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("read verified support widget evidence: %w", err)
+	}
+	return count, nil
+}
+
+// ActiveEmailRouteCount counts the workspace's active support email addresses.
+func (r *SetupRepository) ActiveEmailRouteCount(ctx context.Context, workspaceID string) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Table("support_email_routes").
+		Where("workspace_id = ? AND active = true", workspaceID).Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("read setup evidence from support_email_routes: %w", err)
+	}
+	return count, nil
+}
+
 func (r *SetupRepository) GetEvidenceSince(ctx context.Context, workspaceID string, since time.Time) (model.SetupEvidence, error) {
 	evidence := model.SetupEvidence{TaskAchievementTimes: make(map[string]time.Time)}
 	var workspaceTimezone string
@@ -275,13 +299,16 @@ func (r *SetupRepository) GetEvidenceSince(ctx context.Context, workspaceID stri
 			evidence.TaskAchievementTimes[query.repeat] = repeat
 		}
 	}
-	var verifiedWidgetCount, emailRouteCount, agentKnowledgeCount, supportKnowledgeCount int64
+	var agentKnowledgeCount, supportKnowledgeCount int64
+	emailRouteCount, err := r.ActiveEmailRouteCount(ctx, workspaceID)
+	if err != nil {
+		return model.SetupEvidence{}, err
+	}
 	additional := []struct {
 		table string
 		where string
 		dest  *int64
 	}{
-		{"support_email_routes", "workspace_id = ? AND active = true", &emailRouteCount},
 		{"agent_knowledge_sources", "workspace_id = ?", &agentKnowledgeCount},
 		{"support_content_sources", "workspace_id = ?", &supportKnowledgeCount},
 		{"support_content_sources", "workspace_id = ? AND sync_status = 'ready' AND (indexed_pages > 0 OR indexed_chunks > 0)", &evidence.BrandKnowledgeSourceCount},
@@ -292,11 +319,9 @@ func (r *SetupRepository) GetEvidenceSince(ctx context.Context, workspaceID stri
 			return model.SetupEvidence{}, fmt.Errorf("read setup evidence from %s: %w", query.table, err)
 		}
 	}
-	if err := r.db.WithContext(ctx).Table("support_widget_installations AS installs").
-		Joins("JOIN support_widget_sessions AS sessions ON sessions.workspace_id = installs.workspace_id").
-		Where("installs.workspace_id = ? AND installs.active = true", workspaceID).
-		Distinct("installs.id").Count(&verifiedWidgetCount).Error; err != nil {
-		return model.SetupEvidence{}, fmt.Errorf("read verified support widget evidence: %w", err)
+	verifiedWidgetCount, err := r.VerifiedWidgetInstallationCount(ctx, workspaceID)
+	if err != nil {
+		return model.SetupEvidence{}, err
 	}
 	if err := r.db.WithContext(ctx).Table("docs_helpcenter_articles AS articles").
 		Joins("JOIN docs_documents AS documents ON documents.id = articles.document_id").

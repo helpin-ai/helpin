@@ -20,6 +20,7 @@ func checkUpgradeCompatibility(current releaseMetadata, target releaseMetadata) 
 	}
 	return fmt.Errorf("release %s does not declare a tested upgrade from %s; installation was not changed", target.Tag, current.Tag)
 }
+
 // retiredDefaults lists values that earlier bundles wrote as defaults. An
 // unchanged retired default follows the new release default on upgrade; any
 // operator-customized value is preserved exactly.
