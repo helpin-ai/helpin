@@ -10,7 +10,7 @@ import { AskAgentMenuCard, PRODUCTS, ProductLink, ProductsMenu } from './Product
 
 type MenuName = 'product';
 
-export function PreviewNav() {
+export function PreviewNav({ homepage = false }: { homepage?: boolean }) {
   const pathname = usePathname();
   const [hidden, setHidden] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -122,7 +122,7 @@ export function PreviewNav() {
             <Link className="nav-direct" href="/pricing" onClick={close}>Pricing</Link>
           </div>
           <div className="navright">
-            <a className="gh" href={GITHUB_URL} target="_blank" rel="noopener noreferrer" aria-label="Helpin on GitHub"><GithubIcon /><span>GitHub</span></a>
+            <a className="gh" href={GITHUB_URL} target="_blank" rel="noopener noreferrer" aria-label="Helpin on GitHub"><GithubIcon />{!homepage && <span>GitHub</span>}</a>
             <a className="nav-signin" href="https://app.helpin.ai">Sign in</a>
             <Link className="btn btn-primary" href={SIGNUP_URL} onClick={close}>Start free<ArrowRight size={15} /></Link>
             <button ref={mobileToggle} className="nav-mobile-toggle" type="button" aria-expanded={mobileOpen} aria-controls="preview-mobile-menu" aria-label={mobileOpen ? 'Close navigation' : 'Open navigation'} onClick={() => { setMobileOpen(!mobileOpen); setOpen(null); }}>{mobileOpen ? <X size={21} /> : <Menu size={21} />}</button>

@@ -12,7 +12,7 @@ import { AgentDirectoryPreview } from './_components/agent-directory/AgentDirect
 import { AgentControlArt } from './_components/AgentControlArt';
 import { AskAgentBento } from './_components/AskAgentBento';
 import { CustomerRecordBento } from './_components/CustomerRecordBento';
-import { CtaRow, GithubIcon, SectionHead, GITHUB_URL } from './_components/ui';
+import { CtaRow, SectionHead, DEMO_URL, GITHUB_URL } from './_components/ui';
 
 const RECORD_FACTS = [
   {
@@ -63,7 +63,7 @@ const RECORD_FACTS = [
 export default function NewHomePage() {
   return (
     <>
-      <PreviewNav />
+      <PreviewNav homepage />
 
       {/* 01 Hero */}
       <section className="hero homepage-hero">
@@ -73,7 +73,7 @@ export default function NewHomePage() {
             <span className="eyebrow">An open-source alternative to Intercom and Linear</span>
             <h1>AI agents that do more than answer.</h1>
             <p className="lede">Helpin gives AI agents the full customer context to resolve questions, take action, and follow through—across support, projects, CRM, meetings, and docs.</p>
-            <CtaRow primaryLabel="Start free trial" />
+            <CtaRow primaryLabel="Start free trial" secondaryHref={DEMO_URL} secondaryLabel="Book a demo" />
             <p className="cta-note">Open source · Self-host or use Helpin Cloud</p>
 
           </div>
@@ -202,7 +202,7 @@ export default function NewHomePage() {
             <div>
               <SectionHead eyebrow="Open source" title="Your customer history stays yours."
                 lede="Choose self-hosting for control over your infrastructure and data, or Helpin Cloud for managed hosting. Connect supported AI providers to fit the way your team works." />
-              <div className="links"><a className="btn btn-primary" href={`${GITHUB_URL}/blob/develop/community/README.md`} target="_blank" rel="noopener noreferrer">Self-host Helpin →</a><a className="btn-link" href={GITHUB_URL} target="_blank" rel="noopener noreferrer"><GithubIcon />View the code →</a></div>
+              <div className="links"><a className="btn btn-primary" href={`${GITHUB_URL}/blob/develop/community/README.md`} target="_blank" rel="noopener noreferrer">Self-host Helpin →</a></div>
               <p className="self-host-license">Open source · Run it yourself</p>
             </div>
             <HostingDiagram />
@@ -262,7 +262,7 @@ export default function NewHomePage() {
             <span className="eyebrow">Close the loop</span>
             <h2 id="final-cta-title">Put your customer history to work.</h2>
             <p className="lede">Bring your team and AI agents into one workspace to answer questions, move projects forward, and follow up with the customers waiting on them.</p>
-            <CtaRow primaryLabel="Start free trial" />
+            <CtaRow primaryLabel="Start free trial" secondaryHref={DEMO_URL} secondaryLabel="Book a demo" />
             <div className="assure"><span>Open source</span><span>Self-host or use Helpin Cloud</span><span>Built for SaaS teams</span></div>
           </div>
         </div>

@@ -64,7 +64,7 @@ export function PreviewFooter({ homepage = false }: { homepage?: boolean }) {
         </div>
         <div className="footer-community">
           <div className="footer-socials">
-            <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" aria-label="Helpin on GitHub"><GithubIcon size={18} /></a>
+            {!homepage && <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" aria-label="Helpin on GitHub"><GithubIcon size={18} /></a>}
             <a href="mailto:hello@helpin.ai" aria-label="Email Helpin"><Mail size={18} aria-hidden="true" /></a>
           </div>
         </div>
