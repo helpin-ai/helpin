@@ -80,5 +80,5 @@ function WorkflowCard({ feature, index }: { feature: Feature; index: number }) {
 }
 
 export function SupportInboxFeatures() {
-  return <><div className="ops-cards">{FEATURES.map((feature, index) => <WorkflowCard key={feature.id} feature={feature} index={index} />)}</div><p className="ops-plan-note">Round-robin assignment and AI conversation routing depend on your Cloud plan.</p></>;
+  return <><div className="ops-cards">{FEATURES.map((feature, index) => <WorkflowCard key={feature.id} feature={feature} index={index} />)}</div><p className="ops-plan-note">Round-robin assignment and AI conversation routing are included in Growth and when you self-host.</p></>;
 }
