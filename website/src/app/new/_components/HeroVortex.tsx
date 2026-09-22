@@ -1,13 +1,13 @@
 'use client';
 
-import { useId } from 'react';
+import { useEffect, useId, useRef, type CSSProperties } from 'react';
 import { useBentoPlayback } from './useBentoPlayback';
 import './hero-vortex.css';
 
 // Adapted from the teammate's VortexLines.jsx handoff (September 2026).
 // Source: https://storage.googleapis.com/vm-dev-screenshots/Helpin.ai%20Open%20Source%20Alternative.zip
-// Keep its bowed # geometry and staggered highlights. Only the outer transform
-// moves: animating SVG stroke dashes repaints this large canvas every frame.
+// Keep the large SVG static; small light streaks follow its paths on separate
+// layers so flowing highlights do not repaint the whole line illustration.
 const CX = 700, CY = 350, LENGTH = 1100, SPREAD = 190, GAP = 185;
 const BUNDLES = [
   { axis: 'v', offset: -GAP }, { axis: 'v', offset: GAP },
@@ -60,9 +60,33 @@ const CONVERGING = [0, 1].map(side => ({
 }));
 const ART = { vortex: BUNDLES, flow: FLOW, connections: CONNECTIONS, orbit: ORBITS, converge: CONVERGING };
 
+function bundleTransform(transform: string) {
+  if (!transform) return undefined;
+  if (transform.startsWith('rotate')) {
+    const [angle, x, y] = transform.match(/-?[\d.]+/g)!.map(Number);
+    return `translate(${x}px, ${y}px) rotate(${angle}deg) translate(${-x}px, ${-y}px)`;
+  }
+  return 'translateX(1400px) scaleX(-1)';
+}
+
 export function HeroVortex({ variant = 'vortex', tone = 'light' }: { variant?: MotionVariant; tone?: 'light' | 'dark' }) {
   const id = useId().replace(/:/g, '');
   const { container, playing } = useBentoPlayback(0);
+  const lights = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const layer = lights.current;
+    const artwork = layer?.parentElement;
+    if (!layer || !artwork) return;
+    // Match the SVG's xMidYMid slice crop at every responsive stage size.
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      layer.style.transform = `translate(-50%, -50%) scale(${Math.max(width / 1400, height / 700)})`;
+      layer.dataset.ready = 'true';
+    });
+    observer.observe(artwork);
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <div ref={container} className="hero-vortex" data-playing={playing} data-variant={variant} data-tone={tone}>
@@ -89,14 +113,22 @@ export function HeroVortex({ variant = 'vortex', tone = 'light' }: { variant?: M
                 <g className="hero-vortex-sheen" stroke={`url(#${id}-sheen)`} strokeWidth="1.5">
                   {bundle.lines.map((line, j) => <path key={j} d={line.d} opacity={line.opacity * 1.9} />)}
                 </g>
-                <g stroke="#3FC48F" strokeWidth="1.6" strokeDasharray="80 680">
-                  {bundle.lines.map((line, j) => (
-                    <path key={j} d={line.d} opacity={Math.min(0.95, line.opacity * 2.2)} strokeDashoffset={-(j * 80 + bi * 120)} />
-                  ))}
-                </g>
               </g>
             ))}
           </svg>
+          <div ref={lights} className="hero-vortex-lights">
+            {ART[variant].map((bundle, bi) => (
+              <div key={bi} className="hero-vortex-light-bundle" style={{ transform: bundleTransform(bundle.transform) }}>
+                {bundle.lines.filter((_, j) => j % 3 === 1).map((line, j) => (
+                  <span key={j} className="hero-vortex-light" style={{
+                    offsetPath: `path("${line.d}")`,
+                    '--light-duration': `${6 + (j % 3) * 1.2}s`,
+                    '--light-delay': `${-(j * 1.7 + bi * 2.1)}s`,
+                  } as CSSProperties} />
+                ))}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>
