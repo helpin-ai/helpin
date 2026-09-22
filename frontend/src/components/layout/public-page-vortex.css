@@ -9,14 +9,10 @@
 .public-vortex-light { position: absolute; top: 0; left: 0; width: 56px; height: 1.8px; border-radius: 50%; background: linear-gradient(90deg, transparent, #3fc48f 45%, #74ffc4 75%, transparent); offset-anchor: center; offset-rotate: auto; animation: public-vortex-stream var(--light-duration) linear infinite; animation-delay: var(--light-delay); animation-play-state: paused; }
 .public-vortex[data-playing=true] .public-vortex-light,
 .public-vortex[data-playing=true] .public-vortex-drift { animation-play-state: running; will-change: transform; }
-.public-vortex-toggle { position: absolute; right: clamp(36px, 4.5vw, 72px); bottom: clamp(36px, 4.5vw, 72px); pointer-events: auto; color: #a3a3a3; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 6px; cursor: pointer; }
-.public-vortex-toggle:hover { color: #fafafa; }
-.public-page .public-vortex-toggle:focus-visible { outline-color: #a3a3a3; }
 @keyframes public-vortex-stream { from { offset-distance: 0%; } to { offset-distance: 100%; } }
 @keyframes public-vortex-drift { 0%, 100% { transform: translate3d(-32px, 0, 0); } 50% { transform: translate3d(32px, 0, 0); } }
 @supports not (offset-path: path("M 0 0 L 1 1")) { .public-vortex-lights { display: none; } }
-@media (max-width: 1100px) { .public-vortex-toggle { right: 28px; bottom: 36px; } }
 @media (prefers-reduced-motion: reduce) {
   .public-vortex .public-vortex-drift, .public-vortex .public-vortex-light { animation: none; will-change: auto; }
-  .public-vortex-sheen, .public-vortex-lights, .public-vortex-toggle { display: none; }
+  .public-vortex-sheen, .public-vortex-lights { display: none; }
 }
