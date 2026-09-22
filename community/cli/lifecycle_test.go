@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func writeVolumeTar(t *testing.T, headers []*tar.Header) []byte {
@@ -79,6 +80,7 @@ func lifecycleFixture(t *testing.T) (*app, string, *bytes.Buffer, *[]string) {
 		t.Fatal(err)
 	}
 	var events []string
+	resumed := false
 	a.output = func(dir string, args ...string) ([]byte, error) {
 		text := strings.Join(args, " ")
 		switch {
@@ -95,12 +97,25 @@ func lifecycleFixture(t *testing.T) (*app, string, *bytes.Buffer, *[]string) {
 		case strings.Contains(text, "--status running"):
 			return []byte("helpin-api\n"), nil
 		case strings.Contains(text, "ps --all --format json"):
+			if resumed {
+				return []byte(`[{"Service":"helpin-api","State":"running","Health":"healthy"}]`), nil
+			}
 			return []byte(`[{"Service":"helpin-api","State":"exited","ExitCode":0}]`), nil
 		default:
 			return nil, nil
 		}
 	}
-	a.run = func(_ string, args ...string) error { events = append(events, strings.Join(args, " ")); return nil }
+	a.run = func(_ string, args ...string) error {
+		text := strings.Join(args, " ")
+		events = append(events, text)
+		if strings.Contains(text, "start helpin-api") {
+			resumed = true
+		}
+		if strings.Contains(text, "stop --timeout") {
+			resumed = false
+		}
+		return nil
+	}
 	archive := writeVolumeTar(t, []*tar.Header{{Name: "./", Typeflag: tar.TypeDir}, {Name: "./data", Typeflag: tar.TypeReg, Size: 6}})
 	a.stream = func(_ string, in io.Reader, out io.Writer, args ...string) error {
 		events = append(events, strings.Join(args, " "))
@@ -150,7 +165,7 @@ func TestBackupRestorePreservesKeysAndSeparatesVolumes(t *testing.T) {
 		t.Fatal(manifest)
 	}
 	all := strings.Join(*events, "\n")
-	if strings.Index(all, "stop --timeout") > strings.Index(all, "--entrypoint tar") || !strings.Contains(all, "start --wait --wait-timeout 300 helpin-api") {
+	if strings.Index(all, "stop --timeout") > strings.Index(all, "--entrypoint tar") || !strings.Contains(all, "start helpin-api") {
 		t.Fatal(all)
 	}
 	target := root + "-restored"
@@ -187,7 +202,7 @@ func TestBackupFailureResumesServicesAndNeverCompletesManifest(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(destination, "backup.json")); !os.IsNotExist(err) {
 		t.Fatal("incomplete backup marked complete")
 	}
-	if !strings.Contains(strings.Join(*events, "\n"), "start --wait --wait-timeout 300 helpin-api") {
+	if !strings.Contains(strings.Join(*events, "\n"), "start helpin-api") {
 		t.Fatal("services were not resumed")
 	}
 }
@@ -196,12 +211,14 @@ func TestBackupRefusesExternalWritersAndUncleanStops(t *testing.T) {
 		t.Run(scenario, func(t *testing.T) {
 			a, root, _, _ := lifecycleFixture(t)
 			output := a.output
+			uncleanReported := false
 			a.output = func(dir string, args ...string) ([]byte, error) {
 				text := strings.Join(args, " ")
 				if scenario == "writer" && strings.Contains(text, "--filter volume=") {
 					return []byte("another-container"), nil
 				}
-				if scenario == "unclean" && strings.Contains(text, "ps --all --format json") {
+				if scenario == "unclean" && !uncleanReported && strings.Contains(text, "ps --all --format json") {
+					uncleanReported = true
 					return []byte(`[{"Service":"postgres","State":"exited","ExitCode":137}]`), nil
 				}
 				return output(dir, args...)
@@ -382,5 +399,54 @@ func TestCommandEnvironmentIncludesLocalAppConfig(t *testing.T) {
 	}
 	if len(values) != 1 || values[0] != `AGENT_RUNTIME_EXECUTION_APP_CONFIG={"trusted":"local"}` {
 		t.Fatal(values)
+	}
+}
+
+func TestResumeServicesChecksReadinessWithoutStartWait(t *testing.T) {
+	for _, tc := range []struct {
+		name, states string
+		wantError    bool
+	}{
+		{"healthy", `[{"Service":"helpin-api","State":"running","Health":"healthy"},{"Service":"unused-worker","State":"exited"}]`, false},
+		{"missing", `[]`, true},
+		{"unhealthy", `[{"Service":"helpin-api","State":"running","Health":"unhealthy"}]`, true},
+		{"stopped", `[{"Service":"helpin-api","State":"exited","ExitCode":1}]`, true},
+		{"invalid JSON", `invalid`, true},
+		{"json lines", "{\"Service\":\"helpin-api\",\"State\":\"running\",\"Health\":\"healthy\"}\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a, _ := testApp(t)
+			a.run = func(_ string, args ...string) error {
+				if strings.Join(args, " ") != strings.Join(composeArgs("start", "helpin-api"), " ") {
+					t.Fatalf("unexpected restart command: %v", args)
+				}
+				return nil
+			}
+			a.output = func(string, ...string) ([]byte, error) { return []byte(tc.states), nil }
+			err := a.resumeServices(t.TempDir(), []string{"helpin-api"}, 0)
+			if (err != nil) != tc.wantError {
+				t.Fatalf("resume error = %v, want error %v", err, tc.wantError)
+			}
+		})
+	}
+}
+
+func TestResumeServicesWaitsForHealthy(t *testing.T) {
+	a, _ := testApp(t)
+	a.run = func(string, ...string) error { return nil }
+	calls := 0
+	a.output = func(string, ...string) ([]byte, error) {
+		calls++
+		health := "starting"
+		if calls > 1 {
+			health = "healthy"
+		}
+		return []byte(fmt.Sprintf(`[{"Service":"helpin-api","State":"running","Health":%q}]`, health)), nil
+	}
+	if err := a.resumeServices(t.TempDir(), []string{"helpin-api"}, time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if calls < 2 {
+		t.Fatal("did not wait for health check")
 	}
 }

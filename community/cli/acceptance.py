@@ -32,10 +32,12 @@ def main():
     with tempfile.TemporaryDirectory(prefix='helpin-cli-acceptance-') as temp:
         root = Path(temp).resolve()
         # This fixture runs only a tiny Go HTTP server in Alpine, not Community.
-        # Stub its RAM probe while delegating all other operations to real Docker.
+        # Stub RAM and disk capacity for this fixture, not real installation checks.
         # Production resource rejection remains covered by CLI unit tests.
         docker = shutil.which('docker')
         assert docker, 'Docker is required'
+        df = shutil.which('df')
+        assert df, 'df is required'
         shim_dir = root / 'fixture-bin'
         shim_dir.mkdir()
         shim = shim_dir / 'docker'
@@ -46,6 +48,15 @@ def main():
                         'else:\n'
                         f'    os.execv({docker!r}, [{docker!r}, *sys.argv[1:]])\n')
         shim.chmod(0o755)
+        disk_shim = shim_dir / 'df'
+        disk_shim.write_text('#!/usr/bin/env python3\n'
+                             'import os, sys\n'
+                             f'if sys.argv[1:] == ["-Pk", {str(root)!r}]:\n'
+                             '    print("Filesystem 1024-blocks Used Available Capacity Mounted on")\n'
+                             '    print("fixture 41943040 0 41943040 0% /")\n'
+                             'else:\n'
+                             f'    os.execv({df!r}, [{df!r}, *sys.argv[1:]])\n')
+        disk_shim.chmod(0o755)
         os.environ['PATH'] = str(shim_dir) + os.pathsep + os.environ['PATH']
         binary = root / 'helpin'
         run('go', 'build', '-o', str(binary), '.', cwd=ROOT / 'community/cli', env={**os.environ, 'GOWORK': 'off'})

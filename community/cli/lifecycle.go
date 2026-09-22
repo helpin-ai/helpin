@@ -437,7 +437,7 @@ func (a *app) backup(o options, resume bool) (destination string, err error) {
 	// successful upgrade backup leaves the whole stack stopped for replacement.
 	defer func() {
 		if (resume || !complete) && len(running) > 0 {
-			if e := a.compose(dir, append([]string{"start", "--wait", "--wait-timeout", "300"}, running...)...); e != nil {
+			if e := a.resumeServices(dir, running, 5*time.Minute); e != nil {
 				err = errors.Join(err, fmt.Errorf("backup at %s; service restart failed, run helpin start --dir %q: %w", destination, root, e))
 			}
 		}
@@ -498,4 +498,26 @@ func (a *app) backup(o options, resume bool) (destination string, err error) {
 	complete = true
 	fmt.Fprintf(a.out, "✓ Backup complete: %s\nContains encryption keys and private data; keep an encrypted copy off-host.\n", destination)
 	return destination, nil
+}
+
+// Older Compose v2 releases support up --wait but not start --wait. Start only
+// the previously running services, then poll their state without recreating them.
+func (a *app) resumeServices(dir string, services []string, timeout time.Duration) error {
+	if err := a.compose(dir, append([]string{"start"}, services...)...); err != nil {
+		return err
+	}
+	deadline := time.Now().Add(timeout)
+	for {
+		data, err := a.output(dir, composeArgs("ps", "--all", "--format", "json")...)
+		if err != nil {
+			return err
+		}
+		if err = checkServiceStates(data, services); err == nil {
+			return nil
+		}
+		if !time.Now().Before(deadline) {
+			return fmt.Errorf("timed out waiting for resumed services: %w", err)
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 }

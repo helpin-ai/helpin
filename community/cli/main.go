@@ -416,6 +416,11 @@ func (a *app) checkServices(dir string) error {
 	if err != nil {
 		return err
 	}
+	return checkServiceStates(data, strings.Fields(string(expected)))
+}
+
+func checkServiceStates(data []byte, names []string) error {
+	var err error
 	type service struct {
 		Service, State, Health string
 		ExitCode               int
@@ -441,8 +446,15 @@ func (a *app) checkServices(dir string) error {
 	if err != nil {
 		return err
 	}
+	wanted := map[string]bool{}
+	for _, name := range names {
+		wanted[name] = true
+	}
 	seen := map[string]bool{}
 	for _, item := range services {
+		if !wanted[item.Service] {
+			continue
+		}
 		job := item.Service == "helpin-migrate" || item.Service == "temporal-schema" || item.Service == "temporal-namespace"
 		if job && item.State == "exited" && item.ExitCode == 0 {
 			seen[item.Service] = true
@@ -453,7 +465,6 @@ func (a *app) checkServices(dir string) error {
 		}
 		seen[item.Service] = true
 	}
-	names := strings.Fields(string(expected))
 	if len(names) == 0 {
 		return errors.New("no services found in this installation")
 	}
