@@ -1,50 +1,57 @@
-import { Users, Building2 } from 'lucide-react';
+import { AI_PRICING } from '@/generated/aiPricing';
 import { SIGNUP_URL } from '../new/_components/ui';
+
+type PlanKey = 'starter' | 'growth';
+type Interval = 'monthly' | 'annual' | 'trial';
+
+const allowance = (plan: PlanKey, interval: Interval) =>
+  (AI_PRICING.plans.find(item => item.plan === plan && item.billing_interval === interval)?.allowance_microusd ?? 0) / 1_000_000;
+
+export const AI_ALLOWANCE = {
+  starter: { monthly: allowance('starter', 'monthly'), annual: allowance('starter', 'annual') },
+  growth: { monthly: allowance('growth', 'monthly'), annual: allowance('growth', 'annual') },
+  trial: allowance('growth', 'trial'),
+};
 
 export const PLANS = [
   {
+    key: 'starter' as const,
     name: 'Starter',
     price: 99,
     annual: 79,
-    description: 'A shared starting point for support, product, and customer teams.',
-    Icon: Users,
-    seats: 'Unlimited',
-    aiUsage: 'Standard',
+    description: 'Every module, with room for a growing team.',
     cta: 'Start free trial',
     href: `${SIGNUP_URL}?plan=starter`,
     popular: false,
+    featuresHeading: 'Includes',
     features: [
-      'Support, projects, CRM, meetings and knowledge',
-      'Unlimited users',
+      'Support, projects, CRM, meetings, and knowledge',
       '10 teams',
-      '500 documents',
       '5,000 contacts',
+      '500 documents',
       'Built-in AI agents',
       'GitHub integration',
-      'Public help center + custom domain',
+      'Public help center on your domain',
     ],
   },
   {
+    key: 'growth' as const,
     name: 'Growth',
     price: 299,
     annual: 239,
-    description: 'For teams ready to build repeatable workflows around their agents.',
-    Icon: Building2,
-    seats: 'Unlimited',
-    aiUsage: '3× Starter',
+    description: 'For teams automating their process with custom agents.',
     cta: 'Start free trial',
     href: `${SIGNUP_URL}?plan=growth`,
     popular: true,
+    featuresHeading: 'Everything in Starter, plus',
     features: [
-      'Everything in Starter, plus:',
-      'Unlimited teams',
-      'Unlimited documents',
-      'Unlimited contacts',
-      'Create agents for your process.',
-      'Run them on a schedule.',
-      'Connect the steps through automation.',
+      'Unlimited teams, contacts, and documents',
+      'Custom agents',
+      'Scheduled agent runs',
+      'Automation flows',
       'AI conversation routing',
-      'Remove Helpin branding',
+      'Round-robin assignment and SLAs',
+      'No Helpin branding on the widget',
       'Priority support',
     ],
   },
@@ -90,82 +97,58 @@ export const COMPARISON_FEATURES = [
   { name: 'Meetings', category: true },
   { name: 'Notes, summaries and action items', starter: true, growth: true },
 
-  { name: 'Agent capabilities and usage', category: true },
-  { name: 'Included AI usage', starter: 'Standard monthly allowance', growth: '3× Starter allowance' },
+  { name: 'AI agents', category: true },
+  { name: 'Included AI usage per month', starter: `$${AI_ALLOWANCE.starter.monthly}`, growth: `$${AI_ALLOWANCE.growth.monthly}` },
   { name: 'Built-in agents', starter: true, growth: true },
   { name: 'Custom agents', starter: false, growth: true },
   { name: 'Agent scheduling', starter: false, growth: true },
-  { name: 'Extra AI usage', starter: 'Exact metered usage', growth: 'Exact metered usage' },
+  { name: 'Extra AI usage', starter: 'Metered, opt-in', growth: 'Metered, opt-in' },
 
-  { name: 'Automation and connections', category: true },
+  { name: 'Automation and integrations', category: true },
   { name: 'GitHub integration', starter: true, growth: true },
   { name: 'Import tools', starter: true, growth: true },
   { name: 'Module access controls', starter: true, growth: true },
   { name: 'Automation flows', starter: false, growth: true },
 
-  { name: 'Your customer-facing experience', category: true },
+  { name: 'Branding', category: true },
   { name: 'Widget branding', starter: 'Helpin', growth: 'Removed' },
 
-  { name: 'Help from our team', category: true },
+  { name: 'Support from our team', category: true },
   { name: 'Standard support', starter: true, growth: true },
   { name: 'Priority support', starter: false, growth: true },
 ];
 
 export const FAQS = [
   {
-    "q": "Can we use Helpin without a Cloud subscription?",
-    "a": "Yes. Operate the open-source edition yourself and configure the services it uses. Your team remains responsible for the installation and its operating costs."
+    q: 'What does “per workspace” mean?',
+    a: 'Each workspace is its own subscription with its own billing. There is no per-seat charge, so adding teammates never changes the price.',
   },
   {
-    "q": "How does the open-source edition differ from Enterprise?",
-    "a": "The product modules are open source. Certain capabilities use a separate Enterprise license. Check the licensing terms for the functionality you intend to deploy."
+    q: 'Do we need a card for the trial?',
+    a: `No. The 14-day trial runs on Growth and includes $${AI_ALLOWANCE.trial} of AI usage. When it ends, choose Starter or Growth to keep going. Until you do, workspace access is limited.`,
   },
   {
-    "q": "Do we buy each product module separately?",
-    "a": "No. Modules are bundled; capacity and advanced features differ."
+    q: 'What happens when our AI allowance runs out?',
+    a: 'Overage is off by default, so new AI work pauses until the allowance renews next month. Turn on metered overage to keep working; extra usage is billed monthly at the same token rates. Unused allowance does not carry over, including on annual plans.',
   },
   {
-    "q": "What happens when our AI allowance runs out?",
-    "a": "Without overage enabled, new paid AI work is blocked when the remaining allowance cannot cover it. Wait for the monthly renewal or enable optional metered overage. Review the rates in AI usage and charges before enabling it."
+    q: 'What determines how much AI we use?',
+    a: 'The model profile and the amount of work: tokens in and out, plus any paid tools. Workspace settings show usage as it builds up.',
   },
   {
-    "q": "What determines AI consumption?",
-    "a": "The model and work performed. Settings displays usage."
+    q: 'Can we choose the models our agents use?',
+    a: 'Yes. Each agent has its own model, instructions, tools, and approval settings. Which models are available depends on your deployment and the providers you connect.',
   },
   {
-    "q": "Can we change Cloud plans?",
-    "a": "Use billing settings; check timing and adjustments before confirming."
+    q: 'Can we use Helpin without a Cloud plan?',
+    a: 'Yes. The open-source edition is free to self-host. Your team runs the infrastructure and pays for it, along with any AI providers you connect.',
   },
   {
-    "q": "Is annual billing available?",
-    "a": "Yes. The plan cards show yearly totals."
+    q: 'How does the open-source edition differ from Enterprise?',
+    a: 'All product modules are open source. Some capabilities are covered by a separate Enterprise license, so check the licensing terms for the features you plan to deploy.',
   },
   {
-    "q": "Do we need a card for the trial?",
-    "a": "No. Try Cloud without adding a card on a 14-day Growth trial. After the trial, choose Starter or Growth to continue. Until you choose a paid plan, workspace access is limited."
+    q: 'Can we switch plans or billing period later?',
+    a: 'Yes, from billing settings. Check when the change takes effect and any price adjustment before you confirm.',
   },
-  {
-    "q": "Can we choose the models our agents use?",
-    "a": "Configure the model for the agent’s work, along with its instructions, tools, and approval settings. Check which connections are available in your deployment."
-  },
-  {
-    "q": "Will Helpin cost less than our current tools?",
-    "a": "Compare the subscriptions, integrations, and operating work you would actually replace. A useful evaluation should show whether Helpin improves your workflow as well as how the costs compare."
-  },
-  {
-    "q": "Does unused AI allowance carry forward?",
-    "a": "No; it renews monthly."
-  },
-  {
-    "q": "What does “per workspace” mean?",
-    "a": "Each workspace has separate billing."
-  },
-  {
-    "q": "Will adding teammates increase our subscription?",
-    "a": "No seat-based charge applies."
-  },
-  {
-    "q": "How should we evaluate access and data handling?",
-    "a": "Review workspace permissions, agent tool access, and the connected services your workflows use. For self-hosting, also review the infrastructure and operational responsibilities your team will take on."
-  }
 ];
