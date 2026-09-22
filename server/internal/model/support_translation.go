@@ -5,6 +5,8 @@ import "time"
 // SupportTranslation is a private snapshot, never a public widget message.
 // Source hashes identify exact text revisions without changing canonical messages.
 type SupportTranslation struct {
+	RetryAttempt    int        `json:"-" gorm:"-"`
+	PolicyRevision  int64      `json:"-"`
 	ID              string     `json:"id" gorm:"type:uuid;primaryKey"`
 	WorkspaceID     string     `json:"-" gorm:"type:uuid;not null"`
 	ConversationID  string     `json:"conversation_id" gorm:"type:uuid;not null"`
@@ -48,6 +50,7 @@ type SupportTranslationPreference struct {
 func (SupportTranslationPreference) TableName() string { return "support_translation_preferences" }
 
 type SupportTranslationConversation struct {
+	Revision         int64     `json:"revision"`
 	WorkspaceID      string    `json:"-" gorm:"primaryKey;type:uuid"`
 	ConversationID   string    `json:"-" gorm:"primaryKey;type:uuid"`
 	CustomerLanguage string    `json:"customer_language"`
@@ -72,4 +75,42 @@ type SupportTranslateRequest struct {
 	Content        string `json:"content,omitempty"`
 	DraftID        string `json:"draft_id,omitempty"`
 	TargetLanguage string `json:"target_language"`
+	Live           bool   `json:"-"`
 }
+
+// SupportLiveMessage is durable work recorded in the message insertion transaction.
+type SupportLiveMessage struct {
+	SourceHash     string `json:"-"`
+	WorkspaceID    string
+	ConversationID string
+	MessageID      string `gorm:"primaryKey"`
+	Enabled        bool
+	Revision       int64
+	TargetLanguage string
+	Status         string
+	Attempts       int
+	UpdatedAt      time.Time
+}
+
+func (SupportLiveMessage) TableName() string { return "support_live_messages" }
+
+// SupportPendingSend is private to its author and is never a widget projection.
+type SupportPendingSend struct {
+	TargetLanguage string    `json:"-"`
+	RecipientEmail string    `json:"-"`
+	RequestHash    string    `json:"-"`
+	Attempts       int       `json:"-"`
+	ID             string    `json:"id" gorm:"primaryKey"`
+	WorkspaceID    string    `json:"-"`
+	ConversationID string    `json:"conversation_id"`
+	UserID         string    `json:"-"`
+	Request        string    `json:"-"`
+	Revision       int64     `json:"-"`
+	Status         string    `json:"status"`
+	Failure        string    `json:"failure,omitempty"`
+	MessageID      string    `json:"message_id,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+func (SupportPendingSend) TableName() string { return "support_pending_sends" }

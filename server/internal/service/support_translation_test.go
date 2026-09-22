@@ -97,7 +97,7 @@ func TestTranslationSendAutomaticallyPreservesDeliveryAndDeduplicates(t *testing
 			if err := env.messageRepo.DB().Where("sent_message_id = ?", first.ID).First(&artifact).Error; err != nil {
 				t.Fatal(err)
 			}
-			if artifact.SourceText != req.Content || artifact.ReviewStatus != "unavailable" {
+			if artifact.SourceText != req.Content || artifact.ReviewStatus != "not_requested" {
 				t.Fatalf("private artifact=%+v", artifact)
 			}
 			messages, err := s.ListWidgetConversationMessages(context.Background(), c.WorkspaceID, c.ID)
@@ -227,12 +227,12 @@ func TestTranslationProtectedTextRoundTrip(t *testing.T) {
 	}
 }
 
-func TestTranslationJevPrimaryBlocksAndShadowIsAdvisory(t *testing.T) {
+func TestTranslationNeverUsesJevAsSendGate(t *testing.T) {
 	for _, tc := range []struct {
 		name, mode, choice string
 		wantError          bool
 	}{
-		{"accepted", "primary", "yes", false}, {"rejected", "primary", "no", true}, {"uncertain", "primary", "uncertain", true}, {"shadow", "shadow", "no", false}, {"off", "off", "no", false},
+		{"accepted", "primary", "yes", false}, {"rejected", "primary", "no", false}, {"uncertain", "primary", "uncertain", false}, {"shadow", "shadow", "no", false}, {"off", "off", "no", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			env, c, _ := translationFixture(t)
@@ -262,7 +262,7 @@ func TestTranslationDetectsCustomerLanguageOnSend(t *testing.T) {
 	env, c, p := translationFixture(t)
 	setTranslationWorkspaceSettings(t, env, c.WorkspaceID, func(settings *model.SupportInboxSettings) {
 		settings.TranslationCustomerLanguage = ""
-		settings.TranslationIncomingEnabled = false
+		settings.TranslationIncomingEnabled = true
 	})
 	s := env.service.supportInboxService
 	ctx := context.Background()
@@ -283,7 +283,7 @@ func TestTranslationDetectsCustomerLanguageOnSend(t *testing.T) {
 	}
 }
 
-func TestTranslationRetriesUnavailableJevReviewAfterCooldown(t *testing.T) {
+func TestTranslationUnavailableJevDoesNotBlockOrDuplicateSend(t *testing.T) {
 	env, c, p := translationFixture(t)
 	s := env.service.supportInboxService
 	ctx := context.Background()
@@ -301,8 +301,8 @@ func TestTranslationRetriesUnavailableJevReviewAfterCooldown(t *testing.T) {
 	req.TranslationTargetLanguage = "de"
 	req.ClientMessageID = uuid.NewString()
 	actor := strPtr("22222222-2222-2222-2222-222222222222")
-	if _, err := s.CreateConversationMessage(ctx, c.WorkspaceID, c.ID, req, "user", actor, nil, nil); err == nil {
-		t.Fatal("failed Jev allowed send")
+	if _, err := s.CreateConversationMessage(ctx, c.WorkspaceID, c.ID, req, "user", actor, nil, nil); err != nil {
+		t.Fatal(err)
 	}
 	if err := env.messageRepo.DB().Model(&model.SupportTranslation{}).Where("conversation_id = ?", c.ID).Update("updated_at", time.Now().Add(-2*time.Minute)).Error; err != nil {
 		t.Fatal(err)
@@ -312,7 +312,7 @@ func TestTranslationRetriesUnavailableJevReviewAfterCooldown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sent.Content != "Hallo" || reviewer.calls != 2 || p.calls != 2 {
+	if sent.Content != "Hallo" || reviewer.calls != 0 || p.calls != 1 {
 		t.Fatalf("retry result=%q reviewCalls=%d calls=%d", sent.Content, reviewer.calls, p.calls)
 	}
 }
@@ -335,7 +335,7 @@ func setTranslationWorkspaceSettings(t *testing.T, env *emailFallbackTestEnv, wo
 	}
 }
 
-func TestTranslationWorkspacePolicyIgnoresLegacyOverrides(t *testing.T) {
+func TestTranslationPreservesConversationOverrides(t *testing.T) {
 	env, c, _ := translationFixture(t)
 	db := env.messageRepo.DB()
 	actor := "22222222-2222-2222-2222-222222222222"
@@ -352,7 +352,7 @@ func TestTranslationWorkspacePolicyIgnoresLegacyOverrides(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !options.Available || !options.Preference.AutoTranslateIncoming || !options.Preference.AutoTranslateOutgoing || options.Preference.ReadingLanguage != "en" || options.Conversation.CustomerLanguage != "de" || options.Conversation.TranslationMode != "inherit" {
+		if !options.Available || options.Preference.AutoTranslateIncoming || options.Preference.AutoTranslateOutgoing || options.Preference.ReadingLanguage != "en" || options.Conversation.CustomerLanguage != "es" || options.Conversation.TranslationMode != "off" {
 			t.Fatalf("workspace policy not applied: %+v", options)
 		}
 	}
@@ -389,6 +389,9 @@ func TestTranslationSendUsesWorkspacePolicy(t *testing.T) {
 			req.AutoTranslate = !tc.master || !tc.outgoing
 			req.TranslationTargetLanguage = "fr"
 			sent, err := s.CreateConversationMessage(context.Background(), c.WorkspaceID, c.ID, req, "user", strPtr("22222222-2222-2222-2222-222222222222"), nil, nil)
+			if !tc.provider && tc.master && tc.outgoing && !tc.internal {
+ if err == nil || sent != nil || p.calls != 0 {t.Fatal("provider outage silently sent original")}; return
+ }
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -414,9 +417,9 @@ func TestTranslationIncomingUsesWorkspaceLanguage(t *testing.T) {
 	if result.TargetLanguage != "en" || result.TranslatedText != "Hello" {
 		t.Fatalf("client language overrode workspace: %+v", result)
 	}
-	setTranslationWorkspaceSettings(t, env, c.WorkspaceID, func(settings *model.SupportInboxSettings) { settings.TranslationIncomingEnabled = false })
-	if _, err := s.TranslateSupport(context.Background(), c.WorkspaceID, c.ID, "agent", req); err == nil || p.calls != 1 {
-		t.Fatalf("disabled incoming allowed: err=%v calls=%d", err, p.calls)
+	setTranslationWorkspaceSettings(t, env, c.WorkspaceID, func(settings *model.SupportInboxSettings) { settings.TranslationIncomingEnabled = true })
+	if _, err := s.TranslateSupport(context.Background(), c.WorkspaceID, c.ID, "agent", req); err != nil || p.calls != 1 {
+		t.Fatalf("manual translation unavailable: err=%v calls=%d", err, p.calls)
 	}
 }
 
@@ -425,16 +428,14 @@ func TestTranslationWorkspacePolicyRevalidatedAfterGeneration(t *testing.T) {
 		t.Run(change, func(t *testing.T) {
 			env, c, p := translationFixture(t)
 			p.onCall = func() {
-				setTranslationWorkspaceSettings(t, env, c.WorkspaceID, func(settings *model.SupportInboxSettings) {
-					switch change {
-					case "disable":
-						settings.TranslationEnabled = false
-					case "outgoing":
-						settings.TranslationOutgoingEnabled = false
-					case "language":
-						settings.TranslationCustomerLanguage = "fr"
-					}
-				})
+				enabled, language := false, "de"
+				if change == "language" {
+					enabled = true
+					language = "fr"
+				}
+				if _, err := env.service.supportInboxService.SetLiveTranslate(context.Background(), c.WorkspaceID, c.ID, enabled, language); err != nil {
+					t.Fatal(err)
+				}
 			}
 			req := explicitDeliveryRequest(t, "chat_only")
 			req.Content = "Hello"
@@ -557,7 +558,7 @@ func TestTranslationRetryAfterPipelineUpgrade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sent.Content != req.Content || p.calls != 2 {
+	if sent.Content != req.Content || p.calls != 3 {
 		t.Fatalf("retry content=%q calls=%d", sent.Content, p.calls)
 	}
 	if err := db.Model(&model.SupportTranslation{}).Where("conversation_id = ?", c.ID).Updates(map[string]any{"pipeline_version": "v1", "cache_key": "sent-old-cache"}).Error; err != nil {
@@ -567,7 +568,7 @@ func TestTranslationRetryAfterPipelineUpgrade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if again.ID != sent.ID || p.calls != 2 {
+	if again.ID != sent.ID || p.calls != 3 {
 		t.Fatalf("upgrade duplicated send: %s/%s calls=%d", sent.ID, again.ID, p.calls)
 	}
 }
@@ -585,7 +586,7 @@ func TestTranslationDetectionRecoversAfterRepeatedProviderFailures(t *testing.T)
 			env, c, p := translationFixture(t)
 			setTranslationWorkspaceSettings(t, env, c.WorkspaceID, func(settings *model.SupportInboxSettings) {
 				settings.TranslationCustomerLanguage = ""
-				settings.TranslationIncomingEnabled = false
+				settings.TranslationIncomingEnabled = true
 			})
 			s := env.service.supportInboxService
 			ctx := context.Background()
@@ -619,7 +620,7 @@ func TestTranslationDetectionRecoversAfterRepeatedProviderFailures(t *testing.T)
 			if _, err := s.CreateConversationMessage(ctx, c.WorkspaceID, c.ID, req, "user", actor, nil, nil); err == nil {
 				t.Fatal("cooldown allowed send")
 			}
-			if p.calls != 3 {
+			if p.calls != 6 {
 				t.Fatalf("cooldown called provider: %d", p.calls)
 			}
 			rows, err := env.messageRepo.ListByConversation(ctx, c.WorkspaceID, c.ID, true)
@@ -633,7 +634,7 @@ func TestTranslationDetectionRecoversAfterRepeatedProviderFailures(t *testing.T)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if sent.Content != "Hallo" || p.calls != 5 {
+			if sent.Content != "Hallo" || p.calls != 8 {
 				t.Fatalf("recovery content=%q calls=%d", sent.Content, p.calls)
 			}
 			if err := db.First(&artifact, "id = ?", artifact.ID).Error; err != nil {
@@ -643,7 +644,7 @@ func TestTranslationDetectionRecoversAfterRepeatedProviderFailures(t *testing.T)
 				t.Fatalf("recovered artifact: attempts=%d status=%s code=%s", artifact.Attempts, artifact.Status, artifact.ErrorCode)
 			}
 			again, err := s.CreateConversationMessage(ctx, c.WorkspaceID, c.ID, req, "user", actor, nil, nil)
-			if err != nil || again.ID != sent.ID || p.calls != 5 {
+			if err != nil || again.ID != sent.ID || p.calls != 8 {
 				t.Fatalf("recovered send not deduplicated: err=%v calls=%d", err, p.calls)
 			}
 		})
@@ -707,7 +708,7 @@ func TestTranslationSendOriginalBypassesProviderAndDeduplicates(t *testing.T) {
 	}
 }
 
-func TestTranslationLongEnglishEmailUsesJevWithoutTranslation(t *testing.T) {
+func TestTranslationLongEnglishEmailUsesLLMAndPreservesOriginal(t *testing.T) {
 	env, c, provider := translationFixture(t)
 	setTranslationWorkspaceSettings(t, env, c.WorkspaceID, func(settings *model.SupportInboxSettings) { settings.TranslationCustomerLanguage = "" })
 	jev, classifier, _, db := setupJevDecisionTest(t, "primary")
@@ -719,7 +720,7 @@ func TestTranslationLongEnglishEmailUsesJevWithoutTranslation(t *testing.T) {
 	classifier.choices["language"] = "en"
 	s := env.service.supportInboxService
 	s.translations.jev = jev
-	provider.fail = true
+	provider.responseLanguage = "en"
 	msg := &model.SupportMessage{ID: uuid.NewString(), WorkspaceID: c.WorkspaceID, ConversationID: c.ID, SenderType: "customer", MessageType: "reply", Content: strings.Repeat("Our Instagram posts are failing. Please help.\n", 220)}
 	if err := env.messageRepo.Create(context.Background(), msg); err != nil {
 		t.Fatal(err)
@@ -732,7 +733,7 @@ func TestTranslationLongEnglishEmailUsesJevWithoutTranslation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sent.Content != req.Content || provider.calls != 0 {
+	if sent.Content != req.Content || provider.calls == 0 || classifier.calls != 0 {
 		t.Fatalf("same-language send translated: %q calls=%d", sent.Content, provider.calls)
 	}
 	options, err := s.TranslationOptions(context.Background(), c.WorkspaceID, c.ID, actor)
@@ -757,7 +758,7 @@ func TestTranslationLongMessagePreservesAllContent(t *testing.T) {
 	}
 }
 
-func TestTranslationLongReplyReviewsEveryChunk(t *testing.T) {
+func TestTranslationLongReplyDoesNotCallJev(t *testing.T) {
 	env, c, _ := translationFixture(t)
 	jev, reviewer, _, db := setupJevDecisionTest(t, "primary")
 	if err := db.Exec("INSERT INTO workspaces(id) VALUES (?)", c.WorkspaceID).Error; err != nil {
@@ -774,7 +775,7 @@ func TestTranslationLongReplyReviewsEveryChunk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sent.Content != strings.TrimSpace(strings.ReplaceAll(req.Content, "Hello", "Hallo")) || reviewer.calls < 2 {
+	if sent.Content != strings.TrimSpace(strings.ReplaceAll(req.Content, "Hello", "Hallo")) || reviewer.calls != 0 {
 		t.Fatalf("long reply/review incomplete: calls=%d", reviewer.calls)
 	}
 	for _, state := range reviewer.states {

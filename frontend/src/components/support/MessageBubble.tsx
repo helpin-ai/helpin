@@ -1,3 +1,4 @@
+import { PendingSendStatus } from './PendingSendStatus';
 import { memo, useCallback, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -296,6 +297,7 @@ function findTrailingAIContractStart(content: string): number {
 
 export interface MessageBubbleProps {
  translatedContent?: string;
+ translationFooter?: ReactNode;
   message: SupportMessage;
   isConsecutive?: boolean;
   isLastInGroup?: boolean;
@@ -311,6 +313,7 @@ export interface MessageBubbleProps {
 
 export const MessageBubble = memo(function MessageBubble({
   translatedContent,
+  translationFooter,
   message,
   isConsecutive,
   isLastInGroup = true,
@@ -795,8 +798,8 @@ export const MessageBubble = memo(function MessageBubble({
   const messageActionsMenu = (
     <MessageActionsMenu
       alignSide={isCustomer ? 'right' : 'left'}
-      canEdit={cancellableActive}
-      canDelete={canMutateOwnReply}
+      canEdit={!message.pending_send && cancellableActive}
+      canDelete={!message.pending_send && canMutateOwnReply}
       onEdit={handleUndoOrEdit}
       onCopy={handleCopy}
       onReply={handleQuoteReply}
@@ -818,8 +821,8 @@ export const MessageBubble = memo(function MessageBubble({
         )}
 
         <MessageActionsContextMenu
-          canEdit={cancellableActive}
-          canDelete={canMutateOwnReply}
+          canEdit={!message.pending_send && cancellableActive}
+          canDelete={!message.pending_send && canMutateOwnReply}
           onEdit={handleUndoOrEdit}
           onCopy={handleCopy}
           onReply={handleQuoteReply}
@@ -829,11 +832,11 @@ export const MessageBubble = memo(function MessageBubble({
         >
         <div
           data-slot="support-message-bubble"
-          className={`${bubbleWidthClass} group/message ${showBubble ? '' : 'relative'}`}
+          className={`${message.pending_send && message.pending_send !== 'failed' ? 'opacity-70' : ''} ${bubbleWidthClass} group/message ${showBubble ? '' : 'relative'}`}
         >
           {showBubble ? (
             <div data-slot="support-message-bubble-frame" className="relative">
-              {messageActionsMenu}
+              {!message.pending_send && messageActionsMenu}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div
@@ -873,6 +876,7 @@ export const MessageBubble = memo(function MessageBubble({
                       </div>
                     )}
                     {renderImageAttachments(hasDisplayContent || fileAttachments.length > 0 || linkPreviews.length > 0 ? 'mt-2' : '')}
+                    {translationFooter}
                     {renderBubbleTime('float-right ml-2 mt-1 text-muted-foreground')}
                   </div>
                 </TooltipTrigger>
@@ -932,7 +936,8 @@ export const MessageBubble = memo(function MessageBubble({
         isPending={deleteMutation.isPending}
       />
       {/* Status below the bubble row — outside the avatar alignment */}
-      {(hasStatusBelow || hasCancellableFooter) && (
+      {message.pending_send && <PendingSendStatus message={message}/>}
+      {!message.pending_send && (hasStatusBelow || hasCancellableFooter) && (
         <div className={`mt-0.5 ${isCustomer ? 'pl-9' : 'pr-9'}`}>
           {showStandaloneEmailBadge && (
             <div className={`mb-0.5 space-y-0.5 ${isCustomer ? '' : 'text-right'}`}>

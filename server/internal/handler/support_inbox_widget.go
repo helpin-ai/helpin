@@ -115,7 +115,7 @@ func (h *SupportInboxWidgetHandler) CreateSession(w http.ResponseWriter, r *http
 	}
 
 	// Legacy HTTP path — anonymous_id defaults to empty, will be set by WS flow
-	session, err := h.supportService.CreateWidgetSession(widgetRequestContext(r), req.WidgetKey, "", req.CustomerName, req.CustomerEmail, nil, nil, nil, nil)
+	session, err := h.supportService.CreateWidgetSession(widgetRequestContext(r), req.WidgetKey, "", req.CustomerName, req.CustomerEmail, nil, nil, nil, req.Locale)
 	if err != nil {
 		writeWidgetError(w, r, http.StatusBadRequest, err)
 		return
@@ -199,6 +199,9 @@ func (h *SupportInboxWidgetHandler) GetMessages(w http.ResponseWriter, r *http.R
 	if err != nil {
 		writeWidgetError(w, r, http.StatusUnauthorized, err)
 		return
+	}
+	if locale := r.URL.Query().Get("locale"); locale != "" {
+		_ = h.supportService.RefreshWidgetLocale(r.Context(), session, locale)
 	}
 	conversationID := session.ConversationID
 	if conversationID == nil {

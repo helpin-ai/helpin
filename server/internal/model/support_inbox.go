@@ -326,25 +326,33 @@ type SupportConversationSearchParams struct {
 
 // SupportMessage represents a message within a support conversation.
 type SupportMessage struct {
-	TranslationID     string     `json:"-" gorm:"-"`
-	ID                string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID       string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	ConversationID    string     `json:"conversation_id" gorm:"type:uuid;index"`
-	SenderType        string     `json:"sender_type" gorm:"not null"`                  // customer, user, agent, ai
-	MessageType       string     `json:"message_type" gorm:"not null;default:'reply'"` // reply, csat_survey, system, email_notice
-	SystemEventType   *string    `json:"system_event_type,omitempty" gorm:"size:40;index:idx_support_messages_system_event,where:system_event_type IS NOT NULL"`
-	SenderUserID      *string    `json:"sender_user_id" gorm:"type:uuid"`
-	SenderAgentID     *string    `json:"sender_agent_id" gorm:"type:uuid"`
-	SenderDisplayName *string    `json:"sender_display_name"`
-	SenderAvatarURL   *string    `json:"sender_avatar_url"`
-	Content           string     `json:"content" gorm:"not null"`
-	IsInternal        bool       `json:"is_internal" gorm:"not null;default:false"`
-	Metadata          string     `json:"metadata" gorm:"type:jsonb;default:'{}'"` // JSONB for CSAT ratings, AI sources, etc.
-	ViaChannel        *string    `json:"via_channel,omitempty" gorm:"size:20"`
-	EmailNotifiedAt   *time.Time `json:"email_notified_at,omitempty"`
-	EmailReadAt       *time.Time `json:"email_read_at,omitempty"`
-	CreatedAt         time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt         time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	// Private execution guard, used only while committing a durable staff send.
+	PendingGuard         *SupportPendingSend `json:"-" gorm:"-"`
+	PendingAttachmentIDs []string            `json:"-" gorm:"-"`
+
+	PendingSend       string                `json:"pending_send,omitempty" gorm:"-"`
+	PendingFailure    string                `json:"pending_failure,omitempty" gorm:"-"`
+	PendingSendID     string                `json:"pending_send_id,omitempty" gorm:"-"`
+	PendingRequest    *CreateMessageRequest `json:"pending_request,omitempty" gorm:"-"`
+	TranslationID     string                `json:"-" gorm:"-"`
+	ID                string                `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID       string                `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	ConversationID    string                `json:"conversation_id" gorm:"type:uuid;index"`
+	SenderType        string                `json:"sender_type" gorm:"not null"`                  // customer, user, agent, ai
+	MessageType       string                `json:"message_type" gorm:"not null;default:'reply'"` // reply, csat_survey, system, email_notice
+	SystemEventType   *string               `json:"system_event_type,omitempty" gorm:"size:40;index:idx_support_messages_system_event,where:system_event_type IS NOT NULL"`
+	SenderUserID      *string               `json:"sender_user_id" gorm:"type:uuid"`
+	SenderAgentID     *string               `json:"sender_agent_id" gorm:"type:uuid"`
+	SenderDisplayName *string               `json:"sender_display_name"`
+	SenderAvatarURL   *string               `json:"sender_avatar_url"`
+	Content           string                `json:"content" gorm:"not null"`
+	IsInternal        bool                  `json:"is_internal" gorm:"not null;default:false"`
+	Metadata          string                `json:"metadata" gorm:"type:jsonb;default:'{}'"` // JSONB for CSAT ratings, AI sources, etc.
+	ViaChannel        *string               `json:"via_channel,omitempty" gorm:"size:20"`
+	EmailNotifiedAt   *time.Time            `json:"email_notified_at,omitempty"`
+	EmailReadAt       *time.Time            `json:"email_read_at,omitempty"`
+	CreatedAt         time.Time             `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt         time.Time             `json:"updated_at" gorm:"autoUpdateTime"`
 	// CancellableUntil is the moment the email-fallback timer fires for an
 	// outbound agent reply. Until this passes, the agent can soft-delete the
 	// message and the queued email is removed from the per-conversation Redis
@@ -1071,6 +1079,7 @@ type UpdateConversationStatusRequest struct {
 
 // WidgetSessionRequest creates a new widget session (legacy HTTP).
 type WidgetSessionRequest struct {
+	Locale        *string `json:"locale,omitempty"`
 	WorkspaceSlug string  `json:"workspace_slug"`
 	WidgetKey     string  `json:"widget_key"`
 	CustomerName  *string `json:"customer_name"`
@@ -1135,6 +1144,7 @@ type WidgetSessionCreateData struct {
 
 // WidgetSessionRestoreData is the payload for session:restore.
 type WidgetSessionRestoreData struct {
+	Locale       string `json:"locale,omitempty"`
 	SessionToken string `json:"session_token"`
 }
 

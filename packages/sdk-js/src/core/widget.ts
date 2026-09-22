@@ -1841,7 +1841,7 @@ export class WidgetManager {
         // Send session:create or session:restore
         const storedSession = this.widgetKey ? getStoredSession(this.widgetKey) : null;
         if (storedSession) {
-          this.wsSend('session:restore', { session_token: storedSession.session_token });
+          this.wsSend('session:restore', { session_token: storedSession.session_token, locale: typeof navigator !== 'undefined' ? navigator.language : '' });
         } else {
           this.wsSend('session:create', {
             anonymous_id: this.anonymousId || '',

@@ -171,3 +171,13 @@ func TestSupportRewriteRoutesUseOnlySmallTierModels(t *testing.T) {
 		}
 	}
 }
+
+func TestLiveTranslatePinsPrimaryAndIndependentFallback(t *testing.T) {
+	p, ok := DefaultAICompletionRouteRegistry().Policy(BillingFeatureSupportTranslation, "")
+	if !ok || p.Primary.Model != "openai/gpt-oss-120b" || p.Primary.OpenRouterProvider != "cerebras/fp16" || p.PreferRequestRoute {
+		t.Fatalf("unsafe translation primary: %+v", p)
+	}
+	if len(p.Fallbacks) != 1 || p.Fallbacks[0].Model != "deepseek/deepseek-v4.1-flash" || p.Fallbacks[0].OpenRouterProvider != "coreweave/fp8" {
+		t.Fatalf("fallback: %+v", p.Fallbacks)
+	}
+}

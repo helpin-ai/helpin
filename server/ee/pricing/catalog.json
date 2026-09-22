@@ -3,6 +3,7 @@
   "effective_date": "2026-09-14",
   "reviewed_date": "2026-09-10",
   "source_urls": [
+    "https://openrouter.ai/api/v1/models/openai/gpt-oss-120b/endpoints",
     "https://developers.openai.com/api/docs/models/gpt-5.6-luna",
     "https://developers.openai.com/api/docs/models/gpt-5.6-terra",
     "https://developers.openai.com/api/docs/models/gpt-5.5",
@@ -54,6 +55,7 @@
     {"plan": "founder", "billing_interval": "monthly", "allowance_microusd": 150000000, "soft": true}
   ],
   "routes": [
+    {"provider": "openrouter", "canonical_model": "gpt-oss-120b", "route": "openai/gpt-oss-120b", "service_tier": "standard", "tier": "medium", "maximum_cost_rates": {"input_microusd_per_million": 350000, "cache_read_microusd_per_million": 0, "cache_write_microusd_per_million": 0, "output_microusd_per_million": 750000}, "enabled": true},
     {"provider": "openrouter", "canonical_model": "gpt-5.6-luna", "route": "openai/gpt-5.6-luna", "service_tier": "standard", "tier": "small", "maximum_cost_rates": {"input_microusd_per_million": 200000, "cache_read_microusd_per_million": 20000, "cache_write_microusd_per_million": 250000, "output_microusd_per_million": 1200000}, "enabled": true},
     {"provider": "openai", "canonical_model": "gpt-5.6-luna", "route": "gpt-5.6-luna", "service_tier": "standard", "tier": "small", "maximum_cost_rates": {"input_microusd_per_million": 200000, "cache_read_microusd_per_million": 20000, "cache_write_microusd_per_million": 250000, "output_microusd_per_million": 1200000}, "enabled": true},
     {"provider": "openrouter", "canonical_model": "glm-5.3-flash", "route": "z-ai/glm-5.3-flash:exacto", "service_tier": "standard", "tier": "small", "maximum_cost_rates": {"input_microusd_per_million": 150000, "cache_read_microusd_per_million": 30000, "cache_write_microusd_per_million": 0, "output_microusd_per_million": 500000}, "enabled": true},

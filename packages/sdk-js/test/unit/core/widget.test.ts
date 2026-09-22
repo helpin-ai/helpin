@@ -216,7 +216,7 @@ describe('WidgetManager', () => {
       expect(MockWebSocket.instances[0].url).toBe('wss://client.helpin.ai/widget/ws?key=test-key');
       expect(MockWebSocket.instances[0].sent.map((frame) => JSON.parse(frame))).toContainEqual({
         type: 'session:restore',
-        data: { session_token: 'persisted-token' },
+        data: { session_token: 'persisted-token', locale: navigator.language },
       });
     });
 

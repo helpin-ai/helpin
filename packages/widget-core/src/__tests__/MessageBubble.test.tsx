@@ -276,3 +276,9 @@ describe('MessageBubble', () => {
     expect(container.querySelector('.helpin-message-bubble')).toBeTruthy();
   });
 });
+
+it('keeps RTL prose directional without reversing the widget', () => {
+ const {container} = render(<MessageBubble message={{id:'rtl',conversationId:'c',role:'customer',content:'مرحبا https://example.com/123',createdAt:'2026-09-22T10:00:00Z'}} />);
+ expect(container.querySelector('[dir="auto"]')?.textContent).toContain('مرحبا');
+ expect(container.querySelector('.helpin-message')?.getAttribute('dir')).not.toBe('rtl');
+});

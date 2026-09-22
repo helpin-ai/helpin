@@ -1,5 +1,5 @@
 export const TRANSLATION_LANGUAGES: Record<string, string> = {
-  en: 'English',
+  en: 'English', fa: 'Persian',
   de: 'German',
   fr: 'French',
   es: 'Spanish',

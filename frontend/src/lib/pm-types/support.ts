@@ -598,6 +598,10 @@ export const SUPPORT_SYSTEM_EVENT_TYPES = [
 export type SupportSystemEventType = (typeof SUPPORT_SYSTEM_EVENT_TYPES)[number];
 
 export interface SupportMessage {
+ pending_send?: string;
+ pending_failure?: string;
+ pending_send_id?: string;
+ pending_request?: CreateMessageRequest;
   id: string;
   client_message_id?: string;
   workspace_id: string;
@@ -1254,9 +1258,10 @@ export interface SupportTranslationOptions {
  conversation: SupportTranslationConversation;
 }
 export interface SupportTranslation {
+  updated_at: string;
  id: string;
  conversation_id: string;
- purpose: 'message_display' | 'outgoing_reply';
+ purpose: 'message_display' | 'manual_display' | 'outgoing_reply';
  source_message_id?: string;
  sent_message_id?: string;
  source_text: string;

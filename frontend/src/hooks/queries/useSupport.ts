@@ -4,7 +4,7 @@ import type { WidgetOriginSettings } from '@/lib/pmTypes';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { queryKeys } from '@/lib/queryKeys';
-import { uploadToS3 } from '@/lib/api';
+import { api, uploadToS3 } from '@/lib/api';
 import { supportService } from '@/lib/services/supportService';
 import { supportAttachmentService } from '@/lib/services/supportAttachmentService';
 import { agentService } from '@/lib/services/agentService';
@@ -951,7 +951,7 @@ export function useSendMessage(workspaceId: string, conversationId: string | nul
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: SendMessagePayload) =>
-      supportService.createConversationMessage(workspaceId, conversationId!, payload).then((response) => {
+      (payload.is_internal ? supportService.createConversationMessage(workspaceId, conversationId!, payload) : api.post<SupportMessage>(`/support/inbox/conversations/${conversationId}/translation/sends?workspace_id=${encodeURIComponent(workspaceId)}`,payload)).then((response) => {
         if (response.status === 422) throw new SupportTranslationSendError();
         return unwrap(response);
       }),
@@ -960,10 +960,9 @@ export function useSendMessage(workspaceId: string, conversationId: string | nul
       const key = queryKeys.support.messages(workspaceId, conversationId);
       await queryClient.cancelQueries({ queryKey: key });
       const previousMessages = queryClient.getQueryData<SupportMessagePages>(key);
-      if (payload.auto_translate) return { previousMessages, optimisticId: '' };
       const now = new Date().toISOString();
       const optimisticId = payload.client_message_id?.trim()
-        || `optimistic-${conversationId}-${crypto.randomUUID()}`;
+        || crypto.randomUUID();
       payload.client_message_id = optimisticId;
       const optimistic = buildOptimisticSupportMessage({
         workspaceId,
@@ -973,6 +972,7 @@ export function useSendMessage(workspaceId: string, conversationId: string | nul
         now,
         optimisticId,
       });
+      if (!payload.is_internal) optimistic.pending_send="preparing";
       queryClient.setQueryData<SupportMessagePages>(key, (current) => appendMessageToNewestPage(current, optimistic));
       return { previousMessages, optimisticId };
     },
@@ -987,12 +987,13 @@ export function useSendMessage(workspaceId: string, conversationId: string | nul
           queryClient.setQueryData<SupportMessagePages>(queryKeys.support.messages(workspaceId, conversationId), current => appendMessageToNewestPage(current, message));
         }
       }
+      queryClient.invalidateQueries({ queryKey: ['support',workspaceId,'pending-sends',conversationId] });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
       invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },
     onError: (error: Error, _payload, context) => {
-      if (conversationId && context?.previousMessages) {
-        queryClient.setQueryData(queryKeys.support.messages(workspaceId, conversationId), context.previousMessages);
+      if (conversationId && context?.optimisticId) {
+        queryClient.setQueryData<SupportMessagePages>(queryKeys.support.messages(workspaceId, conversationId), current => removeMessageFromPages(current, context.optimisticId));
       }
       if (!(error instanceof SupportTranslationSendError)) toast.error('Failed to send message', { description: error.message });
     },

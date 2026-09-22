@@ -4398,3 +4398,8 @@
 .helpin-attachment-video { width: 100%; min-width: 0; }
 .helpin-attachment-video video { display: block; width: 100%; max-height: 280px; border-radius: 8px; background: #111; }
 .helpin-video-fallback { font-size: 12px; margin: 4px 0; }
+
+/* Natural prose follows its own language; code and URLs retain logical order. */
+.helpin-message-content, .helpin-compose textarea { text-align: start; }
+.helpin-message-content pre, .helpin-message-content code { direction: ltr; unicode-bidi: isolate; text-align: left; }
+.helpin-message-content a { unicode-bidi: isolate; }

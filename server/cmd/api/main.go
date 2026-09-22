@@ -843,11 +843,8 @@ func main() {
 		fatalWithSentry("configure product decisions", jevProductErr)
 	}
 	jevProductDecisions.SetMetrics(metrics)
-	translationRoute := service.AICompletionRoute{Provider: "openrouter", Model: "deepseek/deepseek-v4-flash-0731"}
-	if !supportLLMRouter.HasChatProvider("openrouter") && supportLLMRouter.HasChatProvider("openai") {
-		translationRoute = service.AICompletionRoute{Provider: "openai", Model: "gpt-5.6-luna"}
-	}
-	supportInboxService.SetTranslations(repository.NewSupportTranslationRepository(db), supportLLMProvider, jevProductDecisions, translationRoute, supportLLMRouter.HasChatProvider("openai") || supportLLMRouter.HasChatProvider("openrouter"))
+	translationRoute := service.AICompletionRoute{Provider: "openrouter", Model: "openai/gpt-oss-120b", OpenRouterProvider: "cerebras/fp16"}
+	supportInboxService.SetTranslations(repository.NewSupportTranslationRepository(db), supportLLMProvider, jevProductDecisions, translationRoute, supportLLMRouter.HasChatProvider("openrouter"))
 	supportInboxService.SetTranslationMetrics(metrics)
 	pmTriageService, pmTriageErr := service.NewPMTriageService(service.PMTriageConfig{
 		Mode: cfg.JevPMMode, Threshold: cfg.JevPMThreshold, DailyLimit: cfg.JevPMDailyLimit,
@@ -2086,6 +2083,11 @@ func main() {
 	// Durable inbound processing does not depend on outbound Postmark/Redis configuration.
 	inboundCtx, inboundCancel := context.WithCancel(context.Background())
 	defer inboundCancel()
+	go supportInboxService.RunLiveTranslate(inboundCtx)
+	go supportInboxService.RunLiveTranslate(inboundCtx)
+	go supportInboxService.RunTranslationReview(inboundCtx)
+	go supportInboxService.RunPendingSupportSends(inboundCtx)
+	go supportInboxService.RunPendingSupportSends(inboundCtx)
 	go emailFallbackService.StartInboundWorker(inboundCtx, "email")
 	go emailFallbackService.StartInboundWorker(inboundCtx, "attachment")
 	go emailFallbackService.StartInboundWorker(inboundCtx, "attachment")

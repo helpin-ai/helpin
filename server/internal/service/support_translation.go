@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -13,18 +12,17 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
-	"github.com/helpin-ai/helpin/server/internal/decision"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/observability"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
-const supportTranslationVersion = "v3"
+const supportTranslationVersion = "v4"
 const BillingFeatureSupportTranslation = "support_translation"
 
 var ErrSupportTranslation = errors.New("Translation is unavailable. Your reply hasn’t been sent.")
-var supportTranslationLanguages = map[string]string{"en": "English", "de": "German", "fr": "French", "es": "Spanish", "it": "Italian", "pt": "Portuguese", "pt-BR": "Portuguese (Brazil)", "nl": "Dutch", "pl": "Polish", "uk": "Ukrainian", "ru": "Russian", "tr": "Turkish", "ar": "Arabic", "he": "Hebrew", "hi": "Hindi", "bn": "Bengali", "ur": "Urdu", "ja": "Japanese", "ko": "Korean", "zh-CN": "Chinese (Simplified)", "zh-TW": "Chinese (Traditional)", "vi": "Vietnamese", "th": "Thai", "id": "Indonesian", "sv": "Swedish", "da": "Danish", "no": "Norwegian", "fi": "Finnish", "cs": "Czech", "ro": "Romanian", "el": "Greek"}
+var supportTranslationLanguages = map[string]string{"fa": "Persian", "en": "English", "de": "German", "fr": "French", "es": "Spanish", "it": "Italian", "pt": "Portuguese", "pt-BR": "Portuguese (Brazil)", "nl": "Dutch", "pl": "Polish", "uk": "Ukrainian", "ru": "Russian", "tr": "Turkish", "ar": "Arabic", "he": "Hebrew", "hi": "Hindi", "bn": "Bengali", "ur": "Urdu", "ja": "Japanese", "ko": "Korean", "zh-CN": "Chinese (Simplified)", "zh-TW": "Chinese (Traditional)", "vi": "Vietnamese", "th": "Thai", "id": "Indonesian", "sv": "Swedish", "da": "Danish", "no": "Norwegian", "fi": "Finnish", "cs": "Czech", "ro": "Romanian", "el": "Greek"}
 
 type supportTranslationService struct {
 	metrics   *observability.Metrics
@@ -72,22 +70,27 @@ func (s *SupportInboxService) TranslationOptions(ctx context.Context, workspaceI
 			settings = parseSettings(installation.Settings)
 		}
 	}
-	// Workspace settings are authoritative. Legacy personal and conversation
-	// overrides are intentionally ignored, including previously disabled threads.
-	result.Preference = model.SupportTranslationPreference{ReadingLanguage: settings.DefaultAgentLanguage, AutoTranslateIncoming: settings.TranslationIncomingEnabled, AutoTranslateOutgoing: settings.TranslationOutgoingEnabled}
-	result.Conversation = model.SupportTranslationConversation{CustomerLanguage: settings.TranslationCustomerLanguage, TranslationMode: "inherit"}
-	result.Available = s.translations.available && settings.TranslationEnabled
-	if !settings.TranslationEnabled {
-		result.UnavailableReason = "Translation is disabled in workspace settings."
-	} else if !s.translations.available {
-		result.UnavailableReason = "Configure a translation provider to enable translation."
+	// Persisted conversation policy is independent of the default for new threads.
+	policy, err := s.translations.repo.LiveConversation(ctx, workspaceID, conversationID, settings.TranslationEnabled && settings.TranslationIncomingEnabled && settings.TranslationOutgoingEnabled, settings.TranslationCustomerLanguage)
+	if err != nil {
+		return nil, err
+	}
+	enabled := policy.TranslationMode == "on"
+	result.Preference = model.SupportTranslationPreference{ReadingLanguage: settings.DefaultAgentLanguage, AutoTranslateIncoming: enabled, AutoTranslateOutgoing: enabled}
+	result.Conversation = *policy
+	result.Available = s.translations.available
+	if !result.Available {
+		result.UnavailableReason = "Translation is temporarily unavailable."
 	}
 	detected, err := s.translations.repo.DetectedLanguage(ctx, workspaceID, conversationID)
 	if err != nil {
 		return nil, err
 	}
 	result.DetectedCustomerLanguage = detected
-	result.JevReview = s.translations.jev.Primary(workspaceID, JevTranslationReview)
+	result.JevReview = false
+	if result.DetectedCustomerLanguage == "" {
+		result.DetectedCustomerLanguage = normalizeLiveLanguage(s.translations.repo.BrowserLanguage(ctx, workspaceID, conversationID))
+	}
 	return result, nil
 }
 func (s *SupportInboxService) TranslateSupport(ctx context.Context, workspaceID, conversationID, userID string, req model.SupportTranslateRequest) (*model.SupportTranslation, error) {
@@ -96,7 +99,7 @@ func (s *SupportInboxService) TranslateSupport(ctx context.Context, workspaceID,
 		return nil, err
 	}
 	if req.MessageID != "" {
-		if !options.Preference.AutoTranslateIncoming {
+		if req.Live && !options.Preference.AutoTranslateIncoming {
 			return nil, ErrSupportTranslation
 		}
 		req.TargetLanguage = options.Preference.ReadingLanguage
@@ -106,7 +109,7 @@ func (s *SupportInboxService) TranslateSupport(ctx context.Context, workspaceID,
 	if !options.Available || supportTranslationLanguages[req.TargetLanguage] == "" {
 		return nil, ErrSupportTranslation
 	}
-	artifact := &model.SupportTranslation{ID: uuid.NewString(), WorkspaceID: workspaceID, ConversationID: conversationID, Purpose: "outgoing_reply", CreatedByUserID: &userID, TargetLanguage: req.TargetLanguage, PipelineVersion: supportTranslationVersion, Status: "pending", ReviewStatus: "not_requested", Attempts: 1}
+	artifact := &model.SupportTranslation{ID: uuid.NewString(), WorkspaceID: workspaceID, ConversationID: conversationID, Purpose: "outgoing_reply", CreatedByUserID: &userID, TargetLanguage: req.TargetLanguage, PipelineVersion: supportTranslationVersion, PolicyRevision: options.Conversation.Revision, Status: "pending", ReviewStatus: "not_requested", Attempts: 1}
 	source := strings.TrimSpace(req.Content)
 	scope := userID + ":" + req.DraftID
 	if req.MessageID != "" {
@@ -114,10 +117,13 @@ func (s *SupportInboxService) TranslateSupport(ctx context.Context, workspaceID,
 		if err != nil {
 			return nil, err
 		}
-		if msg == nil || msg.WorkspaceID != workspaceID || msg.ConversationID != conversationID || msg.IsInternal || msg.SenderType != "customer" || msg.MessageType != "reply" {
+		if msg == nil || msg.WorkspaceID != workspaceID || msg.ConversationID != conversationID || msg.IsInternal || msg.SenderType != "customer" || msg.MessageType != "reply" || msg.DeletedAt.Valid {
 			return nil, ErrSupportTranslation
 		}
-		artifact.Purpose = "message_display"
+		artifact.Purpose = "manual_display"
+		if req.Live {
+			artifact.Purpose = "message_display"
+		}
 		artifact.SourceMessageID = &msg.ID
 		artifact.CreatedByUserID = nil
 		source = msg.Content
@@ -139,15 +145,12 @@ func (s *SupportInboxService) TranslateSupport(ctx context.Context, workspaceID,
 	if estimatedTranslationTokens(source) > 32000 {
 		return nil, fmt.Errorf("message is too long for automatic translation; send the original instead")
 	}
-	if artifact.Purpose == "outgoing_reply" && options.JevReview {
-		artifact.ReviewStatus = "pending"
+	if job, ok := ctx.Value(supportSendGuardKey{}).(*model.SupportPendingSend); ok {
+		artifact.RetryAttempt = job.Attempts
 	}
 	artifact.SourceText = source
 	artifact.SourceHash = translationHash(source)
 	reviewPolicy := "off"
-	if s.translations.jev.Enabled(workspaceID, JevTranslationReview) {
-		reviewPolicy = fmt.Sprintf("%v", s.translations.jev.policies[JevTranslationReview])
-	}
 	artifact.CacheKey = translationHash(strings.Join([]string{workspaceID, conversationID, artifact.Purpose, scope, artifact.SourceHash, req.TargetLanguage, reviewPolicy, supportTranslationVersion, s.translations.route.Provider, s.translations.route.Model}, "\x00"))
 	artifact, owned, err := s.translations.repo.Reserve(ctx, artifact)
 	if err != nil {
@@ -163,7 +166,9 @@ func (s *SupportInboxService) TranslateSupport(ctx context.Context, workspaceID,
 		s.translations.metrics.TranslationEvent(artifact.Purpose, outcome)
 		return artifact, nil
 	}
-	bounded, cancel := context.WithTimeout(ctx, 50*time.Second)
+	started := time.Now()
+	defer func() { s.translations.metrics.TranslationWorkflow(artifact.Purpose, time.Since(started)) }()
+	bounded, cancel := context.WithTimeout(ctx, 55*time.Second)
 	defer cancel()
 	callErr := s.generateSupportTranslation(bounded, artifact)
 	if callErr != nil {
@@ -195,8 +200,9 @@ func (s *SupportInboxService) TranslateSupport(ctx context.Context, workspaceID,
 		return nil, err
 	}
 	if !current.Available || (artifact.Purpose == "message_display" &&
-		((!current.Preference.AutoTranslateIncoming) || current.Preference.ReadingLanguage != artifact.TargetLanguage)) ||
-		(artifact.Purpose == "outgoing_reply" && (!current.Preference.AutoTranslateOutgoing ||
+		((!current.Preference.AutoTranslateIncoming) || current.Conversation.Revision != options.Conversation.Revision || current.Preference.ReadingLanguage != artifact.TargetLanguage)) ||
+		(artifact.Purpose == "outgoing_reply" && (!current.Preference.AutoTranslateOutgoing || current.Conversation.Revision != options.Conversation.Revision ||
+			(current.Conversation.CustomerLanguage == "" && current.DetectedCustomerLanguage != "" && current.DetectedCustomerLanguage != artifact.TargetLanguage) ||
 			(current.Conversation.CustomerLanguage != "" && current.Conversation.CustomerLanguage != artifact.TargetLanguage))) {
 		return nil, ErrSupportTranslation
 	}
@@ -210,46 +216,6 @@ func (s *SupportInboxService) TranslateSupport(ctx context.Context, workspaceID,
 		}
 	}
 	return artifact, nil
-}
-func (s *SupportInboxService) reviewSupportTranslation(ctx context.Context, t *model.SupportTranslation) {
-	t.ReviewStatus = "unavailable"
-	if !s.translations.jev.Enabled(t.WorkspaceID, JevTranslationReview) {
-		return
-	}
-	state, err := json.Marshal(map[string]string{"original": t.SourceText, "translation": t.TranslatedText, "target_language": t.TargetLanguage})
-	if err != nil {
-		return
-	}
-	questions := map[string]decision.Question{}
-	for key, instruction := range map[string]string{"meaning": "Does the translation preserve the original meaning, negation and requested actions without material omissions?", "promises": "Does the translation avoid adding promises, commitments, claims or instructions absent from the original?", "language": "Is the translation in the requested target language (except preserved code, links, names and identifiers)?"} {
-		questions[key] = decision.Question{Instructions: instruction, Choices: map[string]string{"yes": "Clearly satisfies the check", "no": "Materially fails the check", "uncertain": "Cannot reliably establish this"}}
-	}
-	result, err := s.translations.jev.Decide(ctx, JevDecisionRequest{WorkspaceID: t.WorkspaceID, Feature: JevTranslationReview, SourceID: t.ID, Version: fmt.Sprintf("%s:%d:%s", supportTranslationVersion, t.Attempts, translationHash(t.SourceText+"\x00"+t.TranslatedText)), State: string(state), Questions: questions})
-	if err != nil || result == nil {
-		return
-	}
-	if result.ID != "" {
-		t.JevAssessmentID = &result.ID
-	}
-	if result.Status != "ready" || result.Result == nil {
-		return
-	}
-	t.ReviewStatus = "accepted"
-	for key := range questions {
-		answer, ok := result.Result.Answers[key]
-		if !ok || answer.Choice != "yes" || answer.Probabilities["yes"] < result.Threshold {
-			t.ReviewStatus = "needs_review"
-			break
-		}
-	}
-	if result.Mode == "shadow" {
-		if t.ReviewStatus == "accepted" {
-			t.ReviewStatus = "shadow_accepted"
-		} else {
-			t.ReviewStatus = "shadow_rejected"
-		}
-	}
-
 }
 
 // prepareTranslatedReply returns no translation and no error when the customer
@@ -302,9 +268,6 @@ func (s *SupportInboxService) prepareTranslatedReply(ctx context.Context, worksp
 	}
 	if t.ReviewStatus == "needs_review" {
 		return nil, fmt.Errorf("translation could not be verified; your reply was not sent")
-	}
-	if options.JevReview && t.ReviewStatus != "accepted" && !(t.ReviewStatus == "not_requested" && t.SourceLanguage == t.TargetLanguage && t.TranslatedText == t.SourceText) {
-		return nil, fmt.Errorf("translation review is unavailable; your reply was not sent")
 	}
 	if t.SourceHash != translationHash(strings.TrimSpace(req.Content)) || t.TargetLanguage != target {
 		return nil, ErrSupportTranslation

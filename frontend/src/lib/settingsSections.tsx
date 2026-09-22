@@ -338,8 +338,8 @@ const allSettingsSections: SettingsSectionMeta[] = [
   },
   {
     id: 'support-translation',
-    label: 'Translation',
-    description: 'Manage automatic translation for all support conversations in this workspace.',
+    label: 'Live Translate',
+    description: 'Choose the reading language and Live Translate default for new support conversations.',
     keywords: ['auto translate', 'live translation', 'languages'],
     icon: ExternalMCP,
     group: 'Support',

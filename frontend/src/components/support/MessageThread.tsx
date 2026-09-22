@@ -1,3 +1,6 @@
+import { usePendingSupportSends } from '@/hooks/queries/usePendingSupportSends';
+import { LiveTranslateBar } from './LiveTranslateBar';
+import { useCachedSupportTranslations } from '@/hooks/queries/useSupportTranslation';
 import { pmTriageService, type TriageView, type SupportTaskDraft } from '@/lib/services/pmTriageService';
 import { unwrapRequired } from '@/lib/queryUtils';
 import { getReplyDeliveryMode, getReplyEmailSubject } from './replyDelivery';
@@ -311,12 +314,16 @@ export function MessageThread({
     isFetchingNextPage,
     isFetchNextPageError,
   } = useConversationMessages(workspaceId, conversationId);
-  const messages = useMemo(
+  const loadedMessages = useMemo(
     () => flattenSupportMessagePages(messagePages).filter(
       message => !(message.message_type === 'system' && message.system_event_type === 'teammate_joined'),
     ),
     [messagePages],
   );
+  const messages=usePendingSupportSends(workspaceId,conversationId||'',loadedMessages);
+  const translationIds=useMemo(()=>messages.filter(m=>m.sender_type==='customer'&&!m.is_internal).map(m=>m.id),[messages]);
+  const cachedTranslations=useCachedSupportTranslations(workspaceId,conversationId||'',translationIds, Math.max(0, ...messages.filter(m=>m.sender_type==='customer').map(m=>Date.parse(m.created_at)))).data;
+  const translationMap=useMemo(()=>new Map((cachedTranslations||[]).map(t=>[t.source_message_id,t])),[cachedTranslations]);
   const { data: inboxScopes } = useInboxScopes(workspaceId);
   const { data: installation } = useChatSettings(workspaceId);
   useSupportTeammatePresence(workspaceId);
@@ -1140,6 +1147,7 @@ export function MessageThread({
       )}
 
       {/* Messages area with light background (Crisp-style) */}
+      <LiveTranslateBar workspaceId={workspaceId} conversationId={conversationId} editable={!!access?.permissions?.includes('support.edit')} />
       <ScrollArea
         ref={scrollAreaRef}
         className="min-h-0 min-w-0 flex-1 bg-muted/20 dark:bg-sidebar [&>[data-slot=scroll-area-viewport]>div]:!block [&>[data-slot=scroll-area-viewport]>div]:!w-full [&>[data-slot=scroll-area-viewport]>div]:!min-w-0 [&>[data-slot=scroll-area-viewport]>div]:!max-w-full"
@@ -1205,6 +1213,7 @@ export function MessageThread({
                 <TranslatedMessageBubble
                   workspaceId={workspaceId}
                   message={item.message}
+                  cachedTranslation={translationMap.get(item.message.id)}
                   isConsecutive={item.isConsecutive}
                   isLastInGroup={item.isLastInGroup}
                   source={conversation?.source}

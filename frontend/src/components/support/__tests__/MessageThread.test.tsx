@@ -22,7 +22,8 @@ function createTestQueryClient() {
 }
 
 // Translation polling is covered separately; keep transcript timer tests deterministic.
-vi.mock('@/hooks/queries/useSupportTranslation', () => ({ useSupportTranslationOptions: () => ({ data: { available: false, preference: { reading_language: 'en', auto_translate_incoming: false } } }) }))
+vi.mock('@/hooks/queries/useSupportTranslation', () => ({ useSupportTranslationOptions: () => ({ data: undefined }), useCachedSupportTranslations: () => ({data: []}), setLiveTranslate: vi.fn(), translationOptionsKey: () => [] }))
+vi.mock('@/hooks/queries/usePendingSupportSends', () => ({ usePendingSupportSends: (_ws: string, _id: string, messages: unknown[]) => messages }))
 
 // This transcript fixture must not start the live widget's pageview timer.
 vi.mock('@/lib/helpin', () => ({ resetHelpinIdentity: vi.fn() }))

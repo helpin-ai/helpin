@@ -2064,6 +2064,9 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		if err != nil {
 			return nil, ErrSupportTranslation
 		}
+		if options.Preference.AutoTranslateOutgoing && !options.Available {
+			return nil, ErrSupportTranslation
+		}
 		req.AutoTranslate = options.Available && options.Preference.AutoTranslateOutgoing
 		if req.AutoTranslate && clientMessageID == "" {
 			clientMessageID = uuid.NewString()
@@ -2095,6 +2098,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		req.Content = translation.TranslatedText
 	}
 
+	reportSupportSendProgress(ctx, "sending")
 	// Auto-resolve sender display name and avatar from user record.
 	var senderAvatarURL *string
 	if senderUserID != nil && s.userRepo != nil {
@@ -2146,6 +2150,19 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 
 	if translation != nil {
 		msg.TranslationID = translation.ID
+	}
+	if guard, ok := ctx.Value(supportSendGuardKey{}).(*model.SupportPendingSend); ok {
+		// Permissions may have changed while the provider was working.
+		actor, err := s.authzService.ResolveActor(ctx, workspaceID, guard.UserID)
+		if err != nil || !s.authzService.Can(actor, authorization.PermSupportEdit) {
+			return nil, ErrSupportTranslation
+		}
+		if _, err := s.loadConversationAccessible(authorization.WithActor(ctx, actor), workspaceID, ticketID); err != nil {
+			return nil, err
+		}
+		msg.CreatedAt = guard.CreatedAt
+		msg.PendingGuard = guard
+		msg.PendingAttachmentIDs = req.AttachmentIDs
 	}
 
 	if len(mentionedUserIDs) > 0 {
