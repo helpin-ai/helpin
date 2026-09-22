@@ -25,7 +25,7 @@ export const PAGE_SEO = {
       'Self-host the open-source product or choose Helpin Cloud with unlimited teammates and monthly AI usage. Compare plans, hosting and Enterprise licensing.',
     canonicalPath: '/pricing',
     imagePath: '/og/helpin-pricing-green.png',
-    imageAlt: 'Helpin pricing — One platform. Your whole team, connected.',
+    imageAlt: 'Helpin pricing — Every module. Every teammate. One price.',
   },
   privacy: {
     title: 'Privacy Policy — Helpin',

@@ -25,14 +25,14 @@ const variants = [
     output: resolve(websiteRoot, 'public/og/helpin-home-green.png'),
     eyebrow: 'ONE CUSTOMER HISTORY',
     headline: ['AI agents that do', 'more than answer.'],
-    support: 'A shared workspace for your team and AI agents.',
+    support: 'Support, projects, CRM and docs on one customer history.',
     visual: 'connected',
   },
   {
     output: resolve(websiteRoot, 'public/og/helpin-pricing-green.png'),
     eyebrow: 'HELPIN PRICING',
-    headline: ['One platform.', 'Your whole team,', 'connected.'],
-    support: 'Choose Helpin Cloud or self-host on your infrastructure.',
+    headline: ['Every module.', 'Every teammate.', 'One price.'],
+    support: 'Self-host free, or let us run it with AI included.',
     visual: 'pricing',
   },
   {
@@ -67,18 +67,33 @@ const variants = [
 
 const productCards = [
   ['product', 'THE HELPIN PRODUCT', ['Everything in Helpin,', 'attached to', 'the customer.'], 'Support, projects, CRM, meetings, docs and AI agents.'],
-  ['customer-support', 'CUSTOMER SUPPORT', ['AI agents that', 'know the history.'], 'Support that follows through—with your team in control.'],
-  ['projects', 'PROJECTS', ['Plan the work.', 'Build with AI agents', 'that know why.'], 'Roadmaps, sprints and customer history in one workspace.'],
-  ['crm', 'CRM', ['Move deals forward.'], 'With AI agents that know your customers.'],
-  ['meetings', 'MEETINGS', ['AI agents that turn', 'meeting decisions', 'into next steps.'], 'Keep calls, tasks and follow-ups connected to the customer.'],
+  ['customer-support', 'CUSTOMER SUPPORT', ['AI agents that', 'know the history.'], 'No per-seat or per-resolution fees.'],
+  ['projects', 'PROJECTS', ['Plan the work.', 'Build with AI agents', 'that know why.'], 'Roadmaps, sprints and objectives in one workspace.'],
+  ['crm', 'CRM', ['Every deal, with', 'the whole customer', 'history.'], 'Contacts, companies and deals, with signals and playbooks.'],
+  ['meetings', 'MEETINGS', ['Meeting notes that', 'become tracked work.'], 'Google Meet, Zoom, Teams and Webex, linked to the customer.'],
   ['knowledge', 'KNOWLEDGE', ['Better docs for', 'your customers.'], 'Better answers from your AI agents.'],
   ['ai-agents', 'AI AGENTS', ['AI agents that turn', 'customer history', 'into action.'], 'Your team sets the tools, permissions and approvals.'],
-  ['developers', 'FOR DEVELOPERS', ['Connect your product.'], 'Give AI agents the tools to act—with SDKs, APIs and MCP.'],
-  ['self-hosting', 'OPEN SOURCE', ['The whole product.', 'Your infrastructure.'], 'One connected platform. Your team controls the deployment.'],
+  ['developers', 'FOR DEVELOPERS', ['Connect your product.'], 'Give AI agents the tools to act, with SDKs, MCP and events.'],
+  ['self-hosting', 'OPEN SOURCE', ['Same product.', 'You choose who', 'runs it.'], 'Free under AGPL-3.0, no plan limits. Community 0.1 beta.'],
   ['branding', 'THE HELPIN BRAND', ['One customer history.'], 'A shared workspace for your team and AI agents.'],
 ];
 for (const [slug, eyebrow, headline, support] of productCards) {
-  variants.push({ output: resolve(websiteRoot, `public/og/helpin-${slug}-green.png`), eyebrow, headline, support, visual: 'connected' });
+  variants.push({ output: resolve(websiteRoot, `public/og/helpin-${slug}-green.png`), eyebrow, headline, support, visual: 'connected', art: slug });
+}
+variants[0].art = 'home';
+variants[1].art = 'pricing';
+
+// Page artwork: text-free panels generated once with gpt-image-2.5-sunburst and committed,
+// so builds stay offline and deterministic. Prompts live in scripts/assets/og-art/README.md.
+// A variant without an art file falls back to its drawn visual.
+const ART_WIDTH = 440;
+for (const variant of variants.filter((item) => item.art)) {
+  try {
+    const art = await readFile(resolve(websiteRoot, `scripts/assets/og-art/${variant.art}.jpg`));
+    variant.artSrc = `data:image/jpeg;base64,${art.toString('base64')}`;
+  } catch {
+    variant.artSrc = null;
+  }
 }
 // Instrument Sans: Google Fonts static TTFs, bundled for deterministic offline builds.
 // Source: https://fonts.google.com/specimen/Instrument+Sans (SIL OFL in assets/instrument-sans).
@@ -105,14 +120,15 @@ function connectedVisual() {
       h('div', { style: { display: 'flex', color: '#B2C6BA', fontSize: 14, marginTop: 8 } }, detail))))
 }
 
-function pricingVisual() {
+function pricingVisual(onArt = false) {
+  const [headline, label, detail] = onArt ? ['#9CDBB3', '#EDF5EF', '#B2C6BA'] : [COLORS.accent, COLORS.ink, COLORS.muted];
   return h('div', {
-    style: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: 390 },
+    style: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: onArt ? ART_WIDTH : 390, height: onArt ? 630 : undefined, paddingBottom: onArt ? 120 : 0 },
   },
-  h('div', { style: { display: 'flex', fontSize: 72, lineHeight: 0.95, color: COLORS.accent, fontWeight: 700, letterSpacing: '-2px' } }, 'NO SEAT'),
-  h('div', { style: { display: 'flex', fontSize: 72, lineHeight: 0.95, color: COLORS.accent, fontWeight: 700, letterSpacing: '-2px' } }, 'LIMITS'),
-  h('div', { style: { display: 'flex', marginTop: 28, fontSize: 24, fontWeight: 700, letterSpacing: '2px', color: COLORS.ink } }, 'UNLIMITED TEAMMATES'),
-  h('div', { style: { display: 'flex', marginTop: 12, fontSize: 23, color: COLORS.muted } }, 'Starter and Growth'));
+  h('div', { style: { display: 'flex', fontSize: 72, lineHeight: 0.95, color: headline, fontWeight: 700, letterSpacing: '-2px' } }, 'NO SEAT'),
+  h('div', { style: { display: 'flex', fontSize: 72, lineHeight: 0.95, color: headline, fontWeight: 700, letterSpacing: '-2px' } }, 'LIMITS'),
+  h('div', { style: { display: 'flex', marginTop: 28, fontSize: 22, fontWeight: 700, letterSpacing: '2px', color: label } }, 'UNLIMITED TEAMMATES'),
+  h('div', { style: { display: 'flex', marginTop: 12, fontSize: 20, color: detail } }, 'On every plan, and free to self-host'));
 }
 
 function legalVisual(kind) {
@@ -204,17 +220,22 @@ function image(variant) {
   h('div', {
     style: { display: 'flex', position: 'absolute', left: 72, top: 58 },
   }, brand()),
+  ...(variant.artSrc ? [h('img', {
+    src: variant.artSrc, width: ART_WIDTH, height: 630, alt: '',
+    style: { position: 'absolute', right: 0, top: 0, width: ART_WIDTH, height: 630, objectFit: 'cover' },
+  })] : []),
+  ...(variant.artSrc && variant.visual === 'pricing' ? [h('div', { style: { display: 'flex', position: 'absolute', right: 0, top: 0 } }, pricingVisual(true))] : []),
   h('div', {
-    style: { display: 'flex', position: 'absolute', left: 72, right: 72, top: 148, bottom: 58, alignItems: 'center', justifyContent: 'space-between' },
+    style: { display: 'flex', position: 'absolute', left: 72, right: variant.artSrc ? ART_WIDTH + 56 : 72, top: 148, bottom: 58, alignItems: 'center', justifyContent: 'space-between' },
   },
-  h('div', { style: { display: 'flex', flexDirection: 'column', width: 650 } },
+  h('div', { style: { display: 'flex', flexDirection: 'column', width: variant.artSrc ? 632 : 650 } },
     h('div', { style: { display: 'flex', marginBottom: 22, fontSize: 17, fontWeight: 700, letterSpacing: '2.4px', color: COLORS.accent } }, variant.eyebrow),
     h('div', { style: { display: 'flex', flexDirection: 'column', fontSize: 58, lineHeight: 1.08, fontWeight: 600, letterSpacing: '-1.8px' } },
       ...variant.headline.map((line) => h('div', { key: line, style: { display: 'flex' } }, line)),
     ),
     h('div', { style: { display: 'flex', marginTop: 26, fontSize: 21, lineHeight: 1.5, color: COLORS.muted } }, variant.support),
   ),
-  visual(variant.visual)),
+  ...(variant.artSrc ? [] : [visual(variant.visual)])),
   h('div', { style: { display: 'flex', position: 'absolute', left: 72, bottom: 34, width: 70, height: 5, borderRadius: 3, background: COLORS.accent } }));
 }
 
