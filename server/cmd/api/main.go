@@ -905,6 +905,13 @@ func main() {
 	if err != nil {
 		fatalWithSentry("failed to initialize AI connections", err)
 	}
+	// Re-map untouched standard profiles when shared connections change. The
+	// customer-mode instance never seals keys; managed defaults are never bypassed.
+	standardProfileRemapper, err := service.NewAIStandardProfiles(repository.NewAIStandardProfileRepository(db), "", "customer", nil)
+	if err != nil {
+		fatalWithSentry("failed to initialize standard AI profile re-mapping", err)
+	}
+	aiConnectionService.SetChangeObserver(standardProfileRemapper)
 	aiProfileService := service.NewAIProfileService(repository.NewAIProfileRepository(db), aiConnectionService).SetAdmissionPolicy(editionServices.ConnectionPolicy).CheckRuntimeReadiness()
 	externalMCPService, err := service.NewExternalMCPService(
 		externalMCPRepo,
@@ -1884,7 +1891,8 @@ func main() {
 	handlers.Docs.SetImageEditService(docsImageEditService)
 	handlers.Docs.SetSupportWidgetConfigProvider(supportInboxService)
 	handlers.SupportInboxWidget.SetPublicOrigin(cfg.PublicWidgetURL)
-	handlers.AIConnection.SetKnowledgeConfiguration(cfg.OpenAIAPIKey != "", cfg.OpenAIEmbeddingModel, supportLLMRouter.ConfiguredChatProviders())
+	supportEmbeddingModel := llm.SupportEmbeddingModel(cfg.OpenAIAPIKey, cfg.OpenRouterAPIKey, cfg.OpenAIEmbeddingModel)
+	handlers.AIConnection.SetKnowledgeConfiguration(supportEmbeddingModel != "", supportEmbeddingModel, supportLLMRouter.ConfiguredChatProviders())
 	handlers.Docs.SetPublicWidgetURLs(cfg.PublicWidgetURL, cfg.PublicSDKURL)
 	handlers.Auth.SetPublicWidgetURLs(cfg.PublicWidgetURL, cfg.PublicSDKURL)
 	handlers.Auth.SetSetupGuideEnabled(setupSuccessEnabled)

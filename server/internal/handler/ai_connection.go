@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -115,6 +116,24 @@ func (h *AIConnectionHandler) Disconnect(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	w.WriteHeader(204)
+}
+
+// Test runs a minimal live completion with the connection's credential. The
+// body is optional; {"model": "..."} selects a specific model.
+func (h *AIConnectionHandler) Test(w http.ResponseWriter, r *http.Request) {
+	var req model.TestAIConnectionRequest
+	if err := decodeAIConnection(w, r, &req); err != nil && !errors.Is(err, io.EOF) {
+		writeError(w, 400, "invalid connection test request")
+		return
+	}
+	workspace, user, id := middleware.GetWorkspaceID(r.Context()), middleware.GetUserID(r.Context()), chi.URLParam(r, "connectionID")
+	result, err := h.service.TestConnection(r.Context(), workspace, user, id, req.Model)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "AI connection test failed", "error", err, "workspace_id", workspace, "connection_id", id)
+		h.failure(w, err)
+		return
+	}
+	writeJSON(w, 200, result)
 }
 
 // Refresh is mounted behind RequireInternalAPISecret, never user-supplied auth.

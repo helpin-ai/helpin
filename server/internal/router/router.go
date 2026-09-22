@@ -541,6 +541,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.Post("/", h.AIConnection.Create)
 					r.Post("/{connectionID}/poll", h.AIConnection.Poll)
 					r.Post("/{connectionID}/reconnect", h.AIConnection.Reconnect)
+					r.Post("/{connectionID}/test", h.AIConnection.Test)
 					r.Delete("/{connectionID}", h.AIConnection.Disconnect)
 				})
 			}

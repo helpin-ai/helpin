@@ -63,11 +63,15 @@ support email also needs operator-owned `SUPPORT_EMAIL_REPLY_DOMAIN` and
 `SUPPORT_EMAIL_ROUTE_DOMAIN`; SMTP application mail does not configure these
 support channels.
 
-Agent profiles configure agent runs only. Knowledge embeddings still use the
+Agent profiles configure agent runs only. Knowledge embeddings use the
 server's `OPENAI_API_KEY`, optional `OPENAI_BASE_URL` (an OpenAI-compatible API
 base including `/v1`), and `OPENAI_EMBEDDING_MODEL` (default
-`text-embedding-3-small`). The model must return 1,536 dimensions. Without this
-configuration, semantic retrieval is unavailable and keyword search remains.
+`text-embedding-3-small`). When `OPENAI_API_KEY` is empty and `OPENROUTER_API_KEY`
+is set, embeddings use OpenRouter's embeddings endpoint (at `OPENROUTER_BASE_URL`
+when set) with `openai/text-embedding-3-small`; an `OPENAI_EMBEDDING_MODEL`
+without a vendor prefix gets `openai/` added. `OPENAI_API_KEY` always takes
+precedence. The model must return 1,536 dimensions. Without either key,
+semantic retrieval is unavailable and keyword search remains.
 A local chat connection alone does not configure embeddings. Workspace AI
 settings reports this distinction; "configured" does not mean the endpoint
 has been contacted or verified. Help-center AI answers and automatic triage

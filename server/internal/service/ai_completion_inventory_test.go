@@ -16,7 +16,10 @@ func TestProductionLLMCallsUseAICompleter(t *testing.T) {
 	}
 	var violations []string
 	for _, filename := range files {
-		if strings.HasSuffix(filename, "_test.go") || filename == "ai_completion.go" || filename == "ai_usage_meter.go" {
+		// ai_connection_verify.go probes a customer's own connection credential
+		// (managed connections are rejected), so there is no platform usage to meter.
+		if strings.HasSuffix(filename, "_test.go") || filename == "ai_completion.go" || filename == "ai_usage_meter.go" ||
+			filename == "ai_connection_verify.go" {
 			continue
 		}
 		parsed, err := parser.ParseFile(token.NewFileSet(), filename, nil, 0)
