@@ -12,7 +12,7 @@ const PRODUCTS = [
   { name: 'Projects', preview: 'projects', Icon: FolderKanban, title: 'Manage the plan—not just the requests.', body: 'Organize roadmaps, sprints, dependencies, and objectives. Keep relevant customer needs attached while your team manages product development, maintenance, and internal work.', href: '/new/products/projects' },
   { name: 'CRM', preview: 'crm', Icon: Building2, title: 'See the relationship behind the deal.', body: 'Manage contacts, companies, and pipelines alongside the conversations and work that explain the next move.', href: '/new/products/crm' },
   { name: 'Knowledge', preview: 'knowledge', Icon: BookOpen, title: 'Give people and agents a useful place to look.', body: 'Publish customer guides, maintain internal docs, and select the knowledge your agents can use.', href: '/new/products/knowledge' },
-  { name: 'Agents', preview: 'agents', Icon: Bot, title: 'Put the history to work.', body: 'Use specialists to answer questions, plan tasks, prepare changes, and follow up. Choose their tools and the actions that need review.', href: '/new/products/ai-agents' },
+  { name: 'Agents', preview: 'agents', Icon: Bot, title: 'Put the history to work.', body: 'Use specialists to answer questions, plan tasks, and follow up after the release. Choose their tools and the actions that need review.', href: '/new/products/ai-agents' },
 ] as const;
 
 export function CommunityShowcase() {

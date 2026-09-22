@@ -7,9 +7,8 @@ import { DEMO_URL, GITHUB_URL } from '../new/_components/ui';
 
 const SELF_HOSTED_FEATURES = [
   'Every module and Growth feature, no plan limits',
-  'Support, docs, and AI agents on by default',
-  'Turn on projects, CRM, and automation in config',
-  'Bring your own AI provider keys',
+  'Support, projects, CRM, meetings, docs, and automation',
+  'AI agents with your own provider keys',
   'No Helpin AI or tool fees',
   'Community help on GitHub',
 ];

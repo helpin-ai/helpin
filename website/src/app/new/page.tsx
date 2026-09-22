@@ -263,7 +263,7 @@ export default function NewHomePage() {
             <h2 id="final-cta-title">Put your customer history to work.</h2>
             <p className="lede">No card required. Every module, unlimited teammates, and AI usage included.</p>
             <CtaRow primaryLabel="Start free trial" secondaryHref={DEMO_URL} secondaryLabel="Book a demo" />
-            <div className="assure"><span>Open source</span><span>Self-host or use Helpin Cloud</span><span>Built for SaaS teams</span></div>
+            <div className="assure"><span>Open source</span><span>Self-host free, or let us run it</span><span>Built for SaaS teams</span></div>
           </div>
         </div>
       </section>

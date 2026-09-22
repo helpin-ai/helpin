@@ -63,7 +63,7 @@ export function Availability({ category }: { category: string }) {
   return <span className="eyebrow">{category}</span>;
 }
 export function CtaNote({ trial = false, support = false }: { trial?: boolean; support?: boolean }) {
-  return <p className="cta-note">{trial ? `14-day cloud trial · No card${support ? ' · Or self-host free' : ''}` : 'Open source · Run it yourself or use our cloud'}</p>;
+  return <p className="cta-note">{trial ? `14-day free trial · No card required${support ? ' · Or self-host free' : ''}` : 'Open source · Self-host free, or let us run it'}</p>;
 }
 export type FAQItem = readonly [question: string, answer: string, href?: string, label?: string];
 export function FAQList({ items, className }: { items: readonly FAQItem[]; className: string }) {

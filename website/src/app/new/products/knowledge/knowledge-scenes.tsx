@@ -21,7 +21,7 @@ function Sources(){return <>
     ['Reviewed and published', 'Your team approves the guidance for readers.'],
     ['Agent source refreshed', 'The selected source index includes the published update.'],
   ].map(([title,detail],index)=><Step key={title} at={3.5+index*1.7}><span>{String(index+1).padStart(2,'0')}</span><div><strong>{title}</strong><p>{detail}</p></div></Step>)}</div>
-  <p className="ks-source-maintenance">Refresh the source index after the content changes.</p>
+  <p className="ks-source-maintenance">The index refreshes when you publish or unpublish.</p>
 </>;}
 function Quill(){return <>
   <div className="ks-quill-heading"><img src="/new/agents/quill.svg" width={43} height={43} alt=""/><div><strong>Docs agent</strong><span>Review the integration setup guide</span></div><span className="ks-badge">Docs agent</span></div>
