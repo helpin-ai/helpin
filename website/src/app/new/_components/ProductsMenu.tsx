@@ -33,7 +33,7 @@ export function AskAgentMenuCard() {
       <span className="nav-agent-context-card"><UserRound size={16}/><i/><i/></span>
     </div>
     <span className="nav-products-agent-icon"><Bot size={29} strokeWidth={1.5} aria-hidden="true" /></span>
-    <span className="nav-products-agent-copy"><small>Built on your customer history</small><b>Ask Agent</b><span>Your workspace assistant. Ask questions, investigate issues, and coordinate specialist agents using customer history.</span></span>
+    <span className="nav-products-agent-copy"><b>Ask Agent</b><span>Your workspace assistant. Ask questions, investigate issues, and coordinate specialist agents using customer history.</span></span>
     <span className="nav-products-agent-cta">See Ask Agent in action<ArrowRight size={15} aria-hidden="true" /></span>
     <span className="nav-agent-benefits">{['Faster answers', 'Less context switching', 'Happier customers'].map(item => <span key={item}><Check size={11} aria-hidden="true"/>{item}</span>)}</span>
   </Link>;
