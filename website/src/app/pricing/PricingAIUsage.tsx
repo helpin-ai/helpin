@@ -24,9 +24,9 @@ export function AIUsage() {
     <section id="ai-usage" className="pricing-ai-section">
       <div className="wrap">
         <SectionHead
-          eyebrow="Choose how your agents work"
-          title={"Match the AI\nto the job."}
-          lede="Choose managed AI, an approved provider connection, or personal access where enabled. Match the model to the task."
+          eyebrow="AI usage"
+          title={"Choose how you\npay for AI."}
+          lede="Use your plan’s allowance, workspace API keys, or a personal provider connection."
         />
         <div
           className="pricing-ai-providers"
@@ -57,13 +57,13 @@ export function AIUsage() {
             <span className="pricing-ai-route-icon">
               <Cloud size={21} strokeWidth={1.5} aria-hidden="true" />
             </span>
-            <span className="pricing-ai-route-label">MANAGED AI</span>
-            <h3>Start with the included allowance.</h3>
+            <span className="pricing-ai-route-label">INCLUDED ALLOWANCE</span>
+            <h3>Every Cloud plan includes AI.</h3>
             <p>
-              Use the AI allocation in your Cloud plan.
+              A monthly AI allowance, billed and managed by Helpin. Nothing to configure.
             </p>
             <span className="pricing-ai-route-footer">
-              Managed by Helpin
+              Included with every Cloud plan
             </span>
           </article>
           <article>
@@ -71,12 +71,12 @@ export function AIUsage() {
               <KeyRound size={21} strokeWidth={1.5} aria-hidden="true" />
             </span>
             <span className="pricing-ai-route-label">YOUR PROVIDER KEYS</span>
-            <h3>Connect your provider account.</h3>
+            <h3>Bring your own API keys.</h3>
             <p>
-              Use approved shared connections for team workflows.
+              Connect OpenAI, Anthropic, OpenRouter or an approved compatible endpoint. Keys are shared across the workspace and power team automations. The provider bills you directly.
             </p>
             <span className="pricing-ai-route-footer">
-              Cloud enablement required
+              Enabled by Helpin for Cloud workspaces
             </span>
           </article>
           <article>
@@ -84,19 +84,19 @@ export function AIUsage() {
               <UserRound size={21} strokeWidth={1.5} aria-hidden="true" />
             </span>
             <span className="pricing-ai-route-label">PERSONAL CONNECTION</span>
-            <h3>Keep personal access personal.</h3>
+            <h3>Use your own account for manual runs.</h3>
             <p>
-              Where enabled, use it for manually started runs—not shared automation.
+              Sign in with ChatGPT or connect a personal provider key for runs you start yourself. Not used for shared automations.
             </p>
             <span className="pricing-ai-route-footer">
-              Availability-dependent.
+              Subject to your provider’s terms
             </span>
           </article>
         </div>
         <div className="pricing-usage-summary">
-          <p><strong>Monthly allowance.</strong> Renews monthly, without carryover—even with annual billing.</p>
-          <p><strong>Extra usage is optional.</strong> Opt-in, metered overage. No prepaid blocks.</p>
-          <p><strong>Provider billing is separate.</strong> Cloud platform and paid-tool fees still apply. Community self-hosting has no Helpin token or tool fees.</p>
+          <p><strong>Allowance resets monthly.</strong> No carryover, including on annual plans.</p>
+          <p><strong>Overage is opt-in.</strong> Metered, pay for what you use. No prepaid blocks.</p>
+          <p><strong>Your keys, your bill.</strong> With your own keys or personal connection, the provider charges you directly. Your Helpin plan, configured Cloud token fees, and any paid-tool fees still apply. Self-hosted Community edition has no Helpin AI or tool fees.</p>
         </div>
         <details className="pricing-ai-charges" id="ai-usage-charges">
           <summary><span><strong>Models, allowances, and usage rates</strong><small>Compare model profiles and check the billing details.</small></span></summary>
