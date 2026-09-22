@@ -1,26 +1,18 @@
 import { HeroVortex } from '../new/_components/HeroVortex';
-import { BookOpen, Bot, CalendarDays, ChevronRight, Kanban, MessagesSquare, Users } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { CtaRow, DEMO_URL } from '../new/_components/ui';
-import { ConnectedWorkspace } from '../new/_components/ConnectedWorkspace';
 import { PricingPlans } from './PricingPlans';
-import { AIUsage, CloudComparison, HostingOptions, PricingFAQ, WorkflowComparison } from './PricingSections';
-
-const PRODUCTS = [
-  { label: 'Support', Icon: MessagesSquare }, { label: 'Projects', Icon: Kanban },
-  { label: 'CRM', Icon: Users }, { label: 'Meetings', Icon: CalendarDays },
-  { label: 'Knowledge', Icon: BookOpen }, { label: 'AI agents', Icon: Bot },
-];
+import { AIUsage, CloudComparison, HostingOptions, PricingFAQ } from './PricingSections';
 
 export default function PricingPage() {
   return <div className="pricing-page">
-    <section className="pricing-hero"><HeroVortex variant="orbit" tone="dark" /><div className="wrap"><div className="pricing-breadcrumb"><Link href="/new">Helpin</Link><ChevronRight size={12} aria-hidden="true" /><span>Pricing</span></div><span className="eyebrow">Open source or Helpin Cloud</span><h1>One product.<br /><span>Choose how you run it.</span></h1><p className="lede">Self-host the open-source product, or let us handle the hosting. Cloud plans include unlimited teammates and a monthly AI allowance.</p><nav className="pricing-jump" aria-label="Pricing options"><a href="#cloud-plans">Cloud plans ↓</a><a href="#self-hosted">Self-hosting ↓</a><a href="#enterprise">Enterprise ↓</a></nav><ul className="pricing-products" aria-label="Included product modules">{PRODUCTS.map(({label,Icon}) => <li key={label}><Icon size={18} aria-hidden="true" />{label}</li>)}</ul></div></section>
+    <section className="pricing-hero"><HeroVortex variant="orbit" tone="dark" /><div className="wrap"><div className="pricing-breadcrumb"><Link href="/new">Helpin</Link><ChevronRight size={12} aria-hidden="true" /><span>Pricing</span></div><span className="eyebrow">Helpin pricing</span><h1>One platform.<br /><span>Your whole team, connected.</span></h1><p className="lede">All product modules. Unlimited teammates. Choose managed Cloud hosting or run Helpin yourself.</p><nav className="pricing-jump" aria-label="Pricing options"><a href="#cloud-plans">Cloud plans ↓</a><a href="#self-hosted">Self-hosting ↓</a><a href="#enterprise">Enterprise ↓</a></nav></div></section>
     <PricingPlans />
     <HostingOptions />
-    <WorkflowComparison />
     <AIUsage />
     <CloudComparison />
     <PricingFAQ />
-    <section className="final-cta final-cta-connected" aria-labelledby="pricing-final-title"><div className="wrap"><ConnectedWorkspace /><div className="final"><span className="eyebrow">Start with your team’s next customer request</span><h2 id="pricing-final-title">Try Helpin Cloud for 14 days.</h2><p className="lede">Explore the product on a Growth trial, then choose Starter or Growth.</p><CtaRow primaryLabel="Start free trial" secondaryHref={DEMO_URL} secondaryLabel="Book a demo" /><p className="pricing-note">No card required · Or <a href="/new/self-hosting">self-host the open-source product</a></p></div></div></section>
+    <section className="pricing-final" aria-labelledby="pricing-final-title"><div className="wrap"><div><h2 id="pricing-final-title">Choose your plan. Bring your team.</h2><p className="lede">Try Cloud without a card, or <a href="/new/self-hosting">explore self-hosting</a>.</p></div><CtaRow primaryLabel="Start free trial" secondaryHref={DEMO_URL} secondaryLabel="Book a demo" /></div></section>
   </div>;
 }

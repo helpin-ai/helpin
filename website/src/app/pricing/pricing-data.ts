@@ -6,7 +6,7 @@ export const PLANS = [
     name: 'Starter',
     price: 99,
     annual: 79,
-    description: 'For teams bringing their customer work together.',
+    description: 'A shared starting point for support, product, and customer teams.',
     Icon: Users,
     seats: 'Unlimited',
     aiUsage: 'Standard',
@@ -28,7 +28,7 @@ export const PLANS = [
     name: 'Growth',
     price: 299,
     annual: 239,
-    description: 'For teams that need more capacity and agent controls.',
+    description: 'For teams ready to build repeatable workflows around their agents.',
     Icon: Building2,
     seats: 'Unlimited',
     aiUsage: '3× Starter',
@@ -40,9 +40,9 @@ export const PLANS = [
       'Unlimited teams',
       'Unlimited documents',
       'Unlimited contacts',
-      'Custom AI agents',
-      'Scheduled agents',
-      'Advanced automation flows',
+      'Create agents for your process.',
+      'Run them on a schedule.',
+      'Connect the steps through automation.',
       'AI conversation routing',
       'Remove Helpin branding',
       'Priority support',
@@ -51,19 +51,19 @@ export const PLANS = [
 ];
 
 export const COMPARISON_FEATURES = [
-  { name: 'Users & Access', category: true },
+  { name: 'Your team', category: true },
   { name: 'Users', starter: 'Unlimited', growth: 'Unlimited' },
   { name: 'Teams', starter: '10', growth: 'Unlimited' },
   { name: 'Mobile access', starter: true, growth: true },
 
-  { name: 'Projects', category: true },
+  { name: 'Planning and delivery', category: true },
   { name: 'Tasks & stories', starter: 'Unlimited', growth: 'Unlimited' },
   { name: 'Epics', starter: 'Unlimited', growth: 'Unlimited' },
   { name: 'Sprints', starter: true, growth: true },
   { name: 'Board, list, and roadmap views', starter: true, growth: true },
   { name: 'Custom fields', starter: true, growth: true },
 
-  { name: 'Support', category: true },
+  { name: 'Customer support', category: true },
   { name: 'Live chat widget', starter: true, growth: true },
   { name: 'Shared inbox', starter: true, growth: true },
   { name: 'Team inboxes', starter: true, growth: true },
@@ -73,14 +73,14 @@ export const COMPARISON_FEATURES = [
   { name: 'SLA management', starter: false, growth: true },
   { name: 'AI conversation routing', starter: false, growth: true },
 
-  { name: 'CRM', category: true },
+  { name: 'Customer relationships', category: true },
   { name: 'Contacts', starter: '5,000', growth: 'Unlimited' },
   { name: 'Deals and pipelines', starter: true, growth: true },
   { name: 'Gmail sync', starter: true, growth: true },
   { name: 'Buyer signal detection', starter: true, growth: true },
   { name: 'Deal automation', starter: false, growth: true },
 
-  { name: 'Knowledge', category: true },
+  { name: 'Docs and help center', category: true },
   { name: 'Documents', starter: '500', growth: 'Unlimited' },
   { name: 'Internal docs', starter: true, growth: true },
   { name: 'Public help center', starter: true, growth: true },
@@ -90,85 +90,91 @@ export const COMPARISON_FEATURES = [
   { name: 'Meetings', category: true },
   { name: 'Notes, summaries and action items', starter: true, growth: true },
 
-  { name: 'AI Agents', category: true },
+  { name: 'Agent capabilities and usage', category: true },
   { name: 'Included AI usage', starter: 'Standard monthly allowance', growth: '3× Starter allowance' },
   { name: 'Built-in agents', starter: true, growth: true },
   { name: 'Custom agents', starter: false, growth: true },
   { name: 'Agent scheduling', starter: false, growth: true },
   { name: 'Extra AI usage', starter: 'Exact metered usage', growth: 'Exact metered usage' },
 
-  { name: 'Platform', category: true },
+  { name: 'Automation and connections', category: true },
   { name: 'GitHub integration', starter: true, growth: true },
   { name: 'Import tools', starter: true, growth: true },
   { name: 'Module access controls', starter: true, growth: true },
   { name: 'Automation flows', starter: false, growth: true },
 
-  { name: 'Branding', category: true },
+  { name: 'Your customer-facing experience', category: true },
   { name: 'Widget branding', starter: 'Helpin', growth: 'Removed' },
 
-  { name: 'Customer service', category: true },
+  { name: 'Help from our team', category: true },
   { name: 'Standard support', starter: true, growth: true },
   { name: 'Priority support', starter: false, growth: true },
 ];
 
 export const FAQS = [
-  { q: 'Can we use Helpin without a Cloud subscription?', a: 'Yes. Self-host the open-source product on your own infrastructure. You cover hosting and provider costs; Enterprise features are licensed separately.' },
-  { q: 'What is the difference between open source and Enterprise?', a: 'The product modules are open source. Code in ee/ directories, including subscription billing, managed AI routes and commercial policies, uses a separate Enterprise license.' },
   {
-    q: 'Do I need to buy modules separately?',
-    a: 'No. Both Cloud plans include support, projects, CRM, meetings and knowledge. Capacity, automation and agent controls vary by plan.',
+    "q": "Can we use Helpin without a Cloud subscription?",
+    "a": "Yes. Operate the open-source edition yourself and configure the services it uses. Your team remains responsible for the installation and its operating costs."
   },
   {
-    q: 'What happens if I use all of my included AI usage?',
-    a: 'Paid workspaces can allow extra AI usage. Only exact usage beyond the allowance is settled each month, before applicable taxes — there are no prepaid blocks.',
+    "q": "How does the open-source edition differ from Enterprise?",
+    "a": "The product modules are open source. Certain capabilities use a separate Enterprise license. Check the licensing terms for the functionality you intend to deploy."
   },
   {
-    q: 'How is AI usage measured?',
-    a: 'Usage reflects the model size and the amount of AI work completed. Routine tasks use the allowance more slowly than demanding planning, coding, and review work. Settings shows consumption as a simple percentage.',
+    "q": "Do we buy each product module separately?",
+    "a": "No. Modules are bundled; capacity and advanced features differ."
   },
   {
-    q: 'Can I switch plans anytime?',
-    a: 'You can change Cloud plans in billing settings. Review the effective date and any billing adjustment before confirming.',
+    "q": "What happens when our AI allowance runs out?",
+    "a": "Without overage enabled, new paid AI work is blocked when the remaining allowance cannot cover it. Wait for the monthly renewal or enable optional metered overage. Review the rates in AI usage and charges before enabling it."
   },
   {
-    q: 'Do you offer annual billing?',
-    a: 'Yes. Starter is $99/month or $948/year. Growth is $299/month or $2,868/year.',
+    "q": "What determines AI consumption?",
+    "a": "The model and work performed. Settings displays usage."
   },
   {
-    q: 'Is a credit card required for the trial?',
-    a: 'No. New workspaces start on a no-card 14-day Growth trial. Add billing only when you are ready to keep using the workspace.',
+    "q": "Can we change Cloud plans?",
+    "a": "Use billing settings; check timing and adjustments before confirming."
   },
   {
-    q: 'What AI models does Helpin support?',
-    a: 'Choose from supported models through OpenAI, Anthropic, OpenRouter, and approved compatible endpoints. Cloud includes managed AI access; you can also connect your own provider accounts when BYOK is enabled for your workspace. Where enabled, ChatGPT subscription connections are personal and available for manually started runs. Provider charges and any configured Cloud platform or paid-tool fees are separate.',
+    "q": "Is annual billing available?",
+    "a": "Yes. The plan cards show yearly totals."
   },
   {
-    q: 'How does pricing compare to my current tools?',
-    a: 'Compare the tools and workflows your team actually needs. Helpin combines customer work in one product; your savings depend on the subscriptions you replace and the integrations you keep.',
+    "q": "Do we need a card for the trial?",
+    "a": "No. Try Cloud without adding a card on a 14-day Growth trial. After the trial, choose Starter or Growth to continue. Until you choose a paid plan, workspace access is limited."
   },
   {
-    q: 'Does unused AI usage roll over?',
-    a: 'No. Cloud AI allowances reset each month on your renewal date, including on annual subscriptions.',
+    "q": "Can we choose the models our agents use?",
+    "a": "Configure the model for the agent’s work, along with its instructions, tools, and approval settings. Check which connections are available in your deployment."
   },
   {
-    q: 'How does per-workspace pricing work?',
-    a: 'Each Cloud workspace gets its own plan and billing. Create a workspace, start with a 14-day Growth trial, then choose Starter or Growth. If you do not upgrade, workspace access is limited until you choose a paid plan.',
+    "q": "Will Helpin cost less than our current tools?",
+    "a": "Compare the subscriptions, integrations, and operating work you would actually replace. A useful evaluation should show whether Helpin improves your workflow as well as how the costs compare."
   },
   {
-    q: 'Are seats really unlimited on paid plans?',
-    a: 'Yes. Starter and Growth both include unlimited seats. We do not charge per seat — your whole team gets access.',
+    "q": "Does unused AI allowance carry forward?",
+    "a": "No; it renews monthly."
   },
   {
-    q: 'Is my data safe?',
-    a: 'Access follows workspace and resource permissions. Review our privacy policy and deployment documentation, or self-host to operate the data and infrastructure yourself.',
+    "q": "What does “per workspace” mean?",
+    "a": "Each workspace has separate billing."
   },
+  {
+    "q": "Will adding teammates increase our subscription?",
+    "a": "No seat-based charge applies."
+  },
+  {
+    "q": "How should we evaluate access and data handling?",
+    "a": "Review workspace permissions, agent tool access, and the connected services your workflows use. For self-hosting, also review the infrastructure and operational responsibilities your team will take on."
+  }
 ];
 
 export const WORKFLOW_COMPARISON = [
-  { tool: 'Jira / Linear / ClickUp', workflow: 'Project planning', domain: 'linear.app' },
-  { tool: 'Intercom / Zendesk / Freshdesk', workflow: 'Customer support', domain: 'intercom.com' },
-  { tool: 'HubSpot / Salesforce / Pipedrive', workflow: 'Customer relationships', domain: 'hubspot.com' },
-  { tool: 'Notion / Confluence / Slite', workflow: 'Knowledge and docs', domain: 'notion.so' },
-  { tool: 'ChatGPT / Claude / Copilot', workflow: 'AI assistance', domain: 'openai.com' },
+  { tool: 'Jira / Linear / ClickUp', workflow: 'Project planning', description: 'Keep the reason behind the task within reach.', domain: 'linear.app' },
+  { tool: 'Intercom / Zendesk / Freshdesk', workflow: 'Customer support', description: 'Answer with the earlier conversation in view.', domain: 'intercom.com' },
+  { tool: 'HubSpot / Salesforce / Pipedrive', workflow: 'Customer relationships', description: 'See what needs attention before the next call.', domain: 'hubspot.com' },
+  { tool: 'Notion / Confluence / Slite', workflow: 'Knowledge and docs', description: 'Turn what you learn into guidance others can use.', domain: 'notion.so' },
+  { tool: 'ChatGPT / Claude / Copilot', workflow: 'AI assistance', description: 'Give the next action more than the latest message.', domain: 'openai.com' },
 ];
 
