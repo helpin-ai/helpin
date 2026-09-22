@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import shutil
 import subprocess
 import tarfile
 import tempfile
@@ -29,7 +30,23 @@ def port():
 def main():
     image = subprocess.check_output(['docker', 'image', 'inspect', 'alpine:3.20', '--format', '{{index .RepoDigests 0}}'], text=True).strip()
     with tempfile.TemporaryDirectory(prefix='helpin-cli-acceptance-') as temp:
-        root = Path(temp)
+        root = Path(temp).resolve()
+        # This fixture runs only a tiny Go HTTP server in Alpine, not Community.
+        # Stub its RAM probe while delegating all other operations to real Docker.
+        # Production resource rejection remains covered by CLI unit tests.
+        docker = shutil.which('docker')
+        assert docker, 'Docker is required'
+        shim_dir = root / 'fixture-bin'
+        shim_dir.mkdir()
+        shim = shim_dir / 'docker'
+        shim.write_text('#!/usr/bin/env python3\n'
+                        'import os, sys\n'
+                        'if sys.argv[1:] == ["info", "--format", "{{.MemTotal}}"]:\n'
+                        '    print(8 * 1024 * 1024 * 1024)\n'
+                        'else:\n'
+                        f'    os.execv({docker!r}, [{docker!r}, *sys.argv[1:]])\n')
+        shim.chmod(0o755)
+        os.environ['PATH'] = str(shim_dir) + os.pathsep + os.environ['PATH']
         binary = root / 'helpin'
         run('go', 'build', '-o', str(binary), '.', cwd=ROOT / 'community/cli', env={**os.environ, 'GOWORK': 'off'})
         source = root / 'helpin-community'
