@@ -53,9 +53,18 @@ export function CloudComparison() {
       <div className="wrap">
         <SectionHead
           eyebrow="The details behind your choice"
-          title={"Compare the capacity.\nCheck the controls."}
-          lede="Choose the plan around the work you want to run—not just the features you might use someday."
+          title="Choose the capacity you need."
+          lede="The key differences first. Open the full comparison for every feature and limit."
         />
+        <table className="pricing-table pricing-key-differences">
+          <caption className="sr-only">Key differences between Starter and Growth</caption>
+          <colgroup><col className="pricing-feature-column" /><col /><col /></colgroup>
+          <thead><tr><th scope="col">At a glance</th><th scope="col">Starter</th><th scope="col">Growth</th></tr></thead>
+          <tbody>{ALL.flatMap(group => group.rows).filter(row => ['Teams', 'Contacts', 'Documents', 'Included AI usage', 'Custom agents', 'Automation flows'].includes(row.name)).map(row => <tr key={row.name}><th scope="row">{row.name}</th><Cell value={row.starter} plan="Starter" /><Cell value={row.growth} plan="Growth" /></tr>)}</tbody>
+        </table>
+        <details className="pricing-ai-charges pricing-full-comparison">
+          <summary><span><strong>Compare every feature</strong><small>All plan limits, controls, and shared capabilities.</small></span></summary>
+          <div>
         <table className="pricing-table">
           <caption className="sr-only">
             Starter and Growth Cloud limits and features. Checkmarks mean
@@ -133,6 +142,8 @@ export function CloudComparison() {
             ))}
           </dl>
         </div>
+          </div>
+        </details>
         <p className="pricing-note">
           This comparison covers Cloud subscriptions; self-hosting is a separate deployment choice.{" "}
           <a href="#self-hosted">Explore the self-hosted edition →</a>
