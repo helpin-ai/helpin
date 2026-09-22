@@ -821,6 +821,26 @@ describe('DockTranscript', () => {
     });
 
     expect(container.textContent).toContain('Bob Smith approved');
+    expect(container.querySelector('[data-dock-decision="approved"]')).not.toBeNull();
+    expect(container.querySelector('[data-message-sender]')).toBeNull();
+  });
+
+  it.each(['approval', 'approval_request_resolution'])('renders %s as an activity decision without a synthetic user message', (messageType) => {
+    act(() => {
+      root.render(<DockTranscript
+        stream={streamWithMessages([
+          userMessage('real-user', 'Approved. Continue.', 1),
+          { ...userMessage('decision', 'Approved. Continue.', 2, 'user-2'), message_type: messageType },
+        ])}
+        active={false}
+        workspaceId="ws-1"
+      />);
+    });
+
+    const decision = container.querySelector('[data-dock-decision="approved"]');
+    expect(decision?.textContent).toBe('Bob Smith approved');
+    expect(container.textContent?.match(/Approved\. Continue\./g)).toHaveLength(1);
+    expect(container.querySelectorAll('[data-message-sender]')).toHaveLength(1);
   });
 
   it('groups adjacent successful calls without timing and keeps failures separate', () => {

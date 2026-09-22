@@ -1930,6 +1930,24 @@ describe('AskAgentsDock', () => {
     );
   });
 
+  it('overlays user questions while keeping the composer in the background', async () => {
+    const run = { id: 'run-1', status: 'paused', pause_reason: 'human_input' } as never;
+    mocks.getChat.mockResolvedValue({ data: chatDetail({ chat: { ...CHAT, active_run_id: 'run-1' }, run }), error: null });
+    mocks.listChatRunInteractions.mockResolvedValue({ data: { interactions: [{
+      id: 'question-1', interaction_kind: 'request_user_input', status: 'pending',
+      request_schema_version: '1', title: 'Choose a project',
+      request_payload: { questions: [{ id: 'project', question: 'Which project should I use?', options: [{ label: 'Helpin', description: 'Main project' }] }] },
+    }] }, error: null });
+
+    await renderDock();
+    await waitForText('Which project should I use?');
+    const overlay = document.body.querySelector('[data-dock-interaction-overlay]');
+    expect(overlay?.textContent).toContain('Which project should I use?');
+    expect(document.body.querySelector('[data-agent-dock-chat-scroll]')?.contains(overlay)).toBe(false);
+    expect(dockTextarea()?.disabled).toBe(true);
+    expect(dockTextarea()?.closest('[data-dock-interaction-background]')?.hasAttribute('inert')).toBe(true);
+  });
+
   it('renders the approval card from the interactions fallback when events are empty', async () => {
     const run = { id: 'run-1', status: 'paused', pause_reason: 'human_approval' } as never;
     mocks.getChat.mockResolvedValue({
@@ -1971,16 +1989,12 @@ describe('AskAgentsDock', () => {
       await Promise.resolve();
     });
 
-    const approvalNotice = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button')).find(
-      (button) => button.textContent?.includes('Agent needs your approval'),
-    );
-    expect(approvalNotice).not.toBeUndefined();
-    await act(async () => {
-      approvalNotice?.click();
-      await Promise.resolve();
-    });
-
-    expect(scrollContainer?.scrollTop).toBe(1_000);
+    const overlay = document.body.querySelector('[data-dock-interaction-overlay]');
+    expect(overlay?.textContent).toContain('Confirm fallback launch');
+    expect(scrollContainer?.contains(overlay)).toBe(false);
+    expect(scrollContainer?.scrollTop).toBe(200);
+    expect(dockTextarea()).not.toBeNull();
+    expect(scrollContainer?.closest('[data-dock-interaction-background]')?.hasAttribute('inert')).toBe(true);
     expect(document.body.textContent).not.toContain('Agent needs your approval');
 
     const approve = Array.from(document.body.querySelectorAll('button')).find(

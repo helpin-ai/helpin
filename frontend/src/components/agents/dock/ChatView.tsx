@@ -25,7 +25,7 @@ import { DockTranscript, type DockMessageSubmission } from './DockTranscript';
 import { DockPlanConfirmCard } from './DockPlanConfirmCard';
 import { ExecutionStrip } from './ExecutionStrip';
 import { PendingInteractionCard } from './PendingInteractionCard';
-import { ApprovalAttentionBanner } from './ApprovalAttentionBanner';
+import { DockInteractionLayer } from './DockInteractionLayer';
 import { CodingPlanPanel } from '@/components/pm/CodingSession/CodingPlanPanel';
 import type { AskAgentAvatarState } from '@/components/agents/AskAgentAvatar';
 import { deriveAskAgentAvatarState } from '@/components/agents/askAgentPresence';
@@ -46,7 +46,6 @@ import {
 } from './dockChatTimeline';
 import {
   isDockTranscriptStreaming,
-  isStructuredInteractionKind,
   resolveDockComposerState,
   transformDockStream,
 } from './dockChatState';
@@ -564,14 +563,13 @@ export function ChatView({
   useEffect(() => {
     const node = scrollRef.current;
     if (node && autoFollowRef.current) node.scrollTop = node.scrollHeight;
-  }, [transformed, currentPlan, pendingInteraction, visibleSendError]);
+  }, [transformed, currentPlan, visibleSendError]);
 
   const effectiveInteraction = pendingInteraction ?? fallbackInteraction;
   const dockConfirm = effectiveInteraction ? parseDockPlanConfirm(effectiveInteraction.request_payload) : null;
-  const structuredPending = !dockConfirm && isStructuredInteractionKind(effectiveInteraction?.interaction_kind);
   const composer = resolveDockComposerState(
     run ? { status: run.status, pause_reason: run.pause_reason } : null,
-    !!dockConfirm || structuredPending,
+    !!effectiveInteraction,
     detailLoading || sending || agentDefaultUnavailable,
   );
 
@@ -887,19 +885,35 @@ export function ChatView({
     });
   }, [plans, runsById, transformed, workspaceId]);
 
-  const needsApproval = (
-    (run?.status === 'paused' && run.pause_reason === 'human_approval')
-    || effectiveInteraction?.interaction_kind.includes('approval') === true
-    || Object.values(runsById).some(
-      (childRun) => childRun.status === 'paused' && childRun.pause_reason === 'human_approval',
-    )
-  );
   const runtimeStream = transformed?.stream ?? streamState;
   const showRuntimeTimeline = isDockTranscriptStreaming(run)
     || (run?.status !== 'cancelled' && runtimeStream !== null && hasAuthoritativeDockRuntimeTimeline(runtimeStream));
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <DockInteractionLayer
+      active={active}
+      interactionId={effectiveInteraction?.interaction_id}
+      prompt={effectiveInteraction && (dockConfirm ? (
+        <DockPlanConfirmCard
+          payload={dockConfirm}
+          onDecision={(decision, note) => resolveInteraction(effectiveInteraction.interaction_id, {
+            response_payload: { decision }, followup_message: note,
+          })}
+        />
+      ) : run ? (
+        <PendingInteractionCard
+          workspaceId={workspaceId}
+          runId={run.id}
+          interaction={effectiveInteraction}
+          resolve={resolveInteraction}
+          onResolved={() => {
+            clearPendingInteraction(effectiveInteraction.interaction_id);
+            void refreshDetail();
+            void refetch();
+          }}
+        />
+      ) : null)}
+    >
       <div className="relative flex min-h-0 flex-1 flex-col">
       <div ref={scrollRef} data-agent-dock-chat-scroll className={`${activityStyles.activityHost} min-h-0 flex-1 overflow-y-auto px-5 pb-24 pt-3 sm:px-6`}>
       <div className="space-y-3">
@@ -999,30 +1013,6 @@ export function ChatView({
             </div>
           </div>
         )}
-        {effectiveInteraction && dockConfirm && (
-          <DockPlanConfirmCard
-            payload={dockConfirm}
-            onDecision={(decision, note) =>
-              resolveInteraction(effectiveInteraction.interaction_id, {
-                response_payload: { decision },
-                followup_message: note,
-              })
-            }
-          />
-        )}
-        {effectiveInteraction && !dockConfirm && run && (
-          <PendingInteractionCard
-            workspaceId={workspaceId}
-            runId={run.id}
-            interaction={effectiveInteraction}
-            resolve={resolveInteraction}
-            onResolved={() => {
-              clearPendingInteraction(effectiveInteraction.interaction_id);
-              void refreshDetail();
-              void refetch();
-            }}
-          />
-        )}
         {displayedLiveProgress ? (
           <div
             className="mt-2 shrink-0 border-t border-border/40 px-1 pt-2"
@@ -1037,9 +1027,6 @@ export function ChatView({
       {!atBottom && <ScrollToLatestButton onClick={scrollToLatest} />}
       </div>
       {currentPlan && (!hasWorkPlanOrigin(currentPlan) || !mergedStream || !dockWorkPlans(mergedStream).some(plan => plan.origin?.event_id === currentPlan.origin?.event_id)) && <div className="max-h-48 shrink-0 overflow-y-auto px-5" data-current-work-plan><CodingPlanPanel plan={currentPlan} runStatus={run?.status} title="Current work plan" defaultOpen={false} /></div>}
-      {needsApproval && !atBottom ? (
-        <ApprovalAttentionBanner onReview={scrollToLatest} />
-      ) : null}
       {run?.status === 'paused' && run.pause_reason === 'authentication' && workspaceSlug && (
         <div className="px-3.5 py-2"><AISettingsLink slug={workspaceSlug} className="text-xs underline text-quiet-text-secondary">Review AI access to continue</AISettingsLink></div>
       )}
@@ -1127,6 +1114,6 @@ export function ChatView({
           </div>
         </div>
       )}
-    </div>
+    </DockInteractionLayer>
   );
 }

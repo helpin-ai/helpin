@@ -55,7 +55,7 @@ export function resolveDockComposerState(
     return { visible: true, enabled: true, placeholder: 'Ask anything, or tell an agent what to do' };
   }
   if (hasStructuredInteraction) {
-    return { visible: false, enabled: false, placeholder: '' };
+    return { visible: true, enabled: false, placeholder: 'Respond to the agent above' };
   }
   switch (run.status) {
     case 'completed':

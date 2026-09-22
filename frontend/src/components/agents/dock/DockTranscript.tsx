@@ -7,6 +7,7 @@ import { Tick01Icon } from '@/lib/icons';
 import { DockActivityTimeline, DockActivitySteps } from './DockActivityTimeline';
 import { buildDockActivityTimeline } from './dockActivityTimeline';
 import { DockAnswerSegment } from './DockAnswerSegment';
+import { DockDecisionRow } from './DockDecisionRow';
 import { useDockAnswerAnimation } from './useDockAnswerAnimation';
 import { cn } from '@/lib/utils';
 import type { AgentRunPauseReason, CodingSessionStreamState } from '@/lib/pmTypes';
@@ -16,6 +17,7 @@ import {
   segmentTimestamp,
   transcriptSegmentTimes,
   TranscriptSegmentView,
+  type TranscriptSegment,
 } from '@/components/agents/transcript';
 import { useAuthStore } from '@/stores/authStore';
 import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
@@ -257,7 +259,9 @@ export function DockTranscript({
       ? (compactAssistantProgress ? DOCK_WORKING_SEGMENT_KINDS : DOCK_CHAT_SEGMENT_KINDS)
       : DOCK_SEGMENT_KINDS,
     compactAssistantProgress: false,
-  }) : [];
+  }).map((segment): TranscriptSegment => segment.kind === 'user' && segment.message.message_type === 'approval'
+    ? { ...segment, kind: 'review_decision' }
+    : segment) : [];
   const animateAnswer = useDockAnswerAnimation(segments, active || !!latestSubmission);
   if (!stream) return null;
   const plans = historyWorkOnly ? [] : dockWorkPlans(stream, savedWorkPlans);
@@ -413,7 +417,13 @@ export function DockTranscript({
               data-assistant-presentation={assistantPresentation?.presentation}
               data-final-response-separator={assistantPresentation?.separator ? 'true' : undefined}
             >
-              {workingGroup && timelineView ? (
+              {entry.segment.kind === 'review_decision' ? (
+                <DockDecisionRow
+                  message={entry.segment.message}
+                  actor={actorsById.get(entry.segment.message.resolver_user_id ?? entry.segment.message.actor_user_id ?? '')
+                    ?? fallbackActor ?? (user ? { id: user.id, email: user.email, full_name: user.full_name } : null)}
+                />
+              ) : workingGroup && timelineView ? (
                 <DockActivityTimeline group={workingGroup} runStatus={runStatus} pauseReason={pauseReason} />
               ) : workingGroup ? (
                 <DockWorkingGroup
