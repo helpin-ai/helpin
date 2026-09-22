@@ -6,6 +6,7 @@ import { PreviewNav } from '../../_components/PreviewNav';
 import { PreviewFooter } from '../../_components/PreviewFooter';
 import { ConnectedWorkspace } from '../../_components/ConnectedWorkspace';
 import { CtaRow, GITHUB_URL, SectionHead } from '../../_components/ui';
+import { HeroVortex } from '../../_components/HeroVortex';
 import { AgentWorkflowArt } from './agent-workflow-art';
 import { ProductPreview } from '../../_components/product-previews';
 import './agents.css';
@@ -75,6 +76,7 @@ export default function AIAgentsPage() {
     <PreviewNav />
     <main className="agents-page">
       <section className="agents-hero" aria-labelledby="agents-title">
+        <HeroVortex />
         <div className="wrap">
           <div className="agents-breadcrumb"><Link href="/new">Helpin</Link><ChevronRight size={12} /><span>AI agents</span></div>
           <div className="agents-hero-copy">
@@ -96,7 +98,7 @@ export default function AIAgentsPage() {
 
         </div>
       </section>
-      <section id="agent-ask" className="agents-ask-section ask-agent-section">
+      <section id="agent-ask" className="agents-ask-section ask-agent-section section-motion"><HeroVortex variant="converge" tone="dark" />
         <div className="wrap">
           <SectionHead eyebrow="Ask Agent" title="Ask Agent: one question, the right agents on it." lede="Your starting point across the workspace. Ask Agent finds answers and handles work directly, bringing in specialists when the request calls for them." />
           <figure className="ask-agent-preview">
@@ -111,7 +113,7 @@ export default function AIAgentsPage() {
           <div className="agents-capability-grid">{CAPABILITIES.map(item => <article key={item.id}><div className="agents-capability-copy"><span className="eyebrow">{item.label}</span><h3>{item.title}</h3><p>{item.description}</p></div><AgentWorkflowArt variant={item.id} /><div className="agents-prompt"><span>Try asking</span><p>“{item.prompt}”</p></div></article>)}</div>
         </div>
       </section>
-      <section id="agent-coding" className="agents-coding">
+      <section id="agent-coding" className="agents-coding section-motion"><HeroVortex variant="converge" tone="dark" />
         <div className="wrap agents-split">
           <div><SectionHead eyebrow="Coding agents" title="From bug report to a fix your team reviews, with the customer attached." lede="The coding task planner refines the task, the coding agent prepares the change, and the code reviewer checks it. The customer conversation stays attached throughout." /><ul className="agents-benefits"><li><MessageSquare size={18} />Keep the original request attached.</li><li><Code2 size={18} />Work in a connected repository.</li><li><ShieldCheck size={18} />Review the changes before they ship.</li></ul><a className="agents-text-link" href={`${GITHUB_URL}/blob/develop/docs/coding-agent-execution.md`} target="_blank" rel="noopener noreferrer">Explore coding agents<ArrowRight size={15} /></a></div>
           <AgentWorkflowArt variant="coding" />
