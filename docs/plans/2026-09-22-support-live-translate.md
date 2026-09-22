@@ -213,7 +213,7 @@ Release acceptance must cover: same-language; manual history; first message; liv
 ### Implementation record — 2026-09-22
 
 - Implemented in the existing `waqar-fixes` worktree without subagents. The unrelated My Work mockups remain untouched.
-- Persistence owner: additive `202609220001_support_live_translate.sql`, `repository/support_live_translate.go`, and the existing translation repository. Database triggers snapshot policy revision, enabled state, reading language and source hash when each incoming message is accepted. Existing caches remain; no historical jobs are created. Legacy `inherit` resolves conservatively against all three old switches; explicit conversation choices win.
+- Persistence owner: additive `202609220002_support_live_translate.sql`, `repository/support_live_translate.go`, and the existing translation repository. Database triggers snapshot policy revision, enabled state, reading language and source hash when each incoming message is accepted. Existing caches remain; no historical jobs are created. Legacy `inherit` resolves conservatively against all three old switches; explicit conversation choices win.
 - Execution owner: `service/support_live_translate.go` (two bounded incoming workers), `service/support_pending_send.go` (two durable sender-private send workers), and `service/support_translation_review.go` (one independent sample/maintenance worker). They use the API shutdown context and PostgreSQL row locks/skip-locked claims. Attempts fence stale workers; no database lock spans a model call. Incoming failures get at most three attempts with cooldown; crashed claims can recover after two minutes.
 - Send recovery freezes the submitted request, recipient, target hint, policy revision and client identity. Commit rechecks policy, lease, privacy state, recipient and attachment ownership. Permissions are resolved again after generation. Attachments link atomically with the final message. Confirmed messages retain the submission time and stable client identity; recovery includes recent confirmations to close HTTP/realtime races. Sent draft text is cleared; failed/dismissed operations have a 30-day retention window and privacy deletion removes them immediately.
 - Events: `support_translation` is scoped to its conversation; `support_pending_send` also has `TargetUserID`. Visitors never receive pending operations; the public widget projection explicitly rejects pending replies in addition to its existing allowlist. Separate AI-generated replies retain their existing path.
@@ -229,3 +229,10 @@ Release acceptance must cover: same-language; manual history; first message; liv
 - Plan clarifications: the composer retains its draft only until the fast enqueue request is durably acknowledged, then clears while translation continues in the thread. Cached translation summaries are fetched in batched requests independently of history rendering. Quality-review sampling is approximately 0.4%, not a per-message gate. A provider-free greeting/attachment-only reply does not require invented language evidence.
 
 - Commit scope: `feat(support): implement conversation-scoped live translation` on `waqar-fixes`. No push or deployment is included.
+
+### Develop integration — 2026-09-22
+
+- User authorized pulling `develop` and pushing the integrated work to `develop`.
+- Merged upstream `279d07f3b`. Renumbered the unpublished Live Translate migration to `202609220002` because upstream now owns `202609220001` for support schema parity. Updated its integration-test reference and restored the query-key export required by the conversation controls.
+- Rechecked the combined migration ledger, backend support regressions and disposable PostgreSQL translation/privacy/concurrency scenarios; all pass. Upstream dependency changes are installed from the frozen lockfile.
+- Final merged checks also pass: 280 support UI tests across 38 files, frontend TypeScript checking, and the enterprise API build.

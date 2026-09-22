@@ -47,7 +47,7 @@ func TestLiveTranslatePostgresArrivalPolicyAndPrivacy(t *testing.T) {
 	privacyCheck(t, db, "SELECT NOT enabled AND revision=3 FROM support_live_messages WHERE message_id=?", offAgain)
 	// Reapplying DDL preserves explicit off and resolves legacy inherit conservatively.
 	privacyExec(t, db, "UPDATE support_translation_conversations SET translation_mode='inherit' WHERE conversation_id=?", conv.ID)
-	migration, err := os.ReadFile("../dbmigrate/sql/202609220001_support_live_translate.sql")
+	migration, err := os.ReadFile("../dbmigrate/sql/202609220002_support_live_translate.sql")
 	if err != nil {
 		t.Fatal(err)
 	}

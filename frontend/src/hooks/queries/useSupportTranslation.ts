@@ -7,7 +7,7 @@ import type {
   SupportTranslationOptions,
 } from '@/lib/pmTypes';
 
-const translationOptionsKey = (workspaceId: string, conversationId: string, userId?: string) =>
+export const translationOptionsKey = (workspaceId: string, conversationId: string, userId?: string) =>
   ['support', workspaceId, 'translation', conversationId, userId] as const;
 const base = (conversationId: string) => `/support/inbox/conversations/${conversationId}/translation`;
 const params = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
