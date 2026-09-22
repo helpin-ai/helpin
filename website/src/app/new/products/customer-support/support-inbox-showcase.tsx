@@ -50,7 +50,10 @@ export function SupportInboxShowcase() {
     const distance = element.offsetHeight - (element.firstElementChild as HTMLElement).offsetHeight;
     window.scrollTo({ top: scrollY + element.getBoundingClientRect().top - 80 + (second ? distance * 0.8 : 0), behavior: 'instant' });
   }
-  return <figure className="support-inbox-showcase" data-enhanced={enhanced}>
+  return <figure className="support-inbox-showcase" data-enhanced={enhanced} onFocusCapture={event => {
+    // Reveal inbox controls when keyboard navigation reaches behind the overlay.
+    if (enhanced && assisted && (event.target as HTMLElement).closest('.swi-shell')) selectStep(false);
+  }}>
     <div ref={track} className="support-inbox-scroll" data-enhanced={enhanced}>
       <div className="support-inbox-sticky">
         <div className="support-inbox-steps" aria-label="Explore the support workflow">
