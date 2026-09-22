@@ -113,7 +113,7 @@ describe('website SEO metadata', () => {
     for (const path of previewRoutes) {
       const metadata = previewMetadata('Helpin — ' + path, path);
       const image = metadata.openGraph.images[0];
-      assert.match(image.url, /-green-v2\.png$/);
+      assert.match(image.url, /-green-v3\.png$/);
       assert.equal(metadata.twitter.images[0].url, image.url);
       assert.equal(metadata.robots.index, false);
       assert.ok(existsSync(new URL('../public' + image.url, import.meta.url)));
@@ -122,12 +122,12 @@ describe('website SEO metadata', () => {
 
   it('ships social images as optimized 1200 by 630 PNG files', () => {
     const images = [
-      '../public/og/helpin-home-green-v2.png',
-      '../public/og/helpin-new-home-green-v2.png',
-      '../public/og/helpin-pricing-green-v2.png',
-      '../public/og/helpin-privacy-green-v2.png',
-      '../public/og/helpin-terms-green-v2.png',
-      ...previewRoutes.filter(path => path !== '/new').map(path => '../public/og/helpin-' + path.split('/').at(-1) + '-green-v2.png'),
+      '../public/og/helpin-home-green-v3.png',
+      '../public/og/helpin-new-home-green-v3.png',
+      '../public/og/helpin-pricing-green-v3.png',
+      '../public/og/helpin-privacy-green-v3.png',
+      '../public/og/helpin-terms-green-v3.png',
+      ...previewRoutes.filter(path => path !== '/new').map(path => '../public/og/helpin-' + path.split('/').at(-1) + '-green-v3.png'),
       '../../frontend/public/og/helpin-app.png',
       '../../frontend/public/og/helpin-shared-document.png',
     ];

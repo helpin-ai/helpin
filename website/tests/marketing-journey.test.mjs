@@ -46,7 +46,8 @@ describe('marketing signup journey', () => {
   it('describes trial expiry consistently with app billing behavior', () => {
     assert.match(files.pricing, /14-day Growth trial/);
     assert.match(files.pricing, /choose Starter or Growth/i);
-    assert.match(files.pricing, /workspace access is limited/i);
+    // Matches the app: "This workspace is locked until billing is reactivated."
+    assert.match(files.pricing, /workspace is locked/i);
   });
 
   it('keeps conversion buttons out of the pricing hero', () => {
