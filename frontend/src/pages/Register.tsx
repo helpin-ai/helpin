@@ -44,22 +44,22 @@ export default function Register() {
     <PublicPageShell>
       <Card className="w-full">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Create your account</CardTitle>
-          <CardDescription>Get started with Helpin</CardDescription>
+          <CardTitle role="heading" aria-level={1} className="text-2xl">Create your account</CardTitle>
+          <CardDescription>A new home for your team’s work.</CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="fullName">Full name</Label>
-              <Input id="fullName" type="text" placeholder="Jane Doe" value={fullName} onChange={e => setFullName(e.target.value)} required />
+              <Input id="fullName" name="name" autoComplete="name" type="text" placeholder="Jane Doe" value={fullName} onChange={e => setFullName(e.target.value)} required />
             </div>
             <div className="space-y-2">
               <Label htmlFor="email">Work email</Label>
-              <Input id="email" type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} required />
+              <Input id="email" name="email" autoComplete="email" type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} required />
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
-              <Input id="password" type="password" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} required minLength={8} />
+              <Input id="password" name="password" autoComplete="new-password" type="password" placeholder="At least 8 characters" value={password} onChange={e => setPassword(e.target.value)} required minLength={8} />
             </div>
           </CardContent>
           <CardFooter className="flex flex-col gap-4 mt-4">

@@ -178,13 +178,13 @@ export default function Login() {
     <PublicPageShell>
       <Card className="w-full">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Sign in</CardTitle>
+          <CardTitle role="heading" aria-level={1} className="text-2xl">{twoFaToken ? 'Verify it’s you' : 'Welcome back'}</CardTitle>
           <CardDescription>
             {twoFaToken
               ? useRecoveryCode
                 ? 'Enter one of your saved recovery codes.'
                 : 'Enter the 6-digit code from your authenticator app.'
-              : 'Enter your email and password.'}
+              : 'Sign in to your Helpin workspace.'}
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
