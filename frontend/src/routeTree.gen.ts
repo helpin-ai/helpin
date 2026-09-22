@@ -19,10 +19,14 @@ import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SharedShareTokenRouteImport } from './routes/shared/$shareToken'
 import { Route as ShareShareTokenRouteImport } from './routes/share/$shareToken'
+import { Route as PortalSlugRouteImport } from './routes/portal/$slug'
 import { Route as JoinTokenRouteImport } from './routes/join/$token'
 import { Route as AuthenticatedWorkspacesRouteImport } from './routes/_authenticated/workspaces'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
+import { Route as PortalSlugIndexRouteImport } from './routes/portal/$slug/index'
+import { Route as PortalSlugSignInRouteImport } from './routes/portal/$slug/sign-in'
+import { Route as PortalSlugCallbackRouteImport } from './routes/portal/$slug/callback'
 import { Route as AuthenticatedWSlugRouteImport } from './routes/_authenticated/w/$slug'
 import { Route as AuthenticatedOauthAuthorizeRouteImport } from './routes/_authenticated/oauth/authorize'
 import { Route as AuthenticatedWSlugIndexRouteImport } from './routes/_authenticated/w/$slug/index'
@@ -172,6 +176,11 @@ const ShareShareTokenRoute = ShareShareTokenRouteImport.update({
   path: '/share/$shareToken',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PortalSlugRoute = PortalSlugRouteImport.update({
+  id: '/portal/$slug',
+  path: '/portal/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const JoinTokenRoute = JoinTokenRouteImport.update({
   id: '/join/$token',
   path: '/join/$token',
@@ -191,6 +200,21 @@ const AuthenticatedOnboardingRoute = AuthenticatedOnboardingRouteImport.update({
   id: '/onboarding',
   path: '/onboarding',
   getParentRoute: () => AuthenticatedRoute,
+} as any)
+const PortalSlugIndexRoute = PortalSlugIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => PortalSlugRoute,
+} as any)
+const PortalSlugSignInRoute = PortalSlugSignInRouteImport.update({
+  id: '/sign-in',
+  path: '/sign-in',
+  getParentRoute: () => PortalSlugRoute,
+} as any)
+const PortalSlugCallbackRoute = PortalSlugCallbackRouteImport.update({
+  id: '/callback',
+  path: '/callback',
+  getParentRoute: () => PortalSlugRoute,
 } as any)
 const AuthenticatedWSlugRoute = AuthenticatedWSlugRouteImport.update({
   id: '/w/$slug',
@@ -792,10 +816,14 @@ export interface FileRoutesByFullPath {
   '/profile': typeof AuthenticatedProfileRoute
   '/workspaces': typeof AuthenticatedWorkspacesRoute
   '/join/$token': typeof JoinTokenRoute
+  '/portal/$slug': typeof PortalSlugRouteWithChildren
   '/share/$shareToken': typeof ShareShareTokenRoute
   '/shared/$shareToken': typeof SharedShareTokenRoute
   '/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
+  '/portal/$slug/callback': typeof PortalSlugCallbackRoute
+  '/portal/$slug/sign-in': typeof PortalSlugSignInRoute
+  '/portal/$slug/': typeof PortalSlugIndexRoute
   '/w/$slug/automation': typeof AuthenticatedWSlugAutomationRouteWithChildren
   '/w/$slug/crm': typeof AuthenticatedWSlugCrmRouteWithChildren
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
@@ -908,6 +936,9 @@ export interface FileRoutesByTo {
   '/share/$shareToken': typeof ShareShareTokenRoute
   '/shared/$shareToken': typeof SharedShareTokenRoute
   '/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
+  '/portal/$slug/callback': typeof PortalSlugCallbackRoute
+  '/portal/$slug/sign-in': typeof PortalSlugSignInRoute
+  '/portal/$slug': typeof PortalSlugIndexRoute
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
   '/w/$slug/notifications': typeof AuthenticatedWSlugNotificationsRoute
   '/w/$slug/setup': typeof AuthenticatedWSlugSetupRoute
@@ -1014,10 +1045,14 @@ export interface FileRoutesById {
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/_authenticated/workspaces': typeof AuthenticatedWorkspacesRoute
   '/join/$token': typeof JoinTokenRoute
+  '/portal/$slug': typeof PortalSlugRouteWithChildren
   '/share/$shareToken': typeof ShareShareTokenRoute
   '/shared/$shareToken': typeof SharedShareTokenRoute
   '/_authenticated/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/_authenticated/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
+  '/portal/$slug/callback': typeof PortalSlugCallbackRoute
+  '/portal/$slug/sign-in': typeof PortalSlugSignInRoute
+  '/portal/$slug/': typeof PortalSlugIndexRoute
   '/_authenticated/w/$slug/automation': typeof AuthenticatedWSlugAutomationRouteWithChildren
   '/_authenticated/w/$slug/crm': typeof AuthenticatedWSlugCrmRouteWithChildren
   '/_authenticated/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
@@ -1130,10 +1165,14 @@ export interface FileRouteTypes {
     | '/profile'
     | '/workspaces'
     | '/join/$token'
+    | '/portal/$slug'
     | '/share/$shareToken'
     | '/shared/$shareToken'
     | '/oauth/authorize'
     | '/w/$slug'
+    | '/portal/$slug/callback'
+    | '/portal/$slug/sign-in'
+    | '/portal/$slug/'
     | '/w/$slug/automation'
     | '/w/$slug/crm'
     | '/w/$slug/dashboard'
@@ -1246,6 +1285,9 @@ export interface FileRouteTypes {
     | '/share/$shareToken'
     | '/shared/$shareToken'
     | '/oauth/authorize'
+    | '/portal/$slug/callback'
+    | '/portal/$slug/sign-in'
+    | '/portal/$slug'
     | '/w/$slug/dashboard'
     | '/w/$slug/notifications'
     | '/w/$slug/setup'
@@ -1351,10 +1393,14 @@ export interface FileRouteTypes {
     | '/_authenticated/profile'
     | '/_authenticated/workspaces'
     | '/join/$token'
+    | '/portal/$slug'
     | '/share/$shareToken'
     | '/shared/$shareToken'
     | '/_authenticated/oauth/authorize'
     | '/_authenticated/w/$slug'
+    | '/portal/$slug/callback'
+    | '/portal/$slug/sign-in'
+    | '/portal/$slug/'
     | '/_authenticated/w/$slug/automation'
     | '/_authenticated/w/$slug/crm'
     | '/_authenticated/w/$slug/dashboard'
@@ -1464,6 +1510,7 @@ export interface RootRouteChildren {
   ResetPasswordRoute: typeof ResetPasswordRoute
   VerifyEmailRoute: typeof VerifyEmailRoute
   JoinTokenRoute: typeof JoinTokenRoute
+  PortalSlugRoute: typeof PortalSlugRouteWithChildren
   ShareShareTokenRoute: typeof ShareShareTokenRoute
   SharedShareTokenRoute: typeof SharedShareTokenRoute
 }
@@ -1540,6 +1587,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShareShareTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/portal/$slug': {
+      id: '/portal/$slug'
+      path: '/portal/$slug'
+      fullPath: '/portal/$slug'
+      preLoaderRoute: typeof PortalSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/join/$token': {
       id: '/join/$token'
       path: '/join/$token'
@@ -1567,6 +1621,27 @@ declare module '@tanstack/react-router' {
       fullPath: '/onboarding'
       preLoaderRoute: typeof AuthenticatedOnboardingRouteImport
       parentRoute: typeof AuthenticatedRoute
+    }
+    '/portal/$slug/': {
+      id: '/portal/$slug/'
+      path: '/'
+      fullPath: '/portal/$slug/'
+      preLoaderRoute: typeof PortalSlugIndexRouteImport
+      parentRoute: typeof PortalSlugRoute
+    }
+    '/portal/$slug/sign-in': {
+      id: '/portal/$slug/sign-in'
+      path: '/sign-in'
+      fullPath: '/portal/$slug/sign-in'
+      preLoaderRoute: typeof PortalSlugSignInRouteImport
+      parentRoute: typeof PortalSlugRoute
+    }
+    '/portal/$slug/callback': {
+      id: '/portal/$slug/callback'
+      path: '/callback'
+      fullPath: '/portal/$slug/callback'
+      preLoaderRoute: typeof PortalSlugCallbackRouteImport
+      parentRoute: typeof PortalSlugRoute
     }
     '/_authenticated/w/$slug': {
       id: '/_authenticated/w/$slug'
@@ -2611,6 +2686,22 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
   AuthenticatedRouteChildren,
 )
 
+interface PortalSlugRouteChildren {
+  PortalSlugCallbackRoute: typeof PortalSlugCallbackRoute
+  PortalSlugSignInRoute: typeof PortalSlugSignInRoute
+  PortalSlugIndexRoute: typeof PortalSlugIndexRoute
+}
+
+const PortalSlugRouteChildren: PortalSlugRouteChildren = {
+  PortalSlugCallbackRoute: PortalSlugCallbackRoute,
+  PortalSlugSignInRoute: PortalSlugSignInRoute,
+  PortalSlugIndexRoute: PortalSlugIndexRoute,
+}
+
+const PortalSlugRouteWithChildren = PortalSlugRoute._addFileChildren(
+  PortalSlugRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
@@ -2621,6 +2712,7 @@ const rootRouteChildren: RootRouteChildren = {
   ResetPasswordRoute: ResetPasswordRoute,
   VerifyEmailRoute: VerifyEmailRoute,
   JoinTokenRoute: JoinTokenRoute,
+  PortalSlugRoute: PortalSlugRouteWithChildren,
   ShareShareTokenRoute: ShareShareTokenRoute,
   SharedShareTokenRoute: SharedShareTokenRoute,
 }
