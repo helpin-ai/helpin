@@ -63,6 +63,12 @@ export function PreviewNav({ homepage = false }: { homepage?: boolean }) {
     return () => { document.body.style.overflow = previousOverflow; };
   }, [mobileOpen]);
 
+  // Read the open state through a ref so opening a menu doesn't re-subscribe the scroll
+  // listener; re-running it read window.scrollY inside the click, forcing a synchronous layout.
+  const expandedRef = useRef(expanded);
+  expandedRef.current = expanded;
+  useEffect(() => { if (expanded) setHidden(false); }, [expanded]);
+
   useEffect(() => {
     let previousY = Math.max(0, window.scrollY);
     let travel = 0;
@@ -73,7 +79,7 @@ export function PreviewNav({ homepage = false }: { homepage?: boolean }) {
       const delta = y - previousY;
       previousY = y;
       setScrolled(y > 12);
-      if (y <= 60 || expanded || nav.current?.querySelector(':focus-visible')) {
+      if (y <= 60 || expandedRef.current || nav.current?.querySelector(':focus-visible')) {
         travel = 0; setHidden(false); return;
       }
       if (!delta) return;
@@ -86,7 +92,7 @@ export function PreviewNav({ homepage = false }: { homepage?: boolean }) {
     const onScroll = () => { if (!frame) frame = window.requestAnimationFrame(update); };
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => { window.removeEventListener('scroll', onScroll); window.cancelAnimationFrame(frame); };
-  }, [expanded]);
+  }, []);
 
   const keyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === 'Escape' && expanded) {
