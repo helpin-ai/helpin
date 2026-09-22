@@ -29,18 +29,13 @@ export function PublicPageVortex() {
   const lights = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(false);
 
-  // A brief intro settles automatically; visibility and reduced motion still apply.
+  // Loop while visible; preserve reduced-motion and background-tab behavior.
   useEffect(() => {
     const element = container.current;
     if (!element) return;
     const media = window.matchMedia('(prefers-reduced-motion: reduce)');
     let visible = false;
-    let finished = false;
-    const update = () => setPlaying(visible && !document.hidden && !media.matches && !finished);
-    const timer = window.setTimeout(() => {
-      finished = true;
-      update();
-    }, 4000);
+    const update = () => setPlaying(visible && !document.hidden && !media.matches);
     const observer = new IntersectionObserver(([entry]) => {
       visible = entry.isIntersecting;
       update();
@@ -50,7 +45,6 @@ export function PublicPageVortex() {
     media.addEventListener('change', update);
     document.addEventListener('visibilitychange', update);
     return () => {
-      window.clearTimeout(timer);
       observer.disconnect();
       media.removeEventListener('change', update);
       document.removeEventListener('visibilitychange', update);
@@ -105,8 +99,8 @@ export function PublicPageVortex() {
                 {bundle.lines.filter((_, j) => j % 3 === 1).map((line, j) => (
                   <span key={j} className="public-vortex-light" style={{
                     offsetPath: `path("${line.d}")`,
-                    '--light-duration': `${6 + (j % 3) * 1.2}s`,
-                    '--light-delay': `${-(j * 1.7 + bi * 2.1)}s`,
+                    '--light-duration': `${12 + (j % 3) * 2.4}s`,
+                    '--light-delay': `${-(j * 3.4 + bi * 4.2)}s`,
                   } as CSSProperties} />
                 ))}
               </div>;
