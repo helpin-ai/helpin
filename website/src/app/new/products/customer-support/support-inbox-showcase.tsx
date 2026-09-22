@@ -60,11 +60,6 @@ export function SupportInboxShowcase() {
   }}>
     <div ref={track} className="support-inbox-scroll" data-enhanced={enhanced}>
       <div className="support-inbox-sticky">
-        <div className="support-inbox-steps" aria-label="Explore the support workflow">
-          <button type="button" aria-pressed={!assisted} onClick={() => selectStep(false)}>01 <span>The shared inbox</span></button>
-          <button type="button" aria-pressed={assisted} onClick={() => selectStep(true)}>02 <span>Ask Agent beside you</span></button>
-          <a href="#support-operations">Continue ↓</a>
-        </div>
         <div className="support-inbox-stage"><SupportWorkspace scrollStory assisted={!enhanced || assisted} highlight={active} /></div>
         <p className="support-inbox-scroll-caption">{enhanced && assisted ? 'Ask Agent brings the findings together. Your teammate reviews the reply.' : 'Start with the conversation. Keep the customer’s history in view.'}</p>
       </div>
