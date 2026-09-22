@@ -39,6 +39,7 @@ type Handlers struct {
 	Workspace           *handler.WorkspaceHandler
 	Setup               *handler.SetupHandler
 	Capability          *handler.CapabilityHandler
+	SampleData          *handler.SampleDataHandler
 	Edition             EditionRoutes
 	Settings            *handler.SettingsHandler
 	Automation          *handler.AutomationHandler
@@ -688,6 +689,11 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermWorkspaceUpdate)).Put("/setup/goals", h.Setup.UpdateGoals)
 					r.Patch("/setup/me", h.Setup.UpdatePreference)
 					r.Post("/setup/recommendations/{taskKey}/start", h.Setup.StartRecommendation)
+				}
+				if h.SampleData != nil {
+					r.Get("/sample-data", h.SampleData.Get)
+					r.With(requirePerm(authorization.PermWorkspaceUpdate)).Post("/sample-data", h.SampleData.Load)
+					r.With(requirePerm(authorization.PermWorkspaceUpdate)).Delete("/sample-data", h.SampleData.Remove)
 				}
 				if h.GitHubApp != nil {
 					r.With(requirePerm(authorization.PermSettingsRead)).Get("/github/app-status", h.GitHubApp.Status)

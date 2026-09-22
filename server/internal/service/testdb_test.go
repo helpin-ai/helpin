@@ -21,6 +21,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 	}
 
 	tables := []string{
+		serviceSampleDataItemsSchema,
 		`CREATE TABLE users (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			email TEXT NOT NULL UNIQUE,
