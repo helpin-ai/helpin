@@ -1,0 +1,17 @@
+/* Marketing demos should only consume vertical scrolling after interaction.
+   Keep native scrolling, touch gestures, and keyboard focus; no wheel interception.
+   Dialogs are deliberately excluded so their content stays reachable. */
+.hp3 :is(.product-preview, .adp, .crm-workspace, .mw-preview, .kp-workspace, .aaw-scene, .support-workspace):not(:focus-within)
+  :is(.product-preview-viewport, .adp-scroll, .cw-table-scroll, .cw-record-content,
+      .cw-properties, .cw-crm, .cw-apps, .mw-panel, .kp-library,
+      .kp-workspace-nav, .kp-space-nav, .kp-app-rail, .kp-code pre,
+      .aaw-roster-list, .aaw-content, .swi-messages, .swi-queues, .swi-list,
+      .pth-layout, .pth-followup) {
+  overflow-y: hidden;
+}
+
+.hp3 .adp:focus-visible {
+  outline: 2px solid var(--em);
+  outline-offset: 4px;
+  border-radius: 12px;
+}
