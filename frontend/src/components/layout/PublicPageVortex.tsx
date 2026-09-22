@@ -1,5 +1,4 @@
 import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
-import { PauseIcon, PlayIcon } from '@/lib/icons';
 import './public-page-vortex.css';
 
 // Adapted from website/src/app/new/_components/HeroVortex.tsx.
@@ -28,16 +27,20 @@ export function PublicPageVortex() {
   const id = useId().replace(/:/g, '');
   const container = useRef<HTMLDivElement>(null);
   const lights = useRef<HTMLDivElement>(null);
-  const [paused, setPaused] = useState(false);
   const [playing, setPlaying] = useState(false);
 
-  // Same visibility/reduced-motion lifecycle as the website's useBentoPlayback.
+  // A brief intro settles automatically; visibility and reduced motion still apply.
   useEffect(() => {
     const element = container.current;
     if (!element) return;
     const media = window.matchMedia('(prefers-reduced-motion: reduce)');
     let visible = false;
-    const update = () => setPlaying(visible && !document.hidden && !media.matches && !paused);
+    let finished = false;
+    const update = () => setPlaying(visible && !document.hidden && !media.matches && !finished);
+    const timer = window.setTimeout(() => {
+      finished = true;
+      update();
+    }, 4000);
     const observer = new IntersectionObserver(([entry]) => {
       visible = entry.isIntersecting;
       update();
@@ -47,11 +50,12 @@ export function PublicPageVortex() {
     media.addEventListener('change', update);
     document.addEventListener('visibilitychange', update);
     return () => {
+      window.clearTimeout(timer);
       observer.disconnect();
       media.removeEventListener('change', update);
       document.removeEventListener('visibilitychange', update);
     };
-  }, [paused]);
+  }, []);
 
   useEffect(() => {
     const layer = lights.current;
@@ -110,9 +114,6 @@ export function PublicPageVortex() {
           </div>
         </div>
       </div>
-      <button type="button" className="public-vortex-toggle" onClick={() => setPaused(value => !value)} aria-label={paused ? 'Play background animation' : 'Pause background animation'}>
-        {paused ? <PlayIcon className="size-4" aria-hidden="true" /> : <PauseIcon className="size-4" aria-hidden="true" />}
-      </button>
     </div>
   );
 }
