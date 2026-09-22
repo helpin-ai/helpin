@@ -82,6 +82,34 @@ A useful introduction is: “This guide explains how to run Helpin and Agent Run
 locally so contributors can test agent execution. Start with Community Compose
 for a configured pair; use the host-process section when debugging a service.”
 
+## Use the README voice
+
+Helpin’s README helps teams understand and try the product. Agent Runtime’s
+README helps developers understand agent execution and integrate it into their
+own applications. Keep the relationship clear without repeating the same pitch.
+
+Use this voice throughout introductory documentation:
+
+- Lead with what the reader can do. Use familiar words, concrete verbs, and short
+  paragraphs with one main idea.
+- Explain a capability through a recognizable task before introducing its
+  technical name. Prefer “review an article” to an abstract feature claim.
+- Give the reader a clear next step. Installation examples need prerequisites,
+  a working directory, commands, and an observable success check.
+- Keep detailed configuration and deployment operations in linked guides. A
+  README should help readers choose where to start.
+- Distinguish product scope, release availability, and deployment choices. Keep
+  necessary limits next to the promise they qualify.
+- Separate proposals, approvals, execution, and confirmed outcomes. A completed
+  task does not establish that a release shipped or a customer reply was sent.
+- Show genuine screenshots or clearly labeled illustrations with fictional data.
+  Generated interface images are illustrations, not evidence of shipped behavior.
+- Avoid hype, repeated slogans, unexplained jargon, and internal review notes.
+  Resolve placeholders before publishing; report unresolved facts separately.
+
+For example: “Your application supplies the article. The agent proposes edits.
+Your existing review process decides what to publish.”
+
 ## Rename without breaking navigation
 
 Search for the old filename across the repository, including indexes, agent
