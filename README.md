@@ -31,29 +31,26 @@ articles, and support agents. Projects, CRM navigation, and broader automation
 are outside its default supported surface. Read the
 [release scope and known limitations](ROADMAP.md) before choosing a deployment.
 
-Use the [installation guide](community/README.md) for a published bundle, or the
-[source-build guide](docs/community/development.md#source-builds-and-acceptance)
-when evaluating from source. Source builds also require access to the separate
-Agent Runtime repository at the revision pinned by Helpin.
-
-You need Docker Engine, Compose v2, Bash, OpenSSL, and an amd64 or arm64 host.
+You need Linux or macOS on amd64 or arm64, Docker Engine or Docker Desktop,
+Compose v2, Bash, OpenSSL, curl, and `sha256sum` or `shasum`.
 Start with **8 GiB RAM and 20 GiB free disk** for evaluation; source builds need
 more. These are starting points, not production capacity limits.
 
-After downloading, verifying, and extracting a
-[Community release bundle](https://github.com/helpin-ai/helpin/releases), run
-these commands from its `community/` directory:
+**Install with the CLI.** Once the website installer and a Community release
+with CLI assets are published, run:
 
 ```sh
-./setup.sh install
-# Review the generated .env for your URLs and optional mail/AI settings.
-./setup.sh start
-./setup.sh status
+curl -fsSL https://helpin.ai/install.sh | bash
+"$HOME/.local/bin/helpin" install
 ```
 
-Open **http://localhost:8085**, sign up, and create an organization and workspace.
-The [CLI guide](docs/community/cli.md) also covers guided installation when CLI
-release assets are available.
+Choose local or public server setup. The CLI downloads and verifies the bundle,
+guides configuration, and starts Helpin. For local setup, open
+**http://localhost:8085**, sign up, and create an organization and workspace.
+
+- [CLI options](docs/community/cli.md): versions, install directory, server setup, and unattended installation.
+- [Manual bundle installation](community/README.md#manual-bundle-installation): download a release and use `setup.sh`.
+- [Build from source](docs/community/development.md#source-builds-and-acceptance): requires access to the separate Agent Runtime repository at the pinned revision.
 
 ### Send your first message
 
