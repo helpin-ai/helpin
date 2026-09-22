@@ -4,7 +4,6 @@ import remarkGfm from 'remark-gfm';
 import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, LinkSquare01Icon, File01Icon, RotateLeft01Icon, StickyNote01Icon, CancelCircleIcon, Mail01Icon, AlertCircleIcon, BotIcon, UserIcon, ZapIcon, BubbleChatIcon } from '@/lib/icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import { SupportEmailRecipients } from './SupportEmailRecipients';
 import { EmailDetailModal } from './EmailDetailModal';
 import { MessageActionsContextMenu, MessageActionsMenu } from './MessageActionsMenu';
 import { MessageDeleteDialog } from './MessageDeleteDialog';
@@ -140,6 +139,10 @@ function renderSupportAuditSystemEventContent(
 ): ReactNode {
   if (eventType === 'assigned') {
     return renderAssignedSystemEventContent(content);
+  }
+
+  if (eventType === 'mailbox_moved' || eventType === 'triage_routed') {
+    return renderBoldedSupportMatches(content, /(\bmoved to inbox ')(.+)('\.)$/g);
   }
 
   if (eventType === 'email_recipients_updated') {
@@ -722,7 +725,6 @@ export const MessageBubble = memo(function MessageBubble({
                       <span className="font-normal">{inboundIdentity.email_unknown_sender ? ' · Team only' : ' left a private note'}</span>
                     </span>
                   </div>
-                  <SupportEmailRecipients message={message} />
                   {hasDisplayContent && (
                     <div className="prose-chat inline text-sm leading-relaxed text-amber-900 [&>p:last-child]:inline dark:text-amber-200">
                       {mentionParts ? (
@@ -829,8 +831,6 @@ export const MessageBubble = memo(function MessageBubble({
           data-slot="support-message-bubble"
           className={`${bubbleWidthClass} group/message ${showBubble ? '' : 'relative'}`}
         >
-          {isCustomer && message.via_channel === 'email' && <div className="mb-1 text-xs font-medium text-foreground">{resolvedSenderName}</div>}
-          <SupportEmailRecipients message={message} />
           {showBubble ? (
             <div data-slot="support-message-bubble-frame" className="relative">
               {messageActionsMenu}
@@ -909,7 +909,7 @@ export const MessageBubble = memo(function MessageBubble({
       </div>
 
       {/* Email detail modal — rendered via Radix portal */}
-      {hasEmailBadge && (
+      {(hasEmailBadge || emailDetailOpen) && (
         <EmailDetailModal
           workspaceId={message.workspace_id}
           message={message}
@@ -923,6 +923,7 @@ export const MessageBubble = memo(function MessageBubble({
         messageId={message.id}
         open={infoOpen}
         onOpenChange={setInfoOpen}
+        onViewEmail={() => { setInfoOpen(false); setEmailDetailOpen(true); }}
       />
       <MessageDeleteDialog
         open={deleteDialogOpen}

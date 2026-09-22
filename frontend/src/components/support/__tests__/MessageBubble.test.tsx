@@ -39,6 +39,7 @@ function renderBubble(
 
   return {
     container,
+    queryClient,
     cleanup: () => {
       act(() => {
         root.unmount()
@@ -758,7 +759,7 @@ Can I export my data?`,
     read.cleanup()
   })
 
-  it('opens message info when an email delivery marker is clicked', () => {
+  it('opens the original email from message info for an emailed chat reply', () => {
     const message: SupportMessage = {
       id: 'msg-email-info-1',
       workspace_id: 'ws-1',
@@ -769,13 +770,23 @@ Can I export my data?`,
       content: 'Following up here.',
       message_type: 'reply',
       is_internal: false,
-      via_channel: 'email',
+      via_channel: 'widget',
       email_delivery_status: 'delivered',
       created_at: '2026-04-24T12:18:09.000Z',
       updated_at: '2026-04-24T12:20:00.000Z',
     }
 
     const rendered = renderBubble(message, 'delivered_email')
+    rendered.queryClient.setQueryData(['support', 'ws-1', 'conversations', 'conv-1', 'messages', message.id, 'info'], {
+      id: message.id, sent_at: message.created_at, sender: { name: 'Agent', type: 'user' },
+      from: 'support@example.com', origin: 'email', type: 'text', email_direction: 'outbound',
+      email_delivery_status_label: 'Delivered via email',
+    })
+    rendered.queryClient.setQueryData(['support', 'ws-1', 'messages', message.id, 'email'], {
+      id: 'email-log', message_id: message.id, direction: 'outbound', subject: 'Original email subject',
+      from_email: 'support@example.com', to_email: 'customer@example.com', stripped_text: message.content,
+      created_at: message.created_at,
+    })
     const marker = findButtonByText(rendered.container, 'Delivered via email')
     expect(marker).toBeTruthy()
 
@@ -784,6 +795,12 @@ Can I export my data?`,
     })
 
     expect(document.body.textContent).toContain('Message info')
+    const viewEmail = findButtonByText(document.body, 'View original email')
+    expect(viewEmail).toBeTruthy()
+    act(() => viewEmail!.click())
+    expect(document.body.textContent).toContain('Original email subject')
+    expect(document.body.textContent).toContain('customer@example.com')
+    expect(document.body.textContent).not.toContain('Message info')
     rendered.cleanup()
   })
 
@@ -1187,15 +1204,10 @@ it.each([false, true])('attributes participant mail and preserves team-only priv
   }
   const rendered = renderBubble(message, undefined, { customerEmail: 'customer@example.com', fallbackAvatarUrl: 'https://example.com/customer-avatar.png' })
   try {
-    expect(rendered.container.textContent).toContain('Colleague')
     expect(rendered.container.querySelector('img[src="https://example.com/customer-avatar.png"]')).toBeNull()
     if (unknown) expect(rendered.container.textContent).toContain('Team only')
-    const details = rendered.container.querySelector('details')!
-    expect(details.open).toBe(false)
-    expect(details.querySelector('summary')?.textContent).toContain('To: support@example.com · CC (1)')
-    act(() => details.querySelector('summary')!.click())
-    expect(details.open).toBe(true)
-    expect(details.textContent).toContain('colleague@example.com')
-    expect(details.textContent).toContain('customer@example.com')
+    expect(rendered.container.querySelector('details')).toBeNull()
+    expect(rendered.container.textContent).not.toContain('To: support@example.com')
+    if (!unknown) expect(rendered.container.textContent).not.toContain('Colleague')
   } finally { rendered.cleanup() }
 })

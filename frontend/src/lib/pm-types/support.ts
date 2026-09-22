@@ -660,6 +660,8 @@ export interface SupportMessageActionResponse {
 }
 
 export interface SupportMessageInfo {
+  email_direction?: string;
+  reply_to?: string;
   original_text?: string;
   translation_language?: string;
   id: string;

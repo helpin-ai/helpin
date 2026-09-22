@@ -54,6 +54,8 @@ type SupportMessageInfo struct {
 	SentAt                   time.Time                   `json:"sent_at"`
 	Sender                   SupportMessageInfoSender    `json:"sender"`
 	From                     string                      `json:"from"`
+	ReplyTo                  string                      `json:"reply_to,omitempty"`
+	EmailDirection           string                      `json:"email_direction,omitempty"`
 	ToEmail                  string                      `json:"to_email,omitempty"`
 	CCEmails                 []string                    `json:"cc_emails,omitempty"`
 	BCCEmails                []string                    `json:"bcc_emails,omitempty"`
@@ -201,6 +203,8 @@ func (s *SupportMessageActionsService) Info(ctx context.Context, workspaceID, co
 		if logRow != nil {
 			info.From = supportMessageInfoFrom(msg, logRow)
 			info.ToEmail = strings.TrimSpace(logRow.ToEmail)
+			info.ReplyTo = strings.TrimSpace(logRow.ReplyTo)
+			info.EmailDirection = strings.TrimSpace(logRow.Direction)
 			info.CCEmails = normalizeSupportEmailList(logRow.CCEmails)
 			info.BCCEmails = normalizeSupportEmailList(logRow.BCCEmails)
 			info.EmailDeliveryStatus, info.EmailDeliveryStatusLabel = supportMessageInfoEmailStatus(msg, logRow, s.now())
@@ -284,6 +288,11 @@ func supportMessageInfoType(msg *model.SupportMessage) string {
 }
 
 func supportMessageInfoEmailStatus(msg *model.SupportMessage, logRow *model.SupportEmailLog, now time.Time) (string, string) {
+	if (logRow != nil && strings.EqualFold(strings.TrimSpace(logRow.Direction), "inbound")) ||
+		(logRow == nil && msg.SenderType == "customer" && supportMessageInfoOrigin(msg) == "email") {
+		return "received", "Received via email"
+	}
+
 	if supportMessageIsExternalEmail(msg) {
 		return "unavailable", "Delivery status unavailable"
 	}
