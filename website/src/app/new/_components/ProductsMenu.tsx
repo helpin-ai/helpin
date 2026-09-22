@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { useBentoPlayback } from './useBentoPlayback';
 import Link from 'next/link';
 import { ArrowRight, BookOpen, Bot, Building2, ChevronRight, FileText, Kanban, MessagesSquare, Pause, Play, UserRound, Video } from 'lucide-react';
@@ -57,7 +57,9 @@ export function AskAgentMenuCard() {
   </div>;
 }
 
-export function ProductsMenu() {
+// The menu stays mounted and is only shown or hidden, and it takes no props, so the nav's
+// open/close state changes never need to re-render it.
+export const ProductsMenu = memo(function ProductsMenu() {
   return <>
     <div className="nav-products-main">
       <div className="nav-products-intro"><h2>Everything you need to build exceptional customer experiences</h2></div>
@@ -65,4 +67,4 @@ export function ProductsMenu() {
     </div>
     <AskAgentMenuCard/>
   </>;
-}
+});
