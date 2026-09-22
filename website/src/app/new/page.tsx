@@ -74,12 +74,12 @@ export default function NewHomePage() {
             <h1>AI agents that do more than answer.</h1>
             <p className="lede">Helpin gives AI agents the full customer context to resolve questions, take action, and follow through—across support, projects, CRM, meetings, and docs.</p>
             <CtaRow primaryLabel="Start free trial" secondaryHref={DEMO_URL} secondaryLabel="Book a demo" />
-            <p className="cta-note">Open source · Self-host or use Helpin Cloud</p>
+            <p className="cta-note">Open source · Self-host free, or let us run it</p>
 
           </div>
           <figure className="hero-workflow"><LoopWire /></figure>
           <div className="hero-evaluation">
-            <p className="hero-replaces">Keep the conversation, the work, and the follow-up connected. Bring in the tools you keep through APIs and supported integrations.</p>
+            <p className="hero-replaces">Move off separate support, project, and CRM tools, or connect the ones you keep.</p>
             <CustomerLogos />
           </div>
         </div>
@@ -115,7 +115,7 @@ export default function NewHomePage() {
           <div className="ask-agent-intro">
             <span className="eyebrow">Ask Agent</span>
             <h2 id="ask-agent-title">Ask a question.<br />Put the answer to work.</h2>
-            <p className="lede">Ask Agent brings together relevant customer history, linked work, and connected tools. It can answer directly or coordinate specialist agents to investigate, plan, and prepare the next step.</p>
+            <p className="lede">Ask Agent answers from your customer history, or coordinates specialist agents to investigate and plan the next step.</p>
           </div>
           <figure className="ask-agent-preview">
             <ProductPreview product="ask-agent" theme="light" />
@@ -201,9 +201,9 @@ export default function NewHomePage() {
           <div className="self-host-intro">
             <div>
               <SectionHead eyebrow="Open source" title="Your customer history stays yours."
-                lede="Choose self-hosting for control over your infrastructure and data, or Helpin Cloud for managed hosting. Connect supported AI providers to fit the way your team works." />
+                lede="Self-host the complete product for free, with every module and no plan limits. Or let Helpin Cloud run it, with AI included." />
               <div className="links"><a className="btn btn-primary" href={`${GITHUB_URL}/blob/develop/community/README.md`} target="_blank" rel="noopener noreferrer">Self-host Helpin →</a></div>
-              <p className="self-host-license">Open source · Run it yourself</p>
+              <p className="self-host-license">AGPL-3.0 · Community 0.1 beta</p>
             </div>
             <HostingDiagram />
           </div>
@@ -259,9 +259,9 @@ export default function NewHomePage() {
         <div className="wrap">
           <ConnectedWorkspace />
           <div className="final">
-            <span className="eyebrow">Close the loop</span>
+            <span className="eyebrow">14-day free trial</span>
             <h2 id="final-cta-title">Put your customer history to work.</h2>
-            <p className="lede">Bring your team and AI agents into one workspace to answer questions, move projects forward, and follow up with the customers waiting on them.</p>
+            <p className="lede">No card required. Every module, unlimited teammates, and AI usage included.</p>
             <CtaRow primaryLabel="Start free trial" secondaryHref={DEMO_URL} secondaryLabel="Book a demo" />
             <div className="assure"><span>Open source</span><span>Self-host or use Helpin Cloud</span><span>Built for SaaS teams</span></div>
           </div>
