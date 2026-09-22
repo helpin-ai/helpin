@@ -4,13 +4,13 @@
 .hp3 .support-operations .sec-head .eyebrow { color: #9cdbb3; justify-content: center; }
 .hp3 .support-operations .sec-head .lede { color: var(--t2); max-width: 720px; margin-inline: auto; }
 .hp3 .ops-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
-.hp3 .ops-card { min-width: 0; overflow: hidden; border: 1px solid #bce2cb26; border-radius: 16px; background: linear-gradient(145deg, #17362980, #10291f); }
-.hp3 .ops-art { margin: 12px 12px 0; padding: 14px; border: 1px solid #c3e8d01a; border-radius: 10px; background: radial-gradient(ellipse at 50% 100%, #21533955, transparent 75%), #0b2119; }
+.hp3 .ops-card { min-width: 0; overflow: hidden; border: 1px solid #bce2cb26; border-radius: 16px; background: linear-gradient(145deg, var(--art-dark-soft), var(--art-dark)); }
+.hp3 .ops-art { margin: 12px 12px 0; padding: 14px; border: 1px solid #c3e8d01a; border-radius: 10px; background: radial-gradient(ellipse at 50% 100%, #21533955, transparent 75%), var(--surface-deep); }
 .hp3 .ops-art-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px; color: #b2c6ba; font-size: 10px; }
 .hp3 .ops-art-toolbar > span { display: flex; align-items: center; gap: 7px; }
 .hp3 .ops-workspace-mark { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 4px; background: #286b47; color: #fff; font-size: 11px; font-weight: 600; }
-.hp3 .ops-art-toolbar button { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid #bce2cb30; border-radius: 50%; background: #163729; color: #c3dfcd; cursor: pointer; }
-.hp3 .ops-art-toolbar button:hover { background: #235138; }
+.hp3 .ops-art-toolbar button { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid #bce2cb30; border-radius: 50%; background: var(--art-dark-soft); color: #c3dfcd; cursor: pointer; }
+.hp3 .ops-art-toolbar button:hover { background: var(--art-dark-raised); }
 .hp3 .ops-art-toolbar button:focus-visible { outline: 2px solid #b0e5bd; outline-offset: 4px; }
 .hp3 .ops-scene { height: 324px; color: #d6e5dc; font-size: 11px; }
 .hp3 .ops-scene strong { font-weight: 500; }
@@ -100,7 +100,7 @@
 @keyframes ops-mail-travel { 0% { opacity: 0; transform: translateY(-30px); } 15%,75% { opacity: 1; } 100% { opacity: 0; transform: translateY(29px); } }
 @keyframes ops-arrive { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes ops-confirm { from { opacity: 0; transform: scale(.92); } to { opacity: 1; transform: scale(1); } }
-@keyframes ops-route-select { from { background: #183226; border-color: #bce2cb20; color: #8fae9c; } }
+@keyframes ops-route-select { from { background: var(--art-dark-raised); border-color: #bce2cb20; color: #8fae9c; } }
 @keyframes ops-route-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
 @keyframes ops-route-dot { from { transform: translateY(-52px); opacity: 0; } 10%,to { opacity: 1; } to { transform: translateY(0); } }
 @keyframes ops-tag-attach { from { opacity: 0; transform: translate(12px,-5px) scale(.94); } to { opacity: 1; transform: translate(0,0) scale(1); } }

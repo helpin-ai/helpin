@@ -26,7 +26,7 @@
 .hp3 .cw-account .cw-frame{height:725px}.hp3 .cw-account{overflow:visible;margin-bottom:8px;background:#fff;border-radius:12px}.hp3 .cw-account .cw-frame{border-radius:12px 12px 0 0;overflow:hidden}.hp3 .cw-account .cw-playback{border-radius:0 0 12px 12px}
 .hp3 .cw-agent-layer{position:absolute;right:28px;top:76px;width:365px;z-index:2}
 .hp3 .cw-agent-layer[hidden]{display:none}
-.hp3 .cw-agent{color:var(--on-dark);background:var(--art-dark);border:1px solid #365b47;border-radius:13px;box-shadow:0 20px 55px #00000030;font-size:calc(12px + var(--preview-font-step, 0px));overflow:hidden}
+.hp3 .cw-agent{color:var(--on-dark);background:var(--art-dark);border:1px solid rgba(196,216,204,.14);border-radius:13px;box-shadow:0 20px 55px #00000030;font-size:calc(12px + var(--preview-font-step, 0px));overflow:hidden}
 .hp3 .cw-agent header{display:flex;align-items:center;gap:9px;padding:16px 18px;border-bottom:1px solid var(--art-dark-border);background:var(--art-dark-soft)}
 .hp3 .cw-agent header strong{font-size:calc(12px + var(--preview-font-step, 0px));font-weight:500}
 .hp3 .cw-agent header small{display:block;color:var(--on-dark-muted);font-size:calc(10px + var(--preview-font-step, 0px));margin-top:3px}
