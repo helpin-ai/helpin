@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
+import { PauseIcon, PlayIcon } from '@/lib/icons';
 import './public-page-vortex.css';
 
 // Adapted from website/src/app/new/_components/HeroVortex.tsx.
@@ -110,7 +111,7 @@ export function PublicPageVortex() {
         </div>
       </div>
       <button type="button" className="public-vortex-toggle" onClick={() => setPaused(value => !value)} aria-label={paused ? 'Play background animation' : 'Pause background animation'}>
-        {paused ? 'Play motion' : 'Pause motion'}
+        {paused ? <PlayIcon className="size-4" aria-hidden="true" /> : <PauseIcon className="size-4" aria-hidden="true" />}
       </button>
     </div>
   );
