@@ -65,7 +65,7 @@
 .public-page-content [data-slot="input"]::placeholder { color: var(--muted-foreground); opacity: 0.8; }
 .public-page-content [data-slot="input"]:focus-visible { border-color: var(--ring); box-shadow: 0 1px 0 var(--ring); }
 .public-page-content [data-slot="input"][aria-invalid="true"] { border-color: var(--destructive); }
-.public-page-content [data-slot="button"] { min-height: 44px; height: auto; padding-block: 10px; border-radius: 8px; white-space: normal; }
+.public-page-content [data-slot="button"] { min-height: 44px; height: auto; padding-block: 10px; white-space: normal; }
 .public-page-content [data-slot="button"][data-variant="default"] { background: var(--primary); color: var(--primary-foreground); }
 .public-page-content [data-slot="button"][data-variant="default"]:hover { filter: brightness(0.92); }
 .public-page-content [data-slot="button"][data-variant="outline"] { border-color: var(--input); background: transparent; }
