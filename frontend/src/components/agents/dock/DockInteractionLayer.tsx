@@ -53,14 +53,14 @@ export function DockInteractionLayer({ children, prompt, interactionId, active =
           {children}
         </div>
         {open && (
-          <div className="absolute inset-0 z-20 overflow-y-auto overscroll-contain bg-background/65 px-3 py-3 sm:px-5" data-dock-interaction-overlay>
+          <div className="absolute inset-0 z-20 flex flex-col overflow-y-auto overscroll-contain bg-background/65 px-3 py-3 sm:px-5" data-dock-interaction-overlay>
             <div
               key={displayedId}
               ref={promptRef}
               role="dialog"
               aria-label="Agent needs your response"
               tabIndex={-1}
-              className="min-w-0 rounded-[14px] border border-border bg-popover p-4 text-popover-foreground shadow-sm outline-none"
+              className="mt-auto min-w-0 shrink-0 rounded-[14px] border border-border bg-popover p-4 text-popover-foreground shadow-sm outline-none"
             >
               {displayedPrompt}
             </div>
