@@ -19,12 +19,16 @@ export function SupportInboxShowcase() {
   const [enhanced, setEnhanced] = useState(false);
   const [assisted, setAssisted] = useState(false);
   useEffect(() => {
-    const media = matchMedia('(min-width: 1100px) and (min-height: 820px) and (prefers-reduced-motion: no-preference)');
+    const media = matchMedia('(min-width: 1100px) and (min-height: 650px) and (prefers-reduced-motion: no-preference)');
     let frame = 0;
     const update = () => {
       frame = 0;
       const element = track.current;
       if (!element) return;
+      // Fit the complete desktop canvas without switching to a stacked layout
+      // merely because browser chrome makes the viewport shorter.
+      const scale = innerHeight < 820 ? Math.min(1, (innerHeight - 220) / 600) : 1;
+      element.style.setProperty('--inbox-preview-scale', String(scale));
       setEnhanced(media.matches);
       const distance = element.offsetHeight - (element.firstElementChild as HTMLElement).offsetHeight;
       setAssisted(media.matches && 80 - element.getBoundingClientRect().top > distance * 0.45);

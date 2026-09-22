@@ -30,7 +30,10 @@
 .hp3 .swi-human-draft { padding: 14px; margin-top: 16px; background: var(--art-dark-soft); border: 1px solid var(--art-dark-border); border-radius: 8px; }
 .hp3 .swi-human-draft p { margin-bottom: 0; }
 .hp3 .swi-human-review { display: flex; gap: 9px; align-items: center; font-size: 11px; margin-top: 18px; }
-.hp3 .support-inbox-showcase[data-enhanced=true] .swi-human-assist { position: absolute; z-index: 2; top: 12px; right: 12px; bottom: 12px; width: 350px; margin: 0; }
+/* Desktop placement is independent of scroll enhancement and motion settings. */
+@media (min-width: 1100px) {
+  .hp3 .support-inbox-showcase .swi-human-assist { position: absolute; z-index: 2; top: 12px; right: 12px; bottom: 12px; width: 350px; margin: 0; }
+}
 .hp3 .support-inbox-showcase[data-enhanced=true] .support-inbox-scroll::after { content: ""; display: block; height: 70vh; }
 .hp3 .support-inbox-showcase[data-enhanced=true] .support-inbox-sticky { position: sticky; top: 80px; }
 .hp3 .support-inbox-showcase[data-enhanced=true] .support-inbox-stage { padding: 16px; border-radius: 16px; }
@@ -53,4 +56,9 @@
   .hp3 .support-inbox-showcase[data-enhanced=true] .swi-human-source { padding-block: 7px; }
   .hp3 .support-inbox-showcase[data-enhanced=true] .swi-human-draft { margin-top: 10px; padding: 12px; }
   .hp3 .support-inbox-showcase[data-enhanced=true] .swi-human-review { margin-top: 12px; }
+}
+
+@media (min-width: 1100px) and (max-height: 819px) {
+  .hp3 .support-inbox-showcase[data-enhanced=true] .support-inbox-stage { zoom: var(--inbox-preview-scale, 1); }
+  .hp3 #support-inbox .support-inbox-showcase[data-enhanced=true] .swi-shell { height: 600px; }
 }
