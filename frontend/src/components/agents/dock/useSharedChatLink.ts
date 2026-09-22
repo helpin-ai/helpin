@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DockChat } from '@/lib/dockTypes';
 import { dockChatService } from '@/lib/services/dockChatService';
 import { useDockStore } from '@/stores/dockStore';
@@ -11,6 +11,12 @@ export function useSharedChatLink(workspaceId: string | undefined, enabled: bool
   const [attempt, setAttempt] = useState(0);
   const boundWorkspace = useRef<string | null>(null);
   const selectedId = useDockStore(state => state.activeChatId);
+  const open = useCallback((chatId: string) => {
+    boundWorkspace.current = workspaceId ?? null;
+    setTarget(chatId);
+    setResult({ workspaceId, chat: null, error: null, pending: true });
+    setAttempt(value => value + 1);
+  }, [workspaceId]);
 
   useEffect(() => {
     if (!enabled || !workspaceId || !target || !ready) return;
@@ -46,6 +52,7 @@ export function useSharedChatLink(workspaceId: string | undefined, enabled: bool
 
   const inWorkspace = !result.workspaceId || result.workspaceId === workspaceId;
   return {
+    open,
     chat: inWorkspace ? result.chat : null,
     pending: enabled && inWorkspace && !!target && result.pending,
     error: enabled && inWorkspace && selectedId === target ? result.error : null,

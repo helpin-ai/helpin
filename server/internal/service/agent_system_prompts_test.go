@@ -246,6 +246,10 @@ func TestCodeBuilderSystemPromptIncludesGenericExecutionContextGuidance(t *testi
 	for _, snippet := range []string{
 		"You are Forge, the workspace code builder.",
 		"Implement the requested task directly in the repository",
+		"If it is already present, do not recreate or alter it merely to produce a change",
+		"do not run repository-wide test, lint, build, or vet commands by default",
+		"report it without modifying unrelated code",
+		"Do not continue investigating unrelated repository problems",
 		"Commit only actual requested file changes locally",
 		"without creating an empty commit",
 	} {

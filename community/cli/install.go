@@ -23,6 +23,10 @@ func (a *app) releaseTag(requested string) (string, error) {
 	if requested == "" && tagPattern.MatchString(version) {
 		requested = version
 	}
+	return a.latestReleaseTag(requested)
+}
+
+func (a *app) latestReleaseTag(requested string) (string, error) {
 	if requested != "" {
 		if !tagPattern.MatchString(requested) {
 			return "", errors.New("invalid --version; expected community-v0.x.y[-rc.n]")
@@ -191,7 +195,7 @@ func (a *app) install(o options) error {
 			return errors.New("installation destination must be a directory, not a symlink")
 		}
 		if _, err = os.Stat(filepath.Join(o.dir, "community", ".env")); err == nil {
-			fmt.Fprintf(a.out, "Existing installation preserved at %s.\nUse helpin configure, start, or status with --dir %q. Upgrades are not yet supported.\n", o.dir, o.dir)
+			fmt.Fprintf(a.out, "Existing installation preserved at %s.\nUse helpin configure, start, or status with --dir %q. Use helpin upgrade for a compatible release.\n", o.dir, o.dir)
 			return nil
 		}
 		entries, err := os.ReadDir(o.dir)

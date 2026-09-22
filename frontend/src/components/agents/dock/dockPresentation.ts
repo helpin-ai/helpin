@@ -70,6 +70,7 @@ function attentionPresentation(label: string): DockRunPresentation {
 }
 
 export function dockRunTitle(summary: DockRunSummary): string {
+  if (summary.run.dock_chat_id) return summary.run.target_info?.title?.trim() || 'Ask Agent conversation';
   const target = summary.run.target_info;
   const title = target?.title?.trim();
   const key = target?.task_key?.trim();

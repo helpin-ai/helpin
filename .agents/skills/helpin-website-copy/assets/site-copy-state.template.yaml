@@ -1,0 +1,14 @@
+schema_version: 1
+record_kind: template
+updated_at: null
+# Discussion is not approval. Populate real routes from the repository.
+context: Page drafts were discussed; this template asserts no approval or implementation.
+sequence: []
+pages: []
+# Each actual page record should include:
+# id, route, source_files, target_release, section_inventory,
+# draft_status, review_status, approval (human, date, evidence),
+# implementation_status, implemented_revision, blockers, next_action.
+# Keep these states separate; do not infer approval from implementation.
+editorial_decisions: []
+# Record explicit decisions with scope, human source, date, and wording.

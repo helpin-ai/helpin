@@ -10,6 +10,15 @@ import (
 
 const dockChatWorkSummaryMessageType = "status"
 
+func isDockChatDecision(message model.AgentRunMessage) bool {
+	switch message.MessageType {
+	case "approval", "approval_request_resolution", "review_checkpoint_resolution":
+		return true
+	default:
+		return false
+	}
+}
+
 func compactDockChatMessagePage(messages []model.AgentRunMessage) []model.AgentRunMessage {
 	compact := make([]model.AgentRunMessage, 0, len(messages))
 	assistantGroup := make([]model.AgentRunMessage, 0, 4)
@@ -19,14 +28,26 @@ func compactDockChatMessagePage(messages []model.AgentRunMessage) []model.AgentR
 		if len(assistantGroup) == 0 {
 			return
 		}
-		workTarget := assistantGroup[len(assistantGroup)-1]
-		final := finalDockAssistantMessage(assistantGroup)
+		// Approval/resume messages are activity, not new human turns or answers.
+		assistants := make([]model.AgentRunMessage, 0, len(assistantGroup))
+		for _, message := range assistantGroup {
+			if message.Role == "assistant" && !isDockChatDecision(message) {
+				assistants = append(assistants, message)
+			}
+		}
+		if len(assistants) == 0 {
+			compact = append(compact, assistantGroup...)
+			assistantGroup = assistantGroup[:0]
+			return
+		}
+		final := finalDockAssistantMessage(assistants)
+		workTarget := assistants[len(assistants)-1]
 		// In-flight explicit progress is not a completed conversation answer.
 		explicitProgress := false
 		for _, message := range assistantGroup {
 			explicitProgress = explicitProgress || message.MessageType == "assistant_progress"
 		}
-		if explicitProgress && final.MessageType != "assistant_final" {
+		if (explicitProgress || isDockChatDecision(assistantGroup[len(assistantGroup)-1])) && final.MessageType != "assistant_final" {
 			compact = append(compact, assistantGroup...)
 			assistantGroup = assistantGroup[:0]
 			return
@@ -61,7 +82,7 @@ func compactDockChatMessagePage(messages []model.AgentRunMessage) []model.AgentR
 	}
 
 	for _, message := range messages {
-		if message.Role == "assistant" {
+		if message.Role == "assistant" || isDockChatDecision(message) {
 			assistantGroup = append(assistantGroup, message)
 			if intervalStartedAt.IsZero() {
 				intervalStartedAt = message.CreatedAt
@@ -108,6 +129,10 @@ func finalDockAssistantMessage(messages []model.AgentRunMessage) model.AgentRunM
 func dockAssistantActivityCount(messages []model.AgentRunMessage) int {
 	count := 0
 	for _, message := range messages {
+		if isDockChatDecision(message) {
+			count++
+			continue
+		}
 		var segments []model.CodingSessionLiveTurnSegment
 		if len(message.TurnSegments) > 0 && json.Unmarshal(message.TurnSegments, &segments) == nil {
 			for _, segment := range segments {

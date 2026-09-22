@@ -44,10 +44,14 @@ class ReleasePackageTest(unittest.TestCase):
             docker = root / 'bin/docker'
             docker.write_text('#!/bin/sh\nif [ "$3" = inspect ]; then printf "sha256:%s\\n" "' + 'b' * 64 + '"; fi\n')
             docker.chmod(0o755)
-            env = {**os.environ, 'PATH': f'{root}/bin:{os.environ["PATH"]}', 'COMMUNITY_RELEASE_TAG': 'community-v0.1.0-rc.1', 'PUBLIC_HOST_EVIDENCE': 'https://example.test/acceptance'}
+            env = {**os.environ, 'PATH': f'{root}/bin:{os.environ["PATH"]}', 'COMMUNITY_RELEASE_TAG': 'community-v0.1.0-rc.1', 'PUBLIC_HOST_EVIDENCE': 'https://example.test/acceptance',
+                   'COMMUNITY_UPGRADE_FROM': 'community-v0.0.9', 'UPGRADE_EVIDENCE': 'https://example.test/upgrade-recovery'}
             subprocess.run(['python3', str(root / 'community/package-release.py')], env=env, check=True, capture_output=True)
             archive = next(artifacts.glob('*.tar.gz'))
             with tarfile.open(archive) as package:
+                metadata = json.load(package.extractfile('helpin-community/release-evidence/release.json'))
+                self.assertEqual(metadata['upgrade_from'], ['community-v0.0.9'])
+                self.assertEqual(metadata['upgrade_evidence'], 'https://example.test/upgrade-recovery')
                 names = package.getnames()
                 self.assertIn('helpin-community/docs/community/troubleshooting.md', names)
                 for name in license_files:
@@ -63,6 +67,13 @@ class ReleasePackageTest(unittest.TestCase):
                 for line in sums:
                     digest, name = line.split('  ', 1)
                     self.assertEqual(hashlib.sha256(package.extractfile('helpin-community/' + name).read()).hexdigest(), digest)
+            for changes in ({'UPGRADE_EVIDENCE': ''}, {'COMMUNITY_UPGRADE_FROM': '../bad'},
+                            {'COMMUNITY_UPGRADE_FROM': 'community-v0.1.0-rc.1'},
+                            {'COMMUNITY_UPGRADE_FROM': 'community-v0.0.9,community-v0.0.9'}):
+                rejected = subprocess.run(['python3', str(root / 'community/package-release.py')],
+                                          env={**env, **changes}, capture_output=True, text=True)
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertIn('upgrade', rejected.stderr.lower())
             # Reject incomplete inventories before any manifest can be published.
             (artifacts / 'images-arm64.txt').write_text(next(iter(expected)) + '@sha256:' + 'a' * 64 + '\n')
             rejected = subprocess.run(['python3', str(root / 'community/package-release.py')], env=env, capture_output=True, text=True)

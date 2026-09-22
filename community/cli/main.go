@@ -28,6 +28,7 @@ type options struct {
 	project                                                            string
 	port, storagePort, helpPort                                        int
 	yes, noStart                                                       bool
+	backupPath                                                         string
 }
 
 type app struct {
@@ -38,6 +39,7 @@ type app struct {
 	readyWait   time.Duration
 	run         func(string, ...string) error
 	output      func(string, ...string) ([]byte, error)
+	stream      func(string, io.Reader, io.Writer, ...string) error
 }
 
 func main() {
@@ -56,6 +58,12 @@ func main() {
 		cmd.Dir, cmd.Env = dir, commandEnv(dir)
 		return cmd.Output()
 	}
+	a.stream = func(dir string, in io.Reader, out io.Writer, args ...string) error {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir, cmd.Env = dir, commandEnv(dir)
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = in, out, os.Stderr
+		return cmd.Run()
+	}
 	if err := a.execute(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "Helpin:", err)
 		os.Exit(1)
@@ -65,7 +73,7 @@ func main() {
 // An operator's unrelated shell Compose variables must not redirect commands
 // to another project or override the persistent secrets in this installation.
 func commandEnv(dir string) []string {
-	keys := map[string]bool{"COMPOSE_FILE": true, "COMPOSE_PROFILES": true, "COMPOSE_PROJECT_NAME": true, "COMPOSE_ENV_FILES": true}
+	keys := map[string]bool{"COMPOSE_FILE": true, "COMPOSE_PROFILES": true, "COMPOSE_PROJECT_NAME": true, "COMPOSE_ENV_FILES": true, "AGENT_RUNTIME_EXECUTION_APP_CONFIG": true}
 	if data, err := os.ReadFile(filepath.Join(dir, ".env")); err == nil {
 		for key := range envValues(string(data)) {
 			keys[key] = true
@@ -77,6 +85,9 @@ func commandEnv(dir string) []string {
 		if !keys[key] {
 			env = append(env, entry)
 		}
+	}
+	if data, err := os.ReadFile(filepath.Join(dir, "apps.json")); err == nil {
+		env = append(env, "AGENT_RUNTIME_EXECUTION_APP_CONFIG="+string(data))
 	}
 	return env
 }
@@ -111,26 +122,29 @@ func (a *app) execute(args []string) error {
 		return nil
 	}
 	if command == "help" || command == "--help" || command == "-h" {
-		fmt.Fprintln(a.out, "Helpin Community\n\nUsage: helpin <command> [options]\nCommands: install, start, stop, restart, status, logs, configure, doctor, version\nRun helpin install --help for setup options. Default installation: ~/helpin.\nUpgrades are not yet supported; stop preserves your data.")
+		fmt.Fprintln(a.out, "Helpin Community\n\nUsage: helpin <command> [options]\nCommands: install, start, stop, restart, status, logs, configure, doctor, backup, restore, upgrade, version\nRun helpin <command> --help for options. Default installation: ~/helpin.\nBackup pauses services; restore uses new volumes. Upgrade requires a compatible release and creates a recovery backup.")
 		return nil
 	}
 	if command == "" {
 		if !a.interactive {
 			return a.execute([]string{"help"})
 		}
-		fmt.Fprintln(a.out, "Helpin Community\n\n1. Install\n2. Status\n3. Start\n4. Stop\n5. Restart\n6. Logs\n7. Configure\n8. Diagnose")
+		fmt.Fprintln(a.out, "Helpin Community\n\n1. Install\n2. Status\n3. Start\n4. Stop\n5. Restart\n6. Logs\n7. Configure\n8. Diagnose\n9. Backup\n10. Restore\n11. Upgrade\n12. Exit")
 		choice, e := a.ask("Choose an action", "1")
 		if e != nil {
 			return e
 		}
-		commands := map[string]string{"1": "install", "2": "status", "3": "start", "4": "stop", "5": "restart", "6": "logs", "7": "configure", "8": "doctor"}
+		if choice == "12" {
+			return nil
+		}
+		commands := map[string]string{"1": "install", "2": "status", "3": "start", "4": "stop", "5": "restart", "6": "logs", "7": "configure", "8": "doctor", "9": "backup", "10": "restore", "11": "upgrade"}
 		command = commands[choice]
 		if command == "" {
-			return errors.New("choose an action from 1 to 8")
+			return errors.New("choose an action from 1 to 12")
 		}
 	}
 	switch command {
-	case "install", "start", "stop", "restart", "status", "logs", "configure", "doctor":
+	case "install", "start", "stop", "restart", "status", "logs", "configure", "doctor", "backup", "restore", "upgrade":
 	default:
 		return fmt.Errorf("unknown command %q; run helpin --help", command)
 	}
@@ -138,6 +152,10 @@ func (a *app) execute(args []string) error {
 	f := flag.NewFlagSet(command, flag.ContinueOnError)
 	f.SetOutput(a.out)
 	f.StringVar(&o.dir, "dir", filepath.Join(home, "helpin"), "installation directory")
+	if command == "backup" || command == "restore" || command == "upgrade" {
+		f.BoolVar(&o.yes, "yes", false, "confirm the operation without prompting")
+		f.StringVar(&o.backupPath, "backup", "", "backup directory (source for restore; new destination for backup/upgrade)")
+	}
 	if command == "install" || command == "configure" {
 		f.BoolVar(&o.yes, "yes", false, "use supplied options and defaults without prompts")
 		f.StringVar(&o.mode, "mode", "", "local or server")
@@ -149,10 +167,12 @@ func (a *app) execute(args []string) error {
 		f.IntVar(&o.storagePort, "storage-port", 0, "local storage port (default 9005)")
 		f.IntVar(&o.helpPort, "help-port", 0, "local help-center port (default 8086)")
 	}
-	if command == "install" {
-		f.StringVar(&o.release, "version", "", "Community release tag; defaults to this CLI's release")
+	if command == "install" || command == "upgrade" {
+		f.StringVar(&o.release, "version", "", "release tag (install: CLI version; upgrade: newest published Community release)")
 		f.StringVar(&o.bundle, "bundle", "", "install a previously downloaded release archive")
 		f.StringVar(&o.checksum, "checksum", "", "checksum file for --bundle")
+	}
+	if command == "install" || command == "restore" {
 		f.BoolVar(&o.noStart, "no-start", false, "prepare configuration without starting services")
 	}
 	if err = f.Parse(args); errors.Is(err, flag.ErrHelp) {
@@ -163,7 +183,7 @@ func (a *app) execute(args []string) error {
 	if command != "logs" && f.NArg() != 0 {
 		return errors.New("unexpected arguments; options must follow the command")
 	}
-	if command == "install" && !o.yes {
+	if (command == "install" || command == "restore") && !o.yes {
 		dirSet := false
 		f.Visit(func(value *flag.Flag) {
 			if value.Name == "dir" {
@@ -171,7 +191,11 @@ func (a *app) execute(args []string) error {
 			}
 		})
 		if !dirSet {
-			o.dir, err = a.ask("Installation directory", o.dir)
+			label, fallback := "Installation directory", o.dir
+			if command == "restore" {
+				label, fallback = "New restore directory", o.dir+"-restored"
+			}
+			o.dir, err = a.ask(label, fallback)
 			if err != nil {
 				return err
 			}
@@ -188,6 +212,9 @@ func (a *app) execute(args []string) error {
 	}
 	if command == "install" {
 		return a.install(o)
+	}
+	if command == "restore" {
+		return a.restore(o)
 	}
 	dir := filepath.Join(o.dir, "community")
 	if _, err = os.Stat(filepath.Join(dir, ".env")); err != nil {
@@ -209,6 +236,16 @@ func (a *app) execute(args []string) error {
 		return err
 	}
 	defer unlock()
+	if command == "backup" {
+		if err := a.confirm(o.yes, "Pause services and back up this installation?"); err != nil {
+			return err
+		}
+		_, err := a.backup(o, true)
+		return err
+	}
+	if command == "upgrade" {
+		return a.upgrade(o)
+	}
 	if command == "configure" {
 		values, err := readEnv(dir)
 		if err != nil {
@@ -379,6 +416,11 @@ func (a *app) checkServices(dir string) error {
 	if err != nil {
 		return err
 	}
+	return checkServiceStates(data, strings.Fields(string(expected)))
+}
+
+func checkServiceStates(data []byte, names []string) error {
+	var err error
 	type service struct {
 		Service, State, Health string
 		ExitCode               int
@@ -404,8 +446,15 @@ func (a *app) checkServices(dir string) error {
 	if err != nil {
 		return err
 	}
+	wanted := map[string]bool{}
+	for _, name := range names {
+		wanted[name] = true
+	}
 	seen := map[string]bool{}
 	for _, item := range services {
+		if !wanted[item.Service] {
+			continue
+		}
 		job := item.Service == "helpin-migrate" || item.Service == "temporal-schema" || item.Service == "temporal-namespace"
 		if job && item.State == "exited" && item.ExitCode == 0 {
 			seen[item.Service] = true
@@ -416,7 +465,6 @@ func (a *app) checkServices(dir string) error {
 		}
 		seen[item.Service] = true
 	}
-	names := strings.Fields(string(expected))
 	if len(names) == 0 {
 		return errors.New("no services found in this installation")
 	}

@@ -100,6 +100,7 @@ type AgentRuntimeProjectionService struct {
 	runMessageRepo      agentRuntimeProjectionMessageRepository
 	artifactRepo        agentRuntimeProjectionArtifactRepository
 	interactionRepo     agentRuntimeProjectionInteractionRepository
+	attentionNotifier   agentAttentionNotifier
 	sessionSnapshotRepo agentRuntimeProjectionSessionSnapshotRepository
 	usageMeter          *AIUsageMeter
 	agentRuntimeClient  agentRuntimeSignalClient
@@ -955,6 +956,9 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		s.runFinalizers.FinalizeTerminalRun(ctx, run, runtimeSummaryAvailable)
 	}
 	if !changed {
+		if isTerminalAgentRunStatus(run.Status) && s.attentionNotifier != nil {
+			return errors.Join(settlementErr, s.attentionNotifier.MarkAgentAttentionResolved(ctx, run.WorkspaceID, run.ID))
+		}
 		return settlementErr
 	}
 	model.NormalizeAgentRunPauseState(run)
@@ -962,6 +966,9 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		return err
 	}
 	s.notifyRunChange(ctx, run, model.AgentRunChangeState)
+	if isTerminalAgentRunStatus(run.Status) && s.attentionNotifier != nil {
+		settlementErr = errors.Join(settlementErr, s.attentionNotifier.MarkAgentAttentionResolved(ctx, run.WorkspaceID, run.ID))
+	}
 	if hookPtr := s.supportChatPauseHook.Load(); hookPtr != nil && event.Type == agentruntime.EventRunPaused &&
 		run.Status == model.AgentRunStatusPaused && run.PauseReason == model.AgentRunPauseReasonUserMessage {
 		hook := *hookPtr
@@ -1943,9 +1950,8 @@ func (s *AgentRuntimeProjectionService) upsertRuntimeInteraction(ctx context.Con
 				return err
 			}
 			s.publishRuntimeInteractionEvent(run, updated)
-			return nil
 		}
-		return nil
+		return s.syncInteractionAttention(ctx, run, updated)
 	}
 	interactionKind := projectedRuntimeInteractionKind(runtimeInteraction, run.RuntimeKind)
 	interaction := &model.AgentRunInteraction{
@@ -1984,7 +1990,7 @@ func (s *AgentRuntimeProjectionService) upsertRuntimeInteraction(ctx context.Con
 	}
 	s.publishRuntimeInteractionEvent(run, *interaction)
 	s.notifyRunChange(ctx, run, model.AgentRunChangeInteraction)
-	return nil
+	return s.syncInteractionAttention(ctx, run, *interaction)
 }
 
 func (s *AgentRuntimeProjectionService) publishRuntimeInteractionEvent(run *model.AgentRun, interaction model.AgentRunInteraction) {

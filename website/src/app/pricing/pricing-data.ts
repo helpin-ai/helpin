@@ -169,12 +169,3 @@ export const FAQS = [
     "a": "Review workspace permissions, agent tool access, and the connected services your workflows use. For self-hosting, also review the infrastructure and operational responsibilities your team will take on."
   }
 ];
-
-export const WORKFLOW_COMPARISON = [
-  { tool: 'Jira / Linear / ClickUp', workflow: 'Project planning', description: 'Keep the reason behind the task within reach.', domain: 'linear.app' },
-  { tool: 'Intercom / Zendesk / Freshdesk', workflow: 'Customer support', description: 'Answer with the earlier conversation in view.', domain: 'intercom.com' },
-  { tool: 'HubSpot / Salesforce / Pipedrive', workflow: 'Customer relationships', description: 'See what needs attention before the next call.', domain: 'hubspot.com' },
-  { tool: 'Notion / Confluence / Slite', workflow: 'Knowledge and docs', description: 'Turn what you learn into guidance others can use.', domain: 'notion.so' },
-  { tool: 'ChatGPT / Claude / Copilot', workflow: 'AI assistance', description: 'Give the next action more than the latest message.', domain: 'openai.com' },
-];
-

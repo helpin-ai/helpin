@@ -22,7 +22,7 @@ interface PendingInteractionCardProps {
 }
 
 /**
- * Inline form rendered under an active execution strip when the agent has
+ * Shared form rendered in the dock overlay or an execution strip when the agent has
  * paused for human input (request_user_input / approval / review checkpoint).
  *
  * Reuses CodingInteractionCard for the form chrome but submits to the new

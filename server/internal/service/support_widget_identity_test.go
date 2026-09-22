@@ -119,6 +119,9 @@ func TestListWidgetTokensCarriesCanonicalWorkspaceAndOrigins(t *testing.T) {
 }
 
 func TestNormalizeAllowedOrigins(t *testing.T) {
+	if origins, err := normalizeAllowedOrigins([]string{" * ", "*"}); err != nil || len(origins) != 1 || origins[0] != "*" {
+		t.Fatalf("explicit allow-all policy: %v, %v", origins, err)
+	}
 	origins, err := normalizeAllowedOrigins([]string{
 		"HTTPS://APP.EXAMPLE.COM", "https://app.example.com", "http://localhost:3000", "TAURI://LOCALHOST", "tauri://localhost",
 	})
@@ -128,7 +131,7 @@ func TestNormalizeAllowedOrigins(t *testing.T) {
 	if got := strings.Join(origins, ","); got != "http://localhost:3000,https://app.example.com,tauri://localhost" {
 		t.Fatalf("origins = %q", got)
 	}
-	for _, invalid := range []string{"*", "https://*.example.com", "https://example.com/path"} {
+	for _, invalid := range []string{"https://*.example.com", "https://example.com/path"} {
 		if _, err := normalizeAllowedOrigins([]string{invalid}); err == nil {
 			t.Errorf("expected %q to be rejected", invalid)
 		}

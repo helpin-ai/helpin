@@ -438,6 +438,18 @@ func (s *AgentService) clearAgentAttentionNotification(ctx context.Context, run 
 	if s == nil || s.notificationService == nil || run == nil {
 		return
 	}
+	if s.interactionRepo != nil {
+		interactions, err := s.interactionRepo.ListByRun(ctx, run.WorkspaceID, run.ID)
+		if err != nil {
+			slog.ErrorContext(ctx, "failed to check remaining agent attention", "error", err, "run_id", run.ID)
+			return
+		}
+		for _, interaction := range interactions {
+			if interactionNeedsAttention(interaction) {
+				return
+			}
+		}
+	}
 	if err := s.notificationService.MarkAgentAttentionResolved(ctx, run.WorkspaceID, run.ID); err != nil {
 		slog.ErrorContext(ctx, "failed to clear agent attention notification",
 			"error", err,

@@ -57,6 +57,10 @@ func (p *NotificationAccessPolicy) CanReceive(ctx context.Context, userID string
 			return false, nil
 		}
 	case "agent_run":
+		standalone, canRead, err := p.resources.AgentRunNotificationAccess(ctx, actor, event.EntityID)
+		if err != nil || !standalone {
+			return canRead, err
+		}
 		if taskID, ok := event.Metadata["task_id"].(string); !ok || taskID == "" {
 			module = model.ModuleAutomation
 		}

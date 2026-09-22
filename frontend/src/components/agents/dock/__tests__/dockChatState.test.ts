@@ -34,9 +34,10 @@ describe('resolveDockComposerState', () => {
     expect(state.enabled).toBe(false);
   });
 
-  it('hides during a structured interaction', () => {
+  it('keeps the composer mounted but disabled during a structured interaction', () => {
     const state = resolveDockComposerState({ status: 'paused', pause_reason: 'human_approval' }, true, false);
-    expect(state.visible).toBe(false);
+    expect(state.visible).toBe(true);
+    expect(state.enabled).toBe(false);
   });
 
   it('enables continuation after the run ended', () => {

@@ -95,7 +95,10 @@ func TestInboundAttachmentFailureDoesNotLoseMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := 0; i < 10; i++ {
-		env.convRepo.DB().Model(&model.SupportInboundJob{}).Where("kind = ?", "attachment").Update("available_at", time.Now().Add(-time.Second))
+		// Match the UTC timestamps used by the worker; SQLite compares their text.
+		if err := env.convRepo.DB().Model(&model.SupportInboundJob{}).Where("kind = ?", "attachment").Update("available_at", time.Now().UTC().Add(-time.Second)).Error; err != nil {
+			t.Fatal(err)
+		}
 		if err := env.service.processNextInboundJob(ctx, "attachment"); err != nil {
 			t.Fatal(err)
 		}

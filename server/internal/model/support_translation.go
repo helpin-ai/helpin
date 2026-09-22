@@ -8,29 +8,29 @@ type SupportTranslation struct {
 	ID              string     `json:"id" gorm:"type:uuid;primaryKey"`
 	WorkspaceID     string     `json:"-" gorm:"type:uuid;not null"`
 	ConversationID  string     `json:"conversation_id" gorm:"type:uuid;not null"`
-	Purpose         string     `json:"purpose"`
+	Purpose         string     `json:"purpose" gorm:"not null"`
 	SourceMessageID *string    `json:"source_message_id,omitempty" gorm:"type:uuid"`
 	CreatedByUserID *string    `json:"-" gorm:"type:uuid"`
 	SentMessageID   *string    `json:"sent_message_id,omitempty" gorm:"type:uuid"`
-	SourceText      string     `json:"source_text"`
-	SourceHash      string     `json:"source_hash"`
-	SourceLanguage  string     `json:"source_language"`
-	TargetLanguage  string     `json:"target_language"`
-	TranslatedText  string     `json:"translated_text"`
-	SendKey         string     `json:"-"`
-	CacheKey        string     `json:"-"`
-	Provider        string     `json:"provider,omitempty"`
-	Model           string     `json:"model,omitempty"`
-	PipelineVersion string     `json:"-"`
-	Attempts        int        `json:"-"`
-	Status          string     `json:"status"`
-	ReviewStatus    string     `json:"review_status"`
+	SourceText      string     `json:"source_text" gorm:"not null"`
+	SourceHash      string     `json:"source_hash" gorm:"not null"`
+	SourceLanguage  string     `json:"source_language" gorm:"not null;default:''"`
+	TargetLanguage  string     `json:"target_language" gorm:"not null"`
+	TranslatedText  string     `json:"translated_text" gorm:"not null;default:''"`
+	SendKey         string     `json:"-" gorm:"not null;default:''"`
+	CacheKey        string     `json:"-" gorm:"not null"`
+	Provider        string     `json:"provider,omitempty" gorm:"not null;default:''"`
+	Model           string     `json:"model,omitempty" gorm:"not null;default:''"`
+	PipelineVersion string     `json:"-" gorm:"not null"`
+	Attempts        int        `json:"-" gorm:"type:integer;not null;default:1"`
+	Status          string     `json:"status" gorm:"not null"`
+	ReviewStatus    string     `json:"review_status" gorm:"not null;default:'not_requested'"`
 	JevAssessmentID *string    `json:"-" gorm:"type:uuid"`
 	SentByUserID    *string    `json:"-" gorm:"type:uuid"`
 	SentAt          *time.Time `json:"-"`
-	ErrorCode       string     `json:"error_code,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	ErrorCode       string     `json:"error_code,omitempty" gorm:"not null;default:''"`
+	CreatedAt       time.Time  `json:"created_at" gorm:"not null;default:CURRENT_TIMESTAMP"`
+	UpdatedAt       time.Time  `json:"updated_at" gorm:"not null;default:CURRENT_TIMESTAMP"`
 	ExpiresAt       *time.Time `json:"expires_at,omitempty"`
 }
 
@@ -39,10 +39,10 @@ func (SupportTranslation) TableName() string { return "support_translations" }
 type SupportTranslationPreference struct {
 	WorkspaceID           string    `json:"-" gorm:"primaryKey;type:uuid"`
 	UserID                string    `json:"-" gorm:"primaryKey;type:uuid"`
-	ReadingLanguage       string    `json:"reading_language"`
-	AutoTranslateOutgoing bool      `json:"auto_translate_outgoing"`
-	AutoTranslateIncoming bool      `json:"auto_translate_incoming"`
-	UpdatedAt             time.Time `json:"-"`
+	ReadingLanguage       string    `json:"reading_language" gorm:"not null;default:'en'"`
+	AutoTranslateOutgoing bool      `json:"auto_translate_outgoing" gorm:"not null"`
+	AutoTranslateIncoming bool      `json:"auto_translate_incoming" gorm:"not null"`
+	UpdatedAt             time.Time `json:"-" gorm:"not null;default:CURRENT_TIMESTAMP"`
 }
 
 func (SupportTranslationPreference) TableName() string { return "support_translation_preferences" }
@@ -50,9 +50,9 @@ func (SupportTranslationPreference) TableName() string { return "support_transla
 type SupportTranslationConversation struct {
 	WorkspaceID      string    `json:"-" gorm:"primaryKey;type:uuid"`
 	ConversationID   string    `json:"-" gorm:"primaryKey;type:uuid"`
-	CustomerLanguage string    `json:"customer_language"`
-	TranslationMode  string    `json:"translation_mode"`
-	UpdatedAt        time.Time `json:"-"`
+	CustomerLanguage string    `json:"customer_language" gorm:"not null;default:''"`
+	TranslationMode  string    `json:"translation_mode" gorm:"not null;default:'inherit'"`
+	UpdatedAt        time.Time `json:"-" gorm:"not null;default:CURRENT_TIMESTAMP"`
 }
 
 func (SupportTranslationConversation) TableName() string { return "support_translation_conversations" }

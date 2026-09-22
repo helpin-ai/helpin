@@ -427,11 +427,13 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all(workspaceId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.unreadCount(workspaceId) })
 
-      if (event.action === 'created') {
+      if (event.action === 'created' || event.action === 'updated') {
         const data = event.data ?? {}
         const eventType = typeof data.event_type === 'string' ? data.event_type : ''
         const recipientId = typeof data.recipient_id === 'string' ? data.recipient_id : ''
         const parentTaskId = typeof data.parent_task_id === 'string' ? data.parent_task_id : ''
+        const chatId = typeof data.dock_chat_id === 'string' ? data.dock_chat_id : ''
+        const runId = typeof data.run_id === 'string' ? data.run_id : ''
         const selfId = selfIdRef.current
         if (
           eventType === 'task.agent_attention_required'
@@ -443,11 +445,17 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
           toast('Agent needs your attention', {
             description: 'An agent has paused and is waiting for your input.',
             duration: 10_000,
-            action: slug && parentTaskId ? {
+            action: chatId ? {
+              label: 'Open chat',
+              onClick: () => window.dispatchEvent(new CustomEvent('helpin:ask-agents', { detail: { chatId } })),
+            } : slug && parentTaskId ? {
               label: 'Open task',
               onClick: () => {
                 window.location.href = `/w/${slug}/pm/tasks?task=${parentTaskId}`
               },
+            } : runId ? {
+              label: 'Open agent',
+              onClick: () => window.dispatchEvent(new CustomEvent('helpin:ask-agents', { detail: { runId } })),
             } : undefined,
           })
         }

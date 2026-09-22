@@ -49,7 +49,9 @@ for public traffic. Follow the release gate and published patch notes.
 Community packaging maintainers plan tested upgrades from 0.1, automated
 public-edge/ACME fixtures, cached SDK loader upgrade compatibility, Postmark
 support-delivery fixtures, and a signing-secret setup UI. The 0.1 guide already
-includes explicit backup/restore and external proxy instructions. These items
+includes backup/restore and external proxy instructions. The operator CLI now
+implements backup, restore, and compatibility-gated upgrades; full-stack upgrade
+evidence and published compatible releases remain separate requirements. These items
 are plans, not evidence of shipped features or completed deployment checks.
 
 ## Implementation references

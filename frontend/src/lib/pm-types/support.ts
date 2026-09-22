@@ -1233,12 +1233,12 @@ export interface SupportInstallationResponse extends WidgetOriginSettings {
   updated_at: string;
 }
 
-export interface SupportTranslationPreference {
+interface SupportTranslationPreference {
  reading_language: string;
  auto_translate_incoming: boolean;
  auto_translate_outgoing: boolean;
 }
-export interface SupportTranslationConversation {
+interface SupportTranslationConversation {
  customer_language: string;
  translation_mode: 'inherit' | 'on' | 'off';
 }

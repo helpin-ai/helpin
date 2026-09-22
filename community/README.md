@@ -93,8 +93,10 @@ custom domain for public hosting. Locally, open
 installation you want to keep.
 
 Published bundles pin exact image digests. Changing a version variable does not
-upgrade an installation; use a reviewed replacement bundle. Tested cross-version
-upgrades start in 0.2.
+upgrade an installation. The [operator CLI](../docs/community/cli.md) provides
+backup, restore, and upgrade commands. An upgrade target must explicitly declare
+a tested path from your installed release; command availability alone does not
+establish release compatibility.
 
 ## Next steps
 
