@@ -149,6 +149,7 @@ func AutoMigrationModels() []any {
 		&model.GitIntegration{},
 		&model.GitCredential{},
 		&model.GitHubAppCredential{},
+		&model.InstanceSettings{},
 		&model.GitRepository{},
 		&model.PMTeamRepoDefault{},
 		&model.TaskDeliveryTarget{},

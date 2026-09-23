@@ -29,6 +29,7 @@ type capabilityWiring struct {
 	aiConnectionsEnabled bool
 	chatProviders        []string
 	embeddingModel       string
+	embeddingSource      func(context.Context, string) (service.EmbeddingSourceInfo, error)
 	storage              *storage.S3Client
 	temporal             tclient.Client
 	gitHubAppConfigured  func(context.Context) bool
@@ -46,6 +47,7 @@ func newCapabilityHandler(db *gorm.DB, cfg *config.Config, deps capabilityWiring
 		AIConnectionsEnabled:      deps.aiConnectionsEnabled,
 		ServerChatProviders:       deps.chatProviders,
 		EmbeddingModel:            deps.embeddingModel,
+		EmbeddingSource:           deps.embeddingSource,
 		SupportEmailConfigured:    supportEmailConfigured,
 		ObjectStorageConfigured:   deps.storage != nil,
 		GitHubAppConfigured:       deps.gitHubAppConfigured,

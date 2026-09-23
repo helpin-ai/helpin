@@ -55,9 +55,15 @@ private and back up its encryption keys together with your data: changing the
 keys only in the environment makes stored encrypted credentials unreadable.
 
 Open `http://localhost:8085`, sign up, and create your organization and
-workspace. Local signup does not require email, and new accounts remain
-unverified. With working application mail, `AUTH_EMAIL_VERIFICATION_REQUIRED=true`
-enables verification emails and the verification UI; it does not block every
+workspace. The first account on a new server becomes its **server admin**, and
+after that signup is invite only: invite teammates from **Settings → Members**
+(without application email, copy each invite link and send it yourself). Server
+admins can change the signup policy under **Settings → Signup & admins** and
+set up application email under **Settings → System status**; see
+[Server administration](../docs/community/configuration.md#server-administration).
+Local signup does not require email, and new accounts remain unverified. With
+working application mail, `AUTH_EMAIL_VERIFICATION_REQUIRED=true` enables
+verification emails and the verification UI; it does not block every
 unverified login.
 
 ## Explore with sample data

@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -328,11 +329,47 @@ func (a *app) prerequisites() error {
 	if err != nil {
 		return errors.New("cannot determine Docker memory")
 	}
-	if memory < 8*1024*1024*1024 {
-		return errors.New("Docker needs at least 8 GiB RAM for Community evaluation; increase the Docker VM/server memory")
+	warning, err := checkMemory(memory)
+	if err != nil {
+		return err
+	}
+	if warning != "" {
+		fmt.Fprintln(a.out, "!", warning)
 	}
 	fmt.Fprintln(a.out, "✓ Docker, Compose, and memory checks passed")
 	return nil
+}
+
+const gib = 1024 * 1024 * 1024
+
+// A nominal 8 GB server reports roughly 7.6–7.8 GiB to Docker after the kernel
+// and firmware reservations, so the requirement accepts 7.5 GiB. Between the
+// minimum and that threshold the installation may work but is tight.
+const (
+	memoryRecommended = 15 * gib / 2 // 7.5 GiB
+	memoryMinimum     = 6 * gib
+)
+
+var errInsufficientMemory = errors.New("insufficient memory")
+
+type memoryError struct{ total uint64 }
+
+func (e memoryError) Error() string {
+	return fmt.Sprintf("Docker reports %.1f GiB RAM; Community evaluation needs a server with at least 8 GB RAM; increase the Docker VM/server memory", float64(e.total)/gib)
+}
+
+func (e memoryError) Is(target error) bool { return target == errInsufficientMemory }
+
+// checkMemory returns an error below the minimum and a warning between the
+// minimum and the nominal-8-GB threshold.
+func checkMemory(total uint64) (string, error) {
+	switch {
+	case total < memoryMinimum:
+		return "", memoryError{total}
+	case total < memoryRecommended:
+		return fmt.Sprintf("Docker reports %.1f GiB RAM; a server with at least 8 GB RAM is recommended, so services may run slowly or restart under load", float64(total)/gib), nil
+	}
+	return "", nil
 }
 
 func checkPorts(o options) error {
@@ -367,38 +404,75 @@ func (a *app) ready(dir string) error {
 }
 
 func (a *app) doctor(dir string) error {
-	var failures []string
-	check := func(label string, err error) {
+	failures, hints := 0, []string{}
+	addHint := func(hint string) {
+		for _, h := range hints {
+			if h == hint {
+				return
+			}
+		}
+		hints = append(hints, hint)
+	}
+	check := func(label string, err error, hint func(error) string) {
 		if err != nil {
 			fmt.Fprintf(a.out, "✗ %s: %v\n", label, err)
-			failures = append(failures, label)
+			failures++
+			addHint(hint(err))
 		} else {
 			fmt.Fprintln(a.out, "✓", label)
 		}
 	}
-	check("Docker prerequisites", a.prerequisites())
+	fixed := func(hint string) func(error) string { return func(error) string { return hint } }
+	logsHint := fixed("inspect helpin logs")
+	check("Docker prerequisites", a.prerequisites(), func(err error) string {
+		if errors.Is(err, errInsufficientMemory) {
+			return "increase server memory to at least 8 GB RAM"
+		}
+		return "start Docker and check Docker Compose v2 and your Docker permissions"
+	})
 	_, err := a.output(dir, "docker", "compose", "--env-file", ".env", "-f", "compose.yaml", "config", "--quiet")
-	check("Compose configuration", err)
-	check("Service status", a.run(dir, "bash", "./setup.sh", "status"))
-	check("All required services", a.checkServices(dir))
+	check("Compose configuration", err, fixed("review .env and compose.yaml, or rerun helpin configure"))
+	check("Service status", a.run(dir, "bash", "./setup.sh", "status"), logsHint)
+	check("All required services", a.checkServices(dir), logsHint)
 	values, err := readEnv(dir)
 	if err != nil {
 		return err
 	}
 	client := &http.Client{Timeout: 10 * time.Second}
-	for _, endpoint := range []string{"http://127.0.0.1:" + values["DASHBOARD_PORT"], values["APP_BASE_URL"]} {
-		check(endpoint, waitForApp(client, endpoint, values["PUBLIC_WIDGET_URL"], 0))
+	local := "http://127.0.0.1:" + values["DASHBOARD_PORT"]
+	check(local, waitForApp(client, local, values["PUBLIC_WIDGET_URL"], 0), logsHint)
+	public := values["APP_BASE_URL"]
+	publicHint := logsHint
+	if !isLoopbackURL(public) {
+		publicHint = fixed("for the public URL, check DNS, your HTTPS proxy and trusted proxy CIDR")
 	}
+	check(public, waitForApp(client, public, values["PUBLIC_WIDGET_URL"], 0), publicHint)
 	info, err := os.Stat(filepath.Join(dir, ".env"))
 	if err == nil && info.Mode().Perm()&0077 != 0 {
 		err = errors.New("configuration contains secrets; run chmod 600 on .env")
 	}
-	check("Secret file permissions", err)
-	failures = append(failures, a.reportCapabilities(client, values)...)
-	if len(failures) > 0 {
-		return fmt.Errorf("%d checks failed; inspect helpin logs; for public URLs check DNS, your HTTPS proxy and trusted proxy CIDR", len(failures))
+	check("Secret file permissions", err, fixed("run chmod 600 on .env"))
+	if capabilityFailures := a.reportCapabilities(client, values); len(capabilityFailures) > 0 {
+		failures += len(capabilityFailures)
+		addHint("follow the Next steps listed under Capabilities")
+	}
+	if failures > 0 {
+		return fmt.Errorf("%d checks failed; %s", failures, strings.Join(hints, "; "))
 	}
 	return nil
+}
+
+func isLoopbackURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Hostname() == "" {
+		return false
+	}
+	host := u.Hostname()
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // Match the public configuration, so a proxy pointing at another application

@@ -106,6 +106,20 @@ describe('OrgGitConnectionsTab GitHub flow', () => {
     expect(gitService.getOrgGitHubInstallURL).toHaveBeenCalledWith('org-1', 'ws-1', { forceInstall: false, returnTo: 'settings' });
   });
 
+  it('shows GitHub and GitLab as quiet branded actions rather than dark buttons', async () => {
+    const view = await renderTab(configured);
+    const buttons = Array.from(view.querySelectorAll('button'));
+    const github = buttons.find((button) => button.textContent?.trim() === 'Connect GitHub')!;
+    const gitlab = buttons.find((button) => button.textContent?.trim() === 'Connect GitLab')!;
+
+    for (const [button, provider] of [[github, 'github'], [gitlab, 'gitlab']] as const) {
+      expect(button.dataset.gitProvider).toBe(provider);
+      expect(button.dataset.variant).toBe('outline');
+      expect(button.querySelector(`svg[data-git-provider-icon="${provider}"]`)).not.toBeNull();
+    }
+    expect(view.querySelectorAll('button[data-variant="default"]')).toHaveLength(0);
+  });
+
   it('offers creation in the page body and shows the reachability problem instead when blocked', async () => {
     const missing: GitHubAppStatus = { configured: false, source: 'none', slug: '', install_url: '', webhook_configured: false, manifest_available: true };
     let view = await renderTab(missing);

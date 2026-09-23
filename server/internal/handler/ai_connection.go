@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -15,15 +16,26 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
+// KnowledgeAIConfiguration describes how the workspace's knowledge search is
+// wired. EmbeddingSource is "server", "workspace", or "" when no provider
+// serves the workspace; EmbeddingDetail names the source for display.
 type KnowledgeAIConfiguration struct {
 	EmbeddingsConfigured bool     `json:"embeddings_configured"`
 	EmbeddingModel       string   `json:"embedding_model"`
 	EmbeddingDimensions  int      `json:"embedding_dimensions"`
+	EmbeddingSource      string   `json:"embedding_source"`
+	EmbeddingProvider    string   `json:"embedding_provider,omitempty"`
+	EmbeddingDetail      string   `json:"embedding_detail,omitempty"`
 	ChatProviders        []string `json:"chat_providers"`
 }
+
+// KnowledgeEmbeddingSourceFunc resolves a workspace's embedding source.
+type KnowledgeEmbeddingSourceFunc func(ctx context.Context, workspaceID string) (service.EmbeddingSourceInfo, error)
+
 type AIConnectionHandler struct {
-	service   *service.AIConnectionService
-	knowledge KnowledgeAIConfiguration
+	service         *service.AIConnectionService
+	knowledge       KnowledgeAIConfiguration
+	embeddingSource KnowledgeEmbeddingSourceFunc
 }
 
 // Configuration describes wiring, not a successful provider health check.
@@ -34,19 +46,58 @@ func (h *AIConnectionHandler) SetKnowledgeConfiguration(embeddings bool, embeddi
 	if chatProviders == nil {
 		chatProviders = []string{}
 	}
-	h.knowledge = KnowledgeAIConfiguration{embeddings, embeddingModel, 1536, chatProviders}
+	h.knowledge = KnowledgeAIConfiguration{
+		EmbeddingsConfigured: embeddings, EmbeddingModel: embeddingModel,
+		EmbeddingDimensions: 1536, ChatProviders: chatProviders,
+	}
+	if embeddings {
+		h.knowledge.EmbeddingSource = service.EmbeddingSourceServer
+	}
+}
+
+// SetKnowledgeEmbeddingSource makes the knowledge configuration reflect each
+// workspace's own embedding source (server key or workspace connection).
+func (h *AIConnectionHandler) SetKnowledgeEmbeddingSource(resolve KnowledgeEmbeddingSourceFunc) {
+	h.embeddingSource = resolve
+}
+
+// knowledgeFor returns the knowledge configuration as seen by one workspace.
+func (h *AIConnectionHandler) knowledgeFor(ctx context.Context, workspaceID string) KnowledgeAIConfiguration {
+	knowledge := h.knowledge
+	if h.embeddingSource == nil {
+		return knowledge
+	}
+	source, err := h.embeddingSource(ctx, workspaceID)
+	if err != nil {
+		slog.WarnContext(ctx, "resolve knowledge embedding source failed", "workspace_id", workspaceID, "error", err)
+		return knowledge
+	}
+	knowledge.EmbeddingsConfigured = source.Available()
+	knowledge.EmbeddingSource = source.Source
+	knowledge.EmbeddingProvider = source.Provider
+	if source.Available() {
+		knowledge.EmbeddingDetail = source.Detail()
+		if source.Model != "" {
+			knowledge.EmbeddingModel = source.Model
+		}
+		if source.Dimensions > 0 {
+			knowledge.EmbeddingDimensions = source.Dimensions
+		}
+	}
+	return knowledge
 }
 
 func NewAIConnectionHandler(s *service.AIConnectionService) *AIConnectionHandler {
 	return &AIConnectionHandler{service: s}
 }
 func (h *AIConnectionHandler) List(w http.ResponseWriter, r *http.Request) {
-	connections, err := h.service.List(r.Context(), middleware.GetWorkspaceID(r.Context()), middleware.GetUserID(r.Context()))
+	workspaceID := middleware.GetWorkspaceID(r.Context())
+	connections, err := h.service.List(r.Context(), workspaceID, middleware.GetUserID(r.Context()))
 	if err != nil {
 		h.failure(w, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"enabled": h.service.Enabled(), "connections": connections, "models": h.service.Models(), "knowledge": h.knowledge})
+	writeJSON(w, 200, map[string]any{"enabled": h.service.Enabled(), "connections": connections, "models": h.service.Models(), "knowledge": h.knowledgeFor(r.Context(), workspaceID)})
 }
 func decodeAIConnection(w http.ResponseWriter, r *http.Request, out any) error {
 	r.Body = http.MaxBytesReader(w, r.Body, 128<<10)

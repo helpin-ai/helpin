@@ -28,6 +28,8 @@ import { useWorkspaceModuleAccess } from '@/hooks/queries/useSettings';
 import { EditMemberDialog } from './EditMemberDialog';
 import { getMemberModuleAccess } from './memberAccess';
 
+type CreatedInviteLink = { email: string; url: string; emailed: boolean };
+
 export function MembersTab({ workspaceId, organizationId, editable, canManageTeams = false, canManageModuleAccess = false, teams, userMemberships, onRefresh }: {
   workspaceId: string;
   organizationId?: string;
@@ -46,7 +48,10 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
   const [invEmailInput, setInvEmailInput] = useState('');
   const [invRole, setInvRole] = useState('member');
   const [sending, setSending] = useState(false);
-  const [createdJoinUrl, setCreatedJoinUrl] = useState<string | null>(null);
+  // Invite links to show after sending; `linksEmailed` is false when the server has no email.
+  const [createdLinks, setCreatedLinks] = useState<CreatedInviteLink[]>([]);
+  const [linksEmailed, setLinksEmailed] = useState(true);
+  const appEmailConfigured = useAuthStore((state) => state.configuration?.app_email_configured ?? true);
   const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([]);
   const [query, setQuery] = useState('');
   const [editingMember, setEditingMember] = useState<MemberWithUser | null>(null);
@@ -128,7 +133,7 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
   useEffect(() => { loadData(); }, [workspaceId]);
 
   const openInviteDialog = () => {
-    setCreatedJoinUrl(null);
+    setCreatedLinks([]);
     setInvEmails([]);
     setInvEmailInput('');
     setInvRole('member');
@@ -138,7 +143,7 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
 
   const closeInviteDialog = () => {
     setInviteOpen(false);
-    if (createdJoinUrl) loadData();
+    if (createdLinks.length > 0) loadData();
   };
 
   const pendingInviteEmails = useMemo(
@@ -162,7 +167,7 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
     setSending(true);
     let sent = 0;
     const failures: { email: string; error: string }[] = [];
-    let lastJoinUrl: string | null = null;
+    const links: CreatedInviteLink[] = [];
 
     await Promise.all(
       emails.map(async (email) => {
@@ -175,7 +180,7 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
               selectedTeamIds.map((teamId) => settingsService.addTeamInvitation(workspaceId, teamId, data.id)),
             );
           }
-          if (data?.join_url) lastJoinUrl = data.join_url;
+          if (data?.join_url) links.push({ email, url: data.join_url, emailed: data.email_sent !== false });
           sent++;
         }
       }),
@@ -184,10 +189,15 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
     setSending(false);
 
     const failureLines = failures.map((f) => `${f.email}: ${f.error}`);
+    const unsent = links.filter((link) => !link.emailed);
 
     if (sent > 0 && failures.length > 0) {
-      toast.warning(`${sent} of ${emails.length} invitations sent`, {
+      toast.warning(`${sent} of ${emails.length} invitations ${unsent.length > 0 ? 'created' : 'sent'}`, {
         description: failureLines.join('\n'),
+      });
+    } else if (sent > 0 && unsent.length > 0) {
+      toast.success(`${sent} invitation${sent === 1 ? '' : 's'} created`, {
+        description: 'Email isn’t set up on this server, so share the invite link.',
       });
     } else if (sent > 0) {
       toast.success(`${sent} invitation${sent === 1 ? '' : 's'} sent`);
@@ -202,8 +212,13 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
     }
 
     if (sent > 0) {
-      if (emails.length === 1 && lastJoinUrl) {
-        setCreatedJoinUrl(lastJoinUrl);
+      if (emails.length === 1 && links.length === 1) {
+        setCreatedLinks(links);
+        setLinksEmailed(links[0].emailed);
+      } else if (unsent.length > 0) {
+        // Without email, every new invitation needs its link shared by hand.
+        setCreatedLinks(unsent);
+        setLinksEmailed(false);
       } else {
         setInviteOpen(false);
         loadData();
@@ -292,7 +307,9 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
             <div>
               <h3 className="text-sm font-medium">Pending Invitations</h3>
               <p className="text-sm text-muted-foreground">
-                Invitations that have been sent but not yet accepted.
+                {appEmailConfigured
+                  ? 'Invitations that have been sent but not yet accepted.'
+                  : 'Email isn’t set up on this server, so share each invite link with the person you invited.'}
               </p>
             </div>
             <div className="overflow-hidden rounded-lg border border-border">
@@ -301,8 +318,8 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
                   <TableRow className="bg-muted/40 hover:bg-muted/40">
                     <TableHead>Email</TableHead>
                     <TableHead className="w-[160px]">Workspace role</TableHead>
-                    <TableHead className="w-[140px]">Sent</TableHead>
-                    <TableHead className="w-[120px]">Actions</TableHead>
+                    <TableHead className="w-[140px]">Created</TableHead>
+                    <TableHead className="w-[160px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -314,7 +331,16 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
                         {new Date(inv.created_at).toLocaleDateString()}
                       </TableCell>
                       <TableCell>
-                        <Button variant="ghost" size="sm" aria-label={`Manage invitation for ${inv.email}`} onClick={() => setManagingInvitation(inv)}>Manage</Button>
+                        <div className="flex items-center gap-1">
+                          {inv.join_url && (
+                            <QuickTooltip label="Copy invite link">
+                              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Copy invite link for ${inv.email}`} onClick={() => handleCopyLink(inv.join_url!)}>
+                                <Copy01Icon className="h-4 w-4" aria-hidden="true" />
+                              </Button>
+                            </QuickTooltip>
+                          )}
+                          <Button variant="ghost" size="sm" aria-label={`Manage invitation for ${inv.email}`} onClick={() => setManagingInvitation(inv)}>Manage</Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -457,7 +483,7 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
           <div className="space-y-4 py-2">
             <div className="flex justify-between text-sm"><span className="text-muted-foreground">Workspace role</span><span>{workspaceRoleLabel(managingInvitation?.role ?? '')}</span></div>
             {managingInvitation?.join_url && <Button variant="outline" className="w-full" onClick={() => handleCopyLink(managingInvitation.join_url!)}><Copy01Icon className="mr-2 h-4 w-4" />Copy invite link</Button>}
-            <Button variant="outline" className="w-full" disabled={invitationBusy} onClick={async () => { if (!managingInvitation) return; setInvitationBusy(true); try { await handleResend(managingInvitation.id); } finally { setInvitationBusy(false); } }}><ArrowReloadHorizontalIcon className="mr-2 h-4 w-4" />Resend invitation</Button>
+            {appEmailConfigured && <Button variant="outline" className="w-full" disabled={invitationBusy} onClick={async () => { if (!managingInvitation) return; setInvitationBusy(true); try { await handleResend(managingInvitation.id); } finally { setInvitationBusy(false); } }}><ArrowReloadHorizontalIcon className="mr-2 h-4 w-4" />Resend invitation</Button>}
             <div className="border-t pt-4"><Button variant="ghost" className="w-full text-destructive hover:text-destructive" disabled={invitationBusy} onClick={() => setRevokeInvitationConfirm(true)}>Revoke invitation</Button></div>
           </div>
           <DialogFooter><Button variant="outline" disabled={invitationBusy} onClick={() => setManagingInvitation(null)}>Done</Button></DialogFooter>
@@ -472,19 +498,28 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
 
       <Dialog open={inviteOpen} onOpenChange={closeInviteDialog}>
         <DialogContent className="sm:max-w-2xl">
-          {createdJoinUrl ? (
+          {createdLinks.length > 0 ? (
             <>
               <DialogHeader>
-                <DialogTitle>Invitation Sent</DialogTitle>
+                <DialogTitle>{linksEmailed ? 'Invitation Sent' : createdLinks.length === 1 ? 'Share the invite link' : 'Share the invite links'}</DialogTitle>
+                {!linksEmailed && <DialogDescription>Email isn’t set up on this server, so send each person their link yourself. Links expire in 7 days.</DialogDescription>}
               </DialogHeader>
               <div className="space-y-4 py-4">
-                <p className="text-sm text-muted-foreground">Share this link with <span className="font-medium text-foreground">{pendingInviteEmails[0]}</span> to join the workspace.</p>
-                <div className="flex gap-2">
-                  <Input value={createdJoinUrl} readOnly className="bg-muted text-xs" />
-                  <Button type="button" variant="outline" size="icon" onClick={() => handleCopyLink(createdJoinUrl)}>
-                    <Copy01Icon className="h-4 w-4" />
-                  </Button>
-                </div>
+                {createdLinks.map((link) => (
+                  <div key={link.email} className="space-y-1.5">
+                    <p className="text-sm text-muted-foreground">
+                      {linksEmailed ? 'Share this link with ' : 'Link for '}
+                      <span className="font-medium text-foreground">{link.email}</span>
+                      {linksEmailed ? ' to join the workspace.' : ''}
+                    </p>
+                    <div className="flex gap-2">
+                      <Input value={link.url} readOnly className="bg-muted text-xs" aria-label={`Invite link for ${link.email}`} />
+                      <Button type="button" variant="outline" size="icon" aria-label={`Copy invite link for ${link.email}`} onClick={() => handleCopyLink(link.url)}>
+                        <Copy01Icon className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
               </div>
               <DialogFooter>
                 <Button type="button" onClick={closeInviteDialog}>Done</Button>

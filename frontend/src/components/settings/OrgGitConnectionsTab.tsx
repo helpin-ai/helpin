@@ -3,6 +3,8 @@ import { useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { GitHubAppCreateButton } from '@/components/git/GitHubAppCreateButton';
+import { GitProviderButton, GitProviderIcon } from '@/components/git/GitProviderIcon';
+import { gitProviderLabels, gitProviderOf } from '@/components/git/gitProvider';
 import { gitHubAppOwnerNote } from '@/components/git/githubApp';
 import { useGitHubAppStatus } from '@/hooks/queries';
 import { useGitHubReturnResult } from '@/hooks/useGitHubReturnResult';
@@ -10,7 +12,6 @@ import { gitRepoURL } from '@/lib/gitUrls';
 import { gitService } from '@/lib/services/gitService';
 import type { GitIntegration, GitIntegrationDetail, GitIntegrationWorkspaceUsage, GitRepository } from '@/lib/pmTypes';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -237,37 +238,24 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
         description="Organization provider access for repositories used across workspaces."
         actions={canManage ? (
           <div className="flex shrink-0 flex-wrap gap-2 md:justify-end">
-            {githubAppMissing ? null : hasGitHubIntegration ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
+            {githubAppMissing ? null : (
+              <GitProviderButton
+                provider="github"
                 disabled={installingGitHub || !organizationId}
-                onClick={() => void startGitHubConnect(true)}
+                aria-busy={installingGitHub || undefined}
+                onClick={() => void startGitHubConnect(hasGitHubIntegration)}
               >
-                Connect Another GitHub Org
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                variant="default"
-                size="sm"
-                disabled={installingGitHub || !organizationId}
-                onClick={() => void startGitHubConnect(false)}
-              >
-                {installingGitHub ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
-                Connect GitHub
-              </Button>
+                {hasGitHubIntegration ? 'Connect Another GitHub Org' : 'Connect GitHub'}
+                {installingGitHub ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
+              </GitProviderButton>
             )}
-            <Button
-              type="button"
-              variant={hasGitLabIntegration ? 'outline' : 'default'}
-              size="sm"
+            <GitProviderButton
+              provider="gitlab"
               disabled={!organizationId}
               onClick={openGitLabDialog}
             >
               {hasGitLabIntegration ? 'Connect Another GitLab Account' : 'Connect GitLab'}
-            </Button>
+            </GitProviderButton>
           </div>
         ) : null}
       />
@@ -316,7 +304,8 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
           ) : (
             <div className="space-y-3">
               {integrations.map((integration) => {
-                const providerLabel = integration.provider === 'gitlab' ? 'GitLab' : 'GitHub';
+                const provider = gitProviderOf(integration.provider);
+                const providerLabel = gitProviderLabels[provider];
                 const manageURL = gitHubAccessURL(integration);
                 const workspaceRepos = workspaceReposByIntegration.get(integration.id) ?? [];
                 const usage = integrationUsage[integration.id] ?? [];
@@ -329,8 +318,9 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className={cn('h-2 w-2 rounded-full', integration.active ? 'bg-emerald-500' : 'bg-muted-foreground/50')} />
+                            <GitProviderIcon provider={provider} />
                             <p className="truncate text-sm font-medium">{integration.display_name}</p>
-                            <Badge variant="outline" className="text-[10px] uppercase tracking-wide">{providerLabel}</Badge>
+                            <span className="text-[12px] text-quiet-text-tertiary">{providerLabel}</span>
                           </div>
                           <p className="mt-1 truncate text-xs text-muted-foreground">
                             {integration.account_login || 'Connected account'}

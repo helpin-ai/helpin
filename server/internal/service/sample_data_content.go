@@ -1,5 +1,7 @@
 package service
 
+import "github.com/helpin-ai/helpin/server/internal/model"
+
 // Fixture content for the sample workspace. Everything describes Northwind
 // Outfitters, a fictional online outdoor-gear retailer. Every email address
 // uses the reserved example.com domain.
@@ -27,6 +29,34 @@ type sampleTask struct {
 
 type sampleArticle struct {
 	title, markdown string
+}
+
+// sampleFlow is an example Flow that moves a task when its pull request
+// changes. Sample Flows are created turned off.
+type sampleFlow struct {
+	name, description, triggerType, baseBranch string
+	// targetStateType and targetStateName select the default workflow state
+	// the task moves to.
+	targetStateType, targetStateName string
+}
+
+var sampleFlows = []sampleFlow{
+	{
+		name:            "Move tasks to In Review when a pull request opens",
+		description:     "Example Flow, turned off. When a pull request into main opens for a task's branch, the task moves to In Review.",
+		triggerType:     model.TriggerGitHubPROpened,
+		baseBranch:      "main",
+		targetStateType: model.PMStateTypeStarted,
+		targetStateName: "In Review",
+	},
+	{
+		name:            "Move tasks to Done when a pull request merges",
+		description:     "Example Flow, turned off. When a pull request into main merges, the linked task moves to Done.",
+		triggerType:     model.TriggerGitHubPRMerged,
+		baseBranch:      "main",
+		targetStateType: model.PMStateTypeDone,
+		targetStateName: "Done",
+	},
 }
 
 type sampleMessage struct {

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -20,6 +21,12 @@ type CapabilityHandler struct {
 // NewCapabilityHandler creates a CapabilityHandler.
 func NewCapabilityHandler(capabilities *service.CapabilityService) *CapabilityHandler {
 	return &CapabilityHandler{service: capabilities}
+}
+
+// SetAppEmailState makes email_outbound follow application email settings
+// that can change at runtime (settings saved in the app).
+func (h *CapabilityHandler) SetAppEmailState(state func(context.Context) (bool, string)) {
+	h.service.SetAppEmailState(state)
 }
 
 // Workspace returns the capabilities visible to a workspace member.
@@ -51,7 +58,16 @@ func (h *CapabilityHandler) Instance(w http.ResponseWriter, r *http.Request) {
 // SendTestEmail sends a test email to the requesting user's own address.
 // POST /api/workspaces/{id}/email/test
 func (h *CapabilityHandler) SendTestEmail(w http.ResponseWriter, r *http.Request) {
-	workspaceID := chi.URLParam(r, "id")
+	h.sendTestEmail(w, r, chi.URLParam(r, "id"))
+}
+
+// SendInstanceTestEmail sends a test email for a server admin outside any
+// workspace. POST /api/instance/email/test
+func (h *CapabilityHandler) SendInstanceTestEmail(w http.ResponseWriter, r *http.Request) {
+	h.sendTestEmail(w, r, "")
+}
+
+func (h *CapabilityHandler) sendTestEmail(w http.ResponseWriter, r *http.Request, workspaceID string) {
 	userID := middleware.GetUserID(r.Context())
 	if userID == "" {
 		writeError(w, http.StatusUnauthorized, "authentication required")

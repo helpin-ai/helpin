@@ -1,5 +1,6 @@
 import type { CapabilitiesResponse, Capability, CapabilityKey } from './capabilityTypes';
-import type { WorkspaceOnboardingStep } from './workspaceOnboardingMode';
+import type { SetupGoalKey } from './setupTypes';
+import { workspaceOnboardingSteps, type WorkspaceOnboardingStep } from './workspaceOnboardingMode';
 
 /**
  * What the server reports about a freshly created workspace, reduced to the
@@ -13,6 +14,7 @@ export type OnboardingConditions = {
   edition?: CapabilitiesResponse['edition'];
   ai?: Capability['status'];
   email?: Capability['status'];
+  github?: Capability['status'];
 };
 
 function statusOf(response: CapabilitiesResponse | undefined, key: CapabilityKey) {
@@ -24,6 +26,7 @@ export function onboardingConditionsFromCapabilities(response: CapabilitiesRespo
     edition: response?.edition,
     ai: statusOf(response, 'ai_chat'),
     email: statusOf(response, 'email_outbound'),
+    github: statusOf(response, 'github'),
   };
 }
 
@@ -47,50 +50,121 @@ export function areEmailInvitesUnavailable({ email }: OnboardingConditions) {
   return email === 'needs_setup' || email === 'unavailable';
 }
 
+/** Setup goal whose people are offered the optional Connect GitHub step. */
+export const GITHUB_STEP_GOAL: SetupGoalKey = 'product_delivery';
+
+export type GitHubStepConditions = {
+  edition?: CapabilitiesResponse['edition'];
+  github?: Capability['status'];
+  /** Setup goals chosen for the workspace, in priority order. */
+  goals: readonly SetupGoalKey[];
+  /** Only the workspace owner can create or install the GitHub App from Helpin. */
+  isOwner: boolean;
+};
+
+/**
+ * The optional Connect GitHub step appears only when every condition holds: a
+ * Community server, the person chose to plan and ship projects, GitHub isn't
+ * ready for the workspace yet, and they own the workspace. Admins who aren't
+ * owners and members skip it silently; so does a server where GitHub is
+ * unavailable (Projects or Agents turned off).
+ */
+export function shouldOfferGitHubStep({ edition, github, goals, isOwner }: GitHubStepConditions) {
+  return edition === 'community'
+    && isOwner
+    && goals.includes(GITHUB_STEP_GOAL)
+    && (github === 'needs_setup' || github === 'unable_to_verify');
+}
+
+/**
+ * Whether this visit includes Connect GitHub, or undefined while something it
+ * depends on is still loading. Once shown for a workspace the step stays, so a
+ * successful connection (GitHub turns ready) doesn't skip past its result. A
+ * URL that asks for the step (GitHub returns to `?step=github`) keeps it for
+ * the owner on Community, even when GitHub is ready by then.
+ */
+export function resolveGitHubStepInclusion({
+  workspaceId,
+  rememberedWorkspaceId,
+  requested,
+  capabilitiesSettled,
+  conditions,
+  accessSettled,
+  role,
+  goals,
+}: {
+  workspaceId: string;
+  rememberedWorkspaceId: string | null;
+  requested: boolean;
+  capabilitiesSettled: boolean;
+  conditions: OnboardingConditions;
+  accessSettled: boolean;
+  role: string | undefined;
+  /** Undefined while the workspace's goals are loading. */
+  goals: readonly SetupGoalKey[] | undefined;
+}): boolean | undefined {
+  if (rememberedWorkspaceId === workspaceId) return true;
+  if (!capabilitiesSettled) return undefined;
+  const { edition, github } = conditions;
+  if (edition !== 'community' || !github || github === 'unavailable') return false;
+  if (!accessSettled) return undefined;
+  if (role !== 'owner') return false;
+  if (requested) return true;
+  if (goals === undefined) return undefined;
+  return shouldOfferGitHubStep({ edition, github, goals, isOwner: true });
+}
+
+/** Optional steps included in this flow. */
+export type OnboardingInclusions = { includeAI: boolean; includeGitHub?: boolean };
+
 /** The steps shown in the progress indicator, in order. */
-export function onboardingStepsFor({ includeAI }: { includeAI: boolean }): WorkspaceOnboardingStep[] {
-  return includeAI
-    ? ['workspace', 'ai', 'context', 'teams', 'invite', 'finish']
-    : ['workspace', 'context', 'teams', 'invite', 'finish'];
+export function onboardingStepsFor({ includeAI, includeGitHub = false }: OnboardingInclusions): WorkspaceOnboardingStep[] {
+  return workspaceOnboardingSteps.filter((step) =>
+    (step !== 'ai' || includeAI) && (step !== 'github' || includeGitHub));
 }
 
 export function nextOnboardingStep(
   current: WorkspaceOnboardingStep,
-  { includeAI }: { includeAI: boolean },
+  inclusions: OnboardingInclusions,
 ): WorkspaceOnboardingStep {
-  const steps = onboardingStepsFor({ includeAI });
-  const index = steps.indexOf(current);
-  if (index === -1) {
-    // Only `ai` can be missing from the list; it is followed by `context`.
-    return 'context';
+  const steps = onboardingStepsFor(inclusions);
+  // Walk the full order so a step left out of this flow (`ai`, `github`) still has a successor.
+  const order = workspaceOnboardingSteps;
+  for (let index = order.indexOf(current) + 1; index < order.length; index += 1) {
+    if (steps.includes(order[index])) return order[index];
   }
-  return steps[Math.min(index + 1, steps.length - 1)];
+  return 'finish';
 }
 
 /**
  * The step to render for a URL. Before a workspace exists only the workspace
  * step is possible. Once it exists the workspace step is never shown again, so
- * Back/Forward or a reload can't create a second workspace. `includeAI` is
- * undefined while capabilities are still loading; the `ai` step waits for it.
+ * Back/Forward or a reload can't create a second workspace. `includeAI` and
+ * `includeGitHub` are undefined while what they depend on is still loading;
+ * the optional steps wait for them.
  */
 export function resolveOnboardingStep({
   requested,
   hasWorkspace,
   includeAI,
+  includeGitHub,
 }: {
   requested: WorkspaceOnboardingStep | undefined;
   hasWorkspace: boolean;
   includeAI: boolean | undefined;
+  includeGitHub: boolean | undefined;
 }): WorkspaceOnboardingStep | undefined {
   if (!hasWorkspace) return 'workspace';
-  if (!requested || requested === 'workspace') {
+  const fromGitHub = () => {
+    if (includeGitHub === undefined) return undefined;
+    return includeGitHub ? 'github' : 'context';
+  };
+  const fromAI = () => {
     if (includeAI === undefined) return undefined;
-    return nextOnboardingStep('workspace', { includeAI });
-  }
-  if (requested === 'ai') {
-    if (includeAI === undefined) return undefined;
-    return includeAI ? 'ai' : 'context';
-  }
+    return includeAI ? 'ai' : fromGitHub();
+  };
+  if (!requested || requested === 'workspace' || requested === 'ai') return fromAI();
+  if (requested === 'github') return fromGitHub();
   return requested;
 }
 

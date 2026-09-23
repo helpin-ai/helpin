@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 const stepLabels: Record<WorkspaceOnboardingStep, string> = {
   workspace: 'Workspace',
   ai: 'AI',
+  github: 'GitHub',
   context: 'Company',
   teams: 'Teams',
   invite: 'Invite',

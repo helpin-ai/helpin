@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
 import { workspacesService } from '@/lib/services/workspacesService';
+import { inviteService } from '@/lib/services/inviteService';
 import { MembersTab } from '../MembersTab';
 import type { WorkspaceTeam, TeamUserMembership } from '@/lib/types';
 
@@ -15,7 +16,9 @@ vi.mock('@/lib/services/workspacesService', () => ({ workspacesService: { remove
   { id: 'owner-member', user_id: 'owner', full_name: 'Workspace Owner', email: 'owner@example.com', role: 'owner' },
   { id: 'member-1', user_id: 'ada', full_name: 'Ada Lovelace', email: 'ada@example.com', role: 'member' },
 ], error: null }) } }));
-vi.mock('@/lib/services/inviteService', () => ({ inviteService: { list: vi.fn().mockResolvedValue({ data: [], error: null }) } }));
+vi.mock('@/lib/services/inviteService', () => ({ inviteService: { list: vi.fn().mockResolvedValue({ data: [], error: null }), send: vi.fn() } }));
+const copy = vi.hoisted(() => vi.fn());
+vi.mock('@/hooks/useCopyToClipboard', () => ({ useCopyToClipboard: () => ({ copy }) }));
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 afterEach(() => { document.body.innerHTML = ''; });
 
@@ -44,6 +47,32 @@ describe('MembersTab', () => {
     await act(async () => Array.from(document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')).find(button => button.textContent === 'Remove member')!.click());
     expect(workspacesService.removeMember).toHaveBeenCalledWith('ws-1', 'member-1');
     expect(container.textContent).not.toContain('Ada Lovelace');
+    act(() => root.unmount());
+  });
+
+  it('offers copyable invite links when the server has no email', async () => {
+    useAuthStore.setState({
+      user: { id: 'owner', full_name: 'Owner', email: 'owner@example.com' },
+      configuration: { email_verification_required: false, app_email_configured: false, google_login_enabled: false },
+    } as never);
+    const joinUrl = 'https://helpin.example.com/join/abc123';
+    vi.mocked(inviteService.list).mockResolvedValueOnce({ data: [
+      { id: 'inv-1', workspace_id: 'ws-1', email: 'grace@example.com', role: 'member', status: 'pending', invited_by: 'owner', expires_at: '2026-10-01T00:00:00Z', created_at: '2026-09-23T00:00:00Z', join_url: joinUrl },
+    ], error: null } as never);
+    const container = document.createElement('div'); document.body.appendChild(container); const root = createRoot(container);
+    await act(async () => root.render(<QueryClientProvider client={new QueryClient()}><TooltipProvider><MembersTab workspaceId="ws-1" editable teams={[]} userMemberships={[]} /></TooltipProvider></QueryClientProvider>));
+
+    expect(container.textContent).toContain('Email isn’t set up on this server');
+    const copyButton = container.querySelector<HTMLButtonElement>('button[aria-label="Copy invite link for grace@example.com"]')!;
+    expect(copyButton).not.toBeNull();
+    await act(async () => copyButton.click());
+    expect(copy).toHaveBeenCalledWith(joinUrl);
+
+    // Managing the invitation offers the link but not an email resend.
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Manage invitation for grace@example.com"]')!.click());
+    const dialogText = document.querySelector('[role="dialog"]')?.textContent ?? '';
+    expect(dialogText).toContain('Copy invite link');
+    expect(dialogText).not.toContain('Resend invitation');
     act(() => root.unmount());
   });
 });

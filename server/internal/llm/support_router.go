@@ -90,6 +90,34 @@ func SupportEmbeddingModel(openAIAPIKey, openRouterAPIKey, configured string) st
 	}
 }
 
+// SupportEmbeddingProviderName reports which server key serves embeddings:
+// "openai", "openrouter", or "" when neither key is configured.
+func SupportEmbeddingProviderName(openAIAPIKey, openRouterAPIKey string) string {
+	switch {
+	case strings.TrimSpace(openAIAPIKey) != "":
+		return "openai"
+	case strings.TrimSpace(openRouterAPIKey) != "":
+		return "openrouter"
+	default:
+		return ""
+	}
+}
+
+// NewOpenRouterEmbeddingProvider returns an OpenRouter embeddings client that
+// accepts OpenAI embedding model names, or nil when apiKey is empty. An empty
+// baseURL uses the public OpenRouter API.
+func NewOpenRouterEmbeddingProvider(apiKey, baseURL string) EmbeddingProvider {
+	baseURL = strings.TrimSpace(baseURL)
+	if baseURL == "" {
+		baseURL = openRouterDefaultBaseURL
+	}
+	base := NewOpenAIProvider(strings.TrimSpace(apiKey), baseURL, "")
+	if base == nil {
+		return nil
+	}
+	return &openRouterEmbeddingProvider{base: base}
+}
+
 // openRouterEmbeddingProvider maps OpenAI embedding model names to OpenRouter's
 // vendor-prefixed identifiers so callers can keep passing OPENAI_EMBEDDING_MODEL.
 type openRouterEmbeddingProvider struct {

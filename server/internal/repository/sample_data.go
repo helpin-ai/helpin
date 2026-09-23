@@ -197,6 +197,27 @@ func (r *SampleDataRepository) CreateTeam(ctx context.Context, team *model.Works
 	return nil
 }
 
+// CreateDisabledAutomationRule inserts a sample Flow with enabled = false.
+// Writing the column explicitly bypasses the model's default:true tag, so the
+// rule is never briefly enabled; no schedule is registered and the rule engine
+// only matches enabled rules, so it cannot fire until someone turns it on.
+func (r *SampleDataRepository) CreateDisabledAutomationRule(ctx context.Context, rule *model.AutomationRule) error {
+	if rule == nil || rule.ID == "" {
+		return fmt.Errorf("sample Flow requires an identity")
+	}
+	rule.Enabled = false
+	if err := r.db.WithContext(ctx).Model(&model.AutomationRule{}).Create(map[string]any{
+		"id": rule.ID, "workspace_id": rule.WorkspaceID, "name": rule.Name, "description": rule.Description,
+		"enabled": false, "workflow_id": rule.WorkflowID, "trigger_type": rule.TriggerType,
+		"trigger_config": rule.TriggerConfig, "action_type": rule.ActionType, "action_config": rule.ActionConfig,
+		"position": rule.Position, "stop_on_match": false, "created_by": rule.CreatedBy,
+		"created_at": rule.CreatedAt, "updated_at": rule.UpdatedAt,
+	}).Error; err != nil {
+		return fmt.Errorf("create sample Flow: %w", err)
+	}
+	return nil
+}
+
 // SetConversationState stamps lifecycle fields that the sample loader writes
 // directly, without running status-change side effects.
 func (r *SampleDataRepository) SetConversationState(ctx context.Context, workspaceID, conversationID string, fields map[string]any) error {
@@ -261,6 +282,12 @@ type sampleEntitySpec struct {
 // that are deleted with it and the references that are detached. Table and
 // column names are constants, never user input.
 var sampleEntitySpecs = map[string]sampleEntitySpec{
+	// A sample Flow that someone turned on and that has run keeps its run
+	// history, so the Flow is kept rather than orphaning that history.
+	model.SampleEntityAutomationRule: {
+		table:    "automation_rules",
+		retainIf: []sampleColumnRef{{"agent_trigger_executions", "binding_id"}},
+	},
 	model.SampleEntitySupportConversation: {
 		table: "support_conversations",
 		children: []sampleColumnRef{

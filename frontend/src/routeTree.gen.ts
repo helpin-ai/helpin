@@ -55,6 +55,7 @@ import { Route as AuthenticatedWSlugSettingsTaskTemplatesRouteImport } from './r
 import { Route as AuthenticatedWSlugSettingsSystemStatusRouteImport } from './routes/_authenticated/w/$slug/settings/system-status'
 import { Route as AuthenticatedWSlugSettingsSupportTranslationRouteImport } from './routes/_authenticated/w/$slug/settings/support-translation'
 import { Route as AuthenticatedWSlugSettingsSupportAiAssistantRouteImport } from './routes/_authenticated/w/$slug/settings/support-ai-assistant'
+import { Route as AuthenticatedWSlugSettingsServerRouteImport } from './routes/_authenticated/w/$slug/settings/server'
 import { Route as AuthenticatedWSlugSettingsRepositoriesRouteImport } from './routes/_authenticated/w/$slug/settings/repositories'
 import { Route as AuthenticatedWSlugSettingsRedirectsRouteImport } from './routes/_authenticated/w/$slug/settings/redirects'
 import { Route as AuthenticatedWSlugSettingsRecurringTasksRouteImport } from './routes/_authenticated/w/$slug/settings/recurring-tasks'
@@ -382,6 +383,12 @@ const AuthenticatedWSlugSettingsSupportAiAssistantRoute =
   AuthenticatedWSlugSettingsSupportAiAssistantRouteImport.update({
     id: '/settings/support-ai-assistant',
     path: '/settings/support-ai-assistant',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedWSlugSettingsServerRoute =
+  AuthenticatedWSlugSettingsServerRouteImport.update({
+    id: '/settings/server',
+    path: '/settings/server',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugSettingsRepositoriesRoute =
@@ -921,6 +928,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/settings/recurring-tasks': typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   '/w/$slug/settings/redirects': typeof AuthenticatedWSlugSettingsRedirectsRoute
   '/w/$slug/settings/repositories': typeof AuthenticatedWSlugSettingsRepositoriesRoute
+  '/w/$slug/settings/server': typeof AuthenticatedWSlugSettingsServerRoute
   '/w/$slug/settings/support-ai-assistant': typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
   '/w/$slug/settings/support-translation': typeof AuthenticatedWSlugSettingsSupportTranslationRoute
   '/w/$slug/settings/system-status': typeof AuthenticatedWSlugSettingsSystemStatusRoute
@@ -1038,6 +1046,7 @@ export interface FileRoutesByTo {
   '/w/$slug/settings/recurring-tasks': typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   '/w/$slug/settings/redirects': typeof AuthenticatedWSlugSettingsRedirectsRoute
   '/w/$slug/settings/repositories': typeof AuthenticatedWSlugSettingsRepositoriesRoute
+  '/w/$slug/settings/server': typeof AuthenticatedWSlugSettingsServerRoute
   '/w/$slug/settings/support-ai-assistant': typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
   '/w/$slug/settings/support-translation': typeof AuthenticatedWSlugSettingsSupportTranslationRoute
   '/w/$slug/settings/system-status': typeof AuthenticatedWSlugSettingsSystemStatusRoute
@@ -1161,6 +1170,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/settings/recurring-tasks': typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   '/_authenticated/w/$slug/settings/redirects': typeof AuthenticatedWSlugSettingsRedirectsRoute
   '/_authenticated/w/$slug/settings/repositories': typeof AuthenticatedWSlugSettingsRepositoriesRoute
+  '/_authenticated/w/$slug/settings/server': typeof AuthenticatedWSlugSettingsServerRoute
   '/_authenticated/w/$slug/settings/support-ai-assistant': typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
   '/_authenticated/w/$slug/settings/support-translation': typeof AuthenticatedWSlugSettingsSupportTranslationRoute
   '/_authenticated/w/$slug/settings/system-status': typeof AuthenticatedWSlugSettingsSystemStatusRoute
@@ -1286,6 +1296,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/recurring-tasks'
     | '/w/$slug/settings/redirects'
     | '/w/$slug/settings/repositories'
+    | '/w/$slug/settings/server'
     | '/w/$slug/settings/support-ai-assistant'
     | '/w/$slug/settings/support-translation'
     | '/w/$slug/settings/system-status'
@@ -1403,6 +1414,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/recurring-tasks'
     | '/w/$slug/settings/redirects'
     | '/w/$slug/settings/repositories'
+    | '/w/$slug/settings/server'
     | '/w/$slug/settings/support-ai-assistant'
     | '/w/$slug/settings/support-translation'
     | '/w/$slug/settings/system-status'
@@ -1525,6 +1537,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/settings/recurring-tasks'
     | '/_authenticated/w/$slug/settings/redirects'
     | '/_authenticated/w/$slug/settings/repositories'
+    | '/_authenticated/w/$slug/settings/server'
     | '/_authenticated/w/$slug/settings/support-ai-assistant'
     | '/_authenticated/w/$slug/settings/support-translation'
     | '/_authenticated/w/$slug/settings/system-status'
@@ -1907,6 +1920,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/support-ai-assistant'
       fullPath: '/w/$slug/settings/support-ai-assistant'
       preLoaderRoute: typeof AuthenticatedWSlugSettingsSupportAiAssistantRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/settings/server': {
+      id: '/_authenticated/w/$slug/settings/server'
+      path: '/settings/server'
+      fullPath: '/w/$slug/settings/server'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsServerRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/settings/repositories': {
@@ -2661,6 +2681,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugSettingsRecurringTasksRoute: typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   AuthenticatedWSlugSettingsRedirectsRoute: typeof AuthenticatedWSlugSettingsRedirectsRoute
   AuthenticatedWSlugSettingsRepositoriesRoute: typeof AuthenticatedWSlugSettingsRepositoriesRoute
+  AuthenticatedWSlugSettingsServerRoute: typeof AuthenticatedWSlugSettingsServerRoute
   AuthenticatedWSlugSettingsSupportAiAssistantRoute: typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
   AuthenticatedWSlugSettingsSupportTranslationRoute: typeof AuthenticatedWSlugSettingsSupportTranslationRoute
   AuthenticatedWSlugSettingsSystemStatusRoute: typeof AuthenticatedWSlugSettingsSystemStatusRoute
@@ -2750,6 +2771,7 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
     AuthenticatedWSlugSettingsRedirectsRoute,
   AuthenticatedWSlugSettingsRepositoriesRoute:
     AuthenticatedWSlugSettingsRepositoriesRoute,
+  AuthenticatedWSlugSettingsServerRoute: AuthenticatedWSlugSettingsServerRoute,
   AuthenticatedWSlugSettingsSupportAiAssistantRoute:
     AuthenticatedWSlugSettingsSupportAiAssistantRoute,
   AuthenticatedWSlugSettingsSupportTranslationRoute:

@@ -29,8 +29,12 @@ type CapabilityConfig struct {
 	AIConnectionsEnabled bool
 	// ServerChatProviders lists providers configured through server environment keys.
 	ServerChatProviders []string
-	// EmbeddingModel is the knowledge embedding model, or "" when none is configured.
+	// EmbeddingModel is the server's knowledge embedding model, or "" when no
+	// server key is configured.
 	EmbeddingModel string
+	// EmbeddingSource resolves a workspace's embedding source (server key or
+	// workspace connection). Nil means only EmbeddingModel is considered.
+	EmbeddingSource func(ctx context.Context, workspaceID string) (EmbeddingSourceInfo, error)
 	// SupportEmailConfigured reports that support email domains, a sending
 	// provider and an inbound webhook secret are all configured.
 	SupportEmailConfigured  bool
@@ -225,25 +229,65 @@ func (s *CapabilityService) instanceAIChat(ctx context.Context) (model.Capabilit
 
 func (s *CapabilityService) aiEmbeddings(ctx context.Context, workspaceID string) (model.Capability, error) {
 	const key = model.CapabilityKeyAIEmbeddings
-	if s.cfg.EmbeddingModel == "" {
-		return capability(key, model.CapabilityNeedsSetup, "No embedding provider is configured; knowledge search uses keywords only.",
-			serverAction("Set OPENAI_API_KEY or OPENROUTER_API_KEY on the server")), nil
+	source, err := s.embeddingSource(ctx, workspaceID)
+	if err != nil {
+		return model.Capability{}, err
+	}
+	if !source.Available() {
+		const detail = "No embedding provider is configured; knowledge search uses keywords only."
+		if workspaceID == "" {
+			return capability(key, model.CapabilityNeedsSetup, detail,
+				serverAction("Set OPENAI_API_KEY or OPENROUTER_API_KEY on the server, or connect OpenAI or OpenRouter in a workspace's AI settings")), nil
+		}
+		return capability(key, model.CapabilityNeedsSetup, detail,
+			settingsAction("Connect OpenAI or OpenRouter", "settings/ai")), nil
 	}
 	embedded, err := s.evidence.HasEmbeddedChunks(ctx, workspaceID)
 	if err != nil {
 		return model.Capability{}, err
 	}
-	if embedded {
-		return capability(key, model.CapabilityReady, "Knowledge has been indexed with "+s.cfg.EmbeddingModel+".", nil), nil
+	sourceDetail := source.Detail()
+	if source.Provider == "" {
+		sourceDetail = "Embeddings are configured"
 	}
-	return capability(key, model.CapabilityUnableToVerify, "Embeddings are configured with "+s.cfg.EmbeddingModel+"; they are confirmed once knowledge is indexed.", nil), nil
+	if embedded {
+		return capability(key, model.CapabilityReady, sourceDetail+"; knowledge has been indexed with "+source.Model+".", nil), nil
+	}
+	return capability(key, model.CapabilityUnableToVerify, sourceDetail+" ("+source.Model+"); embeddings are confirmed once knowledge is indexed.", nil), nil
+}
+
+// embeddingSource resolves the workspace source, or only the server source for
+// the instance view (empty workspaceID).
+func (s *CapabilityService) embeddingSource(ctx context.Context, workspaceID string) (EmbeddingSourceInfo, error) {
+	if s.cfg.EmbeddingModel != "" {
+		info := EmbeddingSourceInfo{Source: EmbeddingSourceServer, Model: s.cfg.EmbeddingModel, Dimensions: docsEmbeddingDimensions}
+		if s.cfg.EmbeddingSource != nil {
+			resolved, err := s.cfg.EmbeddingSource(ctx, workspaceID)
+			if err != nil {
+				return EmbeddingSourceInfo{}, err
+			}
+			if resolved.Source == EmbeddingSourceServer {
+				info.Provider = resolved.Provider
+			}
+		}
+		return info, nil
+	}
+	if workspaceID == "" || s.cfg.EmbeddingSource == nil {
+		return EmbeddingSourceInfo{}, nil
+	}
+	return s.cfg.EmbeddingSource(ctx, workspaceID)
 }
 
 func (s *CapabilityService) emailOutbound(ctx context.Context, workspace bool) (model.Capability, error) {
 	const key = model.CapabilityKeyEmailOutbound
-	if !s.cfg.AppEmailConfigured {
-		return capability(key, model.CapabilityNeedsSetup, "Application email is not configured; invitations and password resets cannot be sent.",
-			serverAction("Set SMTP_HOST and SMTP_FROM on the server")), nil
+	configured, fingerprint := s.appEmail(ctx)
+	if !configured {
+		detail := "Application email is not configured; invitations and password resets cannot be sent."
+		if s.appEmailEditable() {
+			return capability(key, model.CapabilityNeedsSetup, detail+" Invitations can still be shared as links.",
+				serverAction("Add SMTP settings in Settings → System status, or set SMTP_HOST and SMTP_FROM on the server")), nil
+		}
+		return capability(key, model.CapabilityNeedsSetup, detail, serverAction("Set SMTP_HOST and SMTP_FROM on the server")), nil
 	}
 	test := serverAction("Send a test email with Settings or the API")
 	if workspace {
@@ -253,7 +297,7 @@ func (s *CapabilityService) emailOutbound(ctx context.Context, workspace bool) (
 	if err != nil {
 		return model.Capability{}, err
 	}
-	if check == nil || check.ConfigFingerprint != s.cfg.AppEmailFingerprint {
+	if check == nil || check.ConfigFingerprint != fingerprint {
 		return capability(key, model.CapabilityUnableToVerify, "Application email is configured but no test email has been sent.", test), nil
 	}
 	checkedAt := check.CheckedAt

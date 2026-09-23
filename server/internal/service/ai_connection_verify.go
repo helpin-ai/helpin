@@ -38,6 +38,32 @@ func (s *AIConnectionService) SetChangeObserver(observer AIConnectionChangeObser
 	return s
 }
 
+// AddChangeObserver registers another hook after any existing ones. Every
+// observer runs even when an earlier one fails.
+func (s *AIConnectionService) AddChangeObserver(observer AIConnectionChangeObserver) *AIConnectionService {
+	switch {
+	case observer == nil:
+	case s.observer == nil:
+		s.observer = observer
+	default:
+		s.observer = aiConnectionChangeObservers{s.observer, observer}
+	}
+	return s
+}
+
+// aiConnectionChangeObservers notifies several observers in order.
+type aiConnectionChangeObservers []AIConnectionChangeObserver
+
+func (o aiConnectionChangeObservers) AIConnectionsChanged(ctx context.Context, workspace string) error {
+	var errs []error
+	for _, observer := range o {
+		if err := observer.AIConnectionsChanged(ctx, workspace); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
 // SetTestProviderFactory replaces the provider clients used by TestConnection.
 func (s *AIConnectionService) SetTestProviderFactory(factory AIConnectionTestProviderFactory) *AIConnectionService {
 	s.testProviders = factory
@@ -51,7 +77,7 @@ func (s *AIConnectionService) notifyConnectionsChanged(ctx context.Context, c *m
 		return
 	}
 	if err := s.observer.AIConnectionsChanged(ctx, c.WorkspaceID); err != nil {
-		slog.ErrorContext(ctx, "re-map standard AI profiles after connection change failed",
+		slog.ErrorContext(ctx, "AI connection change observer failed",
 			"error", err, "workspace_id", c.WorkspaceID, "connection_id", c.ID, "provider", c.Provider)
 	}
 }

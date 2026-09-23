@@ -10,8 +10,10 @@ source availability alone does not make the public installer usable.
 
 Use Linux or macOS on amd64 or arm64, with Docker Engine or Docker Desktop,
 Docker Compose v2, Bash, OpenSSL, and curl. The bootstrap also needs `sha256sum`
-or `shasum`. Allow at least 8 GiB of memory available to Docker and 20 GiB free
-on the installation filesystem. Ensure Docker's own data disk also has room for
+or `shasum`. Allow at least 8 GB of RAM available to Docker and 20 GiB free
+on the installation filesystem. An 8 GB server reports about 7.7 GiB usable;
+`helpin doctor` and `install` accept 7.5 GiB or more, warn from 6 GiB, and fail
+below that. Ensure Docker's own data disk also has room for
 images and volumes. These are evaluation starting points, not capacity promises.
 Native Windows is not supported by this installer. Use a Linux environment with
 a reachable Docker engine. The CLI does not install Docker or change group

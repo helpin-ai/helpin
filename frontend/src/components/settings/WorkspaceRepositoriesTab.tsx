@@ -11,7 +11,8 @@ import type {
   GitRepository,
   WireGitRepositoriesConflictResponse,
 } from '@/lib/pmTypes';
-import { Badge } from '@/components/ui/badge';
+import { GitProviderIcon } from '@/components/git/GitProviderIcon';
+import { gitProviderOf } from '@/components/git/gitProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -127,12 +128,14 @@ export function WorkspaceRepositoriesTab({ workspaceId, editable }: WorkspaceRep
   }, [workspaceId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loads Git connections and repositories from the server when the workspace changes.
     void loadGitStatus();
   }, [loadGitStatus]);
 
   const defaultPickerIntegrationId = repoProviderIntegrations[0]?.id ?? null;
   useEffect(() => {
     if (repoPickerIntegrationId || !defaultPickerIntegrationId) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetches the default provider's repositories from the server.
     void loadAvailableRepos(defaultPickerIntegrationId);
     // intentionally depend only on the primitive id to avoid re-firing when
     // integrations re-fetch and produce a new array reference.
@@ -148,6 +151,7 @@ export function WorkspaceRepositoriesTab({ workspaceId, editable }: WorkspaceRep
   // Re-fetch when the debounced search changes (after a picker integration is selected).
   useEffect(() => {
     if (!repoPickerIntegrationId) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- searches the provider's repositories on the server.
     void loadAvailableRepos(repoPickerIntegrationId, { search: debouncedRepoSearch || undefined });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedRepoSearch]);
@@ -190,8 +194,9 @@ export function WorkspaceRepositoriesTab({ workspaceId, editable }: WorkspaceRep
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="inline-flex h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
+                        <GitProviderIcon provider={gitProviderOf(integration.provider)} />
                         <p className="truncate text-sm font-medium">{integration.display_name}</p>
-                        <Badge variant="outline" className="text-[10px] uppercase tracking-wide">{providerLabel(integration.provider)}</Badge>
+                        <span className="text-[12px] text-quiet-text-tertiary">{providerLabel(integration.provider)}</span>
                       </div>
                       <p className="mt-1 truncate text-xs text-muted-foreground">
                         {integration.account_login || 'Connected account'}

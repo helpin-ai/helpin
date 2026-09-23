@@ -58,8 +58,8 @@ type GitHubAppStatusResponse struct {
 
 // GitHubAppManifestRequest optionally creates the App under a GitHub
 // organization instead of the signed-in GitHub user. ReturnTo selects the
-// Helpin page the browser returns to: settings (default), setup or
-// system_status.
+// Helpin page the browser returns to: settings (default), setup,
+// system_status or onboarding.
 type GitHubAppManifestRequest struct {
 	Organization string `json:"organization"`
 	ReturnTo     string `json:"return_to"`

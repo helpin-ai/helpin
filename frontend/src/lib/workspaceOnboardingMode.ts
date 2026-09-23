@@ -6,6 +6,7 @@
 export const workspaceOnboardingSteps = [
   'workspace',
   'ai',
+  'github',
   'context',
   'teams',
   'invite',

@@ -124,6 +124,13 @@ it('makes keyword-only retrieval and separate server AI wiring visible', async (
   expect(document.body.textContent).toContain('No server chat provider is configured');
 });
 
+it('names the workspace connection that serves embeddings', async () => {
+  vi.mocked(aiConnectionService.list).mockResolvedValue({data:{enabled:true, connections:[],models:[],knowledge:{embeddings_configured:true,embedding_model:'text-embedding-3-small',embedding_dimensions:1536,embedding_source:'workspace',embedding_provider:'openrouter',embedding_detail:"Using this workspace's OpenRouter connection",chat_providers:[]}},error:null});
+  await render('workspace');
+  expect(document.body.textContent).toContain("Using this workspace's OpenRouter connection for embeddings: text-embedding-3-small (1536 dimensions)");
+  expect(document.body.textContent).not.toContain('keyword matching only');
+});
+
 it('orders Workspace before Personal and keeps management scoped when switching tabs', async () => {
   frame.permissions = new Set();
   vi.mocked(aiConnectionService.list).mockResolvedValue({ data: { enabled: true, connections: [], models: [] }, error: null });

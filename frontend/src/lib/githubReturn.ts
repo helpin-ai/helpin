@@ -48,6 +48,9 @@ export function stripGitHubReturnParams() {
 
 /** Workspace page for a return destination, matching the server's redirects. */
 export function gitHubReturnPath(slug: string, returnTo: GitHubReturnTo = 'settings') {
+  if (returnTo === 'onboarding') {
+    return `/onboarding?${new URLSearchParams({ step: 'github', workspace: slug }).toString()}`;
+  }
   const base = `/w/${encodeURIComponent(slug)}`;
   if (returnTo === 'setup') return `${base}/setup`;
   if (returnTo === 'system_status') return `${base}/settings/system-status`;

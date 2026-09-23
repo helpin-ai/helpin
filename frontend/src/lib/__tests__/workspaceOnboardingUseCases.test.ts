@@ -14,7 +14,16 @@ describe('workspaceOnboardingUseCases', () => {
       'help_center_docs',
       'internal_docs',
       'sales_crm',
+      'automation',
     ]);
+  });
+
+  it('offers automation as a sixth goal that leads the automation setup journey', () => {
+    expect(ONBOARDING_USE_CASE_OPTIONS.find((option) => option.value === 'automation')).toMatchObject({
+      label: 'Automate repeatable work',
+      replaces: 'Replaces Zapier, Make, n8n',
+    });
+    expect(mapOnboardingUseCasesToSetupGoals(['automation', 'product_engineering'])).toEqual(['automation_mastery', 'product_delivery']);
   });
 
   it('presents one canonical team-project journey', () => {

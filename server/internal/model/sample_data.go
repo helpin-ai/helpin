@@ -18,11 +18,15 @@ const (
 	SampleEntityCRMContact          = "crm_contact"
 	SampleEntityCRMCompany          = "crm_company"
 	SampleEntityCRMPipeline         = "crm_pipeline"
+	// SampleEntityAutomationRule is a sample Flow. Sample Flows are always
+	// created disabled so they never fire until someone turns them on.
+	SampleEntityAutomationRule = "automation_rule"
 )
 
 // SampleEntityRemovalOrder lists sample entity types in the order they must be
 // removed so that dependents are always deleted before the rows they point to.
 var SampleEntityRemovalOrder = []string{
+	SampleEntityAutomationRule,
 	SampleEntitySupportConversation,
 	SampleEntityPMTask,
 	SampleEntityPMEpic,

@@ -13,6 +13,9 @@ const (
 	GitHubReturnSettings     = "settings"
 	GitHubReturnSetup        = "setup"
 	GitHubReturnSystemStatus = "system_status"
+	// GitHubReturnOnboarding returns to the Connect GitHub step of workspace
+	// onboarding (/onboarding?step=github&workspace=<slug>).
+	GitHubReturnOnboarding = "onboarding"
 )
 
 // GitHub flow results reported to the frontend in the github query flag.
@@ -34,7 +37,7 @@ const (
 )
 
 // ErrGitHubReturnToInvalid reports an unknown return_to value.
-var ErrGitHubReturnToInvalid = errors.New("return_to must be settings, setup or system_status")
+var ErrGitHubReturnToInvalid = errors.New("return_to must be settings, setup, system_status or onboarding")
 
 // NormalizeGitHubReturnTo validates return_to. Empty means settings.
 func NormalizeGitHubReturnTo(value string) (string, error) {
@@ -45,6 +48,8 @@ func NormalizeGitHubReturnTo(value string) (string, error) {
 		return GitHubReturnSetup, nil
 	case GitHubReturnSystemStatus:
 		return GitHubReturnSystemStatus, nil
+	case GitHubReturnOnboarding:
+		return GitHubReturnOnboarding, nil
 	default:
 		return "", ErrGitHubReturnToInvalid
 	}
@@ -60,11 +65,18 @@ func gitHubReturnTo(claim string) string {
 	return returnTo
 }
 
-// gitHubReturnPageURL is the workspace page for returnTo.
+// gitHubReturnPageURL is the workspace page for returnTo. The onboarding page
+// carries its step and workspace in the query, so callers add result flags
+// with withGitHubReturnQuery rather than by appending "?".
 func gitHubReturnPageURL(appBaseURL, workspaceSlug, returnTo string) string {
 	base := appBaseOrDefault(appBaseURL)
 	slug := url.PathEscape(strings.TrimSpace(workspaceSlug))
 	switch gitHubReturnTo(returnTo) {
+	case GitHubReturnOnboarding:
+		query := url.Values{}
+		query.Set("step", "github")
+		query.Set("workspace", strings.TrimSpace(workspaceSlug))
+		return fmt.Sprintf("%s/onboarding?%s", base, query.Encode())
 	case GitHubReturnSetup:
 		return fmt.Sprintf("%s/w/%s/setup", base, slug)
 	case GitHubReturnSystemStatus:
@@ -82,6 +94,21 @@ func gitHubInstalledURL(appBaseURL string, query url.Values) string {
 		target += "?" + encoded
 	}
 	return target
+}
+
+// withGitHubReturnQuery adds query to target, keeping any query target
+// already has (the onboarding page's step and workspace).
+func withGitHubReturnQuery(target string, query url.Values) string {
+	parsed, err := url.Parse(target)
+	if err != nil {
+		return target
+	}
+	merged := parsed.Query()
+	for key, values := range query {
+		merged[key] = values
+	}
+	parsed.RawQuery = merged.Encode()
+	return parsed.String()
 }
 
 // gitHubResultQuery builds the github/github_message result flags.

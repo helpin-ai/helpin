@@ -47,6 +47,9 @@ export function useSignUp() {
     mutationFn: async ({ email, password, fullName }: { email: string; password: string; fullName: string }) => {
       const res = await authService.signup(email, password, fullName)
       if (res.error || !res.data) throw new Error(res.error || 'Sign up failed')
+      if ('verification_required' in res.data) {
+        throw new Error(`Check ${res.data.email} for a link to confirm your email, then sign in.`)
+      }
       if (!res.data.user) {
         throw new Error('Sign up failed')
       }

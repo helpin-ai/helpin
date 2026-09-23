@@ -136,11 +136,11 @@ function AISettingsContent({
           <AISectionLabel label="Knowledge search" />
           <p className="text-sm text-muted-foreground">
             {connections.data.knowledge.embeddings_configured
-              ? `Embeddings configured: ${connections.data.knowledge.embedding_model} (${connections.data.knowledge.embedding_dimensions} dimensions). Provider connectivity has not been verified.`
-              : "Semantic search is not configured. Knowledge search uses keyword matching only. Ask your administrator to configure OPENAI_API_KEY and, if needed, OPENAI_BASE_URL with a compatible 1,536-dimension embedding model."}
+              ? `${connections.data.knowledge.embedding_detail ? `${connections.data.knowledge.embedding_detail} for embeddings` : "Embeddings configured"}: ${connections.data.knowledge.embedding_model} (${connections.data.knowledge.embedding_dimensions} dimensions). Provider connectivity has not been verified.`
+              : "Semantic search is not configured. Knowledge search uses keyword matching only. Connect OpenAI or OpenRouter as a workspace connection below, or ask your administrator to set OPENAI_API_KEY or OPENROUTER_API_KEY on the server."}
           </p>
           <p className="text-sm text-muted-foreground">
-            Profiles below apply to agent runs. Embeddings, help-center AI answers, and automatic triage use server provider settings separately.
+            Profiles below apply to agent runs. Help-center AI answers and automatic triage use server provider settings separately. Embeddings use the server's key when one is set, otherwise this workspace's OpenAI or OpenRouter connection.
             {connections.data.knowledge.chat_providers.length === 0 && " No server chat provider is configured."}
           </p>
         </section>

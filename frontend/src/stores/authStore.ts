@@ -21,7 +21,7 @@ interface AuthState {
     options?: { useAutofill?: boolean },
   ) => Promise<{ error: string | null; requires2FA?: boolean; twoFAToken?: string; cancelled?: boolean }>;
   verify2FASignIn: (twoFaToken: string, code: string, useRecoveryCode: boolean, rememberMe?: boolean) => Promise<{ error: string | null }>;
-  signUp: (email: string, password: string, fullName: string) => Promise<{ error: string | null }>;
+  signUp: (email: string, password: string, fullName: string) => Promise<{ error: string | null; verificationRequired?: boolean; email?: string }>;
   signInDemo: (email?: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   updateUser: (data: { full_name?: string; avatar_style?: string; avatar_seed?: string; avatar_background_mode?: string; avatar_background_color?: string }) => Promise<void>;
@@ -150,7 +150,16 @@ export const useAuthStore = create<AuthState>((set) => ({
   signUp: async (email: string, password: string, fullName: string) => {
     const { data, error } = await authService.signup(email, password, fullName);
     if (error || !data) return { error: error || 'Sign up failed' };
+    if ('verification_required' in data) {
+      // Domain-restricted signup: no session until the email is confirmed.
+      return { error: null, verificationRequired: true, email: data.email };
+    }
     await persistAuthSession(data.user, data.access_token, data.refresh_token, false);
+    const configuration = useAuthStore.getState().configuration;
+    if (configuration?.signup_first_user) {
+      // The first account has been claimed; later visitors follow the policy.
+      set({ configuration: { ...configuration, signup_first_user: false } });
+    }
     return { error: null };
   },
 

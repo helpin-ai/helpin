@@ -4,6 +4,7 @@ import { workspacesService } from '@/lib/services/workspacesService'
 import { queryKeys } from '@/lib/queryKeys'
 import { unwrap } from '@/lib/queryUtils'
 import type { Permission, WorkspaceAccess, WorkspaceMember, WorkspaceModule } from '@/lib/types'
+import { useAuthStore } from '@/stores/authStore'
 
 /**
  * useSession fetches the legacy my-membership endpoint.
@@ -37,8 +38,12 @@ export function useWorkspaceAccess(wsId: string) {
  * Returns `has(perm)` and `hasAny(perms)` functions plus convenience booleans.
  */
 export function usePermissions(access: WorkspaceAccess | null | undefined) {
+  const isServerAdmin = useAuthStore((state) => Boolean(state.user?.is_server_admin))
   return useMemo(() => {
     const permSet = new Set<string>(access?.permissions ?? [])
+    // Server administration is account-level, not a workspace role; expose it
+    // alongside workspace permissions so settings navigation can gate on it.
+    if (isServerAdmin) permSet.add('server.admin')
     const moduleSet = new Set<string>(access?.modules ?? [])
     const role = access?.membership?.role ?? ''
 
@@ -109,8 +114,10 @@ export function usePermissions(access: WorkspaceAccess | null | undefined) {
       canAdminDocs: has('docs.admin'),
       /** Accessible workspace modules */
       modules: access?.modules ?? [],
+      /** Administers this self-hosted server (Community) */
+      isServerAdmin,
     }
-  }, [access])
+  }, [access, isServerAdmin])
 }
 
 /**

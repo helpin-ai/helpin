@@ -42,20 +42,53 @@ type testEmailSender struct {
 	sender  TestEmailSender
 	users   capabilityUserStore
 	limiter *testEmailLimiter
+	// state reports live application email settings when they can change at
+	// runtime (settings saved in the app); nil uses the static config.
+	state func(context.Context) (bool, string)
 }
 
 // SetTestEmail enables SendTestEmail. A nil sender reports that application
 // email is not configured.
 func (s *CapabilityService) SetTestEmail(sender TestEmailSender, users capabilityUserStore) *CapabilityService {
-	s.email = &testEmailSender{sender: sender, users: users, limiter: newTestEmailLimiter(time.Now)}
+	var state func(context.Context) (bool, string)
+	if s.email != nil {
+		state = s.email.state
+	}
+	s.email = &testEmailSender{sender: sender, users: users, limiter: newTestEmailLimiter(time.Now), state: state}
 	return s
+}
+
+// SetAppEmailState makes email_outbound follow application email settings
+// that can change without a restart. state returns whether email is
+// configured and a fingerprint of its non-secret settings.
+func (s *CapabilityService) SetAppEmailState(state func(context.Context) (bool, string)) *CapabilityService {
+	if s.email == nil {
+		s.email = &testEmailSender{limiter: newTestEmailLimiter(time.Now)}
+	}
+	s.email.state = state
+	return s
+}
+
+// appEmail returns whether application email is configured and its
+// configuration fingerprint.
+func (s *CapabilityService) appEmail(ctx context.Context) (bool, string) {
+	if s.email != nil && s.email.state != nil {
+		return s.email.state(ctx)
+	}
+	return s.cfg.AppEmailConfigured, s.cfg.AppEmailFingerprint
+}
+
+// appEmailEditable reports whether application email can be set up in the app.
+func (s *CapabilityService) appEmailEditable() bool {
+	return s.email != nil && s.email.state != nil
 }
 
 // SendTestEmail sends a short message to the requesting user's own address and
 // records the outcome for the email_outbound capability. Recipients are never
 // caller-supplied, so the endpoint cannot be used to send mail to others.
 func (s *CapabilityService) SendTestEmail(ctx context.Context, workspaceID, userID string) (model.TestEmailResult, error) {
-	if s.email == nil || s.email.sender == nil || !s.cfg.AppEmailConfigured {
+	configured, fingerprint := s.appEmail(ctx)
+	if s.email == nil || s.email.sender == nil || !configured {
 		return model.TestEmailResult{OK: false, Error: "Application email is not configured on this server."}, nil
 	}
 	if !s.email.limiter.allow(userID) {
@@ -73,7 +106,7 @@ func (s *CapabilityService) SendTestEmail(ctx context.Context, workspaceID, user
 	body := "<p>This is a test email from your Helpin installation.</p><p>Application email is working: invitations, password resets and notifications can be delivered.</p>"
 	sendErr := s.email.sender.SendEmail(recipient, testEmailSubject, body, text)
 	check := &model.InstanceCapabilityCheck{
-		Key: model.CapabilityKeyEmailOutbound, OK: sendErr == nil, ConfigFingerprint: s.cfg.AppEmailFingerprint,
+		Key: model.CapabilityKeyEmailOutbound, OK: sendErr == nil, ConfigFingerprint: fingerprint,
 		CheckedBy: &userID, CheckedAt: time.Now().UTC(),
 	}
 	result := model.TestEmailResult{OK: sendErr == nil, Recipient: recipient}

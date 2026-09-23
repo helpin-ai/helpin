@@ -103,11 +103,14 @@ function ProviderRow({
   const reconnect = useReconnectAIConnection(workspaceId);
   const test = useTestAIConnection(workspaceId);
   const [apiKey, setApiKey] = useState('');
-  const [replacing, setReplacing] = useState(false);
+  // The key field stays folded away until the person chooses to add or replace a key.
+  const [editing, setEditing] = useState(false);
   const [result, setResult] = useState<SetupResult | null>(null);
   const busy = create.isPending || reconnect.isPending || test.isPending;
   const connected = connection?.status === 'connected';
+  const replacing = connected && editing;
   const label = providerMeta[provider].label;
+  const shortLabel = providerMeta[provider].shortLabel;
 
   const submit = async () => {
     const key = apiKey.trim();
@@ -123,7 +126,7 @@ function ProviderRow({
         ? await reconnect.mutateAsync({ id: connection.id, apiKey: key })
         : await create.mutateAsync({ name: providerMeta[provider].shortLabel, provider, api_key: key, scope: 'workspace' });
       setApiKey('');
-      setReplacing(false);
+      setEditing(false);
       const outcome = await test.mutateAsync({ connectionId: saved.connection.id });
       setResult(describeTest(outcome.ok, outcome.model, outcome.latency_ms, outcome.error));
     } catch (error) {
@@ -131,13 +134,13 @@ function ProviderRow({
     }
   };
 
-  const showForm = !connected || replacing;
+  const cancel = () => { setEditing(false); setApiKey(''); setResult(null); };
   return (
     <li className="space-y-3 py-4" data-provider={provider}>
       <div className="flex items-start gap-3">
         <ProviderIcon provider={provider} className="mt-0.5 h-4 w-4 shrink-0" />
         <div className="min-w-0 flex-1">
-          <p className="text-[13.5px] font-semibold leading-5">{providerMeta[provider].shortLabel}</p>
+          <p id={`${id}-name`} className="text-[13.5px] font-semibold leading-5">{shortLabel}</p>
           <p className="text-[12.5px] leading-5 text-muted-foreground">{note}</p>
         </div>
         {connected && !replacing && (
@@ -146,8 +149,17 @@ function ProviderRow({
             Connected
           </span>
         )}
+        {!connected && !editing && (
+          <OnboardingTextButton
+            className="min-h-0 shrink-0 px-0 text-[12.5px]"
+            aria-describedby={`${id}-name`}
+            onClick={() => { setEditing(true); setResult(null); }}
+          >
+            Add key
+          </OnboardingTextButton>
+        )}
       </div>
-      {showForm ? (
+      {editing ? (
         <form
           className="flex flex-col gap-3 pl-7 sm:flex-row sm:items-end"
           onSubmit={(event) => { event.preventDefault(); void submit(); }}
@@ -158,30 +170,30 @@ function ProviderRow({
               id={`${id}-key`}
               type="password"
               autoComplete="off"
+              // Opened by an explicit "Add key" or "Replace key" click, so focus goes to the field.
+              autoFocus
               value={apiKey}
               disabled={busy}
               onChange={(event) => setApiKey(event.target.value)}
             />
           </div>
           <div className="flex items-center gap-2">
-            {replacing && (
-              <OnboardingTextButton onClick={() => { setReplacing(false); setApiKey(''); setResult(null); }} disabled={busy}>
-                Cancel
-              </OnboardingTextButton>
-            )}
+            <OnboardingTextButton onClick={cancel} disabled={busy}>
+              Cancel
+            </OnboardingTextButton>
             <Button type="submit" size="sm" variant="outline" disabled={busy}>
               {busy && <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
               {create.isPending || reconnect.isPending ? 'Saving…' : test.isPending ? 'Testing…' : replacing ? 'Replace and test' : 'Connect and test'}
             </Button>
           </div>
         </form>
-      ) : (
+      ) : connected ? (
         <div className="pl-7">
-          <OnboardingTextButton className="min-h-0 px-0 text-[12.5px]" onClick={() => { setReplacing(true); setResult(null); }}>
+          <OnboardingTextButton className="min-h-0 px-0 text-[12.5px]" onClick={() => { setEditing(true); setResult(null); }}>
             Replace key
           </OnboardingTextButton>
         </div>
-      )}
+      ) : null}
       <div className="pl-7">
         <SetupResultMessage result={result} />
       </div>

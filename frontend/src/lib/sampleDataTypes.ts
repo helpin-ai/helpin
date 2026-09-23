@@ -11,7 +11,9 @@ export type SampleDataEntity =
   | 'crm_deal'
   | 'crm_contact'
   | 'crm_company'
-  | 'crm_pipeline';
+  | 'crm_pipeline'
+  /** Example Flows; always created turned off. */
+  | 'automation_rule';
 
 /** Response of GET/POST/DELETE /workspaces/{id}/sample-data. */
 export interface SampleDataStatus {

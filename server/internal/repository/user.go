@@ -146,12 +146,13 @@ func (r *UserRepository) UpdatePassword(ctx context.Context, id, passwordHash st
 	return r.db.WithContext(ctx).Model(&model.User{}).Where("id = ?", id).Update("password_hash", passwordHash).Error
 }
 
-// MarkEmailVerified marks a user's email as verified if it has not already been verified.
+// MarkEmailVerified marks a user's email as verified if it has not already
+// been verified, which also lifts a pending signup verification.
 func (r *UserRepository) MarkEmailVerified(ctx context.Context, id string, verifiedAt time.Time) (*model.User, error) {
 	if err := r.db.WithContext(ctx).
 		Model(&model.User{}).
 		Where("id = ? AND email_verified_at IS NULL", id).
-		Update("email_verified_at", verifiedAt).Error; err != nil {
+		Updates(map[string]any{"email_verified_at": verifiedAt, "signup_verification_pending": false}).Error; err != nil {
 		return nil, fmt.Errorf("mark email verified: %w", err)
 	}
 	return r.GetByID(ctx, id)

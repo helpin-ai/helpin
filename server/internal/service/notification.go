@@ -565,7 +565,7 @@ func (s *NotificationService) buildDeliveryPlans(
 	}
 
 	if emailChannel == "digest" {
-		if s.emailClient == nil {
+		if !appEmailReady(s.emailClient) {
 			reason := "email client not configured"
 			plans = append(plans, notificationDeliveryPlan{
 				Channel: "digest",
@@ -586,7 +586,7 @@ func (s *NotificationService) buildDeliveryPlans(
 		Status:  "pending",
 	}
 
-	if s.emailClient == nil {
+	if !appEmailReady(s.emailClient) {
 		msg := "email client not configured"
 		emailPlan.Status = "skipped"
 		emailPlan.Error = &msg
@@ -953,7 +953,7 @@ func (s *NotificationService) sendPendingSupportReplyEmailGroup(ctx context.Cont
 		return s.notifRepo.UpdateDeliveryStatus(ctx, []string{latest.DeliveryID}, "skipped", nil, &reason)
 	}
 
-	if s.emailClient == nil {
+	if !appEmailReady(s.emailClient) {
 		reason := "email client not configured"
 		return s.notifRepo.UpdateDeliveryStatus(ctx, []string{latest.DeliveryID}, "skipped", nil, &reason)
 	}
@@ -1139,7 +1139,7 @@ func (s *NotificationService) sendRecipientDigest(ctx context.Context, recipient
 		return nil
 	}
 
-	if s.emailClient == nil {
+	if !appEmailReady(s.emailClient) {
 		reason := "email client not configured"
 		return s.notifRepo.UpdateDeliveryStatus(ctx, deliveryIDs(dueDeliveries), "skipped", nil, &reason)
 	}

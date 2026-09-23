@@ -11,6 +11,8 @@ const state = vi.hoisted(() => ({
   workspaceBySlug: undefined as { id: string; slug: string; name: string; website_url?: string; company_product_context?: string } | undefined,
   capabilities: undefined as CapabilitiesResponse | undefined,
   permissions: new Set<string>(['workspace.update']),
+  role: undefined as string | undefined,
+  setupGoals: [] as string[],
   sampleStatus: { loaded: false, counts: {}, modules: ['pm'] } as { loaded: boolean; counts: object; modules: string[] },
   loadSample: vi.fn(),
   create: vi.fn(),
@@ -35,7 +37,12 @@ vi.mock('@/hooks/queries', () => ({
     isSuccess: Boolean(id && state.capabilities),
     isError: false,
   }),
-  useWorkspaceAccess: () => ({ data: { permissions: [] } }),
+  useWorkspaceAccess: () => ({ data: { permissions: [], membership: state.role ? { role: state.role } : undefined } }),
+  useSetup: (id?: string) => ({
+    data: id ? { goals: state.setupGoals } : undefined,
+    isSuccess: Boolean(id),
+    isError: false,
+  }),
   usePermissions: () => ({ has: (permission: string) => state.permissions.has(permission) }),
   useOrganizations: () => ({ data: [{ id: 'org-1', name: 'Acme Org' }], isLoading: false }),
   useCreateOrganization: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -47,6 +54,13 @@ vi.mock('@/hooks/queries/useSampleData', () => ({
 vi.mock('../ConnectAIStep', () => ({
   ConnectAIStep: ({ onContinue }: { onContinue: () => void }) => (
     <div data-testid="setup-ai">
+      <button type="button" onClick={onContinue}>Skip for now</button>
+    </div>
+  ),
+}));
+vi.mock('../ConnectGitHubStep', () => ({
+  ConnectGitHubStep: ({ onContinue }: { onContinue: () => void }) => (
+    <div data-testid="setup-github">
       <button type="button" onClick={onContinue}>Skip for now</button>
     </div>
   ),
@@ -92,12 +106,13 @@ let root: Root | null = null;
 
 const acme = { id: 'ws-1', slug: 'acme', name: 'Acme' };
 
-function caps(edition: CapabilitiesResponse['edition'], ai: string, email = 'ready'): CapabilitiesResponse {
+function caps(edition: CapabilitiesResponse['edition'], ai: string, email = 'ready', github = 'needs_setup'): CapabilitiesResponse {
   return {
     edition,
     capabilities: [
       { key: 'ai_chat', status: ai as never, detail: '', required: false },
       { key: 'email_outbound', status: email as never, detail: '', required: false },
+      { key: 'github', status: github as never, detail: '', required: false },
     ],
   };
 }
@@ -128,6 +143,8 @@ beforeEach(() => {
   state.workspaceBySlug = undefined;
   state.capabilities = undefined;
   state.permissions = new Set(['workspace.update']);
+  state.role = undefined;
+  state.setupGoals = [];
   state.sampleStatus = { loaded: false, counts: {}, modules: ['pm'] };
 });
 
@@ -201,6 +218,69 @@ describe('OnboardingFlow', () => {
     expect(state.navigate).toHaveBeenCalledWith({ to: '/onboarding', search: { step: 'context', workspace: 'acme' }, replace: true });
   });
 
+  it('offers Connect GitHub after Connect AI to a Community owner who plans and ships projects', () => {
+    state.workspaceBySlug = acme;
+    state.capabilities = caps('community', 'needs_setup');
+    state.role = 'owner';
+    state.setupGoals = ['customer_support', 'product_delivery'];
+    render({ step: 'ai', workspaceSlug: 'acme' });
+
+    act(() => button('Skip for now')?.click());
+    expect(state.navigate).toHaveBeenCalledWith({ to: '/onboarding', search: { step: 'github', workspace: 'acme' } });
+  });
+
+  it('shows Connect GitHub and lets the owner skip it to company context', () => {
+    state.workspaceBySlug = acme;
+    state.capabilities = caps('community', 'ready');
+    state.role = 'owner';
+    state.setupGoals = ['product_delivery'];
+    render({ step: 'github', workspaceSlug: 'acme' });
+
+    expect(container?.querySelector('[data-testid="setup-github"]')).not.toBeNull();
+    expect(container?.textContent).toContain('Connect GitHub');
+    act(() => button('Skip for now')?.click());
+    expect(state.navigate).toHaveBeenCalledWith({ to: '/onboarding', search: { step: 'context', workspace: 'acme' } });
+  });
+
+  it('goes from the workspace straight to Connect GitHub when AI already works', () => {
+    state.workspaceBySlug = acme;
+    state.capabilities = caps('community', 'ready');
+    state.role = 'owner';
+    state.setupGoals = ['product_delivery'];
+    render({ step: 'ai', workspaceSlug: 'acme' });
+
+    expect(container?.querySelector('[data-testid="setup-github"]')).not.toBeNull();
+    expect(state.navigate).toHaveBeenCalledWith({ to: '/onboarding', search: { step: 'github', workspace: 'acme' }, replace: true });
+  });
+
+  it('resumes Connect GitHub from the URL GitHub returns to, even once GitHub is ready', () => {
+    state.workspaceBySlug = acme;
+    state.capabilities = caps('community', 'ready', 'ready', 'ready');
+    state.role = 'owner';
+    render({ step: 'github', workspaceSlug: 'acme' });
+
+    expect(container?.querySelector('[data-testid="setup-github"]')).not.toBeNull();
+    expect(state.navigate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['an admin who is not the owner', { role: 'admin', goals: ['product_delivery'], edition: 'community', github: 'needs_setup' }],
+    ['a member', { role: 'member', goals: ['product_delivery'], edition: 'community', github: 'needs_setup' }],
+    ['an owner without the delivery goal', { role: 'owner', goals: ['customer_support'], edition: 'community', github: 'needs_setup' }],
+    ['an owner whose GitHub is ready', { role: 'owner', goals: ['product_delivery'], edition: 'community', github: 'ready' }],
+    ['an owner on Enterprise', { role: 'owner', goals: ['product_delivery'], edition: 'enterprise', github: 'needs_setup' }],
+  ] as const)('skips Connect GitHub silently for %s', (_label, { role, goals, edition, github }) => {
+    state.workspaceBySlug = acme;
+    state.capabilities = caps(edition, 'ready', 'ready', github);
+    state.role = role;
+    state.setupGoals = [...goals];
+    render({ step: 'ai', workspaceSlug: 'acme' });
+
+    expect(container?.querySelector('[data-testid="setup-github"]')).toBeNull();
+    expect(container?.textContent).toContain('Tell Helpin about your company');
+    expect(state.navigate).toHaveBeenCalledWith({ to: '/onboarding', search: { step: 'context', workspace: 'acme' }, replace: true });
+  });
+
   it('shows a failed generation inline with the server sentence and keeps the text editable', async () => {
     state.workspaceBySlug = acme;
     state.capabilities = caps('community', 'ready');
@@ -244,13 +324,25 @@ describe('OnboardingFlow', () => {
     expect(state.navigate).toHaveBeenCalledWith({ to: '/onboarding', search: { step: 'invite', workspace: 'acme' } });
   });
 
-  it('explains that invitations need email when outbound email is not set up', () => {
+  it('creates copyable invite links when outbound email is not set up', async () => {
+    const { inviteService } = await import('@/lib/services/inviteService');
+    vi.mocked(inviteService.send).mockResolvedValue({
+      data: { id: 'inv-1', email: 'sam@acme.com', email_sent: false, join_url: 'https://helpin.example.com/join/abc' },
+      error: null,
+    } as never);
     state.workspaceBySlug = acme;
     state.capabilities = caps('community', 'ready', 'needs_setup');
     render({ step: 'invite', workspaceSlug: 'acme' });
 
-    expect(container?.textContent).toContain('Email isn’t set up on this server, so invitations can’t be sent yet. You can invite people later from Settings → Members.');
-    expect(container?.querySelector('input[aria-label="Email addresses"]')).toBeNull();
+    expect(container?.textContent).toContain('Helpin creates an invite link for each person');
+    const input = container?.querySelector('input[aria-label="Email addresses"]') as HTMLInputElement;
+    expect(input).not.toBeNull();
+    act(() => typeInto(input, 'sam@acme.com'));
+    await act(async () => button('Create invite links')?.click());
+
+    expect(inviteService.send).toHaveBeenCalledWith({ workspace_id: 'ws-1', email: 'sam@acme.com', role: 'member' });
+    expect(container?.textContent).toContain('https://helpin.example.com/join/abc');
+    expect(container?.querySelector('button[aria-label="Copy invite link for sam@acme.com"]')).not.toBeNull();
     act(() => button('Continue')?.click());
     expect(state.navigate).toHaveBeenCalledWith({ to: '/onboarding', search: { step: 'finish', workspace: 'acme' } });
   });
