@@ -1561,7 +1561,7 @@ func main() {
 	if setupSuccessEnabled {
 		workspaceService.SetSetupInitializer(setupService)
 	}
-	workspaceService.SetContextGeneratorDependencies(supportLLMProvider, nil)
+	workspaceService.SetContextGeneratorDependencies(supportLLMProvider, nil).SetContextAIProfiles(aiProfileService)
 	entitlementService := editionServices.Entitlements
 	setupService.SetEntitlementService(entitlementService)
 	pmImportService.SetEntitlementService(entitlementService)

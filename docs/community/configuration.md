@@ -85,6 +85,19 @@ settings reports this distinction; "configured" does not mean the endpoint
 has been contacted or verified. Help-center AI answers and automatic triage
 also retain server-level chat provider settings and their existing model routes.
 
+A workspace's website is optional. When one is given, onboarding and Settings →
+Knowledge can draft the company/product context from it. The draft runs on the
+workspace's default AI profile and its connection (OpenAI, Anthropic,
+OpenRouter or an approved OpenAI-compatible endpoint). When no workspace
+connection can run it, the server's OpenRouter key is used if it is set. A server
+`OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `OPENROUTER_API_KEY` becomes a shared
+AI connection in every workspace, including new ones, so this works without
+further setup; Settings reports it as untested until someone tests it. Without any AI, the
+request fails at once and users write the context themselves. Helpin reads only
+public addresses: it refuses private, loopback, link-local and cloud metadata
+addresses, including after redirects. Sites that need JavaScript or block
+automated visitors cannot be read.
+
 The installer provisions pgvector and pgcrypto before the Helpin migrator runs.
 With external Postgres, its administrator must install pgvector on the server and
 run `CREATE EXTENSION IF NOT EXISTS vector;` and

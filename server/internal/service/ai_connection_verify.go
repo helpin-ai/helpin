@@ -155,22 +155,8 @@ func (s *AIConnectionService) connectionTestModel(ctx context.Context, workspace
 }
 
 func defaultAIConnectionTestProvider(provider string, credential sdk.ModelCredential) (llm.Provider, error) {
-	var client llm.Provider
-	switch provider {
-	case "openai":
-		if p := llm.NewOpenAIProvider(credential.APIKey, "", ""); p != nil {
-			client = p
-		}
-	case "openrouter":
-		if p := llm.NewOpenAIProvider(credential.APIKey, llm.OpenRouterDefaultBaseURL, ""); p != nil {
-			client = p
-		}
-	case "anthropic":
-		if p := llm.NewClaudeProvider(credential.APIKey); p != nil {
-			client = p
-		}
-	}
-	if client == nil {
+	client, err := defaultAIChatClient(sdk.RunModel{Provider: provider}, credential)
+	if err != nil {
 		return nil, errors.New("connection testing is not supported for this provider")
 	}
 	return client, nil

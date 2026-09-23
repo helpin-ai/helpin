@@ -18,6 +18,7 @@ type AIProfileService struct {
 	repo                  *repository.AIProfileRepository
 	connections           *AIConnectionService
 	admissionPolicy       AIConnectionAdmissionPolicy
+	chatClients           AIChatClientFactory
 }
 
 func NewAIProfileService(repo *repository.AIProfileRepository, connections *AIConnectionService) *AIProfileService {

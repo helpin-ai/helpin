@@ -128,8 +128,24 @@ func TestNormalizeSetupGoalsCanonicalizesTeamProjectsBeforeLimit(t *testing.T) {
 			t.Fatalf("goals = %v, want %v", goals, want)
 		}
 	}
-	if _, err := NormalizeSetupGoals([]string{model.SetupGoalTeamProjects, model.SetupGoalHelpCenterDocs, model.SetupGoalInternalDocs, model.SetupGoalSalesCRM}); err == nil {
-		t.Fatal("expected four canonical goals to be rejected")
+}
+
+func TestNormalizeSetupGoalsAcceptsEveryGoalInGivenOrder(t *testing.T) {
+	raw := []string{
+		model.SetupGoalSalesCRM, model.SetupGoalTeamProjects, model.SetupGoalHelpCenterDocs,
+		model.SetupGoalInternalDocs, model.SetupGoalCustomerSupport, model.SetupGoalAutomationMastery,
+		model.SetupGoalProductDelivery,
+	}
+	goals, err := NormalizeSetupGoals(raw)
+	if err != nil {
+		t.Fatalf("normalize all goals: %v", err)
+	}
+	want := []string{
+		model.SetupGoalSalesCRM, model.SetupGoalProductDelivery, model.SetupGoalHelpCenterDocs,
+		model.SetupGoalInternalDocs, model.SetupGoalCustomerSupport, model.SetupGoalAutomationMastery,
+	}
+	if strings.Join(goals, ",") != strings.Join(want, ",") {
+		t.Fatalf("goals = %v, want %v", goals, want)
 	}
 }
 
@@ -537,14 +553,14 @@ func TestAutomationSetupCompletesCoreWhenAssistedWorkAndFlowAreReady(t *testing.
 	}
 }
 
-func TestNormalizeSetupGoalsRejectsUnknownAndCapsSelection(t *testing.T) {
+func TestNormalizeSetupGoalsRejectsUnknownAndDeduplicates(t *testing.T) {
 	if _, err := NormalizeSetupGoals([]string{
 		model.SetupGoalProductDelivery,
 		model.SetupGoalCustomerSupport,
 		model.SetupGoalAutomationMastery,
 		"sales_pipeline",
 	}); err == nil {
-		t.Fatal("expected more than three goals to be rejected")
+		t.Fatal("expected an unknown goal among known goals to be rejected")
 	}
 
 	if _, err := NormalizeSetupGoals([]string{"not-real"}); err == nil {
