@@ -6,6 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/design-system/quiet-dropdown-select';
 import { useUpdateChatSettings } from '@/hooks/queries/useSupport';
 import type { SupportInstallationResponse, WidgetOriginSettings as OriginSettings } from '@/lib/pmTypes';
+import { WidgetSigningSecret } from './WidgetSigningSecret';
 
 export function parseWidgetOrigins(value: string): string[] {
   return [...new Set(value.split('\n').map(line => line.trim().replace(/\/$/, '')).filter(Boolean).map(origin => {
@@ -21,7 +22,12 @@ export function parseWidgetOrigins(value: string): string[] {
   }))].sort();
 }
 
-export function WidgetOriginSettings({ workspaceId, installation }: { workspaceId: string; installation: SupportInstallationResponse }) {
+export function WidgetOriginSettings({ workspaceId, installation, canManageSigningSecret = false }: {
+  workspaceId: string;
+  installation: SupportInstallationResponse;
+  /** Requires the support.admin permission, matching the reveal/rotate endpoints. */
+  canManageSigningSecret?: boolean;
+}) {
   const [origins, setOrigins] = useState((installation.allowed_origins ?? []).filter(origin => origin !== '*').join('\n'));
   const [allowAll, setAllowAll] = useState(installation.allowed_origins?.includes('*') ?? false);
   const [mode, setMode] = useState<OriginSettings['identity_verification_mode']>(installation.identity_verification_mode);
@@ -81,6 +87,12 @@ export function WidgetOriginSettings({ workspaceId, installation }: { workspaceI
       </div>
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       <Button type="button" size="sm" disabled={!dirty || mutation.isPending} onClick={() => void save()}>{mutation.isPending ? 'Saving…' : 'Save origin settings'}</Button>
+      <WidgetSigningSecret
+        workspaceId={workspaceId}
+        configured={installation.signing_secret_configured ?? true}
+        canManage={canManageSigningSecret}
+        enforced={installation.identity_verification_mode === 'enforced'}
+      />
     </section>
   );
 }

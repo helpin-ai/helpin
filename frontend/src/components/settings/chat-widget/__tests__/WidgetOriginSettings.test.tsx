@@ -6,7 +6,11 @@ import { parseWidgetOrigins, WidgetOriginSettings } from '../WidgetOriginSetting
 import type { SupportInstallationResponse } from '@/lib/pmTypes';
 
 const mocks = vi.hoisted(() => ({ save: vi.fn() }));
-vi.mock('@/hooks/queries/useSupport', () => ({ useUpdateChatSettings: () => ({ mutateAsync: mocks.save, isPending: false }) }));
+vi.mock('@/hooks/queries/useSupport', () => ({
+  useUpdateChatSettings: () => ({ mutateAsync: mocks.save, isPending: false }),
+  useRevealWidgetSigningSecret: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useRotateWidgetSigningSecret: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 afterEach(() => vi.clearAllMocks());
 

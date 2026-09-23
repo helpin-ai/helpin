@@ -30,12 +30,25 @@ Select **Require server-signed identities** only after integrating signing on
 your application's server. Anonymous chat remains available. Identity requests
 with missing, expired, or mismatched signatures are rejected in this mode.
 
-An authorized workspace administrator can obtain a new signing secret using
+A workspace administrator (a role with the `support.admin` permission) can view
+the signing secret in **Settings → Chat widget**, under **Identity signing
+secret**. The secret is masked by default: select the eye icon to reveal it or
+the copy icon to copy it. Each reveal is recorded in the workspace's credential
+audit. Store the secret in your backend's secret configuration; never in the
+browser or an install snippet. The public widget key and server signing secret
+are different values.
+
+**Regenerate secret** issues a new secret after confirmation. The previous
+secret stops working immediately, so update your server configuration right
+away. Until you do, signed identities are rejected when signatures are
+required, or treated as unverified otherwise. Regenerating the public widget
+key also replaces the signing secret.
+
+Scripts can use the same authenticated endpoints:
+`POST /api/support/inbox/installations/reveal-secret?workspace_id=WORKSPACE_ID`
+returns the current `secret_key`, and
 `POST /api/support/inbox/installations/rotate-secret?workspace_id=WORKSPACE_ID`
-with their authenticated session. The response contains `secret_key` once. Store
-it in your backend's secret configuration; never in the browser or an install
-snippet. Rotation immediately invalidates proofs signed with the previous key.
-The public widget key and server signing secret are different values.
+returns a new one.
 
 Example server-side signing in Python (standard library only):
 

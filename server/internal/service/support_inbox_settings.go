@@ -782,7 +782,8 @@ func (s *SupportInboxService) UpdateInstallationSettings(ctx context.Context, wo
 
 // RegenerateWidgetKey generates a new widget key + secret key.
 // If no installation exists yet, one is created with default settings.
-func (s *SupportInboxService) RegenerateWidgetKey(ctx context.Context, workspaceID string) (*model.SupportWidgetInstallation, *model.SupportInboxSettings, error) {
+// Regenerating also rotates the identity signing secret, so it is audited.
+func (s *SupportInboxService) RegenerateWidgetKey(ctx context.Context, workspaceID, actorUserID string) (*model.SupportWidgetInstallation, *model.SupportInboxSettings, error) {
 	inst, err := s.installationRepo.GetByWorkspace(ctx, workspaceID)
 	if err != nil {
 		return nil, nil, err
@@ -806,7 +807,7 @@ func (s *SupportInboxService) RegenerateWidgetKey(ctx context.Context, workspace
 		return nil, nil, fmt.Errorf("generate secret key: %w", err)
 	}
 
-	if err := s.installationRepo.RegenerateKeys(ctx, inst.ID, newWidgetKey, newSecretKey); err != nil {
+	if err := s.installationRepo.RegenerateKeys(ctx, inst.ID, newWidgetKey, newSecretKey, actorUserID); err != nil {
 		return nil, nil, err
 	}
 
@@ -816,6 +817,30 @@ func (s *SupportInboxService) RegenerateWidgetKey(ctx context.Context, workspace
 	settings := parseSettings(inst.Settings)
 	slog.InfoContext(ctx, "regenerated support widget keys", "workspace_id", workspaceID, "installation_id", inst.ID)
 	return inst, &settings, nil
+}
+
+// RevealWidgetSecret returns the current identity signing secret for an
+// administrator and records the access. The secret is never logged.
+func (s *SupportInboxService) RevealWidgetSecret(ctx context.Context, workspaceID, actorUserID string) (string, error) {
+	if strings.TrimSpace(actorUserID) == "" {
+		return "", fmt.Errorf("an authenticated administrator is required")
+	}
+	inst, err := s.installationRepo.GetByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return "", err
+	}
+	if inst == nil || strings.TrimSpace(inst.SecretKey) == "" {
+		return "", fmt.Errorf("no signing secret found for this workspace")
+	}
+	if err := s.installationRepo.RecordSecretReveal(ctx, inst, actorUserID); err != nil {
+		return "", err
+	}
+	slog.InfoContext(ctx, "revealed support widget signing secret",
+		"workspace_id", workspaceID,
+		"installation_id", inst.ID,
+		"actor_user_id", actorUserID,
+	)
+	return inst.SecretKey, nil
 }
 
 // RotateWidgetSecret rotates the S2S/signing secret without changing the public widget key.
