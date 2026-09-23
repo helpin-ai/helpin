@@ -180,6 +180,10 @@ func main() {
 		fatalWithSentry("failed to migrate drop restrict_to_owners", err)
 	}
 
+	if err := repository.MigrateSupportTranslationCustomerLanguage(db); err != nil {
+		fatalWithSentry("failed to backfill support translation customer language", err)
+	}
+
 	if cfg.RunAutoMigrate {
 		// Fix: idx_ws_member_ws_user was incorrectly created as a single-column unique
 		// index on user_id only. Drop it so AutoMigrate recreates it as composite (workspace_id, user_id).

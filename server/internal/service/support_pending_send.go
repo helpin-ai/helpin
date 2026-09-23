@@ -16,6 +16,8 @@ import (
 	"time"
 )
 
+var ErrInvalidSupportReply = errors.New("invalid support reply")
+
 type supportSendProgressKey struct{}
 type supportSendGuardKey struct{}
 
@@ -26,10 +28,10 @@ func reportSupportSendProgress(ctx context.Context, status string) {
 }
 func (s *SupportInboxService) QueueSupportSend(ctx context.Context, ws, conv, user string, req model.CreateMessageRequest) (*model.SupportMessage, error) {
 	if _, err := uuid.Parse(req.ClientMessageID); err != nil {
-		return nil, ErrSupportTranslation
+		return nil, ErrInvalidSupportReply
 	}
 	if req.IsInternal || (req.MessageType != "" && req.MessageType != "reply") || (strings.TrimSpace(req.Content) == "" && len(req.AttachmentIDs) == 0) {
-		return nil, ErrSupportTranslation
+		return nil, ErrInvalidSupportReply
 	}
 	if err := validateSupportDeliveryMode(&req, "user"); err != nil {
 		return nil, err
@@ -70,7 +72,7 @@ func (s *SupportInboxService) QueueSupportSend(ctx context.Context, ws, conv, us
 		return nil, err
 	}
 	if stored.RequestHash != translationHash(string(raw)) {
-		return nil, ErrSupportTranslation
+		return nil, ErrInvalidSupportReply
 	}
 	if stored.Status == "sent" {
 		return s.messageRepo.GetByID(ctx, stored.MessageID)
