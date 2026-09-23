@@ -33,6 +33,15 @@ scan and acceptance run before inclusion in a release.
   storage server or storage-init client. Garage bootstraps a private bucket using
   its upstream single-node/default-bucket functionality.
 
+- Caddy: upstream `caddy:2.11.4-alpine`, used only when the bundled HTTPS proxy
+  (`HELPIN_PROXY=builtin`) is selected. The 2026-09-23 amd64 scan found 17
+  fixable high/critical findings in the Go standard library and `x/crypto`,
+  `x/net`, `x/text` and gRPC modules compiled into the upstream binary. Unlike the
+  other infrastructure images, Caddy is **internet-facing**, so several findings
+  (HTTP/2 and TLS denial of service) are on its request path. They are accepted
+  as beta exceptions through 2026-10-16 only until a patched upstream release is
+  pinned; operators who cannot accept them should use `--proxy external`.
+
 Review upstream refreshes at each release and before exceptions expire. Prefer a
 patched upstream pin, rerun scans and install/restore, then delete resolved
 exceptions. Reassess any exception if ports, privileges or network exposure change.

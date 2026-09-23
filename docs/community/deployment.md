@@ -5,12 +5,19 @@ hostname. It explains the reverse proxy, URL settings, and network boundaries
 required for HTTPS access; use it after a local evaluation succeeds. Run
 commands below from the bundle’s `community/` directory.
 
-The [CLI setup wizard](cli.md) can generate the URL settings and a host Caddy
-configuration with `helpin install --mode server` or `helpin configure --mode
-server`. It keeps services on loopback and leaves DNS and proxy activation to
-the operator. Use `helpin doctor` after configuring HTTPS.
+The quickest path is the bundled proxy: `helpin install --mode server` (or
+`helpin configure --mode server`) with the default `--proxy builtin` runs Caddy
+from `compose.proxy.yaml`, writes its configuration, and trusts only its fixed
+address. Point DNS at the server, allow ports 80 and 443, and run `helpin
+doctor`; certificates are issued automatically. See the [CLI guide](cli.md).
 
-Use an existing HTTPS reverse proxy or adapt `Caddyfile.example`. Configure:
+To run your own proxy instead, choose `--proxy external`. The wizard can still
+generate URL settings and a host Caddy configuration; it keeps services on
+loopback and leaves DNS and proxy activation to the operator. Use `helpin
+doctor` after configuring HTTPS.
+
+With your own proxy, use an existing HTTPS reverse proxy or adapt
+`Caddyfile.example`. Configure:
 
 - `APP_BASE_URL=https://inbox.example.com`
 - `PUBLIC_WIDGET_URL=https://widget.example.com`

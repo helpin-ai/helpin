@@ -26,10 +26,13 @@ var tagPattern = regexp.MustCompile(`^community-v0\.[0-9]+\.[0-9]+(-[a-z0-9.]+)?
 
 type options struct {
 	dir, release, bundle, checksum, mode, domain, storage, help, proxy string
-	project                                                            string
-	port, storagePort, helpPort                                        int
-	yes, noStart                                                       bool
-	backupPath                                                         string
+	// proxyMode is "builtin" (Caddy in the bundle terminates HTTPS) or
+	// "external" (the operator runs their own reverse proxy). Server mode only.
+	proxyMode, acmeEmail        string
+	project                     string
+	port, storagePort, helpPort int
+	yes, noStart                bool
+	backupPath                  string
 	// Optional integrations. Secrets come only from files, environment
 	// variables or hidden prompts, never from command-line values.
 	smtpHost, smtpPort, smtpUser, smtpFrom, smtpTLS, smtpPasswordFile string
@@ -172,7 +175,9 @@ func (a *app) execute(args []string) error {
 		f.StringVar(&o.domain, "domain", "", "dashboard hostname (server mode)")
 		f.StringVar(&o.storage, "storage-domain", "", "attachment hostname (server mode)")
 		f.StringVar(&o.help, "help-domain", "", "help-center hostname (server mode)")
-		f.StringVar(&o.proxy, "proxy-cidr", "", "exact trusted proxy source IP/CIDR as seen by ingress")
+		f.StringVar(&o.proxyMode, "proxy", "", "server mode HTTPS: builtin (bundled Caddy, default) or external (your own proxy)")
+		f.StringVar(&o.acmeEmail, "acme-email", "", "builtin proxy: optional email for certificate expiry notices")
+		f.StringVar(&o.proxy, "proxy-cidr", "", "external proxy: exact trusted proxy source IP/CIDR as seen by ingress")
 		f.IntVar(&o.port, "port", 0, "local dashboard port (default 8085)")
 		f.IntVar(&o.storagePort, "storage-port", 0, "local storage port (default 9005)")
 		f.IntVar(&o.helpPort, "help-port", 0, "local help-center port (default 8086)")
@@ -285,7 +290,7 @@ func (a *app) execute(args []string) error {
 		return nil
 	}
 	if command == "restart" {
-		err = a.run(dir, "docker", "compose", "--env-file", ".env", "-f", "compose.yaml", "up", "-d", "--force-recreate", "--wait", "--wait-timeout", "300")
+		err = a.run(dir, composeArgs(dir, "up", "-d", "--force-recreate", "--wait", "--wait-timeout", "300")...)
 	} else {
 		err = a.run(dir, "bash", "./setup.sh", command)
 	}
@@ -380,6 +385,14 @@ func checkPorts(o options) error {
 		}
 		listener.Close()
 	}
+	if o.mode == "server" && o.proxyMode == "builtin" {
+		for _, port := range []int{80, 443} {
+			if conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), time.Second); err == nil {
+				conn.Close()
+				return fmt.Errorf("port %d is already in use; stop the existing web server or use --proxy external", port)
+			}
+		}
+	}
 	return nil
 }
 
@@ -394,7 +407,9 @@ func (a *app) ready(dir string) error {
 		return fmt.Errorf("services started but dashboard readiness failed; run helpin doctor: %w", err)
 	}
 	fmt.Fprintln(a.out, "✓ Helpin services are ready")
-	if strings.HasPrefix(values["APP_BASE_URL"], "https://") {
+	if values["HELPIN_PROXY"] == "builtin" {
+		fmt.Fprintf(a.out, "Public URL: %s\nHTTPS is handled by the bundled Caddy proxy. Point the dashboard, help-center and attachment DNS names at this server and allow ports 80 and 443; certificates are issued automatically. Verify with: helpin doctor --dir %q\n", values["APP_BASE_URL"], filepath.Dir(dir))
+	} else if strings.HasPrefix(values["APP_BASE_URL"], "https://") {
 		fmt.Fprintf(a.out, "Public URL: %s\nHTTPS is not configured by the CLI. Install the generated Caddyfile on this host, point DNS here, and run helpin doctor --dir %q to verify public access.\n", values["APP_BASE_URL"], filepath.Dir(dir))
 	} else {
 		fmt.Fprintf(a.out, "Open %s to create your account and workspace.\n", values["APP_BASE_URL"])
@@ -430,7 +445,7 @@ func (a *app) doctor(dir string) error {
 		}
 		return "start Docker and check Docker Compose v2 and your Docker permissions"
 	})
-	_, err := a.output(dir, "docker", "compose", "--env-file", ".env", "-f", "compose.yaml", "config", "--quiet")
+	_, err := a.output(dir, composeArgs(dir, "config", "--quiet")...)
 	check("Compose configuration", err, fixed("review .env and compose.yaml, or rerun helpin configure"))
 	check("Service status", a.run(dir, "bash", "./setup.sh", "status"), logsHint)
 	check("All required services", a.checkServices(dir), logsHint)
@@ -506,11 +521,11 @@ func waitForApp(client *http.Client, base, wanted string, timeout time.Duration)
 }
 
 func (a *app) checkServices(dir string) error {
-	expected, err := a.output(dir, "docker", "compose", "--env-file", ".env", "-f", "compose.yaml", "config", "--services")
+	expected, err := a.output(dir, composeArgs(dir, "config", "--services")...)
 	if err != nil {
 		return err
 	}
-	data, err := a.output(dir, "docker", "compose", "--env-file", ".env", "-f", "compose.yaml", "ps", "--all", "--format", "json")
+	data, err := a.output(dir, composeArgs(dir, "ps", "--all", "--format", "json")...)
 	if err != nil {
 		return err
 	}

@@ -77,17 +77,32 @@ AI provider connections and application mail remain optional.
 ### Public server setup
 
 Server mode asks for three distinct DNS hostnames: the dashboard, attachments,
-and public help center. The widget shares the dashboard hostname. It also asks
-for the exact proxy source IP/CIDR as seen by the ingress container; a host proxy
-usually appears as the Docker bridge gateway, not loopback. Do not guess this
-value or trust all addresses.
+and public help center. The widget shares the dashboard hostname. It then asks
+how HTTPS is handled:
 
-The CLI writes public URL settings and `community/Caddyfile`. Install that file
-in your host's Caddy service, point the three DNS names at this server, permit
-80/443 at the edge, and persist certificate storage. The CLI leaves the app's
-published ports on loopback. It does not install or reload your proxy. See the
+- **`builtin`** (default for new servers): the bundle runs Caddy
+  (`compose.proxy.yaml`) on ports 80 and 443. Caddy obtains and renews
+  certificates automatically once DNS points at the server. The CLI writes
+  `community/Caddyfile`, and trusts only Caddy's fixed address on a private
+  `edge` network, so there is no proxy address to look up. `--acme-email` sets
+  an optional address for certificate expiry notices. Ports 80 and 443 must be
+  free on the host.
+- **`external`**: you run your own reverse proxy. The CLI asks for its exact
+  source IP/CIDR as seen by the ingress container; a host proxy usually appears
+  as the Docker bridge gateway, not loopback. Do not guess this value or trust
+  all addresses. The CLI writes a host `community/Caddyfile` you can adapt, keeps
+  the app's published ports on loopback, and does not install or reload your
+  proxy. Installations that already used their own proxy keep `external`, and
+  passing `--proxy-cidr` without `--proxy` also selects it.
+
+Point the three DNS names at this server and permit 80/443 at the edge. See the
 [public deployment guide](deployment.md) for the network and HTTPS requirements.
 Configure the help-center custom domain in Helpin after creating your workspace.
+
+If `172.30.255.0/28` collides with an existing network on the host, change
+`EDGE_SUBNET`, `EDGE_IP_RANGE` and `EDGE_PROXY_IP` in `.env` (the proxy address
+must be inside the subnet but outside the range), then rerun `helpin configure`
+and `helpin restart`.
 
 Run `helpin doctor` after configuring the proxy. A successful local startup is
 reported separately from public HTTPS readiness. Doctor checks the public API
@@ -105,10 +120,11 @@ helpin install --yes --mode local --dir "$HOME/helpin" \
   --port 8085 --help-port 8086 --storage-port 9005
 ```
 
-For server mode, supply `--domain`, `--storage-domain`, `--help-domain`, and
-`--proxy-cidr`. Unattended runs change mail and AI settings only when their
-flags are given. Secrets are never accepted as command-line values; pass a file
-or an environment variable instead:
+For server mode, supply `--domain`, `--storage-domain` and `--help-domain`, plus
+`--proxy builtin` (optionally `--acme-email`) or `--proxy external
+--proxy-cidr`. Unattended runs change mail and AI settings only when their flags
+are given. Secrets are never accepted as command-line values; pass a file or an
+environment variable instead:
 
 ```sh
 HELPIN_SMTP_PASSWORD="$(cat /run/secrets/smtp)" helpin install --yes --mode local \

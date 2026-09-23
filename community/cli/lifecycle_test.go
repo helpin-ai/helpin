@@ -443,8 +443,8 @@ func TestResumeServicesChecksReadinessWithoutStartWait(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a, _ := testApp(t)
-			a.run = func(_ string, args ...string) error {
-				if strings.Join(args, " ") != strings.Join(composeArgs("start", "helpin-api"), " ") {
+			a.run = func(runDir string, args ...string) error {
+				if strings.Join(args, " ") != strings.Join(composeArgs(runDir, "start", "helpin-api"), " ") {
 					t.Fatalf("unexpected restart command: %v", args)
 				}
 				return nil

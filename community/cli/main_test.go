@@ -231,6 +231,80 @@ func TestExtractionRejectsTraversalAndLinks(t *testing.T) {
 	}
 }
 
+func TestConfigureBuiltinProxyTrustsOnlyCaddy(t *testing.T) {
+	a, _ := testApp(t)
+	dir := t.TempDir()
+	original := strings.ReplaceAll(template(t), "=GENERATE\n", "=existing-secret\n")
+	put(t, filepath.Join(dir, ".env"), original)
+	o := options{yes: true, mode: "server", domain: "inbox.example.com", storage: "files.example.com", help: "help.example.com", acmeEmail: "ops@example.com"}
+	if err := a.configuration(&o, envValues(original)); err != nil {
+		t.Fatal(err)
+	}
+	if o.proxyMode != "builtin" {
+		t.Fatalf("new server installs should default to the bundled proxy, got %q", o.proxyMode)
+	}
+	if err := writeConfiguration(dir, o); err != nil {
+		t.Fatal(err)
+	}
+	values, _ := readEnv(dir)
+	if values["HELPIN_PROXY"] != "builtin" || values["COMMUNITY_TRUSTED_PROXY_CIDR"] != defaultEdgeProxyIP+"/32" || values["ACME_EMAIL"] != "ops@example.com" {
+		t.Fatal(values)
+	}
+	caddy := get(t, filepath.Join(dir, "Caddyfile"))
+	for _, want := range []string{"email ops@example.com", "inbox.example.com {", "reverse_proxy helpin-frontend:80", "reverse_proxy helpin-helpcenter:3000", "reverse_proxy garage:3900"} {
+		if !strings.Contains(caddy, want) {
+			t.Fatalf("Caddyfile missing %q:\n%s", want, caddy)
+		}
+	}
+	if strings.Contains(caddy, "127.0.0.1") {
+		t.Fatalf("bundled Caddy must reach services by name:\n%s", caddy)
+	}
+	put(t, filepath.Join(dir, proxyComposeFile), "services: {}\n")
+	if args := strings.Join(composeArgs(dir, "ps"), " "); !strings.Contains(args, "-f compose.yaml -f "+proxyComposeFile+" ps") {
+		t.Fatal(args)
+	}
+}
+
+func TestProxyModeDefaultsAndCompatibility(t *testing.T) {
+	a, _ := testApp(t)
+	base := options{yes: true, mode: "server", domain: "inbox.example.com", storage: "files.example.com", help: "help.example.com"}
+
+	// Existing HTTPS installs predate the bundled proxy: keep their own.
+	o := base
+	o.proxy = "172.18.0.1"
+	if err := a.configuration(&o, map[string]string{"APP_BASE_URL": "https://inbox.example.com", "COMMUNITY_TRUSTED_PROXY_CIDR": "172.18.0.1/32"}); err != nil || o.proxyMode != "external" {
+		t.Fatalf("existing server install: mode %q err %v", o.proxyMode, err)
+	}
+
+	// --proxy-cidr alone keeps working for existing automation.
+	o = base
+	o.proxy = "10.0.0.5"
+	if err := a.configuration(&o, map[string]string{}); err != nil || o.proxyMode != "external" || o.proxy != "10.0.0.5/32" {
+		t.Fatalf("proxy-cidr only: mode %q proxy %q err %v", o.proxyMode, o.proxy, err)
+	}
+
+	// A custom edge address is honoured.
+	o = base
+	if err := a.configuration(&o, map[string]string{"EDGE_PROXY_IP": "10.99.0.2"}); err != nil || o.proxy != "10.99.0.2/32" {
+		t.Fatalf("custom edge: proxy %q err %v", o.proxy, err)
+	}
+
+	for _, bad := range []options{{proxyMode: "caddy"}, {acmeEmail: "not-an-email"}} {
+		o = base
+		o.proxyMode, o.acmeEmail = bad.proxyMode, bad.acmeEmail
+		if err := a.configuration(&o, map[string]string{}); err == nil {
+			t.Fatalf("accepted %+v", bad)
+		}
+	}
+
+	// Without the proxy file (older bundles), commands stay on compose.yaml.
+	dir := t.TempDir()
+	put(t, filepath.Join(dir, ".env"), "HELPIN_PROXY=builtin\n")
+	if args := strings.Join(composeArgs(dir, "ps"), " "); strings.Contains(args, proxyComposeFile) {
+		t.Fatal(args)
+	}
+}
+
 func TestConfigurePublicPreservesSecretsAndNeverSourcesEnv(t *testing.T) {
 	a, _ := testApp(t)
 	dir := t.TempDir()
