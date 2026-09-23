@@ -364,3 +364,31 @@ func (f *fakeMCPDocsEmbeddingQueue) QueueDocumentSync(context.Context, string) e
 	f.queued++
 	return nil
 }
+
+func TestRequireMCPCommandDocumentAccess(t *testing.T) {
+	docsTool := MCPToolDefinition{Name: "edit_document", Toolset: MCPToolsetDocs}
+	tests := []struct {
+		name      string
+		tool      MCPToolDefinition
+		arguments string
+		spaceID   string
+		wantErr   error
+	}{
+		{name: "accessible document passes", tool: docsTool, arguments: `{"document_id":"document-1"}`, spaceID: "space-1"},
+		{name: "document in an inaccessible space is hidden", tool: docsTool, arguments: `{"document_id":"document-1"}`, spaceID: "space-hidden", wantErr: ErrMCPNotFound},
+		{name: "unknown document is hidden", tool: docsTool, arguments: `{"document_id":"missing"}`, spaceID: "space-1", wantErr: ErrMCPNotFound},
+		{name: "tools without a document id are unaffected", tool: docsTool, arguments: `{"query":"x"}`, spaceID: "space-hidden"},
+		{name: "non-docs tools are unaffected", tool: MCPToolDefinition{Name: "list_tasks", Toolset: MCPToolsetPM}, arguments: `{"document_id":"document-1"}`, spaceID: "space-hidden"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := setupMCPDocsLifecycleTest(t, model.DocStatusDraft, model.SpaceTypeInternal)
+			env.documents.documents["document-1"].SpaceID = tt.spaceID
+			err := env.service.requireMCPCommandDocumentAccess(
+				context.Background(), env.principal, env.actor, tt.tool, json.RawMessage(tt.arguments))
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("requireMCPCommandDocumentAccess() error = %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+}

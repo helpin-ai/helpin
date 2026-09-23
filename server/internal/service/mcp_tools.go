@@ -122,6 +122,9 @@ func (s *MCPService) executeAuthorizedMCPTool(
 	arguments json.RawMessage,
 ) (*MCPToolResult, error) {
 	if tool.CommandName != "" {
+		if err := s.requireMCPCommandDocumentAccess(ctx, principal, actor, tool, arguments); err != nil {
+			return nil, err
+		}
 		if tool.Name == "search_workspace" {
 			var err error
 			arguments, err = s.prepareMCPWorkspaceSearchArguments(principal, actor, arguments)
@@ -1043,6 +1046,34 @@ func (s *MCPService) accessibleMCPTask(
 		return nil, nil
 	}
 	return task, nil
+}
+
+// requireMCPCommandDocumentAccess applies Docs space access to command-backed
+// document tools, which otherwise only verify the workspace.
+func (s *MCPService) requireMCPCommandDocumentAccess(
+	ctx context.Context,
+	principal *model.MCPPrincipal,
+	actor *authorization.Actor,
+	tool MCPToolDefinition,
+	arguments json.RawMessage,
+) error {
+	if tool.Toolset != MCPToolsetDocs {
+		return nil
+	}
+	var input struct {
+		DocumentID string `json:"document_id"`
+	}
+	if err := json.Unmarshal(arguments, &input); err != nil || strings.TrimSpace(input.DocumentID) == "" {
+		return nil
+	}
+	document, err := s.accessibleMCPDocument(ctx, principal, actor, strings.TrimSpace(input.DocumentID))
+	if err != nil {
+		return err
+	}
+	if document == nil {
+		return ErrMCPNotFound
+	}
+	return nil
 }
 
 // mcpPrincipalCanSeeRun hides dock chat runs, which are private to the user

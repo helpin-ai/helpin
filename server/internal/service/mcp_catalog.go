@@ -89,6 +89,7 @@ func (s *MCPService) buildToolCatalog() []MCPToolDefinition {
 		"create_document":       {Toolset: MCPToolsetDocs, Scope: MCPScopeDocsWrite, Permission: authorization.PermDocsEdit, Module: model.ModuleDocs, Mutating: true},
 		"update_document_block": {Toolset: MCPToolsetDocs, Scope: MCPScopeDocsWrite, Permission: authorization.PermDocsEdit, Module: model.ModuleDocs, Mutating: true},
 		"insert_document_block": {Toolset: MCPToolsetDocs, Scope: MCPScopeDocsWrite, Permission: authorization.PermDocsEdit, Module: model.ModuleDocs, Mutating: true},
+		"edit_document":         {Toolset: MCPToolsetDocs, Scope: MCPScopeDocsWrite, Permission: authorization.PermDocsEdit, Module: model.ModuleDocs, Mutating: true},
 		"list_repositories":     {Toolset: MCPToolsetContext, Scope: MCPScopeContextRead, Permission: authorization.PermIntegrationsEnumerate},
 		"list_contacts":         {Toolset: MCPToolsetCRM, Scope: MCPScopeCRMRead, Permission: authorization.PermCRMRead, Module: model.ModuleCRM},
 		"list_deals":            {Toolset: MCPToolsetCRM, Scope: MCPScopeCRMRead, Permission: authorization.PermCRMRead, Module: model.ModuleCRM},
