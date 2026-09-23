@@ -2,6 +2,7 @@ const MCP_WRITE_SCOPE_BY_TOOLSET: Readonly<Record<string, string>> = {
   pm: 'helpin.pm.write',
   docs: 'helpin.docs.write',
   crm: 'helpin.crm.write',
+  support: 'helpin.support.write',
   agents: 'helpin.agents.run',
 };
 

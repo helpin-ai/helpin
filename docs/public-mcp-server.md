@@ -200,7 +200,7 @@ Toolsets control which product-area tools are visible. Scopes control the author
 | `pm` | `helpin.pm.read` | `helpin.pm.write` |
 | `docs` | `helpin.docs.read` | `helpin.docs.write`; `helpin.docs.publish` for Help Center publishing |
 | `crm` | `helpin.crm.read` | `helpin.crm.write` |
-| `support` | `helpin.support.read` | No public support-write scope in v1 |
+| `support` | `helpin.support.read` | `helpin.support.write` organizes conversations; replies are never sent through MCP |
 | `agents` | `helpin.agents.read` | `helpin.agents.run` |
 
 The recommended default grant includes:
@@ -317,6 +317,22 @@ Allowed run targets are:
 - `crm_deal`
 - `crm_contact`
 - `support_conversation`
+
+### 7.7 Parity tools (Linear and Plane)
+
+These tools expose existing Helpin commands that in-app agents already use, with the same toolset, scope, RBAC, and module checks as every other public tool.
+
+| Area | Read tools | Write tools |
+| --- | --- | --- |
+| Epics | `list_epics`, `get_epic` | `update_epic` |
+| Sprints | `list_sprints`, `get_sprint`, `list_sprint_tasks` | `create_sprint`, `update_sprint` |
+| Objectives | `list_objectives`, `get_objective` | `create_objective`, `update_objective`, `update_key_result` |
+| Labels and workflows | `list_pm_labels`, `list_team_workflows_with_stages` | `ensure_task_label` |
+| Members | `list_workspace_members` (`workspace.members.read`) | — |
+| CRM | `get_crm_company`, `list_crm_companies`, `list_crm_pipelines`, `list_crm_associations` | `add_crm_activity`, `update_crm_contact`, `update_crm_company`, `update_crm_deal`, `link_crm_objects`, `unlink_crm_association`, `set_primary_contact_company` |
+| Support | `list_support_inboxes`, `list_support_tags`, `list_support_assignees` | `assign_support_conversation`, `move_support_conversation`, `add_support_conversation_tag`, `remove_support_conversation_tag`, `link_support_conversation_task`, `link_support_conversation_contact`, `update_support_conversation_subject` (`helpin.support.write` + `support.edit`) |
+
+Not exposed: sending support replies, CRM enrichment, and deleting records.
 
 ## 8. Tool-call execution flow
 
@@ -614,7 +630,7 @@ The public v1 server does not expose:
 - deleting Helpin records
 - sending customer support replies
 - creating a public support reply draft through the run-scoped internal draft contract
-- changing support status or assignment
+- changing support conversation status (assignment, inbox moves, tags, links, and subject are available with `helpin.support.write`)
 - deleting documentation (archive and restore are available)
 - publishing without the explicit `helpin.docs.publish` scope and `docs.publish` permission
 - broad document-content replacement through `write_document_content` (use version-checked `edit_document` instead)
@@ -757,7 +773,7 @@ The implementation includes automated checks for:
 - strict tool schemas and rejection of workspace-override properties
 - workspace-policy scope/toolset narrowing and forced read-only behavior
 - platform domain flags
-- the 59-tool catalog
+- the 97-tool catalog, including parity tools for epics, sprints, objectives, labels, workflows, members, CRM, and support organization
 - document image uploads: presigned upload with storage verification, and SSRF-safe copy from a public URL
 - document lifecycle tools: publish, unpublish, archive, restore, and rename, including typed error codes
 - exclusion of deferred destructive, support-draft, and customer-send actions
