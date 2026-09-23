@@ -791,3 +791,14 @@ const server = http.createServer((request, response) => {
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`help-center listening on ${PORT}`)
 })
+
+// Node runs as PID 1 in the container, where signals without a handler are
+// ignored; without this, `docker stop` waits for the timeout and kills us.
+function shutdown(signal) {
+  console.log(`help-center received ${signal}, shutting down`)
+  server.close(() => process.exit(0))
+  server.closeIdleConnections?.()
+  setTimeout(() => process.exit(0), 5000).unref()
+}
+process.once('SIGTERM', () => shutdown('SIGTERM'))
+process.once('SIGINT', () => shutdown('SIGINT'))

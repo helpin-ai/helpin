@@ -234,12 +234,29 @@ func (a *app) checkCleanStop(dir string) error {
 		return err
 	}
 	for _, s := range states {
-		if s.State == "running" || s.State == "restarting" || s.ExitCode == 137 {
+		if s.State == "running" || s.State == "restarting" {
+			return fmt.Errorf("%s did not stop cleanly; restart and investigate before backing up", s.Service)
+		}
+		// A forced kill (137) can leave a data volume inconsistent, so it blocks
+		// the backup for services that write volumes. Stateless services such as
+		// the help center (older images ignore SIGTERM) hold nothing to snapshot.
+		if s.ExitCode == 137 && volumeServices[s.Service] {
 			return fmt.Errorf("%s did not stop cleanly; restart and investigate before backing up", s.Service)
 		}
 	}
 	return nil
 }
+
+// volumeServices are the Compose services that write named volumes included in
+// backups. A test keeps this in sync with compose.yaml.
+var volumeServices = map[string]bool{
+	"postgres":             true,
+	"redis":                true,
+	"nats":                 true,
+	"garage":               true,
+	"agent-runtime-worker": true,
+}
+
 func helperArgs(volume string, restore bool) []string {
 	mount := "type=volume,src=" + volume + ",dst=/data,volume-nocopy"
 	if !restore {
