@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
@@ -75,4 +76,25 @@ func (f fakeMCPPMCommentLister) List(context.Context, string, string) ([]model.C
 
 func jsonContains(encoded []byte, fragment string) bool {
 	return strings.Contains(string(encoded), fragment)
+}
+
+func TestResolveMCPTaskKeyArgument(t *testing.T) {
+	commands := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	service := &MCPService{commands: commands}
+	principal := &model.MCPPrincipal{WorkspaceID: "workspace-1", UserID: "user-1"}
+	actor := &authorization.Actor{WorkspaceID: "workspace-1", UserID: "user-1", Role: "admin"}
+	for _, arguments := range []string{
+		`{"task_id":"4c7bf8bc-5be1-7abd-8eed-b26ab273d21e"}`,
+		`{"document_id":"HEL-120"}`,
+		`{"task_id":"not-a-key"}`,
+	} {
+		got, err := service.resolveMCPTaskKeyArgument(context.Background(), principal, actor, json.RawMessage(arguments))
+		if err != nil || string(got) != arguments {
+			t.Fatalf("resolve(%s) = %s, %v; want unchanged", arguments, got, err)
+		}
+	}
+	_, err := service.resolveMCPTaskKeyArgument(context.Background(), principal, actor, json.RawMessage(`{"task_id":"hel-120"}`))
+	if !errors.Is(err, ErrMCPNotFound) {
+		t.Fatalf("unresolvable key error = %v, want ErrMCPNotFound", err)
+	}
 }
