@@ -17,13 +17,18 @@ export type SystemStatusPanelProps = {
   canManage: boolean;
   /** Only the owner can create the instance GitHub App. */
   isOwner: boolean;
+  /**
+   * The page shows the application email settings card, which owns Save and
+   * Send test email; the Application email row then shows status only.
+   */
+  emailSettingsOnPage?: boolean;
 };
 
 /**
  * Settings → System status: the services this Community server provides to
  * every workspace, with the step that fixes each gap inline.
  */
-export function SystemStatusPanel({ workspaceId, slug, canManage, isOwner }: SystemStatusPanelProps) {
+export function SystemStatusPanel({ workspaceId, slug, canManage, isOwner, emailSettingsOnPage }: SystemStatusPanelProps) {
   const capabilities = useWorkspaceCapabilities(workspaceId);
 
   if (capabilities.isLoading) {
@@ -49,7 +54,7 @@ export function SystemStatusPanel({ workspaceId, slug, canManage, isOwner }: Sys
   }
 
   const groups = groupSystemCapabilities(capabilities.data.capabilities);
-  const rowProps = { workspaceId, slug, canManage, isOwner };
+  const rowProps = { workspaceId, slug, canManage, isOwner, emailSettingsOnPage };
   return (
     <div>
       {groups.blocking.length > 0 && (
@@ -90,7 +95,7 @@ function CapabilityList({ items, muted, ...context }: RowContext & { items: Capa
   );
 }
 
-function CapabilityRow({ capability, muted, workspaceId, slug, canManage, isOwner }: RowContext & { capability: Capability; muted?: boolean }) {
+function CapabilityRow({ capability, muted, workspaceId, slug, canManage, isOwner, emailSettingsOnPage }: RowContext & { capability: Capability; muted?: boolean }) {
   const status = capabilityStatus(capability.status);
   const StatusIcon = status.icon;
   const checked = checkedLabel(capability.checked_at);
@@ -116,20 +121,23 @@ function CapabilityRow({ capability, muted, workspaceId, slug, canManage, isOwne
           <p className="mt-1 max-w-2xl text-[12.5px] leading-5 text-quiet-text-tertiary">{capability.detail}</p>
           {checked && <p className="mt-1 text-[11.5px] text-quiet-muted">{checked}</p>}
         </div>
-        <CapabilityStep capability={capability} workspaceId={workspaceId} slug={slug} canManage={canManage} isOwner={isOwner} />
+        <CapabilityStep capability={capability} workspaceId={workspaceId} slug={slug} canManage={canManage} isOwner={isOwner} emailSettingsOnPage={emailSettingsOnPage} />
       </div>
     </li>
   );
 }
 
-function CapabilityStep({ capability, workspaceId, slug, canManage, isOwner }: { capability: Capability; workspaceId: string; slug: string; canManage: boolean; isOwner: boolean }) {
+function CapabilityStep({ capability, workspaceId, slug, canManage, isOwner, emailSettingsOnPage }: { capability: Capability; workspaceId: string; slug: string; canManage: boolean; isOwner: boolean; emailSettingsOnPage?: boolean }) {
   switch (capability.key) {
     case 'ai_chat':
       return <SetupAIStep capability={capability} workspaceId={workspaceId} slug={slug} canManage={canManage} />;
     case 'email_outbound':
+      // The email settings card below owns Save and Send test email.
+      if (emailSettingsOnPage) return null;
       return <SetupEmailStep capability={capability} workspaceId={workspaceId} slug={slug} canManage={canManage} />;
     case 'github':
-      return <SetupGitHubStep capability={capability} workspaceId={workspaceId} slug={slug} canManage={canManage} isOwner={isOwner} returnTo="system_status" />;
+      // The row's detail already states why GitHub is blocked; don't repeat it.
+      return <SetupGitHubStep capability={capability} workspaceId={workspaceId} slug={slug} canManage={canManage} isOwner={isOwner} returnTo="system_status" detailShown />;
     default:
       return <CapabilityActionView capability={capability} slug={slug} canManage={canManage} />;
   }

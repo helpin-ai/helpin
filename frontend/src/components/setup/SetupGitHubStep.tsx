@@ -30,6 +30,11 @@ export type SetupGitHubStepProps = {
   isOwner: boolean;
   /** Page GitHub returns to after creating or installing the App. */
   returnTo?: GitHubReturnTo;
+  /**
+   * The capability's detail is visible next to this step (System status), and
+   * it already explains why creating the App is blocked.
+   */
+  detailShown?: boolean;
 };
 
 /**
@@ -37,7 +42,7 @@ export type SetupGitHubStepProps = {
  * (created here from a manifest or configured on the server), an
  * installation for the organization, then repositories for this workspace.
  */
-export function SetupGitHubStep({ capability, workspaceId, slug, canManage, isOwner, returnTo = 'settings' }: SetupGitHubStepProps) {
+export function SetupGitHubStep({ capability, workspaceId, slug, canManage, isOwner, returnTo = 'settings', detailShown = false }: SetupGitHubStepProps) {
   const settled = capability.status === 'ready' || capability.status === 'unavailable';
   // Refetch on focus: the App is created and installed on GitHub, in this tab or another.
   const appStatus = useGitHubAppStatus(workspaceId, { enabled: canManage && !settled, refetchOnWindowFocus: 'always' });
@@ -50,6 +55,7 @@ export function SetupGitHubStep({ capability, workspaceId, slug, canManage, isOw
 
   if (!status.configured) {
     if (status.manifest_blocked_reason) {
+      if (detailShown && capability.detail.includes(status.manifest_blocked_reason)) return null;
       return <p className="max-w-2xl text-[12.5px] leading-5 text-quiet-text-tertiary" data-testid="github-blocked">{status.manifest_blocked_reason}</p>;
     }
     if (status.manifest_available) {
