@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
 import { useLoadSampleData, useRemoveSampleData, useSampleDataStatus } from '@/hooks/queries/useSampleData';
@@ -68,10 +67,10 @@ export function SampleDataCard({ workspaceId, canManage, className }: SampleData
   const headingId = `sample-data-${workspaceId}`;
 
   return (
-    <section aria-labelledby={headingId} className={cn('rounded-[10px] border border-quiet-field px-4 py-3.5', className)}>
-      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-        <div className="min-w-0 flex-1 space-y-1">
-          <h3 id={headingId} className="text-[13.5px] font-semibold text-quiet-text-primary">
+    <section aria-labelledby={headingId} className={className}>
+      <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+        <div className="min-w-0 flex-1 space-y-0.5">
+          <h3 id={headingId} className="text-[13.5px] font-semibold tracking-[-0.008em] text-quiet-text-primary">
             Sample data
           </h3>
           {statusQuery.isLoading ? (
@@ -94,19 +93,19 @@ export function SampleDataCard({ workspaceId, canManage, className }: SampleData
         </div>
         {status && allowed ? (
           status.loaded ? (
-            <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void onRemove()}>
+            <button type="button" className={textAction} disabled={busy} onClick={() => void onRemove()}>
               {remove.isPending
-                ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                : <Delete01Icon className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />}
+                ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                : <Delete01Icon className="h-3.5 w-3.5" aria-hidden="true" />}
               {remove.isPending ? 'Removing…' : 'Remove sample data'}
-            </Button>
+            </button>
           ) : modules.length > 0 ? (
-            <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void onLoad()}>
+            <button type="button" className={textAction} disabled={busy} onClick={() => void onLoad()}>
               {load.isPending
-                ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                : <DatabaseIcon className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />}
+                ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                : <DatabaseIcon className="h-3.5 w-3.5" aria-hidden="true" />}
               {load.isPending ? 'Loading…' : 'Load sample data'}
-            </Button>
+            </button>
           ) : null
         ) : null}
       </div>
@@ -128,6 +127,9 @@ export function SampleDataCard({ workspaceId, canManage, className }: SampleData
     </section>
   );
 }
+
+/** Quiet text action: icon plus label, no border or fill. */
+const textAction = 'inline-flex shrink-0 items-center gap-1.5 rounded-[6px] text-[12.5px] font-medium text-quiet-text-secondary transition-colors hover:text-quiet-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-quiet-text-tertiary disabled:pointer-events-none disabled:opacity-50';
 
 function errorMessage(error: unknown): string {
   const text = error instanceof Error && error.message ? error.message : 'try again.';
