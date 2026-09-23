@@ -190,6 +190,16 @@
       ],
       "tier": "medium",
       "enabled": true
+    },
+    {
+      "provider": "openrouter",
+      "canonical_model": "qwen3.8-omni-flash",
+      "label": "Qwen3.8 Omni Flash",
+      "aliases": [
+        "qwen/qwen3.8-omni-flash"
+      ],
+      "tier": "small",
+      "enabled": true
     }
   ],
   "routes": [
@@ -443,6 +453,18 @@
       "cache_write_support": false,
       "context_window": 131072,
       "maximum_output": 32768,
+      "enabled": true
+    },
+    {
+      "provider": "openrouter",
+      "canonical_model": "qwen3.8-omni-flash",
+      "route": "qwen/qwen3.8-omni-flash",
+      "service_tier": "standard",
+      "tier": "small",
+      "cache_read_support": true,
+      "cache_write_support": false,
+      "context_window": 1000000,
+      "maximum_output": 131072,
       "enabled": true
     }
   ],

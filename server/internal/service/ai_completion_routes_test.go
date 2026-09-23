@@ -70,8 +70,8 @@ func TestAICompletionRouteRegistryKeepsMediaOnApprovedVisionRoute(t *testing.T) 
 	if policy.Primary.Provider != "openrouter" || policy.Primary.Model != "google/gemini-3.8-flash" {
 		t.Fatalf("media route = %#v", policy.Primary)
 	}
-	if len(policy.Fallbacks) != 0 {
-		t.Fatalf("media fallbacks = %#v, want none", policy.Fallbacks)
+	if len(policy.Fallbacks) != 1 || policy.Fallbacks[0].Model != "qwen/qwen3.8-omni-flash" {
+		t.Fatalf("media fallbacks = %#v, want Qwen Omni", policy.Fallbacks)
 	}
 }
 

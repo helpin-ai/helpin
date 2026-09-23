@@ -122,14 +122,14 @@ func TestLiveTranslateLanguageEvidenceDoesNotTreatIdentifiersAsLanguage(t *testi
 func TestLiveTranslateAttemptDeadlineIsIndependent(t *testing.T) {
 	parent, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	first, stop := completionAttemptContext(parent, BillingFeatureSupportTranslation)
+	first, stop := completionAttemptContext(parent, BillingFeatureSupportTranslation, AICompletionRoute{})
 	firstDeadline, _ := first.Deadline()
 	parentDeadline, _ := parent.Deadline()
 	if !firstDeadline.Before(parentDeadline) {
 		t.Fatal("primary consumed the whole fallback budget")
 	}
 	stop()
-	second, stopSecond := completionAttemptContext(parent, BillingFeatureSupportTranslation)
+	second, stopSecond := completionAttemptContext(parent, BillingFeatureSupportTranslation, AICompletionRoute{})
 	defer stopSecond()
 	if second.Err() != nil || parent.Err() != nil {
 		t.Fatal("cancelled primary poisoned fallback")

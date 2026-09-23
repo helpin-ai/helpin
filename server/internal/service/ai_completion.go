@@ -149,7 +149,7 @@ func completeAI(ctx context.Context, provider llm.Provider, input AICompletionRe
 			FeatureKey: input.FeatureKey, OperationKey: input.OperationKey,
 			IdempotencyKey: fmt.Sprintf("%s:route:%d", input.IdempotencyKey, index), Metadata: input.Metadata,
 		})
-		attemptCtx, cancelAttempt := completionAttemptContext(legacyCtx, input.FeatureKey)
+		attemptCtx, cancelAttempt := completionAttemptContext(legacyCtx, input.FeatureKey, route)
 		response, err := provider.ChatCompletion(attemptCtx, chat)
 		cancelAttempt()
 		if err == nil && response == nil {
@@ -230,7 +230,7 @@ func (s *AICompletionService) completeAttempt(
 	}
 
 	attemptStart := time.Now()
-	attemptCtx, cancelAttempt := completionAttemptContext(ctx, input.FeatureKey)
+	attemptCtx, cancelAttempt := completionAttemptContext(ctx, input.FeatureKey, route)
 	response, providerErr := s.provider.ChatCompletion(attemptCtx, chat)
 	cancelAttempt()
 	attemptDuration := time.Since(attemptStart)
@@ -332,6 +332,13 @@ func (s *AICompletionService) finishCompletionAudit(ctx context.Context, executi
 func completionChatRequest(input llm.ChatRequest, route AICompletionRoute) (llm.ChatRequest, error) {
 	input.Provider = route.Provider
 	input.Model = route.Model
+	if route.ProviderOptions != "" {
+		input.ProviderOptions = json.RawMessage(route.ProviderOptions)
+	}
+	if route.DisableReasoning {
+		disabled := false
+		input.Reasoning = &llm.ReasoningConfig{Enabled: &disabled}
+	}
 	if route.Model == "deepseek/deepseek-v4.1-flash" && route.OpenRouterProvider == "coreweave/fp8" {
 		disabled := false
 		input.Reasoning = &llm.ReasoningConfig{Enabled: &disabled}
@@ -391,7 +398,10 @@ func isIncompleteFinishReason(reason string) bool {
 	}
 }
 
-func completionAttemptContext(ctx context.Context, feature string) (context.Context, context.CancelFunc) {
+func completionAttemptContext(ctx context.Context, feature string, route AICompletionRoute) (context.Context, context.CancelFunc) {
+	if route.AttemptTimeout > 0 {
+		return context.WithTimeout(ctx, route.AttemptTimeout)
+	}
 	if feature == BillingFeatureSupportTranslation {
 		return context.WithTimeout(ctx, 12*time.Second)
 	}

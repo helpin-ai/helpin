@@ -35,10 +35,10 @@ func defaultActions() []Action {
 		embeddingAction(ActionHelpcenterSearchEmbed, "Help-center search embedding", CategorySupportAI, "helpcenter"),
 		embeddingAction(ActionCuratedGuidanceEmbed, "Curated guidance embedding", CategorySupportAI, "support"),
 		{
-			Key: ActionAskMediaEnrichment, PolicyVersion: "v1", FeatureKey: "ask_chat",
+			Key: ActionAskMediaEnrichment, PolicyVersion: "v2", FeatureKey: "ask_chat",
 			Label: "Ask media enrichment", Category: CategoryAgents, Origin: "ask",
 			Modality: ModalityChat, DefaultProvider: "openrouter", DefaultModel: "google/gemini-3.8-flash",
-			AllowedModels: map[string][]string{"openrouter": {"google/gemini-3.8-flash"}}, Timeout: 4 * time.Minute,
+			AllowedModels: map[string][]string{"openrouter": {"google/gemini-3.8-flash", "qwen/qwen3.8-omni-flash"}}, Timeout: 4 * time.Minute,
 			MaxInputTokens: 200000, MaxOutputTokens: 700, MaxReasoningTokens: 32000,
 			RetryClass: RetryTransient, Autonomy: AutonomyAnalyze,
 			DataClass: DataClassWorkspaceData, Chargeable: true,
