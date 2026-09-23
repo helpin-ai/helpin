@@ -91,3 +91,19 @@ func TestPublicToolErrorSurfacesTypedCodes(t *testing.T) {
 		})
 	}
 }
+
+func TestPrincipalForPathForcesReadOnlyEndpoint(t *testing.T) {
+	principal := &model.MCPPrincipal{UserID: "user-1", ReadOnly: false}
+	for _, path := range []string{"/mcp/readonly", "/mcp/readonly/"} {
+		got := principalForPath(principal, path)
+		if !got.ReadOnly {
+			t.Fatalf("principalForPath(%q).ReadOnly = false, want true", path)
+		}
+	}
+	if principal.ReadOnly {
+		t.Fatal("principalForPath mutated the authenticated principal")
+	}
+	if got := principalForPath(principal, "/mcp"); got != principal || got.ReadOnly {
+		t.Fatalf("principalForPath(/mcp) = %#v, want the original writable principal", got)
+	}
+}
