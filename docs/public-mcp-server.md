@@ -274,10 +274,17 @@ Uploaded images stay private while the document is a draft. Publishing to the He
 | `restore_document` | Write | Restores an archived document to draft | `PermDocsEdit` + Docs module |
 | `publish_document` | Publish | Publishes a document; in an external-capable space it also becomes a live Help Center article using the existing snapshot, slug, and redirect behavior | `helpin.docs.publish` + `PermDocsPublish` + Docs module |
 | `unpublish_document` | Publish, destructive | Removes a live Help Center article and returns the document to draft | `helpin.docs.publish` + `PermDocsPublish` + Docs module |
+| `publish_documents` | Publish | Publishes up to 50 documents with the same behavior as `publish_document`; `only_if_changed` skips documents whose live article has no unpublished changes. Returns one result per document (`published`, `skipped`, or `error` with a `code`, plus `live_slug`) and continues past failures. Documents not reached within the 30-second deadline are returned in `remaining_document_ids` | `helpin.docs.publish` + `PermDocsPublish` + Docs module |
+| `propose_document_change` | Write | Submits a whole-document or single-block replacement for human review in Docs; the document is unchanged until a reviewer applies it | `helpin.docs.write` + `PermDocsEdit` + Docs module |
+| `list_document_change_proposals` | Read | Lists pending proposals for a document with proposed and current markdown | `PermDocsRead` + Docs module |
+| `apply_document_change_proposal` | Write | Applies a pending proposal as the reviewer; refuses with `PROPOSAL_CONFLICT` when the replaced content changed after the proposal, unless `force` is set for a document proposal | `helpin.docs.write` + `PermDocsEdit` + Docs module |
+| `discard_document_change_proposal` | Write, destructive | Discards a pending proposal without changing the document | `helpin.docs.write` + `PermDocsEdit` + Docs module |
 
 Every document tool that takes a `document_id` also enforces Docs space access, so documents in team-only spaces the member cannot open are reported as not found.
 
-Document lifecycle tools return typed error codes that clients can act on: `DOCUMENT_LOCKED`, `DOCUMENT_ARCHIVED`, `DOCUMENT_NOT_ARCHIVED`, `DOCUMENT_NOT_PUBLISHED`, and `DOC_IS_PUBLISHED`. Errors are returned as `CODE: message`.
+Document lifecycle tools return typed error codes that clients can act on: `DOCUMENT_LOCKED`, `DOCUMENT_ARCHIVED`, `DOCUMENT_NOT_ARCHIVED`, `DOCUMENT_NOT_PUBLISHED`, and `DOC_IS_PUBLISHED`. Proposal tools add `PROPOSAL_NOT_FOUND` (unknown, or already applied or discarded) and `PROPOSAL_CONFLICT` (the document or block changed after the proposal). Errors are returned as `CODE: message`; `publish_documents` reports the same codes per document, plus `NOT_FOUND`, `NO_UNPUBLISHED_CHANGES` for skips, and `PUBLISH_FAILED`.
+
+A proposal made through MCP is recorded with the connected user as its author, the same way an agent run records one. Applying a proposal needs the same `docs.edit` permission as editing the document directly, so it grants no extra access.
 
 ### 7.4 CRM
 
@@ -343,6 +350,7 @@ Not exposed: sending support replies, CRM enrichment, and deleting records.
 | `update_help_center_article_metadata` | Publish | Sets social preview title, description, HTTPS image, and alt text; omitted fields are kept and `null` clears | `helpin.docs.publish` + `PermDocsEdit` |
 | `list_help_center_redirects` | Read | Lists redirects with search and pagination | `PermDocsAdmin` |
 | `create_help_center_redirect` | Publish | Redirects an old public path to a collection or article after merges or archives | `helpin.docs.publish` + `PermDocsAdmin` |
+| `update_help_center_collection_slug` | Publish | Changes a collection's public slug, including slugs that carry section numbers. Redirects the old collection path and each published article path, refreshes the default-locale slug, and clears the public cache | `helpin.docs.publish` + `PermDocsAdmin` + Docs space access |
 
 ## 8. Tool-call execution flow
 
@@ -646,7 +654,7 @@ The public v1 server does not expose:
 - deleting documentation (archive and restore are available)
 - publishing without the explicit `helpin.docs.publish` scope and `docs.publish` permission
 - broad document-content replacement through `write_document_content` (use version-checked `edit_document` instead)
-- applying unapproved document change proposals
+- applying document change proposals without a reviewer who holds `docs.edit`
 - sending CRM email
 - CRM enrichment, merge, or bulk mutation
 - member, role, workspace-security, or billing administration
@@ -786,7 +794,7 @@ The implementation includes automated checks for:
 - strict tool schemas and rejection of workspace-override properties
 - workspace-policy scope/toolset narrowing and forced read-only behavior
 - platform domain flags
-- the 104-tool catalog
+- the 110-tool catalog
 - the `/mcp/readonly` endpoint forcing read-only mode, including parity tools for epics, sprints, objectives, labels, workflows, members, CRM, and support organization
 - document image uploads: presigned upload with storage verification, and SSRF-safe copy from a public URL
 - document lifecycle tools: publish, unpublish, archive, restore, and rename, including typed error codes

@@ -58,4 +58,8 @@ var (
 	// ErrDocsChangeProposalNotFound is returned when a referenced docs
 	// change proposal does not exist for the requested document/workspace.
 	ErrDocsChangeProposalNotFound = errors.New("docs change proposal not found")
+
+	// ErrDocsChangeProposalResolved is returned when a proposal was already
+	// applied or discarded.
+	ErrDocsChangeProposalResolved = errors.New("proposal is already resolved")
 )

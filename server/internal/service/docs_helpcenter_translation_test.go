@@ -2240,6 +2240,52 @@ func TestDocsHelpcenterService_CollectionRedirects(t *testing.T) {
 		}
 	})
 
+	t.Run("UpdateCollectionSlug renames a section-numbered slug and refreshes the default-locale mirror", func(t *testing.T) {
+		db, svc, ctx := setup(t)
+		seedCollection(t, db, "coll-A", "01-getting-started")
+		seedPublishedArticle(t, db, "doc-1", "start-here", ptr("coll-A"))
+		seedDocsHelpcenterTranslationServiceCollectionTranslation(t, db, model.DocsHelpcenterCollectionTranslation{
+			ID:           "en-coll-A",
+			CollectionID: "coll-A",
+			WorkspaceID:  workspaceID,
+			SpaceID:      spaceID,
+			Locale:       "en",
+			Name:         "coll-A",
+			Slug:         ptr("1-2-legacy-start"),
+			Status:       model.DocsHelpcenterTranslationStatusPublished,
+			PublishedAt:  &now,
+			CreatedAt:    now,
+			UpdatedAt:    now,
+		})
+
+		updated, err := svc.UpdateCollectionSlug(ctx, "coll-A", " Getting Started ")
+		if err != nil {
+			t.Fatalf("UpdateCollectionSlug: %v", err)
+		}
+		if updated.Slug != "getting-started" {
+			t.Fatalf("collection slug = %q, want getting-started", updated.Slug)
+		}
+
+		redirectRepo := repository.NewDocsRedirectRepository(db)
+		for _, source := range []string{"/01-getting-started", "/01-getting-started/start-here", "/1-2-legacy-start", "/1-2-legacy-start/start-here"} {
+			got, err := redirectRepo.GetBySourcePath(ctx, workspaceID, source)
+			if err != nil {
+				t.Fatalf("get redirect %s: %v", source, err)
+			}
+			if got == nil || got.TargetCollectionSlug != "getting-started" {
+				t.Fatalf("redirect %s = %+v, want target getting-started", source, got)
+			}
+		}
+
+		translation, err := repository.NewDocsHelpcenterTranslationRepository(db).GetCollectionTranslation(ctx, "coll-A", "en")
+		if err != nil {
+			t.Fatalf("load collection translation: %v", err)
+		}
+		if translation == nil || translation.Slug == nil || *translation.Slug != "getting-started" {
+			t.Fatalf("default-locale slug = %+v, want getting-started", translation)
+		}
+	})
+
 	t.Run("EmitArticleMoveRedirect produces auto_article_move redirect and survives A->B->A", func(t *testing.T) {
 		db, svc, ctx := setup(t)
 		seedCollection(t, db, "A", "coll-a")
