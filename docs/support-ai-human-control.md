@@ -16,12 +16,20 @@ The conversation header shows who is handling the conversation. Teammates with
   conversations cannot be returned; workspace AI and the reply channel must
   be enabled.
 
-A handoff adds one internal briefing with the issue, steps suggested or tried,
+An AI-initiated handoff adds one internal briefing with the issue, steps suggested or tried,
 outstanding questions, and the reason. Agent-initiated handoff can supply these
 fields through `escalate_to_human`. Otherwise the note uses attributed public
 transcript excerpts. It does not invent completed actions or require another
 model call. These notes are never delivered to the widget or as customer email.
 Provider failures therefore do not prevent a factual handoff note.
+
+Teammate pause and return actions appear as compact, attributed internal activity
+rows. They do not regenerate a handoff briefing. The original AI investigation
+remains available when a teammate toggles control. Briefings show the issue,
+checks or suggestions, and next step, with the complete note under “View details.”
+Older control notes are rendered as activity rows; historical pause-note content
+remains accessible under “View original note.” Missing teammate names use “A
+teammate” rather than attributing the action to “AI control.”
 
 ## Reliability
 
@@ -34,7 +42,7 @@ restore delivery rights, and the existing sweep retries closing revoked runs.
 
 The current Runtime run ID is checked again when an AI reply commits. A run
 that started before takeover cannot bind to a later ownership version. Pause
-and return are recorded in internal notes; they do not change resolution metrics.
+and return are recorded as internal system events; they do not change resolution metrics.
 
 ## Deployment
 

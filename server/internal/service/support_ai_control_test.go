@@ -97,7 +97,7 @@ func TestSupportAIControlPauseAndReturnFence(t *testing.T) {
 	if err := db.Where("is_internal = true").Find(&notes).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(notes) != 2 || !strings.Contains(notes[0].Content, "I tried reconnecting") {
+	if len(notes) != 2 || notes[0].MessageType != "system" || derefString(notes[0].SystemEventType) != "ai_paused" || derefString(notes[1].SystemEventType) != "ai_returned" {
 		t.Fatalf("notes = %+v", notes)
 	}
 	public, err := svc.messageRepo.ListByConversation(ctx, "ws", "conv", false)
@@ -298,6 +298,9 @@ func TestSupportHandoffBriefAttributionAndPrivacy(t *testing.T) {
 	if !note.IsInternal || strings.Contains(note.Content, "PRIVATE") || !strings.Contains(note.Content, "AI said: Try reconnecting") || !strings.Contains(note.Content, "Customer said: The connection still fails") {
 		t.Fatalf("bad fallback: %s", note.Content)
 	}
+	if strings.Count(note.Content, "The connection still fails") != 1 {
+		t.Fatal("fallback repeats the customer issue")
+	}
 	rich := buildSupportHandoffNote(conv, history, "cannot_answer", SupportHandoffBrief{Issue: "Connection fails", AttemptedSteps: []string{"AI suggested reconnecting; customer has not confirmed trying it."}, UnresolvedQuestions: []string{"Which error appears?"}}, time.Now())
 	if !strings.Contains(rich.Content, "not confirmed") || !strings.Contains(rich.Content, "Which error appears?") {
 		t.Fatal(rich.Content)
@@ -337,5 +340,42 @@ func TestSupportAIControlAssignsConfiguredAIOnUnownedConversation(t *testing.T) 
 	current := readControlConversation(t, db)
 	if derefString(current.AssignedAgentID) != "agent" || derefString(current.AIState) != "pending" {
 		t.Fatal("existing assign-agent path did not select the configured AI")
+	}
+}
+
+func TestSupportAIControlTogglePreservesExistingBrief(t *testing.T) {
+	svc, db, conv, settings := setupAIControlTest(t)
+	ctx := context.Background()
+	seedUser(t, db, "teammate", "teammate@example.test", "Arooj Bukhari", "unused")
+	svc.userRepo = repository.NewUserRepository(db)
+	brief := buildSupportHandoffNote(conv, nil, "cannot_answer", SupportHandoffBrief{Issue: "Workspace switching fails", AttemptedSteps: []string{"Checked related engineering tickets"}}, time.Now())
+	if err := svc.messageRepo.Create(ctx, brief); err != nil {
+		t.Fatal(err)
+	}
+	for _, action := range []string{"pause", "return", "pause"} {
+		current := readControlConversation(t, db)
+		req := model.SupportAIControlRequest{Action: action, ExpectedVersion: current.AIControlVersion}
+		if err := svc.changeConversationAIControl(ctx, current, "teammate", &req, settings, nil, "paused_by_teammate"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var notes []model.SupportMessage
+	if err := db.Where("message_type = 'note'").Find(&notes).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != 1 || notes[0].ID != brief.ID || notes[0].Content != brief.Content {
+		t.Fatalf("original brief must be preserved without duplicate summaries: %+v", notes)
+	}
+	var events []model.SupportMessage
+	if err := db.Where("message_type = 'system'").Find(&events).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("expected three activity rows, got %d", len(events))
+	}
+	for _, event := range events {
+		if !event.IsInternal || derefString(event.SenderUserID) != "teammate" || derefString(event.SenderDisplayName) != "Arooj Bukhari" || event.WidgetVisible() {
+			t.Fatalf("incorrect activity attribution: %+v", event)
+		}
 	}
 }

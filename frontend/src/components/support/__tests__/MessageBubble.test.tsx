@@ -51,6 +51,85 @@ function renderBubble(
 }
 
 describe('MessageBubble', () => {
+  it.each(['ai_paused', 'ai_returned'] as const)('renders %s with the recorded actor', (event) => {
+    const rendered = renderBubble({
+      id: 'activity', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'user',
+      sender_user_id: 'arooj', sender_display_name: 'Arooj Bukhari', message_type: 'system', system_event_type: event, is_internal: true,
+      content: event === 'ai_returned' ? 'Returned to AI. AI will respond to the next customer message.' : 'AI paused.',
+      created_at: '2026-09-18T10:38:14Z', updated_at: '2026-09-18T10:38:14Z',
+    })
+    try {
+      expect(rendered.container.textContent).toContain(event === 'ai_paused' ? 'Arooj paused AI.' : 'Arooj returned the conversation to AI.')
+      expect(rendered.container.querySelector('[data-support-ai-activity]')).not.toBeNull()
+      expect(rendered.container.textContent).not.toContain('left a private note')
+    } finally { rendered.cleanup() }
+  })
+
+  it('keeps a legacy pause note accessible without displaying another handoff card', () => {
+    const rendered = renderBubble({
+      id: 'pause', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'agent',
+      sender_user_id: 'former-member', sender_display_name: 'AI control', message_type: 'note', is_internal: true,
+      content: 'AI handoff with historical context',
+      metadata: JSON.stringify({ ai_handoff_brief: true, agent_authored: false, reason: 'paused_by_teammate' }),
+      created_at: '2026-09-18T10:38:14Z', updated_at: '2026-09-18T10:38:14Z',
+    })
+    try {
+      expect(rendered.container.textContent).toContain('A teammate paused AI.')
+      expect(rendered.container.querySelector('[data-support-ai-handoff]')).toBeNull()
+      const details = rendered.container.querySelector('details')
+      expect(details?.open).toBe(false)
+      expect(details?.querySelector('summary')?.textContent).toBe('View original note')
+      expect(details?.textContent).toContain('historical context')
+      act(() => { details!.open = true })
+      expect(details?.open).toBe(true)
+    } finally { rendered.cleanup() }
+  })
+
+  it('does not mistake ordinary private notes for AI activity', () => {
+    const rendered = renderBubble({
+      id: 'ordinary', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'user',
+      sender_display_name: 'Arooj Bukhari', message_type: 'note', is_internal: true,
+      content: 'Returned to AI. AI will respond to the next customer message.', metadata: '{invalid',
+      created_at: '2026-09-18T10:38:14Z', updated_at: '2026-09-18T10:38:14Z',
+    })
+    try {
+      expect(rendered.container.textContent).toContain('left a private note')
+      expect(rendered.container.querySelector('[data-support-ai-activity]')).toBeNull()
+    } finally { rendered.cleanup() }
+  })
+
+  it('renders a legacy return note as an attributed activity', () => {
+    const rendered = renderBubble({
+      id: 'return', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'agent',
+      sender_user_id: 'arooj', sender_display_name: 'AI control', message_type: 'note', is_internal: true,
+      content: 'Returned to AI. AI will respond to the next customer message.', metadata: '{}',
+      created_at: '2026-09-18T10:38:14Z', updated_at: '2026-09-18T10:38:14Z',
+    }, null, { teammateDisplayName: 'Arooj Bukhari' })
+    try {
+      expect(rendered.container.textContent).toContain('Arooj returned the conversation to AI')
+      expect(rendered.container.textContent).not.toContain('left a private note')
+    } finally { rendered.cleanup() }
+  })
+
+  it('shows an AI handoff with expandable investigation details', () => {
+    const rendered = renderBubble({
+      id: 'handoff', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'agent',
+      sender_display_name: 'AI control', message_type: 'note', is_internal: true,
+      content: 'AI handoff\n\nIssue\nWorkspace switch fails\n\nAlready tried / suggested\n- Checked related tickets\n\nStill unresolved\n- Verify call sites\n\nReason for handoff\ncannot answer',
+      metadata: JSON.stringify({ ai_handoff_brief: true, agent_authored: true }),
+      created_at: '2026-09-18T10:32:14Z', updated_at: '2026-09-18T10:32:14Z',
+    })
+    try {
+      expect(rendered.container.textContent).not.toContain('left a private note')
+      expect(rendered.container.textContent).toContain('Workspace switch fails')
+      const details = rendered.container.querySelector('details')
+      expect(details).not.toBeNull()
+      expect(details?.open).toBe(false)
+      expect(details?.querySelector('summary')?.textContent).toBe('View details')
+      expect(details?.textContent).toContain('Checked related tickets')
+    } finally { rendered.cleanup() }
+  })
+
   it.each([true, false])('shows saved visitor feedback below the AI bubble (%s)', async (helpful) => {
     const message: SupportMessage = {
       id: 'feedback-answer', workspace_id: 'ws-1', conversation_id: 'conv-1',

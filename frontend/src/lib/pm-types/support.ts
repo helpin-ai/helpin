@@ -575,6 +575,8 @@ export interface SupportLinkSecurity {
  * server/internal/model/support_system_event.go.
  */
 export const SUPPORT_SYSTEM_EVENT_TYPES = [
+  'ai_paused',
+  'ai_returned',
   'teammate_joined',
   'assigned',
   'unassigned',

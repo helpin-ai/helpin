@@ -351,6 +351,7 @@ export function MessageThread({
   const [isThreadTransitioning, setIsThreadTransitioning] = useState(false);
   const lastOpenThreadReadMessageIdRef = useRef<string | null>(null);
   const assignedAgentId = conversation?.assigned_agent_id ?? null;
+  const memberNameByUserId = useMemo(() => new Map(members.map(member => [member.user_id, member.full_name])), [members]);
   const memberAvatarByUserId = useMemo(() => {
     const map = new Map<string, string>();
     for (const member of members) {
@@ -1219,6 +1220,7 @@ export function MessageThread({
                   source={conversation?.source}
                   contactLastSeenAt={conversation?.contact_last_seen_at}
                   receiptStatus={item.message.id === receiptMessageId ? receiptStatus : undefined}
+                  teammateDisplayName={item.message.sender_user_id ? memberNameByUserId.get(item.message.sender_user_id) : undefined}
                   customerDisplayName={conversation?.customer_name || conversation?.customer_email}
                   customerEmail={conversation?.customer_email}
                   workspaceSlug={workspaceSlug}

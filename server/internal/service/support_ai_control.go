@@ -62,13 +62,9 @@ func (s *SupportInboxService) pauseForTeammate(ctx context.Context, conv *model.
 
 func (s *SupportInboxService) changeConversationAIControl(ctx context.Context, conv *model.SupportConversation, actorID string, req *model.SupportAIControlRequest, settings model.SupportInboxSettings, extra map[string]any, reason string) error {
 	returning := req != nil && req.Action == "return"
-	var history []model.SupportMessage
-	if !returning && s.messageRepo != nil {
-		var err error
-		history, err = s.messageRepo.ListByConversation(ctx, conv.WorkspaceID, conv.ID, false)
-		if err != nil {
-			slog.WarnContext(ctx, "load AI handoff context", "error", err, "conversation_id", conv.ID)
-		}
+	actorName := s.lookupUserName(ctx, actorID)
+	if actorName == "" {
+		actorName = "A teammate"
 	}
 	var note *model.SupportMessage
 	previousRun, changed, err := s.conversationRepo.ChangeAIControl(ctx, conv.WorkspaceID, conv.ID, func(current *model.SupportConversation) (map[string]any, *model.SupportMessage, error) {
@@ -109,7 +105,7 @@ func (s *SupportInboxService) changeConversationAIControl(ctx context.Context, c
 			fields["ai_resumed_at"] = now
 			fields["ai_paused_at"] = nil
 			fields["ai_paused_by_user_id"] = nil
-			note = supportControlNote(current, actorID, "Returned to AI. AI will respond to the next customer message.", now)
+			note = supportControlActivity(current, actorID, actorName, model.SystemEventAIReturned, actorName+" returned the conversation to AI. AI will respond to the next customer message.", "returned_by_teammate", now)
 			if current.CustomerRequestedHumanAt != nil {
 				note.Content += "\n\nA teammate explicitly confirmed this return after the customer requested a human."
 			}
@@ -139,12 +135,9 @@ func (s *SupportInboxService) changeConversationAIControl(ctx context.Context, c
 				if actorID != "" {
 					fields["ai_paused_by_user_id"] = actorID
 				}
-				// Ordinary human-only conversations do not need an AI briefing.
+				// Record ownership changes without regenerating an AI investigation.
 				if current.AIState != nil || current.AIActiveRunID != nil || req != nil {
-					note = buildSupportHandoffNote(current, history, reason, SupportHandoffBrief{}, now)
-					if actorID != "" {
-						note.SenderUserID = &actorID
-					}
+					note = supportControlActivity(current, actorID, actorName, model.SystemEventAIPaused, actorName+" paused AI.", reason, now)
 				}
 			}
 		}

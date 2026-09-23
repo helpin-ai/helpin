@@ -1,3 +1,5 @@
+import { SupportAIActivity } from './SupportAIActivity';
+import { getSupportAIActivity } from './supportAIActivity';
 import { PendingSendStatus } from './PendingSendStatus';
 import { memo, useCallback, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
@@ -305,6 +307,7 @@ export interface MessageBubbleProps {
   receiptStatus?: SupportReceiptStatus;
   contactLastSeenAt?: string;
   fallbackAvatarUrl?: string;
+  teammateDisplayName?: string;
   customerDisplayName?: string;
   customerEmail?: string | null;
   workspaceSlug?: string;
@@ -321,6 +324,7 @@ export const MessageBubble = memo(function MessageBubble({
   receiptStatus,
   contactLastSeenAt,
   fallbackAvatarUrl,
+  teammateDisplayName,
   customerDisplayName,
   customerEmail,
   workspaceSlug,
@@ -549,6 +553,16 @@ export const MessageBubble = memo(function MessageBubble({
       {getInitial(resolvedSenderName)}
     </div>
   );
+
+  const aiActivity = getSupportAIActivity(message);
+  if (aiActivity) {
+    return <SupportAIActivity
+      message={message}
+      activity={aiActivity}
+      teammateName={teammateDisplayName}
+      detailsContent={<Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{message.content}</Markdown>}
+    />;
+  }
 
   // ── System message: centered pill with avatar ──
   if (message.message_type === 'system' && message.system_event_type !== 'delayed_team_reply') {

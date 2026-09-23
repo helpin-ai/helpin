@@ -111,7 +111,7 @@ export function useSupportAIControl(conversation: SupportConversation) {
   const explanation = paused
     ? unavailable
       ? 'Enable AI for this channel to return the conversation.'
-      : 'Returning releases human assignment. AI responds to the next customer message.'
+      : 'AI will respond to the next customer message. Returning releases human assignment.'
     : `${waiting ? 'Waiting for the next customer message. ' : ''}Stop AI replies and follow-ups.`;
   const Icon = mutation.isPending
     ? Loading01Icon
