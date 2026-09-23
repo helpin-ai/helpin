@@ -182,7 +182,7 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 	}
 	content := strings.TrimSpace(req.Content)
 	if content == "" {
-		return nil, fmt.Errorf("content is required")
+		return nil, errCommandInput("content is required")
 	}
 	if disclosures := supportReplyInternalProcessDisclosures(content); len(disclosures) > 0 {
 		return mustJSON(map[string]any{
@@ -202,7 +202,7 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 		return nil, fmt.Errorf("get conversation: %w", err)
 	}
 	if conv == nil {
-		return nil, fmt.Errorf("conversation not found")
+		return nil, errCommandNotFound("conversation")
 	}
 	if conv.AnonymizedAt != nil {
 		return mustJSON(map[string]any{"status": "suppressed", "next_action": "This customer was deleted. The conversation is read-only. End your turn."}), nil

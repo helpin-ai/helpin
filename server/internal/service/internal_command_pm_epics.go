@@ -131,7 +131,7 @@ func (s *InternalCommandService) executePMListEpics(ctx context.Context, meta mo
 		}
 		if label.TeamID != nil {
 			if err := requireTeamAccess(ctx, label.TeamID); err != nil {
-				return nil, fmt.Errorf("label not found")
+				return nil, errCommandNotFound("label")
 			}
 		}
 		if teamID != "" && label.TeamID != nil && strings.TrimSpace(*label.TeamID) != teamID {
@@ -182,7 +182,7 @@ func (s *InternalCommandService) executePMGetEpic(ctx context.Context, meta mode
 		return nil, err
 	}
 	if epic == nil || epic.Epic.WorkspaceID != meta.WorkspaceID {
-		return nil, fmt.Errorf("epic not found")
+		return nil, errCommandNotFound("epic")
 	}
 	if err := requireCommandAgentTeam(meta, epic.Epic.TeamID); err != nil {
 		return nil, err
@@ -199,10 +199,10 @@ func (s *InternalCommandService) executePMCreateEpic(ctx context.Context, meta m
 		return nil, fmt.Errorf("parse create epic input: %w", err)
 	}
 	if strings.TrimSpace(req.Name) == "" {
-		return nil, fmt.Errorf("name is required")
+		return nil, errCommandInput("name is required")
 	}
 	if req.TeamID == nil || strings.TrimSpace(*req.TeamID) == "" {
-		return nil, fmt.Errorf("team_id is required")
+		return nil, errCommandInput("team_id is required")
 	}
 	teamID, err := s.validatePMCommandOptionalEpicTeam(ctx, meta.WorkspaceID, req.TeamID, true)
 	if err != nil {
@@ -260,14 +260,14 @@ func (s *InternalCommandService) executePMUpdateEpic(ctx context.Context, meta m
 		return nil, err
 	}
 	if !pmEpicUpdateHasEditableField(req) {
-		return nil, fmt.Errorf("at least one editable field is required")
+		return nil, errCommandInput("at least one editable field is required")
 	}
 	current, err := s.epicService.GetByID(ctx, epicID)
 	if err != nil {
 		return nil, err
 	}
 	if current == nil || current.Epic.WorkspaceID != meta.WorkspaceID {
-		return nil, fmt.Errorf("epic not found")
+		return nil, errCommandNotFound("epic")
 	}
 	if err := requireCommandAgentTeam(meta, current.Epic.TeamID); err != nil {
 		return nil, err
@@ -357,11 +357,11 @@ func resolvePMCommandEpicID(meta model.InternalCommandContext, explicit string, 
 		targetID = strings.TrimSpace(meta.TargetID)
 	}
 	if rejectConflict && explicit != "" && targetID != "" && explicit != targetID {
-		return "", fmt.Errorf("epic_id conflicts with the current epic target")
+		return "", errCommandInput("epic_id conflicts with the current epic target")
 	}
 	epicID := firstNonEmptyCommand(explicit, targetID)
 	if epicID == "" {
-		return "", fmt.Errorf("epic_id is required")
+		return "", errCommandInput("epic_id is required")
 	}
 	return epicID, nil
 }
@@ -372,7 +372,7 @@ func parsePMCommandDateOnly(value *string, field string) (*time.Time, error) {
 	}
 	parsed, err := time.Parse(internalCommandDateOnlyLayout, strings.TrimSpace(*value))
 	if err != nil {
-		return nil, fmt.Errorf("%s must be YYYY-MM-DD", field)
+		return nil, errCommandInput("%s must be YYYY-MM-DD", field)
 	}
 	return &parsed, nil
 }
@@ -457,7 +457,7 @@ func (s *InternalCommandService) validatePMCommandEpicOwner(ctx context.Context,
 		}
 	}
 	if byUser != nil && byMember != nil && byUser.ID != byMember.ID {
-		return nil, nil, fmt.Errorf("owner_id and owner_member_id must reference the same workspace member")
+		return nil, nil, errCommandInput("owner_id and owner_member_id must reference the same workspace member")
 	}
 	var normalizedOwnerID, normalizedMemberID *string
 	if byUser != nil {

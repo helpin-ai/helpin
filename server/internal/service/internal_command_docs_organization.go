@@ -60,7 +60,7 @@ func (s *InternalCommandService) registerDocsOrganizationCommands() {
 				return nil, err
 			}
 			if space == nil || space.WorkspaceID != meta.WorkspaceID {
-				return nil, fmt.Errorf("space not found")
+				return nil, errCommandNotFound("space")
 			}
 			collection, err := s.docsCollectionService.Create(ctx, meta.WorkspaceID, space.ID, model.CreateDocsCollectionRequest{
 				Name: strings.TrimSpace(req.Name), Slug: req.Slug, Description: req.Description,
@@ -95,7 +95,7 @@ func (s *InternalCommandService) registerDocsOrganizationCommands() {
 				return nil, err
 			}
 			if space == nil || space.WorkspaceID != meta.WorkspaceID {
-				return nil, fmt.Errorf("space not found")
+				return nil, errCommandNotFound("space")
 			}
 			updated, err := s.docsSpaceService.Update(ctx, space.ID, req.UpdateDocsSpaceRequest)
 			if err != nil {
@@ -127,7 +127,7 @@ func (s *InternalCommandService) registerDocsOrganizationCommands() {
 				return nil, err
 			}
 			if collection == nil || collection.WorkspaceID != meta.WorkspaceID {
-				return nil, fmt.Errorf("collection not found")
+				return nil, errCommandNotFound("collection")
 			}
 			if req.ParentCollectionID != nil {
 				if s.docsSpaceService == nil {
@@ -138,7 +138,7 @@ func (s *InternalCommandService) registerDocsOrganizationCommands() {
 					return nil, err
 				}
 				if space == nil || space.WorkspaceID != meta.WorkspaceID {
-					return nil, fmt.Errorf("space not found")
+					return nil, errCommandNotFound("space")
 				}
 				if space.Type == model.SpaceTypeExternalCapable {
 					return nil, fmt.Errorf("public Help Center collections cannot be reparented by an agent")
@@ -175,14 +175,14 @@ func (s *InternalCommandService) registerDocsOrganizationCommands() {
 				return nil, err
 			}
 			if document == nil || document.WorkspaceID != meta.WorkspaceID {
-				return nil, fmt.Errorf("document not found")
+				return nil, errCommandNotFound("document")
 			}
 			space, err := s.docsSpaceService.GetUnfiltered(ctx, strings.TrimSpace(req.SpaceID))
 			if err != nil {
 				return nil, err
 			}
 			if space == nil || space.WorkspaceID != meta.WorkspaceID {
-				return nil, fmt.Errorf("space not found")
+				return nil, errCommandNotFound("space")
 			}
 			if document.Status == model.DocStatusPublished && document.SpaceID != space.ID {
 				return nil, fmt.Errorf("published documents cannot be moved between spaces by an agent")

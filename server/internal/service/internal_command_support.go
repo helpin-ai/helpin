@@ -116,10 +116,10 @@ func (s *InternalCommandService) executeListConversationMessages(ctx context.Con
 		req.Limit = 20
 	}
 	if req.Limit < 1 || req.Limit > 100 {
-		return nil, fmt.Errorf("limit must be between 1 and 100")
+		return nil, errCommandInput("limit must be between 1 and 100")
 	}
 	if req.Offset < 0 {
-		return nil, fmt.Errorf("offset must be zero or greater")
+		return nil, errCommandInput("offset must be zero or greater")
 	}
 	messages, total, err := s.supportMessageRepo.ListConversationPageFromNewest(ctx, meta.WorkspaceID, conversationID, true, req.Limit, req.Offset)
 	if err != nil {
@@ -196,7 +196,7 @@ func (s *InternalCommandService) executeDraftSupportReply(ctx context.Context, m
 	}
 	content := strings.TrimSpace(req.Content)
 	if content == "" {
-		return nil, fmt.Errorf("content is required")
+		return nil, errCommandInput("content is required")
 	}
 	run, err := s.resolveCommandRun(ctx, meta)
 	if err != nil {
@@ -237,7 +237,7 @@ func (s *InternalCommandService) executeUpdateConversationStatus(ctx context.Con
 	}
 	status := strings.TrimSpace(req.Status)
 	if status == "" {
-		return nil, fmt.Errorf("status is required")
+		return nil, errCommandInput("status is required")
 	}
 	conversationID := firstNonEmptyCommand(req.ConversationID, commandConversationTargetID(meta))
 	if conversationID == "" {
@@ -248,7 +248,7 @@ func (s *InternalCommandService) executeUpdateConversationStatus(ctx context.Con
 		return nil, err
 	}
 	if conversation == nil {
-		return nil, fmt.Errorf("conversation not found")
+		return nil, errCommandNotFound("conversation")
 	}
 	conversation.Status = status
 	if err := s.supportConversationRepo.Update(ctx, conversation); err != nil {

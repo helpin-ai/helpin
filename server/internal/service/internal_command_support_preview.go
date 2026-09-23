@@ -49,7 +49,7 @@ func (s *InternalCommandService) executeSupportPreviewCommand(ctx context.Contex
 			return nil, err
 		}
 		if strings.TrimSpace(req.Reason) == "" {
-			return nil, fmt.Errorf("reason is required")
+			return nil, errCommandInput("reason is required")
 		}
 		response := supportPreviewResponse(run, snapshot)
 		response.FinalDecision = "handoff"

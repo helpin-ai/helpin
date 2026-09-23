@@ -588,7 +588,7 @@ func (s *InternalCommandService) registerDefaults() {
 			}
 			req.AgentID = strings.TrimSpace(req.AgentID)
 			if req.AgentID == "" {
-				return nil, fmt.Errorf("agent_id is required")
+				return nil, errCommandInput("agent_id is required")
 			}
 			agents, err := s.agentService.ListAgentsForActor(ctx, meta.WorkspaceID, internalCommandActor(meta))
 			if err != nil {
@@ -706,7 +706,7 @@ func (s *InternalCommandService) registerDefaults() {
 			switch status {
 			case "", model.DocStatusDraft, model.DocStatusPublished, model.DocStatusArchived:
 			default:
-				return nil, fmt.Errorf("status must be draft, published, or archived")
+				return nil, errCommandInput("status must be draft, published, or archived")
 			}
 			limit := req.Limit
 			if limit <= 0 {
@@ -716,7 +716,7 @@ func (s *InternalCommandService) registerDefaults() {
 				limit = 100
 			}
 			if req.Offset < 0 {
-				return nil, fmt.Errorf("offset must be zero or greater")
+				return nil, errCommandInput("offset must be zero or greater")
 			}
 			docs, err := s.docsDocumentService.List(
 				ctx,
@@ -846,7 +846,7 @@ func (s *InternalCommandService) registerDefaults() {
 			}
 			epic, err := s.epicService.GetByID(ctx, meta.TargetID)
 			if err != nil || epic == nil || epic.Epic.WorkspaceID != meta.WorkspaceID {
-				return nil, fmt.Errorf("epic not found")
+				return nil, errCommandNotFound("epic")
 			}
 			if err := requireCommandAgentTeam(meta, epic.Epic.TeamID); err != nil {
 				return nil, err
@@ -876,7 +876,7 @@ func (s *InternalCommandService) registerDefaults() {
 			}
 			epic, err := s.epicService.GetByID(ctx, meta.TargetID)
 			if err != nil || epic == nil || epic.Epic.WorkspaceID != meta.WorkspaceID {
-				return nil, fmt.Errorf("epic not found")
+				return nil, errCommandNotFound("epic")
 			}
 			if err := requireCommandAgentTeam(meta, epic.Epic.TeamID); err != nil {
 				return nil, err
@@ -895,13 +895,13 @@ func (s *InternalCommandService) registerDefaults() {
 			if len(req.Tasks) == 0 {
 				var legacy model.ConfirmPlanningRequest
 				if err := json.Unmarshal(input, &legacy); err != nil {
-					return nil, fmt.Errorf("tasks is required")
+					return nil, errCommandInput("tasks is required")
 				}
 				req.Tasks = legacy.ProposedTasks
 				req.RunID = legacy.RunID
 			}
 			if len(req.Tasks) == 0 {
-				return nil, fmt.Errorf("tasks is required")
+				return nil, errCommandInput("tasks is required")
 			}
 
 			var tasks []model.PMTask
@@ -947,7 +947,7 @@ func (s *InternalCommandService) registerDefaults() {
 				return nil, fmt.Errorf("parse dependency input: %w", err)
 			}
 			if len(req.Dependencies) == 0 {
-				return nil, fmt.Errorf("dependencies is required")
+				return nil, errCommandInput("dependencies is required")
 			}
 			if len(req.Dependencies) > 100 {
 				return nil, fmt.Errorf("at most 100 dependencies can be created at once")
@@ -958,7 +958,7 @@ func (s *InternalCommandService) registerDefaults() {
 				sourceID := strings.TrimSpace(dep.SourceTaskID)
 				targetID := strings.TrimSpace(dep.TargetTaskID)
 				if sourceID == "" || targetID == "" {
-					return nil, fmt.Errorf("source_task_id and target_task_id are required")
+					return nil, errCommandInput("source_task_id and target_task_id are required")
 				}
 				if sourceID == targetID {
 					return nil, fmt.Errorf("a task cannot depend on itself")
@@ -972,7 +972,7 @@ func (s *InternalCommandService) registerDefaults() {
 					return nil, err
 				}
 				if source == nil || target == nil || source.WorkspaceID != meta.WorkspaceID || target.WorkspaceID != meta.WorkspaceID {
-					return nil, fmt.Errorf("tasks must belong to the current workspace")
+					return nil, errCommandInput("tasks must belong to the current workspace")
 				}
 				if err := requireTeamAccess(ctx, source.TeamID); err != nil {
 					return nil, fmt.Errorf("source task is not accessible")
@@ -1038,7 +1038,7 @@ func (s *InternalCommandService) registerDefaults() {
 			req.Name = strings.TrimSpace(req.Name)
 			req.TeamID = strings.TrimSpace(req.TeamID)
 			if req.Name == "" || req.TeamID == "" {
-				return nil, fmt.Errorf("name and team_id are required")
+				return nil, errCommandInput("name and team_id are required")
 			}
 
 			req.EpicID = stringPtrOrNil(commandDerefString(req.EpicID))
@@ -1136,7 +1136,7 @@ func (s *InternalCommandService) registerDefaults() {
 			}
 			name := strings.TrimSpace(req.Name)
 			if name == "" {
-				return nil, fmt.Errorf("name is required")
+				return nil, errCommandInput("name is required")
 			}
 			teamID := stringPtrOrNil(commandDerefString(req.TeamID))
 			if err := requireCommandAgentTeam(meta, teamID); err != nil {
@@ -1206,7 +1206,7 @@ func (s *InternalCommandService) registerDefaults() {
 			}
 			req.DetailLevel = strings.ToLower(strings.TrimSpace(req.DetailLevel))
 			if req.DetailLevel != "" && req.DetailLevel != "summary" && req.DetailLevel != "compact" && req.DetailLevel != "full" {
-				return nil, fmt.Errorf("detail_level must be summary, compact, or full")
+				return nil, errCommandInput("detail_level must be summary, compact, or full")
 			}
 			req.TaskID = strings.TrimSpace(firstNonEmptyCommand(req.TaskID, commandTaskTargetID(meta)))
 			if req.TaskID != "" {
@@ -1325,14 +1325,14 @@ func (s *InternalCommandService) registerDefaults() {
 			taskID := strings.TrimSpace(firstNonEmptyCommand(req.TaskID, meta.TargetID))
 			content := strings.TrimSpace(req.Content)
 			if taskID == "" || content == "" {
-				return nil, fmt.Errorf("task_id and content are required")
+				return nil, errCommandInput("task_id and content are required")
 			}
 			detail, err := s.taskService.GetByID(ctx, taskID)
 			if err != nil {
 				return nil, err
 			}
 			if detail.Task.WorkspaceID != meta.WorkspaceID {
-				return nil, fmt.Errorf("task not found")
+				return nil, errCommandNotFound("task")
 			}
 			if normalized := normalizeTaskDescriptionRichText(&content); normalized != nil {
 				content = *normalized
@@ -1368,7 +1368,7 @@ func (s *InternalCommandService) registerDefaults() {
 				return nil, err
 			}
 			if task == nil {
-				return nil, fmt.Errorf("task not found")
+				return nil, errCommandNotFound("task")
 			}
 			createdIDs := make([]string, 0, len(req.Followups))
 			for idx, followup := range req.Followups {
@@ -1416,7 +1416,7 @@ func (s *InternalCommandService) registerDefaults() {
 			}
 			taskID := strings.TrimSpace(firstNonEmptyCommand(req.TaskID, meta.TargetID))
 			if taskID == "" || strings.TrimSpace(req.StateID) == "" {
-				return nil, fmt.Errorf("task_id and state_id are required")
+				return nil, errCommandInput("task_id and state_id are required")
 			}
 			_, err := s.taskService.MoveToState(ctx, taskID, model.MoveTaskRequest{
 				StateID:  req.StateID,
@@ -1444,10 +1444,10 @@ func (s *InternalCommandService) registerDefaults() {
 				return nil, fmt.Errorf("parse document content input: %w", err)
 			}
 			if strings.TrimSpace(req.DocumentID) == "" {
-				return nil, fmt.Errorf("document_id is required")
+				return nil, errCommandInput("document_id is required")
 			}
 			if len(req.Content) == 0 || strings.TrimSpace(string(req.Content)) == "" || strings.TrimSpace(string(req.Content)) == "null" {
-				return nil, fmt.Errorf("content is required")
+				return nil, errCommandInput("content is required")
 			}
 			// Auto-convert markdown to TipTap JSON when the agent sends a
 			// plain string instead of a structured document object.
@@ -1456,13 +1456,13 @@ func (s *InternalCommandService) registerDefaults() {
 				var markdown string
 				if err := json.Unmarshal(docContent, &markdown); err == nil {
 					if strings.TrimSpace(markdown) == "" {
-						return nil, fmt.Errorf("content must not be empty")
+						return nil, errCommandInput("content must not be empty")
 					}
 					docContent = tiptap.MarkdownToJSON(markdown)
 				}
 			}
 			if documentContentIsEffectivelyEmpty(docContent) {
-				return nil, fmt.Errorf("content must not be empty")
+				return nil, errCommandInput("content must not be empty")
 			}
 			if err := tiptap.ValidateDocument(docContent); err != nil {
 				return nil, err
@@ -1497,16 +1497,16 @@ func (s *InternalCommandService) registerDefaults() {
 				return nil, fmt.Errorf("parse document block input: %w", err)
 			}
 			if strings.TrimSpace(req.DocumentID) == "" {
-				return nil, fmt.Errorf("document_id is required")
+				return nil, errCommandInput("document_id is required")
 			}
 			if strings.TrimSpace(req.BlockID) == "" {
-				return nil, fmt.Errorf("block_id is required")
+				return nil, errCommandInput("block_id is required")
 			}
 			if req.Revision <= 0 {
-				return nil, fmt.Errorf("revision is required")
+				return nil, errCommandInput("revision is required")
 			}
 			if len(req.Content) == 0 || strings.TrimSpace(string(req.Content)) == "" || strings.TrimSpace(string(req.Content)) == "null" {
-				return nil, fmt.Errorf("content is required")
+				return nil, errCommandInput("content is required")
 			}
 			if err := s.requireCommandDocumentInWorkspace(ctx, meta.WorkspaceID, req.DocumentID); err != nil {
 				return nil, err
@@ -1575,10 +1575,10 @@ func (s *InternalCommandService) registerDefaults() {
 			req.SpaceID = strings.TrimSpace(req.SpaceID)
 			req.Title = strings.TrimSpace(html.UnescapeString(req.Title))
 			if req.SpaceID == "" {
-				return nil, fmt.Errorf("space_id is required")
+				return nil, errCommandInput("space_id is required")
 			}
 			if req.Title == "" {
-				return nil, fmt.Errorf("title is required")
+				return nil, errCommandInput("title is required")
 			}
 			if s.docsDocumentService == nil {
 				return nil, fmt.Errorf("docs document service is not available")
@@ -1637,7 +1637,7 @@ func (s *InternalCommandService) registerDefaults() {
 				return nil, err
 			}
 			if document == nil || document.WorkspaceID != meta.WorkspaceID {
-				return nil, fmt.Errorf("document not found")
+				return nil, errCommandNotFound("document")
 			}
 			if s.docsLinkService == nil {
 				return nil, fmt.Errorf("docs link service is not available")
@@ -1653,7 +1653,7 @@ func (s *InternalCommandService) registerDefaults() {
 					return nil, err
 				}
 				if task == nil || task.WorkspaceID != meta.WorkspaceID || requireTeamAccess(ctx, task.TeamID) != nil {
-					return nil, fmt.Errorf("linked task not found")
+					return nil, errCommandNotFound("linked task")
 				}
 				linkedObjectType = model.LinkedObjectTask
 			case model.LinkedObjectEpic:
@@ -1665,7 +1665,7 @@ func (s *InternalCommandService) registerDefaults() {
 					return nil, err
 				}
 				if epic == nil || epic.Epic.WorkspaceID != meta.WorkspaceID || requireTeamAccess(ctx, epic.Epic.TeamID) != nil {
-					return nil, fmt.Errorf("linked epic not found")
+					return nil, errCommandNotFound("linked epic")
 				}
 			case model.LinkedObjectDeal, "crm_deal":
 				if s.crmDealService == nil {
@@ -1676,7 +1676,7 @@ func (s *InternalCommandService) registerDefaults() {
 					return nil, err
 				}
 				if deal == nil || deal.WorkspaceID != meta.WorkspaceID {
-					return nil, fmt.Errorf("linked deal not found")
+					return nil, errCommandNotFound("linked deal")
 				}
 				linkedObjectType = model.LinkedObjectDeal
 			default:
@@ -1718,7 +1718,7 @@ func (s *InternalCommandService) registerDefaults() {
 			}
 			dealID := strings.TrimSpace(firstNonEmptyCommand(req.DealID, meta.TargetID))
 			if dealID == "" || strings.TrimSpace(req.StageID) == "" {
-				return nil, fmt.Errorf("deal_id and stage_id are required")
+				return nil, errCommandInput("deal_id and stage_id are required")
 			}
 			deal, err := s.crmDealService.Update(ctx, dealID, model.UpdateCRMDealRequest{StageID: &req.StageID})
 			if err != nil {
@@ -1743,7 +1743,7 @@ func (s *InternalCommandService) registerDefaults() {
 			}
 			dealID := strings.TrimSpace(firstNonEmptyCommand(req.DealID, meta.TargetID))
 			if dealID == "" || strings.TrimSpace(req.Content) == "" {
-				return nil, fmt.Errorf("deal_id and content are required")
+				return nil, errCommandInput("deal_id and content are required")
 			}
 			activity, err := s.crmActivityService.Create(ctx, model.CreateCRMActivityRequest{
 				WorkspaceID:  meta.WorkspaceID,
@@ -1775,7 +1775,7 @@ func (s *InternalCommandService) registerDefaults() {
 			req.ContactID = strings.TrimSpace(firstNonEmptyCommand(req.ContactID, meta.TargetID))
 			req.ActorUserID = meta.ActorID
 			if req.ContactID == "" {
-				return nil, fmt.Errorf("contact_id is required")
+				return nil, errCommandInput("contact_id is required")
 			}
 			result, err := s.crmEnrichmentService.EnrichContact(ctx, meta.WorkspaceID, req)
 			if err != nil {
@@ -1801,7 +1801,7 @@ func (s *InternalCommandService) registerDefaults() {
 			req.CompanyID = strings.TrimSpace(firstNonEmptyCommand(req.CompanyID, meta.TargetID))
 			req.ActorUserID = meta.ActorID
 			if req.CompanyID == "" {
-				return nil, fmt.Errorf("company_id is required")
+				return nil, errCommandInput("company_id is required")
 			}
 			result, err := s.crmEnrichmentService.EnrichCompany(ctx, meta.WorkspaceID, req)
 			if err != nil {
@@ -1826,7 +1826,7 @@ func (s *InternalCommandService) registerDefaults() {
 			}
 			req.ContactID = strings.TrimSpace(firstNonEmptyCommand(req.ContactID, meta.TargetID))
 			if req.ContactID == "" {
-				return nil, fmt.Errorf("contact_id is required")
+				return nil, errCommandInput("contact_id is required")
 			}
 			result, err := s.crmEnrichmentService.EnsureContactCompany(ctx, meta.WorkspaceID, req)
 			if err != nil {
@@ -1855,10 +1855,10 @@ func (s *InternalCommandService) registerDefaults() {
 			}
 			epicID := firstNonEmptyCommand(req.EpicID, meta.TargetID)
 			if epicID == "" {
-				return nil, fmt.Errorf("epic_id is required")
+				return nil, errCommandInput("epic_id is required")
 			}
 			if req.TargetStateID == "" {
-				return nil, fmt.Errorf("target_state_id is required")
+				return nil, errCommandInput("target_state_id is required")
 			}
 			mutated, err := s.pmAutomationService.HandleEpicAutoStart(ctx, meta.WorkspaceID, epicID, req.TargetStateID)
 			if err != nil {
@@ -1887,10 +1887,10 @@ func (s *InternalCommandService) registerDefaults() {
 			}
 			epicID := firstNonEmptyCommand(req.EpicID, meta.TargetID)
 			if epicID == "" {
-				return nil, fmt.Errorf("epic_id is required")
+				return nil, errCommandInput("epic_id is required")
 			}
 			if req.TargetStateID == "" {
-				return nil, fmt.Errorf("target_state_id is required")
+				return nil, errCommandInput("target_state_id is required")
 			}
 			mutated, err := s.pmAutomationService.HandleEpicAutoComplete(ctx, meta.WorkspaceID, epicID, req.TargetStateID)
 			if err != nil {
@@ -1945,10 +1945,10 @@ func (s *InternalCommandService) registerDefaults() {
 			}
 			taskID := firstNonEmptyCommand(req.TaskID, meta.TargetID)
 			if taskID == "" {
-				return nil, fmt.Errorf("task_id is required")
+				return nil, errCommandInput("task_id is required")
 			}
 			if strings.TrimSpace(req.TargetBranch) == "" {
-				return nil, fmt.Errorf("target_branch is required")
+				return nil, errCommandInput("target_branch is required")
 			}
 			if err := s.gitService.MergeBranch(ctx, meta.WorkspaceID, taskID, req.TargetBranch); err != nil {
 				return nil, err
@@ -2035,7 +2035,7 @@ func (s *InternalCommandService) requireCommandDocumentInWorkspace(ctx context.C
 		return err
 	}
 	if document == nil || document.WorkspaceID != strings.TrimSpace(workspaceID) {
-		return fmt.Errorf("document not found")
+		return errCommandNotFound("document")
 	}
 	return nil
 }
@@ -2191,7 +2191,7 @@ func (s *InternalCommandService) resolveCommandRun(ctx context.Context, meta mod
 	}
 	runID := strings.TrimSpace(meta.RunID)
 	if runID == "" {
-		return nil, fmt.Errorf("run_id is required")
+		return nil, errCommandInput("run_id is required")
 	}
 	run, err := s.agentRunRepo.GetByExternalRuntimeID(ctx, agentRuntimeName, runID)
 	if err != nil {
@@ -2204,7 +2204,7 @@ func (s *InternalCommandService) resolveCommandRun(ctx context.Context, meta mod
 		}
 	}
 	if run == nil || (strings.TrimSpace(meta.WorkspaceID) != "" && run.WorkspaceID != strings.TrimSpace(meta.WorkspaceID)) {
-		return nil, fmt.Errorf("run not found")
+		return nil, errCommandNotFound("run")
 	}
 	return run, nil
 }
@@ -2444,7 +2444,7 @@ func (s *InternalCommandService) resolveTaskCreationWorkflow(ctx context.Context
 	}
 	teamID = strings.TrimSpace(teamID)
 	if workspaceID == "" || teamID == "" {
-		return "", "", fmt.Errorf("workspace_id and team_id are required")
+		return "", "", errCommandInput("workspace_id and team_id are required")
 	}
 
 	workflowID := commandDerefString(requestedWorkflowID)
@@ -2457,7 +2457,7 @@ func (s *InternalCommandService) resolveTaskCreationWorkflow(ctx context.Context
 			return "", "", fmt.Errorf("get workflow: %w", err)
 		}
 		if loaded == nil || loaded.Workflow.WorkspaceID != workspaceID {
-			return "", "", fmt.Errorf("workflow not found")
+			return "", "", errCommandNotFound("workflow")
 		}
 		if loaded.Workflow.TeamID != nil && strings.TrimSpace(*loaded.Workflow.TeamID) != "" && strings.TrimSpace(*loaded.Workflow.TeamID) != teamID {
 			return "", "", fmt.Errorf("workflow_id does not belong to team_id")
@@ -2483,7 +2483,7 @@ func (s *InternalCommandService) resolveTaskCreationWorkflow(ctx context.Context
 		workflow = resolved
 	}
 	if workflow == nil {
-		return "", "", fmt.Errorf("workflow not found")
+		return "", "", errCommandNotFound("workflow")
 	}
 
 	if workflowID == "" {
@@ -2533,7 +2533,7 @@ func parseInternalCommandTaskDeadline(value string) (*time.Time, error) {
 			return &parsed, nil
 		}
 	}
-	return nil, fmt.Errorf("deadline must be YYYY-MM-DD or RFC3339")
+	return nil, errCommandInput("deadline must be YYYY-MM-DD or RFC3339")
 }
 
 func commandDerefString(value *string) string {
@@ -2594,7 +2594,7 @@ func (s *InternalCommandService) listSingleTaskCommand(ctx context.Context, meta
 	}
 	task := detail.Task
 	if task.WorkspaceID != meta.WorkspaceID {
-		return nil, fmt.Errorf("task not found")
+		return nil, errCommandNotFound("task")
 	}
 	tasks := []map[string]any{}
 	total := int64(0)

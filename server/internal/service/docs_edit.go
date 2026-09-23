@@ -42,10 +42,10 @@ func (s *InternalCommandService) executeEditDocument(ctx context.Context, meta m
 	}
 	req.DocumentID = strings.TrimSpace(firstNonEmptyCommand(req.DocumentID, currentDocumentTargetID(meta)))
 	if req.DocumentID == "" || strings.TrimSpace(req.ExpectedVersion) == "" {
-		return nil, fmt.Errorf("document_id and expected_version are required")
+		return nil, errCommandInput("document_id and expected_version are required")
 	}
 	if len(req.Operations) < 1 || len(req.Operations) > 20 {
-		return nil, fmt.Errorf("provide between 1 and 20 operations")
+		return nil, errCommandInput("provide between 1 and 20 operations")
 	}
 	if s.docsContentService == nil || s.docsBlockService == nil {
 		return nil, fmt.Errorf("document editing is not available")
@@ -59,7 +59,13 @@ func (s *InternalCommandService) executeEditDocument(ctx context.Context, meta m
 	var before json.RawMessage
 	saved, err := s.docsContentService.mutateContent(ctx, req.DocumentID, meta.ActorID, req.ExpectedVersion, func(raw json.RawMessage) (json.RawMessage, error) {
 		before = append(json.RawMessage(nil), raw...)
-		return applyDocumentEdits(raw, req.Operations)
+		next, err := applyDocumentEdits(raw, req.Operations)
+		if err != nil {
+			// applyDocumentEdits is a pure transform of the caller's snapshot
+			// and operations; its messages describe only the caller's input.
+			return nil, errCommandInput("%s", err.Error())
+		}
+		return next, nil
 	})
 	if err != nil {
 		return nil, err
@@ -154,7 +160,7 @@ func applyDocumentEdits(raw json.RawMessage, operations []documentEditOperation)
 			}
 			end++
 			if end <= start {
-				return nil, fmt.Errorf("end_block_id must follow start_block_id")
+				return nil, errCommandInput("end_block_id must follow start_block_id")
 			}
 			for i := start; i < end; i++ {
 				if claimed[i] || len(textOps[i]) > 0 {
@@ -214,13 +220,13 @@ func validateDocumentEditOperation(op documentEditOperation) error {
 	switch op.Type {
 	case "replace_text":
 		if strings.TrimSpace(op.BlockID) == "" {
-			return fmt.Errorf("replace_text: block_id is required; use the block id from read_document or get_document_blocks")
+			return errCommandInput("replace_text: block_id is required; use the block id from read_document or get_document_blocks")
 		}
 		if op.OldText == "" {
-			return fmt.Errorf("replace_text: old_text must be nonempty and match text in the selected block")
+			return errCommandInput("replace_text: old_text must be nonempty and match text in the selected block")
 		}
 		if op.NewText == nil {
-			return fmt.Errorf("replace_text: new_text is required; use an empty string to remove the match")
+			return errCommandInput("replace_text: new_text is required; use an empty string to remove the match")
 		}
 		if hasContent || anchor > 0 || op.StartBlockID != "" || op.EndBlockID != "" {
 			return fmt.Errorf("replace_text accepts only block_id, old_text, and new_text")
@@ -240,10 +246,10 @@ func validateDocumentEditOperation(op documentEditOperation) error {
 			return fmt.Errorf("range operations do not accept insertion or text selectors")
 		}
 		if (op.Type == "replace_range") != hasContent {
-			return fmt.Errorf("replace_range requires content; delete_range must omit content")
+			return errCommandInput("replace_range requires content; delete_range must omit content")
 		}
 	default:
-		return fmt.Errorf("type must be replace_text, replace_range, insert, or delete_range")
+		return errCommandInput("type must be replace_text, replace_range, insert, or delete_range")
 	}
 	return nil
 }
@@ -260,7 +266,7 @@ func documentReplacementNodes(raw json.RawMessage) ([]map[string]any, error) {
 		}
 		nodes = doc.Content
 	} else if err := json.Unmarshal(raw, &nodes); err != nil {
-		return nil, fmt.Errorf("content must be Markdown or an array of block nodes")
+		return nil, errCommandInput("content must be Markdown or an array of block nodes")
 	}
 	if len(nodes) == 0 {
 		return nil, fmt.Errorf("replacement content is empty; use delete_range to delete")

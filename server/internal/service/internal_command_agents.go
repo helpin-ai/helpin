@@ -124,7 +124,7 @@ func dockLaunchStepHasDirectInput(step dockLaunchStep) bool {
 
 func validateDirectDockLaunchSteps(steps []dockLaunchStep) error {
 	if len(steps) == 0 {
-		return fmt.Errorf("at least one step is required")
+		return errCommandInput("at least one step is required")
 	}
 	for index, step := range steps {
 		prefix := fmt.Sprintf("step %d: ", index+1)
@@ -132,17 +132,17 @@ func validateDirectDockLaunchSteps(steps []dockLaunchStep) error {
 			prefix = ""
 		}
 		if strings.TrimSpace(step.Instructions) == "" {
-			return fmt.Errorf("%sinstructions are required", prefix)
+			return errCommandInput("%sinstructions are required", prefix)
 		}
 		targetType := normalizeCommandBarTargetType(step.Target.Type)
 		if targetType == "" {
-			return fmt.Errorf("%starget.type is required for direct launches; use workspace only for genuinely workspace-scoped work", prefix)
+			return errCommandInput("%starget.type is required for direct launches; use workspace only for genuinely workspace-scoped work", prefix)
 		}
 		if err := validateCommandBarSupportedTarget(targetType); err != nil {
 			return fmt.Errorf("%s%w", prefix, err)
 		}
 		if targetType != "workspace" && strings.TrimSpace(step.Target.ID) == "" {
-			return fmt.Errorf("%starget.id is required for target.type %q", prefix, targetType)
+			return errCommandInput("%starget.id is required for target.type %q", prefix, targetType)
 		}
 	}
 	return nil
@@ -271,13 +271,13 @@ func normalizeDockGetRunRequest(req dockGetRunRequest) (dockGetRunRequest, error
 		req.DetailLevel = "status"
 	}
 	if req.RunID == "" && req.PlanID == "" {
-		return req, fmt.Errorf("run_id or plan_id is required")
+		return req, errCommandInput("run_id or plan_id is required")
 	}
 	if req.RunID != "" && req.PlanID != "" {
 		return req, fmt.Errorf("run_id and plan_id are mutually exclusive")
 	}
 	if req.DetailLevel != "status" && req.DetailLevel != "result" {
-		return req, fmt.Errorf("detail_level must be status or result")
+		return req, errCommandInput("detail_level must be status or result")
 	}
 	if req.DetailLevel == "result" && req.RunID == "" {
 		return req, fmt.Errorf("detail_level=result requires run_id")
@@ -286,10 +286,10 @@ func normalizeDockGetRunRequest(req dockGetRunRequest) (dockGetRunRequest, error
 		return req, fmt.Errorf("result_offset and result_limit require detail_level=result")
 	}
 	if req.ResultOffset < 0 {
-		return req, fmt.Errorf("result_offset must be zero or greater")
+		return req, errCommandInput("result_offset must be zero or greater")
 	}
 	if req.ResultLimit < 0 || req.ResultLimit > dockRunResultMaxChars {
-		return req, fmt.Errorf("result_limit must be between 1 and %d", dockRunResultMaxChars)
+		return req, errCommandInput("result_limit must be between 1 and %d", dockRunResultMaxChars)
 	}
 	if req.DetailLevel == "result" && req.ResultLimit == 0 {
 		req.ResultLimit = dockRunResultDefaultChars
@@ -325,7 +325,7 @@ func (s *InternalCommandService) resolvedDockApprovalAction(ctx context.Context,
 	}
 	interactionID = strings.TrimSpace(interactionID)
 	if interactionID == "" {
-		return nil, nil, fmt.Errorf("approval_interaction_id is required: call request_approval with a %q payload first", payloadKind)
+		return nil, nil, errCommandInput("approval_interaction_id is required: call request_approval with a %q payload first", payloadKind)
 	}
 	interaction, err := s.agentRunInteractionRepo.GetByID(ctx, meta.WorkspaceID, chatRun.ID, interactionID)
 	if err != nil {
@@ -376,7 +376,7 @@ func (s *InternalCommandService) resolvedDockApprovalAction(ctx context.Context,
 	}
 	kind := strings.TrimSpace(firstNonEmptyString(request.Kind, request.Phase))
 	if kind != payloadKind {
-		return nil, nil, fmt.Errorf("approval must use phase %q with the proposed action", payloadKind)
+		return nil, nil, errCommandInput("approval must use phase %q with the proposed action", payloadKind)
 	}
 	approvedAction := request.Action
 	if len(approvedAction) == 0 {
@@ -499,7 +499,7 @@ func (s *InternalCommandService) executeDockLaunch(ctx context.Context, meta mod
 		return nil, fmt.Errorf("agent service is not configured")
 	}
 	if len(steps) == 0 {
-		return nil, fmt.Errorf("at least one step is required")
+		return nil, errCommandInput("at least one step is required")
 	}
 	chatRun, kind, err := s.resolveOrchestratorRun(ctx, meta)
 	if err != nil {
@@ -870,7 +870,7 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 				return nil, err
 			}
 			if run == nil {
-				return nil, fmt.Errorf("run not found")
+				return nil, errCommandNotFound("run")
 			}
 			response := dockGetRunResponse{
 				RunID:        run.ID,
@@ -965,7 +965,7 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 			}
 			runID := strings.TrimSpace(req.RunID)
 			if runID == "" {
-				return nil, fmt.Errorf("run_id or plan_id is required")
+				return nil, errCommandInput("run_id or plan_id is required")
 			}
 			if s.agentService == nil {
 				return nil, fmt.Errorf("agent service is not configured")
@@ -1013,7 +1013,7 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 			}
 			req = req.normalized()
 			if len(req.Description) < 10 {
-				return nil, fmt.Errorf("description must be at least 10 characters")
+				return nil, errCommandInput("description must be at least 10 characters")
 			}
 			chatRun, err := s.resolveDockChatRun(ctx, meta)
 			if err != nil {
@@ -1091,7 +1091,7 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 				ProposalID string `json:"proposal_id"`
 			}
 			if err := json.Unmarshal(approvedAction, &approved); err != nil || strings.TrimSpace(approved.ProposalID) == "" {
-				return nil, fmt.Errorf("approval action must contain the draft proposal_id")
+				return nil, errCommandInput("approval action must contain the draft proposal_id")
 			}
 			proposal, err := s.dockActionProposalRepo.GetByID(ctx, meta.WorkspaceID, strings.TrimSpace(approved.ProposalID))
 			if err != nil {
@@ -1174,7 +1174,7 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 			switch {
 			case run.DockChatID != nil && strings.TrimSpace(*run.DockChatID) != "":
 				if epicID == "" {
-					return nil, fmt.Errorf("epic_id is required")
+					return nil, errCommandInput("epic_id is required")
 				}
 				action := dockEpicPipelineAction{EpicID: epicID}.normalized()
 				actionHash, hashErr := dockActionHash(action)
