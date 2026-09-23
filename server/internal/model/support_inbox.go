@@ -525,6 +525,12 @@ type SupportCredentialRotationAudit struct {
 	CreatedAt      time.Time `json:"created_at" gorm:"autoCreateTime"`
 }
 
+// Credential audit kinds stored in SupportCredentialRotationAudit.RotationKind.
+const (
+	CredentialAuditSigningSecretRotated  = "server_signing_secret"
+	CredentialAuditSigningSecretRevealed = "server_signing_secret_revealed"
+)
+
 func (SupportCredentialRotationAudit) TableName() string {
 	return "support_credential_rotation_audits"
 }
@@ -1926,15 +1932,24 @@ type VisitorContextResponse struct {
 
 // InstallationSettingsResponse wraps installation + parsed settings for the admin API.
 type InstallationSettingsResponse struct {
-	ID                       string               `json:"id"`
-	WorkspaceID              string               `json:"workspace_id"`
-	WidgetKey                string               `json:"widget_key"`
-	AllowedOrigins           []string             `json:"allowed_origins"`
-	IdentityVerificationMode string               `json:"identity_verification_mode"`
-	Settings                 SupportInboxSettings `json:"settings"`
-	Active                   bool                 `json:"active"`
-	CreatedAt                string               `json:"created_at"`
-	UpdatedAt                string               `json:"updated_at"`
+	ID                       string   `json:"id"`
+	WorkspaceID              string   `json:"workspace_id"`
+	WidgetKey                string   `json:"widget_key"`
+	AllowedOrigins           []string `json:"allowed_origins"`
+	IdentityVerificationMode string   `json:"identity_verification_mode"`
+	// SigningSecretConfigured reports whether an identity signing secret exists.
+	// The secret itself is only returned by the audited reveal/rotate endpoints.
+	SigningSecretConfigured bool                 `json:"signing_secret_configured"`
+	Settings                SupportInboxSettings `json:"settings"`
+	Active                  bool                 `json:"active"`
+	CreatedAt               string               `json:"created_at"`
+	UpdatedAt               string               `json:"updated_at"`
+}
+
+// RevealWidgetSecretResponse returns the current signing secret to an
+// authorized administrator. Each reveal is audited.
+type RevealWidgetSecretResponse struct {
+	SecretKey string `json:"secret_key"`
 }
 
 // RotateWidgetSecretResponse returns a newly rotated secret exactly once.

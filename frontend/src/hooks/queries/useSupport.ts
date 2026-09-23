@@ -268,6 +268,26 @@ export function useRegenerateWidgetKey(workspaceId: string) {
   });
 }
 
+/**
+ * Reveal/rotate the widget identity signing secret. The secret is returned to
+ * the caller only and never written to the query cache.
+ */
+export function useRevealWidgetSigningSecret(workspaceId: string) {
+  return useMutation({
+    mutationFn: () => supportService.revealWidgetSigningSecret(workspaceId).then(unwrap),
+  });
+}
+
+export function useRotateWidgetSigningSecret(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => supportService.rotateWidgetSigningSecret(workspaceId).then(unwrap),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.support.installation(workspaceId) });
+    },
+  });
+}
+
 // ── Conversations ───────────────────────────────────────────────────
 
 export function useConversations(workspaceId: string, filters?: SupportConversationFilters) {
