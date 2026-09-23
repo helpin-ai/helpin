@@ -39,16 +39,17 @@ func newCapabilityHandler(db *gorm.DB, cfg *config.Config, deps capabilityWiring
 	supportEmailConfigured := (strings.TrimSpace(d.SupportEmailReplyDomain) != "" && d.ReplyEmailConfigured && d.ReplyInboundSecretSet) ||
 		(strings.TrimSpace(d.SupportEmailRouteDomain) != "" && d.RouteEmailConfigured && d.RouteInboundSecretSet)
 	capabilityConfig := service.CapabilityConfig{
-		Edition:                 deployment.EditionName,
-		Modules:                 cfg.EnabledModules,
-		AppEmailConfigured:      deps.appEmail != nil,
-		AppEmailFingerprint:     appEmailFingerprint(cfg, deps.appEmail),
-		AIConnectionsEnabled:    deps.aiConnectionsEnabled,
-		ServerChatProviders:     deps.chatProviders,
-		EmbeddingModel:          deps.embeddingModel,
-		SupportEmailConfigured:  supportEmailConfigured,
-		ObjectStorageConfigured: deps.storage != nil,
-		GitHubAppConfigured:     deps.gitHubAppConfigured,
+		Edition:                   deployment.EditionName,
+		Modules:                   cfg.EnabledModules,
+		AppEmailConfigured:        deps.appEmail != nil,
+		AppEmailFingerprint:       appEmailFingerprint(cfg, deps.appEmail),
+		AIConnectionsEnabled:      deps.aiConnectionsEnabled,
+		ServerChatProviders:       deps.chatProviders,
+		EmbeddingModel:            deps.embeddingModel,
+		SupportEmailConfigured:    supportEmailConfigured,
+		ObjectStorageConfigured:   deps.storage != nil,
+		GitHubAppConfigured:       deps.gitHubAppConfigured,
+		GitHubReachabilityProblem: service.GitHubAppBaseURLBlockedReason(cfg.AppBaseURL),
 	}
 	if deps.storage != nil {
 		capabilityConfig.StorageProbe = deps.storage.CheckBucket

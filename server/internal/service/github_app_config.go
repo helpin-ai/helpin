@@ -40,6 +40,27 @@ type GitHubAppConfigOptions struct {
 	CacheTTL time.Duration
 }
 
+// _gitHubAppOwnerRetry bounds how often a failed GET /app lookup is retried
+// for an environment-configured App.
+const _gitHubAppOwnerRetry = 5 * time.Minute
+
+// gitHubAppInstallRedirector sends the browser from App creation straight to
+// the App's install page with signed Helpin install state.
+type gitHubAppInstallRedirector interface {
+	GitHubAppInstallRedirect(ctx context.Context, slug, workspaceID, actorID, returnTo string) (string, error)
+}
+
+// gitHubAppLookup reads the authenticated App (GET /app) to learn its owner.
+type gitHubAppLookup interface {
+	GetApp(ctx context.Context) (*githubapp.App, error)
+}
+
+// gitHubAppOwner identifies the GitHub account that owns the App.
+type gitHubAppOwner struct {
+	Login string
+	Type  string
+}
+
 // GitHubAppConfigService resolves the instance GitHub App from the
 // environment or the database and runs the App manifest flow. It implements
 // githubapp.CredentialSource.
@@ -47,13 +68,21 @@ type GitHubAppConfigService struct {
 	store      gitHubAppCredentialStore
 	workspaces gitHubAppWorkspaceLookup
 	converter  gitHubAppManifestConverter
+	installer  gitHubAppInstallRedirector
+	appLookup  gitHubAppLookup
 	opts       GitHubAppConfigOptions
 	now        func() time.Time
 
-	mu       sync.Mutex
-	cached   githubapp.Credentials
-	cachedAt time.Time
-	hasCache bool
+	mu          sync.Mutex
+	cached      githubapp.Credentials
+	cachedOwner gitHubAppOwner
+	cachedAt    time.Time
+	hasCache    bool
+
+	envOwnerMu      sync.Mutex
+	envOwner        gitHubAppOwner
+	envOwnerAt      time.Time
+	envOwnerChecked bool
 }
 
 var _ githubapp.CredentialSource = (*GitHubAppConfigService)(nil)
@@ -93,20 +122,47 @@ func (s *GitHubAppConfigService) Current(ctx context.Context) (githubapp.Credent
 	return creds, err
 }
 
+// SetInstallRedirector lets CompleteManifest continue to the App's install
+// page. Without one, it returns to Helpin with a "created" result.
+func (s *GitHubAppConfigService) SetInstallRedirector(installer gitHubAppInstallRedirector) *GitHubAppConfigService {
+	s.installer = installer
+	return s
+}
+
+// SetAppLookup lets Status report the owner of an environment-configured App.
+func (s *GitHubAppConfigService) SetAppLookup(lookup gitHubAppLookup) *GitHubAppConfigService {
+	s.appLookup = lookup
+	return s
+}
+
 // Status describes the active App without secrets.
 func (s *GitHubAppConfigService) Status(ctx context.Context) (*model.GitHubAppStatusResponse, error) {
 	creds, source, err := s.resolve(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return &model.GitHubAppStatusResponse{
+	status := &model.GitHubAppStatusResponse{
 		Configured:        creds.Usable(),
 		Source:            source,
 		Slug:              creds.Slug,
 		InstallURL:        creds.InstallURL(),
 		WebhookConfigured: creds.WebhookSecret != "",
 		ManifestAvailable: s.manifestAvailable(source),
-	}, nil
+	}
+	switch source {
+	case model.GitHubAppSourceDatabase:
+		owner := s.storedOwner()
+		status.OwnerLogin, status.OwnerType = owner.Login, owner.Type
+		status.Private = true
+	case model.GitHubAppSourceEnv:
+		owner := s.environmentOwner(ctx)
+		status.OwnerLogin, status.OwnerType = owner.Login, owner.Type
+	case model.GitHubAppSourceNone:
+		if s.opts.ManifestEnabled {
+			status.ManifestBlockedReason = GitHubAppBaseURLBlockedReason(s.opts.AppBaseURL)
+		}
+	}
+	return status, nil
 }
 
 // Invalidate drops cached stored credentials.
@@ -115,6 +171,47 @@ func (s *GitHubAppConfigService) Invalidate() {
 	defer s.mu.Unlock()
 	s.hasCache = false
 	s.cached = githubapp.Credentials{}
+	s.cachedOwner = gitHubAppOwner{}
+}
+
+func (s *GitHubAppConfigService) storedOwner() gitHubAppOwner {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cachedOwner
+}
+
+// environmentOwner fetches GET /app once for an environment-configured App.
+// Failures are retried after _gitHubAppOwnerRetry and report no owner.
+func (s *GitHubAppConfigService) environmentOwner(ctx context.Context) gitHubAppOwner {
+	if s.appLookup == nil {
+		return gitHubAppOwner{}
+	}
+	s.envOwnerMu.Lock()
+	defer s.envOwnerMu.Unlock()
+	if s.envOwnerChecked && (s.envOwner.Login != "" || s.now().Sub(s.envOwnerAt) < _gitHubAppOwnerRetry) {
+		return s.envOwner
+	}
+	lookupCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	app, err := s.appLookup.GetApp(lookupCtx)
+	s.envOwnerChecked = true
+	s.envOwnerAt = s.now()
+	if err != nil || app == nil {
+		slog.WarnContext(ctx, "github app owner lookup failed", "error", err)
+		s.envOwner = gitHubAppOwner{}
+		return s.envOwner
+	}
+	s.envOwner = gitHubAppOwner{Login: strings.TrimSpace(app.OwnerLogin), Type: strings.TrimSpace(app.OwnerType)}
+	return s.envOwner
+}
+
+// Source reports where the active App comes from: env, database or none.
+func (s *GitHubAppConfigService) Source(ctx context.Context) string {
+	_, source, err := s.resolve(ctx)
+	if err != nil {
+		return model.GitHubAppSourceNone
+	}
+	return source
 }
 
 func (s *GitHubAppConfigService) resolve(ctx context.Context) (githubapp.Credentials, string, error) {
@@ -149,6 +246,10 @@ func (s *GitHubAppConfigService) stored(ctx context.Context) (githubapp.Credenti
 		return githubapp.Credentials{}, err
 	}
 	s.cached = creds
+	s.cachedOwner = gitHubAppOwner{}
+	if row != nil {
+		s.cachedOwner = gitHubAppOwner{Login: strings.TrimSpace(derefString(row.OwnerLogin)), Type: strings.TrimSpace(derefString(row.OwnerType))}
+	}
 	s.cachedAt = s.now()
 	s.hasCache = true
 	return creds, nil
@@ -213,7 +314,8 @@ func (s *GitHubAppConfigService) manifestAvailable(source string) bool {
 		s.converter != nil &&
 		len(s.opts.EncryptionKey) == 32 &&
 		s.opts.StateSecret != "" &&
-		s.opts.AppBaseURL != ""
+		s.opts.AppBaseURL != "" &&
+		GitHubAppBaseURLBlockedReason(s.opts.AppBaseURL) == ""
 }
 
 func gitHubAppFieldAAD(field string) []byte {

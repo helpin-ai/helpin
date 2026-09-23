@@ -2,6 +2,7 @@
 
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { systemStatusEnabled } from '@edition/config';
 import type { CapabilitiesResponse, Capability } from '@/lib/capabilityTypes';
@@ -13,6 +14,7 @@ let workspace = { id: 'workspace-1', slug: 'acme' };
 let setupView: SetupView;
 let capabilities: CapabilitiesResponse | undefined;
 let isAdmin = true;
+const queryClient = new QueryClient();
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => navigate,
@@ -91,7 +93,7 @@ function renderPage() {
     document.body.appendChild(container);
     root = createRoot(container);
   }
-  act(() => root?.render(<SetupSuccessPage />));
+  act(() => root?.render(<QueryClientProvider client={queryClient}><SetupSuccessPage /></QueryClientProvider>));
 }
 
 function journeyTrigger(title: string) {
@@ -305,5 +307,32 @@ describe('SetupSuccessPage adoption guide', () => {
     capabilities = { edition: 'community', capabilities: [cap('object_storage', 'ready', { required: true }), cap('workers', 'ready', { required: true })] };
     renderPage();
     expect(container?.querySelector('[data-testid="required-services-notice"]')).toBeNull();
+  });
+});
+
+describe('SetupSuccessPage GitHub return', () => {
+  afterEach(() => window.history.replaceState(null, '', '/'));
+
+  it('announces the GitHub result inline and removes it from the address bar', async () => {
+    window.history.replaceState(null, '', '/w/acme/setup?github=connected&github_message=GitHub+App+connected+to+acme.&integration_id=gi-1&tab=x');
+    setupView = view([journey('foundation', 'Workspace essentials', 'Add company details')]);
+    renderPage();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+
+    const status = Array.from(container?.querySelectorAll('[role="status"]') ?? []).find((element) => element.textContent?.includes('GitHub'));
+    expect(status?.textContent).toBe('GitHub App connected to acme.');
+    expect(status?.getAttribute('aria-live')).toBe('polite');
+    expect(window.location.search).toBe('?tab=x');
+  });
+
+  it('shows failures from the older manifest flag', async () => {
+    window.history.replaceState(null, '', '/w/acme/setup?github_app_manifest=error&github_message=Only+a+workspace+owner+can+create+the+GitHub+App.');
+    setupView = view([journey('foundation', 'Workspace essentials', 'Add company details')]);
+    renderPage();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+
+    const status = Array.from(container?.querySelectorAll('[role="status"]') ?? []).find((element) => element.textContent?.includes('owner'));
+    expect(status?.className).toContain('text-quiet-accent');
+    expect(window.location.search).toBe('');
   });
 });

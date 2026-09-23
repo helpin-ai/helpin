@@ -645,6 +645,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/organizations/{id}/git/integrations", h.Git.ListOrgIntegrations)
 			r.Post("/organizations/{id}/git/integrations", h.Git.CreateOrgIntegration)
 			r.Get("/organizations/{id}/git/github/install-url", h.Git.GetOrgGitHubInstallURL)
+			r.Post("/organizations/{id}/git/github/installations/{installationID}/claim", h.Git.ClaimOrgGitHubInstallation)
 			r.Post("/organizations/{id}/git/gitlab/connect", h.Git.ConnectOrgGitLab)
 			r.Get("/organizations/{id}/git/integrations/{integrationId}", h.Git.GetOrgIntegration)
 			r.Put("/organizations/{id}/git/integrations/{integrationId}", h.Git.UpdateOrgIntegration)

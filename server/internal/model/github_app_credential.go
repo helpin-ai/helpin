@@ -44,12 +44,36 @@ type GitHubAppStatusResponse struct {
 	InstallURL        string `json:"install_url"`
 	WebhookConfigured bool   `json:"webhook_configured"`
 	ManifestAvailable bool   `json:"manifest_available"`
+	// ManifestBlockedReason explains why the App cannot be created from
+	// Helpin (APP_BASE_URL is not a public https address); empty otherwise.
+	ManifestBlockedReason string `json:"manifest_blocked_reason"`
+	// OwnerLogin and OwnerType ("User" or "Organization") identify the GitHub
+	// account that owns the App; empty when unknown.
+	OwnerLogin string `json:"owner_login"`
+	OwnerType  string `json:"owner_type"`
+	// Private is true for Apps created from Helpin, which only their owner
+	// account can install.
+	Private bool `json:"private"`
 }
 
 // GitHubAppManifestRequest optionally creates the App under a GitHub
-// organization instead of the signed-in GitHub user.
+// organization instead of the signed-in GitHub user. ReturnTo selects the
+// Helpin page the browser returns to: settings (default), setup or
+// system_status.
 type GitHubAppManifestRequest struct {
 	Organization string `json:"organization"`
+	ReturnTo     string `json:"return_to"`
+}
+
+// GitHubInstallationClaimResponse reports the integration linked to a GitHub
+// App installation that was claimed by an organization.
+type GitHubInstallationClaimResponse struct {
+	IntegrationID string `json:"integration_id"`
+	AccountLogin  string `json:"account_login"`
+	AccountType   string `json:"account_type"`
+	// Created is false when the installation was already linked to this
+	// organization and was refreshed.
+	Created bool `json:"created"`
 }
 
 // GitHubAppManifestResponse carries the manifest the browser must POST to

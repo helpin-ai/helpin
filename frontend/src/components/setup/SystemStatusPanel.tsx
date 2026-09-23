@@ -129,7 +129,7 @@ function CapabilityStep({ capability, workspaceId, slug, canManage, isOwner }: {
     case 'email_outbound':
       return <SetupEmailStep capability={capability} workspaceId={workspaceId} slug={slug} canManage={canManage} />;
     case 'github':
-      return <SetupGitHubStep capability={capability} workspaceId={workspaceId} slug={slug} canManage={canManage} isOwner={isOwner} />;
+      return <SetupGitHubStep capability={capability} workspaceId={workspaceId} slug={slug} canManage={canManage} isOwner={isOwner} returnTo="system_status" />;
     default:
       return <CapabilityActionView capability={capability} slug={slug} canManage={canManage} />;
   }

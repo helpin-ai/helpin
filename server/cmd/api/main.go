@@ -891,7 +891,9 @@ func main() {
 	).
 		SetEpicDeliveryDependencies(epicDeliveryTargetRepo, pmEpicRepo).
 		SetGitLabDependencies(gitCredentialRepo, resolveGitOAuthEncryptionKey(cfg)).
-		SetGitHubAppSource(githubAppConfig)
+		SetGitHubAppSource(githubAppConfig).
+		SetGitHubInstallClaimEnabled(gitHubAppManifestEnabled)
+	githubAppConfig.SetInstallRedirector(gitService).SetAppLookup(githubAppClient)
 	pmTaskService.SetGitService(gitService)
 	pmEpicService.SetGitService(gitService)
 	var agentRuntimeClient *service.AgentRuntimeClient

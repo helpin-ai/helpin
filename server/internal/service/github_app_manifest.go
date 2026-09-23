@@ -36,7 +36,6 @@ const (
 	_gitHubAppManifestStatePurpose = "github_app_manifest"
 	_gitHubAppManifestStateTTL     = 30 * time.Minute
 	_gitHubAppNameMaxLength        = 34
-	_gitHubAppManifestQueryKey     = "github_app_manifest"
 )
 
 var _gitHubOrganizationLogin = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$`)
@@ -54,6 +53,9 @@ type gitHubAppManifestState struct {
 	Purpose     string `json:"purpose"`
 	WorkspaceID string `json:"workspace_id"`
 	ActorID     string `json:"actor_id"`
+	// ReturnTo is the Helpin page to return to; absent in older tokens,
+	// which return to settings.
+	ReturnTo string `json:"return_to,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -92,6 +94,9 @@ func (s *GitHubAppConfigService) CreateManifest(ctx context.Context, workspaceID
 		return nil, ErrGitHubAppAlreadyConfigured
 	}
 	if !s.manifestAvailable(source) {
+		if reason := GitHubAppBaseURLBlockedReason(s.opts.AppBaseURL); reason != "" {
+			return nil, fmt.Errorf("%w: %s", ErrGitHubAppManifestUnavailable, reason)
+		}
 		return nil, fmt.Errorf("%w: set APP_BASE_URL, JWT_SECRET and GIT_OAUTH_ENCRYPTION_KEY", ErrGitHubAppManifestUnavailable)
 	}
 	workspaceID = strings.TrimSpace(workspaceID)
@@ -103,12 +108,16 @@ func (s *GitHubAppConfigService) CreateManifest(ctx context.Context, workspaceID
 	if organization != "" && !_gitHubOrganizationLogin.MatchString(organization) {
 		return nil, fmt.Errorf("%w: organization must be a GitHub organization login", ErrGitHubAppManifestInvalid)
 	}
+	returnTo, err := NormalizeGitHubReturnTo(req.ReturnTo)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrGitHubAppManifestInvalid, err)
+	}
 
 	manifest, err := json.Marshal(s.buildManifest())
 	if err != nil {
 		return nil, fmt.Errorf("encode github app manifest: %w", err)
 	}
-	state, err := s.signManifestState(workspaceID, actorID)
+	state, err := s.signManifestState(workspaceID, actorID, returnTo)
 	if err != nil {
 		return nil, err
 	}
@@ -121,15 +130,18 @@ func (s *GitHubAppConfigService) CreateManifest(ctx context.Context, workspaceID
 }
 
 // CompleteManifest exchanges the manifest code, stores the new App and
-// returns the frontend URL to redirect the browser to. Failures are reported
-// through the github_app_manifest=error query flag rather than an error.
+// returns the URL to redirect the browser to: the new App's GitHub install
+// page (with Helpin install state) on success, otherwise the return_to page
+// with the github=created|error result flag. An invalid state goes to the
+// frontend /github/installed route with the error.
 func (s *GitHubAppConfigService) CompleteManifest(ctx context.Context, code, stateToken string) string {
 	claims, err := s.parseManifestState(stateToken)
 	if err != nil {
-		return s.manifestRedirect(ctx, "", "error", "The GitHub App setup link is invalid or expired. Start again from Helpin.")
+		return gitHubInstalledURL(s.opts.AppBaseURL, gitHubResultQuery(GitHubResultError,
+			"The GitHub App setup link is invalid or expired. Start again from Helpin."))
 	}
 	fail := func(message string) string {
-		return s.manifestRedirect(ctx, claims.WorkspaceID, "error", message)
+		return s.manifestRedirect(ctx, claims, GitHubResultError, message)
 	}
 	if !s.opts.ManifestEnabled {
 		return fail("Creating a GitHub App from Helpin is not available in this edition.")
@@ -157,7 +169,14 @@ func (s *GitHubAppConfigService) CompleteManifest(ctx context.Context, code, sta
 		return fail("Helpin could not save the GitHub App credentials.")
 	}
 	slog.InfoContext(ctx, "github app created from manifest", "workspace_id", claims.WorkspaceID, "user_id", claims.ActorID, "app_id", conversion.ID, "slug", conversion.Slug)
-	return s.manifestRedirect(ctx, claims.WorkspaceID, "created", fmt.Sprintf("GitHub App %s created. Install it to connect repositories.", conversion.Slug))
+	if s.installer != nil {
+		installURL, err := s.installer.GitHubAppInstallRedirect(ctx, conversion.Slug, claims.WorkspaceID, claims.ActorID, claims.ReturnTo)
+		if err == nil {
+			return installURL
+		}
+		slog.ErrorContext(ctx, "github app install link failed after creation", "workspace_id", claims.WorkspaceID, "user_id", claims.ActorID, "slug", conversion.Slug, "error", err)
+	}
+	return s.manifestRedirect(ctx, claims, GitHubResultCreated, fmt.Sprintf("GitHub App %s created. Install it to connect repositories.", conversion.Slug))
 }
 
 func (s *GitHubAppConfigService) storeConversion(ctx context.Context, conversion *githubapp.ManifestConversion, actorID string) error {
@@ -234,12 +253,13 @@ func gitHubAppManifestName(appBaseURL, suffix string) string {
 	return name
 }
 
-func (s *GitHubAppConfigService) signManifestState(workspaceID, actorID string) (string, error) {
+func (s *GitHubAppConfigService) signManifestState(workspaceID, actorID, returnTo string) (string, error) {
 	now := s.now()
 	claims := gitHubAppManifestState{
 		Purpose:     _gitHubAppManifestStatePurpose,
 		WorkspaceID: workspaceID,
 		ActorID:     actorID,
+		ReturnTo:    gitHubReturnTo(returnTo),
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(_gitHubAppManifestStateTTL)),
@@ -285,23 +305,17 @@ func (s *GitHubAppConfigService) isWorkspaceOwner(ctx context.Context, workspace
 	return strings.EqualFold(strings.TrimSpace(role), model.RoleOwner)
 }
 
-func (s *GitHubAppConfigService) manifestRedirect(ctx context.Context, workspaceID, status, message string) string {
-	base := s.opts.AppBaseURL
-	if base == "" {
-		base = "http://localhost:5173"
-	}
-	target := base + "/"
-	if workspaceID != "" && s.workspaces != nil {
-		if workspace, err := s.workspaces.GetByID(ctx, workspaceID); err == nil && workspace != nil && workspace.Slug != "" {
-			target = fmt.Sprintf("%s/w/%s/settings/git-connections", base, url.PathEscape(workspace.Slug))
+// manifestRedirect returns the return_to page of the state's workspace with
+// the github result flag, or the frontend result route when the workspace
+// cannot be resolved.
+func (s *GitHubAppConfigService) manifestRedirect(ctx context.Context, claims *gitHubAppManifestState, status, message string) string {
+	query := gitHubResultQuery(status, message)
+	if claims != nil && claims.WorkspaceID != "" && s.workspaces != nil {
+		if workspace, err := s.workspaces.GetByID(ctx, claims.WorkspaceID); err == nil && workspace != nil && workspace.Slug != "" {
+			return gitHubReturnPageURL(s.opts.AppBaseURL, workspace.Slug, claims.ReturnTo) + "?" + query.Encode()
 		}
 	}
-	query := url.Values{}
-	query.Set(_gitHubAppManifestQueryKey, status)
-	if message != "" {
-		query.Set("github_message", message)
-	}
-	return target + "?" + query.Encode()
+	return gitHubInstalledURL(s.opts.AppBaseURL, query)
 }
 
 func randomHex(n int) string {

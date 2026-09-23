@@ -123,17 +123,43 @@ an existing Garage access key; use Garage's documented key management procedure.
 ## GitHub App
 
 Helpin connects to GitHub through one GitHub App per installation. A workspace
-owner can create it from **Settings → Git Connections → Create GitHub App**. Helpin
-sends a [GitHub App manifest](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest)
-to GitHub; after you confirm there (optionally under a GitHub organization), GitHub
-returns to `/api/github/app-manifest/callback` and Helpin stores the App. It is used
-at once, without a restart, by the API and the worker.
+owner can create it from **Settings → Git Connections**, the Setup guide, or
+**Settings → System status** with **Create GitHub App**:
 
-- The manifest uses `APP_BASE_URL` for the App homepage, its webhook
-  (`/api/git/webhook`), and its setup and callback URLs, so `APP_BASE_URL` must be
-  the public origin GitHub can reach. The App is private and requests repository
-  contents (write), pull requests (write), checks (read), and metadata (read), with
-  `push`, `pull_request`, `release`, and `check_suite` events.
+1. Choose who owns the App: **a GitHub organization** (recommended; enter its
+   login) or **your personal GitHub account**.
+2. Helpin sends a [GitHub App manifest](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest)
+   to GitHub, which asks you to confirm the new App. GitHub then returns to
+   `/api/github/app-manifest/callback`, and Helpin stores the App. The API and the
+   worker use it at once, without a restart.
+3. Helpin sends you straight to GitHub's install page for the new App. Choose the
+   repositories and install. GitHub returns to `/api/git/github/callback`, Helpin
+   connects the installation to the workspace's organization, and you land back
+   on the page you started from.
+
+The App is **private**: GitHub only lets the account that owns it install it, and
+shows everyone else a 404 page. Create it under the organization that owns your
+repositories. An App owned by your personal account can only reach your personal
+repositories. Git connections and the Setup guide name the owner when the App is
+configured but not yet installed.
+
+If you install the App, or change its repository access, from GitHub instead of
+from Helpin, GitHub returns without Helpin's signed link. Helpin then opens
+`/github/installed`, checks with GitHub that the installation belongs to this
+App, and connects it to your workspace's organization. You must be an
+organization owner or admin. An installation already connected to another Helpin
+organization is refused.
+
+- GitHub must reach this server: the manifest uses `APP_BASE_URL` for the App
+  homepage, its webhook (`/api/git/webhook`), and its setup and callback URLs. Use
+  an `https` URL on a public hostname. When `APP_BASE_URL` uses `http`,
+  `localhost`, a `.local` or single-label hostname, or a private, loopback or
+  link-local IP address, **Create GitHub App** is replaced by an explanation,
+  `manifest_blocked_reason` is set in the App status, and System status and
+  `helpin doctor` report the same problem for GitHub.
+- The App requests repository contents (write), pull requests (write), checks
+  (read), and metadata (read), with `push`, `pull_request`, `release`, and
+  `check_suite` events.
 - The private key, client secret, and webhook secret are encrypted with
   `GIT_OAUTH_ENCRYPTION_KEY` (or `CRM_ENCRYPTION_KEY` when it is unset). The
   button is unavailable without a valid key, and a lost key makes the stored App
@@ -151,8 +177,12 @@ To pin an existing App instead, set `GITHUB_APP_ID`, `GITHUB_APP_SLUG`,
 stored App and the create button is hidden. Without `GITHUB_APP_WEBHOOK_SECRET`,
 all GitHub webhooks are rejected. `GET /api/workspaces/{id}/github/app-status`
 reports `configured`, `source` (`env`, `database`, or `none`), `slug`,
-`install_url`, `webhook_configured`, and `manifest_available`, without secrets.
-Enterprise configures the App only through these settings.
+`install_url`, `webhook_configured`, `manifest_available`,
+`manifest_blocked_reason`, `owner_login`, `owner_type` (`User` or
+`Organization`), and `private`, without secrets. For an App set through these
+settings, Helpin asks GitHub for the owner once; `private` is only reported for
+an App created from Helpin. Enterprise configures the App only through these
+settings and connects installations only through Helpin's install link.
 
 ## Authenticated request limits
 

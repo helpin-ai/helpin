@@ -37,6 +37,9 @@ type CapabilityConfig struct {
 	ObjectStorageConfigured bool
 	// GitHubAppConfigured reports an instance GitHub App; nil means not configured.
 	GitHubAppConfigured func(context.Context) bool
+	// GitHubReachabilityProblem explains why GitHub cannot reach APP_BASE_URL
+	// (see GitHubAppBaseURLBlockedReason); empty when it can.
+	GitHubReachabilityProblem string
 	// StorageProbe checks that the object storage bucket answers.
 	StorageProbe func(context.Context) error
 	// WorkerProbe reports whether a background worker polls for jobs.
@@ -340,7 +343,7 @@ func (s *CapabilityService) workspaceGitHub(ctx context.Context, workspaceID str
 		return capability(key, model.CapabilityUnavailable, "Projects and Agents are not enabled on this server.", nil), nil
 	}
 	if !s.gitHubAppConfigured(ctx) {
-		return capability(key, model.CapabilityNeedsSetup, "The GitHub App is not configured on this server.",
+		return capability(key, model.CapabilityNeedsSetup, s.gitHubDetail("The GitHub App is not configured on this server."),
 			settingsAction("Set up GitHub", "settings/git-connections")), nil
 	}
 	orgID, err := s.evidence.WorkspaceOrganizationID(ctx, workspaceID)
@@ -372,10 +375,22 @@ func (s *CapabilityService) instanceGitHub(ctx context.Context) model.Capability
 		return capability(key, model.CapabilityUnavailable, "Projects and Agents are not enabled on this server.", nil)
 	}
 	if !s.gitHubAppConfigured(ctx) {
+		if s.cfg.GitHubReachabilityProblem != "" {
+			return capability(key, model.CapabilityNeedsSetup, s.gitHubDetail("The GitHub App is not configured."),
+				serverAction("Set APP_BASE_URL to a public https address, then set up a GitHub App in Settings → Git connections"))
+		}
 		return capability(key, model.CapabilityNeedsSetup, "The GitHub App is not configured.",
 			serverAction("Set up a GitHub App in Settings → Git connections"))
 	}
-	return capability(key, model.CapabilityReady, "The GitHub App is configured.", nil)
+	return capability(key, model.CapabilityReady, s.gitHubDetail("The GitHub App is configured."), nil)
+}
+
+// gitHubDetail appends the APP_BASE_URL reachability problem, if any.
+func (s *CapabilityService) gitHubDetail(detail string) string {
+	if s.cfg.GitHubReachabilityProblem == "" {
+		return detail
+	}
+	return detail + " " + s.cfg.GitHubReachabilityProblem
 }
 
 func (s *CapabilityService) objectStorage(ctx context.Context) model.Capability {

@@ -11,6 +11,8 @@ import { systemStatusEnabled } from '@edition/config';
 import { workspaceSidebarSafeInsetClassName } from '@/components/design-system/quiet';
 import { SampleDataCard } from '@/components/setup/SampleDataButton';
 import { SetupSettingsLink } from '@/components/setup/CapabilityActions';
+import { GitHubReturnNotice } from '@/components/setup/GitHubReturnNotice';
+import { useGitHubReturnResult } from '@/hooks/useGitHubReturnResult';
 import { blockingServices } from '@/components/setup/capabilityPresentation';
 import { SetupTaskRequirement } from '@/components/setup/SetupTaskRequirement';
 import { journeyTaskRequirements, type SetupTaskRequirementKind } from '@/components/setup/setupTaskRequirements';
@@ -50,6 +52,7 @@ export function SetupSuccessPage() {
   const { data: access } = useWorkspaceAccess(workspaceId);
   const { has } = usePermissions(access);
   const capabilities = useWorkspaceCapabilities(workspaceId);
+  const githubReturn = useGitHubReturnResult();
   const trackedWorkspace = useRef<string | null>(null);
   const expansionWorkspace = useRef('');
   const expansionInitialized = useRef(false);
@@ -214,6 +217,8 @@ export function SetupSuccessPage() {
         </section>
 
         <SampleDataCard className="border-b border-quiet-divider-light py-4" workspaceId={workspaceId} canManage={canManage} />
+
+        <GitHubReturnNotice result={githubReturn} className="pt-4" />
 
         {blockedServiceCount > 0 && (
           <div className="relative mt-6 py-1 pl-4" role="note" data-testid="required-services-notice">

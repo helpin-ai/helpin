@@ -27,6 +27,7 @@ import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
 import { Route as AuthenticatedWSlugRouteImport } from './routes/_authenticated/w/$slug'
 import { Route as AuthenticatedOauthAuthorizeRouteImport } from './routes/_authenticated/oauth/authorize'
+import { Route as AuthenticatedGithubInstalledRouteImport } from './routes/_authenticated/github/installed'
 import { Route as AuthenticatedWSlugIndexRouteImport } from './routes/_authenticated/w/$slug/index'
 import { Route as AuthenticatedWSlugTeamGoalsRouteImport } from './routes/_authenticated/w/$slug/team-goals'
 import { Route as AuthenticatedWSlugTasksRouteImport } from './routes/_authenticated/w/$slug/tasks'
@@ -219,6 +220,12 @@ const AuthenticatedOauthAuthorizeRoute =
   AuthenticatedOauthAuthorizeRouteImport.update({
     id: '/oauth/authorize',
     path: '/oauth/authorize',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedGithubInstalledRoute =
+  AuthenticatedGithubInstalledRouteImport.update({
+    id: '/github/installed',
+    path: '/github/installed',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedWSlugIndexRoute = AuthenticatedWSlugIndexRouteImport.update({
@@ -850,6 +857,7 @@ export interface FileRoutesByFullPath {
   '/join/$token': typeof JoinTokenRoute
   '/share/$shareToken': typeof ShareShareTokenRoute
   '/shared/$shareToken': typeof SharedShareTokenRoute
+  '/github/installed': typeof AuthenticatedGithubInstalledRoute
   '/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
   '/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
@@ -971,6 +979,7 @@ export interface FileRoutesByTo {
   '/join/$token': typeof JoinTokenRoute
   '/share/$shareToken': typeof ShareShareTokenRoute
   '/shared/$shareToken': typeof SharedShareTokenRoute
+  '/github/installed': typeof AuthenticatedGithubInstalledRoute
   '/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
@@ -1088,6 +1097,7 @@ export interface FileRoutesById {
   '/join/$token': typeof JoinTokenRoute
   '/share/$shareToken': typeof ShareShareTokenRoute
   '/shared/$shareToken': typeof SharedShareTokenRoute
+  '/_authenticated/github/installed': typeof AuthenticatedGithubInstalledRoute
   '/_authenticated/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/_authenticated/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
   '/_authenticated/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
@@ -1212,6 +1222,7 @@ export interface FileRouteTypes {
     | '/join/$token'
     | '/share/$shareToken'
     | '/shared/$shareToken'
+    | '/github/installed'
     | '/oauth/authorize'
     | '/w/$slug'
     | '/oauth/cli/authorize'
@@ -1333,6 +1344,7 @@ export interface FileRouteTypes {
     | '/join/$token'
     | '/share/$shareToken'
     | '/shared/$shareToken'
+    | '/github/installed'
     | '/oauth/authorize'
     | '/oauth/cli/authorize'
     | '/w/$slug/dashboard'
@@ -1449,6 +1461,7 @@ export interface FileRouteTypes {
     | '/join/$token'
     | '/share/$shareToken'
     | '/shared/$shareToken'
+    | '/_authenticated/github/installed'
     | '/_authenticated/oauth/authorize'
     | '/_authenticated/w/$slug'
     | '/_authenticated/oauth/cli/authorize'
@@ -1698,6 +1711,13 @@ declare module '@tanstack/react-router' {
       path: '/oauth/authorize'
       fullPath: '/oauth/authorize'
       preLoaderRoute: typeof AuthenticatedOauthAuthorizeRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/github/installed': {
+      id: '/_authenticated/github/installed'
+      path: '/github/installed'
+      fullPath: '/github/installed'
+      preLoaderRoute: typeof AuthenticatedGithubInstalledRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/w/$slug/': {
@@ -2768,6 +2788,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
   AuthenticatedWorkspacesRoute: typeof AuthenticatedWorkspacesRoute
+  AuthenticatedGithubInstalledRoute: typeof AuthenticatedGithubInstalledRoute
   AuthenticatedOauthAuthorizeRoute: typeof AuthenticatedOauthAuthorizeRoute
   AuthenticatedWSlugRoute: typeof AuthenticatedWSlugRouteWithChildren
   AuthenticatedOauthCliAuthorizeRoute: typeof AuthenticatedOauthCliAuthorizeRoute
@@ -2777,6 +2798,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,
   AuthenticatedWorkspacesRoute: AuthenticatedWorkspacesRoute,
+  AuthenticatedGithubInstalledRoute: AuthenticatedGithubInstalledRoute,
   AuthenticatedOauthAuthorizeRoute: AuthenticatedOauthAuthorizeRoute,
   AuthenticatedWSlugRoute: AuthenticatedWSlugRouteWithChildren,
   AuthenticatedOauthCliAuthorizeRoute: AuthenticatedOauthCliAuthorizeRoute,

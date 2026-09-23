@@ -26,7 +26,7 @@ export function SetupTaskRequirement({ kind, capabilities, workspaceId, slug, ca
   return (
     <div className="mt-2 space-y-1.5" data-requirement="github">
       <p className="text-[12.5px] text-quiet-text-tertiary">GitHub needs to be connected before you can choose repositories.</p>
-      <SetupGitHubStep capability={capability} workspaceId={workspaceId} slug={slug} canManage={canManage} isOwner={isOwner} />
+      <SetupGitHubStep capability={capability} workspaceId={workspaceId} slug={slug} canManage={canManage} isOwner={isOwner} returnTo="setup" />
     </div>
   );
 }

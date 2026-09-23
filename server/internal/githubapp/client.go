@@ -311,6 +311,9 @@ func (c *Client) GetInstallation(ctx context.Context, installationID string) (*I
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		return nil, fmt.Errorf("decode github installation response: %w", err)
 	}
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("%w: %s", ErrInstallationNotFound, installationID)
+	}
 	if resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("github installation lookup failed (%d): %s", resp.StatusCode, payload.Message)
 	}

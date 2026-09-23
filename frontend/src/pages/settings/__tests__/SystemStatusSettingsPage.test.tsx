@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 let permissions = new Set<string>();
@@ -44,7 +45,7 @@ function render() {
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
-  act(() => root?.render(<SystemStatusSettingsPage />));
+  act(() => root?.render(<QueryClientProvider client={new QueryClient()}><SystemStatusSettingsPage /></QueryClientProvider>));
   return container;
 }
 
@@ -67,5 +68,19 @@ describe('SystemStatusSettingsPage', () => {
 
     expect(page.querySelector('[data-testid="panel"]')).toBeNull();
     expect(page.textContent).toContain('Only workspace admins can view system status.');
+  });
+
+  it('announces the GitHub result it returned with and strips it from the URL', async () => {
+    permissions = new Set(['workspace.update']);
+    window.history.replaceState(null, '', '/w/acme/settings/system-status?github=error&github_message=GitHub+could+not+confirm+the+installation.');
+    const page = render();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+
+    const status = page.querySelector('[role="status"]');
+    expect(status?.textContent).toBe('GitHub could not confirm the installation.');
+    expect(status?.className).toContain('text-quiet-accent');
+    expect(window.location.search).toBe('');
+    expect(page.querySelector('[data-testid="panel"]')).not.toBeNull();
+    window.history.replaceState(null, '', '/');
   });
 });

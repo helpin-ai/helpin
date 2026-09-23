@@ -303,20 +303,20 @@ func TestGitHubAppCompleteManifestRejectsBadStateAndNonOwner(t *testing.T) {
 	converter := &fakeManifestConverter{conversion: testManifestConversion(t)}
 	svc := newTestGitHubAppConfig(db, converter, githubapp.Credentials{}, true)
 
-	assertManifestRedirect(t, svc.CompleteManifest(context.Background(), "code", "not-a-token"), "/", "error")
+	assertManifestRedirect(t, svc.CompleteManifest(context.Background(), "code", "not-a-token"), "/github/installed", "error")
 
-	adminState, err := svc.signManifestState("ws-1", "user-admin")
+	adminState, err := svc.signManifestState("ws-1", "user-admin", "")
 	if err != nil {
 		t.Fatalf("sign state: %v", err)
 	}
 	assertManifestRedirect(t, svc.CompleteManifest(context.Background(), "code", adminState), "/w/acme/settings/git-connections", "error")
 
-	ownerState, err := svc.signManifestState("ws-1", "user-owner")
+	ownerState, err := svc.signManifestState("ws-1", "user-owner", "")
 	if err != nil {
 		t.Fatalf("sign state: %v", err)
 	}
 	svc.now = func() time.Time { return time.Now().Add(2 * _gitHubAppManifestStateTTL) }
-	assertManifestRedirect(t, svc.CompleteManifest(context.Background(), "code", ownerState), "/", "error")
+	assertManifestRedirect(t, svc.CompleteManifest(context.Background(), "code", ownerState), "/github/installed", "error")
 	if len(converter.codes) != 0 {
 		t.Fatalf("expected no code exchange, got %v", converter.codes)
 	}
@@ -338,7 +338,7 @@ func assertManifestRedirect(t *testing.T, redirect, wantPath, wantStatus string)
 	if parsed.Host != "helpin.example.com" || parsed.Path != wantPath {
 		t.Fatalf("unexpected redirect target %q", redirect)
 	}
-	if got := parsed.Query().Get("github_app_manifest"); got != wantStatus {
-		t.Fatalf("expected github_app_manifest=%s, got %q (%s)", wantStatus, got, parsed.Query().Get("github_message"))
+	if got := parsed.Query().Get("github"); got != wantStatus {
+		t.Fatalf("expected github=%s, got %q (%s)", wantStatus, got, parsed.Query().Get("github_message"))
 	}
 }
