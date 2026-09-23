@@ -113,6 +113,7 @@ func (s *DocsDocumentService) DeleteDocumentsPermanently(ctx context.Context, wo
 	if err != nil {
 		return err
 	}
+	s.invalidateHelpcenterCache(ctx, workspaceID)
 	s.enqueueAssetCleanupBestEffort(ctx, workspaceID, cleanupDeletedDocumentID(documentIDs), candidateKeys)
 	return nil
 }

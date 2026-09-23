@@ -1482,7 +1482,7 @@ func (s *SupportInboxService) GetWidgetHelpArticle(ctx context.Context, widgetKe
 		ArticleKey:  buildDocsHelpcenterArticleKey(slug, publicID),
 		Excerpt:     doc.Excerpt,
 		Icon:        doc.Icon,
-		ContentHTML: renderWidgetArticleHTML(contentJSON),
+		ContentHTML: renderWidgetArticleHTML(resolvePublicDocumentLinksForRender(ctx, s.docsHelpcenterRepo, inst.WorkspaceID, "", contentJSON)),
 		PublicPath:  publicPath,
 	}, nil
 }
