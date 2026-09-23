@@ -20,16 +20,29 @@ const (
 	MCPErrorCodeNotArchived       = "DOCUMENT_NOT_ARCHIVED"
 	MCPErrorCodeNotPublished      = "DOCUMENT_NOT_PUBLISHED"
 	MCPErrorCodeRunNotOwned       = "RUN_NOT_OWNED"
+
+	MCPErrorCodeAgentTargetNotAllowed   = "AGENT_TARGET_NOT_ALLOWED"
+	MCPErrorCodeTargetNotFound          = "TARGET_NOT_FOUND"
+	MCPErrorCodeRepositoryRequired      = "REPOSITORY_REQUIRED"
+	MCPErrorCodeRepositoryNotApplicable = "REPOSITORY_NOT_APPLICABLE"
+	MCPErrorCodeTargetBusy              = "TARGET_BUSY"
+	MCPErrorCodeAgentRunLimit           = "AGENT_RUN_LIMIT"
 )
 
 // MCPToolError is a public, client-actionable tool failure with a stable code.
 type MCPToolError struct {
 	Code    string
 	Message string
+	// Err optionally classifies the failure under an MCP sentinel such as
+	// ErrMCPRateLimited so errors.Is keeps working for typed failures.
+	Err error
 }
 
 // Error implements error.
 func (e *MCPToolError) Error() string { return e.Code + ": " + e.Message }
+
+// Unwrap exposes the optional sentinel classification.
+func (e *MCPToolError) Unwrap() error { return e.Err }
 
 func newMCPToolError(code, message string) error {
 	return &MCPToolError{Code: code, Message: message}

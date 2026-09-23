@@ -509,10 +509,10 @@ func validateAgentTarget(agent *model.Agent, targetType string) error {
 	}
 	resolved := agentcontract.ResolveAgentProfile(agent, agent.DefaultInvocationMode)
 	if len(resolved.TargetTypes) == 0 {
-		return fmt.Errorf("agent is not runnable")
+		return agentRunPreconditionError(ErrAgentRunTargetNotAllowed, "agent is not runnable")
 	}
 	if !slices.Contains(resolved.TargetTypes, targetType) {
-		return fmt.Errorf("agent can only be assigned to %s", strings.Join(resolved.TargetTypes, ", "))
+		return agentRunPreconditionError(ErrAgentRunTargetNotAllowed, "agent can only be assigned to %s", strings.Join(resolved.TargetTypes, ", "))
 	}
 	return nil
 }
