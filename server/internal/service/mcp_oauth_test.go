@@ -225,32 +225,48 @@ func TestPublicMCPToolCatalogIsBoundedAndExcludesDeferredActions(t *testing.T) {
 	commands := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
 	service := &MCPService{commands: commands}
 	catalog := service.buildToolCatalog()
-	if len(catalog) != 49 {
-		t.Fatalf("buildToolCatalog() returned %d tools, want 49", len(catalog))
+	if len(catalog) != 104 {
+		t.Fatalf("buildToolCatalog() returned %d tools, want 104", len(catalog))
 	}
 	expectedTools := map[string]struct {
 		toolset  string
 		mutating bool
 	}{
-		"list_spaces":                {MCPToolsetDocs, false},
-		"list_collections":           {MCPToolsetDocs, false},
-		"search_icons":               {MCPToolsetDocs, false},
-		"create_space":               {MCPToolsetDocs, true},
-		"create_collection":          {MCPToolsetDocs, true},
-		"update_space":               {MCPToolsetDocs, true},
-		"update_collection":          {MCPToolsetDocs, true},
-		"move_document":              {MCPToolsetDocs, true},
-		"link_document_to_object":    {MCPToolsetDocs, true},
-		"insert_document_block":      {MCPToolsetDocs, true},
-		"create_crm_deal":            {MCPToolsetCRM, true},
-		"update_task":                {MCPToolsetPM, true},
-		"create_epic":                {MCPToolsetPM, true},
-		"create_task_batch":          {MCPToolsetPM, true},
-		"set_task_dependencies":      {MCPToolsetPM, true},
-		"list_task_checklist":        {MCPToolsetPM, false},
-		"create_task_checklist_item": {MCPToolsetPM, true},
-		"update_task_checklist_item": {MCPToolsetPM, true},
-		"get_task_context":           {MCPToolsetPM, false},
+		"list_spaces":                    {MCPToolsetDocs, false},
+		"list_collections":               {MCPToolsetDocs, false},
+		"search_icons":                   {MCPToolsetDocs, false},
+		"create_space":                   {MCPToolsetDocs, true},
+		"create_collection":              {MCPToolsetDocs, true},
+		"update_space":                   {MCPToolsetDocs, true},
+		"update_collection":              {MCPToolsetDocs, true},
+		"move_document":                  {MCPToolsetDocs, true},
+		"link_document_to_object":        {MCPToolsetDocs, true},
+		"insert_document_block":          {MCPToolsetDocs, true},
+		"create_crm_deal":                {MCPToolsetCRM, true},
+		"update_task":                    {MCPToolsetPM, true},
+		"create_epic":                    {MCPToolsetPM, true},
+		"create_task_batch":              {MCPToolsetPM, true},
+		"set_task_dependencies":          {MCPToolsetPM, true},
+		"list_task_checklist":            {MCPToolsetPM, false},
+		"create_task_checklist_item":     {MCPToolsetPM, true},
+		"update_task_checklist_item":     {MCPToolsetPM, true},
+		"get_task_context":               {MCPToolsetPM, false},
+		"update_document":                {MCPToolsetDocs, true},
+		"publish_document":               {MCPToolsetDocs, true},
+		"unpublish_document":             {MCPToolsetDocs, true},
+		"archive_document":               {MCPToolsetDocs, true},
+		"restore_document":               {MCPToolsetDocs, true},
+		"edit_document":                  {MCPToolsetDocs, true},
+		"prepare_document_image_upload":  {MCPToolsetDocs, true},
+		"complete_document_image_upload": {MCPToolsetDocs, true},
+		"upload_document_image_from_url": {MCPToolsetDocs, true},
+		"read_documents":                 {MCPToolsetDocs, false},
+	}
+	for alias, requirement := range parityMCPCommandRequirements() {
+		expectedTools[alias] = struct {
+			toolset  string
+			mutating bool
+		}{requirement.Toolset, requirement.Mutating}
 	}
 	deferred := map[string]bool{
 		"write_document_content":     true,

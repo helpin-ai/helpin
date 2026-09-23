@@ -777,6 +777,24 @@ func (r *AgentRunRepository) FindActiveByTarget(ctx context.Context, workspaceID
 	return &run, nil
 }
 
+// FindActiveNonDockByTarget returns the newest active run for a target that is
+// not owned by a dock chat. Dock chat runs are private to their chat and must
+// never be reused by callers that start runs outside that chat.
+func (r *AgentRunRepository) FindActiveNonDockByTarget(ctx context.Context, workspaceID, targetType, targetID string) (*model.AgentRun, error) {
+	var run model.AgentRun
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND target_type = ? AND target_id = ? AND status IN ? AND dock_chat_id IS NULL",
+			workspaceID, targetType, targetID, []string{"queued", "running", "paused"}).
+		Order("created_at DESC").
+		First(&run).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("find active non-dock target run: %w", err)
+	}
+	return &run, nil
+}
+
 // ListActive returns queued, running, or approval-pending runs in a workspace.
 func (r *AgentRunRepository) ListActive(ctx context.Context, workspaceID string, limit int) ([]model.AgentRun, error) {
 	query := r.db.WithContext(ctx).

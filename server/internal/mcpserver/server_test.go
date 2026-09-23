@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"fmt"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/helpin-ai/helpin/server/internal/ratelimit"
 	"github.com/redis/go-redis/v9"
@@ -62,5 +63,47 @@ func TestRequestLimiterSharesActorBudgetAcrossTokens(t *testing.T) {
 	principal.ServicePrincipalID = "service2"
 	if !limiter.AllowTool(ctx, principal, search) {
 		t.Fatal("service principals share budget")
+	}
+}
+
+func TestPublicToolErrorSurfacesTypedCodes(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{
+			name: "typed tool error keeps its code",
+			err:  fmt.Errorf("wrapped: %w", &service.MCPToolError{Code: service.MCPErrorCodeDocumentPublished, Message: "Unpublish first."}),
+			want: "DOC_IS_PUBLISHED: Unpublish first.",
+		},
+		{
+			name: "sentinel errors keep their public message",
+			err:  service.ErrMCPNotFound,
+			want: "The requested Helpin record was not found in the connected workspace.",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := publicToolError(tt.err); got != tt.want {
+				t.Fatalf("publicToolError() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPrincipalForPathForcesReadOnlyEndpoint(t *testing.T) {
+	principal := &model.MCPPrincipal{UserID: "user-1", ReadOnly: false}
+	for _, path := range []string{"/mcp/readonly", "/mcp/readonly/"} {
+		got := principalForPath(principal, path)
+		if !got.ReadOnly {
+			t.Fatalf("principalForPath(%q).ReadOnly = false, want true", path)
+		}
+	}
+	if principal.ReadOnly {
+		t.Fatal("principalForPath mutated the authenticated principal")
+	}
+	if got := principalForPath(principal, "/mcp"); got != principal || got.ReadOnly {
+		t.Fatalf("principalForPath(/mcp) = %#v, want the original writable principal", got)
 	}
 }

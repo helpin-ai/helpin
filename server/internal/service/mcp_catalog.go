@@ -21,11 +21,15 @@ const (
 	MCPScopePMWrite     = "helpin.pm.write"
 	MCPScopeDocsRead    = "helpin.docs.read"
 	MCPScopeDocsWrite   = "helpin.docs.write"
+	// MCPScopeDocsPublish allows publishing to and unpublishing from the public Help Center.
+	MCPScopeDocsPublish = "helpin.docs.publish"
 	MCPScopeCRMRead     = "helpin.crm.read"
 	MCPScopeCRMWrite    = "helpin.crm.write"
 	MCPScopeSupportRead = "helpin.support.read"
-	MCPScopeAgentsRead  = "helpin.agents.read"
-	MCPScopeAgentsRun   = "helpin.agents.run"
+	// MCPScopeSupportWrite allows organizing conversations (assign, move, tag, link, rename); it never sends replies.
+	MCPScopeSupportWrite = "helpin.support.write"
+	MCPScopeAgentsRead   = "helpin.agents.read"
+	MCPScopeAgentsRun    = "helpin.agents.run"
 )
 
 var (
@@ -35,9 +39,9 @@ var (
 	_allMCPScopes       = []string{
 		MCPScopeContextRead,
 		MCPScopePMRead, MCPScopePMWrite,
-		MCPScopeDocsRead, MCPScopeDocsWrite,
+		MCPScopeDocsRead, MCPScopeDocsWrite, MCPScopeDocsPublish,
 		MCPScopeCRMRead, MCPScopeCRMWrite,
-		MCPScopeSupportRead,
+		MCPScopeSupportRead, MCPScopeSupportWrite,
 		MCPScopeAgentsRead, MCPScopeAgentsRun,
 	}
 )
@@ -87,13 +91,17 @@ func (s *MCPService) buildToolCatalog() []MCPToolDefinition {
 		"create_document":       {Toolset: MCPToolsetDocs, Scope: MCPScopeDocsWrite, Permission: authorization.PermDocsEdit, Module: model.ModuleDocs, Mutating: true},
 		"update_document_block": {Toolset: MCPToolsetDocs, Scope: MCPScopeDocsWrite, Permission: authorization.PermDocsEdit, Module: model.ModuleDocs, Mutating: true},
 		"insert_document_block": {Toolset: MCPToolsetDocs, Scope: MCPScopeDocsWrite, Permission: authorization.PermDocsEdit, Module: model.ModuleDocs, Mutating: true},
+		"edit_document":         {Toolset: MCPToolsetDocs, Scope: MCPScopeDocsWrite, Permission: authorization.PermDocsEdit, Module: model.ModuleDocs, Mutating: true},
 		"list_repositories":     {Toolset: MCPToolsetContext, Scope: MCPScopeContextRead, Permission: authorization.PermIntegrationsEnumerate},
 		"list_contacts":         {Toolset: MCPToolsetCRM, Scope: MCPScopeCRMRead, Permission: authorization.PermCRMRead, Module: model.ModuleCRM},
 		"list_deals":            {Toolset: MCPToolsetCRM, Scope: MCPScopeCRMRead, Permission: authorization.PermCRMRead, Module: model.ModuleCRM},
-		"list_crm_signals":    {Toolset: MCPToolsetCRM, Scope: MCPScopeCRMRead, Permission: authorization.PermCRMRead, Module: model.ModuleCRM},
+		"list_crm_signals":      {Toolset: MCPToolsetCRM, Scope: MCPScopeCRMRead, Permission: authorization.PermCRMRead, Module: model.ModuleCRM},
 		"create_crm_deal":       {Toolset: MCPToolsetCRM, Scope: MCPScopeCRMWrite, Permission: authorization.PermCRMEdit, Module: model.ModuleCRM, Mutating: true},
 		"add_deal_note":         {Toolset: MCPToolsetCRM, Scope: MCPScopeCRMWrite, Permission: authorization.PermCRMEdit, Module: model.ModuleCRM, Mutating: true},
 		"update_deal_stage":     {Toolset: MCPToolsetCRM, Scope: MCPScopeCRMWrite, Permission: authorization.PermCRMEdit, Module: model.ModuleCRM, Mutating: true},
+	}
+	for alias, requirement := range parityMCPCommandRequirements() {
+		commandRequirements[alias] = requirement
 	}
 
 	defs := make([]MCPToolDefinition, 0, len(commandRequirements)+27)
@@ -117,6 +125,11 @@ func (s *MCPService) buildToolCatalog() []MCPToolDefinition {
 		defs = append(defs, requirement)
 	}
 	defs = append(defs, specialMCPToolDefinitions()...)
+	defs = append(defs, docsLifecycleMCPToolDefinitions()...)
+	defs = append(defs, uploadMCPToolDefinitions()...)
+	defs = append(defs, docsBatchMCPToolDefinitions()...)
+	defs = append(defs, helpcenterMCPToolDefinitions()...)
+	defs = append(defs, pmParityMCPToolDefinitions()...)
 	sort.Slice(defs, func(i, j int) bool { return defs[i].Name < defs[j].Name })
 	return defs
 }
