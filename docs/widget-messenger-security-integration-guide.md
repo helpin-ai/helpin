@@ -16,10 +16,12 @@ installation snippet. Origins include the scheme and any non-default port, with
 no path or wildcard. An empty allowlist denies widget access. Use the SDK/API
 URLs belonging to your Helpin deployment; the current loader filename is `lib.js`.
 
-Obtain the installation's signing secret through the authenticated secret-rotation
-endpoint described in [website origins and visitor identity](community/widget-identity.md).
-Keep it only in your application's backend secret configuration. The public widget
-key is a different value. Rotation invalidates proofs signed with the previous key.
+Copy the installation's signing secret from Settings → Chat widget → Identity
+signing secret (requires the `support.admin` permission), as described in
+[website origins and visitor identity](community/widget-identity.md). Keep it only
+in your application's backend secret configuration. The public widget key is a
+different value. Regenerating the secret invalidates proofs signed with the
+previous one.
 
 ## 2. Sign the authenticated user's identity
 

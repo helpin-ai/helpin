@@ -373,13 +373,27 @@ func (r *SupportInboxInstallationRepository) ListAllActive(ctx context.Context) 
 }
 
 // RegenerateKeys updates just the widget_key and secret_key columns.
-func (r *SupportInboxInstallationRepository) RegenerateKeys(ctx context.Context, id, widgetKey, secretKey string) error {
-	return r.rotateKeys(ctx, id, &widgetKey, secretKey, "")
+func (r *SupportInboxInstallationRepository) RegenerateKeys(ctx context.Context, id, widgetKey, secretKey, actorUserID string) error {
+	return r.rotateKeys(ctx, id, &widgetKey, secretKey, actorUserID)
 }
 
 // RotateSecret rotates only the server/signing secret and retains its read alias.
 func (r *SupportInboxInstallationRepository) RotateSecret(ctx context.Context, id, secretKey, actorUserID string) error {
 	return r.rotateKeys(ctx, id, nil, secretKey, actorUserID)
+}
+
+// RecordSecretReveal audits an administrator viewing the signing secret.
+func (r *SupportInboxInstallationRepository) RecordSecretReveal(ctx context.Context, inst *model.SupportWidgetInstallation, actorUserID string) error {
+	audit := model.SupportCredentialRotationAudit{
+		WorkspaceID:    inst.WorkspaceID,
+		InstallationID: inst.ID,
+		ActorUserID:    actorUserID,
+		RotationKind:   model.CredentialAuditSigningSecretRevealed,
+	}
+	if err := r.db.WithContext(ctx).Create(&audit).Error; err != nil {
+		return fmt.Errorf("audit widget secret reveal: %w", err)
+	}
+	return nil
 }
 
 func (r *SupportInboxInstallationRepository) rotateKeys(
@@ -428,7 +442,7 @@ func (r *SupportInboxInstallationRepository) rotateKeys(
 				WorkspaceID:    installation.WorkspaceID,
 				InstallationID: installation.ID,
 				ActorUserID:    actorUserID,
-				RotationKind:   "server_signing_secret",
+				RotationKind:   model.CredentialAuditSigningSecretRotated,
 			}
 			if err := tx.Create(&audit).Error; err != nil {
 				return fmt.Errorf("audit widget secret rotation: %w", err)
