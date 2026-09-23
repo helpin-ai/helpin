@@ -1108,6 +1108,14 @@ func (s *DocsHelpcenterService) buildSourceArticlePublication(ctx context.Contex
 	if err != nil {
 		return nil, err
 	}
+	cfg, err := s.hcRepo.GetConfig(ctx, doc.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	publication.Content, err = materializePublicationDocumentLinks(ctx, publication.Content, s.publicationArticlePathResolver(doc.WorkspaceID, locale, cfg))
+	if err != nil {
+		return nil, err
+	}
 	publication.Content, err = validatePublicationSnapshotContent(publication.Content)
 	if err != nil {
 		return nil, err
