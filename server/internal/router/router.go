@@ -1,6 +1,7 @@
 package router
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -291,6 +292,16 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(apiCORS)
+		r.NotFound(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(model.APIError{Error: "API route not found"})
+		})
+		r.MethodNotAllowed(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			_ = json.NewEncoder(w).Encode(model.APIError{Error: "API method not allowed"})
+		})
 		if h.CRMOutreach != nil {
 			r.Get("/crm/outreach/unsubscribe/{token}", h.CRMOutreach.Unsubscribe)
 			r.Post("/crm/outreach/unsubscribe/{token}", h.CRMOutreach.Unsubscribe)

@@ -230,6 +230,13 @@ export const supportService = {
     api.post<SendSupportConversationTranscriptResponse>(`/support/inbox/conversations/${conversationId}/transcript${qs(workspaceId)}`, payload),
   createConversationMessage: (workspaceId: string, conversationId: string, payload: CreateMessageRequest) =>
     api.post<SupportMessage>(`/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`, payload),
+  sendConversationReply: async (workspaceId: string, conversationId: string, payload: CreateMessageRequest) => {
+    const response = await api.post<SupportMessage>(`/support/inbox/conversations/${conversationId}/translation/sends${qs(workspaceId)}`, payload);
+    if (response.isMissingRoute) {
+      return api.post<SupportMessage>(`/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`, payload);
+    }
+    return response;
+  },
   deleteConversationMessage: (workspaceId: string, conversationId: string, messageId: string, undo = false) => {
     let path = `/support/inbox/conversations/${conversationId}/messages/${messageId}${qs(workspaceId)}`;
     if (undo) path += '&undo=1';

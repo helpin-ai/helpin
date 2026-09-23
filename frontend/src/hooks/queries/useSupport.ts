@@ -4,7 +4,7 @@ import type { WidgetOriginSettings } from '@/lib/pmTypes';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { queryKeys } from '@/lib/queryKeys';
-import { api, uploadToS3 } from '@/lib/api';
+import { uploadToS3 } from '@/lib/api';
 import { supportService } from '@/lib/services/supportService';
 import { supportAttachmentService } from '@/lib/services/supportAttachmentService';
 import { agentService } from '@/lib/services/agentService';
@@ -951,7 +951,7 @@ export function useSendMessage(workspaceId: string, conversationId: string | nul
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: SendMessagePayload) =>
-      (payload.is_internal ? supportService.createConversationMessage(workspaceId, conversationId!, payload) : api.post<SupportMessage>(`/support/inbox/conversations/${conversationId}/translation/sends?workspace_id=${encodeURIComponent(workspaceId)}`,payload)).then((response) => {
+      (payload.is_internal ? supportService.createConversationMessage(workspaceId, conversationId!, payload) : supportService.sendConversationReply(workspaceId, conversationId!, payload)).then((response) => {
         if (response.status === 422) throw new SupportTranslationSendError();
         return unwrap(response);
       }),
