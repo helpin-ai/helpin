@@ -15,6 +15,7 @@ import { SupportWorkspace } from './support-workspace';
 import { SupportHeroScene } from './support-hero-scene';
 import { SupportKnowledge } from './support-knowledge';
 import './support.css';
+import { DOCS } from '../../_components/docsLinks';
 
 export const metadata = previewMetadata("Support \u2014 Helpin", "/new/products/customer-support");
 
@@ -34,12 +35,12 @@ const FAQS = [
   [
     "Can our team handle chat and email together?",
     "Yes. Add the chat widget and forward support email into Helpin’s shared inbox.",
-    "https://github.com/helpin-ai/helpin/blob/develop/docs/community/configuration.md"
+    DOCS.emailForwarding
   ],
   [
     "Do we need a new support email address?",
     "No. Keep your existing address and verify it for replies through Helpin.",
-    "https://github.com/helpin-ai/helpin/blob/develop/docs/community/configuration.md"
+    DOCS.senderAddresses
   ],
   [
     "How are conversations assigned?",

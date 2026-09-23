@@ -2,7 +2,8 @@ import { HeroVortex } from '../_components/HeroVortex';
 import { previewMetadata } from '../_components/preview-metadata';
 import { PreviewNav } from '../_components/PreviewNav';
 import { PreviewFooter } from '../_components/PreviewFooter';
-import { CtaRow, SectionHead, GITHUB_URL } from '../_components/ui';
+import { CtaRow, SectionHead } from '../_components/ui';
+import { DOCS } from '../_components/docsLinks';
 
 export const metadata = previewMetadata("Product overview \u2014 Helpin", "/new/product");
 
@@ -123,7 +124,7 @@ export default function ProductPage() {
           <div className="six">
             {DEVELOPERS.map(([k, v]) => <div key={k}><h3>{k}</h3><p>{v}</p></div>)}
           </div>
-          <div className="links"><a className="btn-link" href={`${GITHUB_URL}/blob/develop/docs/README.md`}>Read the docs →</a></div>
+          <div className="links"><a className="btn-link" href={DOCS.home}>Read the docs →</a></div>
         </div>
       </section>
 

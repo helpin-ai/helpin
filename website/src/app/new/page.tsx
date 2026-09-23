@@ -13,6 +13,7 @@ import { AgentControlArt } from './_components/AgentControlArt';
 import { AskAgentBento } from './_components/AskAgentBento';
 import { CustomerRecordBento } from './_components/CustomerRecordBento';
 import { CtaRow, GithubIcon, SectionHead, GITHUB_URL } from './_components/ui';
+import { DOCS } from './_components/docsLinks';
 
 const RECORD_FACTS = [
   {
@@ -202,7 +203,7 @@ export default function NewHomePage() {
             <div>
               <SectionHead eyebrow="Open source" title="Your customer history stays yours."
                 lede="Self-host the complete product for free, with every module and no plan limits. Or let Helpin Cloud run it, with AI included." />
-              <div className="links"><a className="btn btn-primary" href={`${GITHUB_URL}/blob/develop/community/README.md`} target="_blank" rel="noopener noreferrer">Self-host Helpin →</a><a className="btn-link" href={GITHUB_URL} target="_blank" rel="noopener noreferrer"><GithubIcon />View the code →</a></div>
+              <div className="links"><a className="btn btn-primary" href={DOCS.selfHosting}>Self-host Helpin →</a><a className="btn-link" href={GITHUB_URL} target="_blank" rel="noopener noreferrer"><GithubIcon />View the code →</a></div>
               <p className="self-host-license">AGPL-3.0 · Community 0.1 beta</p>
             </div>
             <HostingDiagram />
@@ -229,26 +230,26 @@ export default function NewHomePage() {
               <span className="eyebrow">Helpin CLI</span>
               <h3>Run your instance from the terminal.</h3>
               <p>Install Helpin, check your services, and inspect logs with the Helpin CLI.</p>
-              <a className="btn-link" href={`${GITHUB_URL}/blob/develop/community/README.md`} target="_blank" rel="noopener noreferrer">Explore the Helpin CLI →</a>
+              <a className="btn-link" href={DOCS.selfHostingInstall}>Explore the Helpin CLI →</a>
             </div>
           </article>
           <div className="developer-features">
             <article>
               <span className="developer-feature-icon"><Braces size={22} aria-hidden="true" /></span>
               <h3>APIs &amp; SDKs</h3><p>Bring customer data into Helpin and add support chat to your app.</p>
-              <a className="inline-link" href={`${GITHUB_URL}/blob/develop/docs/README.md`} target="_blank" rel="noopener noreferrer">Developer docs →</a>
-              <a className="inline-link" href={`${GITHUB_URL}/tree/develop/packages/sdk-js`} target="_blank" rel="noopener noreferrer">Explore the SDK →</a>
+              <a className="inline-link" href={DOCS.developer}>Developer docs →</a>
+              <a className="inline-link" href={DOCS.widgetSdk}>Explore the SDK →</a>
             </article>
             <article>
               <span className="developer-feature-icon"><Plug size={22} aria-hidden="true" /></span>
               <h3>Connect your AI tools</h3><p>Give Helpin agents selected tools from external systems. Use public MCP to make permitted Helpin context available to connected AI clients.</p><p className="developer-availability">Public MCP is in controlled beta.</p>
-              <a className="inline-link" href={`${GITHUB_URL}/blob/develop/docs/public-mcp-server.md`} target="_blank" rel="noopener noreferrer">Connect AI tools →</a>
-              <a className="inline-link" href={`${GITHUB_URL}/blob/develop/docs/external-mcp-servers.md`} target="_blank" rel="noopener noreferrer">Connect external tools →</a>
+              <a className="inline-link" href={DOCS.mcpServer}>Connect AI tools →</a>
+              <a className="inline-link" href={DOCS.externalMcp}>Connect external tools →</a>
             </article>
             <article>
               <span className="developer-feature-icon"><Webhook size={22} aria-hidden="true" /></span>
               <h3>Start work from an event</h3><p>Connect supported product and engineering events to agent workflows. Set the rules that determine when a run begins.</p>
-              <a className="inline-link" href={`${GITHUB_URL}/blob/develop/docs/agents-and-automation.md`} target="_blank" rel="noopener noreferrer">Explore automation →</a>
+              <a className="inline-link" href={DOCS.automation}>Explore automation →</a>
             </article>
           </div>
         </div>
