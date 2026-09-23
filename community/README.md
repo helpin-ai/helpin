@@ -60,6 +60,23 @@ unverified. With working application mail, `AUTH_EMAIL_VERIFICATION_REQUIRED=tru
 enables verification emails and the verification UI; it does not block every
 unverified login.
 
+## Explore with sample data
+
+To look around before connecting anything, open the Setup guide and choose
+**Load sample data** (workspace admins and owners). Helpin adds a small
+fictional company, Northwind Outfitters, to the modules available to you:
+support conversations, draft help articles in a help-center space, a project
+with tasks, and CRM companies, contacts, and deals. Customer addresses use the
+reserved `example.com` domain.
+
+Loading sends no email, notifications, or webhooks, and it runs no automations
+or AI. Sample records never count toward Setup guide progress. **Remove sample
+data** deletes exactly the records it added, including any edits you made to
+them. A sample help-center space, sales pipeline, or team that now holds your
+own records is kept; your own tasks in the sample project stay, without the
+project. The API is `GET`, `POST`, and `DELETE`
+`/api/workspaces/{id}/sample-data`.
+
 ## Start your first conversation
 
 1. In workspace settings, add your website origin first (scheme, hostname, and

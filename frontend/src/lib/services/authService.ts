@@ -17,6 +17,8 @@ export type AuthConfig = {
   google_login_enabled: boolean;
   demo_enabled?: boolean;
   demo_requires_email?: boolean;
+  /** Whether the API serves the workspace Setup guide; absent on older APIs. */
+  setup_guide_enabled?: boolean;
 };
 
 export const authService = {

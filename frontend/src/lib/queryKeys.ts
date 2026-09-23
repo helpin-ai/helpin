@@ -42,6 +42,7 @@ export const queryKeys = {
     session: (wsId: string) => ['workspaces', wsId, 'session'] as const,
     access: (wsId: string) => ['workspaces', wsId, 'access'] as const,
     setup: (wsId: string) => ['workspaces', wsId, 'setup'] as const,
+    capabilities: (wsId: string) => ['workspaces', wsId, 'capabilities'] as const,
   },
 
   automation: {
@@ -199,6 +200,7 @@ export const queryKeys = {
     taskLinks: (wsId: string, taskId: string) => ['git', wsId, 'tasks', taskId, 'links'] as const,
     taskDeliveryTarget: (wsId: string, taskId: string) => ['git', wsId, 'tasks', taskId, 'delivery-target'] as const,
     epicDeliveryTarget: (wsId: string, epicId: string) => ['git', wsId, 'epics', epicId, 'delivery-target'] as const,
+    githubAppStatus: (wsId: string) => ['git', wsId, 'github-app-status'] as const,
   },
 
   support: {

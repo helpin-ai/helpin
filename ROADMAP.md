@@ -7,16 +7,18 @@ published Community bundle; the release notes of your bundle record changes.
 ## What Community 0.1 includes
 
 The first release focuses on support chat, visitor identification, and public
-help-center articles, with agents assisting that workflow. The default enabled
-modules are `support,docs,agents`.
+help-center articles, with agents assisting that workflow. All modules are
+enabled by default: `support,docs,agents,pm,crm,automation`. Operators can
+narrow the surface with `HELPIN_ENABLED_MODULES`.
 
-## Outside the default surface
+## Included by default, outside the support focus
 
-PM and CRM navigation and automation builders are outside the default modules.
-This is a deployment surface choice, not removal of their code: shared customer
-services remain available to Support, and some agent APIs, including
-coding-session routes, are classified under Agents. Coding workflows are outside
-this release's support-focused scope.
+PM, CRM, and automation builders are included in the default modules, but this
+release's support-focused scope sets the supported bar. Operators who want only
+the support surface can set `HELPIN_ENABLED_MODULES=support,docs,agents`; shared
+customer services remain available to Support either way, and some agent APIs,
+including coding-session routes, are classified under Agents. Coding workflows
+are outside this release's support-focused scope.
 
 Subscription billing, payment UI, the analytics collector, ClickHouse, and the
 desktop, mobile, admin, and email notice apps are not part of the Community

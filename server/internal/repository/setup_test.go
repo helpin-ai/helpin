@@ -264,6 +264,7 @@ func TestSetupRepositoryPersistsGoalsAndReadsVerifiedEvidence(t *testing.T) {
 }
 
 var setupTestSchema = []string{
+	sampleDataItemsTestSchema,
 	`CREATE TABLE setup_goals (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, key TEXT NOT NULL, catalog_version INTEGER NOT NULL DEFAULT 1, source TEXT NOT NULL, status TEXT NOT NULL, position INTEGER NOT NULL, activated_at DATETIME NOT NULL, created_by TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(workspace_id, key))`,
 	`CREATE TABLE setup_intents (workspace_id TEXT PRIMARY KEY, goal_keys TEXT NOT NULL DEFAULT '[]', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
 	`CREATE TABLE setup_achievements (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, goal_key TEXT NOT NULL, task_key TEXT NOT NULL, member_id TEXT NOT NULL DEFAULT '', evidence TEXT NOT NULL, achieved_at DATETIME NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(workspace_id, goal_key, task_key, member_id))`,

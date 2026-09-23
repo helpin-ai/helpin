@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"gorm.io/gorm"
@@ -182,6 +183,272 @@ func TestStandardAIProfilesAdoptOnlyEmptyPlaceholder(t *testing.T) {
 	}
 	if c.Funding != "managed" || c.Status != "connected" || c.Name != "openrouter (managed)" {
 		t.Fatal("empty migration placeholder was not provisioned")
+	}
+}
+
+// customerStandardProfilesFixture mirrors Community: customer funding with
+// environment provider keys sealed into the standard connections.
+func customerStandardProfilesFixture(t *testing.T, credentials map[string]string) (*AIStandardProfiles, *AIConnectionService, *gorm.DB) {
+	t.Helper()
+	s, connections, db := standardProfilesFixture(t)
+	s.funding = "customer"
+	s.credentials = credentials
+	connections.SetAuthorizationService(authorization.NewAuthzService(db, connectionMembers{}, nil))
+	return s, connections, db
+}
+
+type standardRouteWant struct{ provider, model string }
+
+func assertStandardProfile(t *testing.T, db *gorm.DB, tier string, want standardRouteWant, connectionID string) {
+	t.Helper()
+	var p model.AIProfile
+	if err := db.First(&p, "id = ?", model.StandardAIProfileID("workspace", tier)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if p.Primary.Model.Provider != want.provider || p.Primary.Model.Model != want.model || p.Primary.ConnectionID != connectionID {
+		t.Fatalf("%s = %s/%s on %s, want %s/%s on %s", tier, p.Primary.Model.Provider, p.Primary.Model.Model,
+			p.Primary.ConnectionID, want.provider, want.model, connectionID)
+	}
+}
+
+func workspaceDefault(t *testing.T, db *gorm.DB) string {
+	t.Helper()
+	var settings model.AIWorkspaceSettings
+	if err := db.First(&settings, "workspace_id = ?", "workspace").Error; err != nil {
+		t.Fatal(err)
+	}
+	return derefString(settings.DefaultProfileID)
+}
+
+func TestStandardProfilesFollowConfiguredProviders(t *testing.T) {
+	fixedLarge := standardRouteWant{"openai", "gpt-5.6-terra"}
+	fixedFlagship := standardRouteWant{"anthropic", "claude-sonnet-5"}
+	tests := []struct {
+		name        string
+		credentials map[string]string
+		want        map[string]standardRouteWant
+	}{
+		{name: "only anthropic", credentials: map[string]string{"anthropic": "anthropic-key"}, want: map[string]standardRouteWant{
+			"small": {"anthropic", "claude-haiku-4-5"}, "medium": {"anthropic", "claude-haiku-4-5"},
+			"large": {"anthropic", "claude-haiku-4-5"}, "flagship": fixedFlagship,
+		}},
+		{name: "only openai", credentials: map[string]string{"openai": "openai-key"}, want: map[string]standardRouteWant{
+			"small": {"openai", "gpt-5.6-luna"}, "medium": {"openai", "gpt-5-mini"},
+			"large": fixedLarge, "flagship": {"openai", "gpt-5.5"},
+		}},
+		{name: "only openrouter", credentials: map[string]string{"openrouter": "openrouter-key"}, want: map[string]standardRouteWant{
+			"small": {"openrouter", "deepseek/deepseek-v4.1-flash:nitro"}, "medium": {"openrouter", "google/gemini-3.8-flash"},
+			"large": {"openrouter", "openai/gpt-5.6-terra"}, "flagship": {"openrouter", "anthropic/claude-sonnet-5"},
+		}},
+		{name: "openai and anthropic", credentials: map[string]string{"openai": "openai-key", "anthropic": "anthropic-key"}, want: map[string]standardRouteWant{
+			"small": {"openai", "gpt-5.6-luna"}, "medium": {"openai", "gpt-5-mini"},
+			"large": fixedLarge, "flagship": fixedFlagship,
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, connections, db := customerStandardProfilesFixture(t, tt.credentials)
+			ctx := context.Background()
+			if err := s.EnsureWorkspace(ctx, "workspace"); err != nil {
+				t.Fatal(err)
+			}
+			for tier, want := range tt.want {
+				connectionID := model.StandardAIConnectionID("workspace", want.provider)
+				assertStandardProfile(t, db, tier, want, connectionID)
+				c, err := connections.repo.Get(ctx, connectionID)
+				if err != nil || !usableStandardConnection(c) {
+					t.Fatalf("%s runs on an unusable connection: %v", tier, err)
+				}
+			}
+			if workspaceDefault(t, db) != model.StandardAIProfileID("workspace", "small") {
+				t.Fatal("runnable Small was not kept as the default")
+			}
+		})
+	}
+}
+
+func TestStandardProfilesRemapWhenSharedConnectionsChange(t *testing.T) {
+	s, connections, db := customerStandardProfilesFixture(t, nil)
+	connections.SetChangeObserver(s)
+	ctx := context.Background()
+	if err := s.EnsureWorkspace(ctx, "workspace"); err != nil {
+		t.Fatal(err)
+	}
+	fixedSmall := standardRouteWant{"openrouter", "deepseek/deepseek-v4.1-flash:nitro"}
+	assertStandardProfile(t, db, "small", fixedSmall, model.StandardAIConnectionID("workspace", "openrouter"))
+
+	login, err := connections.Create(ctx, "workspace", "owner", model.CreateAIConnectionRequest{Name: "Team OpenAI", Scope: "workspace", Provider: "openai", APIKey: "team-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := login.Connection.ID
+	assertStandardProfile(t, db, "small", standardRouteWant{"openai", "gpt-5.6-luna"}, id)
+	assertStandardProfile(t, db, "large", standardRouteWant{"openai", "gpt-5.6-terra"}, id)
+	assertStandardProfile(t, db, "flagship", standardRouteWant{"openai", "gpt-5.5"}, id)
+	var p model.AIProfile
+	if err := db.First(&p, "id = ?", model.StandardAIProfileID("workspace", "small")).Error; err != nil || p.Revision != 1 {
+		t.Fatalf("re-mapping changed the revision: %d, %v", p.Revision, err)
+	}
+
+	if err := connections.Disconnect(ctx, "workspace", "owner", id); err != nil {
+		t.Fatal(err)
+	}
+	assertStandardProfile(t, db, "small", fixedSmall, model.StandardAIConnectionID("workspace", "openrouter"))
+	assertStandardProfile(t, db, "large", standardRouteWant{"openai", "gpt-5.6-terra"}, model.StandardAIConnectionID("workspace", "openai"))
+
+	if _, err := connections.Create(ctx, "workspace", "owner", model.CreateAIConnectionRequest{Name: "Mine", Provider: "anthropic", APIKey: "personal-key"}); err != nil {
+		t.Fatal(err)
+	}
+	assertStandardProfile(t, db, "small", fixedSmall, model.StandardAIConnectionID("workspace", "openrouter"))
+}
+
+func TestStandardProfilesNeverOverwriteEditedProfiles(t *testing.T) {
+	s, _, db := customerStandardProfilesFixture(t, nil)
+	ctx := context.Background()
+	if err := s.EnsureWorkspace(ctx, "workspace"); err != nil {
+		t.Fatal(err)
+	}
+	large := model.StandardAIProfileID("workspace", "large")
+	if err := db.Model(&model.AIProfile{}).Where("id = ?", large).UpdateColumn("revision", 2).Error; err != nil {
+		t.Fatal(err)
+	}
+	s.credentials = map[string]string{"anthropic": "anthropic-key"}
+	if err := s.EnsureWorkspace(ctx, "workspace"); err != nil {
+		t.Fatal(err)
+	}
+	assertStandardProfile(t, db, "large", standardRouteWant{"openai", "gpt-5.6-terra"}, model.StandardAIConnectionID("workspace", "openai"))
+	assertStandardProfile(t, db, "small", standardRouteWant{"anthropic", "claude-haiku-4-5"}, model.StandardAIConnectionID("workspace", "anthropic"))
+}
+
+func TestStandardProfilesRepointDefaultOnlyFromUnrunnableSmall(t *testing.T) {
+	s, _, db := customerStandardProfilesFixture(t, nil)
+	ctx := context.Background()
+	if err := s.EnsureWorkspace(ctx, "workspace"); err != nil {
+		t.Fatal(err)
+	}
+	small := model.StandardAIProfileID("workspace", "small")
+	if workspaceDefault(t, db) != small {
+		t.Fatal("Small is not the initial default")
+	}
+	// A user-edited Small stays on the unconfigured OpenRouter placeholder.
+	if err := db.Model(&model.AIProfile{}).Where("id = ?", small).UpdateColumn("revision", 2).Error; err != nil {
+		t.Fatal(err)
+	}
+	s.credentials = map[string]string{"anthropic": "anthropic-key"}
+	if err := s.EnsureWorkspace(ctx, "workspace"); err != nil {
+		t.Fatal(err)
+	}
+	if got := workspaceDefault(t, db); got != model.StandardAIProfileID("workspace", "medium") {
+		t.Fatalf("default = %s, want the runnable Medium profile", got)
+	}
+
+	flagship := model.StandardAIProfileID("workspace", "flagship")
+	if err := db.Model(&model.AIWorkspaceSettings{}).Where("workspace_id = ?", "workspace").UpdateColumn("default_profile_id", flagship).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := s.EnsureWorkspace(ctx, "workspace"); err != nil {
+		t.Fatal(err)
+	}
+	if workspaceDefault(t, db) != flagship {
+		t.Fatal("a user-selected default was moved")
+	}
+}
+
+func TestStandardProfilesKeepDefaultWhenNothingRuns(t *testing.T) {
+	s, _, db := customerStandardProfilesFixture(t, nil)
+	if err := s.EnsureWorkspace(context.Background(), "workspace"); err != nil {
+		t.Fatal(err)
+	}
+	if workspaceDefault(t, db) != model.StandardAIProfileID("workspace", "small") {
+		t.Fatal("default moved although no profile can run")
+	}
+}
+
+func TestStandardProfilesRotateOnlyEnvironmentCredentials(t *testing.T) {
+	s, connections, db := customerStandardProfilesFixture(t, map[string]string{"openai": "first-env-key"})
+	connections.SetChangeObserver(s)
+	ctx := context.Background()
+	if err := s.EnsureWorkspace(ctx, "workspace"); err != nil {
+		t.Fatal(err)
+	}
+	id := model.StandardAIConnectionID("workspace", "openai")
+	storedKey := func() (string, *model.AIConnection) {
+		t.Helper()
+		c, err := connections.repo.Get(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		secret, err := connections.open(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return secret.APIKey, c
+	}
+	key, c := storedKey()
+	if key != "first-env-key" || derefString(c.CredentialSource) != model.AIConnectionCredentialSourceEnvironment {
+		t.Fatal("environment key was not sealed with its source")
+	}
+	s.credentials["openai"] = "second-env-key"
+	if err := s.EnsureWorkspace(ctx, "workspace"); err != nil {
+		t.Fatal(err)
+	}
+	if key, _ = storedKey(); key != "second-env-key" {
+		t.Fatal("rotated environment key did not reach the workspace")
+	}
+	if _, err := connections.Reconnect(ctx, "workspace", "owner", id, "user-key"); err != nil {
+		t.Fatal(err)
+	}
+	s.credentials["openai"] = "third-env-key"
+	if err := s.EnsureWorkspace(ctx, "workspace"); err != nil {
+		t.Fatal(err)
+	}
+	key, c = storedKey()
+	if key != "user-key" || c.CredentialSource != nil {
+		t.Fatal("environment rotation overwrote a user-supplied key")
+	}
+	// Legacy rows have no recorded source and are never rotated.
+	if err := db.Model(&model.AIConnection{}).Where("id = ?", id).UpdateColumn("credential_source", nil).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := s.EnsureWorkspace(ctx, "workspace"); err != nil {
+		t.Fatal(err)
+	}
+	if key, _ = storedKey(); key != "user-key" {
+		t.Fatal("legacy connection adopted an environment key")
+	}
+}
+
+func TestAgentCreationUsesConnectedProviderRoute(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	if err := db.AutoMigrate(&model.AIConnection{}, &model.AIProfile{}, &model.AIWorkspaceSettings{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE TABLE workspaces(id TEXT PRIMARY KEY); INSERT INTO workspaces VALUES ('ws-test')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	connections, err := NewAIConnectionService(repository.NewAIConnectionRepository(db), nil, &AgentRuntimeClient{}, AIConnectionConfig{EncryptionKey: strings.Repeat("k", 32)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	shared := &model.AIConnection{ID: "shared-openai", WorkspaceID: "ws-test", Scope: "workspace", Funding: "customer", Provider: "openai", Name: "Team OpenAI", Status: "connected"}
+	if err := connections.seal(shared, aiConnectionSecret{APIKey: "team-key"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := connections.repo.Create(ctx, shared); err != nil {
+		t.Fatal(err)
+	}
+	svc := (&AgentService{agentRepo: repository.NewAgentRepository(db)}).SetAIProfileService(NewAIProfileService(repository.NewAIProfileRepository(db), connections))
+	agent, err := svc.CreateAgent(ctx, modelCreateAgentRequest(nil), "user-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if derefString(agent.Provider) != "openai" || derefString(agent.Model) != "gpt-5.6-luna" {
+		t.Fatalf("agent route = %s/%s, want openai/gpt-5.6-luna", derefString(agent.Provider), derefString(agent.Model))
+	}
+	var p model.AIProfile
+	if err := db.First(&p, "id = ?", model.StandardAIProfileID("ws-test", "small")).Error; err != nil || p.Primary.ConnectionID != shared.ID {
+		t.Fatalf("Small does not run on the shared connection: %v", err)
 	}
 }
 

@@ -8,7 +8,9 @@ retains conservative authentication defaults.
 
 | Setting | Behavior |
 | --- | --- |
-| `HELPIN_ENABLED_MODULES` | Comma-separated product surfaces. Community defaults to `support,docs,agents`; Enterprise defaults to all modules. Support requires Docs. Workspace roles remain in force. |
+| `HELPIN_ENABLED_MODULES` | Comma-separated product surfaces. Both editions default to all modules: `support,docs,agents,pm,crm,automation`. Support requires Docs. Workspace roles remain in force. Upgrading an installation whose value is still the Community 0.1 default `support,docs,agents` switches it to the new default; any other value is kept. |
+| `CRM_ENCRYPTION_KEY`, `GIT_OAUTH_ENCRYPTION_KEY` | Generated 32-byte hex keys. The first encrypts CRM mail and calendar tokens and is the fallback key for TOTP and PM import secrets; the second encrypts stored Git provider tokens. Keep them stable and back them up with the databases. `helpin upgrade` generates them when an older `.env` lacks them. |
+| `SETUP_SUCCESS_ENABLED` | Optional. Controls the workspace Setup guide. Empty uses the edition default: on in Community, off in Enterprise. Set `false` to hide it. |
 | `AUTH_EMAIL_VERIFICATION_REQUIRED` | Defaults to `true`. Set `false` for local Community signup without mail. Enterprise rejects `false`. This never marks an email verified. |
 | `DEMO_VIEWER_EMAIL` | Optional. Email of an existing account that visitors of `/demo` are signed in as without a password. Give it the `viewer` role in one workspace only, no 2FA, not a platform admin. Every non-read API request from this account is rejected with `demo_read_only`. Empty disables `/demo`. |
 | `DEMO_REQUIRE_EMAIL` | Defaults to `false`. When `true`, visitors must enter their own email before the demo session is issued. |
@@ -18,6 +20,14 @@ retains conservative authentication defaults.
 | `SMTP_USERNAME`, `SMTP_PASSWORD` | Set both for authenticated delivery, or leave both empty for a trusted relay. |
 | `SMTP_TLS_MODE` | `starttls` by default; `tls` for implicit TLS; explicit `none` only for an unauthenticated trusted local relay. Credentials require TLS and AUTH PLAIN; LOGIN-only SMTP servers are unsupported. TLS certificates are verified. |
 | `POSTMARK_APP_SERVER_TOKEN`, `POSTMARK_APP_FROM_EMAIL` | Optional alternative application-mail provider. |
+
+`helpin install` and `helpin configure` can write the SMTP settings for you
+(see the [CLI guide](cli.md)). Workspace administrators can send a test email
+to their own address with `POST /api/workspaces/{id}/email/test` (at most one
+every 30 seconds and five per hour per user). The result is recorded, and the
+`email_outbound` capability reports `ready` only after a successful test of the
+current mail settings; changing the host, port, username, sender, or TLS mode
+requires a new test.
 
 SMTP sends invitations, password reset, optional verification and application
 notifications. It does **not** enable support reply threading or inbound mail;
@@ -61,15 +71,32 @@ support email also needs operator-owned `SUPPORT_EMAIL_REPLY_DOMAIN` and
 `SUPPORT_EMAIL_ROUTE_DOMAIN`; SMTP application mail does not configure these
 support channels.
 
-Agent profiles configure agent runs only. Knowledge embeddings still use the
+Agent profiles configure agent runs only. Knowledge embeddings use the
 server's `OPENAI_API_KEY`, optional `OPENAI_BASE_URL` (an OpenAI-compatible API
 base including `/v1`), and `OPENAI_EMBEDDING_MODEL` (default
-`text-embedding-3-small`). The model must return 1,536 dimensions. Without this
-configuration, semantic retrieval is unavailable and keyword search remains.
+`text-embedding-3-small`). When `OPENAI_API_KEY` is empty and `OPENROUTER_API_KEY`
+is set, embeddings use OpenRouter's embeddings endpoint (at `OPENROUTER_BASE_URL`
+when set) with `openai/text-embedding-3-small`; an `OPENAI_EMBEDDING_MODEL`
+without a vendor prefix gets `openai/` added. `OPENAI_API_KEY` always takes
+precedence. The model must return 1,536 dimensions. Without either key,
+semantic retrieval is unavailable and keyword search remains.
 A local chat connection alone does not configure embeddings. Workspace AI
 settings reports this distinction; "configured" does not mean the endpoint
 has been contacted or verified. Help-center AI answers and automatic triage
 also retain server-level chat provider settings and their existing model routes.
+
+A workspace's website is optional. When one is given, onboarding and Settings →
+Knowledge can draft the company/product context from it. The draft runs on the
+workspace's default AI profile and its connection (OpenAI, Anthropic,
+OpenRouter or an approved OpenAI-compatible endpoint). When no workspace
+connection can run it, the server's OpenRouter key is used if it is set. A server
+`OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `OPENROUTER_API_KEY` becomes a shared
+AI connection in every workspace, including new ones, so this works without
+further setup; Settings reports it as untested until someone tests it. Without any AI, the
+request fails at once and users write the context themselves. Helpin reads only
+public addresses: it refuses private, loopback, link-local and cloud metadata
+addresses, including after redirects. Sites that need JavaScript or block
+automated visitors cannot be read.
 
 The installer provisions pgvector and pgcrypto before the Helpin migrator runs.
 With external Postgres, its administrator must install pgvector on the server and
@@ -92,6 +119,70 @@ URLs use the application origin. Garage has a distinct generated access key,
 secret key and RPC secret. Keep them with backups of the entire `garage_data`
 volume, including metadata and object data. Changing env values does not rotate
 an existing Garage access key; use Garage's documented key management procedure.
+
+## GitHub App
+
+Helpin connects to GitHub through one GitHub App per installation. A workspace
+owner can create it from **Settings → Git Connections**, the Setup guide, or
+**Settings → System status** with **Create GitHub App**:
+
+1. Choose who owns the App: **a GitHub organization** (recommended; enter its
+   login) or **your personal GitHub account**.
+2. Helpin sends a [GitHub App manifest](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest)
+   to GitHub, which asks you to confirm the new App. GitHub then returns to
+   `/api/github/app-manifest/callback`, and Helpin stores the App. The API and the
+   worker use it at once, without a restart.
+3. Helpin sends you straight to GitHub's install page for the new App. Choose the
+   repositories and install. GitHub returns to `/api/git/github/callback`, Helpin
+   connects the installation to the workspace's organization, and you land back
+   on the page you started from.
+
+The App is **private**: GitHub only lets the account that owns it install it, and
+shows everyone else a 404 page. Create it under the organization that owns your
+repositories. An App owned by your personal account can only reach your personal
+repositories. Git connections and the Setup guide name the owner when the App is
+configured but not yet installed.
+
+If you install the App, or change its repository access, from GitHub instead of
+from Helpin, GitHub returns without Helpin's signed link. Helpin then opens
+`/github/installed`, checks with GitHub that the installation belongs to this
+App, and connects it to your workspace's organization. You must be an
+organization owner or admin. An installation already connected to another Helpin
+organization is refused.
+
+- GitHub must reach this server: the manifest uses `APP_BASE_URL` for the App
+  homepage, its webhook (`/api/git/webhook`), and its setup and callback URLs. Use
+  an `https` URL on a public hostname. When `APP_BASE_URL` uses `http`,
+  `localhost`, a `.local` or single-label hostname, or a private, loopback or
+  link-local IP address, **Create GitHub App** is replaced by an explanation,
+  `manifest_blocked_reason` is set in the App status, and System status and
+  `helpin doctor` report the same problem for GitHub.
+- The App requests repository contents (write), pull requests (write), checks
+  (read), and metadata (read), with `push`, `pull_request`, `release`, and
+  `check_suite` events.
+- The private key, client secret, and webhook secret are encrypted with
+  `GIT_OAUTH_ENCRYPTION_KEY` (or `CRM_ENCRYPTION_KEY` when it is unset). The
+  button is unavailable without a valid key, and a lost key makes the stored App
+  unreadable.
+- Helpin refuses to replace an App that already exists. To start over, delete the
+  App on GitHub and the row in `github_app_credentials`.
+- Webhook deliveries must carry a valid `X-Hub-Signature-256` for the App's
+  webhook secret; unsigned or wrongly signed deliveries are rejected with 401.
+
+To pin an existing App instead, set `GITHUB_APP_ID`, `GITHUB_APP_SLUG`,
+`GITHUB_APP_PRIVATE_KEY` (PEM, escaped or base64-encoded PEM), and
+`GITHUB_APP_WEBHOOK_SECRET`; `GITHUB_APP_CLIENT_ID` and
+`GITHUB_APP_CLIENT_SECRET` are optional. When `GITHUB_APP_ID` and
+`GITHUB_APP_PRIVATE_KEY` are both set, these settings take precedence over a
+stored App and the create button is hidden. Without `GITHUB_APP_WEBHOOK_SECRET`,
+all GitHub webhooks are rejected. `GET /api/workspaces/{id}/github/app-status`
+reports `configured`, `source` (`env`, `database`, or `none`), `slug`,
+`install_url`, `webhook_configured`, `manifest_available`,
+`manifest_blocked_reason`, `owner_login`, `owner_type` (`User` or
+`Organization`), and `private`, without secrets. For an App set through these
+settings, Helpin asks GitHub for the owner once; `private` is only reported for
+an App created from Helpin. Enterprise configures the App only through these
+settings and connects installations only through Helpin's install link.
 
 ## Authenticated request limits
 

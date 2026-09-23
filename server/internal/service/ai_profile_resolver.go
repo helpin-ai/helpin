@@ -13,6 +13,10 @@ type AIProfileSelectionRequest struct {
 	ProfileID      string
 	AgentProfileID string
 	Unattended     bool
+	// Direct means the caller executes the route itself instead of launching it
+	// through Agent Runtime, so runtime readiness is only required where the
+	// runtime approves the destination (compatible endpoints).
+	Direct bool
 }
 
 // Resolve selects once before admission. Only a known unavailable connection
@@ -63,7 +67,7 @@ func (s *AIProfileService) Resolve(ctx context.Context, workspace, user string, 
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := s.checkExecutionRoute(ctx, p.Primary); err != nil {
+	if err := s.checkSelectedRoute(ctx, p.Primary, req.Direct); err != nil {
 		return nil, nil, err
 	}
 	c, credential, err := s.routeCredential(ctx, workspace, user, req.Unattended, p.Primary)
@@ -73,7 +77,7 @@ func (s *AIProfileService) Resolve(ctx context.Context, workspace, user string, 
 		if err != nil {
 			return nil, nil, err
 		}
-		if err := s.checkExecutionRoute(ctx, *p.Fallback); err != nil {
+		if err := s.checkSelectedRoute(ctx, *p.Fallback, req.Direct); err != nil {
 			return nil, nil, err
 		}
 		c, credential, err = s.routeCredential(ctx, workspace, user, req.Unattended, *p.Fallback)
@@ -83,6 +87,16 @@ func (s *AIProfileService) Resolve(ctx context.Context, workspace, user string, 
 	}
 	selection.ConnectionScope, selection.OwnerID = c.Scope, c.UserID
 	return selection, credential, nil
+}
+
+// checkSelectedRoute keeps Agent Runtime readiness for runtime launches. A
+// direct completion does not use the runtime, except that a compatible
+// endpoint must still be one the runtime configuration approves.
+func (s *AIProfileService) checkSelectedRoute(ctx context.Context, route model.AIProfileRoute, direct bool) error {
+	if direct && route.Model.Provider != "openai_compatible" {
+		return nil
+	}
+	return s.checkExecutionRoute(ctx, route)
 }
 
 func (s *AIProfileService) routeCredential(ctx context.Context, workspace, user string, unattended bool, route model.AIProfileRoute) (*model.AIConnection, *sdk.ModelCredential, error) {

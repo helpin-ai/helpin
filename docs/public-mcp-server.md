@@ -36,7 +36,7 @@ The server exposes Helpin capabilities across:
 
 The MCP server is an authorization and product-execution boundary. It is not a public wrapper around the internal Agent Runtime bridge. Public clients receive their own workspace-scoped identity, scopes, toolsets, policy checks, audit history, and revocation controls.
 
-PM and CRM toolsets require those modules to be enabled; Community 0.1 beta enables support, docs, and agents by default.
+PM and CRM toolsets require those modules to be enabled; Community enables every module by default.
 
 ## 2. What users can accomplish
 

@@ -1,0 +1,142 @@
+package service
+
+import (
+	"errors"
+	"fmt"
+	"net"
+	"net/url"
+	"strings"
+)
+
+// Helpin pages a GitHub App flow (create or install) returns the browser to.
+const (
+	GitHubReturnSettings     = "settings"
+	GitHubReturnSetup        = "setup"
+	GitHubReturnSystemStatus = "system_status"
+)
+
+// GitHub flow results reported to the frontend in the github query flag.
+const (
+	GitHubResultConnected = "connected"
+	GitHubResultCreated   = "created"
+	GitHubResultError     = "error"
+)
+
+const (
+	// _gitHubResultQueryKey is the query flag every GitHub App redirect uses.
+	_gitHubResultQueryKey = "github"
+	// _gitHubMessageQueryKey carries a human-readable result message.
+	_gitHubMessageQueryKey = "github_message"
+	// _gitHubInstalledPath is the frontend route that finishes installs that
+	// arrive without Helpin state and reports flows without a return page.
+	_gitHubInstalledPath = "/github/installed"
+	_defaultAppBaseURL   = "http://localhost:5173"
+)
+
+// ErrGitHubReturnToInvalid reports an unknown return_to value.
+var ErrGitHubReturnToInvalid = errors.New("return_to must be settings, setup or system_status")
+
+// NormalizeGitHubReturnTo validates return_to. Empty means settings.
+func NormalizeGitHubReturnTo(value string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", GitHubReturnSettings:
+		return GitHubReturnSettings, nil
+	case GitHubReturnSetup:
+		return GitHubReturnSetup, nil
+	case GitHubReturnSystemStatus:
+		return GitHubReturnSystemStatus, nil
+	default:
+		return "", ErrGitHubReturnToInvalid
+	}
+}
+
+// gitHubReturnTo maps a stored claim to a destination; tokens issued before
+// return_to existed, or with an unknown value, return to settings.
+func gitHubReturnTo(claim string) string {
+	returnTo, err := NormalizeGitHubReturnTo(claim)
+	if err != nil {
+		return GitHubReturnSettings
+	}
+	return returnTo
+}
+
+// gitHubReturnPageURL is the workspace page for returnTo.
+func gitHubReturnPageURL(appBaseURL, workspaceSlug, returnTo string) string {
+	base := appBaseOrDefault(appBaseURL)
+	slug := url.PathEscape(strings.TrimSpace(workspaceSlug))
+	switch gitHubReturnTo(returnTo) {
+	case GitHubReturnSetup:
+		return fmt.Sprintf("%s/w/%s/setup", base, slug)
+	case GitHubReturnSystemStatus:
+		return fmt.Sprintf("%s/w/%s/settings/system-status", base, slug)
+	default:
+		return fmt.Sprintf("%s/w/%s/settings/git-connections", base, slug)
+	}
+}
+
+// gitHubInstalledURL is the frontend route for results without a known
+// workspace and for installs that arrive without Helpin state.
+func gitHubInstalledURL(appBaseURL string, query url.Values) string {
+	target := appBaseOrDefault(appBaseURL) + _gitHubInstalledPath
+	if encoded := query.Encode(); encoded != "" {
+		target += "?" + encoded
+	}
+	return target
+}
+
+// gitHubResultQuery builds the github/github_message result flags.
+func gitHubResultQuery(status, message string) url.Values {
+	query := url.Values{}
+	query.Set(_gitHubResultQueryKey, status)
+	if strings.TrimSpace(message) != "" {
+		query.Set(_gitHubMessageQueryKey, message)
+	}
+	return query
+}
+
+func appBaseOrDefault(appBaseURL string) string {
+	base := strings.TrimRight(strings.TrimSpace(appBaseURL), "/")
+	if base == "" {
+		return _defaultAppBaseURL
+	}
+	return base
+}
+
+// GitHubAppBaseURLBlockedReason explains why GitHub cannot reach appBaseURL
+// (webhooks, the App callback and the setup URL all use it), or returns ""
+// when it is an https URL on a public hostname or public IP address.
+func GitHubAppBaseURLBlockedReason(appBaseURL string) string {
+	value := strings.TrimSpace(appBaseURL)
+	if !gitHubCanReach(value) {
+		shown := value
+		if shown == "" {
+			shown = "not set"
+		}
+		return fmt.Sprintf("GitHub must reach this server to deliver events. Set APP_BASE_URL to a public https address (currently %s).", shown)
+	}
+	return ""
+}
+
+func gitHubCanReach(appBaseURL string) bool {
+	parsed, err := url.Parse(appBaseURL)
+	if err != nil || !strings.EqualFold(parsed.Scheme, "https") {
+		return false
+	}
+	host := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
+	if host == "" {
+		return false
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return !(ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+			ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast())
+	}
+	if host == "localhost" || !strings.Contains(host, ".") {
+		return false
+	}
+	for _, suffix := range []string{".localhost", ".local", ".internal", ".lan", ".home.arpa"} {
+		if strings.HasSuffix(host, suffix) {
+			return false
+		}
+	}
+	return true
+}

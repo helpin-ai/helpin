@@ -1,32 +1,43 @@
 import type { ReactNode } from 'react';
 import { HelpinLogo } from '@/components/layout/HelpinLogo';
+import { cn } from '@/lib/utils';
 import { PublicPageVortex } from './PublicPageVortex';
 import './public-page-shell.css';
 
 interface PublicPageShellProps {
   children: ReactNode;
+  /** Replaces the "Back to website" link, for example with Sign out during onboarding. */
+  headerAction?: ReactNode;
+  /** `wide` fits multi-part forms such as workspace onboarding. */
+  contentWidth?: 'narrow' | 'wide';
+  /** Hide the brand panel for task pages such as onboarding; sign-in and signup keep it. */
+  brandPanel?: boolean;
 }
 
-export function PublicPageShell({ children }: PublicPageShellProps) {
+export function PublicPageShell({ children, headerAction, contentWidth = 'narrow', brandPanel = true }: PublicPageShellProps) {
   return (
-    <div className="public-page">
+    <div className={cn('public-page', !brandPanel && 'public-page--solo')}>
       <div className="public-page-main">
         <header className="public-page-header">
           <a href="https://helpin.ai" aria-label="Helpin home"><HelpinLogo /></a>
-          <a href="https://helpin.ai" className="public-page-back">Back to website <span aria-hidden="true">↗</span></a>
+          {headerAction ?? (
+            <a href="https://helpin.ai" className="public-page-back">Back to website <span aria-hidden="true">↗</span></a>
+          )}
         </header>
-        <main className="public-page-content">{children}</main>
+        <main className={cn('public-page-content', contentWidth === 'wide' && 'public-page-content--wide')}>{children}</main>
         <footer className="public-page-footer">
           <span>Made for working together.</span>
         </footer>
       </div>
-      <aside className="public-page-brand" aria-label="Helpin: good work happens together">
-        <div className="public-page-brand-heading">
-          <p className="public-page-eyebrow">A little more connected</p>
-          <h2>Good work<br />happens together.</h2>
-        </div>
-        <PublicPageVortex />
-      </aside>
+      {brandPanel && (
+        <aside className="public-page-brand" aria-label="Helpin: good work happens together">
+          <div className="public-page-brand-heading">
+            <p className="public-page-eyebrow">A little more connected</p>
+            <h2>Good work<br />happens together.</h2>
+          </div>
+          <PublicPageVortex />
+        </aside>
+      )}
     </div>
   );
 }

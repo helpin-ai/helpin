@@ -39,6 +39,8 @@ type Handlers struct {
 	Organization        *handler.OrganizationHandler
 	Workspace           *handler.WorkspaceHandler
 	Setup               *handler.SetupHandler
+	Capability          *handler.CapabilityHandler
+	SampleData          *handler.SampleDataHandler
 	Edition             EditionRoutes
 	Settings            *handler.SettingsHandler
 	Automation          *handler.AutomationHandler
@@ -77,6 +79,7 @@ type Handlers struct {
 	SupportTag          *handler.SupportTagHandler
 	SupportInboxWidget  *handler.SupportInboxWidgetHandler
 	Git                 *handler.GitHandler
+	GitHubApp           *handler.GitHubAppHandler
 	Docs                *handler.DocsHandler
 	TLSAsk              *handler.TLSAskHandler
 	Notification        *handler.NotificationHandler
@@ -347,6 +350,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Post("/mcp/oauth/revoke", h.MCP.RevokeToken)
 		}
 		r.Get("/health", h.Health.Check)
+		if h.Capability != nil {
+			// Operator tooling (helpin doctor) authenticates with the internal secret.
+			r.With(middleware.RequireInternalAPISecret).Get("/instance/capabilities", h.Capability.Instance)
+		}
 		if h.Edition != nil {
 			h.Edition.RegisterPublic(r)
 		}
@@ -357,6 +364,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		// ---- Public git webhook (no JWT) ----
 		r.Get("/git/github/callback", h.Git.GitHubCallback)
 		r.Post("/git/webhook", h.Git.Webhook)
+		if h.GitHubApp != nil {
+			r.Get("/github/app-manifest/callback", h.GitHubApp.ManifestCallback)
+		}
 		if h.PostmarkInbound != nil {
 			r.Post("/webhooks/postmark/inbound", h.PostmarkInbound.PostmarkInbound)
 			r.Post("/webhooks/postmark/open", h.PostmarkInbound.PostmarkOpen)
@@ -552,6 +562,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.Post("/", h.AIConnection.Create)
 					r.Post("/{connectionID}/poll", h.AIConnection.Poll)
 					r.Post("/{connectionID}/reconnect", h.AIConnection.Reconnect)
+					r.Post("/{connectionID}/test", h.AIConnection.Test)
 					r.Delete("/{connectionID}", h.AIConnection.Disconnect)
 				})
 			}
@@ -645,6 +656,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/organizations/{id}/git/integrations", h.Git.ListOrgIntegrations)
 			r.Post("/organizations/{id}/git/integrations", h.Git.CreateOrgIntegration)
 			r.Get("/organizations/{id}/git/github/install-url", h.Git.GetOrgGitHubInstallURL)
+			r.Post("/organizations/{id}/git/github/installations/{installationID}/claim", h.Git.ClaimOrgGitHubInstallation)
 			r.Post("/organizations/{id}/git/gitlab/connect", h.Git.ConnectOrgGitLab)
 			r.Get("/organizations/{id}/git/integrations/{integrationId}", h.Git.GetOrgIntegration)
 			r.Put("/organizations/{id}/git/integrations/{integrationId}", h.Git.UpdateOrgIntegration)
@@ -689,6 +701,19 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermWorkspaceUpdate)).Put("/setup/goals", h.Setup.UpdateGoals)
 					r.Patch("/setup/me", h.Setup.UpdatePreference)
 					r.Post("/setup/recommendations/{taskKey}/start", h.Setup.StartRecommendation)
+				}
+				if h.SampleData != nil {
+					r.Get("/sample-data", h.SampleData.Get)
+					r.With(requirePerm(authorization.PermWorkspaceUpdate)).Post("/sample-data", h.SampleData.Load)
+					r.With(requirePerm(authorization.PermWorkspaceUpdate)).Delete("/sample-data", h.SampleData.Remove)
+				}
+				if h.GitHubApp != nil {
+					r.With(requirePerm(authorization.PermSettingsRead)).Get("/github/app-status", h.GitHubApp.Status)
+					r.With(authorization.RequireOwner(authz)).Post("/github/app-manifest", h.GitHubApp.CreateManifest)
+				}
+				if h.Capability != nil {
+					r.Get("/capabilities", h.Capability.Workspace)
+					r.With(requirePerm(authorization.PermWorkspaceUpdate)).Post("/email/test", h.Capability.SendTestEmail)
 				}
 				r.With(requirePerm(authorization.PermWorkspaceMembersManage)).Put("/members/{memberId}", h.Workspace.UpdateMember)
 				r.With(requirePerm(authorization.PermWorkspaceMembersManage)).Delete("/members/{memberId}", h.Workspace.RemoveMember)

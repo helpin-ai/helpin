@@ -148,6 +148,7 @@ func AutoMigrationModels() []any {
 		&model.SupportCoverageGapPairDecision{},
 		&model.GitIntegration{},
 		&model.GitCredential{},
+		&model.GitHubAppCredential{},
 		&model.GitRepository{},
 		&model.PMTeamRepoDefault{},
 		&model.TaskDeliveryTarget{},

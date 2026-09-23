@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -143,6 +144,18 @@ func TestInstallGeneratesSecretsAndRepeatPreservesEverything(t *testing.T) {
 	values := envValues(before)
 	if values["JWT_SECRET"] == values["AI_CONNECTION_ENCRYPTION_KEY"] {
 		t.Fatal("secrets reused")
+	}
+	// Modules enabled by default need their own stable 32-byte hex keys.
+	for _, key := range []string{"CRM_ENCRYPTION_KEY", "GIT_OAUTH_ENCRYPTION_KEY"} {
+		if decoded, err := hex.DecodeString(values[key]); err != nil || len(decoded) != 32 {
+			t.Fatalf("%s is not a generated 32-byte hex key", key)
+		}
+	}
+	if values["CRM_ENCRYPTION_KEY"] == values["GIT_OAUTH_ENCRYPTION_KEY"] || values["CRM_ENCRYPTION_KEY"] == values["AI_CONNECTION_ENCRYPTION_KEY"] {
+		t.Fatal("encryption keys reused")
+	}
+	if values["HELPIN_ENABLED_MODULES"] != "support,docs,agents,pm,crm,automation" {
+		t.Fatal("new installations must enable every module:", values["HELPIN_ENABLED_MODULES"])
 	}
 	info, _ := os.Stat(envPath)
 	if info.Mode().Perm() != 0600 {

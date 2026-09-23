@@ -29,6 +29,12 @@ type options struct {
 	port, storagePort, helpPort                                        int
 	yes, noStart                                                       bool
 	backupPath                                                         string
+	// Optional integrations. Secrets come only from files, environment
+	// variables or hidden prompts, never from command-line values.
+	smtpHost, smtpPort, smtpUser, smtpFrom, smtpTLS, smtpPasswordFile string
+	aiProvider, aiKeyFile                                             string
+	smtp                                                              *smtpSettings
+	ai                                                                *aiSettings
 }
 
 type app struct {
@@ -40,6 +46,8 @@ type app struct {
 	run         func(string, ...string) error
 	output      func(string, ...string) ([]byte, error)
 	stream      func(string, io.Reader, io.Writer, ...string) error
+	// secret reads one value without echoing it (interactive sessions only).
+	secret func(string) (string, error)
 }
 
 func main() {
@@ -47,6 +55,7 @@ func main() {
 	if info, err := os.Stdin.Stat(); err == nil {
 		a.interactive = info.Mode()&os.ModeCharDevice != 0
 	}
+	a.secret = terminalSecret(a)
 	a.run = func(dir string, args ...string) error {
 		cmd := exec.Command(args[0], args[1:]...)
 		cmd.Dir, cmd.Stdin, cmd.Stdout, cmd.Stderr = dir, os.Stdin, os.Stdout, os.Stderr
@@ -122,7 +131,7 @@ func (a *app) execute(args []string) error {
 		return nil
 	}
 	if command == "help" || command == "--help" || command == "-h" {
-		fmt.Fprintln(a.out, "Helpin Community\n\nUsage: helpin <command> [options]\nCommands: install, start, stop, restart, status, logs, configure, doctor, backup, restore, upgrade, version\nRun helpin <command> --help for options. Default installation: ~/helpin.\nBackup pauses services; restore uses new volumes. Upgrade requires a compatible release and creates a recovery backup.")
+		fmt.Fprintln(a.out, "Helpin Community\n\nUsage: helpin <command> [options]\nCommands: install, start, stop, restart, status, logs, configure, doctor, backup, restore, upgrade, version\nRun helpin <command> --help for options. Default installation: ~/helpin.\nBackup pauses services; restore uses new volumes. Upgrade requires a compatible release and creates a recovery backup.\nSecrets for install/configure come from --smtp-password-file/--ai-key-file, HELPIN_SMTP_PASSWORD/HELPIN_AI_API_KEY or hidden prompts, never from command-line values.")
 		return nil
 	}
 	if command == "" {
@@ -166,6 +175,14 @@ func (a *app) execute(args []string) error {
 		f.IntVar(&o.port, "port", 0, "local dashboard port (default 8085)")
 		f.IntVar(&o.storagePort, "storage-port", 0, "local storage port (default 9005)")
 		f.IntVar(&o.helpPort, "help-port", 0, "local help-center port (default 8086)")
+		f.StringVar(&o.smtpHost, "smtp-host", "", "application mail SMTP host (omit to leave mail unchanged)")
+		f.StringVar(&o.smtpPort, "smtp-port", "", "SMTP port (default 587)")
+		f.StringVar(&o.smtpUser, "smtp-username", "", "SMTP username")
+		f.StringVar(&o.smtpFrom, "smtp-from", "", "sender address for application mail")
+		f.StringVar(&o.smtpTLS, "smtp-tls", "", "SMTP TLS mode: starttls, tls or none")
+		f.StringVar(&o.smtpPasswordFile, "smtp-password-file", "", "file containing the SMTP password (or set "+smtpPasswordEnv+")")
+		f.StringVar(&o.aiProvider, "ai-provider", "", "AI provider: openrouter, openai, anthropic or skip")
+		f.StringVar(&o.aiKeyFile, "ai-key-file", "", "file containing the AI provider API key (or set "+aiKeyEnv+")")
 	}
 	if command == "install" || command == "upgrade" {
 		f.StringVar(&o.release, "version", "", "release tag (install: CLI version; upgrade: newest published Community release)")
@@ -254,7 +271,13 @@ func (a *app) execute(args []string) error {
 		if err = a.configuration(&o, values); err != nil {
 			return err
 		}
+		if err = a.integrations(&o, values); err != nil {
+			return err
+		}
 		if err = writeConfiguration(dir, o); err != nil {
+			return err
+		}
+		if err = writeIntegrations(dir, o); err != nil {
 			return err
 		}
 		fmt.Fprintf(a.out, "Configuration saved. Apply it with: helpin restart --dir %q\n", o.dir)
@@ -371,6 +394,7 @@ func (a *app) doctor(dir string) error {
 		err = errors.New("configuration contains secrets; run chmod 600 on .env")
 	}
 	check("Secret file permissions", err)
+	failures = append(failures, a.reportCapabilities(client, values)...)
 	if len(failures) > 0 {
 		return fmt.Errorf("%d checks failed; inspect helpin logs; for public URLs check DNS, your HTTPS proxy and trusted proxy CIDR", len(failures))
 	}

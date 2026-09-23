@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	sdk "github.com/helpin-ai/agent-runtime-go"
 	"github.com/helpin-ai/helpin/server/internal/aipolicy"
 	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/llm"
@@ -187,14 +188,44 @@ func (s *AICompletionService) completeAttempt(
 	if err != nil {
 		return nil, false, err
 	}
-	attemptKey := fmt.Sprintf("%s:route:%d:%s", input.IdempotencyKey, index, aiUsageStableHash(aiCompletionRouteKey(route)))
+	return s.runMeteredAttempt(ctx, input, meteredCompletionAttempt{
+		client: s.provider, chat: chat, route: route,
+		policyRoute:   aipolicy.Route{Provider: route.Provider, Model: route.Model},
+		key:           fmt.Sprintf("%s:route:%d:%s", input.IdempotencyKey, index, aiUsageStableHash(aiCompletionRouteKey(route))),
+		index:         index,
+		funding:       aiusage.FundingHelpinHosted,
+		retryUnpriced: input.PreferredRoute != nil && policy.PreferRequestRoute,
+	})
+}
+
+// meteredCompletionAttempt is one governed, metered provider call. Catalogued
+// routes run on the server provider router; workspace AI profiles run on a
+// client bound to the profile's connection with the profile's funding policy.
+type meteredCompletionAttempt struct {
+	client llm.Provider
+	chat   llm.ChatRequest
+	// route identifies the executed provider and model for audit and metering.
+	route AICompletionRoute
+	// policyRoute is validated against the action's allowed routes; an empty
+	// route validates the action identity with its default route.
+	policyRoute   aipolicy.Route
+	endpoint      *sdk.ModelEndpoint
+	key           string
+	index         int
+	funding       aiusage.FundingMode
+	flatTariff    *aiusage.FlatTokenTariff
+	retryUnpriced bool
+}
+
+func (s *AICompletionService) runMeteredAttempt(ctx context.Context, input AICompletionRequest, a meteredCompletionAttempt) (*llm.ChatResponse, bool, error) {
+	route, chat, attemptKey, index := a.route, a.chat, a.key, a.index
 	var auditExecution *model.AIActionExecution
 	if s.policy != nil {
 		action, policyErr := aipolicy.ResolveExecution(s.policy, aipolicy.ExecutionContext{
 			WorkspaceID: input.WorkspaceID, ActionKey: input.ActionKey,
 			FeatureKey: input.FeatureKey, IdempotencyKey: input.IdempotencyKey,
 			Attempt: index + 1, Metadata: input.Metadata,
-		}, aipolicy.Route{Provider: route.Provider, Model: route.Model})
+		}, a.policyRoute)
 		if policyErr != nil {
 			return nil, false, policyErr
 		}
@@ -217,21 +248,21 @@ func (s *AICompletionService) completeAttempt(
 	promotional := known && !feature.Chargeable
 	preflight, err := s.usage.Preflight(ctx, PreflightRequest{Metering: MeteringRequest{
 		WorkspaceID: input.WorkspaceID, TaskNature: taskNatureForFeature(input.FeatureKey),
-		FeatureKey: input.FeatureKey, OperationKey: input.OperationKey,
+		FeatureKey: input.FeatureKey, OperationKey: input.OperationKey, Endpoint: a.endpoint,
 		Provider: route.Provider, Model: route.Model, Route: route.Model, ServiceTier: route.ServiceTier,
-		FundingMode: aiusage.FundingHelpinHosted, InputTokensEstimate: estimateChatInputTokens(input.Chat),
+		FundingMode: a.funding, FlatTariff: a.flatTariff, InputTokensEstimate: estimateChatInputTokens(input.Chat),
 		MaximumOutputTokens: int64(input.Chat.MaxTokens), ExecutionID: metadataString(input.Metadata, "execution_id"),
 		IdempotencyKey: attemptKey, Promotional: promotional,
 	}})
 	if err != nil {
 		s.finishCompletionAudit(ctx, auditExecution, nil, "llm_preflight", err)
-		retry := input.PreferredRoute != nil && policy.PreferRequestRoute && errors.Is(err, model.ErrModelUnavailableUnderPricing)
+		retry := a.retryUnpriced && errors.Is(err, model.ErrModelUnavailableUnderPricing)
 		return nil, retry, err
 	}
 
 	attemptStart := time.Now()
 	attemptCtx, cancelAttempt := completionAttemptContext(ctx, input.FeatureKey)
-	response, providerErr := s.provider.ChatCompletion(attemptCtx, chat)
+	response, providerErr := a.client.ChatCompletion(attemptCtx, chat)
 	cancelAttempt()
 	attemptDuration := time.Since(attemptStart)
 	attemptOutcome := "provider_error"

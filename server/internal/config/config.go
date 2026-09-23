@@ -39,8 +39,11 @@ type Config struct {
 	// DemoRequireEmail makes the visitor email mandatory on POST /api/auth/demo.
 	DemoRequireEmail bool
 	// DemoLeadWebhookURL receives a JSON POST for every visitor email captured.
-	DemoLeadWebhookURL    string
-	EnabledModules        []model.ModuleID
+	DemoLeadWebhookURL string
+	EnabledModules     []model.ModuleID
+	// SetupGuideEnabled gates the workspace Setup guide (SETUP_SUCCESS_ENABLED;
+	// unset uses the edition default: on in Community, off in Enterprise).
+	SetupGuideEnabled     bool
 	DatabaseURL           string
 	JWTSecret             string
 	Port                  string
@@ -129,6 +132,11 @@ type Config struct {
 	GitHubAppID         string
 	GitHubAppSlug       string
 	GitHubAppPrivateKey string
+	// GITHUB_APP_WEBHOOK_SECRET is the App's webhook secret; deliveries are
+	// rejected without it. Client ID/secret are optional.
+	GitHubAppWebhookSecret string
+	GitHubAppClientID      string
+	GitHubAppClientSecret  string
 
 	// GitOAuthEncryptionKey encrypts stored git provider tokens (GitHub App + GitLab PAT) at rest.
 	GitOAuthEncryptionKey string
@@ -302,6 +310,10 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	setupGuideEnabled, err := deployment.SetupGuidePolicy(os.Getenv("SETUP_SUCCESS_ENABLED"))
+	if err != nil {
+		return nil, err
+	}
 
 	appBaseURL := os.Getenv("APP_BASE_URL")
 	if appBaseURL == "" {
@@ -397,6 +409,7 @@ func Load() (*Config, error) {
 		RunAutoMigrate:                         parseBoolEnvDefaultTrue(os.Getenv("RUN_AUTO_MIGRATE")),
 		CORSOrigins:                            corsOrigins,
 		EnabledModules:                         enabledModules,
+		SetupGuideEnabled:                      setupGuideEnabled,
 		PublicWidgetURL:                        publicWidgetURL,
 		PublicSDKURL:                           publicSDKURL,
 		EmailVerificationRequired:              emailVerificationRequired,
@@ -470,6 +483,9 @@ func Load() (*Config, error) {
 		GitHubAppID:                            os.Getenv("GITHUB_APP_ID"),
 		GitHubAppSlug:                          os.Getenv("GITHUB_APP_SLUG"),
 		GitHubAppPrivateKey:                    os.Getenv("GITHUB_APP_PRIVATE_KEY"),
+		GitHubAppWebhookSecret:                 strings.TrimSpace(os.Getenv("GITHUB_APP_WEBHOOK_SECRET")),
+		GitHubAppClientID:                      strings.TrimSpace(os.Getenv("GITHUB_APP_CLIENT_ID")),
+		GitHubAppClientSecret:                  strings.TrimSpace(os.Getenv("GITHUB_APP_CLIENT_SECRET")),
 		GitOAuthEncryptionKey:                  strings.TrimSpace(os.Getenv("GIT_OAUTH_ENCRYPTION_KEY")),
 		SMTPHost:                               strings.TrimSpace(os.Getenv("SMTP_HOST")),
 		SMTPPort:                               smtpPort,

@@ -1,8 +1,9 @@
 package model
 
 import (
-	sdk "github.com/helpin-ai/agent-runtime-go"
 	"time"
+
+	sdk "github.com/helpin-ai/agent-runtime-go"
 )
 
 // AIConnection belongs to a workspace or one of its members. Secret material is never
@@ -24,8 +25,33 @@ type AIConnection struct {
 	AccountID       string                  `json:"account_id,omitempty"`
 	ExpiresAt       *time.Time              `json:"expires_at,omitempty"`
 	EncryptedSecret []byte                  `json:"-"`
-	CreatedAt       time.Time               `json:"created_at"`
-	UpdatedAt       time.Time               `json:"updated_at"`
+	// CredentialSource is "environment" when the deployment's provider key
+	// configured this connection; startup may then rotate it from the environment.
+	// Any other value, including nil, marks a key that only users may change.
+	CredentialSource *string `json:"credential_source,omitempty"`
+	// LastVerifiedAt records the last explicit connection test. A nil
+	// LastVerificationError alongside it means that test succeeded.
+	LastVerifiedAt        *time.Time `json:"last_verified_at,omitempty"`
+	LastVerificationError *string    `json:"last_verification_error,omitempty"`
+	CreatedAt             time.Time  `json:"created_at"`
+	UpdatedAt             time.Time  `json:"updated_at"`
+}
+
+// AIConnectionCredentialSourceEnvironment marks a key sealed from deployment configuration.
+const AIConnectionCredentialSourceEnvironment = "environment"
+
+// TestAIConnectionRequest optionally selects the model used for a connection test.
+type TestAIConnectionRequest struct {
+	Model string `json:"model,omitempty"`
+}
+
+// AIConnectionTestResult reports a live provider check. Error is sanitized and
+// never contains credential material or raw provider responses.
+type AIConnectionTestResult struct {
+	OK        bool   `json:"ok"`
+	Model     string `json:"model"`
+	LatencyMS int64  `json:"latency_ms"`
+	Error     string `json:"error,omitempty"`
 }
 
 type CreateAIConnectionRequest struct {

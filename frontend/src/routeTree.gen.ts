@@ -27,6 +27,7 @@ import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
 import { Route as AuthenticatedWSlugRouteImport } from './routes/_authenticated/w/$slug'
 import { Route as AuthenticatedOauthAuthorizeRouteImport } from './routes/_authenticated/oauth/authorize'
+import { Route as AuthenticatedGithubInstalledRouteImport } from './routes/_authenticated/github/installed'
 import { Route as AuthenticatedWSlugIndexRouteImport } from './routes/_authenticated/w/$slug/index'
 import { Route as AuthenticatedWSlugTeamGoalsRouteImport } from './routes/_authenticated/w/$slug/team-goals'
 import { Route as AuthenticatedWSlugTasksRouteImport } from './routes/_authenticated/w/$slug/tasks'
@@ -51,6 +52,7 @@ import { Route as AuthenticatedWSlugSprintsSprintIdRouteImport } from './routes/
 import { Route as AuthenticatedWSlugSettingsWorkflowsRouteImport } from './routes/_authenticated/w/$slug/settings/workflows'
 import { Route as AuthenticatedWSlugSettingsTeamsRouteImport } from './routes/_authenticated/w/$slug/settings/teams'
 import { Route as AuthenticatedWSlugSettingsTaskTemplatesRouteImport } from './routes/_authenticated/w/$slug/settings/task-templates'
+import { Route as AuthenticatedWSlugSettingsSystemStatusRouteImport } from './routes/_authenticated/w/$slug/settings/system-status'
 import { Route as AuthenticatedWSlugSettingsSupportTranslationRouteImport } from './routes/_authenticated/w/$slug/settings/support-translation'
 import { Route as AuthenticatedWSlugSettingsSupportAiAssistantRouteImport } from './routes/_authenticated/w/$slug/settings/support-ai-assistant'
 import { Route as AuthenticatedWSlugSettingsRepositoriesRouteImport } from './routes/_authenticated/w/$slug/settings/repositories'
@@ -220,6 +222,12 @@ const AuthenticatedOauthAuthorizeRoute =
     path: '/oauth/authorize',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedGithubInstalledRoute =
+  AuthenticatedGithubInstalledRouteImport.update({
+    id: '/github/installed',
+    path: '/github/installed',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedWSlugIndexRoute = AuthenticatedWSlugIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -356,6 +364,12 @@ const AuthenticatedWSlugSettingsTaskTemplatesRoute =
   AuthenticatedWSlugSettingsTaskTemplatesRouteImport.update({
     id: '/settings/task-templates',
     path: '/settings/task-templates',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedWSlugSettingsSystemStatusRoute =
+  AuthenticatedWSlugSettingsSystemStatusRouteImport.update({
+    id: '/settings/system-status',
+    path: '/settings/system-status',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugSettingsSupportTranslationRoute =
@@ -843,6 +857,7 @@ export interface FileRoutesByFullPath {
   '/join/$token': typeof JoinTokenRoute
   '/share/$shareToken': typeof ShareShareTokenRoute
   '/shared/$shareToken': typeof SharedShareTokenRoute
+  '/github/installed': typeof AuthenticatedGithubInstalledRoute
   '/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
   '/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
@@ -908,6 +923,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/settings/repositories': typeof AuthenticatedWSlugSettingsRepositoriesRoute
   '/w/$slug/settings/support-ai-assistant': typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
   '/w/$slug/settings/support-translation': typeof AuthenticatedWSlugSettingsSupportTranslationRoute
+  '/w/$slug/settings/system-status': typeof AuthenticatedWSlugSettingsSystemStatusRoute
   '/w/$slug/settings/task-templates': typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
   '/w/$slug/settings/teams': typeof AuthenticatedWSlugSettingsTeamsRoute
   '/w/$slug/settings/workflows': typeof AuthenticatedWSlugSettingsWorkflowsRoute
@@ -963,6 +979,7 @@ export interface FileRoutesByTo {
   '/join/$token': typeof JoinTokenRoute
   '/share/$shareToken': typeof ShareShareTokenRoute
   '/shared/$shareToken': typeof SharedShareTokenRoute
+  '/github/installed': typeof AuthenticatedGithubInstalledRoute
   '/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
@@ -1023,6 +1040,7 @@ export interface FileRoutesByTo {
   '/w/$slug/settings/repositories': typeof AuthenticatedWSlugSettingsRepositoriesRoute
   '/w/$slug/settings/support-ai-assistant': typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
   '/w/$slug/settings/support-translation': typeof AuthenticatedWSlugSettingsSupportTranslationRoute
+  '/w/$slug/settings/system-status': typeof AuthenticatedWSlugSettingsSystemStatusRoute
   '/w/$slug/settings/task-templates': typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
   '/w/$slug/settings/teams': typeof AuthenticatedWSlugSettingsTeamsRoute
   '/w/$slug/settings/workflows': typeof AuthenticatedWSlugSettingsWorkflowsRoute
@@ -1079,6 +1097,7 @@ export interface FileRoutesById {
   '/join/$token': typeof JoinTokenRoute
   '/share/$shareToken': typeof ShareShareTokenRoute
   '/shared/$shareToken': typeof SharedShareTokenRoute
+  '/_authenticated/github/installed': typeof AuthenticatedGithubInstalledRoute
   '/_authenticated/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/_authenticated/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
   '/_authenticated/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
@@ -1144,6 +1163,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/settings/repositories': typeof AuthenticatedWSlugSettingsRepositoriesRoute
   '/_authenticated/w/$slug/settings/support-ai-assistant': typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
   '/_authenticated/w/$slug/settings/support-translation': typeof AuthenticatedWSlugSettingsSupportTranslationRoute
+  '/_authenticated/w/$slug/settings/system-status': typeof AuthenticatedWSlugSettingsSystemStatusRoute
   '/_authenticated/w/$slug/settings/task-templates': typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
   '/_authenticated/w/$slug/settings/teams': typeof AuthenticatedWSlugSettingsTeamsRoute
   '/_authenticated/w/$slug/settings/workflows': typeof AuthenticatedWSlugSettingsWorkflowsRoute
@@ -1202,6 +1222,7 @@ export interface FileRouteTypes {
     | '/join/$token'
     | '/share/$shareToken'
     | '/shared/$shareToken'
+    | '/github/installed'
     | '/oauth/authorize'
     | '/w/$slug'
     | '/oauth/cli/authorize'
@@ -1267,6 +1288,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/repositories'
     | '/w/$slug/settings/support-ai-assistant'
     | '/w/$slug/settings/support-translation'
+    | '/w/$slug/settings/system-status'
     | '/w/$slug/settings/task-templates'
     | '/w/$slug/settings/teams'
     | '/w/$slug/settings/workflows'
@@ -1322,6 +1344,7 @@ export interface FileRouteTypes {
     | '/join/$token'
     | '/share/$shareToken'
     | '/shared/$shareToken'
+    | '/github/installed'
     | '/oauth/authorize'
     | '/oauth/cli/authorize'
     | '/w/$slug/dashboard'
@@ -1382,6 +1405,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/repositories'
     | '/w/$slug/settings/support-ai-assistant'
     | '/w/$slug/settings/support-translation'
+    | '/w/$slug/settings/system-status'
     | '/w/$slug/settings/task-templates'
     | '/w/$slug/settings/teams'
     | '/w/$slug/settings/workflows'
@@ -1437,6 +1461,7 @@ export interface FileRouteTypes {
     | '/join/$token'
     | '/share/$shareToken'
     | '/shared/$shareToken'
+    | '/_authenticated/github/installed'
     | '/_authenticated/oauth/authorize'
     | '/_authenticated/w/$slug'
     | '/_authenticated/oauth/cli/authorize'
@@ -1502,6 +1527,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/settings/repositories'
     | '/_authenticated/w/$slug/settings/support-ai-assistant'
     | '/_authenticated/w/$slug/settings/support-translation'
+    | '/_authenticated/w/$slug/settings/system-status'
     | '/_authenticated/w/$slug/settings/task-templates'
     | '/_authenticated/w/$slug/settings/teams'
     | '/_authenticated/w/$slug/settings/workflows'
@@ -1687,6 +1713,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOauthAuthorizeRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/github/installed': {
+      id: '/_authenticated/github/installed'
+      path: '/github/installed'
+      fullPath: '/github/installed'
+      preLoaderRoute: typeof AuthenticatedGithubInstalledRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/w/$slug/': {
       id: '/_authenticated/w/$slug/'
       path: '/'
@@ -1853,6 +1886,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/task-templates'
       fullPath: '/w/$slug/settings/task-templates'
       preLoaderRoute: typeof AuthenticatedWSlugSettingsTaskTemplatesRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/settings/system-status': {
+      id: '/_authenticated/w/$slug/settings/system-status'
+      path: '/settings/system-status'
+      fullPath: '/w/$slug/settings/system-status'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsSystemStatusRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/settings/support-translation': {
@@ -2623,6 +2663,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugSettingsRepositoriesRoute: typeof AuthenticatedWSlugSettingsRepositoriesRoute
   AuthenticatedWSlugSettingsSupportAiAssistantRoute: typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
   AuthenticatedWSlugSettingsSupportTranslationRoute: typeof AuthenticatedWSlugSettingsSupportTranslationRoute
+  AuthenticatedWSlugSettingsSystemStatusRoute: typeof AuthenticatedWSlugSettingsSystemStatusRoute
   AuthenticatedWSlugSettingsTaskTemplatesRoute: typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
   AuthenticatedWSlugSettingsTeamsRoute: typeof AuthenticatedWSlugSettingsTeamsRoute
   AuthenticatedWSlugSettingsWorkflowsRoute: typeof AuthenticatedWSlugSettingsWorkflowsRoute
@@ -2713,6 +2754,8 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
     AuthenticatedWSlugSettingsSupportAiAssistantRoute,
   AuthenticatedWSlugSettingsSupportTranslationRoute:
     AuthenticatedWSlugSettingsSupportTranslationRoute,
+  AuthenticatedWSlugSettingsSystemStatusRoute:
+    AuthenticatedWSlugSettingsSystemStatusRoute,
   AuthenticatedWSlugSettingsTaskTemplatesRoute:
     AuthenticatedWSlugSettingsTaskTemplatesRoute,
   AuthenticatedWSlugSettingsTeamsRoute: AuthenticatedWSlugSettingsTeamsRoute,
@@ -2745,6 +2788,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
   AuthenticatedWorkspacesRoute: typeof AuthenticatedWorkspacesRoute
+  AuthenticatedGithubInstalledRoute: typeof AuthenticatedGithubInstalledRoute
   AuthenticatedOauthAuthorizeRoute: typeof AuthenticatedOauthAuthorizeRoute
   AuthenticatedWSlugRoute: typeof AuthenticatedWSlugRouteWithChildren
   AuthenticatedOauthCliAuthorizeRoute: typeof AuthenticatedOauthCliAuthorizeRoute
@@ -2754,6 +2798,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,
   AuthenticatedWorkspacesRoute: AuthenticatedWorkspacesRoute,
+  AuthenticatedGithubInstalledRoute: AuthenticatedGithubInstalledRoute,
   AuthenticatedOauthAuthorizeRoute: AuthenticatedOauthAuthorizeRoute,
   AuthenticatedWSlugRoute: AuthenticatedWSlugRouteWithChildren,
   AuthenticatedOauthCliAuthorizeRoute: AuthenticatedOauthCliAuthorizeRoute,

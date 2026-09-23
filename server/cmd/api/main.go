@@ -862,10 +862,11 @@ func main() {
 	supportInboxService.SetTriageService(supportInboxTriageService)
 
 	slog.Info("startup: initializing GitHub App client")
-	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)
+	githubAppConfig, err := newGitHubAppConfigService(db, cfg)
 	if err != nil {
 		fatalWithSentry("failed to initialize github app client", err)
 	}
+	githubAppClient := githubapp.NewClientWithSource(githubAppConfig)
 	var temporalClient tclient.Client
 	temporalClient, err = tclient.Dial(temporalapp.BuildClientOptions(cfg))
 	if err != nil {
@@ -893,7 +894,10 @@ func main() {
 		cfg.JWTSecret,
 	).
 		SetEpicDeliveryDependencies(epicDeliveryTargetRepo, pmEpicRepo).
-		SetGitLabDependencies(gitCredentialRepo, resolveGitOAuthEncryptionKey(cfg))
+		SetGitLabDependencies(gitCredentialRepo, resolveGitOAuthEncryptionKey(cfg)).
+		SetGitHubAppSource(githubAppConfig).
+		SetGitHubInstallClaimEnabled(gitHubAppManifestEnabled)
+	githubAppConfig.SetInstallRedirector(gitService).SetAppLookup(githubAppClient)
 	pmTaskService.SetGitService(gitService)
 	pmEpicService.SetGitService(gitService)
 	var agentRuntimeClient *service.AgentRuntimeClient
@@ -909,6 +913,13 @@ func main() {
 	if err != nil {
 		fatalWithSentry("failed to initialize AI connections", err)
 	}
+	// Re-map untouched standard profiles when shared connections change. The
+	// customer-mode instance never seals keys; managed defaults are never bypassed.
+	standardProfileRemapper, err := service.NewAIStandardProfiles(repository.NewAIStandardProfileRepository(db), "", "customer", nil)
+	if err != nil {
+		fatalWithSentry("failed to initialize standard AI profile re-mapping", err)
+	}
+	aiConnectionService.SetChangeObserver(standardProfileRemapper)
 	aiProfileService := service.NewAIProfileService(repository.NewAIProfileRepository(db), aiConnectionService).SetAdmissionPolicy(editionServices.ConnectionPolicy).CheckRuntimeReadiness()
 	externalMCPService, err := service.NewExternalMCPService(
 		externalMCPRepo,
@@ -1552,11 +1563,11 @@ func main() {
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
 	workspaceService.SetProductAnalyticsService(productAnalytics)
 	setupService := service.NewSetupService(setupRepo)
-	setupSuccessEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv("SETUP_SUCCESS_ENABLED")), "true")
+	setupSuccessEnabled := cfg.SetupGuideEnabled
 	if setupSuccessEnabled {
 		workspaceService.SetSetupInitializer(setupService)
 	}
-	workspaceService.SetContextGeneratorDependencies(supportLLMProvider, nil)
+	workspaceService.SetContextGeneratorDependencies(supportLLMProvider, nil).SetContextAIProfiles(aiProfileService)
 	entitlementService := editionServices.Entitlements
 	setupService.SetEntitlementService(entitlementService)
 	pmImportService.SetEntitlementService(entitlementService)
@@ -1776,6 +1787,7 @@ func main() {
 		Organization:        handler.NewOrganizationHandler(orgService),
 		Workspace:           handler.NewWorkspaceHandler(workspaceService, authzService),
 		Setup:               setupHandler,
+		SampleData:          handler.NewSampleDataHandler(service.NewSampleDataService(db, cfg.DocsOrderingUseSortKey), authzService),
 		Edition:             editionServices.Routes,
 		Settings:            handler.NewSettingsHandler(settingsService, automationInventoryService),
 		Automation:          handler.NewAutomationHandler(automationInventoryService, ruleEngine, agentService, flowTemplateRegistry, flowTemplateInstaller, flowTemplateUninstaller),
@@ -1822,6 +1834,7 @@ func main() {
 		AdminWebhookEvent:   handler.NewAdminWebhookEventHandler(supportEmailWebhookEventRepo),
 		AdminEmailQueue:     handler.NewAdminEmailQueueHandler(emailFallbackService, supportEmailLogRepo, supportEmailWebhookEventRepo, emailDiagnosticsConfig),
 		Git:                 handler.NewGitHandler(gitService, gitWebhookEventRepo),
+		GitHubApp:           handler.NewGitHubAppHandler(githubAppConfig),
 		Notification:        handler.NewNotificationHandler(notificationService, followerService),
 		UserNotifSettings:   handler.NewUserNotificationSettingsHandler(userNotifSettingsService),
 		PushDevice:          handler.NewPushDeviceHandler(pushDeviceService),
@@ -1888,9 +1901,17 @@ func main() {
 	handlers.Docs.SetImageEditService(docsImageEditService)
 	handlers.Docs.SetSupportWidgetConfigProvider(supportInboxService)
 	handlers.SupportInboxWidget.SetPublicOrigin(cfg.PublicWidgetURL)
-	handlers.AIConnection.SetKnowledgeConfiguration(cfg.OpenAIAPIKey != "", cfg.OpenAIEmbeddingModel, supportLLMRouter.ConfiguredChatProviders())
+	supportEmbeddingModel := llm.SupportEmbeddingModel(cfg.OpenAIAPIKey, cfg.OpenRouterAPIKey, cfg.OpenAIEmbeddingModel)
+	handlers.AIConnection.SetKnowledgeConfiguration(supportEmbeddingModel != "", supportEmbeddingModel, supportLLMRouter.ConfiguredChatProviders())
+	handlers.Capability = newCapabilityHandler(db, cfg, capabilityWiring{
+		appEmail: appEmailClient, emailDiagnostics: emailDiagnosticsConfig,
+		aiConnectionsEnabled: aiConnectionService.Enabled(), chatProviders: supportLLMRouter.ConfiguredChatProviders(),
+		embeddingModel: supportEmbeddingModel, storage: s3Client, temporal: temporalClient,
+		gitHubAppConfigured: githubAppClient.Configured,
+	})
 	handlers.Docs.SetPublicWidgetURLs(cfg.PublicWidgetURL, cfg.PublicSDKURL)
 	handlers.Auth.SetPublicWidgetURLs(cfg.PublicWidgetURL, cfg.PublicSDKURL)
+	handlers.Auth.SetSetupGuideEnabled(setupSuccessEnabled)
 	handlers.Docs.SetHelpcenterAISearchService(helpcenterAISearchService)
 	handlers.Docs.SetAPIReferenceService(docsAPIReferenceService)
 

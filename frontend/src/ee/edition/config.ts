@@ -1,4 +1,6 @@
 export const billingEnabled = true;
+/** Server services are platform-managed, so Settings → System status is hidden. */
+export const systemStatusEnabled = false;
 export const meetingProcessingRecovery = "The transcript is safe. Upgrade or add AI capacity, then retry processing to create meeting notes.";
 
 export const defaultSupportWidgetKey = "b86e7c64e7c93517f0c2f395c7b98701";

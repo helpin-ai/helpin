@@ -32,8 +32,8 @@ guides below.
 
 ## Customer relationships and signals
 
-CRM and PM are outside the Community 0.1 beta default modules; their code is in
-the monorepo.
+CRM and PM are included in the Community default modules; operators can disable
+them with `HELPIN_ENABLED_MODULES`.
 
 - [CRM architecture and data model](crm-overview.md): the CRM module and its connections to other Helpin modules.
 - [CRM signals](crm-signals.md): implemented detection, scoring, activation, and operations.

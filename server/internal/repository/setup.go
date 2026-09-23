@@ -15,6 +15,14 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// Setup evidence ignores sample data: exploring the sample workspace must not
+// complete a setup step on the workspace's behalf.
+var (
+	notSamplePMTask       = NotSampleDataSQL("pm_tasks.id")
+	notSampleConversation = NotSampleDataSQL("support_conversations.id")
+	notSampleDocument     = NotSampleDataSQL("documents.id")
+)
+
 type SetupRepository struct {
 	db *gorm.DB
 }
@@ -210,6 +218,30 @@ func (r *SetupRepository) GetEvidence(ctx context.Context, workspaceID string) (
 	return r.GetEvidenceSince(ctx, workspaceID, time.Unix(0, 0).UTC())
 }
 
+// VerifiedWidgetInstallationCount counts active widget installations whose
+// workspace has served at least one visitor session. Configuration alone is not
+// evidence that the widget runs on a website.
+func (r *SetupRepository) VerifiedWidgetInstallationCount(ctx context.Context, workspaceID string) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Table("support_widget_installations AS installs").
+		Joins("JOIN support_widget_sessions AS sessions ON sessions.workspace_id = installs.workspace_id").
+		Where("installs.workspace_id = ? AND installs.active = true", workspaceID).
+		Distinct("installs.id").Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("read verified support widget evidence: %w", err)
+	}
+	return count, nil
+}
+
+// ActiveEmailRouteCount counts the workspace's active support email addresses.
+func (r *SetupRepository) ActiveEmailRouteCount(ctx context.Context, workspaceID string) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Table("support_email_routes").
+		Where("workspace_id = ? AND active = true", workspaceID).Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("read setup evidence from support_email_routes: %w", err)
+	}
+	return count, nil
+}
+
 func (r *SetupRepository) GetEvidenceSince(ctx context.Context, workspaceID string, since time.Time) (model.SetupEvidence, error) {
 	evidence := model.SetupEvidence{TaskAchievementTimes: make(map[string]time.Time)}
 	var workspaceTimezone string
@@ -228,19 +260,19 @@ func (r *SetupRepository) GetEvidenceSince(ctx context.Context, workspaceID stri
 		args  []any
 	}{
 		{"workspaces", "id = ? AND COALESCE(TRIM(company_product_context), '') <> ''", &contextCount, []any{workspaceID}},
-		{"workspace_teams", "workspace_id = ?", &evidence.TeamCount, []any{workspaceID}},
+		{"workspace_teams", "workspace_id = ? AND " + NotSampleDataSQL("workspace_teams.id"), &evidence.TeamCount, []any{workspaceID}},
 		{"workspace_invitations", "workspace_id = ? AND status IN ('pending', 'accepted') AND created_at >= ?", &evidence.InvitationCount, []any{workspaceID, since}},
 		{"workspace_members", "workspace_id = ? AND status = 'active'", &evidence.ActiveMemberCount, []any{workspaceID}},
-		{"pm_tasks", "workspace_id = ? AND archived = false", &evidence.InitialWorkCount, []any{workspaceID}},
-		{"pm_tasks", "workspace_id = ? AND completed = true AND archived = false AND completed_at >= ?", &evidence.CompletedTaskCount, []any{workspaceID, since}},
+		{"pm_tasks", "workspace_id = ? AND archived = false AND " + notSamplePMTask, &evidence.InitialWorkCount, []any{workspaceID}},
+		{"pm_tasks", "workspace_id = ? AND completed = true AND archived = false AND completed_at >= ? AND " + notSamplePMTask, &evidence.CompletedTaskCount, []any{workspaceID, since}},
 		{"pm_sprint_closeouts", "workspace_id = ? AND closed_at >= ?", &evidence.SprintCloseoutCount, []any{workspaceID, since}},
 		{"git_repositories", "workspace_id = ? AND active = true AND selected = true AND deleted_at IS NULL", &evidence.ConnectedRepositoryCount, []any{workspaceID}},
 		{"automation_rules", "workspace_id = ? AND enabled = true", &evidence.EnabledAutomationCount, []any{workspaceID}},
 		{"agent_trigger_executions", "workspace_id = ? AND status = 'completed' AND completed_at >= ?", &evidence.TriggeredSuccessRunCount, []any{workspaceID, since}},
-		{"support_conversations", "workspace_id = ? AND status = 'resolved' AND resolved_at >= ? AND EXISTS (SELECT 1 FROM support_messages sm WHERE sm.conversation_id = support_conversations.id AND sm.sender_type = 'customer' AND sm.deleted_at IS NULL)", &evidence.ValidatedSupportCount, []any{workspaceID, since}},
-		{"support_conversations", "workspace_id = ? AND status = 'resolved' AND channel IN ('widget', 'email', 'api') AND source <> 'internal' AND resolved_at >= ? AND EXISTS (SELECT 1 FROM support_messages sm WHERE sm.conversation_id = support_conversations.id AND sm.sender_type = 'customer' AND sm.deleted_at IS NULL)", &evidence.ResolvedConversationCount, []any{workspaceID, since}},
-		{"support_conversations", "workspace_id = ? AND status = 'resolved' AND resolved_at >= ? AND EXISTS (SELECT 1 FROM support_messages customer_message WHERE customer_message.conversation_id = support_conversations.id AND customer_message.sender_type = 'customer' AND customer_message.deleted_at IS NULL) AND EXISTS (SELECT 1 FROM support_messages ai_message WHERE ai_message.conversation_id = support_conversations.id AND ai_message.sender_type = 'ai' AND ai_message.message_type = 'reply' AND ai_message.deleted_at IS NULL)", &evidence.AIResolvedConversationCount, []any{workspaceID, since}},
-		{"support_conversations", "workspace_id = ? AND linked_task_id IS NOT NULL AND updated_at >= ?", &evidence.LinkedSupportTaskCount, []any{workspaceID, since}},
+		{"support_conversations", "workspace_id = ? AND status = 'resolved' AND resolved_at >= ? AND EXISTS (SELECT 1 FROM support_messages sm WHERE sm.conversation_id = support_conversations.id AND sm.sender_type = 'customer' AND sm.deleted_at IS NULL) AND " + notSampleConversation, &evidence.ValidatedSupportCount, []any{workspaceID, since}},
+		{"support_conversations", "workspace_id = ? AND status = 'resolved' AND channel IN ('widget', 'email', 'api') AND source <> 'internal' AND resolved_at >= ? AND EXISTS (SELECT 1 FROM support_messages sm WHERE sm.conversation_id = support_conversations.id AND sm.sender_type = 'customer' AND sm.deleted_at IS NULL) AND " + notSampleConversation, &evidence.ResolvedConversationCount, []any{workspaceID, since}},
+		{"support_conversations", "workspace_id = ? AND status = 'resolved' AND resolved_at >= ? AND EXISTS (SELECT 1 FROM support_messages customer_message WHERE customer_message.conversation_id = support_conversations.id AND customer_message.sender_type = 'customer' AND customer_message.deleted_at IS NULL) AND EXISTS (SELECT 1 FROM support_messages ai_message WHERE ai_message.conversation_id = support_conversations.id AND ai_message.sender_type = 'ai' AND ai_message.message_type = 'reply' AND ai_message.deleted_at IS NULL) AND " + notSampleConversation, &evidence.AIResolvedConversationCount, []any{workspaceID, since}},
+		{"support_conversations", "workspace_id = ? AND linked_task_id IS NOT NULL AND updated_at >= ? AND " + notSampleConversation, &evidence.LinkedSupportTaskCount, []any{workspaceID, since}},
 		{"support_coverage_recommendations", "workspace_id = ? AND status = 'applied' AND updated_at >= ?", &evidence.CoverageImprovementCount, []any{workspaceID, since}},
 		{"agent_runs", "workspace_id = ? AND approval_state IN ('approved', 'rejected') AND updated_at >= ?", &evidence.ApprovalResolvedCount, []any{workspaceID, since}},
 	}
@@ -257,7 +289,7 @@ func (r *SetupRepository) GetEvidenceSince(ctx context.Context, workspaceID stri
 		first  string
 		repeat string
 	}{
-		{"pm_tasks", "completed_at", "workspace_id = ? AND completed = true AND archived = false AND completed_at >= ?", &evidence.CompletedTaskDayCount, "product.first_task_completed", "product.repeat_completion"},
+		{"pm_tasks", "completed_at", "workspace_id = ? AND completed = true AND archived = false AND completed_at >= ? AND " + notSamplePMTask, &evidence.CompletedTaskDayCount, "product.first_task_completed", "product.repeat_completion"},
 		{"agent_runs", "completed_at", "workspace_id = ? AND status = 'completed' AND completed_at >= ? AND (COALESCE(CAST(output_summary AS TEXT), '{}') NOT IN ('{}', 'null', '') OR EXISTS (SELECT 1 FROM agent_run_artifacts WHERE agent_run_artifacts.run_id = agent_runs.id))", &evidence.CompletedAgentRunDayCount, "automation.first_assisted_value", "automation.repeat_assisted_value"},
 		{"agent_trigger_executions", "completed_at", "workspace_id = ? AND status = 'completed' AND completed_at >= ?", &evidence.TriggeredSuccessDayCount, "automation.triggered_value", ""},
 	}
@@ -275,13 +307,16 @@ func (r *SetupRepository) GetEvidenceSince(ctx context.Context, workspaceID stri
 			evidence.TaskAchievementTimes[query.repeat] = repeat
 		}
 	}
-	var verifiedWidgetCount, emailRouteCount, agentKnowledgeCount, supportKnowledgeCount int64
+	var agentKnowledgeCount, supportKnowledgeCount int64
+	emailRouteCount, err := r.ActiveEmailRouteCount(ctx, workspaceID)
+	if err != nil {
+		return model.SetupEvidence{}, err
+	}
 	additional := []struct {
 		table string
 		where string
 		dest  *int64
 	}{
-		{"support_email_routes", "workspace_id = ? AND active = true", &emailRouteCount},
 		{"agent_knowledge_sources", "workspace_id = ?", &agentKnowledgeCount},
 		{"support_content_sources", "workspace_id = ?", &supportKnowledgeCount},
 		{"support_content_sources", "workspace_id = ? AND sync_status = 'ready' AND (indexed_pages > 0 OR indexed_chunks > 0)", &evidence.BrandKnowledgeSourceCount},
@@ -292,16 +327,14 @@ func (r *SetupRepository) GetEvidenceSince(ctx context.Context, workspaceID stri
 			return model.SetupEvidence{}, fmt.Errorf("read setup evidence from %s: %w", query.table, err)
 		}
 	}
-	if err := r.db.WithContext(ctx).Table("support_widget_installations AS installs").
-		Joins("JOIN support_widget_sessions AS sessions ON sessions.workspace_id = installs.workspace_id").
-		Where("installs.workspace_id = ? AND installs.active = true", workspaceID).
-		Distinct("installs.id").Count(&verifiedWidgetCount).Error; err != nil {
-		return model.SetupEvidence{}, fmt.Errorf("read verified support widget evidence: %w", err)
+	verifiedWidgetCount, err := r.VerifiedWidgetInstallationCount(ctx, workspaceID)
+	if err != nil {
+		return model.SetupEvidence{}, err
 	}
 	if err := r.db.WithContext(ctx).Table("docs_helpcenter_articles AS articles").
 		Joins("JOIN docs_documents AS documents ON documents.id = articles.document_id").
 		Joins("JOIN docs_spaces AS spaces ON spaces.id = documents.space_id AND spaces.workspace_id = documents.workspace_id").
-		Where("documents.workspace_id = ? AND documents.deleted_at IS NULL AND spaces.deleted_at IS NULL AND spaces.type = 'external_capable' AND articles.public_published_at IS NOT NULL", workspaceID).
+		Where("documents.workspace_id = ? AND documents.deleted_at IS NULL AND spaces.deleted_at IS NULL AND spaces.type = 'external_capable' AND articles.public_published_at IS NOT NULL AND "+notSampleDocument, workspaceID).
 		Count(&evidence.PublicHelpDocCount).Error; err != nil {
 		return model.SetupEvidence{}, fmt.Errorf("read published help-doc setup evidence: %w", err)
 	}
@@ -335,24 +368,24 @@ func (r *SetupRepository) GetEvidenceSince(ctx context.Context, workspaceID stri
 		where string
 		dest  *int64
 	}{
-		{"pm_epics", "workspace_id = ? AND archived = false AND COALESCE(owner_member_id, owner_id) IS NOT NULL AND planned_start_date IS NOT NULL AND deadline IS NOT NULL", &evidence.PlannedProjectCount},
-		{"pm_sprints", "workspace_id = ? AND archived = false AND start_date IS NOT NULL AND end_date IS NOT NULL AND EXISTS (SELECT 1 FROM pm_tasks WHERE pm_tasks.workspace_id = pm_sprints.workspace_id AND pm_tasks.sprint_id = pm_sprints.id AND pm_tasks.archived = false)", &evidence.PlannedSprintCount},
-		{"pm_tasks", "workspace_id = ? AND archived = false AND (epic_id IS NOT NULL OR sprint_id IS NOT NULL) AND EXISTS (SELECT 1 FROM pm_task_owners WHERE pm_task_owners.task_id = pm_tasks.id)", &evidence.AssignedProjectTaskCount},
-		{"docs_spaces", "workspace_id = ? AND deleted_at IS NULL AND is_system = false AND type = 'external_capable'", &evidence.HelpCenterSpaceCount},
-		{"docs_documents AS documents", "documents.workspace_id = ? AND documents.deleted_at IS NULL AND EXISTS (SELECT 1 FROM docs_spaces spaces WHERE spaces.id = documents.space_id AND spaces.workspace_id = documents.workspace_id AND spaces.deleted_at IS NULL AND spaces.type = 'external_capable') AND EXISTS (SELECT 1 FROM docs_contents content WHERE content.document_id = documents.id AND (content.word_count > 0 OR COALESCE(TRIM(content.content_text), '') <> ''))", &evidence.HelpCenterContentCount},
+		{"pm_epics", "workspace_id = ? AND archived = false AND COALESCE(owner_member_id, owner_id) IS NOT NULL AND planned_start_date IS NOT NULL AND deadline IS NOT NULL AND " + NotSampleDataSQL("pm_epics.id"), &evidence.PlannedProjectCount},
+		{"pm_sprints", "workspace_id = ? AND archived = false AND start_date IS NOT NULL AND end_date IS NOT NULL AND EXISTS (SELECT 1 FROM pm_tasks WHERE pm_tasks.workspace_id = pm_sprints.workspace_id AND pm_tasks.sprint_id = pm_sprints.id AND pm_tasks.archived = false AND " + notSamplePMTask + ")", &evidence.PlannedSprintCount},
+		{"pm_tasks", "workspace_id = ? AND archived = false AND (epic_id IS NOT NULL OR sprint_id IS NOT NULL) AND EXISTS (SELECT 1 FROM pm_task_owners WHERE pm_task_owners.task_id = pm_tasks.id) AND " + notSamplePMTask, &evidence.AssignedProjectTaskCount},
+		{"docs_spaces", "workspace_id = ? AND deleted_at IS NULL AND is_system = false AND type = 'external_capable' AND " + NotSampleDataSQL("docs_spaces.id"), &evidence.HelpCenterSpaceCount},
+		{"docs_documents AS documents", "documents.workspace_id = ? AND documents.deleted_at IS NULL AND EXISTS (SELECT 1 FROM docs_spaces spaces WHERE spaces.id = documents.space_id AND spaces.workspace_id = documents.workspace_id AND spaces.deleted_at IS NULL AND spaces.type = 'external_capable') AND EXISTS (SELECT 1 FROM docs_contents content WHERE content.document_id = documents.id AND (content.word_count > 0 OR COALESCE(TRIM(content.content_text), '') <> '')) AND " + notSampleDocument, &evidence.HelpCenterContentCount},
 		{"docs_helpcenter_configs", "workspace_id = ? AND is_published = true", &evidence.HelpCenterSiteCount},
-		{"docs_spaces", "workspace_id = ? AND deleted_at IS NULL AND is_system = false AND type = 'internal'", &evidence.InternalDocsSpaceCount},
-		{"docs_documents AS documents", "documents.workspace_id = ? AND documents.deleted_at IS NULL AND EXISTS (SELECT 1 FROM docs_spaces spaces WHERE spaces.id = documents.space_id AND spaces.workspace_id = documents.workspace_id AND spaces.deleted_at IS NULL AND spaces.type = 'internal') AND EXISTS (SELECT 1 FROM docs_contents content WHERE content.document_id = documents.id AND (content.word_count > 0 OR COALESCE(TRIM(content.content_text), '') <> ''))", &evidence.InternalDocsContentCount},
-		{"docs_documents AS documents", "documents.workspace_id = ? AND documents.deleted_at IS NULL AND documents.status = 'published' AND documents.published_at IS NOT NULL AND EXISTS (SELECT 1 FROM docs_spaces spaces WHERE spaces.id = documents.space_id AND spaces.workspace_id = documents.workspace_id AND spaces.deleted_at IS NULL AND spaces.type = 'internal')", &evidence.InternalDocsPublishedCount},
-		{"docs_documents AS documents", "documents.workspace_id = ? AND documents.deleted_at IS NULL AND documents.owner_id IS NOT NULL AND documents.next_review_at IS NOT NULL AND EXISTS (SELECT 1 FROM docs_spaces spaces WHERE spaces.id = documents.space_id AND spaces.workspace_id = documents.workspace_id AND spaces.deleted_at IS NULL AND spaces.type = 'internal')", &evidence.InternalDocsOwnershipCount},
+		{"docs_spaces", "workspace_id = ? AND deleted_at IS NULL AND is_system = false AND type = 'internal' AND " + NotSampleDataSQL("docs_spaces.id"), &evidence.InternalDocsSpaceCount},
+		{"docs_documents AS documents", "documents.workspace_id = ? AND documents.deleted_at IS NULL AND EXISTS (SELECT 1 FROM docs_spaces spaces WHERE spaces.id = documents.space_id AND spaces.workspace_id = documents.workspace_id AND spaces.deleted_at IS NULL AND spaces.type = 'internal') AND EXISTS (SELECT 1 FROM docs_contents content WHERE content.document_id = documents.id AND (content.word_count > 0 OR COALESCE(TRIM(content.content_text), '') <> '')) AND " + notSampleDocument, &evidence.InternalDocsContentCount},
+		{"docs_documents AS documents", "documents.workspace_id = ? AND documents.deleted_at IS NULL AND documents.status = 'published' AND documents.published_at IS NOT NULL AND EXISTS (SELECT 1 FROM docs_spaces spaces WHERE spaces.id = documents.space_id AND spaces.workspace_id = documents.workspace_id AND spaces.deleted_at IS NULL AND spaces.type = 'internal') AND " + notSampleDocument, &evidence.InternalDocsPublishedCount},
+		{"docs_documents AS documents", "documents.workspace_id = ? AND documents.deleted_at IS NULL AND documents.owner_id IS NOT NULL AND documents.next_review_at IS NOT NULL AND EXISTS (SELECT 1 FROM docs_spaces spaces WHERE spaces.id = documents.space_id AND spaces.workspace_id = documents.workspace_id AND spaces.deleted_at IS NULL AND spaces.type = 'internal') AND " + notSampleDocument, &evidence.InternalDocsOwnershipCount},
 		{"agent_knowledge_sources AS sources", "sources.workspace_id = ? AND sources.sync_status = 'ready' AND (sources.indexed_documents > 0 OR sources.indexed_chunks > 0) AND EXISTS (SELECT 1 FROM docs_spaces spaces WHERE spaces.id = sources.space_id AND spaces.workspace_id = sources.workspace_id AND spaces.deleted_at IS NULL AND spaces.type = 'internal') AND EXISTS (SELECT 1 FROM agents WHERE agents.id = sources.agent_id AND agents.workspace_id = sources.workspace_id)", &evidence.InternalAgentKnowledgeCount},
-		{"crm_contacts", "workspace_id = ?", &evidence.CRMContactCount},
-		{"crm_companies", "workspace_id = ?", &evidence.CRMCompanyCount},
-		{"crm_pipelines AS pipelines", "pipelines.workspace_id = ? AND EXISTS (SELECT 1 FROM crm_pipeline_stages stages WHERE stages.pipeline_id = pipelines.id AND stages.stage_type = 'open') AND EXISTS (SELECT 1 FROM crm_pipeline_stages stages WHERE stages.pipeline_id = pipelines.id AND stages.stage_type = 'won') AND EXISTS (SELECT 1 FROM crm_pipeline_stages stages WHERE stages.pipeline_id = pipelines.id AND stages.stage_type = 'lost')", &evidence.CRMPipelineCount},
-		{"crm_deals AS deals", "deals.workspace_id = ? AND deals.owner_member_id IS NOT NULL AND deals.amount > 0 AND deals.close_date IS NOT NULL AND EXISTS (SELECT 1 FROM crm_associations associations WHERE associations.workspace_id = deals.workspace_id AND ((associations.from_object_type = 'deal' AND associations.from_object_id = deals.id AND associations.to_object_type = 'contact') OR (associations.to_object_type = 'deal' AND associations.to_object_id = deals.id AND associations.from_object_type = 'contact')))", &evidence.CRMActionableDealCount},
+		{"crm_contacts", "workspace_id = ? AND " + NotSampleDataSQL("crm_contacts.id"), &evidence.CRMContactCount},
+		{"crm_companies", "workspace_id = ? AND " + NotSampleDataSQL("crm_companies.id"), &evidence.CRMCompanyCount},
+		{"crm_pipelines AS pipelines", "pipelines.workspace_id = ? AND " + NotSampleDataSQL("pipelines.id") + " AND EXISTS (SELECT 1 FROM crm_pipeline_stages stages WHERE stages.pipeline_id = pipelines.id AND stages.stage_type = 'open') AND EXISTS (SELECT 1 FROM crm_pipeline_stages stages WHERE stages.pipeline_id = pipelines.id AND stages.stage_type = 'won') AND EXISTS (SELECT 1 FROM crm_pipeline_stages stages WHERE stages.pipeline_id = pipelines.id AND stages.stage_type = 'lost')", &evidence.CRMPipelineCount},
+		{"crm_deals AS deals", "deals.workspace_id = ? AND " + NotSampleDataSQL("deals.id") + " AND deals.owner_member_id IS NOT NULL AND deals.amount > 0 AND deals.close_date IS NOT NULL AND EXISTS (SELECT 1 FROM crm_associations associations WHERE associations.workspace_id = deals.workspace_id AND ((associations.from_object_type = 'deal' AND associations.from_object_id = deals.id AND associations.to_object_type = 'contact') OR (associations.to_object_type = 'deal' AND associations.to_object_id = deals.id AND associations.from_object_type = 'contact')))", &evidence.CRMActionableDealCount},
 		{"crm_email_accounts", "workspace_id = ? AND is_active = true AND status = 'connected'", &evidence.CRMConnectedEmailCount},
 		{"crm_autonomy_settings", "workspace_id = ? AND enabled = true AND (auto_create_deals = true OR auto_progress_deals = true)", &evidence.CRMAutonomyEnabledCount},
-		{"crm_suggestions AS suggestions", "suggestions.workspace_id = ? AND suggestions.suggestion_type IN ('deal_create', 'deal_advance') AND suggestions.execution_status = 'succeeded' AND suggestions.executed_at IS NOT NULL AND suggestions.object_id IS NOT NULL AND EXISTS (SELECT 1 FROM crm_deals WHERE crm_deals.id = suggestions.object_id AND crm_deals.workspace_id = suggestions.workspace_id)", &evidence.CRMSignalValueCount},
+		{"crm_suggestions AS suggestions", "suggestions.workspace_id = ? AND suggestions.suggestion_type IN ('deal_create', 'deal_advance') AND suggestions.execution_status = 'succeeded' AND suggestions.executed_at IS NOT NULL AND suggestions.object_id IS NOT NULL AND EXISTS (SELECT 1 FROM crm_deals WHERE crm_deals.id = suggestions.object_id AND crm_deals.workspace_id = suggestions.workspace_id AND " + NotSampleDataSQL("crm_deals.id") + ")", &evidence.CRMSignalValueCount},
 		{"agents", "workspace_id = ? AND is_system = false AND approval_mode = 'always'", &evidence.ApprovalGuardCount},
 		{"automation_rules", "workspace_id = ? AND enabled = true AND template_key IN ('release_notes_writer', 'stale_task_escalation', 'advance_on_approval')", &evidence.ProductRequiredFlowCount},
 		{"automation_rules", "workspace_id = ? AND enabled = true AND template_key = 'public_help_freshness_sweep'", &evidence.HelpCenterRequiredFlowCount},
@@ -365,7 +398,7 @@ func (r *SetupRepository) GetEvidenceSince(ctx context.Context, workspaceID stri
 		}
 	}
 	if len(supportSettings.WidgetHelpSpaceIDs) > 0 {
-		if err := r.db.WithContext(ctx).Table("docs_spaces").Where("workspace_id = ? AND deleted_at IS NULL AND type = 'external_capable' AND id IN ?", workspaceID, supportSettings.WidgetHelpSpaceIDs).Count(&evidence.HelpCenterWidgetCount).Error; err != nil {
+		if err := r.db.WithContext(ctx).Table("docs_spaces").Where("workspace_id = ? AND deleted_at IS NULL AND type = 'external_capable' AND id IN ? AND "+NotSampleDataSQL("docs_spaces.id"), workspaceID, supportSettings.WidgetHelpSpaceIDs).Count(&evidence.HelpCenterWidgetCount).Error; err != nil {
 			return model.SetupEvidence{}, fmt.Errorf("read help-center widget setup evidence: %w", err)
 		}
 	}
@@ -487,11 +520,11 @@ func (r *SetupRepository) GetEvidenceSince(ctx context.Context, workspaceID stri
 		key, table, column, where string
 		args                      []any
 	}{
-		{"product.initial_work", "pm_tasks", "created_at", "workspace_id = ? AND archived = false", []any{workspaceID}},
+		{"product.initial_work", "pm_tasks", "created_at", "workspace_id = ? AND archived = false AND " + notSamplePMTask, []any{workspaceID}},
 		{"product.agent_result_used", "agent_runs AS runs", "runs.completed_at", valuableRun + " AND runs.target_type IN ('task', 'epic', 'repository')", []any{workspaceID, since}},
 		{"product.sprint_closeout_reviewable", "pm_sprint_closeouts", "closed_at", "workspace_id = ? AND closed_at >= ?", []any{workspaceID, since}},
 		{"product.release_notes_flow_succeeded", "agent_trigger_executions AS executions", "executions.completed_at", "executions.workspace_id = ? AND executions.status = 'completed' AND executions.completed_at >= ? AND EXISTS (SELECT 1 FROM automation_rules WHERE " + setupAutomationRuleBindingJoin("automation_rules", "executions") + " AND automation_rules.template_key = 'release_notes_writer')", []any{workspaceID, since}},
-		{"support.pm_task_linked", "support_conversations", "updated_at", "workspace_id = ? AND linked_task_id IS NOT NULL AND updated_at >= ?", []any{workspaceID, since}},
+		{"support.pm_task_linked", "support_conversations", "updated_at", "workspace_id = ? AND linked_task_id IS NOT NULL AND updated_at >= ? AND " + notSampleConversation, []any{workspaceID, since}},
 		{"support.coverage_fix_applied", "support_coverage_recommendations", "updated_at", "workspace_id = ? AND status = 'applied' AND updated_at >= ?", []any{workspaceID, since}},
 		{"automation.custom_agent_succeeded", "agent_runs AS runs", "runs.completed_at", valuableRun + " AND EXISTS (SELECT 1 FROM agents WHERE agents.id = runs.agent_id AND agents.is_system = false)", []any{workspaceID, since}},
 	}

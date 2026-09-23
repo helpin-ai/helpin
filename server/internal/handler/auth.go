@@ -29,6 +29,9 @@ type AuthHandler struct {
 	googleOAuth      *oauth2.Config
 	appBaseURL       string
 	mobileAppBaseURL string
+	// setupGuideEnabled mirrors the server-side Setup guide gate so prebuilt
+	// clients need no build-time flag.
+	setupGuideEnabled bool
 }
 
 type GoogleOAuthConfig struct {
@@ -739,10 +742,17 @@ func (h *AuthHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		"google_login_enabled":        h.googleOAuth != nil,
 		"demo_enabled":                h.authService.DemoEnabled(),
 		"demo_requires_email":         h.authService.DemoRequiresEmail(),
+		"setup_guide_enabled":         h.setupGuideEnabled,
 	})
 }
 
 func (h *AuthHandler) SetPublicWidgetURLs(widget, sdk string) {
 	h.publicWidgetURL = widget
 	h.publicSDKURL = sdk
+}
+
+// SetSetupGuideEnabled reports whether the workspace Setup guide routes are
+// registered, so the dashboard shows the guide only when the API serves it.
+func (h *AuthHandler) SetSetupGuideEnabled(enabled bool) {
+	h.setupGuideEnabled = enabled
 }

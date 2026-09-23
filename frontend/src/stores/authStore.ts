@@ -28,6 +28,27 @@ interface AuthState {
 }
 
 let _initializing = false;
+let _configurationRequest: Promise<AuthConfig | null> | null = null;
+
+/**
+ * Returns the public auth configuration, fetching it once if it has not loaded.
+ * Route guards await this so they never decide on a missing configuration.
+ * A failed request resolves to null (conservative defaults) and may be retried.
+ */
+export function ensureAuthConfiguration(): Promise<AuthConfig | null> {
+  const loaded = useAuthStore.getState().configuration;
+  if (loaded) return Promise.resolve(loaded);
+  if (!_configurationRequest) {
+    _configurationRequest = authService.config()
+      .then(({ data }) => {
+        if (data) useAuthStore.setState({ configuration: data });
+        return data ?? null;
+      })
+      .catch(() => null)
+      .finally(() => { _configurationRequest = null; });
+  }
+  return _configurationRequest;
+}
 
 export async function clearClientSession() {
   resetAnalytics();
@@ -67,10 +88,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       // Public capabilities are also needed on the login page. A failed config
       // request must not turn off verification or invalidate an existing session.
-      try {
-        const config = await authService.config();
-        if (config.data) set({ configuration: config.data });
-      } catch { /* Keep conservative defaults until configuration is reachable. */ }
+      await ensureAuthConfiguration();
       await hydrateSessionStorage();
       const { data, error, isNetworkError } = await authService.me();
       if (data && !error) {
