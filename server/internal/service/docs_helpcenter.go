@@ -1108,11 +1108,7 @@ func (s *DocsHelpcenterService) buildSourceArticlePublication(ctx context.Contex
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := s.hcRepo.GetConfig(ctx, doc.WorkspaceID)
-	if err != nil {
-		return nil, err
-	}
-	publication.Content, err = materializePublicationDocumentLinks(ctx, publication.Content, s.publicationArticlePathResolver(doc.WorkspaceID, locale, cfg))
+	publication.Content, err = materializePublicationDocumentLinks(ctx, publication.Content, liveArticleLinkPathLookup(s.hcRepo, doc.WorkspaceID, locale))
 	if err != nil {
 		return nil, err
 	}
@@ -1957,7 +1953,7 @@ func (s *DocsHelpcenterService) getPublicArticleUncached(ctx context.Context, wo
 
 	var contentHTML *string
 	if len(translation.Content) > 0 {
-		rendered, err := RenderPublicDocsHTML(translation.Content)
+		rendered, err := renderPublicArticleHTML(ctx, s.hcRepo, doc.WorkspaceID, resolvedLocale, translation.Content)
 		if err == nil && rendered != "" {
 			contentHTML = &rendered
 		}
@@ -2198,7 +2194,7 @@ func (s *DocsHelpcenterService) getPublicArticleByLocalizedCanonicalPathUncached
 
 	var contentHTML *string
 	if len(translation.Content) > 0 {
-		rendered, err := RenderPublicDocsHTML(translation.Content)
+		rendered, err := renderPublicArticleHTML(ctx, s.hcRepo, doc.WorkspaceID, resolvedLocale, translation.Content)
 		if err == nil && rendered != "" {
 			contentHTML = &rendered
 		}
@@ -2330,7 +2326,7 @@ func (s *DocsHelpcenterService) getPublicArticleByLocalizedCanonicalKeyUncached(
 
 	var contentHTML *string
 	if len(translation.Content) > 0 {
-		rendered, err := RenderPublicDocsHTML(translation.Content)
+		rendered, err := renderPublicArticleHTML(ctx, s.hcRepo, doc.WorkspaceID, resolvedLocale, translation.Content)
 		if err == nil && rendered != "" {
 			contentHTML = &rendered
 		}
@@ -2431,7 +2427,7 @@ func (s *DocsHelpcenterService) getPublicArticleByCanonicalPathUncached(ctx cont
 	// Render TipTap JSON -> HTML for public display.
 	var contentHTML *string
 	if content != nil && len(content.Content) > 0 {
-		rendered, err := RenderPublicDocsHTML(content.Content)
+		rendered, err := renderPublicArticleHTML(ctx, s.hcRepo, doc.WorkspaceID, "", content.Content)
 		if err == nil && rendered != "" {
 			contentHTML = &rendered
 		}
@@ -2514,7 +2510,7 @@ func (s *DocsHelpcenterService) getPublicArticleByCanonicalKeyUncached(ctx conte
 
 	var contentHTML *string
 	if content != nil && len(content.Content) > 0 {
-		rendered, err := RenderPublicDocsHTML(content.Content)
+		rendered, err := renderPublicArticleHTML(ctx, s.hcRepo, doc.WorkspaceID, "", content.Content)
 		if err == nil && rendered != "" {
 			contentHTML = &rendered
 		}
@@ -2614,7 +2610,8 @@ func (s *DocsHelpcenterService) PreviewArticleHTML(ctx context.Context, workspac
 
 	var contentHTML string
 	if content != nil && len(content.Content) > 0 {
-		rendered, err := tiptap.RenderHTML(content.Content)
+		previewContent := resolvePublicDocumentLinksForRender(ctx, s.hcRepo, doc.WorkspaceID, "", content.Content)
+		rendered, err := tiptap.RenderHTML(previewContent)
 		if err != nil {
 			slog.ErrorContext(ctx, "preview render failed", "error", err, "doc_id", docID)
 		} else {
