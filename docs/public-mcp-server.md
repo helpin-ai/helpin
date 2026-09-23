@@ -377,6 +377,8 @@ sequenceDiagram
 
 ### 8.1 Strict inputs
 
+Any tool that takes `task_id` also accepts the human task key shown in Helpin, such as `HEL-120` (current workspace key or a retired alias). Keys that do not resolve in the connected workspace are reported as not found.
+
 - Every tool publishes a JSON Schema.
 - Unknown properties are rejected for the new public facades.
 - The client cannot pass a workspace override.

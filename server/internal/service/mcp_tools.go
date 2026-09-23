@@ -66,6 +66,11 @@ func (s *MCPService) ExecuteTool(ctx context.Context, principal *model.MCPPrinci
 	}
 
 	executionContext := authorization.WithActor(ctx, actor)
+	cleanArguments, err = s.resolveMCPTaskKeyArgument(executionContext, effective, actor, cleanArguments)
+	if err != nil {
+		s.audit(ctx, effective, "tool.call", name, "error", mcpReasonCode(err), cleanArguments, nil)
+		return nil, err
+	}
 	result, err := s.executeAuthorizedMCPTool(executionContext, effective, actor, tool, cleanArguments)
 	if err != nil {
 		s.audit(ctx, effective, "tool.call", name, "error", mcpReasonCode(err), cleanArguments, nil)
@@ -1058,6 +1063,36 @@ func (s *MCPService) accessibleMCPTask(
 		return nil, nil
 	}
 	return task, nil
+}
+
+// resolveMCPTaskKeyArgument lets every tool accept a human task key such as
+// HEL-120 in task_id by rewriting it to the task's ID before dispatch.
+func (s *MCPService) resolveMCPTaskKeyArgument(
+	ctx context.Context,
+	principal *model.MCPPrincipal,
+	actor *authorization.Actor,
+	arguments json.RawMessage,
+) (json.RawMessage, error) {
+	var values map[string]any
+	if err := json.Unmarshal(arguments, &values); err != nil {
+		return arguments, nil
+	}
+	raw, ok := values["task_id"].(string)
+	if !ok || s.commands == nil || !searchTaskKeyPattern.MatchString(strings.ToUpper(strings.TrimSpace(raw))) {
+		return arguments, nil
+	}
+	taskID, err := s.commands.resolveCommandTaskKey(ctx, model.InternalCommandContext{
+		WorkspaceID: principal.WorkspaceID, ActorID: principal.UserID, ActorRole: actor.Role,
+	}, raw)
+	if err != nil {
+		return nil, ErrMCPNotFound
+	}
+	values["task_id"] = taskID
+	encoded, err := json.Marshal(values)
+	if err != nil {
+		return nil, fmt.Errorf("encode resolved task key: %w", err)
+	}
+	return encoded, nil
 }
 
 // requireMCPCommandDocumentAccess applies Docs space access to command-backed
