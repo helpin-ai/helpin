@@ -1722,6 +1722,7 @@ func main() {
 		},
 	)
 	mcpService.SetDocsLifecycle(docsDocumentService, docsHelpcenterService, docsEmbeddingService)
+	mcpService.SetDocsChangeProposals(docsChangeProposalService)
 	mcpService.SetAttachments(pmAttachmentService)
 	mcpService.SetDocsContentReader(docsContentRepo)
 	mcpService.SetPMComments(pmCommentService)

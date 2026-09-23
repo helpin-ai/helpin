@@ -515,7 +515,7 @@ func (s *InternalCommandService) requireCommandProposalBlock(ctx context.Context
 			return nil, errCommandNotFound("block")
 		}
 		if block.Revision != revision {
-			return nil, fmt.Errorf("revision is stale; fetch the latest block revision")
+			return nil, fmt.Errorf("%w; fetch the latest block revision", ErrDocsStaleBlockRevision)
 		}
 		return block, nil
 	}
