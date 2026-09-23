@@ -589,6 +589,7 @@ export function CodingSessionSurface({
           liveAssistantMessage={streamState.live_assistant_message}
           liveReasoningMessage={streamState.live_reasoning_message}
           liveTurnSegments={streamState.live_turn_segments}
+          progressState={streamState}
           loading={loading}
           onSendMessage={messageComposer.enabled ? sendMessage : undefined}
           sendingMessage={sendingMessage}

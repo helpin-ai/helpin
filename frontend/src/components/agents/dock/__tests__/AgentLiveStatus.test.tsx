@@ -27,6 +27,20 @@ describe('AgentLiveStatus', () => {
     container.remove();
   });
 
+  it('replaces working with an offline notice and restores it on reconnect', () => {
+    act(() => root.render(<AgentLiveStatus progress={{ label: 'Working…', tone: 'working' }} />));
+    const online = vi.spyOn(navigator, 'onLine', 'get');
+    try {
+      online.mockReturnValue(false);
+      act(() => window.dispatchEvent(new Event('offline')));
+      expect(container.textContent).toContain('Offline — live updates paused');
+      expect(container.querySelector('[data-agent-work-loader]')).toBeNull();
+      online.mockReturnValue(true);
+      act(() => window.dispatchEvent(new Event('online')));
+      expect(container.textContent).toContain('Working');
+    } finally { online.mockRestore(); }
+  });
+
   it('uses worked wording and stops ticking after completion', () => {
     const setIntervalSpy = vi.spyOn(window, 'setInterval');
     const clearIntervalSpy = vi.spyOn(window, 'clearInterval');

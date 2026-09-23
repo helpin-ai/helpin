@@ -11,6 +11,7 @@ import { isToolName } from '@/lib/toolNames';
 import type {
   AgentRunArtifact,
   CodingSession,
+  CodingSessionStreamState,
   CodingSessionActor,
   CodingSessionInteraction,
   CodingSessionLiveAssistantMessage,
@@ -21,13 +22,13 @@ import type {
 import { useWorkspaceMembers } from '@/hooks/queries';
 import type { CodingSessionComposerState } from './codingSessionComposer';
 import type { PublishedPreview } from '@/components/pm/runPreviews';
-import { StreamingStatusText } from '@/components/agents/StreamingStatusText';
+import { AgentLiveStatus } from '@/components/agents/dock/AgentLiveStatus';
+import { resolveAgentLiveProgress } from '@/components/agents/dock/agentProgress';
 import { CodingInteractionCard } from './CodingInteractionCard';
 import { CodingReviewHistoryPanel, type CodingReviewHistoryItem } from './CodingReviewHistoryPanel';
 import {
   ALL_SEGMENT_KINDS,
   collectSegments,
-  deriveLiveStatusLabel,
   ScrollToLatestButton,
   segmentTimestamp,
   transcriptSegmentTimes,
@@ -46,6 +47,7 @@ export function CodingTranscriptPane({
   liveAssistantMessage,
   liveReasoningMessage,
   liveTurnSegments,
+  progressState,
   loading = false,
   onSendMessage,
   sendingMessage = false,
@@ -66,6 +68,7 @@ export function CodingTranscriptPane({
   liveAssistantMessage: CodingSessionLiveAssistantMessage | null;
   liveReasoningMessage: CodingSessionLiveReasoningMessage | null;
   liveTurnSegments: CodingSessionLiveTurnSegment[];
+  progressState?: Pick<CodingSessionStreamState, 'turn_state' | 'activity_events'>;
   loading?: boolean;
   onSendMessage?: (content: string) => Promise<void>;
   sendingMessage?: boolean;
@@ -136,16 +139,19 @@ export function CodingTranscriptPane({
     ),
     [transcriptMessages, visibleLiveSegments, liveReasoningMessage, promptMessage, includeLive],
   );
-  const hasActiveStreamSegment = segments.some((segment) => (
-    (segment.kind === 'assistant' && segment.streaming)
-    || (segment.kind === 'tool' && segment.toolCall.status === 'running')
-    || (segment.kind === 'reasoning' && segment.reasoning.status === 'streaming')
-  ));
-  const showStreamingStatus = session?.status === 'running' && !hasActiveStreamSegment;
-  const liveStatusLabel = deriveLiveStatusLabel(
-    { live_turn_segments: visibleLiveSegments, live_reasoning_message: liveReasoningMessage },
-    session?.status,
-  );
+  const liveProgress = useMemo(() => session?.status === 'completed' ? null : resolveAgentLiveProgress({
+    run: session ?? null,
+    stream: {
+      transcript_messages: transcriptMessages,
+      live_turn_segments: visibleLiveSegments,
+      live_reasoning_message: liveReasoningMessage,
+      activity_events: progressState?.activity_events ?? [],
+      turn_state: progressState?.turn_state,
+    },
+    currentPlan: null,
+    sending: sendingMessage,
+  }), [session, transcriptMessages, visibleLiveSegments, liveReasoningMessage, progressState, sendingMessage]);
+  const showStreamingStatus = liveProgress !== null;
 
   const transcriptTimes = useMemo(() => transcriptSegmentTimes({
     transcript_messages: transcriptMessages,
@@ -330,11 +336,7 @@ export function CodingTranscriptPane({
           </DockWorkingGroup>
         );
       case 'streaming-status':
-        return (
-          <StreamingStatusText className="text-[13px]">
-            {liveStatusLabel ?? 'Thinking…'}
-          </StreamingStatusText>
-        );
+        return liveProgress ? <AgentLiveStatus progress={liveProgress} /> : null;
       case 'empty':
         return (
           <div className="rounded-lg border border-dashed border-border px-5 py-8 text-center text-sm text-muted-foreground">
@@ -350,7 +352,7 @@ export function CodingTranscriptPane({
           />
         );
     }
-  }, [actorForMessage, liveStatusLabel]);
+  }, [actorForMessage, liveProgress]);
 
   return (
     <section className="relative flex h-full min-h-[20rem] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm xl:min-h-0">

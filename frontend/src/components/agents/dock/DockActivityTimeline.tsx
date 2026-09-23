@@ -11,6 +11,7 @@ import type { AgentRunPauseReason, CodingSessionActor, CodingSessionTranscriptMe
 import { DockDecisionRow } from './DockDecisionRow';
 import type { DockWorkingGroupEntry } from './dockWorkingGroups';
 import styles from './DockActivityTimeline.module.css';
+import { useBrowserOnline } from '@/hooks/useBrowserOnline';
 
 function ActivityIcon({ name }: { name: string }) {
   const Icon = /search|list|find/.test(name) ? Search01Icon
@@ -68,6 +69,8 @@ function ActivityRow({ segment, active }: { segment: TranscriptSegment; active: 
 type ResolveActor = (message: CodingSessionTranscriptMessage) => CodingSessionActor | null;
 
 export function DockActivityTimeline({ group, runStatus, pauseReason, resolveActor }: { group: DockWorkingGroupEntry; runStatus?: string; pauseReason?: AgentRunPauseReason; resolveActor?: ResolveActor }) {
+  const online = useBrowserOnline();
+  const offline = group.active && !online;
   const failed = group.segments.some(segment => segment.kind === 'tool' && segment.toolCall.status === 'failed');
   const [expanded, setExpanded] = useState(group.active || failed);
   const [wasActive, setWasActive] = useState(group.active);
@@ -101,7 +104,7 @@ export function DockActivityTimeline({ group, runStatus, pauseReason, resolveAct
   const toolStarts = group.segments.flatMap(segment => segment.kind === 'tool' && segment.toolCall.started_at ? [Date.parse(segment.toolCall.started_at)] : []).filter(Number.isFinite);
   const startedAt = group.startedAt ?? (toolStarts.length ? Math.min(...toolStarts) : undefined);
   const duration = group.durationMs ?? (group.active && startedAt !== undefined ? Math.max(0, now - startedAt) : undefined);
-  const label = failed ? 'Some steps failed'
+  const label = offline ? 'Offline — live updates paused' : failed ? 'Some steps failed'
     : group.active ? (latestTool?.kind === 'tool' ? describeToolCall(latestTool.toolCall).primaryLabel : 'Working…')
     : group.completed || group.durationMs !== undefined ? 'Work completed'
     : runStatus === 'cancelled' ? 'Stopped'
@@ -113,10 +116,10 @@ export function DockActivityTimeline({ group, runStatus, pauseReason, resolveAct
   const summary = (
     <button type="button" className={styles.summary} aria-expanded={expanded} aria-controls={detailsId} onClick={() => { setManuallyToggled(true); setExpanded(!expanded); }}>
       <span className={cn(styles.summaryIcon, failed ? 'text-destructive' : 'text-muted-foreground')} aria-hidden="true">
-        {group.active ? <AskAgentWorkAnimation className="h-5 w-5" /> : failed || (!group.completed && (runStatus === 'failed' || runStatus === 'cancelled')) ? <Cancel01Icon className="h-4 w-4" /> : <Tick01Icon className="h-3.5 w-3.5" />}
+        {offline ? <span className="h-1.5 w-1.5 rounded-full bg-amber-500" /> : group.active ? <AskAgentWorkAnimation className="h-5 w-5" /> : failed || (!group.completed && (runStatus === 'failed' || runStatus === 'cancelled')) ? <Cancel01Icon className="h-4 w-4" /> : <Tick01Icon className="h-3.5 w-3.5" />}
       </span>
       <span className={styles.label} role={group.active ? 'status' : undefined}>{label}</span>
-      {duration !== undefined && duration > 0 && <span className={styles.elapsed}>{formatCodingSessionElapsed(duration)}</span>}
+      {!offline && duration !== undefined && duration > 0 && <span className={styles.elapsed}>{formatCodingSessionElapsed(duration)}</span>}
       <DisclosureChevron open={expanded} className="h-3 w-3 shrink-0 opacity-65" />
     </button>
   );
