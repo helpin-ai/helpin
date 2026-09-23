@@ -1,0 +1,43 @@
+# Built-in HTTPS reverse proxy (Caddy), layered on compose.yaml when .env sets
+# HELPIN_PROXY=builtin. `helpin install/configure --mode server` manages this.
+#
+# Caddy reaches the public services over a small dedicated network with a fixed
+# address, so the ingress can trust exactly one proxy source
+# (COMMUNITY_TRUSTED_PROXY_CIDR=${EDGE_PROXY_IP}/32). Change EDGE_SUBNET,
+# EDGE_IP_RANGE and EDGE_PROXY_IP only if the defaults collide with a network.
+services:
+  caddy:
+    image: caddy:2.11.4-alpine@sha256:6aeddd44c3078b0f9a35206472a11420648a79c184603ef95957d0a20044cb2b
+    restart: unless-stopped
+    ports:
+      - '${PROXY_HTTP_PORT:-80}:80'
+      - '${PROXY_HTTPS_PORT:-443}:443'
+      - '${PROXY_HTTPS_PORT:-443}:443/udp'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      edge: {ipv4_address: '${EDGE_PROXY_IP:-172.30.255.2}'}
+    depends_on:
+      helpin-frontend: {condition: service_healthy}
+      helpin-helpcenter: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, 'http://127.0.0.1:2019/config/']
+      interval: 10s
+      retries: 10
+  helpin-frontend:
+    networks: [default, edge]
+  helpin-helpcenter:
+    networks: [default, edge]
+  garage:
+    networks: [default, edge]
+networks:
+  edge:
+    ipam:
+      # Other services get addresses only from ip_range, so Caddy's fixed
+      # EDGE_PROXY_IP (outside that range) is always free.
+      config: [{subnet: '${EDGE_SUBNET:-172.30.255.0/28}', ip_range: '${EDGE_IP_RANGE:-172.30.255.8/29}'}]
+volumes:
+  caddy_data:
+  caddy_config:

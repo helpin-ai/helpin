@@ -73,10 +73,31 @@ func (a *app) confirm(yes bool, question string) error {
 	}
 	return nil
 }
-func composeArgs(args ...string) []string {
-	return append([]string{"docker", "compose", "--env-file", ".env", "-f", "compose.yaml"}, args...)
+
+// composeArgs builds a Compose command for the installation in dir. The
+// built-in HTTPS proxy is a separate file so installations that don't use it
+// never create its fixed-address network.
+func composeArgs(dir string, args ...string) []string {
+	base := []string{"docker", "compose", "--env-file", ".env", "-f", "compose.yaml"}
+	if builtinProxy(dir) {
+		base = append(base, "-f", proxyComposeFile)
+	}
+	return append(base, args...)
 }
-func (a *app) compose(dir string, args ...string) error { return a.run(dir, composeArgs(args...)...) }
+
+const proxyComposeFile = "compose.proxy.yaml"
+
+func builtinProxy(dir string) bool {
+	values, err := readEnv(dir)
+	if err != nil || values["HELPIN_PROXY"] != "builtin" {
+		return false
+	}
+	_, err = os.Stat(filepath.Join(dir, proxyComposeFile))
+	return err == nil
+}
+func (a *app) compose(dir string, args ...string) error {
+	return a.run(dir, composeArgs(dir, args...)...)
+}
 func readRelease(root string) (releaseMetadata, error) {
 	var metadata releaseMetadata
 	data, err := os.ReadFile(filepath.Join(root, "release-evidence", "release.json"))
@@ -113,7 +134,7 @@ func canonicalDestination(destination string) (string, error) {
 }
 func (a *app) configurationForBackup(dir string) (composeConfig, error) {
 	var config composeConfig
-	data, err := a.output(dir, composeArgs("config", "--format", "json")...)
+	data, err := a.output(dir, composeArgs(dir, "config", "--format", "json")...)
 	if err != nil {
 		return config, errors.New("cannot resolve Compose configuration; check .env and apps.json")
 	}
@@ -191,7 +212,7 @@ func (a *app) noVolumeWriters(config composeConfig) error {
 	return nil
 }
 func (a *app) runningServices(dir string) ([]string, error) {
-	data, err := a.output(dir, composeArgs("ps", "--status", "running", "--services")...)
+	data, err := a.output(dir, composeArgs(dir, "ps", "--status", "running", "--services")...)
 	if err != nil {
 		return nil, err
 	}
@@ -204,7 +225,7 @@ func (a *app) runningServices(dir string) ([]string, error) {
 	return services, nil
 }
 func (a *app) checkCleanStop(dir string) error {
-	data, err := a.output(dir, composeArgs("ps", "--all", "--format", "json")...)
+	data, err := a.output(dir, composeArgs(dir, "ps", "--all", "--format", "json")...)
 	if err != nil {
 		return err
 	}
@@ -255,6 +276,7 @@ var volumeServices = map[string]bool{
 	"nats":                 true,
 	"garage":               true,
 	"agent-runtime-worker": true,
+	"caddy":                true,
 }
 
 func helperArgs(volume string, restore bool) []string {
@@ -525,7 +547,7 @@ func (a *app) resumeServices(dir string, services []string, timeout time.Duratio
 	}
 	deadline := time.Now().Add(timeout)
 	for {
-		data, err := a.output(dir, composeArgs("ps", "--all", "--format", "json")...)
+		data, err := a.output(dir, composeArgs(dir, "ps", "--all", "--format", "json")...)
 		if err != nil {
 			return err
 		}

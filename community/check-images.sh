@@ -18,4 +18,4 @@ while IFS= read -r image; do
     exit 1
   fi
   echo "PASS: $name vulnerability and secret scans"
-done < <(docker compose --env-file "${COMMUNITY_ENV_FILE:-.env}" config --images | sort -u)
+done < <(docker compose --env-file "${COMMUNITY_ENV_FILE:-.env}" -f compose.yaml -f compose.proxy.yaml config --images | sort -u)
