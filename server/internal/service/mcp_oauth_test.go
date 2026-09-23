@@ -225,8 +225,8 @@ func TestPublicMCPToolCatalogIsBoundedAndExcludesDeferredActions(t *testing.T) {
 	commands := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
 	service := &MCPService{commands: commands}
 	catalog := service.buildToolCatalog()
-	if len(catalog) != 58 {
-		t.Fatalf("buildToolCatalog() returned %d tools, want 58", len(catalog))
+	if len(catalog) != 59 {
+		t.Fatalf("buildToolCatalog() returned %d tools, want 59", len(catalog))
 	}
 	expectedTools := map[string]struct {
 		toolset  string
@@ -260,6 +260,7 @@ func TestPublicMCPToolCatalogIsBoundedAndExcludesDeferredActions(t *testing.T) {
 		"prepare_document_image_upload":  {MCPToolsetDocs, true},
 		"complete_document_image_upload": {MCPToolsetDocs, true},
 		"upload_document_image_from_url": {MCPToolsetDocs, true},
+		"read_documents":                 {MCPToolsetDocs, false},
 	}
 	deferred := map[string]bool{
 		"write_document_content":     true,

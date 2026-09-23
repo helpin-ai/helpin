@@ -935,6 +935,9 @@ func (s *MCPService) executeSpecialMCPTool(
 		if result, handled, err := s.executeUploadMCPTool(ctx, principal, actor, name, arguments); handled {
 			return result, err
 		}
+		if result, handled, err := s.executeDocsBatchMCPTool(ctx, principal, actor, name, arguments); handled {
+			return result, err
+		}
 		return nil, ErrMCPNotFound
 	}
 }

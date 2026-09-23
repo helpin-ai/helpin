@@ -131,6 +131,7 @@ type MCPService struct {
 	helpcenter    mcpHelpcenterPublisher
 	docsEmbedding mcpDocsEmbeddingQueue
 	attachments   mcpAttachmentService
+	docsContent   mcpDocsContentReader
 	fetchImage    mcpImageFetcher
 	config        MCPServiceConfig
 	tools         map[string]MCPToolDefinition
