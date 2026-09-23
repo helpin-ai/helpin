@@ -416,6 +416,20 @@ Helpin stores:
 
 Retrying the same mutation with the same key and request returns the stored result. Reusing the key with a different tool or request returns a conflict instead of performing another write.
 
+### 8.4 Tool errors
+
+Tool failures are returned as `CODE: message` when the cause is something the client can act on. Messages never include database errors, internal identifiers, or records from another workspace.
+
+| Code | Meaning | What to do |
+| --- | --- | --- |
+| `NOT_FOUND` | The task, document, epic, sprint, or other record does not exist in the connected workspace, or the member cannot open it | Check the ID or task key, or search again |
+| `INVALID_INPUT` | The arguments match the schema but Helpin rejected them, for example a blank comment, a state from another workflow, a self-dependency, or an edit that references an unknown block | Fix the named argument and retry |
+| `VERSION_CONFLICT` | The document or block changed after it was read (`edit_document` `expected_version`, `update_document_block` `revision`) | Read the document again and retry with the new version |
+| `FORBIDDEN` | The member cannot act on this specific record | Ask a workspace admin for access |
+| `DOCUMENT_LOCKED` | The document is locked | Unlock it in Helpin first |
+
+Document lifecycle, upload, and agent-run tools add the codes listed with those tools. Scope, role, policy, idempotency, rate-limit, schema, and deadline failures keep their fixed explanations. Any other failure returns a generic message; retrying with corrected arguments is safe because mutations are idempotent.
+
 ## 9. Agent Runtime delegation
 
 MCP does not create a parallel agent system. `start_agent_run` creates a normal Helpin `agent_run`. The selected agent's saved configuration is applied; the run is executed by Agent Runtime.
@@ -790,6 +804,7 @@ The implementation includes automated checks for:
 - the `/mcp/readonly` endpoint forcing read-only mode, including parity tools for epics, sprints, objectives, labels, workflows, members, CRM, and support organization
 - document image uploads: presigned upload with storage verification, and SSRF-safe copy from a public URL
 - document lifecycle tools: publish, unpublish, archive, restore, and rename, including typed error codes
+- typed `NOT_FOUND`, `INVALID_INPUT`, `VERSION_CONFLICT`, and `FORBIDDEN` errors for command-backed tools, including `add_task_comment` calls with no agent-run target
 - exclusion of deferred destructive, support-draft, and customer-send actions
 - agent-run privacy: runs started outside a dock chat never reuse a chat's run, and `get_agent_run` / `cancel_agent_run` hide other users' dock chat runs
 - persisted agent-start and active-run safety counts

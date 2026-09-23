@@ -46,10 +46,10 @@ func (s *PMChecklistItemService) requireAccessibleTask(ctx context.Context, task
 		return nil, err
 	}
 	if task == nil || task.WorkspaceID != workspaceID {
-		return nil, fmt.Errorf("task not found")
+		return nil, errCommandNotFound("task")
 	}
 	if err := requireTeamAccess(ctx, task.TeamID); err != nil {
-		return nil, fmt.Errorf("task not found")
+		return nil, errCommandNotFound("task")
 	}
 	return task, nil
 }
@@ -63,7 +63,7 @@ func (s *PMChecklistItemService) validateAssignee(ctx context.Context, workspace
 		return nil, nil
 	}
 	if trimmed == "" {
-		return nil, fmt.Errorf("assignee_id must be an active workspace member")
+		return nil, errCommandInput("assignee_id must be an active workspace member")
 	}
 	if s.workspaceRepo == nil {
 		return nil, fmt.Errorf("workspace repository is not configured")
@@ -73,7 +73,7 @@ func (s *PMChecklistItemService) validateAssignee(ctx context.Context, workspace
 		return nil, err
 	}
 	if membership == nil {
-		return nil, fmt.Errorf("assignee_id must be an active workspace member")
+		return nil, errCommandInput("assignee_id must be an active workspace member")
 	}
 	return &trimmed, nil
 }
@@ -81,7 +81,7 @@ func (s *PMChecklistItemService) validateAssignee(ctx context.Context, workspace
 // List returns checklist items for an accessible task in the workspace.
 func (s *PMChecklistItemService) List(ctx context.Context, taskID, workspaceID string) ([]model.PMChecklistItem, error) {
 	if taskID == "" {
-		return nil, fmt.Errorf("task_id is required")
+		return nil, errCommandInput("task_id is required")
 	}
 	if _, err := s.requireAccessibleTask(ctx, taskID, workspaceID); err != nil {
 		return nil, err
@@ -92,7 +92,7 @@ func (s *PMChecklistItemService) List(ctx context.Context, taskID, workspaceID s
 // ListBounded returns at most 100 checklist items plus full count metadata.
 func (s *PMChecklistItemService) ListBounded(ctx context.Context, taskID, workspaceID string, limit int) ([]model.PMChecklistItem, int64, bool, error) {
 	if taskID == "" {
-		return nil, 0, false, fmt.Errorf("task_id is required")
+		return nil, 0, false, errCommandInput("task_id is required")
 	}
 	if _, err := s.requireAccessibleTask(ctx, taskID, workspaceID); err != nil {
 		return nil, 0, false, err
@@ -101,7 +101,7 @@ func (s *PMChecklistItemService) ListBounded(ctx context.Context, taskID, worksp
 		limit = 100
 	}
 	if limit > 100 {
-		return nil, 0, false, fmt.Errorf("limit must be between 1 and 100")
+		return nil, 0, false, errCommandInput("limit must be between 1 and 100")
 	}
 	items, total, err := s.repo.ListPage(ctx, taskID, limit, 0)
 	if err != nil {
@@ -125,10 +125,10 @@ func (s *PMChecklistItemService) Get(ctx context.Context, id, workspaceID string
 // Create creates a checklist item.
 func (s *PMChecklistItemService) Create(ctx context.Context, taskID string, req model.CreateChecklistItemRequest, workspaceID, actorID string) (*model.PMChecklistItem, error) {
 	if taskID == "" {
-		return nil, fmt.Errorf("task_id is required")
+		return nil, errCommandInput("task_id is required")
 	}
 	if strings.TrimSpace(req.Text) == "" {
-		return nil, fmt.Errorf("text is required")
+		return nil, errCommandInput("text is required")
 	}
 	if _, err := s.requireAccessibleTask(ctx, taskID, workspaceID); err != nil {
 		return nil, err
@@ -166,7 +166,7 @@ func (s *PMChecklistItemService) Update(ctx context.Context, id string, req mode
 		return nil, err
 	}
 	if item == nil {
-		return nil, fmt.Errorf("checklist item not found")
+		return nil, errCommandNotFound("checklist item")
 	}
 	if _, err := s.requireAccessibleTask(ctx, item.TaskID, workspaceID); err != nil {
 		return nil, err
@@ -219,7 +219,7 @@ func (s *PMChecklistItemService) Delete(ctx context.Context, id string, workspac
 		return err
 	}
 	if item == nil {
-		return fmt.Errorf("checklist item not found")
+		return errCommandNotFound("checklist item")
 	}
 	if _, err := s.requireAccessibleTask(ctx, item.TaskID, workspaceID); err != nil {
 		return err

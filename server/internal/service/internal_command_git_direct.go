@@ -30,10 +30,10 @@ func (s *InternalCommandService) registerDirectGitCommands() {
 		args.Base = strings.TrimSpace(args.Base)
 		args.Title = strings.TrimSpace(args.Title)
 		if args.RepositoryID == "" || args.Head == "" || args.Base == "" || args.Title == "" {
-			return nil, fmt.Errorf("repository_id, head, base and title are required")
+			return nil, errCommandInput("repository_id, head, base and title are required")
 		}
 		if args.Head == args.Base {
-			return nil, fmt.Errorf("head must differ from base")
+			return nil, errCommandInput("head must differ from base")
 		}
 		if s.gitService == nil {
 			return nil, fmt.Errorf("git service is unavailable")

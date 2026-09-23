@@ -79,7 +79,7 @@ func (s *PMEpicService) requireAdmin(ctx context.Context, workspaceID, actorID s
 // List returns epics and computed stats.
 func (s *PMEpicService) List(ctx context.Context, workspaceID string, filters model.PMEpicListFilters) ([]model.EpicWithStats, error) {
 	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace_id is required")
+		return nil, errCommandInput("workspace_id is required")
 	}
 	filters.AccessibleTeamIDs = intersectAccessibleTeamIDs(filters.AccessibleTeamIDs, accessibleTeamIDs(ctx))
 	epics, err := s.epicRepo.List(ctx, workspaceID, filters)
@@ -93,7 +93,7 @@ func (s *PMEpicService) List(ctx context.Context, workspaceID string, filters mo
 // ListPage returns a repository-bounded epic page with batch-loaded enrichment.
 func (s *PMEpicService) ListPage(ctx context.Context, workspaceID string, filters model.PMEpicListFilters, pagination model.PMPagination) ([]model.EpicWithStats, int64, error) {
 	if workspaceID == "" {
-		return nil, 0, fmt.Errorf("workspace_id is required")
+		return nil, 0, errCommandInput("workspace_id is required")
 	}
 	filters.AccessibleTeamIDs = intersectAccessibleTeamIDs(filters.AccessibleTeamIDs, accessibleTeamIDs(ctx))
 	epics, total, err := s.epicRepo.ListPage(ctx, workspaceID, filters, pagination)
@@ -149,10 +149,10 @@ func (s *PMEpicService) GetByID(ctx context.Context, id string) (*model.EpicWith
 		return nil, err
 	}
 	if epic == nil {
-		return nil, fmt.Errorf("epic not found")
+		return nil, errCommandNotFound("epic")
 	}
 	if err := requireTeamAccess(ctx, epic.Epic.TeamID); err != nil {
-		return nil, fmt.Errorf("epic not found")
+		return nil, errCommandNotFound("epic")
 	}
 	return epic, nil
 }
@@ -169,10 +169,10 @@ func (s *PMEpicService) getWithSuggestedHealth(ctx context.Context, id string) (
 // Create creates an epic.
 func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest, actorID string) (*model.EpicWithStats, error) {
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
-		return nil, fmt.Errorf("workspace_id and name are required")
+		return nil, errCommandInput("workspace_id and name are required")
 	}
 	if req.TeamID == nil || strings.TrimSpace(*req.TeamID) == "" {
-		return nil, fmt.Errorf("team_id is required")
+		return nil, errCommandInput("team_id is required")
 	}
 	teamID := strings.TrimSpace(*req.TeamID)
 	req.TeamID = &teamID
@@ -325,10 +325,10 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 		return nil, err
 	}
 	if current == nil {
-		return nil, fmt.Errorf("epic not found")
+		return nil, errCommandNotFound("epic")
 	}
 	if err := requireCanEditTeamEpics(ctx, current.Epic.TeamID); err != nil {
-		return nil, fmt.Errorf("epic not found")
+		return nil, errCommandNotFound("epic")
 	}
 	epic := current.Epic
 	teamChanged := false
@@ -429,7 +429,7 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 		return nil, err
 	}
 	if updatedEpic == nil {
-		return nil, fmt.Errorf("epic not found")
+		return nil, errCommandNotFound("epic")
 	}
 	s.logger.InfoContext(ctx, "epic updated", "epic_id", epic.ID, "workspace_id", epic.WorkspaceID)
 	s.logEpicUpdateActivity(ctx, current, updatedEpic, actorID)
@@ -484,7 +484,7 @@ func (s *PMEpicService) validatePlanningRepository(ctx context.Context, workspac
 		return err
 	}
 	if repo == nil {
-		return fmt.Errorf("planning repository not found")
+		return errCommandNotFound("planning repository")
 	}
 	if repo.Archived || !repo.Selected {
 		return fmt.Errorf("planning repository is not available")
@@ -499,7 +499,7 @@ func (s *PMEpicService) Delete(ctx context.Context, id string, actorID string) e
 		return err
 	}
 	if epic == nil {
-		return fmt.Errorf("epic not found")
+		return errCommandNotFound("epic")
 	}
 	if err := requireCanEditTeamEpics(ctx, epic.Epic.TeamID); err != nil {
 		return err
@@ -545,7 +545,7 @@ func (s *PMEpicService) UpdateHealth(ctx context.Context, id string, req model.U
 		return err
 	}
 	if epic == nil {
-		return fmt.Errorf("epic not found")
+		return errCommandNotFound("epic")
 	}
 	if err := requireCanEditTeamEpics(ctx, epic.Epic.TeamID); err != nil {
 		return err
@@ -569,7 +569,7 @@ func (s *PMEpicService) AddLabel(ctx context.Context, epicID, labelID, actorID s
 		return err
 	}
 	if epic == nil {
-		return fmt.Errorf("epic not found")
+		return errCommandNotFound("epic")
 	}
 	if err := requireCanEditTeamEpics(ctx, epic.Epic.TeamID); err != nil {
 		return err
@@ -597,7 +597,7 @@ func (s *PMEpicService) RemoveLabel(ctx context.Context, epicID, labelID, actorI
 		return err
 	}
 	if epic == nil {
-		return fmt.Errorf("epic not found")
+		return errCommandNotFound("epic")
 	}
 	if err := requireCanEditTeamEpics(ctx, epic.Epic.TeamID); err != nil {
 		return err
@@ -639,10 +639,10 @@ func (s *PMEpicService) ListTasks(ctx context.Context, epicID string) ([]model.B
 func (s *PMEpicService) LinkTasks(ctx context.Context, workspaceID, epicID string, taskIDs []string, actorID string) (*model.LinkEpicTasksResponse, error) {
 	ids := dedupeIDs(taskIDs)
 	if workspaceID == "" || strings.TrimSpace(epicID) == "" {
-		return nil, fmt.Errorf("workspace_id and epic_id are required")
+		return nil, errCommandInput("workspace_id and epic_id are required")
 	}
 	if len(ids) == 0 {
-		return nil, fmt.Errorf("at least one task_id is required")
+		return nil, errCommandInput("at least one task_id is required")
 	}
 	if len(ids) > 100 {
 		return nil, fmt.Errorf("at most 100 task_ids are allowed")
@@ -653,7 +653,7 @@ func (s *PMEpicService) LinkTasks(ctx context.Context, workspaceID, epicID strin
 		return nil, err
 	}
 	if epic == nil || epic.Epic.WorkspaceID != workspaceID || epic.Epic.Archived {
-		return nil, fmt.Errorf("epic not found")
+		return nil, errCommandNotFound("epic")
 	}
 	if epic.Epic.TeamID == nil || strings.TrimSpace(*epic.Epic.TeamID) == "" {
 		return nil, fmt.Errorf("assign the epic to a team before linking tasks")
@@ -671,7 +671,7 @@ func (s *PMEpicService) LinkTasks(ctx context.Context, workspaceID, epicID strin
 			return err
 		}
 		if len(selected) != len(ids) {
-			return fmt.Errorf("one or more tasks were not found")
+			return errCommandNotFound("one or more tasks were")
 		}
 		for index := range selected {
 			task := &selected[index]
@@ -679,7 +679,7 @@ func (s *PMEpicService) LinkTasks(ctx context.Context, workspaceID, epicID strin
 				return fmt.Errorf("archived tasks cannot be linked")
 			}
 			if task.TeamID == nil || strings.TrimSpace(*task.TeamID) != strings.TrimSpace(*epic.Epic.TeamID) {
-				return fmt.Errorf("all tasks must belong to the same team as the epic")
+				return errCommandInput("all tasks must belong to the same team as the epic")
 			}
 			if err := requireTeamAccess(ctx, task.TeamID); err != nil {
 				return err
@@ -759,7 +759,7 @@ func (s *PMEpicService) syncProgress(ctx context.Context, epicID string) error {
 		return err
 	}
 	if withStats == nil {
-		return fmt.Errorf("epic not found")
+		return errCommandNotFound("epic")
 	}
 	epic := withStats.Epic
 	stats := withStats.Stats

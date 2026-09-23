@@ -159,7 +159,7 @@ func (s *MCPService) executeAuthorizedMCPTool(
 					ActorRole:   actor.Role,
 				}, taskKey)
 				if err != nil {
-					return nil, err
+					return nil, mcpCommandError(err)
 				}
 				task, err := s.accessibleMCPTask(ctx, principal, taskID)
 				if err != nil {
@@ -191,7 +191,7 @@ func (s *MCPService) executeAuthorizedMCPTool(
 			ActorRole:   actor.Role,
 		}, tool.CommandName, arguments)
 		if err != nil {
-			return nil, err
+			return nil, mcpCommandError(err)
 		}
 		if taskContextInput != nil {
 			var data model.GetTaskContextResult

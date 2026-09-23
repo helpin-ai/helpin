@@ -35,7 +35,7 @@ func NewPMWorkflowService(workflowRepo *repository.PMWorkflowRepository, taskRep
 // ListByWorkspace lists workflows in a workspace.
 func (s *PMWorkflowService) ListByWorkspace(ctx context.Context, workspaceID string) ([]model.WorkflowWithStates, error) {
 	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace_id is required")
+		return nil, errCommandInput("workspace_id is required")
 	}
 	return s.workflowRepo.ListByWorkspace(ctx, workspaceID)
 }
@@ -47,7 +47,7 @@ func (s *PMWorkflowService) GetByID(ctx context.Context, id string) (*model.Work
 		return nil, err
 	}
 	if wf == nil {
-		return nil, fmt.Errorf("workflow not found")
+		return nil, errCommandNotFound("workflow")
 	}
 	return wf, nil
 }
@@ -55,7 +55,7 @@ func (s *PMWorkflowService) GetByID(ctx context.Context, id string) (*model.Work
 // ListEpicStates returns epic workflow states for workspace, seeding defaults if none exist.
 func (s *PMWorkflowService) ListEpicStates(ctx context.Context, workspaceID string) ([]model.PMEpicWorkflowState, error) {
 	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace_id is required")
+		return nil, errCommandInput("workspace_id is required")
 	}
 	states, err := s.workflowRepo.ListEpicStates(ctx, workspaceID)
 	if err != nil {
@@ -77,7 +77,7 @@ func (s *PMWorkflowService) Create(ctx context.Context, req model.CreateWorkflow
 // becomes the workflow's default_state. Passed-in WorkflowID fields are ignored.
 func (s *PMWorkflowService) createWithStates(ctx context.Context, req model.CreateWorkflowRequest, states []model.PMWorkflowState) (*model.WorkflowWithStates, error) {
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
-		return nil, fmt.Errorf("workspace_id and name are required")
+		return nil, errCommandInput("workspace_id and name are required")
 	}
 	if len(states) == 0 {
 		return nil, fmt.Errorf("workflow requires at least one state")
@@ -159,7 +159,7 @@ func (s *PMWorkflowService) Update(ctx context.Context, id string, req model.Upd
 		return nil, err
 	}
 	if wf == nil {
-		return nil, fmt.Errorf("workflow not found")
+		return nil, errCommandNotFound("workflow")
 	}
 
 	if req.Name != nil {
@@ -181,7 +181,7 @@ func (s *PMWorkflowService) Update(ctx context.Context, id string, req model.Upd
 			return nil, err
 		}
 		if !ok {
-			return nil, fmt.Errorf("default_state_id must belong to this workflow")
+			return nil, errCommandInput("default_state_id must belong to this workflow")
 		}
 		wf.Workflow.DefaultStateID = req.DefaultStateID
 	}
@@ -205,7 +205,7 @@ func (s *PMWorkflowService) Delete(ctx context.Context, id string) error {
 		return err
 	}
 	if wf == nil {
-		return fmt.Errorf("workflow not found")
+		return errCommandNotFound("workflow")
 	}
 	all, err := s.workflowRepo.ListByWorkspace(ctx, wf.Workflow.WorkspaceID)
 	if err != nil {
@@ -237,7 +237,7 @@ func (s *PMWorkflowService) Delete(ctx context.Context, id string) error {
 // CreateState adds a state to a workflow.
 func (s *PMWorkflowService) CreateState(ctx context.Context, workflowID string, req model.CreateWorkflowStateRequest) (*model.PMWorkflowState, error) {
 	if strings.TrimSpace(req.Name) == "" {
-		return nil, fmt.Errorf("name is required")
+		return nil, errCommandInput("name is required")
 	}
 	if !isValidStateType(req.StateType) {
 		return nil, fmt.Errorf("invalid state_type")
@@ -248,7 +248,7 @@ func (s *PMWorkflowService) CreateState(ctx context.Context, workflowID string, 
 		return nil, err
 	}
 	if wf == nil {
-		return nil, fmt.Errorf("workflow not found")
+		return nil, errCommandNotFound("workflow")
 	}
 
 	// Temporarily assign end position; normalizePositions will fix it.
@@ -309,7 +309,7 @@ func (s *PMWorkflowService) UpdateState(ctx context.Context, workflowID, stateID
 		return nil, err
 	}
 	if wf == nil {
-		return nil, fmt.Errorf("workflow not found")
+		return nil, errCommandNotFound("workflow")
 	}
 
 	var target *model.PMWorkflowState
@@ -320,7 +320,7 @@ func (s *PMWorkflowService) UpdateState(ctx context.Context, workflowID, stateID
 		}
 	}
 	if target == nil {
-		return nil, fmt.Errorf("state not found")
+		return nil, errCommandNotFound("state")
 	}
 
 	if req.Name != nil {
@@ -395,7 +395,7 @@ func (s *PMWorkflowService) UpdateState(ctx context.Context, workflowID, stateID
 			return &state, nil
 		}
 	}
-	return nil, fmt.Errorf("state not found")
+	return nil, errCommandNotFound("state")
 }
 
 // DeleteState deletes a state if no active tasks and workflow remains valid.
@@ -405,7 +405,7 @@ func (s *PMWorkflowService) DeleteState(ctx context.Context, workflowID, stateID
 		return err
 	}
 	if wf == nil {
-		return fmt.Errorf("workflow not found")
+		return errCommandNotFound("workflow")
 	}
 
 	count, err := s.taskRepo.CountByWorkflowState(ctx, stateID)
@@ -423,7 +423,7 @@ func (s *PMWorkflowService) DeleteState(ctx context.Context, workflowID, stateID
 		}
 	}
 	if len(remaining) == len(wf.States) {
-		return fmt.Errorf("state not found")
+		return errCommandNotFound("state")
 	}
 	if err := ensureWorkflowStateTypeCoverage(remaining); err != nil {
 		return err
@@ -446,14 +446,14 @@ func (s *PMWorkflowService) DeleteState(ctx context.Context, workflowID, stateID
 // ReorderStates reorders workflow states with ordering validation.
 func (s *PMWorkflowService) ReorderStates(ctx context.Context, workflowID string, req model.ReorderStatesRequest) error {
 	if len(req.StateIDs) == 0 {
-		return fmt.Errorf("state_ids is required")
+		return errCommandInput("state_ids is required")
 	}
 	wf, err := s.workflowRepo.GetByID(ctx, workflowID)
 	if err != nil {
 		return err
 	}
 	if wf == nil {
-		return fmt.Errorf("workflow not found")
+		return errCommandNotFound("workflow")
 	}
 
 	stateByID := make(map[string]model.PMWorkflowState, len(wf.States))
@@ -470,7 +470,7 @@ func (s *PMWorkflowService) ReorderStates(ctx context.Context, workflowID string
 		reordered = append(reordered, state)
 	}
 	if len(reordered) != len(wf.States) {
-		return fmt.Errorf("state_ids must include all workflow states")
+		return errCommandInput("state_ids must include all workflow states")
 	}
 
 	if err := validateWorkflowStateOrder(reordered); err != nil {
@@ -486,7 +486,7 @@ func (s *PMWorkflowService) ReorderStates(ctx context.Context, workflowID string
 // ResolveTeamWorkflow returns the workflow for a team, falling back to the workspace default.
 func (s *PMWorkflowService) ResolveTeamWorkflow(ctx context.Context, workspaceID, teamID string) (*model.WorkflowWithStates, error) {
 	if workspaceID == "" || teamID == "" {
-		return nil, fmt.Errorf("workspace_id and team_id are required")
+		return nil, errCommandInput("workspace_id and team_id are required")
 	}
 
 	// Try team-specific workflow first.
@@ -522,7 +522,7 @@ func (s *PMWorkflowService) ResolveTeamWorkflow(ctx context.Context, workspaceID
 // CopyToTeam copies a source workflow to a target team.
 func (s *PMWorkflowService) CopyToTeam(ctx context.Context, sourceWorkflowID, targetTeamID, workspaceID string) (*model.WorkflowWithStates, error) {
 	if sourceWorkflowID == "" || targetTeamID == "" || workspaceID == "" {
-		return nil, fmt.Errorf("source_workflow_id, target_team_id, and workspace_id are required")
+		return nil, errCommandInput("source_workflow_id, target_team_id, and workspace_id are required")
 	}
 
 	// Validate source workflow exists.
@@ -531,7 +531,7 @@ func (s *PMWorkflowService) CopyToTeam(ctx context.Context, sourceWorkflowID, ta
 		return nil, err
 	}
 	if source == nil {
-		return nil, fmt.Errorf("source workflow not found")
+		return nil, errCommandNotFound("source workflow")
 	}
 
 	// Check target team doesn't already have a workflow.
@@ -663,7 +663,7 @@ func buildStateMapping(oldStates, newStates []model.PMWorkflowState, defaultStat
 // SeedWorkspaceDefaults seeds default workflow, epic states, and labels.
 func (s *PMWorkflowService) SeedWorkspaceDefaults(ctx context.Context, workspaceID, actorID string) error {
 	if workspaceID == "" {
-		return fmt.Errorf("workspace_id is required")
+		return errCommandInput("workspace_id is required")
 	}
 	if _, err := s.workflowRepo.SeedDefaultWorkflow(ctx, workspaceID); err != nil {
 		return err
@@ -764,7 +764,7 @@ func validateWorkflowStateOrder(states []model.PMWorkflowState) error {
 			return fmt.Errorf("invalid state_type %s", state.StateType)
 		}
 		if rank < prev {
-			return fmt.Errorf("state type ordering must be backlog < unstarted < started < done")
+			return errCommandInput("state type ordering must be backlog < unstarted < started < done")
 		}
 		prev = rank
 	}
@@ -789,7 +789,7 @@ func ensureWorkflowStateTypeCoverage(states []model.PMWorkflowState) error {
 		}
 	}
 	if !flags.Unstarted || !flags.Started || !flags.Done {
-		return fmt.Errorf("workflow must include at least one unstarted, started, and done state")
+		return errCommandInput("workflow must include at least one unstarted, started, and done state")
 	}
 	return nil
 }
