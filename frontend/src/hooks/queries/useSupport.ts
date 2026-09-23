@@ -279,6 +279,23 @@ export function useConversations(workspaceId: string, filters?: SupportConversat
   });
 }
 
+/**
+ * Whether the workspace has any conversation the user can see, regardless of
+ * view or status. Separates a brand-new inbox (onboarding) from inbox zero.
+ * Keyed under conversations() so new/removed conversations refresh it.
+ */
+export function useHasAnySupportConversation(workspaceId: string, enabled = true) {
+  return useQuery({
+    queryKey: [...queryKeys.support.conversations(workspaceId), 'any'] as const,
+    queryFn: async (): Promise<boolean> => {
+      const page = await loadConversationListPage(workspaceId, { page: 1, per_page: 1 });
+      return (page.data?.length ?? 0) > 0;
+    },
+    enabled: !!workspaceId && enabled,
+    staleTime: 15_000,
+  });
+}
+
 export function hasSupportConversationSearchInput(filters: SupportConversationGlobalSearchFilters) {
   return Object.entries(filters).some(([key, value]) => {
     if (key === 'page' || key === 'per_page' || key === 'sort') return false;
