@@ -201,13 +201,15 @@ func (r *InstanceSettingsRepository) SetServerAdmin(ctx context.Context, userID 
 }
 
 // GrantServerAdminByEmails marks existing accounts with the given (already
-// normalized) emails as server admins.
+// normalized) emails as server admins. Only verified addresses qualify:
+// anyone can register an unverified account with a listed address before the
+// operator sets it, so unverified accounts are granted when they verify.
 func (r *InstanceSettingsRepository) GrantServerAdminByEmails(ctx context.Context, emails []string) (int64, error) {
 	if len(emails) == 0 {
 		return 0, nil
 	}
 	result := r.db.WithContext(ctx).Model(&model.User{}).
-		Where("lower(email) IN ? AND is_server_admin = ?", emails, false).
+		Where("lower(email) IN ? AND is_server_admin = ? AND email_verified_at IS NOT NULL", emails, false).
 		Update("is_server_admin", true)
 	if result.Error != nil {
 		return 0, fmt.Errorf("grant server admin by email: %w", result.Error)

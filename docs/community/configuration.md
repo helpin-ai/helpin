@@ -20,7 +20,7 @@ retains conservative authentication defaults.
 | `SMTP_USERNAME`, `SMTP_PASSWORD` | Set both for authenticated delivery, or leave both empty for a trusted relay. |
 | `SMTP_TLS_MODE` | `starttls` by default; `tls` for implicit TLS; explicit `none` only for an unauthenticated trusted local relay. Credentials require TLS and AUTH PLAIN; LOGIN-only SMTP servers are unsupported. TLS certificates are verified. |
 | `POSTMARK_APP_SERVER_TOKEN`, `POSTMARK_APP_FROM_EMAIL` | Optional alternative application-mail provider. |
-| `HELPIN_ADMIN_EMAILS` | Optional comma-separated addresses of [server admins](#server-administration). Matching accounts are made server admins at startup, and a new account on one of these addresses becomes one once its email is verified. Accounts are matched by address, so list only mailboxes you control. |
+| `HELPIN_ADMIN_EMAILS` | Optional comma-separated addresses of [server admins](#server-administration). Matching accounts with a verified email are made server admins at startup; an account whose email isn't verified yet becomes one once it verifies. Unverified accounts never qualify, so someone who registered a listed address before you set it can't gain admin. |
 
 `helpin install` and `helpin configure` can write the SMTP settings for you
 (see the [CLI guide](cli.md)). Server admins can instead enter them in

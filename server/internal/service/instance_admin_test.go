@@ -350,8 +350,18 @@ func TestEnvServerAdminsAreGrantedAndProtected(t *testing.T) {
 	if err != nil || resp.User.IsServerAdmin {
 		t.Fatalf("unverified env signup = %+v, %v; want a regular account", resp, err)
 	}
+	// Startup never grants an unverified account: whoever registered the
+	// address first could otherwise claim admin.
 	if err := env.instance.Bootstrap(ctx); err != nil {
 		t.Fatalf("bootstrap: %v", err)
+	}
+	if admins, err := env.instance.ListAdmins(ctx); err != nil || len(admins) != 1 {
+		t.Fatalf("admins before verification = %+v, %v; want only the founder", admins, err)
+	}
+
+	mustExec(t, env.db, `UPDATE users SET email_verified_at = CURRENT_TIMESTAMP WHERE email = ?`, "ops@example.com")
+	if err := env.instance.Bootstrap(ctx); err != nil {
+		t.Fatalf("bootstrap after verification: %v", err)
 	}
 	admins, err := env.instance.ListAdmins(ctx)
 	if err != nil || len(admins) != 2 {
