@@ -1155,6 +1155,7 @@ func main() {
 	docsDocumentService.SetTranslationService(docsHelpcenterTranslationService)
 	docsContentService.SetTranslationService(docsHelpcenterTranslationService)
 	docsHelpcenterService.SetTranslationService(docsHelpcenterTranslationService)
+	docsHelpcenterTranslationService.SetHelpcenterCacheInvalidator(docsHelpcenterService.InvalidateHelpcenterCacheForWorkspace)
 	docsDocumentService.SetHelpcenterService(docsHelpcenterService)
 	docsDeletionDeps := service.DocsDocumentDeletionDependencies{
 		ContentRepo:     docsContentRepo,

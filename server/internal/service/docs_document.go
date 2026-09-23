@@ -49,6 +49,16 @@ func (s *DocsDocumentService) SetHelpcenterService(helpcenterSvc *DocsHelpcenter
 	s.helpcenterSvc = helpcenterSvc
 }
 
+// invalidateHelpcenterCache refreshes cached public Help Center pages after a
+// document's status, location or existence changes. Public pages require a
+// published document and resolve article links at render time, so other
+// articles linking to this one must be re-rendered too.
+func (s *DocsDocumentService) invalidateHelpcenterCache(ctx context.Context, workspaceID string) {
+	if s.helpcenterSvc != nil {
+		s.helpcenterSvc.InvalidateHelpcenterCacheForWorkspace(ctx, workspaceID)
+	}
+}
+
 func (s *DocsDocumentService) SetRuleEngine(engine *AutomationRuleEngine) {
 	s.ruleEngine = engine
 }
@@ -287,6 +297,7 @@ func (s *DocsDocumentService) Publish(ctx context.Context, id string) (*model.Do
 	if err := s.docRepo.UpdateStatus(ctx, id, model.DocStatusPublished); err != nil {
 		return nil, err
 	}
+	s.invalidateHelpcenterCache(ctx, doc.WorkspaceID)
 	updated, err := s.docRepo.GetByID(ctx, id)
 	if err == nil && updated != nil {
 		s.trackProductEvent(ctx, ProductAnalyticsEvent{
@@ -330,6 +341,7 @@ func (s *DocsDocumentService) Unpublish(ctx context.Context, id string) (*model.
 	if err := s.docRepo.UpdateStatus(ctx, id, model.DocStatusDraft); err != nil {
 		return nil, err
 	}
+	s.invalidateHelpcenterCache(ctx, doc.WorkspaceID)
 	updated, err := s.docRepo.GetByID(ctx, id)
 	if err == nil && updated != nil {
 		publishWorkspaceEventWithParent(s.wsPublisher, "updated", "docs_document", updated.ID, updated.WorkspaceID, "", "docs_space", updated.SpaceID, nil)
@@ -361,6 +373,7 @@ func (s *DocsDocumentService) Archive(ctx context.Context, id string) (*model.Do
 		slog.Error("[DEBUG] Archive UpdateStatus failed", "doc_id", id, "error", err)
 		return nil, err
 	}
+	s.invalidateHelpcenterCache(ctx, doc.WorkspaceID)
 	updated, err := s.docRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -388,6 +401,7 @@ func (s *DocsDocumentService) Unarchive(ctx context.Context, id string) (*model.
 	if err := s.docRepo.UpdateStatus(ctx, id, model.DocStatusDraft); err != nil {
 		return nil, err
 	}
+	s.invalidateHelpcenterCache(ctx, doc.WorkspaceID)
 	updated, err := s.docRepo.GetByID(ctx, id)
 	if err == nil && updated != nil {
 		publishWorkspaceEventWithParent(s.wsPublisher, "updated", "docs_document", updated.ID, updated.WorkspaceID, "", "docs_space", updated.SpaceID, nil)
@@ -437,6 +451,7 @@ func (s *DocsDocumentService) Move(ctx context.Context, id string, req model.Mov
 	if err := s.docRepo.Move(ctx, id, req.SpaceID, req.CollectionID); err != nil {
 		return nil, err
 	}
+	s.invalidateHelpcenterCache(ctx, doc.WorkspaceID)
 	updated, err := s.docRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -470,6 +485,7 @@ func (s *DocsDocumentService) Delete(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
+	s.invalidateHelpcenterCache(ctx, doc.WorkspaceID)
 	publishWorkspaceEventWithParent(s.wsPublisher, "deleted", "docs_document", id, doc.WorkspaceID, "", "docs_space", doc.SpaceID, nil)
 	s.enqueueAssetCleanupBestEffort(ctx, doc.WorkspaceID, doc.ID, candidateKeys)
 	return nil
@@ -479,6 +495,7 @@ func (s *DocsDocumentService) Delete(ctx context.Context, id string) error {
 func (s *DocsDocumentService) Restore(ctx context.Context, id string) (*model.DocsDocument, error) {
 	doc, err := s.docRepo.Restore(ctx, id)
 	if err == nil && doc != nil {
+		s.invalidateHelpcenterCache(ctx, doc.WorkspaceID)
 		publishWorkspaceEventWithParent(s.wsPublisher, "updated", "docs_document", doc.ID, doc.WorkspaceID, "", "docs_space", doc.SpaceID, nil)
 	}
 	return doc, err

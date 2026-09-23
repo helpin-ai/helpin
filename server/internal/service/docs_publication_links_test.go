@@ -18,13 +18,9 @@ func TestMaterializePublicationDocumentLinks(t *testing.T) {
 		{"type":"text","text":" or "},
 		{"type":"text","text":"our site","marks":[{"type":"link","attrs":{"href":"https://helpin.ai"}}]}
 	]}]}`)
-	resolve := func(_ context.Context, documentID string) (string, bool, error) {
-		if documentID == "live-doc" {
-			return "/articles/core-concepts-ba8b1552", true, nil
-		}
-		return "", false, nil
-	}
-	published, err := materializePublicationDocumentLinks(context.Background(), draft, resolve)
+	published, err := materializePublicationDocumentLinks(context.Background(), draft, staticLinkPaths(map[string]string{
+		"live-doc": "/articles/core-concepts-ba8b1552",
+	}))
 	if err != nil {
 		t.Fatalf("materializePublicationDocumentLinks() error = %v", err)
 	}
@@ -55,9 +51,9 @@ func TestMaterializePublicationDocumentLinks(t *testing.T) {
 
 func TestMaterializePublicationDocumentLinksSkipsContentWithoutInternalLinks(t *testing.T) {
 	raw := json.RawMessage(`{"type":"doc","content":[]}`)
-	got, err := materializePublicationDocumentLinks(context.Background(), raw, func(context.Context, string) (string, bool, error) {
+	got, err := materializePublicationDocumentLinks(context.Background(), raw, func(context.Context, []string) (map[string]string, error) {
 		t.Fatal("resolver must not run")
-		return "", false, nil
+		return nil, nil
 	})
 	if err != nil || string(got) != string(raw) {
 		t.Fatalf("got %s, %v; want unchanged", got, err)
