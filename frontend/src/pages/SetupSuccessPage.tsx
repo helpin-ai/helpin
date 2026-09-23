@@ -7,12 +7,17 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { systemStatusEnabled } from '@edition/config';
 import { SampleDataCard } from '@/components/setup/SampleDataButton';
-import { SetupConnectionsSection } from '@/components/setup/SetupConnectionsSection';
-import { usePermissions, useSetup, useUpdateSetupGoals, useWorkspaceAccess } from '@/hooks/queries';
+import { SetupSettingsLink } from '@/components/setup/CapabilityActions';
+import { blockingServices } from '@/components/setup/capabilityPresentation';
+import { SetupTaskRequirement } from '@/components/setup/SetupTaskRequirement';
+import { journeyTaskRequirements, type SetupTaskRequirementKind } from '@/components/setup/setupTaskRequirements';
+import { usePermissions, useSetup, useUpdateSetupGoals, useWorkspaceAccess, useWorkspaceCapabilities } from '@/hooks/queries';
 import { resolveSetupAction } from '@/lib/setupActions';
 import { trackAnalyticsEvent } from '@/lib/analytics';
 import { setupService } from '@/lib/services/setupService';
+import type { CapabilitiesResponse } from '@/lib/capabilityTypes';
 import type { SetupGoalKey, SetupJourney, SetupTask } from '@/lib/setupTypes';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -43,6 +48,7 @@ export function SetupSuccessPage() {
   const updateGoals = useUpdateSetupGoals(workspaceId);
   const { data: access } = useWorkspaceAccess(workspaceId);
   const { has } = usePermissions(access);
+  const capabilities = useWorkspaceCapabilities(workspaceId);
   const trackedWorkspace = useRef<string | null>(null);
   const expansionWorkspace = useRef('');
   const expansionInitialized = useRef(false);
@@ -130,10 +136,6 @@ export function SetupSuccessPage() {
   const toggleGoal = (key: SetupGoalKey) => {
     setDraftGoals((current) => {
       if (current.includes(key)) return current.filter((goal) => goal !== key);
-      if (current.length >= 3) {
-        toast.info('Choose up to three goals so your guide stays focused.');
-        return current;
-      }
       return [...current, key];
     });
   };
@@ -159,6 +161,15 @@ export function SetupSuccessPage() {
 
   const view = setup.data;
   const recommendedDestination = view.recommended ? resolveSetupAction(view.recommended.action.key, slug) : undefined;
+  const canManage = has('workspace.update');
+  const taskContext: TaskRequirementContext = {
+    capabilities: capabilities.data,
+    workspaceId,
+    slug,
+    canManage,
+    isOwner: access?.membership?.role === 'owner',
+  };
+  const blockedServiceCount = canManage && systemStatusEnabled ? blockingServices(capabilities.data).length : 0;
 
   return (
     <main className="h-full overflow-y-auto bg-background">
@@ -202,15 +213,20 @@ export function SetupSuccessPage() {
           )}
         </section>
 
+        {blockedServiceCount > 0 && (
+          <div className="relative mt-8 py-1 pl-4" role="note" data-testid="required-services-notice">
+            <span aria-hidden="true" className="absolute inset-y-0 left-0 w-[3px] bg-quiet-accent" />
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <p className="text-sm text-quiet-text-primary">
+                {blockedServiceCount === 1 ? 'A required server service needs attention.' : `${blockedServiceCount} required server services need attention.`}
+              </p>
+              <SetupSettingsLink slug={slug} path="settings/system-status">Open System status</SetupSettingsLink>
+            </div>
+          </div>
+        )}
+
         <div className="mt-14 space-y-14">
-          <SetupConnectionsSection
-            workspaceId={workspaceId}
-            slug={slug}
-            goals={view.goals}
-            canManage={has('workspace.update')}
-            isOwner={access?.membership?.role === 'owner'}
-          />
-          <SampleDataCard workspaceId={workspaceId} canManage={has('workspace.update')} />
+          <SampleDataCard workspaceId={workspaceId} canManage={canManage} />
           {view.journeys.map((journey) => (
             <JourneySection
               key={journey.key}
@@ -218,6 +234,7 @@ export function SetupSuccessPage() {
               expanded={Boolean(expandedJourneys[journey.key])}
               onToggle={() => toggleJourney(journey.key)}
               onAction={runAction}
+              taskContext={taskContext}
             />
           ))}
         </div>
@@ -227,7 +244,7 @@ export function SetupSuccessPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Edit setup goals</DialogTitle>
-            <DialogDescription>Choose up to three outcomes. Workspace essentials and recommended automation remain available.</DialogDescription>
+            <DialogDescription>Select everything you want to set up. The first goal leads your guide; workspace essentials and recommended automation remain available.</DialogDescription>
           </DialogHeader>
           <div className="divide-y rounded-lg border">
             {SETUP_GOAL_OPTIONS.map((option) => {
@@ -250,8 +267,17 @@ export function SetupSuccessPage() {
   );
 }
 
-function JourneySection({ journey, expanded, onToggle, onAction }: { journey: SetupJourney; expanded: boolean; onToggle: () => void; onAction: (key: string, taskKey?: string) => void }) {
+type TaskRequirementContext = {
+  capabilities?: CapabilitiesResponse;
+  workspaceId: string;
+  slug: string;
+  canManage: boolean;
+  isOwner: boolean;
+};
+
+function JourneySection({ journey, expanded, onToggle, onAction, taskContext }: { journey: SetupJourney; expanded: boolean; onToggle: () => void; onAction: (key: string, taskKey?: string) => void; taskContext: TaskRequirementContext }) {
   const taskListId = `setup-journey-tasks-${journey.key}`;
+  const requirements = journeyTaskRequirements(journey.tasks, taskContext.capabilities);
   return (
     <section id={`setup-journey-${journey.key}`} className="scroll-mt-6">
       <button
@@ -271,13 +297,15 @@ function JourneySection({ journey, expanded, onToggle, onAction }: { journey: Se
         </span>
       </button>
       <ol id={taskListId} className="divide-y" hidden={!expanded}>
-        {journey.tasks.map((task, index) => <JourneyTaskRow key={task.key} task={task} index={index} onAction={onAction} />)}
+        {journey.tasks.map((task, index) => (
+          <JourneyTaskRow key={task.key} task={task} index={index} onAction={onAction} requirement={requirements.get(task.key)} taskContext={taskContext} />
+        ))}
       </ol>
     </section>
   );
 }
 
-function JourneyTaskRow({ task, index, onAction }: { task: SetupTask; index: number; onAction: (key: string, taskKey?: string) => void }) {
+function JourneyTaskRow({ task, index, onAction, requirement, taskContext }: { task: SetupTask; index: number; onAction: (key: string, taskKey?: string) => void; requirement?: SetupTaskRequirementKind; taskContext: TaskRequirementContext }) {
   const completed = task.status === 'completed';
   const needsAttention = task.status === 'needs_attention';
   const blocked = task.status === 'blocked';
@@ -286,7 +314,16 @@ function JourneyTaskRow({ task, index, onAction }: { task: SetupTask; index: num
     <li className="group flex gap-4 py-5 sm:gap-6">
       <div className="flex w-8 shrink-0 justify-center pt-0.5" aria-hidden="true">{completed ? <CheckCircle2 className="h-5 w-5 text-emerald-500" /> : needsAttention ? <AlertCircle className="h-5 w-5 text-amber-500" /> : blocked ? <Lock className="h-4 w-4 text-muted-foreground/55" /> : <Circle className="h-5 w-5 text-muted-foreground/45" />}</div>
       <div className="min-w-0 flex-1 sm:flex sm:items-center sm:justify-between sm:gap-6">
-        <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className={cn('text-sm font-medium leading-5 break-words', completed && 'text-muted-foreground')}>{task.title}</p>{!task.shared && <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">Your step</span>}{blocked && stateHint && <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300" title={stateHint} aria-label={stateHint}>Blocked</span>}</div></div>
+        <div className="min-w-0 sm:flex-1"><div className="flex flex-wrap items-center gap-2"><p className={cn('text-sm font-medium leading-5 break-words', completed && 'text-muted-foreground')}>{task.title}</p>{!task.shared && <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">Your step</span>}{blocked && stateHint && <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300" title={stateHint} aria-label={stateHint}>Blocked</span>}</div>{requirement && taskContext.capabilities && (
+          <SetupTaskRequirement
+            kind={requirement}
+            capabilities={taskContext.capabilities}
+            workspaceId={taskContext.workspaceId}
+            slug={taskContext.slug}
+            canManage={taskContext.canManage}
+            isOwner={taskContext.isOwner}
+          />
+        )}</div>
         {!completed && !blocked && task.action && <Button variant="ghost" size="sm" className="mt-3 h-8 shrink-0 gap-1.5 px-0 text-xs hover:bg-transparent sm:mt-0 sm:px-3" onClick={() => onAction(task.action!.key, task.key)}>{task.action.label}<ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" /></Button>}
         {completed && <span className="mt-2 block shrink-0 text-xs text-emerald-600 sm:mt-0">Verified</span>}
         {needsAttention && <span className="mt-2 block shrink-0 text-xs text-amber-600 sm:mt-0">Needs attention</span>}

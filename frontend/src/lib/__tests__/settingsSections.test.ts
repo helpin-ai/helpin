@@ -1,4 +1,4 @@
-import { billingEnabled } from '@edition/config';
+import { billingEnabled, systemStatusEnabled } from '@edition/config';
 import { describe, expect, it } from 'vitest';
 import { getSettingsSidebarGroups, SETTINGS_ROUTE_SECTIONS } from '../settingsSections';
 
@@ -96,6 +96,20 @@ describe('getSettingsSidebarGroups', () => {
     expect(none).not.toContain('ai');
     expect(both).not.toContain('ai-connections');
     expect(both).toContain('ai');
+  });
+
+  it.skipIf(!systemStatusEnabled)('lists System status under Workspace for workspace admins', () => {
+    const admin = getSettingsSidebarGroups(true, new Set(['workspace.read', 'workspace.update', 'module_access.manage']))
+      .find((group) => group.label === 'Workspace')?.sections.map((section) => section.id) ?? [];
+    const member = getSettingsSidebarGroups(false, new Set(['workspace.read', 'settings.read']))
+      .flatMap((group) => group.sections.map((section) => section.id));
+
+    expect(admin.indexOf('system-status')).toBe(admin.indexOf('access') + 1);
+    expect(member).not.toContain('system-status');
+  });
+
+  it.skipIf(systemStatusEnabled)('omits System status where the platform manages server services', () => {
+    expect(SETTINGS_ROUTE_SECTIONS.map((section) => section.id)).not.toContain('system-status');
   });
 
   it('exposes a single AI setup entry to members with workspace read access', () => {

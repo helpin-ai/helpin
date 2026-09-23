@@ -1,3 +1,4 @@
+import { systemStatusEnabled } from '@edition/config';
 import { billingSettingsSections } from '@edition/settings';
 import type { FC, CSSProperties } from 'react';
 import type { Permission, WorkspaceModule } from '@/lib/types';
@@ -34,6 +35,7 @@ import {
   Globe02Icon,
   Key01Icon,
   AiNetworkIcon,
+  DashboardSpeed01Icon,
 } from '@hugeicons/core-free-icons';
 
 export type IconComponent = FC<{ className?: string; style?: CSSProperties }>;
@@ -77,6 +79,7 @@ const MCP = hi(PlugSocketIcon);
 const ExternalMCP = hi(Globe02Icon);
 const AIConnections = hi(Key01Icon);
 const WorkspaceAI = hi(AiNetworkIcon);
+const SystemStatus = hi(DashboardSpeed01Icon);
 
 export type SettingsSection =
   | 'ai'
@@ -84,6 +87,7 @@ export type SettingsSection =
   | 'members'
   | 'teams'
   | 'access'
+  | 'system-status'
   | 'mcp'
   | 'external-mcp'
   | 'billing'
@@ -138,6 +142,17 @@ const SETTINGS_GROUP_ICONS: Record<string, IconComponent> = {
 export const SETTINGS_HOME_LABEL = 'Settings home';
 export const SETTINGS_SIDEBAR_GROUP_LABELS: Record<string, string> = {
   'Integrations & data': 'Integration',
+};
+
+/** Settings → System status: the server-level capability checks, for workspace admins. */
+const SYSTEM_STATUS_SECTION:SettingsSectionMeta<'system-status'> = {
+  id: 'system-status',
+  keywords: ['server', 'health', 'doctor', 'object storage', 'background workers', 'smtp', 'github app', 'ai provider'],
+  label: 'System status',
+  description: 'Check the services this server provides to every workspace.',
+  icon: SystemStatus,
+  group: 'Workspace',
+  requiredPermission: 'workspace.update',
 };
 
 const allSettingsSections: SettingsSectionMeta[] = [
@@ -214,6 +229,8 @@ const allSettingsSections: SettingsSectionMeta[] = [
     group: 'Workspace',
     requiredPermission: 'module_access.manage',
   },
+  // Server services on a Community install; platform-managed on other editions.
+  ...(systemStatusEnabled ? [SYSTEM_STATUS_SECTION] : []),
   ...billingSettingsSections(Billing).map(section => ({ ...section, group: 'Billing', keywords: ['invoices', 'payment', 'subscription', 'plan', 'usage', 'credits'] })),
   {
     id: 'ai-connections',

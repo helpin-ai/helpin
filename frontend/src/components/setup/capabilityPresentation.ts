@@ -1,16 +1,15 @@
 import type { ElementType } from 'react';
 import { AlertCircleIcon, CheckmarkCircle02Icon, DashedLineCircleIcon, HelpCircleIcon } from '@/lib/icons';
-import type { Capability, CapabilityKey, CapabilityStatus } from '@/lib/capabilityTypes';
-import type { SetupGoalKey } from '@/lib/setupTypes';
+import type { CapabilitiesResponse, Capability, CapabilityKey, CapabilityStatus } from '@/lib/capabilityTypes';
 
 export const CAPABILITY_TITLES: Record<CapabilityKey, string> = {
-  ai_chat: 'AI provider',
+  ai_chat: 'AI chat',
   ai_embeddings: 'Knowledge search',
-  email_outbound: 'Outgoing email',
+  email_outbound: 'Application email',
   support_widget: 'Chat widget',
-  support_email_inbound: 'Support email',
-  github: 'GitHub',
-  object_storage: 'File storage',
+  support_email_inbound: 'Inbound support email',
+  github: 'GitHub App',
+  object_storage: 'Object storage',
   workers: 'Background workers',
 };
 
@@ -36,76 +35,74 @@ export function capabilityStatus(status: string): StatusPresentation {
   return CAPABILITY_STATUS[status as CapabilityStatus] ?? CAPABILITY_STATUS.unable_to_verify;
 }
 
-/** Capabilities every workspace depends on, whatever its goals. */
-const FOUNDATION: CapabilityKey[] = ['object_storage', 'workers', 'ai_chat', 'email_outbound'];
+/**
+ * Server-level services shown on Settings → System status, in reading order.
+ * Workspace adoption steps (such as installing the chat widget) belong to the
+ * Setup guide instead.
+ */
+export const SYSTEM_STATUS_ORDER: CapabilityKey[] = [
+  'object_storage',
+  'workers',
+  'email_outbound',
+  'support_email_inbound',
+  'ai_chat',
+  'ai_embeddings',
+  'github',
+];
 
-/** Capabilities that unlock each Setup goal, in the order they matter. */
-export const GOAL_CAPABILITIES: Record<SetupGoalKey, CapabilityKey[]> = {
-  customer_support: ['support_widget', 'support_email_inbound', 'ai_embeddings'],
-  help_center_docs: ['support_widget', 'ai_embeddings'],
-  internal_docs: ['ai_embeddings'],
-  product_delivery: ['github'],
-  team_project_management: ['github'],
-  automation_mastery: ['github'],
-  sales_crm: [],
-};
+const WORKSPACE_ADOPTION_KEYS: CapabilityKey[] = ['support_widget'];
 
-export const GOAL_LABELS: Record<SetupGoalKey, string> = {
-  product_delivery: 'Plan and ship team projects',
-  team_project_management: 'Plan and ship team projects',
-  customer_support: 'Scale customer support',
-  help_center_docs: 'Publish help center docs',
-  internal_docs: 'Build internal knowledge',
-  sales_crm: 'Build a sales pipeline',
-  automation_mastery: 'Automate repeatable work',
-};
-
-/** Goals (by label) that need a capability; empty for foundation capabilities. */
-export function goalsNeeding(key: CapabilityKey, goals: SetupGoalKey[]) {
-  if (FOUNDATION.includes(key)) return [];
-  return [...new Set(goals.filter((goal) => GOAL_CAPABILITIES[goal]?.includes(key)).map((goal) => GOAL_LABELS[goal]))];
-}
-
-function isRelevant(key: CapabilityKey, goals: SetupGoalKey[]) {
-  return FOUNDATION.includes(key) || goals.some((goal) => GOAL_CAPABILITIES[goal]?.includes(key));
+/** A required service (storage, workers) that is not ready. */
+export function isBlocking(capability: Capability) {
+  return capability.required && capability.status !== 'ready';
 }
 
 function attentionRank(capability: Capability) {
-  if (capability.required && capability.status !== 'ready') return 0;
+  if (isBlocking(capability)) return 0;
   if (capability.status === 'needs_setup') return 1;
   if (capability.status === 'unable_to_verify') return 2;
   return 3;
 }
 
-export interface CapabilityGroups {
+export interface SystemStatusGroups {
   /** Required services that are not ready; shown first and prominently. */
   blocking: Capability[];
-  relevant: Capability[];
-  other: Capability[];
+  /** Everything else this server could provide, needing attention first. */
+  services: Capability[];
   unavailable: Capability[];
 }
 
 /**
- * Orders capabilities so what the chosen goals need comes first: required
- * services that are not ready, then goal-relevant items needing attention,
- * then everything else, with unavailable items last.
+ * Orders server capabilities for System status: required services that are
+ * not ready, then the remaining services with anything needing setup first,
+ * then services this server does not offer.
  */
-export function groupCapabilities(capabilities: Capability[], goals: SetupGoalKey[]): CapabilityGroups {
-  const order = new Map<string, number>();
-  const goalOrder = [...FOUNDATION, ...goals.flatMap((goal) => GOAL_CAPABILITIES[goal] ?? [])];
-  goalOrder.forEach((key, index) => { if (!order.has(key)) order.set(key, index); });
-  const byAttention = (a: Capability, b: Capability) =>
-    attentionRank(a) - attentionRank(b) || (order.get(a.key) ?? 99) - (order.get(b.key) ?? 99);
+export function groupSystemCapabilities(capabilities: Capability[]): SystemStatusGroups {
+  const order = (key: string) => {
+    const index = SYSTEM_STATUS_ORDER.indexOf(key as CapabilityKey);
+    return index === -1 ? SYSTEM_STATUS_ORDER.length : index;
+  };
+  const byAttention = (a: Capability, b: Capability) => attentionRank(a) - attentionRank(b) || order(a.key) - order(b.key);
 
-  const groups: CapabilityGroups = { blocking: [], relevant: [], other: [], unavailable: [] };
+  const groups: SystemStatusGroups = { blocking: [], services: [], unavailable: [] };
   for (const capability of capabilities) {
+    if (WORKSPACE_ADOPTION_KEYS.includes(capability.key)) continue;
     if (capability.status === 'unavailable') groups.unavailable.push(capability);
-    else if (capability.required && capability.status !== 'ready') groups.blocking.push(capability);
-    else if (isRelevant(capability.key, goals)) groups.relevant.push(capability);
-    else groups.other.push(capability);
+    else if (isBlocking(capability)) groups.blocking.push(capability);
+    else groups.services.push(capability);
   }
   groups.blocking.sort(byAttention);
-  groups.relevant.sort(byAttention);
-  groups.other.sort(byAttention);
+  groups.services.sort(byAttention);
+  groups.unavailable.sort((a, b) => order(a.key) - order(b.key));
   return groups;
+}
+
+export function findCapability(response: CapabilitiesResponse | undefined, key: CapabilityKey) {
+  return response?.capabilities.find((capability) => capability.key === key);
+}
+
+/** Required server services that are not ready, on a Community server only. */
+export function blockingServices(response: CapabilitiesResponse | undefined) {
+  if (response?.edition !== 'community') return [];
+  return response.capabilities.filter(isBlocking);
 }
