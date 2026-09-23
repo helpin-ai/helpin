@@ -14,7 +14,8 @@ instead.
 - Bash and OpenSSL
 - An amd64 or arm64 host; native architecture tests are a release gate, not an
   inference from successful builds
-- At least 8 GiB RAM and 20 GiB free disk for evaluation
+- At least 8 GB RAM and 20 GiB free disk for evaluation (an 8 GB server reports
+  about 7.7 GiB usable, which `helpin doctor` accepts)
 
 These are evaluation starting points, not measured capacity promises.
 

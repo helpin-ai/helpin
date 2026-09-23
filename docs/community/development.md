@@ -7,7 +7,8 @@ are for a source checkout, not the downloadable operator bundle.
 
 The complete stack builds in Docker; host Go and Node installations are not
 required for this path. Install Git, Docker Engine with Compose v2, Bash, and
-OpenSSL. Start with at least 8 GiB RAM and 20 GiB disk for evaluation, and allow
+OpenSSL. Start with at least 8 GB RAM (a nominal 8 GB server reports about
+7.7 GiB, which the CLI accepts) and 20 GiB disk for evaluation, and allow
 additional memory and disk for source builds and image layers.
 
 Use a new parent directory for these checkouts. Both repositories must be

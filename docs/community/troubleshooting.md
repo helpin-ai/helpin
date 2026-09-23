@@ -29,7 +29,7 @@ The candidate is unpublished until release gates pass. Do not assume candidate
 image tags are publicly pullable. Use an actual published bundle, or build from
 source with access to both repositories and the pinned Runtime revision. See the
 [installation guide](../../community/README.md). Source builds need more resources
-than the evaluation baseline of 8 GiB RAM and 20 GiB disk; inspect Docker build
+than the evaluation baseline of 8 GB RAM and 20 GiB disk; inspect Docker build
 output for resource exhaustion before retrying.
 
 ## Dashboard cannot reach the API
