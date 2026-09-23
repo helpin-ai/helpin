@@ -58,6 +58,8 @@ spec:
               value: "https://mcp.helpin.ai"
             - name: MCP_SERVER_ENABLED
               value: "true"
+            - name: EXTERNAL_MCP_ADDITIONAL_ALLOWED_HOSTS
+              value: "ctrl-ys3gb9-mgmt-api.cstuinternal.com"
             - name: METRICS_ADDR
               value: ":9090"
             - name: GOMEMLIMIT

@@ -281,3 +281,22 @@ func TestRateLimitConfiguration(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadAddsExternalMCPHostsWithoutReplacingOperatorPolicy(t *testing.T) {
+	setRequiredConfigEnv(t)
+	t.Setenv("EXTERNAL_MCP_ALLOWED_HOSTS", "mcp.customer.io,mcp-eu.customer.io")
+	t.Setenv("EXTERNAL_MCP_ADDITIONAL_ALLOWED_HOSTS", "ctrl-ys3gb9-mgmt-api.cstuinternal.com")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	want := []string{"mcp.customer.io", "mcp-eu.customer.io", "ctrl-ys3gb9-mgmt-api.cstuinternal.com"}
+	if len(cfg.ExternalMCPAllowedHosts) != len(want) {
+		t.Fatalf("allowed hosts = %v, want %v", cfg.ExternalMCPAllowedHosts, want)
+	}
+	for i, host := range want {
+		if cfg.ExternalMCPAllowedHosts[i] != host {
+			t.Fatalf("allowed hosts = %v, want %v", cfg.ExternalMCPAllowedHosts, want)
+		}
+	}
+}

@@ -52,6 +52,8 @@ spec:
               value: "https://mcp.stage.helpin.ai"
             - name: MCP_SERVER_ENABLED
               value: "true"
+            - name: EXTERNAL_MCP_ADDITIONAL_ALLOWED_HOSTS
+              value: "ctrl-ys3gb9-mgmt-api.cstuinternal.com"
           resources:
             requests:
               cpu: 100m
