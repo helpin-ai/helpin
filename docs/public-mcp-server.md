@@ -334,6 +334,15 @@ These tools expose existing Helpin commands that in-app agents already use, with
 
 Not exposed: sending support replies, CRM enrichment, and deleting records.
 
+### 7.8 Help Center operations
+
+| Tool | Mode | What it does | Helpin check |
+| --- | --- | --- | --- |
+| `get_help_center_article` | Read | Live state, live slug, unpublished changes, social preview metadata, and reader feedback (helpful, not helpful, views) | `PermDocsRead` + Docs module |
+| `update_help_center_article_metadata` | Publish | Sets social preview title, description, HTTPS image, and alt text; omitted fields are kept and `null` clears | `helpin.docs.publish` + `PermDocsEdit` |
+| `list_help_center_redirects` | Read | Lists redirects with search and pagination | `PermDocsAdmin` |
+| `create_help_center_redirect` | Publish | Redirects an old public path to a collection or article after merges or archives | `helpin.docs.publish` + `PermDocsAdmin` |
+
 ## 8. Tool-call execution flow
 
 Every call repeats the full authorization decision. Tool annotations such as read-only, destructive, or idempotent are client hints and are never treated as authorization.
@@ -773,7 +782,7 @@ The implementation includes automated checks for:
 - strict tool schemas and rejection of workspace-override properties
 - workspace-policy scope/toolset narrowing and forced read-only behavior
 - platform domain flags
-- the 97-tool catalog, including parity tools for epics, sprints, objectives, labels, workflows, members, CRM, and support organization
+- the 101-tool catalog, including parity tools for epics, sprints, objectives, labels, workflows, members, CRM, and support organization
 - document image uploads: presigned upload with storage verification, and SSRF-safe copy from a public URL
 - document lifecycle tools: publish, unpublish, archive, restore, and rename, including typed error codes
 - exclusion of deferred destructive, support-draft, and customer-send actions
