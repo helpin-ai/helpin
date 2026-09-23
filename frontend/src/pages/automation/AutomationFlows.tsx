@@ -2887,6 +2887,7 @@ export function FlowComposer({
                     <SelectItem value="failure">failure</SelectItem>
                     <SelectItem value="cancelled">cancelled</SelectItem>
                     <SelectItem value="timed_out">timed out</SelectItem>
+                    <SelectItem value="skipped">skipped</SelectItem>
                   </SelectContent>
                 </Select>
               </SentenceRow>
