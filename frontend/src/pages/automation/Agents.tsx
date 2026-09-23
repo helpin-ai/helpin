@@ -3355,8 +3355,9 @@ export function AgentsPage() {
     };
     const res = await agentService.createPresetVersion(workspaceId, payload);
     if (!res.error && res.data) {
+      const savedPreset = res.data;
       await loadPresets();
-      setForm((current) => buildSystemPresetVersionForm(current, res.data));
+      setForm((current) => buildSystemPresetVersionForm(current, savedPreset));
       setVersionDraftOpen(false);
       setVersionLabelDraft('');
       setVersionDescriptionDraft('');
@@ -3424,7 +3425,8 @@ export function AgentsPage() {
     }
     await loadPresets();
     if (res.data) {
-      setForm((current) => buildSystemPresetVersionForm(current, res.data));
+      const savedPreset = res.data;
+      setForm((current) => buildSystemPresetVersionForm(current, savedPreset));
     }
     if (!options?.silent) {
       toast.success('Version saved');
