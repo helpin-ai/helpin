@@ -157,3 +157,21 @@ describe('useHelpin (Next.js)', () => {
     expect(screen.getByTestId('result').textContent).toBe('has-id');
   });
 });
+
+describe('useHelpin hook order', () => {
+  it('keeps working when the client appears after the first render', () => {
+    let client: HelpinClient | null = null;
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { result, rerender } = renderHook(() => useHelpin(), {
+      wrapper: ({ children }: { children: React.ReactNode }) => (
+        <HelpinProvider client={client}>{children}</HelpinProvider>
+      ),
+    });
+    expect(typeof result.current.show).toBe('function');
+
+    client = createMockClient();
+    expect(() => rerender()).not.toThrow();
+    expect(typeof result.current.track).toBe('function');
+    errors.mockRestore();
+  });
+});
