@@ -68,6 +68,7 @@ const SCOPE_LABELS: Record<string, string> = {
   'helpin.crm.read': 'Read CRM records',
   'helpin.crm.write': 'Add notes and update CRM records',
   'helpin.support.read': 'Read support conversations',
+  'helpin.support.write': 'Assign, move, tag, and link support conversations (never sends replies)',
   'helpin.agents.read': 'Read agents and runs',
   'helpin.agents.run': 'Start and cancel agent runs',
 };

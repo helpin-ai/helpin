@@ -392,3 +392,22 @@ func TestRequireMCPCommandDocumentAccess(t *testing.T) {
 		})
 	}
 }
+
+func TestParityMCPCommandRequirements(t *testing.T) {
+	sendOrDestroy := []string{"send", "delete", "enrich", "draft_support_reply", "publish_prd"}
+	for alias, requirement := range parityMCPCommandRequirements() {
+		for _, fragment := range sendOrDestroy {
+			if strings.Contains(alias, fragment) {
+				t.Errorf("%s must not be exposed through public MCP", alias)
+			}
+		}
+		if requirement.Mutating == isMCPReadScopeForTest(requirement.Scope) {
+			t.Errorf("%s scope %q does not match mutating=%v", alias, requirement.Scope, requirement.Mutating)
+		}
+		if requirement.Permission == "" {
+			t.Errorf("%s must declare an RBAC permission", alias)
+		}
+	}
+}
+
+func isMCPReadScopeForTest(scope string) bool { return !isMCPWriteScope(scope) }
