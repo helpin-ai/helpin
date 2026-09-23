@@ -1684,6 +1684,7 @@ func main() {
 			SupportEnabled:       cfg.MCPSupportEnabled,
 		},
 	)
+	mcpService.SetDocsLifecycle(docsDocumentService, docsHelpcenterService, docsEmbeddingService)
 	supportInboxService.SetAuthzService(authzService)
 
 	// Inject authorization into WebSocket handler for workspace access checks.

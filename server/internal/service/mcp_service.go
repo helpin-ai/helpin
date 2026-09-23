@@ -127,6 +127,9 @@ type MCPService struct {
 	crmContacts   *CRMContactService
 	crmDeals      *CRMDealService
 	support       *SupportInboxService
+	docsLifecycle mcpDocsLifecycleService
+	helpcenter    mcpHelpcenterPublisher
+	docsEmbedding mcpDocsEmbeddingQueue
 	config        MCPServiceConfig
 	tools         map[string]MCPToolDefinition
 	toolSchemas   map[string]*jsonschema.Resolved
@@ -850,7 +853,7 @@ func hasMCPWriteGrant(scopes, toolsets []string) bool {
 }
 
 func isMCPWriteScope(scope string) bool {
-	return strings.HasSuffix(scope, ".write") || scope == MCPScopeAgentsRun
+	return strings.HasSuffix(scope, ".write") || scope == MCPScopeAgentsRun || scope == MCPScopeDocsPublish
 }
 
 func decodeMCPStrings(raw json.RawMessage) []string {

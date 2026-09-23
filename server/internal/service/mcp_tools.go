@@ -870,6 +870,10 @@ func (s *MCPService) executeSpecialMCPTool(
 		if err != nil {
 			return nil, err
 		}
+		if !mcpPrincipalCanSeeRun(principal, run) {
+			return nil, newMCPToolError(MCPErrorCodeRunNotOwned,
+				"Another private run is already active for this agent and target. Wait for it to finish or choose another target.")
+		}
 		attribution := &model.MCPAgentRunAttribution{RunID: run.ID, WorkspaceID: principal.WorkspaceID, ClientName: principal.ClientName}
 		if principal.ConnectionID != "" {
 			attribution.ConnectionID = &principal.ConnectionID
@@ -893,6 +897,9 @@ func (s *MCPService) executeSpecialMCPTool(
 		if err != nil {
 			return nil, err
 		}
+		if !mcpPrincipalCanSeeRun(principal, run) {
+			return nil, ErrMCPNotFound
+		}
 		artifacts, err := s.agents.ListRunArtifacts(ctx, principal.WorkspaceID, input.RunID)
 		if err != nil {
 			return nil, err
@@ -906,12 +913,22 @@ func (s *MCPService) executeSpecialMCPTool(
 		if err := decodeMCPArguments(arguments, &input); err != nil {
 			return nil, err
 		}
+		existing, err := s.agents.GetAgentRun(ctx, principal.WorkspaceID, input.RunID)
+		if err != nil {
+			return nil, err
+		}
+		if !mcpPrincipalCanSeeRun(principal, existing) {
+			return nil, ErrMCPNotFound
+		}
 		run, err := s.agents.CancelRun(ctx, principal.WorkspaceID, input.RunID, principal.UserID)
 		if err != nil {
 			return nil, err
 		}
 		return &MCPToolResult{Summary: "Agent run cancellation requested.", Data: map[string]any{"run_id": run.ID, "status": run.Status}}, nil
 	default:
+		if result, handled, err := s.executeDocsLifecycleMCPTool(ctx, principal, actor, name, arguments); handled {
+			return result, err
+		}
 		return nil, ErrMCPNotFound
 	}
 }
@@ -1028,6 +1045,18 @@ func (s *MCPService) accessibleMCPTask(
 	return task, nil
 }
 
+// mcpPrincipalCanSeeRun hides dock chat runs, which are private to the user
+// who owns the chat, from every other MCP principal.
+func mcpPrincipalCanSeeRun(principal *model.MCPPrincipal, run *model.AgentRun) bool {
+	if run == nil {
+		return false
+	}
+	if run.DockChatID == nil {
+		return true
+	}
+	return run.TriggeredByUserID != nil && *run.TriggeredByUserID == principal.UserID
+}
+
 func mcpPrincipalKey(principal *model.MCPPrincipal) string {
 	if principal.ConnectionID != "" {
 		return "connection:" + principal.ConnectionID
@@ -1036,6 +1065,10 @@ func mcpPrincipalKey(principal *model.MCPPrincipal) string {
 }
 
 func mcpReasonCode(err error) string {
+	var toolErr *MCPToolError
+	if errors.As(err, &toolErr) {
+		return strings.ToLower(toolErr.Code)
+	}
 	switch {
 	case errors.Is(err, ErrMCPUnauthorized):
 		return "unauthorized"

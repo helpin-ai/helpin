@@ -198,7 +198,7 @@ Toolsets control which product-area tools are visible. Scopes control the author
 | --- | --- | --- |
 | `context` | `helpin.context.read` | — |
 | `pm` | `helpin.pm.read` | `helpin.pm.write` |
-| `docs` | `helpin.docs.read` | `helpin.docs.write` |
+| `docs` | `helpin.docs.read` | `helpin.docs.write`; `helpin.docs.publish` for Help Center publishing |
 | `crm` | `helpin.crm.read` | `helpin.crm.write` |
 | `support` | `helpin.support.read` | No public support-write scope in v1 |
 | `agents` | `helpin.agents.read` | `helpin.agents.run` |
@@ -210,6 +210,8 @@ The recommended default grant includes:
 - read-only mode
 
 CRM and Support must be explicitly allowed by workspace policy and requested during consent.
+
+`helpin.docs.publish` is a separate, explicit write scope. Enabling Docs writes never adds it automatically, read-only connections never receive it, and a publish tool also requires the member's `docs.publish` permission.
 
 ## 7. Complete v1 tool catalog
 
@@ -260,6 +262,13 @@ The fully enabled catalog contains 49 tools; the catalog regression test asserts
 | `move_document` | Write | Moves an accessible document to a validated space or collection | `PermDocsEdit` + Docs module |
 | `link_document_to_object` | Write | Links an accessible document to an accessible Helpin object | `PermDocsEdit` + Docs module |
 | `update_document_block` | Write | Updates a specific block using the addressable block contract | `PermDocsEdit` + Docs module |
+| `update_document` | Write | Renames a document or updates its excerpt and tags | `PermDocsEdit` + Docs module |
+| `archive_document` | Write, destructive | Archives a document; refuses a live Help Center article with `DOC_IS_PUBLISHED` | `PermDocsEdit` + Docs module |
+| `restore_document` | Write | Restores an archived document to draft | `PermDocsEdit` + Docs module |
+| `publish_document` | Publish | Publishes a document; in an external-capable space it also becomes a live Help Center article using the existing snapshot, slug, and redirect behavior | `helpin.docs.publish` + `PermDocsPublish` + Docs module |
+| `unpublish_document` | Publish, destructive | Removes a live Help Center article and returns the document to draft | `helpin.docs.publish` + `PermDocsPublish` + Docs module |
+
+Document lifecycle tools return typed error codes that clients can act on: `DOCUMENT_LOCKED`, `DOCUMENT_ARCHIVED`, `DOCUMENT_NOT_ARCHIVED`, `DOCUMENT_NOT_PUBLISHED`, and `DOC_IS_PUBLISHED`. Errors are returned as `CODE: message`.
 
 ### 7.4 CRM
 
@@ -286,8 +295,8 @@ The fully enabled catalog contains 49 tools; the catalog regression test asserts
 | Tool | Mode | What it does | Helpin check |
 | --- | --- | --- | --- |
 | `list_agents` | Read | Lists system and custom agents the actor may use, without provider credentials or private runtime configuration | `PermPMRead` |
-| `start_agent_run` | Async write | Starts one normal durable Helpin agent run for an explicit target | `PermPMEdit` |
-| `get_agent_run` | Read | Polls status, output summary, artifacts, and run information | `PermPMRead` |
+| `start_agent_run` | Async write | Starts one normal durable Helpin agent run for an explicit target. It never attaches to another user's private dock chat run; if one would be reused it returns `RUN_NOT_OWNED` | `PermPMEdit` |
+| `get_agent_run` | Read | Polls status, output summary, artifacts, and run information. Other users' dock chat runs are reported as not found | `PermPMRead` |
 | `cancel_agent_run` | Destructive write | Requests cancellation of an active run | `PermPMEdit` |
 
 Allowed run targets are:
@@ -429,7 +438,7 @@ The server exposes six workflow prompts:
 | `prepare_release` | Review release evidence, blockers, docs gaps, and durable agent work without deploying |
 | `delegate_to_helpin_agent` | Select an agent, start one durable run, poll it, and report artifacts |
 | `triage_customer_issue` | Investigate a support issue and prepare product follow-up without sending a reply |
-| `docs_maintenance` | Find stale documentation and make narrow, safe block-level updates without publishing |
+| `docs_maintenance` | Find stale documentation and make narrow, safe block-level updates; publish or archive only on explicit request |
 | `review_pipeline` | Review CRM pipeline evidence and make only explicitly confirmed bounded writes |
 
 Prompts are registered only when the required underlying tool is visible.
@@ -597,7 +606,8 @@ The public v1 server does not expose:
 - sending customer support replies
 - creating a public support reply draft through the run-scoped internal draft contract
 - changing support status or assignment
-- publishing, unpublishing, or deleting documentation
+- deleting documentation (archive and restore are available)
+- publishing without the explicit `helpin.docs.publish` scope and `docs.publish` permission
 - broad document-content replacement through `write_document_content`
 - applying unapproved document change proposals
 - sending CRM email
@@ -738,8 +748,10 @@ The implementation includes automated checks for:
 - strict tool schemas and rejection of workspace-override properties
 - workspace-policy scope/toolset narrowing and forced read-only behavior
 - platform domain flags
-- the 49-tool catalog
-- exclusion of deferred destructive, publishing, support-draft, and customer-send actions
+- the 54-tool catalog
+- document lifecycle tools: publish, unpublish, archive, restore, and rename, including typed error codes
+- exclusion of deferred destructive, support-draft, and customer-send actions
+- agent-run privacy: runs started outside a dock chat never reuse a chat's run, and `get_agent_run` / `cancel_agent_run` hide other users' dock chat runs
 - persisted agent-start and active-run safety counts
 - MCP tool annotations and structured output schemas
 - general and tool-class rate limits

@@ -6394,8 +6394,9 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		// Dock chat runs are keyed by chat, not target: many chats share the
 		// workspace target and the same ask_agent, so the per-target guard
 		// would wrongly reuse another chat's paused run. DockChatService
-		// guarantees a single active backing run per chat.
-		activeRun, err = s.runRepo.FindActiveByTarget(ctx, params.workspaceID, params.targetType, params.targetID)
+		// guarantees a single active backing run per chat. For the same
+		// reason, a run started outside a chat must never reuse a chat's run.
+		activeRun, err = s.runRepo.FindActiveNonDockByTarget(ctx, params.workspaceID, params.targetType, params.targetID)
 		if err != nil {
 			return nil, err
 		}
