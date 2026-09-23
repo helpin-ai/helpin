@@ -8,7 +8,7 @@ import { AiMagicIcon, Loading01Icon } from '@/lib/icons';
 import { queryKeys } from '@/lib/queryKeys';
 import { workspacesService } from '@/lib/services/workspacesService';
 import type { Workspace } from '@/lib/types';
-import { describeContextGenerationError, websiteDisplayName } from '@/lib/workspaceOnboardingFlow';
+import { AI_SETTINGS_PATH_LABEL, describeContextGenerationError, websiteDisplayName } from '@/lib/workspaceOnboardingFlow';
 import { OnboardingActions, OnboardingTextButton } from './OnboardingShell';
 
 type CompanyContextStepProps = {
@@ -122,7 +122,7 @@ export function CompanyContextStep({ workspace, defaultWebsiteUrl = '', canGener
         </div>
         {!canGenerate && (
           <p className="text-[12.5px] leading-5 text-muted-foreground">
-            Generating needs AI. Connect a provider in Settings → AI, or write it yourself.
+            Generating needs AI. Connect a provider in {AI_SETTINGS_PATH_LABEL}, or write it yourself.
           </p>
         )}
       </div>

@@ -5,6 +5,9 @@ import type { WorkspaceOnboardingStep } from './workspaceOnboardingMode';
  * What the server reports about a freshly created workspace, reduced to the
  * facts the onboarding flow branches on.
  */
+/** Where workspace AI keys are managed after onboarding. */
+export const AI_SETTINGS_PATH_LABEL = 'Settings → AI & knowledge → AI setup';
+
 export type OnboardingConditions = {
   /** The API edition. Cloud/Enterprise manage AI for the workspace. */
   edition?: CapabilitiesResponse['edition'];

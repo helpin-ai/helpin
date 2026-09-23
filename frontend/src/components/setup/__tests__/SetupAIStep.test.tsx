@@ -130,6 +130,24 @@ describe('SetupAIStep', () => {
     expect(container.querySelector('input[type="password"]')).not.toBeNull();
   });
 
+  it('fills the keyless placeholder for the chosen provider instead of creating a duplicate', async () => {
+    listConnections([{ id: 'std-1', scope: 'workspace', name: 'OpenRouter', provider: 'openrouter', status: 'disconnected', user_id: null }]);
+    vi.mocked(api.post).mockImplementation(async (path: string) => {
+      if (path === '/ai-connections/std-1/reconnect?workspace_id=ws-1') {
+        return { data: { connection: { id: 'std-1', scope: 'workspace', name: 'OpenRouter', provider: 'openrouter', status: 'connected', user_id: null } }, error: null, status: 200 } as never;
+      }
+      if (path === '/ai-connections/std-1/test?workspace_id=ws-1') return { data: { ok: true, model: 'glm', latency_ms: 300 }, error: null, status: 200 } as never;
+      return { data: null, error: 'unexpected', status: 404 } as never;
+    });
+    const { container } = await renderStep(capability({ key: 'ai_chat', action: { kind: 'open_settings', label: 'Connect an AI provider', path: 'settings/ai' } }));
+
+    await connectWithKey(container, 'sk-or-2');
+
+    expect(api.post).toHaveBeenCalledWith('/ai-connections/std-1/reconnect?workspace_id=ws-1', { api_key: 'sk-or-2' });
+    expect(api.post).not.toHaveBeenCalledWith(CREATE, expect.anything());
+    expect(status(container)).toBe('Connected. glm answered in 300 ms.');
+  });
+
   it('renders nothing actionable once AI is ready or for members', async () => {
     const ready = await renderStep(capability({ key: 'ai_chat', status: 'ready' }));
     expect(ready.container.querySelector('button, form, a')).toBeNull();

@@ -44,8 +44,12 @@ vi.mock('@/hooks/queries/useSampleData', () => ({
   useSampleDataStatus: () => ({ data: state.sampleStatus }),
   useLoadSampleData: () => ({ mutateAsync: state.loadSample, isPending: false }),
 }));
-vi.mock('@/components/setup/SetupAIStep', () => ({
-  SetupAIStep: ({ capability }: { capability: { status: string } }) => <div data-testid="setup-ai" data-status={capability.status} />,
+vi.mock('../ConnectAIStep', () => ({
+  ConnectAIStep: ({ onContinue }: { onContinue: () => void }) => (
+    <div data-testid="setup-ai">
+      <button type="button" onClick={onContinue}>Skip for now</button>
+    </div>
+  ),
 }));
 vi.mock('@/components/layout/PublicPageShell', () => ({
   PublicPageShell: ({ children, headerAction }: { children: ReactNode; headerAction?: ReactNode }) => (
@@ -173,8 +177,7 @@ describe('OnboardingFlow', () => {
     state.capabilities = caps('community', 'needs_setup');
     render({ step: 'ai', workspaceSlug: 'acme' });
 
-    expect(container?.querySelector('[data-testid="setup-ai"]')?.getAttribute('data-status')).toBe('needs_setup');
-    expect(container?.textContent).toContain('Settings → AI');
+    expect(container?.querySelector('[data-testid="setup-ai"]')).not.toBeNull();
     act(() => button('Skip for now')?.click());
     expect(state.navigate).toHaveBeenCalledWith({ to: '/onboarding', search: { step: 'context', workspace: 'acme' } });
   });

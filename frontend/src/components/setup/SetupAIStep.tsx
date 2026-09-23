@@ -5,7 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useAIConnections, useCreateAIConnection, useTestAIConnection } from '@/hooks/queries/useAIConnections';
+import { useAIConnections, useCreateAIConnection, useReconnectAIConnection, useTestAIConnection } from '@/hooks/queries/useAIConnections';
 import { providerMeta, type AIProviderKey } from '@/lib/aiProviders';
 import { Loading01Icon, PlayCircleIcon } from '@/lib/icons';
 import type { AIConnectionTestResult } from '@/lib/services/aiConnectionService';
@@ -105,6 +105,7 @@ function SetupAIConnect({
   const id = useId();
   const connections = useAIConnections(workspaceId);
   const create = useCreateAIConnection(workspaceId);
+  const reconnect = useReconnectAIConnection(workspaceId);
   const [provider, setProvider] = useState<AIProviderKey>(SETUP_AI_PROVIDERS[0]);
   const [apiKey, setApiKey] = useState('');
 
@@ -124,7 +125,8 @@ function SetupAIConnect({
   const supported = SETUP_AI_PROVIDERS.filter((key) => data.models.length === 0 || data.models.some((model) => model.provider === key));
   const providers = supported.length > 0 ? supported : SETUP_AI_PROVIDERS;
   const selected = providers.includes(provider) ? provider : providers[0];
-  const busy = create.isPending || testing;
+  const saving = create.isPending || reconnect.isPending;
+  const busy = saving || testing;
 
   const submit = async () => {
     const key = apiKey.trim();
@@ -134,12 +136,17 @@ function SetupAIConnect({
     }
     onResult(null);
     try {
-      const login = await create.mutateAsync({
-        name: providerMeta[selected].shortLabel,
-        provider: selected,
-        api_key: key,
-        scope: 'workspace',
-      });
+      // Fill the keyless placeholder Community creates for this provider rather
+      // than adding a duplicate connection next to it.
+      const placeholder = data.connections.find((connection) => connection.scope === 'workspace' && connection.provider === selected);
+      const login = placeholder
+        ? await reconnect.mutateAsync({ id: placeholder.id, apiKey: key })
+        : await create.mutateAsync({
+          name: providerMeta[selected].shortLabel,
+          provider: selected,
+          api_key: key,
+          scope: 'workspace',
+        });
       setApiKey('');
       await onCreated(login.connection.id);
     } catch (error) {
@@ -183,7 +190,7 @@ function SetupAIConnect({
       </div>
       <Button type="submit" size="sm" variant="outline" disabled={busy}>
         {busy && <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
-        {create.isPending ? 'Connecting…' : testing ? 'Testing…' : 'Connect and test'}
+        {saving ? 'Connecting…' : testing ? 'Testing…' : 'Connect and test'}
       </Button>
       <p className="text-[12px] text-quiet-text-tertiary sm:col-span-3">
         Shared with the workspace and stored encrypted. Standard AI profiles use it automatically.

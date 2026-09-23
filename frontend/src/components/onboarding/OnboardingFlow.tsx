@@ -163,9 +163,7 @@ export function OnboardingFlow({ step, workspaceSlug }: OnboardingFlowProps) {
         headerAction={headerAction}
       >
         <ConnectAIStep
-          capability={aiCapability}
           workspaceId={workspace.id}
-          slug={workspace.slug}
           canManage={access ? has('workspace.update') : true}
           onContinue={() => advance('ai')}
         />
