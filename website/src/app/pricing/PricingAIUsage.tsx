@@ -1,7 +1,8 @@
 import { Cloud, Gauge, KeyRound } from 'lucide-react';
 import { AI_PRICING } from '@/generated/aiPricing';
-import { GITHUB_URL, SectionHead } from '../new/_components/ui';
+import { SectionHead } from '../new/_components/ui';
 import { AI_ALLOWANCE } from './pricing-data';
+import { DOCS } from '../new/_components/docsLinks';
 
 const PROVIDERS = [
   { id: 'openai', name: 'OpenAI' },
@@ -78,7 +79,7 @@ export function AIUsage() {
               <div><dt>Tracking usage</dt><dd>Billing settings show how much of the allowance is used and reserved, and when it resets.</dd></div>
               <div><dt>Trial</dt><dd>The 14-day Growth trial includes ${AI_ALLOWANCE.trial} of AI usage in total.</dd></div>
             </dl>
-            <a className="btn-link" href={`${GITHUB_URL}/blob/develop/docs/ai-connections.md`}>AI connection guide →</a>
+            <a className="btn-link" href={DOCS.aiConnections}>AI connection guide →</a>
           </div>
         </details>
       </div>

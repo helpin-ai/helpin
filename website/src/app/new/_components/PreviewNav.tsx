@@ -3,10 +3,11 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ArrowRight, ArrowUpRight, BookOpen, Braces, ChevronDown, Menu, Server, X } from 'lucide-react';
+import { ArrowRight, BookOpen, Braces, ChevronDown, Menu, Server, X } from 'lucide-react';
 import { HelpinBrand } from '@/components/HelpinBrand';
 import { GITHUB_URL, SIGNUP_URL, GithubIcon } from './ui';
 import { AskAgentMenuCard, PRODUCTS, ProductLink, ProductsMenu } from './ProductsMenu';
+import { DOCS } from './docsLinks';
 
 type MenuName = 'product';
 
@@ -147,7 +148,7 @@ export function PreviewNav() {
           <div className="nav-mobile-resources"><Link href="/pricing">Pricing<ArrowRight size={13} /></Link>
             <Link href="/new/developers"><Braces size={17} />Developers<ArrowRight size={13} /></Link>
             <Link href="/new/self-hosting"><Server size={17} />Open source & self-hosting<ArrowRight size={13} /></Link>
-            <a href={`${GITHUB_URL}/blob/develop/docs/README.md`} target="_blank" rel="noopener noreferrer"><BookOpen size={17} />Documentation<ArrowUpRight size={13} /></a>
+            <a href={DOCS.home}><BookOpen size={17} />Documentation</a>
           </div>
           <div className="nav-mobile-bottom"><a href={GITHUB_URL} target="_blank" rel="noopener noreferrer"><GithubIcon size={17} />View on GitHub</a><a href="https://app.helpin.ai">Sign in<ArrowRight size={14} /></a></div>
         </div>
