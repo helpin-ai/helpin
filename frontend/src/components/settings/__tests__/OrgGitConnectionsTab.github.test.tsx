@@ -132,5 +132,10 @@ describe('OrgGitConnectionsTab GitHub flow', () => {
     const notice = view.querySelector('[data-testid="github-app-missing"]');
     expect(notice?.textContent).toBe(reason);
     expect(notice?.querySelector('button')).toBeNull();
+    // GitHub stays visible, disabled and pointing at the reason, so owners know it's supported.
+    const github = Array.from(view.querySelectorAll('button')).find((button) => button.textContent?.trim() === 'Connect GitHub');
+    expect(github?.disabled).toBe(true);
+    expect(github?.getAttribute('aria-describedby')).toBe('github-app-missing-reason');
+    expect(view.querySelector('#github-app-missing-reason')?.textContent).toBe(reason);
   });
 });

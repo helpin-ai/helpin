@@ -238,7 +238,18 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
         description="Organization provider access for repositories used across workspaces."
         actions={canManage ? (
           <div className="flex shrink-0 flex-wrap gap-2 md:justify-end">
-            {githubAppMissing ? null : (
+            {githubAppMissing ? (
+              // Keep GitHub visible so owners know it's supported; the notice
+              // below explains what the server needs first.
+              <GitProviderButton
+                provider="github"
+                disabled
+                aria-describedby="github-app-missing-reason"
+                title="GitHub isn’t set up on this server yet. See the note below."
+              >
+                Connect GitHub
+              </GitProviderButton>
+            ) : (
               <GitProviderButton
                 provider="github"
                 disabled={installingGitHub || !organizationId}
@@ -268,7 +279,7 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
         <>
           {githubAppMissing ? (
             <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground" data-testid="github-app-missing">
-              <p>
+              <p id="github-app-missing-reason">
                 {githubAppStatus?.manifest_blocked_reason
                   ? githubAppStatus.manifest_blocked_reason
                   : githubAppStatus?.manifest_available

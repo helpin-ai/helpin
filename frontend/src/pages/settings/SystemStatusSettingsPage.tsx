@@ -31,6 +31,7 @@ function SystemStatusSettingsContent({ workspaceId, currentWorkspaceSlug, access
         slug={currentWorkspaceSlug}
         canManage
         isOwner={access?.membership?.role === 'owner'}
+        emailSettingsOnPage
       />
       <AppEmailSettingsCard />
     </div>

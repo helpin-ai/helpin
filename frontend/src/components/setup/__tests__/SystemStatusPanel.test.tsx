@@ -40,9 +40,9 @@ function serve(capabilities: Capability[] | 'error', options: { edition?: 'commu
   });
 }
 
-async function renderPanel(options: { canManage?: boolean; isOwner?: boolean } = {}) {
+async function renderPanel(options: { canManage?: boolean; isOwner?: boolean; emailSettingsOnPage?: boolean } = {}) {
   rendered = await renderWithQuery(
-    <SystemStatusPanel workspaceId="ws-1" slug="acme" canManage={options.canManage ?? true} isOwner={options.isOwner ?? true} />,
+    <SystemStatusPanel workspaceId="ws-1" slug="acme" canManage={options.canManage ?? true} isOwner={options.isOwner ?? true} emailSettingsOnPage={options.emailSettingsOnPage} />,
   );
   return rendered.container;
 }
@@ -127,6 +127,14 @@ describe('SystemStatusPanel', () => {
 
     expect(button(row(container, 'email_outbound'), 'Send test email')).toBeDefined();
     expect(button(row(container, 'ai_chat'), 'Test connection')).toBeDefined();
+  });
+
+  it('leaves email testing to the settings card when it is on the page', async () => {
+    serve([capability({ key: 'email_outbound', status: 'unable_to_verify', action: { kind: 'send_test_email', label: 'Send a test email' } })]);
+    const container = await renderPanel({ emailSettingsOnPage: true });
+
+    expect(row(container, 'email_outbound').textContent).toContain('Application email');
+    expect(button(container, 'Send test email')).toBeUndefined();
   });
 
   it('offers to connect AI inline when no provider is set up', async () => {

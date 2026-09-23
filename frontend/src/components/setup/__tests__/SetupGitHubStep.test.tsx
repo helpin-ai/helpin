@@ -5,7 +5,7 @@ import type { Capability } from '@/lib/capabilityTypes';
 import type { GitHubAppStatus } from '@/lib/pm-types/delivery';
 import { assignBrowserLocation } from '@/lib/githubReturn';
 import { GITHUB_APP_ENV_HINT, SetupGitHubStep } from '../SetupGitHubStep';
-import { button, capability, click, renderWithQuery, type Rendered } from './setupTestUtils';
+import { button, capability, click, flush, renderWithQuery, type Rendered } from './setupTestUtils';
 
 vi.mock('@/lib/api', () => ({ api: { get: vi.fn(), post: vi.fn() } }));
 vi.mock('@tanstack/react-router', () => ({
@@ -67,6 +67,16 @@ describe('SetupGitHubStep', () => {
     expect(container.textContent).toBe(reason);
     expect(button(container, 'Create GitHub App')).toBeUndefined();
     expect(container.querySelector('code')).toBeNull();
+  });
+
+  it('does not repeat the reason when the visible capability detail already states it', async () => {
+    const reason = 'GitHub must reach this server to deliver events. Set APP_BASE_URL to a public https address (currently http://localhost:8080).';
+    appStatus({ manifest_available: false, manifest_blocked_reason: reason });
+    const cap = capability({ key: 'github', detail: `The GitHub App is not configured on this server. ${reason}` });
+    rendered = await renderWithQuery(<SetupGitHubStep capability={cap} workspaceId="ws-1" slug="acme" canManage isOwner detailShown />);
+    await flush();
+
+    expect(rendered.container.textContent).toBe('');
   });
 
   it('tells admins who is not the owner that the owner creates the App', async () => {
