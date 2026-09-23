@@ -180,8 +180,8 @@ func main() {
 		fatalWithSentry("failed to migrate drop restrict_to_owners", err)
 	}
 
-	if err := repository.MigrateSupportTranslationCustomerLanguage(db); err != nil {
-		fatalWithSentry("failed to backfill support translation customer language", err)
+	if err := repository.MigrateSupportTranslationConversationDefaults(db); err != nil {
+		fatalWithSentry("failed to repair support translation conversation defaults", err)
 	}
 
 	if cfg.RunAutoMigrate {
