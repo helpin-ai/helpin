@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"sort"
+	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -114,7 +115,7 @@ func (s *MCPService) buildToolCatalog() []MCPToolDefinition {
 			continue
 		}
 		requirement.Name = command.Tool.Alias
-		requirement.Title = command.Tool.Alias
+		requirement.Title = mcpToolTitle(command.Tool.Alias)
 		requirement.Description = command.Tool.Description
 		requirement.InputSchema = cloneMCPSchema(command.Tool.InputSchema)
 		requirement.CommandName = command.Name
@@ -194,6 +195,25 @@ func specialMCPToolDefinitions() []MCPToolDefinition {
 		{Name: "get_agent_run", Title: "Get agent run", Description: "Poll a Helpin agent run and return status, output, artifacts, and links.", InputSchema: object(map[string]any{"run_id": map[string]any{"type": "string"}}, "run_id"), Toolset: MCPToolsetAgents, Scope: MCPScopeAgentsRead, Permission: authorization.PermPMRead},
 		{Name: "cancel_agent_run", Title: "Cancel agent run", Description: "Cancel an active Helpin agent run.", InputSchema: withMCPIdempotencyKey(object(map[string]any{"run_id": map[string]any{"type": "string"}}, "run_id")), Toolset: MCPToolsetAgents, Scope: MCPScopeAgentsRun, Permission: authorization.PermPMEdit, Mutating: true, Destructive: true, IdempotentHint: true},
 	}
+}
+
+// _mcpTitleAcronyms keeps product acronyms upper case in display titles.
+var _mcpTitleAcronyms = map[string]string{"pm": "PM", "crm": "CRM", "mcp": "MCP", "id": "ID", "url": "URL", "api": "API"}
+
+// mcpToolTitle turns a snake_case tool name into a sentence-case display
+// title, for example list_crm_companies becomes "List CRM companies".
+func mcpToolTitle(name string) string {
+	words := strings.Split(strings.TrimSpace(name), "_")
+	for index, word := range words {
+		if acronym, ok := _mcpTitleAcronyms[word]; ok {
+			words[index] = acronym
+			continue
+		}
+		if index == 0 && word != "" {
+			words[index] = strings.ToUpper(word[:1]) + word[1:]
+		}
+	}
+	return strings.Join(words, " ")
 }
 
 func cloneMCPSchema(schema map[string]any) map[string]any {
