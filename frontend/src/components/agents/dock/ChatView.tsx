@@ -33,7 +33,7 @@ import { ScrollToLatestButton } from '@/components/agents/transcript';
 import { AgentLiveStatus } from './AgentLiveStatus';
 import { resolveAgentLiveProgress } from './agentProgress';
 import { resolveVisibleTurn } from './agentTurnState';
-import { parseFollowUpSuggestions } from './followUpSuggestions';
+import { chatFollowUpSuggestions } from './followUpSuggestions';
 import { starterSuggestionsForContext } from './starterSuggestions';
 import { focusComposerAtEnd } from './composerFocus';
 import { planSummaryToRunPlan } from './planSummary';
@@ -809,12 +809,10 @@ export function ChatView({
     : liveProgress;
 
   const followUpSuggestions = useMemo(() => {
-    if (run?.status !== 'completed' || sending || pendingEcho) return [];
-    const finalMessage = [...(transformed?.stream.transcript_messages ?? [])]
-      .reverse()
-      .find((message) => message.role === 'assistant' && message.content.trim());
-    return finalMessage ? parseFollowUpSuggestions(finalMessage.content) : [];
-  }, [run?.status, sending, transformed, pendingEcho]);
+    if (sending || pendingEcho || analyzingMedia || effectiveInteraction) return [];
+    // Parse the original answer; the chat display stream has its hints removed.
+    return chatFollowUpSuggestions(run, mergedStream?.transcript_messages ?? []);
+  }, [run, sending, pendingEcho, analyzingMedia, effectiveInteraction, mergedStream]);
 
   const hasTranscriptMessages = (transformed?.stream.transcript_messages ?? persistedMessages)
     .some((message) => message.content.trim());

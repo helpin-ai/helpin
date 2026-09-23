@@ -5,7 +5,8 @@ import {
   stripDockPageContext,
   type DockChildRunResult,
 } from '@/lib/dockTypes';
-import type { CodingSessionStreamState } from '@/lib/pmTypes';
+import { stripFollowUpSuggestions } from './followUpSuggestions';
+import type { CodingSessionLiveAssistantMessage, CodingSessionLiveTurnSegment, CodingSessionStreamState } from '@/lib/pmTypes';
 
 /** Minimal run shape the composer needs (AgentRun and CodingSession both fit). */
 export interface DockRunLike {
@@ -79,6 +80,16 @@ export interface DockTranscriptTransform {
   childResults: DockChildResultEntry[];
 }
 
+function chatAssistantMessage(message: CodingSessionLiveAssistantMessage): CodingSessionLiveAssistantMessage {
+  return { ...message, content: stripFollowUpSuggestions(message.content) };
+}
+
+function chatTurnSegment(segment: CodingSessionLiveTurnSegment): CodingSessionLiveTurnSegment {
+  return segment.kind === 'assistant_message'
+    ? { ...segment, assistant_message: chatAssistantMessage(segment.assistant_message) }
+    : segment;
+}
+
 /**
  * Rewrites a run stream for chat display: strips <page_context> blocks from
  * user messages and extracts <child_run_result> messages into structured
@@ -89,7 +100,11 @@ export function transformDockStream(stream: CodingSessionStreamState, order: 'ti
   const messages = [];
   for (const message of stream.transcript_messages) {
     if (message.role !== 'user') {
-      messages.push(message);
+      messages.push(message.role === 'assistant' ? {
+        ...message,
+        content: stripFollowUpSuggestions(message.content),
+        turn_segments: message.turn_segments?.map(chatTurnSegment),
+      } : message);
       continue;
     }
     const childResult = parseDockChildResult(message.content);
@@ -116,7 +131,12 @@ export function transformDockStream(stream: CodingSessionStreamState, order: 'ti
     return a.sequence_no - b.sequence_no;
   });
   return {
-    stream: { ...stream, transcript_messages: messages },
+    stream: {
+      ...stream,
+      transcript_messages: messages,
+      live_assistant_message: stream.live_assistant_message ? chatAssistantMessage(stream.live_assistant_message) : null,
+      live_turn_segments: stream.live_turn_segments.map(chatTurnSegment),
+    },
     childResults,
   };
 }
