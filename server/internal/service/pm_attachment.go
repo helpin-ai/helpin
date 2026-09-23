@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -184,6 +185,47 @@ func formatByteLimit(bytes int64) string {
 		return fmt.Sprintf("%dMB", bytes/(1024*1024))
 	}
 	return fmt.Sprintf("%d bytes", bytes)
+}
+
+var (
+	// ErrAttachmentUploadMissing indicates that no object exists for a pending upload.
+	ErrAttachmentUploadMissing = errors.New("attachment upload was not found in storage")
+	// ErrAttachmentUploadSizeMismatch indicates that the stored object differs from the declared size.
+	ErrAttachmentUploadSizeMismatch = errors.New("attachment upload size does not match the declared size")
+)
+
+type pmAttachmentObjectHeader interface {
+	HeadObject(ctx context.Context, key string) (int64, error)
+}
+
+// Get returns one attachment record, or nil when it does not exist.
+func (s *PMAttachmentService) Get(ctx context.Context, id string) (*model.PMAttachment, error) {
+	return s.attachmentRepo.GetByID(ctx, id)
+}
+
+// VerifyAndConfirmUpload confirms a client-side upload only after storage
+// reports an object of the declared size, when the store can report it.
+func (s *PMAttachmentService) VerifyAndConfirmUpload(ctx context.Context, id string) error {
+	attachment, err := s.attachmentRepo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if attachment == nil {
+		return fmt.Errorf("attachment not found")
+	}
+	if attachment.IsUploaded {
+		return nil
+	}
+	if header, ok := s.s3Client.(pmAttachmentObjectHeader); ok {
+		size, err := header.HeadObject(ctx, attachment.StorageKey)
+		if err != nil {
+			return ErrAttachmentUploadMissing
+		}
+		if size != attachment.FileSize {
+			return ErrAttachmentUploadSizeMismatch
+		}
+	}
+	return s.ConfirmUpload(ctx, id)
 }
 
 // ConfirmUpload marks an attachment as successfully uploaded.

@@ -130,6 +130,8 @@ type MCPService struct {
 	docsLifecycle mcpDocsLifecycleService
 	helpcenter    mcpHelpcenterPublisher
 	docsEmbedding mcpDocsEmbeddingQueue
+	attachments   mcpAttachmentService
+	fetchImage    mcpImageFetcher
 	config        MCPServiceConfig
 	tools         map[string]MCPToolDefinition
 	toolSchemas   map[string]*jsonschema.Resolved
