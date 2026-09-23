@@ -21,6 +21,8 @@ const (
 	MCPScopePMWrite     = "helpin.pm.write"
 	MCPScopeDocsRead    = "helpin.docs.read"
 	MCPScopeDocsWrite   = "helpin.docs.write"
+	// MCPScopeDocsPublish allows publishing to and unpublishing from the public Help Center.
+	MCPScopeDocsPublish = "helpin.docs.publish"
 	MCPScopeCRMRead     = "helpin.crm.read"
 	MCPScopeCRMWrite    = "helpin.crm.write"
 	MCPScopeSupportRead = "helpin.support.read"
@@ -35,7 +37,7 @@ var (
 	_allMCPScopes       = []string{
 		MCPScopeContextRead,
 		MCPScopePMRead, MCPScopePMWrite,
-		MCPScopeDocsRead, MCPScopeDocsWrite,
+		MCPScopeDocsRead, MCPScopeDocsWrite, MCPScopeDocsPublish,
 		MCPScopeCRMRead, MCPScopeCRMWrite,
 		MCPScopeSupportRead,
 		MCPScopeAgentsRead, MCPScopeAgentsRun,
@@ -117,6 +119,7 @@ func (s *MCPService) buildToolCatalog() []MCPToolDefinition {
 		defs = append(defs, requirement)
 	}
 	defs = append(defs, specialMCPToolDefinitions()...)
+	defs = append(defs, docsLifecycleMCPToolDefinitions()...)
 	sort.Slice(defs, func(i, j int) bool { return defs[i].Name < defs[j].Name })
 	return defs
 }

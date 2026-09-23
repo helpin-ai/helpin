@@ -214,7 +214,7 @@ func (h *Handler) addWorkflowPrompts(server *mcp.Server, tools []service.MCPTool
 		{
 			name: "docs_maintenance", title: "Maintain Helpin documentation",
 			description:  "Find stale Helpin documentation and prepare safe draft updates.",
-			text:         "List Docs spaces and collections before choosing a location. Search and read the relevant Helpin documents and linked product work. Identify stale or unsupported claims before editing. Use the narrowest available draft mutation with a stable idempotency key. Create a space or collection only when the user requested a new location. Do not publish, unpublish, or delete documentation.",
+			text:         "List Docs spaces and collections before choosing a location. Search and read the relevant Helpin documents and linked product work. Identify stale or unsupported claims before editing. Use the narrowest available draft mutation with a stable idempotency key. Create a space or collection only when the user requested a new location. Publish, unpublish, or archive documentation only when the user explicitly asks, and never delete it.",
 			requiredTool: "list_documents",
 		},
 		{
@@ -288,6 +288,10 @@ func bearerToken(header string) string {
 }
 
 func publicToolError(err error) string {
+	var toolErr *service.MCPToolError
+	if errors.As(err, &toolErr) {
+		return toolErr.Code + ": " + toolErr.Message
+	}
 	switch {
 	case errors.Is(err, service.ErrMCPUnauthorized):
 		return "The Helpin connection is no longer authorized. Reconnect it and retry."
