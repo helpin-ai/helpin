@@ -10,12 +10,12 @@ export const DOCS = {
   automation: '/docs/c/5-automation-a1529cea',
   emailForwarding: '/docs/articles/support-email-forwarding-routes-c33014e7',
   senderAddresses: '/docs/articles/custom-sender-addresses-domains-d9017160',
-  aiConnections: '/docs/c/54-agents-071e3280',
+  aiConnections: '/docs/articles/ai-connections-profiles-01b6b5d7',
 
-  selfHosting: '/docs/c/self-hosting-15b46d4c',
-  selfHostingInstall: '/docs/c/self-hosting-install-deploy-35ba824f',
-  selfHostingDeploy: '/docs/c/self-hosting-install-deploy-35ba824f',
+  selfHosting: '/docs/articles/self-hosting-overview-8de2104d',
+  selfHostingInstall: '/docs/articles/install-with-the-cli-b0520064',
+  selfHostingDeploy: '/docs/articles/deploy-on-a-public-server-ed3a4a14',
   selfHostingConfigure: '/docs/c/self-hosting-configure-48cd823c',
-  selfHostingAI: '/docs/c/self-hosting-configure-48cd823c',
-  selfHostingBackups: '/docs/c/self-hosting-operate-3222d66f',
+  selfHostingAI: '/docs/articles/ai-providers-knowledge-search-0eee18c5',
+  selfHostingBackups: '/docs/articles/back-up-and-restore-8a351119',
 } as const;
