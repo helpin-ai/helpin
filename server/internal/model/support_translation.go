@@ -50,7 +50,7 @@ type SupportTranslationPreference struct {
 func (SupportTranslationPreference) TableName() string { return "support_translation_preferences" }
 
 type SupportTranslationConversation struct {
-	Revision         int64     `json:"revision"`
+	Revision         int64     `json:"revision" gorm:"not null;default:1"`
 	WorkspaceID      string    `json:"-" gorm:"primaryKey;type:uuid"`
 	ConversationID   string    `json:"-" gorm:"primaryKey;type:uuid"`
 	CustomerLanguage string    `json:"customer_language" gorm:"not null;default:''"`

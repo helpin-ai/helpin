@@ -2,13 +2,31 @@ package repository
 
 import "gorm.io/gorm"
 
-// MigrateSupportTranslationCustomerLanguage repairs rows written before the
-// customer_language column became required. Run this before GORM AutoMigrate,
-// which otherwise tries to add the NOT NULL constraint while NULL rows exist.
-func MigrateSupportTranslationCustomerLanguage(db *gorm.DB) error {
-	if !db.Migrator().HasTable("support_translation_conversations") ||
-		!db.Migrator().HasColumn("support_translation_conversations", "customer_language") {
+// MigrateSupportTranslationConversationDefaults repairs rows and defaults that
+// predate Live Translate. Run before AutoMigrate: it can make these columns
+// required before the versioned SQL migration has run.
+func MigrateSupportTranslationConversationDefaults(db *gorm.DB) error {
+	const table = "support_translation_conversations"
+	if !db.Migrator().HasTable(table) {
 		return nil
 	}
-	return db.Exec(`UPDATE support_translation_conversations SET customer_language = '' WHERE customer_language IS NULL`).Error
+	if db.Migrator().HasColumn(table, "customer_language") {
+		if err := db.Exec(`UPDATE support_translation_conversations SET customer_language = '' WHERE customer_language IS NULL`).Error; err != nil {
+			return err
+		}
+		if db.Dialector.Name() == "postgres" {
+			if err := db.Exec(`ALTER TABLE support_translation_conversations ALTER COLUMN customer_language SET DEFAULT ''`).Error; err != nil {
+				return err
+			}
+		}
+	}
+	if db.Migrator().HasColumn(table, "revision") {
+		if err := db.Exec(`UPDATE support_translation_conversations SET revision = 1 WHERE revision IS NULL`).Error; err != nil {
+			return err
+		}
+		if db.Dialector.Name() == "postgres" {
+			return db.Exec(`ALTER TABLE support_translation_conversations ALTER COLUMN revision SET DEFAULT 1, ALTER COLUMN revision SET NOT NULL`).Error
+		}
+	}
+	return nil
 }
