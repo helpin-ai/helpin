@@ -262,11 +262,14 @@ The fully enabled catalog contains 49 tools; the catalog regression test asserts
 | `move_document` | Write | Moves an accessible document to a validated space or collection | `PermDocsEdit` + Docs module |
 | `link_document_to_object` | Write | Links an accessible document to an accessible Helpin object | `PermDocsEdit` + Docs module |
 | `update_document_block` | Write | Updates a specific block using the addressable block contract | `PermDocsEdit` + Docs module |
+| `edit_document` | Write | Atomically applies up to 20 edits (replace text, replace or delete a block range, insert before/after) against the version from a read; nothing is applied on conflict | `PermDocsEdit` + Docs module |
 | `update_document` | Write | Renames a document or updates its excerpt and tags | `PermDocsEdit` + Docs module |
 | `archive_document` | Write, destructive | Archives a document; refuses a live Help Center article with `DOC_IS_PUBLISHED` | `PermDocsEdit` + Docs module |
 | `restore_document` | Write | Restores an archived document to draft | `PermDocsEdit` + Docs module |
 | `publish_document` | Publish | Publishes a document; in an external-capable space it also becomes a live Help Center article using the existing snapshot, slug, and redirect behavior | `helpin.docs.publish` + `PermDocsPublish` + Docs module |
 | `unpublish_document` | Publish, destructive | Removes a live Help Center article and returns the document to draft | `helpin.docs.publish` + `PermDocsPublish` + Docs module |
+
+Every document tool that takes a `document_id` also enforces Docs space access, so documents in team-only spaces the member cannot open are reported as not found.
 
 Document lifecycle tools return typed error codes that clients can act on: `DOCUMENT_LOCKED`, `DOCUMENT_ARCHIVED`, `DOCUMENT_NOT_ARCHIVED`, `DOCUMENT_NOT_PUBLISHED`, and `DOC_IS_PUBLISHED`. Errors are returned as `CODE: message`.
 
@@ -608,7 +611,7 @@ The public v1 server does not expose:
 - changing support status or assignment
 - deleting documentation (archive and restore are available)
 - publishing without the explicit `helpin.docs.publish` scope and `docs.publish` permission
-- broad document-content replacement through `write_document_content`
+- broad document-content replacement through `write_document_content` (use version-checked `edit_document` instead)
 - applying unapproved document change proposals
 - sending CRM email
 - CRM enrichment, merge, or bulk mutation
@@ -748,7 +751,7 @@ The implementation includes automated checks for:
 - strict tool schemas and rejection of workspace-override properties
 - workspace-policy scope/toolset narrowing and forced read-only behavior
 - platform domain flags
-- the 54-tool catalog
+- the 55-tool catalog
 - document lifecycle tools: publish, unpublish, archive, restore, and rename, including typed error codes
 - exclusion of deferred destructive, support-draft, and customer-send actions
 - agent-run privacy: runs started outside a dock chat never reuse a chat's run, and `get_agent_run` / `cancel_agent_run` hide other users' dock chat runs
