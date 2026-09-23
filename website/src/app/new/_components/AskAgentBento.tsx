@@ -39,13 +39,13 @@ function Answers({ id }: { id: string }) {
     <Node id={id} x={16} y={36} width={158} label="Conversation" icon={MessageSquare} phase={0} />
     <Node id={id} x={16} y={132} width={158} label="Meeting" icon={Video} phase={.35} />
     <Node id={id} x={16} y={228} width={158} label="Project" icon={FileText} phase={.7} />
-    <rect x={263} y={68} width={230} height={200} rx={16} fill="#11221e" stroke="#28463b" />
+    <rect x={263} y={68} width={230} height={200} rx={16} style={{ fill: 'var(--art-dark-soft)', stroke: 'var(--art-dark-border)' }} />
     <g transform="translate(250 82)">
       <rect className="ab-panel" width={246} height={200} rx={16} fill={`url(#${id}-panel)`} />
       <rect className="ab-result-glow" width={246} height={200} rx={16} style={delay(2.1)} />
       <Icon icon={GitBranch} x={19} y={19} />
       <text x={58} y={40} className="ab-panel-title">Ask Agent</text>
-      <path d="M20 61 H226" stroke="#2b463d" />
+      <path d="M20 61 H226" style={{ stroke: 'var(--art-dark-border)' }} />
       <g className="ab-answer-reveal" style={delay(2.1)}>
         <text x={22} y={99} className="ab-answer-title">SSO approval<tspan x={22} dy={29}>pending</tspan></text>
         <text x={22} y={160} className="ab-detail">Okta guide needed</text>
@@ -85,7 +85,7 @@ function Mcp({ id }: { id: string }) {
       <rect className="ab-panel" width={168} height={194} rx={16} fill={`url(#${id}-panel)`} />
       <rect className="ab-result-glow" width={168} height={194} rx={16} style={delay(3)} />
       <Icon icon={GitBranch} x={17} y={20} size={24} /><text x={49} y={38} className="ab-panel-title">Ask Agent</text>
-      <path d="M16 59 H152" stroke="#2b463d" />
+      <path d="M16 59 H152" style={{ stroke: 'var(--art-dark-border)' }} />
       <g className="ab-answer-reveal" style={delay(3)}>
         <circle cx={84} cy={92} r={17} fill="#123e2e" stroke="#4fc78f" /><Icon icon={Check} x={73} y={81} size={22} />
         <text x={84} y={141} textAnchor="middle" className="ab-answer-title">Context<tspan x={84} dy={26}>ready</tspan></text>
@@ -102,7 +102,7 @@ export function AskAgentBento({ variant }: { variant: Variant }) {
   return <div ref={container} className="ask-agent-art ab-scene" data-playing={playing}>
     <svg key={cycle} className="ab-svg" viewBox="0 0 520 350" width={520} height={350} role="img" aria-labelledby={`${id}-title ${id}-description`}>
       <title id={`${id}-title`}>{title}</title><desc id={`${id}-description`}>{description}</desc>
-      <defs><linearGradient id={`${id}-panel`} x1="0" y1="0" x2="1" y2="1"><stop stopColor="#182b27" /><stop offset="1" stopColor="#0d1917" /></linearGradient></defs>
+      <defs><linearGradient id={`${id}-panel`} x1="0" y1="0" x2="1" y2="1"><stop style={{ stopColor: 'var(--art-dark-raised)' }} /><stop offset="1" style={{ stopColor: 'var(--art-dark)' }} /></linearGradient></defs>
       {variant === 'answers' ? <Answers id={id} /> : variant === 'coordination' ? <Coordination id={id} /> : <Mcp id={id} />}
     </svg>
   </div>;

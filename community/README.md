@@ -14,7 +14,8 @@ instead.
 - Bash and OpenSSL
 - An amd64 or arm64 host; native architecture tests are a release gate, not an
   inference from successful builds
-- At least 8 GiB RAM and 20 GiB free disk for evaluation
+- At least 8 GB RAM and 20 GiB free disk for evaluation (an 8 GB server reports
+  about 7.7 GiB usable, which `helpin doctor` accepts)
 
 These are evaluation starting points, not measured capacity promises.
 
@@ -55,10 +56,33 @@ private and back up its encryption keys together with your data: changing the
 keys only in the environment makes stored encrypted credentials unreadable.
 
 Open `http://localhost:8085`, sign up, and create your organization and
-workspace. Local signup does not require email, and new accounts remain
-unverified. With working application mail, `AUTH_EMAIL_VERIFICATION_REQUIRED=true`
-enables verification emails and the verification UI; it does not block every
+workspace. The first account on a new server becomes its **server admin**, and
+after that signup is invite only: invite teammates from **Settings → Members**
+(without application email, copy each invite link and send it yourself). Server
+admins can change the signup policy under **Settings → Signup & admins** and
+set up application email under **Settings → System status**; see
+[Server administration](../docs/community/configuration.md#server-administration).
+Local signup does not require email, and new accounts remain unverified. With
+working application mail, `AUTH_EMAIL_VERIFICATION_REQUIRED=true` enables
+verification emails and the verification UI; it does not block every
 unverified login.
+
+## Explore with sample data
+
+To look around before connecting anything, open the Setup guide and choose
+**Load sample data** (workspace admins and owners). Helpin adds a small
+fictional company, Northwind Outfitters, to the modules available to you:
+support conversations, draft help articles in a help-center space, a project
+with tasks, and CRM companies, contacts, and deals. Customer addresses use the
+reserved `example.com` domain.
+
+Loading sends no email, notifications, or webhooks, and it runs no automations
+or AI. Sample records never count toward Setup guide progress. **Remove sample
+data** deletes exactly the records it added, including any edits you made to
+them. A sample help-center space, sales pipeline, or team that now holds your
+own records is kept; your own tasks in the sample project stay, without the
+project. The API is `GET`, `POST`, and `DELETE`
+`/api/workspaces/{id}/sample-data`.
 
 ## Start your first conversation
 

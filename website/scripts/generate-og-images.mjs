@@ -15,11 +15,27 @@ const markWhiteSrc = `data:image/png;base64,${markWhite.toString('base64')}`;
 // Website cards use a quiet, monochrome dark theme (near-black, white type, green only as a small accent).
 // App cards in frontend/public/og keep the light theme.
 const DARK = {
-  canvas: '#0A0B0B',
+  canvas: '#090909',
   ink: '#F1F4F2',
   muted: '#9AA39E',
   eyebrow: '#8A938E',
+  accent: '#A9D8B8',
 };
+
+// A static trace of the site's HeroVortex "flow" lines (same formula and gradient as
+// src/app/new/_components/HeroVortex.tsx), so the cards carry the website's signature.
+const FLOW_LINES = [0, 1].flatMap((group) => Array.from({ length: 12 }, (_, i) => ({
+  group,
+  d: `M -120 ${130 + group * 250 + i * 13} C 330 ${-80 + group * 370 + i * 17}, 810 ${530 - group * 220 + i * 9}, 1520 ${150 + group * 260 + i * 12}`,
+  opacity: 0.22 + (1 - Math.abs(i - 5.5) / 6) * 0.3,
+})));
+const vortexSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 700" width="1400" height="700">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0B7A4E"/><stop offset="50%" stop-color="#0F9D63"/><stop offset="100%" stop-color="#3FC48F"/></linearGradient></defs>
+${[0, 1].map((group) => `<g transform="rotate(${group ? -7 : 7} 700 350)" fill="none" stroke="url(#g)" stroke-linecap="round">
+<g stroke-width="4" opacity="0.22">${FLOW_LINES.filter((l) => l.group === group).map((l) => `<path d="${l.d}" opacity="${l.opacity.toFixed(3)}"/>`).join('')}</g>
+<g stroke-width="1">${FLOW_LINES.filter((l) => l.group === group).map((l) => `<path d="${l.d}" opacity="${l.opacity.toFixed(3)}"/>`).join('')}</g></g>`).join('')}
+</svg>`;
+const vortexSrc = `data:image/svg+xml;base64,${Buffer.from(vortexSvg).toString('base64')}`;
 
 const COLORS = {
   canvas: '#FFFFFF',
@@ -262,16 +278,18 @@ function image(variant) {
       overflow: 'hidden', color: dark ? DARK.ink : COLORS.ink, fontFamily: 'Instrument Sans', ...background,
     },
   },
+  // The website's vortex, as a quiet static trace behind everything else.
+  ...(dark ? [h('img', { src: vortexSrc, width: 1260, height: 630, alt: '', style: { position: 'absolute', left: -30, top: -40, width: 1260, height: 630, opacity: 0.5 } })] : []),
   ...(variant.artSrc ? [
     h('img', {
       src: variant.artSrc, width: ART_WIDTH, height: 630, alt: '',
       style: { position: 'absolute', right: 0, top: 0, width: ART_WIDTH, height: 630, objectFit: 'cover' },
     }),
-    // Blend the artwork into the canvas instead of showing a hard panel edge.
-    h('div', { style: { display: 'flex', position: 'absolute', right: ART_WIDTH - 90, top: 0, width: 90, height: 630, backgroundImage: `linear-gradient(90deg, ${DARK.canvas}, rgba(10,11,11,0))` } }),
+    // Blend the artwork into the canvas so the vortex lines flow into it instead of hitting a panel edge.
+    h('div', { style: { display: 'flex', position: 'absolute', right: ART_WIDTH - 140, top: 0, width: 140, height: 630, backgroundImage: `linear-gradient(90deg, ${DARK.canvas}, rgba(9,9,9,0))` } }),
   ] : []),
-  // One soft light from above across the whole card, artwork included, so there is no visible seam.
-  ...(dark ? [h('div', { style: { display: 'flex', position: 'absolute', left: 0, top: 0, width: 1200, height: 630, backgroundImage: 'radial-gradient(ellipse 900px 420px at 30% -10%, rgba(255,255,255,0.06), rgba(255,255,255,0))' } })] : []),
+  // The site's hero light: a faint green glow plus soft light from above, across the whole card.
+  ...(dark ? [h('div', { style: { display: 'flex', position: 'absolute', left: 0, top: 0, width: 1200, height: 630, backgroundImage: 'radial-gradient(ellipse 760px 520px at 82% 42%, rgba(55,122,86,0.20), rgba(55,122,86,0)), radial-gradient(ellipse 900px 420px at 30% -10%, rgba(255,255,255,0.05), rgba(255,255,255,0))' } })] : []),
   h('div', {
     style: { display: 'flex', position: 'absolute', left: 72, top: 58 },
   }, brand(dark)),
@@ -281,7 +299,8 @@ function image(variant) {
   h('div', { style: { display: 'flex', flexDirection: 'column', width: variant.artSrc ? 600 : 620, flexShrink: 0 } },
     h('div', { style: { display: 'flex', marginBottom: 22, fontSize: 17, fontWeight: 700, letterSpacing: '2.4px', color: dark ? DARK.eyebrow : COLORS.accent } }, variant.eyebrow),
     h('div', { style: { display: 'flex', flexDirection: 'column', fontSize: 56, lineHeight: 1.08, fontWeight: 600, letterSpacing: '-1.8px' } },
-      ...variant.headline.map((line) => h('div', { key: line, style: { display: 'flex' } }, line)),
+      // As on the site's dark heroes, the closing part of a multi-line headline is set in mint.
+      ...variant.headline.map((line, index) => h('div', { key: line, style: { display: 'flex', color: dark && variant.headline.length > 1 && index === variant.headline.length - 1 ? DARK.accent : undefined } }, line)),
     ),
     h('div', { style: { display: 'flex', marginTop: 26, fontSize: 21, lineHeight: 1.5, color: dark ? DARK.muted : COLORS.muted } }, variant.support),
   ),

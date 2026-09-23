@@ -64,6 +64,17 @@ func NewS3Client(accessKeyID, secretAccessKey, bucket, region, endpointURL, publ
 	}
 }
 
+// CheckBucket confirms that the bucket exists and the credentials can reach it.
+func (s *S3Client) CheckBucket(ctx context.Context) error {
+	if s == nil {
+		return fmt.Errorf("object storage is not configured")
+	}
+	if _, err := s.client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: aws.String(s.bucket)}); err != nil {
+		return fmt.Errorf("head bucket: %w", err)
+	}
+	return nil
+}
+
 // EnsureCORS sets a permissive CORS policy on the bucket so that browsers
 // on any origin can upload files via presigned PUT URLs.
 // Safe to call on every startup — it overwrites the existing CORS config.
@@ -213,6 +224,19 @@ func (s *S3Client) GetObject(ctx context.Context, key string) ([]byte, error) {
 		return nil, fmt.Errorf("read S3 object: %w", err)
 	}
 	return data, nil
+}
+
+// HeadObject returns the stored size of an object, or an error when it does
+// not exist. It verifies client-side uploads without downloading them.
+func (s *S3Client) HeadObject(ctx context.Context, key string) (int64, error) {
+	result, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("head S3 object: %w", err)
+	}
+	return aws.ToInt64(result.ContentLength), nil
 }
 
 // DeleteObject deletes an object from S3.

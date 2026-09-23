@@ -31,11 +31,30 @@ type supportTranslationService struct {
 	jev       *JevDecisionService
 	route     AICompletionRoute
 	available bool
+	// unconfigured means this server has no translation provider at all (for
+	// example a Community install without an OpenRouter key). Unlike an outage
+	// (available=false), replies are then sent as written instead of blocked.
+	unconfigured bool
 }
 
 func (s *SupportInboxService) SetTranslations(repo *repository.SupportTranslationRepository, provider llm.Provider, jev *JevDecisionService, route AICompletionRoute, available bool) *SupportInboxService {
 	s.translations = &supportTranslationService{repo: repo, provider: provider, jev: jev, route: route, available: available}
 	return s
+}
+
+// SetTranslationProviderConfigured records whether the server has a
+// translation provider. Without one, translation is off rather than
+// "temporarily unavailable", so teammate replies are never blocked by it.
+func (s *SupportInboxService) SetTranslationProviderConfigured(configured bool) *SupportInboxService {
+	if s.translations != nil {
+		s.translations.unconfigured = !configured
+	}
+	return s
+}
+
+// translationConfigured reports whether translation can run on this server.
+func (s *SupportInboxService) translationConfigured() bool {
+	return s.translations != nil && !s.translations.unconfigured
 }
 func (s *SupportInboxService) SetTranslationMetrics(metrics *observability.Metrics) {
 	if s.translations != nil {
@@ -58,6 +77,13 @@ func (s *SupportInboxService) TranslationOptions(ctx context.Context, workspaceI
 	result := &model.SupportTranslationOptions{Languages: supportTranslationLanguages, Preference: model.SupportTranslationPreference{ReadingLanguage: "en", AutoTranslateIncoming: true, AutoTranslateOutgoing: true}, Conversation: model.SupportTranslationConversation{TranslationMode: "inherit"}}
 	if s.translations == nil {
 		result.UnavailableReason = "Translation is not configured."
+		return result, nil
+	}
+	if s.translations.unconfigured {
+		result.Preference.AutoTranslateIncoming = false
+		result.Preference.AutoTranslateOutgoing = false
+		result.Conversation.TranslationMode = "off"
+		result.UnavailableReason = "Translation isn’t set up on this server. Add an OpenRouter key on the server to turn it on."
 		return result, nil
 	}
 	settings := model.DefaultSupportInboxSettings()

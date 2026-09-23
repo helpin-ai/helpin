@@ -1,4 +1,4 @@
-import { billingEnabled } from '@edition/config';
+import { billingEnabled, systemStatusEnabled } from '@edition/config';
 import { describe, expect, it } from 'vitest';
 import { getSettingsSidebarGroups, SETTINGS_ROUTE_SECTIONS } from '../settingsSections';
 
@@ -96,6 +96,25 @@ describe('getSettingsSidebarGroups', () => {
     expect(none).not.toContain('ai');
     expect(both).not.toContain('ai-connections');
     expect(both).toContain('ai');
+  });
+
+  it.skipIf(!systemStatusEnabled)('lists the Server group after Workspace for server admins only', () => {
+    const serverAdmin = getSettingsSidebarGroups(true, new Set(['workspace.read', 'workspace.update', 'server.admin']));
+    const labels = serverAdmin.map((group) => group.label);
+    const server = serverAdmin.find((group) => group.label === 'Server')?.sections.map((section) => section.id);
+    const workspaceAdmin = getSettingsSidebarGroups(true, new Set(['workspace.read', 'workspace.update', 'settings.manage', 'module_access.manage']))
+      .flatMap((group) => group.sections.map((section) => section.id));
+
+    expect(labels.indexOf('Server')).toBe(labels.indexOf('Workspace') + 1);
+    expect(server).toEqual(['system-status', 'server']);
+    expect(workspaceAdmin).not.toContain('system-status');
+    expect(workspaceAdmin).not.toContain('server');
+  });
+
+  it.skipIf(systemStatusEnabled)('omits System status and Server where the platform manages server services', () => {
+    const ids = SETTINGS_ROUTE_SECTIONS.map((section) => section.id);
+    expect(ids).not.toContain('system-status');
+    expect(ids).not.toContain('server');
   });
 
   it('exposes a single AI setup entry to members with workspace read access', () => {

@@ -2,11 +2,16 @@ const MCP_WRITE_SCOPE_BY_TOOLSET: Readonly<Record<string, string>> = {
   pm: 'helpin.pm.write',
   docs: 'helpin.docs.write',
   crm: 'helpin.crm.write',
+  support: 'helpin.support.write',
   agents: 'helpin.agents.run',
 };
 
+// Publishing changes public content, so it counts as a write scope even though
+// it is never added automatically when writes are enabled for a toolset.
+export const MCP_DOCS_PUBLISH_SCOPE = 'helpin.docs.publish';
+
 export function isMCPWriteScope(scope: string): boolean {
-  return scope.endsWith('.write') || scope === 'helpin.agents.run';
+  return scope.endsWith('.write') || scope === 'helpin.agents.run' || scope === MCP_DOCS_PUBLISH_SCOPE;
 }
 
 export function hasMCPWriteScope(scopes: string[]): boolean {
@@ -16,7 +21,8 @@ export function hasMCPWriteScope(scopes: string[]): boolean {
 export function hasMCPWriteGrant(scopes: string[], toolsets: string[]): boolean {
   return toolsets.some((toolset) => {
     const writeScope = MCP_WRITE_SCOPE_BY_TOOLSET[toolset];
-    return Boolean(writeScope && scopes.includes(writeScope));
+    if (writeScope && scopes.includes(writeScope)) return true;
+    return toolset === 'docs' && scopes.includes(MCP_DOCS_PUBLISH_SCOPE);
   });
 }
 

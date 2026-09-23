@@ -1,12 +1,14 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
 func (h *SupportInboxHandler) TranslationOptions(w http.ResponseWriter, r *http.Request) {
@@ -65,6 +67,10 @@ func (h *SupportInboxHandler) QueueSupportSend(w http.ResponseWriter, r *http.Re
 	}
 	result, err := h.supportService.QueueSupportSend(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"), middleware.GetUserID(r.Context()), req)
 	if err != nil {
+		if errors.Is(err, service.ErrSupportTranslation) {
+			writeError(w, http.StatusUnprocessableEntity, "Translation unavailable. Your draft has been preserved.")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "Could not queue reply. Your draft has been preserved.")
 		return
 	}

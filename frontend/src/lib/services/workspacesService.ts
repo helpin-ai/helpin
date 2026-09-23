@@ -14,7 +14,12 @@ export const workspacesService = {
     api.get<Workspace[]>(organizationId ? `/workspaces?organization_id=${organizationId}` : '/workspaces'),
   create: (data: { name: string; slug: string; workspace_key: string; organization_id: string; description?: string; company_product_context?: string; website_url?: string; timezone?: string; setup_goals?: string[] }) =>
     api.post<Workspace>('/workspaces', data),
-  generateCompanyProductDescription: (data: { workspace_name: string; website_url: string; workspace_id?: string }) =>
+  /**
+   * Drafts company/product context from a website. With `workspace_id` the
+   * server uses that workspace's AI connection. Failures answer 400 (bad URL)
+   * or 422 with a sentence that can be shown to the person as is.
+   */
+  generateCompanyProductDescription: (data: { website_url: string; workspace_id?: string; workspace_name?: string }) =>
     api.post<{ description: string; company_product_context: string }>('/workspaces/context/generate-description', data),
   getBySlug: (slug: string) => api.get<Workspace>(`/workspaces/by-slug/${slug}`),
   update: (id: string, data: Partial<Workspace>) =>

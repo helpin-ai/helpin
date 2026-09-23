@@ -731,7 +731,15 @@ async function handleRequest(request, response) {
       headers.set(name, normalizeHeaderValue(value))
     }
 
-    const fetchRequest = new Request(routeUrl, {
+    // Pages render from the public (mounted) URL: the router strips and re-adds
+    // the basepath itself, and an unmounted URL would trip its canonical
+    // redirect. Proxies may already strip the basepath, so rebuild it here.
+    // Server functions stay on the internal path TanStack Start matches on.
+    const ssrUrl = new URL(routeUrl)
+    if (hcContext.basepath && !internalPath.startsWith('/_serverFn/')) {
+      ssrUrl.pathname = internalPath === '/' ? hcContext.basepath : `${hcContext.basepath}${internalPath}`
+    }
+    const fetchRequest = new Request(ssrUrl, {
       method: request.method,
       headers,
       body: shouldReadBody(request.method || 'GET') ? Readable.toWeb(request) : undefined,
@@ -791,3 +799,14 @@ const server = http.createServer((request, response) => {
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`help-center listening on ${PORT}`)
 })
+
+// Node runs as PID 1 in the container, where signals without a handler are
+// ignored; without this, `docker stop` waits for the timeout and kills us.
+function shutdown(signal) {
+  console.log(`help-center received ${signal}, shutting down`)
+  server.close(() => process.exit(0))
+  server.closeIdleConnections?.()
+  setTimeout(() => process.exit(0), 5000).unref()
+}
+process.once('SIGTERM', () => shutdown('SIGTERM'))
+process.once('SIGINT', () => shutdown('SIGINT'))

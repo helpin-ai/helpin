@@ -22,7 +22,7 @@ const BUNDLES = [
       d: axis === 'v'
         ? `M ${CX + position - bow * 0.4} ${CY - LENGTH} Q ${CX + position + bow} ${CY} ${CX + position - bow * 0.4} ${CY + LENGTH}`
         : `M ${CX - LENGTH} ${CY + position - bow * 0.4} Q ${CX} ${CY + position + bow} ${CX + LENGTH} ${CY + position - bow * 0.4}`,
-      opacity: Math.max(0.07, 0.55 - Math.abs(t) * 0.7),
+      opacity: Math.max(0.16, 0.8 - Math.abs(t) * 0.9),
     };
   }),
 }));
@@ -98,16 +98,16 @@ export function HeroVortex({ variant = 'vortex', tone = 'light' }: { variant?: M
                 <stop stopColor="#0B7A4E" /><stop offset="50%" stopColor="#0F9D63" /><stop offset="100%" stopColor="#3FC48F" />
               </linearGradient>
               <linearGradient id={`${id}-sheen`} x1="0" y1="0" x2="1" y2="0.3">
-                <stop stopColor="#2AE79A" stopOpacity="0" /><stop offset="42%" stopColor="#2AE79A" stopOpacity="0" />
-                <stop offset="50%" stopColor="#74FFC4" /><stop offset="58%" stopColor="#2AE79A" stopOpacity="0" /><stop offset="100%" stopColor="#2AE79A" stopOpacity="0" />
+                <stop stopColor="#6FD3A5" stopOpacity="0" /><stop offset="42%" stopColor="#6FD3A5" stopOpacity="0" />
+                <stop offset="50%" stopColor="#CFF2E0" /><stop offset="58%" stopColor="#6FD3A5" stopOpacity="0" /><stop offset="100%" stopColor="#6FD3A5" stopOpacity="0" />
               </linearGradient>
             </defs>
             {ART[variant].map((bundle, bi) => (
               <g key={bi} transform={bundle.transform} fill="none" strokeLinecap="round">
-                <g stroke={`url(#${id}-base)`} strokeWidth="4" opacity="0.22">
+                <g stroke={`url(#${id}-base)`} strokeWidth="4" opacity="0.3">
                   {bundle.lines.map((line, j) => <path key={j} d={line.d} opacity={line.opacity} />)}
                 </g>
-                <g stroke={`url(#${id}-base)`} strokeWidth="1">
+                <g stroke={`url(#${id}-base)`} strokeWidth="1.4">
                   {bundle.lines.map((line, j) => <path key={j} d={line.d} opacity={line.opacity} />)}
                 </g>
                 <g className="hero-vortex-sheen" stroke={`url(#${id}-sheen)`} strokeWidth="1.5">

@@ -39,8 +39,11 @@ type Config struct {
 	// DemoRequireEmail makes the visitor email mandatory on POST /api/auth/demo.
 	DemoRequireEmail bool
 	// DemoLeadWebhookURL receives a JSON POST for every visitor email captured.
-	DemoLeadWebhookURL    string
-	EnabledModules        []model.ModuleID
+	DemoLeadWebhookURL string
+	EnabledModules     []model.ModuleID
+	// SetupGuideEnabled gates the workspace Setup guide (SETUP_SUCCESS_ENABLED;
+	// unset uses the edition default: on in Community, off in Enterprise).
+	SetupGuideEnabled     bool
 	DatabaseURL           string
 	JWTSecret             string
 	Port                  string
@@ -129,6 +132,11 @@ type Config struct {
 	GitHubAppID         string
 	GitHubAppSlug       string
 	GitHubAppPrivateKey string
+	// GITHUB_APP_WEBHOOK_SECRET is the App's webhook secret; deliveries are
+	// rejected without it. Client ID/secret are optional.
+	GitHubAppWebhookSecret string
+	GitHubAppClientID      string
+	GitHubAppClientSecret  string
 
 	// GitOAuthEncryptionKey encrypts stored git provider tokens (GitHub App + GitLab PAT) at rest.
 	GitOAuthEncryptionKey string
@@ -172,6 +180,9 @@ type Config struct {
 	WebAuthnRPID                      string
 	WebAuthnRPOrigins                 []string
 	PlatformAdminEmails               []string
+	// ServerAdminEmails (HELPIN_ADMIN_EMAILS) designates self-hosted server
+	// admins by email (Community only).
+	ServerAdminEmails []string
 
 	// Google account sign-in (optional — Google button disabled if unset)
 	GoogleAuthClientID     string
@@ -302,6 +313,10 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	setupGuideEnabled, err := deployment.SetupGuidePolicy(os.Getenv("SETUP_SUCCESS_ENABLED"))
+	if err != nil {
+		return nil, err
+	}
 
 	appBaseURL := os.Getenv("APP_BASE_URL")
 	if appBaseURL == "" {
@@ -397,6 +412,7 @@ func Load() (*Config, error) {
 		RunAutoMigrate:                         parseBoolEnvDefaultTrue(os.Getenv("RUN_AUTO_MIGRATE")),
 		CORSOrigins:                            corsOrigins,
 		EnabledModules:                         enabledModules,
+		SetupGuideEnabled:                      setupGuideEnabled,
 		PublicWidgetURL:                        publicWidgetURL,
 		PublicSDKURL:                           publicSDKURL,
 		EmailVerificationRequired:              emailVerificationRequired,
@@ -470,6 +486,9 @@ func Load() (*Config, error) {
 		GitHubAppID:                            os.Getenv("GITHUB_APP_ID"),
 		GitHubAppSlug:                          os.Getenv("GITHUB_APP_SLUG"),
 		GitHubAppPrivateKey:                    os.Getenv("GITHUB_APP_PRIVATE_KEY"),
+		GitHubAppWebhookSecret:                 strings.TrimSpace(os.Getenv("GITHUB_APP_WEBHOOK_SECRET")),
+		GitHubAppClientID:                      strings.TrimSpace(os.Getenv("GITHUB_APP_CLIENT_ID")),
+		GitHubAppClientSecret:                  strings.TrimSpace(os.Getenv("GITHUB_APP_CLIENT_SECRET")),
 		GitOAuthEncryptionKey:                  strings.TrimSpace(os.Getenv("GIT_OAUTH_ENCRYPTION_KEY")),
 		SMTPHost:                               strings.TrimSpace(os.Getenv("SMTP_HOST")),
 		SMTPPort:                               smtpPort,
@@ -506,7 +525,7 @@ func Load() (*Config, error) {
 		ChatGPTClientID:                        strings.TrimSpace(os.Getenv("CHATGPT_OAUTH_CLIENT_ID")),
 		ExternalMCPEnabled:                     parseBoolEnv(os.Getenv("EXTERNAL_MCP_ENABLED")),
 		ExternalMCPEncryptionKey:               strings.TrimSpace(os.Getenv("EXTERNAL_MCP_ENCRYPTION_KEY")),
-		ExternalMCPAllowedHosts:                parseCSV(firstNonEmpty(os.Getenv("EXTERNAL_MCP_ALLOWED_HOSTS"), "*")),
+		ExternalMCPAllowedHosts:                parseCSV(firstNonEmpty(os.Getenv("EXTERNAL_MCP_ALLOWED_HOSTS"), "*") + "," + os.Getenv("EXTERNAL_MCP_ADDITIONAL_ALLOWED_HOSTS")),
 		ExternalMCPOAuthRedirectURL:            strings.TrimSpace(os.Getenv("EXTERNAL_MCP_OAUTH_REDIRECT_URL")),
 		ExternalMCPOAuthClientID:               strings.TrimSpace(os.Getenv("EXTERNAL_MCP_OAUTH_CLIENT_ID")),
 		ExternalMCPOAuthClientSecret:           strings.TrimSpace(os.Getenv("EXTERNAL_MCP_OAUTH_CLIENT_SECRET")),
@@ -515,6 +534,7 @@ func Load() (*Config, error) {
 		WebAuthnRPID:                           webAuthnRPID,
 		WebAuthnRPOrigins:                      webAuthnRPOrigins,
 		PlatformAdminEmails:                    parseCSV(os.Getenv("PLATFORM_ADMIN_EMAILS")),
+		ServerAdminEmails:                      parseCSV(os.Getenv("HELPIN_ADMIN_EMAILS")),
 		GoogleAuthClientID:                     strings.TrimSpace(os.Getenv("GOOGLE_AUTH_CLIENT_ID")),
 		GoogleAuthClientSecret:                 strings.TrimSpace(os.Getenv("GOOGLE_AUTH_CLIENT_SECRET")),
 		GoogleAuthRedirectURL:                  strings.TrimSpace(os.Getenv("GOOGLE_AUTH_REDIRECT_URL")),

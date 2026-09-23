@@ -52,6 +52,17 @@ describe('MCP policy scope helpers', () => {
     expect(hasMCPWriteGrant(['helpin.docs.write'], ['context'])).toBe(false);
   });
 
+  it('treats Help Center publishing as an explicit write scope', () => {
+    expect(isMCPWriteScope('helpin.docs.publish')).toBe(true);
+    expect(hasMCPWriteGrant(['helpin.docs.read', 'helpin.docs.publish'], ['docs'])).toBe(true);
+    expect(hasMCPWriteGrant(['helpin.docs.publish'], ['pm'])).toBe(false);
+    expect(ensureMCPWriteScopes(
+      ['helpin.docs.read'],
+      ['docs'],
+      ['helpin.docs.read', 'helpin.docs.write', 'helpin.docs.publish'],
+    )).toEqual(['helpin.docs.read', 'helpin.docs.write']);
+  });
+
   it('applies selected workspace restrictions before authorization', () => {
     expect(getMCPConsentAccess(
       ['helpin.context.read', 'helpin.pm.read', 'helpin.pm.write', 'helpin.docs.read'],

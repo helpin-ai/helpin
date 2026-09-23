@@ -57,7 +57,28 @@ func setupSupportInboxCoverageAnalysisTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create support_conversations: %v", err)
 	}
+	if err := db.Exec(sampleDataItemsTestSchema).Error; err != nil {
+		t.Fatalf("create sample_data_items: %v", err)
+	}
 	return db
+}
+
+func TestSupportConversationRepository_CoverageCandidatesExcludeSampleData(t *testing.T) {
+	db := setupSupportInboxCoverageAnalysisTestDB(t)
+	repo := NewSupportConversationRepository(db)
+	now := time.Now().UTC()
+	insertCoverageCandidateConversation(t, db, "real", "ws-1", "open", now, nil, nil)
+	insertCoverageCandidateConversation(t, db, "sample", "ws-1", "open", now, nil, nil)
+	if err := db.Exec(`INSERT INTO sample_data_items (id, workspace_id, entity_type, entity_id) VALUES ('item', 'ws-1', 'support_conversation', 'sample')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	got, err := repo.ListCoverageAnalysisCandidates(context.Background(), "ws-1", now.Add(-time.Hour), now.Add(time.Hour), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != "real" {
+		t.Fatalf("candidates = %+v, want only the real conversation", got)
+	}
 }
 
 func insertCoverageCandidateConversation(t *testing.T, db *gorm.DB, id, workspaceID, status string, updatedAt time.Time, resolvedAt *time.Time, aiState *string) {

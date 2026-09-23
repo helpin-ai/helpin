@@ -53,7 +53,7 @@ import { StandardRailNav } from './sidebar/StandardRailNav';
 import { CrmRailNav } from './sidebar/CrmRailNav';
 import { SupportRailNav } from './sidebar/SupportRailNav';
 import { SidebarSearchFooter } from './sidebar/SidebarSearchFooter';
-import { isSetupSuccessEnabled } from '@/lib/featureFlags';
+import { useSetupGuideEnabled } from '@/hooks/useSetupGuideEnabled';
 import type { SupportInboxView } from '@/lib/pmTypes';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -76,7 +76,8 @@ export function Sidebar() {
   const initials = getInitials(user?.full_name || user?.email);
 
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
-  const { data: setup } = useSetup(isSetupSuccessEnabled() ? workspaceId : undefined);
+  const setupGuideEnabled = useSetupGuideEnabled();
+  const { data: setup } = useSetup(setupGuideEnabled ? workspaceId : undefined);
   const { isAdmin, canManageSettings, canManageTeams, canEditDocs, permissionSet, canAccessModule, modules } = usePermissions(access);
   const hasSupportModule = canAccessModule('support');
   const {
@@ -227,8 +228,8 @@ export function Sidebar() {
     ? normalizeCRMSectionPath(wsSlug, location.pathname)
     : getLastCRMPath(workspaceId ?? '', wsSlug);
   const railItems = useMemo(
-    () => buildRailItems(wsSlug, totalSupportUnread, isSetupSuccessEnabled() ? setupProgress : undefined, crmDefaultLink).map(item => item.id === 'automation' && !modules.includes('automation') ? { ...item, label: 'Agents', defaultLink: `/w/${wsSlug}/automation/agents` } : item),
-    [wsSlug, totalSupportUnread, setupProgress, crmDefaultLink, modules],
+    () => buildRailItems(wsSlug, totalSupportUnread, setupGuideEnabled ? setupProgress : undefined, crmDefaultLink).map(item => item.id === 'automation' && !modules.includes('automation') ? { ...item, label: 'Agents', defaultLink: `/w/${wsSlug}/automation/agents` } : item),
+    [wsSlug, totalSupportUnread, setupGuideEnabled, setupProgress, crmDefaultLink, modules],
   );
 
   useEffect(() => {

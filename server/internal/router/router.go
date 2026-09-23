@@ -1,6 +1,7 @@
 package router
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -38,6 +39,8 @@ type Handlers struct {
 	Organization        *handler.OrganizationHandler
 	Workspace           *handler.WorkspaceHandler
 	Setup               *handler.SetupHandler
+	Capability          *handler.CapabilityHandler
+	SampleData          *handler.SampleDataHandler
 	Edition             EditionRoutes
 	Settings            *handler.SettingsHandler
 	Automation          *handler.AutomationHandler
@@ -76,6 +79,7 @@ type Handlers struct {
 	SupportTag          *handler.SupportTagHandler
 	SupportInboxWidget  *handler.SupportInboxWidgetHandler
 	Git                 *handler.GitHandler
+	GitHubApp           *handler.GitHubAppHandler
 	Docs                *handler.DocsHandler
 	TLSAsk              *handler.TLSAskHandler
 	Notification        *handler.NotificationHandler
@@ -111,6 +115,9 @@ type Handlers struct {
 	EmailImageProxy     *handler.EmailImageProxyHandler
 	AdminWebhookEvent   *handler.AdminWebhookEventHandler
 	AdminEmailQueue     *handler.AdminEmailQueueHandler
+
+	// Instance serves self-hosted server administration; nil outside Community.
+	Instance *handler.InstanceHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -199,6 +206,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Get("/.well-known/oauth-authorization-server", h.MCP.AuthorizationServerMetadata)
 		r.Get("/.well-known/oauth-protected-resource", h.MCP.ProtectedResourceMetadata)
 		r.Handle("/mcp", http.HandlerFunc(h.MCP.Protocol))
+		r.Handle("/mcp/readonly", http.HandlerFunc(h.MCP.Protocol))
 	}
 
 	// ---- Public widget routes for client.helpin.ai (no JWT, open CORS) ----
@@ -291,6 +299,16 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(apiCORS)
+		r.NotFound(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(model.APIError{Error: "API route not found"})
+		})
+		r.MethodNotAllowed(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			_ = json.NewEncoder(w).Encode(model.APIError{Error: "API method not allowed"})
+		})
 		if h.CRMOutreach != nil {
 			r.Get("/crm/outreach/unsubscribe/{token}", h.CRMOutreach.Unsubscribe)
 			r.Post("/crm/outreach/unsubscribe/{token}", h.CRMOutreach.Unsubscribe)
@@ -336,6 +354,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Post("/mcp/oauth/revoke", h.MCP.RevokeToken)
 		}
 		r.Get("/health", h.Health.Check)
+		if h.Capability != nil {
+			// Operator tooling (helpin doctor) authenticates with the internal secret.
+			r.With(middleware.RequireInternalAPISecret).Get("/instance/capabilities", h.Capability.Instance)
+		}
 		if h.Edition != nil {
 			h.Edition.RegisterPublic(r)
 		}
@@ -346,6 +368,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		// ---- Public git webhook (no JWT) ----
 		r.Get("/git/github/callback", h.Git.GitHubCallback)
 		r.Post("/git/webhook", h.Git.Webhook)
+		if h.GitHubApp != nil {
+			r.Get("/github/app-manifest/callback", h.GitHubApp.ManifestCallback)
+		}
 		if h.PostmarkInbound != nil {
 			r.Post("/webhooks/postmark/inbound", h.PostmarkInbound.PostmarkInbound)
 			r.Post("/webhooks/postmark/open", h.PostmarkInbound.PostmarkOpen)
@@ -541,6 +566,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.Post("/", h.AIConnection.Create)
 					r.Post("/{connectionID}/poll", h.AIConnection.Poll)
 					r.Post("/{connectionID}/reconnect", h.AIConnection.Reconnect)
+					r.Post("/{connectionID}/test", h.AIConnection.Test)
 					r.Delete("/{connectionID}", h.AIConnection.Disconnect)
 				})
 			}
@@ -625,6 +651,24 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Post("/user/push-devices", h.PushDevice.Register)
 			r.Delete("/user/push-devices", h.PushDevice.Unregister)
 
+			// Self-hosted server administration (server admins only).
+			if h.Instance != nil {
+				r.Group(func(r chi.Router) {
+					r.Use(h.Instance.RequireServerAdmin)
+					r.Get("/instance/signup-policy", h.Instance.GetSignupPolicy)
+					r.Put("/instance/signup-policy", h.Instance.UpdateSignupPolicy)
+					r.Get("/instance/admins", h.Instance.ListAdmins)
+					r.Post("/instance/admins", h.Instance.GrantAdmin)
+					r.Delete("/instance/admins/{userID}", h.Instance.RevokeAdmin)
+					r.Get("/instance/email", h.Instance.GetEmailSettings)
+					r.Put("/instance/email", h.Instance.UpdateEmailSettings)
+					r.Delete("/instance/email", h.Instance.ClearEmailSettings)
+					if h.Capability != nil {
+						r.Post("/instance/email/test", h.Capability.SendInstanceTestEmail)
+					}
+				})
+			}
+
 			// Organizations
 			r.Get("/organizations", h.Organization.List)
 			r.Post("/organizations", h.Organization.Create)
@@ -634,6 +678,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/organizations/{id}/git/integrations", h.Git.ListOrgIntegrations)
 			r.Post("/organizations/{id}/git/integrations", h.Git.CreateOrgIntegration)
 			r.Get("/organizations/{id}/git/github/install-url", h.Git.GetOrgGitHubInstallURL)
+			r.Post("/organizations/{id}/git/github/installations/{installationID}/claim", h.Git.ClaimOrgGitHubInstallation)
 			r.Post("/organizations/{id}/git/gitlab/connect", h.Git.ConnectOrgGitLab)
 			r.Get("/organizations/{id}/git/integrations/{integrationId}", h.Git.GetOrgIntegration)
 			r.Put("/organizations/{id}/git/integrations/{integrationId}", h.Git.UpdateOrgIntegration)
@@ -678,6 +723,19 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermWorkspaceUpdate)).Put("/setup/goals", h.Setup.UpdateGoals)
 					r.Patch("/setup/me", h.Setup.UpdatePreference)
 					r.Post("/setup/recommendations/{taskKey}/start", h.Setup.StartRecommendation)
+				}
+				if h.SampleData != nil {
+					r.Get("/sample-data", h.SampleData.Get)
+					r.With(requirePerm(authorization.PermWorkspaceUpdate)).Post("/sample-data", h.SampleData.Load)
+					r.With(requirePerm(authorization.PermWorkspaceUpdate)).Delete("/sample-data", h.SampleData.Remove)
+				}
+				if h.GitHubApp != nil {
+					r.With(requirePerm(authorization.PermSettingsRead)).Get("/github/app-status", h.GitHubApp.Status)
+					r.With(authorization.RequireOwner(authz)).Post("/github/app-manifest", h.GitHubApp.CreateManifest)
+				}
+				if h.Capability != nil {
+					r.Get("/capabilities", h.Capability.Workspace)
+					r.With(requirePerm(authorization.PermWorkspaceUpdate)).Post("/email/test", h.Capability.SendTestEmail)
 				}
 				r.With(requirePerm(authorization.PermWorkspaceMembersManage)).Put("/members/{memberId}", h.Workspace.UpdateMember)
 				r.With(requirePerm(authorization.PermWorkspaceMembersManage)).Delete("/members/{memberId}", h.Workspace.RemoveMember)

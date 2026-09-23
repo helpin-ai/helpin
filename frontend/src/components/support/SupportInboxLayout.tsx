@@ -8,7 +8,7 @@ import { usePermissions, useWorkspaceAccess } from '@/hooks/queries';
 import { useMinWidth } from '@/hooks/use-min-width';
 import { supportInboxBuiltinViewKey, useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useConversation, useSupportInboxViews, useSupportMailboxes, useSupportRoutingUsage } from '@/hooks/queries/useSupport';
-import { ConversationList } from './ConversationList';
+import { ConversationList, type SupportInboxEmptyState } from './ConversationList';
 import { MessageThread } from './MessageThread';
 import { buildSupportConversationPageContext } from './supportAgentContext';
 import { supportSidebarWidthClass } from './supportSidebarLayout';
@@ -108,7 +108,7 @@ export function SupportInboxLayout() {
   const { data: access } = useWorkspaceAccess(workspaceId);
   const { isAdmin } = usePermissions(access);
   const editMailbox = editMailboxId ? mailboxes.find((m) => m.id === editMailboxId) ?? null : null;
-  const [showInboxOnboarding, setShowInboxOnboarding] = useState(false);
+  const [inboxEmptyState, setInboxEmptyState] = useState<SupportInboxEmptyState>(null);
   const navigate = useNavigate();
   const location = useLocation();
   const params = useParams({ strict: false }) as { conversationId?: string };
@@ -416,7 +416,7 @@ export function SupportInboxLayout() {
             userId={user?.id}
             autoSelectFirst={isMultiPanel}
             onConversationOpen={isMultiPanel ? undefined : handleOpenMobileConversation}
-            onOnboardingEmptyChange={setShowInboxOnboarding}
+            onInboxEmptyStateChange={setInboxEmptyState}
             onWidgetSettingsClick={handleWidgetSettingsClick}
             onCreateConversationClick={() => setCreateDialogOpen(true)}
             onSearchClick={handleSupportSearchClick}
@@ -429,7 +429,7 @@ export function SupportInboxLayout() {
           <MessageThread
             workspaceId={workspaceId}
             conversationId={selectedConversationId}
-            showInboxOnboarding={showInboxOnboarding}
+            inboxEmptyState={inboxEmptyState}
             onWidgetSettingsClick={handleWidgetSettingsClick}
             onCreateConversationClick={() => setCreateDialogOpen(true)}
           />

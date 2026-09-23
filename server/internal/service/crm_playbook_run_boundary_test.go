@@ -34,7 +34,7 @@ func playbookRunBoundaryFixture(t *testing.T) (*gorm.DB, *repository.AgentRunRep
 	db := f.Open(t)
 	f.Exec(t, db, `CREATE TABLE agent_runs (id uuid PRIMARY KEY,workspace_id uuid,agent_id uuid,target_type text,target_id uuid,
 		input jsonb,status text,pause_reason text,approval_state text,external_runtime text,external_runtime_id text,
-		created_at timestamp,updated_at timestamp)`)
+		dock_chat_id uuid,created_at timestamp,updated_at timestamp)`)
 	run := model.AgentRun{ID: uuid.NewString(), WorkspaceID: f.Workspace, AgentID: uuid.NewString(), TargetType: "crm_company", TargetID: f.Company,
 		Input: playbookRunContextJSON(t), Status: "paused", PauseReason: model.AgentRunPauseReasonHumanApproval, ApprovalState: "pending",
 		ExternalRuntime: f.Ptr(agentRuntimeName), ExternalRuntimeID: f.Ptr("runtime-run"), CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}

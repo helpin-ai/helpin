@@ -912,6 +912,54 @@ function buildSystemAgentForm(agent: Agent, presets: AgentPresetDefinition[]): A
   };
 }
 
+export function buildSystemPresetVersionForm(current: AgentFormData, preset: AgentPresetDefinition): AgentFormData {
+  const provider = normalizeProviderForRuntime(
+    preset.runtime_kind,
+    preset.provider ?? presetFallback(current.preset_key).provider ?? current.provider,
+  );
+  return {
+    ...current,
+    preset_version_key: preset.version_key,
+    runtime_kind: preset.runtime_kind,
+    model_tier: preset.model_tier ?? current.model_tier,
+    supported_modes: preset.supported_modes,
+    provider,
+    model: preset.model ?? '',
+    ...deriveExecutionConfigFields(preset.runtime_kind, provider, preset.execution_config),
+    system_prompt: preset.system_prompt || preset.instruction_preamble?.trim() || '',
+    instruction_preamble: preset.instruction_preamble ?? '',
+    instruction_skills: preset.instruction_skills ?? [],
+    available_skill_keys: preset.available_skills ?? [],
+    allowed_tools: normalizeToolList(preset.allowed_tools ?? []),
+    allowed_targets: normalizeTargetList(preset.allowed_target_types ?? []),
+    approval_mode: 'never',
+    default_invocation_mode: normalizeDefaultInvocationMode(
+      preset.default_invocation_mode,
+      preset.runtime_kind,
+      preset.default_invocation_mode,
+    ),
+  };
+}
+
+export function hasWorkspacePresetVersionChanges(form: AgentFormData, preset: AgentPresetDefinition): boolean {
+  return (
+    form.runtime_kind !== preset.runtime_kind ||
+    form.provider !== (preset.provider ?? '') ||
+    form.model.trim() !== (preset.model ?? '') ||
+    stableConfigJSON(buildExecutionConfigPayload(form)) !== stableConfigJSON(buildExecutionConfigPayload({
+      ...form,
+      ...deriveExecutionConfigFields(preset.runtime_kind, form.provider, preset.execution_config),
+    })) ||
+    form.system_prompt.trim() !== (preset.system_prompt || preset.instruction_preamble || '').trim() ||
+    stableJSON(form.instruction_skills) !== stableJSON(preset.instruction_skills ?? []) ||
+    stableJSON(form.available_skill_keys) !== stableJSON(preset.available_skills ?? []) ||
+    stableJSON(normalizeToolList(form.allowed_tools)) !== stableJSON(normalizeToolList(preset.allowed_tools ?? [])) ||
+    stableJSON(normalizeTargetList(form.allowed_targets)) !== stableJSON(normalizeTargetList(preset.allowed_target_types ?? [])) ||
+    stableJSON(form.supported_modes) !== stableJSON(preset.supported_modes) ||
+    form.default_invocation_mode !== preset.default_invocation_mode
+  );
+}
+
 function buildTemplateAgentForm(template: AgentTemplate): AgentFormData {
   const runtimeKind = template.runtime_kind || 'native_sdk';
   const provider = normalizeProviderForRuntime(runtimeKind, 'anthropic');
@@ -3307,16 +3355,9 @@ export function AgentsPage() {
     };
     const res = await agentService.createPresetVersion(workspaceId, payload);
     if (!res.error && res.data) {
+      const savedPreset = res.data;
       await loadPresets();
-      setForm((current) => ({
-        ...current,
-        preset_version_key: res.data?.version_key ?? current.preset_version_key,
-        system_prompt: res.data?.system_prompt || current.system_prompt,
-        instruction_preamble: res.data?.instruction_preamble ?? current.instruction_preamble,
-        instruction_skills: res.data?.instruction_skills ?? current.instruction_skills,
-        available_skill_keys: res.data?.available_skills ?? current.available_skill_keys,
-        allowed_targets: normalizeTargetList(res.data?.allowed_target_types ?? current.allowed_targets),
-      }));
+      setForm((current) => buildSystemPresetVersionForm(current, savedPreset));
       setVersionDraftOpen(false);
       setVersionLabelDraft('');
       setVersionDescriptionDraft('');
@@ -3383,6 +3424,10 @@ export function AgentsPage() {
       return false;
     }
     await loadPresets();
+    if (res.data) {
+      const savedPreset = res.data;
+      setForm((current) => buildSystemPresetVersionForm(current, savedPreset));
+    }
     if (!options?.silent) {
       toast.success('Version saved');
       setSaving(false);
@@ -3595,19 +3640,9 @@ export function AgentsPage() {
   const versionSystemPromptValue = versionReadOnly
     ? selectedPreset?.system_prompt?.trim() || form.system_prompt
     : form.system_prompt;
-  const hasWorkspaceVersionChanges = Boolean(isEditingWorkspaceVersion && selectedPreset && (
-    form.runtime_kind !== selectedPreset.runtime_kind ||
-    form.provider !== (selectedPreset.provider ?? '') ||
-    form.model.trim() !== (selectedPreset.model ?? '') ||
-    stableConfigJSON(buildExecutionConfigPayload(form)) !== stableConfigJSON(selectedPreset.execution_config) ||
-    form.system_prompt.trim() !== (selectedPreset.system_prompt || selectedPreset.instruction_preamble || '').trim() ||
-    stableJSON(form.instruction_skills) !== stableJSON(selectedPreset.instruction_skills ?? []) ||
-    stableJSON(form.available_skill_keys) !== stableJSON(selectedPreset.available_skills ?? []) ||
-    stableJSON(normalizeToolList(form.allowed_tools)) !== stableJSON(normalizeToolList(selectedPreset.allowed_tools ?? [])) ||
-    stableJSON(normalizeTargetList(form.allowed_targets)) !== stableJSON(normalizeTargetList(selectedPreset.allowed_target_types ?? [])) ||
-    stableJSON(form.supported_modes) !== stableJSON(selectedPreset.supported_modes) ||
-    form.default_invocation_mode !== selectedPreset.default_invocation_mode
-  ));
+  const hasWorkspaceVersionChanges = Boolean(
+    isEditingWorkspaceVersion && selectedPreset && hasWorkspacePresetVersionChanges(form, selectedPreset),
+  );
   const hasCustomVersionChanges = Boolean(isEditingCustomVersion && selectedCustomVersion && (
     form.model_tier !== (selectedCustomVersion.model_tier ?? editingAgent?.model_tier ?? 'large') ||
     form.system_prompt.trim() !== (selectedCustomVersion.system_prompt ?? '') ||
@@ -3819,34 +3854,10 @@ export function AgentsPage() {
     if (!editingAgent?.is_system) return;
     const nextPreset = presetMetaForSelection(form.preset_key, versionKey, presets);
     if (!nextPreset) return;
-    const nextProvider = normalizeProviderForRuntime(
-      nextPreset.runtime_kind,
-      nextPreset.provider ?? presetFallback(form.preset_key).provider ?? form.provider,
-    );
     setVersionDraftOpen(false);
     setVersionLabelDraft('');
     setVersionDescriptionDraft('');
-    setForm((current) => ({
-      ...current,
-      preset_version_key: nextPreset.version_key,
-      runtime_kind: nextPreset.runtime_kind,
-      supported_modes: nextPreset.supported_modes,
-      provider: nextProvider,
-      model: nextPreset.model ?? '',
-      ...deriveExecutionConfigFields(nextPreset.runtime_kind, nextProvider, nextPreset.execution_config),
-      system_prompt: nextPreset.system_prompt || nextPreset.instruction_preamble?.trim() || '',
-      instruction_preamble: nextPreset.instruction_preamble ?? '',
-      instruction_skills: nextPreset.instruction_skills ?? [],
-      available_skill_keys: nextPreset.available_skills ?? [],
-      allowed_tools: normalizeToolList(nextPreset.allowed_tools ?? []),
-      allowed_targets: normalizeTargetList(nextPreset.allowed_target_types ?? []),
-      approval_mode: 'never',
-      default_invocation_mode: normalizeDefaultInvocationMode(
-        nextPreset.default_invocation_mode,
-        nextPreset.runtime_kind,
-        nextPreset.default_invocation_mode,
-      ),
-    }));
+    setForm((current) => buildSystemPresetVersionForm(current, nextPreset));
   };
   const selectCustomAgentVersion = (versionID: string) => {
     if (!editingAgent || editingAgent.is_system) return;

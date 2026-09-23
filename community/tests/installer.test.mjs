@@ -30,7 +30,7 @@ test('install generates independent stable secrets and never executes dotenv con
     run('install');
     const generated = await readFile(join(dir, '.env'), 'utf8');
     const values = Object.fromEntries(generated.split('\n').filter(line => /^[A-Z_]+=/.test(line)).map(line => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]));
-    const keys = ['POSTGRES_PASSWORD', 'HELPIN_DB_PASSWORD', 'RUNTIME_DB_PASSWORD', 'TEMPORAL_DB_PASSWORD', 'VISIBILITY_DB_PASSWORD', 'GARAGE_SECRET_KEY', 'GARAGE_RPC_SECRET', 'JWT_SECRET', 'INTERNAL_API_SECRET', 'AI_CONNECTION_ENCRYPTION_KEY', 'AGENT_RUNTIME_MODEL_CREDENTIAL_ENCRYPTION_KEY', 'AGENT_RUNTIME_MCP_CREDENTIAL_ENCRYPTION_KEY'];
+    const keys = ['POSTGRES_PASSWORD', 'HELPIN_DB_PASSWORD', 'RUNTIME_DB_PASSWORD', 'TEMPORAL_DB_PASSWORD', 'VISIBILITY_DB_PASSWORD', 'GARAGE_SECRET_KEY', 'GARAGE_RPC_SECRET', 'JWT_SECRET', 'INTERNAL_API_SECRET', 'AI_CONNECTION_ENCRYPTION_KEY', 'AGENT_RUNTIME_MODEL_CREDENTIAL_ENCRYPTION_KEY', 'AGENT_RUNTIME_MCP_CREDENTIAL_ENCRYPTION_KEY', 'CRM_ENCRYPTION_KEY', 'GIT_OAUTH_ENCRYPTION_KEY'];
     assert.equal(new Set(keys.map(key => values[key])).size, keys.length);
     for (const key of keys) assert.ok(values[key].length >= 43, `${key} not initialized`);
     assert.match(values.GARAGE_ACCESS_KEY, /^GK[0-9a-f]{32}$/);
@@ -41,6 +41,16 @@ test('install generates independent stable secrets and never executes dotenv con
     assert.equal(await readFile(join(dir, '.env'), 'utf8'), malicious);
     await assert.rejects(stat(join(dir, 'executed')), { code: 'ENOENT' });
   } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('settings written by helpin install/configure reach the API and worker', async () => {
+  const example = await readFile(new URL('.env.example', root), 'utf8');
+  const compose = await readFile(new URL('compose.yaml', root), 'utf8');
+  for (const key of ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USERNAME', 'SMTP_PASSWORD', 'SMTP_FROM', 'SMTP_TLS_MODE',
+    'OPENROUTER_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'INTERNAL_API_SECRET']) {
+    assert.match(example, new RegExp(`^${key}=`, 'm'), `${key} missing from .env.example`);
+    assert.match(compose, new RegExp(`\\$\\{${key}[:}]`), `${key} not passed by compose.yaml`);
+  }
 });
 
 test('bundle launch and event contracts agree with the Runtime template', async () => {

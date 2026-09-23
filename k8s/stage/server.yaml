@@ -32,7 +32,7 @@ spec:
           emptyDir: {}
       containers:
         - name: helpin-server
-          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.426-rc.3
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.433-rc.1
           envFrom:
             - secretRef:
                 name: helpin-secrets
@@ -52,6 +52,8 @@ spec:
               value: "https://mcp.stage.helpin.ai"
             - name: MCP_SERVER_ENABLED
               value: "true"
+            - name: EXTERNAL_MCP_ADDITIONAL_ALLOWED_HOSTS
+              value: "ctrl-ys3gb9-mgmt-api.cstuinternal.com"
           resources:
             requests:
               cpu: 100m

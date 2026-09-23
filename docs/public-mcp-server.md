@@ -36,7 +36,7 @@ The server exposes Helpin capabilities across:
 
 The MCP server is an authorization and product-execution boundary. It is not a public wrapper around the internal Agent Runtime bridge. Public clients receive their own workspace-scoped identity, scopes, toolsets, policy checks, audit history, and revocation controls.
 
-PM and CRM toolsets require those modules to be enabled; Community 0.1 beta enables support, docs, and agents by default.
+PM and CRM toolsets require those modules to be enabled; Community enables every module by default.
 
 ## 2. What users can accomplish
 
@@ -198,9 +198,9 @@ Toolsets control which product-area tools are visible. Scopes control the author
 | --- | --- | --- |
 | `context` | `helpin.context.read` | — |
 | `pm` | `helpin.pm.read` | `helpin.pm.write` |
-| `docs` | `helpin.docs.read` | `helpin.docs.write` |
+| `docs` | `helpin.docs.read` | `helpin.docs.write`; `helpin.docs.publish` for Help Center publishing |
 | `crm` | `helpin.crm.read` | `helpin.crm.write` |
-| `support` | `helpin.support.read` | No public support-write scope in v1 |
+| `support` | `helpin.support.read` | `helpin.support.write` organizes conversations; replies are never sent through MCP |
 | `agents` | `helpin.agents.read` | `helpin.agents.run` |
 
 The recommended default grant includes:
@@ -210,6 +210,8 @@ The recommended default grant includes:
 - read-only mode
 
 CRM and Support must be explicitly allowed by workspace policy and requested during consent.
+
+`helpin.docs.publish` is a separate, explicit write scope. Enabling Docs writes never adds it automatically, read-only connections never receive it, and a publish tool also requires the member's `docs.publish` permission.
 
 ## 7. Complete v1 tool catalog
 
@@ -252,6 +254,7 @@ The fully enabled catalog contains 49 tools; the catalog regression test asserts
 | `read_document` | Read | Reads document content through the canonical command contract | `PermDocsRead` + Docs module |
 | `get_document_blocks` | Read | Returns addressable document blocks for precise updates | `PermDocsRead` + Docs module |
 | `get_document` | Read | Loads one document record and verifies workspace ownership | `PermDocsRead` + Docs module |
+| `read_documents` | Read | Summarizes up to 50 documents in one call: status, word count, empty body, Help Center live state, and unpublished changes; inaccessible IDs are returned in `not_found` | `PermDocsRead` + Docs module |
 | `create_space` | Write | Creates an internal or external-capable Docs space without publishing content | `PermDocsEdit` + Docs module |
 | `create_collection` | Write | Creates a top-level or nested collection in an accessible space | `PermDocsEdit` + Docs module |
 | `update_space` | Write | Updates bounded metadata for an accessible Docs space | `PermDocsEdit` + Docs module |
@@ -260,6 +263,21 @@ The fully enabled catalog contains 49 tools; the catalog regression test asserts
 | `move_document` | Write | Moves an accessible document to a validated space or collection | `PermDocsEdit` + Docs module |
 | `link_document_to_object` | Write | Links an accessible document to an accessible Helpin object | `PermDocsEdit` + Docs module |
 | `update_document_block` | Write | Updates a specific block using the addressable block contract | `PermDocsEdit` + Docs module |
+| `edit_document` | Write | Atomically applies up to 20 edits (replace text, replace or delete a block range, insert before/after) against the version from a read; nothing is applied on conflict | `PermDocsEdit` + Docs module |
+| `update_document` | Write | Renames a document or updates its excerpt and tags | `PermDocsEdit` + Docs module |
+| `prepare_document_image_upload` | Write | Returns a presigned PUT URL for a PNG, JPEG, WebP, or GIF image (up to 20 MB) attached privately to a document | `PermDocsEdit` + Docs module |
+| `complete_document_image_upload` | Write | Confirms the upload only after storage reports an object of the declared size, then returns markdown to insert | `PermDocsEdit` + Docs module |
+| `upload_document_image_from_url` | Write | Copies a public HTTPS image (up to 10 MB) into Helpin through the SSRF-safe media client and returns markdown to insert | `PermDocsEdit` + Docs module |
+
+Uploaded images stay private while the document is a draft. Publishing to the Help Center copies referenced images into the public snapshot. Image URLs must be HTTPS. Private, loopback, link-local, and metadata addresses are refused when the address is resolved, and again on each redirect (at most three). File contents must match the declared image type. Upload errors use `UPLOAD_NOT_FOUND`, `UPLOAD_SIZE_MISMATCH`, `UNSUPPORTED_CONTENT_TYPE`, `URL_NOT_PUBLIC`, and `URL_FETCH_FAILED`.
+| `archive_document` | Write, destructive | Archives a document; refuses a live Help Center article with `DOC_IS_PUBLISHED` | `PermDocsEdit` + Docs module |
+| `restore_document` | Write | Restores an archived document to draft | `PermDocsEdit` + Docs module |
+| `publish_document` | Publish | Publishes a document; in an external-capable space it also becomes a live Help Center article using the existing snapshot, slug, and redirect behavior | `helpin.docs.publish` + `PermDocsPublish` + Docs module |
+| `unpublish_document` | Publish, destructive | Removes a live Help Center article and returns the document to draft | `helpin.docs.publish` + `PermDocsPublish` + Docs module |
+
+Every document tool that takes a `document_id` also enforces Docs space access, so documents in team-only spaces the member cannot open are reported as not found.
+
+Document lifecycle tools return typed error codes that clients can act on: `DOCUMENT_LOCKED`, `DOCUMENT_ARCHIVED`, `DOCUMENT_NOT_ARCHIVED`, `DOCUMENT_NOT_PUBLISHED`, and `DOC_IS_PUBLISHED`. Errors are returned as `CODE: message`.
 
 ### 7.4 CRM
 
@@ -286,8 +304,8 @@ The fully enabled catalog contains 49 tools; the catalog regression test asserts
 | Tool | Mode | What it does | Helpin check |
 | --- | --- | --- | --- |
 | `list_agents` | Read | Lists system and custom agents the actor may use, without provider credentials or private runtime configuration | `PermPMRead` |
-| `start_agent_run` | Async write | Starts one normal durable Helpin agent run for an explicit target | `PermPMEdit` |
-| `get_agent_run` | Read | Polls status, output summary, artifacts, and run information | `PermPMRead` |
+| `start_agent_run` | Async write | Starts one normal durable Helpin agent run for an explicit target. It never attaches to another user's private dock chat run; if one would be reused it returns `RUN_NOT_OWNED` | `PermPMEdit` |
+| `get_agent_run` | Read | Polls status, output summary, artifacts, and run information. Other users' dock chat runs are reported as not found | `PermPMRead` |
 | `cancel_agent_run` | Destructive write | Requests cancellation of an active run | `PermPMEdit` |
 
 Allowed run targets are:
@@ -299,6 +317,32 @@ Allowed run targets are:
 - `crm_deal`
 - `crm_contact`
 - `support_conversation`
+
+### 7.7 Parity tools (Linear and Plane)
+
+These tools expose existing Helpin commands that in-app agents already use, with the same toolset, scope, RBAC, and module checks as every other public tool.
+
+| Area | Read tools | Write tools |
+| --- | --- | --- |
+| Tasks | `list_task_comments` (authors by ID and name only) | `archive_task`, `restore_task` |
+| Epics | `list_epics`, `get_epic` | `update_epic` |
+| Sprints | `list_sprints`, `get_sprint`, `list_sprint_tasks` | `create_sprint`, `update_sprint` |
+| Objectives | `list_objectives`, `get_objective` | `create_objective`, `update_objective`, `update_key_result` |
+| Labels and workflows | `list_pm_labels`, `list_team_workflows_with_stages` | `ensure_task_label` |
+| Members | `list_workspace_members` (`workspace.members.read`) | — |
+| CRM | `get_crm_company`, `list_crm_companies`, `list_crm_pipelines`, `list_crm_associations` | `add_crm_activity`, `update_crm_contact`, `update_crm_company`, `update_crm_deal`, `link_crm_objects`, `unlink_crm_association`, `set_primary_contact_company` |
+| Support | `list_support_inboxes`, `list_support_tags`, `list_support_assignees` | `assign_support_conversation`, `move_support_conversation`, `add_support_conversation_tag`, `remove_support_conversation_tag`, `link_support_conversation_task`, `link_support_conversation_contact`, `update_support_conversation_subject` (`helpin.support.write` + `support.edit`) |
+
+Not exposed: sending support replies, CRM enrichment, and deleting records.
+
+### 7.8 Help Center operations
+
+| Tool | Mode | What it does | Helpin check |
+| --- | --- | --- | --- |
+| `get_help_center_article` | Read | Live state, live slug, unpublished changes, social preview metadata, and reader feedback (helpful, not helpful, views) | `PermDocsRead` + Docs module |
+| `update_help_center_article_metadata` | Publish | Sets social preview title, description, HTTPS image, and alt text; omitted fields are kept and `null` clears | `helpin.docs.publish` + `PermDocsEdit` |
+| `list_help_center_redirects` | Read | Lists redirects with search and pagination | `PermDocsAdmin` |
+| `create_help_center_redirect` | Publish | Redirects an old public path to a collection or article after merges or archives | `helpin.docs.publish` + `PermDocsAdmin` |
 
 ## 8. Tool-call execution flow
 
@@ -332,6 +376,8 @@ sequenceDiagram
 ```
 
 ### 8.1 Strict inputs
+
+Any tool that takes `task_id` also accepts the human task key shown in Helpin, such as `HEL-120` (current workspace key or a retired alias). Keys that do not resolve in the connected workspace are reported as not found.
 
 - Every tool publishes a JSON Schema.
 - Unknown properties are rejected for the new public facades.
@@ -429,7 +475,7 @@ The server exposes six workflow prompts:
 | `prepare_release` | Review release evidence, blockers, docs gaps, and durable agent work without deploying |
 | `delegate_to_helpin_agent` | Select an agent, start one durable run, poll it, and report artifacts |
 | `triage_customer_issue` | Investigate a support issue and prepare product follow-up without sending a reply |
-| `docs_maintenance` | Find stale documentation and make narrow, safe block-level updates without publishing |
+| `docs_maintenance` | Find stale documentation and make narrow, safe block-level updates; publish or archive only on explicit request |
 | `review_pipeline` | Review CRM pipeline evidence and make only explicitly confirmed bounded writes |
 
 Prompts are registered only when the required underlying tool is visible.
@@ -596,9 +642,10 @@ The public v1 server does not expose:
 - deleting Helpin records
 - sending customer support replies
 - creating a public support reply draft through the run-scoped internal draft contract
-- changing support status or assignment
-- publishing, unpublishing, or deleting documentation
-- broad document-content replacement through `write_document_content`
+- changing support conversation status (assignment, inbox moves, tags, links, and subject are available with `helpin.support.write`)
+- deleting documentation (archive and restore are available)
+- publishing without the explicit `helpin.docs.publish` scope and `docs.publish` permission
+- broad document-content replacement through `write_document_content` (use version-checked `edit_document` instead)
 - applying unapproved document change proposals
 - sending CRM email
 - CRM enrichment, merge, or bulk mutation
@@ -652,6 +699,7 @@ For headless automation:
 | `GET /.well-known/oauth-authorization-server` | OAuth authorization-server metadata |
 | `GET /.well-known/oauth-protected-resource` | MCP protected-resource metadata |
 | `/mcp` | Authenticated Streamable HTTP MCP endpoint |
+| `/mcp/readonly` | Same endpoint with read-only mode forced: only read tools are listed and callable, whatever the connection's grant allows |
 | `POST /api/mcp/oauth/register` | Dynamic public-client registration |
 | `GET /api/mcp/oauth/authorize` | Redirect into the authenticated Helpin consent UI |
 | `POST /api/mcp/oauth/token` | Authorization-code and refresh-token grants |
@@ -738,8 +786,12 @@ The implementation includes automated checks for:
 - strict tool schemas and rejection of workspace-override properties
 - workspace-policy scope/toolset narrowing and forced read-only behavior
 - platform domain flags
-- the 49-tool catalog
-- exclusion of deferred destructive, publishing, support-draft, and customer-send actions
+- the 104-tool catalog
+- the `/mcp/readonly` endpoint forcing read-only mode, including parity tools for epics, sprints, objectives, labels, workflows, members, CRM, and support organization
+- document image uploads: presigned upload with storage verification, and SSRF-safe copy from a public URL
+- document lifecycle tools: publish, unpublish, archive, restore, and rename, including typed error codes
+- exclusion of deferred destructive, support-draft, and customer-send actions
+- agent-run privacy: runs started outside a dock chat never reuse a chat's run, and `get_agent_run` / `cancel_agent_run` hide other users' dock chat runs
 - persisted agent-start and active-run safety counts
 - MCP tool annotations and structured output schemas
 - general and tool-class rate limits

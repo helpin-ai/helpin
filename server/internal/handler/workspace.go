@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -65,13 +67,60 @@ func (h *WorkspaceHandler) GenerateCompanyProductDescription(w http.ResponseWrit
 		return
 	}
 
-	resp, err := h.workspaceService.GenerateCompanyProductDescription(r.Context(), req)
+	userID := middleware.GetUserID(r.Context())
+	req.WorkspaceID = strings.TrimSpace(req.WorkspaceID)
+	if req.WorkspaceID != "" && !h.canEditWorkspaceContext(r, req.WorkspaceID, userID) {
+		writeError(w, http.StatusForbidden, "You don't have permission to update this workspace.")
+		return
+	}
+
+	resp, err := h.workspaceService.GenerateCompanyProductDescription(r.Context(), userID, req)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeWorkspaceContextError(w, r, err, req.WorkspaceID, userID)
 		return
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// workspaceContextErrorMessages are the only texts returned for generation
+// failures; internal detail is logged, never sent.
+var workspaceContextErrorMessages = map[string]string{
+	service.WorkspaceContextErrAIUnavailable:     "AI isn't connected yet. Connect an AI provider to generate this, or write it yourself.",
+	service.WorkspaceContextErrWebsiteUnreadable: "We couldn't read your website. It may need JavaScript or block automated visitors. Write a short description instead.",
+	service.WorkspaceContextErrTimeout:           "This is taking too long. Write a short description instead.",
+	service.WorkspaceContextErrGenerationFailed:  "We couldn't generate a description. Write a short description instead.",
+}
+
+// canEditWorkspaceContext matches PUT /workspaces/{id}: the caller must be an
+// active member with workspace.update.
+func (h *WorkspaceHandler) canEditWorkspaceContext(r *http.Request, workspaceID, userID string) bool {
+	if h.authz == nil {
+		return false
+	}
+	actor, err := h.authz.ResolveActor(r.Context(), workspaceID, userID)
+	if err != nil {
+		return false
+	}
+	return h.authz.Can(actor, authorization.PermWorkspaceUpdate)
+}
+
+func writeWorkspaceContextError(w http.ResponseWriter, r *http.Request, err error, workspaceID, userID string) {
+	var validation *service.WorkspaceContextValidationError
+	if errors.As(err, &validation) {
+		writeError(w, http.StatusBadRequest, validation.Message)
+		return
+	}
+	code := service.WorkspaceContextErrGenerationFailed
+	var contextErr *service.WorkspaceContextError
+	if errors.As(err, &contextErr) {
+		if _, known := workspaceContextErrorMessages[contextErr.Code]; known {
+			code = contextErr.Code
+		}
+	}
+	slog.WarnContext(r.Context(), "company/product context generation failed",
+		"workspace_id", workspaceID, "user_id", userID, "code", code, "error", err)
+	writeErrorCode(w, http.StatusUnprocessableEntity, workspaceContextErrorMessages[code], code)
 }
 
 // GetBySlug handles GET /api/workspaces/by-slug/{slug}.

@@ -63,6 +63,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
 		return
 	}
+	principal = principalForPath(principal, r.URL.Path)
 	r.Body = http.MaxBytesReader(w, r.Body, _maxBodyBytes)
 	ctx := context.WithValue(r.Context(), principalContextKey{}, principal)
 	h.streamable.ServeHTTP(w, r.WithContext(ctx))
@@ -214,7 +215,7 @@ func (h *Handler) addWorkflowPrompts(server *mcp.Server, tools []service.MCPTool
 		{
 			name: "docs_maintenance", title: "Maintain Helpin documentation",
 			description:  "Find stale Helpin documentation and prepare safe draft updates.",
-			text:         "List Docs spaces and collections before choosing a location. Search and read the relevant Helpin documents and linked product work. Identify stale or unsupported claims before editing. Use the narrowest available draft mutation with a stable idempotency key. Create a space or collection only when the user requested a new location. Do not publish, unpublish, or delete documentation.",
+			text:         "List Docs spaces and collections before choosing a location. Search and read the relevant Helpin documents and linked product work. Identify stale or unsupported claims before editing. Use the narrowest available draft mutation with a stable idempotency key. Create a space or collection only when the user requested a new location. Publish, unpublish, or archive documentation only when the user explicitly asks, and never delete it.",
 			requiredTool: "list_documents",
 		},
 		{
@@ -279,6 +280,21 @@ func (h *Handler) validOrigin(r *http.Request) bool {
 	return false
 }
 
+// ReadOnlyPath is the endpoint that exposes only read tools, whatever the
+// connection's grant allows.
+const ReadOnlyPath = "/mcp/readonly"
+
+// principalForPath forces read-only mode on the read-only endpoint without
+// mutating the authenticated principal.
+func principalForPath(principal *model.MCPPrincipal, requestPath string) *model.MCPPrincipal {
+	if principal == nil || strings.TrimSuffix(requestPath, "/") != ReadOnlyPath {
+		return principal
+	}
+	readOnly := *principal
+	readOnly.ReadOnly = true
+	return &readOnly
+}
+
 func bearerToken(header string) string {
 	parts := strings.Fields(header)
 	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
@@ -288,6 +304,10 @@ func bearerToken(header string) string {
 }
 
 func publicToolError(err error) string {
+	var toolErr *service.MCPToolError
+	if errors.As(err, &toolErr) {
+		return toolErr.Code + ": " + toolErr.Message
+	}
 	switch {
 	case errors.Is(err, service.ErrMCPUnauthorized):
 		return "The Helpin connection is no longer authorized. Reconnect it and retry."

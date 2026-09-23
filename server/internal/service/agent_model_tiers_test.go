@@ -170,3 +170,77 @@ func TestTierChangePreservesIndependentExecutionSettings(t *testing.T) {
 		}
 	}
 }
+
+func TestStandardRouteForTierFollowsConnectedProviders(t *testing.T) {
+	type route struct{ provider, model string }
+	fixed := map[string]route{
+		"small":    {"openrouter", "deepseek/deepseek-v4.1-flash:nitro"},
+		"medium":   {"openrouter", "google/gemini-3.8-flash"},
+		"large":    {"openai", "gpt-5.6-terra"},
+		"flagship": {"anthropic", "claude-sonnet-5"},
+	}
+	tests := []struct {
+		name      string
+		connected []string
+		want      map[string]route
+	}{
+		{name: "no provider keeps fixed routes", want: fixed},
+		{name: "all providers keep fixed routes", connected: []string{"openrouter", "openai", "anthropic"}, want: fixed},
+		{name: "only openrouter", connected: []string{"openrouter"}, want: map[string]route{
+			"small":    fixed["small"],
+			"medium":   fixed["medium"],
+			"large":    {"openrouter", "openai/gpt-5.6-terra"},
+			"flagship": {"openrouter", "anthropic/claude-sonnet-5"},
+		}},
+		{name: "only openai", connected: []string{"openai"}, want: map[string]route{
+			"small":    {"openai", "gpt-5.6-luna"},
+			"medium":   {"openai", "gpt-5-mini"},
+			"large":    fixed["large"],
+			"flagship": {"openai", "gpt-5.5"},
+		}},
+		{name: "only anthropic uses the nearest available size", connected: []string{"anthropic"}, want: map[string]route{
+			"small":    {"anthropic", "claude-haiku-4-5"},
+			"medium":   {"anthropic", "claude-haiku-4-5"},
+			"large":    {"anthropic", "claude-haiku-4-5"},
+			"flagship": fixed["flagship"],
+		}},
+		{name: "openai and anthropic", connected: []string{"openai", "anthropic"}, want: map[string]route{
+			"small":    {"openai", "gpt-5.6-luna"},
+			"medium":   {"openai", "gpt-5-mini"},
+			"large":    fixed["large"],
+			"flagship": fixed["flagship"],
+		}},
+		{name: "openrouter and anthropic prefer openrouter for large", connected: []string{"openrouter", "anthropic"}, want: map[string]route{
+			"small":    fixed["small"],
+			"medium":   fixed["medium"],
+			"large":    {"openrouter", "openai/gpt-5.6-terra"},
+			"flagship": fixed["flagship"],
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			connected := map[string]bool{}
+			for _, provider := range tt.connected {
+				connected[provider] = true
+			}
+			for tier, want := range tt.want {
+				got, err := standardRouteForTier(tier, connected)
+				if err != nil {
+					t.Fatalf("standardRouteForTier(%q): %v", tier, err)
+				}
+				if got.Provider != want.provider || got.Model != want.model {
+					t.Errorf("%s = %s/%s, want %s/%s", tier, got.Provider, got.Model, want.provider, want.model)
+				}
+				if got.Controls == nil {
+					t.Errorf("%s has nil controls", tier)
+				}
+			}
+		})
+	}
+}
+
+func TestStandardRouteForTierRejectsUnknownTier(t *testing.T) {
+	if _, err := standardRouteForTier("huge", map[string]bool{"openai": true}); err == nil {
+		t.Fatal("unknown tier accepted")
+	}
+}

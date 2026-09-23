@@ -20,6 +20,24 @@ func checkUpgradeCompatibility(current releaseMetadata, target releaseMetadata) 
 	}
 	return fmt.Errorf("release %s does not declare a tested upgrade from %s; installation was not changed", target.Tag, current.Tag)
 }
+
+// retiredDefaults lists values that earlier bundles wrote as defaults. An
+// unchanged retired default follows the new release default on upgrade; any
+// operator-customized value is preserved exactly.
+var retiredDefaults = map[string][]string{
+	// Community 0.1 enabled only support, docs and agents by default.
+	"HELPIN_ENABLED_MODULES": {"support,docs,agents"},
+}
+
+func isRetiredDefault(key, value string) bool {
+	for _, retired := range retiredDefaults[key] {
+		if strings.TrimSpace(value) == retired {
+			return true
+		}
+	}
+	return false
+}
+
 func mergeUpgradeEnvironment(old, target string) error {
 	existing, err := os.ReadFile(old)
 	if err != nil {
@@ -29,8 +47,22 @@ func mergeUpgradeEnvironment(old, target string) error {
 	if err != nil {
 		return err
 	}
+	targetValues := envValues(string(defaults))
+	lines := strings.Split(strings.TrimRight(string(existing), "\n"), "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok || !isRetiredDefault(key, value) {
+			continue
+		}
+		if next, found := targetValues[key]; found && strings.TrimSpace(next) != "" {
+			lines[i] = key + "=" + next
+		}
+	}
 	values := envValues(string(existing))
-	merged := strings.TrimRight(string(existing), "\n") + "\n"
+	merged := strings.Join(lines, "\n") + "\n"
 	for _, line := range strings.Split(string(defaults), "\n") {
 		key, _, ok := strings.Cut(line, "=")
 		if !ok || strings.HasPrefix(key, "#") {

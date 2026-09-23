@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"sort"
+	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -21,11 +22,15 @@ const (
 	MCPScopePMWrite     = "helpin.pm.write"
 	MCPScopeDocsRead    = "helpin.docs.read"
 	MCPScopeDocsWrite   = "helpin.docs.write"
+	// MCPScopeDocsPublish allows publishing to and unpublishing from the public Help Center.
+	MCPScopeDocsPublish = "helpin.docs.publish"
 	MCPScopeCRMRead     = "helpin.crm.read"
 	MCPScopeCRMWrite    = "helpin.crm.write"
 	MCPScopeSupportRead = "helpin.support.read"
-	MCPScopeAgentsRead  = "helpin.agents.read"
-	MCPScopeAgentsRun   = "helpin.agents.run"
+	// MCPScopeSupportWrite allows organizing conversations (assign, move, tag, link, rename); it never sends replies.
+	MCPScopeSupportWrite = "helpin.support.write"
+	MCPScopeAgentsRead   = "helpin.agents.read"
+	MCPScopeAgentsRun    = "helpin.agents.run"
 )
 
 var (
@@ -35,9 +40,9 @@ var (
 	_allMCPScopes       = []string{
 		MCPScopeContextRead,
 		MCPScopePMRead, MCPScopePMWrite,
-		MCPScopeDocsRead, MCPScopeDocsWrite,
+		MCPScopeDocsRead, MCPScopeDocsWrite, MCPScopeDocsPublish,
 		MCPScopeCRMRead, MCPScopeCRMWrite,
-		MCPScopeSupportRead,
+		MCPScopeSupportRead, MCPScopeSupportWrite,
 		MCPScopeAgentsRead, MCPScopeAgentsRun,
 	}
 )
@@ -87,13 +92,17 @@ func (s *MCPService) buildToolCatalog() []MCPToolDefinition {
 		"create_document":       {Toolset: MCPToolsetDocs, Scope: MCPScopeDocsWrite, Permission: authorization.PermDocsEdit, Module: model.ModuleDocs, Mutating: true},
 		"update_document_block": {Toolset: MCPToolsetDocs, Scope: MCPScopeDocsWrite, Permission: authorization.PermDocsEdit, Module: model.ModuleDocs, Mutating: true},
 		"insert_document_block": {Toolset: MCPToolsetDocs, Scope: MCPScopeDocsWrite, Permission: authorization.PermDocsEdit, Module: model.ModuleDocs, Mutating: true},
+		"edit_document":         {Toolset: MCPToolsetDocs, Scope: MCPScopeDocsWrite, Permission: authorization.PermDocsEdit, Module: model.ModuleDocs, Mutating: true},
 		"list_repositories":     {Toolset: MCPToolsetContext, Scope: MCPScopeContextRead, Permission: authorization.PermIntegrationsEnumerate},
 		"list_contacts":         {Toolset: MCPToolsetCRM, Scope: MCPScopeCRMRead, Permission: authorization.PermCRMRead, Module: model.ModuleCRM},
 		"list_deals":            {Toolset: MCPToolsetCRM, Scope: MCPScopeCRMRead, Permission: authorization.PermCRMRead, Module: model.ModuleCRM},
-		"list_crm_signals":    {Toolset: MCPToolsetCRM, Scope: MCPScopeCRMRead, Permission: authorization.PermCRMRead, Module: model.ModuleCRM},
+		"list_crm_signals":      {Toolset: MCPToolsetCRM, Scope: MCPScopeCRMRead, Permission: authorization.PermCRMRead, Module: model.ModuleCRM},
 		"create_crm_deal":       {Toolset: MCPToolsetCRM, Scope: MCPScopeCRMWrite, Permission: authorization.PermCRMEdit, Module: model.ModuleCRM, Mutating: true},
 		"add_deal_note":         {Toolset: MCPToolsetCRM, Scope: MCPScopeCRMWrite, Permission: authorization.PermCRMEdit, Module: model.ModuleCRM, Mutating: true},
 		"update_deal_stage":     {Toolset: MCPToolsetCRM, Scope: MCPScopeCRMWrite, Permission: authorization.PermCRMEdit, Module: model.ModuleCRM, Mutating: true},
+	}
+	for alias, requirement := range parityMCPCommandRequirements() {
+		commandRequirements[alias] = requirement
 	}
 
 	defs := make([]MCPToolDefinition, 0, len(commandRequirements)+27)
@@ -106,7 +115,7 @@ func (s *MCPService) buildToolCatalog() []MCPToolDefinition {
 			continue
 		}
 		requirement.Name = command.Tool.Alias
-		requirement.Title = command.Tool.Alias
+		requirement.Title = mcpToolTitle(command.Tool.Alias)
 		requirement.Description = command.Tool.Description
 		requirement.InputSchema = cloneMCPSchema(command.Tool.InputSchema)
 		requirement.CommandName = command.Name
@@ -117,6 +126,11 @@ func (s *MCPService) buildToolCatalog() []MCPToolDefinition {
 		defs = append(defs, requirement)
 	}
 	defs = append(defs, specialMCPToolDefinitions()...)
+	defs = append(defs, docsLifecycleMCPToolDefinitions()...)
+	defs = append(defs, uploadMCPToolDefinitions()...)
+	defs = append(defs, docsBatchMCPToolDefinitions()...)
+	defs = append(defs, helpcenterMCPToolDefinitions()...)
+	defs = append(defs, pmParityMCPToolDefinitions()...)
 	sort.Slice(defs, func(i, j int) bool { return defs[i].Name < defs[j].Name })
 	return defs
 }
@@ -181,6 +195,25 @@ func specialMCPToolDefinitions() []MCPToolDefinition {
 		{Name: "get_agent_run", Title: "Get agent run", Description: "Poll a Helpin agent run and return status, output, artifacts, and links.", InputSchema: object(map[string]any{"run_id": map[string]any{"type": "string"}}, "run_id"), Toolset: MCPToolsetAgents, Scope: MCPScopeAgentsRead, Permission: authorization.PermPMRead},
 		{Name: "cancel_agent_run", Title: "Cancel agent run", Description: "Cancel an active Helpin agent run.", InputSchema: withMCPIdempotencyKey(object(map[string]any{"run_id": map[string]any{"type": "string"}}, "run_id")), Toolset: MCPToolsetAgents, Scope: MCPScopeAgentsRun, Permission: authorization.PermPMEdit, Mutating: true, Destructive: true, IdempotentHint: true},
 	}
+}
+
+// _mcpTitleAcronyms keeps product acronyms upper case in display titles.
+var _mcpTitleAcronyms = map[string]string{"pm": "PM", "crm": "CRM", "mcp": "MCP", "id": "ID", "url": "URL", "api": "API"}
+
+// mcpToolTitle turns a snake_case tool name into a sentence-case display
+// title, for example list_crm_companies becomes "List CRM companies".
+func mcpToolTitle(name string) string {
+	words := strings.Split(strings.TrimSpace(name), "_")
+	for index, word := range words {
+		if acronym, ok := _mcpTitleAcronyms[word]; ok {
+			words[index] = acronym
+			continue
+		}
+		if index == 0 && word != "" {
+			words[index] = strings.ToUpper(word[:1]) + word[1:]
+		}
+	}
+	return strings.Join(words, " ")
 }
 
 func cloneMCPSchema(schema map[string]any) map[string]any {

@@ -28,8 +28,17 @@ export function ScrollReveal() {
     const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
     const targets = new Map<HTMLElement, number>();
     const revealed = new Set<HTMLElement>();
+    // Elements waiting offscreen hold their start state with plain inline styles. A paused
+    // animation would do the same visually, but keeps a compositor layer alive per element.
+    const waiting = new Map<HTMLElement, { delay: number; translate: string }>();
     const running = new Map<HTMLElement, Animation>();
     let observer: IntersectionObserver | undefined;
+
+    const release = (element: HTMLElement) => {
+      element.style.removeProperty('opacity');
+      element.style.removeProperty('translate');
+      waiting.delete(element);
+    };
 
     for (const selector of GROUPS) {
       root.querySelectorAll(selector).forEach(group => {
@@ -47,6 +56,21 @@ export function ScrollReveal() {
       observer?.disconnect();
       running.forEach(animation => animation.cancel());
       running.clear();
+      Array.from(waiting.keys()).forEach(release);
+    };
+
+    const reveal = (element: HTMLElement) => {
+      const pending = waiting.get(element);
+      if (!pending) return;
+      // Start the animation before releasing the inline start state; the backwards fill holds
+      // the same start keyframe through the delay, so there is no frame without either.
+      const animation = element.animate(
+        [{ opacity: 0, translate: pending.translate }, { opacity: 1, translate: '0 0' }],
+        { duration: 500, delay: pending.delay, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'backwards' },
+      );
+      release(element);
+      running.set(element, animation);
+      animation.onfinish = () => running.delete(element);
     };
 
     const start = () => {
@@ -59,14 +83,8 @@ export function ScrollReveal() {
           observer?.unobserve(element);
           if (revealed.has(element)) continue;
           revealed.add(element);
-          const animation = running.get(element);
-          if (!animation) continue;
-          if (element.contains(document.activeElement)) {
-            animation.cancel();
-            running.delete(element);
-          } else {
-            animation.play();
-          }
+          if (element.contains(document.activeElement)) release(element);
+          else reveal(element);
         }
       }, { threshold: 0, rootMargin: '0px 0px 120px 0px' });
 
@@ -81,22 +99,18 @@ export function ScrollReveal() {
         // Prepare the hidden start state offscreen, rather than hiding a card once
         // it has already appeared. Large product images only fade; text moves gently.
         const translate = element.querySelector('img, svg') ? '0 0' : '0 12px';
-        const animation = element.animate(
-          [{ opacity: 0, translate }, { opacity: 1, translate: '0 0' }],
-          { duration: 500, delay, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'both' },
-        );
-        animation.pause();
-        running.set(element, animation);
-        animation.onfinish = () => {
-          animation.cancel();
-          running.delete(element);
-        };
+        element.style.opacity = '0';
+        element.style.translate = translate;
+        waiting.set(element, { delay, translate });
         observer.observe(element);
       }
     };
 
     const onFocus = (event: Event) => {
       if (!(event.target instanceof Node)) return;
+      for (const element of Array.from(waiting.keys())) {
+        if (element.contains(event.target)) release(element);
+      }
       for (const [element, animation] of running) {
         if (element.contains(event.target)) {
           animation.cancel();

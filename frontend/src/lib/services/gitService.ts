@@ -3,6 +3,11 @@ import type {
   GitIntegration,
   GitIntegrationDetail,
   GitHubInstallURLResponse,
+  GitHubAppManifestRequest,
+  GitHubAppManifestResponse,
+  GitHubAppStatus,
+  GitHubInstallationClaimResponse,
+  GitHubReturnTo,
   GitLabConnectTokenRequest,
   GitLabConnectResponse,
   GitBranch,
@@ -57,10 +62,27 @@ async function gitRawRequest<T>(path: string, options: RequestInit = {}) {
   }
 }
 
+type GitHubInstallURLOptions = { forceInstall?: boolean; returnTo?: GitHubReturnTo };
+
+function gitHubInstallQuery(workspaceId: string | undefined, options?: GitHubInstallURLOptions) {
+  const params = new URLSearchParams();
+  if (workspaceId) params.set('workspace_id', workspaceId);
+  if (options?.forceInstall) params.set('force_install', 'true');
+  if (options?.returnTo) params.set('return_to', options.returnTo);
+  const query = params.toString();
+  return query ? `?${query}` : '';
+}
+
 export const gitService = {
-  getOrgGitHubInstallURL: (organizationId: string, workspaceId?: string, options?: { forceInstall?: boolean }) =>
+  getOrgGitHubInstallURL: (organizationId: string, workspaceId?: string, options?: GitHubInstallURLOptions) =>
     api.get<GitHubInstallURLResponse>(
-      `/organizations/${organizationId}/git/github/install-url${orgQs(workspaceId)}${options?.forceInstall ? `${workspaceId ? '&' : '?'}force_install=true` : ''}`,
+      `/organizations/${organizationId}/git/github/install-url${gitHubInstallQuery(workspaceId, options)}`,
+    ),
+  /** Links an installation that reached Helpin without its install link (installed or updated on GitHub). */
+  claimOrgGitHubInstallation: (organizationId: string, installationId: string, workspaceId?: string) =>
+    api.post<GitHubInstallationClaimResponse>(
+      `/organizations/${encodeURIComponent(organizationId)}/git/github/installations/${encodeURIComponent(installationId)}/claim${orgQs(workspaceId)}`,
+      {},
     ),
   connectOrgGitLab: (organizationId: string, workspaceId: string | undefined, payload: GitLabConnectTokenRequest) =>
     api.post<GitLabConnectResponse>(`/organizations/${organizationId}/git/gitlab/connect${orgQs(workspaceId)}`, payload),
@@ -76,8 +98,12 @@ export const gitService = {
     api.del<{ status: string }>(`/organizations/${organizationId}/git/integrations/${integrationId}${orgQs(workspaceId)}`),
   syncOrgRepositories: (organizationId: string, integrationId: string) =>
     api.post<GitRepository[]>(`/organizations/${organizationId}/git/integrations/${integrationId}/sync`, {}),
-  getGitHubInstallURL: (workspaceId: string, options?: { forceInstall?: boolean }) =>
-    api.get<GitHubInstallURLResponse>(`/git/github/install-url${qs(workspaceId)}${options?.forceInstall ? '&force_install=true' : ''}`),
+  getGitHubAppStatus: (workspaceId: string) =>
+    api.get<GitHubAppStatus>(`/workspaces/${workspaceId}/github/app-status`),
+  createGitHubAppManifest: (workspaceId: string, request: GitHubAppManifestRequest = {}) =>
+    api.post<GitHubAppManifestResponse>(`/workspaces/${workspaceId}/github/app-manifest`, request),
+  getGitHubInstallURL: (workspaceId: string, options?: GitHubInstallURLOptions) =>
+    api.get<GitHubInstallURLResponse>(`/git/github/install-url${gitHubInstallQuery(workspaceId, options)}`),
   listIntegrations: (workspaceId: string) =>
     api.get<GitIntegration[]>(`/git/integrations${qs(workspaceId)}`),
   getIntegration: (workspaceId: string, integrationId: string) =>

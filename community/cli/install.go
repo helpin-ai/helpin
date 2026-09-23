@@ -211,6 +211,9 @@ func (a *app) install(o options) error {
 	if err := a.configuration(&o, map[string]string{}); err != nil {
 		return err
 	}
+	if err := a.integrations(&o, map[string]string{}); err != nil {
+		return err
+	}
 	if err := a.prerequisites(); err != nil {
 		return err
 	}
@@ -291,6 +294,9 @@ func (a *app) install(o options) error {
 	identity := sha256.Sum256([]byte(o.dir))
 	o.project = fmt.Sprintf("helpin-%x", identity[:6])
 	if err = writeConfiguration(dir, o); err != nil {
+		return err
+	}
+	if err = writeIntegrations(dir, o); err != nil {
 		return err
 	}
 	if _, err = a.output(dir, "docker", "compose", "--env-file", ".env", "-f", "compose.yaml", "config", "--quiet"); err != nil {

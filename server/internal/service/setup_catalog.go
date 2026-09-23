@@ -154,9 +154,8 @@ func NormalizeSetupGoals(raw []string) ([]string, error) {
 			result = append(result, key)
 		}
 	}
-	if len(result) > 3 {
-		return nil, fmt.Errorf("choose up to 3 setup goals")
-	}
+	// There is no maximum: every catalog goal may be selected. Order is kept as
+	// given, so the first goal remains the primary one.
 	return result, nil
 }
 

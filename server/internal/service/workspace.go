@@ -34,6 +34,7 @@ type WorkspaceService struct {
 	billingService      WorkspaceLifecyclePolicy
 	contextLLM          workspaceContextLLM
 	contextFetcher      WorkspaceContextFetcher
+	contextProfiles     workspaceContextProfiles
 	customerIOIdentity  *CustomerIOIdentityService
 	setupInitializer    WorkspaceSetupInitializer
 	logger              *slog.Logger

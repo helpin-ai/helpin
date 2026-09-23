@@ -71,6 +71,42 @@ func (r *AIConnectionRepository) ActiveMember(ctx context.Context, workspace, us
 	return n > 0, err
 }
 
+// DefaultProfile returns the workspace's live default profile, or nil.
+func (r *AIConnectionRepository) DefaultProfile(ctx context.Context, workspace string) (*model.AIProfile, error) {
+	var settings model.AIWorkspaceSettings
+	err := r.db.WithContext(ctx).Where("workspace_id = ?", workspace).Take(&settings).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) || (err == nil && settings.DefaultProfileID == nil) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var profile model.AIProfile
+	err = r.db.WithContext(ctx).Where("workspace_id = ? AND id = ? AND deleted_at IS NULL", workspace, *settings.DefaultProfileID).Take(&profile).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	return &profile, err
+}
+
+// RecordVerification stores a connection test outcome without touching secrets.
+func (r *AIConnectionRepository) RecordVerification(ctx context.Context, id string, at time.Time, failure *string) error {
+	return r.db.WithContext(ctx).Model(&model.AIConnection{}).Where("id = ?", id).
+		Updates(map[string]any{"last_verified_at": at, "last_verification_error": failure}).Error
+}
+
+// SharedEmbeddingConnections returns the workspace-owned, live, connected
+// connections for the given providers, oldest first. Secrets are included so
+// the caller can decrypt them; callers must never serialize the result.
+func (r *AIConnectionRepository) SharedEmbeddingConnections(ctx context.Context, workspace string, providers []string) ([]model.AIConnection, error) {
+	var out []model.AIConnection
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND scope = ? AND user_id IS NULL AND superseded_by IS NULL AND status = ? AND provider IN ?",
+			workspace, "workspace", "connected", providers).
+		Order("created_at, id").Find(&out).Error
+	return out, err
+}
+
 // WorkspaceExists rejects deleted workspaces before loading shared credentials.
 // Workspaces have no lifecycle status column; edition policy handles billing gates.
 func (r *AIConnectionRepository) WorkspaceExists(ctx context.Context, workspace string) (bool, error) {

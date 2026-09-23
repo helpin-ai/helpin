@@ -14,6 +14,7 @@ const mockUseUpdateSupportInboxView = vi.fn()
 const mockUseUpdateSupportBuiltinInboxView = vi.fn()
 const mockUseSupportInboxViews = vi.fn()
 const mockUseSupportTags = vi.fn()
+const mockUseHasAnySupportConversation = vi.fn()
 
 vi.mock('@/hooks/queries/useSupport', () => ({
   useInfiniteConversations: (...args: unknown[]) => mockUseInfiniteConversations(...args),
@@ -24,6 +25,7 @@ vi.mock('@/hooks/queries/useSupport', () => ({
   useUpdateSupportBuiltinInboxView: (...args: unknown[]) => mockUseUpdateSupportBuiltinInboxView(...args),
   useSupportInboxViews: (...args: unknown[]) => mockUseSupportInboxViews(...args),
   useSupportTags: (...args: unknown[]) => mockUseSupportTags(...args),
+  useHasAnySupportConversation: (...args: unknown[]) => mockUseHasAnySupportConversation(...args),
 }))
 
 vi.mock('../ConversationRow', () => ({
@@ -117,10 +119,49 @@ describe('ConversationList presence resync', () => {
     mockUseSupportTags.mockReturnValue({
       data: [],
     })
+    mockUseHasAnySupportConversation.mockReturnValue({ data: undefined })
   })
 
   afterEach(() => {
     document.body.innerHTML = ''
+  })
+
+  it.each([
+    [false, 'onboarding'],
+    [true, 'inbox-zero'],
+  ] as const)('reports an empty default Inbox as hasAny=%s → %s', (hasAny, expected) => {
+    mockUseInfiniteConversations.mockReturnValue({
+      data: { pages: [{ data: [] }] },
+      isLoading: false,
+      isFetching: false,
+      isFetchingNextPage: false,
+      hasNextPage: false,
+      fetchNextPage: vi.fn(),
+      error: null,
+    })
+    mockUseHasAnySupportConversation.mockReturnValue({ data: hasAny })
+    const onInboxEmptyStateChange = vi.fn()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(
+        <ConversationList
+          workspaceId="ws-1"
+          userId="user-1"
+          onInboxEmptyStateChange={onInboxEmptyStateChange}
+          onWidgetSettingsClick={vi.fn()}
+          onCreateConversationClick={vi.fn()}
+        />,
+      )
+    })
+
+    expect(mockUseHasAnySupportConversation).toHaveBeenLastCalledWith('ws-1', true)
+    expect(onInboxEmptyStateChange).toHaveBeenLastCalledWith(expected)
+    expect(container.textContent?.includes('Install widget')).toBe(expected === 'onboarding')
+
+    act(() => root.unmount())
   })
 
   it('reserves inline header space for the collapsed workspace sidebar opener', () => {

@@ -38,6 +38,8 @@ func setupUserTestDB(t *testing.T) *gorm.DB {
 			totp_verified BOOLEAN NOT NULL DEFAULT 0,
 			recovery_codes_encrypted TEXT,
 			is_platform_admin BOOLEAN NOT NULL DEFAULT 0,
+			is_server_admin BOOLEAN NOT NULL DEFAULT 0,
+			signup_verification_pending BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
 		)

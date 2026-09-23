@@ -4,7 +4,7 @@ import type { WidgetOriginSettings } from '@/lib/pmTypes';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { queryKeys } from '@/lib/queryKeys';
-import { api, uploadToS3 } from '@/lib/api';
+import { uploadToS3 } from '@/lib/api';
 import { supportService } from '@/lib/services/supportService';
 import { supportAttachmentService } from '@/lib/services/supportAttachmentService';
 import { agentService } from '@/lib/services/agentService';
@@ -275,6 +275,23 @@ export function useConversations(workspaceId: string, filters?: SupportConversat
     queryKey: [...queryKeys.support.conversations(workspaceId), filters] as const,
     queryFn: async (): Promise<ConversationListResponse> => loadConversationListPage(workspaceId, filters),
     enabled: !!workspaceId,
+    staleTime: 15_000,
+  });
+}
+
+/**
+ * Whether the workspace has any conversation the user can see, regardless of
+ * view or status. Separates a brand-new inbox (onboarding) from inbox zero.
+ * Keyed under conversations() so new/removed conversations refresh it.
+ */
+export function useHasAnySupportConversation(workspaceId: string, enabled = true) {
+  return useQuery({
+    queryKey: [...queryKeys.support.conversations(workspaceId), 'any'] as const,
+    queryFn: async (): Promise<boolean> => {
+      const page = await loadConversationListPage(workspaceId, { page: 1, per_page: 1 });
+      return (page.data?.length ?? 0) > 0;
+    },
+    enabled: !!workspaceId && enabled,
     staleTime: 15_000,
   });
 }
@@ -951,7 +968,7 @@ export function useSendMessage(workspaceId: string, conversationId: string | nul
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: SendMessagePayload) =>
-      (payload.is_internal ? supportService.createConversationMessage(workspaceId, conversationId!, payload) : api.post<SupportMessage>(`/support/inbox/conversations/${conversationId}/translation/sends?workspace_id=${encodeURIComponent(workspaceId)}`,payload)).then((response) => {
+      (payload.is_internal ? supportService.createConversationMessage(workspaceId, conversationId!, payload) : supportService.sendConversationReply(workspaceId, conversationId!, payload)).then((response) => {
         if (response.status === 422) throw new SupportTranslationSendError();
         return unwrap(response);
       }),
