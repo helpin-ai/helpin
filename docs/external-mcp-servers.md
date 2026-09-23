@@ -217,6 +217,7 @@ Mutation bodies are strict JSON with unknown-field rejection and a 128 KiB limit
 | `EXTERNAL_MCP_ENABLED` | Global outbound MCP rollout switch; default `false` |
 | `EXTERNAL_MCP_ENCRYPTION_KEY` | Required when enabled; 32 raw bytes, 64 hex characters, or base64-encoded 32 bytes |
 | `EXTERNAL_MCP_ALLOWED_HOSTS` | Comma-separated exact/wildcard endpoint hosts; defaults to `*` for any public HTTPS host |
+| `EXTERNAL_MCP_ADDITIONAL_ALLOWED_HOSTS` | Optional extra exact/wildcard hosts appended to the primary policy |
 | `EXTERNAL_MCP_OAUTH_REDIRECT_URL` | Public Helpin API callback URL |
 | `EXTERNAL_MCP_OAUTH_CLIENT_ID` | Optional pre-registered OAuth client ID; otherwise DCR is used |
 | `EXTERNAL_MCP_OAUTH_CLIENT_SECRET` | Optional pre-registered client secret |
