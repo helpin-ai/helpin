@@ -6,7 +6,7 @@ describe('prefixAssetUrls', () => {
     const source = `const css = "/assets/app.css"; const chunks = ["assets/route.js"]; const chunk = './chunk.js'; url(/assets/font.woff2)`
 
     expect(prefixAssetUrls(source, '/docs')).toBe(
-      `const css = "/docs/assets/app.css"; const chunks = ["/docs/assets/route.js"]; const chunk = './chunk.js'; url(/docs/assets/font.woff2)`,
+      `const css = "/docs/assets/app.css"; const chunks = ["docs/assets/route.js"]; const chunk = './chunk.js'; url(/docs/assets/font.woff2)`,
     )
   })
 
