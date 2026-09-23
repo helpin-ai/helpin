@@ -36,7 +36,7 @@ func (s *DocsBlockService) List(ctx context.Context, workspaceID, documentID str
 		return nil, err
 	}
 	if doc == nil || doc.WorkspaceID != workspaceID {
-		return nil, fmt.Errorf("document not found")
+		return nil, errCommandNotFound("document")
 	}
 	blocks, err := s.blockRepo.ListByDocument(ctx, documentID, false)
 	if err != nil {
@@ -59,7 +59,7 @@ func (s *DocsBlockService) Get(ctx context.Context, documentID, blockID string) 
 		return nil, err
 	}
 	if block == nil || block.DocumentID != documentID || block.DeletedAt != nil {
-		return nil, fmt.Errorf("block not found")
+		return nil, errCommandNotFound("block")
 	}
 	block.AgentReadable = docsBlockAgentProjection(*block)
 	return block, nil
@@ -67,7 +67,7 @@ func (s *DocsBlockService) Get(ctx context.Context, documentID, blockID string) 
 
 func (s *DocsBlockService) Patch(ctx context.Context, documentID, blockID string, expectedRevision int, content json.RawMessage, actorID string) (*model.DocsContent, error) {
 	if expectedRevision <= 0 {
-		return nil, fmt.Errorf("revision is required")
+		return nil, errCommandInput("revision is required")
 	}
 	doc, err := s.loadEditableDocument(ctx, documentID)
 	if err != nil {
@@ -78,7 +78,7 @@ func (s *DocsBlockService) Patch(ctx context.Context, documentID, blockID string
 		return nil, err
 	}
 	if block == nil || block.DocumentID != documentID || block.DeletedAt != nil {
-		return nil, fmt.Errorf("block not found")
+		return nil, errCommandNotFound("block")
 	}
 	if block.Revision != expectedRevision {
 		return nil, ErrDocsStaleBlockRevision
@@ -136,7 +136,7 @@ func (s *DocsBlockService) Create(ctx context.Context, documentID string, afterB
 // blocks, in insertion order.
 func (s *DocsBlockService) CreateBlocks(ctx context.Context, documentID string, afterBlockID *string, atStart bool, contents []json.RawMessage, actorID string) (*model.DocsContent, []string, error) {
 	if len(contents) == 0 {
-		return nil, nil, fmt.Errorf("at least one block is required")
+		return nil, nil, errCommandInput("at least one block is required")
 	}
 	doc, err := s.loadEditableDocument(ctx, documentID)
 	if err != nil {
@@ -168,7 +168,7 @@ func (s *DocsBlockService) CreateBlocks(ctx context.Context, documentID string, 
 			}
 		}
 		if insertAt < 0 {
-			return nil, nil, fmt.Errorf("after block not found")
+			return nil, nil, errCommandNotFound("after block")
 		}
 	}
 	next := make([]map[string]any, 0, len(aggregate.Content)+len(nodes))
@@ -196,7 +196,7 @@ func (s *DocsBlockService) CreateBlocks(ctx context.Context, documentID string, 
 
 func (s *DocsBlockService) Reorder(ctx context.Context, documentID string, blockIDs []string, actorID string) (*model.DocsContent, error) {
 	if len(blockIDs) == 0 {
-		return nil, fmt.Errorf("block_ids is required")
+		return nil, errCommandInput("block_ids is required")
 	}
 	doc, err := s.loadEditableDocument(ctx, documentID)
 	if err != nil {
@@ -266,7 +266,7 @@ func (s *DocsBlockService) Delete(ctx context.Context, documentID, blockID, acto
 		next = append(next, child)
 	}
 	if !removed {
-		return nil, fmt.Errorf("block not found")
+		return nil, errCommandNotFound("block")
 	}
 	aggregate.Content = next
 	raw, _ := json.Marshal(aggregate)
@@ -287,7 +287,7 @@ func (s *DocsBlockService) MarkStaleFromSupport(ctx context.Context, workspaceID
 		return err
 	}
 	if doc == nil || doc.WorkspaceID != workspaceID {
-		return fmt.Errorf("document not found")
+		return errCommandNotFound("document")
 	}
 	aggregate, err := s.currentAggregate(ctx, documentID)
 	if err != nil {
@@ -353,7 +353,7 @@ func (s *DocsBlockService) loadEditableDocument(ctx context.Context, documentID 
 		return nil, err
 	}
 	if doc == nil {
-		return nil, fmt.Errorf("document not found")
+		return nil, errCommandNotFound("document")
 	}
 	if err := checkLocked(doc); err != nil {
 		return nil, err
@@ -396,7 +396,7 @@ func decodeBlockNode(raw json.RawMessage) (map[string]any, error) {
 		return nil, fmt.Errorf("invalid block content: %w", err)
 	}
 	if strings.TrimSpace(asBlockString(node["type"])) == "" {
-		return nil, fmt.Errorf("block content must include type")
+		return nil, errCommandInput("block content must include type")
 	}
 	// Reject structurally invalid nodes here rather than storing them: a bad
 	// shape (for example "content" as a string) survives the round trip and

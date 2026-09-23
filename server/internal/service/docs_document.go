@@ -61,7 +61,7 @@ func (s *DocsDocumentService) SetEntitlementService(entitlementSvc EntitlementPo
 // Create creates a new document.
 func (s *DocsDocumentService) Create(ctx context.Context, workspaceID string, req model.CreateDocsDocumentRequest, userID string) (*model.DocsDocument, error) {
 	if req.Title == "" {
-		return nil, fmt.Errorf("title is required")
+		return nil, errCommandInput("title is required")
 	}
 	if s.entitlementSvc != nil {
 		count, err := s.docRepo.CountByWorkspace(ctx, workspaceID)
@@ -79,7 +79,7 @@ func (s *DocsDocumentService) Create(ctx context.Context, workspaceID string, re
 		return nil, err
 	}
 	if space == nil {
-		return nil, fmt.Errorf("space not found")
+		return nil, errCommandNotFound("space")
 	}
 	if space.WorkspaceID != workspaceID {
 		return nil, fmt.Errorf("space does not belong to this workspace")
@@ -177,7 +177,7 @@ func (s *DocsDocumentService) Update(ctx context.Context, id string, req model.U
 		return nil, err
 	}
 	if doc == nil {
-		return nil, fmt.Errorf("document not found")
+		return nil, errCommandNotFound("document")
 	}
 	if err := checkLocked(doc); err != nil {
 		return nil, err
@@ -276,7 +276,7 @@ func (s *DocsDocumentService) Publish(ctx context.Context, id string) (*model.Do
 		return nil, err
 	}
 	if doc == nil {
-		return nil, fmt.Errorf("document not found")
+		return nil, errCommandNotFound("document")
 	}
 	if err := checkLocked(doc); err != nil {
 		return nil, err
@@ -319,7 +319,7 @@ func (s *DocsDocumentService) Unpublish(ctx context.Context, id string) (*model.
 		return nil, err
 	}
 	if doc == nil {
-		return nil, fmt.Errorf("document not found")
+		return nil, errCommandNotFound("document")
 	}
 	if err := checkLocked(doc); err != nil {
 		return nil, err
@@ -344,7 +344,7 @@ func (s *DocsDocumentService) Archive(ctx context.Context, id string) (*model.Do
 		return nil, err
 	}
 	if doc == nil {
-		return nil, fmt.Errorf("document not found")
+		return nil, errCommandNotFound("document")
 	}
 	if err := checkLocked(doc); err != nil {
 		return nil, err
@@ -380,7 +380,7 @@ func (s *DocsDocumentService) Unarchive(ctx context.Context, id string) (*model.
 		return nil, err
 	}
 	if doc == nil {
-		return nil, fmt.Errorf("document not found")
+		return nil, errCommandNotFound("document")
 	}
 	if doc.Status != model.DocStatusArchived {
 		return nil, fmt.Errorf("document is not archived")
@@ -406,7 +406,7 @@ func (s *DocsDocumentService) Move(ctx context.Context, id string, req model.Mov
 		return nil, err
 	}
 	if doc == nil {
-		return nil, fmt.Errorf("document not found")
+		return nil, errCommandNotFound("document")
 	}
 
 	if err := checkLocked(doc); err != nil {
@@ -418,7 +418,7 @@ func (s *DocsDocumentService) Move(ctx context.Context, id string, req model.Mov
 		return nil, err
 	}
 	if targetSpace == nil {
-		return nil, fmt.Errorf("target space not found")
+		return nil, errCommandNotFound("target space")
 	}
 	if targetSpace.WorkspaceID != doc.WorkspaceID {
 		return nil, fmt.Errorf("target space does not belong to this workspace")
@@ -461,7 +461,7 @@ func (s *DocsDocumentService) Delete(ctx context.Context, id string) error {
 		return err
 	}
 	if doc == nil {
-		return fmt.Errorf("document not found")
+		return errCommandNotFound("document")
 	}
 	if err := checkLocked(doc); err != nil {
 		return err
@@ -492,7 +492,7 @@ func (s *DocsDocumentService) ToggleShare(ctx context.Context, id string, enable
 		return nil, err
 	}
 	if doc == nil {
-		return nil, fmt.Errorf("document not found")
+		return nil, errCommandNotFound("document")
 	}
 
 	updates := map[string]interface{}{
@@ -527,7 +527,7 @@ func (s *DocsDocumentService) ToggleLock(ctx context.Context, id string, lock bo
 		return nil, err
 	}
 	if doc == nil {
-		return nil, fmt.Errorf("document not found")
+		return nil, errCommandNotFound("document")
 	}
 
 	if !lock && doc.IsLocked {
@@ -614,7 +614,7 @@ func (s *DocsDocumentService) MoveItem(ctx context.Context, wsID string, req mod
 		return fmt.Errorf("invalid item type: %s", req.Item.Type)
 	}
 	if req.Item.ID == "" {
-		return fmt.Errorf("item id is required")
+		return errCommandInput("item id is required")
 	}
 
 	// Resolve the before/after sort_keys.

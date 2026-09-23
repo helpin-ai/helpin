@@ -67,19 +67,19 @@ func (s *InternalCommandService) executeSearchWorkspace(ctx context.Context, met
 	}
 	req.Query = strings.TrimSpace(req.Query)
 	if req.Query == "" {
-		return nil, fmt.Errorf("query is required")
+		return nil, errCommandInput("query is required")
 	}
 	if len(req.Query) > 500 {
-		return nil, fmt.Errorf("query must be 500 characters or fewer")
+		return nil, errCommandInput("query must be 500 characters or fewer")
 	}
 	if req.Limit == 0 {
 		req.Limit = workspaceSearchDefaultLimit
 	}
 	if req.Limit < 1 || req.Limit > workspaceSearchMaxLimit {
-		return nil, fmt.Errorf("limit must be between 1 and 50")
+		return nil, errCommandInput("limit must be between 1 and 50")
 	}
 	if req.Offset < 0 || req.Offset > workspaceSearchMaxOffset {
-		return nil, fmt.Errorf("offset must be between 0 and 500")
+		return nil, errCommandInput("offset must be between 0 and 500")
 	}
 
 	requested, err := normalizeWorkspaceSearchTypes(req.EntityTypes)

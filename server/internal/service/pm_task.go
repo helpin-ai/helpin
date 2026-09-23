@@ -249,7 +249,7 @@ func (s *PMTaskService) ListSummary(ctx context.Context, workspaceID string, fil
 
 func (s *PMTaskService) list(ctx context.Context, workspaceID string, filters model.PMTaskFilters, pagination model.PMPagination, summary bool) ([]model.BoardTask, int64, error) {
 	if workspaceID == "" {
-		return nil, 0, fmt.Errorf("workspace_id is required")
+		return nil, 0, errCommandInput("workspace_id is required")
 	}
 	filters.AccessibleTeamIDs = intersectAccessibleTeamIDs(filters.AccessibleTeamIDs, accessibleTeamIDs(ctx))
 	var (
@@ -276,10 +276,10 @@ func (s *PMTaskService) GetByID(ctx context.Context, id string) (*model.TaskDeta
 		return nil, err
 	}
 	if detail == nil {
-		return nil, fmt.Errorf("task not found")
+		return nil, errCommandNotFound("task")
 	}
 	if err := requireTeamAccess(ctx, detail.Task.TeamID); err != nil {
-		return nil, fmt.Errorf("task not found")
+		return nil, errCommandNotFound("task")
 	}
 	s.populateTaskDetail(ctx, detail)
 	return detail, nil
@@ -292,10 +292,10 @@ func (s *PMTaskService) GetByDisplayID(ctx context.Context, workspaceID string, 
 		return nil, err
 	}
 	if detail == nil {
-		return nil, fmt.Errorf("task not found")
+		return nil, errCommandNotFound("task")
 	}
 	if err := requireTeamAccess(ctx, detail.Task.TeamID); err != nil {
-		return nil, fmt.Errorf("task not found")
+		return nil, errCommandNotFound("task")
 	}
 	s.populateTaskDetail(ctx, detail)
 	return detail, nil
@@ -308,7 +308,7 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 
 func (s *PMTaskService) create(ctx context.Context, req model.CreateTaskRequest, actorID string, supportReview *supportTaskCreateReview) (*model.TaskDetail, error) {
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
-		return nil, fmt.Errorf("workspace_id and name are required")
+		return nil, errCommandInput("workspace_id and name are required")
 	}
 	if err := s.requireCanEdit(ctx, req.WorkspaceID, actorID); err != nil {
 		return nil, err
@@ -317,7 +317,7 @@ func (s *PMTaskService) create(ctx context.Context, req model.CreateTaskRequest,
 		return nil, err
 	}
 	if req.TeamID == nil || strings.TrimSpace(*req.TeamID) == "" {
-		return nil, fmt.Errorf("team_id is required")
+		return nil, errCommandInput("team_id is required")
 	}
 	teamID := strings.TrimSpace(*req.TeamID)
 	req.TeamID = &teamID
@@ -358,7 +358,7 @@ func (s *PMTaskService) create(ctx context.Context, req model.CreateTaskRequest,
 		}
 	}
 	if stateID == "" {
-		return nil, fmt.Errorf("workflow_state_id is required")
+		return nil, errCommandInput("workflow_state_id is required")
 	}
 
 	ok, err := s.workflowRepo.StateBelongsToWorkflow(ctx, stateID, workflowID)
@@ -366,7 +366,7 @@ func (s *PMTaskService) create(ctx context.Context, req model.CreateTaskRequest,
 		return nil, err
 	}
 	if !ok {
-		return nil, fmt.Errorf("workflow_state_id must belong to workflow_id")
+		return nil, errCommandInput("workflow_state_id must belong to workflow_id")
 	}
 
 	taskType := req.TaskType
@@ -473,7 +473,7 @@ func (s *PMTaskService) create(ctx context.Context, req model.CreateTaskRequest,
 				return nil, err
 			}
 			if membership == nil {
-				return nil, fmt.Errorf("checklist assignee must be an active workspace member")
+				return nil, errCommandInput("checklist assignee must be an active workspace member")
 			}
 		}
 		position := i
@@ -727,7 +727,7 @@ func (s *PMTaskService) SaveAsTemplate(ctx context.Context, taskID string, req m
 		name = strings.TrimSpace(*req.Name)
 	}
 	if name == "" {
-		return nil, fmt.Errorf("template name is required")
+		return nil, errCommandInput("template name is required")
 	}
 	existing, err := s.templateRepo.GetByName(ctx, task.WorkspaceID, task.TeamID, name)
 	if err != nil {
@@ -956,10 +956,10 @@ func (s *PMTaskService) applyTemplateDefaultsToCreateRequest(ctx context.Context
 		return err
 	}
 	if tmpl == nil {
-		return fmt.Errorf("task template not found")
+		return errCommandNotFound("task template")
 	}
 	if tmpl.WorkspaceID != req.WorkspaceID {
-		return fmt.Errorf("task template not found")
+		return errCommandNotFound("task template")
 	}
 	if !canViewTaskTemplate(ctx, tmpl.TeamID) {
 		return &model.ErrForbidden{Message: "you do not have access to this template"}
@@ -1101,7 +1101,7 @@ func (s *PMTaskService) Duplicate(ctx context.Context, taskID, actorID string) (
 		return nil, err
 	}
 	if detail == nil {
-		return nil, fmt.Errorf("task not found")
+		return nil, errCommandNotFound("task")
 	}
 	source := detail.Task
 	if err := s.requireCanEdit(ctx, source.WorkspaceID, actorID); err != nil {
@@ -1215,7 +1215,7 @@ func (s *PMTaskService) Duplicate(ctx context.Context, taskID, actorID string) (
 		return nil, err
 	}
 	if created == nil {
-		return nil, fmt.Errorf("task not found")
+		return nil, errCommandNotFound("task")
 	}
 	s.populateTaskDetail(ctx, created)
 	return created, nil
@@ -1224,7 +1224,7 @@ func (s *PMTaskService) Duplicate(ctx context.Context, taskID, actorID string) (
 // Seed creates a batch of synthetic tasks for board and list testing.
 func (s *PMTaskService) Seed(ctx context.Context, req model.SeedPMTasksRequest) (*model.SeedPMTasksResponse, error) {
 	if req.WorkspaceID == "" {
-		return nil, fmt.Errorf("workspace_id is required")
+		return nil, errCommandInput("workspace_id is required")
 	}
 
 	count := req.Count
@@ -1246,7 +1246,7 @@ func (s *PMTaskService) Seed(ctx context.Context, req model.SeedPMTasksRequest) 
 		}
 	}
 	if workflow == nil || len(workflow.States) == 0 {
-		return nil, fmt.Errorf("default workflow is required")
+		return nil, errCommandInput("default workflow is required")
 	}
 
 	maxDisplayID, err := s.taskRepo.GetMaxDisplayID(ctx, req.WorkspaceID)
@@ -1385,10 +1385,10 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 		return nil, err
 	}
 	if current == nil {
-		return nil, fmt.Errorf("task not found")
+		return nil, errCommandNotFound("task")
 	}
 	if err := requireTeamAccess(ctx, current.TeamID); err != nil {
-		return nil, fmt.Errorf("task not found")
+		return nil, errCommandNotFound("task")
 	}
 	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
 		return nil, err
@@ -1399,7 +1399,7 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 		return nil, err
 	}
 	if previousDetail == nil {
-		return nil, fmt.Errorf("task not found")
+		return nil, errCommandNotFound("task")
 	}
 
 	stateChanged := false
@@ -1447,7 +1447,7 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 			return nil, err
 		}
 		if !ok {
-			return nil, fmt.Errorf("workflow_state_id must belong to workflow_id")
+			return nil, errCommandInput("workflow_state_id must belong to workflow_id")
 		}
 	}
 	current.WorkflowID = workflowID
@@ -1681,7 +1681,7 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 		return nil, err
 	}
 	if updatedDetail == nil {
-		return nil, fmt.Errorf("task not found")
+		return nil, errCommandNotFound("task")
 	}
 
 	// Only log meaningful field changes with descriptive messages
@@ -1888,7 +1888,7 @@ func (s *PMTaskService) Delete(ctx context.Context, id, actorID string) error {
 		return err
 	}
 	if current == nil {
-		return fmt.Errorf("task not found")
+		return errCommandNotFound("task")
 	}
 	if err := s.requireAdmin(ctx, current.WorkspaceID, actorID); err != nil {
 		return err
@@ -1911,7 +1911,7 @@ func (s *PMTaskService) MoveToState(ctx context.Context, id string, req model.Mo
 		return nil, err
 	}
 	if current == nil {
-		return nil, fmt.Errorf("task not found")
+		return nil, errCommandNotFound("task")
 	}
 	s.logger.InfoContext(ctx, "[pm-dnd] service move start",
 		"trace_id", req.DebugTraceID,
@@ -1927,17 +1927,17 @@ func (s *PMTaskService) MoveToState(ctx context.Context, id string, req model.Mo
 		return nil, err
 	}
 	if req.StateID == "" {
-		return nil, fmt.Errorf("state_id is required")
+		return nil, errCommandInput("state_id is required")
 	}
 	ok, err := s.workflowRepo.StateBelongsToWorkflow(ctx, req.StateID, current.WorkflowID)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
-		return nil, fmt.Errorf("state_id must belong to task workflow")
+		return nil, errCommandInput("state_id must belong to task workflow")
 	}
 	if req.Position != nil && *req.Position < 0 {
-		return nil, fmt.Errorf("position must be >= 0")
+		return nil, errCommandInput("position must be >= 0")
 	}
 	if err := s.taskRepo.MoveToState(ctx, current.ID, req.StateID, req.Position, req.DebugTraceID); err != nil {
 		return nil, err
@@ -2042,7 +2042,7 @@ func (s *PMTaskService) Reorder(ctx context.Context, id string, req model.Reorde
 		return err
 	}
 	if current == nil {
-		return fmt.Errorf("task not found")
+		return errCommandNotFound("task")
 	}
 	s.logger.InfoContext(ctx, "[pm-dnd] service reorder start",
 		"trace_id", req.DebugTraceID,
@@ -2057,7 +2057,7 @@ func (s *PMTaskService) Reorder(ctx context.Context, id string, req model.Reorde
 		return err
 	}
 	if req.Position < 0 {
-		return fmt.Errorf("position must be >= 0")
+		return errCommandInput("position must be >= 0")
 	}
 	if err := s.taskRepo.Reorder(ctx, id, req.Position, req.DebugTraceID); err != nil {
 		return err
@@ -2091,13 +2091,13 @@ func (s *PMTaskService) AddOwner(ctx context.Context, taskID, userID, actorID st
 		return err
 	}
 	if current == nil {
-		return fmt.Errorf("task not found")
+		return errCommandNotFound("task")
 	}
 	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
 		return err
 	}
 	if userID == "" {
-		return fmt.Errorf("user_id is required")
+		return errCommandInput("user_id is required")
 	}
 	if err := s.taskRepo.AddOwner(ctx, taskID, userID); err != nil {
 		return err
@@ -2148,7 +2148,7 @@ func (s *PMTaskService) RemoveOwner(ctx context.Context, taskID, userID, actorID
 		return err
 	}
 	if current == nil {
-		return fmt.Errorf("task not found")
+		return errCommandNotFound("task")
 	}
 	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
 		return err
@@ -2170,13 +2170,13 @@ func (s *PMTaskService) AddFollower(ctx context.Context, taskID, userID, actorID
 		return err
 	}
 	if current == nil {
-		return fmt.Errorf("task not found")
+		return errCommandNotFound("task")
 	}
 	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
 		return err
 	}
 	if userID == "" {
-		return fmt.Errorf("user_id is required")
+		return errCommandInput("user_id is required")
 	}
 	if err := s.taskRepo.AddFollower(ctx, taskID, userID); err != nil {
 		return err
@@ -2195,7 +2195,7 @@ func (s *PMTaskService) RemoveFollower(ctx context.Context, taskID, userID, acto
 		return err
 	}
 	if current == nil {
-		return fmt.Errorf("task not found")
+		return errCommandNotFound("task")
 	}
 	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
 		return err
@@ -2217,7 +2217,7 @@ func (s *PMTaskService) AddLabel(ctx context.Context, taskID, labelID, actorID s
 		return err
 	}
 	if current == nil {
-		return fmt.Errorf("task not found")
+		return errCommandNotFound("task")
 	}
 	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
 		return err
@@ -2242,7 +2242,7 @@ func (s *PMTaskService) RemoveLabel(ctx context.Context, taskID, labelID, actorI
 		return err
 	}
 	if current == nil {
-		return fmt.Errorf("task not found")
+		return errCommandNotFound("task")
 	}
 	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
 		return err
@@ -2268,7 +2268,7 @@ func (s *PMTaskService) RemoveLabel(ctx context.Context, taskID, labelID, actorI
 // perStateLimit controls how many tasks per column (0 = unlimited).
 func (s *PMTaskService) ListByWorkflowState(ctx context.Context, workflowID string, filters model.PMTaskFilters, perStateLimit int) ([]model.TaskStateColumn, error) {
 	if workflowID == "" {
-		return nil, fmt.Errorf("workflow_id is required")
+		return nil, errCommandInput("workflow_id is required")
 	}
 	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
 	columns, err := s.taskRepo.ListByWorkflowState(ctx, workflowID, filters, perStateLimit)
@@ -2282,7 +2282,7 @@ func (s *PMTaskService) ListByWorkflowState(ctx context.Context, workflowID stri
 // ListColumnTasks returns a page of tasks for a single board column.
 func (s *PMTaskService) ListColumnTasks(ctx context.Context, stateID string, filters model.PMTaskFilters, offset, limit int) ([]model.BoardTask, []model.TaskGroup, int, error) {
 	if stateID == "" {
-		return nil, nil, 0, fmt.Errorf("state_id is required")
+		return nil, nil, 0, errCommandInput("state_id is required")
 	}
 	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
 	if limit <= 0 {
@@ -2301,7 +2301,7 @@ func (s *PMTaskService) ListColumnTasks(ctx context.Context, stateID string, fil
 // ListByMember returns board columns grouped by owner member.
 func (s *PMTaskService) ListByMember(ctx context.Context, workspaceID, workflowID string, filters model.PMTaskFilters, perMemberLimit int, includeEmpty bool, memberIDs []string) ([]model.TaskMemberColumn, error) {
 	if workspaceID == "" || workflowID == "" {
-		return nil, fmt.Errorf("workspace_id and workflow_id are required")
+		return nil, errCommandInput("workspace_id and workflow_id are required")
 	}
 	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
 	columns, err := s.taskRepo.ListByMember(ctx, workspaceID, workflowID, filters, perMemberLimit, includeEmpty, memberIDs)
@@ -2315,7 +2315,7 @@ func (s *PMTaskService) ListByMember(ctx context.Context, workspaceID, workflowI
 // ListMemberColumnTasks returns a page of tasks for a single member board column.
 func (s *PMTaskService) ListMemberColumnTasks(ctx context.Context, workspaceID, workflowID string, memberID *string, filters model.PMTaskFilters, offset, limit int) ([]model.BoardTask, int, error) {
 	if workspaceID == "" || workflowID == "" {
-		return nil, 0, fmt.Errorf("workspace_id and workflow_id are required")
+		return nil, 0, errCommandInput("workspace_id and workflow_id are required")
 	}
 	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
 	if limit <= 0 {
@@ -2332,7 +2332,7 @@ func (s *PMTaskService) ListMemberColumnTasks(ctx context.Context, workspaceID, 
 // CountByState returns state-level task counts for a workflow.
 func (s *PMTaskService) CountByState(ctx context.Context, workflowID string) ([]model.TaskStateCount, error) {
 	if workflowID == "" {
-		return nil, fmt.Errorf("workflow_id is required")
+		return nil, errCommandInput("workflow_id is required")
 	}
 	return s.taskRepo.CountByState(ctx, workflowID)
 }

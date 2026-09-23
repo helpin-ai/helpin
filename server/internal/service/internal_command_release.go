@@ -127,10 +127,10 @@ func (s *InternalCommandService) executeGetReleaseContext(ctx context.Context, m
 	req.RepoFullName = strings.TrimSpace(req.RepoFullName)
 	req.TagName = strings.TrimSpace(req.TagName)
 	if req.TagName == "" {
-		return nil, fmt.Errorf("tag_name is required")
+		return nil, errCommandInput("tag_name is required")
 	}
 	if strings.TrimSpace(req.RepositoryID) == "" && req.RepoFullName == "" {
-		return nil, fmt.Errorf("repository_id or repo_full_name is required")
+		return nil, errCommandInput("repository_id or repo_full_name is required")
 	}
 	if s.releaseFactsProvider == nil {
 		return nil, fmt.Errorf("release facts are not available")
@@ -152,10 +152,10 @@ func (s *InternalCommandService) executeFindTasksForGitChanges(ctx context.Conte
 	applyCommandRepositoryTargetDefault(meta, &req.RepositoryID)
 	req.RepoFullName = strings.TrimSpace(req.RepoFullName)
 	if strings.TrimSpace(req.RepositoryID) == "" && req.RepoFullName == "" {
-		return nil, fmt.Errorf("repo_full_name or repository_id is required")
+		return nil, errCommandInput("repo_full_name or repository_id is required")
 	}
 	if len(req.PRNumbers) == 0 && len(req.CommitSHAs) == 0 && len(req.Branches) == 0 && len(req.Texts) == 0 {
-		return nil, fmt.Errorf("at least one evidence array is required")
+		return nil, errCommandInput("at least one evidence array is required")
 	}
 	if s.releaseFactsProvider == nil {
 		return nil, fmt.Errorf("release facts are not available")
@@ -188,7 +188,7 @@ func (s *InternalCommandService) executeGetTaskContext(ctx context.Context, meta
 		req.TaskIDs = []string{commandTaskTargetID(meta)}
 	}
 	if len(req.TaskIDs) == 0 {
-		return nil, fmt.Errorf("task_ids or task_keys is required")
+		return nil, errCommandInput("task_ids or task_keys is required")
 	}
 	if len(req.TaskIDs) > 50 {
 		return nil, fmt.Errorf("at most 50 task_ids may be requested")
@@ -197,7 +197,7 @@ func (s *InternalCommandService) executeGetTaskContext(ctx context.Context, meta
 		for _, taskID := range req.TaskIDs {
 			detail, err := s.taskService.GetByID(ctx, taskID)
 			if err != nil || detail.Task.WorkspaceID != meta.WorkspaceID {
-				return nil, fmt.Errorf("task not found")
+				return nil, errCommandNotFound("task")
 			}
 			if err := s.validateTaskWithinTarget(ctx, meta, &detail.Task); err != nil {
 				return nil, err
