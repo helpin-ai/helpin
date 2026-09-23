@@ -3,6 +3,7 @@ import { createRouter, ErrorComponent } from '@tanstack/react-router'
 import { setupRouterSsrQueryIntegration } from '@tanstack/react-router-ssr-query'
 import { LoadingState } from '@/components/LoadingState'
 import { createHelpCenterQueryClient } from '@/lib/queryClient'
+import { createBasepathRewrite } from '@/lib/pathUtils'
 import { resolveHelpCenterContext } from '@/lib/utils'
 import { routeTree } from './routeTree.gen'
 
@@ -78,7 +79,7 @@ export function getRouter() {
   const router = createRouter({
     routeTree,
     context: { queryClient },
-    basepath,
+    rewrite: basepath ? createBasepathRewrite(basepath) : undefined,
     scrollRestoration: true,
     defaultPreload: 'intent',
     defaultPendingComponent: () => <LoadingState />,
