@@ -44,6 +44,7 @@ func (d InternalCommandDefinition) RiskLevel() string {
 }
 
 type InternalCommandService struct {
+	imageService          *AgentImageService
 	jevDecisions          *JevDecisionService
 	agentService          *AgentService
 	taskService           *PMTaskService
@@ -474,6 +475,7 @@ func taskDependencyGraphHasCycle(graph map[string][]string) bool {
 
 func (s *InternalCommandService) registerDefaults() {
 	s.registerDirectGitCommands()
+	s.registerImageToolCommands()
 	s.register(InternalCommandDefinition{
 		Name:                 "agents.list_agents",
 		Module:               "agents",

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -113,7 +114,7 @@ func (s *InternalCommandService) executeInsertDocumentArtifact(ctx context.Conte
 	if err := decodeStrictInternalCommandInput(input, &req); err != nil {
 		return nil, fmt.Errorf("parse insert document artifact input: %w", err)
 	}
-	return s.insertDocumentArtifact(ctx, meta, req, "")
+	return s.insertDocumentArtifact(ctx, meta, req)
 }
 
 func (s *InternalCommandService) executeInsertDocumentImage(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
@@ -130,10 +131,10 @@ func (s *InternalCommandService) executeInsertDocumentImage(ctx context.Context,
 	return s.insertDocumentArtifact(ctx, meta, insertDocumentArtifactRequest{
 		DocumentID: req.DocumentID, ArtifactID: req.ArtifactID, AfterBlockID: req.AfterBlockID,
 		Description: req.Alt, Caption: req.Caption,
-	}, model.AgentRunArtifactTypeBrowserScreenshot)
+	}, model.AgentRunArtifactTypeBrowserScreenshot, model.AgentRunArtifactTypeGeneratedImage)
 }
 
-func (s *InternalCommandService) insertDocumentArtifact(ctx context.Context, meta model.InternalCommandContext, req insertDocumentArtifactRequest, requiredArtifactType string) (json.RawMessage, error) {
+func (s *InternalCommandService) insertDocumentArtifact(ctx context.Context, meta model.InternalCommandContext, req insertDocumentArtifactRequest, allowedArtifactTypes ...string) (json.RawMessage, error) {
 	if s.docsBlockService == nil {
 		return nil, fmt.Errorf("docs block service is not available")
 	}
@@ -162,8 +163,8 @@ func (s *InternalCommandService) insertDocumentArtifact(ctx context.Context, met
 	if artifact == nil || artifact.StorageMode != "object" || artifact.ObjectKey == nil || strings.TrimSpace(*artifact.ObjectKey) == "" {
 		return nil, errCommandNotFound("private document artifact")
 	}
-	if requiredArtifactType != "" && artifact.ArtifactType != requiredArtifactType {
-		return nil, errCommandNotFound("private browser screenshot artifact")
+	if len(allowedArtifactTypes) > 0 && !slices.Contains(allowedArtifactTypes, artifact.ArtifactType) {
+		return nil, errCommandNotFound("private image artifact")
 	}
 	blockType, attrs, err := documentBlockForArtifact(artifact, req.Description)
 	if err != nil {
@@ -197,7 +198,7 @@ func documentBlockForArtifact(artifact *model.AgentRunArtifact, description stri
 	}
 	reference := artifactReference(artifact.ID)
 	switch artifact.ArtifactType {
-	case model.AgentRunArtifactTypeBrowserScreenshot:
+	case model.AgentRunArtifactTypeBrowserScreenshot, model.AgentRunArtifactTypeGeneratedImage:
 		return "resizableImage", map[string]any{
 			"src": reference, "artifactId": artifact.ID, "alt": description,
 			"width": "100%", "height": "auto", "alignment": "center",
