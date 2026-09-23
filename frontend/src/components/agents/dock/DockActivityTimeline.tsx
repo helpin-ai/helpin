@@ -110,21 +110,25 @@ export function DockActivityTimeline({ group, runStatus, pauseReason, resolveAct
     : runStatus === 'paused' && pauseReason === 'human_approval' ? 'Waiting for approval'
     : runStatus === 'paused' && pauseReason === 'authentication' ? 'Waiting for sign-in'
     : 'Activity';
+  const summary = (
+    <button type="button" className={styles.summary} aria-expanded={expanded} aria-controls={detailsId} onClick={() => { setManuallyToggled(true); setExpanded(!expanded); }}>
+      <span className={cn(styles.summaryIcon, failed ? 'text-destructive' : 'text-muted-foreground')} aria-hidden="true">
+        {group.active ? <AskAgentWorkAnimation className="h-5 w-5" /> : failed || (!group.completed && (runStatus === 'failed' || runStatus === 'cancelled')) ? <Cancel01Icon className="h-4 w-4" /> : <Tick01Icon className="h-3.5 w-3.5" />}
+      </span>
+      <span className={styles.label} role={group.active ? 'status' : undefined}>{label}</span>
+      {duration !== undefined && duration > 0 && <span className={styles.elapsed}>{formatCodingSessionElapsed(duration)}</span>}
+      <DisclosureChevron open={expanded} className="h-3 w-3 shrink-0 opacity-65" />
+    </button>
+  );
   return (
     <section className={styles.container} aria-label="Agent activity" data-dock-activity-timeline data-running={group.active}>
-      <button type="button" className={styles.summary} aria-expanded={expanded} aria-controls={detailsId} onClick={() => { setManuallyToggled(true); setExpanded(!expanded); }}>
-        <span className={cn(styles.summaryIcon, failed ? 'text-destructive' : 'text-muted-foreground')} aria-hidden="true">
-          {group.active ? <AskAgentWorkAnimation className="h-5 w-5" /> : failed || (!group.completed && (runStatus === 'failed' || runStatus === 'cancelled')) ? <Cancel01Icon className="h-4 w-4" /> : <Tick01Icon className="h-3.5 w-3.5" />}
-        </span>
-        <span className={styles.label} role={group.active ? 'status' : undefined}>{label}</span>
-        {duration !== undefined && duration > 0 && <span className={styles.elapsed}>{formatCodingSessionElapsed(duration)}</span>}
-        <DisclosureChevron open={expanded} className="h-3 w-3 shrink-0 opacity-65" />
-      </button>
+      {!group.active && summary}
       {contentMounted && <div id={detailsId} className={styles.disclosure} data-open={expanded} aria-hidden={!expanded} inert={!expanded}>
         <div className={styles.disclosureInner}>
           <div className={styles.history}><DockActivitySteps segments={group.segments} active={group.active} resolveActor={resolveActor} /></div>
         </div>
       </div>}
+      {group.active && summary}
     </section>
   );
 }
