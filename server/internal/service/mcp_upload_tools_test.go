@@ -255,3 +255,34 @@ func (f *fakeMCPAttachmentService) VerifyAndConfirmUpload(context.Context, strin
 	f.verifyCalls++
 	return f.verifyErr
 }
+
+func TestReadDocumentsSummarizesAccessibleDocuments(t *testing.T) {
+	env := setupMCPDocsLifecycleTest(t, model.DocStatusDraft, model.SpaceTypeExternalCapable)
+	env.documents.documents["document-2"] = &model.DocsDocument{
+		ID: "document-2", WorkspaceID: "workspace-1", SpaceID: "space-hidden", Title: "Hidden",
+	}
+	env.service.docsContent = fakeMCPDocsContentReader{"document-1": 240}
+	result, err := env.run("read_documents", `{"document_ids":["document-1","document-2","missing"]}`)
+	if err != nil {
+		t.Fatalf("read_documents error = %v", err)
+	}
+	data := result.Data.(map[string]any)
+	items := data["items"].([]map[string]any)
+	if len(items) != 1 || items[0]["document_id"] != "document-1" || items[0]["word_count"] != 240 || items[0]["is_empty"] != false {
+		t.Fatalf("items = %#v", items)
+	}
+	notFound := data["not_found"].([]string)
+	if len(notFound) != 2 || notFound[0] != "document-2" || notFound[1] != "missing" {
+		t.Fatalf("not_found = %v, want hidden and missing documents", notFound)
+	}
+}
+
+type fakeMCPDocsContentReader map[string]int
+
+func (f fakeMCPDocsContentReader) GetByDocumentID(_ context.Context, documentID string) (*model.DocsContent, error) {
+	words, ok := f[documentID]
+	if !ok {
+		return nil, nil
+	}
+	return &model.DocsContent{DocumentID: documentID, WordCount: words}, nil
+}

@@ -254,6 +254,7 @@ The fully enabled catalog contains 49 tools; the catalog regression test asserts
 | `read_document` | Read | Reads document content through the canonical command contract | `PermDocsRead` + Docs module |
 | `get_document_blocks` | Read | Returns addressable document blocks for precise updates | `PermDocsRead` + Docs module |
 | `get_document` | Read | Loads one document record and verifies workspace ownership | `PermDocsRead` + Docs module |
+| `read_documents` | Read | Summarizes up to 50 documents in one call: status, word count, empty body, Help Center live state, and unpublished changes; inaccessible IDs are returned in `not_found` | `PermDocsRead` + Docs module |
 | `create_space` | Write | Creates an internal or external-capable Docs space without publishing content | `PermDocsEdit` + Docs module |
 | `create_collection` | Write | Creates a top-level or nested collection in an accessible space | `PermDocsEdit` + Docs module |
 | `update_space` | Write | Updates bounded metadata for an accessible Docs space | `PermDocsEdit` + Docs module |
@@ -756,7 +757,7 @@ The implementation includes automated checks for:
 - strict tool schemas and rejection of workspace-override properties
 - workspace-policy scope/toolset narrowing and forced read-only behavior
 - platform domain flags
-- the 58-tool catalog
+- the 59-tool catalog
 - document image uploads: presigned upload with storage verification, and SSRF-safe copy from a public URL
 - document lifecycle tools: publish, unpublish, archive, restore, and rename, including typed error codes
 - exclusion of deferred destructive, support-draft, and customer-send actions

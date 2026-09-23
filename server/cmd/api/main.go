@@ -1697,6 +1697,7 @@ func main() {
 	)
 	mcpService.SetDocsLifecycle(docsDocumentService, docsHelpcenterService, docsEmbeddingService)
 	mcpService.SetAttachments(pmAttachmentService)
+	mcpService.SetDocsContentReader(docsContentRepo)
 	supportInboxService.SetAuthzService(authzService)
 
 	// Inject authorization into WebSocket handler for workspace access checks.
