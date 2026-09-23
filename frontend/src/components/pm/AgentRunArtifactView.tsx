@@ -32,6 +32,7 @@ const ARTIFACT_ICONS: Record<string, React.ReactNode> = {
   review_decision: <SecurityCheckIcon className="h-3.5 w-3.5" />,
   browser_screenshot: <Image01Icon className="h-3.5 w-3.5" />,
   browser_recording: <PlayCircleIcon className="h-3.5 w-3.5" />,
+  generated_image: <Image01Icon className="h-3.5 w-3.5" />,
 };
 
 interface Props {
@@ -46,7 +47,8 @@ export function AgentRunArtifactView({ artifact, reviewDecisionArtifact = null, 
   const reviewFindings = artifact.artifact_type === 'review_findings' ? parseReviewFindingsArtifact(artifact.inline_content) : null;
   const reviewDecision = artifact.artifact_type === 'review_decision' ? parseReviewDecisionArtifact(artifact.inline_content) : null;
   const linkedDecision = artifact.artifact_type === 'review_findings' ? parseReviewDecisionArtifact(reviewDecisionArtifact?.inline_content) : null;
-  const isBrowserMedia = artifact.artifact_type === 'analysis_output' || artifact.artifact_type === 'browser_screenshot' || artifact.artifact_type === 'browser_recording';
+  const isImageArtifact = artifact.artifact_type === 'browser_screenshot' || artifact.artifact_type === 'generated_image';
+  const isBrowserMedia = artifact.artifact_type === 'analysis_output' || isImageArtifact || artifact.artifact_type === 'browser_recording';
   const mediaKey = isBrowserMedia ? `${artifact.workspace_id}/${artifact.id}` : '';
   const [mediaState, setMediaState] = useState<{ key: string; url: string | null; error: boolean }>({ key: '', url: null, error: false });
   const mediaURL = mediaState.key === mediaKey ? mediaState.url : null;
@@ -80,19 +82,19 @@ export function AgentRunArtifactView({ artifact, reviewDecisionArtifact = null, 
           {artifact.format === 'png' && <img src={mediaURL} alt="Analysis output" className="max-h-96 max-w-full" />}
           <a href={mediaURL} target="_blank" rel="noreferrer" download className="text-quiet-accent underline">Download {artifact.format?.toUpperCase() || 'file'}</a>
         </div> : <p>{mediaError ? 'Output is unavailable' : 'Loading output…'}</p>
-      ) : artifact.artifact_type === 'browser_screenshot' ? (
+      ) : isImageArtifact ? (
         mediaURL ? (
           <a href={mediaURL} target="_blank" rel="noreferrer" className="block overflow-hidden rounded border border-border/60 bg-background">
             <img
               src={mediaURL}
-              alt={typeof artifact.metadata?.file_name === 'string' ? artifact.metadata.file_name : 'Browser screenshot'}
+              alt={typeof artifact.metadata?.file_name === 'string' ? artifact.metadata.file_name : label}
               className="max-h-72 w-full object-contain"
               onError={() => { setMediaState({ key: mediaKey, url: null, error: true }); }}
             />
           </a>
         ) : (
           <div className="rounded border border-border/60 bg-background px-2 py-4 text-center text-[11px] text-muted-foreground">
-            {mediaError ? 'Screenshot is unavailable' : 'Loading screenshot…'}
+            {mediaError ? `${label} is unavailable` : `Loading ${label.toLowerCase()}…`}
           </div>
         )
       ) : artifact.artifact_type === 'browser_recording' ? (
