@@ -36,6 +36,7 @@
 }
 /* Task pages (onboarding): one column, no brand panel. */
 .public-page--solo { grid-template-columns: minmax(0, 1fr); max-width: 1200px; }
+.public-page--solo .public-page-content--wide { max-width: 600px; }
 .public-page-main { order: 2; display: flex; flex-direction: column; min-width: 0; padding: 22px 40px 12px; }
 .public-page-header, .public-page-footer { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
 .public-page-header a { flex-shrink: 0; }

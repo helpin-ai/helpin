@@ -5,7 +5,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/design-system/quiet-dropdown-select';
 import { useCreateOrganization, useOrganizations } from '@/hooks/queries';
-import { Loading01Icon } from '@/lib/icons';
+import {
+  BookOpen01Icon,
+  DollarCircleIcon,
+  File01Icon,
+  HeadphonesIcon,
+  Loading01Icon,
+  SourceCodeIcon,
+} from '@/lib/icons';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { generateWorkspaceSlug } from '@/lib/slugUtils';
 import type { Workspace } from '@/lib/types';
@@ -25,6 +32,22 @@ import { useOrganizationStore } from '@/stores/organizationStore';
 import { OnboardingActions } from './OnboardingShell';
 
 const NEW_ORGANIZATION = '__new_organization__';
+
+const goalIcons = {
+  product_engineering: SourceCodeIcon,
+  customer_support: HeadphonesIcon,
+  help_center_docs: BookOpen01Icon,
+  internal_docs: File01Icon,
+  sales_crm: DollarCircleIcon,
+} satisfies Record<WorkspaceOnboardingUseCase, typeof SourceCodeIcon>;
+
+const goalIconStyles = {
+  product_engineering: 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-300',
+  customer_support: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300',
+  help_center_docs: 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900 dark:bg-violet-950 dark:text-violet-300',
+  internal_docs: 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-300',
+  sales_crm: 'border-cyan-200 bg-cyan-50 text-cyan-700 dark:border-cyan-900 dark:bg-cyan-950 dark:text-cyan-300',
+} satisfies Record<WorkspaceOnboardingUseCase, string>;
 
 function workspaceKeyFromName(name: string) {
   return (name.replace(/[^a-zA-Z]/g, '').slice(0, 3) || 'WS').toUpperCase();
@@ -211,32 +234,45 @@ export function GoalPicker({
       <p id={`${id}-hint`} className="-mt-1 text-[12.5px] leading-5 text-muted-foreground">
         Select everything you want to set up. Your first choice leads your setup guide.
       </p>
-      <ul className="divide-y divide-border border-y border-border">
+      <ul className="grid gap-3 sm:grid-cols-2">
         {ONBOARDING_USE_CASE_OPTIONS.map((option) => {
           const position = selected.indexOf(option.value);
           const isSelected = position >= 0;
+          const Icon = goalIcons[option.value];
           return (
-            <li key={option.value}>
+            <li key={option.value} className="flex">
               <button
                 type="button"
                 aria-pressed={isSelected}
                 onClick={() => onToggle(option.value)}
-                className="flex w-full items-start gap-3 px-1 py-3 text-left transition-colors hover:bg-muted/60"
+                className={cn(
+                  'flex w-full flex-col rounded-lg border p-4 text-left transition-colors',
+                  isSelected
+                    ? 'border-foreground/60 bg-muted/50'
+                    : 'border-border hover:border-foreground/25 hover:bg-muted/40',
+                )}
               >
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold tabular-nums',
-                    isSelected ? 'border-foreground bg-foreground text-background' : 'border-input text-transparent',
-                  )}
-                >
-                  {isSelected ? position + 1 : ''}
+                <span className="flex items-start gap-3">
+                  <span aria-hidden="true" className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border', goalIconStyles[option.value])}>
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0 flex-1 pt-0.5 text-[13.5px] font-semibold leading-5 tracking-[-0.008em]">{option.label}</span>
+                  {/* The number shows priority: the first pick leads the setup guide. */}
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold tabular-nums',
+                      isSelected ? 'border-foreground bg-foreground text-background' : 'border-input text-transparent',
+                    )}
+                  >
+                    {isSelected ? position + 1 : ''}
+                  </span>
                 </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[13.5px] font-semibold leading-5 tracking-[-0.008em]">{option.label}</span>
-                  <span className="mt-0.5 block text-[12.5px] leading-5 text-muted-foreground">{option.description}</span>
-                  {isSelected && <span className="sr-only">Selected, priority {position + 1}</span>}
+                <span className="mt-3 block flex-1 text-[12.5px] leading-5 text-muted-foreground">{option.description}</span>
+                <span className="mt-3 block border-t border-border pt-3 text-[11.5px] leading-4 text-muted-foreground/90">
+                  {option.replaces}
                 </span>
+                {isSelected && <span className="sr-only">Selected, priority {position + 1}</span>}
               </button>
             </li>
           );
