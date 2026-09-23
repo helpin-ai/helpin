@@ -149,7 +149,7 @@ function SetupAIConnect({
 
   return (
     <form
-      className="grid max-w-xl gap-3 sm:grid-cols-[10rem_minmax(0,1fr)_auto] sm:items-end"
+      className="grid max-w-xl gap-3 sm:grid-cols-[12.5rem_minmax(0,1fr)_auto] sm:items-end"
       onSubmit={(event) => { event.preventDefault(); void submit(); }}
     >
       <div className="space-y-1">

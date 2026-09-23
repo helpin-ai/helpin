@@ -142,8 +142,10 @@ export function OnboardingFlow({ step, workspaceSlug }: OnboardingFlowProps) {
       <OnboardingShell
         steps={steps}
         current="workspace"
-        title={firstWorkspace ? 'Set up your workspace' : 'Create a workspace'}
-        description="Name it and choose what you want to set up. You can change both later."
+        title={firstWorkspace ? 'Create your workspace' : 'Create a workspace'}
+        description={firstWorkspace
+          ? 'A workspace is your team’s home in Helpin. Projects, support, docs and customers live here, and you invite teammates into it. Most companies need only one.'
+          : 'Each workspace keeps its own projects, support, docs, customers and members. Use a separate one for a different company or a team that works apart.'}
         headerAction={headerAction}
       >
         <WorkspaceStep useEmailDefaults={firstWorkspace} onCreated={handleCreated} />

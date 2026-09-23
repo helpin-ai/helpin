@@ -175,9 +175,11 @@ export function WorkspaceStep({ useEmailDefaults, onCreated }: WorkspaceStepProp
           onChange={(event) => setName(event.target.value)}
           placeholder="Acme"
           autoComplete="organization"
+          aria-describedby={`${id}-name-hint`}
           autoFocus
           required
         />
+        <p id={`${id}-name-hint`} className="text-[12.5px] text-muted-foreground">Usually your company or team name.</p>
       </div>
       <GoalPicker selected={goals} onToggle={(goal) => setGoals((current) => toggleOrderedSelection(current, goal))} />
       <p id={errorId} role="alert" className="text-sm text-destructive empty:hidden">{error ?? ''}</p>

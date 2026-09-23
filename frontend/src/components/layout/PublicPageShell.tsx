@@ -10,11 +10,13 @@ interface PublicPageShellProps {
   headerAction?: ReactNode;
   /** `wide` fits multi-part forms such as workspace onboarding. */
   contentWidth?: 'narrow' | 'wide';
+  /** Hide the brand panel for task pages such as onboarding; sign-in and signup keep it. */
+  brandPanel?: boolean;
 }
 
-export function PublicPageShell({ children, headerAction, contentWidth = 'narrow' }: PublicPageShellProps) {
+export function PublicPageShell({ children, headerAction, contentWidth = 'narrow', brandPanel = true }: PublicPageShellProps) {
   return (
-    <div className="public-page">
+    <div className={cn('public-page', !brandPanel && 'public-page--solo')}>
       <div className="public-page-main">
         <header className="public-page-header">
           <a href="https://helpin.ai" aria-label="Helpin home"><HelpinLogo /></a>
@@ -27,13 +29,15 @@ export function PublicPageShell({ children, headerAction, contentWidth = 'narrow
           <span>Made for working together.</span>
         </footer>
       </div>
-      <aside className="public-page-brand" aria-label="Helpin: good work happens together">
-        <div className="public-page-brand-heading">
-          <p className="public-page-eyebrow">A little more connected</p>
-          <h2>Good work<br />happens together.</h2>
-        </div>
-        <PublicPageVortex />
-      </aside>
+      {brandPanel && (
+        <aside className="public-page-brand" aria-label="Helpin: good work happens together">
+          <div className="public-page-brand-heading">
+            <p className="public-page-eyebrow">A little more connected</p>
+            <h2>Good work<br />happens together.</h2>
+          </div>
+          <PublicPageVortex />
+        </aside>
+      )}
     </div>
   );
 }

@@ -42,29 +42,25 @@ export function OnboardingShell({ steps, current, title, description, headerActi
   }, [current]);
 
   return (
-    <PublicPageShell headerAction={headerAction} contentWidth="wide">
+    <PublicPageShell headerAction={headerAction} contentWidth="wide" brandPanel={false}>
       <div className="space-y-7">
         {currentIndex >= 0 && (
-          <nav aria-label="Onboarding progress">
-            <p className="mb-2 text-[12px] text-muted-foreground">
-              Step {currentIndex + 1} of {steps.length}
-              <span aria-hidden="true"> · </span>
-              <span className="text-foreground">{stepLabels[steps[currentIndex]]}</span>
-            </p>
-            <ol className="flex gap-1">
-              {steps.map((step, index) => (
-                <li
-                  key={step}
-                  aria-current={index === currentIndex ? 'step' : undefined}
-                  className={cn('h-0.5 flex-1 rounded-full', index <= currentIndex ? 'bg-foreground' : 'bg-border')}
-                >
-                  <span className="sr-only">
-                    {stepLabels[step]}{index < currentIndex ? ' (done)' : index === currentIndex ? ' (current)' : ''}
-                  </span>
-                </li>
-              ))}
-            </ol>
-          </nav>
+          // One continuous bar, no visible count: the AI step is only known after
+          // the workspace exists, so a "Step N of M" label would change mid-flow.
+          <div
+            role="progressbar"
+            aria-label="Onboarding progress"
+            aria-valuemin={0}
+            aria-valuemax={steps.length}
+            aria-valuenow={currentIndex + 1}
+            aria-valuetext={`${stepLabels[steps[currentIndex]]}, step ${currentIndex + 1} of ${steps.length}`}
+            className="h-0.5 w-full overflow-hidden rounded-full bg-border"
+          >
+            <div
+              className="h-full rounded-full bg-foreground transition-[width] duration-300 ease-out motion-reduce:transition-none"
+              style={{ width: `${((currentIndex + 1) / steps.length) * 100}%` }}
+            />
+          </div>
         )}
         <header className="space-y-2.5">
           <h1
