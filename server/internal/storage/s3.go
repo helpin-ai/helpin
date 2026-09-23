@@ -215,6 +215,19 @@ func (s *S3Client) GetObject(ctx context.Context, key string) ([]byte, error) {
 	return data, nil
 }
 
+// HeadObject returns the stored size of an object, or an error when it does
+// not exist. It verifies client-side uploads without downloading them.
+func (s *S3Client) HeadObject(ctx context.Context, key string) (int64, error) {
+	result, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("head S3 object: %w", err)
+	}
+	return aws.ToInt64(result.ContentLength), nil
+}
+
 // DeleteObject deletes an object from S3.
 func (s *S3Client) DeleteObject(ctx context.Context, key string) error {
 	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{

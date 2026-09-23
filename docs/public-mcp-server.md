@@ -264,6 +264,11 @@ The fully enabled catalog contains 49 tools; the catalog regression test asserts
 | `update_document_block` | Write | Updates a specific block using the addressable block contract | `PermDocsEdit` + Docs module |
 | `edit_document` | Write | Atomically applies up to 20 edits (replace text, replace or delete a block range, insert before/after) against the version from a read; nothing is applied on conflict | `PermDocsEdit` + Docs module |
 | `update_document` | Write | Renames a document or updates its excerpt and tags | `PermDocsEdit` + Docs module |
+| `prepare_document_image_upload` | Write | Returns a presigned PUT URL for a PNG, JPEG, WebP, or GIF image (up to 20 MB) attached privately to a document | `PermDocsEdit` + Docs module |
+| `complete_document_image_upload` | Write | Confirms the upload only after storage reports an object of the declared size, then returns markdown to insert | `PermDocsEdit` + Docs module |
+| `upload_document_image_from_url` | Write | Copies a public HTTPS image (up to 10 MB) into Helpin through the SSRF-safe media client and returns markdown to insert | `PermDocsEdit` + Docs module |
+
+Uploaded images stay private while the document is a draft. Publishing to the Help Center copies referenced images into the public snapshot. Image URLs must be HTTPS. Private, loopback, link-local, and metadata addresses are refused when the address is resolved, and again on each redirect (at most three). File contents must match the declared image type. Upload errors use `UPLOAD_NOT_FOUND`, `UPLOAD_SIZE_MISMATCH`, `UNSUPPORTED_CONTENT_TYPE`, `URL_NOT_PUBLIC`, and `URL_FETCH_FAILED`.
 | `archive_document` | Write, destructive | Archives a document; refuses a live Help Center article with `DOC_IS_PUBLISHED` | `PermDocsEdit` + Docs module |
 | `restore_document` | Write | Restores an archived document to draft | `PermDocsEdit` + Docs module |
 | `publish_document` | Publish | Publishes a document; in an external-capable space it also becomes a live Help Center article using the existing snapshot, slug, and redirect behavior | `helpin.docs.publish` + `PermDocsPublish` + Docs module |
@@ -751,7 +756,8 @@ The implementation includes automated checks for:
 - strict tool schemas and rejection of workspace-override properties
 - workspace-policy scope/toolset narrowing and forced read-only behavior
 - platform domain flags
-- the 55-tool catalog
+- the 58-tool catalog
+- document image uploads: presigned upload with storage verification, and SSRF-safe copy from a public URL
 - document lifecycle tools: publish, unpublish, archive, restore, and rename, including typed error codes
 - exclusion of deferred destructive, support-draft, and customer-send actions
 - agent-run privacy: runs started outside a dock chat never reuse a chat's run, and `get_agent_run` / `cancel_agent_run` hide other users' dock chat runs
