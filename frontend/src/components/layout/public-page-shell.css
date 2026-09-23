@@ -42,6 +42,7 @@
 .public-page a:hover { text-decoration: underline; text-underline-offset: 4px; }
 .public-page a:focus-visible, .public-page button:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; }
 .public-page-content { width: 100%; max-width: 380px; margin: auto; padding-block: 64px; overflow-wrap: anywhere; }
+.public-page-content--wide { max-width: 520px; padding-block: 48px; }
 .public-page-footer { justify-content: flex-end; color: var(--muted-foreground); font-size: 11px; line-height: 1.5; }
 .public-page-content > [data-slot="card"] { border: 0; border-radius: 0; background: transparent; padding: 0; gap: 28px; overflow: visible; }
 .public-page-content [data-slot="card-header"],

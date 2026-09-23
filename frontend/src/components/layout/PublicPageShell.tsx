@@ -1,21 +1,28 @@
 import type { ReactNode } from 'react';
 import { HelpinLogo } from '@/components/layout/HelpinLogo';
+import { cn } from '@/lib/utils';
 import { PublicPageVortex } from './PublicPageVortex';
 import './public-page-shell.css';
 
 interface PublicPageShellProps {
   children: ReactNode;
+  /** Replaces the "Back to website" link, for example with Sign out during onboarding. */
+  headerAction?: ReactNode;
+  /** `wide` fits multi-part forms such as workspace onboarding. */
+  contentWidth?: 'narrow' | 'wide';
 }
 
-export function PublicPageShell({ children }: PublicPageShellProps) {
+export function PublicPageShell({ children, headerAction, contentWidth = 'narrow' }: PublicPageShellProps) {
   return (
     <div className="public-page">
       <div className="public-page-main">
         <header className="public-page-header">
           <a href="https://helpin.ai" aria-label="Helpin home"><HelpinLogo /></a>
-          <a href="https://helpin.ai" className="public-page-back">Back to website <span aria-hidden="true">↗</span></a>
+          {headerAction ?? (
+            <a href="https://helpin.ai" className="public-page-back">Back to website <span aria-hidden="true">↗</span></a>
+          )}
         </header>
-        <main className="public-page-content">{children}</main>
+        <main className={cn('public-page-content', contentWidth === 'wide' && 'public-page-content--wide')}>{children}</main>
         <footer className="public-page-footer">
           <span>Made for working together.</span>
         </footer>

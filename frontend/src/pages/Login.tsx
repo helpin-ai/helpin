@@ -13,6 +13,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { PublicPageShell } from '@/components/layout/PublicPageShell';
 import { toast } from 'sonner';
 import { consumeRedirectAfterLogin, loginRedirectFromSearch } from '@/lib/authRedirect';
+import { loginDestination } from '@/lib/signupRedirect';
 
 export default function Login() {
   useTitle('Sign In');
@@ -42,16 +43,11 @@ export default function Login() {
       return;
     }
 
-    if (workspaces && workspaces.length > 0) {
-      const user = useAuthStore.getState().user;
-      const defaultWs = user?.default_workspace_id
-        ? workspaces.find((w) => w.id === user.default_workspace_id)
-        : null;
-      const targetSlug = defaultWs ? defaultWs.slug : workspaces[0].slug;
-      navigate({ to: '/w/$slug/pm/my-work', params: { slug: targetSlug } });
-    } else {
-      navigate({ to: '/workspaces' });
-    }
+    // Without a workspace, the person continues in the full onboarding flow.
+    navigate(loginDestination({
+      workspaces,
+      defaultWorkspaceId: useAuthStore.getState().user?.default_workspace_id,
+    }));
   };
 
   useEffect(() => {
