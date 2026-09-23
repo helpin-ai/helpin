@@ -304,7 +304,7 @@ Document lifecycle tools return typed error codes that clients can act on: `DOCU
 | Tool | Mode | What it does | Helpin check |
 | --- | --- | --- | --- |
 | `list_agents` | Read | Lists system and custom agents the actor may use, without provider credentials or private runtime configuration | `PermPMRead` |
-| `start_agent_run` | Async write | Starts one normal durable Helpin agent run for an explicit target. It never attaches to another user's private dock chat run; if one would be reused it returns `RUN_NOT_OWNED` | `PermPMEdit` |
+| `start_agent_run` | Async write | Starts one normal durable Helpin agent run for an explicit target. Task targets accept a task ID or key such as `HEL-12`. Agents with repository tools, such as Forge and Sub-agent, need a task repository: pass `repository_id` from `list_repositories`, and optionally `base_branch`, to set the task's delivery repository first, as the app's repository picker does. It never attaches to another user's private dock chat run; if one would be reused it returns `RUN_NOT_OWNED` | `PermPMEdit`; `repository_id` also needs the PM toolset and `helpin.pm.write` scope |
 | `get_agent_run` | Read | Polls status, output summary, artifacts, and run information. Other users' dock chat runs are reported as not found | `PermPMRead` |
 | `cancel_agent_run` | Destructive write | Requests cancellation of an active run | `PermPMEdit` |
 
@@ -317,6 +317,18 @@ Allowed run targets are:
 - `crm_deal`
 - `crm_contact`
 - `support_conversation`
+
+`start_agent_run` returns typed error codes, as `CODE: message`, when a launch precondition fails:
+
+| Code | Meaning | What to do |
+| --- | --- | --- |
+| `TARGET_NOT_FOUND` | The task, epic, or other target does not exist in the connected workspace | Use an ID from `list_tasks`, `list_epics`, or `search_workspace` |
+| `AGENT_TARGET_NOT_ALLOWED` | The agent's allowed targets or team restriction exclude this target | Choose an agent from `list_agents` whose `allowed_targets` include the target type and team |
+| `REPOSITORY_REQUIRED` | The agent needs a repository and the task has none, or its repository is not connected or enabled | Call `list_repositories` and retry with `repository_id` |
+| `REPOSITORY_NOT_APPLICABLE` | `repository_id` or `base_branch` was sent for a target other than a task | Remove them and retry |
+| `TARGET_BUSY` | Another agent already has an active or paused run on the target | Wait for it to finish or cancel it, then retry |
+| `AGENT_RUN_LIMIT` | An hourly or concurrent agent-run safety limit was reached; the message names the limit | Retry later or wait for an active run to finish |
+| `RUN_NOT_OWNED` | The run that would be reused is another user's private dock chat run | Wait for it to finish or choose another target |
 
 ### 7.7 Parity tools (Linear and Plane)
 

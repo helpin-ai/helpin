@@ -26,6 +26,11 @@ import (
 )
 
 var ErrTaskDeliveryTargetRequired = errors.New("task has no delivery target configured")
+
+// ErrDeliveryRepositoryUnavailable means the selected repository is missing,
+// disabled, or not connected for PM delivery in this workspace.
+var ErrDeliveryRepositoryUnavailable = errors.New("repository is not available for PM delivery")
+
 var ErrEpicDeliveryTargetRequired = errors.New("epic has no delivery target configured")
 
 // GitService contains git integration and task delivery business logic.
@@ -1489,7 +1494,7 @@ func (s *GitService) UpdateTaskDeliveryTarget(ctx context.Context, workspaceID, 
 			return nil, err
 		}
 		if repo == nil {
-			return nil, fmt.Errorf("repository is not available for PM delivery")
+			return nil, ErrDeliveryRepositoryUnavailable
 		}
 		target.RepositoryID = &repo.ID
 		target.RepoFullName = &repo.FullName
@@ -1513,7 +1518,7 @@ func (s *GitService) UpdateTaskDeliveryTarget(ctx context.Context, workspaceID, 
 			return nil, err
 		}
 		if repo == nil {
-			return nil, fmt.Errorf("repository is not available for PM delivery")
+			return nil, ErrDeliveryRepositoryUnavailable
 		}
 		target.RepositoryID = &repo.ID
 		target.RepoFullName = &repo.FullName
@@ -1610,7 +1615,7 @@ func (s *GitService) UpdateEpicDeliveryTarget(ctx context.Context, workspaceID, 
 			return nil, err
 		}
 		if repo == nil {
-			return nil, fmt.Errorf("repository is not available for PM delivery")
+			return nil, ErrDeliveryRepositoryUnavailable
 		}
 		target.RepositoryID = &repo.ID
 		target.RepoFullName = &repo.FullName
@@ -1634,7 +1639,7 @@ func (s *GitService) UpdateEpicDeliveryTarget(ctx context.Context, workspaceID, 
 			return nil, err
 		}
 		if repo == nil {
-			return nil, fmt.Errorf("repository is not available for PM delivery")
+			return nil, ErrDeliveryRepositoryUnavailable
 		}
 		target.RepositoryID = &repo.ID
 		target.RepoFullName = &repo.FullName
@@ -1935,7 +1940,7 @@ func (s *GitService) ResolveTaskDeliveryTargetForRun(ctx context.Context, worksp
 			return nil, err
 		}
 		if repo == nil {
-			return nil, fmt.Errorf("repository is not available for PM delivery")
+			return nil, ErrDeliveryRepositoryUnavailable
 		}
 	}
 	return target, nil
