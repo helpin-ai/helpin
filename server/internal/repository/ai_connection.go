@@ -95,6 +95,18 @@ func (r *AIConnectionRepository) RecordVerification(ctx context.Context, id stri
 		Updates(map[string]any{"last_verified_at": at, "last_verification_error": failure}).Error
 }
 
+// SharedEmbeddingConnections returns the workspace-owned, live, connected
+// connections for the given providers, oldest first. Secrets are included so
+// the caller can decrypt them; callers must never serialize the result.
+func (r *AIConnectionRepository) SharedEmbeddingConnections(ctx context.Context, workspace string, providers []string) ([]model.AIConnection, error) {
+	var out []model.AIConnection
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND scope = ? AND user_id IS NULL AND superseded_by IS NULL AND status = ? AND provider IN ?",
+			workspace, "workspace", "connected", providers).
+		Order("created_at, id").Find(&out).Error
+	return out, err
+}
+
 // WorkspaceExists rejects deleted workspaces before loading shared credentials.
 // Workspaces have no lifecycle status column; edition policy handles billing gates.
 func (r *AIConnectionRepository) WorkspaceExists(ctx context.Context, workspace string) (bool, error) {

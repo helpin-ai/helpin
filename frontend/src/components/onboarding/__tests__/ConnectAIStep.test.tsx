@@ -50,6 +50,7 @@ function row(container: HTMLElement, provider: string) {
 
 async function connect(container: HTMLElement, provider: string, key: string) {
   const r = row(container, provider);
+  await click(button(r, 'Add key'));
   await type(r.querySelector('input[type="password"]') as HTMLInputElement, key);
   await act(async () => { r.querySelector('form')!.requestSubmit(); });
   await flush();
@@ -61,10 +62,32 @@ describe('ConnectAIStep', () => {
     const { container } = await renderStep();
 
     for (const provider of ['openrouter', 'openai', 'anthropic']) {
-      expect(row(container, provider)?.querySelector('input[type="password"]')).not.toBeNull();
+      expect(row(container, provider)).not.toBeNull();
+      expect(button(row(container, provider), 'Add key')).toBeDefined();
     }
     expect(container.textContent).toContain('You can add, replace or remove them later in Settings → AI & knowledge → AI setup.');
     expect(button(container, 'Skip for now')).toBeDefined();
+  });
+
+  it('keeps each provider collapsed until Add key opens its focused key field', async () => {
+    listConnections([]);
+    const { container } = await renderStep();
+
+    expect(container.querySelector('input[type="password"]')).toBeNull();
+    const openai = row(container, 'openai');
+    expect(openai.textContent).toContain('GPT models, direct from OpenAI.');
+
+    await click(button(openai, 'Add key'));
+    const field = openai.querySelector('input[type="password"]') as HTMLInputElement;
+    expect(field).not.toBeNull();
+    expect(document.activeElement).toBe(field);
+    expect(button(openai, 'Connect and test')).toBeDefined();
+    expect(button(openai, 'Add key')).toBeUndefined();
+    expect(row(container, 'anthropic').querySelector('input')).toBeNull();
+
+    await click(button(openai, 'Cancel'));
+    expect(openai.querySelector('input')).toBeNull();
+    expect(button(openai, 'Add key')).toBeDefined();
   });
 
   it('fills the keyless placeholder connection instead of creating a duplicate, then tests it', async () => {

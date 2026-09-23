@@ -4,7 +4,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/button';
 import { EmailChipInput, classifyEmailChipInput, mergeEmailChips } from '@/components/ui/email-chip-input';
 import { Label } from '@/components/ui/label';
-import { Loading01Icon } from '@/lib/icons';
+import { Copy01Icon, Loading01Icon } from '@/lib/icons';
 import { inviteService } from '@/lib/services/inviteService';
 import { settingsService } from '@/lib/services/settingsService';
 import { OnboardingActions, OnboardingTextButton } from './OnboardingShell';
@@ -13,33 +13,25 @@ type InviteStepProps = {
   workspaceId: string;
   /** Teams created during onboarding; non-admin invitees join them. */
   teamIds: string[];
-  /** Outbound email isn't set up on this server, so invitations can't be delivered. */
+  /** Outbound email isn't set up on this server, so invitations are shared as links. */
   emailUnavailable: boolean;
   onDone: () => void;
 };
 
-export function InviteStep({ workspaceId, teamIds, emailUnavailable, onDone }: InviteStepProps) {
-  if (emailUnavailable) {
-    return (
-      <div className="space-y-7">
-        <p className="text-sm leading-relaxed">
-          Email isn’t set up on this server, so invitations can’t be sent yet. You can invite people later from Settings → Members.
-        </p>
-        <OnboardingActions>
-          <Button type="button" className="w-full sm:w-auto sm:min-w-32" onClick={onDone}>Continue</Button>
-        </OnboardingActions>
-      </div>
-    );
-  }
-  return <InviteForm workspaceId={workspaceId} teamIds={teamIds} onDone={onDone} />;
-}
+type InviteLink = { email: string; url: string };
 
-function InviteForm({ workspaceId, teamIds, onDone }: Omit<InviteStepProps, 'emailUnavailable'>) {
+/**
+ * Invites teammates. With application email configured, invitations are sent
+ * by email; without it (or when a send fails over to a link) each invitation
+ * returns a join link the person can copy and share themselves.
+ */
+export function InviteStep({ workspaceId, teamIds, emailUnavailable, onDone }: InviteStepProps) {
   const id = useId();
   const [emails, setEmails] = useState<string[]>([]);
   const [input, setInput] = useState('');
   const [role, setRole] = useState('member');
   const [sending, setSending] = useState(false);
+  const [links, setLinks] = useState<InviteLink[]>([]);
   const recipients = useMemo(() => mergeEmailChips(emails, input), [emails, input]);
   const hasInvalidInput = useMemo(() => classifyEmailChipInput(input).invalid.length > 0, [input]);
 
@@ -52,7 +44,8 @@ function InviteForm({ workspaceId, teamIds, onDone }: Omit<InviteStepProps, 'ema
     setEmails(recipients);
     setInput('');
     setSending(true);
-    let sent = 0;
+    let emailed = 0;
+    const created: InviteLink[] = [];
     const failures: { email: string; error: string }[] = [];
     await Promise.all(
       recipients.map(async (email) => {
@@ -61,7 +54,8 @@ function InviteForm({ workspaceId, teamIds, onDone }: Omit<InviteStepProps, 'ema
           failures.push({ email, error });
           return;
         }
-        sent++;
+        if (data?.email_sent === false && data.join_url) created.push({ email, url: data.join_url });
+        else emailed++;
         if (data?.id && role !== 'admin' && teamIds.length > 0) {
           await Promise.all(teamIds.map((teamId) => settingsService.addTeamInvitation(workspaceId, teamId, data.id)));
         }
@@ -69,18 +63,27 @@ function InviteForm({ workspaceId, teamIds, onDone }: Omit<InviteStepProps, 'ema
     );
     setSending(false);
     const failureLines = failures.map((failure) => `${failure.email}: ${failure.error}`).join('\n');
-    if (sent > 0 && failures.length > 0) {
-      toast.warning(`${sent} of ${recipients.length} invitations sent`, { description: failureLines });
-    } else if (sent > 0) {
-      toast.success(`${sent} invitation${sent === 1 ? '' : 's'} sent`);
-    } else {
-      toast.error('Invitations weren’t sent', { description: failureLines });
+    if (failures.length > 0) {
+      toast.error(`${failures.length} invitation${failures.length === 1 ? '' : 's'} couldn’t be created`, { description: failureLines });
+    } else if (emailed > 0) {
+      toast.success(`${emailed} invitation${emailed === 1 ? '' : 's'} sent`);
     }
-    onDone();
+    if (created.length > 0) {
+      setLinks(created.sort((a, b) => recipients.indexOf(a.email) - recipients.indexOf(b.email)));
+      return;
+    }
+    if (failures.length === 0) onDone();
   };
+
+  if (links.length > 0) return <InviteLinks links={links} onDone={onDone} />;
 
   return (
     <form onSubmit={(event) => void submit(event)} className="space-y-7">
+      {emailUnavailable && (
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          Email isn’t set up on this server, so Helpin creates an invite link for each person. Share the links yourself.
+        </p>
+      )}
       <div className="space-y-2">
         <p className="text-sm font-medium" aria-hidden="true">Email addresses</p>
         <EmailChipInput
@@ -110,9 +113,54 @@ function InviteForm({ workspaceId, teamIds, onDone }: Omit<InviteStepProps, 'ema
         <OnboardingTextButton onClick={onDone} disabled={sending}>Skip</OnboardingTextButton>
         <Button type="submit" className="w-full sm:w-auto sm:min-w-32" disabled={sending || recipients.length === 0 || hasInvalidInput}>
           {sending && <Loading01Icon className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />}
-          {sending ? 'Sending…' : 'Send invitations'}
+          {sending ? 'Creating…' : emailUnavailable ? 'Create invite links' : 'Send invitations'}
         </Button>
       </OnboardingActions>
     </form>
+  );
+}
+
+function InviteLinks({ links, onDone }: { links: InviteLink[]; onDone: () => void }) {
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const copy = async (link: InviteLink) => {
+    try {
+      await navigator.clipboard.writeText(link.url);
+      setCopied(link.email);
+    } catch {
+      toast.error('Couldn’t copy the link. Select it and copy it manually.');
+    }
+  };
+
+  return (
+    <div className="space-y-7">
+      <p className="text-sm leading-relaxed">
+        Send each person their link. It lets them create an account and join this workspace. You can find these links later in Settings → Members.
+      </p>
+      <ul className="divide-y divide-border border-y border-border">
+        {links.map((link) => (
+          <li key={link.email} className="flex items-center gap-3 py-3">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[13.5px] font-semibold">{link.email}</p>
+              <p className="truncate font-mono text-[11.5px] text-muted-foreground">{link.url}</p>
+            </div>
+            <OnboardingTextButton
+              className="min-h-0 shrink-0 text-[12.5px]"
+              aria-label={`Copy invite link for ${link.email}`}
+              onClick={() => void copy(link)}
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <Copy01Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                {copied === link.email ? 'Copied' : 'Copy link'}
+              </span>
+            </OnboardingTextButton>
+          </li>
+        ))}
+      </ul>
+      <p className="sr-only" role="status" aria-live="polite">{copied ? `Invite link for ${copied} copied` : ''}</p>
+      <OnboardingActions>
+        <Button type="button" className="w-full sm:w-auto sm:min-w-32" onClick={onDone}>Continue</Button>
+      </OnboardingActions>
+    </div>
   );
 }

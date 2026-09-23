@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 let permissions = new Set<string>();
+let serverAdmin = false;
 let role = 'admin';
 
 vi.mock('../SettingsPageFrame', () => ({
@@ -14,7 +15,7 @@ vi.mock('../SettingsPageFrame', () => ({
         workspaceId: 'ws-1',
         currentWorkspaceSlug: 'acme',
         access: { membership: { role } },
-        permissions: { has: (permission: string) => permissions.has(permission) },
+        permissions: { has: (permission: string) => permissions.has(permission), isServerAdmin: serverAdmin },
       })}
     </div>
   ),
@@ -23,6 +24,9 @@ vi.mock('@/components/setup/SystemStatusPanel', () => ({
   SystemStatusPanel: ({ workspaceId, slug, canManage, isOwner }: { workspaceId: string; slug: string; canManage: boolean; isOwner: boolean }) => (
     <div data-testid="panel" data-workspace={workspaceId} data-slug={slug} data-can-manage={String(canManage)} data-owner={String(isOwner)} />
   ),
+}));
+vi.mock('@/components/settings/server/AppEmailSettingsCard', () => ({
+  AppEmailSettingsCard: () => <div data-testid="email-settings" />,
 }));
 
 import { SystemStatusSettingsPage } from '../SystemStatusSettingsPage';
@@ -38,6 +42,7 @@ afterEach(() => {
   container = null;
   root = null;
   permissions = new Set();
+  serverAdmin = false;
   role = 'admin';
 });
 
@@ -50,8 +55,8 @@ function render() {
 }
 
 describe('SystemStatusSettingsPage', () => {
-  it('shows server services to workspace admins', () => {
-    permissions = new Set(['workspace.update']);
+  it('shows server services and application email to server admins', () => {
+    serverAdmin = true;
     role = 'owner';
     const page = render();
 
@@ -60,18 +65,20 @@ describe('SystemStatusSettingsPage', () => {
     expect(panel?.getAttribute('data-workspace')).toBe('ws-1');
     expect(panel?.getAttribute('data-can-manage')).toBe('true');
     expect(panel?.getAttribute('data-owner')).toBe('true');
+    expect(page.querySelector('[data-testid="email-settings"]')).not.toBeNull();
   });
 
-  it('keeps server services from members without workspace admin access', () => {
-    permissions = new Set(['workspace.read', 'settings.read']);
+  it('keeps server services from workspace admins who are not server admins', () => {
+    permissions = new Set(['workspace.update', 'settings.manage']);
     const page = render();
 
     expect(page.querySelector('[data-testid="panel"]')).toBeNull();
-    expect(page.textContent).toContain('Only workspace admins can view system status.');
+    expect(page.querySelector('[data-testid="email-settings"]')).toBeNull();
+    expect(page.textContent).toContain('Only server admins can view system status.');
   });
 
   it('announces the GitHub result it returned with and strips it from the URL', async () => {
-    permissions = new Set(['workspace.update']);
+    serverAdmin = true;
     window.history.replaceState(null, '', '/w/acme/settings/system-status?github=error&github_message=GitHub+could+not+confirm+the+installation.');
     const page = render();
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });

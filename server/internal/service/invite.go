@@ -74,11 +74,10 @@ func generateToken() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// CreateInvitation creates a new invitation and sends an email.
+// CreateInvitation creates a new invitation and emails it when application
+// email is configured. Without email the invitation is still created and the
+// response carries the join link (EmailSent=false) for the inviter to share.
 func (s *InviteService) CreateInvitation(ctx context.Context, req model.CreateInvitationRequest, inviterUserID string) (*model.InvitationResponse, error) {
-	if s.emailClient == nil {
-		return nil, fmt.Errorf("invitations are unavailable: application email is not configured")
-	}
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 
 	// Validate role
@@ -149,7 +148,8 @@ func (s *InviteService) CreateInvitation(ctx context.Context, req model.CreateIn
 		"invitation_id", created.ID,
 	)
 
-	if s.emailClient != nil {
+	emailSent := appEmailReady(s.emailClient)
+	if emailSent {
 		workspace, _ := s.workspaceRepo.GetByID(ctx, req.WorkspaceID)
 		inviter, _ := s.userRepo.GetByID(ctx, inviterUserID)
 		wsName := req.WorkspaceID
@@ -168,6 +168,9 @@ func (s *InviteService) CreateInvitation(ctx context.Context, req model.CreateIn
 			)
 			return nil, fmt.Errorf("invitation saved, but email delivery failed; check mail configuration and resend")
 		}
+	} else {
+		s.logger.InfoContext(ctx, "invitation created without email; share the join link",
+			"workspace_id", req.WorkspaceID, "invitation_id", created.ID)
 	}
 
 	s.trackProductEvent(ctx, ProductAnalyticsEvent{
@@ -187,6 +190,7 @@ func (s *InviteService) CreateInvitation(ctx context.Context, req model.CreateIn
 		ExpiresAt:         created.ExpiresAt,
 		CreatedAt:         created.CreatedAt,
 		JoinURL:           joinURL,
+		EmailSent:         &emailSent,
 	}, nil
 }
 
@@ -436,8 +440,8 @@ func (s *InviteService) ListInvitations(ctx context.Context, workspaceID, userID
 
 // ResendInvitation resends an invitation email with a new token.
 func (s *InviteService) ResendInvitation(ctx context.Context, invitationID, userID string) error {
-	if s.emailClient == nil {
-		return fmt.Errorf("invitations are unavailable: application email is not configured")
+	if !appEmailReady(s.emailClient) {
+		return fmt.Errorf("email isn't set up on this server, so invitations can't be resent; copy the invite link instead")
 	}
 	inv, err := s.invitationRepo.GetByID(ctx, invitationID)
 	if err != nil {
@@ -489,7 +493,7 @@ func (s *InviteService) ResendInvitation(ctx context.Context, invitationID, user
 		"email", inv.Email,
 	)
 
-	if s.emailClient != nil {
+	if appEmailReady(s.emailClient) {
 		workspace, _ := s.workspaceRepo.GetByID(ctx, inv.WorkspaceID)
 		inviter, _ := s.userRepo.GetByID(ctx, userID)
 		wsName := inv.WorkspaceID

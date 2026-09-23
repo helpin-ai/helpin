@@ -9,6 +9,8 @@ import (
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+
+	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 // sampleDataItemsTestSchema mirrors migration 202609220041 for SQLite tests.
@@ -55,10 +57,13 @@ func TestSetupEvidenceIgnoresSampleData(t *testing.T) {
 		`INSERT INTO crm_pipeline_stages (id, pipeline_id, stage_type) VALUES ('open', 'pipeline', 'open'), ('won', 'pipeline', 'won'), ('lost', 'pipeline', 'lost')`,
 		`INSERT INTO crm_deals (id, workspace_id, owner_member_id, amount, close_date) VALUES ('deal', 'ws', 'member', 100, '2026-03-01')`,
 		`INSERT INTO crm_associations (id, workspace_id, from_object_type, from_object_id, to_object_type, to_object_id) VALUES ('assoc', 'ws', 'contact', 'contact', 'deal', 'deal')`,
+		// A sample Flow someone turned on is still sample content.
+		`INSERT INTO automation_rules (id, workspace_id, enabled) VALUES ('flow', 'ws', 1)`,
 		`INSERT INTO sample_data_items (workspace_id, entity_type, entity_id) VALUES
 			('ws', 'workspace_team', 'team'), ('ws', 'pm_epic', 'epic'), ('ws', 'pm_task', 'task'),
 			('ws', 'support_conversation', 'conversation'), ('ws', 'docs_space', 'space'), ('ws', 'docs_document', 'doc'),
-			('ws', 'crm_contact', 'contact'), ('ws', 'crm_company', 'company'), ('ws', 'crm_pipeline', 'pipeline'), ('ws', 'crm_deal', 'deal')`,
+			('ws', 'crm_contact', 'contact'), ('ws', 'crm_company', 'company'), ('ws', 'crm_pipeline', 'pipeline'), ('ws', 'crm_deal', 'deal'),
+			('ws', 'automation_rule', 'flow')`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatalf("seed: %v", err)
@@ -84,6 +89,7 @@ func TestSetupEvidenceIgnoresSampleData(t *testing.T) {
 		"crm companies":     evidence.CRMCompanyCount,
 		"crm pipelines":     evidence.CRMPipelineCount,
 		"crm deals":         evidence.CRMActionableDealCount,
+		"enabled flows":     evidence.EnabledAutomationCount,
 	}
 	for name, count := range counts {
 		if count != 0 {
@@ -157,6 +163,46 @@ func TestSampleDataRepositoryKeepsSpaceHoldingRealDocuments(t *testing.T) {
 	db.Table("docs_spaces").Count(&count)
 	if count != 1 {
 		t.Fatalf("space deleted although it holds a real document")
+	}
+}
+
+func TestSampleDataRepositoryCreatesDisabledFlowAndRemovesIt(t *testing.T) {
+	db := setupSampleDataTestDB(t, append(sampleRemovalSchema(),
+		`CREATE TABLE automation_rules (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, name TEXT NOT NULL, description TEXT, enabled BOOLEAN NOT NULL DEFAULT 1, workflow_id TEXT, trigger_type TEXT NOT NULL, trigger_config TEXT NOT NULL DEFAULT '{}', action_type TEXT NOT NULL, action_config TEXT NOT NULL DEFAULT '{}', position INTEGER NOT NULL DEFAULT 0, stop_on_match BOOLEAN NOT NULL DEFAULT 0, created_by TEXT, created_at DATETIME, updated_at DATETIME)`,
+		`CREATE TABLE agent_trigger_executions (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, binding_id TEXT)`,
+	)...)
+	ctx := context.Background()
+	repo := NewSampleDataRepository(db)
+	for _, id := range []string{"flow", "used-flow"} {
+		rule := &model.AutomationRule{ID: id, WorkspaceID: "ws", Name: "Sample", Enabled: true, TriggerType: model.TriggerGitHubPRMerged,
+			TriggerConfig: []byte(`{"base_branch":"main"}`), ActionType: model.ActionMoveToState, ActionConfig: []byte(`{"target_state_id":"done"}`)}
+		if err := repo.CreateDisabledAutomationRule(ctx, rule); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+	}
+	var enabled int64
+	db.Table("automation_rules").Where("enabled = ?", true).Count(&enabled)
+	if enabled != 0 {
+		t.Fatalf("enabled sample Flows = %d, want every sample Flow created turned off", enabled)
+	}
+	if err := repo.CreateDisabledAutomationRule(ctx, &model.AutomationRule{WorkspaceID: "ws"}); err == nil {
+		t.Fatal("expected an error for a Flow without an identity")
+	}
+
+	if err := repo.DeleteEntity(ctx, "ws", model.SampleEntityAutomationRule, "flow"); err != nil {
+		t.Fatalf("delete unused Flow: %v", err)
+	}
+	// A Flow someone turned on and ran keeps its run history.
+	if err := db.Exec(`INSERT INTO agent_trigger_executions (id, workspace_id, binding_id) VALUES ('execution', 'ws', 'used-flow')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.DeleteEntity(ctx, "ws", model.SampleEntityAutomationRule, "used-flow"); !errors.Is(err, ErrSampleEntityRetained) {
+		t.Fatalf("delete used Flow err = %v, want ErrSampleEntityRetained", err)
+	}
+	var ids []string
+	db.Table("automation_rules").Pluck("id", &ids)
+	if len(ids) != 1 || ids[0] != "used-flow" {
+		t.Fatalf("remaining Flows = %v, want only the Flow with run history", ids)
 	}
 }
 

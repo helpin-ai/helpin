@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { GitHubAppCreateButton } from '@/components/git/GitHubAppCreateButton';
 import { gitHubAppOwnerNote } from '@/components/git/githubApp';
+import { GitProviderIcon } from '@/components/git/GitProviderIcon';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useGitHubAppStatus } from '@/hooks/queries/useGitHubApp';
 import { assignBrowserLocation } from '@/lib/githubReturn';
@@ -91,7 +92,7 @@ export function SetupGitHubStep({ capability, workspaceId, slug, canManage, isOw
  * Starts the installation with Helpin's signed install link, so GitHub
  * returns to this page and the installation is linked automatically.
  */
-function GitHubInstallAction({ workspaceId, returnTo }: { workspaceId: string; returnTo: GitHubReturnTo }) {
+export function GitHubInstallAction({ workspaceId, returnTo }: { workspaceId: string; returnTo: GitHubReturnTo }) {
   const [pending, setPending] = useState(false);
   const [result, setResult] = useState<SetupResult | null>(null);
 
@@ -115,6 +116,7 @@ function GitHubInstallAction({ workspaceId, returnTo }: { workspaceId: string; r
   return (
     <>
       <button type="button" className={setupTextActionClassName} disabled={pending} onClick={() => void install()}>
+        <GitProviderIcon provider="github" className="h-3.5 w-3.5" />
         Install the GitHub App
         {pending
           ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />

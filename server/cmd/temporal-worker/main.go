@@ -470,6 +470,13 @@ func main() {
 		fatalWithSentry("initialize AI connections", err)
 	}
 	agentService.SetAIConnectionService(aiConnectionService).SetAIProfileService(service.NewAIProfileService(repository.NewAIProfileRepository(db), aiConnectionService).SetAdmissionPolicy(editionServices.ConnectionPolicy).CheckRuntimeReadiness())
+	// Indexing uses the server embedding key when set, otherwise the
+	// workspace's own OpenAI or OpenRouter connection.
+	supportEmbeddingProvider = service.NewWorkspaceEmbeddingResolver(service.WorkspaceEmbeddingResolverConfig{
+		Server: supportEmbeddingProvider, ServerProvider: llm.SupportEmbeddingProviderName(cfg.OpenAIAPIKey, cfg.OpenRouterAPIKey),
+		Model: cfg.OpenAIEmbeddingModel, Connections: aiConnectionService,
+		Meter: aiUsageMeter, Registry: aiActionRegistry, Audit: aiActionExecutionRepo,
+	})
 	if agentRuntimeClient != nil {
 		agentService.SetAgentRuntimeClient(agentRuntimeClient)
 	}

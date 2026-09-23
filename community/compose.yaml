@@ -40,6 +40,8 @@ x-helpin-env: &helpin-env
   SMTP_PASSWORD: ${SMTP_PASSWORD:-}
   SMTP_FROM: ${SMTP_FROM:-}
   SMTP_TLS_MODE: ${SMTP_TLS_MODE:-starttls}
+  # Optional: comma-separated addresses of server admins.
+  HELPIN_ADMIN_EMAILS: ${HELPIN_ADMIN_EMAILS:-}
   CHATGPT_CONNECTIONS_ENABLED: ${CHATGPT_CONNECTIONS_ENABLED:-false}
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}
   OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}

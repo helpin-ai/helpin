@@ -202,7 +202,7 @@ export interface GitHubAppStatus {
 }
 
 /** Helpin page a GitHub App create or install flow returns to. */
-export type GitHubReturnTo = 'settings' | 'setup' | 'system_status';
+export type GitHubReturnTo = 'settings' | 'setup' | 'system_status' | 'onboarding';
 
 export interface GitHubAppManifestRequest {
   /** GitHub organization login that owns the App; the signed-in GitHub user owns it when omitted. */

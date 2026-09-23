@@ -12,9 +12,11 @@ import {
   HeadphonesIcon,
   Loading01Icon,
   SourceCodeIcon,
+  ZapIcon,
 } from '@/lib/icons';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { generateWorkspaceSlug } from '@/lib/slugUtils';
+import type { SetupGoalKey } from '@/lib/setupTypes';
 import type { Workspace } from '@/lib/types';
 import { validateWorkspaceOnboardingDetails } from '@/lib/workspaceOnboardingDetails';
 import { workspaceDefaultsForCreation } from '@/lib/workspaceOnboardingDefaults';
@@ -39,6 +41,7 @@ const goalIcons = {
   help_center_docs: BookOpen01Icon,
   internal_docs: File01Icon,
   sales_crm: DollarCircleIcon,
+  automation: ZapIcon,
 } satisfies Record<WorkspaceOnboardingUseCase, typeof SourceCodeIcon>;
 
 const goalIconStyles = {
@@ -47,6 +50,7 @@ const goalIconStyles = {
   help_center_docs: 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900 dark:bg-violet-950 dark:text-violet-300',
   internal_docs: 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-300',
   sales_crm: 'border-cyan-200 bg-cyan-50 text-cyan-700 dark:border-cyan-900 dark:bg-cyan-950 dark:text-cyan-300',
+  automation: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300',
 } satisfies Record<WorkspaceOnboardingUseCase, string>;
 
 function workspaceKeyFromName(name: string) {
@@ -56,7 +60,8 @@ function workspaceKeyFromName(name: string) {
 type WorkspaceStepProps = {
   /** Prefill the name from a company email domain (first workspace only). */
   useEmailDefaults: boolean;
-  onCreated: (workspace: Workspace) => void;
+  /** Called with the new workspace and the setup goals it was created with, in priority order. */
+  onCreated: (workspace: Workspace, setupGoals: SetupGoalKey[]) => void;
 };
 
 /**
@@ -130,13 +135,14 @@ export function WorkspaceStep({ useEmailDefaults, onCreated }: WorkspaceStepProp
         return;
       }
       setCurrentOrganization(organization);
+      const setupGoals = mapOnboardingUseCasesToSetupGoals(goals);
       const { data: workspace, error: createError } = await workspacesService.create({
         name: name.trim(),
         slug,
         workspace_key: workspaceKeyFromName(name),
         organization_id: organization.id,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        setup_goals: mapOnboardingUseCasesToSetupGoals(goals),
+        setup_goals: setupGoals,
       });
       if (createError || !workspace) {
         setError(createError ?? 'The workspace couldn’t be created. Try again.');
@@ -144,7 +150,7 @@ export function WorkspaceStep({ useEmailDefaults, onCreated }: WorkspaceStepProp
       }
       trackWorkspaceOnboardingUseCases(goals);
       void queryClient.invalidateQueries({ queryKey: ['workspaces'] });
-      onCreated(workspace);
+      onCreated(workspace, setupGoals);
     } catch (caught) {
       setError(caught instanceof Error && caught.message ? caught.message : 'The workspace couldn’t be created. Try again.');
     } finally {

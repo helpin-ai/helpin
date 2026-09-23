@@ -87,7 +87,7 @@ func TestSampleDataPostgresLoadAndRemove(t *testing.T) {
 		model.SampleEntityCRMCompany: 3, model.SampleEntityCRMContact: 5, model.SampleEntityCRMDeal: 2,
 		model.SampleEntityCRMPipeline: 1, model.SampleEntityWorkspaceTeam: 1, model.SampleEntityPMEpic: 1,
 		model.SampleEntityPMTask: 6, model.SampleEntityDocsSpace: 1, model.SampleEntityDocsDocument: 3,
-		model.SampleEntitySupportConversation: 4,
+		model.SampleEntitySupportConversation: 4, model.SampleEntityAutomationRule: 2,
 	}
 	for entity, count := range want {
 		if status.Counts[entity] != count {
@@ -151,7 +151,7 @@ func TestSampleDataPostgresLoadAndRemove(t *testing.T) {
 		"planned project": evidence.PlannedProjectCount, "resolved": evidence.ResolvedConversationCount,
 		"validated support": evidence.ValidatedSupportCount, "linked support": evidence.LinkedSupportTaskCount,
 		"help space": evidence.HelpCenterSpaceCount, "help content": evidence.HelpCenterContentCount,
-		"contacts": evidence.CRMContactCount, "companies": evidence.CRMCompanyCount,
+		"contacts": evidence.CRMContactCount, "companies": evidence.CRMCompanyCount, "enabled flows": evidence.EnabledAutomationCount,
 		"pipelines": evidence.CRMPipelineCount, "deals": evidence.CRMActionableDealCount,
 	} {
 		if count != 0 {
@@ -166,7 +166,7 @@ func TestSampleDataPostgresLoadAndRemove(t *testing.T) {
 	if removed.Loaded || len(removed.Retained) != 0 {
 		t.Fatalf("status after remove = %+v", removed)
 	}
-	for _, table := range []string{"pm_tasks", "pm_epics", "workspace_teams", "docs_spaces", "docs_documents", "crm_companies", "crm_contacts", "crm_deals", "crm_pipelines", "crm_associations", "support_conversations", "support_messages", "pm_activity_log", "sample_data_items"} {
+	for _, table := range []string{"pm_tasks", "pm_epics", "workspace_teams", "docs_spaces", "docs_documents", "crm_companies", "crm_contacts", "crm_deals", "crm_pipelines", "crm_associations", "support_conversations", "support_messages", "pm_activity_log", "automation_rules", "sample_data_items"} {
 		if n := workspaceRowCount(t, db, table, fixture.workspaceID); n != 0 {
 			t.Errorf("%s rows after removal = %d", table, n)
 		}

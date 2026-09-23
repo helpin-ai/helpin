@@ -318,6 +318,36 @@ func TestWorkspaceService_CreatePersistsOnboardingSetupGoals(t *testing.T) {
 	}
 }
 
+// Onboarding offers "Automate repeatable work" as a goal of its own, so the
+// automation journey must be accepted and kept first when it is chosen first.
+func TestWorkspaceService_CreateAcceptsAutomationOnboardingGoal(t *testing.T) {
+	db, svc := newWorkspaceTestHarness(t)
+	for _, stmt := range []string{
+		`CREATE TABLE setup_intents (workspace_id TEXT PRIMARY KEY, goal_keys TEXT NOT NULL DEFAULT '[]', created_at DATETIME, updated_at DATETIME)`,
+		`CREATE TABLE setup_goals (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, key TEXT NOT NULL, catalog_version INTEGER NOT NULL DEFAULT 1, source TEXT NOT NULL DEFAULT 'onboarding', status TEXT NOT NULL DEFAULT 'active', position INTEGER NOT NULL DEFAULT 0, activated_at DATETIME NOT NULL, created_by TEXT NOT NULL, created_at DATETIME, updated_at DATETIME, UNIQUE (workspace_id, key))`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create setup table: %v", err)
+		}
+	}
+	svc.SetSetupInitializer(NewSetupService(repository.NewSetupRepository(db)))
+
+	created, err := svc.Create(context.Background(), model.CreateWorkspaceRequest{
+		Name: "Automation Goal", Slug: "automation-goal", WorkspaceKey: "AUG",
+		SetupGoals: []string{model.SetupGoalAutomationMastery, model.SetupGoalProductDelivery},
+	}, "owner-1")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	var goals []model.SetupGoal
+	if err := db.Where("workspace_id = ?", created.ID).Order("position").Find(&goals).Error; err != nil {
+		t.Fatalf("load setup goals: %v", err)
+	}
+	if len(goals) != 2 || goals[0].Key != model.SetupGoalAutomationMastery || goals[1].Key != model.SetupGoalProductDelivery {
+		t.Fatalf("setup goals = %+v, want automation_mastery then product_delivery", goals)
+	}
+}
+
 func TestWorkspaceService_Create_SeedsDefaultEpicAutomations(t *testing.T) {
 	_, svc, automationRepo, workflowRepo := newWorkspaceDefaultsTestHarness(t)
 	ctx := context.Background()

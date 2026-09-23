@@ -4,6 +4,7 @@ import { useTitle } from '@/hooks/useTitle';
 import { useAuthStore } from '@/stores/authStore';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { passkeyService } from '@/lib/services/passkeyService';
+import { selfSignupAllowed } from '@/lib/services/authService';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -29,6 +30,7 @@ export default function Login() {
   const passkeySupported = passkeyService.isSupported();
   const redirect = loginRedirectFromSearch();
   const registerHref = redirect ? `/register?redirect=${encodeURIComponent(redirect)}` : '/register';
+  const signupAllowed = selfSignupAllowed(useAuthStore((state) => state.configuration));
 
   const completeLoginRedirect = async (isCancelled?: () => boolean) => {
     const redirect = loginRedirectFromSearch() ?? consumeRedirectAfterLogin();
@@ -282,11 +284,13 @@ export default function Login() {
                 )}
               </>
             )}
-            {!twoFaToken && (
+            {!twoFaToken && (signupAllowed ? (
               <p className="text-sm text-muted-foreground">
                 Don't have an account? <Link to={registerHref as '/register'} className="text-primary hover:underline">Sign up</Link>
               </p>
-            )}
+            ) : (
+              <p className="text-sm text-muted-foreground">New here? Ask your admin for an invite.</p>
+            ))}
           </CardFooter>
         </form>
       </Card>

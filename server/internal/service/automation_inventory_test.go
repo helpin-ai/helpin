@@ -823,6 +823,8 @@ func TestAutomationActivityResolvesTargetDisplayInfo(t *testing.T) {
 			totp_verified BOOLEAN NOT NULL DEFAULT 0,
 			recovery_codes_encrypted TEXT,
 			is_platform_admin BOOLEAN NOT NULL DEFAULT 0,
+			is_server_admin BOOLEAN NOT NULL DEFAULT 0,
+			signup_verification_pending BOOLEAN NOT NULL DEFAULT 0,
 			avatar_url TEXT,
 			avatar_style TEXT,
 			avatar_seed TEXT,

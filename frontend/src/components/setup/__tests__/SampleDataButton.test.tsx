@@ -5,7 +5,7 @@ import { queryKeys } from '@/lib/queryKeys';
 import { sampleDataQueryKey } from '@/hooks/queries/useSampleData';
 import type { SampleDataStatus } from '@/lib/sampleDataTypes';
 import { SampleDataCard } from '../SampleDataButton';
-import { summarizeSampleCounts } from '../sampleDataPresentation';
+import { describeSampleModules, sampleRemovalMessage, summarizeSampleCounts } from '../sampleDataPresentation';
 import { button, click, renderWithQuery, type Rendered } from './setupTestUtils';
 
 vi.mock('@/lib/api', () => ({ api: { get: vi.fn(), post: vi.fn(), del: vi.fn() } }));
@@ -130,5 +130,23 @@ describe('SampleDataCard', () => {
 describe('summarizeSampleCounts', () => {
   it('uses singular labels and skips empty entities', () => {
     expect(summarizeSampleCounts({ counts: { pm_epic: 1, pm_task: 1, crm_deal: 0 } })).toBe('1 project, 1 task');
+  });
+
+  it('says sample Flows are turned off', () => {
+    expect(summarizeSampleCounts({ counts: { pm_task: 6, automation_rule: 2 } })).toBe('6 tasks, 2 Flows (turned off)');
+  });
+});
+
+describe('describeSampleModules', () => {
+  it('mentions example Flows when Automation is available', () => {
+    expect(describeSampleModules(['pm', 'automation'])).toBe('a project with tasks and example Flows that stay off until you turn them on');
+  });
+});
+
+describe('sampleRemovalMessage', () => {
+  it('explains that Flows someone turned on and ran were kept', () => {
+    expect(sampleRemovalMessage({ loaded: false, counts: {}, modules: [], retained: { automation_rule: 1 } })).toBe(
+      'Sample data removed. Kept the sample Flows you turned on, with their run history.',
+    );
   });
 });

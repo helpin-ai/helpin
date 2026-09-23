@@ -180,6 +180,9 @@ type Config struct {
 	WebAuthnRPID                      string
 	WebAuthnRPOrigins                 []string
 	PlatformAdminEmails               []string
+	// ServerAdminEmails (HELPIN_ADMIN_EMAILS) designates self-hosted server
+	// admins by email (Community only).
+	ServerAdminEmails []string
 
 	// Google account sign-in (optional — Google button disabled if unset)
 	GoogleAuthClientID     string
@@ -531,6 +534,7 @@ func Load() (*Config, error) {
 		WebAuthnRPID:                           webAuthnRPID,
 		WebAuthnRPOrigins:                      webAuthnRPOrigins,
 		PlatformAdminEmails:                    parseCSV(os.Getenv("PLATFORM_ADMIN_EMAILS")),
+		ServerAdminEmails:                      parseCSV(os.Getenv("HELPIN_ADMIN_EMAILS")),
 		GoogleAuthClientID:                     strings.TrimSpace(os.Getenv("GOOGLE_AUTH_CLIENT_ID")),
 		GoogleAuthClientSecret:                 strings.TrimSpace(os.Getenv("GOOGLE_AUTH_CLIENT_SECRET")),
 		GoogleAuthRedirectURL:                  strings.TrimSpace(os.Getenv("GOOGLE_AUTH_REDIRECT_URL")),

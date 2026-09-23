@@ -40,6 +40,9 @@ type InvitationResponse struct {
 	AcceptedAt        *time.Time `json:"accepted_at,omitempty"`
 	CreatedAt         time.Time  `json:"created_at"`
 	JoinURL           string     `json:"join_url,omitempty"`
+	// EmailSent is set when the invitation is created or resent: false means
+	// application email is not configured and the caller must share JoinURL.
+	EmailSent *bool `json:"email_sent,omitempty"`
 }
 
 // AcceptInvitationRequest is the payload for accepting an invitation.

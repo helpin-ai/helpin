@@ -6,6 +6,13 @@ export const queryKeys = {
     me: ['user', 'me'] as const,
   },
 
+  /** Self-hosted server administration (Community). */
+  instance: {
+    signupPolicy: ['instance', 'signup-policy'] as const,
+    admins: ['instance', 'admins'] as const,
+    email: ['instance', 'email'] as const,
+  },
+
   organizations: {
     all: ['organizations'] as const,
     members: (orgId: string) => ['organizations', orgId, 'members'] as const,

@@ -34,7 +34,7 @@ func (s *SupportAIService) searchSingleQuery(
 	if embeddingModel == "" {
 		embeddingModel = defaultDocsEmbeddingModel
 	}
-	if s.embeddingProvider != nil {
+	if embeddingsAvailable(ctx, s.embeddingProvider, workspaceID) {
 		embedCtx := withAIActionMetering(ctx, workspaceID, aipolicy.ActionSupportKnowledgeEmbed, "support_knowledge_embed", query, map[string]interface{}{
 			"surface": "support_knowledge", "agent_id": agentID,
 		})

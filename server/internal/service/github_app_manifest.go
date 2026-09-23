@@ -312,7 +312,7 @@ func (s *GitHubAppConfigService) manifestRedirect(ctx context.Context, claims *g
 	query := gitHubResultQuery(status, message)
 	if claims != nil && claims.WorkspaceID != "" && s.workspaces != nil {
 		if workspace, err := s.workspaces.GetByID(ctx, claims.WorkspaceID); err == nil && workspace != nil && workspace.Slug != "" {
-			return gitHubReturnPageURL(s.opts.AppBaseURL, workspace.Slug, claims.ReturnTo) + "?" + query.Encode()
+			return withGitHubReturnQuery(gitHubReturnPageURL(s.opts.AppBaseURL, workspace.Slug, claims.ReturnTo), query)
 		}
 	}
 	return gitHubInstalledURL(s.opts.AppBaseURL, query)

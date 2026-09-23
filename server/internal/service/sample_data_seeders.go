@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/tiptap"
@@ -21,8 +23,14 @@ func DefaultSampleDataSeeders(docsUseSortKey bool) []SampleDataSeeder {
 		pmSampleSeeder{},
 		docsSampleSeeder{useSortKey: docsUseSortKey},
 		supportSampleSeeder{},
+		automationSampleSeeder{},
 	}
 }
+
+// Custom agents and meetings are deliberately not seeded: agents have no
+// disabled state, so a sample agent would be a live, runnable executor, and a
+// useful sample meeting needs capture and processing output that only the
+// capture pipeline writes.
 
 // ── CRM ──────────────────────────────────────────────────────────────────
 
@@ -480,6 +488,74 @@ func sampleConversationState(env *SampleDataEnv, fixture sampleConversation) map
 		fields["team_last_seen_at"] = lastAt
 	}
 	return fields
+}
+
+// ── Automation ───────────────────────────────────────────────────────────
+
+type automationSampleSeeder struct{}
+
+func (automationSampleSeeder) Module() model.ModuleID { return model.ModuleAutomation }
+
+func (automationSampleSeeder) sampleDataCompanion() {}
+
+// Seed creates example Flows on the default task workflow. Every Flow is
+// inserted disabled through the repository, bypassing the rule engine: no cron
+// schedule is registered, no websocket event is published, and the engine
+// only matches enabled rules, so nothing fires until someone turns a Flow on.
+// Without a task workflow there is nothing for the Flows to act on, so none
+// are created.
+func (automationSampleSeeder) Seed(ctx context.Context, env *SampleDataEnv) error {
+	workflow, err := repository.NewPMWorkflowRepository(env.Tx).GetDefaultWorkflow(ctx, env.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	if workflow == nil || len(workflow.States) == 0 {
+		return nil
+	}
+	for position, fixture := range sampleFlows {
+		rule, err := sampleFlowRecord(env, workflow, fixture, position)
+		if err != nil {
+			return err
+		}
+		if err := env.Repo.CreateDisabledAutomationRule(ctx, rule); err != nil {
+			return fmt.Errorf("create Flow %q: %w", fixture.name, err)
+		}
+		env.Track(model.SampleEntityAutomationRule, rule.ID)
+	}
+	return nil
+}
+
+func sampleFlowRecord(env *SampleDataEnv, workflow *model.WorkflowWithStates, fixture sampleFlow, position int) (*model.AutomationRule, error) {
+	trigger, err := json.Marshal(model.TriggerConfigGitHubPullRequest{BaseBranch: fixture.baseBranch})
+	if err != nil {
+		return nil, err
+	}
+	action, err := json.Marshal(model.ActionConfigMoveToState{
+		TargetStateID: sampleWorkflowState(workflow, fixture.targetStateType, fixture.targetStateName),
+	})
+	if err != nil {
+		return nil, err
+	}
+	workflowID := workflow.Workflow.ID
+	rule := &model.AutomationRule{
+		ID:            uuid.NewString(),
+		WorkspaceID:   env.WorkspaceID,
+		Name:          fixture.name,
+		Description:   optionalText(fixture.description),
+		WorkflowID:    &workflowID,
+		TriggerType:   fixture.triggerType,
+		TriggerConfig: trigger,
+		ActionType:    model.ActionMoveToState,
+		ActionConfig:  action,
+		Position:      position,
+		CreatedAt:     env.Now,
+		UpdatedAt:     env.Now,
+	}
+	if env.ActorID != "" {
+		actorID := env.ActorID
+		rule.CreatedBy = &actorID
+	}
+	return rule, nil
 }
 
 func optionalText(value string) *string {

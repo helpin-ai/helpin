@@ -9,7 +9,7 @@ retains conservative authentication defaults.
 | Setting | Behavior |
 | --- | --- |
 | `HELPIN_ENABLED_MODULES` | Comma-separated product surfaces. Both editions default to all modules: `support,docs,agents,pm,crm,automation`. Support requires Docs. Workspace roles remain in force. Upgrading an installation whose value is still the Community 0.1 default `support,docs,agents` switches it to the new default; any other value is kept. |
-| `CRM_ENCRYPTION_KEY`, `GIT_OAUTH_ENCRYPTION_KEY` | Generated 32-byte hex keys. The first encrypts CRM mail and calendar tokens and is the fallback key for TOTP and PM import secrets; the second encrypts stored Git provider tokens. Keep them stable and back them up with the databases. `helpin upgrade` generates them when an older `.env` lacks them. |
+| `CRM_ENCRYPTION_KEY`, `GIT_OAUTH_ENCRYPTION_KEY` | Generated 32-byte hex keys. The first encrypts CRM mail and calendar tokens and the SMTP password saved in **Settings → System status**, and is the fallback key for TOTP and PM import secrets; the second encrypts stored Git provider tokens. Keep them stable and back them up with the databases. `helpin upgrade` generates them when an older `.env` lacks them. |
 | `SETUP_SUCCESS_ENABLED` | Optional. Controls the workspace Setup guide. Empty uses the edition default: on in Community, off in Enterprise. Set `false` to hide it. |
 | `AUTH_EMAIL_VERIFICATION_REQUIRED` | Defaults to `true`. Set `false` for local Community signup without mail. Enterprise rejects `false`. This never marks an email verified. |
 | `DEMO_VIEWER_EMAIL` | Optional. Email of an existing account that visitors of `/demo` are signed in as without a password. Give it the `viewer` role in one workspace only, no 2FA, not a platform admin. Every non-read API request from this account is rejected with `demo_read_only`. Empty disables `/demo`. |
@@ -20,20 +20,88 @@ retains conservative authentication defaults.
 | `SMTP_USERNAME`, `SMTP_PASSWORD` | Set both for authenticated delivery, or leave both empty for a trusted relay. |
 | `SMTP_TLS_MODE` | `starttls` by default; `tls` for implicit TLS; explicit `none` only for an unauthenticated trusted local relay. Credentials require TLS and AUTH PLAIN; LOGIN-only SMTP servers are unsupported. TLS certificates are verified. |
 | `POSTMARK_APP_SERVER_TOKEN`, `POSTMARK_APP_FROM_EMAIL` | Optional alternative application-mail provider. |
+| `HELPIN_ADMIN_EMAILS` | Optional comma-separated addresses of [server admins](#server-administration). Matching accounts are made server admins at startup, and a new account on one of these addresses becomes one once its email is verified. Accounts are matched by address, so list only mailboxes you control. |
 
 `helpin install` and `helpin configure` can write the SMTP settings for you
-(see the [CLI guide](cli.md)). Workspace administrators can send a test email
-to their own address with `POST /api/workspaces/{id}/email/test` (at most one
-every 30 seconds and five per hour per user). The result is recorded, and the
-`email_outbound` capability reports `ready` only after a successful test of the
-current mail settings; changing the host, port, username, sender, or TLS mode
+(see the [CLI guide](cli.md)). Server admins can instead enter them in
+**Settings → System status → Application email**; see
+[Application email in the app](#application-email-in-the-app). Workspace
+administrators can send a test email to their own address with
+`POST /api/workspaces/{id}/email/test`, and server admins with
+`POST /api/instance/email/test` (at most one every 30 seconds and five per hour
+per user). The result is recorded, and the `email_outbound` capability reports
+`ready` only after a successful test of the current mail settings; changing the
+host, port, username, sender, or TLS mode, or saving the settings again,
 requires a new test.
 
 SMTP sends invitations, password reset, optional verification and application
 notifications. It does **not** enable support reply threading or inbound mail;
 those integrations still use optional Postmark. Without application mail, local
-signup works when verification is disabled, while invitations and password reset
-report that mail is unavailable. Google OAuth is optional.
+signup works when verification is disabled, invitations are created as links
+that the inviter copies and shares, and password reset reports that mail is
+unavailable. Google OAuth is optional.
+
+## Server administration
+
+Community has server admins, who manage the settings that apply to every
+workspace on the server: the signup policy, the list of server admins, and
+application email. Server admins see **Settings → System status** and
+**Settings → Signup & admins**; workspace owners and admins who are not server
+admins do not. Server admin is separate from workspace roles and from the
+hosted-operator `PLATFORM_ADMIN_EMAILS` role. Enterprise has no server admins,
+and its signup and application mail are unchanged.
+
+- **The first account is the server admin.** On a new server, the first person
+  to sign up becomes the server admin. Concurrent first signups are resolved in
+  the database, so exactly one account wins.
+- **Upgrades.** When an existing server upgrades, the owner of its oldest
+  organization (normally whoever set it up) becomes the server admin; if there
+  are no organizations, the oldest account does. The API repeats this check at
+  startup, so a server whose only admin account was deleted gets a new admin.
+- **More admins.** A server admin can make any existing account a server admin
+  by email, and remove admins. The last server admin cannot be removed, and
+  admins listed in `HELPIN_ADMIN_EMAILS` can only be removed there.
+
+### Signup policy
+
+**Settings → Signup & admins** chooses who can create an account. Invitations
+work under every policy.
+
+| Policy | Who can sign up |
+| --- | --- |
+| Invite only | Nobody without an invitation. The default for new servers once the first account exists. |
+| Approved email domains | Addresses on the listed domains (exact match; list subdomains separately). A password signup must confirm its email before it can sign in, even when `AUTH_EMAIL_VERIFICATION_REQUIRED=false`, because anyone can type an address on an allowed domain. This policy therefore requires working application email. Google sign-in counts as verified. |
+| Anyone | Anyone who can reach the server. |
+
+Servers that existed before server administration keep **Anyone** so nobody is
+locked out by the upgrade; the page recommends switching to invite only. The
+sign-in and registration pages read the policy from `GET /api/auth/config`
+(`signup_mode`, `signup_allowed_domains`, and `signup_first_user`, which is
+`true` until the first account exists) and hide self-signup on invite-only
+servers. The API enforces the policy for password and Google signups and
+rejects others with `403` and the code `signup_restricted`.
+
+### Application email in the app
+
+Server admins can enter SMTP settings (server, port, username, password,
+sender, and security) under **Settings → System status → Application email**,
+then send a test email. Saved settings apply without restarting the API; other
+API replicas pick them up within 30 seconds. The password is stored encrypted
+with `CRM_ENCRYPTION_KEY` and is never returned by the API. An unauthenticated
+local relay needs no password.
+
+`SMTP_*` and `POSTMARK_APP_*` variables take precedence: while they configure
+application email, the page shows them read-only as set by the server's
+configuration, and saved settings are ignored. Remove the variables and restart
+the API to manage email in the app instead.
+
+### Invitations without email
+
+When application email is not configured, creating an invitation still
+succeeds: the response (`POST /api/invitations`) includes the `join_url` and
+`"email_sent": false`, and **Settings → Members** offers **Copy invite link** for
+pending invitations. Invite links expire after seven days and use the normal
+join flow, including on invite-only servers.
 
 Deployment modules are intersected with workspace access, including owners and
 administrators. The Agents surface uses the existing Automation access grants,
@@ -78,12 +146,32 @@ base including `/v1`), and `OPENAI_EMBEDDING_MODEL` (default
 is set, embeddings use OpenRouter's embeddings endpoint (at `OPENROUTER_BASE_URL`
 when set) with `openai/text-embedding-3-small`; an `OPENAI_EMBEDDING_MODEL`
 without a vendor prefix gets `openai/` added. `OPENAI_API_KEY` always takes
-precedence. The model must return 1,536 dimensions. Without either key,
-semantic retrieval is unavailable and keyword search remains.
-A local chat connection alone does not configure embeddings. Workspace AI
-settings reports this distinction; "configured" does not mean the endpoint
-has been contacted or verified. Help-center AI answers and automatic triage
-also retain server-level chat provider settings and their existing model routes.
+precedence. The model must return 1,536 dimensions. A server key serves every
+workspace.
+
+Without either server key, each workspace uses its own shared (workspace-scope)
+AI connection for embeddings: a connected OpenAI connection first, then a
+connected OpenRouter connection, preferring the connection Helpin created for
+that provider. Both request `text-embedding-3-small`; OpenRouter serves it as
+`openai/text-embedding-3-small`. The stored vectors therefore stay compatible
+when a workspace switches between them. Vectors are recorded with their model
+name and 1,536 dimensions, and a response with any other dimension is rejected.
+Anthropic connections (no embeddings API), OpenAI-compatible endpoints (no
+embedding model setting) and personal connections are never used for
+embeddings. This usage is recorded in the AI action audit with the connection
+and funding mode; in Community it is not billed, and Enterprise uses a
+connection only when the workspace's AI connection policy admits it.
+When a workspace connects OpenAI or OpenRouter, Helpin indexes the knowledge
+that has no vectors yet (disabled or failed knowledge sources, unindexed help
+center spaces, and content sources that were never embedded) in the background.
+If neither the server nor the workspace has a key, semantic retrieval is
+unavailable and keyword search remains.
+
+Workspace AI settings and the `ai_embeddings` capability name the source in use
+("Using the server's OpenAI key" or "Using this workspace's OpenRouter
+connection"); "configured" does not mean the endpoint has been contacted or
+verified. Help-center AI answers, automatic triage and support coverage
+analysis keep server-level provider settings and their existing model routes.
 
 A workspace's website is optional. When one is given, onboarding and Settings →
 Knowledge can draft the company/product context from it. The draft runs on the
@@ -123,8 +211,11 @@ an existing Garage access key; use Garage's documented key management procedure.
 ## GitHub App
 
 Helpin connects to GitHub through one GitHub App per installation. A workspace
-owner can create it from **Settings → Git Connections**, the Setup guide, or
-**Settings → System status** with **Create GitHub App**:
+owner can create it from **Settings → Git Connections**, the Setup guide,
+**Settings → System status**, or the optional **Connect GitHub** onboarding step
+with **Create GitHub App**. Onboarding offers that step to the workspace owner
+who chooses **Plan and ship team projects** while GitHub isn't connected yet;
+it can be skipped.
 
 1. Choose who owns the App: **a GitHub organization** (recommended; enter its
    login) or **your personal GitHub account**.

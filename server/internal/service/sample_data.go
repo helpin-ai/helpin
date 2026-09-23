@@ -211,12 +211,27 @@ func (s *SampleDataService) newEnv(ctx context.Context, tx *gorm.DB, repo *repos
 	}, nil
 }
 
+// sampleDataCompanion marks a seeder that only adds examples around content
+// seeded by other modules (sample Flows act on sample tasks). It runs only
+// when at least one content seeder is enabled.
+type sampleDataCompanion interface {
+	sampleDataCompanion()
+}
+
 func (s *SampleDataService) enabledSeeders(enabled map[model.ModuleID]bool) []SampleDataSeeder {
 	var result []SampleDataSeeder
+	hasContent := false
 	for _, seeder := range s.seeders {
-		if enabled[seeder.Module()] {
-			result = append(result, seeder)
+		if !enabled[seeder.Module()] {
+			continue
 		}
+		if _, companion := seeder.(sampleDataCompanion); !companion {
+			hasContent = true
+		}
+		result = append(result, seeder)
+	}
+	if !hasContent {
+		return nil
 	}
 	return result
 }

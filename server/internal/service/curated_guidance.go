@@ -198,7 +198,7 @@ func (s *CuratedGuidanceService) validateAgent(ctx context.Context, workspaceID,
 }
 
 func (s *CuratedGuidanceService) embed(ctx context.Context, item *model.CuratedGuidance) error {
-	if s.embedder == nil {
+	if !embeddingsAvailable(ctx, s.embedder, item.WorkspaceID) {
 		item.Embedding = nil
 		item.EmbeddingProvider = ""
 		item.EmbeddingModel = ""

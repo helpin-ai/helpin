@@ -115,6 +115,9 @@ type Handlers struct {
 	EmailImageProxy     *handler.EmailImageProxyHandler
 	AdminWebhookEvent   *handler.AdminWebhookEventHandler
 	AdminEmailQueue     *handler.AdminEmailQueueHandler
+
+	// Instance serves self-hosted server administration; nil outside Community.
+	Instance *handler.InstanceHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -646,6 +649,24 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			// Push device registration (account-level, no workspace scope)
 			r.Post("/user/push-devices", h.PushDevice.Register)
 			r.Delete("/user/push-devices", h.PushDevice.Unregister)
+
+			// Self-hosted server administration (server admins only).
+			if h.Instance != nil {
+				r.Group(func(r chi.Router) {
+					r.Use(h.Instance.RequireServerAdmin)
+					r.Get("/instance/signup-policy", h.Instance.GetSignupPolicy)
+					r.Put("/instance/signup-policy", h.Instance.UpdateSignupPolicy)
+					r.Get("/instance/admins", h.Instance.ListAdmins)
+					r.Post("/instance/admins", h.Instance.GrantAdmin)
+					r.Delete("/instance/admins/{userID}", h.Instance.RevokeAdmin)
+					r.Get("/instance/email", h.Instance.GetEmailSettings)
+					r.Put("/instance/email", h.Instance.UpdateEmailSettings)
+					r.Delete("/instance/email", h.Instance.ClearEmailSettings)
+					if h.Capability != nil {
+						r.Post("/instance/email/test", h.Capability.SendInstanceTestEmail)
+					}
+				})
+			}
 
 			// Organizations
 			r.Get("/organizations", h.Organization.List)

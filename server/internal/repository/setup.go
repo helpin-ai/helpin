@@ -267,7 +267,7 @@ func (r *SetupRepository) GetEvidenceSince(ctx context.Context, workspaceID stri
 		{"pm_tasks", "workspace_id = ? AND completed = true AND archived = false AND completed_at >= ? AND " + notSamplePMTask, &evidence.CompletedTaskCount, []any{workspaceID, since}},
 		{"pm_sprint_closeouts", "workspace_id = ? AND closed_at >= ?", &evidence.SprintCloseoutCount, []any{workspaceID, since}},
 		{"git_repositories", "workspace_id = ? AND active = true AND selected = true AND deleted_at IS NULL", &evidence.ConnectedRepositoryCount, []any{workspaceID}},
-		{"automation_rules", "workspace_id = ? AND enabled = true", &evidence.EnabledAutomationCount, []any{workspaceID}},
+		{"automation_rules", "workspace_id = ? AND enabled = true AND " + NotSampleDataSQL("automation_rules.id"), &evidence.EnabledAutomationCount, []any{workspaceID}},
 		{"agent_trigger_executions", "workspace_id = ? AND status = 'completed' AND completed_at >= ?", &evidence.TriggeredSuccessRunCount, []any{workspaceID, since}},
 		{"support_conversations", "workspace_id = ? AND status = 'resolved' AND resolved_at >= ? AND EXISTS (SELECT 1 FROM support_messages sm WHERE sm.conversation_id = support_conversations.id AND sm.sender_type = 'customer' AND sm.deleted_at IS NULL) AND " + notSampleConversation, &evidence.ValidatedSupportCount, []any{workspaceID, since}},
 		{"support_conversations", "workspace_id = ? AND status = 'resolved' AND channel IN ('widget', 'email', 'api') AND source <> 'internal' AND resolved_at >= ? AND EXISTS (SELECT 1 FROM support_messages sm WHERE sm.conversation_id = support_conversations.id AND sm.sender_type = 'customer' AND sm.deleted_at IS NULL) AND " + notSampleConversation, &evidence.ResolvedConversationCount, []any{workspaceID, since}},

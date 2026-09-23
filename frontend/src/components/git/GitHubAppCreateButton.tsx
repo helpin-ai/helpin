@@ -4,9 +4,10 @@ import { QuietPrimaryAction, QuietTextAction, QuietUnderlineInput } from '@/comp
 import { Button } from '@/components/ui/button';
 import { useCreateGitHubAppManifest, useGitHubAppStatus, useWorkspaceAccess } from '@/hooks/queries';
 import { GITHUB_LOGIN_PATTERN } from '@/lib/githubReturn';
-import { Loading01Icon, PlusSignIcon } from '@/lib/icons';
+import { Loading01Icon } from '@/lib/icons';
 import type { GitHubReturnTo } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
+import { GitProviderIcon } from './GitProviderIcon';
 import { GITHUB_APP_OWNER_HINT, submitGitHubAppManifest } from './githubApp';
 
 export type GitHubAppCreateButtonProps = {
@@ -72,7 +73,11 @@ export function GitHubAppCreateButton({
         aria-controls={panelId}
         onClick={() => setOpen((value) => !value)}
       >
-        <PlusSignIcon className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+        {/* The brand ink would vanish on a dark button, so it follows the label there. */}
+        <GitProviderIcon
+          provider="github"
+          className={cn('mr-1.5 h-3.5 w-3.5', variant === 'default' && 'text-current dark:text-current')}
+        />
         Create GitHub App
       </Button>
       <div id={panelId} hidden={!open}>

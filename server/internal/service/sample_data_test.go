@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
 // fakeSampleSeeder inserts minimal rows so the orchestration (module gating,
@@ -73,7 +75,7 @@ func countRows(t *testing.T, db *gorm.DB, table string) int64 {
 	return count
 }
 
-var allSampleModules = map[model.ModuleID]bool{model.ModulePM: true, model.ModuleCRM: true, model.ModuleDocs: true, model.ModuleSupport: true}
+var allSampleModules = map[model.ModuleID]bool{model.ModulePM: true, model.ModuleCRM: true, model.ModuleDocs: true, model.ModuleSupport: true, model.ModuleAutomation: true}
 
 func TestSampleDataLoadSeedsEnabledModulesOnly(t *testing.T) {
 	pm := &fakeSampleSeeder{module: model.ModulePM}
@@ -194,8 +196,117 @@ func TestSampleDataStatusBeforeLoad(t *testing.T) {
 	}
 }
 
+// sampleFlowRulesSchema mirrors the automation_rules columns the sample Flow
+// insert writes.
+const sampleFlowRulesSchema = `CREATE TABLE automation_rules (
+	id TEXT PRIMARY KEY,
+	workspace_id TEXT NOT NULL,
+	name TEXT NOT NULL,
+	description TEXT,
+	enabled BOOLEAN NOT NULL DEFAULT 1,
+	team_id TEXT,
+	workflow_id TEXT,
+	trigger_type TEXT NOT NULL,
+	trigger_config TEXT NOT NULL DEFAULT '{}',
+	action_type TEXT NOT NULL,
+	action_config TEXT NOT NULL DEFAULT '{}',
+	template_key TEXT,
+	template_instance_id TEXT,
+	template_version INTEGER,
+	position INTEGER NOT NULL DEFAULT 0,
+	stop_on_match BOOLEAN NOT NULL DEFAULT 0,
+	created_by TEXT,
+	created_at DATETIME,
+	updated_at DATETIME
+)`
+
+func seedSampleFlowWorkflow(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	mustExec(t, db, sampleFlowRulesSchema)
+	seedWorkflow(t, db, "wf-1", "ws-1", "todo")
+	for _, state := range [][3]string{{"progress", "In Progress", "started"}, {"review", "In Review", "started"}, {"done", "Done", "done"}} {
+		mustExec(t, db, `INSERT INTO pm_workflow_states (id, workflow_id, name, state_type, position) VALUES (?, 'wf-1', ?, ?, 1)`, state[0], state[1], state[2])
+	}
+}
+
+var pmAndAutomationModules = map[model.ModuleID]bool{model.ModulePM: true, model.ModuleAutomation: true}
+
+func TestSampleDataAutomationSeederCreatesDisabledFlows(t *testing.T) {
+	svc, db := setupSampleDataService(t, &fakeSampleSeeder{module: model.ModulePM}, automationSampleSeeder{})
+	seedSampleFlowWorkflow(t, db)
+	ctx := context.Background()
+
+	status, err := svc.Load(ctx, "ws-1", "user-1", pmAndAutomationModules)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if status.Counts[model.SampleEntityAutomationRule] != int64(len(sampleFlows)) {
+		t.Fatalf("counts = %+v, want %d Flows", status.Counts, len(sampleFlows))
+	}
+	var rules []model.AutomationRule
+	if err := db.Order("position").Find(&rules).Error; err != nil {
+		t.Fatal(err)
+	}
+	wantTargets := []string{"review", "done"}
+	for i, rule := range rules {
+		if rule.Enabled {
+			t.Errorf("Flow %q is enabled; sample Flows must be created turned off", rule.Name)
+		}
+		if rule.WorkflowID == nil || *rule.WorkflowID != "wf-1" || rule.CreatedBy == nil || *rule.CreatedBy != "user-1" {
+			t.Errorf("Flow %q workflow=%v created_by=%v", rule.Name, rule.WorkflowID, rule.CreatedBy)
+		}
+		var action model.ActionConfigMoveToState
+		if err := json.Unmarshal(rule.ActionConfig, &action); err != nil || action.TargetStateID != wantTargets[i] {
+			t.Errorf("Flow %q target = %q (err %v), want %q", rule.Name, action.TargetStateID, err, wantTargets[i])
+		}
+		// A person can turn the Flow on without editing it first.
+		if err := (&AutomationRuleEngine{}).validateRuleRequest(rule.TriggerType, rule.TriggerConfig, rule.ActionType, rule.ActionConfig); err != nil {
+			t.Errorf("Flow %q is not a valid Flow: %v", rule.Name, err)
+		}
+	}
+	matching, err := repository.NewAutomationRuleRepository(db).ListMatchingRules(ctx, "ws-1", model.TriggerGitHubPRMerged)
+	if err != nil || len(matching) != 0 {
+		t.Fatalf("matching rules = %d (err %v), want none: disabled Flows never fire", len(matching), err)
+	}
+
+	if _, err := svc.Remove(ctx, "ws-1", "user-1", pmAndAutomationModules); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if got := countRows(t, db, "automation_rules"); got != 0 {
+		t.Fatalf("Flows after removal = %d, want 0", got)
+	}
+}
+
+func TestSampleDataAutomationSeederSkipsWorkspaceWithoutWorkflow(t *testing.T) {
+	svc, db := setupSampleDataService(t, &fakeSampleSeeder{module: model.ModulePM}, automationSampleSeeder{})
+	mustExec(t, db, sampleFlowRulesSchema)
+	status, err := svc.Load(context.Background(), "ws-1", "user-1", pmAndAutomationModules)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if status.Counts[model.SampleEntityAutomationRule] != 0 || countRows(t, db, "automation_rules") != 0 {
+		t.Fatalf("status = %+v, want no Flows without a task workflow", status)
+	}
+}
+
+func TestSampleDataAutomationAloneIsNotSeedable(t *testing.T) {
+	svc, db := setupSampleDataService(t, &fakeSampleSeeder{module: model.ModulePM}, automationSampleSeeder{})
+	seedSampleFlowWorkflow(t, db)
+	automationOnly := map[model.ModuleID]bool{model.ModuleAutomation: true}
+	status, err := svc.Status(context.Background(), "ws-1", automationOnly)
+	if err != nil || len(status.Modules) != 0 {
+		t.Fatalf("modules = %v (err %v), want none: sample Flows accompany sample content", status.Modules, err)
+	}
+	if _, err := svc.Load(context.Background(), "ws-1", "user-1", automationOnly); !errors.Is(err, model.ErrSampleDataNoModules) {
+		t.Fatalf("err = %v, want ErrSampleDataNoModules", err)
+	}
+	if got := countRows(t, db, "automation_rules"); got != 0 {
+		t.Fatalf("Flows = %d, want 0", got)
+	}
+}
+
 func TestDefaultSampleDataSeedersCoverEveryContentModule(t *testing.T) {
-	want := []model.ModuleID{model.ModuleCRM, model.ModulePM, model.ModuleDocs, model.ModuleSupport}
+	want := []model.ModuleID{model.ModuleCRM, model.ModulePM, model.ModuleDocs, model.ModuleSupport, model.ModuleAutomation}
 	seeders := DefaultSampleDataSeeders(false)
 	if len(seeders) != len(want) {
 		t.Fatalf("seeders = %d, want %d", len(seeders), len(want))

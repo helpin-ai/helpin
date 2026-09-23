@@ -23,6 +23,14 @@ describe('githubReturn', () => {
     expect(gitHubReturnPath('acme')).toBe('/w/acme/settings/git-connections');
     expect(gitHubReturnPath('acme', 'setup')).toBe('/w/acme/setup');
     expect(gitHubReturnPath('acme', 'system_status')).toBe('/w/acme/settings/system-status');
+    expect(gitHubReturnPath('acme', 'onboarding')).toBe('/onboarding?step=github&workspace=acme');
+  });
+
+  it('keeps the onboarding step and workspace when stripping the result', () => {
+    window.history.replaceState(null, '', '/onboarding?step=github&workspace=acme&github=created&github_message=Install+it.');
+    expect(readGitHubReturnResult(window.location.search)).toEqual({ status: 'created', message: 'Install it.' });
+    stripGitHubReturnParams();
+    expect(`${window.location.pathname}${window.location.search}`).toBe('/onboarding?step=github&workspace=acme');
   });
 
   it('matches GitHub organization logins', () => {

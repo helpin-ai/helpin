@@ -19,12 +19,27 @@ export type AuthConfig = {
   demo_requires_email?: boolean;
   /** Whether the API serves the workspace Setup guide; absent on older APIs. */
   setup_guide_enabled?: boolean;
+  /** Who may self-signup; absent on older APIs, which allow anyone. */
+  signup_mode?: 'open' | 'invite_only' | 'domains';
+  /** Allowed email domains when signup_mode is `domains`. */
+  signup_allowed_domains?: string[];
+  /** True until the first account exists; it may always sign up and becomes the server admin. */
+  signup_first_user?: boolean;
 };
+
+/** Signup accepted, but the account must confirm its email before signing in. */
+export type SignupVerificationResponse = { verification_required: true; email: string };
+
+/** Whether this server lets people create their own account. */
+export function selfSignupAllowed(config: AuthConfig | null | undefined): boolean {
+  if (!config) return true;
+  return Boolean(config.signup_first_user) || config.signup_mode !== 'invite_only';
+}
 
 export const authService = {
   config: () => api.get<AuthConfig>('/auth/config'),
   signup: (email: string, password: string, fullName: string) =>
-    api.post<AuthResponse>('/auth/signup', { email, password, full_name: fullName, anonymous_id: getUsermavenAnonymousId() }),
+    api.post<AuthResponse | SignupVerificationResponse>('/auth/signup', { email, password, full_name: fullName, anonymous_id: getUsermavenAnonymousId() }),
   demoSignin: (email?: string) => api.post<SigninResponse>('/auth/demo', email ? { email } : {}),
   signin: (email: string, password: string, rememberMe = true) =>
     api.post<SigninResponse>('/auth/signin', { email, password, remember_me: rememberMe }),

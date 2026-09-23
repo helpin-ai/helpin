@@ -98,18 +98,23 @@ describe('getSettingsSidebarGroups', () => {
     expect(both).toContain('ai');
   });
 
-  it.skipIf(!systemStatusEnabled)('lists System status under Workspace for workspace admins', () => {
-    const admin = getSettingsSidebarGroups(true, new Set(['workspace.read', 'workspace.update', 'module_access.manage']))
-      .find((group) => group.label === 'Workspace')?.sections.map((section) => section.id) ?? [];
-    const member = getSettingsSidebarGroups(false, new Set(['workspace.read', 'settings.read']))
+  it.skipIf(!systemStatusEnabled)('lists the Server group after Workspace for server admins only', () => {
+    const serverAdmin = getSettingsSidebarGroups(true, new Set(['workspace.read', 'workspace.update', 'server.admin']));
+    const labels = serverAdmin.map((group) => group.label);
+    const server = serverAdmin.find((group) => group.label === 'Server')?.sections.map((section) => section.id);
+    const workspaceAdmin = getSettingsSidebarGroups(true, new Set(['workspace.read', 'workspace.update', 'settings.manage', 'module_access.manage']))
       .flatMap((group) => group.sections.map((section) => section.id));
 
-    expect(admin.indexOf('system-status')).toBe(admin.indexOf('access') + 1);
-    expect(member).not.toContain('system-status');
+    expect(labels.indexOf('Server')).toBe(labels.indexOf('Workspace') + 1);
+    expect(server).toEqual(['system-status', 'server']);
+    expect(workspaceAdmin).not.toContain('system-status');
+    expect(workspaceAdmin).not.toContain('server');
   });
 
-  it.skipIf(systemStatusEnabled)('omits System status where the platform manages server services', () => {
-    expect(SETTINGS_ROUTE_SECTIONS.map((section) => section.id)).not.toContain('system-status');
+  it.skipIf(systemStatusEnabled)('omits System status and Server where the platform manages server services', () => {
+    const ids = SETTINGS_ROUTE_SECTIONS.map((section) => section.id);
+    expect(ids).not.toContain('system-status');
+    expect(ids).not.toContain('server');
   });
 
   it('exposes a single AI setup entry to members with workspace read access', () => {

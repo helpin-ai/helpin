@@ -187,6 +187,56 @@ func TestGitHubAppManifestToInstallRoundTripsReturnTo(t *testing.T) {
 	}
 }
 
+func TestGitHubAppManifestToInstallReturnsToOnboardingStep(t *testing.T) {
+	f := setupGitHubFlow(t)
+	ctx := context.Background()
+
+	resp, err := f.apps.CreateManifest(ctx, "ws-1", "user-owner", model.GitHubAppManifestRequest{Organization: "acme", ReturnTo: "onboarding"})
+	if err != nil {
+		t.Fatalf("CreateManifest: %v", err)
+	}
+	redirect, err := url.Parse(f.apps.CompleteManifest(ctx, "code-1", resp.State))
+	if err != nil {
+		t.Fatalf("parse manifest redirect: %v", err)
+	}
+	installState := redirect.Query().Get("state")
+	claims, _, _, err := f.git.resolveGitHubInstallState(ctx, installState)
+	if err != nil || claims.ReturnTo != GitHubReturnOnboarding {
+		t.Fatalf("install claims = %+v err=%v, want return_to onboarding", claims, err)
+	}
+
+	final, err := url.Parse(f.git.GitHubInstallCallbackRedirect(ctx, installState, "777", "install"))
+	if err != nil {
+		t.Fatalf("parse final redirect: %v", err)
+	}
+	query := final.Query()
+	if final.Host != "helpin.example.com" || final.Path != "/onboarding" ||
+		query.Get("step") != "github" || query.Get("workspace") != "acme" ||
+		query.Get("github") != GitHubResultConnected || query.Get("integration_id") == "" {
+		t.Fatalf("unexpected final redirect %q", final.String())
+	}
+}
+
+func TestGitHubAppCompleteManifestKeepsOnboardingStepWhenInstallLinkFails(t *testing.T) {
+	f := setupGitHubFlow(t)
+	f.apps.SetInstallRedirector(failingInstallRedirector{})
+	resp, err := f.apps.CreateManifest(context.Background(), "ws-1", "user-owner", model.GitHubAppManifestRequest{ReturnTo: "onboarding"})
+	if err != nil {
+		t.Fatalf("CreateManifest: %v", err)
+	}
+	redirect, err := url.Parse(f.apps.CompleteManifest(context.Background(), "code-1", resp.State))
+	if err != nil {
+		t.Fatalf("parse redirect: %v", err)
+	}
+	query := redirect.Query()
+	if redirect.Path != "/onboarding" || query.Get("step") != "github" || query.Get("workspace") != "acme" || query.Get("github") != GitHubResultCreated {
+		t.Fatalf("unexpected redirect %q", redirect.String())
+	}
+	if strings.Count(redirect.String(), "?") != 1 {
+		t.Fatalf("redirect has a malformed query: %q", redirect.String())
+	}
+}
+
 func TestGitHubAppCompleteManifestFallsBackWhenInstallLinkFails(t *testing.T) {
 	f := setupGitHubFlow(t)
 	f.apps.SetInstallRedirector(failingInstallRedirector{})
