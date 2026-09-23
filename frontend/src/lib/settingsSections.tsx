@@ -1,3 +1,4 @@
+import { systemStatusEnabled } from '@edition/config';
 import { billingSettingsSections } from '@edition/settings';
 import type { FC, CSSProperties } from 'react';
 import type { Permission, WorkspaceModule } from '@/lib/types';
@@ -34,6 +35,8 @@ import {
   Globe02Icon,
   Key01Icon,
   AiNetworkIcon,
+  DashboardSpeed01Icon,
+  ServerStack01Icon,
 } from '@hugeicons/core-free-icons';
 
 export type IconComponent = FC<{ className?: string; style?: CSSProperties }>;
@@ -77,6 +80,8 @@ const MCP = hi(PlugSocketIcon);
 const ExternalMCP = hi(Globe02Icon);
 const AIConnections = hi(Key01Icon);
 const WorkspaceAI = hi(AiNetworkIcon);
+const SystemStatus = hi(DashboardSpeed01Icon);
+const Server = hi(ServerStack01Icon);
 
 export type SettingsSection =
   | 'ai'
@@ -84,6 +89,8 @@ export type SettingsSection =
   | 'members'
   | 'teams'
   | 'access'
+  | 'system-status'
+  | 'server'
   | 'mcp'
   | 'external-mcp'
   | 'billing'
@@ -124,11 +131,12 @@ export type SettingsSectionMeta<T extends SettingsRouteSection = SettingsRouteSe
 };
 
 export const SETTINGS_TOP_LEVEL_GROUPS = new Set(['Billing']);
-const SETTINGS_GROUP_LABELS = ['Billing', 'Personal', 'Organization', 'Workspace', 'AI & knowledge', 'Integrations & data', 'Projects', 'Support', 'CRM'];
+const SETTINGS_GROUP_LABELS = ['Billing', 'Personal', 'Organization', 'Workspace', 'Server', 'AI & knowledge', 'Integrations & data', 'Projects', 'Support', 'CRM'];
 const SETTINGS_GROUP_ICONS: Record<string, IconComponent> = {
   Personal: Profile,
   Organization: Members,
   Workspace: General,
+  Server,
   'AI & knowledge': WorkspaceAI,
   'Integrations & data': ExternalMCP,
   Projects: Pipelines,
@@ -138,6 +146,28 @@ const SETTINGS_GROUP_ICONS: Record<string, IconComponent> = {
 export const SETTINGS_HOME_LABEL = 'Settings home';
 export const SETTINGS_SIDEBAR_GROUP_LABELS: Record<string, string> = {
   'Integrations & data': 'Integration',
+};
+
+/** Settings → System status: the server-level capability checks and application email, for server admins. */
+const SYSTEM_STATUS_SECTION:SettingsSectionMeta<'system-status'> = {
+  id: 'system-status',
+  keywords: ['server', 'health', 'doctor', 'object storage', 'background workers', 'smtp', 'email', 'github app', 'ai provider'],
+  label: 'System status',
+  description: 'Check the services this server provides to every workspace.',
+  icon: SystemStatus,
+  group: 'Server',
+  requiredPermission: 'server.admin',
+};
+
+/** Settings → Server: who can sign up and who administers this server, for server admins. */
+const SERVER_SECTION: SettingsSectionMeta<'server'> = {
+  id: 'server',
+  keywords: ['signup', 'sign up', 'registration', 'invite only', 'email domains', 'server admins', 'administrators'],
+  label: 'Signup & admins',
+  description: 'Choose who can create an account on this server and who administers it.',
+  icon: Server,
+  group: 'Server',
+  requiredPermission: 'server.admin',
 };
 
 const allSettingsSections: SettingsSectionMeta[] = [
@@ -214,6 +244,8 @@ const allSettingsSections: SettingsSectionMeta[] = [
     group: 'Workspace',
     requiredPermission: 'module_access.manage',
   },
+  // Server services on a Community install; platform-managed on other editions.
+  ...(systemStatusEnabled ? [SYSTEM_STATUS_SECTION, SERVER_SECTION] : []),
   ...billingSettingsSections(Billing).map(section => ({ ...section, group: 'Billing', keywords: ['invoices', 'payment', 'subscription', 'plan', 'usage', 'credits'] })),
   {
     id: 'ai-connections',

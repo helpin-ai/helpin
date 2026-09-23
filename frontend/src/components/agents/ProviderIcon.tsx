@@ -19,9 +19,11 @@ const PROVIDER_PATHS: Record<string, string> = {
 };
 
 /**
- * Brand mark for an AI provider, drawn with `currentColor` so it inherits the
- * surrounding text color and stays legible in both themes. Providers without a
- * mark, including self-hosted endpoints, fall back to a server glyph.
+ * Brand mark for an AI provider. The OpenAI, Anthropic and OpenRouter marks are
+ * single-color, so they are drawn at full-contrast primary ink (near-black in
+ * light mode, near-white in dark) rather than a muted tone, matching how the
+ * brands present them. Providers without a mark, including self-hosted
+ * endpoints, fall back to a server glyph.
  */
 export function ProviderIcon({
   provider,
@@ -41,7 +43,7 @@ export function ProviderIcon({
       fill="currentColor"
       aria-hidden="true"
       data-ai-provider-icon={provider}
-      className={cn("h-4 w-4", className)}
+      className={cn("h-4 w-4 text-quiet-text-primary", className)}
     >
       <path d={path} />
     </svg>
@@ -62,7 +64,7 @@ export function ProviderIconTile({
         className,
       )}
     >
-      <ProviderIcon provider={provider} className="h-4 w-4 text-muted-foreground" />
+      <ProviderIcon provider={provider} className="h-4 w-4" />
     </span>
   );
 }

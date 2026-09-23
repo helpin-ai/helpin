@@ -64,6 +64,17 @@ func NewS3Client(accessKeyID, secretAccessKey, bucket, region, endpointURL, publ
 	}
 }
 
+// CheckBucket confirms that the bucket exists and the credentials can reach it.
+func (s *S3Client) CheckBucket(ctx context.Context) error {
+	if s == nil {
+		return fmt.Errorf("object storage is not configured")
+	}
+	if _, err := s.client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: aws.String(s.bucket)}); err != nil {
+		return fmt.Errorf("head bucket: %w", err)
+	}
+	return nil
+}
+
 // EnsureCORS sets a permissive CORS policy on the bucket so that browsers
 // on any origin can upload files via presigned PUT URLs.
 // Safe to call on every startup — it overwrites the existing CORS config.

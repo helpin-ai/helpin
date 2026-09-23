@@ -290,12 +290,18 @@ func main() {
 	if cfg.EmailVerificationRequired && appEmailClient == nil {
 		fatalWithSentry("configure application email", fmt.Errorf("AUTH_EMAIL_VERIFICATION_REQUIRED requires an SMTP or Postmark application email sender"))
 	}
+	// Community: server admins may also save SMTP settings in the app; the
+	// environment sender above still takes precedence.
+	appEmailConfig := newAppEmailConfig(db, cfg, appEmailClient)
+	if appEmailConfig != nil {
+		appEmailClient = appEmailConfig.Sender()
+	}
 	replyEmailClient := email.NewClient(cfg.PostmarkReplyServerToken, cfg.PostmarkReplyFromEmail)
 	postmarkDomainClient := email.NewDomainClient(cfg.PostmarkAccountToken)
-	if appEmailClient != nil {
+	if email.Configured(appEmailClient) {
 		slog.Info("Application email configured")
 	} else {
-		slog.Info("Application email is not configured; invitations and password reset are unavailable")
+		slog.Info("Application email is not configured; invitations are shared as links and password reset is unavailable")
 	}
 	if replyEmailClient != nil {
 		slog.Info("Postmark support reply email configured")
@@ -417,6 +423,13 @@ func main() {
 			fatalWithSentry("failed to bootstrap platform admins", err)
 		}
 		slog.Info("startup: platform admin bootstrap complete", "configured_emails", len(cfg.PlatformAdminEmails), "updated_users", updated)
+	}
+	// Community server administration: first-account admin, signup policy.
+	instanceService := newInstanceService(db, cfg, func() bool { return email.Configured(appEmailClient) })
+	if instanceService != nil {
+		if err := instanceService.Bootstrap(context.Background()); err != nil {
+			slog.Error("startup: server admin bootstrap failed", "error", err)
+		}
 	}
 	passkeyRepo := repository.NewPasskeyRepository(db)
 	orgRepo := repository.NewOrganizationRepository(db)
@@ -634,6 +647,7 @@ func main() {
 	}
 	authService := service.NewAuthService(userRepo, passwordResetRepo, orgRepo, workspaceRepo, emailVerificationRepo, jwtManager, s3Client, appEmailClient, cfg.AppBaseURL, resolveTOTPEncryptionKey(cfg))
 	authService.SetEmailVerificationRequired(cfg.EmailVerificationRequired)
+	authService.SetSignupGate(instanceService)
 	authService.ConfigureDemo(service.DemoConfig{
 		ViewerEmail:    cfg.DemoViewerEmail,
 		RequireEmail:   cfg.DemoRequireEmail,
@@ -862,10 +876,11 @@ func main() {
 	supportInboxService.SetTriageService(supportInboxTriageService)
 
 	slog.Info("startup: initializing GitHub App client")
-	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)
+	githubAppConfig, err := newGitHubAppConfigService(db, cfg)
 	if err != nil {
 		fatalWithSentry("failed to initialize github app client", err)
 	}
+	githubAppClient := githubapp.NewClientWithSource(githubAppConfig)
 	var temporalClient tclient.Client
 	temporalClient, err = tclient.Dial(temporalapp.BuildClientOptions(cfg))
 	if err != nil {
@@ -893,7 +908,10 @@ func main() {
 		cfg.JWTSecret,
 	).
 		SetEpicDeliveryDependencies(epicDeliveryTargetRepo, pmEpicRepo).
-		SetGitLabDependencies(gitCredentialRepo, resolveGitOAuthEncryptionKey(cfg))
+		SetGitLabDependencies(gitCredentialRepo, resolveGitOAuthEncryptionKey(cfg)).
+		SetGitHubAppSource(githubAppConfig).
+		SetGitHubInstallClaimEnabled(gitHubAppManifestEnabled)
+	githubAppConfig.SetInstallRedirector(gitService).SetAppLookup(githubAppClient)
 	pmTaskService.SetGitService(gitService)
 	pmEpicService.SetGitService(gitService)
 	var agentRuntimeClient *service.AgentRuntimeClient
@@ -909,7 +927,23 @@ func main() {
 	if err != nil {
 		fatalWithSentry("failed to initialize AI connections", err)
 	}
+	// Re-map untouched standard profiles when shared connections change. The
+	// customer-mode instance never seals keys; managed defaults are never bypassed.
+	standardProfileRemapper, err := service.NewAIStandardProfiles(repository.NewAIStandardProfileRepository(db), "", "customer", nil)
+	if err != nil {
+		fatalWithSentry("failed to initialize standard AI profile re-mapping", err)
+	}
+	aiConnectionService.SetChangeObserver(standardProfileRemapper)
 	aiProfileService := service.NewAIProfileService(repository.NewAIProfileRepository(db), aiConnectionService).SetAdmissionPolicy(editionServices.ConnectionPolicy).CheckRuntimeReadiness()
+	// Knowledge embeddings: a server key serves every workspace; otherwise each
+	// workspace's own OpenAI or OpenRouter connection does.
+	embeddingResolver := service.NewWorkspaceEmbeddingResolver(service.WorkspaceEmbeddingResolverConfig{
+		Server: supportEmbeddingProvider, ServerProvider: llm.SupportEmbeddingProviderName(cfg.OpenAIAPIKey, cfg.OpenRouterAPIKey),
+		Model: cfg.OpenAIEmbeddingModel, Connections: aiConnectionService,
+		Meter: aiUsageMeter, Registry: aiActionRegistry, Audit: aiActionExecutionRepo,
+	})
+	aiConnectionService.AddChangeObserver(embeddingResolver)
+	supportEmbeddingProvider = embeddingResolver
 	externalMCPService, err := service.NewExternalMCPService(
 		externalMCPRepo,
 		notificationService,
@@ -1176,6 +1210,7 @@ func main() {
 		s3Client,
 		runEngine,
 	)
+	embeddingResolver.SetBackfiller(service.NewKnowledgeEmbeddingBackfill(docsEmbeddingService, supportContentSyncService))
 	supportContentSourceService := service.NewSupportContentSourceService(
 		supportContentSourceRepo,
 		agentRepo,
@@ -1552,11 +1587,11 @@ func main() {
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
 	workspaceService.SetProductAnalyticsService(productAnalytics)
 	setupService := service.NewSetupService(setupRepo)
-	setupSuccessEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv("SETUP_SUCCESS_ENABLED")), "true")
+	setupSuccessEnabled := cfg.SetupGuideEnabled
 	if setupSuccessEnabled {
 		workspaceService.SetSetupInitializer(setupService)
 	}
-	workspaceService.SetContextGeneratorDependencies(supportLLMProvider, nil)
+	workspaceService.SetContextGeneratorDependencies(supportLLMProvider, nil).SetContextAIProfiles(aiProfileService)
 	entitlementService := editionServices.Entitlements
 	setupService.SetEntitlementService(entitlementService)
 	pmImportService.SetEntitlementService(entitlementService)
@@ -1712,7 +1747,7 @@ func main() {
 
 	// Initialize handlers.
 	emailDiagnosticsConfig := model.EmailDiagnosticsConfig{
-		AppEmailConfigured:        appEmailClient != nil,
+		AppEmailConfigured:        email.Configured(appEmailClient),
 		ReplyEmailConfigured:      replyEmailClient != nil,
 		RouteEmailConfigured:      strings.TrimSpace(cfg.PostmarkRouteServerToken) != "",
 		RedisConfigured:           redisClient != nil,
@@ -1780,6 +1815,7 @@ func main() {
 		Organization:        handler.NewOrganizationHandler(orgService),
 		Workspace:           handler.NewWorkspaceHandler(workspaceService, authzService),
 		Setup:               setupHandler,
+		SampleData:          handler.NewSampleDataHandler(service.NewSampleDataService(db, cfg.DocsOrderingUseSortKey), authzService),
 		Edition:             editionServices.Routes,
 		Settings:            handler.NewSettingsHandler(settingsService, automationInventoryService),
 		Automation:          handler.NewAutomationHandler(automationInventoryService, ruleEngine, agentService, flowTemplateRegistry, flowTemplateInstaller, flowTemplateUninstaller),
@@ -1826,6 +1862,7 @@ func main() {
 		AdminWebhookEvent:   handler.NewAdminWebhookEventHandler(supportEmailWebhookEventRepo),
 		AdminEmailQueue:     handler.NewAdminEmailQueueHandler(emailFallbackService, supportEmailLogRepo, supportEmailWebhookEventRepo, emailDiagnosticsConfig),
 		Git:                 handler.NewGitHandler(gitService, gitWebhookEventRepo),
+		GitHubApp:           handler.NewGitHubAppHandler(githubAppConfig),
 		Notification:        handler.NewNotificationHandler(notificationService, followerService),
 		UserNotifSettings:   handler.NewUserNotificationSettingsHandler(userNotifSettingsService),
 		PushDevice:          handler.NewPushDeviceHandler(pushDeviceService),
@@ -1892,9 +1929,24 @@ func main() {
 	handlers.Docs.SetImageEditService(docsImageEditService)
 	handlers.Docs.SetSupportWidgetConfigProvider(supportInboxService)
 	handlers.SupportInboxWidget.SetPublicOrigin(cfg.PublicWidgetURL)
-	handlers.AIConnection.SetKnowledgeConfiguration(cfg.OpenAIAPIKey != "", cfg.OpenAIEmbeddingModel, supportLLMRouter.ConfiguredChatProviders())
+	supportEmbeddingModel := llm.SupportEmbeddingModel(cfg.OpenAIAPIKey, cfg.OpenRouterAPIKey, cfg.OpenAIEmbeddingModel)
+	handlers.AIConnection.SetKnowledgeConfiguration(supportEmbeddingModel != "", supportEmbeddingModel, supportLLMRouter.ConfiguredChatProviders())
+	handlers.AIConnection.SetKnowledgeEmbeddingSource(embeddingResolver.EmbeddingSource)
+	handlers.Capability = newCapabilityHandler(db, cfg, capabilityWiring{
+		appEmail: appEmailClient, emailDiagnostics: emailDiagnosticsConfig,
+		aiConnectionsEnabled: aiConnectionService.Enabled(), chatProviders: supportLLMRouter.ConfiguredChatProviders(),
+		embeddingModel: supportEmbeddingModel, embeddingSource: embeddingResolver.EmbeddingSource,
+		storage: s3Client, temporal: temporalClient,
+		gitHubAppConfigured: githubAppClient.Configured,
+	})
 	handlers.Docs.SetPublicWidgetURLs(cfg.PublicWidgetURL, cfg.PublicSDKURL)
 	handlers.Auth.SetPublicWidgetURLs(cfg.PublicWidgetURL, cfg.PublicSDKURL)
+	handlers.Auth.SetSetupGuideEnabled(setupSuccessEnabled)
+	if instanceService != nil && appEmailConfig != nil {
+		handlers.Capability.SetAppEmailState(appEmailConfig.AppEmailState)
+		handlers.Instance = handler.NewInstanceHandler(instanceService, appEmailConfig)
+		handlers.Auth.SetSignupPolicy(instanceService)
+	}
 	handlers.Docs.SetHelpcenterAISearchService(helpcenterAISearchService)
 	handlers.Docs.SetAPIReferenceService(docsAPIReferenceService)
 

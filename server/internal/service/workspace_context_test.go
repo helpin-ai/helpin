@@ -44,7 +44,7 @@ func TestWorkspaceServiceGenerateCompanyProductDescriptionReturnsOpenRouterFailu
 			"https://acme.com": "Acme is a customer intelligence platform.",
 		}})
 
-	_, err := svc.GenerateCompanyProductDescription(context.Background(), model.GenerateWorkspaceContextDescriptionRequest{
+	_, err := svc.GenerateCompanyProductDescription(context.Background(), "", model.GenerateWorkspaceContextDescriptionRequest{
 		WorkspaceName: "Acme",
 		WebsiteURL:    "https://acme.com",
 	})
@@ -70,7 +70,7 @@ func TestWorkspaceServiceGenerateCompanyProductDescriptionUsesDirectWebsiteFetch
 			},
 		})
 
-	resp, err := svc.GenerateCompanyProductDescription(context.Background(), model.GenerateWorkspaceContextDescriptionRequest{
+	resp, err := svc.GenerateCompanyProductDescription(context.Background(), "", model.GenerateWorkspaceContextDescriptionRequest{
 		WorkspaceName: "Acme",
 		WebsiteURL:    "acme.com",
 	})
@@ -121,7 +121,7 @@ func TestWorkspaceServiceGenerateCompanyProductDescriptionProvidesAIUsageContext
 			},
 		})
 
-	resp, err := svc.GenerateCompanyProductDescription(context.Background(), model.GenerateWorkspaceContextDescriptionRequest{
+	resp, err := svc.GenerateCompanyProductDescription(context.Background(), "", model.GenerateWorkspaceContextDescriptionRequest{
 		WorkspaceName: "Acme",
 		WebsiteURL:    "https://acme.com",
 	})

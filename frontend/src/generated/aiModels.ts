@@ -174,6 +174,14 @@ export const AI_MODELS = {
       "label": "GPT-5.5 Pro",
       "tier": "flagship",
       "enabled": false
+    },
+    {
+      "provider": "openrouter",
+      "canonical_model": "gpt-oss-120b",
+      "selection_model": "openai/gpt-oss-120b",
+      "label": "GPT-OSS 120B",
+      "tier": "medium",
+      "enabled": true
     }
   ],
   "tiers": [

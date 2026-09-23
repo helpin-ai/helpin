@@ -1,8 +1,8 @@
 # CRM signal architecture and operations
 
 This engineering and operations reference explains CRM signal detection, customer
-work, and activation for contributors and operators. CRM is not enabled by
-default in Community 0.1 beta (`HELPIN_ENABLED_MODULES`). It describes implementation
+work, and activation for contributors and operators. CRM is enabled by
+default in Community (`HELPIN_ENABLED_MODULES`). It describes implementation
 in this checkout, not deployment status or provider availability. Historical design decisions and
 the original phase plan remain in
 [`crm-buyer-signals-assessment.md`](crm-buyer-signals-assessment.md), but that

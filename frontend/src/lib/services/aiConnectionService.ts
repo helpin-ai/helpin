@@ -34,6 +34,17 @@ export interface AIConnection {
   status: "pending" | "connected" | "reauthorization_required" | "disconnected";
   account_id?: string;
   expires_at?: string;
+  /** Time of the last explicit connection test. */
+  last_verified_at?: string;
+  /** Error from the last test; absent alongside `last_verified_at` when it passed. */
+  last_verification_error?: string;
+}
+/** Result of a live connection test. */
+export interface AIConnectionTestResult {
+  ok: boolean;
+  model: string;
+  latency_ms: number;
+  error?: string;
 }
 export interface AIConnectionModel {
   provider: string;
@@ -61,7 +72,16 @@ export const aiConnectionService = {
   list: (workspace: string) =>
     api.get<{
       enabled: boolean;
-      knowledge?: { embeddings_configured: boolean; embedding_model: string; embedding_dimensions: number; chat_providers: string[] };
+      knowledge?: {
+        embeddings_configured: boolean;
+        embedding_model: string;
+        embedding_dimensions: number;
+        /** "server", "workspace", or "" when no provider serves this workspace. */
+        embedding_source?: "server" | "workspace" | "";
+        embedding_provider?: string;
+        embedding_detail?: string;
+        chat_providers: string[];
+      };
       connections: AIConnection[];
       models: AIConnectionModel[];
     }>(path(workspace, "/")),
@@ -84,6 +104,11 @@ export const aiConnectionService = {
     api.post<AIConnectionLogin>(
       path(workspace, `/${encodeURIComponent(id)}/reconnect`),
       { api_key },
+    ),
+  test: (workspace: string, id: string, model?: string) =>
+    api.post<AIConnectionTestResult>(
+      path(workspace, `/${encodeURIComponent(id)}/test`),
+      model ? { model } : {},
     ),
   disconnect: (workspace: string, id: string) =>
     api.del<void>(path(workspace, `/${encodeURIComponent(id)}`)),

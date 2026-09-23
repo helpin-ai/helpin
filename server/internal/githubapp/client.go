@@ -138,15 +138,18 @@ type CompareRefsResult struct {
 	Files        []CompareFile
 }
 
-// Client creates GitHub App JWTs and installation tokens.
+// Client creates GitHub App JWTs and installation tokens. Credentials are read
+// through a CredentialSource on every signing, so an App created or rotated at
+// runtime is used without a restart.
 type Client struct {
-	appID      string
-	privateKey *rsa.PrivateKey
+	source     CredentialSource
+	keys       *signingKeyCache
 	apiBaseURL string
 	httpClient *http.Client
 }
 
-// NewClient returns a GitHub App client, or nil when config is incomplete.
+// NewClient returns a GitHub App client with fixed credentials, or nil when
+// config is incomplete.
 func NewClient(appID, privateKeyPEM string) (*Client, error) {
 	appID = strings.TrimSpace(appID)
 	privateKeyPEM = strings.TrimSpace(privateKeyPEM)
@@ -154,25 +157,39 @@ func NewClient(appID, privateKeyPEM string) (*Client, error) {
 		return nil, nil
 	}
 
-	privateKey, err := parsePrivateKey(privateKeyPEM)
-	if err != nil {
+	if _, err := parsePrivateKey(privateKeyPEM); err != nil {
 		return nil, err
 	}
+	return NewClientWithSource(StaticSource(Credentials{AppID: appID, PrivateKey: privateKeyPEM})), nil
+}
 
+// NewClientWithSource returns a client that resolves App credentials from
+// source on use. The client is never nil; calls fail with ErrNotConfigured
+// while the source has no usable App.
+func NewClientWithSource(source CredentialSource) *Client {
 	return &Client{
-		appID:      appID,
-		privateKey: privateKey,
+		source:     source,
+		keys:       &signingKeyCache{},
 		apiBaseURL: "https://api.github.com",
 		httpClient: &http.Client{Timeout: 30 * time.Second},
-	}, nil
+	}
+}
+
+// Configured reports whether the client currently has usable App credentials.
+func (c *Client) Configured(ctx context.Context) bool {
+	if c == nil || c.source == nil {
+		return false
+	}
+	creds, err := c.source.Current(ctx)
+	return err == nil && creds.Usable()
 }
 
 // MintInstallationToken returns a short-lived installation token.
 func (c *Client) MintInstallationToken(ctx context.Context, installationID string) (string, error) {
 	if c == nil {
-		return "", fmt.Errorf("github app is not configured")
+		return "", ErrNotConfigured
 	}
-	appJWT, err := c.createAppJWT()
+	appJWT, err := c.createAppJWT(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -261,9 +278,9 @@ func (c *Client) ListInstallationRepositories(ctx context.Context, installationI
 // GetInstallation returns metadata for a GitHub App installation.
 func (c *Client) GetInstallation(ctx context.Context, installationID string) (*Installation, error) {
 	if c == nil {
-		return nil, fmt.Errorf("github app is not configured")
+		return nil, ErrNotConfigured
 	}
-	appJWT, err := c.createAppJWT()
+	appJWT, err := c.createAppJWT(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -293,6 +310,9 @@ func (c *Client) GetInstallation(ctx context.Context, installationID string) (*I
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		return nil, fmt.Errorf("decode github installation response: %w", err)
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("%w: %s", ErrInstallationNotFound, installationID)
 	}
 	if resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("github installation lookup failed (%d): %s", resp.StatusCode, payload.Message)
@@ -1096,14 +1116,28 @@ func (c *Client) getCheckRunAnnotations(ctx context.Context, token, owner, repo 
 	return annotations, nil
 }
 
-func (c *Client) createAppJWT() (string, error) {
+func (c *Client) createAppJWT(ctx context.Context) (string, error) {
+	if c.source == nil {
+		return "", ErrNotConfigured
+	}
+	creds, err := c.source.Current(ctx)
+	if err != nil {
+		return "", fmt.Errorf("resolve github app credentials: %w", err)
+	}
+	if !creds.Usable() {
+		return "", ErrNotConfigured
+	}
+	privateKey, err := c.keys.get(creds.PrivateKey)
+	if err != nil {
+		return "", err
+	}
 	now := time.Now()
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.RegisteredClaims{
-		Issuer:    c.appID,
+		Issuer:    strings.TrimSpace(creds.AppID),
 		IssuedAt:  jwt.NewNumericDate(now.Add(-1 * time.Minute)),
 		ExpiresAt: jwt.NewNumericDate(now.Add(9 * time.Minute)),
 	})
-	signed, err := token.SignedString(c.privateKey)
+	signed, err := token.SignedString(privateKey)
 	if err != nil {
 		return "", fmt.Errorf("sign github app jwt: %w", err)
 	}

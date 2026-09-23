@@ -1,11 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { GitHubAppCreateButton } from '@/components/git/GitHubAppCreateButton';
+import { GitProviderButton, GitProviderIcon } from '@/components/git/GitProviderIcon';
+import { gitProviderLabels, gitProviderOf } from '@/components/git/gitProvider';
+import { gitHubAppOwnerNote } from '@/components/git/githubApp';
+import { useGitHubAppStatus } from '@/hooks/queries';
+import { useGitHubReturnResult } from '@/hooks/useGitHubReturnResult';
 import { gitRepoURL } from '@/lib/gitUrls';
 import { gitService } from '@/lib/services/gitService';
 import type { GitIntegration, GitIntegrationDetail, GitIntegrationWorkspaceUsage, GitRepository } from '@/lib/pmTypes';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -59,6 +65,10 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
   const [commitAuthorEmail, setCommitAuthorEmail] = useState('');
   const [savingCommitIdentity, setSavingCommitIdentity] = useState(false);
 
+  const queryClient = useQueryClient();
+  const { data: githubAppStatus } = useGitHubAppStatus(workspaceId);
+  const githubAppMissing = githubAppStatus ? !githubAppStatus.configured : false;
+  const githubOwnerNote = gitHubAppOwnerNote(githubAppStatus);
   const hasGitHubIntegration = useMemo(() => integrations.some((item) => item.provider === 'github'), [integrations]);
   const hasGitLabIntegration = useMemo(() => integrations.some((item) => item.provider === 'gitlab'), [integrations]);
   const workspaceReposByIntegration = useMemo(() => {
@@ -99,26 +109,24 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
   }, [organizationId, workspaceId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loads organization connections from the server when the organization changes.
     void loadIntegrations();
   }, [loadIntegrations]);
 
+  // GitHub returns here after creating or installing the App (github=…),
+  // and older redirects use github_app / github_app_manifest.
+  const githubReturn = useGitHubReturnResult();
+  const announcedGitHubReturn = useRef(false);
   useEffect(() => {
-    const url = new URL(window.location.href);
-    const githubStatus = url.searchParams.get('github_app');
-    const githubMessage = url.searchParams.get('github_message');
-    if (!githubStatus) return;
-
-    if (githubStatus === 'connected') {
-      toast.success(githubMessage || 'GitHub connected');
+    if (!githubReturn || announcedGitHubReturn.current) return;
+    announcedGitHubReturn.current = true;
+    if (githubReturn.status === 'error') {
+      toast.error(githubReturn.message);
     } else {
-      toast.error(githubMessage || 'GitHub connection failed');
+      toast.success(githubReturn.message);
     }
-    url.searchParams.delete('github_app');
-    url.searchParams.delete('github_message');
-    url.searchParams.delete('integration_id');
-    window.history.replaceState({}, '', `${url.pathname}${url.search ? url.search : ''}${url.hash}`);
-    void loadIntegrations();
-  }, [loadIntegrations]);
+    void queryClient.invalidateQueries({ queryKey: ['git'] });
+  }, [githubReturn, queryClient]);
 
   const startGitHubConnect = async (forceInstall = false) => {
     if (!organizationId) return;
@@ -127,7 +135,7 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
     const { data, error } = await gitService.getOrgGitHubInstallURL(
       organizationId,
       workspaceId,
-      forceInstall ? { forceInstall: true } : undefined,
+      { forceInstall, returnTo: 'settings' },
     );
     setInstallingGitHub(false);
     if (error || !data) {
@@ -230,37 +238,24 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
         description="Organization provider access for repositories used across workspaces."
         actions={canManage ? (
           <div className="flex shrink-0 flex-wrap gap-2 md:justify-end">
-            {hasGitHubIntegration ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
+            {githubAppMissing ? null : (
+              <GitProviderButton
+                provider="github"
                 disabled={installingGitHub || !organizationId}
-                onClick={() => void startGitHubConnect(true)}
+                aria-busy={installingGitHub || undefined}
+                onClick={() => void startGitHubConnect(hasGitHubIntegration)}
               >
-                Connect Another GitHub Org
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                variant="default"
-                size="sm"
-                disabled={installingGitHub || !organizationId}
-                onClick={() => void startGitHubConnect(false)}
-              >
-                {installingGitHub ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
-                Connect GitHub
-              </Button>
+                {hasGitHubIntegration ? 'Connect Another GitHub Org' : 'Connect GitHub'}
+                {installingGitHub ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
+              </GitProviderButton>
             )}
-            <Button
-              type="button"
-              variant={hasGitLabIntegration ? 'outline' : 'default'}
-              size="sm"
+            <GitProviderButton
+              provider="gitlab"
               disabled={!organizationId}
               onClick={openGitLabDialog}
             >
               {hasGitLabIntegration ? 'Connect Another GitLab Account' : 'Connect GitLab'}
-            </Button>
+            </GitProviderButton>
           </div>
         ) : null}
       />
@@ -271,6 +266,23 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
         </div>
       ) : (
         <>
+          {githubAppMissing ? (
+            <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground" data-testid="github-app-missing">
+              <p>
+                {githubAppStatus?.manifest_blocked_reason
+                  ? githubAppStatus.manifest_blocked_reason
+                  : githubAppStatus?.manifest_available
+                    ? 'No GitHub App is configured for this Helpin instance yet. A workspace owner can create one here; GitHub then asks to install it and returns you to this page.'
+                    : 'No GitHub App is configured for this Helpin instance. Set the GITHUB_APP_* server settings to connect GitHub.'}
+              </p>
+              {canManage && !githubAppStatus?.manifest_blocked_reason ? (
+                <GitHubAppCreateButton workspaceId={workspaceId} returnTo="settings" variant="outline" className="mt-2" />
+              ) : null}
+            </div>
+          ) : null}
+          {canManage && !hasGitHubIntegration && githubOwnerNote ? (
+            <p className="text-[12.5px] text-quiet-text-tertiary" data-testid="github-owner-note">{githubOwnerNote}</p>
+          ) : null}
           {setupError ? (
             <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
               {setupError}
@@ -292,7 +304,8 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
           ) : (
             <div className="space-y-3">
               {integrations.map((integration) => {
-                const providerLabel = integration.provider === 'gitlab' ? 'GitLab' : 'GitHub';
+                const provider = gitProviderOf(integration.provider);
+                const providerLabel = gitProviderLabels[provider];
                 const manageURL = gitHubAccessURL(integration);
                 const workspaceRepos = workspaceReposByIntegration.get(integration.id) ?? [];
                 const usage = integrationUsage[integration.id] ?? [];
@@ -305,8 +318,9 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className={cn('h-2 w-2 rounded-full', integration.active ? 'bg-emerald-500' : 'bg-muted-foreground/50')} />
+                            <GitProviderIcon provider={provider} />
                             <p className="truncate text-sm font-medium">{integration.display_name}</p>
-                            <Badge variant="outline" className="text-[10px] uppercase tracking-wide">{providerLabel}</Badge>
+                            <span className="text-[12px] text-quiet-text-tertiary">{providerLabel}</span>
                           </div>
                           <p className="mt-1 truncate text-xs text-muted-foreground">
                             {integration.account_login || 'Connected account'}

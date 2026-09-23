@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -57,7 +59,10 @@ func TestEnsurePullRequestRefreshesOnlyManagedBody(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := &Client{appID: "1", privateKey: key, apiBaseURL: server.URL, httpClient: server.Client()}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+	client := NewClientWithSource(StaticSource(Credentials{AppID: "1", PrivateKey: string(keyPEM)}))
+	client.apiBaseURL = server.URL
+	client.httpClient = server.Client()
 	pr, err := client.EnsurePullRequest(context.Background(), "installation-1", "acme", "api", EnsurePullRequestInput{
 		Head: "feature", Base: "main", Title: "Ignored for existing PR", Body: generatedBody,
 	})

@@ -23,7 +23,7 @@ import (
 func TestSignGitHubInstallState(t *testing.T) {
 	svc := &GitService{stateSecret: "test-secret"}
 
-	tokenString, err := svc.signGitHubInstallState("org-123", "ws-123", "user-456")
+	tokenString, err := svc.signGitHubInstallState("org-123", "ws-123", "user-456", "")
 	if err != nil {
 		t.Fatalf("signGitHubInstallState returned error: %v", err)
 	}
@@ -73,8 +73,8 @@ func TestWithGitHubInstallStatus(t *testing.T) {
 	if parsed.Query().Get("tab") != "delivery" {
 		t.Fatalf("expected existing query param to be preserved, got %q", parsed.Query().Get("tab"))
 	}
-	if parsed.Query().Get("github_app") != "connected" {
-		t.Fatalf("expected github_app=connected, got %q", parsed.Query().Get("github_app"))
+	if parsed.Query().Get("github") != "connected" {
+		t.Fatalf("expected github=connected, got %q", parsed.Query().Get("github"))
 	}
 	if !strings.Contains(parsed.Query().Get("github_message"), "Connected successfully") {
 		t.Fatalf("expected github_message to be populated, got %q", parsed.Query().Get("github_message"))
@@ -151,7 +151,7 @@ func TestGetGitHubInstallURLReturnsInstallActionWithoutExistingIntegration(t *te
 		stateSecret:     "test-secret",
 	}
 
-	installURL, action, integrationID, err := svc.GetGitHubInstallURL(context.Background(), "ws-123", "user-456", false)
+	installURL, action, integrationID, err := svc.GetGitHubInstallURL(context.Background(), "ws-123", "user-456", false, "")
 	if err != nil {
 		t.Fatalf("GetGitHubInstallURL returned error: %v", err)
 	}
@@ -261,7 +261,7 @@ func TestGetGitHubInstallURLReturnsPickReposForExistingOrgIntegration(t *testing
 		stateSecret:   "test-secret",
 	}
 
-	installURL, action, integrationID, err := svc.GetGitHubInstallURL(context.Background(), "ws-123", "user-456", false)
+	installURL, action, integrationID, err := svc.GetGitHubInstallURL(context.Background(), "ws-123", "user-456", false, "")
 	if err != nil {
 		t.Fatalf("GetGitHubInstallURL returned error: %v", err)
 	}
@@ -355,7 +355,7 @@ func TestGetGitHubInstallURLForceInstallBypassesExistingOrgIntegration(t *testin
 		stateSecret:     "test-secret",
 	}
 
-	installURL, action, integrationID, err := svc.GetGitHubInstallURL(context.Background(), "ws-123", "user-456", true)
+	installURL, action, integrationID, err := svc.GetGitHubInstallURL(context.Background(), "ws-123", "user-456", true, "")
 	if err != nil {
 		t.Fatalf("GetGitHubInstallURL returned error: %v", err)
 	}

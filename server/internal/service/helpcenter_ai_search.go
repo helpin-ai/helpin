@@ -324,7 +324,7 @@ func (s *HelpcenterAISearchService) retrievePublicChunks(ctx context.Context, wo
 		return nil, nil
 	}
 	queryEmbedding := ""
-	if s.embeddingProvider != nil {
+	if embeddingsAvailable(ctx, s.embeddingProvider, workspaceID) {
 		embedCtx := withAIActionMetering(ctx, workspaceID, aipolicy.ActionHelpcenterSearchEmbed, "helpcenter_search_embed", query, map[string]interface{}{"surface": "helpcenter_search"})
 		resp, err := s.embeddingProvider.CreateEmbeddings(embedCtx, llm.EmbeddingRequest{
 			Model:  s.embeddingModel,

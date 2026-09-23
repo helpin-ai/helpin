@@ -45,6 +45,8 @@ type AIConnectionService struct {
 	catalog         *aimodel.Catalog
 	runtime         *AgentRuntimeClient
 	authz           *authorization.AuthzService
+	observer        AIConnectionChangeObserver
+	testProviders   AIConnectionTestProviderFactory
 }
 
 func NewAIConnectionService(repo *repository.AIConnectionRepository, catalog *aimodel.Catalog, runtime *AgentRuntimeClient, cfg AIConnectionConfig) (*AIConnectionService, error) {
@@ -212,6 +214,7 @@ func (s *AIConnectionService) Create(ctx context.Context, workspace, user string
 	if err := s.repo.Create(ctx, c); err != nil {
 		return nil, err
 	}
+	s.notifyConnectionsChanged(ctx, c)
 	return aiLoginResult(c, session), nil
 }
 func aiLoginResult(c *model.AIConnection, session *chatgptauth.DeviceSession) *model.AIConnectionLogin {
@@ -325,12 +328,17 @@ func (s *AIConnectionService) Reconnect(ctx context.Context, workspace, user, id
 			secret.APIKey = apiKey
 			c.Status = "connected"
 		}
+		// A user-supplied key takes ownership from the environment for good.
+		c.CredentialSource = nil
 		if err := s.seal(c, secret); err != nil {
 			return err
 		}
 		result = aiLoginResult(c, secret.Device)
 		return nil
 	})
+	if err == nil && result != nil {
+		s.notifyConnectionsChanged(ctx, &result.Connection)
+	}
 	return result, err
 }
 
@@ -467,6 +475,7 @@ func (s *AIConnectionService) Disconnect(ctx context.Context, workspace, user, i
 	if err := s.authorizeConnectionManagement(ctx, workspace, user, id); err != nil {
 		return err
 	}
+	var disconnected model.AIConnection
 	if err := s.repo.WithLocked(ctx, id, func(c *model.AIConnection) error {
 		if err := accessAIConnection(c, workspace, user); err != nil {
 			return err
@@ -474,10 +483,12 @@ func (s *AIConnectionService) Disconnect(ctx context.Context, workspace, user, i
 		c.Status = "disconnected"
 		c.EncryptedSecret = nil
 		c.ExpiresAt = nil
+		disconnected = *c
 		return nil
 	}); err != nil {
 		return err
 	}
+	s.notifyConnectionsChanged(ctx, &disconnected)
 	runs, err := s.boundConnectionRuns(ctx, workspace, user, id)
 	if err != nil {
 		return err

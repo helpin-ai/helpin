@@ -41,7 +41,9 @@ func (s *AgentService) assignInitialStandardProfile(ctx context.Context, agent *
 	if err := profiles.EnsureWorkspace(ctx, agent.WorkspaceID); err != nil {
 		return err
 	}
-	route, err := standardModelForTier(tier)
+	// The standard profile was just re-mapped to connected providers, so the
+	// agent records the route it will actually run rather than the fixed default.
+	route, err := profiles.StandardRoute(ctx, agent.WorkspaceID, tier)
 	if err != nil {
 		return err
 	}

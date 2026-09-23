@@ -96,8 +96,9 @@ func (s *SupportContentSyncService) QueueSourceSync(ctx context.Context, workspa
 		"crawl_source", source.CrawlSource,
 	)
 
-	if s.embedder == nil {
-		msg := "OpenAI-compatible embedding provider is not configured"
+	refreshEmbeddingSource(s.embedder, source.WorkspaceID)
+	if !embeddingsAvailable(ctx, s.embedder, source.WorkspaceID) {
+		msg := embeddingProviderMissingMessage
 		_ = s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncDisabled, 0, source.IndexedPages, source.IndexedChunks, &msg, nil, nil, nil)
 		return nil
 	}
@@ -164,8 +165,9 @@ func (s *SupportContentSyncService) RunSourceSync(ctx context.Context, workspace
 		"include_subdomains", source.IncludeSubdomains,
 		"include_external_links", source.IncludeExternalLinks,
 	)
-	if s.embedder == nil {
-		msg := "OpenAI-compatible embedding provider is not configured"
+	refreshEmbeddingSource(s.embedder, source.WorkspaceID)
+	if !embeddingsAvailable(ctx, s.embedder, source.WorkspaceID) {
+		msg := embeddingProviderMissingMessage
 		return s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncDisabled, 0, source.IndexedPages, source.IndexedChunks, &msg, nil, nil, nil)
 	}
 	if source.SourceType == model.ContentSourceTypeFile {
@@ -523,8 +525,9 @@ func (s *SupportContentSyncService) QueueSourceReindex(ctx context.Context, work
 	if source == nil || source.WorkspaceID != workspaceID {
 		return fmt.Errorf("content source not found in workspace")
 	}
-	if s.embedder == nil {
-		msg := "OpenAI-compatible embedding provider is not configured"
+	refreshEmbeddingSource(s.embedder, source.WorkspaceID)
+	if !embeddingsAvailable(ctx, s.embedder, source.WorkspaceID) {
+		msg := embeddingProviderMissingMessage
 		_ = s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncDisabled, 0, source.IndexedPages, source.IndexedChunks, &msg, nil, nil, nil)
 		return nil
 	}
@@ -557,8 +560,9 @@ func (s *SupportContentSyncService) RunSourceReindex(ctx context.Context, worksp
 	if source == nil || source.WorkspaceID != workspaceID {
 		return fmt.Errorf("content source not found in workspace")
 	}
-	if s.embedder == nil {
-		msg := "OpenAI-compatible embedding provider is not configured"
+	refreshEmbeddingSource(s.embedder, source.WorkspaceID)
+	if !embeddingsAvailable(ctx, s.embedder, source.WorkspaceID) {
+		msg := embeddingProviderMissingMessage
 		return s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncDisabled, 0, source.IndexedPages, source.IndexedChunks, &msg, nil, nil, nil)
 	}
 

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -143,6 +144,18 @@ func TestInstallGeneratesSecretsAndRepeatPreservesEverything(t *testing.T) {
 	values := envValues(before)
 	if values["JWT_SECRET"] == values["AI_CONNECTION_ENCRYPTION_KEY"] {
 		t.Fatal("secrets reused")
+	}
+	// Modules enabled by default need their own stable 32-byte hex keys.
+	for _, key := range []string{"CRM_ENCRYPTION_KEY", "GIT_OAUTH_ENCRYPTION_KEY"} {
+		if decoded, err := hex.DecodeString(values[key]); err != nil || len(decoded) != 32 {
+			t.Fatalf("%s is not a generated 32-byte hex key", key)
+		}
+	}
+	if values["CRM_ENCRYPTION_KEY"] == values["GIT_OAUTH_ENCRYPTION_KEY"] || values["CRM_ENCRYPTION_KEY"] == values["AI_CONNECTION_ENCRYPTION_KEY"] {
+		t.Fatal("encryption keys reused")
+	}
+	if values["HELPIN_ENABLED_MODULES"] != "support,docs,agents,pm,crm,automation" {
+		t.Fatal("new installations must enable every module:", values["HELPIN_ENABLED_MODULES"])
 	}
 	info, _ := os.Stat(envPath)
 	if info.Mode().Perm() != 0600 {
@@ -394,6 +407,98 @@ func TestDoctorFailsForUnhealthyServices(t *testing.T) {
 	put(t, filepath.Join(dir, ".env"), "DASHBOARD_PORT="+port+"\nAPP_BASE_URL="+server.URL+"\nPUBLIC_WIDGET_URL=http://expected.test\n")
 	if err := a.doctor(dir); err == nil {
 		t.Fatal("doctor passed broken installation")
+	}
+}
+
+func TestCheckMemoryAcceptsNominalEightGigabyteServers(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		total         uint64
+		warn, failure bool
+	}{
+		{"16 GiB", 16 * gib, false, false},
+		{"nominal 8 GB server", 77 * gib / 10, false, false},
+		{"threshold", 7.5 * gib, false, false},
+		{"tight", 7 * gib, true, false},
+		{"minimum", 6 * gib, true, false},
+		{"too small", 4 * gib, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			warning, err := checkMemory(tc.total)
+			if (err != nil) != tc.failure || (warning != "") != tc.warn {
+				t.Fatalf("warning=%q err=%v", warning, err)
+			}
+			if err != nil && (!errors.Is(err, errInsufficientMemory) || !strings.Contains(err.Error(), "at least 8 GB RAM")) {
+				t.Fatalf("unexpected error %v", err)
+			}
+		})
+	}
+}
+
+func TestPrerequisitesWarnsOnTightMemory(t *testing.T) {
+	a, out := testApp(t)
+	a.output = func(_ string, args ...string) ([]byte, error) {
+		if len(args) > 1 && args[1] == "info" {
+			return []byte(fmt.Sprint(uint64(6.5 * gib))), nil
+		}
+		return nil, nil
+	}
+	if err := a.prerequisites(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "! Docker reports 6.5 GiB RAM") {
+		t.Fatal(out.String())
+	}
+}
+
+func TestDoctorHintReflectsFailedChecks(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(503) }))
+	defer server.Close()
+	_, port, _ := net.SplitHostPort(strings.TrimPrefix(server.URL, "http://"))
+	for _, tc := range []struct {
+		name, memory, publicURL string
+		want, reject            []string
+	}{
+		{"memory with local URL", "4294967296", server.URL, []string{"increase server memory to at least 8 GB RAM", "inspect helpin logs"}, []string{"DNS"}},
+		{"public URL", "17179869184", "http://0.0.0.0:" + port, []string{"check DNS, your HTTPS proxy"}, []string{"memory"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a, _ := testApp(t)
+			a.output = func(_ string, args ...string) ([]byte, error) {
+				if len(args) > 1 && args[1] == "info" {
+					return []byte(tc.memory), nil
+				}
+				return nil, nil
+			}
+			a.run = func(string, ...string) error { return nil }
+			dir := t.TempDir()
+			put(t, filepath.Join(dir, ".env"), "DASHBOARD_PORT="+port+"\nAPP_BASE_URL="+tc.publicURL+"\nPUBLIC_WIDGET_URL=http://expected.test\n")
+			err := a.doctor(dir)
+			if err == nil {
+				t.Fatal("doctor passed broken installation")
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("missing %q in %v", want, err)
+				}
+			}
+			for _, reject := range tc.reject {
+				if strings.Contains(err.Error(), reject) {
+					t.Errorf("unexpected %q in %v", reject, err)
+				}
+			}
+		})
+	}
+}
+
+func TestIsLoopbackURL(t *testing.T) {
+	for raw, want := range map[string]bool{
+		"http://127.0.0.1:8080": true, "http://localhost:3000": true, "http://[::1]:80": true,
+		"https://helpin.example.com": false, "http://0.0.0.0:80": false, "": false,
+	} {
+		if got := isLoopbackURL(raw); got != want {
+			t.Errorf("%q: got %v", raw, got)
+		}
 	}
 }
 

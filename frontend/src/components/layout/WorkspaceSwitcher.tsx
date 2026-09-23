@@ -290,7 +290,7 @@ export function WorkspaceSwitcher() {
               <button
                 type="button"
                 onClick={() => {
-                  navigate({ to: '/workspaces', search: { create: true } });
+                  navigate({ to: '/onboarding', search: { step: 'workspace' } });
                   setOpen(false);
                 }}
                 className="flex items-center justify-center gap-1 rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"

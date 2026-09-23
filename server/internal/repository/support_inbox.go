@@ -192,6 +192,8 @@ func (r *SupportMessageRepository) ListEmailFallbackReconciliationCandidates(ctx
 		Where("support_messages.is_internal = ?", false).
 		Where("COALESCE(NULLIF(support_messages.message_type, ''), 'reply') = ?", "reply").
 		Where("support_messages.sender_type <> ?", "customer").
+		// Sample conversations use fictional customers; never email them.
+		Where(NotSampleDataSQL("sc.id")).
 		Where("support_messages.created_at <= ?", before).
 		Where("(support_messages.created_at >= ? OR ("+explicitEmail+"))", after).
 		Where("(support_messages.cancellable_until IS NULL OR support_messages.cancellable_until <= ?)", before).
@@ -1875,6 +1877,9 @@ func (r *SupportConversationRepository) ListCoverageAnalysisCandidatesPage(ctx c
 	query := r.db.WithContext(ctx).
 		Where("workspace_id = ?", workspaceID).
 		Where("status <> ?", model.SupportConversationStatusSpam).
+		// Sample conversations are not real customer demand; keep them out of
+		// AI coverage analysis.
+		Where(NotSampleDataSQL("support_conversations.id")).
 		Where(`(
 			(updated_at >= ? AND updated_at < ?)
 			OR (resolved_at IS NOT NULL AND resolved_at >= ? AND resolved_at < ?)
@@ -1905,6 +1910,7 @@ func (r *SupportConversationRepository) ListWorkspacesForCoverageAnalysisCandida
 		Model(&model.SupportConversation{}).
 		Distinct("workspace_id").
 		Where("status <> ?", model.SupportConversationStatusSpam).
+		Where(NotSampleDataSQL("support_conversations.id")).
 		Where(`(
 			(updated_at >= ? AND updated_at < ?)
 			OR (resolved_at IS NOT NULL AND resolved_at >= ? AND resolved_at < ?)

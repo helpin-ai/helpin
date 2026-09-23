@@ -22,7 +22,7 @@ const BUNDLES = [
       d: axis === 'v'
         ? `M ${CX + position - bow * 0.4} ${CY - LENGTH} Q ${CX + position + bow} ${CY} ${CX + position - bow * 0.4} ${CY + LENGTH}`
         : `M ${CX - LENGTH} ${CY + position - bow * 0.4} Q ${CX} ${CY + position + bow} ${CX + LENGTH} ${CY + position - bow * 0.4}`,
-      opacity: Math.max(0.07, 0.55 - Math.abs(t) * 0.7),
+      opacity: Math.max(0.16, 0.8 - Math.abs(t) * 0.9),
     };
   }),
 }));
@@ -104,10 +104,10 @@ export function HeroVortex({ variant = 'vortex', tone = 'light' }: { variant?: M
             </defs>
             {ART[variant].map((bundle, bi) => (
               <g key={bi} transform={bundle.transform} fill="none" strokeLinecap="round">
-                <g stroke={`url(#${id}-base)`} strokeWidth="4" opacity="0.22">
+                <g stroke={`url(#${id}-base)`} strokeWidth="4" opacity="0.3">
                   {bundle.lines.map((line, j) => <path key={j} d={line.d} opacity={line.opacity} />)}
                 </g>
-                <g stroke={`url(#${id}-base)`} strokeWidth="1">
+                <g stroke={`url(#${id}-base)`} strokeWidth="1.4">
                   {bundle.lines.map((line, j) => <path key={j} d={line.d} opacity={line.opacity} />)}
                 </g>
                 <g className="hero-vortex-sheen" stroke={`url(#${id}-sheen)`} strokeWidth="1.5">

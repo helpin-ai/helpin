@@ -195,8 +195,8 @@ and [router edition hooks](server/internal/router/edition.go). Enterprise
 implementations live under `server/ee/` and `frontend/src/ee/`. Community excludes
 subscription billing, payment UI, and commercial charging policy.
 
-The Community Compose default `HELPIN_ENABLED_MODULES=support,docs,agents` selects
-the beta product surface. Module configuration is separate from compilation and
+The Community Compose default `HELPIN_ENABLED_MODULES=support,docs,agents,pm,crm,automation`
+enables every module. Module configuration is separate from compilation and
 licensing: enabling a module is not a promise that its wider feature set is part
 of the supported Community release. Refer to [LICENSE](LICENSE) for licensing
 scopes, and [build editions](docs/ai-connections.md#build-editions) for commands.

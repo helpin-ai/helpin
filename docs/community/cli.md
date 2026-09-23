@@ -10,8 +10,10 @@ source availability alone does not make the public installer usable.
 
 Use Linux or macOS on amd64 or arm64, with Docker Engine or Docker Desktop,
 Docker Compose v2, Bash, OpenSSL, and curl. The bootstrap also needs `sha256sum`
-or `shasum`. Allow at least 8 GiB of memory available to Docker and 20 GiB free
-on the installation filesystem. Ensure Docker's own data disk also has room for
+or `shasum`. Allow at least 8 GB of RAM available to Docker and 20 GiB free
+on the installation filesystem. An 8 GB server reports about 7.7 GiB usable;
+`helpin doctor` and `install` accept 7.5 GiB or more, warn from 6 GiB, and fail
+below that. Ensure Docker's own data disk also has room for
 images and volumes. These are evaluation starting points, not capacity promises.
 Native Windows is not supported by this installer. Use a Linux environment with
 a reachable Docker engine. The CLI does not install Docker or change group
@@ -54,6 +56,20 @@ starts services, and checks the API's expected configuration before printing
 success. First startup includes downloading container images and may take
 several minutes.
 
+The wizard then offers two optional integrations; enter `skip` to configure
+either later:
+
+- **Application email (SMTP)**: host, port, TLS mode (`starttls`, `tls`, or
+  `none` for an unauthenticated trusted relay), username, password, and sender
+  address. It sends invitations and password resets.
+- **AI provider**: `openrouter`, `openai`, or `anthropic`, with its API key.
+  Anthropic keys do not provide knowledge embeddings.
+
+Passwords and API keys are read without echo and are written only to the
+private `community/.env` (mode 600), next to the generated secrets, which are
+preserved. `helpin configure` offers the same prompts; a blank secret keeps the
+stored one.
+
 Open the printed dashboard URL, create your account and workspace, then follow
 the [first support conversation](../../community/README.md#start-your-first-conversation).
 AI provider connections and application mail remain optional.
@@ -90,7 +106,19 @@ helpin install --yes --mode local --dir "$HOME/helpin" \
 ```
 
 For server mode, supply `--domain`, `--storage-domain`, `--help-domain`, and
-`--proxy-cidr`. Use `--no-start` to download and prepare the configuration before
+`--proxy-cidr`. Unattended runs change mail and AI settings only when their
+flags are given. Secrets are never accepted as command-line values; pass a file
+or an environment variable instead:
+
+```sh
+HELPIN_SMTP_PASSWORD="$(cat /run/secrets/smtp)" helpin install --yes --mode local \
+  --smtp-host smtp.example.com --smtp-username helpin --smtp-from help@example.com \
+  --ai-provider openrouter --ai-key-file /run/secrets/openrouter
+```
+
+`--smtp-password-file` and `HELPIN_AI_API_KEY` are the other two sources; a
+file's first line is used. `--smtp-port` defaults to 587 and `--smtp-tls` to
+`starttls`. Use `--no-start` to download and prepare the configuration before
 starting services with `helpin start`. Use `--version` to select another
 published Community bundle for a **new** installation.
 
@@ -116,8 +144,8 @@ assets or artifacts from a trusted source.
 | `helpin restart` | Recreates services to apply configuration, preserving data volumes |
 | `helpin status` | Shows containers, image identities, and migration information |
 | `helpin logs [service...]` | Follows logs, initially showing the last 150 lines |
-| `helpin configure` | Updates local/server URL and port settings; preserves secrets and optional settings |
-| `helpin doctor` | Checks Docker, Compose configuration, required services, API readiness, HTTPS, and secret file permissions |
+| `helpin configure` | Updates local/server URL and port settings, and optionally application mail and the AI provider key; preserves secrets |
+| `helpin doctor` | Checks Docker, Compose configuration, required services, API readiness, HTTPS, secret file permissions, and capabilities |
 | `helpin backup` | Stops services, snapshots the bundle and all named volumes, then resumes previously running services |
 | `helpin restore` | Verifies a backup and restores the original release/data/keys into a new directory and new volumes |
 | `helpin upgrade` | Verifies a compatible target release, creates a recovery backup, applies migrations, and checks readiness |
@@ -125,9 +153,28 @@ assets or artifacts from a trusted source.
 
 Every installation command accepts `--dir`. Put options before service names:
 `helpin logs --dir /srv/helpin helpin-api agent-runtime-worker`.
-Use `helpin install --help` for setup flags. Optional mail and server AI settings
-are still managed in `community/.env`; see [configuration](configuration.md).
-After changing configuration, run `helpin restart`.
+Use `helpin install --help` for setup flags. Other optional settings are managed
+in `community/.env`; see [configuration](configuration.md). After changing
+configuration, run `helpin restart`.
+
+### Capability checks
+
+`helpin doctor` ends with a **Capabilities** section read from the local API
+(`GET /api/instance/capabilities`, authenticated with the installation's
+`INTERNAL_API_SECRET` over the loopback dashboard port). Each line shows a
+status and, when something is missing, the next step:
+
+| Status | Meaning |
+| --- | --- |
+| `ready` | Configured and confirmed by evidence, such as a successful test or indexed knowledge |
+| `needs setup` | Missing configuration, or the last check failed |
+| `unable to verify` | Configured, but not yet confirmed; for example no test email has been sent |
+| `unavailable` | Not offered by this edition or the enabled modules |
+
+Only object storage and background workers are required: doctor fails when one
+of them needs setup. Optional integrations never fail doctor. Older releases
+without the endpoint are reported as skipped. For workspace members,
+`GET /api/workspaces/{id}/capabilities` reports the same checks per workspace.
 
 Repeating `install` on an existing installation preserves it and prints the
 management commands. It does not rotate keys, replace the bundle, or upgrade
