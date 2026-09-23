@@ -941,6 +941,9 @@ func (s *MCPService) executeSpecialMCPTool(
 		if result, handled, err := s.executeHelpcenterMCPTool(ctx, principal, actor, name, arguments); handled {
 			return result, err
 		}
+		if result, handled, err := s.executePMParityMCPTool(ctx, principal, name, arguments); handled {
+			return result, err
+		}
 		return nil, ErrMCPNotFound
 	}
 }
