@@ -862,7 +862,8 @@ func main() {
 	}
 	jevProductDecisions.SetMetrics(metrics)
 	translationRoute := service.AICompletionRoute{Provider: "openrouter", Model: "openai/gpt-oss-120b", OpenRouterProvider: "cerebras/fp16"}
-	supportInboxService.SetTranslations(repository.NewSupportTranslationRepository(db), supportLLMProvider, jevProductDecisions, translationRoute, supportLLMRouter.HasChatProvider("openrouter"))
+	supportInboxService.SetTranslations(repository.NewSupportTranslationRepository(db), supportLLMProvider, jevProductDecisions, translationRoute, supportLLMRouter.HasChatProvider("openrouter")).
+		SetTranslationProviderConfigured(supportLLMRouter.HasChatProvider("openrouter"))
 	supportInboxService.SetTranslationMetrics(metrics)
 	pmTriageService, pmTriageErr := service.NewPMTriageService(service.PMTriageConfig{
 		Mode: cfg.JevPMMode, Threshold: cfg.JevPMThreshold, DailyLimit: cfg.JevPMDailyLimit,

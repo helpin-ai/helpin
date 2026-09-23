@@ -402,6 +402,38 @@ func TestTranslationSendUsesWorkspacePolicy(t *testing.T) {
 	}
 }
 
+// A server without a translation provider (a Community install with no
+// OpenRouter key) must never block teammate replies; only an outage of a
+// configured provider does.
+func TestTranslationUnconfiguredServerSendsReplies(t *testing.T) {
+	env, c, p := translationFixture(t)
+	s := env.service.supportInboxService
+	s.translations.available = false
+	s.SetTranslationProviderConfigured(false)
+	setTranslationWorkspaceSettings(t, env, c.WorkspaceID, func(settings *model.SupportInboxSettings) {
+		settings.TranslationEnabled = true
+		settings.TranslationOutgoingEnabled = true
+	})
+
+	options, err := s.TranslationOptions(context.Background(), c.WorkspaceID, c.ID, "22222222-2222-2222-2222-222222222222")
+	if err != nil {
+		t.Fatalf("TranslationOptions: %v", err)
+	}
+	if options.Available || options.Preference.AutoTranslateOutgoing || options.Conversation.TranslationMode != "off" || !strings.Contains(options.UnavailableReason, "isn’t set up") {
+		t.Fatalf("unconfigured options = %+v", options)
+	}
+
+	req := explicitDeliveryRequest(t, "chat_only")
+	req.Content = "Hello"
+	sent, err := s.CreateConversationMessage(context.Background(), c.WorkspaceID, c.ID, req, "user", strPtr("22222222-2222-2222-2222-222222222222"), nil, nil)
+	if err != nil {
+		t.Fatalf("reply blocked on a server without translation: %v", err)
+	}
+	if sent.Content != "Hello" || p.calls != 0 {
+		t.Fatalf("content=%q calls=%d", sent.Content, p.calls)
+	}
+}
+
 func TestTranslationIncomingUsesWorkspaceLanguage(t *testing.T) {
 	env, c, p := translationFixture(t)
 	s := env.service.supportInboxService

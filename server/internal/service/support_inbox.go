@@ -2059,7 +2059,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	// Apply the workspace policy to every public teammate reply, including older
 	// clients that omit or send stale per-message translation flags.
 	req.AutoTranslate = false
-	if !req.SendOriginal && s.translations != nil && senderType == "user" && !req.IsInternal && messageType == "reply" && strings.TrimSpace(req.Content) != "" {
+	if !req.SendOriginal && s.translationConfigured() && senderType == "user" && !req.IsInternal && messageType == "reply" && strings.TrimSpace(req.Content) != "" {
 		options, err := s.TranslationOptions(ctx, workspaceID, ticketID, derefString(senderUserID))
 		if err != nil {
 			return nil, ErrSupportTranslation
