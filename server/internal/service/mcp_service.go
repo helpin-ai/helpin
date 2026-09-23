@@ -132,6 +132,7 @@ type MCPService struct {
 	docsEmbedding mcpDocsEmbeddingQueue
 	attachments   mcpAttachmentService
 	docsContent   mcpDocsContentReader
+	pmComments    mcpPMCommentLister
 	fetchImage    mcpImageFetcher
 	config        MCPServiceConfig
 	tools         map[string]MCPToolDefinition

@@ -129,6 +129,7 @@ func (s *MCPService) buildToolCatalog() []MCPToolDefinition {
 	defs = append(defs, uploadMCPToolDefinitions()...)
 	defs = append(defs, docsBatchMCPToolDefinitions()...)
 	defs = append(defs, helpcenterMCPToolDefinitions()...)
+	defs = append(defs, pmParityMCPToolDefinitions()...)
 	sort.Slice(defs, func(i, j int) bool { return defs[i].Name < defs[j].Name })
 	return defs
 }

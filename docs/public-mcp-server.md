@@ -324,6 +324,7 @@ These tools expose existing Helpin commands that in-app agents already use, with
 
 | Area | Read tools | Write tools |
 | --- | --- | --- |
+| Tasks | `list_task_comments` (authors by ID and name only) | `archive_task`, `restore_task` |
 | Epics | `list_epics`, `get_epic` | `update_epic` |
 | Sprints | `list_sprints`, `get_sprint`, `list_sprint_tasks` | `create_sprint`, `update_sprint` |
 | Objectives | `list_objectives`, `get_objective` | `create_objective`, `update_objective`, `update_key_result` |
@@ -782,7 +783,7 @@ The implementation includes automated checks for:
 - strict tool schemas and rejection of workspace-override properties
 - workspace-policy scope/toolset narrowing and forced read-only behavior
 - platform domain flags
-- the 101-tool catalog, including parity tools for epics, sprints, objectives, labels, workflows, members, CRM, and support organization
+- the 104-tool catalog, including parity tools for epics, sprints, objectives, labels, workflows, members, CRM, and support organization
 - document image uploads: presigned upload with storage verification, and SSRF-safe copy from a public URL
 - document lifecycle tools: publish, unpublish, archive, restore, and rename, including typed error codes
 - exclusion of deferred destructive, support-draft, and customer-send actions
