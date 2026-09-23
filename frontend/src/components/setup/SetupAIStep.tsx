@@ -110,10 +110,14 @@ function SetupAIConnect({
 
   if (connections.isLoading) return <Skeleton className="h-8 w-full max-w-md" />;
   const data = connections.data;
-  const hasWorkspaceConnection = data?.connections.some((connection) => connection.scope === 'workspace') ?? false;
-  // A workspace connection exists (for example it needs reconnecting, or no
-  // default is set), or connections can't be listed: settings can fix it.
-  if (!data || !data.enabled || hasWorkspaceConnection) {
+  // Community creates disconnected standard connections without keys, so only
+  // a connected workspace connection means the key form is not what's needed
+  // (for example no default is set): settings can fix that. Adding a key while
+  // only disconnected ones exist re-maps the untouched standard profiles to it.
+  const hasConnectedWorkspaceConnection = data?.connections.some(
+    (connection) => connection.scope === 'workspace' && connection.status === 'connected',
+  ) ?? false;
+  if (!data || !data.enabled || hasConnectedWorkspaceConnection) {
     return <CapabilityActionView capability={capability} slug={slug} canManage />;
   }
 

@@ -110,12 +110,24 @@ describe('SetupAIStep', () => {
     expect(status(container)).toBe('Connected. gpt-5.6 answered in 812 ms.');
   });
 
-  it('links to AI settings when a workspace connection already exists', async () => {
-    listConnections([{ id: 'conn-1', scope: 'workspace', name: 'OpenAI', provider: 'openai', status: 'reauthorization_required', user_id: null }]);
+  it('links to AI settings when a connected workspace connection exists but AI still needs setup', async () => {
+    listConnections([{ id: 'conn-1', scope: 'workspace', name: 'OpenAI', provider: 'openai', status: 'connected', user_id: null }]);
     const { container } = await renderStep(capability({ key: 'ai_chat', action: { kind: 'open_settings', label: 'Connect an AI provider', path: 'settings/ai' } }));
 
     expect(container.querySelector('form')).toBeNull();
     expect(container.querySelector('a')?.getAttribute('href')).toBe('/w/acme/settings/ai');
+  });
+
+  it('shows the key form when only disconnected standard connections exist', async () => {
+    // Community provisions standard connections without keys; they must not hide the form.
+    listConnections([
+      { id: 'std-1', scope: 'workspace', name: 'OpenRouter', provider: 'openrouter', status: 'disconnected', user_id: null },
+      { id: 'std-2', scope: 'workspace', name: 'OpenAI', provider: 'openai', status: 'reauthorization_required', user_id: null },
+    ]);
+    const { container } = await renderStep(capability({ key: 'ai_chat', action: { kind: 'open_settings', label: 'Connect an AI provider', path: 'settings/ai' } }));
+
+    expect(container.querySelector('form')).not.toBeNull();
+    expect(container.querySelector('input[type="password"]')).not.toBeNull();
   });
 
   it('renders nothing actionable once AI is ready or for members', async () => {
