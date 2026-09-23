@@ -130,13 +130,16 @@ type MCPService struct {
 	docsLifecycle mcpDocsLifecycleService
 	helpcenter    mcpHelpcenterPublisher
 	docsEmbedding mcpDocsEmbeddingQueue
-	attachments   mcpAttachmentService
-	docsContent   mcpDocsContentReader
-	pmComments    mcpPMCommentLister
-	fetchImage    mcpImageFetcher
-	config        MCPServiceConfig
-	tools         map[string]MCPToolDefinition
-	toolSchemas   map[string]*jsonschema.Resolved
+	docsProposals mcpDocsChangeProposalService
+	// proposalCommands overrides commands for propose_document_change in tests.
+	proposalCommands mcpCommandExecutor
+	attachments      mcpAttachmentService
+	docsContent      mcpDocsContentReader
+	pmComments       mcpPMCommentLister
+	fetchImage       mcpImageFetcher
+	config           MCPServiceConfig
+	tools            map[string]MCPToolDefinition
+	toolSchemas      map[string]*jsonschema.Resolved
 }
 
 // NewMCPService creates the public MCP service boundary.
