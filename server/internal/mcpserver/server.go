@@ -63,6 +63,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
 		return
 	}
+	principal = principalForPath(principal, r.URL.Path)
 	r.Body = http.MaxBytesReader(w, r.Body, _maxBodyBytes)
 	ctx := context.WithValue(r.Context(), principalContextKey{}, principal)
 	h.streamable.ServeHTTP(w, r.WithContext(ctx))
@@ -277,6 +278,21 @@ func (h *Handler) validOrigin(r *http.Request) bool {
 		}
 	}
 	return false
+}
+
+// ReadOnlyPath is the endpoint that exposes only read tools, whatever the
+// connection's grant allows.
+const ReadOnlyPath = "/mcp/readonly"
+
+// principalForPath forces read-only mode on the read-only endpoint without
+// mutating the authenticated principal.
+func principalForPath(principal *model.MCPPrincipal, requestPath string) *model.MCPPrincipal {
+	if principal == nil || strings.TrimSuffix(requestPath, "/") != ReadOnlyPath {
+		return principal
+	}
+	readOnly := *principal
+	readOnly.ReadOnly = true
+	return &readOnly
 }
 
 func bearerToken(header string) string {

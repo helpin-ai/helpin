@@ -697,6 +697,7 @@ For headless automation:
 | `GET /.well-known/oauth-authorization-server` | OAuth authorization-server metadata |
 | `GET /.well-known/oauth-protected-resource` | MCP protected-resource metadata |
 | `/mcp` | Authenticated Streamable HTTP MCP endpoint |
+| `/mcp/readonly` | Same endpoint with read-only mode forced: only read tools are listed and callable, whatever the connection's grant allows |
 | `POST /api/mcp/oauth/register` | Dynamic public-client registration |
 | `GET /api/mcp/oauth/authorize` | Redirect into the authenticated Helpin consent UI |
 | `POST /api/mcp/oauth/token` | Authorization-code and refresh-token grants |
@@ -783,7 +784,8 @@ The implementation includes automated checks for:
 - strict tool schemas and rejection of workspace-override properties
 - workspace-policy scope/toolset narrowing and forced read-only behavior
 - platform domain flags
-- the 104-tool catalog, including parity tools for epics, sprints, objectives, labels, workflows, members, CRM, and support organization
+- the 104-tool catalog
+- the `/mcp/readonly` endpoint forcing read-only mode, including parity tools for epics, sprints, objectives, labels, workflows, members, CRM, and support organization
 - document image uploads: presigned upload with storage verification, and SSRF-safe copy from a public URL
 - document lifecycle tools: publish, unpublish, archive, restore, and rename, including typed error codes
 - exclusion of deferred destructive, support-draft, and customer-send actions

@@ -200,6 +200,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Get("/.well-known/oauth-authorization-server", h.MCP.AuthorizationServerMetadata)
 		r.Get("/.well-known/oauth-protected-resource", h.MCP.ProtectedResourceMetadata)
 		r.Handle("/mcp", http.HandlerFunc(h.MCP.Protocol))
+		r.Handle("/mcp/readonly", http.HandlerFunc(h.MCP.Protocol))
 	}
 
 	// ---- Public widget routes for client.helpin.ai (no JWT, open CORS) ----
