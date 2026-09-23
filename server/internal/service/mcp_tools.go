@@ -848,51 +848,7 @@ func (s *MCPService) executeSpecialMCPTool(
 		return &MCPToolResult{Summary: fmt.Sprintf("Returned %d available agents.", len(items)), Data: items}, nil
 
 	case "start_agent_run":
-		var input struct {
-			AgentID           string  `json:"agent_id"`
-			TargetType        string  `json:"target_type"`
-			TargetID          string  `json:"target_id"`
-			AdditionalContext *string `json:"additional_context"`
-		}
-		if err := decodeMCPArguments(arguments, &input); err != nil {
-			return nil, err
-		}
-		if err := s.agents.RequireActorCanUseAgent(ctx, principal.WorkspaceID, input.AgentID, actor); err != nil {
-			return nil, ErrMCPForbidden
-		}
-		recentStarts, err := s.repo.CountRecentToolCalls(ctx, principal.WorkspaceID, principal.UserID, "start_agent_run", time.Now().Add(-time.Hour))
-		if err != nil {
-			return nil, err
-		}
-		if recentStarts >= 10 {
-			return nil, ErrMCPRateLimited
-		}
-		userActive, workspaceActive, err := s.repo.CountActiveMCPAgentRuns(ctx, principal.WorkspaceID, principal.UserID)
-		if err != nil {
-			return nil, err
-		}
-		if userActive >= 3 || workspaceActive >= 10 {
-			return nil, ErrMCPRateLimited
-		}
-		run, err := s.agents.StartTargetRun(ctx, principal.WorkspaceID, input.TargetType, input.TargetID, model.StartAgentRunRequest{AgentID: input.AgentID, AdditionalContext: input.AdditionalContext}, principal.UserID)
-		if err != nil {
-			return nil, err
-		}
-		if !mcpPrincipalCanSeeRun(principal, run) {
-			return nil, newMCPToolError(MCPErrorCodeRunNotOwned,
-				"Another private run is already active for this agent and target. Wait for it to finish or choose another target.")
-		}
-		attribution := &model.MCPAgentRunAttribution{RunID: run.ID, WorkspaceID: principal.WorkspaceID, ClientName: principal.ClientName}
-		if principal.ConnectionID != "" {
-			attribution.ConnectionID = &principal.ConnectionID
-		}
-		if principal.ServicePrincipalID != "" {
-			attribution.ServicePrincipalID = &principal.ServicePrincipalID
-		}
-		if err := s.repo.CreateRunAttribution(ctx, attribution); err != nil {
-			return nil, err
-		}
-		return &MCPToolResult{Summary: "Agent run started. Poll get_agent_run with the returned run_id.", Data: map[string]any{"run_id": run.ID, "status": run.Status, "agent_id": run.AgentID, "target_type": run.TargetType, "target_id": run.TargetID}}, nil
+		return s.startMCPAgentRun(ctx, principal, actor, arguments)
 
 	case "get_agent_run":
 		var input struct {
