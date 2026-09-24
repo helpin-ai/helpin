@@ -112,8 +112,8 @@ tests for metrics/telemetry/ownership/rate limits, Go vet/build, 29 SDK tests an
   scraped successfully (`up=1`) on port 9090.
 - Shared monitoring comes from the infrastructure repository's Argo application
   definitions (`argo-applications/victoriametrics.yaml`, `grafana-operator.yaml`,
-  and Grafana resources). Helpin-specific resources come from this repository's
-  `k8s/prod/monitoring*.yaml`, reconciled by the Helpin Argo application.
+  and Grafana resources). Helpin-specific resources come from
+  `helpin-ai/gitops:helpin/prod/monitoring*.yaml`, reconciled by the Helpin Argo application.
 - All 12 Grafana panel expressions return successful queries; connection and
   alert-delivery panels return real samples. All 10 Helpin rules evaluate `ok`.
 - Manual Job `helpin-widget-smoke-verify-20260917` succeeded: Chromium 2.682s,
@@ -134,7 +134,7 @@ tests for metrics/telemetry/ownership/rate limits, Go vet/build, 29 SDK tests an
 
 The translation feature adds the **Helpin — Support translation** dashboard
 (UID `helpin-support-translation`) through
-[`monitoring-translation-dashboard.yaml`](../../k8s/prod/monitoring-translation-dashboard.yaml).
+[`monitoring-translation-dashboard.yaml`](https://github.com/helpin-ai/gitops/blob/main/helpin/prod/monitoring-translation-dashboard.yaml).
 The manifest uses the existing Grafana operator and VictoriaMetrics datasource;
 it is ready for the normal release process, not verified live by this change.
 

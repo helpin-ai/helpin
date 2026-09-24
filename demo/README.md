@@ -53,7 +53,7 @@ the viewer role. Verify those setup requirements before enabling public access.
 ## Planned provisioning and follow-up work (not implemented)
 
 - Visitor bots (agent-browser through the widget, scenario library, daily cap)
-  and reply bots (API service accounts), as CronJobs in `k8s/prod`.
+  and reply bots (API service accounts), as CronJobs in `helpin-ai/gitops:helpin/prod`.
 - Demo site accounts for bot personas with HMAC-signed widget identify.
 - An external MCP server exposing demo-site user data to the support agent.
 - Backups for the demo workspace.

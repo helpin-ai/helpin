@@ -12,7 +12,7 @@ differs from this proposal. [Capture health](src/health.rs) stays ready until
 shutdown and liveness does not depend on broker health.
 [Token storage](src/auth/http_tokens.rs) uses `ArcSwap`, not the proposed
 `RwLock`; startup can proceed with an empty registry. The
-[staging workload](../../k8s/stage/events-pipeline/deployments/eventpipeline-web.yaml)
+[staging workload](https://github.com/helpin-ai/gitops/blob/main/helpin/stage/events-pipeline/deployments/eventpipeline-web.yaml)
 uses a retained PVC, not the `emptyDir` example below. Kafka-specific fixes,
 example image names, configuration proposals, incident descriptions and staged
 verification instructions remain historical and should not be applied to the
