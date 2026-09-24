@@ -1,5 +1,5 @@
 import { AI_PRICING } from '@/generated/aiPricing';
-import { SIGNUP_URL } from '../new/_components/ui';
+import { SIGNUP_URL } from '../(site)/_components/ui';
 
 type PlanKey = 'starter' | 'growth';
 type Interval = 'monthly' | 'annual' | 'trial';

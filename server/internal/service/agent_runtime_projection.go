@@ -1356,17 +1356,34 @@ func (s *AgentRuntimeProjectionService) maybeCancelOverage(ctx context.Context, 
 	if s.usageMeter.usage == nil {
 		return false, errors.New("AI usage lifecycle is required")
 	}
-	if metering, ok := agentRunMeteringContext(run); ok {
+	metering, ok := agentRunMeteringContext(run)
+	if ok {
 		if err := s.usageMeter.usage.Heartbeat(ctx, metering); err != nil {
 			return false, err
 		}
 	}
-	exceeded, err := s.usageMeter.agentRunUsageExceedsBudget(run, usage)
+	if !ok || metering.EnforcementMode != model.AIUsageEnforcementStrict || metering.MaxBillableMicrousd <= 0 {
+		return false, nil
+	}
+	charge, err := s.usageMeter.agentRunUsageCharge(run, usage, metering)
 	if err != nil {
 		return false, err
 	}
-	if !exceeded {
+	if charge < metering.MaxBillableMicrousd {
 		return false, nil
+	}
+	// The launch estimate bounds the initial hold, not the entire runtime. Grow
+	// the hold against the workspace allowance before cancelling the run.
+	if charge < math.MaxInt64 {
+		metering.MaxBillableMicrousd = charge + 1
+		if err := s.usageMeter.usage.Heartbeat(ctx, metering); err == nil {
+			if err := storeAgentRunMeteringContext(run, metering); err != nil {
+				return false, err
+			}
+			return true, nil
+		} else if !errors.Is(err, model.ErrAIUsageExhausted) {
+			return false, err
+		}
 	}
 
 	if _, cancelErr := s.agentRuntimeClient.CancelRun(ctx, runtimeRunID); cancelErr != nil {

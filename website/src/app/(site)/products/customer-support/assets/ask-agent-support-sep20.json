@@ -1,0 +1,37 @@
+{
+  "type": "Generated fictional support and Ask Agent demonstration",
+  "model": "gpt-image-2.5-sunburst",
+  "tool": "OpenAI images.edit API; previously authorized direct runner",
+  "nativeDimensions": [
+    3840,
+    2160
+  ],
+  "master": "output/imagegen/customer-support/ask-agent-support-sep20-v2.webp",
+  "references": [
+    {
+      "role": "Ask Agent UI layout",
+      "source": "https://storage.googleapis.com/vm-dev-screenshots/Sep%2020/Screenshot%202026-09-20%20at%2012.40.33%E2%80%AFPM.png"
+    },
+    {
+      "role": "OrbitDesk identity, support UI, fictional story",
+      "source": "output/imagegen/customer-support/inbox-orbitdesk-sep20-v1.webp"
+    },
+    {
+      "role": "Brand mark",
+      "source": "website/public/brand/helpin-icon-white.svg"
+    }
+  ],
+  "prompts": [
+    "ask-agent-support-sep20-prompt.txt",
+    "ask-agent-support-sep20-refinement.txt"
+  ],
+  "publishedWidths": [
+    960,
+    1440,
+    1920,
+    3840
+  ],
+  "processing": "Sharp 0.34.5, WebP quality 94, effort 6, proportional downscaling; no upscaling",
+  "scene": "Ask Agent reviews a CSV export issue, creates EXP-142, coordinates a proposed code fix and assigns Sam for review. The fix is not merged.",
+  "placement": "/products/customer-support#support-connected"
+}

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
-import { MarketingShell } from '../new/_components/MarketingShell';
-import { PreviewNav } from '../new/_components/PreviewNav';
-import { PreviewFooter } from '../new/_components/PreviewFooter';
+import { MarketingShell } from '../(site)/_components/MarketingShell';
+import { PreviewNav } from '../(site)/_components/PreviewNav';
+import { PreviewFooter } from '../(site)/_components/PreviewFooter';
 import './pricing.css';
 import { createPageMetadata, PAGE_SEO } from '@/lib/metadata';
 

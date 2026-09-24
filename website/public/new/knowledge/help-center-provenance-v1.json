@@ -1,5 +1,5 @@
 {
-  "page": "/new/products/knowledge#knowledge-library",
+  "page": "/products/knowledge#knowledge-library",
   "section": "Make your docs feel like part of your product.",
   "asset_type": "Generated illustrative demo edited from the user-provided real Helpin public help-center screenshot",
   "tool": "Direct OpenAI Images edit API; previously authorized custom 4K runner",

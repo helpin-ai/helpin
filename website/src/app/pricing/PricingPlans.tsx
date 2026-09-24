@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { ArrowRight, Building2, Check } from 'lucide-react';
 import { AI_ALLOWANCE, PLANS } from './pricing-data';
-import { DEMO_URL, GITHUB_URL } from '../new/_components/ui';
+import { DEMO_URL, GITHUB_URL } from '../(site)/_components/ui';
 
 const SELF_HOSTED_FEATURES = [
   'Every module and Growth feature, no plan limits',
@@ -29,7 +29,7 @@ export function PricingPlans() {
         <h3 id="plan-self-hosted">Self-hosted</h3>
         <p className="pricing-plan-description">The complete open-source product, on your servers.</p>
         <div className="pricing-price"><div className="pricing-price-amount"><span>$</span><strong>0</strong><span>forever</span></div><p>AGPL-3.0 · You cover hosting and AI providers</p></div>
-        <a className="btn btn-secondary" href="/new/self-hosting">Read the self-hosting guide<ArrowRight size={16} aria-hidden="true" /></a>
+        <a className="btn btn-secondary" href="/self-hosting">Read the self-hosting guide<ArrowRight size={16} aria-hidden="true" /></a>
         <dl className="pricing-plan-metrics"><div><dt>Teammates</dt><dd>Unlimited</dd></div><div><dt>AI usage</dt><dd>Your provider keys</dd></div></dl>
         <ul>{SELF_HOSTED_FEATURES.map(feature => <li key={feature}><Check size={14} strokeWidth={2} aria-hidden="true" /><span>{feature}</span></li>)}</ul>
         <p className="pricing-plan-aside">Community 0.1 is in beta. <a href={GITHUB_URL}>View on GitHub</a></p>

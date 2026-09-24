@@ -693,19 +693,23 @@ func agentRunUsageIsZero(usage agentRuntimeUsagePayload) bool {
 		usage.OutputTokens == 0 && usage.ReasoningOutputTokens == 0
 }
 
+func (m *AIUsageMeter) agentRunUsageCharge(run *model.AgentRun, usage agentRuntimeUsagePayload, metering MeteringContext) (int64, error) {
+	if m == nil || m.usage == nil {
+		return 0, errors.New("usage lifecycle is required")
+	}
+	normalized, err := aiusage.NormalizeTokens(agentRunTokenTelemetry(run, usage))
+	if err != nil {
+		return 0, err
+	}
+	return m.usage.ChargeForTokens(metering, normalized)
+}
+
 func (m *AIUsageMeter) agentRunUsageExceedsBudget(run *model.AgentRun, usage agentRuntimeUsagePayload) (bool, error) {
 	metering, ok := agentRunMeteringContext(run)
 	if !ok || metering.EnforcementMode != model.AIUsageEnforcementStrict || metering.MaxBillableMicrousd <= 0 {
 		return false, nil
 	}
-	if m == nil || m.usage == nil {
-		return false, errors.New("usage lifecycle is required")
-	}
-	normalized, err := aiusage.NormalizeTokens(agentRunTokenTelemetry(run, usage))
-	if err != nil {
-		return false, err
-	}
-	charge, err := m.usage.ChargeForTokens(metering, normalized)
+	charge, err := m.agentRunUsageCharge(run, usage, metering)
 	return err == nil && charge >= metering.MaxBillableMicrousd, err
 }
 
