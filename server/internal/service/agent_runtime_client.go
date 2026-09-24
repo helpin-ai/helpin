@@ -224,6 +224,11 @@ func (c *AgentRuntimeClient) CancelRun(ctx context.Context, runtimeRunID string)
 	return c.client.CancelRun(ctx, runtimeRunID)
 }
 
+// PauseRun requests a manual pause; the runtime acknowledges it with a later event.
+func (c *AgentRuntimeClient) PauseRun(ctx context.Context, runtimeRunID string) (*AgentRuntimeRun, error) {
+	return c.client.PauseRun(ctx, runtimeRunID)
+}
+
 func firstOptionalString(values []string) string {
 	if len(values) == 0 {
 		return ""

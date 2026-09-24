@@ -145,7 +145,7 @@ frontend/                        # React SPA
     routes/                      # TanStack Router file-based routes
     stores/                      # Zustand stores (auth, workspace, org, etc.)
 
-k8s/                             # Kubernetes manifests for the hosted service
+helpin-ai/gitops                 # Hosted Kubernetes manifests (separate private repo)
 
 .github/workflows/               # CI/CD pipelines
   ci.yml                         # PR checks (Go and pnpm validation)

@@ -6,7 +6,7 @@ import "time"
 // Source hashes identify exact text revisions without changing canonical messages.
 type SupportTranslation struct {
 	RetryAttempt    int        `json:"-" gorm:"-"`
-	PolicyRevision  int64      `json:"-"`
+	PolicyRevision  int64      `json:"-" gorm:"not null;default:0"`
 	ID              string     `json:"id" gorm:"type:uuid;primaryKey"`
 	WorkspaceID     string     `json:"-" gorm:"type:uuid;not null"`
 	ConversationID  string     `json:"conversation_id" gorm:"type:uuid;not null"`

@@ -88,7 +88,7 @@ paths help orient work elsewhere in the monorepo:
 | `events-pipeline/` | Separate event capture and analytics pipeline |
 | `website/` | Marketing site |
 | `community/` | Self-hosted bundle, images, installer, and acceptance tests |
-| `docker/`, `k8s/`, `ops/` | Other development and deployment infrastructure |
+| `docker/`, `ops/` | Development and deployment infrastructure; hosted Kubernetes manifests live in `helpin-ai/gitops` |
 | `.github/workflows/` | Checks, build jobs, and release/deployment workflows |
 | `docs/` | Engineering guides and separately indexed design history |
 

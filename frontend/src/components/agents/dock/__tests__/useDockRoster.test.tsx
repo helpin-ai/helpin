@@ -7,7 +7,7 @@ import { useDockStore } from '@/stores/dockStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
-import type { DockChat } from '@/lib/dockTypes';
+import type { DockChat, DockRunSummary } from '@/lib/dockTypes';
 
 const mocks = vi.hoisted(() => ({ listChats: vi.fn(), listRuns: vi.fn() }));
 vi.mock('@/lib/services/dockChatService', () => ({ dockChatService: mocks }));
@@ -16,6 +16,12 @@ vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const chat = (id: string): DockChat => ({ id, workspace_id: 'ws-1', user_id: 'user-1', title: id, visibility: 'private', created_at: '', updated_at: '' });
 const response = (id: string, next_cursor: string | null = null) => ({ data: { chats: [chat(id)], next_cursor }, error: null });
+const runSummary = (id: string, status: string, pauseReason: string, attentionKind?: DockRunSummary['attention_kind']) => ({
+  run: { id, status, pause_reason: pauseReason },
+  agent: { id: 'agent-1', name: 'Agent' },
+  attention_kind: attentionKind,
+  last_activity_at: '2026-09-24T00:00:00Z',
+} as DockRunSummary);
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done; }); return { promise, resolve }; }
 let root: Root;
 let container: HTMLDivElement;
@@ -45,6 +51,16 @@ afterEach(() => {
 });
 
 describe('shared roster request ordering and recovery', () => {
+  it('removes answered chat attention when the active run leaves the roster', async () => {
+    const awaiting = runSummary('ask-run', 'paused', 'human_input', 'input');
+    mocks.listRuns.mockResolvedValueOnce({ data: { runs: [awaiting] }, error: null })
+      .mockResolvedValue({ data: { runs: [] }, error: null });
+    await act(async () => root.render(<Harness />));
+    expect(rosters.first.runs.map((summary) => summary.run.id)).toEqual(['ask-run']);
+    await act(async () => { await rosters.first.refreshRuns(); });
+    expect(rosters.first.runs).toEqual([]);
+  });
+
   it('refreshes the collapsed run indicators when a known chat gains attention', async () => {
     mocks.listChats.mockResolvedValue({ data: { chats: [{ ...chat('first'), active_run_id: 'ask-run' }] }, error: null });
     await act(async () => root.render(<Harness />));

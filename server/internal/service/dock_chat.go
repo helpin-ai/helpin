@@ -478,6 +478,9 @@ func (s *DockChatService) sendMessageLocked(ctx context.Context, workspaceID, us
 			return nil, err
 		}
 	case model.IsAgentRunPausedStatus(currentRun.Status):
+		if currentRun.PauseReason == model.AgentRunPauseReasonManual {
+			return nil, fmt.Errorf("resume the agent before sending another message")
+		}
 		usesCurrentTools, err := s.runUsesCurrentScopedTools(ctx, chat, userID, currentRun)
 		if err != nil {
 			return nil, err

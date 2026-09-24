@@ -39,6 +39,8 @@ const mocks = vi.hoisted(() => ({
   listChatRunInteractions: vi.fn(),
   resolveInteraction: vi.fn(),
   cancelChatRun: vi.fn(),
+  pauseChatRun: vi.fn(),
+  resumeChatRun: vi.fn(),
   listRuns: vi.fn(),
   getRunSnapshot: vi.fn(),
   listRunEvents: vi.fn(),
@@ -86,6 +88,8 @@ vi.mock('@/lib/services/dockChatService', () => ({
     listChatRunInteractions: mocks.listChatRunInteractions,
     resolveInteraction: mocks.resolveInteraction,
     cancelChatRun: mocks.cancelChatRun,
+    pauseChatRun: mocks.pauseChatRun,
+    resumeChatRun: mocks.resumeChatRun,
     listRuns: mocks.listRuns,
     getRunSnapshot: mocks.getRunSnapshot,
     listRunEvents: mocks.listRunEvents,
@@ -1233,6 +1237,55 @@ describe('AskAgentsDock', () => {
     expect(mocks.cancelChatRun).toHaveBeenCalledWith('ws-1', 'chat-1');
   });
 
+  it('pauses an active chat run without cancelling it', async () => {
+    mocks.getChat.mockResolvedValue({
+      data: chatDetail({
+        chat: { ...CHAT, active_run_id: 'run-1' },
+        run: { id: 'run-1', status: 'running', pause_reason: 'none' } as never,
+      }),
+      error: null,
+    });
+    mocks.getChatRun.mockResolvedValue({ data: { id: 'run-1', status: 'running', stream_state_snapshot: null }, error: null });
+    mocks.pauseChatRun.mockResolvedValue({
+      data: { id: 'run-1', status: 'running', pause_reason: 'none', execution_stage: 'pausing' }, error: null,
+    });
+
+    await renderDock();
+    await waitForText('Sprint questions');
+    const pause = document.body.querySelector<HTMLButtonElement>('[data-helpin-dock] [aria-label="Pause agent"]');
+    expect(pause).not.toBeNull();
+    await act(async () => pause?.click());
+    await flush();
+
+    expect(mocks.pauseChatRun).toHaveBeenCalledWith('ws-1', 'chat-1');
+    expect(mocks.cancelChatRun).not.toHaveBeenCalled();
+  });
+
+  it('resumes a manually paused chat run', async () => {
+    mocks.getChat.mockResolvedValue({
+      data: chatDetail({
+        chat: { ...CHAT, active_run_id: 'run-1' },
+        run: { id: 'run-1', status: 'paused', pause_reason: 'manual' } as never,
+      }),
+      error: null,
+    });
+    mocks.getChatRun.mockResolvedValue({ data: { id: 'run-1', status: 'paused', stream_state_snapshot: null }, error: null });
+    mocks.resumeChatRun.mockResolvedValue({
+      data: { id: 'run-1', status: 'paused', pause_reason: 'manual', execution_stage: 'resuming' }, error: null,
+    });
+
+    await renderDock();
+    await waitForText('Sprint questions');
+    expect(dockTextarea().disabled).toBe(true);
+    const resume = document.body.querySelector<HTMLButtonElement>('[data-helpin-dock] [aria-label="Resume agent"]');
+    expect(resume).not.toBeNull();
+    await act(async () => resume?.click());
+    await flush();
+
+    expect(mocks.resumeChatRun).toHaveBeenCalledWith('ws-1', 'chat-1');
+    expect(mocks.cancelChatRun).not.toHaveBeenCalled();
+  });
+
   it('keeps a persisted cancellation visibly pending and prevents repeat stop requests', async () => {
     mocks.getChat.mockResolvedValue({
       data: chatDetail({
@@ -1675,6 +1728,33 @@ describe('AskAgentsDock', () => {
 
     expect(document.body.textContent).toContain('Ask Agent');
     expect(document.body.textContent).toContain('1 agent need your attention');
+  });
+
+  it('clears a chat from the dock after its question is answered', async () => {
+    useDockStore.setState({ collapsed: true });
+    const run = { ...DOCK_RUN.run, id: 'ask-run', dock_chat_id: CHAT.id, pause_reason: 'human_input' };
+    const chat = { ...CHAT, active_run_id: run.id, active_run_status: 'paused' as const };
+    const attention = { ...DOCK_RUN, run, attention_kind: 'input' as const };
+    let answered = false;
+    mocks.listChats.mockResolvedValue({ data: { chats: [chat] }, error: null });
+    mocks.listRuns.mockImplementation(async () => ({ data: { runs: answered ? [] : [attention], attention_count: answered ? 0 : 1 }, error: null }));
+    mocks.getChat.mockResolvedValue({ data: chatDetail({ chat, run }), error: null });
+    mocks.getChatRun.mockResolvedValue({ data: run, error: null });
+    mocks.sendMessage.mockImplementation(async () => {
+      answered = true;
+      return { data: chatDetail({ chat: { ...chat, active_run_status: 'running' }, run: { ...run, status: 'running', pause_reason: 'none' } }), error: null };
+    });
+
+    await renderDock();
+    await waitForText('1 need you');
+    await act(async () => document.body.querySelector<HTMLButtonElement>('[aria-label="1 agent need your attention"]')?.click());
+    await waitForCondition(() => !dockTextarea().disabled, `chat answer composer was not ready: ${dockTextarea().placeholder}`);
+    await act(async () => {
+      setTextareaValue(dockTextarea(), 'Use the current project');
+      dockTextarea().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    await waitForCondition(() => answered && !document.body.querySelector('[aria-label="1 agent need your attention"]'), 'answered chat remained in dock');
+    expect(document.body.querySelector('[aria-label^="Open Ask Agent conversation"]')).toBeNull();
   });
 
   it('keeps completed and other inactive agents out of the minimized dock', async () => {

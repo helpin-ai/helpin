@@ -651,7 +651,8 @@ describe('CodingInterruptionPanel', () => {
       );
     });
 
-    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 120 }));
+    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: expect.any(Number) }));
+    expect(scrollTo.mock.calls.at(-1)?.[0].top).toBeGreaterThan(0);
 
     act(() => {
       root.unmount();

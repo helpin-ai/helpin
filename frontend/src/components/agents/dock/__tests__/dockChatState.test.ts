@@ -28,6 +28,12 @@ describe('resolveDockComposerState', () => {
     expect(state.enabled).toBe(true);
   });
 
+  it('requires explicit resume after a manual pause', () => {
+    const state = resolveDockComposerState({ status: 'paused', pause_reason: 'manual' }, false, false);
+    expect(state.enabled).toBe(false);
+    expect(state.placeholder).toContain('resume');
+  });
+
   it('disables while the agent is working', () => {
     const state = resolveDockComposerState({ status: 'running', pause_reason: 'none' }, false, false);
     expect(state.visible).toBe(true);

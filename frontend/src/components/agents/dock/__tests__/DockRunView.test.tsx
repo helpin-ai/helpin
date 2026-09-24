@@ -52,15 +52,19 @@ vi.mock('@/components/pm/CodingSession/CodingPlanPanel', () => ({
 }));
 
 vi.mock('../DockInput', () => ({
-  DockInput: ({ disabled, placeholder, onStop }: {
+  DockInput: ({ disabled, placeholder, onStop, onPause, onResume }: {
     disabled?: boolean;
     placeholder?: string;
     onStop?: () => void;
+    onPause?: () => void;
+    onResume?: () => void;
   }) => (
     <div
       data-testid="dock-input"
       data-disabled={String(disabled)}
       data-can-stop={String(Boolean(onStop))}
+      data-can-pause={String(Boolean(onPause))}
+      data-can-resume={String(Boolean(onResume))}
     >
       {placeholder}
     </div>
@@ -203,7 +207,23 @@ describe('DockRunView timeline parity', () => {
     expect(container.querySelector('[data-current-work-plan]')).not.toBeNull();
     expect(container.querySelector('[data-testid="dock-input"]')?.getAttribute('data-disabled')).toBe('true');
     expect(container.querySelector('[data-testid="dock-input"]')?.getAttribute('data-can-stop')).toBe('true');
+    expect(container.querySelector('[data-testid="dock-input"]')?.getAttribute('data-can-pause')).toBe('true');
     expect(container.textContent).toContain('Agent is working…');
+  });
+
+  it('offers resume for a manually paused run', () => {
+    mocks.session = codingSession({ status: 'paused', pause_reason: 'manual' });
+    const summary: DockRunSummary = {
+      run: agentRun({ status: 'paused', pause_reason: 'manual' }),
+      agent: { id: 'agent-1', name: 'Scribe' },
+      last_activity_at: '2026-08-21T19:53:00Z',
+    };
+    act(() => root.render(<DockRunView workspaceId="ws-1" summary={summary} draft="" onDraftChange={vi.fn()} onRunChanged={vi.fn()} onRunContinued={vi.fn()} />));
+    const input = container.querySelector('[data-testid="dock-input"]');
+    expect(input?.getAttribute('data-can-resume')).toBe('true');
+    expect(input?.getAttribute('data-can-pause')).toBe('false');
+    expect(input?.getAttribute('data-disabled')).toBe('true');
+    expect(container.textContent).toContain('Agent paused');
   });
 
   it('delegates completed work disclosure to the transcript instead of adding a passive footer', () => {

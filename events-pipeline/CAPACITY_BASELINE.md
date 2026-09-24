@@ -140,8 +140,8 @@ after material event-envelope changes.
 ## Deployment sizing
 
 The resource tables below reflect the checked-in
-[production capture/replay manifest](../k8s/prod/events-pipeline/deployments/eventpipeline-web.yaml)
-and [staging manifest](../k8s/stage/events-pipeline/deployments/eventpipeline-web.yaml),
+[production capture/replay manifest](https://github.com/helpin-ai/gitops/blob/main/helpin/prod/events-pipeline/deployments/eventpipeline-web.yaml)
+and [staging manifest](https://github.com/helpin-ai/gitops/blob/main/helpin/stage/events-pipeline/deployments/eventpipeline-web.yaml),
 including the increased production replay memory allocation. They do not report
 live cluster resources.
 

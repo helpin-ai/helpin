@@ -6,8 +6,8 @@
 
 ## Current deployment boundary
 
-The checked-in [staging](../../k8s/stage/temporal-worker.yaml) and
-[production](../../k8s/prod/temporal-worker.yaml) manifests define
+The checked-in [staging](https://github.com/helpin-ai/gitops/blob/main/helpin/stage/temporal-worker.yaml) and
+[production](https://github.com/helpin-ai/gitops/blob/main/helpin/prod/temporal-worker.yaml) manifests define
 `helpin-temporal-automation` with the `automation-default` queue. They retain
 non-root execution, a read-only root filesystem, dropped capabilities, and a
 writable `/tmp`, but do not contain a Codex-specific deployment,

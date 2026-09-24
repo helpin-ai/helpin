@@ -22,8 +22,8 @@ type GitHubAppCredential struct {
 	OwnerLogin             *string   `json:"owner_login"`
 	OwnerType              *string   `json:"owner_type"`
 	CreatedBy              *string   `json:"created_by" gorm:"type:uuid"`
-	CreatedAt              time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt              time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	CreatedAt              time.Time `json:"created_at" gorm:"autoCreateTime;not null;default:now()"`
+	UpdatedAt              time.Time `json:"updated_at" gorm:"autoUpdateTime;not null;default:now()"`
 }
 
 // TableName returns the GitHub App credential table.

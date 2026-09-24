@@ -144,6 +144,8 @@ export function ChatView({
   const [sending, setSending] = useState(false);
   const [launchStartedAt, setLaunchStartedAt] = useState<string | undefined>();
   const [stopping, setStopping] = useState(false);
+  const [pausing, setPausing] = useState(false);
+  const [resuming, setResuming] = useState(false);
   const [pendingEcho, setPendingEcho] = useState<PendingDockChatMessage | null>(null);
   const [latestSubmission, setLatestSubmission] = useState<DockMessageSubmission | null>(null);
   const [failedClientMessageIds, setFailedClientMessageIds] = useState<ReadonlySet<string>>(() => new Set());
@@ -566,7 +568,7 @@ export function ChatView({
     if (node && autoFollowRef.current) node.scrollTop = node.scrollHeight;
   }, [transformed, currentPlan, visibleSendError]);
 
-  const effectiveInteraction = pendingInteraction ?? fallbackInteraction;
+  const effectiveInteraction = run?.pause_reason === 'manual' ? null : pendingInteraction ?? fallbackInteraction;
   const dockConfirm = effectiveInteraction ? parseDockPlanConfirm(effectiveInteraction.request_payload) : null;
   const composer = resolveDockComposerState(
     run ? { status: run.status, pause_reason: run.pause_reason } : null,
@@ -745,8 +747,37 @@ export function ChatView({
     if (attachment.id) void pmAttachmentService.remove(workspaceId, attachment.id, { pendingOnly: true });
   }, [workspaceId]);
 
-  const canStop = runActive && (run?.status === 'queued' || run?.status === 'running');
+  const canPause = run?.status === 'queued' || run?.status === 'running';
+  const canResume = run?.status === 'paused' && run.pause_reason === 'manual';
+  const canStop = runActive && (canPause || canResume);
+  const pausePending = pausing || run?.execution_stage === 'pausing';
+  const resumePending = resuming || run?.execution_stage === 'resuming';
   const cancellationPending = stopping || run?.execution_stage === 'cancelling';
+  const handlePause = useCallback(async () => {
+    if (!chatId || pausePending) return;
+    setPausing(true);
+    try {
+      const res = await dockChatService.pauseChatRun(workspaceId, chatId);
+      if (res.error) { toast.error(res.error); return; }
+      if (res.data) setDetail((current) => current ? { ...current, run: res.data } : current);
+      await Promise.all([refreshDetail(), refetch()]);
+    } finally {
+      setPausing(false);
+    }
+  }, [chatId, pausePending, refetch, refreshDetail, workspaceId]);
+
+  const handleResume = useCallback(async () => {
+    if (!chatId || resumePending) return;
+    setResuming(true);
+    try {
+      const res = await dockChatService.resumeChatRun(workspaceId, chatId);
+      if (res.error) { toast.error(res.error); return; }
+      if (res.data) setDetail((current) => current ? { ...current, run: res.data } : current);
+      await Promise.all([refreshDetail(), refetch()]);
+    } finally {
+      setResuming(false);
+    }
+  }, [chatId, resumePending, refetch, refreshDetail, workspaceId]);
   const handleStop = useCallback(async () => {
     if (!chatId || cancellationPending) return;
     setStopping(true);
@@ -772,12 +803,13 @@ export function ChatView({
       if (!res.error) {
         clearPendingInteraction(interactionId);
         setFallbackInteraction(null);
+        onChatChanged?.();
         void refreshDetail();
         void refetch();
       }
       return { error: res.error };
     },
-    [chatId, clearPendingInteraction, refetch, refreshDetail, workspaceId],
+    [chatId, clearPendingInteraction, onChatChanged, refetch, refreshDetail, workspaceId],
   );
 
   const activeSubAgentName = useMemo(() => {
@@ -1113,7 +1145,11 @@ export function ChatView({
                 textareaRef={textareaRef}
                 onStop={canStop ? () => void handleStop() : undefined}
                 stopping={cancellationPending}
-                placeholder={cancellationPending ? 'Stopping agent…' : undefined}
+                onPause={canPause && !cancellationPending ? () => void handlePause() : undefined}
+                pausing={pausePending}
+                onResume={canResume && !cancellationPending ? () => void handleResume() : undefined}
+                resuming={resumePending}
+                placeholder={cancellationPending ? 'Stopping agent…' : pausePending ? 'Pausing agent…' : resumePending ? 'Resuming agent…' : undefined}
                 showShortcutHint={showComposerShortcutHint}
               />
           </div>

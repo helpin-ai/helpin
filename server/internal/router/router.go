@@ -966,6 +966,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requireCommandBarRead()).Get("/chats/{chatID}/run/interactions", h.DockChat.ListChatRunInteractions)
 				r.With(requireCommandBarEdit()).Post("/chats/{chatID}/interactions/{interactionID}/resolve", h.DockChat.ResolveChatRunInteraction)
 				r.With(requireCommandBarEdit()).Post("/chats/{chatID}/run/cancel", h.DockChat.CancelChatRun)
+				r.With(requireCommandBarEdit()).Post("/chats/{chatID}/run/pause", h.DockChat.PauseChatRun)
+				r.With(requireCommandBarEdit()).Post("/chats/{chatID}/run/resume", h.DockChat.ResumeChatRun)
 				r.With(requireCommandBarRead()).Get("/runs", h.DockChat.ListRuns)
 				r.With(requireCommandBarRead()).Get("/runs/{runID}/snapshot", h.DockChat.GetRunSnapshot)
 				if h.PublicShare != nil {
@@ -979,6 +981,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requireCommandBarEdit()).Post("/runs/{runID}/messages", h.DockChat.SendRunMessage)
 				r.With(requireCommandBarEdit()).Post("/runs/{runID}/continue", h.DockChat.ContinueRun)
 				r.With(requireCommandBarEdit()).Post("/runs/{runID}/cancel", h.DockChat.CancelRun)
+				r.With(requireCommandBarEdit()).Post("/runs/{runID}/pause", h.DockChat.PauseRun)
+				r.With(requireCommandBarEdit()).Post("/runs/{runID}/resume", h.DockChat.ResumeRun)
 			})
 
 			// Support module

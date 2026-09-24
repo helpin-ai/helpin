@@ -128,7 +128,7 @@ Apps using Agent Runtime may implement their own installation UI/storage or use 
 
 The Go SDK exposes `github.com/helpin-ai/agent-runtime-go/mcpauth`; the Python SDK exposes `MCPOAuthClient`. These helpers own protocol mechanics, not product policy. An app must still supply workspace/user authorization, callback routes, encrypted single-use state and refresh-token storage, tool discovery/review, notifications, and run bindings. Helpin imports the Go SDK OAuth helper and typed run/rotation contracts, then supplies all of those application-owned pieces here as the reference architecture.
 
-Helpin pins `github.com/helpin-ai/agent-runtime-go v0.6.0` in
+Helpin pins `github.com/helpin-ai/agent-runtime-go v0.7.0` in
 [`server/go.mod`](../server/go.mod). That module includes `mcpauth` and the
 run-scoped MCP types; normal builds do not require a local SDK override.
 

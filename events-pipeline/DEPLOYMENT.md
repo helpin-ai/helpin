@@ -10,10 +10,10 @@ Staging uses separate workflows with change filters; a merge does not necessaril
 rebuild every component:
 
 - `Staging Release` builds the API, Temporal worker, and migration image, then
-  commits their versioned image tags under `k8s/stage` when its change detector
+  commits their versioned image tags under `helpin/stage` in `helpin-ai/gitops` when its change detector
   selects `server/`, or when dispatched with `force_all`;
 - `Events Pipeline - Staging` builds the Rust image, then commits its immutable
-  tag to the capture, replay, bootstrap, and writer manifests for changes under
+  tag to the web (capture/replay) and writer manifests for changes under
   `events-pipeline/` or to that workflow;
 - the SDK workflow publishes to the staging CDN for changes under `packages/sdk-js/`,
   `packages/widget-core/`, `packages/shared/`, or `.node-version`; and
@@ -26,7 +26,7 @@ Check the [server release workflow](../.github/workflows/deploy-staging.yml),
 [npm workflow](../.github/workflows/publish-npm-staging.yml) before relying on a
 merge to produce new images. Manifest-only edits do not trigger pipeline builds.
 
-Argo CD is expected to recurse through `k8s/stage`. It creates a dedicated
+Argo CD recurses through `helpin/stage` in `helpin-ai/gitops`. It creates a dedicated
 three-member Helpin Keeper ensemble, a one-shard/two-replica Helpin ClickHouse
 installation, the three-node NATS StatefulSet, two capture/replay StatefulSet
 pods, two writer pods, and the Postgres and ClickHouse migration hooks. The
@@ -139,7 +139,7 @@ The existing `ghcr-helpin-json-key` image-pull secret is also required.
   `clickhouse.altinity.com/chi=clickhouse` in every pod template. Otherwise it
   blocks the new Helpin replicas from the two shared dedicated hosts.
 - Confirm the Argo CD application includes nested directories under
-  `k8s/stage`; otherwise the event-pipeline manifests are never applied.
+  `helpin/stage` in `helpin-ai/gitops`; otherwise the event-pipeline manifests are never applied.
 - Confirm `client.stage.helpin.ai` resolves to the ingress and its wildcard TLS
   secret exists.
 
@@ -158,7 +158,7 @@ events-pipeline/scripts/k8s-preflight.sh helpin
 3. Confirm the required builds were selected by their change filters; dispatch
    missing builds explicitly when new images are needed. Wait for `Staging
    Release`, `Events Pipeline - Staging`, and any required SDK deployment to
-   succeed, then wait for the image workflows’ manifest-tag commits on `develop`.
+   succeed, then wait for the image workflows’ manifest-tag commits on `helpin-ai/gitops:main`.
 4. Refresh Argo CD and inspect the rendered diff. The ClickHouse and Postgres
    migration images and every event-pipeline command must use the new tags.
 5. If a capture Deployment from an earlier preview exists, scale it to zero;

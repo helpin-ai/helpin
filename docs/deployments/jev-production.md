@@ -171,8 +171,8 @@ Emergency feature rollback: set `JEV_ROUTING_MODE=off`, `JEV_TAGS_MODE=off`,
 Existing LLM routing remains available. Already-added tags are not automatically removed.
 For binary rollback, select the previously verified release from the current
 GitOps history and deployment record. The original rollout named
-`server-v0.95.403`; it is not a permanently valid rollback target. The checked-in
-[production API manifest](../../k8s/prod/server.yaml) identifies the desired image
+`server-v0.95.403`; it is not a permanently valid rollback target. The GitOps
+[production API manifest](https://github.com/helpin-ai/gitops/blob/main/helpin/prod/server.yaml) identifies the desired image
 and secret reference, but does not prove cluster state. Jev uses existing schemas.
 
 ## Lifecycle integration verification

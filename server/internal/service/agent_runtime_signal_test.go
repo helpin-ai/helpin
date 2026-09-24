@@ -44,6 +44,8 @@ type fakeAgentRuntimeSignalClient struct {
 	startRunHook         func(AgentRuntimeStartRunRequest)
 	resumeErr            error
 	cancelErr            error
+	pauseErr             error
+	pauseCalls           []string
 	startAuthErr         error
 	cancelAuthErr        error
 }
@@ -191,6 +193,14 @@ func (c *fakeAgentRuntimeSignalClient) CancelRun(_ context.Context, runtimeRunID
 		return nil, c.cancelErr
 	}
 	return &AgentRuntimeRun{ID: runtimeRunID, Status: model.AgentRunStatusCancelled}, nil
+}
+
+func (c *fakeAgentRuntimeSignalClient) PauseRun(_ context.Context, runtimeRunID string) (*AgentRuntimeRun, error) {
+	c.pauseCalls = append(c.pauseCalls, runtimeRunID)
+	if c.pauseErr != nil {
+		return nil, c.pauseErr
+	}
+	return &AgentRuntimeRun{ID: runtimeRunID, Status: model.AgentRunStatusRunning}, nil
 }
 
 func TestResumeRunForAgentRuntimeRunSignalsRuntimeAndKeepsLocalSideEffects(t *testing.T) {
@@ -434,6 +444,42 @@ func TestCancelRunForAgentRuntimeRunSignalsRuntimeBeforeLocalCancel(t *testing.T
 	}
 	if updated.Status != model.AgentRunStatusCancelled || updated.CompletedAt == nil {
 		t.Fatalf("expected runtime cancellation acknowledgement to be projected immediately, got status=%s completed_at=%v", updated.Status, updated.CompletedAt)
+	}
+}
+
+func TestManualPauseAndResumeKeepsTheSameRuntimeRun(t *testing.T) {
+	db := newInteractiveApprovalTestDB(t)
+	runRepo := repository.NewAgentRunRepository(db)
+	now := time.Now().UTC()
+	seedAgentRuntimeSignalAgent(t, db, now)
+	run := seedAgentRuntimeSignalRun(t, runRepo, model.AgentRunStatusRunning, model.AgentRunPauseReasonNone, "not_required", now)
+	runtimeClient := &fakeAgentRuntimeSignalClient{}
+	svc := &AgentService{runRepo: runRepo, agentRuntimeClient: runtimeClient}
+
+	pausing, err := svc.PauseRun(context.Background(), "ws-1", run.ID, "user-1")
+	if err != nil {
+		t.Fatalf("PauseRun: %v", err)
+	}
+	if len(runtimeClient.pauseCalls) != 1 || runtimeClient.pauseCalls[0] != "run_runtime_1" {
+		t.Fatalf("unexpected runtime pause calls: %#v", runtimeClient.pauseCalls)
+	}
+	if pausing.Status != model.AgentRunStatusRunning || pausing.ExecutionStage == nil || *pausing.ExecutionStage != "pausing" {
+		t.Fatalf("pause should stay pending until runtime acknowledgement: %#v", pausing)
+	}
+	run.Status = model.AgentRunStatusPaused
+	run.PauseReason = model.AgentRunPauseReasonManual
+	if err := runRepo.Update(context.Background(), run); err != nil {
+		t.Fatalf("project manual pause: %v", err)
+	}
+	resuming, err := svc.ResumeManuallyPausedRun(context.Background(), "ws-1", run.ID, "user-1")
+	if err != nil {
+		t.Fatalf("ResumeManuallyPausedRun: %v", err)
+	}
+	if len(runtimeClient.resumeCalls) != 1 || runtimeClient.resumeCalls[0].runID != "run_runtime_1" || runtimeClient.resumeCalls[0].req.Intent != "continue" {
+		t.Fatalf("unexpected runtime resume calls: %#v", runtimeClient.resumeCalls)
+	}
+	if resuming.ID != run.ID || resuming.ExecutionStage == nil || *resuming.ExecutionStage != "resuming" {
+		t.Fatalf("resume should target the same run: %#v", resuming)
 	}
 }
 
