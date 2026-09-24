@@ -76,8 +76,8 @@ assume that enabling AutoMigrate replaces the versioned migration ledger.
 
 Migration hook manifests:
 
-- `k8s/stage/server-migrate.yaml`
-- `k8s/prod/server-migrate.yaml`
+- `helpin-ai/gitops:helpin/stage/server-migrate.yaml`
+- `helpin-ai/gitops:helpin/prod/server-migrate.yaml`
 
 Both are ArgoCD `PreSync` hook Jobs. They run before the new Deployment is applied.
 
@@ -151,11 +151,12 @@ Do not rely on API startup to perform the hard-cut migration.
 ### 1. Verify Git/GitHub release state
 
 ```bash
-git fetch origin
+git clone git@github.com:helpin-ai/gitops.git
+cd gitops
 git log --oneline -n 3 origin/main
-git show origin/main:k8s/prod/server.yaml | sed -n '28,40p'
-git show origin/main:k8s/prod/server-migrate.yaml | sed -n '28,40p'
-git show origin/main:k8s/prod/temporal-worker.yaml | sed -n '30,40p'
+git show origin/main:helpin/prod/server.yaml | sed -n '28,40p'
+git show origin/main:helpin/prod/server-migrate.yaml | sed -n '28,40p'
+git show origin/main:helpin/prod/temporal-worker.yaml | sed -n '30,40p'
 ```
 
 Check that API, migration, and worker manifests use the same release tag. They

@@ -162,7 +162,7 @@ packages/                        # pnpm workspace packages
     src/core/widget.ts           # Widget initialization + DOM injection
     dist/                        # Built output (UMD + ES + CJS)
 
-k8s/                             # Kubernetes manifests for the hosted service
+helpin-ai/gitops                 # Hosted Kubernetes manifests (separate private repo)
 
 .github/workflows/               # CI/CD pipelines
   ci.yml                         # PR checks; inspect workflow for exact jobs
