@@ -33,7 +33,7 @@ export function LiveTranslateBar({ workspaceId, conversationId, editable, forceV
       value={data.conversation.customer_language}
       onChange={event => save.mutate({ enabled, language: event.target.value })}
     >
-      <option value="">{language ? `${languageFlag(language)} ${data.languages[language]} (detected)` : 'Customer language unknown'}</option>
+      <option value="">{language ? `${languageFlag(language)} ${data.languages[language]} (detected)` : 'Unknown language'}</option>
       {Object.entries(data.languages).map(([code, name]) => <option key={code} value={code}>{languageFlag(code)} {name}</option>)}
     </select>
     <span aria-hidden="true">↔</span>

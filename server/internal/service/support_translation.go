@@ -252,19 +252,25 @@ func (s *SupportInboxService) TranslateSupport(ctx context.Context, workspaceID,
 }
 
 // prepareTranslatedReply returns no translation and no error when the customer
-// language is unknown and there is no customer-authored text to detect it from.
-// Detection failures offer an explicit send-original choice at the API boundary.
+// language cannot be reliably determined. A detection outage must not block
+// original replies; translation failures for a known target remain explicit.
 func (s *SupportInboxService) prepareTranslatedReply(ctx context.Context, workspaceID, conversationID, userID string, req model.CreateMessageRequest) (*model.SupportTranslation, error) {
 	options, err := s.TranslationOptions(ctx, workspaceID, conversationID, userID)
 	if err != nil {
 		return nil, err
 	}
-	if !options.Available || !options.Preference.AutoTranslateOutgoing || req.IsInternal || (req.MessageType != "" && req.MessageType != "reply") {
+	if !options.Preference.AutoTranslateOutgoing || req.IsInternal || (req.MessageType != "" && req.MessageType != "reply") {
 		return nil, ErrSupportTranslation
 	}
 	target := options.Conversation.CustomerLanguage
 	if target == "" {
 		target = options.DetectedCustomerLanguage
+	}
+	if !options.Available {
+		if target == "" {
+			return nil, nil
+		}
+		return nil, ErrSupportTranslation
 	}
 	if target == "" {
 		messageID, lookupErr := s.translations.repo.LatestCustomerMessageID(ctx, workspaceID, conversationID)
@@ -279,6 +285,9 @@ func (s *SupportInboxService) prepareTranslatedReply(ctx context.Context, worksp
 			return nil, ErrSupportTranslation
 		}
 		target, err = s.detectCustomerLanguage(ctx, workspaceID, conversationID, msg)
+		if errors.Is(err, errCustomerLanguageUnknown) {
+			return nil, nil
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -307,6 +316,11 @@ func (s *SupportInboxService) prepareTranslatedReply(ctx context.Context, worksp
 	}
 	if t.SentMessageID == nil && (t.ExpiresAt == nil || !time.Now().Before(*t.ExpiresAt)) {
 		return nil, ErrSupportTranslation
+	}
+	// Same-language detection preserves the draft; it is an original send, not
+	// a translated reply. Keep previously delivered artifacts for deduplication.
+	if t.SentMessageID == nil && t.SourceLanguage == target && t.TranslatedText == strings.TrimSpace(req.Content) {
+		return nil, nil
 	}
 	return t, nil
 }

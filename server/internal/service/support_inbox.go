@@ -2067,7 +2067,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		if err != nil {
 			return nil, ErrSupportTranslation
 		}
-		if options.Preference.AutoTranslateOutgoing && !options.Available {
+		if options.Preference.AutoTranslateOutgoing && !options.Available && (options.Conversation.CustomerLanguage != "" || options.DetectedCustomerLanguage != "") {
 			return nil, ErrSupportTranslation
 		}
 		req.AutoTranslate = options.Available && options.Preference.AutoTranslateOutgoing

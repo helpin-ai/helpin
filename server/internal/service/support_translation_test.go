@@ -390,8 +390,11 @@ func TestTranslationSendUsesWorkspacePolicy(t *testing.T) {
 			req.TranslationTargetLanguage = "fr"
 			sent, err := s.CreateConversationMessage(context.Background(), c.WorkspaceID, c.ID, req, "user", strPtr("22222222-2222-2222-2222-222222222222"), nil, nil)
 			if !tc.provider && tc.master && tc.outgoing && !tc.internal {
- if err == nil || sent != nil || p.calls != 0 {t.Fatal("provider outage silently sent original")}; return
- }
+				if err == nil || sent != nil || p.calls != 0 {
+					t.Fatal("provider outage silently sent original")
+				}
+				return
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -634,9 +637,13 @@ func TestTranslationDetectionRecoversAfterRepeatedProviderFailures(t *testing.T)
 			p.failure = tc.failure
 			var artifact model.SupportTranslation
 			for attempt := 1; attempt <= 3; attempt++ {
-				_, err := s.CreateConversationMessage(ctx, c.WorkspaceID, c.ID, req, "user", actor, nil, nil)
-				if err == nil || !errors.Is(err, ErrSupportTranslation) {
-					t.Fatalf("send error=%v", err)
+				req.ClientMessageID = uuid.NewString()
+				sent, err := s.CreateConversationMessage(ctx, c.WorkspaceID, c.ID, req, "user", actor, nil, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if sent.Content != req.Content || sent.TranslationID != "" {
+					t.Fatal("detection failure did not preserve original")
 				}
 				if err := db.Where("source_message_id = ?", msg.ID).First(&artifact).Error; err != nil {
 					t.Fatal(err)
@@ -649,19 +656,30 @@ func TestTranslationDetectionRecoversAfterRepeatedProviderFailures(t *testing.T)
 				}
 			}
 			p.failure = nil
-			if _, err := s.CreateConversationMessage(ctx, c.WorkspaceID, c.ID, req, "user", actor, nil, nil); err == nil {
-				t.Fatal("cooldown allowed send")
+			req.ClientMessageID = uuid.NewString()
+			if sent, err := s.CreateConversationMessage(ctx, c.WorkspaceID, c.ID, req, "user", actor, nil, nil); err != nil || sent.Content != req.Content {
+				t.Fatalf("cooldown blocked original: %v", err)
 			}
 			if p.calls != 6 {
 				t.Fatalf("cooldown called provider: %d", p.calls)
 			}
 			rows, err := env.messageRepo.ListByConversation(ctx, c.WorkspaceID, c.ID, true)
-			if err != nil || len(rows) != 1 {
-				t.Fatalf("failed sends created messages: count=%d err=%v", len(rows), err)
+			if err != nil {
+				t.Fatal(err)
+			}
+			originalReplies := 0
+			for _, row := range rows {
+				if row.SenderType == "user" && row.MessageType == "reply" && row.Content == req.Content {
+					originalReplies++
+				}
+			}
+			if originalReplies != 4 {
+				t.Fatalf("original replies=%d, want 4", originalReplies)
 			}
 			if err := db.Model(&artifact).Update("updated_at", time.Now().Add(-16*time.Minute)).Error; err != nil {
 				t.Fatal(err)
 			}
+			req.ClientMessageID = uuid.NewString()
 			sent, err := s.CreateConversationMessage(ctx, c.WorkspaceID, c.ID, req, "user", actor, nil, nil)
 			if err != nil {
 				t.Fatal(err)
@@ -765,7 +783,7 @@ func TestTranslationLongEnglishEmailUsesLLMAndPreservesOriginal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sent.Content != req.Content || provider.calls == 0 || classifier.calls != 0 {
+	if sent.Content != req.Content || sent.TranslationID != "" || provider.calls == 0 || classifier.calls != 0 {
 		t.Fatalf("same-language send translated: %q calls=%d", sent.Content, provider.calls)
 	}
 	options, err := s.TranslationOptions(context.Background(), c.WorkspaceID, c.ID, actor)
