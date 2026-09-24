@@ -1,4 +1,4 @@
-import type { WidgetOriginSettings } from '@/lib/pmTypes';
+import type { WidgetOriginSettings, WidgetSigningSecretResponse } from '@/lib/pmTypes';
 import { api } from '../api';
 import type { AssignableMember } from '../types';
 import type {
@@ -322,6 +322,10 @@ export const supportService = {
     api.patch<SupportInstallationResponse>(`/support/inbox/installations${qs(workspaceId)}`, settings),
   regenerateWidgetKey: (workspaceId: string) =>
     api.post<SupportInstallationResponse>(`/support/inbox/installations/regenerate-key${qs(workspaceId)}`, {}),
+  revealWidgetSigningSecret: (workspaceId: string) =>
+    api.post<WidgetSigningSecretResponse>(`/support/inbox/installations/reveal-secret${qs(workspaceId)}`, {}),
+  rotateWidgetSigningSecret: (workspaceId: string) =>
+    api.post<WidgetSigningSecretResponse>(`/support/inbox/installations/rotate-secret${qs(workspaceId)}`, {}),
   /**
    * @deprecated Use WebSocket `support:typing:start` / `support:typing:stop` messages instead.
    * Kept as HTTP fallback for clients without an active WebSocket connection.

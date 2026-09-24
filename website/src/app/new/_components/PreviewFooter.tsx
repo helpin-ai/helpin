@@ -3,6 +3,7 @@ import { HeroVortex } from './HeroVortex';
 import { ArrowUpRight, Mail } from 'lucide-react';
 import { HelpinBrand } from '@/components/HelpinBrand';
 import { GITHUB_URL, GithubIcon } from './ui';
+import { DOCS } from './docsLinks';
 
 // Keep the footer focused on current pages; detailed capabilities live on each page.
 const COLUMNS = [
@@ -17,7 +18,7 @@ const COLUMNS = [
   { title: 'Resources', links: [
     { label: 'Developers', href: '/new/developers' },
     { label: 'Self-hosting', href: '/new/self-hosting' },
-    { label: 'Documentation', href: `${GITHUB_URL}/blob/develop/docs/README.md` },
+    { label: 'Documentation', href: DOCS.home },
   ] },
   { title: 'Community', links: [
     { label: 'Contributing', href: `${GITHUB_URL}/blob/develop/CONTRIBUTING.md` },

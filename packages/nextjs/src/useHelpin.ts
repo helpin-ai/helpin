@@ -69,88 +69,83 @@ function reportMissingClient(): void {
 function useHelpin(): HelpinClient {
   const client = useContext(HelpinContext);
 
-  // Return no-op client if we're in a server environment or client is not initialized
-  if (!client) {
-    reportMissingClient();
-    return noopClient;
-  }
-
   const id = useCallback(
-    (userData: UserProps, doNotSendEvent?: boolean): Promise<void> =>
-      client.id(userData, doNotSendEvent),
+    async (userData: UserProps, doNotSendEvent?: boolean): Promise<void> => {
+      await client?.id(userData, doNotSendEvent);
+    },
     [client],
   );
 
   const trackPageView = useCallback(
-    (): void => client.pageview(),
+    (): void => client?.pageview(),
     [client],
   );
 
   const track = useCallback(
     (typeName: string, payload?: EventPayload): void =>
-      client.track(typeName, payload),
+      client?.track(typeName, payload),
     [client],
   );
 
   const lead = useCallback(
     (payload: LeadProps, directSend?: boolean): void =>
-      client.lead(payload, directSend),
+      client?.lead(payload, directSend),
     [client],
   );
 
   const rawTrack = useCallback(
-    (payload: any): void => client.rawTrack(payload),
+    (payload: any): void => client?.rawTrack(payload),
     [client],
   );
 
   const show = useCallback(
-    (): void => client.show(),
+    (): void => client?.show(),
     [client],
   );
 
   const hide = useCallback(
-    (): void => client.hide(),
+    (): void => client?.hide(),
     [client],
   );
 
   const toggle = useCallback(
-    (): void => client.toggle(),
+    (): void => client?.toggle(),
     [client],
   );
 
   const open = useCallback(
-    (): void => client.open(),
+    (): void => client?.open(),
     [client],
   );
 
   const close = useCallback(
-    (): void => client.close(),
+    (): void => client?.close(),
     [client],
   );
 
   const openMessages = useCallback(
-    (): void => client.openMessages(),
+    (): void => client?.openMessages(),
     [client],
   );
 
   const openNewMessage = useCallback(
-    (content?: string): void => client.openNewMessage(content),
+    (content?: string): void => client?.openNewMessage(content),
     [client],
   );
 
   const openConversation = useCallback(
-    (conversationId: string): void => client.openConversation(conversationId),
+    (conversationId: string): void => client?.openConversation(conversationId),
     [client],
   );
 
   const openArticle = useCallback(
     (articleKey: string, options?: ShowArticleOptions): void =>
-      client.openArticle(articleKey, options),
+      client?.openArticle(articleKey, options),
     [client],
   );
 
   const shutdown = useCallback(
-    (): void => client.shutdown(),
+    (): void => client?.shutdown(),
     [client],
   );
 
@@ -161,7 +156,7 @@ function useHelpin(): HelpinClient {
         eventType?: string;
         persist?: boolean;
       },
-    ): void => client.set(properties, opts),
+    ): void => client?.set(properties, opts),
     [client],
   );
 
@@ -172,9 +167,16 @@ function useHelpin(): HelpinClient {
         eventType?: string;
         persist?: boolean;
       },
-    ): void => client.unset(propertyName, opts),
+    ): void => client?.unset(propertyName, opts),
     [client],
   );
+
+  // Hooks above always run so the hook order stays stable when the client
+  // appears after the first render (for example after server rendering).
+  if (!client) {
+    reportMissingClient();
+    return noopClient;
+  }
 
   return {
     ...client,

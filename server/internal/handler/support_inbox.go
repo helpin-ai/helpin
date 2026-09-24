@@ -1345,17 +1345,7 @@ func (h *SupportInboxHandler) GetInstallation(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	writeJSON(w, http.StatusOK, model.InstallationSettingsResponse{
-		ID:                       inst.ID,
-		WorkspaceID:              inst.WorkspaceID,
-		WidgetKey:                inst.WidgetKey,
-		AllowedOrigins:           []string(inst.AllowedOrigins),
-		IdentityVerificationMode: inst.IdentityVerificationMode,
-		Settings:                 *settings,
-		Active:                   inst.Active,
-		CreatedAt:                inst.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:                inst.UpdatedAt.Format(time.RFC3339),
-	})
+	writeJSON(w, http.StatusOK, installationSettingsResponse(inst, settings))
 }
 
 // UpdateInstallationSettings handles PATCH /api/support/inbox/installations.
@@ -1378,17 +1368,7 @@ func (h *SupportInboxHandler) UpdateInstallationSettings(w http.ResponseWriter, 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, model.InstallationSettingsResponse{
-		ID:                       inst.ID,
-		WorkspaceID:              inst.WorkspaceID,
-		WidgetKey:                inst.WidgetKey,
-		AllowedOrigins:           []string(inst.AllowedOrigins),
-		IdentityVerificationMode: inst.IdentityVerificationMode,
-		Settings:                 *settings,
-		Active:                   inst.Active,
-		CreatedAt:                inst.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:                inst.UpdatedAt.Format(time.RFC3339),
-	})
+	writeJSON(w, http.StatusOK, installationSettingsResponse(inst, settings))
 }
 
 // RegenerateWidgetKey handles POST /api/support/inbox/installations/regenerate-key.
@@ -1399,23 +1379,47 @@ func (h *SupportInboxHandler) RegenerateWidgetKey(w http.ResponseWriter, r *http
 		return
 	}
 
-	inst, settings, err := h.supportService.RegenerateWidgetKey(r.Context(), workspaceID)
+	inst, settings, err := h.supportService.RegenerateWidgetKey(r.Context(), workspaceID, middleware.GetUserID(r.Context()))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	writeJSON(w, http.StatusOK, model.InstallationSettingsResponse{
+	writeJSON(w, http.StatusOK, installationSettingsResponse(inst, settings))
+}
+
+func installationSettingsResponse(inst *model.SupportWidgetInstallation, settings *model.SupportInboxSettings) model.InstallationSettingsResponse {
+	return model.InstallationSettingsResponse{
 		ID:                       inst.ID,
 		WorkspaceID:              inst.WorkspaceID,
 		WidgetKey:                inst.WidgetKey,
 		AllowedOrigins:           []string(inst.AllowedOrigins),
 		IdentityVerificationMode: inst.IdentityVerificationMode,
+		SigningSecretConfigured:  strings.TrimSpace(inst.SecretKey) != "",
 		Settings:                 *settings,
 		Active:                   inst.Active,
 		CreatedAt:                inst.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:                inst.UpdatedAt.Format(time.RFC3339),
-	})
+	}
+}
+
+// RevealWidgetSecret handles POST /api/support/inbox/installations/reveal-secret.
+// It is a POST so the secret is never cached or prefetched, and each reveal is audited.
+func (h *SupportInboxHandler) RevealWidgetSecret(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	secretKey, err := h.supportService.RevealWidgetSecret(
+		r.Context(), workspaceID, middleware.GetUserID(r.Context()),
+	)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, model.RevealWidgetSecretResponse{SecretKey: secretKey})
 }
 
 // RotateWidgetSecret handles POST /api/support/inbox/installations/rotate-secret.
@@ -1432,6 +1436,7 @@ func (h *SupportInboxHandler) RotateWidgetSecret(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, model.RotateWidgetSecretResponse{
 		SecretKey: secretKey,
 		RotatedAt: time.Now().UTC().Format(time.RFC3339),

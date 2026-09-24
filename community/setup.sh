@@ -9,6 +9,11 @@ docker compose version >/dev/null || fail 'Docker Compose v2 is required.'
 if [[ -f apps.json ]]; then
   export AGENT_RUNTIME_EXECUTION_APP_CONFIG="$(cat apps.json)"
 fi
+# The bundled HTTPS proxy is layered on only when .env selects it.
+compose_files=(-f compose.yaml)
+if [[ -f .env && -f compose.proxy.yaml ]] && grep -qx 'HELPIN_PROXY=builtin' .env; then
+  compose_files+=(-f compose.proxy.yaml)
+fi
 case "${1:-}" in
   install)
     command -v openssl >/dev/null || fail 'Install openssl to generate secrets.'
@@ -37,19 +42,19 @@ case "${1:-}" in
     if awk -F= '$2 == "GENERATE" || $2 == "GENERATE_BASE64" || $2 == "GENERATE_GARAGE_ACCESS_KEY" {found=1} END {exit !found}' .env; then
       fail 'Uninitialized secret placeholders. Use setup.sh install in a new directory or generate the missing secrets.'
     fi
-    docker compose --env-file .env -f compose.yaml config --quiet
-    docker compose --env-file .env -f compose.yaml up -d --wait --wait-timeout 300
+    docker compose --env-file .env "${compose_files[@]}" config --quiet
+    docker compose --env-file .env "${compose_files[@]}" up -d --wait --wait-timeout 300
     ;;
-  stop) docker compose --env-file .env -f compose.yaml down ;;
-  logs) shift; docker compose --env-file .env -f compose.yaml logs --tail=150 -f "$@" ;;
+  stop) docker compose --env-file .env "${compose_files[@]}" down ;;
+  logs) shift; docker compose --env-file .env "${compose_files[@]}" logs --tail=150 -f "$@" ;;
   status)
-    docker compose --env-file .env -f compose.yaml ps --all
-    docker compose --env-file .env -f compose.yaml images
-    if docker compose --env-file .env -f compose.yaml exec -T postgres pg_isready -U postgres -d helpin >/dev/null 2>&1; then
-      docker compose --env-file .env -f compose.yaml exec -T postgres psql -U postgres -d helpin -At -c \
+    docker compose --env-file .env "${compose_files[@]}" ps --all
+    docker compose --env-file .env "${compose_files[@]}" images
+    if docker compose --env-file .env "${compose_files[@]}" exec -T postgres pg_isready -U postgres -d helpin >/dev/null 2>&1; then
+      docker compose --env-file .env "${compose_files[@]}" exec -T postgres psql -U postgres -d helpin -At -c \
         "SELECT 'Helpin migration: ' || max(version) FROM schema_migrations" || true
       for database in temporal temporal_visibility; do
-        docker compose --env-file .env -f compose.yaml exec -T postgres psql -U postgres -d "$database" -At -c \
+        docker compose --env-file .env "${compose_files[@]}" exec -T postgres psql -U postgres -d "$database" -At -c \
           "SELECT '$database schema: ' || curr_version FROM schema_version" || true
       done
     fi

@@ -34,9 +34,11 @@ const TIMEZONE_LIST: { id: string; offset: string; searchKey: string }[] = (() =
   });
 })();
 
-export function GeneralTab({ workspaceId, editable }: {
+export function GeneralTab({ workspaceId, editable, canDeleteWorkspace }: {
   workspaceId: string;
   editable: boolean;
+  /** Only the workspace owner can delete it; the server enforces the same rule. */
+  canDeleteWorkspace: boolean;
 }) {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const { data: contentSources = [] } = useSupportContentSources(workspaceId);
@@ -459,7 +461,7 @@ export function GeneralTab({ workspaceId, editable }: {
 
         </CardContent>
       </Card>
-      {editable && (
+      {canDeleteWorkspace && (
         <Card className={cn(LINEAR_CARD_CLASS, 'border-destructive/30')}>
           <CardHeader>
             <CardTitle className="text-destructive">Danger Zone</CardTitle>

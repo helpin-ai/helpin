@@ -1108,11 +1108,7 @@ func (s *DocsHelpcenterService) buildSourceArticlePublication(ctx context.Contex
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := s.hcRepo.GetConfig(ctx, doc.WorkspaceID)
-	if err != nil {
-		return nil, err
-	}
-	publication.Content, err = materializePublicationDocumentLinks(ctx, publication.Content, s.publicationArticlePathResolver(doc.WorkspaceID, locale, cfg))
+	publication.Content, err = materializePublicationDocumentLinks(ctx, publication.Content, liveArticleLinkPathLookup(s.hcRepo, doc.WorkspaceID, locale))
 	if err != nil {
 		return nil, err
 	}
@@ -1303,7 +1299,8 @@ func (s *DocsHelpcenterService) EmitArticleMoveRedirect(ctx context.Context, doc
 //
 // Collection slugs are no longer required to be unique — duplicate slugs
 // are allowed. The method updates the slug and creates redirects from the
-// old slug to the new one.
+// old slug (and a differing published default-locale slug) to the new one,
+// refreshes the default-locale mirror, and invalidates the public cache.
 func (s *DocsHelpcenterService) UpdateCollectionSlug(ctx context.Context, collectionID, rawNewSlug string) (*model.DocsCollection, error) {
 	collection, err := s.collectionRepo.GetByID(ctx, collectionID)
 	if err != nil {
@@ -1312,7 +1309,11 @@ func (s *DocsHelpcenterService) UpdateCollectionSlug(ctx context.Context, collec
 	if collection == nil {
 		return nil, ErrDocsCollectionNotFound
 	}
-	newSlug := strings.TrimSpace(slugify(rawNewSlug))
+	// normalizeSlug matches the Help Center source-slug normalization, so the
+	// stored slug is never rewritten later without a redirect. Digits are
+	// kept, and slugs that carry section numbers ("01-getting-started") can
+	// be renamed like any other.
+	newSlug := normalizeSlug(rawNewSlug)
 	if newSlug == "" {
 		return nil, fmt.Errorf("collection slug is required")
 	}
@@ -1320,7 +1321,16 @@ func (s *DocsHelpcenterService) UpdateCollectionSlug(ctx context.Context, collec
 		return collection, nil
 	}
 
-	oldSlug := collection.Slug
+	// Redirect every public path the collection answers on today: the
+	// source slug and, when it differs, the published default-locale slug.
+	oldSlugs := []string{}
+	if strings.TrimSpace(collection.Slug) != "" {
+		oldSlugs = append(oldSlugs, strings.TrimSpace(collection.Slug))
+	}
+	if publicSlug := s.defaultLocaleCollectionSlug(ctx, collection); publicSlug != "" && publicSlug != newSlug &&
+		(len(oldSlugs) == 0 || publicSlug != oldSlugs[0]) {
+		oldSlugs = append(oldSlugs, publicSlug)
+	}
 
 	var updated *model.DocsCollection
 	txErr := s.collectionRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -1328,8 +1338,16 @@ func (s *DocsHelpcenterService) UpdateCollectionSlug(ctx context.Context, collec
 		txRedirectRepo := repository.NewDocsRedirectRepository(tx)
 		txHcRepo := repository.NewDocsHelpcenterRepository(tx, false)
 
-		// Collection-level redirect: old /:slug -> new /:slug.
-		if oldSlug != "" {
+		// Per-article redirects cover every directly-published article.
+		// ListPublishedArticleSlugsInCollection reads the canonical source
+		// slug from docs_helpcenter_articles.slug so we cover articles that
+		// have not yet synthesised a publication row.
+		articles, err := txHcRepo.ListPublishedArticleSlugsInCollection(ctx, collection.ID)
+		if err != nil {
+			return err
+		}
+		for _, oldSlug := range oldSlugs {
+			// Collection-level redirect: old /:slug -> new /:slug.
 			collectionRedirect := &model.DocsRedirect{
 				WorkspaceID:          collection.WorkspaceID,
 				SourcePath:           buildDocsRedirectPath(oldSlug, nil),
@@ -1341,14 +1359,6 @@ func (s *DocsHelpcenterService) UpdateCollectionSlug(ctx context.Context, collec
 				return err
 			}
 
-			// Per-article redirects for every directly-published article.
-			// ListPublishedArticleSlugsInCollection reads the canonical
-			// source slug from docs_helpcenter_articles.slug so we cover
-			// articles that have not yet synthesised a publication row.
-			articles, err := txHcRepo.ListPublishedArticleSlugsInCollection(ctx, collection.ID)
-			if err != nil {
-				return err
-			}
 			for i := range articles {
 				slug := articles[i].Slug
 				if slug == "" {
@@ -1379,8 +1389,34 @@ func (s *DocsHelpcenterService) UpdateCollectionSlug(ctx context.Context, collec
 		return nil, txErr
 	}
 
+	// Keep the default-locale mirror (which public routes resolve first) in
+	// step with the new source slug, then drop cached public pages.
+	if s.translationSvc != nil {
+		if err := s.translationSvc.RefreshCollectionSource(ctx, collection.ID); err != nil {
+			slog.WarnContext(ctx, "refresh collection translation mirror after slug change failed",
+				"collection_id", collection.ID, "error", err)
+		}
+	}
+	s.InvalidateHelpcenterCacheForWorkspace(ctx, collection.WorkspaceID)
 	publishWorkspaceEventWithParent(s.wsPublisher, "updated", "docs_collection", collection.ID, collection.WorkspaceID, "", "docs_space", collection.SpaceID, nil)
 	return updated, nil
+}
+
+// defaultLocaleCollectionSlug returns the published default-locale slug of a
+// collection, or "" when there is none or it cannot be resolved.
+func (s *DocsHelpcenterService) defaultLocaleCollectionSlug(ctx context.Context, collection *model.DocsCollection) string {
+	if s.translationSvc == nil || s.translationSvc.translationRepo == nil || s.hcRepo == nil {
+		return ""
+	}
+	cfg, err := s.hcRepo.GetConfig(ctx, collection.WorkspaceID)
+	if err != nil || cfg == nil {
+		return ""
+	}
+	translation, err := s.translationSvc.translationRepo.GetCollectionTranslation(ctx, collection.ID, defaultHelpcenterLocale(cfg))
+	if err != nil || translation == nil || translation.Slug == nil {
+		return ""
+	}
+	return strings.TrimSpace(*translation.Slug)
 }
 
 func sameCollectionPointer(a, b *string) bool {
@@ -1957,7 +1993,7 @@ func (s *DocsHelpcenterService) getPublicArticleUncached(ctx context.Context, wo
 
 	var contentHTML *string
 	if len(translation.Content) > 0 {
-		rendered, err := RenderPublicDocsHTML(translation.Content)
+		rendered, err := renderPublicArticleHTML(ctx, s.hcRepo, doc.WorkspaceID, resolvedLocale, translation.Content)
 		if err == nil && rendered != "" {
 			contentHTML = &rendered
 		}
@@ -2198,7 +2234,7 @@ func (s *DocsHelpcenterService) getPublicArticleByLocalizedCanonicalPathUncached
 
 	var contentHTML *string
 	if len(translation.Content) > 0 {
-		rendered, err := RenderPublicDocsHTML(translation.Content)
+		rendered, err := renderPublicArticleHTML(ctx, s.hcRepo, doc.WorkspaceID, resolvedLocale, translation.Content)
 		if err == nil && rendered != "" {
 			contentHTML = &rendered
 		}
@@ -2330,7 +2366,7 @@ func (s *DocsHelpcenterService) getPublicArticleByLocalizedCanonicalKeyUncached(
 
 	var contentHTML *string
 	if len(translation.Content) > 0 {
-		rendered, err := RenderPublicDocsHTML(translation.Content)
+		rendered, err := renderPublicArticleHTML(ctx, s.hcRepo, doc.WorkspaceID, resolvedLocale, translation.Content)
 		if err == nil && rendered != "" {
 			contentHTML = &rendered
 		}
@@ -2431,7 +2467,7 @@ func (s *DocsHelpcenterService) getPublicArticleByCanonicalPathUncached(ctx cont
 	// Render TipTap JSON -> HTML for public display.
 	var contentHTML *string
 	if content != nil && len(content.Content) > 0 {
-		rendered, err := RenderPublicDocsHTML(content.Content)
+		rendered, err := renderPublicArticleHTML(ctx, s.hcRepo, doc.WorkspaceID, "", content.Content)
 		if err == nil && rendered != "" {
 			contentHTML = &rendered
 		}
@@ -2514,7 +2550,7 @@ func (s *DocsHelpcenterService) getPublicArticleByCanonicalKeyUncached(ctx conte
 
 	var contentHTML *string
 	if content != nil && len(content.Content) > 0 {
-		rendered, err := RenderPublicDocsHTML(content.Content)
+		rendered, err := renderPublicArticleHTML(ctx, s.hcRepo, doc.WorkspaceID, "", content.Content)
 		if err == nil && rendered != "" {
 			contentHTML = &rendered
 		}
@@ -2614,7 +2650,8 @@ func (s *DocsHelpcenterService) PreviewArticleHTML(ctx context.Context, workspac
 
 	var contentHTML string
 	if content != nil && len(content.Content) > 0 {
-		rendered, err := tiptap.RenderHTML(content.Content)
+		previewContent := resolvePublicDocumentLinksForRender(ctx, s.hcRepo, doc.WorkspaceID, "", content.Content)
+		rendered, err := tiptap.RenderHTML(previewContent)
 		if err != nil {
 			slog.ErrorContext(ctx, "preview render failed", "error", err, "doc_id", docID)
 		} else {

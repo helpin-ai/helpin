@@ -263,7 +263,7 @@ func browserArtifactStoragePolicy(artifactType, contentType string) (string, int
 
 func isBrowserMediaArtifactType(artifactType string) bool {
 	return artifactType == "analysis_output" || artifactType == model.AgentRunArtifactTypeBrowserScreenshot ||
-		artifactType == model.AgentRunArtifactTypeBrowserRecording
+		artifactType == model.AgentRunArtifactTypeBrowserRecording || artifactType == model.AgentRunArtifactTypeGeneratedImage
 }
 
 // SetAgentRepository enables repository-backed effective agent scope

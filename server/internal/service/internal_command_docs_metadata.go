@@ -49,19 +49,19 @@ func (s *InternalCommandService) executeDocsUpdateDocumentMetadata(ctx context.C
 		return nil, err
 	}
 	if document == nil || document.WorkspaceID != meta.WorkspaceID {
-		return nil, fmt.Errorf("document not found")
+		return nil, errCommandNotFound("document")
 	}
 	space, err := s.docsSpaceService.Get(ctx, document.SpaceID, commandDocsActor(meta))
 	if err != nil {
 		return nil, err
 	}
 	if space == nil || space.WorkspaceID != meta.WorkspaceID {
-		return nil, fmt.Errorf("document not found")
+		return nil, errCommandNotFound("document")
 	}
 	if req.Title != nil {
 		trimmed := strings.TrimSpace(html.UnescapeString(*req.Title))
 		if trimmed == "" {
-			return nil, fmt.Errorf("title must not be empty")
+			return nil, errCommandInput("title must not be empty")
 		}
 		req.Title = &trimmed
 	}

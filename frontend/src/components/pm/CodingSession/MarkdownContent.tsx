@@ -3,8 +3,10 @@ import { Streamdown, defaultRehypePlugins, defaultRemarkPlugins, type Components
 import { toast } from 'sonner';
 
 import { automationService } from '@/lib/services/automationService';
+import { ArtifactInlineImage } from '@/components/agents/ArtifactInlineImage';
 import {
   helpinReferenceRoute,
+  parseHelpinImageMarker,
   parseHelpinReferenceMarker,
   remarkHelpinReferences,
 } from '@/lib/helpinReferences';
@@ -14,6 +16,10 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 function MarkdownLink(props: (ComponentPropsWithoutRef<'a'> | Record<string, unknown>) & ExtraProps) {
   const { children, href } = props as ComponentPropsWithoutRef<'a'>;
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
+  const image = parseHelpinImageMarker(href);
+  if (image) {
+    return <ArtifactInlineImage artifactId={image.id} alt={textContent(children)} />;
+  }
   const reference = parseHelpinReferenceMarker(href);
   if (!reference) {
     return (
@@ -66,6 +72,15 @@ function MarkdownLink(props: (ComponentPropsWithoutRef<'a'> | Record<string, unk
       {children}
     </a>
   );
+}
+
+function textContent(node: unknown): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(textContent).join('');
+  if (node && typeof node === 'object' && 'props' in node) {
+    return textContent((node as { props?: { children?: unknown } }).props?.children);
+  }
+  return '';
 }
 
 const markdownComponents: Components = {

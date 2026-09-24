@@ -66,7 +66,7 @@ func (s *InternalCommandService) executeReadChatHistory(ctx context.Context, met
 			return nil, fmt.Errorf("chat history is temporarily unavailable")
 		}
 		if message == nil {
-			return nil, fmt.Errorf("chat message not found")
+			return nil, errCommandNotFound("chat message")
 		}
 		response.Messages = append(response.Messages, chatHistoryMessage{Sequence: *message.DockChatSequence, Role: message.Role, chatHistoryPart: chatHistoryExcerpt(chatHistoryContent(*message), req.Offset, 8000)})
 	} else {

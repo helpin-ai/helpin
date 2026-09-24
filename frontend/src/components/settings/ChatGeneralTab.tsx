@@ -63,11 +63,15 @@ import { CuratedGuidanceField } from './CuratedGuidanceField';
 type ChatGeneralTabMode = 'chat-widget' | 'ai-assistant';
 
 
-export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspaceId: string; mode?: ChatGeneralTabMode }) {
-  return <ChatGeneralSettings key={`${workspaceId}:${mode}`} workspaceId={workspaceId} mode={mode} />;
+export function ChatGeneralTab({ workspaceId, mode = 'chat-widget', canManageSigningSecret = false }: {
+  workspaceId: string;
+  mode?: ChatGeneralTabMode;
+  canManageSigningSecret?: boolean;
+}) {
+  return <ChatGeneralSettings key={`${workspaceId}:${mode}`} workspaceId={workspaceId} mode={mode} canManageSigningSecret={canManageSigningSecret} />;
 }
 
-function ChatGeneralSettings({ workspaceId, mode }: { workspaceId: string; mode: ChatGeneralTabMode }) {
+function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { workspaceId: string; mode: ChatGeneralTabMode; canManageSigningSecret: boolean }) {
   const publicConfig = useAuthStore((s) => s.configuration);
   const widgetHost = publicConfig?.public_widget_url || window.location.origin;
   const sdkURL = publicConfig?.public_sdk_url || `${widgetHost}/sdk/lib.js`;
@@ -920,7 +924,7 @@ function Dashboard() {
       <div className="flex flex-1 flex-col overflow-auto">
         <div className="flex-1 space-y-3 p-4">
         {saveIndicator}
-        {data && <WidgetOriginSettings key={workspaceId} workspaceId={workspaceId} installation={data} />}
+        {data && <WidgetOriginSettings key={workspaceId} workspaceId={workspaceId} installation={data} canManageSigningSecret={canManageSigningSecret} />}
         {/* Widget Installation */}
         <div className={supportSectionClass}>
           <button

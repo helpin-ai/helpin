@@ -25,7 +25,7 @@ Durable OAuth credentials do not belong in Agent Runtime. Agent Runtime receives
 
 ## Workspace manager flow
 
-1. Open **Settings → Model Context Protocol → External servers**.
+1. Open **Settings → Integrations & data → External tools (MCP)**.
 2. Select Customer.io US/EU, a Linear or Sentry preset, or an operator-approved custom server. All endpoint hosts must satisfy the configured host policy.
 3. Choose the OAuth scopes. Customer.io starts with `read`; sensitive reads and writes are opt-in.
 4. Continue to the provider's browser consent page.

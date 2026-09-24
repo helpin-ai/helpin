@@ -13,6 +13,8 @@ const (
 	ActionCuratedGuidanceEmbed       = "support.curated_guidance.embed.v1"
 	ActionPlatformRerank             = "platform.rerank.v1"
 	ActionAskMediaEnrichment         = "agents.ask.media_enrichment.v1"
+	ActionAgentImageGenerate         = "agents.image.generate.v1"
+	ActionAgentImageEdit             = "agents.image.edit.v1"
 )
 
 type featureSeed struct {
@@ -43,6 +45,8 @@ func defaultActions() []Action {
 			RetryClass: RetryTransient, Autonomy: AutonomyAnalyze,
 			DataClass: DataClassWorkspaceData, Chargeable: true,
 		},
+		imageAction(ActionAgentImageGenerate, "Agent image generation"),
+		imageAction(ActionAgentImageEdit, "Agent image editing"),
 		{
 			Key: ActionPlatformRerank, PolicyVersion: "v1", FeatureKey: "ai_rerank",
 			Label: "AI search reranking", Category: CategorySupportAI, Origin: "search",
@@ -153,5 +157,19 @@ func defaultChatModels() map[string][]string {
 		"anthropic":  {"claude-haiku-4-5", "claude-sonnet-4-6", "claude-sonnet-5", "claude-opus-4-8"},
 		"openai":     {"gpt-5-mini", "gpt-5.5", "gpt-5.6-luna", "gpt-5.6-terra"},
 		"openrouter": {"openai/gpt-oss-120b", "deepseek/deepseek-v4.1-flash", "z-ai/glm-5.3-flash:exacto", "deepseek/deepseek-v4-flash-0731", "openai/gpt-5.6-luna", "openai/gpt-5.6-terra", "anthropic/claude-sonnet-5", "google/gemini-3.7-flash"},
+	}
+}
+
+// imageAction governs agent image tools. They run on the workspace's own OpenAI
+// connection (or, in Community, the operator's server key), so they are not
+// charged by Helpin; every attempt is still audited.
+func imageAction(key, label string) Action {
+	return Action{
+		Key: key, PolicyVersion: "v1", FeatureKey: "agent_images",
+		Label: label, Category: CategoryAgents, Origin: "agents",
+		Modality: ModalityImage, DefaultProvider: "openai", DefaultModel: "gpt-image-2.5-flare",
+		AllowedModels: map[string][]string{"openai": {"gpt-image-2.5-flare", "gpt-image-2.5-sunburst"}},
+		Timeout:       4 * time.Minute, RetryClass: RetryNone, Autonomy: AutonomyAssist,
+		DataClass: DataClassWorkspaceData, Chargeable: false,
 	}
 }

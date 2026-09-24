@@ -5,7 +5,11 @@ export function GeneralSettingsPage() {
   return (
     <SettingsPageFrame section="general">
       {({ workspaceId, permissions }) => (
-        <GeneralTab workspaceId={workspaceId} editable={permissions.canManageSettings} />
+        <GeneralTab
+          workspaceId={workspaceId}
+          editable={permissions.canManageSettings}
+          canDeleteWorkspace={permissions.isOwner}
+        />
       )}
     </SettingsPageFrame>
   );

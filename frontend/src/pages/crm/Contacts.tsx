@@ -66,10 +66,6 @@ export function ContactsPage() {
   );
   const showContactsEmptyState = !isLoading && !hasActiveFilters && deferredContacts.length === 0 && totalCount === 0;
 
-  const handleImportClick = () => {
-    if (!wsSlug) return;
-    void navigate({ to: '/w/$slug/settings/import', params: { slug: wsSlug } });
-  };
   const handleSeedContacts = async () => {
     if (!wsId || isSeeding) return;
     setIsSeeding(true);
@@ -149,7 +145,6 @@ export function ContactsPage() {
           <CRMDataEmptyState
             kind="contacts"
             onCreateClick={() => openGlobalCreate('crm_contact')}
-            onImportClick={handleImportClick}
           />
         ) : (
           <ContactsTable

@@ -299,7 +299,7 @@ func (a *app) install(o options) error {
 	if err = writeIntegrations(dir, o); err != nil {
 		return err
 	}
-	if _, err = a.output(dir, "docker", "compose", "--env-file", ".env", "-f", "compose.yaml", "config", "--quiet"); err != nil {
+	if _, err = a.output(dir, composeArgs(dir, "config", "--quiet")...); err != nil {
 		return errors.New("generated Compose configuration is invalid")
 	}
 	if err = os.Rename(bundle, o.dir); err != nil {

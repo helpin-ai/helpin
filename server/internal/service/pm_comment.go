@@ -48,7 +48,7 @@ func NewPMCommentService(commentRepo *repository.PMCommentRepository, taskRepo *
 // List returns comments for an entity, with attachment URLs resolved.
 func (s *PMCommentService) List(ctx context.Context, entityType, entityID string) ([]model.CommentWithAuthor, error) {
 	if entityType == "" || entityID == "" {
-		return nil, fmt.Errorf("entity_type and entity_id are required")
+		return nil, errCommandInput("entity_type and entity_id are required")
 	}
 	comments, err := s.commentRepo.List(ctx, entityType, entityID)
 	if err != nil {
@@ -66,7 +66,7 @@ func (s *PMCommentService) List(ctx context.Context, entityType, entityID string
 // ListByEntityIDs returns comments grouped by entity ID with attachment URLs resolved.
 func (s *PMCommentService) ListByEntityIDs(ctx context.Context, entityType string, entityIDs []string) (map[string][]model.CommentWithAuthor, error) {
 	if entityType == "" {
-		return nil, fmt.Errorf("entity_type is required")
+		return nil, errCommandInput("entity_type is required")
 	}
 	commentsByEntity, err := s.commentRepo.ListByEntityIDs(ctx, entityType, entityIDs)
 	if err != nil {
@@ -88,7 +88,7 @@ func (s *PMCommentService) ListByEntityIDs(ctx context.Context, entityType strin
 // module-specific route boundaries before mutating it.
 func (s *PMCommentService) Get(ctx context.Context, id string) (*model.PMComment, error) {
 	if strings.TrimSpace(id) == "" {
-		return nil, fmt.Errorf("comment id is required")
+		return nil, errCommandInput("comment id is required")
 	}
 	return s.commentRepo.GetByID(ctx, id)
 }
@@ -118,10 +118,10 @@ func (s *PMCommentService) resolveAttachmentURLs(attachments []model.AttachmentR
 // Create creates a comment.
 func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRequest, authorID string, workspaceID string) (*model.CommentWithAuthor, error) {
 	if req.EntityType == "" || req.EntityID == "" || strings.TrimSpace(req.Body) == "" {
-		return nil, fmt.Errorf("entity_type, entity_id, and body are required")
+		return nil, errCommandInput("entity_type, entity_id, and body are required")
 	}
 	if authorID == "" {
-		return nil, fmt.Errorf("author is required")
+		return nil, errCommandInput("author is required")
 	}
 
 	comment := &model.PMComment{
@@ -379,7 +379,7 @@ func (s *PMCommentService) SetResolved(ctx context.Context, id string, resolved 
 		return nil, err
 	}
 	if comment == nil {
-		return nil, fmt.Errorf("comment not found")
+		return nil, errCommandNotFound("comment")
 	}
 
 	action := "comment_reopened"
@@ -420,14 +420,14 @@ func (s *PMCommentService) SetResolved(ctx context.Context, id string, resolved 
 // Update updates a comment if actor is author or admin.
 func (s *PMCommentService) Update(ctx context.Context, id string, req model.UpdateCommentRequest, actorID string, isAdmin bool, workspaceID string) (*model.PMComment, error) {
 	if strings.TrimSpace(req.Body) == "" {
-		return nil, fmt.Errorf("body is required")
+		return nil, errCommandInput("body is required")
 	}
 	comment, err := s.commentRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	if comment == nil {
-		return nil, fmt.Errorf("comment not found")
+		return nil, errCommandNotFound("comment")
 	}
 	if !isAdmin && comment.AuthorID != actorID {
 		return nil, fmt.Errorf("only the author can edit this comment")
@@ -501,7 +501,7 @@ func (s *PMCommentService) Delete(ctx context.Context, id string, actorID string
 		return err
 	}
 	if comment == nil {
-		return fmt.Errorf("comment not found")
+		return errCommandNotFound("comment")
 	}
 	if !isAdmin && comment.AuthorID != actorID {
 		return fmt.Errorf("only the author can delete this comment")
@@ -521,7 +521,7 @@ func (s *PMCommentService) Delete(ctx context.Context, id string, actorID string
 // ToggleReaction adds or removes a reaction on a comment.
 func (s *PMCommentService) ToggleReaction(ctx context.Context, commentID, userID, emoji, workspaceID string) ([]model.ReactionSummary, error) {
 	if emoji == "" {
-		return nil, fmt.Errorf("emoji is required")
+		return nil, errCommandInput("emoji is required")
 	}
 
 	comment, err := s.commentRepo.GetByID(ctx, commentID)
@@ -529,7 +529,7 @@ func (s *PMCommentService) ToggleReaction(ctx context.Context, commentID, userID
 		return nil, err
 	}
 	if comment == nil {
-		return nil, fmt.Errorf("comment not found")
+		return nil, errCommandNotFound("comment")
 	}
 
 	exists, err := s.commentRepo.HasReaction(ctx, commentID, userID, emoji)

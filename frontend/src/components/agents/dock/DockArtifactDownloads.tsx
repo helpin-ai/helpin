@@ -28,7 +28,8 @@ function ArtifactDownload({ workspaceId, artifact }: { workspaceId: string; arti
   const metadata = artifactMetadata(artifact);
   const name = metadata.file_name?.trim() || `output.${artifact.format || 'file'}`;
   const contentType = metadata.content_type?.trim() || '';
-  const isPNG = artifact.format === 'png' || contentType === 'image/png';
+  // Screenshots and generated images preview inline; other files are listed only.
+  const isPNG = ['png', 'jpg', 'jpeg', 'webp'].includes(artifact.format ?? '') || contentType.startsWith('image/');
   const [previewURL, setPreviewURL] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
 
@@ -88,7 +89,7 @@ function ArtifactDownload({ workspaceId, artifact }: { workspaceId: string; arti
 export function DockArtifactDownloads({ workspaceId, artifacts }: { workspaceId: string; artifacts: AgentRunArtifact[] }) {
   const downloads = useMemo(() => artifacts.filter((artifact) => (
     artifact.storage_mode === 'object'
-    && ['analysis_output', 'browser_screenshot', 'browser_recording'].includes(artifact.artifact_type)
+    && ['analysis_output', 'browser_screenshot', 'browser_recording', 'generated_image'].includes(artifact.artifact_type)
   )), [artifacts]);
   if (downloads.length === 0) return null;
 

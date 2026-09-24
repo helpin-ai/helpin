@@ -1235,10 +1235,17 @@ export interface SupportInstallationResponse extends WidgetOriginSettings {
   id: string;
   workspace_id: string;
   widget_key: string;
+  /** Whether an identity signing secret exists. The secret is only returned by reveal/rotate. */
+  signing_secret_configured?: boolean;
   settings: SupportInboxSettings;
   active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface WidgetSigningSecretResponse {
+  secret_key: string;
+  rotated_at?: string;
 }
 
 interface SupportTranslationPreference {
