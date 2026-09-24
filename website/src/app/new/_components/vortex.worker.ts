@@ -20,7 +20,7 @@ function paint(scene: Scene) {
     ctx.canvas.width = width;
     ctx.canvas.height = height;
   }
-  drawArt(ctx, scene.art, scene.clock, view);
+  drawArt(ctx, scene.art, scene.clock, view, scene.playing);
 }
 
 function tick(now: number) {
@@ -62,6 +62,7 @@ self.onmessage = ({ data }: MessageEvent<VortexMessage>) => {
       if (!scene) break;
       if (data.playing && !scene.playing && !scheduled) last = performance.now();
       scene.playing = data.playing;
+      if (!data.playing) paint(scene);
       schedule();
       break;
     case 'dispose':

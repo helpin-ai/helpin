@@ -199,7 +199,7 @@ export type Viewport = { width: number; height: number; dpr: number; scale: numb
 const baseGradients = new WeakMap<Ctx, CanvasGradient>();
 
 // Draws one frame. `scale` maps artwork units to CSS pixels; line widths stay in CSS pixels.
-export function drawArt(ctx: Ctx, art: Art, t: number, view: Viewport) {
+export function drawArt(ctx: Ctx, art: Art, t: number, view: Viewport, playing: boolean) {
   const { dpr, scale } = view;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
@@ -226,22 +226,37 @@ export function drawArt(ctx: Ctx, art: Art, t: number, view: Viewport) {
     ctx.stroke();
   }
 
+  // A paused scene shows only the underlying lines, never a stranded light streak.
+  if (!playing) {
+    ctx.globalAlpha = 1;
+    return;
+  }
+
   // Streaks of light run along every other line, fading in and out at the path ends.
   ctx.lineWidth = 2 * px;
   for (let j = 1; j < art.lines.length; j += 2) {
     const p = art.lines[j].pts, count = p.length / 2;
-    const length = Math.round(count * 0.14);
+    const length = count * 0.14;
     const progress = ((t + j * 1.7) / (6 + (j % 3) * 1.2)) % 1;
-    const head = Math.round(progress * (count - 1 + length));
+    const head = progress * (count - 1 + length);
     const from = Math.max(0, head - length), to = Math.min(count - 1, head);
     if (to - from < 2) continue;
-    const streak = ctx.createLinearGradient(p[from * 2], p[from * 2 + 1], p[to * 2], p[to * 2 + 1]);
+    const start = Math.floor(from), end = Math.floor(to);
+    const startOffset = from - start, endOffset = to - end;
+    const x0 = p[start * 2] + (p[(start + 1) * 2] - p[start * 2]) * startOffset;
+    const y0 = p[start * 2 + 1] + (p[(start + 1) * 2 + 1] - p[start * 2 + 1]) * startOffset;
+    const x1 = p[end * 2] + (p[Math.min(end + 1, count - 1) * 2] - p[end * 2]) * endOffset;
+    const y1 = p[end * 2 + 1] + (p[Math.min(end + 1, count - 1) * 2 + 1] - p[end * 2 + 1]) * endOffset;
+    const streak = ctx.createLinearGradient(x0, y0, x1, y1);
     streak.addColorStop(0, 'rgba(63,184,133,0)');
     streak.addColorStop(0.6, 'rgba(63,184,133,.9)');
     streak.addColorStop(1, 'rgba(226,250,238,1)');
     ctx.strokeStyle = streak;
     ctx.globalAlpha = Math.min(1, progress / 0.14, (1 - progress) / 0.14);
-    trace(ctx, p, from, to);
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    for (let i = Math.ceil(from); i < to; i++) ctx.lineTo(p[i * 2], p[i * 2 + 1]);
+    ctx.lineTo(x1, y1);
     ctx.stroke();
   }
   ctx.globalAlpha = 1;
