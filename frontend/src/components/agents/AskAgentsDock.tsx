@@ -750,6 +750,7 @@ export function AskAgentsDock({
                   onChatChanged={() => {
                     setDraftChat(false);
                     void refreshChats(true);
+                    void refreshRuns();
                   }}
                   onRunStatusChange={updateChatRunStatus}
                   streamController={chatStreamController}

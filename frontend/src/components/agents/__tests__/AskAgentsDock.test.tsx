@@ -1677,6 +1677,33 @@ describe('AskAgentsDock', () => {
     expect(document.body.textContent).toContain('1 agent need your attention');
   });
 
+  it('clears a chat from the dock after its question is answered', async () => {
+    useDockStore.setState({ collapsed: true });
+    const run = { ...DOCK_RUN.run, id: 'ask-run', dock_chat_id: CHAT.id, pause_reason: 'human_input' };
+    const chat = { ...CHAT, active_run_id: run.id, active_run_status: 'paused' as const };
+    const attention = { ...DOCK_RUN, run, attention_kind: 'input' as const };
+    let answered = false;
+    mocks.listChats.mockResolvedValue({ data: { chats: [chat] }, error: null });
+    mocks.listRuns.mockImplementation(async () => ({ data: { runs: answered ? [] : [attention], attention_count: answered ? 0 : 1 }, error: null }));
+    mocks.getChat.mockResolvedValue({ data: chatDetail({ chat, run }), error: null });
+    mocks.getChatRun.mockResolvedValue({ data: run, error: null });
+    mocks.sendMessage.mockImplementation(async () => {
+      answered = true;
+      return { data: chatDetail({ chat: { ...chat, active_run_status: 'running' }, run: { ...run, status: 'running', pause_reason: 'none' } }), error: null };
+    });
+
+    await renderDock();
+    await waitForText('1 need you');
+    await act(async () => document.body.querySelector<HTMLButtonElement>('[aria-label="1 agent need your attention"]')?.click());
+    await waitForCondition(() => !dockTextarea().disabled, `chat answer composer was not ready: ${dockTextarea().placeholder}`);
+    await act(async () => {
+      setTextareaValue(dockTextarea(), 'Use the current project');
+      dockTextarea().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    await waitForCondition(() => answered && !document.body.querySelector('[aria-label="1 agent need your attention"]'), 'answered chat remained in dock');
+    expect(document.body.querySelector('[aria-label^="Open Ask Agent conversation"]')).toBeNull();
+  });
+
   it('keeps completed and other inactive agents out of the minimized dock', async () => {
     useDockStore.setState({ collapsed: true });
     mocks.listRuns.mockResolvedValue({

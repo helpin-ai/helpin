@@ -4054,7 +4054,7 @@ func (s *AgentService) ListDockRunsForActor(
 		response.NextCursor = &next
 	}
 	runs = append(runs, settled...)
-	normalized := s.normalizeRunCollection(s.reconcileStuckRuns(ctx, runs))
+	normalized := s.normalizeDockRunCollection(s.reconcileStuckRuns(ctx, runs))
 	s.enrichRunTargets(ctx, workspaceID, normalized)
 
 	agentIDs := make([]string, 0, len(normalized))
@@ -4105,6 +4105,27 @@ func (s *AgentService) ListDockRunsForActor(
 	return response, nil
 }
 
+func (s *AgentService) normalizeDockRunCollection(runs []model.AgentRun) []model.AgentRun {
+	// The general run projection treats an unspecified pause as a request for
+	// input. In the dock, only an explicit request should raise attention.
+	passivePauses := make(map[string]struct{})
+	for _, run := range runs {
+		if run.Status == model.AgentRunStatusPaused &&
+			(run.PauseReason == "" || run.PauseReason == model.AgentRunPauseReasonNone) &&
+			run.ApprovalState != "pending" &&
+			!isDockAttentionStage(run.ExecutionStage) {
+			passivePauses[run.ID] = struct{}{}
+		}
+	}
+	normalized := s.normalizeRunCollection(runs)
+	for i := range normalized {
+		if _, passive := passivePauses[normalized[i].ID]; passive {
+			normalized[i].PauseReason = model.AgentRunPauseReasonNone
+		}
+	}
+	return normalized
+}
+
 // GetDockRunForActor returns a non-chat run only when it belongs to the actor.
 func (s *AgentService) GetDockRunForActor(ctx context.Context, workspaceID, actorID, runID string) (*model.AgentRun, error) {
 	if strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(actorID) == "" || strings.TrimSpace(runID) == "" {
@@ -4134,6 +4155,15 @@ func dockRunAttentionKind(run model.AgentRun) string {
 		return "authentication"
 	default:
 		return ""
+	}
+}
+
+func isDockAttentionStage(stage *string) bool {
+	switch strings.TrimSpace(derefString(stage)) {
+	case "awaiting_approval", "awaiting_input", "awaiting_auth":
+		return true
+	default:
+		return false
 	}
 }
 

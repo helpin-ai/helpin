@@ -771,12 +771,13 @@ export function ChatView({
       if (!res.error) {
         clearPendingInteraction(interactionId);
         setFallbackInteraction(null);
+        onChatChanged?.();
         void refreshDetail();
         void refetch();
       }
       return { error: res.error };
     },
-    [chatId, clearPendingInteraction, refetch, refreshDetail, workspaceId],
+    [chatId, clearPendingInteraction, onChatChanged, refetch, refreshDetail, workspaceId],
   );
 
   const activeSubAgentName = useMemo(() => {
