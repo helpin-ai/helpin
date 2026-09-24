@@ -528,13 +528,36 @@ func (s *CRMMeetingService) DeleteRecording(ctx context.Context, workspaceID, me
 	return s.repo.Update(ctx, meeting)
 }
 
+// MeetingCaptureNotConfiguredMessage is the user-facing explanation returned
+// when the server has no usable capture provider credentials.
+const MeetingCaptureNotConfiguredMessage = "Meeting capture isn't set up on this server. Ask your server admin to configure a capture provider."
+
+// IsMeetingCaptureNotConfigured reports whether err means the deployment has
+// no usable capture provider credentials.
+func IsMeetingCaptureNotConfigured(err error) bool {
+	return errors.Is(err, meetingcapture.ErrNotConfigured)
+}
+
+// CaptureAvailability reports the deployment-selected capture provider and
+// whether the server has the credentials it needs (API key and webhook secret).
+func (s *CRMMeetingService) CaptureAvailability() (provider string, configured bool) {
+	provider = s.captureProvider
+	selected := s.providers[provider]
+	return provider, selected != nil && selected.Configured()
+}
+
 // GetSettings returns user-manageable workspace meeting settings.
 func (s *CRMMeetingService) GetSettings(ctx context.Context, workspaceID string) (*model.CRMMeetingSettings, error) {
 	settings, err := s.repo.GetSettings(ctx, workspaceID)
 	if err != nil {
 		return nil, err
 	}
+	s.describeCapture(settings)
 	return settings, nil
+}
+
+func (s *CRMMeetingService) describeCapture(settings *model.CRMMeetingSettings) {
+	settings.CaptureProvider, settings.CaptureConfigured = s.CaptureAvailability()
 }
 
 // UpdateSettings validates and saves workspace meeting policy.
@@ -567,6 +590,7 @@ func (s *CRMMeetingService) UpdateSettings(
 	if err := s.repo.UpsertSettings(ctx, settings); err != nil {
 		return nil, err
 	}
+	s.describeCapture(settings)
 	return settings, nil
 }
 

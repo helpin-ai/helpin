@@ -1945,7 +1945,9 @@ func main() {
 		aiConnectionsEnabled: aiConnectionService.Enabled(), chatProviders: supportLLMRouter.ConfiguredChatProviders(),
 		embeddingModel: supportEmbeddingModel, embeddingSource: embeddingResolver.EmbeddingSource,
 		storage: s3Client, temporal: temporalClient,
-		gitHubAppConfigured: githubAppClient.Configured,
+		gitHubAppConfigured:   githubAppClient.Configured,
+		meetingCapture:        crmMeetingService.CaptureAvailability,
+		googleOAuthConfigured: gmailOAuth != nil,
 	})
 	handlers.Docs.SetPublicWidgetURLs(cfg.PublicWidgetURL, cfg.PublicSDKURL)
 	handlers.Auth.SetPublicWidgetURLs(cfg.PublicWidgetURL, cfg.PublicSDKURL)

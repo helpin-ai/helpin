@@ -21,6 +21,7 @@ import {
 } from '@/lib/meetingPresentation';
 import { MeetingProcessingState } from '@/components/crm/MeetingProcessingState';
 import { MeetingStatusText } from '@/components/crm/MeetingStatusText';
+import { ServerSetupNotice } from '@/components/crm/ServerSetupNotice';
 import { UpgradeRequiredDialog } from '@edition';
 import { MarkdownContent } from '@/components/pm/CodingSession/MarkdownContent';
 import {
@@ -44,6 +45,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
   useAcceptMeetingAction,
   useCRMMeeting,
+  useCRMMeetingSettings,
   useDismissMeetingAction,
   useRetryMeetingProcessing,
   useStartMeetingCapture,
@@ -61,6 +63,8 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { CRMMeetingActionItem, CRMMeetingTranscriptSegment } from '@/lib/crmMeetingTypes';
 
 type MeetingDetailTab = 'overview' | 'transcript';
+
+const CAPTURE_UNAVAILABLE_ID = 'meeting-capture-unavailable';
 
 const titleCase = (value: string) => value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 
@@ -311,6 +315,8 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
   const canEditPM = permissions.has('pm.edit');
   const meetingQuery = useCRMMeeting(workspaceId, meetingId);
   const { data } = meetingQuery;
+  const settingsQuery = useCRMMeetingSettings(workspaceId);
+  const captureUnavailable = settingsQuery.data?.settings.capture_configured === false;
   const startCapture = useStartMeetingCapture(workspaceId, meetingId);
   const stopCapture = useStopMeetingCapture(workspaceId, meetingId);
   const retryProcessing = useRetryMeetingProcessing(workspaceId, meetingId);
@@ -474,7 +480,8 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
       icon={<PlayCircleIcon className="h-4 w-4" />}
       label="Start capture"
       onClick={() => runCommand(() => startCapture.mutateAsync(), 'Helpin is joining the meeting')}
-      disabled={startCapture.isPending}
+      disabled={startCapture.isPending || captureUnavailable}
+      aria-describedby={captureUnavailable ? CAPTURE_UNAVAILABLE_ID : undefined}
     />
   ) : canEditCRM && canStop ? (
     <QuietDetailAction
@@ -577,6 +584,16 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
             </div>
 
             <main className="min-h-0 flex-1 lg:overflow-y-auto">
+              {captureUnavailable && canStart ? (
+                <QuietSection title="Meeting capture">
+                  <ServerSetupNotice
+                    id={CAPTURE_UNAVAILABLE_ID}
+                    title="Meeting capture isn’t set up on this server."
+                    slug={slug}
+                    isServerAdmin={permissions.isServerAdmin}
+                  />
+                </QuietSection>
+              ) : null}
               {meeting.failure_message ? (
                 <QuietSection title="Capture needs attention">
                   <QuietStatusText tone="blocker" className="text-quiet-accent">Capture failed</QuietStatusText>

@@ -45,13 +45,20 @@ type aiSettings struct {
 	provider, key string
 }
 
-// integrations collects optional application mail and AI provider settings.
+// integrations collects optional application mail, AI provider, meeting
+// capture and Google (Gmail and Calendar) settings.
 // With --yes nothing is prompted: omitted flags leave the settings unchanged.
 func (a *app) integrations(o *options, old map[string]string) error {
 	if err := a.smtpIntegration(o, old); err != nil {
 		return err
 	}
-	return a.aiIntegration(o, old)
+	if err := a.aiIntegration(o, old); err != nil {
+		return err
+	}
+	if err := a.meetingIntegration(o, old); err != nil {
+		return err
+	}
+	return a.googleIntegration(o, old)
 }
 
 func (a *app) smtpIntegration(o *options, old map[string]string) error {
@@ -287,6 +294,9 @@ func writeIntegrations(dir string, o options) error {
 	}
 	if o.ai != nil {
 		set(aiProviderKeys[o.ai.provider], o.ai.key)
+	}
+	for _, value := range crmIntegrationValues(o) {
+		set(value[0], value[1])
 	}
 	if len(values) == 0 {
 		return nil

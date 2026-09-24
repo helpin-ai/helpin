@@ -3,7 +3,6 @@ package service
 import (
 	"errors"
 	"fmt"
-	"net"
 	"net/url"
 	"strings"
 )
@@ -133,37 +132,5 @@ func appBaseOrDefault(appBaseURL string) string {
 // (webhooks, the App callback and the setup URL all use it), or returns ""
 // when it is an https URL on a public hostname or public IP address.
 func GitHubAppBaseURLBlockedReason(appBaseURL string) string {
-	value := strings.TrimSpace(appBaseURL)
-	if !gitHubCanReach(value) {
-		shown := value
-		if shown == "" {
-			shown = "not set"
-		}
-		return fmt.Sprintf("GitHub must reach this server to deliver events. Set APP_BASE_URL to a public https address (currently %s).", shown)
-	}
-	return ""
-}
-
-func gitHubCanReach(appBaseURL string) bool {
-	parsed, err := url.Parse(appBaseURL)
-	if err != nil || !strings.EqualFold(parsed.Scheme, "https") {
-		return false
-	}
-	host := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
-	if host == "" {
-		return false
-	}
-	if ip := net.ParseIP(host); ip != nil {
-		return !(ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
-			ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast())
-	}
-	if host == "localhost" || !strings.Contains(host, ".") {
-		return false
-	}
-	for _, suffix := range []string{".localhost", ".local", ".internal", ".lan", ".home.arpa"} {
-		if strings.HasSuffix(host, suffix) {
-			return false
-		}
-	}
-	return true
+	return PublicBaseURLBlockedReason("GitHub", appBaseURL)
 }

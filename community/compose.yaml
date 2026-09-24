@@ -56,6 +56,20 @@ x-helpin-env: &helpin-env
   GITHUB_APP_WEBHOOK_SECRET: ${GITHUB_APP_WEBHOOK_SECRET:-}
   GITHUB_APP_CLIENT_ID: ${GITHUB_APP_CLIENT_ID:-}
   GITHUB_APP_CLIENT_SECRET: ${GITHUB_APP_CLIENT_SECRET:-}
+  # Optional CRM meeting capture. Empty provider means recall; empty base URLs
+  # use each provider's hosted API.
+  CRM_MEETING_CAPTURE_PROVIDER: ${CRM_MEETING_CAPTURE_PROVIDER:-}
+  RECALL_BASE_URL: ${RECALL_BASE_URL:-}
+  RECALL_API_KEY: ${RECALL_API_KEY:-}
+  RECALL_WEBHOOK_SECRET: ${RECALL_WEBHOOK_SECRET:-}
+  VEXA_BASE_URL: ${VEXA_BASE_URL:-}
+  VEXA_API_KEY: ${VEXA_API_KEY:-}
+  VEXA_WEBHOOK_SECRET: ${VEXA_WEBHOOK_SECRET:-}
+  # Optional Google OAuth client for Gmail and Google Calendar. An empty
+  # redirect URL means APP_BASE_URL/api/crm/email/oauth/callback.
+  GMAIL_CLIENT_ID: ${GMAIL_CLIENT_ID:-}
+  GMAIL_CLIENT_SECRET: ${GMAIL_CLIENT_SECRET:-}
+  GMAIL_OAUTH_REDIRECT_URL: ${GMAIL_OAUTH_REDIRECT_URL:-}
 x-runtime-env: &runtime-env
   AGENT_RUNTIME_ADDR: :8090
   AGENT_RUNTIME_STORE_DRIVER: postgres

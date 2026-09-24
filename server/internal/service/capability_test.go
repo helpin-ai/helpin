@@ -17,6 +17,8 @@ type fakeCapabilityEvidence struct {
 	inbound      bool
 	github       bool
 	repositories int64
+	meetingEvent bool
+	google       bool
 	summary      repository.AIConnectionSummary
 	check        *model.InstanceCapabilityCheck
 	recorded     []*model.InstanceCapabilityCheck
@@ -39,6 +41,12 @@ func (f *fakeCapabilityEvidence) HasGitHubInstallation(context.Context, string) 
 }
 func (f *fakeCapabilityEvidence) ConnectedRepositoryCount(context.Context, string) (int64, error) {
 	return f.repositories, nil
+}
+func (f *fakeCapabilityEvidence) HasMeetingProviderEvent(context.Context, string, string) (bool, error) {
+	return f.meetingEvent, nil
+}
+func (f *fakeCapabilityEvidence) HasConnectedGoogleAccount(context.Context, string) (bool, error) {
+	return f.google, nil
 }
 func (f *fakeCapabilityEvidence) SharedAIConnectionSummary(context.Context) (repository.AIConnectionSummary, error) {
 	return f.summary, nil
@@ -201,6 +209,7 @@ func TestWorkspaceCapabilityPathsMatchFrontendRoutes(t *testing.T) {
 		"settings/inboxes-routing": true,
 		"settings/git-connections": true,
 		"settings/repositories":    true,
+		"settings/crm-email":       true, // Gmail and Google Calendar connections
 	}
 	untested := &model.AIConnection{ID: "c1", WorkspaceID: "ws", Status: "connected", Funding: "customer"}
 	profile := &model.AIProfile{Primary: model.AIProfileRoute{ConnectionID: "c1"}}
@@ -217,6 +226,8 @@ func TestWorkspaceCapabilityPathsMatchFrontendRoutes(t *testing.T) {
 			&fakeCapabilityEvidence{installs: 1}, fakeCapabilitySetup{routes: 1}, fakeCapabilityAI{profile: profile, connection: untested}},
 		{"app installed", CapabilityConfig{AIConnectionsEnabled: true, GitHubAppConfigured: appConfigured},
 			&fakeCapabilityEvidence{github: true}, fakeCapabilitySetup{}, fakeCapabilityAI{}},
+		{"google configured", CapabilityConfig{GoogleOAuthConfigured: true, MeetingCaptureConfigured: true},
+			&fakeCapabilityEvidence{}, fakeCapabilitySetup{}, fakeCapabilityAI{}},
 	}
 	for _, tt := range scenarios {
 		t.Run(tt.name, func(t *testing.T) {

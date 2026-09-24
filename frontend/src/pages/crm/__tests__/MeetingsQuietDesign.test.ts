@@ -46,6 +46,17 @@ describe('CRM meetings Quiet Hairline composition', () => {
     expect(meetingDetailSource).toContain('className="mt-4 grid gap-3 md:grid-cols-2"');
   });
 
+  it('explains and disables capture when the server has no capture provider', () => {
+    for (const source of [meetingsSource, meetingDetailSource]) {
+      expect(source).toContain("capture_configured === false");
+      expect(source).toContain('<ServerSetupNotice');
+      expect(source).toContain('Meeting capture isn’t set up on this server.');
+    }
+    expect(meetingDetailSource).toContain('disabled={startCapture.isPending || captureUnavailable}');
+    expect(meetingDetailSource).toContain('aria-describedby={captureUnavailable ? CAPTURE_UNAVAILABLE_ID : undefined}');
+    expect(meetingsSource).toContain('calendarConnectUnavailable={googleConnectUnavailable}');
+  });
+
   it('retains the compact speaker-and-transcript row design', () => {
     expect(meetingDetailSource).toContain("sm:grid-cols-[120px_minmax(0,1fr)]");
     expect(meetingDetailSource).toContain("active && 'bg-primary/5 ring-1 ring-primary/15'");
