@@ -15,6 +15,8 @@ import {
   PlusSignIcon,
   Search01Icon,
   StopIcon,
+  PauseIcon,
+  PlayIcon,
   Tick01Icon,
   Cancel01Icon,
   UserIcon,
@@ -111,9 +113,13 @@ export interface DockInputProps {
   disabled?: boolean;
   autoFocus?: boolean;
   textareaRef?: React.RefObject<HTMLTextAreaElement | null>;
-  /** When set, the send button becomes a stop button for the active run. */
+  /** Run controls replace Send while the agent is working or manually paused. */
   onStop?: () => void;
   stopping?: boolean;
+  onPause?: () => void;
+  pausing?: boolean;
+  onResume?: () => void;
+  resuming?: boolean;
   placeholder?: string;
   showShortcutHint?: boolean;
   profilePicker?: ReactNode;
@@ -181,6 +187,10 @@ export function DockInput({
   textareaRef,
   onStop,
   stopping,
+  onPause,
+  pausing,
+  onResume,
+  resuming,
   placeholder: placeholderOverride,
   showShortcutHint = true,
   profilePicker,
@@ -287,7 +297,7 @@ export function DockInput({
       </DropdownMenu>
     </>
   ) : null;
-  const submitControl = onStop ? (
+  const stopControl = onStop ? (
     <button
       type="button"
       onClick={onStop}
@@ -298,7 +308,9 @@ export function DockInput({
         'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition',
         stopping
           ? 'cursor-not-allowed bg-muted text-muted-foreground'
-          : 'bg-foreground text-background hover:bg-foreground/85',
+          : onPause || onResume
+            ? 'bg-muted text-muted-foreground hover:bg-muted/80'
+            : 'bg-foreground text-background hover:bg-foreground/85',
       )}
     >
       {stopping ? (
@@ -307,7 +319,22 @@ export function DockInput({
         <StopIcon className="h-3.5 w-3.5" />
       )}
     </button>
-  ) : (
+  ) : null;
+  const submitControl = onPause || onResume ? (
+    <div className="flex shrink-0 items-center gap-1.5">
+      <button
+        type="button"
+        onClick={onPause ?? onResume}
+        disabled={pausing || resuming}
+        title={pausing ? 'Pausing agent' : resuming ? 'Resuming agent' : onPause ? 'Pause agent' : 'Resume agent'}
+        aria-label={pausing ? 'Pausing agent' : resuming ? 'Resuming agent' : onPause ? 'Pause agent' : 'Resume agent'}
+        className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-foreground text-background transition hover:bg-foreground/85 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {pausing || resuming ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" /> : onPause ? <PauseIcon className="h-3.5 w-3.5" /> : <PlayIcon className="h-3.5 w-3.5" />}
+      </button>
+      {stopControl}
+    </div>
+  ) : stopControl ?? (
     <button
       type="button"
       onClick={onSubmit}

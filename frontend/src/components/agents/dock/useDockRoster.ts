@@ -275,7 +275,10 @@ class DockRosterOwner {
           const incomingIds = new Set(incoming.map((summary) => summary.run.id));
           this.publish({
             runs: cursor ? [...current, ...incoming.filter((summary) => !known.has(summary.run.id))]
-              : [...incoming, ...(preserveLoaded ? current.filter((summary) => !incomingIds.has(summary.run.id)) : [])],
+              : [...incoming, ...(preserveLoaded ? current.filter((summary) =>
+                !incomingIds.has(summary.run.id)
+                && !['queued', 'running', 'paused'].includes(summary.run.status)
+              ) : [])],
             ...(cursor || !preserveLoaded || !this.loadedPages.runs ? { nextRunCursor: result.data.next_cursor ?? null } : {}),
           });
           if (cursor) this.loadedPages.runs = true;

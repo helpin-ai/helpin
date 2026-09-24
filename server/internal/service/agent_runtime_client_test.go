@@ -3,8 +3,10 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -192,4 +194,24 @@ func TestAgentRuntimeClientForwardsRunSignals(t *testing.T) {
 		t.Fatalf("cancel: %v", err)
 	}
 
+}
+
+func TestAgentRuntimeClientRequestsManualPauseWithV1Auth(t *testing.T) {
+	httpClient := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.Method != http.MethodPost || r.URL.EscapedPath() != "/v1/runs/run-runtime-1/pause" || r.URL.Query().Get("app_id") != "helpin" {
+			t.Errorf("unexpected pause request: %s %s", r.Method, r.URL.String())
+		}
+		if r.Header.Get("Authorization") != "Bearer runtime-token" || r.Header.Get("X-Agent-Runtime-Event-Protocol") != "v2" {
+			t.Error("pause request omitted runtime authentication or protocol")
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"id":"run-runtime-1","status":"running"}`)), Request: r}, nil
+	})}
+	client, err := NewAgentRuntimeClient("https://runtime.example.test", "helpin", "runtime-token", httpClient, "v2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := client.PauseRun(context.Background(), "run-runtime-1")
+	if err != nil || run.ID != "run-runtime-1" {
+		t.Fatalf("pause request failed: run=%#v err=%v", run, err)
+	}
 }

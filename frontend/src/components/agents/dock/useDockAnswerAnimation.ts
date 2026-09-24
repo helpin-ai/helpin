@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { TranscriptSegment } from '@/components/agents/transcript';
+import { findLastMatchingIndex } from './findLastMatchingIndex';
 
 const answerId = (segment: TranscriptSegment) => segment.kind === 'assistant'
   ? segment.messageId ?? segment.id.replace(/^live:/, '') : segment.id;
@@ -7,7 +8,7 @@ const answerId = (segment: TranscriptSegment) => segment.kind === 'assistant'
 /** Animate only answers arriving after we observed this conversation working. */
 export function useDockAnswerAnimation(segments: TranscriptSegment[], active: boolean) {
   const ids = segments.filter(segment => segment.kind === 'assistant' && !segment.progress).map(answerId);
-  const currentTurnStart = segments.findLastIndex(segment => segment.kind === 'user' || segment.kind === 'review_decision');
+  const currentTurnStart = findLastMatchingIndex(segments, segment => segment.kind === 'user' || segment.kind === 'review_decision');
   const currentTurnIds = new Set(segments.slice(currentTurnStart + 1).map(answerId));
   const signature = JSON.stringify(ids);
   const [previous, setPrevious] = useState(() => ({
@@ -27,4 +28,3 @@ export function useDockAnswerAnimation(segments: TranscriptSegment[], active: bo
   }
   return (segment: TranscriptSegment) => current.animated.has(answerId(segment));
 }
-

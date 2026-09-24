@@ -87,6 +87,7 @@ function ArtifactDownload({ workspaceId, artifact }: { workspaceId: string; arti
 }
 
 export function DockArtifactDownloads({ workspaceId, artifacts }: { workspaceId: string; artifacts: AgentRunArtifact[] }) {
+  const [expanded, setExpanded] = useState(false);
   const downloads = useMemo(() => artifacts.filter((artifact) => (
     artifact.storage_mode === 'object'
     && ['analysis_output', 'browser_screenshot', 'browser_recording', 'generated_image'].includes(artifact.artifact_type)
@@ -94,18 +95,28 @@ export function DockArtifactDownloads({ workspaceId, artifacts }: { workspaceId:
   if (downloads.length === 0) return null;
 
   return (
-    <section className="mt-3 border-y border-border/60 py-1" data-agent-artifact-downloads>
-      <div className="flex items-center justify-between px-0.5 py-1.5">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          {downloads.length === 1 ? 'File' : `${downloads.length} files`}
+    <details
+      className="mt-3 border-y border-border/70 bg-transparent"
+      data-agent-artifact-downloads
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+    >
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-3 outline-none focus-visible:ring-2 focus-visible:ring-ring/25">
+        <span className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          <File01Icon className="h-3.5 w-3.5" aria-hidden="true" />
+          Artifacts
         </span>
-        <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground" title="Only workspace members with access to this conversation can download these files">
-          <LockKeyIcon className="h-3 w-3" aria-hidden="true" /> Private
+        <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
+          <span className="tabular-nums">{downloads.length === 1 ? '1 file' : `${downloads.length} files`}</span>
+          <span className="inline-flex items-center gap-1" title="Only workspace members with access to this conversation can download these files">
+            <LockKeyIcon className="h-3 w-3" aria-hidden="true" /> Private
+          </span>
         </span>
-      </div>
-      <div>
-        {downloads.map((artifact) => <ArtifactDownload key={artifact.id} workspaceId={workspaceId} artifact={artifact} />)}
-      </div>
-    </section>
+      </summary>
+      {expanded ? (
+        <div className="border-t border-border/60 py-1">
+          {downloads.map((artifact) => <ArtifactDownload key={artifact.id} workspaceId={workspaceId} artifact={artifact} />)}
+        </div>
+      ) : null}
+    </details>
   );
 }

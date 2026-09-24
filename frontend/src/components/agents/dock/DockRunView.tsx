@@ -45,6 +45,8 @@ export function DockRunView({
   const [fallbackInteraction, setFallbackInteraction] = useState<CodingSessionInteraction | null>(null);
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [pausing, setPausing] = useState(false);
+  const [resuming, setResuming] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const autoFollowRef = useRef(true);
@@ -80,23 +82,23 @@ export function DockRunView({
   }), [completedRun, currentPlan, effectiveRun, streamState]);
 
   const refreshInteractions = useCallback(async () => {
-    if (effectiveRun.status !== 'paused') return;
+    if (effectiveRun.status !== 'paused' || effectiveRun.pause_reason === 'manual') return;
     const result = await dockChatService.listRunInteractions(workspaceId, run.id);
     if (!result.data) return;
     const pending = result.data.interactions.filter((interaction) => interaction.status === 'pending');
     const latest = pending[pending.length - 1] as (CodingSessionInteraction & { id?: string }) | undefined;
     setFallbackInteraction(latest ? { ...latest, interaction_id: latest.interaction_id ?? latest.id ?? '' } : null);
-  }, [effectiveRun.status, run.id, workspaceId]);
+  }, [effectiveRun.status, effectiveRun.pause_reason, run.id, workspaceId]);
 
   useEffect(() => {
     if (!active || !networkAvailable) return;
-    if (effectiveRun.status === 'paused') {
+    if (effectiveRun.status === 'paused' && effectiveRun.pause_reason !== 'manual') {
       const timer = window.setTimeout(() => void refreshInteractions(), 0);
       return () => window.clearTimeout(timer);
     }
     const timer = window.setTimeout(() => setFallbackInteraction(null), 0);
     return () => window.clearTimeout(timer);
-  }, [active, networkAvailable, effectiveRun.status, refreshInteractions]);
+  }, [active, networkAvailable, effectiveRun.status, effectiveRun.pause_reason, refreshInteractions]);
 
   useEffect(() => {
     const node = scrollRef.current;
@@ -124,7 +126,7 @@ export function DockRunView({
     if (node && autoFollowRef.current) node.scrollTop = node.scrollHeight;
   }, [streamState, sendError]);
 
-  const interaction = pendingInteraction ?? fallbackInteraction;
+  const interaction = effectiveRun.pause_reason === 'manual' ? null : pendingInteraction ?? fallbackInteraction;
   const resolveInteraction = useCallback(async (
     interactionId: string,
     payload: { response_payload: Record<string, unknown>; followup_message?: string },
@@ -188,10 +190,38 @@ export function DockRunView({
     setStopping(false);
   };
 
+  const pause = async () => {
+    if (pausePending) return;
+    setPausing(true);
+    try {
+      const result = await dockChatService.pauseRun(workspaceId, run.id);
+      if (result.error) toast.error(result.error);
+      else { onRunChanged(); await refetch(); }
+    } finally {
+      setPausing(false);
+    }
+  };
+
+  const resume = async () => {
+    if (resumePending) return;
+    setResuming(true);
+    try {
+      const result = await dockChatService.resumeRun(workspaceId, run.id);
+      if (result.error) toast.error(result.error);
+      else { onRunChanged(); await refetch(); }
+    } finally {
+      setResuming(false);
+    }
+  };
+
   const composerEnabled = effectiveRun.status === 'failed'
     || effectiveRun.status === 'cancelled'
     || (effectiveRun.status === 'paused' && (effectiveRun.pause_reason === 'human_input' || effectiveRun.pause_reason === 'awaiting_user_message') && !interaction);
-  const canStop = effectiveRun.status === 'queued' || effectiveRun.status === 'running';
+  const canPause = effectiveRun.status === 'queued' || effectiveRun.status === 'running';
+  const canResume = effectiveRun.status === 'paused' && effectiveRun.pause_reason === 'manual';
+  const canStop = canPause || canResume;
+  const pausePending = pausing || effectiveRun.execution_stage === 'pausing';
+  const resumePending = resuming || effectiveRun.execution_stage === 'resuming';
   const cancellationPending = stopping || effectiveRun.execution_stage === 'cancelling';
 
   return (
@@ -270,7 +300,11 @@ export function DockRunView({
             disabled={!composerEnabled}
             onStop={canStop ? () => void stop() : undefined}
             stopping={cancellationPending}
-            placeholder={cancellationPending ? 'Stopping agent…' : composerEnabled ? `Answer ${summary.agent.name || 'agent'}…` : effectiveRun.status === 'queued' ? 'Agent is starting…' : 'Agent is working…'}
+            onPause={canPause && !cancellationPending ? () => void pause() : undefined}
+            pausing={pausePending}
+            onResume={canResume && !cancellationPending ? () => void resume() : undefined}
+            resuming={resumePending}
+            placeholder={cancellationPending ? 'Stopping agent…' : pausePending ? 'Pausing agent…' : resumePending ? 'Resuming agent…' : canResume ? 'Agent paused — resume to continue' : composerEnabled ? `Answer ${summary.agent.name || 'agent'}…` : effectiveRun.status === 'queued' ? 'Agent is starting…' : 'Agent is working…'}
           />
         </div>
       ) : null}

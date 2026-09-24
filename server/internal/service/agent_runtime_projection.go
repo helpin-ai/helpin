@@ -758,8 +758,12 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		if !suppressLifecycle {
 			pauseReason := normalizeRuntimePauseReason(eventDataString(event.Data, "pause_reason"))
 			changed = setRunStatus(run, model.AgentRunStatusPaused, pauseReason) || changed
+			changed = clearRuntimeResumeStage(run) || changed
+			changed = clearRuntimePauseStage(run) || changed
 		}
 	case agentruntime.EventRunCompleted:
+		changed = clearRuntimeResumeStage(run) || changed
+		changed = clearRuntimePauseStage(run) || changed
 		if run.CompletedAt == nil {
 			run.CompletedAt = &now
 			changed = true
@@ -775,6 +779,8 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		}
 		changed = setRunStatus(run, model.AgentRunStatusCompleted, model.AgentRunPauseReasonNone) || changed
 	case agentruntime.EventRunFailed:
+		changed = clearRuntimeResumeStage(run) || changed
+		changed = clearRuntimePauseStage(run) || changed
 		if run.CompletedAt == nil {
 			run.CompletedAt = &now
 			changed = true
@@ -787,6 +793,8 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		}
 		changed = setRunStatus(run, model.AgentRunStatusFailed, model.AgentRunPauseReasonNone) || changed
 	case agentruntime.EventRunCancelled:
+		changed = clearRuntimeResumeStage(run) || changed
+		changed = clearRuntimePauseStage(run) || changed
 		if run.CompletedAt == nil {
 			run.CompletedAt = &now
 			changed = true
@@ -1356,17 +1364,34 @@ func (s *AgentRuntimeProjectionService) maybeCancelOverage(ctx context.Context, 
 	if s.usageMeter.usage == nil {
 		return false, errors.New("AI usage lifecycle is required")
 	}
-	if metering, ok := agentRunMeteringContext(run); ok {
+	metering, ok := agentRunMeteringContext(run)
+	if ok {
 		if err := s.usageMeter.usage.Heartbeat(ctx, metering); err != nil {
 			return false, err
 		}
 	}
-	exceeded, err := s.usageMeter.agentRunUsageExceedsBudget(run, usage)
+	if !ok || metering.EnforcementMode != model.AIUsageEnforcementStrict || metering.MaxBillableMicrousd <= 0 {
+		return false, nil
+	}
+	charge, err := s.usageMeter.agentRunUsageCharge(run, usage, metering)
 	if err != nil {
 		return false, err
 	}
-	if !exceeded {
+	if charge < metering.MaxBillableMicrousd {
 		return false, nil
+	}
+	// The launch estimate bounds the initial hold, not the entire runtime. Grow
+	// the hold against the workspace allowance before cancelling the run.
+	if charge < math.MaxInt64 {
+		metering.MaxBillableMicrousd = charge + 1
+		if err := s.usageMeter.usage.Heartbeat(ctx, metering); err == nil {
+			if err := storeAgentRunMeteringContext(run, metering); err != nil {
+				return false, err
+			}
+			return true, nil
+		} else if !errors.Is(err, model.ErrAIUsageExhausted) {
+			return false, err
+		}
 	}
 
 	if _, cancelErr := s.agentRuntimeClient.CancelRun(ctx, runtimeRunID); cancelErr != nil {
@@ -2724,12 +2749,22 @@ func clearRuntimeResumeStage(run *model.AgentRun) bool {
 	}
 }
 
+func clearRuntimePauseStage(run *model.AgentRun) bool {
+	if run == nil || strings.TrimSpace(derefString(run.ExecutionStage)) != "pausing" {
+		return false
+	}
+	run.ExecutionStage = nil
+	return true
+}
+
 func normalizeRuntimePauseReason(reason string) string {
 	switch strings.TrimSpace(reason) {
 	case model.AgentRunPauseReasonHumanApproval:
 		return model.AgentRunPauseReasonHumanApproval
 	case model.AgentRunPauseReasonUserMessage:
 		return model.AgentRunPauseReasonUserMessage
+	case model.AgentRunPauseReasonManual:
+		return model.AgentRunPauseReasonManual
 	case model.AgentRunPauseReasonAuthentication, "auth":
 		return model.AgentRunPauseReasonAuthentication
 	case model.AgentRunPauseReasonNone:
