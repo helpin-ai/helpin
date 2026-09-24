@@ -366,7 +366,9 @@ func validateAIUsageOperation(operationKey, taskNature string, resolved aiusage.
 		}
 		return nil
 	case AIUsageOperationMediaEnrichment:
-		if resolved.Provider != mediaEnrichmentProvider || resolved.CanonicalModel != mediaEnrichmentCanonicalModel || resolved.Route != mediaEnrichmentRoute || resolved.Tier != aiusage.TierMedium {
+		primary := resolved.Provider == mediaEnrichmentProvider && resolved.CanonicalModel == mediaEnrichmentCanonicalModel && resolved.Route == mediaEnrichmentRoute && resolved.Tier == aiusage.TierMedium
+		fallback := resolved.Provider == "openrouter" && resolved.CanonicalModel == "qwen3.8-omni-flash" && resolved.Route == "qwen/qwen3.8-omni-flash" && resolved.Tier == aiusage.TierSmall
+		if !primary && !fallback {
 			return fmt.Errorf("%w: %s requires the approved multimodal reader", model.ErrModelUnavailableUnderPricing, operationKey)
 		}
 		return nil

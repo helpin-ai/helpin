@@ -522,6 +522,9 @@ const (
 
 const AgentRunArtifactTypeToolCall = "tool_call"
 const AgentRunArtifactTypeBrowserScreenshot = "browser_screenshot"
+
+// AgentRunArtifactTypeGeneratedImage is an image created by generate_image or edit_image.
+const AgentRunArtifactTypeGeneratedImage = "generated_image"
 const AgentRunArtifactTypeBrowserRecording = "browser_recording"
 
 const (

@@ -1155,6 +1155,7 @@ func main() {
 	docsDocumentService.SetTranslationService(docsHelpcenterTranslationService)
 	docsContentService.SetTranslationService(docsHelpcenterTranslationService)
 	docsHelpcenterService.SetTranslationService(docsHelpcenterTranslationService)
+	docsHelpcenterTranslationService.SetHelpcenterCacheInvalidator(docsHelpcenterService.InvalidateHelpcenterCacheForWorkspace)
 	docsDocumentService.SetHelpcenterService(docsHelpcenterService)
 	docsDeletionDeps := service.DocsDocumentDeletionDependencies{
 		ContentRepo:     docsContentRepo,
@@ -1365,6 +1366,11 @@ func main() {
 	commandService.SetDocsSearchRepository(docsSearchRepo)
 	commandService.SetDocsChangeProposalService(docsChangeProposalService)
 	commandService.SetAgentRunDependencies(agentRunRepo, agentRunArtifactRepo)
+	commandService.SetImageTools(service.NewAgentImageService(service.AgentImageConfig{
+		ServerOpenAIKey: cfg.OpenAIAPIKey, ServerOpenAIBaseURL: cfg.OpenAIBaseURL,
+		// Only Community (no edition connection policy) may fund images from the server key.
+		AllowServerKey: editionServices.ConnectionPolicy == nil,
+	}, aiConnectionService, agentRunArtifactRepo, s3Client, pmAttachmentService, aiActionRegistry, aiActionExecutionRepo))
 	commandService.SetDockActionProposalRepository(dockActionProposalRepo)
 	commandService.SetReleaseFactsProvider(service.NewReleaseFactsService(
 		gitIntegrationRepo,
@@ -1721,6 +1727,7 @@ func main() {
 		},
 	)
 	mcpService.SetDocsLifecycle(docsDocumentService, docsHelpcenterService, docsEmbeddingService)
+	mcpService.SetDocsChangeProposals(docsChangeProposalService)
 	mcpService.SetAttachments(pmAttachmentService)
 	mcpService.SetDocsContentReader(docsContentRepo)
 	mcpService.SetPMComments(pmCommentService)

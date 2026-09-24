@@ -30,6 +30,17 @@ func supportControlNote(conv *model.SupportConversation, actorID, content string
 	return note
 }
 
+func supportControlActivity(conv *model.SupportConversation, actorID, actorName, eventType, content, reason string, now time.Time) *model.SupportMessage {
+	note := supportControlNote(conv, actorID, content, now)
+	note.MessageType = "system"
+	note.SystemEventType = &eventType
+	note.SenderType = "user"
+	note.SenderDisplayName = &actorName
+	metadata, _ := json.Marshal(map[string]string{"reason": reason})
+	note.Metadata = string(metadata)
+	return note
+}
+
 func briefText(text string) string {
 	text = strings.Join(strings.Fields(text), " ")
 	chars := []rune(text)
@@ -95,9 +106,6 @@ func buildSupportHandoffNote(conv *model.SupportConversation, history []model.Su
 	unresolved := briefList(brief.UnresolvedQuestions)
 	if unresolved == "" {
 		unresolved = "A teammate needs to review the customer's latest request; the remaining steps have not been established."
-		if len(customer) > 0 {
-			unresolved += "\n" + briefList(customer)
-		}
 	}
 	content := fmt.Sprintf("AI handoff\n\nIssue\n%s\n\nAlready tried / suggested\n%s\n\nStill unresolved\n%s\n\nReason for handoff\n%s", issue, attempted, unresolved, briefText(strings.ReplaceAll(reason, "_", " ")))
 

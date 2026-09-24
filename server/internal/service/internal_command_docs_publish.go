@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -113,7 +114,7 @@ func (s *InternalCommandService) executeInsertDocumentArtifact(ctx context.Conte
 	if err := decodeStrictInternalCommandInput(input, &req); err != nil {
 		return nil, fmt.Errorf("parse insert document artifact input: %w", err)
 	}
-	return s.insertDocumentArtifact(ctx, meta, req, "")
+	return s.insertDocumentArtifact(ctx, meta, req)
 }
 
 func (s *InternalCommandService) executeInsertDocumentImage(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
@@ -130,10 +131,10 @@ func (s *InternalCommandService) executeInsertDocumentImage(ctx context.Context,
 	return s.insertDocumentArtifact(ctx, meta, insertDocumentArtifactRequest{
 		DocumentID: req.DocumentID, ArtifactID: req.ArtifactID, AfterBlockID: req.AfterBlockID,
 		Description: req.Alt, Caption: req.Caption,
-	}, model.AgentRunArtifactTypeBrowserScreenshot)
+	}, model.AgentRunArtifactTypeBrowserScreenshot, model.AgentRunArtifactTypeGeneratedImage)
 }
 
-func (s *InternalCommandService) insertDocumentArtifact(ctx context.Context, meta model.InternalCommandContext, req insertDocumentArtifactRequest, requiredArtifactType string) (json.RawMessage, error) {
+func (s *InternalCommandService) insertDocumentArtifact(ctx context.Context, meta model.InternalCommandContext, req insertDocumentArtifactRequest, allowedArtifactTypes ...string) (json.RawMessage, error) {
 	if s.docsBlockService == nil {
 		return nil, fmt.Errorf("docs block service is not available")
 	}
@@ -144,13 +145,13 @@ func (s *InternalCommandService) insertDocumentArtifact(ctx context.Context, met
 	req.ArtifactID = strings.TrimSpace(req.ArtifactID)
 	req.Description = strings.TrimSpace(req.Description)
 	if req.DocumentID == "" || req.ArtifactID == "" || req.Description == "" {
-		return nil, fmt.Errorf("document_id, artifact_id, and description are required")
+		return nil, errCommandInput("document_id, artifact_id, and description are required")
 	}
 	if utf8.RuneCountInString(req.Description) > 1000 {
-		return nil, fmt.Errorf("description must be at most 1000 characters")
+		return nil, errCommandInput("description must be at most 1000 characters")
 	}
 	if req.Caption != nil && utf8.RuneCountInString(strings.TrimSpace(*req.Caption)) > 2000 {
-		return nil, fmt.Errorf("caption must be at most 2000 characters")
+		return nil, errCommandInput("caption must be at most 2000 characters")
 	}
 	if err := s.requireCommandDocumentInWorkspace(ctx, meta.WorkspaceID, req.DocumentID); err != nil {
 		return nil, err
@@ -160,10 +161,10 @@ func (s *InternalCommandService) insertDocumentArtifact(ctx context.Context, met
 		return nil, err
 	}
 	if artifact == nil || artifact.StorageMode != "object" || artifact.ObjectKey == nil || strings.TrimSpace(*artifact.ObjectKey) == "" {
-		return nil, fmt.Errorf("private document artifact not found")
+		return nil, errCommandNotFound("private document artifact")
 	}
-	if requiredArtifactType != "" && artifact.ArtifactType != requiredArtifactType {
-		return nil, fmt.Errorf("private browser screenshot artifact not found")
+	if len(allowedArtifactTypes) > 0 && !slices.Contains(allowedArtifactTypes, artifact.ArtifactType) {
+		return nil, errCommandNotFound("private image artifact")
 	}
 	blockType, attrs, err := documentBlockForArtifact(artifact, req.Description)
 	if err != nil {
@@ -193,11 +194,11 @@ func (s *InternalCommandService) insertDocumentArtifact(ctx context.Context, met
 
 func documentBlockForArtifact(artifact *model.AgentRunArtifact, description string) (string, map[string]any, error) {
 	if artifact == nil {
-		return "", nil, fmt.Errorf("private document artifact not found")
+		return "", nil, errCommandNotFound("private document artifact")
 	}
 	reference := artifactReference(artifact.ID)
 	switch artifact.ArtifactType {
-	case model.AgentRunArtifactTypeBrowserScreenshot:
+	case model.AgentRunArtifactTypeBrowserScreenshot, model.AgentRunArtifactTypeGeneratedImage:
 		return "resizableImage", map[string]any{
 			"src": reference, "artifactId": artifact.ID, "alt": description,
 			"width": "100%", "height": "auto", "alignment": "center",
@@ -235,7 +236,7 @@ func decodeStrictInternalCommandInput(input json.RawMessage, target any) error {
 		return err
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return fmt.Errorf("input must contain one JSON object")
+		return errCommandInput("input must contain one JSON object")
 	}
 	return nil
 }
@@ -257,15 +258,15 @@ func (s *InternalCommandService) executeInsertDocumentBlock(ctx context.Context,
 	req.Content = strings.TrimSpace(req.Content)
 	req.Position = strings.ToLower(strings.TrimSpace(req.Position))
 	if req.DocumentID == "" {
-		return nil, fmt.Errorf("document_id is required")
+		return nil, errCommandInput("document_id is required")
 	}
 	if req.Content == "" {
-		return nil, fmt.Errorf("content is required")
+		return nil, errCommandInput("content is required")
 	}
 	switch req.Position {
 	case "", "start", "end":
 	default:
-		return nil, fmt.Errorf("position must be start or end")
+		return nil, errCommandInput("position must be start or end")
 	}
 	if err := s.requireCommandDocumentInWorkspace(ctx, meta.WorkspaceID, req.DocumentID); err != nil {
 		return nil, err
@@ -277,7 +278,7 @@ func (s *InternalCommandService) executeInsertDocumentBlock(ctx context.Context,
 		return nil, fmt.Errorf("parse block markdown: %w", err)
 	}
 	if len(generated.Content) == 0 {
-		return nil, fmt.Errorf("content must not be empty")
+		return nil, errCommandInput("content must not be empty")
 	}
 	content, blockIDs, err := s.docsBlockService.CreateBlocks(ctx, req.DocumentID, req.AfterBlockID, req.Position == "start", generated.Content, meta.ActorID)
 	if err != nil {
@@ -303,16 +304,16 @@ func (s *InternalCommandService) executeSearchDocuments(ctx context.Context, met
 	}
 	query := strings.TrimSpace(req.Query)
 	if query == "" {
-		return nil, fmt.Errorf("query is required")
+		return nil, errCommandInput("query is required")
 	}
 	if req.Limit == 0 {
 		req.Limit = 10
 	}
 	if req.Limit < 1 || req.Limit > 20 {
-		return nil, fmt.Errorf("limit must be between 1 and 20")
+		return nil, errCommandInput("limit must be between 1 and 20")
 	}
 	if req.Offset < 0 {
-		return nil, fmt.Errorf("offset must be zero or greater")
+		return nil, errCommandInput("offset must be zero or greater")
 	}
 	if s.docsSearchRepo == nil {
 		return nil, fmt.Errorf("docs search is not available")
@@ -417,16 +418,16 @@ func (s *InternalCommandService) executePublishDocumentChangeProposal(ctx contex
 	switch req.Scope {
 	case "document", "block":
 	default:
-		return nil, fmt.Errorf("scope must be document or block")
+		return nil, errCommandInput("scope must be document or block")
 	}
 	if req.DocumentID == "" {
-		return nil, fmt.Errorf("document_id is required")
+		return nil, errCommandInput("document_id is required")
 	}
 	if req.Content == "" {
-		return nil, fmt.Errorf("content is required")
+		return nil, errCommandInput("content is required")
 	}
 	if req.Summary == "" {
-		return nil, fmt.Errorf("summary is required")
+		return nil, errCommandInput("summary is required")
 	}
 	if targetID := currentDocumentTargetID(meta); targetID != "" && targetID != req.DocumentID {
 		return nil, fmt.Errorf("document_id does not match this run target")
@@ -438,10 +439,10 @@ func (s *InternalCommandService) executePublishDocumentChangeProposal(ctx contex
 		content = tiptap.MarkdownToJSON(req.Content)
 	case "block":
 		if req.BlockID == "" {
-			return nil, fmt.Errorf("block_id is required for block proposals")
+			return nil, errCommandInput("block_id is required for block proposals")
 		}
 		if req.Revision <= 0 {
-			return nil, fmt.Errorf("revision is required for block proposals")
+			return nil, errCommandInput("revision is required for block proposals")
 		}
 		block, err := s.requireCommandProposalBlock(ctx, meta.WorkspaceID, req.DocumentID, req.BlockID, req.Revision)
 		if err != nil {
@@ -512,14 +513,14 @@ func (s *InternalCommandService) requireCommandProposalBlock(ctx context.Context
 			continue
 		}
 		if block.DeletedAt != nil {
-			return nil, fmt.Errorf("block not found")
+			return nil, errCommandNotFound("block")
 		}
 		if block.Revision != revision {
-			return nil, fmt.Errorf("revision is stale; fetch the latest block revision")
+			return nil, fmt.Errorf("%w; fetch the latest block revision", ErrDocsStaleBlockRevision)
 		}
 		return block, nil
 	}
-	return nil, fmt.Errorf("block not found")
+	return nil, errCommandNotFound("block")
 }
 
 // commandProposalBlockContentFromMarkdown converts replacement markdown into a
@@ -537,7 +538,7 @@ func commandProposalBlockContentFromMarkdown(current json.RawMessage, markdown s
 		return nil, fmt.Errorf("parse proposal markdown: %w", err)
 	}
 	if len(generated.Content) == 0 {
-		return nil, fmt.Errorf("content must not be empty")
+		return nil, errCommandInput("content must not be empty")
 	}
 	// A block proposal replaces exactly one block. Keeping only the first node
 	// would silently drop the rest at apply time while the reviewer is shown

@@ -1,11 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
+import { useBrowserOnline } from '@/hooks/useBrowserOnline';
 import { Tick01Icon } from '@/lib/icons';
 import { AskAgentWorkAnimation } from '@/components/agents/AskAgentWorkAnimation';
 import { cn } from '@/lib/utils';
 import type { AgentLiveProgress } from './agentProgress';
 import { formatAgentElapsed } from './agentProgress';
 
-export function AgentLiveStatus({ progress }: { progress: AgentLiveProgress }) {
+export function AgentLiveStatus({ progress: sourceProgress }: { progress: AgentLiveProgress }) {
+  const online = useBrowserOnline();
+  const progress: AgentLiveProgress = !online && !sourceProgress.completed
+    ? { ...sourceProgress, label: 'Offline — live updates paused', tone: 'waiting' }
+    : sourceProgress;
   const [now, setNow] = useState(() => Date.now());
   const [pausedMs, setPausedMs] = useState(0);
   const pauseStartedAtRef = useRef<number | null>(null);

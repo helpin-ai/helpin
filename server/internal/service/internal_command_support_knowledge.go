@@ -90,7 +90,7 @@ func (s *InternalCommandService) registerSupportKnowledgeCommands() {
 				}
 			}
 			if len(queries) == 0 {
-				return nil, fmt.Errorf("at least one non-empty query is required")
+				return nil, errCommandInput("at least one non-empty query is required")
 			}
 
 			var previewSnapshot *model.SupportPreviewSnapshot

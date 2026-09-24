@@ -1125,7 +1125,7 @@ func (h *GitHandler) handleGitLabPipeline(r *http.Request, w http.ResponseWriter
 		return
 	}
 	for _, repoRecord := range repoRecords {
-		if err := h.gitService.ProcessWebhookCheckSuiteForProvider(r.Context(), repoRecord.WorkspaceID, repoRecord.Provider, repoRecord.FullName, "completed", ref, status); err != nil {
+		if err := h.gitService.ProcessWebhookCheckSuiteForProvider(r.Context(), repoRecord.WorkspaceID, repoRecord.Provider, repoRecord.FullName, "completed", ref, gitlabPipelineConclusion(status)); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -1198,6 +1198,20 @@ func gitlabPipelineTerminalStatus(status string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// gitlabPipelineConclusion maps a terminal GitLab pipeline status to the
+// check-suite conclusion vocabulary that pipeline flow filters use, so a
+// "failure" or "cancelled" filter matches GitLab pipelines as well as GitHub.
+func gitlabPipelineConclusion(status string) string {
+	switch normalized := strings.ToLower(strings.TrimSpace(status)); normalized {
+	case "failed":
+		return "failure"
+	case "canceled":
+		return "cancelled"
+	default:
+		return normalized
 	}
 }
 

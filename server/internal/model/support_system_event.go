@@ -10,6 +10,9 @@ package model
 type SupportSystemEventType = string
 
 const (
+	// Internal teammate actions; never delivered to customers.
+	SystemEventAIPaused   SupportSystemEventType = "ai_paused"
+	SystemEventAIReturned SupportSystemEventType = "ai_returned"
 	// SystemEventTeammateJoined — first non-internal reply by a given
 	// teammate on the conversation. Renders a widget-visible
 	// "{name} joined the conversation" pill.
@@ -82,6 +85,8 @@ const (
 // allSupportSystemEventTypes is the authoritative set of valid event types.
 // Kept private so callers go through IsValidSupportSystemEventType.
 var allSupportSystemEventTypes = map[SupportSystemEventType]struct{}{
+	SystemEventAIPaused:               {},
+	SystemEventAIReturned:             {},
 	SystemEventTeammateJoined:         {},
 	SystemEventAssigned:               {},
 	SystemEventUnassigned:             {},

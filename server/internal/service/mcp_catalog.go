@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"sort"
+	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -114,7 +115,7 @@ func (s *MCPService) buildToolCatalog() []MCPToolDefinition {
 			continue
 		}
 		requirement.Name = command.Tool.Alias
-		requirement.Title = command.Tool.Alias
+		requirement.Title = mcpToolTitle(command.Tool.Alias)
 		requirement.Description = command.Tool.Description
 		requirement.InputSchema = cloneMCPSchema(command.Tool.InputSchema)
 		requirement.CommandName = command.Name
@@ -129,6 +130,8 @@ func (s *MCPService) buildToolCatalog() []MCPToolDefinition {
 	defs = append(defs, uploadMCPToolDefinitions()...)
 	defs = append(defs, docsBatchMCPToolDefinitions()...)
 	defs = append(defs, helpcenterMCPToolDefinitions()...)
+	defs = append(defs, helpcenterBulkMCPToolDefinitions()...)
+	defs = append(defs, docsProposalMCPToolDefinitions()...)
 	defs = append(defs, pmParityMCPToolDefinitions()...)
 	sort.Slice(defs, func(i, j int) bool { return defs[i].Name < defs[j].Name })
 	return defs
@@ -190,10 +193,29 @@ func specialMCPToolDefinitions() []MCPToolDefinition {
 		{Name: "get_support_conversation", Title: "Get support conversation", Description: "Get one support conversation by ID.", InputSchema: object(map[string]any{"conversation_id": map[string]any{"type": "string"}}, "conversation_id"), Toolset: MCPToolsetSupport, Scope: MCPScopeSupportRead, Permission: authorization.PermSupportRead, Module: model.ModuleSupport},
 		{Name: "list_conversation_messages", Title: "List support messages", Description: "List public messages in a support conversation. Internal notes are excluded.", InputSchema: object(map[string]any{"conversation_id": map[string]any{"type": "string"}, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 100}, "offset": map[string]any{"type": "integer", "minimum": 0}}, "conversation_id"), Toolset: MCPToolsetSupport, Scope: MCPScopeSupportRead, Permission: authorization.PermSupportRead, Module: model.ModuleSupport},
 		{Name: "list_agents", Title: "List Helpin agents", Description: "List Helpin system and custom agents available to the connected actor.", InputSchema: object(map[string]any{}), Toolset: MCPToolsetAgents, Scope: MCPScopeAgentsRead, Permission: authorization.PermPMRead},
-		{Name: "start_agent_run", Title: "Start agent run", Description: "Start a durable Helpin agent run and return a run handle for polling.", InputSchema: withMCPIdempotencyKey(object(map[string]any{"agent_id": map[string]any{"type": "string"}, "target_type": map[string]any{"type": "string", "enum": []string{"workspace", "task", "epic", "sprint", "objective", "document", "crm_deal", "crm_contact", "support_conversation"}}, "target_id": map[string]any{"type": "string"}, "additional_context": map[string]any{"type": "string", "maxLength": 20000}}, "agent_id", "target_type", "target_id")), Toolset: MCPToolsetAgents, Scope: MCPScopeAgentsRun, Permission: authorization.PermPMEdit, Mutating: true, IdempotentHint: true},
+		{Name: "start_agent_run", Title: "Start agent run", Description: "Start a durable Helpin agent run and return a run handle for polling. Task targets accept a task ID or key such as HEL-12. Agents with repository tools need a task repository: pass repository_id from list_repositories (and optionally base_branch) to set it, as the app's repository picker does.", InputSchema: withMCPIdempotencyKey(object(map[string]any{"agent_id": map[string]any{"type": "string"}, "target_type": map[string]any{"type": "string", "enum": []string{"workspace", "task", "epic", "sprint", "objective", "document", "crm_deal", "crm_contact", "support_conversation"}}, "target_id": map[string]any{"type": "string"}, "additional_context": map[string]any{"type": "string", "maxLength": 20000}, "repository_id": map[string]any{"type": "string", "minLength": 1, "description": "Task targets only. Sets the task's delivery repository before the run; requires PM write access."}, "base_branch": map[string]any{"type": "string", "minLength": 1, "maxLength": 255, "description": "Task targets only, with repository_id. Defaults to the repository's default branch."}}, "agent_id", "target_type", "target_id")), Toolset: MCPToolsetAgents, Scope: MCPScopeAgentsRun, Permission: authorization.PermPMEdit, Mutating: true, IdempotentHint: true},
 		{Name: "get_agent_run", Title: "Get agent run", Description: "Poll a Helpin agent run and return status, output, artifacts, and links.", InputSchema: object(map[string]any{"run_id": map[string]any{"type": "string"}}, "run_id"), Toolset: MCPToolsetAgents, Scope: MCPScopeAgentsRead, Permission: authorization.PermPMRead},
 		{Name: "cancel_agent_run", Title: "Cancel agent run", Description: "Cancel an active Helpin agent run.", InputSchema: withMCPIdempotencyKey(object(map[string]any{"run_id": map[string]any{"type": "string"}}, "run_id")), Toolset: MCPToolsetAgents, Scope: MCPScopeAgentsRun, Permission: authorization.PermPMEdit, Mutating: true, Destructive: true, IdempotentHint: true},
 	}
+}
+
+// _mcpTitleAcronyms keeps product acronyms upper case in display titles.
+var _mcpTitleAcronyms = map[string]string{"pm": "PM", "crm": "CRM", "mcp": "MCP", "id": "ID", "url": "URL", "api": "API"}
+
+// mcpToolTitle turns a snake_case tool name into a sentence-case display
+// title, for example list_crm_companies becomes "List CRM companies".
+func mcpToolTitle(name string) string {
+	words := strings.Split(strings.TrimSpace(name), "_")
+	for index, word := range words {
+		if acronym, ok := _mcpTitleAcronyms[word]; ok {
+			words[index] = acronym
+			continue
+		}
+		if index == 0 && word != "" {
+			words[index] = strings.ToUpper(word[:1]) + word[1:]
+		}
+	}
+	return strings.Join(words, " ")
 }
 
 func cloneMCPSchema(schema map[string]any) map[string]any {

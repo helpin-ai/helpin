@@ -86,6 +86,8 @@ type fakeMCPHelpcenterAdmin struct {
 	metadataRequest model.UpdateDocsHelpcenterArticleMetadataRequest
 	redirectRequest model.CreateDocsRedirectRequest
 	listFilter      model.DocsRedirectFilter
+	// unpublishedChanges marks a live article as having unpublished edits.
+	unpublishedChanges bool
 }
 
 func (f *fakeMCPHelpcenterAdmin) EnrichDocumentPublishState(_ context.Context, document *model.DocsDocument) error {
@@ -93,6 +95,7 @@ func (f *fakeMCPHelpcenterAdmin) EnrichDocumentPublishState(_ context.Context, d
 		live := *f.article.PublicPublishedAt
 		slug := f.article.Slug
 		document.LivePublishedAt, document.LiveSlug = &live, &slug
+		document.HasUnpublishedChanges = f.unpublishedChanges
 	}
 	return nil
 }

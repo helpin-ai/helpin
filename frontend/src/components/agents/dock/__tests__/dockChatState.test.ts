@@ -217,3 +217,26 @@ describe('dock marker parsing', () => {
     })?.action?.proposal_id).toBe('proposal-1');
   });
 });
+
+it('cleans chat answers and live segments without modifying the source used by agent runs', () => {
+  const marker = '<!-- helpin_follow_up_suggestions ["Review the task"] -->';
+  const content = `Done\n\n${marker}`;
+  const stream = emptyStream();
+  const live = { message_id: 'reply', content, status: 'streaming' as const, tool_calls: [] };
+  const segment = { segment_id: 'seg', kind: 'assistant_message' as const, assistant_message: live };
+  stream.transcript_messages = [
+    { event_id: 'user', role: 'user', content: marker, timestamp: '', sequence_no: 1 },
+    { event_id: 'assistant', role: 'assistant', content, timestamp: '', sequence_no: 2, turn_segments: [segment] },
+  ];
+  stream.live_assistant_message = live;
+  stream.live_turn_segments = [segment];
+  const result = transformDockStream(stream).stream;
+  expect(result.transcript_messages[0].content).toBe(marker);
+  expect(result.transcript_messages[1].content).toBe('Done');
+  expect(result.live_assistant_message?.content).toBe('Done');
+  expect(result.live_turn_segments[0]).toMatchObject({ assistant_message: { content: 'Done' } });
+  expect(result.transcript_messages[1].turn_segments?.[0]).toMatchObject({ assistant_message: { content: 'Done' } });
+  expect(stream.transcript_messages[1].content).toBe(content);
+  expect(stream.live_assistant_message.content).toBe(content);
+  expect(stream.live_turn_segments[0]).toMatchObject({ assistant_message: { content } });
+});

@@ -268,6 +268,26 @@ export function useRegenerateWidgetKey(workspaceId: string) {
   });
 }
 
+/**
+ * Reveal/rotate the widget identity signing secret. The secret is returned to
+ * the caller only and never written to the query cache.
+ */
+export function useRevealWidgetSigningSecret(workspaceId: string) {
+  return useMutation({
+    mutationFn: () => supportService.revealWidgetSigningSecret(workspaceId).then(unwrap),
+  });
+}
+
+export function useRotateWidgetSigningSecret(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => supportService.rotateWidgetSigningSecret(workspaceId).then(unwrap),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.support.installation(workspaceId) });
+    },
+  });
+}
+
 // ── Conversations ───────────────────────────────────────────────────
 
 export function useConversations(workspaceId: string, filters?: SupportConversationFilters) {
@@ -275,6 +295,23 @@ export function useConversations(workspaceId: string, filters?: SupportConversat
     queryKey: [...queryKeys.support.conversations(workspaceId), filters] as const,
     queryFn: async (): Promise<ConversationListResponse> => loadConversationListPage(workspaceId, filters),
     enabled: !!workspaceId,
+    staleTime: 15_000,
+  });
+}
+
+/**
+ * Whether the workspace has any conversation the user can see, regardless of
+ * view or status. Separates a brand-new inbox (onboarding) from inbox zero.
+ * Keyed under conversations() so new/removed conversations refresh it.
+ */
+export function useHasAnySupportConversation(workspaceId: string, enabled = true) {
+  return useQuery({
+    queryKey: [...queryKeys.support.conversations(workspaceId), 'any'] as const,
+    queryFn: async (): Promise<boolean> => {
+      const page = await loadConversationListPage(workspaceId, { page: 1, per_page: 1 });
+      return (page.data?.length ?? 0) > 0;
+    },
+    enabled: !!workspaceId && enabled,
     staleTime: 15_000,
   });
 }

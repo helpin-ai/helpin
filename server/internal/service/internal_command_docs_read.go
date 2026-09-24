@@ -77,7 +77,7 @@ func (s *InternalCommandService) executeDocumentRead(ctx context.Context, meta m
 	req.SectionID = strings.TrimSpace(req.SectionID)
 	req.AnchorBlockID = strings.TrimSpace(req.AnchorBlockID)
 	if req.DocumentID == "" {
-		return nil, fmt.Errorf("document_id is required")
+		return nil, errCommandInput("document_id is required")
 	}
 	if err := validateDocumentReadRequest(req, tool); err != nil {
 		return nil, err
@@ -90,7 +90,7 @@ func (s *InternalCommandService) executeDocumentRead(ctx context.Context, meta m
 		return nil, err
 	}
 	if doc == nil || doc.WorkspaceID != meta.WorkspaceID {
-		return nil, fmt.Errorf("document not found")
+		return nil, errCommandNotFound("document")
 	}
 	content, blocks, err := s.docsContentService.contentRepo.ReadSnapshot(ctx, req.DocumentID)
 	if err != nil {
@@ -229,7 +229,7 @@ func (s *InternalCommandService) executeDocumentRead(ctx context.Context, meta m
 
 func validateDocumentReadRequest(req documentReadRequest, tool string) error {
 	if req.Mode != "" && req.Mode != "auto" && req.Mode != "full" && req.Mode != "outline" {
-		return fmt.Errorf("mode must be auto, full, or outline")
+		return errCommandInput("mode must be auto, full, or outline")
 	}
 	if req.Format != "" && req.Include != nil {
 		return fmt.Errorf("choose format or include_content, not both")
@@ -238,13 +238,13 @@ func validateDocumentReadRequest(req documentReadRequest, tool string) error {
 		return fmt.Errorf("around requires anchor_block_id or query")
 	}
 	if req.Format != "" && req.Format != "markdown" && req.Format != "json" && req.Format != "summary" {
-		return fmt.Errorf("format must be markdown, json, or summary")
+		return errCommandInput("format must be markdown, json, or summary")
 	}
 	if req.Offset < 0 || req.Limit < 0 || req.Limit > 100 {
-		return fmt.Errorf("offset must be >= 0 and limit between 1 and 100 when provided")
+		return errCommandInput("offset must be >= 0 and limit between 1 and 100 when provided")
 	}
 	if req.Around != nil && (*req.Around < 0 || *req.Around > 25) {
-		return fmt.Errorf("around must be between 0 and 25")
+		return errCommandInput("around must be between 0 and 25")
 	}
 	if len(req.BlockIDs) > 100 || len(req.Query) > 500 {
 		return fmt.Errorf("provide at most 100 block_ids and a query of at most 500 characters")
@@ -292,7 +292,7 @@ func selectDocumentBlocks(blocks []model.DocsBlock, sections []documentSection, 
 	case req.AnchorBlockID != "":
 		i := find(req.AnchorBlockID)
 		if i < 0 {
-			return nil, nil, fmt.Errorf("anchor block not found")
+			return nil, nil, errCommandNotFound("anchor block")
 		}
 		n := 5
 		if req.Around != nil {

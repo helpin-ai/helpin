@@ -4587,7 +4587,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 			return nil, fmt.Errorf("get task: %w", err)
 		}
 		if task == nil || task.WorkspaceID != workspaceID {
-			return nil, fmt.Errorf("task not found")
+			return nil, agentRunPreconditionError(ErrAgentRunTargetNotFound, "task not found")
 		}
 
 		agent, err := s.requireRunnableAgent(ctx, workspaceID, agentID, "task")
@@ -4664,7 +4664,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 			return nil, fmt.Errorf("get epic: %w", err)
 		}
 		if epicWithStats == nil || epicWithStats.Epic.WorkspaceID != workspaceID {
-			return nil, fmt.Errorf("epic not found")
+			return nil, agentRunPreconditionError(ErrAgentRunTargetNotFound, "epic not found")
 		}
 		epic := &epicWithStats.Epic
 
@@ -6479,7 +6479,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		}
 	}
 	if activeRun != nil && model.IsAgentRunActiveStatus(activeRun.Status) {
-		err := fmt.Errorf("an agent run is already active for this %s", params.targetType)
+		err := agentRunPreconditionError(ErrAgentRunTargetBusy, "an agent run is already active for this %s", params.targetType)
 		s.recordTriggerExecution(ctx, params.workspaceID, params.agent.ID, params.trigger, params.targetType, params.targetID, nil, err)
 		return nil, err
 	}
@@ -7586,10 +7586,10 @@ func validateAgentTeamScope(agent *model.Agent, targetType string, targetTeamID 
 	}
 	actualTargetTeamID := strings.TrimSpace(derefString(targetTeamID))
 	if actualTargetTeamID == "" {
-		return fmt.Errorf("agent is restricted to team %s and cannot run on workspace-scoped %s targets", strings.Join(teamIDs, ","), targetType)
+		return agentRunPreconditionError(ErrAgentRunTargetNotAllowed, "agent is restricted to team %s and cannot run on workspace-scoped %s targets", strings.Join(teamIDs, ","), targetType)
 	}
 	if !slices.Contains(teamIDs, actualTargetTeamID) {
-		return fmt.Errorf("agent is restricted to team %s and cannot run on %s targets for team %s", strings.Join(teamIDs, ","), targetType, actualTargetTeamID)
+		return agentRunPreconditionError(ErrAgentRunTargetNotAllowed, "agent is restricted to team %s and cannot run on %s targets for team %s", strings.Join(teamIDs, ","), targetType, actualTargetTeamID)
 	}
 	return nil
 }
@@ -7605,9 +7605,9 @@ func validateAgentTeamScopes(agent *model.Agent, targetType string, targetTeamID
 		}
 	}
 	if len(targetTeamIDs) == 0 {
-		return fmt.Errorf("agent is restricted to team %s and cannot run on workspace-scoped %s targets", strings.Join(teamIDs, ","), targetType)
+		return agentRunPreconditionError(ErrAgentRunTargetNotAllowed, "agent is restricted to team %s and cannot run on workspace-scoped %s targets", strings.Join(teamIDs, ","), targetType)
 	}
-	return fmt.Errorf("agent is restricted to team %s and cannot run on %s targets for teams %s", strings.Join(teamIDs, ","), targetType, strings.Join(normalizeServiceTeamIDs(targetTeamIDs), ","))
+	return agentRunPreconditionError(ErrAgentRunTargetNotAllowed, "agent is restricted to team %s and cannot run on %s targets for teams %s", strings.Join(teamIDs, ","), targetType, strings.Join(normalizeServiceTeamIDs(targetTeamIDs), ","))
 }
 
 func resolveCreateAgentTeamIDs(req model.CreateAgentRequest) []string {

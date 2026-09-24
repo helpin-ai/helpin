@@ -81,7 +81,7 @@ with tempfile.TemporaryDirectory(prefix='community-bundle-') as temporary:
     bundle = Path(temporary) / 'helpin-community'
     community = bundle / 'community'
     community.mkdir(parents=True)
-    for name in ('setup.sh', '.env.example', 'apps.example.json', 'README.md', 'Caddyfile.example',
+    for name in ('setup.sh', '.env.example', 'apps.example.json', 'README.md', 'Caddyfile.example', 'compose.proxy.yaml',
                  'garage.toml', 'upstream-image-exceptions.json', 'temporal-schema.sh', 'temporal.yaml', 'temporal-namespace.sh', 'runtime-revision.txt'):
         shutil.copy2(root / 'community' / name, community / name)
     shutil.copytree(root / 'community/postgres', community / 'postgres')

@@ -16,6 +16,7 @@ const (
 	ModalityEmbedding     Modality = "embedding"
 	ModalityRerank        Modality = "rerank"
 	ModalityExternalAgent Modality = "external_agent"
+	ModalityImage         Modality = "image"
 )
 
 // Category is the customer-facing AI usage category.
@@ -179,7 +180,7 @@ func routeAllowed(action Action, route Route) bool {
 
 func validModality(modality Modality) bool {
 	switch modality {
-	case ModalityChat, ModalityEmbedding, ModalityRerank, ModalityExternalAgent:
+	case ModalityChat, ModalityEmbedding, ModalityRerank, ModalityExternalAgent, ModalityImage:
 		return true
 	default:
 		return false

@@ -32,6 +32,8 @@ type DocsHelpcenterTranslationService struct {
 	artifactStore   publicationArtifactStore
 	llmProvider     llm.Provider
 	entitlementSvc  EntitlementPolicy
+	// invalidateCache drops a workspace's cached public Help Center pages.
+	invalidateCache func(ctx context.Context, workspaceID string)
 }
 
 // NewDocsHelpcenterTranslationService creates a new multilingual help-center service.
@@ -62,6 +64,19 @@ func NewDocsHelpcenterTranslationService(
 func (s *DocsHelpcenterTranslationService) SetEntitlementService(entitlementSvc EntitlementPolicy) *DocsHelpcenterTranslationService {
 	s.entitlementSvc = entitlementSvc
 	return s
+}
+
+// SetHelpcenterCacheInvalidator wires the public Help Center cache so that
+// publishing or unpublishing a translation refreshes cached pages, including
+// other articles whose links to it are resolved at render time.
+func (s *DocsHelpcenterTranslationService) SetHelpcenterCacheInvalidator(invalidate func(ctx context.Context, workspaceID string)) {
+	s.invalidateCache = invalidate
+}
+
+func (s *DocsHelpcenterTranslationService) invalidateHelpcenterCache(ctx context.Context, workspaceID string) {
+	if s.invalidateCache != nil && workspaceID != "" {
+		s.invalidateCache(ctx, workspaceID)
+	}
 }
 
 func (s *DocsHelpcenterTranslationService) SetSearchRepository(searchRepo *repository.DocsHelpcenterSearchRepository) {
@@ -583,6 +598,7 @@ func (s *DocsHelpcenterTranslationService) UnpublishArticleTranslation(ctx conte
 		return nil, err
 	}
 	if updated != nil {
+		s.invalidateHelpcenterCache(ctx, updated.WorkspaceID)
 		updated.LivePublishedAt = nil
 		updated.LiveSlug = nil
 		updated.HasUnpublishedChanges = false
@@ -1512,6 +1528,7 @@ func (s *DocsHelpcenterTranslationService) PublishArticleTranslation(ctx context
 	if err != nil {
 		return nil, err
 	}
+	s.invalidateHelpcenterCache(ctx, translation.WorkspaceID)
 	if updated != nil {
 		updated.LivePublishedAt = &publication.PublishedAt
 		updated.LiveSlug = &publication.Slug

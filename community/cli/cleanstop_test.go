@@ -39,6 +39,12 @@ func TestVolumeServicesMatchCompose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read compose.yaml: %v", err)
 	}
+	// The bundled proxy is layered on from its own file; its services count too.
+	proxy, err := os.ReadFile("../" + proxyComposeFile)
+	if err != nil {
+		t.Fatalf("read %s: %v", proxyComposeFile, err)
+	}
+	data = append(append(data, '\n'), proxy...)
 	lines := strings.Split(string(data), "\n")
 	named := map[string]bool{}
 	inVolumes := false

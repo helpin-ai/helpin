@@ -274,10 +274,17 @@ Uploaded images stay private while the document is a draft. Publishing to the He
 | `restore_document` | Write | Restores an archived document to draft | `PermDocsEdit` + Docs module |
 | `publish_document` | Publish | Publishes a document; in an external-capable space it also becomes a live Help Center article using the existing snapshot, slug, and redirect behavior | `helpin.docs.publish` + `PermDocsPublish` + Docs module |
 | `unpublish_document` | Publish, destructive | Removes a live Help Center article and returns the document to draft | `helpin.docs.publish` + `PermDocsPublish` + Docs module |
+| `publish_documents` | Publish | Publishes up to 50 documents with the same behavior as `publish_document`; `only_if_changed` skips documents whose live article has no unpublished changes. Returns one result per document (`published`, `skipped`, or `error` with a `code`, plus `live_slug`) and continues past failures. Documents not reached within the 30-second deadline are returned in `remaining_document_ids` | `helpin.docs.publish` + `PermDocsPublish` + Docs module |
+| `propose_document_change` | Write | Submits a whole-document or single-block replacement for human review in Docs; the document is unchanged until a reviewer applies it | `helpin.docs.write` + `PermDocsEdit` + Docs module |
+| `list_document_change_proposals` | Read | Lists pending proposals for a document with proposed and current markdown | `PermDocsRead` + Docs module |
+| `apply_document_change_proposal` | Write | Applies a pending proposal as the reviewer; refuses with `PROPOSAL_CONFLICT` when the replaced content changed after the proposal, unless `force` is set for a document proposal | `helpin.docs.write` + `PermDocsEdit` + Docs module |
+| `discard_document_change_proposal` | Write, destructive | Discards a pending proposal without changing the document | `helpin.docs.write` + `PermDocsEdit` + Docs module |
 
 Every document tool that takes a `document_id` also enforces Docs space access, so documents in team-only spaces the member cannot open are reported as not found.
 
-Document lifecycle tools return typed error codes that clients can act on: `DOCUMENT_LOCKED`, `DOCUMENT_ARCHIVED`, `DOCUMENT_NOT_ARCHIVED`, `DOCUMENT_NOT_PUBLISHED`, and `DOC_IS_PUBLISHED`. Errors are returned as `CODE: message`.
+Document lifecycle tools return typed error codes that clients can act on: `DOCUMENT_LOCKED`, `DOCUMENT_ARCHIVED`, `DOCUMENT_NOT_ARCHIVED`, `DOCUMENT_NOT_PUBLISHED`, and `DOC_IS_PUBLISHED`. Proposal tools add `PROPOSAL_NOT_FOUND` (unknown, or already applied or discarded) and `PROPOSAL_CONFLICT` (the document or block changed after the proposal). Errors are returned as `CODE: message`; `publish_documents` reports the same codes per document, plus `NOT_FOUND`, `NO_UNPUBLISHED_CHANGES` for skips, and `PUBLISH_FAILED`.
+
+A proposal made through MCP is recorded with the connected user as its author, the same way an agent run records one. Applying a proposal needs the same `docs.edit` permission as editing the document directly, so it grants no extra access.
 
 ### 7.4 CRM
 
@@ -304,7 +311,7 @@ Document lifecycle tools return typed error codes that clients can act on: `DOCU
 | Tool | Mode | What it does | Helpin check |
 | --- | --- | --- | --- |
 | `list_agents` | Read | Lists system and custom agents the actor may use, without provider credentials or private runtime configuration | `PermPMRead` |
-| `start_agent_run` | Async write | Starts one normal durable Helpin agent run for an explicit target. It never attaches to another user's private dock chat run; if one would be reused it returns `RUN_NOT_OWNED` | `PermPMEdit` |
+| `start_agent_run` | Async write | Starts one normal durable Helpin agent run for an explicit target. Task targets accept a task ID or key such as `HEL-12`. Agents with repository tools, such as Forge and Sub-agent, need a task repository: pass `repository_id` from `list_repositories`, and optionally `base_branch`, to set the task's delivery repository first, as the app's repository picker does. It never attaches to another user's private dock chat run; if one would be reused it returns `RUN_NOT_OWNED` | `PermPMEdit`; `repository_id` also needs the PM toolset and `helpin.pm.write` scope |
 | `get_agent_run` | Read | Polls status, output summary, artifacts, and run information. Other users' dock chat runs are reported as not found | `PermPMRead` |
 | `cancel_agent_run` | Destructive write | Requests cancellation of an active run | `PermPMEdit` |
 
@@ -317,6 +324,18 @@ Allowed run targets are:
 - `crm_deal`
 - `crm_contact`
 - `support_conversation`
+
+`start_agent_run` returns typed error codes, as `CODE: message`, when a launch precondition fails:
+
+| Code | Meaning | What to do |
+| --- | --- | --- |
+| `TARGET_NOT_FOUND` | The task, epic, or other target does not exist in the connected workspace | Use an ID from `list_tasks`, `list_epics`, or `search_workspace` |
+| `AGENT_TARGET_NOT_ALLOWED` | The agent's allowed targets or team restriction exclude this target | Choose an agent from `list_agents` whose `allowed_targets` include the target type and team |
+| `REPOSITORY_REQUIRED` | The agent needs a repository and the task has none, or its repository is not connected or enabled | Call `list_repositories` and retry with `repository_id` |
+| `REPOSITORY_NOT_APPLICABLE` | `repository_id` or `base_branch` was sent for a target other than a task | Remove them and retry |
+| `TARGET_BUSY` | Another agent already has an active or paused run on the target | Wait for it to finish or cancel it, then retry |
+| `AGENT_RUN_LIMIT` | An hourly or concurrent agent-run safety limit was reached; the message names the limit | Retry later or wait for an active run to finish |
+| `RUN_NOT_OWNED` | The run that would be reused is another user's private dock chat run | Wait for it to finish or choose another target |
 
 ### 7.7 Parity tools (Linear and Plane)
 
@@ -343,6 +362,7 @@ Not exposed: sending support replies, CRM enrichment, and deleting records.
 | `update_help_center_article_metadata` | Publish | Sets social preview title, description, HTTPS image, and alt text; omitted fields are kept and `null` clears | `helpin.docs.publish` + `PermDocsEdit` |
 | `list_help_center_redirects` | Read | Lists redirects with search and pagination | `PermDocsAdmin` |
 | `create_help_center_redirect` | Publish | Redirects an old public path to a collection or article after merges or archives | `helpin.docs.publish` + `PermDocsAdmin` |
+| `update_help_center_collection_slug` | Publish | Changes a collection's public slug, including slugs that carry section numbers. Redirects the old collection path and each published article path, refreshes the default-locale slug, and clears the public cache | `helpin.docs.publish` + `PermDocsAdmin` + Docs space access |
 
 ## 8. Tool-call execution flow
 
@@ -415,6 +435,20 @@ Helpin stores:
 - a 24-hour expiration
 
 Retrying the same mutation with the same key and request returns the stored result. Reusing the key with a different tool or request returns a conflict instead of performing another write.
+
+### 8.4 Tool errors
+
+Tool failures are returned as `CODE: message` when the cause is something the client can act on. Messages never include database errors, internal identifiers, or records from another workspace.
+
+| Code | Meaning | What to do |
+| --- | --- | --- |
+| `NOT_FOUND` | The task, document, epic, sprint, or other record does not exist in the connected workspace, or the member cannot open it | Check the ID or task key, or search again |
+| `INVALID_INPUT` | The arguments match the schema but Helpin rejected them, for example a blank comment, a state from another workflow, a self-dependency, or an edit that references an unknown block | Fix the named argument and retry |
+| `VERSION_CONFLICT` | The document or block changed after it was read (`edit_document` `expected_version`, `update_document_block` `revision`) | Read the document again and retry with the new version |
+| `FORBIDDEN` | The member cannot act on this specific record | Ask a workspace admin for access |
+| `DOCUMENT_LOCKED` | The document is locked | Unlock it in Helpin first |
+
+Document lifecycle, upload, and agent-run tools add the codes listed with those tools. Scope, role, policy, idempotency, rate-limit, schema, and deadline failures keep their fixed explanations. Any other failure returns a generic message; retrying with corrected arguments is safe because mutations are idempotent.
 
 ## 9. Agent Runtime delegation
 
@@ -646,7 +680,7 @@ The public v1 server does not expose:
 - deleting documentation (archive and restore are available)
 - publishing without the explicit `helpin.docs.publish` scope and `docs.publish` permission
 - broad document-content replacement through `write_document_content` (use version-checked `edit_document` instead)
-- applying unapproved document change proposals
+- applying document change proposals without a reviewer who holds `docs.edit`
 - sending CRM email
 - CRM enrichment, merge, or bulk mutation
 - member, role, workspace-security, or billing administration
@@ -786,10 +820,11 @@ The implementation includes automated checks for:
 - strict tool schemas and rejection of workspace-override properties
 - workspace-policy scope/toolset narrowing and forced read-only behavior
 - platform domain flags
-- the 104-tool catalog
+- the 110-tool catalog
 - the `/mcp/readonly` endpoint forcing read-only mode, including parity tools for epics, sprints, objectives, labels, workflows, members, CRM, and support organization
 - document image uploads: presigned upload with storage verification, and SSRF-safe copy from a public URL
 - document lifecycle tools: publish, unpublish, archive, restore, and rename, including typed error codes
+- typed `NOT_FOUND`, `INVALID_INPUT`, `VERSION_CONFLICT`, and `FORBIDDEN` errors for command-backed tools, including `add_task_comment` calls with no agent-run target
 - exclusion of deferred destructive, support-draft, and customer-send actions
 - agent-run privacy: runs started outside a dock chat never reuse a chat's run, and `get_agent_run` / `cancel_agent_run` hide other users' dock chat runs
 - persisted agent-start and active-run safety counts

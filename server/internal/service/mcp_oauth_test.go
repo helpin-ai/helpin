@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -225,42 +226,48 @@ func TestPublicMCPToolCatalogIsBoundedAndExcludesDeferredActions(t *testing.T) {
 	commands := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
 	service := &MCPService{commands: commands}
 	catalog := service.buildToolCatalog()
-	if len(catalog) != 104 {
-		t.Fatalf("buildToolCatalog() returned %d tools, want 104", len(catalog))
+	if len(catalog) != 110 {
+		t.Fatalf("buildToolCatalog() returned %d tools, want 110", len(catalog))
 	}
 	expectedTools := map[string]struct {
 		toolset  string
 		mutating bool
 	}{
-		"list_spaces":                    {MCPToolsetDocs, false},
-		"list_collections":               {MCPToolsetDocs, false},
-		"search_icons":                   {MCPToolsetDocs, false},
-		"create_space":                   {MCPToolsetDocs, true},
-		"create_collection":              {MCPToolsetDocs, true},
-		"update_space":                   {MCPToolsetDocs, true},
-		"update_collection":              {MCPToolsetDocs, true},
-		"move_document":                  {MCPToolsetDocs, true},
-		"link_document_to_object":        {MCPToolsetDocs, true},
-		"insert_document_block":          {MCPToolsetDocs, true},
-		"create_crm_deal":                {MCPToolsetCRM, true},
-		"update_task":                    {MCPToolsetPM, true},
-		"create_epic":                    {MCPToolsetPM, true},
-		"create_task_batch":              {MCPToolsetPM, true},
-		"set_task_dependencies":          {MCPToolsetPM, true},
-		"list_task_checklist":            {MCPToolsetPM, false},
-		"create_task_checklist_item":     {MCPToolsetPM, true},
-		"update_task_checklist_item":     {MCPToolsetPM, true},
-		"get_task_context":               {MCPToolsetPM, false},
-		"update_document":                {MCPToolsetDocs, true},
-		"publish_document":               {MCPToolsetDocs, true},
-		"unpublish_document":             {MCPToolsetDocs, true},
-		"archive_document":               {MCPToolsetDocs, true},
-		"restore_document":               {MCPToolsetDocs, true},
-		"edit_document":                  {MCPToolsetDocs, true},
-		"prepare_document_image_upload":  {MCPToolsetDocs, true},
-		"complete_document_image_upload": {MCPToolsetDocs, true},
-		"upload_document_image_from_url": {MCPToolsetDocs, true},
-		"read_documents":                 {MCPToolsetDocs, false},
+		"list_spaces":                        {MCPToolsetDocs, false},
+		"list_collections":                   {MCPToolsetDocs, false},
+		"search_icons":                       {MCPToolsetDocs, false},
+		"create_space":                       {MCPToolsetDocs, true},
+		"create_collection":                  {MCPToolsetDocs, true},
+		"update_space":                       {MCPToolsetDocs, true},
+		"update_collection":                  {MCPToolsetDocs, true},
+		"move_document":                      {MCPToolsetDocs, true},
+		"link_document_to_object":            {MCPToolsetDocs, true},
+		"insert_document_block":              {MCPToolsetDocs, true},
+		"create_crm_deal":                    {MCPToolsetCRM, true},
+		"update_task":                        {MCPToolsetPM, true},
+		"create_epic":                        {MCPToolsetPM, true},
+		"create_task_batch":                  {MCPToolsetPM, true},
+		"set_task_dependencies":              {MCPToolsetPM, true},
+		"list_task_checklist":                {MCPToolsetPM, false},
+		"create_task_checklist_item":         {MCPToolsetPM, true},
+		"update_task_checklist_item":         {MCPToolsetPM, true},
+		"get_task_context":                   {MCPToolsetPM, false},
+		"update_document":                    {MCPToolsetDocs, true},
+		"publish_document":                   {MCPToolsetDocs, true},
+		"unpublish_document":                 {MCPToolsetDocs, true},
+		"archive_document":                   {MCPToolsetDocs, true},
+		"restore_document":                   {MCPToolsetDocs, true},
+		"edit_document":                      {MCPToolsetDocs, true},
+		"prepare_document_image_upload":      {MCPToolsetDocs, true},
+		"complete_document_image_upload":     {MCPToolsetDocs, true},
+		"upload_document_image_from_url":     {MCPToolsetDocs, true},
+		"read_documents":                     {MCPToolsetDocs, false},
+		"publish_documents":                  {MCPToolsetDocs, true},
+		"update_help_center_collection_slug": {MCPToolsetDocs, true},
+		"propose_document_change":            {MCPToolsetDocs, true},
+		"list_document_change_proposals":     {MCPToolsetDocs, false},
+		"apply_document_change_proposal":     {MCPToolsetDocs, true},
+		"discard_document_change_proposal":   {MCPToolsetDocs, true},
 	}
 	for alias, requirement := range parityMCPCommandRequirements() {
 		expectedTools[alias] = struct {
@@ -330,5 +337,27 @@ func TestPublicMCPChecklistSchemasExposeBoundedListAndNullableDueDate(t *testing
 	types, ok := dueDate["type"].([]any)
 	if !ok || len(types) != 2 || types[0] != "string" || types[1] != "null" {
 		t.Fatalf("update checklist due_date schema = %#v", dueDate)
+	}
+}
+
+func TestPublicMCPToolTitlesAreSentenceCase(t *testing.T) {
+	commands := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	service := &MCPService{commands: commands}
+	for _, tool := range service.buildToolCatalog() {
+		if tool.Title == "" || strings.Contains(tool.Title, "_") || tool.Title == tool.Name {
+			t.Errorf("tool %q has display title %q, want a sentence-case title", tool.Name, tool.Title)
+		}
+		if first := tool.Title[:1]; first != strings.ToUpper(first) {
+			t.Errorf("tool %q title %q must start with a capital letter", tool.Name, tool.Title)
+		}
+	}
+	for name, want := range map[string]string{
+		"list_crm_companies":              "List CRM companies",
+		"list_pm_labels":                  "List PM labels",
+		"list_team_workflows_with_stages": "List team workflows with stages",
+	} {
+		if got := mcpToolTitle(name); got != want {
+			t.Errorf("mcpToolTitle(%q) = %q, want %q", name, got, want)
+		}
 	}
 }

@@ -646,6 +646,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 				"crawl_url",
 				"get_release_context",
 				"find_tasks_for_git_changes",
+				"generate_image",
+				"edit_image",
 			}, newPMReadToolAliases, safeCRMDiscoveryToolAliases, safeCRMWriteToolAliases),
 			AllowedCommands:       []string{},
 			AllowedTargetTypes:    []string{"workspace", "document", "task", "crm_deal", "crm_contact", "crm_company"},
@@ -817,6 +819,8 @@ func askAgentPresetTools() []string {
 		"web_search", "fetch_url", "crawl_url",
 		// Authenticated browser inspection and private screenshot/video artifacts.
 		"browser_open", "browser_snapshot", "browser_act", "browser_screenshot", "browser_record",
+		// Image generation and editing; results are new private image artifacts.
+		"generate_image", "edit_image",
 		// Workspace / PM reads.
 		"list_workspace_teams", "list_team_workflows_with_stages",
 		"search_workspace", "list_tasks", "get_task_context",

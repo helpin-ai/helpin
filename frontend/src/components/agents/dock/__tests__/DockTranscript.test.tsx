@@ -15,6 +15,7 @@ import type { CodingSessionEvent } from '@/lib/pmTypes';
 import { resolveAgentLiveProgress } from '../agentProgress';
 import { AgentLiveStatus } from '../AgentLiveStatus';
 import { DockTranscript } from '../DockTranscript';
+import { transformDockStream } from '../dockChatState';
 
 const mocks = vi.hoisted(() => ({
   resolveTeamMemberAvatarSrc: vi.fn(),
@@ -1109,5 +1110,28 @@ describe('Timeline view', () => {
     expect(localStorage.getItem('helpin:agent-dock-transcript-view')).toBe('detailed');
     act(() => useDockStore.getState().setTranscriptView('timeline'));
     expect(container.querySelector('[data-dock-activity-timeline]')).not.toBeNull();
+  });
+});
+
+
+describe('chat-only follow-up metadata', () => {
+  it.each([true, false])('copies the chat presentation without changing non-chat transcripts (chat=%s)', async (chat) => {
+    const content = 'Task created.\n\n<!-- helpin_follow_up_suggestions ["Review the task"] -->';
+    const source = streamWithMessages([{ ...assistantMessage('answer', content, 1), message_type: 'assistant_final' }]);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const descriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    try {
+      act(() => root.render(<DockTranscript stream={chat ? transformDockStream(source).stream : source} active={false} />));
+      if (chat) expect(container.textContent).not.toContain('helpin_follow_up_suggestions');
+      const copy = container.querySelector<HTMLButtonElement>('button[aria-label="Copy message"]');
+      expect(copy).not.toBeNull();
+      await act(async () => { copy!.click(); });
+      expect(writeText).toHaveBeenCalledWith(chat ? 'Task created.' : content);
+      expect(source.transcript_messages[0].content).toBe(content);
+    } finally {
+      if (descriptor) Object.defineProperty(navigator, 'clipboard', descriptor);
+      else Reflect.deleteProperty(navigator, 'clipboard');
+    }
   });
 });

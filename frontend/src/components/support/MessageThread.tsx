@@ -46,6 +46,7 @@ import { AgentRunsCard } from './AgentRunsCard';
 import { AIRunApprovalCard } from './AIRunApprovalCard';
 import { ConversationActionsMenu } from './ConversationActionsMenu';
 import { SupportInboxOnboarding } from './SupportInboxOnboarding';
+import type { SupportInboxEmptyState } from './ConversationList';
 import { SupportInboxPanelHeader } from './SupportInboxPanelHeader';
 import { ReplyComposerLoading } from './ReplyComposerLoading';
 import { getInitialThreadScrollTarget, getPrependRestoredScrollTop, isNearThreadBottom, isNearThreadTop, shouldAutoScrollThread, shouldMarkOpenThreadRead } from './threadAutoScroll';
@@ -57,7 +58,7 @@ interface MessageThreadProps {
   presentation?: 'panel' | 'mobile-sheet';
   onBackToInbox?: () => void;
   onOpenDetails?: () => void;
-  showInboxOnboarding?: boolean;
+  inboxEmptyState?: SupportInboxEmptyState;
   onWidgetSettingsClick?: () => void;
   onCreateConversationClick?: () => void;
 }
@@ -284,7 +285,7 @@ export function MessageThread({
   presentation = 'panel',
   onBackToInbox,
   onOpenDetails,
-  showInboxOnboarding,
+  inboxEmptyState,
   onWidgetSettingsClick,
   onCreateConversationClick,
 }: MessageThreadProps) {
@@ -351,6 +352,7 @@ export function MessageThread({
   const [isThreadTransitioning, setIsThreadTransitioning] = useState(false);
   const lastOpenThreadReadMessageIdRef = useRef<string | null>(null);
   const assignedAgentId = conversation?.assigned_agent_id ?? null;
+  const memberNameByUserId = useMemo(() => new Map(members.map(member => [member.user_id, member.full_name])), [members]);
   const memberAvatarByUserId = useMemo(() => {
     const map = new Map<string, string>();
     for (const member of members) {
@@ -868,11 +870,22 @@ export function MessageThread({
   // selection. Wait until the fetch settled so we don't flash during load.
   const noSelection = !conversationId || (conversationFetched && !conversation);
   if (noSelection) {
-    if (showInboxOnboarding && onWidgetSettingsClick && onCreateConversationClick) {
+    if (inboxEmptyState === 'onboarding' && onWidgetSettingsClick && onCreateConversationClick) {
       return (
         <SupportInboxOnboarding
           onWidgetSettingsClick={onWidgetSettingsClick}
           onCreateConversationClick={onCreateConversationClick}
+        />
+      );
+    }
+
+    if (inboxEmptyState === 'inbox-zero') {
+      return (
+        <EmptyState
+          icon={CheckmarkCircle02Icon}
+          title="You're all caught up"
+          subtitle="Nothing in the Inbox needs a reply right now. New conversations will show up here."
+          background="muted"
         />
       );
     }
@@ -1219,6 +1232,7 @@ export function MessageThread({
                   source={conversation?.source}
                   contactLastSeenAt={conversation?.contact_last_seen_at}
                   receiptStatus={item.message.id === receiptMessageId ? receiptStatus : undefined}
+                  teammateDisplayName={item.message.sender_user_id ? memberNameByUserId.get(item.message.sender_user_id) : undefined}
                   customerDisplayName={conversation?.customer_name || conversation?.customer_email}
                   customerEmail={conversation?.customer_email}
                   workspaceSlug={workspaceSlug}

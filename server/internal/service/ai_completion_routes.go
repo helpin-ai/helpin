@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/aimodel"
 )
@@ -31,6 +32,9 @@ type AICompletionRoute struct {
 	Model              string
 	ServiceTier        string
 	OpenRouterProvider string
+	ProviderOptions    string
+	DisableReasoning   bool
+	AttemptTimeout     time.Duration
 }
 
 // CRMCompletionRouteConfig optionally overrides the reviewed CRM defaults.
@@ -130,8 +134,15 @@ func NewAICompletionRouteRegistry(crmConfig CRMCompletionRouteConfig) AICompleti
 			FeatureKey: BillingFeatureAskChat, OperationKey: AIUsageOperationMediaEnrichment,
 			Primary: AICompletionRoute{
 				Provider: mediaEnrichmentProvider, Model: mediaEnrichmentRoute,
-				ServiceTier: defaultAICompletionServiceTier,
-			}, MaximumOutputTokens: 700,
+				ProviderOptions: `{"only":["google-ai-studio/flex","google-vertex/global/flex"],"sort":"latency","max_price":{"prompt":0.375,"completion":1.875}}`,
+				AttemptTimeout:  2 * time.Minute,
+				ServiceTier:     defaultAICompletionServiceTier,
+			},
+			Fallbacks: []AICompletionRoute{{
+				Provider: "openrouter", Model: "qwen/qwen3.8-omni-flash", OpenRouterProvider: "alibaba",
+				ProviderOptions:  `{"only":["alibaba"],"max_price":{"prompt":0.15,"completion":0.47}}`,
+				DisableReasoning: true, AttemptTimeout: 2 * time.Minute, ServiceTier: defaultAICompletionServiceTier,
+			}}, MaximumOutputTokens: 700,
 		},
 	}
 	registry := AICompletionRouteRegistry{policies: make(map[string]AICompletionRoutePolicy, len(policies))}
