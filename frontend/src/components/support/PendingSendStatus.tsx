@@ -29,7 +29,7 @@ export function PendingSendStatus({ message }: { message: SupportMessage }) {
   const actionClass = 'underline-offset-2 hover:underline disabled:opacity-50';
   return <div className="mt-1 flex flex-wrap items-center justify-end gap-2 pr-9 text-xs text-muted-foreground" aria-live="polite">
     {message.pending_send !== 'failed' ? <span>
-      {message.pending_send === 'translating' ? 'Translating…' : message.pending_send === 'sending' ? 'Sending…' : 'Preparing…'}
+      {message.pending_send === 'translating' ? 'Translating…' : 'Sending…'}
     </span> : <>
       <span className="text-destructive">Not sent</span>
       <button type="button" className={actionClass} disabled={update.isPending} onClick={() => update.mutate('retry')}>Retry</button>

@@ -51,6 +51,16 @@ function renderBubble(
 }
 
 describe('MessageBubble', () => {
+  it.each(['queued', 'preparing', 'sending', 'translating'] as const)('keeps %s delivery status below the bubble', (pending) => {
+    const rendered = renderBubble({ id: 'sending', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'user', message_type: 'reply', is_internal: false, content: 'Hello', pending_send: pending, created_at: '2026-09-24T10:00:00Z', updated_at: '2026-09-24T10:00:00Z' });
+    try {
+      const expected = pending === 'translating' ? 'Translating…' : 'Sending…';
+      expect(rendered.container.textContent).toContain(expected);
+      expect(rendered.container.querySelector('[data-slot="support-message-bubble-frame"]')?.textContent).not.toContain(expected);
+      expect(rendered.container.textContent).not.toContain('Preparing…');
+    } finally { rendered.cleanup(); }
+  });
+
   it('keeps translation controls and timestamp together inside the bubble', () => {
     const rendered = renderBubble({ id: 'translated', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'customer', message_type: 'reply', is_internal: false, content: 'Hello', created_at: '2026-09-24T10:00:00Z', updated_at: '2026-09-24T10:00:00Z' }, undefined, { translationFooter: <button>Show original</button> });
     try {

@@ -58,6 +58,11 @@ func TestLiveTranslateQueuesPrivateReplyWithoutCallingProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	select {
+	case <-s.pendingSupportSendWake():
+	default:
+		t.Fatal("queued send did not wake worker")
+	}
 	if first.ID != second.ID || first.PendingSend != "queued" || p.calls != 0 {
 		t.Fatalf("queue=%+v calls=%d", first, p.calls)
 	}
@@ -218,5 +223,21 @@ func TestCachedLiveTranslationsIncludeSentOriginalOnlyForMatchingPublicMessage(t
 	got, err = env.service.supportInboxService.CachedLiveTranslations(ctx, c.WorkspaceID, c.ID, "reader", []string{msg.ID})
 	if err != nil || len(got) != 0 {
 		t.Fatalf("stale original=%+v err=%v", got, err)
+	}
+}
+
+func TestSupportSendTranslationOffSkipsLanguageLookups(t *testing.T) {
+	env, c, _ := translationFixture(t)
+	s := env.service.supportInboxService
+	ctx := context.Background()
+	if _, err := s.SetLiveTranslate(ctx, c.WorkspaceID, c.ID, false, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := env.messageRepo.DB().Migrator().DropTable(&model.SupportTranslation{}); err != nil {
+		t.Fatal(err)
+	}
+	options, err := s.translationOptions(ctx, c.WorkspaceID, c.ID, "reader", true)
+	if err != nil || options.Preference.AutoTranslateOutgoing || supportReplyTarget(options) != "" {
+		t.Fatalf("disabled send policy=%+v err=%v", options, err)
 	}
 }

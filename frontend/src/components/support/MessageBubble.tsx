@@ -300,6 +300,7 @@ function findTrailingAIContractStart(content: string): number {
 export interface MessageBubbleProps {
  translatedContent?: string;
  translationFooter?: ReactNode;
+ translationStatus?: ReactNode;
   message: SupportMessage;
   isConsecutive?: boolean;
   isLastInGroup?: boolean;
@@ -317,6 +318,7 @@ export interface MessageBubbleProps {
 export const MessageBubble = memo(function MessageBubble({
   translatedContent,
   translationFooter,
+  translationStatus,
   message,
   isConsecutive,
   isLastInGroup = true,
@@ -952,6 +954,7 @@ export const MessageBubble = memo(function MessageBubble({
         isPending={deleteMutation.isPending}
       />
       {/* Status below the bubble row — outside the avatar alignment */}
+      {translationStatus && <div data-slot="support-message-translation-status" className={`mt-1 flex text-xs text-muted-foreground ${isCustomer ? 'justify-start pl-9' : 'justify-end pr-9'}`}>{translationStatus}</div>}
       {message.pending_send && <PendingSendStatus message={message}/>}
       {!message.pending_send && (hasStatusBelow || hasCancellableFooter) && (
         <div className={`mt-0.5 ${isCustomer ? 'pl-9' : 'pr-9'}`}>

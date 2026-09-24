@@ -67,6 +67,10 @@ func translationHash(text string) string {
 }
 
 func (s *SupportInboxService) TranslationOptions(ctx context.Context, workspaceID, conversationID, userID string) (*model.SupportTranslationOptions, error) {
+	return s.translationOptions(ctx, workspaceID, conversationID, userID, false)
+}
+
+func (s *SupportInboxService) translationOptions(ctx context.Context, workspaceID, conversationID, userID string, forSend bool) (*model.SupportTranslationOptions, error) {
 	conv, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)
 	if err != nil {
 		return nil, err
@@ -107,6 +111,9 @@ func (s *SupportInboxService) TranslationOptions(ctx context.Context, workspaceI
 	result.Available = s.translations.available
 	if !result.Available {
 		result.UnavailableReason = "Translation is temporarily unavailable."
+	}
+	if forSend && !enabled {
+		return result, nil
 	}
 	detected, err := s.translations.repo.DetectedLanguage(ctx, workspaceID, conversationID)
 	if err != nil {

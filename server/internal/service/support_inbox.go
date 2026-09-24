@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -33,9 +34,11 @@ import (
 
 // SupportInboxService contains support business logic.
 type SupportInboxService struct {
-	translations     *supportTranslationService
-	followUpRepo     *repository.SupportFollowUpRepository
-	conversationRepo *repository.SupportConversationRepository
+	pendingSendWakeOnce sync.Once
+	pendingSendWake     chan struct{}
+	translations        *supportTranslationService
+	followUpRepo        *repository.SupportFollowUpRepository
+	conversationRepo    *repository.SupportConversationRepository
 	productAnalyticsEmitter
 	mailboxRepo             *repository.SupportMailboxRepository
 	emailRouteRepo          *repository.SupportEmailRouteRepository
@@ -2060,7 +2063,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	// clients that omit or send stale per-message translation flags.
 	req.AutoTranslate = false
 	if !req.SendOriginal && s.translationConfigured() && senderType == "user" && !req.IsInternal && messageType == "reply" && strings.TrimSpace(req.Content) != "" {
-		options, err := s.TranslationOptions(ctx, workspaceID, ticketID, derefString(senderUserID))
+		options, err := s.supportSendTranslationOptions(ctx, workspaceID, ticketID, derefString(senderUserID))
 		if err != nil {
 			return nil, ErrSupportTranslation
 		}

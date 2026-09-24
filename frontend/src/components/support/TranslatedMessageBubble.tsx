@@ -45,5 +45,5 @@ export function TranslatedMessageBubble({ workspaceId, cachedTranslation, ...pro
       >{failed ? 'Retry' : 'Translate'}</QuietTextAction>
     </>}
   </div> : undefined;
-  return <MessageBubble {...props} translatedContent={translated ? (original ? result.source_text : result.translated_text) : undefined} translationFooter={footer} />;
+  return <MessageBubble {...props} translatedContent={translated ? (original ? result.source_text : result.translated_text) : undefined} translationFooter={pending || failed ? undefined : footer} translationStatus={pending || failed ? footer : undefined} />;
 }
