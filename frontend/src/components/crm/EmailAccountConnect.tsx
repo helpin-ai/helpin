@@ -33,10 +33,15 @@ import {
   usePurgeEmailAccount,
   useSyncEmailAccount,
 } from '@/hooks/queries/useCRM';
+import { useGoogleConnectUnavailable } from '@/hooks/queries/useCapabilities';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
 import type { CRMEmailAccount } from '@/lib/crmTypes';
 import { crmEmailService } from '@/lib/services/crmService';
 import { cn } from '@/lib/utils';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { ServerSetupNotice } from './ServerSetupNotice';
+
+const GOOGLE_CONNECT_UNAVAILABLE_ID = 'google-connect-unavailable';
 
 interface EmailAccountConnectProps {
   workspaceId: string;
@@ -114,7 +119,10 @@ export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: 
   const purgeAccount = usePurgeEmailAccount(workspaceId);
   const syncAccount = useSyncEmailAccount(workspaceId);
   const access = useWorkspaceAccess(workspaceId);
-  const { isAdmin } = usePermissions(access.data);
+  const { isAdmin, isServerAdmin } = usePermissions(access.data);
+  const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug ?? '');
+  const googleConnectUnavailable = useGoogleConnectUnavailable(workspaceId);
+  const connectDisabledReason = googleConnectUnavailable ? GOOGLE_CONNECT_UNAVAILABLE_ID : undefined;
 
   const [selectedAccount, setSelectedAccount] = useState<CRMEmailAccount | null>(null);
   const [connecting, setConnecting] = useState<'gmail' | 'microsoft' | null>(null);
@@ -277,8 +285,21 @@ export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: 
           );
         })}
 
+        {googleConnectUnavailable ? (
+          <ServerSetupNotice
+            id={GOOGLE_CONNECT_UNAVAILABLE_ID}
+            title="Connecting Google isn’t set up on this server."
+            slug={workspaceSlug}
+            isServerAdmin={isServerAdmin}
+            className="mx-auto"
+          />
+        ) : null}
         <div className={cn('flex flex-wrap gap-2 pt-1', visibleAccounts.length === 0 && 'justify-center')}>
-          <ConnectAction onClick={() => handleConnect('gmail')} disabled={!!connecting}>
+          <ConnectAction
+            onClick={() => handleConnect('gmail')}
+            disabled={!!connecting || googleConnectUnavailable}
+            aria-describedby={connectDisabledReason}
+          >
             {connecting === 'gmail' ? (
               <Loading01Icon className="mr-1.5 h-3 w-3 animate-spin" />
             ) : (
@@ -361,10 +382,12 @@ export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: 
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="text-sm font-semibold">Account connection</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
+                        <p id="google-reconnect-detail" className="mt-1 text-xs text-muted-foreground">
                           {selectedAccount.is_active
                             ? 'Disconnecting stops future sync. Existing CRM email and calendar activity stays available.'
-                            : 'Reconnect Google to resume syncing from the saved checkpoint.'}
+                            : googleConnectUnavailable
+                              ? 'Reconnecting Google isn’t set up on this server. Ask your server admin to set it up.'
+                              : 'Reconnect Google to resume syncing from the saved checkpoint.'}
                         </p>
                       </div>
                       {selectedAccount.is_active ? (
@@ -373,7 +396,12 @@ export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: 
                           Disconnect
                         </Button>
                       ) : (
-                        <Button size="sm" onClick={() => handleConnect('gmail')} disabled={!!connecting}>
+                        <Button
+                          size="sm"
+                          onClick={() => handleConnect('gmail')}
+                          disabled={!!connecting || googleConnectUnavailable}
+                          aria-describedby={googleConnectUnavailable ? 'google-reconnect-detail' : undefined}
+                        >
                           {connecting === 'gmail' ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <PlusSignIcon className="mr-1.5 h-3.5 w-3.5" />}
                           Reconnect Google
                         </Button>

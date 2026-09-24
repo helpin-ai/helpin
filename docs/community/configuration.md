@@ -275,6 +275,79 @@ settings, Helpin asks GitHub for the owner once; `private` is only reported for
 an App created from Helpin. Enterprise configures the App only through these
 settings and connects installations only through Helpin's install link.
 
+## Meetings
+
+Meeting capture sends a notetaker bot to a Google Meet, Zoom or Microsoft Teams
+call (Recall also joins Webex). The bot records the call, and Helpin stores the
+recording and transcript and derives the summary, decisions and action items
+shown under **CRM → Meetings**. Capture needs a provider account, and the CRM
+module must be enabled. Choose one provider for the server:
+
+- **Recall** ([recall.ai](https://www.recall.ai)) is a hosted API. Create an API
+  key, then add a webhook endpoint in the Recall dashboard and copy its signing
+  secret (it starts with `whsec_`). API keys are regional: the default base URL
+  is `https://us-east-1.recall.ai`; set `RECALL_BASE_URL` for another region.
+- **Vexa** ([vexa.ai](https://vexa.ai)) is open source and can be self-hosted or
+  used as a hosted API. Create an API key, choose a long random webhook secret
+  (for example `openssl rand -hex 32`), and register the webhook address and
+  secret with Vexa's `PUT /user/webhook` API. `VEXA_BASE_URL` defaults to
+  `https://api.cloud.vexa.ai`; set it to your own Vexa for a self-hosted setup.
+
+| Setting | Behavior |
+| --- | --- |
+| `CRM_MEETING_CAPTURE_PROVIDER` | `recall` (the default when empty) or `vexa`. Applies to new captures; captures in progress finish with their original provider. |
+| `RECALL_API_KEY`, `RECALL_WEBHOOK_SECRET`, `RECALL_BASE_URL` | Recall credentials; both the key and the secret are required. |
+| `VEXA_API_KEY`, `VEXA_WEBHOOK_SECRET`, `VEXA_BASE_URL` | Vexa credentials; both the key and the secret are required. |
+
+`helpin configure` can write these for you (see the [CLI guide](cli.md)); run
+`helpin restart` afterwards. Register this webhook address with the provider:
+
+| Provider | Webhook address |
+| --- | --- |
+| Recall | `<APP_BASE_URL>/api/webhooks/meeting-capture/recall` |
+| Vexa | `<APP_BASE_URL>/api/webhooks/meeting-capture/vexa` |
+
+The provider reports each call's progress to that address, so `APP_BASE_URL`
+must be an `https` URL on a public hostname, as for the [GitHub App](#github-app).
+Deliveries without a valid signature for the webhook secret are rejected with
+401.
+
+The `meeting_capture` capability in **Settings → System status** and
+`helpin doctor` reports `needs setup` when the selected provider lacks its key or
+secret, or when `APP_BASE_URL` is not public `https`; `unable to verify` until the
+first webhook arrives; and `ready` afterwards. Until the provider is configured,
+**Meetings** and each meeting explain that capture isn't set up and **Start
+capture** is disabled; the capture API answers `409` with the same explanation.
+
+## Google (Gmail and Calendar)
+
+Members connect their Google account in **Settings → Email & calendar** or from
+**Meetings**. The connection syncs Gmail into CRM, sends CRM email, and brings
+upcoming calendar meetings into **Meetings**. It needs one Google OAuth client
+for the server:
+
+1. In the [Google Cloud console](https://console.cloud.google.com/apis/credentials),
+   enable the Gmail API and the Google Calendar API, and configure the OAuth
+   consent screen. Helpin requests the `gmail.readonly`, `gmail.send` and
+   `calendar.readonly` scopes. Until Google verifies the app, only the test
+   users you add can connect.
+2. Create an OAuth client ID of type **Web application** with the authorized
+   redirect URI `<APP_BASE_URL>/api/crm/email/oauth/callback`.
+3. Set `GMAIL_CLIENT_ID` and `GMAIL_CLIENT_SECRET` (or run `helpin configure`),
+   then run `helpin restart`.
+
+`GMAIL_OAUTH_REDIRECT_URL` is optional: when empty, the server uses
+`<APP_BASE_URL>/api/crm/email/oauth/callback`, which stays correct when the
+domain changes. Google accepts plain `http` redirect addresses only for
+`localhost`, so a server reached by any other name needs `https`. Tokens are
+encrypted with `CRM_ENCRYPTION_KEY`.
+
+The `google_workspace` capability reports `needs setup` when the client is
+missing, or when the redirect address is not `APP_BASE_URL` plus the callback
+path (or would be refused by Google); `unable to verify` until someone connects
+an account; and `ready` afterwards. While it needs setup, the **Connect Google**
+buttons are disabled with an explanation.
+
 ## Authenticated request limits
 
 The API and public MCP use Redis counters shared across replicas. Defaults are

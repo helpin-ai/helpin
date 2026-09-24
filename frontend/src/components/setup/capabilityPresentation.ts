@@ -11,6 +11,8 @@ export const CAPABILITY_TITLES: Record<CapabilityKey, string> = {
   github: 'GitHub App',
   object_storage: 'Object storage',
   workers: 'Background workers',
+  meeting_capture: 'Meeting capture',
+  google_workspace: 'Google (Gmail and Calendar)',
 };
 
 export function capabilityTitle(key: string) {
@@ -48,6 +50,8 @@ export const SYSTEM_STATUS_ORDER: CapabilityKey[] = [
   'ai_chat',
   'ai_embeddings',
   'github',
+  'google_workspace',
+  'meeting_capture',
 ];
 
 const WORKSPACE_ADOPTION_KEYS: CapabilityKey[] = ['support_widget'];

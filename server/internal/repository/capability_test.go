@@ -27,6 +27,8 @@ func setupCapabilityTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE git_repositories (id TEXT PRIMARY KEY, workspace_id TEXT, active BOOLEAN, selected BOOLEAN, deleted_at DATETIME)`,
 		`CREATE TABLE ai_connections (id TEXT PRIMARY KEY, scope TEXT, status TEXT, superseded_by TEXT, last_verified_at DATETIME, last_verification_error TEXT)`,
 		`CREATE TABLE instance_capability_checks (key TEXT PRIMARY KEY, ok BOOLEAN NOT NULL, error TEXT, config_fingerprint TEXT NOT NULL, checked_by TEXT, checked_at DATETIME NOT NULL)`,
+		`CREATE TABLE crm_meeting_provider_events (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, provider TEXT NOT NULL)`,
+		`CREATE TABLE crm_email_accounts (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, provider TEXT NOT NULL, status TEXT NOT NULL, is_active BOOLEAN NOT NULL, refresh_token_encrypted TEXT)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatalf("create table: %v", err)
@@ -47,6 +49,8 @@ func TestCapabilityRepositoryEvidence(t *testing.T) {
 		`INSERT INTO git_integrations VALUES ('g1', 'org', 'github', 1, NULL, '42'), ('g2', 'org2', 'github', 1, NULL, '')`,
 		`INSERT INTO git_repositories VALUES ('r1', 'ws', 1, 1, NULL), ('r2', 'ws', 1, 0, NULL)`,
 		`INSERT INTO ai_connections VALUES ('a1', 'workspace', 'connected', NULL, CURRENT_TIMESTAMP, NULL), ('a2', 'workspace', 'connected', NULL, CURRENT_TIMESTAMP, 'failed'), ('a3', 'personal', 'connected', NULL, CURRENT_TIMESTAMP, NULL)`,
+		`INSERT INTO crm_meeting_provider_events VALUES ('e1', 'ws', 'recall')`,
+		`INSERT INTO crm_email_accounts VALUES ('m1', 'ws', 'gmail', 'connected', 1, 'enc'), ('m2', 'other', 'gmail', 'pending_oauth', 1, NULL)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatal(err)
@@ -74,6 +78,13 @@ func TestCapabilityRepositoryEvidence(t *testing.T) {
 		{"github installation", func() (bool, error) { return repo.HasGitHubInstallation(ctx, "org") }, true},
 		{"github without installation id", func() (bool, error) { return repo.HasGitHubInstallation(ctx, "org2") }, false},
 		{"no organization", func() (bool, error) { return repo.HasGitHubInstallation(ctx, "") }, false},
+		{"workspace meeting event", func() (bool, error) { return repo.HasMeetingProviderEvent(ctx, "ws", "recall") }, true},
+		{"other provider meeting event", func() (bool, error) { return repo.HasMeetingProviderEvent(ctx, "ws", "vexa") }, false},
+		{"other workspace meeting event", func() (bool, error) { return repo.HasMeetingProviderEvent(ctx, "other", "recall") }, false},
+		{"instance meeting event", func() (bool, error) { return repo.HasMeetingProviderEvent(ctx, "", "recall") }, true},
+		{"connected google account", func() (bool, error) { return repo.HasConnectedGoogleAccount(ctx, "ws") }, true},
+		{"pending google account", func() (bool, error) { return repo.HasConnectedGoogleAccount(ctx, "other") }, false},
+		{"instance google account", func() (bool, error) { return repo.HasConnectedGoogleAccount(ctx, "") }, true},
 	} {
 		got, err := tc.got()
 		if err != nil || got != tc.want {

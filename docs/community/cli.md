@@ -56,16 +56,25 @@ starts services, and checks the API's expected configuration before printing
 success. First startup includes downloading container images and may take
 several minutes.
 
-The wizard then offers two optional integrations; enter `skip` to configure
-either later:
+The wizard then offers four optional integrations; enter `skip` to configure
+any of them later:
 
 - **Application email (SMTP)**: host, port, TLS mode (`starttls`, `tls`, or
   `none` for an unauthenticated trusted relay), username, password, and sender
   address. It sends invitations and password resets.
 - **AI provider**: `openrouter`, `openai`, or `anthropic`, with its API key.
   Anthropic keys do not provide knowledge embeddings.
+- **Meeting capture**: `recall` or `vexa`, its API key, and its webhook secret
+  (required; Helpin rejects unsigned events). For Vexa it also asks for the API
+  URL, which defaults to `https://api.cloud.vexa.ai`; enter your server's
+  address for a self-hosted Vexa. The CLI prints the webhook address to
+  register. See [Meetings](configuration.md#meetings).
+- **Google (Gmail and Calendar)**: the OAuth client ID and client secret. The
+  CLI prints the redirect URI to register with Google and leaves
+  `GMAIL_OAUTH_REDIRECT_URL` empty so the server derives it from
+  `APP_BASE_URL`. See [Google](configuration.md#google-gmail-and-calendar).
 
-Passwords and API keys are read without echo and are written only to the
+Passwords, API keys and secrets are read without echo and are written only to the
 private `community/.env` (mode 600), next to the generated secrets, which are
 preserved. `helpin configure` offers the same prompts; a blank secret keeps the
 stored one.
@@ -122,8 +131,8 @@ helpin install --yes --mode local --dir "$HOME/helpin" \
 
 For server mode, supply `--domain`, `--storage-domain` and `--help-domain`, plus
 `--proxy builtin` (optionally `--acme-email`) or `--proxy external
---proxy-cidr`. Unattended runs change mail and AI settings only when their flags
-are given. Secrets are never accepted as command-line values; pass a file or an
+--proxy-cidr`. Unattended runs change mail, AI, meeting capture and Google
+settings only when their flags are given. Secrets are never accepted as command-line values; pass a file or an
 environment variable instead:
 
 ```sh
@@ -134,7 +143,30 @@ HELPIN_SMTP_PASSWORD="$(cat /run/secrets/smtp)" helpin install --yes --mode loca
 
 `--smtp-password-file` and `HELPIN_AI_API_KEY` are the other two sources; a
 file's first line is used. `--smtp-port` defaults to 587 and `--smtp-tls` to
-`starttls`. Use `--no-start` to download and prepare the configuration before
+`starttls`.
+
+Meeting capture and Google use these options:
+
+| Option | Secret source | Behavior |
+| --- | --- | --- |
+| `--meeting-provider recall\|vexa\|skip` | | Selects the capture provider (`CRM_MEETING_CAPTURE_PROVIDER`) |
+| `--meeting-key-file` | or `HELPIN_MEETING_API_KEY` | Provider API key (`RECALL_API_KEY` or `VEXA_API_KEY`) |
+| `--meeting-webhook-secret-file` | or `HELPIN_MEETING_WEBHOOK_SECRET` | Webhook signing secret: Recall's `whsec_` secret, or the secret (16+ characters) you register with Vexa |
+| `--vexa-url` | | Vexa API URL (`VEXA_BASE_URL`); defaults to `https://api.cloud.vexa.ai` |
+| `--google-client-id` | | Google OAuth client ID (`GMAIL_CLIENT_ID`) |
+| `--google-client-secret-file` | or `HELPIN_GOOGLE_CLIENT_SECRET` | Google OAuth client secret (`GMAIL_CLIENT_SECRET`) |
+
+A stored key or secret is kept when no new one is supplied. For example:
+
+```sh
+HELPIN_MEETING_API_KEY="$(cat /run/secrets/recall-key)" \
+HELPIN_MEETING_WEBHOOK_SECRET="$(cat /run/secrets/recall-webhook)" \
+helpin configure --yes --meeting-provider recall \
+  --google-client-id 1234-abc.apps.googleusercontent.com \
+  --google-client-secret-file /run/secrets/google-client-secret
+```
+
+Use `--no-start` to download and prepare the configuration before
 starting services with `helpin start`. Use `--version` to select another
 published Community bundle for a **new** installation.
 
@@ -160,7 +192,7 @@ assets or artifacts from a trusted source.
 | `helpin restart` | Recreates services to apply configuration, preserving data volumes |
 | `helpin status` | Shows containers, image identities, and migration information |
 | `helpin logs [service...]` | Follows logs, initially showing the last 150 lines |
-| `helpin configure` | Updates local/server URL and port settings, and optionally application mail and the AI provider key; preserves secrets |
+| `helpin configure` | Updates local/server URL and port settings, and optionally application mail, the AI provider key, meeting capture, and Google; preserves secrets |
 | `helpin doctor` | Checks Docker, Compose configuration, required services, API readiness, HTTPS, secret file permissions, and capabilities |
 | `helpin backup` | Stops services, snapshots the bundle and all named volumes, then resumes previously running services |
 | `helpin restore` | Verifies a backup and restores the original release/data/keys into a new directory and new volumes |
@@ -187,7 +219,9 @@ status and, when something is missing, the next step:
 | `unable to verify` | Configured, but not yet confirmed; for example no test email has been sent |
 | `unavailable` | Not offered by this edition or the enabled modules |
 
-Only object storage and background workers are required: doctor fails when one
+Meeting capture and Google (Gmail and Calendar) appear here too; they report
+`ready` only after a provider webhook has arrived or someone has connected a
+Google account. Only object storage and background workers are required: doctor fails when one
 of them needs setup. Optional integrations never fail doctor. Older releases
 without the endpoint are reported as skipped. For workspace members,
 `GET /api/workspaces/{id}/capabilities` reports the same checks per workspace.

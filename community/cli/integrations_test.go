@@ -60,7 +60,7 @@ func TestHeadlessIntegrationsWithoutFlagsChangeNothing(t *testing.T) {
 	if err := a.integrations(&o, envValues(original)); err != nil {
 		t.Fatal(err)
 	}
-	if o.smtp != nil || o.ai != nil {
+	if o.smtp != nil || o.ai != nil || o.meeting != nil || o.google != nil {
 		t.Fatal("headless run collected integrations without flags")
 	}
 	if err := writeIntegrations(dir, o); err != nil {
@@ -101,7 +101,7 @@ func TestInteractiveIntegrationsReadSecretsHiddenAndKeepStoredValues(t *testing.
 	a, out := testApp(t)
 	a.interactive = true
 	// SMTP host, port, TLS, username, sender; then the AI provider.
-	a.in = bufio.NewReader(strings.NewReader("mail.internal\n2525\ntls\nrelay\nops@example.com\nanthropic\n"))
+	a.in = bufio.NewReader(strings.NewReader("mail.internal\n2525\ntls\nrelay\nops@example.com\nanthropic\nskip\nskip\n"))
 	var prompts []string
 	a.secret = func(label string) (string, error) {
 		prompts = append(prompts, label)
@@ -141,13 +141,13 @@ func TestInteractiveIntegrationsReadSecretsHiddenAndKeepStoredValues(t *testing.
 func TestInteractiveIntegrationsCanBeSkipped(t *testing.T) {
 	a, _ := testApp(t)
 	a.interactive = true
-	a.in = bufio.NewReader(strings.NewReader("\n\n"))
+	a.in = bufio.NewReader(strings.NewReader("\n\n\n\n"))
 	a.secret = func(string) (string, error) { t.Fatal("prompted for a secret after skipping"); return "", nil }
 	o := options{}
 	if err := a.integrations(&o, map[string]string{}); err != nil {
 		t.Fatal(err)
 	}
-	if o.smtp != nil || o.ai != nil {
+	if o.smtp != nil || o.ai != nil || o.meeting != nil || o.google != nil {
 		t.Fatal("skipped integrations were collected")
 	}
 }

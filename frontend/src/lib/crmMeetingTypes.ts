@@ -175,6 +175,10 @@ export interface CRMMeetingSettings {
   audio_retention_days: number;
   created_at?: string;
   updated_at?: string;
+  /** Deployment-selected capture provider. */
+  capture_provider?: 'recall' | 'vexa';
+  /** False when the server has no credentials for the capture provider; absent on older servers. */
+  capture_configured?: boolean;
 }
 
 export type UpdateCRMMeetingSettingsRequest = Partial<Pick<CRMMeetingSettings, 'enabled' | 'bot_name' | 'auto_join_mode' | 'record_audio_by_default'>>;
