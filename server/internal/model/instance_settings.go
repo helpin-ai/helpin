@@ -37,15 +37,15 @@ type InstanceSettings struct {
 	SignupAllowedDomains  string     `json:"-" gorm:"not null;default:''"`
 	AdminBootstrappedAt   *time.Time `json:"admin_bootstrapped_at"`
 	SMTPHost              *string    `json:"-" gorm:"column:smtp_host"`
-	SMTPPort              *int       `json:"-" gorm:"column:smtp_port"`
+	SMTPPort              *int       `json:"-" gorm:"column:smtp_port;type:integer"`
 	SMTPUsername          *string    `json:"-" gorm:"column:smtp_username"`
 	SMTPPasswordEncrypted *string    `json:"-" gorm:"column:smtp_password_encrypted;type:text"`
 	SMTPFrom              *string    `json:"-" gorm:"column:smtp_from"`
 	SMTPTLSMode           *string    `json:"-" gorm:"column:smtp_tls_mode"`
 	SMTPUpdatedAt         *time.Time `json:"-" gorm:"column:smtp_updated_at"`
 	UpdatedBy             *string    `json:"-" gorm:"type:uuid"`
-	CreatedAt             time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt             time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	CreatedAt             time.Time  `json:"created_at" gorm:"autoCreateTime;not null;default:now()"`
+	UpdatedAt             time.Time  `json:"updated_at" gorm:"autoUpdateTime;not null;default:now()"`
 }
 
 // TableName returns the instance settings table.
