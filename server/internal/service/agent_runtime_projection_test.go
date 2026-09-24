@@ -1245,7 +1245,7 @@ func TestAgentRuntimeProjectionCancelsOnCumulativeUsageOverage(t *testing.T) {
 	repo := &fakeAgentRuntimeProjectionRunRepo{
 		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_overage": run},
 	}
-	usageConsumer := &recordingAIUsageConsumer{charge: 101}
+	usageConsumer := &recordingAIUsageConsumer{charge: 101, heartbeatLimit: 100}
 	runtimeClient := &fakeAgentRuntimeSignalClient{}
 	svc := &AgentRuntimeProjectionService{
 		runRepo: repo,
@@ -1287,11 +1287,60 @@ func TestAgentRuntimeProjectionCancelsOnCumulativeUsageOverage(t *testing.T) {
 	if run.Status != model.AgentRunStatusRunning {
 		t.Fatalf("expected status to remain projection-owned running, got %q", run.Status)
 	}
-	if usageConsumer.heartbeatCalls != 1 {
+	if usageConsumer.heartbeatCalls != 2 {
 		t.Fatalf("expected Forge preflight input, got %#v", usageConsumer.heartbeatCalls)
 	}
 	if repo.updates != 1 || repo.notifications != 1 {
 		t.Fatalf("expected one update/notify, got %d/%d", repo.updates, repo.notifications)
+	}
+}
+
+func TestAgentRuntimeProjectionGrowsReservationWhenWorkspaceHasAllowance(t *testing.T) {
+	run := &model.AgentRun{
+		ID: "helpin-run-growth", WorkspaceID: "ws-1", AgentID: "agent-1",
+		Status: model.AgentRunStatusRunning, PauseReason: model.AgentRunPauseReasonNone,
+		ExternalRuntime: stringPointer(agentRuntimeName), ExternalRuntimeID: stringPointer("run_runtime_growth"),
+	}
+	repo := &fakeAgentRuntimeProjectionRunRepo{
+		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_growth": run},
+	}
+	usageConsumer := &recordingAIUsageConsumer{charge: 101}
+	runtimeClient := &fakeAgentRuntimeSignalClient{}
+	svc := &AgentRuntimeProjectionService{
+		runRepo: repo,
+		agentRepo: &fakeAgentRuntimeProjectionAgentRepo{agent: &model.Agent{
+			ID: "agent-1", PresetKey: model.AgentPresetCodeBuilder, IsSystem: true,
+		}},
+		usageMeter: NewTokenPricedAIUsageMeter(usageConsumer), agentRuntimeClient: runtimeClient,
+		now: time.Now,
+	}
+	if err := storeAgentRunMeteringContext(run, MeteringContext{
+		PolicyMode: "community", WorkspaceID: "ws-1", FeatureKey: BillingFeatureForgeRun,
+		IdempotencyKey:  "ws-1:agent-runtime:" + run.ID + ":terminal-usage",
+		EnforcementMode: model.AIUsageEnforcementStrict, MaxBillableMicrousd: 100,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	event := AgentRuntimeEventEnvelope{
+		RunID: "run_runtime_growth", Type: "usage.checkpoint",
+		Data: map[string]any{
+			"usage": map[string]any{"total_tokens": float64(12000), "input_tokens": float64(10000),
+				"output_tokens": float64(2000), "cached_input_tokens": float64(0)},
+			"usage_semantic": "cumulative",
+		},
+	}
+	if err := svc.ApplyEvent(context.Background(), event); err != nil {
+		t.Fatalf("ApplyEvent returned error: %v", err)
+	}
+	if len(runtimeClient.cancelCalls) != 0 || run.ErrorMessage != nil {
+		t.Fatalf("run was cancelled despite available allowance: calls=%v error=%v", runtimeClient.cancelCalls, run.ErrorMessage)
+	}
+	metering, ok := agentRunMeteringContext(run)
+	if !ok || metering.MaxBillableMicrousd != 102 {
+		t.Fatalf("grown run reservation = %d, found=%v", metering.MaxBillableMicrousd, ok)
+	}
+	if usageConsumer.heartbeatCalls != 2 || repo.updates != 1 {
+		t.Fatalf("reservation growth was not persisted: heartbeats=%d updates=%d", usageConsumer.heartbeatCalls, repo.updates)
 	}
 }
 
