@@ -83,11 +83,14 @@ export function Sidebar() {
   const {
     navFilter,
     setNavFilter,
+    statusFilter,
     selectedMailboxId,
     setSelectedMailboxId,
     activeCustomViewId,
     applyCustomView,
     searchQuery,
+    conversationListFilters,
+    setCreateCustomViewOpen,
     setBuiltinViewFilters,
     setTeamInboxDialogOpen,
     setEditMailboxId,
@@ -466,6 +469,21 @@ export function Sidebar() {
                       activeCustomViewId: view.id,
                       listFilters: next.conversationListFilters,
                       includeFilterParams: false,
+                    }),
+                  });
+                }}
+                onCreateCustomView={() => {
+                  setCreateCustomViewOpen(true);
+                  if (location.pathname === `/w/${wsSlug}/support`) return;
+                  void navigate({
+                    to: `/w/${wsSlug}/support`,
+                    search: buildSupportInboxSearch({
+                      navFilter,
+                      selectedMailboxId,
+                      statusFilter,
+                      searchQuery,
+                      activeCustomViewId,
+                      listFilters: conversationListFilters,
                     }),
                   });
                 }}

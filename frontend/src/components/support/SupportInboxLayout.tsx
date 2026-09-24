@@ -420,6 +420,23 @@ export function SupportInboxLayout() {
             onWidgetSettingsClick={handleWidgetSettingsClick}
             onCreateConversationClick={() => setCreateDialogOpen(true)}
             onSearchClick={handleSupportSearchClick}
+            onViewCreated={(view) => {
+              useSupportInboxStore.getState().applyCustomView(view);
+              const next = useSupportInboxStore.getState();
+              void navigate({
+                to: '/w/$slug/support',
+                params: { slug },
+                search: buildSupportInboxSearch({
+                  navFilter: next.navFilter,
+                  selectedMailboxId: next.selectedMailboxId,
+                  statusFilter: next.statusFilter,
+                  searchQuery: next.searchQuery,
+                  activeCustomViewId: view.id,
+                  listFilters: next.conversationListFilters,
+                  includeFilterParams: false,
+                }),
+              });
+            }}
             canCreateSharedViews={isAdmin}
           />
         </div>

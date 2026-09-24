@@ -409,7 +409,11 @@ export function useCreateSupportInboxView(workspaceId: string) {
   return useMutation({
     mutationFn: (payload: CreateSupportInboxViewRequest) =>
       supportService.createInboxView(workspaceId, payload).then(unwrap),
-    onSuccess: () => {
+    onSuccess: (view) => {
+      queryClient.setQueryData<SupportInboxView[]>(queryKeys.support.inboxViews(workspaceId), (current) => [
+        ...(current ?? []).filter((item) => item.id !== view.id),
+        view,
+      ]);
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViews(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViewCounts(workspaceId) });
     },

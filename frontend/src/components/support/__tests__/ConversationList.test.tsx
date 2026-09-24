@@ -704,6 +704,48 @@ describe('ConversationList presence resync', () => {
     act(() => root.unmount())
   })
 
+  it('opens view creation from the sidebar and selects the saved view', () => {
+    const createdView = {
+      id: 'view-new',
+      workspace_id: 'ws-1',
+      name: 'Customer followups',
+      filters: { nav_filter: 'inbox' },
+      is_shared: false,
+      view_type: 'custom' as const,
+      created_by: 'user-1',
+      created_at: '2026-09-24T00:00:00Z',
+      updated_at: '2026-09-24T00:00:00Z',
+    }
+    const mutate = vi.fn((_payload, options?: { onSuccess?: (view: typeof createdView) => void }) => options?.onSuccess?.(createdView))
+    mockUseCreateSupportInboxView.mockReturnValue({ mutate, isPending: false })
+    useSupportInboxStore.setState({ createCustomViewOpen: true })
+    const onViewCreated = vi.fn()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => root.render(<ConversationList workspaceId="ws-1" userId="user-1" onViewCreated={onViewCreated} />))
+
+    expect(document.body.textContent).toContain('New view')
+    const createButton = Array.from(document.body.querySelectorAll('button')).find((button) => button.textContent === 'Create view') as HTMLButtonElement
+    expect(createButton).toBeTruthy()
+    act(() => createButton.click())
+
+    const nameInput = document.body.querySelector('#support-view-name') as HTMLInputElement
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(nameInput, 'Customer followups')
+      nameInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const saveButton = Array.from(document.body.querySelectorAll('button')).find((button) => button.textContent === 'Save') as HTMLButtonElement
+    act(() => saveButton.click())
+
+    expect(mutate).toHaveBeenCalledWith(expect.objectContaining({ name: 'Customer followups' }), expect.any(Object))
+    expect(onViewCreated).toHaveBeenCalledWith(createdView)
+    expect(useSupportInboxStore.getState().createCustomViewOpen).toBe(false)
+
+    act(() => root.unmount())
+  })
+
   it('only offers save as view after the current filters differ from the sidebar default', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
