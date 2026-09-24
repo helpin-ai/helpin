@@ -65,11 +65,18 @@ describe('DockArtifactDownloads', () => {
       );
     });
 
+    expect(container.textContent).toContain('Artifacts');
     expect(container.textContent).toContain('2 files');
     expect(container.textContent).toContain('Private');
+    expect(container.querySelector('details')?.open).toBe(false);
+    expect(container.textContent).not.toContain('results.csv');
+    expect(mocks.getArtifactContentURL).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain('hidden.csv');
+
+    await act(async () => { container.querySelector('summary')?.click(); });
+    expect(container.querySelector('details')?.open).toBe(true);
     expect(container.textContent).toContain('results.csv');
     expect(container.textContent).toContain('notes.txt');
-    expect(container.textContent).not.toContain('hidden.csv');
 
     const button = container.querySelector('button[aria-label="Download results.csv"]');
     expect(button).not.toBeNull();
@@ -77,5 +84,10 @@ describe('DockArtifactDownloads', () => {
 
     expect(mocks.getArtifactContentURL).toHaveBeenCalledWith('workspace-1', 'file-1');
     expect(replace).toHaveBeenCalledWith('https://private.example/file.csv');
+
+    await act(async () => { container.querySelector('summary')?.click(); });
+    expect(container.querySelector('details')?.open).toBe(false);
+    await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 0)); });
+    expect(container.querySelector('button[aria-label="Download results.csv"]')).toBeNull();
   });
 });
