@@ -44,24 +44,28 @@ export function createVortexRenderer(canvas: HTMLCanvasElement, variant: MotionV
 function mainThreadRenderer(canvas: HTMLCanvasElement, variant: MotionVariant): VortexRenderer {
   const ctx = canvas.getContext('2d');
   const art = createArt(variant);
-  let view: Viewport | null = null, clock = 0, frame = 0, last = 0;
+  let view: Viewport | null = null, clock = 0, frame = 0, last = 0, isPlaying = false;
   const paint = () => {
     if (!ctx || !view) return;
     canvas.width = Math.round(view.width * view.dpr);
     canvas.height = Math.round(view.height * view.dpr);
-    drawArt(ctx, art, clock, view);
+    drawArt(ctx, art, clock, view, isPlaying);
   };
   const tick = (now: number) => {
     clock += Math.min(now - last, 50) / 1000;
     last = now;
-    if (ctx && view) drawArt(ctx, art, clock, view);
+    if (ctx && view) drawArt(ctx, art, clock, view, true);
     frame = requestAnimationFrame(tick);
   };
   return {
     resize: next => { view = next; paint(); },
     play: playing => {
       cancelAnimationFrame(frame);
-      if (!playing) return;
+      isPlaying = playing;
+      if (!playing) {
+        paint();
+        return;
+      }
       last = performance.now();
       frame = requestAnimationFrame(tick);
     },
