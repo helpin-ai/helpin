@@ -26,7 +26,7 @@ function activePlanStep(plan: RunPlanArtifact | null): string | null {
 
 /**
  * Turns noisy runtime state into one calm, user-facing line. This deliberately
- * contains no controls: the composer remains the single owner of Stop/Send.
+ * contains no controls: the composer owns Pause, Resume, Stop, and Send.
  */
 export function resolveAgentLiveProgress({
   run,
@@ -46,6 +46,9 @@ export function resolveAgentLiveProgress({
     return { label: 'Starting…', startedAt, tone: 'working' };
   }
   if (!run) return null;
+  if (run.status === 'paused' && run.pause_reason === 'manual') {
+    return { label: 'Paused', startedAt, tone: 'waiting' };
+  }
   if (turn.answered) return null;
   if (turn.answerPending) return { label: 'Loading answer…', startedAt, tone: 'waiting' };
   if (turn.missingAnswer) return { label: 'Run ended without a final answer', startedAt, tone: 'waiting' };

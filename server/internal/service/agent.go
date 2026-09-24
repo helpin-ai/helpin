@@ -861,6 +861,7 @@ type agentRuntimeSignalClient interface {
 	ListInteractions(ctx context.Context, runtimeRunID string) ([]AgentRuntimeInteraction, error)
 	ResumeRun(ctx context.Context, runtimeRunID string, req AgentRuntimeResumeRunRequest) (*AgentRuntimeRun, error)
 	CancelRun(ctx context.Context, runtimeRunID string) (*AgentRuntimeRun, error)
+	PauseRun(ctx context.Context, runtimeRunID string) (*AgentRuntimeRun, error)
 }
 
 type agentRuntimeEventProjector interface {

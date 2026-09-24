@@ -224,6 +224,41 @@ func (c *AgentRuntimeClient) CancelRun(ctx context.Context, runtimeRunID string)
 	return c.client.CancelRun(ctx, runtimeRunID)
 }
 
+// PauseRun requests a manual pause; the runtime acknowledges it with a later event.
+func (c *AgentRuntimeClient) PauseRun(ctx context.Context, runtimeRunID string) (*AgentRuntimeRun, error) {
+	if c == nil || c.httpClient == nil || c.baseURL == "" {
+		return nil, fmt.Errorf("agent runtime client is not configured")
+	}
+	query := url.Values{}
+	query.Set("app_id", c.AppID())
+	path := "/v1/runs/" + url.PathEscape(strings.TrimSpace(runtimeRunID)) + "/pause"
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path+"?"+query.Encode(), nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Accept", "application/json")
+	if c.serviceToken != "" {
+		request.Header.Set("Authorization", "Bearer "+c.serviceToken)
+	}
+	if c.eventProtocol != "" {
+		request.Header.Set(agentruntime.EventProtocolHeader, c.eventProtocol)
+	}
+	response, err := c.httpClient.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("call agent runtime: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		message, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+		return nil, &agentruntime.HTTPStatusError{Method: http.MethodPost, Path: path, StatusCode: response.StatusCode, Body: strings.TrimSpace(string(message))}
+	}
+	var run AgentRuntimeRun
+	if err := json.NewDecoder(response.Body).Decode(&run); err != nil {
+		return nil, fmt.Errorf("decode agent runtime response: %w", err)
+	}
+	return &run, nil
+}
+
 func firstOptionalString(values []string) string {
 	if len(values) == 0 {
 		return ""

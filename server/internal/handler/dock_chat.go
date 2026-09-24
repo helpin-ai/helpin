@@ -277,6 +277,34 @@ func (h *DockChatHandler) CancelChatRun(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, cancelled)
 }
 
+// PauseChatRun handles POST /api/dock/chats/{chatID}/run/pause.
+func (h *DockChatHandler) PauseChatRun(w http.ResponseWriter, r *http.Request) {
+	run, ok := h.resolveChatRun(w, r)
+	if !ok {
+		return
+	}
+	paused, err := h.agentService.PauseRun(r.Context(), getWorkspaceID(r), run.ID, middleware.GetUserID(r.Context()))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, paused)
+}
+
+// ResumeChatRun handles POST /api/dock/chats/{chatID}/run/resume.
+func (h *DockChatHandler) ResumeChatRun(w http.ResponseWriter, r *http.Request) {
+	run, ok := h.resolveChatRun(w, r)
+	if !ok {
+		return
+	}
+	resumed, err := h.agentService.ResumeManuallyPausedRun(r.Context(), getWorkspaceID(r), run.ID, middleware.GetUserID(r.Context()))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resumed)
+}
+
 // ListRuns handles GET /api/dock/runs.
 func (h *DockChatHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 	response, err := h.agentService.ListDockRunsForActor(
@@ -420,6 +448,34 @@ func (h *DockChatHandler) CancelRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, cancelled)
+}
+
+// PauseRun handles POST /api/dock/runs/{runID}/pause.
+func (h *DockChatHandler) PauseRun(w http.ResponseWriter, r *http.Request) {
+	run, ok := h.resolveDockRun(w, r)
+	if !ok {
+		return
+	}
+	paused, err := h.agentService.PauseRun(r.Context(), getWorkspaceID(r), run.ID, middleware.GetUserID(r.Context()))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, paused)
+}
+
+// ResumeRun handles POST /api/dock/runs/{runID}/resume.
+func (h *DockChatHandler) ResumeRun(w http.ResponseWriter, r *http.Request) {
+	run, ok := h.resolveDockRun(w, r)
+	if !ok {
+		return
+	}
+	resumed, err := h.agentService.ResumeManuallyPausedRun(r.Context(), getWorkspaceID(r), run.ID, middleware.GetUserID(r.Context()))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resumed)
 }
 
 // StartRunAuth handles POST /api/dock/runs/{runID}/auth/device-code/start.

@@ -36,7 +36,7 @@ export type AgentApprovalMode = 'preset_default' | 'never' | 'risk_based' | 'mut
 export type AgentModelProvider = 'anthropic' | 'openai' | 'openrouter';
 export type AgentModelTier = 'small' | 'medium' | 'large' | 'flagship';
 export type AgentInvocationMode = 'interactive' | 'autonomous';
-export type AgentRunPauseReason = 'none' | 'human_input' | 'human_approval' | 'authentication' | 'awaiting_user_message';
+export type AgentRunPauseReason = 'none' | 'human_input' | 'human_approval' | 'authentication' | 'awaiting_user_message' | 'manual';
 export type AgentReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 export type AgentServiceTier = typeof AI_MODELS.service_tiers[number] | 'default' | 'priority';
 

@@ -56,6 +56,8 @@ export function resolveDockComposerState(
       return { visible: true, enabled: false, placeholder: 'Agent is working…' };
     case 'paused':
       switch (run.pause_reason) {
+        case 'manual':
+          return { visible: true, enabled: false, placeholder: 'Agent paused — resume to continue' };
         case 'awaiting_user_message':
           return { visible: true, enabled: true, placeholder: 'Reply…' };
         case 'human_input':

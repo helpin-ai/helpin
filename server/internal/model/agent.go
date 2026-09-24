@@ -533,6 +533,7 @@ const (
 	AgentRunPauseReasonHumanApproval  = "human_approval"
 	AgentRunPauseReasonAuthentication = "authentication"
 	AgentRunPauseReasonUserMessage    = "awaiting_user_message"
+	AgentRunPauseReasonManual         = "manual"
 )
 
 const (
@@ -585,7 +586,7 @@ func IsAgentRunActiveStatus(status string) bool {
 
 func normalizeAgentRunPauseReason(status string, pauseReason string, approvalState string, executionStage *string) string {
 	switch strings.TrimSpace(pauseReason) {
-	case AgentRunPauseReasonHumanInput, AgentRunPauseReasonHumanApproval, AgentRunPauseReasonAuthentication, AgentRunPauseReasonUserMessage:
+	case AgentRunPauseReasonHumanInput, AgentRunPauseReasonHumanApproval, AgentRunPauseReasonAuthentication, AgentRunPauseReasonUserMessage, AgentRunPauseReasonManual:
 		return strings.TrimSpace(pauseReason)
 	}
 	if strings.TrimSpace(approvalState) == "pending" {

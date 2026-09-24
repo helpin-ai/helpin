@@ -95,6 +95,10 @@ export const dockChatService = {
     ),
   cancelChatRun: (workspaceId: string, chatId: string) =>
     api.post<AgentRun>(`/dock/chats/${encodeURIComponent(chatId)}/run/cancel${qs(workspaceId)}`),
+  pauseChatRun: (workspaceId: string, chatId: string) =>
+    api.post<AgentRun>(`/dock/chats/${encodeURIComponent(chatId)}/run/pause${qs(workspaceId)}`),
+  resumeChatRun: (workspaceId: string, chatId: string) =>
+    api.post<AgentRun>(`/dock/chats/${encodeURIComponent(chatId)}/run/resume${qs(workspaceId)}`),
   listRuns: (workspaceId: string, cursor?: string | null, limit = 30, signal?: AbortSignal) => {
     const query = new URLSearchParams({ workspace_id: workspaceId, limit: String(limit) });
     if (cursor) query.set('cursor', cursor);
@@ -126,4 +130,8 @@ export const dockChatService = {
     api.post<AgentRun>(`/dock/runs/${encodeURIComponent(runId)}/continue${qs(workspaceId)}`, content ? { content } : {}),
   cancelRun: (workspaceId: string, runId: string) =>
     api.post<AgentRun>(`/dock/runs/${encodeURIComponent(runId)}/cancel${qs(workspaceId)}`, {}),
+  pauseRun: (workspaceId: string, runId: string) =>
+    api.post<AgentRun>(`/dock/runs/${encodeURIComponent(runId)}/pause${qs(workspaceId)}`, {}),
+  resumeRun: (workspaceId: string, runId: string) =>
+    api.post<AgentRun>(`/dock/runs/${encodeURIComponent(runId)}/resume${qs(workspaceId)}`, {}),
 };

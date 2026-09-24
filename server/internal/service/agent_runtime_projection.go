@@ -758,8 +758,12 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		if !suppressLifecycle {
 			pauseReason := normalizeRuntimePauseReason(eventDataString(event.Data, "pause_reason"))
 			changed = setRunStatus(run, model.AgentRunStatusPaused, pauseReason) || changed
+			changed = clearRuntimeResumeStage(run) || changed
+			changed = clearRuntimePauseStage(run) || changed
 		}
 	case agentruntime.EventRunCompleted:
+		changed = clearRuntimeResumeStage(run) || changed
+		changed = clearRuntimePauseStage(run) || changed
 		if run.CompletedAt == nil {
 			run.CompletedAt = &now
 			changed = true
@@ -775,6 +779,8 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		}
 		changed = setRunStatus(run, model.AgentRunStatusCompleted, model.AgentRunPauseReasonNone) || changed
 	case agentruntime.EventRunFailed:
+		changed = clearRuntimeResumeStage(run) || changed
+		changed = clearRuntimePauseStage(run) || changed
 		if run.CompletedAt == nil {
 			run.CompletedAt = &now
 			changed = true
@@ -787,6 +793,8 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		}
 		changed = setRunStatus(run, model.AgentRunStatusFailed, model.AgentRunPauseReasonNone) || changed
 	case agentruntime.EventRunCancelled:
+		changed = clearRuntimeResumeStage(run) || changed
+		changed = clearRuntimePauseStage(run) || changed
 		if run.CompletedAt == nil {
 			run.CompletedAt = &now
 			changed = true
@@ -2741,12 +2749,22 @@ func clearRuntimeResumeStage(run *model.AgentRun) bool {
 	}
 }
 
+func clearRuntimePauseStage(run *model.AgentRun) bool {
+	if run == nil || strings.TrimSpace(derefString(run.ExecutionStage)) != "pausing" {
+		return false
+	}
+	run.ExecutionStage = nil
+	return true
+}
+
 func normalizeRuntimePauseReason(reason string) string {
 	switch strings.TrimSpace(reason) {
 	case model.AgentRunPauseReasonHumanApproval:
 		return model.AgentRunPauseReasonHumanApproval
 	case model.AgentRunPauseReasonUserMessage:
 		return model.AgentRunPauseReasonUserMessage
+	case model.AgentRunPauseReasonManual:
+		return model.AgentRunPauseReasonManual
 	case model.AgentRunPauseReasonAuthentication, "auth":
 		return model.AgentRunPauseReasonAuthentication
 	case model.AgentRunPauseReasonNone:
