@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	agentruntime "github.com/helpin-ai/agent-runtime-go"
+
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
@@ -70,7 +72,7 @@ func (s *AgentService) ResumeManuallyPausedRun(ctx context.Context, workspaceID,
 		return nil, err
 	}
 	if _, err := s.agentRuntimeClient.ResumeRun(ctx, runtimeRunID, AgentRuntimeResumeRunRequest{
-		Intent: "continue", ExternalActorID: actorID,
+		Intent: agentruntime.ResumeIntentContinue, ExternalActorID: actorID,
 	}); err != nil {
 		resetErr := s.runRepo.UpdateStage(ctx, workspaceID, run.ID, "", nil)
 		return nil, errors.Join(fmt.Errorf("resume agent runtime run: %w", err), resetErr)
