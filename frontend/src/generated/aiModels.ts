@@ -182,6 +182,14 @@ export const AI_MODELS = {
       "label": "GPT-OSS 120B",
       "tier": "medium",
       "enabled": true
+    },
+    {
+      "provider": "openrouter",
+      "canonical_model": "qwen3.8-omni-flash",
+      "selection_model": "qwen/qwen3.8-omni-flash",
+      "label": "Qwen3.8 Omni Flash",
+      "tier": "small",
+      "enabled": true
     }
   ],
   "tiers": [

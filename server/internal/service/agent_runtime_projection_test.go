@@ -304,6 +304,15 @@ func TestAgentRuntimeProjectionMapsLifecycleByHostRunID(t *testing.T) {
 	if run.Status != model.AgentRunStatusPaused || run.PauseReason != model.AgentRunPauseReasonUserMessage {
 		t.Fatalf("expected paused/awaiting_user_message, got %s/%s", run.Status, run.PauseReason)
 	}
+	stage := "pausing"
+	run.ExecutionStage = &stage
+	err = svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		RunID: "run_runtime_1", Type: "run.paused",
+		Data: map[string]any{"pause_reason": model.AgentRunPauseReasonManual},
+	})
+	if err != nil || run.Status != model.AgentRunStatusPaused || run.PauseReason != model.AgentRunPauseReasonManual || run.ExecutionStage != nil {
+		t.Fatalf("manual pause projection failed: run=%#v err=%v", run, err)
+	}
 }
 
 func TestAgentRuntimeProjectionRejectsProseOnlyCustomAgentCoverageCompletion(t *testing.T) {

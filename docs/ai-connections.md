@@ -99,7 +99,7 @@ expired-token refresh, reconnect, and revocation are separate release gates.
 ChatGPT strips the previous-response identifier and does not support lossless
 provider-state replay, although ordinary transcript continuation is supported.
 
-Helpin pins SDK `v0.6.0` in [the server module](../server/go.mod).
+Helpin pins SDK `v0.7.0` in [the server module](../server/go.mod).
 Check the selected Runtime revision separately when verifying pair compatibility. Explicit empty model controls clear inherited controls
 while preserving execution limits. Chat Completions and the local-model
 adapter validation are implemented.
@@ -165,7 +165,7 @@ redirect their credentials. Compatible routes have transcript continuation, not
 lossless Responses replay or provider-specific reasoning/service-tier controls.
 
 Endpoint approval and compose templates are documented in the Agent Runtime
-repository (currently private). Helpin currently pins SDK `v0.6.0`; the earlier `v0.6.0-alpha.2`
+repository (currently private). Helpin currently pins SDK `v0.7.0`; the earlier `v0.6.0-alpha.2`
 rollout reference is historical.
 
 Host Helpin Cloud development commands are `just backend-ee`, `just worker-ee`, and

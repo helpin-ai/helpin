@@ -183,8 +183,8 @@ func TestPublicPricingUsesPercentageAllowanceDenominators(t *testing.T) {
 	}
 
 	pricing := catalog.PublicSnapshot()
-	if pricing.PricingVersion != "2026-09-14" {
-		t.Errorf("pricing version = %q, want 2026-09-14", pricing.PricingVersion)
+	if pricing.PricingVersion != "2026-09-23" {
+		t.Errorf("pricing version = %q, want 2026-09-23", pricing.PricingVersion)
 	}
 
 	wantAllowances := map[string]int64{
