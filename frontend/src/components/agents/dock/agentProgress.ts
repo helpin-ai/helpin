@@ -11,7 +11,7 @@ export interface AgentLiveProgress {
 }
 
 interface ResolveAgentLiveProgressInput {
-  run: Pick<AgentRun, 'status' | 'pause_reason' | 'started_at' | 'created_at'> | null;
+  run: Pick<AgentRun, 'status' | 'pause_reason' | 'execution_stage' | 'started_at' | 'created_at'> | null;
   stream: Pick<CodingSessionStreamState, 'transcript_messages' | 'live_turn_segments' | 'live_reasoning_message' | 'activity_events' | 'turn_state'> | null;
   currentPlan: RunPlanArtifact | null;
   activeSubAgentName?: string | null;
@@ -46,6 +46,9 @@ export function resolveAgentLiveProgress({
     return { label: 'Starting…', startedAt, tone: 'working' };
   }
   if (!run) return null;
+  if (run.execution_stage === 'pausing') {
+    return { label: 'Pausing…', startedAt, tone: 'waiting' };
+  }
   if (run.status === 'paused' && run.pause_reason === 'manual') {
     return { label: 'Paused', startedAt, tone: 'waiting' };
   }
