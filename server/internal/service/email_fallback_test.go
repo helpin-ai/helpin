@@ -4408,3 +4408,20 @@ func TestEmailFallbackProcessInboundEmailIgnoresSpamConversation(t *testing.T) {
 		t.Fatalf("messages = %d, want 0", len(messages))
 	}
 }
+
+func TestCleanForwardedEmailProjectionTextWrappedHeaders(t *testing.T) {
+	input := `---------- Forwarded message ---------
+From: Justin Staples <justin@js-interactive.com>
+Date: Thu, Sep 24, 2026 at 4:01 AM
+Subject: Re: Monthly Dashboard Report — Google Search Console (
+coloradoelectricalengineering.com)
+To: Waqar from Usermaven <waqar@usermaven.com>, Cassie Christman <
+cassie@js-interactive.com>
+
+Hi Waqar,
+This dashboard hasn't shown data for some time now.`
+	want := "Hi Waqar,\nThis dashboard hasn't shown data for some time now."
+	if got := cleanForwardedEmailProjectionText(input); got != want {
+		t.Fatalf("cleanForwardedEmailProjectionText() = %q, want %q", got, want)
+	}
+}

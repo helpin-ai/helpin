@@ -150,19 +150,28 @@ func cleanForwardedEmailProjectionText(content string) string {
 
 	note := strings.TrimSpace(strings.Join(lines[:markerIndex], "\n"))
 	bodyStart := -1
+	firstNonMetadata := -1
 	sawMetadata := false
+	headerEnded := false
 	for i := markerIndex + 1; i < len(lines); i++ {
+		if sawMetadata && strings.TrimSpace(lines[i]) == "" {
+			headerEnded = true
+			continue
+		}
+		if headerEnded {
+			bodyStart = i
+			break
+		}
 		if isForwardedEmailMetadataLine(lines[i]) {
 			sawMetadata = true
 			continue
 		}
-		if sawMetadata && strings.TrimSpace(lines[i]) == "" {
-			continue
+		if sawMetadata && firstNonMetadata < 0 {
+			firstNonMetadata = i
 		}
-		if sawMetadata {
-			bodyStart = i
-			break
-		}
+	}
+	if bodyStart < 0 {
+		bodyStart = firstNonMetadata
 	}
 	if bodyStart < 0 {
 		if note != "" {
