@@ -189,11 +189,12 @@ function ManageTagsDialog({
   const updateTag = useUpdateSupportTag(workspaceId);
   const createTag = useCreateSupportTag(workspaceId);
   const deleteTag = useDeleteSupportTag(workspaceId);
+  const showSearch = tags.length > 10;
   const filteredTags = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
+    const normalized = showSearch ? query.trim().toLowerCase() : '';
     if (!normalized) return tags;
     return tags.filter((tag) => tag.name.toLowerCase().includes(normalized));
-  }, [query, tags]);
+  }, [query, showSearch, tags]);
   const normalizedName = formName.trim();
   const duplicate = tags.some((tag) => tag.id !== editingId && tag.name.toLowerCase() === normalizedName.toLowerCase());
   const pending = createTag.isPending || updateTag.isPending || deleteTag.isPending;
@@ -276,14 +277,16 @@ function ManageTagsDialog({
         {mode === 'list' ? (
           <div className="flex max-h-[520px] flex-col gap-4">
             <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <QuietSearchInput
-                  autoFocus
-                  placeholder="Search tags..."
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                />
-              </div>
+              {showSearch && (
+                <div className="flex items-center gap-2">
+                  <QuietSearchInput
+                    autoFocus
+                    placeholder="Search tags..."
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                  />
+                </div>
+              )}
               {tags.length === 0 ? (
                 <div className="rounded-md border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
                   No tags yet.
