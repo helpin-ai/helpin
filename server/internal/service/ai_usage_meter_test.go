@@ -277,6 +277,7 @@ type recordingAIUsageConsumer struct {
 	consumeErr     error
 	charge         int64
 	heartbeatCalls int
+	heartbeatLimit int64
 	consumeInputs  []CompletionUsage
 }
 
@@ -296,8 +297,11 @@ func (c *recordingAIUsageConsumer) Reconcile(_ context.Context, input Completion
 func (c *recordingAIUsageConsumer) ChargeForTokens(MeteringContext, aiusage.NormalizedTokens) (int64, error) {
 	return c.charge, nil
 }
-func (c *recordingAIUsageConsumer) Heartbeat(context.Context, MeteringContext) error {
+func (c *recordingAIUsageConsumer) Heartbeat(_ context.Context, metering MeteringContext) error {
 	c.heartbeatCalls++
+	if c.heartbeatLimit > 0 && metering.MaxBillableMicrousd > c.heartbeatLimit {
+		return model.ErrAIUsageExhausted
+	}
 	return nil
 }
 func (p scriptedMeteredLLMProvider) ResolvePricingIdentity(req llm.ChatRequest) (llm.ChatPricingIdentity, error) {
