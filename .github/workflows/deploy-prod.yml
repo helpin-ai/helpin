@@ -5,7 +5,6 @@ on:
     branches:
       - main
     paths-ignore:
-      - "k8s/**"
       - "**.md"
   workflow_dispatch:
     inputs:
@@ -393,12 +392,19 @@ jobs:
             --notes-file release_notes.md \
             --latest
 
+      - name: Checkout gitops manifests
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: helpin-ai/gitops
+          ref: main
+          token: ${{ secrets.GITOPS_TOKEN }}
+          path: gitops
+
       - name: Update K8s manifests
-        working-directory: prod-release
         run: |
           SERVER_TAG="${{ needs.version.outputs.server_tag }}"
           HELPCENTER_TAG="${{ needs.version.outputs.helpcenter_tag }}"
-          MANIFEST_DIR="k8s/prod"
+          MANIFEST_DIR="gitops/helpin/prod"
           UPDATED=""
 
           if [ -n "$SERVER_TAG" ]; then
@@ -420,14 +426,12 @@ jobs:
             UPDATED="${UPDATED:+$UPDATED, }helpcenter→$HELPCENTER_TAG"
           fi
 
-          git add k8s/
-          git commit -m "chore: update prod images ($UPDATED) [skip ci]" || echo "No manifest changes"
+          # The smoke ConfigMap is generated from ops/widget-smoke in this repo.
+          python3 prod-release/scripts/monitoring/generate-smoke-manifest.py \
+            "$MANIFEST_DIR/monitoring-smoke-config.yaml"
 
-      - name: Push all changes
-        working-directory: prod-release
-        run: |
-          git pull --rebase origin main
-          git push origin main
+          bash prod-release/scripts/ci/push-gitops.sh gitops \
+            "chore: update helpin prod images ($UPDATED)" helpin/prod
 
       - name: Clean up RC tags
         working-directory: prod-release

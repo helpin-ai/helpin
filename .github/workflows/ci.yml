@@ -359,10 +359,9 @@ jobs:
       - run: pnpm --dir packages/sdk-js run test:e2e:uploads
       - name: Test smoke verification and cleanup
         run: node --test ops/widget-smoke/smoke.test.cjs
-      - name: Verify smoke ConfigMap matches source
-        run: |
-          python3 scripts/monitoring/generate-smoke-manifest.py
-          git diff --exit-code -- k8s/prod/monitoring-smoke-config.yaml
+      - name: Verify smoke ConfigMap generates
+        # deploy-prod.yml writes the generated ConfigMap to helpin-ai/gitops.
+        run: python3 scripts/monitoring/generate-smoke-manifest.py > /dev/null
 
   # ----------------------- Help Center ----------------------
   helpcenter:

@@ -5,7 +5,6 @@ on:
     branches:
       - develop
     paths-ignore:
-      - "k8s/**"
       - "**.md"
   workflow_dispatch:
     inputs:
@@ -432,20 +431,19 @@ jobs:
             --notes-file release_notes.md \
             --prerelease
 
+      - name: Checkout gitops manifests
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: helpin-ai/gitops
+          ref: main
+          token: ${{ secrets.GITOPS_TOKEN }}
+          path: gitops
+
       - name: Update K8s manifests
         run: |
           SERVER_TAG="${{ needs.version.outputs.server_tag }}"
           HELPCENTER_TAG="${{ needs.version.outputs.helpcenter_tag }}"
-
-          MANIFEST_CLONE="${GITHUB_WORKSPACE}/../k8s-helpin-stg"
-          rm -rf "$MANIFEST_CLONE"
-          git clone --depth 1 --branch develop "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" "$MANIFEST_CLONE"
-          cd "$MANIFEST_CLONE"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          MANIFEST_DIR="k8s/stage"
+          MANIFEST_DIR="gitops/helpin/stage"
           UPDATED=""
 
           if [ -n "$SERVER_TAG" ]; then
@@ -467,7 +465,5 @@ jobs:
             UPDATED="${UPDATED:+$UPDATED, }helpcenter→$HELPCENTER_TAG"
           fi
 
-          git add k8s/
-          git commit -m "chore: update stage images ($UPDATED) [skip ci]" || echo "No manifest changes"
-          git pull --rebase origin develop
-          git push origin develop
+          bash stg-release/scripts/ci/push-gitops.sh gitops \
+            "chore: update helpin stage images ($UPDATED)" helpin/stage
