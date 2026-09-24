@@ -12,12 +12,12 @@ export type PageSeo = {
 
 export const PAGE_SEO = {
   home: {
-    title: 'Helpin — Support, projects, CRM and AI agents',
+    title: 'Helpin — AI agents that do more than answer',
     description:
-      'Helpin connects projects, support, sales, and docs with AI agents that plan, build, triage, and follow up across every team.',
+      'Helpin gives AI agents the full customer context to resolve questions, take action, and follow through across support, projects, CRM, meetings, and docs.',
     canonicalPath: '/',
-    imagePath: '/og/helpin-home-green-v4.png',
-    imageAlt: 'Helpin — Bring every team together. Put AI agents to work.',
+    imagePath: '/og/helpin-new-home-green-v4.png',
+    imageAlt: 'Helpin — AI agents that do more than answer.',
   },
   pricing: {
     title: 'Pricing — Open source and Helpin Cloud',

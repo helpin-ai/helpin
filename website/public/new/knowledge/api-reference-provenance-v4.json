@@ -1,5 +1,5 @@
 {
-  "page": "/new/products/knowledge#knowledge-api",
+  "page": "/products/knowledge#knowledge-api",
   "section": "Give developers a reference they can work with.",
   "asset_type": "Generated illustrative demo edited from the user-provided real Helpin public API reference screenshot",
   "tool": "Direct OpenAI Images edit API; previously authorized custom 4K runner",

@@ -1,0 +1,8 @@
+# Former marketing preview URLs. Keep /new/asset paths available.
+/new / 301
+/new/ / 301
+/new/product /product 301
+/new/developers /developers 301
+/new/self-hosting /self-hosting 301
+/new/branding /branding 301
+/new/products/* /products/:splat 301

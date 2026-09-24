@@ -21,4 +21,4 @@ emerald accent. No glow, gradients, grain or decorative lines.
    `sharp(src).resize(720, 945, { fit: 'cover' }).jpeg({ quality: 86, mozjpeg: true })`.
 4. `HELPIN_OG_VARIANT=<slug> pnpm generate:og`, then check the card in `public/og/`.
 5. If the card's content changed, bump `VERSION` in `generate-og-images.mjs` and the matching paths in
-   `src/lib/metadata.ts`, `src/app/new/_components/preview-metadata.ts` and `tests/seo-metadata.test.mjs`.
+   `src/lib/metadata.ts`, `src/app/(site)/_components/marketing-metadata.ts` and `tests/seo-metadata.test.mjs`.

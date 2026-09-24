@@ -1,4 +1,4 @@
-import { DEMO_URL, FAQList, SectionHead } from '../new/_components/ui';
+import { DEMO_URL, FAQList, SectionHead } from '../(site)/_components/ui';
 import { FAQS } from './pricing-data';
 
 export { AIUsage } from './PricingAIUsage';

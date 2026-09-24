@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { demoFrame, DEMO_DURATION, DEMO_MESSAGES } from '../src/app/new/products/customer-support/support-widget-script.ts';
+import { demoFrame, DEMO_DURATION, DEMO_MESSAGES } from '../src/app/(site)/products/customer-support/support-widget-script.ts';
 
 const timestamp = '2026-09-21T10:00:00Z';
 describe('Support widget story', () => {
