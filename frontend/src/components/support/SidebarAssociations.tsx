@@ -263,9 +263,10 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
   return (
     <div>
       {pmEnabled && <CollapsibleSection
+        key={`${workspaceId}:${conversationId}:tasks`}
         title="Tasks"
         count={tasks.length}
-        defaultOpen={tasks.length > 0}
+        autoOpenWhenPopulated
         onAdd={() => setPickerSection('tasks')}
       >
         {tasks.length === 0 ? (
@@ -345,9 +346,10 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
       </CollapsibleSection>}
 
       <CollapsibleSection
+        key={`${workspaceId}:${conversationId}:crm`}
         title="CRM"
         count={crmRecords.length}
-        defaultOpen={crmRecords.length > 0}
+        autoOpenWhenPopulated
         onAdd={() => setPickerSection('crm')}
       >
         {crmRecords.length === 0 ? (
@@ -408,9 +410,10 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
       </CollapsibleSection>
 
       <CollapsibleSection
+        key={`${workspaceId}:${conversationId}:docs`}
         title="Docs"
         count={docs.length}
-        defaultOpen={docs.length > 0}
+        autoOpenWhenPopulated
         onAdd={() => setPickerSection('docs')}
       >
         {docs.length === 0 ? (

@@ -8,6 +8,8 @@ interface CollapsibleSectionProps {
   icon?: React.ElementType;
   count?: number;
   defaultOpen?: boolean;
+  /** Follow item availability until the user explicitly toggles this section. */
+  autoOpenWhenPopulated?: boolean;
   onAdd?: () => void;
   children: React.ReactNode;
 }
@@ -16,10 +18,12 @@ export function CollapsibleSection({
   title,
   count = 0,
   defaultOpen = false,
+  autoOpenWhenPopulated = false,
   onAdd,
   children,
 }: CollapsibleSectionProps) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [userOpen, setOpen] = useState<boolean | undefined>(autoOpenWhenPopulated ? undefined : defaultOpen);
+  const open = userOpen ?? (count > 0);
 
   return (
     <div
