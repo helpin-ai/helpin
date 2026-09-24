@@ -1,6 +1,6 @@
 import { ArrowRight, Check } from "lucide-react";
 import { COMPARISON_FEATURES, PLANS } from "./pricing-data";
-import { SectionHead } from "../new/_components/ui";
+import { SectionHead } from "../(site)/_components/ui";
 
 type Value = boolean | string | undefined;
 type Feature = { name: string; starter?: Value; growth?: Value };

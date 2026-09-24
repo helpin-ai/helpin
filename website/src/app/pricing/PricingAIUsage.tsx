@@ -1,8 +1,8 @@
 import { Cloud, Gauge, KeyRound } from 'lucide-react';
 import { AI_PRICING } from '@/generated/aiPricing';
-import { SectionHead } from '../new/_components/ui';
+import { SectionHead } from '../(site)/_components/ui';
 import { AI_ALLOWANCE } from './pricing-data';
-import { DOCS } from '../new/_components/docsLinks';
+import { DOCS } from '../(site)/_components/docsLinks';
 
 const PROVIDERS = [
   { id: 'openai', name: 'OpenAI' },

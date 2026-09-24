@@ -1,0 +1,31 @@
+{
+  "type": "Generated fictional Projects and Ask Agent demonstration",
+  "model": "gpt-image-2.5-sunburst",
+  "tool": "OpenAI images.edit API, previously authorized direct runner",
+  "nativeDimensions": [
+    3840,
+    2160
+  ],
+  "master": "output/imagegen/projects/board-ask-agent-v1.webp",
+  "prompt": "board-ask-agent-v1-prompt.txt",
+  "references": [
+    {
+      "role": "Board layout, typography and OrbitDesk identity",
+      "path": "website/public/new/product/workspace-projects-4k-v3.webp"
+    },
+    {
+      "role": "Ask Agent interface and brand mark",
+      "path": "website/public/new/support/ask-agent-support-sep20-3840.webp"
+    }
+  ],
+  "publishedWidths": [
+    960,
+    1440,
+    1920,
+    3840
+  ],
+  "publishedPath": "website/public/new/projects/board-ask-agent-{width}-v1.webp",
+  "processing": "Sharp 0.34.5, proportional resizing without enlargement, WebP quality 94 effort 6",
+  "scene": "Six tasks in Planned, In Progress and In Review with a read-only Ask Agent summary using matching task IDs, owners and statuses.",
+  "placement": "/products/projects#project-tasks"
+}

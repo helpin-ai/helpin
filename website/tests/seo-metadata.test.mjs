@@ -4,8 +4,8 @@ import { describe, it } from 'node:test';
 import { inflateSync } from 'node:zlib';
 
 const { createPageMetadata, PAGE_SEO } = await import('../src/lib/metadata.ts');
-const { previewMetadata } = await import('../src/app/new/_components/preview-metadata.ts');
-const previewRoutes = ['/new', '/new/product', '/new/products/customer-support', '/new/products/projects', '/new/products/crm', '/new/products/meetings', '/new/products/knowledge', '/new/products/ai-agents', '/new/developers', '/new/self-hosting', '/new/branding'];
+const { marketingMetadata } = await import('../src/app/(site)/_components/marketing-metadata.ts');
+const marketingRoutes = ['/product', '/products/customer-support', '/products/projects', '/products/crm', '/products/meetings', '/products/knowledge', '/products/ai-agents', '/developers', '/self-hosting', '/branding'];
 
 function decodeRgbaPng(png) {
   const idat = [];
@@ -109,25 +109,26 @@ describe('website SEO metadata', () => {
     }
   });
 
-  it('gives every new page its own branded OG and Twitter image', () => {
-    for (const path of previewRoutes) {
-      const metadata = previewMetadata('Helpin — ' + path, path);
+  it('gives every marketing page a public canonical and branded social image', () => {
+    for (const path of marketingRoutes) {
+      const metadata = marketingMetadata('Helpin — ' + path, path);
       const image = metadata.openGraph.images[0];
       assert.match(image.url, /-green-v4\.png$/);
       assert.equal(metadata.twitter.images[0].url, image.url);
-      assert.equal(metadata.robots.index, false);
+      assert.equal(metadata.alternates.canonical, path);
+      assert.equal(metadata.openGraph.url, path);
+      assert.equal(metadata.robots.index, true);
       assert.ok(existsSync(new URL('../public' + image.url, import.meta.url)));
     }
   });
 
   it('ships social images as optimized 1200 by 630 PNG files', () => {
     const images = [
-      '../public/og/helpin-home-green-v4.png',
       '../public/og/helpin-new-home-green-v4.png',
       '../public/og/helpin-pricing-green-v4.png',
       '../public/og/helpin-privacy-green-v4.png',
       '../public/og/helpin-terms-green-v4.png',
-      ...previewRoutes.filter(path => path !== '/new').map(path => '../public/og/helpin-' + path.split('/').at(-1) + '-green-v4.png'),
+      ...marketingRoutes.map(path => '../public/og/helpin-' + path.split('/').at(-1) + '-green-v4.png'),
       '../../frontend/public/og/helpin-app.png',
       '../../frontend/public/og/helpin-shared-document.png',
     ];

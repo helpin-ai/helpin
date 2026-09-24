@@ -23,7 +23,7 @@ const DARK = {
 };
 
 // A static trace of the site's HeroVortex "flow" lines (same formula and gradient as
-// src/app/new/_components/HeroVortex.tsx), so the cards carry the website's signature.
+// src/app/(site)/_components/HeroVortex.tsx), so the cards carry the website's signature.
 const FLOW_LINES = [0, 1].flatMap((group) => Array.from({ length: 12 }, (_, i) => ({
   group,
   d: `M -120 ${130 + group * 250 + i * 13} C 330 ${-80 + group * 370 + i * 17}, 810 ${530 - group * 220 + i * 9}, 1520 ${150 + group * 260 + i * 12}`,
@@ -48,17 +48,10 @@ const COLORS = {
 };
 
 // Bump when card content changes so social platforms fetch the new image instead of a cached one.
-// Update the matching paths in src/lib/metadata.ts and src/app/new/_components/preview-metadata.ts.
+// Update the matching paths in src/lib/metadata.ts and src/app/(site)/_components/marketing-metadata.ts.
 const VERSION = 'v4';
 
 const variants = [
-  {
-    output: resolve(websiteRoot, `public/og/helpin-home-green-${VERSION}.png`),
-    eyebrow: 'THE HELPIN PLATFORM',
-    headline: ['Bring every team', 'together. Put AI', 'agents to work.'],
-    support: 'Support, projects, CRM and docs. Connected by AI agents.',
-    visual: 'connected',
-  },
   {
     output: resolve(websiteRoot, `public/og/helpin-new-home-green-${VERSION}.png`),
     eyebrow: 'ONE CUSTOMER HISTORY',

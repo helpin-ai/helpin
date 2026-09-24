@@ -1,4 +1,4 @@
-/* Pricing (/pricing). Builds on the .hp3 tokens and primitives in new/new.css. */
+/* Pricing (/pricing). Builds on the .hp3 tokens and primitives in (site)/new.css. */
 .hp3 .pricing-page { color: var(--ink); }
 .hp3 .pricing-page section { scroll-margin-top: 80px; }
 .hp3 .pricing-page .sec-head { gap: 14px; margin-bottom: 40px; }
