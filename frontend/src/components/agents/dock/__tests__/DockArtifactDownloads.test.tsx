@@ -73,7 +73,10 @@ describe('DockArtifactDownloads', () => {
     expect(mocks.getArtifactContentURL).not.toHaveBeenCalled();
     expect(container.textContent).not.toContain('hidden.csv');
 
-    await act(async () => { container.querySelector('summary')?.click(); });
+    await act(async () => {
+      container.querySelector('summary')?.click();
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+    });
     expect(container.querySelector('details')?.open).toBe(true);
     expect(container.textContent).toContain('results.csv');
     expect(container.textContent).toContain('notes.txt');
@@ -85,7 +88,10 @@ describe('DockArtifactDownloads', () => {
     expect(mocks.getArtifactContentURL).toHaveBeenCalledWith('workspace-1', 'file-1');
     expect(replace).toHaveBeenCalledWith('https://private.example/file.csv');
 
-    await act(async () => { container.querySelector('summary')?.click(); });
+    await act(async () => {
+      container.querySelector('summary')?.click();
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+    });
     expect(container.querySelector('details')?.open).toBe(false);
     await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 0)); });
     expect(container.querySelector('button[aria-label="Download results.csv"]')).toBeNull();
