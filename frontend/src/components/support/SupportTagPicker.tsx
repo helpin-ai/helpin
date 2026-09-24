@@ -259,7 +259,7 @@ function ManageTagsDialog({
       onOpenChange(nextOpen);
       if (!nextOpen) returnToList();
     }}>
-      <DialogContent aria-describedby={undefined} className="sm:max-w-[520px]">
+      <DialogContent aria-describedby={undefined} className="sm:max-w-[560px]">
         <DialogHeader className={mode === 'list' ? undefined : 'flex-row items-center gap-2 space-y-0'}>
           {mode !== 'list' ? (
             <button
