@@ -31,16 +31,22 @@ function Harness({ conv }: { conv: SupportConversation }) {
 }
 async function render(conv = conversation) { await act(async () => root.render(<QueryClientProvider client={client}><Harness conv={conv} /></QueryClientProvider>)); }
 function item() { return document.querySelector<HTMLElement>('[role="menuitem"]'); }
+async function explanation() {
+  await act(async () => { item()?.blur(); item()?.focus(); });
+  return document.querySelector('[role="tooltip"]')?.textContent ?? '';
+}
 async function select() { expect(item()).toBeTruthy(); await act(async () => item()!.click()); }
 it('pauses from the menu and includes the displayed version', async () => {
   await render(); expect(item()?.getAttribute('aria-label')).toBe('Pause AI'); await select();
   expect(supportService.changeConversationAIControl).toHaveBeenCalledWith('ws', 'conv', { action: 'pause', expected_version: 4, confirm_human_request: false });
 });
-it('explains ownership release and the next-message wait beside Return to AI', async () => {
+it('explains ownership release and the next-message wait in a tooltip for Resume AI', async () => {
   await render({ ...conversation, human_takeover: true, ai_paused_by_user_id: 'teammate' });
-  expect(item()?.textContent).toContain('AI paused by Sam');
-  expect(item()?.textContent).toContain('releases human assignment');
-  expect(item()?.textContent).toContain('next customer message');
+  expect(item()?.textContent).toBe('Resume AI');
+  const tip = await explanation();
+  expect(tip).toContain('AI paused by Sam');
+  expect(tip).toContain('releases human assignment');
+  expect(tip).toContain('next customer message');
   await select();
   expect(supportService.changeConversationAIControl).toHaveBeenCalledWith('ws', 'conv', { action: 'return', expected_version: 4, confirm_human_request: false });
 });
@@ -49,7 +55,7 @@ it('keeps deliberate confirmation when the customer requested a human', async ()
   await select();
   expect(supportService.changeConversationAIControl).not.toHaveBeenCalled();
   expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain('customer requested a human');
-  const confirm = [...document.querySelectorAll('[role="alertdialog"] button')].find(button => button.textContent === 'Return to AI') as HTMLButtonElement;
+  const confirm = [...document.querySelectorAll('[role="alertdialog"] button')].find(button => button.textContent === 'Resume AI') as HTMLButtonElement;
   await act(async () => confirm.click());
   expect(supportService.changeConversationAIControl).toHaveBeenCalledWith('ws', 'conv', { action: 'return', expected_version: 4, confirm_human_request: true });
 });
@@ -59,7 +65,7 @@ it('does not offer mutation to a read-only teammate', async () => {
 it('shows why return is unavailable when workspace AI is disabled', async () => {
   state.enabled = false; await render({ ...conversation, human_takeover: true });
   expect(item()?.getAttribute('aria-disabled')).toBe('true');
-  expect(item()?.textContent).toContain('Enable AI for this channel');
+  expect(await explanation()).toContain('Enable AI for this channel');
   await select(); expect(supportService.changeConversationAIControl).not.toHaveBeenCalled();
 });
 it('hides controls for deleted, spam and resolved conversations', async () => {
@@ -73,7 +79,7 @@ it('hides when AI is unconfigured and has never been involved', async () => {
 });
 it('shows the next-message wait after returning to AI', async () => {
   await render({ ...conversation, ai_resumed_at: '2026-09-16T12:00:00Z', last_customer_message_at: '2026-09-16T11:00:00Z' });
-  expect(item()?.textContent).toContain('Waiting for the next customer message.');
+  expect(await explanation()).toContain('Waiting for the next customer message.');
 });
 it('prevents duplicate requests while an update is pending', async () => {
   let finish!: (value: never) => void;

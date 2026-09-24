@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { BotIcon, Loading01Icon, PauseIcon } from '@/lib/icons';
 import {
@@ -100,7 +101,7 @@ export function useSupportAIControl(conversation: SupportConversation) {
         new Date(conversation.ai_resumed_at));
   const unavailable = paused && (!enabled || !eligible);
   const disabled = mutation.isPending || unavailable;
-  const label = paused ? 'Return to AI' : 'Pause AI';
+  const label = paused ? 'Resume AI' : 'Pause AI';
   const status = paused
     ? pausedBy
       ? `AI paused by ${pausedBy}.`
@@ -111,7 +112,7 @@ export function useSupportAIControl(conversation: SupportConversation) {
   const explanation = paused
     ? unavailable
       ? 'Enable AI for this channel to return the conversation.'
-      : 'AI will respond to the next customer message. Returning releases human assignment.'
+      : 'AI will respond to the next customer message. Resuming releases human assignment.'
     : `${waiting ? 'Waiting for the next customer message. ' : ''}Stop AI replies and follow-ups.`;
   const Icon = mutation.isPending
     ? Loading01Icon
@@ -119,35 +120,37 @@ export function useSupportAIControl(conversation: SupportConversation) {
       ? BotIcon
       : PauseIcon;
   const item = (
-    <DropdownMenuItem
-      aria-label={label}
-      aria-busy={mutation.isPending}
-      disabled={disabled}
-      className="items-start"
-      onSelect={() => {
-        if (disabled) return;
-        if (paused && conversation.customer_requested_human_at)
-          setConfirmReturnFor(conversation.id);
-        else
-          mutation.mutate({
-            action: paused ? 'return' : 'pause',
-            confirmed: false,
-          });
-      }}
-    >
-      <Icon
-        aria-hidden="true"
-        className={`mt-0.5 size-3.5 shrink-0${mutation.isPending ? ' animate-spin' : ''}`}
-      />
-      <span className="min-w-0 space-y-1">
-        <span className="block">
-          {mutation.isPending ? 'Updating…' : label}
-        </span>
-        <span className="block text-xs leading-relaxed text-quiet-text-secondary">
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuItem
+            aria-label={label}
+            aria-busy={mutation.isPending}
+            disabled={disabled}
+            className="data-disabled:pointer-events-auto"
+            onSelect={() => {
+              if (disabled) return;
+              if (paused && conversation.customer_requested_human_at)
+                setConfirmReturnFor(conversation.id);
+              else
+                mutation.mutate({
+                  action: paused ? 'return' : 'pause',
+                  confirmed: false,
+                });
+            }}
+          >
+            <Icon
+              aria-hidden="true"
+              className={`size-3.5 shrink-0${mutation.isPending ? ' animate-spin' : ''}`}
+            />
+            <span>{mutation.isPending ? 'Updating…' : label}</span>
+          </DropdownMenuItem>
+        </TooltipTrigger>
+        <TooltipContent side="left" sideOffset={8}>
           {status} {explanation}
-        </span>
-      </span>
-    </DropdownMenuItem>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
   const confirmation = (
     <AlertDialog
@@ -158,9 +161,9 @@ export function useSupportAIControl(conversation: SupportConversation) {
     >
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Return this conversation to AI?</AlertDialogTitle>
+          <AlertDialogTitle>Resume AI for this conversation?</AlertDialogTitle>
           <AlertDialogDescription>
-            The customer requested a human. Returning releases human assignment
+            The customer requested a human. Resuming releases human assignment
             and allows AI to respond to their next message. The request remains
             in the conversation history.
           </AlertDialogDescription>
@@ -176,7 +179,7 @@ export function useSupportAIControl(conversation: SupportConversation) {
               mutation.mutate({ action: 'return', confirmed: true });
             }}
           >
-            Return to AI
+            Resume AI
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
