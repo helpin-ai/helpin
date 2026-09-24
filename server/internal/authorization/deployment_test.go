@@ -54,6 +54,26 @@ func TestDeploymentModulesRestrictOwnersAndDirectRoutes(t *testing.T) {
 	}
 }
 
+func TestWorkspaceMemberCanUseAskAgentsWithoutAutomationAccess(t *testing.T) {
+	actor := &Actor{Role: model.RoleMember}
+	for _, tc := range []struct {
+		name    string
+		modules []model.ModuleID
+		want    bool
+	}{
+		{name: "agents enabled", modules: []model.ModuleID{model.ModuleDocs, model.ModuleAgents}, want: true},
+		{name: "agents disabled", modules: []model.ModuleID{model.ModuleDocs}, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			authz := NewAuthzService(nil, nil, nil)
+			authz.SetDeploymentModules(tc.modules)
+			if got := authz.CanUseAskAgents(actor); got != tc.want {
+				t.Errorf("CanUseAskAgents() = %t, want %t", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestParseDeploymentModules(t *testing.T) {
 	for _, raw := range []string{"typo", "support", "support,docs,", "docs,*"} {
 		if _, err := deployment.ParseModules(raw); err == nil {

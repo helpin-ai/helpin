@@ -212,7 +212,7 @@ function WorkspaceLayout() {
                 <div className="flex min-h-0 flex-1 overflow-hidden">
                   <WorkspaceMainContent>
                     <Outlet />
-                    {accessibleModules.includes('agents') && <RouteAwareAskAgentsDock />}
+                    {access?.can_use_ask_agents && <RouteAwareAskAgentsDock />}
                   </WorkspaceMainContent>
                 </div>
                 <MemoizedGlobalCreateModals workspaceId={currentWorkspace.id} />

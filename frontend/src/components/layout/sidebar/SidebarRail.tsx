@@ -11,6 +11,7 @@ type SidebarRailProps = {
   activeRail: RailId;
   userEmail?: string;
   accessibleModules?: WorkspaceModule[];
+  canUseAskAgents?: boolean;
   theme?: string;
   onRailSelect: (link: string) => void;
   onToggleTheme: () => void;
@@ -22,6 +23,7 @@ export function SidebarRail({
   activeRail,
   userEmail,
   accessibleModules = [],
+  canUseAskAgents = false,
   theme,
   onRailSelect,
   onToggleTheme,
@@ -93,7 +95,7 @@ export function SidebarRail({
             {theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           </TooltipContent>
         </Tooltip>
-        <SidebarRunsButton />
+        {canUseAskAgents && <SidebarRunsButton />}
         {accountMenu}
       </div>
     </div>

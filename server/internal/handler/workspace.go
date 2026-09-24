@@ -418,11 +418,12 @@ func (h *WorkspaceHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"workspace_id":     actor.WorkspaceID,
-		"membership":       membership,
-		"permissions":      permStrings,
-		"team_memberships": teamMemberships,
-		"modules":          moduleStrings,
-		"security_policy":  securityPolicy,
+		"workspace_id":       actor.WorkspaceID,
+		"membership":         membership,
+		"permissions":        permStrings,
+		"team_memberships":   teamMemberships,
+		"modules":            moduleStrings,
+		"can_use_ask_agents": h.authz.CanUseAskAgents(actor),
+		"security_policy":    securityPolicy,
 	})
 }

@@ -249,6 +249,7 @@ export interface WorkspaceAccess {
     role: string;
   }[];
   modules: WorkspaceModule[];
+  can_use_ask_agents: boolean;
   security_policy?: WorkspaceMFAPolicy;
 }
 

@@ -21,6 +21,14 @@ func (s *AuthzService) deploymentEnabled(module model.ModuleID) bool {
 	return module == "" || s.deploymentModules == nil || s.deploymentModules[module]
 }
 
+// CanUseAskAgents is independent of Automation module grants. Dock routes
+// already allow workspace members with read access; only deployment policy
+// controls whether the Ask Agents product is available.
+func (s *AuthzService) CanUseAskAgents(actor *Actor) bool {
+	return actor != nil && s.deploymentEnabled(model.ModuleAgents) &&
+		s.CanAny(actor, PermPMRead, PermDocsRead, PermCRMRead)
+}
+
 func (s *AuthzService) visibleModules(allowed map[model.ModuleID]struct{}) []model.ModuleID {
 	if s.deploymentModules != nil {
 		if _, ok := allowed[model.ModuleAutomation]; ok && s.deploymentEnabled(model.ModuleAgents) {

@@ -353,6 +353,7 @@ export function Sidebar() {
             activeRail={activeRail}
             userEmail={user?.email ?? undefined}
             accessibleModules={modules}
+            canUseAskAgents={access?.can_use_ask_agents ?? false}
             theme={theme}
             onRailSelect={(link) => handleNavigate(link)}
             onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
