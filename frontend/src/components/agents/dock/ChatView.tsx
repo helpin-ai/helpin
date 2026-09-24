@@ -9,6 +9,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { toast } from 'sonner';
 import { ArrowRight01Icon, ArrowUp01Icon, Loading01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { usePageContextState } from '@/components/command-bar/pageContext';
 import { commandBarService } from '@/lib/services/commandBarService';
 import { dockChatService } from '@/lib/services/dockChatService';
@@ -968,17 +969,23 @@ export function ChatView({
         {followUpSuggestions.length > 0 && (
           <div className="mt-2 border-t border-border/40 pt-1" data-agent-follow-up-suggestions>
             {followUpSuggestions.map((suggestion) => (
-              <button
-                key={suggestion}
-                type="button"
-                className="flex w-full items-center gap-2 rounded-md px-1 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-                onClick={() => {
-                  insertSuggestion(suggestion);
-                }}
-              >
-                <ArrowRight01Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                <span className="min-w-0 truncate">{suggestion}</span>
-              </button>
+              <Tooltip key={suggestion}>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex w-full min-w-0 items-center gap-2 rounded-md px-1 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+                    onClick={() => {
+                      insertSuggestion(suggestion);
+                    }}
+                  >
+                    <ArrowRight01Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    <span className="min-w-0 truncate">{suggestion}</span>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top" align="start" className="max-w-[min(28rem,calc(100vw-2rem))] whitespace-normal break-words text-left leading-relaxed">
+                  {suggestion}
+                </TooltipContent>
+              </Tooltip>
             ))}
           </div>
         )}
