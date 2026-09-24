@@ -326,6 +326,7 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		return nil
 	}
 	s.cancelControlledRun(ctx, workspaceID, conversationID, oldRun)
+	s.localizeSupportHandoffNote(ctx, note)
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, note, "ai:handoff"))
 	if selection != nil && strings.TrimSpace(selection.UserID) != "" && s.assignmentSystemMessageEmitter != nil {
 		s.assignmentSystemMessageEmitter(ctx, workspaceID, conversationID, selection.UserID)

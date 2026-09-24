@@ -35,7 +35,10 @@ func (r *SupportTranslationRepository) CachedMessages(ctx context.Context, works
 	if len(ids) == 0 {
 		return result, nil
 	}
-	err := r.db.WithContext(ctx).Table("support_translations t").Select("t.*").Joins("JOIN support_messages m ON m.id=t.source_message_id AND m.workspace_id=t.workspace_id AND m.content=t.source_text AND m.deleted_at IS NULL").Where("t.workspace_id = ? AND t.conversation_id = ? AND t.target_language = ? AND t.source_message_id IN ? AND t.purpose IN ('message_display','manual_display')", workspaceID, conversationID, target, ids).Order("t.updated_at ASC").Find(&result).Error
+	err := r.db.WithContext(ctx).Table("support_translations t").Select("t.*").
+		Joins("JOIN support_messages m ON m.workspace_id=t.workspace_id AND m.conversation_id=t.conversation_id AND m.deleted_at IS NULL AND m.is_internal = ? AND ((m.id=t.source_message_id AND m.content=t.source_text AND t.purpose IN ('message_display','manual_display')) OR (m.id=t.sent_message_id AND m.content=t.translated_text AND t.purpose='outgoing_reply' AND t.status='ready'))", false).
+		Where("t.workspace_id = ? AND t.conversation_id = ? AND m.id IN ? AND ((t.purpose IN ('message_display','manual_display') AND t.target_language = ?) OR t.purpose='outgoing_reply')", workspaceID, conversationID, ids, target).
+		Order("t.updated_at ASC").Find(&result).Error
 
 	for i := range result {
 		if result[i].Status == "pending" && time.Since(result[i].UpdatedAt) > 2*time.Minute {

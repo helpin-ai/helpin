@@ -163,7 +163,7 @@ func (s *SupportFollowUpService) Complete(ctx context.Context, run *model.AgentR
 		return "", err
 	}
 	if sent != nil {
-		s.publishFollowUpMessage(run.WorkspaceID, sent)
+		s.publishFollowUpMessage(ctx, run.WorkspaceID, sent)
 	}
 	if s.chat.supportAIService.wsPublisher != nil {
 		s.chat.supportAIService.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "support_conversation", EntityID: run.TargetID, WorkspaceID: run.WorkspaceID})

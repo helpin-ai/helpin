@@ -890,8 +890,10 @@ export const MessageBubble = memo(function MessageBubble({
                       </div>
                     )}
                     {renderImageAttachments(hasDisplayContent || fileAttachments.length > 0 || linkPreviews.length > 0 ? 'mt-2' : '')}
-                    {translationFooter}
-                    {renderBubbleTime('float-right ml-2 mt-1 text-muted-foreground')}
+                    {translationFooter ? <div data-slot="support-message-footer" className="mt-1 flex items-end justify-between gap-3">
+                      {translationFooter}
+                      {renderBubbleTime('ml-auto shrink-0 text-muted-foreground')}
+                    </div> : renderBubbleTime('float-right ml-2 mt-1 text-muted-foreground')}
                   </div>
                 </TooltipTrigger>
                 <TooltipContent side="top">

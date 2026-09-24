@@ -196,3 +196,27 @@ func TestLiveTranslateManualBudgetCannotBlockOutgoingReply(t *testing.T) {
 		t.Fatalf("reading activity blocked a reply: %v", err)
 	}
 }
+
+func TestCachedLiveTranslationsIncludeSentOriginalOnlyForMatchingPublicMessage(t *testing.T) {
+	env, c, _ := translationFixture(t)
+	ctx := context.Background()
+	msg := &model.SupportMessage{ID: "sent-original", WorkspaceID: c.WorkspaceID, ConversationID: c.ID, SenderType: "user", MessageType: "reply", Content: "Hola"}
+	if err := env.messageRepo.Create(ctx, msg); err != nil {
+		t.Fatal(err)
+	}
+	artifact := model.SupportTranslation{ID: "sent-artifact", WorkspaceID: c.WorkspaceID, ConversationID: c.ID, Purpose: "outgoing_reply", SentMessageID: &msg.ID, SourceText: "Hello", TranslatedText: "Hola", SourceLanguage: "en", TargetLanguage: "es", Status: "ready", CacheKey: "sent-original"}
+	if err := env.messageRepo.DB().Create(&artifact).Error; err != nil {
+		t.Fatal(err)
+	}
+	got, err := env.service.supportInboxService.CachedLiveTranslations(ctx, c.WorkspaceID, c.ID, "reader", []string{msg.ID})
+	if err != nil || len(got) != 1 || got[0].SourceText != "Hello" {
+		t.Fatalf("saved original=%+v err=%v", got, err)
+	}
+	if err := env.messageRepo.DB().Model(msg).Update("content", "Edited").Error; err != nil {
+		t.Fatal(err)
+	}
+	got, err = env.service.supportInboxService.CachedLiveTranslations(ctx, c.WorkspaceID, c.ID, "reader", []string{msg.ID})
+	if err != nil || len(got) != 0 {
+		t.Fatalf("stale original=%+v err=%v", got, err)
+	}
+}

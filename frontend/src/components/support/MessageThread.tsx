@@ -322,9 +322,9 @@ export function MessageThread({
     [messagePages],
   );
   const messages=usePendingSupportSends(workspaceId,conversationId||'',loadedMessages);
-  const translationIds=useMemo(()=>messages.filter(m=>m.sender_type==='customer'&&!m.is_internal).map(m=>m.id),[messages]);
-  const cachedTranslations=useCachedSupportTranslations(workspaceId,conversationId||'',translationIds, Math.max(0, ...messages.filter(m=>m.sender_type==='customer').map(m=>Date.parse(m.created_at)))).data;
-  const translationMap=useMemo(()=>new Map((cachedTranslations||[]).map(t=>[t.source_message_id,t])),[cachedTranslations]);
+  const translationIds=useMemo(()=>messages.filter(m=>m.message_type==='reply'&&!m.is_internal&&!m.pending_send).map(m=>m.id),[messages]);
+  const cachedTranslations=useCachedSupportTranslations(workspaceId,conversationId||'',translationIds, Math.max(0, ...messages.filter(m=>!m.is_internal).map(m=>Date.parse(m.created_at)))).data;
+  const translationMap=useMemo(()=>new Map((cachedTranslations||[]).map(t=>[t.purpose === 'outgoing_reply' ? t.sent_message_id : t.source_message_id,t])),[cachedTranslations]);
   const { data: inboxScopes } = useInboxScopes(workspaceId);
   const { data: installation } = useChatSettings(workspaceId);
   useSupportTeammatePresence(workspaceId);

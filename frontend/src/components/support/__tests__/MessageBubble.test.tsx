@@ -51,6 +51,16 @@ function renderBubble(
 }
 
 describe('MessageBubble', () => {
+  it('keeps translation controls and timestamp together inside the bubble', () => {
+    const rendered = renderBubble({ id: 'translated', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'customer', message_type: 'reply', is_internal: false, content: 'Hello', created_at: '2026-09-24T10:00:00Z', updated_at: '2026-09-24T10:00:00Z' }, undefined, { translationFooter: <button>Show original</button> });
+    try {
+      const footer = rendered.container.querySelector('[data-slot="support-message-footer"]');
+      expect(footer?.querySelector('button')?.textContent).toBe('Show original');
+      expect(footer?.querySelector('time')?.dateTime).toBe('2026-09-24T10:00:00Z');
+      expect(footer?.closest('[data-slot="support-message-bubble-frame"]')).not.toBeNull();
+    } finally { rendered.cleanup(); }
+  });
+
   it.each(['ai_paused', 'ai_returned'] as const)('renders %s with the recorded actor', (event) => {
     const rendered = renderBubble({
       id: 'activity', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'user',
@@ -127,6 +137,8 @@ describe('MessageBubble', () => {
       expect(details?.open).toBe(false)
       expect(details?.querySelector('summary')?.textContent).toBe('View details')
       expect(details?.textContent).toContain('Checked related tickets')
+      expect(details?.textContent).not.toContain('Workspace switch fails')
+      expect(rendered.container.textContent?.match(/Checked related tickets/g)).toHaveLength(1)
     } finally { rendered.cleanup() }
   })
 

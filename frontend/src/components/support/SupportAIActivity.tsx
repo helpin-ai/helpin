@@ -1,12 +1,12 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { AIActivity } from './supportAIActivity';
 import type { SupportMessage } from '@/lib/pmTypes';
 import { BotIcon } from '@/lib/icons';
 import { formatMessageTime, formatTimestamp } from './helpers';
 
 function handoffSections(content: string) {
-  const match = content.match(/^AI handoff\n\nIssue\n([\s\S]*?)\n\nAlready tried \/ suggested\n([\s\S]*?)\n\nStill unresolved\n([\s\S]*?)\n\nReason for handoff\n/);
-  return match ? { issue: match[1], checked: match[2], next: match[3] } : null;
+  const match = content.match(/^AI handoff\n\nIssue\n([\s\S]*?)\n\nAlready tried \/ suggested\n([\s\S]*?)\n\nStill unresolved\n([\s\S]*?)\n\nReason for handoff\n([\s\S]*)$/);
+  return match ? { issue: match[1], checked: match[2], next: match[3], reason: match[4] } : null;
 }
 
 export function SupportAIActivity({ message, activity, teammateName, detailsContent }: {
@@ -15,6 +15,7 @@ export function SupportAIActivity({ message, activity, teammateName, detailsCont
   teammateName?: string;
   detailsContent?: ReactNode;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const storedName = message.sender_display_name === 'AI control' ? undefined : message.sender_display_name;
   const name = (storedName || teammateName)?.trim();
   const actor = !name || name === 'A teammate' ? 'A teammate' : name.split(/\s+/)[0];
@@ -48,12 +49,18 @@ export function SupportAIActivity({ message, activity, teammateName, detailsCont
         <span className="text-[11px] text-muted-foreground">Team only</span>
         <span className="ml-auto">{time}</span>
       </div>
-      {sections ? <dl className="space-y-2 text-sm [overflow-wrap:anywhere]">
-        <div><dt className="text-xs font-medium text-muted-foreground">Issue</dt><dd className="line-clamp-2">{sections.issue}</dd></div>
-        {sections.checked !== 'No attempted steps recorded.' && <div><dt className="text-xs font-medium text-muted-foreground">What AI checked / suggested</dt><dd className="line-clamp-2">{sections.checked}</dd></div>}
-        <div><dt className="text-xs font-medium text-muted-foreground">Next step</dt><dd className="line-clamp-2">{sections.next}</dd></div>
-      </dl> : <p className="text-sm">AI handed this conversation to the team.</p>}
-      {details('View details')}
+      {sections ? <div className="text-sm [overflow-wrap:anywhere]">
+        <p className={`whitespace-pre-wrap ${expanded ? '' : 'line-clamp-2'}`}>{sections.issue}</p>
+        <details className="mt-2 text-xs text-muted-foreground" onToggle={event => setExpanded(event.currentTarget.open)}>
+          <summary className="w-fit cursor-pointer rounded-sm font-medium hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">View details</summary>
+          <dl className="mt-2 space-y-2 text-sm text-foreground">
+            {sections.checked !== 'No attempted steps recorded.' && <div><dt className="text-xs font-medium text-muted-foreground">What AI checked / suggested</dt><dd className="whitespace-pre-wrap">{sections.checked}</dd></div>}
+            <div><dt className="text-xs font-medium text-muted-foreground">Still unresolved</dt><dd className="whitespace-pre-wrap">{sections.next}</dd></div>
+            <div><dt className="text-xs font-medium text-muted-foreground">Reason for handoff</dt><dd className="whitespace-pre-wrap">{sections.reason}</dd></div>
+          </dl>
+        </details>
+      </div> : <div className="prose-chat text-sm [overflow-wrap:anywhere]">{detailsContent ?? <p className="whitespace-pre-wrap">{message.content}</p>}</div>}
+
     </section>
   </div>;
 }

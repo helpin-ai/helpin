@@ -164,7 +164,7 @@ func (s *SupportFollowUpService) process(ctx context.Context, row model.SupportA
 		return tx.Model(e).Updates(map[string]any{"status": "assessing", "started_at": e.StartedAt, "updated_at": now}).Error
 	})
 	if err == nil && sent != nil {
-		s.publishFollowUpMessage(row.WorkspaceID, sent)
+		s.publishFollowUpMessage(ctx, row.WorkspaceID, sent)
 	}
 	if err != nil || !launch {
 		return err
@@ -238,8 +238,9 @@ func (s *SupportInboxService) SetFollowUpRepository(repo *repository.SupportFoll
 	s.followUpRepo = repo
 }
 
-func (s *SupportFollowUpService) publishFollowUpMessage(workspaceID string, message *model.SupportMessage) {
+func (s *SupportFollowUpService) publishFollowUpMessage(ctx context.Context, workspaceID string, message *model.SupportMessage) {
 	if message.IsInternal {
+		s.chat.supportAIService.localizeSupportHandoffNote(ctx, message)
 		s.chat.supportAIService.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, message, "support:follow_up"))
 		return
 	}

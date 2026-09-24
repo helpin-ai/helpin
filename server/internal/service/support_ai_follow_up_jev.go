@@ -85,7 +85,7 @@ func (s *SupportFollowUpService) assessJevFollowUp(ctx context.Context, row mode
 		return false, "", err
 	}
 	if sent != nil {
-		s.publishFollowUpMessage(row.WorkspaceID, sent)
+		s.publishFollowUpMessage(ctx, row.WorkspaceID, sent)
 	}
 	if handled && s.chat.supportAIService.wsPublisher != nil {
 		s.chat.supportAIService.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "support_conversation", EntityID: row.ConversationID, WorkspaceID: row.WorkspaceID})
