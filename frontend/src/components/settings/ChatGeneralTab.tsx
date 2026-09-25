@@ -942,12 +942,13 @@ function Dashboard() {
           <div className="mb-5">
             <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Customer portal</p>
             <h2 id="customer-portal-settings-heading" className="mt-1 text-sm font-medium">Portal access and intake</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Control whether customers can use the portal and submit new support requests.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Configure customer portal access and new-request intake.</p>
             <p className="mt-3 text-xs text-muted-foreground" aria-live="polite">
-              Customer access: <span className="font-medium text-foreground">{portalEnabled ? 'Available' : 'Unavailable'}</span>
+              Portal setting: <span className="font-medium text-foreground">{portalEnabled ? 'On' : 'Off'}</span>
               {' · '}
-              New request intake: <span className="font-medium text-foreground">{portalEnabled && portalIntakeEnabled ? 'Available' : 'Unavailable'}</span>
+              Intake setting: <span className="font-medium text-foreground">{portalIntakeEnabled ? 'On' : 'Off'}</span>
             </p>
+            <p className="mt-1 text-xs text-muted-foreground">These settings do not confirm customer availability; the public portal service must also be ready.</p>
           </div>
 
           <div className="divide-y divide-border/70">
