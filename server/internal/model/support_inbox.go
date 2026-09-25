@@ -1402,6 +1402,12 @@ type SupportInboxSettings struct {
 	LauncherPosition string `json:"launcher_position"` // bottom_right, bottom_left
 	LauncherIcon     string `json:"launcher_icon"`     // chat_bubble, question_mark, help
 
+	// Customer Portal
+	PortalEnabled                bool `json:"portal_enabled"`
+	PortalRequestsOnly           bool `json:"portal_requests_only"`
+	PortalAnonymousIntakeEnabled bool `json:"portal_anonymous_intake_enabled"`
+	PortalIntakeEnabled          bool `json:"portal_intake_enabled"`
+
 	// CSAT
 	CSATEnabled bool `json:"csat_enabled"`
 
@@ -1502,6 +1508,10 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		LogoURL:                         "",
 		LauncherPosition:                "bottom_right",
 		LauncherIcon:                    "chat_bubble",
+		PortalEnabled:                   false,
+		PortalRequestsOnly:              false,
+		PortalAnonymousIntakeEnabled:    false,
+		PortalIntakeEnabled:             false,
 		CSATEnabled:                     false,
 		FileUploadsEnabled:              true,
 		ForceVisitorIdentity:            false,
@@ -1574,6 +1584,10 @@ type UpdateInstallationSettingsRequest struct {
 	ForwardedEmailDetectionEnabled  *bool                       `json:"forwarded_email_detection_enabled,omitempty"`
 	ForwardedEmailDetectionMode     *string                     `json:"forwarded_email_detection_mode,omitempty"`
 	ForwardedEmailMinConfidence     *int                        `json:"forwarded_email_min_confidence,omitempty"`
+	PortalEnabled                   *bool                       `json:"portal_enabled,omitempty"`
+	PortalRequestsOnly              *bool                       `json:"portal_requests_only,omitempty"`
+	PortalAnonymousIntakeEnabled    *bool                       `json:"portal_anonymous_intake_enabled,omitempty"`
+	PortalIntakeEnabled             *bool                       `json:"portal_intake_enabled,omitempty"`
 	WidgetName                      *string                     `json:"widget_name,omitempty"`
 	WidgetAvatarURL                 *string                     `json:"widget_avatar_url,omitempty"`
 	WidgetHelpSpaceIDs              []string                    `json:"widget_help_space_ids,omitempty"`

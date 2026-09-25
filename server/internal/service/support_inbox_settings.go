@@ -311,6 +311,18 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.ForwardedEmailMinConfidence != nil {
 		current.ForwardedEmailMinConfidence = *patch.ForwardedEmailMinConfidence
 	}
+	if patch.PortalEnabled != nil {
+		current.PortalEnabled = *patch.PortalEnabled
+	}
+	if patch.PortalRequestsOnly != nil {
+		current.PortalRequestsOnly = *patch.PortalRequestsOnly
+	}
+	if patch.PortalAnonymousIntakeEnabled != nil {
+		current.PortalAnonymousIntakeEnabled = *patch.PortalAnonymousIntakeEnabled
+	}
+	if patch.PortalIntakeEnabled != nil {
+		current.PortalIntakeEnabled = *patch.PortalIntakeEnabled
+	}
 	if patch.WidgetName != nil {
 		current.WidgetName = *patch.WidgetName
 	}
