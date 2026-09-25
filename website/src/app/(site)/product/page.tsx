@@ -1,11 +1,11 @@
 import { HeroVortex } from '../_components/HeroVortex';
-import { marketingMetadata } from '../_components/marketing-metadata';
+import { createPageMetadata, PAGE_SEO } from '@/lib/metadata';
 import { PreviewNav } from '../_components/PreviewNav';
 import { PreviewFooter } from '../_components/PreviewFooter';
 import { CtaRow, SectionHead } from '../_components/ui';
 import { DOCS } from '../_components/docsLinks';
 
-export const metadata = marketingMetadata("Product overview \u2014 Helpin", "/product");
+export const metadata = createPageMetadata(PAGE_SEO.product);
 
 // Product detail moved off the homepage. Each area is a section with an anchor the homepage links to.
 const AGENTS = [

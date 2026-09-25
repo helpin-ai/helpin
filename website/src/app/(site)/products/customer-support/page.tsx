@@ -1,6 +1,6 @@
 import { HeroVortex } from '../../_components/HeroVortex';
 import { Availability, DEMO_URL, FAQList } from '../../_components/ui';
-import { marketingMetadata } from '../../_components/marketing-metadata';
+import { createPageMetadata, PAGE_SEO } from '@/lib/metadata';
 import Link from 'next/link';
 import { ArrowRight, ChevronRight, Inbox, MessageSquare, Clock3, Languages, Paperclip, Search, Sparkles, Users, Zap } from 'lucide-react';
 import { PreviewNav } from '../../_components/PreviewNav';
@@ -17,7 +17,7 @@ import { SupportKnowledge } from './support-knowledge';
 import './support.css';
 import { DOCS } from '../../_components/docsLinks';
 
-export const metadata = marketingMetadata("Support \u2014 Helpin", "/products/customer-support");
+export const metadata = createPageMetadata(PAGE_SEO.customerSupport);
 
 
 const FEATURES = [

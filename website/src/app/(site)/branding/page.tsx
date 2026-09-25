@@ -1,5 +1,5 @@
 import { HeroVortex } from '../_components/HeroVortex';
-import { marketingMetadata } from '../_components/marketing-metadata';
+import { createPageMetadata, PAGE_SEO } from '@/lib/metadata';
 import { Download } from 'lucide-react';
 import { HelpinBrand } from '@/components/HelpinBrand';
 import { PreviewNav } from '../_components/PreviewNav';
@@ -7,7 +7,7 @@ import { PreviewFooter } from '../_components/PreviewFooter';
 import { ColorPalette } from './brand-tools';
 import './branding.css';
 
-export const metadata = marketingMetadata("Branding \u2014 Helpin", "/branding");
+export const metadata = createPageMetadata(PAGE_SEO.branding);
 
 export default function BrandingPage() {
   return <>

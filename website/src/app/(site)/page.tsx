@@ -14,6 +14,12 @@ import { AskAgentBento } from './_components/AskAgentBento';
 import { CustomerRecordBento } from './_components/CustomerRecordBento';
 import { CtaRow, GithubIcon, SectionHead, GITHUB_URL } from './_components/ui';
 import { DOCS } from './_components/docsLinks';
+import { createPageMetadata, PAGE_SEO } from '@/lib/metadata';
+import { JsonLd, organization, softwareApplication, website } from '@/lib/structured-data';
+import { PLANS } from '../pricing/pricing-data';
+
+export const metadata = createPageMetadata(PAGE_SEO.home);
+const HOME_JSON_LD = { '@context': 'https://schema.org', '@graph': [organization, website, softwareApplication(PLANS)] };
 
 const RECORD_FACTS = [
   {
@@ -64,6 +70,7 @@ const RECORD_FACTS = [
 export default function HomePage() {
   return (
     <>
+      <JsonLd data={HOME_JSON_LD} />
       <PreviewNav />
 
       {/* 01 Hero */}

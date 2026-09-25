@@ -1,5 +1,5 @@
 import { FAQList } from '../../_components/ui';
-import { marketingMetadata } from '../../_components/marketing-metadata';
+import { createPageMetadata, PAGE_SEO } from '@/lib/metadata';
 import Link from 'next/link';
 import { ArrowRight, Bot, ChevronRight, Clock3, Code2, LockKeyhole, MessageSquare, Settings2, ShieldCheck, Users } from 'lucide-react';
 import { PreviewNav } from '../../_components/PreviewNav';
@@ -11,7 +11,7 @@ import { AgentWorkflowArt } from './agent-workflow-art';
 import { ProductPreview } from '../../_components/product-previews';
 import './agents.css';
 
-export const metadata = marketingMetadata("AI Agents \u2014 Helpin", "/products/ai-agents");
+export const metadata = createPageMetadata(PAGE_SEO.aiAgents);
 // Names and roles follow the system presets and the application's native persona catalog.
 const SPECIALISTS = [
   { name: 'Echo', icon: 'echo', role: 'Support agent', description: 'Answer customers in live chat from your help center and earlier conversations. Hand the conversation to a teammate when it needs a person.', outcome: 'A grounded answer. A clean handoff.' },

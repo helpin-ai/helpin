@@ -2,7 +2,7 @@ import { HeroVortex } from '../_components/HeroVortex';
 import Link from 'next/link';
 import { IncludedTable } from '../_components/IncludedTable';
 import { CtaRow } from '../_components/ui';
-import { marketingMetadata } from '../_components/marketing-metadata';
+import { createPageMetadata, PAGE_SEO } from '@/lib/metadata';
 import { Database, GitBranch, KeyRound, Server, Settings2, Users } from 'lucide-react';
 import { PreviewNav } from '../_components/PreviewNav';
 import { PreviewFooter } from '../_components/PreviewFooter';
@@ -16,7 +16,7 @@ import '../_components/platform/platform-polish.css';
 import './self-hosting-copy.css';
 import { DOCS } from '../_components/docsLinks';
 
-export const metadata = marketingMetadata("Self-hosting \u2014 Helpin", "/self-hosting");
+export const metadata = createPageMetadata(PAGE_SEO.selfHosting);
 const INSTALL_GUIDE = DOCS.selfHosting;
 const FAQS = [
   [
