@@ -78,7 +78,21 @@ func (h *CommandBarHandler) StartEpicDeliveryPipeline(w http.ResponseWriter, r *
 	workspaceID := getWorkspaceID(r)
 	actorID := middleware.GetUserID(r.Context())
 	epicID := chi.URLParam(r, "id")
-	resp, err := h.commandBarService.StartEpicDeliveryPipeline(r.Context(), workspaceID, actorID, epicID, service.DirectDispatchParams())
+	var req struct {
+		AIProfileID string `json:"ai_profile_id"`
+	}
+	if r.ContentLength != 0 {
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+	}
+	params, err := h.commandBarService.WithEpicDeliveryProfile(r.Context(), workspaceID, actorID, req.AIProfileID, service.DirectDispatchParams())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	resp, err := h.commandBarService.StartEpicDeliveryPipeline(r.Context(), workspaceID, actorID, epicID, params)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -190,6 +204,36 @@ func (h *CommandBarHandler) RetryPlan(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	resp, err := h.commandBarService.RetryPlanFromStep(r.Context(), workspaceID, actorID, planID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, resp)
+}
+
+func (h *CommandBarHandler) RestartPausedEpicStep(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	actorID := middleware.GetUserID(r.Context())
+	planID := chi.URLParam(r, "planID")
+	var req model.CommandBarRestartPausedStepRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	plan, err := h.commandBarService.GetWorkspacePlan(r.Context(), workspaceID, planID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if req.StepIndex < 0 || req.StepIndex >= len(plan.Plan.Steps) {
+		writeError(w, http.StatusBadRequest, "invalid step index")
+		return
+	}
+	if err := authorizeCommandBarSteps(r, plan.Plan.PageContext, plan.Plan.Steps[req.StepIndex:], req.StepIndex); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
+	resp, err := h.commandBarService.RestartPausedEpicStep(r.Context(), workspaceID, actorID, planID, req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

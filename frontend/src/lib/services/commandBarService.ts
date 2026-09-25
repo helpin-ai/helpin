@@ -21,14 +21,14 @@ export const commandBarService = {
     api.get<CommandBarPlanDetailResponse>(`/command-bar/plans/${encodeURIComponent(planId)}${qs(workspaceId)}`),
   listEpicPlans: (workspaceId: string, epicId: string) =>
     api.get<CommandBarPlanListResponse>(`/pm/epics/${encodeURIComponent(epicId)}/command-bar-plans${qs(workspaceId)}`),
-  startEpicDeliveryPipeline: (workspaceId: string, epicId: string) =>
+  startEpicDeliveryPipeline: (workspaceId: string, epicId: string, aiProfileId = '') =>
     api.post<{
       plan_id: string;
       run_count: number;
       task_count: number;
       dependency_edges: number;
       skipped_tasks?: Array<{ task_id: string; title: string; reason: string }>;
-    }>(`/pm/epics/${encodeURIComponent(epicId)}/delivery-pipeline${qs(workspaceId)}`),
+    }>(`/pm/epics/${encodeURIComponent(epicId)}/delivery-pipeline${qs(workspaceId)}`, { ai_profile_id: aiProfileId }),
   getAgentToolCatalog: (workspaceId: string, agentId: string, selectedTools?: string[]) => {
     const params = (selectedTools ?? []).map((tool) => `&selected=${encodeURIComponent(tool)}`).join('');
     return api.get<CommandBarToolCatalogResponse>(`/command-bar/agents/${encodeURIComponent(agentId)}/tools${qs(workspaceId)}${params}`);
@@ -41,6 +41,8 @@ export const commandBarService = {
     api.post<CommandBarResumePlanResponse>(`/command-bar/plans/${encodeURIComponent(planId)}/resume${qs(workspaceId)}`),
   retryPlan: (workspaceId: string, planId: string, stepIndex: number) =>
     api.post<CommandBarRetryPlanResponse>(`/command-bar/plans/${encodeURIComponent(planId)}/retry${qs(workspaceId)}`, { step_index: stepIndex }),
+  restartPausedStep: (workspaceId: string, planId: string, payload: { step_index: number; expected_run_id: string; ai_profile_id: string; reviewed_partial_work: boolean }) =>
+    api.post<CommandBarRetryPlanResponse>(`/command-bar/plans/${encodeURIComponent(planId)}/restart-paused-step${qs(workspaceId)}`, payload),
   dismissPlans: (workspaceId: string, planIds: string[]) =>
     api.post<void>(`/command-bar/plans/dismiss${qs(workspaceId)}`, { plan_ids: planIds }),
   dismissPlan: (workspaceId: string, planId: string) =>

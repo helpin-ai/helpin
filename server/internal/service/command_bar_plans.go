@@ -232,6 +232,9 @@ func (s *CommandBarService) ResumePlan(ctx context.Context, workspaceID, actorID
 	if plan.Status != model.CommandBarPlanStatusRunning {
 		return nil, fmt.Errorf("only running command bar plans can be resumed")
 	}
+	if err := requireCommandBarPlanProfileOwner(*plan, actorID); err != nil {
+		return nil, err
+	}
 	var pageContext model.CommandBarPageContext
 	if err := json.Unmarshal(plan.PageContext, &pageContext); err != nil {
 		return nil, fmt.Errorf("decode command bar plan context: %w", err)
@@ -293,6 +296,9 @@ func (s *CommandBarService) RetryPlanFromStep(ctx context.Context, workspaceID, 
 	}
 	if plan == nil {
 		return nil, fmt.Errorf("command bar plan not found")
+	}
+	if err := requireCommandBarPlanProfileOwner(*plan, actorID); err != nil {
+		return nil, err
 	}
 	// Like ResumePlan, retry is team-actionable (not owner-gated): a failed
 	// epic delivery can be retried by any member with command-bar edit

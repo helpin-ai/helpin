@@ -246,6 +246,60 @@ func (r *CommandBarPlanRepository) RestartStepRun(ctx context.Context, workspace
 	return nil
 }
 
+// BeginPausedStepRestart atomically claims the exact old run. A second editor
+// cannot replace the same step after its mapping has already been removed.
+func (r *CommandBarPlanRepository) BeginPausedStepRestart(ctx context.Context, workspaceID, id string, stepIndex int, expectedRunID string, binding []byte) error {
+	if r == nil || r.db == nil {
+		return fmt.Errorf("command bar plan repository is not configured")
+	}
+	var profile any
+	if len(binding) > 0 {
+		profile = gorm.Expr("?::jsonb", string(binding))
+	}
+	result := r.db.WithContext(ctx).Model(&model.CommandBarPlanRecord{}).
+		Where("workspace_id = ? AND id = ? AND run_ids_by_step ->> ? = ?", workspaceID, id, strconv.Itoa(stepIndex), expectedRunID).
+		Where("status IN ?", []string{model.CommandBarPlanStatusRunning, model.CommandBarPlanStatusFailed}).
+		Updates(map[string]any{
+			"run_ids_by_step":    gorm.Expr("run_ids_by_step - ?", strconv.Itoa(stepIndex)),
+			"profile_binding":    profile,
+			"status":             model.CommandBarPlanStatusFailed,
+			"current_step_index": stepIndex,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("claim paused step restart: %w", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("delivery step changed; reload before restarting")
+	}
+	return nil
+}
+
+// RollbackPausedStepRestart restores a cancelled mapping when launch fails,
+// leaving the plan retryable rather than stranded with an empty step.
+func (r *CommandBarPlanRepository) RollbackPausedStepRestart(ctx context.Context, workspaceID, id string, stepIndex int, oldRunID string, binding []byte) error {
+	if r == nil || r.db == nil {
+		return fmt.Errorf("command bar plan repository is not configured")
+	}
+	var profile any
+	if len(binding) > 0 {
+		profile = gorm.Expr("?::jsonb", string(binding))
+	}
+	result := r.db.WithContext(ctx).Model(&model.CommandBarPlanRecord{}).
+		Where("workspace_id = ? AND id = ? AND run_ids_by_step ->> ? IS NULL", workspaceID, id, strconv.Itoa(stepIndex)).
+		Updates(map[string]any{
+			"run_ids_by_step": gorm.Expr("COALESCE(run_ids_by_step, '{}'::jsonb) || jsonb_build_object(?::text, ?::text)", strconv.Itoa(stepIndex), oldRunID),
+			"profile_binding": profile,
+			"status":          model.CommandBarPlanStatusFailed,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("restore cancelled step: %w", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("delivery step changed before recovery")
+	}
+	return nil
+}
+
 func (r *CommandBarPlanRepository) MarkCompleted(ctx context.Context, workspaceID, id string) error {
 	if r == nil || r.db == nil {
 		return fmt.Errorf("command bar plan repository is not configured")
