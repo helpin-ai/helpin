@@ -717,6 +717,7 @@ func main() {
 		SetMessageRepo(supportMessageRepo).
 		SetUserRepo(userRepo)
 	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMailboxRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo, userRepo, docsSpaceRepo, docsCollectionRepo, docsHelpcenterRepo)
+	portalAuthService := service.NewPortalAuthService(repository.NewPortalAuthRepository(db), supportInboxService, appEmailClient, cfg.AppBaseURL)
 	supportInboxService.SetProductAnalyticsService(productAnalytics)
 	supportInboxService.SetDocsSearchRepository(docsSearchRepo)
 	supportInboxService.SetCRMCompanyRepository(crmCompanyRepo)
@@ -1863,6 +1864,7 @@ func main() {
 		MCP:                 handler.NewMCPHandler(mcpService, requestLimiter),
 		ExternalMCP:         handler.NewExternalMCPHandler(externalMCPService, agentService, authzService, cfg.AppBaseURL),
 		SupportInbox:        handler.NewSupportInboxHandler(supportInboxService, agentService, supportMessageActionsService),
+		PortalAuth:          handler.NewPortalAuthHandler(portalAuthService),
 		SupportInboxView:    handler.NewSupportInboxViewHandler(supportInboxViewService),
 		SupportTag:          handler.NewSupportTagHandler(supportTagService),
 		SupportInboxWidget:  handler.NewSupportInboxWidgetHandler(supportInboxService),

@@ -35,6 +35,7 @@ type Handlers struct {
 	Assets              *handler.AssetHandler
 	Health              *handler.HealthHandler
 	Auth                *handler.AuthHandler
+	PortalAuth          *handler.PortalAuthHandler
 	Passkey             *handler.PasskeyHandler
 	Organization        *handler.OrganizationHandler
 	Workspace           *handler.WorkspaceHandler
@@ -315,6 +316,17 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		}
 
 		// ---- Public routes ----
+		if h.PortalAuth != nil {
+			r.Route("/portal/auth", func(r chi.Router) {
+				if h.WidgetRateLimit != nil {
+					r.Use(h.WidgetRateLimit)
+				}
+				r.Post("/request-link", h.PortalAuth.RequestLink)
+				r.Post("/exchange", h.PortalAuth.Exchange)
+				r.Get("/session", h.PortalAuth.Session)
+				r.Post("/logout", h.PortalAuth.Logout)
+			})
+		}
 		r.Get("/auth/config", h.Auth.GetConfig)
 		r.Post("/auth/signup", h.Auth.Signup)
 		r.Post("/auth/verify-email", h.Auth.VerifyEmail)
