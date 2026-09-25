@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CodingTranscriptPane } from '../CodingTranscriptPane';
+import { useDockStore } from '@/stores/dockStore';
 import type {
   AgentRunArtifact,
   CodingSession,
@@ -44,6 +45,7 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  useDockStore.setState({ transcriptView: 'detailed' });
   scrollToIndexMock.mockClear();
   window.requestAnimationFrame = ((callback: FrameRequestCallback) => {
     callback(0);
@@ -157,6 +159,33 @@ function buildReviewArtifact(overrides: Partial<AgentRunArtifact> = {}): AgentRu
 }
 
 describe('CodingTranscriptPane', () => {
+  it('shares the dock timeline presentation and view preference', () => {
+    useDockStore.setState({ transcriptView: 'timeline' });
+    act(() => root.render(<CodingTranscriptPane
+      transcriptMessages={[
+        buildTranscriptMessage({ event_id: 'user-prompt', message_id: 'user-prompt', role: 'user', message_type: 'prompt', content: 'Review the run.', sequence_no: 1 }),
+        buildTranscriptMessage({ event_id: 'progress', message_id: 'progress', message_type: 'assistant_progress', content: 'Reading the source.', sequence_no: 2 }),
+        buildTranscriptMessage({ event_id: 'answer', message_id: 'answer', message_type: 'assistant_final', content: 'The source is verified.', sequence_no: 3 }),
+      ]}
+      liveAssistantMessage={null}
+      liveReasoningMessage={null}
+      liveTurnSegments={[]}
+      session={buildSession({ status: 'completed', pause_reason: 'none' })}
+    />));
+
+    expect(container.querySelector('[aria-label="Activity view"]')).not.toBeNull();
+    const activity = container.querySelector('[data-dock-activity-timeline]');
+    expect(activity?.textContent).toContain('Work completed');
+    expect(container.textContent).toContain('The source is verified.');
+    expect(container.textContent).not.toContain('Reading the source.');
+    act(() => activity?.querySelector<HTMLButtonElement>('button')?.click());
+    expect(container.textContent).toContain('Reading the source.');
+
+    act(() => useDockStore.setState({ transcriptView: 'detailed' }));
+    expect(container.querySelector('[data-dock-activity-timeline]')).toBeNull();
+    expect(container.textContent).toContain('The source is verified.');
+  });
+
   it.each([
     ['human_approval', 'Waiting for approval'],
     ['human_input', 'Waiting for your reply'],
