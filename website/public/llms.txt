@@ -1,0 +1,37 @@
+# Helpin
+
+> Helpin is an open-source workspace for customer support, meetings, projects, CRM and docs, built on one shared customer history. AI agents use that history to answer customers, plan and code the resulting work, and update the CRM, with approvals the team controls. Self-host it free under AGPL-3.0, or use Helpin Cloud with AI usage included.
+
+Key facts:
+
+- Products: support inbox (chat and email), AI meeting notetaker, project management (roadmaps, sprints, objectives), CRM (contacts, companies, deals), knowledge base and help center, and AI agents.
+- Pricing: Helpin Cloud Starter is $99/month ($79/month billed annually) and Growth is $299/month ($239/month billed annually). Prices are per workspace with no per-seat fees, and AI usage is included. The 14-day trial needs no card.
+- Self-hosting: the Community edition is free, open source (AGPL-3.0) and runs with Docker Compose, with unlimited users and your own AI provider.
+- Developers: widget SDK, webhooks, a Helpin MCP server for AI clients, external MCP servers for agents, and a CLI.
+
+## Product
+
+- [Product overview](https://helpin.ai/product): how support, meetings, projects, CRM, docs and agents share one customer history
+- [Customer support](https://helpin.ai/products/customer-support): shared inbox with AI agents that answer from your docs and hand off to your team
+- [Meetings](https://helpin.ai/products/meetings): notetaker for Google Meet, Zoom, Microsoft Teams and Webex that turns action items into tasks
+- [Projects](https://helpin.ai/products/projects): roadmaps and sprints where AI agents plan and code from the customer conversation
+- [CRM](https://helpin.ai/products/crm): contacts, companies and deals with the email, meetings and support work behind them
+- [Knowledge](https://helpin.ai/products/knowledge): help center and API docs on your own domain
+- [AI agents](https://helpin.ai/products/ai-agents): specialist agents with configurable tools and approvals
+
+## Pricing and hosting
+
+- [Pricing](https://helpin.ai/pricing): Cloud plans, AI usage and plan comparison
+- [Self-hosting](https://helpin.ai/self-hosting): run the open-source edition on your own infrastructure
+
+## Developers
+
+- [Developers](https://helpin.ai/developers): SDK, webhooks, MCP and CLI
+- [Documentation](https://helpin.ai/docs): help center and developer guides
+- [Source code](https://github.com/helpin-ai/helpin): GitHub repository
+
+## Optional
+
+- [Brand kit](https://helpin.ai/branding): logo, colors and typography
+- [Privacy policy](https://helpin.ai/privacy)
+- [Terms of service](https://helpin.ai/terms)

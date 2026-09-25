@@ -1,6 +1,6 @@
 import { HeroVortex } from '../../_components/HeroVortex';
 import { DEMO_URL, FAQList } from '../../_components/ui';
-import { marketingMetadata } from '../../_components/marketing-metadata';
+import { createPageMetadata, PAGE_SEO } from '@/lib/metadata';
 import Link from 'next/link';
 import { ArrowRight, CheckSquare, ChevronRight, GitBranch, ListFilter, MessagesSquare, Repeat2, Tags, Users } from 'lucide-react';
 import { PreviewNav } from '../../_components/PreviewNav';
@@ -23,7 +23,7 @@ import './project-objectives.css';
 import './project-palette.css';
 import './project-delivery.css';
 
-export const metadata = marketingMetadata("Projects \u2014 Helpin", "/products/projects");
+export const metadata = createPageMetadata(PAGE_SEO.projects);
 const DETAILS = [
   { Icon: ListFilter, title: 'Views that fit the job', body: 'Save filters for a sprint, bug queue, or review list, and share them with the team.' },
   { Icon: GitBranch, title: 'Dependencies in view', body: 'Mark tasks as blocking, related, or duplicate. A blocked task shows what it waits on.' },

@@ -1,10 +1,9 @@
 import type { Metadata, Viewport } from 'next';
 import Script from 'next/script';
-import { createPageMetadata, PAGE_SEO, SITE_URL } from '@/lib/metadata';
+import { SITE_URL } from '@/lib/metadata';
 import './globals.css';
 
 export const metadata: Metadata = {
-  ...createPageMetadata(PAGE_SEO.home),
   applicationName: 'Helpin',
   metadataBase: new URL(SITE_URL),
   icons: {

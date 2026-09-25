@@ -1,6 +1,6 @@
 import { HeroVortex } from '../../_components/HeroVortex';
 import {  DEMO_URL, FAQList } from '../../_components/ui';
-import { marketingMetadata } from '../../_components/marketing-metadata';
+import { createPageMetadata, PAGE_SEO } from '@/lib/metadata';
 import Link from 'next/link';
 import { ArrowRight, CalendarDays, ChevronRight, Mic, Settings2 } from 'lucide-react';
 import { PreviewNav } from '../../_components/PreviewNav';
@@ -13,7 +13,7 @@ import { MeetingWorkspace } from './meeting-workspace';
 import { MeetingAgenda } from './meeting-agenda';
 import { MeetingContext } from './meeting-context';
 
-export const metadata = marketingMetadata("Meetings \u2014 Helpin", "/products/meetings");
+export const metadata = createPageMetadata(PAGE_SEO.meetings);
 const PLATFORMS = [['google_meet', 'Google Meet'], ['zoom', 'Zoom'], ['teams', 'Microsoft Teams'], ['webex', 'Webex']];
 const FAQS = [
   [

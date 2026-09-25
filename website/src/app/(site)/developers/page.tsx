@@ -1,6 +1,6 @@
 import { HeroVortex } from '../_components/HeroVortex';
 import { CtaRow } from '../_components/ui';
-import { marketingMetadata } from '../_components/marketing-metadata';
+import { createPageMetadata, PAGE_SEO } from '@/lib/metadata';
 import Link from 'next/link';
 import { ArrowRight, BookOpen, Braces, KeyRound, MessagesSquare, Plug, Terminal, Webhook } from 'lucide-react';
 import { PreviewNav } from '../_components/PreviewNav';
@@ -14,7 +14,7 @@ import '../_components/platform/platform-polish.css';
 import './developers-copy.css';
 import { DOCS } from '../_components/docsLinks';
 
-export const metadata = marketingMetadata("Developers \u2014 Helpin", "/developers");
+export const metadata = createPageMetadata(PAGE_SEO.developers);
 const FAQS = [
   [
     "Where should I start?",

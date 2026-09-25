@@ -1,6 +1,6 @@
 import { HeroVortex } from '../../_components/HeroVortex';
 import { DEMO_URL, FAQList } from '../../_components/ui';
-import { marketingMetadata } from '../../_components/marketing-metadata';
+import { createPageMetadata, PAGE_SEO } from '@/lib/metadata';
 import Link from "next/link";
 import {
   ArrowRight,
@@ -21,11 +21,7 @@ import { CRMPlaybook } from "./crm-playbook";
 import { CRMWorkspace } from "./crm-workspace";
 import "./crm.css";
 
-export const metadata = marketingMetadata(
-  "CRM \u2014 Helpin",
-  "/products/crm",
-  "Contacts, companies, and deals with the email, meetings, support, and project work behind them.",
-);
+export const metadata = createPageMetadata(PAGE_SEO.crm);
 
 const ESSENTIALS = [
   {

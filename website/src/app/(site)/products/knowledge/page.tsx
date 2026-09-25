@@ -1,6 +1,6 @@
 import { HeroVortex } from '../../_components/HeroVortex';
 import { DEMO_URL, FAQList } from '../../_components/ui';
-import { marketingMetadata } from '../../_components/marketing-metadata';
+import { createPageMetadata, PAGE_SEO } from '@/lib/metadata';
 import Link from 'next/link';
 import { ArrowRight, BookOpen, ChevronRight, Code2, FolderOpen, History, Languages, Link2, ShieldCheck, Search, Server, Braces } from 'lucide-react';
 import { PreviewNav } from '../../_components/PreviewNav';
@@ -14,7 +14,7 @@ import { PublishingDemoV2 } from './publishing-demo-v2';
 import './knowledge.css';
 import { KnowledgeWorkspace, KnowledgeReader, KnowledgeAPI } from './knowledge-previews';
 
-export const metadata = marketingMetadata("Knowledge \u2014 Helpin", "/products/knowledge");
+export const metadata = createPageMetadata(PAGE_SEO.knowledge);
 const FEATURES = [
   { Icon: FolderOpen, title: 'Find the right guide.', body: 'Organize articles into collections. Give longer guides a table of contents so readers can jump to the part they need.' },
   { Icon: Search, title: 'Ask in your own words.', body: 'Enable AI answers with article citations, so readers can check the guidance behind the response.' },
