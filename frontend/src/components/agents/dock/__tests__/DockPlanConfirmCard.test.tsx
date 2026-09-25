@@ -2,6 +2,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { DockPlanConfirmCard } from '../DockPlanConfirmCard';
 
@@ -9,11 +10,13 @@ import { DockPlanConfirmCard } from '../DockPlanConfirmCard';
 
 let container: HTMLDivElement;
 let root: Root;
+let queryClient: QueryClient;
 
 beforeEach(() => {
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 });
 
 afterEach(() => {
@@ -22,9 +25,17 @@ afterEach(() => {
 });
 
 describe('DockPlanConfirmCard', () => {
+  it('shows the profile choice attached to an epic delivery approval', () => {
+    act(() => {
+      root.render(<QueryClientProvider client={queryClient}><DockPlanConfirmCard payload={{ action: { epic_id: 'epic-123', ai_profile_id: 'profile-456' } }} onDecision={vi.fn().mockResolvedValue({ error: null })} /></QueryClientProvider>);
+    });
+    expect(container.textContent).toContain('epic-123');
+    expect(container.textContent).toContain('profile-456');
+    expect(container.textContent).toContain('request changes before approval');
+  });
   it('renders a sub-agent launch as a divider-based approval without nested cards', () => {
     act(() => {
-      root.render(
+      root.render(<QueryClientProvider client={queryClient}>
         <DockPlanConfirmCard
           payload={{
             title: 'Launch a sub-agent',
@@ -45,7 +56,7 @@ describe('DockPlanConfirmCard', () => {
             },
           }}
           onDecision={vi.fn().mockResolvedValue({ error: null })}
-        />,
+        /></QueryClientProvider>,
       );
     });
 

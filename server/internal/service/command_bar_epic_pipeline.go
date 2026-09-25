@@ -234,6 +234,24 @@ func (s *CommandBarService) BuildEpicDeliveryPipeline(ctx context.Context, works
 // (the epic-page button); dock-chat launches pass their chat linkage instead.
 func DirectDispatchParams() dispatchPlanParams { return dispatchPlanParams{} }
 
+// WithEpicDeliveryProfile resolves an explicit, user-authorized selection once.
+// The resulting route is saved privately on the plan, never in a launch DTO.
+func (s *CommandBarService) WithEpicDeliveryProfile(ctx context.Context, workspaceID, actorID, profileID string, params dispatchPlanParams) (dispatchPlanParams, error) {
+	profileID = strings.TrimSpace(profileID)
+	if profileID == "" {
+		return params, nil
+	}
+	if s == nil || s.agentService == nil || s.agentService.aiProfiles == nil {
+		return params, fmt.Errorf("AI profiles are not configured")
+	}
+	selection, _, err := s.agentService.aiProfiles.Resolve(ctx, workspaceID, actorID, AIProfileSelectionRequest{ProfileID: profileID})
+	if err != nil {
+		return params, err
+	}
+	params.profileBinding = selection
+	return params, nil
+}
+
 // StartEpicDeliveryPipeline builds and dispatches the pipeline. params
 // carries dock-chat linkage when launched from a chat.
 func (s *CommandBarService) StartEpicDeliveryPipeline(ctx context.Context, workspaceID, actorID, epicID string, params dispatchPlanParams) (*EpicDeliveryPipelineResponse, error) {

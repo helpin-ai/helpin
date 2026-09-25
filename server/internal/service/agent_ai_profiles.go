@@ -46,7 +46,19 @@ func (s *AgentService) prepareAIProfileRun(ctx context.Context, params *createRu
 	if err := decodeAIConnectionRunInput(params.input, &input); err != nil {
 		return nil, nil, nil, err
 	}
-	if params.parentRunID != nil {
+	bound, commandBarStep := ctx.Value(commandBarAIContextKey{}).(*model.AIExecutionSelection)
+	if commandBarStep && bound != nil {
+		credential, err := s.aiProfiles.Restore(ctx, params.workspaceID, user, bound)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		selection, err := s.aiProfiles.AdmitReviewedSelection(ctx, params.workspaceID, bound)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		return s.applyAISelection(params, selection, credential)
+	}
+	if params.parentRunID != nil && !commandBarStep {
 		parent, err := s.runRepo.GetByID(ctx, params.workspaceID, *params.parentRunID)
 		if err != nil {
 			return nil, nil, nil, err

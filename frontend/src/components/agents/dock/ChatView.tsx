@@ -927,6 +927,7 @@ export function ChatView({
       prompt={effectiveInteraction && (dockConfirm ? (
         <DockPlanConfirmCard
           payload={dockConfirm}
+          workspaceId={workspaceId}
           onDecision={(decision, note) => resolveInteraction(effectiveInteraction.interaction_id, {
             response_payload: { decision }, followup_message: note,
           })}

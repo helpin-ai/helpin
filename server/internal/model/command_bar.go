@@ -75,7 +75,6 @@ type CommandBarGuardrail struct {
 	Message  string `json:"message"`
 }
 
-
 type CommandBarDispatchRequest struct {
 	Text        string                `json:"text"`
 	PageContext CommandBarPageContext `json:"page_context"`
@@ -96,7 +95,6 @@ type ConfirmCommandBarChatProposalRequest struct {
 	AllowedTargets []string `json:"allowed_targets,omitempty"`
 }
 
-
 type CommandBarPlanRecord struct {
 	ID          string  `json:"id" gorm:"type:uuid;primaryKey"`
 	WorkspaceID string  `json:"workspace_id" gorm:"type:uuid;not null;index"`
@@ -108,13 +106,15 @@ type CommandBarPlanRecord struct {
 	DockChatID      *string `json:"dock_chat_id,omitempty" gorm:"type:uuid;index"`
 	// SupportConversationID links a plan launched from a support chat run to
 	// its conversation (mutually exclusive with DockChatID).
-	SupportConversationID *string    `json:"support_conversation_id,omitempty" gorm:"type:uuid;index"`
-	ParentNotifiedAt      *time.Time `json:"parent_notified_at,omitempty"`
-	Status           string          `json:"status" gorm:"not null;default:'running';index"`
-	Prompt           string          `json:"prompt" gorm:"not null"`
-	PageContext      json.RawMessage `json:"page_context" gorm:"type:jsonb;not null;default:'{}'"`
-	Steps            json.RawMessage `json:"steps" gorm:"type:jsonb;not null;default:'[]'"`
-	RunIDsByStep     json.RawMessage `json:"run_ids_by_step" gorm:"type:jsonb;not null;default:'{}'"`
+	SupportConversationID *string         `json:"support_conversation_id,omitempty" gorm:"type:uuid;index"`
+	ParentNotifiedAt      *time.Time      `json:"parent_notified_at,omitempty"`
+	Status                string          `json:"status" gorm:"not null;default:'running';index"`
+	Prompt                string          `json:"prompt" gorm:"not null"`
+	PageContext           json.RawMessage `json:"page_context" gorm:"type:jsonb;not null;default:'{}'"`
+	Steps                 json.RawMessage `json:"steps" gorm:"type:jsonb;not null;default:'[]'"`
+	RunIDsByStep          json.RawMessage `json:"run_ids_by_step" gorm:"type:jsonb;not null;default:'{}'"`
+	// Private admission snapshot for epic delivery. Never serialize its route to clients.
+	ProfileBinding   json.RawMessage `json:"-" gorm:"type:jsonb"`
 	CurrentStepIndex int             `json:"current_step_index" gorm:"not null;default:0"`
 	RunCount         int             `json:"run_count" gorm:"not null;default:0"`
 	ErrorMessage     *string         `json:"error_message"`
@@ -160,6 +160,15 @@ type CommandBarPlanSummary struct {
 	CreatedAt        time.Time             `json:"created_at"`
 	UpdatedAt        time.Time             `json:"updated_at"`
 	Runs             []AgentRun            `json:"runs,omitempty"`
+	AIProfileID      string                `json:"ai_profile_id,omitempty"`
+	AIProfileOwnerID string                `json:"ai_profile_owner_id,omitempty"`
+}
+
+type CommandBarRestartPausedStepRequest struct {
+	StepIndex           int    `json:"step_index"`
+	ExpectedRunID       string `json:"expected_run_id"`
+	AIProfileID         string `json:"ai_profile_id"`
+	ReviewedPartialWork bool   `json:"reviewed_partial_work"`
 }
 
 type CommandBarPlanListResponse struct {

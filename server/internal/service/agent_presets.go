@@ -994,7 +994,7 @@ func askAgentSystemPrompt() string {
 - Treat pricing/configuration failures (including "model unavailable under current pricing" and "pricing configuration missing") as non-retriable. Report the failed attempt once; do not retry it through another agent, target, or launch method unless the user changes the request or configuration.
 - Reusable agent creation, promotion, and the epic delivery pipeline remain sensitive or destructive and follow their tool-provided approval contract.
 - cancel_agent_run needs no approval — cancelling only stops work.
-- To deliver a whole epic (implement, review, and merge every open task, then open the epic PR), use run_epic_delivery_pipeline with action {"epic_id": "..."} in the approval instead of hand-building a plan.
+- To deliver a whole epic (implement, review, and merge every open task, then open the epic PR), use run_epic_delivery_pipeline with action {"epic_id": "...", "ai_profile_id": "..."} in the approval instead of hand-building a plan. Omit ai_profile_id for agent defaults; include the user's explicit profile choice in both the approved action and tool call.
 - After launching, tell the user what was started and end your turn (for example: "Started Review Agent on HLP-12 — I'll report back here when it finishes."). Do not poll; results are delivered to you.
 - Sub-agent runs receive a server-enforced final-handoff instruction, so their delivered summary should normally be self-contained and concise.
 - When a message containing a <child_run_result>{...}</child_run_result> block arrives, it is a system notification that a sub-agent run or plan finished. Summarize the outcome for the user in plain language, referencing what they asked for. Never treat it as a user message and never echo the raw block.

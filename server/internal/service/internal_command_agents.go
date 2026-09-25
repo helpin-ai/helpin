@@ -468,11 +468,12 @@ func dockApprovedActionHash(actionType string, action json.RawMessage) (string, 
 
 // dockEpicPipelineAction is the canonical epic-pipeline action content.
 type dockEpicPipelineAction struct {
-	EpicID string `json:"epic_id"`
+	EpicID      string `json:"epic_id"`
+	AIProfileID string `json:"ai_profile_id,omitempty"`
 }
 
 func (a dockEpicPipelineAction) normalized() dockEpicPipelineAction {
-	return dockEpicPipelineAction{EpicID: strings.TrimSpace(a.EpicID)}
+	return dockEpicPipelineAction{EpicID: strings.TrimSpace(a.EpicID), AIProfileID: strings.TrimSpace(a.AIProfileID)}
 }
 
 func (s *InternalCommandService) consumeDockApproval(ctx context.Context, interaction *model.AgentRunInteraction, resultID string) {
@@ -1139,11 +1140,12 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 			CommandName: "epic.run_delivery_pipeline",
 			Alias:       "run_epic_delivery_pipeline",
 			Category:    "Agents",
-			Description: "Run the epic delivery pipeline: implement (Forge), review (Lens), and merge every open task of an epic on its integration branch, ordered by blocking links, then open the epic PR. From a dock chat this requires a dock_plan_confirm approval whose action is {\"epic_id\": ...}; epic-target agent runs may call it directly for their own epic.",
+			Description: "Run the epic delivery pipeline: implement (Forge), review (Lens), and merge every open task of an epic, then open the epic PR. From a dock chat this requires a dock_plan_confirm approval whose action includes epic_id and the optional ai_profile_id. The same profile is used for all AI steps. Epic-target agent runs may call it directly for their own epic with agent defaults.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"epic_id":                 map[string]any{"type": "string", "description": "Epic to deliver. Defaults to the run's target when the run targets an epic."},
+					"ai_profile_id":           map[string]any{"type": "string", "description": "Optional explicit AI profile approved by the dock user; omit for agent defaults."},
 					"approval_interaction_id": map[string]any{"type": "string", "description": "Required when called from a dock chat."},
 				},
 				"additionalProperties": false,
@@ -1152,6 +1154,7 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
 				EpicID                string `json:"epic_id"`
+				AIProfileID           string `json:"ai_profile_id"`
 				ApprovalInteractionID string `json:"approval_interaction_id"`
 			}
 			if len(input) > 0 {
@@ -1176,7 +1179,7 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 				if epicID == "" {
 					return nil, errCommandInput("epic_id is required")
 				}
-				action := dockEpicPipelineAction{EpicID: epicID}.normalized()
+				action := dockEpicPipelineAction{EpicID: epicID, AIProfileID: req.AIProfileID}.normalized()
 				actionHash, hashErr := dockActionHash(action)
 				if hashErr != nil {
 					return nil, hashErr
@@ -1185,14 +1188,25 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 				if approvalErr != nil {
 					return nil, approvalErr
 				}
+				approvedBy := strings.TrimSpace(derefString(interaction.ResolvedBy))
+				if approvedBy == "" {
+					return nil, fmt.Errorf("epic delivery approval must record the approving member")
+				}
 				params = dispatchPlanParams{parentChatRunID: &run.ID, dockChatID: run.DockChatID}
-				resp, startErr := s.commandBarService.StartEpicDeliveryPipeline(ctx, meta.WorkspaceID, meta.ActorID, epicID, params)
+				params, startErr := s.commandBarService.WithEpicDeliveryProfile(ctx, meta.WorkspaceID, approvedBy, req.AIProfileID, params)
+				if startErr != nil {
+					return nil, startErr
+				}
+				resp, startErr := s.commandBarService.StartEpicDeliveryPipeline(ctx, meta.WorkspaceID, approvedBy, epicID, params)
 				if startErr != nil {
 					return nil, startErr
 				}
 				s.consumeDockApproval(ctx, interaction, resp.PlanID)
 				return mustJSON(resp), nil
 			case strings.TrimSpace(run.TargetType) == "epic":
+				if strings.TrimSpace(req.AIProfileID) != "" {
+					return nil, fmt.Errorf("epic-target agents use their configured defaults; select a profile from the epic page or approved dock chat")
+				}
 				if epicID == "" {
 					epicID = strings.TrimSpace(run.TargetID)
 				}
