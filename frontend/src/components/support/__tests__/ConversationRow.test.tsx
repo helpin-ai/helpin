@@ -395,12 +395,16 @@ describe('ConversationRow', () => {
     expect(getVisibleSupportTagCount([30, 30, 30], 0)).toBe(3)
   })
 
-  it('uses a subtle tint for colored tag pills', () => {
+  it('uses the sidebar tag colors for conversation-list pills', () => {
     expect(getSupportTagPillStyle('#2563eb')).toEqual({
-      backgroundColor: 'rgba(37, 99, 235, 0.08)',
-      borderColor: 'rgba(37, 99, 235, 0.22)',
-      color: 'rgba(37, 99, 235, 0.82)',
+      backgroundColor: '#2563eb1f',
+      borderColor: '#2563eb40',
+      color: '#1e51c1',
     })
-    expect(getSupportTagPillStyle('not-a-color')).toBeUndefined()
+    expect(getSupportTagPillStyle('not-a-color')).toEqual({
+      backgroundColor: 'var(--muted)',
+      borderColor: 'var(--border)',
+      color: 'var(--foreground)',
+    })
   })
 })
