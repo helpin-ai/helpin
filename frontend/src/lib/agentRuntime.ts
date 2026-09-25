@@ -13,7 +13,7 @@ export const AGENT_RUNTIME_HELP_TEXT: Record<AgentRuntimeKind, string> = {
 };
 
 export const MIN_NATIVE_TOOL_STEPS = 1;
-export const MAX_NATIVE_TOOL_STEPS = 1000;
+export const MAX_NATIVE_TOOL_STEPS = 2000;
 
 export function parseNativeToolStepLimit(value: string): number | undefined {
   const trimmed = value.trim();
