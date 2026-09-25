@@ -21,6 +21,8 @@ import (
 
 var ErrAIConnection = errors.New("AI connection is unavailable or requires reconnection")
 
+const chatGPTGPT6SolModel = "gpt-6-sol"
+
 // ErrAIConnectionUnavailable permits a pre-execution fallback after authorization.
 // Ownership, configuration, database, and encryption errors do not use this error.
 var ErrAIConnectionUnavailable = fmt.Errorf("%w: connection is not ready", ErrAIConnection)
@@ -82,6 +84,13 @@ func (s *AIConnectionService) Models() []aimodel.PublicModel {
 			copy.Provider = "openai_chatgpt"
 			out = append(out, copy)
 		}
+	}
+	if s.cfg.ChatGPTEnabled {
+		out = append(out, aimodel.PublicModel{
+			Provider: "openai_chatgpt", CanonicalModel: chatGPTGPT6SolModel,
+			SelectionModel: chatGPTGPT6SolModel, Label: "GPT-6 Sol",
+			Tier: aimodel.TierLarge, Enabled: true,
+		})
 	}
 	return out
 }
@@ -420,11 +429,17 @@ func (s *AIConnectionService) loadConnectionCredential(ctx context.Context, work
 }
 
 func (s *AIConnectionService) ResolveModel(provider, name string) (*sdk.RunModel, aimodel.Tier, error) {
-	pricingProvider := provider
+	lookupProvider := provider
 	if provider == "openai_chatgpt" {
-		pricingProvider = "openai"
+		if !s.cfg.ChatGPTEnabled {
+			return nil, "", errors.New("select a supported model for this AI connection")
+		}
+		if strings.EqualFold(strings.TrimSpace(name), chatGPTGPT6SolModel) {
+			return &sdk.RunModel{Provider: provider, Model: chatGPTGPT6SolModel}, aimodel.TierLarge, nil
+		}
+		lookupProvider = "openai"
 	}
-	route, err := s.catalog.ResolveDefault(pricingProvider, name, "standard")
+	route, err := s.catalog.ResolveDefault(lookupProvider, name, "standard")
 	if err != nil {
 		return nil, "", errors.New("select a supported model for this AI connection")
 	}

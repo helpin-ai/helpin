@@ -35,6 +35,11 @@ import {
   TranscriptSegmentView,
 } from '@/components/agents/transcript';
 import { DockWorkingGroup } from '@/components/agents/dock/DockWorkingGroup';
+import { AgentTimelineEntry } from '@/components/agents/dock/AgentTimelineEntry';
+import { DockTranscriptViewPicker } from '@/components/agents/dock/DockTranscriptViewPicker';
+import { buildDockActivityTimeline } from '@/components/agents/dock/buildDockActivityTimeline';
+import activityStyles from '@/components/agents/dock/DockActivityTimeline.module.css';
+import { useDockStore } from '@/stores/dockStore';
 import {
   buildDockWorkingTimeline,
   type DockWorkingTimelineEntry,
@@ -83,6 +88,7 @@ export function CodingTranscriptPane({
   onApproveRun?: () => void;
   onResolveInteraction?: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
 }) {
+  const timelineView = useDockStore(state => state.transcriptView === 'timeline');
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const autoFollowRef = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
@@ -168,7 +174,13 @@ export function CodingTranscriptPane({
     | { kind: 'bottom-spacer' };
 
   const items = useMemo((): VirtualItem[] => {
-    const list: VirtualItem[] = session?.status === 'completed'
+    const list: VirtualItem[] = timelineView
+      ? buildDockActivityTimeline(
+        segments,
+        session?.status === 'queued' || session?.status === 'running',
+        segment => segmentTimestamp(segment, transcriptTimes),
+      )
+      : session?.status === 'completed'
       ? buildDockWorkingTimeline(segments, false, {
         collapseCompletedWork: true,
         timestampForSegment: (segment) => segmentTimestamp(segment, transcriptTimes),
@@ -190,6 +202,7 @@ export function CodingTranscriptPane({
     showStreamingStatus,
     loading,
     transcriptTimes,
+    timelineView,
   ]);
 
   const virtualizer = useVirtualizer({
@@ -309,16 +322,31 @@ export function CodingTranscriptPane({
     [memberActorByUserId, triggeredBy],
   );
 
-  const renderItem = useCallback((item: VirtualItem) => {
+  const renderItem = useCallback((item: VirtualItem, index: number) => {
     switch (item.kind) {
       case 'segment':
         return (
-          <TranscriptSegmentView
-            segment={item.segment}
-            options={{ expandable: true, resolveActor: actorForMessage }}
-          />
+          <div>
+            {timelineView ? (
+              <AgentTimelineEntry segment={item.segment} resolveActor={actorForMessage} separator={item.segment.kind === 'assistant' && items[index - 1]?.kind === 'working_group'} />
+            ) : (
+              <TranscriptSegmentView
+                segment={item.segment}
+                options={{ expandable: true, resolveActor: actorForMessage }}
+              />
+            )}
+          </div>
         );
       case 'working_group':
+        if (timelineView) return (
+          <AgentTimelineEntry
+            segment={item.segments[0]}
+            workingGroup={item}
+            runStatus={session?.status}
+            pauseReason={session?.pause_reason}
+            resolveActor={actorForMessage}
+          />
+        );
         return (
           <DockWorkingGroup
             id={item.key}
@@ -336,7 +364,7 @@ export function CodingTranscriptPane({
           </DockWorkingGroup>
         );
       case 'streaming-status':
-        return liveProgress ? <AgentLiveStatus progress={liveProgress} /> : null;
+        return liveProgress ? <div data-agent-live-status-region data-working={liveProgress.tone === 'working'}><AgentLiveStatus progress={liveProgress} /></div> : null;
       case 'empty':
         return (
           <div className="rounded-lg border border-dashed border-border px-5 py-8 text-center text-sm text-muted-foreground">
@@ -352,18 +380,19 @@ export function CodingTranscriptPane({
           />
         );
     }
-  }, [actorForMessage, liveProgress]);
+  }, [actorForMessage, items, liveProgress, session?.status, session?.pause_reason, timelineView]);
 
   return (
     <section className="relative flex h-full min-h-[20rem] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm xl:min-h-0">
-      <div className="border-b border-border/60 px-4 py-2">
+      <div className="flex items-center justify-between gap-2 border-b border-border/60 px-4 py-2">
         <div className="text-sm font-medium leading-5 text-muted-foreground">
           Activity
         </div>
+        <DockTranscriptViewPicker label="Activity view" menuClassName="z-[1000]" dockOverlay={false} />
       </div>
 
       <div className="relative min-h-0 flex-1">
-      <div ref={scrollContainerRef} className="h-full overflow-auto pt-3">
+      <div ref={scrollContainerRef} className={`${activityStyles.activityHost} h-full overflow-auto pt-3`}>
         <div className="mx-auto flex w-full max-w-4xl flex-col gap-3 px-4">
           <div
             className="relative w-full"
@@ -387,7 +416,7 @@ export function CodingTranscriptPane({
                   paddingRight: '1rem',
                 }}
               >
-                {renderItem(item)}
+                {renderItem(item, virtualRow.index)}
               </div>
             );
           })}
