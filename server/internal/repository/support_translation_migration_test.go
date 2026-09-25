@@ -47,3 +47,31 @@ func TestMigrateSupportTranslationConversationDefaults(t *testing.T) {
 		t.Fatalf("unexpected policies after backfill: %+v", rows)
 	}
 }
+
+func TestMigrateSupportTranslationPolicyRevision(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:support_translation_policy_revision?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := MigrateSupportTranslationPolicyRevision(db); err != nil {
+		t.Fatalf("missing table: %v", err)
+	}
+	if err := db.Exec("CREATE TABLE support_translations (id INTEGER PRIMARY KEY, policy_revision INTEGER)").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO support_translations (id, policy_revision) VALUES (1, NULL), (2, 7)").Error; err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := MigrateSupportTranslationPolicyRevision(db); err != nil {
+			t.Fatalf("backfill pass %d: %v", i, err)
+		}
+	}
+	var revisions []int64
+	if err := db.Raw("SELECT policy_revision FROM support_translations ORDER BY id").Scan(&revisions).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(revisions) != 2 || revisions[0] != 0 || revisions[1] != 7 {
+		t.Fatalf("unexpected revisions after backfill: %v", revisions)
+	}
+}
