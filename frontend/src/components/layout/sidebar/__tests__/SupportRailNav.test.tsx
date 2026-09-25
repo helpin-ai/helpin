@@ -28,11 +28,13 @@ function renderSupportRail({
   customViews = [],
   customViewCounts = {},
   canManageSettings = false,
+  showCustomViews = true,
   onCreateCustomView = vi.fn(),
 }: {
   customViews?: SupportInboxView[]
   customViewCounts?: Record<string, SupportInboxViewCount>
   canManageSettings?: boolean
+  showCustomViews?: boolean
   onCreateCustomView?: () => void
 } = {}) {
   const container = document.createElement('div')
@@ -102,6 +104,7 @@ function renderSupportRail({
             customViews={customViews}
             customViewCounts={customViewCounts}
             canManageSettings={canManageSettings}
+            showCustomViews={showCustomViews}
             wsSlug="test-docs"
             pathname="/w/test-docs/support"
             onNavFilterChange={vi.fn()}
@@ -222,6 +225,15 @@ describe('SupportRailNav', () => {
     act(() => createAction.click())
     act(() => emptyAction?.click())
     expect(onCreateCustomView).toHaveBeenCalledTimes(2)
+
+    rendered.cleanup()
+  })
+
+  it('hides web-only custom views when disabled for desktop', () => {
+    const rendered = renderSupportRail({ showCustomViews: false })
+
+    expect(rendered.container.textContent).not.toContain('Custom views')
+    expect(buttonByText(rendered.container, 'Create a view')).toBeUndefined()
 
     rendered.cleanup()
   })

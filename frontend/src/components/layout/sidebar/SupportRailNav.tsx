@@ -46,6 +46,7 @@ type SupportRailNavProps = {
   currentUserId?: string;
   customViews?: SupportInboxView[];
   customViewCounts?: Record<string, SupportInboxViewCount>;
+  showCustomViews?: boolean;
   canManageSettings: boolean;
   wsSlug: string;
   pathname: string;
@@ -72,6 +73,7 @@ export function SupportRailNav({
   currentUserId,
   customViews = [],
   customViewCounts = {},
+  showCustomViews = true,
   canManageSettings,
   wsSlug,
   pathname,
@@ -316,7 +318,7 @@ export function SupportRailNav({
         </SidebarMenu>
       </SidebarGroup>
 
-      <SidebarGroup className="p-0 pb-3">
+      {showCustomViews && <SidebarGroup className="p-0 pb-3">
         <SidebarGroupLabel className="flex h-7 items-center justify-between px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
           <span>Custom views</span>
           <SidebarSectionAction label="Create custom view" onClick={onCreateCustomView} />
@@ -402,7 +404,7 @@ export function SupportRailNav({
             );
           })}
         </SidebarMenu>
-      </SidebarGroup>
+      </SidebarGroup>}
 
       <div className="support-bottom-bar sticky bottom-0 z-10 -mx-2 mt-auto border-t border-border/70 bg-[#fafafa] px-2 py-2 dark:bg-sidebar">
         <div className="flex items-center justify-around">
