@@ -31,6 +31,8 @@ var capabilityNames = map[string]string{
 	"github":                "GitHub",
 	"object_storage":        "Object storage",
 	"workers":               "Background workers",
+	"meeting_capture":       "Meeting capture",
+	"google_workspace":      "Google (Gmail and Calendar)",
 }
 
 // instanceCapabilities asks the local API through the loopback ingress. The

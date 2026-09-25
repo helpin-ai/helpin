@@ -7,7 +7,9 @@ export type CapabilityKey =
   | 'support_email_inbound'
   | 'github'
   | 'object_storage'
-  | 'workers';
+  | 'workers'
+  | 'meeting_capture'
+  | 'google_workspace';
 
 export type CapabilityStatus = 'ready' | 'needs_setup' | 'unable_to_verify' | 'unavailable';
 

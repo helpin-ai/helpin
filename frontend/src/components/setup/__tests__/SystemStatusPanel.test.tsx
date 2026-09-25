@@ -129,6 +129,24 @@ describe('SystemStatusPanel', () => {
     expect(button(row(container, 'ai_chat'), 'Test connection')).toBeDefined();
   });
 
+  it('names meeting capture and Google with their server settings, after GitHub', async () => {
+    serve([
+      capability({ key: 'meeting_capture', status: 'needs_setup', detail: 'Meeting capture uses Recall, but RECALL_API_KEY and RECALL_WEBHOOK_SECRET are not both set.', action: { kind: 'server_config', label: 'Set RECALL_API_KEY and RECALL_WEBHOOK_SECRET on the server' } }),
+      capability({ key: 'google_workspace', status: 'needs_setup', action: { kind: 'server_config', label: 'Set GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET on the server' } }),
+      capability({ key: 'github', status: 'needs_setup', action: { kind: 'server_config', label: 'Set up a GitHub App' } }),
+    ]);
+    const container = await renderPanel();
+
+    expect(order(container)).toEqual(['github', 'google_workspace', 'meeting_capture']);
+    const meetings = row(container, 'meeting_capture');
+    expect(meetings.textContent).toContain('Meeting capture');
+    expect(meetings.textContent).toContain('Needs setup');
+    expect(meetings.querySelector('code')?.textContent).toContain('RECALL_WEBHOOK_SECRET');
+    const google = row(container, 'google_workspace');
+    expect(google.textContent).toContain('Google (Gmail and Calendar)');
+    expect(google.querySelector('code')?.textContent).toContain('GMAIL_CLIENT_ID');
+  });
+
   it('leaves email testing to the settings card when it is on the page', async () => {
     serve([capability({ key: 'email_outbound', status: 'unable_to_verify', action: { kind: 'send_test_email', label: 'Send a test email' } })]);
     const container = await renderPanel({ emailSettingsOnPage: true });

@@ -84,6 +84,25 @@ func (r *CapabilityRepository) ConnectedRepositoryCount(ctx context.Context, wor
 	return count, nil
 }
 
+// HasMeetingProviderEvent reports whether the capture provider has delivered an
+// authenticated webhook. An empty workspaceID checks the whole instance.
+func (r *CapabilityRepository) HasMeetingProviderEvent(ctx context.Context, workspaceID, provider string) (bool, error) {
+	if workspaceID == "" {
+		return r.exists(ctx, "SELECT EXISTS (SELECT 1 FROM crm_meeting_provider_events WHERE provider = ?)", provider)
+	}
+	return r.exists(ctx, "SELECT EXISTS (SELECT 1 FROM crm_meeting_provider_events WHERE workspace_id = ? AND provider = ?)", workspaceID, provider)
+}
+
+// HasConnectedGoogleAccount reports whether a Google account completed OAuth
+// and is connected. An empty workspaceID checks the whole instance.
+func (r *CapabilityRepository) HasConnectedGoogleAccount(ctx context.Context, workspaceID string) (bool, error) {
+	const connected = "provider = 'gmail' AND status = 'connected' AND is_active = true AND refresh_token_encrypted IS NOT NULL"
+	if workspaceID == "" {
+		return r.exists(ctx, "SELECT EXISTS (SELECT 1 FROM crm_email_accounts WHERE "+connected+")")
+	}
+	return r.exists(ctx, "SELECT EXISTS (SELECT 1 FROM crm_email_accounts WHERE workspace_id = ? AND "+connected+")", workspaceID)
+}
+
 // SharedAIConnectionSummary counts current shared AI connections and those whose
 // last explicit test succeeded.
 func (r *CapabilityRepository) SharedAIConnectionSummary(ctx context.Context) (AIConnectionSummary, error) {

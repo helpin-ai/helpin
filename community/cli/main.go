@@ -35,10 +35,14 @@ type options struct {
 	backupPath                  string
 	// Optional integrations. Secrets come only from files, environment
 	// variables or hidden prompts, never from command-line values.
-	smtpHost, smtpPort, smtpUser, smtpFrom, smtpTLS, smtpPasswordFile string
-	aiProvider, aiKeyFile                                             string
-	smtp                                                              *smtpSettings
-	ai                                                                *aiSettings
+	smtpHost, smtpPort, smtpUser, smtpFrom, smtpTLS, smtpPasswordFile  string
+	aiProvider, aiKeyFile                                              string
+	meetingProvider, meetingKeyFile, meetingWebhookSecretFile, vexaURL string
+	googleClientID, googleClientSecretFile                             string
+	smtp                                                               *smtpSettings
+	ai                                                                 *aiSettings
+	meeting                                                            *meetingSettings
+	google                                                             *googleSettings
 }
 
 type app struct {
@@ -135,7 +139,7 @@ func (a *app) execute(args []string) error {
 		return nil
 	}
 	if command == "help" || command == "--help" || command == "-h" {
-		fmt.Fprintln(a.out, "Helpin Community\n\nUsage: helpin <command> [options]\nCommands: install, start, stop, restart, status, logs, configure, doctor, backup, restore, upgrade, version\nRun helpin <command> --help for options. Default installation: ~/helpin.\nBackup pauses services; restore uses new volumes. Upgrade requires a compatible release and creates a recovery backup.\nSecrets for install/configure come from --smtp-password-file/--ai-key-file, HELPIN_SMTP_PASSWORD/HELPIN_AI_API_KEY or hidden prompts, never from command-line values.")
+		fmt.Fprintln(a.out, "Helpin Community\n\nUsage: helpin <command> [options]\nCommands: install, start, stop, restart, status, logs, configure, doctor, backup, restore, upgrade, version\nRun helpin <command> --help for options. Default installation: ~/helpin.\nBackup pauses services; restore uses new volumes. Upgrade requires a compatible release and creates a recovery backup.\nSecrets for install/configure come from --*-file flags (--smtp-password-file, --ai-key-file, --meeting-key-file, --meeting-webhook-secret-file, --google-client-secret-file), the matching HELPIN_* environment variables or hidden prompts, never from command-line values.")
 		return nil
 	}
 	if command == "" {
@@ -189,6 +193,12 @@ func (a *app) execute(args []string) error {
 		f.StringVar(&o.smtpPasswordFile, "smtp-password-file", "", "file containing the SMTP password (or set "+smtpPasswordEnv+")")
 		f.StringVar(&o.aiProvider, "ai-provider", "", "AI provider: openrouter, openai, anthropic or skip")
 		f.StringVar(&o.aiKeyFile, "ai-key-file", "", "file containing the AI provider API key (or set "+aiKeyEnv+")")
+		f.StringVar(&o.meetingProvider, "meeting-provider", "", "meeting capture provider: recall, vexa or skip")
+		f.StringVar(&o.meetingKeyFile, "meeting-key-file", "", "file containing the meeting capture API key (or set "+meetingKeyEnv+")")
+		f.StringVar(&o.meetingWebhookSecretFile, "meeting-webhook-secret-file", "", "file containing the meeting capture webhook secret (or set "+meetingSecretEnv+")")
+		f.StringVar(&o.vexaURL, "vexa-url", "", "Vexa API URL (default "+defaultVexaURL+"; your server for a self-hosted Vexa)")
+		f.StringVar(&o.googleClientID, "google-client-id", "", "Google OAuth client ID for Gmail and Calendar (omit to leave Google unchanged)")
+		f.StringVar(&o.googleClientSecretFile, "google-client-secret-file", "", "file containing the Google OAuth client secret (or set "+googleSecretEnv+")")
 	}
 	if command == "install" || command == "upgrade" {
 		f.StringVar(&o.release, "version", "", "release tag (install: CLI version; upgrade: newest published Community release)")

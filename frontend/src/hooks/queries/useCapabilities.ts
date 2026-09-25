@@ -16,6 +16,17 @@ export function useWorkspaceCapabilities(workspaceId?: string) {
   });
 }
 
+/**
+ * True when this server cannot connect Google accounts (Gmail and Calendar)
+ * yet: its Google OAuth client is missing or points at another address.
+ */
+export function useGoogleConnectUnavailable(workspaceId?: string) {
+  const capabilities = useWorkspaceCapabilities(workspaceId);
+  return capabilities.data?.capabilities.some(
+    (capability) => capability.key === 'google_workspace' && capability.status === 'needs_setup',
+  ) ?? false;
+}
+
 /** Invalidates the capability and Setup guide views after a check changes evidence. */
 export function invalidateCapabilities(queryClient: ReturnType<typeof useQueryClient>, workspaceId: string) {
   void queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.capabilities(workspaceId) });
