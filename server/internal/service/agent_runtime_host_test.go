@@ -475,58 +475,131 @@ func TestAgentRuntimeHostRepositorySpecFallsBackToRuntimeRunMapping(t *testing.T
 	}
 }
 
-func TestAgentRuntimeHostRepositorySpecEnsuresEpicTaskBaseBranchWithRunMetadata(t *testing.T) {
-	db := newTestDB(t)
-	seedGitDeliveryStatusFixture(t, db)
-	ensureEpicDeliveryTargetTable(t, db)
-	now := time.Now().UTC()
-	mustExec(t, db, `INSERT INTO workspaces (
+func TestAgentRuntimeHostRepositorySpecEpicTaskRunAttribution(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		mapped      bool
+		previousRun bool
+		wantRunID   string
+	}{
+		{name: "mapped runtime uses Helpin UUID", mapped: true, wantRunID: "3630f8c9-5ea7-47e0-99ba-ea0370679e60"},
+		{name: "unmapped runtime can prepare checkout"},
+		{name: "unmapped runtime preserves previous attribution", previousRun: true, wantRunID: "67a4a5cc-2244-477c-956c-5bb4b40d029c"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newTestDB(t)
+			seedGitDeliveryStatusFixture(t, db)
+			ensureEpicDeliveryTargetTable(t, db)
+			ensureAgentRuntimeHostRunTable(t, db)
+			const helpinRunID = "3630f8c9-5ea7-47e0-99ba-ea0370679e60"
+			const runtimeRunID = "run_a1ae5a50219f839539438358"
+			if tc.mapped {
+				mustExec(t, db, `INSERT INTO agent_runs (
+			id, workspace_id, agent_id, target_type, target_id, runtime_kind, status, external_runtime, external_runtime_id
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+					helpinRunID, "ws-1", "agent-forge", "task", "task-1", "codex", "running", agentRuntimeName, runtimeRunID)
+			}
+			now := time.Now().UTC()
+			mustExec(t, db, `INSERT INTO workspaces (
 		id, name, slug, workspace_key, owner_id, created_at, updated_at
 	) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		"ws-1", "Demo Workspace", "demo", "HEL", "user-1", now, now)
-	mustExec(t, db, `INSERT INTO pm_epics (
+				"ws-1", "Demo Workspace", "demo", "HEL", "user-1", now, now)
+			mustExec(t, db, `INSERT INTO pm_epics (
 		id, workspace_id, name, external_id, team_id, planning_repository_id, position, created_at, updated_at
 	) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`,
-		"epic-1", "ws-1", "Helpin launch", "HEL-900", "team-1", "repo-1", now, now)
-	mustExec(t, db, `UPDATE task_delivery_targets
+				"epic-1", "ws-1", "Helpin launch", "HEL-900", "team-1", "repo-1", now, now)
+			mustExec(t, db, `UPDATE task_delivery_targets
 		SET base_branch = ?, target_source = ?, source_epic_id = ?
 		WHERE id = ?`,
-		"epic/hel-900-helpin-launch", model.TaskDeliveryTargetSourceEpic, "epic-1", "target-1")
+				"epic/hel-900-helpin-launch", model.TaskDeliveryTargetSourceEpic, "epic-1", "target-1")
 
+			app := &fakeGitHubAppClient{}
+			host := NewAgentRuntimeHostService(
+				"helpin",
+				repository.NewAgentRunRepository(db), nil, nil, nil, nil, nil, nil, nil, nil, nil,
+				newGitDeliveryStatusService(db, app),
+			)
+
+			const previousRunID = "67a4a5cc-2244-477c-956c-5bb4b40d029c"
+			if tc.previousRun {
+				_, err := host.gitService.GetEpicDeliveryTarget(context.Background(), "ws-1", "epic-1")
+				if err != nil {
+					t.Fatal(err)
+				}
+				mustExec(t, db, `UPDATE epic_delivery_targets SET last_run_id = ? WHERE epic_id = ?`, previousRunID, "epic-1")
+			}
+			req := agentruntime.PrepareWorkspaceRequest{
+				AppID:         "helpin",
+				RunID:         runtimeRunID,
+				AgentID:       "agent-forge",
+				RuntimeKind:   "codex",
+				Target:        agentruntime.TargetRef{Type: "task", ID: "task-1"},
+				WorkspaceMode: agentruntime.WorkspaceModeRepository,
+				Metadata: map[string]interface{}{
+					"workspace_id":   "ws-1",
+					"repository_id":  "repo-1",
+					"repo_full_name": "acme/api",
+					"base_branch":    "epic/hel-900-helpin-launch",
+					"work_branch":    "hel-31-fix-merge-status",
+				},
+			}
+			spec, err := host.ResolveRepositorySpec(context.Background(), req)
+			if err != nil {
+				t.Fatalf("ResolveRepositorySpec returned error: %v", err)
+			}
+			if spec.BaseBranch != "epic/hel-900-helpin-launch" {
+				t.Fatalf("base branch = %q, want epic branch", spec.BaseBranch)
+			}
+			if len(app.ensureBranches) != 1 {
+				t.Fatalf("ensure branch calls = %d, want 1", len(app.ensureBranches))
+			}
+			call := app.ensureBranches[0]
+			if call.Branch != "epic/hel-900-helpin-launch" || call.Base != "main" {
+				t.Fatalf("unexpected ensure branch call: %#v", call)
+			}
+			// Assert durable attribution: SQLite accepts text that PostgreSQL UUID columns reject.
+			for attempt := 0; attempt < 2; attempt++ {
+				target, err := host.gitService.epicDeliveryRepo.GetByEpic(context.Background(), "ws-1", "epic-1")
+				if err != nil || target == nil {
+					t.Fatalf("load saved epic delivery target: target=%v err=%v", target, err)
+				}
+				if got := derefString(target.LastRunID); got != tc.wantRunID {
+					t.Fatalf("last_run_id = %q, want %q", got, tc.wantRunID)
+				}
+				if target.DeliveryState != "in_progress" {
+					t.Fatalf("delivery state = %q, want in_progress", target.DeliveryState)
+				}
+				if attempt == 0 {
+					if _, err := host.ResolveRepositorySpec(context.Background(), req); err != nil {
+						t.Fatalf("retry checkout: %v", err)
+					}
+				}
+			}
+
+		})
+	}
+}
+
+func TestAgentRuntimeHostRepositorySpecRejectsMappedWorkspaceMismatch(t *testing.T) {
+	db := newTestDB(t)
+	seedGitDeliveryStatusFixture(t, db)
+	ensureAgentRuntimeHostRunTable(t, db)
+	mustExec(t, db, `INSERT INTO agent_runs (
+		id, workspace_id, agent_id, target_type, target_id, runtime_kind, status, external_runtime, external_runtime_id
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"3630f8c9-5ea7-47e0-99ba-ea0370679e60", "ws-1", "agent-forge", "task", "task-1", "codex", "running", agentRuntimeName, "run_external")
 	app := &fakeGitHubAppClient{}
-	host := NewAgentRuntimeHostService(
-		"helpin",
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		newGitDeliveryStatusService(db, app),
-	)
-
-	spec, err := host.ResolveRepositorySpec(context.Background(), agentruntime.PrepareWorkspaceRequest{
-		AppID:         "helpin",
-		RunID:         "run-runtime-epic-task",
-		AgentID:       "agent-scribe",
-		RuntimeKind:   "codex",
-		Target:        agentruntime.TargetRef{Type: "task", ID: "task-1"},
-		WorkspaceMode: agentruntime.WorkspaceModeRepository,
-		Metadata: map[string]interface{}{
-			"workspace_id":   "ws-1",
-			"repository_id":  "repo-1",
-			"repo_full_name": "acme/api",
-			"base_branch":    "epic/hel-900-helpin-launch",
-			"work_branch":    "hel-31-fix-merge-status",
-		},
+	host := NewAgentRuntimeHostService("helpin", repository.NewAgentRunRepository(db),
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, newGitDeliveryStatusService(db, app))
+	_, err := host.ResolveRepositorySpec(context.Background(), agentruntime.PrepareWorkspaceRequest{
+		AppID: "helpin", RunID: "run_external", Target: agentruntime.TargetRef{Type: "task", ID: "task-1"},
+		Metadata: map[string]interface{}{"workspace_id": "ws-other"},
 	})
-	if err != nil {
-		t.Fatalf("ResolveRepositorySpec returned error: %v", err)
+	if !errors.Is(err, ErrAgentRuntimeHostForbidden) {
+		t.Fatalf("cross-workspace checkout error = %v, want forbidden", err)
 	}
-	if spec.BaseBranch != "epic/hel-900-helpin-launch" {
-		t.Fatalf("base branch = %q, want epic branch", spec.BaseBranch)
-	}
-	if len(app.ensureBranches) != 1 {
-		t.Fatalf("ensure branch calls = %d, want 1", len(app.ensureBranches))
-	}
-	call := app.ensureBranches[0]
-	if call.Branch != "epic/hel-900-helpin-launch" || call.Base != "main" {
-		t.Fatalf("unexpected ensure branch call: %#v", call)
+	if len(app.ensureBranches) != 0 {
+		t.Fatal("cross-workspace checkout created a branch")
 	}
 }
 
@@ -635,5 +708,86 @@ func ensureAgentRuntimeHostRunTable(t *testing.T, db *gorm.DB) {
 		updated_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create agent_runs table: %v", err)
+	}
+}
+
+func TestAgentRuntimeHostPreviewRepositorySpecUsesSavedRunPolicy(t *testing.T) {
+	db := newTestDB(t)
+	seedGitDeliveryStatusFixture(t, db)
+	ensureAgentRuntimeHostRunTable(t, db)
+	mustExec(t, db, `ALTER TABLE agent_runs ADD COLUMN input TEXT`)
+	mustExec(t, db, `INSERT INTO agent_runs (
+		id, workspace_id, agent_id, target_type, target_id, runtime_kind, status, external_runtime, external_runtime_id, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"run-helpin-1", "ws-1", "agent-1", "task", "task-1", "native_sdk", "running", agentRuntimeName, "run-runtime-1")
+
+	mustExec(t, db, `UPDATE agent_runs SET input = ? WHERE id = ?`, []byte(`{"delivery_mode":"preview"}`), "run-helpin-1")
+
+	host := NewAgentRuntimeHostService(
+		"helpin",
+		repository.NewAgentRunRepository(db),
+		nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		newGitDeliveryStatusService(db, &fakeGitHubAppClient{}),
+	)
+
+	spec, err := host.ResolveRepositorySpec(context.Background(), agentruntime.PrepareWorkspaceRequest{
+		AppID:         "helpin",
+		RunID:         "run-runtime-1",
+		AgentID:       "agent-1",
+		RuntimeKind:   "native_sdk",
+		Target:        agentruntime.TargetRef{Type: "task", ID: "task-1"},
+		WorkspaceMode: agentruntime.WorkspaceModeRepository,
+	})
+	if err != nil {
+		t.Fatalf("ResolveRepositorySpec returned error: %v", err)
+	}
+	if spec.WorkBranch != "hel-31-fix-merge-status" || spec.Metadata["workspace_id"] != "ws-1" {
+		t.Fatalf("unexpected repository spec: %#v", spec)
+	}
+	if spec.Auth == nil || spec.Auth.Type != "github" || spec.Auth.Token != "github-installation-token" {
+		t.Fatalf("repository spec did not include GitHub installation authentication: %#v", spec.Auth)
+	}
+	if spec.FinalizePolicy != agentruntime.RepositoryFinalizeNone || spec.Metadata["delivery_mode"] != "preview" {
+		t.Fatal("host did not enforce persisted preview policy")
+	}
+
+}
+
+func TestRuntimeAgentBaseIDStripsExecutionSuffix(t *testing.T) {
+	for input, want := range map[string]string{"agent-1": "agent-1", "agent-1-execution": "agent-1", " agent-1-execution ": "agent-1", "": ""} {
+		if got := runtimeAgentBaseID(input); got != want {
+			t.Errorf("runtimeAgentBaseID(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
+func TestResolveTargetContextAcceptsExecutionRuntimeAgentForPreview(t *testing.T) {
+	_, preview, _, runtime, ctx := previewFixture(t)
+	profiles, primary, _ := setupAIProfileTest(t)
+	profile, err := profiles.Save(ctx, "workspace", "owner", "", model.SaveAIProfileRequest{Name: "Support", Scope: "workspace", Primary: primary})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = profiles.SetDefault(ctx, "workspace", "owner", profile.ID); err != nil {
+		t.Fatal(err)
+	}
+	preview.agents.SetAIConnectionService(profiles.connections).SetAIProfileService(profiles)
+	if _, err = preview.Start(ctx, "workspace", "agent-1", model.SupportAIPreviewRequest{Message: "How do I install?"}); err != nil {
+		t.Fatal(err)
+	}
+	target := runtime.startRunCalls[0].Target
+	host := NewAgentRuntimeHostService("helpin", preview.agents.runRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	// The execution projection reports "<agent>-execution"; it must pass the
+	// same ownership check as the ordinary agent ID.
+	resolved, err := host.ResolveTargetContext(ctx, agentruntime.TargetContextRequest{AppID: "helpin", AgentID: "agent-1-execution", RunID: "run_runtime_1", Target: target})
+	if err != nil {
+		t.Fatalf("ResolveTargetContext with execution agent ID: %v", err)
+	}
+	if resolved == nil || resolved.Summary != "Support preview" {
+		t.Fatalf("unexpected preview context: %#v", resolved)
+	}
+	_, err = host.ResolveTargetContext(ctx, agentruntime.TargetContextRequest{AppID: "helpin", AgentID: "agent-2-execution", RunID: "run_runtime_1", Target: target})
+	if !errors.Is(err, ErrAgentRuntimeHostForbidden) {
+		t.Fatalf("foreign execution agent error = %v, want forbidden", err)
 	}
 }

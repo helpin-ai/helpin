@@ -1,5 +1,8 @@
+import { helpinClient } from '@/lib/helpin';
+import { filterWorkspaceNav } from '@/lib/workspaceSurface';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
+import { buildSettingsHomePath } from '@/lib/settingsDiscovery';
 import { useTheme } from 'next-themes';
 import { useHelpin } from '@helpin-ai/react';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -24,7 +27,7 @@ import {
 } from '@/components/ui/sidebar';
 import { WorkspaceSwitcher } from '@/components/layout/WorkspaceSwitcher';
 import { SidebarHeaderToggle } from '@/components/layout/WorkspaceSidebarToggle';
-import { TrialBanner } from '@/components/layout/TrialBanner';
+import { TrialBanner } from '@edition';
 import { NotificationCenter } from '@/components/notifications/NotificationCenter';
 import { useSupportTeammatePresence, useUpdateMySupportTeammatePresence } from '@/hooks/queries/useSupport';
 import { DocsRailNav } from './sidebar/DocsRailNav';
@@ -50,7 +53,7 @@ import { StandardRailNav } from './sidebar/StandardRailNav';
 import { CrmRailNav } from './sidebar/CrmRailNav';
 import { SupportRailNav } from './sidebar/SupportRailNav';
 import { SidebarSearchFooter } from './sidebar/SidebarSearchFooter';
-import { isSetupSuccessEnabled } from '@/lib/featureFlags';
+import { useSetupGuideEnabled } from '@/hooks/useSetupGuideEnabled';
 import type { SupportInboxView } from '@/lib/pmTypes';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -73,17 +76,21 @@ export function Sidebar() {
   const initials = getInitials(user?.full_name || user?.email);
 
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
-  const { data: setup } = useSetup(isSetupSuccessEnabled() ? workspaceId : undefined);
+  const setupGuideEnabled = useSetupGuideEnabled();
+  const { data: setup } = useSetup(setupGuideEnabled ? workspaceId : undefined);
   const { isAdmin, canManageSettings, canManageTeams, canEditDocs, permissionSet, canAccessModule, modules } = usePermissions(access);
   const hasSupportModule = canAccessModule('support');
   const {
     navFilter,
     setNavFilter,
+    statusFilter,
     selectedMailboxId,
     setSelectedMailboxId,
     activeCustomViewId,
     applyCustomView,
     searchQuery,
+    conversationListFilters,
+    setCreateCustomViewOpen,
     setBuiltinViewFilters,
     setTeamInboxDialogOpen,
     setEditMailboxId,
@@ -159,7 +166,15 @@ export function Sidebar() {
   const [expandedTeams, setExpandedTeams] = useState<Set<string>>(() =>
     workspaceId ? getExpandedTeams(workspaceId) : new Set(),
   );
-  const [collapsedSettingsGroups, setCollapsedSettingsGroups] = useState<Set<string>>(getCollapsedSettingsGroups);
+  const isSettingsHome = location.pathname.replace(/\/$/, '') === buildSettingsHomePath(wsSlug).replace(/\/$/, '');
+  const [collapsedSettingsGroups, setCollapsedSettingsGroups] = useState<Set<string>>(() =>
+    isSettingsHome ? new Set(COLLAPSIBLE_SETTINGS_GROUPS) : getCollapsedSettingsGroups(),
+  );
+  const [settingsSidebarPath, setSettingsSidebarPath] = useState(location.pathname);
+  if (settingsSidebarPath !== location.pathname) {
+    setSettingsSidebarPath(location.pathname);
+    if (isSettingsHome) setCollapsedSettingsGroups(new Set(COLLAPSIBLE_SETTINGS_GROUPS));
+  }
   const [activeSetupJourney, setActiveSetupJourney] = useState<string>();
 
   useEffect(() => {
@@ -210,14 +225,14 @@ export function Sidebar() {
     () => buildPanelNavGroups(wsSlug, canManageSettings, permissionSet, agentAttentionCount, teams),
     [wsSlug, canManageSettings, permissionSet, agentAttentionCount, teams],
   );
-  const currentNavGroups = panelNavGroups[activeRail];
+  const currentNavGroups = panelNavGroups[activeRail].map(group => ({ ...group, items: filterWorkspaceNav(group.items, modules) })).filter(group => group.items.length > 0);
   const setupProgress = setup?.total_count ? Math.round((setup.completed_count / setup.total_count) * 100) : 0;
   const crmDefaultLink = activeRail === 'crm'
     ? normalizeCRMSectionPath(wsSlug, location.pathname)
     : getLastCRMPath(workspaceId ?? '', wsSlug);
   const railItems = useMemo(
-    () => buildRailItems(wsSlug, totalSupportUnread, isSetupSuccessEnabled() ? setupProgress : undefined, crmDefaultLink),
-    [wsSlug, totalSupportUnread, setupProgress, crmDefaultLink],
+    () => buildRailItems(wsSlug, totalSupportUnread, setupGuideEnabled ? setupProgress : undefined, crmDefaultLink).map(item => item.id === 'automation' && !modules.includes('automation') ? { ...item, label: 'Agents', defaultLink: `/w/${wsSlug}/automation/agents` } : item),
+    [wsSlug, totalSupportUnread, setupGuideEnabled, setupProgress, crmDefaultLink, modules],
   );
 
   useEffect(() => {
@@ -227,7 +242,11 @@ export function Sidebar() {
   }, [activeRail, location.pathname, workspaceId, wsSlug]);
 
   useEffect(() => {
-    if (activeRail !== 'settings') {
+    if (isSettingsHome) saveCollapsedSettingsGroups(new Set(COLLAPSIBLE_SETTINGS_GROUPS));
+  }, [location.pathname, isSettingsHome]);
+
+  useEffect(() => {
+    if (activeRail !== 'settings' || isSettingsHome) {
       return;
     }
 
@@ -247,7 +266,7 @@ export function Sidebar() {
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname, activeRail, currentNavGroups, collapsedSettingsGroups]);
+  }, [location.pathname, activeRail, currentNavGroups]);
 
   const activeTeamParam = useMemo(() => {
     const search = location.search as Record<string, string | undefined>;
@@ -320,7 +339,7 @@ export function Sidebar() {
       <SidebarHeader className="relative p-2 after:absolute after:right-2 after:bottom-0 after:left-2 after:h-px after:bg-border/70 after:[mask-image:linear-gradient(to_right,transparent,black_24px,black_calc(100%-24px),transparent)] dark:after:bg-sidebar-border">
         <div className="flex items-center gap-1">
           <div className="min-w-0 flex-1">
-            <WorkspaceSwitcher />
+            <WorkspaceSwitcher onCreateWorkspace={() => navigate({ to: '/onboarding', search: { step: 'workspace' } })} />
           </div>
           <NotificationCenter />
           <SidebarHeaderToggle />
@@ -334,6 +353,7 @@ export function Sidebar() {
             activeRail={activeRail}
             userEmail={user?.email ?? undefined}
             accessibleModules={modules}
+            canUseAskAgents={access?.can_use_ask_agents ?? false}
             theme={theme}
             onRailSelect={(link) => handleNavigate(link)}
             onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
@@ -345,12 +365,12 @@ export function Sidebar() {
                 selectedPresenceMode={selectedSupportPresenceMode}
                 onPresenceChange={(value) => updateMyPresence.mutate(value === 'auto' ? null : value)}
                 onProfile={() => handleNavigate({ to: '/w/$slug/settings/$section', params: { slug: wsSlug, section: 'profile' } })}
-                onSettings={() => handleNavigate({ to: '/w/$slug/settings/$section', params: { slug: wsSlug, section: 'general' } })}
+                onSettings={() => handleNavigate(buildSettingsHomePath(wsSlug))}
                 onWorkspaces={() => handleNavigate('/workspaces')}
-                onGetHelp={() => {
+                onGetHelp={helpinClient ? () => {
                   showHelpin();
                   openHelpin();
-                }}
+                } : undefined}
                 onSignOut={signOut}
               />
             )}
@@ -379,6 +399,7 @@ export function Sidebar() {
 
             {activeRail === 'settings' ? (
               <SettingsRailNav
+                workspaceSlug={wsSlug}
                 groups={currentNavGroups}
                 isActive={isActive}
                 collapsedGroups={collapsedSettingsGroups}
@@ -449,6 +470,21 @@ export function Sidebar() {
                       activeCustomViewId: view.id,
                       listFilters: next.conversationListFilters,
                       includeFilterParams: false,
+                    }),
+                  });
+                }}
+                onCreateCustomView={() => {
+                  setCreateCustomViewOpen(true);
+                  if (location.pathname === `/w/${wsSlug}/support`) return;
+                  void navigate({
+                    to: `/w/${wsSlug}/support`,
+                    search: buildSupportInboxSearch({
+                      navFilter,
+                      selectedMailboxId,
+                      statusFilter,
+                      searchQuery,
+                      activeCustomViewId,
+                      listFilters: conversationListFilters,
                     }),
                   });
                 }}

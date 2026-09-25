@@ -127,9 +127,19 @@ type MCPService struct {
 	crmContacts   *CRMContactService
 	crmDeals      *CRMDealService
 	support       *SupportInboxService
-	config        MCPServiceConfig
-	tools         map[string]MCPToolDefinition
-	toolSchemas   map[string]*jsonschema.Resolved
+	docsLifecycle mcpDocsLifecycleService
+	helpcenter    mcpHelpcenterPublisher
+	docsEmbedding mcpDocsEmbeddingQueue
+	docsProposals mcpDocsChangeProposalService
+	// proposalCommands overrides commands for propose_document_change in tests.
+	proposalCommands mcpCommandExecutor
+	attachments      mcpAttachmentService
+	docsContent      mcpDocsContentReader
+	pmComments       mcpPMCommentLister
+	fetchImage       mcpImageFetcher
+	config           MCPServiceConfig
+	tools            map[string]MCPToolDefinition
+	toolSchemas      map[string]*jsonschema.Resolved
 }
 
 // NewMCPService creates the public MCP service boundary.
@@ -850,7 +860,7 @@ func hasMCPWriteGrant(scopes, toolsets []string) bool {
 }
 
 func isMCPWriteScope(scope string) bool {
-	return strings.HasSuffix(scope, ".write") || scope == MCPScopeAgentsRun
+	return strings.HasSuffix(scope, ".write") || scope == MCPScopeAgentsRun || scope == MCPScopeDocsPublish
 }
 
 func decodeMCPStrings(raw json.RawMessage) []string {

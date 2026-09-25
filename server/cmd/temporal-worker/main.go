@@ -24,13 +24,13 @@ import (
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
+	"github.com/helpin-ai/helpin/server/internal/aimodel"
 	"github.com/helpin-ai/helpin/server/internal/aipolicy"
-	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
-	"github.com/helpin-ai/helpin/server/internal/billingstripe"
 	"github.com/helpin-ai/helpin/server/internal/config"
 	"github.com/helpin-ai/helpin/server/internal/crawler"
 	"github.com/helpin-ai/helpin/server/internal/crmsignal"
+	"github.com/helpin-ai/helpin/server/internal/decision"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/meetingcapture"
@@ -77,7 +77,9 @@ func main() {
 		cfg.AWSRegion,
 		cfg.AWSEndpointURL,
 		cfg.AWSPublicBaseURL,
+		cfg.AWSPresignEndpointURL,
 	)
+	s3Client.ConfigureAssetAccess(cfg.AppBaseURL, cfg.AWSPrivateBucket)
 
 	db, err := gorm.Open(postgres.New(postgres.Config{
 		DSN:                  cfg.DatabaseURL,
@@ -182,13 +184,20 @@ func main() {
 	docsHelpcenterSearchRepo := repository.NewDocsHelpcenterSearchRepository(db)
 	docsRedirectRepo := repository.NewDocsRedirectRepository(db)
 	docsImportRepo := repository.NewDocsImportRepository(db)
-	billingRepo := repository.NewBillingRepository(db)
-	pricingCatalog, pricingCatalogErr := aiusage.LoadCatalog()
-	if pricingCatalogErr != nil {
-		fatalWithSentry("load AI pricing catalog", pricingCatalogErr)
+	modelCatalog, modelCatalogErr := aimodel.LoadCatalog()
+	if modelCatalogErr != nil {
+		fatalWithSentry("load model catalog", modelCatalogErr)
 	}
-	aiUsageRepo := repository.NewAIUsageRepository(db)
-	aiUsageService := service.NewAIUsageService(pricingCatalog, aiUsageRepo, nil)
+	editionServices, err := newEditionServices(db, cfg, workspaceRepo)
+	if err != nil {
+		fatalWithSentry("configure edition", err)
+	}
+	if editionServices.InitializeAIProfiles != nil {
+		if err := editionServices.InitializeAIProfiles(context.Background()); err != nil {
+			fatalWithSentry("failed to initialize standard AI profiles", err)
+		}
+	}
+	aiUsageService := editionServices.Usage
 	aiUsageMeter := service.NewTokenPricedAIUsageMeter(aiUsageService)
 	aiActionExecutionRepo := repository.NewAIActionExecutionRepository(db)
 	aiActionRegistry := aipolicy.DefaultRegistry()
@@ -228,10 +237,11 @@ func main() {
 		}
 	}
 	gmailSyncClient := syncpkg.NewGmailSyncClient(gmailOAuth, crmEmailRepo, encryptionKey)
-	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)
+	githubAppConfig, err := newGitHubAppConfigService(db, cfg)
 	if err != nil {
 		fatalWithSentry("failed to initialize github app client", err)
 	}
+	githubAppClient := githubapp.NewClientWithSource(githubAppConfig)
 	wsPublisher := ws.NewJetStreamPublisher(jetstream)
 	notificationService := service.NewNotificationService(
 		notificationRepo,
@@ -244,6 +254,8 @@ func main() {
 		nil,
 		cfg.AppBaseURL,
 	)
+	notificationAuthz := authorization.NewAuthzService(db, authorization.NewGORMMemberRepository(db), repository.NewWorkspaceModuleGrantRepository(db))
+	notificationService.SetAccessChecker(service.NewNotificationAccessPolicy(notificationAuthz, notificationRepo))
 	// Email sync activities (may be nil if Gmail not configured).
 	crmEmailSyncSettingsRepo := repository.NewCRMEmailSyncSettingsRepository(db)
 
@@ -272,22 +284,22 @@ func main() {
 			OpenRouterProvider: cfg.CRMMeetingFallbackOpenRouterProvider,
 		},
 	})
-	if issues := completionRoutes.Validate(pricingCatalog); len(issues) != 0 {
-		fatalWithSentry("validate AI completion pricing routes", errors.Join(issues...))
+	if issues := completionRoutes.Validate(modelCatalog); len(issues) != 0 {
+		fatalWithSentry("validate AI completion model routes", errors.Join(issues...))
 	}
-	if issues := completionRoutes.ValidateProviders(supportLLMRouter.HasChatProvider); len(issues) != 0 {
+	if issues := completionRoutes.ValidateAvailability(editionServices.ValidateCompletionRoute); len(issues) != 0 {
+		fatalWithSentry("validate edition completion routes", errors.Join(issues...))
+	}
+	if issues := completionRoutes.ValidateProviders(supportLLMRouter.HasChatProvider); editionServices.RequireConfiguredProviders && len(issues) != 0 {
 		fatalWithSentry("validate AI completion providers", errors.Join(issues...))
 	}
-	agentTierResolver := service.NewAgentModelTierResolver(pricingCatalog, supportLLMRouter.HasChatProvider)
-	if issues := agentTierResolver.ValidateSelectable(); len(issues) != 0 {
+	agentTierResolver := service.NewAgentModelTierResolver(modelCatalog, supportLLMRouter.HasChatProvider)
+	if issues := agentTierResolver.ValidateSelectable(); editionServices.RequireConfiguredProviders && len(issues) != 0 {
 		fatalWithSentry("validate agent model sizes", errors.Join(issues...))
 	}
 	supportLLMProvider := service.NewAICompletionService(supportLLMRouter, aiUsageService, completionRoutes).
 		SetGovernance(aiActionRegistry, aiActionExecutionRepo)
 	var llmProvider llm.Provider = supportLLMProvider
-	stripeGateway := billingstripe.New(cfg.StripeSecretKey)
-	billingService := service.NewBillingService(billingRepo, stripeGateway, time.Now)
-	billingService.SetWorkspaceRepository(workspaceRepo)
 	var redisClient *redis.Client
 	if cfg.RedisURL != "" {
 		redisOpts, err := redis.ParseURL(cfg.RedisURL)
@@ -417,7 +429,8 @@ func main() {
 		cfg.JWTSecret,
 	).
 		SetEpicDeliveryDependencies(epicDeliveryTargetRepo, epicRepo).
-		SetGitLabDependencies(gitCredentialRepo, resolveGitOAuthEncryptionKey(cfg))
+		SetGitLabDependencies(gitCredentialRepo, resolveGitOAuthEncryptionKey(cfg)).
+		SetGitHubAppSource(githubAppConfig)
 	pmStoryService.SetGitService(gitService)
 	agentService := service.NewAgentService(
 		agentRepo,
@@ -448,12 +461,22 @@ func main() {
 	).SetWorkspaceSkillStore(workspaceSkillRepo, nil).SetModelProviderConfig(
 		cfg.AnthropicAPIKey,
 		cfg.OpenAIAPIKey,
-		cfg.OpenRouterAPIKey,
-		cfg.CodexOpenAIAuthMode,
-		cfg.CodexEnableChatGPTOAuth,
-		cfg.CodexChatGPTAccessToken,
-		cfg.CodexChatGPTAccountID,
-	).SetTriggerExecutionRepository(triggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetWorkspaceRepository(workspaceRepo).SetNotificationService(notificationService).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetModelTierResolver(agentTierResolver).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
+		cfg.OpenRouterAPIKey).SetTriggerExecutionRepository(triggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetWorkspaceRepository(workspaceRepo).SetNotificationService(notificationService).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetModelTierResolver(agentTierResolver).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
+
+	aiConnectionService, err := service.NewAIConnectionService(repository.NewAIConnectionRepository(db), modelCatalog, agentRuntimeClient, service.AIConnectionConfig{
+		EncryptionKey: cfg.AIConnectionEncryptionKey, ChatGPTEnabled: cfg.ChatGPTConnectionsEnabled, ChatGPTClientID: cfg.ChatGPTClientID, AppID: cfg.AgentRuntimeAppID,
+	})
+	if err != nil {
+		fatalWithSentry("initialize AI connections", err)
+	}
+	agentService.SetAIConnectionService(aiConnectionService).SetAIProfileService(service.NewAIProfileService(repository.NewAIProfileRepository(db), aiConnectionService).SetAdmissionPolicy(editionServices.ConnectionPolicy).CheckRuntimeReadiness())
+	// Indexing uses the server embedding key when set, otherwise the
+	// workspace's own OpenAI or OpenRouter connection.
+	supportEmbeddingProvider = service.NewWorkspaceEmbeddingResolver(service.WorkspaceEmbeddingResolverConfig{
+		Server: supportEmbeddingProvider, ServerProvider: llm.SupportEmbeddingProviderName(cfg.OpenAIAPIKey, cfg.OpenRouterAPIKey),
+		Model: cfg.OpenAIEmbeddingModel, Connections: aiConnectionService,
+		Meter: aiUsageMeter, Registry: aiActionRegistry, Audit: aiActionExecutionRepo,
+	})
 	if agentRuntimeClient != nil {
 		agentService.SetAgentRuntimeClient(agentRuntimeClient)
 	}
@@ -475,6 +498,7 @@ func main() {
 	)
 	docsHelpcenterService.SetSearchRepository(docsHelpcenterSearchRepo)
 	docsHelpcenterService.SetPublicationArtifactDependencies(artifactRepo, s3Client)
+	docsHelpcenterService.SetPublicationAttachmentRepository(pmAttachmentRepo)
 	docsDocumentService.SetHelpcenterService(docsHelpcenterService)
 	docsImportService := service.NewDocsImportService(
 		docsImportRepo,
@@ -642,6 +666,21 @@ func main() {
 		WebhookSecret: cfg.VexaWebhookSecret,
 		HTTPClient:    meetingProviderHTTPClient,
 	})
+	var jevProvider decision.Provider
+	if strings.TrimSpace(cfg.JevAPIKey) != "" {
+		client, err := decision.NewJev(cfg.JevAPIKey, time.Duration(cfg.JevTimeoutMS)*time.Millisecond)
+		if err != nil {
+			fatalWithSentry("configure product Jev", err)
+		}
+		jevProvider = client
+	}
+	jevDecisions, err := service.NewJevDecisionService(jevProvider, repository.NewJevDecisionRepository(db), repository.NewAIExecutionUsageRepository(db), cfg.JevProductPolicies, strings.Split(cfg.JevWorkspaceIDs, ","))
+	if err != nil {
+		fatalWithSentry("configure product decisions", err)
+	}
+	supportCoverageDailyAnalyzer.SetJevDecisions(jevDecisions)
+	commandService.SetJevDecisions(jevDecisions)
+	ruleEngine.SetJevDecisions(jevDecisions)
 	var meetingProcessor *service.CRMMeetingProcessingService
 	if s3Client != nil {
 		meetingProcessor = service.NewCRMMeetingProcessingService(
@@ -654,7 +693,7 @@ func main() {
 			&http.Client{Timeout: 30 * time.Minute}, recallMeetingProvider, vexaMeetingProvider,
 		)
 	}
-	meetingProcessor.SetCRMOutputs(signalDetectionService, crmActivityService, crmSuggestionService).SetFollowUpRoutingStore(crmSuggestionRepo)
+	meetingProcessor.SetCRMOutputs(signalDetectionService, crmActivityService, crmSuggestionService).SetFollowUpRoutingStore(crmSuggestionRepo).SetJevDecisions(jevDecisions)
 	meetingCaptureService := service.NewCRMMeetingService(
 		crmMeetingRepo, nil, nil, recallMeetingProvider, vexaMeetingProvider,
 	).SetCaptureProvider(cfg.CRMMeetingCaptureProvider).
@@ -663,11 +702,12 @@ func main() {
 
 	scheduledRuleActivities := temporalapp.NewScheduledRuleActivities(ruleEngine)
 	crmPlaybookAuthz := authorization.NewAuthzService(db, authorization.NewGORMMemberRepository(db), repository.NewWorkspaceModuleGrantRepository(db))
+	crmPlaybookAuthz.SetDeploymentModules(cfg.EnabledModules)
 	crmSituationService := service.NewCRMSituationService(repository.NewCRMSituationRepository(db), crmPlaybookAuthz)
 	crmPlaybookService := service.NewCRMPlaybookService(repository.NewCRMPlaybookRepository(db), crmPlaybookAuthz, crmSituationService)
 	crmPlaybookExecutionRepo := repository.NewCRMPlaybookExecutionRepository(db)
 	crmPlaybookLauncher := service.NewCRMPlaybookAgentLauncher(agentService, crmPlaybookExecutionRepo, aiUsageMeter)
-	crmPlaybookExecution := service.NewCRMPlaybookExecutionService(crmPlaybookExecutionRepo, crmPlaybookService, crmPlaybookLauncher, crmPlaybookAuthz, workspaceRepo).SetEntitlements(service.NewEntitlementService(billingService))
+	crmPlaybookExecution := service.NewCRMPlaybookExecutionService(crmPlaybookExecutionRepo, crmPlaybookService, crmPlaybookLauncher, crmPlaybookAuthz, workspaceRepo).SetEntitlements(editionServices.Entitlements)
 	crmPlaybookLauncher.SetExecutionService(crmPlaybookExecution)
 	scheduledEventsService := service.NewAutomationScheduledEventService(repository.NewAutomationScheduledEventRepository(db),
 		map[string]service.ScheduledEventHandler{
@@ -675,7 +715,9 @@ func main() {
 			model.CRMPlaybookWorkDue:  crmPlaybookExecution,
 			model.CRMPlaybookEntryDue: crmPlaybookExecution,
 		}).SetMaintenance(crmPlaybookExecution.MaintainScheduledWork)
-	scheduledEventsActivities := temporalapp.NewScheduledEventsActivities(scheduledEventsService)
+	crmSequenceEmail := service.NewCRMEmailService(crmEmailRepo, crmContactRepo, workspaceRepo, crmEmailSyncSettingsRepo, gmailOAuth, encryptionKey, gmailSyncClient, temporalClient, crmSummaryService)
+	crmOutreachService := service.NewCRMOutreachService(repository.NewCRMOutreachRepository(db), crmSequenceEmail, crmEmailRepo, crmPlaybookAuthz, pmStoryService, cfg.AppBaseURL)
+	scheduledEventsActivities := temporalapp.NewScheduledEventsActivities(scheduledEventsService).SetAdditionalDispatcher(crmOutreachService)
 	recurringActivities := service.NewPMRecurringTemplateActivities(pmRecurringTemplateService)
 
 	// Sprint automation activities.

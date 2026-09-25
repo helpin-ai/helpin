@@ -6,6 +6,7 @@ on:
     branches:
       - develop
     paths:
+      - ".node-version"
       - ".github/workflows/build-support-desktop.yml"
       - "apps/support-desktop/**"
       - "packages/support-core/**"
@@ -27,7 +28,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  VITE_EDITION: ee
   VITE_API_URL: ${{ vars.SUPPORT_DESKTOP_API_URL || 'https://api.helpin.ai/api' }}
   VITE_WEB_BASE_URL: ${{ vars.SUPPORT_DESKTOP_WEB_BASE_URL || 'https://app.helpin.ai' }}
 
@@ -52,7 +53,9 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install Linux Tauri dependencies
         if: runner.os == 'Linux'
@@ -64,20 +67,21 @@ jobs:
             librsvg2-dev \
             patchelf
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
-
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22"
-          cache: pnpm
-
+          package-manager-cache: false
+          node-version-file: .node-version
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          cache: true
+          cache_dependency_path: pnpm-lock.yaml
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
 
       - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: apps/support-desktop/src-tauri
 
@@ -98,7 +102,7 @@ jobs:
         run: pnpm --dir apps/support-desktop run tauri:build
 
       - name: Upload installers
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ matrix.artifact }}-${{ github.run_number }}
           path: |

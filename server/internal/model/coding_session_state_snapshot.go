@@ -51,7 +51,7 @@ func EncodeCodingSessionStreamSnapshot(snapshot *CodingSessionStreamSnapshot) (j
 }
 
 func (s *CodingSessionStreamSnapshot) IsEmpty() bool {
-	return s == nil || (s.TurnState == nil && s.LiveAssistantMessage == nil && s.LiveReasoningMessage == nil && len(s.LiveTurnSegments) == 0 && s.CurrentPlan == nil)
+	return s == nil || (s.TurnState == nil && s.LiveAssistantMessage == nil && s.LiveReasoningMessage == nil && len(s.LiveTurnSegments) == 0 && s.CurrentPlan == nil && len(s.WorkPlans) == 0)
 }
 
 func ApplyCodingSessionStreamEvent(snapshot *CodingSessionStreamSnapshot, eventType string, payload map[string]any, timestamp time.Time) *CodingSessionStreamSnapshot {
@@ -305,6 +305,45 @@ func ApplyCodingSessionStreamEvent(snapshot *CodingSessionStreamSnapshot, eventT
 	case "plan.updated":
 		plan := parseCodingSessionRunPlan(payload["content"])
 		if plan != nil {
+			turnID := ""
+			if snapshot.TurnState != nil {
+				turnID = snapshot.TurnState.TurnID
+			}
+			previous := snapshot.CurrentPlan
+			sameSteps := previous != nil && len(previous.Plan) == len(plan.Plan)
+			if sameSteps {
+				for i := range plan.Plan {
+					if previous.Plan[i].Step != plan.Plan[i].Step {
+						sameSteps = false
+						break
+					}
+				}
+			}
+			if previous != nil && (sameSteps || (previous.Origin != nil && turnID != "" && previous.Origin.TurnID == turnID)) {
+				plan.Origin = previous.Origin
+			} else {
+				plan.Origin = &CodingSessionPlanOrigin{EventID: trimmedSnapshotString(payload["_plan_event_id"]), TurnID: turnID, CreatedAt: timestamp.UTC()}
+				if sequence, ok := payload["_plan_sequence"].(int64); ok {
+					plan.Origin.SequenceNo = sequence
+				}
+				if plan.Origin.EventID == "" {
+					plan.Origin.EventID = "plan:" + timestamp.UTC().Format(time.RFC3339Nano)
+				}
+			}
+			if plan.Origin != nil {
+				index := -1
+				for i := range snapshot.WorkPlans {
+					if snapshot.WorkPlans[i].Origin != nil && snapshot.WorkPlans[i].Origin.EventID == plan.Origin.EventID {
+						index = i
+						break
+					}
+				}
+				if index < 0 {
+					snapshot.WorkPlans = append(snapshot.WorkPlans, *plan)
+				} else {
+					snapshot.WorkPlans[index] = *plan
+				}
+			}
 			snapshot.CurrentPlan = plan
 		}
 	}

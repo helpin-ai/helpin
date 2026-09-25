@@ -20,6 +20,9 @@
     "noUncheckedSideEffectImports": true,
     "baseUrl": ".",
     "paths": {
+      "@/components/agents/AISettingsLink": ["./src/shims/AISettingsLink.tsx"],
+      "@edition": ["../../frontend/src/edition/community"],
+      "@edition/*": ["../../frontend/src/edition/community/*"],
       "@desktop/*": ["./src/*"],
       "@/components/pm/task-detail/taskRouteNavigation": ["./src/shims/taskRouteNavigation.ts"],
       "@/*": ["../../frontend/src/*"],

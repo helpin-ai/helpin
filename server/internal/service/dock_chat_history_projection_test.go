@@ -85,6 +85,33 @@ func TestCompactDockChatMessagePageLeavesDirectAnswerWithoutWorkDisclosure(t *te
 
 func int64Ptr(value int64) *int64 { return &value }
 
+func TestCompactDockChatMessagePageIncludesDecisionsInOneTurn(t *testing.T) {
+	base := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
+	for _, kind := range []string{"approval", "approval_request_resolution", "review_checkpoint_resolution"} {
+		t.Run(kind, func(t *testing.T) {
+			messages := []model.AgentRunMessage{
+				{ID: "user", Role: "user", Content: "Check the data", CreatedAt: base},
+				{ID: "progress", Role: "assistant", MessageType: "assistant_progress", Content: "Checking", CreatedAt: base.Add(time.Second)},
+				{ID: "decision", Role: "user", MessageType: kind, Content: "Approved. Continue.", CreatedAt: base.Add(2 * time.Second)},
+				{ID: "progress-2", Role: "assistant", MessageType: "assistant_progress", Content: "Analyzing", CreatedAt: base.Add(3 * time.Second)},
+				{ID: "answer", Role: "assistant", MessageType: "assistant_final", Content: "The findings", CreatedAt: base.Add(4 * time.Second)},
+				{ID: "followup", Role: "user", Content: "Next dataset", CreatedAt: base.Add(5 * time.Second)},
+			}
+			compact := compactDockChatMessagePage(messages)
+			if len(compact) != 4 || compact[0].ID != "user" || compact[1].DockWorkSummary == nil || compact[2].ID != "answer" || compact[3].ID != "followup" {
+				t.Fatalf("expected user + one activity + final + next user: %+v", compact)
+			}
+			if compact[1].DockWorkSummary.DurationMs != 4000 || compact[1].DockWorkSummary.ActivityCount != 1 {
+				t.Fatalf("summary must span the whole turn and include the decision: %+v", compact[1].DockWorkSummary)
+			}
+			pending := compactDockChatMessagePage(messages[:4])
+			if len(pending) != 4 || pending[2].ID != "decision" {
+				t.Fatalf("pending work lost: %+v", pending)
+			}
+		})
+	}
+}
+
 func TestCompactDockChatMessagePagePreservesCanonicalAnswerBeforeLateMetadata(t *testing.T) {
 	for _, lateContent := range []string{"", "Here is the full answer:"} {
 		t.Run(lateContent, func(t *testing.T) {

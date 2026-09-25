@@ -1,4 +1,25 @@
-# Role-Based Access Analysis — PM & Docs Modules
+# Historical PM and Docs role analysis
+
+This page preserves an earlier role analysis for design context. It is not the
+current permission matrix. Source comparison on 2026-09-17 found these differences:
+
+- Members can create and edit epics in their own teams through
+  `requireCanEditTeamEpics`; team ownership is not required for those operations.
+  See [epic service](../../server/internal/service/pm_epic.go),
+  [team access helpers](../../server/internal/service/pm_team_access.go), and
+  [permission tests](../../server/internal/service/pm_team_access_test.go).
+- The document list service filters drafts to the current user for non-admins
+  and non-owners. The team-manager draft visibility described below is not
+  implemented by that list filter. See
+  [document listing](../../server/internal/service/docs_document.go).
+- Current PM code uses tasks rather than stories. Role grants are only one layer:
+  module access and resource-specific checks also apply. Start with the
+  [authorization service](../../server/internal/authorization/authz.go) and
+  [role grants](../../server/internal/authorization/rbac.go) when evaluating access.
+
+The sections below retain the original analysis and recommendations; do not use
+them as acceptance criteria without checking the current route and service.
+
 
 ## PM Module — Role Capabilities
 

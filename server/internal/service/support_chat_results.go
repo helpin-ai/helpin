@@ -35,10 +35,16 @@ func (s *SupportChatService) OnSupportChatRunPaused(ctx context.Context, run *mo
 		return
 	}
 
-	s.supportAIService.publishTypingIndicator(ctx, run.WorkspaceID, conversationID, false)
 	if s.closeSupportChatRunIfTerminal(ctx, run, conversationID, time.Now().UTC()) {
+		s.supportAIService.publishTypingIndicator(ctx, run.WorkspaceID, conversationID, false)
 		return
 	}
+	if s.waitingForSupportResult(ctx, run, conversationID) {
+		s.supportAIService.publishProgress(run.WorkspaceID, conversationID, supportAIProgressChecking)
+		s.drainDeferredMessages(ctx, run, conversationID)
+		return
+	}
+	s.supportAIService.publishTypingIndicator(ctx, run.WorkspaceID, conversationID, false)
 
 	if s.enforceTurnSettlement(ctx, run, conversationID) {
 		// A nudge resume was sent — the run is active again; deferred
@@ -46,6 +52,28 @@ func (s *SupportChatService) OnSupportChatRunPaused(ctx context.Context, run *mo
 		return
 	}
 	s.drainDeferredMessages(ctx, run, conversationID)
+}
+
+// A paused parent with pending child work has not gone silent. Keep its source
+// turn open; result delivery resumes it without requiring another visitor message.
+func (s *SupportChatService) waitingForSupportResult(ctx context.Context, run *model.AgentRun, conversationID string) bool {
+	if s.planRepo == nil || s.processingRepo == nil {
+		return false
+	}
+	row, err := s.processingRepo.LatestProcessingForConversation(ctx, run.WorkspaceID, conversationID)
+	if err != nil {
+		slog.WarnContext(ctx, "support chat: load pending turn", "error", err)
+		return true
+	}
+	if row == nil {
+		return false
+	}
+	pending, err := s.planRepo.HasPendingSupportResult(ctx, run.WorkspaceID, conversationID, run.ID)
+	if err != nil {
+		slog.WarnContext(ctx, "support chat: load pending child work", "error", err)
+		return true
+	}
+	return pending
 }
 
 // closeSupportChatRunIfTerminal ends chat-mode runtime runs that no longer
@@ -60,7 +88,24 @@ func (s *SupportChatService) closeSupportChatRunIfTerminal(ctx context.Context, 
 		slog.WarnContext(ctx, "support chat: load conversation for run closure failed", "error", err, "conversation_id", conversationID, "run_id", run.ID)
 		return false
 	}
-	closeRun, reason := supportChatRunClosureDecision(run, conversation, now)
+	settings, err := s.supportAIService.loadSettings(ctx, run.WorkspaceID)
+	if err != nil {
+		return true
+	}
+	closeRun, reason := supportChatRunClosureDecision(run, conversation, now, *settings)
+	if conversation != nil && conversation.AIControlVersion > 0 && derefString(conversation.AIActiveRunID) != run.ID {
+		closeRun, reason = true, "ownership_changed"
+	}
+	if !closeRun && conversation != nil {
+		allowed, err := s.channelAllowsPendingTurn(ctx, *settings, conversation)
+		if err != nil {
+			return true
+		}
+		if !allowed {
+			closeRun = true
+			reason = "unsupported_channel"
+		}
+	}
 	if !closeRun {
 		return false
 	}
@@ -78,12 +123,18 @@ func (s *SupportChatService) closeSupportChatRunIfTerminal(ctx context.Context, 
 	return true
 }
 
-func supportChatRunClosureDecision(run *model.AgentRun, conversation *model.SupportConversation, now time.Time) (bool, string) {
+func supportChatRunClosureDecision(run *model.AgentRun, conversation *model.SupportConversation, now time.Time, channelSettings ...model.SupportInboxSettings) (bool, string) {
+	settings := model.DefaultSupportInboxSettings()
+	if len(channelSettings) > 0 {
+		settings = channelSettings[0]
+	}
 	if run == nil || strings.TrimSpace(run.TargetType) != "support_conversation" || runInputTriggerType(run) != supportChatTriggerType {
 		return false, ""
 	}
-	if conversation != nil && ((conversation.HumanTakeover != nil && *conversation.HumanTakeover) ||
-		conversation.CustomerRequestedHumanAt != nil || strings.TrimSpace(derefString(conversation.AIState)) == "escalated") {
+	if conversation != nil && (!supportAIConversationSupported(conversation) || ((conversation.Channel == "email" || conversation.Source == "email") && !model.SupportAIReplyAllowed(settings, conversation, nil))) {
+		return true, "unsupported_channel"
+	}
+	if conversation != nil && model.SupportAIConversationBlocked(conversation) {
 		return true, "human_handoff"
 	}
 	if run.Status == model.AgentRunStatusPaused && run.PauseReason == model.AgentRunPauseReasonUserMessage &&
@@ -124,8 +175,15 @@ func (s *SupportChatService) enforceTurnSettlement(ctx context.Context, run *mod
 
 // drainDeferredMessages coalesces messages parked mid-turn into one resume.
 func (s *SupportChatService) drainDeferredMessages(ctx context.Context, run *model.AgentRun, conversationID string) {
+	if s.closeSupportChatRunIfTerminal(ctx, run, conversationID, time.Now().UTC()) {
+		return
+	}
 	rows, err := s.processingRepo.ListDeferredForConversation(ctx, run.WorkspaceID, conversationID)
 	if err != nil || len(rows) == 0 {
+		return
+	}
+	rows = s.filterChatDeferredMessages(ctx, rows)
+	if len(rows) == 0 {
 		return
 	}
 	contents := make([]string, 0, len(rows))
@@ -232,8 +290,15 @@ func (s *SupportChatService) sweepClosableSupportChatRuns(ctx context.Context, s
 // reviveDeferredConversation starts a successor run for parked messages whose
 // run ended before they could be delivered.
 func (s *SupportChatService) reviveDeferredConversation(ctx context.Context, conv *model.SupportConversation, previousRun *model.AgentRun) {
+	if !supportAIConversationSupported(conv) {
+		return
+	}
 	rows, err := s.processingRepo.ListDeferredForConversation(ctx, conv.WorkspaceID, conv.ID)
 	if err != nil || len(rows) == 0 {
+		return
+	}
+	rows = s.filterChatDeferredMessages(ctx, rows)
+	if len(rows) == 0 {
 		return
 	}
 	contents := make([]string, 0, len(rows))
@@ -316,4 +381,28 @@ func (s *SupportChatService) StartSupportChatSweep(ctx context.Context, interval
 			slog.ErrorContext(ctx, "support chat result sweep failed", "error", err)
 		}
 	}
+}
+
+func (s *SupportChatService) filterChatDeferredMessages(ctx context.Context, rows []model.AIMessageProcessing) []model.AIMessageProcessing {
+	var eligible []model.AIMessageProcessing
+	for _, row := range rows {
+		message, err := s.messageRepo.GetByID(ctx, row.SourceMessageID)
+		if err != nil {
+			continue
+		}
+		settings, err := s.supportAIService.loadSettings(ctx, row.WorkspaceID)
+		if err != nil {
+			continue
+		}
+		conv, err := s.conversationRepo.GetByID(ctx, row.WorkspaceID, row.ConversationID, "", model.RoleOwner)
+		if err != nil {
+			continue
+		}
+		if message == nil || model.SupportAIConversationBlocked(conv) || !model.SupportAIReplyAllowed(*settings, conv, message) {
+			_ = s.processingRepo.MarkCompleted(ctx, row.ID, nil, 0)
+			continue
+		}
+		eligible = append(eligible, row)
+	}
+	return eligible
 }

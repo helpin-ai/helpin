@@ -238,7 +238,7 @@ func TestNotificationRepository_MarkEntityEventTypeAsReadForWorkspace(t *testing
 		"Comment added", model.NotifCategoryComments, 1, now, "unread", "normal", now, now,
 	)
 
-	if err := repo.MarkEntityEventTypeAsReadForWorkspace(ctx, "ws-1", "agent_run", "run-1", "task.agent_attention_required"); err != nil {
+	if changed, err := repo.MarkEntityEventTypeAsReadForWorkspace(ctx, "ws-1", "agent_run", "run-1", "task.agent_attention_required"); err != nil || !changed {
 		t.Fatalf("MarkEntityEventTypeAsReadForWorkspace: %v", err)
 	}
 

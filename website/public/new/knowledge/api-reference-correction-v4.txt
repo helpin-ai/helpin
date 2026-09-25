@@ -1,0 +1,7 @@
+Precise masked edit. The transparent region in the mask is ONLY the cURL request code panel on the right. Preserve everything outside this mask exactly, including the corrected JSON response below it.
+Correct this request panel to show exactly these labels and characters. The selected language tab must be 'cURL' with no accents; the adjacent tabs remain 'JavaScript' and 'Python'.
+The first code line must be exactly:
+curl https://api.orbitdesk.example/v1/integrations \
+The second code line must be exactly:
+  -H "Authorization: Bearer YOUR_API_KEY"
+CRITICAL: the URL path is /v1/integrations, including the lowercase v before the digit 1. It is NOT /1/integrations. Retain the existing dark background, white and yellow syntax colors, font, panel borders, copy icon, and text alignment. No other changes. Output 3840x2160.

@@ -59,7 +59,8 @@ type AutomationRuleEngine struct {
 	activitySvc     *PMActivityService
 	wsPublisher     *websocket.Publisher
 	healthObserver  AutomationHealthObserver
-	entitlementSvc  *EntitlementService
+	jevDecisions    *JevDecisionService
+	entitlementSvc  EntitlementPolicy
 	runEngine       interface {
 		StartRuleSchedule(ctx context.Context, ruleID, workspaceID, schedule string) error
 		StopRuleSchedule(ctx context.Context, ruleID string) error
@@ -128,7 +129,7 @@ func (e *AutomationRuleEngine) SetRunEngine(runEngine interface {
 	return e
 }
 
-func (e *AutomationRuleEngine) SetEntitlementService(entitlementSvc *EntitlementService) *AutomationRuleEngine {
+func (e *AutomationRuleEngine) SetEntitlementService(entitlementSvc EntitlementPolicy) *AutomationRuleEngine {
 	e.entitlementSvc = entitlementSvc
 	return e
 }
@@ -205,6 +206,9 @@ func (e *AutomationRuleEngine) EvaluateEvent(ctx context.Context, event model.Au
 		)
 
 		if err := e.executeAction(ctx, &rule, event, task, execCtx); err != nil {
+			if errors.Is(err, errFlowConditionSkipped) {
+				continue
+			}
 			e.logger.ErrorContext(ctx, "automation rule action failed",
 				"error", err,
 				"rule_id", rule.ID,
@@ -236,7 +240,7 @@ func (e *AutomationRuleEngine) resolveTaskIfNeeded(ctx context.Context, event mo
 		if err != nil {
 			return nil, err
 		}
-		if task == nil {
+		if task == nil || task.WorkspaceID != event.WorkspaceID {
 			return nil, fmt.Errorf("task %s not found", event.TaskID)
 		}
 		return task, nil
@@ -376,6 +380,9 @@ func (e *AutomationRuleEngine) matchesScope(rule model.AutomationRule, task *mod
 }
 
 func (e *AutomationRuleEngine) executeAction(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, task *model.PMTask, execCtx *model.RuleExecutionContext) error {
+	if !e.matchesSemanticCondition(ctx, rule, event, task) {
+		return errFlowConditionSkipped
+	}
 	if rule.TriggerType == model.CRMPlaybookWorkDue {
 		return fmt.Errorf("manage this Flow from its CRM Playbook")
 	}
@@ -850,6 +857,9 @@ func (e *AutomationRuleEngine) EvaluateCronRules(ctx context.Context, category s
 		)
 
 		if err := e.executeAction(ctx, &rule, event, nil, &model.RuleExecutionContext{MaxDepth: defaultMaxChainDepth}); err != nil {
+			if errors.Is(err, errFlowConditionSkipped) {
+				continue
+			}
 			e.logger.ErrorContext(ctx, "cron automation rule action failed",
 				"error", err,
 				"rule_id", rule.ID,
@@ -918,6 +928,9 @@ func (e *AutomationRuleEngine) ExecuteScheduledRule(ctx context.Context, workspa
 	)
 
 	if err := e.executeAction(ctx, rule, event, nil, &model.RuleExecutionContext{MaxDepth: defaultMaxChainDepth}); err != nil {
+		if errors.Is(err, errFlowConditionSkipped) {
+			return nil
+		}
 		e.observeFailure(ctx, workspaceID, rule.ID, err)
 		if errors.Is(err, ErrAssignedAgentNotFound) {
 			rule.Enabled = false
@@ -999,6 +1012,9 @@ func (e *AutomationRuleEngine) ExecuteManualRule(ctx context.Context, workspaceI
 		return nil, fmt.Errorf("this flow needs an event to run")
 	}
 
+	if condition, conditionErr := parseSemanticFlowCondition(rule.TriggerType, rule.TriggerConfig); conditionErr != nil || condition != nil {
+		return nil, fmt.Errorf("semantic conditions require their source event")
+	}
 	now := time.Now().UTC()
 	actor := strings.TrimSpace(actorID)
 	trigger := &model.AgentRunTriggerContext{
@@ -1087,6 +1103,10 @@ func (e *AutomationRuleEngine) CreateRuleForActor(ctx context.Context, workspace
 		return nil, err
 	}
 
+	if err := e.validateSemanticConditionChange(workspaceID, req.TriggerType, req.TriggerConfig, "", nil); err != nil {
+		return nil, err
+	}
+
 	rule := &model.AutomationRule{
 		WorkspaceID:   workspaceID,
 		Name:          req.Name,
@@ -1141,6 +1161,7 @@ func (e *AutomationRuleEngine) UpdateRule(ctx context.Context, workspaceID, rule
 		return nil, fmt.Errorf("manage this Flow from its CRM Playbook")
 	}
 	wasScheduled := rule.TriggerType == model.TriggerCron && rule.Enabled
+	previousTrigger, previousConfig := rule.TriggerType, rule.TriggerConfig
 
 	if req.Name != nil {
 		rule.Name = *req.Name
@@ -1171,6 +1192,9 @@ func (e *AutomationRuleEngine) UpdateRule(ctx context.Context, workspaceID, rule
 	}
 
 	if err := e.validateRuleRequest(rule.TriggerType, rule.TriggerConfig, rule.ActionType, rule.ActionConfig); err != nil {
+		return nil, err
+	}
+	if err := e.validateSemanticConditionChange(workspaceID, rule.TriggerType, rule.TriggerConfig, previousTrigger, previousConfig); err != nil {
 		return nil, err
 	}
 	if e.entitlementSvc != nil && rule.Enabled {
@@ -1257,6 +1281,10 @@ func (e *AutomationRuleEngine) EnsureScheduledRules(ctx context.Context) error {
 // --- Validation ---
 
 func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerConfig json.RawMessage, actionType string, actionConfig json.RawMessage) error {
+	if _, err := parseSemanticFlowCondition(triggerType, triggerConfig); err != nil {
+		return err
+	}
+
 	switch triggerType {
 	case model.TriggerTaskStateEntered:
 		var cfg model.TriggerConfigStateEntered

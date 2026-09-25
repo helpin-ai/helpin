@@ -1,3 +1,4 @@
+import { TaskTriageSection } from './TaskTriageSection';
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { useTitle } from '@/hooks/useTitle';
 import { useQueryClient } from '@tanstack/react-query';
@@ -373,12 +374,6 @@ function TaskDeliveryRailSection({
                 </MetadataRow>
               ) : null}
 
-              <MetadataRow icon={GitBranchIcon} label="Source">
-                <span className={cn('inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium leading-none', delivery.sourceClassName)}>
-                  {delivery.sourceLabel}
-                </span>
-              </MetadataRow>
-
               {delivery.canUseEpicTarget ? (
                 <MetadataRow icon={GitBranchIcon} label="Epic branch">
                   <Button
@@ -498,10 +493,14 @@ function TaskDetailPanelBody({
     } as any);
   }, [navigate]);
 
+  const deliverySidebarRef = useRef<HTMLElement>(null);
+
   const openDeliveryContext = useCallback(() => {
     setDeliverySectionOpen(true);
     window.requestAnimationFrame(() => {
-      document.getElementById('task-delivery-section')?.scrollIntoView({ block: 'nearest' });
+      const section = deliverySidebarRef.current?.querySelector<HTMLElement>('#task-delivery-section');
+      section?.scrollIntoView({ block: 'nearest' });
+      section?.querySelector<HTMLElement>('#task-delivery-settings button:not([disabled])')?.focus({ preventScroll: true });
     });
   }, []);
 
@@ -1438,6 +1437,17 @@ function TaskDetailPanelBody({
             )}
           </div>
 
+          {permissions.has('pm.edit') && workspace?.slug ? (
+            <TaskTriageSection
+              key={taskId}
+              workspaceId={workspaceId}
+              workspaceSlug={workspace.slug}
+              detail={taskDetail}
+              disabled={saving || labelSaving || editingDescription || Object.keys(pendingPatch).length > 0 || Boolean(saveError)}
+              onTaskUpdated={onTaskUpdated}
+            />
+          ) : null}
+
           {/* Attachments: compact action when empty, full section once populated. */}
           <div id="attachments-section">
             <Attachments
@@ -1494,6 +1504,7 @@ function TaskDetailPanelBody({
                 delivery={delivery}
                 showDevelopmentHistory={hasGitIntegration && fieldVis.dev_history}
                 onEditDeliveryContext={openDeliveryContext}
+                deliveryContextEditReason={!canEdit ? 'You need permission to edit this task.' : deliveryLockReason || (!hasGitIntegration || delivery.hidden ? 'Connect a repository in workspace settings to configure delivery.' : undefined)}
               />
             </div>
           )}
@@ -1503,7 +1514,7 @@ function TaskDetailPanelBody({
         </div>
 
         {/* ── Right column (sidebar) ────────────────────────────── */}
-        <aside className="border-t border-border/60 px-4 py-5 pb-16 sm:px-6 lg:min-h-0 lg:overflow-y-auto lg:border-l lg:border-t-0 lg:px-5 lg:pb-40">
+        <aside ref={deliverySidebarRef} className="border-t border-border/60 px-4 py-5 pb-16 sm:px-6 lg:min-h-0 lg:overflow-y-auto lg:border-l lg:border-t-0 lg:px-5 lg:pb-40">
           <TaskSidebarIdRow displayId={taskDetail.task.display_id} taskKey={taskDetail.task.task_key} taskName={taskDetail.task.name} taskType={taskDetail.task.task_type} />
 
           <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
@@ -1827,7 +1838,7 @@ function TaskDetailPanelBody({
 
           </div>
 
-          {hasGitIntegration && fieldVis.delivery && !delivery.hidden ? (
+          {hasGitIntegration && (fieldVis.delivery || deliverySectionOpen) && !delivery.hidden ? (
             <TaskDeliveryRailSection
               workspaceId={workspaceId}
               delivery={delivery}

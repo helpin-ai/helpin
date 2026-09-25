@@ -3,7 +3,6 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   ArrowUp02Icon,
   Loading01Icon,
-  LockKeyIcon,
 } from '@/lib/icons';
 
 import { Button } from '@/components/ui/button';
@@ -12,6 +11,7 @@ import { isToolName } from '@/lib/toolNames';
 import type {
   AgentRunArtifact,
   CodingSession,
+  CodingSessionStreamState,
   CodingSessionActor,
   CodingSessionInteraction,
   CodingSessionLiveAssistantMessage,
@@ -22,13 +22,13 @@ import type {
 import { useWorkspaceMembers } from '@/hooks/queries';
 import type { CodingSessionComposerState } from './codingSessionComposer';
 import type { PublishedPreview } from '@/components/pm/runPreviews';
-import { StreamingStatusText } from '@/components/agents/StreamingStatusText';
+import { AgentLiveStatus } from '@/components/agents/dock/AgentLiveStatus';
+import { resolveAgentLiveProgress } from '@/components/agents/dock/agentProgress';
 import { CodingInteractionCard } from './CodingInteractionCard';
 import { CodingReviewHistoryPanel, type CodingReviewHistoryItem } from './CodingReviewHistoryPanel';
 import {
   ALL_SEGMENT_KINDS,
   collectSegments,
-  deriveLiveStatusLabel,
   ScrollToLatestButton,
   segmentTimestamp,
   transcriptSegmentTimes,
@@ -47,6 +47,7 @@ export function CodingTranscriptPane({
   liveAssistantMessage,
   liveReasoningMessage,
   liveTurnSegments,
+  progressState,
   loading = false,
   onSendMessage,
   sendingMessage = false,
@@ -58,8 +59,6 @@ export function CodingTranscriptPane({
   availablePreviewPanelKey,
   attachedPreview,
   onViewPreview,
-  onAuthStart,
-  onAuthCancel,
   onApproveRun,
   onResolveInteraction,
 }: {
@@ -69,6 +68,7 @@ export function CodingTranscriptPane({
   liveAssistantMessage: CodingSessionLiveAssistantMessage | null;
   liveReasoningMessage: CodingSessionLiveReasoningMessage | null;
   liveTurnSegments: CodingSessionLiveTurnSegment[];
+  progressState?: Pick<CodingSessionStreamState, 'turn_state' | 'activity_events'>;
   loading?: boolean;
   onSendMessage?: (content: string) => Promise<void>;
   sendingMessage?: boolean;
@@ -80,8 +80,6 @@ export function CodingTranscriptPane({
   availablePreviewPanelKey?: string | null;
   attachedPreview?: PublishedPreview | null;
   onViewPreview?: (panelKey: string) => void;
-  onAuthStart?: () => void;
-  onAuthCancel?: () => void;
   onApproveRun?: () => void;
   onResolveInteraction?: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
 }) {
@@ -141,16 +139,19 @@ export function CodingTranscriptPane({
     ),
     [transcriptMessages, visibleLiveSegments, liveReasoningMessage, promptMessage, includeLive],
   );
-  const hasActiveStreamSegment = segments.some((segment) => (
-    (segment.kind === 'assistant' && segment.streaming)
-    || (segment.kind === 'tool' && segment.toolCall.status === 'running')
-    || (segment.kind === 'reasoning' && segment.reasoning.status === 'streaming')
-  ));
-  const showStreamingStatus = session?.status === 'running' && !hasActiveStreamSegment;
-  const liveStatusLabel = deriveLiveStatusLabel(
-    { live_turn_segments: visibleLiveSegments, live_reasoning_message: liveReasoningMessage },
-    session?.status,
-  );
+  const liveProgress = useMemo(() => session?.status === 'completed' ? null : resolveAgentLiveProgress({
+    run: session ?? null,
+    stream: {
+      transcript_messages: transcriptMessages,
+      live_turn_segments: visibleLiveSegments,
+      live_reasoning_message: liveReasoningMessage,
+      activity_events: progressState?.activity_events ?? [],
+      turn_state: progressState?.turn_state,
+    },
+    currentPlan: null,
+    sending: sendingMessage,
+  }), [session, transcriptMessages, visibleLiveSegments, liveReasoningMessage, progressState, sendingMessage]);
+  const showStreamingStatus = liveProgress !== null;
 
   const transcriptTimes = useMemo(() => transcriptSegmentTimes({
     transcript_messages: transcriptMessages,
@@ -335,11 +336,7 @@ export function CodingTranscriptPane({
           </DockWorkingGroup>
         );
       case 'streaming-status':
-        return (
-          <StreamingStatusText className="text-[13px]">
-            {liveStatusLabel ?? 'Thinking…'}
-          </StreamingStatusText>
-        );
+        return liveProgress ? <AgentLiveStatus progress={liveProgress} /> : null;
       case 'empty':
         return (
           <div className="rounded-lg border border-dashed border-border px-5 py-8 text-center text-sm text-muted-foreground">
@@ -355,7 +352,7 @@ export function CodingTranscriptPane({
           />
         );
     }
-  }, [actorForMessage, liveStatusLabel]);
+  }, [actorForMessage, liveProgress]);
 
   return (
     <section className="relative flex h-full min-h-[20rem] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm xl:min-h-0">
@@ -419,8 +416,6 @@ export function CodingTranscriptPane({
           attachedPreview={attachedPreview ?? null}
           reviewArtifacts={reviewArtifacts}
           onViewPreview={onViewPreview}
-          onAuthStart={onAuthStart ?? (() => {})}
-          onAuthCancel={onAuthCancel ?? (() => {})}
           onApproveRun={onApproveRun}
           onResolveInteraction={onResolveInteraction ?? (() => {})}
         />
@@ -497,8 +492,6 @@ function InterruptionOverlay({
   attachedPreview,
   onViewPreview,
   reviewArtifacts,
-  onAuthStart,
-  onAuthCancel,
   onApproveRun,
   onResolveInteraction,
 }: {
@@ -509,22 +502,9 @@ function InterruptionOverlay({
   attachedPreview?: PublishedPreview | null;
   reviewArtifacts: CodingReviewHistoryItem[];
   onViewPreview?: (panelKey: string) => void;
-  onAuthStart: () => void;
-  onAuthCancel: () => void;
   onApproveRun?: () => void;
   onResolveInteraction: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
 }) {
-  const authState = session?.auth_state;
-  const hasDeviceCode = Boolean(authState?.verification_url || authState?.user_code);
-  const hasBrowserAuth = Boolean(authState?.auth_url);
-  const authDescription = hasDeviceCode
-    ? 'Complete device sign-in to continue this session.'
-    : hasBrowserAuth
-      ? 'Continue sign-in in your browser to resume this session.'
-      : authState?.state === 'pending'
-        ? 'Preparing sign-in. This can take a few seconds.'
-        : 'Start sign-in to continue this session.';
-
   return (
     <div className="relative">
       {/* Stacked gradient-blur scrim — each layer covers a slice with increasing blur toward the bottom */}
@@ -541,45 +521,7 @@ function InterruptionOverlay({
       >
         <div className="space-y-4">
       {session?.pause_reason === 'authentication' ? (
-        <div className="rounded-lg border border-amber-200/80 bg-amber-50 p-4 dark:border-amber-800/50 dark:bg-amber-950/20">
-          <div className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400">
-            <LockKeyIcon className="h-3.5 w-3.5" />
-            Authentication required
-          </div>
-          <div className="text-sm font-semibold">ChatGPT sign-in required</div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {authDescription}
-          </p>
-          {authState?.user_code ? (
-            <div className="mt-3 rounded-lg border border-border bg-card px-3 py-2 font-mono text-sm tracking-widest">
-              {authState.user_code}
-            </div>
-          ) : null}
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Button size="sm" onClick={onAuthStart} disabled={acting !== null}>
-              Start sign-in
-            </Button>
-            {authState?.verification_url ? (
-              <Button asChild variant="outline" size="sm">
-                <a href={authState.verification_url} target="_blank" rel="noreferrer">
-                  Open verification page
-                </a>
-              </Button>
-            ) : null}
-            {!authState?.verification_url && authState?.auth_url ? (
-              <Button asChild variant="outline" size="sm">
-                <a href={authState.auth_url} target="_blank" rel="noreferrer">
-                  Continue in browser
-                </a>
-              </Button>
-            ) : null}
-            {authState?.state === 'pending' ? (
-              <Button variant="outline" size="sm" onClick={onAuthCancel} disabled={acting !== null}>
-                Cancel sign-in
-              </Button>
-            ) : null}
-          </div>
-        </div>
+        <p className="text-sm text-muted-foreground">Reconnect the required provider or start a new run with a configured API key.</p>
       ) : null}
 
       {session?.status === 'paused' && session?.pause_reason === 'human_approval' && session?.approval_state === 'pending' && !activeInteraction ? (

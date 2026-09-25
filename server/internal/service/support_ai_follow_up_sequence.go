@@ -61,6 +61,11 @@ func (s *SupportFollowUpService) advanceWaiting(ctx context.Context, tx *gorm.DB
 	agentID := derefString(conv.AssignedAgentID)
 	metadata, _ := json.Marshal(map[string]any{"ai_auto_reply": true, "ai_agent_id": agentID, "ai_model": "agent-runtime", "ai_reply_kind": "inactivity_follow_up", "support_follow_up_id": e.ID, "follow_up_number": 2})
 	msg := &model.SupportMessage{ID: id, WorkspaceID: conv.WorkspaceID, ConversationID: conv.ID, SenderType: "ai", SenderAgentID: &agentID, SenderDisplayName: strPtr(helpinAIDisplayName), Content: e.ClosingNotice, MessageType: "reply", Metadata: string(metadata), CreatedAt: now}
+	channel, err := supportFollowUpReplyChannel(ctx, tx, conv)
+	if err != nil {
+		return nil, err
+	}
+	setSupportFollowUpEmailDelivery(msg, channel)
 	if err := s.chat.messageRepo.WithTx(tx).Create(ctx, msg); err != nil {
 		return nil, err
 	}
@@ -77,7 +82,11 @@ func supportFollowUpDeliveryTime(ctx context.Context, tx *gorm.DB, conv *model.S
 			return sentAt, "", err
 		}
 	}
-	accepted := conv.Channel == "widget"
+	message, err := repository.NewSupportMessageRepository(tx).GetByID(ctx, messageID)
+	if err != nil {
+		return sentAt, "", err
+	}
+	accepted := message != nil && model.SupportAIReplyChannel(conv, message) == "chat" && message.DeliveryMode() != model.SupportDeliveryEmailOnly
 	for _, log := range logs {
 		if log.Status == "failed" || log.Status == "bounced" || log.Status == "spam_complaint" || log.BouncedAt != nil {
 			return sentAt, "follow_up_delivery_failed", nil

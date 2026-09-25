@@ -76,6 +76,7 @@ describe('borderless task surfaces', () => {
   it('keeps task list metadata on the PM text-ui scale and names on the shared table-name scale', () => {
     const taskListSource = readFileSync(resolve(__dirname, '../TaskListView.tsx'), 'utf8');
     const displayMenuSource = readFileSync(resolve(__dirname, '../ListDisplayMenu.tsx'), 'utf8');
+    const sharedDisplayMenuSource = readFileSync(resolve(__dirname, '../../design-system/display-settings-menu.tsx'), 'utf8');
     const tableStylesSource = readFileSync(resolve(__dirname, '../../../lib/tableStyles.ts'), 'utf8');
 
     expect(taskListSource).toContain('font-mono text-ui text-muted-foreground');
@@ -86,7 +87,8 @@ describe('borderless task surfaces', () => {
     expect(taskListSource).toContain('triggerClassName="text-[length:var(--text-ui)]"');
     expect(taskListSource).toContain('singleLine');
     expect(taskListSource).not.toContain('py-0.5 text-xs transition-colors hover:bg-accent');
-    expect(displayMenuSource).toContain('size="icon-sm"');
-    expect(displayMenuSource).toContain('QuietDropdown');
+    expect(displayMenuSource).toContain('<DisplaySettingsMenu');
+    expect(sharedDisplayMenuSource).toContain('className="h-7 w-7"');
+    expect(sharedDisplayMenuSource).toContain('QuietDropdown');
   });
 });

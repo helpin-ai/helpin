@@ -20,7 +20,7 @@ import {
 import { RetryQueue } from '../utils/queue';
 import { isWindowAvailable } from '../utils/common';
 import { HttpsTransport } from '../transport/https';
-import { persistIdentity, clearIdentity, getStoredIdentity } from './identity';
+import { persistIdentity, clearIdentity, clearSession, getStoredIdentity } from './identity';
 import type { ShowArticleOptions, WidgetSettings } from './widget';
 import { ConfiguredCapture } from '../tracking/configured-capture';
 
@@ -109,10 +109,10 @@ export class HelpinClient {
   private config: Config;
   private logger: Logger;
   private cookieManager?: CookieManager;
-  private transport: Transport;
+  private transport?: Transport;
   private persistence: LocalStoragePersistence | MemoryPersistence;
   private pageviewTracking?: PageviewTracking;
-  private retryQueue: RetryQueue;
+  private retryQueue?: RetryQueue;
   private anonymousId: string;
   private namespace: string;
   private widgetController: HelpinWidgetController | null;
@@ -129,19 +129,15 @@ export class HelpinClient {
       config.host = `https://${config.host}`;
     }
     this.config = this.mergeConfig(config, defaultConfig);
+ this.config.supportOnly = config.supportOnly ?? config.support_only ?? false;
+ if (this.config.supportOnly && !config.host) throw new Error("supportOnly requires an explicit host");
     this.logger = getLogger(this.config.logLevel);
     this.namespace = config.namespace || 'default';
-    this.transport = this.initializeTransport(this.config);
     this.persistence = this.initializePersistence();
-    this.retryQueue = new RetryQueue(
-      this.transport,
-      this.config.maxSendAttempts || 3,
-      this.config.minSendTimeout || 1000,
-      10,
-      200, // Reduced interval to .2 second
-      this.logger,
-      this.namespace,
-    );
+    if (!this.config.supportOnly) {
+      this.transport = this.initializeTransport(this.config);
+      this.retryQueue = new RetryQueue(this.transport, this.config.maxSendAttempts || 3, this.config.minSendTimeout || 1000, 10, 200, this.logger, this.namespace);
+    }
     this.widgetController = widgetController;
     this.widgetSettings = null;
     this.hasBootedWidget = false;
@@ -160,12 +156,13 @@ export class HelpinClient {
 
   private initializeBrowserFeatures(): void {
     this.cookieManager = new CookieManager(this.config.cookieDomain);
+    if (this.config.supportOnly) return;
 
     if (this.config.autoPageview) {
       this.pageviewTracking = new PageviewTracking(this);
     }
 
-    if (this.config.crossDomainLinking) {
+    if (!this.config.supportOnly && this.config.crossDomainLinking) {
       this.manageCrossDomainLinking();
     }
 
@@ -204,20 +201,16 @@ export class HelpinClient {
   }
 
   public init(config: Config): void {
+    const requestedMode = config.supportOnly ?? config.support_only;
+    if (requestedMode !== undefined && requestedMode !== this.config.supportOnly) throw new Error('Create a new client to change supportOnly mode');
     this.config = { ...this.config, ...config };
     this.logger = getLogger(this.config.logLevel);
     this.namespace = config.namespace || this.namespace;
-    this.transport = this.initializeTransport(config);
     this.persistence = this.initializePersistence();
-    this.retryQueue = new RetryQueue(
-      this.transport,
-      this.config.maxSendAttempts || 3,
-      this.config.minSendTimeout || 1000,
-      10,
-      250, // Reduced interval to .25 second
-      this.logger,
-      this.namespace,
-    );
+    if (!this.config.supportOnly) {
+      this.transport = this.initializeTransport(this.config);
+      this.retryQueue = new RetryQueue(this.transport, this.config.maxSendAttempts || 3, this.config.minSendTimeout || 1000, 10, 250, this.logger, this.namespace);
+    }
 
     if (isWindowAvailable()) {
       this.initializeBrowserFeatures();
@@ -283,6 +276,7 @@ export class HelpinClient {
     this.widgetSettings = {
       widgetKey,
       host: overrides?.host ?? this.config.host,
+      ...(this.config.supportOnly ? { supportOnly: true } : {}),
       user: overrides?.user ?? this.getWidgetUser(),
     };
   }
@@ -391,7 +385,7 @@ export class HelpinClient {
   }
 
   private initializePersistence(): LocalStoragePersistence | MemoryPersistence {
-    if (this.config.disableEventPersistence || !isWindowAvailable()) {
+    if (this.config.supportOnly || this.config.disableEventPersistence || !isWindowAvailable()) {
       return new MemoryPersistence();
     } else {
       return new LocalStoragePersistence(
@@ -418,7 +412,7 @@ export class HelpinClient {
     let id = this.cookieManager?.get(cookieName);
 
     if (!id) {
-      if (this.config.crossDomainLinking) {
+      if (!this.config.supportOnly && this.config.crossDomainLinking) {
         const urlParams = new URLSearchParams(window.location.search);
         const queryId = urlParams.get('_hp');
 
@@ -464,14 +458,25 @@ export class HelpinClient {
       throw new Error('User ID must be a string');
     }
 
+    // group() may intentionally precede id(); preserve that explicit context.
     const inlineCompany = resolveCompanyPayload(userData.company);
     const persistedCompany = resolveCompanyPayload(this.persistence.get('companyProps'));
     const activeCompany = inlineCompany || persistedCompany;
+    const previousEmail = this.getWidgetUser()?.email;
+    const identityChanged = Boolean(previousEmail && userData.email && previousEmail !== userData.email);
+    const restartWidget = identityChanged && this.hasBootedWidget;
+    if (identityChanged) {
+      this.widgetController?.shutdown();
+      this.hasBootedWidget = false;
+      if (this.config.widgetKey) clearSession(this.config.widgetKey);
+      await this.reset(true);
+    }
+
     const userId = userData.id;
     this.persistence.set('userId', userId);
     this.persistence.set('userProps', userData);
-    if (inlineCompany) {
-      this.persistence.set('companyProps', inlineCompany);
+    if (activeCompany) {
+      this.persistence.set('companyProps', activeCompany);
     }
     this.syncWidgetSettings();
 
@@ -481,6 +486,7 @@ export class HelpinClient {
     if (identity.email && this.config.widgetKey) {
       persistIdentity(this.config.widgetKey, identity.email, identity.name, identity.firstName, identity.lastName);
     }
+    if (restartWidget) this.bootWidget();
 
     if (!doNotSendEvent) {
       const identifyPayload = {
@@ -565,6 +571,7 @@ export class HelpinClient {
     payload?: EventPayload,
     directSend: boolean = false,
   ): void {
+    if (this.config.supportOnly || !this.transport || !this.retryQueue) return;
     // Check if user has opted out of tracking
     const exclusionState = getExclusionState();
 
@@ -744,6 +751,7 @@ export class HelpinClient {
   }
 
   public pageview(): void {
+    if (this.config.supportOnly) return;
     if (isWindowAvailable()) {
       this.track(
         'pageview',

@@ -12,8 +12,8 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
-func TestNormalizeSupportIntentUsesSourceSufficiencyForEveryCompany(t *testing.T) {
-	definition := normalizeSupportIntent(supportIntentPricingGeneral, []string{"company_specific_field"})
+func TestSupportIntentUsesSourceSufficiencyForEveryCompany(t *testing.T) {
+	definition := supportIntentDefinition(supportIntentPricingGeneral)
 	if definition.ID != supportIntentPricingGeneral || definition.EvidenceMode != supportEvidenceModeSufficiency || len(definition.RequiredEvidence) != 0 {
 		t.Fatalf("pricing should be evaluated from retrieved sources without hard-coded fields: %+v", definition)
 	}
@@ -71,11 +71,11 @@ func TestCrawlRecordTextPreservesMarkdownAndHTMLSections(t *testing.T) {
 }
 
 func TestPricingAnswerIsValidatedAgainstRetrievedSources(t *testing.T) {
-	plan := normalizeSupportQueryPlan(SupportQueryPlanContract{
+	plan := SupportQueryPlanContract{
 		Route:           supportDecisionAnswer,
 		Intent:          supportIntentPricingGeneral,
 		StandaloneQuery: "What is your pricing?",
-	}, "What is your pricing?")
+	}
 	results := []KnowledgeSearchResult{{
 		ID:          "price-1",
 		ReferenceID: "content:pricing",
@@ -84,9 +84,6 @@ func TestPricingAnswerIsValidatedAgainstRetrievedSources(t *testing.T) {
 		URL:         "https://example.test/pricing",
 		Content:     "Usermaven Growth plan starts at $49 per month. Enterprise uses custom pricing; contact sales.",
 	}}
-	if plan.Decision != supportDecisionAnswer || plan.EvidenceMode != supportEvidenceModeSufficiency || len(plan.RequiredEvidence) != 0 {
-		t.Fatalf("pricing should proceed to source-grounded generation: %+v", plan)
-	}
 	response := &AIResponseContract{
 		Content:      "The Growth plan starts at $49 per month. Enterprise pricing is custom.",
 		CanAnswer:    true,
@@ -111,24 +108,13 @@ func TestPricingAnswerIsValidatedAgainstRetrievedSources(t *testing.T) {
 	}
 }
 
-func TestCommercialPlanWithoutSubjectStillRetrievesSources(t *testing.T) {
-	plan := normalizeSupportQueryPlan(SupportQueryPlanContract{
-		Route:           supportDecisionAnswer,
-		Intent:          supportIntentPricingGeneral,
-		StandaloneQuery: "What is your pricing?",
-	}, "What is your pricing?")
-	if plan.Decision != supportDecisionAnswer || len(plan.SearchQueries) == 0 {
-		t.Fatalf("subjectless commercial question should be answered from retrieved sources: %+v", plan)
-	}
-}
-
 func TestValidationRejectsUncitedNumber(t *testing.T) {
-	plan := normalizeSupportQueryPlan(SupportQueryPlanContract{
+	plan := SupportQueryPlanContract{
 		Route:           supportDecisionAnswer,
 		Intent:          supportIntentPricingGeneral,
 		Subject:         "Usermaven",
 		StandaloneQuery: "What is your pricing?",
-	}, "What is your pricing?")
+	}
 	results := []KnowledgeSearchResult{
 		{ID: "cited", Title: "Usermaven Pricing", URL: "https://usermaven.com/pricing", Content: "Growth starts at $49 per month. Enterprise has custom pricing."},
 		{ID: "uncited", Title: "Legacy", Content: "An old plan cost $99 per month."},
@@ -149,7 +135,7 @@ func TestValidationRejectsUncitedNumber(t *testing.T) {
 }
 
 func TestValidationRejectsUnknownEvidenceID(t *testing.T) {
-	plan := defaultSupportQueryPlan("Does every plan include unlimited projects?")
+	plan := SupportQueryPlanContract{}
 	results := []KnowledgeSearchResult{{
 		ID: "guidance-1", SourceType: knowledgeSourceTypeGuidance,
 		Content: "Growth starts at $49 per month.",
@@ -168,7 +154,7 @@ func TestValidationRejectsUnknownEvidenceID(t *testing.T) {
 }
 
 func TestValidationAcceptsSourceMappedParaphrase(t *testing.T) {
-	plan := defaultSupportQueryPlan("What is your pricing?")
+	plan := SupportQueryPlanContract{}
 	results := []KnowledgeSearchResult{{ID: "doc-1", Content: "Monthly YearlySave up to 34%"}}
 	response := &AIResponseContract{
 		Content:   "Yearly billing is advertised as saving up to 34%.",
@@ -180,20 +166,6 @@ func TestValidationAcceptsSourceMappedParaphrase(t *testing.T) {
 	validation := validateSupportAnswer(plan, supportEvidenceCoverage{Found: map[string][]string{}}, results, response)
 	if validation.Outcome != supportValidationPass {
 		t.Fatalf("strict source mapping plus exact numeric evidence should accept paraphrases: %+v", validation)
-	}
-}
-
-func TestSelectSupportEvidenceContextUsesRetrievalRank(t *testing.T) {
-	plan := SupportQueryPlanContract{}
-	results := []KnowledgeSearchResult{
-		{ID: "top", CombinedScore: 1},
-		{ID: "price", CombinedScore: 0.2},
-		{ID: "enterprise", CombinedScore: 0.1},
-	}
-	coverage := supportEvidenceCoverage{Found: map[string][]string{}}
-	selected := selectSupportEvidenceContext(plan, coverage, results, 2)
-	if len(selected) != 2 || selected[0].ID != "top" || selected[1].ID != "price" {
-		t.Fatalf("retrieval order should be preserved: %+v", selected)
 	}
 }
 
@@ -295,26 +267,6 @@ func TestSemanticRerankerPreservesApplicableGuidanceAuthority(t *testing.T) {
 	}
 }
 
-func TestBuildSupportConversationStateRequiresImmediateAnswerForConfirmation(t *testing.T) {
-	metadata, _ := json.Marshal(AIMessageMetadata{
-		AIReplyKind:    supportReplyKindAnswer,
-		AIIssueKey:     "pricing",
-		AIIssueSummary: "Customer asked about pricing.",
-	})
-	history := []model.SupportMessage{
-		{SenderType: "customer", Content: "What is your pricing?"},
-		{SenderType: "ai", Content: "Growth starts at $49.", Metadata: string(metadata)},
-	}
-	state := buildSupportConversationState(history)
-	if !state.ConfirmationEligible || state.ActiveIssueKey != "pricing" || state.LastAIAnswer == "" {
-		t.Fatalf("unexpected conversation state: %+v", state)
-	}
-	history = append(history, model.SupportMessage{SenderType: "customer", Content: "What about annual billing?"})
-	if buildSupportConversationState(history).ConfirmationEligible {
-		t.Fatal("an intervening customer request must make confirmation ineligible")
-	}
-}
-
 func TestCuratedGuidanceSearchEnforcesScopeStatusAndValidity(t *testing.T) {
 	db := newTestDB(t)
 	if err := db.Exec(`CREATE TABLE curated_guidance (
@@ -386,12 +338,12 @@ func (r *capturePlatformTraceRecorder) RecordSupportAIRetrievalTrace(_ context.C
 func TestAnswerTraceIncludesShadowComparisonMetadata(t *testing.T) {
 	recorder := &capturePlatformTraceRecorder{traces: make(chan *model.SupportAIRetrievalTrace, 1)}
 	service := (&SupportAIService{}).SetSupportAIRetrievalTraceRecorder(recorder)
-	plan := normalizeSupportQueryPlan(SupportQueryPlanContract{
+	plan := SupportQueryPlanContract{
 		Route:           supportDecisionAnswer,
 		Intent:          supportIntentUnknown,
 		Language:        "en",
 		StandaloneQuery: "How do I configure analytics?",
-	}, "How do I configure analytics?")
+	}
 	results := []KnowledgeSearchResult{{ID: "chunk-1", ReferenceID: "docs:doc-1", SourceType: knowledgeSourceTypeDocs, Content: "Configure analytics from Settings."}}
 	response := &AIResponseContract{SourceDocIDs: []string{"docs:doc-1"}}
 	service.recordSupportAIAnswerTrace(

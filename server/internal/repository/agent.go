@@ -700,14 +700,18 @@ func (r *AgentRunRepository) ListDockRunsForActor(
 	return runs, nil
 }
 
-// ListActiveDockRunsForActor returns every active non-chat run owned by the actor.
+// ListActiveDockRunsForActor returns active runs, including current unarchived chats owned by the actor.
 func (r *AgentRunRepository) ListActiveDockRunsForActor(ctx context.Context, workspaceID, actorID string) ([]model.AgentRun, error) {
 	activeStatuses := []string{model.AgentRunStatusQueued, model.AgentRunStatusRunning, model.AgentRunStatusPaused}
 	var runs []model.AgentRun
 	if err := r.db.WithContext(ctx).
 		Select(_agentRunListColumns).
 		Where("workspace_id = ? AND triggered_by_user_id = ?", workspaceID, actorID).
-		Where("dock_chat_id IS NULL").
+		Where(`dock_chat_id IS NULL OR ((status <> ? OR pause_reason IN ?) AND EXISTS (
+			SELECT 1 FROM dock_chats chat WHERE chat.id = agent_runs.dock_chat_id
+			AND chat.workspace_id = agent_runs.workspace_id AND chat.user_id = ?
+			AND chat.active_run_id = agent_runs.id AND chat.archived_at IS NULL
+		))`, model.AgentRunStatusPaused, []string{model.AgentRunPauseReasonHumanInput, model.AgentRunPauseReasonHumanApproval, model.AgentRunPauseReasonAuthentication}, actorID).
 		Where("status IN ?", activeStatuses).
 		Order("updated_at DESC, created_at DESC").
 		Find(&runs).Error; err != nil {
@@ -769,6 +773,24 @@ func (r *AgentRunRepository) FindActiveByTarget(ctx context.Context, workspaceID
 			return nil, nil
 		}
 		return nil, fmt.Errorf("find active target run: %w", err)
+	}
+	return &run, nil
+}
+
+// FindActiveNonDockByTarget returns the newest active run for a target that is
+// not owned by a dock chat. Dock chat runs are private to their chat and must
+// never be reused by callers that start runs outside that chat.
+func (r *AgentRunRepository) FindActiveNonDockByTarget(ctx context.Context, workspaceID, targetType, targetID string) (*model.AgentRun, error) {
+	var run model.AgentRun
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND target_type = ? AND target_id = ? AND status IN ? AND dock_chat_id IS NULL",
+			workspaceID, targetType, targetID, []string{"queued", "running", "paused"}).
+		Order("created_at DESC").
+		First(&run).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("find active non-dock target run: %w", err)
 	}
 	return &run, nil
 }
@@ -970,6 +992,7 @@ func (r *AgentRunMessageRepository) ListDockChatTurnThroughMessage(
 		Model(&model.AgentRunMessage{}).
 		Select("COALESCE(MAX(dock_chat_sequence), 0) AS sequence").
 		Where("workspace_id = ? AND dock_chat_id = ? AND role = ? AND dock_chat_sequence < ? AND delivery_status <> ?", workspaceID, dockChatID, "user", *target.DockChatSequence, "failed").
+		Where("COALESCE(message_type, '') NOT IN ?", []string{"approval", "approval_request_resolution", "review_checkpoint_resolution"}).
 		Scan(&previous).Error; err != nil {
 		return nil, fmt.Errorf("find dock chat work boundary: %w", err)
 	}
@@ -1090,7 +1113,7 @@ func (r *AgentRunRepository) ListActiveByExternalRuntime(ctx context.Context, ex
 			model.AgentRunStatusRunning,
 			model.AgentRunStatusPaused,
 		}).
-		Where("updated_at < ?", olderThan).
+		Where("updated_at < ? OR (target_type = ? AND created_at < ?)", olderThan, "support_preview", olderThan).
 		Order("updated_at ASC").
 		Limit(limit).
 		Find(&runs).Error; err != nil {
@@ -1183,6 +1206,23 @@ func (r *AgentRunRepository) Update(ctx context.Context, run *model.AgentRun) er
 		_ = r.triggerExecutionRepo.SyncRunStatus(ctx, run)
 	}
 	return nil
+}
+
+// BindExternalRuntimeIfActive records the delegated runtime mapping without
+// reviving a run that was cancelled while remote admission was in flight.
+func (r *AgentRunRepository) BindExternalRuntimeIfActive(ctx context.Context, workspaceID, runID, runtimeName, runtimeRunID string) (bool, error) {
+	if r == nil || r.db == nil {
+		return false, fmt.Errorf("agent run repository is not configured")
+	}
+	result := r.db.WithContext(ctx).
+		Model(&model.AgentRun{}).
+		Where("workspace_id = ? AND id = ?", workspaceID, runID).
+		Where("status IN ?", []string{model.AgentRunStatusQueued, model.AgentRunStatusRunning, model.AgentRunStatusPaused}).
+		Updates(map[string]any{"external_runtime": runtimeName, "external_runtime_id": runtimeRunID})
+	if result.Error != nil {
+		return false, fmt.Errorf("bind active agent run to external runtime: %w", result.Error)
+	}
+	return result.RowsAffected == 1, nil
 }
 
 // UpdateOutputSummary updates only the run output summary.
@@ -1423,6 +1463,7 @@ func (r *AgentTriggerExecutionRepository) CountAutomationRuleExecutions(ctx cont
 	var rows []countRow
 	if err := r.db.WithContext(ctx).
 		Model(&model.AgentTriggerExecution{}).
+		Where("binding_id <> ?", "semantic_condition").
 		Select("reference_id, COUNT(*) AS total, SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS failed", model.AgentTriggerExecutionStatusFailed).
 		Where("workspace_id = ? AND binding_kind = ? AND reference_type = ? AND reference_id IN ?", workspaceID, "automation_rule", "automation_rule", ruleIDs).
 		Group("reference_id").
@@ -1554,6 +1595,23 @@ func (r *AgentRunArtifactRepository) ListByRun(ctx context.Context, workspaceID,
 	var artifacts []model.AgentRunArtifact
 	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND run_id = ?", workspaceID, runID).Order("sequence_no ASC, created_at ASC").Find(&artifacts).Error; err != nil {
 		return nil, fmt.Errorf("list run artifacts: %w", err)
+	}
+	return artifacts, nil
+}
+
+// ListObjectArtifactsByDockChat returns durable private files from every run
+// that has backed a Dock conversation. A successor run must not make files
+// published by an earlier run disappear from the conversation.
+func (r *AgentRunArtifactRepository) ListObjectArtifactsByDockChat(ctx context.Context, workspaceID, dockChatID string) ([]model.AgentRunArtifact, error) {
+	var artifacts []model.AgentRunArtifact
+	if err := r.db.WithContext(ctx).
+		Table("agent_run_artifacts AS artifact").
+		Select("artifact.*").
+		Joins("JOIN agent_runs AS run ON run.id = artifact.run_id AND run.workspace_id = artifact.workspace_id").
+		Where("artifact.workspace_id = ? AND run.dock_chat_id = ? AND artifact.storage_mode = ?", workspaceID, dockChatID, "object").
+		Order("artifact.created_at ASC, artifact.sequence_no ASC, artifact.id ASC").
+		Scan(&artifacts).Error; err != nil {
+		return nil, fmt.Errorf("list dock chat object artifacts: %w", err)
 	}
 	return artifacts, nil
 }

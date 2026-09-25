@@ -19,10 +19,30 @@ func setupSupportPortalService(t *testing.T) (*SupportPortalService, *gorm.DB) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&model.SupportConversation{}, &model.SupportPortalIdentity{}, &model.SupportPortalRequestReference{}, &model.SupportPortalAuditEvent{}); err != nil {
-		t.Fatal(err)
+	for _, statement := range []string{
+		`CREATE TABLE support_conversations (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, subject TEXT NOT NULL, status TEXT NOT NULL, channel TEXT NOT NULL, source TEXT NOT NULL, portal_visible BOOLEAN NOT NULL, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME)`,
+		`CREATE TABLE support_portal_identities (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, email TEXT NOT NULL, display_name TEXT, auth_subject TEXT, created_at DATETIME, updated_at DATETIME)`,
+		`CREATE UNIQUE INDEX idx_support_portal_identity_email ON support_portal_identities (workspace_id, email)`,
+		`CREATE UNIQUE INDEX idx_support_portal_identity_subject ON support_portal_identities (workspace_id, auth_subject) WHERE auth_subject IS NOT NULL`,
+		`CREATE TABLE support_portal_request_references (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, conversation_id TEXT NOT NULL, portal_identity_id TEXT NOT NULL, reference TEXT NOT NULL, created_at DATETIME)`,
+		`CREATE UNIQUE INDEX idx_support_portal_request_conversation ON support_portal_request_references (workspace_id, conversation_id)`,
+		`CREATE UNIQUE INDEX idx_support_portal_request_reference ON support_portal_request_references (workspace_id, reference)`,
+		`CREATE TABLE support_portal_audit_events (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, conversation_id TEXT NOT NULL, portal_identity_id TEXT, actor_type TEXT NOT NULL, actor_user_id TEXT, event_type TEXT NOT NULL, metadata TEXT NOT NULL DEFAULT '{}', occurred_at DATETIME NOT NULL, created_at DATETIME)`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatal(err)
+		}
 	}
 	return NewSupportPortalService(repository.NewSupportPortalRepository(db)), db
+}
+
+func createSupportPortalConversation(t *testing.T, db *gorm.DB, conversation *model.SupportConversation) {
+	t.Helper()
+	if err := db.Exec(`INSERT INTO support_conversations (id, workspace_id, subject, status, channel, source, portal_visible, created_at, updated_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		conversation.ID, conversation.WorkspaceID, conversation.Subject, conversation.Status, conversation.Channel, conversation.Source, conversation.PortalVisible, conversation.CreatedAt, conversation.UpdatedAt, conversation.DeletedAt,
+	).Error; err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestSupportPortalProjectsCanonicalConversationWithOpaqueStableReference(t *testing.T) {
@@ -30,9 +50,7 @@ func TestSupportPortalProjectsCanonicalConversationWithOpaqueStableReference(t *
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Second)
 	conversation := &model.SupportConversation{ID: "conversation-internal-id", WorkspaceID: "ws-1", Subject: "Cannot log in", Status: model.SupportConversationStatusOpen, Channel: "email", Source: "email", PortalVisible: true, CreatedAt: now, UpdatedAt: now}
-	if err := db.Create(conversation).Error; err != nil {
-		t.Fatal(err)
-	}
+	createSupportPortalConversation(t, db, conversation)
 	identity, err := svc.FindOrCreateIdentity(ctx, "ws-1", "Customer@Example.com", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +77,7 @@ func TestSupportPortalProjectsCanonicalConversationWithOpaqueStableReference(t *
 	if request.Reference != first.Reference || request.Subject != conversation.Subject || request.Status != conversation.Status {
 		t.Fatalf("unexpected projection: %#v", request)
 	}
-	if strings.Contains(string(mustJSON(t, request)), conversation.ID) {
+	if strings.Contains(string(mustPortalJSON(t, request)), conversation.ID) {
 		t.Fatalf("projection leaked internal conversation ID: %#v", request)
 	}
 }
@@ -79,9 +97,7 @@ func TestSupportPortalDeniesHiddenInternalSpamAndDeletedConversations(t *testing
 			conversation.ID = "conv-" + strings.ReplaceAll(tc.name, " ", "-")
 			conversation.WorkspaceID = "ws-1"
 			conversation.Subject = "private"
-			if err := db.Create(&conversation).Error; err != nil {
-				t.Fatal(err)
-			}
+			createSupportPortalConversation(t, db, &conversation)
 			identity, err := svc.FindOrCreateIdentity(context.Background(), "ws-1", "customer@example.com", nil)
 			if err != nil {
 				t.Fatal(err)
@@ -95,10 +111,8 @@ func TestSupportPortalDeniesHiddenInternalSpamAndDeletedConversations(t *testing
 	t.Run("deleted", func(t *testing.T) {
 		svc, db := setupSupportPortalService(t)
 		conversation := &model.SupportConversation{ID: "conv-deleted", WorkspaceID: "ws-1", Subject: "deleted", Status: "open", Channel: "email", Source: "email", PortalVisible: true}
-		if err := db.Create(conversation).Error; err != nil {
-			t.Fatal(err)
-		}
-		if err := db.Delete(conversation).Error; err != nil {
+		createSupportPortalConversation(t, db, conversation)
+		if err := db.Exec("DELETE FROM support_conversations WHERE id = ?", conversation.ID).Error; err != nil {
 			t.Fatal(err)
 		}
 		var deletedCount int64
@@ -138,9 +152,7 @@ func TestSupportPortalReferenceAuthorizationAndAuditAttribution(t *testing.T) {
 	svc, db := setupSupportPortalService(t)
 	ctx := context.Background()
 	conversation := &model.SupportConversation{ID: "conv-1", WorkspaceID: "ws-1", Subject: "help", Status: "open", Channel: "email", Source: "email", PortalVisible: true}
-	if err := db.Create(conversation).Error; err != nil {
-		t.Fatal(err)
-	}
+	createSupportPortalConversation(t, db, conversation)
 	owner, err := svc.FindOrCreateIdentity(ctx, "ws-1", "owner@example.com", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -168,7 +180,7 @@ func TestSupportPortalReferenceAuthorizationAndAuditAttribution(t *testing.T) {
 	}
 }
 
-func mustJSON(t *testing.T, value any) []byte {
+func mustPortalJSON(t *testing.T, value any) []byte {
 	t.Helper()
 	data, err := json.Marshal(value)
 	if err != nil {

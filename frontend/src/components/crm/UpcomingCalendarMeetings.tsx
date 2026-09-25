@@ -13,12 +13,15 @@ import {
 } from '@/components/design-system/quiet';
 import { MeetingPlatformLabel } from '@/components/crm/MeetingPlatform';
 import { MeetingStatusText } from '@/components/crm/MeetingStatusText';
+import { ServerSetupNotice } from '@/components/crm/ServerSetupNotice';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { useUpdateCalendarMeetingCapture, useUpdateCalendarMeetingSeriesCapture } from '@/hooks/queries/useCRMMeetings';
 import { detectMeetingPlatform, formatMeetingDate } from '@/lib/meetingPresentation';
 import { groupUpcomingMeetings, type UpcomingMeetingGroup } from '@/components/crm/upcomingCalendarMeetingGroups';
 import type { CRMCalendarMeetingCandidate } from '@/lib/crmMeetingTypes';
+
+const GOOGLE_CONNECT_UNAVAILABLE_ID = 'google-calendar-connect-unavailable';
 
 function UpcomingRowsLoading() {
   return (
@@ -46,6 +49,8 @@ export function UpcomingCalendarMeetings({
   calendarConnected,
   calendarLoading,
   connectingCalendar,
+  calendarConnectUnavailable = false,
+  isServerAdmin = false,
   meetingNotesEnabled,
   searching,
   onConnectCalendar,
@@ -61,6 +66,9 @@ export function UpcomingCalendarMeetings({
   calendarConnected: boolean;
   calendarLoading: boolean;
   connectingCalendar: boolean;
+  /** The server has no usable Google OAuth client, so connecting would fail. */
+  calendarConnectUnavailable?: boolean;
+  isServerAdmin?: boolean;
   meetingNotesEnabled: boolean;
   searching: boolean;
   onConnectCalendar: () => void;
@@ -135,7 +143,20 @@ export function UpcomingCalendarMeetings({
               : 'Calls with a Google Meet, Zoom, Teams, or Webex link will appear after calendar sync.'}
           action={!calendarConnected ? (
             <div className="flex flex-wrap items-center gap-4">
-              <QuietPrimaryAction onClick={onConnectCalendar} disabled={connectingCalendar}>
+              {calendarConnectUnavailable ? (
+                <ServerSetupNotice
+                  id={GOOGLE_CONNECT_UNAVAILABLE_ID}
+                  title="Connecting Google Calendar isn’t set up on this server."
+                  slug={workspaceSlug}
+                  isServerAdmin={isServerAdmin}
+                  className="basis-full"
+                />
+              ) : null}
+              <QuietPrimaryAction
+                onClick={onConnectCalendar}
+                disabled={connectingCalendar || calendarConnectUnavailable}
+                aria-describedby={calendarConnectUnavailable ? GOOGLE_CONNECT_UNAVAILABLE_ID : undefined}
+              >
                 {connectingCalendar ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" /> : <Calendar01Icon className="h-3.5 w-3.5" />}
                 Connect Google Calendar
               </QuietPrimaryAction>

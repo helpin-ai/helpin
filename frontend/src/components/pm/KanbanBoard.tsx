@@ -1,3 +1,4 @@
+import { BoardListViewToggle } from '@/components/design-system/board-list-view-toggle';
 import { TaskListGroupingDropdown } from './TaskListGroupingDropdown';
 import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from '@tanstack/react-router';
@@ -15,7 +16,7 @@ import {
   useDroppable,
 } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { BotIcon, CollapseIcon, ExpandIcon, LayoutTwoColumnIcon, LayoutTable01Icon, Loading01Icon, PlusSignIcon, UserIcon } from '@/lib/icons';
+import { BotIcon, CollapseIcon, ExpandIcon, Loading01Icon, PlusSignIcon, UserIcon } from '@/lib/icons';
 import { ChartColumnIcon, StickyNote01Icon } from '@/lib/pmIcons';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -1305,24 +1306,7 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
                   Seed 500
                 </Button>
               ) : null}
-              <span className="inline-flex h-7 items-center gap-0.5 rounded-md border border-border/70 bg-muted/30 p-0.5">
-                <QuickTooltip label="Board view">
-                  <Button variant="ghost" size="icon" aria-pressed={viewMode === 'board'} className={`h-6 w-6 rounded-sm ${viewMode === 'board'
-                    ? 'bg-background text-foreground shadow-sm hover:bg-background'
-                    : 'text-muted-foreground hover:text-foreground'
-                  }`} onClick={() => setViewMode('board')}>
-                    <LayoutTwoColumnIcon className="h-3.5 w-3.5" />
-                  </Button>
-                </QuickTooltip>
-                <QuickTooltip label="List view">
-                  <Button variant="ghost" size="icon" aria-pressed={viewMode === 'list'} className={`h-6 w-6 rounded-sm ${viewMode === 'list'
-                    ? 'bg-background text-foreground shadow-sm hover:bg-background'
-                    : 'text-muted-foreground hover:text-foreground'
-                  }`} onClick={() => setViewMode('list')}>
-                    <LayoutTable01Icon className="h-3.5 w-3.5" />
-                  </Button>
-                </QuickTooltip>
-              </span>
+              <BoardListViewToggle value={viewMode} onChange={setViewMode} />
             </BoardToolbarSlot>
             <BoardToolbarSlot>{viewMode === 'board' ? <BoardDisplayMenu /> : <ListDisplayMenu disabledKeys={listDisabledKeys} />}</BoardToolbarSlot>
           </div>

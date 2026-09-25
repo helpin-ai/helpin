@@ -19,22 +19,30 @@ export function cleanForwardedDisplayContent(content: string): string {
 
   const note = lines.slice(0, markerIndex).join('\n').trim();
   let bodyStart = -1;
+  let firstNonMetadata = -1;
   let sawMetadata = false;
+  let headerEnded = false;
 
   for (let i = markerIndex + 1; i < lines.length; i += 1) {
+    if (sawMetadata && lines[i].trim() === '') {
+      headerEnded = true;
+      continue;
+    }
+    if (headerEnded) {
+      bodyStart = i;
+      break;
+    }
     const line = lines[i];
     if (isForwardedMetadataLine(line)) {
       sawMetadata = true;
       continue;
     }
-    if (sawMetadata && line.trim() === '') {
-      continue;
-    }
-    if (sawMetadata) {
-      bodyStart = i;
-      break;
+    if (sawMetadata && firstNonMetadata < 0) {
+      firstNonMetadata = i;
     }
   }
+
+  if (bodyStart < 0) bodyStart = firstNonMetadata;
 
   if (bodyStart < 0) return note || content;
 

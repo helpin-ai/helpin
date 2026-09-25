@@ -36,7 +36,7 @@ describe('attachment upload transport', () => {
     const xhr = await storage();
     expect(xhr.open).toHaveBeenCalledWith('PUT', initialized.upload_url, true);
     expect(xhr.send).toHaveBeenCalledWith(file);
-    expect(xhr.setRequestHeader.mock.calls).toEqual([['Content-Type', 'video/mp4'], ['x-amz-acl', 'public-read']]);
+    expect(xhr.setRequestHeader.mock.calls).toEqual([['Content-Type', 'video/mp4']]);
     xhr.upload.onprogress?.({ lengthComputable: true, loaded: 2, total: 5 } as ProgressEvent);
     expect(onProgress).toHaveBeenLastCalledWith(40);
     xhr.upload.onprogress?.({ lengthComputable: true, loaded: 5, total: 5 } as ProgressEvent);
@@ -104,6 +104,41 @@ describe('attachment upload transport', () => {
     await rejected;
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+  it('aborts a storage request with no progress and offers a retry', async () => {
+    vi.useFakeTimers();
+    const result = start();
+    const rejected = expect(result).rejects.toThrow(/stopped making progress.*retry/i);
+    const xhr = await storage();
+    await vi.advanceTimersByTimeAsync(30_000);
+    await rejected;
+    expect(xhr.abort).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it('keeps an active transfer alive when bytes continue arriving', async () => {
+    vi.useFakeTimers();
+    const result = start();
+    const xhr = await storage();
+    await vi.advanceTimersByTimeAsync(20_000);
+    xhr.upload.onprogress?.({ loaded: 2, total: 5, lengthComputable: true } as ProgressEvent);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(xhr.abort).not.toHaveBeenCalled();
+    xhr.onload?.();
+    await expect(result).resolves.toEqual({ attachmentId: 'att-1', url: initialized.public_url });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it('does not extend the idle deadline for repeated zero-byte events', async () => {
+    vi.useFakeTimers();
+    const result = start();
+    const rejected = expect(result).rejects.toThrow(/stopped making progress/i);
+    const xhr = await storage();
+    await vi.advanceTimersByTimeAsync(20_000);
+    xhr.upload.onprogress?.({ loaded: 0, total: 5, lengthComputable: true } as ProgressEvent);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await rejected;
+    expect(xhr.abort).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
   it('preserves a helpful API validation error during initiation', async () => {
     fetchMock.mockReset().mockResolvedValue({ ok: false, status: 413, json: async () => ({ error: 'File exceeds the 100 MB limit' }) });
     await expect(start()).rejects.toThrow('File exceeds the 100 MB limit');
@@ -130,4 +165,84 @@ describe('attachment upload transport', () => {
     await rejected;
     expect(vi.getTimerCount()).toBe(0);
   });
+});
+
+describe('upload regression edge cases', () => {
+  it('rejects before connection and succeeds with the session on retry', async () => {
+    await expect(uploadAttachment('api.test', '', file)).rejects.toThrow(/Chat is not connected/);
+    expect(fetchMock).not.toHaveBeenCalled();
+    const result = start();
+    (await storage()).onload?.();
+    await expect(result).resolves.toMatchObject({ attachmentId: 'att-1' });
+  });
+  it.each(['initialization', 'confirmation'])('reports network failure during %s', async stage => {
+    fetchMock.mockReset();
+    if (stage === 'confirmation') fetchMock.mockResolvedValueOnce({ ok: true, json: async () => initialized });
+    fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
+    const result = start();
+    const rejected = expect(result).rejects.toThrow(stage === 'initialization' ? /start.*connection/i : /confirm.*connection/i);
+    if (stage === 'confirmation') (await storage()).onload?.();
+    await rejected;
+  });
+  it('times out stalled confirmation without reporting ready', async () => {
+    vi.useFakeTimers();
+    fetchMock.mockReset().mockResolvedValueOnce({ ok: true, json: async () => initialized }).mockImplementation((_url, { signal }) => new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))));
+    const onProgress = vi.fn();
+    const result = start({ onProgress });
+    const rejected = expect(result).rejects.toThrow(/timed out/i);
+    (await storage()).onload?.();
+    await vi.advanceTimersByTimeAsync(600_000);
+    await rejected;
+    expect(onProgress).not.toHaveBeenCalledWith(100);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it('sends unicode filenames and unknown MIME consistently without signed-header drift', async () => {
+    const unknown = new File(['hello'], '夏 dress #1.png');
+    const result = uploadAttachment('api.test', 'token', unknown);
+    const xhr = await storage();
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ file_name: unknown.name, file_size: 5, content_type: 'application/octet-stream' });
+    expect(xhr.setRequestHeader.mock.calls).toEqual([['Content-Type', 'application/octet-stream']]);
+    xhr.onload?.();
+    await result;
+  });
+  it('cleans up after synchronous storage send failure', async () => {
+    vi.useFakeTimers();
+    // A browser can throw before starting a request (invalid URL or policy).
+    const original = UploadXHR;
+    vi.stubGlobal('XMLHttpRequest', class extends original { send = vi.fn(() => { throw new TypeError('Network error'); }); });
+    await expect(start()).rejects.toThrow(/connection/i);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+it('reports stage outcomes without leaking attachment data', async () => {
+  const onTelemetry = vi.fn();
+  const result = start({ onTelemetry });
+  const xhr = await storage();
+  xhr.onload?.();
+  await result;
+  expect(onTelemetry.mock.calls.map(([e]) => [e.stage, e.outcome])).toEqual([
+    ['initialization', 'success'], ['storage', 'success'], ['confirmation', 'success'], ['upload', 'success'],
+  ]);
+  expect(JSON.stringify(onTelemetry.mock.calls)).not.toContain(file.name);
+  expect(JSON.stringify(onTelemetry.mock.calls)).not.toContain(initialized.upload_url);
+});
+
+it('reports storage stalls as timeouts and not success', async () => {
+  vi.useFakeTimers();
+  const onTelemetry = vi.fn();
+  const result = start({ onTelemetry });
+  const rejected = expect(result).rejects.toThrow(/stopped making progress/);
+  await storage();
+  await vi.advanceTimersByTimeAsync(30_000);
+  await rejected;
+  expect(onTelemetry).toHaveBeenCalledWith(expect.objectContaining({ stage: 'storage', outcome: 'timeout' }));
+  expect(onTelemetry).toHaveBeenLastCalledWith(expect.objectContaining({ stage: 'upload', outcome: 'timeout' }));
+});
+
+it('ignores telemetry callback errors without breaking an upload', async () => {
+  const result = start({ onTelemetry: () => { throw new Error('telemetry unavailable'); } });
+  (await storage()).onload?.();
+  await expect(result).resolves.toMatchObject({ attachmentId: 'att-1' });
 });

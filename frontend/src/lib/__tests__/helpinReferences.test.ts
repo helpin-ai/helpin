@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  helpinImageMarker,
   helpinReferenceMarker,
   helpinReferenceRoute,
   parseHelpinReference,
+  parseHelpinImageMarker,
   parseHelpinReferenceMarker,
 } from '@/lib/helpinReferences';
 
@@ -25,6 +27,14 @@ describe('Helpin references', () => {
     expect(parseHelpinReference('helpin://unknown/item-1')).toBeNull();
     expect(parseHelpinReference('helpin://tasks/folder/item-1')).toBeNull();
     expect(parseHelpinReference('https://helpin.ai/tasks/task-1')).toBeNull();
+  });
+
+  it('marks only artifact images for inline rendering', () => {
+    const marker = helpinImageMarker('helpin://artifacts/img-1');
+    expect(parseHelpinImageMarker(marker ?? undefined)).toEqual({ type: 'artifacts', id: 'img-1' });
+    expect(helpinImageMarker('helpin://tasks/task-1')).toBeNull();
+    expect(helpinImageMarker('https://example.com/a.png')).toBeNull();
+    expect(parseHelpinImageMarker(helpinReferenceMarker('helpin://artifacts/img-1') ?? undefined)).toBeNull();
   });
 
   it('round trips references through a sanitizer-safe marker', () => {

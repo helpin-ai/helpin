@@ -1,10 +1,11 @@
+/* eslint-disable react-refresh/only-export-components -- Existing shared recipient parser API is used by mail composers. */
 import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
 import { Cancel01Icon } from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
-const EMAIL_DELIMITER_REGEX = /[,\n\s]+/;
+const EMAIL_DELIMITER_REGEX = /[;,\n\s]+/;
 const SIMPLE_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
 
 const normalizeEmail = (value: string) => value.trim().toLowerCase();
@@ -59,6 +60,7 @@ type EmailChipInputProps = {
   disabled?: boolean;
   autoComplete?: string;
   autoFocus?: boolean;
+  ariaLabel?: string;
 };
 
 export function EmailChipInput({
@@ -71,6 +73,7 @@ export function EmailChipInput({
   disabled = false,
   autoComplete = 'off',
   autoFocus = false,
+  ariaLabel,
 }: EmailChipInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [invalidEntries, setInvalidEntries] = useState<string[]>([]);
@@ -100,7 +103,7 @@ export function EmailChipInput({
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (disabled) return;
 
-    if ((event.key === ',' || event.key === 'Enter' || event.key === 'Tab') && inputValue.trim()) {
+    if ((event.key === ';' || event.key === ',' || event.key === 'Enter' || event.key === 'Tab') && inputValue.trim()) {
       event.preventDefault();
       commitInput();
       return;
@@ -114,7 +117,7 @@ export function EmailChipInput({
 
   const handlePaste = (event: ClipboardEvent<HTMLInputElement>) => {
     const pastedText = event.clipboardData.getData('text');
-    if (!pastedText || !/[,\n\s]/.test(pastedText)) {
+    if (!pastedText || !/[;,\n\s]/.test(pastedText)) {
       return;
     }
 
@@ -133,8 +136,8 @@ export function EmailChipInput({
       onClick={() => inputRef.current?.focus()}
     >
       {value.map((email) => (
-        <Badge key={email} variant="secondary" className="h-7 gap-1 rounded-full pl-2.5 pr-1 text-xs font-medium">
-          <span className="max-w-[20rem] truncate">{email}</span>
+        <Badge key={email} variant="secondary" className="h-7 max-w-full gap-1 rounded-full pl-2.5 pr-1 text-xs font-medium">
+          <span className="min-w-0 max-w-[20rem] truncate">{email}</span>
           <button
             type="button"
             className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground disabled:pointer-events-none"
@@ -151,6 +154,7 @@ export function EmailChipInput({
       ))}
       <input
         ref={inputRef}
+        aria-label={ariaLabel}
         type="text"
         inputMode="email"
         value={inputValue}

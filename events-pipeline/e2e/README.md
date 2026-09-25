@@ -17,7 +17,7 @@ infrastructure; they never use the developer NATS or ClickHouse containers.
 
 The scripts require Docker with Compose, Rust/Cargo, Go, Python 3, and `curl`.
 The sustained scripts run the pinned `grafana/k6:1.8.1` image, so a host k6
-installation is not required. Reserve ports 3000, 3001, 3010, 3011, 14222,
+installation is not required. Reserve ports 3000, 3001, 3010, 3011, 14222-14224,
 18123, 18222-18224, and 19000.
 
 ### macOS OpenSSL requirement
@@ -234,7 +234,7 @@ events-pipeline/scripts/run-k6-remote.sh
 
 To include Caddy and public TLS in the test, set `TARGET_URL` to the public
 route instead, for example
-`https://helpin-dev.tryunhide.com/api/v1/event`. The token above belongs only
+`https://events.example.com/api/v1/event`. The token above belongs only
 to the disposable E2E fixture.
 
 The arrival profile is the capacity test: it schedules 5,000 requests/s even
@@ -246,8 +246,11 @@ with sufficient CPU, memory, socket capacity, and outbound bandwidth.
 
 Use `PROFILE=connections CONNECTIONS=5000` as a separate closed-model test of
 5,000 simultaneous VUs. It does not guarantee 5,000 completed requests/s.
-Connections are reused by default to match SDK keep-alive behavior. Set
-`NO_VU_CONNECTION_REUSE=true` only to test connection churn deliberately.
+Connections are reused by default to match SDK keep-alive behavior. The underlying
+`k6-capture.js` supports `NO_VU_CONNECTION_REUSE`, but the current
+`run-k6-remote.sh` Docker wrapper does not forward it. Exporting the variable in
+the host shell alone does not enable connection churn; a custom k6 invocation
+must pass it into the container explicitly.
 
 ## Network-enrichment data
 

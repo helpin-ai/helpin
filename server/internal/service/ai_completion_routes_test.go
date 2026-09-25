@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/helpin-ai/helpin/server/internal/aiusage"
+	"github.com/helpin-ai/helpin/server/internal/aimodel"
 )
 
 func TestAICompletionRouteRegistryCoversDirectFeatures(t *testing.T) {
@@ -39,7 +39,7 @@ func TestAICompletionRouteRegistryCoversDirectFeatures(t *testing.T) {
 }
 
 func TestAICompletionRouteRegistryResolvesEveryFixedRouteInPricingCatalog(t *testing.T) {
-	catalog, err := aiusage.LoadCatalog()
+	catalog, err := aimodel.LoadCatalog()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,8 +70,8 @@ func TestAICompletionRouteRegistryKeepsMediaOnApprovedVisionRoute(t *testing.T) 
 	if policy.Primary.Provider != "openrouter" || policy.Primary.Model != "google/gemini-3.8-flash" {
 		t.Fatalf("media route = %#v", policy.Primary)
 	}
-	if len(policy.Fallbacks) != 0 {
-		t.Fatalf("media fallbacks = %#v, want none", policy.Fallbacks)
+	if len(policy.Fallbacks) != 1 || policy.Fallbacks[0].Model != "qwen/qwen3.8-omni-flash" {
+		t.Fatalf("media fallbacks = %#v, want Qwen Omni", policy.Fallbacks)
 	}
 }
 
@@ -124,7 +124,7 @@ func TestAICompletionRouteRegistryAppliesCRMOverridesOnlyToCRMFeatures(t *testin
 		t.Fatalf("non-CRM route changed = %#v", nonCRM.Primary)
 	}
 
-	catalog, err := aiusage.LoadCatalog()
+	catalog, err := aimodel.LoadCatalog()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestAICompletionRouteRegistryRejectsOpenRouterSelectionOnDirectRoute(t *tes
 			Provider: "anthropic", Model: "claude-sonnet-5", OpenRouterProvider: "anthropic",
 		},
 	})
-	catalog, err := aiusage.LoadCatalog()
+	catalog, err := aimodel.LoadCatalog()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func TestSupportRewriteRoutesUseOnlySmallTierModels(t *testing.T) {
 	if policy.Primary.Provider != "openrouter" || policy.Primary.Model != "deepseek/deepseek-v4-flash-0731" {
 		t.Errorf("primary = %+v, want DeepSeek V4 Flash through OpenRouter", policy.Primary)
 	}
-	catalog, err := aiusage.LoadCatalog()
+	catalog, err := aimodel.LoadCatalog()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,5 +169,15 @@ func TestSupportRewriteRoutesUseOnlySmallTierModels(t *testing.T) {
 		if resolved.Tier != "small" {
 			t.Errorf("route %s tier = %s, want small", route.Model, resolved.Tier)
 		}
+	}
+}
+
+func TestLiveTranslatePinsPrimaryAndIndependentFallback(t *testing.T) {
+	p, ok := DefaultAICompletionRouteRegistry().Policy(BillingFeatureSupportTranslation, "")
+	if !ok || p.Primary.Model != "openai/gpt-oss-120b" || p.Primary.OpenRouterProvider != "cerebras/fp16" || p.PreferRequestRoute {
+		t.Fatalf("unsafe translation primary: %+v", p)
+	}
+	if len(p.Fallbacks) != 1 || p.Fallbacks[0].Model != "deepseek/deepseek-v4.1-flash" || p.Fallbacks[0].OpenRouterProvider != "coreweave/fp8" {
+		t.Fatalf("fallback: %+v", p.Fallbacks)
 	}
 }

@@ -2,23 +2,24 @@ type WorkspaceOnboardingDetailsInput = {
   hasOrganization: boolean;
   name: string;
   slug: string;
-  websiteUrl: string;
+  goalCount: number;
 };
 
+/** Checks the workspace step. The website is optional and asked for later. */
 export function validateWorkspaceOnboardingDetails({
   hasOrganization,
   name,
   slug,
-  websiteUrl,
+  goalCount,
 }: WorkspaceOnboardingDetailsInput) {
   if (!hasOrganization) {
-    return 'Please select an organization first';
+    return 'Enter an organization name to continue.';
   }
   if (!name.trim() || !slug.trim()) {
-    return 'Enter a workspace name and slug';
+    return 'Enter a workspace name.';
   }
-  if (!websiteUrl.trim()) {
-    return 'Enter your company or product website';
+  if (goalCount < 1) {
+    return 'Select at least one thing to set up.';
   }
   return null;
 }

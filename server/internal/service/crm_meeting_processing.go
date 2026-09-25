@@ -49,6 +49,7 @@ type CRMMeetingProcessingService struct {
 	activityCreator meetingActivityCreator
 	suggestions     meetingSuggestionManager
 	followUpRouting meetingFollowUpRoutingStore
+	jevDecisions    *JevDecisionService
 	artifactStore   meetingArtifactStore
 	httpClient      *http.Client
 	providers       map[string]meetingCaptureProvider
@@ -574,6 +575,10 @@ func (s *CRMMeetingProcessingService) projectFollowUp(
 	}
 	description := strings.TrimSpace(output.FollowUpDraft.Body)
 	scope := validatedMeetingFollowUpScope(output.FollowUpDraft.Scope, output.FollowUpDraft.ScopeEvidence, transcript.PlainText, output.FollowUpDraft.Subject, output.FollowUpDraft.Body)
+	jevRoute := s.classifyJevMeetingFollowUp(ctx, meeting.WorkspaceID, meeting.ID, output.FollowUpDraft.Subject+"\n"+output.FollowUpDraft.Body, transcript.PlainText)
+	if jevRoute != nil {
+		scope = jevRoute.scope
+	}
 	routingContext := map[string]interface{}{
 		"meeting_id":                  meeting.ID,
 		"draft_subject":               output.FollowUpDraft.Subject,
@@ -582,8 +587,12 @@ func (s *CRMMeetingProcessingService) projectFollowUp(
 	}
 	// An unsupported quote is an incomplete classification, not a final abstention.
 	// The automatic backfill retries it using the saved draft and source transcript.
-	if output.FollowUpDraft.Scope == "uncertain" || scope == output.FollowUpDraft.Scope {
+	if jevRoute != nil || output.FollowUpDraft.Scope == "uncertain" || scope == output.FollowUpDraft.Scope {
 		routingContext[model.MeetingFollowUpRoutingVersionKey] = model.MeetingFollowUpRoutingVersion
+	}
+	if jevRoute != nil {
+		routingContext["meeting_follow_up_jev_assessment_id"] = jevRoute.assessmentID
+		routingContext["meeting_follow_up_scope_evidence"] = jevRoute.evidence
 	}
 	confidence := 0.85
 	_, err = s.suggestions.Create(ctx, model.CreateCRMSuggestionRequest{

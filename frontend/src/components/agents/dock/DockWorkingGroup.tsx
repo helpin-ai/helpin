@@ -67,6 +67,31 @@ export function DockWorkingGroup({
     if (!manuallyToggled) setOpen(false);
   }
 
+  const summary = (
+    <button
+      type="button"
+      className="-mx-1 flex w-[calc(100%+0.5rem)] items-center gap-2 rounded-md px-1 py-1.5 text-left transition-colors hover:bg-quiet-row-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-quiet-text-primary focus-visible:ring-offset-2"
+      aria-expanded={open}
+      onClick={() => {
+        setManuallyToggled(true);
+        setOpen((current) => !current);
+      }}
+    >
+      <span className={cn(
+        'flex h-4 w-4 shrink-0 items-center justify-center',
+        active ? 'text-orange-500' : 'text-emerald-600 dark:text-emerald-400',
+      )}>
+        {active ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" /> : <Tick01Icon className="h-3.5 w-3.5" />}
+      </span>
+      <span data-working-group-label className="min-w-0 truncate text-[11.5px] font-medium text-quiet-text-secondary" title={activeLabel ?? presentation.title}>
+        {label}
+      </span>
+      <span className="min-w-0 flex-1" />
+      {meta ? <span className="shrink-0 text-[11px] text-quiet-muted">{meta}</span> : null}
+      <DisclosureChevron open={open} className="h-3.5 w-3.5" />
+    </button>
+  );
+
   return (
     <section
       className="py-0.5"
@@ -74,33 +99,13 @@ export function DockWorkingGroup({
       data-working-group-id={id}
       data-working-group-active={active ? 'true' : 'false'}
     >
-      <button
-        type="button"
-        className="-mx-1 flex w-[calc(100%+0.5rem)] items-center gap-2 rounded-md px-1 py-1.5 text-left transition-colors hover:bg-quiet-row-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-quiet-text-primary focus-visible:ring-offset-2"
-        aria-expanded={open}
-        onClick={() => {
-          setManuallyToggled(true);
-          setOpen((current) => !current);
-        }}
-      >
-        <span className={cn(
-          'flex h-4 w-4 shrink-0 items-center justify-center',
-          active ? 'text-orange-500' : 'text-emerald-600 dark:text-emerald-400',
-        )}>
-          {active ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" /> : <Tick01Icon className="h-3.5 w-3.5" />}
-        </span>
-        <span data-working-group-label className="min-w-0 truncate text-[11.5px] font-medium text-quiet-text-secondary" title={activeLabel ?? presentation.title}>
-          {label}
-        </span>
-        <span className="min-w-0 flex-1" />
-        {meta ? <span className="shrink-0 text-[11px] text-quiet-muted">{meta}</span> : null}
-        <DisclosureChevron open={open} className="h-3.5 w-3.5" />
-      </button>
+      {!active && summary}
       {open ? (
         <div className="ml-[7px] mt-1 space-y-1.5 border-l border-quiet-divider-light pb-1 pl-[17px]" data-working-group-body>
           {children}
         </div>
       ) : null}
+      {active && summary}
     </section>
   );
 }

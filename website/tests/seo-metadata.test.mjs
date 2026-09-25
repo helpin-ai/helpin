@@ -4,6 +4,8 @@ import { describe, it } from 'node:test';
 import { inflateSync } from 'node:zlib';
 
 const { createPageMetadata, PAGE_SEO } = await import('../src/lib/metadata.ts');
+const { marketingMetadata } = await import('../src/app/(site)/_components/marketing-metadata.ts');
+const marketingRoutes = ['/product', '/products/customer-support', '/products/projects', '/products/crm', '/products/meetings', '/products/knowledge', '/products/ai-agents', '/developers', '/self-hosting', '/branding'];
 
 function decodeRgbaPng(png) {
   const idat = [];
@@ -73,7 +75,7 @@ describe('website SEO metadata', () => {
       assert.ok(page.title.length > 10);
       assert.ok(page.description.length >= 50 && page.description.length <= 160);
       assert.match(page.canonicalPath, /^\/(?:pricing|privacy|terms)?$/);
-      assert.match(page.imagePath, /^\/og\/helpin-[a-z-]+\.png$/);
+      assert.match(page.imagePath, /^\/og\/helpin-[a-z0-9-]+\.png$/);
       assert.match(page.imageAlt, /Helpin/);
       assert.equal(metadata.alternates?.canonical, page.canonicalPath);
       assert.equal(metadata.openGraph?.url, page.canonicalPath);
@@ -107,12 +109,26 @@ describe('website SEO metadata', () => {
     }
   });
 
+  it('gives every marketing page a public canonical and branded social image', () => {
+    for (const path of marketingRoutes) {
+      const metadata = marketingMetadata('Helpin — ' + path, path);
+      const image = metadata.openGraph.images[0];
+      assert.match(image.url, /-green-v4\.png$/);
+      assert.equal(metadata.twitter.images[0].url, image.url);
+      assert.equal(metadata.alternates.canonical, path);
+      assert.equal(metadata.openGraph.url, path);
+      assert.equal(metadata.robots.index, true);
+      assert.ok(existsSync(new URL('../public' + image.url, import.meta.url)));
+    }
+  });
+
   it('ships social images as optimized 1200 by 630 PNG files', () => {
     const images = [
-      '../public/og/helpin-home.png',
-      '../public/og/helpin-pricing.png',
-      '../public/og/helpin-privacy.png',
-      '../public/og/helpin-terms.png',
+      '../public/og/helpin-new-home-green-v4.png',
+      '../public/og/helpin-pricing-green-v4.png',
+      '../public/og/helpin-privacy-green-v4.png',
+      '../public/og/helpin-terms-green-v4.png',
+      ...marketingRoutes.map(path => '../public/og/helpin-' + path.split('/').at(-1) + '-green-v4.png'),
       '../../frontend/public/og/helpin-app.png',
       '../../frontend/public/og/helpin-shared-document.png',
     ];
@@ -127,16 +143,19 @@ describe('website SEO metadata', () => {
       assert.ok(png.byteLength < 1_000_000, `${relativePath} should stay below 1 MB`);
 
       const { width, pixels } = decodeRgbaPng(png);
-      let darkBrandPixels = 0;
+      // The mark area must contain both dark and light pixels: a mark drawn against its
+      // background, whether the card uses the light or the dark theme.
+      let darkPixels = 0;
+      let lightPixels = 0;
       for (let y = 76; y < 104; y += 1) {
         for (let x = 78; x < 116; x += 1) {
           const pixel = (y * width + x) * 4;
-          if (pixels[pixel] < 70 && pixels[pixel + 1] < 70 && pixels[pixel + 2] < 70 && pixels[pixel + 3] > 200) {
-            darkBrandPixels += 1;
-          }
+          if (pixels[pixel + 3] <= 200) continue;
+          if (pixels[pixel] < 70 && pixels[pixel + 1] < 70 && pixels[pixel + 2] < 70) darkPixels += 1;
+          if (pixels[pixel] > 200 && pixels[pixel + 1] > 200 && pixels[pixel + 2] > 200) lightPixels += 1;
         }
       }
-      assert.ok(darkBrandPixels > 100, `${relativePath} should render the Helpin mark`);
+      assert.ok(darkPixels > 100 && lightPixels > 100, `${relativePath} should render the Helpin mark`);
     }
   });
 });

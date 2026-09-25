@@ -1349,7 +1349,7 @@ export function HelpcenterTab({
 
       {/* ── Section: Domain & SEO ── */}
       <div className={cn("overflow-hidden rounded-lg border bg-card transition-shadow", isExpanded('domain-seo') ? "border-primary/20" : "border-border/60")}>
-        <button type="button" onClick={() => toggleSection('domain-seo')} className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40">
+        <button type="button" data-settings-option="helpcenter-domain" aria-expanded={isExpanded('domain-seo')} onClick={() => toggleSection('domain-seo')} className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
             <GlobeIcon className="h-4 w-4" />
           </div>

@@ -37,6 +37,7 @@ export interface SupportConversationTriage {
 }
 
 export interface SupportConversation {
+  anonymized_at?: string | null;
   id: string;
   workspace_id: string;
   mailbox_id?: string | null;
@@ -59,6 +60,7 @@ export interface SupportConversation {
   assigned_agent_id?: string;
   linked_task_id?: string;
   source: TicketSource;
+  channel?: string;
   crm_contact_id?: string;
   crm_company_id?: string | null;
   ai_state?: 'pending' | 'resolved' | 'escalated' | null;
@@ -73,6 +75,10 @@ export interface SupportConversation {
   ai_turn_count?: number;
   customer_requested_human_at?: string;
   human_takeover?: boolean | null;
+  ai_control_version?: number;
+  ai_resumed_at?: string | null;
+  ai_paused_at?: string | null;
+  ai_paused_by_user_id?: string | null;
   list_last_message_id?: string | null;
   list_last_message_at?: string | null;
   list_last_activity_at?: string | null;
@@ -89,6 +95,7 @@ export interface SupportConversation {
   state_version?: number;
   personal_state_version?: number;
   last_customer_message_id?: string | null;
+  last_customer_message_at?: string | null;
   mailbox_name?: string | null;
   mailbox_handle?: string | null;
   mailbox_icon?: string | null;
@@ -532,6 +539,8 @@ export interface SupportConversationSearchParams {
 }
 
 export interface SupportAttachmentPayload {
+  processing_status?: 'processing' | 'failed' | '';
+  processing_error?: string;
   id: string;
   file_key: string;
   file_name: string;
@@ -566,6 +575,8 @@ export interface SupportLinkSecurity {
  * server/internal/model/support_system_event.go.
  */
 export const SUPPORT_SYSTEM_EVENT_TYPES = [
+  'ai_paused',
+  'ai_returned',
   'teammate_joined',
   'assigned',
   'unassigned',
@@ -589,6 +600,10 @@ export const SUPPORT_SYSTEM_EVENT_TYPES = [
 export type SupportSystemEventType = (typeof SUPPORT_SYSTEM_EVENT_TYPES)[number];
 
 export interface SupportMessage {
+ pending_send?: string;
+ pending_failure?: string;
+ pending_send_id?: string;
+ pending_request?: CreateMessageRequest;
   id: string;
   client_message_id?: string;
   workspace_id: string;
@@ -651,6 +666,10 @@ export interface SupportMessageActionResponse {
 }
 
 export interface SupportMessageInfo {
+  email_direction?: string;
+  reply_to?: string;
+  original_text?: string;
+  translation_language?: string;
   id: string;
   sent_at: string;
   sender: {
@@ -795,6 +814,12 @@ export interface SupportAIPreviewAnswer {
 }
 
 export interface SupportAIPreviewResponse {
+  run_id?: string;
+  status?: string;
+  provider?: string;
+  model?: string;
+  profile_id?: string;
+  excluded_tools?: string[];
   conversation_source: string;
   confidence_threshold: number;
   total_tokens_used: number;
@@ -918,6 +943,7 @@ export interface SupportContentSource {
   sync_progress: number;
   indexed_pages: number;
   indexed_chunks: number;
+  last_sync_warning?: string | null;
   last_sync_error?: string | null;
   last_crawl_job_id?: string | null;
   last_sync_started_at?: string | null;
@@ -1004,11 +1030,15 @@ export interface CreateConversationRequest {
 export type SupportReplyDeliveryMode = 'chat_only' | 'chat_and_email' | 'email_only';
 
 export interface CreateMessageRequest {
+  send_original?: boolean;
+ auto_translate?: boolean;
+ translation_target_language?: string;
   content: string;
   client_message_id?: string;
   is_internal?: boolean;
   ai_assisted?: boolean;
   delivery_mode?: SupportReplyDeliveryMode;
+  email_subject?: string;
   channels?: ('chat' | 'email')[];
   cc_emails?: string[];
   bcc_emails?: string[];
@@ -1039,6 +1069,8 @@ export interface LinkTaskRequest {
 }
 
 export interface CreateTaskFromConversationRequest {
+  reviewed_draft?: boolean;
+  source_hash?: string;
   team_id: string;
   name?: string;
   description?: string;
@@ -1113,6 +1145,11 @@ export interface BusinessHoursDay {
 }
 
 export interface SupportInboxSettings {
+ translation_enabled?: boolean;
+ translation_incoming_enabled?: boolean;
+ translation_outgoing_enabled?: boolean;
+ translation_customer_language?: string;
+ default_agent_language?: string;
   require_email_before_chat: boolean;
   require_phone_after_email: boolean;
   welcome_message: string;
@@ -1120,6 +1157,7 @@ export interface SupportInboxSettings {
   ai_agent_id: string | null;
   ai_confidence_threshold: number;
   ai_response_mode: string;
+  ai_reply_channels?: 'chat' | 'email' | 'both';
   ai_max_followups: number;
   ai_follow_up_enabled: boolean;
   ai_follow_up_delay_hours: number;
@@ -1192,12 +1230,61 @@ export interface SupportRoutingUsageStatus {
   exhausted: boolean;
 }
 
-export interface SupportInstallationResponse {
+export interface WidgetOriginSettings {
+  allowed_origins: string[];
+  identity_verification_mode: 'report_only' | 'enforced';
+}
+
+export interface SupportInstallationResponse extends WidgetOriginSettings {
   id: string;
   workspace_id: string;
   widget_key: string;
+  /** Whether an identity signing secret exists. The secret is only returned by reveal/rotate. */
+  signing_secret_configured?: boolean;
   settings: SupportInboxSettings;
   active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface WidgetSigningSecretResponse {
+  secret_key: string;
+  rotated_at?: string;
+}
+
+interface SupportTranslationPreference {
+ reading_language: string;
+ auto_translate_incoming: boolean;
+ auto_translate_outgoing: boolean;
+}
+interface SupportTranslationConversation {
+ customer_language: string;
+ translation_mode: 'inherit' | 'on' | 'off';
+}
+export interface SupportTranslationOptions {
+ available: boolean;
+ unavailable_reason?: string;
+ jev_review: boolean;
+ languages: Record<string, string>;
+ detected_customer_language?: string;
+ preference: SupportTranslationPreference;
+ conversation: SupportTranslationConversation;
+}
+export interface SupportTranslation {
+  updated_at: string;
+ id: string;
+ conversation_id: string;
+ purpose: 'message_display' | 'manual_display' | 'outgoing_reply';
+ source_message_id?: string;
+ sent_message_id?: string;
+ source_text: string;
+ source_hash: string;
+ source_language: string;
+ target_language: string;
+ translated_text: string;
+ status: 'pending' | 'ready' | 'failed' | 'expired';
+ review_status: 'not_requested' | 'pending' | 'accepted' | 'needs_review' | 'unavailable' | 'shadow_accepted' | 'shadow_rejected';
+ error_code?: string;
+ created_at: string;
+ expires_at?: string;
 }

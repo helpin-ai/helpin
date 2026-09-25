@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -31,7 +32,18 @@ var (
 	ErrInvalidCredentials  = errors.New("invalid credentials")
 	ErrInvalidOAuthHandoff = errors.New("oauth handoff is invalid, expired, or already used")
 	ErrTwoFAUnavailable    = errors.New("two-factor authentication is not available")
+	ErrDemoDisabled        = errors.New("demo login is not enabled")
+	// ErrEmailVerificationPending blocks sign-in for a domain-restricted
+	// signup until its email is verified.
+	ErrEmailVerificationPending = errors.New("Verify your email address to finish signing up. Check your inbox for the link.")
 )
+
+// signupGate applies the server's signup policy to self-signup (Community).
+type signupGate interface {
+	CheckSignup(ctx context.Context, candidate SignupCandidate) error
+	CreateAccount(ctx context.Context, candidate SignupCandidate, create func(tx *gorm.DB, admission SignupAdmission) (*model.User, error)) (*model.User, SignupAdmission, error)
+	GrantEnvAdminOnVerification(ctx context.Context, user *model.User)
+}
 
 const (
 	passwordResetTTL      = time.Hour
@@ -58,20 +70,24 @@ type GoogleIdentity struct {
 
 // AuthService handles authentication business logic.
 type AuthService struct {
-	userRepo               *repository.UserRepository
-	passwordResetRepo      *repository.PasswordResetTokenRepository
-	emailVerificationRepo  *repository.EmailVerificationTokenRepository
-	oauthMobileHandoffRepo *repository.OAuthMobileHandoffRepository
-	organizationRepo       *repository.OrganizationRepository
-	workspaceRepo          *repository.WorkspaceRepository
-	jwtManager             *auth.JWTManager
-	s3Client               *storage.S3Client
-	emailClient            authEmailSender
-	customerIOIdentity     *CustomerIOIdentityService
-	productAnalytics       *ProductAnalyticsService
-	appBaseURL             string
-	encryptionKey          []byte
-	logger                 *slog.Logger
+	requireEmailVerification bool
+	userRepo                 *repository.UserRepository
+	passwordResetRepo        *repository.PasswordResetTokenRepository
+	emailVerificationRepo    *repository.EmailVerificationTokenRepository
+	oauthMobileHandoffRepo   *repository.OAuthMobileHandoffRepository
+	organizationRepo         *repository.OrganizationRepository
+	workspaceRepo            *repository.WorkspaceRepository
+	jwtManager               *auth.JWTManager
+	s3Client                 *storage.S3Client
+	emailClient              authEmailSender
+	customerIOIdentity       *CustomerIOIdentityService
+	productAnalytics         *ProductAnalyticsService
+	appBaseURL               string
+	encryptionKey            []byte
+	logger                   *slog.Logger
+	demo                     DemoConfig
+	demoHTTPClient           *http.Client
+	signupGate               signupGate
 }
 
 // NewAuthService creates a new AuthService.
@@ -88,18 +104,37 @@ func NewAuthService(
 	encryptionKey []byte,
 ) *AuthService {
 	return &AuthService{
-		userRepo:              userRepo,
-		passwordResetRepo:     passwordResetRepo,
-		emailVerificationRepo: emailVerificationRepo,
-		organizationRepo:      organizationRepo,
-		workspaceRepo:         workspaceRepo,
-		jwtManager:            jwtManager,
-		s3Client:              s3Client,
-		emailClient:           emailClient,
-		appBaseURL:            strings.TrimRight(strings.TrimSpace(appBaseURL), "/"),
-		encryptionKey:         append([]byte(nil), encryptionKey...),
-		logger:                slog.Default().With("service", "auth"),
+		requireEmailVerification: true,
+		userRepo:                 userRepo,
+		passwordResetRepo:        passwordResetRepo,
+		emailVerificationRepo:    emailVerificationRepo,
+		organizationRepo:         organizationRepo,
+		workspaceRepo:            workspaceRepo,
+		jwtManager:               jwtManager,
+		s3Client:                 s3Client,
+		emailClient:              emailClient,
+		appBaseURL:               strings.TrimRight(strings.TrimSpace(appBaseURL), "/"),
+		encryptionKey:            append([]byte(nil), encryptionKey...),
+		logger:                   slog.Default().With("service", "auth"),
 	}
+}
+
+// SetEmailVerificationRequired applies trusted edition/operator policy without
+// claiming that an unverified address has been verified.
+func (s *AuthService) SetEmailVerificationRequired(required bool) {
+	s.requireEmailVerification = required
+}
+func (s *AuthService) EmailVerificationRequired() bool { return s.requireEmailVerification }
+func (s *AuthService) AppEmailConfigured() bool        { return appEmailReady(s.emailClient) }
+
+// SetSignupGate applies a server signup policy to self-signup. Without one
+// (Enterprise), anyone may sign up and no account becomes a server admin.
+func (s *AuthService) SetSignupGate(gate *InstanceService) {
+	if gate == nil {
+		s.signupGate = nil
+		return
+	}
+	s.signupGate = gate
 }
 
 func (s *AuthService) SetCustomerIOIdentityService(identity *CustomerIOIdentityService) {
@@ -124,6 +159,13 @@ func (s *AuthService) Signup(ctx context.Context, req model.SignupRequest) (*mod
 	if isDisposableEmailDomain(req.Email) {
 		return nil, fmt.Errorf("temporary email addresses are not allowed")
 	}
+	candidate := SignupCandidate{Email: req.Email}
+	if s.signupGate != nil {
+		// Reject by policy before revealing whether the address has an account.
+		if err := s.signupGate.CheckSignup(ctx, candidate); err != nil {
+			return nil, err
+		}
+	}
 
 	existing, err := s.userRepo.GetByEmail(ctx, req.Email)
 	if err != nil {
@@ -141,22 +183,31 @@ func (s *AuthService) Signup(ctx context.Context, req model.SignupRequest) (*mod
 		return nil, fmt.Errorf("hash password: %w", err)
 	}
 
-	user, err := s.userRepo.Create(ctx, req.Email, hash, req.FullName)
+	user, admission, err := s.createSignupUser(ctx, candidate, &model.User{Email: req.Email, PasswordHash: hash, FullName: req.FullName})
 	if err != nil {
+		if isSignupPolicyError(err) {
+			return nil, err
+		}
 		s.logger.ErrorContext(ctx, "failed to create user", "email", req.Email, "error", err)
 		return nil, fmt.Errorf("create user: %w", err)
-	}
-
-	accessToken, refreshToken, err := s.generateTokenPairForUser(user, false, false)
-	if err != nil {
-		s.logger.ErrorContext(ctx, "failed to generate tokens after signup", "user_id", user.ID, "error", err)
-		return nil, fmt.Errorf("generate tokens: %w", err)
 	}
 
 	s.logger.InfoContext(ctx, "user signed up", "user_id", user.ID, "email", user.Email)
 
 	if err := s.sendEmailVerification(ctx, user); err != nil {
 		s.logger.ErrorContext(ctx, "failed to prepare verification email after signup", "user_id", user.ID, "email", user.Email, "error", err)
+	}
+	if admission.VerificationRequired {
+		// No session until the address is verified; the organization is
+		// created now so the first sign-in lands in a working account.
+		s.autoCreateOrganization(ctx, user)
+		return &model.AuthResponse{User: toUserProfile(user), VerificationRequired: true}, nil
+	}
+
+	accessToken, refreshToken, err := s.generateTokenPairForUser(user, false, false)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to generate tokens after signup", "user_id", user.ID, "error", err)
+		return nil, fmt.Errorf("generate tokens: %w", err)
 	}
 
 	// Auto-create a default organization for the new user.
@@ -183,6 +234,23 @@ func (s *AuthService) Signup(ctx context.Context, req model.SignupRequest) (*mod
 		RefreshToken: refreshToken,
 		User:         toUserProfile(user),
 	}, nil
+}
+
+// createSignupUser inserts a self-signup account, through the signup gate
+// when one is configured.
+func (s *AuthService) createSignupUser(ctx context.Context, candidate SignupCandidate, user *model.User) (*model.User, SignupAdmission, error) {
+	if s.signupGate == nil {
+		created, err := s.userRepo.CreateUser(ctx, user)
+		return created, SignupAdmission{}, err
+	}
+	return s.signupGate.CreateAccount(ctx, candidate, func(tx *gorm.DB, admission SignupAdmission) (*model.User, error) {
+		user.SignupVerificationPending = admission.VerificationRequired
+		return repository.NewUserRepository(tx).CreateUser(ctx, user)
+	})
+}
+
+func isSignupPolicyError(err error) bool {
+	return errors.Is(err, ErrSignupInviteOnly) || errors.Is(err, ErrSignupDomainNotAllowed) || errors.Is(err, ErrSignupVerificationUnavailable)
 }
 
 // SignInWithGoogle creates or signs in a user from a verified Google OAuth identity.
@@ -213,7 +281,7 @@ func (s *AuthService) SignInWithGoogle(ctx context.Context, identity GoogleIdent
 		if err != nil {
 			return nil, fmt.Errorf("hash oauth password placeholder: %w", err)
 		}
-		user, err = s.userRepo.CreateUser(ctx, &model.User{
+		user, _, err = s.createSignupUser(ctx, SignupCandidate{Email: email, EmailVerified: true}, &model.User{
 			Email:           email,
 			PasswordHash:    passwordHash,
 			FullName:        fullName,
@@ -221,6 +289,9 @@ func (s *AuthService) SignInWithGoogle(ctx context.Context, identity GoogleIdent
 			EmailVerifiedAt: &now,
 		})
 		if err != nil {
+			if isSignupPolicyError(err) {
+				return nil, err
+			}
 			return nil, fmt.Errorf("create google user: %w", err)
 		}
 		s.autoCreateOrganization(ctx, user)
@@ -394,6 +465,14 @@ func (s *AuthService) Signin(ctx context.Context, req model.SigninRequest) (*mod
 		s.logger.InfoContext(ctx, "signin failed invalid password", "user_id", user.ID, "email", req.Email)
 		return nil, ErrInvalidCredentials
 	}
+	if user.SignupVerificationPending && user.EmailVerifiedAt == nil {
+		// The password proves this is the account holder, so a fresh link is
+		// safe to send.
+		if err := s.sendEmailVerification(ctx, user); err != nil {
+			s.logger.ErrorContext(ctx, "resend signup verification failed", "user_id", user.ID, "error", err)
+		}
+		return nil, ErrEmailVerificationPending
+	}
 
 	if user.TOTPVerified {
 		if len(s.encryptionKey) != 32 {
@@ -475,12 +554,21 @@ func (s *AuthService) VerifyEmail(ctx context.Context, rawToken string) (*model.
 	if user == nil {
 		return nil, fmt.Errorf("user not found")
 	}
+	if s.signupGate != nil {
+		s.signupGate.GrantEnvAdminOnVerification(ctx, user)
+	}
 	profile := toUserProfile(user)
 	return &profile, nil
 }
 
 // ResendEmailVerification sends a fresh verification email for an unverified user.
 func (s *AuthService) ResendEmailVerification(ctx context.Context, userID string) error {
+	if !s.requireEmailVerification {
+		return fmt.Errorf("email verification is disabled for this installation")
+	}
+	if !appEmailReady(s.emailClient) {
+		return fmt.Errorf("application email is not configured")
+	}
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return err
@@ -1052,6 +1140,9 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID string, req mod
 
 // ForgotPassword creates a single-use reset token and emails a reset link when the user exists.
 func (s *AuthService) ForgotPassword(ctx context.Context, req model.ForgotPasswordRequest) error {
+	if !appEmailReady(s.emailClient) {
+		return fmt.Errorf("password reset is unavailable: application email is not configured")
+	}
 	emailAddr := strings.ToLower(strings.TrimSpace(req.Email))
 	if emailAddr == "" {
 		return fmt.Errorf("email is required")
@@ -1084,7 +1175,7 @@ func (s *AuthService) ForgotPassword(ctx context.Context, req model.ForgotPasswo
 		ExpiresAt: now.Add(passwordResetTTL),
 	}
 
-	if s.emailClient == nil {
+	if !appEmailReady(s.emailClient) {
 		s.logger.WarnContext(ctx, "password reset requested but email client not configured", "user_id", user.ID, "email", emailAddr)
 		return nil
 	}
@@ -1211,6 +1302,7 @@ func toUserProfile(u *model.User) model.UserProfile {
 		DefaultWorkspaceID:    u.DefaultWorkspaceID,
 		TwoFAEnabled:          u.TOTPVerified,
 		IsPlatformAdmin:       u.IsPlatformAdmin,
+		IsServerAdmin:         u.IsServerAdmin,
 		EmailVerified:         u.EmailVerifiedAt != nil,
 		EmailVerifiedAt:       u.EmailVerifiedAt,
 		CreatedAt:             u.CreatedAt,
@@ -1339,6 +1431,9 @@ func (s *AuthService) sendEmailVerification(ctx context.Context, user *model.Use
 	if user == nil || user.EmailVerifiedAt != nil || s.emailVerificationRepo == nil {
 		return nil
 	}
+	if !s.requireEmailVerification && !user.SignupVerificationPending {
+		return nil
+	}
 	rawToken, tokenHash, err := generateEmailVerificationToken()
 	if err != nil {
 		return err
@@ -1354,7 +1449,7 @@ func (s *AuthService) sendEmailVerification(ctx context.Context, user *model.Use
 	}); err != nil {
 		return err
 	}
-	if s.emailClient == nil {
+	if !appEmailReady(s.emailClient) {
 		s.logger.WarnContext(ctx, "verification email requested but email client not configured", "user_id", user.ID, "email", user.Email)
 		return nil
 	}

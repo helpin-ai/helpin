@@ -4,6 +4,7 @@ import { useTitle } from '@/hooks/useTitle';
 import { useAuthStore } from '@/stores/authStore';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { passkeyService } from '@/lib/services/passkeyService';
+import { selfSignupAllowed } from '@/lib/services/authService';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -13,6 +14,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { PublicPageShell } from '@/components/layout/PublicPageShell';
 import { toast } from 'sonner';
 import { consumeRedirectAfterLogin, loginRedirectFromSearch } from '@/lib/authRedirect';
+import { loginDestination } from '@/lib/signupRedirect';
 
 export default function Login() {
   useTitle('Sign In');
@@ -28,6 +30,7 @@ export default function Login() {
   const passkeySupported = passkeyService.isSupported();
   const redirect = loginRedirectFromSearch();
   const registerHref = redirect ? `/register?redirect=${encodeURIComponent(redirect)}` : '/register';
+  const signupAllowed = selfSignupAllowed(useAuthStore((state) => state.configuration));
 
   const completeLoginRedirect = async (isCancelled?: () => boolean) => {
     const redirect = loginRedirectFromSearch() ?? consumeRedirectAfterLogin();
@@ -42,16 +45,11 @@ export default function Login() {
       return;
     }
 
-    if (workspaces && workspaces.length > 0) {
-      const user = useAuthStore.getState().user;
-      const defaultWs = user?.default_workspace_id
-        ? workspaces.find((w) => w.id === user.default_workspace_id)
-        : null;
-      const targetSlug = defaultWs ? defaultWs.slug : workspaces[0].slug;
-      navigate({ to: '/w/$slug/pm/my-work', params: { slug: targetSlug } });
-    } else {
-      navigate({ to: '/workspaces' });
-    }
+    // Without a workspace, the person continues in the full onboarding flow.
+    navigate(loginDestination({
+      workspaces,
+      defaultWorkspaceId: useAuthStore.getState().user?.default_workspace_id,
+    }));
   };
 
   useEffect(() => {
@@ -178,13 +176,13 @@ export default function Login() {
     <PublicPageShell>
       <Card className="w-full">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Sign in</CardTitle>
+          <CardTitle role="heading" aria-level={1} className="text-2xl">{twoFaToken ? 'Verify it’s you' : 'Welcome back'}</CardTitle>
           <CardDescription>
             {twoFaToken
               ? useRecoveryCode
                 ? 'Enter one of your saved recovery codes.'
                 : 'Enter the 6-digit code from your authenticator app.'
-              : 'Enter your email and password.'}
+              : 'Sign in to your Helpin workspace.'}
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
@@ -286,11 +284,13 @@ export default function Login() {
                 )}
               </>
             )}
-            {!twoFaToken && (
+            {!twoFaToken && (signupAllowed ? (
               <p className="text-sm text-muted-foreground">
                 Don't have an account? <Link to={registerHref as '/register'} className="text-primary hover:underline">Sign up</Link>
               </p>
-            )}
+            ) : (
+              <p className="text-sm text-muted-foreground">New here? Ask your admin for an invite.</p>
+            ))}
           </CardFooter>
         </form>
       </Card>

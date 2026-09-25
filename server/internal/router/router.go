@@ -1,6 +1,7 @@
 package router
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -12,10 +13,13 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/handler"
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/observability"
 )
 
 // Handlers aggregates all HTTP handlers.
 type Handlers struct {
+	Metrics                *observability.Metrics
+	AuthenticatedRateLimit func(http.Handler) http.Handler
 	// WidgetRateLimit guards the unauthenticated /widget write endpoints
 	// (nil disables limiting, e.g. when Redis is not configured).
 	WidgetRateLimit func(http.Handler) http.Handler
@@ -24,14 +28,20 @@ type Handlers struct {
 	// (nil disables limiting, e.g. when Redis is not configured).
 	HelpcenterAnswerRateLimit func(http.Handler) http.Handler
 
+	// DemoReadOnly rejects every non-read request made by the shared public demo
+	// viewer account (nil when the demo login is not configured).
+	DemoReadOnly func(http.Handler) http.Handler
+
+	Assets              *handler.AssetHandler
 	Health              *handler.HealthHandler
 	Auth                *handler.AuthHandler
 	Passkey             *handler.PasskeyHandler
 	Organization        *handler.OrganizationHandler
 	Workspace           *handler.WorkspaceHandler
 	Setup               *handler.SetupHandler
-	Billing             *handler.BillingHandler
-	AIUsage             *handler.AIUsageHandler
+	Capability          *handler.CapabilityHandler
+	SampleData          *handler.SampleDataHandler
+	Edition             EditionRoutes
 	Settings            *handler.SettingsHandler
 	Automation          *handler.AutomationHandler
 	Invite              *handler.InviteHandler
@@ -43,6 +53,7 @@ type Handlers struct {
 	PMAISuggestion      *handler.PMAISuggestionHandler
 	PMTask              *handler.PMTaskHandler
 	PMTaskInsights      *handler.PMTaskInsightsHandler
+	PMTriage            *handler.PMTriageHandler
 	PMComment           *handler.PMCommentHandler
 	PMAttachment        *handler.PMAttachmentHandler
 	PMObjective         *handler.PMObjectiveHandler
@@ -58,6 +69,9 @@ type Handlers struct {
 	PublicShare         *handler.PublicShareHandler
 	Agent               *handler.AgentHandler
 	AgentRuntimeHost    *handler.AgentRuntimeHostHandler
+	AIConnection        *handler.AIConnectionHandler
+	AIProfile           *handler.AIProfileHandler
+	CLI                 *handler.CLIHandler
 	MCP                 *handler.MCPHandler
 	ExternalMCP         *handler.ExternalMCPHandler
 	SupportInbox        *handler.SupportInboxHandler
@@ -65,6 +79,7 @@ type Handlers struct {
 	SupportTag          *handler.SupportTagHandler
 	SupportInboxWidget  *handler.SupportInboxWidgetHandler
 	Git                 *handler.GitHandler
+	GitHubApp           *handler.GitHubAppHandler
 	Docs                *handler.DocsHandler
 	TLSAsk              *handler.TLSAskHandler
 	Notification        *handler.NotificationHandler
@@ -79,6 +94,7 @@ type Handlers struct {
 	CRMMeeting          *handler.CRMMeetingHandler
 	CRMImport           *handler.CRMImportHandler
 	CRMEmail            *handler.CRMEmailHandler
+	CRMOutreach         *handler.CRMOutreachHandler
 	CRMCalendar         *handler.CRMCalendarHandler
 	CRMEnrichment       *handler.CRMEnrichmentHandler
 	CRMSignal           *handler.CRMSignalHandler
@@ -99,6 +115,9 @@ type Handlers struct {
 	EmailImageProxy     *handler.EmailImageProxyHandler
 	AdminWebhookEvent   *handler.AdminWebhookEventHandler
 	AdminEmailQueue     *handler.AdminEmailQueueHandler
+
+	// Instance serves self-hosted server administration; nil outside Community.
+	Instance *handler.InstanceHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -114,6 +133,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 	r.Use(chimiddleware.RequestID)
 	r.Use(chimiddleware.RealIP)
 	r.Use(middleware.RequestLogger)
+	if h.Metrics != nil {
+		r.Use(h.Metrics.HTTP)
+	}
 	r.Use(chimiddleware.Recoverer)
 	r.Use(middleware.SentryHTTP)
 	r.Use(middleware.SentryRequestContext)
@@ -148,14 +170,18 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		return authorization.RequireAnyPermission(authz, authorization.PermPMEdit, authorization.PermDocsEdit, authorization.PermCRMEdit, authorization.PermSupportEdit)
 	}
 	requireModule := func(module model.ModuleID) func(http.Handler) http.Handler {
-		return authorization.RequireModuleAccess(authz, module)
+		return authorization.RequireProductModule(authz, module)
 	}
 	wsAccess := authorization.RequireWorkspaceAccess(authz)
 	wsActive := wsAccess
-	if h.Billing != nil {
+	if h.Edition != nil {
 		wsActive = func(next http.Handler) http.Handler {
-			return wsAccess(h.Billing.RequireUnlockedWorkspace(next))
+			return wsAccess(h.Edition.RequireActiveWorkspace(next))
 		}
+	}
+
+	if h.Assets != nil {
+		r.Get("/api/public/assets/*", h.Assets.Public)
 	}
 
 	// Root endpoint — responds on bare domain requests.
@@ -172,10 +198,15 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		MaxAge:           3600,
 	})).Get("/view_headers", h.Health.ViewHeaders)
 	r.Get("/health", h.Health.Check)
+	if h.CLI != nil {
+		r.Get("/agent-runtime/cli.json", h.CLI.Discovery)
+		r.Get("/.well-known/oauth-authorization-server/api/cli/oauth", h.CLI.Metadata)
+	}
 	if h.MCP != nil {
 		r.Get("/.well-known/oauth-authorization-server", h.MCP.AuthorizationServerMetadata)
 		r.Get("/.well-known/oauth-protected-resource", h.MCP.ProtectedResourceMetadata)
 		r.Handle("/mcp", http.HandlerFunc(h.MCP.Protocol))
+		r.Handle("/mcp/readonly", http.HandlerFunc(h.MCP.Protocol))
 	}
 
 	// ---- Public widget routes for client.helpin.ai (no JWT, open CORS) ----
@@ -183,7 +214,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 	r.Route("/widget", func(r chi.Router) {
 		r.Use(cors.Handler(cors.Options{
 			AllowedOrigins:   []string{"*"},
-			AllowedMethods:   []string{"GET", "POST", "PATCH", "OPTIONS"},
+			AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
 			AllowedHeaders:   []string{"Content-Type", "X-Session-Token"},
 			AllowCredentials: false,
 			MaxAge:           3600,
@@ -191,27 +222,32 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		if h.WidgetRateLimit != nil {
 			r.Use(h.WidgetRateLimit)
 		}
-		r.Get("/config", h.SupportInboxWidget.GetConfig)
-		r.Post("/session", h.SupportInboxWidget.CreateSession)
-		r.Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
-		r.Post("/messages", h.SupportInboxWidget.SendMessage)
-		r.Post("/conversations/{conversationId}/transcript", h.SupportInboxWidget.SendTranscript)
-		r.Post("/support/conversations/{conversationId}/transcript", h.SupportInboxWidget.SendTranscript)
-		r.Post("/typing", h.SupportInboxWidget.TypingIndicator) // Deprecated: use WebSocket typing:start/typing:stop instead. Kept as HTTP fallback.
-		r.Get("/messages", h.SupportInboxWidget.GetMessages)
-		r.Get("/settings/{id}", h.SupportInboxWidget.GetConfigByID)
+		if h.Metrics != nil {
+			r.With(h.SupportInboxWidget.RequireOrigin).Post("/telemetry", handler.WidgetTelemetry(h.Metrics))
+		}
+		r.With(h.SupportInboxWidget.RequireOrigin).Get("/config", h.SupportInboxWidget.GetConfig)
+		r.With(h.SupportInboxWidget.RequireOrigin).Post("/session", h.SupportInboxWidget.CreateSession)
+		r.With(h.SupportInboxWidget.RequireOrigin).Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
+		r.With(h.SupportInboxWidget.RequireOrigin).Post("/messages", h.SupportInboxWidget.SendMessage)
+		r.With(h.SupportInboxWidget.RequireOrigin).Post("/messages/{messageId}/feedback", h.SupportInboxWidget.SubmitAnswerFeedback)
+		r.With(h.SupportInboxWidget.RequireOrigin).Post("/conversations/{conversationId}/transcript", h.SupportInboxWidget.SendTranscript)
+		r.With(h.SupportInboxWidget.RequireOrigin).Post("/support/conversations/{conversationId}/transcript", h.SupportInboxWidget.SendTranscript)
+		r.With(h.SupportInboxWidget.RequireOrigin).Post("/typing", h.SupportInboxWidget.TypingIndicator) // Deprecated: use WebSocket typing:start/typing:stop instead. Kept as HTTP fallback.
+		r.With(h.SupportInboxWidget.RequireOrigin).Get("/messages", h.SupportInboxWidget.GetMessages)
+		r.With(h.SupportInboxWidget.RequireOrigin).Get("/settings/{id}", h.SupportInboxWidget.GetConfigByID)
 		if h.SupportAttachment != nil {
-			r.Post("/support/attachments", h.SupportAttachment.WidgetCreate)
-			r.Patch("/support/attachments/{attachmentId}/confirm", h.SupportAttachment.WidgetConfirmUpload)
+			r.With(h.SupportInboxWidget.RequireOrigin).Post("/support/attachments", h.SupportAttachment.WidgetCreate)
+			r.With(h.SupportInboxWidget.RequireOrigin).Patch("/support/attachments/{attachmentId}/confirm", h.SupportAttachment.WidgetConfirmUpload)
+			r.With(h.SupportInboxWidget.RequireOrigin).Delete("/support/attachments/{attachmentId}", h.SupportAttachment.WidgetDelete)
 		}
 		// Help center routes (used by widget-core helpApi.ts)
-		r.Get("/support/help/spaces/{spaceSlug}/collections", h.SupportInboxWidget.GetHelpCollections)
-		r.Get("/support/help/collections/{collectionSlug}/articles", h.SupportInboxWidget.GetHelpArticles)
-		r.Get("/support/help/search", h.SupportInboxWidget.SearchHelpArticles)
-		r.Get("/support/help/articles/{articleKey}", h.SupportInboxWidget.GetHelpArticle)
-		r.Post("/identify", h.SupportInboxWidget.Identify) // SDK identify/lead path
+		r.With(h.SupportInboxWidget.RequireOrigin).Get("/support/help/spaces/{spaceSlug}/collections", h.SupportInboxWidget.GetHelpCollections)
+		r.With(h.SupportInboxWidget.RequireOrigin).Get("/support/help/collections/{collectionSlug}/articles", h.SupportInboxWidget.GetHelpArticles)
+		r.With(h.SupportInboxWidget.RequireOrigin).Get("/support/help/search", h.SupportInboxWidget.SearchHelpArticles)
+		r.With(h.SupportInboxWidget.RequireOrigin).Get("/support/help/articles/{articleKey}", h.SupportInboxWidget.GetHelpArticle)
+		r.With(h.SupportInboxWidget.RequireOrigin).Post("/identify", h.SupportInboxWidget.Identify) // SDK identify/lead path
 		if h.SupportAI != nil {
-			r.Post("/support/{conversationId}/escalate", h.SupportAI.EscalateToHuman)
+			r.With(h.SupportInboxWidget.RequireOrigin).Post("/support/{conversationId}/escalate", h.SupportAI.EscalateToHuman)
 		}
 	})
 
@@ -263,14 +299,34 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(apiCORS)
+		r.NotFound(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(model.APIError{Error: "API route not found"})
+		})
+		r.MethodNotAllowed(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			_ = json.NewEncoder(w).Encode(model.APIError{Error: "API method not allowed"})
+		})
+		if h.CRMOutreach != nil {
+			r.Get("/crm/outreach/unsubscribe/{token}", h.CRMOutreach.Unsubscribe)
+			r.Post("/crm/outreach/unsubscribe/{token}", h.CRMOutreach.Unsubscribe)
+		}
 
 		// ---- Public routes ----
+		r.Get("/auth/config", h.Auth.GetConfig)
 		r.Post("/auth/signup", h.Auth.Signup)
 		r.Post("/auth/verify-email", h.Auth.VerifyEmail)
 		r.Get("/auth/google/start", h.Auth.GoogleStart)
 		r.Get("/auth/google/callback", h.Auth.GoogleCallback)
 		r.Post("/auth/google/mobile-exchange", h.Auth.GoogleMobileExchange)
 		r.Post("/auth/signin", h.Auth.Signin)
+		if h.WidgetRateLimit != nil {
+			r.With(h.WidgetRateLimit).Post("/auth/demo", h.Auth.DemoSignin)
+		} else {
+			r.Post("/auth/demo", h.Auth.DemoSignin)
+		}
 		r.Post("/auth/passkey/authentication-options", h.Passkey.AuthenticationOptions)
 		r.Post("/auth/passkey/authenticate", h.Passkey.Authenticate)
 		r.Post("/auth/2fa/verify-signin", h.Auth.Verify2FASignin)
@@ -278,6 +334,19 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Post("/auth/reset-password", h.Auth.ResetPassword)
 		r.Post("/auth/refresh", h.Auth.RefreshToken)
 		r.Post("/auth/signout", h.Auth.Signout)
+		if h.CLI != nil {
+			r.Get("/cli/oauth/authorize", h.CLI.AuthorizeRedirect)
+			r.Post("/cli/oauth/token", h.CLI.Token)
+			r.Post("/cli/oauth/revoke", h.CLI.RevokeToken)
+			r.Get("/cli/v1/me", h.CLI.Me)
+			r.Get("/cli/v1/agents", h.CLI.Agents)
+			r.Post("/cli/v1/runs", h.CLI.Admit)
+			r.Post("/cli/v1/runs/{run_id}/model", h.CLI.Model)
+			r.Post("/cli/v1/runs/{run_id}/events", h.CLI.Report)
+			r.Post("/cli/v1/runs/{run_id}/artifacts", h.CLI.Artifact)
+			r.Get("/cli/v1/runs/{run_id}/execution", h.CLI.Execution)
+			r.Post("/cli/v1/runs/{run_id}/{action:bind|renew|revoke}", h.CLI.Execution)
+		}
 		if h.MCP != nil {
 			r.Post("/mcp/oauth/register", h.MCP.RegisterClient)
 			r.Get("/mcp/oauth/authorize", h.MCP.AuthorizeRedirect)
@@ -285,8 +354,12 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Post("/mcp/oauth/revoke", h.MCP.RevokeToken)
 		}
 		r.Get("/health", h.Health.Check)
-		if h.AIUsage != nil {
-			r.Get("/ai-pricing", h.AIUsage.Pricing)
+		if h.Capability != nil {
+			// Operator tooling (helpin doctor) authenticates with the internal secret.
+			r.With(middleware.RequireInternalAPISecret).Get("/instance/capabilities", h.Capability.Instance)
+		}
+		if h.Edition != nil {
+			h.Edition.RegisterPublic(r)
 		}
 		r.Get("/system/ensure-cors", h.Health.EnsureStorageCORS)
 		r.Get("/invitations/info", h.Invite.GetInfo)
@@ -295,15 +368,15 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		// ---- Public git webhook (no JWT) ----
 		r.Get("/git/github/callback", h.Git.GitHubCallback)
 		r.Post("/git/webhook", h.Git.Webhook)
+		if h.GitHubApp != nil {
+			r.Get("/github/app-manifest/callback", h.GitHubApp.ManifestCallback)
+		}
 		if h.PostmarkInbound != nil {
 			r.Post("/webhooks/postmark/inbound", h.PostmarkInbound.PostmarkInbound)
 			r.Post("/webhooks/postmark/open", h.PostmarkInbound.PostmarkOpen)
 			r.Post("/webhooks/postmark/delivery", h.PostmarkInbound.PostmarkDelivery)
 			r.Post("/webhooks/postmark/bounce", h.PostmarkInbound.PostmarkBounce)
 			r.Post("/webhooks/postmark/spam-complaint", h.PostmarkInbound.PostmarkSpamComplaint)
-		}
-		if h.Billing != nil {
-			r.Post("/webhooks/stripe", h.Billing.StripeWebhook)
 		}
 		if h.CRMMeeting != nil {
 			r.Post("/webhooks/meeting-capture/{provider}", h.CRMMeeting.Webhook)
@@ -371,7 +444,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Route("/widget/support", func(r chi.Router) {
 			r.Use(cors.Handler(cors.Options{
 				AllowedOrigins:   []string{"*"},
-				AllowedMethods:   []string{"GET", "POST", "PATCH", "OPTIONS"},
+				AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
 				AllowedHeaders:   []string{"Content-Type", "X-Session-Token"},
 				AllowCredentials: false,
 				MaxAge:           3600,
@@ -379,23 +452,24 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			if h.WidgetRateLimit != nil {
 				r.Use(h.WidgetRateLimit)
 			}
-			r.Get("/config", h.SupportInboxWidget.GetConfig)
-			r.Get("/help/spaces/{spaceSlug}/collections", h.SupportInboxWidget.GetHelpCollections)
-			r.Get("/help/collections/{collectionSlug}/articles", h.SupportInboxWidget.GetHelpArticles)
-			r.Get("/help/search", h.SupportInboxWidget.SearchHelpArticles)
-			r.Get("/help/articles/{articleKey}", h.SupportInboxWidget.GetHelpArticle)
-			r.Post("/session", h.SupportInboxWidget.CreateSession)
-			r.Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
-			r.Post("/messages", h.SupportInboxWidget.SendMessage)
-			r.Post("/conversations/{conversationId}/transcript", h.SupportInboxWidget.SendTranscript)
-			r.Post("/typing", h.SupportInboxWidget.TypingIndicator) // Deprecated: use WebSocket typing:start/typing:stop instead. Kept as HTTP fallback.
-			r.Get("/messages", h.SupportInboxWidget.GetMessages)
+			r.With(h.SupportInboxWidget.RequireOrigin).Get("/config", h.SupportInboxWidget.GetConfig)
+			r.With(h.SupportInboxWidget.RequireOrigin).Get("/help/spaces/{spaceSlug}/collections", h.SupportInboxWidget.GetHelpCollections)
+			r.With(h.SupportInboxWidget.RequireOrigin).Get("/help/collections/{collectionSlug}/articles", h.SupportInboxWidget.GetHelpArticles)
+			r.With(h.SupportInboxWidget.RequireOrigin).Get("/help/search", h.SupportInboxWidget.SearchHelpArticles)
+			r.With(h.SupportInboxWidget.RequireOrigin).Get("/help/articles/{articleKey}", h.SupportInboxWidget.GetHelpArticle)
+			r.With(h.SupportInboxWidget.RequireOrigin).Post("/session", h.SupportInboxWidget.CreateSession)
+			r.With(h.SupportInboxWidget.RequireOrigin).Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
+			r.With(h.SupportInboxWidget.RequireOrigin).Post("/messages", h.SupportInboxWidget.SendMessage)
+			r.With(h.SupportInboxWidget.RequireOrigin).Post("/messages/{messageId}/feedback", h.SupportInboxWidget.SubmitAnswerFeedback)
+			r.With(h.SupportInboxWidget.RequireOrigin).Post("/conversations/{conversationId}/transcript", h.SupportInboxWidget.SendTranscript)
+			r.With(h.SupportInboxWidget.RequireOrigin).Post("/typing", h.SupportInboxWidget.TypingIndicator) // Deprecated: use WebSocket typing:start/typing:stop instead. Kept as HTTP fallback.
+			r.With(h.SupportInboxWidget.RequireOrigin).Get("/messages", h.SupportInboxWidget.GetMessages)
 			if h.SupportAI != nil {
-				r.Post("/{conversationId}/escalate", h.SupportAI.EscalateToHuman)
+				r.With(h.SupportInboxWidget.RequireOrigin).Post("/{conversationId}/escalate", h.SupportAI.EscalateToHuman)
 			}
 			if h.SupportAttachment != nil {
-				r.Post("/attachments", h.SupportAttachment.WidgetCreate)
-				r.Patch("/attachments/{attachmentId}/confirm", h.SupportAttachment.WidgetConfirmUpload)
+				r.With(h.SupportInboxWidget.RequireOrigin).Post("/attachments", h.SupportAttachment.WidgetCreate)
+				r.With(h.SupportInboxWidget.RequireOrigin).Patch("/attachments/{attachmentId}/confirm", h.SupportAttachment.WidgetConfirmUpload)
 			}
 		})
 
@@ -408,7 +482,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				AllowCredentials: false,
 				MaxAge:           3600,
 			}))
-			r.Get("/{id}", h.SupportInboxWidget.GetConfigByID)
+			r.With(h.SupportInboxWidget.RequireOrigin).Get("/{id}", h.SupportInboxWidget.GetConfigByID)
 		})
 
 		// ---- Public widget routes for client.helpin.ai (no JWT, open CORS) ----
@@ -421,19 +495,27 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				AllowCredentials: false,
 				MaxAge:           3600,
 			}))
-			r.Get("/config", h.SupportInboxWidget.GetConfig)
-			r.Post("/session", h.SupportInboxWidget.CreateSession)
-			r.Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
-			r.Post("/messages", h.SupportInboxWidget.SendMessage)
-			r.Post("/typing", h.SupportInboxWidget.TypingIndicator) // Deprecated: use WebSocket typing:start/typing:stop instead. Kept as HTTP fallback.
-			r.Get("/messages", h.SupportInboxWidget.GetMessages)
-			r.Get("/settings/{id}", h.SupportInboxWidget.GetConfigByID)
-			r.Post("/identify", h.SupportInboxWidget.Identify) // Headless SDK identify/lead path
+			r.With(h.SupportInboxWidget.RequireOrigin).Get("/config", h.SupportInboxWidget.GetConfig)
+			r.With(h.SupportInboxWidget.RequireOrigin).Post("/session", h.SupportInboxWidget.CreateSession)
+			r.With(h.SupportInboxWidget.RequireOrigin).Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
+			r.With(h.SupportInboxWidget.RequireOrigin).Post("/messages", h.SupportInboxWidget.SendMessage)
+			if h.WidgetRateLimit != nil {
+				r.With(h.WidgetRateLimit, h.SupportInboxWidget.RequireOrigin).Post("/messages/{messageId}/feedback", h.SupportInboxWidget.SubmitAnswerFeedback)
+			} else {
+				r.With(h.SupportInboxWidget.RequireOrigin).Post("/messages/{messageId}/feedback", h.SupportInboxWidget.SubmitAnswerFeedback)
+			}
+			r.With(h.SupportInboxWidget.RequireOrigin).Post("/typing", h.SupportInboxWidget.TypingIndicator) // Deprecated: use WebSocket typing:start/typing:stop instead. Kept as HTTP fallback.
+			r.With(h.SupportInboxWidget.RequireOrigin).Get("/messages", h.SupportInboxWidget.GetMessages)
+			r.With(h.SupportInboxWidget.RequireOrigin).Get("/settings/{id}", h.SupportInboxWidget.GetConfigByID)
+			r.With(h.SupportInboxWidget.RequireOrigin).Post("/identify", h.SupportInboxWidget.Identify) // Headless SDK identify/lead path
 		})
 
 		// ---- Internal service-to-service routes (bearer token auth) ----
 		r.Route("/internal", func(r chi.Router) {
 			r.Use(middleware.RequireInternalAPISecret)
+			if h.AIConnection != nil {
+				r.Post("/agent-runtime/model-credentials/refresh", h.AIConnection.Refresh)
+			}
 			r.Get("/widget-tokens", h.SupportInboxWidget.GetWidgetTokens)
 			if h.AgentRuntimeHost != nil {
 				r.Route("/agent-runtime", func(r chi.Router) {
@@ -454,6 +536,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Route("/admin", func(r chi.Router) {
 			r.Use(middleware.AdminAuditLogger(jwtManager))
 			r.Use(middleware.RequireAuth(jwtManager))
+			if h.AuthenticatedRateLimit != nil {
+				r.Use(h.AuthenticatedRateLimit)
+			}
 			r.Use(authorization.RequirePlatformAdmin)
 			r.Get("/webhook-events", h.AdminWebhookEvent.List)
 			r.Get("/webhook-events/{id}", h.AdminWebhookEvent.GetByID)
@@ -465,8 +550,46 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		// ---- Protected routes ----
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAuth(jwtManager))
+			if h.DemoReadOnly != nil {
+				r.Use(h.DemoReadOnly)
+			}
+			if h.AuthenticatedRateLimit != nil {
+				r.Use(h.AuthenticatedRateLimit)
+			}
+			r.Use(authorization.RequireDeploymentAccess(authz))
+			if h.AIConnection != nil {
+				r.Route("/ai-connections", func(r chi.Router) {
+					r.Use(middleware.RequireWorkspaceID)
+					r.Use(wsActive)
+					r.Get("/", h.AIConnection.List)
+					r.Get("/endpoints", h.AIConnection.Endpoints)
+					r.Post("/", h.AIConnection.Create)
+					r.Post("/{connectionID}/poll", h.AIConnection.Poll)
+					r.Post("/{connectionID}/reconnect", h.AIConnection.Reconnect)
+					r.Post("/{connectionID}/test", h.AIConnection.Test)
+					r.Delete("/{connectionID}", h.AIConnection.Disconnect)
+				})
+			}
+
+			if h.AIProfile != nil {
+				r.Route("/ai-profiles", func(r chi.Router) {
+					r.Use(middleware.RequireWorkspaceID)
+					r.Use(wsActive)
+					r.Get("/", h.AIProfile.List)
+					r.Post("/", h.AIProfile.Save)
+					r.Put("/{profileID}", h.AIProfile.Save)
+					r.Delete("/{profileID}", h.AIProfile.Delete)
+				})
+				r.With(middleware.RequireWorkspaceID, wsActive).Get("/ai-settings", h.AIProfile.Settings)
+				r.With(middleware.RequireWorkspaceID, wsActive).Put("/ai-settings", h.AIProfile.SetDefault)
+			}
+
 			if h.AgentRuntimeHost != nil {
 				r.With(middleware.RequireWorkspaceID, wsAccess).Get("/agent-artifacts/{id}/content-url", h.AgentRuntimeHost.BrowserArtifactContentURL)
+			}
+			if h.CLI != nil {
+				r.Get("/cli/oauth/request", h.CLI.ConsentRequest)
+				r.Post("/cli/oauth/authorize", h.CLI.Authorize)
 			}
 			if h.MCP != nil {
 				r.Get("/mcp/oauth/request", h.MCP.AuthorizationRequest)
@@ -528,6 +651,24 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Post("/user/push-devices", h.PushDevice.Register)
 			r.Delete("/user/push-devices", h.PushDevice.Unregister)
 
+			// Self-hosted server administration (server admins only).
+			if h.Instance != nil {
+				r.Group(func(r chi.Router) {
+					r.Use(h.Instance.RequireServerAdmin)
+					r.Get("/instance/signup-policy", h.Instance.GetSignupPolicy)
+					r.Put("/instance/signup-policy", h.Instance.UpdateSignupPolicy)
+					r.Get("/instance/admins", h.Instance.ListAdmins)
+					r.Post("/instance/admins", h.Instance.GrantAdmin)
+					r.Delete("/instance/admins/{userID}", h.Instance.RevokeAdmin)
+					r.Get("/instance/email", h.Instance.GetEmailSettings)
+					r.Put("/instance/email", h.Instance.UpdateEmailSettings)
+					r.Delete("/instance/email", h.Instance.ClearEmailSettings)
+					if h.Capability != nil {
+						r.Post("/instance/email/test", h.Capability.SendInstanceTestEmail)
+					}
+				})
+			}
+
 			// Organizations
 			r.Get("/organizations", h.Organization.List)
 			r.Post("/organizations", h.Organization.Create)
@@ -537,6 +678,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/organizations/{id}/git/integrations", h.Git.ListOrgIntegrations)
 			r.Post("/organizations/{id}/git/integrations", h.Git.CreateOrgIntegration)
 			r.Get("/organizations/{id}/git/github/install-url", h.Git.GetOrgGitHubInstallURL)
+			r.Post("/organizations/{id}/git/github/installations/{installationID}/claim", h.Git.ClaimOrgGitHubInstallation)
 			r.Post("/organizations/{id}/git/gitlab/connect", h.Git.ConnectOrgGitLab)
 			r.Get("/organizations/{id}/git/integrations/{integrationId}", h.Git.GetOrgIntegration)
 			r.Put("/organizations/{id}/git/integrations/{integrationId}", h.Git.UpdateOrgIntegration)
@@ -548,13 +690,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Delete("/organizations/{id}/members/{userId}", h.Organization.RemoveMember)
 			r.Post("/organizations/{id}/transfer-ownership", h.Organization.TransferOwnership)
 
-			// Organization billing is owner-only.
-			if h.Billing != nil {
-				r.With(h.Billing.RequireOrgBillingOwner).Get("/organizations/{id}/billing", h.Billing.GetOrganizationBilling)
-				r.With(h.Billing.RequireOrgBillingOwner).Get("/organizations/{id}/billing/cards", h.Billing.ListCards)
-				r.With(h.Billing.RequireOrgBillingOwner).Put("/organizations/{id}/billing/cards/{cardId}", h.Billing.UpdateCard)
-				r.With(h.Billing.RequireOrgBillingOwner).Delete("/organizations/{id}/billing/cards/{cardId}", h.Billing.DeleteCard)
-				r.With(h.Billing.RequireOrgBillingOwner).Get("/organizations/{id}/billing/invoices", h.Billing.ListInvoices)
+			// Optional edition routes retain this authenticated boundary.
+			if h.Edition != nil {
+				h.Edition.RegisterAuthenticated(r)
 			}
 
 			// Workspaces — workspace-scoped routes with RBAC
@@ -586,6 +724,19 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.Patch("/setup/me", h.Setup.UpdatePreference)
 					r.Post("/setup/recommendations/{taskKey}/start", h.Setup.StartRecommendation)
 				}
+				if h.SampleData != nil {
+					r.Get("/sample-data", h.SampleData.Get)
+					r.With(requirePerm(authorization.PermWorkspaceUpdate)).Post("/sample-data", h.SampleData.Load)
+					r.With(requirePerm(authorization.PermWorkspaceUpdate)).Delete("/sample-data", h.SampleData.Remove)
+				}
+				if h.GitHubApp != nil {
+					r.With(requirePerm(authorization.PermSettingsRead)).Get("/github/app-status", h.GitHubApp.Status)
+					r.With(authorization.RequireOwner(authz)).Post("/github/app-manifest", h.GitHubApp.CreateManifest)
+				}
+				if h.Capability != nil {
+					r.Get("/capabilities", h.Capability.Workspace)
+					r.With(requirePerm(authorization.PermWorkspaceUpdate)).Post("/email/test", h.Capability.SendTestEmail)
+				}
 				r.With(requirePerm(authorization.PermWorkspaceMembersManage)).Put("/members/{memberId}", h.Workspace.UpdateMember)
 				r.With(requirePerm(authorization.PermWorkspaceMembersManage)).Delete("/members/{memberId}", h.Workspace.RemoveMember)
 
@@ -593,20 +744,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermWorkspaceUpdate)).Post("/logo", h.Workspace.UploadLogo)
 				r.With(requirePerm(authorization.PermWorkspaceUpdate)).Delete("/logo", h.Workspace.DeleteLogo)
 				r.With(authorization.RequireOwner(authz)).Delete("/", h.Workspace.Delete)
-				if h.Billing != nil {
-					r.With(requirePerm(authorization.PermSettingsRead)).Get("/billing", h.Billing.Get)
-					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Post("/billing/checkout", h.Billing.Checkout)
-					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Post("/billing/confirm-checkout", h.Billing.ConfirmCheckout)
-					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Post("/billing/preview-plan-change", h.Billing.PreviewPlanChange)
-					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Post("/billing/change-plan", h.Billing.ChangePlan)
-					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Post("/billing/resume-subscription", h.Billing.ResumeSubscription)
-					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Post("/billing/portal", h.Billing.Portal)
-					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Put("/billing/extra-usage", h.Billing.SetOnDemand)
-					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Post("/billing/test-scenario", h.Billing.ApplyTestScenario)
-					// Usage is read-only and visible to any settings reader (matches the
-					// billing summary). Payment-method changes remain billing-owner-only.
-					r.With(requirePerm(authorization.PermSettingsRead)).Get("/billing/usage", h.Billing.GetUsage)
-					r.With(h.Billing.RequireWorkspaceBillingOwner).Put("/billing/payment-method", h.Billing.LinkPaymentMethod)
+				if h.Edition != nil {
+					h.Edition.RegisterWorkspace(r)
 				}
 
 				// Import routes require pm.import
@@ -812,6 +951,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Route("/dock", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
 				r.Use(wsActive)
+				r.Get("/ai-defaults", h.DockChat.AIDefaults)
 				r.With(requireCommandBarRead()).Get("/chats", h.DockChat.ListChats)
 				r.With(requireCommandBarRead()).Post("/chats", h.DockChat.CreateChat)
 				r.With(requireCommandBarRead()).Get("/chats/support-conversation", h.DockChat.FindSupportConversationChat)
@@ -826,6 +966,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requireCommandBarRead()).Get("/chats/{chatID}/run/interactions", h.DockChat.ListChatRunInteractions)
 				r.With(requireCommandBarEdit()).Post("/chats/{chatID}/interactions/{interactionID}/resolve", h.DockChat.ResolveChatRunInteraction)
 				r.With(requireCommandBarEdit()).Post("/chats/{chatID}/run/cancel", h.DockChat.CancelChatRun)
+				r.With(requireCommandBarEdit()).Post("/chats/{chatID}/run/pause", h.DockChat.PauseChatRun)
+				r.With(requireCommandBarEdit()).Post("/chats/{chatID}/run/resume", h.DockChat.ResumeChatRun)
 				r.With(requireCommandBarRead()).Get("/runs", h.DockChat.ListRuns)
 				r.With(requireCommandBarRead()).Get("/runs/{runID}/snapshot", h.DockChat.GetRunSnapshot)
 				if h.PublicShare != nil {
@@ -839,8 +981,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requireCommandBarEdit()).Post("/runs/{runID}/messages", h.DockChat.SendRunMessage)
 				r.With(requireCommandBarEdit()).Post("/runs/{runID}/continue", h.DockChat.ContinueRun)
 				r.With(requireCommandBarEdit()).Post("/runs/{runID}/cancel", h.DockChat.CancelRun)
-				r.With(requireCommandBarEdit()).Post("/runs/{runID}/auth/device-code/start", h.DockChat.StartRunAuth)
-				r.With(requireCommandBarEdit()).Post("/runs/{runID}/auth/device-code/cancel", h.DockChat.CancelRunAuth)
+				r.With(requireCommandBarEdit()).Post("/runs/{runID}/pause", h.DockChat.PauseRun)
+				r.With(requireCommandBarEdit()).Post("/runs/{runID}/resume", h.DockChat.ResumeRun)
 			})
 
 			// Support module
@@ -860,6 +1002,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/tickets/{id}/link-task", h.SupportInbox.LinkConversationTask)
 				r.With(requirePerm(authorization.PermSupportEdit), requirePerm(authorization.PermPMEdit)).Post("/tickets/{id}/create-task", h.SupportInbox.CreateTaskFromConversation)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/tickets/{id}/assign-agent", h.SupportInbox.AssignConversationAgent)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/tickets/{id}/ai-control", h.SupportInbox.ChangeConversationAIControl)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/tickets/{id}/assign-user", h.SupportInbox.AssignConversationUser)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/tickets/{id}/run-agent", h.SupportInbox.RunAgent)
 
@@ -917,8 +1060,17 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/conversations/{id}/status", h.SupportInbox.UpdateConversationStatus)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/follow-up/cancel", h.SupportInbox.CancelConversationFollowUp)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/messages", h.SupportInbox.ListConversationMessages)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/translation", h.SupportInbox.TranslationOptions)
+				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/conversations/{id}/translation", h.SupportInbox.SetLiveTranslate)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/translation/messages", h.SupportInbox.CachedLiveTranslations)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/translation/sends", h.SupportInbox.QueueSupportSend)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/translation/sends", h.SupportInbox.PendingSupportSends)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/translation/sends/{send_id}", h.SupportInbox.RetrySupportSend)
+				r.With(requirePerm(authorization.PermSupportRead)).Post("/inbox/conversations/{id}/translation/messages", h.SupportInbox.TranslateMessage)
+
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/message-pages", h.SupportInbox.ListConversationMessagePage)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/messages/{id}/email", h.SupportInbox.GetMessageEmailDetail)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/messages/{id}/attachments/{attachmentID}/retry", h.SupportInbox.RetryInboundAttachment)
 				if h.EmailImageProxy != nil {
 					r.With(requirePerm(authorization.PermSupportRead)).Get("/email/image-proxy", h.EmailImageProxy.Proxy)
 				}
@@ -930,7 +1082,13 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				}
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/link-task", h.SupportInbox.LinkConversationTask)
 				r.With(requirePerm(authorization.PermSupportEdit), requirePerm(authorization.PermPMEdit)).Post("/inbox/conversations/{id}/create-task", h.SupportInbox.CreateTaskFromConversation)
+				r.With(requirePerm(authorization.PermSupportEdit), requirePerm(authorization.PermPMEdit)).Post("/inbox/conversations/{id}/task-draft", h.SupportInbox.PreviewTaskFromConversation)
+				if h.PMTriage != nil {
+					r.With(requirePerm(authorization.PermSupportEdit), requirePerm(authorization.PermPMEdit)).Post("/inbox/conversations/{id}/task-triage", h.PMTriage.AnalyzeConversation)
+					r.With(requirePerm(authorization.PermSupportEdit), requirePerm(authorization.PermPMEdit)).Post("/inbox/conversations/{id}/task-triage/review", h.PMTriage.ReviewConversation)
+				}
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/assign-agent", h.SupportInbox.AssignConversationAgent)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/ai-control", h.SupportInbox.ChangeConversationAIControl)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/assign-user", h.SupportInbox.AssignConversationUser)
 				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/conversations/{id}/crm-contact", h.SupportInbox.UpdateConversationCRMContact)
 				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/conversations/{id}/crm-company", h.SupportInbox.UpdateConversationCRMCompany)
@@ -956,6 +1114,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/routing-usage", h.SupportInbox.GetRoutingUsageStatus)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Patch("/inbox/installations", h.SupportInbox.UpdateInstallationSettings)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/installations/regenerate-key", h.SupportInbox.RegenerateWidgetKey)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/installations/reveal-secret", h.SupportInbox.RevealWidgetSecret)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/installations/rotate-secret", h.SupportInbox.RotateWidgetSecret)
 
 				// Canned responses
@@ -1118,6 +1277,11 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/counts", h.PMTask.CountByState)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/display/{displayID}", h.PMTask.GetByDisplayID)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/{id}", h.PMTask.Get)
+				if h.PMTriage != nil {
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/task-drafts/triage", h.PMTriage.AnalyzeDraft)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/triage", h.PMTriage.AnalyzeTask)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/triage/review", h.PMTriage.ReviewTask)
+				}
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/save-as-template", h.PMTask.SaveAsTemplate)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/duplicate", h.PMTask.Duplicate)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/tasks/{id}", h.PMTask.Update)
@@ -1216,7 +1380,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				if h.SupportAI != nil {
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/knowledge-sources", h.SupportAI.GetKnowledgeSources)
-					r.With(requirePerm(authorization.PermPMRead)).Post("/agents/{id}/support-preview", h.SupportAI.PreviewSupportReply)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/agents/{id}/support-preview", h.SupportAI.PreviewSupportReply)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Get("/agents/{id}/support-preview/{runId}", h.SupportAI.GetSupportPreview)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Delete("/agents/{id}/support-preview/{runId}", h.SupportAI.CancelSupportPreview)
 					r.With(requirePerm(authorization.PermPMEdit)).Put("/agents/{id}/knowledge-sources", h.SupportAI.UpdateKnowledgeSources)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/agents/{id}/knowledge-sources/{spaceId}/reindex", h.SupportAI.ReindexKnowledgeSource)
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/curated-guidance", h.SupportAI.ListCuratedGuidance)
@@ -1267,8 +1433,6 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}", h.Agent.GetAgentRun)
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}/messages", h.Agent.ListRunMessages)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/messages", h.Agent.SendRunMessage)
-					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/codex-auth/device-code/start", h.Agent.StartCodexDeviceCodeAuth)
-					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/codex-auth/device-code/cancel", h.Agent.CancelCodexDeviceCodeAuth)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/resume", h.Agent.ResumeRun)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/continue", h.Agent.ContinueRun)
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}/artifacts", h.Agent.ListRunArtifacts)
@@ -1292,8 +1456,6 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/coding-sessions/{id}/approve", h.Agent.ApproveCodingSession)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/coding-sessions/{id}/request-changes", h.Agent.RequestCodingSessionChanges)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/coding-sessions/{id}/cancel", h.Agent.CancelCodingSession)
-					r.With(requirePerm(authorization.PermPMEdit)).Post("/coding-sessions/{id}/auth/device-code/start", h.Agent.StartCodingSessionDeviceCodeAuth)
-					r.With(requirePerm(authorization.PermPMEdit)).Post("/coding-sessions/{id}/auth/device-code/cancel", h.Agent.CancelCodingSessionDeviceCodeAuth)
 				})
 			})
 
@@ -1334,6 +1496,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Use(middleware.RequireWorkspaceID)
 				r.Use(wsActive)
 				r.Use(handler.NoStoreOnWrites)
+
+				if h.Assets != nil {
+					r.With(requirePerm(authorization.PermDocsRead)).Get("/images/content", h.Assets.DocsImage)
+				}
 
 				// Spaces — docs.read / docs.edit / docs.admin
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/spaces", h.Docs.ListSpaces)
@@ -1587,7 +1753,24 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// Email — crm.read / crm.edit
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/email/accounts", h.CRMEmail.ListAccounts)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/email/accounts", h.CRMEmail.CreateAccount)
+				if h.CRMOutreach != nil {
+					r.With(requirePerm(authorization.PermCRMEdit)).Get("/outreach/mailbox-capacity", h.CRMOutreach.MailboxCapacity)
+					r.With(requirePerm(authorization.PermCRMEdit)).Put("/outreach/mailbox-capacity/{id}", h.CRMOutreach.MailboxCapacity)
+					r.With(requirePerm(authorization.PermCRMRead)).Get("/outreach/templates", h.CRMOutreach.Templates)
+					r.With(requirePerm(authorization.PermCRMEdit)).Post("/outreach/templates", h.CRMOutreach.Templates)
+					r.With(requirePerm(authorization.PermCRMEdit)).Post("/outreach/templates/{id}/render", h.CRMOutreach.RenderTemplate)
+					r.With(requirePerm(authorization.PermCRMEdit)).Put("/outreach/templates/{id}", h.CRMOutreach.Templates)
+					r.With(requirePerm(authorization.PermCRMEdit)).Delete("/outreach/templates/{id}", h.CRMOutreach.Templates)
+					r.With(requirePerm(authorization.PermCRMRead)).Get("/outreach/sequences", h.CRMOutreach.Sequences)
+					r.With(requirePerm(authorization.PermCRMEdit)).Post("/outreach/sequences", h.CRMOutreach.Sequences)
+					r.With(requirePerm(authorization.PermCRMEdit)).Put("/outreach/sequences/{id}", h.CRMOutreach.Sequences)
+					r.With(requirePerm(authorization.PermCRMEdit)).Post("/outreach/sequences/{id}/enroll", h.CRMOutreach.Enroll)
+					r.With(requirePerm(authorization.PermCRMRead)).Get("/outreach/enrollments", h.CRMOutreach.Enrollments)
+					r.With(requirePerm(authorization.PermCRMRead)).Get("/outreach/enrollments/{id}", h.CRMOutreach.Enrollments)
+					r.With(requirePerm(authorization.PermCRMEdit)).Post("/outreach/enrollments/{id}", h.CRMOutreach.Enrollments)
+				}
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/email/accounts/{id}", h.CRMEmail.GetAccount)
+				r.With(requirePerm(authorization.PermCRMEdit)).Put("/email/accounts/{id}/signature", h.CRMEmail.UpdateSignature)
 				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/email/accounts/{id}", h.CRMEmail.DeleteAccount)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/email/accounts/{id}/diagnostics", h.CRMEmail.GetAccountDiagnostics)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/email/accounts/{id}/sync", h.CRMEmail.SyncAccount)

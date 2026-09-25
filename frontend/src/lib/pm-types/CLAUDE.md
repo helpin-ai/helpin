@@ -33,6 +33,12 @@ This folder is the structured replacement for the old `pmTypes.ts` monolith.
 - Visitor context:
   - `visitor.ts`
 
+Additional domains exported by the barrel:
+
+- Coding-session interactions and artifacts: `codingSession.ts`
+- Agent skill references and catalog: `skills.ts`
+- Task detail views and update entries: `taskInsights.ts`
+
 ## Preferred workflow
 
 1. Add the type in the domain file that owns the concept.
@@ -53,6 +59,6 @@ Run:
 
 ```bash
 cd frontend
-npx tsc -b
-npm run build
+pnpm exec tsc -b
+pnpm run build
 ```

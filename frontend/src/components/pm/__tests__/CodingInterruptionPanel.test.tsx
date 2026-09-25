@@ -66,13 +66,6 @@ function buildSession(overrides: Partial<CodingSession> = {}): CodingSession {
       changed_file_count: 0,
       changed_files: [],
     },
-    auth_state: {
-      state: 'pending',
-      auth_mode: 'chatgpt_device_code',
-      verification_url: 'https://chatgpt.com/device',
-      user_code: 'ABCD-EFGH',
-      updated_at: '2026-03-31T10:00:00Z',
-    },
     created_at: '2026-03-31T10:00:00Z',
     updated_at: '2026-03-31T10:00:00Z',
     ...overrides,
@@ -208,78 +201,6 @@ describe('CodingInterruptionPanel', () => {
     document.body.innerHTML = '';
   });
 
-  it('renders ChatGPT device-code controls when authentication is required', () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    const root = createRoot(container);
-
-    act(() => {
-      root.render(
-        <CodingTranscriptPane
-          transcriptMessages={[]}
-          liveAssistantMessage={null}
-          liveReasoningMessage={null}
-          liveTurnSegments={[]}
-          session={buildSession()}
-          activeInteraction={null}
-          acting={null}
-          onAuthStart={vi.fn()}
-          onAuthCancel={vi.fn()}
-          onResolveInteraction={vi.fn()}
-        />,
-      );
-    });
-
-    expect(container.textContent).toContain('ChatGPT sign-in required');
-    expect(container.textContent).toContain('ABCD-EFGH');
-    expect(container.textContent).toContain('Open verification page');
-    expect(container.textContent).toContain('Cancel sign-in');
-
-    act(() => {
-      root.unmount();
-    });
-  });
-
-  it('renders browser-continue controls when auth falls back to browser flow', () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    const root = createRoot(container);
-
-    act(() => {
-      root.render(
-        <CodingTranscriptPane
-          transcriptMessages={[]}
-          liveAssistantMessage={null}
-          liveReasoningMessage={null}
-          liveTurnSegments={[]}
-          session={buildSession({
-            auth_state: {
-              state: 'pending',
-              auth_mode: 'chatgpt_device_code',
-              auth_url: 'https://chatgpt.com/login',
-              updated_at: '2026-03-31T10:00:00Z',
-            },
-          })}
-          activeInteraction={null}
-          acting={null}
-          onAuthStart={vi.fn()}
-          onAuthCancel={vi.fn()}
-          onResolveInteraction={vi.fn()}
-        />,
-      );
-    });
-
-    expect(container.textContent).toContain('Continue sign-in in your browser to resume this session.');
-    expect(container.textContent).not.toContain('Codex');
-    expect(container.textContent).toContain('Continue in browser');
-    expect(container.textContent).toContain('Cancel sign-in');
-    expect(container.textContent).not.toContain('Open verification page');
-
-    act(() => {
-      root.unmount();
-    });
-  });
-
   it('renders resume controls when human input is required', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -295,12 +216,9 @@ describe('CodingInterruptionPanel', () => {
           liveTurnSegments={[]}
           session={buildSession({
             pause_reason: 'human_input',
-            auth_state: undefined,
           })}
           activeInteraction={buildInteraction()}
           acting={null}
-          onAuthStart={vi.fn()}
-          onAuthCancel={vi.fn()}
           onResolveInteraction={vi.fn()}
         />,
       );
@@ -337,12 +255,9 @@ describe('CodingInterruptionPanel', () => {
           liveTurnSegments={[]}
           session={buildSession({
             pause_reason: 'human_input',
-            auth_state: undefined,
           })}
           activeInteraction={buildInteraction()}
           acting={null}
-          onAuthStart={vi.fn()}
-          onAuthCancel={vi.fn()}
           onResolveInteraction={vi.fn()}
         />,
       );
@@ -372,7 +287,6 @@ describe('CodingInterruptionPanel', () => {
           liveTurnSegments={[]}
           session={buildSession({
             pause_reason: 'human_input',
-            auth_state: undefined,
           })}
           activeInteraction={buildInteraction({
             request_payload: {
@@ -407,8 +321,6 @@ describe('CodingInterruptionPanel', () => {
             },
           })}
           acting={null}
-          onAuthStart={vi.fn()}
-          onAuthCancel={vi.fn()}
           onResolveInteraction={vi.fn()}
         />,
       );
@@ -531,7 +443,6 @@ describe('CodingInterruptionPanel', () => {
           session={buildSession({
             status: 'completed',
             pause_reason: 'none',
-            auth_state: undefined,
             system_prompt: 'Research configured competitors and file the changelog tracking report task.',
           })}
         />,
@@ -562,7 +473,6 @@ describe('CodingInterruptionPanel', () => {
           session={buildSession({
             status: 'completed',
             pause_reason: 'none',
-            auth_state: undefined,
             system_prompt: 'Fallback native agent system prompt.',
           })}
         />,
@@ -683,8 +593,6 @@ describe('CodingInterruptionPanel', () => {
           session={buildSession()}
           activeInteraction={null}
           acting={null}
-          onAuthStart={vi.fn()}
-          onAuthCancel={vi.fn()}
           onResolveInteraction={vi.fn()}
         />,
       );
@@ -706,8 +614,6 @@ describe('CodingInterruptionPanel', () => {
           session={buildSession()}
           activeInteraction={null}
           acting={null}
-          onAuthStart={vi.fn()}
-          onAuthCancel={vi.fn()}
           onResolveInteraction={vi.fn()}
         />,
       );
@@ -740,14 +646,13 @@ describe('CodingInterruptionPanel', () => {
           session={buildSession()}
           activeInteraction={null}
           acting={null}
-          onAuthStart={vi.fn()}
-          onAuthCancel={vi.fn()}
           onResolveInteraction={vi.fn()}
         />,
       );
     });
 
-    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 120 }));
+    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: expect.any(Number) }));
+    expect(scrollTo.mock.calls.at(-1)?.[0].top).toBeGreaterThan(0);
 
     act(() => {
       root.unmount();

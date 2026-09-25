@@ -1,0 +1,11 @@
+Meetings recording preview — 2026-09-20
+
+Tool: built-in image generation/editing. Model version not exposed.
+Edit target: website/public/new/product/workspace-meetings-1920-v3.webp.
+Native output: 1672 × 941. Generated illustrative demo; fictional participants.
+Master: output/imagegen/meetings/recording-preview-v4.png.
+Published: website/public/new/meetings/recording-preview-{960,1672}-v4.webp.
+WebP derivatives use proportional resizing without upscaling.
+
+Prompt:
+Use case: precise-object-edit. Edit target: the provided OrbitDesk Meetings product screenshot. Change ONLY the empty black video recording rectangle in the middle of the screen into a realistic paused customer video-call recording with three people talking. Keep ALL surrounding UI, exact text, layout, sidebar, customer identity, title, summary, decisions, right details panel and action items unchanged. Preserve the 16:9 overall screenshot composition and crisp interface lettering; return a 3840x2160 image if supported, otherwise native high resolution. Inside the existing wide player rectangle, show three adjacent webcam participant tiles: Maya Chen, a professional East Asian woman in her 30s; Sam Rivera, a professional man in his 30s; and a third adult teammate. Fictional demo participants on an SSO rollout review, natural expressions, one person speaking with a subtle gesture while two listen. Distinct realistic home-office backgrounds, soft daylight, believable webcams, business-casual clothing. All faces clearly visible at thumbnail size. Small name labels Maya Chen, Sam Rivera, Alex Morgan inside the video tiles only. Keep duration 42:18 and a restrained translucent circular play indicator over the video. The player stays exactly the same size and position with rounded corners. No extra interface chrome, invented controls, watermarks or changed app text. Illustrative meeting preview, not a real customer recording.

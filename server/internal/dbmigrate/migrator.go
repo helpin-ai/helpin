@@ -75,23 +75,30 @@ type StatusRow struct {
 	AppliedAt *time.Time
 }
 
-func Up(ctx context.Context, db *sql.DB) error {
+func Up(ctx context.Context, db *sql.DB, sources ...Source) error {
 	return withLockedConn(ctx, db, func(conn *sql.Conn) error {
 		if err := ensureSchemaMigrationsTable(ctx, conn); err != nil {
 			return err
 		}
 
-		migrations, err := loadMigrations()
+		migrations, err := loadMigrations(sources...)
 		if err != nil {
 			return err
 		}
 
-		applied, err := loadAppliedMigrations(ctx, conn)
+		if err := relocateLegacyMigrationVersions(ctx, conn, migrations); err != nil {
+			return err
+		}
+
+		applied, err := loadResolvedAppliedMigrations(ctx, conn, migrations)
 		if err != nil {
 			return err
 		}
 
 		for _, migration := range migrations {
+			if skipSupersededPipeline(migration, applied) {
+				continue
+			}
 			if existing, ok := applied[migration.Version]; ok {
 				if existing.Checksum != migration.Checksum {
 					return fmt.Errorf("migration %s checksum mismatch for %s", migration.Version, migration.Path)
@@ -107,24 +114,27 @@ func Up(ctx context.Context, db *sql.DB) error {
 	})
 }
 
-func Status(ctx context.Context, db *sql.DB) ([]StatusRow, error) {
+func Status(ctx context.Context, db *sql.DB, sources ...Source) ([]StatusRow, error) {
 	return withLockedConnResult(ctx, db, func(conn *sql.Conn) ([]StatusRow, error) {
 		if err := ensureSchemaMigrationsTable(ctx, conn); err != nil {
 			return nil, err
 		}
 
-		migrations, err := loadMigrations()
+		migrations, err := loadMigrations(sources...)
 		if err != nil {
 			return nil, err
 		}
 
-		applied, err := loadAppliedMigrations(ctx, conn)
+		applied, err := loadResolvedAppliedMigrations(ctx, conn, migrations)
 		if err != nil {
 			return nil, err
 		}
 
 		rows := make([]StatusRow, 0, len(migrations))
 		for _, migration := range migrations {
+			if skipSupersededPipeline(migration, applied) {
+				continue
+			}
 			row := StatusRow{
 				Version: migration.Version,
 				Name:    migration.Name,
@@ -172,18 +182,22 @@ func Head(ctx context.Context, db *sql.DB) (*StatusRow, error) {
 // Repair recalculates checksums for all applied migrations to match
 // the current file contents. This fixes checksum mismatches caused by
 // post-apply edits to migration files.
-func Repair(ctx context.Context, db *sql.DB) (int, error) {
+func Repair(ctx context.Context, db *sql.DB, sources ...Source) (int, error) {
 	return withLockedConnResult(ctx, db, func(conn *sql.Conn) (int, error) {
 		if err := ensureSchemaMigrationsTable(ctx, conn); err != nil {
 			return 0, err
 		}
 
-		migrations, err := loadMigrations()
+		migrations, err := loadMigrations(sources...)
 		if err != nil {
 			return 0, err
 		}
 
-		applied, err := loadAppliedMigrations(ctx, conn)
+		if err := relocateLegacyMigrationVersions(ctx, conn, migrations); err != nil {
+			return 0, err
+		}
+
+		applied, err := loadResolvedAppliedMigrations(ctx, conn, migrations)
 		if err != nil {
 			return 0, err
 		}
@@ -217,24 +231,27 @@ type ValidationIssue struct {
 // Validate checks for checksum mismatches and pending migrations without
 // modifying anything. Returns issues found; an empty slice means everything
 // is clean.
-func Validate(ctx context.Context, db *sql.DB) ([]ValidationIssue, error) {
+func Validate(ctx context.Context, db *sql.DB, sources ...Source) ([]ValidationIssue, error) {
 	return withLockedConnResult(ctx, db, func(conn *sql.Conn) ([]ValidationIssue, error) {
 		if err := ensureSchemaMigrationsTable(ctx, conn); err != nil {
 			return nil, err
 		}
 
-		migrations, err := loadMigrations()
+		migrations, err := loadMigrations(sources...)
 		if err != nil {
 			return nil, err
 		}
 
-		applied, err := loadAppliedMigrations(ctx, conn)
+		applied, err := loadResolvedAppliedMigrations(ctx, conn, migrations)
 		if err != nil {
 			return nil, err
 		}
 
 		var issues []ValidationIssue
 		for _, migration := range migrations {
+			if skipSupersededPipeline(migration, applied) {
+				continue
+			}
 			existing, ok := applied[migration.Version]
 			if !ok {
 				issues = append(issues, ValidationIssue{
@@ -258,24 +275,27 @@ func Validate(ctx context.Context, db *sql.DB) ([]ValidationIssue, error) {
 }
 
 // Pending returns only unapplied migrations.
-func Pending(ctx context.Context, db *sql.DB) ([]StatusRow, error) {
+func Pending(ctx context.Context, db *sql.DB, sources ...Source) ([]StatusRow, error) {
 	return withLockedConnResult(ctx, db, func(conn *sql.Conn) ([]StatusRow, error) {
 		if err := ensureSchemaMigrationsTable(ctx, conn); err != nil {
 			return nil, err
 		}
 
-		migrations, err := loadMigrations()
+		migrations, err := loadMigrations(sources...)
 		if err != nil {
 			return nil, err
 		}
 
-		applied, err := loadAppliedMigrations(ctx, conn)
+		applied, err := loadResolvedAppliedMigrations(ctx, conn, migrations)
 		if err != nil {
 			return nil, err
 		}
 
 		var pending []StatusRow
 		for _, migration := range migrations {
+			if skipSupersededPipeline(migration, applied) {
+				continue
+			}
 			if _, ok := applied[migration.Version]; !ok {
 				pending = append(pending, StatusRow{
 					Version: migration.Version,
@@ -366,10 +386,39 @@ type appliedMigration struct {
 	AppliedAt *time.Time
 }
 
-func loadMigrations() ([]Migration, error) {
-	entries, err := fs.ReadDir(migrationFiles, "sql")
+// Source is an optional SQL directory supplied by an edition. Core migrations
+// always remain registered and retain their original ledger and checksums.
+type Source struct {
+	FS        fs.FS
+	Directory string
+}
+
+func loadMigrations(sources ...Source) ([]Migration, error) {
+	sources = append([]Source{{FS: migrationFiles, Directory: "sql"}}, sources...)
+	var migrations []Migration
+	for _, source := range sources {
+		if source.FS == nil || !fs.ValidPath(source.Directory) {
+			return nil, fmt.Errorf("invalid migration source")
+		}
+		loaded, err := loadMigrationSource(source)
+		if err != nil {
+			return nil, err
+		}
+		migrations = append(migrations, loaded...)
+	}
+	sort.Slice(migrations, func(i, j int) bool { return migrations[i].Version < migrations[j].Version })
+	for i := 1; i < len(migrations); i++ {
+		if migrations[i-1].Version == migrations[i].Version {
+			return nil, fmt.Errorf("duplicate migration version %s", migrations[i].Version)
+		}
+	}
+	return migrations, nil
+}
+
+func loadMigrationSource(source Source) ([]Migration, error) {
+	entries, err := fs.ReadDir(source.FS, source.Directory)
 	if err != nil {
-		return nil, fmt.Errorf("read embedded migrations: %w", err)
+		return nil, fmt.Errorf("read migration source: %w", err)
 	}
 
 	migrations := make([]Migration, 0, len(entries))
@@ -383,8 +432,8 @@ func loadMigrations() ([]Migration, error) {
 			return nil, fmt.Errorf("invalid migration filename %q", entry.Name())
 		}
 
-		path := filepath.Join("sql", entry.Name())
-		contents, err := fs.ReadFile(migrationFiles, path)
+		path := filepath.Join(source.Directory, entry.Name())
+		contents, err := fs.ReadFile(source.FS, path)
 		if err != nil {
 			return nil, fmt.Errorf("read migration %s: %w", path, err)
 		}
@@ -397,16 +446,6 @@ func loadMigrations() ([]Migration, error) {
 			SQL:      string(contents),
 			Checksum: hex.EncodeToString(sum[:]),
 		})
-	}
-
-	sort.Slice(migrations, func(i, j int) bool {
-		return migrations[i].Version < migrations[j].Version
-	})
-
-	for i := 1; i < len(migrations); i++ {
-		if migrations[i-1].Version == migrations[i].Version {
-			return nil, fmt.Errorf("duplicate migration version %s", migrations[i].Version)
-		}
 	}
 
 	return migrations, nil

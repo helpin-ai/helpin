@@ -92,18 +92,20 @@ func (s *SupportAttachmentService) Create(
 	storageKey := fmt.Sprintf("workspaces/%s/support/%s/%s-%s",
 		workspaceID, storageScope, attachment.ID, attachment.FileName)
 
-	var publicURL string
-	if s.s3Client.HasPublicURL() {
-		publicURL = s.s3Client.PublicURL(storageKey)
+	// Customer attachments remain private. URLs are minted for authorized
+	// readers and never stored as permanent public object URLs.
+	publicURL, err := s.s3Client.GeneratePresignedInlineGetURL(storageKey)
+	if err != nil {
+		return nil, err
 	}
 
-	if err := s.attachmentRepo.UpdateStorageKey(ctx, attachment.ID, storageKey, publicURL); err != nil {
+	if err := s.attachmentRepo.UpdateStorageKey(ctx, attachment.ID, storageKey, ""); err != nil {
 		return nil, err
 	}
 	attachment.StorageKey = storageKey
-	attachment.PublicURL = publicURL
+	attachment.PublicURL = ""
 
-	uploadURL, err := s.s3Client.GeneratePresignedPutURL(storageKey, attachment.ContentType, attachment.FileSize, s.s3Client.HasPublicURL())
+	uploadURL, err := s.s3Client.GeneratePresignedPutURL(storageKey, attachment.ContentType, attachment.FileSize, false)
 	if err != nil {
 		return nil, fmt.Errorf("generate upload URL: %w", err)
 	}
@@ -203,14 +205,14 @@ func (s *SupportAttachmentService) StoreInboundEmailAttachment(ctx context.Conte
 	}
 
 	messageID := strings.TrimSpace(req.MessageID)
-	attachmentID := uuid.NewString()
+	attachmentID := strings.TrimSpace(req.AttachmentID)
+	if attachmentID == "" {
+		attachmentID = uuid.NewString()
+	}
 	storageKey := fmt.Sprintf("workspaces/%s/support/%s/%s-%s",
 		strings.TrimSpace(req.WorkspaceID), strings.TrimSpace(req.ConversationID), attachmentID, fileName)
 	publicURL := ""
-	if s.s3Client.HasPublicURL() {
-		publicURL = s.s3Client.PublicURL(storageKey)
-	}
-	if err := s.s3Client.PutObject(ctx, storageKey, contentType, fileSize, bytes.NewReader(data), s.s3Client.HasPublicURL()); err != nil {
+	if err := s.s3Client.PutObject(ctx, storageKey, contentType, fileSize, bytes.NewReader(data), false); err != nil {
 		return nil, err
 	}
 
@@ -228,8 +230,12 @@ func (s *SupportAttachmentService) StoreInboundEmailAttachment(ctx context.Conte
 		IsUploaded:     true,
 	}
 
-	if err := s.attachmentRepo.Create(ctx, attachment); err != nil {
-		return nil, err
+	// Queued inbound files already have a placeholder. Its worker commits the
+	// uploaded metadata after storage succeeds; legacy callers create a row here.
+	if req.AttachmentID == "" {
+		if err := s.attachmentRepo.Create(ctx, attachment); err != nil {
+			return nil, err
+		}
 	}
 
 	return &model.SupportAttachmentPayload{
@@ -279,13 +285,22 @@ func (s *SupportAttachmentService) HydrateMessages(ctx context.Context, messages
 		if a.MessageID == nil {
 			continue
 		}
+		attachmentURL := a.PublicURL
+		if s.s3Client != nil && a.IsUploaded && a.StorageKey != "" {
+			var err error
+			attachmentURL, err = s.s3Client.GeneratePresignedInlineGetURL(a.StorageKey)
+			if err != nil {
+				return fmt.Errorf("sign support attachment: %w", err)
+			}
+		}
 		byMsg[*a.MessageID] = append(byMsg[*a.MessageID], model.SupportAttachmentPayload{
-			ID:       a.ID,
+			ID:               a.ID,
+			ProcessingStatus: a.ProcessingStatus, ProcessingError: a.ProcessingError, ContentID: a.ContentID,
 			FileKey:  a.StorageKey,
 			FileName: a.FileName,
 			FileType: a.ContentType,
 			FileSize: a.FileSize,
-			URL:      a.PublicURL,
+			URL:      attachmentURL,
 		})
 	}
 
@@ -338,4 +353,52 @@ func authorizeSupportAttachment(attachment *model.SupportAttachment, uploaderTyp
 
 func supportAttachmentStringPtr(value string) *string {
 	return &value
+}
+
+// DeleteUnsentWidget removes only an attachment owned by this session that has
+// never been sent. Storage cleanup is required even if confirmation failed.
+func (s *SupportAttachmentService) DeleteUnsentWidget(ctx context.Context, id, sessionID string) error {
+	attachment, err := s.attachmentRepo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if attachment == nil {
+		return nil
+	}
+	if err := authorizeSupportAttachment(attachment, "customer", nil, &sessionID); err != nil {
+		return err
+	}
+	if attachment.MessageID != nil {
+		return fmt.Errorf("sent attachments cannot be removed")
+	}
+	if s.s3Client != nil && attachment.StorageKey != "" {
+		if err := s.s3Client.DeleteObject(ctx, attachment.StorageKey); err != nil {
+			return fmt.Errorf("delete attachment storage: %w", err)
+		}
+	}
+	return s.attachmentRepo.Delete(ctx, id)
+}
+
+// PendingReplyAttachments validates ownership before a private queued reply can
+// retain or display uploaded files. It does not attach them to a public message.
+func (s *SupportAttachmentService) PendingReplyAttachments(ctx context.Context, workspaceID, conversationID, userID string, ids []string) ([]model.SupportAttachmentPayload, error) {
+	result := make([]model.SupportAttachmentPayload, 0, len(ids))
+	for _, id := range ids {
+		a, err := s.attachmentRepo.GetByID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if a == nil || a.WorkspaceID != workspaceID || (a.ConversationID != nil && *a.ConversationID != conversationID) || a.UploadedByID == nil || *a.UploadedByID != userID || !a.IsUploaded {
+			return nil, fmt.Errorf("attachment unavailable")
+		}
+		url := a.PublicURL
+		if s.s3Client != nil && a.StorageKey != "" {
+			url, err = s.s3Client.GeneratePresignedInlineGetURL(a.StorageKey)
+			if err != nil {
+				return nil, err
+			}
+		}
+		result = append(result, model.SupportAttachmentPayload{ID: a.ID, FileKey: a.StorageKey, FileName: a.FileName, FileType: a.ContentType, FileSize: a.FileSize, URL: url})
+	}
+	return result, nil
 }

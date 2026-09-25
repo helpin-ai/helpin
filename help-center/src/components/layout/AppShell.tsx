@@ -9,14 +9,15 @@ const SearchDialog = lazy(async () => {
 })
 
 const WIDGET_SCRIPT_ID = 'helpin-widget'
-const WIDGET_SCRIPT_SRC = import.meta.env.VITE_WIDGET_SCRIPT_URL || 'https://cdn.helpin.ai/lib.js'
-const WIDGET_HOST = import.meta.env.VITE_WIDGET_HOST || 'https://client.helpin.ai'
 
 function HelpCenterChatWidget() {
   const { config } = useDocsContext()
 
   useEffect(() => {
     const widgetKey = config.support_widget_key?.trim()
+    const host = config.public_widget_url || import.meta.env.VITE_WIDGET_HOST
+    const scriptURL = config.public_sdk_url || import.meta.env.VITE_WIDGET_SCRIPT_URL
+    if (!host || !scriptURL) return
     if (!config.is_published || config.chat_widget_enabled === false || !widgetKey) return
 
     const existing = document.getElementById(WIDGET_SCRIPT_ID)
@@ -30,8 +31,9 @@ function HelpCenterChatWidget() {
     script.defer = true
     script.dataset.widgetKey = widgetKey
     script.setAttribute('data-widget-key', widgetKey)
-    script.setAttribute('data-host', WIDGET_HOST)
-    script.src = WIDGET_SCRIPT_SRC
+    script.setAttribute('data-host', host)
+    script.setAttribute('data-support-only', 'true')
+    script.src = scriptURL
     let timeoutID: ReturnType<typeof setTimeout> | undefined
     let idleID: number | undefined
     const appendScript = () => {
@@ -52,7 +54,7 @@ function HelpCenterChatWidget() {
       if (timeoutID !== undefined) globalThis.clearTimeout(timeoutID)
       script.remove()
     }
-  }, [config.chat_widget_enabled, config.is_published, config.support_widget_key])
+  }, [config.chat_widget_enabled, config.is_published, config.support_widget_key, config.public_widget_url, config.public_sdk_url])
 
   return null
 }

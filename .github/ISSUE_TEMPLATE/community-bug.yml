@@ -1,0 +1,14 @@
+name: Community installation or behavior bug
+description: Report a reproducible Community bug using synthetic data.
+body:
+  - type: markdown
+    attributes:
+      value: Do not paste .env files, tokens, customer messages or exploitable security details. Use SECURITY.md for private reports.
+  - type: input
+    id: version
+    attributes: {label: Bundle version and CPU architecture}
+    validations: {required: true}
+  - type: textarea
+    id: steps
+    attributes: {label: Reproduction, description: Include expected and actual behavior and sanitized diagnostics.}
+    validations: {required: true}

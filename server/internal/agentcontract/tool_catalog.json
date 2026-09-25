@@ -322,12 +322,24 @@
             "items": {
               "additionalProperties": false,
               "properties": {
-                "alias": {"type": "string"},
-                "base_branch": {"type": "string"},
-                "primary": {"type": "boolean"},
-                "repo_full_name": {"type": "string"},
-                "repository_id": {"type": "string"},
-                "work_branch": {"type": "string"}
+                "alias": {
+                  "type": "string"
+                },
+                "base_branch": {
+                  "type": "string"
+                },
+                "primary": {
+                  "type": "boolean"
+                },
+                "repo_full_name": {
+                  "type": "string"
+                },
+                "repository_id": {
+                  "type": "string"
+                },
+                "work_branch": {
+                  "type": "string"
+                }
               },
               "type": "object"
             },
@@ -336,7 +348,9 @@
             "type": "array"
           }
         },
-        "required": ["repositories"],
+        "required": [
+          "repositories"
+        ],
         "type": "object"
       },
       "presets": []
@@ -419,7 +433,7 @@
             "type": "string"
           },
           "space_id": {
-            "description": "The space ID where the document will be created. Optional — omit to use the workspace's only space; required when multiple spaces exist (use list_spaces to discover IDs).",
+            "description": "The space ID where the document will be created. Optional \u2014 omit to use the workspace's only space; required when multiple spaces exist (use list_spaces to discover IDs).",
             "type": "string"
           },
           "tags": {
@@ -430,7 +444,7 @@
             "type": "array"
           },
           "title": {
-            "description": "The document title",
+            "description": "Plain-text document title. Use literal characters such as & rather than HTML entities such as &amp;.",
             "type": "string"
           }
         },
@@ -1514,7 +1528,7 @@
     },
     {
       "name": "fetch_url",
-      "description": "Fetch a specific public URL and return extracted title, description, readable text, and links. Use this after finding or knowing an exact changelog, release notes, blog, docs, or source URL.",
+      "description": "Fetch a credential-free GET from a public URL and return extracted content. In an execution workspace, set output_path to save the bounded response for local Python analysis without a command approval. Never put credentials or private workspace data in the URL; use an approval-gated tool for authenticated or state-changing requests.",
       "category": "Web Search",
       "input_schema": {
         "properties": {
@@ -1526,6 +1540,10 @@
             "description": "Maximum extracted text characters to return. Defaults to 12000, max 30000.",
             "type": "integer"
           },
+          "output_path": {
+            "description": "Optional file path relative to the current execution workspace. Saves the exact response body (maximum 2 MiB) for later local analysis.",
+            "type": "string"
+          },
           "url": {
             "description": "Public http(s) URL to fetch directly.",
             "type": "string"
@@ -1534,6 +1552,7 @@
         "required": [
           "url"
         ],
+        "additionalProperties": false,
         "type": "object"
       },
       "presets": []
@@ -1934,7 +1953,10 @@
             "type": "string"
           },
           "match_mode": {
-            "enum": ["regex", "literal"],
+            "enum": [
+              "regex",
+              "literal"
+            ],
             "type": "string"
           },
           "max_results": {
@@ -2189,7 +2211,7 @@
             "type": "integer"
           },
           "path": {
-            "description": "Optional path filter — only commits touching this file or directory.",
+            "description": "Optional path filter \u2014 only commits touching this file or directory.",
             "type": "string"
           },
           "repository": {
@@ -2758,7 +2780,17 @@
             "type": "boolean"
           },
           "kind": {
-            "enum": ["function", "method", "type", "class", "interface", "constructor", "constant", "variable", "module"],
+            "enum": [
+              "function",
+              "method",
+              "type",
+              "class",
+              "interface",
+              "constructor",
+              "constant",
+              "variable",
+              "module"
+            ],
             "type": "string"
           },
           "path": {
@@ -2790,7 +2822,11 @@
         "additionalProperties": false,
         "properties": {
           "direction": {
-            "enum": ["callers", "callees", "both"],
+            "enum": [
+              "callers",
+              "callees",
+              "both"
+            ],
             "type": "string"
           },
           "path": {
@@ -3888,6 +3924,16 @@
             "description": "Deprecated compatibility field. Plain commands only; shell operators are rejected.",
             "type": "string"
           },
+          "working_directory": {
+            "type": "string",
+            "description": "Existing directory relative to the workspace root; defaults to the root. Absolute paths, traversal, and symlinks are rejected."
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 900,
+            "description": "Execution timeout in seconds; defaults to 120."
+          },
           "program": {
             "description": "The executable name (for example: go, npm, git)",
             "type": "string"
@@ -4653,6 +4699,7 @@
             "type": "array"
           },
           "title": {
+            "description": "Plain-text document title. Use literal characters such as & rather than HTML entities such as &amp;.",
             "maxLength": 500,
             "minLength": 1,
             "type": "string"
@@ -5287,15 +5334,26 @@
         "additionalProperties": false,
         "properties": {
           "additional_queries": {
-            "items": {"type": "string"},
+            "items": {
+              "type": "string"
+            },
             "type": "array"
           },
           "category": {
-            "enum": ["company", "research paper", "news", "personal site", "financial report", "people"],
+            "enum": [
+              "company",
+              "research paper",
+              "news",
+              "personal site",
+              "financial report",
+              "people"
+            ],
             "type": "string"
           },
           "exclude_domains": {
-            "items": {"type": "string"},
+            "items": {
+              "type": "string"
+            },
             "type": "array"
           },
           "freshness": {
@@ -5303,7 +5361,9 @@
             "type": "string"
           },
           "include_domains": {
-            "items": {"type": "string"},
+            "items": {
+              "type": "string"
+            },
             "type": "array"
           },
           "max_results": {
@@ -5312,7 +5372,10 @@
             "type": "integer"
           },
           "mode": {
-            "enum": ["fast", "deep"],
+            "enum": [
+              "fast",
+              "deep"
+            ],
             "type": "string"
           },
           "query": {
@@ -5380,6 +5443,59 @@
           "content"
         ],
         "type": "object"
+      },
+      "presets": []
+    },
+    {
+      "name": "run_python",
+      "description": "Run local Python source in a fresh interpreter with a private run-local venv. For credential-free public GETs, first use fetch_url with output_path, then analyze the saved file here; network access inside Python is approval-gated. Files and installed packages persist only in this run; analysis storage (512 MiB) is deleted when the run ends and never transfers to successor runs. Install dependencies with run_command (python3 -m pip install), subject to approval. Publish important outputs before finishing the turn. output_paths explicitly selects private CSV, PNG, JSON or text artifacts (10 files, 10 MiB each, 25 MiB total).",
+      "category": "Workspace",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "output_paths": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "type": "string"
+            }
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "additionalProperties": false
+      },
+      "presets": []
+    },
+    {
+      "name": "publish_outputs",
+      "description": "Publish explicitly selected workspace CSV, PNG, JSON or text files as durable private downloads. Maximum 10 files, 10 MiB per file and 25 MiB total; artifacts survive run workspace deletion.",
+      "category": "Workspace",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "paths": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "paths"
+        ],
+        "additionalProperties": false
       },
       "presets": []
     }

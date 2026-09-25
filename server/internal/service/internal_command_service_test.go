@@ -760,7 +760,8 @@ func TestAddTaskCommentCommandConvertsMarkdownToRichTextHTML(t *testing.T) {
 
 func TestAddTaskCommentCommandPersistsAgentAttribution(t *testing.T) {
 	db := newTestDB(t)
-	mustExec(t, db, `CREATE TABLE agents (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, name TEXT NOT NULL, icon_key TEXT, preset_key TEXT)`)
+	mustExec(t, db, `CREATE TABLE agents (
+ ai_profile_id TEXT,id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, name TEXT NOT NULL, icon_key TEXT, preset_key TEXT)`)
 	mustExec(t, db, `CREATE TABLE agent_runs (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, external_runtime TEXT, external_runtime_id TEXT)`)
 	seedUser(t, db, "actor-1", "actor@example.com", "Waqar Azeem", "hash")
 	seedWorkspace(t, db, "ws-1", "Workspace", "workspace", "actor-1")
@@ -1022,4 +1023,12 @@ func TestDeliveryMergeBranchCommandUpdatesDeliveryStatusAfterSuccessfulMerge(t *
 		t.Fatalf("unexpected merge call: %#v", app.mergeCalls[0])
 	}
 	assertMergedDeliveryStatus(t, db)
+}
+
+func TestCreateDocumentRejectsEntityOnlyTitle(t *testing.T) {
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	_, err := svc.Execute(context.Background(), model.InternalCommandContext{WorkspaceID: "ws", ActorRole: model.RoleOwner}, "docs.create_document", json.RawMessage(`{"space_id":"space","title":"&nbsp;"}`))
+	if err == nil || !strings.Contains(err.Error(), "title is required") {
+		t.Fatalf("expected empty normalized title error, got %v", err)
+	}
 }

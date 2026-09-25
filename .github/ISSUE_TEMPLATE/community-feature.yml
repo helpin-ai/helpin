@@ -1,0 +1,11 @@
+name: Community improvement
+description: Propose a focused improvement to the support and docs experience.
+body:
+  - type: textarea
+    id: problem
+    attributes: {label: Problem, description: Describe the user task and what prevents it.}
+    validations: {required: true}
+  - type: textarea
+    id: proposal
+    attributes: {label: Proposed behavior and scope}
+    validations: {required: true}

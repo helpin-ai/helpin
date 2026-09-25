@@ -1,0 +1,235 @@
+{
+  "pgvector/pgvector:0.8.6-pg17-bookworm@sha256:cf134a767f474095eeba57e0117be8e568e011a63f33fbf252f14c9b760f8e6f": {
+    "expires": "2026-10-16",
+    "reason": "Beta upstream image exception; see docs/community/upstream-images.md.",
+    "findings": [
+      {
+        "id": "CVE-2026-86145",
+        "package": "libpcre2-8-0",
+        "installed": "10.42-1"
+      },
+      {
+        "id": "CVE-2026-89161",
+        "package": "libpcre2-8-0",
+        "installed": "10.42-1"
+      },
+      {
+        "id": "CVE-2025-68121",
+        "package": "stdlib",
+        "installed": "v1.24.6"
+      },
+      {
+        "id": "CVE-2025-61726",
+        "package": "stdlib",
+        "installed": "v1.24.6"
+      },
+      {
+        "id": "CVE-2025-61729",
+        "package": "stdlib",
+        "installed": "v1.24.6"
+      },
+      {
+        "id": "CVE-2026-25679",
+        "package": "stdlib",
+        "installed": "v1.24.6"
+      },
+      {
+        "id": "CVE-2026-27145",
+        "package": "stdlib",
+        "installed": "v1.24.6"
+      },
+      {
+        "id": "CVE-2026-32280",
+        "package": "stdlib",
+        "installed": "v1.24.6"
+      },
+      {
+        "id": "CVE-2026-32281",
+        "package": "stdlib",
+        "installed": "v1.24.6"
+      },
+      {
+        "id": "CVE-2026-32283",
+        "package": "stdlib",
+        "installed": "v1.24.6"
+      },
+      {
+        "id": "CVE-2026-33811",
+        "package": "stdlib",
+        "installed": "v1.24.6"
+      },
+      {
+        "id": "CVE-2026-33814",
+        "package": "stdlib",
+        "installed": "v1.24.6"
+      },
+      {
+        "id": "CVE-2026-33818",
+        "package": "stdlib",
+        "installed": "v1.24.6"
+      },
+      {
+        "id": "CVE-2026-39820",
+        "package": "stdlib",
+        "installed": "v1.24.6"
+      },
+      {
+        "id": "CVE-2026-39821",
+        "package": "stdlib",
+        "installed": "v1.24.6"
+      },
+      {
+        "id": "CVE-2026-39822",
+        "package": "stdlib",
+        "installed": "v1.24.6"
+      },
+      {
+        "id": "CVE-2026-39836",
+        "package": "stdlib",
+        "installed": "v1.24.6"
+      },
+      {
+        "id": "CVE-2026-42499",
+        "package": "stdlib",
+        "installed": "v1.24.6"
+      },
+      {
+        "id": "CVE-2026-42504",
+        "package": "stdlib",
+        "installed": "v1.24.6"
+      },
+      {
+        "id": "CVE-2026-56853",
+        "package": "stdlib",
+        "installed": "v1.24.6"
+      },
+      {
+        "id": "CVE-2026-56858",
+        "package": "stdlib",
+        "installed": "v1.24.6"
+      },
+      {
+        "id": "CVE-2026-56859",
+        "package": "stdlib",
+        "installed": "v1.24.6"
+      },
+      {
+        "id": "CVE-2026-56860",
+        "package": "stdlib",
+        "installed": "v1.24.6"
+      },
+      {
+        "id": "CVE-2026-56862",
+        "package": "stdlib",
+        "installed": "v1.24.6"
+      }
+    ]
+  },
+  "nats:2.14.7-alpine@sha256:ae5c49895a97b129546e30908012d7c965296c02f8754cd879e9d50ed3edd508": {
+    "expires": "2026-10-16",
+    "reason": "Beta upstream image exception; see docs/community/upstream-images.md.",
+    "findings": [
+      {
+        "id": "CVE-2026-14456",
+        "package": "libcrypto3",
+        "installed": "3.5.7-r0"
+      },
+      {
+        "id": "CVE-2026-14456",
+        "package": "libssl3",
+        "installed": "3.5.7-r0"
+      }
+    ]
+  },
+  "caddy:2.11.4-alpine@sha256:6aeddd44c3078b0f9a35206472a11420648a79c184603ef95957d0a20044cb2b": {
+    "expires": "2026-10-16",
+    "reason": "Beta upstream image exception; see docs/community/upstream-images.md.",
+    "findings": [
+      {
+        "id": "CVE-2026-27145",
+        "package": "stdlib",
+        "installed": "v1.26.3"
+      },
+      {
+        "id": "CVE-2026-33818",
+        "package": "stdlib",
+        "installed": "v1.26.3"
+      },
+      {
+        "id": "CVE-2026-39821",
+        "package": "stdlib",
+        "installed": "v1.26.3"
+      },
+      {
+        "id": "CVE-2026-39822",
+        "package": "stdlib",
+        "installed": "v1.26.3"
+      },
+      {
+        "id": "CVE-2026-42504",
+        "package": "stdlib",
+        "installed": "v1.26.3"
+      },
+      {
+        "id": "CVE-2026-46600",
+        "package": "golang.org/x/net",
+        "installed": "v0.55.0"
+      },
+      {
+        "id": "CVE-2026-46600",
+        "package": "stdlib",
+        "installed": "v1.26.3"
+      },
+      {
+        "id": "CVE-2026-56852",
+        "package": "golang.org/x/text",
+        "installed": "v0.37.0"
+      },
+      {
+        "id": "CVE-2026-56853",
+        "package": "stdlib",
+        "installed": "v1.26.3"
+      },
+      {
+        "id": "CVE-2026-56854",
+        "package": "golang.org/x/crypto",
+        "installed": "v0.52.0"
+      },
+      {
+        "id": "CVE-2026-56858",
+        "package": "stdlib",
+        "installed": "v1.26.3"
+      },
+      {
+        "id": "CVE-2026-56859",
+        "package": "stdlib",
+        "installed": "v1.26.3"
+      },
+      {
+        "id": "CVE-2026-56860",
+        "package": "stdlib",
+        "installed": "v1.26.3"
+      },
+      {
+        "id": "CVE-2026-56862",
+        "package": "stdlib",
+        "installed": "v1.26.3"
+      },
+      {
+        "id": "CVE-2026-84304",
+        "package": "google.golang.org/grpc",
+        "installed": "v1.81.0"
+      },
+      {
+        "id": "CVE-2026-84445",
+        "package": "google.golang.org/grpc",
+        "installed": "v1.81.0"
+      },
+      {
+        "id": "GHSA-hrxh-6v49-42gf",
+        "package": "google.golang.org/grpc",
+        "installed": "v1.81.0"
+      }
+    ]
+  }
+}

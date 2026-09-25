@@ -154,9 +154,8 @@ func NormalizeSetupGoals(raw []string) ([]string, error) {
 			result = append(result, key)
 		}
 	}
-	if len(result) > 3 {
-		return nil, fmt.Errorf("choose up to 3 setup goals")
-	}
+	// There is no maximum: every catalog goal may be selected. Order is kept as
+	// given, so the first goal remains the primary one.
 	return result, nil
 }
 
@@ -593,22 +592,6 @@ func setupMaturityFromProgress(coreDone, coreTotal, allDone, allTotal, powerDone
 		return model.SetupMaturityActivated
 	}
 	return model.SetupMaturityEstablished
-}
-
-func supportSetupMaturity(e SetupEvidence) string {
-	if e.SupportEmailInboxCount == 0 || e.LiveChatInstallationCount == 0 {
-		return model.SetupMaturityPreparing
-	}
-	if e.PublicHelpDocCount == 0 || e.BrandKnowledgeSourceCount == 0 || !e.SupportAIAgentActive {
-		return model.SetupMaturityReady
-	}
-	if e.TeamInboxCount == 0 || e.AutomaticRoutingCount == 0 {
-		return model.SetupMaturityActivated
-	}
-	if e.LinkedSupportTaskCount == 0 || e.CoverageImprovementCount == 0 {
-		return model.SetupMaturityEstablished
-	}
-	return model.SetupMaturityAdvanced
 }
 
 func isSetupCoreTask(key string) bool {

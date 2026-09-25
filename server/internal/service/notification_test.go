@@ -197,26 +197,20 @@ func TestNormalizeEmailDigestFrequency(t *testing.T) {
 }
 
 func TestSelectEmailDeliveryChannel(t *testing.T) {
-	tests := []struct {
-		name            string
-		priority        string
-		digestFrequency string
-		expected        string
-	}{
-		{name: "urgent bypasses digest", priority: "urgent", digestFrequency: "daily", expected: "email"},
-		{name: "high bypasses digest", priority: "high", digestFrequency: "weekly", expected: "email"},
-		{name: "normal daily uses digest", priority: "normal", digestFrequency: "daily", expected: "digest"},
-		{name: "low weekly uses digest", priority: "low", digestFrequency: "weekly", expected: "digest"},
-		{name: "normal immediate uses email", priority: "normal", digestFrequency: "immediate", expected: "email"},
-		{name: "normal never disables email", priority: "normal", digestFrequency: "never", expected: ""},
-		{name: "low none disables email", priority: "low", digestFrequency: "none", expected: ""},
-		{name: "urgent still emails when digest disabled", priority: "urgent", digestFrequency: "never", expected: "email"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := selectEmailDeliveryChannel(tt.priority, tt.digestFrequency); got != tt.expected {
-				t.Fatalf("selectEmailDeliveryChannel(%q, %q) = %q, want %q", tt.priority, tt.digestFrequency, got, tt.expected)
+	for _, tc := range []struct{ event, frequency, want string }{
+		{"crm.signal_ready", "daily", "digest"},
+		{"task.blocked", "weekly", "digest"},
+		{"comment.mention", "daily", "email"},
+		{"doc.mention", "weekly", "email"},
+		{"support_conversation.mentioned", "daily", "email"},
+		{"task.agent_attention_required", "never", "email"},
+		{"comment.created", "immediate", "email"},
+		{"comment.created", "never", ""},
+		{"crm.signal_ready", "none", ""},
+	} {
+		t.Run(tc.event+"/"+tc.frequency, func(t *testing.T) {
+			if got := selectEmailDeliveryChannel(tc.event, tc.frequency); got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
 			}
 		})
 	}

@@ -28,9 +28,14 @@ volume.
 `nats-bootstrap` requires `NATS_URL`, `EVENTS_WORK_MAX_BYTES`,
 `EVENTS_RAW_MAX_BYTES`, and `EVENTS_DLQ_MAX_BYTES`. It creates an R3
 WorkQueue/DiscardNew work stream, an R1 diagnostic raw archive, and an R3 DLQ.
-All are file-backed, S2-compressed, and bounded to a six-hour maximum age.
+By default, all are file-backed, S2-compressed, and bounded to a six-hour
+maximum age. Work storage/compression and replica counts can be overridden;
+see [bootstrap configuration](src/nats_bootstrap.rs). Bootstrap reads the process
+environment directly, so export its settings rather than relying on `.env` loading.
 
 ## Local development
+
+Run from `events-pipeline/rust-capture` with the Rust toolchain installed:
 
 ```bash
 cp .env.example .env
@@ -38,6 +43,14 @@ PRINT_SINK=true cargo run
 cargo test --lib pipeline::tests
 cargo test --lib writer::tests
 ```
+
+`PRINT_SINK=true` logs acceptance metadata without inline enrichment, NATS, or
+ClickHouse writes. It still authenticates requests. Set `HTTP_TOKENS_URL` to a
+running backend token endpoint and use the same `INTERNAL_API_SECRET` as the
+backend; the endpoint must return credentials for your test workspace. An empty
+registry can leave the process running while requests fail authentication. See
+the [API guide](../rust-capture-api-guide.md) for request credentials and the
+[local end-to-end harness](../e2e/README.md) for an isolated test setup.
 
 Set `PRINT_SINK=false` and `NATS_URL` to exercise JetStream. With network
 enrichment enabled, capture and replay download missing MaxMind and IP2Proxy
@@ -55,13 +68,20 @@ pulls bounded batches from one multi-subject durable consumer per writer, and
 sends AckProgress until ClickHouse and any terminal DLQ publication have
 completed. The 100 logical subjects are assigned in balanced contiguous ranges;
 the current two-writer topology owns 50 subjects per writer.
+When running capture and writer on the same host, set distinct
+`WRITER_HEALTH_PORT` and `WRITER_METRICS_PORT` values: the writer defaults to
+3000/3001, which collide with capture.
 Production mounts the private NATS CA and role-specific client certificate
 through the `NATS_*_FILE` variables shown in `.env.example`.
 
 The API listens on `:3000`, metrics on `:3001`, and exposes
 `/health/liveness`, `/health/readiness`, and `/health/status`. NATS health is
-reported separately while readiness remains true during a broker outage when
-the durable spill is writable.
+reported separately. Capture readiness remains true until shutdown, including
+during a broker outage; it does not test spill writability or token availability.
+A ready response therefore does not prove ingestion works. Check the token
+registry, fallback errors and disk capacity, then send an authenticated event and
+verify its destination. See [health implementation](src/health.rs) and
+[startup wiring](src/main.rs).
 
 Capture uses separate named NATS connections for durable work, the raw archive,
 and capture DLQ traffic. The session writer likewise separates its work
@@ -98,5 +118,9 @@ different or missing guard, snapshots each shard's safe seed floor into the new
 consumer metadata, removes the old non-overlapping WorkQueue filters, and
 creates the new consumers. Start writers only after bootstrap succeeds.
 
-The complete runtime, storage, sessionization, and acceptance contract is in
+The historical runtime, storage, sessionization, and acceptance design is in
 [`../../docs/plans/2026-08-25-nats-event-pipeline.md`](../../docs/plans/2026-08-25-nats-event-pipeline.md).
+
+Use the current source and [deployment runbook](../DEPLOYMENT.md) to check
+implementation and operating requirements; the original plan is not proof that
+every acceptance criterion has been deployed or verified.

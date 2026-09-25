@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -34,8 +35,13 @@ func (h *GitHandler) GetGitHubInstallURL(w http.ResponseWriter, r *http.Request)
 	workspaceID := getWorkspaceID(r)
 	actorID := middleware.GetUserID(r.Context())
 	forceInstall := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("force_install")), "true")
+	returnTo, err := service.NormalizeGitHubReturnTo(r.URL.Query().Get("return_to"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
-	installURL, action, integrationID, err := h.gitService.GetGitHubInstallURL(r.Context(), workspaceID, actorID, forceInstall)
+	installURL, action, integrationID, err := h.gitService.GetGitHubInstallURL(r.Context(), workspaceID, actorID, forceInstall, returnTo)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -43,32 +49,69 @@ func (h *GitHandler) GetGitHubInstallURL(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, model.GitHubInstallURLResponse{InstallURL: installURL, Action: action, IntegrationID: integrationID})
 }
 
-// GitHubCallback handles GET /api/git/github/callback.
+// GitHubCallback handles GET /api/git/github/callback, GitHub's App setup
+// URL. It always redirects the browser: installs without valid Helpin state
+// continue at the frontend /github/installed route.
 func (h *GitHandler) GitHubCallback(w http.ResponseWriter, r *http.Request) {
-	redirectURL, err := h.gitService.CompleteGitHubInstall(
+	query := r.URL.Query()
+	redirectURL := h.gitService.GitHubInstallCallbackRedirect(
 		r.Context(),
-		r.URL.Query().Get("state"),
-		r.URL.Query().Get("installation_id"),
+		query.Get("state"),
+		query.Get("installation_id"),
+		query.Get("setup_action"),
 	)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
 
+// GetOrgGitHubInstallURL handles GET /api/organizations/{id}/git/github/install-url.
 func (h *GitHandler) GetOrgGitHubInstallURL(w http.ResponseWriter, r *http.Request) {
 	orgID := chi.URLParam(r, "id")
 	actorID := middleware.GetUserID(r.Context())
 	forceInstall := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("force_install")), "true")
 	returnWorkspaceID := strings.TrimSpace(r.URL.Query().Get("workspace_id"))
+	returnTo, err := service.NormalizeGitHubReturnTo(r.URL.Query().Get("return_to"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
-	installURL, action, integrationID, err := h.gitService.GetGitHubInstallURLForOrganization(r.Context(), orgID, returnWorkspaceID, actorID, forceInstall)
+	installURL, action, integrationID, err := h.gitService.GetGitHubInstallURLForOrganization(r.Context(), orgID, returnWorkspaceID, actorID, forceInstall, returnTo)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, model.GitHubInstallURLResponse{InstallURL: installURL, Action: action, IntegrationID: integrationID})
+}
+
+// ClaimOrgGitHubInstallation handles
+// POST /api/organizations/{id}/git/github/installations/{installationID}/claim.
+// It links an installation that reached Helpin without state (installed or
+// updated from GitHub) to the organization. Optional ?workspace_id= records
+// the workspace the claim came from.
+func (h *GitHandler) ClaimOrgGitHubInstallation(w http.ResponseWriter, r *http.Request) {
+	orgID := chi.URLParam(r, "id")
+	installationID := chi.URLParam(r, "installationID")
+	actorID := middleware.GetUserID(r.Context())
+	workspaceID := strings.TrimSpace(r.URL.Query().Get("workspace_id"))
+
+	resp, err := h.gitService.ClaimGitHubInstallation(r.Context(), orgID, workspaceID, actorID, installationID)
+	switch {
+	case err == nil:
+		writeJSON(w, http.StatusOK, resp)
+	case errors.Is(err, service.ErrGitHubInstallClaimForbidden):
+		writeError(w, http.StatusForbidden, err.Error())
+	case errors.Is(err, service.ErrGitHubInstallClaimUnavailable), errors.Is(err, service.ErrGitHubInstallationNotFound):
+		writeError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, service.ErrGitHubInstallationClaimed):
+		writeError(w, http.StatusConflict, err.Error())
+	case errors.Is(err, service.ErrGitHubInstallClaimInvalid):
+		writeError(w, http.StatusBadRequest, "invalid installation or workspace")
+	case errors.Is(err, service.ErrGitHubInstallAppMissing):
+		writeError(w, http.StatusConflict, err.Error())
+	default:
+		slog.ErrorContext(r.Context(), "claim github installation failed", "organization_id", orgID, "installation_id", installationID, "user_id", actorID, "error", err)
+		writeError(w, http.StatusBadGateway, "GitHub could not confirm the installation. Try again.")
+	}
 }
 
 // ConnectOrgGitLab handles POST /api/organizations/{id}/git/gitlab/connect.
@@ -573,14 +616,33 @@ func (h *GitHandler) Webhook(w http.ResponseWriter, r *http.Request) {
 				body,
 				r.Header.Get("X-Hub-Signature-256"),
 			)
+			if errors.Is(err, service.ErrGitHubWebhookUnknownInstallation) {
+				// Signed by the App but not (yet) linked to an organization,
+				// e.g. installation events that arrive before the setup callback.
+				writeJSON(recorder, http.StatusOK, map[string]string{"status": "ignored"})
+				return
+			}
+			if errors.Is(err, service.ErrGitHubWebhookSignature) {
+				writeError(recorder, http.StatusUnauthorized, "invalid github webhook signature")
+				return
+			}
 			if err != nil {
-				writeError(recorder, http.StatusUnauthorized, err.Error())
+				slog.ErrorContext(r.Context(), "resolve github webhook installation", "error", err)
+				writeError(recorder, http.StatusInternalServerError, "failed to resolve github installation")
 				return
 			}
 			integration = resolvedIntegration
 			if integration != nil {
 				resolvedIntegrationID = &integration.ID
 			}
+		} else if err := h.gitService.VerifyGitHubWebhookWithoutInstallation(
+			r.Context(),
+			r.URL.Query().Get("workspace_id"),
+			body,
+			r.Header.Get("X-Hub-Signature-256"),
+		); err != nil {
+			writeError(recorder, http.StatusUnauthorized, "invalid github webhook signature")
+			return
 		}
 
 		event := r.Header.Get("X-GitHub-Event")
@@ -1063,7 +1125,7 @@ func (h *GitHandler) handleGitLabPipeline(r *http.Request, w http.ResponseWriter
 		return
 	}
 	for _, repoRecord := range repoRecords {
-		if err := h.gitService.ProcessWebhookCheckSuiteForProvider(r.Context(), repoRecord.WorkspaceID, repoRecord.Provider, repoRecord.FullName, "completed", ref, status); err != nil {
+		if err := h.gitService.ProcessWebhookCheckSuiteForProvider(r.Context(), repoRecord.WorkspaceID, repoRecord.Provider, repoRecord.FullName, "completed", ref, gitlabPipelineConclusion(status)); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -1136,6 +1198,20 @@ func gitlabPipelineTerminalStatus(status string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// gitlabPipelineConclusion maps a terminal GitLab pipeline status to the
+// check-suite conclusion vocabulary that pipeline flow filters use, so a
+// "failure" or "cancelled" filter matches GitLab pipelines as well as GitHub.
+func gitlabPipelineConclusion(status string) string {
+	switch normalized := strings.ToLower(strings.TrimSpace(status)); normalized {
+	case "failed":
+		return "failure"
+	case "canceled":
+		return "cancelled"
+	default:
+		return normalized
 	}
 }
 

@@ -276,7 +276,7 @@ func TestDocumentationSkillsDeclareExpectedGuidance(t *testing.T) {
 		if !containsString(skill.SupportedRuntimes, "native_sdk") {
 			t.Fatalf("expected %s to support native_sdk, got %v", key, skill.SupportedRuntimes)
 		}
-		if !containsString(skill.SupportedRuntimes, "codex") {
+		if !containsString(skill.SupportedRuntimes, "native_sdk") {
 			t.Fatalf("expected %s to support codex, got %v", key, skill.SupportedRuntimes)
 		}
 		for _, snippet := range snippets {
@@ -301,8 +301,8 @@ func TestSecurityTriageSkillReferencesScannerWorkflow(t *testing.T) {
 		"Let the scanner tools handle bundled rules, caches, and scanner-native fallbacks",
 		"Scanner output is evidence, not truth",
 		"Create tasks only for findings classified as `applicable`",
-		"prewarms Trivy vulnerability databases",
-		"seed writable runtime caches under `/tmp/helpin-security-cache`",
+		"Do not assume scanner binaries, prewarmed databases, or bundled rules are installed",
+		"A zero-finding result with an execution or parsing warning is not evidence",
 	} {
 		if !strings.Contains(skill.Instructions, snippet) {
 			t.Fatalf("expected security triage instructions to contain %q\n%s", snippet, skill.Instructions)
@@ -420,8 +420,8 @@ func TestTaskPlannerBundleUsesTaskPlanDocSkillStack(t *testing.T) {
 		t.Fatalf("did not expect epic task-plan skill in task planner bundle, got %v", bundle.SkillKeys)
 	}
 	skill, ok := GetBuiltInSkill("coding_task_planning")
-	if !ok || !containsString(skill.SupportedRuntimes, "codex") {
-		t.Fatalf("task planning skill must support Codex, got %#v", skill.SupportedRuntimes)
+	if !ok || !containsString(skill.SupportedRuntimes, "native_sdk") {
+		t.Fatalf("task planning skill must support native, got %#v", skill.SupportedRuntimes)
 	}
 }
 
@@ -622,8 +622,8 @@ func TestReviewAgentSkillDeclaresCompletionInteractionPolicy(t *testing.T) {
 	if contract.Transports["native_sdk"].ToolName != CanonicalToolName(ToolRequestReviewCheckpoint) {
 		t.Fatalf("expected native_sdk review checkpoint tool transport, got %+v", contract.Transports["native_sdk"])
 	}
-	if contract.Transports["codex"].Type != InteractionTransportTypeToolCall || contract.Transports["codex"].ToolName != CanonicalToolName(ToolRequestReviewCheckpoint) {
-		t.Fatalf("expected codex review checkpoint tool transport, got %+v", contract.Transports["codex"])
+	if contract.Transports["native_sdk"].Type != InteractionTransportTypeToolCall || contract.Transports["native_sdk"].ToolName != CanonicalToolName(ToolRequestReviewCheckpoint) {
+		t.Fatalf("expected codex review checkpoint tool transport, got %+v", contract.Transports["native_sdk"])
 	}
 	inputContract, ok := skill.Policy.InteractionContract(InteractionKindRequestUserInput)
 	if !ok {
@@ -635,8 +635,8 @@ func TestReviewAgentSkillDeclaresCompletionInteractionPolicy(t *testing.T) {
 	if inputContract.Transports["native_sdk"].ToolName != CanonicalToolName(ToolRequestUserInput) {
 		t.Fatalf("expected native_sdk request_user_input tool transport, got %+v", inputContract.Transports["native_sdk"])
 	}
-	if inputContract.Transports["codex"].Type != InteractionTransportTypeRuntimeBridge {
-		t.Fatalf("expected codex request_user_input runtime bridge transport, got %+v", inputContract.Transports["codex"])
+	if inputContract.Transports["native_sdk"].Type != InteractionTransportTypeToolCall {
+		t.Fatalf("expected native request_user_input tool transport, got %+v", inputContract.Transports["native_sdk"])
 	}
 	for _, instruction := range []string{
 		"Do not ask for the same missing value again in the current run.",
@@ -686,4 +686,15 @@ func containsString(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestSupportTrustBoundaryAddedToOldDeliverySnapshots(t *testing.T) {
+	old := "Workspace instructions\n\n" + supportRuntimeDeliveryContract
+	got := EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, old)
+	if !strings.Contains(got, SupportKnowledgeTrustPolicy) {
+		t.Fatal("old snapshot bypasses trust boundary")
+	}
+	if next := EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, got); next != got {
+		t.Fatal("trust boundary duplicated")
+	}
 }

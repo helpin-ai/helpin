@@ -1,3 +1,4 @@
+import { defaultStageColor } from '@/lib/crmStageColors';
 import { useRef, useState, type ReactNode } from "react";
 import {
   closestCenter,
@@ -286,7 +287,8 @@ function StageRow({
           </span>
         )}
       </div>
-      <div className="min-w-0 text-sm font-medium break-words">
+      <div className="flex min-w-0 items-center gap-1.5 text-sm font-medium break-words">
+        <span className="h-3 w-3 shrink-0 rounded-full border border-border/50" style={{backgroundColor: stage.color || defaultStageColor(stage.stage_type, stage.position)}} />
         {editable ? (
           <InlineStageField
             label={`Stage name: ${stage.name}`}

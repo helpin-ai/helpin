@@ -34,16 +34,16 @@ export function formatMessageTime(dateStr: string): string {
 export function getDayLabel(dateStr: string): string {
   const date = new Date(dateStr);
   const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const messageDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const diffDays = Math.floor((today.getTime() - messageDay.getTime()) / 86400000);
-
-  if (diffDays === 0) return 'Today';
-  if (diffDays === 1) return 'Yesterday';
-  if (diffDays < 7) {
-    return date.toLocaleDateString(undefined, { weekday: 'long' });
-  }
-  return date.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  // Compare calendar days so daylight-saving transitions do not shift the label.
+  if (date.toDateString() === now.toDateString()) return 'Today';
+  if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  return date.toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: date.getFullYear() === now.getFullYear() ? undefined : 'numeric',
+  });
 }
 
 export function isSameDay(a: string, b: string): boolean {

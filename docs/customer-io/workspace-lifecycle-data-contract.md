@@ -6,8 +6,14 @@ Helpin identifies people globally by `user_id` and keeps lifecycle context on th
 
 | Object | `object_type_id` | Key attributes |
 |---|---:|---|
-| Workspace | `1` | `workspace_id`, `organization_id`, `plan`, `billing_status`, `trial_ends_at`, `trialing`, `modules`, `credits_remaining` |
+| Workspace | `1` | `workspace_id`, `organization_id`, `plan`, `billing_status`, `trial_ends_at`, `trialing`, `ai_usage_allowance_microusd`, `ai_usage_used_microusd`, `ai_usage_remaining_microusd`, `ai_usage_reserved_microusd`, `ai_usage_overage_microusd`, `pricing_version` |
 | Organization | `2` | `organization_id`, `workspace_count`, `trialing_workspace_count`, `paid_workspace_count`, `highest_plan`, `monthly_due_cents` |
+
+Billing attributes are included only when billing context is available. The
+current mapper does not emit the old `credits_remaining` field. Source fields
+and omission rules are defined in
+[the Customer.io identity service](../../server/internal/service/customer_io.go).
+These are data contracts, not evidence that a hosted campaign is enabled.
 
 Workspace relationship attributes:
 

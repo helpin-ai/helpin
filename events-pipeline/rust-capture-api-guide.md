@@ -1,8 +1,10 @@
-# Rust-Capture API Documentation
+# Event capture API reference
 
 ## Overview
 
-The Rust-Capture API is an event tracking service that captures, processes, and forwards analytics events. It supports both client-side and server-to-server event tracking.
+Use this reference to send browser or server events to the capture service.
+The [pipeline guide](README.md) explains tenancy, identity, and delivery. This
+reference describes the checked-in handler, not the retired upstream API.
 
 ## Endpoints
 
@@ -18,13 +20,18 @@ All endpoints accept POST requests and return the same response format:
 
 ## Authentication
 
-Authentication is required for all endpoints. The API key can be provided in three ways:
+Capture authenticates against Helpin's token registry before decoding the body.
+Supply a registered credential using `?api_key=...`, `?token=...`, or the
+`x-auth-token` header. The header overrides the query token; a nonempty token
+wins over `api_key`. Historical `p_*` query parameters are also accepted.
 
-1. **Query Parameter**: `?api_key=YOUR_API_KEY` or `?token=YOUR_API_KEY`
-2. **HTTP Header**: `Authorization: Bearer YOUR_API_KEY`
-3. **Request Body**: Include `api_key` field in the JSON payload
+`Authorization: Bearer ...` and a body-only `api_key` do **not** authenticate this
+handler. A request credential overrides the payload's `api_key` for every event.
+The registry determines browser/server credential kind, installation, and
+workspace; token punctuation and a caller-supplied `project_id` are not authority.
 
-**Note**: If the token is provided via header/query and differs from the body's `api_key`, the header/query token will override the body value.
+For browser integrations, prefer the [SDK](../packages/sdk-js/README.md), which
+supplies the supported request format. Keep server credentials on your backend.
 
 ## Content Types
 
@@ -38,6 +45,9 @@ Authentication is required for all endpoints. The API key can be provided in thr
 Events can be sent as:
 - **Single Event**: A JSON object containing one event
 - **Batch Events**: A JSON array containing multiple events
+
+The following examples are request bodies; send the credential separately as
+described above.
 
 ### Example - Single Event
 ```json
@@ -74,7 +84,7 @@ Events can be sent as:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `api_key` | String | Yes | Your project API key (can be provided via query/header) |
+| `api_key` | String | No in the body | Populated from the authenticated request credential; raw credentials are replaced before downstream storage |
 | `event_type` | String | Yes | Type of event being tracked (e.g., "pageview", "click", "custom_event") |
 | `user` | Object | Yes | User identification and attributes object |
 
@@ -112,7 +122,7 @@ The `company` object is a flexible HashMap that can contain:
 |-------|------|----------|-------------|
 | `url` | String | No | Full URL of the page |
 | `page_title` | String | No | Title of the page |
-| `referrer` | String | No | Referring URL (HTTP Referer) |
+| `referer` | String | No | Input field used to populate normalized `referrer`; the handler does not read the HTTP Referer header |
 | `doc_path` | String | No | Document path component of the URL |
 | `doc_host` | String | No | Document host/domain |
 | `doc_search` | String | No | Query string parameters |
@@ -186,7 +196,7 @@ Both objects are flexible HashMaps that can contain any custom key-value pairs.
 |-------|------|----------|-------------|
 | `source_ip` | String | No | User's IP address (auto-captured from `x-forwarded-for` header if not provided) |
 | `utc_time` | String | No | UTC timestamp of when the event occurred |
-| `timestamp` | Integer | No | Custom Unix timestamp for backfilling historical data. Only works with server-side tokens (tokens containing a dot). Accepts both seconds and milliseconds (values > 1,000,000,000,000 are treated as milliseconds). Must be after 1971-01-01. |
+| `timestamp` | Integer | No | Server-credential event time in seconds or milliseconds; allowed range is now minus 7 days through now plus 1 hour. Browser events use receipt time. |
 | `received_at` | String | Auto | Server timestamp when event was received (auto-generated) |
 | `src` | String | No | Source/origin of the event |
 
@@ -194,8 +204,8 @@ Both objects are flexible HashMaps that can contain any custom key-value pairs.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `cookie_policy` | String | No | Cookie consent policy status (can be passed as query parameter) |
-| `ip_policy` | String | No | IP tracking policy status (can be passed as query parameter) |
+| `cookie_policy` | String | No | Query parameter copied into each event; body-only values are overwritten |
+| `ip_policy` | String | No | Query parameter copied into each event; body-only values are overwritten |
 
 ## Query Parameters
 
@@ -210,11 +220,10 @@ Both objects are flexible HashMaps that can contain any custom key-value pairs.
 
 | Header | Description |
 |--------|-------------|
-| `Authorization` | Bearer token for authentication |
+| `x-auth-token` | Registered credential; overrides query credentials |
 | `Content-Type` | Request content type (application/json or application/x-www-form-urlencoded) |
 | `x-forwarded-for` | Client IP address (automatically captured) |
 | `user-agent` | Client user agent (automatically captured) |
-| `referer` | Referring URL (automatically captured) |
 
 ## Response Format
 
@@ -222,7 +231,7 @@ Both objects are flexible HashMaps that can contain any custom key-value pairs.
 
 ```json
 {
-  "status": 1
+  "status": "Ok"
 }
 ```
 
@@ -233,12 +242,14 @@ Both objects are flexible HashMaps that can contain any custom key-value pairs.
 | HTTP Status | Description |
 |-------------|-------------|
 | `400 Bad Request` | Invalid JSON payload or no events in batch |
-| `401 Unauthorized` | Invalid or missing API key |
+| `401 Unauthorized` | Invalid or missing request credential |
+| `403 Forbidden` | Browser credential attempted a server-only commercial event or company field |
+| `413 Payload Too Large` | Request body or event exceeds its limit |
+| `503 Service Unavailable` | Retryable sink failure |
+| `504 Gateway Timeout` | Request exceeds the configured timeout |
 
-Error response format:
-```json
-"Error message describing the issue"
-```
+Capture errors return a plain-text message, not a JSON string. See
+[error mapping](rust-capture/src/api.rs) and [timeout middleware](rust-capture/src/metrics_recorder.rs).
 
 ## Automatic Enrichment
 
@@ -246,7 +257,7 @@ The following fields are automatically enriched by the server if not provided:
 
 1. **IP Address**: Extracted from `x-forwarded-for` header
 2. **User Agent**: Extracted from `user-agent` header
-3. **Referrer**: Extracted from `referer` header
+3. **Referrer**: Copied from the payload `referer` field
 4. **Received At**: Server timestamp when event is received
 5. **Geolocation**: Enriched based on IP address (in processing pipeline)
 6. **User Agent Parsing**: Device, browser, and OS information (in processing pipeline)
@@ -254,31 +265,26 @@ The following fields are automatically enriched by the server if not provided:
 
 ## Backfilling Historical Data
 
-To backfill historical events, use the `timestamp` field with the following requirements:
+This endpoint accepts recent server events, not arbitrary historical imports.
+The token registry must classify the credential as `server`. When a server event
+supplies `timestamp`, enrichment accepts Unix seconds or milliseconds (absolute
+values above 1,000,000,000,000 are interpreted as milliseconds) only within **now
+minus 7 days through now plus 1 hour**. Browser credentials use receipt time.
+Out-of-window timestamps fail enrichment rather than being clamped.
 
-1. **Server-side token required**: The `timestamp` field only works with server-side API keys (tokens containing a dot, e.g., `UMYwi4UKqF.18954a1e-95fb-43d9-9808-fe828f85cad7`)
-2. **Timestamp format**: Accepts Unix timestamps in either:
-   - **Seconds**: Values ≤ 1,000,000,000,000 (e.g., `1609459200` for Jan 1, 2021)
-   - **Milliseconds**: Values > 1,000,000,000,000 (e.g., `1609459200000` for Jan 1, 2021)
-3. **Date validation**: Timestamp must represent a date after January 1, 1971
-4. **Use S2S endpoints**: Always use server-to-server endpoints (`/api/v1/s2s/event` or `/api/v1/s2s/events`) for backfilling
+For a current server event, generate the timestamp at send time:
 
-### Example - Backfilling Event
-```json
-{
-  "api_key": "your_server_secret.uuid-here",
-  "event_type": "purchase",
-  "timestamp": 1609459200000,
-  "user": {
-    "id": "user123",
-    "email": "user@example.com"
-  },
-  "event_attributes": {
-    "amount": 99.99,
-    "product": "Premium Plan"
-  }
-}
+```sh
+EVENT_TIMESTAMP=$(date +%s)
+curl --fail-with-body 'http://localhost:3000/api/v1/s2s/event' \
+  -H "x-auth-token: $HELPIN_SERVER_TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data "{\"event_type\":\"purchase\",\"timestamp\":$EVENT_TIMESTAMP,\"user\":{\"id\":\"user123\"}}"
 ```
+
+Set `HELPIN_SERVER_TOKEN` to an actual registered server credential and use the
+capture origin for your environment. See [timestamp validation](rust-capture/src/pipeline.rs)
+and [enrichment](rust-capture/src/enrichment/handler.rs) for the current bounds.
 
 ## Best Practices
 
@@ -287,12 +293,14 @@ To backfill historical events, use the `timestamp` field with the following requ
 3. **Include UTM parameters**: For marketing attribution tracking
 4. **Consistent event naming**: Use a standardized naming convention for event_type
 5. **Custom attributes**: Use `event_attributes` for event-specific data
-6. **Historical data**: Use the `timestamp` field with server-side tokens for backfilling
+6. **Recent server events**: Use `timestamp` only within the accepted time window
 7. **Privacy compliance**: Always respect user consent via cookie_policy and ip_policy
 
 ## Rate Limiting
 
-No explicit rate limits are documented, but it's recommended to:
+The router defaults to a 2 MiB request limit (`MAX_BODY_SIZE`) and the request
+timeout defaults to 60 seconds (`REQUEST_TIMEOUT_SECS`). Ingress may impose
+additional limits. For sustained ingestion:
 - Batch events when possible
 - Implement retry logic with exponential backoff
 - Monitor response times and adjust accordingly

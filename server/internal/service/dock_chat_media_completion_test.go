@@ -2,15 +2,11 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"slices"
+	"github.com/helpin-ai/helpin/server/internal/aipolicy"
+	"github.com/helpin-ai/helpin/server/internal/llm"
 	"testing"
 	"time"
-
-	"github.com/helpin-ai/helpin/server/internal/aipolicy"
-	"github.com/helpin-ai/helpin/server/internal/aiusage"
-	"github.com/helpin-ai/helpin/server/internal/llm"
 )
 
 type dockMediaCompletionFunc func(context.Context, llm.ChatRequest) (*llm.ChatResponse, error)
@@ -22,8 +18,8 @@ func (f dockMediaCompletionFunc) ChatCompletion(ctx context.Context, req llm.Cha
 func TestDockChatMediaCompletionAllowsLongAnalysis(t *testing.T) {
 	provider := dockMediaCompletionFunc(func(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
 		deadline, ok := ctx.Deadline()
-		if !ok || time.Until(deadline) < 3*time.Minute+50*time.Second || time.Until(deadline) > 4*time.Minute {
-			t.Fatalf("media provider deadline = %v, want approximately four minutes", deadline)
+		if !ok || time.Until(deadline) < time.Minute+50*time.Second || time.Until(deadline) > 2*time.Minute {
+			t.Fatalf("media provider deadline = %v, want approximately two minutes per attempt", deadline)
 		}
 		action, ok := aipolicy.DefaultRegistry().Lookup(aipolicy.ActionAskMediaEnrichment)
 		if !ok || action.Timeout != 4*time.Minute {
@@ -56,47 +52,33 @@ func TestDockChatMediaCompletionPreservesCallerCancellation(t *testing.T) {
 	}
 }
 
-func TestDockChatMediaCompletionUsesGovernedGemini38WithinCurrentPrices(t *testing.T) {
-	store := &fakeAIUsageStore{}
-	audit := &gatewayFakeAudit{}
-	provider := &scriptedAICompletionProvider{}
-	completion := newTestAICompletionService(t, provider, store).
-		SetGovernance(aipolicy.DefaultRegistry(), audit)
-	s := (&DockChatService{}).SetMediaAnalyzer(&PMAttachmentService{}, completion)
-	_, err := s.analyzeDockChatMedia(context.Background(), "ws", "user", "What went wrong?", []dockChatMediaAttachment{
-		{ID: "image", FileType: "image/png", URL: "https://example.com/screenshot.png"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(provider.requests) != 1 {
-		t.Fatalf("provider requests = %d, want one", len(provider.requests))
-	}
-	req := provider.requests[0]
-	if req.Model != "google/gemini-3.8-flash" || req.MaxTokens != 700 {
-		t.Fatalf("media route/output limit = %q/%d", req.Model, req.MaxTokens)
-	}
-	var options struct {
-		Sort     string   `json:"sort"`
-		Only     []string `json:"only"`
-		MaxPrice struct {
-			Prompt     float64 `json:"prompt"`
-			Completion float64 `json:"completion"`
-		} `json:"max_price"`
-	}
-	if err := json.Unmarshal(req.ProviderOptions, &options); err != nil {
-		t.Fatal(err)
-	}
-	if options.Sort != "latency" || options.MaxPrice.Prompt != 0.375 || options.MaxPrice.Completion != 1.875 {
-		t.Fatalf("media provider options = %+v", options)
-	}
-	if !slices.Equal(options.Only, []string{"google-ai-studio/flex", "google-vertex/global/flex"}) {
-		t.Fatalf("media providers = %v, want explicit Flex endpoints", options.Only)
-	}
-	if store.reconcile.Entry.CanonicalModel != "gemini-3.8-flash" || store.reconcile.Entry.ModelTier != string(aiusage.TierMedium) {
-		t.Fatalf("media ledger = %+v", store.reconcile.Entry)
-	}
-	if len(audit.started) != 1 || len(audit.finished) != 1 || audit.started[0].ActionKey != aipolicy.ActionAskMediaEnrichment {
-		t.Fatalf("media audit start/finish = %d/%d", len(audit.started), len(audit.finished))
+func TestDockChatMediaFallbackOnlyForTransientFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		status    int
+		wantCalls int
+		wantError bool
+	}{
+		{"rate_limit", 429, 2, false}, {"unavailable", 503, 2, false},
+		{"invalid_media", 400, 1, true}, {"unauthorized", 401, 1, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			provider := dockMediaCompletionFunc(func(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
+				calls++
+				if calls == 1 {
+					return nil, &llm.ProviderError{StatusCode: tc.status}
+				}
+				if req.Model != "qwen/qwen3.8-omni-flash" {
+					t.Fatalf("fallback model=%s", req.Model)
+				}
+				return &llm.ChatResponse{Content: "Visible upload error"}, nil
+			})
+			s := (&DockChatService{}).SetMediaAnalyzer(&PMAttachmentService{}, provider)
+			_, err := s.analyzeDockChatMedia(context.Background(), "ws", "user", "Describe", []dockChatMediaAttachment{{ID: "image", FileType: "image/png", URL: "https://example.com/image.png"}})
+			if calls != tc.wantCalls || (err != nil) != tc.wantError {
+				t.Fatalf("calls=%d error=%v", calls, err)
+			}
+		})
 	}
 }

@@ -1,12 +1,23 @@
+import { CodingPlanPanel } from '@/components/pm/CodingSession/CodingPlanPanel';
+import { dockWorkPlans, dockPlanBoundary } from './dockWorkPlans';
+import type { RunPlanArtifact, AgentRunStatus } from '@/lib/pmTypes';
 import { Fragment, useState, type ReactNode } from 'react';
+import { useDockStore } from '@/stores/dockStore';
+import { Tick01Icon } from '@/lib/icons';
+import { DockActivityTimeline, DockActivitySteps } from './DockActivityTimeline';
+import { buildDockActivityTimeline } from './dockActivityTimeline';
+import { DockAnswerSegment } from './DockAnswerSegment';
+import { DockDecisionRow } from './DockDecisionRow';
+import { useDockAnswerAnimation } from './useDockAnswerAnimation';
 import { cn } from '@/lib/utils';
-import type { CodingSessionStreamState } from '@/lib/pmTypes';
+import type { AgentRunPauseReason, CodingSessionStreamState } from '@/lib/pmTypes';
 import {
   collectSegments,
   DOCK_SEGMENT_KINDS,
   segmentTimestamp,
   transcriptSegmentTimes,
   TranscriptSegmentView,
+  type TranscriptSegment,
 } from '@/components/agents/transcript';
 import { useAuthStore } from '@/stores/authStore';
 import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
@@ -90,11 +101,14 @@ function DockWorkDisclosure({
   workspaceId,
   chatId,
   summary,
+  resolveActor,
 }: {
   workspaceId: string;
   chatId: string;
   summary: NonNullable<CodingSessionTranscriptMessage['dock_work_summary']>;
+  resolveActor: (message: CodingSessionTranscriptMessage) => CodingSessionActor | null;
 }) {
+  const timelineView = useDockStore(state => state.transcriptView === 'timeline');
   const cacheKey = `${workspaceId}:${chatId}:${summary.message_id}`;
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<AgentRunMessage[] | null>(() => dockWorkDetailCache.get(cacheKey) ?? null);
@@ -127,26 +141,32 @@ function DockWorkDisclosure({
   };
 
   const workStream = messages ? mergePersistedChatMessages(null, messages) : null;
+  const workSegments = workStream ? collectSegments(workStream, { includeLive: false, include: DOCK_WORKING_SEGMENT_KINDS })
+    .map((segment): TranscriptSegment => segment.kind === 'user' && segment.message.message_type === 'approval' ? { ...segment, kind: 'review_decision' } : segment)
+    .filter(segment => segment.kind === 'tool' || segment.kind === 'reasoning' || segment.kind === 'review_decision'
+      || (segment.kind === 'assistant' && !segment.final && !!segment.content.trim())) : null;
+  const hasDetails = workSegments ? workSegments.length > 0 : summary.activity_count > 0;
+  const Summary = hasDetails ? 'button' : 'div';
   return (
     <section className="py-1" data-dock-work-disclosure>
-      <button
-        type="button"
-        className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
-        aria-expanded={open}
-        onClick={toggle}
+      <Summary
+        {...(hasDetails ? { type: 'button' as const, 'aria-expanded': open, onClick: toggle } : {})}
+        className={cn("inline-flex items-center gap-2 text-xs font-normal text-muted-foreground", hasDetails && "hover:text-foreground", timelineView && "min-h-11 py-2.5")}
       >
-        <span>Worked for {formatCodingSessionElapsed(summary.duration_ms)}</span>
-        <DisclosureChevron open={open} />
-      </button>
-      {open ? (
-        <div className="mt-2 border-l border-border/70 pl-3">
+        {timelineView ? <><span className="grid h-5 w-5 place-items-center"><Tick01Icon className="h-3.5 w-3.5" /></span><span>Work completed</span><span className="text-[11px] font-normal tabular-nums">{formatCodingSessionElapsed(summary.duration_ms)}</span></> : <span>Worked for {formatCodingSessionElapsed(summary.duration_ms)}</span>}
+        {hasDetails && <DisclosureChevron open={open} />}
+      </Summary>
+      {open && hasDetails ? (
+        <div className={cn("mt-2", !timelineView && "border-l border-border/70 pl-3")}>
           {loading ? <div className="text-xs text-muted-foreground">Loading work…</div> : null}
           {error ? (
             <button type="button" className="text-xs text-destructive" onClick={() => void loadWork()}>
               Couldn’t load work. Retry
             </button>
           ) : null}
-          {workStream ? (
+          {workStream && timelineView ? (
+            <DockActivitySteps segments={workSegments ?? []} resolveActor={resolveActor} />
+          ) : workStream ? (
             <DockTranscript
               stream={workStream}
               active={false}
@@ -184,7 +204,10 @@ export function DockTranscript({
   compactAssistantProgress = false,
   completedRun = false,
   historyWorkOnly = false,
+  runStatus,
+  pauseReason,
   subAgentRuns = [],
+  savedWorkPlans = [],
   latestSubmission,
   className,
 }: {
@@ -207,12 +230,17 @@ export function DockTranscript({
   completedRun?: boolean;
   /** Render progress and tools without repeating the completed final answer. */
   historyWorkOnly?: boolean;
+  runStatus?: string;
+  pauseReason?: AgentRunPauseReason;
   /** Delegated work inserted between the messages surrounding its launch. */
   subAgentRuns?: DockSubAgentTimelineItem[];
+  savedWorkPlans?: RunPlanArtifact[];
   /** Segments already visible before the latest local send, including undated snapshots. */
   latestSubmission?: DockMessageSubmission | null;
   className?: string;
 }) {
+  const transcriptView = useDockStore(state => state.transcriptView);
+  const timelineView = transcriptView === 'timeline' && compactAssistantProgress && !historyWorkOnly;
   const user = useAuthStore((state) => state.user);
   const { members } = useWorkspaceMembers(workspaceId);
   const actorsById = new Map<string, CodingSessionActor>(
@@ -227,16 +255,23 @@ export function DockTranscript({
       avatar_background_color: member.avatar_background_color,
     }]),
   );
-  if (!stream) return null;
-  const segments = collectSegments(stream, {
+  const resolveDecisionActor = (message: CodingSessionTranscriptMessage) =>
+    actorsById.get(message.resolver_user_id ?? message.actor_user_id ?? '')
+      ?? fallbackActor ?? (user ? { id: user.id, email: user.email, full_name: user.full_name } : null);
+  const segments = stream ? collectSegments(stream, {
     includeLive: useRuntimeTimeline,
     runtimeActive: active,
     include: showUserMessages
       ? (compactAssistantProgress ? DOCK_WORKING_SEGMENT_KINDS : DOCK_CHAT_SEGMENT_KINDS)
       : DOCK_SEGMENT_KINDS,
     compactAssistantProgress: false,
-  });
-  if (segments.length === 0 && subAgentRuns.length === 0) return null;
+  }).map((segment): TranscriptSegment => segment.kind === 'user' && segment.message.message_type === 'approval'
+    ? { ...segment, kind: 'review_decision' }
+    : segment) : [];
+  const animateAnswer = useDockAnswerAnimation(segments, active || !!latestSubmission);
+  if (!stream) return null;
+  const plans = historyWorkOnly ? [] : dockWorkPlans(stream, savedWorkPlans);
+  if (segments.length === 0 && subAgentRuns.length === 0 && plans.length === 0) return null;
   const times = transcriptSegmentTimes(stream);
   // A submitted user turn now shares the transcript's stable row. Retained
   // live work from before that turn must stay above it while history catches up.
@@ -258,7 +293,10 @@ export function DockTranscript({
     }
   }
   const latestAssistantSegmentId = segments[finalAssistantIndex(segments, !active)]?.id;
-  const workingTimeline = compactAssistantProgress
+  const sequences = transcriptSegmentSequences(stream);
+  const workingTimeline = timelineView
+    ? buildDockActivityTimeline(segments, active, segment => segmentTimestamp(segment, times))
+    : compactAssistantProgress
     ? buildDockWorkingTimeline(segments, active, {
         collapseCompletedWork: completedRun || segments.some((segment) => segment.kind === 'assistant' && segment.final),
         turnState: stream.turn_state,
@@ -300,7 +338,6 @@ export function DockTranscript({
     if (segment.kind === 'assistant') intervalAssistantIndexes.push(index);
   }
   finalizeInterval(entries.length, !active);
-  const sequences = transcriptSegmentSequences(stream);
   const runsByBoundary = new Map<number, DockSubAgentTimelineItem[]>();
   for (const item of [...subAgentRuns].sort((left, right) => {
     const timeDelta = Date.parse(left.createdAt) - Date.parse(right.createdAt);
@@ -327,12 +364,22 @@ export function DockTranscript({
     runsByBoundary.set(boundary, existing);
   }
 
+  const plansByBoundary = new Map<number, {plan: RunPlanArtifact; collapsed: boolean}[]>();
+  const planEntries = entries.map(entry => ({timestamp: segmentTimestamp(entry.segment, times), user: entry.segment.kind === 'user', pending: entry.segment.kind === 'user' && entry.segment.message.delivery_status === 'pending'}));
+  for (const plan of plans) {
+    const placement = dockPlanBoundary(plan, planEntries);
+    plansByBoundary.set(placement.index, [...(plansByBoundary.get(placement.index) ?? []), {plan, collapsed: placement.collapsed}]);
+  }
+  const renderPlans = (index: number) => plansByBoundary.get(index)?.map(({plan, collapsed}) => <CodingPlanPanel key={`${plan.origin!.event_id}:${collapsed}`} plan={plan} title="Work plan" defaultOpen={!collapsed} runStatus={collapsed ? undefined : runStatus as AgentRunStatus} />);
+
   return (
     <div className={cn('space-y-1.5', className)}>
       {entries.map((entry, index) => {
         const workingGroup = 'workingGroup' in entry ? entry.workingGroup : undefined;
         const followsUserMessage = index > 0 && entries[index - 1].segment.kind === 'user';
-        const assistantPresentation = assistantPresentations.get(index);
+        const assistantPresentation = entry.segment.kind === 'assistant' && entry.segment.final
+          ? { presentation: 'final' as const, separator: index > 0 }
+          : assistantPresentations.get(index);
         if (historyWorkOnly && (
           entry.segment.kind === 'user'
           || entry.segment.kind === 'status'
@@ -345,16 +392,17 @@ export function DockTranscript({
           && chatId
         ) {
           return (
-            <DockWorkDisclosure
-              key={entry.key}
+            <Fragment key={entry.key}>{renderPlans(index)}<DockWorkDisclosure
               workspaceId={workspaceId}
               chatId={chatId}
               summary={entry.segment.message.dock_work_summary}
-            />
+              resolveActor={resolveDecisionActor}
+            /></Fragment>
           );
         }
         return (
-          <Fragment key={entry.key}>
+          <Fragment key={entry.segment.kind === 'assistant' ? entry.segment.messageId ?? entry.segment.id.replace(/^live:/, '') : entry.key}>
+            {renderPlans(index)}
             {runsByBoundary.has(index) ? <SubAgentTimelineGroup items={runsByBoundary.get(index)!} /> : null}
             <div
               className={cn(
@@ -365,7 +413,14 @@ export function DockTranscript({
               data-assistant-presentation={assistantPresentation?.presentation}
               data-final-response-separator={assistantPresentation?.separator ? 'true' : undefined}
             >
-              {workingGroup ? (
+              {workingGroup && timelineView ? (
+                <DockActivityTimeline group={workingGroup} runStatus={runStatus} pauseReason={pauseReason} resolveActor={resolveDecisionActor} />
+              ) : entry.segment.kind === 'review_decision' ? (
+                <DockDecisionRow
+                  message={entry.segment.message}
+                  actor={resolveDecisionActor(entry.segment.message)}
+                />
+              ) : workingGroup ? (
                 <DockWorkingGroup
                   id={workingGroup.key}
                   segments={workingGroup.segments}
@@ -392,7 +447,8 @@ export function DockTranscript({
                   ))}
                 </DockWorkingGroup>
               ) : (
-                <TranscriptSegmentView
+                <DockAnswerSegment
+                  animate={assistantPresentation?.presentation === 'final' && animateAnswer(entry.segment)}
                   segment={entry.segment}
                   options={{
                     expandable: true,
@@ -402,6 +458,7 @@ export function DockTranscript({
                       && (entry.segment.kind !== 'assistant' || entry.segment.id !== latestAssistantSegmentId),
                     assistantPresentation: assistantPresentation?.presentation,
                     fallbackUserLabel: 'You',
+                    userPresentation: 'signature',
                     resolveActor: (message) => {
                       const attributedUserId = message.resolver_user_id ?? message.actor_user_id;
                       if (attributedUserId) {
@@ -427,6 +484,7 @@ export function DockTranscript({
           </Fragment>
         );
       })}
+      {renderPlans(entries.length)}
       {runsByBoundary.has(entries.length) ? <SubAgentTimelineGroup items={runsByBoundary.get(entries.length)!} /> : null}
     </div>
   );

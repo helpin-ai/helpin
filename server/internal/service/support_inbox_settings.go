@@ -12,6 +12,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/helpin-ai/helpin/server/internal/deployment"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
@@ -126,6 +127,21 @@ func parseSettings(raw string) model.SupportInboxSettings {
 
 // mergeSettingsUpdate applies non-nil patch fields onto current settings.
 func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateInstallationSettingsRequest) model.SupportInboxSettings {
+	if patch.TranslationIncomingEnabled != nil {
+		current.TranslationIncomingEnabled = *patch.TranslationIncomingEnabled
+	}
+	if patch.TranslationOutgoingEnabled != nil {
+		current.TranslationOutgoingEnabled = *patch.TranslationOutgoingEnabled
+	}
+	if patch.TranslationCustomerLanguage != nil {
+		current.TranslationCustomerLanguage = *patch.TranslationCustomerLanguage
+	}
+	if patch.TranslationEnabled != nil {
+		current.TranslationEnabled = *patch.TranslationEnabled
+	}
+	if patch.DefaultAgentLanguage != nil {
+		current.DefaultAgentLanguage = *patch.DefaultAgentLanguage
+	}
 	if patch.RequireEmailBeforeChat != nil {
 		current.RequireEmailBeforeChat = *patch.RequireEmailBeforeChat
 	}
@@ -148,6 +164,9 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	}
 	if patch.AIConfidenceThreshold != nil {
 		current.AIConfidenceThreshold = *patch.AIConfidenceThreshold
+	}
+	if patch.AIReplyChannels != nil {
+		current.AIReplyChannels = *patch.AIReplyChannels
 	}
 	if patch.AIResponseMode != nil {
 		current.AIResponseMode = *patch.AIResponseMode
@@ -408,6 +427,9 @@ func (s *SupportInboxService) validateSettings(ctx context.Context, workspaceID 
 	if !validIcon[settings.LauncherIcon] {
 		return fmt.Errorf("launcher_icon must be chat_bubble, question_mark, or help")
 	}
+	if settings.AIReplyChannels != "" && settings.AIReplyChannels != "chat" && settings.AIReplyChannels != "email" && settings.AIReplyChannels != "both" {
+		return fmt.Errorf("ai_reply_channels must be chat, email, or both")
+	}
 	validResponseMode := map[string]bool{"ai_first": true, "internal_note": true, "off": true}
 	if settings.AIResponseMode != "" && !validResponseMode[settings.AIResponseMode] {
 		return fmt.Errorf("ai_response_mode must be ai_first, internal_note, or off")
@@ -614,7 +636,7 @@ func (s *SupportInboxService) GetInstallation(ctx context.Context, workspaceID s
 			WorkspaceID:              workspaceID,
 			WidgetKey:                widgetKey,
 			SecretKey:                secretKey,
-			IdentityVerificationMode: model.IdentityVerificationModeEnforced,
+			IdentityVerificationMode: deployment.WidgetIdentityMode,
 			Settings:                 string(raw),
 			Active:                   true,
 		}
@@ -684,6 +706,12 @@ func (s *SupportInboxService) UpdateInstallationSettings(ctx context.Context, wo
 
 	current := parseSettings(inst.Settings)
 	merged := mergeSettingsUpdate(current, req)
+	if merged.TranslationCustomerLanguage != "" && supportTranslationLanguages[merged.TranslationCustomerLanguage] == "" {
+		return nil, nil, fmt.Errorf("unsupported customer translation language")
+	}
+	if supportTranslationLanguages[merged.DefaultAgentLanguage] == "" {
+		return nil, nil, fmt.Errorf("unsupported default translation language")
+	}
 	if merged.DelayedTeamReplyMinutes < 1 || merged.DelayedTeamReplyMinutes > 1440 {
 		return nil, nil, fmt.Errorf("delayed team reply wait must be between 1 and 1440 minutes")
 	}
@@ -766,7 +794,8 @@ func (s *SupportInboxService) UpdateInstallationSettings(ctx context.Context, wo
 
 // RegenerateWidgetKey generates a new widget key + secret key.
 // If no installation exists yet, one is created with default settings.
-func (s *SupportInboxService) RegenerateWidgetKey(ctx context.Context, workspaceID string) (*model.SupportWidgetInstallation, *model.SupportInboxSettings, error) {
+// Regenerating also rotates the identity signing secret, so it is audited.
+func (s *SupportInboxService) RegenerateWidgetKey(ctx context.Context, workspaceID, actorUserID string) (*model.SupportWidgetInstallation, *model.SupportInboxSettings, error) {
 	inst, err := s.installationRepo.GetByWorkspace(ctx, workspaceID)
 	if err != nil {
 		return nil, nil, err
@@ -790,7 +819,7 @@ func (s *SupportInboxService) RegenerateWidgetKey(ctx context.Context, workspace
 		return nil, nil, fmt.Errorf("generate secret key: %w", err)
 	}
 
-	if err := s.installationRepo.RegenerateKeys(ctx, inst.ID, newWidgetKey, newSecretKey); err != nil {
+	if err := s.installationRepo.RegenerateKeys(ctx, inst.ID, newWidgetKey, newSecretKey, actorUserID); err != nil {
 		return nil, nil, err
 	}
 
@@ -800,6 +829,30 @@ func (s *SupportInboxService) RegenerateWidgetKey(ctx context.Context, workspace
 	settings := parseSettings(inst.Settings)
 	slog.InfoContext(ctx, "regenerated support widget keys", "workspace_id", workspaceID, "installation_id", inst.ID)
 	return inst, &settings, nil
+}
+
+// RevealWidgetSecret returns the current identity signing secret for an
+// administrator and records the access. The secret is never logged.
+func (s *SupportInboxService) RevealWidgetSecret(ctx context.Context, workspaceID, actorUserID string) (string, error) {
+	if strings.TrimSpace(actorUserID) == "" {
+		return "", fmt.Errorf("an authenticated administrator is required")
+	}
+	inst, err := s.installationRepo.GetByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return "", err
+	}
+	if inst == nil || strings.TrimSpace(inst.SecretKey) == "" {
+		return "", fmt.Errorf("no signing secret found for this workspace")
+	}
+	if err := s.installationRepo.RecordSecretReveal(ctx, inst, actorUserID); err != nil {
+		return "", err
+	}
+	slog.InfoContext(ctx, "revealed support widget signing secret",
+		"workspace_id", workspaceID,
+		"installation_id", inst.ID,
+		"actor_user_id", actorUserID,
+	)
+	return inst.SecretKey, nil
 }
 
 // RotateWidgetSecret rotates the S2S/signing secret without changing the public widget key.
@@ -853,7 +906,7 @@ func (s *SupportInboxService) SeedWorkspaceDefaults(ctx context.Context, workspa
 				WorkspaceID:              workspaceID,
 				WidgetKey:                widgetKey,
 				SecretKey:                secretKey,
-				IdentityVerificationMode: model.IdentityVerificationModeEnforced,
+				IdentityVerificationMode: deployment.WidgetIdentityMode,
 				Settings:                 string(raw),
 				Active:                   true,
 			}

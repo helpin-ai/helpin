@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -20,7 +21,7 @@ func createSupportAttachmentTestTable(t *testing.T, db *gorm.DB) {
 		message_id TEXT,
 		file_name TEXT NOT NULL,
 		file_size INTEGER NOT NULL,
-		content_type TEXT NOT NULL,
+		content_type TEXT NOT NULL, content_id TEXT NOT NULL DEFAULT '', processing_status TEXT NOT NULL DEFAULT '', processing_error TEXT NOT NULL DEFAULT '',
 		storage_key TEXT NOT NULL DEFAULT '',
 		public_url TEXT NOT NULL DEFAULT '',
 		is_uploaded BOOLEAN NOT NULL DEFAULT 0,
@@ -46,6 +47,23 @@ func TestSupportAttachmentCreateStagesWidgetUploadWithoutConversation(t *testing
 	}, "workspace-1", "", "customer", nil, &sessionID)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
+	}
+	upload, err := url.Parse(response.UploadURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	download, err := url.Parse(response.PublicURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if upload.Query().Get("x-amz-acl") != "" {
+		t.Fatal("customer upload granted public access")
+	}
+	if download.Query().Get("X-Amz-Signature") == "" {
+		t.Fatal("download URL must be signed")
+	}
+	if response.Attachment.PublicURL != "" {
+		t.Fatal("must not persist expiring or public attachment URLs")
 	}
 	if response.Attachment.ConversationID != nil {
 		t.Fatalf("conversation_id = %v, want nil while upload is staged", response.Attachment.ConversationID)
@@ -131,6 +149,44 @@ func TestSupportAttachmentCreateSizeAndTypeValidation(t *testing.T) {
 			}
 			if response.UploadURL == "" || response.Attachment.FileSize != tt.size || response.Attachment.ContentType != tt.mime {
 				t.Fatalf("unexpected response: %+v", response)
+			}
+		})
+	}
+}
+
+func TestDeleteUnsentWidgetOwnershipAndSentProtection(t *testing.T) {
+	for _, tt := range []struct {
+		name, session   string
+		sent, wantError bool
+	}{
+		{"owner can clean up", "owner", false, false},
+		{"other session denied", "other", false, true},
+		{"sent file protected", "owner", true, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			db := newTestDB(t)
+			createSupportAttachmentTestTable(t, db)
+			repo := repository.NewSupportAttachmentRepository(db)
+			svc := NewSupportAttachmentService(repo, nil)
+			owner := "owner"
+			attachment := &model.SupportAttachment{WorkspaceID: "workspace", FileName: "test.png", FileSize: 1, ContentType: "image/png", UploadedByType: "customer", SessionID: &owner}
+			if tt.sent {
+				message := "message"
+				attachment.MessageID = &message
+			}
+			if err := repo.Create(context.Background(), attachment); err != nil {
+				t.Fatal(err)
+			}
+			err := svc.DeleteUnsentWidget(context.Background(), attachment.ID, tt.session)
+			if (err != nil) != tt.wantError {
+				t.Fatalf("error=%v wantError=%v", err, tt.wantError)
+			}
+			remaining, err := repo.GetByID(context.Background(), attachment.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if (remaining != nil) != tt.wantError {
+				t.Fatal("attachment deletion violated ownership or sent protection")
 			}
 		})
 	}

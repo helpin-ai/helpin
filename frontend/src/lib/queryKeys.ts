@@ -6,6 +6,13 @@ export const queryKeys = {
     me: ['user', 'me'] as const,
   },
 
+  /** Self-hosted server administration (Community). */
+  instance: {
+    signupPolicy: ['instance', 'signup-policy'] as const,
+    admins: ['instance', 'admins'] as const,
+    email: ['instance', 'email'] as const,
+  },
+
   organizations: {
     all: ['organizations'] as const,
     members: (orgId: string) => ['organizations', orgId, 'members'] as const,
@@ -21,6 +28,7 @@ export const queryKeys = {
   },
 
   dock: {
+    aiDefaults: (wsId: string) => ['dock', wsId, 'ai-defaults'] as const,
     root: (wsId: string) => ['dock', wsId] as const,
     runs: (wsId: string) => ['dock', wsId, 'runs'] as const,
     chats: (wsId: string) => ['dock', wsId, 'chats'] as const,
@@ -41,6 +49,7 @@ export const queryKeys = {
     session: (wsId: string) => ['workspaces', wsId, 'session'] as const,
     access: (wsId: string) => ['workspaces', wsId, 'access'] as const,
     setup: (wsId: string) => ['workspaces', wsId, 'setup'] as const,
+    capabilities: (wsId: string) => ['workspaces', wsId, 'capabilities'] as const,
   },
 
   automation: {
@@ -80,6 +89,14 @@ export const queryKeys = {
     externalRoot: (wsId: string) => ['mcp', wsId, 'external'] as const,
     externalProviders: (wsId: string) => ['mcp', wsId, 'external', 'providers'] as const,
     externalServers: (wsId: string) => ['mcp', wsId, 'external', 'servers'] as const,
+  },
+
+  ai: {
+    root: (wsId: string) => ['ai', wsId] as const,
+    connections: (wsId: string) => ['ai', wsId, 'connections'] as const,
+    endpoints: (wsId: string) => ['ai', wsId, 'endpoints'] as const,
+    profiles: (wsId: string) => ['ai', wsId, 'profiles'] as const,
+    settings: (wsId: string) => ['ai', wsId, 'settings'] as const,
   },
 
   pm: {
@@ -190,6 +207,7 @@ export const queryKeys = {
     taskLinks: (wsId: string, taskId: string) => ['git', wsId, 'tasks', taskId, 'links'] as const,
     taskDeliveryTarget: (wsId: string, taskId: string) => ['git', wsId, 'tasks', taskId, 'delivery-target'] as const,
     epicDeliveryTarget: (wsId: string, epicId: string) => ['git', wsId, 'epics', epicId, 'delivery-target'] as const,
+    githubAppStatus: (wsId: string) => ['git', wsId, 'github-app-status'] as const,
   },
 
   support: {

@@ -38,7 +38,7 @@ type SidebarAccountMenuProps = {
   onProfile: () => void;
   onSettings: () => void;
   onWorkspaces: () => void;
-  onGetHelp: () => void;
+  onGetHelp?: () => void;
   onSignOut: () => void;
 };
 
@@ -144,10 +144,10 @@ export function SidebarAccountMenu({
           <span>All Workspaces</span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={onGetHelp}>
+        {onGetHelp && <DropdownMenuItem onClick={onGetHelp}>
           <HelpCircleIcon className="h-4 w-4" />
           <span>Get Help</span>
-        </DropdownMenuItem>
+        </DropdownMenuItem>}
         <DropdownMenuItem onClick={onSignOut} variant="destructive">
           <Logout01Icon className="h-4 w-4" />
           <span>Sign out</span>

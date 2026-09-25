@@ -1,0 +1,179 @@
+# AI connections and profiles
+
+This reference explains how AI connections and profiles select a provider,
+model, and policy for Helpin features and agent runs. It describes the contract
+in this checkout; rollout history lives in the
+[September 14 plan](plans/2026-09-14-ai-profiles-and-ee-billing-plan.md). Do not
+restart an older installation into profile-based wiring before completing that
+plan's migration and provisioning steps.
+
+Connections hold encrypted credentials; profiles bind a connection to an explicit
+provider, model, and model controls. A profile may have one direct fallback.
+Selection order is a manual override, an agent's shared default, then the workspace
+default. Accepted runs retain their selected route and policy across retries and
+resumes. Profile names do not determine charges.
+
+Personal connections and profiles belong to a user within a workspace. They are
+available for explicit manual use and trusted descendants. Shared connections
+belong to the workspace and support unattended execution. Shared management uses
+workspace settings permissions; selecting a shared connection requires current
+workspace access. ChatGPT connections remain personal. Existing personal IDs and
+encryption AAD are preserved; there is no account-wide credential migration.
+
+Fallback happens before admission when the authorized primary connection is
+known to be unavailable. Authorization, capability, policy, billing, and
+infrastructure errors do not authorize fallback. Execution never changes routes
+mid-run. CRM freezes its route in the reviewed setup and requires another review
+to change that route; its financial policy is accepted when the run launches.
+
+Community records normalized usage without Helpin token or tool charges. Helpin Cloud
+managed routes retain hosted pricing. New Helpin Cloud BYOK uses an explicit versioned
+flat USD fee per million normalized tokens, equally across providers and models;
+paid tools are charged separately. A zero rate is valid; an unset rate is not.
+Helpin Cloud BYOK defaults off per workspace. The historical percentage and full-equivalent
+modes remain readable for older records but do not define new profile pricing.
+
+## Configuration and provisioning
+
+- Apply core migrations through `cmd/migrate`. An Enterprise build adds its migration
+  source with `go run -tags ee ./cmd/migrate up`; historical SQL remains in the
+  original ledger with unchanged checksums.
+- Set Helpin's stable `AI_CONNECTION_ENCRYPTION_KEY` (32 bytes, raw, hexadecimal,
+  or base64), and configure its runtime URL and service token.
+- Set the runtime's separate `AGENT_RUNTIME_MODEL_CREDENTIAL_ENCRYPTION_KEY` on
+  its API and every worker (32 raw bytes or base64).
+- Configure the runtime app's `model_credential_callback` URL to Helpin's
+  `/api/internal/agent-runtime/model-credentials/refresh`, with a token environment
+  variable holding Helpin's `INTERNAL_API_SECRET`.
+- ChatGPT requires Helpin's `CHATGPT_CONNECTIONS_ENABLED` and the runtime's
+  `AGENT_RUNTIME_CHATGPT_ENABLED`. Enable them only in validated deployments.
+  `CHATGPT_OAUTH_CLIENT_ID` optionally overrides the SDK's public client ID.
+
+Normal migrations and application startup provision the standard profiles. There
+is no separate `ai-bootstrap` command. Migration `202609140011` creates Small,
+Medium, Large and Flagship, resets existing system agents and preset copies to
+their family's size, and resets other custom agents to Small. It applies the same
+reset to saved agent and workspace preset versions, preserves non-model execution
+settings, and never changes accepted run inputs or checkpoints. This is an explicit
+one-time reset of legacy model choices, not a lossless migration.
+
+Migration `202609140012` updates unchanged standard Small profiles to
+`deepseek/deepseek-v4.1-flash:nitro`, with provider quantizations `fp8`, `fp16`,
+`bf16`, and `fp32`, and Medium to `google/gemini-3.8-flash`. Ask Agent defaults
+to Small; agents and saved versions using its former standard Medium default
+move to Small. Custom profile routes and other explicit profile selections are
+preserved, as are accepted run inputs. New installations use these same defaults.
+
+API and worker startup provision standard profiles for existing workspaces; new
+workspaces are provisioned automatically. Enterprise fills untouched standard connection
+placeholders using Helpin's provider configuration and updates connected managed
+keys when deployment keys rotate. Existing customer credentials and disconnected
+connections are preserved. Community uses customer-funded connections and permits
+unconfigured placeholders. No credential values belong in SQL migrations.
+
+Normal provisioning does not assign agents, restore cleared defaults, or overwrite
+edited profiles. New custom agents start on Small unless an explicit profile is
+selected. Preset copies start on the family's default size; later edits remain
+supported. Profiles created deliberately by users remain separate from the four
+standard profiles. Legacy generated duplicates can be cleaned up once after the
+reset; that cleanup is not part of startup.
+
+Finish or cancel legacy runs using Runtime defaults before enabling Helpin's trusted
+runtime app policy `require_run_model_credentials`. The runtime enforces this policy at engine
+admission, before queueing. Other apps and standalone runtime installations keep
+their existing environment keys and defaults. Provider readiness remains a startup
+snapshot: restart after changing runtime provider-key configuration.
+
+## Refresh and validation
+
+The callback checks connection/run ownership, active access, provider/account,
+and runtime mapping. Row locks serialize refresh; rejected-token fingerprints
+avoid repeated rotation by concurrent workers. Reconnect updates active run
+credentials and resumes matching authentication interactions. Disconnect clears
+the secret and revokes bound credentials. A post-launch check covers disconnects
+racing admission. Already in-flight requests may finish; revocation prevents
+subsequent model calls.
+
+ChatGPT inference and tool execution have been exercised in test runs; live
+expired-token refresh, reconnect, and revocation are separate release gates.
+ChatGPT strips the previous-response identifier and does not support lossless
+provider-state replay, although ordinary transcript continuation is supported.
+
+Helpin pins SDK `v0.7.0` in [the server module](../server/go.mod).
+Check the selected Runtime revision separately when verifying pair compatibility. Explicit empty model controls clear inherited controls
+while preserving execution limits. Chat Completions and the local-model
+adapter validation are implemented.
+
+## Build editions
+
+Community is the default Go build (`go run ./cmd/api` and `go run ./cmd/temporal-worker`). It records usage with no financial policy, price catalog, subscription gate, or billing jobs. Missing deployment provider keys do not prevent startup; a feature still needs a configured provider when invoked.
+
+Helpin Cloud uses `go run -tags ee ./cmd/api` and `go run -tags ee ./cmd/temporal-worker`, plus `go run -tags ee ./cmd/migrate up` for registered Enterprise migrations. Its API and every worker require `AI_CONNECTION_ENCRYPTION_KEY`, even when personal ChatGPT is disabled. Existing and new workspaces receive standard profiles automatically; the normal migration performs the one-time agent reset. Missing provider keys leave connections visibly unconfigured.
+
+Container builds default to community too. Helpin Cloud builds pass `--build-arg GO_BUILD_TAGS=ee`; the staging and production workflows declare that choice explicitly. Both binaries must use the same edition.
+
+The frontend also defaults to community: `pnpm --dir frontend dev` and `pnpm --dir frontend build`. Helpin Cloud development uses `pnpm --dir frontend dev:ee`; production uses `pnpm --dir frontend build:ee`. The build command fixes the edition for both TypeScript and Vite, so an inherited environment value cannot select mismatched implementations. Staging and production workflows explicitly build Enterprise. Community omits billing navigation, payment requests, upgrade UI, and price assets; old billing URLs return not found. Desktop builds that reuse frontend components default to the same community extension points.
+
+### Helpin Cloud BYOK operator policy
+
+The Enterprise-only operator command previews a transactional policy change by default:
+
+```bash
+cd server
+go run -tags ee ./cmd/ai-byok-policy \
+  -workspace "$WORKSPACE_ID" -mode enable \
+  -tariff-version "$TARIFF_VERSION" \
+  -microusd-per-million-tokens "$RATE_MICROUSD"
+```
+
+Supply an explicit nonnegative integer rate: `1000000` represents USD 1 per
+million normalized tokens; `0` explicitly configures no Helpin token fee.
+An omitted rate is invalid. Review the JSON result, then repeat with `-apply`.
+The command loads `DATABASE_URL` from the environment or `server/.env` and
+requires the core and Enterprise migrations to have been applied. It does not restart
+services, test provider credentials, or change accepted executions.
+
+A tariff version can be reused only with identical values. A different rate
+requires a new version. Paid tools retain the separate tool tariffs frozen at
+admission. To block new BYOK executions while preserving existing run snapshots
+and refresh authorization, preview `-workspace "$WORKSPACE_ID" -mode disable`,
+then repeat with `-apply`. Disabling preserves the workspace's tariff reference.
+Use connection/run revocation when accepted executions must also stop.
+
+Launch readiness is checked against Runtime's capabilities before acquiring a
+credential or choosing a fallback. Helpin uses `run_credentials_configured` and
+supported authentication modes, not global provider-key availability. ChatGPT
+also requires this app's `model_credentials` callback component to report
+configured authentication. Upgrade Runtime before restarting Helpin with this
+check. These are configuration checks, not provider authentication probes.
+
+A personal profile's originating owner is frozen separately from its actual
+connection owner. When a personal route falls back to a shared connection, its
+children, resume, and refresh still require the originating member. Profile
+edits or deletion do not rewrite the accepted selection.
+
+## Compatible/local agent models
+
+Use the Runtime `openai_compatible` provider for Chat Completions endpoints. The
+Runtime administrator approves each endpoint's ID, canonical URL and authentication
+mode in the trusted Helpin app entry. Local HTTP requires explicit `allow_http`.
+Helpin's connection form selects an approved ID; it cannot send an arbitrary URL.
+No-auth endpoints omit API keys and still have a revocable run credential record.
+A profile can name an unpriced model and freezes the connection's endpoint binding.
+Changes to that binding require a new connection/profile; accepted runs never
+redirect their credentials. Compatible routes have transcript continuation, not
+lossless Responses replay or provider-specific reasoning/service-tier controls.
+
+Endpoint approval and compose templates are documented in the Agent Runtime
+repository (currently private). Helpin currently pins SDK `v0.7.0`; the earlier `v0.6.0-alpha.2`
+rollout reference is historical.
+
+Host Helpin Cloud development commands are `just backend-ee`, `just worker-ee`, and
+`just frontend-ee` in separate terminals. Community uses the existing commands
+without the `-ee` suffix. Do not switch a live Enterprise deployment to Community while
+accepted Enterprise runs are outstanding; drain them first to preserve their frozen policy.
+
+Bootstrap reads only the process environment unless `-env-file` names an explicit
+dotenv file. It never guesses a file from the working directory. Existing process
+environment values take precedence; each imported key still requires an explicit
+`-credential provider=ENVIRONMENT_VARIABLE` mapping.

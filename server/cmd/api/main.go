@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -28,17 +29,18 @@ import (
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
+	"github.com/helpin-ai/helpin/server/internal/aimodel"
 	"github.com/helpin-ai/helpin/server/internal/aipolicy"
-	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/auth"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
-	"github.com/helpin-ai/helpin/server/internal/billingstripe"
 	"github.com/helpin-ai/helpin/server/internal/cache"
 	"github.com/helpin-ai/helpin/server/internal/config"
 	"github.com/helpin-ai/helpin/server/internal/coordination"
 	"github.com/helpin-ai/helpin/server/internal/crawler"
 	"github.com/helpin-ai/helpin/server/internal/crmemail"
 	"github.com/helpin-ai/helpin/server/internal/crmsignal"
+	"github.com/helpin-ai/helpin/server/internal/dbschema"
+	"github.com/helpin-ai/helpin/server/internal/decision"
 	"github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/geoip"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
@@ -49,6 +51,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/oauth"
 	"github.com/helpin-ai/helpin/server/internal/observability"
+	"github.com/helpin-ai/helpin/server/internal/ratelimit"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/router"
 	"github.com/helpin-ai/helpin/server/internal/service"
@@ -83,7 +86,8 @@ func main() {
 	}
 
 	// Initialize structured logger.
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: parseLogLevel(cfg.LogLevel)}))
+	metrics := observability.NewMetrics()
+	logger := slog.New(metrics.BackgroundHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: parseLogLevel(cfg.LogLevel)})))
 	slog.SetDefault(logger)
 
 	// Connect to PostgreSQL via GORM.
@@ -176,6 +180,13 @@ func main() {
 		fatalWithSentry("failed to migrate drop restrict_to_owners", err)
 	}
 
+	if err := repository.MigrateSupportTranslationConversationDefaults(db); err != nil {
+		fatalWithSentry("failed to repair support translation conversation defaults", err)
+	}
+	if err := repository.MigrateSupportTranslationPolicyRevision(db); err != nil {
+		fatalWithSentry("failed to repair support translation policy revision", err)
+	}
+
 	if cfg.RunAutoMigrate {
 		// Fix: idx_ws_member_ws_user was incorrectly created as a single-column unique
 		// index on user_id only. Drop it so AutoMigrate recreates it as composite (workspace_id, user_id).
@@ -185,263 +196,11 @@ func main() {
 
 		// Auto-migrate all models.
 		slog.Info("startup: running AutoMigrate")
-		if err := db.AutoMigrate(
-			&model.User{},
-			&model.UserPasskey{},
-			&model.PasswordResetToken{},
-			&model.EmailVerificationToken{},
-			&model.OAuthMobileHandoff{},
-			&model.Organization{},
-			&model.OrganizationMember{},
-			&model.Workspace{},
-			&model.WorkspaceMember{},
-			&model.WorkspaceModuleGrant{},
-			&model.WorkspaceSettings{},
-			&model.SetupGoal{},
-			&model.SetupIntent{},
-			&model.SetupAchievement{},
-			&model.SetupActionIntent{},
-			&model.MemberSetupPreference{},
-			&model.WorkspaceBilling{},
-			&model.StripeWebhookEvent{},
-			&model.OrganizationBilling{},
-			&model.BillingPaymentMethod{},
-			&model.WorkspaceTeam{},
-			&model.TeamWorkspaceMembership{},
-			&model.WorkspaceManager{},
-			&model.JobRoleCriteria{},
-			&model.PMWorkflow{},
-			&model.PMWorkflowState{},
-			&model.PMEpicWorkflowState{},
-			&model.PMLabel{},
-			&model.PMEpic{},
-			&model.PMEpicObjective{},
-			&model.PMEpicLabel{},
-			&model.PMSprint{},
-			&model.PMSprintLabel{},
-			&model.PMTask{},
-			&model.PMTaskOwner{},
-			&model.PMTaskFollower{},
-			&model.PMTaskLabel{},
-			&model.PMComment{},
-			&model.PMCommentReaction{},
-			&model.PMActivityLog{},
-			&model.PMTaskUpdateRead{},
-			&model.PMTaskStandingBrief{},
-			&model.PMTaskBriefSuggestionDismissal{},
-			&model.PMAttachment{},
-			&model.PMObjective{},
-			&model.PMKeyResult{},
-			&model.PMObjectiveTeam{},
-			&model.PMObjectiveOwner{},
-			&model.PMObjectiveLabel{},
-			&model.PMChecklistItem{},
-			&model.PMExternalLink{},
-			&model.PMView{},
-			&model.SupportInboxView{},
-			&model.PMAutomation{},
-			&model.AutomationRule{},
-			&model.WorkspaceInvitation{},
-			&model.InvitationTeamPreassignment{},
-			&model.PMTeamEstimateSettings{},
-			&model.PMTeamFieldVisibility{},
-			&model.Agent{},
-			&model.AgentTeamAccess{},
-			&model.AgentTemplate{},
-			&model.WorkspaceAgentPresetVersion{},
-			&model.AgentVersion{},
-			&model.WorkspaceSkill{},
-			&model.AgentRun{},
-			&model.AgentTriggerExecution{},
-			&model.AgentRunMessage{},
-			&model.AgentRunArtifact{},
-			&model.AgentRunInteraction{},
-			&model.DockActionProposal{},
-			// Public MCP tables are intentionally excluded. Their constraints,
-			// partial indexes, and retention fields are owned exclusively by
-			// versioned migration 202607100003_public_mcp.sql. Letting GORM
-			// reconcile those tables can attempt incompatible constraint changes.
-			&model.CommandBarPlanRecord{},
-			&model.CommandBarPlanDismissal{},
-			&model.DockChat{},
-			&model.DockChatHandoff{},
-			&model.PublicShare{},
-			&model.SupportRunEvidence{},
-			&model.HelpcenterAnswer{},
-			&model.CodingSessionStateSnapshot{},
-			&model.CodexWorkspaceAuth{},
-			&model.PMTaskLink{},
-			&model.SupportConversation{},
-			&model.SupportPortalIdentity{},
-			&model.SupportPortalRequestReference{},
-			&model.SupportPortalAuditEvent{},
-			&model.SupportConversationTriage{},
-			&model.SupportConversationTriageEvent{},
-			&model.SupportMailbox{},
-			&model.SupportMailboxMembership{},
-			&model.SupportTriageRule{},
-			&model.SupportEmailRoute{},
-			&model.SupportEmailSender{},
-			&model.SupportEmailSenderMailbox{},
-			&model.SupportEmailSenderDomain{},
-			&model.SupportMessage{},
-			&model.SupportEmailLog{},
-			&model.SupportEmailWebhookEvent{},
-			&model.SupportTag{},
-			&model.SupportConversationTag{},
-			&model.SupportTeammateStatusOverride{},
-			&model.SupportCannedResponse{},
-			&model.SupportWidgetInstallation{},
-			// WorkspaceEventProjectAlias is owned by versioned migration
-			// 202608240001, including its overlapping single-column and
-			// composite uniqueness constraints. GORM cannot safely reconcile
-			// those PostgreSQL constraints as indexes during AutoMigrate.
-			&model.CRMIdentityLink{},
-			&model.SupportCredentialRotationAudit{},
-			&model.SupportWidgetSession{},
-			&model.SupportAttachment{},
-			&model.CRMEmailAttachment{},
-			&model.SupportEvent{},
-			&model.SupportCoverageTopic{},
-			&model.SupportCoverageGap{},
-			&model.SupportGapEvidence{},
-			&model.SupportGapSuggestion{},
-			&model.SupportCoverageGapArticle{},
-			&model.SupportCoverageSnapshot{},
-			&model.SupportCoverageDigestDelivery{},
-			&model.SupportCoverageAnalysisRun{},
-			&model.SupportCoverageConversationAnalysis{},
-			&model.AIActionExecution{},
-			&model.CoverageBatch{},
-			&model.CoverageAnalysisAttempt{},
-			&model.CoverageFinding{},
-			&model.CoverageTopicV2{},
-			&model.CoverageAssignmentAttempt{},
-			&model.CoverageTopicMembership{},
-			&model.CoverageUnreviewedSignal{},
-			&model.CoverageRebuildAudit{},
-			&model.SupportAIRetrievalTrace{},
-			&model.SupportCoverageRecommendation{},
-			&model.SupportCoverageClusterRebuildRun{},
-			&model.SupportCoverageGapMergeSuggestion{},
-			&model.SupportCoverageGapPairDecision{},
-			&model.GitIntegration{},
-			&model.GitCredential{},
-			&model.GitRepository{},
-			&model.PMTeamRepoDefault{},
-			&model.TaskDeliveryTarget{},
-			&model.EpicDeliveryTarget{},
-			&model.TaskGitLink{},
-			&model.GitWebhookEvent{},
-			&model.AgentHandoff{},
-			&model.PMTaskTemplate{},
-			&model.PMRecurringTemplate{},
-			&model.PMRecurringRun{},
-			&model.PMImportJob{},
-			&authorization.AuthorizationRelation{},
-			// Docs module
-			&model.DocsSpace{},
-			&model.DocsSpaceTeam{},
-			&model.DocsCollection{},
-			&model.DocsDocument{},
-			&model.DocsDocumentKey{},
-			&model.DocsContent{},
-			&model.DocsBlock{},
-			&model.DocsAISectionCandidate{},
-			&model.DocsChangeProposal{},
-			&model.DocsVersion{},
-			&model.DocsLink{},
-			&model.DocsHelpcenterConfig{},
-			&model.DocsHelpcenterArticle{},
-			&model.DocsHelpcenterArticlePublication{},
-			&model.DocsHelpcenterSearchEntry{},
-			&model.DocsHelpcenterSpaceTranslation{},
-			&model.DocsHelpcenterCollectionTranslation{},
-			&model.DocsHelpcenterArticleTranslation{},
-			&model.DocsSlugAlias{},
-			&model.DocsRedirect{},
-			&model.DocsReviewQueue{},
-			&model.DocsArticleFeedback{},
-			&model.DocsComment{},
-			&model.DocsImportJob{},
-			&model.DocsAPIReference{},
-			&model.DocsAPIReferenceRevision{},
-			// Notifications module
-			&model.Notification{},
-			&model.NotificationEvent{},
-			&model.NotificationDelivery{},
-			&model.NotificationPreference{},
-			&model.UserNotificationSettings{},
-			&model.EntityFollower{},
-			&model.PushDevice{},
-			// CRM module
-			&model.CRMContact{},
-			&model.CRMCompany{},
-			&model.CRMPipeline{},
-			&model.CRMPipelineStage{},
-			&model.CRMDeal{},
-			&model.CRMAssociation{},
-			&model.CRMActivity{},
-			&model.CRMImportJob{},
-			&model.CRMMeeting{},
-			&model.CRMMeetingCapture{},
-			&model.CRMMeetingTranscript{},
-			&model.CRMMeetingIntelligence{},
-			&model.CRMMeetingActionItem{},
-			&model.CRMMeetingSettings{},
-			&model.CRMMeetingProviderEvent{},
-			// CRM Phase 3: Email & Calendar
-			&model.CRMEmailAccount{},
-			&model.CRMEmailThread{},
-			&model.CRMEmailMessage{},
-			&model.CRMEmailMessageContact{},
-			&model.CRMCalendarEvent{},
-			&model.CRMCalendarSeriesPreference{},
-			// CRM Phase 4: Intelligence
-			&model.CRMEnrichmentResult{},
-			&model.CRMSignal{},
-			&model.CRMSignalObservation{},
-			&model.CRMSignalInterpretationConfig{},
-			&model.CRMSignalMotionState{},
-			&model.CRMSignalRuleConfig{},
-			&model.CRMSignalEvaluationRun{},
-			&model.CRMSignalEvaluatorWatermark{},
-			&model.CRMSignalScoringConfig{},
-			&model.CRMSignalFeedback{},
-			&model.CRMSignalRoutingPolicy{},
-			&model.CRMSignalRoutingSettings{},
-			&model.CRMSignalRolloutSettings{},
-			&model.CRMCompanyCommercialState{},
-			&model.CRMCompanyCommercialStateHistory{},
-			&model.CRMCompanyCommercialStateHealth{},
-			&model.CRMSignalConditionState{},
-			&model.CRMUsageWeekdayBaseline{},
-			&model.CRMSignalBatchSuppression{},
-			&model.CRMSignalDelivery{},
-			&model.CRMSignalExternalEvidence{},
-			&model.CRMEntitySummary{},
-			&model.CRMDealHealthScore{},
-			&model.CRMSuggestion{},
-			// Signals, Playbooks, history and scheduled events are versioned-SQL-owned;
-			// AutoMigrate must not pre-create these models without their constraints.
-			// CRM Phase 5: Writing
-			&model.CRMWritingProfile{},
-			// CRM Autonomy
-			&model.CRMAutonomySettings{},
-			// CRM Email Sync Settings
-			&model.CRMEmailSyncSettings{},
-			&model.AutomationHealthSnapshot{},
-			// AI Support Agent
-			&model.AgentKnowledgeSource{},
-			&model.AgentContentSource{},
-			&model.AIMessageProcessing{},
-			&model.DocsChunk{},
-			&model.SupportContentSource{},
-			&model.SupportContentPage{},
-			&model.SupportContentChunk{},
-			&model.CuratedGuidance{},
-		); err != nil {
+		if err := db.AutoMigrate(dbschema.AutoMigrationModels()...); err != nil {
 			fatalWithSentry("failed to auto-migrate", err)
+		}
+		if err := autoMigrateEdition(db); err != nil {
+			fatalWithSentry("failed to auto-migrate edition", err)
 		}
 		slog.Info("startup: AutoMigrate complete")
 	} else {
@@ -527,13 +286,25 @@ func main() {
 	slog.Info("startup: all migrations complete")
 
 	// Initialize email clients (nil if not configured).
-	appEmailClient := email.NewClient(cfg.PostmarkAppServerToken, cfg.PostmarkAppFromEmail)
+	appEmailClient, err := email.NewAppSender(email.SMTPConfig{Host: cfg.SMTPHost, Port: cfg.SMTPPort, Username: cfg.SMTPUsername, Password: cfg.SMTPPassword, From: cfg.SMTPFrom, TLSMode: cfg.SMTPTLSMode}, cfg.PostmarkAppServerToken, cfg.PostmarkAppFromEmail)
+	if err != nil {
+		fatalWithSentry("configure application email", err)
+	}
+	if cfg.EmailVerificationRequired && appEmailClient == nil {
+		fatalWithSentry("configure application email", fmt.Errorf("AUTH_EMAIL_VERIFICATION_REQUIRED requires an SMTP or Postmark application email sender"))
+	}
+	// Community: server admins may also save SMTP settings in the app; the
+	// environment sender above still takes precedence.
+	appEmailConfig := newAppEmailConfig(db, cfg, appEmailClient)
+	if appEmailConfig != nil {
+		appEmailClient = appEmailConfig.Sender()
+	}
 	replyEmailClient := email.NewClient(cfg.PostmarkReplyServerToken, cfg.PostmarkReplyFromEmail)
 	postmarkDomainClient := email.NewDomainClient(cfg.PostmarkAccountToken)
-	if appEmailClient != nil {
-		slog.Info("Postmark app email configured")
+	if email.Configured(appEmailClient) {
+		slog.Info("Application email configured")
 	} else {
-		slog.Info("Postmark app email not configured — product emails will be logged only")
+		slog.Info("Application email is not configured; invitations are shared as links and password reset is unavailable")
 	}
 	if replyEmailClient != nil {
 		slog.Info("Postmark support reply email configured")
@@ -554,8 +325,15 @@ func main() {
 		cfg.AWSRegion,
 		cfg.AWSEndpointURL,
 		cfg.AWSPublicBaseURL,
+		cfg.AWSPresignEndpointURL,
 	)
+	s3Client.ConfigureAssetAccess(cfg.AppBaseURL, cfg.AWSPrivateBucket)
 	if s3Client != nil {
+		if cfg.AWSPrivateBucket {
+			if err := s3Client.EnsureCORS(context.Background()); err != nil {
+				fatalWithSentry("configure private bucket browser uploads", err)
+			}
+		}
 		slog.Info("S3 storage configured")
 	} else {
 		slog.Info("S3 storage not configured — attachments disabled")
@@ -649,6 +427,13 @@ func main() {
 		}
 		slog.Info("startup: platform admin bootstrap complete", "configured_emails", len(cfg.PlatformAdminEmails), "updated_users", updated)
 	}
+	// Community server administration: first-account admin, signup policy.
+	instanceService := newInstanceService(db, cfg, func() bool { return email.Configured(appEmailClient) })
+	if instanceService != nil {
+		if err := instanceService.Bootstrap(context.Background()); err != nil {
+			slog.Error("startup: server admin bootstrap failed", "error", err)
+		}
+	}
 	passkeyRepo := repository.NewPasskeyRepository(db)
 	orgRepo := repository.NewOrganizationRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
@@ -710,7 +495,6 @@ func main() {
 	supportMessageRepo := repository.NewSupportMessageRepository(db)
 	supportEmailLogRepo := repository.NewSupportEmailLogRepository(db)
 	supportEmailWebhookEventRepo := repository.NewSupportEmailWebhookEventRepository(db)
-	billingRepo := repository.NewBillingRepository(db)
 	customerIOOutboxRepo := repository.NewCustomerIOLifecycleOutboxRepository(db)
 	productAnalyticsOutboxRepo := repository.NewProductAnalyticsOutboxRepository(db)
 	supportTagRepo := repository.NewSupportTagRepository(db)
@@ -718,6 +502,21 @@ func main() {
 	supportInstallRepo := repository.NewSupportInboxInstallationRepository(db)
 	supportSessionRepo := repository.NewSupportInboxSessionRepository(db)
 	supportAttachmentRepo := repository.NewSupportAttachmentRepository(db)
+	orgService := service.NewOrganizationService(orgRepo)
+	authzMemberRepo := authorization.NewGORMMemberRepository(db)
+	authzService := authorization.NewAuthzService(db, authzMemberRepo, moduleGrantRepo)
+	authzService.SetDeploymentModules(cfg.EnabledModules)
+	authzService.SetWorkspaceMFARepository(workspaceRepo)
+	editionServices, err := newEditionServices(db, cfg, workspaceRepo, orgService, authzService, productAnalytics, customerIOOutboxRepo)
+	if err != nil {
+		fatalWithSentry("configure edition", err)
+	}
+	if editionServices.InitializeAIProfiles != nil {
+		if err := editionServices.InitializeAIProfiles(context.Background()); err != nil {
+			fatalWithSentry("failed to initialize standard AI profiles", err)
+		}
+	}
+	aiUsageService := editionServices.Usage
 	customerIOIdentityService := service.NewCustomerIOIdentityService(
 		service.NewCustomerIOTrackClient(service.CustomerIOTrackConfig{
 			SiteID:                   cfg.CustomerIOSiteID,
@@ -729,53 +528,16 @@ func main() {
 		userRepo,
 		workspaceRepo,
 		orgRepo,
-		billingRepo,
+		editionServices.BillingInsights,
 	)
-	pricingCatalog, pricingCatalogErr := aiusage.LoadCatalog()
-	if pricingCatalogErr != nil {
-		log.Fatalf("load AI pricing catalog: %v", pricingCatalogErr)
+	if editionServices.AttachIdentity != nil {
+		editionServices.AttachIdentity(customerIOIdentityService)
 	}
-	aiUsageRepo := repository.NewAIUsageRepository(db)
-	aiUsageService := service.NewAIUsageService(pricingCatalog, aiUsageRepo, nil)
-	stripeGateway := billingstripe.New(cfg.StripeSecretKey)
-	settlementCtx, settlementCancel := context.WithCancel(context.Background())
-	settlementDone := make(chan struct{})
-	if stripeGateway != nil {
-		settlementWorker := service.NewAIUsageSettlementWorker(aiUsageRepo, stripeGateway)
-		go func() {
-			defer close(settlementDone)
-			settlementWorker.Run(settlementCtx, time.Minute)
-		}()
-	} else {
-		close(settlementDone)
+	modelCatalog, modelCatalogErr := aimodel.LoadCatalog()
+	if modelCatalogErr != nil {
+		log.Fatalf("load model catalog: %v", modelCatalogErr)
 	}
-	billingService := service.NewBillingService(billingRepo, stripeGateway, time.Now)
-	periodCtx, periodCancel := context.WithCancel(context.Background())
-	periodDone := make(chan struct{})
-	periodWorker := service.NewAIUsagePeriodWorker(aiUsageRepo, billingService.NextAIUsagePeriodSchedule)
-	go func() {
-		defer close(periodDone)
-		periodWorker.Run(periodCtx, time.Minute)
-	}()
-	reservationCtx, reservationCancel := context.WithCancel(context.Background())
-	reservationDone := make(chan struct{})
-	reservationSweeper := service.NewAIUsageReservationSweeper(aiUsageRepo)
-	go func() {
-		defer close(reservationDone)
-		reservationSweeper.Run(reservationCtx, time.Minute, 15*time.Minute)
-	}()
-	billingTestScenarioService := service.NewBillingTestScenarioService(db, billingService, time.Now)
-	billingService.SetPriceConfig(service.BillingPriceConfig{
-		StarterMonthly: cfg.StripeStarterMonthlyPriceID,
-		StarterAnnual:  cfg.StripeStarterAnnualPriceID,
-		GrowthMonthly:  cfg.StripeGrowthMonthlyPriceID,
-		GrowthAnnual:   cfg.StripeGrowthAnnualPriceID,
-	})
-	billingService.SetWorkspaceRepository(workspaceRepo)
-	billingService.SetCustomerIOIdentityService(customerIOIdentityService)
-	billingService.SetCustomerIOLifecycleOutboxRepository(customerIOOutboxRepo)
 	customerIOOutboxWorker := service.NewCustomerIOLifecycleOutboxWorker(customerIOOutboxRepo, workspaceRepo, customerIOIdentityService)
-	billingService.SetProductAnalyticsService(productAnalytics)
 	customerIOOutboxCtx, customerIOOutboxCancel := context.WithCancel(context.Background())
 	customerIOOutboxDone := make(chan struct{})
 	go func() {
@@ -787,7 +549,7 @@ func main() {
 		userRepo,
 		workspaceRepo,
 		orgRepo,
-		billingRepo,
+		editionServices.BillingMetadata,
 		service.NewUsermavenClient(service.UsermavenConfig{
 			APIKey:      cfg.UsermavenAPIKey,
 			ServerToken: cfg.UsermavenServerToken,
@@ -887,6 +649,13 @@ func main() {
 		fatalWithSentry("failed to initialize webauthn", err)
 	}
 	authService := service.NewAuthService(userRepo, passwordResetRepo, orgRepo, workspaceRepo, emailVerificationRepo, jwtManager, s3Client, appEmailClient, cfg.AppBaseURL, resolveTOTPEncryptionKey(cfg))
+	authService.SetEmailVerificationRequired(cfg.EmailVerificationRequired)
+	authService.SetSignupGate(instanceService)
+	authService.ConfigureDemo(service.DemoConfig{
+		ViewerEmail:    cfg.DemoViewerEmail,
+		RequireEmail:   cfg.DemoRequireEmail,
+		LeadWebhookURL: cfg.DemoLeadWebhookURL,
+	})
 	authService.SetOAuthMobileHandoffRepository(oauthMobileHandoffRepo)
 	authService.SetCustomerIOIdentityService(customerIOIdentityService)
 	authService.SetProductAnalyticsService(productAnalytics)
@@ -901,6 +670,7 @@ func main() {
 	automationHealthService := service.NewAutomationHealthService(automationHealthRepo)
 	pmAutomationService.SetHealthObserver(automationHealthService)
 	notificationService := service.NewNotificationService(notificationRepo, notificationPrefRepo, userNotifSettingsRepo, followerRepo, userRepo, workspaceRepo, wsPublisher, appEmailClient, cfg.AppBaseURL)
+	notificationService.SetAccessChecker(service.NewNotificationAccessPolicy(authzService, notificationRepo))
 	userNotifSettingsService := service.NewUserNotificationSettingsService(userNotifSettingsRepo)
 	pushDeviceService := service.NewPushDeviceService(pushDeviceRepo)
 	var fcmClient service.FCMClient
@@ -1026,18 +796,21 @@ func main() {
 			OpenRouterProvider: cfg.CRMMeetingFallbackOpenRouterProvider,
 		},
 	})
-	if issues := completionRoutes.Validate(pricingCatalog); len(issues) != 0 {
-		fatalWithSentry("validate AI completion pricing routes", errors.Join(issues...))
+	if issues := completionRoutes.Validate(modelCatalog); len(issues) != 0 {
+		fatalWithSentry("validate AI completion model routes", errors.Join(issues...))
 	}
-	if issues := completionRoutes.ValidateProviders(supportLLMRouter.HasChatProvider); len(issues) != 0 {
+	if issues := completionRoutes.ValidateAvailability(editionServices.ValidateCompletionRoute); len(issues) != 0 {
+		fatalWithSentry("validate edition completion routes", errors.Join(issues...))
+	}
+	if issues := completionRoutes.ValidateProviders(supportLLMRouter.HasChatProvider); editionServices.RequireConfiguredProviders && len(issues) != 0 {
 		fatalWithSentry("validate AI completion providers", errors.Join(issues...))
 	}
-	agentTierResolver := service.NewAgentModelTierResolver(pricingCatalog, supportLLMRouter.HasChatProvider)
-	if issues := agentTierResolver.ValidateSelectable(); len(issues) != 0 {
+	agentTierResolver := service.NewAgentModelTierResolver(modelCatalog, supportLLMRouter.HasChatProvider)
+	if issues := agentTierResolver.ValidateSelectable(); editionServices.RequireConfiguredProviders && len(issues) != 0 {
 		fatalWithSentry("validate agent model sizes", errors.Join(issues...))
 	}
 	supportLLMProvider := service.NewAICompletionService(supportLLMRouter, aiUsageService, completionRoutes).
-		SetGovernance(aiActionRegistry, aiActionExecutionRepo)
+		SetGovernance(aiActionRegistry, aiActionExecutionRepo).SetMetrics(metrics)
 	supportInboxTriageService := service.NewSupportInboxTriageService(
 		supportInboxService,
 		supportConversationTriageRepo,
@@ -1049,13 +822,69 @@ func main() {
 		supportMessageRepo,
 		supportLLMProvider,
 	)
+	var decisionPolicies []service.SupportDecisionPolicy
+	if cfg.SupportDecisionMode != "" && cfg.SupportDecisionMode != "off" && cfg.SupportDecisionPolicies != "" {
+		if err := json.Unmarshal([]byte(cfg.SupportDecisionPolicies), &decisionPolicies); err != nil {
+			fatalWithSentry("invalid support decision policies", err)
+		}
+	}
+	decisionClient, err := service.NewSupportDecisionClient(service.SupportDecisionConfig{
+		Mode: cfg.SupportDecisionMode, URL: cfg.SupportDecisionURL, Token: cfg.SupportDecisionToken,
+		Timeout:      time.Duration(cfg.SupportDecisionTimeoutMS) * time.Millisecond,
+		WorkspaceIDs: strings.Split(cfg.SupportDecisionWorkspaceIDs, ","), Policies: decisionPolicies,
+	})
+	if err != nil {
+		fatalWithSentry("configure support decision client", err)
+	}
+	supportInboxTriageService.SetLocalDecisionClient(decisionClient)
+	var supportJevService *service.SupportJevService
+	var pmJevProvider decision.Provider
+	if strings.TrimSpace(cfg.JevAPIKey) != "" {
+		jevClient, jevErr := decision.NewJev(cfg.JevAPIKey, time.Duration(cfg.JevTimeoutMS)*time.Millisecond)
+		if jevErr != nil {
+			fatalWithSentry("configure Jev client", jevErr)
+		}
+		pmJevProvider = jevClient
+		jevService, jevErr := service.NewSupportJevService(service.SupportJevConfig{
+			HandoffMode: cfg.JevHandoffMode, FollowUpMode: cfg.JevFollowUpMode,
+			HandoffThreshold: cfg.JevHandoffThreshold, FollowUpThreshold: cfg.JevFollowUpThreshold,
+			RoutingMode: cfg.JevRoutingMode, TagsMode: cfg.JevTagsMode, WorkspaceIDs: strings.Split(cfg.JevWorkspaceIDs, ","),
+			RoutingThreshold: cfg.JevRoutingThreshold, TagThreshold: cfg.JevTagThreshold, DailyLimit: cfg.JevDailyLimit,
+		}, jevClient, repository.NewSupportJevRepository(db), repository.NewAIExecutionUsageRepository(db), supportTagService)
+		if jevErr != nil {
+			fatalWithSentry("configure support Jev", jevErr)
+		}
+		jevService.SetMetrics(metrics)
+		supportInboxTriageService.SetJevService(jevService)
+		supportJevService = jevService
+	}
+
+	jevProductDecisions, jevProductErr := service.NewJevDecisionService(pmJevProvider, repository.NewJevDecisionRepository(db), repository.NewAIExecutionUsageRepository(db), cfg.JevProductPolicies, strings.Split(cfg.JevWorkspaceIDs, ","))
+	if jevProductErr != nil {
+		fatalWithSentry("configure product decisions", jevProductErr)
+	}
+	jevProductDecisions.SetMetrics(metrics)
+	translationRoute := service.AICompletionRoute{Provider: "openrouter", Model: "openai/gpt-oss-120b", OpenRouterProvider: "cerebras/fp16"}
+	supportInboxService.SetTranslations(repository.NewSupportTranslationRepository(db), supportLLMProvider, jevProductDecisions, translationRoute, supportLLMRouter.HasChatProvider("openrouter")).
+		SetTranslationProviderConfigured(supportLLMRouter.HasChatProvider("openrouter"))
+	supportInboxService.SetTranslationMetrics(metrics)
+	pmTriageService, pmTriageErr := service.NewPMTriageService(service.PMTriageConfig{
+		Mode: cfg.JevPMMode, Threshold: cfg.JevPMThreshold, DailyLimit: cfg.JevPMDailyLimit,
+		WorkspaceIDs: strings.Split(cfg.JevWorkspaceIDs, ","),
+	}, pmJevProvider, repository.NewPMTriageRepository(db), repository.NewAIExecutionUsageRepository(db), pmTaskRepo, workspaceRepo, pmLabelRepo, supportInboxService)
+	if pmTriageErr != nil {
+		fatalWithSentry("configure PM Jev", pmTriageErr)
+	}
+
+	pmTaskService.SetTriageService(pmTriageService)
 	supportInboxService.SetTriageService(supportInboxTriageService)
 
 	slog.Info("startup: initializing GitHub App client")
-	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)
+	githubAppConfig, err := newGitHubAppConfigService(db, cfg)
 	if err != nil {
 		fatalWithSentry("failed to initialize github app client", err)
 	}
+	githubAppClient := githubapp.NewClientWithSource(githubAppConfig)
 	var temporalClient tclient.Client
 	temporalClient, err = tclient.Dial(temporalapp.BuildClientOptions(cfg))
 	if err != nil {
@@ -1083,7 +912,10 @@ func main() {
 		cfg.JWTSecret,
 	).
 		SetEpicDeliveryDependencies(epicDeliveryTargetRepo, pmEpicRepo).
-		SetGitLabDependencies(gitCredentialRepo, resolveGitOAuthEncryptionKey(cfg))
+		SetGitLabDependencies(gitCredentialRepo, resolveGitOAuthEncryptionKey(cfg)).
+		SetGitHubAppSource(githubAppConfig).
+		SetGitHubInstallClaimEnabled(gitHubAppManifestEnabled)
+	githubAppConfig.SetInstallRedirector(gitService).SetAppLookup(githubAppClient)
 	pmTaskService.SetGitService(gitService)
 	pmEpicService.SetGitService(gitService)
 	var agentRuntimeClient *service.AgentRuntimeClient
@@ -1093,6 +925,29 @@ func main() {
 			fatalWithSentry("failed to initialize agent runtime client", err)
 		}
 	}
+	aiConnectionService, err := service.NewAIConnectionService(repository.NewAIConnectionRepository(db), modelCatalog, agentRuntimeClient, service.AIConnectionConfig{
+		EncryptionKey: cfg.AIConnectionEncryptionKey, ChatGPTEnabled: cfg.ChatGPTConnectionsEnabled, ChatGPTClientID: cfg.ChatGPTClientID, AppID: cfg.AgentRuntimeAppID,
+	})
+	if err != nil {
+		fatalWithSentry("failed to initialize AI connections", err)
+	}
+	// Re-map untouched standard profiles when shared connections change. The
+	// customer-mode instance never seals keys; managed defaults are never bypassed.
+	standardProfileRemapper, err := service.NewAIStandardProfiles(repository.NewAIStandardProfileRepository(db), "", "customer", nil)
+	if err != nil {
+		fatalWithSentry("failed to initialize standard AI profile re-mapping", err)
+	}
+	aiConnectionService.SetChangeObserver(standardProfileRemapper)
+	aiProfileService := service.NewAIProfileService(repository.NewAIProfileRepository(db), aiConnectionService).SetAdmissionPolicy(editionServices.ConnectionPolicy).CheckRuntimeReadiness()
+	// Knowledge embeddings: a server key serves every workspace; otherwise each
+	// workspace's own OpenAI or OpenRouter connection does.
+	embeddingResolver := service.NewWorkspaceEmbeddingResolver(service.WorkspaceEmbeddingResolverConfig{
+		Server: supportEmbeddingProvider, ServerProvider: llm.SupportEmbeddingProviderName(cfg.OpenAIAPIKey, cfg.OpenRouterAPIKey),
+		Model: cfg.OpenAIEmbeddingModel, Connections: aiConnectionService,
+		Meter: aiUsageMeter, Registry: aiActionRegistry, Audit: aiActionExecutionRepo,
+	})
+	aiConnectionService.AddChangeObserver(embeddingResolver)
+	supportEmbeddingProvider = embeddingResolver
 	externalMCPService, err := service.NewExternalMCPService(
 		externalMCPRepo,
 		notificationService,
@@ -1140,17 +995,13 @@ func main() {
 	).SetModelProviderConfig(
 		cfg.AnthropicAPIKey,
 		cfg.OpenAIAPIKey,
-		cfg.OpenRouterAPIKey,
-		cfg.CodexOpenAIAuthMode,
-		cfg.CodexEnableChatGPTOAuth,
-		cfg.CodexChatGPTAccessToken,
-		cfg.CodexChatGPTAccountID,
-	).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetWorkspaceRepository(workspaceRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetAgentDraftLLM(supportLLMProvider).SetModelTierResolver(agentTierResolver).SetAIUsageMeter(aiUsageMeter).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
+		cfg.OpenRouterAPIKey).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetWorkspaceRepository(workspaceRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetAgentDraftLLM(supportLLMProvider).SetModelTierResolver(agentTierResolver).SetAIUsageMeter(aiUsageMeter).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
 	agentService.SetProductAnalyticsService(productAnalytics)
 	if agentRuntimeClient != nil {
 		agentService.SetAgentRuntimeClient(agentRuntimeClient)
 	}
 	agentService.SetExternalMCPService(externalMCPService)
+	agentService.SetAIConnectionService(aiConnectionService).SetAIProfileService(aiProfileService)
 	commandBarService := service.NewCommandBarService(agentService, commandBarPlanRepo, commandBarPlanDismissalRepo).
 		SetWebsocketPublisher(wsPublisher)
 	supportInboxService.SetConversationAgentRunner(agentService.RunConversationAgentAuto)
@@ -1170,6 +1021,7 @@ func main() {
 		pmActivityService,
 		wsPublisher,
 	)
+	ruleEngine.SetJevDecisions(jevProductDecisions)
 	ruleEngine.SetAgentService(agentService)
 	ruleEngine.SetTaskService(pmTaskService)
 	ruleEngine.SetHealthObserver(automationHealthService)
@@ -1245,6 +1097,7 @@ func main() {
 	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, docsRedirectRepo, s3Client, wsPublisher)
 	docsHelpcenterService.SetSearchRepository(docsHelpcenterSearchRepo)
 	docsHelpcenterService.SetPublicationArtifactDependencies(agentRunArtifactRepo, s3Client)
+	docsHelpcenterService.SetPublicationAttachmentRepository(pmAttachmentRepo)
 	tlsAskService := service.NewTLSAskService(docsHelpcenterRepo, cfg.TLSAskExtraAllowedDomains)
 
 	// Tiered cache for hot public help-center reads. L1 is an in-process LRU;
@@ -1282,6 +1135,7 @@ func main() {
 	docsHelpcenterTranslationService := service.NewDocsHelpcenterTranslationService(docsHelpcenterTranslationRepo, docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsRedirectRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, llmProvider)
 	docsHelpcenterTranslationService.SetSearchRepository(docsHelpcenterSearchRepo)
 	docsHelpcenterTranslationService.SetPublicationArtifactDependencies(agentRunArtifactRepo, s3Client)
+	docsHelpcenterTranslationService.SetPublicationAttachmentRepository(pmAttachmentRepo)
 	docsImportService := service.NewDocsImportService(
 		docsImportRepo,
 		docsSpaceService,
@@ -1304,6 +1158,7 @@ func main() {
 	docsDocumentService.SetTranslationService(docsHelpcenterTranslationService)
 	docsContentService.SetTranslationService(docsHelpcenterTranslationService)
 	docsHelpcenterService.SetTranslationService(docsHelpcenterTranslationService)
+	docsHelpcenterTranslationService.SetHelpcenterCacheInvalidator(docsHelpcenterService.InvalidateHelpcenterCacheForWorkspace)
 	docsDocumentService.SetHelpcenterService(docsHelpcenterService)
 	docsDeletionDeps := service.DocsDocumentDeletionDependencies{
 		ContentRepo:     docsContentRepo,
@@ -1360,6 +1215,7 @@ func main() {
 		s3Client,
 		runEngine,
 	)
+	embeddingResolver.SetBackfiller(service.NewKnowledgeEmbeddingBackfill(docsEmbeddingService, supportContentSyncService))
 	supportContentSourceService := service.NewSupportContentSourceService(
 		supportContentSourceRepo,
 		agentRepo,
@@ -1395,6 +1251,8 @@ func main() {
 	crmDealService.SetProductAnalyticsService(productAnalytics)
 	crmAssociationService := service.NewCRMAssociationService(crmAssociationRepo)
 	associationsService := service.NewAssociationsService(crmAssociationRepo, crmContactRepo, workspaceRepo, pmTaskLinkRepo, pmTaskRepo, supportConversationRepo, docsLinkRepo, docsDocumentRepo)
+	pmTriageHandler := handler.NewPMTriageHandler(pmTriageService)
+	pmTriageHandler.SetReviewer(service.NewPMTriageReviewService(pmTriageService, pmTaskService, associationsService))
 	crmActivityService := service.NewCRMActivityService(crmActivityRepo)
 	crmImportService := service.NewCRMImportService(crmImportRepo, crmContactRepo, crmCompanyRepo, crmDealRepo).SetDealService(crmDealService)
 
@@ -1511,6 +1369,11 @@ func main() {
 	commandService.SetDocsSearchRepository(docsSearchRepo)
 	commandService.SetDocsChangeProposalService(docsChangeProposalService)
 	commandService.SetAgentRunDependencies(agentRunRepo, agentRunArtifactRepo)
+	commandService.SetImageTools(service.NewAgentImageService(service.AgentImageConfig{
+		ServerOpenAIKey: cfg.OpenAIAPIKey, ServerOpenAIBaseURL: cfg.OpenAIBaseURL,
+		// Only Community (no edition connection policy) may fund images from the server key.
+		AllowServerKey: editionServices.ConnectionPolicy == nil,
+	}, aiConnectionService, agentRunArtifactRepo, s3Client, pmAttachmentService, aiActionRegistry, aiActionExecutionRepo))
 	commandService.SetDockActionProposalRepository(dockActionProposalRepo)
 	commandService.SetReleaseFactsProvider(service.NewReleaseFactsService(
 		gitIntegrationRepo,
@@ -1563,6 +1426,7 @@ func main() {
 			SetEventProtocol(cfg.AgentRuntimeEventProtocol).
 			SetOverageDependencies(agentRepo, aiUsageMeter, agentRuntimeClient).
 			SetTranscriptRepositories(agentRunMessageRepo, agentRunArtifactRepo, agentRunInteractionRepo).
+			SetAttentionNotifier(notificationService).
 			SetCodingSessionSnapshotRepository(codingSessionStateSnapshotRepo).
 			SetWebSocketPublisher(agentRuntimeProjectionPublisher).
 			SetRunFinalizers(runFinalizers)
@@ -1674,6 +1538,8 @@ func main() {
 		SetConversationRepositories(supportConversationRepo, supportMessageRepo).
 		SetKnowledgeMatcher(supportCoverageKnowledgeMatcher, docsSpaceRepo, supportContentSourceRepo).
 		SetTemporalClient(temporalClient)
+	supportCoverageDailyAnalyzer.SetJevDecisions(jevProductDecisions)
+	commandService.SetJevDecisions(jevProductDecisions)
 	supportCoverageTraceService := service.NewSupportCoverageRetrievalTraceService(supportCoverageAnalysisRepo)
 	supportEventService := service.NewSupportEventService(supportEventRepo, supportCoverageService).
 		SetCoverageV2Repository(supportCoverageV2Repo).
@@ -1702,6 +1568,7 @@ func main() {
 		agentService,
 		supportAIService,
 	)
+	supportChatService.SetJevService(supportJevService)
 	supportChatService.SetResearchEvidenceDependencies(supportRunEvidenceRepo, workspaceRepo)
 	supportFollowUpRepo := repository.NewSupportFollowUpRepository(db)
 	supportFollowUpService := service.NewSupportFollowUpService(supportFollowUpRepo, supportChatService)
@@ -1725,19 +1592,17 @@ func main() {
 		}()
 	}
 
-	orgService := service.NewOrganizationService(orgRepo)
 	orgService.SetCustomerIOIdentityService(customerIOIdentityService)
 	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService, agentService)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
 	workspaceService.SetProductAnalyticsService(productAnalytics)
 	setupService := service.NewSetupService(setupRepo)
-	setupSuccessEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv("SETUP_SUCCESS_ENABLED")), "true")
+	setupSuccessEnabled := cfg.SetupGuideEnabled
 	if setupSuccessEnabled {
 		workspaceService.SetSetupInitializer(setupService)
 	}
-	workspaceService.SetContextGeneratorDependencies(supportLLMProvider, nil)
-	billingService.SetOrgRoleResolver(orgService)
-	entitlementService := service.NewEntitlementService(billingService)
+	workspaceService.SetContextGeneratorDependencies(supportLLMProvider, nil).SetContextAIProfiles(aiProfileService)
+	entitlementService := editionServices.Entitlements
 	setupService.SetEntitlementService(entitlementService)
 	pmImportService.SetEntitlementService(entitlementService)
 	supportInboxService.SetEntitlementService(entitlementService)
@@ -1749,7 +1614,7 @@ func main() {
 	crmContactService.SetEntitlementService(entitlementService)
 	crmImportService.SetEntitlementService(entitlementService)
 	dealAutomationService.SetEntitlementService(entitlementService)
-	workspaceService.SetBillingService(billingService)
+	workspaceService.SetBillingService(editionServices.WorkspaceLifecycle)
 	workspaceService.SetCustomerIOIdentityService(customerIOIdentityService)
 	workspaceService.SetPresenceProvider(wsHub.Presence)
 	workspaceService.SetStatusOverrideRepo(supportTeammateStatusOverrideRepo)
@@ -1757,7 +1622,8 @@ func main() {
 		SetGitRepositoryRepository(gitRepositoryRepo).
 		SetEntitlementService(entitlementService)
 	automationInventoryService := service.NewAutomationInventoryService(settingsRepo, pmAutomationRepo, crmEmailRepo, automationHealthRepo, automationRuleRepo, agentTriggerExecutionRepo, agentRunRepo, agentRepo, workspaceRepo, pmTaskRepo, supportInstallRepo).
-		SetTargetResolvers(pmEpicRepo, docsDocumentRepo, supportConversationRepo, crmContactRepo, crmDealRepo, gitRepositoryRepo, supportCoverageRepo)
+		SetTargetResolvers(pmEpicRepo, docsDocumentRepo, supportConversationRepo, crmContactRepo, crmDealRepo, gitRepositoryRepo, supportCoverageRepo).
+		SetJevDecisions(jevProductDecisions)
 	flowTemplateRegistry, err := flowtemplates.LoadSystemRegistry()
 	if err != nil {
 		fatalWithSentry("failed to load flow templates", err)
@@ -1770,15 +1636,13 @@ func main() {
 		slog.Error("failed to ensure PM recurring scheduler", "error", err)
 	}
 	inviteService := service.NewInviteService(invitationRepo, workspaceRepo, orgRepo, userRepo, settingsRepo, appEmailClient, cfg.AppBaseURL, jwtManager)
-	inviteService.SetBillingService(billingService)
+	inviteService.SetBillingService(editionServices.Seats)
 	inviteService.SetCustomerIOIdentityService(customerIOIdentityService)
 	inviteService.SetProductAnalyticsService(productAnalytics)
-	// Initialize authorization service.
-	authzMemberRepo := authorization.NewGORMMemberRepository(db)
-	authzService := authorization.NewAuthzService(db, authzMemberRepo, moduleGrantRepo)
-	authzService.SetWorkspaceMFARepository(workspaceRepo)
+	aiConnectionService.SetAuthorizationService(authzService)
+	crmOutreachService := service.NewCRMOutreachService(repository.NewCRMOutreachRepository(db), crmEmailService, crmEmailRepo, authzService, pmTaskService, cfg.AppBaseURL)
 	crmSituationService := service.NewCRMSituationService(crmSituationRepo, authzService)
-	crmPlaybookService := service.NewCRMPlaybookService(repository.NewCRMPlaybookRepository(db), authzService, crmSituationService)
+	crmPlaybookService := service.NewCRMPlaybookService(repository.NewCRMPlaybookRepository(db), authzService, crmSituationService).SetAIProfileService(aiProfileService)
 	crmPlaybookExecutionRepo := repository.NewCRMPlaybookExecutionRepository(db)
 	crmPlaybookLauncher := service.NewCRMPlaybookAgentLauncher(agentService, crmPlaybookExecutionRepo, aiUsageMeter)
 	crmPlaybookExecution := service.NewCRMPlaybookExecutionService(crmPlaybookExecutionRepo, crmPlaybookService, crmPlaybookLauncher, authzService, workspaceRepo).SetEntitlements(entitlementService)
@@ -1805,6 +1669,7 @@ func main() {
 	dockChatService := service.NewDockChatService(dockChatRepo, agentRunRepo, agentRunMessageRepo, commandBarPlanRepo, agentService, commandService, authzService).
 		SetTitleLLM(supportLLMProvider).
 		SetPMAttachmentRepository(pmAttachmentRepo).
+		SetArtifactRepository(agentRunArtifactRepo).
 		SetMediaSourceService(supportInboxService).
 		SetMediaAnalyzer(pmAttachmentService, supportLLMProvider)
 	publicShareRepo := repository.NewPublicShareRepository(db)
@@ -1826,6 +1691,11 @@ func main() {
 	docsEntityReferenceResolverService = service.NewDocsEntityReferenceResolverService(pmTaskService, pmEpicService, supportInboxService, crmDealService, crmContactService, crmCompanyService, docsDocumentService, authzService)
 	docsReferencesService.SetEntityReferenceResolver(docsEntityReferenceResolverService)
 	agentService.SetMCPRepository(mcpRepo)
+	cliService, err := service.NewCLIService(repository.NewCLIRepository(db), workspaceRepo, authzService, agentService, service.CLIConfig{Enabled: cfg.CLIEnabled, GatewayEnabled: cfg.CLIModelGatewayEnabled, PublicBaseURL: cfg.CLIPublicBaseURL, AppBaseURL: cfg.AppBaseURL})
+	if err != nil {
+		slog.Error("invalid CLI configuration", "error", err)
+		os.Exit(1)
+	}
 	mcpService := service.NewMCPService(
 		mcpRepo,
 		workspaceRepo,
@@ -1859,6 +1729,11 @@ func main() {
 			SupportEnabled:       cfg.MCPSupportEnabled,
 		},
 	)
+	mcpService.SetDocsLifecycle(docsDocumentService, docsHelpcenterService, docsEmbeddingService)
+	mcpService.SetDocsChangeProposals(docsChangeProposalService)
+	mcpService.SetAttachments(pmAttachmentService)
+	mcpService.SetDocsContentReader(docsContentRepo)
+	mcpService.SetPMComments(pmCommentService)
 	supportInboxService.SetAuthzService(authzService)
 
 	// Inject authorization into WebSocket handler for workspace access checks.
@@ -1883,7 +1758,7 @@ func main() {
 
 	// Initialize handlers.
 	emailDiagnosticsConfig := model.EmailDiagnosticsConfig{
-		AppEmailConfigured:        appEmailClient != nil,
+		AppEmailConfigured:        email.Configured(appEmailClient),
 		ReplyEmailConfigured:      replyEmailClient != nil,
 		RouteEmailConfigured:      strings.TrimSpace(cfg.PostmarkRouteServerToken) != "",
 		RedisConfigured:           redisClient != nil,
@@ -1897,6 +1772,9 @@ func main() {
 		RouteInboundSecretSet:     strings.TrimSpace(cfg.PostmarkRouteInboundWebhookSecret) != "",
 	}
 
+	if appEmailClient != nil {
+		emailDiagnosticsConfig.AppFromEmail = appEmailClient.FromEmail()
+	}
 	var setupHandler *handler.SetupHandler
 	if setupSuccessEnabled {
 		setupHandler = handler.NewSetupHandler(setupService, authzService)
@@ -1924,9 +1802,18 @@ func main() {
 	// agent-independent auto-indexing.
 	helpcenterAISearchService.SetAutoIndexer(docsEmbeddingService)
 
+	requestLimiter := ratelimit.New(redisClient, ratelimit.Config{RequestsPerMinute: cfg.AuthenticatedRateLimit, ExpensivePerMinute: cfg.ExpensiveRateLimit})
+	var demoReadOnly func(http.Handler) http.Handler
+	if authService.DemoEnabled() {
+		demoReadOnly = middleware.DemoReadOnly(authService.IsDemoUser)
+	}
 	handlers := router.Handlers{
+		Metrics:                   metrics,
+		AuthenticatedRateLimit:    middleware.AuthenticatedRateLimit(requestLimiter),
 		WidgetRateLimit:           middleware.WidgetRateLimit(redisClient),
 		HelpcenterAnswerRateLimit: middleware.HelpcenterAnswerRateLimit(redisClient),
+		DemoReadOnly:              demoReadOnly,
+		Assets:                    handler.NewAssetHandler(s3Client),
 		Health:                    handler.NewHealthHandler(s3Client, geoIPResolver),
 		Auth: handler.NewAuthHandler(authService, handler.GoogleOAuthConfig{
 			ClientID:         cfg.GoogleAuthClientID,
@@ -1939,8 +1826,8 @@ func main() {
 		Organization:        handler.NewOrganizationHandler(orgService),
 		Workspace:           handler.NewWorkspaceHandler(workspaceService, authzService),
 		Setup:               setupHandler,
-		Billing:             handler.NewBillingHandler(billingService, cfg.StripeWebhookSecret, cfg.AppBaseURL, billingTestScenarioService, strings.EqualFold(os.Getenv("BILLING_TEST_SCENARIOS_ENABLED"), "true")),
-		AIUsage:             handler.NewAIUsageHandler(pricingCatalog),
+		SampleData:          handler.NewSampleDataHandler(service.NewSampleDataService(db, cfg.DocsOrderingUseSortKey), authzService),
+		Edition:             editionServices.Routes,
 		Settings:            handler.NewSettingsHandler(settingsService, automationInventoryService),
 		Automation:          handler.NewAutomationHandler(automationInventoryService, ruleEngine, agentService, flowTemplateRegistry, flowTemplateInstaller, flowTemplateUninstaller),
 		Invite:              handler.NewInviteHandler(inviteService),
@@ -1953,6 +1840,7 @@ func main() {
 		PMAISuggestion:      handler.NewPMAISuggestionHandler(pmAISuggestionService),
 		PMTask:              handler.NewPMTaskHandler(pmTaskService),
 		PMTaskInsights:      handler.NewPMTaskInsightsHandler(pmTaskInsightsService),
+		PMTriage:            pmTriageHandler,
 		PMComment:           handler.NewPMCommentHandler(pmCommentService),
 		PMAttachment:        handler.NewPMAttachmentHandler(pmAttachmentService),
 		PMObjective:         handler.NewPMObjectiveHandler(pmObjectiveService),
@@ -1968,20 +1856,24 @@ func main() {
 		PMTaskTemplate:      handler.NewPMTaskTemplateHandler(pmTaskTemplateService),
 		PMRecurringTemplate: handler.NewPMRecurringTemplateHandler(pmRecurringTemplateService),
 		Agent:               handler.NewAgentHandler(agentService),
+		AIConnection:        handler.NewAIConnectionHandler(aiConnectionService),
+		AIProfile:           handler.NewAIProfileHandler(aiProfileService),
 		AgentRuntimeHost:    handler.NewAgentRuntimeHostHandler(agentRuntimeHostService).SetProjectionService(agentRuntimeProjectionService),
-		MCP:                 handler.NewMCPHandler(mcpService),
+		CLI:                 handler.NewCLIHandler(cliService),
+		MCP:                 handler.NewMCPHandler(mcpService, requestLimiter),
 		ExternalMCP:         handler.NewExternalMCPHandler(externalMCPService, agentService, authzService, cfg.AppBaseURL),
 		SupportInbox:        handler.NewSupportInboxHandler(supportInboxService, agentService, supportMessageActionsService),
 		SupportInboxView:    handler.NewSupportInboxViewHandler(supportInboxViewService),
 		SupportTag:          handler.NewSupportTagHandler(supportTagService),
 		SupportInboxWidget:  handler.NewSupportInboxWidgetHandler(supportInboxService),
-		SupportAI:           handler.NewSupportAIHandler(supportAIService, supportInboxService, agentKnowledgeSourceService, supportContentSourceService, agentContentSourceService, curatedGuidanceService),
+		SupportAI:           handler.NewSupportAIHandler(supportAIService, supportInboxService, agentKnowledgeSourceService, supportContentSourceService, agentContentSourceService, curatedGuidanceService).SetPreviewService(service.NewSupportPreviewService(agentService, supportAIService, supportRunEvidenceRepo)),
 		SupportAttachment:   handler.NewSupportAttachmentHandler(supportAttachmentService, supportInboxService),
 		PostmarkInbound:     handler.NewPostmarkInboundHandler(emailFallbackService, cfg.PostmarkReplyInboundWebhookSecret, cfg.PostmarkRouteInboundWebhookSecret),
 		EmailImageProxy:     handler.NewEmailImageProxyHandler(),
 		AdminWebhookEvent:   handler.NewAdminWebhookEventHandler(supportEmailWebhookEventRepo),
 		AdminEmailQueue:     handler.NewAdminEmailQueueHandler(emailFallbackService, supportEmailLogRepo, supportEmailWebhookEventRepo, emailDiagnosticsConfig),
 		Git:                 handler.NewGitHandler(gitService, gitWebhookEventRepo),
+		GitHubApp:           handler.NewGitHubAppHandler(githubAppConfig),
 		Notification:        handler.NewNotificationHandler(notificationService, followerService),
 		UserNotifSettings:   handler.NewUserNotificationSettingsHandler(userNotifSettingsService),
 		PushDevice:          handler.NewPushDeviceHandler(pushDeviceService),
@@ -1994,6 +1886,7 @@ func main() {
 		CRMMeeting:          handler.NewCRMMeetingHandler(crmMeetingService),
 		CRMImport:           handler.NewCRMImportHandler(crmImportService),
 		CRMEmail:            handler.NewCRMEmailHandler(crmEmailService, cfg.AppBaseURL),
+		CRMOutreach:         handler.NewCRMOutreachHandler(crmOutreachService),
 		CRMCalendar:         handler.NewCRMCalendarHandler(crmCalendarService),
 		CRMEnrichment:       handler.NewCRMEnrichmentHandler(crmEnrichmentService),
 		CRMSignal:           handler.NewCRMSignalHandler(crmSignalService),
@@ -2046,6 +1939,27 @@ func main() {
 	handlers.Docs.SetSupportEventRecorder(supportEventRecorder)
 	handlers.Docs.SetImageEditService(docsImageEditService)
 	handlers.Docs.SetSupportWidgetConfigProvider(supportInboxService)
+	handlers.SupportInboxWidget.SetPublicOrigin(cfg.PublicWidgetURL)
+	supportEmbeddingModel := llm.SupportEmbeddingModel(cfg.OpenAIAPIKey, cfg.OpenRouterAPIKey, cfg.OpenAIEmbeddingModel)
+	handlers.AIConnection.SetKnowledgeConfiguration(supportEmbeddingModel != "", supportEmbeddingModel, supportLLMRouter.ConfiguredChatProviders())
+	handlers.AIConnection.SetKnowledgeEmbeddingSource(embeddingResolver.EmbeddingSource)
+	handlers.Capability = newCapabilityHandler(db, cfg, capabilityWiring{
+		appEmail: appEmailClient, emailDiagnostics: emailDiagnosticsConfig,
+		aiConnectionsEnabled: aiConnectionService.Enabled(), chatProviders: supportLLMRouter.ConfiguredChatProviders(),
+		embeddingModel: supportEmbeddingModel, embeddingSource: embeddingResolver.EmbeddingSource,
+		storage: s3Client, temporal: temporalClient,
+		gitHubAppConfigured:   githubAppClient.Configured,
+		meetingCapture:        crmMeetingService.CaptureAvailability,
+		googleOAuthConfigured: gmailOAuth != nil,
+	})
+	handlers.Docs.SetPublicWidgetURLs(cfg.PublicWidgetURL, cfg.PublicSDKURL)
+	handlers.Auth.SetPublicWidgetURLs(cfg.PublicWidgetURL, cfg.PublicSDKURL)
+	handlers.Auth.SetSetupGuideEnabled(setupSuccessEnabled)
+	if instanceService != nil && appEmailConfig != nil {
+		handlers.Capability.SetAppEmailState(appEmailConfig.AppEmailState)
+		handlers.Instance = handler.NewInstanceHandler(instanceService, appEmailConfig)
+		handlers.Auth.SetSignupPolicy(instanceService)
+	}
 	handlers.Docs.SetHelpcenterAISearchService(helpcenterAISearchService)
 	handlers.Docs.SetAPIReferenceService(docsAPIReferenceService)
 
@@ -2237,34 +2151,20 @@ func main() {
 		}
 	}()
 
-	// Start background ticker for Helpin-managed trial expiry (daily).
-	billingTrialExpiryDone := make(chan struct{})
-	go func() {
-		runBillingTrialExpirySweep := func() {
-			count, err := billingService.ExpireOverdueTrials(context.Background())
-			if err != nil {
-				slog.Error("billing trial expiry sweep failed", "error", err)
-				return
-			}
-			if count > 0 {
-				slog.Info("billing trial expiry sweep complete", "expired_count", count)
-			}
-		}
+	editionCtx, editionCancel := context.WithCancel(context.Background())
+	editionDone := editionServices.StartWorkers(editionCtx)
 
-		runBillingTrialExpirySweep()
-
-		ticker := time.NewTicker(24 * time.Hour)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				runBillingTrialExpirySweep()
-			case <-billingTrialExpiryDone:
-				return
-			}
-		}
-	}()
-
+	// Durable inbound processing does not depend on outbound Postmark/Redis configuration.
+	inboundCtx, inboundCancel := context.WithCancel(context.Background())
+	defer inboundCancel()
+	go supportInboxService.RunLiveTranslate(inboundCtx)
+	go supportInboxService.RunLiveTranslate(inboundCtx)
+	go supportInboxService.RunTranslationReview(inboundCtx)
+	go supportInboxService.RunPendingSupportSends(inboundCtx)
+	go supportInboxService.RunPendingSupportSends(inboundCtx)
+	go emailFallbackService.StartInboundWorker(inboundCtx, "email")
+	go emailFallbackService.StartInboundWorker(inboundCtx, "attachment")
+	go emailFallbackService.StartInboundWorker(inboundCtx, "attachment")
 	// Start email fallback workers only when both Redis and Postmark are available.
 	var emailFallbackCancel context.CancelFunc
 	if redisClient != nil && replyEmailClient != nil {
@@ -2346,6 +2246,18 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	// Metrics uses a dedicated cluster-only port, never the public API ingress.
+	var metricsServer *http.Server
+	if addr := os.Getenv("METRICS_ADDR"); addr != "" {
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", metrics.Handler())
+		metricsServer = &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second, WriteTimeout: 10 * time.Second}
+		go func() {
+			if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				fatalWithSentry("metrics server failed", err)
+			}
+		}()
+	}
 	// Listen for shutdown signals.
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
@@ -2366,9 +2278,7 @@ func main() {
 	signalRuleCancel()
 	commercialStateCancel()
 	usageBaselineCancel()
-	settlementCancel()
-	periodCancel()
-	reservationCancel()
+	editionCancel()
 	select {
 	case <-customerIOOutboxDone:
 	case <-time.After(6 * time.Second):
@@ -2380,19 +2290,9 @@ func main() {
 		slog.Warn("product analytics outbox worker did not stop before shutdown timeout")
 	}
 	select {
-	case <-settlementDone:
+	case <-editionDone:
 	case <-time.After(6 * time.Second):
-		slog.Warn("AI usage settlement worker did not stop before shutdown timeout")
-	}
-	select {
-	case <-periodDone:
-	case <-time.After(6 * time.Second):
-		slog.Warn("AI usage period worker did not stop before shutdown timeout")
-	}
-	select {
-	case <-reservationDone:
-	case <-time.After(6 * time.Second):
-		slog.Warn("AI usage reservation sweeper did not stop before shutdown timeout")
+		slog.Warn("edition workers did not stop before shutdown timeout")
 	}
 	select {
 	case <-signalRuleDone:
@@ -2409,6 +2309,7 @@ func main() {
 	case <-time.After(6 * time.Second):
 		slog.Warn("CRM usage-baseline synchronizer did not stop before shutdown timeout")
 	}
+	inboundCancel()
 	if emailFallbackCancel != nil {
 		emailFallbackCancel()
 	}
@@ -2416,12 +2317,16 @@ func main() {
 	close(healthScoreDone)
 	close(signalRouteDone)
 	close(supportReplyEmailDone)
-	close(billingTrialExpiryDone)
 	close(cleanupDone)
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	if metricsServer != nil {
+		if err := metricsServer.Shutdown(shutdownCtx); err != nil {
+			slog.Error("metrics shutdown failed", "error", err)
+		}
+	}
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		fatalWithSentry("server forced to shutdown", err)
 	}

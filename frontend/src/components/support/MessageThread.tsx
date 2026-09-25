@@ -1,9 +1,15 @@
+import { usePendingSupportSends } from '@/hooks/queries/usePendingSupportSends';
+import { LiveTranslateBar } from './LiveTranslateBar';
+import { useCachedSupportTranslations } from '@/hooks/queries/useSupportTranslation';
+import { pmTriageService, type TriageView, type SupportTaskDraft } from '@/lib/services/pmTriageService';
+import { unwrapRequired } from '@/lib/queryUtils';
+import { getReplyDeliveryMode, getReplyEmailSubject } from './replyDelivery';
 import { lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { ArrowLeft02Icon, ClipboardIcon, Message01Icon, Loading01Icon, CheckmarkCircle02Icon, CancelCircleIcon, MoreHorizontalIcon } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
-import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
+import { UpgradeRequiredDialog } from '@edition';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import {
@@ -33,17 +39,18 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
 import { getDayLabel, getEffectiveSenderType, getSupportReceiptStatus, isSameDay, getInitial, isAIActiveConversation, type SupportReceiptStatus } from './helpers';
-import { MessageBubble } from './MessageBubble';
+import { TranslatedMessageBubble } from './TranslatedMessageBubble';
 import { useJoinedMessagePosition } from './useJoinedMessagePosition';
 import { EmptyState } from './EmptyState';
 import { AgentRunsCard } from './AgentRunsCard';
 import { AIRunApprovalCard } from './AIRunApprovalCard';
 import { ConversationActionsMenu } from './ConversationActionsMenu';
 import { SupportInboxOnboarding } from './SupportInboxOnboarding';
+import type { SupportInboxEmptyState } from './ConversationList';
 import { SupportInboxPanelHeader } from './SupportInboxPanelHeader';
 import { ReplyComposerLoading } from './ReplyComposerLoading';
 import { getInitialThreadScrollTarget, getPrependRestoredScrollTop, isNearThreadBottom, isNearThreadTop, shouldAutoScrollThread, shouldMarkOpenThreadRead } from './threadAutoScroll';
-import type { UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import type { UpgradeRequiredReason } from '@edition';
 
 interface MessageThreadProps {
   workspaceId: string;
@@ -51,12 +58,13 @@ interface MessageThreadProps {
   presentation?: 'panel' | 'mobile-sheet';
   onBackToInbox?: () => void;
   onOpenDetails?: () => void;
-  showInboxOnboarding?: boolean;
+  inboxEmptyState?: SupportInboxEmptyState;
   onWidgetSettingsClick?: () => void;
   onCreateConversationClick?: () => void;
 }
 
 const LazyCreateTaskDialog = lazy(() => import('./CreateTaskDialog').then((module) => ({ default: module.CreateTaskDialog })));
+const LazySupportTaskTriageDialog = lazy(() => import('./SupportTaskTriageDialog').then((module) => ({ default: module.SupportTaskTriageDialog })));
 const loadReplyComposer = () => import('./ReplyComposer').then((module) => ({ default: module.ReplyComposer }));
 const LazyReplyComposer = lazy(loadReplyComposer);
 
@@ -180,16 +188,16 @@ function DaySeparator({
 }) {
   return (
     <div ref={separatorRef} className="sticky top-0 z-[1] my-5 flex items-center gap-3">
-      <div className="h-px flex-1 bg-border/60" aria-hidden />
+      <div className="h-px flex-1 bg-border" aria-hidden />
       <span
-        className={`shrink-0 rounded-full px-3 py-0.5 text-[10.5px] font-medium text-muted-foreground/70 ${
+        className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold text-foreground/75 ${
           isSticky ? 'bg-white dark:bg-background' : 'bg-muted'
         }`}
         style={{ border: 'none', boxShadow: 'none', outline: 'none' }}
       >
         {label}
       </span>
-      <div className="h-px flex-1 bg-border/60" aria-hidden />
+      <div className="h-px flex-1 bg-border" aria-hidden />
     </div>
   );
 }
@@ -277,7 +285,7 @@ export function MessageThread({
   presentation = 'panel',
   onBackToInbox,
   onOpenDetails,
-  showInboxOnboarding,
+  inboxEmptyState,
   onWidgetSettingsClick,
   onCreateConversationClick,
 }: MessageThreadProps) {
@@ -307,7 +315,16 @@ export function MessageThread({
     isFetchingNextPage,
     isFetchNextPageError,
   } = useConversationMessages(workspaceId, conversationId);
-  const messages = useMemo(() => flattenSupportMessagePages(messagePages), [messagePages]);
+  const loadedMessages = useMemo(
+    () => flattenSupportMessagePages(messagePages).filter(
+      message => !(message.message_type === 'system' && message.system_event_type === 'teammate_joined'),
+    ),
+    [messagePages],
+  );
+  const messages=usePendingSupportSends(workspaceId,conversationId||'',loadedMessages);
+  const translationIds=useMemo(()=>messages.filter(m=>m.message_type==='reply'&&!m.is_internal&&!m.pending_send).map(m=>m.id),[messages]);
+  const cachedTranslations=useCachedSupportTranslations(workspaceId,conversationId||'',translationIds, Math.max(0, ...messages.filter(m=>!m.is_internal).map(m=>Date.parse(m.created_at)))).data;
+  const translationMap=useMemo(()=>new Map((cachedTranslations||[]).map(t=>[t.purpose === 'outgoing_reply' ? t.sent_message_id : t.source_message_id,t])),[cachedTranslations]);
   const { data: inboxScopes } = useInboxScopes(workspaceId);
   const { data: installation } = useChatSettings(workspaceId);
   useSupportTeammatePresence(workspaceId);
@@ -325,11 +342,17 @@ export function MessageThread({
   const isThreadLoading = !!conversationId && (!conversationFetched || isLoading);
 
   const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
+  const [taskReview, setTaskReview] = useState<{ conversationId: string; view: TriageView | null; error?: string } | null>(null);
+  const [analyzingTask, setAnalyzingTask] = useState(false);
+  const taskReviewSourceRef = useRef(`${workspaceId}:${conversationId}`);
+  taskReviewSourceRef.current = `${workspaceId}:${conversationId}`;
+
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
   const [activeStickySeparator, setActiveStickySeparator] = useState<number | null>(null);
   const [isThreadTransitioning, setIsThreadTransitioning] = useState(false);
   const lastOpenThreadReadMessageIdRef = useRef<string | null>(null);
   const assignedAgentId = conversation?.assigned_agent_id ?? null;
+  const memberNameByUserId = useMemo(() => new Map(members.map(member => [member.user_id, member.full_name])), [members]);
   const memberAvatarByUserId = useMemo(() => {
     const map = new Map<string, string>();
     for (const member of members) {
@@ -440,22 +463,6 @@ export function MessageThread({
     };
   }, [workspaceId, conversationId, assignedAgentId]);
 
-  const isVisitorOnline = useSupportPresenceStore((s) =>
-    conversation?.anonymous_id ? !!s.onlineVisitors[conversation.anonymous_id] : false
-  );
-
-  const emailFallbackHint = useMemo(() => {
-    const settings = installation?.settings;
-    const email = conversation?.customer_email?.trim();
-    if (!conversation || !settings?.email_fallback_enabled || !email) return null;
-    if (conversation.email_unsubscribed) return null;
-    if (conversation.status === 'resolved' || conversation.status === 'spam') return null;
-    if (conversation.anonymous_id && isVisitorOnline) return null;
-
-    return {
-      email,
-    };
-  }, [conversation, installation, isVisitorOnline]);
 
   useEffect(() => {
     const handleAgentRunEvent = (event: Event) => {
@@ -493,6 +500,8 @@ export function MessageThread({
 
   useEffect(() => {
     const handleKeyDown = async (event: KeyboardEvent) => {
+      // Desktop and mobile threads can both be mounted; only one owns Undo.
+      if (event.defaultPrevented) return;
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z' || event.shiftKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
       if (target?.closest('input, textarea, [contenteditable="true"]')) return;
@@ -510,7 +519,7 @@ export function MessageThread({
       const result = await deleteMessage.mutateAsync({ messageId: latest.id, undo: true });
       if (result.markdown) {
         window.dispatchEvent(new CustomEvent(RESTORE_SUPPORT_DRAFT_EVENT, {
-          detail: { conversationId, markdown: result.markdown, attachments: latest.attachments ?? [] },
+          detail: { conversationId, markdown: result.markdown, attachments: latest.attachments ?? [], deliveryMode: getReplyDeliveryMode(latest.metadata), emailSubject: getReplyEmailSubject(latest.metadata) },
         }));
       }
     };
@@ -543,7 +552,20 @@ export function MessageThread({
   };
 
   const handleCreateTask = async () => {
-    if (!conversationId || !workspaceSlug) return;
+    if (!conversationId || !workspaceSlug || analyzingTask) return;
+    const sourceKey = `${workspaceId}:${conversationId}`;
+    setAnalyzingTask(true);
+    try {
+      const view = unwrapRequired(await pmTriageService.analyze(workspaceId, 'support_conversation', conversationId), 'Task matching');
+      if (taskReviewSourceRef.current !== sourceKey) return;
+      if (view.status !== 'disabled' && view.status !== 'shadow') {
+        setTaskReview({ conversationId, view });
+        return;
+      }
+    } catch (error) {
+      if (taskReviewSourceRef.current === sourceKey) setTaskReview({ conversationId, view: null, error: error instanceof Error ? error.message : 'Task matching is unavailable.' });
+      return;
+    } finally { setAnalyzingTask(false); }
 
     const dismissed = access?.membership?.support_task_dialog_dismissed;
     const savedTeamId = access?.membership?.support_default_team_id;
@@ -582,6 +604,16 @@ export function MessageThread({
     toast.success(`Created ${created.task_key ?? 'task'}`, {
       description: created.summary || created.task_name,
     });
+    openTaskRoute(navigate as never, location as never, workspaceSlug, created.task_id);
+  };
+
+  const handleReviewedTaskCreate = async (teamId: string, draft: SupportTaskDraft) => {
+    if (!conversationId || !workspaceSlug) return;
+    const created = await createTaskFromConversation.mutateAsync({ conversationId, teamId, draft: { ...draft, reviewed_draft: true } });
+    setTaskReview(null);
+    try { await updatePreferences.mutateAsync({ support_default_team_id: teamId }); }
+    catch { toast.error('Task created, but the default team preference could not be saved.'); }
+    toast.success(`Created ${created.task_key ?? 'task'}`, { description: created.summary || created.task_name });
     openTaskRoute(navigate as never, location as never, workspaceSlug, created.task_id);
   };
 
@@ -838,11 +870,22 @@ export function MessageThread({
   // selection. Wait until the fetch settled so we don't flash during load.
   const noSelection = !conversationId || (conversationFetched && !conversation);
   if (noSelection) {
-    if (showInboxOnboarding && onWidgetSettingsClick && onCreateConversationClick) {
+    if (inboxEmptyState === 'onboarding' && onWidgetSettingsClick && onCreateConversationClick) {
       return (
         <SupportInboxOnboarding
           onWidgetSettingsClick={onWidgetSettingsClick}
           onCreateConversationClick={onCreateConversationClick}
+        />
+      );
+    }
+
+    if (inboxEmptyState === 'inbox-zero') {
+      return (
+        <EmptyState
+          icon={CheckmarkCircle02Icon}
+          title="You're all caught up"
+          subtitle="Nothing in the Inbox needs a reply right now. New conversations will show up here."
+          background="muted"
         />
       );
     }
@@ -921,13 +964,14 @@ export function MessageThread({
             variant="ghost"
             size="icon"
             className="h-11 w-11 shrink-0"
-            disabled={createTaskFromConversation.isPending}
+            disabled={createTaskFromConversation.isPending || analyzingTask || !access?.permissions?.includes('pm.edit')}
             onClick={handleCreateTask}
             aria-label="Create task"
             title="Create task"
           >
-            {createTaskFromConversation.isPending ? <Loading01Icon className="h-4 w-4 animate-spin" /> : <ClipboardIcon className="h-4 w-4" />}
+            {createTaskFromConversation.isPending || analyzingTask ? <Loading01Icon className="h-4 w-4 animate-spin" /> : <ClipboardIcon className="h-4 w-4" />}
           </Button>
+
 
           <Button
             type="button"
@@ -979,12 +1023,13 @@ export function MessageThread({
               size="sm"
               variant="outline"
               className="h-7 gap-1 text-xs"
-              disabled={createTaskFromConversation.isPending}
+              disabled={createTaskFromConversation.isPending || analyzingTask || !access?.permissions?.includes('pm.edit')}
               onClick={handleCreateTask}
             >
-              {createTaskFromConversation.isPending ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <CheckmarkCircle02Icon className="h-3.5 w-3.5" />}
+              {createTaskFromConversation.isPending || analyzingTask ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <CheckmarkCircle02Icon className="h-3.5 w-3.5" />}
               Create Task
             </Button>
+
 
             {/* Resolve / Unresolve */}
             {conversation.status === 'resolved' ? (
@@ -1115,6 +1160,7 @@ export function MessageThread({
       )}
 
       {/* Messages area with light background (Crisp-style) */}
+      <LiveTranslateBar workspaceId={workspaceId} conversationId={conversationId} editable={!!access?.permissions?.includes('support.edit')} />
       <ScrollArea
         ref={scrollAreaRef}
         className="min-h-0 min-w-0 flex-1 bg-muted/20 dark:bg-sidebar [&>[data-slot=scroll-area-viewport]>div]:!block [&>[data-slot=scroll-area-viewport]>div]:!w-full [&>[data-slot=scroll-area-viewport]>div]:!min-w-0 [&>[data-slot=scroll-area-viewport]>div]:!max-w-full"
@@ -1177,22 +1223,22 @@ export function MessageThread({
                 data-support-message-id={item.message.id}
                 data-support-message-key={supportMessageRenderKey(item.message)}
               >
-                <MessageBubble
+                <TranslatedMessageBubble
+                  workspaceId={workspaceId}
                   message={item.message}
+                  cachedTranslation={translationMap.get(item.message.id)}
                   isConsecutive={item.isConsecutive}
                   isLastInGroup={item.isLastInGroup}
                   source={conversation?.source}
                   contactLastSeenAt={conversation?.contact_last_seen_at}
                   receiptStatus={item.message.id === receiptMessageId ? receiptStatus : undefined}
+                  teammateDisplayName={item.message.sender_user_id ? memberNameByUserId.get(item.message.sender_user_id) : undefined}
                   customerDisplayName={conversation?.customer_name || conversation?.customer_email}
                   customerEmail={conversation?.customer_email}
                   workspaceSlug={workspaceSlug}
                   linkedTaskId={conversation?.linked_task_id}
                   fallbackAvatarUrl={
-                    (item.message.sender_user_id ? memberAvatarByUserId.get(item.message.sender_user_id) : undefined)
-                    ?? ((item.message.sender_display_name === currentUser?.full_name || item.message.sender_display_name === currentUser?.email)
-                      ? currentUser?.avatar_url
-                      : undefined)
+                    item.message.sender_user_id ? memberAvatarByUserId.get(item.message.sender_user_id) : undefined
                   }
                 />
               </div>
@@ -1209,19 +1255,38 @@ export function MessageThread({
 
       {/* Reserve the editor's space immediately. Its key isolates drafts and
           attachments when switching between already cached conversations. */}
-      {conversationId && (conversation?.id === conversationId && !isThreadLoading ? (
+      {conversationId && (conversation?.id === conversationId && !isThreadLoading ? (conversation.anonymized_at ? (
+        <div className="px-4 py-3 text-sm text-muted-foreground" role="status">
+          This customer was deleted. Messages and comments are retained; this conversation is read-only.
+        </div>
+      ) : (
         <Suspense fallback={<ReplyComposerLoading />}>
           <LazyReplyComposer
             key={`${workspaceId}:${conversationId}`}
             workspaceId={workspaceId}
             conversationId={conversationId}
-            emailFallbackHint={emailFallbackHint}
             emailDeliveryEnabled={installation?.settings.email_fallback_enabled}
             onUpgradeRequired={setUpgradeDialogReason}
           />
         </Suspense>
-      ) : <ReplyComposerLoading />)}
+      )) : <ReplyComposerLoading />)}
 
+      {taskReview && taskReview.conversationId === conversationId ? (
+        <Suspense fallback={null}><LazySupportTaskTriageDialog
+          key={`${workspaceId}:${conversationId}`}
+          workspaceId={workspaceId}
+          workspaceSlug={workspaceSlug}
+          conversationId={taskReview.conversationId}
+          initialView={taskReview.view}
+          initialError={taskReview.error}
+          teams={wsSettings?.teams ?? []}
+          defaultTeamId={access?.membership?.support_default_team_id ?? access?.team_memberships?.[0]?.team_id}
+          isCreating={createTaskFromConversation.isPending}
+          onOpenChange={(open) => { if (!open) setTaskReview(null); }}
+          onCreate={handleReviewedTaskCreate}
+          onLinked={() => { setTaskReview(null); toast.success('Conversation linked to existing task'); }}
+        /></Suspense>
+      ) : null}
       {showCreateTaskDialog ? (
         <Suspense fallback={null}>
           <LazyCreateTaskDialog

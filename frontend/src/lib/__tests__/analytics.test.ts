@@ -1,8 +1,9 @@
+// This suite verifies the commercial analytics contract; Community has no endpoints.
+vi.mock('@edition/config', () => ({ APP_ANALYTICS_HOST: 'app.helpin.ai', USERMAVEN_KEY: 'test-key', CUSTOMER_IO_WRITE_KEY: 'test-key' }));
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { OrganizationWithRole, User, Workspace, WorkspaceAccess } from '../types';
 import {
-  buildAnalyticsBillingEventProperties,
   buildAnalyticsOrganizationTraits,
   buildAnalyticsUserTraits,
   buildAnalyticsWorkspaceTraits,
@@ -35,7 +36,7 @@ const baseWorkspace: Workspace = {
   id: 'ws-1',
   name: 'Acme',
   slug: 'acme',
-  workspace_key: 'acme',
+  workspace_key: 'test-key',
   owner_id: 'user-1',
   organization_id: 'org-1',
   role: 'owner',
@@ -144,13 +145,13 @@ describe('app analytics', () => {
     const clients = makeClients();
     expect(initializeAppAnalytics({ hostname: 'app.helpin.ai', clients })).toBe(true);
     expect(clients.usermaven.init).toHaveBeenCalledWith({
-      key: 'UMpgKYZLxR',
+      key: 'test-key',
       tracking_host: 'https://events.usermaven.com',
       autocapture: true,
       cookie_domain: 'helpin.ai',
     });
     expect(clients.customerio.load).toHaveBeenCalledWith({
-      writeKey: 'a3fced22111b6be05726',
+      writeKey: 'test-key',
     });
   });
 
@@ -330,21 +331,6 @@ describe('app analytics', () => {
     expect(clients.usermaven.id).toHaveBeenCalledTimes(2);
   });
 
-  it('builds billing lifecycle event properties for Usermaven', () => {
-    expect(buildAnalyticsBillingEventProperties('workspace_billing_checkout_confirmed', 'ws-1', baseWorkspace.billing!)).toMatchObject({
-      event_name: 'workspace_billing_checkout_confirmed',
-      workspace_id: 'ws-1',
-      plan: 'growth',
-      billing_status: 'trialing',
-      billing_interval: 'monthly',
-      trialing: true,
-      locked: false,
-      ai_usage_used_microusd: 71_760_000,
-      ai_usage_remaining_microusd: 227_240_000,
-      pricing_version: '2026-08-13',
-      seat_usage: 3,
-    });
-  });
 
   it('tracks events and resets only on app.helpin.ai', () => {
     const clients = makeClients();

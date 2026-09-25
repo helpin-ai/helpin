@@ -1,0 +1,50 @@
+Use case: precise-object-edit. Asset: a polished 4K product screenshot of the real Helpin public API documentation reader for a marketing section.
+Image 1 is the EDIT TARGET. Preserve its actual Helpin API reference design: white top navigation, narrow left operation sidebar, central API documentation, and right request playground with a dark code example. Preserve original Inter-style font, compact realistic type sizes, thin gray dividers, generous whitespace, and flat edge-to-edge screenshot composition. Do not invent a redesigned app.
+
+Output: native 3840x2160, 16:9. Extend the viewport vertically so the endpoint description and right request/code area can be read without cropping, not by scaling text excessively. No browser chrome, no outer padding, no perspective, no floating panels, no marketing copy overlaid on the screenshot. Main UI columns roughly 18% / 55% / 27%.
+
+Consistent identity: replace all USERMAVEN/Usermaven branding with OrbitDesk. Use a small forest-green rounded square containing white O, followed by dark 'OrbitDesk'. Replace purple UI accents with restrained forest green; retain meaningful HTTP method colors (green GET, blue POST, orange PATCH). Keep the full public help-center header with 'Help Docs', active 'Developers / API Docs', search 'Search for articles...', 'Go to Website', and theme icon. Top-right Go to Website and right Send request buttons are forest green. No Usermaven names, Acme, Shopify, real customer data, real API keys, or private URLs.
+
+Left sidebar:
+'API REFERENCES'
+'{} OrbitDesk API' selected pale green
+'ON THIS PAGE': 'Overview', 'Authentication'
+'INTEGRATIONS': 'GET List integrations' selected; 'POST Create integration'; 'GET Get integration'; 'PATCH Update integration'
+'WORKSPACES': 'GET List workspaces'; 'GET Get workspace'
+'CUSTOMERS': 'GET List customers'; 'POST Create customer'
+Keep short complete labels with enough padding, no clipped nonsense.
+
+Center:
+Small badges 'v1.0.0' and 'OpenAPI 3.1.0', and the source's 'Copy for AI' button at top right.
+Large but source-proportional heading 'API Reference'.
+Description: 'Build with OrbitDesk. Connect integrations, manage workspaces, and keep customer records in sync.'
+'Base URLs' bordered panel with 'https://api.orbitdesk.example' and sublabel 'OrbitDesk API'.
+'Authentication' heading and slim panel 'BearerAuth' with 'BEARER' badge. Small instruction 'Include your API key in the Authorization header.'
+Divider. Lower visible operation heading 'List integrations', with green 'GET' method and '/v1/integrations'.
+Description: 'Retrieve the integrations connected to your workspace.'
+Parameters table with two rows: 'page' integer, 'Page number. Default: 1.' and 'limit' integer, 'Results per page. Default: 20.'
+
+Right request playground:
+Top green 'GET' badge and '/v1/integrations'.
+Heading 'Build a request', small Reset control.
+Server field 'https://api.orbitdesk.example'.
+Authentication field shows only masked bullets, no real key.
+'PARAMETERS': page field '1', limit field '20'.
+Full-width green 'Send request' button.
+Below, polished dark code panel with tabs 'cURL', 'JavaScript', 'Python', cURL selected.
+Exact concise code with no truncation:
+curl https://api.orbitdesk.example/v1/integrations \
+  -H "Authorization: Bearer YOUR_API_KEY"
+
+A compact response panel below with 'Example response' and '200 OK'. JSON:
+{
+  "data": [
+    {
+      "id": "int_042",
+      "provider": "slack",
+      "status": "connected"
+    }
+  ]
+}
+
+Remove the floating chat bubble in this screenshot so it does not obscure the request and response. Preserve the reference's recognizable API-documentation layout and font family. Improve crispness, alignment, spacing, and realistic content. All exact strings must be spelled cleanly. No fabricated performance numbers, testimonials, usage counts, unreadable miniature text, or decorative gradients.

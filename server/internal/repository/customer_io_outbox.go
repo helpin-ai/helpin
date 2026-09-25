@@ -43,7 +43,9 @@ func NewCustomerIOLifecycleOutboxRepository(db *gorm.DB) *CustomerIOLifecycleOut
 	return repository
 }
 
-func enqueueCustomerIOLifecycleEventTx(
+// EnqueueCustomerIOLifecycleEventTx snapshots recipients and enqueues an event
+// inside the caller transaction, so retries cannot consume an uncommitted event.
+func EnqueueCustomerIOLifecycleEventTx(
 	ctx context.Context,
 	tx *gorm.DB,
 	input CustomerIOLifecycleEventInput,

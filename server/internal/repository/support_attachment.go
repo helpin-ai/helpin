@@ -170,7 +170,7 @@ func (r *SupportAttachmentRepository) ListByMessageIDs(ctx context.Context, mess
 	}
 	var attachments []model.SupportAttachment
 	if err := r.db.WithContext(ctx).
-		Where("message_id IN ? AND is_uploaded = true", messageIDs).
+		Where("message_id IN ? AND (is_uploaded = true OR processing_status <> '')", messageIDs).
 		Order("created_at ASC").
 		Find(&attachments).Error; err != nil {
 		return nil, fmt.Errorf("list support attachments by message IDs: %w", err)
@@ -182,6 +182,20 @@ func (r *SupportAttachmentRepository) ListByMessageIDs(ctx context.Context, mess
 func (r *SupportAttachmentRepository) Delete(ctx context.Context, id string) error {
 	if err := r.db.WithContext(ctx).Delete(&model.SupportAttachment{}, "id = ?", id).Error; err != nil {
 		return fmt.Errorf("delete support attachment: %w", err)
+	}
+	return nil
+}
+
+// CompleteInbound updates the placeholder created atomically with the message.
+func (r *SupportAttachmentRepository) CompleteInbound(ctx context.Context, a *model.SupportAttachment) error {
+	result := r.db.WithContext(ctx).Model(&model.SupportAttachment{}).
+		Where("id = ? AND workspace_id = ? AND message_id = ?", a.ID, a.WorkspaceID, a.MessageID).
+		Updates(map[string]any{"storage_key": a.StorageKey, "public_url": a.PublicURL, "file_size": a.FileSize, "content_type": a.ContentType, "is_uploaded": true, "processing_status": "", "processing_error": ""})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
 	}
 	return nil
 }

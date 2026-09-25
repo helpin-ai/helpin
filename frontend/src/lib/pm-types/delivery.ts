@@ -184,6 +184,47 @@ export interface GitHubInstallURLResponse {
   integration_id?: string;
 }
 
+/** Instance GitHub App status (no secrets). */
+export interface GitHubAppStatus {
+  configured: boolean;
+  source: 'env' | 'database' | 'none';
+  slug: string;
+  install_url: string;
+  webhook_configured: boolean;
+  manifest_available: boolean;
+  /** Why the App cannot be created from Helpin (APP_BASE_URL unreachable by GitHub). */
+  manifest_blocked_reason?: string;
+  /** GitHub account that owns the App, when known. */
+  owner_login?: string;
+  owner_type?: 'User' | 'Organization' | '';
+  /** Created from Helpin: only the owner account can install it. */
+  private?: boolean;
+}
+
+/** Helpin page a GitHub App create or install flow returns to. */
+export type GitHubReturnTo = 'settings' | 'setup' | 'system_status' | 'onboarding';
+
+export interface GitHubAppManifestRequest {
+  /** GitHub organization login that owns the App; the signed-in GitHub user owns it when omitted. */
+  organization?: string;
+  return_to?: GitHubReturnTo;
+}
+
+/** GitHub App manifest to POST to `post_url` in a form field named `manifest`. */
+export interface GitHubAppManifestResponse {
+  manifest: Record<string, unknown>;
+  post_url: string;
+  state: string;
+}
+
+/** Result of linking an installation that reached Helpin without its install link. */
+export interface GitHubInstallationClaimResponse {
+  integration_id: string;
+  account_login: string;
+  account_type: string;
+  created: boolean;
+}
+
 export type GitLabTokenAuthType = 'personal_token' | 'group_token' | 'project_token';
 
 export interface GitLabConnectTokenRequest {

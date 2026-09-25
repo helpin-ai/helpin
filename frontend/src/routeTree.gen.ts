@@ -14,17 +14,24 @@ import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
+import { Route as DemoRouteImport } from './routes/demo'
 import { Route as BillingPreviewRouteImport } from './routes/billing-preview'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SharedShareTokenRouteImport } from './routes/shared/$shareToken'
 import { Route as ShareShareTokenRouteImport } from './routes/share/$shareToken'
+import { Route as PortalSlugRouteImport } from './routes/portal/$slug'
 import { Route as JoinTokenRouteImport } from './routes/join/$token'
+import { Route as EmailPreferencesTokenRouteImport } from './routes/email-preferences/$token'
 import { Route as AuthenticatedWorkspacesRouteImport } from './routes/_authenticated/workspaces'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
+import { Route as PortalSlugIndexRouteImport } from './routes/portal/$slug/index'
+import { Route as PortalSlugSignInRouteImport } from './routes/portal/$slug/sign-in'
+import { Route as PortalSlugCallbackRouteImport } from './routes/portal/$slug/callback'
 import { Route as AuthenticatedWSlugRouteImport } from './routes/_authenticated/w/$slug'
 import { Route as AuthenticatedOauthAuthorizeRouteImport } from './routes/_authenticated/oauth/authorize'
+import { Route as AuthenticatedGithubInstalledRouteImport } from './routes/_authenticated/github/installed'
 import { Route as AuthenticatedWSlugIndexRouteImport } from './routes/_authenticated/w/$slug/index'
 import { Route as AuthenticatedWSlugTeamGoalsRouteImport } from './routes/_authenticated/w/$slug/team-goals'
 import { Route as AuthenticatedWSlugTasksRouteImport } from './routes/_authenticated/w/$slug/tasks'
@@ -35,6 +42,7 @@ import { Route as AuthenticatedWSlugDocsRouteImport } from './routes/_authentica
 import { Route as AuthenticatedWSlugDashboardRouteImport } from './routes/_authenticated/w/$slug/dashboard'
 import { Route as AuthenticatedWSlugCrmRouteImport } from './routes/_authenticated/w/$slug/crm'
 import { Route as AuthenticatedWSlugAutomationRouteImport } from './routes/_authenticated/w/$slug/automation'
+import { Route as AuthenticatedOauthCliAuthorizeRouteImport } from './routes/_authenticated/oauth/cli/authorize'
 import { Route as AuthenticatedWSlugSprintsIndexRouteImport } from './routes/_authenticated/w/$slug/sprints/index'
 import { Route as AuthenticatedWSlugSettingsIndexRouteImport } from './routes/_authenticated/w/$slug/settings/index'
 import { Route as AuthenticatedWSlugPmIndexRouteImport } from './routes/_authenticated/w/$slug/pm/index'
@@ -48,7 +56,10 @@ import { Route as AuthenticatedWSlugSprintsSprintIdRouteImport } from './routes/
 import { Route as AuthenticatedWSlugSettingsWorkflowsRouteImport } from './routes/_authenticated/w/$slug/settings/workflows'
 import { Route as AuthenticatedWSlugSettingsTeamsRouteImport } from './routes/_authenticated/w/$slug/settings/teams'
 import { Route as AuthenticatedWSlugSettingsTaskTemplatesRouteImport } from './routes/_authenticated/w/$slug/settings/task-templates'
+import { Route as AuthenticatedWSlugSettingsSystemStatusRouteImport } from './routes/_authenticated/w/$slug/settings/system-status'
+import { Route as AuthenticatedWSlugSettingsSupportTranslationRouteImport } from './routes/_authenticated/w/$slug/settings/support-translation'
 import { Route as AuthenticatedWSlugSettingsSupportAiAssistantRouteImport } from './routes/_authenticated/w/$slug/settings/support-ai-assistant'
+import { Route as AuthenticatedWSlugSettingsServerRouteImport } from './routes/_authenticated/w/$slug/settings/server'
 import { Route as AuthenticatedWSlugSettingsRepositoriesRouteImport } from './routes/_authenticated/w/$slug/settings/repositories'
 import { Route as AuthenticatedWSlugSettingsRedirectsRouteImport } from './routes/_authenticated/w/$slug/settings/redirects'
 import { Route as AuthenticatedWSlugSettingsRecurringTasksRouteImport } from './routes/_authenticated/w/$slug/settings/recurring-tasks'
@@ -69,7 +80,9 @@ import { Route as AuthenticatedWSlugSettingsCrmAutonomyRouteImport } from './rou
 import { Route as AuthenticatedWSlugSettingsChatGeneralRouteImport } from './routes/_authenticated/w/$slug/settings/chat-general'
 import { Route as AuthenticatedWSlugSettingsBillingRouteImport } from './routes/_authenticated/w/$slug/settings/billing'
 import { Route as AuthenticatedWSlugSettingsAutomationsRouteImport } from './routes/_authenticated/w/$slug/settings/automations'
+import { Route as AuthenticatedWSlugSettingsAiConnectionsRouteImport } from './routes/_authenticated/w/$slug/settings/ai-connections'
 import { Route as AuthenticatedWSlugSettingsAiAutomationsRouteImport } from './routes/_authenticated/w/$slug/settings/ai-automations'
+import { Route as AuthenticatedWSlugSettingsAiRouteImport } from './routes/_authenticated/w/$slug/settings/ai'
 import { Route as AuthenticatedWSlugSettingsAccessRouteImport } from './routes/_authenticated/w/$slug/settings/access'
 import { Route as AuthenticatedWSlugSettingsSectionRouteImport } from './routes/_authenticated/w/$slug/settings/$section'
 import { Route as AuthenticatedWSlugPmToolCatalogRouteImport } from './routes/_authenticated/w/$slug/pm/tool-catalog'
@@ -104,6 +117,7 @@ import { Route as AuthenticatedWSlugPmObjectivesIndexRouteImport } from './route
 import { Route as AuthenticatedWSlugPmEpicsIndexRouteImport } from './routes/_authenticated/w/$slug/pm/epics/index'
 import { Route as AuthenticatedWSlugCrmPlaybooksIndexRouteImport } from './routes/_authenticated/w/$slug/crm/playbooks/index'
 import { Route as AuthenticatedWSlugCrmMeetingsIndexRouteImport } from './routes/_authenticated/w/$slug/crm/meetings/index'
+import { Route as AuthenticatedWSlugCrmEmailsIndexRouteImport } from './routes/_authenticated/w/$slug/crm/emails/index'
 import { Route as AuthenticatedWSlugCrmDealsIndexRouteImport } from './routes/_authenticated/w/$slug/crm/deals/index'
 import { Route as AuthenticatedWSlugCrmContactsIndexRouteImport } from './routes/_authenticated/w/$slug/crm/contacts/index'
 import { Route as AuthenticatedWSlugCrmCompaniesIndexRouteImport } from './routes/_authenticated/w/$slug/crm/companies/index'
@@ -148,6 +162,11 @@ const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
   path: '/forgot-password',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DemoRoute = DemoRouteImport.update({
+  id: '/demo',
+  path: '/demo',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BillingPreviewRoute = BillingPreviewRouteImport.update({
   id: '/billing-preview',
   path: '/billing-preview',
@@ -172,9 +191,19 @@ const ShareShareTokenRoute = ShareShareTokenRouteImport.update({
   path: '/share/$shareToken',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PortalSlugRoute = PortalSlugRouteImport.update({
+  id: '/portal/$slug',
+  path: '/portal/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const JoinTokenRoute = JoinTokenRouteImport.update({
   id: '/join/$token',
   path: '/join/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EmailPreferencesTokenRoute = EmailPreferencesTokenRouteImport.update({
+  id: '/email-preferences/$token',
+  path: '/email-preferences/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedWorkspacesRoute = AuthenticatedWorkspacesRouteImport.update({
@@ -192,6 +221,21 @@ const AuthenticatedOnboardingRoute = AuthenticatedOnboardingRouteImport.update({
   path: '/onboarding',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const PortalSlugIndexRoute = PortalSlugIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => PortalSlugRoute,
+} as any)
+const PortalSlugSignInRoute = PortalSlugSignInRouteImport.update({
+  id: '/sign-in',
+  path: '/sign-in',
+  getParentRoute: () => PortalSlugRoute,
+} as any)
+const PortalSlugCallbackRoute = PortalSlugCallbackRouteImport.update({
+  id: '/callback',
+  path: '/callback',
+  getParentRoute: () => PortalSlugRoute,
+} as any)
 const AuthenticatedWSlugRoute = AuthenticatedWSlugRouteImport.update({
   id: '/w/$slug',
   path: '/w/$slug',
@@ -201,6 +245,12 @@ const AuthenticatedOauthAuthorizeRoute =
   AuthenticatedOauthAuthorizeRouteImport.update({
     id: '/oauth/authorize',
     path: '/oauth/authorize',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedGithubInstalledRoute =
+  AuthenticatedGithubInstalledRouteImport.update({
+    id: '/github/installed',
+    path: '/github/installed',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedWSlugIndexRoute = AuthenticatedWSlugIndexRouteImport.update({
@@ -257,6 +307,12 @@ const AuthenticatedWSlugAutomationRoute =
     id: '/automation',
     path: '/automation',
     getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedOauthCliAuthorizeRoute =
+  AuthenticatedOauthCliAuthorizeRouteImport.update({
+    id: '/oauth/cli/authorize',
+    path: '/oauth/cli/authorize',
+    getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedWSlugSprintsIndexRoute =
   AuthenticatedWSlugSprintsIndexRouteImport.update({
@@ -335,10 +391,28 @@ const AuthenticatedWSlugSettingsTaskTemplatesRoute =
     path: '/settings/task-templates',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
+const AuthenticatedWSlugSettingsSystemStatusRoute =
+  AuthenticatedWSlugSettingsSystemStatusRouteImport.update({
+    id: '/settings/system-status',
+    path: '/settings/system-status',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedWSlugSettingsSupportTranslationRoute =
+  AuthenticatedWSlugSettingsSupportTranslationRouteImport.update({
+    id: '/settings/support-translation',
+    path: '/settings/support-translation',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
 const AuthenticatedWSlugSettingsSupportAiAssistantRoute =
   AuthenticatedWSlugSettingsSupportAiAssistantRouteImport.update({
     id: '/settings/support-ai-assistant',
     path: '/settings/support-ai-assistant',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedWSlugSettingsServerRoute =
+  AuthenticatedWSlugSettingsServerRouteImport.update({
+    id: '/settings/server',
+    path: '/settings/server',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugSettingsRepositoriesRoute =
@@ -461,10 +535,22 @@ const AuthenticatedWSlugSettingsAutomationsRoute =
     path: '/settings/automations',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
+const AuthenticatedWSlugSettingsAiConnectionsRoute =
+  AuthenticatedWSlugSettingsAiConnectionsRouteImport.update({
+    id: '/settings/ai-connections',
+    path: '/settings/ai-connections',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
 const AuthenticatedWSlugSettingsAiAutomationsRoute =
   AuthenticatedWSlugSettingsAiAutomationsRouteImport.update({
     id: '/settings/ai-automations',
     path: '/settings/ai-automations',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedWSlugSettingsAiRoute =
+  AuthenticatedWSlugSettingsAiRouteImport.update({
+    id: '/settings/ai',
+    path: '/settings/ai',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugSettingsAccessRoute =
@@ -671,6 +757,12 @@ const AuthenticatedWSlugCrmMeetingsIndexRoute =
     path: '/meetings/',
     getParentRoute: () => AuthenticatedWSlugCrmRoute,
   } as any)
+const AuthenticatedWSlugCrmEmailsIndexRoute =
+  AuthenticatedWSlugCrmEmailsIndexRouteImport.update({
+    id: '/emails/',
+    path: '/emails/',
+    getParentRoute: () => AuthenticatedWSlugCrmRoute,
+  } as any)
 const AuthenticatedWSlugCrmDealsIndexRoute =
   AuthenticatedWSlugCrmDealsIndexRouteImport.update({
     id: '/deals/',
@@ -783,6 +875,7 @@ const AuthenticatedWSlugAutomationToolsConnectionsRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/billing-preview': typeof BillingPreviewRoute
+  '/demo': typeof DemoRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
@@ -791,11 +884,18 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/workspaces': typeof AuthenticatedWorkspacesRoute
+  '/email-preferences/$token': typeof EmailPreferencesTokenRoute
   '/join/$token': typeof JoinTokenRoute
+  '/portal/$slug': typeof PortalSlugRouteWithChildren
   '/share/$shareToken': typeof ShareShareTokenRoute
   '/shared/$shareToken': typeof SharedShareTokenRoute
+  '/github/installed': typeof AuthenticatedGithubInstalledRoute
   '/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
+  '/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
+  '/portal/$slug/callback': typeof PortalSlugCallbackRoute
+  '/portal/$slug/sign-in': typeof PortalSlugSignInRoute
+  '/portal/$slug/': typeof PortalSlugIndexRoute
   '/w/$slug/automation': typeof AuthenticatedWSlugAutomationRouteWithChildren
   '/w/$slug/crm': typeof AuthenticatedWSlugCrmRouteWithChildren
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
@@ -833,7 +933,9 @@ export interface FileRoutesByFullPath {
   '/w/$slug/pm/tool-catalog': typeof AuthenticatedWSlugPmToolCatalogRoute
   '/w/$slug/settings/$section': typeof AuthenticatedWSlugSettingsSectionRoute
   '/w/$slug/settings/access': typeof AuthenticatedWSlugSettingsAccessRoute
+  '/w/$slug/settings/ai': typeof AuthenticatedWSlugSettingsAiRoute
   '/w/$slug/settings/ai-automations': typeof AuthenticatedWSlugSettingsAiAutomationsRoute
+  '/w/$slug/settings/ai-connections': typeof AuthenticatedWSlugSettingsAiConnectionsRoute
   '/w/$slug/settings/automations': typeof AuthenticatedWSlugSettingsAutomationsRoute
   '/w/$slug/settings/billing': typeof AuthenticatedWSlugSettingsBillingRoute
   '/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
@@ -854,7 +956,10 @@ export interface FileRoutesByFullPath {
   '/w/$slug/settings/recurring-tasks': typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   '/w/$slug/settings/redirects': typeof AuthenticatedWSlugSettingsRedirectsRoute
   '/w/$slug/settings/repositories': typeof AuthenticatedWSlugSettingsRepositoriesRoute
+  '/w/$slug/settings/server': typeof AuthenticatedWSlugSettingsServerRoute
   '/w/$slug/settings/support-ai-assistant': typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
+  '/w/$slug/settings/support-translation': typeof AuthenticatedWSlugSettingsSupportTranslationRoute
+  '/w/$slug/settings/system-status': typeof AuthenticatedWSlugSettingsSystemStatusRoute
   '/w/$slug/settings/task-templates': typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
   '/w/$slug/settings/teams': typeof AuthenticatedWSlugSettingsTeamsRoute
   '/w/$slug/settings/workflows': typeof AuthenticatedWSlugSettingsWorkflowsRoute
@@ -885,6 +990,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/crm/companies/': typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   '/w/$slug/crm/contacts/': typeof AuthenticatedWSlugCrmContactsIndexRoute
   '/w/$slug/crm/deals/': typeof AuthenticatedWSlugCrmDealsIndexRoute
+  '/w/$slug/crm/emails/': typeof AuthenticatedWSlugCrmEmailsIndexRoute
   '/w/$slug/crm/meetings/': typeof AuthenticatedWSlugCrmMeetingsIndexRoute
   '/w/$slug/crm/playbooks/': typeof AuthenticatedWSlugCrmPlaybooksIndexRoute
   '/w/$slug/pm/epics/': typeof AuthenticatedWSlugPmEpicsIndexRoute
@@ -896,6 +1002,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/billing-preview': typeof BillingPreviewRoute
+  '/demo': typeof DemoRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
@@ -904,10 +1011,16 @@ export interface FileRoutesByTo {
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/workspaces': typeof AuthenticatedWorkspacesRoute
+  '/email-preferences/$token': typeof EmailPreferencesTokenRoute
   '/join/$token': typeof JoinTokenRoute
   '/share/$shareToken': typeof ShareShareTokenRoute
   '/shared/$shareToken': typeof SharedShareTokenRoute
+  '/github/installed': typeof AuthenticatedGithubInstalledRoute
   '/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
+  '/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
+  '/portal/$slug/callback': typeof PortalSlugCallbackRoute
+  '/portal/$slug/sign-in': typeof PortalSlugSignInRoute
+  '/portal/$slug': typeof PortalSlugIndexRoute
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
   '/w/$slug/notifications': typeof AuthenticatedWSlugNotificationsRoute
   '/w/$slug/setup': typeof AuthenticatedWSlugSetupRoute
@@ -941,7 +1054,9 @@ export interface FileRoutesByTo {
   '/w/$slug/pm/tool-catalog': typeof AuthenticatedWSlugPmToolCatalogRoute
   '/w/$slug/settings/$section': typeof AuthenticatedWSlugSettingsSectionRoute
   '/w/$slug/settings/access': typeof AuthenticatedWSlugSettingsAccessRoute
+  '/w/$slug/settings/ai': typeof AuthenticatedWSlugSettingsAiRoute
   '/w/$slug/settings/ai-automations': typeof AuthenticatedWSlugSettingsAiAutomationsRoute
+  '/w/$slug/settings/ai-connections': typeof AuthenticatedWSlugSettingsAiConnectionsRoute
   '/w/$slug/settings/automations': typeof AuthenticatedWSlugSettingsAutomationsRoute
   '/w/$slug/settings/billing': typeof AuthenticatedWSlugSettingsBillingRoute
   '/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
@@ -962,7 +1077,10 @@ export interface FileRoutesByTo {
   '/w/$slug/settings/recurring-tasks': typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   '/w/$slug/settings/redirects': typeof AuthenticatedWSlugSettingsRedirectsRoute
   '/w/$slug/settings/repositories': typeof AuthenticatedWSlugSettingsRepositoriesRoute
+  '/w/$slug/settings/server': typeof AuthenticatedWSlugSettingsServerRoute
   '/w/$slug/settings/support-ai-assistant': typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
+  '/w/$slug/settings/support-translation': typeof AuthenticatedWSlugSettingsSupportTranslationRoute
+  '/w/$slug/settings/system-status': typeof AuthenticatedWSlugSettingsSystemStatusRoute
   '/w/$slug/settings/task-templates': typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
   '/w/$slug/settings/teams': typeof AuthenticatedWSlugSettingsTeamsRoute
   '/w/$slug/settings/workflows': typeof AuthenticatedWSlugSettingsWorkflowsRoute
@@ -993,6 +1111,7 @@ export interface FileRoutesByTo {
   '/w/$slug/crm/companies': typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   '/w/$slug/crm/contacts': typeof AuthenticatedWSlugCrmContactsIndexRoute
   '/w/$slug/crm/deals': typeof AuthenticatedWSlugCrmDealsIndexRoute
+  '/w/$slug/crm/emails': typeof AuthenticatedWSlugCrmEmailsIndexRoute
   '/w/$slug/crm/meetings': typeof AuthenticatedWSlugCrmMeetingsIndexRoute
   '/w/$slug/crm/playbooks': typeof AuthenticatedWSlugCrmPlaybooksIndexRoute
   '/w/$slug/pm/epics': typeof AuthenticatedWSlugPmEpicsIndexRoute
@@ -1005,6 +1124,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/billing-preview': typeof BillingPreviewRoute
+  '/demo': typeof DemoRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
@@ -1013,11 +1133,18 @@ export interface FileRoutesById {
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/_authenticated/workspaces': typeof AuthenticatedWorkspacesRoute
+  '/email-preferences/$token': typeof EmailPreferencesTokenRoute
   '/join/$token': typeof JoinTokenRoute
+  '/portal/$slug': typeof PortalSlugRouteWithChildren
   '/share/$shareToken': typeof ShareShareTokenRoute
   '/shared/$shareToken': typeof SharedShareTokenRoute
+  '/_authenticated/github/installed': typeof AuthenticatedGithubInstalledRoute
   '/_authenticated/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/_authenticated/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
+  '/_authenticated/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
+  '/portal/$slug/callback': typeof PortalSlugCallbackRoute
+  '/portal/$slug/sign-in': typeof PortalSlugSignInRoute
+  '/portal/$slug/': typeof PortalSlugIndexRoute
   '/_authenticated/w/$slug/automation': typeof AuthenticatedWSlugAutomationRouteWithChildren
   '/_authenticated/w/$slug/crm': typeof AuthenticatedWSlugCrmRouteWithChildren
   '/_authenticated/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
@@ -1055,7 +1182,9 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/pm/tool-catalog': typeof AuthenticatedWSlugPmToolCatalogRoute
   '/_authenticated/w/$slug/settings/$section': typeof AuthenticatedWSlugSettingsSectionRoute
   '/_authenticated/w/$slug/settings/access': typeof AuthenticatedWSlugSettingsAccessRoute
+  '/_authenticated/w/$slug/settings/ai': typeof AuthenticatedWSlugSettingsAiRoute
   '/_authenticated/w/$slug/settings/ai-automations': typeof AuthenticatedWSlugSettingsAiAutomationsRoute
+  '/_authenticated/w/$slug/settings/ai-connections': typeof AuthenticatedWSlugSettingsAiConnectionsRoute
   '/_authenticated/w/$slug/settings/automations': typeof AuthenticatedWSlugSettingsAutomationsRoute
   '/_authenticated/w/$slug/settings/billing': typeof AuthenticatedWSlugSettingsBillingRoute
   '/_authenticated/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
@@ -1076,7 +1205,10 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/settings/recurring-tasks': typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   '/_authenticated/w/$slug/settings/redirects': typeof AuthenticatedWSlugSettingsRedirectsRoute
   '/_authenticated/w/$slug/settings/repositories': typeof AuthenticatedWSlugSettingsRepositoriesRoute
+  '/_authenticated/w/$slug/settings/server': typeof AuthenticatedWSlugSettingsServerRoute
   '/_authenticated/w/$slug/settings/support-ai-assistant': typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
+  '/_authenticated/w/$slug/settings/support-translation': typeof AuthenticatedWSlugSettingsSupportTranslationRoute
+  '/_authenticated/w/$slug/settings/system-status': typeof AuthenticatedWSlugSettingsSystemStatusRoute
   '/_authenticated/w/$slug/settings/task-templates': typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
   '/_authenticated/w/$slug/settings/teams': typeof AuthenticatedWSlugSettingsTeamsRoute
   '/_authenticated/w/$slug/settings/workflows': typeof AuthenticatedWSlugSettingsWorkflowsRoute
@@ -1108,6 +1240,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/crm/companies/': typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   '/_authenticated/w/$slug/crm/contacts/': typeof AuthenticatedWSlugCrmContactsIndexRoute
   '/_authenticated/w/$slug/crm/deals/': typeof AuthenticatedWSlugCrmDealsIndexRoute
+  '/_authenticated/w/$slug/crm/emails/': typeof AuthenticatedWSlugCrmEmailsIndexRoute
   '/_authenticated/w/$slug/crm/meetings/': typeof AuthenticatedWSlugCrmMeetingsIndexRoute
   '/_authenticated/w/$slug/crm/playbooks/': typeof AuthenticatedWSlugCrmPlaybooksIndexRoute
   '/_authenticated/w/$slug/pm/epics/': typeof AuthenticatedWSlugPmEpicsIndexRoute
@@ -1121,6 +1254,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/billing-preview'
+    | '/demo'
     | '/forgot-password'
     | '/login'
     | '/register'
@@ -1129,11 +1263,18 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/profile'
     | '/workspaces'
+    | '/email-preferences/$token'
     | '/join/$token'
+    | '/portal/$slug'
     | '/share/$shareToken'
     | '/shared/$shareToken'
+    | '/github/installed'
     | '/oauth/authorize'
     | '/w/$slug'
+    | '/oauth/cli/authorize'
+    | '/portal/$slug/callback'
+    | '/portal/$slug/sign-in'
+    | '/portal/$slug/'
     | '/w/$slug/automation'
     | '/w/$slug/crm'
     | '/w/$slug/dashboard'
@@ -1171,7 +1312,9 @@ export interface FileRouteTypes {
     | '/w/$slug/pm/tool-catalog'
     | '/w/$slug/settings/$section'
     | '/w/$slug/settings/access'
+    | '/w/$slug/settings/ai'
     | '/w/$slug/settings/ai-automations'
+    | '/w/$slug/settings/ai-connections'
     | '/w/$slug/settings/automations'
     | '/w/$slug/settings/billing'
     | '/w/$slug/settings/chat-general'
@@ -1192,7 +1335,10 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/recurring-tasks'
     | '/w/$slug/settings/redirects'
     | '/w/$slug/settings/repositories'
+    | '/w/$slug/settings/server'
     | '/w/$slug/settings/support-ai-assistant'
+    | '/w/$slug/settings/support-translation'
+    | '/w/$slug/settings/system-status'
     | '/w/$slug/settings/task-templates'
     | '/w/$slug/settings/teams'
     | '/w/$slug/settings/workflows'
@@ -1223,6 +1369,7 @@ export interface FileRouteTypes {
     | '/w/$slug/crm/companies/'
     | '/w/$slug/crm/contacts/'
     | '/w/$slug/crm/deals/'
+    | '/w/$slug/crm/emails/'
     | '/w/$slug/crm/meetings/'
     | '/w/$slug/crm/playbooks/'
     | '/w/$slug/pm/epics/'
@@ -1234,6 +1381,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/billing-preview'
+    | '/demo'
     | '/forgot-password'
     | '/login'
     | '/register'
@@ -1242,10 +1390,16 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/profile'
     | '/workspaces'
+    | '/email-preferences/$token'
     | '/join/$token'
     | '/share/$shareToken'
     | '/shared/$shareToken'
+    | '/github/installed'
     | '/oauth/authorize'
+    | '/oauth/cli/authorize'
+    | '/portal/$slug/callback'
+    | '/portal/$slug/sign-in'
+    | '/portal/$slug'
     | '/w/$slug/dashboard'
     | '/w/$slug/notifications'
     | '/w/$slug/setup'
@@ -1279,7 +1433,9 @@ export interface FileRouteTypes {
     | '/w/$slug/pm/tool-catalog'
     | '/w/$slug/settings/$section'
     | '/w/$slug/settings/access'
+    | '/w/$slug/settings/ai'
     | '/w/$slug/settings/ai-automations'
+    | '/w/$slug/settings/ai-connections'
     | '/w/$slug/settings/automations'
     | '/w/$slug/settings/billing'
     | '/w/$slug/settings/chat-general'
@@ -1300,7 +1456,10 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/recurring-tasks'
     | '/w/$slug/settings/redirects'
     | '/w/$slug/settings/repositories'
+    | '/w/$slug/settings/server'
     | '/w/$slug/settings/support-ai-assistant'
+    | '/w/$slug/settings/support-translation'
+    | '/w/$slug/settings/system-status'
     | '/w/$slug/settings/task-templates'
     | '/w/$slug/settings/teams'
     | '/w/$slug/settings/workflows'
@@ -1331,6 +1490,7 @@ export interface FileRouteTypes {
     | '/w/$slug/crm/companies'
     | '/w/$slug/crm/contacts'
     | '/w/$slug/crm/deals'
+    | '/w/$slug/crm/emails'
     | '/w/$slug/crm/meetings'
     | '/w/$slug/crm/playbooks'
     | '/w/$slug/pm/epics'
@@ -1342,6 +1502,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_authenticated'
     | '/billing-preview'
+    | '/demo'
     | '/forgot-password'
     | '/login'
     | '/register'
@@ -1350,11 +1511,18 @@ export interface FileRouteTypes {
     | '/_authenticated/onboarding'
     | '/_authenticated/profile'
     | '/_authenticated/workspaces'
+    | '/email-preferences/$token'
     | '/join/$token'
+    | '/portal/$slug'
     | '/share/$shareToken'
     | '/shared/$shareToken'
+    | '/_authenticated/github/installed'
     | '/_authenticated/oauth/authorize'
     | '/_authenticated/w/$slug'
+    | '/_authenticated/oauth/cli/authorize'
+    | '/portal/$slug/callback'
+    | '/portal/$slug/sign-in'
+    | '/portal/$slug/'
     | '/_authenticated/w/$slug/automation'
     | '/_authenticated/w/$slug/crm'
     | '/_authenticated/w/$slug/dashboard'
@@ -1392,7 +1560,9 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/pm/tool-catalog'
     | '/_authenticated/w/$slug/settings/$section'
     | '/_authenticated/w/$slug/settings/access'
+    | '/_authenticated/w/$slug/settings/ai'
     | '/_authenticated/w/$slug/settings/ai-automations'
+    | '/_authenticated/w/$slug/settings/ai-connections'
     | '/_authenticated/w/$slug/settings/automations'
     | '/_authenticated/w/$slug/settings/billing'
     | '/_authenticated/w/$slug/settings/chat-general'
@@ -1413,7 +1583,10 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/settings/recurring-tasks'
     | '/_authenticated/w/$slug/settings/redirects'
     | '/_authenticated/w/$slug/settings/repositories'
+    | '/_authenticated/w/$slug/settings/server'
     | '/_authenticated/w/$slug/settings/support-ai-assistant'
+    | '/_authenticated/w/$slug/settings/support-translation'
+    | '/_authenticated/w/$slug/settings/system-status'
     | '/_authenticated/w/$slug/settings/task-templates'
     | '/_authenticated/w/$slug/settings/teams'
     | '/_authenticated/w/$slug/settings/workflows'
@@ -1445,6 +1618,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/crm/companies/'
     | '/_authenticated/w/$slug/crm/contacts/'
     | '/_authenticated/w/$slug/crm/deals/'
+    | '/_authenticated/w/$slug/crm/emails/'
     | '/_authenticated/w/$slug/crm/meetings/'
     | '/_authenticated/w/$slug/crm/playbooks/'
     | '/_authenticated/w/$slug/pm/epics/'
@@ -1458,12 +1632,15 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   BillingPreviewRoute: typeof BillingPreviewRoute
+  DemoRoute: typeof DemoRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
   RegisterRoute: typeof RegisterRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   VerifyEmailRoute: typeof VerifyEmailRoute
+  EmailPreferencesTokenRoute: typeof EmailPreferencesTokenRoute
   JoinTokenRoute: typeof JoinTokenRoute
+  PortalSlugRoute: typeof PortalSlugRouteWithChildren
   ShareShareTokenRoute: typeof ShareShareTokenRoute
   SharedShareTokenRoute: typeof SharedShareTokenRoute
 }
@@ -1505,6 +1682,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ForgotPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/demo': {
+      id: '/demo'
+      path: '/demo'
+      fullPath: '/demo'
+      preLoaderRoute: typeof DemoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/billing-preview': {
       id: '/billing-preview'
       path: '/billing-preview'
@@ -1540,11 +1724,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShareShareTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/portal/$slug': {
+      id: '/portal/$slug'
+      path: '/portal/$slug'
+      fullPath: '/portal/$slug'
+      preLoaderRoute: typeof PortalSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/join/$token': {
       id: '/join/$token'
       path: '/join/$token'
       fullPath: '/join/$token'
       preLoaderRoute: typeof JoinTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/email-preferences/$token': {
+      id: '/email-preferences/$token'
+      path: '/email-preferences/$token'
+      fullPath: '/email-preferences/$token'
+      preLoaderRoute: typeof EmailPreferencesTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/workspaces': {
@@ -1568,6 +1766,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOnboardingRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/portal/$slug/': {
+      id: '/portal/$slug/'
+      path: '/'
+      fullPath: '/portal/$slug/'
+      preLoaderRoute: typeof PortalSlugIndexRouteImport
+      parentRoute: typeof PortalSlugRoute
+    }
+    '/portal/$slug/sign-in': {
+      id: '/portal/$slug/sign-in'
+      path: '/sign-in'
+      fullPath: '/portal/$slug/sign-in'
+      preLoaderRoute: typeof PortalSlugSignInRouteImport
+      parentRoute: typeof PortalSlugRoute
+    }
+    '/portal/$slug/callback': {
+      id: '/portal/$slug/callback'
+      path: '/callback'
+      fullPath: '/portal/$slug/callback'
+      preLoaderRoute: typeof PortalSlugCallbackRouteImport
+      parentRoute: typeof PortalSlugRoute
+    }
     '/_authenticated/w/$slug': {
       id: '/_authenticated/w/$slug'
       path: '/w/$slug'
@@ -1580,6 +1799,13 @@ declare module '@tanstack/react-router' {
       path: '/oauth/authorize'
       fullPath: '/oauth/authorize'
       preLoaderRoute: typeof AuthenticatedOauthAuthorizeRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/github/installed': {
+      id: '/_authenticated/github/installed'
+      path: '/github/installed'
+      fullPath: '/github/installed'
+      preLoaderRoute: typeof AuthenticatedGithubInstalledRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/w/$slug/': {
@@ -1651,6 +1877,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/w/$slug/automation'
       preLoaderRoute: typeof AuthenticatedWSlugAutomationRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/oauth/cli/authorize': {
+      id: '/_authenticated/oauth/cli/authorize'
+      path: '/oauth/cli/authorize'
+      fullPath: '/oauth/cli/authorize'
+      preLoaderRoute: typeof AuthenticatedOauthCliAuthorizeRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/w/$slug/sprints/': {
       id: '/_authenticated/w/$slug/sprints/'
@@ -1743,11 +1976,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugSettingsTaskTemplatesRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
+    '/_authenticated/w/$slug/settings/system-status': {
+      id: '/_authenticated/w/$slug/settings/system-status'
+      path: '/settings/system-status'
+      fullPath: '/w/$slug/settings/system-status'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsSystemStatusRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/settings/support-translation': {
+      id: '/_authenticated/w/$slug/settings/support-translation'
+      path: '/settings/support-translation'
+      fullPath: '/w/$slug/settings/support-translation'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsSupportTranslationRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
     '/_authenticated/w/$slug/settings/support-ai-assistant': {
       id: '/_authenticated/w/$slug/settings/support-ai-assistant'
       path: '/settings/support-ai-assistant'
       fullPath: '/w/$slug/settings/support-ai-assistant'
       preLoaderRoute: typeof AuthenticatedWSlugSettingsSupportAiAssistantRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/settings/server': {
+      id: '/_authenticated/w/$slug/settings/server'
+      path: '/settings/server'
+      fullPath: '/w/$slug/settings/server'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsServerRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/settings/repositories': {
@@ -1890,11 +2144,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugSettingsAutomationsRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
+    '/_authenticated/w/$slug/settings/ai-connections': {
+      id: '/_authenticated/w/$slug/settings/ai-connections'
+      path: '/settings/ai-connections'
+      fullPath: '/w/$slug/settings/ai-connections'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsAiConnectionsRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
     '/_authenticated/w/$slug/settings/ai-automations': {
       id: '/_authenticated/w/$slug/settings/ai-automations'
       path: '/settings/ai-automations'
       fullPath: '/w/$slug/settings/ai-automations'
       preLoaderRoute: typeof AuthenticatedWSlugSettingsAiAutomationsRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/settings/ai': {
+      id: '/_authenticated/w/$slug/settings/ai'
+      path: '/settings/ai'
+      fullPath: '/w/$slug/settings/ai'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsAiRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/settings/access': {
@@ -2135,6 +2403,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugCrmMeetingsIndexRouteImport
       parentRoute: typeof AuthenticatedWSlugCrmRoute
     }
+    '/_authenticated/w/$slug/crm/emails/': {
+      id: '/_authenticated/w/$slug/crm/emails/'
+      path: '/emails'
+      fullPath: '/w/$slug/crm/emails/'
+      preLoaderRoute: typeof AuthenticatedWSlugCrmEmailsIndexRouteImport
+      parentRoute: typeof AuthenticatedWSlugCrmRoute
+    }
     '/_authenticated/w/$slug/crm/deals/': {
       id: '/_authenticated/w/$slug/crm/deals/'
       path: '/deals'
@@ -2334,6 +2609,7 @@ interface AuthenticatedWSlugCrmRouteChildren {
   AuthenticatedWSlugCrmCompaniesIndexRoute: typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   AuthenticatedWSlugCrmContactsIndexRoute: typeof AuthenticatedWSlugCrmContactsIndexRoute
   AuthenticatedWSlugCrmDealsIndexRoute: typeof AuthenticatedWSlugCrmDealsIndexRoute
+  AuthenticatedWSlugCrmEmailsIndexRoute: typeof AuthenticatedWSlugCrmEmailsIndexRoute
   AuthenticatedWSlugCrmMeetingsIndexRoute: typeof AuthenticatedWSlugCrmMeetingsIndexRoute
   AuthenticatedWSlugCrmPlaybooksIndexRoute: typeof AuthenticatedWSlugCrmPlaybooksIndexRoute
 }
@@ -2357,6 +2633,7 @@ const AuthenticatedWSlugCrmRouteChildren: AuthenticatedWSlugCrmRouteChildren = {
   AuthenticatedWSlugCrmContactsIndexRoute:
     AuthenticatedWSlugCrmContactsIndexRoute,
   AuthenticatedWSlugCrmDealsIndexRoute: AuthenticatedWSlugCrmDealsIndexRoute,
+  AuthenticatedWSlugCrmEmailsIndexRoute: AuthenticatedWSlugCrmEmailsIndexRoute,
   AuthenticatedWSlugCrmMeetingsIndexRoute:
     AuthenticatedWSlugCrmMeetingsIndexRoute,
   AuthenticatedWSlugCrmPlaybooksIndexRoute:
@@ -2456,7 +2733,9 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugPmToolCatalogRoute: typeof AuthenticatedWSlugPmToolCatalogRoute
   AuthenticatedWSlugSettingsSectionRoute: typeof AuthenticatedWSlugSettingsSectionRoute
   AuthenticatedWSlugSettingsAccessRoute: typeof AuthenticatedWSlugSettingsAccessRoute
+  AuthenticatedWSlugSettingsAiRoute: typeof AuthenticatedWSlugSettingsAiRoute
   AuthenticatedWSlugSettingsAiAutomationsRoute: typeof AuthenticatedWSlugSettingsAiAutomationsRoute
+  AuthenticatedWSlugSettingsAiConnectionsRoute: typeof AuthenticatedWSlugSettingsAiConnectionsRoute
   AuthenticatedWSlugSettingsAutomationsRoute: typeof AuthenticatedWSlugSettingsAutomationsRoute
   AuthenticatedWSlugSettingsBillingRoute: typeof AuthenticatedWSlugSettingsBillingRoute
   AuthenticatedWSlugSettingsChatGeneralRoute: typeof AuthenticatedWSlugSettingsChatGeneralRoute
@@ -2477,7 +2756,10 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugSettingsRecurringTasksRoute: typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   AuthenticatedWSlugSettingsRedirectsRoute: typeof AuthenticatedWSlugSettingsRedirectsRoute
   AuthenticatedWSlugSettingsRepositoriesRoute: typeof AuthenticatedWSlugSettingsRepositoriesRoute
+  AuthenticatedWSlugSettingsServerRoute: typeof AuthenticatedWSlugSettingsServerRoute
   AuthenticatedWSlugSettingsSupportAiAssistantRoute: typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
+  AuthenticatedWSlugSettingsSupportTranslationRoute: typeof AuthenticatedWSlugSettingsSupportTranslationRoute
+  AuthenticatedWSlugSettingsSystemStatusRoute: typeof AuthenticatedWSlugSettingsSystemStatusRoute
   AuthenticatedWSlugSettingsTaskTemplatesRoute: typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
   AuthenticatedWSlugSettingsTeamsRoute: typeof AuthenticatedWSlugSettingsTeamsRoute
   AuthenticatedWSlugSettingsWorkflowsRoute: typeof AuthenticatedWSlugSettingsWorkflowsRoute
@@ -2522,8 +2804,11 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
   AuthenticatedWSlugSettingsSectionRoute:
     AuthenticatedWSlugSettingsSectionRoute,
   AuthenticatedWSlugSettingsAccessRoute: AuthenticatedWSlugSettingsAccessRoute,
+  AuthenticatedWSlugSettingsAiRoute: AuthenticatedWSlugSettingsAiRoute,
   AuthenticatedWSlugSettingsAiAutomationsRoute:
     AuthenticatedWSlugSettingsAiAutomationsRoute,
+  AuthenticatedWSlugSettingsAiConnectionsRoute:
+    AuthenticatedWSlugSettingsAiConnectionsRoute,
   AuthenticatedWSlugSettingsAutomationsRoute:
     AuthenticatedWSlugSettingsAutomationsRoute,
   AuthenticatedWSlugSettingsBillingRoute:
@@ -2561,8 +2846,13 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
     AuthenticatedWSlugSettingsRedirectsRoute,
   AuthenticatedWSlugSettingsRepositoriesRoute:
     AuthenticatedWSlugSettingsRepositoriesRoute,
+  AuthenticatedWSlugSettingsServerRoute: AuthenticatedWSlugSettingsServerRoute,
   AuthenticatedWSlugSettingsSupportAiAssistantRoute:
     AuthenticatedWSlugSettingsSupportAiAssistantRoute,
+  AuthenticatedWSlugSettingsSupportTranslationRoute:
+    AuthenticatedWSlugSettingsSupportTranslationRoute,
+  AuthenticatedWSlugSettingsSystemStatusRoute:
+    AuthenticatedWSlugSettingsSystemStatusRoute,
   AuthenticatedWSlugSettingsTaskTemplatesRoute:
     AuthenticatedWSlugSettingsTaskTemplatesRoute,
   AuthenticatedWSlugSettingsTeamsRoute: AuthenticatedWSlugSettingsTeamsRoute,
@@ -2595,32 +2885,55 @@ interface AuthenticatedRouteChildren {
   AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
   AuthenticatedWorkspacesRoute: typeof AuthenticatedWorkspacesRoute
+  AuthenticatedGithubInstalledRoute: typeof AuthenticatedGithubInstalledRoute
   AuthenticatedOauthAuthorizeRoute: typeof AuthenticatedOauthAuthorizeRoute
   AuthenticatedWSlugRoute: typeof AuthenticatedWSlugRouteWithChildren
+  AuthenticatedOauthCliAuthorizeRoute: typeof AuthenticatedOauthCliAuthorizeRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,
   AuthenticatedWorkspacesRoute: AuthenticatedWorkspacesRoute,
+  AuthenticatedGithubInstalledRoute: AuthenticatedGithubInstalledRoute,
   AuthenticatedOauthAuthorizeRoute: AuthenticatedOauthAuthorizeRoute,
   AuthenticatedWSlugRoute: AuthenticatedWSlugRouteWithChildren,
+  AuthenticatedOauthCliAuthorizeRoute: AuthenticatedOauthCliAuthorizeRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
   AuthenticatedRouteChildren,
 )
 
+interface PortalSlugRouteChildren {
+  PortalSlugCallbackRoute: typeof PortalSlugCallbackRoute
+  PortalSlugSignInRoute: typeof PortalSlugSignInRoute
+  PortalSlugIndexRoute: typeof PortalSlugIndexRoute
+}
+
+const PortalSlugRouteChildren: PortalSlugRouteChildren = {
+  PortalSlugCallbackRoute: PortalSlugCallbackRoute,
+  PortalSlugSignInRoute: PortalSlugSignInRoute,
+  PortalSlugIndexRoute: PortalSlugIndexRoute,
+}
+
+const PortalSlugRouteWithChildren = PortalSlugRoute._addFileChildren(
+  PortalSlugRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   BillingPreviewRoute: BillingPreviewRoute,
+  DemoRoute: DemoRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,
   RegisterRoute: RegisterRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   VerifyEmailRoute: VerifyEmailRoute,
+  EmailPreferencesTokenRoute: EmailPreferencesTokenRoute,
   JoinTokenRoute: JoinTokenRoute,
+  PortalSlugRoute: PortalSlugRouteWithChildren,
   ShareShareTokenRoute: ShareShareTokenRoute,
   SharedShareTokenRoute: SharedShareTokenRoute,
 }

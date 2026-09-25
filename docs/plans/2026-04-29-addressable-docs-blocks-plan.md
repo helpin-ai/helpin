@@ -1,8 +1,45 @@
-# Addressable Docs Blocks Plan
+# Addressable document blocks plan
 
 ## Status
 
-Implementation started.
+Historical phased plan, source-compared on 2026-09-17. Core storage, mutation,
+and retrieval paths are implemented. This page explains the migration to
+contributors; the phases below are the original requirements, not a current
+completion checklist or proof that every document path has been audited.
+
+## Current implementation
+
+The [content mutation repository](../../server/internal/repository/docs_content_mutation.go)
+normalizes aggregate content and synchronizes block rows inside its transaction.
+The [block repository](../../server/internal/repository/docs_block.go) stamps IDs
+on supported top-level nodes, detects IDs owned by other documents, and retains
+aggregate compatibility for malformed/non-document content. This does not mean
+every nested editor node has its own row. The
+[editor extension](../../frontend/src/components/docs/BlockIdExtension.ts)
+provides client-side IDs for supported node types.
+
+[Block mutations](../../server/internal/service/docs_block.go) check document
+locking and use versioned aggregate saves; patch additionally requires a positive
+matching block revision and verifies the current block content. The
+[router](../../server/internal/router/router.go) exposes list/create/patch/reorder/
+delete operations with Docs read/edit permissions. Internal commands include
+`docs.update_document_block`. These entry-point checks must remain intact; a
+repository method alone is not an authorization boundary.
+
+[Embedding synchronization](../../server/internal/service/docs_embedding.go)
+prefers nonempty structured block chunks, retaining aggregate-text fallback.
+A block-read error fails synchronization rather than silently falling back.
+[Support search](../../server/internal/service/support_knowledge_search.go)
+propagates block IDs in results. This supersedes the original document-only
+vector/agent description below, without asserting that every downstream consumer
+or public rendering path is fully block-native.
+
+[Document deletion](../../server/internal/service/docs_deletion.go) includes
+block rows and scans block JSON when collecting owned asset references. The
+[SQL migration](../../server/internal/dbmigrate/sql/202604290003_addressable_docs_blocks.sql)
+contains the top-level backfill. These source paths do not establish that the
+migration has run in any particular installation. Original compilation/build
+steps below were not rerun during this documentation review.
 
 ## Goal
 
@@ -17,7 +54,7 @@ The core model is:
 - document content remains a materialized aggregate for compatibility
 - links, citations, chunks, vectors, and agent edits can target a block
 
-## Current Findings
+## Original findings
 
 Docs are not created from one path. Content can be written by editor autosave, markdown save, imports, versions/reverts, internal commands, PM import flows, Temporal agent activity bridges, and direct repository callers. The block migration has to attach to the shared content write path first, then expose block-level APIs.
 

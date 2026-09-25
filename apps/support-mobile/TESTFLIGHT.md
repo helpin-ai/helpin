@@ -1,9 +1,10 @@
 # TestFlight release setup
 
 The support mobile app is uploaded through the manually triggered
-`Deploy Support Mobile to TestFlight` GitHub Actions workflow. The workflow
+[`Deploy Support Mobile to TestFlight`](../../.github/workflows/deploy-support-mobile-testflight.yml) GitHub Actions workflow. The workflow
 runs on GitHub's `macos-15` runner, builds a signed IPA against staging, checks
-it with App Store Connect, and uploads it to TestFlight.
+it with App Store Connect, and uploads it to TestFlight. These are configured
+workflow steps, not evidence that a release has succeeded.
 
 ## One-time Apple setup
 
@@ -122,4 +123,4 @@ configuration; the native plugin disables itself when
 the Firebase plist securely during the build, enable Push Notifications and
 Background Modes in the generated Xcode project, wire the APNs token callback,
 and verify delivery on a physical iPhone. Those steps are tracked separately
-in `src-tauri/tauri-plugin-helpin-push/README.md`.
+in the [native push integration checklist](src-tauri/tauri-plugin-helpin-push/README.md#native-integration-checklist).

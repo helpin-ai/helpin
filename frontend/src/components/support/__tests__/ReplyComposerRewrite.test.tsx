@@ -2,24 +2,31 @@
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { SupportTranslationSendError } from '@/lib/supportTranslationError';
 import { ReplyComposer } from '../ReplyComposer';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { Editor } from '@tiptap/core';
+import { clearReplyDeliveryDraft, loadReplyDelivery, saveReplyDelivery, saveReplySubject } from '../replyDelivery';
 
 const mocks = vi.hoisted(() => ({
+  translation: false,
   rewrite: vi.fn(), send: vi.fn(), empty: [], mutation: { isPending: false, mutateAsync: vi.fn() },
+  conversation: null as Record<string, unknown> | null,
 }));
 vi.mock('@/hooks/queries/useSupport', () => ({
   useRewriteSupportDraft: () => ({ isPending: false, mutateAsync: mocks.rewrite }),
   useSendMessage: () => ({ isPending: false, mutateAsync: mocks.send }),
-  useConversation: () => ({ data: null }),
+  useConversation: () => ({ data: mocks.conversation }),
   useCannedResponses: () => ({ data: mocks.empty }),
   useCreateCannedResponse: () => mocks.mutation,
   useUpdateCannedResponse: () => mocks.mutation,
   useDeleteCannedResponse: () => mocks.mutation,
   useUpdateConversationEmailRecipients: () => mocks.mutation,
   useUploadSupportAttachment: () => mocks.mutation,
+}));
+vi.mock('@/hooks/queries/useSupportTranslation', () => ({
+ useSupportTranslationOptions: () => ({ data: { available: mocks.translation, languages: { en: 'English', de: 'German' }, conversation: { customer_language: 'de' }, preference: { reading_language: 'en', auto_translate_incoming: true, auto_translate_outgoing: true } } }),
 }));
 vi.mock('@tanstack/react-query', () => ({ useQuery: () => ({ data: mocks.empty }) }));
 vi.mock('@/stores/dockStore', () => ({ useDockStore: () => null }));
@@ -43,13 +50,15 @@ vi.mock('@/components/ui/dropdown-menu', () => {
 describe('ReplyComposer AI loading state', () => {
   let container: HTMLDivElement;
   let root: Root;
-  function setup() {
+  function setup(emailConversation = false, widgetConversation = false) {
     mocks.send.mockReset();
+    mocks.conversation = emailConversation ? { source: 'email', customer_email: 'customer@example.com', subject: 'Invoice question' }
+      : widgetConversation ? { source: 'widget', anonymous_id: 'visitor-1', customer_email: 'customer@example.com' } : null;
     useSupportInboxStore.setState({ replyMode: 'reply', drafts: { 'conv-1': '**Original** draft' } });
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
-    act(() => { root.render(<TooltipProvider><ReplyComposer workspaceId="ws-1" conversationId="conv-1" /></TooltipProvider>); });
+    act(() => { root.render(<TooltipProvider><ReplyComposer workspaceId="ws-1" conversationId="conv-1" emailDeliveryEnabled /></TooltipProvider>); });
   }
   function button(label: string) {
     const found = [...container.querySelectorAll('button')].find((element) => element.textContent === label);
@@ -60,6 +69,88 @@ describe('ReplyComposer AI loading state', () => {
     act(() => { root?.unmount(); });
     container?.remove();
     vi.useRealTimers();
+    mocks.translation = false;
+    saveReplySubject('ws-1', 'conv-1');
+    clearReplyDeliveryDraft('ws-1', 'conv-1');
+  });
+
+  it('offers an explicit original send after translation fails and preserves delivery and retry identity', async () => {
+    mocks.translation = true;
+    setup(true);
+    mocks.send.mockRejectedValueOnce(new SupportTranslationSendError());
+    await act(async () => { button('Send').click(); });
+    const first = mocks.send.mock.calls[0][0];
+    expect(container.textContent).toContain('Your reply hasn’t been sent.');
+    expect(mocks.send).toHaveBeenCalledTimes(1);
+    await act(async () => { button('Send original').click(); });
+    expect(mocks.send.mock.calls[1][0]).toMatchObject({ content: first.content, client_message_id: first.client_message_id, send_original: true, delivery_mode: 'email_only' });
+    expect(mocks.send.mock.calls[1][0].auto_translate).toBeUndefined();
+    expect(container.textContent).not.toContain('Send original');
+  });
+
+  it('does not offer translation bypass for network or delivery failures', async () => {
+    mocks.translation = true;
+    setup(true);
+    mocks.send.mockRejectedValueOnce(new Error('Network unavailable'));
+    await act(async () => { button('Send').click(); });
+    expect(container.textContent).not.toContain('Send original');
+    expect(container.querySelector('.tiptap')?.textContent).toContain('Original');
+  });
+
+  it('does not carry a translation failure into another conversation', async () => {
+    mocks.translation = true;
+    setup(true);
+    mocks.send.mockRejectedValueOnce(new SupportTranslationSendError());
+    await act(async () => { button('Send').click(); });
+    expect(container.textContent).toContain('Send original');
+    await act(async () => { root.render(<TooltipProvider><ReplyComposer workspaceId="ws-1" conversationId="conv-2" emailDeliveryEnabled /></TooltipProvider>); });
+    expect(container.textContent).not.toContain('Send original');
+  });
+
+  it('translates on normal Send without a preview step', async () => {
+    mocks.translation = true;
+    setup(false, true);
+    expect(container.textContent).not.toContain('Preview translation');
+    await act(async () => { button('Send').click(); });
+    expect(mocks.send).toHaveBeenCalledOnce();
+    expect(mocks.send.mock.calls[0][0]).toMatchObject({ auto_translate: true, translation_target_language: 'de', content: '**Original** draft' });
+    expect(mocks.send.mock.calls[0][0].client_message_id).toBeTruthy();
+  });
+  it('keeps the draft and same send identity after translation failure', async () => {
+    mocks.translation = true;
+    setup(false, true);
+    mocks.send.mockRejectedValueOnce(new Error('Translation failed'));
+    await act(async () => { button('Send').click(); });
+    expect(container.querySelector('[contenteditable="true"]')?.textContent).toContain('Original');
+    const firstID = mocks.send.mock.calls[0][0].client_message_id;
+    await act(async () => { button('Send').click(); });
+    expect(mocks.send.mock.calls[1][0].client_message_id).toBe(firstID);
+  });
+  it('never translates internal notes', async () => {
+    mocks.translation = true;
+    setup(false, true);
+    act(() => useSupportInboxStore.setState({ replyMode: 'note' }));
+    await act(async () => { button('Add Note').click(); });
+    expect(mocks.send.mock.calls[0][0].auto_translate).toBeUndefined();
+  });
+
+  it('sends email without a subject editor or a stale draft subject override', async () => {
+    saveReplySubject('ws-1', 'conv-1', 'Old edited subject');
+    setup(true);
+    expect([...container.querySelectorAll('label')].some((label) => label.textContent?.includes('Subject'))).toBe(false);
+    await act(async () => { button('Send').click(); });
+    expect(mocks.send).toHaveBeenCalledOnce();
+    expect(mocks.send.mock.calls[0][0]).toMatchObject({ delivery_mode: 'email_only', channels: ['email'] });
+    expect(mocks.send.mock.calls[0][0]).not.toHaveProperty('email_subject');
+  });
+
+  it('uses the chosen email destination for this chat reply and resets after sending', async () => {
+    saveReplyDelivery('ws-1', 'conv-1', 'email_only');
+    setup(false, true);
+    await act(async () => { button('Send').click(); });
+    expect(mocks.send.mock.calls[0][0]).toMatchObject({ delivery_mode: 'email_only', channels: ['email'] });
+    expect(loadReplyDelivery('ws-1', 'conv-1')).toBeUndefined();
+    expect(container.querySelector('[aria-label="Sending options: Chat only"]')).not.toBeNull();
   });
 
   it('blocks button and keyboard sending for the full upload batch and failed attachments', async () => {

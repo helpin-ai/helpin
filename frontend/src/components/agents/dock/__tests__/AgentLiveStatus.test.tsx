@@ -4,12 +4,6 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentLiveStatus } from '../AgentLiveStatus';
 
-vi.mock('lottie-web', () => ({
-  default: {
-    loadAnimation: () => ({ destroy: vi.fn(), goToAndStop: vi.fn() }),
-  },
-}));
-
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('AgentLiveStatus', () => {
@@ -25,6 +19,20 @@ describe('AgentLiveStatus', () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+  });
+
+  it('replaces working with an offline notice and restores it on reconnect', () => {
+    act(() => root.render(<AgentLiveStatus progress={{ label: 'Working…', tone: 'working' }} />));
+    const online = vi.spyOn(navigator, 'onLine', 'get');
+    try {
+      online.mockReturnValue(false);
+      act(() => window.dispatchEvent(new Event('offline')));
+      expect(container.textContent).toContain('Offline — live updates paused');
+      expect(container.querySelector('[data-agent-work-loader]')).toBeNull();
+      online.mockReturnValue(true);
+      act(() => window.dispatchEvent(new Event('online')));
+      expect(container.textContent).toContain('Working');
+    } finally { online.mockRestore(); }
   });
 
   it('uses worked wording and stops ticking after completion', () => {

@@ -19,6 +19,7 @@ const (
 // backed the chat carry AgentRun.DockChatID, so the full history is a real FK
 // chain rather than a heuristic match.
 type DockChat struct {
+	ExecutionEnabled      bool               `json:"execution_enabled" gorm:"not null;default:false"`
 	ID                    string             `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID           string             `json:"workspace_id" gorm:"type:uuid;not null;index:idx_dock_chats_ws_user,priority:1;uniqueIndex:idx_dock_chats_support_conversation,priority:1,where:archived_at IS NULL"`
 	UserID                string             `json:"user_id" gorm:"type:uuid;not null;index:idx_dock_chats_ws_user,priority:2;uniqueIndex:idx_dock_chats_support_conversation,priority:2,where:archived_at IS NULL"`
@@ -27,7 +28,7 @@ type DockChat struct {
 	ModuleID              *ModuleID          `json:"module_id,omitempty" gorm:"type:text;index"`
 	SupportConversationID *string            `json:"support_conversation_id,omitempty" gorm:"type:uuid;index;uniqueIndex:idx_dock_chats_support_conversation,priority:3,where:archived_at IS NULL"`
 	ActiveRunID           *string            `json:"active_run_id,omitempty" gorm:"type:uuid;index"`
-	NextMessageSequence   int64              `json:"-" gorm:"->"`
+	NextMessageSequence   int64              `json:"-" gorm:"->;not null;default:0"`
 	// ActiveRunStatus is a read-only projection used by chat roster surfaces.
 	// It is hydrated from ActiveRunID and is not stored on the chat row.
 	ActiveRunStatus string     `json:"active_run_status,omitempty" gorm:"-"`
@@ -46,22 +47,27 @@ type CreateDockChatRequest struct {
 	SupportConversationID *string             `json:"support_conversation_id,omitempty"`
 	Visibility            *DockChatVisibility `json:"visibility,omitempty"`
 	ModuleID              *ModuleID           `json:"module_id,omitempty"`
+	ExecutionEnabled      bool                `json:"execution_enabled,omitempty"`
 }
 
 // UpdateDockChatRequest is the payload for renaming or archiving a dock chat.
 type UpdateDockChatRequest struct {
-	Title      *string             `json:"title,omitempty"`
-	Archived   *bool               `json:"archived,omitempty"`
-	Visibility *DockChatVisibility `json:"visibility,omitempty"`
+	ExecutionEnabled *bool               `json:"execution_enabled,omitempty"`
+	Title            *string             `json:"title,omitempty"`
+	Archived         *bool               `json:"archived,omitempty"`
+	Visibility       *DockChatVisibility `json:"visibility,omitempty"`
 }
 
 // SendDockChatMessageRequest is the payload for a user chat turn.
 type SendDockChatMessageRequest struct {
-	ClientMessageID string                 `json:"client_message_id"`
-	Content         string                 `json:"content"`
-	PageContext     map[string]interface{} `json:"page_context,omitempty"`
-	References      []DockEntityReference  `json:"references,omitempty"`
-	AttachmentIDs   []string               `json:"attachment_ids,omitempty"`
+	AIProfileID       string                 `json:"ai_profile_id,omitempty"`
+	ModelConnectionID string                 `json:"model_connection_id,omitempty"`
+	ModelName         string                 `json:"model_name,omitempty"`
+	ClientMessageID   string                 `json:"client_message_id"`
+	Content           string                 `json:"content"`
+	PageContext       map[string]interface{} `json:"page_context,omitempty"`
+	References        []DockEntityReference  `json:"references,omitempty"`
+	AttachmentIDs     []string               `json:"attachment_ids,omitempty"`
 }
 
 // DockEntityReference identifies supplemental workspace context attached to a dock turn.
@@ -80,9 +86,11 @@ type GenerateDockChatTitleRequest struct {
 // DockChatDetail is the read model returned for a single chat: the chat row
 // plus a summary of its current backing run and the plans launched from it.
 type DockChatDetail struct {
+	WorkPlans       []CodingSessionRunPlan  `json:"work_plans,omitempty"`
 	Chat            DockChat                `json:"chat"`
 	Run             *AgentRun               `json:"run,omitempty"`
 	AcceptedMessage *AgentRunMessage        `json:"accepted_message,omitempty"`
+	Artifacts       []AgentRunArtifact      `json:"artifacts,omitempty"`
 	PlanIDs         []string                `json:"plan_ids"`
 	Plans           []CommandBarPlanSummary `json:"plans,omitempty"`
 }

@@ -75,6 +75,7 @@ export function stagePayload(stages: CRMPipelineStage[]) {
     name: stage.name,
     stage_type: stage.stage_type,
     probability: stage.probability,
+    color: stage.color,
     position,
   }));
 }

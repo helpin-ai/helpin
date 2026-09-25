@@ -90,4 +90,59 @@ describe('MarkdownContent Helpin references', () => {
 
     act(() => root.unmount());
   });
+
+  it('renders generated image artifacts inline through a signed URL', async () => {
+    useWorkspaceStore.setState({ currentWorkspace: { id: 'ws-1', slug: 'acme', name: 'Acme' } as never });
+    const contentURL = vi.spyOn(automationService, 'getArtifactContentURL').mockResolvedValue({
+      data: { url: 'https://files.example.com/signed/img-1.png', expires_at: '' }, error: null, status: 200,
+    } as never);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<MarkdownContent content={'Here it is:\n\n![Event sourcing](helpin://artifacts/img-1)'} />);
+    });
+
+    expect(contentURL).toHaveBeenCalledWith('ws-1', 'img-1');
+    const image = container.querySelector<HTMLImageElement>('[data-agent-inline-image] img');
+    expect(image?.getAttribute('src')).toBe('https://files.example.com/signed/img-1.png');
+    expect(image?.getAttribute('alt')).toBe('Event sourcing');
+    expect(container.querySelector('[data-agent-inline-image]')?.getAttribute('target')).toBe('_blank');
+
+    act(() => root.unmount());
+  });
+
+  it('shows a fallback when an inline image cannot be loaded', async () => {
+    useWorkspaceStore.setState({ currentWorkspace: { id: 'ws-1', slug: 'acme', name: 'Acme' } as never });
+    vi.spyOn(automationService, 'getArtifactContentURL').mockResolvedValue({ data: null, error: 'not found', status: 404 } as never);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<MarkdownContent content="![Diagram](helpin://artifacts/missing)" />);
+    });
+
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.textContent).toContain('Diagram is unavailable');
+
+    act(() => root.unmount());
+  });
+
+  it('does not treat non-artifact images as private artifacts', async () => {
+    const contentURL = vi.spyOn(automationService, 'getArtifactContentURL');
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<MarkdownContent content="![Task](helpin://tasks/task-1)" />);
+    });
+
+    expect(contentURL).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-agent-inline-image]')).toBeNull();
+
+    act(() => root.unmount());
+  });
 });

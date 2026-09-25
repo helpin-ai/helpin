@@ -1,3 +1,5 @@
+import { MailboxCapacityPanel } from "./outreach/MailboxCapacity";
+import { CRMEmailSignatureSettings } from './CRMEmailSignature';
 import { useEffect, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import {
@@ -13,7 +15,8 @@ import { toast } from 'sonner';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { QuietPrimaryAction, QuietTextAction } from '@/components/design-system/quiet';
+import { CRMEmailSettingsSection } from './CRMEmailSettingsSection';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import {
   Dialog,
@@ -30,10 +33,15 @@ import {
   usePurgeEmailAccount,
   useSyncEmailAccount,
 } from '@/hooks/queries/useCRM';
+import { useGoogleConnectUnavailable } from '@/hooks/queries/useCapabilities';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
 import type { CRMEmailAccount } from '@/lib/crmTypes';
 import { crmEmailService } from '@/lib/services/crmService';
 import { cn } from '@/lib/utils';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { ServerSetupNotice } from './ServerSetupNotice';
+
+const GOOGLE_CONNECT_UNAVAILABLE_ID = 'google-connect-unavailable';
 
 interface EmailAccountConnectProps {
   workspaceId: string;
@@ -111,7 +119,10 @@ export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: 
   const purgeAccount = usePurgeEmailAccount(workspaceId);
   const syncAccount = useSyncEmailAccount(workspaceId);
   const access = useWorkspaceAccess(workspaceId);
-  const { isAdmin } = usePermissions(access.data);
+  const { isAdmin, isServerAdmin } = usePermissions(access.data);
+  const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug ?? '');
+  const googleConnectUnavailable = useGoogleConnectUnavailable(workspaceId);
+  const connectDisabledReason = googleConnectUnavailable ? GOOGLE_CONNECT_UNAVAILABLE_ID : undefined;
 
   const [selectedAccount, setSelectedAccount] = useState<CRMEmailAccount | null>(null);
   const [connecting, setConnecting] = useState<'gmail' | 'microsoft' | null>(null);
@@ -186,13 +197,12 @@ export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: 
 
   const isWorking = disconnectAccount.isPending || purgeAccount.isPending || syncAccount.isPending;
 
+  const ConnectAction = visibleAccounts.length === 0 ? QuietPrimaryAction : QuietTextAction;
+
   return (
-    <Card className="rounded-xl border border-border bg-card shadow-none">
-      <CardHeader>
-        <CardTitle className="text-base">Google accounts</CardTitle>
-        <CardDescription>Connect Google to sync Gmail conversations and Google Calendar events.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
+    <section className="rounded-lg border border-border/70 bg-card">
+      <h2 className="border-b border-quiet-divider-strong px-4 py-3 text-sm font-semibold text-quiet-text-primary">Connected accounts</h2>
+      <div className="space-y-3 px-4 pb-4 pt-1">
         {visibleAccounts.length === 0 && (
           <div className="rounded-lg border bg-muted/20 px-5 py-7 text-center">
             <Mail01Icon className="mx-auto h-7 w-7 text-muted-foreground" />
@@ -209,7 +219,7 @@ export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: 
           return (
             <div
               key={account.id}
-              className="flex flex-col gap-3 rounded-lg border border-border bg-background p-3"
+              className="flex flex-col gap-3 border-b border-quiet-divider-light py-4 last:border-b-0"
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0 space-y-2">
@@ -243,11 +253,12 @@ export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: 
                   </div>
                 </div>
 
-                <Button variant="outline" size="sm" onClick={() => setSelectedAccount(account)}>
-                  Sync details
-                </Button>
+                <QuietTextAction onClick={() => setSelectedAccount(account)}>
+                  Manage
+                </QuietTextAction>
               </div>
 
+              {account.member_id === memberId && <><CRMEmailSignatureSettings workspaceId={workspaceId} account={account} /><CRMEmailSettingsSection title="Sending limits" optionId="email-sending-limits"><MailboxCapacityPanel workspaceId={workspaceId} accountId={account.id} /></CRMEmailSettingsSection></>}
               <div
                 className={cn(
                   'flex items-start gap-2 rounded-lg border px-3 py-2.5',
@@ -274,16 +285,29 @@ export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: 
           );
         })}
 
+        {googleConnectUnavailable ? (
+          <ServerSetupNotice
+            id={GOOGLE_CONNECT_UNAVAILABLE_ID}
+            title="Connecting Google isn’t set up on this server."
+            slug={workspaceSlug}
+            isServerAdmin={isServerAdmin}
+            className="mx-auto"
+          />
+        ) : null}
         <div className={cn('flex flex-wrap gap-2 pt-1', visibleAccounts.length === 0 && 'justify-center')}>
-          <Button size="sm" onClick={() => handleConnect('gmail')} disabled={!!connecting}>
+          <ConnectAction
+            onClick={() => handleConnect('gmail')}
+            disabled={!!connecting || googleConnectUnavailable}
+            aria-describedby={connectDisabledReason}
+          >
             {connecting === 'gmail' ? (
               <Loading01Icon className="mr-1.5 h-3 w-3 animate-spin" />
             ) : (
               <PlusSignIcon className="mr-1.5 h-3 w-3" />
             )}
             Connect Google
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => handleConnect('microsoft')} disabled={!!connecting}>
+          </ConnectAction>
+          <Button variant="ghost" size="sm" disabled title="Microsoft support is coming soon">
             <PlusSignIcon className="mr-1.5 h-3 w-3" />
             Microsoft
             <Badge variant="secondary" className="ml-1.5 text-[10px]">
@@ -358,10 +382,12 @@ export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: 
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="text-sm font-semibold">Account connection</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
+                        <p id="google-reconnect-detail" className="mt-1 text-xs text-muted-foreground">
                           {selectedAccount.is_active
                             ? 'Disconnecting stops future sync. Existing CRM email and calendar activity stays available.'
-                            : 'Reconnect Google to resume syncing from the saved checkpoint.'}
+                            : googleConnectUnavailable
+                              ? 'Reconnecting Google isn’t set up on this server. Ask your server admin to set it up.'
+                              : 'Reconnect Google to resume syncing from the saved checkpoint.'}
                         </p>
                       </div>
                       {selectedAccount.is_active ? (
@@ -370,7 +396,12 @@ export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: 
                           Disconnect
                         </Button>
                       ) : (
-                        <Button size="sm" onClick={() => handleConnect('gmail')} disabled={!!connecting}>
+                        <Button
+                          size="sm"
+                          onClick={() => handleConnect('gmail')}
+                          disabled={!!connecting || googleConnectUnavailable}
+                          aria-describedby={googleConnectUnavailable ? 'google-reconnect-detail' : undefined}
+                        >
                           {connecting === 'gmail' ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <PlusSignIcon className="mr-1.5 h-3.5 w-3.5" />}
                           Reconnect Google
                         </Button>
@@ -420,7 +451,7 @@ export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: 
           confirmLabel={purgeAccount.isPending ? 'Deleting…' : 'Delete synced data'}
           onConfirm={handlePurge}
         />
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }

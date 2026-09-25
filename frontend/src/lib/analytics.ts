@@ -1,9 +1,11 @@
+import { APP_ANALYTICS_HOST, USERMAVEN_KEY, CUSTOMER_IO_WRITE_KEY } from '@edition/config';
+export { APP_ANALYTICS_HOST, USERMAVEN_KEY, CUSTOMER_IO_WRITE_KEY } from '@edition/config';
 import type { UsermavenOptions } from '@usermaven/sdk-js';
-import type { OrganizationWithRole, User, Workspace, WorkspaceAccess, WorkspaceBillingSummary } from './types';
+import type { OrganizationWithRole, User, Workspace, WorkspaceAccess } from './types';
 
-export const APP_ANALYTICS_HOST = 'app.helpin.ai';
-export const USERMAVEN_KEY = 'UMpgKYZLxR';
-export const CUSTOMER_IO_WRITE_KEY = 'a3fced22111b6be05726';
+
+
+
 export const CUSTOMER_IO_WORKSPACE_OBJECT_TYPE_ID = '1';
 
 type UsermavenInitOptions = Pick<UsermavenOptions, 'key' | 'tracking_host' | 'autocapture' | 'cookie_domain'>;
@@ -27,7 +29,7 @@ export type AnalyticsClients = {
   };
 };
 
-type AnalyticsOptions = {
+export type AnalyticsOptions = {
   hostname?: string;
   clients?: AnalyticsClients;
 };
@@ -160,7 +162,7 @@ export function getUsermavenAnonymousId() {
 }
 
 export function shouldEnableAppAnalytics(hostname = currentHostname()) {
-  return hostname === APP_ANALYTICS_HOST;
+  return Boolean(APP_ANALYTICS_HOST) && hostname === APP_ANALYTICS_HOST;
 }
 
 export function initializeAppAnalytics(options?: AnalyticsOptions) {
@@ -336,38 +338,6 @@ export function buildAnalyticsWorkspaceTraits(
   };
 }
 
-export function buildAnalyticsBillingEventProperties(
-  eventName: string,
-  workspaceId: string,
-  billing?: WorkspaceBillingSummary | null,
-  extra?: Record<string, unknown>,
-) {
-  return {
-    event_name: eventName,
-    workspace_id: workspaceId,
-    plan: billing?.plan,
-    billing_status: billing?.status,
-    billing_interval: billing?.billing_interval,
-    trialing: !!billing?.trialing,
-    trial_ends_at: billing?.trial_ends_at,
-    trial_days_left: daysUntil(billing?.trial_ends_at),
-    locked: !!billing?.locked,
-    ai_usage_allowance_microusd: billing?.ai_usage_allowance_microusd,
-    ai_usage_used_microusd: billing?.ai_usage_used_microusd,
-    ai_usage_remaining_microusd: billing?.ai_usage_remaining_microusd,
-    ai_usage_reserved_microusd: billing?.ai_usage_reserved_microusd,
-    ai_usage_overage_microusd: billing?.ai_usage_overage_microusd,
-    seat_limit: billing?.seat_limit,
-    seat_usage: billing?.seat_usage,
-    seat_over_limit: billing?.seat_over_limit,
-    extra_ai_usage_enabled: billing?.extra_ai_usage_enabled,
-    extra_ai_usage_available: billing?.extra_ai_usage_available,
-    pricing_version: billing?.pricing_version,
-    manage_billing_enabled: billing?.manage_billing_enabled,
-    cancel_at_period_end: billing?.cancel_at_period_end,
-    ...extra,
-  };
-}
 
 export function buildCustomerIoWorkspaceTraits(workspace: Workspace, access?: WorkspaceAccess | null): AnalyticsTraits {
   const billing = workspace.billing;
@@ -461,16 +431,6 @@ export function trackAnalyticsEvent(
 }
 
 
-export function trackWorkspaceBillingEvent(
-  eventName: string,
-  workspaceId: string | undefined,
-  billing?: WorkspaceBillingSummary | null,
-  extra?: Record<string, unknown>,
-  options?: AnalyticsOptions,
-) {
-  if (!workspaceId) return;
-  trackAnalyticsEvent(eventName, buildAnalyticsBillingEventProperties(eventName, workspaceId, billing, extra), options);
-}
 
 export function resetAnalytics(options?: AnalyticsOptions) {
   if (!shouldEnableAppAnalytics(hostFor(options))) return;

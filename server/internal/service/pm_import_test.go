@@ -69,12 +69,12 @@ func TestPMImportServicePreviewShortcut(t *testing.T) {
 
 	var requesterMatched bool
 	for _, user := range resp.Users {
-		if user.Email == "azhar@contentstudio.io" {
+		if user.Email == "requester@example.com" {
 			requesterMatched = user.MatchedUserID != nil && *user.MatchedUserID != ""
 		}
 	}
 	if !requesterMatched {
-		t.Fatal("expected azhar requester to auto-match")
+		t.Fatal("expected requester to auto-match")
 	}
 
 	if len(resp.Workflows) != 1 {
@@ -1191,6 +1191,8 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			totp_verified BOOLEAN NOT NULL DEFAULT 0,
 			recovery_codes_encrypted TEXT,
 			is_platform_admin BOOLEAN NOT NULL DEFAULT 0,
+			is_server_admin BOOLEAN NOT NULL DEFAULT 0,
+			signup_verification_pending BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -1604,7 +1606,7 @@ func newImportTestService(t *testing.T, db *gorm.DB) (*PMImportService, string, 
 	adminID := "user-admin"
 	users := []model.User{
 		{ID: adminID, Email: "admin@example.com", PasswordHash: "x", FullName: "Admin User"},
-		{ID: "user-requester", Email: "azhar@contentstudio.io", PasswordHash: "x", FullName: "Azhar K"},
+		{ID: "user-requester", Email: "requester@example.com", PasswordHash: "x", FullName: "Riley Requester"},
 		{ID: "user-owner-one", Email: "owner.one@example.com", PasswordHash: "x", FullName: "Owner One"},
 		{ID: "user-owner-two", Email: "owner.two@example.com", PasswordHash: "x", FullName: "Owner Two"},
 	}
@@ -1625,7 +1627,7 @@ func newImportTestService(t *testing.T, db *gorm.DB) (*PMImportService, string, 
 	}
 	memberships := []model.WorkspaceMember{
 		{ID: uuid.NewString(), WorkspaceID: workspaceID, UserID: stringPtr(adminID), Email: "admin@example.com", DisplayName: "Admin User", Role: model.RoleOwner, Status: model.WorkspaceMemberStatusActive},
-		{ID: uuid.NewString(), WorkspaceID: workspaceID, UserID: stringPtr("user-requester"), Email: "azhar@contentstudio.io", DisplayName: "Azhar K", Role: model.RoleMember, Status: model.WorkspaceMemberStatusActive},
+		{ID: uuid.NewString(), WorkspaceID: workspaceID, UserID: stringPtr("user-requester"), Email: "requester@example.com", DisplayName: "Riley Requester", Role: model.RoleMember, Status: model.WorkspaceMemberStatusActive},
 		{ID: uuid.NewString(), WorkspaceID: workspaceID, UserID: stringPtr("user-owner-one"), Email: "owner.one@example.com", DisplayName: "Owner One", Role: model.RoleMember, Status: model.WorkspaceMemberStatusActive},
 		{ID: uuid.NewString(), WorkspaceID: workspaceID, UserID: stringPtr("user-owner-two"), Email: "owner.two@example.com", DisplayName: "Owner Two", Role: model.RoleMember, Status: model.WorkspaceMemberStatusActive},
 	}
@@ -1683,7 +1685,7 @@ func newShortcutAPITestHandler(t *testing.T) http.Handler {
 			return
 		}
 		write(w, []map[string]any{
-			{"id": "member-requester", "profile": map[string]any{"email_address": "azhar@contentstudio.io", "name": "Azhar K"}},
+			{"id": "member-requester", "profile": map[string]any{"email_address": "requester@example.com", "name": "Riley Requester"}},
 			{"id": "member-owner-one", "profile": map[string]any{"email_address": "owner.one@example.com", "name": "Owner One"}},
 			{"id": "member-owner-two", "profile": map[string]any{"email_address": "owner.two@example.com", "name": "Owner Two"}},
 		})
@@ -1883,7 +1885,7 @@ func newShortcutAPITestHandler(t *testing.T) http.Handler {
 func shortcutImportTestCSV() string {
 	rows := []map[string]string{
 		{
-			"id": "85463", "name": "Paid Ads Attribution Improvements", "type": "feature", "requester": "azhar@contentstudio.io",
+			"id": "85463", "name": "Paid Ads Attribution Improvements", "type": "feature", "requester": "requester@example.com",
 			"description": "Sticky totals", "is_completed": "true", "created_at": "2025/03/13 02:27:02", "started_at": "2025/03/17 13:49:40",
 			"updated_at": "2025/03/26 23:35:41", "moved_at": "2025/03/26 23:35:41", "completed_at": "2025/03/26 23:35:41",
 			"estimate": "3", "is_blocked": "false", "state": "Completed", "iteration_id": "84719", "iteration": "Dev Team: Week 4-5, 2026",
@@ -1919,7 +1921,7 @@ func shortcutImportTestCSV() string {
 			"tasks": "[ ] Unit tests;[ ] Integrate pinecone into Usermaven",
 		},
 		{
-			"id": "45480", "name": "Webhook delete event", "type": "bug", "requester": "azhar@contentstudio.io",
+			"id": "45480", "name": "Webhook delete event", "type": "bug", "requester": "requester@example.com",
 			"owners": "owner.one@example.com;owner.two@example.com", "description": "Webhook should trigger", "is_completed": "false",
 			"created_at": "2025/04/01 10:00:00", "updated_at": "2025/04/02 10:00:00", "labels": "backend",
 			"iteration_id": "99999", "iteration": "Unknown Sprint Name", "utc_offset": "+00:00", "is_archived": "false", "team": "",

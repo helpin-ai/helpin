@@ -60,7 +60,7 @@ type CRMPlaybookExecutionService struct {
 }
 
 // SetEntitlements uses live Automation billing gates independently of CRM teammate access.
-func (s *CRMPlaybookExecutionService) SetEntitlements(entitlements *EntitlementService) *CRMPlaybookExecutionService {
+func (s *CRMPlaybookExecutionService) SetEntitlements(entitlements EntitlementPolicy) *CRMPlaybookExecutionService {
 	s.entitlements = entitlements
 	return s
 }

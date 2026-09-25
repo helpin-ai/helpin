@@ -3,8 +3,10 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -191,40 +193,25 @@ func TestAgentRuntimeClientForwardsRunSignals(t *testing.T) {
 	if _, err := client.CancelRun(context.Background(), "run-runtime-1"); err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
-	if state, err := client.StartCodexDeviceCodeAuth(context.Background(), "run-runtime-1"); err != nil || state.State != "pending" {
-		t.Fatalf("start codex auth state=%#v err=%v", state, err)
-	}
-	if state, err := client.CancelCodexDeviceCodeAuth(context.Background(), "run-runtime-1"); err != nil || state.State != "pending" {
-		t.Fatalf("cancel codex auth state=%#v err=%v", state, err)
-	}
 
-	want := []string{
-		"POST /v1/runs/run-runtime-1/resume?app_id=helpin",
-		"POST /v1/runs/run-runtime-1/resume?app_id=helpin",
-		"POST /v1/runs/run-runtime-1/resume?app_id=helpin",
-		"POST /v1/runs/run-runtime-1/messages?app_id=helpin",
-		"POST /v1/runs/run-runtime-1/cancel?app_id=helpin",
-		"POST /v1/runs/run-runtime-1/codex-auth/device-code/start?app_id=helpin",
-		"POST /v1/runs/run-runtime-1/codex-auth/device-code/cancel?app_id=helpin",
-	}
-	if len(paths) != len(want) {
-		t.Fatalf("expected paths %#v, got %#v", want, paths)
-	}
-	for i := range want {
-		if paths[i] != want[i] {
-			t.Fatalf("path %d: expected %q, got %q", i, want[i], paths[i])
+}
+
+func TestAgentRuntimeClientRequestsManualPauseWithV1Auth(t *testing.T) {
+	httpClient := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.Method != http.MethodPost || r.URL.EscapedPath() != "/v1/runs/run-runtime-1/pause" || r.URL.Query().Get("app_id") != "helpin" {
+			t.Errorf("unexpected pause request: %s %s", r.Method, r.URL.String())
 		}
+		if r.Header.Get("Authorization") != "Bearer runtime-token" || r.Header.Get("X-Agent-Runtime-Event-Protocol") != "v2" {
+			t.Error("pause request omitted runtime authentication or protocol")
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"id":"run-runtime-1","status":"running"}`)), Request: r}, nil
+	})}
+	client, err := NewAgentRuntimeClient("https://runtime.example.test", "helpin", "runtime-token", httpClient, "v2")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if len(resumeBodies) != 3 {
-		t.Fatalf("expected three resume bodies, got %#v", resumeBodies)
-	}
-	if resumeBodies[1].Intent != "approve" || resumeBodies[1].ExternalActorID != "user-1" {
-		t.Fatalf("expected attributed approve body, got %#v", resumeBodies[1])
-	}
-	if resumeBodies[2].Intent != "request_changes" || resumeBodies[2].Content != "revise" || resumeBodies[2].ExternalActorID != "user-2" {
-		t.Fatalf("expected attributed request-changes body, got %#v", resumeBodies[2])
-	}
-	if len(messageBodies) != 1 || messageBodies[0]["external_actor_id"] != "user-3" {
-		t.Fatalf("expected attributed message body, got %#v", messageBodies)
+	run, err := client.PauseRun(context.Background(), "run-runtime-1")
+	if err != nil || run.ID != "run-runtime-1" {
+		t.Fatalf("pause request failed: run=%#v err=%v", run, err)
 	}
 }

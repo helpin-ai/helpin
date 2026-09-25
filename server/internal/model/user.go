@@ -20,8 +20,13 @@ type User struct {
 	TOTPVerified           bool       `json:"-" gorm:"column:totp_verified;not null;default:false"`
 	RecoveryCodesEncrypted *string    `json:"-" gorm:"column:recovery_codes_encrypted;type:text"`
 	IsPlatformAdmin        bool       `json:"is_platform_admin" gorm:"column:is_platform_admin;not null;default:false"`
-	CreatedAt              time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt              time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	// IsServerAdmin marks a self-hosted server's administrators (Community).
+	IsServerAdmin bool `json:"is_server_admin" gorm:"column:is_server_admin;not null;default:false"`
+	// SignupVerificationPending blocks sign-in until the email is verified; set
+	// for accounts created through domain-restricted signup.
+	SignupVerificationPending bool      `json:"-" gorm:"column:signup_verification_pending;not null;default:false"`
+	CreatedAt                 time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt                 time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (User) TableName() string { return "users" }
@@ -41,11 +46,28 @@ type SigninRequest struct {
 	RememberMe bool   `json:"remember_me"`
 }
 
+// DemoSigninRequest is the payload for POST /api/auth/demo. Email is the
+// visitor's own address (optional unless the server requires it); it is only
+// forwarded to the lead webhook and never becomes an account.
+type DemoSigninRequest struct {
+	Email string `json:"email"`
+}
+
 // AuthResponse is returned after successful authentication.
 type AuthResponse struct {
 	AccessToken  string      `json:"access_token"`
 	RefreshToken string      `json:"refresh_token"`
 	User         UserProfile `json:"user"`
+	// VerificationRequired is set instead of tokens when the new account must
+	// verify its email before signing in (domain-restricted signup).
+	VerificationRequired bool `json:"-"`
+}
+
+// SignupVerificationResponse is returned by signup when the account must
+// verify its email before it can sign in.
+type SignupVerificationResponse struct {
+	VerificationRequired bool   `json:"verification_required"`
+	Email                string `json:"email"`
 }
 
 // SigninResponse is returned after a signin attempt.
@@ -70,6 +92,7 @@ type UserProfile struct {
 	DefaultWorkspaceID    *string    `json:"default_workspace_id"`
 	TwoFAEnabled          bool       `json:"two_fa_enabled"`
 	IsPlatformAdmin       bool       `json:"is_platform_admin"`
+	IsServerAdmin         bool       `json:"is_server_admin"`
 	EmailVerified         bool       `json:"email_verified"`
 	EmailVerifiedAt       *time.Time `json:"email_verified_at,omitempty"`
 	MFASatisfiedInToken   bool       `json:"mfa_satisfied_in_token,omitempty"`

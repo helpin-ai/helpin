@@ -35,14 +35,14 @@ func normalizeCommandPagination(page, perPage, limit int, offset *int) (model.PM
 			limit = 50
 		}
 		if limit < 1 || limit > 100 {
-			return model.PMPagination{}, 0, 0, fmt.Errorf("limit must be between 1 and 100")
+			return model.PMPagination{}, 0, 0, errCommandInput("limit must be between 1 and 100")
 		}
 		value := 0
 		if offset != nil {
 			value = *offset
 		}
 		if value < 0 {
-			return model.PMPagination{}, 0, 0, fmt.Errorf("offset must be zero or greater")
+			return model.PMPagination{}, 0, 0, errCommandInput("offset must be zero or greater")
 		}
 		return model.PMPagination{Page: 1, PerPage: limit, Offset: &value}, value, limit, nil
 	}
@@ -53,7 +53,7 @@ func normalizeCommandPagination(page, perPage, limit int, offset *int) (model.PM
 		perPage = 50
 	}
 	if perPage > 100 {
-		return model.PMPagination{}, 0, 0, fmt.Errorf("per_page must not exceed 100")
+		return model.PMPagination{}, 0, 0, errCommandInput("per_page must not exceed 100")
 	}
 	if page-1 > math.MaxInt/perPage {
 		value := math.MaxInt
@@ -223,7 +223,7 @@ func (s *InternalCommandService) executeListPMLabels(ctx context.Context, meta m
 		return nil, err
 	}
 	if teamID != "" && !canAccessTeam(ctx, &teamID) {
-		return nil, fmt.Errorf("team not found")
+		return nil, errCommandNotFound("team")
 	}
 	labels, err := s.labelService.ListByWorkspace(ctx, meta.WorkspaceID, stringPtrOrNil(teamID), true)
 	if err != nil {
@@ -284,7 +284,7 @@ func (s *InternalCommandService) executeListPMTeamWorkflows(ctx context.Context,
 		return nil, err
 	}
 	if requestedTeamID != "" && len(agentTeams) > 0 && !containsCommandTeam(agentTeams, &requestedTeamID) {
-		return nil, fmt.Errorf("team not found")
+		return nil, errCommandNotFound("team")
 	}
 	teams, err := s.workspaceRepo.ListTeams(ctx, meta.WorkspaceID)
 	if err != nil {
@@ -329,7 +329,7 @@ func (s *InternalCommandService) executeListPMTeamWorkflows(ctx context.Context,
 		})
 	}
 	if requestedTeamID != "" && len(rows) == 0 {
-		return nil, fmt.Errorf("team not found")
+		return nil, errCommandNotFound("team")
 	}
 	pagination, offset, limit, err := normalizeCommandPagination(req.Page, req.PerPage, req.Limit, req.Offset)
 	if err != nil {
@@ -423,7 +423,7 @@ func (s *InternalCommandService) executeListPMTasks(ctx context.Context, meta mo
 	}
 	if strings.TrimSpace(req.UpdatedAfter) != "" {
 		if _, err := time.Parse("2006-01-02", strings.TrimSpace(req.UpdatedAfter)); err != nil {
-			return nil, fmt.Errorf("updated_after must be YYYY-MM-DD")
+			return nil, errCommandInput("updated_after must be YYYY-MM-DD")
 		}
 	}
 	pagination, offset, limit, err := normalizeCommandPagination(req.Page, req.PerPage, req.Limit, req.Offset)
@@ -469,7 +469,7 @@ func (s *InternalCommandService) executeListPMTasks(ctx context.Context, meta mo
 	commentsByTask := map[string][]model.CommentWithAuthor{}
 	detailLevel := strings.ToLower(strings.TrimSpace(req.DetailLevel))
 	if detailLevel != "" && detailLevel != "summary" && detailLevel != "compact" && detailLevel != "full" {
-		return nil, fmt.Errorf("detail_level must be summary, compact, or full")
+		return nil, errCommandInput("detail_level must be summary, compact, or full")
 	}
 	if detailLevel == "compact" || req.IncludeComments {
 		if s.commentService == nil {
@@ -668,7 +668,7 @@ func (s *InternalCommandService) executeCreatePMTask(ctx context.Context, meta m
 	req.Name = strings.TrimSpace(req.Name)
 	req.TeamID = strings.TrimSpace(req.TeamID)
 	if req.Name == "" || req.TeamID == "" {
-		return nil, fmt.Errorf("name and team_id are required")
+		return nil, errCommandInput("name and team_id are required")
 	}
 	if err := requireCommandAgentTeam(meta, &req.TeamID); err != nil {
 		return nil, err
@@ -767,7 +767,7 @@ func (s *InternalCommandService) executeGetPMTask(ctx context.Context, meta mode
 		return nil, err
 	}
 	if detail.Task.WorkspaceID != meta.WorkspaceID {
-		return nil, fmt.Errorf("task not found")
+		return nil, errCommandNotFound("task")
 	}
 	if err := s.validateTaskWithinTarget(ctx, meta, &detail.Task); err != nil {
 		return nil, err
@@ -779,11 +779,11 @@ func (s *InternalCommandService) resolveCommandTaskKey(ctx context.Context, meta
 	taskKey = strings.ToUpper(strings.TrimSpace(taskKey))
 	match := searchTaskKeyPattern.FindStringSubmatch(taskKey)
 	if match == nil {
-		return "", fmt.Errorf("task_key must look like USE-488")
+		return "", errCommandInput("task_key must look like USE-488")
 	}
 	displayID, err := strconv.Atoi(match[2])
 	if err != nil || displayID <= 0 {
-		return "", fmt.Errorf("task_key must look like USE-488")
+		return "", errCommandInput("task_key must look like USE-488")
 	}
 	if s.taskService == nil {
 		return "", fmt.Errorf("task service is not configured")
@@ -796,12 +796,12 @@ func (s *InternalCommandService) resolveCommandTaskKey(ctx context.Context, meta
 			validAlias = lookupErr == nil && workspace != nil && workspace.ID == meta.WorkspaceID
 		}
 		if !validAlias {
-			return "", fmt.Errorf("task not found")
+			return "", errCommandNotFound("task")
 		}
 	}
 	detail, err := s.taskService.GetByDisplayID(ctx, meta.WorkspaceID, displayID)
 	if err != nil || detail == nil || detail.Task.WorkspaceID != meta.WorkspaceID {
-		return "", fmt.Errorf("task not found")
+		return "", errCommandNotFound("task")
 	}
 	if err := s.validateTaskWithinTarget(ctx, meta, &detail.Task); err != nil {
 		return "", err
@@ -833,7 +833,7 @@ func (s *InternalCommandService) executeUpdatePMTask(ctx context.Context, meta m
 		return nil, fmt.Errorf("parse update task input: %w", err)
 	}
 	if req.Name == nil && req.Description == nil && req.TaskType == nil && req.EpicID == nil && req.SprintID == nil && req.OwnerMemberIDs == nil && req.Estimate == nil && req.Priority == nil && req.Severity == nil && req.Deadline == nil && req.Blocked == nil && req.Blocker == nil && req.LabelIDs == nil {
-		return nil, fmt.Errorf("at least one editable field is required")
+		return nil, errCommandInput("at least one editable field is required")
 	}
 	taskID, err := resolveCommandEntityID(meta, req.TaskID, "task")
 	if err != nil {
@@ -844,7 +844,7 @@ func (s *InternalCommandService) executeUpdatePMTask(ctx context.Context, meta m
 		return nil, err
 	}
 	if current.Task.WorkspaceID != meta.WorkspaceID {
-		return nil, fmt.Errorf("task not found")
+		return nil, errCommandNotFound("task")
 	}
 	if err := requireCommandAgentTeam(meta, current.Task.TeamID); err != nil {
 		return nil, err
@@ -914,7 +914,7 @@ func (s *InternalCommandService) executeListTaskChecklist(ctx context.Context, m
 		limit = 100
 	}
 	if limit > 100 {
-		return nil, fmt.Errorf("limit must be between 1 and 100")
+		return nil, errCommandInput("limit must be between 1 and 100")
 	}
 	items, total, hasMore, err := s.checklistService.ListBounded(ctx, task.ID, meta.WorkspaceID, limit)
 	if err != nil {
@@ -976,17 +976,17 @@ func (s *InternalCommandService) executeUpdateTaskChecklistItem(ctx context.Cont
 	}
 	req.ChecklistItemID = strings.TrimSpace(req.ChecklistItemID)
 	if req.ChecklistItemID == "" {
-		return nil, fmt.Errorf("checklist_item_id is required")
+		return nil, errCommandInput("checklist_item_id is required")
 	}
 	if req.Text == nil && req.Completed == nil && req.Position == nil && req.AssigneeID == nil && req.DueDate == nil {
-		return nil, fmt.Errorf("at least one editable field is required")
+		return nil, errCommandInput("at least one editable field is required")
 	}
 	item, err := s.checklistService.repo.GetByID(ctx, req.ChecklistItemID)
 	if err != nil {
 		return nil, err
 	}
 	if item == nil {
-		return nil, fmt.Errorf("checklist item not found")
+		return nil, errCommandNotFound("checklist item")
 	}
 	explicitTaskID := strings.TrimSpace(req.TaskID)
 	if explicitTaskID != "" && explicitTaskID != item.TaskID {
@@ -1029,11 +1029,11 @@ func (s *InternalCommandService) executeAddPMComment(ctx context.Context, meta m
 	}
 	entityType := strings.ToLower(strings.TrimSpace(req.EntityType))
 	targetType := normalizeCommandBarTargetType(meta.TargetType)
-	if entityType == "" && targetType != "workspace" {
+	if entityType == "" && !isWorkspaceCommandTarget(targetType) {
 		entityType = targetType
 	}
 	if entityType != "task" && entityType != "epic" && entityType != "sprint" && entityType != "objective" {
-		return nil, fmt.Errorf("entity_type must be task, epic, sprint, or objective")
+		return nil, errCommandInput("entity_type must be task, epic, sprint, or objective")
 	}
 	if err := validatePMCommentTarget(meta, entityType); err != nil {
 		return nil, err
@@ -1047,7 +1047,7 @@ func (s *InternalCommandService) executeAddPMComment(ctx context.Context, meta m
 	}
 	content := strings.TrimSpace(req.Content)
 	if content == "" {
-		return nil, fmt.Errorf("content is required")
+		return nil, errCommandInput("content is required")
 	}
 	if normalized := normalizeTaskDescriptionRichText(&content); normalized != nil {
 		content = *normalized
@@ -1091,14 +1091,14 @@ func (s *InternalCommandService) executeUpdatePMTaskState(ctx context.Context, m
 		return nil, err
 	}
 	if detail.Task.WorkspaceID != meta.WorkspaceID {
-		return nil, fmt.Errorf("task not found")
+		return nil, errCommandNotFound("task")
 	}
 	if err := s.validateTaskWithinTarget(ctx, meta, &detail.Task); err != nil {
 		return nil, err
 	}
 	stateID := strings.TrimSpace(req.StateID)
 	if stateID == "" {
-		return nil, fmt.Errorf("state_id is required")
+		return nil, errCommandInput("state_id is required")
 	}
 	updated, err := s.taskService.MoveToState(ctx, taskID, model.MoveTaskRequest{StateID: stateID, Position: req.Position}, fallbackActor(meta))
 	if err != nil {
@@ -1121,7 +1121,7 @@ func (s *InternalCommandService) executeSetPMTaskDependencies(ctx context.Contex
 		return nil, fmt.Errorf("parse dependency input: %w", err)
 	}
 	if len(req.Dependencies) == 0 || len(req.Dependencies) > 100 {
-		return nil, fmt.Errorf("dependencies must contain between 1 and 100 items")
+		return nil, errCommandInput("dependencies must contain between 1 and 100 items")
 	}
 	type pair struct{ sourceID, targetID string }
 	pending := make([]pair, 0, len(req.Dependencies))
@@ -1129,7 +1129,7 @@ func (s *InternalCommandService) executeSetPMTaskDependencies(ctx context.Contex
 		sourceID := strings.TrimSpace(dependency.SourceTaskID)
 		targetID := strings.TrimSpace(dependency.TargetTaskID)
 		if sourceID == "" || targetID == "" || sourceID == targetID {
-			return nil, fmt.Errorf("source_task_id and target_task_id must be distinct task IDs")
+			return nil, errCommandInput("source_task_id and target_task_id must be distinct task IDs")
 		}
 		for _, taskID := range []string{sourceID, targetID} {
 			task, err := s.taskRepo.GetRawByID(ctx, taskID)
@@ -1137,7 +1137,7 @@ func (s *InternalCommandService) executeSetPMTaskDependencies(ctx context.Contex
 				return nil, err
 			}
 			if task == nil || task.WorkspaceID != meta.WorkspaceID || requireTeamAccess(ctx, task.TeamID) != nil {
-				return nil, fmt.Errorf("tasks must belong to the current workspace and be accessible")
+				return nil, &CommandError{Kind: CommandErrorNotFound, Message: "tasks must belong to the current workspace and be accessible"}
 			}
 			if err := s.validateTaskWithinTarget(ctx, meta, task); err != nil {
 				return nil, err
@@ -1157,7 +1157,7 @@ func (s *InternalCommandService) executeSetPMTaskDependencies(ctx context.Contex
 		graph[dependency.sourceID] = append(graph[dependency.sourceID], dependency.targetID)
 	}
 	if taskDependencyGraphHasCycle(graph) {
-		return nil, fmt.Errorf("task dependencies contain a cycle")
+		return nil, errCommandInput("task dependencies contain a cycle")
 	}
 	if err := s.taskLinkRepo.WithTransaction(ctx, func(links *repository.PMTaskLinkRepository) error {
 		for _, dependency := range pending {
@@ -1180,7 +1180,7 @@ func resolveCommandParentAssociation(meta model.InternalCommandContext, explicit
 	}
 	targetID := strings.TrimSpace(meta.TargetID)
 	if explicit != "" && explicit != targetID {
-		return "", fmt.Errorf("%s_id conflicts with the current %s target", entityType, entityType)
+		return "", errCommandInput("%s_id conflicts with the current %s target", entityType, entityType)
 	}
 	return targetID, nil
 }
@@ -1190,20 +1190,27 @@ func validateCommandParentUpdate(meta model.InternalCommandContext, entityType s
 		return nil
 	}
 	if strings.TrimSpace(*explicit) != strings.TrimSpace(meta.TargetID) {
-		return fmt.Errorf("%s_id conflicts with the current %s target", entityType, entityType)
+		return errCommandInput("%s_id conflicts with the current %s target", entityType, entityType)
 	}
 	return nil
 }
 
 func validatePMCommentTarget(meta model.InternalCommandContext, entityType string) error {
 	targetType := normalizeCommandBarTargetType(meta.TargetType)
-	if targetType == "workspace" || entityType == targetType {
+	if isWorkspaceCommandTarget(targetType) || entityType == targetType {
 		return nil
 	}
 	if entityType == "task" && (targetType == "epic" || targetType == "sprint") {
 		return nil
 	}
-	return fmt.Errorf("entity_type conflicts with the current %s target", targetType)
+	return errCommandInput("entity_type conflicts with the current %s target", targetType)
+}
+
+// isWorkspaceCommandTarget reports whether a normalized command target is
+// workspace-wide. Public MCP and API calls carry no run target at all, which
+// is equivalent to a workspace target: nothing narrows the entity choice.
+func isWorkspaceCommandTarget(targetType string) bool {
+	return targetType == "" || targetType == "workspace"
 }
 
 // resolveCommandEntityID defaults an entity ID from a matching run target and
@@ -1214,14 +1221,14 @@ func resolveCommandEntityID(meta model.InternalCommandContext, explicit, entityT
 	if targetType == entityType {
 		targetID := strings.TrimSpace(meta.TargetID)
 		if explicit != "" && explicit != targetID {
-			return "", fmt.Errorf("%s_id conflicts with the current %s target", entityType, entityType)
+			return "", errCommandInput("%s_id conflicts with the current %s target", entityType, entityType)
 		}
 		if explicit == "" {
 			explicit = targetID
 		}
 	}
 	if explicit == "" {
-		return "", fmt.Errorf("%s_id is required", entityType)
+		return "", errCommandInput("%s_id is required", entityType)
 	}
 	return explicit, nil
 }
@@ -1236,7 +1243,7 @@ func (s *InternalCommandService) resolveWritableCommandTask(ctx context.Context,
 		return nil, err
 	}
 	if detail.Task.WorkspaceID != meta.WorkspaceID {
-		return nil, fmt.Errorf("task not found")
+		return nil, errCommandNotFound("task")
 	}
 	if err := s.validateTaskWithinTarget(ctx, meta, &detail.Task); err != nil {
 		return nil, err
@@ -1246,7 +1253,7 @@ func (s *InternalCommandService) resolveWritableCommandTask(ctx context.Context,
 
 func (s *InternalCommandService) validateTaskWithinTarget(_ context.Context, meta model.InternalCommandContext, task *model.PMTask) error {
 	if task == nil {
-		return fmt.Errorf("task not found")
+		return errCommandNotFound("task")
 	}
 	if err := requireCommandAgentTeam(meta, task.TeamID); err != nil {
 		return err
@@ -1254,15 +1261,15 @@ func (s *InternalCommandService) validateTaskWithinTarget(_ context.Context, met
 	switch normalizeCommandBarTargetType(meta.TargetType) {
 	case "task":
 		if task.ID != strings.TrimSpace(meta.TargetID) {
-			return fmt.Errorf("task does not belong to the current task target")
+			return errCommandInput("task does not belong to the current task target")
 		}
 	case "epic":
 		if task.EpicID == nil || strings.TrimSpace(*task.EpicID) != strings.TrimSpace(meta.TargetID) {
-			return fmt.Errorf("task does not belong to the current epic target")
+			return errCommandInput("task does not belong to the current epic target")
 		}
 	case "sprint":
 		if task.SprintID == nil || strings.TrimSpace(*task.SprintID) != strings.TrimSpace(meta.TargetID) {
-			return fmt.Errorf("task does not belong to the current sprint target")
+			return errCommandInput("task does not belong to the current sprint target")
 		}
 	}
 	return nil
@@ -1272,7 +1279,7 @@ func (s *InternalCommandService) validateCommandAgentParentScope(ctx context.Con
 	if epicID != "" && s.epicService != nil {
 		e, err := s.epicService.GetByID(ctx, epicID)
 		if err != nil || e == nil || e.Epic.WorkspaceID != meta.WorkspaceID {
-			return fmt.Errorf("epic not found")
+			return errCommandNotFound("epic")
 		}
 		if err := requireCommandAgentTeam(meta, e.Epic.TeamID); err != nil {
 			return err
@@ -1281,7 +1288,7 @@ func (s *InternalCommandService) validateCommandAgentParentScope(ctx context.Con
 	if sprintID != "" && s.sprintService != nil {
 		s, err := s.sprintService.GetByID(ctx, sprintID)
 		if err != nil || s == nil || s.Sprint.WorkspaceID != meta.WorkspaceID {
-			return fmt.Errorf("sprint not found")
+			return errCommandNotFound("sprint")
 		}
 		if err := requireCommandAgentTeam(meta, s.Sprint.TeamID); err != nil {
 			return err
@@ -1377,7 +1384,7 @@ func parseStrictPMCommandDate(value, field string, allowEmpty bool) (*time.Time,
 	}
 	parsed, err := time.Parse("2006-01-02", value)
 	if err != nil || parsed.Format("2006-01-02") != value {
-		return nil, fmt.Errorf("%s must be YYYY-MM-DD", field)
+		return nil, errCommandInput("%s must be YYYY-MM-DD", field)
 	}
 	return &parsed, nil
 }
@@ -1421,7 +1428,7 @@ func (s *InternalCommandService) validateChecklistAssignee(ctx context.Context, 
 		return nil
 	}
 	if assignee == "" {
-		return fmt.Errorf("assignee_id must not be empty")
+		return errCommandInput("assignee_id must not be empty")
 	}
 	if s.workspaceRepo == nil {
 		return fmt.Errorf("workspace repository is not configured")
@@ -1431,7 +1438,7 @@ func (s *InternalCommandService) validateChecklistAssignee(ctx context.Context, 
 		return err
 	}
 	if membership == nil {
-		return fmt.Errorf("assignee_id does not belong to the current workspace")
+		return errCommandInput("assignee_id does not belong to the current workspace")
 	}
 	return nil
 }
@@ -1444,7 +1451,7 @@ func (s *InternalCommandService) validatePMCommentEntity(ctx context.Context, me
 		}
 		detail, err := s.taskService.GetByID(ctx, entityID)
 		if err != nil || detail.Task.WorkspaceID != meta.WorkspaceID {
-			return fmt.Errorf("task not found")
+			return errCommandNotFound("task")
 		}
 		return s.validateTaskWithinTarget(ctx, meta, &detail.Task)
 	case "epic":
@@ -1453,7 +1460,7 @@ func (s *InternalCommandService) validatePMCommentEntity(ctx context.Context, me
 		}
 		epic, err := s.epicService.GetByID(ctx, entityID)
 		if err != nil || epic.Epic.WorkspaceID != meta.WorkspaceID {
-			return fmt.Errorf("epic not found")
+			return errCommandNotFound("epic")
 		}
 		if err := requireCommandAgentTeam(meta, epic.Epic.TeamID); err != nil {
 			return err
@@ -1464,7 +1471,7 @@ func (s *InternalCommandService) validatePMCommentEntity(ctx context.Context, me
 		}
 		sprint, err := s.sprintService.GetByID(ctx, entityID)
 		if err != nil || sprint.Sprint.WorkspaceID != meta.WorkspaceID {
-			return fmt.Errorf("sprint not found")
+			return errCommandNotFound("sprint")
 		}
 		if err := requireCommandAgentTeam(meta, sprint.Sprint.TeamID); err != nil {
 			return err
@@ -1475,7 +1482,7 @@ func (s *InternalCommandService) validatePMCommentEntity(ctx context.Context, me
 		}
 		objective, err := s.objectiveService.GetByID(ctx, entityID, meta.WorkspaceID)
 		if err != nil {
-			return fmt.Errorf("objective not found")
+			return errCommandNotFound("objective")
 		}
 		if err := requireCommandAgentTeams(meta, objective.Teams); err != nil {
 			return err

@@ -283,3 +283,20 @@ func TestSupportFollowUpDoesNotHideLiveChat(t *testing.T) {
 		t.Fatal("started an unnecessary additional chat")
 	}
 }
+
+func TestSupportFollowUpRejectsEmailThreads(t *testing.T) {
+	svc, db, run, e, d := setupFollowUpTest(t)
+	mustExec(t, db, `UPDATE support_conversations SET channel='email',source='email' WHERE id='conv'`)
+	status, err := svc.Complete(context.Background(), run, e.ID, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status != "suppressed" {
+		t.Fatalf("status=%q, want suppressed", status)
+	}
+	var count int64
+	db.Model(&model.SupportMessage{}).Where("id != 'source'").Count(&count)
+	if count != 0 {
+		t.Fatalf("email followup sent %d messages", count)
+	}
+}

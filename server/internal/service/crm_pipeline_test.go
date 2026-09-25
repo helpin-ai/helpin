@@ -36,7 +36,7 @@ func setupCRMPipelineTest(t *testing.T) (*CRMDealService, *gorm.DB, *model.CRMPi
 		`CREATE TABLE workspaces (id TEXT PRIMARY KEY)`,
 		`INSERT INTO workspaces VALUES ('ws')`,
 		`CREATE TABLE crm_pipelines (id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))), workspace_id TEXT NOT NULL, name TEXT NOT NULL, is_default BOOLEAN NOT NULL DEFAULT false, default_commercial_motion TEXT DEFAULT 'new_business', position INTEGER DEFAULT 0, created_at DATETIME, updated_at DATETIME)`,
-		`CREATE TABLE crm_pipeline_stages (id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))), pipeline_id TEXT NOT NULL REFERENCES crm_pipelines(id), name TEXT NOT NULL, stage_type TEXT NOT NULL, position INTEGER, probability INTEGER, created_at DATETIME, updated_at DATETIME)`,
+		`CREATE TABLE crm_pipeline_stages (color TEXT NOT NULL DEFAULT '#788596', id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))), pipeline_id TEXT NOT NULL REFERENCES crm_pipelines(id), name TEXT NOT NULL, stage_type TEXT NOT NULL, position INTEGER, probability INTEGER, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE crm_deals (id TEXT PRIMARY KEY, pipeline_id TEXT NOT NULL REFERENCES crm_pipelines(id), stage_id TEXT NOT NULL REFERENCES crm_pipeline_stages(id), probability INTEGER, updated_at DATETIME)`,
 	} {
 		if err := db.Exec(sql).Error; err != nil {
@@ -327,5 +327,50 @@ func TestExistingBusinessPipelineValueRoundTrips(t *testing.T) {
 		if !validCRMDealCommercialMotion(value) {
 			t.Errorf("rejected supported deal type %s", value)
 		}
+	}
+}
+
+func TestPipelineStageColorsPersistAndSurviveLegacyEdits(t *testing.T) {
+	svc, db, pipeline := setupCRMPipelineTest(t)
+	payload := pipelineRequest(t, pipeline, nil)
+	encoded, _ := json.Marshal(payload)
+	var raw map[string]interface{}
+	if err := json.Unmarshal(encoded, &raw); err != nil {
+		t.Fatal(err)
+	}
+	raw["stages"].([]interface{})[0].(map[string]interface{})["color"] = "#b44ec9"
+	encoded, _ = json.Marshal(raw)
+	if err := json.Unmarshal(encoded, &payload); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := svc.UpdatePipeline(context.Background(), pipeline.ID, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var color string
+	db.Table("crm_pipeline_stages").Select("color").Where("id = ?", "a").Scan(&color)
+	if color != "#b44ec9" {
+		t.Fatalf("color not saved: %q", color)
+	}
+	// A client that sends stage edits without color must preserve stored customization.
+	raw["stages"].([]interface{})[0].(map[string]interface{})["name"] = "Discovery"
+	for _, stage := range raw["stages"].([]interface{}) {
+		delete(stage.(map[string]interface{}), "color")
+	}
+	encoded, _ = json.Marshal(raw)
+	payload = model.UpdateCRMPipelineRequest{}
+	json.Unmarshal(encoded, &payload)
+	if _, err = svc.UpdatePipeline(context.Background(), updated.ID, payload); err != nil {
+		t.Fatal(err)
+	}
+	db.Table("crm_pipeline_stages").Select("color").Where("id = ?", "a").Scan(&color)
+	if color != "#b44ec9" {
+		t.Fatal("legacy edit erased color")
+	}
+	raw["stages"].([]interface{})[0].(map[string]interface{})["color"] = "invalid"
+	encoded, _ = json.Marshal(raw)
+	json.Unmarshal(encoded, &payload)
+	if _, err = svc.UpdatePipeline(context.Background(), updated.ID, payload); err == nil {
+		t.Fatal("accepted invalid color")
 	}
 }

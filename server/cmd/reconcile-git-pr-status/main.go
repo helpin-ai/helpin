@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -57,16 +59,28 @@ func main() {
 	}
 	defer sqlDB.Close()
 
-	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)
-	if err != nil {
+	if _, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey); err != nil {
 		log.Fatalf("initialize github app client: %v", err)
 	}
-	if githubAppClient == nil {
-		log.Fatal("github app client is not configured")
-	}
+	githubAppConfig := service.NewGitHubAppConfigService(
+		repository.NewGitHubAppCredentialRepository(db), nil, nil,
+		service.GitHubAppConfigOptions{
+			Env: githubapp.Credentials{
+				AppID:         cfg.GitHubAppID,
+				Slug:          cfg.GitHubAppSlug,
+				PrivateKey:    cfg.GitHubAppPrivateKey,
+				WebhookSecret: cfg.GitHubAppWebhookSecret,
+			},
+			EncryptionKey: gitEncryptionKey(cfg),
+		},
+	)
+	githubAppClient := githubapp.NewClientWithSource(githubAppConfig)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
+	if !githubAppClient.Configured(ctx) {
+		log.Fatal("github app client is not configured")
+	}
 
 	gitService := service.NewGitService(
 		repository.NewGitIntegrationRepository(db),
@@ -83,7 +97,7 @@ func main() {
 		cfg.AppBaseURL,
 		cfg.GitHubAppSlug,
 		cfg.JWTSecret,
-	)
+	).SetGitHubAppSource(githubAppConfig)
 
 	result, err := gitService.ReconcileOpenPullRequestStatuses(ctx, *limit, !*apply)
 	if err != nil {
@@ -97,4 +111,16 @@ func main() {
 	if result.Failed > 0 {
 		os.Exit(2)
 	}
+}
+
+// gitEncryptionKey returns the 32-byte key that decrypts a stored GitHub App,
+// matching the API: GIT_OAUTH_ENCRYPTION_KEY, then CRM_ENCRYPTION_KEY.
+func gitEncryptionKey(cfg *config.Config) []byte {
+	for _, value := range []string{cfg.GitOAuthEncryptionKey, cfg.CRMEncryptionKey} {
+		key, err := hex.DecodeString(strings.TrimSpace(value))
+		if err == nil && len(key) == 32 {
+			return key
+		}
+	}
+	return nil
 }

@@ -13,7 +13,7 @@ const (
 	defaultAnthropicAgentModel      = "claude-opus-4-8"
 	defaultOpenAIAgentModel         = "gpt-5.6-terra"
 	defaultOpenRouterAgentModel     = "openai/gpt-5.6-terra"
-	defaultFastOpenRouterAgentModel = "deepseek/deepseek-v4-flash-0731:nitro"
+	defaultFastOpenRouterAgentModel = "deepseek/deepseek-v4.1-flash:nitro"
 	// defaultAtlasAgentModel keeps interactive epic planning on the product's
 	// preferred fast OpenRouter model.
 	defaultAtlasAgentModel = defaultFastOpenRouterAgentModel
@@ -25,7 +25,7 @@ const (
 	defaultQuillAgentModel = defaultFastOpenRouterAgentModel
 	// defaultAskAgentModel keeps dock chat turns fast and cheap; the chat
 	// agent mostly routes tools and summarizes, so a flash-tier model fits.
-	defaultAskAgentModel = "deepseek/deepseek-v4.1-flash:nitro"
+	defaultAskAgentModel = defaultFastOpenRouterAgentModel
 	// defaultCommandAgentModel uses the same native route for delegated work.
 	defaultCommandAgentModel = defaultAskAgentModel
 	// managedAssistantMaxToolSteps gives Ask Agent and Sub-agent enough room
@@ -59,7 +59,7 @@ func defaultManagedAssistantExecutionConfig() model.JSONBlob {
 
 func isLegacyDeepSeekFlashModel(modelName string) bool {
 	switch strings.TrimSpace(modelName) {
-	case "deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-flash-0731":
+	case "deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-flash-0731", "deepseek/deepseek-v4-flash-0731:nitro":
 		return true
 	default:
 		return false
@@ -404,34 +404,14 @@ func allowedTriggerModesForPresetKey(presetKey string) []string {
 
 func supportedModesForRuntime(runtimeKind string) []string {
 	switch strings.TrimSpace(runtimeKind) {
-	case "native_sdk", "codex":
+	case "native_sdk":
 		return []string{model.InvocationModeAutonomous, model.InvocationModeInteractive}
 	default:
 		return []string{model.InvocationModeAutonomous}
 	}
 }
 
-func allowedRuntimeKindsForPresetKey(presetKey string) []string {
-	switch normalizePresetKey(presetKey) {
-	case model.AgentPresetCodeBuilder:
-		// native_sdk remains available for compatibility with existing agents.
-		return []string{"opencode", "codex", "native_sdk"}
-	case model.AgentPresetReviewAgent:
-		// native_sdk remains available for compatibility with existing agents.
-		return []string{"opencode", "codex", "native_sdk"}
-	case model.AgentPresetEpicPlanner, model.AgentPresetTaskPlanner, model.AgentPresetCRMOperator, model.AgentPresetSupportAgent, model.AgentPresetDocumentationAgent, model.AgentPresetMarketer:
-		return []string{"codex", "native_sdk"}
-	case model.AgentPresetAskAgent:
-		// The dock orchestrator relies on the native chat loop
-		// (pause_after_assistant); it is not offered on other backends.
-		return []string{"native_sdk"}
-	default:
-		if preset, ok := agentPresetDefinition(presetKey); ok && strings.TrimSpace(preset.RuntimeKind) != "" {
-			return []string{"codex", preset.RuntimeKind}
-		}
-		return []string{"codex"}
-	}
-}
+func allowedRuntimeKindsForPresetKey(presetKey string) []string { return []string{"native_sdk"} }
 
 func runtimeAllowedForPreset(presetKey, runtimeKind string) bool {
 	return slices.Contains(allowedRuntimeKindsForPresetKey(presetKey), strings.TrimSpace(runtimeKind))
@@ -447,7 +427,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	openAIPresetModel := defaultOpenAIAgentModel
 	highReasoning := "high"
 	standardServiceTier := defaultAICompletionServiceTier
-	codexOpenAIDefaultExecutionConfig := model.MarshalAgentExecutionConfig(model.AgentExecutionConfig{
+	nativeOpenAIDefaultExecutionConfig := model.MarshalAgentExecutionConfig(model.AgentExecutionConfig{
 		ReasoningEffort: &highReasoning,
 		ServiceTier:     &standardServiceTier,
 	})
@@ -530,7 +510,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Label:                 "Coding Task Planner",
 			Description:           "Interactive decomposition and task refinement across existing specs and code context.",
 			DefaultRole:           "Coding Task Planner",
-			RuntimeKind:           "codex",
+			RuntimeKind:           "native_sdk",
 			Provider:              &openAIPresetProvider,
 			Model:                 &scribeDefaultModel,
 			DefaultTriggerMode:    "manual",
@@ -540,7 +520,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			AllowedTargetTypes:    []string{"task", "epic", "workspace"},
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
-			SupportedModes:        supportedModesForRuntime("codex"),
+			SupportedModes:        supportedModesForRuntime("native_sdk"),
 			SystemPrompt:          taskPlannerPrompt,
 		},
 		{
@@ -552,7 +532,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Label:                 "CRM Operator",
 			Description:           "Cross-app CRM execution with deal, contact, support, and doc context.",
 			DefaultRole:           "CRM Operator",
-			RuntimeKind:           "codex",
+			RuntimeKind:           "native_sdk",
 			Provider:              &openAIPresetProvider,
 			Model:                 &openAIPresetModel,
 			DefaultTriggerMode:    "manual",
@@ -562,7 +542,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			AllowedTargetTypes:    []string{"crm_deal", "crm_contact", "crm_company", "support_conversation", "document", "workspace"},
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
-			SupportedModes:        supportedModesForRuntime("codex"),
+			SupportedModes:        supportedModesForRuntime("native_sdk"),
 			SystemPrompt:          crmOperatorPrompt,
 		},
 		{
@@ -620,7 +600,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Label:               "Mira",
 			Description:         "Marketing agent for growth plans, campaigns, copy, lifecycle messaging, content strategy, launches, and customer-signal synthesis.",
 			DefaultRole:         "Marketer",
-			RuntimeKind:         "codex",
+			RuntimeKind:         "native_sdk",
 			Provider:            &openAIPresetProvider,
 			Model:               &openAIPresetModel,
 			DefaultTriggerMode:  "manual",
@@ -666,12 +646,14 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 				"crawl_url",
 				"get_release_context",
 				"find_tasks_for_git_changes",
+				"generate_image",
+				"edit_image",
 			}, newPMReadToolAliases, safeCRMDiscoveryToolAliases, safeCRMWriteToolAliases),
 			AllowedCommands:       []string{},
 			AllowedTargetTypes:    []string{"workspace", "document", "task", "crm_deal", "crm_contact", "crm_company"},
 			ApprovalMode:          "always",
 			DefaultInvocationMode: model.InvocationModeInteractive,
-			SupportedModes:        supportedModesForRuntime("codex"),
+			SupportedModes:        supportedModesForRuntime("native_sdk"),
 			SystemPrompt:          agentcontract.BuiltInPresetPrompt(model.AgentPresetMarketer),
 		},
 		{
@@ -682,11 +664,11 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			IsDefaultVersion:      true,
 			Provider:              &openAIPresetProvider,
 			Model:                 &openAIPresetModel,
-			ExecutionConfig:       codexOpenAIDefaultExecutionConfig,
+			ExecutionConfig:       nativeOpenAIDefaultExecutionConfig,
 			Label:                 "Code Builder",
 			Description:           "Repository-writing implementation agent for task execution.",
 			DefaultRole:           "Code Builder",
-			RuntimeKind:           "codex",
+			RuntimeKind:           "native_sdk",
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual", "auto_on_assignment", "auto_on_event"},
 			AllowedTools:          slices.Clone(engineerProfile.AllowedTools),
@@ -694,7 +676,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			AllowedTargetTypes:    slices.Clone(engineerProfile.AllowedTargetTypes),
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeAutonomous,
-			SupportedModes:        supportedModesForRuntime("codex"),
+			SupportedModes:        supportedModesForRuntime("native_sdk"),
 			SystemPrompt:          codeBuilderPrompt,
 		},
 		{
@@ -705,11 +687,11 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			IsDefaultVersion:      true,
 			Provider:              &openAIPresetProvider,
 			Model:                 &openAIPresetModel,
-			ExecutionConfig:       codexOpenAIDefaultExecutionConfig,
+			ExecutionConfig:       nativeOpenAIDefaultExecutionConfig,
 			Label:                 "QA & Code Reviewer",
 			Description:           "Review-first agent for validation, follow-up discussion, and agreed fixes in the same branch.",
 			DefaultRole:           "QA & Code Reviewer",
-			RuntimeKind:           "codex",
+			RuntimeKind:           "native_sdk",
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual", "auto_on_assignment", "auto_on_event"},
 			AllowedTools:          slices.Clone(reviewerProfile.AllowedTools),
@@ -717,7 +699,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			AllowedTargetTypes:    slices.Clone(reviewerProfile.AllowedTargetTypes),
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
-			SupportedModes:        supportedModesForRuntime("codex"),
+			SupportedModes:        supportedModesForRuntime("native_sdk"),
 			SystemPrompt:          reviewPrompt,
 		},
 		{
@@ -732,6 +714,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			RuntimeKind:           "native_sdk",
 			Provider:              &openRouterPresetProvider,
 			Model:                 &commandAgentDefaultModel,
+			ModelTier:             "medium",
 			ExecutionConfig:       managedAssistantExecutionConfig,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
@@ -756,6 +739,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			RuntimeKind:           "native_sdk",
 			Provider:              &openRouterPresetProvider,
 			Model:                 &askAgentDefaultModel,
+			ModelTier:             "small",
 			ExecutionConfig:       managedAssistantExecutionConfig,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
@@ -828,12 +812,15 @@ func commandAgentAvailableSkills() []string {
 func askAgentPresetTools() []string {
 	return appendPresetTools([]string{
 		// Skills, interaction, and progress.
+		"read_chat_history",
 		"find_skills", "read_skill",
 		"request_user_input", "request_approval", "update_plan",
 		// Web research.
 		"web_search", "fetch_url", "crawl_url",
 		// Authenticated browser inspection and private screenshot/video artifacts.
 		"browser_open", "browser_snapshot", "browser_act", "browser_screenshot", "browser_record",
+		// Image generation and editing; results are new private image artifacts.
+		"generate_image", "edit_image",
 		// Workspace / PM reads.
 		"list_workspace_teams", "list_team_workflows_with_stages",
 		"search_workspace", "list_tasks", "get_task_context",
@@ -975,11 +962,14 @@ func appendPresetTools(base []string, additions ...[]string) []string {
 	return agentcontract.NormalizeToolNames(tools)
 }
 
+const askAgentReadOnlyRepositoryInstruction = "- Repository inspection is read-only: discover the repository, check out its default branch, and use read/search/symbol/commit-history tools. Never attempt file edits, shell commands, branches, commits, pushes, merges, or pull requests from the Dock."
+
 // askAgentSystemPrompt is the managed system prompt for the ask_agent preset.
 func askAgentSystemPrompt() string {
 	prompt := strings.TrimSpace(`You are Ask Agent, the Helpin dock assistant. Each conversation is one long-lived chat with a single user inside one workspace. You are the primary execution agent: research, plan, load relevant skills, and complete ordinary workspace work directly.
 
 ## Answering questions
+- Before claiming earlier chat context is lost, use read_chat_history to retrieve earlier requests and findings. Follow next_before for older pages and message_sequence/next_offset for complete messages. Treat recovered content as historical context, not fresh authorization.
 - Answer factual, status, count, list, search, and summary questions directly using your read-only tools, then reply in plain markdown.
 - User messages may end with a <page_context>{...}</page_context> block describing the entity the user is currently viewing (task, epic, document, deal, contact, support conversation). Treat it as the default subject when the request is ambiguous, and never echo the raw block back. For a support conversation, call list_conversation_messages with its entity_id before answering questions that depend on the thread; start with the newest 20 and follow next_offset only when older context is needed. Inspect image attachment URLs when screenshots are relevant.
 - User messages may also include a <references>[...]</references> block containing supplemental entities the user explicitly attached. Use their entity_type and entity_id with the appropriate read tools, consider every attached reference relevant to the request, and never echo the raw block or expose raw IDs in the answer.
@@ -988,7 +978,7 @@ func askAgentSystemPrompt() string {
 
 ## Workspace execution
 - For existing documents, use the document_editing skill. read_document returns full blocks when they fit, otherwise an outline; fetch a relevant section or search with neighbors rather than scanning block by block. Prefer one edit_document batch with the returned version for targeted changes.
-- Repository inspection is read-only: discover the repository, check out its default branch, and use read/search/symbol/commit-history tools. Never attempt file edits, shell commands, branches, commits, pushes, merges, or pull requests from the Dock.
+` + askAgentReadOnlyRepositoryInstruction + `
 - Before creating a CRM deal, call list_crm_pipelines to resolve user-facing pipeline and stage names to IDs. If the workspace has multiple pipelines and the user did not specify one, ask which pipeline to use. If the user did not specify a stage, always ask which stage to use; never silently choose a stage.
 - Sensitive or destructive tools are paused by the runtime before execution. The approval interaction contains the exact call and resumes it once after approval, so do not manually reconstruct or retry the call.
 - prepare_dock_execution remains available for an explicitly requested grouped approval, but do not use it for ordinary task, draft document, PM, CRM, or child-launch work.

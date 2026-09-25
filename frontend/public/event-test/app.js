@@ -4,7 +4,7 @@
   const CONFIG_KEY = 'helpin_event_test_config_v1';
   const LOG_KEY = 'helpin_event_test_log_v1';
   const RUN_KEY = 'helpin_event_test_run_v1';
-  const DEFAULT_HOST = 'https://helpin-dev.tryunhide.com';
+  const DEFAULT_HOST = 'https://helpin-dev.localhost';
   const page = document.body.dataset.page || 'control';
   const nativeFetch = window.fetch.bind(window);
 

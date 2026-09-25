@@ -25,7 +25,7 @@ func TestRuntimeSummaryMarkerPreservesSettledUsage(t *testing.T) {
 			if err := repo.Create(ctx, run); err != nil {
 				t.Fatal(err)
 			}
-			before, err := parseRunUsageWatermark(run.OutputSummary)
+			before, err := ParseRunUsageWatermark(run.OutputSummary)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -41,7 +41,7 @@ func TestRuntimeSummaryMarkerPreservesSettledUsage(t *testing.T) {
 			if err := db.Model(&model.AgentRun{}).Where("id = ?", run.ID).Take(&row).Error; err != nil {
 				t.Fatal(err)
 			}
-			after, err := parseRunUsageWatermark(json.RawMessage(row.OutputSummary))
+			after, err := ParseRunUsageWatermark(json.RawMessage(row.OutputSummary))
 			if err != nil {
 				t.Fatal(err)
 			}

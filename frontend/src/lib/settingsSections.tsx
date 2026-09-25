@@ -1,9 +1,15 @@
+import { systemStatusEnabled } from '@edition/config';
+import { billingSettingsSections } from '@edition/settings';
 import type { FC, CSSProperties } from 'react';
-import type { Permission } from '@/lib/types';
+import type { Permission, WorkspaceModule } from '@/lib/types';
+import { workspaceSurface } from './workspaceSurface';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   UserIcon,
-  Settings02Icon,
+  Building03Icon,
+  CreditCardIcon,
+  PlugSocketIcon,
+  SourceCodeIcon,
   Notification02Icon,
   Settings01Icon,
   UserGroupIcon,
@@ -27,6 +33,10 @@ import {
   Shield01Icon,
   Shield02Icon,
   Globe02Icon,
+  Key01Icon,
+  AiNetworkIcon,
+  DashboardSpeed01Icon,
+  ServerStack01Icon,
 } from '@hugeicons/core-free-icons';
 
 export type IconComponent = FC<{ className?: string; style?: CSSProperties }>;
@@ -42,8 +52,9 @@ function hi(icon: HugeIconData): IconComponent {
 
 const Profile = hi(UserIcon);
 const Security = hi(Shield02Icon);
-const Account = hi(Settings02Icon);
-const Billing = Account;
+const Account = hi(Building03Icon);
+const Billing = hi(CreditCardIcon);
+const Repositories = hi(SourceCodeIcon);
 const Notifications = hi(Notification02Icon);
 const General = hi(Settings01Icon);
 const Members = hi(UserGroupIcon);
@@ -65,14 +76,21 @@ const Autonomy = hi(SlidersHorizontalIcon);
 const ChatWidget = hi(BubbleChatIcon);
 const InboxesRouting = hi(Route01Icon);
 const Access = hi(Shield01Icon);
-const MCP = hi(Robot01Icon);
+const MCP = hi(PlugSocketIcon);
 const ExternalMCP = hi(Globe02Icon);
+const AIConnections = hi(Key01Icon);
+const WorkspaceAI = hi(AiNetworkIcon);
+const SystemStatus = hi(DashboardSpeed01Icon);
+const Server = hi(ServerStack01Icon);
 
 export type SettingsSection =
+  | 'ai'
   | 'general'
   | 'members'
   | 'teams'
   | 'access'
+  | 'system-status'
+  | 'server'
   | 'mcp'
   | 'external-mcp'
   | 'billing'
@@ -92,10 +110,11 @@ export type SettingsSection =
   | 'crm-meetings'
   | 'crm-autonomy'
   | 'support-ai-assistant'
+  | 'support-translation'
   | 'chat-general'
   | 'inboxes-routing';
 
-export type SettingsRouteSection = SettingsSection | 'profile' | 'security' | 'notifications' | 'account' | 'git-connections';
+export type SettingsRouteSection = SettingsSection | 'ai-connections' | 'profile' | 'security' | 'notifications' | 'account' | 'git-connections';
 
 export type SettingsSectionMeta<T extends SettingsRouteSection = SettingsRouteSection> = {
   id: T;
@@ -106,124 +125,183 @@ export type SettingsSectionMeta<T extends SettingsRouteSection = SettingsRouteSe
   requiresManageSettings?: boolean;
   requiredPermission?: Permission;
   sidebar?: boolean;
+  keywords?: string[];
+  scope?: 'organization';
+  options?: { id: string; label: string; keywords?: string[] }[];
 };
 
-export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
+export const SETTINGS_TOP_LEVEL_GROUPS = new Set(['Billing']);
+const SETTINGS_GROUP_LABELS = ['Billing', 'Personal', 'Organization', 'Workspace', 'Server', 'AI & knowledge', 'Integrations & data', 'Projects', 'Support', 'CRM'];
+const SETTINGS_GROUP_ICONS: Record<string, IconComponent> = {
+  Personal: Profile,
+  Organization: Members,
+  Workspace: General,
+  Server,
+  'AI & knowledge': WorkspaceAI,
+  'Integrations & data': ExternalMCP,
+  Projects: Pipelines,
+  Support: ChatWidget,
+  CRM: Autonomy,
+};
+export const SETTINGS_HOME_LABEL = 'Settings home';
+export const SETTINGS_SIDEBAR_GROUP_LABELS: Record<string, string> = {
+  'Integrations & data': 'Integration',
+};
+
+/** Settings → System status: the server-level capability checks and application email, for server admins. */
+const SYSTEM_STATUS_SECTION:SettingsSectionMeta<'system-status'> = {
+  id: 'system-status',
+  keywords: ['server', 'health', 'doctor', 'object storage', 'background workers', 'smtp', 'email', 'github app', 'ai provider'],
+  label: 'System status',
+  description: 'Check the services this server provides to every workspace.',
+  icon: SystemStatus,
+  group: 'Server',
+  requiredPermission: 'server.admin',
+};
+
+/** Settings → Server: who can sign up and who administers this server, for server admins. */
+const SERVER_SECTION: SettingsSectionMeta<'server'> = {
+  id: 'server',
+  keywords: ['signup', 'sign up', 'registration', 'invite only', 'email domains', 'server admins', 'administrators'],
+  label: 'Signup & admins',
+  description: 'Choose who can create an account on this server and who administers it.',
+  icon: Server,
+  group: 'Server',
+  requiredPermission: 'server.admin',
+};
+
+const allSettingsSections: SettingsSectionMeta[] = [
   {
     id: 'profile',
+    keywords: ["name", "avatar", "photo", "timezone"],
     label: 'Profile',
-    description: '',
+    description: "Your name, avatar, and personal details.",
     icon: Profile,
     group: 'Personal',
   },
   {
-    id: 'security',
-    label: 'Security',
-    description: '',
-    icon: Security,
-    group: 'Personal',
-  },
-  {
     id: 'notifications',
+    keywords: ["alerts", "email notifications", "desktop", "push"],
     label: 'Notifications',
-    description: '',
+    description: "Choose when and how Helpin notifies you.",
     icon: Notifications,
     group: 'Personal',
   },
   {
+    id: 'security',
+    keywords: ["password", "login", "authentication", "2fa"],
+    label: 'Security',
+    description: "Password and account security.",
+    icon: Security,
+    group: 'Personal',
+  },
+  {
     id: 'account',
-    label: 'Organization',
-    description: '',
+    scope: 'organization',
+    keywords: ["organization name"],
+    label: 'Organization details',
+    description: "Organization details and preferences.",
     icon: Account,
     group: 'Organization',
   },
   {
     id: 'git-connections',
-    label: 'Git Connections',
+    scope: 'organization',
+    label: 'Git connections',
     description: 'Manage organization-level GitHub and GitLab provider connections.',
     icon: Delivery,
     group: 'Organization',
   },
   {
     id: 'general',
+    keywords: ["workspace name", "logo", "timezone"],
     label: 'General',
-    description: '',
+    description: "Workspace name and preferences.",
     icon: General,
     group: 'Workspace',
   },
   {
-    id: 'billing',
-    label: 'Billing',
-    description: 'Manage this workspace plan, AI usage, payment methods, and invoices.',
-    icon: Billing,
-    group: 'Workspace',
-  },
-  {
     id: 'members',
+    keywords: ["invite teammate", "invite user", "remove member", "roles"],
     label: 'Members',
-    description: '',
+    description: "Invite people and manage workspace membership.",
     icon: Members,
     group: 'Workspace',
   },
   {
     id: 'teams',
+    keywords: ["team membership", "team settings"],
     label: 'Teams',
-    description: '',
+    description: "Organize people into teams.",
     icon: Teams,
     group: 'Workspace',
   },
   {
     id: 'access',
-    label: 'Module Access',
+    label: 'Module access',
     description: 'Grant CRM and Support access by team or by direct workspace member exception.',
     icon: Access,
     group: 'Workspace',
     requiredPermission: 'module_access.manage',
+  },
+  // Server services on a Community install; platform-managed on other editions.
+  ...(systemStatusEnabled ? [SYSTEM_STATUS_SECTION, SERVER_SECTION] : []),
+  ...billingSettingsSections(Billing).map(section => ({ ...section, group: 'Billing', keywords: ['invoices', 'payment', 'subscription', 'plan', 'usage', 'credits'] })),
+  {
+    id: 'ai-connections',
+    sidebar: false,
+    label: 'Personal AI setup',
+    description: 'Your API keys and ChatGPT login, plus the profiles that use them.',
+    icon: AIConnections,
+    group: 'AI & knowledge',
+    requiredPermission: 'workspace.read',
+  },
+  {
+    id: 'ai',
+    label: 'AI setup',
+    description: 'Workspace and personal AI connections, profiles, and the workspace default.',
+    keywords: ['personal AI', 'workspace AI', 'API keys', 'ChatGPT', 'models', 'profiles'],
+    icon: WorkspaceAI,
+    group: 'AI & knowledge',
+    requiredPermission: 'workspace.read',
+  },
+  {
+    id: 'knowledge',
+    label: 'Knowledge sources',
+    description: 'Manage help center docs and website content sources used across AI experiences.',
+    icon: Knowledge,
+    group: 'AI & knowledge',
+  },
+  {
+    id: 'repositories',
+    label: 'Repositories',
+    description: 'Choose which synced Git repositories are available to this workspace.',
+    icon: Repositories,
+    group: 'Integrations & data',
+  },
+  {
+    id: 'external-mcp',
+    label: 'External tools (MCP)',
+    description: 'Connect remote MCP servers and choose which tools Helpin agents may use.',
+    icon: ExternalMCP,
+    group: 'Integrations & data',
+    requiredPermission: 'settings.read',
   },
   {
     id: 'mcp',
     label: 'MCP access',
     description: 'Connect outside MCP clients to Helpin and control their workspace access.',
     icon: MCP,
-    group: 'Workspace',
+    group: 'Integrations & data',
     requiredPermission: 'workspace.read',
   },
   {
-    id: 'external-mcp',
-    label: 'External MCP',
-    description: 'Connect remote MCP servers and choose which tools Helpin agents may use.',
-    icon: ExternalMCP,
-    group: 'Workspace',
-    requiredPermission: 'settings.read',
-  },
-  {
-    id: 'repositories',
-    label: 'Repositories',
-    description: 'Choose which synced Git repositories are available to this workspace.',
-    icon: Delivery,
-    group: 'Workspace',
-  },
-  {
-    id: 'knowledge',
-    label: 'Knowledge',
-    description: 'Manage help center docs and website content sources used across AI experiences.',
-    icon: Knowledge,
-    group: 'Workspace',
-  },
-  {
-    id: 'workflows',
-    label: 'Workflows',
-    description: 'Manage workflows, pipeline rules, and workspace-level Git provider event rules.',
-    icon: Workflows,
-    group: 'Projects',
-    sidebar: false,
-  },
-  {
-    id: 'delivery',
-    label: 'Delivery',
-    description: 'Configure project delivery repositories, branches, and team defaults.',
-    icon: Delivery,
-    group: 'Projects',
+    id: 'import',
+    keywords: ["csv", "export", "migrate"],
+    label: 'Import & export',
+    description: 'Import data from Shortcut and other project management tools.',
+    icon: ImportExport,
+    group: 'Integrations & data',
   },
   {
     id: 'labels',
@@ -234,49 +312,76 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
   },
   {
     id: 'task-templates',
-    label: 'Templates',
+    label: 'Task templates',
     description: 'Define reusable templates for quick task creation.',
     icon: TaskTemplates,
     group: 'Projects',
   },
   {
     id: 'recurring-tasks',
-    label: 'Recurring Tasks',
+    label: 'Recurring tasks',
     description: 'Manage recurring work templates, schedules, failures, and generated tasks.',
     icon: RecurringTasks,
     group: 'Projects',
   },
   {
     id: 'automations',
+    keywords: ["rules", "triggers"],
     label: 'Automations',
-    description: '',
+    description: "Configure rules for recurring actions.",
     icon: Automations,
     group: 'Projects',
   },
   {
-    id: 'support-ai-assistant',
-    label: 'AI Assistant',
-    description: 'Configure how support AI replies, drafts internal notes, and hands conversations to humans.',
-    icon: Automations,
-    group: 'Support',
+    id: 'delivery',
+    label: 'Delivery',
+    description: 'Configure project delivery repositories, branches, and team defaults.',
+    icon: Delivery,
+    group: 'Projects',
+  },
+  {
+    id: 'workflows',
+    label: 'Workflows',
+    description: 'Manage workflows, pipeline rules, and workspace-level Git provider event rules.',
+    icon: Workflows,
+    group: 'Projects',
+    sidebar: false,
   },
   {
     id: 'inboxes-routing',
-    label: 'Inboxes & Routing',
+    label: 'Inboxes & routing',
     description: 'Manage team inboxes, email forwarding, and AI conversation routing.',
     icon: InboxesRouting,
     group: 'Support',
   },
   {
     id: 'chat-general',
-    label: 'Chat Widget',
+    label: 'Chat widget',
     description: 'Widget installation, availability, identity capture, and appearance.',
     icon: ChatWidget,
     group: 'Support',
   },
   {
+    id: 'support-ai-assistant',
+    label: 'AI assistant',
+    description: 'Configure how support AI replies, drafts internal notes, and hands conversations to humans.',
+    icon: Automations,
+    group: 'Support',
+  },
+  {
+    id: 'support-translation',
+    label: 'Live Translate',
+    description: 'Choose the reading language and Live Translate default for new support conversations.',
+    keywords: ['auto translate', 'live translation', 'languages'],
+    icon: ExternalMCP,
+    group: 'Support',
+    requiredPermission: 'support.admin',
+  },
+  {
     id: 'helpcenter',
-    label: 'Help Center',
+    options: [{"id": "helpcenter-domain", "label": "Domain & SEO", "keywords": ["custom domain", "website address", "url", "seo"]}],
+    keywords: ["custom domain", "branding", "seo", "languages"],
+    label: 'Help center',
     description: 'Configure your public help center branding, domain, and SEO.',
     icon: HelpCenter,
     group: 'Support',
@@ -289,41 +394,39 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     group: 'Support',
   },
   {
+    id: 'crm-email',
+    options: [{"id": "email-signature", "label": "Email signature", "keywords": ["signature", "footer"]}, {"id": "email-sending-limits", "label": "Sending limits", "keywords": ["daily limit", "sending limit", "quota", "capacity", "pacing"]}, {"id": "email-sync", "label": "Sync preferences", "keywords": ["email history", "address filters", "blocklist", "allowlist"]}, {"id": "email-calendar", "label": "Calendar events", "keywords": ["private meetings", "solo meetings", "calendar sync"]}, {"id": "email-contacts", "label": "Contact creation", "keywords": ["automatic contacts", "blocked prefixes", "noreply"]}],
+    keywords: ["gmail", "email sync", "mailbox", "outlook"],
+    label: 'Email & calendar',
+    description: 'Connected accounts, sending limits, and sync preferences.',
+    icon: EmailAccounts,
+    group: 'CRM',
+  },
+  {
     id: 'crm-pipelines',
-    label: 'Deal Pipelines',
+    keywords: ["deal stages", "sales pipeline"],
+    label: 'Deal pipelines',
     description: 'Configure deal pipelines and stages.',
     icon: Pipelines,
     group: 'CRM',
   },
   {
-    id: 'crm-email',
-    label: 'Email Sync',
-    description: 'Connect Gmail to sync conversations and detect CRM signals.',
-    icon: EmailAccounts,
-    group: 'CRM',
-  },
-  {
     id: 'crm-meetings',
-    label: 'Meeting Notes',
+    label: 'Meeting notes',
     description: 'Choose how Helpin joins calls, takes notes, and saves recordings.',
     icon: Meetings,
     group: 'CRM',
   },
   {
     id: 'crm-autonomy',
-    label: 'Deal Automation',
+    label: 'Deal automation',
     description: 'Configure self-driving deal automation thresholds.',
     icon: Autonomy,
     group: 'CRM',
   },
-  {
-    id: 'import',
-    label: 'Import & Export',
-    description: 'Import data from Shortcut and other project management tools.',
-    icon: ImportExport,
-    group: 'Data',
-  },
 ];
+
+export const SETTINGS_ROUTE_SECTIONS = allSettingsSections;
 
 export const SETTINGS_SECTIONS = SETTINGS_ROUTE_SECTIONS.filter(
   (section): section is SettingsSectionMeta<SettingsSection> =>
@@ -351,13 +454,18 @@ export function buildSettingsRoutePath(workspaceSlug: string, section: SettingsR
 
 export type SettingsSidebarGroup = {
   label: string;
+  icon?: IconComponent;
   sections: SettingsSectionMeta[];
 };
 
-export function getSettingsSidebarGroups(canManageSettings: boolean, permissionSet?: Set<string>): SettingsSidebarGroup[] {
+export function getSettingsSidebarGroups(canManageSettings: boolean, permissionSet?: Set<string>, modules?: readonly WorkspaceModule[]): SettingsSidebarGroup[] {
   const groups: SettingsSidebarGroup[] = [];
 
   for (const section of SETTINGS_ROUTE_SECTIONS) {
+    const module = workspaceSurface(buildSettingsRoutePath('workspace', section.id));
+    if (modules && module && !modules.includes(module)) {
+      continue;
+    }
     if (section.requiresManageSettings && !canManageSettings) {
       continue;
     }
@@ -374,8 +482,8 @@ export function getSettingsSidebarGroups(canManageSettings: boolean, permissionS
       continue;
     }
 
-    groups.push({ label: section.group, sections: [section] });
+    groups.push({ label: section.group, icon: SETTINGS_GROUP_ICONS[section.group], sections: [section] });
   }
 
-  return groups;
+  return groups.sort((a, b) => SETTINGS_GROUP_LABELS.indexOf(a.label) - SETTINGS_GROUP_LABELS.indexOf(b.label));
 }

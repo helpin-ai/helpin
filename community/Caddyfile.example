@@ -1,0 +1,24 @@
+# Run this proxy on the same host as the loopback-bound Compose ingress.
+# Replace all example hostnames, set the corresponding .env public URLs,
+# and point their A/AAAA records at this host before starting Caddy.
+# Persist Caddy's data directory so certificate keys/renewals survive restarts.
+inbox.example.com {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8085
+}
+widget.example.com {
+    encode zstd gzip
+    @visitor path /widget/* /sdk/*
+    handle @visitor {
+        reverse_proxy 127.0.0.1:8085
+    }
+    handle { respond "Not found" 404 }
+}
+help.example.com {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8086
+}
+files.example.com {
+    # Preserve Host: S3 presigned URL signatures cover it.
+    reverse_proxy 127.0.0.1:9005
+}

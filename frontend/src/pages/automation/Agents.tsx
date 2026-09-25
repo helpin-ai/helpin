@@ -1,4 +1,6 @@
+import type { AIConnectionSelection } from '@/lib/services/aiConnectionService';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { CodingCapacityNotice } from '@/components/agents/CodingCapacityNotice';
 import { useNavigate } from '@tanstack/react-router';
 import { Collapsible } from 'radix-ui';
 import { formatDistanceToNow } from 'date-fns';
@@ -26,7 +28,7 @@ import {
   SecurityCheckIcon,
 } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
-import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
+import { UpgradeRequiredDialog } from '@edition';
 import { AutomationShell } from '@/components/automation/AutomationShell';
 import { ToolMultiSelectPopover } from '@/components/automation/ToolMultiSelectPopover';
 import { QuietEmptyState, QuietIconAction, QuietPrimaryAction } from '@/components/design-system/quiet';
@@ -50,9 +52,10 @@ import { AGENT_APPROVAL_OPTIONS, agentApprovalDescription } from '@/lib/agentApp
 import { buildAutomationActivityPath, buildAutomationFlowsPath } from '@/lib/automationUi';
 import { getAgentTokenUsageTotal } from '@/lib/agentTokenUsage';
 import { CRM_AGENT_TARGET_OPTIONS } from '@/lib/agentCRMTargets';
-import { AGENT_MODEL_TIER_OPTIONS, agentModelTierLabel } from '@/lib/agentModelTier';
+import { AIProfileLabel } from '@/components/agents/AIProfileLabel';
+import { AIProfilePicker } from '@/components/agents/AIProfilePicker';
 import { buildSettingsRoutePath } from '@/lib/settingsSections';
-import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@edition/errors';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from '@/components/pm/agentRunConstants';
 import type {
   Agent,
@@ -188,7 +191,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     label: 'Epic Planner',
     default_role: 'Epic Planner',
     description: 'Interactive product planning for epics, PRDs, docs, and tasks.',
-    runtime_kind: 'codex',
+    runtime_kind: 'native_sdk',
     default_invocation_mode: 'interactive',
     supported_modes: ['autonomous', 'interactive'],
   },
@@ -197,7 +200,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     label: 'Coding Task Planner',
     default_role: 'Coding Task Planner',
     description: 'Interactive decomposition and refinement for tasks and execution plans.',
-    runtime_kind: 'codex',
+    runtime_kind: 'native_sdk',
     default_invocation_mode: 'interactive',
     supported_modes: ['autonomous', 'interactive'],
   },
@@ -206,7 +209,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     label: 'Beacon',
     default_role: 'CRM Operator',
     description: 'Cross-app CRM execution across deals, contacts, docs, and support context.',
-    runtime_kind: 'codex',
+    runtime_kind: 'native_sdk',
     default_invocation_mode: 'interactive',
     supported_modes: ['autonomous', 'interactive'],
   },
@@ -215,7 +218,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     label: 'Support Agent',
     default_role: 'Support Agent',
     description: 'Handles support conversations and drafts replies with review controls.',
-    runtime_kind: 'codex',
+    runtime_kind: 'native_sdk',
     default_invocation_mode: 'autonomous',
     supported_modes: ['autonomous', 'interactive'],
   },
@@ -224,7 +227,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     label: 'Quill',
     default_role: 'Documentation Agent',
     description: 'Keeps internal docs, public help docs, and API docs accurate and organized.',
-    runtime_kind: 'codex',
+    runtime_kind: 'native_sdk',
     default_invocation_mode: 'interactive',
     supported_modes: ['autonomous', 'interactive'],
   },
@@ -242,7 +245,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     label: 'Code Builder',
     default_role: 'Code Builder',
     description: 'Writes code, implements features, and fixes bugs in the repo.',
-    runtime_kind: 'codex',
+    runtime_kind: 'native_sdk',
     default_invocation_mode: 'autonomous',
     supported_modes: ['autonomous', 'interactive'],
   },
@@ -251,16 +254,25 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     label: 'QA & Code Reviewer',
     default_role: 'QA & Code Reviewer',
     description: 'Reviews work, runs tests, and checks quality without repo mutation.',
-    runtime_kind: 'codex',
+    runtime_kind: 'native_sdk',
     default_invocation_mode: 'autonomous',
     supported_modes: ['autonomous', 'interactive'],
+  },
+  ask_agent: {
+    ...DEFAULT_PRESET_MODEL,
+    label: 'Ask Agent',
+    default_role: 'Workspace Assistant',
+    description: 'Answers questions and carries out work from workspace chat.',
+    runtime_kind: 'native_sdk',
+    default_invocation_mode: 'interactive',
+    supported_modes: ['interactive'],
   },
   command_agent: {
     ...DEFAULT_PRESET_MODEL,
     label: 'Sub-agent',
     default_role: 'Sub-agent',
     description: 'Runs one delegated task with a limited tool set.',
-    runtime_kind: 'codex',
+    runtime_kind: 'native_sdk',
     default_invocation_mode: 'autonomous',
     supported_modes: ['autonomous', 'interactive'],
   },
@@ -271,7 +283,7 @@ const PRESET_FALLBACK_DEFAULT: (typeof PRESET_FALLBACKS)[AgentPresetKey] = {
   label: 'Agent',
   default_role: 'Automation Agent',
   description: '',
-  runtime_kind: 'codex',
+  runtime_kind: 'native_sdk',
   default_invocation_mode: 'autonomous',
   supported_modes: ['autonomous', 'interactive'],
 };
@@ -412,6 +424,8 @@ type SecurityTriageSeverity = typeof SECURITY_TRIAGE_SEVERITY_OPTIONS[number]['v
 // ---------------------------------------------------------------------------
 
 interface AgentFormData {
+  ai_profile_id?: string;
+  native_context?: AgentExecutionConfig['native_context'];
   name: string;
   icon_key: AgentIconKey;
   preset_key: AgentPresetKey;
@@ -511,26 +525,20 @@ const RUN_NOW_SUPPORTED_TARGETS = new Set<AgentTargetType>([
 ]);
 
 function normalizeProviderForRuntime(
-  runtimeKind: AgentRuntimeKind,
+  _runtimeKind: AgentRuntimeKind,
   provider: AgentModelProvider,
 ): AgentModelProvider {
-  if (runtimeKind === 'codex' && provider === 'anthropic') {
-    return 'openai';
-  }
   return provider;
 }
 
 function availableProvidersForRuntime(
-  runtimeKind: AgentRuntimeKind,
+  _runtimeKind: AgentRuntimeKind,
   providerOptions: AgentModelProviderOption[],
 ): AgentModelProviderOption[] {
-  if (runtimeKind !== 'codex') {
-    return providerOptions;
-  }
-  return providerOptions.filter((provider) => provider.value === 'openai' || provider.value === 'openrouter');
+  return providerOptions;
 }
 
-const CODEX_PROVIDER_MISSING_MESSAGE = 'Add OpenAI, OpenRouter, or enable Codex ChatGPT auth.';
+const PROVIDER_MISSING_MESSAGE = 'Configure an OpenAI, OpenRouter, or Anthropic API key.';
 const PROVIDER_REQUIRED_MODEL_MESSAGE = 'Select a compatible AI provider first.';
 
 export function getAgentProviderConfigState(
@@ -548,8 +556,8 @@ export function getAgentProviderConfigState(
     hasCompatibleProvider,
     providerDisabled: !hasCompatibleProvider,
     modelDisabled,
-    providerMessage: !hasCompatibleProvider && runtimeKind === 'codex'
-      ? CODEX_PROVIDER_MISSING_MESSAGE
+    providerMessage: !hasCompatibleProvider
+      ? PROVIDER_MISSING_MESSAGE
       : '',
     modelMessage: modelDisabled ? PROVIDER_REQUIRED_MODEL_MESSAGE : '',
   };
@@ -713,10 +721,10 @@ function deriveExecutionConfigFields(
   runtimeKind: AgentRuntimeKind,
   provider: AgentModelProvider,
   executionConfig?: AgentExecutionConfig,
-): Pick<AgentFormData, 'reasoning_effort' | 'service_tier' | 'max_tool_steps'> {
+): Pick<AgentFormData, 'reasoning_effort' | 'service_tier' | 'max_tool_steps' | 'native_context'> {
   const normalizedProvider = normalizeProviderForRuntime(runtimeKind, provider);
-  const reasoningEffort = runtimeKind === 'codex' ? (executionConfig?.reasoning_effort ?? '') : '';
-  const serviceTier = runtimeKind === 'codex' && normalizedProvider === 'openai'
+  const reasoningEffort = runtimeKind === 'native_sdk' && normalizedProvider !== 'anthropic' ? (executionConfig?.reasoning_effort ?? '') : '';
+  const serviceTier = runtimeKind === 'native_sdk' && normalizedProvider === 'openai'
     ? (executionConfig?.service_tier ?? '')
     : '';
   const maxToolSteps = runtimeKind === 'native_sdk' && executionConfig?.max_tool_steps
@@ -726,13 +734,14 @@ function deriveExecutionConfigFields(
     reasoning_effort: reasoningEffort,
     service_tier: serviceTier,
     max_tool_steps: maxToolSteps,
+    native_context: executionConfig?.native_context,
   };
 }
 
 function buildExecutionConfigPayload(form: AgentFormData): AgentExecutionConfig | undefined {
-  const config: AgentExecutionConfig = {};
-  if (form.runtime_kind === 'codex') {
-    if (form.reasoning_effort) {
+  const config: AgentExecutionConfig = { ...(form.native_context ? { native_context: form.native_context } : {}) };
+  if (form.runtime_kind === 'native_sdk') {
+    if (form.provider !== 'anthropic' && form.reasoning_effort) {
       config.reasoning_effort = form.reasoning_effort;
     }
     if (form.provider === 'openai' && form.service_tier) {
@@ -749,7 +758,7 @@ function buildExecutionConfigPayload(form: AgentFormData): AgentExecutionConfig 
 }
 
 function supportedModesForForm(runtimeKind: AgentRuntimeKind): AgentInvocationMode[] {
-  if (runtimeKind === 'native_sdk' || runtimeKind === 'codex') {
+  if (runtimeKind === 'native_sdk') {
     return ['autonomous', 'interactive'];
   }
   return ['autonomous'];
@@ -802,7 +811,7 @@ function buildUpdatePayload(
   const preset = agent?.is_system ? presetMetaForSelection(form.preset_key, form.preset_version_key, presets) : null;
   const defaultRuntimeKind = agent?.is_system
     ? (preset?.runtime_kind ?? presetFallback(form.preset_key).runtime_kind)
-    : 'codex';
+    : 'native_sdk';
   const provider = normalizeProviderForRuntime(form.runtime_kind, form.provider);
   const teamIds = form.teamAccessMode === 'specific_teams' ? normalizeTeamIdList(form.team_ids) : [];
   const advancedPayload: UpdateAgentRequest = advancedOpen
@@ -819,6 +828,7 @@ function buildUpdatePayload(
   if (agent?.is_system) {
     return {
       name: form.name.trim(),
+      ai_profile_id: form.ai_profile_id || '',
       preset_key: form.preset_key,
       preset_version_key: form.preset_version_key,
       provider: provider || undefined,
@@ -835,7 +845,7 @@ function buildUpdatePayload(
     name: form.name.trim(),
     icon_key: form.icon_key,
     trigger_mode: 'manual',
-    model_tier: form.model_tier,
+    ai_profile_id: form.ai_profile_id || '',
     system_prompt: form.system_prompt.trim() || undefined,
     team_ids: teamIds,
     allowed_tools: normalizeToolList(form.allowed_tools),
@@ -867,6 +877,7 @@ function buildSystemAgentForm(agent: Agent, presets: AgentPresetDefinition[]): A
     preset_key: presetKey,
     preset_version_key: agent.preset_version_key?.trim() || preset?.version_key || fallbackPresetVersionKey(presetKey),
     runtime_kind: agent.runtime_kind || runtimeKind,
+    ai_profile_id: agent.ai_profile_id ?? '',
     model_tier: agent.model_tier ?? preset?.model_tier ?? 'large',
     supported_modes: supportedModes,
     provider,
@@ -899,6 +910,54 @@ function buildSystemAgentForm(agent: Agent, presets: AgentPresetDefinition[]): A
       preset?.default_invocation_mode ?? presetFallback(presetKey).default_invocation_mode,
     ),
   };
+}
+
+export function buildSystemPresetVersionForm(current: AgentFormData, preset: AgentPresetDefinition): AgentFormData {
+  const provider = normalizeProviderForRuntime(
+    preset.runtime_kind,
+    preset.provider ?? presetFallback(current.preset_key).provider ?? current.provider,
+  );
+  return {
+    ...current,
+    preset_version_key: preset.version_key,
+    runtime_kind: preset.runtime_kind,
+    model_tier: preset.model_tier ?? current.model_tier,
+    supported_modes: preset.supported_modes,
+    provider,
+    model: preset.model ?? '',
+    ...deriveExecutionConfigFields(preset.runtime_kind, provider, preset.execution_config),
+    system_prompt: preset.system_prompt || preset.instruction_preamble?.trim() || '',
+    instruction_preamble: preset.instruction_preamble ?? '',
+    instruction_skills: preset.instruction_skills ?? [],
+    available_skill_keys: preset.available_skills ?? [],
+    allowed_tools: normalizeToolList(preset.allowed_tools ?? []),
+    allowed_targets: normalizeTargetList(preset.allowed_target_types ?? []),
+    approval_mode: 'never',
+    default_invocation_mode: normalizeDefaultInvocationMode(
+      preset.default_invocation_mode,
+      preset.runtime_kind,
+      preset.default_invocation_mode,
+    ),
+  };
+}
+
+export function hasWorkspacePresetVersionChanges(form: AgentFormData, preset: AgentPresetDefinition): boolean {
+  return (
+    form.runtime_kind !== preset.runtime_kind ||
+    form.provider !== (preset.provider ?? '') ||
+    form.model.trim() !== (preset.model ?? '') ||
+    stableConfigJSON(buildExecutionConfigPayload(form)) !== stableConfigJSON(buildExecutionConfigPayload({
+      ...form,
+      ...deriveExecutionConfigFields(preset.runtime_kind, form.provider, preset.execution_config),
+    })) ||
+    form.system_prompt.trim() !== (preset.system_prompt || preset.instruction_preamble || '').trim() ||
+    stableJSON(form.instruction_skills) !== stableJSON(preset.instruction_skills ?? []) ||
+    stableJSON(form.available_skill_keys) !== stableJSON(preset.available_skills ?? []) ||
+    stableJSON(normalizeToolList(form.allowed_tools)) !== stableJSON(normalizeToolList(preset.allowed_tools ?? [])) ||
+    stableJSON(normalizeTargetList(form.allowed_targets)) !== stableJSON(normalizeTargetList(preset.allowed_target_types ?? [])) ||
+    stableJSON(form.supported_modes) !== stableJSON(preset.supported_modes) ||
+    form.default_invocation_mode !== preset.default_invocation_mode
+  );
 }
 
 function buildTemplateAgentForm(template: AgentTemplate): AgentFormData {
@@ -942,6 +1001,7 @@ function buildCustomAgentForm(agent: Agent): AgentFormData {
     preset_key: presetKey,
     preset_version_key: fallbackPresetVersionKey(presetKey),
     runtime_kind: runtimeKind,
+    ai_profile_id: agent.ai_profile_id ?? '',
     model_tier: agent.model_tier ?? 'large',
     supported_modes: supportedModesForForm(runtimeKind),
     provider,
@@ -974,6 +1034,7 @@ function buildCustomAgentVersionForm(agent: Agent, version: AgentVersion): Agent
   return {
     ...buildCustomAgentForm(agent),
     runtime_kind: runtimeKind,
+    ai_profile_id: version.ai_profile_id ?? '',
     model_tier: version.model_tier ?? agent.model_tier ?? 'large',
     supported_modes: version.supported_modes?.length ? version.supported_modes : supportedModesForForm(runtimeKind),
     provider,
@@ -997,13 +1058,13 @@ function comparableCustomAgentForm(form: AgentFormData) {
     : [];
   return {
     name: form.name.trim(),
-    model_tier: form.model_tier,
+    ai_profile_id: form.ai_profile_id || '',
     icon_key: form.icon_key,
     runtime_kind: form.runtime_kind,
     provider,
     model: form.model.trim(),
-    reasoning_effort: form.runtime_kind === 'codex' ? form.reasoning_effort : '',
-    service_tier: form.runtime_kind === 'codex' && provider === 'openai' ? form.service_tier : '',
+    reasoning_effort: form.runtime_kind === 'native_sdk' ? form.reasoning_effort : '',
+    service_tier: form.runtime_kind === 'native_sdk' && provider === 'openai' ? form.service_tier : '',
     max_tool_steps: form.runtime_kind === 'native_sdk' ? parseNativeToolStepLimit(form.max_tool_steps) ?? 0 : 0,
     system_prompt: form.system_prompt.trim(),
     monthly_token_budget: normalizeTokenBudgetFormValue(form.monthly_token_budget),
@@ -1982,6 +2043,7 @@ function AgentCard({
             </div>
             <p className="text-xs text-muted-foreground">{role}</p>
             <p className="line-clamp-2 text-sm text-muted-foreground">{purpose}</p>
+            <CodingCapacityNotice agent={agent} />
           </div>
           {canEdit ? (
             <DropdownMenu>
@@ -2035,7 +2097,7 @@ function AgentCard({
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1">
             <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Model size</p>
-            <p className="text-sm text-muted-foreground">{agentModelTierLabel(agent.model_tier)}</p>
+            <p className="text-sm text-muted-foreground"><AIProfileLabel workspaceId={agent.workspace_id} profileId={agent.ai_profile_id} /></p>
           </div>
           <div className="space-y-1">
             <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Mode</p>
@@ -2310,13 +2372,14 @@ export function AgentRow({
               <span className="truncate text-xs text-muted-foreground">{role}</span>
               {agent.is_system ? <Badge variant="outline" className="h-5 px-1.5 text-[10px]">System</Badge> : null}
             </div>
+            <CodingCapacityNotice agent={agent} className="mt-1" />
           </div>
         </div>
       </div>
 
       <div className="min-w-0 space-y-1">
         <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Config</p>
-        <p className="truncate text-sm font-medium text-foreground">{agentModelTierLabel(agent.model_tier)}</p>
+        <p className="truncate text-sm font-medium text-foreground"><AIProfileLabel workspaceId={agent.workspace_id} profileId={agent.ai_profile_id} /></p>
         <p className="truncate text-xs text-muted-foreground">{invocationLabel}</p>
       </div>
 
@@ -2499,6 +2562,8 @@ export function AgentsPage() {
   const [runNowTargetType, setRunNowTargetType] = useState<AgentTargetType | ''>('');
   const [runNowTargetId, setRunNowTargetId] = useState('');
   const [runNowAdditionalContext, setRunNowAdditionalContext] = useState('');
+  const [runNowAIConnection, setRunNowAIConnection] = useState<AIConnectionSelection>({});
+  const [runNowDeliveryMode, setRunNowDeliveryMode] = useState<'publish' | 'preview'>('publish');
   const [runNowBaseBranch, setRunNowBaseBranch] = useState('');
   const [runNowRepositoriesLoading, setRunNowRepositoriesLoading] = useState(false);
   const [runNowSubmitting, setRunNowSubmitting] = useState(false);
@@ -2673,6 +2738,8 @@ export function AgentsPage() {
           : '',
     );
     setRunNowAdditionalContext('');
+    setRunNowDeliveryMode('publish');
+    setRunNowAIConnection({});
     setRunNowBaseBranch(defaultTarget === 'repository' ? (firstRunnableRepo?.default_branch ?? '') : '');
     setRunNowOpen(true);
     if (defaultTarget === 'repository' && !firstRunnableRepo) {
@@ -2711,6 +2778,8 @@ export function AgentsPage() {
       target_type: runNowTargetType,
       target_id: targetId,
       additional_context: runNowAdditionalContext.trim() || undefined,
+      delivery_mode: runNowDeliveryMode,
+      ...runNowAIConnection,
       base_branch: runNowBaseBranch.trim() || undefined,
     });
     setRunNowSubmitting(false);
@@ -2730,6 +2799,8 @@ export function AgentsPage() {
   }, [
     navigate,
     runNowAdditionalContext,
+    runNowDeliveryMode,
+    runNowAIConnection,
     runNowAgent,
     runNowBaseBranch,
     runNowTargetId,
@@ -3181,6 +3252,7 @@ export function AgentsPage() {
           name: form.name.trim(),
           team_id: form.team_id || undefined,
           overrides: {
+            ai_profile_id: form.ai_profile_id || '',
             role: templateDraft.template.default_role,
             icon_key: form.icon_key,
             runtime_kind: form.runtime_kind,
@@ -3241,7 +3313,7 @@ export function AgentsPage() {
         label: versionLabelDraft.trim(),
         description: versionDescriptionDraft.trim() || undefined,
         source_version_id: selectedCustomVersionID || undefined,
-        model_tier: form.model_tier,
+        ai_profile_id: form.ai_profile_id || '',
         system_prompt: form.system_prompt.trim() || undefined,
         skills: form.skills,
         allowed_tools: normalizeToolList(form.allowed_tools),
@@ -3283,16 +3355,9 @@ export function AgentsPage() {
     };
     const res = await agentService.createPresetVersion(workspaceId, payload);
     if (!res.error && res.data) {
+      const savedPreset = res.data;
       await loadPresets();
-      setForm((current) => ({
-        ...current,
-        preset_version_key: res.data?.version_key ?? current.preset_version_key,
-        system_prompt: res.data?.system_prompt || current.system_prompt,
-        instruction_preamble: res.data?.instruction_preamble ?? current.instruction_preamble,
-        instruction_skills: res.data?.instruction_skills ?? current.instruction_skills,
-        available_skill_keys: res.data?.available_skills ?? current.available_skill_keys,
-        allowed_targets: normalizeTargetList(res.data?.allowed_target_types ?? current.allowed_targets),
-      }));
+      setForm((current) => buildSystemPresetVersionForm(current, savedPreset));
       setVersionDraftOpen(false);
       setVersionLabelDraft('');
       setVersionDescriptionDraft('');
@@ -3310,7 +3375,7 @@ export function AgentsPage() {
       const res = await automationService.updateAgentVersion(workspaceId, editingAgent.id, selectedCustomVersion.id, {
         label: selectedCustomVersion.label,
         description: selectedCustomVersion.description,
-        model_tier: form.model_tier,
+        ai_profile_id: form.ai_profile_id || '',
         system_prompt: form.system_prompt.trim() || undefined,
         skills: form.skills,
         allowed_tools: normalizeToolList(form.allowed_tools),
@@ -3359,6 +3424,10 @@ export function AgentsPage() {
       return false;
     }
     await loadPresets();
+    if (res.data) {
+      const savedPreset = res.data;
+      setForm((current) => buildSystemPresetVersionForm(current, savedPreset));
+    }
     if (!options?.silent) {
       toast.success('Version saved');
       setSaving(false);
@@ -3571,19 +3640,9 @@ export function AgentsPage() {
   const versionSystemPromptValue = versionReadOnly
     ? selectedPreset?.system_prompt?.trim() || form.system_prompt
     : form.system_prompt;
-  const hasWorkspaceVersionChanges = Boolean(isEditingWorkspaceVersion && selectedPreset && (
-    form.runtime_kind !== selectedPreset.runtime_kind ||
-    form.provider !== (selectedPreset.provider ?? '') ||
-    form.model.trim() !== (selectedPreset.model ?? '') ||
-    stableConfigJSON(buildExecutionConfigPayload(form)) !== stableConfigJSON(selectedPreset.execution_config) ||
-    form.system_prompt.trim() !== (selectedPreset.system_prompt || selectedPreset.instruction_preamble || '').trim() ||
-    stableJSON(form.instruction_skills) !== stableJSON(selectedPreset.instruction_skills ?? []) ||
-    stableJSON(form.available_skill_keys) !== stableJSON(selectedPreset.available_skills ?? []) ||
-    stableJSON(normalizeToolList(form.allowed_tools)) !== stableJSON(normalizeToolList(selectedPreset.allowed_tools ?? [])) ||
-    stableJSON(normalizeTargetList(form.allowed_targets)) !== stableJSON(normalizeTargetList(selectedPreset.allowed_target_types ?? [])) ||
-    stableJSON(form.supported_modes) !== stableJSON(selectedPreset.supported_modes) ||
-    form.default_invocation_mode !== selectedPreset.default_invocation_mode
-  ));
+  const hasWorkspaceVersionChanges = Boolean(
+    isEditingWorkspaceVersion && selectedPreset && hasWorkspacePresetVersionChanges(form, selectedPreset),
+  );
   const hasCustomVersionChanges = Boolean(isEditingCustomVersion && selectedCustomVersion && (
     form.model_tier !== (selectedCustomVersion.model_tier ?? editingAgent?.model_tier ?? 'large') ||
     form.system_prompt.trim() !== (selectedCustomVersion.system_prompt ?? '') ||
@@ -3795,34 +3854,10 @@ export function AgentsPage() {
     if (!editingAgent?.is_system) return;
     const nextPreset = presetMetaForSelection(form.preset_key, versionKey, presets);
     if (!nextPreset) return;
-    const nextProvider = normalizeProviderForRuntime(
-      nextPreset.runtime_kind,
-      nextPreset.provider ?? presetFallback(form.preset_key).provider ?? form.provider,
-    );
     setVersionDraftOpen(false);
     setVersionLabelDraft('');
     setVersionDescriptionDraft('');
-    setForm((current) => ({
-      ...current,
-      preset_version_key: nextPreset.version_key,
-      runtime_kind: nextPreset.runtime_kind,
-      supported_modes: nextPreset.supported_modes,
-      provider: nextProvider,
-      model: nextPreset.model ?? '',
-      ...deriveExecutionConfigFields(nextPreset.runtime_kind, nextProvider, nextPreset.execution_config),
-      system_prompt: nextPreset.system_prompt || nextPreset.instruction_preamble?.trim() || '',
-      instruction_preamble: nextPreset.instruction_preamble ?? '',
-      instruction_skills: nextPreset.instruction_skills ?? [],
-      available_skill_keys: nextPreset.available_skills ?? [],
-      allowed_tools: normalizeToolList(nextPreset.allowed_tools ?? []),
-      allowed_targets: normalizeTargetList(nextPreset.allowed_target_types ?? []),
-      approval_mode: 'never',
-      default_invocation_mode: normalizeDefaultInvocationMode(
-        nextPreset.default_invocation_mode,
-        nextPreset.runtime_kind,
-        nextPreset.default_invocation_mode,
-      ),
-    }));
+    setForm((current) => buildSystemPresetVersionForm(current, nextPreset));
   };
   const selectCustomAgentVersion = (versionID: string) => {
     if (!editingAgent || editingAgent.is_system) return;
@@ -4366,8 +4401,8 @@ export function AgentsPage() {
                   </div>
                   <dl className="grid grid-cols-2 divide-x divide-y divide-border/40 border-t border-border/40 bg-muted/20 sm:grid-cols-5">
                     <div className="space-y-1 p-3">
-                      <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Model size</dt>
-                      <dd className="truncate text-sm font-medium">{agentModelTierLabel(form.model_tier)}</dd>
+                      <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">AI profile</dt>
+                      <dd className="truncate text-sm font-medium"><AIProfileLabel workspaceId={workspaceId} profileId={form.ai_profile_id} /></dd>
                     </div>
                     <div className="space-y-1 p-3">
                       <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Mode</dt>
@@ -4737,43 +4772,18 @@ export function AgentsPage() {
                     </Collapsible.Content>
                   </Collapsible.Root>
 
-                  {/* 03 — Execution */}
-                  <Collapsible.Root defaultOpen={false} className="rounded-xl border border-border/60 bg-card">
-                    <Collapsible.Trigger asChild>
-                      <button type="button" className="group flex w-full items-center gap-3 px-4 py-3 text-left">
-                        <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
-                        <span className="flex-1 text-sm font-medium">Model size</span>
-                        <span className="text-xs text-muted-foreground group-data-[state=open]:hidden">{agentModelTierLabel(form.model_tier)}</span>
-                      </button>
-                    </Collapsible.Trigger>
-                    <Collapsible.Content>
-                      <div className="border-t border-border/60 p-4">
-                        <div className="max-w-lg space-y-2">
-                          <FieldLabel>Model size</FieldLabel>
-                          <Select
-                            value={form.model_tier}
-                            disabled={editingSystemAgent || versionReadOnly}
-                            onValueChange={(value) => setForm((current) => ({ ...current, model_tier: value as AgentModelTier }))}
-                          >
-                            <SelectTrigger className="h-9" aria-label="Model size">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {AGENT_MODEL_TIER_OPTIONS.map((tier) => (
-                                <SelectItem key={tier.value} value={tier.value}>{tier.label}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <p className="text-[11px] leading-relaxed text-muted-foreground">
-                            {AGENT_MODEL_TIER_OPTIONS.find((tier) => tier.value === form.model_tier)?.description}
-                          </p>
-                          {editingSystemAgent ? (
-                            <p className="text-[11px] leading-relaxed text-muted-foreground">Built-in model sizes are managed by Helpin.</p>
-                          ) : null}
-                        </div>
-                      </div>
-                    </Collapsible.Content>
-                  </Collapsible.Root>
+                  <div className="border-t border-quiet-divider-strong py-4">
+                    <AIProfilePicker workspaceId={workspaceId || ""} value={form.ai_profile_id} sharedOnly disabled={saving} onChange={id => {
+                      if (editingSystemAgent && editingAgent && workspaceId) {
+                        setSaving(true);
+                        void automationService.updateAgent(workspaceId, editingAgent.id, { ai_profile_id: id || '' }).then(res => {
+                          if (res.error) toast.error('Unable to update AI profile', { description: res.error });
+                          else { setForm(current => ({ ...current, ai_profile_id: id || '' })); if (res.data) setEditingAgent(res.data); void loadAgents(); }
+                        }).catch(() => toast.error('Unable to update AI profile')).finally(() => setSaving(false));
+                      } else setForm(current => ({ ...current, ai_profile_id: id || '' }));
+                    }} />
+                    <p className="mt-2 text-xs text-quiet-text-secondary">{editingSystemAgent ? 'Changes save immediately for new runs of this agent.' : 'Save this version to apply its AI profile to new runs.'} Accepted runs keep their original selection.</p>
+                  </div>
 
                   </div>
                 </section>
@@ -5646,8 +5656,8 @@ export function AgentsPage() {
                 </div>
                 <dl className="grid grid-cols-2 divide-x divide-y divide-border/40 border-t border-border/40 bg-muted/20 sm:grid-cols-4 lg:grid-cols-8">
                   <div className="space-y-1 p-3">
-                    <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Model size</dt>
-                    <dd className="truncate text-sm font-medium">{agentModelTierLabel(form.model_tier)}</dd>
+                    <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">AI profile</dt>
+                    <dd className="truncate text-sm font-medium"><AIProfileLabel workspaceId={workspaceId} profileId={form.ai_profile_id} /></dd>
                   </div>
                   <div className="space-y-1 p-3">
                     <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Mode</dt>
@@ -6147,23 +6157,7 @@ export function AgentsPage() {
             <div className="rounded-xl border border-border/60 bg-card p-5">
               <div className="grid gap-5 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <FieldLabel tooltip="Templates use a Helpin-managed model size so capability and billing remain predictable.">Model size</FieldLabel>
-                  <Select
-                    value={form.model_tier}
-                    disabled
-                  >
-                    <SelectTrigger className="h-9" aria-label="Model size">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {AGENT_MODEL_TIER_OPTIONS.map((tier) => (
-                        <SelectItem key={tier.value} value={tier.value}>{tier.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-[11px] leading-relaxed text-muted-foreground">
-                    {AGENT_MODEL_TIER_OPTIONS.find((tier) => tier.value === form.model_tier)?.description}
-                  </p>
+                  <AIProfilePicker workspaceId={workspaceId || ""} value={form.ai_profile_id} sharedOnly onChange={id => setForm(current => ({ ...current, ai_profile_id: id || '' }))} />
                 </div>
 
                 <div className="space-y-2">
@@ -6535,6 +6529,10 @@ export function AgentsPage() {
       {runNowOpen ? (
         <Suspense fallback={null}>
           <AgentRunNowDialog
+            aiConnection={runNowAIConnection}
+            onAIConnectionChange={setRunNowAIConnection}
+            deliveryMode={runNowDeliveryMode}
+            onDeliveryModeChange={setRunNowDeliveryMode}
             open
             onOpenChange={(open) => {
               setRunNowOpen(open);

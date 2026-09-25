@@ -4,7 +4,7 @@ import { ArrowDown01Icon, ArrowRight01Icon, BotIcon, Loading01Icon, MessagePrevi
 import { toast } from 'sonner';
 
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
-import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
+import { UpgradeRequiredDialog } from '@edition';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { Badge } from '@/components/ui/badge';
@@ -21,7 +21,7 @@ import type { Agent, AgentRun } from '@/lib/pmTypes';
 import { isAgentAvailableForTarget } from '@/lib/agentAccess';
 import { agentService } from '@/lib/services/agentService';
 import { cn } from '@/lib/utils';
-import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@edition/errors';
 import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
 import { ACTIVE_RUN_STATUSES, STATUS_META, getAgentRunDisplayStatus } from './agentRunConstants';
 import {

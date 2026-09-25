@@ -16,7 +16,7 @@ type CRMImportService struct {
 	companyRepo    *repository.CRMCompanyRepository
 	dealRepo       *repository.CRMDealRepository
 	dealService    *CRMDealService
-	entitlementSvc *EntitlementService
+	entitlementSvc EntitlementPolicy
 }
 
 // SetDealService routes imported deals through the canonical customer workflow.
@@ -40,7 +40,7 @@ func NewCRMImportService(
 	}
 }
 
-func (s *CRMImportService) SetEntitlementService(entitlementSvc *EntitlementService) *CRMImportService {
+func (s *CRMImportService) SetEntitlementService(entitlementSvc EntitlementPolicy) *CRMImportService {
 	s.entitlementSvc = entitlementSvc
 	return s
 }

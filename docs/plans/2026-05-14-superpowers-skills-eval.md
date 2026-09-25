@@ -1,8 +1,49 @@
-# Superpowers Skills — Evaluation & Integration Plan
+# Superpowers skills evaluation and integration plan
 
-**Source:** https://github.com/obra/superpowers (~191K stars, by Jesse Vincent)
+**Historical upstream reference:** https://github.com/obra/superpowers
+(upstream contents, popularity, and license were not reverified in this review).
 **Date:** 2026-05-14
-**Status:** Proposal for review
+**Status:** Historical proposal; source-compared on 2026-09-18.
+
+This document records an earlier proposal for adapting coding-methodology skills.
+Use it to understand the suggested improvements, not as a list of installed
+skills or an approved implementation schedule.
+
+## Current implementation and limits
+
+- The six proposed new directories in the change list below are absent from
+  `server/skills/system/`. Standalone brainstorming is also a proposal, not an
+  installed skill established by this document.
+- The [skill catalog](../../server/internal/agentcontract/skill_catalog.go) aliases
+  older keys: `code_builder` maps to `code_implementation` and `review_agent` to
+  `code_review`. Directory names and public skill keys are not interchangeable.
+- [Code implementation](../../server/skills/system/code_builder/SKILL.md) already
+  requires relevant validation and reporting only checks actually run. The
+  [review skill](../../server/skills/system/review_agent/SKILL.md) also requires
+  targeted validation when possible and explicit outcomes after agreed fixes.
+  The original claim of no explicit verification guidance is outdated.
+- Current catalog composition and [runtime activation](../../server/internal/agentskills/activation.go)
+  distinguish configured skills from active instructions. Adding a Markdown
+  directory alone does not prove every coding agent receives its content.
+- No `customer_visible`/`CustomerVisible` implementation was found in server or
+  frontend Go/TypeScript sources. The flag, picker filter, automatic customer
+  benefit, and one-day estimate below remain proposed work. The current
+  [skill catalog page](../../frontend/src/pages/automation/SkillCatalog.tsx) is a
+  concrete UI entry point to inspect when designing that work.
+- Historical `docs/superpowers/plans/` references refer to material now organized
+  under `docs/plans/`. They do not authorize automatic subagent dispatch, mandatory
+  approval gates, or importing external skills for routine documentation work.
+
+The original recommendations overlap: dispatching parallel agents appears in
+both the adapt and skip groups, and requesting/receiving review are combined.
+Treat the headline adoption totals as historical estimates, not a reconciled
+inventory. The concrete list contains six new directories and four existing
+files to modify. Licensing and nested-agent execution still require their own
+review before any import or implementation; Markdown format does not establish
+permission to reuse content. No upstream import or runtime test was performed.
+
+## Original evaluation
+
 
 ## TL;DR
 
@@ -44,7 +85,7 @@ Helpin already overlaps in 6 places (`code_builder`, `task_planner_context`, `ta
 
 | Superpowers skill | Action |
 |---|---|
-| **dispatching-parallel-agents** | We already have `automation_rule.start_agent_run` and the generic agent runtime per `AGENTS_AND_AUTOMATION.md`. Don't import a skill — instead, write a **Helpin-flavored variant** that maps the upstream pattern to our automation rules + `agent_run` primitive. |
+| **dispatching-parallel-agents** | We already have `automation_rule.start_agent_run` and the generic agent runtime per `agents-and-automation.md`. Don't import a skill — instead, write a **Helpin-flavored variant** that maps the upstream pattern to our automation rules + `agent_run` primitive. |
 | **finishing-a-development-branch** | Upstream presents merge/PR/keep/discard options. In Helpin, "remote delivery is backend-managed after the run succeeds" (from `code_builder`). Adopt only the *verify-tests-clean* prefix, drop the branch-disposition prompts. Fold into `verification_before_completion`. |
 | **writing-skills** | Meta-skill for the *team* building Helpin's skills catalog, not for customer runtime. Keep internal — put under `docs/skills/authoring-guide.md` rather than `server/skills/system/`. |
 
@@ -57,7 +98,7 @@ Helpin already overlaps in 6 places (`code_builder`, `task_planner_context`, `ta
 
 ## Concrete change list to `server/skills/system/`
 
-**Add (3 new directories):**
+**Add (6 proposed new directories):**
 1. `test_driven_development/` — RED-GREEN-REFACTOR cycle, testing anti-patterns reference
 2. `systematic_debugging/` — 4-phase root-cause process
 3. `verification_before_completion/` — explicit verify gate before declaring done
@@ -65,7 +106,7 @@ Helpin already overlaps in 6 places (`code_builder`, `task_planner_context`, `ta
 5. `authoring_for_code_review/` — pre-review checklist + responding to feedback
 6. `subagent_driven_development/` — batched subagent dispatch + two-stage review
 
-**Modify (3 existing):**
+**Modify (4 existing files):**
 - `code_builder/SKILL.md` — reference TDD, verification, subagent-driven-development; expand from 7 bullets to actual methodology
 - `review_agent/SKILL.md` — reference `authoring_for_code_review` for the symmetric author-side guidance
 - `task_planner_context/SKILL.md` — borrow brainstorming's HARD-GATE language and Socratic framing
@@ -77,7 +118,7 @@ Helpin already overlaps in 6 places (`code_builder`, `task_planner_context`, `ta
 
 ## How to make these available to customers
 
-Helpin's `AGENTS_AND_AUTOMATION.md` already states custom agents are `native_sdk`, generic, and built by composing skills. Two distinct surfaces:
+Helpin's `agents-and-automation.md` already states custom agents are `native_sdk`, generic, and built by composing skills. Two distinct surfaces:
 
 ### Transparent benefit (no customer action needed)
 
@@ -138,7 +179,7 @@ This is a ~1-day backend change plus a tiny frontend filter. No new product surf
 
 ## Open questions for you
 
-- **Subagent dispatch in worker**: does the current worker actually launch nested agent runs, or is this still "planned" per `AGENTS_AND_AUTOMATION.md`? `subagent_driven_development` lands hollow without the primitive.
+- **Subagent dispatch in worker**: does the current worker actually launch nested agent runs, or is this still "planned" per `agents-and-automation.md`? `subagent_driven_development` lands hollow without the primitive.
 - **Customer-visible skills picker**: confirm the custom-agent UI is the right surface, or should these go through a marketplace-style flow?
-- **Licensing**: Superpowers is on GitHub but I haven't confirmed the license. Skills are markdown — usually permissive — but confirm before bulk import.
+- **Licensing**: Superpowers is on GitHub but I haven't confirmed the license. Confirm the applicable license and attribution obligations before any bulk import.
 - **Branding**: keep using "superpowers" as the directory name (consistent with existing `docs/superpowers/`) or rebrand to Helpin terminology?

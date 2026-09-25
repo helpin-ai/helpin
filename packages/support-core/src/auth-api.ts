@@ -5,6 +5,7 @@ export interface ApiResponse<T> {
   error: string | null
   status?: number
   isNetworkError?: boolean
+  isMissingRoute?: boolean
 }
 
 interface ApiClientOptions {
@@ -41,10 +42,6 @@ function mergeJsonHeaders(token: string | null, headers?: HeadersInit): HeadersI
     'Content-Type': 'application/json',
     ...mergeAuthHeaders(token, headers),
   }
-}
-
-async function parseError(response: Response): Promise<{ error: string }> {
-  return response.json().catch(() => ({ error: response.statusText }))
 }
 
 function shouldAttemptAuthRefresh(path: string): boolean {
@@ -146,8 +143,19 @@ async function request<T>(
     )
 
     if (!response.ok) {
-      const errorPayload = await parseError(response)
-      return { data: null, error: errorPayload.error || response.statusText, status: response.status }
+      // Chi's unmatched route response is plain text. Preserve that signal so
+      // callers can use an older endpoint without retrying a request that ran.
+      const body = await response.text()
+      let errorPayload: { error?: string } = {}
+      try { errorPayload = JSON.parse(body) } catch { /* Plain-text error. */ }
+      const isMissingRoute = (response.status === 404 && body.trim() === '404 page not found')
+        || (response.status === 405 && body.trim() === 'Method Not Allowed')
+      return {
+        data: null,
+        error: errorPayload?.error || response.statusText || `Request failed (HTTP ${response.status})`,
+        status: response.status,
+        isMissingRoute,
+      }
     }
 
     if (response.status === 204) {

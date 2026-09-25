@@ -6,7 +6,7 @@
 #   localStorage.getItem('access_token')
 #
 # Example:
-#   ./scripts/seed-support-conversations.sh http://91.98.85.12:8080 "eyJhbG..."
+#   ./scripts/seed-support-conversations.sh http://localhost:8080 "eyJhbG..."
 
 set -e
 

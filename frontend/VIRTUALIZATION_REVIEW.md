@@ -1,5 +1,33 @@
 # Virtualization Review: Table Components
 
+> Historical implementation review. Its component names, line numbers, and bug
+> claims describe an older table implementation. Current CRM tables use
+> `useTableSurface`, and memoized row components are present; `StoryListView`
+> has been replaced by `TaskListView`. Reproduce a performance issue against the
+> current component before treating a recommendation below as an open defect.
+
+
+## Current source comparison (2026-09-17)
+
+The nested scrollers described below are absent from the four current table
+components. Each attaches `tableSurfaceRef` to its `TABLE_CONTAINER`; the shared
+[useTableSurface hook](src/hooks/useTableSurface.ts) assigns that same element to
+`parentRef`, which the virtualizer uses as its scroll element. Header and virtual
+body now share that container. The old inner `calc(100% - 30px)` wrapper is gone.
+
+The shared hook also clips rows and cells behind pinned headers/columns, schedules
+geometry updates with `requestAnimationFrame`, and cleans up observers/listeners.
+Its existence is not a browser-performance or visual-correctness guarantee.
+[TaskListView](src/components/pm/TaskListView.tsx) uses a separate
+[sticky group overlay](src/components/pm/StickyPinnedGroupOverlay.tsx).
+
+[Shared styles](src/lib/tableStyles.ts) still specify 36px row/group heights;
+`TABLE_CONTAINER` now also includes background styling. Overscan and row
+memoization differ from the old review; see the
+[current performance comparison](TABLE_PERF_ANALYSIS.md#current-source-comparison-2026-09-17).
+No current bug reproduction or browser benchmark is claimed here. The historical
+fix sketch below is not a drop-in patch for the present components.
+
 ## Shared Constants (`src/lib/tableStyles.ts`)
 
 - `TABLE_CONTAINER = 'min-h-0 flex-1 overflow-auto'` -- this IS a scroll container (overflow-auto)

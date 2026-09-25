@@ -1,8 +1,46 @@
-# PRD — Reply Delivery Card
+# Reply delivery card requirements
 
 **Date:** 2026-04-15
-**Status:** Draft, pending scope confirmation
-**Related plans:** `docs/plans/2026-04-15-reply-delivery-card-plan.md` (implementation)
+**Status:** Historical proposal; not implemented in the inspected source (2026-09-18)
+**Related plan:** [Reply delivery card implementation proposal](../plans/2026-04-15-reply-delivery-card-plan.md)
+
+
+This proposal describes a possible first-message reassurance card for widget
+customers. It is not a guide to an available feature or a record of measured
+customer outcomes.
+
+## Current status and unresolved requirements
+
+- Searches of server, frontend, and package Go/TypeScript sources found no
+  `reply_delivery_info`, `delivery_card`, or `reply_delivery_card` implementation.
+  The [system-event registry](../../server/internal/model/support_system_event.go)
+  does not define this event. The proposed workflow, persistence, flag, and
+  rollout percentages below are not implemented behavior established by this PRD.
+- The [existing delayed-team-reply service](../../server/internal/service/support_delayed_team_reply.go)
+  handles unanswered AI-to-team handoffs after a configured delay. It is a
+  separate feature, not the proposed fifteen-second timer after a first message.
+- The [widget renderer](../../packages/widget-core/src/components/MessageBubble.tsx)
+  allowlists `teammate_joined` and `delayed_team_reply` system events. Merely
+  setting `is_internal=false` is not enough to expose a new system event.
+- `ai_escalated` is an internal event, with any customer-facing escalation reply
+  sent separately. The edge-case claim that this event proves the customer has
+  seen something conflicts with current visibility and with the proposal's
+  public-reply suppression rule. Define suppression using customer-visible
+  messages before implementing a timer.
+- Email copy must depend on actual delivery capability and customer preferences,
+  not just an email address being present. The existing delayed notice provides
+  an implementation reference for distinguishing email-capable and widget-only
+  cases; this proposal does not establish delivery eligibility.
+- Exactly-once emission, cancellation on closure, and restart recovery require
+  an explicit scheduling and atomic deduplication design. They are not proven by
+  the proposed delay or a pre-write reply check. The scheduling primitive remains
+  an open choice in this document despite the edge table assuming Temporal.
+
+The competitor assertion and numeric success targets below are historical
+hypotheses, not externally verified findings or measured results. No application
+tests, production metrics, or live customer conversations were used in this review.
+
+## Original proposal
 
 ## TL;DR
 After a customer sends their first message on a new support conversation, and no teammate or AI has replied within a short window, the widget drops a persisted, muted-gray card that confirms where replies will land (widget + email), the email on file, and the expected reply time. The card survives reload. If a reply lands fast enough, the card never appears — so it only surfaces when the customer is actually waiting.
@@ -13,7 +51,7 @@ The support widget today gives a customer no explicit confirmation that their fi
 1. *Did my message actually go through?* — no visible acknowledgment the email on file was captured or that the support system knows how to reach them outside the widget.
 2. *When should I expect a reply?* — the reply-time preset is shown in the conversation header subtitle, but it's easy to miss and doesn't anchor to *this specific* message.
 
-Both anxieties are currently resolved only by the AI replying quickly or a teammate joining fast. When neither happens, the customer sits in silence. Intercom addresses this with a delayed delivery card and has, by inference from their funnel, validated it as a reassurance surface.
+Both anxieties are currently resolved only by the AI replying quickly or a teammate joining fast. When neither happens, the customer sits in silence. The original proposal cited a competitor delivery card as inspiration; it provided no evidence that the pattern improves Helpin customer outcomes.
 
 ## Goals
 - Confirm delivery mechanism (widget + email) when a customer has sent a first message and is now waiting.
@@ -88,7 +126,7 @@ Content is a **snapshot at fire time** — reply-time setting changes later don'
 │  ┌──────────────────────────────────────────┐  │
 │  │  You'll get replies here and in your     │  │
 │  │  email:                                  │  │
-│  │  azhar@contentstudio.io                  │  │
+│  │  customer@example.com                  │  │
 │  │                                          │  │
 │  │  Our usual reply time                    │  │
 │  │  ⏱  Usually replies in a few minutes     │  │

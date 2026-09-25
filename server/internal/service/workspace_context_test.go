@@ -44,7 +44,7 @@ func TestWorkspaceServiceGenerateCompanyProductDescriptionReturnsOpenRouterFailu
 			"https://acme.com": "Acme is a customer intelligence platform.",
 		}})
 
-	_, err := svc.GenerateCompanyProductDescription(context.Background(), model.GenerateWorkspaceContextDescriptionRequest{
+	_, err := svc.GenerateCompanyProductDescription(context.Background(), "", model.GenerateWorkspaceContextDescriptionRequest{
 		WorkspaceName: "Acme",
 		WebsiteURL:    "https://acme.com",
 	})
@@ -70,7 +70,7 @@ func TestWorkspaceServiceGenerateCompanyProductDescriptionUsesDirectWebsiteFetch
 			},
 		})
 
-	resp, err := svc.GenerateCompanyProductDescription(context.Background(), model.GenerateWorkspaceContextDescriptionRequest{
+	resp, err := svc.GenerateCompanyProductDescription(context.Background(), "", model.GenerateWorkspaceContextDescriptionRequest{
 		WorkspaceName: "Acme",
 		WebsiteURL:    "acme.com",
 	})
@@ -113,7 +113,7 @@ func TestWorkspaceServiceGenerateCompanyProductDescriptionUsesDirectWebsiteFetch
 
 func TestWorkspaceServiceGenerateCompanyProductDescriptionProvidesAIUsageContext(t *testing.T) {
 	consumer := &recordingAIUsageConsumer{}
-	llmProvider := NewMeteredLLMProvider(&fakeWorkspaceContextLLM{}, NewAIUsageMeter(consumer))
+	llmProvider := NewMeteredLLMProvider(&fakeWorkspaceContextLLM{}, NewTokenPricedAIUsageMeter(consumer))
 	svc := NewWorkspaceService(nil, nil, nil).
 		SetContextGeneratorDependencies(llmProvider, fakeWorkspaceContextFetcher{
 			pages: map[string]string{
@@ -121,7 +121,7 @@ func TestWorkspaceServiceGenerateCompanyProductDescriptionProvidesAIUsageContext
 			},
 		})
 
-	resp, err := svc.GenerateCompanyProductDescription(context.Background(), model.GenerateWorkspaceContextDescriptionRequest{
+	resp, err := svc.GenerateCompanyProductDescription(context.Background(), "", model.GenerateWorkspaceContextDescriptionRequest{
 		WorkspaceName: "Acme",
 		WebsiteURL:    "https://acme.com",
 	})
@@ -131,7 +131,11 @@ func TestWorkspaceServiceGenerateCompanyProductDescriptionProvidesAIUsageContext
 	if resp.CompanyProductContext == "" {
 		t.Fatal("CompanyProductContext = empty, want generated context")
 	}
-	if consumer.preflight.FeatureKey != "" || consumer.input.FeatureKey != "" {
+	if !consumer.preflight.Promotional {
 		t.Fatalf("setup context generation should not consume credits, got preflight=%#v consume=%#v", consumer.preflight, consumer.input)
 	}
+}
+
+func (p *fakeWorkspaceContextLLM) ResolvePricingIdentity(req llm.ChatRequest) (llm.ChatPricingIdentity, error) {
+	return testMeterIdentity(req), nil
 }

@@ -1,6 +1,33 @@
-# Help Center Icon Delivery Plan
+# Help center icon delivery plan
 
-- **Status:** Superseded by [`2026-07-16-help-center-icons-mvp-plan.md`](./2026-07-16-help-center-icons-mvp-plan.md)
+This superseded proposal records the larger icon delivery architecture considered
+before the smaller MVP. Maintainers should use the linked successor and current
+source when changing delivery; the phases below do not describe shipped behavior.
+
+## Source review — 2026-09-18
+
+- [The generator](../../help-center/scripts/generate-icons.mjs) and frontend/help
+  center package scripts generate static assets under `/assets/helpin-icons/`.
+  The proposed S3-backed `/_helpin/icons/` API and workspace sprite pipeline are
+  not the implemented delivery path.
+- [PublicIcon](../../help-center/src/components/PublicIcon.tsx) uses a base-path
+  aware CSS mask for canonical IDs and text for display values. `PhIcon` and the
+  old manual public icon map are no longer the current renderer.
+- [The editor picker](../../frontend/src/components/ui/icon-picker.tsx) fetches a
+  cached manifest on picker intent and displays at most 60 results. It does not
+  import the whole Hugeicons package as a module-scope side effect, nor implement
+  the virtualized full result grid proposed here.
+- [The backend catalog](../../server/internal/iconcatalog/catalog.go) resolves
+  legacy values, bounds new Unicode display text, and supports bounded search.
+  `NormalizeUpdate` tolerates an unchanged historical value; the strict new-write
+  rule must not be described as retroactively rejecting every legacy value.
+- Package 4.1.1, performance estimates, inventory counts, license assertions,
+  deployment gates, and benchmark targets below belong to the dated proposal.
+  This source review does not verify production measurements or legal approval.
+
+## Original proposal
+
+- **Status:** Superseded by [`2026-07-16-help-center-icons-mvp-plan.md`](2026-07-16-help-center-icons-mvp-plan.md)
 - **Date:** 2026-07-16
 - **Owners:** Docs, Help Center, Platform
 - **Scope:** Space, collection, document, and featured-card icons displayed in the Helpin editor and public Help Center, plus application surfaces that consume the shared `IconPicker`, `StoredIcon`, or `ICON_MAP` module
@@ -56,15 +83,15 @@ There is also a performance concern in adopting Hugeicons directly in the Help C
 - Using the icon delivery system for fixed application controls such as close, search, or chevron icons. Those should remain direct, statically analyzable component imports.
 - Reworking `AgentIconPicker`. It uses a separate, fixed `AGENT_ICON_PRESETS` catalog and does not import the shared full-catalog picker.
 
-## 5. Industry patterns
+## 5. Icon storage and delivery requirements
 
-The relevant public product patterns are consistent even though their private renderers are not fully documented.
+Persist icon identity separately from icon delivery. A saved value should identify
+an icon from a bounded library, an intentional emoji/text value, or an asset.
+The public renderer should resolve only the icons used by the current help center;
+it should not load the full authoring catalog.
 
-- Mintlify lets a project select one icon library and stores an icon name, URL, or project-relative asset path. This gives its build system a bounded source and the opportunity to include only referenced assets. See [Mintlify icon settings](https://www.mintlify.com/docs/organize/settings-appearance) and [Mintlify's Icon component](https://www.mintlify.com/docs/components/icons).
-- Notion represents an icon as a typed value: native icon name and color, emoji, custom emoji, external image, or uploaded file. Its March 2026 API changelog notes that native icons previously appeared as external SVG URLs and now use a structured name-and-color representation. See [Notion's icon object](https://developers.notion.com/reference/emoji-and-icon) and [Notion's changelog](https://developers.notion.com/page/changelog).
-- GitBook supports icons, emoji, uploaded assets, and site-level icon weight/style configuration. See [GitBook icon customization](https://gitbook.com/docs/publishing-documentation/customization/icons-colors-and-themes).
-
-The shared lesson is to persist icon identity separately from icon delivery and to avoid making the public renderer aware of an entire authoring catalog.
+Keep the stored identity stable as delivery moves from individual immutable SVGs
+to a sprite, if measured request costs justify that change.
 
 ## 6. Proposed architecture
 

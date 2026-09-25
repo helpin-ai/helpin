@@ -3,7 +3,6 @@ package service
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -117,9 +116,6 @@ func (s *DockChatService) analyzeDockChatMedia(ctx context.Context, workspaceID,
 			Messages:    []llm.Message{{Role: "user", ContentParts: parts}},
 			Temperature: 0,
 			MaxTokens:   700,
-			// Keep the medium-tier media cost ceiling while preferring the
-			// lowest-latency eligible provider. Current prices select Flex.
-			ProviderOptions: json.RawMessage(`{"only":["google-ai-studio/flex","google-vertex/global/flex"],"sort":"latency","max_price":{"prompt":0.375,"completion":1.875}}`),
 		},
 	})
 	if err != nil {

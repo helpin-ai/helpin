@@ -10,6 +10,8 @@ import {
   AgentsListTable,
   CUSTOM_AGENT_TARGET_OPTIONS,
   canEditWorkspacePresetVersionDescription,
+  buildSystemPresetVersionForm,
+  hasWorkspacePresetVersionChanges,
   getAgentAnalyticsSummary,
   getAgentRecentRunSummary,
   getAgentTokenUsageSummary,
@@ -42,6 +44,43 @@ function render(node: React.ReactNode) {
     root?.render(node);
   });
 }
+
+describe('workspace preset version activation', () => {
+  it('hydrates a duplicate from the saved version and ignores non-editable model controls', () => {
+    const preset = {
+      version_key: 'ask_agent_workspace_1',
+      runtime_kind: 'native_sdk',
+      provider: 'openrouter',
+      model: 'new-model',
+      model_tier: 'large',
+      execution_config: { max_tool_steps: 24, openrouter: { provider: 'auto' } },
+      system_prompt: 'Ask Agent instructions',
+      instruction_skills: [],
+      available_skills: [],
+      allowed_tools: ['mcp__logs__search'],
+      allowed_target_types: ['workspace'],
+      supported_modes: ['autonomous', 'interactive'],
+      default_invocation_mode: 'interactive',
+    } as AgentPresetDefinition;
+    const sourceForm = {
+      preset_key: 'ask_agent',
+      preset_version_key: 'ask_agent_default',
+      provider: 'openai',
+      model: 'old-model',
+    } as Parameters<typeof buildSystemPresetVersionForm>[0];
+
+    const savedForm = buildSystemPresetVersionForm(sourceForm, preset);
+
+    expect(savedForm.preset_version_key).toBe(preset.version_key);
+    expect(savedForm.provider).toBe(preset.provider);
+    expect(savedForm.model).toBe(preset.model);
+    expect(hasWorkspacePresetVersionChanges(savedForm, preset)).toBe(false);
+    expect(hasWorkspacePresetVersionChanges({
+      ...savedForm,
+      allowed_tools: [...savedForm.allowed_tools, 'mcp__logs__read'],
+    }, preset)).toBe(true);
+  });
+});
 
 describe('Agents list header', () => {
   it('shows config, run volume, and last run columns', () => {
@@ -353,7 +392,7 @@ describe('getVersionToolEditingState', () => {
 });
 
 describe('getAgentProviderConfigState', () => {
-  it('requires a compatible provider before Codex model config can be edited', () => {
+  it('allows configured providers for native model configuration', () => {
     const options = [
       {
         value: 'anthropic',
@@ -365,13 +404,13 @@ describe('getAgentProviderConfigState', () => {
       },
     ] satisfies AgentModelProviderOption[];
 
-    expect(getAgentProviderConfigState('codex', 'openai', options)).toEqual({
-      providerOptions: [],
+    expect(getAgentProviderConfigState('native_sdk', 'openai', options)).toEqual({
+      providerOptions: options,
       selectedProviderOption: undefined,
-      hasCompatibleProvider: false,
-      providerDisabled: true,
+      hasCompatibleProvider: true,
+      providerDisabled: false,
       modelDisabled: true,
-      providerMessage: 'Add OpenAI, OpenRouter, or enable Codex ChatGPT auth.',
+      providerMessage: '',
       modelMessage: 'Select a compatible AI provider first.',
     });
   });

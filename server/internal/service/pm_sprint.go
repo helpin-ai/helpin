@@ -35,7 +35,7 @@ func NewPMSprintService(sprintRepo *repository.PMSprintRepository, taskRepo *rep
 // List returns sprints with filters.
 func (s *PMSprintService) List(ctx context.Context, workspaceID string, filters model.PMSprintListFilters) ([]model.SprintWithStats, error) {
 	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace_id is required")
+		return nil, errCommandInput("workspace_id is required")
 	}
 	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
 	sprints, err := s.sprintRepo.List(ctx, workspaceID, filters)
@@ -48,7 +48,7 @@ func (s *PMSprintService) List(ctx context.Context, workspaceID string, filters 
 // ListPage returns a repository-bounded sprint page with batch enrichment.
 func (s *PMSprintService) ListPage(ctx context.Context, workspaceID string, filters model.PMSprintListFilters, pagination model.PMPagination) ([]model.SprintWithStats, int, int, int, error) {
 	if workspaceID == "" {
-		return nil, 0, 0, 0, fmt.Errorf("workspace_id is required")
+		return nil, 0, 0, 0, errCommandInput("workspace_id is required")
 	}
 	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
 	return s.sprintRepo.ListPage(ctx, workspaceID, filters, pagination)
@@ -72,7 +72,7 @@ func (s *PMSprintService) ListByIDs(ctx context.Context, workspaceID string, ids
 // ListPlanningWorkspace returns grouped sprints and an unassigned backlog for the planning page.
 func (s *PMSprintService) ListPlanningWorkspace(ctx context.Context, workspaceID string, filters model.PMSprintPlanningFilters) (*model.SprintPlanningWorkspace, error) {
 	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace_id is required")
+		return nil, errCommandInput("workspace_id is required")
 	}
 	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
 	return s.sprintRepo.ListPlanningWorkspace(ctx, workspaceID, filters)
@@ -81,7 +81,7 @@ func (s *PMSprintService) ListPlanningWorkspace(ctx context.Context, workspaceID
 // ListBacklogTasksPage returns a paginated view of accessible unsprinted work.
 func (s *PMSprintService) ListBacklogTasksPage(ctx context.Context, workspaceID string, teamID *string, pagination model.PMPagination) (*model.PaginatedResponse, error) {
 	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace_id is required")
+		return nil, errCommandInput("workspace_id is required")
 	}
 	filters := model.PMSprintPlanningFilters{
 		TeamID:            teamID,
@@ -97,10 +97,10 @@ func (s *PMSprintService) GetByID(ctx context.Context, id string) (*model.Sprint
 		return nil, err
 	}
 	if sprint == nil {
-		return nil, fmt.Errorf("sprint not found")
+		return nil, errCommandNotFound("sprint")
 	}
 	if err := requireTeamAccess(ctx, sprint.Sprint.TeamID); err != nil {
-		return nil, fmt.Errorf("sprint not found")
+		return nil, errCommandNotFound("sprint")
 	}
 	return sprint, nil
 }
@@ -112,10 +112,10 @@ func (s *PMSprintService) GetCloseout(ctx context.Context, sprintID string) (*mo
 		return nil, err
 	}
 	if sprint == nil {
-		return nil, fmt.Errorf("sprint not found")
+		return nil, errCommandNotFound("sprint")
 	}
 	if err := requireTeamAccess(ctx, sprint.Sprint.TeamID); err != nil {
-		return nil, fmt.Errorf("sprint not found")
+		return nil, errCommandNotFound("sprint")
 	}
 	if s.closeoutRepo == nil {
 		return &model.SprintCloseoutResponse{RolledInFrom: []model.SprintInboundRolloverSummary{}}, nil
@@ -141,7 +141,7 @@ func (s *PMSprintService) GetCloseout(ctx context.Context, sprintID string) (*mo
 // ListCloseouts returns frozen closeout summaries for PM reports.
 func (s *PMSprintService) ListCloseouts(ctx context.Context, workspaceID string, teamID *string) ([]model.SprintCloseoutListItem, error) {
 	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace_id is required")
+		return nil, errCommandInput("workspace_id is required")
 	}
 	if s.closeoutRepo == nil {
 		return []model.SprintCloseoutListItem{}, nil
@@ -183,7 +183,7 @@ func (s *PMSprintService) ListCloseouts(ctx context.Context, workspaceID string,
 // Create creates a sprint.
 func (s *PMSprintService) Create(ctx context.Context, req model.CreateSprintRequest, actorID string) (*model.SprintWithStats, error) {
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
-		return nil, fmt.Errorf("workspace_id and name are required")
+		return nil, errCommandInput("workspace_id and name are required")
 	}
 	if err := requireCanManage(ctx, req.TeamID); err != nil {
 		return nil, err
@@ -196,7 +196,7 @@ func (s *PMSprintService) Create(ctx context.Context, req model.CreateSprintRequ
 		}
 	}
 	if !req.EndDate.After(req.StartDate) {
-		return nil, fmt.Errorf("end_date must be after start_date")
+		return nil, errCommandInput("end_date must be after start_date")
 	}
 	overlap, err := s.sprintRepo.HasDateOverlap(ctx, req.WorkspaceID, req.TeamID, req.StartDate, req.EndDate, nil)
 	if err != nil {
@@ -284,10 +284,10 @@ func (s *PMSprintService) Update(ctx context.Context, id string, req model.Updat
 		return nil, err
 	}
 	if current == nil {
-		return nil, fmt.Errorf("sprint not found")
+		return nil, errCommandNotFound("sprint")
 	}
 	if err := requireCanManage(ctx, current.Sprint.TeamID); err != nil {
-		return nil, fmt.Errorf("sprint not found")
+		return nil, errCommandNotFound("sprint")
 	}
 	sprint := current.Sprint
 
@@ -318,10 +318,10 @@ func (s *PMSprintService) Update(ctx context.Context, id string, req model.Updat
 	}
 
 	if sprint.StartDate == nil || sprint.EndDate == nil {
-		return nil, fmt.Errorf("start_date and end_date are required")
+		return nil, errCommandInput("start_date and end_date are required")
 	}
 	if !sprint.EndDate.After(*sprint.StartDate) {
-		return nil, fmt.Errorf("end_date must be after start_date")
+		return nil, errCommandInput("end_date must be after start_date")
 	}
 	excludeID := id
 	overlap, err := s.sprintRepo.HasDateOverlap(ctx, sprint.WorkspaceID, sprint.TeamID, *sprint.StartDate, *sprint.EndDate, &excludeID)
@@ -404,10 +404,10 @@ func (s *PMSprintService) Delete(ctx context.Context, id string, actorID string)
 		return err
 	}
 	if current == nil {
-		return fmt.Errorf("sprint not found")
+		return errCommandNotFound("sprint")
 	}
 	if err := requireCanManage(ctx, current.Sprint.TeamID); err != nil {
-		return fmt.Errorf("sprint not found")
+		return errCommandNotFound("sprint")
 	}
 	if err := s.sprintRepo.Delete(ctx, id); err != nil {
 		s.logger.ErrorContext(ctx, "failed to delete sprint", "error", err, "sprint_id", id)
@@ -424,7 +424,7 @@ func (s *PMSprintService) Delete(ctx context.Context, id string, actorID string)
 // GetCurrentSprint returns active sprint for workspace/team.
 func (s *PMSprintService) GetCurrentSprint(ctx context.Context, workspaceID string, teamID *string) (*model.PMSprint, error) {
 	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace_id is required")
+		return nil, errCommandInput("workspace_id is required")
 	}
 	return s.sprintRepo.GetCurrentSprint(ctx, workspaceID, teamID)
 }
@@ -442,10 +442,10 @@ func (s *PMSprintService) ListTasks(ctx context.Context, sprintID string) ([]mod
 func (s *PMSprintService) LinkTasks(ctx context.Context, workspaceID, sprintID string, taskIDs []string, actorID string) (*model.LinkSprintTasksResponse, error) {
 	ids := dedupeIDs(taskIDs)
 	if workspaceID == "" || strings.TrimSpace(sprintID) == "" {
-		return nil, fmt.Errorf("workspace_id and sprint_id are required")
+		return nil, errCommandInput("workspace_id and sprint_id are required")
 	}
 	if len(ids) == 0 {
-		return nil, fmt.Errorf("at least one task_id is required")
+		return nil, errCommandInput("at least one task_id is required")
 	}
 	if len(ids) > 100 {
 		return nil, fmt.Errorf("at most 100 task_ids are allowed")
@@ -459,7 +459,7 @@ func (s *PMSprintService) LinkTasks(ctx context.Context, workspaceID, sprintID s
 		return nil, err
 	}
 	if sprint == nil || sprint.Sprint.WorkspaceID != workspaceID || sprint.Sprint.Archived {
-		return nil, fmt.Errorf("sprint not found")
+		return nil, errCommandNotFound("sprint")
 	}
 	if sprint.Sprint.Status == model.PMSprintStatusDone {
 		return nil, fmt.Errorf("completed sprints cannot accept new tasks")
@@ -480,7 +480,7 @@ func (s *PMSprintService) LinkTasks(ctx context.Context, workspaceID, sprintID s
 			return err
 		}
 		if len(selected) != len(ids) {
-			return fmt.Errorf("one or more tasks were not found")
+			return errCommandNotFound("one or more tasks were")
 		}
 		for index := range selected {
 			task := &selected[index]
@@ -488,7 +488,7 @@ func (s *PMSprintService) LinkTasks(ctx context.Context, workspaceID, sprintID s
 				return fmt.Errorf("archived tasks cannot be linked")
 			}
 			if task.TeamID == nil || strings.TrimSpace(*task.TeamID) != strings.TrimSpace(*sprint.Sprint.TeamID) {
-				return fmt.Errorf("all tasks must belong to the same team as the sprint")
+				return errCommandInput("all tasks must belong to the same team as the sprint")
 			}
 			if err := requireTeamAccess(ctx, task.TeamID); err != nil {
 				return err

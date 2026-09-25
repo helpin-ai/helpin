@@ -52,42 +52,29 @@ func TestResolveApprovalStateByMode(t *testing.T) {
 	}
 }
 
-func TestResolveAgentProfileUsesOpenCodeQueue(t *testing.T) {
+func TestResolveAgentProfileUsesCodingQueue(t *testing.T) {
 	agent := &model.Agent{
 		PresetKey:   model.AgentPresetCodeBuilder,
-		RuntimeKind: "opencode",
+		RuntimeKind: "native_sdk",
 	}
 
 	resolved := ResolveAgentProfile(agent, model.InvocationModeAutonomous)
 
-	if resolved.Queue != "agent-opencode-autonomous" {
-		t.Fatalf("expected queue %q, got %q", "agent-opencode-autonomous", resolved.Queue)
+	if resolved.Queue != "agent-native-coding" {
+		t.Fatalf("expected queue %q, got %q", "agent-native-coding", resolved.Queue)
 	}
 }
 
-func TestResolveAgentProfileUsesCodexQueue(t *testing.T) {
+func TestResolveAgentProfileUsesInteractiveCodingQueue(t *testing.T) {
 	agent := &model.Agent{
 		PresetKey:   model.AgentPresetCodeBuilder,
-		RuntimeKind: "codex",
-	}
-
-	resolved := ResolveAgentProfile(agent, model.InvocationModeAutonomous)
-
-	if resolved.Queue != "agent-codex-autonomous" {
-		t.Fatalf("expected queue %q, got %q", "agent-codex-autonomous", resolved.Queue)
-	}
-}
-
-func TestResolveAgentProfileUsesInteractiveCodexQueue(t *testing.T) {
-	agent := &model.Agent{
-		PresetKey:   model.AgentPresetCodeBuilder,
-		RuntimeKind: "codex",
+		RuntimeKind: "native_sdk",
 	}
 
 	resolved := ResolveAgentProfile(agent, model.InvocationModeInteractive)
 
-	if resolved.Queue != "agent-codex-interactive" {
-		t.Fatalf("expected queue %q, got %q", "agent-codex-interactive", resolved.Queue)
+	if resolved.Queue != "agent-native-coding" {
+		t.Fatalf("expected queue %q, got %q", "agent-native-coding", resolved.Queue)
 	}
 }
 
@@ -127,17 +114,17 @@ func TestResolveAgentProfileDoesNotAddAvailableSkillToolsForWorkspaceVersionWith
 	}
 }
 
-func TestResolveAgentProfileDoesNotAddNativeAvailableSkillToolsForCodexAgent(t *testing.T) {
+func TestResolveAgentProfileDoesNotAddSkillToolsWithoutAvailableSkills(t *testing.T) {
 	agent := &model.Agent{
 		PresetKey:   model.AgentPresetCodeBuilder,
-		RuntimeKind: "codex",
+		RuntimeKind: "native_sdk",
 	}
 
 	resolved := ResolveAgentProfile(agent, model.InvocationModeAutonomous)
 
 	for _, toolName := range []string{ToolListAvailableSkills, ToolSearchAvailableSkills, ToolReadSkill} {
 		if slices.Contains(resolved.Tools, toolName) {
-			t.Fatalf("did not expect codex tools to include native available-skill tool %q, got %v", toolName, resolved.Tools)
+			t.Fatalf("did not expect tools to include an unavailable skill tool %q, got %v", toolName, resolved.Tools)
 		}
 	}
 }

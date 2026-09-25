@@ -18,30 +18,38 @@ export const TABLE_HEADER_CELL_SORTABLE = 'cursor-pointer select-none hover:bg-m
 
 /** Data row – pixel-pinned to ROW_HEIGHT so it exactly matches the virtualizer's translateY spacing. */
 export const TABLE_ROW =
-  'shared-table-row group/row flex h-[36px] cursor-pointer items-center border-b border-border/60 bg-card dark:bg-transparent hover:bg-muted dark:hover:bg-muted';
+  'shared-table-row group/row flex h-[40px] cursor-pointer items-center border-b border-border/60 bg-card dark:bg-transparent hover:bg-muted dark:hover:bg-muted';
 
 /** Data cell – right border for grid lines */
 export const TABLE_CELL =
   'shared-table-cell flex shrink-0 items-center self-stretch bg-inherit px-2.5';
+
+/** Checkbox column cell – no horizontal padding so the checkbox sits centered in CHECKBOX_COL_SIZE */
+export const TABLE_CELL_SELECT =
+  'shared-table-cell flex shrink-0 items-center justify-center self-stretch bg-inherit';
+
+/** Checkbox column header cell – centers the select-all checkbox to match TABLE_CELL_SELECT */
+export const TABLE_HEADER_CELL_SELECT =
+  'shared-table-cell border-b border-border/60 relative flex shrink-0 items-center justify-center bg-card dark:bg-transparent py-1.5 text-[11px] font-medium text-muted-foreground';
 
 /** Primary entity name shown in table cells. */
 export const TABLE_NAME_TEXT = 'text-sm text-foreground/90';
 
 /** Group header row (for grouped/expandable tables) – pixel-pinned to GROUP_ROW_HEIGHT */
 export const TABLE_GROUP_ROW =
-  'shared-table-row border-b border-border/60 flex h-[36px] cursor-pointer items-center bg-muted/60 text-sm font-semibold hover:bg-muted dark:bg-transparent dark:hover:bg-muted';
+  'shared-table-row border-b border-border/60 flex h-[40px] cursor-pointer items-center bg-muted/60 text-sm font-semibold hover:bg-muted dark:bg-transparent dark:hover:bg-muted';
 
 /** Inner sticky wrapper for group row content – pins chevron/label to viewport left during horizontal scroll */
 export const TABLE_GROUP_ROW_INNER =
-  'sticky left-0 z-[1] flex items-center gap-2 px-3';
+  'shared-table-group-inner sticky left-0 z-[1] flex items-center gap-2 px-3';
 
 /** Column resize handle – always-visible 1px separator, expands on hover */
 export const TABLE_RESIZE_HANDLE =
   'absolute right-0 top-0 h-full w-px cursor-col-resize touch-none select-none bg-border/40 hover:w-1 hover:bg-primary/30 active:bg-primary/50';
 
 /** Row height for virtualizer estimateSize */
-export const ROW_HEIGHT = 36;
-export const GROUP_ROW_HEIGHT = 36;
+export const ROW_HEIGHT = 40;
+export const GROUP_ROW_HEIGHT = 40;
 
 /** Checkbox column width */
 export const CHECKBOX_COL_SIZE = 40;
@@ -85,6 +93,10 @@ export const TABLE_CHECKBOX_HOVER =
 
 /**
  * Returns inline style for pinned columns.
+ *
+ * Horizontal pinning is a wide-viewport affordance only: below `md` the
+ * `.shared-table-pinned-*` rule in index.css drops these back to static so the
+ * pinned group cannot swallow a narrow viewport.
  */
 export function pinnedStyle(
   position: 'left' | 'right',

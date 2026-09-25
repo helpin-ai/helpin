@@ -15,8 +15,8 @@ func TestMiraPresetDefinitionUsesNativeHelpinTools(t *testing.T) {
 	if preset.Label != "Mira" {
 		t.Fatalf("label = %q, want Mira", preset.Label)
 	}
-	if preset.RuntimeKind != "codex" {
-		t.Fatalf("runtime = %q, want codex", preset.RuntimeKind)
+	if preset.RuntimeKind != "native_sdk" {
+		t.Fatalf("runtime = %q, want native_sdk", preset.RuntimeKind)
 	}
 	if preset.DefaultRole != "Marketer" {
 		t.Fatalf("role = %q, want Marketer", preset.DefaultRole)

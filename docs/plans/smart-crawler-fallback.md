@@ -1,5 +1,17 @@
 # Smart Crawler with Automatic Fallback
 
+> Source review, 2026-09-17
+
+Historical implementation plan. The [SmartCrawler](../../server/internal/crawler/smart.go),
+[local crawler](../../server/internal/crawler/colly.go), and
+[worker wiring](../../server/cmd/temporal-worker/main.go) now exist; the opening
+Cloudflare-only limitation is obsolete. The application configuration defaults
+`CRAWLER_MODE` to `cloudflare_with_fallback`; when Cloudflare is unconfigured that
+mode uses local crawling. The constructor itself normalizes empty or unknown modes
+to `local`. Consult [configuration](../../server/internal/config/config.go) and
+[current crawling guidance](../community/configuration.md#allow-website-crawling)
+before treating the pseudocode below as the current contract.
+
 ## Overview
 
 The website content sync feature currently relies on Cloudflare Browser Rendering's `/crawl` endpoint. When rate-limited (HTTP 429), syncs fail. This plan introduces a self-hosted fallback using **Colly** (crawling) + **go-trafilatura** (content extraction) that kicks in automatically — no user configuration required.

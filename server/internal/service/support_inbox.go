@@ -15,10 +15,12 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/google/uuid"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/email/inboundhtml"
@@ -32,8 +34,11 @@ import (
 
 // SupportInboxService contains support business logic.
 type SupportInboxService struct {
-	followUpRepo     *repository.SupportFollowUpRepository
-	conversationRepo *repository.SupportConversationRepository
+	pendingSendWakeOnce sync.Once
+	pendingSendWake     chan struct{}
+	translations        *supportTranslationService
+	followUpRepo        *repository.SupportFollowUpRepository
+	conversationRepo    *repository.SupportConversationRepository
 	productAnalyticsEmitter
 	mailboxRepo             *repository.SupportMailboxRepository
 	emailRouteRepo          *repository.SupportEmailRouteRepository
@@ -73,7 +78,7 @@ type SupportInboxService struct {
 	taskService             *PMTaskService
 	geoIPResolver           geoip.Resolver
 	supportEventRecorder    SupportEventRecorder
-	entitlementSvc          *EntitlementService
+	entitlementSvc          EntitlementPolicy
 	routeDomain             string
 }
 
@@ -271,7 +276,7 @@ func supportActorFromContext(ctx context.Context, workspaceID string) *authoriza
 	return actor
 }
 
-func (s *SupportInboxService) SetEntitlementService(entitlementSvc *EntitlementService) *SupportInboxService {
+func (s *SupportInboxService) SetEntitlementService(entitlementSvc EntitlementPolicy) *SupportInboxService {
 	s.entitlementSvc = entitlementSvc
 	return s
 }
@@ -1296,7 +1301,7 @@ func (s *SupportInboxService) pushVisitorConversationsRefresh(ctx context.Contex
 	if conversations == nil {
 		conversations = []model.SupportConversation{}
 	}
-	listJSON, _ := json.Marshal(map[string]any{"conversations": conversations})
+	listJSON, _ := json.Marshal(map[string]any{"conversations": model.PublicWidgetConversations(conversations)})
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "updated",
 		Entity:      "support_visitor_conversations",
@@ -1663,84 +1668,6 @@ func (s *SupportInboxService) CreateConversation(ctx context.Context, req model.
 	return ticket, nil
 }
 
-// CreateConversationWithMessage creates a normal support conversation and
-// immediately sends the first public teammate message.
-func (s *SupportInboxService) CreateConversationWithMessage(ctx context.Context, req model.CreateConversationWithMessageRequest, actorID string) (*model.CreateConversationWithMessageResponse, error) {
-	if strings.TrimSpace(req.WorkspaceID) == "" || strings.TrimSpace(req.Subject) == "" {
-		return nil, fmt.Errorf("workspace_id and subject are required")
-	}
-	if strings.TrimSpace(req.Content) == "" && len(req.AttachmentIDs) == 0 {
-		return nil, fmt.Errorf("content is required")
-	}
-	channels := normalizeSupportDeliveryChannels(req.Channels)
-	if len(req.Channels) > 0 && len(channels) == 0 {
-		return nil, fmt.Errorf("at least one supported channel is required")
-	}
-	if supportChannelsIncludeEmail(channels) && (req.CustomerEmail == nil || strings.TrimSpace(*req.CustomerEmail) == "") {
-		return nil, fmt.Errorf("customer_email is required for email delivery")
-	}
-
-	conversation, err := s.CreateConversation(ctx, model.CreateConversationRequest{
-		WorkspaceID:   req.WorkspaceID,
-		MailboxID:     req.MailboxID,
-		Subject:       req.Subject,
-		Priority:      "medium",
-		CustomerName:  req.CustomerName,
-		CustomerEmail: req.CustomerEmail,
-		Source:        "internal",
-	}, actorID)
-	if err != nil {
-		return nil, err
-	}
-	if req.CRMContactID != nil && strings.TrimSpace(*req.CRMContactID) != "" {
-		conversation.CRMContactID = req.CRMContactID
-		if err := s.conversationRepo.Update(ctx, conversation); err != nil {
-			return nil, err
-		}
-	}
-	if supportChannelsIncludeEmail(channels) && len(req.CCEmails) > 0 {
-		ccEmails := normalizeSupportEmailListExcluding(req.CCEmails, derefString(conversation.CustomerEmail))
-		conversation.EmailCC = model.DocsStringArray(ccEmails)
-		if err := s.conversationRepo.UpdateFields(ctx, req.WorkspaceID, conversation.ID, map[string]any{
-			"email_cc": conversation.EmailCC,
-		}); err != nil {
-			return nil, err
-		}
-	}
-	if s.tagRepo != nil {
-		for _, tagID := range req.TagIDs {
-			tagID = strings.TrimSpace(tagID)
-			if tagID == "" {
-				continue
-			}
-			if err := s.tagRepo.AddConversationTag(ctx, req.WorkspaceID, conversation.ID, tagID); err != nil {
-				return nil, err
-			}
-		}
-		hydrated := []model.SupportConversation{*conversation}
-		s.hydrateConversationTags(ctx, req.WorkspaceID, hydrated)
-		conversation.Tags = hydrated[0].Tags
-		conversation.SystemTags = hydrated[0].SystemTags
-	}
-
-	message, err := s.CreateConversationMessage(ctx, req.WorkspaceID, conversation.ID, model.CreateMessageRequest{
-		Content:       req.Content,
-		IsInternal:    false,
-		MessageType:   "reply",
-		AttachmentIDs: req.AttachmentIDs,
-		Channels:      channels,
-		CCEmails:      req.CCEmails,
-		BCCEmails:     req.BCCEmails,
-	}, "user", &actorID, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	return &model.CreateConversationWithMessageResponse{
-		Conversation: conversation,
-		Message:      message,
-	}, nil
-}
-
 // validConversationStatuses defines allowed status transitions.
 var validConversationStatuses = map[string]bool{
 	model.SupportConversationStatusOpen:              true,
@@ -1938,6 +1865,9 @@ func (s *SupportInboxService) listConversationMessages(ctx context.Context, work
 
 	if widgetOnly {
 		messages = widgetVisibleSupportMessages(messages)
+		if err := s.projectWidgetAIProgress(ctx, conv, messages); err != nil {
+			return nil, err
+		}
 	}
 
 	// Hydrate file attachments onto messages.
@@ -2028,7 +1958,19 @@ func hydrateEmailBodiesFromLogs(messages []model.SupportMessage, logs []model.Su
 				}
 			}
 
+			cidURLs := map[string]string{}
+			for _, attachment := range messages[i].Attachments {
+				if attachment.ContentID != "" && attachment.URL != "" {
+					cidURLs[normalizeInboundContentID(attachment.ContentID)] = attachment.URL
+				}
+			}
 			messages[i].HTMLBody = projection.HTML
+			if len(cidURLs) > 0 {
+				var original model.PostmarkInboundPayload
+				if json.Unmarshal([]byte(log.RawBody), &original) == nil && original.HtmlBody != "" {
+					messages[i].HTMLBody = inboundPayloadProjectionWithHTML(original, rewriteInboundCIDImageSources(original.HtmlBody, cidURLs)).HTMLBody
+				}
+			}
 			messages[i].StrippedText = log.StrippedText
 			messages[i].EmailVisibleText = projection.Markdown
 			messages[i].EmailQuotedText = projection.QuotedMarkdown
@@ -2078,6 +2020,10 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		return nil, fmt.Errorf("conversation not found")
 	}
 
+	if conv.AnonymizedAt != nil {
+		return nil, fmt.Errorf("this conversation is read-only because its customer was deleted")
+	}
+
 	messageType := req.MessageType
 	if messageType == "" {
 		messageType = "reply"
@@ -2092,6 +2038,18 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		return nil, fmt.Errorf("this conversation has no chat session; choose email only")
 	}
 
+	replyID := ""
+	if senderType == "user" && senderUserID != nil && !req.IsInternal && messageType == "reply" && clientMessageID != "" {
+		previous, lookupErr := s.messageRepo.FindTeammateReplyByClientID(ctx, workspaceID, ticketID, *senderUserID, clientMessageID)
+		if lookupErr != nil {
+			return nil, lookupErr
+		}
+		if previous != nil {
+			return previous, nil
+		}
+		replyID = uuid.NewSHA1(uuid.NameSpaceOID, []byte("support-reply:"+workspaceID+":"+ticketID+":"+*senderUserID+":"+clientMessageID)).String()
+	}
+
 	explicitEmail := req.DeliveryMode == model.SupportDeliveryEmailOnly || req.DeliveryMode == model.SupportDeliveryChatAndEmail
 	explicitDelay := 0
 	if explicitEmail {
@@ -2101,6 +2059,49 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		}
 	}
 
+	// Apply the workspace policy to every public teammate reply, including older
+	// clients that omit or send stale per-message translation flags.
+	req.AutoTranslate = false
+	if !req.SendOriginal && s.translationConfigured() && senderType == "user" && !req.IsInternal && messageType == "reply" && strings.TrimSpace(req.Content) != "" {
+		options, err := s.supportSendTranslationOptions(ctx, workspaceID, ticketID, derefString(senderUserID))
+		if err != nil {
+			return nil, ErrSupportTranslation
+		}
+		if options.Preference.AutoTranslateOutgoing && !options.Available && (options.Conversation.CustomerLanguage != "" || options.DetectedCustomerLanguage != "") {
+			return nil, ErrSupportTranslation
+		}
+		req.AutoTranslate = options.Available && options.Preference.AutoTranslateOutgoing
+		if req.AutoTranslate && clientMessageID == "" {
+			clientMessageID = uuid.NewString()
+			req.ClientMessageID = clientMessageID
+		}
+	}
+	var translation *model.SupportTranslation
+	if req.AutoTranslate {
+		if senderType != "user" {
+			return nil, ErrSupportTranslation
+		}
+		var err error
+		translation, err = s.prepareTranslatedReply(ctx, workspaceID, ticketID, derefString(senderUserID), req)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrSupportTranslation, err)
+		}
+	}
+	if translation != nil {
+		if translation.SentMessageID != nil {
+			sent, err := s.messageRepo.GetByID(ctx, *translation.SentMessageID)
+			if err != nil {
+				return nil, err
+			}
+			if sent == nil {
+				return nil, ErrSupportTranslation
+			}
+			return sent, nil
+		}
+		req.Content = translation.TranslatedText
+	}
+
+	reportSupportSendProgress(ctx, "sending")
 	// Auto-resolve sender display name and avatar from user record.
 	var senderAvatarURL *string
 	if senderUserID != nil && s.userRepo != nil {
@@ -2136,6 +2137,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	}
 
 	msg := &model.SupportMessage{
+		ID:                replyID,
 		WorkspaceID:       workspaceID,
 		ConversationID:    ticketID,
 		SenderType:        senderType,
@@ -2149,14 +2151,34 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		ClientMessageID:   clientMessageID,
 	}
 
+	if translation != nil {
+		msg.TranslationID = translation.ID
+	}
+	if guard, ok := ctx.Value(supportSendGuardKey{}).(*model.SupportPendingSend); ok {
+		// Permissions may have changed while the provider was working.
+		actor, err := s.authzService.ResolveActor(ctx, workspaceID, guard.UserID)
+		if err != nil || !s.authzService.Can(actor, authorization.PermSupportEdit) {
+			return nil, ErrSupportTranslation
+		}
+		if _, err := s.loadConversationAccessible(authorization.WithActor(ctx, actor), workspaceID, ticketID); err != nil {
+			return nil, err
+		}
+		msg.CreatedAt = guard.CreatedAt
+		msg.PendingGuard = guard
+		msg.PendingAttachmentIDs = req.AttachmentIDs
+	}
+
 	if len(mentionedUserIDs) > 0 {
 		metaJSON, _ := json.Marshal(map[string]any{"mentioned_user_ids": mentionedUserIDs})
 		msg.Metadata = string(metaJSON)
 	}
-	if req.AIAssisted || clientMessageID != "" {
+	if req.AIAssisted || clientMessageID != "" || translation != nil {
 		metadata := map[string]any{}
 		if strings.TrimSpace(msg.Metadata) != "" {
 			_ = json.Unmarshal([]byte(msg.Metadata), &metadata)
+		}
+		if translation != nil {
+			metadata["translated"] = true
 		}
 		if req.AIAssisted {
 			metadata["ai_assisted"] = true
@@ -2170,6 +2192,11 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	}
 	msg.Metadata = mergeSupportMessageMetadata(msg.Metadata, req.Channels, req.CCEmails, req.BCCEmails)
 	msg.Metadata = withSupportDeliveryMode(msg.Metadata, req.DeliveryMode)
+	if senderType == "user" && !msg.IsInternal && messageType == "reply" {
+		if err := s.pauseForTeammate(ctx, conv, derefString(senderUserID), "teammate_replied", map[string]any{"opened_by_user_id": senderUserID}); err != nil {
+			return nil, err
+		}
+	}
 	// Before persisting a teammate's first public reply, emit a widget-visible
 	// "{name} joined the conversation" system message so the customer sees a
 	// centered pill immediately ahead of the reply — Intercom's pattern.
@@ -2178,11 +2205,14 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	}
 
 	if explicitEmail {
-		if err := s.createExplicitEmailMessage(ctx, msg, conv, explicitDelay); err != nil {
+		if err := s.createExplicitEmailMessage(ctx, msg, conv, explicitDelay, req.EmailSubject); err != nil {
 			return nil, err
 		}
 	} else if err := s.messageRepo.Create(ctx, msg); err != nil {
 		return nil, err
+	}
+	if translation != nil {
+		s.translations.metrics.TranslationEvent("outgoing_reply", "sent")
 	}
 	if explicitEmail && msg.WidgetVisible() && senderType == "user" && senderUserID != nil {
 		s.emitTeammateJoinedIfFirstReply(ctx, workspaceID, ticketID, strings.TrimSpace(*senderUserID), derefString(senderDisplayName), senderAvatarURL, clientMessageID, msg)
@@ -2234,7 +2264,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 				slog.ErrorContext(ctx, "failed to reopen support conversation after customer reply", "error", err, "conversation_id", ticketID)
 			}
 		}
-		if s.triageService != nil && !supportConversationHumanOwned(conv) {
+		if s.triageService != nil && (!supportConversationHumanOwned(conv) || s.triageService.jev.enabled(workspaceID)) {
 			go func(workspaceID, conversationID, messageID string) {
 				if _, triageErr := s.triageService.EvaluateAndRoute(context.WithoutCancel(ctx), workspaceID, conversationID, messageID); triageErr != nil {
 					slog.ErrorContext(ctx, "support triage failed after customer reply", "workspace_id", workspaceID, "conversation_id", conversationID, "message_id", messageID, "error", triageErr)
@@ -2243,31 +2273,18 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		}
 	}
 
-	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType == "user" && senderUserID != nil && conv != nil {
-		if conv.OpenedByUserID == nil || *conv.OpenedByUserID != *senderUserID {
-			conv.OpenedByUserID = senderUserID
-			conv.FlowState = strPtr(model.SupportConversationFlowStateAssignedToHuman)
-			conv.HumanTakeover = boolPtr(true)
-			// The message insert has already advanced the database projections.
-			// Saving the pre-reply snapshot here would restore the old preview,
-			// sender and workload state along with these ownership changes.
-			if err := s.conversationRepo.UpdateFields(ctx, workspaceID, ticketID, map[string]any{
-				"opened_by_user_id": senderUserID,
-				"flow_state":        model.SupportConversationFlowStateAssignedToHuman,
-				"human_takeover":    true,
-			}); err != nil {
-				slog.ErrorContext(ctx, "failed to set support conversation owner", "error", err, "conversation_id", ticketID)
-			}
-		}
+	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType == "user" && senderUserID != nil {
+		conv.OpenedByUserID = senderUserID
 	}
 
 	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType != "customer" && conv != nil {
 		conv.FlowState = strPtr(model.SupportConversationFlowStateAssignedToHuman)
 		conv.HumanTakeover = boolPtr(true)
-		updates := map[string]any{
-			"flow_state":        model.SupportConversationFlowStateAssignedToHuman,
-			"opened_by_user_id": conv.OpenedByUserID,
-			"human_takeover":    true,
+		updates := map[string]any{}
+		if msg.SenderType != "user" {
+			updates["flow_state"] = model.SupportConversationFlowStateAssignedToHuman
+			updates["human_takeover"] = true
+			updates["opened_by_user_id"] = conv.OpenedByUserID
 		}
 		if conv.Status == model.SupportConversationStatusResolved {
 			conv.Status = model.SupportConversationStatusWaitingOnCustomer
@@ -2368,6 +2385,12 @@ func (s *SupportInboxService) enrichSupportMessageLinksAsync(msg *model.SupportM
 		}
 		if err := s.messageRepo.UpdateMetadata(previewCtx, message.ID, message.Metadata); err != nil {
 			slog.WarnContext(previewCtx, "persist support link preview metadata failed", "message_id", message.ID, "error", err)
+			return
+		}
+		if saved, err := s.messageRepo.GetByID(previewCtx, message.ID); err == nil && saved != nil {
+			message.Metadata = saved.Metadata
+		} else {
+			slog.WarnContext(previewCtx, "reload enriched message metadata failed", "message_id", message.ID, "error", err)
 			return
 		}
 		if s.wsPublisher != nil {
@@ -2471,14 +2494,26 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 		return nil, fmt.Errorf("conversation not found")
 	}
 
-	messages, err := s.ListConversationMessages(ctx, workspaceID, conversationID, true)
+	messages, err := s.ListConversationMessages(ctx, workspaceID, conversationID, !req.ReviewedDraft)
 	if err != nil {
 		return nil, err
 	}
 
-	draft, err := s.generateTaskDraftFromConversation(ctx, workspaceID, conversation, messages)
-	if err != nil {
-		return nil, err
+	var draft *supportConversationTaskDraft
+	if req.ReviewedDraft {
+		_, sourceHash := supportPMTriageEvidence(conversation, messages)
+		if req.SourceHash == "" || req.SourceHash != sourceHash {
+			return nil, ErrPMTriageStale
+		}
+		if trimPtrValue(req.Name) == "" || trimPtrValue(req.Description) == "" || !isValidTaskType(trimPtrValue(req.TaskType)) {
+			return nil, fmt.Errorf("reviewed title, description and valid task type are required")
+		}
+		draft = &supportConversationTaskDraft{Title: trimPtrValue(req.Name), Description: trimPtrValue(req.Description), TaskType: trimPtrValue(req.TaskType), Priority: trimPtrValue(req.Priority)}
+	} else {
+		draft, err = s.generateTaskDraftFromConversation(ctx, workspaceID, conversation, messages)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if trimPtrValue(req.Name) == "" {
 		if err := validateSupportTaskDraft(conversation, messages, draft); err != nil {
@@ -2535,13 +2570,19 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 		createReq.Priority = &priority
 	}
 
-	detail, err := s.taskService.Create(ctx, createReq, actorID)
+	var review *supportTaskCreateReview
+	if req.ReviewedDraft {
+		review = &supportTaskCreateReview{conversationID: conversationID, sourceHash: req.SourceHash}
+	}
+	detail, err := s.taskService.create(ctx, createReq, actorID, review)
 	if err != nil {
 		return nil, err
 	}
 
 	taskID := detail.Task.ID
-	if err := s.LinkConversationTask(ctx, workspaceID, conversationID, taskID, actorID); err != nil {
+	if req.ReviewedDraft {
+		s.publishReviewedTaskLink(ctx, workspaceID, conversationID, taskID, actorID)
+	} else if err := s.LinkConversationTask(ctx, workspaceID, conversationID, taskID, actorID); err != nil {
 		return nil, err
 	}
 
@@ -4221,16 +4262,14 @@ func (s *SupportInboxService) assignConversationAgent(ctx context.Context, works
 		if inst != nil {
 			settings := parseSettings(inst.Settings)
 			if settings.AIAgentID != nil && strings.TrimSpace(*settings.AIAgentID) == agentID {
-				pending := "pending"
-				ticket.HumanTakeover = boolPtr(false)
-				ticket.AIState = &pending
-				ticket.AIResolvedAt = nil
-				ticket.AIResolutionType = nil
-				ticket.FlowState = strPtr(model.SupportConversationFlowStateAIHandling)
+				if !inst.Active {
+					return fmt.Errorf("support AI is not enabled")
+				}
+				return s.changeConversationAIControl(ctx, ticket, derefString(actorID), &model.SupportAIControlRequest{Action: "return", ExpectedVersion: ticket.AIControlVersion}, settings, nil, "")
 			}
 		}
 	}
-	if err := s.conversationRepo.Update(ctx, ticket); err != nil {
+	if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, map[string]any{"assigned_agent_id": ticket.AssignedAgentID, "flow_state": ticket.FlowState}); err != nil {
 		return err
 	}
 
@@ -4277,13 +4316,18 @@ func (s *SupportInboxService) assignConversationUser(ctx context.Context, worksp
 	}
 
 	previousAssignedUserID := derefString(ticket.AssignedUserID)
-	ticket.AssignedUserID = normalizedUserID
 	if normalizedUserID != nil {
-		ticket.HumanTakeover = boolPtr(true)
-	}
-	ticket.FlowState = strPtr(defaultConversationFlowState(ticket.OpenedByUserID, ticket.AssignedUserID, ticket.AssignedAgentID))
-	if err := s.conversationRepo.Update(ctx, ticket); err != nil {
-		return err
+		if err := s.pauseForTeammate(ctx, ticket, derefString(actorID), "assigned_to_teammate", map[string]any{"assigned_user_id": normalizedUserID}); err != nil {
+			return err
+		}
+	} else {
+		if ticket.HumanTakeover != nil && *ticket.HumanTakeover {
+			if err := s.pauseForTeammate(ctx, ticket, derefString(actorID), "unassigned_by_teammate", map[string]any{"assigned_user_id": (*string)(nil)}); err != nil {
+				return err
+			}
+		} else if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, map[string]any{"assigned_user_id": nil}); err != nil {
+			return err
+		}
 	}
 
 	if s.activitySvc != nil {
@@ -4745,8 +4789,8 @@ func formatAssignmentSystemMessage(target assignmentTargetKind, actorName, targe
 
 // emitTeammateJoinedIfFirstReply emits a public "{name} joined the conversation"
 // system message on the widget-visible side the first time a given teammate
-// sends a non-internal reply on the conversation. Matches Intercom's behavior
-// of surfacing a "joined" pill on first engagement rather than on assignment.
+// sends a non-internal reply on the conversation. The "joined" pill appears
+// on first engagement rather than on assignment.
 func (s *SupportInboxService) emitTeammateJoinedIfFirstReply(ctx context.Context, workspaceID, conversationID, senderUserID, displayName string, senderAvatar *string, replyClientMessageID string, savedReply ...*model.SupportMessage) {
 	if s.messageRepo == nil || senderUserID == "" {
 		return

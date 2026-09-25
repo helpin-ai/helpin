@@ -5,14 +5,17 @@ package model
 // message_type='system') must carry one of these values so renderers can
 // branch on intent instead of keyword-matching prose.
 //
-// Visibility is governed by is_internal — SystemEventType only describes
-// what happened, not who sees it.
+// Internal events must set is_internal. WidgetVisible additionally allowlists
+// public event types so missing flags cannot expose staff routing activity.
 type SupportSystemEventType = string
 
 const (
+	// Internal teammate actions; never delivered to customers.
+	SystemEventAIPaused   SupportSystemEventType = "ai_paused"
+	SystemEventAIReturned SupportSystemEventType = "ai_returned"
 	// SystemEventTeammateJoined — first non-internal reply by a given
-	// teammate on the conversation. Widget-visible; matches Intercom's
-	// "Jarek joined the conversation" pill.
+	// teammate on the conversation. Renders a widget-visible
+	// "{name} joined the conversation" pill.
 	SystemEventTeammateJoined SupportSystemEventType = "teammate_joined"
 
 	// SystemEventAssigned — one user assigns the conversation to another
@@ -82,6 +85,8 @@ const (
 // allSupportSystemEventTypes is the authoritative set of valid event types.
 // Kept private so callers go through IsValidSupportSystemEventType.
 var allSupportSystemEventTypes = map[SupportSystemEventType]struct{}{
+	SystemEventAIPaused:               {},
+	SystemEventAIReturned:             {},
 	SystemEventTeammateJoined:         {},
 	SystemEventAssigned:               {},
 	SystemEventUnassigned:             {},

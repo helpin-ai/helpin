@@ -5,11 +5,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { SupportConversation } from '@/lib/pmTypes'
+import type { DockChat } from '@/lib/dockTypes'
+import { useDockStore } from '@/stores/dockStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useSupportInboxStore } from '@/stores/supportInboxStore'
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { ConversationRow, getConversationRowVisualState, getSupportTagPillStyle, getVisibleSupportTagCount } from '../ConversationRow'
+
+vi.mock('../SupportAIControl', () => ({
+  useSupportAIControl: () => ({ item: null, confirmation: null }),
+}))
 
 const mockWorkspaceMembers = vi.hoisted(() => ({
   data: [] as Array<{
@@ -40,6 +46,10 @@ vi.mock('@/hooks/queries/useSupport', () => ({
 
 vi.mock('@/components/ui/confirm-dialog', () => ({
   useConfirm: () => vi.fn(async () => true),
+}))
+
+vi.mock('../SupportAIControl', () => ({
+  useSupportAIControl: () => ({ item: null, confirmation: null }),
 }))
 
 vi.mock('sonner', () => ({
@@ -101,6 +111,7 @@ describe('ConversationRow', () => {
     useAuthStore.setState({ user: { id: 'user-1', email: 'agent@example.com', full_name: 'Agent' } })
     useWorkspaceStore.setState({ currentWorkspace: { id: 'ws-1', name: 'Workspace', slug: 'workspace' } })
     useSupportInboxStore.setState({ selectedConversationId: null, drafts: {} })
+    useDockStore.setState({ chats: [] })
     mockWorkspaceMembers.data = []
     useSupportPresenceStore.setState({
       typingIndicators: {},
@@ -112,6 +123,45 @@ describe('ConversationRow', () => {
 
   afterEach(() => {
     document.body.innerHTML = ''
+  })
+
+  it.each(['queued', 'running'] as const)('shows %s Ask Agent activity alongside unread messages and clears on completion', (status) => {
+    const chat: DockChat = {
+      id: 'chat-1', workspace_id: 'ws-1', user_id: 'user-1', title: 'Help',
+      visibility: 'private', support_conversation_id: 'conv-1', active_run_id: 'run-1',
+      active_run_status: status, created_at: '', updated_at: '',
+    }
+    const { container, cleanup } = renderRow(conversation({ unread_count: 3 }))
+    expect(container.querySelector('[aria-label="Ask Agent is running"]')).toBeNull()
+    act(() => useDockStore.setState({ chats: [chat] }))
+    expect(container.querySelector('[aria-label="Ask Agent is running"]')).not.toBeNull()
+    expect(container.querySelector('[data-agent-work-loader]')).not.toBeNull()
+    expect(container.textContent).toContain('Can you help with my invoice?')
+    expect(container.textContent).toContain('3')
+    act(() => useDockStore.setState({ chats: [{ ...chat, active_run_status: 'paused' }] }))
+    expect(container.querySelector('[aria-label="Ask Agent is waiting for input"]')).not.toBeNull()
+    expect(container.querySelector('[data-agent-work-loader]')).toBeNull()
+    for (const status of ['completed', 'failed', 'cancelled'] as const) {
+      act(() => useDockStore.setState({ chats: [{ ...chat, active_run_status: status }] }))
+      expect(container.querySelector('[aria-label^="Ask Agent is"]')).toBeNull()
+    }
+    cleanup()
+  })
+
+  it('ignores activity from other conversations, workspaces, and archived chats', () => {
+    const chat: DockChat = {
+      id: 'chat-1', workspace_id: 'ws-1', user_id: 'user-1', title: 'Help',
+      visibility: 'private', support_conversation_id: 'conv-1', active_run_id: 'run-1',
+      active_run_status: 'running', created_at: '', updated_at: '',
+    }
+    useDockStore.setState({ chats: [
+      { ...chat, id: 'other-conversation', support_conversation_id: 'conv-2' },
+      { ...chat, id: 'other-workspace', workspace_id: 'ws-2' },
+      { ...chat, id: 'archived', archived_at: '2026-09-12T00:00:00Z' },
+    ] })
+    const { container, cleanup } = renderRow(conversation())
+    expect(container.querySelector('[aria-label^="Ask Agent is"]')).toBeNull()
+    cleanup()
   })
 
   it('shows timeline activity age without changing the last reply preview', () => {

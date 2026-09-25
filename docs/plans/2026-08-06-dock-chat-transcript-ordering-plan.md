@@ -1,4 +1,42 @@
-# Dock Chat Transcript Ordering Fix Plan
+# Dock chat transcript ordering fix plan
+
+> Historical implementation plan, source-compared on 2026-09-17. This page
+> explains the original ordering investigation. The timestamp fix is present;
+> optional sequence hardening and old release/rollout steps are not all implemented.
+
+## Current implementation
+
+The [runtime projection](../../server/internal/service/agent_runtime_projection.go)
+sets mirrored assistant `CreatedAt` from `eventTime(event)`, which uses envelope
+`SentAt` in UTC or the service clock when absent. Reconciled runtime messages use
+the runtime store's creation time when available. The mirror still uses envelope
+time rather than the proposed `data.CreatedAt` preference, so Phase 2's Helpin
+behavior should not be treated as completed merely because the SDK was upgraded.
+The [module manifest](../../server/go.mod) now pins Agent Runtime Go SDK v0.6.0,
+not the historical v0.2/v0.3 release sequence below.
+
+The [agent-run message model](../../server/internal/model/agent.go) does not have
+the proposed `RuntimeSequenceNo` field. Artifact metadata with a
+`runtime_sequence_no` key is a separate concern and does not establish Phase 3
+message ordering. The [Dock transform](../../frontend/src/components/agents/dock/dockChatState.ts)
+supports timestamp/sequence ordering modes rather than the proposed comparator
+based on a new message runtime-sequence field.
+
+The [segment collector](../../frontend/src/components/agents/transcript/segments.ts)
+contains settled-history handling so cumulative runtime segments do not simply
+move prior-turn content after later user messages. Later reconciliation and
+presentation changes are described in the
+[reviewed timeline design](../specs/2026-08-15-ask-agent-timeline-ordering-design.md).
+Those changes should be considered when extending this earlier fix.
+
+Historical rows are not proven repaired by the presence of the new-message
+projection fix. The optional timestamp-backfill proposal, original incident DB
+observations, and production replay acceptance steps are not newly verified here.
+AutoMigrate is not sufficient for every installation; new schema work must follow
+the repository's current versioned-migration guidance. No consumer was stopped,
+service restarted, migration applied, or SDK published during this review.
+
+## Original August investigation and plan
 
 **Date:** 2026-08-06
 **Bug:** In the Ask Agents dock chat, user and agent messages render out of order —

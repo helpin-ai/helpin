@@ -27,7 +27,7 @@ func TestPostmarkInbound_AuthFailure(t *testing.T) {
 	}
 }
 
-func TestPostmarkInbound_InvalidJSONReturnsOK(t *testing.T) {
+func TestPostmarkInbound_InvalidJSONIsNotAcknowledged(t *testing.T) {
 	h := NewPostmarkInboundHandler(nil, "secret")
 	req := httptest.NewRequest(http.MethodPost, "/api/webhooks/postmark/inbound", strings.NewReader(`{`))
 	req.SetBasicAuth("postmark", "secret")
@@ -35,12 +35,12 @@ func TestPostmarkInbound_InvalidJSONReturnsOK(t *testing.T) {
 
 	h.PostmarkInbound(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
 	}
 }
 
-func TestPostmarkInbound_AuthorizedWithoutServiceReturnsOK(t *testing.T) {
+func TestPostmarkInbound_UnavailableServiceIsRetryable(t *testing.T) {
 	h := NewPostmarkInboundHandler(nil, "secret")
 	req := httptest.NewRequest(http.MethodPost, "/api/webhooks/postmark/inbound", strings.NewReader(`{"MailboxHash":"conv-123"}`))
 	req.SetBasicAuth("postmark", "secret")
@@ -48,8 +48,8 @@ func TestPostmarkInbound_AuthorizedWithoutServiceReturnsOK(t *testing.T) {
 
 	h.PostmarkInbound(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
 	}
 }
 
@@ -225,8 +225,8 @@ func TestPostmarkInbound_AllowsAnyConfiguredSecret(t *testing.T) {
 
 	h.PostmarkInbound(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
 	}
 }
 
@@ -236,7 +236,7 @@ type retryingPostmarkProcessor struct {
 	calls     int
 }
 
-func (p *retryingPostmarkProcessor) ProcessInboundEmail(_ context.Context, _ model.PostmarkInboundPayload, _ string) error {
+func (p *retryingPostmarkProcessor) AcceptInboundEmail(_ context.Context, _ model.PostmarkInboundPayload, _ string) error {
 	p.calls++
 	err := p.nextError
 	p.nextError = nil
@@ -250,7 +250,7 @@ func TestPostmarkInboundRetryableDispatchHTTPStatus(t *testing.T) {
 		want int
 	}{
 		{"dispatch failure", fmt.Errorf("dispatch failed: %w", service.ErrInboundEmailAIDispatchRetry), http.StatusServiceUnavailable},
-		{"permanent processing failure", errors.New("invalid mailbox hash"), http.StatusOK},
+		{"receipt persistence failure", errors.New("database unavailable"), http.StatusServiceUnavailable},
 		{"success", nil, http.StatusOK},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

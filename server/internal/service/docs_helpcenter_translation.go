@@ -27,10 +27,13 @@ type DocsHelpcenterTranslationService struct {
 	spaceRepo       *repository.DocsSpaceRepository
 	collectionRepo  *repository.DocsCollectionRepository
 	searchRepo      *repository.DocsHelpcenterSearchRepository
+	attachmentRepo  publicationAttachmentRepository
 	artifactRepo    publicationArtifactRepository
 	artifactStore   publicationArtifactStore
 	llmProvider     llm.Provider
-	entitlementSvc  *EntitlementService
+	entitlementSvc  EntitlementPolicy
+	// invalidateCache drops a workspace's cached public Help Center pages.
+	invalidateCache func(ctx context.Context, workspaceID string)
 }
 
 // NewDocsHelpcenterTranslationService creates a new multilingual help-center service.
@@ -58,9 +61,22 @@ func NewDocsHelpcenterTranslationService(
 	}
 }
 
-func (s *DocsHelpcenterTranslationService) SetEntitlementService(entitlementSvc *EntitlementService) *DocsHelpcenterTranslationService {
+func (s *DocsHelpcenterTranslationService) SetEntitlementService(entitlementSvc EntitlementPolicy) *DocsHelpcenterTranslationService {
 	s.entitlementSvc = entitlementSvc
 	return s
+}
+
+// SetHelpcenterCacheInvalidator wires the public Help Center cache so that
+// publishing or unpublishing a translation refreshes cached pages, including
+// other articles whose links to it are resolved at render time.
+func (s *DocsHelpcenterTranslationService) SetHelpcenterCacheInvalidator(invalidate func(ctx context.Context, workspaceID string)) {
+	s.invalidateCache = invalidate
+}
+
+func (s *DocsHelpcenterTranslationService) invalidateHelpcenterCache(ctx context.Context, workspaceID string) {
+	if s.invalidateCache != nil && workspaceID != "" {
+		s.invalidateCache(ctx, workspaceID)
+	}
 }
 
 func (s *DocsHelpcenterTranslationService) SetSearchRepository(searchRepo *repository.DocsHelpcenterSearchRepository) {
@@ -582,6 +598,7 @@ func (s *DocsHelpcenterTranslationService) UnpublishArticleTranslation(ctx conte
 		return nil, err
 	}
 	if updated != nil {
+		s.invalidateHelpcenterCache(ctx, updated.WorkspaceID)
 		updated.LivePublishedAt = nil
 		updated.LiveSlug = nil
 		updated.HasUnpublishedChanges = false
@@ -1462,6 +1479,10 @@ func (s *DocsHelpcenterTranslationService) PublishArticleTranslation(ctx context
 	if len(publishedContent) > 0 {
 		publication.Content = publishedContent
 	}
+	publication.Content, err = materializePublicationImages(ctx, s.artifactStore, s.attachmentRepo, doc.WorkspaceID, doc.ID, publication.Content)
+	if err != nil {
+		return nil, err
+	}
 	publication.Content, err = materializePublicationArtifactReferences(ctx, s.artifactRepo, s.artifactStore, doc.WorkspaceID, doc.ID, publication.Content)
 	if err != nil {
 		return nil, err
@@ -1507,6 +1528,7 @@ func (s *DocsHelpcenterTranslationService) PublishArticleTranslation(ctx context
 	if err != nil {
 		return nil, err
 	}
+	s.invalidateHelpcenterCache(ctx, translation.WorkspaceID)
 	if updated != nil {
 		updated.LivePublishedAt = &publication.PublishedAt
 		updated.LiveSlug = &publication.Slug
@@ -1960,14 +1982,6 @@ func normalizeSlug(value string) string {
 	return trimmed
 }
 
-func trimmedStringPointer(value string) *string {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return nil
-	}
-	return &trimmed
-}
-
 func stringPtrValue(value *string) string {
 	if value == nil {
 		return ""
@@ -1994,4 +2008,8 @@ func articleSEODescription(article *model.DocsHelpcenterArticle) *string {
 		return nil
 	}
 	return article.SEODescription
+}
+
+func (s *DocsHelpcenterTranslationService) SetPublicationAttachmentRepository(repo *repository.PMAttachmentRepository) {
+	s.attachmentRepo = repo
 }

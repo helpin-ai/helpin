@@ -1,4 +1,50 @@
-# Marketing System Agents — Composition Spec
+# Marketing agent presets composition plan
+
+> Historical composition proposal, source-compared on 2026-09-17. This page
+> explains the original six-agent marketing concept for contributors. Its
+> readiness labels and build order are not the current preset catalog.
+
+## Current implementation
+
+The [preset catalog](../../server/internal/service/agent_presets.go) implements
+one consolidated `marketer` preset named **Mira**, rather than the six preset keys
+below. Mira uses `native_sdk`, allows manual triggers, defaults to interactive
+invocation, and sets approval mode to `always`. These configuration values do not
+prove every external action is available or automatically approved.
+
+Its tools cover research, document authoring, task creation/comments, CRM discovery,
+and selected CRM writes. Current names include `request_approval`, `web_search`,
+and `list_crm_signals`; the older names below are not copyable tool contracts.
+[CRM operational commands](../../server/internal/service/internal_command_crm_operational.go)
+now include deal creation and contact/deal updates, so the blanket claim that CRM
+writes still need to ship is obsolete. Tool availability remains subject to the
+preset, runtime policy, permissions, and configured services.
+
+Marketing skills use current catalog keys such as `marketing_context_setup` and
+`marketing_copywriting`, with skill discovery/read tools. The proposed hyphenated
+skill composition is not proof that each skill is automatically loaded for every
+run. [Preset test source](../../server/internal/service/agent_presets_marketer_test.go)
+checks Mira's configuration; it is not an end-to-end campaign execution test.
+
+Browser tools including `browser_snapshot` now occur in
+[Runtime profiles](../../server/internal/agentcontract/runtime_profiles.go), so
+“once browser_snapshot lands” is historical. That does not establish browser
+availability for every Mira run. No `schedule_email_sequence` or `draft_social_post`
+implementation was found in current backend source. Gmail/Postmark integrations
+alone do not establish a marketing preset's ability to send campaigns.
+
+The [automation event constants](../../server/internal/model/automation_rule.go)
+use `task.state_entered` and provider-specific release events such as
+`github.release_published`; the old `story.state_entered` and generic release
+examples below are not current event identifiers. Mira's preset remains manual;
+these event examples are proposed compositions, not installed triggers.
+
+See the [companion skill evaluation](2026-05-12-marketing-skills-catalog-eval.md)
+for the historical rationale. No campaigns were sent or runtime tests run during
+this documentation review.
+
+## Original six-agent proposal
+
 
 Companion to `2026-05-12-marketing-skills-catalog-eval.md`. Names each proposed agent, the skills it composes, the Helpin tools it relies on, its trigger surfaces, and readiness today.
 

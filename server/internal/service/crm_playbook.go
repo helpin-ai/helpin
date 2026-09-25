@@ -42,6 +42,7 @@ type crmPlaybookStore interface {
 
 // CRMPlaybookService owns business policy and manual participation. It has no execution dependency.
 type CRMPlaybookService struct {
+	aiProfiles *AIProfileService
 	store      crmPlaybookStore
 	authz      crmSituationAuthorizer
 	situations *CRMSituationService

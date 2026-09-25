@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -14,34 +14,49 @@ import {
 } from '@/components/design-system/quiet';
 import { crmEmailService } from '@/lib/services/crmService';
 import { unwrap } from '@/lib/queryUtils';
-import { useCRMEmailAttachments } from '@/hooks/useCRMEmailAttachments';
+import { withEmailSignature } from './emailComposition';
+import { useCRMEmailAttachments, type CRMEmailAttachmentDraft } from '@/hooks/useCRMEmailAttachments';
 import { CRMEmailAttachmentStrip } from './CRMEmailAttachmentStrip';
-import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
-import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { UpgradeRequiredDialog } from '@edition';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@edition/errors';
 
 export function CRMEmailReplyComposer({
   workspaceId,
+  signature,
+  attachmentDraft,
+  onAttachmentDraftChange,
+  onBusyChange,
   content,
   sending,
   onChange,
   onSubmit,
 }: {
   workspaceId: string;
+  signature?: string;
+  onBusyChange?: (busy: boolean) => void;
+  attachmentDraft?: CRMEmailAttachmentDraft;
+  onAttachmentDraftChange?: (draft: CRMEmailAttachmentDraft) => void;
   content: string;
   sending: boolean;
   onChange: (content: string) => void;
-  onSubmit: (attachments?: { draftId: string; attachmentIds: string[] }) => void | Promise<void>;
+  onSubmit: (attachments?: { draftId: string; attachmentIds: string[]; bodyHTML: string }) => void | Promise<void>;
 }) {
   const [focused, setFocused] = useState(false);
   const [rewriting, setRewriting] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkInitial, setLinkInitial] = useState({ label: '', url: '' });
-  const emailAttachments = useCRMEmailAttachments(workspaceId);
+  const emailAttachments = useCRMEmailAttachments(workspaceId, attachmentDraft, onAttachmentDraftChange);
+  const sendLock = useRef(false);
+  const [includeSignature, setIncludeSignature] = useState(true);
   const [upgradeReason, setUpgradeReason] = useState<UpgradeRequiredReason | null>(null);
   const submit = async () => {
-    if (emailAttachments.uploading) return;
-    await onSubmit({ draftId: emailAttachments.draftId, attachmentIds: emailAttachments.attachmentIds });
-    emailAttachments.reset();
+    if (sendLock.current || sending || rewriting || emailAttachments.uploading || emailAttachments.hasFailedUploads || !editor?.getText().trim()) return;
+    sendLock.current = true;
+    try {
+      await onSubmit({ draftId: emailAttachments.draftId, attachmentIds: emailAttachments.attachmentIds, bodyHTML: withEmailSignature(editor.getHTML(), includeSignature ? signature : undefined) });
+      emailAttachments.reset();
+    } catch { /* Parent shows the delivery error; retain message and attachments. */ }
+    finally { sendLock.current = false; }
   };
   const extensions = useMemo(() => [
     StarterKit.configure({
@@ -89,6 +104,8 @@ export function CRMEmailReplyComposer({
     editor.commands.setContent(content, { emitUpdate: false });
   }, [content, editor]);
 
+  useEffect(() => { onBusyChange?.(sending || rewriting || emailAttachments.uploading); }, [sending, rewriting, emailAttachments.uploading, onBusyChange]);
+
   if (!editor) return null;
   const hasContent = Boolean(editor.getText().trim());
   const openLink = () => {
@@ -132,6 +149,7 @@ export function CRMEmailReplyComposer({
         <QuietComposerAITools disabled={!hasContent} pending={rewriting} onSelect={rewrite} />
       </div>
       <QuietComposerEditorSurface><EditorContent editor={editor} /></QuietComposerEditorSurface>
+      {signature && <div className="px-3 pb-3 text-sm"><label className="mb-2 flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" checked={includeSignature} onChange={(event) => setIncludeSignature(event.target.checked)} disabled={sending} />Include signature</label>{includeSignature && <div className="whitespace-pre-wrap break-words">{signature}</div>}</div>}
       <CRMEmailAttachmentStrip attachments={emailAttachments.attachments} onRemove={(id) => void emailAttachments.remove(id)} />
       <QuietComposerToolbar
         editor={editor}
@@ -140,7 +158,7 @@ export function CRMEmailReplyComposer({
         onAttach={emailAttachments.pickFiles}
         onSubmit={() => void submit()}
         submitLabel="Send reply"
-        submitDisabled={!hasContent || emailAttachments.uploading}
+        submitDisabled={!hasContent || emailAttachments.uploading || emailAttachments.hasFailedUploads || rewriting || sending}
         submitting={sending}
       />
       <LinkInsertModal

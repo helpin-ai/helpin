@@ -45,7 +45,7 @@ func (h *DocsHandler) publicHelpcenterConfigResponse(
 	r *http.Request,
 	cfg *model.DocsHelpcenterConfig,
 ) publicHelpcenterConfigResponse {
-	resp := publicHelpcenterConfigResponse{DocsHelpcenterConfig: cfg}
+	resp := publicHelpcenterConfigResponse{DocsHelpcenterConfig: cfg, PublicWidgetURL: h.publicWidgetURL, PublicSDKURL: h.publicSDKURL}
 	if !cfg.ChatWidgetEnabled || h.supportWidgetConfig == nil {
 		return resp
 	}

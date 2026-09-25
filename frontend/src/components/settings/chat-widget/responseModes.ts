@@ -12,3 +12,9 @@ export function isChatWidgetAIResponseModeActive(mode: string | null | undefined
 export function getChatWidgetAIResponseModeForUI(mode: string | null | undefined) {
   return isChatWidgetAIResponseModeActive(mode) ? String(mode) : DEFAULT_CHAT_WIDGET_AI_RESPONSE_MODE;
 }
+
+export type AIReplyChannels = 'chat' | 'email' | 'both';
+
+export function getAIReplyChannels(value?: string): AIReplyChannels {
+  return value === 'email' || value === 'both' ? value : 'chat';
+}

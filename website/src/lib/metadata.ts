@@ -12,27 +12,27 @@ export type PageSeo = {
 
 export const PAGE_SEO = {
   home: {
-    title: 'Helpin — The AI Operating System for Modern Work',
+    title: 'Helpin — AI agents that do more than answer',
     description:
-      'Helpin connects projects, support, sales, and docs with AI agents that plan, build, triage, and follow up across every team.',
+      'Helpin gives AI agents the full customer context to resolve questions, take action, and follow through across support, projects, CRM, meetings, and docs.',
     canonicalPath: '/',
-    imagePath: '/og/helpin-home.png',
-    imageAlt: 'Helpin brings every team together and puts AI agents to work',
+    imagePath: '/og/helpin-new-home-green-v4.png',
+    imageAlt: 'Helpin — AI agents that do more than answer.',
   },
   pricing: {
-    title: 'Pricing — Helpin',
+    title: 'Pricing — Open source and Helpin Cloud',
     description:
-      'Simple plans with unlimited teammates, every Helpin module, and AI agents included in one connected workspace.',
+      'Self-host the open-source product or choose Helpin Cloud with unlimited teammates and monthly AI usage. Compare plans, hosting and Enterprise licensing.',
     canonicalPath: '/pricing',
-    imagePath: '/og/helpin-pricing.png',
-    imageAlt: 'Helpin pricing focuses on growth, not seat count',
+    imagePath: '/og/helpin-pricing-green-v4.png',
+    imageAlt: 'Helpin pricing — Every module. Every teammate. One price.',
   },
   privacy: {
     title: 'Privacy Policy — Helpin',
     description:
       'Learn how Helpin collects, protects, and processes information across the website and connected workspace.',
     canonicalPath: '/privacy',
-    imagePath: '/og/helpin-privacy.png',
+    imagePath: '/og/helpin-privacy-green-v4.png',
     imageAlt: 'Privacy at Helpin',
   },
   terms: {
@@ -40,7 +40,7 @@ export const PAGE_SEO = {
     description:
       'Read the terms governing access to and use of the Helpin website, workspace, AI agents, and connected services.',
     canonicalPath: '/terms',
-    imagePath: '/og/helpin-terms.png',
+    imagePath: '/og/helpin-terms-green-v4.png',
     imageAlt: 'Helpin Terms of Service',
   },
 } as const satisfies Record<string, PageSeo>;

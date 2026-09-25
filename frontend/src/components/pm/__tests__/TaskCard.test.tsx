@@ -228,7 +228,7 @@ describe('TaskCard', () => {
       expect(callbacks.onOpen).not.toHaveBeenCalled()
       rerender(savedTask)
       if (savedId) {
-        expect(container.querySelector<HTMLElement>('[title="Same name"]')!.style.backgroundColor).toBe('rgb(78, 143, 234)')
+        expect(container.querySelector<HTMLElement>('[title="Same name"] [aria-hidden="true"]')!.style.backgroundColor).toBe('rgb(78, 143, 234)')
       } else {
         expect(container.textContent).toContain('No Epic')
       }
@@ -260,10 +260,10 @@ describe('TaskCard', () => {
     const epic = { id: 'epic-1', name: 'Current epic', color: '#e2564a' } as Epic
     const { container, root, rerender } = renderTaskCard(task, { isOverlay }, [epic])
     const badge = () => container.querySelector<HTMLElement>('[title="Current epic"]')!
-    expect(badge().style.backgroundColor).toBe('rgb(226, 86, 74)')
+    expect(badge().querySelector<HTMLElement>('[aria-hidden="true"]')!.style.backgroundColor).toBe('rgb(226, 86, 74)')
     expect(badge().closest('button') !== null).toBe(!isOverlay)
     rerender(task, { isOverlay }, [{ ...epic, color: '#4e8fea' }])
-    expect(badge().style.backgroundColor).toBe('rgb(78, 143, 234)')
+    expect(badge().querySelector<HTMLElement>('[aria-hidden="true"]')!.style.backgroundColor).toBe('rgb(78, 143, 234)')
     act(() => root.unmount())
     container.remove()
   })
@@ -276,7 +276,7 @@ describe('TaskCard', () => {
     ] as Epic[]
     const { container, root, rerender } = renderTaskCard(task, {}, epics)
     rerender({ ...task, epic_id: 'epic-2' })
-    expect(container.querySelector<HTMLElement>('[title="Same name"]')!.style.backgroundColor).toBe('rgb(78, 143, 234)')
+    expect(container.querySelector<HTMLElement>('[title="Same name"] [aria-hidden="true"]')!.style.backgroundColor).toBe('rgb(78, 143, 234)')
     act(() => root.unmount())
     container.remove()
   })

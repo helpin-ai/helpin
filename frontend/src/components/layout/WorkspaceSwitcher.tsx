@@ -60,7 +60,7 @@ function sanitizeWorkspaceRouteRemainder(rest: string): string {
   return rest;
 }
 
-export function WorkspaceSwitcher() {
+export function WorkspaceSwitcher({ onCreateWorkspace }: { onCreateWorkspace?: () => void }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { isMobile } = useSidebar();
@@ -276,7 +276,7 @@ export function WorkspaceSwitcher() {
                 ))
               )}
             </div>
-            <div className="grid grid-cols-2 gap-1.5 border-t border-border px-1.5 py-1">
+            <div className={cn('grid gap-1.5 border-t border-border px-1.5 py-1', onCreateWorkspace && 'grid-cols-2')}>
               <button
                 type="button"
                 onClick={() => {
@@ -287,17 +287,19 @@ export function WorkspaceSwitcher() {
               >
                 View All
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  navigate({ to: '/workspaces', search: { create: true } });
-                  setOpen(false);
-                }}
-                className="flex items-center justify-center gap-1 rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-              >
-                <PlusSignIcon className="h-3 w-3" />
-                Create
-              </button>
+              {onCreateWorkspace && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onCreateWorkspace();
+                    setOpen(false);
+                  }}
+                  className="flex items-center justify-center gap-1 rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+                >
+                  <PlusSignIcon className="h-3 w-3" />
+                  Create
+                </button>
+              )}
             </div>
           </PopoverContent>
         </Popover>

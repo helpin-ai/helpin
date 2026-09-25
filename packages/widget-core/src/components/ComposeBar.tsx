@@ -174,7 +174,7 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
             ))}
           </div>
         )}
-        <textarea
+        <textarea dir="auto"
           ref={textareaRef}
           className="helpin-compose-input"
           value={message}

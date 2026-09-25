@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -62,6 +63,9 @@ func (s *CRMEmailService) ReconcileActionEmail(ctx context.Context, ws, userID, 
 	local, err := s.emailRepo.GetMessageByExternalID(ctx, account.ID, message.ID)
 	if err != nil {
 		return false, nil, err
+	}
+	if err := s.emailRepo.FinishSend(ctx, intentID, "sent"); err != nil {
+		slog.ErrorContext(ctx, "record reconciled CRM email reservation", "workspace_id", ws, "reservation_id", intentID, "error", err)
 	}
 	if local != nil {
 		return true, &local.ID, nil

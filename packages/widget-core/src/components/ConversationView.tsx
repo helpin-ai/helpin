@@ -40,7 +40,7 @@ interface ConversationViewProps {
   onCaptureEmail?: (email: string) => Promise<void>;
   onPreChatSubmit?: (data: { phone: string; email: string }) => void;
   onImageClick?: (src: string, alt: string) => void;
-  onAnswerFeedback?: (messageId: string, helpful: boolean) => void;
+  onAnswerFeedback?: (messageId: string, helpful: boolean) => Promise<boolean>;
   connectionStatus?: 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
   queuedMessageCount?: number;
   csatSubmitted?: boolean;
@@ -163,17 +163,22 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
       !isAIThinking &&
       !isTyping,
   );
+  const isFinished = ['resolved', 'closed', 'spam'].includes(conversation?.status || '')
+    || ['resolved_by_human', 'resolved_by_ai'].includes(conversation?.flowState || '');
+  // Explicit current flow takes priority over historical AI escalation state.
+  const hasCurrentHumanHandoff = conversation?.flowState
+    ? ['waiting_for_human', 'queued_for_human', 'after_hours_queue', 'assigned_to_human'].includes(conversation.flowState)
+    : conversation?.aiState === 'escalated';
+  const latestCustomerIndex = messages.reduce((latest, message, index) =>
+    !message.isInternal && message.role === 'customer' ? index : latest, -1);
+  const latestHumanIndex = messages.reduce((latest, message, index) =>
+    !message.isInternal && message.role === 'agent' ? index : latest, -1);
+  const handoffStartedAt = Date.parse(conversation?.handoffStartedAt || '');
+  const humanRepliedSinceHandoff = latestHumanIndex >= 0
+    && latestHumanIndex > latestCustomerIndex
+    && (!Number.isFinite(handoffStartedAt) || Date.parse(messages[latestHumanIndex].createdAt) >= handoffStartedAt);
   const isWaitingForTeammate = Boolean(
-    (showHumanAvailability ||
-      hasEscalationNotice ||
-      conversation?.aiState === 'escalated' ||
-      conversation?.flowState === 'waiting_for_human' ||
-      conversation?.flowState === 'queued_for_human' ||
-      conversation?.flowState === 'after_hours_queue' ||
-      conversation?.flowState === 'assigned_to_human') &&
-      !hasHumanReply &&
-      !isTyping &&
-      !isAIThinking,
+    !isFinished && hasCurrentHumanHandoff && !humanRepliedSinceHandoff && !isTyping && !isAIThinking,
   );
   const waitingTeammates = (config.availableTeammates || []).slice(0, 3);
   const showCsat = Boolean(
@@ -188,33 +193,14 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
       && !isAIThinking,
   );
   const handoffProgress = useMemo(() => {
-    if (delayedReplyIndex >= 0) return { title: 'Waiting for a teammate', detail: '' };
-    const detail = availability?.replyTimeText || availability?.outsideHoursMessage || 'We’ll let you know as soon as someone replies.';
     if (handoffState === 'after_hours' || conversation?.flowState === 'after_hours_queue') {
-      return { title: 'Our team is currently offline', detail };
+      return { title: 'Our team is currently offline', detail: availability?.outsideHoursMessage || '' };
     }
-    if (conversation?.flowState === 'assigned_to_human' || activeTeammate?.name) {
-      return {
-        title: activeTeammate?.name ? `${activeTeammate.name} is joining` : 'A teammate is joining',
-        detail: 'They’ll pick up the conversation here shortly.',
-      };
-    }
-    if (
-      conversation?.flowState === 'queued_for_human' ||
-      conversation?.flowState === 'waiting_for_human' ||
-      conversation?.aiState === 'escalated' ||
-      hasEscalationNotice
-    ) {
-      return { title: 'You’re in the support queue', detail };
-    }
-    return { title: 'Finding the right teammate…', detail: 'Your request has been sent to the support team.' };
-  }, [activeTeammate?.name, availability?.outsideHoursMessage, availability?.replyTimeText, conversation?.aiState, conversation?.flowState, delayedReplyIndex, handoffState, hasEscalationNotice]);
+    return { title: 'Waiting for a teammate', detail: '' };
+  }, [availability?.outsideHoursMessage, conversation?.flowState, handoffState]);
 
   // Derive the most recent responding agent from messages.
   const activeAgent = useMemo(() => {
-    if (activeTeammate?.name && !messages.some((message) => message.role === 'agent')) {
-      return { name: activeTeammate.name, avatar: activeTeammate.avatarUrl, isAI: false };
-    }
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i];
       if (m.role === 'ai') {
@@ -224,11 +210,8 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
         return { name: m.senderName, avatar: m.senderAvatar, isAI: false };
       }
     }
-    if (activeTeammate?.name) {
-      return { name: activeTeammate.name, avatar: activeTeammate.avatarUrl, isAI: false };
-    }
     return null;
-  }, [activeTeammate, messages]);
+  }, [messages]);
 
   const introRole = aiFirst ? 'ai' as const : 'agent' as const;
   const introName = aiFirst ? 'Helpin AI' : workspaceName;
@@ -659,11 +642,6 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
           <span className="helpin-waiting-teammate-copy">
             <span className="helpin-waiting-teammate-label">{handoffProgress.title}</span>
             {handoffProgress.detail && <span className="helpin-waiting-teammate-detail">{handoffProgress.detail}</span>}
-            {transcriptEmail && (
-              <span className="helpin-contact-confirmation">
-                <span aria-hidden="true">✓</span> Replies will also go to {transcriptEmail}
-              </span>
-            )}
           </span>
         </div>
       )}

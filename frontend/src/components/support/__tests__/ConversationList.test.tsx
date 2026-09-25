@@ -14,6 +14,7 @@ const mockUseUpdateSupportInboxView = vi.fn()
 const mockUseUpdateSupportBuiltinInboxView = vi.fn()
 const mockUseSupportInboxViews = vi.fn()
 const mockUseSupportTags = vi.fn()
+const mockUseHasAnySupportConversation = vi.fn()
 
 vi.mock('@/hooks/queries/useSupport', () => ({
   useInfiniteConversations: (...args: unknown[]) => mockUseInfiniteConversations(...args),
@@ -24,6 +25,7 @@ vi.mock('@/hooks/queries/useSupport', () => ({
   useUpdateSupportBuiltinInboxView: (...args: unknown[]) => mockUseUpdateSupportBuiltinInboxView(...args),
   useSupportInboxViews: (...args: unknown[]) => mockUseSupportInboxViews(...args),
   useSupportTags: (...args: unknown[]) => mockUseSupportTags(...args),
+  useHasAnySupportConversation: (...args: unknown[]) => mockUseHasAnySupportConversation(...args),
 }))
 
 vi.mock('../ConversationRow', () => ({
@@ -117,10 +119,49 @@ describe('ConversationList presence resync', () => {
     mockUseSupportTags.mockReturnValue({
       data: [],
     })
+    mockUseHasAnySupportConversation.mockReturnValue({ data: undefined })
   })
 
   afterEach(() => {
     document.body.innerHTML = ''
+  })
+
+  it.each([
+    [false, 'onboarding'],
+    [true, 'inbox-zero'],
+  ] as const)('reports an empty default Inbox as hasAny=%s → %s', (hasAny, expected) => {
+    mockUseInfiniteConversations.mockReturnValue({
+      data: { pages: [{ data: [] }] },
+      isLoading: false,
+      isFetching: false,
+      isFetchingNextPage: false,
+      hasNextPage: false,
+      fetchNextPage: vi.fn(),
+      error: null,
+    })
+    mockUseHasAnySupportConversation.mockReturnValue({ data: hasAny })
+    const onInboxEmptyStateChange = vi.fn()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(
+        <ConversationList
+          workspaceId="ws-1"
+          userId="user-1"
+          onInboxEmptyStateChange={onInboxEmptyStateChange}
+          onWidgetSettingsClick={vi.fn()}
+          onCreateConversationClick={vi.fn()}
+        />,
+      )
+    })
+
+    expect(mockUseHasAnySupportConversation).toHaveBeenLastCalledWith('ws-1', true)
+    expect(onInboxEmptyStateChange).toHaveBeenLastCalledWith(expected)
+    expect(container.textContent?.includes('Install widget')).toBe(expected === 'onboarding')
+
+    act(() => root.unmount())
   })
 
   it('reserves inline header space for the collapsed workspace sidebar opener', () => {
@@ -659,6 +700,48 @@ describe('ConversationList presence resync', () => {
         sort: 'oldest',
       },
     }, expect.any(Object))
+
+    act(() => root.unmount())
+  })
+
+  it('opens view creation from the sidebar and selects the saved view', () => {
+    const createdView = {
+      id: 'view-new',
+      workspace_id: 'ws-1',
+      name: 'Customer followups',
+      filters: { nav_filter: 'inbox' },
+      is_shared: false,
+      view_type: 'custom' as const,
+      created_by: 'user-1',
+      created_at: '2026-09-24T00:00:00Z',
+      updated_at: '2026-09-24T00:00:00Z',
+    }
+    const mutate = vi.fn((_payload, options?: { onSuccess?: (view: typeof createdView) => void }) => options?.onSuccess?.(createdView))
+    mockUseCreateSupportInboxView.mockReturnValue({ mutate, isPending: false })
+    useSupportInboxStore.setState({ createCustomViewOpen: true })
+    const onViewCreated = vi.fn()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => root.render(<ConversationList workspaceId="ws-1" userId="user-1" onViewCreated={onViewCreated} />))
+
+    expect(document.body.textContent).toContain('New view')
+    const createButton = Array.from(document.body.querySelectorAll('button')).find((button) => button.textContent === 'Create view') as HTMLButtonElement
+    expect(createButton).toBeTruthy()
+    act(() => createButton.click())
+
+    const nameInput = document.body.querySelector('#support-view-name') as HTMLInputElement
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(nameInput, 'Customer followups')
+      nameInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const saveButton = Array.from(document.body.querySelectorAll('button')).find((button) => button.textContent === 'Save') as HTMLButtonElement
+    act(() => saveButton.click())
+
+    expect(mutate).toHaveBeenCalledWith(expect.objectContaining({ name: 'Customer followups' }), expect.any(Object))
+    expect(onViewCreated).toHaveBeenCalledWith(createdView)
+    expect(useSupportInboxStore.getState().createCustomViewOpen).toBe(false)
 
     act(() => root.unmount())
   })

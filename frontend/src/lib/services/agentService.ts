@@ -2,6 +2,8 @@ import { api } from '../api';
 import { automationService } from './automationService';
 import type {
   Agent,
+  SupportAIPreviewRequest,
+  SupportAIPreviewResponse,
   AgentRun,
   CodingSession,
   CodingSessionEventListResponse,
@@ -11,7 +13,6 @@ import type {
   AgentPresetDefinition,
   UpdateAgentRequest,
   AgentModelProviderOption,
-  CodexAuthState,
   ContinueAgentRunRequest,
   CreateWorkspaceAgentPresetVersionRequest,
   UpdateWorkspaceAgentPresetVersionRequest,
@@ -28,6 +29,12 @@ import type {
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
 
 export const agentService = {
+  previewSupportReply: (workspaceId: string, agentId: string, payload: SupportAIPreviewRequest) =>
+    api.post<SupportAIPreviewResponse>(`/pm/agents/${agentId}/support-preview${qs(workspaceId)}`, payload),
+  getSupportPreview: (workspaceId: string, agentId: string, runId: string) =>
+    api.get<SupportAIPreviewResponse>(`/pm/agents/${agentId}/support-preview/${runId}${qs(workspaceId)}`),
+  cancelSupportPreview: (workspaceId: string, agentId: string, runId: string) =>
+    api.del(`/pm/agents/${agentId}/support-preview/${runId}${qs(workspaceId)}`),
   list: (workspaceId: string) =>
     api.get<Agent[]>(`/pm/agents${qs(workspaceId)}`),
   get: (workspaceId: string, id: string) =>
@@ -101,10 +108,6 @@ export const agentService = {
     ),
   cancelRun: (workspaceId: string, runId: string) =>
     automationService.cancelRun(workspaceId, runId) as ReturnType<typeof automationService.cancelRun>,
-  startCodexDeviceCodeAuth: (workspaceId: string, runId: string) =>
-    api.post<CodexAuthState>(`/pm/agent-runs/${runId}/codex-auth/device-code/start${qs(workspaceId)}`, {}),
-  cancelCodexDeviceCodeAuth: (workspaceId: string, runId: string) =>
-    api.post<CodexAuthState>(`/pm/agent-runs/${runId}/codex-auth/device-code/cancel${qs(workspaceId)}`, {}),
   approveRun: (workspaceId: string, runId: string, payload?: ApproveAgentRunRequest) =>
     automationService.approveRun(workspaceId, runId, payload) as ReturnType<typeof automationService.approveRun>,
   requestRunChanges: (workspaceId: string, runId: string, payload: SendAgentRunRequestChangesRequest) =>

@@ -1,7 +1,15 @@
+import { dockWorkPlans, hasWorkPlanOrigin } from './dockWorkPlans';
+import activityStyles from './DockActivityTimeline.module.css';
+import { useAskAgentDefaults } from "@/hooks/queries/useAskAgentDefaults";
+import { AIConnectionPicker } from '@/components/agents/AIConnectionPicker';
+import { AISettingsLink } from '@/components/agents/AISettingsLink';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
+import type { AIConnectionSelection } from '@/lib/services/aiConnectionService';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { ArrowRight01Icon, ArrowUp01Icon, Loading01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { usePageContextState } from '@/components/command-bar/pageContext';
 import { commandBarService } from '@/lib/services/commandBarService';
 import { dockChatService } from '@/lib/services/dockChatService';
@@ -11,11 +19,14 @@ import { parseDockPlanConfirm } from '@/lib/dockTypes';
 import type { DockChatDetail, DockChatMediaAttachment, DockEntityReference } from '@/lib/dockTypes';
 import type { AgentRun, AgentRunMessage, CodingSessionInteraction, CommandBarPageContext, CommandBarPlanSummary } from '@/lib/pmTypes';
 import { DockInput } from './DockInput';
+import { DockExecutionPicker } from './DockExecutionPicker';
+import { resolveExecutionPickerDisabled } from './executionPickerState';
+import { DockArtifactDownloads } from './DockArtifactDownloads';
 import { DockTranscript, type DockMessageSubmission } from './DockTranscript';
 import { DockPlanConfirmCard } from './DockPlanConfirmCard';
 import { ExecutionStrip } from './ExecutionStrip';
 import { PendingInteractionCard } from './PendingInteractionCard';
-import { ApprovalAttentionBanner } from './ApprovalAttentionBanner';
+import { DockInteractionLayer } from './DockInteractionLayer';
 import { CodingPlanPanel } from '@/components/pm/CodingSession/CodingPlanPanel';
 import type { AskAgentAvatarState } from '@/components/agents/AskAgentAvatar';
 import { deriveAskAgentAvatarState } from '@/components/agents/askAgentPresence';
@@ -23,7 +34,7 @@ import { ScrollToLatestButton } from '@/components/agents/transcript';
 import { AgentLiveStatus } from './AgentLiveStatus';
 import { resolveAgentLiveProgress } from './agentProgress';
 import { resolveVisibleTurn } from './agentTurnState';
-import { parseFollowUpSuggestions } from './followUpSuggestions';
+import { chatFollowUpSuggestions } from './followUpSuggestions';
 import { starterSuggestionsForContext } from './starterSuggestions';
 import { focusComposerAtEnd } from './composerFocus';
 import { planSummaryToRunPlan } from './planSummary';
@@ -36,7 +47,6 @@ import {
 } from './dockChatTimeline';
 import {
   isDockTranscriptStreaming,
-  isStructuredInteractionKind,
   resolveDockComposerState,
   transformDockStream,
 } from './dockChatState';
@@ -51,11 +61,14 @@ interface ChatViewProps {
   chatId?: string;
   rosterRunId?: string | null;
   active?: boolean;
-  onCreateChat?: () => Promise<{ id: string } | null>;
+  onCreateChat?: (options?: { executionEnabled?: boolean }) => Promise<{ id: string } | null>;
   scrollToLatestRequest: number;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   initialDraft?: string;
   onDraftConsumed?: () => void;
+  /** References attached when the chat opens, e.g. from a list selection. */
+  initialReferences?: DockEntityReference[];
+  onReferencesConsumed?: () => void;
   draftValue?: string;
   onDraftChange?: (value: string) => void;
   onChatChanged?: () => void;
@@ -93,6 +106,8 @@ export function ChatView({
   textareaRef,
   initialDraft,
   onDraftConsumed,
+  initialReferences,
+  onReferencesConsumed,
   draftValue,
   onDraftChange,
   onChatChanged,
@@ -109,6 +124,9 @@ export function ChatView({
   const detailRefreshed = useRef(false);
   const cachedTranscript = chatId ? useDockStore.getState().transcripts[chatId] : undefined;
   const cacheTranscript = useDockStore((state) => state.cacheTranscript);
+  const [aiConnection, setAIConnection] = useState<AIConnectionSelection>({});
+  const [changingExecution, setChangingExecution] = useState(false);
+  const [draftExecutionEnabled, setDraftExecutionEnabled] = useState(false);
   const [detail, setDetail] = useState<DockChatDetail | null>(cachedTranscript?.detail ?? null);
   const [detailLoading, setDetailLoading] = useState(!!chatId && !cachedTranscript);
   const [refreshError, setRefreshError] = useState<string | null>(null);
@@ -126,6 +144,8 @@ export function ChatView({
   const [sending, setSending] = useState(false);
   const [launchStartedAt, setLaunchStartedAt] = useState<string | undefined>();
   const [stopping, setStopping] = useState(false);
+  const [pausing, setPausing] = useState(false);
+  const [resuming, setResuming] = useState(false);
   const [pendingEcho, setPendingEcho] = useState<PendingDockChatMessage | null>(null);
   const [latestSubmission, setLatestSubmission] = useState<DockMessageSubmission | null>(null);
   const [failedClientMessageIds, setFailedClientMessageIds] = useState<ReadonlySet<string>>(() => new Set());
@@ -161,7 +181,34 @@ export function ChatView({
     return () => window.clearTimeout(timer);
   }, [initialDraft, onDraftConsumed, setValue]);
 
+  useEffect(() => {
+    if (!initialReferences || initialReferences.length === 0) return;
+    const timer = window.setTimeout(() => {
+      setReferences((current) => {
+        const next = current.slice();
+        for (const reference of initialReferences) {
+          if (next.length >= 10) break;
+          const exists = next.some(
+            (item) => item.entity_type === reference.entity_type && item.entity_id === reference.entity_id,
+          );
+          if (!exists) next.push(reference);
+        }
+        return next;
+      });
+      onReferencesConsumed?.();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [initialReferences, onReferencesConsumed]);
+
+  const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.id === workspaceId ? state.currentWorkspace.slug : undefined);
   const run = detail?.run ?? null;
+  const executionEnabled = detail?.chat.execution_enabled ?? draftExecutionEnabled;
+  const acceptedSelection = run?.input?.ai_selection;
+  const acceptedProfileId = acceptedSelection && typeof acceptedSelection === 'object' && 'profile_id' in acceptedSelection && typeof acceptedSelection.profile_id === 'string'
+    ? acceptedSelection.profile_id : typeof run?.input?.ai_profile_id === 'string' ? run.input.ai_profile_id : undefined;
+  const agentDefaults = useAskAgentDefaults(!run && active ? workspaceId : "");
+  const askAgentDefault = agentDefaults.data?.ai_profile_id;
+  const agentDefaultUnavailable = !run && !aiConnection.ai_profile_id && (agentDefaults.isPending || agentDefaults.isError);
   const runActive = !!run && ACTIVE_RUN_STATUSES.has(run.status);
   useEffect(() => {
     if (detailRefreshed.current) onRunIdChange?.(run?.id ?? null);
@@ -211,6 +258,30 @@ export function ChatView({
     if (res.data) { detailRefreshed.current = true; setDetail(res.data); }
     return res.data ?? null;
   }, [chatId, detailReader]);
+
+  const changeExecution = useCallback(async (enabled: boolean) => {
+    if (!chatId) {
+      setDraftExecutionEnabled(enabled);
+      return;
+    }
+    setChangingExecution(true);
+    try {
+      const response = await dockChatService.updateChat(workspaceId, chatId, { execution_enabled: enabled });
+      if (response.error || !response.data) {
+        toast.error(response.error ?? 'Could not update execution settings.');
+        return;
+      }
+      setDetail((current) => current ? { ...current, chat: response.data! } : current);
+      onChatChanged?.();
+      toast.message(enabled
+        ? 'Code and Python tools will be available for your next message.'
+        : 'Execution stopped. Check any interrupted external action before retrying.');
+    } catch {
+      toast.error('Could not update execution settings.');
+    } finally {
+      setChangingExecution(false);
+    }
+  }, [chatId, onChatChanged, workspaceId]);
 
   const refreshMessages = useCallback(async (automatic = false) => {
 	if (!chatId) return [];
@@ -469,7 +540,11 @@ export function ChatView({
     };
     update();
     node.addEventListener('scroll', update, { passive: true });
-    return () => node.removeEventListener('scroll', update);
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
+      if (autoFollowRef.current) node.scrollTop = node.scrollHeight;
+    });
+    if (node.firstElementChild) observer?.observe(node.firstElementChild);
+    return () => { node.removeEventListener('scroll', update); observer?.disconnect(); };
   }, []);
 
   const scrollToLatest = useCallback(() => {
@@ -491,20 +566,19 @@ export function ChatView({
   useEffect(() => {
     const node = scrollRef.current;
     if (node && autoFollowRef.current) node.scrollTop = node.scrollHeight;
-  }, [transformed, currentPlan, pendingInteraction, visibleSendError]);
+  }, [transformed, currentPlan, visibleSendError]);
 
-  const effectiveInteraction = pendingInteraction ?? fallbackInteraction;
+  const effectiveInteraction = run?.pause_reason === 'manual' ? null : pendingInteraction ?? fallbackInteraction;
   const dockConfirm = effectiveInteraction ? parseDockPlanConfirm(effectiveInteraction.request_payload) : null;
-  const structuredPending = !dockConfirm && isStructuredInteractionKind(effectiveInteraction?.interaction_kind);
   const composer = resolveDockComposerState(
     run ? { status: run.status, pause_reason: run.pause_reason } : null,
-    !!dockConfirm || structuredPending,
-    detailLoading || sending,
+    !!effectiveInteraction,
+    detailLoading || sending || agentDefaultUnavailable,
   );
 
   const sendContent = useCallback(
     async (content: string, messageReferences: DockEntityReference[] = references, retryClientMessageID?: string) => {
-      if (!content || sending) return;
+      if (!content || sending || agentDefaultUnavailable) return;
       const clientMessageId = retryClientMessageID ?? newClientMessageID();
       const needsTitle = !detail?.chat.title.trim();
       setSending(true);
@@ -533,12 +607,13 @@ export function ChatView({
       try {
         let targetChatId = chatId;
         if (!targetChatId) {
-          const created = await onCreateChat?.();
+          const created = await onCreateChat?.({ executionEnabled: draftExecutionEnabled });
           if (!created) throw new Error('Unable to create chat. Please retry.');
           targetChatId = created.id;
         }
 		const res = await dockChatService.sendMessage(workspaceId, targetChatId, {
           client_message_id: clientMessageId,
+          ...(!run ? aiConnection : {}),
           content,
           page_context: effectivePageContext ?? undefined,
           references: messageReferences.length > 0 ? messageReferences : undefined,
@@ -607,10 +682,11 @@ export function ChatView({
         setSending(false);
       }
     },
-    [chatId, currentUserId, detail?.chat.title, effectivePageContext, mediaAttachments, mergedStream, onChatChanged, onCreateChat, references, refetch, refreshMessages, run, sending, workspaceId],
+    [agentDefaultUnavailable, aiConnection, chatId, currentUserId, detail?.chat.title, draftExecutionEnabled, effectivePageContext, mediaAttachments, mergedStream, onChatChanged, onCreateChat, references, refetch, refreshMessages, run, sending, workspaceId],
   );
 
   const submit = async () => {
+    if (agentDefaultUnavailable) return;
     const readyAttachmentCount = mediaAttachments.filter((attachment) => attachment.status === 'ready' && attachment.id).length;
     const content = value.trim() || (readyAttachmentCount === 1 ? 'Review the attached file.' : readyAttachmentCount > 1 ? 'Review the attached files.' : '');
     if (!content) return;
@@ -671,8 +747,37 @@ export function ChatView({
     if (attachment.id) void pmAttachmentService.remove(workspaceId, attachment.id, { pendingOnly: true });
   }, [workspaceId]);
 
-  const canStop = runActive && (run?.status === 'queued' || run?.status === 'running');
+  const canPause = run?.status === 'queued' || run?.status === 'running';
+  const canResume = run?.status === 'paused' && run.pause_reason === 'manual';
+  const canStop = runActive && (canPause || canResume);
+  const pausePending = pausing || run?.execution_stage === 'pausing';
+  const resumePending = resuming || run?.execution_stage === 'resuming';
   const cancellationPending = stopping || run?.execution_stage === 'cancelling';
+  const handlePause = useCallback(async () => {
+    if (!chatId || pausePending) return;
+    setPausing(true);
+    try {
+      const res = await dockChatService.pauseChatRun(workspaceId, chatId);
+      if (res.error) { toast.error(res.error); return; }
+      if (res.data) setDetail((current) => current ? { ...current, run: res.data } : current);
+      await Promise.all([refreshDetail(), refetch()]);
+    } finally {
+      setPausing(false);
+    }
+  }, [chatId, pausePending, refetch, refreshDetail, workspaceId]);
+
+  const handleResume = useCallback(async () => {
+    if (!chatId || resumePending) return;
+    setResuming(true);
+    try {
+      const res = await dockChatService.resumeChatRun(workspaceId, chatId);
+      if (res.error) { toast.error(res.error); return; }
+      if (res.data) setDetail((current) => current ? { ...current, run: res.data } : current);
+      await Promise.all([refreshDetail(), refetch()]);
+    } finally {
+      setResuming(false);
+    }
+  }, [chatId, resumePending, refetch, refreshDetail, workspaceId]);
   const handleStop = useCallback(async () => {
     if (!chatId || cancellationPending) return;
     setStopping(true);
@@ -698,12 +803,13 @@ export function ChatView({
       if (!res.error) {
         clearPendingInteraction(interactionId);
         setFallbackInteraction(null);
+        onChatChanged?.();
         void refreshDetail();
         void refetch();
       }
       return { error: res.error };
     },
-    [chatId, clearPendingInteraction, refetch, refreshDetail, workspaceId],
+    [chatId, clearPendingInteraction, onChatChanged, refetch, refreshDetail, workspaceId],
   );
 
   const activeSubAgentName = useMemo(() => {
@@ -736,15 +842,20 @@ export function ChatView({
     : liveProgress;
 
   const followUpSuggestions = useMemo(() => {
-    if (run?.status !== 'completed' || sending || pendingEcho) return [];
-    const finalMessage = [...(transformed?.stream.transcript_messages ?? [])]
-      .reverse()
-      .find((message) => message.role === 'assistant' && message.content.trim());
-    return finalMessage ? parseFollowUpSuggestions(finalMessage.content) : [];
-  }, [run?.status, sending, transformed, pendingEcho]);
+    if (sending || pendingEcho || analyzingMedia || effectiveInteraction) return [];
+    // Parse the original answer; the chat display stream has its hints removed.
+    return chatFollowUpSuggestions(run, mergedStream?.transcript_messages ?? []);
+  }, [run, sending, pendingEcho, analyzingMedia, effectiveInteraction, mergedStream]);
 
   const hasTranscriptMessages = (transformed?.stream.transcript_messages ?? persistedMessages)
     .some((message) => message.content.trim());
+  const executionPickerDisabled = resolveExecutionPickerDisabled({
+    changingExecution,
+    sending,
+    pendingEcho: Boolean(pendingEcho),
+    runStatus: run?.status,
+  });
+
   const starterSuggestions = !hasTranscriptMessages && !value.trim() && !sending && !pendingEcho
     ? starterSuggestionsForContext(effectivePageContext?.entity_type)
     : [];
@@ -805,21 +916,38 @@ export function ChatView({
     });
   }, [plans, runsById, transformed, workspaceId]);
 
-  const needsApproval = (
-    (run?.status === 'paused' && run.pause_reason === 'human_approval')
-    || effectiveInteraction?.interaction_kind.includes('approval') === true
-    || Object.values(runsById).some(
-      (childRun) => childRun.status === 'paused' && childRun.pause_reason === 'human_approval',
-    )
-  );
   const runtimeStream = transformed?.stream ?? streamState;
   const showRuntimeTimeline = isDockTranscriptStreaming(run)
     || (run?.status !== 'cancelled' && runtimeStream !== null && hasAuthoritativeDockRuntimeTimeline(runtimeStream));
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <DockInteractionLayer
+      active={active}
+      interactionId={effectiveInteraction?.interaction_id}
+      prompt={effectiveInteraction && (dockConfirm ? (
+        <DockPlanConfirmCard
+          payload={dockConfirm}
+          onDecision={(decision, note) => resolveInteraction(effectiveInteraction.interaction_id, {
+            response_payload: { decision }, followup_message: note,
+          })}
+        />
+      ) : run ? (
+        <PendingInteractionCard
+          workspaceId={workspaceId}
+          runId={run.id}
+          interaction={effectiveInteraction}
+          resolve={resolveInteraction}
+          onResolved={() => {
+            clearPendingInteraction(effectiveInteraction.interaction_id);
+            void refreshDetail();
+            void refetch();
+          }}
+        />
+      ) : null)}
+    >
       <div className="relative flex min-h-0 flex-1 flex-col">
-      <div ref={scrollRef} data-agent-dock-chat-scroll className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pb-24 pt-3">
+      <div ref={scrollRef} data-agent-dock-chat-scroll className={`${activityStyles.activityHost} min-h-0 flex-1 overflow-y-auto px-5 pb-24 pt-3 sm:px-6`}>
+      <div className="space-y-3">
 		{nextMessagesBefore && (
 		  <div className="flex justify-center">
 		    <Button
@@ -837,7 +965,7 @@ export function ChatView({
 		    </Button>
 		  </div>
 		)}
-        {detailLoading && !detail && (
+        {detailLoading && !detail && !hasTranscriptMessages && !pendingEcho && !sending && (
           <p className="py-6 text-center text-sm text-muted-foreground">Loading chat…</p>
         )}
         {refreshError && (
@@ -846,7 +974,7 @@ export function ChatView({
             <button type="button" className="font-semibold hover:underline" onClick={() => void refreshConversation()}>Retry</button>
           </div>
         )}
-        {!detailLoading && !run && !pendingEcho && (
+        {!detailLoading && !run && !pendingEcho && !sending && !hasTranscriptMessages && (
           <p className="py-6 text-center text-sm text-muted-foreground">
             {requiredPageContext?.entity_type === 'support_conversation'
               ? 'Ask about this conversation, draft a reply, investigate the issue, or have an agent take the next step.'
@@ -858,34 +986,42 @@ export function ChatView({
             stream={transformed.stream}
             latestSubmission={latestSubmission}
             active={isDockTranscriptStreaming(run)}
+            runStatus={run?.status}
+            pauseReason={run?.pause_reason}
             useRuntimeTimeline={showRuntimeTimeline}
             workspaceId={workspaceId}
             chatId={chatId}
             fallbackActor={streamController.session?.triggered_by_user}
+            savedWorkPlans={detail?.work_plans}
             subAgentRuns={subAgentTimelineItems}
             compactAssistantProgress
           />
         )}
+        <DockArtifactDownloads workspaceId={workspaceId} artifacts={detail?.artifacts ?? []} />
         {followUpSuggestions.length > 0 && (
           <div className="mt-2 border-t border-border/40 pt-1" data-agent-follow-up-suggestions>
             {followUpSuggestions.map((suggestion) => (
-              <button
-                key={suggestion}
-                type="button"
-                className="flex w-full items-center gap-2 rounded-md px-1 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-                onClick={() => {
-                  insertSuggestion(suggestion);
-                }}
-              >
-                <ArrowRight01Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                <span className="min-w-0 truncate">{suggestion}</span>
-              </button>
+              <Tooltip key={suggestion}>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex w-full min-w-0 items-center gap-2 rounded-md px-1 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+                    onClick={() => {
+                      insertSuggestion(suggestion);
+                    }}
+                  >
+                    <ArrowRight01Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    <span className="min-w-0 truncate">{suggestion}</span>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top" align="start" className="max-w-[min(28rem,calc(100vw-2rem))] whitespace-normal break-words text-left leading-relaxed">
+                  {suggestion}
+                </TooltipContent>
+              </Tooltip>
             ))}
           </div>
         )}
-        {currentPlan && (
-          <CodingPlanPanel plan={currentPlan} runStatus={run?.status} title="Work plan" />
-        )}
+
         {visibleSendError && (
           <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs">
             <p className="mb-1 line-clamp-2 text-foreground/80">{visibleSendError.content}</p>
@@ -914,44 +1050,23 @@ export function ChatView({
             </div>
           </div>
         )}
-        {effectiveInteraction && dockConfirm && (
-          <DockPlanConfirmCard
-            payload={dockConfirm}
-            onDecision={(decision, note) =>
-              resolveInteraction(effectiveInteraction.interaction_id, {
-                response_payload: { decision },
-                followup_message: note,
-              })
-            }
-          />
-        )}
-        {effectiveInteraction && !dockConfirm && run && (
-          <PendingInteractionCard
-            workspaceId={workspaceId}
-            runId={run.id}
-            interaction={effectiveInteraction}
-            resolve={resolveInteraction}
-            onResolved={() => {
-              clearPendingInteraction(effectiveInteraction.interaction_id);
-              void refreshDetail();
-              void refetch();
-            }}
-          />
-        )}
         {displayedLiveProgress ? (
           <div
             className="mt-2 shrink-0 border-t border-border/40 px-1 pt-2"
             data-agent-live-status-region
+            data-working={displayedLiveProgress.tone === 'working'}
           >
             <AgentLiveStatus progress={displayedLiveProgress} />
           </div>
         ) : null}
       </div>
+      </div>
       {!atBottom && <ScrollToLatestButton onClick={scrollToLatest} />}
       </div>
-      {needsApproval && !atBottom ? (
-        <ApprovalAttentionBanner onReview={scrollToLatest} />
-      ) : null}
+      {currentPlan && (!hasWorkPlanOrigin(currentPlan) || !mergedStream || !dockWorkPlans(mergedStream).some(plan => plan.origin?.event_id === currentPlan.origin?.event_id)) && <div className="max-h-48 shrink-0 overflow-y-auto px-5" data-current-work-plan><CodingPlanPanel plan={currentPlan} runStatus={run?.status} title="Current work plan" defaultOpen={false} /></div>}
+      {run?.status === 'paused' && run.pause_reason === 'authentication' && workspaceSlug && (
+        <div className="px-3.5 py-2"><AISettingsLink slug={workspaceSlug} className="text-xs underline text-quiet-text-secondary">Review AI access to continue</AISettingsLink></div>
+      )}
       {composer.visible && (
         <div className="border-t border-border/60">
           {starterSuggestions.length > 0 && composer.enabled && (
@@ -976,6 +1091,21 @@ export function ChatView({
           <div className="p-2">
               <DockInput
                 mode="conversation"
+                executionPicker={(!chatId || (detail && detail.chat.user_id === currentUserId)) ? (
+                  <DockExecutionPicker
+                    enabled={Boolean(executionEnabled)}
+                    disabled={executionPickerDisabled}
+                    onChange={changeExecution}
+                  />
+                ) : null}
+                profilePicker={run ? (
+                  acceptedProfileId ? <AIConnectionPicker workspaceId={workspaceId} inDock compact locked value={{ ai_profile_id: acceptedProfileId }} onChange={() => {}} />
+                    : <span className="text-xs text-quiet-text-secondary" title="This conversation keeps its saved AI configuration">Saved profile</span>
+                ) : !aiConnection.ai_profile_id && agentDefaults.isPending ? (
+                  <span role="status" className="text-xs text-quiet-text-secondary">Loading…</span>
+                ) : !aiConnection.ai_profile_id && agentDefaults.isError ? (
+                  <button type="button" className="text-xs text-quiet-text-secondary hover:text-foreground" title="Retry loading the agent’s default profile" onClick={() => void agentDefaults.refetch()}>Retry default</button>
+                ) : <AIConnectionPicker workspaceId={workspaceId} inDock compact defaultProfileId={askAgentDefault} value={aiConnection} onChange={setAIConnection} disabled={sending} />}
                 value={value}
                 onChange={setValue}
                 onSubmit={() => void submit()}
@@ -1015,12 +1145,16 @@ export function ChatView({
                 textareaRef={textareaRef}
                 onStop={canStop ? () => void handleStop() : undefined}
                 stopping={cancellationPending}
-                placeholder={cancellationPending ? 'Stopping agent…' : undefined}
+                onPause={canPause && !cancellationPending ? () => void handlePause() : undefined}
+                pausing={pausePending}
+                onResume={canResume && !cancellationPending ? () => void handleResume() : undefined}
+                resuming={resumePending}
+                placeholder={cancellationPending ? 'Stopping agent…' : pausePending ? 'Pausing agent…' : resumePending ? 'Resuming agent…' : undefined}
                 showShortcutHint={showComposerShortcutHint}
               />
           </div>
         </div>
       )}
-    </div>
+    </DockInteractionLayer>
   );
 }

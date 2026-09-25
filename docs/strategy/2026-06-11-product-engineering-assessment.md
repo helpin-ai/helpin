@@ -1,4 +1,49 @@
-# Helpin Product & Engineering Assessment — 2026-06-11
+# Product and engineering assessment: June 2026
+
+> Historical assessment, source-compared on 2026-09-17. This page preserves
+> June product priorities for maintainers. Its verdict, scorecard, estimates,
+> counts, and competitor comparisons are not a current readiness or security audit.
+
+## Material changes since June
+
+Several absence claims are contradicted by current source:
+
+- **Billing and usage:** Enterprise [billing handlers](../../server/ee/handler/billing.go)
+  and [AI usage handlers](../../server/ee/handler/ai_usage.go) exist. Consult the
+  [usage guide](../ai-usage-metering.md) for current accounting boundaries.
+  Their presence does not imply Community includes commercial billing or that a
+  particular deployment has completed live acceptance.
+- **Product surfaces:** [Support](../../frontend/src/pages/pm/Support.tsx) and
+  [Support search](../../frontend/src/pages/pm/SupportSearch.tsx) exist, and
+  [Deals](../../frontend/src/pages/crm/Deals.tsx) renders board and list views.
+  “One page/no inbox/no search” and “no kanban” are not current descriptions.
+- **Validation:** the [CI workflow](../../.github/workflows/ci.yml) runs backend,
+  frontend, widget, and mobile tests without the cited `continue-on-error: true`
+  setting. Workflow configuration does not establish that branch protection
+  requires every job or that the latest run passed.
+- **Rate limiting:** [router wiring](../../server/internal/router/router.go)
+  includes injected authenticated, widget, and help-center answer limiters.
+  This disproves “none anywhere”; it is not proof that every endpoint or websocket
+  path has equivalent limits in every deployment.
+- **Distribution:** [production npm publishing](../../.github/workflows/publish-npm-prod.yml)
+  and a [Support mobile app](../../apps/support-mobile/README.md) exist.
+  Source and workflow presence do not establish successful publication or mobile
+  store availability.
+- **Onboarding:** the [Setup page](../../frontend/src/pages/SetupSuccessPage.tsx)
+  now provides a goal-driven guide. The historical empty onboarding assessment
+  should not be reused as a present feature inventory.
+
+The original claims of uniform tenant isolation, production readiness, universal
+layering, minimal TODOs, fixed agent counts, and superiority to named competitors
+were not re-established by this documentation review. In particular, “no isolation
+holes found” is a historical observation, not a security guarantee. The full
+module analytics, integrations, importer parity, and go-to-market scorecard need
+separate acceptance evidence; the old week estimates are not current commitments.
+See the [documentation audit](../research/2026-09-17-documentation-code-audit.md)
+for concrete current findings rather than treating this strategic verdict as a
+release checklist.
+
+## Original June assessment
 
 Scope: full-repo audit across product module maturity, engineering quality, and go-to-market readiness.
 

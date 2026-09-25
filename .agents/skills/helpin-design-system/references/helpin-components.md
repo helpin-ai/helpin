@@ -1,6 +1,10 @@
 # Helpin component map
 
-Use this map for product UI under `frontend/`. Inspect the live source before extending a component.
+Use this map to choose shared components for product UI under `frontend/`. It describes the design contract to follow when creating or updating a surface; it does not certify that every existing page already follows it. Inspect the source before extending a component.
+
+Source review: 2026-09-18. The component exports, title sizes, dropdown token and search modes, relationship-dialog widths, settings disclosure behavior, and document width selection were checked against the current source. Responsive, keyboard, contrast, and save-failure behavior still need verification on the surface being changed.
+
+Start with `frontend/src/components/design-system/quiet.tsx` for shared page primitives, `quiet-dropdown.tsx` and `quiet-dropdown-select.tsx` in the same directory for selection, and `frontend/src/components/settings/SettingsSection.tsx` for settings disclosures. Component names below are exported symbols; source filenames can differ (for example, `EpicDetailPage` is in `frontend/src/pages/pm/EpicDetail.tsx`).
 
 ## Centralized Quiet primitives
 
@@ -106,6 +110,17 @@ Use `frontend/src/pages/pm/EpicDetail.tsx` as the visual reference for PM detail
 - **Progress:** preserve existing bars, labels, numbers, and calculations when replacing cards or summaries with shared metrics. On Objective detail, show epic completion and elapsed time toward the target date as bars; keep the target-date bar conditional on a date being set. A percentage or date alone does not replace these indicators.
 - **Responsive layout:** desktop main content and the rail may scroll separately. On narrow screens, use one vertically scrollable column whose sections retain their content height. Do not let constrained grid rows overlap the rail with the main content. Verify by scrolling to the final property, not only by checking the initial viewport.
 
+## Settings section composition
+
+Use `frontend/src/pages/NotificationSettings.tsx` as the reference for a settings page with collapsible groups and `frontend/src/components/settings/ConversationRoutingTab.tsx` for persistent section containers.
+
+- Keep `QuietPageHeader` for the route header. Group related controls into full-width, vertically stacked sections with subtle borders, rounded corners, clear headings, and consistent padding. Avoid nested cards for individual rows.
+- Reuse `SettingsSection` from `@/components/settings/SettingsSection` for collapsible groups. It owns the container, header, chevron, focus treatment, and body divider; content remains mounted when collapsed. For always-visible groups, use the existing settings `Card`/`CardContent` composition rather than a disclosure that cannot collapse. These are explicit exceptions to the generic no-card rule.
+- Keep section titles readable with `text-sm font-semibold text-quiet-text-primary`. Use secondary text for useful supporting scope, never placeholder-level contrast for navigation or section headings. Preserve this hierarchy in dark mode.
+- On dense settings pages, open the general or most frequently needed group by default and collapse optional module/advanced groups. Short forms may stay open. Keep group titles visible, and reveal a section containing a validation error or a search/deep-link target so the relevant control can be reached.
+- Match the settings sidebar's grouping and order where the same categories appear on settings home or a settings page. Preserve personal/workspace/organization scope where it changes the effect of a control.
+- Use the [content rules](quiet-hairline.md#content-and-progressive-disclosure) to decide whether `description` is needed. The prop is optional; do not fill it with a paraphrase of the title.
+
 ## Canonical reference surfaces
 
 - Task sheet: `TaskDetailPanel`, opened through `GlobalTaskPanel`.
@@ -118,7 +133,7 @@ Reference surfaces demonstrate composition and domain behavior; the Quiet primit
 
 ## Component decisions
 
-- Do not use `Card` to structure a new page section. Use `QuietSection` or a hairline list.
+- Use `QuietSection` or a hairline list for general page sections. Settings forms follow the explicit [settings section composition](#settings-section-composition), including its shared bordered containers.
 - Use `QuietMetricGrid` and `QuietMetricBlock` when a small set of earned operational numbers needs the shared Automation Activity hairline treatment; do not recreate separate metric cards.
 - Do not use `Badge` for ordinary status, counts, lifecycle, filters, or metadata. Use `QuietStatusText` or inline text. Editable applied filters use the shared `PMFilterPill` exception above, not a custom Badge.
 - Do not use default `Button` colors or boxed `Input`/`Tabs` styling for Quiet page chrome. Use the Quiet wrappers.

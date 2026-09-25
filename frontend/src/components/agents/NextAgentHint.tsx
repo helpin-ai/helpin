@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Loading01Icon, PlayIcon, SparklesIcon } from '@/lib/icons';
 import { AgentAvatar, resolveAgentPersonaKey, type AgentPersonaKey } from '@/components/agents/AgentAvatar';
 import { Button } from '@/components/ui/button';
+import { CodingCapacityNotice } from '@/components/agents/CodingCapacityNotice';
 import { cn } from '@/lib/utils';
 import type { Agent } from '@/lib/pmTypes';
 
@@ -83,10 +84,13 @@ export function NextAgentHint({
       <div className="flex min-w-0 items-center gap-2">
         <SparklesIcon className="h-3.5 w-3.5 shrink-0 text-primary/70" />
         <AgentAvatar agent={nextAgent} className="h-5 w-5 shrink-0 rounded-none border-0 bg-transparent shadow-none" genericBare />
-        <span className="truncate text-muted-foreground">
-          <span className="font-medium text-foreground">Next up · {nextAgent.name}.</span>
-          <span className="ml-1">{copy.lead}</span>
-        </span>
+        <div className="min-w-0 text-muted-foreground">
+          <p>
+            <span className="font-medium text-foreground">Next up · {nextAgent.name}.</span>
+            <span className="ml-1">{copy.lead}</span>
+          </p>
+          <CodingCapacityNotice agent={nextAgent} className="mt-1" />
+        </div>
       </div>
       <Button
         size="sm"

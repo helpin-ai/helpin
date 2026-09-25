@@ -120,10 +120,10 @@ func (s *InternalCommandService) executeListSignals(ctx context.Context, meta mo
 		limit = 20
 	}
 	if limit < 1 || limit > 50 {
-		return nil, fmt.Errorf("limit must be between 1 and 50")
+		return nil, errCommandInput("limit must be between 1 and 50")
 	}
 	if req.Offset < 0 {
-		return nil, fmt.Errorf("offset must be zero or greater")
+		return nil, errCommandInput("offset must be zero or greater")
 	}
 	dealID := req.DealID
 	if dealID == nil && strings.TrimSpace(meta.TargetType) == "crm_deal" && strings.TrimSpace(meta.TargetID) != "" {
@@ -186,10 +186,10 @@ func parseCRMListLimit(input json.RawMessage) (int, int, string, error) {
 		req.Limit = 20
 	}
 	if req.Limit < 1 || req.Limit > 50 {
-		return 0, 0, "", fmt.Errorf("limit must be between 1 and 50")
+		return 0, 0, "", errCommandInput("limit must be between 1 and 50")
 	}
 	if req.Offset < 0 {
-		return 0, 0, "", fmt.Errorf("offset must be zero or greater")
+		return 0, 0, "", errCommandInput("offset must be zero or greater")
 	}
 	return req.Limit, req.Offset, strings.TrimSpace(req.Query), nil
 }

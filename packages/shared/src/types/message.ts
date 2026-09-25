@@ -37,8 +37,12 @@ export interface Message {
   captureEmail?: boolean;
   sources?: AiSource[];
   aiConfidence?: number;
+  /** Visitor vote acknowledged and persisted by the support server. */
+  answerFeedback?: boolean;
   /** AI-authored classification used to decide which response UI is appropriate. */
   aiReplyKind?: AIReplyKind;
+  /** Present only while this acknowledgment is awaiting its final answer. */
+  aiProgressState?: 'checking';
   linkPreviews?: LinkPreview[];
   attachments?: Attachment[];
   viaChannel?: 'email' | 'widget';

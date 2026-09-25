@@ -3,13 +3,14 @@ package service
 // support.send_reply / support.escalate_to_human: the only ways a support
 // chat run's output reaches the visitor. send_reply re-validates the agent's
 // grounding server-side (claims vs the run's evidence snapshot, numeric
-// checks, confidence threshold, satisfaction trend) and converts failures
+// checks and confidence threshold) and converts failures
 // into the existing escalation machinery — a hallucinated answer cannot reach
 // a customer regardless of what the model produced.
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -39,7 +40,6 @@ type supportReplyGateInput struct {
 	Kind      string
 	Contract  *AIResponseContract
 	Evidence  []KnowledgeSearchResult
-	History   []model.SupportMessage
 	Threshold float64
 }
 
@@ -54,7 +54,8 @@ type supportReplyGateResult struct {
 // evaluateSupportReplyGate re-validates an agent-produced reply exactly the
 // way the pipeline validated its own answers: evidence-grounded claims and
 // numeric matching for answers, a weighted confidence score vs the workspace
-// threshold, and the declining-satisfaction trend across recent AI turns.
+// threshold. Scores from different turns are not customer satisfaction signals;
+// conversation-level handoff decisions belong to the support lifecycle.
 func evaluateSupportReplyGate(input supportReplyGateInput) supportReplyGateResult {
 	kind := normalizeSupportReplyKind(input.Kind)
 	result := supportReplyGateResult{ValidationOutcome: supportValidationPass}
@@ -72,11 +73,6 @@ func evaluateSupportReplyGate(input supportReplyGateInput) supportReplyGateResul
 	result.Confidence = confidence
 	if kind == supportReplyKindAnswer && confidence < input.Threshold {
 		result.EscalationReason = "low_confidence"
-		return result
-	}
-
-	if signal := evaluatePostAnswerEscalation(input.History, confidence); signal != nil {
-		result.EscalationReason = signal.Reason
 		return result
 	}
 
@@ -107,12 +103,12 @@ func (s *InternalCommandService) registerSupportReplyCommands() {
 			CommandName: "support.send_reply",
 			Alias:       "send_support_reply",
 			Category:    "Support",
-			Description: "Send your reply to the visitor. For factual answers you MUST first call search_knowledge and cite the evidence_id values that support each material claim — the server re-validates grounding and confidence. This must be the final successful action of the turn. If the tool returns rewrite_required, rewrite once in customer-facing language and call it again.",
+			Description: "Send your reply to the visitor. For factual answers you MUST first call search_knowledge and cite the evidence_id values that support each material claim — the server re-validates grounding and confidence. When child work is pending, a conversational acknowledgment keeps the customer turn open; wait for the child result and then send the final answer. Otherwise this must be the final successful action of the turn. If the tool returns rewrite_required, rewrite once in customer-facing language and call it again.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"content":        map[string]any{"type": "string", "description": "The reply text shown to the visitor."},
-					"reply_kind":     map[string]any{"type": "string", "enum": []string{"answer", "clarify", "conversational", "confirmation"}, "description": "answer = factual answer needing evidence; clarify = asking the visitor a question; conversational = greeting/small talk; confirmation = confirming the visitor's issue is resolved."},
+					"reply_kind":     map[string]any{"type": "string", "enum": []string{"answer", "clarify", "conversational", "confirmation"}, "description": "answer = factual answer needing evidence; clarify = asking the visitor a question; conversational = greeting/small talk or a brief acknowledgment while child work is pending; confirmation = confirming the visitor's issue is resolved."},
 					"confidence":     map[string]any{"type": "number", "description": "Your 0-1 confidence that the reply is correct and grounded."},
 					"source_doc_ids": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "evidence_id values (from search_knowledge) backing the reply."},
 					"claims": map[string]any{
@@ -150,9 +146,11 @@ func (s *InternalCommandService) registerSupportReplyCommands() {
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"reason":        map[string]any{"type": "string", "description": "Short machine reason, e.g. customer_requested, out_of_scope, risky_request, cannot_answer."},
-					"issue_key":     map[string]any{"type": "string", "description": "Optional stable key for the visitor's issue."},
-					"issue_summary": map[string]any{"type": "string", "description": "Optional one-line summary for the teammate."},
+					"reason":               map[string]any{"type": "string", "description": "Short machine reason, e.g. customer_requested, out_of_scope, risky_request, cannot_answer."},
+					"issue_key":            map[string]any{"type": "string", "description": "Optional stable key for the visitor's issue."},
+					"issue_summary":        map[string]any{"type": "string", "description": "Optional one-line summary for the teammate."},
+					"attempted_steps":      map[string]any{"type": "array", "maxItems": 5, "items": map[string]any{"type": "string", "maxLength": 700}, "description": "Brief factual steps and results. Distinguish AI suggestions from customer-confirmed actions. Do not invent completed actions."},
+					"unresolved_questions": map[string]any{"type": "array", "maxItems": 5, "items": map[string]any{"type": "string", "maxLength": 700}, "description": "What remains unanswered or requires a human. Internal only; do not repeat sensitive credentials."},
 				},
 				"required":             []string{"reason"},
 				"additionalProperties": false,
@@ -168,7 +166,7 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 		return nil, fmt.Errorf("support reply service is not configured")
 	}
 	conversationID := commandConversationTargetID(meta)
-	if conversationID == "" {
+	if conversationID == "" && meta.TargetType != supportPreviewTarget {
 		return nil, fmt.Errorf("send_reply requires a support conversation target")
 	}
 	var req struct {
@@ -184,7 +182,7 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 	}
 	content := strings.TrimSpace(req.Content)
 	if content == "" {
-		return nil, fmt.Errorf("content is required")
+		return nil, errCommandInput("content is required")
 	}
 	if disclosures := supportReplyInternalProcessDisclosures(content); len(disclosures) > 0 {
 		return mustJSON(map[string]any{
@@ -195,17 +193,45 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 		}), nil
 	}
 
+	if meta.TargetType == supportPreviewTarget {
+		return s.captureSupportPreviewReply(ctx, meta, req.ReplyKind, &AIResponseContract{Content: content, CanAnswer: true, SourceDocIDs: req.SourceDocIDs, Confidence: req.Confidence, Claims: req.Claims})
+	}
+
 	conv, err := supportAI.conversationRepo.GetByID(ctx, meta.WorkspaceID, conversationID, "", model.RoleOwner)
 	if err != nil {
 		return nil, fmt.Errorf("get conversation: %w", err)
 	}
 	if conv == nil {
-		return nil, fmt.Errorf("conversation not found")
+		return nil, errCommandNotFound("conversation")
+	}
+	if conv.AnonymizedAt != nil {
+		return mustJSON(map[string]any{"status": "suppressed", "next_action": "This customer was deleted. The conversation is read-only. End your turn."}), nil
+	}
+
+	var replyRunID string
+	if meta.RunID != "" {
+		run, err := s.resolveCommandRun(ctx, meta)
+		if err != nil {
+			return nil, err
+		}
+		if run != nil {
+			replyRunID = run.ID
+		}
+		if run == nil || (run.ID != derefString(conv.AIActiveRunID) && (conv.AIControlVersion > 0 || derefString(conv.AIActiveRunID) != "")) {
+			return mustJSON(map[string]any{"status": "suppressed", "next_action": "A newer run owns this conversation. End your turn."}), nil
+		}
+	}
+	settings, err := supportAI.loadSettings(ctx, meta.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if !supportAIConversationSupported(conv) {
+		s.closeEscalatedSupportCommandRun(ctx, meta)
+		return mustJSON(map[string]any{"status": "suppressed", "next_action": "AI replies are not enabled for this message channel. End your turn."}), nil
 	}
 	// The kill-switch wins even mid-turn: a human took over while the agent
 	// was thinking, so the reply is suppressed, not published.
-	if (conv.HumanTakeover != nil && *conv.HumanTakeover) || conv.CustomerRequestedHumanAt != nil || derefString(conv.AIState) == "escalated" {
-		s.settleSupportTurn(ctx, meta.WorkspaceID, conversationID, nil)
+	if model.SupportAIConversationBlocked(conv) {
 		s.closeEscalatedSupportCommandRun(ctx, meta)
 		return mustJSON(map[string]any{
 			"status":      "suppressed",
@@ -213,10 +239,30 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 		}), nil
 	}
 
-	settings, err := supportAI.loadSettings(ctx, meta.WorkspaceID)
-	if err != nil {
-		return nil, err
+	if s.supportProcessingRepo == nil {
+		return nil, fmt.Errorf("support processing repository is not configured")
 	}
+	turn, err := s.supportProcessingRepo.LatestProcessingForConversation(ctx, meta.WorkspaceID, conversationID)
+	if err != nil {
+		return nil, fmt.Errorf("load support turn: %w", err)
+	}
+	if turn == nil {
+		s.closeEscalatedSupportCommandRun(ctx, meta)
+		return mustJSON(map[string]any{"status": "suppressed", "next_action": "This customer turn already has an outcome. Stop; wait for a new customer message."}), nil
+	}
+
+	source, err := supportAI.messageRepo.GetByID(ctx, turn.SourceMessageID)
+	if err != nil {
+		return nil, fmt.Errorf("load support source message: %w", err)
+	}
+	if source == nil || !model.SupportAIReplyAllowed(*settings, conv, source) || !shouldAutomaticallyProcessSupportAI(*settings) {
+		if err := s.supportProcessingRepo.MarkCompleted(ctx, turn.ID, nil, 0); err != nil {
+			return nil, err
+		}
+		s.closeEscalatedSupportCommandRun(ctx, meta)
+		return mustJSON(map[string]any{"status": "suppressed", "next_action": "AI replies are not enabled for this message channel. End your turn."}), nil
+	}
+
 	agentID := strings.TrimSpace(derefString(settings.AIAgentID))
 	if agentID == "" {
 		return nil, fmt.Errorf("no support AI agent is configured")
@@ -229,22 +275,7 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 		if listErr != nil {
 			slog.WarnContext(ctx, "send_reply: load run evidence failed", "error", listErr, "run_id", run.ID)
 		}
-		for _, row := range rows {
-			evidence = append(evidence, KnowledgeSearchResult{
-				ID:            row.EvidenceID,
-				ReferenceID:   row.ReferenceID,
-				SourceType:    row.SourceType,
-				SourceID:      row.SourceID,
-				DocumentID:    row.DocumentID,
-				Title:         row.Title,
-				URL:           row.URL,
-				IsInternal:    row.IsInternal,
-				Content:       row.Content,
-				LexicalScore:  row.LexicalScore,
-				VectorScore:   row.VectorScore,
-				CombinedScore: row.CombinedScore,
-			})
-		}
+		evidence = supportEvidenceFromRows(rows)
 	}
 
 	history, err := supportAI.messageRepo.ListByConversation(ctx, meta.WorkspaceID, conversationID, false)
@@ -264,7 +295,6 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 		Kind:      req.ReplyKind,
 		Contract:  contract,
 		Evidence:  evidence,
-		History:   sanitizeConversationHistory(history, ""),
 		Threshold: settings.AIConfidenceThreshold,
 	})
 	if !gate.OK {
@@ -278,11 +308,10 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 			"proposed_confidence", req.Confidence,
 			"source_doc_ids", req.SourceDocIDs)
 		sourceMessageID := s.supportTurnSourceMessageID(ctx, meta.WorkspaceID, conversationID, history)
-		if escErr := supportAI.EscalateToHumanForMessageWithIssue(ctx, meta.WorkspaceID, conversationID, sourceMessageID, gate.EscalationReason, "", ""); escErr != nil {
-			slog.ErrorContext(ctx, "send_reply: escalate after gate failure failed",
-				"error", escErr, "workspace_id", meta.WorkspaceID, "conversation_id", conversationID, "reason", gate.EscalationReason)
+		if escErr := supportAI.EscalateToHumanForMessageWithIssue(ctx, meta.WorkspaceID, conversationID, sourceMessageID, gate.EscalationReason, "", "", SupportHandoffBrief{ExpectedRunID: replyRunID}); escErr != nil {
+			return nil, fmt.Errorf("handoff after reply validation: %w", escErr)
 		}
-		s.settleSupportTurn(ctx, meta.WorkspaceID, conversationID, nil)
+		s.settleSupportSource(ctx, meta.WorkspaceID, conversationID, sourceMessageID)
 		supportAI.publishTypingIndicator(ctx, meta.WorkspaceID, conversationID, false)
 		s.closeEscalatedSupportCommandRun(ctx, meta)
 		return mustJSON(map[string]any{
@@ -293,6 +322,19 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 	}
 
 	kind := normalizeSupportReplyKind(req.ReplyKind)
+	progressState := ""
+	if kind == supportReplyKindConversational && replyRunID != "" && s.commandBarService != nil && s.commandBarService.planRepo != nil {
+		pending, pendingErr := s.commandBarService.planRepo.HasPendingSupportResult(ctx, meta.WorkspaceID, conversationID, replyRunID)
+		if pendingErr != nil {
+			return nil, fmt.Errorf("load pending support work: %w", pendingErr)
+		}
+		if pending {
+			progressState = supportAIProgressChecking
+		}
+	}
+	if progressState != "" && turn.Status == "waiting_for_result" {
+		return mustJSON(map[string]any{"status": "awaiting_result", "next_action": supportProgressNextAction}), nil
+	}
 	// Claims cite chunk ids; AISources are keyed by reference ids — translate.
 	referenceByID := make(map[string]string, len(evidence))
 	for _, item := range evidence {
@@ -307,9 +349,12 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 	sources := buildAISources(sourceRefIDs, evidence)
 	var message *model.SupportMessage
 	if shouldCreatePublicSupportAIReply(*settings) {
-		message, err = supportAI.publishAIReply(ctx, meta.WorkspaceID, conversationID, agentID, content, supportReplyModelLabel, 0, gate.Confidence, sources, kind, "", "", "", conv.CustomerEmail, conv.CustomerPhone)
+		message, err = supportAI.publishAIReply(ctx, meta.WorkspaceID, conversationID, agentID, content, supportReplyModelLabel, 0, gate.Confidence, sources, kind, "", "", progressState, conv.CustomerEmail, conv.CustomerPhone, turn.ID, replyRunID)
 	} else {
-		message, err = supportAI.publishAIInternalNote(ctx, meta.WorkspaceID, conversationID, agentID, "Suggested reply:\n\n"+content, supportReplyModelLabel, 0, gate.Confidence, sources, kind, "", "", "", conv.CustomerEmail, conv.CustomerPhone)
+		message, err = supportAI.publishAIInternalNote(ctx, meta.WorkspaceID, conversationID, agentID, "Suggested reply:\n\n"+content, supportReplyModelLabel, 0, gate.Confidence, sources, kind, "", "", progressState, conv.CustomerEmail, conv.CustomerPhone, turn.ID, replyRunID)
+	}
+	if errors.Is(err, errSupportTurnSettled) {
+		return mustJSON(map[string]any{"status": "suppressed", "next_action": "This customer turn already has an outcome. End your turn."}), nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("publish reply: %w", err)
@@ -321,8 +366,12 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 		}
 	}
 
-	triggerMessageID := s.supportTurnSourceMessageID(ctx, meta.WorkspaceID, conversationID, history)
-	s.settleSupportTurn(ctx, meta.WorkspaceID, conversationID, &message.ID)
+	if progressState != "" {
+		supportAI.publishProgress(meta.WorkspaceID, conversationID, progressState)
+		return mustJSON(map[string]any{"status": "awaiting_result", "message_id": message.ID, "next_action": supportProgressNextAction}), nil
+	}
+
+	triggerMessageID := turn.SourceMessageID
 	s.consumeSupportReplyBilling(ctx, meta.WorkspaceID, conversationID, message.ID)
 	// Answer trace feeds coverage analytics (the retrieval trace was emitted
 	// by search_knowledge; this one records the delivered outcome).
@@ -339,6 +388,8 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 		"next_action": "Reply delivered. End your turn now; do not call send_support_reply again until the visitor responds.",
 	}), nil
 }
+
+const supportProgressNextAction = "Acknowledgment delivered; the customer is still waiting for an answer. End this runtime turn and wait for the child result. When it arrives, call send_support_reply with the final answer; do not wait for another visitor message or repeat the acknowledgment."
 
 func supportReplyInternalProcessDisclosures(content string) []string {
 	lower := strings.ToLower(content)
@@ -383,9 +434,11 @@ func (s *InternalCommandService) executeSupportEscalate(ctx context.Context, met
 		return nil, fmt.Errorf("escalate_to_human requires a support conversation target")
 	}
 	var req struct {
-		Reason       string `json:"reason"`
-		IssueKey     string `json:"issue_key"`
-		IssueSummary string `json:"issue_summary"`
+		Reason              string   `json:"reason"`
+		IssueKey            string   `json:"issue_key"`
+		IssueSummary        string   `json:"issue_summary"`
+		AttemptedSteps      []string `json:"attempted_steps"`
+		UnresolvedQuestions []string `json:"unresolved_questions"`
 	}
 	if err := json.Unmarshal(input, &req); err != nil {
 		return nil, fmt.Errorf("parse escalate input: %w", err)
@@ -394,11 +447,28 @@ func (s *InternalCommandService) executeSupportEscalate(ctx context.Context, met
 	if reason == "" {
 		reason = "agent_requested"
 	}
+	var escalationRunID string
+	if meta.TargetType != supportPreviewTarget && meta.RunID != "" {
+		conv, err := supportAI.conversationRepo.GetByID(ctx, meta.WorkspaceID, conversationID, "", model.RoleOwner)
+		if err != nil {
+			return nil, err
+		}
+		run, err := s.resolveCommandRun(ctx, meta)
+		if err != nil {
+			return nil, err
+		}
+		if run != nil {
+			escalationRunID = run.ID
+		}
+		if conv == nil || model.SupportAIConversationBlocked(conv) || (conv.AIControlVersion > 0 && (run == nil || derefString(conv.AIActiveRunID) != run.ID)) {
+			return mustJSON(map[string]any{"status": "suppressed", "next_action": "Ownership changed. End your turn."}), nil
+		}
+	}
 	sourceMessageID := s.supportTurnSourceMessageID(ctx, meta.WorkspaceID, conversationID, nil)
-	if err := supportAI.EscalateToHumanForMessageWithIssue(ctx, meta.WorkspaceID, conversationID, sourceMessageID, reason, strings.TrimSpace(req.IssueKey), strings.TrimSpace(req.IssueSummary)); err != nil {
+	if err := supportAI.EscalateToHumanForMessageWithIssue(ctx, meta.WorkspaceID, conversationID, sourceMessageID, reason, strings.TrimSpace(req.IssueKey), strings.TrimSpace(req.IssueSummary), SupportHandoffBrief{ExpectedRunID: escalationRunID, Issue: req.IssueSummary, AttemptedSteps: req.AttemptedSteps, UnresolvedQuestions: req.UnresolvedQuestions}); err != nil {
 		return nil, fmt.Errorf("escalate: %w", err)
 	}
-	s.settleSupportTurn(ctx, meta.WorkspaceID, conversationID, nil)
+	s.settleSupportSource(ctx, meta.WorkspaceID, conversationID, sourceMessageID)
 	supportAI.publishTypingIndicator(ctx, meta.WorkspaceID, conversationID, false)
 	s.closeEscalatedSupportCommandRun(ctx, meta)
 	return mustJSON(map[string]any{
@@ -426,24 +496,17 @@ func (s *InternalCommandService) closeEscalatedSupportCommandRun(ctx context.Con
 	}
 }
 
-// settleSupportTurn marks the triggering visitor message's processing row
-// completed — the signal that this turn produced its one outcome.
-func (s *InternalCommandService) settleSupportTurn(ctx context.Context, workspaceID, conversationID string, replyMessageID *string) {
-	if s.supportProcessingRepo == nil {
+// settleSupportSource only settles the source captured before handoff. A
+// cancellation callback may race with return and a newer customer turn.
+func (s *InternalCommandService) settleSupportSource(ctx context.Context, workspaceID, conversationID, sourceMessageID string) {
+	if s.supportProcessingRepo == nil || sourceMessageID == "" {
 		return
 	}
-	row, err := s.supportProcessingRepo.LatestProcessingForConversation(ctx, workspaceID, conversationID)
-	if err != nil || row == nil {
-		return
-	}
-	if err := s.supportProcessingRepo.MarkCompleted(ctx, row.ID, replyMessageID, 0); err != nil {
-		slog.WarnContext(ctx, "settle support turn failed", "error", err, "conversation_id", conversationID)
+	if err := s.supportProcessingRepo.CompleteSource(ctx, workspaceID, conversationID, sourceMessageID); err != nil {
+		slog.WarnContext(ctx, "settle support source", "error", err, "conversation_id", conversationID)
 	}
 }
 
-// supportTurnSourceMessageID finds the message the current turn responds to:
-// the in-flight processing row's source message, else the latest customer
-// message.
 func (s *InternalCommandService) supportTurnSourceMessageID(ctx context.Context, workspaceID, conversationID string, history []model.SupportMessage) string {
 	if s.supportProcessingRepo != nil {
 		if row, err := s.supportProcessingRepo.LatestProcessingForConversation(ctx, workspaceID, conversationID); err == nil && row != nil {

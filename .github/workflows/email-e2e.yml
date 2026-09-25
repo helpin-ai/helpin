@@ -1,7 +1,7 @@
 name: Email E2E (MailSlurp)
 
 # Real-provider email tests via MailSlurp + Postmark staging. See
-# `docs/test-suite-ci-email-plan.md` Phase 6 / Scenarios A–G.
+# `docs/plans/test-suite-ci-email-plan.md` Phase 6 / Scenarios A–G.
 #
 # Runs:
 # - Daily schedule (03:30 UTC, after Nightly).
@@ -36,8 +36,8 @@ concurrency:
   group: email-e2e-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+permissions:
+  contents: read
 
 jobs:
   preflight:
@@ -65,7 +65,7 @@ jobs:
   # Scenario suite. Scenario names use `TestMailSlurpScenario...` so failures
   # report the specific behavior that broke.
   #
-  # Scenarios map to docs/test-suite-ci-email-plan.md Phase 6 as they land.
+  # Scenarios map to docs/plans/test-suite-ci-email-plan.md Phase 6 as they land.
   # Test files use the `email_e2e` build tag and are kept out of the
   # default unit-test path because they send real provider email.
   scenarios:
@@ -83,12 +83,13 @@ jobs:
       POSTMARK_INBOUND_DOMAIN: ${{ secrets.POSTMARK_INBOUND_DOMAIN }}
       SUPPORT_REPLY_DOMAIN: ${{ secrets.SUPPORT_REPLY_DOMAIN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ inputs.branch || github.ref }}
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.24'
+          go-version: '1.26.7'
       - name: Verify gcc available (CGO requires it)
         run: |
           if ! command -v gcc >/dev/null 2>&1; then

@@ -1,3 +1,4 @@
+import { ASK_AGENT_BODY_PATH } from '@/components/agents/AskAgentAvatar';
 import { BotIcon } from '@/lib/icons';
 
 import type { Agent, AgentIconKey, AgentPresetKey } from '@/lib/pmTypes';
@@ -12,6 +13,8 @@ export type AgentPersonaKey =
   | 'beacon'
   | 'quill'
   | 'mira'
+  | 'ask'
+  | 'sub_agent'
   | 'violet_star'
   | 'ocean_orbit'
   | 'forest_cap'
@@ -37,6 +40,8 @@ const PRESET_PERSONA_MAP: Partial<Record<AgentPresetKey, AgentPersonaKey>> = {
   crm_operator: 'beacon',
   documentation_agent: 'quill',
   marketer: 'mira',
+  ask_agent: 'ask',
+  command_agent: 'sub_agent',
 };
 
 const PERSONA_META: Record<AgentPersonaKey, AgentPersonaMeta> = {
@@ -48,6 +53,8 @@ const PERSONA_META: Record<AgentPersonaKey, AgentPersonaMeta> = {
   beacon: { key: 'beacon', label: 'Beacon', role: 'CRM operator' },
   quill: { key: 'quill', label: 'Quill', role: 'Documentation Agent' },
   mira: { key: 'mira', label: 'Mira', role: 'Marketer' },
+  ask: { key: 'ask', label: 'Ask Agent', role: 'Workspace assistant' },
+  sub_agent: { key: 'sub_agent', label: 'Sub-agent', role: 'Delegated task runner' },
   violet_star: { key: 'violet_star', label: 'Violet star', role: 'Custom avatar' },
   ocean_orbit: { key: 'ocean_orbit', label: 'Ocean orbit', role: 'Custom avatar' },
   forest_cap: { key: 'forest_cap', label: 'Forest cap', role: 'Custom avatar' },
@@ -92,6 +99,10 @@ function personaFromName(name?: string | null): AgentPersonaKey | null {
       return 'quill';
     case 'mira':
       return 'mira';
+    case 'ask agent':
+      return 'ask';
+    case 'sub-agent':
+      return 'sub_agent';
     default:
       return null;
   }
@@ -314,6 +325,39 @@ function PersonaSvg({ persona, className, genericBare = false }: { persona: Agen
           <circle cx="10" cy="27" r="3" fill="#FFD48C" />
           <circle cx="70" cy="27" r="3" fill="#FFD48C" />
           <path d="M24 62C31 66 49 66 56 62" stroke="#FFB35C" strokeWidth="2.2" strokeLinecap="round" opacity=".8" />
+        </svg>
+      );
+    case 'ask':
+      // Static rendition of the product mark (AskAgentAvatar animates; lists shouldn't).
+      return (
+        <svg className={className} viewBox="0 0 100 100" fill="none">
+          <rect width="100" height="100" rx="24" fill="#1E1C1A" opacity=".12" />
+          <rect x="9" y="9" width="82" height="82" rx="20" fill="#1E1C1A" />
+          <g transform="translate(50 50) scale(.8) translate(-50 -50)">
+            <path d={ASK_AGENT_BODY_PATH} fill="#F7F5F2" fillRule="evenodd" />
+            <rect x="35.03" y="32.62" width="8.4" height="12" rx="4.2" fill="#1E1C1A" />
+            <rect x="62.51" y="32.68" width="8.4" height="12" rx="4.2" fill="#1E1C1A" />
+            <circle cx="39.82" cy="35.85" r="1.58" fill="#F7F5F2" />
+            <circle cx="67.25" cy="35.85" r="1.58" fill="#F7F5F2" />
+            <path d="M51.36,65.63 Q60.93,73.05 70.58,65.47" stroke="#1E1C1A" strokeWidth="3.35" strokeLinecap="round" />
+          </g>
+        </svg>
+      );
+    case 'sub_agent':
+      return (
+        <svg className={className} viewBox="0 0 80 80" fill="none">
+          <rect x="12" y="18" width="56" height="48" rx="14" fill="#4B5B75" opacity=".12" />
+          <rect x="16" y="22" width="48" height="40" rx="12" fill="#4B5B75" />
+          <path d="M40 22V13" stroke="#4B5B75" strokeWidth="3" strokeLinecap="round" />
+          <path d="M33 10H48M43 5L48 10L43 15" stroke="#8FA3C2" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+          <rect x="23" y="32" width="13" height="10" rx="4" fill="#E8EDF5" />
+          <rect x="44" y="32" width="13" height="10" rx="4" fill="#E8EDF5" />
+          <circle cx="30" cy="37" r="2.6" fill="#1B2433" />
+          <circle cx="51" cy="37" r="2.6" fill="#1B2433" />
+          <path d="M33 51H47" stroke="#E8EDF5" strokeWidth="2.6" strokeLinecap="round" />
+          <circle cx="9" cy="42" r="2.5" fill="#8FA3C2" />
+          <circle cx="4" cy="42" r="1.6" fill="#8FA3C2" opacity=".6" />
+          <path d="M64 42H70" stroke="#8FA3C2" strokeWidth="3" strokeLinecap="round" />
         </svg>
       );
     case 'violet_star':

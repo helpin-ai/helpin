@@ -1,0 +1,33 @@
+{
+  "type": "Generated fictional Projects and Ask Agent demonstration based on user-provided actual UI references",
+  "model": "gpt-image-2.5-sunburst",
+  "tool": "OpenAI images.edit API, previously authorized direct 4K runner",
+  "nativeDimensions": [
+    3840,
+    2160
+  ],
+  "master": "output/imagegen/projects/board-ask-agent-dark-v4.webp",
+  "prompt": "board-ask-agent-dark-v4-prompt.txt",
+  "references": [
+    {
+      "role": "Actual dark task board structure and style",
+      "url": "https://storage.googleapis.com/vm-dev-screenshots/Sep%2020/Screenshot%202026-09-20%20at%207.59.40%E2%80%AFPM.png",
+      "localPath": "output/imagegen/projects/actual-dark-board-reference.png"
+    },
+    {
+      "role": "Actual Ask Agent two-pane window, controls and warm charcoal surfaces",
+      "url": "https://storage.googleapis.com/vm-dev-screenshots/Sep%2020/Screenshot%202026-09-20%20at%208.00.42%E2%80%AFPM.png",
+      "localPath": "output/imagegen/projects/actual-dark-agent-reference.png"
+    }
+  ],
+  "publishedWidths": [
+    960,
+    1440,
+    1920,
+    3840
+  ],
+  "publishedPath": "website/public/new/projects/board-ask-agent-dark-{width}-v4.webp",
+  "processing": "Sharp 0.34.5, proportional resizing without enlargement, WebP quality 94 effort 6",
+  "scene": "Full-width OrbitDesk board with eight tasks in Backlog, Ready, In Progress and In Review. A compact floating Ask Agent conversation overlays the lower-right area, summarizing matching task IDs, owners and statuses. No task changes or outbound messages are depicted.",
+  "placement": "/products/projects#project-tasks"
+}

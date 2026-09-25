@@ -26,7 +26,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { DatePicker } from '@/components/ui/date-picker';
 import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
-import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
+import { UpgradeRequiredDialog } from '@edition';
 import { AgentPickerCard } from '@/components/pm/AgentPickerCard';
 import {
   CreateEntityDialogContent,
@@ -79,7 +79,7 @@ import {
 } from '@/components/pm/sprintAutomationPrompt';
 import { showEntityCreatedToast, entityCreatedToastIcons } from '@/components/ui/entity-created-toast';
 import { getOptionalSectionActionClass } from '@/components/pm/optionalSectionActionPill';
-import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@edition/errors';
 import { queryKeys } from '@/lib/queryKeys';
 import { ColorPicker, EPIC_PRESET_COLORS } from '@/components/pm/ColorPicker';
 import { DEFAULT_EPIC_COLOR } from '@/components/pm/epicColor';

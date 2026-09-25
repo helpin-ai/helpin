@@ -77,7 +77,7 @@ describe('Company detail divider redesign', () => {
 
 	it('creates company-context deals with the company as the atomic customer', () => {
 		expect(companyDetailSource).toContain('companyContext={{ id: companyId')
-		expect(createDealSource).toContain("{ company_id: customer.id, contact_id: primaryContactId || undefined }")
+		expect(createDealSource).toContain("company_id: company?.id")
 		expect(createDealSource).not.toContain("from_object_type: 'deal'")
 		expect(createDealSource).not.toContain('Deal created, but it could not be linked')
 	})

@@ -52,6 +52,7 @@ type SupportRailNavProps = {
   onNavFilterChange: (value: SupportNavFilter) => void;
   onMailboxSelect: (mailboxId: string) => void;
   onCustomViewSelect: (view: SupportInboxView) => void;
+  onCreateCustomView: () => void;
   onEditCustomView: (view: SupportInboxView) => void;
   onDeleteCustomView: (view: SupportInboxView) => void;
   onCreateMailbox: () => void;
@@ -77,6 +78,7 @@ export function SupportRailNav({
   onNavFilterChange,
   onMailboxSelect,
   onCustomViewSelect,
+  onCreateCustomView,
   onEditCustomView,
   onDeleteCustomView,
   onCreateMailbox,
@@ -314,86 +316,93 @@ export function SupportRailNav({
         </SidebarMenu>
       </SidebarGroup>
 
-      {customViews.length > 0 && (
-        <SidebarGroup className="p-0 pb-3">
-          <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
-            Custom views
-          </SidebarGroupLabel>
-          <SidebarMenu>
-            {customViews.map((view) => {
-              const isActive = !isOnSearch && !isOnCoverage && activeCustomViewId === view.id;
-              const isMenuOpen = openMenuId === view.id;
-              const canModifyView = view.created_by === currentUserId || (view.is_shared && canManageSettings);
-              const count = customViewCounts[view.id];
+      <SidebarGroup className="p-0 pb-3">
+        <SidebarGroupLabel className="flex h-7 items-center justify-between px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
+          <span>Custom views</span>
+          <SidebarSectionAction label="Create custom view" onClick={onCreateCustomView} />
+        </SidebarGroupLabel>
+        <SidebarMenu>
+          {customViews.length === 0 && (
+            <SidebarMenuItem>
+              <SidebarMenuButton className={supportMenuRowClassName} onClick={onCreateCustomView}>
+                <PlusSignIcon className="h-4 w-4" />
+                <span className="min-w-0 truncate">Create a view</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          )}
+          {customViews.map((view) => {
+            const isActive = !isOnSearch && !isOnCoverage && activeCustomViewId === view.id;
+            const isMenuOpen = openMenuId === view.id;
+            const canModifyView = view.created_by === currentUserId || (view.is_shared && canManageSettings);
+            const count = customViewCounts[view.id];
 
-              return (
-                <SidebarMenuItem key={view.id} className="group/custom-view">
-                  <SidebarMenuButton
-                    isActive={isActive}
-                    className={supportMenuRowClassName}
-                    onClick={() => onCustomViewSelect(view)}
-                  >
-                    <FileSearchIcon className="h-4 w-4" />
-                    <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                      <span className="truncate">{view.name}</span>
-                      {view.is_shared && <UserGroupIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
-                      {renderUnreadDot(count?.unread_count)}
-                    </span>
-                    <span className={trailingSlotClassName}>
-                      {renderCounts(
-                        count?.total_count,
-                        `transition-opacity ${canModifyView && !isMenuOpen ? 'group-hover/custom-view:opacity-0' : ''} ${isMenuOpen ? 'opacity-0' : 'opacity-100'}`,
-                        false,
-                      )}
-                      {canModifyView && (
-                        <DropdownMenu onOpenChange={(open) => setOpenMenuId(open ? view.id : null)}>
-                          <DropdownMenuTrigger asChild>
-                            <span
-                              role="button"
-                              onPointerDown={(event) => event.stopPropagation()}
-                              onClick={(event) => event.stopPropagation()}
-                              className={`${trailingMenuButtonClassName} ${
-                                isMenuOpen
-                                  ? 'opacity-100'
-                                  : view.is_shared
-                                    ? 'opacity-0 group-hover/custom-view:opacity-100'
-                                    : 'opacity-0 group-hover/custom-view:opacity-100'
-                              }`}
-                            >
-                              <MoreVerticalIcon className="h-3.5 w-3.5" />
-                            </span>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent side="right" align="start" className="w-36">
-                            <DropdownMenuItem
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                onEditCustomView(view);
-                              }}
-                            >
-                              <PencilEdit01Icon className="mr-2 h-3.5 w-3.5" />
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="text-destructive focus:text-destructive"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                onDeleteCustomView(view);
-                              }}
-                            >
-                              <Delete01Icon className="mr-2 h-3.5 w-3.5" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )}
-                    </span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              );
-            })}
-          </SidebarMenu>
-        </SidebarGroup>
-      )}
+            return (
+              <SidebarMenuItem key={view.id} className="group/custom-view">
+                <SidebarMenuButton
+                  isActive={isActive}
+                  className={supportMenuRowClassName}
+                  onClick={() => onCustomViewSelect(view)}
+                >
+                  <FileSearchIcon className="h-4 w-4" />
+                  <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                    <span className="truncate">{view.name}</span>
+                    {view.is_shared && <UserGroupIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+                    {renderUnreadDot(count?.unread_count)}
+                  </span>
+                  <span className={trailingSlotClassName}>
+                    {renderCounts(
+                      count?.total_count,
+                      `transition-opacity ${canModifyView && !isMenuOpen ? 'group-hover/custom-view:opacity-0' : ''} ${isMenuOpen ? 'opacity-0' : 'opacity-100'}`,
+                      false,
+                    )}
+                    {canModifyView && (
+                      <DropdownMenu onOpenChange={(open) => setOpenMenuId(open ? view.id : null)}>
+                        <DropdownMenuTrigger asChild>
+                          <span
+                            role="button"
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onClick={(event) => event.stopPropagation()}
+                            className={`${trailingMenuButtonClassName} ${
+                              isMenuOpen
+                                ? 'opacity-100'
+                                : view.is_shared
+                                  ? 'opacity-0 group-hover/custom-view:opacity-100'
+                                  : 'opacity-0 group-hover/custom-view:opacity-100'
+                            }`}
+                          >
+                            <MoreVerticalIcon className="h-3.5 w-3.5" />
+                          </span>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent side="right" align="start" className="w-36">
+                          <DropdownMenuItem
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onEditCustomView(view);
+                            }}
+                          >
+                            <PencilEdit01Icon className="mr-2 h-3.5 w-3.5" />
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onDeleteCustomView(view);
+                            }}
+                          >
+                            <Delete01Icon className="mr-2 h-3.5 w-3.5" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            );
+          })}
+        </SidebarMenu>
+      </SidebarGroup>
 
       <div className="support-bottom-bar sticky bottom-0 z-10 -mx-2 mt-auto border-t border-border/70 bg-[#fafafa] px-2 py-2 dark:bg-sidebar">
         <div className="flex items-center justify-around">

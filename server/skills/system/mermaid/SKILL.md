@@ -5,7 +5,6 @@ metadata:
   title: Mermaid Diagrams
   supported_runtimes:
     - native_sdk
-    - codex
 ---
 
 # Mermaid diagrams

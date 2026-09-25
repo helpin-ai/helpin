@@ -12,6 +12,7 @@ import (
 
 // SupportConversation represents a support conversation (renamed from SupportTicket).
 type SupportConversation struct {
+	AnonymizedAt                   *time.Time      `json:"anonymized_at,omitempty" gorm:"type:timestamptz"`
 	ID                             string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID                    string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	MailboxID                      *string         `json:"mailbox_id" gorm:"type:uuid;index"`
@@ -77,9 +78,13 @@ type SupportConversation struct {
 	// AIActiveRunID points at the agent-runtime chat run currently backing
 	// this conversation's AI turns (nil before the first AI turn; repointed
 	// when an idle-expired run gets a successor).
-	AIFollowUp    *SupportAIFollowUp `json:"ai_follow_up,omitempty" gorm:"-"`
-	AIActiveRunID *string            `json:"ai_active_run_id,omitempty" gorm:"type:uuid;index"`
-	HumanTakeover *bool              `json:"human_takeover" gorm:"default:false;index"`
+	AIFollowUp       *SupportAIFollowUp `json:"ai_follow_up,omitempty" gorm:"-"`
+	AIActiveRunID    *string            `json:"ai_active_run_id,omitempty" gorm:"type:uuid;index"`
+	AIControlVersion int64              `json:"ai_control_version" gorm:"not null;default:0"`
+	AIResumedAt      *time.Time         `json:"ai_resumed_at,omitempty" gorm:"type:timestamptz"`
+	AIPausedAt       *time.Time         `json:"ai_paused_at,omitempty" gorm:"column:ai_paused_at;type:timestamptz"`
+	AIPausedByUserID *string            `json:"ai_paused_by_user_id,omitempty" gorm:"column:ai_paused_by_user_id;type:uuid"`
+	HumanTakeover    *bool              `json:"human_takeover" gorm:"default:false;index"`
 
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
@@ -329,24 +334,33 @@ type SupportConversationSearchParams struct {
 
 // SupportMessage represents a message within a support conversation.
 type SupportMessage struct {
-	ID                string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID       string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	ConversationID    string     `json:"conversation_id" gorm:"type:uuid;index"`
-	SenderType        string     `json:"sender_type" gorm:"not null"`                  // customer, user, agent, ai
-	MessageType       string     `json:"message_type" gorm:"not null;default:'reply'"` // reply, csat_survey, system
-	SystemEventType   *string    `json:"system_event_type,omitempty" gorm:"size:40;index:idx_support_messages_system_event,where:system_event_type IS NOT NULL"`
-	SenderUserID      *string    `json:"sender_user_id" gorm:"type:uuid"`
-	SenderAgentID     *string    `json:"sender_agent_id" gorm:"type:uuid"`
-	SenderDisplayName *string    `json:"sender_display_name"`
-	SenderAvatarURL   *string    `json:"sender_avatar_url"`
-	Content           string     `json:"content" gorm:"not null"`
-	IsInternal        bool       `json:"is_internal" gorm:"not null;default:false"`
-	Metadata          string     `json:"metadata" gorm:"type:jsonb;default:'{}'"` // JSONB for CSAT ratings, AI sources, etc.
-	ViaChannel        *string    `json:"via_channel,omitempty" gorm:"size:20"`
-	EmailNotifiedAt   *time.Time `json:"email_notified_at,omitempty"`
-	EmailReadAt       *time.Time `json:"email_read_at,omitempty"`
-	CreatedAt         time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt         time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	// Private execution guard, used only while committing a durable staff send.
+	PendingGuard         *SupportPendingSend `json:"-" gorm:"-"`
+	PendingAttachmentIDs []string            `json:"-" gorm:"-"`
+
+	PendingSend       string                `json:"pending_send,omitempty" gorm:"-"`
+	PendingFailure    string                `json:"pending_failure,omitempty" gorm:"-"`
+	PendingSendID     string                `json:"pending_send_id,omitempty" gorm:"-"`
+	PendingRequest    *CreateMessageRequest `json:"pending_request,omitempty" gorm:"-"`
+	TranslationID     string                `json:"-" gorm:"-"`
+	ID                string                `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID       string                `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	ConversationID    string                `json:"conversation_id" gorm:"type:uuid;index"`
+	SenderType        string                `json:"sender_type" gorm:"not null"`                  // customer, user, agent, ai
+	MessageType       string                `json:"message_type" gorm:"not null;default:'reply'"` // reply, csat_survey, system, email_notice
+	SystemEventType   *string               `json:"system_event_type,omitempty" gorm:"size:40;index:idx_support_messages_system_event,where:system_event_type IS NOT NULL"`
+	SenderUserID      *string               `json:"sender_user_id" gorm:"type:uuid"`
+	SenderAgentID     *string               `json:"sender_agent_id" gorm:"type:uuid"`
+	SenderDisplayName *string               `json:"sender_display_name"`
+	SenderAvatarURL   *string               `json:"sender_avatar_url"`
+	Content           string                `json:"content" gorm:"not null"`
+	IsInternal        bool                  `json:"is_internal" gorm:"not null;default:false"`
+	Metadata          string                `json:"metadata" gorm:"type:jsonb;default:'{}'"` // JSONB for CSAT ratings, AI sources, etc.
+	ViaChannel        *string               `json:"via_channel,omitempty" gorm:"size:20"`
+	EmailNotifiedAt   *time.Time            `json:"email_notified_at,omitempty"`
+	EmailReadAt       *time.Time            `json:"email_read_at,omitempty"`
+	CreatedAt         time.Time             `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt         time.Time             `json:"updated_at" gorm:"autoUpdateTime"`
 	// CancellableUntil is the moment the email-fallback timer fires for an
 	// outbound agent reply. Until this passes, the agent can soft-delete the
 	// message and the queued email is removed from the per-conversation Redis
@@ -518,6 +532,12 @@ type SupportCredentialRotationAudit struct {
 	RotationKind   string    `json:"rotation_kind" gorm:"not null"`
 	CreatedAt      time.Time `json:"created_at" gorm:"autoCreateTime"`
 }
+
+// Credential audit kinds stored in SupportCredentialRotationAudit.RotationKind.
+const (
+	CredentialAuditSigningSecretRotated  = "server_signing_secret"
+	CredentialAuditSigningSecretRevealed = "server_signing_secret_revealed"
+)
 
 func (SupportCredentialRotationAudit) TableName() string {
 	return "support_credential_rotation_audits"
@@ -969,16 +989,20 @@ type CreateConversationWithMessageResponse struct {
 
 // CreateMessageRequest is the payload for creating a support message.
 type CreateMessageRequest struct {
-	Content         string   `json:"content"`
-	ClientMessageID string   `json:"client_message_id,omitempty"`
-	IsInternal      bool     `json:"is_internal"`
-	AIAssisted      bool     `json:"ai_assisted,omitempty"`
-	MessageType     string   `json:"message_type"` // reply, csat_survey, system
-	AttachmentIDs   []string `json:"attachment_ids,omitempty"`
-	Channels        []string `json:"channels,omitempty"`
-	DeliveryMode    string   `json:"delivery_mode,omitempty"`
-	CCEmails        []string `json:"cc_emails,omitempty"`
-	BCCEmails       []string `json:"bcc_emails,omitempty"`
+	SendOriginal              bool     `json:"send_original,omitempty"`
+	AutoTranslate             bool     `json:"auto_translate,omitempty"`
+	TranslationTargetLanguage string   `json:"translation_target_language,omitempty"`
+	Content                   string   `json:"content"`
+	ClientMessageID           string   `json:"client_message_id,omitempty"`
+	IsInternal                bool     `json:"is_internal"`
+	AIAssisted                bool     `json:"ai_assisted,omitempty"`
+	MessageType               string   `json:"message_type"` // reply, csat_survey, system, email_notice
+	AttachmentIDs             []string `json:"attachment_ids,omitempty"`
+	Channels                  []string `json:"channels,omitempty"`
+	DeliveryMode              string   `json:"delivery_mode,omitempty"`
+	EmailSubject              *string  `json:"email_subject,omitempty"`
+	CCEmails                  []string `json:"cc_emails,omitempty"`
+	BCCEmails                 []string `json:"bcc_emails,omitempty"`
 }
 
 // LinkTaskRequest links a conversation to a task.
@@ -988,6 +1012,8 @@ type LinkTaskRequest struct {
 
 // CreateTaskFromConversationRequest creates a PM task from the current support conversation.
 type CreateTaskFromConversationRequest struct {
+	ReviewedDraft     bool                         `json:"reviewed_draft,omitempty"`
+	SourceHash        string                       `json:"source_hash,omitempty"`
 	Name              *string                      `json:"name,omitempty"`
 	Description       *string                      `json:"description,omitempty"`
 	TaskType          *string                      `json:"task_type,omitempty"`
@@ -1067,6 +1093,7 @@ type UpdateConversationStatusRequest struct {
 
 // WidgetSessionRequest creates a new widget session (legacy HTTP).
 type WidgetSessionRequest struct {
+	Locale        *string `json:"locale,omitempty"`
 	WorkspaceSlug string  `json:"workspace_slug"`
 	WidgetKey     string  `json:"widget_key"`
 	CustomerName  *string `json:"customer_name"`
@@ -1131,6 +1158,7 @@ type WidgetSessionCreateData struct {
 
 // WidgetSessionRestoreData is the payload for session:restore.
 type WidgetSessionRestoreData struct {
+	Locale       string `json:"locale,omitempty"`
 	SessionToken string `json:"session_token"`
 }
 
@@ -1204,8 +1232,8 @@ type WidgetSessionJoinedPayload struct {
 	ExpiresAt      string                `json:"expires_at"`
 	IsAnonymous    bool                  `json:"is_anonymous"`
 	CustomerEmail  string                `json:"customer_email,omitempty"`
-	Conversations  []SupportConversation `json:"conversations"`
-	Messages       []SupportMessage      `json:"messages"`
+	Conversations  []WidgetConversation  `json:"conversations"`
+	Messages       []WidgetMessage       `json:"messages"`
 	ActiveTeammate *WidgetActiveTeammate `json:"active_teammate,omitempty"`
 }
 
@@ -1273,6 +1301,11 @@ const (
 
 // SupportInboxSettings holds all widget configuration stored as JSONB.
 type SupportInboxSettings struct {
+	TranslationIncomingEnabled  bool   `json:"translation_incoming_enabled"`
+	TranslationOutgoingEnabled  bool   `json:"translation_outgoing_enabled"`
+	TranslationCustomerLanguage string `json:"translation_customer_language"`
+	TranslationEnabled          bool   `json:"translation_enabled"`
+	DefaultAgentLanguage        string `json:"default_agent_language"`
 	// Identity Capture
 	RequireEmailBeforeChat bool   `json:"require_email_before_chat"`
 	RequirePhoneAfterEmail bool   `json:"require_phone_after_email"`
@@ -1284,6 +1317,7 @@ type SupportInboxSettings struct {
 	AutoPromoteToLead     bool   `json:"auto_promote_to_lead"`
 
 	// AI Auto-Reply
+	AIReplyChannels              string  `json:"ai_reply_channels"` // chat, email, both
 	AIEnabled                    bool    `json:"ai_enabled"`
 	AIAgentID                    *string `json:"ai_agent_id"`
 	AIConfidenceThreshold        float64 `json:"ai_confidence_threshold"` // 0.0–1.0
@@ -1396,6 +1430,10 @@ type SupportRoutingUsageStatus struct {
 // DefaultSupportInboxSettings returns settings with sensible defaults.
 func DefaultSupportInboxSettings() SupportInboxSettings {
 	return SupportInboxSettings{
+		TranslationIncomingEnabled:     true,
+		TranslationOutgoingEnabled:     true,
+		TranslationEnabled:             true,
+		DefaultAgentLanguage:           "en",
 		RequireEmailBeforeChat:         true,
 		RequirePhoneAfterEmail:         false,
 		WelcomeMessage:                 "Hi there! How can we help you today?",
@@ -1405,6 +1443,7 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		AIEnabled:                      false,
 		AIAgentID:                      nil,
 		AIConfidenceThreshold:          0.7,
+		AIReplyChannels:                "chat",
 		AIResponseMode:                 "ai_first",
 		AIPreRouterMode:                SupportAIPreRouterModeEnabled,
 		AIMaxFollowups:                 5,
@@ -1481,6 +1520,11 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 
 // UpdateInstallationSettingsRequest is a PATCH payload with pointer fields.
 type UpdateInstallationSettingsRequest struct {
+	TranslationIncomingEnabled      *bool                       `json:"translation_incoming_enabled,omitempty"`
+	TranslationOutgoingEnabled      *bool                       `json:"translation_outgoing_enabled,omitempty"`
+	TranslationCustomerLanguage     *string                     `json:"translation_customer_language,omitempty"`
+	TranslationEnabled              *bool                       `json:"translation_enabled,omitempty"`
+	DefaultAgentLanguage            *string                     `json:"default_agent_language,omitempty"`
 	AllowedOrigins                  *[]string                   `json:"allowed_origins,omitempty"`
 	IdentityVerificationMode        *string                     `json:"identity_verification_mode,omitempty"`
 	RequireEmailBeforeChat          *bool                       `json:"require_email_before_chat,omitempty"`
@@ -1492,6 +1536,7 @@ type UpdateInstallationSettingsRequest struct {
 	AIEnabled                       *bool                       `json:"ai_enabled,omitempty"`
 	AIAgentID                       *string                     `json:"ai_agent_id,omitempty"`
 	AIConfidenceThreshold           *float64                    `json:"ai_confidence_threshold,omitempty"`
+	AIReplyChannels                 *string                     `json:"ai_reply_channels,omitempty"`
 	AIResponseMode                  *string                     `json:"ai_response_mode,omitempty"`
 	AIPreRouterMode                 *string                     `json:"ai_pre_router_mode,omitempty"`
 	AIMaxFollowups                  *int                        `json:"ai_max_followups,omitempty"`
@@ -1590,7 +1635,24 @@ type SupportAIPreviewHistoryTurn struct {
 }
 
 // SupportAIPreviewResponse is the structured dry-run response for support AI previewing.
+// SupportPreviewSnapshot contains only the immutable text context of a test run.
+// It is created by the host, never accepted as a runtime/model-supplied flag.
+type SupportPreviewSnapshot struct {
+	ExcludedTools       []string         `json:"excluded_tools,omitempty"`
+	History             []SupportMessage `json:"history"`
+	Message             string           `json:"message"`
+	ConversationSource  string           `json:"conversation_source"`
+	ConfidenceThreshold float64          `json:"confidence_threshold"`
+	MaxResults          int              `json:"max_results"`
+}
+
 type SupportAIPreviewResponse struct {
+	RunID               string                    `json:"run_id,omitempty"`
+	Status              string                    `json:"status,omitempty"`
+	Provider            string                    `json:"provider,omitempty"`
+	Model               string                    `json:"model,omitempty"`
+	ProfileID           string                    `json:"profile_id,omitempty"`
+	ExcludedTools       []string                  `json:"excluded_tools,omitempty"`
 	ConversationSource  string                    `json:"conversation_source"`
 	ConfidenceThreshold float64                   `json:"confidence_threshold"`
 	TotalTokensUsed     int                       `json:"total_tokens_used"`
@@ -1892,19 +1954,36 @@ type VisitorContextResponse struct {
 
 // InstallationSettingsResponse wraps installation + parsed settings for the admin API.
 type InstallationSettingsResponse struct {
-	ID                       string               `json:"id"`
-	WorkspaceID              string               `json:"workspace_id"`
-	WidgetKey                string               `json:"widget_key"`
-	AllowedOrigins           []string             `json:"allowed_origins"`
-	IdentityVerificationMode string               `json:"identity_verification_mode"`
-	Settings                 SupportInboxSettings `json:"settings"`
-	Active                   bool                 `json:"active"`
-	CreatedAt                string               `json:"created_at"`
-	UpdatedAt                string               `json:"updated_at"`
+	ID                       string   `json:"id"`
+	WorkspaceID              string   `json:"workspace_id"`
+	WidgetKey                string   `json:"widget_key"`
+	AllowedOrigins           []string `json:"allowed_origins"`
+	IdentityVerificationMode string   `json:"identity_verification_mode"`
+	// SigningSecretConfigured reports whether an identity signing secret exists.
+	// The secret itself is only returned by the audited reveal/rotate endpoints.
+	SigningSecretConfigured bool                 `json:"signing_secret_configured"`
+	Settings                SupportInboxSettings `json:"settings"`
+	Active                  bool                 `json:"active"`
+	CreatedAt               string               `json:"created_at"`
+	UpdatedAt               string               `json:"updated_at"`
+}
+
+// RevealWidgetSecretResponse returns the current signing secret to an
+// authorized administrator. Each reveal is audited.
+type RevealWidgetSecretResponse struct {
+	SecretKey string `json:"secret_key"`
 }
 
 // RotateWidgetSecretResponse returns a newly rotated secret exactly once.
 type RotateWidgetSecretResponse struct {
 	SecretKey string `json:"secret_key"`
 	RotatedAt string `json:"rotated_at"`
+}
+
+// SupportAIControlRequest changes ownership without sending a customer message.
+// Version prevents one teammate from overwriting another's newer decision.
+type SupportAIControlRequest struct {
+	Action              string `json:"action"`
+	ExpectedVersion     int64  `json:"expected_version"`
+	ConfirmHumanRequest bool   `json:"confirm_human_request"`
 }

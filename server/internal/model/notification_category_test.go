@@ -198,6 +198,8 @@ func TestEventTypeToCategory_AllSprints(t *testing.T) {
 // TestEventTypeToCategory_AllMappedToValidCategory ensures every mapped event type uses a known category constant.
 func TestEventTypeToCategory_AllMappedToValidCategory(t *testing.T) {
 	validCategories := map[string]bool{
+		NotifCategoryCRMSignals:      true,
+		NotifCategoryIntegrations:    true,
 		NotifCategoryAssignments:     true,
 		NotifCategoryStatusChanges:   true,
 		NotifCategoryComments:        true,

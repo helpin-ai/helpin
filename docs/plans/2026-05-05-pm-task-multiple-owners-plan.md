@@ -1,5 +1,16 @@
 # PM Task Multiple Owners Implementation Plan
 
+> Source review, 2026-09-17
+
+The `server/internal/worker` tool/executor package referenced below is absent
+from this checkout. Current Helpin provider dispatch lives in
+[agent_runtime_mcp.go](../../server/internal/service/agent_runtime_mcp.go), with
+product operations implemented by internal command services. Runtime-local tool
+execution belongs to the separate Agent Runtime repository. See the
+[current tool guide](../internal-tools-framework.md); do not recreate the old
+worker registry to follow this historical plan.
+The current [task model](../../server/internal/model/pm_task.go) exposes `owner_member_ids` and hydrated `Owners`; those fields are implemented, not an outstanding schema proposal.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make multiple owners a first-class concept on PM tasks. Drop the legacy single-owner columns (`owner_member_id`, `owner_id`) from `pm_tasks` and treat the `pm_task_owners` join table as the only source of truth — mirroring the pattern already in place for `pm_objectives`.
@@ -18,7 +29,7 @@
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Primary owner concept | **None.** Owners are a true set. | Linear-style. User explicitly chose first-class multi-owner. |
+| Primary owner concept | **None.** Owners are a true set. | Owners have equal standing; there is no primary owner. |
 | Group-by-owner on board | Duplicate the card across each owner's lane; show "Unassigned" lane for tasks with no owners. | Standard for true-set tools. |
 | MyWork filter | "I am one of the owners" (set membership). | Matches user intent. |
 | Notification on owner change | Existing auto-follow on `AddOwner`/`RemoveOwner` already covers this. No new emission. | Service already emits `owner_added` / `owner_removed` activity events. |

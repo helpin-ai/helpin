@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
-	"github.com/helpin-ai/helpin/server/internal/aiusage"
+	"github.com/helpin-ai/helpin/server/internal/aimodel"
 )
 
 const defaultAICompletionServiceTier = "standard"
@@ -31,6 +32,9 @@ type AICompletionRoute struct {
 	Model              string
 	ServiceTier        string
 	OpenRouterProvider string
+	ProviderOptions    string
+	DisableReasoning   bool
+	AttemptTimeout     time.Duration
 }
 
 // CRMCompletionRouteConfig optionally overrides the reviewed CRM defaults.
@@ -80,6 +84,8 @@ func NewAICompletionRouteRegistry(crmConfig CRMCompletionRouteConfig) AICompleti
 		}
 	}
 	policies := []AICompletionRoutePolicy{
+		{FeatureKey: BillingFeatureSupportTranslation, OperationKey: "quality_review", Primary: AICompletionRoute{Provider: "openrouter", Model: "deepseek/deepseek-v4.1-flash", OpenRouterProvider: "coreweave/fp8", ServiceTier: defaultAICompletionServiceTier}, PreferRequestRoute: true, MaximumOutputTokens: 128},
+		{FeatureKey: BillingFeatureSupportTranslation, Primary: AICompletionRoute{Provider: "openrouter", Model: "openai/gpt-oss-120b", OpenRouterProvider: "cerebras/fp16", ServiceTier: defaultAICompletionServiceTier}, Fallbacks: []AICompletionRoute{{Provider: "openrouter", Model: "deepseek/deepseek-v4.1-flash", OpenRouterProvider: "coreweave/fp8", ServiceTier: defaultAICompletionServiceTier}}, MaximumOutputTokens: 4000},
 		common(BillingFeatureAIRouting, 400),
 		common(BillingFeatureCoverageGapAnalysis, 1800),
 		crm(BillingFeatureCRMSignalDetection, 4096),
@@ -106,6 +112,10 @@ func NewAICompletionRouteRegistry(crmConfig CRMCompletionRouteConfig) AICompleti
 			MaximumOutputTokens: 1024,
 		},
 		{
+			FeatureKey: BillingFeatureSupportAIReply, OperationKey: supportGreetingOperation,
+			Primary: openRouterLunaRoute, MaximumOutputTokens: 256,
+		},
+		{
 			FeatureKey: BillingFeatureSupportTaskDraft, Primary: glm53FlashExactoRoute,
 			Fallbacks: []AICompletionRoute{openRouterLunaRoute}, PreferRequestRoute: true,
 			MaximumOutputTokens: 1200,
@@ -124,8 +134,15 @@ func NewAICompletionRouteRegistry(crmConfig CRMCompletionRouteConfig) AICompleti
 			FeatureKey: BillingFeatureAskChat, OperationKey: AIUsageOperationMediaEnrichment,
 			Primary: AICompletionRoute{
 				Provider: mediaEnrichmentProvider, Model: mediaEnrichmentRoute,
-				ServiceTier: defaultAICompletionServiceTier,
-			}, MaximumOutputTokens: 700,
+				ProviderOptions: `{"only":["google-ai-studio/flex","google-vertex/global/flex"],"sort":"latency","max_price":{"prompt":0.375,"completion":1.875}}`,
+				AttemptTimeout:  2 * time.Minute,
+				ServiceTier:     defaultAICompletionServiceTier,
+			},
+			Fallbacks: []AICompletionRoute{{
+				Provider: "openrouter", Model: "qwen/qwen3.8-omni-flash", OpenRouterProvider: "alibaba",
+				ProviderOptions:  `{"only":["alibaba"],"max_price":{"prompt":0.15,"completion":0.47}}`,
+				DisableReasoning: true, AttemptTimeout: 2 * time.Minute, ServiceTier: defaultAICompletionServiceTier,
+			}}, MaximumOutputTokens: 700,
 		},
 	}
 	registry := AICompletionRouteRegistry{policies: make(map[string]AICompletionRoutePolicy, len(policies))}
@@ -171,7 +188,7 @@ func (r AICompletionRouteRegistry) Policy(featureKey, operationKey string) (AICo
 }
 
 // Validate returns all catalog and structural route-policy issues.
-func (r AICompletionRouteRegistry) Validate(catalog *aiusage.Catalog) []error {
+func (r AICompletionRouteRegistry) Validate(catalog *aimodel.Catalog) []error {
 	var issues []error
 	for key, policy := range r.policies {
 		if strings.TrimSpace(policy.FeatureKey) == "" {
@@ -240,4 +257,21 @@ func aiCompletionRouteKey(route AICompletionRoute) string {
 		strings.ToLower(strings.TrimSpace(route.ServiceTier)),
 		strings.ToLower(strings.TrimSpace(route.OpenRouterProvider)),
 	}, ":")
+}
+
+// ValidateAvailability lets an edition add readiness requirements without making
+// the product route registry depend on prices or subscriptions.
+func (r AICompletionRouteRegistry) ValidateAvailability(validate func(AICompletionRoute) error) []error {
+	if validate == nil {
+		return nil
+	}
+	var issues []error
+	for key, policy := range r.policies {
+		for _, route := range append([]AICompletionRoute{policy.Primary}, policy.Fallbacks...) {
+			if err := validate(route); err != nil {
+				issues = append(issues, fmt.Errorf("%s: %w", key, err))
+			}
+		}
+	}
+	return issues
 }

@@ -62,7 +62,7 @@ type Agent struct {
 	ActiveVersionID            *string         `json:"active_version_id,omitempty" gorm:"type:uuid;index"`
 	Role                       string          `json:"role"`
 	Status                     string          `json:"status" gorm:"not null;default:'idle'"`
-	RuntimeKind                string          `json:"runtime_kind" gorm:"not null;default:'opencode'"`
+	RuntimeKind                string          `json:"runtime_kind" gorm:"not null;default:'native_sdk'"`
 	ModelTier                  string          `json:"model_tier" gorm:"not null;default:''"`
 	Skills                     AgentSkillRefs  `json:"skills" gorm:"type:jsonb;not null;default:'[]'"`
 	TriggerMode                string          `json:"trigger_mode" gorm:"not null;default:'manual'"`
@@ -88,6 +88,7 @@ type Agent struct {
 	ResolvedSkillInstructions  string          `json:"-" gorm:"-"`
 	CreatedAt                  time.Time       `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt                  time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+	AIProfileID                *string         `json:"ai_profile_id,omitempty" gorm:"column:ai_profile_id;type:uuid"`
 }
 
 func (Agent) TableName() string { return "agents" }
@@ -170,6 +171,7 @@ type AgentVersion struct {
 	DeletedAt             *time.Time      `json:"deleted_at" gorm:"index"`
 	CreatedAt             time.Time       `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt             time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+	AIProfileID           *string         `json:"ai_profile_id,omitempty" gorm:"column:ai_profile_id;type:uuid"`
 }
 
 func (AgentVersion) TableName() string { return "agent_versions" }
@@ -183,7 +185,7 @@ type AgentRun struct {
 	ConversationID    *string                 `json:"conversation_id" gorm:"type:uuid"`
 	TargetType        string                  `json:"target_type" gorm:"not null;default:'task';index"`
 	TargetID          string                  `json:"target_id" gorm:"type:uuid;not null;index"`
-	RuntimeKind       string                  `json:"runtime_kind" gorm:"not null;default:'opencode'"`
+	RuntimeKind       string                  `json:"runtime_kind" gorm:"not null;default:'native_sdk'"`
 	ModelTier         string                  `json:"model_tier" gorm:"not null;default:''"`
 	InvocationMode    string                  `json:"invocation_mode" gorm:"not null;default:'autonomous'"`
 	ParentRunID       *string                 `json:"parent_run_id" gorm:"type:uuid;index"`
@@ -259,25 +261,27 @@ func (AgentRunArtifact) TableName() string { return "agent_run_artifacts" }
 
 // AgentTriggerExecution captures one durable trigger firing attempt for an agent binding.
 type AgentTriggerExecution struct {
-	ID            string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID   string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	AgentID       string     `json:"agent_id" gorm:"type:uuid;not null;index"`
-	ActorID       *string    `json:"actor_id,omitempty" gorm:"type:uuid;index"`
-	BindingID     string     `json:"binding_id" gorm:"not null;index"`
-	BindingKind   string     `json:"binding_kind" gorm:"not null;index"`
-	TriggerType   *string    `json:"trigger_type"`
-	ReferenceID   *string    `json:"reference_id" gorm:"index"`
-	ReferenceType *string    `json:"reference_type"`
-	TargetType    *string    `json:"target_type" gorm:"index"`
-	TargetID      *string    `json:"target_id" gorm:"index"`
-	RunID         *string    `json:"run_id" gorm:"type:uuid;index"`
-	Status        string     `json:"status" gorm:"not null;index"`
-	ErrorMessage  *string    `json:"error_message"`
-	FiredAt       time.Time  `json:"fired_at" gorm:"not null;index"`
-	StartedAt     *time.Time `json:"started_at"`
-	CompletedAt   *time.Time `json:"completed_at"`
-	CreatedAt     time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt     time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                    string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID           string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	AgentID               string     `json:"agent_id" gorm:"type:uuid;index"`
+	ActorID               *string    `json:"actor_id,omitempty" gorm:"type:uuid;index"`
+	BindingID             string     `json:"binding_id" gorm:"not null;index"`
+	BindingKind           string     `json:"binding_kind" gorm:"not null;index"`
+	TriggerType           *string    `json:"trigger_type"`
+	ReferenceID           *string    `json:"reference_id" gorm:"index"`
+	ReferenceType         *string    `json:"reference_type"`
+	TargetType            *string    `json:"target_type" gorm:"index"`
+	TargetID              *string    `json:"target_id" gorm:"index"`
+	RunID                 *string    `json:"run_id" gorm:"type:uuid;index"`
+	ConditionOutcome      *string    `json:"condition_outcome,omitempty" gorm:"->"`
+	ConditionAssessmentID *string    `json:"condition_assessment_id,omitempty" gorm:"type:uuid;->"`
+	Status                string     `json:"status" gorm:"not null;index"`
+	ErrorMessage          *string    `json:"error_message"`
+	FiredAt               time.Time  `json:"fired_at" gorm:"not null;index"`
+	StartedAt             *time.Time `json:"started_at"`
+	CompletedAt           *time.Time `json:"completed_at"`
+	CreatedAt             time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt             time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (AgentTriggerExecution) TableName() string { return "agent_trigger_executions" }
@@ -308,6 +312,7 @@ type CreateAgentRequest struct {
 	ApprovalMode          *string         `json:"approval_mode"`
 	MaxConcurrentRuns     *int            `json:"max_concurrent_runs"`
 	DefaultInvocationMode *string         `json:"default_invocation_mode"`
+	AIProfileID           *string         `json:"ai_profile_id"`
 }
 
 type CustomAgentDraftRequest struct {
@@ -371,6 +376,7 @@ type UpdateAgentRequest struct {
 	ApprovalMode          *string         `json:"approval_mode"`
 	MaxConcurrentRuns     *int            `json:"max_concurrent_runs"`
 	DefaultInvocationMode *string         `json:"default_invocation_mode"`
+	AIProfileID           *string         `json:"ai_profile_id"`
 }
 
 type CreateWorkspaceAgentPresetVersionRequest struct {
@@ -430,6 +436,7 @@ type CreateAgentVersionRequest struct {
 	AllowedTargets        json.RawMessage `json:"allowed_targets"`
 	SupportedModes        json.RawMessage `json:"supported_modes"`
 	DefaultInvocationMode *string         `json:"default_invocation_mode"`
+	AIProfileID           *string         `json:"ai_profile_id"`
 }
 
 type UpdateAgentVersionRequest struct {
@@ -446,6 +453,7 @@ type UpdateAgentVersionRequest struct {
 	AllowedTargets        json.RawMessage `json:"allowed_targets"`
 	SupportedModes        json.RawMessage `json:"supported_modes"`
 	DefaultInvocationMode *string         `json:"default_invocation_mode"`
+	AIProfileID           *string         `json:"ai_profile_id"`
 }
 
 // AgentTriggerUsageSummary is the aggregated read model for "what triggers this agent".
@@ -514,6 +522,9 @@ const (
 
 const AgentRunArtifactTypeToolCall = "tool_call"
 const AgentRunArtifactTypeBrowserScreenshot = "browser_screenshot"
+
+// AgentRunArtifactTypeGeneratedImage is an image created by generate_image or edit_image.
+const AgentRunArtifactTypeGeneratedImage = "generated_image"
 const AgentRunArtifactTypeBrowserRecording = "browser_recording"
 
 const (
@@ -522,6 +533,7 @@ const (
 	AgentRunPauseReasonHumanApproval  = "human_approval"
 	AgentRunPauseReasonAuthentication = "authentication"
 	AgentRunPauseReasonUserMessage    = "awaiting_user_message"
+	AgentRunPauseReasonManual         = "manual"
 )
 
 const (
@@ -574,7 +586,7 @@ func IsAgentRunActiveStatus(status string) bool {
 
 func normalizeAgentRunPauseReason(status string, pauseReason string, approvalState string, executionStage *string) string {
 	switch strings.TrimSpace(pauseReason) {
-	case AgentRunPauseReasonHumanInput, AgentRunPauseReasonHumanApproval, AgentRunPauseReasonAuthentication, AgentRunPauseReasonUserMessage:
+	case AgentRunPauseReasonHumanInput, AgentRunPauseReasonHumanApproval, AgentRunPauseReasonAuthentication, AgentRunPauseReasonUserMessage, AgentRunPauseReasonManual:
 		return strings.TrimSpace(pauseReason)
 	}
 	if strings.TrimSpace(approvalState) == "pending" {
@@ -611,21 +623,29 @@ type HandoffAgentRunRequest struct {
 }
 
 type StartAgentRunRequest struct {
+	ModelConnectionID string                 `json:"model_connection_id,omitempty"`
+	ModelName         string                 `json:"model_name,omitempty"`
+	DeliveryMode      string                 `json:"delivery_mode,omitempty"`
 	AgentID           string                 `json:"agent_id,omitempty"`
 	AdditionalContext *string                `json:"additional_context,omitempty"`
 	AllowedTools      []string               `json:"allowed_tools,omitempty"`
 	BaseBranch        *string                `json:"base_branch,omitempty"`
 	WorkingBranch     *string                `json:"working_branch,omitempty"`
 	Output            *AgentRunOutputContext `json:"output,omitempty"`
+	AIProfileID       string                 `json:"ai_profile_id,omitempty"`
 }
 
 type StartTargetAgentRunRequest struct {
+	ModelConnectionID string  `json:"model_connection_id,omitempty"`
+	ModelName         string  `json:"model_name,omitempty"`
+	DeliveryMode      string  `json:"delivery_mode,omitempty"`
 	TargetType        string  `json:"target_type"`
 	TargetID          string  `json:"target_id"`
 	AgentID           string  `json:"agent_id"`
 	AdditionalContext *string `json:"additional_context,omitempty"`
 	BaseBranch        *string `json:"base_branch,omitempty"`
 	WorkingBranch     *string `json:"working_branch,omitempty"`
+	AIProfileID       string  `json:"ai_profile_id,omitempty"`
 }
 
 type AgentRunTriggerContext struct {
@@ -705,24 +725,39 @@ type AgentRunWorkspaceContext struct {
 
 // AgentRunInputPayload is the shared input contract for all agent runs.
 type AgentRunInputPayload struct {
-	Trigger             *AgentRunTriggerContext    `json:"trigger,omitempty"`
-	CRMPlaybook         *CRMPlaybookRunContext     `json:"crm_playbook,omitempty"`
-	Target              *AgentRunTargetContext     `json:"target,omitempty"`
-	Event               *AgentRunEventContext      `json:"event,omitempty"`
-	Output              *AgentRunOutputContext     `json:"output,omitempty"`
-	WorkspaceContext    *AgentRunWorkspaceContext  `json:"workspace_context,omitempty"`
-	AttachedContexts    []AgentRunContextReference `json:"attached_contexts,omitempty"`
-	TaskID              string                     `json:"task_id,omitempty"`
-	EpicID              string                     `json:"epic_id,omitempty"`
-	ConversationID      string                     `json:"conversation_id,omitempty"`
-	AdditionalContext   string                     `json:"additional_context,omitempty"`
-	AllowedTools        []string                   `json:"allowed_tools,omitempty"`
-	Stage               string                     `json:"stage,omitempty"`
-	PlanDocumentID      string                     `json:"plan_document_id,omitempty"`
-	SpecDocumentID      string                     `json:"spec_document_id,omitempty"`
-	SpecVersionID       string                     `json:"spec_version_id,omitempty"`
-	PlanningMethodology string                     `json:"planning_methodology,omitempty"`
-	FlowOutputKind      string                     `json:"flow_output_kind,omitempty"`
+	ExecutionEnabled  bool                    `json:"execution_enabled,omitempty"`
+	SupportPreview    *SupportPreviewSnapshot `json:"support_preview,omitempty"`
+	ExecutionLocation string                  `json:"execution_location,omitempty"`
+	LocalExecution    *CLILocalRun            `json:"local_execution,omitempty"`
+
+	CredentialSource  string                     `json:"credential_source,omitempty"`
+	ModelProvider     string                     `json:"model_provider,omitempty"`
+	ModelConnectionID string                     `json:"model_connection_id,omitempty"`
+	ModelName         string                     `json:"model_name,omitempty"`
+	DeliveryMode      string                     `json:"delivery_mode,omitempty"`
+	Trigger           *AgentRunTriggerContext    `json:"trigger,omitempty"`
+	CRMPlaybook       *CRMPlaybookRunContext     `json:"crm_playbook,omitempty"`
+	Target            *AgentRunTargetContext     `json:"target,omitempty"`
+	Event             *AgentRunEventContext      `json:"event,omitempty"`
+	Output            *AgentRunOutputContext     `json:"output,omitempty"`
+	WorkspaceContext  *AgentRunWorkspaceContext  `json:"workspace_context,omitempty"`
+	AttachedContexts  []AgentRunContextReference `json:"attached_contexts,omitempty"`
+	TaskID            string                     `json:"task_id,omitempty"`
+	EpicID            string                     `json:"epic_id,omitempty"`
+	ConversationID    string                     `json:"conversation_id,omitempty"`
+	AdditionalContext string                     `json:"additional_context,omitempty"`
+	// TrustedUserMessages contains bounded, host-authenticated human turns from
+	// an earlier Dock chat run. It is kept separate from carry-forward context,
+	// which also contains untrusted assistant and tool output.
+	TrustedUserMessages []string              `json:"trusted_user_messages,omitempty"`
+	AllowedTools        []string              `json:"allowed_tools,omitempty"`
+	Stage               string                `json:"stage,omitempty"`
+	PlanDocumentID      string                `json:"plan_document_id,omitempty"`
+	SpecDocumentID      string                `json:"spec_document_id,omitempty"`
+	SpecVersionID       string                `json:"spec_version_id,omitempty"`
+	PlanningMethodology string                `json:"planning_methodology,omitempty"`
+	FlowOutputKind      string                `json:"flow_output_kind,omitempty"`
+	AISelection         *AIExecutionSelection `json:"ai_selection,omitempty"`
 }
 
 func (p *AgentRunInputPayload) SetTarget(targetType, targetID string) {
@@ -756,8 +791,9 @@ func (p *AgentRunInputPayload) SetTarget(targetType, targetID string) {
 }
 
 type SendAgentRunMessageRequest struct {
-	Content         string `json:"content"`
-	ClientMessageID string `json:"client_message_id,omitempty"`
+	Content             string   `json:"content"`
+	ClientMessageID     string   `json:"client_message_id,omitempty"`
+	TrustedUserMessages []string `json:"-"`
 }
 
 type ContinueAgentRunRequest struct {
@@ -769,11 +805,12 @@ type SendAgentRunRequestChangesRequest struct {
 }
 
 type ResumeAgentRunRequest struct {
-	Intent          string          `json:"intent"`
-	Content         string          `json:"content,omitempty"`
-	SendMessage     bool            `json:"send_message,omitempty"`
-	ResponsePayload json.RawMessage `json:"response_payload,omitempty"`
-	ClientMessageID string          `json:"client_message_id,omitempty"`
+	Intent              string          `json:"intent"`
+	Content             string          `json:"content,omitempty"`
+	SendMessage         bool            `json:"send_message,omitempty"`
+	ResponsePayload     json.RawMessage `json:"response_payload,omitempty"`
+	ClientMessageID     string          `json:"client_message_id,omitempty"`
+	TrustedUserMessages []string        `json:"-"`
 }
 
 // RuntimeProfile describes the policy attached to a capability profile.

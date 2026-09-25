@@ -28,15 +28,22 @@ describe('resolveDockComposerState', () => {
     expect(state.enabled).toBe(true);
   });
 
+  it('requires explicit resume after a manual pause', () => {
+    const state = resolveDockComposerState({ status: 'paused', pause_reason: 'manual' }, false, false);
+    expect(state.enabled).toBe(false);
+    expect(state.placeholder).toContain('resume');
+  });
+
   it('disables while the agent is working', () => {
     const state = resolveDockComposerState({ status: 'running', pause_reason: 'none' }, false, false);
     expect(state.visible).toBe(true);
     expect(state.enabled).toBe(false);
   });
 
-  it('hides during a structured interaction', () => {
+  it('keeps the composer mounted but disabled during a structured interaction', () => {
     const state = resolveDockComposerState({ status: 'paused', pause_reason: 'human_approval' }, true, false);
-    expect(state.visible).toBe(false);
+    expect(state.visible).toBe(true);
+    expect(state.enabled).toBe(false);
   });
 
   it('enables continuation after the run ended', () => {
@@ -215,4 +222,27 @@ describe('dock marker parsing', () => {
       action: { proposal_id: 'proposal-1' },
     })?.action?.proposal_id).toBe('proposal-1');
   });
+});
+
+it('cleans chat answers and live segments without modifying the source used by agent runs', () => {
+  const marker = '<!-- helpin_follow_up_suggestions ["Review the task"] -->';
+  const content = `Done\n\n${marker}`;
+  const stream = emptyStream();
+  const live = { message_id: 'reply', content, status: 'streaming' as const, tool_calls: [] };
+  const segment = { segment_id: 'seg', kind: 'assistant_message' as const, assistant_message: live };
+  stream.transcript_messages = [
+    { event_id: 'user', role: 'user', content: marker, timestamp: '', sequence_no: 1 },
+    { event_id: 'assistant', role: 'assistant', content, timestamp: '', sequence_no: 2, turn_segments: [segment] },
+  ];
+  stream.live_assistant_message = live;
+  stream.live_turn_segments = [segment];
+  const result = transformDockStream(stream).stream;
+  expect(result.transcript_messages[0].content).toBe(marker);
+  expect(result.transcript_messages[1].content).toBe('Done');
+  expect(result.live_assistant_message?.content).toBe('Done');
+  expect(result.live_turn_segments[0]).toMatchObject({ assistant_message: { content: 'Done' } });
+  expect(result.transcript_messages[1].turn_segments?.[0]).toMatchObject({ assistant_message: { content: 'Done' } });
+  expect(stream.transcript_messages[1].content).toBe(content);
+  expect(stream.live_assistant_message.content).toBe(content);
+  expect(stream.live_turn_segments[0]).toMatchObject({ assistant_message: { content } });
 });

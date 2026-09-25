@@ -1,4 +1,4 @@
-import type { AgentApprovalState, AgentInvocationMode, AgentRunPauseReason, AgentRunStatus, AgentRuntimeKind, CodexAuthState } from './agents';
+import type { AgentRunDeliveryMode, AgentApprovalState, AgentInvocationMode, AgentRunPauseReason, AgentRunStatus, AgentRuntimeKind } from './agents';
 
 export type CodingSessionInteractionKind =
   | 'request_user_input'
@@ -109,6 +109,8 @@ export interface CodingSessionDiff {
 }
 
 export interface CodingSession {
+  execution_location?: 'local' | 'cloud';
+  delivery_mode?: AgentRunDeliveryMode;
   id: string;
   run_id: string;
   parent_run_id?: string;
@@ -134,7 +136,6 @@ export interface CodingSession {
   input_tokens: number;
   output_tokens: number;
   tokens_used: number;
-  auth_state?: CodexAuthState;
   stream_state_snapshot?: CodingSessionStreamSnapshot;
   triggered_by_user?: CodingSessionActor;
   created_at: string;
@@ -257,6 +258,7 @@ export interface CodingSessionStreamSnapshot {
   live_reasoning_message?: CodingSessionLiveReasoningMessage;
   live_turn_segments?: CodingSessionLiveTurnSegment[];
   current_plan?: RunPlanArtifact;
+  work_plans?: RunPlanArtifact[];
 }
 
 export interface CodingSessionTurnState {
@@ -273,6 +275,7 @@ export interface RunPlanStep {
 }
 
 export interface RunPlanArtifact {
+  origin?: { event_id: string; sequence_no?: number; turn_id?: string; created_at: string };
   note?: string;
   plan: RunPlanStep[];
 }
@@ -285,5 +288,6 @@ export interface CodingSessionStreamState {
   live_turn_segments: CodingSessionLiveTurnSegment[];
   activity_events: CodingSessionEvent[];
   current_plan: RunPlanArtifact | null;
+  work_plans?: RunPlanArtifact[];
   completed_tool_calls: CodingSessionLiveToolCall[];
 }

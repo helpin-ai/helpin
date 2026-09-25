@@ -11,14 +11,14 @@ import (
 
 type SetupService struct {
 	repo         *repository.SetupRepository
-	entitlements *EntitlementService
+	entitlements EntitlementPolicy
 }
 
 func NewSetupService(repo *repository.SetupRepository) *SetupService {
 	return &SetupService{repo: repo}
 }
 
-func (s *SetupService) SetEntitlementService(entitlements *EntitlementService) *SetupService {
+func (s *SetupService) SetEntitlementService(entitlements EntitlementPolicy) *SetupService {
 	s.entitlements = entitlements
 	return s
 }

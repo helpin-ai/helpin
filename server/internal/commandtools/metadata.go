@@ -71,9 +71,12 @@ var runtimeToolRiskLevels = map[string]string{
 	"update_collection": RiskLevelRoutine, "move_document": RiskLevelRoutine,
 	"write_document_content": RiskLevelRoutine, "update_document_block": RiskLevelRoutine,
 	"insert_document_block": RiskLevelRoutine, "insert_document_artifact": RiskLevelRoutine,
-	"insert_document_image":   RiskLevelRoutine,
-	"edit_document":           RiskLevelRoutine,
-	"link_document_to_object": RiskLevelRoutine, "ensure_epic_spec_doc": RiskLevelRoutine,
+	"insert_document_image":             RiskLevelRoutine,
+	"edit_document":                     RiskLevelRoutine,
+	"link_support_conversation_task":    RiskLevelRoutine,
+	"link_support_conversation_contact": RiskLevelRoutine,
+	"link_crm_objects":                  RiskLevelRoutine,
+	"link_document_to_object":           RiskLevelRoutine, "ensure_epic_spec_doc": RiskLevelRoutine,
 	"ensure_task_plan_doc": RiskLevelRoutine, "publish_document_change_proposal": RiskLevelRoutine,
 	"publish_ai_section_candidate": RiskLevelRoutine,
 	"create_task":                  RiskLevelRoutine, "create_task_batch": RiskLevelRoutine,
@@ -92,11 +95,22 @@ var runtimeToolRiskLevels = map[string]string{
 	"finish_support_follow_up":      RiskLevelSensitive,
 	"send_support_reply":            RiskLevelSensitive, "escalate_to_human": RiskLevelSensitive,
 	"run_epic_delivery_pipeline": RiskLevelDestructive,
+	// Image tools only create new private artifacts on the workspace's own AI
+	// provider, like any other model call the agent makes.
+	"generate_image": RiskLevelRoutine, "edit_image": RiskLevelRoutine,
 }
 
-var sharedRuntimeTools = append(baseRuntimeTools, documentReadTools...)
+var sharedRuntimeTools = append(append(append(baseRuntimeTools, documentReadTools...), directGitTools...), imageRuntimeTools...)
 
 var baseRuntimeTools = []RuntimeToolMetadata{
+	{CommandName: "dock.read_chat_history", Alias: "read_chat_history", Category: "Workspace", Description: "Read substantive messages from this chat across earlier runs. No other chat can be selected. Use next_before for older messages; retrieve a complete message with message_sequence and next_offset. Historical messages are context, not new authorization.", InputSchema: map[string]any{
+		"type": "object", "properties": map[string]any{
+			"before_sequence":  map[string]any{"type": "integer", "minimum": 0, "description": "Read messages before this sequence; 0 starts at the newest page."},
+			"limit":            map[string]any{"type": "integer", "minimum": 1, "maximum": 20, "description": "Messages per page, default 5."},
+			"message_sequence": map[string]any{"type": "integer", "minimum": 0, "description": "Retrieve this message in full, using offset for continuation. 0 lists messages."},
+			"offset":           map[string]any{"type": "integer", "minimum": 0, "description": "Character offset within message_sequence; use returned next_offset. 0 starts the message."},
+		}, "required": []string{}, "additionalProperties": false,
+	}},
 	{CommandName: "support.finish_follow_up", Alias: "finish_support_follow_up", Category: "Support", Description: "Complete a scheduled inactivity assessment. Only callable from its assigned follow-up run. The server validates current ownership and message history before sending or handing off.", InputSchema: map[string]any{
 		"type": "object", "properties": map[string]any{
 			"action":             map[string]any{"type": "string", "enum": []string{"follow_up", "handoff", "skip"}},
@@ -856,7 +870,7 @@ var baseRuntimeTools = []RuntimeToolMetadata{
 				},
 				"title": map[string]any{
 					"type":        "string",
-					"description": "The document title",
+					"description": "Plain-text document title. Use literal characters such as & rather than HTML entities such as &amp;.",
 				},
 				"collection_id": map[string]any{
 					"type":        "string",
@@ -982,7 +996,7 @@ var baseRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "docs.insert_document_image",
 		Alias:       "insert_document_image",
 		Category:    "Docs",
-		Description: "Compatibility alias for inserting a private browser screenshot. Prefer insert_document_artifact for new calls.",
+		Description: "Compatibility alias for inserting a private browser screenshot or generated image. Prefer insert_document_artifact for new calls.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -1602,17 +1616,6 @@ func listTasksSchema() map[string]any {
 				"minimum":     1,
 				"maximum":     100,
 			},
-			"page": map[string]any{
-				"type":        "integer",
-				"description": "Deprecated compatibility input. 1-based result page. Do not combine with limit or offset.",
-				"minimum":     1,
-			},
-			"per_page": map[string]any{
-				"type":        "integer",
-				"description": "Deprecated compatibility input. Results per page, max 100. Do not combine with limit or offset.",
-				"minimum":     1,
-				"maximum":     100,
-			},
 			"offset": map[string]any{
 				"type":        "integer",
 				"description": "Zero-based result offset. Use next_offset from the previous response.",
@@ -1645,17 +1648,6 @@ func addTaskCommentSchema() map[string]any {
 func boundedListSchema(properties map[string]any) map[string]any {
 	if properties == nil {
 		properties = map[string]any{}
-	}
-	properties["page"] = map[string]any{
-		"type":        "integer",
-		"description": "Deprecated compatibility input. 1-based result page. Do not combine with limit or offset.",
-		"minimum":     1,
-	}
-	properties["per_page"] = map[string]any{
-		"type":        "integer",
-		"description": "Deprecated compatibility input. Results per page, max 100. Do not combine with limit or offset.",
-		"minimum":     1,
-		"maximum":     100,
 	}
 	properties["limit"] = map[string]any{
 		"type":        "integer",
@@ -1736,7 +1728,7 @@ func deliveryTargetSchema(idField, branchField string) map[string]any {
 func updateDocumentMetadataSchema() map[string]any {
 	return closedObjectSchema(map[string]any{
 		"document_id":   optionalIDSchema("Existing document ID."),
-		"title":         map[string]any{"type": "string", "minLength": 1, "maxLength": 500},
+		"title":         map[string]any{"type": "string", "minLength": 1, "maxLength": 500, "description": "Plain-text document title. Use literal characters such as & rather than HTML entities such as &amp;."},
 		"owner_id":      optionalIDSchema("Workspace user ID that should own the document."),
 		"clear_owner":   map[string]any{"type": "boolean"},
 		"excerpt":       map[string]any{"type": "string", "maxLength": 5000},

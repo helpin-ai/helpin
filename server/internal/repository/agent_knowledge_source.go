@@ -48,6 +48,18 @@ func (r *AgentKnowledgeSourceRepository) ListBySpaceID(ctx context.Context, work
 	return sources, nil
 }
 
+// ListByWorkspaceID returns every knowledge source link in a workspace.
+func (r *AgentKnowledgeSourceRepository) ListByWorkspaceID(ctx context.Context, workspaceID string) ([]model.AgentKnowledgeSource, error) {
+	var sources []model.AgentKnowledgeSource
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ?", workspaceID).
+		Order("created_at ASC").
+		Find(&sources).Error; err != nil {
+		return nil, err
+	}
+	return sources, nil
+}
+
 // GetByID returns a knowledge source row by ID.
 func (r *AgentKnowledgeSourceRepository) GetByID(ctx context.Context, id string) (*model.AgentKnowledgeSource, error) {
 	var source model.AgentKnowledgeSource

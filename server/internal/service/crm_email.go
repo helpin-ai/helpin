@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/mail"
 	"sort"
 	"strings"
 	"time"
@@ -634,11 +635,42 @@ func (s *CRMEmailService) SendEmail(ctx context.Context, workspaceID, accountID,
 	return s.sendEmail(ctx, workspaceID, accountID, userID, to, cc, subject, bodyHTML, "", nil)
 }
 
-func (s *CRMEmailService) SendEmailWithAttachments(ctx context.Context, workspaceID, accountID, userID string, to, cc []string, subject, bodyHTML, draftID string, attachmentIDs []string) (*model.CRMEmailMessage, error) {
-	return s.sendEmail(ctx, workspaceID, accountID, userID, to, cc, subject, bodyHTML, draftID, attachmentIDs)
+func (s *CRMEmailService) SendEmailWithAttachments(ctx context.Context, workspaceID, accountID, userID string, to, cc []string, subject, bodyHTML, draftID string, attachmentIDs []string, dealIDs ...string) (*model.CRMEmailMessage, error) {
+	dealID := ""
+	if len(dealIDs) > 0 {
+		dealID = dealIDs[0]
+	}
+	return s.sendEmailWithDeal(ctx, workspaceID, accountID, userID, to, cc, subject, bodyHTML, draftID, attachmentIDs, dealID)
 }
 
 func (s *CRMEmailService) sendEmail(ctx context.Context, workspaceID, accountID, userID string, to, cc []string, subject, bodyHTML, draftID string, attachmentIDs []string, intentIDs ...string) (*model.CRMEmailMessage, error) {
+	return s.sendEmailWithDeal(ctx, workspaceID, accountID, userID, to, cc, subject, bodyHTML, draftID, attachmentIDs, "", intentIDs...)
+}
+
+func (s *CRMEmailService) sendEmailWithDeal(ctx context.Context, workspaceID, accountID, userID string, to, cc []string, subject, bodyHTML, draftID string, attachmentIDs []string, dealID string, intentIDs ...string) (*model.CRMEmailMessage, error) {
+	if strings.TrimSpace(subject) == "" || strings.ContainsAny(subject, "\r\n") || strings.TrimSpace(bodyHTML) == "" || len(to) == 0 {
+		return nil, fmt.Errorf("recipient, subject, and message are required")
+	}
+	for _, addresses := range [][]string{to, cc} {
+		for i, value := range addresses {
+			parsed, err := mail.ParseAddress(value)
+			if err != nil || strings.ContainsAny(value, "\r\n") {
+				return nil, fmt.Errorf("enter valid email addresses")
+			}
+			addresses[i] = parsed.Address
+		}
+	}
+
+	if dealID != "" {
+		valid, err := s.emailRepo.CRMEntityBelongsToWorkspace(ctx, "deal", workspaceID, dealID)
+		if err != nil {
+			return nil, err
+		}
+		if !valid {
+			return nil, fmt.Errorf("deal not found")
+		}
+	}
+
 	if len(intentIDs) > 1 || len(intentIDs) == 1 && !validSituationID(intentIDs[0]) {
 		return nil, ErrCRMPlaybookInput
 	}
@@ -656,8 +688,8 @@ func (s *CRMEmailService) sendEmail(ctx context.Context, workspaceID, accountID,
 	if account.MemberID != userID {
 		return nil, fmt.Errorf("not authorized to send from this email account")
 	}
-	if !account.IsActive {
-		return nil, fmt.Errorf("email account is not active")
+	if !account.IsActive || account.Status != model.CRMEmailAccountStatusConnected || account.Provider != model.CRMEmailProviderGmail {
+		return nil, fmt.Errorf("connect an active Gmail account before sending")
 	}
 
 	accessToken, err := s.gmailSync.GetValidToken(ctx, account)
@@ -671,6 +703,36 @@ func (s *CRMEmailService) sendEmail(ctx context.Context, workspaceID, accountID,
 	}
 
 	attachments, err := s.prepareAttachments(ctx, workspaceID, draftID, userID, attachmentIDs)
+	if err != nil {
+		return nil, err
+	}
+	resolution, err := s.resolver.Resolve(ctx, crmemail.ResolveInput{
+		WorkspaceID: account.WorkspaceID,
+		Direction:   model.CRMEmailDirectionOutbound,
+		Settings:    settings,
+		SelfEmails:  []string{account.EmailAddress},
+		From: crmemail.Participant{
+			Email: account.EmailAddress,
+			Role:  model.CRMEmailParticipantRoleFrom,
+		},
+		To: participantsFromAddresses(to, model.CRMEmailParticipantRoleTo),
+		CC: participantsFromAddresses(cc, model.CRMEmailParticipantRoleCC),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("resolve email participants: %w", err)
+	}
+
+	// Validate local capabilities before consuming mailbox capacity.
+	if len(intentIDs) == 1 {
+		if _, ok := s.gmailSync.(gmailIntentClient); !ok || len(attachments) > 0 {
+			return nil, fmt.Errorf("email action reconciliation is not configured")
+		}
+	} else if len(attachments) > 0 {
+		if _, ok := s.gmailSync.(gmailAttachmentClient); !ok {
+			return nil, fmt.Errorf("email attachments are not configured")
+		}
+	}
+	reservationID, err := s.reserveEmail(ctx, account, intentIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -690,27 +752,12 @@ func (s *CRMEmailService) sendEmail(ctx context.Context, workspaceID, accountID,
 	} else {
 		sendResult, err = s.gmailSync.SendMessage(ctx, accessToken, account.EmailAddress, to, cc, subject, bodyHTML)
 	}
+	err = s.finishEmailAttempt(ctx, account, reservationID, err, sendResult != nil && sendResult.ID != "" && err == nil)
 	if err != nil {
 		return nil, fmt.Errorf("send email: %w", err)
 	}
 	if sendResult == nil || strings.TrimSpace(sendResult.ID) == "" {
 		return nil, fmt.Errorf("send email result is unconfirmed")
-	}
-
-	resolution, err := s.resolver.Resolve(ctx, crmemail.ResolveInput{
-		WorkspaceID: account.WorkspaceID,
-		Direction:   model.CRMEmailDirectionOutbound,
-		Settings:    settings,
-		SelfEmails:  []string{account.EmailAddress},
-		From: crmemail.Participant{
-			Email: account.EmailAddress,
-			Role:  model.CRMEmailParticipantRoleFrom,
-		},
-		To: participantsFromAddresses(to, model.CRMEmailParticipantRoleTo),
-		CC: participantsFromAddresses(cc, model.CRMEmailParticipantRoleCC),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("resolve email participants: %w", err)
 	}
 
 	toJSON, _ := json.Marshal(participantEmails(resolution.To))
@@ -727,24 +774,35 @@ func (s *CRMEmailService) sendEmail(ctx context.Context, workspaceID, accountID,
 		}
 	}
 
+	associationWarning := ""
+	if dealID != "" {
+		if threadID == nil {
+			associationWarning = "Email sent, but the conversation could not be linked to this deal. Link it from the email timeline."
+		} else if err := s.emailRepo.UpdateThreadDeal(ctx, workspaceID, *threadID, &dealID); err != nil {
+			slog.ErrorContext(ctx, "failed to link sent email to deal", "error", err, "deal_id", dealID)
+			associationWarning = "Email sent, but the conversation could not be linked to this deal. Link it from the email timeline."
+		}
+	}
 	fromAddress := resolution.From.Email
 	if fromAddress == "" {
 		fromAddress = crmemail.NormalizeEmailAddress(account.EmailAddress)
 	}
 	message := &model.CRMEmailMessage{
-		WorkspaceID:       account.WorkspaceID,
-		EmailAccountID:    account.ID,
-		ThreadID:          threadID,
-		MessageExternalID: sendResult.ID,
-		FromAddress:       fromAddress,
-		ToAddresses:       toJSON,
-		CCAddresses:       ccJSON,
-		Subject:           subject,
-		BodyHTML:          &bodyHTML,
-		Direction:         model.CRMEmailDirectionOutbound,
-		SentAt:            now,
-		ContactID:         resolution.PrimaryContactID,
-		ContactIDs:        resolution.ContactIDs,
+		AssociationWarning: associationWarning,
+		DealID:             optionalStringPtr(dealID),
+		WorkspaceID:        account.WorkspaceID,
+		EmailAccountID:     account.ID,
+		ThreadID:           threadID,
+		MessageExternalID:  sendResult.ID,
+		FromAddress:        fromAddress,
+		ToAddresses:        toJSON,
+		CCAddresses:        ccJSON,
+		Subject:            subject,
+		BodyHTML:           &bodyHTML,
+		Direction:          model.CRMEmailDirectionOutbound,
+		SentAt:             now,
+		ContactID:          resolution.PrimaryContactID,
+		ContactIDs:         resolution.ContactIDs,
 	}
 	if len(intentIDs) == 1 {
 		message.RFCMessageID = optionalStringPtr(crmActionMessageID(intentIDs[0]))
@@ -948,22 +1006,6 @@ func (s *CRMEmailService) replyToThread(ctx context.Context, workspaceID, thread
 	if err != nil {
 		return nil, err
 	}
-	var sendResult *sync.GmailSendResult
-	if len(attachments) > 0 {
-		client, ok := s.gmailSync.(gmailThreadAttachmentClient)
-		if !ok {
-			return nil, fmt.Errorf("email attachments are not configured")
-		}
-		sendResult, err = client.SendThreadMessageWithAttachments(ctx, accessToken, account.EmailAddress, to, cc, thread.Subject, bodyHTML, thread.ThreadExternalID, stringValue(latest.RFCMessageID), references, attachments)
-	} else {
-		sendResult, err = threadClient.SendThreadMessage(ctx, accessToken, account.EmailAddress, to, cc, thread.Subject, bodyHTML, thread.ThreadExternalID, stringValue(latest.RFCMessageID), references)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("send thread reply: %w", err)
-	}
-	now := time.Now().UTC()
-	toJSON, _ := json.Marshal(to)
-	ccJSON, _ := json.Marshal(cc)
 	settings, settingsErr := s.GetEmailSyncSettings(ctx, workspaceID)
 	if settingsErr != nil {
 		return nil, fmt.Errorf("load email sync settings: %w", settingsErr)
@@ -980,6 +1022,36 @@ func (s *CRMEmailService) replyToThread(ctx context.Context, workspaceID, thread
 	if resolutionErr != nil {
 		return nil, fmt.Errorf("resolve reply participants: %w", resolutionErr)
 	}
+	if len(attachments) > 0 {
+		if _, ok := s.gmailSync.(gmailThreadAttachmentClient); !ok {
+			return nil, fmt.Errorf("email attachments are not configured")
+		}
+	}
+	reservationID, err := s.reserveEmail(ctx, account, nil)
+	if err != nil {
+		return nil, err
+	}
+	var sendResult *sync.GmailSendResult
+	if len(attachments) > 0 {
+		client, ok := s.gmailSync.(gmailThreadAttachmentClient)
+		if !ok {
+			return nil, fmt.Errorf("email attachments are not configured")
+		}
+		sendResult, err = client.SendThreadMessageWithAttachments(ctx, accessToken, account.EmailAddress, to, cc, thread.Subject, bodyHTML, thread.ThreadExternalID, stringValue(latest.RFCMessageID), references, attachments)
+	} else {
+		sendResult, err = threadClient.SendThreadMessage(ctx, accessToken, account.EmailAddress, to, cc, thread.Subject, bodyHTML, thread.ThreadExternalID, stringValue(latest.RFCMessageID), references)
+	}
+	err = s.finishEmailAttempt(ctx, account, reservationID, err, sendResult != nil && sendResult.ID != "" && err == nil)
+	if err != nil {
+		return nil, fmt.Errorf("send thread reply: %w", err)
+	}
+	if sendResult == nil || strings.TrimSpace(sendResult.ID) == "" {
+		return nil, fmt.Errorf("send reply result is unconfirmed")
+	}
+	now := time.Now().UTC()
+	toJSON, _ := json.Marshal(to)
+	ccJSON, _ := json.Marshal(cc)
+
 	message := &model.CRMEmailMessage{
 		WorkspaceID: workspaceID, EmailAccountID: account.ID, ThreadID: &thread.ID,
 		MessageExternalID: sendResult.ID, FromAddress: account.EmailAddress,
@@ -1531,4 +1603,18 @@ func (s *CRMEmailService) UpdateEmailSyncSettings(ctx context.Context, workspace
 		return nil, err
 	}
 	return settings, nil
+}
+
+func (s *CRMEmailService) UpdateSignature(ctx context.Context, workspaceID, accountID, userID, signature string) error {
+	account, err := s.emailRepo.GetAccountByIDForWorkspace(ctx, workspaceID, accountID)
+	if err != nil {
+		return err
+	}
+	if account == nil || account.MemberID != userID {
+		return fmt.Errorf("not authorized to edit this email account")
+	}
+	if len(signature) > 10000 {
+		return fmt.Errorf("signature must be 10000 characters or fewer")
+	}
+	return s.emailRepo.UpdateSignature(ctx, workspaceID, accountID, userID, strings.TrimSpace(signature))
 }

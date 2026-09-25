@@ -66,6 +66,11 @@ func (s *MCPService) ExecuteTool(ctx context.Context, principal *model.MCPPrinci
 	}
 
 	executionContext := authorization.WithActor(ctx, actor)
+	cleanArguments, err = s.resolveMCPTaskKeyArgument(executionContext, effective, actor, cleanArguments)
+	if err != nil {
+		s.audit(ctx, effective, "tool.call", name, "error", mcpReasonCode(err), cleanArguments, nil)
+		return nil, err
+	}
 	result, err := s.executeAuthorizedMCPTool(executionContext, effective, actor, tool, cleanArguments)
 	if err != nil {
 		s.audit(ctx, effective, "tool.call", name, "error", mcpReasonCode(err), cleanArguments, nil)
@@ -122,6 +127,9 @@ func (s *MCPService) executeAuthorizedMCPTool(
 	arguments json.RawMessage,
 ) (*MCPToolResult, error) {
 	if tool.CommandName != "" {
+		if err := s.requireMCPCommandDocumentAccess(ctx, principal, actor, tool, arguments); err != nil {
+			return nil, err
+		}
 		if tool.Name == "search_workspace" {
 			var err error
 			arguments, err = s.prepareMCPWorkspaceSearchArguments(principal, actor, arguments)
@@ -151,7 +159,7 @@ func (s *MCPService) executeAuthorizedMCPTool(
 					ActorRole:   actor.Role,
 				}, taskKey)
 				if err != nil {
-					return nil, err
+					return nil, mcpCommandError(err)
 				}
 				task, err := s.accessibleMCPTask(ctx, principal, taskID)
 				if err != nil {
@@ -183,7 +191,7 @@ func (s *MCPService) executeAuthorizedMCPTool(
 			ActorRole:   actor.Role,
 		}, tool.CommandName, arguments)
 		if err != nil {
-			return nil, err
+			return nil, mcpCommandError(err)
 		}
 		if taskContextInput != nil {
 			var data model.GetTaskContextResult
@@ -840,47 +848,7 @@ func (s *MCPService) executeSpecialMCPTool(
 		return &MCPToolResult{Summary: fmt.Sprintf("Returned %d available agents.", len(items)), Data: items}, nil
 
 	case "start_agent_run":
-		var input struct {
-			AgentID           string  `json:"agent_id"`
-			TargetType        string  `json:"target_type"`
-			TargetID          string  `json:"target_id"`
-			AdditionalContext *string `json:"additional_context"`
-		}
-		if err := decodeMCPArguments(arguments, &input); err != nil {
-			return nil, err
-		}
-		if err := s.agents.RequireActorCanUseAgent(ctx, principal.WorkspaceID, input.AgentID, actor); err != nil {
-			return nil, ErrMCPForbidden
-		}
-		recentStarts, err := s.repo.CountRecentToolCalls(ctx, principal.WorkspaceID, principal.UserID, "start_agent_run", time.Now().Add(-time.Hour))
-		if err != nil {
-			return nil, err
-		}
-		if recentStarts >= 10 {
-			return nil, ErrMCPRateLimited
-		}
-		userActive, workspaceActive, err := s.repo.CountActiveMCPAgentRuns(ctx, principal.WorkspaceID, principal.UserID)
-		if err != nil {
-			return nil, err
-		}
-		if userActive >= 3 || workspaceActive >= 10 {
-			return nil, ErrMCPRateLimited
-		}
-		run, err := s.agents.StartTargetRun(ctx, principal.WorkspaceID, input.TargetType, input.TargetID, model.StartAgentRunRequest{AgentID: input.AgentID, AdditionalContext: input.AdditionalContext}, principal.UserID)
-		if err != nil {
-			return nil, err
-		}
-		attribution := &model.MCPAgentRunAttribution{RunID: run.ID, WorkspaceID: principal.WorkspaceID, ClientName: principal.ClientName}
-		if principal.ConnectionID != "" {
-			attribution.ConnectionID = &principal.ConnectionID
-		}
-		if principal.ServicePrincipalID != "" {
-			attribution.ServicePrincipalID = &principal.ServicePrincipalID
-		}
-		if err := s.repo.CreateRunAttribution(ctx, attribution); err != nil {
-			return nil, err
-		}
-		return &MCPToolResult{Summary: "Agent run started. Poll get_agent_run with the returned run_id.", Data: map[string]any{"run_id": run.ID, "status": run.Status, "agent_id": run.AgentID, "target_type": run.TargetType, "target_id": run.TargetID}}, nil
+		return s.startMCPAgentRun(ctx, principal, actor, arguments)
 
 	case "get_agent_run":
 		var input struct {
@@ -892,6 +860,9 @@ func (s *MCPService) executeSpecialMCPTool(
 		run, err := s.agents.GetAgentRun(ctx, principal.WorkspaceID, input.RunID)
 		if err != nil {
 			return nil, err
+		}
+		if !mcpPrincipalCanSeeRun(principal, run) {
+			return nil, ErrMCPNotFound
 		}
 		artifacts, err := s.agents.ListRunArtifacts(ctx, principal.WorkspaceID, input.RunID)
 		if err != nil {
@@ -906,12 +877,40 @@ func (s *MCPService) executeSpecialMCPTool(
 		if err := decodeMCPArguments(arguments, &input); err != nil {
 			return nil, err
 		}
+		existing, err := s.agents.GetAgentRun(ctx, principal.WorkspaceID, input.RunID)
+		if err != nil {
+			return nil, err
+		}
+		if !mcpPrincipalCanSeeRun(principal, existing) {
+			return nil, ErrMCPNotFound
+		}
 		run, err := s.agents.CancelRun(ctx, principal.WorkspaceID, input.RunID, principal.UserID)
 		if err != nil {
 			return nil, err
 		}
 		return &MCPToolResult{Summary: "Agent run cancellation requested.", Data: map[string]any{"run_id": run.ID, "status": run.Status}}, nil
 	default:
+		if result, handled, err := s.executeDocsLifecycleMCPTool(ctx, principal, actor, name, arguments); handled {
+			return result, err
+		}
+		if result, handled, err := s.executeUploadMCPTool(ctx, principal, actor, name, arguments); handled {
+			return result, err
+		}
+		if result, handled, err := s.executeDocsBatchMCPTool(ctx, principal, actor, name, arguments); handled {
+			return result, err
+		}
+		if result, handled, err := s.executeHelpcenterMCPTool(ctx, principal, actor, name, arguments); handled {
+			return result, err
+		}
+		if result, handled, err := s.executeHelpcenterBulkMCPTool(ctx, principal, actor, name, arguments); handled {
+			return result, err
+		}
+		if result, handled, err := s.executeDocsProposalMCPTool(ctx, principal, actor, name, arguments); handled {
+			return result, err
+		}
+		if result, handled, err := s.executePMParityMCPTool(ctx, principal, name, arguments); handled {
+			return result, err
+		}
 		return nil, ErrMCPNotFound
 	}
 }
@@ -1028,6 +1027,76 @@ func (s *MCPService) accessibleMCPTask(
 	return task, nil
 }
 
+// resolveMCPTaskKeyArgument lets every tool accept a human task key such as
+// HEL-120 in task_id by rewriting it to the task's ID before dispatch.
+func (s *MCPService) resolveMCPTaskKeyArgument(
+	ctx context.Context,
+	principal *model.MCPPrincipal,
+	actor *authorization.Actor,
+	arguments json.RawMessage,
+) (json.RawMessage, error) {
+	var values map[string]any
+	if err := json.Unmarshal(arguments, &values); err != nil {
+		return arguments, nil
+	}
+	raw, ok := values["task_id"].(string)
+	if !ok || s.commands == nil || !searchTaskKeyPattern.MatchString(strings.ToUpper(strings.TrimSpace(raw))) {
+		return arguments, nil
+	}
+	taskID, err := s.commands.resolveCommandTaskKey(ctx, model.InternalCommandContext{
+		WorkspaceID: principal.WorkspaceID, ActorID: principal.UserID, ActorRole: actor.Role,
+	}, raw)
+	if err != nil {
+		return nil, ErrMCPNotFound
+	}
+	values["task_id"] = taskID
+	encoded, err := json.Marshal(values)
+	if err != nil {
+		return nil, fmt.Errorf("encode resolved task key: %w", err)
+	}
+	return encoded, nil
+}
+
+// requireMCPCommandDocumentAccess applies Docs space access to command-backed
+// document tools, which otherwise only verify the workspace.
+func (s *MCPService) requireMCPCommandDocumentAccess(
+	ctx context.Context,
+	principal *model.MCPPrincipal,
+	actor *authorization.Actor,
+	tool MCPToolDefinition,
+	arguments json.RawMessage,
+) error {
+	if tool.Toolset != MCPToolsetDocs {
+		return nil
+	}
+	var input struct {
+		DocumentID string `json:"document_id"`
+	}
+	if err := json.Unmarshal(arguments, &input); err != nil || strings.TrimSpace(input.DocumentID) == "" {
+		return nil
+	}
+	document, err := s.accessibleMCPDocument(ctx, principal, actor, strings.TrimSpace(input.DocumentID))
+	if err != nil {
+		return err
+	}
+	if document == nil {
+		return ErrMCPNotFound
+	}
+	return nil
+}
+
+// mcpPrincipalCanSeeRun hides dock chat runs, which are private to the user
+// who owns the chat, from every other MCP principal.
+func mcpPrincipalCanSeeRun(principal *model.MCPPrincipal, run *model.AgentRun) bool {
+	if run == nil {
+		return false
+	}
+	if run.DockChatID == nil {
+		return true
+	}
+	return run.TriggeredByUserID != nil && *run.TriggeredByUserID == principal.UserID
+}
+
 func mcpPrincipalKey(principal *model.MCPPrincipal) string {
 	if principal.ConnectionID != "" {
 		return "connection:" + principal.ConnectionID
@@ -1036,6 +1105,10 @@ func mcpPrincipalKey(principal *model.MCPPrincipal) string {
 }
 
 func mcpReasonCode(err error) string {
+	var toolErr *MCPToolError
+	if errors.As(err, &toolErr) {
+		return strings.ToLower(toolErr.Code)
+	}
 	switch {
 	case errors.Is(err, ErrMCPUnauthorized):
 		return "unauthorized"

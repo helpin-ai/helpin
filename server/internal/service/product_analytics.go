@@ -27,16 +27,7 @@ const (
 )
 
 // ProductAnalyticsEvent is one canonical product event.
-type ProductAnalyticsEvent struct {
-	SemanticKey string
-	UserID      string
-	AnonymousID string
-	WorkspaceID string
-	Name        string
-	Source      string
-	OccurredAt  time.Time
-	Attributes  map[string]any
-}
+type ProductAnalyticsEvent = model.ProductAnalyticsEvent
 
 // ProductAnalyticsService queues canonical product events without blocking product behavior.
 type ProductAnalyticsService struct {
@@ -189,7 +180,7 @@ type ProductAnalyticsOutboxWorker struct {
 	userRepo         *repository.UserRepository
 	workspaceRepo    *repository.WorkspaceRepository
 	organizationRepo *repository.OrganizationRepository
-	billingRepo      *repository.BillingRepository
+	billingRepo      workspaceBillingReader
 	client           *UsermavenClient
 	now              func() time.Time
 }
@@ -200,7 +191,7 @@ func NewProductAnalyticsOutboxWorker(
 	userRepo *repository.UserRepository,
 	workspaceRepo *repository.WorkspaceRepository,
 	organizationRepo *repository.OrganizationRepository,
-	billingRepo *repository.BillingRepository,
+	billingRepo workspaceBillingReader,
 	client *UsermavenClient,
 ) *ProductAnalyticsOutboxWorker {
 	return &ProductAnalyticsOutboxWorker{
@@ -460,4 +451,8 @@ func analyticsClaimToken(row *model.ProductAnalyticsOutbox) string {
 		return ""
 	}
 	return *row.ClaimToken
+}
+
+type workspaceBillingReader interface {
+	GetByWorkspaceID(context.Context, string) (*model.WorkspaceBilling, error)
 }

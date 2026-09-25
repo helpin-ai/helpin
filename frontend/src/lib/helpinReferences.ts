@@ -17,6 +17,7 @@ export type HelpinReference = {
 };
 
 const INTERNAL_REFERENCE_PATH = '/__helpin/reference/';
+const INTERNAL_IMAGE_PATH = '/__helpin/image/';
 const CANONICAL_REFERENCE_RE = /^helpin:\/\/([a-z_-]+)\/([^/?#]+)$/i;
 const LEGACY_ARTIFACT_RE = /^helpin-artifact:\/\/([^/?#]+)$/i;
 
@@ -105,6 +106,23 @@ export function helpinReferenceRoute(reference: HelpinReference, workspaceSlug: 
   }
 }
 
+/** Converts an artifact image reference into a safe inline-image marker. */
+export function helpinImageMarker(value: string): string | null {
+  if (parseHelpinReference(value)?.type !== 'artifacts') return null;
+  return `${INTERNAL_IMAGE_PATH}${encodeURIComponent(value.trim())}`;
+}
+
+/** Recovers an artifact reference from an inline-image marker. */
+export function parseHelpinImageMarker(value: string | undefined): HelpinReference | null {
+  if (!value?.startsWith(INTERNAL_IMAGE_PATH)) return null;
+  try {
+    const reference = parseHelpinReference(decodeURIComponent(value.slice(INTERNAL_IMAGE_PATH.length)));
+    return reference?.type === 'artifacts' ? reference : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Remark plugin that preserves Helpin links through the markdown sanitizer. */
 export function remarkHelpinReferences() {
   return (tree: unknown) => rewriteHelpinLinkNodes(tree);
@@ -122,10 +140,20 @@ function decodedReference(type: HelpinReferenceType, encodedID: string): HelpinR
 
 function rewriteHelpinLinkNodes(node: unknown): void {
   if (!node || typeof node !== 'object') return;
-  const record = node as { type?: unknown; url?: unknown; children?: unknown };
+  const record = node as { type?: unknown; url?: unknown; alt?: unknown; children?: unknown };
   if (record.type === 'link' && typeof record.url === 'string') {
     const marker = helpinReferenceMarker(record.url);
     if (marker) record.url = marker;
+  }
+  // `![alt](helpin://artifacts/id)` becomes a link the renderer draws as an
+  // inline image; the sanitizer would otherwise drop the private image URL.
+  if (record.type === 'image' && typeof record.url === 'string') {
+    const marker = helpinImageMarker(record.url);
+    if (marker) {
+      const alt = typeof record.alt === 'string' ? record.alt : '';
+      Object.assign(record, { type: 'link', url: marker, children: [{ type: 'text', value: alt }] });
+      delete record.alt;
+    }
   }
   if (Array.isArray(record.children)) {
     for (const child of record.children) rewriteHelpinLinkNodes(child);

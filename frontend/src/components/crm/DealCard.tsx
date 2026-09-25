@@ -1,12 +1,12 @@
-import { useCallback, useMemo } from 'react';
+import { defaultStageColor } from '@/lib/crmStageColors';
+import { revenueSuffix } from './dealCreationDefaults';
+import { useMemo } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Calendar03Icon, UserAdd01Icon } from '@/lib/icons';
 import { differenceInDays, format, isBefore, parseISO, startOfDay } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { StageTypeIcon } from '@/lib/crmConstants';
-import { crmDealService } from '@/lib/services/crmService';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { findAssignableMember } from '@/lib/assignableMembers';
@@ -22,8 +22,9 @@ interface DealCardProps {
   workspaceId: string;
   assignableMembers?: AssignableMember[];
   ownerNameMap?: Map<string, string>;
-  onOwnerChanged?: (deal: CRMDeal) => void;
+  onOwnerChange?: (id: string, ownerId: string) => void;
   isOverlay?: boolean;
+  pending?: boolean;
 }
 
 export function DealCard({
@@ -32,8 +33,9 @@ export function DealCard({
   workspaceId,
   assignableMembers,
   ownerNameMap,
-  onOwnerChanged,
+  onOwnerChange,
   isOverlay = false,
+  pending = false,
 }: DealCardProps) {
   const {
     attributes,
@@ -42,7 +44,11 @@ export function DealCard({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: deal.id });
+  } = useSortable({
+    // The overlay must not replace the source card in dnd-kit's node registry.
+    id: isOverlay ? `deal-overlay:${deal.id}` : deal.id,
+    disabled: pending || isOverlay,
+  });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -71,22 +77,14 @@ export function DealCard({
     return ownerNameMap?.get(ownerKey) ?? null;
   }, [deal.owner_member_id, ownerNameMap]);
 
-  const handleAssignOwner = useCallback(
-    async (value: string) => {
-      const newOwnerId = value === '__none__' ? '' : value;
-      try {
-        const result = await crmDealService.update(workspaceId, deal.id, { owner_member_id: newOwnerId });
-        if (result.data) {
-          onOwnerChanged?.(result.data);
-        }
-      } catch {}
-    },
-    [workspaceId, deal.id, onOwnerChanged],
-  );
 
   return (
     <article
       ref={setNodeRef}
+      data-deal-id={deal.id}
+      aria-label={deal.name}
+      aria-busy={pending}
+      inert={pending || isOverlay}
       style={style}
       {...attributes}
       {...listeners}
@@ -94,10 +92,10 @@ export function DealCard({
       tabIndex={0}
       onClick={() => onOpen(deal)}
       onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
+        if (event.key === 'Enter' && !isDragging) {
           event.preventDefault();
           onOpen(deal);
-        }
+        } else { listeners?.onKeyDown?.(event); }
       }}
       className={cn(
         'group cursor-pointer rounded-lg border border-border/60 bg-card p-3 shadow-sm transition-all',
@@ -109,7 +107,7 @@ export function DealCard({
       {/* Row 1: display_id + stage type icon */}
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         {deal.stage && (
-          <StageTypeIcon stageType={deal.stage.stage_type} className="h-3.5 w-3.5 shrink-0" />
+          <span title={deal.stage.name} className="h-3 w-3 shrink-0 rounded-full border border-border/50" style={{backgroundColor: deal.stage.color || defaultStageColor(deal.stage.stage_type, deal.stage.position)}} />
         )}
         <span className="font-mono text-[11px]">{deal.display_id}</span>
         <span className="flex-1" />
@@ -124,7 +122,7 @@ export function DealCard({
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         {displayProps.amount && deal.amount != null && (
           <span className={cn(pillBase, 'border-green-300 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950/50 dark:text-green-400')}>
-            {deal.currency} {new Intl.NumberFormat().format(deal.amount)}
+            {deal.currency} {new Intl.NumberFormat().format(deal.amount)}{revenueSuffix(deal.revenue_type)}
           </span>
         )}
 
@@ -167,13 +165,14 @@ export function DealCard({
         <span className="flex-1" />
 
         {/* Owner avatar / assign button */}
-        {displayProps.owner && (assignableMembers && workspaceId ? (
+        {displayProps.owner && (assignableMembers && workspaceId && onOwnerChange ? (
           <MemberPickerPopover
             value={deal.owner_member_id || '__none__'}
             members={assignableMembers}
             noneLabel="Unassigned"
+            triggerLabel="Owner"
             onChange={(value) => {
-              void handleAssignOwner(value);
+              onOwnerChange(deal.id, value === '__none__' ? '' : value);
             }}
             align="end"
             triggerClassName="shrink-0 rounded-full transition-opacity hover:opacity-80"

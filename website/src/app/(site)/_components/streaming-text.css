@@ -1,0 +1,23 @@
+.hp3 .preview-stream-accessible {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+/* Fade each character's color in from transparent rather than its opacity: an opacity animation
+   would give every character its own compositor layer. The missing "to" keyframe resolves to the
+   character's own color, and backwards fill ends each animation once it finishes. */
+.hp3 .preview-stream[data-streaming="true"] .preview-stream-character {
+  animation: preview-stream-in 160ms linear var(--stream-delay) backwards;
+}
+.hp3 .preview-stream[data-pending="true"] .preview-stream-character { opacity: 0; }
+@keyframes preview-stream-in { from { color: transparent; } }
+@media (prefers-reduced-motion: reduce) {
+  .hp3 .preview-stream[data-streaming="true"] .preview-stream-character { animation: none; }
+  .hp3 .preview-stream[data-pending="true"] .preview-stream-character { opacity: 1; }
+}

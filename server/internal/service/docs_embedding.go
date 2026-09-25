@@ -25,6 +25,10 @@ const (
 	docsEmbeddingBatchSize       = 64
 	docsEmbeddingBatchAttempts   = 3
 	docsEmbeddingRetryDelay      = 500 * time.Millisecond
+
+	// embeddingProviderMissingMessage is shown on knowledge sources that
+	// cannot be indexed because no embedding provider serves the workspace.
+	embeddingProviderMissingMessage = "No embedding provider is configured: set OPENAI_API_KEY or OPENROUTER_API_KEY on the server, or connect OpenAI or OpenRouter in this workspace's AI settings"
 )
 
 // DocsEmbeddingService keeps pgvector-backed support knowledge chunks in sync.
@@ -169,8 +173,8 @@ func (s *DocsEmbeddingService) QueueSpaceSync(ctx context.Context, workspaceID, 
 		return nil
 	}
 
-	if s.embedder == nil {
-		errMsg := "OpenAI-compatible embedding provider is not configured"
+	if !embeddingsAvailable(ctx, s.embedder, workspaceID) {
+		errMsg := embeddingProviderMissingMessage
 		for _, source := range sources {
 			msg := errMsg
 			_ = s.knowledgeRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncDisabled, 0, 0, 0, &msg, nil, nil)
@@ -210,6 +214,14 @@ func (s *DocsEmbeddingService) syncSpace(ctx context.Context, workspaceID, space
 	}
 	if space == nil || space.WorkspaceID != workspaceID || !isDocsKnowledgeSpaceType(space.Type) {
 		msg := "Only internal and help center spaces can be indexed for support AI"
+		return s.updateAllSyncStates(ctx, sources, model.KnowledgeSourceSyncDisabled, 0, 0, 0, &msg, nil, nil)
+	}
+
+	// A worker process may have cached the source before the API changed a
+	// workspace AI connection; resolve it again for this sync.
+	refreshEmbeddingSource(s.embedder, workspaceID)
+	if !embeddingsAvailable(ctx, s.embedder, workspaceID) {
+		msg := embeddingProviderMissingMessage
 		return s.updateAllSyncStates(ctx, sources, model.KnowledgeSourceSyncDisabled, 0, 0, 0, &msg, nil, nil)
 	}
 

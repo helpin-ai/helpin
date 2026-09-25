@@ -3798,3 +3798,105 @@ func extractSupportDescriptionSection(html, sectionID string) string {
 	}
 	return html[start:]
 }
+
+func TestSupportInboxServiceCreateConversationWithMessageWithoutCustomerLanguage(t *testing.T) {
+	env, existing, provider := translationFixture(t)
+	ctx := context.Background()
+	setTranslationWorkspaceSettings(t, env, existing.WorkspaceID, func(settings *model.SupportInboxSettings) {
+		settings.TranslationCustomerLanguage = ""
+		settings.TranslationIncomingEnabled = false
+		settings.TranslationOutgoingEnabled = true
+	})
+	provider.fail = true // With no evidence, even a provider outage must not block.
+	body := "Hello, following up on your cancellation request."
+	result, err := env.service.supportInboxService.CreateConversationWithMessage(ctx, model.CreateConversationWithMessageRequest{
+		WorkspaceID: existing.WorkspaceID, Subject: "Following up", Content: body,
+		CustomerEmail: strPtr("recipient@example.com"), Channels: []string{"email"},
+	}, "22222222-2222-2222-2222-222222222222")
+	if err != nil {
+		t.Fatalf("first outbound send: %v", err)
+	}
+	if result == nil || result.Conversation == nil || result.Message == nil {
+		t.Fatal("missing conversation or first message")
+	}
+	if result.Message.Content != body || result.Message.TranslationID != "" || provider.calls != 0 {
+		t.Fatalf("first message was translated: content=%q translation=%q calls=%d", result.Message.Content, result.Message.TranslationID, provider.calls)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		saved, err := env.messageRepo.GetByID(ctx, result.Message.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if saved == nil || saved.Content != body {
+			t.Fatalf("first message not recorded: %+v", saved)
+		}
+		if saved.CancellableUntil != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("first outbound email was not queued")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	queued, err := env.redis.LRange(ctx, env.service.msgListKey(result.Conversation.ID), 0, -1).Result()
+	if err != nil || len(queued) != 1 || queued[0] != result.Message.ID {
+		t.Fatalf("queued email=%v err=%v", queued, err)
+	}
+	// Advance this message beyond the undo window before running delivery.
+	if err := env.messageRepo.SetCancellableUntil(ctx, result.Message.ID, time.Now().Add(-time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	sent := captureExplicitDeliveryEmails(t, env)
+	if err := env.service.fireEmail(ctx, result.Conversation.ID, queued); err != nil {
+		t.Fatalf("deliver first email: %v", err)
+	}
+	if len(*sent) != 1 || !strings.Contains((*sent)[0].TextBody, body) {
+		t.Fatalf("first email delivery=%+v", *sent)
+	}
+}
+
+func TestSupportInboxServiceCreateConversationWithMessageCleansUpFailure(t *testing.T) {
+	for _, scenario := range []string{"translation failure", "message write failure", "invalid tag", "request cancelled"} {
+		t.Run(scenario, func(t *testing.T) {
+			env, existing, provider := translationFixture(t)
+			db := env.messageRepo.DB()
+			svc := env.service.supportInboxService.SetSupportTagRepo(repository.NewSupportTagRepository(db))
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			mustExec(t, db, `INSERT INTO support_tags (id, workspace_id, name, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+				"outbound-tag", existing.WorkspaceID, "Outbound", "#2563eb", time.Now(), time.Now())
+			tags := []string{"outbound-tag"}
+			switch scenario {
+			case "translation failure":
+				provider.fail = true
+			case "message write failure":
+				mustExec(t, db, `CREATE TRIGGER reject_outbound_reply BEFORE INSERT ON support_messages WHEN NEW.sender_type = 'user' AND NEW.message_type = 'reply' BEGIN SELECT RAISE(FAIL, 'message write failed'); END`)
+			case "invalid tag":
+				tags = append(tags, "missing-tag")
+			case "request cancelled":
+				provider.onCall = cancel
+			}
+			result, err := svc.CreateConversationWithMessage(ctx, model.CreateConversationWithMessageRequest{
+				WorkspaceID: existing.WorkspaceID, Subject: "Unsuccessful outbound", Content: "Hello",
+				CustomerEmail: strPtr("recipient@example.com"), Channels: []string{"email"}, TagIDs: tags,
+			}, "22222222-2222-2222-2222-222222222222")
+			if err == nil || result != nil {
+				t.Fatalf("expected failed send, got result=%+v err=%v", result, err)
+			}
+			var conversations, messages, tagLinks int64
+			if err := db.Model(&model.SupportConversation{}).Where("workspace_id = ? AND id <> ?", existing.WorkspaceID, existing.ID).Count(&conversations).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Model(&model.SupportMessage{}).Where("workspace_id = ? AND conversation_id <> ?", existing.WorkspaceID, existing.ID).Count(&messages).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Model(&model.SupportConversationTag{}).Where("tag_id = ?", "outbound-tag").Count(&tagLinks).Error; err != nil {
+				t.Fatal(err)
+			}
+			if conversations != 0 || messages != 0 || tagLinks != 0 {
+				t.Fatalf("failed send left conversations=%d messages=%d tag links=%d", conversations, messages, tagLinks)
+			}
+		})
+	}
+}

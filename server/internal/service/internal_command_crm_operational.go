@@ -157,7 +157,7 @@ func (s *InternalCommandService) executeCRMCreateDeal(ctx context.Context, meta 
 	}
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
-		return nil, fmt.Errorf("name is required")
+		return nil, errCommandInput("name is required")
 	}
 	contactID := strings.TrimSpace(req.ContactID)
 	companyID := strings.TrimSpace(req.CompanyID)
@@ -170,7 +170,7 @@ func (s *InternalCommandService) executeCRMCreateDeal(ctx context.Context, meta 
 		}
 	}
 	if contactID == "" && companyID == "" {
-		return nil, fmt.Errorf("contact_id or company_id is required")
+		return nil, errCommandInput("contact_id or company_id is required")
 	}
 	if contactID != "" {
 		if _, err := s.scopedCRMContact(ctx, meta.WorkspaceID, contactID); err != nil {
@@ -183,15 +183,15 @@ func (s *InternalCommandService) executeCRMCreateDeal(ctx context.Context, meta 
 		}
 	}
 	if req.Amount != nil && *req.Amount < 0 {
-		return nil, fmt.Errorf("amount must not be negative")
+		return nil, errCommandInput("amount must not be negative")
 	}
 	if req.Probability != nil && (*req.Probability < 0 || *req.Probability > 100) {
-		return nil, fmt.Errorf("probability must be between 0 and 100")
+		return nil, errCommandInput("probability must be between 0 and 100")
 	}
 	if req.Currency != nil {
 		value := strings.ToUpper(strings.TrimSpace(*req.Currency))
 		if len(value) != 3 {
-			return nil, fmt.Errorf("currency must be a 3-letter code")
+			return nil, errCommandInput("currency must be a 3-letter code")
 		}
 		req.Currency = &value
 	}
@@ -238,13 +238,13 @@ func (s *InternalCommandService) resolveCRMDealPlacement(ctx context.Context, wo
 	pipelineID = strings.TrimSpace(pipelineID)
 	stageID = strings.TrimSpace(stageID)
 	if stageID == "" {
-		return nil, nil, fmt.Errorf("stage_id is required; ask the user which stage to use")
+		return nil, nil, errCommandInput("stage_id is required; ask the user which stage to use")
 	}
 	var pipeline *model.CRMPipeline
 	if pipelineID != "" {
 		resolved, err := s.crmDealService.GetPipeline(ctx, pipelineID)
 		if err != nil || resolved == nil || resolved.WorkspaceID != workspaceID {
-			return nil, nil, fmt.Errorf("pipeline not found")
+			return nil, nil, errCommandNotFound("pipeline")
 		}
 		pipeline = resolved
 	} else {
@@ -259,7 +259,7 @@ func (s *InternalCommandService) resolveCRMDealPlacement(ctx context.Context, wo
 			return nil, nil, fmt.Errorf("workspace has no CRM pipeline")
 		}
 		if pipeline == nil {
-			return nil, nil, fmt.Errorf("pipeline_id is required because this workspace has multiple pipelines; ask the user which pipeline to use")
+			return nil, nil, errCommandInput("pipeline_id is required because this workspace has multiple pipelines; ask the user which pipeline to use")
 		}
 	}
 	for idx := range pipeline.Stages {
@@ -396,15 +396,15 @@ func (s *InternalCommandService) executeCRMUpdateDeal(ctx context.Context, meta 
 		return nil, err
 	}
 	if req.Amount != nil && *req.Amount < 0 {
-		return nil, fmt.Errorf("amount must not be negative")
+		return nil, errCommandInput("amount must not be negative")
 	}
 	if req.Probability != nil && (*req.Probability < 0 || *req.Probability > 100) {
-		return nil, fmt.Errorf("probability must be between 0 and 100")
+		return nil, errCommandInput("probability must be between 0 and 100")
 	}
 	if req.Currency != nil {
 		value := strings.ToUpper(strings.TrimSpace(*req.Currency))
 		if len(value) != 3 {
-			return nil, fmt.Errorf("currency must be a 3-letter code")
+			return nil, errCommandInput("currency must be a 3-letter code")
 		}
 		req.Currency = &value
 	}
@@ -414,7 +414,7 @@ func (s *InternalCommandService) executeCRMUpdateDeal(ctx context.Context, meta 
 	}
 	pipeline, err := s.crmDealService.GetPipeline(ctx, pipelineID)
 	if err != nil || pipeline == nil || pipeline.WorkspaceID != meta.WorkspaceID {
-		return nil, fmt.Errorf("pipeline not found")
+		return nil, errCommandNotFound("pipeline")
 	}
 	stageID := deal.StageID
 	if req.StageID != nil {
@@ -465,7 +465,7 @@ func (s *InternalCommandService) executeCRMAddActivity(ctx context.Context, meta
 		targets++
 	}
 	if targets != 1 {
-		return nil, fmt.Errorf("exactly one of contact_id, company_id, or deal_id is required")
+		return nil, errCommandInput("exactly one of contact_id, company_id, or deal_id is required")
 	}
 	if req.ContactID != nil {
 		if _, err := s.scopedCRMContact(ctx, meta.WorkspaceID, *req.ContactID); err != nil {
@@ -503,7 +503,7 @@ func (s *InternalCommandService) scopedCRMContact(ctx context.Context, workspace
 	}
 	item, err := s.crmContactService.GetByID(ctx, strings.TrimSpace(id))
 	if err != nil || item == nil || item.WorkspaceID != workspaceID {
-		return nil, fmt.Errorf("contact not found")
+		return nil, errCommandNotFound("contact")
 	}
 	return item, nil
 }
@@ -513,7 +513,7 @@ func (s *InternalCommandService) scopedCRMCompany(ctx context.Context, workspace
 	}
 	item, err := s.crmCompanyService.GetByID(ctx, strings.TrimSpace(id))
 	if err != nil || item == nil || item.WorkspaceID != workspaceID {
-		return nil, fmt.Errorf("company not found")
+		return nil, errCommandNotFound("company")
 	}
 	return item, nil
 }
@@ -523,7 +523,7 @@ func (s *InternalCommandService) scopedCRMDeal(ctx context.Context, workspaceID,
 	}
 	item, err := s.crmDealService.GetByID(ctx, strings.TrimSpace(id))
 	if err != nil || item == nil || item.WorkspaceID != workspaceID {
-		return nil, fmt.Errorf("deal not found")
+		return nil, errCommandNotFound("deal")
 	}
 	return item, nil
 }
@@ -551,21 +551,21 @@ func resolveCRMCommandID(meta model.InternalCommandContext, explicit, targetType
 	if strings.TrimSpace(meta.TargetType) == targetType {
 		targetID := strings.TrimSpace(meta.TargetID)
 		if explicit != "" && targetID != "" && explicit != targetID {
-			return "", fmt.Errorf("%s conflicts with the current %s target", field, targetType)
+			return "", errCommandInput("%s conflicts with the current %s target", field, targetType)
 		}
 		if explicit == "" {
 			explicit = targetID
 		}
 	}
 	if explicit == "" {
-		return "", fmt.Errorf("%s is required", field)
+		return "", errCommandInput("%s is required", field)
 	}
 	return explicit, nil
 }
 
 func normalizeOperationalLimit(value int) (int, error) {
 	if value < 0 || value > 100 {
-		return 0, fmt.Errorf("limit must be between 1 and 100")
+		return 0, errCommandInput("limit must be between 1 and 100")
 	}
 	if value == 0 {
 		return 50, nil
@@ -584,7 +584,7 @@ func parseCRMCommandDate(value *string) (*time.Time, error) {
 	}
 	parsed, err := time.Parse("2006-01-02", strings.TrimSpace(*value))
 	if err != nil {
-		return nil, fmt.Errorf("close_date must be YYYY-MM-DD")
+		return nil, errCommandInput("close_date must be YYYY-MM-DD")
 	}
 	return &parsed, nil
 }
@@ -594,7 +594,7 @@ func parseCRMCommandTimestamp(value *string) (*time.Time, error) {
 	}
 	parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(*value))
 	if err != nil {
-		return nil, fmt.Errorf("occurred_at must be RFC3339")
+		return nil, errCommandInput("occurred_at must be RFC3339")
 	}
 	return &parsed, nil
 }

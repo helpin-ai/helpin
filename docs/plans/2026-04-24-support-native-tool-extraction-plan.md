@@ -1,8 +1,11 @@
 # Support Native Tool Extraction Plan
 
+> **Historical / superseded execution design.** The proposal to retain a separate AI-first executor was superseded by the full Agent Runtime migration. Current support execution uses agent_run and Helpin-owned knowledge, delivery and handoff tools.
+> See [Support execution through Agent Runtime](../support-agent-runtime.md) for current ownership.
+
 ## Status
 
-Proposed.
+Superseded by the Agent Runtime migration.
 
 ## Goal
 
@@ -880,9 +883,9 @@ That means a gap-analysis agent should primarily use `support_coverage` tools, n
 
 The backend already has:
 
-- gap and evidence models in [support_coverage.go](/root/helpin/server/internal/model/support_coverage.go:87)
-- read/query service methods in [support_coverage.go](/root/helpin/server/internal/service/support_coverage.go:135)
-- docs-suggestion generation and apply flows in [support_coverage_drafts.go](/root/helpin/server/internal/service/support_coverage_drafts.go:59)
+- gap and evidence models in [support_coverage.go](../../server/internal/model/support_coverage.go)
+- read/query service methods in [support_coverage.go](../../server/internal/service/support_coverage.go)
+- docs-suggestion generation and apply flows in [support_coverage_drafts.go](../../server/internal/service/support_coverage_drafts.go)
 
 This is exactly the durable product layer a native gap-analysis agent should build on.
 

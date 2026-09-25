@@ -24,14 +24,23 @@ declare global {
   }
 }
 
-type InstallWidgetMockOptions = {
+export type InstallWidgetMockOptions = {
+  dropMessageAcknowledgments?: boolean
+  deferSession?: boolean
   invalidStoredSession?: boolean
   persistedSession?: boolean
   unreadCount?: number
+  widgetPosition?: 'bottom-left' | 'bottom-right'
 }
 
 export async function installWidgetMocks(page: Page, options: InstallWidgetMockOptions = {}) {
-  await page.addInitScript(({ widgetHost, widgetKey, unreadCount, conversationId, linkPreviewUrl, persistedSession, invalidStoredSession }) => {
+  // Storage uploads use XMLHttpRequest for progress; fetch mocks do not intercept it.
+  await page.route(`https://${WIDGET_HOST}/uploads/**`, route => route.fulfill({
+    status: 200,
+    headers: { 'Access-Control-Allow-Origin': '*' },
+    body: '',
+  }))
+  await page.addInitScript(({ widgetHost, widgetKey, unreadCount, conversationId, linkPreviewUrl, persistedSession, invalidStoredSession, widgetPosition, deferSession, dropMessageAcknowledgments }) => {
     const patchedUserAgent = (navigator.userAgent || '').replace(/HeadlessChrome\/[\d.]+\s*/i, 'Chrome/122.0.0.0 ')
     Object.defineProperty(Navigator.prototype, 'userAgent', {
       configurable: true,
@@ -102,9 +111,10 @@ export async function installWidgetMocks(page: Page, options: InstallWidgetMockO
       socketBehavior: 'open' as 'open' | 'fail',
     }
 
+    const sessionExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
     const buildSessionPayload = () => ({
       session_token: state.sessionToken,
-      expires_at: '2026-04-27T20:00:00Z',
+      expires_at: sessionExpiresAt,
       is_anonymous: state.isAnonymous,
       customer_email: state.customerEmail || null,
       conversations: state.conversations,
@@ -138,6 +148,8 @@ export async function installWidgetMocks(page: Page, options: InstallWidgetMockO
           ? JSON.parse(init.body)
           : undefined
 
+      if (url.host === widgetHost && url.pathname === '/widget/telemetry') return new Response(null, { status: 204 })
+
       if (url.host === widgetHost && url.pathname === '/widget/config' && method === 'GET') {
         return new Response(
           JSON.stringify({
@@ -155,7 +167,7 @@ export async function installWidgetMocks(page: Page, options: InstallWidgetMockO
               primaryColor: '#2563eb',
               logoUrl: '',
               welcomeMessage: 'Hi there. How can we help?',
-              widgetPosition: 'bottom-right',
+              widgetPosition,
               showBranding: true,
               launcherIcon: 'chat_bubble',
               colorScheme: 'light',
@@ -290,6 +302,7 @@ export async function installWidgetMocks(page: Page, options: InstallWidgetMockO
 
         switch (frame.type) {
           case 'session:create':
+            if (deferSession) break
             queueMicrotask(() => {
               this.serverEmit({
                 type: 'session:joined',
@@ -348,7 +361,7 @@ export async function installWidgetMocks(page: Page, options: InstallWidgetMockO
               ? frame.data.attachment_ids.filter((value): value is string => typeof value === 'string')
               : []
             const message = {
-              id: `msg-${Date.now()}`,
+              id: `msg-${Date.now()}-${state.messages.length}`,
               conversation_id: state.conversationId,
               sender_type: 'customer',
               sender_display_name: state.customerName,
@@ -368,7 +381,7 @@ export async function installWidgetMocks(page: Page, options: InstallWidgetMockO
                 : undefined,
               is_internal: false,
               via_channel: 'widget',
-              created_at: '2026-03-27T20:01:00Z',
+              created_at: new Date().toISOString(),
             }
             state.messages.push(message)
             state.conversations = state.conversations.map((conversation) =>
@@ -380,6 +393,7 @@ export async function installWidgetMocks(page: Page, options: InstallWidgetMockO
                   }
                 : conversation,
             )
+            if (dropMessageAcknowledgments) break
             queueMicrotask(() => {
               this.serverEmit({
                 type: 'message:received',
@@ -396,19 +410,22 @@ export async function installWidgetMocks(page: Page, options: InstallWidgetMockO
               })
             })
             break
-          case 'conversation:select':
+          case 'conversation:select': {
             state.conversations = state.conversations.map((conversation) =>
               conversation.id === frame.data?.conversation_id
                 ? { ...conversation, unread_count: 0 }
                 : conversation,
             )
+            // Snapshot history before subsequent sends, as the server's read loop does.
+            const history = structuredClone(buildConversationMessagesPayload())
             queueMicrotask(() => {
               this.serverEmit({
                 type: 'conversation:messages',
-                data: buildConversationMessagesPayload(),
+                data: history,
               })
             })
             break
+          }
           case 'conversation:read':
             state.conversations = state.conversations.map((conversation) =>
               conversation.id === frame.data?.conversation_id
@@ -468,18 +485,21 @@ export async function installWidgetMocks(page: Page, options: InstallWidgetMockO
       if (persistedSession || invalidStoredSession) {
         localStorage.setItem(`helpin_ws_${widgetKey}`, JSON.stringify({
           session_token: 'session-1',
-          expires_at: '2026-04-27T20:00:00Z',
+          expires_at: sessionExpiresAt,
         }))
       }
     } catch {
       // ignore localStorage issues in tests
     }
   }, {
+    dropMessageAcknowledgments: options.dropMessageAcknowledgments,
+    deferSession: options.deferSession,
     widgetHost: WIDGET_HOST,
     widgetKey: WIDGET_KEY,
     persistedSession: options.persistedSession ?? false,
     invalidStoredSession: options.invalidStoredSession ?? false,
     unreadCount: options.unreadCount ?? 0,
+    widgetPosition: options.widgetPosition ?? 'bottom-right',
     conversationId: CONVERSATION_ID,
     linkPreviewUrl: LINK_PREVIEW_URL,
   })

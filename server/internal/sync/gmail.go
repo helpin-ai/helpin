@@ -77,6 +77,7 @@ type GmailHistoryResult struct {
 
 // GmailAPIError captures non-success Gmail API responses.
 type GmailAPIError struct {
+	RetryAfter string
 	StatusCode int
 	Body       string
 }
@@ -411,7 +412,7 @@ func (c *GmailSyncClient) sendMessage(ctx context.Context, accessToken, from str
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("send failed (status %d): %s", resp.StatusCode, string(body))
+		return nil, &GmailAPIError{StatusCode: resp.StatusCode, Body: string(body), RetryAfter: resp.Header.Get("Retry-After")}
 	}
 
 	var sendResp struct {
@@ -697,11 +698,6 @@ func extractBody(mimeType string, body gmailMessageBody, parts []gmailPart) (tex
 	}
 
 	return text, html
-}
-
-func parseAddressList(value string) []string {
-	addrs, _ := parseAddressListWithNames(value)
-	return addrs
 }
 
 func parseAddressListWithNames(value string) ([]string, map[string]string) {

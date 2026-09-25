@@ -11,16 +11,6 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
-func eventTypesForCategory(category string) []string {
-	eventTypes := make([]string, 0)
-	for eventType, mappedCategory := range model.EventTypeToCategory {
-		if mappedCategory == category {
-			eventTypes = append(eventTypes, eventType)
-		}
-	}
-	return eventTypes
-}
-
 func eventTypesForCategories(categories ...string) []string {
 	if len(categories) == 0 {
 		return nil
@@ -49,6 +39,7 @@ type NotificationRepository struct {
 // PendingDigestDelivery is a pending delivery joined with the current notification state.
 type PendingDigestDelivery struct {
 	DeliveryID         string
+	Channel            string
 	RecipientID        string
 	NotificationID     string
 	WorkspaceID        string
@@ -56,6 +47,9 @@ type PendingDigestDelivery struct {
 	SnoozedUntil       *time.Time
 	EventType          string
 	EventTitle         string
+	EntityType         string
+	EntityID           string
+	EventMetadata      model.JSONB
 	CreatedAt          time.Time
 }
 
@@ -112,8 +106,13 @@ func (r *NotificationRepository) GetExisting(ctx context.Context, recipientID, e
 
 // List fetches paginated notifications for a user in a workspace.
 func (r *NotificationRepository) List(ctx context.Context, recipientID, workspaceID string, status string, filter string, limit int, cursor *time.Time) ([]model.Notification, error) {
+	return r.ListAccessCandidates(ctx, recipientID, workspaceID, status, filter, limit, cursor, 0)
+}
+
+// ListAccessCandidates supports scanning beyond inaccessible rows without short pages.
+func (r *NotificationRepository) ListAccessCandidates(ctx context.Context, recipientID, workspaceID, status, filter string, limit int, cursor *time.Time, offset int) ([]model.Notification, error) {
 	q := r.db.WithContext(ctx).
-		Where("recipient_id = ? AND workspace_id = ?", recipientID, workspaceID)
+		Where("recipient_id = ? AND workspace_id = ? AND status NOT IN ?", recipientID, workspaceID, []string{"email_only", "email_only_handled"})
 
 	if status != "" {
 		q = q.Where("status = ?", status)
@@ -147,7 +146,7 @@ func (r *NotificationRepository) List(ctx context.Context, recipientID, workspac
 	}
 
 	var notifs []model.Notification
-	if err := q.Order("last_event_at DESC").Limit(limit).Find(&notifs).Error; err != nil {
+	if err := q.Order("last_event_at DESC, id DESC").Offset(offset).Limit(limit).Find(&notifs).Error; err != nil {
 		return nil, fmt.Errorf("list notifications: %w", err)
 	}
 	return notifs, nil
@@ -180,21 +179,21 @@ func (r *NotificationRepository) UnreadCount(ctx context.Context, recipientID, w
 }
 
 // ListPendingDigestDeliveries returns pending digest deliveries joined with the current notification state.
-func (r *NotificationRepository) ListPendingDigestDeliveries(ctx context.Context) ([]PendingDigestDelivery, error) {
-	return r.listPendingDeliveriesByChannel(ctx, "digest")
+func (r *NotificationRepository) ListPendingDigestDeliveries(ctx context.Context, recipientID ...string) ([]PendingDigestDelivery, error) {
+	return r.listPendingDeliveriesByChannel(ctx, []string{"digest", "email_overflow"}, recipientID...)
 }
 
 // ListPendingSupportReplyEmailDeliveries returns pending delayed support reply email deliveries.
-func (r *NotificationRepository) ListPendingSupportReplyEmailDeliveries(ctx context.Context) ([]PendingDigestDelivery, error) {
-	return r.listPendingDeliveriesByChannel(ctx, "support_reply_email")
+func (r *NotificationRepository) ListPendingSupportReplyEmailDeliveries(ctx context.Context, recipientID ...string) ([]PendingDigestDelivery, error) {
+	return r.listPendingDeliveriesByChannel(ctx, []string{"support_reply_email"}, recipientID...)
 }
 
-func (r *NotificationRepository) listPendingDeliveriesByChannel(ctx context.Context, channel string) ([]PendingDigestDelivery, error) {
+func (r *NotificationRepository) listPendingDeliveriesByChannel(ctx context.Context, channels []string, recipientID ...string) ([]PendingDigestDelivery, error) {
 	var deliveries []PendingDigestDelivery
-	err := r.db.WithContext(ctx).
+	q := r.db.WithContext(ctx).
 		Table("notification_deliveries nd").
 		Select(`
-			nd.id AS delivery_id,
+			nd.id AS delivery_id, nd.channel,
 			n.recipient_id,
 			n.id AS notification_id,
 			n.workspace_id,
@@ -202,15 +201,18 @@ func (r *NotificationRepository) listPendingDeliveriesByChannel(ctx context.Cont
 			n.snoozed_until,
 			ne.event_type,
 			ne.title AS event_title,
+ n.entity_type, n.entity_id, ne.metadata AS event_metadata,
 			nd.created_at
 		`).
 		Joins("JOIN notification_events ne ON ne.id = nd.notification_event_id").
 		Joins("JOIN notifications n ON n.id = ne.notification_id").
-		Where("nd.channel = ? AND nd.status = ?", channel, "pending").
-		Order("nd.created_at ASC").
-		Scan(&deliveries).Error
+		Where("nd.channel IN ? AND nd.status = ?", channels, "pending")
+	if len(recipientID) > 0 {
+		q = q.Where("n.recipient_id = ?", recipientID[0])
+	}
+	err := q.Order("nd.created_at ASC").Scan(&deliveries).Error
 	if err != nil {
-		return nil, fmt.Errorf("list pending deliveries for channel %s: %w", channel, err)
+		return nil, fmt.Errorf("list pending deliveries for channels %v: %w", channels, err)
 	}
 	return deliveries, nil
 }
@@ -251,29 +253,40 @@ func (r *NotificationRepository) MarkAsRead(ctx context.Context, id, recipientID
 		}).Error
 }
 
+// HasAttentionInteraction also covers older pending interactions when a run has
+// multiple simultaneous questions and snapshots replay them in sequence.
+func (r *NotificationRepository) HasAttentionInteraction(ctx context.Context, notificationID, interactionID string) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&model.NotificationEvent{}).
+		Where("notification_id = ? AND metadata ->> 'interaction_id' = ?", notificationID, interactionID).
+		Count(&count).Error
+	return count > 0, err
+}
+
 // MarkEntityCategoryAsRead marks unread notifications as read for a specific entity/category pair.
 func (r *NotificationRepository) MarkEntityCategoryAsRead(ctx context.Context, recipientID, workspaceID, entityType, entityID, category string) error {
 	now := time.Now()
 	return r.db.WithContext(ctx).Model(&model.Notification{}).
-		Where("recipient_id = ? AND workspace_id = ? AND entity_type = ? AND entity_id = ? AND latest_event_category = ? AND status = 'unread'",
+		Where("recipient_id = ? AND workspace_id = ? AND entity_type = ? AND entity_id = ? AND latest_event_category = ? AND status IN ('unread', 'email_only')",
 			recipientID, workspaceID, entityType, entityID, category).
 		Updates(map[string]interface{}{
-			"status":  "read",
+			"status":  gorm.Expr("CASE WHEN status = ? THEN ? ELSE ? END", "email_only", "email_only_handled", "read"),
 			"read_at": now,
 		}).Error
 }
 
 // MarkEntityEventTypeAsReadForWorkspace marks unread notifications as read for
 // a specific entity+event pair across all recipients in a workspace.
-func (r *NotificationRepository) MarkEntityEventTypeAsReadForWorkspace(ctx context.Context, workspaceID, entityType, entityID, eventType string) error {
+func (r *NotificationRepository) MarkEntityEventTypeAsReadForWorkspace(ctx context.Context, workspaceID, entityType, entityID, eventType string) (bool, error) {
 	now := time.Now()
-	return r.db.WithContext(ctx).Model(&model.Notification{}).
-		Where("workspace_id = ? AND entity_type = ? AND entity_id = ? AND event_type = ? AND status = 'unread'",
+	result := r.db.WithContext(ctx).Model(&model.Notification{}).
+		Where("workspace_id = ? AND entity_type = ? AND entity_id = ? AND event_type = ? AND status IN ('unread', 'email_only')",
 			workspaceID, entityType, entityID, eventType).
 		Updates(map[string]interface{}{
-			"status":  "read",
+			"status":  gorm.Expr("CASE WHEN status = ? THEN ? ELSE ? END", "email_only", "email_only_handled", "read"),
 			"read_at": now,
-		}).Error
+		})
+	return result.RowsAffected > 0, result.Error
 }
 
 // MarkAllAsRead marks all unread notifications as read for a user.

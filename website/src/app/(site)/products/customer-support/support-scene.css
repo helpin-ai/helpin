@@ -1,0 +1,41 @@
+.hp3 .support-scene { margin: auto 12px 12px; border: 1px solid #e4ebe6; border-radius: 12px; background: radial-gradient(ellipse at 50% 25%, #fff, #f5f7f6 65%, #edf2ee); color: #53665b; overflow: hidden; }
+.hp3 .support-scene-toolbar { display: flex; align-items: center; justify-content: space-between; height: 52px; padding: 12px 17px 5px; color: #687b70; font-size: 10px; }
+.hp3 .support-scene-toolbar > span { display: flex; gap: 7px; align-items: center; }
+.hp3 .sw-workspace { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 5px; background: #174b32; color: #fff; font-weight: 600; font-size: 11px; }
+.hp3 .support-scene-toolbar button { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid #dfe8e2; border-radius: 50%; background: #fff; color: #587563; cursor: pointer; }
+.hp3 .support-scene-toolbar button:focus-visible { outline: 2px solid #0f7a50; outline-offset: 3px; }
+.hp3 .support-workflow-art { display: block; width: 100%; height: auto; overflow: visible; }
+.hp3 .support-workflow-art text { font-family: var(--sans); fill: #293a30; }
+.hp3 .sw-panel { fill: #fff; stroke: #dfe6e1; filter: drop-shadow(0 4px 7px #233c2e08); }
+.hp3 .support-workflow-art .sw-title { font-size: 14px; font-weight: 600; }
+.hp3 .support-workflow-art .sw-body { font-size: 13px; }
+.hp3 .support-workflow-art .sw-meta { font-size: 11px; fill: #718078; }
+.hp3 .support-workflow-art .sw-small { font-size: 11px; font-weight: 500; }
+.hp3 .support-workflow-art .sw-green { color: #168052; fill: #168052; }
+.hp3 .support-workflow-art .sw-amber { color: #917030; fill: #917030; }
+.hp3 .support-workflow-art .sw-purple { fill: #795aa8; }
+.hp3 .sw-divider { stroke: #eaf0ec; }
+.hp3 .sw-wire { fill: none; stroke: #d7e4dc; stroke-width: 1.5; }
+.hp3 .sw-route { fill: none; stroke: #6ab48a; stroke-width: 1.8; stroke-dasharray: 1; }
+.hp3 .sw-tick { fill: none; stroke: #198452; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; }
+.hp3 .sw-white-tick .sw-tick { stroke: #fff; }
+.hp3 .sw-thinking, .hp3 .sw-handoff-signal { opacity: 0; }
+.hp3 .sw-thinking { fill: #60856e; }
+.hp3 .sw-success-ring { fill: none; stroke: #399d65; opacity: 0; transform-origin: center; transform-box: fill-box; }
+.hp3 .support-scene[data-playing='true'] .sw-reveal { animation: sw-reveal .55s cubic-bezier(.22,1,.36,1) var(--sw-delay) both; }
+.hp3 .support-scene[data-playing='true'] .sw-character { animation: sw-character .16s linear var(--sw-delay) both; }
+.hp3 .support-scene[data-playing='true'] .sw-tick { animation: sw-draw .4s ease var(--sw-delay) both; }
+.hp3 .support-scene[data-playing='true'] .sw-route { animation: sw-draw .9s ease var(--sw-delay) both; }
+.hp3 .support-scene[data-playing='true'] .sw-thinking { animation: sw-thinking-window 1.1s linear .55s both; }
+.hp3 .support-scene[data-playing='true'] .sw-thinking circle { animation: sw-thinking-dot .6s ease-in-out var(--sw-delay) 3; }
+.hp3 .support-scene[data-playing='true'] .sw-handoff-signal { animation: sw-handoff-signal 1.2s cubic-bezier(.4,0,.3,1) 1.3s both; }
+.hp3 .support-scene[data-playing='true'] .sw-success-ring { animation: sw-success-ring 1s ease-out 2.9s both; }
+@keyframes sw-reveal { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes sw-character { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sw-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes sw-thinking-window { 0%,90% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes sw-thinking-dot { 50% { transform: translateY(-2px); opacity: .4; } }
+@keyframes sw-handoff-signal { 0% { opacity: 0; transform: translateX(0); } 12%,85% { opacity: 1; } 100% { opacity: 0; transform: translateX(235px); } }
+@keyframes sw-success-ring { 0% { opacity: .7; transform: scale(1); } 100% { opacity: 0; transform: scale(1.035,1.15); } }
+@media (max-width: 760px) { .hp3 .support-scene { margin: 0 14px 14px; } }
+@media (prefers-reduced-motion: reduce) { .hp3 .support-scene[data-playing='true'] * { animation: none; } .hp3 .support-scene-toolbar button { visibility: hidden; } }

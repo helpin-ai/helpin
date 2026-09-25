@@ -1,0 +1,20 @@
+<!-- Native Helpin persona artwork, copied from frontend/src/components/agents/AgentAvatar.tsx. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 80 80" fill="none">
+          <circle cx="40" cy="41" r="30" fill="#0F766E" opacity=".12" />
+          <rect x="15" y="20" width="50" height="44" rx="18" fill="#0F766E" />
+          <path d="M40 6L52 22H28L40 6Z" fill="#14B8A6" />
+          <path d="M40 11L46 19H34L40 11Z" fill="#D9FBF5" opacity=".95" />
+          <path d="M25 13C20 16 16 21 14 27" stroke="#5EEAD4" stroke-width="2.5" stroke-linecap="round" />
+          <path d="M55 13C60 16 64 21 66 27" stroke="#5EEAD4" stroke-width="2.5" stroke-linecap="round" />
+          <circle cx="40" cy="8" r="2.5" fill="#99F6E4" />
+          <circle cx="29" cy="38" r="7" fill="#D9FBF5" />
+          <circle cx="51" cy="38" r="7" fill="#D9FBF5" />
+          <circle cx="29" cy="38" r="3" fill="#083C39" />
+          <circle cx="51" cy="38" r="3" fill="#083C39" />
+          <circle cx="31" cy="36" r="1.3" fill="#D9FBF5" />
+          <circle cx="53" cy="36" r="1.3" fill="#D9FBF5" />
+          <path d="M33 51Q40 57 47 51" stroke="#D9FBF5" stroke-width="2.6" stroke-linecap="round" />
+          <circle cx="58" cy="25" r="3" fill="#99F6E4" />
+          <circle cx="62" cy="31" r="2" fill="#5EEAD4" />
+          <path d="M28 62H52" stroke="#5EEAD4" stroke-width="2" stroke-linecap="round" opacity=".75" />
+        </svg>

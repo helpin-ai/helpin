@@ -494,7 +494,10 @@
         margin-left: 4px;
       }
 
+      .tp-msg-bubble a { unicode-bidi: isolate; }
+      .tp-msg-bubble code, .tp-msg-bubble pre { direction: ltr; unicode-bidi: isolate; }
       .tp-msg-bubble {
+        text-align: start;
         padding: 10px 16px;
         font-size: 14px;
         line-height: 1.55;
@@ -1351,11 +1354,12 @@
           widget_key: config.widgetKey,
           customer_name: name || undefined,
           customer_email: email || undefined,
+          locale: navigator.language || undefined,
         }),
       sendMessage: (sessionToken, content) =>
         request("POST", "/messages", { session_token: sessionToken, content }),
       getMessages: (sessionToken) =>
-        request("GET", `/messages?session_token=${encodeURIComponent(sessionToken)}`),
+        request("GET", `/messages?session_token=${encodeURIComponent(sessionToken)}&locale=${encodeURIComponent(navigator.language || "")}`),
     };
   }
 
@@ -1534,7 +1538,7 @@
       this.inputArea.className = "tp-input-area";
       this.inputArea.innerHTML = `
         <div class="tp-input-wrap">
-          <textarea rows="1" placeholder="${escapeHTML(this.config.placeholder)}" aria-label="Message"></textarea>
+          <textarea dir="auto" rows="1" placeholder="${escapeHTML(this.config.placeholder)}" aria-label="Message"></textarea>
           <button class="tp-emoji-btn" aria-label="Open emoji picker" type="button">
             ${ICONS.emoji}
           </button>
@@ -2027,7 +2031,7 @@
           ${!isCustomer ? avatarHTML : ""}
           <div class="tp-msg-content">
             ${senderHTML}
-            <div class="tp-msg-bubble"${statusClass}>${contentHTML}${linkPreviewsHTML}</div>
+            <div class="tp-msg-bubble" dir="auto"${statusClass}>${contentHTML}${linkPreviewsHTML}</div>
             ${timeHTML}
           </div>
         `;

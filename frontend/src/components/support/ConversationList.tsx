@@ -14,7 +14,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Switch } from '@/components/ui/switch';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { useCreateSupportInboxView, useInfiniteConversations, useInboxScopes, useSupportInboxViews, useSupportTags, useUpdateSupportBuiltinInboxView, useUpdateSupportInboxView } from '@/hooks/queries/useSupport';
+import { useCreateSupportInboxView, useHasAnySupportConversation, useInfiniteConversations, useInboxScopes, useSupportInboxViews, useSupportTags, useUpdateSupportBuiltinInboxView, useUpdateSupportInboxView } from '@/hooks/queries/useSupport';
 import { supportInboxBuiltinViewKey, useSupportInboxStore, type NavFilter } from '@/stores/supportInboxStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { ConversationRow } from './ConversationRow';
@@ -35,7 +35,7 @@ import {
   type ConversationSortOrder,
   type ConversationStateFilter,
 } from '@/lib/supportInboxFilters';
-import type { SupportInboxScope, SupportTag } from '@/lib/pmTypes';
+import type { SupportInboxScope, SupportInboxView, SupportTag } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
 import { SupportTagBadge } from './SupportTagPicker';
 import { SupportInboxPanelHeader } from './SupportInboxPanelHeader';
@@ -222,15 +222,18 @@ function TagFilterSelector({
   );
 }
 
+export type SupportInboxEmptyState = 'onboarding' | 'inbox-zero' | null;
+
 interface ConversationListProps {
   workspaceId: string;
   userId?: string;
   autoSelectFirst?: boolean;
   onConversationOpen?: (conversationId: string) => void;
-  onOnboardingEmptyChange?: (isEmpty: boolean) => void;
+  onInboxEmptyStateChange?: (state: SupportInboxEmptyState) => void;
   onWidgetSettingsClick?: () => void;
   onCreateConversationClick?: () => void;
   onSearchClick?: () => void;
+  onViewCreated?: (view: SupportInboxView) => void;
   canCreateSharedViews?: boolean;
 }
 
@@ -239,10 +242,11 @@ export function ConversationList({
   userId,
   autoSelectFirst = true,
   onConversationOpen,
-  onOnboardingEmptyChange,
+  onInboxEmptyStateChange,
   onWidgetSettingsClick,
   onCreateConversationClick,
   onSearchClick,
+  onViewCreated,
   canCreateSharedViews = false,
 }: ConversationListProps) {
   const searchQuery = useSupportInboxStore((s) => s.searchQuery);
@@ -259,9 +263,12 @@ export function ConversationList({
   const setBuiltinViewFilter = useSupportInboxStore((s) => s.setBuiltinViewFilter);
   const syncRouteState = useSupportInboxStore((s) => s.syncRouteState);
   const selectConversation = useSupportInboxStore((s) => s.selectConversation);
+  const createCustomViewOpen = useSupportInboxStore((s) => s.createCustomViewOpen);
+  const setCreateCustomViewOpen = useSupportInboxStore((s) => s.setCreateCustomViewOpen);
   const selectedConversationId = useSupportInboxStore((s) => s.selectedConversationId);
   const handoffConversationId = useSupportInboxStore((s) => s.conversationHandoff?.fromConversationId ?? null);
   const [saveViewOpen, setSaveViewOpen] = useState(false);
+  const [filterPopoverOpen, setFilterPopoverOpen] = useState(false);
   const [saveViewName, setSaveViewName] = useState('');
   const [saveViewShared, setSaveViewShared] = useState(false);
   const wsSend = useSupportPresenceStore((s) => s.wsSend);
@@ -380,15 +387,22 @@ export function ConversationList({
   const isSwitchingEmptyList = !!isFetching && !isFetchingNextPage && filteredConversations.length === 0;
   const shouldShowListSkeleton = isLoading || isSwitchingEmptyList;
   const shouldShowEmptyState = !shouldShowListSkeleton && filteredConversations.length === 0 && !error && !hasNextPage;
-  const shouldShowOnboardingEmptyState =
+  const isDefaultInboxEmpty =
     shouldShowEmptyState &&
     navFilter === 'inbox' &&
     selectedMailboxId === 'all' &&
     !searchQuery.trim();
+  // An empty Inbox only means "set up support" when the workspace has no
+  // conversations at all; otherwise everything is resolved/waiting (inbox zero).
+  const { data: hasAnyConversation } = useHasAnySupportConversation(workspaceId, isDefaultInboxEmpty);
+  const inboxEmptyState: SupportInboxEmptyState = !isDefaultInboxEmpty || hasAnyConversation === undefined
+    ? null
+    : hasAnyConversation ? 'inbox-zero' : 'onboarding';
+  const shouldShowOnboardingEmptyState = inboxEmptyState === 'onboarding';
 
   useEffect(() => {
-    onOnboardingEmptyChange?.(shouldShowOnboardingEmptyState);
-  }, [onOnboardingEmptyChange, shouldShowOnboardingEmptyState]);
+    onInboxEmptyStateChange?.(inboxEmptyState);
+  }, [onInboxEmptyStateChange, inboxEmptyState]);
 
   useEffect(() => {
     if (!autoSelectFirst || selectedConversationId || shouldShowListSkeleton || error || filteredConversations.length === 0) return;
@@ -485,10 +499,11 @@ export function ConversationList({
         listFilters: conversationListFilters,
       }),
     }, {
-      onSuccess: () => {
+      onSuccess: (view) => {
         setSaveViewOpen(false);
         setSaveViewName('');
         setSaveViewShared(false);
+        onViewCreated?.(view);
       },
     });
   }, [
@@ -496,6 +511,7 @@ export function ConversationList({
     conversationListFilters,
     createInboxView,
     navFilter,
+    onViewCreated,
     saveViewName,
     saveViewShared,
     searchQuery,
@@ -569,14 +585,13 @@ export function ConversationList({
   ]);
 
   return (
-    <div className="flex h-full w-full flex-col bg-background md:w-[300px] md:border-r dark:border-sidebar-border dark:bg-sidebar">
+    <div className="flex h-full w-full flex-col bg-muted/30 md:w-[300px] md:border-r dark:border-sidebar-border">
       {/* Filter toolbar */}
       <SupportInboxPanelHeader
         className={cn(
           workspaceSidebarSafeInsetClassName,
-          'gap-1.5 bg-background/85 px-2 supports-[backdrop-filter]:bg-background/75 dark:bg-sidebar/90 dark:supports-[backdrop-filter]:bg-sidebar/80',
+          'gap-1.5 bg-muted/30 px-2',
         )}
-        style={{ backdropFilter: 'blur(8px) saturate(160%)' }}
       >
         <TooltipProvider>
           <div className="min-w-0 flex-1 px-1.5 text-sm font-medium">
@@ -598,7 +613,13 @@ export function ConversationList({
               <span className="text-xs">New conversation</span>
             </TooltipContent>
           </Tooltip>
-          <Popover>
+          <Popover
+            open={filterPopoverOpen || createCustomViewOpen}
+            onOpenChange={(open) => {
+              setFilterPopoverOpen(open);
+              if (!open) setCreateCustomViewOpen(false);
+            }}
+          >
             <Tooltip>
               <TooltipTrigger asChild>
                 <PopoverTrigger asChild>
@@ -622,7 +643,7 @@ export function ConversationList({
             <PopoverContent side="right" align="start" sideOffset={8} className="w-[380px] p-3">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div className="min-w-0 text-sm font-semibold">
-                  <span className="block truncate">{listTitle} filters</span>
+                  <span className="block truncate">{createCustomViewOpen ? 'New view' : `${listTitle} filters`}</span>
                 </div>
                 {activeFilterCount > 0 && (
                   <Button
@@ -739,9 +760,9 @@ export function ConversationList({
                       </FilterPill>
                     ))}
                   </FilterSection>
-                  {(canSaveCurrentView || canUpdateCurrentView) && (
+                  {(createCustomViewOpen || canSaveCurrentView || canUpdateCurrentView) && (
                     <div className="space-y-2 border-t pt-3">
-                      {canUpdateCurrentView && (
+                      {!createCustomViewOpen && canUpdateCurrentView && (
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -766,9 +787,13 @@ export function ConversationList({
                         variant="outline"
                         size="sm"
                         className="w-full justify-center"
-                        onClick={() => setSaveViewOpen(true)}
+                        onClick={() => {
+                          setFilterPopoverOpen(false);
+                          setCreateCustomViewOpen(false);
+                          setSaveViewOpen(true);
+                        }}
                       >
-                        Save as new view
+                        {createCustomViewOpen ? 'Create view' : 'Save as new view'}
                       </Button>
                     </div>
                   )}

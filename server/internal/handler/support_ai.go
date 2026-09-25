@@ -16,6 +16,7 @@ import (
 
 // SupportAIHandler handles AI-specific support endpoints.
 type SupportAIHandler struct {
+	previewService     *service.SupportPreviewService
 	aiService          *service.SupportAIService
 	supportInboxSvc    *service.SupportInboxService
 	knowledgeSourceSvc *service.AgentKnowledgeSourceService
@@ -41,6 +42,45 @@ func NewSupportAIHandler(
 		agentContentSvc:    agentContentSvc,
 		curatedGuidanceSvc: curatedGuidanceSvc,
 	}
+}
+
+func (h *SupportAIHandler) SetPreviewService(previews *service.SupportPreviewService) *SupportAIHandler {
+	h.previewService = previews
+	return h
+}
+
+func (h *SupportAIHandler) CancelSupportPreview(w http.ResponseWriter, r *http.Request) {
+	if h.previewService == nil {
+		writeError(w, 503, "support preview unavailable")
+		return
+	}
+	if err := h.previewService.Cancel(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"), chi.URLParam(r, "runId")); err != nil {
+		if errors.Is(err, service.ErrSupportPreviewConversationNotFound) {
+			writeError(w, 404, "preview not found")
+		} else {
+			writeError(w, 500, "could not stop preview")
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "cancelled"})
+}
+
+func (h *SupportAIHandler) GetSupportPreview(w http.ResponseWriter, r *http.Request) {
+	if h.previewService == nil {
+		writeError(w, http.StatusServiceUnavailable, "support preview unavailable")
+		return
+	}
+	response, err := h.previewService.Get(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"), chi.URLParam(r, "runId"))
+	if err != nil {
+		if errors.Is(err, service.ErrSupportPreviewConversationNotFound) {
+			writeError(w, 404, "preview not found")
+		} else {
+			slog.ErrorContext(r.Context(), "support preview lookup failed", "error", err)
+			writeError(w, 500, "failed to load preview")
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 // ListCuratedGuidance returns pinned answers scoped to one support agent.
@@ -426,7 +466,7 @@ func (h *SupportAIHandler) PreviewSupportReply(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, "workspace_id is required")
 		return
 	}
-	if h.aiService == nil {
+	if h.previewService == nil {
 		writeError(w, http.StatusServiceUnavailable, "support ai service unavailable")
 		return
 	}
@@ -437,7 +477,7 @@ func (h *SupportAIHandler) PreviewSupportReply(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	resp, err := h.aiService.PreviewSupportReply(r.Context(), workspaceID, chi.URLParam(r, "id"), req)
+	resp, err := h.previewService.Start(r.Context(), workspaceID, chi.URLParam(r, "id"), req)
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrSupportPreviewInvalidInput):

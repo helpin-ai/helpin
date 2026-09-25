@@ -109,11 +109,11 @@ func TestRequireActorCanUseAgentFiltersTeamScopedAgents(t *testing.T) {
 		WorkspaceID:           "ws-1",
 		Name:                  "Team A Agent",
 		Status:                "idle",
-		RuntimeKind:           "native_sdk",
+		RuntimeKind:           "codex",
 		AllowedTargets:        json.RawMessage(`["support_conversation"]`),
 		AllowedTools:          json.RawMessage(`[]`),
 		AllowedCommands:       json.RawMessage(`[]`),
-		Skills:                model.AgentSkillRefs{},
+		Skills:                model.AgentSkillRefs{{Key: "missing-retired-skill"}},
 		ExecutionConfig:       model.JSONBlob(`{}`),
 		ApprovalMode:          "always",
 		DefaultInvocationMode: "interactive",
@@ -150,6 +150,7 @@ func setupAgentScopeTestDB(t *testing.T) *gorm.DB {
 	}
 	statements := []string{
 		`CREATE TABLE agents (
+ ai_profile_id TEXT,
 			id text PRIMARY KEY,
 			workspace_id text NOT NULL,
 			is_system boolean NOT NULL DEFAULT false,
@@ -298,6 +299,7 @@ func setupAgentScopeTestDB(t *testing.T) *gorm.DB {
 			customer_requested_human_at datetime,
 			ai_active_run_id TEXT,
 			human_takeover boolean DEFAULT false,
+            ai_control_version BIGINT NOT NULL DEFAULT 0, ai_resumed_at timestamptz, ai_paused_at timestamptz, ai_paused_by_user_id TEXT,
 			created_at datetime,
 			updated_at datetime
 		)`,

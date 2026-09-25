@@ -1,3 +1,7 @@
+import { SequenceEnrollmentDialog } from '@/components/crm/outreach/SequenceEnrollmentDialog';
+import { CRMEmailComposerDialog } from '@/components/crm/CRMEmailComposerDialog';
+import { useEmailAccounts, useContact } from '@/hooks/queries/useCRM';
+import { recurringRevenue, revenueSuffix, type RevenueType } from '@/components/crm/dealCreationDefaults';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
@@ -8,6 +12,7 @@ import {
   Delete01Icon,
   DollarCircleIcon,
   Loading01Icon,
+  Mail01Icon,
   Tag01Icon,
   UserIcon,
 } from '@/lib/icons';
@@ -36,7 +41,7 @@ import {
   usePipelines,
   useUpdateDeal,
 } from '@/hooks/queries';
-import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
+import { useCRMOwnerMembers } from '@/hooks/useCRMOwnerMembers';
 import { ActivityTimeline } from '@/components/crm/ActivityTimeline';
 import { DealHealthScore } from '@/components/crm/DealHealthScore';
 import { EntitySignals } from '@/components/crm/EntitySignals';
@@ -44,7 +49,7 @@ import { EntitySummaryCard } from '@/components/crm/EntitySummaryCard';
 import { AssociationsList } from '@/components/crm/AssociationsList';
 import { LinkedTasksPanel } from '@/components/crm/LinkedTasksPanel';
 import { DealEmailThreadPanel } from '@/components/crm/deal-detail/DealEmailThreadPanel';
-import { DealStagePath } from '@/components/crm/deal-detail/DealStagePath';
+import { DealStageSelect } from '@/components/crm/DealStageSelect';
 import { DealRelationships } from '@/components/crm/deal-detail/DealRelationships';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { useRegisterPageContext } from '@/components/command-bar/pageContext';
@@ -58,6 +63,7 @@ interface FormState {
   stage_id: string;
   amount: string;
   currency: string;
+  revenue_type: RevenueType;
   close_date: string;
   probability: string;
   owner_member_id: string;
@@ -87,10 +93,16 @@ export function DealDetailPage({ dealId, onRequestClose, registerBeforeClose }: 
 
   const { data: deal, isLoading } = useDeal(wsId, dealId);
   const { data: associations, refetch: refetchAssociations } = useDealAssociations(wsId, dealId);
+  const [sequenceOpen, setSequenceOpen] = useState(false);
+  const [emailOpen, setEmailOpen] = useState(false);
+  const emailAccounts = useEmailAccounts(wsId);
+  const contactAssociation = associations?.find((association) => association.from_object_type === 'contact' || association.to_object_type === 'contact');
+  const emailContactId = contactAssociation ? (contactAssociation.from_object_type === 'contact' ? contactAssociation.from_object_id : contactAssociation.to_object_id) : '';
+  const emailContact = useContact(wsId, emailContactId, Boolean(emailContactId));
   const { data: pipelines } = usePipelines(wsId);
   const updateDeal = useUpdateDeal(wsId);
   const deleteDeal = useDeleteDeal(wsId);
-  const { members: assignableMembers } = useAssignableWorkspaceMembers(wsId);
+  const { members: assignableMembers } = useCRMOwnerMembers(wsId);
 
   const [form, setForm] = useState<FormState | null>(null);
   const [pendingVersion, setPendingVersion] = useState(0);
@@ -141,6 +153,7 @@ export function DealDetailPage({ dealId, onRequestClose, registerBeforeClose }: 
         stage_id: deal.stage_id,
         amount: deal.amount != null ? String(deal.amount) : '',
         currency: deal.currency ?? 'USD',
+        revenue_type: deal.revenue_type ?? 'one_time',
         close_date: deal.close_date ? deal.close_date.slice(0, 10) : '',
         probability: deal.probability != null ? String(deal.probability) : '',
         owner_member_id: deal.owner_member_id ?? '',
@@ -263,6 +276,7 @@ export function DealDetailPage({ dealId, onRequestClose, registerBeforeClose }: 
     );
   }
 
+  const recurring = recurringRevenue(form.amount === '' ? undefined : Number(form.amount), form.revenue_type);
   const selectedOwner = findAssignableMember(assignableMembers, form.owner_member_id);
   const amountValue = Number.parseFloat(form.amount);
 	const customerAssociation = associations?.find((association) => association.association_label === 'deal_customer');
@@ -288,19 +302,21 @@ export function DealDetailPage({ dealId, onRequestClose, registerBeforeClose }: 
 					{ id: 'customer', label: customerName, onClick: customerId ? openCustomer : undefined },
 				]} onBack={goToDeals} backLabel="Back to deals" />}
 				title={<QuietTitleInput aria-label="Deal name" presentation="header" className="max-w-[42rem] border-b-transparent hover:border-quiet-field focus-visible:border-quiet-text-primary" value={form.name} onChange={(event) => updateField('name', event.target.value, { name: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); } }} placeholder="Deal name" />}
-				meta={<QuietMetaLine items={[<span className="font-mono" key="id">{deal.display_id}</span>, currentPipeline?.name, form.amount ? new Intl.NumberFormat('en-US', { style: 'currency', currency: form.currency || 'USD', maximumFractionDigits: 0 }).format(amountValue || 0) : null, form.probability ? `${form.probability}% probability` : null]} />}
+				meta={<QuietMetaLine items={[<span className="font-mono" key="id">{deal.display_id}</span>, currentPipeline?.name, form.amount ? new Intl.NumberFormat('en-US', { style: 'currency', currency: form.currency || 'USD', maximumFractionDigits: 0 }).format(amountValue || 0) + revenueSuffix(form.revenue_type) : null, form.probability ? `${form.probability}% probability` : null]} />}
 				state={<SaveIndicator saving={saving} error={saveError} presentation="quiet" />}
 				actions={<>
+          <QuietDetailAction icon={<Mail01Icon className="h-4 w-4" />} label="Add to sequence" onClick={() => setSequenceOpen(true)} />
+          <QuietDetailAction icon={<Mail01Icon className="h-4 w-4" />} label="Send email" onClick={() => setEmailOpen(true)} />
 					<QuietDetailAction tone="danger" icon={<Delete01Icon className="h-4 w-4" />} label="Delete deal" onClick={() => setDeleteConfirmOpen(true)} />
 					{onRequestClose ? <QuietDetailAction iconOnly icon={<Cancel01Icon className="h-4 w-4" />} label="Close deal" onClick={() => void onRequestClose()} /> : null}
 				</>}
 			/>
 
-			<DealStagePath stages={sortedStages} value={form.stage_id} disabled={saving} onChange={(stageId) => updateField('stage_id', stageId, { stage_id: stageId })} />
+
 
 			<QuietDetailLayout
 				className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden"
-				main={<main className="min-h-0 lg:overflow-y-auto">
+				main={<main className="min-h-0 lg:h-full lg:overflow-y-auto">
 					<QuietSection title="Summary" className="lg:px-10"><EntitySummaryCard workspaceId={wsId} dealId={dealId} presentation="compact" /></QuietSection>
 					<QuietSection title="Signals" action={<DealHealthScore workspaceId={wsId} dealId={dealId} compact />} className="lg:px-10">
 						<EntitySignals workspaceId={wsId} dealId={dealId} presentation="compact" onOpenSource={(signal) => {
@@ -318,12 +334,16 @@ export function DealDetailPage({ dealId, onRequestClose, registerBeforeClose }: 
 					<section className="-mx-4 mt-4 border-t border-border/60 px-4 pt-4">
 						<h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-foreground/70">Details</h2>
 						<div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
-							<DealMetadataRow icon={Tag01Icon} label="Pipeline"><SidebarPopoverSelect value={form.pipeline_id} options={(pipelines ?? []).map((pipeline) => ({ value: pipeline.id, label: pipeline.name }))} onChange={(pipelineId) => { const pipeline = pipelines?.find((item) => item.id === pipelineId); const firstStageId = [...(pipeline?.stages ?? [])].sort((a, b) => a.position - b.position)[0]?.id ?? ''; setForm((current) => current ? { ...current, pipeline_id: pipelineId, stage_id: firstStageId } : current); queuePatch({ pipeline_id: pipelineId, ...(firstStageId ? { stage_id: firstStageId } : {}) }); }} renderTrigger={() => <span className="truncate">{currentPipeline?.name ?? 'Select pipeline'}</span>} /></DealMetadataRow>
+							<DealMetadataRow icon={Tag01Icon} label="Stage"><DealStageSelect stages={sortedStages} value={form.stage_id} disabled={saving} onChange={(stageId) => updateField('stage_id', stageId, { stage_id: stageId })} /></DealMetadataRow>
+                            <DealMetadataRow icon={Tag01Icon} label="Pipeline"><SidebarPopoverSelect value={form.pipeline_id} options={(pipelines ?? []).map((pipeline) => ({ value: pipeline.id, label: pipeline.name }))} onChange={(pipelineId) => { const pipeline = pipelines?.find((item) => item.id === pipelineId); const firstStageId = [...(pipeline?.stages ?? [])].sort((a, b) => a.position - b.position)[0]?.id ?? ''; setForm((current) => current ? { ...current, pipeline_id: pipelineId, stage_id: firstStageId } : current); queuePatch({ pipeline_id: pipelineId, ...(firstStageId ? { stage_id: firstStageId } : {}) }); }} renderTrigger={() => <span className="truncate">{currentPipeline?.name ?? 'Select pipeline'}</span>} /></DealMetadataRow>
 							<DealMetadataRow icon={DollarCircleIcon} label="Amount"><div className="flex min-w-0 items-center gap-1.5"><input className="min-w-0 flex-1 bg-transparent px-1.5 py-0.5 text-xs outline-none placeholder:text-muted-foreground" type="number" step="0.01" value={form.amount} onChange={(event) => updateField('amount', event.target.value, { amount: event.target.value ? Number.parseFloat(event.target.value) : undefined })} placeholder="None" /><SidebarPopoverSelect value={form.currency} options={['USD', 'EUR', 'GBP', 'CAD', 'AUD'].map((value) => ({ value, label: value }))} onChange={(value) => updateField('currency', value, { currency: value })} renderTrigger={() => <span className="text-muted-foreground">{form.currency}</span>} triggerClassName="px-1" width="w-28" /></div></DealMetadataRow>
+              <DealMetadataRow icon={DollarCircleIcon} label="Revenue type"><SidebarPopoverSelect renderTrigger={() => <span>{form.revenue_type === 'one_time' ? 'One-time' : form.revenue_type === 'monthly' ? 'Monthly' : 'Annual'}</span>} value={form.revenue_type} options={[{value:'one_time',label:'One-time'},{value:'monthly',label:'Monthly'},{value:'annual',label:'Annual'}]} onChange={(value) => updateField('revenue_type', value as RevenueType, { revenue_type: value as RevenueType })} /></DealMetadataRow>
+              {recurring && <DealMetadataRow icon={DollarCircleIcon} label={deal.stage?.stage_type === 'open' ? 'Potential MRR / ARR' : 'MRR / ARR'}><span>{form.currency} {new Intl.NumberFormat(undefined, {maximumFractionDigits:2}).format(recurring.mrr)} / {new Intl.NumberFormat(undefined, {maximumFractionDigits:2}).format(recurring.arr)}</span></DealMetadataRow>}
+
 							<DealMetadataRow icon={Tag01Icon} label="Deal type"><SidebarPopoverSelect value={form.commercial_motion} options={[{ value: 'inherit', label: `Inherit ${currentPipeline?.default_commercial_motion?.replace('_', ' ') ?? 'pipeline default'}` }, { value: 'new_business', label: 'New business' }, { value: 'existing_business', label: 'Existing business' }, { value: 'expansion', label: 'Expansion' }, { value: 'renewal', label: 'Renewal' }]} onChange={(value) => updateField('commercial_motion', value as FormState['commercial_motion'], value === 'inherit' ? { clear_commercial_motion: true } : { commercial_motion: value as CRMDealCommercialMotion })} renderTrigger={() => <span className="capitalize">{form.commercial_motion === 'inherit' ? `Inherit ${currentPipeline?.default_commercial_motion?.replace('_', ' ') ?? ''}` : form.commercial_motion.replace('_', ' ')}</span>} /></DealMetadataRow>
 							<div className="col-span-3 my-1 h-px bg-border/40" />
 							<DealMetadataRow icon={Calendar01Icon} label="Close date"><input className="w-full bg-transparent px-1.5 py-0.5 text-xs outline-none" type="date" value={form.close_date} onChange={(event) => updateField('close_date', event.target.value, { close_date: event.target.value ? `${event.target.value}T00:00:00Z` : undefined })} /></DealMetadataRow>
-							<DealMetadataRow icon={DashboardSpeed01Icon} label="Probability"><div className="flex items-center gap-1"><input className="w-12 bg-transparent px-1.5 py-0.5 text-xs outline-none placeholder:text-muted-foreground" type="number" min="0" max="100" value={form.probability} onChange={(event) => updateField('probability', event.target.value, { probability: event.target.value ? Number.parseInt(event.target.value, 10) : undefined })} placeholder="None" /><span className="text-muted-foreground">%</span></div></DealMetadataRow>
+							<DealMetadataRow icon={DashboardSpeed01Icon} label="Probability"><div className="flex items-center gap-1"><input className="w-12 bg-transparent px-1.5 py-0.5 text-xs outline-none placeholder:text-muted-foreground" type="number" min="0" max="100" value={form.probability} onChange={(event) => updateField('probability', event.target.value, { probability: event.target.value ? Number.parseInt(event.target.value, 10) : undefined, clear_probability: event.target.value === '' })} placeholder={String(sortedStages.find(stage => stage.id === form.stage_id)?.probability ?? 0)} /><span className="text-muted-foreground">%</span></div></DealMetadataRow>
 							<DealMetadataRow icon={UserIcon} label="Owner"><MemberPickerPopover value={form.owner_member_id || '__none__'} members={assignableMembers} noneLabel="Unassigned" onChange={(value) => updateField('owner_member_id', value === '__none__' ? '' : value, { owner_member_id: value === '__none__' ? '' : value })} renderTrigger={() => selectedOwner ? <><UserAvatar name={selectedOwner.display_name || selectedOwner.email} avatarUrl={selectedOwner.avatar_url} avatarStyle={selectedOwner.avatar_style} avatarSeed={selectedOwner.avatar_seed} avatarBackgroundMode={selectedOwner.avatar_background_mode} avatarBackgroundColor={selectedOwner.avatar_background_color} className="h-4 w-4" fallbackClassName="text-[7px]" /><span className="truncate">{selectedOwner.display_name || selectedOwner.email}</span></> : <span className="text-muted-foreground">Unassigned</span>} /></DealMetadataRow>
 						</div>
 					</section>
@@ -331,6 +351,8 @@ export function DealDetailPage({ dealId, onRequestClose, registerBeforeClose }: 
 				</>}
 			/>
 
+      {sequenceOpen && <SequenceEnrollmentDialog workspaceId={wsId} dealId={dealId} onClose={() => setSequenceOpen(false)} />}
+      {emailOpen && <CRMEmailComposerDialog workspaceId={wsId} accounts={emailAccounts.data ?? []} open draft={{ dealId, dealName: deal.name, to: emailContact.data?.email ? [emailContact.data.email] : [] }} onOpenChange={setEmailOpen} />}
       <DealEmailThreadPanel open={!!emailThreadId} onOpenChange={(open) => { if (!open) setEmailThreadId(undefined); }} workspaceId={wsId} dealId={dealId} threadId={emailThreadId} />
       <ConfirmDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen} title="Delete deal" description="Are you sure? This action cannot be undone." confirmLabel="Delete" variant="destructive" onConfirm={handleDelete} />
     </div>

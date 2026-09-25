@@ -1,16 +1,38 @@
-# Helpin Quiet Hairline
+# Helpin quiet hairline design reference
+
+
+Use this reference when designing or reviewing Helpin's web interface. It defines
+shared visual conventions and intentional exceptions; it is not a claim that
+every existing screen already conforms. Preserve behavior and accessibility when
+applying the conventions.
+
+The implementation sources are the [theme tokens](../../../../frontend/src/index.css),
+[Quiet components](../../../../frontend/src/components/design-system/quiet.tsx),
+[shared buttons](../../../../frontend/src/components/ui/button.tsx), and
+[conversation composer primitives](../../../../frontend/src/components/design-system/conversation-composer.tsx).
+Source review on 2026-09-18 confirmed the listed light palette, 93.75% root scale,
+12.2px dropdown token, compact headers, and blue composer-border exception.
+Dark tokens map to shared dark semantics; contrast and interaction accessibility
+still require verification in the rendered screen.
 
 ## The one rule
 
-Structure comes from hairlines, whitespace, and type weight—never from boxes. Do not use bordered inputs, rounded field outlines, cards, pills, tinted status chips, filled section wells, or decorative shadows. If a border seems necessary to group content, use a 1px divider and an eyebrow label.
+Structure comes primarily from hairlines, whitespace, and type weight. Avoid decorative boxes, bordered inputs, rounded field outlines, cards, pills, tinted status chips, filled section wells, and decorative shadows outside the functional patterns below. Default to a 1px divider and a clear section label; preserve containers that communicate a meaningful settings group.
 
-Functional exceptions include the centralized search field and editable applied-filter pills described below. The Objectives index intentionally retains its established card grid. Preserve their shared components rather than restyling them as plain text.
+Functional exceptions include the centralized search field, editable applied-filter pills, and bordered settings sections described below. The Objectives index intentionally retains its established card grid. Preserve their shared components rather than restyling them as plain text.
 
 The only sanctioned elevation is an existing product overlay such as a Sheet, Dialog, Popover, command surface, or menu. Preserve its established behavior and use the quietest compatible chrome.
 
 ## Voice
 
 The interface reads like a well-set working document, not a form. Use one or two dark buttons per screen at most; everything else is a text, icon, or underline action with a clear hover and focus state. Every number, count, status, badge, and icon must help the user scan, decide, or act.
+
+## Content and progressive disclosure
+
+- Show only what helps the current task or decision. State each fact once in its most useful location. Repeat it only when needed for a separate decision, confirmation, or context that is no longer visible.
+- Do not restate a page title in its subtitle, a section title in its description, or a control label in helper text. Omit descriptions that add no meaning. Do not move redundant text into a tooltip; remove it.
+- Put secondary explanations, examples, and implementation details that users actually need in a concise tooltip beside the relevant control. Use the shared tooltip primitives with a focusable, accessibly named trigger; provide tap access on touch devices. Do not rely on hover alone or a disabled button receiving focus.
+- Keep essential labels, selected values, scope, validation errors, required instructions, and consequential warnings visible. A user must be able to complete the task and understand its effects without discovering a tooltip. Tooltips supplement accessible labels; they do not replace them.
 
 ## Light palette
 
@@ -35,7 +57,7 @@ The interface reads like a well-set working document, not a form. Use one or two
 | Lifecycle | `#7c5cff` |
 | Dark action | `#1c1a17`, hover `#3b3733` |
 
-Use the `quiet-*` semantic Tailwind tokens rather than these literals. In dark mode, the tokens map to Helpin's existing accessible dark semantics.
+Use the `quiet-*` semantic Tailwind tokens rather than these literals. In dark mode, the tokens map to Helpin's existing dark semantics.
 
 Avatar fallback pairs, selected by the centralized avatar seed, are:
 
@@ -123,6 +145,8 @@ Rows stack actor/meta, title, detail, and provenance. They use 12–13px vertica
 
 Sections are full-width and stacked. A section header contains an optional 15px icon, eyebrow, inline count, spacer, and quiet action. End sections with a strong divider. Do not create side-by-side section cards.
 
+Settings forms use stacked, subtly bordered sections with clear headers and consistent internal padding. Their boundaries communicate related controls and disclosure state; retain them when simplifying content. Use primary text and semibold weight for section headings, including collapsed headings, rather than muted placeholder styling. Follow [Settings section composition](helpin-components.md#settings-section-composition) for shared components, default disclosure behavior, and reference pages.
+
 ### Inputs and editors
 
 PM descriptions use the same display, edit affordance, divider editor, and Cancel/Done components as Epic detail. These are description controls, separate from conversation composers; see [PM detail composition](helpin-components.md#pm-detail-composition).
@@ -158,4 +182,4 @@ Use bubbles only for genuine turn-taking. Inbound is warm hover neutral and outb
 
 ## Anti-patterns
 
-Do not introduce bordered data-entry inputs, rounded field boxes, outlined section cards, decorative pills/chips for ordinary status or filter tabs, tinted enrichment cards, blue focus treatments, blue send buttons, centered empty illustrations, raw function names without an outcome sentence, emoji, gradients, ornamental metrics, or more than two dark actions per screen. Preserve the shared search field and editable applied-filter exceptions above.
+Do not introduce bordered data-entry inputs, rounded field boxes, decorative section cards outside the settings pattern, decorative pills/chips for ordinary status or filter tabs, tinted enrichment cards, blue focus treatments outside the shared conversation-composer exception, blue send buttons, centered empty illustrations, raw function names without an outcome sentence, emoji, gradients, ornamental metrics, or more than two dark actions per screen. Preserve the functional exceptions above, including shared settings sections. Do not flatten meaningful settings groups to satisfy the general preference for fewer containers.

@@ -17,6 +17,7 @@ func TestAgentRunMessageRepositoryDockChatTimelineSpansRunsAndPaginates(t *testi
 		t.Fatalf("open database: %v", err)
 	}
 	if err := db.Exec(`CREATE TABLE dock_chats (
+execution_enabled boolean NOT NULL DEFAULT false,
 		id TEXT PRIMARY KEY,
 		workspace_id TEXT NOT NULL,
 		next_message_sequence INTEGER DEFAULT 0,
@@ -140,5 +141,19 @@ func TestAgentRunMessageRepositoryDockChatTimelineSpansRunsAndPaginates(t *testi
 	crossChat, err := repo.ListDockChatTurnThroughMessage(ctx, workspaceID, "00000000-0000-0000-0000-000000000099", recovered.ID)
 	if err != nil || len(crossChat) != 0 {
 		t.Fatalf("cross-chat detail leaked: %#v err=%v", crossChat, err)
+	}
+	for i, kind := range []string{"approval", "approval_request_resolution", "review_checkpoint_resolution"} {
+		decision := &model.AgentRunMessage{ID: fmt.Sprintf("decision-%d", i), WorkspaceID: workspaceID, RunID: "run-2", DockChatID: stringPtr(chatID), Role: "user", MessageType: kind, Content: "Approved. Continue.", DeliveryStatus: "sent", SequenceNo: 3 + i}
+		if err := repo.Create(ctx, decision); err != nil {
+			t.Fatal(err)
+		}
+	}
+	answer := &model.AgentRunMessage{ID: "final-answer", WorkspaceID: workspaceID, RunID: "run-2", DockChatID: stringPtr(chatID), Role: "assistant", MessageType: "assistant_final", Content: "Done", DeliveryStatus: "sent", SequenceNo: 6}
+	if err := repo.Create(ctx, answer); err != nil {
+		t.Fatal(err)
+	}
+	turn, err = repo.ListDockChatTurnThroughMessage(ctx, workspaceID, chatID, answer.ID)
+	if err != nil || len(turn) != 5 || turn[0].ID != recovered.ID || turn[4].ID != answer.ID {
+		t.Fatalf("approval incorrectly split work detail: %+v err=%v", turn, err)
 	}
 }

@@ -277,7 +277,7 @@ export function SidebarOtherConversations({ workspaceId, conversationId }: Sideb
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   if (isLoading || !data || data.other_conversations.length === 0) return null;
   return (
-    <CollapsibleSection title="Other Conversations" icon={Message01Icon} count={Math.max(data.total_conversations - 1, data.other_conversations.length)}>
+    <CollapsibleSection key={`${workspaceId}:${conversationId}`} autoOpenWhenPopulated title="Other Conversations" icon={Message01Icon} count={Math.max(data.total_conversations - 1, data.other_conversations.length)}>
       <div className="max-h-[240px] space-y-1.5 overflow-y-auto pr-1">
         {data.other_conversations.map((conv) => (
           <Link

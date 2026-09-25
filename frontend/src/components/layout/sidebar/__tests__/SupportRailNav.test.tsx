@@ -28,10 +28,12 @@ function renderSupportRail({
   customViews = [],
   customViewCounts = {},
   canManageSettings = false,
+  onCreateCustomView = vi.fn(),
 }: {
   customViews?: SupportInboxView[]
   customViewCounts?: Record<string, SupportInboxViewCount>
   canManageSettings?: boolean
+  onCreateCustomView?: () => void
 } = {}) {
   const container = document.createElement('div')
   document.body.appendChild(container)
@@ -107,6 +109,7 @@ function renderSupportRail({
             onCustomViewSelect={vi.fn()}
             onEditCustomView={vi.fn()}
             onDeleteCustomView={vi.fn()}
+            onCreateCustomView={onCreateCustomView}
             onCreateMailbox={vi.fn()}
             onEditMailbox={vi.fn()}
             onArchiveMailbox={vi.fn()}
@@ -201,6 +204,24 @@ describe('SupportRailNav', () => {
     expect(text.indexOf('Team Inboxes')).toBeGreaterThan(-1)
     expect(text.indexOf('Custom views')).toBeGreaterThan(-1)
     expect(text.indexOf('Custom views')).toBeGreaterThan(text.indexOf('Team Inboxes'))
+
+    rendered.cleanup()
+  })
+
+  it('offers custom view creation in the sidebar before any views exist', () => {
+    const onCreateCustomView = vi.fn()
+    const rendered = renderSupportRail({ onCreateCustomView })
+
+    const text = rendered.container.textContent ?? ''
+    expect(text.indexOf('Custom views')).toBeGreaterThan(text.indexOf('Team Inboxes'))
+    const createAction = rendered.container.querySelector('[aria-label="Create custom view"]') as HTMLButtonElement
+    const emptyAction = buttonByText(rendered.container, 'Create a view')
+    expect(createAction).toBeTruthy()
+    expect(emptyAction).toBeTruthy()
+
+    act(() => createAction.click())
+    act(() => emptyAction?.click())
+    expect(onCreateCustomView).toHaveBeenCalledTimes(2)
 
     rendered.cleanup()
   })

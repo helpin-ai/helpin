@@ -1,3 +1,4 @@
+vi.mock('../SupportAIControl', () => ({ useSupportAIControl: () => ({ item: <div role="menuitem" data-testid="ai-control">AI control</div>, confirmation: null }) }));
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -12,11 +13,21 @@ const supportHooks = vi.hoisted(() => ({
   useConversation: vi.fn(),
   useConversationMessages: vi.fn(),
   markConversationRead: vi.fn(),
+  deleteMessage: vi.fn(),
+  currentUser: null as { id: string; full_name?: string; email?: string; avatar_url?: string } | null,
 }))
 
 function createTestQueryClient() {
   return new QueryClient({ defaultOptions: { queries: { retry: false } } })
 }
+
+// Translation polling is covered separately; keep transcript timer tests deterministic.
+vi.mock('@/hooks/queries/useSupportTranslation', () => ({ useSupportTranslationOptions: () => ({ data: undefined }), useCachedSupportTranslations: () => ({data: []}), setLiveTranslate: vi.fn(), translationOptionsKey: () => [] }))
+vi.mock('@/hooks/queries/usePendingSupportSends', () => ({ usePendingSupportSends: (_ws: string, _id: string, messages: unknown[]) => messages }))
+
+// This transcript fixture must not start the live widget's pageview timer.
+vi.mock('@/lib/helpin', () => ({ resetHelpinIdentity: vi.fn() }))
+vi.mock('@/stores/authStore', () => ({ useAuthStore: (selector: (state: { user: { id: string } | null }) => unknown) => selector({ user: supportHooks.currentUser }) }))
 
 vi.mock('@tanstack/react-router', () => ({
   useLocation: () => ({ pathname: '/w/acme/support/conv-1' }),
@@ -34,7 +45,7 @@ vi.mock('@/hooks/queries/useSupport', () => ({
   useMoveConversation: () => ({ mutate: vi.fn(), isPending: false }),
   useSendConversationTranscript: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDismissConversationTriage: () => ({ mutate: vi.fn(), isPending: false }),
-  useDeleteSupportMessage: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDeleteSupportMessage: () => ({ mutateAsync: supportHooks.deleteMessage, isPending: false }),
   useMarkConversationRead: () => ({ mutate: supportHooks.markConversationRead, isPending: false }),
   useMarkConversationUnread: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateConversationSubject: () => ({ mutate: vi.fn(), isPending: false }),
@@ -61,7 +72,7 @@ vi.mock('@/lib/services/agentService', () => ({
   },
 }))
 
-vi.mock('@/components/billing/UpgradeRequiredDialog', () => ({
+vi.mock('@edition', () => ({
   UpgradeRequiredDialog: () => null,
 }))
 
@@ -70,7 +81,7 @@ vi.mock('../ReplyComposer', () => ({
 }))
 
 vi.mock('../MessageBubble', () => ({
-  MessageBubble: ({ message, isConsecutive }: { message: { content: string }; isConsecutive: boolean }) => <div data-testid="message-bubble" data-consecutive={String(isConsecutive)}>{message.content}</div>,
+  MessageBubble: ({ message, isConsecutive, fallbackAvatarUrl }: { message: { content: string }; isConsecutive: boolean; fallbackAvatarUrl?: string }) => <div data-testid="message-bubble" data-consecutive={String(isConsecutive)} data-avatar={fallbackAvatarUrl}>{message.content}</div>,
 }))
 
 vi.mock('../AIRunApprovalCard', () => ({
@@ -101,6 +112,76 @@ describe('MessageThread', () => {
     document.body.innerHTML = ''
   })
 
+  it('preserves messages and comments but hides the composer after customer deletion', async () => {
+    supportHooks.useConversation.mockReturnValue({ isFetched: true, data: { id: 'conv-1', workspace_id: 'ws-1', status: 'resolved', anonymized_at: '2026-09-16T00:00:00Z' } })
+    supportHooks.useConversationMessages.mockReturnValue({ isLoading: false, data: seedSupportMessagePages([
+      { id: 'message', conversation_id: 'conv-1', sender_type: 'customer', content: 'I am Alice', is_internal: false, created_at: '2026-09-15T00:00:00Z' },
+      { id: 'comment', conversation_id: 'conv-1', sender_type: 'user', content: 'Comment about Alice', is_internal: true, created_at: '2026-09-15T00:01:00Z' },
+    ] as never) })
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    const client = createTestQueryClient()
+    try {
+      await act(async () => root.render(<QueryClientProvider client={client}><MessageThread workspaceId="ws-1" conversationId="conv-1" /></QueryClientProvider>))
+      expect(container.textContent).toContain('I am Alice')
+      expect(container.textContent).toContain('Comment about Alice')
+      expect(container.textContent).toContain('this conversation is read-only')
+      expect(container.querySelector('[data-testid="reply-composer"]')).toBeNull()
+    } finally {
+      act(() => root.unmount())
+      client.clear()
+    }
+  })
+
+  it.each(['Viewer', undefined])('does not use the viewer photo based on a matching or missing sender name (%s)', async (senderName) => {
+    supportHooks.currentUser = { id: 'viewer', full_name: senderName, email: 'viewer@example.com', avatar_url: '/viewer.png' }
+    supportHooks.useConversation.mockReturnValue({ isFetched: true, data: { id: 'conv-1', workspace_id: 'ws-1', status: 'open', source: 'widget', created_at: '2026-09-15T09:00:00Z' } })
+    supportHooks.useConversationMessages.mockReturnValue({ isLoading: false, data: seedSupportMessagePages([{
+      id: 'reply', workspace_id: 'ws-1', conversation_id: 'conv-1', sender_type: 'user',
+      sender_user_id: 'teammate', sender_display_name: senderName, content: 'Hello', is_internal: false,
+      created_at: '2026-09-15T09:00:00Z', updated_at: '2026-09-15T09:00:00Z',
+    }]) })
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    const client = createTestQueryClient()
+    try {
+      await act(async () => root.render(<QueryClientProvider client={client}><MessageThread workspaceId="ws-1" conversationId="conv-1" /></QueryClientProvider>))
+      const bubble = container.querySelector('[data-testid="message-bubble"]')
+      expect(bubble).not.toBeNull()
+      expect(bubble?.getAttribute('data-avatar')).toBeNull()
+    } finally {
+      act(() => root.unmount())
+      client.clear()
+      supportHooks.currentUser = null
+    }
+  })
+
+  it('handles keyboard Undo once with two mounted threads and restores original email details', async () => {
+    const attachment = { id: 'attachment-1', file_name: 'receipt.pdf' };
+    const message = { id: 'reply-undo', conversation_id: 'conv-1', sender_type: 'user', sender_user_id: 'user-1', is_internal: false,
+      content: 'Original email', created_at: new Date().toISOString(), cancellable_until: new Date(Date.now() + 60000).toISOString(),
+      metadata: JSON.stringify({ delivery_mode: 'email_only', email_subject: 'Original subject' }), attachments: [attachment] };
+    supportHooks.currentUser = { id: 'user-1' };
+    supportHooks.useConversation.mockReturnValue({ data: { id: 'conv-1', workspace_id: 'ws-1', subject: 'Thread', status: 'open' }, isFetched: true });
+    supportHooks.useConversationMessages.mockReturnValue({ data: seedSupportMessagePages([message] as never), isLoading: false, hasNextPage: false, fetchNextPage: vi.fn() });
+    supportHooks.deleteMessage.mockResolvedValue({ markdown: 'Original email' });
+    const restored = vi.fn();
+    window.addEventListener('support:restore-draft', restored);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const client = createTestQueryClient();
+    await act(async () => root.render(<QueryClientProvider client={client}><MessageThread workspaceId="ws-1" conversationId="conv-1" /><MessageThread workspaceId="ws-1" conversationId="conv-1" /></QueryClientProvider>));
+    await act(async () => document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true })));
+    expect(supportHooks.deleteMessage).toHaveBeenCalledTimes(1);
+    expect(restored).toHaveBeenCalledTimes(1);
+    expect(restored.mock.calls[0][0].detail).toMatchObject({ deliveryMode: 'email_only', emailSubject: 'Original subject', attachments: [attachment], markdown: 'Original email' });
+    window.removeEventListener('support:restore-draft', restored);
+    act(() => root.unmount());
+    client.clear();
+    supportHooks.currentUser = null;
+  });
+
   it.each([
     { label: 'AI handling without legacy state', flow_state: 'ai_handling', ai_state: null, human_takeover: false, enabled: true },
     { label: 'legacy AI handling', flow_state: null, ai_state: 'pending', human_takeover: false, enabled: true },
@@ -120,6 +201,8 @@ describe('MessageThread', () => {
     try {
       await act(async () => root.render(<QueryClientProvider client={client}><MessageThread workspaceId="ws-1" conversationId="conv-1" /></QueryClientProvider>))
       expect(container.querySelector('[data-testid="ai-run-approvals"]')?.getAttribute('data-enabled')).toBe(String(enabled))
+      expect(container.querySelector('[data-testid="ai-control"]')).toBeNull()
+      expect(container.querySelector('[aria-label="Open conversation actions"]')).toBeTruthy()
     } finally {
       act(() => root.unmount())
       client.clear()
@@ -383,6 +466,8 @@ describe('MessageThread', () => {
     expect(container.querySelector('[aria-label="Resolve conversation"]')).toBeTruthy()
     expect(container.querySelector('[aria-label="Open conversation actions"]')).toBeTruthy()
     expect(container.textContent).not.toContain('Create Task')
+      expect(container.querySelector('[data-testid="ai-control"]')).toBeNull()
+      expect(container.querySelector('[aria-label="Open conversation actions"]')).toBeTruthy()
 
     act(() => {
       returnButton?.click()
@@ -392,6 +477,24 @@ describe('MessageThread', () => {
     expect(onOpenDetails).toHaveBeenCalledOnce()
 
     act(() => root.unmount())
+  })
+
+  it('keeps assignment messages and notes while hiding routine join events', () => {
+    const base = { workspace_id: 'ws-1', conversation_id: 'conv-1', sender_type: 'user' as const,
+      created_at: '2026-09-13T09:00:00Z', updated_at: '2026-09-13T09:00:00Z', is_internal: true }
+    const joined = { ...base, id: 'joined', message_type: 'system', system_event_type: 'teammate_joined', content: 'Waqar joined the conversation.' }
+    const assigned = { ...base, id: 'assigned', message_type: 'system', system_event_type: 'assigned', content: 'Assigned to Sarah.' }
+    const note = { ...base, id: 'note', message_type: 'reply', content: 'Waqar joined the conversation.' }
+    supportHooks.useConversation.mockReturnValue({ isFetched: true, data: { id: 'conv-1', workspace_id: 'ws-1', status: 'open', source: 'widget', created_at: base.created_at } })
+    supportHooks.useConversationMessages.mockReturnValue({ data: seedSupportMessagePages([joined, assigned, note]), isLoading: false, hasNextPage: false })
+    const container = document.createElement('div'); document.body.appendChild(container)
+    const root = createRoot(container); const client = createTestQueryClient()
+    act(() => root.render(<QueryClientProvider client={client}><MessageThread workspaceId="ws-1" conversationId="conv-1" /></QueryClientProvider>))
+    act(() => { vi.runAllTimers() })
+    expect(container.querySelector('[data-support-message-id="joined"]')).toBeNull()
+    expect(container.querySelector('[data-support-message-id="assigned"]')?.textContent).toBe('Assigned to Sarah.')
+    expect(container.querySelector('[data-support-message-id="note"]')?.textContent).toBe(note.content)
+    act(() => root.unmount()); client.clear()
   })
 
   it.each(['event-first', 'ack-first', 'refetch-only', 'other-teammate'])('keeps the immediate reply stable with joined status arriving %s', (delivery) => {
@@ -419,11 +522,11 @@ describe('MessageThread', () => {
     pages = appendMessageToNewestPage(pages, optimistic); render()
     const preview = order()
     const previewNode = container.querySelector('[data-support-message-id="optimistic-send"]')
-    expect(previewNode?.firstElementChild?.getAttribute("data-consecutive")).toBe("false")
+    expect(previewNode?.querySelector('[data-testid="message-bubble"]')?.getAttribute("data-consecutive")).toBe("false")
     if (delivery === 'ack-first') { pages = replaceMessageInPages(pages, optimistic.id, saved)!; render() }
     if (delivery !== 'refetch-only') { pages = appendMessageToNewestPage(pages, joined); render() }
     const realtimeJoin = order()
-    expect(previewNode?.firstElementChild?.getAttribute("data-consecutive")).toBe("false")
+    expect(previewNode?.querySelector('[data-testid="message-bubble"]')?.getAttribute("data-consecutive")).toBe("false")
     pages = appendMessageToNewestPage(pages, saved)
     pages = replaceMessageInPages(pages, optimistic.id, saved)!; render()
     const confirmed = order()
@@ -431,12 +534,12 @@ describe('MessageThread', () => {
     pages = seedSupportMessagePages([customer, joined, { ...saved, client_message_id: undefined, metadata: JSON.stringify({ client_message_id: optimistic.client_message_id }) }]); render()
     const refreshed = order()
     expect(preview).toEqual(['Customer question', 'Teammate reply'])
-    if (delivery !== 'refetch-only') expect(realtimeJoin).toEqual(['Customer question', 'Waqar joined the conversation.', 'Teammate reply'])
+    if (delivery !== 'refetch-only') expect(realtimeJoin).toEqual(['Customer question', 'Teammate reply'])
     expect(confirmed).toEqual(realtimeJoin)
-    expect(refreshed).toEqual(['Customer question', 'Waqar joined the conversation.', 'Teammate reply'])
+    expect(refreshed).toEqual(['Customer question', 'Teammate reply'])
     expect(previewNode).toBe(savedNode)
     expect(container.querySelector('[data-support-message-id="saved-reply"]')).toBe(previewNode)
-    expect(previewNode?.firstElementChild?.getAttribute("data-consecutive")).toBe("false")
+    expect(previewNode?.querySelector('[data-testid="message-bubble"]')?.getAttribute("data-consecutive")).toBe("false")
     act(() => root.unmount()); client.clear()
   })
 
@@ -487,13 +590,10 @@ describe('MessageThread', () => {
       pages = appendMessageToNewestPage(pages, joined)
       if (batchReply) pages = appendMessageToNewestPage(pages, { ...history[0], id: 'new-customer-reply', content: 'New customer reply' })
       render(false)
-      expect(rows().indexOf(reply)).toBe(historyCount + 1)
-      if (historyCount === 1 && !reducedMotion) {
-        expect(animate).toHaveBeenCalledWith([{ transform: 'translateY(-100px)' }, { transform: 'translateY(0)' }], expect.objectContaining({ duration: 160 }))
-      } else {
-        if (historyCount > 1) expect(reply.getBoundingClientRect().top).toBe(top - (batchReply ? 100 : 0))
-        expect(animate).not.toHaveBeenCalled()
-      }
+      expect(rows().indexOf(reply)).toBe(historyCount)
+      if (historyCount > 1) expect(reply.getBoundingClientRect().top).toBe(top - (batchReply ? 100 : 0))
+      expect(animate).not.toHaveBeenCalled()
+      expect(container.querySelector('[data-support-message-id="joined"]')).toBeNull()
     } finally {
       act(() => root.unmount()); client.clear(); rect.mockRestore()
       window.matchMedia = previousMatchMedia
@@ -545,7 +645,7 @@ describe('MessageThread', () => {
       } else pages = appendMessageToNewestPage(pages, joined)
       render()
       expect(anchor.getBoundingClientRect().top).toBe(top)
-      expect(scrollTop).toBe(300)
+      expect(scrollTop).toBe(200)
     } finally { act(() => root.unmount()); client.clear(); rect.mockRestore() }
   })
 

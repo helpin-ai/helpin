@@ -96,7 +96,7 @@ func TestInviteServiceCreateAndAcceptInvitationUsesWorkspaceMemberIdentity(t *te
 		t.Fatalf("add owner member: %v", err)
 	}
 
-	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "https://app.example.com", nil)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, stubInviteEmailSender{}, "https://app.example.com", nil)
 
 	resp, err := svc.CreateInvitation(ctx, model.CreateInvitationRequest{
 		WorkspaceID: "ws-1",
@@ -726,6 +726,8 @@ func newWorkspaceIdentityTestDB(t *testing.T) *gorm.DB {
 			totp_verified BOOLEAN NOT NULL DEFAULT 0,
 			recovery_codes_encrypted TEXT,
 			is_platform_admin BOOLEAN NOT NULL DEFAULT 0,
+			is_server_admin BOOLEAN NOT NULL DEFAULT 0,
+			signup_verification_pending BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

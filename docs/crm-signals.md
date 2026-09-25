@@ -1,10 +1,22 @@
-# CRM Signals
+# CRM signal architecture and operations
 
-This is the canonical engineering and operations reference for Helpin CRM
-signals. It describes the implemented system. Historical design decisions and
+This engineering and operations reference explains CRM signal detection, customer
+work, and activation for contributors and operators. CRM is enabled by
+default in Community (`HELPIN_ENABLED_MODULES`). It describes implementation
+in this checkout, not deployment status or provider availability. Historical design decisions and
 the original phase plan remain in
 [`crm-buyer-signals-assessment.md`](crm-buyer-signals-assessment.md), but that
 assessment is not a statement of current implementation status.
+
+## Source entry points
+
+Reviewed against the [rule evaluator](../server/internal/service/crm_signal_rule_evaluator.go),
+[activation service](../server/internal/service/crm_signal_activation.go),
+[situation service](../server/internal/service/crm_situation.go),
+[Playbook automation](../server/internal/service/crm_playbook_automation.go), and
+[CRM completion routes](../server/internal/service/ai_completion_routes.go) on 2026-09-18.
+The situation-list API defaults to Mine; the unified inbox defaults to Everyone.
+These are separate read contracts.
 
 ## Purpose
 
@@ -26,9 +38,9 @@ The system deliberately separates:
 - **business priority** — how important the evidence is now;
 - **activation** — whether this exact rule version may create downstream work.
 
-## Delivered phases
+## Implemented phases
 
-| Phase | Releasable scope |
+| Phase | Source scope |
 |---|---|
 | 1 — motion-aware spine | observations, account motion resolver, pipeline defaults and deal overrides, versioned interpretation maps, immutable meaning snapshots, motion-exit supersession, `(entity, motion)` composition, evidence-gated lanes, routing ownership, and the objective shadow-to-live gate |
 | 2 — customer behavior | shared server-only event catalog, commercial-state materialization and health, weekday baselines, six customer rules with level-rule re-arm and anomaly suppression, delayed subscription-outcome calibration, recommendations, and operator UI |
@@ -345,7 +357,10 @@ refusing, so activating below the bar stays visible in logs.
 
 ## Product and API surfaces
 
-Signals appear in the CRM Signal Inbox and on contact, company, and deal pages.
+Signals appear in the unified CRM Signals inbox and on contact, company, and deal pages.
+The lane-based feed described next remains the evidence view and API; the default
+inbox combines situations, recommendations, and untracked evidence as described
+in [Signals daily workspace](#signals-daily-workspace).
 The inbox leads with why the evidence matters now, a recommended next step,
 and navigation to the resolved CRM record; detailed scoring stays behind an
 evidence disclosure. The workspace feed uses the shared query builder for owner, account, domain,
@@ -401,11 +416,11 @@ permission.
 The [customer-work blueprint](crm-customer-work-blueprint.md) owns the agreed
 complete target experience; the [automation connection plan](crm-playbook-automation-change-proposal.md)
 owns the planned Flow/Beacon/skill extension. This reference describes implemented
-behavior in the inspected branch, not production deployment. The additive foundation stores independent
+behavior in this checkout, not production deployment. The additive foundation stores independent
 customer situations in `crm_situations`, with source links in
 `crm_situation_references`. Source adapters now reconcile eligible signals and
 unresolved Review suggestions, using `crm_situation_source_links` for stable
-source-to-work mappings. The branch now has the unified Signals inbox and a
+source-to-work mappings. This checkout has the unified Signals inbox and a
 compatible Review redirect, described under [Review consolidation](#review-consolidation).
 This does not enable Playbook execution or new outbound automation.
 
@@ -627,10 +642,10 @@ remain separate from approval. Legacy status-only updates remain decisions, not
 executions, and cannot reset accepted work to pending or overwrite a concurrent
 decision. No action result automatically closes a customer situation.
 
-Shared Flow/Agent process orchestration, durable continuations and recovery
-controls, and the unified Signals/Playbooks UI remain required before
-the complete blueprint can ship. These backend integration tests are not a claim
-that the complete automated customer journeys have shipped.
+The guarded Flow/Agent connection, recovery controls, and unified Signals/Playbooks
+UI are described in the following sections. The foundation APIs above alone do
+not establish that a workspace has enabled that connection or completed a customer
+journey. Test source coverage is separate from production deployment.
 
 ### Playbook configuration and manual participation
 
@@ -897,8 +912,8 @@ Setup includes reviewed connection, separate activation, entry choice and usage
 limits. Signal drawers expose start/resume/pause and focused execution status.
 Exact action review reuses the existing composer and real PM/CRM pickers; result
 inspection never retries the action. Activity shows recorded configuration and
-execution events without presenting them as customer success. This is branch
-implementation, not a deployment or migration of application data.
+execution events without presenting them as customer success. This describes the
+implementation in this checkout, not a deployment or migration of application data.
 
 Browser verification renders the production pages with an isolated mocked API:
 `cd frontend && npx playwright test --config=playwright.crm.config.ts`.
@@ -995,8 +1010,8 @@ action uses the existing CRM endpoint; reads never mark evidence reviewed.
 The prior intelligence page remains reachable at `/crm/insights?view=evidence`,
 preserving raw motion/evidence filters, source navigation, deal health, CRM search,
 and setup links. Review consolidation and guarded Playbook execution are connected
-without rewriting ordinary saved Flows/Agents. Further changes to existing
-Flow/Agent behavior still require the user's confirmation.
+without rewriting ordinary saved Flows/Agents. Ordinary saved Flow/Agent behavior remains independent of the explicit Playbook
+activation and exact-action approval contracts described above.
 
 The isolated browser suite covers the compatibility redirect, standalone and
 linked decisions, preserved filters/deep links, mixed failure/approval states,
@@ -1107,13 +1122,14 @@ external-evidence links are detached first. There is no replay or archive: the
 new corpus starts from evidence detected under the motion-aware contract, as a
 deliberate clean cutover.
 
-Run both Postgres migrations before deploying the API. The first migration is
-destructive by design for the legacy signal corpus and should be treated as the
-cutover boundary; it does not delete CRM contacts, companies, deals, source
+Apply the pending versioned Postgres migrations through the deployment migration
+runner before deploying the API. Specifically,
+`202608280003_crm_motion_aware_signal_spine.sql` removes the legacy signal corpus
+and should be treated as the historical cutover boundary; it does not delete CRM contacts, companies, deals, source
 events, suggestions, or external evidence.
 
 ClickHouse schema is versioned under `server/internal/chmigrate/sql`. Local
-event-stack startup runs the ClickHouse migration runner; stage and production
+event-stack startup runs the ClickHouse migration runner; other environments
 run the same migrations before event consumers are deployed. The backend needs
 `CLICKHOUSE_DSN` to evaluate behavioral rules. Without it, conversation and
 daily Postgres rules continue to work, while the behavioral cadence is skipped.
@@ -1170,6 +1186,10 @@ OPENAI_BASE_URL=
 ```
 
 ## Local verification
+
+The commands below are verification procedures. This documentation review
+inspected source and test fixtures; it did not run live event infrastructure,
+Temporal workflows, provider calls, or the listed backend/browser suites.
 
 Customer-work foundation tests run without an application database:
 
@@ -1259,6 +1279,6 @@ pipeline operations and migration commands.
 - [`crm-entity-summaries.md`](crm-entity-summaries.md) — downstream summary
   refresh and provenance.
 - [`crm-email-sync.md`](crm-email-sync.md) — normalized CRM email source.
-- [`CRM_MODULE.md`](CRM_MODULE.md) — broader CRM architecture.
+- [`crm-overview.md`](crm-overview.md) — broader CRM architecture.
 - [`crm-buyer-signals-assessment.md`](crm-buyer-signals-assessment.md) —
   historical assessment and design rationale; not current status.

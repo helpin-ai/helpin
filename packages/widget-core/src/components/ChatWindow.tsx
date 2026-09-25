@@ -73,7 +73,7 @@ interface ChatWindowProps {
     articleSlug?: string;
   };
   onImageClick?: (src: string, alt: string) => void;
-  onAnswerFeedback?: (messageId: string, helpful: boolean) => void;
+  onAnswerFeedback?: (messageId: string, helpful: boolean) => Promise<boolean>;
   queuedMessageCount?: number;
   csatSubmitted?: boolean;
   onCsatSubmit?: (rating: number, feedback?: string) => void;

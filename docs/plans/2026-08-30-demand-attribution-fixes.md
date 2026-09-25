@@ -1,6 +1,53 @@
 # Demand attribution fixes
 
-**Status:** ready to build
+> Historical plan, source-compared on 2026-09-17. For contributors evaluating
+> attribution work: search-event changes and widget company fallback exist, but
+> the original trust guarantee, email scope, and measured exit criteria are not
+> established as complete by this checkout.
+
+## Current implementation and remaining gaps
+
+All three event emitters now populate a normalized client-supplied anonymous ID:
+[public search](../../server/internal/handler/docs.go),
+[help-center answers](../../server/internal/handler/docs_helpcenter_answers.go),
+and [widget help search](../../server/internal/service/support_inbox_widget.go).
+They do not populate `WidgetSessionID` in these event calls. The
+[normalizer](../../server/internal/service/support_events.go) trims the token
+and rejects empty values or values over 128 bytes. This is browser attribution,
+not proof of identity. Answer recording includes cache hits; requests rejected
+before an answer response, such as budget-blocked requests, do not reach that call.
+No production measurement here establishes the proposed 95% coverage target.
+
+The [company resolver](../../server/internal/service/support_inbox.go) matches
+an existing company by email domain when widget identity has no usable declared
+company. It filters a fixed list of free/disposable providers and never creates
+a company through that fallback. The widget identify transaction records
+`company_match_method = email_domain`, while retaining the person's original
+`identity_method` and `identity_trust`. This differs from the proposed
+probabilistic `identity_trust` plus `identity_method = email_domain` representation.
+
+**The original context-only safety guarantee is not established.** The
+[identity model](../../server/internal/model/support_inbox.go) explicitly separates
+company provenance from person trust, but
+[behavioral identity resolution](../../server/internal/repository/crm_signal_rule.go)
+returns company ID with the person's trust without checking `CompanyMatchMethod`.
+The [rule evaluator](../../server/internal/service/crm_signal_rule_evaluator.go)
+uses verified evidence trust in activation eligibility. These paths do not prove
+that an inferred company is always barred from activation; the plan's “no new
+guard is needed” claim needs implementation review before being relied on.
+
+The widget fallback does not establish email-channel coverage. The inspected
+[inbound email creation path](../../server/internal/service/email_fallback.go)
+still attaches a matched/created contact without invoking the company-domain
+resolver. The [resolver tests](../../server/internal/service/support_inbox_email_domain_company_test.go)
+cover widget matching and exclusions, not before/after production attribution rates.
+
+## Original proposal and assessment
+
+The counts, line numbers, vendor prices, competitive claims, and traffic assumptions
+below are the August assessment, not current measurements or verified market facts.
+
+**Original status (2026-08-30):** ready to build
 **Date:** 2026-08-30
 
 Two defects that make support demand unattributable to accounts. Both are small.

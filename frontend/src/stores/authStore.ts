@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { User } from '@/lib/types';
-import { authService } from '@/lib/services/authService';
+import { authService, type AuthConfig } from '@/lib/services/authService';
 import { passkeyService } from '@/lib/services/passkeyService';
 import { stopTokenRefreshTimer } from '@/lib/api';
 import { queryClient } from '@/lib/queryClient';
@@ -9,6 +9,7 @@ import { resetHelpinIdentity } from '@/lib/helpin';
 import { clearSession, hydrateSessionStorage, writeSession } from '@helpin-ai/support-core';
 
 interface AuthState {
+  configuration: AuthConfig | null;
   user: User | null;
   loading: boolean;
   serverUnreachable: boolean;
@@ -20,12 +21,34 @@ interface AuthState {
     options?: { useAutofill?: boolean },
   ) => Promise<{ error: string | null; requires2FA?: boolean; twoFAToken?: string; cancelled?: boolean }>;
   verify2FASignIn: (twoFaToken: string, code: string, useRecoveryCode: boolean, rememberMe?: boolean) => Promise<{ error: string | null }>;
-  signUp: (email: string, password: string, fullName: string) => Promise<{ error: string | null }>;
+  signUp: (email: string, password: string, fullName: string) => Promise<{ error: string | null; verificationRequired?: boolean; email?: string }>;
+  signInDemo: (email?: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   updateUser: (data: { full_name?: string; avatar_style?: string; avatar_seed?: string; avatar_background_mode?: string; avatar_background_color?: string }) => Promise<void>;
 }
 
 let _initializing = false;
+let _configurationRequest: Promise<AuthConfig | null> | null = null;
+
+/**
+ * Returns the public auth configuration, fetching it once if it has not loaded.
+ * Route guards await this so they never decide on a missing configuration.
+ * A failed request resolves to null (conservative defaults) and may be retried.
+ */
+export function ensureAuthConfiguration(): Promise<AuthConfig | null> {
+  const loaded = useAuthStore.getState().configuration;
+  if (loaded) return Promise.resolve(loaded);
+  if (!_configurationRequest) {
+    _configurationRequest = authService.config()
+      .then(({ data }) => {
+        if (data) useAuthStore.setState({ configuration: data });
+        return data ?? null;
+      })
+      .catch(() => null)
+      .finally(() => { _configurationRequest = null; });
+  }
+  return _configurationRequest;
+}
 
 export async function clearClientSession() {
   resetAnalytics();
@@ -55,6 +78,7 @@ export async function persistAuthSession(user: User, accessToken: string, refres
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
+  configuration: null,
   loading: true,
   serverUnreachable: false,
 
@@ -62,6 +86,9 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (_initializing) return;
     _initializing = true;
     try {
+      // Public capabilities are also needed on the login page. A failed config
+      // request must not turn off verification or invalidate an existing session.
+      await ensureAuthConfiguration();
       await hydrateSessionStorage();
       const { data, error, isNetworkError } = await authService.me();
       if (data && !error) {
@@ -123,7 +150,27 @@ export const useAuthStore = create<AuthState>((set) => ({
   signUp: async (email: string, password: string, fullName: string) => {
     const { data, error } = await authService.signup(email, password, fullName);
     if (error || !data) return { error: error || 'Sign up failed' };
+    if ('verification_required' in data) {
+      // Domain-restricted signup: no session until the email is confirmed.
+      return { error: null, verificationRequired: true, email: data.email };
+    }
     await persistAuthSession(data.user, data.access_token, data.refresh_token, false);
+    const configuration = useAuthStore.getState().configuration;
+    if (configuration?.signup_first_user) {
+      // The first account has been claimed; later visitors follow the policy.
+      set({ configuration: { ...configuration, signup_first_user: false } });
+    }
+    return { error: null };
+  },
+
+  signInDemo: async (email?: string) => {
+    const { data, error } = await authService.demoSignin(email);
+    if (error || !data) return { error: error || 'Demo sign in failed' };
+    if (!data.user) {
+      return { error: 'Demo sign in failed' };
+    }
+
+    await persistAuthSession(data.user, data.access_token ?? '', data.refresh_token ?? '', false);
     return { error: null };
   },
 

@@ -1,3 +1,10 @@
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { SettingsSection } from './SettingsSection';
+import { Select as AISelect, SelectTrigger as AISelectTrigger, SelectValue as AISelectValue, SelectContent as AISelectContent, SelectItem as AISelectItem } from '@/components/design-system/quiet-dropdown-select';
+import { SupportAIPreview } from "./SupportAIPreview";
+import { WidgetOriginSettings } from './chat-widget/WidgetOriginSettings';
+import { brandingDescription } from '@edition';
+import { AIReplyChannelsSelect, getAIReplyChannels, type AIReplyChannels } from './chat-widget/AIReplyChannelsSelect';
 import { AIFollowUpSettings } from './chat-widget/AIFollowUpSettings';
 import { useEffect, useRef, useState } from 'react';
 import { useSettingsAutosave } from '@/hooks/useSettingsAutosave';
@@ -12,17 +19,17 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { formatReplyTimeCopy, SPECIAL_NOTICE_MAX_LENGTH } from '@helpin-ai/shared';
 import { toast } from 'sonner';
-import { Copy01Icon, CodeIcon, Message01Icon, HelpCircleIcon, Image01Icon, Key01Icon, BotIcon, ArrowDown01Icon, StarIcon, Alert01Icon } from '@/lib/icons';
-import { useChatSettings, useUpdateChatSettings, useRegenerateWidgetKey, useDocsSpaces, useWorkspaceBilling } from '@/hooks/queries';
+import { Copy01Icon, CodeIcon, Message01Icon, HelpCircleIcon, Image01Icon, Key01Icon, BotIcon, ArrowDown01Icon, StarIcon } from '@/lib/icons';
+import { useChatSettings, useUpdateChatSettings, useRegenerateWidgetKey, useDocsSpaces } from '@/hooks/queries';
+import { useWorkspaceBilling } from '@edition';
 import { useSupportAgents, useSupportMailboxes } from '@/hooks/queries/useSupport';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { WidgetPreview } from './WidgetPreview';
 import { CodeBlock } from '@/components/ui/code-block';
 import { BrandColorPicker } from '@/components/pm/ColorPicker';
+import { useAuthStore } from '@/stores/authStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { cn } from '@/lib/utils';
 import type { BusinessHoursDay } from '@/lib/pmTypes';
@@ -36,7 +43,6 @@ import {
   sortHelpSpaceIds,
   type ChatSettingsDraft,
 } from './chat-widget/utils';
-import { CHAT_WIDGET_ROUTING_ASSIGNMENT_DESCRIPTION } from './chat-widget/handoffSummary';
 import { DelayedTeamReplySettings } from './chat-widget/DelayedTeamReplySettings';
 import { DEFAULT_DELAYED_TEAM_REPLY_MINUTES, DEFAULT_DELAYED_TEAM_REPLY_MESSAGE, DEFAULT_DELAYED_TEAM_REPLY_MESSAGE_NO_EMAIL } from './chat-widget/delayedTeamReply';
 import { CHAT_WIDGET_ESCALATION_TABS } from './chat-widget/escalationTabs';
@@ -55,16 +61,23 @@ import { CuratedGuidanceField } from './CuratedGuidanceField';
 /* ── Main component ──────────────────────────────────────────────────── */
 
 type ChatGeneralTabMode = 'chat-widget' | 'ai-assistant';
-const HELPIN_WIDGET_HOST = 'https://client.helpin.ai';
 
-export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspaceId: string; mode?: ChatGeneralTabMode }) {
-  return <ChatGeneralSettings key={`${workspaceId}:${mode}`} workspaceId={workspaceId} mode={mode} />;
+
+export function ChatGeneralTab({ workspaceId, mode = 'chat-widget', canManageSigningSecret = false }: {
+  workspaceId: string;
+  mode?: ChatGeneralTabMode;
+  canManageSigningSecret?: boolean;
+}) {
+  return <ChatGeneralSettings key={`${workspaceId}:${mode}`} workspaceId={workspaceId} mode={mode} canManageSigningSecret={canManageSigningSecret} />;
 }
 
-function ChatGeneralSettings({ workspaceId, mode }: { workspaceId: string; mode: ChatGeneralTabMode }) {
+function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { workspaceId: string; mode: ChatGeneralTabMode; canManageSigningSecret: boolean }) {
+  const publicConfig = useAuthStore((s) => s.configuration);
+  const widgetHost = publicConfig?.public_widget_url || window.location.origin;
+  const sdkURL = publicConfig?.public_sdk_url || `${widgetHost}/sdk/lib.js`;
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const isAIAssistantPage = mode === 'ai-assistant';
-  const { data, isLoading } = useChatSettings(workspaceId);
+  const { data, isLoading, refetch: refetchSettings } = useChatSettings(workspaceId);
   const { data: docsSpaces = [], isLoading: docsSpacesLoading } = useDocsSpaces(workspaceId);
   const { data: billing, isLoading: billingLoading } = useWorkspaceBilling(workspaceId);
   const updateMutation = useUpdateChatSettings(workspaceId);
@@ -93,11 +106,13 @@ function ChatGeneralSettings({ workspaceId, mode }: { workspaceId: string; mode:
   const [widgetAvatarUrl, setWidgetAvatarUrl] = useState('');
   const [widgetHelpSpaceIds, setWidgetHelpSpaceIds] = useState<string[]>([]);
 
+
   // AI & Routing state
   const [aiEnabled, setAiEnabled] = useState(false);
   const [aiEnableAttempted, setAiEnableAttempted] = useState(false);
   const [aiAgentId, setAiAgentId] = useState(NO_AGENT_VALUE);
   const [confidenceThreshold, setConfidenceThreshold] = useState('0.7');
+  const [aiReplyChannels, setAiReplyChannels] = useState<AIReplyChannels>('chat');
   const [aiResponseMode, setAiResponseMode] = useState(DEFAULT_CHAT_WIDGET_AI_RESPONSE_MODE);
   const [aiFollowUpEnabled, setAiFollowUpEnabled] = useState(true);
   const [aiFollowUpDelay, setAiFollowUpDelay] = useState(24);
@@ -134,7 +149,7 @@ function ChatGeneralSettings({ workspaceId, mode }: { workspaceId: string; mode:
 
   // Accordion state
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    () => new Set(isAIAssistantPage ? ['ai-auto-reply'] : ['widget-settings']),
+    () => new Set(['widget-settings']),
   );
 
   const logoInputRef = useRef<HTMLInputElement>(null);
@@ -175,6 +190,7 @@ function ChatGeneralSettings({ workspaceId, mode }: { workspaceId: string; mode:
       setAiAgentId(s.ai_agent_id ?? NO_AGENT_VALUE);
       setConfidenceThreshold(String(s.ai_confidence_threshold));
       setAiResponseMode(getChatWidgetAIResponseModeForUI(s.ai_response_mode));
+      setAiReplyChannels(getAIReplyChannels(s.ai_reply_channels));
       setAiFollowUpEnabled(s.ai_follow_up_enabled ?? true);
       setAiFollowUpDelay(s.ai_follow_up_delay_hours ?? 24);
       setAiFollowUpClose(s.ai_follow_up_close_hours ?? 1);
@@ -231,6 +247,7 @@ function ChatGeneralSettings({ workspaceId, mode }: { workspaceId: string; mode:
     ai_agent_id: aiAgentId === NO_AGENT_VALUE ? '' : aiAgentId,
     ai_confidence_threshold: parseFloat(confidenceThreshold),
     ai_response_mode: aiResponseMode,
+    ai_reply_channels: aiReplyChannels,
     ai_max_followups: aiMaxFollowups,
     ai_follow_up_enabled: aiFollowUpEnabled,
     ai_follow_up_delay_hours: aiFollowUpDelay,
@@ -311,22 +328,10 @@ function ChatGeneralSettings({ workspaceId, mode }: { workspaceId: string; mode:
       if (aiAssistantEnableBlocker) {
         setAiEnableAttempted(true);
         setAiEnabled(false);
-        setExpandedSections(prev => {
-          if (prev.has('ai-auto-reply')) return prev;
-          const next = new Set(prev);
-          next.add('ai-auto-reply');
-          return next;
-        });
         return;
       }
       setAiEnableAttempted(false);
       setAiEnabled(true);
-      setExpandedSections(prev => {
-        if (prev.has('ai-auto-reply')) return prev;
-        const next = new Set(prev);
-        next.add('ai-auto-reply');
-        return next;
-      });
       return;
     }
     setAiEnableAttempted(false);
@@ -402,6 +407,10 @@ function ChatGeneralSettings({ workspaceId, mode }: { workspaceId: string; mode:
     );
   }
 
+  if (!data) {
+    return <div role="alert" className="space-y-3 text-sm"><p>Could not load support settings.</p><Button variant="outline" onClick={() => void refetchSettings()}>Retry</Button></div>;
+  }
+
   const widgetKey = data?.widget_key ?? '';
   const htmlSnippet = `<!-- Step 1: Install the pixel — add before closing </body> tag -->
 
@@ -415,8 +424,9 @@ function ChatGeneralSettings({ workspaceId, mode }: { workspaceId: string; mode:
     t.defer = true;
     t.id = 'helpin-widget';
     t.setAttribute('data-widget-key', '${widgetKey}');
-    t.setAttribute('data-host', '${HELPIN_WIDGET_HOST}');
-    t.src = 'https://cdn.helpin.ai/lib.js';
+    t.setAttribute('data-host', '${widgetHost}');
+    t.setAttribute('data-support-only', 'true');
+    t.src = '${sdkURL}';
     s.parentNode.insertBefore(t, s);
   })();
 </script>
@@ -458,9 +468,9 @@ import { createClient, HelpinProvider } from '@helpin-ai/react';
 
 const client = createClient({
   widgetKey: '${widgetKey}',
-  host: '${HELPIN_WIDGET_HOST}',
-  // The React package loads the live widget runtime from Helpin's CDN.
-  // widgetRuntimeUrl: 'https://cdn.helpin.ai/lib.js',
+  host: '${widgetHost}',
+  widgetRuntimeUrl: '${sdkURL}',
+  supportOnly: true,
 });
 
 function App() {
@@ -516,7 +526,9 @@ import App from './App.vue';
 
 const client = createClient({
   widgetKey: '${widgetKey}',
-  host: '${HELPIN_WIDGET_HOST}',
+  host: '${widgetHost}',
+  widgetRuntimeUrl: '${sdkURL}',
+  supportOnly: true,
 });
 
 createApp(App)
@@ -552,7 +564,9 @@ import { createClient, HelpinProvider } from '@helpin-ai/nextjs';
 export function Providers({ children }) {
   const client = useMemo(() => createClient({
     widgetKey: '${widgetKey}',
-    host: '${HELPIN_WIDGET_HOST}',
+    host: '${widgetHost}',
+  widgetRuntimeUrl: '${sdkURL}',
+  supportOnly: true,
   }), []);
 
   return <HelpinProvider client={client}>{children}</HelpinProvider>;
@@ -595,7 +609,8 @@ function Dashboard() {
   const installPrompt = buildWidgetInstallPrompt({
     framework: snippetTab,
     widgetKey,
-    host: HELPIN_WIDGET_HOST,
+    host: widgetHost,
+    runtimeURL: sdkURL,
   });
 
   // Derive help spaces for the widget preview
@@ -603,7 +618,7 @@ function Dashboard() {
     .filter(space => widgetHelpSpaceIds.includes(space.id))
     .map(space => ({ id: space.id, name: space.name, slug: space.slug }));
 
-  const previewHost = (import.meta.env.VITE_API_URL || 'http://localhost:8080/api').replace(/\/api\/?$/, '');
+  const previewHost = widgetHost;
   const previewAvailability = buildPreviewAvailability({
     businessHoursEnabled,
     timezone,
@@ -680,11 +695,6 @@ function Dashboard() {
     ? `/w/${workspace.slug}/settings/support-ai-assistant`
     : null;
   const supportSectionClass = 'overflow-hidden rounded-lg border border-border/70 bg-card transition-colors';
-  const aiAssistantSectionTitle = isAIAssistantPage ? 'Configuration' : 'AI Assistant';
-  const aiAssistantSectionDescription = isAIAssistantPage
-    ? 'Choose when AI replies, leaves notes, or hands off.'
-    : 'Configure how AI helps with new visitor messages';
-
   // Fallback copy shown in the textarea placeholders — reused so the preview
   // reflects what customers will actually see when a field is left blank.
   const ESCALATION_DEFAULT_PLACEHOLDER = 'Let me connect you with a team member who can help further.';
@@ -709,155 +719,84 @@ function Dashboard() {
   const businessHoursSettingsHref = workspace?.slug ? `/w/${workspace.slug}/settings/chat-general` : null;
 
   const aiAssistantSection = (
-    <div className={supportSectionClass}>
-      <div className="flex items-center">
-        <button
-          type="button"
-          onClick={() => toggleSection('ai-auto-reply')}
-          className="flex min-w-0 flex-1 items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
-        >
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-            <BotIcon className="h-4 w-4" />
+    <>
+      <Card className="gap-5 rounded-lg border-border/70">
+        <CardHeader className="flex flex-row items-start justify-between gap-4">
+          <div className="space-y-1">
+            <CardTitle role="heading" aria-level={2} className="text-sm font-semibold text-quiet-text-primary">AI responses</CardTitle>
+            <p id="ai-enabled-help" className="text-sm text-quiet-text-secondary">Use your support agent to handle incoming customer messages.</p>
           </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium">{aiAssistantSectionTitle}</p>
-            <p className="text-sm text-muted-foreground">{aiAssistantSectionDescription}</p>
+          <div className="flex shrink-0 items-center gap-2">
+            <Label htmlFor="ai-assistant-enabled" className="text-sm">{aiEnabled && !aiAssistantEnableBlocker ? 'On' : 'Off'}</Label>
+            <Switch id="ai-assistant-enabled" aria-label="Enable AI assistant" aria-describedby="ai-enabled-help" checked={aiEnabled && !aiAssistantEnableBlocker} onCheckedChange={handleAIEnabledChange} />
           </div>
-        </button>
-        <label className="flex shrink-0 items-center gap-2 px-4 text-sm font-medium">
-          Enable
-          <Switch checked={aiEnabled && !aiAssistantEnableBlocker} onCheckedChange={handleAIEnabledChange} />
-        </label>
-        <button
-          type="button"
-          onClick={() => toggleSection('ai-auto-reply')}
-          aria-label="AI Assistant section"
-          className="flex self-stretch items-center px-4 text-muted-foreground transition-colors hover:bg-muted/40"
-        >
-          <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 transition-transform duration-200', isExpanded('ai-auto-reply') && 'rotate-180')} />
-        </button>
-      </div>
-      <div className="accordion-animate" data-open={isExpanded('ai-auto-reply')}>
-        <div>
-          <div className="border-t border-border px-6 py-6 space-y-4">
-          {showAIAssistantEnableBlocker && aiAssistantEnableBlocker ? (
-            <Alert className="rounded-lg border-amber-200 bg-amber-50/80 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100">
-              <Alert01Icon className="h-4 w-4 text-amber-600 dark:text-amber-300" />
-              <AlertDescription className="text-xs text-amber-800 dark:text-amber-100/90">
-                {aiAssistantEnableBlocker}
-              </AlertDescription>
-            </Alert>
-          ) : null}
-          <div className="space-y-4">
-            <div className="grid gap-x-3 gap-y-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,0.9fr)]">
-              <div className="min-w-0 space-y-1.5">
-                <Label className="text-sm">Support agent</Label>
-                <Select value={aiAgentId} onValueChange={handleAIAgentChange}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a support agent..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NO_AGENT_VALUE}>No support agent selected</SelectItem>
-                    {supportAgents.map((agent) => (
-                      <SelectItem key={agent.id} value={agent.id}>{agent.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-
-              <div className="space-y-1.5">
-                <ConfigurationLabel label={"When a message comes in"} help="Choose whether AI leaves a private note or replies publicly with the selected support agent." />
-                <Select value={aiResponseMode} onValueChange={setAiResponseMode}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CHAT_WIDGET_AI_RESPONSE_MODES.map((mode) => (
-                      <SelectItem key={mode.value} value={mode.value}>{mode.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-1.5">
-                  <Label className="text-sm">Confidence</Label>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-border text-[10px] font-medium text-muted-foreground hover:text-foreground"
-                        aria-label="About confidence"
-                      >
-                        ?
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-[240px] text-xs leading-relaxed">
-                      AI only answers when its confidence is at or above this value. Higher confidence means fewer AI answers and more human handoffs.
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-                <Select value={confidenceThreshold} onValueChange={setConfidenceThreshold}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0].map(v => (
-                      <SelectItem key={v} value={String(v)}>{(v * 100).toFixed(0)}%</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-1.5">
-                  <Label className="text-sm">Handoff after</Label>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-border text-[10px] font-medium text-muted-foreground hover:text-foreground"
-                        aria-label="About handoff after"
-                      >
-                        ?
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-[260px] text-xs leading-relaxed">
-                      Counts AI follow-up replies on the same problem in a conversation. If the visitor brings up a new problem, the count starts over.
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-                <Select value={String(aiMaxFollowups)} onValueChange={(v) => setAiMaxFollowups(Number(v))}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(v => (
-                      <SelectItem key={v} value={String(v)}>{formatAIHandoffFollowupOption(v)}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {showAIAssistantEnableBlocker && aiAssistantEnableBlocker && (
+            <p role="alert" className="text-sm text-destructive">{aiAssistantEnableBlocker}</p>
+          )}
+          <div className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
+            <div className="min-w-0 space-y-2">
+              <Label htmlFor="ai-support-agent">Support agent</Label>
+              <AISelect value={aiAgentId} onValueChange={handleAIAgentChange}>
+                <AISelectTrigger id="ai-support-agent" aria-label="Support agent" variant="underline" className="w-full"><AISelectValue placeholder="Select a support agent…" /></AISelectTrigger>
+                <AISelectContent>
+                  <AISelectItem value={NO_AGENT_VALUE}>No support agent selected</AISelectItem>
+                  {supportAgents.map((agent) => <AISelectItem key={agent.id} value={agent.id}>{agent.name}</AISelectItem>)}
+                </AISelectContent>
+              </AISelect>
+              {supportAgents.length === 0 && <p className="text-xs text-quiet-text-secondary">Create a support agent before enabling AI responses.</p>}
+            </div>
+            <div className="min-w-0 space-y-2">
+              <Label htmlFor="ai-response-mode">Response mode</Label>
+              <AISelect value={aiResponseMode} onValueChange={setAiResponseMode}>
+                <AISelectTrigger id="ai-response-mode" aria-label="Response mode" aria-describedby="ai-response-mode-help" variant="underline" className="w-full"><AISelectValue /></AISelectTrigger>
+                <AISelectContent>{CHAT_WIDGET_AI_RESPONSE_MODES.map((mode) => <AISelectItem key={mode.value} value={mode.value}>{mode.label}</AISelectItem>)}</AISelectContent>
+              </AISelect>
+              <p id="ai-response-mode-help" className="text-xs text-quiet-text-secondary">{aiResponseMode === 'ai_first' ? 'Replies are sent directly to the customer.' : 'Suggestions stay private for your team to review.'}</p>
+            </div>
+            <div className="min-w-0 space-y-2">
+              <Label htmlFor="ai-reply-channels">Channels</Label>
+              <AIReplyChannelsSelect value={aiReplyChannels} onChange={setAiReplyChannels} />
+            </div>
+            <div className="min-w-0 space-y-2">
+              <Label htmlFor="ai-confidence">Minimum confidence</Label>
+              <AISelect value={confidenceThreshold} onValueChange={setConfidenceThreshold}>
+                <AISelectTrigger id="ai-confidence" aria-label="Minimum confidence" aria-describedby="ai-confidence-help" variant="underline" className="w-full"><AISelectValue /></AISelectTrigger>
+                <AISelectContent>{[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0].map(v => <AISelectItem key={v} value={String(v)}>{(v * 100).toFixed(0)}%</AISelectItem>)}</AISelectContent>
+              </AISelect>
+              <p id="ai-confidence-help" className="text-xs text-quiet-text-secondary">Higher confidence means fewer AI answers and more human handoffs.</p>
             </div>
           </div>
+        </CardContent>
+      </Card>
 
-          <div className="flex items-center justify-between border-t border-border pt-4">
-            <div>
-              <ConfigurationLabel label={'Show "Talk to Human" button'} help="Let visitors request help from a team member at any time." />
+      <SettingsSection title="Human handoff" description="Reply limits, customer messages, and team routing.">
+        <div className="space-y-5 pt-4">
+          <div className="grid gap-6 sm:grid-cols-2">
+            <div className="min-w-0 space-y-2">
+              <Label htmlFor="ai-handoff-limit">Hand off after</Label>
+              <AISelect value={String(aiMaxFollowups)} onValueChange={(value) => setAiMaxFollowups(Number(value))}>
+                <AISelectTrigger id="ai-handoff-limit" aria-label="Hand off after" aria-describedby="ai-handoff-help" variant="underline" className="w-full"><AISelectValue /></AISelectTrigger>
+                <AISelectContent>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(value => <AISelectItem key={value} value={String(value)}>{formatAIHandoffFollowupOption(value)}</AISelectItem>)}</AISelectContent>
+              </AISelect>
+              <p id="ai-handoff-help" className="text-xs text-quiet-text-secondary">Counts AI follow-up replies about the same issue. A new issue starts the count again.</p>
             </div>
-            <Switch checked={showTalkToHuman} onCheckedChange={setShowTalkToHuman} />
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="ai-talk-to-human">Show “Talk to Human”</Label>
+                <p className="text-xs text-quiet-text-secondary">Let customers request a teammate from the chat widget.</p>
+              </div>
+              <Switch id="ai-talk-to-human" checked={showTalkToHuman} onCheckedChange={setShowTalkToHuman} />
+            </div>
           </div>
-
-          <div className="space-y-3 border-t border-border pt-4">
-            <div>
-              <ConfigurationLabel label={"Escalation messages"} help="Messages shown during a handoff and while waiting for a teammate to reply." />
-            </div>
+          <div className="min-w-0 space-y-3 border-t border-quiet-divider pt-5">
+            <h3 className="text-sm font-semibold text-quiet-text-primary">Customer handoff messages</h3>
             <Tabs defaultValue="default" className="gap-2">
-              <div className="overflow-hidden rounded-md border bg-background focus-within:ring-2 focus-within:ring-ring/30">
-                <TabsList className="h-auto min-h-9 w-full flex-wrap justify-start gap-0 rounded-none border-b bg-muted/40 p-1">
+              <div className="min-w-0">
+                <TabsList variant="quiet" aria-label="Handoff message type" className="w-full flex-wrap gap-x-5 gap-y-0">
                   {CHAT_WIDGET_ESCALATION_TABS.map((tab) => (
-                    <TabsTrigger key={tab.value} value={tab.value} className="h-7 flex-none rounded px-3 text-xs">
+                    <TabsTrigger key={tab.value} value={tab.value} className="flex-none">
                       {tab.label}
                     </TabsTrigger>
                   ))}
@@ -880,9 +819,9 @@ function Dashboard() {
                     onChange={(e) => setEscalationMessage(e.target.value)}
                     placeholder="Let me connect you with a team member who can help further."
                     rows={3}
-                    className="rounded-none border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                    className="rounded-none border-0 border-b border-quiet-field bg-transparent px-0 shadow-none focus-visible:border-quiet-text-primary focus-visible:ring-0 focus-visible:ring-offset-0"
                   />
-                  {/\{(?:reply_time|next_open)\}/.test(escalationMessage || ESCALATION_DEFAULT_PLACEHOLDER) && (<p className="border-t border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                  {/\{(?:reply_time|next_open)\}/.test(escalationMessage || ESCALATION_DEFAULT_PLACEHOLDER) && (<p className="py-2 text-xs text-muted-foreground">
                     Preview: <span className="italic">&ldquo;{escalationPreviewDefault}&rdquo;</span>
                   </p>)}
                 </TabsContent>
@@ -894,9 +833,9 @@ function Dashboard() {
                     onChange={(e) => setEscalationMessageBusy(e.target.value)}
                     placeholder="I've notified the team. Everyone's helping other customers right now - expect a reply within {reply_time}."
                     rows={3}
-                    className="rounded-none border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                    className="rounded-none border-0 border-b border-quiet-field bg-transparent px-0 shadow-none focus-visible:border-quiet-text-primary focus-visible:ring-0 focus-visible:ring-offset-0"
                   />
-                  {/\{(?:reply_time|next_open)\}/.test(escalationMessageBusy || ESCALATION_BUSY_PLACEHOLDER) && (<p className="border-t border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                  {/\{(?:reply_time|next_open)\}/.test(escalationMessageBusy || ESCALATION_BUSY_PLACEHOLDER) && (<p className="py-2 text-xs text-muted-foreground">
                     Preview: <span className="italic">&ldquo;{escalationPreviewBusy}&rdquo;</span>
                   </p>)}
                 </TabsContent>
@@ -908,10 +847,10 @@ function Dashboard() {
                     onChange={(e) => setEscalationMessageAfterHours(e.target.value)}
                     placeholder="I've passed this on to the team. We're away right now and back {next_open}."
                     rows={3}
-                    className="rounded-none border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                    className="rounded-none border-0 border-b border-quiet-field bg-transparent px-0 shadow-none focus-visible:border-quiet-text-primary focus-visible:ring-0 focus-visible:ring-offset-0"
                   />
-                  {/\{(?:reply_time|next_open)\}/.test(escalationMessageAfterHours || ESCALATION_AFTER_HOURS_PLACEHOLDER) && (<p className="border-t border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-                    Preview: <span className="italic">&ldquo;{escalationPreviewAfterHours}&rdquo;</span> <span className="text-muted-foreground/70">(example — actual time depends on your business hours schedule)</span>
+                  {/\{(?:reply_time|next_open)\}/.test(escalationMessageAfterHours || ESCALATION_AFTER_HOURS_PLACEHOLDER) && (<p className="py-2 text-xs text-muted-foreground">
+                    Preview: <span className="italic">&ldquo;{escalationPreviewAfterHours}&rdquo;</span> <span className="text-muted-foreground">(example — actual time depends on your business hours schedule)</span>
                   </p>)}
                   {!businessHoursEnabled && (
                     <p className="px-3 pb-2 text-xs text-muted-foreground">
@@ -932,29 +871,21 @@ function Dashboard() {
                 Use <code>{'{reply_time}'}</code> for busy messages and <code>{'{next_open}'}</code> for after-hours messages.
               </p>
             </Tabs>
+
           </div>
-
-          <AIFollowUpSettings enabled={aiFollowUpEnabled} delayHours={aiFollowUpDelay} closeHours={aiFollowUpClose} secondDelayHours={aiFollowUpSecondDelay} onEnabledChange={setAiFollowUpEnabled} onDelayChange={setAiFollowUpDelay} onCloseChange={setAiFollowUpClose} onSecondDelayChange={setAiFollowUpSecondDelay} />
-
-          <div className="border-t border-border pt-4 space-y-3">
-            <div>
-              <ConfigurationLabel label="Routing &amp; Assignment" help={CHAT_WIDGET_ROUTING_ASSIGNMENT_DESCRIPTION} />
-            </div>
-            <div className="flex flex-col gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
-              <p className="min-w-0 text-sm text-foreground">{handoffSummaryElement}</p>
+          <div className="space-y-3 border-t border-quiet-divider pt-5">
+            <h3 className="text-sm font-semibold text-quiet-text-primary">Team routing</h3>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="min-w-0 text-sm text-quiet-text-secondary">{handoffSummaryElement}</p>
               {routingAssignmentHref ? (
-                <Button asChild variant="outline" size="sm" className="shrink-0">
-                  <a href={routingAssignmentHref}>Configure routing & assignment</a>
-                </Button>
-              ) : (
-                <p className="shrink-0 text-xs text-muted-foreground">Open a workspace to configure routing & assignment.</p>
-              )}
+                <Button asChild variant="ghost" size="sm" className="shrink-0 self-start"><a href={routingAssignmentHref}>Configure routing &amp; assignment</a></Button>
+              ) : <p className="text-xs text-quiet-text-secondary">Open a workspace to configure routing &amp; assignment.</p>}
             </div>
-          </div>
           </div>
         </div>
-      </div>
-    </div>
+      </SettingsSection>
+      <AIFollowUpSettings enabled={aiFollowUpEnabled} delayHours={aiFollowUpDelay} closeHours={aiFollowUpClose} secondDelayHours={aiFollowUpSecondDelay} onEnabledChange={setAiFollowUpEnabled} onDelayChange={setAiFollowUpDelay} onCloseChange={setAiFollowUpClose} onSecondDelayChange={setAiFollowUpSecondDelay} />
+    </>
   );
 
   const chatWidgetAIAssistantCard = (
@@ -988,6 +919,7 @@ function Dashboard() {
       <div className="space-y-4">
         {saveIndicator}
         {aiAssistantSection}
+        {data?.settings.ai_agent_id && <SupportAIPreview key={`${workspaceId}:${data.settings.ai_agent_id}`} workspaceId={workspaceId} agentId={data.settings.ai_agent_id} />}
         <CuratedGuidanceField
           key={aiAgentId}
           workspaceId={workspaceId}
@@ -1004,6 +936,7 @@ function Dashboard() {
       <div className="flex flex-1 flex-col overflow-auto">
         <div className="flex-1 space-y-3 p-4">
         {saveIndicator}
+        {data && <WidgetOriginSettings key={workspaceId} workspaceId={workspaceId} installation={data} canManageSigningSecret={canManageSigningSecret} />}
         {/* Customer Portal */}
         <section className="border-y border-border/70 px-2 py-5" aria-labelledby="customer-portal-settings-heading">
           <div className="mb-5">
@@ -1071,7 +1004,7 @@ function Dashboard() {
               <CodeIcon className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">Widget Installation</p>
+              <p className="text-sm font-medium">2. Install the widget</p>
               <p className="text-sm text-muted-foreground">Embed the chat widget on your website</p>
             </div>
             <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('widget-installation') && 'rotate-180')} />
@@ -1482,11 +1415,7 @@ function Dashboard() {
                 <div>
                   <Label className="text-sm font-medium">Show "Powered by Helpin"</Label>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    {canRemoveBranding
-                      ? 'Display branding in the widget footer.'
-                      : billing?.plan === 'founder'
-                        ? 'Workspaces on the Founder plan keep Helpin branding visible.'
-                        : 'Upgrade to the Growth plan to hide Helpin branding.'}
+                    {brandingDescription(billing)}
                   </p>
                 </div>
                 <Switch
@@ -1751,7 +1680,7 @@ function Dashboard() {
                 <div className="flex items-center justify-between">
                   <div>
                     <Label className="text-sm">File uploads</Label>
-                    <p className="text-xs text-muted-foreground">Allow visitors to upload images, documents, and other files (max 10 MB).</p>
+                    <p className="text-xs text-muted-foreground">Allow visitors to upload images, documents, and other files (max 100 MB per file).</p>
                   </div>
                   <Switch checked={fileUploadsEnabled} onCheckedChange={setFileUploadsEnabled} />
                 </div>
@@ -1824,21 +1753,5 @@ function Dashboard() {
 
       </div>
     </PreviewLayout>
-  );
-}
-
-function ConfigurationLabel({ label, help }: { label: string; help: string }) {
-  return (
-    <div className="flex items-center gap-1.5">
-      <Label className="text-sm">{label}</Label>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button type="button" aria-label={`About ${label}`} className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-border text-[10px] font-medium text-muted-foreground hover:text-foreground">
-            ?
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-[280px] text-xs leading-relaxed">{help}</TooltipContent>
-      </Tooltip>
-    </div>
   );
 }

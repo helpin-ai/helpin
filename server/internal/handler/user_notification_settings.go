@@ -22,7 +22,7 @@ func NewUserNotificationSettingsHandler(svc *service.UserNotificationSettingsSer
 func (h *UserNotificationSettingsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 
-	settings, err := h.service.Get(r.Context(), userID)
+	settings, err := h.service.Get(r.Context(), userID, r.URL.Query().Get("timezone"))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to get notification settings")
 		return

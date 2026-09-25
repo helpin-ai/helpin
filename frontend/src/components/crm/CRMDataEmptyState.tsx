@@ -9,6 +9,7 @@ import {
   UserCheck01Icon,
   UserGroupIcon,
 } from '@/lib/icons';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
 type CRMDataEmptyKind = 'contacts' | 'companies';
@@ -16,7 +17,6 @@ type CRMDataEmptyKind = 'contacts' | 'companies';
 interface CRMDataEmptyStateProps {
   kind: CRMDataEmptyKind;
   onCreateClick: () => void;
-  onImportClick: () => void;
 }
 
 interface CRMNoResultsStateProps {
@@ -123,7 +123,7 @@ const EMPTY_COPY: Record<CRMDataEmptyKind, {
   },
 };
 
-export function CRMDataEmptyState({ kind, onCreateClick, onImportClick }: CRMDataEmptyStateProps) {
+export function CRMDataEmptyState({ kind, onCreateClick }: CRMDataEmptyStateProps) {
   const copy = EMPTY_COPY[kind];
   const Icon = copy.icon;
 
@@ -142,9 +142,11 @@ export function CRMDataEmptyState({ kind, onCreateClick, onImportClick }: CRMDat
                 <PlusSignIcon className="h-4 w-4" />
                 {copy.createLabel}
               </Button>
-              <Button size="sm" variant="outline" onClick={onImportClick}>
+              {/* CSV import has no screen yet; keep the entry point visible but inactive. */}
+              <Button size="sm" variant="outline" disabled aria-describedby={`crm-import-${kind}-soon`}>
                 <Upload01Icon className="h-4 w-4" />
                 {copy.importLabel}
+                <Badge id={`crm-import-${kind}-soon`} variant="secondary">Coming soon</Badge>
               </Button>
             </div>
           </div>

@@ -206,8 +206,12 @@ func (r *CRMContactRepository) ListByEmails(ctx context.Context, workspaceID str
 // Update updates a contact.
 func (r *CRMContactRepository) Update(ctx context.Context, contact *model.CRMContact) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Save(contact).Error; err != nil {
-			return fmt.Errorf("update contact: %w", err)
+		result := tx.Model(&model.CRMContact{}).Where("workspace_id = ? AND id = ?", contact.WorkspaceID, contact.ID).Select("*").Updates(contact)
+		if result.Error != nil {
+			return fmt.Errorf("update contact: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
 		}
 
 		name := strings.TrimSpace(strings.Join([]string{contact.FirstName, crmContactStringValue(contact.LastName)}, " "))
@@ -237,14 +241,6 @@ func crmContactStringValue(value *string) string {
 		return ""
 	}
 	return *value
-}
-
-// Delete removes a contact.
-func (r *CRMContactRepository) Delete(ctx context.Context, id string) error {
-	if err := r.db.WithContext(ctx).Where("id = ?", id).Delete(&model.CRMContact{}).Error; err != nil {
-		return fmt.Errorf("delete contact: %w", err)
-	}
-	return nil
 }
 
 // MarkEmailInvalid flags every contact in a workspace whose email matches

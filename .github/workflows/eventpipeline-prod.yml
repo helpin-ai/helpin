@@ -14,8 +14,7 @@ on:
         default: true
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 env:
   REGISTRY: ghcr.io
@@ -28,8 +27,9 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - name: Determine version
         id: version
@@ -49,10 +49,15 @@ jobs:
           echo "tag=ep-v$VERSION" >> "$GITHUB_OUTPUT"
 
   build-rust:
+    permissions:
+      contents: read
+      packages: write
     needs: version
     runs-on: arc-runners-helpin-ai
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Prepare Docker socket
         run: |
           if [ -S /var/run/docker.sock ]; then
@@ -60,15 +65,15 @@ jobs:
           fi
           docker version
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Build and push Rust capture image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: events-pipeline/rust-capture
           push: true
@@ -79,33 +84,37 @@ jobs:
           cache-to: type=gha,mode=max
 
   release:
+    permissions:
+      contents: write
     needs: [version, build-rust]
     runs-on: arc-runners-helpin-ai
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: true
           fetch-depth: 0
       - name: Create git tag
         run: |
           git tag ${{ needs.version.outputs.tag }}
           git push origin ${{ needs.version.outputs.tag }}
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ needs.version.outputs.tag }}
           name: "Release: Events Pipeline ${{ needs.version.outputs.version }}"
           generate_release_notes: true
+      - name: Checkout gitops manifests
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: helpin-ai/gitops
+          ref: main
+          token: ${{ secrets.GITOPS_TOKEN }}
+          path: gitops
       - name: Update K8s manifests
         run: |
-          sed -i "s|${{ env.RUST_IMAGE }}:[^ ]*|${{ env.RUST_IMAGE }}:${{ needs.version.outputs.tag }}|g" k8s/prod/events-pipeline/deployments/eventpipeline-web.yaml
-          sed -i "s|${{ env.RUST_IMAGE }}:[^ ]*|${{ env.RUST_IMAGE }}:${{ needs.version.outputs.tag }}|g" k8s/prod/events-pipeline/deployments/eventpipeline-writer.yaml
-          if git diff --quiet; then
-            echo "No manifest changes needed"
-          else
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add k8s/prod/events-pipeline/
-            git commit -m "chore: update helpin events-pipeline prod images to ${{ needs.version.outputs.tag }} [skip ci]"
-            git pull --rebase origin main
-            git push origin main
-          fi
+          DIR=gitops/helpin/prod/events-pipeline/deployments
+          sed -i "s|${{ env.RUST_IMAGE }}:[^ ]*|${{ env.RUST_IMAGE }}:${{ needs.version.outputs.tag }}|g" "$DIR/eventpipeline-web.yaml"
+          sed -i "s|${{ env.RUST_IMAGE }}:[^ ]*|${{ env.RUST_IMAGE }}:${{ needs.version.outputs.tag }}|g" "$DIR/eventpipeline-writer.yaml"
+          bash scripts/ci/push-gitops.sh gitops \
+            "chore: update helpin events-pipeline prod images to ${{ needs.version.outputs.tag }}" \
+            helpin/prod/events-pipeline

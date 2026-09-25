@@ -59,6 +59,13 @@ function buildInteraction(overrides: Partial<CodingSessionInteraction> = {}): Co
 }
 
 describe('resolveCodingSessionComposerState', () => {
+  it('keeps local replies and continuation in the CLI', () => {
+    for (const status of ['paused', 'failed', 'cancelled'] as const) {
+      const state = resolveCodingSessionComposerState(buildSession({ execution_location: 'local', status, pause_reason: 'human_input' }));
+      expect(state.enabled).toBe(false);
+      expect(state.visible).toBe(false);
+    }
+  });
   it('shows a disabled waiting composer while the agent is running normally', () => {
     const state = resolveCodingSessionComposerState(buildSession({ status: 'running', pause_reason: 'none' }));
 

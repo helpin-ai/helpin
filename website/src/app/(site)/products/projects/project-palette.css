@@ -1,0 +1,10 @@
+/* Role mapping for Projects. Layout/motion stay in the component styles;
+   all surfaces come from new.css and the approved Support/Agents references. */
+.hp3 .projects-page .projects-tasks :is(.lede,.projects-details p){color:var(--on-dark-muted)}
+.hp3 .projects-page .projects-tasks :is(.eyebrow,.projects-details svg){color:var(--on-dark-accent)}
+.hp3 .projects-page .projects-tasks .projects-details article{border-color:var(--art-dark-border)}
+.hp3 .projects-page .projects-tasks .projects-details h3{color:var(--on-dark)}
+.hp3 .projects-page .ps-agents{background:var(--art-dark);border-color:var(--art-dark-border)}
+.hp3 .projects-page .ps-agents .ps-agent-steps>.ps-step{background:var(--art-dark-raised);border-color:var(--art-dark-border)}
+/* The connected closing scene owns its dark palette in project-delivery.css. */
+.hp3 .projects-page .pob-epics button:focus-visible{outline:2px solid var(--em);outline-offset:3px}

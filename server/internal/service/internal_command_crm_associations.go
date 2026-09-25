@@ -136,7 +136,7 @@ func (s *InternalCommandService) executeCRMSetPrimaryContactCompany(ctx context.
 func (s *InternalCommandService) validateCRMAssociationObject(ctx context.Context, meta model.InternalCommandContext, objectType, objectID string) error {
 	objectType, objectID = strings.TrimSpace(objectType), strings.TrimSpace(objectID)
 	if objectID == "" {
-		return fmt.Errorf("object_id is required")
+		return errCommandInput("object_id is required")
 	}
 	switch objectType {
 	case model.CRMObjectContact:
@@ -154,7 +154,7 @@ func (s *InternalCommandService) validateCRMAssociationObject(ctx context.Contex
 		}
 		epic, err := s.epicService.GetByID(ctx, objectID)
 		if err != nil || epic == nil || epic.Epic.WorkspaceID != meta.WorkspaceID {
-			return fmt.Errorf("epic not found")
+			return errCommandNotFound("epic")
 		}
 		return requireCommandAgentTeam(meta, epic.Epic.TeamID)
 	case model.CRMObjectTask:
@@ -163,7 +163,7 @@ func (s *InternalCommandService) validateCRMAssociationObject(ctx context.Contex
 		}
 		task, err := s.taskService.GetByID(ctx, objectID)
 		if err != nil || task == nil || task.Task.WorkspaceID != meta.WorkspaceID {
-			return fmt.Errorf("task not found")
+			return errCommandNotFound("task")
 		}
 		return requireCommandAgentTeam(meta, task.Task.TeamID)
 	case model.CRMObjectSupportConversation:
@@ -172,7 +172,7 @@ func (s *InternalCommandService) validateCRMAssociationObject(ctx context.Contex
 		}
 		conversation, err := s.supportConversationRepo.GetByID(ctx, meta.WorkspaceID, objectID, "", model.RoleOwner)
 		if err != nil || conversation == nil {
-			return fmt.Errorf("support conversation not found")
+			return errCommandNotFound("support conversation")
 		}
 		return nil
 	default:

@@ -1,8 +1,14 @@
 # Provider Capability Matrix
 
+> Historical matrix for the removed in-process executor. Its worker factories
+> and Temporal checkpoints are no longer the execution path. Use
+> [AI connections](../ai-connections.md) and the selected Agent Runtime revision
+> for current provider contracts; the support statuses below are not current.
+
+
 ## Purpose
 
-This matrix records what the current `native_sdk` runtime is wired to support today.
+This matrix records the old `native_sdk` implementation at the time it was written.
 
 Status meanings:
 
@@ -11,7 +17,8 @@ Status meanings:
 - `not wired`: no active implementation path
 - `needs characterization`: code exists, but behavior still needs test-backed validation against live providers
 
-This is intentionally code-backed first. It should be updated as characterization tests and live validation work land.
+The code references below identify retired source locations and are retained
+for historical context; update current provider guidance in the linked guide.
 
 ## Current Matrix
 
@@ -29,10 +36,10 @@ This is intentionally code-backed first. It should be updated as characterizatio
 
 ## Code References
 
-- provider routing: [server/internal/worker/eino_exec.go](/root/teampulse/server/internal/worker/eino_exec.go)
-- runtime adapter wiring: [server/internal/worker/runtime_factory.go](/root/teampulse/server/internal/worker/runtime_factory.go)
-- native executor entrypoint: [server/internal/worker/eino_executor.go](/root/teampulse/server/internal/worker/eino_executor.go)
-- checkpoint load/save: [server/internal/temporalapp/activities.go](/root/teampulse/server/internal/temporalapp/activities.go)
+- provider routing: `server/internal/worker/eino_exec.go` (removed)
+- runtime adapter wiring: `server/internal/worker/runtime_factory.go` (removed)
+- native executor entrypoint: `server/internal/worker/eino_executor.go` (removed)
+- checkpoint load/save: `server/internal/temporalapp/activities.go` (removed)
 
 ## Current Notes
 

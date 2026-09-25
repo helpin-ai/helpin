@@ -38,8 +38,18 @@ func NewUserNotificationSettingsService(repo *repository.UserNotificationSetting
 }
 
 // Get returns account-level notification settings for a user.
-func (s *UserNotificationSettingsService) Get(ctx context.Context, userID string) (*model.UserNotificationSettings, error) {
-	return s.repo.Get(ctx, userID)
+func (s *UserNotificationSettingsService) Get(ctx context.Context, userID string, timezoneHint ...string) (*model.UserNotificationSettings, error) {
+	settings, err := s.repo.Get(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if settings.ID == "" && len(timezoneHint) > 0 && timezoneHint[0] != "" && ValidateTimezone(timezoneHint[0]) == nil {
+		if err := s.repo.InitializeTimezone(ctx, userID, timezoneHint[0]); err != nil {
+			return nil, err
+		}
+		return s.repo.Get(ctx, userID)
+	}
+	return settings, nil
 }
 
 // Update applies partial updates to account-level notification settings.
