@@ -2,6 +2,10 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { QuietPrimaryAction } from '@/components/design-system/quiet';
+import { useAuthStore } from '@/stores/authStore';
+import { EpicDeliveryProfileSelect } from './EpicDeliveryProfileSelect';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import { DeliveryPlanView } from '@/components/agents/dock/DeliveryPlanView';
 import { StatusDot } from '@/components/agents/dock/StatusDot';
@@ -39,11 +43,13 @@ export function EpicDeliveryPipelineButton({
   disabledReason,
 }: EpicDeliveryPipelineButtonProps) {
   const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [profileId, setProfileId] = useState('');
 
   const start = async () => {
     setBusy(true);
     try {
-      const res = await commandBarService.startEpicDeliveryPipeline(workspaceId, epicId);
+      const res = await commandBarService.startEpicDeliveryPipeline(workspaceId, epicId, profileId);
       if (res.error || !res.data) {
         toast.error(res.error ?? 'Failed to start delivery pipeline');
         return;
@@ -53,23 +59,31 @@ export function EpicDeliveryPipelineButton({
         `Delivery pipeline started for ${res.data.task_count} task${res.data.task_count === 1 ? '' : 's'}${skipped ? ` (${skipped} skipped)` : ''}`,
       );
       await onStarted();
+      setOpen(false);
     } finally {
       setBusy(false);
     }
   };
 
-  return (
+  return <>
     <Button
       variant="outline"
       size="sm"
       className="h-7 text-xs"
       disabled={disabled || busy}
       title={disabled ? disabledReason : undefined}
-      onClick={() => void start()}
+      onClick={() => setOpen(true)}
     >
       {busy ? 'Starting…' : 'Run delivery pipeline'}
     </Button>
-  );
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Run epic delivery</DialogTitle><DialogDescription>Forge implements each open task, Lens reviews it, then Helpin merges the task branches and opens the epic pull request.</DialogDescription></DialogHeader>
+        <EpicDeliveryProfileSelect workspaceId={workspaceId} value={profileId} onChange={setProfileId} disabled={busy} />
+        <DialogFooter><QuietPrimaryAction disabled={busy} onClick={() => void start()}>{busy ? 'Starting…' : 'Start delivery'}</QuietPrimaryAction></DialogFooter>
+      </DialogContent>
+    </Dialog>
+  </>;
 }
 
 interface EpicDeliveryRunsPanelProps {
@@ -96,12 +110,25 @@ export function EpicDeliveryRunsPanel({
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [restartOpen, setRestartOpen] = useState(false);
+  const [restartStepIndex, setRestartStepIndex] = useState<number | null>(null);
+  const [restartProfileId, setRestartProfileId] = useState('');
+  const [reviewedPartialWork, setReviewedPartialWork] = useState(false);
+  const currentUserId = useAuthStore((state) => state.user?.id);
+
+  const restartableSteps = plan.steps.flatMap((step, index) => {
+    const runId = plan.runIdsByStep[index];
+    const run = runId ? runsById[runId] : undefined;
+    return !step.step_type && run && ['paused', 'cancelled', 'failed'].includes(run.status) ? [{ index, run }] : [];
+  });
+  const restartStep = restartableSteps.find((item) => item.index === restartStepIndex);
+  const personalProfileOwnedByOther = !!plan.aiProfileOwnerId && plan.aiProfileOwnerId !== currentUserId;
 
   // Retry whenever something failed/was cancelled and nothing is in flight —
   // including plans the backend still considers "running" (a zombie state
   // resume can't revive, since resume only starts steps with no run yet).
-  const canRetry = canEdit && planHasFailedSteps(plan, runsById) && !planHasActiveRuns(plan, runsById);
-  const canResume = canEdit && !canRetry && isPlanStalled(plan, runsById);
+  const canRetry = canEdit && !personalProfileOwnedByOther && planHasFailedSteps(plan, runsById) && !planHasActiveRuns(plan, runsById);
+  const canResume = canEdit && !personalProfileOwnedByOther && !canRetry && isPlanStalled(plan, runsById);
 
   const resume = async () => {
     setBusy(true);
@@ -142,8 +169,29 @@ export function EpicDeliveryRunsPanel({
     }
   };
 
+  const restart = async () => {
+    if (!restartStep || !reviewedPartialWork) return;
+    setBusy(true);
+    try {
+      const res = await commandBarService.restartPausedStep(workspaceId, plan.id, {
+        step_index: restartStep.index,
+        expected_run_id: restartStep.run.id,
+        ai_profile_id: restartProfileId,
+        reviewed_partial_work: true,
+      });
+      if (res.error || !res.data) {
+        toast.error(res.error ?? 'Failed to restart delivery step');
+        await onReload();
+        return;
+      }
+      toast.success('Delivery step restarted');
+      setRestartOpen(false);
+      await onReload();
+    } finally { setBusy(false); }
+  };
+
   const headerActions =
-    canResume || canRetry ? (
+    canResume || canRetry || (canEdit && restartableSteps.length > 0) ? (
       <span className="flex shrink-0 items-center gap-1.5">
         {canResume ? (
           <Button
@@ -167,6 +215,14 @@ export function EpicDeliveryRunsPanel({
             Retry failed steps
           </Button>
         ) : null}
+        {canEdit && restartableSteps.length > 0 ? (
+          <Button variant="outline" size="sm" className="h-7 text-xs" disabled={busy} onClick={() => {
+            setRestartStepIndex(restartableSteps[0].index);
+            setRestartProfileId(!plan.aiProfileOwnerId || plan.aiProfileOwnerId === currentUserId ? plan.aiProfileId ?? '' : '');
+            setReviewedPartialWork(false);
+            setRestartOpen(true);
+          }}>Restart step with profile</Button>
+        ) : null}
       </span>
     ) : undefined;
 
@@ -189,6 +245,16 @@ export function EpicDeliveryRunsPanel({
         title="Delivery Run"
         description="Interactive agent chat, artifacts, and live tool activity for this delivery step."
       />
+      <Dialog open={restartOpen} onOpenChange={setRestartOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Restart delivery step</DialogTitle><DialogDescription>A paused run will be cancelled. Completed steps stay complete. Your profile choice applies to this step and future AI steps.</DialogDescription></DialogHeader>
+          {restartableSteps.length > 1 ? <div className="space-y-2"><label className="text-xs font-medium">Step to restart</label><select className="w-full border-b border-border bg-transparent py-2 text-sm" value={restartStepIndex ?? ''} onChange={(event) => { setRestartStepIndex(Number(event.target.value)); setReviewedPartialWork(false); }}>{restartableSteps.map(({ index }) => <option key={index} value={index}>{index + 1}. {plan.steps[index].agent_name}: {plan.steps[index].target.display_title}</option>)}</select></div> : null}
+          {restartStep ? <Button variant="outline" size="sm" className="justify-start" onClick={() => { setSelectedRunId(restartStep.run.id); setDrawerOpen(true); }}>Inspect existing run and branch work</Button> : null}
+          <label className="flex items-start gap-2 text-xs text-muted-foreground"><input type="checkbox" className="mt-0.5" checked={reviewedPartialWork} onChange={(event) => setReviewedPartialWork(event.target.checked)} />I reviewed the existing run and task branch before restarting.</label>
+          <EpicDeliveryProfileSelect workspaceId={workspaceId} value={restartProfileId} onChange={setRestartProfileId} disabled={busy} />
+          <DialogFooter><QuietPrimaryAction disabled={busy || !reviewedPartialWork || !restartStep} onClick={() => void restart()}>{busy ? 'Restarting…' : 'Cancel run and restart step'}</QuietPrimaryAction></DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

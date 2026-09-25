@@ -16,6 +16,8 @@ export interface CommandBarRunPlan {
   currentStepIndex?: number;
   createdAt?: string;
   updatedAt?: string;
+  aiProfileId?: string;
+  aiProfileOwnerId?: string;
 }
 
 /** Maps an API plan summary into the rail-friendly `CommandBarRunPlan` shape. */
@@ -31,5 +33,7 @@ export function planSummaryToRunPlan(plan: CommandBarPlanSummary): CommandBarRun
     currentStepIndex: plan.current_step_index,
     createdAt: plan.created_at,
     updatedAt: plan.updated_at,
+    aiProfileId: plan.ai_profile_id,
+    aiProfileOwnerId: plan.ai_profile_owner_id,
   };
 }

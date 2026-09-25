@@ -193,6 +193,8 @@ export interface DockPlanConfirmPayload {
 }
 
 export interface DockPlanConfirmAction {
+  epic_id?: string
+  ai_profile_id?: string
   steps?: DockPlanConfirmStep[]
   // Direct Dock execution proposal form.
   proposal_id?: string

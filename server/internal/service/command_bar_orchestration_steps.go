@@ -48,6 +48,10 @@ func (s *AgentService) startCommandBarPlanStep(ctx context.Context, workspaceID,
 		}
 	}
 	actor := (*string)(nil)
+	ctx, actorID, err = s.commandBarAIContext(ctx, workspaceID, planID, actorID)
+	if err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(actorID) != "" {
 		actor = &actorID
 	}
@@ -187,9 +191,9 @@ func (s *AgentService) startReadyCommandBarPlanSteps(ctx context.Context, input 
 		return &CommandBarPlanProgress{Terminal: true, Status: plan.Status}, nil
 	}
 
-	steps := input.Steps
-	if len(steps) == 0 {
-		_ = json.Unmarshal(plan.Steps, &steps)
+	var steps []model.CommandBarPlanStep
+	if err := json.Unmarshal(plan.Steps, &steps); err != nil {
+		return nil, err
 	}
 	runIDsByStep := decodeCommandBarPlanRunIDs(plan.RunIDsByStep)
 	runIDs := make([]string, 0, len(runIDsByStep))
@@ -311,7 +315,7 @@ func (s *AgentService) commandBarExistingChildRunForParent(ctx context.Context, 
 
 func (s *AgentService) commandBarExistingRunForStep(ctx context.Context, workspaceID string, parentRunID *string, planID string, steps []model.CommandBarPlanStep, stepIndex int) *model.AgentRun {
 	existing := s.commandBarExistingChildRunForParent(ctx, workspaceID, parentRunID)
-	if existing == nil || !commandBarRunMatchesStep(existing, planID, steps, stepIndex) {
+	if existing == nil || existing.Status == model.AgentRunStatusCancelled || existing.Status == model.AgentRunStatusFailed || !commandBarRunMatchesStep(existing, planID, steps, stepIndex) {
 		return nil
 	}
 	return existing
@@ -602,7 +606,11 @@ func (s *AgentService) startCommandBarMergeConflictResolution(ctx context.Contex
 		RunID:  &run.ID,
 		Reason: &reason,
 	}
-	actor := stringPtrIfNotEmpty(input.ActorID)
+	ctx, boundActorID, err := s.commandBarAIContext(ctx, input.WorkspaceID, input.PlanID, input.ActorID)
+	if err != nil {
+		return nil, err
+	}
+	actor := stringPtrIfNotEmpty(boundActorID)
 	child, err := s.startTargetRunWithOptions(ctx, input.WorkspaceID, step.Target.EntityType, step.Target.EntityID, model.StartAgentRunRequest{
 		AgentID:           forgeStep.AgentID,
 		AdditionalContext: &additionalContext,

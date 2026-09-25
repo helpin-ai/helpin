@@ -724,7 +724,7 @@ func TestBuildRuntimeExecutionSupplementPromptOmitsArtifactContext(t *testing.T)
 	}
 }
 
-func TestParseWorkflowConfigForAgent_UsesPlannerDefaultWhenFrontMatterOmitsMaxIterations(t *testing.T) {
+func TestParseWorkflowConfigForAgent_UsesDefaultWhenFrontMatterOmitsMaxIterations(t *testing.T) {
 	dir := t.TempDir()
 	content := "---\ntimeout_minutes: 45\n---\nPlanner instructions"
 	if err := os.WriteFile(filepath.Join(dir, "WORKFLOW.md"), []byte(content), 0o644); err != nil {
@@ -738,8 +738,8 @@ func TestParseWorkflowConfigForAgent_UsesPlannerDefaultWhenFrontMatterOmitsMaxIt
 	if config == nil {
 		t.Fatal("expected config")
 	}
-	if config.MaxIterations != plannerWorkflowMaxIterations {
-		t.Fatalf("MaxIterations = %d, want %d", config.MaxIterations, plannerWorkflowMaxIterations)
+	if config.MaxIterations != model.MaxNativeToolSteps {
+		t.Fatalf("MaxIterations = %d, want %d", config.MaxIterations, model.MaxNativeToolSteps)
 	}
 	if config.TimeoutMinutes != 45 {
 		t.Fatalf("TimeoutMinutes = %d, want 45", config.TimeoutMinutes)

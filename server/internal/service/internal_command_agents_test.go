@@ -486,6 +486,7 @@ func TestGetAgentRunRetrievesOwnedPersistedResultWithoutNewPlan(t *testing.T) {
 		page_context BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
 		steps BLOB NOT NULL DEFAULT (CAST('[]' AS BLOB)),
 		run_ids_by_step BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
+		profile_binding BLOB,
 		current_step_index INTEGER NOT NULL DEFAULT 0,
 		run_count INTEGER NOT NULL DEFAULT 0,
 		error_message TEXT,

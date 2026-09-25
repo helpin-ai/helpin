@@ -1,7 +1,6 @@
 package agentcontract
 
 import (
-	"strings"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -33,42 +32,16 @@ type WorkflowConfig struct {
 }
 
 const (
-	defaultWorkflowMaxIterations  = 50
-	plannerWorkflowMaxIterations  = 300
-	askAgentWorkflowMaxIterations = model.MaxNativeToolSteps
+	defaultWorkflowMaxIterations  = model.MaxNativeToolSteps
 	defaultWorkflowTimeoutMinutes = 30
 	defaultWorkflowCommandTimeout = 2 * time.Minute
 )
 
 // DefaultWorkflowConfigForAgent returns host-side runtime defaults for an agent.
-func DefaultWorkflowConfigForAgent(agent *model.Agent) *WorkflowConfig {
-	maxIterations := defaultWorkflowMaxIterations
-	if agent != nil && strings.TrimSpace(agent.EffectivePresetKey()) == model.AgentPresetAskAgent {
-		maxIterations = askAgentWorkflowMaxIterations
-	} else if isHighToolBudgetAgent(agent) {
-		maxIterations = plannerWorkflowMaxIterations
-	}
+func DefaultWorkflowConfigForAgent(_ *model.Agent) *WorkflowConfig {
 	return &WorkflowConfig{
-		MaxIterations:  maxIterations,
+		MaxIterations:  defaultWorkflowMaxIterations,
 		TimeoutMinutes: defaultWorkflowTimeoutMinutes,
 		CommandTimeout: defaultWorkflowCommandTimeout,
-	}
-}
-
-func isHighToolBudgetAgent(agent *model.Agent) bool {
-	if agent == nil {
-		return false
-	}
-	if !agent.IsSystem {
-		return true
-	}
-	if strings.TrimSpace(agent.RuntimeKind) != "native_sdk" {
-		return false
-	}
-	switch strings.TrimSpace(agent.EffectivePresetKey()) {
-	case model.AgentPresetEpicPlanner, model.AgentPresetTaskPlanner:
-		return true
-	default:
-		return false
 	}
 }

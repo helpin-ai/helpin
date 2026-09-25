@@ -496,12 +496,17 @@ func TestRuntimeAgentFromHelpinAgentPropagatesNativeToolBudget(t *testing.T) {
 		{
 			name:  "system default",
 			agent: &model.Agent{IsSystem: true, PresetKey: model.AgentPresetMarketer, RuntimeKind: "native_sdk"},
-			want:  50,
+			want:  2000,
+		},
+		{
+			name:  "forge",
+			agent: &model.Agent{IsSystem: true, PresetKey: model.AgentPresetCodeBuilder, RuntimeKind: "native_sdk"},
+			want:  2000,
 		},
 		{
 			name:  "planner",
 			agent: &model.Agent{IsSystem: true, PresetKey: model.AgentPresetEpicPlanner, RuntimeKind: "native_sdk"},
-			want:  300,
+			want:  2000,
 		},
 		{
 			name:  "ask agent",
@@ -511,7 +516,7 @@ func TestRuntimeAgentFromHelpinAgentPropagatesNativeToolBudget(t *testing.T) {
 		{
 			name:  "custom agent",
 			agent: &model.Agent{IsSystem: false, RuntimeKind: "native_sdk"},
-			want:  300,
+			want:  2000,
 		},
 		{
 			name: "per-agent override",
