@@ -138,9 +138,13 @@ export type AIModelSuggestionGroup = {
   models: Array<{ selectionModel: string; canonicalModel: string; label: string }>;
 };
 
+const GPT_6_ASTRA = { selectionModel: "gpt-6-astra", canonicalModel: "gpt-6-astra", label: "GPT-6 Astra" };
+const GPT_5_6_SOL = { selectionModel: "gpt-5.6-sol", canonicalModel: "gpt-5.6-sol", label: "GPT-5.6 Sol" };
+
 const CHATGPT_MODELS = [
-  { selectionModel: "gpt-6-astra", canonicalModel: "gpt-6-astra", label: "GPT-6 Astra" },
-  { selectionModel: "gpt-5.6-sol", canonicalModel: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
+  GPT_6_ASTRA,
+  { selectionModel: "gpt-6-sol", canonicalModel: "gpt-6-sol", label: "GPT-6 Sol" },
+  GPT_5_6_SOL,
   { selectionModel: "gpt-5.6-terra", canonicalModel: "gpt-5.6-terra", label: "GPT-5.6 Terra" },
   { selectionModel: "gpt-5.6-luna", canonicalModel: "gpt-5.6-luna", label: "GPT-5.6 Luna" },
 ];
@@ -151,7 +155,7 @@ const CHATGPT_MODELS = [
 // https://platform.claude.com/docs/en/models/overview
 // https://openrouter.ai/api/v1/models
 const LATEST_PROVIDER_MODELS: Record<string, AIModelSuggestionGroup["models"]> = {
-  openai: CHATGPT_MODELS.slice(0, 2),
+  openai: [GPT_6_ASTRA, GPT_5_6_SOL],
   anthropic: [
     { selectionModel: "claude-fable-5-1", canonicalModel: "claude-fable-5-1", label: "Claude Fable 5.1" },
     { selectionModel: "claude-opus-5", canonicalModel: "claude-opus-5", label: "Claude Opus 5" },

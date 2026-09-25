@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TranscriptSegment } from '@/components/agents/transcript';
-import { buildDockActivityTimeline } from '../dockActivityTimeline';
+import { buildDockActivityTimeline } from '../buildDockActivityTimeline';
 
 const progress: TranscriptSegment = { kind: 'assistant', id: 'progress', content: 'Checking the work.', progress: true };
 const tool: TranscriptSegment = { kind: 'tool', id: 'search', toolCall: { tool_call_id: 'search', tool_name: 'search', args_text: '{}', status: 'running' } };
