@@ -87,28 +87,42 @@ function ProofStrip() {
   );
 }
 
+// Both products' take on one topic in a single frame, with the verdict as its footer.
+function Versus({ name, competitor, helpin, verdict }: { name: string; competitor: React.ReactNode; helpin: React.ReactNode; verdict?: string }) {
+  return (
+    <div className="cmp-versus">
+      <div className="cmp-sides">
+        <Side name={name}>{competitor}</Side>
+        <span className="cmp-versus-badge" aria-hidden="true">vs</span>
+        <Side name="Helpin">{helpin}</Side>
+      </div>
+      {verdict ? <p className="cmp-verdict"><Scale size={15} aria-hidden="true" /><span><b>The difference:</b> {verdict}</span></p> : null}
+    </div>
+  );
+}
+
 function ComparisonTable({ competitor }: { competitor: Competitor }) {
   const { name } = competitor;
   return (
     <div className="included-table-scroll cmp-table-scroll" role="region" aria-label={`Helpin and ${name} feature comparison`} tabIndex={0}>
-      <table className="included-table cmp-table">
+      <table className="included-table cmp-table" role="table">
         <caption className="sr-only">Helpin and {name} compared. {competitor.tableLede}</caption>
         <colgroup><col className="cmp-table-feature" /><col className="cmp-table-helpin" /><col /></colgroup>
-        <thead>
-          <tr>
-            <th scope="col">Capability</th>
-            <th scope="col" className="cmp-table-product"><span className="cmp-table-name"><HelpinMark size={18} />Helpin</span><span>Cloud or self-hosted</span></th>
-            <th scope="col" className="cmp-table-product"><span className="cmp-table-name"><Monogram name={name} />{name}</span><span>{competitor.category}</span></th>
+        <thead role="rowgroup">
+          <tr role="row">
+            <th scope="col" role="columnheader">Capability</th>
+            <th scope="col" role="columnheader" className="cmp-table-product"><span className="cmp-table-name"><HelpinMark size={18} />Helpin</span><span>Cloud or self-hosted</span></th>
+            <th scope="col" role="columnheader" className="cmp-table-product"><span className="cmp-table-name"><Monogram name={name} />{name}</span><span>{competitor.category}</span></th>
           </tr>
         </thead>
         {competitor.table.map(group => (
-          <tbody key={group.group}>
-            <tr className="cmp-table-group"><th scope="rowgroup" colSpan={3}>{group.group}</th></tr>
+          <tbody key={group.group} role="rowgroup">
+            <tr role="row" className="cmp-table-group"><th scope="rowgroup" role="rowheader" colSpan={3}>{group.group}</th></tr>
             {group.rows.map(row => (
-              <tr key={row.label}>
-                <th scope="row">{row.label}</th>
-                <td className="cmp-table-helpin-cell"><Value value={row.helpin} status={row.helpinStatus} /></td>
-                <td><Value value={row.competitor} status={row.competitorStatus} /></td>
+              <tr key={row.label} role="row">
+                <th scope="row" role="rowheader">{row.label}</th>
+                <td role="cell" className="cmp-table-helpin-cell"><Value value={row.helpin} status={row.helpinStatus} /></td>
+                <td role="cell"><Value value={row.competitor} status={row.competitorStatus} /></td>
               </tr>
             ))}
           </tbody>
@@ -210,11 +224,7 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
                 {copy.features.map(feature => (
                   <div key={feature.id} id={feature.id} className="cmp-feature">
                     <h3>{feature.title}</h3>
-                    <div className="cmp-sides">
-                      <Side name={name}>{feature.competitor}</Side>
-                      <Side name="Helpin">{feature.helpin}</Side>
-                    </div>
-                    <p className="cmp-verdict"><Scale size={15} aria-hidden="true" /><span><b>The difference:</b> {feature.verdict}</span></p>
+                    <Versus name={name} competitor={feature.competitor} helpin={feature.helpin} verdict={feature.verdict} />
                     {feature.preview ? <LazyPreview product={feature.preview.product} label={feature.preview.label} /> : null}
                   </div>
                 ))}
@@ -245,10 +255,7 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
 
               <section id="pricing" className="cmp-block">
                 <h2>Pricing and value</h2>
-                <div className="cmp-sides">
-                  <Side name={name}>{copy.pricing}</Side>
-                  <Side name="Helpin">{HELPIN_ARTICLE.pricing}</Side>
-                </div>
+                <Versus name={name} competitor={copy.pricing} helpin={HELPIN_ARTICLE.pricing} />
                 <h3 className="cmp-subhead">Estimate what your team would pay</h3>
                 <p>Change the team size, plans and AI volume to match your team. The estimate uses list prices and says plainly when {name} costs less. <Link href="/pricing">See Helpin pricing</Link>.</p>
                 <PriceCalculator name={name} calculator={competitor.calculator} />
@@ -256,18 +263,12 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
 
               <section id="hosting" className="cmp-block">
                 <h2>Hosting and data</h2>
-                <div className="cmp-sides">
-                  <Side name={name}>{copy.hosting}</Side>
-                  <Side name="Helpin">{HELPIN_ARTICLE.hosting}</Side>
-                </div>
+                <Versus name={name} competitor={copy.hosting} helpin={HELPIN_ARTICLE.hosting} />
               </section>
 
               <section id="switching" className="cmp-block">
                 <h2>Switching and onboarding</h2>
-                <div className="cmp-sides">
-                  <Side name={name}>{copy.onboarding}</Side>
-                  <Side name="Helpin">{HELPIN_ARTICLE.onboarding}</Side>
-                </div>
+                <Versus name={name} competitor={copy.onboarding} helpin={HELPIN_ARTICLE.onboarding} />
                 <h3 className="cmp-subhead">{competitor.switching.title}</h3>
                 <p>{competitor.switching.lede}</p>
                 <div className="cmp-checklists">

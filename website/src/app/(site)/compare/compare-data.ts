@@ -22,6 +22,8 @@ export type CalculatorPlan = { name: string; annual: number; monthly?: number; m
 
 export type Calculator = {
   seatsLabel: string;
+  /** What one seat is called in running text, singular then plural. */
+  seatsUnit: readonly [string, string];
   seats: number;
   plans: CalculatorPlan[];
   /** Index of the competitor plan closest to the Helpin plan below. */
@@ -253,6 +255,7 @@ export const COMPETITORS: Competitor[] = [
     ],
     calculator: {
       seatsLabel: 'Support teammates',
+      seatsUnit: ['teammate', 'teammates'],
       seats: 8,
       plans: [{ name: 'Essential', annual: 29, monthly: 39 }, { name: 'Advanced', annual: 85, monthly: 99 }, { name: 'Expert', annual: 132 }],
       plan: 1,
@@ -398,6 +401,7 @@ export const COMPETITORS: Competitor[] = [
     ],
     calculator: {
       seatsLabel: 'Support agents',
+      seatsUnit: ['agent', 'agents'],
       seats: 8,
       plans: [{ name: 'Suite Team', annual: 55 }, { name: 'Suite Professional', annual: 115 }],
       plan: 0,
@@ -543,6 +547,7 @@ export const COMPETITORS: Competitor[] = [
     ],
     calculator: {
       seatsLabel: 'Support teammates',
+      seatsUnit: ['teammate', 'teammates'],
       seats: 8,
       plans: [{ name: 'Standard', annual: 25 }, { name: 'Plus', annual: 45 }, { name: 'Pro', annual: 75, minSeats: 10 }],
       plan: 1,
@@ -686,6 +691,7 @@ export const COMPETITORS: Competitor[] = [
     ],
     calculator: {
       seatsLabel: 'Support agents',
+      seatsUnit: ['agent', 'agents'],
       seats: 8,
       plans: [{ name: 'Startups', annual: 19, monthly: 19 }, { name: 'Business', annual: 39, monthly: 39 }, { name: 'Enterprise', annual: 99, monthly: 99 }],
       plan: 1,
@@ -834,6 +840,7 @@ export const COMPETITORS: Competitor[] = [
     ],
     calculator: {
       seatsLabel: 'People on the team',
+      seatsUnit: ['person', 'people'],
       seats: 20,
       plans: [{ name: 'Basic', annual: 10 }, { name: 'Business', annual: 16 }],
       plan: 1,
