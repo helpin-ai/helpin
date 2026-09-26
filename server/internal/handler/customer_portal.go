@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -98,6 +99,7 @@ func (h *CustomerPortalHandler) authorized(w http.ResponseWriter, r *http.Reques
 	}
 	identity, err := h.auth.Validate(r.Context(), id, portalSessionCookie(r))
 	if err != nil {
+		slog.WarnContext(r.Context(), "portal access denied", "workspace_id", id, "action", r.Method, "reason", "invalid_session")
 		writeError(w, http.StatusUnauthorized, "invalid portal session")
 		return "", nil
 	}
@@ -146,6 +148,7 @@ func (h *CustomerPortalHandler) CreateRequest(w http.ResponseWriter, r *http.Req
 		}
 		return
 	}
+	slog.InfoContext(r.Context(), "portal request created", "workspace_id", id, "portal_identity_id", identity.ID, "reference", request.Reference, "attachment_count", len(body.AttachmentIDs))
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusCreated, request)
 }
@@ -247,6 +250,7 @@ func (h *CustomerPortalHandler) Reply(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "unable to send reply")
 		return
 	}
+	slog.InfoContext(r.Context(), "portal reply created", "workspace_id", id, "portal_identity_id", identity.ID, "reference", detail.Reference, "attachment_count", len(body.AttachmentIDs))
 	h.RequestDetail(w, r)
 }
 
@@ -274,6 +278,7 @@ func (h *CustomerPortalHandler) UploadAttachment(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	slog.InfoContext(r.Context(), "portal attachment uploaded", "workspace_id", id, "portal_identity_id", identity.ID, "reference", chi.URLParam(r, "reference"), "attachment_id", result.Attachment.ID)
 	writeJSON(w, http.StatusCreated, result)
 }
 
@@ -291,5 +296,6 @@ func (h *CustomerPortalHandler) ConfirmAttachment(w http.ResponseWriter, r *http
 		writeError(w, http.StatusBadRequest, "attachment unavailable")
 		return
 	}
+	slog.InfoContext(r.Context(), "portal attachment confirmed", "workspace_id", id, "portal_identity_id", identity.ID, "reference", chi.URLParam(r, "reference"), "attachment_id", chi.URLParam(r, "attachmentId"))
 	w.WriteHeader(http.StatusNoContent)
 }
