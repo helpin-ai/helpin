@@ -11,11 +11,13 @@ export function ExternalMCPSettingsPage() {
         <ExternalMCPAddButton workspaceId={workspaceId} onAdd={() => setCreateOpen(true)} />
       ) : null}
     >
-      {({ workspaceId, currentWorkspaceName, permissions }) => (
+      {({ workspaceId, currentWorkspaceSlug, permissions }) => (
         <ExternalMCPConnections
           workspaceId={workspaceId}
-          workspaceName={currentWorkspaceName}
+          workspaceSlug={currentWorkspaceSlug}
           canManageSettings={permissions.canManageSettings}
+          canEditCustomAgents={permissions.hasAny('pm.edit', 'docs.edit', 'crm.edit', 'support.edit')}
+          canEditPresetAgents={permissions.has('pm.edit')}
           createOpen={createOpen}
           onCreateOpenChange={setCreateOpen}
         />
