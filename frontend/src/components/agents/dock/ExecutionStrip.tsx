@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import type { AgentRun } from '@/lib/pmTypes';
 import type { CommandBarRunPlan } from './planSummary';
@@ -130,6 +130,17 @@ function liveStreamSummary(plan: RunPlanArtifact | null): string | null {
   return null;
 }
 
+/** Keep the task's opening phrase in the row; the full brief lives in the disclosure. */
+function compactTaskSummary(text: string): string {
+  const firstLine = text.trim().split(/\n/).find(line => line.trim()) ?? '';
+  const task = firstLine.replace(/^[#>*\s-]+/, '').replace(/^(?:task|goal|objective):\s*/i, '')
+    .split(/\s+\(|[.!?](?:\s|$)/, 1)[0].replace(/\s+/g, ' ').trim();
+  if (task.length <= 110) return task;
+  const prefix = task.slice(0, 107);
+  const boundary = prefix.lastIndexOf(' ');
+  return `${prefix.slice(0, boundary > 70 ? boundary : prefix.length)}…`;
+}
+
 function planRuns(plan: CommandBarRunPlan, runsById: Record<string, AgentRun>): AgentRun[] {
   return Object.values(plan.runIdsByStep)
     .map((id) => runsById[id])
@@ -173,6 +184,7 @@ function PlanStrip({
   open,
   setOpen,
 }: PlanStripProps & InternalProps) {
+  const detailsId = useId();
   const state = classifyPlan(plan, runsById);
   const runs = planRuns(plan, runsById);
   const failedToStart = plan.status === 'failed' && runs.length === 0;
@@ -223,6 +235,10 @@ function PlanStrip({
     : null;
   const hasTranscript = dockTranscriptHasContent(transcriptState, singleActive);
   const liveSummary = liveStreamSummary(stream.currentPlan);
+  const taskLabel = compactTaskSummary(
+    state === 'running' && liveSummary ? liveSummary.replace(/^…/, '') : taskSummary,
+  ) || 'Delegated task';
+  const taskInstructions = singleStep?.instructions?.trim() || plan.prompt?.trim() || '';
   const expandedSummary = !isSingleStep && state === 'running' && liveSummary ? `${summary} · ${liveSummary}` : summary;
   const isFanOut = plan.planKind === 'fan_out';
   const isTaskPipeline = plan.planKind === 'task_pipeline_fan_out';
@@ -258,19 +274,21 @@ function PlanStrip({
         <button
           type="button"
           onClick={() => setOpen(!open)}
-          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           aria-expanded={open}
+          aria-controls={open ? detailsId : undefined}
         >
           <StatusDot state={dot} />
           {isSingleStep ? (
-            <span className="min-w-0 flex-1 space-y-1">
-              <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <span className="min-w-0 break-words text-sm font-medium text-foreground">{label}</span>
+            <span className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-2">
+              <span className="flex min-w-0 items-baseline gap-2 sm:max-w-[45%]">
+                <span className="min-w-0 truncate text-xs font-medium text-foreground" title={label}>{label}</span>
                 <span className={cn('shrink-0 text-xs', state === 'attention' ? 'text-destructive' : 'text-muted-foreground')}>
                   {failedToStart ? 'Failed to start' : activityStatusLabel(state)}
                 </span>
               </span>
-              <span className="block break-words text-xs text-muted-foreground">{taskSummary}</span>
+              <span className="hidden text-muted-foreground/60 sm:inline" aria-hidden="true">·</span>
+              <span className="min-w-0 truncate text-xs text-muted-foreground sm:flex-1" title={taskLabel}>{taskLabel}</span>
             </span>
           ) : (
             <>
@@ -305,7 +323,15 @@ function PlanStrip({
       {showRail && !open ? renderRail() : null}
 
       {open ? (
-        <div className="space-y-2 pl-4">
+        <div id={detailsId} className="space-y-3 border-l border-border/60 pl-4">
+          {isSingleStep && taskInstructions && taskInstructions !== taskLabel ? (
+            <div className="space-y-1">
+              <div className="text-xs font-medium text-muted-foreground">Task instructions</div>
+              <p className="whitespace-pre-wrap break-words text-xs leading-relaxed text-foreground/80">
+                {taskInstructions}
+              </p>
+            </div>
+          ) : null}
           {!isSingleStep && plan.prompt ? (
             <p className="text-[11px] italic text-muted-foreground">"{plan.prompt}"</p>
           ) : null}
