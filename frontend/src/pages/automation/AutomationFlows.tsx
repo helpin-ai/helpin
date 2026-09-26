@@ -2378,7 +2378,7 @@ function FlowDetailDrawer({
   return (
     <Sheet open={!!rule} onOpenChange={onOpenChange}>
       <SheetContent
-        className="w-full overflow-hidden border-l border-border bg-popover p-0 shadow-none duration-150 sm:max-w-[460px]"
+        className="overflow-hidden border-l border-border bg-popover p-0 shadow-none duration-150 data-[side=right]:w-full data-[side=right]:sm:max-w-[640px] [&>[data-slot=sheet-close]]:z-20"
         overlayClassName="bg-[rgba(26,25,23,0.14)] backdrop-blur-none duration-150"
         showCloseButton
       >
