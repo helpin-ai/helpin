@@ -5,7 +5,7 @@ import {
   Rocket, Scale, Server, ShieldCheck, Smartphone, Sprout, Users, Wallet, X, Zap,
 } from 'lucide-react';
 import { SITE_URL } from '@/lib/metadata';
-import { JsonLd } from '@/lib/structured-data';
+import { article, JsonLd, organization } from '@/lib/structured-data';
 import { CustomerLogos } from '../_components/CustomerLogos';
 import { HeroVortex } from '../_components/HeroVortex';
 import { PreviewNav } from '../_components/PreviewNav';
@@ -14,7 +14,7 @@ import { PlatformClosing } from '../_components/platform/PlatformParts';
 import { CommunityShowcase } from '../_components/platform/PlatformProof';
 import { CtaNote, CtaRow, DEMO_URL, FAQList, GITHUB_URL, SectionHead, SIGNUP_URL } from '../_components/ui';
 import { ALTERNATIVES } from './alternatives-data';
-import { cellStatus, COMPETITORS, formatChecked, type Cell, type Competitor, type IconKey, type Status } from './compare-data';
+import { cellStatus, COMPETITORS, competitorSeo, formatChecked, type Cell, type Competitor, type IconKey, type Status } from './compare-data';
 import { HeroMatchup } from './HeroMatchup';
 import { InViewOnce } from './InViewOnce';
 import { PriceCalculator } from './PriceCalculator';
@@ -79,13 +79,20 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
   const { name } = competitor;
   const others = COMPETITORS.filter(item => item.slug !== competitor.slug);
   const checked = formatChecked(competitor.checked);
-  const breadcrumbs = {
+  const seo = competitorSeo(competitor);
+  const structured = {
     '@context': 'https://schema.org',
-    '@type': 'BreadcrumbList',
-    itemListElement: [
-      { '@type': 'ListItem', position: 1, name: 'Helpin', item: SITE_URL },
-      { '@type': 'ListItem', position: 2, name: 'Compare', item: `${SITE_URL}/compare` },
-      { '@type': 'ListItem', position: 3, name: `Helpin vs ${name}`, item: `${SITE_URL}/compare/${competitor.slug}` },
+    '@graph': [
+      {
+        '@type': 'BreadcrumbList',
+        itemListElement: [
+          { '@type': 'ListItem', position: 1, name: 'Helpin', item: SITE_URL },
+          { '@type': 'ListItem', position: 2, name: 'Compare', item: `${SITE_URL}/compare` },
+          { '@type': 'ListItem', position: 3, name: `Helpin vs ${name}`, item: `${SITE_URL}${seo.canonicalPath}` },
+        ],
+      },
+      { ...article({ headline: seo.title, description: seo.description, path: seo.canonicalPath, date: competitor.checked }), image: `${SITE_URL}${seo.imagePath}` },
+      organization,
     ],
   };
 
@@ -93,7 +100,7 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
     <>
       <PreviewNav />
       <div className="platform-page compare-page">
-        <JsonLd data={breadcrumbs} />
+        <JsonLd data={structured} />
         <section className="platform-hero motion-hero">
           <HeroVortex variant="connections" tone="dark" />
           <div className="wrap">

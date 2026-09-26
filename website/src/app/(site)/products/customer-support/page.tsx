@@ -74,7 +74,9 @@ const FAQS = [
   ],
   [
     "Can we import from Zendesk or Intercom?",
-    "Import from Zendesk and Intercom is coming soon. Until then, forward your support email to Helpin and new conversations start there."
+    "Import from Zendesk and Intercom is coming soon. Until then, forward your support email to Helpin and new conversations start there.",
+    "/compare",
+    "See how Helpin compares"
   ],
   [
     "Is self-hosting available for Support?",

@@ -64,3 +64,19 @@ export function faqPage(items: readonly (readonly [question: string, answer: str
     })),
   };
 }
+
+/** A dated article by the Helpin team, so freshness and authorship are machine-readable. */
+export function article({ headline, description, path, date }: { headline: string; description: string; path: string; date: string }) {
+  return {
+    '@type': 'Article',
+    headline,
+    description,
+    url: `${SITE_URL}${path}`,
+    mainEntityOfPage: `${SITE_URL}${path}`,
+    datePublished: date,
+    dateModified: date,
+    author: { '@type': 'Organization', name: 'Helpin team', url: SITE_URL },
+    publisher: { '@id': ORGANIZATION_ID },
+    image: `${SITE_URL}/og/helpin-compare-green-v4.png`,
+  };
+}

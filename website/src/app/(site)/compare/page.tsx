@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { ArrowRight, CalendarCheck, ChevronRight, FileSearch, RefreshCw, Scale } from 'lucide-react';
-import { createPageMetadata, PAGE_SEO } from '@/lib/metadata';
+import { createPageMetadata, PAGE_SEO, SITE_URL } from '@/lib/metadata';
+import { JsonLd } from '@/lib/structured-data';
 import { HeroVortex } from '../_components/HeroVortex';
 import { PreviewNav } from '../_components/PreviewNav';
 import { PreviewFooter } from '../_components/PreviewFooter';
@@ -18,11 +19,36 @@ export const metadata = createPageMetadata(PAGE_SEO.compare);
 const GROUPS = ['Customer support', 'Project management'] as const;
 const CHECKED = formatChecked(COMPETITORS[0].checked);
 
+const HUB_JSON_LD = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: 'Helpin', item: SITE_URL },
+        { '@type': 'ListItem', position: 2, name: 'Compare', item: `${SITE_URL}/compare` },
+      ],
+    },
+    {
+      '@type': 'CollectionPage',
+      name: PAGE_SEO.compare.title,
+      description: PAGE_SEO.compare.description,
+      url: `${SITE_URL}/compare`,
+      mainEntity: {
+        '@type': 'ItemList',
+        itemListElement: [...COMPETITORS.map(item => ({ name: `Helpin vs ${item.name}`, slug: item.slug })), ...ALTERNATIVES.map(item => ({ name: `Best ${item.competitor} alternatives`, slug: item.slug }))]
+          .map((item, index) => ({ '@type': 'ListItem', position: index + 1, name: item.name, url: `${SITE_URL}/compare/${item.slug}` })),
+      },
+    },
+  ],
+};
+
 export default function CompareHub() {
   return (
     <>
       <PreviewNav />
       <div className="platform-page compare-page">
+        <JsonLd data={HUB_JSON_LD} />
         <section className="platform-hero motion-hero">
           <HeroVortex variant="connections" tone="dark" />
           <div className="wrap">
@@ -30,7 +56,7 @@ export default function CompareHub() {
             <div className="platform-hero-grid">
               <div className="platform-hero-copy">
                 <span className="eyebrow">Compare Helpin</span>
-                <h1>How Helpin compares <span>with the tools you know.</span></h1>
+                <h1>How Helpin compares <span>with Intercom, Zendesk, Linear and more.</span></h1>
                 <p className="lede">Side-by-side comparisons with the support desks and project tools teams use today: features, pricing for a sample team, what switching involves, and where the other tool is the better fit.</p>
                 <CtaRow primaryLabel="Start free trial" primaryHref={SIGNUP_URL} secondaryHref={DEMO_URL} secondaryLabel="Book a demo" />
                 <div className="platform-hero-points">

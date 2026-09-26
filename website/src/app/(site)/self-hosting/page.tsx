@@ -45,7 +45,9 @@ const FAQS = [
   ],
   [
     "Can we move from Zendesk or Intercom?",
-    "Import from Zendesk and Intercom is coming soon."
+    "Import from Zendesk and Intercom is coming soon.",
+    "/compare",
+    "See how Helpin compares"
   ],
   [
     "Does server setup manage HTTPS for us?",
