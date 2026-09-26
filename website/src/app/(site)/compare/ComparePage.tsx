@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import {
   ArrowRight, Award, BarChart3, Blocks, Bot, CalendarCheck, Check, ChevronRight, Feather, GitBranch, GitPullRequest,
-  Handshake, Import, Inbox, Link2, type LucideIcon, Megaphone, MessagesSquare, RefreshCw, Rocket, Scale, Server,
+  FileSearch, Handshake, Import, Inbox, type LucideIcon, Megaphone, MessagesSquare, RefreshCw, Rocket, Scale, Server,
   ShieldCheck, Smartphone, Sprout, Users, Wallet, Zap,
 } from 'lucide-react';
 import { SITE_URL } from '@/lib/metadata';
@@ -91,7 +91,7 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
                 <CtaRow primaryLabel="Start free trial" primaryHref={SIGNUP_URL} secondaryHref={DEMO_URL} secondaryLabel="Book a demo" />
                 <div className="platform-hero-points">
                   <span><CalendarCheck size={14} aria-hidden="true" />Checked {checked}</span>
-                  <span><Link2 size={14} aria-hidden="true" /><a href="#sources">{competitor.sources.length} sources</a></span>
+                  <span><FileSearch size={14} aria-hidden="true" />From public pricing and docs</span>
                   <span><Scale size={14} aria-hidden="true" />Strengths on both sides</span>
                 </div>
               </div>
@@ -246,11 +246,10 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
           </div>
         </section>
 
-        <section id="sources" className="cmp-sources">
+        <section id="about-this-comparison" className="cmp-sources">
           <div className="wrap">
-            <h2>Sources</h2>
-            <p>Checked {checked}. Prices are in US dollars and exclude tax. Products change, so check {name}’s site for current details. {name} is a trademark of its owner; Helpin is not affiliated with it. Spot something out of date? Email <a href="mailto:hello@helpin.ai">hello@helpin.ai</a>.</p>
-            <ul>{competitor.sources.map(source => <li key={source.url}><a href={source.url} target="_blank" rel="noopener noreferrer nofollow">{source.label}</a></li>)}</ul>
+            <h2>About this comparison</h2>
+            <p>Based on {name}’s public pricing and documentation, checked {checked}. Prices are in US dollars and exclude tax. Products change, so check {name}’s site for current details. {name} is a trademark of its owner; Helpin is not affiliated with it. Spot something out of date? Email <a href="mailto:hello@helpin.ai">hello@helpin.ai</a>.</p>
           </div>
         </section>
 

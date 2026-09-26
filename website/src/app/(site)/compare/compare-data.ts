@@ -43,6 +43,7 @@ export type Competitor = {
   switching: { title: string; lede: string; steps: { title: string; body: string; status: StepStatus }[] };
   faqs: FAQ[];
   closing: { title: string; description: string };
+  /** Where each competitor fact was checked. Internal record for re-checks; not shown on the page. */
   sources: { label: string; url: string }[];
 };
 
