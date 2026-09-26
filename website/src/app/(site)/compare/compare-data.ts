@@ -97,7 +97,7 @@ const CHECKED = '2026-09-26';
 const HELPIN = {
   seats: 'Unlimited teammates on every plan',
   ai: 'AI usage allowance included in every Cloud plan',
-  selfHost: 'Free Community edition (AGPL-3.0, 0.1 beta)',
+  selfHost: 'Free Community edition (AGPL-3.0, 0.2 beta)',
   trial: '14 days, no card',
   channels: 'Web chat and email',
   sdks: 'Web: JavaScript, React, Next.js, Vue',
@@ -142,7 +142,7 @@ function sharedFaqs(name: string, { selfHost = true } = {}): FAQ[] {
     [`Can we run Helpin alongside ${name}?`, `Yes. Add the Helpin widget to a few pages or forward one support address, and keep ${name} for everything else while your team tries the workflow. Move the rest when you’re ready.`],
     ['How is AI billed in Helpin?', 'Every Cloud plan includes a monthly AI usage allowance, measured in tokens at published rates. On an active paid plan you can turn on metered overage if you need more. Self-hosted installs use your own AI provider and pay it directly.'],
     ['Is there a free trial?', 'Yes. The 14-day trial runs on the Growth plan, needs no card, and includes $140 of AI usage.'],
-    ...(selfHost ? [['Can we self-host Helpin?', 'Yes. The Community edition is free and open source under AGPL-3.0, and runs with Docker Compose. It is a 0.1 beta, and coding agents arrive with the 0.2 release.'] as const] : []),
+    ...(selfHost ? [['Can we self-host Helpin?', 'Yes. The Community edition is free and open source under AGPL-3.0, and runs with Docker Compose. It is a 0.2 beta and includes every product, coding agents too.'] as const] : []),
     ['Will you help us switch?', 'Yes. Book a call and we’ll plan the move with you: what to set up first, how to run both tools side by side, and when to cut over.'],
   ];
 }
@@ -633,7 +633,7 @@ export const COMPETITORS: Competitor[] = [
         icon: 'workflow',
         competitorLane: ['Conversation', 'Linear integration'],
         helpinLane: AFTER_REPLY_LANE,
-        body: 'Chatwoot links issues to Linear. Helpin includes roadmaps, sprints and objectives, so the request, the task and the follow-up share one history. Coding agents open pull requests on Helpin Cloud today and arrive in the Community edition with 0.2.',
+        body: 'Chatwoot links issues to Linear. Helpin includes roadmaps, sprints and objectives, so the request, the task and the follow-up share one history. Coding agents open pull requests from the task, on Helpin Cloud or self-hosted.',
       },
       {
         title: 'No deals or meeting notes',
@@ -678,14 +678,14 @@ export const COMPETITORS: Competitor[] = [
           row('Project management', HELPIN.projects, 'Through the Linear integration', ['yes', 'partial']),
           row('CRM with deals', HELPIN.crm, 'Contacts, companies and segments', ['yes', 'partial']),
           row('Meeting notes', HELPIN.meetings, false, ['yes']),
-          row('Coding agents', 'Helpin Cloud; coming to Community in 0.2', false, ['partial']),
+          row('Coding agents', HELPIN.coding, false, ['yes']),
           row('MCP server', HELPIN.mcp, 'Community-built only', ['yes', 'partial']),
         ],
       },
     ],
     strengths: [
       { icon: 'channels', title: 'Channels.', body: 'WhatsApp, Facebook, Instagram, TikTok, Telegram, LINE, SMS and voice. Helpin supports web chat and email.' },
-      { icon: 'community', title: 'Maturity and community.', body: 'Years of releases, tens of thousands of GitHub stars and roughly monthly releases. Helpin’s Community edition is a 0.1 beta.' },
+      { icon: 'community', title: 'Maturity and community.', body: 'Years of releases, tens of thousands of GitHub stars and roughly monthly releases. Helpin’s Community edition is a 0.2 beta.' },
       { icon: 'deploy', title: 'Deployment options.', body: 'Official Docker, Kubernetes Helm charts, a Linux installer and cloud marketplace images.' },
       { icon: 'mobile', title: 'Mobile.', body: 'An agent app for iOS and Android, and mobile widget SDKs.' },
     ],
@@ -718,7 +718,7 @@ export const COMPETITORS: Competitor[] = [
     },
     faqs: [
       ['Are Helpin and Chatwoot both open source?', 'Yes. Chatwoot’s core is MIT-licensed with a separate paid enterprise edition. Helpin’s product features are open source under AGPL-3.0.'],
-      ['Which is better for self-hosting?', 'Chatwoot is more mature, with more deployment options. Helpin includes AI agents, projects and CRM in the free Community edition, which is currently a 0.1 beta.'],
+      ['Which is better for self-hosting?', 'Chatwoot is more mature, with more deployment options. Helpin includes AI agents, projects and CRM in the free Community edition, which is currently a 0.2 beta.'],
       ['Can I use my own AI provider?', 'Yes, with both. Self-hosted Helpin connects to OpenAI, Anthropic, OpenRouter or an OpenAI-compatible endpoint. Chatwoot’s Captain supports your own OpenAI-compatible key on a paid plan.'],
       ['Does Helpin support WhatsApp?', 'Not today. Helpin supports web chat and email. If WhatsApp or social channels are essential, Chatwoot covers them.'],
       ...sharedFaqs('Chatwoot', { selfHost: false }),

@@ -212,7 +212,7 @@ export default function HomePage() {
               <SectionHead eyebrow="Open source" title="Your customer history stays yours."
                 lede="Self-host the complete product for free, with every module and no plan limits. Or let Helpin Cloud run it, with AI included." />
               <div className="links"><a className="btn btn-primary" href={DOCS.selfHosting}>Self-host Helpin →</a><a className="btn-link" href={GITHUB_URL} target="_blank" rel="noopener noreferrer"><GithubIcon />View the code →</a></div>
-              <p className="self-host-license">AGPL-3.0 · Community 0.1 beta</p>
+              <p className="self-host-license">AGPL-3.0 · Community 0.2 beta</p>
             </div>
             <HostingDiagram />
           </div>

@@ -84,7 +84,7 @@ const FAQS = [
     "What is included on each plan?",
     "On Cloud, Starter includes 5,000 contacts. Growth adds unlimited contacts and deal automation. Both are included when you self-host, with no plan limits."
   ],
-  ["Can we self-host CRM?", "Yes. CRM, including meetings, is part of the AGPL-3.0 product: free, with no plan limits. Community is in 0.1 beta. Your team runs the installation and covers hosting and provider costs.", "/self-hosting#whats-included"]
+  ["Can we self-host CRM?", "Yes. CRM, including meetings, is part of the AGPL-3.0 product: free, with no plan limits. Community is in 0.2 beta. Your team runs the installation and covers hosting and provider costs.", "/self-hosting#whats-included"]
 ] as const;
 
 export default function CRMPage() {

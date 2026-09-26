@@ -80,7 +80,7 @@ const FAQS = [
   ],
   [
     "Is self-hosting available for Support?",
-    "Yes. Support is part of the open-source Community edition (0.1 beta), with every support feature and no plan limits. Your team operates the installation and covers hosting and provider costs.",
+    "Yes. Support is part of the open-source Community edition (0.2 beta), with every support feature and no plan limits. Your team operates the installation and covers hosting and provider costs.",
     "/self-hosting#whats-included",
     "See what’s included"
   ],
