@@ -61,6 +61,11 @@ type SupportConversation struct {
 	VisitorCountryCode             *string         `json:"visitor_country_code,omitempty"`
 	VisitorCountryName             *string         `json:"visitor_country_name,omitempty"`
 	ViewSearchDocument             *string         `json:"-"`
+	// PortalVisible opts this conversation into the customer portal. Portal
+	// requests remain projections of this record; they never create a ticket
+	// or a second thread.
+	PortalVisible             bool       `json:"portal_visible" gorm:"not null;default:false;index"`
+	PortalVisibilityChangedAt *time.Time `json:"portal_visibility_changed_at,omitempty" gorm:"type:timestamptz"`
 
 	// AI State — separate from human Status. Null when AI is not involved.
 	AIState                  *string    `json:"ai_state" gorm:"index"` // null, "pending", "resolved", "escalated"
@@ -83,6 +88,9 @@ type SupportConversation struct {
 
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	// DeletedAt supports explicit portal-ineligibility checks without changing
+	// the existing permanent-delete behavior of support conversations.
+	DeletedAt *time.Time `json:"-" gorm:"index"`
 
 	// Virtual fields — populated by SELECT subqueries, not stored as columns.
 	LastMessage                  *string                    `json:"last_message,omitempty" gorm:"->"`
@@ -1394,6 +1402,12 @@ type SupportInboxSettings struct {
 	LauncherPosition string `json:"launcher_position"` // bottom_right, bottom_left
 	LauncherIcon     string `json:"launcher_icon"`     // chat_bubble, question_mark, help
 
+	// Customer Portal
+	PortalEnabled                bool `json:"portal_enabled"`
+	PortalRequestsOnly           bool `json:"portal_requests_only"`
+	PortalAnonymousIntakeEnabled bool `json:"portal_anonymous_intake_enabled"`
+	PortalIntakeEnabled          bool `json:"portal_intake_enabled"`
+
 	// CSAT
 	CSATEnabled bool `json:"csat_enabled"`
 
@@ -1494,6 +1508,10 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		LogoURL:                         "",
 		LauncherPosition:                "bottom_right",
 		LauncherIcon:                    "chat_bubble",
+		PortalEnabled:                   false,
+		PortalRequestsOnly:              false,
+		PortalAnonymousIntakeEnabled:    false,
+		PortalIntakeEnabled:             false,
 		CSATEnabled:                     false,
 		FileUploadsEnabled:              true,
 		ForceVisitorIdentity:            false,
@@ -1566,6 +1584,10 @@ type UpdateInstallationSettingsRequest struct {
 	ForwardedEmailDetectionEnabled  *bool                       `json:"forwarded_email_detection_enabled,omitempty"`
 	ForwardedEmailDetectionMode     *string                     `json:"forwarded_email_detection_mode,omitempty"`
 	ForwardedEmailMinConfidence     *int                        `json:"forwarded_email_min_confidence,omitempty"`
+	PortalEnabled                   *bool                       `json:"portal_enabled,omitempty"`
+	PortalRequestsOnly              *bool                       `json:"portal_requests_only,omitempty"`
+	PortalAnonymousIntakeEnabled    *bool                       `json:"portal_anonymous_intake_enabled,omitempty"`
+	PortalIntakeEnabled             *bool                       `json:"portal_intake_enabled,omitempty"`
 	WidgetName                      *string                     `json:"widget_name,omitempty"`
 	WidgetAvatarURL                 *string                     `json:"widget_avatar_url,omitempty"`
 	WidgetHelpSpaceIDs              []string                    `json:"widget_help_space_ids,omitempty"`

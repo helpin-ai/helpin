@@ -35,6 +35,8 @@ type Handlers struct {
 	Assets              *handler.AssetHandler
 	Health              *handler.HealthHandler
 	Auth                *handler.AuthHandler
+	PortalAuth          *handler.PortalAuthHandler
+	CustomerPortal      *handler.CustomerPortalHandler
 	Passkey             *handler.PasskeyHandler
 	Organization        *handler.OrganizationHandler
 	Workspace           *handler.WorkspaceHandler
@@ -315,6 +317,38 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		}
 
 		// ---- Public routes ----
+		if h.CustomerPortal != nil {
+			r.Route("/public/portal/{slug}", func(r chi.Router) {
+				if h.WidgetRateLimit != nil {
+					r.Use(h.WidgetRateLimit)
+				}
+				r.Get("", h.CustomerPortal.Config)
+				r.Get("/", h.CustomerPortal.Config)
+				r.Post("/auth/magic-link", h.CustomerPortal.RequestLink)
+				r.Post("/auth/exchange", h.CustomerPortal.Exchange)
+				r.Get("/session", h.CustomerPortal.Session)
+				r.Delete("/session", h.CustomerPortal.Logout)
+				r.Get("/requests", h.CustomerPortal.Requests)
+				r.Post("/attachments", h.CustomerPortal.UploadAttachment)
+				r.Post("/requests/{reference}/attachments", h.CustomerPortal.UploadAttachment)
+				r.Patch("/attachments/{attachmentId}/confirm", h.CustomerPortal.ConfirmAttachment)
+				r.Patch("/requests/{reference}/attachments/{attachmentId}/confirm", h.CustomerPortal.ConfirmAttachment)
+				r.Get("/requests/{reference}", h.CustomerPortal.RequestDetail)
+				r.Post("/requests/{reference}/replies", h.CustomerPortal.Reply)
+				r.Post("/requests", h.CustomerPortal.CreateRequest)
+			})
+		}
+		if h.PortalAuth != nil {
+			r.Route("/portal/auth", func(r chi.Router) {
+				if h.WidgetRateLimit != nil {
+					r.Use(h.WidgetRateLimit)
+				}
+				r.Post("/request-link", h.PortalAuth.RequestLink)
+				r.Post("/exchange", h.PortalAuth.Exchange)
+				r.Get("/session", h.PortalAuth.Session)
+				r.Post("/logout", h.PortalAuth.Logout)
+			})
+		}
 		r.Get("/auth/config", h.Auth.GetConfig)
 		r.Post("/auth/signup", h.Auth.Signup)
 		r.Post("/auth/verify-email", h.Auth.VerifyEmail)

@@ -2000,6 +2000,24 @@ type supportEmailLogReader interface {
 	ListByConversation(ctx context.Context, workspaceID, conversationID string) ([]model.SupportEmailLog, error)
 }
 
+func (s *SupportInboxService) reopenForCustomerReply(ctx context.Context, workspaceID, ticketID string, conv *model.SupportConversation) error {
+	flowState := defaultConversationFlowState(conv.OpenedByUserID, conv.AssignedUserID, conv.AssignedAgentID)
+	if conv.HumanTakeover != nil && *conv.HumanTakeover {
+		flowState = model.SupportConversationFlowStateAssignedToHuman
+	}
+	if err := s.conversationRepo.UpdateFields(ctx, workspaceID, ticketID, map[string]any{
+		"status": model.SupportConversationStatusOpen, "flow_state": flowState,
+		"resolved_at": nil, "closed_at": nil, "updated_at": time.Now(),
+	}); err != nil {
+		return err
+	}
+	conv.Status = model.SupportConversationStatusOpen
+	conv.FlowState = &flowState
+	conv.ResolvedAt = nil
+	conv.ClosedAt = nil
+	return nil
+}
+
 // CreateConversationMessage creates a message on a conversation.
 func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, workspaceID, ticketID string, req model.CreateMessageRequest, senderType string, senderUserID, senderAgentID *string, senderDisplayName *string) (*model.SupportMessage, error) {
 	if strings.TrimSpace(req.Content) == "" && len(req.AttachmentIDs) == 0 {
@@ -2150,6 +2168,10 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		MessageType:       messageType,
 		ClientMessageID:   clientMessageID,
 	}
+	if senderType == "customer" && ctx.Value(portalReplySourceKey{}) == true {
+		channel := "portal"
+		msg.ViaChannel = &channel
+	}
 
 	if translation != nil {
 		msg.TranslationID = translation.ID
@@ -2192,6 +2214,14 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	}
 	msg.Metadata = mergeSupportMessageMetadata(msg.Metadata, req.Channels, req.CCEmails, req.BCCEmails)
 	msg.Metadata = withSupportDeliveryMode(msg.Metadata, req.DeliveryMode)
+	portalReply := senderType == "customer" && ctx.Value(portalReplySourceKey{}) == true
+	// Do not append a portal reply to a resolved request if reopening fails.
+	if portalReply && !msg.IsInternal && messageType == "reply" &&
+		(conv.Status == model.SupportConversationStatusWaitingOnCustomer || conv.Status == model.SupportConversationStatusResolved) {
+		if err := s.reopenForCustomerReply(ctx, workspaceID, ticketID, conv); err != nil {
+			return nil, err
+		}
+	}
 	if senderType == "user" && !msg.IsInternal && messageType == "reply" {
 		if err := s.pauseForTeammate(ctx, conv, derefString(senderUserID), "teammate_replied", map[string]any{"opened_by_user_id": senderUserID}); err != nil {
 			return nil, err
@@ -2246,21 +2276,8 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType == "customer" {
 		senderName := derefString(msg.SenderDisplayName)
 		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, s.pushSenderService, conv, msg.Content, senderName)
-		if conv.Status == model.SupportConversationStatusWaitingOnCustomer || conv.Status == model.SupportConversationStatusResolved {
-			conv.Status = model.SupportConversationStatusOpen
-			if conv.HumanTakeover != nil && *conv.HumanTakeover {
-				conv.FlowState = strPtr(model.SupportConversationFlowStateAssignedToHuman)
-			} else {
-				conv.FlowState = strPtr(defaultConversationFlowState(conv.OpenedByUserID, conv.AssignedUserID, conv.AssignedAgentID))
-			}
-			conv.ClosedAt = nil
-			if err := s.conversationRepo.UpdateFields(ctx, workspaceID, ticketID, map[string]any{
-				"status":      conv.Status,
-				"flow_state":  derefString(conv.FlowState),
-				"resolved_at": nil,
-				"closed_at":   nil,
-				"updated_at":  time.Now(),
-			}); err != nil {
+		if !portalReply && (conv.Status == model.SupportConversationStatusWaitingOnCustomer || conv.Status == model.SupportConversationStatusResolved) {
+			if err := s.reopenForCustomerReply(ctx, workspaceID, ticketID, conv); err != nil {
 				slog.ErrorContext(ctx, "failed to reopen support conversation after customer reply", "error", err, "conversation_id", ticketID)
 			}
 		}
