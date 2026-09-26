@@ -7,5 +7,5 @@ export const Route = createFileRoute('/portal/$slug')({
 
 function PortalRoute() {
   const { slug } = Route.useParams()
-  return <CustomerPortalProvider slug={slug} />
+  return <CustomerPortalProvider key={slug} slug={slug} />
 }
