@@ -100,6 +100,9 @@
 .hp3 .cmp-table thead th:nth-child(2) { box-shadow: inset 0 3px 0 var(--em); }
 .hp3 .cmp-table tbody th[scope=row] { color: var(--t2); font-weight: 500; }
 .hp3 .cmp-table td { color: var(--ink); }
+/* Helpin's column states what the visitor gets, so it reads with more weight. */
+.hp3 .cmp-table .cmp-table-helpin-cell { font-weight: 600; letter-spacing: -.005em; }
+.hp3 .cmp-table .cmp-table-helpin-cell .cmp-no { font-weight: 400; }
 .hp3 .cmp-table .cmp-table-group th { padding-block: 11px; background: var(--bg2); color: var(--em); font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; }
 .hp3 .cmp-yes { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--em-t); color: var(--em); vertical-align: middle; }
 .hp3 .cmp-no { color: var(--t3); }
