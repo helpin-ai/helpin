@@ -15,6 +15,57 @@ type PortalAuthRepository struct{ db *gorm.DB }
 
 func NewPortalAuthRepository(db *gorm.DB) *PortalAuthRepository { return &PortalAuthRepository{db: db} }
 
+// CreateRequest commits the inbox conversation, customer message and portal reference together.
+func (r *PortalAuthRepository) CreateRequest(ctx context.Context, workspaceID string, identity *model.SupportPortalIdentity, subject, description, reference string, mailboxID, ownerID, crmContactID, flowState *string) (*model.SupportConversation, *model.SupportPortalRequest, error) {
+	conversation := &model.SupportConversation{
+		ID: uuid.NewString(), WorkspaceID: workspaceID, Subject: subject,
+		Status: "open", Priority: "medium", Channel: "portal", Source: "portal",
+		CustomerName: identity.DisplayName, CustomerEmail: &identity.Email, PortalVisible: true,
+		MailboxID: mailboxID, AssignedUserID: ownerID, CRMContactID: crmContactID, FlowState: flowState,
+	}
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		conversationRepo := NewSupportConversationRepository(tx)
+		if err := conversationRepo.Create(ctx, conversation); err != nil {
+			return err
+		}
+		message := &model.SupportMessage{
+			ID: uuid.NewString(), WorkspaceID: workspaceID, ConversationID: conversation.ID,
+			SenderType: "customer", SenderDisplayName: identity.DisplayName,
+			MessageType: "reply", Content: description,
+		}
+		if err := tx.Create(message).Error; err != nil {
+			return err
+		}
+		conversation.ApplyMessageProjection(*message)
+		if err := tx.Model(conversation).Updates(map[string]any{
+			"list_last_message_id":              conversation.ListLastMessageID,
+			"list_last_message_at":              conversation.ListLastMessageAt,
+			"list_last_message_preview":         conversation.ListLastMessagePreview,
+			"list_last_message_is_internal":     conversation.ListLastMessageIsInternal,
+			"last_public_message_at":            conversation.LastPublicMessageAt,
+			"last_public_message_id":            conversation.LastPublicMessageID,
+			"last_public_sender_type":           conversation.LastPublicSenderType,
+			"last_public_sender_display_name":   conversation.LastPublicSenderDisplayName,
+			"last_customer_message_id":          conversation.LastCustomerMessageID,
+			"last_customer_message_at":          conversation.LastCustomerMessageAt,
+			"unanswered_customer_message_count": conversation.UnansweredCustomerMessageCount,
+			"customer_awaiting_response":        conversation.CustomerAwaitingResponse,
+			"needs_human_reply":                 conversation.NeedsHumanReply,
+			"support_state_version":             conversation.SupportStateVersion,
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Create(&model.SupportPortalRequestReference{
+			ID: uuid.NewString(), WorkspaceID: workspaceID, ConversationID: conversation.ID,
+			PortalIdentityID: identity.ID, Reference: reference,
+		}).Error
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return conversation, &model.SupportPortalRequest{Reference: reference, Subject: subject, Status: "active", CreatedAt: conversation.CreatedAt, UpdatedAt: conversation.UpdatedAt, LastActivityAt: conversation.LastPublicMessageAt}, nil
+}
+
 func (r *PortalAuthRepository) WorkspaceBySlug(ctx context.Context, slug string) (*model.Workspace, error) {
 	var ws model.Workspace
 	if err := r.db.WithContext(ctx).Where("slug = ?", slug).First(&ws).Error; err != nil {

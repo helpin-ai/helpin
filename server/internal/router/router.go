@@ -329,6 +329,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Get("/session", h.CustomerPortal.Session)
 				r.Delete("/session", h.CustomerPortal.Logout)
 				r.Get("/requests", h.CustomerPortal.Requests)
+				r.Post("/requests", h.CustomerPortal.CreateRequest)
 			})
 		}
 		if h.PortalAuth != nil {
