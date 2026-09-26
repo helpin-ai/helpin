@@ -20,7 +20,8 @@ func setupSupportPortalService(t *testing.T) (*SupportPortalService, *gorm.DB) {
 		t.Fatal(err)
 	}
 	for _, statement := range []string{
-		`CREATE TABLE support_conversations (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, subject TEXT NOT NULL, status TEXT NOT NULL, channel TEXT NOT NULL, source TEXT NOT NULL, portal_visible BOOLEAN NOT NULL, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME)`,
+		`CREATE TABLE support_conversations (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, customer_email TEXT, subject TEXT NOT NULL, status TEXT NOT NULL, channel TEXT NOT NULL, source TEXT NOT NULL, portal_visible BOOLEAN NOT NULL, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME)`,
+		`CREATE TABLE support_widget_sessions (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, customer_email TEXT, identity_trust TEXT, identity_verified_at DATETIME)`,
 		`CREATE TABLE support_portal_identities (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, email TEXT NOT NULL, display_name TEXT, auth_subject TEXT, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE UNIQUE INDEX idx_support_portal_identity_email ON support_portal_identities (workspace_id, email)`,
 		`CREATE UNIQUE INDEX idx_support_portal_identity_subject ON support_portal_identities (workspace_id, auth_subject) WHERE auth_subject IS NOT NULL`,
@@ -38,8 +39,8 @@ func setupSupportPortalService(t *testing.T) (*SupportPortalService, *gorm.DB) {
 
 func createSupportPortalConversation(t *testing.T, db *gorm.DB, conversation *model.SupportConversation) {
 	t.Helper()
-	if err := db.Exec(`INSERT INTO support_conversations (id, workspace_id, subject, status, channel, source, portal_visible, created_at, updated_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		conversation.ID, conversation.WorkspaceID, conversation.Subject, conversation.Status, conversation.Channel, conversation.Source, conversation.PortalVisible, conversation.CreatedAt, conversation.UpdatedAt, conversation.DeletedAt,
+	if err := db.Exec(`INSERT INTO support_conversations (id, workspace_id, customer_email, subject, status, channel, source, portal_visible, created_at, updated_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		conversation.ID, conversation.WorkspaceID, conversation.CustomerEmail, conversation.Subject, conversation.Status, conversation.Channel, conversation.Source, conversation.PortalVisible, conversation.CreatedAt, conversation.UpdatedAt, conversation.DeletedAt,
 	).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -53,6 +54,9 @@ func TestSupportPortalProjectsCanonicalConversationWithOpaqueStableReference(t *
 	createSupportPortalConversation(t, db, conversation)
 	identity, err := svc.FindOrCreateIdentity(ctx, "ws-1", "Customer@Example.com", nil)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("UPDATE support_conversations SET customer_email = ? WHERE id = ?", identity.Email, conversation.ID).Error; err != nil {
 		t.Fatal(err)
 	}
 	first, err := svc.EnsureRequestReference(ctx, "ws-1", conversation.ID, identity.ID)

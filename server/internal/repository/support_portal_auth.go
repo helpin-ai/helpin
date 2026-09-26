@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -87,19 +88,55 @@ func (r *PortalAuthRepository) WorkspaceByID(ctx context.Context, id string) (*m
 	return &ws, nil
 }
 
-// AssociateVerifiedEmail only claims customer-visible conversations backed by
-// the verified address, or by a CRM contact with that address and no conflicting
-// customer email. Existing references are never transferred between identities.
+// AssociateVerifiedEmail claims portal-visible conversations after email verification.
+// Widget-originated conversations also require matching verified widget provenance.
 func (r *PortalAuthRepository) AssociateVerifiedEmail(tx *gorm.DB, workspaceID, email, identityID string) error {
-	contactIDs := tx.Model(&model.CRMContact{}).Select("id").Where("workspace_id = ? AND lower(email) = ?", workspaceID, strings.ToLower(email))
+	email = strings.ToLower(strings.TrimSpace(email))
+	var ambiguousIDs []string
+	if err := tx.Model(&model.SupportConversation{}).
+		Where("workspace_id = ? AND portal_visible = true AND channel = ? AND deleted_at IS NULL AND lower(trim(customer_email)) = ?", workspaceID, "widget", email).
+		Where(`EXISTS (SELECT 1 FROM support_widget_sessions AS session
+			WHERE session.workspace_id = support_conversations.workspace_id AND session.conversation_id = support_conversations.id
+			AND session.identity_trust = ? AND session.identity_verified_at IS NOT NULL
+			AND lower(trim(session.customer_email)) <> ?)`, model.IdentityTrustVerified, email).
+		Pluck("id", &ambiguousIDs).Error; err != nil {
+		return err
+	}
+	for _, id := range ambiguousIDs {
+		slog.Warn("portal continuity conflicting widget evidence", "workspace_id", workspaceID, "conversation_id", id, "identity_id", identityID)
+	}
 	var ids []string
 	if err := tx.Model(&model.SupportConversation{}).
 		Where("workspace_id = ? AND portal_visible = true AND status <> ? AND channel <> ? AND source <> ? AND deleted_at IS NULL", workspaceID, model.SupportConversationStatusSpam, "internal", "internal").
-		Where("lower(customer_email) = ? OR (crm_contact_id IN (?) AND (customer_email IS NULL OR customer_email = ''))", strings.ToLower(email), contactIDs).
+		Where("lower(trim(customer_email)) = ?", email).
+		Where(`(channel <> ? AND source <> ?) OR EXISTS (
+			SELECT 1 FROM support_widget_sessions AS session
+			WHERE session.workspace_id = support_conversations.workspace_id
+			AND session.conversation_id = support_conversations.id
+			AND session.identity_trust = ? AND session.identity_verified_at IS NOT NULL
+			AND lower(trim(session.customer_email)) = ?
+		) AND NOT EXISTS (
+			SELECT 1 FROM support_widget_sessions AS other
+			WHERE other.workspace_id = support_conversations.workspace_id
+			AND other.conversation_id = support_conversations.id
+			AND other.identity_trust = ? AND other.identity_verified_at IS NOT NULL
+			AND lower(trim(other.customer_email)) <> ?
+		)`, "widget", "widget", model.IdentityTrustVerified, email, model.IdentityTrustVerified, email).
 		Pluck("id", &ids).Error; err != nil {
 		return err
 	}
 	for _, id := range ids {
+		var existing model.SupportPortalRequestReference
+		err := tx.Where("workspace_id = ? AND conversation_id = ?", workspaceID, id).First(&existing).Error
+		if err != nil && err != gorm.ErrRecordNotFound {
+			return err
+		}
+		if err == nil {
+			if existing.PortalIdentityID != identityID {
+				slog.Warn("portal continuity identity conflict", "workspace_id", workspaceID, "conversation_id", id, "identity_id", identityID, "existing_identity_id", existing.PortalIdentityID)
+			}
+			continue
+		}
 		ref := model.SupportPortalRequestReference{ID: uuid.NewString(), WorkspaceID: workspaceID, ConversationID: id, PortalIdentityID: identityID, Reference: uuid.NewString()}
 		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&ref).Error; err != nil {
 			return err
@@ -113,7 +150,9 @@ func (r *PortalAuthRepository) ListRequests(ctx context.Context, workspaceID, id
 	query := r.db.WithContext(ctx).Table("support_portal_request_references AS refs").
 		Select("refs.reference, conv.subject, conv.status, conv.created_at, conv.last_public_message_at, conv.resolved_at").
 		Joins("JOIN support_conversations AS conv ON conv.id = refs.conversation_id AND conv.workspace_id = refs.workspace_id").
-		Where("refs.workspace_id = ? AND refs.portal_identity_id = ? AND conv.portal_visible = true AND conv.status <> ? AND conv.channel <> ? AND conv.source <> ? AND conv.deleted_at IS NULL", workspaceID, identityID, model.SupportConversationStatusSpam, "internal", "internal")
+		Joins("JOIN support_portal_identities AS identity ON identity.id = refs.portal_identity_id AND identity.workspace_id = refs.workspace_id").
+		Where("refs.workspace_id = ? AND refs.portal_identity_id = ? AND conv.portal_visible = true AND conv.status <> ? AND conv.channel <> ? AND conv.source <> ? AND conv.deleted_at IS NULL", workspaceID, identityID, model.SupportConversationStatusSpam, "internal", "internal").
+		Where(portalContinuityGuard, model.IdentityTrustVerified, model.IdentityTrustVerified)
 	switch status {
 	case "active":
 		query = query.Where("conv.status NOT IN ?", []string{model.SupportConversationStatusWaitingOnCustomer, "waiting", model.SupportConversationStatusResolved, "closed"})
@@ -138,11 +177,33 @@ func (r *PortalAuthRepository) FindRequest(ctx context.Context, workspaceID, ide
 	var conversation model.SupportConversation
 	err := r.db.WithContext(ctx).Table("support_conversations AS conv").Select("conv.*").
 		Joins("JOIN support_portal_request_references AS refs ON refs.conversation_id = conv.id AND refs.workspace_id = conv.workspace_id").
-		Where("refs.workspace_id = ? AND refs.portal_identity_id = ? AND refs.reference = ? AND conv.portal_visible = true AND conv.status <> ? AND conv.channel <> ? AND conv.source <> ? AND conv.deleted_at IS NULL", workspaceID, identityID, reference, model.SupportConversationStatusSpam, "internal", "internal").First(&conversation).Error
+		Joins("JOIN support_portal_identities AS identity ON identity.id = refs.portal_identity_id AND identity.workspace_id = refs.workspace_id").
+		Where("refs.workspace_id = ? AND refs.portal_identity_id = ? AND refs.reference = ? AND conv.portal_visible = true AND conv.status <> ? AND conv.channel <> ? AND conv.source <> ? AND conv.deleted_at IS NULL", workspaceID, identityID, reference, model.SupportConversationStatusSpam, "internal", "internal").
+		Where(portalContinuityGuard, model.IdentityTrustVerified, model.IdentityTrustVerified).First(&conversation).Error
 	if err == gorm.ErrRecordNotFound {
 		return nil, nil
 	}
 	return &conversation, err
+}
+
+// Recheck stored ownership against current customer and verified widget evidence.
+const portalContinuityGuard = `lower(trim(conv.customer_email)) = lower(trim(identity.email)) AND
+	((conv.channel <> 'widget' AND conv.source <> 'widget') OR
+	(EXISTS (SELECT 1 FROM support_widget_sessions AS session WHERE session.workspace_id = conv.workspace_id
+		AND session.conversation_id = conv.id AND session.identity_trust = ? AND session.identity_verified_at IS NOT NULL
+		AND lower(trim(session.customer_email)) = lower(trim(identity.email)))
+	AND NOT EXISTS (SELECT 1 FROM support_widget_sessions AS other WHERE other.workspace_id = conv.workspace_id
+		AND other.conversation_id = conv.id AND other.identity_trust = ? AND other.identity_verified_at IS NOT NULL
+		AND lower(trim(other.customer_email)) <> lower(trim(identity.email)))))`
+
+func (r *PortalAuthRepository) ReconcileRequests(ctx context.Context, workspaceID, identityID string) error {
+	var identity model.SupportPortalIdentity
+	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND id = ?", workspaceID, identityID).First(&identity).Error; err != nil {
+		return err
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return r.AssociateVerifiedEmail(tx, workspaceID, identity.Email, identityID)
+	})
 }
 
 func (r *PortalAuthRepository) CreateLink(ctx context.Context, link *model.PortalMagicLink) error {
