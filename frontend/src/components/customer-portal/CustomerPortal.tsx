@@ -558,7 +558,7 @@ export function CustomerPortalHome() {
 }
 
 export function CustomerPortalRequestPage({ reference }: { reference: string }) {
-  const { slug, status, handleSessionError } = usePortal()
+  const { slug, status, configuration, handleSessionError } = usePortal()
   const [request, setRequest] = useState<CustomerPortalRequestDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
