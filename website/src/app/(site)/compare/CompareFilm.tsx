@@ -1,24 +1,23 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { Maximize2, Pause, Play, RotateCcw, Volume2, VolumeX } from 'lucide-react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { Maximize2, Volume2, VolumeX } from 'lucide-react';
 import type { compareVideo } from './compare-data';
 
 type Props = { id: string; name: string; video: ReturnType<typeof compareVideo> };
 
-// The comparison video in the hero. The poster loads with the page; the file waits for the
-// page's load event, then plays muted while half of it is on screen and pauses when it
-// leaves. Reduced motion never autoplays. The last frame is the end card, so it stops there
-// instead of looping. Without JavaScript it keeps native controls.
+// The comparison video in the hero. It plays muted and on a loop as soon as the page is
+// interactive and a quarter of it is on screen, and pauses while it's scrolled away.
+// Sound and full screen sit inside the frame; clicking the video, or Space/Enter while it
+// has focus, pauses it. Reduced motion never autoplays. Without JavaScript it keeps
+// native controls.
 export function CompareFilm({ id, name, video }: Props) {
   const frame = useRef<HTMLDivElement>(null);
   const player = useRef<HTMLVideoElement>(null);
   const userPaused = useRef(false);
   const [enhanced, setEnhanced] = useState(false);
   const [preload, setPreload] = useState<'none' | 'auto'>('none');
-  const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(true);
-  const [ended, setEnded] = useState(false);
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {
@@ -34,21 +33,24 @@ export function CompareFilm({ id, name, video }: Props) {
     }, { rootMargin: '600px 0px' });
     const visible = new IntersectionObserver(([entry]) => {
       if (!entry.isIntersecting) { media.pause(); return; }
-      if (!reduced && !userPaused.current && !media.ended) media.play().catch(() => {});
-    }, { threshold: 0.5 });
-    // Start after the page has loaded, so the video never competes with the hero's first paint.
-    const start = () => { near.observe(element); visible.observe(element); };
-    if (document.readyState === 'complete') start();
-    else window.addEventListener('load', start, { once: true });
-    return () => { window.removeEventListener('load', start); near.disconnect(); visible.disconnect(); };
+      if (!reduced && !userPaused.current) media.play().catch(() => {});
+    }, { threshold: 0.25 });
+    near.observe(element);
+    visible.observe(element);
+    return () => { near.disconnect(); visible.disconnect(); };
   }, []);
 
   function toggle() {
     const media = player.current;
     if (!media) return;
-    if (media.ended) { media.currentTime = 0; }
     if (media.paused) { userPaused.current = false; media.play().catch(() => {}); }
     else { userPaused.current = true; media.pause(); }
+  }
+
+  function onKey(event: KeyboardEvent<HTMLVideoElement>) {
+    if (event.key !== ' ' && event.key !== 'Enter') return;
+    event.preventDefault();
+    toggle();
   }
 
   function toggleSound() {
@@ -58,7 +60,6 @@ export function CompareFilm({ id, name, video }: Props) {
     media.muted = next;
     setMuted(next);
     if (!next && media.paused) {
-      if (media.ended) media.currentTime = 0;
       userPaused.current = false;
       media.play().catch(() => {});
     }
@@ -72,44 +73,39 @@ export function CompareFilm({ id, name, video }: Props) {
     else media.webkitEnterFullscreen?.();
   }
 
-  const PlayIcon = ended ? RotateCcw : playing ? Pause : Play;
-  const playLabel = ended ? 'Replay the video' : playing ? 'Pause the video' : 'Play the video';
-
   return (
     <figure id={id} className="cmp-film" aria-label={video.title}>
-      <div ref={frame} className="cmp-film-frame" data-playing={playing} data-enhanced={enhanced}>
+      <div ref={frame} className="cmp-film-frame" data-enhanced={enhanced}>
         <video
           ref={player}
           src={video.src}
           poster={video.poster}
           preload={preload}
           muted={muted}
+          loop
           playsInline
           controls={!enhanced}
+          tabIndex={enhanced ? 0 : undefined}
+          aria-label={video.title}
           aria-describedby={`${id}-summary`}
+          aria-keyshortcuts={enhanced ? 'Space Enter' : undefined}
           onClick={enhanced ? toggle : undefined}
-          onPlay={() => { setPlaying(true); setEnded(false); }}
-          onPause={() => setPlaying(false)}
-          onEnded={() => { setPlaying(false); setEnded(true); }}
+          onKeyDown={enhanced ? onKey : undefined}
           onTimeUpdate={event => setProgress(event.currentTarget.currentTime / (event.currentTarget.duration || video.seconds))}
         />
-        <span className="cmp-film-progress" aria-hidden="true"><span style={{ transform: `scaleX(${Math.min(1, progress)})` }} /></span>
-      </div>
-      <figcaption>
         {enhanced ? (
           <div className="cmp-film-controls">
-            <button type="button" onClick={toggle} aria-label={playLabel}><PlayIcon size={15} aria-hidden="true" /></button>
             <button type="button" onClick={toggleSound} aria-label={muted ? 'Turn sound on' : 'Turn sound off'}>
-              {muted ? <VolumeX size={15} aria-hidden="true" /> : <Volume2 size={15} aria-hidden="true" />}
-              <span aria-hidden="true">{muted ? 'Sound on' : 'Sound off'}</span>
+              {muted ? <VolumeX size={16} aria-hidden="true" /> : <Volume2 size={16} aria-hidden="true" />}
             </button>
             <button type="button" onClick={fullScreen} aria-label="Watch full screen"><Maximize2 size={15} aria-hidden="true" /></button>
           </div>
         ) : null}
-        <div className="cmp-film-text">
-          <strong>Helpin vs {name} in {video.seconds} seconds</strong>
-          <span id={`${id}-summary`} className="sr-only">{video.summary}</span>
-        </div>
+        <span className="cmp-film-progress" aria-hidden="true"><span style={{ transform: `scaleX(${Math.min(1, progress)})` }} /></span>
+      </div>
+      <figcaption>
+        <strong>Helpin vs {name} in {video.seconds} seconds</strong>
+        <span id={`${id}-summary`} className="sr-only">{video.summary}</span>
       </figcaption>
     </figure>
   );
