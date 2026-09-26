@@ -756,7 +756,7 @@ function defaultTemplateAgentSetup(template: FlowTemplateManifest, inputs: Recor
   return {
     name: templateAgentName(template),
     system_prompt: defaultTemplateAgentInstructions(template, inputs),
-    approval_mode: (template.agent.create.approval_mode as AgentApprovalMode | undefined) ?? 'mutating_tools',
+    approval_mode: (template.agent.create.approval_mode as AgentApprovalMode | undefined) ?? 'risk_based',
     allowed_targets: (template.agent.create.allowed_targets ?? ['task']) as AgentTargetType[],
     allowed_tools: normalizeToolList(template.agent.create.allowed_tools ?? []),
     skills: (template.agent.create.skills ?? []).map((key) => ({ key })),

@@ -63,8 +63,8 @@ func TestValidateCustomAgentDraftDropsUnknownCatalogValuesAndAddsRequiredSkillTo
 	if len(draft.Skills) != 1 || draft.Skills[0].Key != "support_style" {
 		t.Fatalf("expected valid skill only, got %#v", draft.Skills)
 	}
-	if draft.ApprovalMode != "mutating_tools" {
-		t.Fatalf("expected safe approval default, got %q", draft.ApprovalMode)
+	if draft.ApprovalMode != "risk_based" {
+		t.Fatalf("expected risk-based approval default, got %q", draft.ApprovalMode)
 	}
 	if draft.ModelTier != "small" {
 		t.Fatalf("expected small model tier default, got %q", draft.ModelTier)
@@ -80,6 +80,26 @@ func TestValidateCustomAgentDraftDropsUnknownCatalogValuesAndAddsRequiredSkillTo
 		if !strings.Contains(joined, want) {
 			t.Fatalf("expected warning mentioning %q, got %v", want, warnings)
 		}
+	}
+}
+
+func TestCommandBarAgentDraftApprovalDefault(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		mode string
+		want string
+	}{
+		{name: "omitted", want: "risk_based"},
+		{name: "explicit", mode: "mutating_tools", want: "mutating_tools"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			req := commandBarCreateAgentRequestFromDraft("workspace-1", model.CustomAgentDraft{
+				Name: "Custom agent", ApprovalMode: test.mode,
+			}, model.ConfirmCommandBarChatProposalRequest{})
+			if req.ApprovalMode == nil || *req.ApprovalMode != test.want {
+				t.Fatalf("approval mode = %v, want %q", req.ApprovalMode, test.want)
+			}
+		})
 	}
 }
 

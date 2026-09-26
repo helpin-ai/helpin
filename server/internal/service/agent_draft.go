@@ -199,7 +199,7 @@ func normalizeDraftApprovalMode(value string) string {
 	case "never", "risk_based", "mutating_tools", "preset_default":
 		return strings.TrimSpace(value)
 	default:
-		return "mutating_tools"
+		return "risk_based"
 	}
 }
 
@@ -296,7 +296,7 @@ Choose only these skills:
 
 Defaults:
 - role: Custom Agent
-- approval_mode: mutating_tools unless the user explicitly asks to approve before any work or to execute writes without approval
+- approval_mode: risk_based unless the user explicitly asks for a different approval policy. Routine bounded changes can run immediately; sensitive and destructive changes require approval
 - model_tier: small unless the request clearly needs more complex reasoning
 - default_invocation_mode: interactive
 - max_concurrent_runs: 1
