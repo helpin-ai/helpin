@@ -2,22 +2,20 @@ import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { toast } from 'sonner';
+import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { QuietSearchInput } from '@/components/design-system/quiet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { agentService } from '@/lib/services/agentService';
 import { automationService } from '@/lib/services/automationService';
-import { assignedServerTools, editableAgentVersion, saveServerAgentToolAccess } from '@/lib/externalMCPAgentAccess';
+import { assignedServerTools, editableAgentVersion, saveServerAgentToolAccess, serverAgentAccessState } from '@/lib/externalMCPAgentAccess';
 import { queryKeys } from '@/lib/queryKeys';
 import { unwrap } from '@/lib/queryUtils';
 import type { ExternalMCPServer } from '@/lib/externalMCPTypes';
 import type { Agent, AgentPresetDefinition } from '@/lib/pmTypes';
 
 type Props = {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
   server: ExternalMCPServer;
   workspaceId: string;
   workspaceSlug: string;
@@ -29,8 +27,8 @@ type Props = {
   canEditPresetAgents: boolean;
 };
 
-export function ExternalMCPAgentAccessDrawer({
-  open, onOpenChange, server, workspaceId, workspaceSlug, agents, agentsLoading, agentsError,
+export function ExternalMCPAgentAccessPanel({
+  server, workspaceId, workspaceSlug, agents, agentsLoading, agentsError,
   canManageSettings, canEditCustomAgents, canEditPresetAgents,
 }: Props) {
   const queryClient = useQueryClient();
@@ -42,7 +40,7 @@ export function ExternalMCPAgentAccessDrawer({
   const presetsQuery = useQuery({
     queryKey: ['external-mcp-agent-access-presets', workspaceId],
     queryFn: async () => unwrap(await agentService.listPresets(workspaceId)),
-    enabled: open && Boolean(selectedAgent?.is_system) && canManageSettings && canEditPresetAgents,
+    enabled: Boolean(selectedAgent?.is_system) && canManageSettings && canEditPresetAgents,
     staleTime: 30_000,
   });
   const presets: AgentPresetDefinition[] = presetsQuery.data ?? [];
@@ -62,15 +60,6 @@ export function ExternalMCPAgentAccessDrawer({
   }, [agents, search, server]);
   const assignedAgents = agents.filter((agent) => assignedServerTools(agent.allowed_tools ?? [], server).length > 0).length;
 
-  const close = (nextOpen: boolean) => {
-    if (saving) return;
-    if (!nextOpen) {
-      setSelectedAgentId(null);
-      setSelectedAliases([]);
-      setSearch('');
-    }
-    onOpenChange(nextOpen);
-  };
   const chooseAgent = (agent: Agent) => {
     setSelectedAgentId(agent.id);
     setSelectedAliases(assignedServerTools(agent.allowed_tools ?? [], server));
@@ -98,19 +87,20 @@ export function ExternalMCPAgentAccessDrawer({
   };
 
   return (
-    <Sheet open={open} onOpenChange={close}>
-      <SheetContent className="w-full p-0 sm:max-w-xl" aria-label={`${server.name} agent access`}>
-        <SheetHeader className="shrink-0 border-b px-5 py-5 pr-14">
-          {selectedAgent ? (
-            <Button variant="ghost" size="sm" className="-ml-2 w-fit text-muted-foreground" onClick={() => setSelectedAgentId(null)} disabled={saving}>← All agents</Button>
-          ) : null}
-          <SheetTitle>{selectedAgent ? selectedAgent.name : 'Agent access'}</SheetTitle>
-          <SheetDescription>
-            {selectedAgent ? `Choose which ${server.name} tools this agent’s active version can use.` : `${server.name} · ${assignedAgents} of ${agents.length} agents assigned`}
-          </SheetDescription>
-        </SheetHeader>
+    <div data-external-mcp-agent-access className="min-w-0 border-t bg-muted/15 px-4 py-4">
+      <div className="max-w-3xl">
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          {selectedAgent ? <div>
+            <Button variant="ghost" size="sm" className="-ml-2 mb-2 text-muted-foreground" onClick={() => setSelectedAgentId(null)} disabled={saving}>← All agents</Button>
+            <div className="flex items-center gap-3">
+              <AgentAvatar agent={selectedAgent} className="size-10 rounded-none border-0 bg-transparent shadow-none" genericBare />
+              <div><p className="text-sm font-semibold">{selectedAgent.name}</p><p className="text-xs text-muted-foreground">Choose which {server.name} tools this agent can use.</p></div>
+            </div>
+          </div> : <div><p className="text-sm font-semibold">Agent access</p><p className="text-xs text-muted-foreground">Select an agent to manage its tools.</p></div>}
+          {!selectedAgent && !agentsLoading && !agentsError ? <Badge variant="outline">{assignedAgents} of {agents.length} assigned</Badge> : null}
+        </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+        <div className="max-h-[60vh] overflow-y-auto pr-1">
           {!selectedAgent ? (
             <div className="space-y-3">
               {agents.length > 10 ? <QuietSearchInput aria-label="Search agents" placeholder="Search agents" value={search} onChange={(event) => setSearch(event.target.value)} /> : null}
@@ -120,11 +110,12 @@ export function ExternalMCPAgentAccessDrawer({
               {!agentsLoading && !agentsError && agents.length > 0 && matchingAgents.length === 0 ? <p className="py-8 text-center text-sm text-muted-foreground">No agents match your search.</p> : null}
               {!agentsLoading && !agentsError ? matchingAgents.map((agent) => {
                 const count = assignedServerTools(agent.allowed_tools ?? [], server).length;
+                const accessState = serverAgentAccessState(agent.allowed_tools ?? [], server);
                 return (
-                  <button key={agent.id} type="button" onClick={() => chooseAgent(agent)} className="flex w-full items-center gap-3 rounded-lg border border-border/80 bg-background px-4 py-3 text-left transition-colors hover:border-primary/30 hover:bg-muted/30 focus-visible:outline-2 focus-visible:outline-primary">
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-sm font-semibold text-muted-foreground">{agent.name.trim().charAt(0).toUpperCase() || 'A'}</span>
-                    <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{agent.name}</span><span className="block text-xs text-muted-foreground">{agent.is_system ? 'Preset agent' : 'Custom agent'} · Active version</span></span>
-                    <span className="shrink-0 text-xs text-muted-foreground">{count ? `${count} tool${count === 1 ? '' : 's'}` : 'No access'}</span>
+                  <button key={agent.id} data-agent-access-row type="button" onClick={() => chooseAgent(agent)} className="flex w-full items-center gap-3 rounded-lg border border-border/80 bg-background px-3 py-3 text-left transition-colors hover:border-primary/30 hover:bg-muted/30 focus-visible:outline-2 focus-visible:outline-primary">
+                    <AgentAvatar agent={agent} className="size-9 rounded-none border-0 bg-transparent shadow-none" genericBare />
+                    <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{agent.name}</span><span className="block text-xs text-muted-foreground">{count ? `${count} tool${count === 1 ? '' : 's'} assigned` : agent.is_system ? 'Preset agent' : 'Custom agent'}</span></span>
+                    <Badge variant="outline" className={accessState === 'available' ? 'shrink-0 border-emerald-300/70 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300' : accessState === 'inactive' ? 'shrink-0 border-amber-300/70 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300' : 'shrink-0 text-muted-foreground'}>{accessState === 'available' ? 'Has access' : accessState === 'inactive' ? 'Assigned, unavailable' : 'No access'}</Badge>
                     <span aria-hidden="true" className="text-muted-foreground">›</span>
                   </button>
                 );
@@ -158,11 +149,11 @@ export function ExternalMCPAgentAccessDrawer({
           )}
         </div>
 
-        <SheetFooter className="shrink-0 flex-row items-center justify-between border-t px-5 py-4">
-          {workspaceSlug ? <Link to="/w/$slug/automation/agents" params={{ slug: workspaceSlug }} search={{ agent_id: selectedAgent?.id }} className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">Open agent editor</Link> : <span />}
+        <div className="mt-4 flex items-center justify-between gap-3 border-t pt-3">
+          {workspaceSlug ? <Link to="/w/$slug/automation/agents" params={{ slug: workspaceSlug }} search={{ agent_id: selectedAgent?.id }} className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">{selectedAgent ? 'Open agent editor' : 'Manage agents'}</Link> : <span />}
           {selectedAgent && canEdit ? <Button size="sm" disabled={!changed || saving} onClick={() => void save()}>{saving ? 'Saving…' : 'Save access'}</Button> : null}
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+        </div>
+      </div>
+    </div>
   );
 }

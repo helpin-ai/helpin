@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { assignedServerTools, editableAgentVersion, mergeServerToolAccess, saveServerAgentToolAccess } from '@/lib/externalMCPAgentAccess';
+import { assignedServerTools, editableAgentVersion, mergeServerToolAccess, saveServerAgentToolAccess, serverAgentAccessState } from '@/lib/externalMCPAgentAccess';
 import type { ExternalMCPServer } from '@/lib/externalMCPTypes';
 import type { Agent, AgentPresetDefinition, AgentVersion } from '@/lib/pmTypes';
 
@@ -11,6 +11,14 @@ const server = { tools: [
 describe('external MCP agent access', () => {
   it('counts assignments even when a workspace tool is disabled', () => {
     expect(assignedServerTools(['list_tasks', 'mcp__crm__write'], server)).toEqual(['mcp__crm__write']);
+  });
+
+  it('distinguishes usable access, inactive assignments, and no access', () => {
+    const connected = { ...server, enabled: true, status: 'connected' } as ExternalMCPServer;
+    expect(serverAgentAccessState(['mcp__crm__read'], connected)).toBe('available');
+    expect(serverAgentAccessState(['mcp__crm__write'], connected)).toBe('inactive');
+    expect(serverAgentAccessState(['mcp__crm__read'], { ...connected, enabled: false })).toBe('inactive');
+    expect(serverAgentAccessState([], connected)).toBe('none');
   });
 
   it('changes only this server’s aliases and preserves other agent tools', () => {

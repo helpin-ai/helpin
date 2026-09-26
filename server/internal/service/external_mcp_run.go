@@ -95,6 +95,42 @@ func externalMCPCrossHostRedirectMessage(err error) (string, bool) {
 	return "The MCP endpoint redirected to " + parsed.Hostname() + ". Credentials were not forwarded. Remove this installation and reconnect using the provider's canonical endpoint.", true
 }
 
+// Keep saved assignments intact while omitting intentionally disabled tools
+// and servers from the runtime copy used for a new run.
+func (s *AgentService) projectEnabledExternalMCPTools(ctx context.Context, workspaceID string, runtimeAgent AgentRuntimeAgent) (AgentRuntimeAgent, error) {
+	aliases := make([]string, 0)
+	for _, tool := range runtimeAgent.AllowedTools {
+		tool = strings.TrimSpace(tool)
+		if strings.HasPrefix(tool, "mcp__") && !strings.HasPrefix(tool, "mcp__helpin__") {
+			aliases = append(aliases, tool)
+		}
+	}
+	if len(aliases) == 0 {
+		return runtimeAgent, nil
+	}
+	if s.externalMCPService == nil || !s.externalMCPService.Enabled() {
+		return runtimeAgent, fmt.Errorf("agent has external MCP tools but external MCP is not configured")
+	}
+	tools, err := s.externalMCPService.repo.ListEnabledToolsByAliases(ctx, workspaceID, aliases)
+	if err != nil {
+		return runtimeAgent, err
+	}
+	enabled := make(map[string]bool, len(tools))
+	for _, tool := range tools {
+		enabled[tool.RuntimeAlias] = true
+	}
+	filtered := make([]string, 0, len(runtimeAgent.AllowedTools))
+	for _, tool := range runtimeAgent.AllowedTools {
+		alias := strings.TrimSpace(tool)
+		if strings.HasPrefix(alias, "mcp__") && !strings.HasPrefix(alias, "mcp__helpin__") && !enabled[alias] {
+			continue
+		}
+		filtered = append(filtered, tool)
+	}
+	runtimeAgent.AllowedTools = filtered
+	return runtimeAgent, nil
+}
+
 // ResolveRunAttachments turns selected catalog aliases into the exact runtime
 // server/tool allowlist and an in-memory current credential.
 func (s *ExternalMCPService) ResolveRunAttachments(ctx context.Context, workspaceID string, aliases []string) (*ExternalMCPResolvedRun, error) {

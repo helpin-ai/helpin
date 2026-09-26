@@ -6630,6 +6630,13 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	}
 
 	runtimeAgent = runtimeAgentForDockExecution(run, runtimeAgent)
+	if params.targetType != supportPreviewTarget {
+		runtimeAgent, err = s.projectEnabledExternalMCPTools(ctx, params.workspaceID, runtimeAgent)
+		if err != nil {
+			s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
+			return nil, err
+		}
+	}
 
 	params.agent.Status = "working"
 	if params.taskID != nil {
@@ -6664,7 +6671,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	}
 	resolvedMCP := &ExternalMCPResolvedRun{}
 	selectedExternalTools := make([]string, 0)
-	for _, tool := range parseJSONStringSlice(params.agent.AllowedTools) {
+	for _, tool := range registeredRuntimeAgent.AllowedTools {
 		tool = strings.TrimSpace(tool)
 		if strings.HasPrefix(tool, "mcp__") && !strings.HasPrefix(tool, "mcp__helpin__") {
 			selectedExternalTools = append(selectedExternalTools, tool)

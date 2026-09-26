@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
 import { ExternalMCPConnectDialog } from '@/components/automation/ExternalMCPConnectDialog';
-import { ExternalMCPAgentAccessDrawer } from '@/components/automation/ExternalMCPAgentAccessDrawer';
+import { ExternalMCPAgentAccessPanel } from '@/components/automation/ExternalMCPAgentAccessPanel';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -74,8 +74,6 @@ export function ExternalMCPConnections({
   const agentsQuery = useAgents(workspaceId);
   const servers = serversQuery.data ?? [];
   const agents = agentsQuery.data ?? [];
-  const [accessServerId, setAccessServerId] = useState<string | null>(null);
-  const accessServer = servers.find((server) => server.id === accessServerId);
   const resolveServer = useCallback(async (serverId: string) => {
     const result = await serversQuery.refetch();
     return result.data?.find((server) => server.id === serverId);
@@ -150,26 +148,14 @@ export function ExternalMCPConnections({
                 agents={agents}
                 agentsLoading={agentsQuery.isLoading}
                 agentsError={agentsQuery.isError}
-                onOpenAgentAccess={() => setAccessServerId(server.id)}
+                workspaceSlug={workspaceSlug}
+                canEditCustomAgents={canEditCustomAgents}
+                canEditPresetAgents={canEditPresetAgents}
               />
             ))}
           </div>
         </div>
       ) : null}
-
-      {accessServer ? <ExternalMCPAgentAccessDrawer
-        open={Boolean(accessServerId)}
-        onOpenChange={(open) => { if (!open) setAccessServerId(null); }}
-        server={accessServer}
-        workspaceId={workspaceId}
-        workspaceSlug={workspaceSlug}
-        agents={agents}
-        agentsLoading={agentsQuery.isLoading}
-        agentsError={agentsQuery.isError}
-        canManageSettings={canManageSettings}
-        canEditCustomAgents={canEditCustomAgents}
-        canEditPresetAgents={canEditPresetAgents}
-      /> : null}
 
       {canManageSettings && createOpen ? (
         <ExternalMCPConnectDialog
@@ -200,7 +186,9 @@ function ExternalMCPServerCard({
   agents,
   agentsLoading,
   agentsError,
-  onOpenAgentAccess,
+  workspaceSlug,
+  canEditCustomAgents,
+  canEditPresetAgents,
 }: {
   workspaceId: string;
   server: ExternalMCPServer;
@@ -208,9 +196,11 @@ function ExternalMCPServerCard({
   agents: Agent[];
   agentsLoading: boolean;
   agentsError: boolean;
-  onOpenAgentAccess: () => void;
+  workspaceSlug: string;
+  canEditCustomAgents: boolean;
+  canEditPresetAgents: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expandedSection, setExpandedSection] = useState<'agents' | 'tools' | null>(null);
   const updateServer = useUpdateExternalMCPServer(workspaceId);
   const deleteServer = useDeleteExternalMCPServer(workspaceId);
   const refresh = useRefreshExternalMCPTools(workspaceId);
@@ -238,6 +228,17 @@ function ExternalMCPServerCard({
     }
   };
   const toggleServer = async (enabled: boolean) => {
+    if (!enabled && (assignedAgents > 0 || agentsLoading || agentsError)) {
+      const description = assignedAgents > 0
+        ? `${assignedAgents} ${assignedAgents === 1 ? 'agent has' : 'agents have'} tools assigned from this server. Assignments stay saved, but those tools will be unavailable in new runs until you re-enable it.`
+        : 'Agents may have tools assigned from this server. Assignments stay saved, but those tools will be unavailable in new runs until you re-enable it.';
+      const accepted = await confirm({
+        title: `Disable ${server.name}?`,
+        description,
+        confirmText: 'Disable server',
+      });
+      if (!accepted) return;
+    }
     try {
       await updateServer.mutateAsync({ serverId: server.id, request: { enabled } });
     } catch (error) {
@@ -291,10 +292,11 @@ function ExternalMCPServerCard({
       </div>
       <div className="flex flex-wrap items-center gap-1 border-t border-border/70 px-3 py-2">
         {canManageSettings && needsOAuth ? <Button size="sm" onClick={() => void connect()} disabled={oauth.isPending}>{oauth.isPending ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Key01Icon className="mr-1.5 h-3.5 w-3.5" />}{server.status === 'pending_oauth' ? 'Connect' : 'Reconnect'}</Button> : null}
-        <Button size="sm" variant="ghost" onClick={onOpenAgentAccess}>
+        <Button size="sm" variant="ghost" aria-label={`${expandedSection === 'agents' ? 'Hide' : 'Show'} agent access`} aria-expanded={expandedSection === 'agents'} onClick={() => setExpandedSection((value) => value === 'agents' ? null : 'agents')}>
           <UserGroupIcon className="mr-1.5 h-4 w-4" />Agent access <span className="ml-1 text-muted-foreground">{agentsLoading ? '…' : agentsError ? '—' : assignedAgents}</span>
+          <ArrowDown01Icon className={cn('ml-1.5 h-3.5 w-3.5 transition-transform', expandedSection === 'agents' && 'rotate-180')} />
         </Button>
-        {tools.length > 0 ? <Button size="sm" variant="ghost" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>{expanded ? 'Hide tools' : 'Show tools'}<ArrowDown01Icon className={cn('ml-1.5 h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')} /></Button> : null}
+        {tools.length > 0 ? <Button size="sm" variant="ghost" aria-expanded={expandedSection === 'tools'} onClick={() => setExpandedSection((value) => value === 'tools' ? null : 'tools')}>{expandedSection === 'tools' ? 'Hide tools' : 'Show tools'}<ArrowDown01Icon className={cn('ml-1.5 h-3.5 w-3.5 transition-transform', expandedSection === 'tools' && 'rotate-180')} /></Button> : null}
         {canManageSettings && server.status === 'connected' && tools.length === 0 ? <Button size="sm" variant="ghost" disabled={refresh.isPending} onClick={() => void sync()}><ArrowReloadHorizontalIcon className="mr-1.5 h-4 w-4" />Refresh tools</Button> : null}
         {canManageSettings ? <DropdownMenu>
           <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" className="ml-auto" aria-label={`More actions for ${server.name}`}><MoreHorizontalIcon className="h-4 w-4" /></Button></DropdownMenuTrigger>
@@ -304,7 +306,18 @@ function ExternalMCPServerCard({
           </DropdownMenuContent>
         </DropdownMenu> : null}
       </div>
-      {expanded ? <ExternalMCPToolPolicies workspaceId={workspaceId} server={server} tools={tools} canManageSettings={canManageSettings} /> : null}
+      {expandedSection === 'agents' ? <ExternalMCPAgentAccessPanel
+        server={server}
+        workspaceId={workspaceId}
+        workspaceSlug={workspaceSlug}
+        agents={agents}
+        agentsLoading={agentsLoading}
+        agentsError={agentsError}
+        canManageSettings={canManageSettings}
+        canEditCustomAgents={canEditCustomAgents}
+        canEditPresetAgents={canEditPresetAgents}
+      /> : null}
+      {expandedSection === 'tools' ? <ExternalMCPToolPolicies workspaceId={workspaceId} server={server} tools={tools} canManageSettings={canManageSettings} /> : null}
     </section>
   );
 }
