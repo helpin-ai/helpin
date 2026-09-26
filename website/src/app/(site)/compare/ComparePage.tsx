@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import {
   ArrowRight, ArrowUpRight, Award, BarChart3, Blocks, BookOpenCheck, Bot, CalendarCheck, Check, ChevronRight, Cloud, Cpu, Feather,
-  GitBranch, GitPullRequest, Handshake, Import, Inbox, type LucideIcon, Megaphone, MessagesSquare, Minus, PenLine, RefreshCw,
+  GitBranch, GitPullRequest, Handshake, Import, Inbox, type LucideIcon, Megaphone, MessagesSquare, Minus, PenLine, PlayCircle, RefreshCw,
   Rocket, Scale, Server, ShieldCheck, Smartphone, Sprout, Users, Wallet, X, Zap,
 } from 'lucide-react';
 import { SITE_URL } from '@/lib/metadata';
@@ -13,7 +13,8 @@ import { PreviewFooter } from '../_components/PreviewFooter';
 import { PlatformClosing } from '../_components/platform/PlatformParts';
 import { CtaNote, CtaRow, DEMO_URL, FAQList, GITHUB_URL, SIGNUP_URL } from '../_components/ui';
 import { ARTICLES, HELPIN_ARTICLE } from './article-data';
-import { cellStatus, COMPETITORS, competitorSeo, formatChecked, type Cell, type Competitor, type IconKey, type Status } from './compare-data';
+import { cellStatus, COMPETITORS, competitorSeo, compareVideo, formatChecked, type Cell, type Competitor, type IconKey, type Status } from './compare-data';
+import { CompareFilm } from './CompareFilm';
 import { HeroMatchup } from './HeroMatchup';
 import { InViewOnce } from './InViewOnce';
 import { LazyPreview } from './LazyPreview';
@@ -158,6 +159,7 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
   const checked = formatChecked(competitor.checked);
   const seo = competitorSeo(competitor);
   const support = competitor.group === 'Customer support';
+  const video = compareVideo(competitor);
   const toc = [
     { id: 'overview', label: 'At a glance' },
     { id: 'why-switch', label: 'Why teams switch' },
@@ -181,6 +183,15 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
         ],
       },
       { ...article({ headline: seo.title, description: seo.description, path: seo.canonicalPath, date: competitor.checked }), image: `${SITE_URL}${seo.imagePath}` },
+      {
+        '@type': 'VideoObject',
+        name: video.title,
+        description: video.summary,
+        thumbnailUrl: `${SITE_URL}${video.poster}`,
+        contentUrl: `${SITE_URL}${video.src}`,
+        uploadDate: video.published,
+        duration: `PT${video.seconds}S`,
+      },
       organization,
     ],
   };
@@ -202,6 +213,7 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
                 <CtaRow primaryLabel="Start free trial" primaryHref={SIGNUP_URL} secondaryHref={DEMO_URL} secondaryLabel="Talk to us about switching" />
                 <CtaNote trial support />
                 <div className="platform-hero-points">
+                  <a href="#video"><PlayCircle size={14} aria-hidden="true" />Watch in {video.seconds} seconds</a>
                   <span><GitBranch size={14} aria-hidden="true" />Open source · Cloud or self-hosted</span>
                   <span><PenLine size={14} aria-hidden="true" />By the Helpin team</span>
                   <span><CalendarCheck size={14} aria-hidden="true" />Verified {checked}</span>
@@ -209,6 +221,7 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
               </div>
               <HeroMatchup name={name} glance={competitor.glance} />
             </div>
+            <CompareFilm id="video" name={name} video={video} />
           </div>
         </section>
 
