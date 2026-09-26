@@ -112,7 +112,7 @@ func (s *PortalAuthService) RequestDetail(ctx context.Context, workspaceID, iden
 	detail := &PortalRequestDetail{Reference: reference, Subject: conv.Subject, Status: model.PortalRequestStatus(conv.Status), LastActivityAt: conv.CreatedAt, CanReply: conv.AnonymizedAt == nil, Messages: []PortalMessage{}}
 	for i := range messages {
 		msg := &messages[i]
-		if msg.IsInternal || msg.MessageType != "reply" || (msg.SenderType != "customer" && msg.SenderType != "user" && msg.SenderType != "agent" && msg.SenderType != "ai") {
+		if !portalMessageVisible(msg) {
 			continue
 		}
 		public := PortalMessage{ID: msg.ID, Content: msg.Content, SenderType: msg.SenderType, SenderName: msg.SenderDisplayName, CreatedAt: msg.CreatedAt}
@@ -128,6 +128,11 @@ func (s *PortalAuthService) RequestDetail(ctx context.Context, workspaceID, iden
 		}
 	}
 	return detail, nil
+}
+
+func portalMessageVisible(msg *model.SupportMessage) bool {
+	return !msg.IsInternal && msg.DeliveryMode() != model.SupportDeliveryEmailOnly && msg.MessageType == "reply" &&
+		(msg.SenderType == "customer" || msg.SenderType == "user" || msg.SenderType == "agent" || msg.SenderType == "ai")
 }
 
 func (s *PortalAuthService) Reply(ctx context.Context, workspaceID string, identity *model.SupportPortalIdentity, reference, content string) error {
