@@ -135,6 +135,73 @@ describe('Objectives redesign', () => {
     expect(container.textContent).toContain('Couldn’t load objectives');
   });
 
+  it('makes key-result values and completion understandable without technical type labels', async () => {
+    records[0].key_results = [
+      { id: 'activation', objective_id: 'one', name: 'Increase activation', result_type: 'percent', initial_value: 20, current_value: 35, target_value: 50, progress: 50, position: 0, created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z' },
+      { id: 'launch', objective_id: 'one', name: 'Launch onboarding', result_type: 'boolean', initial_value: 0, current_value: 0, target_value: 1, progress: 0, position: 1, created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z' },
+    ];
+    const update = vi.spyOn(pmObjectiveService, 'updateKeyResult').mockImplementation(async (_ws, id, patch) => {
+      const updated = { ...records[0].key_results.find(kr => kr.id === id)!, ...patch, progress: 100 };
+      records[0] = { ...records[0], key_results: records[0].key_results.map(kr => kr.id === id ? updated : kr) };
+      return response(updated);
+    });
+    const { container } = await render('/w/acme/pm/objectives/one');
+    const section = container.querySelector('[aria-label="Key results"]')!;
+    expect(section).not.toBeNull();
+    expect(section.textContent).toContain('Current');
+    expect(section.textContent).toContain('Target');
+    expect(section.textContent).toContain('50%');
+    expect(section.textContent).toContain('Started at 20%');
+    expect(section.textContent).not.toContain('boolean');
+    expect(section.textContent).not.toContain('outcome progress');
+    expect(section.querySelector('[aria-label="Progress for Increase activation"]')?.getAttribute('aria-valuenow')).toBe('50');
+    const completion = section.querySelector<HTMLButtonElement>('[role="checkbox"][aria-label="Mark Launch onboarding done"]')!;
+    await act(async () => completion.click());
+    expect(update).toHaveBeenCalledWith('ws', 'launch', { current_value: 1 });
+    expect(section.querySelector('[role="checkbox"]')?.getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('keeps key-result values readable and removes editing controls for viewers', async () => {
+    records[0].key_results = [{ id: 'kr', objective_id: 'one', name: 'Reduce support wait time', result_type: 'numeric', initial_value: 60, current_value: 30, target_value: 10, progress: 60, position: 0, created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z' }];
+    context.permissions.canEdit = false; context.permissions.isAdmin = false;
+    const { container } = await render('/w/acme/pm/objectives/one');
+    const section = container.querySelector('[aria-label="Key results"]')!;
+    expect(section).not.toBeNull();
+    expect(section.textContent).toContain('Current');
+    expect(section.textContent).toContain('30');
+    expect(section.textContent).toContain('Target');
+    expect(section.textContent).toContain('10');
+    expect(section.querySelector('input')).toBeNull();
+    expect(section.querySelector('[aria-label^="Delete key result"]')).toBeNull();
+    expect(section.querySelector('[aria-label="Progress for Reduce support wait time"]')?.getAttribute('aria-valuenow')).toBe('60');
+  });
+
+  it('opens a visible editor for the full key result and retains changes after a failed save', async () => {
+    const kr = { id: 'kr', objective_id: 'one', name: 'Activation', result_type: 'percent' as const, initial_value: 20, current_value: 35, target_value: 50, progress: 50, position: 0, created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z' };
+    records[0].key_results = [kr];
+    const update = vi.spyOn(pmObjectiveService, 'updateKeyResult').mockResolvedValueOnce({ data: null, error: 'Could not save changes', status: 500 }).mockImplementation(async (_ws, _id, patch) => {
+      const updated = { ...kr, ...patch };
+      records[0] = { ...records[0], key_results: [updated] };
+      return response(updated);
+    });
+    const { container } = await render('/w/acme/pm/objectives/one');
+    const edit = container.querySelector<HTMLButtonElement>('[aria-label="Edit key result Activation"]');
+    expect(edit).not.toBeNull();
+    await act(async () => edit!.click());
+    const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(dialog().textContent).toContain('Edit key result');
+    expect(dialog().querySelector<HTMLInputElement>('#key-result-target')!.value).toBe('50');
+    await change(dialog().querySelector<HTMLInputElement>('#key-result-name')!, 'Increase activation');
+    await change(dialog().querySelector<HTMLInputElement>('#key-result-target')!, '60');
+    await act(async () => button(dialog(), 'Save changes').click());
+    expect(dialog().textContent).toContain('Could not save changes');
+    expect(dialog().querySelector<HTMLInputElement>('#key-result-target')!.value).toBe('60');
+    await act(async () => button(dialog(), 'Save changes').click());
+    expect(update).toHaveBeenLastCalledWith('ws', 'kr', { name: 'Increase activation', result_type: 'percent', initial_value: 20, current_value: 35, target_value: 60 });
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.textContent).toContain('Increase activation');
+  });
+
   it('saves a key-result value before navigation and preserves the draft after failure', async () => {
     const result = { id: 'kr', objective_id: 'one', name: 'Activation', result_type: 'percent' as const, initial_value: 0, current_value: 20, target_value: 100, progress: 20, position: 0, created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z' };
     records[0].key_results = [result];
