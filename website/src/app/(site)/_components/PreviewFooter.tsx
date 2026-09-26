@@ -22,7 +22,7 @@ const COLUMNS = [
     { label: 'Documentation', href: DOCS.home },
   ] },
   { title: 'Compare', links: [
-    ...COMPETITORS.map(competitor => ({ label: `Helpin vs ${competitor.name}`, href: `/compare/${competitor.slug}` })),
+    ...COMPETITORS.map(competitor => ({ label: `vs ${competitor.name}`, href: `/compare/${competitor.slug}` })),
     { label: 'All comparisons', href: '/compare' },
   ] },
   { title: 'Community', links: [
