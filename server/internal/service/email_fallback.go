@@ -2096,6 +2096,22 @@ func (s *EmailFallbackService) fireEmailBatch(ctx context.Context, conversationI
 	}
 	preparedPending, emailAttachments := s.prepareEmailAttachments(ctx, pending)
 	htmlBody, textBody := s.renderBodies(preparedPending, agentName, workspaceName, chatLink, unsubscribeEmail)
+	if settings.PortalEnabled && conv.PortalVisible && workspace != nil && strings.TrimSpace(s.appBaseURL) != "" {
+		portalURL := strings.TrimRight(s.appBaseURL, "/") + "/portal/" + url.PathEscape(workspace.Slug)
+		var reference struct {
+			Reference string
+		}
+		if err := s.convRepo.DB().WithContext(ctx).Table("support_portal_request_references AS refs").
+			Select("refs.reference").Joins("JOIN support_portal_identities AS identity ON identity.id = refs.portal_identity_id AND identity.workspace_id = refs.workspace_id").
+			Where("refs.workspace_id = ? AND refs.conversation_id = ? AND lower(identity.email) = lower(?)", conv.WorkspaceID, conv.ID, strings.TrimSpace(derefString(conv.CustomerEmail))).
+			Take(&reference).Error; err == nil {
+			portalURL += "/requests/" + url.PathEscape(reference.Reference)
+		} else if err != gorm.ErrRecordNotFound {
+			s.logger.WarnContext(ctx, "portal email link lookup failed", "workspace_id", conv.WorkspaceID, "conversation_id", conv.ID, "error", err)
+		}
+		htmlBody += `<p><a href="` + html.EscapeString(portalURL) + `">View your request in the support portal</a> (sign-in required)</p>`
+		textBody += "\n\nView your request in the support portal (sign-in required):\n" + portalURL
+	}
 
 	var postmarkMessageID, sentFromAddress, fromFallbackReason, fromSource string
 	var sendErr error
