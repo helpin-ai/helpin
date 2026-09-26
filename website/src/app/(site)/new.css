@@ -248,13 +248,14 @@
   .hp3 .footer-brand p { margin-top: 0; }
   .hp3 .footer-community { margin-top: 48px; }
 }
+@media (max-width: 720px) {
+  .hp3 .footer-nav { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 32px 20px; }
+}
 @media (max-width: 600px) {
   .hp3 .pfoot { padding-top: 48px; }
   .hp3 .pfoot .wrap { padding-inline: 24px; }
   .hp3 .footer-brand { display: block; }
   .hp3 .footer-brand p { margin-top: 18px; }
-  .hp3 .footer-nav { display: block; columns: 2; column-gap: 20px; }
-  .hp3 .footer-column { break-inside: avoid; padding-bottom: 32px; }
   .hp3 .footer-column a { padding-block: 7px; }
   .hp3 .footer-community { align-items: flex-start; flex-direction: column; gap: 24px; }
   .hp3 .footer-bottom { align-items: flex-start; flex-direction: column; gap: 16px; }
