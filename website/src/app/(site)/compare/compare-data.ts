@@ -65,6 +65,8 @@ export type Competitor = {
   };
   faqs: FAQ[];
   closing: { title: string; description: string };
+  /** The short comparison video under the hero; its files live in public/new/compare/ (see compareVideo). */
+  video: { seconds: number; summary: string };
   /** Where each competitor fact was checked. Internal record for re-checks; not shown on the page. */
   sources: { label: string; url: string }[];
 };
@@ -80,6 +82,20 @@ export function competitorSeo(competitor: Competitor): PageSeo {
     canonicalPath: `/compare/${competitor.slug}`,
     imagePath: `/og/helpin-compare-${competitor.slug}-green-v4.png`,
     imageAlt: `Helpin vs ${competitor.name}`,
+  };
+}
+
+const VIDEO_PUBLISHED = '2026-09-26';
+
+/** Files and metadata for a competitor's comparison video. Bump the -v suffix when a video is re-cut. */
+export function compareVideo(competitor: Competitor) {
+  const base = `/new/compare/helpin-vs-${competitor.slug}`;
+  return {
+    ...competitor.video,
+    title: `Helpin vs ${competitor.name} in ${competitor.video.seconds} seconds`,
+    src: `${base}-1080p-v1.mp4`,
+    poster: `${base}-poster-1920-v1.webp`,
+    published: VIDEO_PUBLISHED,
   };
 }
 
@@ -282,6 +298,7 @@ export const COMPETITORS: Competitor[] = [
       ...sharedFaqs('Intercom'),
     ],
     closing: { title: 'Bring support and the work behind it together.', description: 'Start a 14-day trial of Helpin Cloud with no card, or self-host the open-source edition for free.' },
+    video: { seconds: 39, summary: 'Intercom charges per seat plus $0.99 per AI outcome. Helpin charges one workspace price with AI usage included, and turns the answer into a task, a pull request and a follow-up.' },
     sources: [
       { label: 'Intercom plans explained', url: 'https://www.intercom.com/help/en/articles/9061614-fin-and-intercom-plans-explained' },
       { label: 'Intercom seats', url: 'https://www.intercom.com/help/en/articles/8205716-seats' },
@@ -430,6 +447,7 @@ export const COMPETITORS: Competitor[] = [
       ...sharedFaqs('Zendesk'),
     ],
     closing: { title: 'Take the ticket all the way to the release.', description: 'Start a 14-day trial of Helpin Cloud with no card, or self-host the open-source edition for free.' },
+    video: { seconds: 39, summary: 'The ticket says solved while the customer is still stuck. Helpin keeps one history from ticket to release, with CRM built in and one price for unlimited teammates.' },
     sources: [
       { label: 'Zendesk pricing', url: 'https://www.zendesk.com/pricing/' },
       { label: 'Zendesk AI agent resolutions', url: 'https://support.zendesk.com/hc/en-us/articles/9570369117338' },
@@ -577,6 +595,7 @@ export const COMPETITORS: Competitor[] = [
       ...sharedFaqs('Help Scout'),
     ],
     closing: { title: 'Keep support simple, and connect what comes next.', description: 'Start a 14-day trial of Helpin Cloud with no card, or self-host the open-source edition for free.' },
+    video: { seconds: 39, summary: 'Keep a calm inbox and connect what comes next: projects, CRM, meetings and AI agents on one customer history, with AI usage included in one workspace price.' },
     sources: [
       { label: 'Help Scout pricing', url: 'https://www.helpscout.com/pricing/' },
       { label: 'Help Scout AI agent', url: 'https://www.helpscout.com/agent/' },
@@ -724,6 +743,7 @@ export const COMPETITORS: Competitor[] = [
       ...sharedFaqs('Chatwoot', { selfHost: false }),
     ],
     closing: { title: 'Open source, from the conversation to the release.', description: 'Self-host the Community edition for free, or start a 14-day trial of Helpin Cloud with no card.' },
+    video: { seconds: 37, summary: 'Both are open source. Chatwoot’s AI agent needs a paid plan even when self-hosted; Helpin’s free Community edition includes AI agents, projects and CRM.' },
     sources: [
       { label: 'Chatwoot pricing', url: 'https://www.chatwoot.com/pricing' },
       { label: 'Chatwoot self-hosted plans', url: 'https://www.chatwoot.com/pricing/self-hosted-plans' },
@@ -870,6 +890,7 @@ export const COMPETITORS: Competitor[] = [
       ...sharedFaqs('Linear').filter(([question]) => !question.startsWith('Can we run Helpin alongside')),
     ],
     closing: { title: 'Plan the work with the customer in view.', description: 'Start a 14-day trial of Helpin Cloud with no card, or self-host the open-source edition for free.' },
+    video: { seconds: 35, summary: 'Linear links customer requests from your support tool. Helpin keeps the customer attached to the task, from the support inbox to the pull request and the follow-up.' },
     sources: [
       { label: 'Linear pricing', url: 'https://linear.app/pricing' },
       { label: 'Linear customer requests', url: 'https://linear.app/docs/customer-requests' },
