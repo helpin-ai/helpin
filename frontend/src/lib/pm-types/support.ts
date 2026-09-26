@@ -839,7 +839,7 @@ export interface AIMessageMetadata {
     confidence: number;
     url?: string;
   }>;
-  ai_confidence: number;
+  ai_confidence?: number;
   ai_model: string;
   ai_tokens_used: number;
   ai_agent_id: string;

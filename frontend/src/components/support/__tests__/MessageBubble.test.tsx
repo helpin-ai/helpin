@@ -51,6 +51,32 @@ function renderBubble(
 }
 
 describe('MessageBubble', () => {
+  it('does not show confidence for an AI follow-up without a score', () => {
+    const rendered = renderBubble({
+      id: 'follow-up', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'ai',
+      message_type: 'reply', is_internal: false, content: 'Do you still need help?',
+      metadata: JSON.stringify({ ai_auto_reply: true, ai_reply_kind: 'inactivity_follow_up', ai_model: 'agent-runtime' }),
+      created_at: '2026-09-24T10:00:00Z', updated_at: '2026-09-24T10:00:00Z',
+    });
+    try {
+      expect(rendered.container.textContent).toContain('Do you still need help?');
+      expect(rendered.container.textContent).not.toContain('NaN% confident');
+      expect(rendered.container.textContent).not.toContain('% confident');
+    } finally { rendered.cleanup(); }
+  });
+
+  it('still shows a recorded AI confidence score', () => {
+    const rendered = renderBubble({
+      id: 'scored', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'ai',
+      message_type: 'reply', is_internal: false, content: 'Here is the answer.',
+      metadata: JSON.stringify({ ai_auto_reply: true, ai_confidence: 0.87, ai_sources: [] }),
+      created_at: '2026-09-24T10:00:00Z', updated_at: '2026-09-24T10:00:00Z',
+    });
+    try {
+      expect(rendered.container.textContent).toContain('87% confident');
+    } finally { rendered.cleanup(); }
+  });
+
   it.each(['queued', 'preparing', 'sending', 'translating'] as const)('keeps %s delivery status below the bubble', (pending) => {
     const rendered = renderBubble({ id: 'sending', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'user', message_type: 'reply', is_internal: false, content: 'Hello', pending_send: pending, created_at: '2026-09-24T10:00:00Z', updated_at: '2026-09-24T10:00:00Z' });
     try {
