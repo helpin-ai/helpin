@@ -63,6 +63,7 @@ const mocks = vi.hoisted(() => ({
 // focused on transcript, message correlation, and composer behavior.
 vi.mock('@/components/agents/AIConnectionPicker', () => ({ AIConnectionPicker: mocks.aiPicker }));
 vi.mock('@/hooks/queries/useAskAgentDefaults', () => ({ useAskAgentDefaults: mocks.useAskAgentDefaults }));
+vi.mock('@/hooks/queries/useAIProfiles', () => ({ useAIProfiles: () => ({ data: [] }) }));
 
 vi.mock('@/lib/helpin', () => ({ resetHelpinIdentity: vi.fn() }));
 
