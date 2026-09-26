@@ -1288,3 +1288,7 @@
 .hp3 .not-found { padding: 160px 0 120px; }
 .hp3 .not-found h1 { font-size: clamp(36px, 5vw, 56px); line-height: 1.08; margin: 14px 0 16px; }
 .hp3 .not-found .cta-row { margin-top: 32px; justify-content: flex-start; }
+
+/* Named competitors in the homepage eyebrow link to their comparisons. */
+.hp3 .eyebrow-link { color: inherit; text-decoration: underline; text-decoration-color: currentColor; text-decoration-thickness: 1px; text-underline-offset: 3px; text-decoration-style: dotted; }
+.hp3 .eyebrow-link:hover { text-decoration-style: solid; }

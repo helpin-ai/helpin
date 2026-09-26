@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { Braces, Database, Plug, Server, SlidersHorizontal, Webhook } from 'lucide-react';
 import { CustomerLogos } from './_components/CustomerLogos';
 import { PreviewNav } from './_components/PreviewNav';
@@ -78,7 +79,7 @@ export default function HomePage() {
         <HeroVortex />
         <div className="wrap hero-wrap">
           <div className="hero-inner">
-            <span className="eyebrow">An open-source alternative to Intercom and Linear</span>
+            <span className="eyebrow">An open-source alternative to <Link className="eyebrow-link" href="/compare/intercom">Intercom</Link> and <Link className="eyebrow-link" href="/compare/linear">Linear</Link></span>
             <h1>AI agents that do more than answer.</h1>
             <p className="lede">Helpin gives AI agents the full customer context to resolve questions, take action, and follow through—across support, projects, CRM, meetings, and docs.</p>
             <CtaRow primaryLabel="Start free trial" />

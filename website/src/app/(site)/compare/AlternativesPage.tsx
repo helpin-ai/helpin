@@ -1,13 +1,13 @@
 import Link from 'next/link';
 import { ArrowRight, CalendarCheck, Check, ChevronRight, Minus, PenLine, Scale } from 'lucide-react';
 import { SITE_URL } from '@/lib/metadata';
-import { JsonLd } from '@/lib/structured-data';
+import { article, JsonLd, organization } from '@/lib/structured-data';
 import { HeroVortex } from '../_components/HeroVortex';
 import { PreviewNav } from '../_components/PreviewNav';
 import { PreviewFooter } from '../_components/PreviewFooter';
 import { PlatformClosing } from '../_components/platform/PlatformParts';
 import { CtaNote, CtaRow, DEMO_URL, FAQList, SectionHead, SIGNUP_URL } from '../_components/ui';
-import { TOOLS, type AlternativesPage as Page } from './alternatives-data';
+import { alternativesSeo, TOOLS, type AlternativesPage as Page } from './alternatives-data';
 import { CompareCard, HelpinMark, Monogram } from './ComparePage';
 import { COMPETITORS, formatChecked } from './compare-data';
 
@@ -20,6 +20,7 @@ export function AlternativesPage({ page }: { page: Page }) {
   const checked = formatChecked(page.checked);
   const year = page.checked.slice(0, 4);
   const related = COMPETITORS.filter(item => item.name !== page.competitor && tools.some(tool => tool.compare === `/compare/${item.slug}`)).slice(0, 3);
+  const seo = alternativesSeo(page);
   const structured = {
     '@context': 'https://schema.org',
     '@graph': [
@@ -31,6 +32,8 @@ export function AlternativesPage({ page }: { page: Page }) {
           { '@type': 'ListItem', position: 3, name: `${page.competitor} alternatives`, item: `${SITE_URL}/compare/${page.slug}` },
         ],
       },
+      { ...article({ headline: seo.title, description: seo.description, path: seo.canonicalPath, date: page.checked }), image: `${SITE_URL}${seo.imagePath}` },
+      organization,
       {
         '@type': 'ItemList',
         name: `${page.competitor} alternatives`,
