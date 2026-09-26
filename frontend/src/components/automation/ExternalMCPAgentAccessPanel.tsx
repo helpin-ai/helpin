@@ -33,7 +33,7 @@ export function ExternalMCPAgentAccessPanel({
 }: Props) {
   const queryClient = useQueryClient();
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
-  const [selectedAliases, setSelectedAliases] = useState<string[]>([]);
+  const [draftAliases, setSelectedAliases] = useState<string[] | null>(null);
   const [search, setSearch] = useState('');
   const [saving, setSaving] = useState(false);
   const selectedAgent = agents.find((agent) => agent.id === selectedAgentId);
@@ -48,6 +48,8 @@ export function ExternalMCPAgentAccessPanel({
   const canEdit = Boolean(canManageSettings && selectedAgent && activeVersion
     && (activeVersion.kind === 'preset' ? canEditPresetAgents : canEditCustomAgents));
   const assigned = selectedAgent ? assignedServerTools(selectedAgent.allowed_tools ?? [], server) : [];
+  const enabledAliases = (server.tools ?? []).filter((tool) => tool.enabled).map((tool) => tool.runtime_alias);
+  const selectedAliases = draftAliases ?? (assigned.length || !canEdit ? assigned : enabledAliases);
   const changed = selectedAliases.length !== assigned.length || selectedAliases.some((alias) => !assigned.includes(alias));
   const matchingAgents = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -62,7 +64,7 @@ export function ExternalMCPAgentAccessPanel({
 
   const chooseAgent = (agent: Agent) => {
     setSelectedAgentId(agent.id);
-    setSelectedAliases(assignedServerTools(agent.allowed_tools ?? [], server));
+    setSelectedAliases(null);
   };
   const save = async () => {
     if (!selectedAgent || !canEdit || !changed || saving) return;
@@ -131,7 +133,13 @@ export function ExternalMCPAgentAccessPanel({
               {!canEdit && !selectedAgent.is_system && !selectedAgent.active_version_id ? <p className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">This agent has no active version to edit.</p> : null}
               {!canEdit && activeVersion && !canManageSettings ? <p className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">Only workspace managers can change agent access.</p> : null}
               {!canEdit && activeVersion && canManageSettings && !(activeVersion.kind === 'preset' ? canEditPresetAgents : canEditCustomAgents) ? <p className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">You need agent editing access to change this version.</p> : null}
-              <div className="flex items-center justify-between gap-3"><p className="text-sm font-medium">Tools on {server.name}</p><Badge variant="secondary">{selectedAliases.length} selected</Badge></div>
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                <p className="text-sm font-medium">Tools on {server.name} <span className="ml-2 text-xs font-normal text-muted-foreground">{selectedAliases.length} selected</span></p>
+                {canEdit && (server.tools ?? []).length > 0 ? <div className="flex items-center gap-1">
+                  <Button variant="ghost" size="sm" disabled={saving || enabledAliases.every((alias) => selectedAliases.includes(alias))} onClick={() => setSelectedAliases([...new Set([...selectedAliases, ...enabledAliases])])}>Select all</Button>
+                  <Button variant="ghost" size="sm" disabled={saving || selectedAliases.length === 0} onClick={() => setSelectedAliases([])}>Select none</Button>
+                </div> : null}
+              </div>
               {(server.tools ?? []).length === 0 ? <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No tools discovered. Refresh this server’s tools first.</p> : null}
               <div className="space-y-2">
                 {(server.tools ?? []).map((tool) => {
@@ -139,7 +147,7 @@ export function ExternalMCPAgentAccessPanel({
                   const disabled = !canEdit || saving || (!tool.enabled && !selected);
                   return (
                     <label key={tool.id} className="flex cursor-pointer gap-3 rounded-lg border border-border/80 px-3 py-3 has-disabled:cursor-default">
-                      <Checkbox checked={selected} disabled={disabled} onCheckedChange={(checked) => setSelectedAliases((current) => checked === true ? [...current, tool.runtime_alias] : current.filter((alias) => alias !== tool.runtime_alias))} aria-label={`${selected ? 'Remove' : 'Allow'} ${tool.remote_name} for ${selectedAgent.name}`} />
+                      <Checkbox checked={selected} disabled={disabled} onCheckedChange={(checked) => setSelectedAliases(checked === true ? [...selectedAliases, tool.runtime_alias] : selectedAliases.filter((alias) => alias !== tool.runtime_alias))} aria-label={`${selected ? 'Remove' : 'Allow'} ${tool.remote_name} for ${selectedAgent.name}`} />
                       <span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><span className="break-all font-mono text-xs font-medium">{tool.remote_name}</span><Badge variant="outline" className="text-[10px] capitalize">{tool.access}</Badge>{!tool.enabled ? <Badge variant="secondary" className="text-[10px]">Off</Badge> : null}</span>{tool.description ? <span className="mt-1 block text-xs leading-5 text-muted-foreground">{tool.description}</span> : null}</span>
                     </label>
                   );
