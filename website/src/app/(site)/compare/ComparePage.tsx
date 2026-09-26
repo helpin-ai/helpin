@@ -11,12 +11,14 @@ import { HeroVortex } from '../_components/HeroVortex';
 import { PreviewNav } from '../_components/PreviewNav';
 import { PreviewFooter } from '../_components/PreviewFooter';
 import { PlatformClosing } from '../_components/platform/PlatformParts';
-import { CommunityShowcase } from '../_components/platform/PlatformProof';
-import { CtaNote, CtaRow, DEMO_URL, FAQList, GITHUB_URL, SectionHead, SIGNUP_URL } from '../_components/ui';
+import { CtaNote, CtaRow, DEMO_URL, FAQList, GITHUB_URL, SIGNUP_URL } from '../_components/ui';
+import { ARTICLES, HELPIN_ARTICLE } from './article-data';
 import { cellStatus, COMPETITORS, competitorSeo, formatChecked, type Cell, type Competitor, type IconKey, type Status } from './compare-data';
 import { HeroMatchup } from './HeroMatchup';
 import { InViewOnce } from './InViewOnce';
+import { LazyPreview } from './LazyPreview';
 import { PriceCalculator } from './PriceCalculator';
+import { Toc } from './Toc';
 
 const ICONS: Record<IconKey, LucideIcon> = {
   workflow: GitPullRequest, billing: Wallet, team: Users, hosting: Server, crm: Handshake, open: GitBranch,
@@ -59,6 +61,17 @@ function Lane({ label, steps, helpin }: { label: string; steps: string[]; helpin
   );
 }
 
+/** One product's side of a comparison, labeled so skimmers can follow either column. */
+function Side({ name, children }: { name: string; children: React.ReactNode }) {
+  const helpin = name === 'Helpin';
+  return (
+    <div className="cmp-side" data-product={helpin ? 'helpin' : 'rival'}>
+      <span className="cmp-side-name">{helpin ? <HelpinMark size={18} /> : <Monogram name={name} />}{name}</span>
+      <p>{children}</p>
+    </div>
+  );
+}
+
 function ProofStrip() {
   return (
     <section className="cmp-proof" aria-label="Who uses Helpin">
@@ -74,11 +87,54 @@ function ProofStrip() {
   );
 }
 
+function ComparisonTable({ competitor }: { competitor: Competitor }) {
+  const { name } = competitor;
+  return (
+    <div className="included-table-scroll cmp-table-scroll" role="region" aria-label={`Helpin and ${name} feature comparison`} tabIndex={0}>
+      <table className="included-table cmp-table">
+        <caption className="sr-only">Helpin and {name} compared. {competitor.tableLede}</caption>
+        <colgroup><col className="cmp-table-feature" /><col className="cmp-table-helpin" /><col /></colgroup>
+        <thead>
+          <tr>
+            <th scope="col">Capability</th>
+            <th scope="col" className="cmp-table-product"><span className="cmp-table-name"><HelpinMark size={18} />Helpin</span><span>Cloud or self-hosted</span></th>
+            <th scope="col" className="cmp-table-product"><span className="cmp-table-name"><Monogram name={name} />{name}</span><span>{competitor.category}</span></th>
+          </tr>
+        </thead>
+        {competitor.table.map(group => (
+          <tbody key={group.group}>
+            <tr className="cmp-table-group"><th scope="rowgroup" colSpan={3}>{group.group}</th></tr>
+            {group.rows.map(row => (
+              <tr key={row.label}>
+                <th scope="row">{row.label}</th>
+                <td className="cmp-table-helpin-cell"><Value value={row.helpin} status={row.helpinStatus} /></td>
+                <td><Value value={row.competitor} status={row.competitorStatus} /></td>
+              </tr>
+            ))}
+          </tbody>
+        ))}
+      </table>
+    </div>
+  );
+}
+
 export function ComparePage({ competitor }: { competitor: Competitor }) {
   const { name } = competitor;
+  const copy = ARTICLES[competitor.slug];
   const others = COMPETITORS.filter(item => item.slug !== competitor.slug);
   const checked = formatChecked(competitor.checked);
   const seo = competitorSeo(competitor);
+  const toc = [
+    { id: 'overview', label: 'At a glance' },
+    { id: 'features', label: 'Core features' },
+    { id: 'why-switch', label: 'Why teams switch' },
+    { id: 'pricing', label: 'Pricing and value' },
+    { id: 'hosting', label: 'Hosting and data' },
+    { id: 'switching', label: 'Switching' },
+    { id: 'strengths', label: `Where ${name} is stronger` },
+    { id: 'fit', label: 'Which one fits' },
+    { id: 'questions', label: 'Questions' },
+  ];
   const structured = {
     '@context': 'https://schema.org',
     '@graph': [
@@ -124,176 +180,163 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
 
         <ProofStrip />
 
-        <nav className="platform-page-nav" aria-label="On this page">
-          <div className="wrap">
-            <strong>Helpin vs {name}</strong>
-            <a href="#short-answer">Short answer</a>
-            <a href="#why-switch">Why teams switch</a>
-            <a href="#side-by-side">Side by side</a>
-            <a href="#product">Product</a>
-            <a href="#pricing">Pricing</a>
-            <a href="#switching">Switching</a>
-            <a href="#questions">Questions</a>
-          </div>
-        </nav>
-
-        <section id="short-answer">
-          <div className="wrap">
-            <div className="platform-section-intro"><SectionHead eyebrow="The short answer" title={competitor.summary.title} lede={competitor.summary.lede} /></div>
-            <div className="cmp-choose">
-              <article className="cmp-choose-rival">
-                <header><Monogram name={name} /><h3>Choose {name} if</h3></header>
-                <ul>{competitor.summary.competitor.map(item => <li key={item}><ArrowRight size={15} aria-hidden="true" />{item}</li>)}</ul>
-              </article>
-              <article className="cmp-choose-helpin">
-                <header><HelpinMark size={30} tone="dark" /><h3>Choose Helpin if</h3></header>
-                <ul>{competitor.summary.helpin.map(item => <li key={item}><Check size={15} strokeWidth={2.2} aria-hidden="true" />{item}</li>)}</ul>
-              </article>
-            </div>
-          </div>
-        </section>
-
-        <section id="why-switch" className="platform-dark section-motion">
-          <HeroVortex variant="converge" tone="dark" />
-          <div className="wrap">
-            <div className="platform-centered"><SectionHead eyebrow="Why teams switch" title={`Why teams look beyond ${name}.`} lede="Four common reasons, and how Helpin handles each one." /></div>
-            <div className="cmp-diff-grid">
-              {competitor.reasons.map((reason, index) => {
-                const Icon = ICONS[reason.icon];
-                return (
-                  <InViewOnce as="article" key={reason.title} className="cmp-diff-card">
-                    <div className="cmp-diff-art" role="img" aria-label={`${name}: ${reason.competitorLane.join(', then ')}. Helpin: ${reason.helpinLane.join(', then ')}.`}>
-                      <Lane label={name} steps={reason.competitorLane} />
-                      <Lane label="Helpin" steps={reason.helpinLane} helpin />
-                    </div>
-                    <div className="cmp-diff-copy">
-                      <div className="cmp-diff-meta"><Icon size={15} aria-hidden="true" /><span>{String(index + 1).padStart(2, '0')}</span></div>
-                      <h3>{reason.title}</h3>
-                      <p>{reason.body}</p>
-                    </div>
-                  </InViewOnce>
-                );
-              })}
-            </div>
-          </div>
-        </section>
-
-        <section id="side-by-side" className="platform-soft">
-          <div className="wrap">
-            <div className="platform-section-intro"><SectionHead eyebrow="Side by side" title={`Helpin and ${name}, feature by feature.`} lede={competitor.tableLede} /></div>
-            <div className="included-table-scroll cmp-table-scroll" role="region" aria-label={`Helpin and ${name} feature comparison`} tabIndex={0}>
-              <table className="included-table cmp-table">
-                <caption className="sr-only">Helpin and {name} compared. {competitor.tableLede}</caption>
-                <colgroup><col className="cmp-table-feature" /><col className="cmp-table-helpin" /><col /></colgroup>
-                <thead>
-                  <tr>
-                    <th scope="col">Capability</th>
-                    <th scope="col" className="cmp-table-product"><span className="cmp-table-name"><HelpinMark size={18} />Helpin</span><span>Cloud or self-hosted</span></th>
-                    <th scope="col" className="cmp-table-product"><span className="cmp-table-name"><Monogram name={name} />{name}</span><span>{competitor.category}</span></th>
-                  </tr>
-                </thead>
-                {competitor.table.map(group => (
-                  <tbody key={group.group}>
-                    <tr className="cmp-table-group"><th scope="rowgroup" colSpan={3}>{group.group}</th></tr>
-                    {group.rows.map(row => (
-                      <tr key={row.label}>
-                        <th scope="row">{row.label}</th>
-                        <td className="cmp-table-helpin-cell"><Value value={row.helpin} status={row.helpinStatus} /></td>
-                        <td><Value value={row.competitor} status={row.competitorStatus} /></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                ))}
-              </table>
-            </div>
-          </div>
-        </section>
-
-        <section id="product">
-          <div className="wrap">
-            <div className="platform-section-intro">
-              <SectionHead eyebrow="What you get" title="See the product, not just the table." lede="Live previews of the Helpin workspace. Everything shown here runs on the same customer history." />
-              <a className="platform-text-link" href={SIGNUP_URL}>Try it free for 14 days<ArrowRight size={15} aria-hidden="true" /></a>
-            </div>
-            <CommunityShowcase initial={competitor.showcase} />
-          </div>
-        </section>
-
-        <section id="strengths" className="platform-soft">
-          <div className="wrap">
-            <div className="platform-section-intro"><SectionHead eyebrow="Fair is fair" title={`Where ${name} is stronger.`} lede={`${name} is a good product. These are the areas where it is ahead of Helpin today.`} /></div>
-            <div className="platform-feature-grid cmp-strength-grid">
-              {competitor.strengths.map(strength => {
-                const Icon = ICONS[strength.icon];
-                return <article key={strength.title}><Icon size={24} aria-hidden="true" /><h3>{strength.title}</h3><p>{strength.body}</p></article>;
-              })}
-            </div>
-          </div>
-        </section>
-
-        <section id="pricing">
-          <div className="wrap">
-            <div className="platform-section-intro">
-              <SectionHead eyebrow="Pricing" title="Estimate what your team would pay." lede={`List prices for Helpin and ${name}. Change the team size, plans and AI volume to match your team.`} />
-              <Link className="platform-text-link" href="/pricing">See Helpin pricing<ArrowRight size={15} aria-hidden="true" /></Link>
-            </div>
-            <PriceCalculator name={name} calculator={competitor.calculator} />
-          </div>
-        </section>
-
-        <section id="switching" className="platform-soft">
-          <div className="wrap">
-            <div className="platform-section-intro">
-              <SectionHead eyebrow="Switching" title={competitor.switching.title} lede={competitor.switching.lede} />
-              <a className="btn btn-secondary cmp-switch-cta" href={DEMO_URL} target="_blank" rel="noopener noreferrer">Talk to us about switching<ArrowUpRight size={15} aria-hidden="true" /></a>
-            </div>
-            <div className="cmp-switch-grid">
-              <div className="cmp-checklists">
-                <article>
-                  <h3><Monogram name={name} />Take from {name}</h3>
-                  <ul>{competitor.switching.take.map(item => <li key={item}><ArrowRight size={14} aria-hidden="true" />{item}</li>)}</ul>
-                </article>
-                <article>
-                  <h3><HelpinMark size={22} />Set up in Helpin</h3>
-                  <ul>{competitor.switching.setUp.map(item => <li key={item}><Check size={14} strokeWidth={2.4} aria-hidden="true" />{item}</li>)}</ul>
-                </article>
+        <section className="cmp-article-section">
+          <div className="wrap cmp-article">
+            <aside className="cmp-article-aside">
+              <Toc items={toc} />
+              <div className="cmp-aside-cta">
+                <strong>Try Helpin free</strong>
+                <p>14-day trial, no card. Or self-host the open-source edition.</p>
+                <a className="btn btn-primary" href={SIGNUP_URL}>Start free trial →</a>
               </div>
-              <InViewOnce as="ol" className="cmp-steps">
-                {competitor.switching.steps.map((step, index) => (
-                  <li key={step.title} style={{ '--i': index } as React.CSSProperties}>
-                    <span className="cmp-step-number">{String(index + 1).padStart(2, '0')}</span>
-                    <div>
-                      <div className="cmp-step-head"><h3>{step.title}</h3><span className="cmp-status" data-status={step.status}>{step.status}</span></div>
-                      <p>{step.body}</p>
-                    </div>
-                  </li>
-                ))}
-              </InViewOnce>
-            </div>
-          </div>
-        </section>
+            </aside>
 
-        <section id="questions">
-          <div className="wrap platform-faq-grid">
-            <SectionHead eyebrow="Questions" title={`Helpin vs ${name}: common questions.`} />
-            <div><FAQList items={competitor.faqs} className="platform-faqs" /></div>
+            <article className="cmp-article-body">
+              <section id="overview" className="cmp-block">
+                <h2>Helpin vs {name} at a glance</h2>
+                {copy.intro.map(paragraph => <p key={paragraph}>{paragraph}</p>)}
+                <div className="cmp-callout">
+                  <strong>The main difference is what each product is built around:</strong>
+                  <ul>{copy.difference.map(item => <li key={item.lead}><b>{item.lead}</b> {item.text}</li>)}</ul>
+                </div>
+                <p>Here’s how the two compare across the capabilities teams ask about most. {competitor.tableLede}</p>
+                <ComparisonTable competitor={competitor} />
+                <p className="cmp-small">Comparison data verified {checked}.</p>
+              </section>
+
+              <section id="features" className="cmp-block">
+                <h2>Core feature comparison</h2>
+                <p>Feature names can sound alike across tools. What matters is how each product handles the work, and what your team does next.</p>
+                {copy.features.map(feature => (
+                  <div key={feature.id} id={feature.id} className="cmp-feature">
+                    <h3>{feature.title}</h3>
+                    <div className="cmp-sides">
+                      <Side name={name}>{feature.competitor}</Side>
+                      <Side name="Helpin">{feature.helpin}</Side>
+                    </div>
+                    <p className="cmp-verdict"><Scale size={15} aria-hidden="true" /><span><b>The difference:</b> {feature.verdict}</span></p>
+                    {feature.preview ? <LazyPreview product={feature.preview.product} label={feature.preview.label} /> : null}
+                  </div>
+                ))}
+              </section>
+
+              <section id="why-switch" className="cmp-block">
+                <h2>Why teams look beyond {name}</h2>
+                <p>Four common reasons teams give for looking elsewhere, and how Helpin handles each one.</p>
+                <div className="cmp-diff-grid">
+                  {competitor.reasons.map((reason, index) => {
+                    const Icon = ICONS[reason.icon];
+                    return (
+                      <InViewOnce as="article" key={reason.title} className="cmp-diff-card">
+                        <div className="cmp-diff-art" role="img" aria-label={`${name}: ${reason.competitorLane.join(', then ')}. Helpin: ${reason.helpinLane.join(', then ')}.`}>
+                          <Lane label={name} steps={reason.competitorLane} />
+                          <Lane label="Helpin" steps={reason.helpinLane} helpin />
+                        </div>
+                        <div className="cmp-diff-copy">
+                          <div className="cmp-diff-meta"><Icon size={15} aria-hidden="true" /><span>{String(index + 1).padStart(2, '0')}</span></div>
+                          <h3>{reason.title}</h3>
+                          <p>{reason.body}</p>
+                        </div>
+                      </InViewOnce>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <section id="pricing" className="cmp-block">
+                <h2>Pricing and value</h2>
+                <div className="cmp-sides">
+                  <Side name={name}>{copy.pricing}</Side>
+                  <Side name="Helpin">{HELPIN_ARTICLE.pricing}</Side>
+                </div>
+                <h3 className="cmp-subhead">Estimate what your team would pay</h3>
+                <p>Change the team size, plans and AI volume to match your team. The estimate uses list prices and says plainly when {name} costs less. <Link href="/pricing">See Helpin pricing</Link>.</p>
+                <PriceCalculator name={name} calculator={competitor.calculator} />
+              </section>
+
+              <section id="hosting" className="cmp-block">
+                <h2>Hosting and data</h2>
+                <div className="cmp-sides">
+                  <Side name={name}>{copy.hosting}</Side>
+                  <Side name="Helpin">{HELPIN_ARTICLE.hosting}</Side>
+                </div>
+              </section>
+
+              <section id="switching" className="cmp-block">
+                <h2>Switching and onboarding</h2>
+                <div className="cmp-sides">
+                  <Side name={name}>{copy.onboarding}</Side>
+                  <Side name="Helpin">{HELPIN_ARTICLE.onboarding}</Side>
+                </div>
+                <h3 className="cmp-subhead">{competitor.switching.title}</h3>
+                <p>{competitor.switching.lede}</p>
+                <div className="cmp-checklists">
+                  <article>
+                    <h4><Monogram name={name} />Take from {name}</h4>
+                    <ul>{competitor.switching.take.map(item => <li key={item}><ArrowRight size={14} aria-hidden="true" />{item}</li>)}</ul>
+                  </article>
+                  <article>
+                    <h4><HelpinMark size={22} />Set up in Helpin</h4>
+                    <ul>{competitor.switching.setUp.map(item => <li key={item}><Check size={14} strokeWidth={2.4} aria-hidden="true" />{item}</li>)}</ul>
+                  </article>
+                </div>
+                <InViewOnce as="ol" className="cmp-steps">
+                  {competitor.switching.steps.map((step, index) => (
+                    <li key={step.title} style={{ '--i': index } as React.CSSProperties}>
+                      <span className="cmp-step-number">{String(index + 1).padStart(2, '0')}</span>
+                      <div>
+                        <div className="cmp-step-head"><h4>{step.title}</h4><span className="cmp-status" data-status={step.status}>{step.status}</span></div>
+                        <p>{step.body}</p>
+                      </div>
+                    </li>
+                  ))}
+                </InViewOnce>
+                <a className="btn btn-secondary cmp-switch-cta" href={DEMO_URL} target="_blank" rel="noopener noreferrer">Talk to us about switching<ArrowUpRight size={15} aria-hidden="true" /></a>
+              </section>
+
+              <section id="strengths" className="cmp-block">
+                <h2>Where {name} is stronger</h2>
+                <p>{name} is a good product. These are the areas where it’s ahead of Helpin today.</p>
+                <div className="cmp-strength-list">
+                  {competitor.strengths.map(strength => {
+                    const Icon = ICONS[strength.icon];
+                    return <article key={strength.title}><Icon size={22} aria-hidden="true" /><div><h3>{strength.title}</h3><p>{strength.body}</p></div></article>;
+                  })}
+                </div>
+              </section>
+
+              <section id="fit" className="cmp-block">
+                <h2>Which one fits your team?</h2>
+                <p>{competitor.summary.lede}</p>
+                <div className="cmp-choose">
+                  <article className="cmp-choose-rival">
+                    <header><Monogram name={name} /><h3>Choose {name} if…</h3></header>
+                    <ul>{competitor.summary.competitor.map(item => <li key={item}><ArrowRight size={15} aria-hidden="true" />{item}</li>)}</ul>
+                  </article>
+                  <article className="cmp-choose-helpin">
+                    <header><HelpinMark size={30} tone="dark" /><h3>Choose Helpin if…</h3></header>
+                    <ul>{competitor.summary.helpin.map(item => <li key={item}><Check size={15} strokeWidth={2.2} aria-hidden="true" />{item}</li>)}</ul>
+                  </article>
+                </div>
+              </section>
+
+              <section id="questions" className="cmp-block">
+                <h2>Questions about Helpin vs {name}</h2>
+                <FAQList items={competitor.faqs} className="platform-faqs" />
+              </section>
+
+              <p className="cmp-byline">Written by the Helpin team from {name}’s public pricing and documentation, verified {checked}. Prices are in US dollars and exclude tax. Products change, so check {name}’s site for current details. {name} is a trademark of its owner; Helpin is not affiliated with it. Spot something out of date? Email <a href="mailto:hello@helpin.ai">hello@helpin.ai</a>.</p>
+            </article>
           </div>
         </section>
 
         <section id="more-comparisons" className="platform-soft">
           <div className="wrap">
             <div className="platform-section-intro">
-              <SectionHead eyebrow="More comparisons" title="See how Helpin compares with other tools." />
+              <div className="sec-head"><span className="eyebrow">More comparisons</span><h2>See how Helpin compares with other tools.</h2></div>
               <Link className="platform-text-link" href="/compare">All comparisons<ArrowRight size={15} aria-hidden="true" /></Link>
             </div>
             <div className="cmp-card-grid">{others.map(item => <CompareCard key={item.slug} competitor={item} />)}</div>
-          </div>
-        </section>
-
-        <section id="about-this-comparison" className="cmp-sources">
-          <div className="wrap">
-            <h2>About this comparison</h2>
-            <p>Written by the Helpin team from {name}’s public pricing and documentation, verified {checked}. Prices are in US dollars and exclude tax. Products change, so check {name}’s site for current details. {name} is a trademark of its owner; Helpin is not affiliated with it. Spot something out of date? Email <a href="mailto:hello@helpin.ai">hello@helpin.ai</a>.</p>
           </div>
         </section>
 

@@ -52,8 +52,6 @@ export type Competitor = {
   reasons: { title: string; body: string; icon: IconKey; competitorLane: string[]; helpinLane: string[] }[];
   tableLede: string;
   table: { group: string; rows: TableRow[] }[];
-  /** Which product the "What you get" demo opens on. */
-  showcase: 'Support' | 'Projects';
   strengths: { title: string; body: string; icon: IconKey }[];
   calculator: Calculator;
   switching: {
@@ -247,7 +245,6 @@ export const COMPETITORS: Competitor[] = [
         ],
       },
     ],
-    showcase: 'Support',
     strengths: [
       { icon: 'channels', title: 'Channels.', body: 'Phone and voice AI, WhatsApp, SMS, social channels, Slack, Discord and Microsoft Teams. Helpin supports web chat and email.' },
       { icon: 'ecosystem', title: 'Ecosystem.', body: 'More than 450 apps and integrations, and native mobile SDKs for iOS and Android.' },
@@ -393,7 +390,6 @@ export const COMPETITORS: Competitor[] = [
         ],
       },
     ],
-    showcase: 'Support',
     strengths: [
       { icon: 'channels', title: 'Omnichannel and voice.', body: 'Native contact center, IVR and messaging channels. Helpin supports web chat and email.' },
       { icon: 'enterprise', title: 'Enterprise controls.', body: 'SSO, SLA policies, sandboxes, custom roles and approval workflows.' },
@@ -539,7 +535,6 @@ export const COMPETITORS: Competitor[] = [
         ],
       },
     ],
-    showcase: 'Support',
     strengths: [
       { icon: 'simplicity', title: 'Simplicity.', body: 'A calm, email-like inbox that reviewers consistently praise for ease of use.' },
       { icon: 'channels', title: 'Channels.', body: 'WhatsApp, Instagram, Messenger and SMS on paid plans. Helpin supports web chat and email.' },
@@ -683,7 +678,6 @@ export const COMPETITORS: Competitor[] = [
         ],
       },
     ],
-    showcase: 'Support',
     strengths: [
       { icon: 'channels', title: 'Channels.', body: 'WhatsApp, Facebook, Instagram, TikTok, Telegram, LINE, SMS and voice. Helpin supports web chat and email.' },
       { icon: 'community', title: 'Maturity and community.', body: 'Years of releases, tens of thousands of GitHub stars and roughly monthly releases. Helpin’s Community edition is a 0.1 beta.' },
@@ -832,7 +826,6 @@ export const COMPETITORS: Competitor[] = [
         ],
       },
     ],
-    showcase: 'Projects',
     strengths: [
       { icon: 'speed', title: 'Speed and design.', body: 'A fast, keyboard-first tracker that engineering teams consistently praise.' },
       { icon: 'community', title: 'Adoption.', body: 'Used by more than 40,000 companies, with a large community of templates and practices.' },
