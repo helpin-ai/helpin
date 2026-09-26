@@ -12,6 +12,8 @@ import { PreviewFooter } from '../_components/PreviewFooter';
 import { PlatformClosing } from '../_components/platform/PlatformParts';
 import { CtaRow, DEMO_URL, FAQList, SectionHead, SIGNUP_URL } from '../_components/ui';
 import { COMPETITORS, formatChecked, type Bill, type Cell, type Competitor, type IconKey } from './compare-data';
+import { HeroMatchup } from './HeroMatchup';
+import { InViewOnce } from './InViewOnce';
 
 const ICONS: Record<IconKey, LucideIcon> = {
   workflow: GitPullRequest, billing: Wallet, team: Users, hosting: Server, crm: Handshake, open: GitBranch,
@@ -35,39 +37,11 @@ function Value({ value }: { value: Cell }) {
   return <>{value}</>;
 }
 
-function Matchup({ competitor }: { competitor: Competitor }) {
-  return (
-    <figure className="cmp-matchup">
-      <div className="cmp-matchup-bar"><span><Scale size={13} aria-hidden="true" />At a glance</span><span>{formatChecked(competitor.checked)}</span></div>
-      <table>
-        <caption className="sr-only">Helpin and {competitor.name} at a glance</caption>
-        <thead>
-          <tr>
-            <td />
-            <th scope="col" className="cmp-matchup-helpin"><HelpinMark size={18} tone="dark" />Helpin</th>
-            <th scope="col"><Monogram name={competitor.name} />{competitor.name}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {competitor.glance.map(row => (
-            <tr key={row.label}>
-              <th scope="row">{row.label}</th>
-              <td className="cmp-matchup-helpin">{row.helpin}</td>
-              <td>{row.competitor}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <figcaption>Full comparison, sources and trade-offs below.</figcaption>
-    </figure>
-  );
-}
-
 function Lane({ label, steps, helpin }: { label: string; steps: string[]; helpin?: boolean }) {
   return (
     <div className={helpin ? 'cmp-lane cmp-lane-helpin' : 'cmp-lane'}>
       <span className="cmp-lane-label">{helpin ? <HelpinMark size={12} tone="dark" /> : null}{label}</span>
-      <ol>{steps.map((step, index) => <li key={step}>{helpin && index === steps.length - 1 ? <Check size={11} strokeWidth={2.4} aria-hidden="true" /> : null}{step}</li>)}</ol>
+      <ol>{steps.map((step, index) => <li key={step} style={{ '--i': index } as React.CSSProperties}>{helpin && index === steps.length - 1 ? <Check size={11} strokeWidth={2.4} aria-hidden="true" /> : null}{step}</li>)}</ol>
     </div>
   );
 }
@@ -79,7 +53,7 @@ function BillCard({ name, bill, helpin }: { name: string; bill: Bill; helpin?: b
         {helpin ? <HelpinMark size={28} /> : <Monogram name={name} />}
         <div><h3>{name}</h3><span>{bill.plan}</span></div>
       </header>
-      <dl>{bill.lines.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+      <dl>{bill.lines.map(([label, value], index) => <div key={label} style={{ '--i': index } as React.CSSProperties}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
       <div className="cmp-bill-total"><span>Estimated monthly</span><strong>{bill.total}</strong></div>
       <p>{bill.totalNote}</p>
     </article>
@@ -121,7 +95,7 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
                   <span><Scale size={14} aria-hidden="true" />Strengths on both sides</span>
                 </div>
               </div>
-              <Matchup competitor={competitor} />
+              <HeroMatchup name={name} glance={competitor.glance} />
             </div>
           </div>
         </section>
@@ -193,7 +167,7 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
               {competitor.differences.map((difference, index) => {
                 const Icon = ICONS[difference.icon];
                 return (
-                  <article key={difference.title} className="cmp-diff-card">
+                  <InViewOnce as="article" key={difference.title} className="cmp-diff-card">
                     <div className="cmp-diff-art" role="img" aria-label={`${name}: ${difference.competitorLane.join(', then ')}. Helpin: ${difference.helpinLane.join(', then ')}.`}>
                       <Lane label={name} steps={difference.competitorLane} />
                       <Lane label="Helpin" steps={difference.helpinLane} helpin />
@@ -203,7 +177,7 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
                       <h3>{difference.title}</h3>
                       <p>{difference.body}</p>
                     </div>
-                  </article>
+                  </InViewOnce>
                 );
               })}
             </div>
@@ -229,10 +203,10 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
                 <SectionHead eyebrow="Pricing" title={competitor.cost.title} lede={competitor.cost.lede} />
                 <Link className="platform-text-link" href="/pricing">See Helpin pricing<ArrowRight size={15} aria-hidden="true" /></Link>
               </div>
-              <div className="cmp-bills">
+              <InViewOnce className="cmp-bills">
                 <BillCard name="Helpin" bill={competitor.cost.helpin} helpin />
                 <BillCard name={name} bill={competitor.cost.competitor} />
-              </div>
+              </InViewOnce>
               <p className="included-note">{competitor.cost.note}</p>
             </div>
           </section>
@@ -241,9 +215,9 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
         <section id="switching">
           <div className="wrap platform-split cmp-switch">
             <SectionHead eyebrow="Switching" title={competitor.switching.title} lede={competitor.switching.lede} />
-            <ol className="cmp-steps">
+            <InViewOnce as="ol" className="cmp-steps">
               {competitor.switching.steps.map((step, index) => (
-                <li key={step.title}>
+                <li key={step.title} style={{ '--i': index } as React.CSSProperties}>
                   <span className="cmp-step-number">{String(index + 1).padStart(2, '0')}</span>
                   <div>
                     <div className="cmp-step-head"><h3>{step.title}</h3><span className="cmp-status" data-status={step.status}>{step.status}</span></div>
@@ -251,7 +225,7 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
                   </div>
                 </li>
               ))}
-            </ol>
+            </InViewOnce>
           </div>
         </section>
 

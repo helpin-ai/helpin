@@ -10,7 +10,7 @@ const GROUPS = [
   '.record-bento-copy', '.ask-agent-capabilities > article', '.ctrl-copy',
   '.self-host-features', '.developer-features', '.developer-cli-copy',
   '.pm-items', '.six', '.steps.big', '.footer-nav', '.support-features',
-  '.cmp-choose', '.cmp-diff-grid', '.cmp-strength-grid', '.cmp-bills', '.cmp-steps', '.cmp-card-grid',
+  '.cmp-choose', '.cmp-strength-grid', '.cmp-card-grid',
 ];
 const SINGLE_ITEMS = [
   '.ask-agent-screenshot', '.control-screenshot', '.developer-visual',

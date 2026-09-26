@@ -31,8 +31,8 @@ export type Competitor = {
   seo: { title: string; description: string };
   /** The H1 reads "Helpin vs {name}: {accent}". */
   hero: { accent: string; lede: string };
-  /** Four short rows for the hero's at-a-glance card. */
-  glance: { label: string; helpin: string; competitor: string }[];
+  /** Three short rows for the hero's comparison cards: where the products differ most. */
+  glance: { label: string; competitor: string; helpin: string }[];
   summary: { title: string; lede: string; competitor: string[]; helpin: string[] };
   tableLede: string;
   table: { group: string; rows: { label: string; helpin: Cell; competitor: Cell }[] }[];
@@ -116,10 +116,9 @@ export const COMPETITORS: Competitor[] = [
       lede: 'Both answer customers with AI. Intercom is a mature support platform with wide channel coverage. Helpin keeps support next to your projects, CRM, meetings and docs, so the question, the fix and the follow-up stay together.',
     },
     glance: [
-      { label: 'Pricing', helpin: 'Per workspace', competitor: 'Per seat' },
-      { label: 'AI agent', helpin: 'Allowance included', competitor: '$0.99 per outcome' },
-      { label: 'Beyond support', helpin: 'Projects, CRM, meetings', competitor: 'Through integrations' },
-      { label: 'Self-hosting', helpin: 'Open source', competitor: 'Hosted only' },
+      { label: 'Pricing', competitor: 'Per seat, plus $0.99 per AI outcome', helpin: 'One workspace price, AI usage included' },
+      { label: 'Beyond support', competitor: 'Projects and CRM through integrations', helpin: 'Projects, CRM and meetings built in' },
+      { label: 'Hosting', competitor: 'Hosted by Intercom', helpin: 'Open source: Cloud or your servers' },
     ],
     summary: {
       title: 'Different tools for different teams.',
@@ -261,10 +260,9 @@ export const COMPETITORS: Competitor[] = [
       lede: 'Zendesk is an established help desk with deep omnichannel and contact center features. Helpin is a newer, open-source platform that keeps support, projects, CRM, meetings and docs on one customer history.',
     },
     glance: [
-      { label: 'Pricing', helpin: 'Per workspace', competitor: 'Per agent' },
-      { label: 'AI agent', helpin: 'Allowance included', competitor: 'Per verified resolution' },
-      { label: 'CRM', helpin: 'Included', competitor: 'Sell retires in 2027' },
-      { label: 'Self-hosting', helpin: 'Open source', competitor: 'Hosted only' },
+      { label: 'Pricing', competitor: 'Per agent, plus AI per resolution', helpin: 'One workspace price, AI usage included' },
+      { label: 'CRM', competitor: 'Zendesk Sell retires in 2027', helpin: 'Contacts, companies and deals built in' },
+      { label: 'Hosting', competitor: 'Hosted by Zendesk', helpin: 'Open source: Cloud or your servers' },
     ],
     summary: {
       title: 'A help desk, or a connected workspace.',
@@ -405,10 +403,9 @@ export const COMPETITORS: Competitor[] = [
       lede: 'Help Scout is a well-loved shared inbox that keeps support simple. Helpin covers the inbox too, and adds projects, CRM, meetings and AI agents on the same customer history, with one price per workspace.',
     },
     glance: [
-      { label: 'Pricing', helpin: 'Per workspace', competitor: 'Per user' },
-      { label: 'AI answers', helpin: 'Allowance included', competitor: '$0.75 per resolution' },
-      { label: 'Beyond support', helpin: 'Projects, CRM, meetings', competitor: 'Through integrations' },
-      { label: 'Self-hosting', helpin: 'Open source', competitor: 'Hosted only' },
+      { label: 'Pricing', competitor: 'Per user, plus $0.75 per AI resolution', helpin: 'One workspace price, AI usage included' },
+      { label: 'Beyond support', competitor: 'Projects and CRM through integrations', helpin: 'Projects, CRM and meetings built in' },
+      { label: 'Hosting', competitor: 'Hosted by Help Scout', helpin: 'Open source: Cloud or your servers' },
     ],
     summary: {
       title: 'Simple support, or support connected to everything else.',
@@ -548,10 +545,9 @@ export const COMPETITORS: Competitor[] = [
       lede: 'Both are open source and both can run on your own servers. Chatwoot is a mature, multichannel inbox. Helpin is a newer platform that connects support to projects, CRM, meetings and docs, with AI agents working across them.',
     },
     glance: [
-      { label: 'License', helpin: 'AGPL-3.0', competitor: 'MIT core, paid enterprise' },
-      { label: 'Self-hosted AI', helpin: 'Included', competitor: 'Paid plan' },
-      { label: 'Channels', helpin: 'Web chat and email', competitor: 'Chat, email, social, more' },
-      { label: 'Beyond support', helpin: 'Projects, CRM, meetings', competitor: 'Through integrations' },
+      { label: 'License', competitor: 'MIT core, paid enterprise edition', helpin: 'AGPL-3.0 for every product feature' },
+      { label: 'Self-hosted AI', competitor: 'Captain needs a paid plan', helpin: 'AI agents included' },
+      { label: 'Beyond support', competitor: 'Issues through the Linear integration', helpin: 'Projects, CRM and meetings built in' },
     ],
     summary: {
       title: 'Both open. Built for different jobs.',
@@ -695,10 +691,9 @@ export const COMPETITORS: Competitor[] = [
       lede: 'Linear is a fast, focused issue tracker that connects to your support tool. Helpin includes projects and support in one product, along with CRM, meetings and docs, so the request, the task and the follow-up share one history.',
     },
     glance: [
-      { label: 'Support inbox', helpin: 'Built in', competitor: 'Through integrations' },
-      { label: 'Pricing', helpin: 'Per workspace', competitor: 'Per user' },
-      { label: 'Coding agents', helpin: 'See the customer context', competitor: 'Linear Agent and partners' },
-      { label: 'Self-hosting', helpin: 'Open source', competitor: 'Hosted only' },
+      { label: 'Customer requests', competitor: 'Linked from Intercom or Zendesk', helpin: 'Support inbox and CRM built in' },
+      { label: 'Pricing', competitor: 'Per user', helpin: 'One workspace price, unlimited teammates' },
+      { label: 'Hosting', competitor: 'Hosted by Linear', helpin: 'Open source: Cloud or your servers' },
     ],
     summary: {
       title: 'A focused tracker, or projects with the customer built in.',
