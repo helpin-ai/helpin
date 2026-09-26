@@ -103,7 +103,7 @@ func (s *InternalCommandService) registerSupportReplyCommands() {
 			CommandName: "support.send_reply",
 			Alias:       "send_support_reply",
 			Category:    "Support",
-			Description: "Send your reply to the visitor. For public product facts, first call search_knowledge. Factual answers must cite server-issued evidence_id values for each material claim; the server re-validates grounding and confidence. For private MCP findings, first call register_support_mcp_evidence and cite its returned ID. When child work is pending, a conversational acknowledgment keeps the customer turn open; wait for the child result and then send the final answer. Otherwise this must be the final successful action of the turn. If the tool returns rewrite_required, rewrite once in customer-facing language and call it again.",
+			Description: "Send your reply to the visitor. For public product facts, first call search_knowledge. Factual answers must cite server-issued evidence_id values for each material claim; the server re-validates grounding and confidence. Direct MCP results are for internal triage and cannot support a factual visitor reply; hand off for customer-specific findings. When child work is pending, a conversational acknowledgment keeps the customer turn open; wait for the child result and then send the final answer. Otherwise this must be the final successful action of the turn. If the tool returns rewrite_required, rewrite once in customer-facing language and call it again.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -275,7 +275,7 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 		if listErr != nil {
 			slog.WarnContext(ctx, "send_reply: load run evidence failed", "error", listErr, "run_id", run.ID)
 		}
-		evidence = supportEvidenceFromRows(supportEvidenceRowsForTurn(rows, source.CreatedAt))
+		evidence = supportEvidenceFromRows(rows)
 	}
 
 	history, err := supportAI.messageRepo.ListByConversation(ctx, meta.WorkspaceID, conversationID, false)
