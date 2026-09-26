@@ -126,6 +126,13 @@ export function CustomerPortalProvider({ slug }: { slug: string }) {
         }
         setConfiguration(nextConfiguration)
 
+        // The callback exchanges its own token. A concurrent session check can
+        // return 401 after the exchange succeeds and overwrite the new session.
+        if (entryPath.current.endsWith('/callback')) {
+          setStatus('anonymous')
+          return
+        }
+
         try {
           const nextSession = await customerPortalService.session(slug)
           if (!active) return
