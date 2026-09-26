@@ -114,6 +114,8 @@ const productCards = [
   ['compare-help-scout', 'HELPIN VS HELP SCOUT', ['Helpin vs', 'Help Scout'], 'Features, pricing and switching, side by side.'],
   ['compare-chatwoot', 'HELPIN VS CHATWOOT', ['Helpin vs', 'Chatwoot'], 'Two open-source options, side by side.'],
   ['compare-linear', 'HELPIN VS LINEAR', ['Helpin vs', 'Linear'], 'Project tracking and customer context, side by side.'],
+  ['compare-intercom-alternatives', 'INTERCOM ALTERNATIVES', ['Intercom', 'alternatives'], 'Six tools compared on pricing, AI and hosting.'],
+  ['compare-zendesk-alternatives', 'ZENDESK ALTERNATIVES', ['Zendesk', 'alternatives'], 'Six tools compared on pricing, AI and hosting.'],
 ];
 for (const [slug, eyebrow, headline, support] of productCards) {
   variants.push({ output: resolve(websiteRoot, `public/og/helpin-${slug}-green-${VERSION}.png`), eyebrow, headline, support, visual: 'connected', art: slug });

@@ -118,9 +118,10 @@ describe('website SEO metadata', () => {
     const { default: sitemap } = await import('../src/app/sitemap.ts');
     const { default: robots } = await import('../src/app/robots.ts');
     const { COMPETITORS } = await import('../src/app/(site)/compare/compare-data.ts');
+    const { ALTERNATIVES } = await import('../src/app/(site)/compare/alternatives-data.ts');
     const urls = sitemap().map(entry => entry.url);
     const pages = Object.values(PAGE_SEO).map(page => page.canonicalPath === '/' ? 'https://helpin.ai' : 'https://helpin.ai' + page.canonicalPath);
-    assert.deepEqual(urls, [...pages, ...COMPETITORS.map(item => `https://helpin.ai/compare/${item.slug}`)]);
+    assert.deepEqual(urls, [...pages, ...[...COMPETITORS, ...ALTERNATIVES].map(item => `https://helpin.ai/compare/${item.slug}`)]);
     assert.equal(robots().sitemap, 'https://helpin.ai/sitemap.xml');
   });
 
@@ -163,7 +164,18 @@ describe('website SEO metadata', () => {
 
   it('gives every comparison page complete, unique, sourced metadata', async () => {
     const { COMPETITORS, competitorSeo } = await import('../src/app/(site)/compare/compare-data.ts');
+    const { ALTERNATIVES, alternativesSeo, TOOLS } = await import('../src/app/(site)/compare/alternatives-data.ts');
     const titles = new Set(Object.values(PAGE_SEO).map(page => page.title));
+    for (const list of ALTERNATIVES) {
+      const page = alternativesSeo(list);
+      assert.ok(page.title.length <= 60, `${page.title} should fit in search results`);
+      assert.ok(page.description.length >= 50 && page.description.length <= 160, `${list.slug} description length`);
+      assert.equal(titles.has(page.title), false);
+      titles.add(page.title);
+      assert.equal(list.tools[0], 'helpin', 'Helpin is listed first and labeled as ours');
+      for (const key of list.tools) assert.ok(TOOLS[key] && TOOLS[key].limits.length >= 2, `${key} needs limits`);
+      assert.ok(existsSync(new URL('../public' + page.imagePath, import.meta.url)), `${page.imagePath} should exist`);
+    }
     for (const competitor of COMPETITORS) {
       const page = competitorSeo(competitor);
       assert.ok(page.title.length <= 60, `${page.title} should fit in search results`);
