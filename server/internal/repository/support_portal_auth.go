@@ -145,7 +145,9 @@ func (r *PortalAuthRepository) ListRequests(ctx context.Context, workspaceID, id
 	query := r.db.WithContext(ctx).Table("support_portal_request_references AS refs").
 		Select("refs.reference, conv.subject, conv.status, conv.created_at, conv.last_public_message_at, conv.resolved_at").
 		Joins("JOIN support_conversations AS conv ON conv.id = refs.conversation_id AND conv.workspace_id = refs.workspace_id").
-		Where("refs.workspace_id = ? AND refs.portal_identity_id = ? AND conv.portal_visible = true AND conv.status <> ? AND conv.channel <> ? AND conv.source <> ? AND conv.deleted_at IS NULL", workspaceID, identityID, model.SupportConversationStatusSpam, "internal", "internal")
+		Joins("JOIN support_portal_identities AS identity ON identity.id = refs.portal_identity_id AND identity.workspace_id = refs.workspace_id").
+		Where("refs.workspace_id = ? AND refs.portal_identity_id = ? AND conv.portal_visible = true AND conv.status <> ? AND conv.channel <> ? AND conv.source <> ? AND conv.deleted_at IS NULL", workspaceID, identityID, model.SupportConversationStatusSpam, "internal", "internal").
+		Where(portalContinuityGuard, model.IdentityTrustVerified, model.IdentityTrustVerified)
 	switch status {
 	case "active":
 		query = query.Where("conv.status NOT IN ?", []string{model.SupportConversationStatusWaitingOnCustomer, "waiting", model.SupportConversationStatusResolved, "closed"})
@@ -170,11 +172,33 @@ func (r *PortalAuthRepository) FindRequest(ctx context.Context, workspaceID, ide
 	var conversation model.SupportConversation
 	err := r.db.WithContext(ctx).Table("support_conversations AS conv").Select("conv.*").
 		Joins("JOIN support_portal_request_references AS refs ON refs.conversation_id = conv.id AND refs.workspace_id = conv.workspace_id").
-		Where("refs.workspace_id = ? AND refs.portal_identity_id = ? AND refs.reference = ? AND conv.portal_visible = true AND conv.status <> ? AND conv.channel <> ? AND conv.source <> ? AND conv.deleted_at IS NULL", workspaceID, identityID, reference, model.SupportConversationStatusSpam, "internal", "internal").First(&conversation).Error
+		Joins("JOIN support_portal_identities AS identity ON identity.id = refs.portal_identity_id AND identity.workspace_id = refs.workspace_id").
+		Where("refs.workspace_id = ? AND refs.portal_identity_id = ? AND refs.reference = ? AND conv.portal_visible = true AND conv.status <> ? AND conv.channel <> ? AND conv.source <> ? AND conv.deleted_at IS NULL", workspaceID, identityID, reference, model.SupportConversationStatusSpam, "internal", "internal").
+		Where(portalContinuityGuard, model.IdentityTrustVerified, model.IdentityTrustVerified).First(&conversation).Error
 	if err == gorm.ErrRecordNotFound {
 		return nil, nil
 	}
 	return &conversation, err
+}
+
+// Recheck stored ownership against current customer and verified widget evidence.
+const portalContinuityGuard = `lower(trim(conv.customer_email)) = lower(trim(identity.email)) AND
+	((conv.channel <> 'widget' AND conv.source <> 'widget') OR
+	(EXISTS (SELECT 1 FROM support_widget_sessions AS session WHERE session.workspace_id = conv.workspace_id
+		AND session.conversation_id = conv.id AND session.identity_trust = ? AND session.identity_verified_at IS NOT NULL
+		AND lower(trim(session.customer_email)) = lower(trim(identity.email)))
+	AND NOT EXISTS (SELECT 1 FROM support_widget_sessions AS other WHERE other.workspace_id = conv.workspace_id
+		AND other.conversation_id = conv.id AND other.identity_trust = ? AND other.identity_verified_at IS NOT NULL
+		AND lower(trim(other.customer_email)) <> lower(trim(identity.email)))))`
+
+func (r *PortalAuthRepository) ReconcileRequests(ctx context.Context, workspaceID, identityID string) error {
+	var identity model.SupportPortalIdentity
+	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND id = ?", workspaceID, identityID).First(&identity).Error; err != nil {
+		return err
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return r.AssociateVerifiedEmail(tx, workspaceID, identity.Email, identityID)
+	})
 }
 
 func (r *PortalAuthRepository) CreateLink(ctx context.Context, link *model.PortalMagicLink) error {

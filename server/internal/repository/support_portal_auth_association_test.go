@@ -17,6 +17,8 @@ func TestPortalAuthAssociateVerifiedEmailScopedAndVisible(t *testing.T) {
 		`CREATE TABLE crm_contacts (id TEXT PRIMARY KEY, workspace_id TEXT, email TEXT)`,
 		`CREATE TABLE support_conversations (id TEXT PRIMARY KEY, workspace_id TEXT, customer_email TEXT, crm_contact_id TEXT, portal_visible BOOLEAN, status TEXT, channel TEXT, source TEXT, deleted_at DATETIME, subject TEXT, created_at DATETIME, updated_at DATETIME, last_public_message_at DATETIME, resolved_at DATETIME)`,
 		`CREATE TABLE support_widget_sessions (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, customer_email TEXT, identity_trust TEXT, identity_verified_at DATETIME)`,
+		`CREATE TABLE support_portal_identities (id TEXT PRIMARY KEY, workspace_id TEXT, email TEXT)`,
+		`INSERT INTO support_portal_identities VALUES ('identity-a','workspace-a','alice@example.com'), ('identity-b','workspace-a','alice@example.com')`,
 		`CREATE TABLE support_portal_request_references (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT UNIQUE, portal_identity_id TEXT, reference TEXT UNIQUE, created_at DATETIME)`,
 		`INSERT INTO crm_contacts VALUES ('contact-a','workspace-a','alice@example.com')`,
 		`INSERT INTO support_conversations (id, workspace_id, customer_email, crm_contact_id, portal_visible, status, channel, source) VALUES
@@ -106,5 +108,79 @@ func TestPortalAuthAssociateVerifiedEmailScopedAndVisible(t *testing.T) {
 	items, err = repo.ListRequests(context.Background(), "workspace-a", "identity-a", "waiting_on_customer")
 	if err != nil || len(items) != 1 || items[0].Status != "waiting_on_customer" {
 		t.Fatalf("legacy status projection: %v %v", items, err)
+	}
+	// A reference already assigned before contradictory widget verification must
+	// no longer authorize either the request list or direct request reads.
+	if err := db.Exec(`INSERT INTO support_widget_sessions VALUES ('late-conflict','workspace-a','contact-match','bob@example.com','verified','2026-01-02')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	items, err = repo.ListRequests(context.Background(), "workspace-a", "identity-a", "")
+	if err != nil || len(items) != 0 {
+		t.Fatalf("conflicting widget reference listed: %v %v", items, err)
+	}
+	var ref string
+	if err := db.Table("support_portal_request_references").Where("conversation_id = ?", "contact-match").Pluck("reference", &ref).Error; err != nil {
+		t.Fatal(err)
+	}
+	conversation, err := repo.FindRequest(context.Background(), "workspace-a", "identity-a", ref)
+	if err != nil || conversation != nil {
+		t.Fatalf("conflicting widget reference readable: %v %v", conversation, err)
+	}
+	projectionRef, err := NewSupportPortalRepository(db).FindReferenceForIdentity(context.Background(), "workspace-a", ref, "identity-a")
+	if err != nil || projectionRef != nil {
+		t.Fatalf("conflicting widget reference projected: %v %v", projectionRef, err)
+	}
+	if err := db.Exec(`DELETE FROM support_widget_sessions WHERE id = 'late-conflict'`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`UPDATE support_conversations SET customer_email = 'bob@example.com' WHERE id = 'contact-match'`).Error; err != nil {
+		t.Fatal(err)
+	}
+	conversation, err = repo.FindRequest(context.Background(), "workspace-a", "identity-a", ref)
+	if err != nil || conversation != nil {
+		t.Fatalf("changed customer email readable: %v %v", conversation, err)
+	}
+}
+
+func TestPortalAuthReconcileRequestsAfterSessionEstablished(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sql := range []string{
+		`CREATE TABLE support_portal_identities (id TEXT PRIMARY KEY, workspace_id TEXT, email TEXT)`,
+		`CREATE TABLE support_conversations (id TEXT PRIMARY KEY, workspace_id TEXT, customer_email TEXT, portal_visible BOOLEAN, status TEXT, channel TEXT, source TEXT, deleted_at DATETIME, subject TEXT, created_at DATETIME, last_public_message_at DATETIME, resolved_at DATETIME)`,
+		`CREATE TABLE support_widget_sessions (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, customer_email TEXT, identity_trust TEXT, identity_verified_at DATETIME)`,
+		`CREATE TABLE support_portal_request_references (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT UNIQUE, portal_identity_id TEXT, reference TEXT UNIQUE, created_at DATETIME)`,
+		`INSERT INTO support_portal_identities VALUES ('alice','ws','alice@example.com')`,
+	} {
+		if err := db.Exec(sql).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	repo := NewPortalAuthRepository(db)
+	ctx := context.Background()
+	if err := repo.ReconcileRequests(ctx, "ws", "missing"); err == nil {
+		t.Fatal("unknown identity must not reconcile")
+	}
+	if err := db.Exec(`INSERT INTO support_conversations (id, workspace_id, customer_email, portal_visible, status, channel, source) VALUES ('email','ws','alice@example.com',1,'open','email','email'), ('widget','ws','alice@example.com',1,'open','widget','widget')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.ReconcileRequests(ctx, "ws", "alice"); err != nil {
+		t.Fatal(err)
+	}
+	items, err := repo.ListRequests(ctx, "ws", "alice", "")
+	if err != nil || len(items) != 1 {
+		t.Fatalf("new email request not discovered: %v %v", items, err)
+	}
+	if err := db.Exec(`INSERT INTO support_widget_sessions VALUES ('verified','ws','widget','alice@example.com','verified','2026-01-01')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.ReconcileRequests(ctx, "ws", "alice"); err != nil {
+		t.Fatal(err)
+	}
+	items, err = repo.ListRequests(ctx, "ws", "alice", "")
+	if err != nil || len(items) != 2 {
+		t.Fatalf("new verified widget request not discovered: %v %v", items, err)
 	}
 }
