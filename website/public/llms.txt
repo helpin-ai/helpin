@@ -7,7 +7,7 @@ Key facts:
 - Products: support inbox (chat and email), AI meeting notetaker, project management (roadmaps, sprints, objectives), CRM (contacts, companies, deals), knowledge base and help center, and AI agents.
 - Pricing: Helpin Cloud Starter is $99/month ($79/month billed annually) and Growth is $299/month ($239/month billed annually). Prices are per workspace with no per-seat fees, and AI usage is included. The 14-day trial needs no card.
 - Self-hosting: the Community edition is free, open source (AGPL-3.0) and runs with Docker Compose, with unlimited users and your own AI provider.
-- Developers: widget SDK, webhooks, a Helpin MCP server for AI clients, external MCP servers for agents, and a CLI.
+- Developers: web widget SDKs (JavaScript, React, Next.js, Vue), a Helpin MCP server for AI clients (beta), external MCP servers for agents, and a CLI.
 
 ## Product
 
@@ -26,7 +26,8 @@ Key facts:
 
 ## Developers
 
-- [Developers](https://helpin.ai/developers): SDK, webhooks, MCP and CLI
+- [Developers](https://helpin.ai/developers): widget SDKs, MCP and CLI
+- [Compare Helpin](https://helpin.ai/compare): side-by-side comparisons with Intercom, Zendesk, Help Scout, Chatwoot and Linear
 - [Documentation](https://helpin.ai/docs): help center and developer guides
 - [Source code](https://github.com/helpin-ai/helpin): GitHub repository
 
