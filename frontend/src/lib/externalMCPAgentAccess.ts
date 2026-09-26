@@ -6,6 +6,14 @@ export function assignedServerTools(allowedTools: string[], server: ExternalMCPS
   return (server.tools ?? []).map((tool) => tool.runtime_alias).filter((alias) => allowed.has(alias));
 }
 
+export function serverAgentAccessState(allowedTools: string[], server: ExternalMCPServer): 'available' | 'inactive' | 'none' {
+  const assigned = assignedServerTools(allowedTools, server);
+  if (assigned.length === 0) return 'none';
+  if (server.enabled && server.status === 'connected'
+    && (server.tools ?? []).some((tool) => tool.enabled && assigned.includes(tool.runtime_alias))) return 'available';
+  return 'inactive';
+}
+
 export function mergeServerToolAccess(currentTools: string[], server: ExternalMCPServer, selectedAliases: string[]): string[] {
   const serverAliases = new Set((server.tools ?? []).map((tool) => tool.runtime_alias));
   const selected = new Set(selectedAliases.filter((alias) => serverAliases.has(alias)));
