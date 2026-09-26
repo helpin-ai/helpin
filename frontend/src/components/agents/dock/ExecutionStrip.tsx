@@ -262,16 +262,28 @@ function PlanStrip({
           aria-expanded={open}
         >
           <StatusDot state={dot} />
-          <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-            {label}
-          </span>
-          <span className="text-muted-foreground/60">·</span>
-          <span className="min-w-0 flex-1 truncate text-xs text-foreground/80">{expandedSummary}</span>
+          {isSingleStep ? (
+            <span className="min-w-0 flex-1 space-y-1">
+              <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <span className="min-w-0 break-words text-sm font-medium text-foreground">{label}</span>
+                <span className={cn('shrink-0 text-xs', state === 'attention' ? 'text-destructive' : 'text-muted-foreground')}>
+                  {failedToStart ? 'Failed to start' : activityStatusLabel(state)}
+                </span>
+              </span>
+              <span className="block break-words text-xs text-muted-foreground">{taskSummary}</span>
+            </span>
+          ) : (
+            <>
+              <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
+              <span className="text-muted-foreground/60">·</span>
+              <span className="min-w-0 flex-1 truncate text-xs text-foreground/80">{expandedSummary}</span>
+            </>
+          )}
           {ts !== null ? (
             <time
               dateTime={new Date(ts).toISOString()}
               title={new Date(ts).toLocaleString()}
-              className="shrink-0 text-[11px] text-muted-foreground"
+              className="hidden shrink-0 text-[11px] text-muted-foreground sm:inline"
             >
               {formatDistanceToNow(ts, { addSuffix: true })}
             </time>

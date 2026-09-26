@@ -414,7 +414,9 @@ export function DockTranscript({
           && chatId
         ) {
           return (
-            <Fragment key={entry.key}>{renderPlans(index)}<DockWorkDisclosure
+            <Fragment key={entry.key}>{renderPlans(index)}
+            {runsByBoundary.has(index) ? <SubAgentTimelineGroup items={runsByBoundary.get(index)!} /> : null}
+            <DockWorkDisclosure
               workspaceId={workspaceId}
               chatId={chatId}
               summary={entry.segment.message.dock_work_summary}
