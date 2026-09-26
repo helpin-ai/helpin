@@ -14,10 +14,10 @@ describe('getScrollDateIndicator', () => {
   });
 
   it('yields to the real separator as it reaches the floating label', () => {
-    expect(getScrollDateIndicator({ scrollTop: 530, previousScrollTop: 560, separators })).toBe('Tuesday');
-    expect(getScrollDateIndicator({ scrollTop: 515, previousScrollTop: 545, separators })).toBeNull();
-    expect(getScrollDateIndicator({ scrollTop: 485, previousScrollTop: 515, separators })).toBeNull();
-    expect(getScrollDateIndicator({ scrollTop: 450, previousScrollTop: 480, separators })).toBe('Monday');
+    expect(getScrollDateIndicator({ scrollTop: 530, previousScrollTop: 560, floatingTop: 8, separators })).toBe('Tuesday');
+    expect(getScrollDateIndicator({ scrollTop: 515, previousScrollTop: 545, floatingTop: 8, separators })).toBe('Tuesday');
+    expect(getScrollDateIndicator({ scrollTop: 492, previousScrollTop: 515, floatingTop: 8, separators })).toBeNull();
+    expect(getScrollDateIndicator({ scrollTop: 480, previousScrollTop: 492, floatingTop: 8, separators })).toBe('Monday');
   });
 
   it('hides before the oldest loaded day separator', () => {

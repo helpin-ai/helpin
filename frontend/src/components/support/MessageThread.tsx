@@ -51,6 +51,7 @@ import { SupportInboxPanelHeader } from './SupportInboxPanelHeader';
 import { ReplyComposerLoading } from './ReplyComposerLoading';
 import { getInitialThreadScrollTarget, getPrependRestoredScrollTop, isNearThreadBottom, isNearThreadTop, shouldAutoScrollThread, shouldMarkOpenThreadRead } from './threadAutoScroll';
 import { getScrollDateIndicator } from './threadDateIndicator';
+import { cn } from '@/lib/utils';
 import type { UpgradeRequiredReason } from '@edition';
 
 interface MessageThreadProps {
@@ -200,7 +201,12 @@ function DaySeparator({
       <div
         data-support-floating-date
         aria-hidden="true"
-        className={`flex justify-center transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none ${phase === 'visible' ? 'translate-y-0 opacity-100' : phase === 'handoff' ? 'translate-y-0 opacity-0' : '-translate-y-2 opacity-0'}`}
+        className={cn(
+          'flex justify-center motion-reduce:transition-none',
+          phase === 'handoff' ? 'transition-none translate-y-0 opacity-0'
+            : 'transition-[opacity,transform] duration-200 ease-out',
+          phase === 'visible' ? 'translate-y-0 opacity-100' : phase === 'hidden' ? '-translate-y-2 opacity-0' : null,
+        )}
       >
         {dateLabel}
       </div>
@@ -852,10 +858,16 @@ export function MessageThread({
       }
 
       const scrollTop = viewport.scrollTop;
+      const viewportTop = viewport.getBoundingClientRect().top;
+      const floatingAnchor = scrollAreaRef.current?.parentElement?.querySelector<HTMLElement>('[data-support-floating-date-anchor]');
+      const floatingTop = (floatingAnchor?.getBoundingClientRect().top ?? viewportTop + 8) - viewportTop;
       const separators = [...separatorRefs.current.entries()]
         .sort(([a], [b]) => a - b)
-        .map(([, node]) => ({ top: node.offsetTop, label: node.textContent?.trim() ?? '' }));
-      const label = getScrollDateIndicator({ scrollTop, previousScrollTop: lastDateScrollTopRef.current, separators });
+        .map(([, node]) => ({
+          top: (node.querySelector('span') ?? node).getBoundingClientRect().top - viewportTop + scrollTop,
+          label: node.textContent?.trim() ?? '',
+        }));
+      const label = getScrollDateIndicator({ scrollTop, previousScrollTop: lastDateScrollTopRef.current, floatingTop, separators });
 
       window.clearTimeout(hideTimer);
       if (label) {
@@ -1264,7 +1276,7 @@ export function MessageThread({
           <div ref={messagesEndRef} />
         </div>
       </ScrollArea>
-      <div className="pointer-events-none absolute inset-x-0 top-2 z-10 flex justify-center">
+      <div data-support-floating-date-anchor className="pointer-events-none absolute inset-x-0 top-2 z-10 flex justify-center">
         <DaySeparator
           label={floatingDate.conversationId === conversationId ? floatingDate.label : ''}
           floating

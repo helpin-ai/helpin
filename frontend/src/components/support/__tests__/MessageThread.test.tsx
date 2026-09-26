@@ -129,8 +129,12 @@ describe('MessageThread', () => {
       const pill = container.querySelector<HTMLElement>('[data-support-floating-date]')!
       expect(separators).toHaveLength(2)
       expect(separators[1].classList.contains('sticky')).toBe(false)
-      Object.defineProperty(separators[0], 'offsetTop', { value: 100 })
-      Object.defineProperty(separators[1], 'offsetTop', { value: 500 })
+      const inlineLabels = separators.map((separator) => separator.querySelector('span')!)
+      inlineLabels.forEach((label, index) => {
+        vi.spyOn(label, 'getBoundingClientRect').mockImplementation(() => ({ top: (index ? 500 : 100) - viewport.scrollTop } as DOMRect))
+      })
+      vi.spyOn(pill.parentElement!, 'getBoundingClientRect').mockImplementation(() => ({ top: 8 } as DOMRect))
+      vi.spyOn(pill.querySelector('span')!, 'getBoundingClientRect').mockImplementation(() => ({ top: 0 } as DOMRect))
 
       await act(async () => { viewport.scrollTop = 700; viewport.dispatchEvent(new Event('scroll')) })
       await act(async () => { viewport.scrollTop = 650; viewport.dispatchEvent(new Event('scroll')) })
@@ -138,9 +142,12 @@ describe('MessageThread', () => {
       expect(pill.className).toContain('opacity-100')
 
       await act(async () => { viewport.scrollTop = 515; viewport.dispatchEvent(new Event('scroll')) })
+      expect(pill.className).toContain('opacity-100')
+      await act(async () => { viewport.scrollTop = 492; viewport.dispatchEvent(new Event('scroll')) })
       expect(pill.className).toContain('opacity-0')
       expect(pill.className).toContain('translate-y-0')
-      await act(async () => { viewport.scrollTop = 450; viewport.dispatchEvent(new Event('scroll')) })
+      expect(pill.classList.contains('transition-none')).toBe(true)
+      await act(async () => { viewport.scrollTop = 480; viewport.dispatchEvent(new Event('scroll')) })
       expect(pill.textContent).toBe(separators[0].textContent)
       expect(pill.className).toContain('opacity-100')
       act(() => { vi.advanceTimersByTime(1000) })

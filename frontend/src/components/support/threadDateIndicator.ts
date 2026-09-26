@@ -1,18 +1,20 @@
 export type DateSeparatorPosition = { top: number; label: string };
 
-export function getScrollDateIndicator({ scrollTop, previousScrollTop, separators }: {
+export function getScrollDateIndicator({ scrollTop, previousScrollTop, floatingTop = 0, separators }: {
   scrollTop: number;
   previousScrollTop: number;
+  floatingTop?: number;
   separators: DateSeparatorPosition[];
 }): string | null {
   if (scrollTop >= previousScrollTop) return null;
 
-  // The real separator takes over while crossing the floating label's position.
-  if (separators.some(({ top }) => Math.abs(top - scrollTop) <= 24)) return null;
+  const handoffTop = scrollTop + floatingTop;
+  // Yield only when the two labels actually meet, not as the inline label nears the viewport edge.
+  if (separators.some(({ top }) => Math.abs(top - handoffTop) <= 2)) return null;
 
   let currentDate: string | null = null;
   for (const separator of separators) {
-    if (separator.top > scrollTop) break;
+    if (separator.top > handoffTop) break;
     currentDate = separator.label;
   }
   return currentDate;
