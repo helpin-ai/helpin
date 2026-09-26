@@ -572,6 +572,42 @@ func TestEchoPromptDefaultsGenericProductReferencesToWorkspace(t *testing.T) {
 	}
 }
 
+func TestEchoConversationGuidanceCoversMixedIntentsAndPlainReplies(t *testing.T) {
+	prompt := BuiltInPresetPrompt(model.AgentPresetSupportAgent)
+	if prompt == nil {
+		t.Fatal("expected Echo system prompt")
+	}
+	for _, text := range []string{*prompt, EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, "Saved workspace prompt")} {
+		for _, expected := range []string{
+			"Reassess the latest message",
+			"Sales or evaluation",
+			"Feedback or feature request",
+			"Billing or account changes",
+			"simple language",
+			"Do not use em dashes",
+		} {
+			if !strings.Contains(text, expected) {
+				t.Errorf("Echo guidance missing %q", expected)
+			}
+		}
+	}
+	if strings.Contains(*prompt, "when the request involves refunds/billing changes/account deletion/legal/security incidents") {
+		t.Fatal("Echo must distinguish public policy questions from requests needing human action")
+	}
+}
+
+func TestSupportSkillGuidesMixedConversations(t *testing.T) {
+	skill, ok := GetBuiltInSkill("support_triage_response")
+	if !ok {
+		t.Fatal("expected support skill")
+	}
+	for _, expected := range []string{"Sales or evaluation", "Feedback or feature request", "simple language", "Do not use em dashes"} {
+		if !strings.Contains(skill.Instructions, expected) {
+			t.Errorf("support skill missing %q", expected)
+		}
+	}
+}
+
 func TestListSkillCatalogReturnsBuiltInSkills(t *testing.T) {
 	catalog := ListSkillCatalog()
 	if len(catalog.Skills) == 0 {
