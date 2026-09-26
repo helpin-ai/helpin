@@ -173,10 +173,11 @@ func TestEchoSystemPromptUsesCustomerSafeResearchFallback(t *testing.T) {
 
 func TestEchoPromptsConstrainPrivateMCPResearch(t *testing.T) {
 	for name, prompt := range map[string]string{
-		"default": echoSystemPrompt,
-		"saved":   EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, "You are Echo."),
+		"default":            echoSystemPrompt,
+		"saved":              EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, "You are Echo."),
+		"old_private_policy": EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, "You are Echo.\n\n## Required private data policy\nUse MCP for internal triage, then hand off."),
 	} {
-		for _, required := range []string{"assigned read-only MCP tools", "current customer and workspace", "never cite raw logs", "server-issued evidence ID", "hand off"} {
+		for _, required := range []string{"assigned read-only MCP tools", "current customer and workspace", "never cite raw logs", "verified customer", "exact MCP tool name", "reply when", "hand off"} {
 			if !strings.Contains(strings.ToLower(prompt), strings.ToLower(required)) {
 				t.Errorf("%s Echo prompt missing %q", name, required)
 			}

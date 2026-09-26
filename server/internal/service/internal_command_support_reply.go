@@ -4,8 +4,8 @@ package service
 // chat run's output reaches the visitor. send_reply re-validates the agent's
 // grounding server-side (claims vs the run's evidence snapshot, numeric
 // checks and confidence threshold) and converts failures
-// into the existing escalation machinery — a hallucinated answer cannot reach
-// a customer regardless of what the model produced.
+// into the existing escalation machinery. MCP-backed replies also receive a
+// semantic review of customer scope, grounding, and privacy.
 
 import (
 	"context"
@@ -37,10 +37,11 @@ func (s *InternalCommandService) SetSupportReplyDependencies(supportAI *SupportA
 
 // supportReplyGateInput feeds the pure server-side reply gate.
 type supportReplyGateInput struct {
-	Kind      string
-	Contract  *AIResponseContract
-	Evidence  []KnowledgeSearchResult
-	Threshold float64
+	Kind          string
+	Contract      *AIResponseContract
+	Evidence      []KnowledgeSearchResult
+	Threshold     float64
+	MCPAssessment *supportMCPReplyAssessment
 }
 
 // supportReplyGateResult is the gate's verdict.
@@ -70,8 +71,21 @@ func evaluateSupportReplyGate(input supportReplyGateInput) supportReplyGateResul
 	}
 
 	confidence := evaluateConfidence(input.Evidence, input.Contract, kind != supportReplyKindAnswer)
+	for _, item := range input.Evidence {
+		if item.SourceType != "external_mcp" {
+			continue
+		}
+		var valid bool
+		confidence, valid = supportMCPReplyConfidence(input.MCPAssessment, input.Contract.Confidence)
+		if !valid {
+			result.ValidationOutcome = supportValidationUngrounded
+			result.EscalationReason = "mcp_reply_not_supported"
+			return result
+		}
+		break
+	}
 	result.Confidence = confidence
-	if kind == supportReplyKindAnswer && confidence < input.Threshold {
+	if (kind == supportReplyKindAnswer || input.MCPAssessment != nil) && confidence < input.Threshold {
 		result.EscalationReason = "low_confidence"
 		return result
 	}
@@ -103,14 +117,14 @@ func (s *InternalCommandService) registerSupportReplyCommands() {
 			CommandName: "support.send_reply",
 			Alias:       "send_support_reply",
 			Category:    "Support",
-			Description: "Send your reply to the visitor. For public product facts, first call search_knowledge. Factual answers must cite server-issued evidence_id values for each material claim; the server re-validates grounding and confidence. Direct MCP results are for internal triage and cannot support a factual visitor reply; hand off for customer-specific findings. When child work is pending, a conversational acknowledgment keeps the customer turn open; wait for the child result and then send the final answer. Otherwise this must be the final successful action of the turn. If the tool returns rewrite_required, rewrite once in customer-facing language and call it again.",
+			Description: "Send your reply to the visitor. For public product facts, first call search_knowledge. Factual answers must cite knowledge evidence IDs or MCP tool names for each material claim; the server re-validates grounding and confidence. For customer-specific findings, cite the exact MCP tool name in evidence_ids and source_doc_ids. The server uses its latest read-only result this customer turn and checks customer scope, factual support, and privacy. Reply when the evidence is clear; MCP use alone is not a reason to hand off. When child work is pending, a conversational acknowledgment keeps the customer turn open; wait for the child result and then send the final answer. Otherwise this must be the final successful action of the turn. If the tool returns rewrite_required, rewrite once in customer-facing language and call it again.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"content":        map[string]any{"type": "string", "description": "The reply text shown to the visitor."},
 					"reply_kind":     map[string]any{"type": "string", "enum": []string{"answer", "clarify", "conversational", "confirmation"}, "description": "answer = factual answer needing evidence; clarify = asking the visitor a question; conversational = greeting/small talk or a brief acknowledgment while child work is pending; confirmation = confirming the visitor's issue is resolved."},
 					"confidence":     map[string]any{"type": "number", "description": "Your 0-1 confidence that the reply is correct and grounded."},
-					"source_doc_ids": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "evidence_id values (from search_knowledge) backing the reply."},
+					"source_doc_ids": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Knowledge evidence_id values or exact MCP tool names backing the reply. MCP citations use the latest lookup this customer turn."},
 					"claims": map[string]any{
 						"type":        "array",
 						"description": "Each material factual claim in the reply mapped to the evidence ids that support it. Required for reply_kind=answer.",
@@ -290,12 +304,33 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 		Confidence:   req.Confidence,
 		Claims:       req.Claims,
 	}
+	mcpEvidence, customerEmail, mcpErr := s.supportMCPReplyEvidence(ctx, meta, conv, source, contract)
+	if mcpErr != nil {
+		reason := "Private evidence is unavailable."
+		var inputErr *CommandError
+		if errors.As(mcpErr, &inputErr) {
+			reason = inputErr.Message
+		} else {
+			slog.WarnContext(ctx, "load MCP reply evidence", "conversation_id", conversationID, "error", mcpErr)
+		}
+		return mustJSON(map[string]any{"status": "evidence_unavailable", "reason": reason, "next_action": "Resolve the stated issue with one narrow lookup or focused clarification; hand off if it cannot be resolved. Do not repeat the same reply or relabel it conversational."}), nil
+	}
+	var mcpAssessment *supportMCPReplyAssessment
+	if len(mcpEvidence) > 0 {
+		evidence = append(evidence, mcpEvidence...)
+		mcpAssessment, err = supportAI.reviewSupportMCPReply(ctx, meta.WorkspaceID, conversationID, customerEmail, source.Content, contract, evidence)
+		if err != nil {
+			slog.WarnContext(ctx, "MCP reply review unavailable", "workspace_id", meta.WorkspaceID, "conversation_id", conversationID, "error", err)
+			return mustJSON(map[string]any{"status": "evidence_unavailable", "next_action": "The account finding could not be verified. Ask a focused clarification or hand off; do not send it as a conversational reply."}), nil
+		}
+	}
 	supportAI.publishProgress(meta.WorkspaceID, conversationID, supportAIProgressFinalizing)
 	gate := evaluateSupportReplyGate(supportReplyGateInput{
-		Kind:      req.ReplyKind,
-		Contract:  contract,
-		Evidence:  evidence,
-		Threshold: settings.AIConfidenceThreshold,
+		Kind:          req.ReplyKind,
+		Contract:      contract,
+		Evidence:      evidence,
+		Threshold:     settings.AIConfidenceThreshold,
+		MCPAssessment: mcpAssessment,
 	})
 	if !gate.OK {
 		slog.WarnContext(ctx, "send_reply: reply gate rejected runtime answer",

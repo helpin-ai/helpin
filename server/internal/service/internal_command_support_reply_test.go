@@ -275,3 +275,12 @@ func TestSupportSendReplyAfterGreetingDoesNotInferDissatisfaction(t *testing.T) 
 		})
 	}
 }
+
+func TestSupportReplyGateRejectsUnreviewedMCPResult(t *testing.T) {
+	evidence := []KnowledgeSearchResult{{ID: "mcp__logs__lookup", SourceType: "external_mcp", IsInternal: true, Content: "Import failed", VectorScore: 1}}
+	contract := &AIResponseContract{Content: "Your import succeeded.", CanAnswer: true, Confidence: 1, Claims: []AIResponseClaim{{Text: "Your import succeeded.", EvidenceIDs: []string{"mcp__logs__lookup"}}}}
+	gate := evaluateSupportReplyGate(supportReplyGateInput{Kind: "answer", Contract: contract, Evidence: evidence, Threshold: .7})
+	if gate.OK {
+		t.Fatal("an MCP tool's successful execution must not prove an unsupported answer")
+	}
+}

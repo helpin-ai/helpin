@@ -150,3 +150,18 @@ func (r *blockingSupportAIRetrievalTraceRecorder) RecordSupportAIRetrievalTrace(
 	<-r.release
 	return r.err
 }
+
+func TestSupportRetrievalTraceExcludesPrivateMCPContent(t *testing.T) {
+	results := []KnowledgeSearchResult{{ID: "mcp__logs__lookup", SourceType: "external_mcp", Content: "secret customer logs", Title: "private title", URL: "https://internal.example"}, {ID: "public", Content: "Public help"}}
+	compact := compactKnowledgeSearchResults(results)
+	encoded, err := json.Marshal(compact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "secret") || strings.Contains(string(encoded), "private title") || strings.Contains(string(encoded), "internal.example") {
+		t.Fatalf("private evidence leaked: %s", encoded)
+	}
+	if len(compact) != 1 || compact[0].ID != "public" {
+		t.Fatalf("want public evidence only, got %s", encoded)
+	}
+}
