@@ -25,16 +25,23 @@ export function HeroVortex({ variant = 'vortex', tone = 'light' }: { variant?: M
     if (!drift || !art) return;
     // A fresh canvas per mount: control of a canvas can be handed to the worker only once.
     const canvas = document.createElement('canvas');
-    drift.appendChild(canvas);
-    const current = createVortexRenderer(canvas, variant);
-    renderer.current = current;
     // The drift box overhangs the clipped stage; only paint the part that can be seen.
-    const observer = new ResizeObserver(() => {
+    const measure = () => {
       const width = drift.offsetWidth, height = drift.offsetHeight;
       const left = Math.max(0, -drift.offsetLeft), top = Math.max(0, -drift.offsetTop);
       const visibleWidth = Math.max(0, Math.min(width, art.clientWidth - drift.offsetLeft) - left);
       const visibleHeight = Math.max(0, Math.min(height, art.clientHeight - drift.offsetTop) - top);
       Object.assign(canvas.style, { left: `${left}px`, top: `${top}px`, width: `${visibleWidth}px`, height: `${visibleHeight}px` });
+      return { width, height, left, top, visibleWidth, visibleHeight };
+    };
+    // Size the canvas before it enters the page: an unsized canvas that later grows to fill
+    // the hero counts as a layout shift (CLS) on every page that uses this art.
+    measure();
+    drift.appendChild(canvas);
+    const current = createVortexRenderer(canvas, variant);
+    renderer.current = current;
+    const observer = new ResizeObserver(() => {
+      const { width, height, left, top, visibleWidth, visibleHeight } = measure();
       // Match an xMidYMid slice crop of the 1400×700 artwork inside the drift box.
       const scale = Math.max(width / W, height / H);
       const pixels = visibleWidth * visibleHeight;

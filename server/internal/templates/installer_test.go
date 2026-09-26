@@ -47,6 +47,9 @@ func TestInstallerInstallCreateAgentTemplateCreatesStampedAgentAndRule(t *testin
 	if result.Agent.TemplateVersion == nil || *result.Agent.TemplateVersion != 1 {
 		t.Fatalf("agent template_version = %v, want 1", result.Agent.TemplateVersion)
 	}
+	if result.Agent.ApprovalMode != "risk_based" {
+		t.Fatalf("agent approval_mode = %q, want risk_based", result.Agent.ApprovalMode)
+	}
 	if result.Rule.TemplateInstanceID == nil || result.Agent.TemplateInstanceID == nil || *result.Rule.TemplateInstanceID != *result.Agent.TemplateInstanceID {
 		t.Fatalf("rule/agent template_instance_id mismatch: rule=%v agent=%v", result.Rule.TemplateInstanceID, result.Agent.TemplateInstanceID)
 	}

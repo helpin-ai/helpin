@@ -28,7 +28,7 @@ agent:
       {{raw_configuration_json}}
     allowed_tools: [list_tasks, add_task_comment, create_task, list_workspace_teams, list_team_workflows_with_stages]
     allowed_targets: [workspace, task]
-    approval_mode: always
+    approval_mode: risk_based
 trigger:
   type: cron
 inputs:

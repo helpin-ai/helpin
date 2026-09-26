@@ -3404,7 +3404,7 @@ func (s *AgentService) createCustomAgent(ctx context.Context, req model.CreateAg
 		return nil, err
 	}
 
-	approvalMode := "always"
+	approvalMode := "risk_based"
 	if req.ApprovalMode != nil && *req.ApprovalMode != "" {
 		approvalMode = *req.ApprovalMode
 	}

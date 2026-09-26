@@ -63,6 +63,38 @@ func setupAIConnectionTest(t *testing.T) (*AIConnectionService, *gorm.DB) {
 	return service, db
 }
 
+func TestChatGPTConnectionOffersGPT6Sol(t *testing.T) {
+	service, _ := setupAIConnectionTest(t)
+	var found bool
+	for _, offered := range service.Models() {
+		if offered.Provider == "openai_chatgpt" && offered.SelectionModel == "gpt-6-sol" {
+			found = offered.Tier == aimodel.TierLarge && offered.Label == "GPT-6 Sol"
+		}
+		if offered.Provider == "openai" && offered.SelectionModel == "gpt-6-sol" {
+			t.Fatal("GPT-6 Sol must not appear on OpenAI API key connections")
+		}
+	}
+	if !found {
+		t.Fatal("GPT-6 Sol is missing from ChatGPT personal model options")
+	}
+	selected, tier, err := service.ResolveModel("openai_chatgpt", "gpt-6-sol")
+	if err != nil || selected == nil || selected.Provider != "openai_chatgpt" || selected.Model != "gpt-6-sol" || tier != aimodel.TierLarge {
+		t.Fatalf("ChatGPT model selection = %+v, %q, %v", selected, tier, err)
+	}
+	if _, _, err := service.ResolveModel("openai", "gpt-6-sol"); err == nil {
+		t.Fatal("GPT-6 Sol resolved for an OpenAI API key connection")
+	}
+	service.cfg.ChatGPTEnabled = false
+	for _, offered := range service.Models() {
+		if offered.Provider == "openai_chatgpt" {
+			t.Fatalf("disabled ChatGPT model offered: %+v", offered)
+		}
+	}
+	if _, _, err := service.ResolveModel("openai_chatgpt", "gpt-6-sol"); err == nil {
+		t.Fatal("disabled ChatGPT model resolved")
+	}
+}
+
 func TestAIConnectionOwnershipEncryptionRotationAndRevocation(t *testing.T) {
 	s, db := setupAIConnectionTest(t)
 	ctx := context.Background()

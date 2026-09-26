@@ -33,6 +33,10 @@ type capabilityWiring struct {
 	storage              *storage.S3Client
 	temporal             tclient.Client
 	gitHubAppConfigured  func(context.Context) bool
+	// meetingCapture reports the selected capture provider and whether it has credentials.
+	meetingCapture func() (string, bool)
+	// googleOAuthConfigured reports a Gmail and Calendar OAuth client.
+	googleOAuthConfigured bool
 }
 
 func newCapabilityHandler(db *gorm.DB, cfg *config.Config, deps capabilityWiring) *handler.CapabilityHandler {
@@ -53,6 +57,7 @@ func newCapabilityHandler(db *gorm.DB, cfg *config.Config, deps capabilityWiring
 		GitHubAppConfigured:       deps.gitHubAppConfigured,
 		GitHubReachabilityProblem: service.GitHubAppBaseURLBlockedReason(cfg.AppBaseURL),
 	}
+	applyCRMCapabilityConfig(&capabilityConfig, cfg, deps)
 	if deps.storage != nil {
 		capabilityConfig.StorageProbe = deps.storage.CheckBucket
 	}
@@ -75,6 +80,26 @@ func newCapabilityHandler(db *gorm.DB, cfg *config.Config, deps capabilityWiring
 	}
 	capabilities.SetTestEmail(sender, repository.NewUserRepository(db))
 	return handler.NewCapabilityHandler(capabilities)
+}
+
+// applyCRMCapabilityConfig describes meeting capture and the Google OAuth
+// client. Webhook and redirect checks compare against APP_BASE_URL, which on
+// Community serves the API under /api; the hosted edition routes its API
+// separately, so it skips them.
+func applyCRMCapabilityConfig(c *service.CapabilityConfig, cfg *config.Config, deps capabilityWiring) {
+	c.MeetingCaptureProvider = cfg.CRMMeetingCaptureProvider
+	if deps.meetingCapture != nil {
+		c.MeetingCaptureProvider, c.MeetingCaptureConfigured = deps.meetingCapture()
+	}
+	c.MeetingCaptureWebhookURL = service.MeetingCaptureWebhookURL(cfg.AppBaseURL, c.MeetingCaptureProvider)
+	c.GoogleOAuthConfigured = deps.googleOAuthConfigured
+	c.GoogleOAuthRedirectURL = service.GoogleOAuthRedirectURL(cfg.AppBaseURL)
+	if deployment.EditionName != "community" {
+		return
+	}
+	c.MeetingCaptureReachabilityProblem = service.PublicBaseURLBlockedReason(
+		service.MeetingProviderTitle(c.MeetingCaptureProvider), cfg.AppBaseURL)
+	c.GoogleOAuthProblem = service.GoogleOAuthRedirectProblem(cfg.AppBaseURL, cfg.GmailOAuthRedirectURL)
 }
 
 // appEmailFingerprint covers the non-secret application mail settings. A

@@ -37,7 +37,7 @@ agent:
       - publish_document_change_proposal
       - create_document
     allowed_targets: [repository, document]
-    approval_mode: always
+    approval_mode: risk_based
 trigger:
   type: event
   event: github.release_published

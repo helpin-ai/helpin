@@ -1,6 +1,6 @@
 import { HeroVortex } from '../../_components/HeroVortex';
 import { DEMO_URL, FAQList } from '../../_components/ui';
-import { marketingMetadata } from '../../_components/marketing-metadata';
+import { createPageMetadata, PAGE_SEO } from '@/lib/metadata';
 import Link from 'next/link';
 import { ArrowRight, CheckSquare, ChevronRight, GitBranch, ListFilter, MessagesSquare, Repeat2, Tags, Users } from 'lucide-react';
 import { PreviewNav } from '../../_components/PreviewNav';
@@ -23,7 +23,7 @@ import './project-objectives.css';
 import './project-palette.css';
 import './project-delivery.css';
 
-export const metadata = marketingMetadata("Projects \u2014 Helpin", "/products/projects");
+export const metadata = createPageMetadata(PAGE_SEO.projects);
 const DETAILS = [
   { Icon: ListFilter, title: 'Views that fit the job', body: 'Save filters for a sprint, bug queue, or review list, and share them with the team.' },
   { Icon: GitBranch, title: 'Dependencies in view', body: 'Mark tasks as blocking, related, or duplicate. A blocked task shows what it waits on.' },
@@ -60,7 +60,7 @@ const FAQS = [
   ],
   [
     "How do agents help with planning and delivery?",
-    "Planning agents develop the scope. Coding agents prepare implementation work and tests, while review agents examine the changes. Tool access and approval settings determine how they proceed. Coding agents need the GitHub App and Agent Runtime, and aren’t in Community 0.1.",
+    "Planning agents develop the scope. Coding agents prepare implementation work and tests, while review agents examine the changes. Tool access and approval settings determine how they proceed. Coding agents need the GitHub App and Agent Runtime, on Helpin Cloud or self-hosted.",
     "/products/ai-agents"
   ],
   [
@@ -73,7 +73,7 @@ const FAQS = [
     "No. After release, Helpin prepares an update in the customer’s original conversation. A teammate approves it before it sends.",
     "/products/projects#project-followup"
   ],
-  ["Can we self-host Projects?", "Yes. Projects is included when you self-host, free under AGPL-3.0 with no plan limits. Your team runs the installation and covers hosting and model provider costs. Community is 0.1 beta, and coding agents aren’t in it yet.", "/self-hosting#whats-included"]
+  ["Can we self-host Projects?", "Yes. Projects is included when you self-host, coding agents too, free under AGPL-3.0 with no plan limits. Your team runs the installation and covers hosting and model provider costs. Community is a 0.2 beta.", "/self-hosting#whats-included"]
 ] as const;
 export default function ProjectsPage() {
   return <>
@@ -92,7 +92,7 @@ export default function ProjectsPage() {
       <section id="project-progress"><div className="wrap"><div className="projects-outcomes-heading"><SectionHead eyebrow="Know what success means" title="Track what you delivered. Measure what it changed." lede="Connect objectives to epics and key results. Keep task completion and recorded outcomes visible as separate measures of progress." /></div><ProjectHealth /></div></section>
       <section id="project-planning" className="projects-planning"><div className="wrap"><SectionHead eyebrow="From the bigger plan to the next sprint" title="Roadmap to sprint, in one place." lede="Schedule epics by objective on the roadmap. Plan sprints from the backlog. Unfinished work rolls into the next sprint automatically." /><div className="projects-planning-grid"><article><div className="projects-planning-copy"><span className="projects-planning-step">01 / ROADMAP</span><h3>See how the bigger pieces fit.</h3><p>Schedule epics around objectives, with owners, timing, and health in view.</p></div><ProjectScene variant="roadmap" /><p className="projects-demo-caption">Validate the mapping. Prepare the pilot. Support the rollout.</p></article><article><div className="projects-planning-copy"><span className="projects-planning-step">02 / SPRINTS</span><h3>Make the next commitment clear.</h3><p>Choose backlog tasks, review the sprint closeout, and carry unfinished work into the next sprint.</p></div><ProjectScene variant="sprint" /><p className="projects-demo-caption">The plan changes. The record of what happened remains.</p></article></div></div></section>
 
-      <section id="project-agents" className="projects-agents"><div className="wrap projects-split"><div><SectionHead eyebrow="From a defined task to a proposed change" title="Give agents more than a task title." lede="Let planning and coding agents work from the requirements and relevant customer history. They can refine the task, prepare code and tests, and review the changes. Your team sets the approval rules." /><p className="projects-agent-copy">Coding agents need the GitHub App and Agent Runtime, and aren’t in Community 0.1.</p><Link className="projects-inline-link" href="/products/ai-agents">Meet the agents<ArrowRight size={15} /></Link></div><div><ProjectScene variant="agents" /><p className="projects-demo-caption">Scoped to what the customer agreed to.</p></div></div></section>
+      <section id="project-agents" className="projects-agents"><div className="wrap projects-split"><div><SectionHead eyebrow="From a defined task to a proposed change" title="Give agents more than a task title." lede="Let planning and coding agents work from the requirements and relevant customer history. They can refine the task, prepare code and tests, and review the changes. Your team sets the approval rules." /><p className="projects-agent-copy">Coding agents need the GitHub App and Agent Runtime, on Helpin Cloud or self-hosted.</p><Link className="projects-inline-link" href="/products/ai-agents">Meet the agents<ArrowRight size={15} /></Link></div><div><ProjectScene variant="agents" /><p className="projects-demo-caption">Scoped to what the customer agreed to.</p></div></div></section>
       <section id="project-followup" className="projects-loop section-motion"><HeroVortex variant="converge" tone="dark" /><div className="wrap projects-delivery-stage"><div className="projects-delivery-heading"><SectionHead eyebrow="Delivery includes the follow-up" title="Ship the change. Bring the answer back." lede="Connect the released work to the original request. Helpin prepares the customer update with the relevant guide. A teammate approves it before it goes to the original conversation." /></div><ProjectDelivery /><Link className="projects-inline-link" href="/products/customer-support">See how support connects<ArrowRight size={15} /></Link></div></section>
       <section id="project-faq"><div className="wrap projects-faq-grid"><SectionHead eyebrow="Before you bring the team in" title="Get to know Helpin Projects." /><div className="projects-faqs"><FAQList items={FAQS} className="faq-items" /><Link className="projects-inline-link" href="/self-hosting">Explore self-hosting<ArrowRight size={15} /></Link></div></div></section>
       <section className="final-cta final-cta-connected" aria-labelledby="projects-final-title"><div className="wrap"><ConnectedWorkspace /><div className="final"><span className="eyebrow">Plan together. Follow through.</span><h2 id="projects-final-title">Bring the plan,<br />the work, and the customer together.</h2><p className="lede">One workspace for the plan, the code, and the customer reply.</p><CtaRow primaryLabel="Start free trial" secondaryHref={DEMO_URL} secondaryLabel="Book a demo" /><p className="projects-supporting-note">14-day free trial · No card required</p><p className="projects-supporting-note">Open source · Self-host free, or let us run it</p></div></div></section>

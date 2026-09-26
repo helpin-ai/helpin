@@ -543,7 +543,7 @@ func Load() (*Config, error) {
 		PMImportEncryptionKey:                  strings.TrimSpace(os.Getenv("PM_IMPORT_ENCRYPTION_KEY")),
 		GmailClientID:                          os.Getenv("GMAIL_CLIENT_ID"),
 		GmailClientSecret:                      os.Getenv("GMAIL_CLIENT_SECRET"),
-		GmailOAuthRedirectURL:                  os.Getenv("GMAIL_OAUTH_REDIRECT_URL"),
+		GmailOAuthRedirectURL:                  gmailOAuthRedirectURL(appBaseURL),
 		CRMLLMProvider:                         crmLLMProvider,
 		CRMLLMModel:                            crmLLMModel,
 		CRMLLMOpenRouterProvider:               crmLLMOpenRouterProvider,
@@ -617,6 +617,14 @@ func validateOpenRouterProviderEnv(name, openRouterProvider, routeProvider, defa
 		return fmt.Errorf("%s requires the corresponding LLM provider to be openrouter", name)
 	}
 	return nil
+}
+
+// gmailOAuthRedirectURL returns GMAIL_OAUTH_REDIRECT_URL, or the Gmail and
+// Calendar OAuth callback under APP_BASE_URL when it is empty. The default
+// matches deployments that serve the API under APP_BASE_URL/api (Community).
+func gmailOAuthRedirectURL(appBaseURL string) string {
+	return firstNonEmpty(os.Getenv("GMAIL_OAUTH_REDIRECT_URL"),
+		strings.TrimRight(strings.TrimSpace(appBaseURL), "/")+"/api/crm/email/oauth/callback")
 }
 
 func firstNonEmpty(values ...string) string {

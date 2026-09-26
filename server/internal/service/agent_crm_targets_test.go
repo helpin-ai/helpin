@@ -24,8 +24,8 @@ func TestCustomAgentDraftPreservesCRMTargets(t *testing.T) {
 			if !strings.Contains(customAgentDraftSystemPrompt(nil, nil), "- "+target+"\n") {
 				t.Fatalf("draft prompt does not advertise supported target %s", target)
 			}
-			if draft.ApprovalMode != "mutating_tools" {
-				t.Fatalf("approval mode = %s, want existing safe default", draft.ApprovalMode)
+			if draft.ApprovalMode != "risk_based" {
+				t.Fatalf("approval mode = %s, want risk-based default", draft.ApprovalMode)
 			}
 		})
 	}

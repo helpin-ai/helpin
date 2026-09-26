@@ -183,6 +183,9 @@ func main() {
 	if err := repository.MigrateSupportTranslationConversationDefaults(db); err != nil {
 		fatalWithSentry("failed to repair support translation conversation defaults", err)
 	}
+	if err := repository.MigrateSupportTranslationPolicyRevision(db); err != nil {
+		fatalWithSentry("failed to repair support translation policy revision", err)
+	}
 
 	if cfg.RunAutoMigrate {
 		// Fix: idx_ws_member_ws_user was incorrectly created as a single-column unique
@@ -1946,7 +1949,9 @@ func main() {
 		aiConnectionsEnabled: aiConnectionService.Enabled(), chatProviders: supportLLMRouter.ConfiguredChatProviders(),
 		embeddingModel: supportEmbeddingModel, embeddingSource: embeddingResolver.EmbeddingSource,
 		storage: s3Client, temporal: temporalClient,
-		gitHubAppConfigured: githubAppClient.Configured,
+		gitHubAppConfigured:   githubAppClient.Configured,
+		meetingCapture:        crmMeetingService.CaptureAvailability,
+		googleOAuthConfigured: gmailOAuth != nil,
 	})
 	handlers.Docs.SetPublicWidgetURLs(cfg.PublicWidgetURL, cfg.PublicSDKURL)
 	handlers.Auth.SetPublicWidgetURLs(cfg.PublicWidgetURL, cfg.PublicSDKURL)

@@ -39,6 +39,12 @@ const (
 	CapabilityKeyGitHub              = "github"
 	CapabilityKeyObjectStorage       = "object_storage"
 	CapabilityKeyWorkers             = "workers"
+	// CapabilityKeyMeetingCapture covers the CRM meeting capture provider
+	// (Recall or Vexa) and its webhooks.
+	CapabilityKeyMeetingCapture = "meeting_capture"
+	// CapabilityKeyGoogleWorkspace covers the Google OAuth client that connects
+	// Gmail and Google Calendar to CRM.
+	CapabilityKeyGoogleWorkspace = "google_workspace"
 )
 
 // CapabilityAction describes the next step that resolves a capability status.

@@ -47,7 +47,10 @@ test('settings written by helpin install/configure reach the API and worker', as
   const example = await readFile(new URL('.env.example', root), 'utf8');
   const compose = await readFile(new URL('compose.yaml', root), 'utf8');
   for (const key of ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USERNAME', 'SMTP_PASSWORD', 'SMTP_FROM', 'SMTP_TLS_MODE',
-    'OPENROUTER_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'INTERNAL_API_SECRET']) {
+    'OPENROUTER_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'INTERNAL_API_SECRET',
+    'CRM_MEETING_CAPTURE_PROVIDER', 'RECALL_BASE_URL', 'RECALL_API_KEY', 'RECALL_WEBHOOK_SECRET',
+    'VEXA_BASE_URL', 'VEXA_API_KEY', 'VEXA_WEBHOOK_SECRET',
+    'GMAIL_CLIENT_ID', 'GMAIL_CLIENT_SECRET', 'GMAIL_OAUTH_REDIRECT_URL']) {
     assert.match(example, new RegExp(`^${key}=`, 'm'), `${key} missing from .env.example`);
     assert.match(compose, new RegExp(`\\$\\{${key}[:}]`), `${key} not passed by compose.yaml`);
   }

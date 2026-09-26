@@ -221,7 +221,7 @@
 .hp3 .footer-brand .logo { color: #f5faf7; }
 .hp3 .footer-brand [data-helpin-brand-lockup] { font-size: 26px; gap: 7px; }
 .hp3 .footer-brand p { margin-top: 24px; color: #92a89d; font-size: 14px; line-height: 1.8; }
-.hp3 .footer-nav { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 32px; }
+.hp3 .footer-nav { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 32px; }
 .hp3 .footer-column h2 { font-size: 14px; font-weight: 500; line-height: 1.6; letter-spacing: 0; color: #f0f6f2; margin: 0 0 16px; text-wrap: initial; }
 .hp3 .footer-column ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
 .hp3 .footer-column a { display: inline-flex; align-items: center; gap: 6px; padding-block: 4px; line-height: 1.6; }
@@ -248,13 +248,14 @@
   .hp3 .footer-brand p { margin-top: 0; }
   .hp3 .footer-community { margin-top: 48px; }
 }
+@media (max-width: 720px) {
+  .hp3 .footer-nav { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 32px 20px; }
+}
 @media (max-width: 600px) {
   .hp3 .pfoot { padding-top: 48px; }
   .hp3 .pfoot .wrap { padding-inline: 24px; }
   .hp3 .footer-brand { display: block; }
   .hp3 .footer-brand p { margin-top: 18px; }
-  .hp3 .footer-nav { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 32px 20px; }
-  .hp3 .footer-column:first-child { grid-row: span 2; }
   .hp3 .footer-column a { padding-block: 7px; }
   .hp3 .footer-community { align-items: flex-start; flex-direction: column; gap: 24px; }
   .hp3 .footer-bottom { align-items: flex-start; flex-direction: column; gap: 16px; }
@@ -1283,3 +1284,12 @@
   .hp3 .hero-proof li { justify-content: flex-start; gap: 8px; font-size: 13px; }
   .hp3 .hero-proof img { width: 20px; height: 20px; }
 }
+
+/* 404 */
+.hp3 .not-found { padding: 160px 0 120px; }
+.hp3 .not-found h1 { font-size: clamp(36px, 5vw, 56px); line-height: 1.08; margin: 14px 0 16px; }
+.hp3 .not-found .cta-row { margin-top: 32px; justify-content: flex-start; }
+
+/* Named competitors in the homepage eyebrow link to their comparisons. */
+.hp3 .eyebrow-link { color: inherit; text-decoration: underline; text-decoration-color: currentColor; text-decoration-thickness: 1px; text-underline-offset: 3px; text-decoration-style: dotted; }
+.hp3 .eyebrow-link:hover { text-decoration-style: solid; }

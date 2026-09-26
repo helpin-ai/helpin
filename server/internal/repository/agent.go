@@ -1137,12 +1137,13 @@ func (r *AgentRunRepository) ListByIDs(ctx context.Context, workspaceID string, 
 	return runs, nil
 }
 
-// FindByParentRunID returns the first run linked to the given parent run.
+// FindByParentRunID prefers the current child when a terminal child was
+// replaced by a DAG retry, then the most recent terminal child.
 func (r *AgentRunRepository) FindByParentRunID(ctx context.Context, workspaceID, parentRunID string) (*model.AgentRun, error) {
 	var run model.AgentRun
 	if err := r.db.WithContext(ctx).
 		Where("workspace_id = ? AND parent_run_id = ?", workspaceID, parentRunID).
-		Order("created_at ASC").
+		Order("CASE WHEN status IN ('queued', 'running', 'paused') THEN 0 ELSE 1 END, created_at DESC").
 		First(&run).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil

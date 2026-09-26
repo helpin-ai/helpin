@@ -4,8 +4,9 @@ import type { RunPlanArtifact, AgentRunStatus } from '@/lib/pmTypes';
 import { Fragment, useState, type ReactNode } from 'react';
 import { useDockStore } from '@/stores/dockStore';
 import { Tick01Icon } from '@/lib/icons';
-import { DockActivityTimeline, DockActivitySteps } from './DockActivityTimeline';
-import { buildDockActivityTimeline } from './dockActivityTimeline';
+import { DockActivitySteps } from './DockActivityTimeline';
+import { AgentTimelineEntry } from './AgentTimelineEntry';
+import { buildDockActivityTimeline } from './buildDockActivityTimeline';
 import { DockAnswerSegment } from './DockAnswerSegment';
 import { DockDecisionRow } from './DockDecisionRow';
 import { useDockAnswerAnimation } from './useDockAnswerAnimation';
@@ -258,6 +259,27 @@ export function DockTranscript({
   const resolveDecisionActor = (message: CodingSessionTranscriptMessage) =>
     actorsById.get(message.resolver_user_id ?? message.actor_user_id ?? '')
       ?? fallbackActor ?? (user ? { id: user.id, email: user.email, full_name: user.full_name } : null);
+  const resolveTranscriptActor = (message: CodingSessionTranscriptMessage): CodingSessionActor | null => {
+    if (message.message_type === 'approval' || message.message_type === 'approval_request_resolution' || message.message_type === 'review_checkpoint_resolution') {
+      return resolveDecisionActor(message);
+    }
+    const attributedUserId = message.resolver_user_id ?? message.actor_user_id;
+    if (attributedUserId) {
+      const actor = actorsById.get(attributedUserId);
+      if (actor) return actor;
+    }
+    if (fallbackActor) return actorsById.get(fallbackActor.id) ?? fallbackActor;
+    return user ? {
+      id: user.id,
+      email: user.email,
+      full_name: user.full_name,
+      avatar_url: user.avatar_url,
+      avatar_style: user.avatar_style,
+      avatar_seed: user.avatar_seed,
+      avatar_background_mode: user.avatar_background_mode,
+      avatar_background_color: user.avatar_background_color,
+    } : null;
+  };
   const segments = stream ? collectSegments(stream, {
     includeLive: useRuntimeTimeline,
     runtimeActive: active,
@@ -407,14 +429,28 @@ export function DockTranscript({
             <div
               className={cn(
                 followsUserMessage && 'pt-2',
-                assistantPresentation?.separator && 'mt-3 border-t border-border/60 pt-4',
+                !timelineView && assistantPresentation?.separator && 'mt-3 border-t border-border/60 pt-4',
               )}
               data-after-user-message={followsUserMessage ? 'true' : undefined}
               data-assistant-presentation={assistantPresentation?.presentation}
               data-final-response-separator={assistantPresentation?.separator ? 'true' : undefined}
             >
-              {workingGroup && timelineView ? (
-                <DockActivityTimeline group={workingGroup} runStatus={runStatus} pauseReason={pauseReason} resolveActor={resolveDecisionActor} />
+              {timelineView ? (
+                <AgentTimelineEntry
+                  segment={entry.segment}
+                  workingGroup={workingGroup}
+                  runStatus={runStatus}
+                  pauseReason={pauseReason}
+                  resolveActor={resolveTranscriptActor}
+                  animate={assistantPresentation?.presentation === 'final' && animateAnswer(entry.segment)}
+                  separator={assistantPresentation?.separator}
+                  options={{
+                    toolGroup: 'toolGroup' in entry ? entry.toolGroup : undefined,
+                    collapseLongAssistantContent: assistantPresentation?.presentation !== 'final'
+                      && (entry.segment.kind !== 'assistant' || entry.segment.id !== latestAssistantSegmentId),
+                    assistantPresentation: assistantPresentation?.presentation,
+                  }}
+                />
               ) : entry.segment.kind === 'review_decision' ? (
                 <DockDecisionRow
                   message={entry.segment.message}
@@ -459,24 +495,7 @@ export function DockTranscript({
                     assistantPresentation: assistantPresentation?.presentation,
                     fallbackUserLabel: 'You',
                     userPresentation: 'signature',
-                    resolveActor: (message) => {
-                      const attributedUserId = message.resolver_user_id ?? message.actor_user_id;
-                      if (attributedUserId) {
-                        const actor = actorsById.get(attributedUserId);
-                        if (actor) return actor;
-                      }
-                      if (fallbackActor) return actorsById.get(fallbackActor.id) ?? fallbackActor;
-                      return user ? {
-                          id: user.id,
-                          email: user.email,
-                          full_name: user.full_name,
-                          avatar_url: user.avatar_url,
-                          avatar_style: user.avatar_style,
-                          avatar_seed: user.avatar_seed,
-                          avatar_background_mode: user.avatar_background_mode,
-                          avatar_background_color: user.avatar_background_color,
-                        } : null;
-                    },
+                    resolveActor: resolveTranscriptActor,
                   }}
                 />
               )}

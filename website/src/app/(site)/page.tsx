@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { Braces, Database, Plug, Server, SlidersHorizontal, Webhook } from 'lucide-react';
 import { CustomerLogos } from './_components/CustomerLogos';
 import { PreviewNav } from './_components/PreviewNav';
@@ -14,6 +15,12 @@ import { AskAgentBento } from './_components/AskAgentBento';
 import { CustomerRecordBento } from './_components/CustomerRecordBento';
 import { CtaRow, GithubIcon, SectionHead, GITHUB_URL } from './_components/ui';
 import { DOCS } from './_components/docsLinks';
+import { createPageMetadata, PAGE_SEO } from '@/lib/metadata';
+import { JsonLd, organization, softwareApplication, website } from '@/lib/structured-data';
+import { PLANS } from '../pricing/pricing-data';
+
+export const metadata = createPageMetadata(PAGE_SEO.home);
+const HOME_JSON_LD = { '@context': 'https://schema.org', '@graph': [organization, website, softwareApplication(PLANS)] };
 
 const RECORD_FACTS = [
   {
@@ -64,6 +71,7 @@ const RECORD_FACTS = [
 export default function HomePage() {
   return (
     <>
+      <JsonLd data={HOME_JSON_LD} />
       <PreviewNav />
 
       {/* 01 Hero */}
@@ -71,7 +79,7 @@ export default function HomePage() {
         <HeroVortex />
         <div className="wrap hero-wrap">
           <div className="hero-inner">
-            <span className="eyebrow">An open-source alternative to Intercom and Linear</span>
+            <span className="eyebrow">An open-source alternative to <Link className="eyebrow-link" href="/compare/intercom">Intercom</Link> and <Link className="eyebrow-link" href="/compare/linear">Linear</Link></span>
             <h1>AI agents that do more than answer.</h1>
             <p className="lede">Helpin gives AI agents the full customer context to resolve questions, take action, and follow through—across support, projects, CRM, meetings, and docs.</p>
             <CtaRow primaryLabel="Start free trial" />
@@ -204,7 +212,7 @@ export default function HomePage() {
               <SectionHead eyebrow="Open source" title="Your customer history stays yours."
                 lede="Self-host the complete product for free, with every module and no plan limits. Or let Helpin Cloud run it, with AI included." />
               <div className="links"><a className="btn btn-primary" href={DOCS.selfHosting}>Self-host Helpin →</a><a className="btn-link" href={GITHUB_URL} target="_blank" rel="noopener noreferrer"><GithubIcon />View the code →</a></div>
-              <p className="self-host-license">AGPL-3.0 · Community 0.1 beta</p>
+              <p className="self-host-license">AGPL-3.0 · Community 0.2 beta</p>
             </div>
             <HostingDiagram />
           </div>

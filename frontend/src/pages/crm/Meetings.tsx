@@ -21,7 +21,9 @@ import { CreateMeetingDialog } from '@/components/crm/CreateMeetingDialog';
 import { MeetingPlatformLabel } from '@/components/crm/MeetingPlatform';
 import { MeetingStatusText } from '@/components/crm/MeetingStatusText';
 import { UpcomingCalendarMeetings } from '@/components/crm/UpcomingCalendarMeetings';
+import { ServerSetupNotice } from '@/components/crm/ServerSetupNotice';
 import { useCRMMeetings, useCRMMeetingSettings, useUpcomingCalendarMeetings } from '@/hooks/queries/useCRMMeetings';
+import { useGoogleConnectUnavailable } from '@/hooks/queries/useCapabilities';
 import { useEmailAccounts } from '@/hooks/queries/useCRM';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
 import { useTitle } from '@/hooks/useTitle';
@@ -93,7 +95,8 @@ export function MeetingsPage() {
   );
   const historyMeetings = (meetingsQuery.data?.data ?? []).filter((meeting) => {
     if (!meeting.calendar_event_id || meeting.status !== 'scheduled' || !meeting.scheduled_start_at) return true;
-    return new Date(meeting.scheduled_start_at).getTime() <= Date.now();
+    // Compare with the fetch time rather than Date.now() so rendering stays pure.
+    return new Date(meeting.scheduled_start_at).getTime() <= meetingsQuery.dataUpdatedAt;
   });
   const hasUpcoming = upcomingCandidates.length > 0;
   const calendarConnected = (accountsQuery.data ?? []).some(
@@ -103,6 +106,8 @@ export function MeetingsPage() {
       && account.is_active,
   );
   const meetingNotesEnabled = settingsQuery.data?.settings.enabled ?? true;
+  const captureUnavailable = settingsQuery.data?.settings.capture_configured === false;
+  const googleConnectUnavailable = useGoogleConnectUnavailable(workspaceId);
   const upcomingUnavailable = upcomingQuery.isError || settingsQuery.isError || accountsQuery.isError;
   const loadingSearch = meetingsQuery.isLoading || upcomingQuery.isLoading || settingsQuery.isLoading || accountsQuery.isLoading;
   const noSearchResults = Boolean(normalizedSearch)
@@ -170,7 +175,16 @@ export function MeetingsPage() {
           />
         </div>
 
-        {settingsQuery.data?.settings.enabled === false && hasUpcoming && !meetingsQuery.isLoading ? (
+        {captureUnavailable ? (
+          <QuietSection title="Meeting capture" className="mb-6 border-t px-0 sm:px-0 lg:px-0">
+            <ServerSetupNotice
+              id="meeting-capture-unavailable"
+              title="Meeting capture isn’t set up on this server."
+              slug={workspaceSlug}
+              isServerAdmin={permissions.isServerAdmin}
+            />
+          </QuietSection>
+        ) : settingsQuery.data?.settings.enabled === false && hasUpcoming && !meetingsQuery.isLoading ? (
           <QuietSection
             title="Meeting capture"
             className="mb-6 border-t px-0 sm:px-0 lg:px-0"
@@ -230,6 +244,8 @@ export function MeetingsPage() {
                 calendarConnected={calendarConnected}
                 calendarLoading={accountsQuery.isLoading || settingsQuery.isLoading}
                 connectingCalendar={connectingCalendar}
+                calendarConnectUnavailable={googleConnectUnavailable}
+                isServerAdmin={permissions.isServerAdmin}
                 meetingNotesEnabled={meetingNotesEnabled}
                 searching={Boolean(normalizedSearch)}
                 onConnectCalendar={() => void connectGoogleCalendar()}

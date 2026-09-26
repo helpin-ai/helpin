@@ -70,6 +70,9 @@ func (h *CRMMeetingHandler) Create(w http.ResponseWriter, r *http.Request) {
 	req.WorkspaceID = getWorkspaceID(r)
 	detail, err := h.meetingService.Create(r.Context(), req, middleware.GetUserID(r.Context()), r.Header.Get("Idempotency-Key"))
 	if err != nil {
+		if writeMeetingCaptureNotConfigured(w, err) {
+			return
+		}
 		writeBillingAwareError(w, meetingErrorStatus(err), err)
 		return
 	}
@@ -114,6 +117,9 @@ func (h *CRMMeetingHandler) Delete(w http.ResponseWriter, r *http.Request) {
 func (h *CRMMeetingHandler) StartCapture(w http.ResponseWriter, r *http.Request) {
 	capture, err := h.meetingService.StartCapture(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"), r.Header.Get("Idempotency-Key"))
 	if err != nil {
+		if writeMeetingCaptureNotConfigured(w, err) {
+			return
+		}
 		writeBillingAwareError(w, meetingErrorStatus(err), err)
 		return
 	}
@@ -205,6 +211,9 @@ func (h *CRMMeetingHandler) UpdateSettings(w http.ResponseWriter, r *http.Reques
 	}
 	settings, err := h.meetingService.UpdateSettings(r.Context(), getWorkspaceID(r), req)
 	if err != nil {
+		if writeMeetingCaptureNotConfigured(w, err) {
+			return
+		}
 		writeError(w, meetingErrorStatus(err), err.Error())
 		return
 	}
@@ -258,6 +267,16 @@ type meetingQueryError struct {
 
 func (e *meetingQueryError) Error() string {
 	return e.field + " must be an RFC3339 timestamp"
+}
+
+// writeMeetingCaptureNotConfigured answers 409 with a user sentence when the
+// server has no usable capture provider. It reports whether it wrote.
+func writeMeetingCaptureNotConfigured(w http.ResponseWriter, err error) bool {
+	if !service.IsMeetingCaptureNotConfigured(err) {
+		return false
+	}
+	writeError(w, http.StatusConflict, service.MeetingCaptureNotConfiguredMessage)
+	return true
 }
 
 func meetingErrorStatus(err error) int {

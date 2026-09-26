@@ -1,6 +1,6 @@
 import { HeroVortex } from '../../_components/HeroVortex';
 import { DEMO_URL, FAQList } from '../../_components/ui';
-import { marketingMetadata } from '../../_components/marketing-metadata';
+import { createPageMetadata, PAGE_SEO } from '@/lib/metadata';
 import Link from "next/link";
 import {
   ArrowRight,
@@ -21,11 +21,7 @@ import { CRMPlaybook } from "./crm-playbook";
 import { CRMWorkspace } from "./crm-workspace";
 import "./crm.css";
 
-export const metadata = marketingMetadata(
-  "CRM \u2014 Helpin",
-  "/products/crm",
-  "Contacts, companies, and deals with the email, meetings, support, and project work behind them.",
-);
+export const metadata = createPageMetadata(PAGE_SEO.crm);
 
 const ESSENTIALS = [
   {
@@ -88,7 +84,7 @@ const FAQS = [
     "What is included on each plan?",
     "On Cloud, Starter includes 5,000 contacts. Growth adds unlimited contacts and deal automation. Both are included when you self-host, with no plan limits."
   ],
-  ["Can we self-host CRM?", "Yes. CRM, including meetings, is part of the AGPL-3.0 product: free, with no plan limits. Community is in 0.1 beta. Your team runs the installation and covers hosting and provider costs.", "/self-hosting#whats-included"]
+  ["Can we self-host CRM?", "Yes. CRM, including meetings, is part of the AGPL-3.0 product: free, with no plan limits. Community is in 0.2 beta. Your team runs the installation and covers hosting and provider costs.", "/self-hosting#whats-included"]
 ] as const;
 
 export default function CRMPage() {

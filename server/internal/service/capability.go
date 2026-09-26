@@ -44,6 +44,23 @@ type CapabilityConfig struct {
 	// GitHubReachabilityProblem explains why GitHub cannot reach APP_BASE_URL
 	// (see GitHubAppBaseURLBlockedReason); empty when it can.
 	GitHubReachabilityProblem string
+	// MeetingCaptureProvider is the deployment-selected capture provider (recall or vexa).
+	MeetingCaptureProvider string
+	// MeetingCaptureConfigured reports that the selected provider has an API key
+	// and a webhook secret.
+	MeetingCaptureConfigured bool
+	// MeetingCaptureReachabilityProblem explains why the provider cannot deliver
+	// webhooks to APP_BASE_URL (see PublicBaseURLBlockedReason); empty when it can.
+	MeetingCaptureReachabilityProblem string
+	// MeetingCaptureWebhookURL is the provider webhook address to register.
+	MeetingCaptureWebhookURL string
+	// GoogleOAuthConfigured reports a Google OAuth client for Gmail and Calendar.
+	GoogleOAuthConfigured bool
+	// GoogleOAuthProblem explains why Google cannot return people to this server
+	// (see GoogleOAuthRedirectProblem); empty when it can.
+	GoogleOAuthProblem string
+	// GoogleOAuthRedirectURL is the redirect URI to register with Google.
+	GoogleOAuthRedirectURL string
 	// StorageProbe checks that the object storage bucket answers.
 	StorageProbe func(context.Context) error
 	// WorkerProbe reports whether a background worker polls for jobs.
@@ -58,6 +75,10 @@ type capabilityEvidence interface {
 	HasInboundSupportEmail(ctx context.Context, workspaceID string) (bool, error)
 	HasGitHubInstallation(ctx context.Context, organizationID string) (bool, error)
 	ConnectedRepositoryCount(ctx context.Context, workspaceID string) (int64, error)
+	// HasMeetingProviderEvent and HasConnectedGoogleAccount check the whole
+	// instance when workspaceID is empty.
+	HasMeetingProviderEvent(ctx context.Context, workspaceID, provider string) (bool, error)
+	HasConnectedGoogleAccount(ctx context.Context, workspaceID string) (bool, error)
 	SharedAIConnectionSummary(ctx context.Context) (repository.AIConnectionSummary, error)
 	GetCheck(ctx context.Context, key string) (*model.InstanceCapabilityCheck, error)
 	RecordCheck(ctx context.Context, check *model.InstanceCapabilityCheck) error
@@ -104,6 +125,8 @@ func (s *CapabilityService) Workspace(ctx context.Context, workspaceID string) (
 		s.supportWidget,
 		s.supportEmailInbound,
 		s.workspaceGitHub,
+		s.meetingCapture,
+		s.googleWorkspace,
 		func(ctx context.Context, _ string) (model.Capability, error) { return s.objectStorage(ctx), nil },
 		func(ctx context.Context, _ string) (model.Capability, error) { return s.workers(ctx), nil },
 	}
@@ -127,6 +150,8 @@ func (s *CapabilityService) Instance(ctx context.Context) (model.CapabilitiesRes
 		func(ctx context.Context) (model.Capability, error) { return s.emailOutbound(ctx, false) },
 		func(context.Context) (model.Capability, error) { return s.instanceSupportEmailInbound(), nil },
 		func(ctx context.Context) (model.Capability, error) { return s.instanceGitHub(ctx), nil },
+		func(ctx context.Context) (model.Capability, error) { return s.meetingCapture(ctx, "") },
+		func(ctx context.Context) (model.Capability, error) { return s.googleWorkspace(ctx, "") },
 		func(ctx context.Context) (model.Capability, error) { return s.objectStorage(ctx), nil },
 		func(ctx context.Context) (model.Capability, error) { return s.workers(ctx), nil },
 	}

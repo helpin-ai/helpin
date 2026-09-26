@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -24,6 +25,7 @@ type dispatchPlanParams struct {
 	parentChatRunID       *string
 	dockChatID            *string
 	supportConversationID *string
+	profileBinding        *model.AIExecutionSelection
 }
 
 func (s *CommandBarService) dispatchPlanCore(ctx context.Context, workspaceID, actorID string, req model.CommandBarDispatchRequest, params dispatchPlanParams) (*model.CommandBarDispatchResponse, error) {
@@ -66,6 +68,12 @@ func (s *CommandBarService) dispatchPlanCore(ctx context.Context, workspaceID, a
 		record.ParentChatRunID = params.parentChatRunID
 		record.DockChatID = params.dockChatID
 		record.SupportConversationID = params.supportConversationID
+		if params.profileBinding != nil {
+			record.ProfileBinding, err = json.Marshal(params.profileBinding)
+			if err != nil {
+				return nil, err
+			}
+		}
 		if err := s.planRepo.Create(ctx, record); err != nil {
 			return nil, err
 		}

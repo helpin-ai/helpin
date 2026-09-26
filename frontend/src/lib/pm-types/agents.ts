@@ -368,6 +368,8 @@ export interface CommandBarPlanSummary {
   created_at: string;
   updated_at: string;
   runs?: AgentRun[];
+  ai_profile_id?: string;
+  ai_profile_owner_id?: string;
 }
 
 export interface CommandBarPlanListResponse {

@@ -1,6 +1,6 @@
 import { HeroVortex } from '../../_components/HeroVortex';
 import { Availability, DEMO_URL, FAQList } from '../../_components/ui';
-import { marketingMetadata } from '../../_components/marketing-metadata';
+import { createPageMetadata, PAGE_SEO } from '@/lib/metadata';
 import Link from 'next/link';
 import { ArrowRight, ChevronRight, Inbox, MessageSquare, Clock3, Languages, Paperclip, Search, Sparkles, Users, Zap } from 'lucide-react';
 import { PreviewNav } from '../../_components/PreviewNav';
@@ -17,7 +17,7 @@ import { SupportKnowledge } from './support-knowledge';
 import './support.css';
 import { DOCS } from '../../_components/docsLinks';
 
-export const metadata = marketingMetadata("Support \u2014 Helpin", "/products/customer-support");
+export const metadata = createPageMetadata(PAGE_SEO.customerSupport);
 
 
 const FEATURES = [
@@ -74,11 +74,13 @@ const FAQS = [
   ],
   [
     "Can we import from Zendesk or Intercom?",
-    "Import from Zendesk and Intercom is coming soon. Until then, forward your support email to Helpin and new conversations start there."
+    "Import from Zendesk and Intercom is coming soon. Until then, forward your support email to Helpin and new conversations start there.",
+    "/compare",
+    "See how Helpin compares"
   ],
   [
     "Is self-hosting available for Support?",
-    "Yes. Support is part of the open-source Community edition (0.1 beta), with every support feature and no plan limits. Your team operates the installation and covers hosting and provider costs.",
+    "Yes. Support is part of the open-source Community edition (0.2 beta), with every support feature and no plan limits. Your team operates the installation and covers hosting and provider costs.",
     "/self-hosting#whats-included",
     "See what’s included"
   ],
