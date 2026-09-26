@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowRight, CalendarCheck, ChevronRight, FileSearch, Link2, RefreshCw, Scale } from 'lucide-react';
+import { ArrowRight, CalendarCheck, ChevronRight, FileSearch, RefreshCw, Scale } from 'lucide-react';
 import { createPageMetadata, PAGE_SEO } from '@/lib/metadata';
 import { HeroVortex } from '../_components/HeroVortex';
 import { PreviewNav } from '../_components/PreviewNav';
@@ -34,7 +34,7 @@ export default function CompareHub() {
                 <CtaRow primaryLabel="Start free trial" primaryHref={SIGNUP_URL} secondaryHref={DEMO_URL} secondaryLabel="Book a demo" />
                 <div className="platform-hero-points">
                   <span><CalendarCheck size={14} aria-hidden="true" />Checked {CHECKED}</span>
-                  <span><Link2 size={14} aria-hidden="true" />Sources on every page</span>
+                  <span><FileSearch size={14} aria-hidden="true" />From public pricing and docs</span>
                   <span><Scale size={14} aria-hidden="true" />Strengths on both sides</span>
                 </div>
               </div>
@@ -80,7 +80,7 @@ export default function CompareHub() {
           <div className="wrap">
             <div className="platform-section-intro"><SectionHead eyebrow="How we compare" title="Written to help you decide." lede="A comparison is only useful if you can trust it, including the parts that don’t favor us." /></div>
             <div className="platform-feature-grid">
-              <article><FileSearch size={24} aria-hidden="true" /><h3>Checked against their own pages.</h3><p>Prices and features come from each product’s public pages and docs, with the date we checked and links to every source.</p></article>
+              <article><FileSearch size={24} aria-hidden="true" /><h3>Checked against their own pages.</h3><p>Prices and features come from each product’s public pricing pages and documentation, with the date we checked them.</p></article>
               <article><Scale size={24} aria-hidden="true" /><h3>Honest about trade-offs.</h3><p>Every page says where the other tool is stronger today, from channels and mobile SDKs to maturity.</p></article>
               <article><RefreshCw size={24} aria-hidden="true" /><h3>Corrected when things change.</h3><p>Products change quickly. If something is out of date, email <a href="mailto:hello@helpin.ai">hello@helpin.ai</a> and we’ll fix it.</p></article>
             </div>
