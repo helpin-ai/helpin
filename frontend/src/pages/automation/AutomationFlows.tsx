@@ -2390,6 +2390,28 @@ function FlowDetailDrawer({
                 <SheetTitle className="truncate text-sm font-semibold">{rule.name}</SheetTitle>
               </div>
               <SheetDescription className="sr-only">Details and actions for {rule.name}</SheetDescription>
+              {(canEdit && !managed || managed && workspaceSlug || rule.trigger_type === 'cron' && canRunNowAction) ? (
+                <div className="flex flex-wrap items-center gap-2 pt-2">
+                  {managed && workspaceSlug ? <Button size="sm" asChild><a href={`/w/${encodeURIComponent(workspaceSlug)}/crm/playbooks/${encodeURIComponent(stringValue(rule.trigger_config?.playbook_id))}`}>Manage in Playbook Setup</a></Button> : null}
+                  {canEdit && !managed ? <Button size="sm" onClick={() => onEdit(rule)}>Edit flow</Button> : null}
+                  {rule.trigger_type === 'cron' && canRunNowAction ? (
+                    <TooltipProvider><Tooltip><TooltipTrigger asChild><span><Button variant="outline" size="sm" disabled={!canRunNow} onClick={() => onRunNow(rule)}>{runningNow ? 'Running…' : 'Run now'}</Button></span></TooltipTrigger>{runNowBlocker ? <TooltipContent>{runNowBlocker}</TooltipContent> : null}</Tooltip></TooltipProvider>
+                  ) : null}
+                  {canEdit && !managed ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon-sm" aria-label="More flow actions">
+                          <MoreHorizontalIcon className="size-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onSelect={() => onToggle(rule)}>{rule.enabled ? 'Pause flow' : 'Enable flow'}</DropdownMenuItem>
+                        <DropdownMenuItem variant="destructive" onSelect={() => onDelete(rule)}>Delete flow</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : null}
+                </div>
+              ) : null}
             </SheetHeader>
 
             <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[22px] pt-[22px] pb-16">
@@ -2460,15 +2482,7 @@ function FlowDetailDrawer({
                   </div>
                 </section>
 
-                <div className="flex flex-wrap gap-2 pb-2">
-                  {managed && workspaceSlug ? <Button variant="outline" size="sm" asChild><a href={`/w/${encodeURIComponent(workspaceSlug)}/crm/playbooks/${encodeURIComponent(stringValue(rule.trigger_config?.playbook_id))}`}>Manage in Playbook Setup</a></Button> : null}
-                  {canEdit && !managed ? <Button variant="outline" size="sm" onClick={() => onToggle(rule)}>{rule.enabled ? 'Pause flow' : 'Enable flow'}</Button> : null}
-                  {canEdit && !managed ? <Button variant="outline" size="sm" onClick={() => onEdit(rule)}>Edit flow</Button> : null}
-                  {rule.trigger_type === 'cron' && canRunNowAction ? (
-                    <TooltipProvider><Tooltip><TooltipTrigger asChild><span><Button variant="outline" size="sm" disabled={!canRunNow} onClick={() => onRunNow(rule)}>{runningNow ? 'Running…' : 'Run now'}</Button></span></TooltipTrigger>{runNowBlocker ? <TooltipContent>{runNowBlocker}</TooltipContent> : null}</Tooltip></TooltipProvider>
-                  ) : null}
-                  {canEdit && !managed ? <Button variant="destructive" size="sm" onClick={() => onDelete(rule)}>Delete</Button> : null}
-                </div>
+
               </div>
             </div>
           </>
