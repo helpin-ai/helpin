@@ -1019,6 +1019,25 @@ describe('Timeline view', () => {
     expect(container.querySelectorAll('[data-message-sender]')).toHaveLength(0);
   });
 
+  it.each(['timeline', 'detailed'] as const)('keeps a running sub-agent visible at a completed-work boundary in %s view', (transcriptView) => {
+    useDockStore.setState({ transcriptView });
+    const summary = { ...assistantMessage('work:handoff', '', 3), message_type: 'status',
+      dock_work_summary: { message_id: 'handoff', duration_ms: 40000, activity_count: 1 } };
+    act(() => root.render(<DockTranscript stream={streamWithMessages([
+      userMessage('request', 'Review my support conversations', 1, 'user-1'),
+      summary,
+      { ...assistantMessage('handoff', 'I started a sub-agent to review the conversations.', 4), message_type: 'assistant_final' },
+    ])} active={false} workspaceId="ws-1" chatId="chat-1" compactAssistantProgress
+      runStatus="paused" pauseReason="awaiting_user_message"
+      subAgentRuns={[{ id: 'review-plan', createdAt: '2026-08-06T00:00:02Z', runCount: 1,
+        content: <div>Support reviewer · Running</div> }]} />));
+    const rows = container.querySelectorAll('[data-agent-dock-sub-agent-runs]');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].textContent).toContain('Support reviewer · Running');
+    expect((container.textContent ?? '').indexOf('Support reviewer')).toBeLessThan((container.textContent ?? '').indexOf('I started a sub-agent'));
+    expect(mocks.getMessageWorkDetail).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['awaiting_user_message', 'Activity'],
     ['human_input', 'Needs your input'],

@@ -43,6 +43,17 @@ describe('resolveAgentLiveProgress', () => {
     })?.label).toBe('Working with Research Agent…');
   });
 
+  it.each(['paused', 'completed'] as const)('keeps delegated progress visible after the parent is %s and has answered', (status) => {
+    expect(resolveAgentLiveProgress({
+      run: run({ status, pause_reason: 'awaiting_user_message' }),
+      stream: stream({ transcript_messages: [{
+        event_id: 'handoff', role: 'assistant', content: 'I started the reviewer.',
+        message_type: 'assistant_final', timestamp: '2026-08-14T10:00:40Z', sequence_no: 2,
+      }] }),
+      currentPlan: null, activeSubAgentName: 'Support reviewer', sending: false,
+    })).toMatchObject({ label: 'Working with Support reviewer…', tone: 'working' });
+  });
+
   it('moves to working as soon as the runtime is running, before its first activity arrives', () => {
     expect(resolveAgentLiveProgress({
       run: run(), stream: stream(), currentPlan: null, sending: false,
