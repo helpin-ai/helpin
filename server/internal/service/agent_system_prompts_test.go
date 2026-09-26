@@ -32,6 +32,17 @@ func TestManagedDocumentPromptsRequireArtifactInsertionTool(t *testing.T) {
 	}
 }
 
+func TestExistingEchoWithMCPAccessGetsPrivateEvidenceTool(t *testing.T) {
+	agent := &model.Agent{PresetKey: model.AgentPresetSupportAgent, AllowedTools: []byte(`["search_knowledge","send_support_reply","mcp__logs__find_events"]`)}
+	runtime := runtimeAgentFromHelpinAgent(agent, "helpin")
+	if !strings.Contains(strings.Join(runtime.AllowedTools, ","), "register_support_mcp_evidence") {
+		t.Fatalf("existing Echo lacks MCP evidence tool: %v", runtime.AllowedTools)
+	}
+	if !strings.Contains(runtime.SystemPrompt, "register_support_mcp_evidence") {
+		t.Fatal("Echo has no instructions to register its MCP result")
+	}
+}
+
 func TestManagedAskAgentExecutionPolicyPrefersNarrowRepositoryReads(t *testing.T) {
 	prompt := agentcontract.EnsureAskAgentExecutionPolicy(model.AgentPresetAskAgent, askAgentSystemPrompt())
 	for _, required := range []string{

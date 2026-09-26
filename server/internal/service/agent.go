@@ -272,6 +272,14 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 	if normalizePresetKey(agent.EffectivePresetKey()) == model.AgentPresetAskAgent {
 		out.AllowedTools = appendPresetTools(out.AllowedTools, askAgentPresetTools())
 	}
+	if normalizePresetKey(agent.EffectivePresetKey()) == model.AgentPresetSupportAgent {
+		for _, tool := range out.AllowedTools {
+			if strings.HasPrefix(tool, "mcp__") && !strings.HasPrefix(tool, "mcp__helpin__") {
+				out.AllowedTools = appendPresetTools(out.AllowedTools, []string{"register_support_mcp_evidence"})
+				break
+			}
+		}
+	}
 	// Preview uses an isolated host target, while retaining the saved agent prompt.
 	if slices.Contains(out.AllowedTargets, "support_conversation") && !slices.Contains(out.AllowedTargets, supportPreviewTarget) {
 		out.AllowedTargets = append(out.AllowedTargets, supportPreviewTarget)

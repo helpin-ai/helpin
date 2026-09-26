@@ -2006,6 +2006,7 @@ func (s *InternalCommandService) registerDefaults() {
 	})
 	s.registerAgentOrchestrationCommands()
 	s.registerSupportKnowledgeCommands()
+	s.registerSupportMCPEvidenceCommand()
 	s.registerSupportReplyCommands()
 	s.registerSupportFollowUpCommand()
 	s.registerSupportCommands()

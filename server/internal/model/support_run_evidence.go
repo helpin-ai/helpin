@@ -2,11 +2,10 @@ package model
 
 import "time"
 
-// SupportRunEvidence snapshots one knowledge chunk returned to a support
-// chat run by the search_knowledge tool. support.send_reply re-validates the
-// agent's citations against these rows (grounding + numeric checks) without
-// re-running retrieval, so the enforcement is over exactly what the agent
-// saw. Rows are deleted when the run reaches a terminal state.
+// SupportRunEvidence snapshots knowledge, child research, or audited private
+// MCP evidence for a support chat run. support.send_reply re-validates cited
+// claims against these rows without repeating the lookup. Rows are deleted
+// when the run reaches a terminal state.
 type SupportRunEvidence struct {
 	ID            string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID   string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
