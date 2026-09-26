@@ -8,7 +8,6 @@ import { PreviewFooter } from '../_components/PreviewFooter';
 import { PlatformClosing } from '../_components/platform/PlatformParts';
 import { CtaRow, DEMO_URL, SectionHead, SIGNUP_URL } from '../_components/ui';
 import { CompareCard, HelpinMark, Monogram } from './ComparePage';
-import { ALTERNATIVES } from './alternatives-data';
 import { COMPETITORS, formatChecked } from './compare-data';
 import '../_components/platform/platform.css';
 import '../_components/platform/platform-polish.css';
@@ -36,8 +35,7 @@ const HUB_JSON_LD = {
       url: `${SITE_URL}/compare`,
       mainEntity: {
         '@type': 'ItemList',
-        itemListElement: [...COMPETITORS.map(item => ({ name: `Helpin vs ${item.name}`, slug: item.slug })), ...ALTERNATIVES.map(item => ({ name: `Best ${item.competitor} alternatives`, slug: item.slug }))]
-          .map((item, index) => ({ '@type': 'ListItem', position: index + 1, name: item.name, url: `${SITE_URL}/compare/${item.slug}` })),
+        itemListElement: COMPETITORS.map((item, index) => ({ '@type': 'ListItem', position: index + 1, name: `Helpin vs ${item.name}`, url: `${SITE_URL}/compare/${item.slug}` })),
       },
     },
   ],
@@ -103,24 +101,7 @@ export default function CompareHub() {
           );
         })}
 
-        <section id="alternatives-guides">
-          <div className="wrap">
-            <div className="platform-section-intro"><SectionHead eyebrow="Alternatives guides" title="Weighing up more than two tools?" lede="Shortlists of six tools each, with prices, AI costs, strengths and limits. Helpin is listed first, and every tool gets the same treatment." /></div>
-            <div className="cmp-card-grid">
-              {ALTERNATIVES.map(item => (
-                <Link key={item.slug} className="cmp-card" href={`/compare/${item.slug}`}>
-                  <div className="cmp-card-names"><Monogram name={item.competitor} /><span>6 alternatives</span></div>
-                  <span className="cmp-card-category">Alternatives guide</span>
-                  <strong>Best {item.competitor} alternatives</strong>
-                  <p>{item.seo.description}</p>
-                  <span className="cmp-card-link">Read the guide<ArrowRight size={14} aria-hidden="true" /></span>
-                </Link>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section id="method" className="platform-soft">
+        <section id="method">
           <div className="wrap">
             <div className="platform-section-intro"><SectionHead eyebrow="How we compare" title="Written to help you decide." lede="A comparison is only useful if you can trust it, including the parts that don’t favor us." /></div>
             <div className="platform-feature-grid">
