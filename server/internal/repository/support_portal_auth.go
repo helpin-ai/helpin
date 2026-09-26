@@ -78,6 +78,17 @@ func (r *PortalAuthRepository) ListRequests(ctx context.Context, workspaceID, id
 	return requests, err
 }
 
+func (r *PortalAuthRepository) FindRequest(ctx context.Context, workspaceID, identityID, reference string) (*model.SupportConversation, error) {
+	var conversation model.SupportConversation
+	err := r.db.WithContext(ctx).Table("support_conversations AS conv").Select("conv.*").
+		Joins("JOIN support_portal_request_references AS refs ON refs.conversation_id = conv.id AND refs.workspace_id = conv.workspace_id").
+		Where("refs.workspace_id = ? AND refs.portal_identity_id = ? AND refs.reference = ? AND conv.portal_visible = true AND conv.status <> ? AND conv.channel <> ? AND conv.source <> ? AND conv.deleted_at IS NULL", workspaceID, identityID, reference, model.SupportConversationStatusSpam, "internal", "internal").First(&conversation).Error
+	if err == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	return &conversation, err
+}
+
 func (r *PortalAuthRepository) CreateLink(ctx context.Context, link *model.PortalMagicLink) error {
 	return r.db.WithContext(ctx).Create(link).Error
 }

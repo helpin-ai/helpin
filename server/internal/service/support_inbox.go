@@ -2150,6 +2150,10 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		MessageType:       messageType,
 		ClientMessageID:   clientMessageID,
 	}
+	if senderType == "customer" && ctx.Value(portalReplySourceKey{}) == true {
+		channel := "portal"
+		msg.ViaChannel = &channel
+	}
 
 	if translation != nil {
 		msg.TranslationID = translation.ID

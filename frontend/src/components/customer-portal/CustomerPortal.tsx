@@ -21,6 +21,7 @@ import {
   customerPortalService,
   type CustomerPortalConfiguration,
   type CustomerPortalRequest,
+  type CustomerPortalRequestDetail,
   type CustomerPortalSession,
   type CustomerPortalRequestFilter,
 } from '@/lib/services/customerPortalService'
@@ -344,7 +345,7 @@ const requestFilters: { value: CustomerPortalRequestFilter; label: string }[] = 
   { value: 'resolved', label: 'Resolved' },
 ]
 
-function RequestList({ requests, filter }: { requests: CustomerPortalRequest[]; filter: CustomerPortalRequestFilter }) {
+function RequestList({ requests, filter, slug }: { requests: CustomerPortalRequest[]; filter: CustomerPortalRequestFilter; slug: string }) {
   if (requests.length === 0) {
     return (
       <div className="border-t border-border py-12 text-center">
@@ -360,7 +361,7 @@ function RequestList({ requests, filter }: { requests: CustomerPortalRequest[]; 
       {requests.map((request) => (
         <li key={request.reference} className="flex items-center justify-between gap-6 py-5">
           <div className="min-w-0">
-            <p className="truncate font-medium">{request.subject}</p>
+            <Link to="/portal/$slug/requests/$reference" params={{ slug, reference: request.reference }} className="truncate font-medium underline-offset-4 hover:underline focus-visible:underline">{request.subject}</Link>
             <p className="mt-1 text-sm text-muted-foreground">
               {request.reference} · Last activity {request.last_activity_at ? new Date(request.last_activity_at).toLocaleDateString() : 'not available'}
             </p>
@@ -519,10 +520,73 @@ export function CustomerPortalHome() {
           ) : error ? (
             <p className="border-t border-border py-8 text-sm text-destructive" role="alert">{error}</p>
           ) : (
-            <RequestList requests={requests} filter={filter} />
+            <RequestList requests={requests} filter={filter} slug={slug} />
           )}
         </section>
       </main>
     </PortalFrame>
   )
+}
+
+export function CustomerPortalRequestPage({ reference }: { reference: string }) {
+  const { slug, status, handleSessionError } = usePortal()
+  const [request, setRequest] = useState<CustomerPortalRequestDetail | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [reply, setReply] = useState('')
+  const [sending, setSending] = useState(false)
+
+  useEffect(() => {
+    if (status !== 'authenticated') return
+    let active = true
+    customerPortalService.requestDetail(slug, reference)
+      .then((detail) => { if (active) setRequest(detail) })
+      .catch((reason) => {
+        if (!active || handleSessionError(reason)) return
+        setError(reason instanceof CustomerPortalApiError && reason.status === 404 ? 'This request is unavailable.' : 'Unable to load this request. Please try again.')
+      })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [slug, reference, status, handleSessionError])
+
+  async function send(event: FormEvent) {
+    event.preventDefault()
+    if (!request?.can_reply || !reply.trim()) return
+    setSending(true)
+    setError(null)
+    try {
+      setRequest(await customerPortalService.reply(slug, reference, reply.trim()))
+      setReply('')
+    } catch (reason) {
+      if (handleSessionError(reason)) return
+      if (reason instanceof CustomerPortalApiError && (reason.status === 409 || reason.status === 404)) {
+        setRequest((previous) => previous ? { ...previous, can_reply: false } : previous)
+        setError('This request can no longer receive replies.')
+      } else setError('Your reply could not be sent. Please try again.')
+    } finally { setSending(false) }
+  }
+
+  if (status !== 'authenticated') return null
+  return <PortalFrame>
+    <main className="mx-auto max-w-3xl px-6 py-12 sm:px-10">
+      <Link to="/portal/$slug/" params={{ slug }} className="text-sm text-muted-foreground underline-offset-4 hover:underline">← All requests</Link>
+      {loading ? <Skeleton className="mt-8 h-24 w-full" /> : error && !request ? <p role="alert" className="mt-8">{error}</p> : request && <>
+        <h1 className="mt-8 text-3xl font-semibold tracking-tight">{request.subject}</h1>
+        <p className="mt-2 text-sm text-muted-foreground">{request.reference} · {request.status.replaceAll('_', ' ')} · Last activity {new Date(request.last_activity_at).toLocaleString()}</p>
+        <ol className="mt-10 divide-y divide-border border-y border-border">
+          {request.messages.map((message) => <li key={message.id} className="py-6">
+            <p className="text-sm text-muted-foreground">{message.sender_type === 'customer' ? 'You' : message.sender_name || 'Support'} · {new Date(message.created_at).toLocaleString()}</p>
+            <p className="mt-2 whitespace-pre-wrap break-words">{message.content}</p>
+            {message.attachments?.map((file) => <a key={file.id} href={file.url} target="_blank" rel="noopener noreferrer" className="mt-2 block text-sm underline">{file.file_name}</a>)}
+          </li>)}
+        </ol>
+        {error && <p role="alert" className="mt-6 text-sm text-destructive">{error}</p>}
+        {request.can_reply ? <form onSubmit={(event) => void send(event)} className="mt-8">
+          <Label htmlFor="portal-reply">Reply</Label>
+          <Textarea id="portal-reply" className="mt-2 min-h-28" value={reply} onChange={(event) => setReply(event.target.value)} required />
+          <Button type="submit" disabled={sending || !reply.trim()} className="mt-4">{sending ? 'Sending…' : 'Send reply'}</Button>
+        </form> : <p className="mt-8 text-sm text-muted-foreground">This request cannot receive replies.</p>}
+      </>}
+    </main>
+  </PortalFrame>
 }

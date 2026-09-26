@@ -29,6 +29,19 @@ export interface CustomerPortalRequest {
   last_activity_at: string | null
 }
 
+export interface CustomerPortalRequestDetail extends CustomerPortalRequest {
+  can_reply: boolean
+  messages: Array<{
+    id: string
+    content: string
+    sender_type: string
+    sender_name?: string | null
+    via_channel?: string
+    created_at: string
+    attachments?: Array<{ id: string; file_name: string; file_type: string; file_size: number; url: string }>
+  }>
+}
+
 export type CustomerPortalRequestFilter = 'all' | CustomerPortalRequest['status']
 
 interface CreatedCustomerPortalRequest {
@@ -105,6 +118,12 @@ export const customerPortalService = {
     portalRequest<void>(slug, '/session', { method: 'DELETE' }),
   requests: (slug: string, filter: CustomerPortalRequestFilter = 'all') =>
     portalRequest<CustomerPortalRequest[]>(slug, `/requests${filter === 'all' ? '' : `?status=${filter}`}`),
+  requestDetail: (slug: string, reference: string) =>
+    portalRequest<CustomerPortalRequestDetail>(slug, `/requests/${encodeURIComponent(reference)}`),
+  reply: (slug: string, reference: string, content: string) =>
+    portalRequest<CustomerPortalRequestDetail>(slug, `/requests/${encodeURIComponent(reference)}/replies`, {
+      method: 'POST', body: JSON.stringify({ content }),
+    }),
   createRequest: (slug: string, input: CreateCustomerPortalRequestInput) =>
     portalRequest<CreatedCustomerPortalRequest>(slug, '/requests', {
       method: 'POST',

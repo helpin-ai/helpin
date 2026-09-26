@@ -79,6 +79,77 @@ func (s *PortalAuthService) Requests(ctx context.Context, workspaceID, identityI
 	return s.repo.ListRequests(ctx, workspaceID, identityID, status)
 }
 
+var ErrPortalReplyUnavailable = errors.New("this request cannot receive replies")
+
+type PortalMessage struct {
+	ID          string                   `json:"id"`
+	Content     string                   `json:"content"`
+	SenderType  string                   `json:"sender_type"`
+	SenderName  *string                  `json:"sender_name,omitempty"`
+	ViaChannel  string                   `json:"via_channel,omitempty"`
+	Attachments []model.WidgetAttachment `json:"attachments,omitempty"`
+	CreatedAt   time.Time                `json:"created_at"`
+}
+
+type PortalRequestDetail struct {
+	Reference      string          `json:"reference"`
+	Subject        string          `json:"subject"`
+	Status         string          `json:"status"`
+	LastActivityAt time.Time       `json:"last_activity_at"`
+	CanReply       bool            `json:"can_reply"`
+	Messages       []PortalMessage `json:"messages"`
+}
+
+func (s *PortalAuthService) RequestDetail(ctx context.Context, workspaceID, identityID, reference string) (*PortalRequestDetail, error) {
+	conv, err := s.repo.FindRequest(ctx, workspaceID, identityID, reference)
+	if err != nil || conv == nil {
+		return nil, err
+	}
+	messages, err := s.inbox.ListConversationMessages(ctx, workspaceID, conv.ID, false)
+	if err != nil {
+		return nil, err
+	}
+	detail := &PortalRequestDetail{Reference: reference, Subject: conv.Subject, Status: model.PortalRequestStatus(conv.Status), LastActivityAt: conv.CreatedAt, CanReply: conv.AnonymizedAt == nil, Messages: []PortalMessage{}}
+	for i := range messages {
+		msg := &messages[i]
+		if msg.IsInternal || msg.MessageType != "reply" || (msg.SenderType != "customer" && msg.SenderType != "user" && msg.SenderType != "agent" && msg.SenderType != "ai") {
+			continue
+		}
+		public := PortalMessage{ID: msg.ID, Content: msg.Content, SenderType: msg.SenderType, SenderName: msg.SenderDisplayName, CreatedAt: msg.CreatedAt}
+		if msg.ViaChannel != nil {
+			public.ViaChannel = *msg.ViaChannel
+		}
+		for _, attachment := range msg.Attachments {
+			public.Attachments = append(public.Attachments, model.WidgetAttachment{ID: attachment.ID, FileName: attachment.FileName, FileType: attachment.FileType, FileSize: attachment.FileSize, URL: attachment.URL})
+		}
+		detail.Messages = append(detail.Messages, public)
+		if msg.CreatedAt.After(detail.LastActivityAt) {
+			detail.LastActivityAt = msg.CreatedAt
+		}
+	}
+	return detail, nil
+}
+
+func (s *PortalAuthService) Reply(ctx context.Context, workspaceID string, identity *model.SupportPortalIdentity, reference, content string) error {
+	conv, err := s.repo.FindRequest(ctx, workspaceID, identity.ID, reference)
+	if err != nil {
+		return err
+	}
+	if conv == nil {
+		return ErrPortalRequestNotFound
+	}
+	if conv.AnonymizedAt != nil {
+		return ErrPortalReplyUnavailable
+	}
+	if strings.TrimSpace(content) == "" {
+		return fmt.Errorf("reply is required")
+	}
+	_, err = s.inbox.CreateConversationMessage(context.WithValue(ctx, portalReplySourceKey{}, true), workspaceID, conv.ID, model.CreateMessageRequest{Content: content, MessageType: "reply"}, "customer", nil, nil, identity.DisplayName)
+	return err
+}
+
+type portalReplySourceKey struct{}
+
 // RequestLink deliberately returns the same result for unknown workspaces and
 // emails. No identity is created until the mailbox owner proves possession.
 func (s *PortalAuthService) RequestLink(ctx context.Context, workspaceID, address string) {

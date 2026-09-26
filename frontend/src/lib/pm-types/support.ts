@@ -618,7 +618,7 @@ export interface SupportMessage {
   system_event_type?: SupportSystemEventType;
   is_internal: boolean;
   metadata?: string;
-  via_channel?: 'email' | 'widget' | null;
+  via_channel?: 'email' | 'widget' | 'portal' | null;
   email_notified_at?: string;
   email_read_at?: string;
   cancellable_until?: string;
