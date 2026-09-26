@@ -9,6 +9,7 @@ export interface CustomerPortalConfiguration {
   enabled: boolean
   requests_only: boolean
   intake_enabled: boolean
+  file_uploads_enabled: boolean
   branding: CustomerPortalBranding
 }
 
@@ -54,6 +55,7 @@ interface CreatedCustomerPortalRequest {
 export interface CreateCustomerPortalRequestInput {
   subject: string
   message: string
+  attachment_ids?: string[]
 }
 
 export class CustomerPortalApiError extends Error {
@@ -120,10 +122,21 @@ export const customerPortalService = {
     portalRequest<CustomerPortalRequest[]>(slug, `/requests${filter === 'all' ? '' : `?status=${filter}`}`),
   requestDetail: (slug: string, reference: string) =>
     portalRequest<CustomerPortalRequestDetail>(slug, `/requests/${encodeURIComponent(reference)}`),
-  reply: (slug: string, reference: string, content: string) =>
+  reply: (slug: string, reference: string, content: string, attachment_ids: string[] = []) =>
     portalRequest<CustomerPortalRequestDetail>(slug, `/requests/${encodeURIComponent(reference)}/replies`, {
-      method: 'POST', body: JSON.stringify({ content }),
+      method: 'POST', body: JSON.stringify({ content, attachment_ids }),
     }),
+  uploadAttachment: async (slug: string, file: File, reference?: string) => {
+    if (file.size <= 0 || file.size > 100 * 1024 * 1024) throw new Error('File must be under 100 MB.')
+    const path = reference ? `/requests/${encodeURIComponent(reference)}/attachments` : '/attachments'
+    const result = await portalRequest<{ attachment: { id: string }; upload_url: string }>(slug, path, {
+      method: 'POST', body: JSON.stringify({ file_name: file.name, file_size: file.size, content_type: file.type }),
+    })
+    const uploaded = await fetch(result.upload_url, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
+    if (!uploaded.ok) throw new Error('File upload failed.')
+    await portalRequest<void>(slug, `${path}/${encodeURIComponent(result.attachment.id)}/confirm`, { method: 'PATCH' })
+    return { id: result.attachment.id, name: file.name }
+  },
   createRequest: (slug: string, input: CreateCustomerPortalRequestInput) =>
     portalRequest<CreatedCustomerPortalRequest>(slug, '/requests', {
       method: 'POST',

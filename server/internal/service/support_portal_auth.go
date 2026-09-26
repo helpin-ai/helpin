@@ -83,10 +83,63 @@ func (s *PortalAuthService) Configuration(ctx context.Context, workspaceID strin
 	if settings == nil {
 		return nil, ErrPortalAuthInvalid
 	}
-	return map[string]any{"enabled": true, "requests_only": settings.PortalRequestsOnly, "intake_enabled": settings.PortalIntakeEnabled, "branding": map[string]string{"name": "Support portal"}}, nil
+	return map[string]any{"enabled": true, "requests_only": settings.PortalRequestsOnly, "intake_enabled": settings.PortalIntakeEnabled, "file_uploads_enabled": settings.FileUploadsEnabled, "branding": map[string]string{"name": "Support portal"}}, nil
 }
 
-func (s *PortalAuthService) CreateRequest(ctx context.Context, workspaceID string, identity *model.SupportPortalIdentity, subject, description string) (*model.SupportPortalRequest, error) {
+var ErrPortalAttachmentsUnavailable = errors.New("portal file uploads are disabled")
+var ErrPortalAttachmentsInvalid = errors.New("one or more attachments are unavailable")
+
+func (s *PortalAuthService) SessionForToken(ctx context.Context, workspaceID, secret string) (*model.PortalSession, error) {
+	if _, err := s.Validate(ctx, workspaceID, secret); err != nil {
+		return nil, err
+	}
+	session, err := s.repo.FindSession(ctx, workspaceID, portalHash(secret), time.Now())
+	if err != nil {
+		return nil, ErrPortalAuthInvalid
+	}
+	return session, nil
+}
+
+func (s *PortalAuthService) AttachmentSession(ctx context.Context, workspaceID, secret string) (*model.PortalSession, error) {
+	session, err := s.SessionForToken(ctx, workspaceID, secret)
+	if err != nil {
+		return nil, err
+	}
+	_, settings, err := s.inbox.GetInstallation(ctx, workspaceID)
+	if err != nil || settings == nil || !settings.FileUploadsEnabled || s.inbox.attachmentService == nil {
+		return nil, ErrPortalAttachmentsUnavailable
+	}
+	return session, nil
+}
+
+func (s *PortalAuthService) UploadAttachment(ctx context.Context, workspaceID, identityID, sessionID, reference string, req model.CreateSupportAttachmentRequest) (*model.SupportAttachmentResponse, error) {
+	conversationID := ""
+	if reference != "" {
+		conv, err := s.repo.FindRequest(ctx, workspaceID, identityID, reference)
+		if err != nil || conv == nil || conv.AnonymizedAt != nil {
+			return nil, ErrPortalRequestNotFound
+		}
+		conversationID = conv.ID
+	}
+	return s.inbox.attachmentService.Create(ctx, req, workspaceID, conversationID, "customer", nil, &sessionID)
+}
+
+func (s *PortalAuthService) ConfirmAttachment(ctx context.Context, workspaceID, identityID, sessionID, reference, attachmentID string) error {
+	conversationID := ""
+	if reference != "" {
+		conv, err := s.repo.FindRequest(ctx, workspaceID, identityID, reference)
+		if err != nil || conv == nil || conv.AnonymizedAt != nil {
+			return ErrPortalAttachmentsInvalid
+		}
+		conversationID = conv.ID
+	}
+	if !s.inbox.attachmentService.PortalAttachmentOwned(ctx, attachmentID, workspaceID, sessionID, conversationID) {
+		return ErrPortalAttachmentsInvalid
+	}
+	return s.inbox.attachmentService.ConfirmUpload(ctx, attachmentID, "customer", nil, &sessionID)
+}
+
+func (s *PortalAuthService) CreateRequest(ctx context.Context, workspaceID string, identity *model.SupportPortalIdentity, subject, description string, attachmentIDs []string, sessionID string) (*model.SupportPortalRequest, error) {
 	if identity == nil || identity.WorkspaceID != workspaceID {
 		return nil, ErrPortalAuthInvalid
 	}
@@ -100,6 +153,14 @@ func (s *PortalAuthService) CreateRequest(ctx context.Context, workspaceID strin
 	subject, description = strings.TrimSpace(subject), strings.TrimSpace(description)
 	if subject == "" || description == "" || len([]rune(subject)) > 200 {
 		return nil, ErrPortalRequestInvalid
+	}
+	if len(attachmentIDs) > 0 {
+		if !settings.FileUploadsEnabled || s.inbox.attachmentService == nil {
+			return nil, ErrPortalAttachmentsUnavailable
+		}
+		if err := s.inbox.attachmentService.ValidatePortalAttachments(ctx, attachmentIDs, workspaceID, sessionID, ""); err != nil {
+			return nil, ErrPortalAttachmentsInvalid
+		}
 	}
 	reference, err := newPortalReference()
 	if err != nil {
@@ -117,7 +178,7 @@ func (s *PortalAuthService) CreateRequest(ctx context.Context, workspaceID strin
 	if s.inbox.contactRepo != nil {
 		contactID = s.inbox.matchOrCreateCRMContact(ctx, workspaceID, &identity.Email, identity.DisplayName)
 	}
-	conversation, request, err := s.repo.CreateRequest(ctx, workspaceID, identity, subject, description, reference, mailboxID, ownerID, contactID, &flowState)
+	conversation, request, err := s.repo.CreateRequest(ctx, workspaceID, identity, subject, description, reference, mailboxID, ownerID, contactID, &flowState, attachmentIDs, sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -177,6 +238,9 @@ func (s *PortalAuthService) RequestDetail(ctx context.Context, workspaceID, iden
 			public.ViaChannel = *msg.ViaChannel
 		}
 		for _, attachment := range msg.Attachments {
+			if attachment.URL == "" || attachment.ProcessingStatus != "" {
+				continue
+			}
 			public.Attachments = append(public.Attachments, model.WidgetAttachment{ID: attachment.ID, FileName: attachment.FileName, FileType: attachment.FileType, FileSize: attachment.FileSize, URL: attachment.URL})
 		}
 		detail.Messages = append(detail.Messages, public)
@@ -192,7 +256,7 @@ func portalMessageVisible(msg *model.SupportMessage) bool {
 		(msg.SenderType == "customer" || msg.SenderType == "user" || msg.SenderType == "agent" || msg.SenderType == "ai")
 }
 
-func (s *PortalAuthService) Reply(ctx context.Context, workspaceID string, identity *model.SupportPortalIdentity, reference, content string) error {
+func (s *PortalAuthService) Reply(ctx context.Context, workspaceID string, identity *model.SupportPortalIdentity, reference, content string, attachmentIDs []string, sessionID string) error {
 	conv, err := s.repo.FindRequest(ctx, workspaceID, identity.ID, reference)
 	if err != nil {
 		return err
@@ -206,7 +270,21 @@ func (s *PortalAuthService) Reply(ctx context.Context, workspaceID string, ident
 	if strings.TrimSpace(content) == "" {
 		return fmt.Errorf("reply is required")
 	}
-	_, err = s.inbox.CreateConversationMessage(context.WithValue(ctx, portalReplySourceKey{}, true), workspaceID, conv.ID, model.CreateMessageRequest{Content: content, MessageType: "reply"}, "customer", nil, nil, identity.DisplayName)
+	if len(attachmentIDs) > 0 {
+		_, settings, settingsErr := s.inbox.GetInstallation(ctx, workspaceID)
+		if settingsErr != nil || settings == nil || !settings.FileUploadsEnabled || s.inbox.attachmentService == nil {
+			return ErrPortalAttachmentsUnavailable
+		}
+		if err := s.inbox.attachmentService.ValidatePortalAttachments(ctx, attachmentIDs, workspaceID, sessionID, conv.ID); err != nil {
+			return ErrPortalAttachmentsInvalid
+		}
+	}
+	msg, err := s.inbox.CreateConversationMessage(context.WithValue(ctx, portalReplySourceKey{}, true), workspaceID, conv.ID, model.CreateMessageRequest{Content: content, MessageType: "reply"}, "customer", nil, nil, identity.DisplayName)
+	if err == nil && len(attachmentIDs) > 0 {
+		if err = s.inbox.attachmentService.LinkPortalAttachments(ctx, attachmentIDs, workspaceID, sessionID, conv.ID, msg.ID); err != nil {
+			return ErrPortalAttachmentsInvalid
+		}
+	}
 	return err
 }
 

@@ -167,6 +167,18 @@ func (s *SupportAttachmentService) LinkWidgetAttachments(
 	)
 }
 
+func (s *SupportAttachmentService) ValidatePortalAttachments(ctx context.Context, ids []string, workspaceID, sessionID, conversationID string) error {
+	return s.attachmentRepo.ValidatePortalAttachments(ctx, ids, workspaceID, sessionID, conversationID)
+}
+
+func (s *SupportAttachmentService) PortalAttachmentOwned(ctx context.Context, id, workspaceID, sessionID, conversationID string) bool {
+	return s.attachmentRepo.PortalAttachmentOwned(ctx, id, workspaceID, sessionID, conversationID)
+}
+
+func (s *SupportAttachmentService) LinkPortalAttachments(ctx context.Context, ids []string, workspaceID, sessionID, conversationID, messageID string) error {
+	return s.attachmentRepo.LinkPortalAttachments(ctx, ids, workspaceID, sessionID, conversationID, conversationID, messageID)
+}
+
 // LinkToMessage associates uploaded attachments with a message.
 func (s *SupportAttachmentService) LinkToMessage(ctx context.Context, attachmentIDs []string, messageID string) error {
 	if len(attachmentIDs) == 0 {
