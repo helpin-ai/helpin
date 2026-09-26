@@ -54,15 +54,21 @@ func BrandHeaderHTML() string {
 }
 
 // NotificationEmailHeaderHTML returns the email header with the Helpin logo and workspace name.
-func NotificationEmailHeaderHTML(workspaceName string) string {
+func NotificationEmailHeaderHTML(workspaceName, destinationURL string) string {
 	escapedName := html.EscapeString(workspaceName)
+	logoOpen := `<span style="display: inline-block;">`
+	logoClose := `</span>`
+	if destinationURL != "" {
+		logoOpen = fmt.Sprintf(`<a href="%s" target="_blank" style="text-decoration: none; display: inline-block;">`, html.EscapeString(destinationURL))
+		logoClose = `</a>`
+	}
 	return fmt.Sprintf(`<!-- Header -->
                 <tr>
                   <td style="padding: 24px 32px;">
                     <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0">
                       <tr>
                         <td style="text-align: left; vertical-align: middle;">
-                          <a href="https://helpin.ai" target="_blank" style="text-decoration: none; display: inline-block;">
+                          %s
                             <span class="helpin-logo-light" style="display: inline-block; white-space: nowrap;">
                               <img src="%s" alt="" width="26" height="26" style="display: inline-block; width: 26px; height: 26px; vertical-align: middle; border: 0; outline: none;" />
                               <span style="display: inline-block; margin-left: 7px; vertical-align: middle; color: #1e1c1a; font-size: 18px; line-height: 26px; font-weight: 700; letter-spacing: -0.5px;">Helpin</span>
@@ -71,7 +77,7 @@ func NotificationEmailHeaderHTML(workspaceName string) string {
                               <img src="%s" alt="" width="26" height="26" style="display: inline-block; width: 26px; height: 26px; vertical-align: middle; border: 0; outline: none;" />
                               <span style="display: inline-block; margin-left: 7px; vertical-align: middle; color: #f7f5f2; font-size: 18px; line-height: 26px; font-weight: 700; letter-spacing: -0.5px;">Helpin</span>
                             </span>
-                          </a>
+                          %s
                         </td>
                         <td style="text-align: right; vertical-align: middle;">
                           <span style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: #bbbbbb; font-weight: 500; display: block; margin-bottom: 2px;">Workspace</span>
@@ -87,8 +93,10 @@ func NotificationEmailHeaderHTML(workspaceName string) string {
                     <div style="height: 1px; background-color: #eeeeee;"></div>
                   </td>
                 </tr>`,
+		logoOpen,
 		helpinLightModeLogoURL,
 		helpinDarkModeLogoURL,
+		logoClose,
 		escapedName,
 	)
 }

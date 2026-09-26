@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html"
 	"log/slog"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -65,21 +66,23 @@ var priorityOrder = map[string]int{
 
 // NotificationService orchestrates notification creation and delivery.
 type NotificationService struct {
-	notifRepo          *repository.NotificationRepository
-	prefRepo           *repository.NotificationPreferenceRepository
-	userSettingsRepo   *repository.UserNotificationSettingsRepository
-	followerRepo       *repository.FollowerRepository
-	userRepo           *repository.UserRepository
-	workspaceRepo      *repository.WorkspaceRepository
-	installationRepo   *repository.SupportInboxInstallationRepository
-	mailboxRepo        *repository.SupportMailboxRepository
-	statusOverrideRepo *repository.SupportTeammateStatusOverrideRepository
-	wsPublisher        *ws.Publisher
-	presence           ws.PresenceProvider
-	emailClient        emailSender
-	appBaseURL         string
-	logger             *slog.Logger
-	accessChecker      NotificationAccessChecker
+	notifRepo           *repository.NotificationRepository
+	prefRepo            *repository.NotificationPreferenceRepository
+	userSettingsRepo    *repository.UserNotificationSettingsRepository
+	followerRepo        *repository.FollowerRepository
+	userRepo            *repository.UserRepository
+	workspaceRepo       *repository.WorkspaceRepository
+	installationRepo    *repository.SupportInboxInstallationRepository
+	mailboxRepo         *repository.SupportMailboxRepository
+	statusOverrideRepo  *repository.SupportTeammateStatusOverrideRepository
+	supportMessageRepo  *repository.SupportMessageRepository
+	supportEmailLogRepo *repository.SupportEmailLogRepository
+	wsPublisher         *ws.Publisher
+	presence            ws.PresenceProvider
+	emailClient         emailSender
+	appBaseURL          string
+	logger              *slog.Logger
+	accessChecker       NotificationAccessChecker
 }
 
 type emailSender interface {
@@ -134,6 +137,11 @@ func (s *NotificationService) SetSupportRoutingDependencies(
 	return s
 }
 
+func (s *NotificationService) SetSupportEmailHistoryRepositories(messages *repository.SupportMessageRepository, emailLogs *repository.SupportEmailLogRepository) {
+	s.supportMessageRepo = messages
+	s.supportEmailLogRepo = emailLogs
+}
+
 type notificationDeliveryPlan struct {
 	Channel     string
 	Status      string
@@ -145,6 +153,9 @@ type digestNotificationItem struct {
 	NotificationID string
 	WorkspaceID    string
 	Title          string
+	Body           string
+	EntityType     string
+	EntityID       string
 	EventCount     int
 	LatestAt       time.Time
 }
@@ -471,12 +482,16 @@ func (s *NotificationService) createEventAndDeliveries(
 }
 
 func (s *NotificationService) createEventAndDeliveriesLocked(ctx context.Context, log *slog.Logger, notificationID, recipientID string, actorID *string, event model.NotificationEventInput, priority string, now time.Time) error {
+	metadata := cloneNotificationMetadata(event.Metadata)
+	if preview := strings.TrimSpace(event.Body); preview != "" {
+		metadata["digest_preview"] = truncate(strings.Join(strings.Fields(preview), " "), 200)
+	}
 	notifEvent := &model.NotificationEvent{
 		NotificationID: notificationID,
 		ActorID:        actorID,
 		EventType:      event.EventType,
 		Title:          event.Title,
-		Metadata:       event.Metadata,
+		Metadata:       metadata,
 		Category:       event.Category,
 		ActorSnapshot:  event.ActorSnapshot,
 		Priority:       priority,
@@ -704,8 +719,14 @@ func (s *NotificationService) renderImmediateEmail(ctx context.Context, event mo
 	}
 
 	entityURL := buildEntityURL(s.appBaseURL, workspaceSlug, event.EntityType, event.EntityID)
+	if event.EventType == "support_conversation.customer_reply" && event.EntityType == "support_conversation" {
+		return s.renderSupportReplyEmail(ctx, event, workspaceName, workspaceSlug, s.loadSupportReplyEmailHistory(ctx, event))
+	}
 
 	subject := fmt.Sprintf("[%s] %s", workspaceName, event.Title)
+	if actorName != "Someone" && strings.TrimSpace(event.Title) != "" && (event.EventType == "comment.created" || event.EventType == "comment.mention" || strings.HasSuffix(event.EventType, ".comment") || strings.HasSuffix(event.EventType, ".mention")) {
+		subject = fmt.Sprintf("%s %s [%s]", actorName, strings.TrimSpace(event.Title), workspaceName)
+	}
 	textBody := event.Title
 	if strings.TrimSpace(event.Body) != "" {
 		textBody += "\n\n" + event.Body
@@ -721,7 +742,7 @@ func (s *NotificationService) renderImmediateEmail(ctx context.Context, event mo
 
 	// Build the task/entity block if we have a title.
 	taskBlockHTML := ""
-	if entityTitle != "" {
+	if entityTitle != "" && event.Category != model.NotifCategorySupportReplies {
 		taskBlockHTML = emailtpl.TaskBlockHTML(entityDisplayID, entityTitle)
 	}
 
@@ -799,7 +820,7 @@ func (s *NotificationService) renderImmediateEmail(ctx context.Context, event mo
 		html.EscapeString(actorName),
 		html.EscapeString(workspaceName),
 		html.EscapeString(event.Title),
-		emailtpl.NotificationEmailHeaderHTML(workspaceName),
+		emailtpl.NotificationEmailHeaderHTML(workspaceName, entityURL),
 		actorLine,
 		taskBlockHTML,
 		commentBlockHTML,
@@ -812,6 +833,18 @@ func (s *NotificationService) renderImmediateEmail(ctx context.Context, event mo
 
 // immediateEmailActionText returns a human-readable action phrase for the actor line.
 func immediateEmailActionText(event model.NotificationEventInput) string {
+	if event.EventType == "checklist.mention" {
+		return "mentioned you in a checklist item"
+	}
+	if event.EventType == "comment.mention" {
+		return "mentioned you in a comment on " + notificationEntityNoun(event.EntityType)
+	}
+	if event.EventType == "comment.created" || strings.HasSuffix(event.EventType, ".comment") {
+		return "commented on " + notificationEntityNoun(event.EntityType)
+	}
+	if strings.HasSuffix(event.EventType, ".mention") && event.EntityType != "support_conversation" {
+		return "mentioned you in " + notificationEntityNoun(event.EntityType)
+	}
 	switch event.Category {
 	case model.NotifCategoryMentions:
 		return "mentioned you"
@@ -822,6 +855,9 @@ func immediateEmailActionText(event model.NotificationEventInput) string {
 	case model.NotifCategoryStatusChanges:
 		return "updated the status"
 	case model.NotifCategorySupportReplies:
+		if title, ok := event.EntitySnapshot["title"].(string); ok && strings.TrimSpace(title) != "" {
+			return fmt.Sprintf("replied to “%s”", strings.TrimSpace(title))
+		}
 		return "replied to a conversation"
 	case model.NotifCategorySupportMentions:
 		return "mentioned you in a conversation"
@@ -834,15 +870,31 @@ func immediateEmailActionText(event model.NotificationEventInput) string {
 	}
 }
 
+func notificationEntityNoun(entityType string) string {
+	switch entityType {
+	case "task":
+		return "a task"
+	case "epic":
+		return "an epic"
+	case "objective":
+		return "an objective"
+	case "sprint":
+		return "a sprint"
+	case "doc", "document":
+		return "a document"
+	case "support_conversation":
+		return "a conversation"
+	default:
+		return "an item"
+	}
+}
+
 // immediateEmailFooterText returns a contextual one-liner for the email footer.
 func immediateEmailFooterText(event model.NotificationEventInput, workspaceName, displayID string) string {
 	switch event.Category {
 	case model.NotifCategoryMentions:
 		return fmt.Sprintf("You were mentioned in %s", workspaceName)
 	case model.NotifCategoryComments:
-		if displayID != "" {
-			return fmt.Sprintf("You're assigned to %s", displayID)
-		}
 		return fmt.Sprintf("You received a comment in %s", workspaceName)
 	case model.NotifCategoryAssignments:
 		return fmt.Sprintf("A task was assigned to you in %s", workspaceName)
@@ -1248,6 +1300,9 @@ func buildDigestItems(deliveries []repository.PendingDigestDelivery, now time.Ti
 					NotificationID: delivery.NotificationID,
 					WorkspaceID:    delivery.WorkspaceID,
 					Title:          strings.TrimSpace(delivery.EventTitle),
+					Body:           digestPreviewFromMetadata(delivery.EventMetadata),
+					EntityType:     delivery.EntityType,
+					EntityID:       delivery.EntityID,
 					EventCount:     0,
 					LatestAt:       delivery.CreatedAt,
 				},
@@ -1255,11 +1310,12 @@ func buildDigestItems(deliveries []repository.PendingDigestDelivery, now time.Ti
 			grouped[delivery.NotificationID] = group
 		}
 
-		if delivery.CreatedAt.After(group.item.LatestAt) {
+		if group.item.EventCount == 0 || !delivery.CreatedAt.Before(group.item.LatestAt) {
 			group.item.LatestAt = delivery.CreatedAt
-		}
-		if title := strings.TrimSpace(delivery.EventTitle); title != "" {
-			group.item.Title = title
+			if title := strings.TrimSpace(delivery.EventTitle); title != "" {
+				group.item.Title = title
+			}
+			group.item.Body = digestPreviewFromMetadata(delivery.EventMetadata)
 		}
 
 		group.item.EventCount++
@@ -1369,12 +1425,10 @@ func (s *NotificationService) renderDigestEmail(ctx context.Context, items []dig
 
 	subject := fmt.Sprintf("[Helpin] %d unread notifications", len(items))
 
-	// Determine CTA URL: link to the first workspace root.
+	// A digest can span workspaces, so only show a single CTA when it has one.
 	ctaURL := ""
-	if len(workspaceOrder) > 0 {
-		if slug := workspaceSlugs[workspaceOrder[0]]; slug != "" && s.appBaseURL != "" {
-			ctaURL = s.appBaseURL + "/w/" + slug
-		}
+	if len(workspaceOrder) == 1 {
+		ctaURL = buildNotificationsURL(s.appBaseURL, workspaceSlugs[workspaceOrder[0]])
 	}
 
 	// Plain text body.
@@ -1384,6 +1438,17 @@ func (s *NotificationService) renderDigestEmail(ctx context.Context, items []dig
 		textBody.WriteString(workspaceNames[workspaceID] + "\n")
 		for _, item := range grouped[workspaceID] {
 			textBody.WriteString("- " + digestItemLine(item) + "\n")
+			if preview := digestItemPreview(item); preview != "" {
+				textBody.WriteString("  " + preview + "\n")
+			}
+			if link := digestItemURL(s.appBaseURL, workspaceSlugs[workspaceID], item); link != "" {
+				textBody.WriteString("  " + link + "\n")
+			}
+		}
+		if len(workspaceOrder) > 1 {
+			if link := buildNotificationsURL(s.appBaseURL, workspaceSlugs[workspaceID]); link != "" {
+				textBody.WriteString("View notifications: " + link + "\n")
+			}
 		}
 		textBody.WriteString("\n")
 	}
@@ -1395,6 +1460,11 @@ func (s *NotificationService) renderDigestEmail(ctx context.Context, items []dig
 	var wsSections strings.Builder
 	for _, workspaceID := range workspaceOrder {
 		wsName := html.EscapeString(workspaceNames[workspaceID])
+		if len(workspaceOrder) > 1 {
+			if link := buildNotificationsURL(s.appBaseURL, workspaceSlugs[workspaceID]); link != "" {
+				wsName = fmt.Sprintf(`<a href="%s" target="_blank" style="color: #18181b; text-decoration: underline;">%s</a>`, html.EscapeString(link), wsName)
+			}
+		}
 		fmt.Fprintf(&wsSections, `
                       <tr>
                         <td style="padding-bottom: 4px;">
@@ -1406,12 +1476,19 @@ func (s *NotificationService) renderDigestEmail(ctx context.Context, items []dig
                           <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0">`, wsName)
 		for _, item := range grouped[workspaceID] {
 			line := html.EscapeString(digestItemLine(item))
+			if link := digestItemURL(s.appBaseURL, workspaceSlugs[workspaceID], item); link != "" {
+				line = fmt.Sprintf(`<a href="%s" target="_blank" style="color:#18181b;text-decoration:none;font-weight:600;">%s</a>`, html.EscapeString(link), line)
+			}
+			previewHTML := ""
+			if preview := digestItemPreview(item); preview != "" {
+				previewHTML = fmt.Sprintf(`<p style="margin:4px 0 0;font-size:13px;line-height:1.45;color:#71717a;">%s</p>`, html.EscapeString(preview))
+			}
 			fmt.Fprintf(&wsSections, `
                             <tr>
                               <td style="padding: 8px 0; border-bottom: 1px solid #f4f4f5;">
-                                <p style="margin: 0; font-size: 14px; line-height: 1.5; color: #52525b;">%s</p>
-                              </td>
-                            </tr>`, line)
+				<p style="margin: 0; font-size: 14px; line-height: 1.5; color: #52525b;">%s</p>%s
+				</td>
+			</tr>`, line, previewHTML)
 		}
 		wsSections.WriteString(`
                           </table>
@@ -1503,7 +1580,7 @@ func (s *NotificationService) renderDigestEmail(ctx context.Context, items []dig
 </html>`,
 		emailtpl.BrandHeaderCSS(),
 		len(items),
-		emailtpl.NotificationEmailHeaderHTML(headerWorkspaceName),
+		emailtpl.NotificationEmailHeaderHTML(headerWorkspaceName, ctaURL),
 		len(items),
 		wsSections.String(),
 		ctaHTML,
@@ -1520,6 +1597,22 @@ func digestItemLine(item digestNotificationItem) string {
 	return fmt.Sprintf("%s (+%d more update%s)", item.Title, item.EventCount-1, pluralSuffix(item.EventCount-1))
 }
 
+func digestItemPreview(item digestNotificationItem) string {
+	return truncate(strings.Join(strings.Fields(item.Body), " "), 140)
+}
+
+func digestPreviewFromMetadata(metadata model.JSONB) string {
+	preview, _ := metadata["digest_preview"].(string)
+	return strings.TrimSpace(preview)
+}
+
+func digestItemURL(baseURL, workspaceSlug string, item digestNotificationItem) string {
+	if item.EntityType == "" || item.EntityID == "" {
+		return ""
+	}
+	return buildEntityURL(baseURL, workspaceSlug, item.EntityType, item.EntityID)
+}
+
 func pluralSuffix(count int) string {
 	if count == 1 {
 		return ""
@@ -1529,8 +1622,12 @@ func pluralSuffix(count int) string {
 
 // buildEntityURL constructs a frontend URL for the given entity.
 func buildEntityURL(baseURL, slug, entityType, entityID string) string {
-	if baseURL == "" || slug == "" {
+	notificationsURL := buildNotificationsURL(baseURL, slug)
+	if notificationsURL == "" {
 		return ""
+	}
+	if entityID == "" {
+		return notificationsURL
 	}
 	base := baseURL + "/w/" + slug
 	switch entityType {
@@ -1542,9 +1639,22 @@ func buildEntityURL(baseURL, slug, entityType, entityID string) string {
 		return base + "/pm/objectives/" + entityID
 	case "sprint":
 		return base + "/pm/sprints/" + entityID
+	case "support_conversation":
+		return base + "/support/" + entityID
+	case "doc", "document":
+		return base + "/docs/documents/" + entityID
+	case "crm_signal":
+		return base + "/crm/insights?signal=" + url.QueryEscape(entityID)
 	default:
-		return base
+		return notificationsURL
 	}
+}
+
+func buildNotificationsURL(baseURL, slug string) string {
+	if baseURL == "" || slug == "" {
+		return ""
+	}
+	return baseURL + "/w/" + slug + "/notifications"
 }
 
 func (s *NotificationService) workspaceSlug(ctx context.Context, workspaceID string) string {

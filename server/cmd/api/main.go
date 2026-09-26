@@ -764,6 +764,7 @@ func main() {
 	}
 	emailFallbackService.SetSupportInboxService(supportInboxService)
 	notificationService.SetSupportRoutingDependencies(supportInstallRepo, supportMailboxRepo, wsHub.Presence, supportTeammateStatusOverrideRepo)
+	notificationService.SetSupportEmailHistoryRepositories(supportMessageRepo, supportEmailLogRepo)
 
 	// AI Support Agent — new repositories and service
 	agentKnowledgeSourceRepo := repository.NewAgentKnowledgeSourceRepository(db)
