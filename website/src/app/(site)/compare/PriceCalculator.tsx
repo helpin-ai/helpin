@@ -180,7 +180,7 @@ export function PriceCalculator({ name, calculator }: { name: string; calculator
             <strong>{money(helpinMonthly)}<small>/mo</small></strong>
           </div>
           <div className="cmp-calc-bar" data-product="rival">
-            <span className="cmp-calc-bar-name"><span className="cmp-monogram" aria-hidden="true">{name.charAt(0)}</span>{name}<small>{plan.name}</small></span>
+            <span className="cmp-calc-bar-name"><span aria-hidden="true" />{name}<small>{plan.name}</small></span>
             <span className="cmp-calc-bar-track" aria-hidden="true"><span style={{ width: share(seatCost, scale) }} />{ai ? <span data-part="ai" style={{ width: share(aiCost, scale) }} /> : null}</span>
             <strong>{money(rivalMonthly)}<small>/mo</small></strong>
           </div>
