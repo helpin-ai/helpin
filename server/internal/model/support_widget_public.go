@@ -121,10 +121,11 @@ func PublicWidgetMetadata(raw string) string {
 		AIProgressState  string                 `json:"ai_progress_state,omitempty"`
 		AIReplyKind      string                 `json:"ai_reply_kind,omitempty"`
 		AISources        []struct {
-			DocID    string `json:"docId,omitempty"`
-			Title    string `json:"title"`
-			URL      string `json:"url,omitempty"`
-			Language string `json:"language,omitempty"`
+			DocID      string `json:"docId,omitempty"`
+			Title      string `json:"title"`
+			URL        string `json:"url,omitempty"`
+			Language   string `json:"language,omitempty"`
+			SourceType string `json:"sourceType,omitempty"`
 		} `json:"ai_sources,omitempty"`
 		LinkPreviews []SupportLinkPreview `json:"link_previews,omitempty"`
 	}
@@ -133,6 +134,16 @@ func PublicWidgetMetadata(raw string) string {
 	}
 	if metadata.AIProgressState != "checking" {
 		metadata.AIProgressState = ""
+	}
+	if len(metadata.AISources) > 0 {
+		publicSources := metadata.AISources[:0]
+		for _, source := range metadata.AISources {
+			if source.SourceType != "external_mcp" {
+				source.SourceType = ""
+				publicSources = append(publicSources, source)
+			}
+		}
+		metadata.AISources = publicSources
 	}
 	metadata.VisitorFeedback = (SupportMessage{Metadata: raw}).VisitorFeedback()
 	switch metadata.AIReplyKind {

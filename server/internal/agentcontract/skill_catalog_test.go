@@ -171,6 +171,19 @@ func TestEchoSystemPromptUsesCustomerSafeResearchFallback(t *testing.T) {
 	}
 }
 
+func TestEchoPromptsConstrainPrivateMCPResearch(t *testing.T) {
+	for name, prompt := range map[string]string{
+		"default": echoSystemPrompt,
+		"saved":   EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, "You are Echo."),
+	} {
+		for _, required := range []string{"assigned read-only MCP tools", "current customer and workspace", "never cite raw logs", "server-issued evidence ID", "hand off"} {
+			if !strings.Contains(strings.ToLower(prompt), strings.ToLower(required)) {
+				t.Errorf("%s Echo prompt missing %q", name, required)
+			}
+		}
+	}
+}
+
 func TestEnsureSupportRuntimeDeliveryContractProtectsWorkspacePromptCopies(t *testing.T) {
 	staleSnapshot := "You are Echo.\n\n## Answer quality\nAnswer from evidence."
 	prompt := EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, staleSnapshot)
