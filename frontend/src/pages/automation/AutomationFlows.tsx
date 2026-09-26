@@ -37,7 +37,7 @@ import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -2312,7 +2312,9 @@ function executionStatusMeta(status: string) {
   }
 }
 
-function FlowDetailDrawer({
+const FLOW_DIALOG_CLASS = 'fixed inset-0 sm:relative sm:inset-auto flex h-[100dvh] max-h-[100dvh] w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none p-0 sm:h-[85dvh] sm:max-h-[900px] sm:w-full sm:max-w-[800px] sm:rounded-xl [&>[data-slot=dialog-close]]:z-20';
+
+function FlowDetails({
   rule,
   workspaceId,
   workspaceSlug,
@@ -2324,7 +2326,6 @@ function FlowDetailDrawer({
   canEdit,
   canRunNowAction,
   runningNow,
-  onOpenChange,
   onEdit,
   onToggle,
   onRunNow,
@@ -2341,7 +2342,6 @@ function FlowDetailDrawer({
   canEdit: boolean;
   canRunNowAction: boolean;
   runningNow: boolean;
-  onOpenChange: (open: boolean) => void;
   onEdit: (rule: AutomationRule) => void;
   onToggle: (rule: AutomationRule) => void;
   onRunNow: (rule: AutomationRule) => void;
@@ -2376,20 +2376,15 @@ function FlowDetailDrawer({
   const canRunNow = !!rule && rule.trigger_type === 'cron' && canRunNowAction && !runNowBlocker && !runningNow;
 
   return (
-    <Sheet open={!!rule} onOpenChange={onOpenChange}>
-      <SheetContent
-        className="overflow-hidden border-l border-border bg-popover p-0 shadow-none duration-150 data-[side=right]:w-full data-[side=right]:sm:max-w-[640px] [&>[data-slot=sheet-close]]:z-20"
-        overlayClassName="bg-[rgba(26,25,23,0.14)] backdrop-blur-none duration-150"
-        showCloseButton
-      >
+    <>
         {rule ? (
           <>
-            <SheetHeader className="sticky top-0 z-10 border-b border-border bg-popover px-[22px] py-[18px] pr-14">
+            <DialogHeader className="sticky top-0 z-10 border-b border-border bg-popover px-[22px] py-[18px] pr-14">
               <div className="flex min-w-0 items-center gap-2.5">
                 <span className="h-[7px] w-[7px] shrink-0 rounded-full" style={{ backgroundColor: stateStyle.color }} aria-hidden="true" />
-                <SheetTitle className="truncate text-sm font-semibold">{rule.name}</SheetTitle>
+                <DialogTitle className="truncate text-sm font-semibold">{rule.name}</DialogTitle>
               </div>
-              <SheetDescription className="sr-only">Details and actions for {rule.name}</SheetDescription>
+              <DialogDescription className="sr-only">Details and actions for {rule.name}</DialogDescription>
               {(canEdit && !managed || managed && workspaceSlug || rule.trigger_type === 'cron' && canRunNowAction) ? (
                 <div className="flex flex-wrap items-center gap-2 pt-2">
                   {managed && workspaceSlug ? <Button size="sm" asChild><a href={`/w/${encodeURIComponent(workspaceSlug)}/crm/playbooks/${encodeURIComponent(stringValue(rule.trigger_config?.playbook_id))}`}>Manage in Playbook Setup</a></Button> : null}
@@ -2412,7 +2407,7 @@ function FlowDetailDrawer({
                   ) : null}
                 </div>
               ) : null}
-            </SheetHeader>
+            </DialogHeader>
 
             <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[22px] pt-[22px] pb-16">
               <div className="space-y-[26px]">
@@ -2487,8 +2482,7 @@ function FlowDetailDrawer({
             </div>
           </>
         ) : null}
-      </SheetContent>
-    </Sheet>
+    </>
   );
 }
 
@@ -2596,6 +2590,7 @@ export function FlowComposer({
   semanticConditionLoading,
   workspaceId,
   open,
+  embedded = false,
   mode,
   draft,
   workflows,
@@ -2616,6 +2611,7 @@ export function FlowComposer({
 }: {
   workspaceId: string;
   open: boolean;
+  embedded?: boolean;
   mode: FlowComposerMode;
   semanticConditionAvailability?: SemanticConditionAvailability;
   semanticConditionLoading?: boolean;
@@ -2698,22 +2694,16 @@ export function FlowComposer({
     return normalized;
   });
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="max-h-[90vh] overflow-y-auto sm:max-w-3xl"
-        onOpenAutoFocus={(event) => {
-          if (mode !== 'create') event.preventDefault();
-        }}
-      >
-        <DialogHeader>
+  const contents = (
+    <>
+        <DialogHeader className="shrink-0 border-b border-border px-[22px] py-[18px] pr-14">
           <DialogTitle>{mode === 'create' ? 'Create flow' : 'Edit flow'}</DialogTitle>
-          <DialogDescription className="text-xs">
+          <DialogDescription className="sr-only">
             Reads top to bottom as a sentence. Only fields relevant to your trigger and action appear.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-5">
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-[22px] pt-[22px] pb-16">
           <div className="space-y-2">
             <div className="space-y-1.5">
               <Label htmlFor="flow-name">Flow name</Label>
@@ -2723,7 +2713,7 @@ export function FlowComposer({
                 onChange={(event) => updateDraft((current) => ({ ...current, name: event.target.value }))}
                 placeholder="Review merged PRs"
                 className="h-10 text-base font-medium"
-                autoFocus={mode === 'create'}
+                autoFocus={embedded || mode === 'create'}
               />
             </div>
             <div className="space-y-1.5">
@@ -3287,16 +3277,16 @@ export function FlowComposer({
           <FlowSummaryParagraph rows={flowLogicRows} />
         </div>
 
-        <DialogFooter className="gap-2 sm:justify-between">
+        <DialogFooter className="shrink-0 border-t border-border bg-popover px-[22px] py-4 gap-2 sm:justify-between">
           <div>
             {mode === 'create' && onBack && (
-              <Button type="button" variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" onClick={onBack}>
+              <Button type="button" variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" disabled={saving} onClick={onBack}>
                 ← Back to templates
               </Button>
             )}
           </div>
           <div className="flex gap-2">
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="button" variant="ghost" disabled={saving} onClick={() => onOpenChange(false)}>Cancel</Button>
             <TooltipIfDisabled message={saving ? null : (!canEdit ? 'You do not have permission to save flows.' : validation)}>
               <Button type="button" onClick={() => void onSave()} disabled={saving || !canEdit || !!validation}>
                 {saving ? 'Saving…' : mode === 'create' ? 'Create flow' : 'Save changes'}
@@ -3304,6 +3294,12 @@ export function FlowComposer({
             </TooltipIfDisabled>
           </div>
         </DialogFooter>
+    </>
+  );
+  return embedded ? contents : (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className={FLOW_DIALOG_CLASS} onOpenAutoFocus={(event) => { if (mode !== 'create') event.preventDefault(); }}>
+        {contents}
       </DialogContent>
     </Dialog>
   );
@@ -4369,6 +4365,8 @@ export function AutomationFlowsPage({
   const [composerMode, setComposerMode] = useState<FlowComposerMode>('create');
   const [draft, setDraft] = useState<FlowDraft>(defaultDraft());
   const [saving, setSaving] = useState(false);
+  const initialDraft = useRef<string | null>(null);
+  const [discardAction, setDiscardAction] = useState<(() => void) | null>(null);
   const [runningFlowId, setRunningFlowId] = useState<string | null>(null);
   const [selectedFlowId, setSelectedFlowId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'paused' | 'attention'>('all');
@@ -4547,6 +4545,29 @@ export function AutomationFlowsPage({
     setSelectedFlowId(search.show_rule);
   }, [authoredFlows, search.show_rule]);
 
+  useEffect(() => {
+    if (composerOpen && initialDraft.current === null) initialDraft.current = JSON.stringify(draft);
+    if (!composerOpen) initialDraft.current = null;
+  }, [composerOpen, draft]);
+
+  const leaveComposer = (action: () => void) => {
+    if (saving) return;
+    if (composerOpen && initialDraft.current !== null && JSON.stringify(draft) !== initialDraft.current) {
+      setDiscardAction(() => action);
+    } else action();
+  };
+  const closeFlowDialog = () => leaveComposer(() => {
+    setComposerOpen(false);
+    setSelectedFlowId(null);
+    setEditingRuleId(null);
+    resetComposerSearch();
+  });
+  const cancelFlowEdit = () => leaveComposer(() => {
+    setComposerOpen(false);
+    setEditingRuleId(null);
+    resetComposerSearch();
+  });
+
   const openCreateComposer = () => {
     setEditingRuleId(null);
     setComposerMode('create');
@@ -4617,6 +4638,7 @@ export function AutomationFlowsPage({
 
   const openEditComposer = (rule: AutomationRule) => {
     if (rule.trigger_type === 'crm.playbook.work_due') { toast.info('Manage this Flow from its CRM Playbook.'); return; }
+    setSelectedFlowId(rule.id);
     setEditingRuleId(rule.id);
     setComposerMode('edit');
     setDraft(draftFromRule(rule, workflows, scheduleTimezone));
@@ -4854,53 +4876,62 @@ export function AutomationFlowsPage({
         saving={uninstallFlowTemplate.isPending || deletingFlow}
         onConfirm={() => void handleConfirmDeleteFlow()}
       />
-      <FlowComposer
-        semanticConditionAvailability={inventoryQuery.isError ? undefined : inventoryQuery.data?.semantic_conditions}
-        semanticConditionLoading={inventoryQuery.isPending}
-        workspaceId={workspaceId}
-        open={composerOpen}
-        mode={composerMode}
-        draft={draft}
-        workflows={workflows}
-        statesById={statesById}
-        agents={agents}
-        accessibleTeamIds={accessibleTeamIds}
-        canSeeAllAgents={permissions.isAdmin}
-        tasks={tasks}
-        epics={epics}
-        repositories={repositories}
-        timezone={scheduleTimezone}
-        saving={saving}
-        canEdit={permissions.canAdminAutomations}
-        onOpenChange={(open) => {
-          setComposerOpen(open);
-          if (!open) {
-            resetComposerSearch();
-          }
-        }}
-        onBack={composerMode === 'create' ? backToGallery : undefined}
-        onDraftChange={setDraft}
-        onSave={handleSave}
-      />
-
-      <FlowDetailDrawer
-        rule={selectedRule}
-        workspaceId={workspaceId}
-        workspaceSlug={workspaceSlug}
-        workspaceName={workspace?.name}
-        statesById={statesById}
-        agentNames={agentNames}
-        healthItem={selectedRule ? flowHealth.get(selectedRule.id) : undefined}
-        timezone={scheduleTimezone}
-        canEdit={permissions.canAdminAutomations}
-        canRunNowAction={permissions.canEdit}
-        runningNow={runningFlowId === selectedRule?.id}
-        onOpenChange={(open) => { if (!open) setSelectedFlowId(null); }}
-        onEdit={(rule) => { setSelectedFlowId(null); openEditComposer(rule); }}
-        onToggle={handleToggle}
-        onRunNow={handleRunNow}
-        onDelete={openDeleteFlow}
-      />
+      <Dialog open={composerOpen || !!selectedRule} onOpenChange={(open) => { if (!open) closeFlowDialog(); }}>
+        <DialogContent className={FLOW_DIALOG_CLASS}>
+          {composerOpen ? <FlowComposer
+            embedded
+            semanticConditionAvailability={inventoryQuery.isError ? undefined : inventoryQuery.data?.semantic_conditions}
+            semanticConditionLoading={inventoryQuery.isPending}
+            workspaceId={workspaceId}
+            open={composerOpen}
+            mode={composerMode}
+            draft={draft}
+            workflows={workflows}
+            statesById={statesById}
+            agents={agents}
+            accessibleTeamIds={accessibleTeamIds}
+            canSeeAllAgents={permissions.isAdmin}
+            tasks={tasks}
+            epics={epics}
+            repositories={repositories}
+            timezone={scheduleTimezone}
+            saving={saving}
+            canEdit={permissions.canAdminAutomations}
+            onOpenChange={(open) => { if (!open) cancelFlowEdit(); }}
+            onBack={composerMode === 'create' ? () => leaveComposer(backToGallery) : undefined}
+            onDraftChange={setDraft}
+            onSave={handleSave}
+          /> : <FlowDetails
+            rule={selectedRule}
+            workspaceId={workspaceId}
+            workspaceSlug={workspaceSlug}
+            workspaceName={workspace?.name}
+            statesById={statesById}
+            agentNames={agentNames}
+            healthItem={selectedRule ? flowHealth.get(selectedRule.id) : undefined}
+            timezone={scheduleTimezone}
+            canEdit={permissions.canAdminAutomations}
+            canRunNowAction={permissions.canEdit}
+            runningNow={runningFlowId === selectedRule?.id}
+            onEdit={openEditComposer}
+            onToggle={handleToggle}
+            onRunNow={handleRunNow}
+            onDelete={openDeleteFlow}
+          />}
+        </DialogContent>
+      </Dialog>
+      <AlertDialog open={!!discardAction} onOpenChange={(open) => { if (!open) setDiscardAction(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
+            <AlertDialogDescription>Your changes to this flow haven’t been saved.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep editing</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { discardAction?.(); setDiscardAction(null); }}>Discard changes</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AutomationShell
         title="Flows"
