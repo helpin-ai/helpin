@@ -21,7 +21,6 @@ export function HeroMatchup({ name, glance }: Props) {
           <img className="cmp-mark" src="/brand/helpin-icon-white.svg" width={18} height={18} alt="" />
           <strong>Helpin</strong>
           <em>vs</em>
-          <span className="cmp-monogram" aria-hidden="true">{name.charAt(0)}</span>
           <strong>{name}</strong>
         </span>
         <button type="button" aria-label={`${paused ? 'Play' : 'Pause'} comparison animation`} aria-pressed={paused} onClick={() => setPaused(!paused)}>

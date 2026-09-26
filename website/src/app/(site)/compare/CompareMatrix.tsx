@@ -65,7 +65,6 @@ export function CompareMatrix({ tools }: { tools: Tool[] }) {
             </th>
             {tools.map((tool, index) => (
               <th key={tool.slug} scope="col" hidden={!shown(index)}>
-                <span className="cmp-monogram" aria-hidden="true">{tool.name.charAt(0)}</span>
                 <strong>{tool.name}</strong>
                 <Link className="btn btn-secondary" href={`/compare/${tool.slug}`}><span className="cmp-mx-long">Full comparison</span><span className="cmp-mx-short" aria-hidden="true">Compare</span><ArrowRight size={13} aria-hidden="true" /></Link>
               </th>
