@@ -24,6 +24,9 @@ import (
 
 var ErrPortalAuthInvalid = errors.New("invalid portal authentication")
 
+var ErrPortalIntakeDisabled = errors.New("portal intake is disabled")
+var ErrPortalRequestInvalid = errors.New("subject and description are required")
+
 type PortalAuthService struct {
 	repo    *repository.PortalAuthRepository
 	inbox   *SupportInboxService
@@ -72,7 +75,36 @@ func (s *PortalAuthService) Configuration(ctx context.Context, workspaceID strin
 	if !s.enabled(ctx, workspaceID) {
 		return nil, ErrPortalAuthInvalid
 	}
-	return map[string]any{"enabled": true, "requests_only": true, "intake_enabled": false, "branding": map[string]string{"name": "Support portal"}}, nil
+	_, settings, err := s.inbox.GetInstallation(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if settings == nil {
+		return nil, ErrPortalAuthInvalid
+	}
+	return map[string]any{"enabled": true, "requests_only": settings.PortalRequestsOnly, "intake_enabled": settings.PortalIntakeEnabled, "branding": map[string]string{"name": "Support portal"}}, nil
+}
+
+func (s *PortalAuthService) CreateRequest(ctx context.Context, workspaceID string, identity *model.SupportPortalIdentity, subject, description string) (*model.SupportPortalRequest, error) {
+	if identity == nil || identity.WorkspaceID != workspaceID {
+		return nil, ErrPortalAuthInvalid
+	}
+	_, settings, err := s.inbox.GetInstallation(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if settings == nil || !settings.PortalEnabled || !settings.PortalIntakeEnabled {
+		return nil, ErrPortalIntakeDisabled
+	}
+	subject, description = strings.TrimSpace(subject), strings.TrimSpace(description)
+	if subject == "" || description == "" || len([]rune(subject)) > 200 {
+		return nil, ErrPortalRequestInvalid
+	}
+	reference, err := newPortalReference()
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.CreateRequest(ctx, workspaceID, identity, subject, description, reference)
 }
 
 func (s *PortalAuthService) Requests(ctx context.Context, workspaceID, identityID, status string) ([]model.SupportPortalRequest, error) {

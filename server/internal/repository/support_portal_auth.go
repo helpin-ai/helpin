@@ -15,6 +15,42 @@ type PortalAuthRepository struct{ db *gorm.DB }
 
 func NewPortalAuthRepository(db *gorm.DB) *PortalAuthRepository { return &PortalAuthRepository{db: db} }
 
+// CreateRequest commits the inbox conversation, customer message and portal reference together.
+func (r *PortalAuthRepository) CreateRequest(ctx context.Context, workspaceID string, identity *model.SupportPortalIdentity, subject, description, reference string) (*model.SupportPortalRequest, error) {
+	conversation := &model.SupportConversation{
+		ID: uuid.NewString(), WorkspaceID: workspaceID, Subject: subject,
+		Status: "open", Priority: "medium", Channel: "portal", Source: "portal",
+		CustomerName: identity.DisplayName, CustomerEmail: &identity.Email, PortalVisible: true,
+	}
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		conversationRepo := NewSupportConversationRepository(tx)
+		if err := conversationRepo.Create(ctx, conversation); err != nil {
+			return err
+		}
+		message := &model.SupportMessage{
+			ID: uuid.NewString(), WorkspaceID: workspaceID, ConversationID: conversation.ID,
+			SenderType: "customer", SenderDisplayName: identity.DisplayName,
+			MessageType: "reply", Content: description,
+		}
+		if err := tx.Create(message).Error; err != nil {
+			return err
+		}
+		conversation.LastPublicMessageAt = &message.CreatedAt
+		conversation.LastPublicMessageID = &message.ID
+		if err := tx.Model(conversation).Updates(map[string]any{"last_public_message_at": message.CreatedAt, "last_public_message_id": message.ID}).Error; err != nil {
+			return err
+		}
+		return tx.Create(&model.SupportPortalRequestReference{
+			ID: uuid.NewString(), WorkspaceID: workspaceID, ConversationID: conversation.ID,
+			PortalIdentityID: identity.ID, Reference: reference,
+		}).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &model.SupportPortalRequest{Reference: reference, Subject: subject, Status: "active", CreatedAt: conversation.CreatedAt, UpdatedAt: conversation.UpdatedAt, LastActivityAt: conversation.LastPublicMessageAt}, nil
+}
+
 func (r *PortalAuthRepository) WorkspaceBySlug(ctx context.Context, slug string) (*model.Workspace, error) {
 	var ws model.Workspace
 	if err := r.db.WithContext(ctx).Where("slug = ?", slug).First(&ws).Error; err != nil {
