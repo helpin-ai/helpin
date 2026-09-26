@@ -18,6 +18,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -104,7 +105,31 @@ func (s *PortalAuthService) CreateRequest(ctx context.Context, workspaceID strin
 	if err != nil {
 		return nil, err
 	}
-	return s.repo.CreateRequest(ctx, workspaceID, identity, subject, description, reference)
+	mailboxID, mailbox, err := s.inbox.maybeApplyMailboxRoutingForChannel(ctx, workspaceID, nil, true, "portal")
+	if err != nil {
+		return nil, err
+	}
+	ownerID, flowState, err := s.inbox.determineMailboxOwner(ctx, workspaceID, mailbox, nil)
+	if err != nil {
+		return nil, err
+	}
+	var contactID *string
+	if s.inbox.contactRepo != nil {
+		contactID = s.inbox.matchOrCreateCRMContact(ctx, workspaceID, &identity.Email, identity.DisplayName)
+	}
+	conversation, request, err := s.repo.CreateRequest(ctx, workspaceID, identity, subject, description, reference, mailboxID, ownerID, contactID, &flowState)
+	if err != nil {
+		return nil, err
+	}
+	s.inbox.wsPublisher.Publish(websocket.Event{
+		Action: "created", Entity: "support_conversation", EntityID: conversation.ID, WorkspaceID: workspaceID,
+	})
+	if s.inbox.triageService != nil {
+		if err := s.inbox.triageService.HydrateConversation(ctx, conversation); err != nil {
+			slog.ErrorContext(ctx, "hydrate portal conversation triage", "error", err, "workspace_id", workspaceID, "conversation_id", conversation.ID)
+		}
+	}
+	return request, nil
 }
 
 func (s *PortalAuthService) Requests(ctx context.Context, workspaceID, identityID, status string) ([]model.SupportPortalRequest, error) {
