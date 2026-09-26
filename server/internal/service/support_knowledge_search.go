@@ -238,7 +238,7 @@ func buildAISources(sourceDocIDs []string, searchResults []KnowledgeSearchResult
 
 	byDocID := map[string]KnowledgeSearchResult{}
 	for _, result := range searchResults {
-		if result.IsInternal {
+		if result.IsInternal || result.SourceType == "external_mcp" {
 			continue
 		}
 		current, ok := byDocID[result.ReferenceID]

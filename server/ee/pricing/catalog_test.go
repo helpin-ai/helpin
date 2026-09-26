@@ -44,6 +44,17 @@ func TestCatalogResolveCanonicalizesRecognizedAlias(t *testing.T) {
 	}
 }
 
+func TestCatalogPricesGPT6LunaOpenRouterRoute(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	route, err := catalog.Resolve("openrouter", "gpt-6-luna", "openai/gpt-6-luna", "standard")
+	if err != nil || route.Tier != TierSmall {
+		t.Fatalf("GPT-6 Luna pricing route = %+v, %v", route, err)
+	}
+}
+
 func TestCatalogResolvesAskMediaReaderRoute(t *testing.T) {
 	catalog, err := LoadCatalog()
 	if err != nil {
@@ -183,8 +194,8 @@ func TestPublicPricingUsesPercentageAllowanceDenominators(t *testing.T) {
 	}
 
 	pricing := catalog.PublicSnapshot()
-	if pricing.PricingVersion != "2026-09-23" {
-		t.Errorf("pricing version = %q, want 2026-09-23", pricing.PricingVersion)
+	if pricing.PricingVersion != "2026-09-26" {
+		t.Errorf("pricing version = %q, want 2026-09-26", pricing.PricingVersion)
 	}
 
 	wantAllowances := map[string]int64{

@@ -20,6 +20,10 @@ var (
 		Provider: "openrouter", Model: "openai/gpt-5.6-luna",
 		ServiceTier: defaultAICompletionServiceTier,
 	}
+	openRouterGreetingLunaRoute = AICompletionRoute{
+		Provider: "openrouter", Model: "openai/gpt-6-luna",
+		ServiceTier: defaultAICompletionServiceTier,
+	}
 	openRouterGeminiFlashRoute = AICompletionRoute{
 		Provider: "openrouter", Model: "google/gemini-3.7-flash",
 		ServiceTier: defaultAICompletionServiceTier,
@@ -113,7 +117,7 @@ func NewAICompletionRouteRegistry(crmConfig CRMCompletionRouteConfig) AICompleti
 		},
 		{
 			FeatureKey: BillingFeatureSupportAIReply, OperationKey: supportGreetingOperation,
-			Primary: openRouterLunaRoute, MaximumOutputTokens: 256,
+			Primary: openRouterGreetingLunaRoute, MaximumOutputTokens: 256,
 		},
 		{
 			FeatureKey: BillingFeatureSupportTaskDraft, Primary: glm53FlashExactoRoute,

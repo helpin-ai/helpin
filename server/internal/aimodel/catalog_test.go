@@ -19,6 +19,17 @@ func TestCustomModelNeedsNoPriceOrTier(t *testing.T) {
 	}
 }
 
+func TestCatalogResolvesGPT6LunaOpenRouterRoute(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	route, err := catalog.Resolve("openrouter", "gpt-6-luna", "openai/gpt-6-luna", "standard")
+	if err != nil || route.Tier != "small" {
+		t.Fatalf("GPT-6 Luna route = %+v, %v", route, err)
+	}
+}
+
 func TestResolveDefaultRejectsAmbiguousCanonicalModel(t *testing.T) {
 	catalog := &Catalog{
 		Models: []ModelDefinition{{Provider: "openrouter", CanonicalModel: "model", Aliases: []string{"model:fast", "model:other"}, Enabled: true}},

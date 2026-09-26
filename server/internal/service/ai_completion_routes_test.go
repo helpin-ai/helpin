@@ -62,6 +62,16 @@ func TestAICompletionRouteRegistryUsesLongOutputRoutesForDocsImport(t *testing.T
 	}
 }
 
+func TestGreetingUsesGPT6LunaWithProviderFailover(t *testing.T) {
+	policy, ok := DefaultAICompletionRouteRegistry().Policy(BillingFeatureSupportAIReply, supportGreetingOperation)
+	if !ok {
+		t.Fatal("greeting route missing")
+	}
+	if policy.Primary.Provider != "openrouter" || policy.Primary.Model != "openai/gpt-6-luna" || policy.Primary.OpenRouterProvider != "" || policy.Primary.ProviderOptions != "" {
+		t.Fatalf("greeting route = %+v", policy.Primary)
+	}
+}
+
 func TestAICompletionRouteRegistryKeepsMediaOnApprovedVisionRoute(t *testing.T) {
 	policy, ok := DefaultAICompletionRouteRegistry().Policy(BillingFeatureAskChat, AIUsageOperationMediaEnrichment)
 	if !ok {

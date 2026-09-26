@@ -34,6 +34,25 @@ func TestAISourcesExcludeInternalKnowledge(t *testing.T) {
 	}
 }
 
+func TestAISourcesExcludePrivateMCPResultsEvenIfMisclassified(t *testing.T) {
+	results := []KnowledgeSearchResult{{ID: "mcp-result", ReferenceID: "mcp-result", SourceType: "external_mcp", Title: "Customer logs", URL: "https://internal.example/logs", Content: "Private customer data"}}
+	if sources := buildAISources([]string{"mcp-result"}, results); len(sources) != 0 {
+		t.Fatalf("private MCP result became a visible source: %+v", sources)
+	}
+}
+
+func TestRegisteredPrivateMCPEvidenceCanValidateWithoutVisibleSource(t *testing.T) {
+	evidence := []KnowledgeSearchResult{{ID: "mcp-result", ReferenceID: "mcp-result", SourceType: "external_mcp", IsInternal: true, Title: "Customer logs", Content: "The customer's import failed on September 25 because its CSV contained duplicate headers."}}
+	contract := &AIResponseContract{Content: "Your import failed because the CSV has duplicate headers.", CanAnswer: true, Confidence: 0.95, SourceDocIDs: []string{"mcp-result"}, Claims: []AIResponseClaim{{Text: "The CSV has duplicate headers.", EvidenceIDs: []string{"mcp-result"}}}}
+	gate := evaluateSupportReplyGate(supportReplyGateInput{Kind: "answer", Contract: contract, Evidence: evidence, Threshold: 0.5, MCPAssessment: &supportMCPReplyAssessment{CustomerScoped: true, Supported: true, Safe: true, Confidence: .9}})
+	if !gate.OK {
+		t.Fatalf("registered private evidence was rejected: %+v", gate)
+	}
+	if sources := buildAISources(contract.SourceDocIDs, evidence); len(sources) != 0 {
+		t.Fatalf("private MCP evidence became a visible source: %+v", sources)
+	}
+}
+
 func TestHasEscalationMessageInHistoryDetectsSystemEvent(t *testing.T) {
 	history := []model.SupportMessage{
 		{SenderType: "customer", Content: "Can you help?"},

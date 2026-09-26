@@ -41,6 +41,14 @@ func TestPublicWidgetMessagePreservesVisitorFeaturesOnly(t *testing.T) {
 	}
 }
 
+func TestPublicWidgetMetadataDropsPrivateMCPSources(t *testing.T) {
+	raw := `{"ai_sources":[{"docId":"private","title":"Customer logs","url":"https://internal.example/logs","sourceType":"external_mcp"},{"docId":"public","title":"Help article","url":"https://example.com/help","sourceType":"content"}]}`
+	public := PublicWidgetMetadata(raw)
+	if strings.Contains(public, "Customer logs") || strings.Contains(public, "internal.example") || !strings.Contains(public, "Help article") {
+		t.Fatalf("incorrect visitor sources: %s", public)
+	}
+}
+
 func TestPublicWidgetMessagesRejectPrivateAndRoutingMessages(t *testing.T) {
 	assigned, unknown, delayed := SystemEventAssigned, "future_internal_event", SystemEventDelayedTeamReply
 	input := []SupportMessage{
