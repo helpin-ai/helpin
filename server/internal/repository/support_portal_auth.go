@@ -55,7 +55,7 @@ func (r *PortalAuthRepository) AssociateVerifiedEmail(tx *gorm.DB, workspaceID, 
 func (r *PortalAuthRepository) ListRequests(ctx context.Context, workspaceID, identityID, status string) ([]model.SupportPortalRequest, error) {
 	var requests []model.SupportPortalRequest
 	query := r.db.WithContext(ctx).Table("support_portal_request_references AS refs").
-		Select("refs.reference, conv.subject, conv.status, conv.created_at, conv.updated_at, conv.list_last_activity_at, conv.last_public_message_at, conv.resolved_at").
+		Select("refs.reference, conv.subject, conv.status, conv.created_at, conv.last_public_message_at, conv.resolved_at").
 		Joins("JOIN support_conversations AS conv ON conv.id = refs.conversation_id AND conv.workspace_id = refs.workspace_id").
 		Where("refs.workspace_id = ? AND refs.portal_identity_id = ? AND conv.portal_visible = true AND conv.status <> ? AND conv.channel <> ? AND conv.source <> ? AND conv.deleted_at IS NULL", workspaceID, identityID, model.SupportConversationStatusSpam, "internal", "internal")
 	switch status {
@@ -66,14 +66,12 @@ func (r *PortalAuthRepository) ListRequests(ctx context.Context, workspaceID, id
 	case model.SupportConversationStatusResolved:
 		query = query.Where("conv.status IN ?", []string{model.SupportConversationStatusResolved, "closed"})
 	}
-	err := query.Order("COALESCE(conv.list_last_activity_at, conv.last_public_message_at, conv.updated_at) DESC").Scan(&requests).Error
+	err := query.Order("COALESCE(conv.last_public_message_at, conv.created_at) DESC").Scan(&requests).Error
 	for i := range requests {
-		if requests[i].ListLastActivityAt != nil {
-			requests[i].LastActivityAt = requests[i].ListLastActivityAt
-		} else if requests[i].LastPublicMessageAt != nil {
+		if requests[i].LastPublicMessageAt != nil {
 			requests[i].LastActivityAt = requests[i].LastPublicMessageAt
 		} else {
-			requests[i].LastActivityAt = &requests[i].UpdatedAt
+			requests[i].LastActivityAt = &requests[i].CreatedAt
 		}
 		requests[i].Status = model.PortalRequestStatus(requests[i].Status)
 	}

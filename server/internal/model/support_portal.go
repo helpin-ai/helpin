@@ -72,7 +72,6 @@ type SupportPortalRequest struct {
 	UpdatedAt           time.Time  `json:"updated_at"`
 	LastActivityAt      *time.Time `json:"last_activity_at,omitempty"`
 	ResolvedAt          *time.Time `json:"resolved_at,omitempty"`
-	ListLastActivityAt  *time.Time `json:"-"`
 	LastPublicMessageAt *time.Time `json:"-"`
 }
 

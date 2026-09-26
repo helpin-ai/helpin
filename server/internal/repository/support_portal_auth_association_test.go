@@ -15,7 +15,7 @@ func TestPortalAuthAssociateVerifiedEmailScopedAndVisible(t *testing.T) {
 	}
 	for _, sql := range []string{
 		`CREATE TABLE crm_contacts (id TEXT PRIMARY KEY, workspace_id TEXT, email TEXT)`,
-		`CREATE TABLE support_conversations (id TEXT PRIMARY KEY, workspace_id TEXT, customer_email TEXT, crm_contact_id TEXT, portal_visible BOOLEAN, status TEXT, channel TEXT, source TEXT, deleted_at DATETIME, subject TEXT, created_at DATETIME, updated_at DATETIME, list_last_activity_at DATETIME, last_public_message_at DATETIME, resolved_at DATETIME)`,
+		`CREATE TABLE support_conversations (id TEXT PRIMARY KEY, workspace_id TEXT, customer_email TEXT, crm_contact_id TEXT, portal_visible BOOLEAN, status TEXT, channel TEXT, source TEXT, deleted_at DATETIME, subject TEXT, created_at DATETIME, updated_at DATETIME, last_public_message_at DATETIME, resolved_at DATETIME)`,
 		`CREATE TABLE support_portal_request_references (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT UNIQUE, portal_identity_id TEXT, reference TEXT UNIQUE, created_at DATETIME)`,
 		`INSERT INTO crm_contacts VALUES ('contact-a','workspace-a','alice@example.com')`,
 		`INSERT INTO support_conversations (id, workspace_id, customer_email, crm_contact_id, portal_visible, status, channel, source) VALUES
@@ -61,7 +61,7 @@ func TestPortalAuthAssociateVerifiedEmailScopedAndVisible(t *testing.T) {
 	if len(requests) != 1 {
 		t.Fatalf("hidden request exposed: %v", requests)
 	}
-	if err := db.Exec(`UPDATE support_conversations SET status = 'waiting_on_customer', list_last_activity_at = '2026-01-02 12:00:00' WHERE id = 'contact-match'`).Error; err != nil {
+	if err := db.Exec(`UPDATE support_conversations SET status = 'waiting_on_customer', created_at = '2026-01-01 12:00:00', updated_at = '2026-01-03 12:00:00', last_public_message_at = '2026-01-02 12:00:00' WHERE id = 'contact-match'`).Error; err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
@@ -77,11 +77,21 @@ func TestPortalAuthAssociateVerifiedEmailScopedAndVisible(t *testing.T) {
 		if tc.want == 1 && (items[0].Status != "waiting_on_customer" || items[0].LastActivityAt == nil || items[0].LastActivityAt.IsZero()) {
 			t.Fatalf("unsafe or missing projection: %+v", items[0])
 		}
+		if tc.want == 1 && items[0].LastActivityAt.Format("2006-01-02") != "2026-01-02" {
+			t.Fatalf("last activity should use public message, not internal update: %+v", items[0])
+		}
+	}
+	if err := db.Exec(`UPDATE support_conversations SET last_public_message_at = NULL WHERE id = 'contact-match'`).Error; err != nil {
+		t.Fatal(err)
+	}
+	items, err := repo.ListRequests(context.Background(), "workspace-a", "identity-a", "")
+	if err != nil || len(items) != 1 || items[0].LastActivityAt == nil || items[0].LastActivityAt.Format("2006-01-02") != "2026-01-01" {
+		t.Fatalf("last activity should fall back to creation, not internal update: %v %v", items, err)
 	}
 	if err := db.Exec(`UPDATE support_conversations SET status = 'resolved' WHERE id = 'contact-match'`).Error; err != nil {
 		t.Fatal(err)
 	}
-	items, err := repo.ListRequests(context.Background(), "workspace-a", "identity-a", "resolved")
+	items, err = repo.ListRequests(context.Background(), "workspace-a", "identity-a", "resolved")
 	if err != nil || len(items) != 1 || items[0].Status != "resolved" {
 		t.Fatalf("status refresh: %v %v", items, err)
 	}
