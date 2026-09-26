@@ -2392,7 +2392,7 @@ function FlowDetailDrawer({
               <SheetDescription className="sr-only">Details and actions for {rule.name}</SheetDescription>
             </SheetHeader>
 
-            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[22px] py-[22px]">
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[22px] pt-[22px] pb-16">
               <div className="space-y-[26px]">
                 <p className="text-pretty text-sm leading-relaxed text-muted-foreground">
                   {rule.description?.trim() || 'This flow connects a trigger to an automated action.'}
