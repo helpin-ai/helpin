@@ -1,7 +1,8 @@
 import Link from 'next/link';
+import { preload } from 'react-dom';
 import {
   ArrowRight, ArrowUpRight, Award, BarChart3, Blocks, BookOpenCheck, Bot, CalendarCheck, Check, ChevronRight, Cloud, Cpu, Feather,
-  GitBranch, GitPullRequest, Handshake, Import, Inbox, type LucideIcon, Megaphone, MessagesSquare, Minus, PenLine, PlayCircle, RefreshCw,
+  GitBranch, GitPullRequest, Handshake, Import, Inbox, type LucideIcon, Megaphone, MessagesSquare, Minus, PenLine, RefreshCw,
   Rocket, Scale, Server, ShieldCheck, Smartphone, Sprout, Users, Wallet, X, Zap,
 } from 'lucide-react';
 import { SITE_URL } from '@/lib/metadata';
@@ -15,7 +16,6 @@ import { CtaNote, CtaRow, DEMO_URL, FAQList, GITHUB_URL, SIGNUP_URL } from '../_
 import { ARTICLES, HELPIN_ARTICLE } from './article-data';
 import { cellStatus, COMPETITORS, competitorSeo, compareVideo, formatChecked, type Cell, type Competitor, type IconKey, type Status } from './compare-data';
 import { CompareFilm } from './CompareFilm';
-import { HeroMatchup } from './HeroMatchup';
 import { InViewOnce } from './InViewOnce';
 import { LazyPreview } from './LazyPreview';
 import { PriceCalculator } from './PriceCalculator';
@@ -160,6 +160,8 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
   const seo = competitorSeo(competitor);
   const support = competitor.group === 'Customer support';
   const video = compareVideo(competitor);
+  // The poster is the hero's largest image, so fetch it early.
+  preload(video.poster, { as: 'image', fetchPriority: 'high' });
   const toc = [
     { id: 'overview', label: 'At a glance' },
     { id: 'why-switch', label: 'Why teams switch' },
@@ -213,15 +215,13 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
                 <CtaRow primaryLabel="Start free trial" primaryHref={SIGNUP_URL} secondaryHref={DEMO_URL} secondaryLabel="Talk to us about switching" />
                 <CtaNote trial support />
                 <div className="platform-hero-points">
-                  <a href="#video"><PlayCircle size={14} aria-hidden="true" />Watch in {video.seconds} seconds</a>
                   <span><GitBranch size={14} aria-hidden="true" />Open source · Cloud or self-hosted</span>
                   <span><PenLine size={14} aria-hidden="true" />By the Helpin team</span>
                   <span><CalendarCheck size={14} aria-hidden="true" />Verified {checked}</span>
                 </div>
               </div>
-              <HeroMatchup name={name} glance={competitor.glance} />
+              <CompareFilm id="video" name={name} video={video} />
             </div>
-            <CompareFilm id="video" name={name} video={video} />
           </div>
         </section>
 
