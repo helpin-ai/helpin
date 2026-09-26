@@ -26,6 +26,7 @@ import {
 } from '@/hooks/queries/useSupport';
 import type { SupportSystemTag, SupportTag } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
+import { getSupportTagStyle, hexToRgb, normalizeHexColor, tintBg, tintBorder } from './supportTagColorStyle';
 
 export const SUPPORT_SYSTEM_TAGS: Record<SupportSystemTag, { name: string; color: string }> = {
   ai_handoff: { name: 'AI handoff', color: '#e58c3a' },
@@ -45,33 +46,6 @@ const AUTO_TAG_COLORS = [
   '#788596',
 ];
 
-function tintBg(hex: string | null | undefined) {
-  if (!hex) return undefined;
-  const color = hex.startsWith('#') ? hex : `#${hex}`;
-  return `${color}1f`;
-}
-
-function tintBorder(hex: string | null | undefined) {
-  if (!hex) return undefined;
-  const color = hex.startsWith('#') ? hex : `#${hex}`;
-  return `${color}40`;
-}
-
-function normalizeHexColor(color: string | null | undefined) {
-  if (!color) return null;
-  return color.startsWith('#') ? color : `#${color}`;
-}
-
-function hexToRgb(color: string) {
-  const normalized = normalizeHexColor(color);
-  if (!normalized || !/^#[0-9a-fA-F]{6}$/.test(normalized)) return null;
-  return {
-    r: parseInt(normalized.slice(1, 3), 16),
-    g: parseInt(normalized.slice(3, 5), 16),
-    b: parseInt(normalized.slice(5, 7), 16),
-  };
-}
-
 function colorDistance(a: string, b: string) {
   const left = hexToRgb(a);
   const right = hexToRgb(b);
@@ -80,23 +54,6 @@ function colorDistance(a: string, b: string) {
   const dg = left.g - right.g;
   const db = left.b - right.b;
   return Math.sqrt((dr * dr) + (dg * dg) + (db * db));
-}
-
-function rgbToHex({ r, g, b }: { r: number; g: number; b: number }) {
-  const clamp = (value: number) => Math.max(0, Math.min(255, Math.round(value)));
-  return `#${clamp(r).toString(16).padStart(2, '0')}${clamp(g).toString(16).padStart(2, '0')}${clamp(b).toString(16).padStart(2, '0')}`;
-}
-
-function tagTextColor(color: string | null | undefined) {
-  const normalized = normalizeHexColor(color);
-  if (!normalized) return undefined;
-  const rgb = hexToRgb(normalized);
-  if (!rgb) return normalized;
-  const luminance = ((0.2126 * rgb.r) + (0.7152 * rgb.g) + (0.0722 * rgb.b)) / 255;
-  if (luminance > 0.58) {
-    return rgbToHex({ r: rgb.r * 0.55, g: rgb.g * 0.55, b: rgb.b * 0.55 });
-  }
-  return rgbToHex({ r: rgb.r * 0.82, g: rgb.g * 0.82, b: rgb.b * 0.82 });
 }
 
 function automaticTagColor(name: string, existingColors: Array<string | null | undefined>) {
@@ -134,18 +91,13 @@ export function SupportTagBadge({
   showDot?: boolean;
 }) {
   const tagColor = normalizeHexColor(color);
-  const textColor = tagTextColor(color);
   return (
     <span
       className={cn(
         'inline-flex h-5 max-w-full min-w-0 items-center gap-1 rounded-sm border-[0.5px] px-2 text-[11px] font-medium',
         className,
       )}
-      style={{
-        backgroundColor: tintBg(color) ?? 'var(--muted)',
-        borderColor: tintBorder(color) ?? 'var(--border)',
-        color: textColor ?? 'var(--foreground)',
-      }}
+      style={getSupportTagStyle(color)}
     >
       {showDot && (
         <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: tagColor ?? 'var(--muted-foreground)' }} />

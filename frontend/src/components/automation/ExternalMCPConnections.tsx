@@ -1,16 +1,18 @@
 import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
 import { ExternalMCPConnectDialog } from '@/components/automation/ExternalMCPConnectDialog';
+import { ExternalMCPAgentAccessDrawer } from '@/components/automation/ExternalMCPAgentAccessDrawer';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useConfirm } from '@/components/ui/confirm-dialog';
-import { LINEAR_CARD_CLASS } from '@/components/settings/settingsConstants';
+import { useAgents } from '@/hooks/queries/useAgents';
+import { assignedServerTools } from '@/lib/externalMCPAgentAccess';
 import {
   useDeleteExternalMCPServer,
   useExternalMCPProviders,
@@ -29,15 +31,20 @@ import {
   Globe02Icon,
   Key01Icon,
   Loading01Icon,
+  MoreHorizontalIcon,
   PlusSignIcon,
   Shield01Icon,
+  UserGroupIcon,
 } from '@/lib/icons';
 import { cn } from '@/lib/utils';
+import type { Agent } from '@/lib/pmTypes';
 
 type ExternalMCPConnectionsProps = {
   workspaceId: string;
-  workspaceName: string;
+  workspaceSlug: string;
   canManageSettings: boolean;
+  canEditCustomAgents: boolean;
+  canEditPresetAgents: boolean;
   createOpen: boolean;
   onCreateOpenChange: (open: boolean) => void;
 };
@@ -54,15 +61,21 @@ const STATUS_COPY: Record<ExternalMCPServer['status'], { label: string; classNam
 
 export function ExternalMCPConnections({
   workspaceId,
-  workspaceName,
+  workspaceSlug,
   canManageSettings,
+  canEditCustomAgents,
+  canEditPresetAgents,
   createOpen,
   onCreateOpenChange,
 }: ExternalMCPConnectionsProps) {
   const providersQuery = useExternalMCPProviders(workspaceId);
   const enabled = providersQuery.data?.enabled === true;
   const serversQuery = useExternalMCPServers(workspaceId, enabled);
+  const agentsQuery = useAgents(workspaceId);
   const servers = serversQuery.data ?? [];
+  const agents = agentsQuery.data ?? [];
+  const [accessServerId, setAccessServerId] = useState<string | null>(null);
+  const accessServer = servers.find((server) => server.id === accessServerId);
   const resolveServer = useCallback(async (serverId: string) => {
     const result = await serversQuery.refetch();
     return result.data?.find((server) => server.id === serverId);
@@ -125,33 +138,38 @@ export function ExternalMCPConnections({
         </div>
       ) : null}
       {!serversQuery.isLoading && !serversQuery.isError && servers.length > 0 ? (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(260px,0.8fr)]">
-          <div className="min-w-0 space-y-3">
+        <div className="max-w-4xl space-y-3">
+          <p className="px-1 text-xs text-muted-foreground">A tool is available to an agent only when the server and tool are enabled and the agent has access.</p>
+          <div className="space-y-3">
             {servers.map((server) => (
               <ExternalMCPServerCard
                 key={server.id}
                 workspaceId={workspaceId}
                 server={server}
                 canManageSettings={canManageSettings}
+                agents={agents}
+                agentsLoading={agentsQuery.isLoading}
+                agentsError={agentsQuery.isError}
+                onOpenAgentAccess={() => setAccessServerId(server.id)}
               />
             ))}
           </div>
-
-          <Card className={`${LINEAR_CARD_CLASS} self-start`}>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base"><Shield01Icon className="h-4 w-4 text-muted-foreground" />Per-run security</CardTitle>
-              <CardDescription>Helpin keeps durable credentials. Agent Runtime gets only the exact selected tools and the current credential for one run.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <SecurityRow label="Workspace isolation" value={workspaceName || 'Current workspace'} />
-              <SecurityRow label="Tool policy" value="Explicit allowlist" />
-              <SecurityRow label="Write actions" value="Approval-aware" />
-              <SecurityRow label="Expired OAuth" value="Pauses and reconnects" />
-              <p className="border-t pt-3 text-xs leading-relaxed text-muted-foreground">Normal access-token expiry refreshes silently. You are notified only when consent is revoked or the refresh credential no longer works.</p>
-            </CardContent>
-          </Card>
         </div>
       ) : null}
+
+      {accessServer ? <ExternalMCPAgentAccessDrawer
+        open={Boolean(accessServerId)}
+        onOpenChange={(open) => { if (!open) setAccessServerId(null); }}
+        server={accessServer}
+        workspaceId={workspaceId}
+        workspaceSlug={workspaceSlug}
+        agents={agents}
+        agentsLoading={agentsQuery.isLoading}
+        agentsError={agentsQuery.isError}
+        canManageSettings={canManageSettings}
+        canEditCustomAgents={canEditCustomAgents}
+        canEditPresetAgents={canEditPresetAgents}
+      /> : null}
 
       {canManageSettings && createOpen ? (
         <ExternalMCPConnectDialog
@@ -179,10 +197,18 @@ function ExternalMCPServerCard({
   workspaceId,
   server,
   canManageSettings,
+  agents,
+  agentsLoading,
+  agentsError,
+  onOpenAgentAccess,
 }: {
   workspaceId: string;
   server: ExternalMCPServer;
   canManageSettings: boolean;
+  agents: Agent[];
+  agentsLoading: boolean;
+  agentsError: boolean;
+  onOpenAgentAccess: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const updateServer = useUpdateExternalMCPServer(workspaceId);
@@ -191,6 +217,7 @@ function ExternalMCPServerCard({
   const oauth = useStartExternalMCPOAuth(workspaceId);
   const confirm = useConfirm();
   const tools = server.tools ?? [];
+  const assignedAgents = agents.filter((agent) => assignedServerTools(agent.allowed_tools ?? [], server).length > 0).length;
   const status = STATUS_COPY[server.status];
   const needsOAuth = server.auth_type === 'oauth' && ['pending_oauth', 'reauthorization_required', 'insufficient_scope'].includes(server.status);
 
@@ -208,6 +235,13 @@ function ExternalMCPServerCard({
       toast.success('Tools refreshed');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not refresh tools');
+    }
+  };
+  const toggleServer = async (enabled: boolean) => {
+    try {
+      await updateServer.mutateAsync({ serverId: server.id, request: { enabled } });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not update server');
     }
   };
   const remove = async () => {
@@ -240,10 +274,6 @@ function ExternalMCPServerCard({
           </div>
           <p className="mt-1 truncate text-xs text-muted-foreground">{safeEndpointLabel(server.endpoint_url)} · {tools.filter((tool) => tool.enabled).length}/{tools.length} tools enabled</p>
           {server.last_error_message ? <p className="mt-2 text-xs text-destructive">{server.last_error_message}</p> : null}
-          <div className="mt-3 flex flex-wrap gap-2">
-            {canManageSettings && needsOAuth ? <Button size="sm" onClick={() => void connect()} disabled={oauth.isPending}>{oauth.isPending ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Key01Icon className="mr-1.5 h-3.5 w-3.5" />}{server.status === 'pending_oauth' ? 'Connect' : 'Reconnect'}</Button> : null}
-            {tools.length > 0 ? <Button size="sm" variant="ghost" onClick={() => setExpanded((value) => !value)}>{expanded ? 'Hide tools' : canManageSettings ? 'Manage tools' : 'View tools'}<ArrowDown01Icon className={cn('ml-1.5 h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')} /></Button> : null}
-          </div>
         </div>
         {canManageSettings ? (
           <div className="flex shrink-0 items-center gap-3 self-start sm:flex-col sm:items-end sm:gap-1.5">
@@ -253,22 +283,26 @@ function ExternalMCPServerCard({
                 checked={server.enabled}
                 aria-label={`${server.enabled ? 'Disable' : 'Enable'} ${server.name}`}
                 disabled={updateServer.isPending}
-                onCheckedChange={(enabled) => updateServer.mutate({ serverId: server.id, request: { enabled } })}
+                onCheckedChange={(enabled) => void toggleServer(enabled)}
               />
-            </div>
-            <div className="flex items-center gap-0.5">
-              {server.status === 'connected' ? (
-                <Button size="icon-sm" variant="ghost" title={`Refresh tools for ${server.name}`} onClick={() => void sync()} disabled={refresh.isPending}>
-                  <ArrowReloadHorizontalIcon className={cn('h-4 w-4', refresh.isPending && 'animate-spin')} />
-                  <span className="sr-only">Refresh tools for {server.name}</span>
-                </Button>
-              ) : null}
-              <Button size="icon-sm" variant="ghost" title={`Remove ${server.name}`} onClick={() => void remove()} disabled={deleteServer.isPending}>
-                <Delete01Icon className="h-4 w-4" /><span className="sr-only">Remove {server.name}</span>
-              </Button>
             </div>
           </div>
         ) : null}
+      </div>
+      <div className="flex flex-wrap items-center gap-1 border-t border-border/70 px-3 py-2">
+        {canManageSettings && needsOAuth ? <Button size="sm" onClick={() => void connect()} disabled={oauth.isPending}>{oauth.isPending ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Key01Icon className="mr-1.5 h-3.5 w-3.5" />}{server.status === 'pending_oauth' ? 'Connect' : 'Reconnect'}</Button> : null}
+        <Button size="sm" variant="ghost" onClick={onOpenAgentAccess}>
+          <UserGroupIcon className="mr-1.5 h-4 w-4" />Agent access <span className="ml-1 text-muted-foreground">{agentsLoading ? '…' : agentsError ? '—' : assignedAgents}</span>
+        </Button>
+        {tools.length > 0 ? <Button size="sm" variant="ghost" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>{expanded ? 'Hide tools' : 'Show tools'}<ArrowDown01Icon className={cn('ml-1.5 h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')} /></Button> : null}
+        {canManageSettings && server.status === 'connected' && tools.length === 0 ? <Button size="sm" variant="ghost" disabled={refresh.isPending} onClick={() => void sync()}><ArrowReloadHorizontalIcon className="mr-1.5 h-4 w-4" />Refresh tools</Button> : null}
+        {canManageSettings ? <DropdownMenu>
+          <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" className="ml-auto" aria-label={`More actions for ${server.name}`}><MoreHorizontalIcon className="h-4 w-4" /></Button></DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {server.status === 'connected' ? <DropdownMenuItem disabled={refresh.isPending} onSelect={() => void sync()}><ArrowReloadHorizontalIcon className="h-4 w-4" />Refresh tools</DropdownMenuItem> : null}
+            <DropdownMenuItem variant="destructive" disabled={deleteServer.isPending} onSelect={() => void remove()}><Delete01Icon className="h-4 w-4" />Remove server</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu> : null}
       </div>
       {expanded ? <ExternalMCPToolPolicies workspaceId={workspaceId} server={server} tools={tools} canManageSettings={canManageSettings} /> : null}
     </section>
@@ -301,7 +335,7 @@ function ExternalMCPToolPolicies({
   return (
     <div className="min-w-0 max-w-full overflow-hidden border-t bg-muted/15 px-4 py-3">
       <div className="mb-2 flex items-center justify-between gap-3">
-        <div><p className="text-sm font-medium">Agent tools</p><p className="text-xs text-muted-foreground">Enabled tools appear under External MCP in the agent editor.</p></div>
+        <div><p className="text-sm font-medium">Workspace tools</p><p className="text-xs text-muted-foreground">Enable tools here, then assign them through Agent access.</p></div>
         <Badge variant="outline">{tools.length} discovered</Badge>
       </div>
       <Table className="table-fixed">
@@ -350,10 +384,6 @@ function ExternalMCPToolPolicies({
       </Table>
     </div>
   );
-}
-
-function SecurityRow({ label, value }: { label: string; value: string }) {
-  return <div className="flex items-center justify-between gap-4"><span className="text-muted-foreground">{label}</span><span className="text-right font-medium">{value}</span></div>;
 }
 
 function safeEndpointLabel(value: string) {

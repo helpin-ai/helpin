@@ -64,6 +64,89 @@ func TestLatestDigestCutoff(t *testing.T) {
 	}
 }
 
+func TestRenderDigestEmailLinksToNotificationPages(t *testing.T) {
+	db := newNotificationDigestTestDB(t)
+	if err := db.Exec(`CREATE TABLE workspaces (id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, workspace := range [][3]string{{"ws-1", "Acme", "acme"}, {"ws-2", "Beta", "beta"}} {
+		if err := db.Exec(`INSERT INTO workspaces (id, name, slug) VALUES (?, ?, ?)`, workspace[0], workspace[1], workspace[2]).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc := NewNotificationService(nil, nil, nil, nil, nil, repository.NewWorkspaceRepository(db), nil, nil, "https://app.helpin.ai")
+	items := []digestNotificationItem{
+		{WorkspaceID: "ws-1", Title: "Task updated", EventCount: 1},
+		{WorkspaceID: "ws-2", Title: "Conversation replied", EventCount: 1},
+	}
+	_, htmlBody, textBody := svc.renderDigestEmail(context.Background(), items)
+	for _, link := range []string{
+		"https://app.helpin.ai/w/acme/notifications",
+		"https://app.helpin.ai/w/beta/notifications",
+	} {
+		if !strings.Contains(htmlBody, `href="`+link+`"`) || !strings.Contains(textBody, link) {
+			t.Fatalf("digest missing workspace notification link %q", link)
+		}
+	}
+	if strings.Contains(htmlBody, `href="https://app.helpin.ai/w/acme"`) {
+		t.Fatal("digest links to workspace home instead of notifications")
+	}
+	_, singleHTML, singleText := svc.renderDigestEmail(context.Background(), items[:1])
+	if !strings.Contains(singleHTML, `href="https://app.helpin.ai/w/acme/notifications"`) ||
+		!strings.Contains(singleHTML, "View All Notifications") ||
+		!strings.Contains(singleText, "View all notifications: https://app.helpin.ai/w/acme/notifications") {
+		t.Fatal("single-workspace digest CTA does not open notifications")
+	}
+
+	_, immediateHTML, immediateText := svc.renderImmediateEmail(context.Background(), model.NotificationEventInput{
+		WorkspaceID: "ws-1", EntityType: "support_conversation", EntityID: "conv-1", Title: "Customer replied",
+	})
+	conversationURL := "https://app.helpin.ai/w/acme/support/conv-1"
+	if !strings.Contains(immediateHTML, `href="`+conversationURL+`"`) || !strings.Contains(immediateText, "View in Helpin: "+conversationURL) {
+		t.Fatal("immediate notification does not open the conversation")
+	}
+}
+
+func TestDigestEntriesShowPreviewAndOpenEachItem(t *testing.T) {
+	db := newNotificationDigestTestDB(t)
+	if err := db.Exec(`CREATE TABLE workspaces (id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO workspaces (id, name, slug) VALUES ('ws', 'Acme', 'acme')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	svc := NewNotificationService(nil, nil, nil, nil, nil, repository.NewWorkspaceRepository(db), nil, nil, "https://app.helpin.ai")
+	items := []digestNotificationItem{{WorkspaceID: "ws", Title: "Mentioned you in the roadmap", Body: "Please review the Q4 goals", EntityType: "epic", EntityID: "epic-1", EventCount: 1}}
+	_, htmlBody, textBody := svc.renderDigestEmail(context.Background(), items)
+	link := "https://app.helpin.ai/w/acme/pm/epics/epic-1"
+	if !strings.Contains(htmlBody, `href="`+link+`"`) || !strings.Contains(textBody, link) {
+		t.Fatal("digest item does not link to its epic")
+	}
+	if !strings.Contains(htmlBody, "Please review the Q4 goals") || !strings.Contains(textBody, "Please review the Q4 goals") {
+		t.Fatal("digest item missing preview")
+	}
+}
+
+func TestBuildDigestItemsKeepsItemContext(t *testing.T) {
+	now := time.Now()
+	items, _, _ := buildDigestItems([]repository.PendingDigestDelivery{{DeliveryID: "delivery", NotificationID: "notification", WorkspaceID: "ws", NotificationStatus: "unread", EventTitle: "Mentioned you", EventMetadata: model.JSONB{"digest_preview": "Please review"}, EntityType: "epic", EntityID: "epic-1", CreatedAt: now}}, now)
+	if len(items) != 1 || items[0].Body != "Please review" || items[0].EntityType != "epic" || items[0].EntityID != "epic-1" {
+		t.Fatalf("digest item context = %+v", items)
+	}
+}
+
+func TestBuildDigestItemsDoesNotReuseOlderPreview(t *testing.T) {
+	now := time.Now()
+	deliveries := []repository.PendingDigestDelivery{
+		{DeliveryID: "old", NotificationID: "notification", WorkspaceID: "ws", NotificationStatus: "unread", EventTitle: "Commented on Roadmap", EventMetadata: model.JSONB{"digest_preview": "Old private detail"}, EntityType: "epic", EntityID: "epic-1", CreatedAt: now},
+		{DeliveryID: "new", NotificationID: "notification", WorkspaceID: "ws", NotificationStatus: "unread", EventTitle: "Roadmap updated", EntityType: "epic", EntityID: "epic-1", CreatedAt: now.Add(time.Minute)},
+	}
+	items, _, _ := buildDigestItems(deliveries, now.Add(time.Hour))
+	if len(items) != 1 || items[0].Title != "Roadmap updated" || items[0].Body != "" {
+		t.Fatalf("digest reused old preview: %+v", items)
+	}
+}
+
 func TestProcessPendingDigests_SendsDueDigestAndSkipsResolvedNotifications(t *testing.T) {
 	db := newNotificationDigestTestDB(t)
 	ctx := context.Background()

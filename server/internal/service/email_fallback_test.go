@@ -4181,6 +4181,27 @@ func TestInboundPayloadProjectionSeparatesQuotedHistory(t *testing.T) {
 	}
 }
 
+func TestSupportEmailNotificationPreviewPrefersFreshProviderReply(t *testing.T) {
+	payload := model.PostmarkInboundPayload{
+		HtmlBody:          `<p>This worked - thanks!</p><table><tr><td>Old quoted reply</td></tr></table>`,
+		StrippedTextReply: "This worked - thanks!",
+	}
+	projection := inboundPayloadProjection(payload)
+	if got := supportEmailNotificationPreview(payload, projection); got != "This worked - thanks!" {
+		t.Fatalf("notification preview = %q, want fresh reply only", got)
+	}
+}
+
+func TestSupportEmailNotificationPreviewOmitsAmbiguousHistory(t *testing.T) {
+	payload := model.PostmarkInboundPayload{
+		HtmlBody: `<p>This worked - thanks!</p><table><tr><td>Old quoted reply</td></tr></table>`,
+	}
+	projection := inboundPayloadProjection(payload)
+	if got := supportEmailNotificationPreview(payload, projection); got != "" {
+		t.Fatalf("notification preview = %q, want no ambiguous excerpt", got)
+	}
+}
+
 func TestIsEmailFallbackTerminalStatus(t *testing.T) {
 	if !isEmailFallbackTerminalStatus("closed") {
 		t.Fatal("legacy closed alias should still be terminal")

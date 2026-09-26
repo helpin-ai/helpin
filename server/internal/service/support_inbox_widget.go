@@ -753,7 +753,7 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 				})
 			}
 		}
-		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, s.pushSenderService, conv, msg.Content, displayName)
+		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, s.pushSenderService, conv, msg.Content, displayName, msg.ID)
 	}
 
 	go s.runWidgetPostMessageAutomation(context.WithoutCancel(ctx), session.WorkspaceID, *session.ConversationID, msg.ID, msg.Content)

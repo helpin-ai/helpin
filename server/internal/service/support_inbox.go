@@ -2245,7 +2245,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 
 	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType == "customer" {
 		senderName := derefString(msg.SenderDisplayName)
-		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, s.pushSenderService, conv, msg.Content, senderName)
+		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, s.pushSenderService, conv, msg.Content, senderName, msg.ID)
 		if conv.Status == model.SupportConversationStatusWaitingOnCustomer || conv.Status == model.SupportConversationStatusResolved {
 			conv.Status = model.SupportConversationStatusOpen
 			if conv.HumanTakeover != nil && *conv.HumanTakeover {

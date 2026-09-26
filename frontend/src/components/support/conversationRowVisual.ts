@@ -1,7 +1,8 @@
 import type { CSSProperties } from 'react';
+import { getSupportTagStyle } from './supportTagColorStyle';
 
 /**
- * Pure, dependency-free visual helpers for a support conversation row.
+ * Pure visual helpers for a support conversation row.
  *
  * Extracted from ConversationRow.tsx so the SAME rules can be reused by other
  * surfaces (e.g. the mobile app's conversation cell) without pulling in
@@ -71,29 +72,6 @@ export function getVisibleSupportTagCount(tagWidths: number[], availableWidth: n
   return visibleCount > 0 ? visibleCount : 1;
 }
 
-function parseHexColor(color: string | null | undefined) {
-  const normalized = color?.trim();
-  if (!normalized) return null;
-  const shortMatch = normalized.match(/^#([0-9a-f]{3})$/i);
-  const longMatch = normalized.match(/^#([0-9a-f]{6})$/i);
-  const hex = shortMatch
-    ? shortMatch[1].split('').map((char) => `${char}${char}`).join('')
-    : longMatch?.[1];
-  if (!hex) return null;
-  return {
-    r: Number.parseInt(hex.slice(0, 2), 16),
-    g: Number.parseInt(hex.slice(2, 4), 16),
-    b: Number.parseInt(hex.slice(4, 6), 16),
-  };
-}
-
-export function getSupportTagPillStyle(color: string | null | undefined): CSSProperties | undefined {
-  const rgb = parseHexColor(color);
-  if (!rgb) return undefined;
-  const value = `${rgb.r}, ${rgb.g}, ${rgb.b}`;
-  return {
-    backgroundColor: `rgba(${value}, 0.08)`,
-    borderColor: `rgba(${value}, 0.22)`,
-    color: `rgba(${value}, 0.82)`,
-  };
+export function getSupportTagPillStyle(color: string | null | undefined): CSSProperties {
+  return getSupportTagStyle(color);
 }
