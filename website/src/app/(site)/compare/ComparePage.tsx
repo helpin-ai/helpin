@@ -187,7 +187,7 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
 
   return (
     <>
-      <PreviewNav />
+      <PreviewNav tone="dark" />
       <div className="platform-page compare-page">
         <JsonLd data={structured} />
         <section className="platform-hero motion-hero">
