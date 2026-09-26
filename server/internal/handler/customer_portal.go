@@ -113,6 +113,35 @@ func (h *CustomerPortalHandler) Session(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, portalCustomer(identity))
 }
 
+func (h *CustomerPortalHandler) CreateRequest(w http.ResponseWriter, r *http.Request) {
+	id, identity := h.authorized(w, r)
+	if identity == nil {
+		return
+	}
+	var body struct {
+		Subject string `json:"subject"`
+		Message string `json:"message"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	request, err := h.auth.CreateRequest(r.Context(), id, identity, body.Subject, body.Message)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrPortalRequestInvalid):
+			writeError(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, service.ErrPortalIntakeDisabled):
+			writeError(w, http.StatusForbidden, err.Error())
+		default:
+			writeError(w, http.StatusInternalServerError, "unable to create request")
+		}
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusCreated, request)
+}
+
 func (h *CustomerPortalHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	if id, err := h.auth.WorkspaceID(r.Context(), chi.URLParam(r, "slug")); err == nil {
 		h.auth.Logout(r.Context(), id, portalSessionCookie(r))

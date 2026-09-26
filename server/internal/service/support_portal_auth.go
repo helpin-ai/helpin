@@ -18,11 +18,15 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 var ErrPortalAuthInvalid = errors.New("invalid portal authentication")
+
+var ErrPortalIntakeDisabled = errors.New("portal intake is disabled")
+var ErrPortalRequestInvalid = errors.New("subject and description are required")
 
 type PortalAuthService struct {
 	repo    *repository.PortalAuthRepository
@@ -72,7 +76,60 @@ func (s *PortalAuthService) Configuration(ctx context.Context, workspaceID strin
 	if !s.enabled(ctx, workspaceID) {
 		return nil, ErrPortalAuthInvalid
 	}
-	return map[string]any{"enabled": true, "requests_only": true, "intake_enabled": false, "branding": map[string]string{"name": "Support portal"}}, nil
+	_, settings, err := s.inbox.GetInstallation(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if settings == nil {
+		return nil, ErrPortalAuthInvalid
+	}
+	return map[string]any{"enabled": true, "requests_only": settings.PortalRequestsOnly, "intake_enabled": settings.PortalIntakeEnabled, "branding": map[string]string{"name": "Support portal"}}, nil
+}
+
+func (s *PortalAuthService) CreateRequest(ctx context.Context, workspaceID string, identity *model.SupportPortalIdentity, subject, description string) (*model.SupportPortalRequest, error) {
+	if identity == nil || identity.WorkspaceID != workspaceID {
+		return nil, ErrPortalAuthInvalid
+	}
+	_, settings, err := s.inbox.GetInstallation(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if settings == nil || !settings.PortalEnabled || !settings.PortalIntakeEnabled {
+		return nil, ErrPortalIntakeDisabled
+	}
+	subject, description = strings.TrimSpace(subject), strings.TrimSpace(description)
+	if subject == "" || description == "" || len([]rune(subject)) > 200 {
+		return nil, ErrPortalRequestInvalid
+	}
+	reference, err := newPortalReference()
+	if err != nil {
+		return nil, err
+	}
+	mailboxID, mailbox, err := s.inbox.maybeApplyMailboxRoutingForChannel(ctx, workspaceID, nil, true, "portal")
+	if err != nil {
+		return nil, err
+	}
+	ownerID, flowState, err := s.inbox.determineMailboxOwner(ctx, workspaceID, mailbox, nil)
+	if err != nil {
+		return nil, err
+	}
+	var contactID *string
+	if s.inbox.contactRepo != nil {
+		contactID = s.inbox.matchOrCreateCRMContact(ctx, workspaceID, &identity.Email, identity.DisplayName)
+	}
+	conversation, request, err := s.repo.CreateRequest(ctx, workspaceID, identity, subject, description, reference, mailboxID, ownerID, contactID, &flowState)
+	if err != nil {
+		return nil, err
+	}
+	s.inbox.wsPublisher.Publish(websocket.Event{
+		Action: "created", Entity: "support_conversation", EntityID: conversation.ID, WorkspaceID: workspaceID,
+	})
+	if s.inbox.triageService != nil {
+		if err := s.inbox.triageService.HydrateConversation(ctx, conversation); err != nil {
+			slog.ErrorContext(ctx, "hydrate portal conversation triage", "error", err, "workspace_id", workspaceID, "conversation_id", conversation.ID)
+		}
+	}
+	return request, nil
 }
 
 func (s *PortalAuthService) Requests(ctx context.Context, workspaceID, identityID, status string) ([]model.SupportPortalRequest, error) {

@@ -331,6 +331,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Get("/requests", h.CustomerPortal.Requests)
 				r.Get("/requests/{reference}", h.CustomerPortal.RequestDetail)
 				r.Post("/requests/{reference}/replies", h.CustomerPortal.Reply)
+				r.Post("/requests", h.CustomerPortal.CreateRequest)
 			})
 		}
 		if h.PortalAuth != nil {
