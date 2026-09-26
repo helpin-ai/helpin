@@ -23,6 +23,15 @@ export interface CustomerPortalSession {
 }
 
 export interface CustomerPortalRequest {
+  reference: string
+  subject: string
+  status: 'active' | 'waiting_on_customer' | 'resolved'
+  last_activity_at: string | null
+}
+
+export type CustomerPortalRequestFilter = 'all' | CustomerPortalRequest['status']
+
+interface CreatedCustomerPortalRequest {
   id: string
   subject: string
   status: string
@@ -94,10 +103,10 @@ export const customerPortalService = {
     }),
   signOut: (slug: string) =>
     portalRequest<void>(slug, '/session', { method: 'DELETE' }),
-  requests: (slug: string) =>
-    portalRequest<CustomerPortalRequest[]>(slug, '/requests'),
+  requests: (slug: string, filter: CustomerPortalRequestFilter = 'all') =>
+    portalRequest<CustomerPortalRequest[]>(slug, `/requests${filter === 'all' ? '' : `?status=${filter}`}`),
   createRequest: (slug: string, input: CreateCustomerPortalRequestInput) =>
-    portalRequest<CustomerPortalRequest>(slug, '/requests', {
+    portalRequest<CreatedCustomerPortalRequest>(slug, '/requests', {
       method: 'POST',
       body: JSON.stringify(input),
     }),

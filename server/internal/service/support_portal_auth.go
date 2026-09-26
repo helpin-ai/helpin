@@ -75,8 +75,8 @@ func (s *PortalAuthService) Configuration(ctx context.Context, workspaceID strin
 	return map[string]any{"enabled": true, "requests_only": true, "intake_enabled": false, "branding": map[string]string{"name": "Support portal"}}, nil
 }
 
-func (s *PortalAuthService) Requests(ctx context.Context, workspaceID, identityID string) ([]model.SupportPortalRequest, error) {
-	return s.repo.ListRequests(ctx, workspaceID, identityID)
+func (s *PortalAuthService) Requests(ctx context.Context, workspaceID, identityID, status string) ([]model.SupportPortalRequest, error) {
+	return s.repo.ListRequests(ctx, workspaceID, identityID, status)
 }
 
 // RequestLink deliberately returns the same result for unknown workspaces and

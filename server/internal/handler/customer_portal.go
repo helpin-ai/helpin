@@ -124,14 +124,19 @@ func (h *CustomerPortalHandler) Requests(w http.ResponseWriter, r *http.Request)
 	if identity == nil {
 		return
 	}
-	requests, err := h.auth.Requests(r.Context(), id, identity.ID)
+	status := r.URL.Query().Get("status")
+	if status != "" && status != "active" && status != model.SupportConversationStatusWaitingOnCustomer && status != model.SupportConversationStatusResolved {
+		writeError(w, http.StatusBadRequest, "invalid request status")
+		return
+	}
+	requests, err := h.auth.Requests(r.Context(), id, identity.ID, status)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "unable to load requests")
 		return
 	}
 	response := make([]map[string]any, 0, len(requests))
 	for _, request := range requests {
-		response = append(response, map[string]any{"id": request.Reference, "subject": request.Subject, "status": request.Status, "updated_at": request.UpdatedAt})
+		response = append(response, map[string]any{"reference": request.Reference, "subject": request.Subject, "status": request.Status, "last_activity_at": request.LastActivityAt})
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, response)

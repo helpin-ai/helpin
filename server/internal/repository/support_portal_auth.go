@@ -52,13 +52,29 @@ func (r *PortalAuthRepository) AssociateVerifiedEmail(tx *gorm.DB, workspaceID, 
 	return nil
 }
 
-func (r *PortalAuthRepository) ListRequests(ctx context.Context, workspaceID, identityID string) ([]model.SupportPortalRequest, error) {
+func (r *PortalAuthRepository) ListRequests(ctx context.Context, workspaceID, identityID, status string) ([]model.SupportPortalRequest, error) {
 	var requests []model.SupportPortalRequest
-	err := r.db.WithContext(ctx).Table("support_portal_request_references AS refs").
-		Select("refs.reference, conv.subject, conv.status, conv.created_at, conv.updated_at").
+	query := r.db.WithContext(ctx).Table("support_portal_request_references AS refs").
+		Select("refs.reference, conv.subject, conv.status, conv.created_at, conv.last_public_message_at, conv.resolved_at").
 		Joins("JOIN support_conversations AS conv ON conv.id = refs.conversation_id AND conv.workspace_id = refs.workspace_id").
-		Where("refs.workspace_id = ? AND refs.portal_identity_id = ? AND conv.portal_visible = true AND conv.status <> ? AND conv.channel <> ? AND conv.source <> ? AND conv.deleted_at IS NULL", workspaceID, identityID, model.SupportConversationStatusSpam, "internal", "internal").
-		Order("conv.updated_at DESC").Scan(&requests).Error
+		Where("refs.workspace_id = ? AND refs.portal_identity_id = ? AND conv.portal_visible = true AND conv.status <> ? AND conv.channel <> ? AND conv.source <> ? AND conv.deleted_at IS NULL", workspaceID, identityID, model.SupportConversationStatusSpam, "internal", "internal")
+	switch status {
+	case "active":
+		query = query.Where("conv.status NOT IN ?", []string{model.SupportConversationStatusWaitingOnCustomer, "waiting", model.SupportConversationStatusResolved, "closed"})
+	case model.SupportConversationStatusWaitingOnCustomer:
+		query = query.Where("conv.status IN ?", []string{model.SupportConversationStatusWaitingOnCustomer, "waiting"})
+	case model.SupportConversationStatusResolved:
+		query = query.Where("conv.status IN ?", []string{model.SupportConversationStatusResolved, "closed"})
+	}
+	err := query.Order("COALESCE(conv.last_public_message_at, conv.created_at) DESC").Scan(&requests).Error
+	for i := range requests {
+		if requests[i].LastPublicMessageAt != nil {
+			requests[i].LastActivityAt = requests[i].LastPublicMessageAt
+		} else {
+			requests[i].LastActivityAt = &requests[i].CreatedAt
+		}
+		requests[i].Status = model.PortalRequestStatus(requests[i].Status)
+	}
 	return requests, err
 }
 

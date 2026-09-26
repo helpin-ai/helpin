@@ -128,7 +128,7 @@ func projectPortalRequest(conversation model.SupportConversation, reference stri
 	if lastActivity == nil {
 		lastActivity = conversation.LastPublicMessageAt
 	}
-	return &model.SupportPortalRequest{Reference: reference, Subject: conversation.Subject, Status: conversation.Status, CreatedAt: conversation.CreatedAt, UpdatedAt: conversation.UpdatedAt, LastActivityAt: lastActivity, ResolvedAt: conversation.ResolvedAt}
+	return &model.SupportPortalRequest{Reference: reference, Subject: conversation.Subject, Status: model.PortalRequestStatus(conversation.Status), CreatedAt: conversation.CreatedAt, UpdatedAt: conversation.UpdatedAt, LastActivityAt: lastActivity, ResolvedAt: conversation.ResolvedAt}
 }
 
 func newPortalReference() (string, error) {
