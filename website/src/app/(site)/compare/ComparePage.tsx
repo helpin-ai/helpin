@@ -13,7 +13,6 @@ import { PreviewFooter } from '../_components/PreviewFooter';
 import { PlatformClosing } from '../_components/platform/PlatformParts';
 import { CommunityShowcase } from '../_components/platform/PlatformProof';
 import { CtaNote, CtaRow, DEMO_URL, FAQList, GITHUB_URL, SectionHead, SIGNUP_URL } from '../_components/ui';
-import { ALTERNATIVES } from './alternatives-data';
 import { cellStatus, COMPETITORS, competitorSeo, formatChecked, type Cell, type Competitor, type IconKey, type Status } from './compare-data';
 import { HeroMatchup } from './HeroMatchup';
 import { InViewOnce } from './InViewOnce';
@@ -285,10 +284,7 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
           <div className="wrap">
             <div className="platform-section-intro">
               <SectionHead eyebrow="More comparisons" title="See how Helpin compares with other tools." />
-              <div className="cmp-intro-links">
-                {ALTERNATIVES.some(item => item.competitor === name) ? <Link className="platform-text-link" href={`/compare/${ALTERNATIVES.find(item => item.competitor === name)!.slug}`}>Best {name} alternatives<ArrowRight size={15} aria-hidden="true" /></Link> : null}
-                <Link className="platform-text-link" href="/compare">All comparisons<ArrowRight size={15} aria-hidden="true" /></Link>
-              </div>
+              <Link className="platform-text-link" href="/compare">All comparisons<ArrowRight size={15} aria-hidden="true" /></Link>
             </div>
             <div className="cmp-card-grid">{others.map(item => <CompareCard key={item.slug} competitor={item} />)}</div>
           </div>
