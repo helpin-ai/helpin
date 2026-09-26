@@ -18,6 +18,7 @@ const COLUMNS = [
   { title: 'Resources', links: [
     { label: 'Developers', href: '/developers' },
     { label: 'Self-hosting', href: '/self-hosting' },
+    { label: 'Compare', href: '/compare' },
     { label: 'Documentation', href: DOCS.home },
   ] },
   { title: 'Community', links: [

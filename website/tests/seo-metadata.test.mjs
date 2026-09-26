@@ -66,7 +66,7 @@ describe('website SEO metadata', () => {
     const expectedRoutes = Object.keys(PAGE_SEO);
     assert.deepEqual(
       Object.values(PAGE_SEO).map(page => page.canonicalPath).sort(),
-      ['/', '/pricing', '/privacy', '/terms', ...marketingRoutes].sort(),
+      ['/', '/pricing', '/privacy', '/terms', '/compare', ...marketingRoutes].sort(),
     );
 
     const titles = new Set();
@@ -117,8 +117,10 @@ describe('website SEO metadata', () => {
   it('lists every public page in the sitemap and points robots.txt at it', async () => {
     const { default: sitemap } = await import('../src/app/sitemap.ts');
     const { default: robots } = await import('../src/app/robots.ts');
+    const { COMPETITORS } = await import('../src/app/(site)/compare/compare-data.ts');
     const urls = sitemap().map(entry => entry.url);
-    assert.deepEqual(urls, Object.values(PAGE_SEO).map(page => page.canonicalPath === '/' ? 'https://helpin.ai' : 'https://helpin.ai' + page.canonicalPath));
+    const pages = Object.values(PAGE_SEO).map(page => page.canonicalPath === '/' ? 'https://helpin.ai' : 'https://helpin.ai' + page.canonicalPath);
+    assert.deepEqual(urls, [...pages, ...COMPETITORS.map(item => `https://helpin.ai/compare/${item.slug}`)]);
     assert.equal(robots().sitemap, 'https://helpin.ai/sitemap.xml');
   });
 
@@ -156,6 +158,22 @@ describe('website SEO metadata', () => {
         }
       }
       assert.ok(darkPixels > 100 && lightPixels > 100, `${relativePath} should render the Helpin mark`);
+    }
+  });
+
+  it('gives every comparison page complete, unique, sourced metadata', async () => {
+    const { COMPETITORS, competitorSeo } = await import('../src/app/(site)/compare/compare-data.ts');
+    const titles = new Set(Object.values(PAGE_SEO).map(page => page.title));
+    for (const competitor of COMPETITORS) {
+      const page = competitorSeo(competitor);
+      assert.ok(page.title.length <= 60, `${page.title} should fit in search results`);
+      assert.ok(page.description.length >= 50 && page.description.length <= 160, `${competitor.slug} description length`);
+      assert.equal(titles.has(page.title), false);
+      titles.add(page.title);
+      assert.match(competitor.checked, /^\d{4}-\d{2}-\d{2}$/);
+      assert.ok(competitor.sources.length >= 3, `${competitor.slug} needs sources`);
+      assert.ok(competitor.strengths.length >= 3, `${competitor.slug} should say where the competitor is stronger`);
+      assert.ok(existsSync(new URL('../public' + page.imagePath, import.meta.url)), `${page.imagePath} should exist`);
     }
   });
 });

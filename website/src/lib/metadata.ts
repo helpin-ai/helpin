@@ -76,9 +76,9 @@ export const PAGE_SEO = {
     imageAlt: 'Helpin AI agents',
   },
   developers: {
-    title: 'Developers: widget SDK, webhooks, MCP and CLI — Helpin',
+    title: 'Developers: widget SDKs, MCP server and CLI — Helpin',
     description:
-      'Embed the Helpin widget with the SDK, identify customers, automate with webhooks, and connect AI tools through the Helpin MCP server and CLI.',
+      'Embed the Helpin widget with the JavaScript, React, Next.js or Vue SDK, identify customers, and connect AI tools and agents through MCP and the CLI.',
     canonicalPath: '/developers',
     imagePath: '/og/helpin-developers-green-v4.png',
     imageAlt: 'Build on Helpin',
@@ -106,6 +106,14 @@ export const PAGE_SEO = {
     canonicalPath: '/pricing',
     imagePath: '/og/helpin-pricing-green-v4.png',
     imageAlt: 'Helpin pricing — Every module. Every teammate. One price.',
+  },
+  compare: {
+    title: 'Compare Helpin with Intercom, Zendesk, Linear and more',
+    description:
+      'Side-by-side comparisons of Helpin with Intercom, Zendesk, Help Scout, Chatwoot and Linear: features, pricing for a sample team, and what switching involves.',
+    canonicalPath: '/compare',
+    imagePath: '/og/helpin-compare-green-v4.png',
+    imageAlt: 'Compare Helpin',
   },
   privacy: {
     title: 'Privacy Policy — Helpin',
