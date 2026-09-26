@@ -37,7 +37,7 @@ agent:
       {{raw_configuration_json}}
     allowed_tools: [get_check_run_logs, read_files, repository_search, run_command, create_document, link_document_to_object, create_task]
     allowed_targets: [repository, document]
-    approval_mode: always
+    approval_mode: risk_based
 trigger:
   type: event
   event: github.check_suite_completed

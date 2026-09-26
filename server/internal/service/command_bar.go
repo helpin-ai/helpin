@@ -113,7 +113,7 @@ func commandBarCreateAgentRequestFromDraft(workspaceID string, draft model.Custo
 		allowedTargets = normalizeStringSlice(req.AllowedTargets)
 	}
 	modelTier := firstNonEmptyString(strings.TrimSpace(draft.ModelTier), "small")
-	approvalMode := firstNonEmptyString(strings.TrimSpace(draft.ApprovalMode), "mutating_tools")
+	approvalMode := firstNonEmptyString(strings.TrimSpace(draft.ApprovalMode), "risk_based")
 	invocationMode := firstNonEmptyString(strings.TrimSpace(draft.DefaultInvocationMode), "interactive")
 	maxRuns := draft.MaxConcurrentRuns
 	if maxRuns <= 0 {

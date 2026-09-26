@@ -240,7 +240,7 @@ func (i *Installer) resolveAgent(ctx context.Context, tx *gorm.DB, tmpl Template
 			AllowedTools:          mustJSON(tmpl.Agent.Create.AllowedTools),
 			AllowedCommands:       json.RawMessage(`[]`),
 			AllowedTargets:        mustJSON(tmpl.Agent.Create.AllowedTargets),
-			ApprovalMode:          firstNonEmpty(tmpl.Agent.Create.ApprovalMode, "always"),
+			ApprovalMode:          firstNonEmpty(tmpl.Agent.Create.ApprovalMode, "risk_based"),
 			MaxConcurrentRuns:     1,
 			DefaultInvocationMode: "interactive",
 			TemplateKey:           strPtr(tmpl.Key),

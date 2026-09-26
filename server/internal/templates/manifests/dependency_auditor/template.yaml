@@ -41,7 +41,7 @@ agent:
       {{raw_configuration_json}}
     allowed_tools: [update_plan, list_directory, read_files, repository_search, run_command, web_search, fetch_url, create_document, link_document_to_object, create_task]
     allowed_targets: [repository, document]
-    approval_mode: always
+    approval_mode: risk_based
 trigger:
   type: cron
 inputs:

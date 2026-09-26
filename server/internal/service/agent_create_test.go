@@ -52,6 +52,9 @@ func TestCreateAgentDefaultsToCodeBuilderPreset(t *testing.T) {
 	if created.RuntimeKind != "native_sdk" {
 		t.Fatalf("expected default runtime native_sdk, got %q", created.RuntimeKind)
 	}
+	if created.ApprovalMode != "risk_based" {
+		t.Fatalf("expected custom agent approval mode risk_based, got %q", created.ApprovalMode)
+	}
 }
 
 func TestCreateAgentModelTierResolvesInternalExecution(t *testing.T) {
