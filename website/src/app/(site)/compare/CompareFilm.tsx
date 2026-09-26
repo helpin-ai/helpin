@@ -6,10 +6,10 @@ import type { compareVideo } from './compare-data';
 
 type Props = { id: string; name: string; video: ReturnType<typeof compareVideo> };
 
-// The comparison video under the hero. Only the poster loads with the page; the file
-// buffers as the video nears the viewport, plays muted while half of it is on screen,
-// and pauses when it leaves. Reduced motion never autoplays. The last frame is the end
-// card, so it stops there instead of looping. Without JavaScript it keeps native controls.
+// The comparison video in the hero. The poster loads with the page; the file waits for the
+// page's load event, then plays muted while half of it is on screen and pauses when it
+// leaves. Reduced motion never autoplays. The last frame is the end card, so it stops there
+// instead of looping. Without JavaScript it keeps native controls.
 export function CompareFilm({ id, name, video }: Props) {
   const frame = useRef<HTMLDivElement>(null);
   const player = useRef<HTMLVideoElement>(null);
@@ -36,9 +36,11 @@ export function CompareFilm({ id, name, video }: Props) {
       if (!entry.isIntersecting) { media.pause(); return; }
       if (!reduced && !userPaused.current && !media.ended) media.play().catch(() => {});
     }, { threshold: 0.5 });
-    near.observe(element);
-    visible.observe(element);
-    return () => { near.disconnect(); visible.disconnect(); };
+    // Start after the page has loaded, so the video never competes with the hero's first paint.
+    const start = () => { near.observe(element); visible.observe(element); };
+    if (document.readyState === 'complete') start();
+    else window.addEventListener('load', start, { once: true });
+    return () => { window.removeEventListener('load', start); near.disconnect(); visible.disconnect(); };
   }, []);
 
   function toggle() {
@@ -106,7 +108,7 @@ export function CompareFilm({ id, name, video }: Props) {
         ) : null}
         <div className="cmp-film-text">
           <strong>Helpin vs {name} in {video.seconds} seconds</strong>
-          <span id={`${id}-summary`}>{video.summary}</span>
+          <span id={`${id}-summary`} className="sr-only">{video.summary}</span>
         </div>
       </figcaption>
     </figure>
