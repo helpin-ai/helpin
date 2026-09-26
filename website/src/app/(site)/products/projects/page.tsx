@@ -77,7 +77,7 @@ const FAQS = [
 ] as const;
 export default function ProjectsPage() {
   return <>
-    <PreviewNav />
+    <PreviewNav tone="dark" />
     <div className="projects-page">
       <section className="projects-hero motion-hero" aria-labelledby="projects-title"><HeroVortex variant="connections" tone="dark" />
         <div className="wrap">

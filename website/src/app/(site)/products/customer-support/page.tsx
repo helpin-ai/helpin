@@ -102,7 +102,7 @@ function Actions() {
 
 export default function CustomerSupportPage() {
   return <>
-    <PreviewNav />
+    <PreviewNav tone="dark" />
     <div className="support-page">
       <section className="hero support-hero motion-hero"><HeroVortex variant="flow" tone="dark" />
         <div className="wrap">

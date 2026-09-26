@@ -98,7 +98,7 @@ const HUB_JSON_LD = {
 export default function CompareHub() {
   return (
     <>
-      <PreviewNav />
+      <PreviewNav tone="dark" />
       <div className="platform-page compare-page">
         <JsonLd data={HUB_JSON_LD} />
         <section className="platform-hero motion-hero cmp-hub-hero">
