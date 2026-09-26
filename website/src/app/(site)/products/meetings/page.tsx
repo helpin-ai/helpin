@@ -56,7 +56,7 @@ const FAQS = [
     "Yes. Configure its name, joining preferences, and recording settings.",
     "/products/meetings#meeting-capture"
   ],
-  ["Can we self-host Meetings?", "Yes. Meetings is included in Helpin Community, free under AGPL-3.0 with no plan limits. Community is in 0.1 beta. Capture needs a Recall.ai account or a Vexa deployment (hosted or self-hosted); Webex requires Recall.ai. Calendar sync needs a Google OAuth app, and summaries need an AI provider.", "/self-hosting#whats-included"]
+  ["Can we self-host Meetings?", "Yes. Meetings is included in Helpin Community, free under AGPL-3.0 with no plan limits. Community is in 0.2 beta. Capture needs a Recall.ai account or a Vexa deployment (hosted or self-hosted); Webex requires Recall.ai. Calendar sync needs a Google OAuth app, and summaries need an AI provider.", "/self-hosting#whats-included"]
 ] as const;
 export default function MeetingsPage() {
   return <><PreviewNav /><main className="meetings-page">

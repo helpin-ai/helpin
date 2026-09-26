@@ -61,7 +61,7 @@ const FAQS = [
   ['Where is Helpin not the right fit yet?', 'If you need phone, WhatsApp or social channels in the inbox, native mobile SDKs, SSO or SLA policies today, tools such as Intercom, Zendesk and Chatwoot cover more. Each comparison lists where the other tool is stronger.'],
   ['How much does Helpin cost?', 'Helpin charges one price per workspace with unlimited teammates: Starter is $79 and Growth $239 a month billed annually, each with an AI usage allowance included. The self-hosted Community edition is free.'],
   ['Can I bring my data from another tool?', 'Helpin imports Help Scout Docs articles, Shortcut projects and CRM contacts from CSV today. Importers for Zendesk and Intercom are coming soon, and you can run Helpin alongside your current tool while you move.'],
-  ['Is Helpin open source?', 'Yes. Every product feature is open source under AGPL-3.0. Run the Community edition (0.1 beta) on your own servers with Docker Compose, or let us host it on Helpin Cloud.'],
+  ['Is Helpin open source?', 'Yes. Every product feature is open source under AGPL-3.0. Run the Community edition (0.2 beta) on your own servers with Docker Compose, or let us host it on Helpin Cloud.'],
 ] as const;
 
 const HUB_JSON_LD = {

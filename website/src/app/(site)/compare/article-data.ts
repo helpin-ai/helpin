@@ -29,7 +29,7 @@ const HELPIN = {
   crm: 'Helpin includes a CRM with contacts, companies, deals and pipelines, and a meeting notetaker for Google Meet, Zoom, Microsoft Teams and Webex. Decisions and action items from calls stay on the same customer record as the conversations and tasks.',
   developers: 'Helpin offers web SDKs for JavaScript, React, Next.js and Vue, a Helpin MCP server (in beta, hosted or self-hosted), connections to external MCP servers for agents, and GitHub and GitLab integrations. It doesn’t have native mobile SDKs or a large app marketplace yet.',
   pricing: 'Helpin charges one price per workspace, with unlimited teammates. Starter is $79 and Growth $239 a month billed annually ($99 and $299 billed monthly), and each includes an AI usage allowance. The self-hosted Community edition is free.',
-  hosting: 'Helpin is open source under AGPL-3.0. Use Helpin Cloud, or run the Community edition (0.1 beta) on your own infrastructure with Docker Compose and your own AI provider. Nothing leaves your servers unless you connect it.',
+  hosting: 'Helpin is open source under AGPL-3.0. Use Helpin Cloud, or run the Community edition (0.2 beta) on your own infrastructure with Docker Compose and your own AI provider. Nothing leaves your servers unless you connect it.',
   onboarding: 'Helpin’s trial runs for 14 days on the Growth plan, with no card. Our team will help you plan the move: what to set up first, how to run both tools side by side, and when to cut over.',
 };
 
@@ -219,7 +219,7 @@ export const ARTICLES: Record<string, Article> = {
     intro: [
       'Chatwoot and Helpin are both open-source customer support platforms you can run on your own servers. They differ in license, in what the free edition includes, and in how far each goes beyond the inbox.',
       'Chatwoot is a mature, widely used support inbox with a long list of channels, from WhatsApp to LINE and voice. Its core is MIT-licensed, and features such as the Captain AI agent, SSO and SLAs need a paid enterprise edition, even when self-hosted.',
-      'Helpin is a newer platform under AGPL-3.0 that connects support to projects, CRM, meetings and docs. Its Community edition, currently a 0.1 beta, includes the AI agents at no cost.',
+      'Helpin is a newer platform under AGPL-3.0 that connects support to projects, CRM, meetings and docs. Its Community edition, currently a 0.2 beta, includes every AI agent at no cost, coding agents too.',
       guide('Chatwoot'),
     ],
     difference: [
@@ -237,7 +237,7 @@ export const ARTICLES: Record<string, Article> = {
       {
         id: 'ai-agents', title: 'AI agents',
         competitor: 'Captain is Chatwoot’s AI agent and copilot. On Cloud it runs on monthly credits, with more at $20 per 1,000. Self-hosted, it needs a paid plan and your own OpenAI-compatible key.',
-        helpin: `${HELPIN.ai} Self-hosted, the agents are part of the free Community edition; coding agents arrive there with the 0.2 release.`,
+        helpin: `${HELPIN.ai} Self-hosted, every agent, coding agents included, is part of the free Community edition.`,
         verdict: 'Both let you bring your own model when self-hosting. Helpin includes its agents in the free edition, and they go beyond the inbox.',
         preview: PREVIEW.agents,
       },
@@ -294,7 +294,7 @@ export const ARTICLES: Record<string, Article> = {
       {
         id: 'coding-agents', title: 'Coding agents',
         competitor: 'Linear Agent can write code in cloud coding sessions using Claude Code or Codex, paid for with prepaid AI credits, and you can assign issues to third-party agents such as Cursor, Codex, GitHub Copilot and Devin.',
-        helpin: 'Helpin’s coding agents work from the task and the customer conversation behind it, open a GitHub pull request or GitLab merge request, and wait for your team’s review. Usage comes from the AI allowance in your Cloud plan, and coding agents arrive in the self-hosted Community edition with 0.2.',
+        helpin: 'Helpin’s coding agents work from the task and the customer conversation behind it, open a GitHub pull request or GitLab merge request, and wait for your team’s review. On Cloud, usage comes from the AI allowance in your plan; self-hosted, they’re part of the free Community edition and use your own AI provider.',
         verdict: 'Linear offers the widest choice of agents. Helpin’s agents start with more of the customer context.',
         preview: PREVIEW.agents,
       },

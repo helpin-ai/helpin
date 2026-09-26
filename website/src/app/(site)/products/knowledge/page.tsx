@@ -58,7 +58,7 @@ const FAQS = [
   ],
   [
     "Can we self-host Knowledge?",
-    "Yes. Community includes every module by default, including docs and the help center. It is free under AGPL-3.0 with no plan limits. Community is currently a 0.1 beta.",
+    "Yes. Community includes every module by default, including docs and the help center. It is free under AGPL-3.0 with no plan limits. Community is currently a 0.2 beta.",
     "/self-hosting#whats-included",
     "See what’s included"
   ]

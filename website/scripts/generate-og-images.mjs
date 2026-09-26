@@ -106,7 +106,7 @@ const productCards = [
   ['knowledge', 'KNOWLEDGE', ['Better docs for', 'your customers.'], 'Better answers from your AI agents.'],
   ['ai-agents', 'AI AGENTS', ['AI agents that turn', 'customer history', 'into action.'], 'Your team sets the tools, permissions and approvals.'],
   ['developers', 'FOR DEVELOPERS', ['Connect your product.'], 'Give AI agents the tools to act, with SDKs, MCP and events.'],
-  ['self-hosting', 'OPEN SOURCE', ['Same product.', 'You choose who', 'runs it.'], 'Free under AGPL-3.0, no plan limits. Community 0.1 beta.'],
+  ['self-hosting', 'OPEN SOURCE', ['Same product.', 'You choose who', 'runs it.'], 'Free under AGPL-3.0, no plan limits. Community 0.2 beta.'],
   ['branding', 'THE HELPIN BRAND', ['One customer history.'], 'A shared workspace for your team and AI agents.'],
   ['compare', 'COMPARE HELPIN', ['How Helpin', 'compares.'], 'Intercom, Zendesk, Help Scout, Chatwoot and Linear.'],
   ['compare-intercom', 'HELPIN VS INTERCOM', ['Helpin vs', 'Intercom'], 'Features, pricing and switching, side by side.'],
