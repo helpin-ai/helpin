@@ -74,7 +74,7 @@ func TestSupportPortalProjectsCanonicalConversationWithOpaqueStableReference(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if request.Reference != first.Reference || request.Subject != conversation.Subject || request.Status != conversation.Status {
+	if request.Reference != first.Reference || request.Subject != conversation.Subject || request.Status != "active" {
 		t.Fatalf("unexpected projection: %#v", request)
 	}
 	if strings.Contains(string(mustPortalJSON(t, request)), conversation.ID) {

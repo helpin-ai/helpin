@@ -65,11 +65,25 @@ func (SupportPortalAuditEvent) TableName() string { return "support_portal_audit
 // support conversation. It has no internal ID, assignment, notes, or customer
 // contact data.
 type SupportPortalRequest struct {
-	Reference      string     `json:"reference"`
-	Subject        string     `json:"subject"`
-	Status         string     `json:"status"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
-	LastActivityAt *time.Time `json:"last_activity_at,omitempty"`
-	ResolvedAt     *time.Time `json:"resolved_at,omitempty"`
+	Reference           string     `json:"reference"`
+	Subject             string     `json:"subject"`
+	Status              string     `json:"status"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
+	LastActivityAt      *time.Time `json:"last_activity_at,omitempty"`
+	ResolvedAt          *time.Time `json:"resolved_at,omitempty"`
+	ListLastActivityAt  *time.Time `json:"-"`
+	LastPublicMessageAt *time.Time `json:"-"`
+}
+
+// PortalRequestStatus exposes only the customer-facing lifecycle, never internal states.
+func PortalRequestStatus(status string) string {
+	switch NormalizeSupportConversationStatus(status) {
+	case SupportConversationStatusResolved:
+		return SupportConversationStatusResolved
+	case SupportConversationStatusWaitingOnCustomer:
+		return SupportConversationStatusWaitingOnCustomer
+	default:
+		return "active"
+	}
 }

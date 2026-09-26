@@ -22,6 +22,7 @@ import {
   type CustomerPortalConfiguration,
   type CustomerPortalRequest,
   type CustomerPortalSession,
+  type CustomerPortalRequestFilter,
 } from '@/lib/services/customerPortalService'
 
 type PortalStatus = 'loading' | 'unavailable' | 'anonymous' | 'authenticated'
@@ -336,13 +337,20 @@ export function CustomerPortalCallback({ token }: { token?: string }) {
   )
 }
 
-function RequestList({ requests }: { requests: CustomerPortalRequest[] }) {
+const requestFilters: { value: CustomerPortalRequestFilter; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'active', label: 'Active' },
+  { value: 'waiting_on_customer', label: 'Waiting on customer' },
+  { value: 'resolved', label: 'Resolved' },
+]
+
+function RequestList({ requests, filter }: { requests: CustomerPortalRequest[]; filter: CustomerPortalRequestFilter }) {
   if (requests.length === 0) {
     return (
       <div className="border-t border-border py-12 text-center">
         <FileText className="mx-auto size-6 text-muted-foreground" aria-hidden="true" />
-        <h2 className="mt-4 font-semibold">No requests yet</h2>
-        <p className="mt-2 text-sm text-muted-foreground">New support requests will appear here.</p>
+        <h2 className="mt-4 font-semibold">{filter === 'all' ? 'No requests yet' : 'No matching requests'}</h2>
+        <p className="mt-2 text-sm text-muted-foreground">{filter === 'all' ? 'New support requests will appear here.' : 'Try another status to see your requests.'}</p>
       </div>
     )
   }
@@ -350,14 +358,14 @@ function RequestList({ requests }: { requests: CustomerPortalRequest[] }) {
   return (
     <ul className="divide-y divide-border border-y border-border">
       {requests.map((request) => (
-        <li key={request.id} className="flex items-center justify-between gap-6 py-5">
+        <li key={request.reference} className="flex items-center justify-between gap-6 py-5">
           <div className="min-w-0">
             <p className="truncate font-medium">{request.subject}</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Updated {new Date(request.updated_at).toLocaleDateString()}
+              {request.reference} · Last activity {request.last_activity_at ? new Date(request.last_activity_at).toLocaleDateString() : 'not available'}
             </p>
           </div>
-          <span className="shrink-0 text-sm capitalize text-muted-foreground">{request.status}</span>
+          <span className="shrink-0 text-sm text-muted-foreground">{requestFilters.find((item) => item.value === request.status)?.label}</span>
         </li>
       ))}
     </ul>
@@ -367,6 +375,8 @@ function RequestList({ requests }: { requests: CustomerPortalRequest[] }) {
 export function CustomerPortalHome() {
   const { configuration, handleSessionError, session, signOut, slug, status } = usePortal()
   const [requests, setRequests] = useState<CustomerPortalRequest[]>([])
+  const [filter, setFilter] = useState<CustomerPortalRequestFilter>('all')
+  const [reload, setReload] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showRequestForm, setShowRequestForm] = useState(false)
@@ -378,8 +388,10 @@ export function CustomerPortalHome() {
   useEffect(() => {
     if (status !== 'authenticated') return
     let active = true
+    setLoading(true)
+    setError(null)
     customerPortalService
-      .requests(slug)
+      .requests(slug, filter)
       .then((nextRequests) => {
         if (active) setRequests(nextRequests)
       })
@@ -393,7 +405,7 @@ export function CustomerPortalHome() {
     return () => {
       active = false
     }
-  }, [handleSessionError, slug, status])
+  }, [handleSessionError, slug, status, filter, reload])
 
   async function createRequest(event: FormEvent) {
     event.preventDefault()
@@ -404,7 +416,7 @@ export function CustomerPortalHome() {
         subject: subject.trim(),
         message: message.trim(),
       })
-      setRequests((current) => [request, ...current])
+      setReload((current) => current + 1)
       setSubject('')
       setMessage('')
       setShowRequestForm(false)
@@ -492,6 +504,14 @@ export function CustomerPortalHome() {
           <h2 id="requests-heading" className="mb-4 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
             Request history
           </h2>
+          <div className="mb-4 flex flex-wrap items-center gap-2" aria-label="Filter requests">
+            {requestFilters.map((item) => (
+              <Button key={item.value} size="sm" variant={filter === item.value ? 'secondary' : 'ghost'} aria-pressed={filter === item.value} onClick={() => setFilter(item.value)}>
+                {item.label}
+              </Button>
+            ))}
+            <Button size="sm" variant="ghost" onClick={() => setReload((current) => current + 1)}>Refresh</Button>
+          </div>
           {loading ? (
             <div className="space-y-px border-y border-border py-2">
               {[0, 1, 2].map((item) => <Skeleton key={item} className="h-16 rounded-none" />)}
@@ -499,7 +519,7 @@ export function CustomerPortalHome() {
           ) : error ? (
             <p className="border-t border-border py-8 text-sm text-destructive" role="alert">{error}</p>
           ) : (
-            <RequestList requests={requests} />
+            <RequestList requests={requests} filter={filter} />
           )}
         </section>
       </main>
