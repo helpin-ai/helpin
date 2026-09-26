@@ -9,22 +9,22 @@
 .hp3 .compare-page .platform-section-intro .platform-text-link { flex: none; margin: 0 0 6px; }
 
 /* Comparison video in the hero's right column (CompareFilm). The column is a little wider
-   than the copy so the video's text stays legible; controls sit below the frame so they
-   never cover the video's own small print. */
+   than the copy so the video's text stays legible. Sound and full screen sit in the frame's
+   bottom-right corner. */
 .hp3 .platform-page.compare-page .platform-hero-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1.12fr); gap: 60px; align-items: center; }
 .hp3 .cmp-film { min-width: 0; margin: 0; }
 .hp3 .cmp-film-frame { position: relative; overflow: hidden; aspect-ratio: 16 / 9; border: 1px solid #ffffff1f; border-radius: 16px; background: var(--art-dark); box-shadow: 0 30px 80px #0006; }
 .hp3 .cmp-film-frame video { display: block; width: 100%; height: 100%; object-fit: cover; }
 .hp3 .cmp-film-frame[data-enhanced=true] video { cursor: pointer; }
+.hp3 .cmp-film-frame video:focus-visible { outline: 2px solid var(--on-dark-accent); outline-offset: -2px; }
+.hp3 .cmp-film-controls { position: absolute; right: 12px; bottom: 14px; display: flex; gap: 8px; }
+.hp3 .cmp-film-controls button { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 1px solid #ffffff2b; border-radius: 50%; background: #0a0f0dbf; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); color: #e7f1ea; cursor: pointer; }
+.hp3 .cmp-film-controls button:hover { background: #1a2420e6; }
+.hp3 .cmp-film-controls button:focus-visible { outline: 2px solid var(--on-dark-accent); outline-offset: 2px; }
 .hp3 .cmp-film-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: #ffffff12; }
-.hp3 .cmp-film-progress span { display: block; height: 100%; background: var(--on-dark-accent); transform-origin: 0 50%; transition: transform .25s linear; }
-.hp3 .cmp-film figcaption { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin-top: 16px; }
-.hp3 .cmp-film-controls { display: flex; flex: none; gap: 8px; }
-.hp3 .cmp-film-controls button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 40px; height: 40px; padding: 0 12px; border: 1px solid #496251; border-radius: 999px; background: #ffffff04; color: #dce8e0; font-size: 13px; font-weight: 500; cursor: pointer; }
-.hp3 .cmp-film-controls button:hover { background: var(--art-dark-raised); }
-.hp3 .cmp-film-controls button:focus-visible { outline: 2px solid var(--on-dark-accent); outline-offset: 3px; }
-.hp3 .cmp-film-text { min-width: 0; font-size: 13px; line-height: 1.5; color: #8fa99a; }
-.hp3 .cmp-film-text strong { font-weight: 500; }
+.hp3 .cmp-film-progress span { display: block; height: 100%; background: var(--on-dark-accent); transform-origin: 0 50%; }
+.hp3 .cmp-film figcaption { margin-top: 14px; font-size: 13px; line-height: 1.5; color: #8fa99a; }
+.hp3 .cmp-film figcaption strong { font-weight: 500; }
 
 /* Shared marks */
 .hp3 .cmp-mark { display: block; flex: none; }
@@ -458,7 +458,6 @@
 .hp3 .cmp-steps[data-motion=playing] > li .cmp-status { animation: cmp-pop .4s cubic-bezier(.22,1,.36,1) both; animation-delay: calc(.35s + var(--i) * .3s); }
 
 @media (prefers-reduced-motion: reduce) {
-  .hp3 .cmp-film-progress span { transition: none; }
   .hp3 :is(.cmp-card, .cmp-card-link svg, .cmp-toc a, .cmp-calc-segmented button, .cmp-calc-bar-track > span, .cmp-growth-now, .cmp-growth-dot, .cmp-growth-tag) { transition: none; }
   .hp3 .cmp-merge :is(li, path, .cmp-merge-helpin) { animation: none !important; opacity: 1 !important; stroke-dashoffset: 0 !important; transform: none !important; }
   .hp3 [data-motion] :is(li, li::after, li::before, dl > div, p, .cmp-lane-label, .cmp-status),
@@ -554,4 +553,6 @@
 }
 @media (max-width: 680px) {
   .hp3 .cmp-film-frame { border-radius: 12px; }
+  .hp3 .cmp-film-controls { right: 8px; bottom: 10px; gap: 6px; }
+  .hp3 .cmp-film-controls button { width: 30px; height: 30px; }
 }
