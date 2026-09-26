@@ -24,6 +24,7 @@ const (
 	SupportEventConversationResolved      = "conversation_resolved"
 	SupportEventWidgetSearchPerformed     = "widget_search_performed"
 	SupportEventWidgetArticleOpened       = "widget_article_opened"
+	SupportEventAIAnswerFeedback          = "ai_answer_feedback"
 	SupportEventArticleFeedback           = "article_feedback_submitted"
 	SupportEventHumanReplyAfterAI         = "human_reply_after_ai"
 	SupportEventDocsIssueFeedback         = "docs_issue_feedback"

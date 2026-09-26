@@ -1,11 +1,11 @@
 # Event pipeline capacity baseline
 
 This document is the sizing baseline for the Helpin event pipeline. It records
-the verified load result, the deployment topology derived from it, and the
+the reported historical load result, the deployment topology derived from it, and the
 limits of that evidence. Re-run the qualification before raising the target or
 changing JetStream storage, replication, ClickHouse, enrichment, or batching.
 
-## Verified baseline
+## Recorded baseline (2026-08-26)
 
 On 2026-08-26, the complete pipeline accepted and wrote every event in a
 ten-minute, 15,000 events/second run:
@@ -47,6 +47,10 @@ Per replica, capture averaged 0.56-0.57 cores and peaked at 0.67-0.71. Writers
 averaged 0.43-0.48 cores and peaked at 0.64-0.65. NATS nodes averaged
 0.55-0.62 cores and peaked at 0.62-0.70.
 
+These are recorded results from the original run, not a fresh verification of
+the current checkout. This review found no checked-in raw output establishing
+these exact measurements; retain new run artifacts when repeating qualification.
+
 ## Qualification configuration
 
 Raise the shell open-file limit before the run. The OpenSSL prefix shown is for
@@ -78,6 +82,12 @@ SUSTAINED_RESOURCE_SAMPLE_INTERVAL_SECONDS=15 \
 SUSTAINED_RESULTS_DIR=/tmp/helpin-e2e-15000-baseline \
 events-pipeline/scripts/sustained-e2e.sh
 ```
+
+The current [harness](scripts/sustained-e2e.sh) defaults to a 25 ms p99 latency
+threshold (`SUSTAINED_K6_P99_LIMIT_MS`), below the recorded 43.55 ms p99 above.
+The historical command therefore does not establish a passing result under
+current thresholds. Choose and record the required latency target before running;
+do not loosen it merely to reproduce the old throughput figure.
 
 ## Initial production qualification
 
@@ -129,6 +139,12 @@ after material event-envelope changes.
 
 ## Deployment sizing
 
+The resource tables below reflect the checked-in
+[production capture/replay manifest](https://github.com/helpin-ai/gitops/blob/main/helpin/prod/events-pipeline/deployments/eventpipeline-web.yaml)
+and [staging manifest](https://github.com/helpin-ai/gitops/blob/main/helpin/stage/events-pipeline/deployments/eventpipeline-web.yaml),
+including the increased production replay memory allocation. They do not report
+live cluster resources.
+
 Stage and production preserve the two-capture/two-writer topology for
 availability and shard ownership. Production is sized for the measured 300/s
 launch ceiling, with burst headroom:
@@ -136,7 +152,7 @@ launch ceiling, with burst headroom:
 | Production container | Replicas | CPU request / limit | Memory request / limit |
 | --- | ---: | ---: | ---: |
 | capture | 2 | 0.25 / 1 core | 512 MiB / 1.5 GiB |
-| replay sidecar | 2 | 0.2 / 0.5 cores | 256 / 512 MiB |
+| replay sidecar | 2 | 0.2 / 0.5 cores | 768 MiB / 2 GiB |
 | session writer | 2 | 0.25 / 1 core | 512 MiB / 1 GiB |
 | NATS | 3 | 0.5 / 2 cores | 1 / 3 GiB |
 | ClickHouse | 2 | 0.5 / 4 cores | 4 / 12 GiB |

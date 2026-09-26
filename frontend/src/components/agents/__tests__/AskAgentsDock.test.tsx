@@ -22,6 +22,8 @@ Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn
 Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
 
 const mocks = vi.hoisted(() => ({
+  useAskAgentDefaults: vi.fn(),
+  aiPicker: vi.fn(() => null),
 	toastError: vi.fn(),
 	toastSuccess: vi.fn(),
   listChats: vi.fn(),
@@ -37,6 +39,8 @@ const mocks = vi.hoisted(() => ({
   listChatRunInteractions: vi.fn(),
   resolveInteraction: vi.fn(),
   cancelChatRun: vi.fn(),
+  pauseChatRun: vi.fn(),
+  resumeChatRun: vi.fn(),
   listRuns: vi.fn(),
   getRunSnapshot: vi.fn(),
   listRunEvents: vi.fn(),
@@ -54,6 +58,11 @@ const mocks = vi.hoisted(() => ({
   searchEntities: vi.fn(),
   uploadEditorFile: vi.fn(),
 }));
+
+// Profile queries have their own provider-backed tests; keep these dock tests
+// focused on transcript, message correlation, and composer behavior.
+vi.mock('@/components/agents/AIConnectionPicker', () => ({ AIConnectionPicker: mocks.aiPicker }));
+vi.mock('@/hooks/queries/useAskAgentDefaults', () => ({ useAskAgentDefaults: mocks.useAskAgentDefaults }));
 
 vi.mock('@/lib/helpin', () => ({ resetHelpinIdentity: vi.fn() }));
 
@@ -79,6 +88,8 @@ vi.mock('@/lib/services/dockChatService', () => ({
     listChatRunInteractions: mocks.listChatRunInteractions,
     resolveInteraction: mocks.resolveInteraction,
     cancelChatRun: mocks.cancelChatRun,
+    pauseChatRun: mocks.pauseChatRun,
+    resumeChatRun: mocks.resumeChatRun,
     listRuns: mocks.listRuns,
     getRunSnapshot: mocks.getRunSnapshot,
     listRunEvents: mocks.listRunEvents,
@@ -169,12 +180,13 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  mocks.useAskAgentDefaults.mockReturnValue({ data: { ai_profile_id: 'ask-default' }, isPending: false, isError: false, refetch: vi.fn() });
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
   localStorage.clear();
   localStorage.setItem('helpin:agent-dock-selection:ws-1', JSON.stringify({ tab: 'chats', chatId: 'chat-1' }));
-  useDockStore.setState({ collapsed: false, view: 'chat', tab: 'chats', workspaceId: null, activeChatId: null, activeRunId: null, chats: [], transcripts: {}, drafts: {}, lastAttentionIds: [] });
+  useDockStore.setState({ transcriptView: 'timeline', collapsed: false, view: 'chat', tab: 'chats', workspaceId: null, activeChatId: null, activeRunId: null, chats: [], transcripts: {}, drafts: {}, lastAttentionIds: [] });
   useWorkspaceStore.setState({
     currentWorkspace: { id: 'ws-1', name: 'Acme' } as never,
   });
@@ -312,6 +324,34 @@ function setTextareaValue(textarea: HTMLTextAreaElement, value: string) {
 }
 
 describe('AskAgentsDock', () => {
+  it.each(['icon', 'attention', 'notification'])('opens an off-page Ask Agent approval through its %s', async (entry) => {
+    const run = { ...DOCK_RUN.run, id: 'ask-run', dock_chat_id: 'older-chat', target_type: 'workspace', target_info: undefined };
+    const chat = { ...CHAT, id: 'older-chat', title: 'Earlier investigation', active_run_id: run.id };
+    mocks.listRuns.mockResolvedValue({ data: { runs: [{ ...DOCK_RUN, run }], attention_count: 1 }, error: null });
+    mocks.getChat.mockImplementation(async (_workspaceId, chatId) => ({ data: chatId === chat.id ? chatDetail({ chat, run }) : chatDetail(), error: null }));
+    mocks.getChatRun.mockResolvedValue({ data: run, error: null });
+    mocks.listChatRunInteractions.mockResolvedValue({ data: { interactions: [{
+      id: 'ask-approval', interaction_kind: 'approval_request', status: 'pending',
+      request_schema_version: '1', request_payload: { title: 'Approve earlier investigation' },
+    }] }, error: null });
+    await renderDock();
+    const icon = document.body.querySelector<HTMLButtonElement>('[aria-label="Open Ask Agent conversation, Approve"]');
+    expect(icon).not.toBeNull();
+    expect(icon?.querySelector('[data-agent-dock-trigger-status-dot]')?.getAttribute('style')).toContain('217, 119, 6');
+    expect(document.body.querySelector('[aria-label="1 agent need your attention"]')).not.toBeNull();
+    await act(async () => {
+      if (entry === 'notification') window.dispatchEvent(new CustomEvent('helpin:ask-agents', { detail: { chatId: chat.id } }));
+      else if (entry === 'attention') document.body.querySelector<HTMLButtonElement>('[aria-label="1 agent need your attention"]')?.click();
+      else icon?.click();
+    });
+    await waitForText('Approve earlier investigation');
+    expect(useDockStore.getState().activeChatId).toBe(chat.id);
+    expect(useDockStore.getState().tab).toBe('chats');
+    expect(mocks.getChat).toHaveBeenCalledWith('ws-1', chat.id, expect.any(AbortSignal));
+    expect(mocks.getRunSnapshot).not.toHaveBeenCalled();
+    expect(document.body.querySelector('[data-dock-interaction-overlay]')?.textContent).toContain('Approve earlier investigation');
+  });
+
   it('keeps the first message visible while a newly created chat starts its run', async () => {
     const createdChat = { ...CHAT, id: 'chat-new', title: '', active_run_id: null };
     let resolveSend: ((value: { data: DockChatDetail; error: null }) => void) | undefined;
@@ -336,9 +376,22 @@ describe('AskAgentsDock', () => {
     expect(document.body.textContent).toContain('Investigate the workspace');
     expect(document.body.textContent).not.toContain('Ask a question about your workspace, or describe work for an agent to do.');
 
+    const composerBeforeAcceptance = dockTextarea();
+    const scrollBeforeAcceptance = document.querySelector('[data-agent-dock-chat-scroll]');
+    expect(document.body.textContent).not.toContain('Loading chat…');
+    mocks.listChats.mockResolvedValue({ data: { chats: [createdChat] }, error: null });
     await act(async () => {
       resolveSend?.({ data: chatDetail({ chat: createdChat }), error: null });
     });
+    expect(dockTextarea()).toBe(composerBeforeAcceptance);
+    expect(document.querySelector('[data-agent-dock-chat-scroll]')).toBe(scrollBeforeAcceptance);
+    expect(document.body.textContent).toContain('Investigate the workspace');
+    expect(document.body.textContent).not.toContain('Loading chat…');
+    await act(async () => window.dispatchEvent(new CustomEvent('helpin:ask-agents', {
+      detail: { mode: 'compose', intent: 'new_chat' },
+    })));
+    expect(dockTextarea()).not.toBe(composerBeforeAcceptance);
+    expect(document.body.textContent).not.toContain('Investigate the workspace');
   });
 
   it('renders a cached transcript immediately and keeps it when refresh fails', async () => {
@@ -602,7 +655,7 @@ describe('AskAgentsDock', () => {
 		});
 		await waitForCondition(() => mocks.sendMessage.mock.calls.length === 1, 'support draft message was not sent');
 
-		expect(mocks.createChat).toHaveBeenCalledWith('ws-1', '', 'conv-new', 'support');
+		expect(mocks.createChat).toHaveBeenCalledWith('ws-1', '', 'conv-new', 'support', false);
 		expect(mocks.sendMessage).toHaveBeenCalledWith('ws-1', 'chat-new', expect.objectContaining({
 			content: 'Investigate this request',
 			page_context: supportContext,
@@ -1184,6 +1237,55 @@ describe('AskAgentsDock', () => {
     expect(mocks.cancelChatRun).toHaveBeenCalledWith('ws-1', 'chat-1');
   });
 
+  it('pauses an active chat run without cancelling it', async () => {
+    mocks.getChat.mockResolvedValue({
+      data: chatDetail({
+        chat: { ...CHAT, active_run_id: 'run-1' },
+        run: { id: 'run-1', status: 'running', pause_reason: 'none' } as never,
+      }),
+      error: null,
+    });
+    mocks.getChatRun.mockResolvedValue({ data: { id: 'run-1', status: 'running', stream_state_snapshot: null }, error: null });
+    mocks.pauseChatRun.mockResolvedValue({
+      data: { id: 'run-1', status: 'running', pause_reason: 'none', execution_stage: 'pausing' }, error: null,
+    });
+
+    await renderDock();
+    await waitForText('Sprint questions');
+    const pause = document.body.querySelector<HTMLButtonElement>('[data-helpin-dock] [aria-label="Pause agent"]');
+    expect(pause).not.toBeNull();
+    await act(async () => pause?.click());
+    await flush();
+
+    expect(mocks.pauseChatRun).toHaveBeenCalledWith('ws-1', 'chat-1');
+    expect(mocks.cancelChatRun).not.toHaveBeenCalled();
+  });
+
+  it('resumes a manually paused chat run', async () => {
+    mocks.getChat.mockResolvedValue({
+      data: chatDetail({
+        chat: { ...CHAT, active_run_id: 'run-1' },
+        run: { id: 'run-1', status: 'paused', pause_reason: 'manual' } as never,
+      }),
+      error: null,
+    });
+    mocks.getChatRun.mockResolvedValue({ data: { id: 'run-1', status: 'paused', stream_state_snapshot: null }, error: null });
+    mocks.resumeChatRun.mockResolvedValue({
+      data: { id: 'run-1', status: 'paused', pause_reason: 'manual', execution_stage: 'resuming' }, error: null,
+    });
+
+    await renderDock();
+    await waitForText('Sprint questions');
+    expect(dockTextarea().disabled).toBe(true);
+    const resume = document.body.querySelector<HTMLButtonElement>('[data-helpin-dock] [aria-label="Resume agent"]');
+    expect(resume).not.toBeNull();
+    await act(async () => resume?.click());
+    await flush();
+
+    expect(mocks.resumeChatRun).toHaveBeenCalledWith('ws-1', 'chat-1');
+    expect(mocks.cancelChatRun).not.toHaveBeenCalled();
+  });
+
   it('keeps a persisted cancellation visibly pending and prevents repeat stop requests', async () => {
     mocks.getChat.mockResolvedValue({
       data: chatDetail({
@@ -1317,7 +1419,8 @@ describe('AskAgentsDock', () => {
     expect(mocks.listMessages).toHaveBeenCalledWith('ws-1', 'chat-1', undefined, 50, expect.any(AbortSignal));
   });
 
-  it('keeps earlier assistant progress and the final reply outside working groups', async () => {
+  it('keeps earlier assistant progress and the final reply outside working groups in Detailed view', async () => {
+    useDockStore.setState({ transcriptView: 'detailed' });
     mocks.listMessages.mockResolvedValue({
       data: {
         messages: [
@@ -1512,7 +1615,7 @@ describe('AskAgentsDock', () => {
     expect(useDockStore.getState().tab).toBe('chats');
   });
 
-  it('opens a local new-chat composer without creating an abandoned chat', async () => {
+  it('selects execution before creating a local chat on its first message', async () => {
     await renderDock();
     await waitForText('Sprint questions');
 
@@ -1535,6 +1638,18 @@ describe('AskAgentsDock', () => {
     await waitForText('New chat');
     expect(mocks.createChat).not.toHaveBeenCalled();
     expect(useDockStore.getState().activeChatId).toBeNull();
+    const executionPicker = document.body.querySelector<HTMLButtonElement>('[aria-label="Code and Python tools disabled"]');
+    expect(executionPicker).not.toBeNull();
+    await act(async () => {
+      executionPicker?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+    });
+    await flush();
+    const executionChoice = Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')).find(
+      (item) => item.textContent?.includes('Code & Python'),
+    );
+    expect(executionChoice).toBeTruthy();
+    await act(async () => executionChoice?.click());
+    expect(document.body.querySelector('[aria-label="Code and Python tools enabled"]')).not.toBeNull();
 
     const createdChat: DockChat = { ...CHAT, id: 'chat-2', title: '' };
     mocks.createChat.mockResolvedValue({ data: createdChat, error: null });
@@ -1545,7 +1660,7 @@ describe('AskAgentsDock', () => {
       textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     });
     await waitForCondition(() => mocks.sendMessage.mock.calls.length === 1, 'draft chat message was not sent');
-    expect(mocks.createChat).toHaveBeenCalledWith('ws-1', '', undefined, null);
+    expect(mocks.createChat).toHaveBeenCalledWith('ws-1', '', undefined, null, true);
     expect(mocks.sendMessage).toHaveBeenCalledWith('ws-1', 'chat-2', expect.objectContaining({ content: 'Investigate the signup issue' }));
   });
 
@@ -1613,6 +1728,33 @@ describe('AskAgentsDock', () => {
 
     expect(document.body.textContent).toContain('Ask Agent');
     expect(document.body.textContent).toContain('1 agent need your attention');
+  });
+
+  it('clears a chat from the dock after its question is answered', async () => {
+    useDockStore.setState({ collapsed: true });
+    const run = { ...DOCK_RUN.run, id: 'ask-run', dock_chat_id: CHAT.id, pause_reason: 'human_input' };
+    const chat = { ...CHAT, active_run_id: run.id, active_run_status: 'paused' as const };
+    const attention = { ...DOCK_RUN, run, attention_kind: 'input' as const };
+    let answered = false;
+    mocks.listChats.mockResolvedValue({ data: { chats: [chat] }, error: null });
+    mocks.listRuns.mockImplementation(async () => ({ data: { runs: answered ? [] : [attention], attention_count: answered ? 0 : 1 }, error: null }));
+    mocks.getChat.mockResolvedValue({ data: chatDetail({ chat, run }), error: null });
+    mocks.getChatRun.mockResolvedValue({ data: run, error: null });
+    mocks.sendMessage.mockImplementation(async () => {
+      answered = true;
+      return { data: chatDetail({ chat: { ...chat, active_run_status: 'running' }, run: { ...run, status: 'running', pause_reason: 'none' } }), error: null };
+    });
+
+    await renderDock();
+    await waitForText('1 need you');
+    await act(async () => document.body.querySelector<HTMLButtonElement>('[aria-label="1 agent need your attention"]')?.click());
+    await waitForCondition(() => !dockTextarea().disabled, `chat answer composer was not ready: ${dockTextarea().placeholder}`);
+    await act(async () => {
+      setTextareaValue(dockTextarea(), 'Use the current project');
+      dockTextarea().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    await waitForCondition(() => answered && !document.body.querySelector('[aria-label="1 agent need your attention"]'), 'answered chat remained in dock');
+    expect(document.body.querySelector('[aria-label^="Open Ask Agent conversation"]')).toBeNull();
   });
 
   it('keeps completed and other inactive agents out of the minimized dock', async () => {
@@ -1686,7 +1828,11 @@ describe('AskAgentsDock', () => {
     expect(header?.querySelector('[aria-label="Conversation actions"]')).not.toBeNull();
   });
 
-	it('creates and copies a public Ask chat link from the header menu', async () => {
+	it.each([false, true])('shares the displayed chat with a background agent run selected: %s', async (hasBackgroundRun) => {
+		if (hasBackgroundRun) {
+			useDockStore.setState({ tab: 'chats', activeRunId: 'agent-run-1' });
+			mocks.listRuns.mockResolvedValue({ data: { runs: [DOCK_RUN], attention_count: 1 }, error: null });
+		}
 		await renderDock();
 		await waitForText('Sprint questions');
 		const trigger = document.body.querySelector<HTMLButtonElement>('[aria-label="Conversation actions"]');
@@ -1696,6 +1842,7 @@ describe('AskAgentsDock', () => {
 			.find((item) => item.textContent === 'Share publicly');
 		await act(async () => share?.click());
 		await flush();
+		expect(mocks.getPublicShare).toHaveBeenCalledWith('ws-1', 'dock_chat', 'chat-1');
 		expect(mocks.createPublicShare).toHaveBeenCalledWith('ws-1', 'dock_chat', 'chat-1');
 		expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://helpin.ai/shared/share-token');
 	});
@@ -1724,6 +1871,12 @@ describe('AskAgentsDock', () => {
 		expect(trigger).not.toBeNull();
 		await act(async () => trigger?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 })));
 		await waitForText('Share publicly');
+		expect(mocks.getPublicShare).toHaveBeenCalledWith('ws-1', 'agent_run', 'agent-run-1');
+		const share = Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+			.find((item) => item.textContent === 'Share publicly');
+		await act(async () => share?.click());
+		await flush();
+		expect(mocks.createPublicShare).toHaveBeenCalledWith('ws-1', 'agent_run', 'agent-run-1');
 	});
 
   it('presents the dock close control as a minimized action with a tooltip', async () => {
@@ -1770,7 +1923,7 @@ describe('AskAgentsDock', () => {
     });
 
     expect(panel?.getAttribute('data-maximized')).toBeNull();
-    expect(panel?.className).toContain('w-[min(900px,92vw)]');
+    expect(panel?.className).toContain('w-[min(1120px,92vw)]');
     expect(document.body.querySelector('[aria-label="Maximize agent dock"]')).not.toBeNull();
   });
 
@@ -1885,6 +2038,24 @@ describe('AskAgentsDock', () => {
     );
   });
 
+  it('overlays user questions while keeping the composer in the background', async () => {
+    const run = { id: 'run-1', status: 'paused', pause_reason: 'human_input' } as never;
+    mocks.getChat.mockResolvedValue({ data: chatDetail({ chat: { ...CHAT, active_run_id: 'run-1' }, run }), error: null });
+    mocks.listChatRunInteractions.mockResolvedValue({ data: { interactions: [{
+      id: 'question-1', interaction_kind: 'request_user_input', status: 'pending',
+      request_schema_version: '1', title: 'Choose a project',
+      request_payload: { questions: [{ id: 'project', question: 'Which project should I use?', options: [{ label: 'Helpin', description: 'Main project' }] }] },
+    }] }, error: null });
+
+    await renderDock();
+    await waitForText('Which project should I use?');
+    const overlay = document.body.querySelector('[data-dock-interaction-overlay]');
+    expect(overlay?.textContent).toContain('Which project should I use?');
+    expect(document.body.querySelector('[data-agent-dock-chat-scroll]')?.contains(overlay)).toBe(false);
+    expect(dockTextarea()?.disabled).toBe(true);
+    expect(dockTextarea()?.closest('[data-dock-interaction-background]')?.hasAttribute('inert')).toBe(true);
+  });
+
   it('renders the approval card from the interactions fallback when events are empty', async () => {
     const run = { id: 'run-1', status: 'paused', pause_reason: 'human_approval' } as never;
     mocks.getChat.mockResolvedValue({
@@ -1926,16 +2097,12 @@ describe('AskAgentsDock', () => {
       await Promise.resolve();
     });
 
-    const approvalNotice = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button')).find(
-      (button) => button.textContent?.includes('Agent needs your approval'),
-    );
-    expect(approvalNotice).not.toBeUndefined();
-    await act(async () => {
-      approvalNotice?.click();
-      await Promise.resolve();
-    });
-
-    expect(scrollContainer?.scrollTop).toBe(1_000);
+    const overlay = document.body.querySelector('[data-dock-interaction-overlay]');
+    expect(overlay?.textContent).toContain('Confirm fallback launch');
+    expect(scrollContainer?.contains(overlay)).toBe(false);
+    expect(scrollContainer?.scrollTop).toBe(200);
+    expect(dockTextarea()).not.toBeNull();
+    expect(scrollContainer?.closest('[data-dock-interaction-background]')?.hasAttribute('inert')).toBe(true);
     expect(document.body.textContent).not.toContain('Agent needs your approval');
 
     const approve = Array.from(document.body.querySelectorAll('button')).find(
@@ -2497,4 +2664,66 @@ describe('follow-up message correlation', () => {
       expect(scroll.textContent).not.toContain('Sending…');
     }
   });
+});
+
+
+describe('inherited AI route disclosure', () => {
+  it('submits an explicitly selected profile with the first chat message', async () => {
+    mocks.sendMessage.mockResolvedValue({ data: chatDetail(), error: null });
+    await renderDock();
+    const props = mocks.aiPicker.mock.calls.at(-1)?.[0] as unknown as { onChange: (value: { ai_profile_id: string }) => void };
+    await act(async () => { props.onChange({ ai_profile_id: 'personal-profile' }); });
+    const textarea = dockTextarea();
+    await act(async () => { setTextareaValue(textarea, 'Review the current task'); });
+    await act(async () => { textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); });
+    await flush();
+    expect(mocks.sendMessage).toHaveBeenCalledWith('ws-1', 'chat-1', expect.objectContaining({ ai_profile_id: 'personal-profile', content: 'Review the current task' }));
+    expect(mocks.sendMessage.mock.calls[0]?.[2]?.model_connection_id).toBeUndefined();
+  });
+  it('passes Ask Agent’s saved profile to the launch picker', async () => {
+    await renderDock();
+    expect(mocks.aiPicker).toHaveBeenCalledWith(expect.objectContaining({ defaultProfileId: 'ask-default', workspaceId: 'ws-1', inDock: true }), undefined);
+  });
+  it('waits for the agent default instead of presenting a workspace fallback', async () => {
+    mocks.useAskAgentDefaults.mockReturnValue({ data: undefined, isPending: true, isError: false });
+    await renderDock();
+    expect(document.body.textContent).toContain('Loading…');
+    expect(mocks.aiPicker).not.toHaveBeenCalled();
+  });
+});
+
+it.each([true, false])('opens the linked chat instead of the saved selection (in first page: %s)', async (inFirstPage) => {
+  const shared = { ...CHAT, id: 'linked-chat', title: 'Linked conversation' };
+  window.history.replaceState({}, '', '/w/acme/pm/my-work?ask_chat=linked-chat');
+  mocks.listChats.mockResolvedValue({ data: { chats: inFirstPage ? [CHAT, shared] : [CHAT] }, error: null });
+  mocks.getChat.mockImplementation(async (_workspaceId: string, chatId: string) => ({ data: chatDetail({ chat: chatId === shared.id ? shared : CHAT }), error: null }));
+  try {
+    await renderDock();
+    expect(useDockStore.getState().activeChatId).toBe(shared.id);
+    expect(mocks.getChat.mock.calls.some((call) => call[1] === shared.id)).toBe(true);
+    expect(window.location.search).not.toContain('ask_chat');
+  } finally {
+    window.history.replaceState({}, '', '/');
+  }
+});
+
+it('shows an error for an inaccessible linked chat instead of opening the saved chat, and can retry', async () => {
+  window.history.replaceState({}, '', '/w/acme/pm/my-work?ask_chat=linked-chat');
+  mocks.getChat.mockResolvedValue({ data: null, error: 'Chat not found or access denied', status: 404 });
+  try {
+    await renderDock();
+    expect(useDockStore.getState().activeChatId).toBe('linked-chat');
+    expect(document.body.textContent).toContain('Unable to open this conversation chat.');
+    expect(document.body.textContent).toContain('Ask its owner to share it with your workspace.');
+    expect(mocks.getChat.mock.calls.every(call => call[1] === 'linked-chat')).toBe(true);
+    const shared = { ...CHAT, id: 'linked-chat', title: 'Linked conversation' };
+    mocks.getChat.mockResolvedValue({ data: chatDetail({ chat: shared }), error: null });
+    const retry = Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Retry');
+    await act(async () => { retry?.click(); });
+    await flush();
+    expect(document.body.textContent).not.toContain('Unable to open this conversation chat.');
+    expect(useDockStore.getState().activeChatId).toBe(shared.id);
+  } finally {
+    window.history.replaceState({}, '', '/');
+  }
 });

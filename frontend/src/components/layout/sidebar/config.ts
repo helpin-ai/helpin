@@ -30,6 +30,7 @@ import {
   Wrench01Icon,
   BookOpen01Icon,
 } from '@/lib/icons';
+import { buildSettingsHomePath } from '@/lib/settingsDiscovery';
 import { buildSettingsRoutePath, getSettingsSidebarGroups } from '@/lib/settingsSections';
 import { isWorkspaceSupportRoute } from '@/lib/workspaceRoutes';
 import type { WorkspaceTeam } from '@/lib/types';
@@ -78,7 +79,7 @@ export function buildRailItems(
     { id: 'docs', label: 'Docs', icon: File01Icon, defaultLink: `/w/${wsSlug}/docs` },
     { id: 'crm', label: 'CRM', icon: Briefcase01Icon, defaultLink: crmDefaultLink },
     { id: 'automation', label: 'Automation', icon: BotIcon, defaultLink: `/w/${wsSlug}/automation/flows` },
-    { id: 'settings', label: 'Settings', icon: Setting07Icon, defaultLink: buildSettingsRoutePath(wsSlug, 'profile') },
+    { id: 'settings', label: 'Settings', icon: Setting07Icon, defaultLink: buildSettingsHomePath(wsSlug) },
   ];
   if (setupProgress !== undefined) {
     items.push({ id: 'setup', label: 'Setup', icon: CheckmarkCircle02Icon, defaultLink: `/w/${wsSlug}/setup`, progressPercent: Math.max(0, Math.min(100, setupProgress)), separatorBefore: true });
@@ -117,6 +118,7 @@ export function buildPanelNavGroups(
           { link: `/w/${wsSlug}/crm/contacts`, label: 'Contacts', icon: UserGroupIcon },
           { link: `/w/${wsSlug}/crm/companies`, label: 'Companies', icon: Building03Icon },
           { link: `/w/${wsSlug}/crm/deals`, label: 'Deals', icon: DollarCircleIcon },
+          { link: `/w/${wsSlug}/crm/emails`, label: 'Emails', icon: InboxIcon },
           { link: `/w/${wsSlug}/crm/meetings`, label: 'Meetings', icon: Camera01Icon },
           { link: `/w/${wsSlug}/crm/playbooks`, label: 'Playbooks', icon: BookOpen01Icon, separatorBefore: true },
           { link: `/w/${wsSlug}/crm/insights`, label: 'Signals', icon: BulbIcon },
@@ -150,6 +152,7 @@ export function buildPanelNavGroups(
     docs: [],
     settings: getSettingsSidebarGroups(canManageSettings, permissionSet).map((group) => ({
       label: group.label,
+      icon: group.icon,
       items: group.sections.map((section) => ({
         link: buildSettingsRoutePath(wsSlug, section.id),
         label: section.label,

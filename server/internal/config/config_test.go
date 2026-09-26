@@ -253,3 +253,50 @@ func TestLoadRejectsNonObjectCommandRouterOpenRouterProviderOptions(t *testing.T
 		t.Fatalf("expected object config error, got %v", err)
 	}
 }
+
+func TestRateLimitConfiguration(t *testing.T) {
+	setRequiredConfigEnv(t)
+	t.Setenv("AUTHENTICATED_RATE_LIMIT_PER_MINUTE", "")
+	t.Setenv("EXPENSIVE_RATE_LIMIT_PER_MINUTE", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AuthenticatedRateLimit != 1200 || cfg.ExpensiveRateLimit != 120 {
+		t.Fatal("unexpected defaults")
+	}
+	t.Setenv("AUTHENTICATED_RATE_LIMIT_PER_MINUTE", "0")
+	t.Setenv("EXPENSIVE_RATE_LIMIT_PER_MINUTE", "240")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AuthenticatedRateLimit != 0 || cfg.ExpensiveRateLimit != 240 {
+		t.Fatal("overrides ignored")
+	}
+	for _, value := range []string{"-1", "bad"} {
+		t.Setenv("EXPENSIVE_RATE_LIMIT_PER_MINUTE", value)
+		if _, err = Load(); err == nil {
+			t.Fatal("invalid limit accepted")
+		}
+	}
+}
+
+func TestLoadAddsExternalMCPHostsWithoutReplacingOperatorPolicy(t *testing.T) {
+	setRequiredConfigEnv(t)
+	t.Setenv("EXTERNAL_MCP_ALLOWED_HOSTS", "mcp.customer.io,mcp-eu.customer.io")
+	t.Setenv("EXTERNAL_MCP_ADDITIONAL_ALLOWED_HOSTS", "ctrl-ys3gb9-mgmt-api.cstuinternal.com")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	want := []string{"mcp.customer.io", "mcp-eu.customer.io", "ctrl-ys3gb9-mgmt-api.cstuinternal.com"}
+	if len(cfg.ExternalMCPAllowedHosts) != len(want) {
+		t.Fatalf("allowed hosts = %v, want %v", cfg.ExternalMCPAllowedHosts, want)
+	}
+	for i, host := range want {
+		if cfg.ExternalMCPAllowedHosts[i] != host {
+			t.Fatalf("allowed hosts = %v, want %v", cfg.ExternalMCPAllowedHosts, want)
+		}
+	}
+}

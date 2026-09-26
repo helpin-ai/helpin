@@ -1,5 +1,8 @@
+import { useDealEdits } from './useDealEdits';
+import { DealStageSelect, DealStageContent } from './DealStageSelect';
+import { comparableDealTotal, revenueSuffix } from './dealCreationDefaults';
 import { useTableSurface } from '@/hooks/useTableSurface';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -33,8 +36,10 @@ import {
   TABLE_CONTAINER,
   TABLE_HEADER,
   TABLE_HEADER_CELL,
+  TABLE_HEADER_CELL_SELECT,
   TABLE_ROW,
   TABLE_CELL,
+  TABLE_CELL_SELECT,
   TABLE_GROUP_ROW,
   TABLE_GROUP_ROW_INNER,
   TABLE_HEADER_CELL_SORTABLE,
@@ -101,7 +106,6 @@ export function DealsTable({
   onDealDeleted,
 }: DealsTableProps) {
   const displayProps = useDealDisplayStore((s) => s.properties);
-  const [localDeals, setLocalDeals] = useState<CRMDeal[]>(deals);
   const [groupBy, setGroupBy] = useState<GroupByOption>('none');
   const [expanded, setExpanded] = useState<ExpandedState>(true);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
@@ -111,12 +115,11 @@ export function DealsTable({
   const parentRef = useRef<HTMLDivElement>(null);
   const tableSurfaceRef = useTableSurface(parentRef);
 
-  useEffect(() => { setLocalDeals(deals); }, [deals]);
 
   const stages = useMemo(() => {
     if (!pipeline?.stages) return [];
     return [...pipeline.stages].sort((a, b) => a.position - b.position);
-  }, [pipeline?.stages]);
+  }, [pipeline]);
 
   const stageMap = useMemo(() => {
     const map = new Map<string, CRMPipelineStage>();
@@ -124,32 +127,11 @@ export function DealsTable({
     return map;
   }, [stages]);
 
-  const updateDealField = useCallback(
-    async (dealId: string, patch: Partial<CRMDeal>) => {
-      let snapshot: CRMDeal[] = [];
-      const optimisticPatch: Partial<CRMDeal> = { ...patch };
-      if (patch.stage_id) {
-        const stage = stageMap.get(patch.stage_id);
-        if (stage) optimisticPatch.stage = stage;
-      }
-
-      setLocalDeals((current) => {
-        snapshot = current;
-        return current.map((d) => (d.id === dealId ? { ...d, ...optimisticPatch } : d));
-      });
-
-      const { stage: _stage, pipeline: _pipeline, display_id: _did, ...apiSafe } = patch as Record<string, unknown>;
-      const { error } = await crmDealService.update(workspaceId, dealId, apiSafe);
-      if (error) setLocalDeals(snapshot);
-      else onDealUpdated?.({ ...snapshot.find((d) => d.id === dealId)!, ...optimisticPatch } as CRMDeal);
-    },
-    [workspaceId, stageMap, onDealUpdated],
-  );
+  const {localDeals,updateDealField,isPending} = useDealEdits(workspaceId,pipeline?.id,deals,stages,onDealUpdated);
 
   const handleDelete = useCallback(async (dealId: string) => {
     const { error } = await crmDealService.remove(workspaceId, dealId);
     if (!error) {
-      setLocalDeals((current) => current.filter((d) => d.id !== dealId));
       onDealDeleted?.(dealId);
     }
   }, [workspaceId, onDealDeleted]);
@@ -192,7 +174,6 @@ export function DealsTable({
             <InlineStageCell
               deal={info.row.original}
               stages={stages}
-              stageMap={stageMap}
               onUpdate={updateDealField}
             />
           ),
@@ -443,7 +424,7 @@ export function DealsTable({
                   return (
                     <div
                       key={header.id}
-                      className={`${TABLE_HEADER_CELL} ${canSort ? TABLE_HEADER_CELL_SORTABLE : ''} ${pinnedClass}`}
+                      className={`${colId === 'select' ? TABLE_HEADER_CELL_SELECT : TABLE_HEADER_CELL} ${canSort ? TABLE_HEADER_CELL_SORTABLE : ''} ${pinnedClass}`}
                       style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 300), ...pinnedSt }}
                       onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
                     >
@@ -492,6 +473,7 @@ export function DealsTable({
                     <MemoGroupHeaderRow row={row} stageMap={stageMap} groupBy={groupBy} />
                   ) : (
                     <MemoDataRow
+                      pending={isPending(row.original.id)}
                       key={`${row.id}:${columnVisibilityVersion}`}
                       row={row}
                       columnSizing={columnSizing}
@@ -522,13 +504,13 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
 }) {
   const subRows = row.subRows;
   const dealCount = subRows.length;
-  const totalAmount = subRows.reduce((sum, r) => sum + (r.original.amount ?? 0), 0);
+  const totalAmount = comparableDealTotal(subRows.map(r => r.original));
   const groupValue = row.groupingValue as string;
 
   let icon = null;
   if (groupBy === 'stage') {
     const stage = stageMap.get(row.original?.stage_id ?? '');
-    if (stage) icon = <StageTypeIcon stageType={stage.stage_type} className="h-4 w-4" />;
+    if (stage) icon = <DealStageContent stage={stage} />;
   } else if (groupBy === 'stage_type') {
     const stageType = Object.entries(STAGE_TYPE_CONFIG).find(([, v]) => v.label === groupValue);
     if (stageType) icon = <StageTypeIcon stageType={stageType[0] as 'open' | 'won' | 'lost'} className="h-4 w-4" />;
@@ -546,10 +528,10 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
           <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground" />
         )}
         {icon}
-        <span>{groupValue}</span>
+        {groupBy !== 'stage' && <span>{groupValue}</span>}
         <span className="ml-2 text-xs font-normal text-muted-foreground">
           {dealCount} {dealCount === 1 ? 'deal' : 'deals'}
-          {totalAmount > 0 && ` \u00B7 $${new Intl.NumberFormat().format(totalAmount)}`}
+          {totalAmount && ` \u00B7 ${totalAmount}`}
         </span>
       </span>
     </div>
@@ -559,6 +541,7 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
 // ── Data Row ──────────────────────────────────────────────────────
 
 interface DealDataRowProps {
+  pending: boolean;
   row: Row<CRMDeal>;
   columnSizing: Record<string, number>;
   columnSizingVersion: string;
@@ -567,6 +550,7 @@ interface DealDataRowProps {
 
 function areDealDataRowPropsEqual(prev: DealDataRowProps, next: DealDataRowProps): boolean {
   return (
+    prev.pending === next.pending &&
     prev.row.id === next.row.id &&
     prev.row.original === next.row.original &&
     prev.columnSizingVersion === next.columnSizingVersion &&
@@ -575,6 +559,7 @@ function areDealDataRowPropsEqual(prev: DealDataRowProps, next: DealDataRowProps
 }
 
 const MemoDataRow = memo(function DataRow({
+  pending,
   row,
   columnSizing,
   columnSizingVersion,
@@ -583,7 +568,7 @@ const MemoDataRow = memo(function DataRow({
   void columnSizingVersion;
   void columnVisibilityVersion;
   return (
-    <div className={TABLE_ROW} data-column-sizing={columnSizingVersion}>
+    <div className={TABLE_ROW} data-column-sizing={columnSizingVersion} data-deal-id={row.original.id} inert={pending} aria-busy={pending}>
       {row.getVisibleCells().map((cell) => {
         if (cell.column.getIsGrouped()) return null;
         const { defSize, runtimeSize, isResized } = resolveColumnRuntimeSize(cell.column, columnSizing);
@@ -595,7 +580,7 @@ const MemoDataRow = memo(function DataRow({
         return (
           <div
             key={cell.id}
-            className={`${TABLE_CELL} ${pinnedClass}`}
+            className={`${colId === 'select' ? TABLE_CELL_SELECT : TABLE_CELL} ${pinnedClass}`}
             style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 300), ...pinnedSt }}
           >
             {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -611,41 +596,13 @@ const MemoDataRow = memo(function DataRow({
 function InlineStageCell({
   deal,
   stages,
-  stageMap,
   onUpdate,
 }: {
   deal: CRMDeal;
   stages: CRMPipelineStage[];
-  stageMap: Map<string, CRMPipelineStage>;
   onUpdate: (id: string, patch: Partial<CRMDeal>) => void;
 }) {
-  const stage = stageMap.get(deal.stage_id);
-  return (
-    <Select
-      value={deal.stage_id}
-      onValueChange={(value) => onUpdate(deal.id, { stage_id: value })}
-    >
-      <SelectTrigger
-        className="h-6 w-full gap-1 border-none bg-transparent px-1 text-xs shadow-none hover:bg-muted"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-1.5 truncate">
-          {stage && <StageTypeIcon stageType={stage.stage_type} className="h-3.5 w-3.5 shrink-0" />}
-          <span className="truncate">{stage?.name ?? 'Unknown'}</span>
-        </div>
-      </SelectTrigger>
-      <SelectContent>
-        {stages.map((s) => (
-          <SelectItem key={s.id} value={s.id}>
-            <div className="flex items-center gap-1.5">
-              <StageTypeIcon stageType={s.stage_type} className="h-3.5 w-3.5" />
-              {s.name}
-            </div>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
+  return <DealStageSelect value={deal.stage_id} stages={stages} onChange={value => onUpdate(deal.id, {stage_id:value})} />;
 }
 
 function InlineAmountCell({
@@ -659,20 +616,15 @@ function InlineAmountCell({
   const [value, setValue] = useState(String(deal.amount ?? ''));
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (editing) {
-      setValue(String(deal.amount ?? ''));
-      setTimeout(() => inputRef.current?.select(), 0);
-    }
-  }, [editing, deal.amount]);
+
 
   if (!editing) {
     return (
       <button
         className="w-full text-left text-xs hover:text-primary"
-        onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+        onClick={(e) => { e.stopPropagation(); setValue(String(deal.amount ?? '')); setEditing(true); }}
       >
-        {deal.amount != null ? `${deal.currency} ${new Intl.NumberFormat().format(deal.amount)}` : '-'}
+        {deal.amount != null ? `${deal.currency} ${new Intl.NumberFormat().format(deal.amount)}${revenueSuffix(deal.revenue_type)}` : '-'}
       </button>
     );
   }
@@ -688,6 +640,8 @@ function InlineAmountCell({
   return (
     <input
       ref={inputRef}
+      autoFocus
+      onFocus={(event) => event.currentTarget.select()}
       className="w-full rounded border border-primary/40 bg-background px-1 py-0.5 text-left text-xs outline-none"
       value={value}
       onChange={(e) => setValue(e.target.value)}
@@ -761,18 +715,13 @@ function InlineProbabilityCell({
   const [value, setValue] = useState(String(deal.probability ?? ''));
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (editing) {
-      setValue(String(deal.probability ?? ''));
-      setTimeout(() => inputRef.current?.select(), 0);
-    }
-  }, [editing, deal.probability]);
+
 
   if (!editing) {
     return (
       <button
         className="flex w-full items-center gap-1.5 text-xs hover:text-primary"
-        onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+        onClick={(e) => { e.stopPropagation(); setValue(String(deal.probability ?? '')); setEditing(true); }}
       >
         {deal.probability != null ? (
           <>
@@ -797,6 +746,8 @@ function InlineProbabilityCell({
   return (
     <input
       ref={inputRef}
+      autoFocus
+      onFocus={(event) => event.currentTarget.select()}
       className="w-full rounded border border-primary/40 bg-background px-1 py-0.5 text-left text-xs outline-none"
       value={value}
       onChange={(e) => setValue(e.target.value)}

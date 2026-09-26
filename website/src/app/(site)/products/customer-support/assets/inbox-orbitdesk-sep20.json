@@ -1,0 +1,20 @@
+{
+  "type": "Generated fictional application demo",
+  "model": "gpt-image-2.5-sunburst",
+  "tool": "OpenAI images.edit API; previously authorized direct runner",
+  "reference": "https://storage.googleapis.com/vm-dev-screenshots/Sep%2020/Screenshot%202026-09-20%20at%2012.25.46%E2%80%AFPM.png",
+  "nativeDimensions": [
+    3840,
+    2016
+  ],
+  "master": "output/imagegen/customer-support/inbox-orbitdesk-sep20-v1.webp",
+  "prompt": "website/src/app/products/customer-support/assets/inbox-orbitdesk-sep20-prompt.txt",
+  "publishedWidths": [
+    960,
+    1440,
+    1920,
+    3840
+  ],
+  "processing": "Sharp 0.34.5, WebP quality 94, effort 6, proportional downscaling only",
+  "interaction": "Annotations and AI draft are separate HTML elements. Draft is local demo content; no live messages sent."
+}

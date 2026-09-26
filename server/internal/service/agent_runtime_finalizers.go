@@ -202,7 +202,7 @@ func (s *AgentRunFinalizerService) SetSupportCoverageService(coverage agentRunFi
 // that read the summary contract are skipped without markers when it is false
 // so a later duplicate terminal event can retry them.
 func (s *AgentRunFinalizerService) FinalizeTerminalRun(ctx context.Context, run *model.AgentRun, runtimeSummaryAvailable bool) {
-	if s == nil || run == nil {
+	if s == nil || run == nil || model.IsLocalAgentRun(run) {
 		return
 	}
 	completed := strings.TrimSpace(run.Status) == model.AgentRunStatusCompleted
@@ -506,7 +506,7 @@ func (s *AgentRunFinalizerService) finalizePlanningOutput(ctx context.Context, r
 // PR for the branch pair — with a marker on top so crash replays skip the
 // bookkeeping writes and activity log once delivery fully succeeded.
 func (s *AgentRunFinalizerService) finalizeRepositoryDelivery(ctx context.Context, run *model.AgentRun) error {
-	if s.repositoryDelivery == nil {
+	if s.repositoryDelivery == nil || agentRunIsPreview(run) {
 		return nil
 	}
 	switch run.TargetType {
@@ -668,7 +668,7 @@ func (s *AgentRunFinalizerService) pushVisitorConversationRefresh(ctx context.Co
 	if conversations == nil {
 		conversations = []model.SupportConversation{}
 	}
-	listJSON, err := json.Marshal(map[string]any{"conversations": conversations})
+	listJSON, err := json.Marshal(map[string]any{"conversations": model.PublicWidgetConversations(conversations)})
 	if err != nil {
 		return
 	}

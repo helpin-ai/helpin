@@ -1,4 +1,18 @@
-# NATS event pipeline
+# NATS event pipeline design and implementation status
+
+This August design records the event capture, sessionization, and ClickHouse delivery contract for contributors and operators. Several sizing and deployment assumptions have changed. Use the current-source differences below before applying any historical operational instruction; this page is not evidence of a live deployment or capacity qualification.
+
+## Source review — 2026-09-18
+
+- [Stream and consumer configuration](../../events-pipeline/rust-capture/src/writer.rs) now uses **six hours**, not 48 hours, for work, raw archive, and DLQ retention. The original six-hour page/24-hour escalation thresholds below are unsuitable for that shorter retention and need an operational decision before use. WorkQueue/DiscardNew, raw R1, work/DLQ R3, 30-second deduplication, explicit acks, five-minute ack wait, and unlimited redelivery remain encoded in source.
+- Consumer `MaxAckPending` and maximum pull batch are now **16,384**. [Writer runtime](../../events-pipeline/rust-capture/src/writer_runtime.rs) flushes at **16,384 rows, 48 MiB, or two seconds**, replacing the old 8,192-row/16-MiB/ten-second sizing. The database default is `helpin`, not `usermaven`.
+- Both checked-in stage and production writer manifests configure **two writer replicas**, while NATS still has three nodes. [Production writer configuration](https://github.com/helpin-ai/gitops/blob/main/helpin/prod/events-pipeline/deployments/eventpipeline-writer.yaml) and [NATS configuration](https://github.com/helpin-ai/gitops/blob/main/helpin/prod/events-pipeline/nats/nats.yaml) are the source of secret names, keys, topology, and image references; the old secret inventory below is superseded. In particular credentials now use `helpin-eventpipeline-secrets` with uppercase keys. Storage class `hcloud-volumes-retain` is present; it is not proof of the required performance or physical storage properties.
+- [Pipeline helpers](../../events-pipeline/rust-capture/src/pipeline.rs) retain the seven-day/one-hour timestamp bounds, 100 shards, terminal delivery threshold 256, version encoding, and 48-hour expected-replay seed lookback. The shard calculation uses the first eight SHA-256 bytes as a big-endian integer; the formula below is corrected to make that contract explicit.
+- [Session seed migration](../../server/internal/chmigrate/sql/202608250003_event_ingestion.sql) still retains 49 hours and filters out retroactive generations. Its original “one hour beyond the work stream” rationale is stale now that stream retention is six hours. These distinct values must not be conflated.
+- [Capture publishing](../../events-pipeline/rust-capture/src/sinks/nats_event_sink.rs) retains separate work/archive/DLQ deadlines and bounded archive work, and supports disabling raw archiving. The reviewed production capture manifest enables the archive. These are checked-in settings, not verification of deployed configuration.
+- Commit-before-ack, ordered acknowledgement retry, poison isolation, and bounded session state are represented in the Rust implementation. Vendor compatibility claims, licensed database qualification, live traffic state, alert coverage, and the 15,000 events/s target were not tested here. The statement below that the branch has no live traffic is historical only.
+
+## Original design and acceptance criteria
 
 ## Runtime path
 
@@ -26,7 +40,7 @@ Capture lowercases `project_id` before all identity-sensitive operations. The
 visitor shard is:
 
 ```text
-sha256(lower(project_id) + ":" + user_anonymous_id) % 100
+u64_big_endian(sha256(lower(project_id) + ":" + user_anonymous_id)[0:8]) % 100
 ```
 
 The subject and envelope version are immutable contracts. An incompatible

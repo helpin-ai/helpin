@@ -1,0 +1,28 @@
+name: Community bundle
+# Full image acceptance stays outside PR CI; run manually before packaging merges.
+on:
+  schedule:
+    - cron: '15 3 * * *'
+  workflow_dispatch:
+    inputs:
+      both_architectures:
+        description: Run full acceptance on native amd64 and arm64
+        type: boolean
+        default: true
+permissions:
+  contents: read
+concurrency:
+  group: community-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.both_architectures && '["amd64", "arm64"]' || '["amd64"]') }}
+    uses: ./.github/workflows/community-test.yml
+    with:
+      level: full
+      architecture: ${{ matrix.arch }}
+    secrets:
+      runtime_read_token: ${{ secrets.COMMUNITY_RUNTIME_READ_TOKEN }}

@@ -36,14 +36,21 @@ func supportFollowUpEnabled(settings model.SupportInboxSettings) bool {
 	return settings.AIFollowUpEnabled && shouldAutomaticallyProcessSupportAI(settings) && shouldCreatePublicSupportAIReply(settings) && strings.TrimSpace(derefString(settings.AIAgentID)) != ""
 }
 
-func supportFollowUpEligible(conv *model.SupportConversation, episode *model.SupportAIFollowUp, settings model.SupportInboxSettings) bool {
+func supportFollowUpEligible(conv *model.SupportConversation, episode *model.SupportAIFollowUp, settings model.SupportInboxSettings, replyChannels ...string) bool {
+	if conv.AIResumedAt != nil && !episode.CreatedAt.After(*conv.AIResumedAt) {
+		return false
+	}
 	if !supportFollowUpEnabled(settings) || conv.FlowState == nil || *conv.FlowState != model.SupportConversationFlowStateAIHandling || derefString(conv.AIState) != "pending" || supportConversationHumanOwned(conv) || conv.CustomerRequestedHumanAt != nil || conv.LinkedTaskID != nil || conv.CustomerAwaitingResponse {
 		return false
 	}
 	if conv.Status != model.SupportConversationStatusOpen && conv.Status != model.SupportConversationStatusWaitingOnCustomer {
 		return false
 	}
-	if conv.Channel != "widget" && conv.Channel != "email" {
+	channel := model.SupportAIReplyChannel(conv, nil)
+	if len(replyChannels) > 0 {
+		channel = replyChannels[0]
+	}
+	if !model.SupportAIChannelEnabled(settings, channel) {
 		return false
 	}
 	if conv.EmailUnsubscribed || derefString(conv.AssignedAgentID) != derefString(settings.AIAgentID) {
@@ -111,7 +118,11 @@ func (s *SupportFollowUpService) process(ctx context.Context, row model.SupportA
 			return nil
 		}
 		settings = parseSettings(inst.Settings)
-		if !inst.Active || !supportFollowUpEligible(c, e, settings) {
+		channel, err := supportFollowUpReplyChannel(ctx, tx, c)
+		if err != nil {
+			return err
+		}
+		if !inst.Active || !supportFollowUpEligible(c, e, settings, channel) {
 			return finishFollowUpRow(tx, e, "cancelled", "conversation_changed", now)
 		}
 		if e.Status == "waiting" {
@@ -153,15 +164,19 @@ func (s *SupportFollowUpService) process(ctx context.Context, row model.SupportA
 		return tx.Model(e).Updates(map[string]any{"status": "assessing", "started_at": e.StartedAt, "updated_at": now}).Error
 	})
 	if err == nil && sent != nil {
-		s.publishFollowUpMessage(row.WorkspaceID, sent)
+		s.publishFollowUpMessage(ctx, row.WorkspaceID, sent)
 	}
 	if err != nil || !launch {
 		return err
 	}
-	return s.launch(ctx, row, &conv, settings, now)
+	handled, classification, err := s.assessJevFollowUp(ctx, row, &conv, now)
+	if err != nil || handled {
+		return err
+	}
+	return s.launch(ctx, row, &conv, settings, now, classification)
 }
 
-func (s *SupportFollowUpService) launch(ctx context.Context, episode model.SupportAIFollowUp, conv *model.SupportConversation, settings model.SupportInboxSettings, now time.Time) error {
+func (s *SupportFollowUpService) launch(ctx context.Context, episode model.SupportAIFollowUp, conv *model.SupportConversation, settings model.SupportInboxSettings, now time.Time, classifications ...string) error {
 	agent, err := s.chat.agentService.GetAgent(ctx, episode.WorkspaceID, derefString(settings.AIAgentID))
 	if err != nil {
 		return err
@@ -175,6 +190,9 @@ func (s *SupportFollowUpService) launch(ctx context.Context, episode model.Suppo
 	trigger := &model.AgentRunTriggerContext{Source: model.AgentRunTriggerSourceSystem, TriggerType: supportFollowUpTriggerType, FiredAt: &now}
 	trigger.Context, _ = json.Marshal(map[string]string{"follow_up_id": episode.ID})
 	additional := supportFollowUpInstructions(episode.CloseHours) + "\n\n" + fmt.Sprintf("Assess inactivity episode %s for support conversation %s. Read its conversation and public messages before deciding. The last unanswered AI message is %s. This is scheduled work, not a new customer message.", episode.ID, conv.ID, episode.SourceMessageID)
+	if len(classifications) > 0 && classifications[0] == "waiting_customer" {
+		additional += "\n\nThe server's Jev assessment classified this episode as waiting_customer with no outstanding company obligation. Generate the grounded follow-up question and separate closure notice using the rules above. Verify the cited public messages before submitting; choose handoff or skip if your context review finds contradictory evidence."
+	}
 	input, err := buildAgentRunInputPayload("support_conversation", conv.ID, trigger, nil, nil, &additional, tools)
 	if err != nil {
 		return err
@@ -220,10 +238,34 @@ func (s *SupportInboxService) SetFollowUpRepository(repo *repository.SupportFoll
 	s.followUpRepo = repo
 }
 
-func (s *SupportFollowUpService) publishFollowUpMessage(workspaceID string, message *model.SupportMessage) {
+func (s *SupportFollowUpService) publishFollowUpMessage(ctx context.Context, workspaceID string, message *model.SupportMessage) {
 	if message.IsInternal {
+		s.chat.supportAIService.localizeSupportHandoffNote(ctx, message)
 		s.chat.supportAIService.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, message, "support:follow_up"))
 		return
 	}
 	publishSupportAIMessageStream(s.chat.supportAIService.wsPublisher, workspaceID, message, "ai:"+derefString(message.SenderAgentID))
+}
+
+func supportFollowUpReplyChannel(ctx context.Context, tx *gorm.DB, conv *model.SupportConversation) (string, error) {
+	source, err := repository.NewSupportMessageRepository(tx).GetByID(ctx, derefString(conv.LastPublicMessageID))
+	if err != nil {
+		return "", err
+	}
+	return model.SupportAIReplyChannel(conv, source), nil
+}
+
+func setSupportFollowUpEmailDelivery(message *model.SupportMessage, channel string) {
+	if channel != "email" {
+		return
+	}
+	metadata := map[string]any{}
+	_ = json.Unmarshal([]byte(message.Metadata), &metadata)
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	metadata["delivery_mode"] = "email_only"
+	encoded, _ := json.Marshal(metadata)
+	message.Metadata = string(encoded)
+	message.ViaChannel = strPtr("email")
 }

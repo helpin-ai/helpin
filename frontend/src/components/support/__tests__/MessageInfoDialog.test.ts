@@ -83,4 +83,27 @@ describe('buildMessageInfoRows', () => {
     expect(rows).toContainEqual(['Email status', 'Delivery status unavailable'])
     expect(rows).toContainEqual(['Read', 'Read status unavailable'])
   })
+
+  it('labels incoming email as received and shows a distinct reply address', () => {
+    const rows = buildMessageInfoRows({
+      ...baseInfo,
+      email_direction: 'inbound',
+      from: 'form@example.com',
+      reply_to: 'customer@example.com',
+      email_delivery_status: 'received',
+      email_delivery_status_label: 'Received via email',
+    })
+    expect(rows).toContainEqual(['Received at', expect.any(String)])
+    expect(rows).toContainEqual(['Reply-To', 'customer@example.com'])
+    expect(rows).toContainEqual(['Email status', 'Received via email'])
+  })
+
+  it('omits Reply-To when it is the same address as From', () => {
+    const rows = buildMessageInfoRows({
+      ...baseInfo,
+      from: 'Customer <customer@example.com>',
+      reply_to: 'customer@example.com',
+    })
+    expect(rows.map(([label]) => label)).not.toContain('Reply-To')
+  })
 })

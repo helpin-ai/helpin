@@ -1,4 +1,34 @@
-# Fix: Old Stories Missing from Kanban Board After Team-Workflow Migration
+# Historical repair of team-workflow task assignments
+
+> Historical planning artifact, source-compared on 2026-09-17. This page
+> explains an older workflow migration for contributors. “Stories,” proposed
+> filenames, approximate line numbers, and database instructions below are from
+> that period; do not execute them as a current repair procedure.
+
+## Current implementation and differences
+
+The [workflow service](../../server/internal/service/pm_workflow.go) now calls
+`migrateTeamTasks` from workflow seeding and copying. Its mapping prefers
+`(state_type, position)`, then state type, then the configured default or first
+new state. Migration errors are logged without failing the already-created
+workflow; success of seeding/copying does not prove that all tasks moved.
+
+The [task repository](../../server/internal/repository/pm_task.go) implements
+`MigrateTasksToWorkflow`. It matches the old workflow and state, excludes archived
+tasks, includes both the target team's tasks and tasks with null `team_id`, and
+sets their team to the target. That is broader than the team-only proposal below.
+Each state mapping is updated separately without a transaction around this loop,
+so failures can leave a partially migrated set.
+
+The actual [legacy SQL](../../server/migrations/045_migrate_team_stories_to_team_workflows.sql)
+is numbered **045**, not the proposed 043 filename. It still uses the old
+`pm_stories` table and handles unassigned stories only when their workspace has
+exactly one team. That SQL rule differs from the current repository helper.
+Current migrations belong under `server/internal/dbmigrate/sql`; a repair for a
+present installation must be based on its actual schema and migration state,
+not direct replay of this archived SQL. No database mutation was run for this review.
+
+## Original repair proposal
 
 ## Context
 

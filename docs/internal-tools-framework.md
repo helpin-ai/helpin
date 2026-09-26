@@ -1,18 +1,26 @@
-# Internal Tool Framework
+# Internal tools framework
 
 ## Purpose
 
-This is the single source of truth for internal tools in Helpin.
+Use this guide when adding a Helpin product tool or changing its JSON contract.
+Helpin owns product authorization and commands; the separate Agent Runtime owns
+model loops and runtime-local tools. Start with [agents and automation](agents-and-automation.md)
+for the execution boundary.
 
-Use it when adding or changing:
+Current implementation map:
 
-- backend-only command tools in `server/internal/commandtools/`
-- runtime tools in `server/internal/worker/tools.go`
-- tool implementations in `server/internal/worker/tools_*.go`
-- tool catalog metadata in `server/internal/worker/tool_catalog.go`
-- Helpin MCP runtime naming in `server/internal/worker/tool_names.go`
-- runtime allowlists in `server/internal/worker/runtime_profiles.go`
-- prompt examples or docs that depend on exact tool JSON
+| Responsibility | Source |
+| --- | --- |
+| Command aliases, descriptions, schemas, and risk metadata | [Command metadata](../server/internal/commandtools/metadata.go) |
+| Product command registration and dispatch | [Internal command service](../server/internal/service/internal_command_service.go) and its domain-specific `internal_command_*.go` files |
+| Runtime provider discovery and exact tool-name dispatch | [Provider bridge](../server/internal/service/agent_runtime_mcp.go) |
+| Runtime callback scope and actor resolution | [Host service](../server/internal/service/agent_runtime_host.go) |
+| Configuration/UI catalog | [Host catalog](../server/internal/agentcontract/tool_catalog.go) |
+| Presets and per-agent tool overrides | [Runtime profiles](../server/internal/agentcontract/runtime_profiles.go) and [profile resolution](../server/internal/agentcontract/resolve.go) |
+| Canonical name normalization | [Tool constants](../server/internal/agentcontract/tool_constants.go) |
+
+The former `worker/tools.go` registry and in-process executor are removed. New
+capabilities must use the owning service or the separate Runtime repository.
 
 Current model:
 
@@ -30,7 +38,7 @@ There are three distinct layers. Keep them separate:
 | Layer | Model-visible? | Primary code | Purpose |
 | --- | --- | --- | --- |
 | System/internal command | No, unless wrapped | `server/internal/commandtools/` plus service/repository code | Reusable backend action with product invariants |
-| Agent-facing runtime tool | Yes | `server/internal/worker/tools.go` and `tools_*.go` | Model-visible tool contract and execution handler |
+| Agent-facing runtime tool | Yes | Separate Agent Runtime; Helpin provider bridge for product tools | Model-visible contract and execution routing |
 | Command-backed runtime tool | Yes | Both of the above | Model-visible alias that delegates to a reusable internal command |
 
 ### System/Internal Commands
@@ -68,7 +76,10 @@ Examples:
 
 ### Agent-Facing Runtime Tools
 
-Agent-facing runtime tools are the contracts the model sees and calls. These are registered in `ToolRegistry`, filtered by the active allowed-tool set, serialized into provider tool definitions, executed through `ExecuteAllowed`, and shown in tool catalog surfaces.
+Agent-facing tools are the contracts the model sees and calls. Helpin exposes
+command-backed product tools through `ListProviderTools` and `CallProviderTool`.
+Agent Runtime selects and executes tools using the run contract. The host catalog
+is configuration/UI metadata, not an executable registry.
 
 Use an agent-facing runtime tool when:
 
@@ -81,8 +92,8 @@ The model-facing contract is the source of truth for prompts and skills. The int
 
 ### Canonical Names and Legacy MCP Names
 
-Helpin product and interaction tools have one current name and one accepted
-legacy representation:
+Helpin product and interaction tools use bare canonical names. Authored
+configuration and stored history can also contain legacy names:
 
 - canonical name: the model-facing and backend name, such as `create_task`, `update_plan`, or `request_user_input`
 - legacy MCP name: a stored compatibility form such as `mcp__helpin__create_task`
@@ -99,24 +110,32 @@ Use canonical names for:
 - provider tool definitions
 - docs that tell an agent which tool to call
 
-Runtime dispatch strips the legacy `mcp__helpin__` prefix before policy checks
-and execution. Frontend transcript surfaces accept either form and display the
-canonical name. Do not create new prefixed data.
+Write-side normalization strips the legacy `mcp__helpin__` prefix and maps known
+legacy aliases. Provider discovery and calls require exact bare canonical names;
+`CallProviderTool` does not accept prefixed aliases. Frontend transcript rendering
+strips the prefix while preserving the historical tool identity. Do not create
+new prefixed data.
 
-Repo-local backend tools such as filesystem reads, patching, and shell execution may still be provided directly by a runtime. Helpin product and interaction tools should be available through the Helpin MCP bridge for both `native_sdk` and `codex`.
+Repo-local backend tools such as filesystem reads, patching, and shell execution may still be provided directly by a runtime. Helpin product and interaction tools should be available through the Helpin MCP bridge for `native_sdk` runs.
 
 ### Runtime Exposure
 
-Adding a tool implementation is not enough to make it usable. Exposure is controlled by:
+A tool needs an implementation, executable registration, and run exposure:
 
-- `server/internal/worker/runtime_profiles.go` for preset/runtime defaults
-- `agent.allowed_tools` overrides, resolved by `ResolveAgentProfile`
-- `ExecutionContext.AllowedTools`, which is enforced by `ToolRegistry.ExecuteAllowed`
-- active skill and prompt selection, which can make the model see only the skills and policies active for the current turn
-- Helpin MCP discovery, which exposes available Helpin product/interaction tools with bare canonical names
-- tool catalog metadata in `server/internal/worker/tool_catalog.go` and `server/internal/commandtools/metadata.go`
+- `agentcontract/runtime_profiles.go` supplies preset defaults; `ResolveAgentProfile`
+  applies per-agent overrides.
+- The launch contract carries the selected allowed tools to Agent Runtime. Runtime
+  owns execution-time tool filtering and approval policy.
+- Helpin's provider catalog includes executable commands with tool metadata.
+  The provider validates unique canonical aliases, schemas, and command mappings.
+- Host callbacks resolve workspace, agent, run, and actor scope before dispatch.
+  `InternalCommandService.Execute` checks actor permissions and mutation guards;
+  domain handlers enforce entity membership and product invariants.
+- The configuration/UI catalog overlays command metadata onto the embedded
+  catalog snapshot. A catalog entry alone does not make a tool executable.
 
-This means a tool can exist in the registry but still be unavailable to a specific agent run.
+A tool can therefore appear in configuration metadata without being available
+for a particular run. Verify both the resolved run contract and provider coverage.
 
 ## What Exists Today
 
@@ -179,8 +198,7 @@ Each agent version owns one complete `system_prompt`. Product prompt modules
 may be used internally to generate a default version, but they are not exposed
 as attached skills and are not runtime dependencies. Approval and completion
 requirements are carried separately as structured runtime policy. Optional
-skills use these runtime-owned tools on both
-`native_sdk` and Codex:
+skills use these runtime-owned tools on `native_sdk` runs:
 
 - `find_skills {"query"?: string, "limit"?: integer}` lists or searches metadata for the current agent's optional skills.
 - `read_skill {"key"?: string, "skill_id"?: string, "path"?: string, "max_bytes"?: integer}` reads one selected package. Exactly one of `key` or `skill_id` is required; `path` defaults to `SKILL.md` and must remain inside the package.
@@ -203,7 +221,7 @@ The current shape of the system is:
                                      v
 +---------+      +-------------------+-------------------+      +------------------+
 |  Model  +----->+ Runtime Tool Contract (name/schema/ui) +----->+ Tool Handler     |
-+---------+      +-------------------+-------------------+      | tools_*.go        |
++---------+      +-------------------+-------------------+      | Runtime / service |
                                      |                          +---------+--------+
                                      |                                    |
                                      |                                    |
@@ -282,7 +300,7 @@ Every JSON tool contract has four layers:
    compact JSON or intentional plain text
 ```
 
-That means a good tool contract is not just the schema in `tools.go`.
+That means a good tool contract is not just the schema in command metadata.
 It is the full agreement between:
 
 - the schema the model sees
@@ -400,61 +418,31 @@ Avoid mixed naming like `taskId`, `docId`, or vague fields like `data` unless th
 
 ## Implementation Pattern
 
-Each tool should follow the same handler pattern:
+For a Helpin product tool:
 
-1. register it in `server/internal/worker/tools.go`
-2. implement it in the matching domain file
-3. unmarshal into a typed Go struct
-4. validate and normalize early
-5. check run-context constraints before doing work
-6. return output in a shape the model can use
+1. Add or update the canonical alias and schema in command metadata.
+2. Register an `InternalCommandDefinition` with its permissions, mutation flag,
+   tool metadata, and execution function.
+3. Implement the domain action in the corresponding service file. Decode typed
+   input, apply defaults, check workspace/entity scope, and enforce invariants.
+4. Return structured output and add tests for successful execution and rejected
+   inputs or unauthorized scope.
+5. Verify provider discovery and the relevant agent's resolved allowlist.
 
-The contract should line up across files like this:
-
-```text
-server/internal/worker/tools.go
-  -> tool name
-  -> description
-  -> input schema
-
-server/internal/worker/tools_*.go
-  -> decode struct
-  -> validation
-  -> execution
-  -> output
-
-server/internal/worker/tool_catalog.go
-  -> category
-
-server/internal/worker/runtime_profiles.go
-  -> exposure policy
-```
-
-Example:
+The execution function uses the current service signature:
 
 ```go
-func toolExample(ctx *ExecutionContext, input json.RawMessage) (string, error) {
-	var params struct {
-		TaskID string `json:"task_id"`
-		Limit  int    `json:"limit"`
-	}
-	if err := json.Unmarshal(input, &params); err != nil {
-		return "", fmt.Errorf("parse input: %w", err)
-	}
-	if strings.TrimSpace(params.TaskID) == "" {
-		return "", fmt.Errorf("task_id is required")
-	}
-	if params.Limit <= 0 || params.Limit > 50 {
-		params.Limit = 20
-	}
-
-	result := map[string]any{
-		"task_id": params.TaskID,
-		"limit":   params.Limit,
-	}
-	return toCompactJSONString(result), nil
-}
+Execute func(ctx context.Context, meta model.InternalCommandContext,
+    input json.RawMessage) (json.RawMessage, error)
 ```
+
+Use [existing command definitions](../server/internal/service/internal_command_service.go)
+and [domain handlers](../server/internal/service/internal_command_docs_metadata.go)
+as implementation examples. Authorization checks and context binding must come
+from the execution boundary and service, not from model-supplied IDs alone.
+
+Runtime-local tools are implemented and tested in Agent Runtime. Updating Helpin's
+metadata does not install an executor implementation.
 
 ## Validation Rules
 
@@ -548,8 +536,9 @@ Current examples:
 
 - canonical task creation input: `tasks`
 - accepted task-plan input alias: `proposed_tasks`
-- legacy aliases such as `request_human_input` and `request_human_approval` are decode/runtime compatibility only; do not use them in new prompt examples
-- legacy prefixed names such as `mcp__helpin__request_user_input` canonicalize to bare names before execution
+- legacy names such as `request_human_input`, `request_human_approval`, and
+  `mcp__helpin__request_user_input` are normalized on the write side; provider
+  calls require the canonical name, not the historical alias
 
 ## Adding New Capabilities
 
@@ -559,16 +548,11 @@ Start by choosing the right shape. Do not add both a command and a runtime tool 
 
 Use this path for backend-owned product actions that may be reused outside a model runtime.
 
-Steps:
-
-1. Define the command name and metadata in `server/internal/commandtools/metadata.go`.
-2. Keep the command name domain-scoped, such as `pm.create_task_batch` or `docs.write_document_content`.
-3. Put product validation and invariants in service/repository code, not in prompts.
-4. Add or reuse a service method that can be called by workers, automation rules, or workflows.
-5. Add repository/service tests for the mutation and edge cases.
-6. Do not add the command to runtime profiles unless the model needs to call it through a runtime tool.
-
-If this command should be model-callable, add an agent-facing runtime tool wrapper as a separate step.
+1. Register the domain-scoped command in `InternalCommandService`, for example
+   `pm.create_task_batch` or `docs.write_document_content`.
+2. Put validation, permission requirements, and product invariants in the service.
+3. Add service/repository tests for the action and authorization boundaries.
+4. Add runtime tool metadata only if the model needs to call the command.
 
 ### Add a Runtime-Only Agent Tool
 
@@ -582,35 +566,30 @@ Examples:
 - previews and approval/interaction tools
 - read-only context tools
 
-Steps:
-
-1. Add the tool definition in `server/internal/worker/tools.go`.
-2. Implement the handler in the matching `server/internal/worker/tools_*.go` file.
-3. Decode into a typed Go struct and validate before doing work.
-4. Add or update the category in `server/internal/worker/tool_catalog.go`.
-5. Add the tool to the right runtime profile in `server/internal/worker/runtime_profiles.go`, or require explicit `agent.allowed_tools`.
-6. Add worker tests for schema presence, allowlist enforcement, successful execution, and validation errors.
-7. Update skills, prompt examples, and docs if the model needs exact field names or sequencing rules.
+Implement and test this capability in the separate Agent Runtime repository.
+Update Helpin's catalog/profile metadata only when the host needs to configure
+or expose it. Verify the selected Runtime release supports the capability, then
+exercise the integration with Helpin. Do not recreate a worker-side executor.
 
 ### Add a Command-Backed Agent Tool
 
 Use this path when the model should call a business mutation, but the mutation must remain reusable and invariant-safe outside the model runtime.
 
-Steps:
-
-1. Add or update the internal command metadata in `server/internal/commandtools/metadata.go`.
-2. Add the tool implementation in the matching `server/internal/worker/tools_*.go` file.
-3. Register the alias through `registerSharedCommandTools` in `server/internal/worker/tools.go`.
-4. In the tool handler, validate model-facing input before delegating to the internal command.
-5. Delegate through `executeInternalCommand` when command execution is available.
-6. Keep a service fallback only when existing tests or runtime paths still require it.
-7. Add or update `server/internal/worker/tools_command_backed_test.go` or a domain-specific worker test.
-8. Add or update runtime profile allowlists and catalog metadata.
-9. Update skill instructions or prompt docs with the runtime MCP name for Helpin product tools, not the internal command name.
+1. Add the canonical alias, schema, category, and risk classification in
+   `server/internal/commandtools/metadata.go`.
+2. Register the backing command and implement its domain action in service code.
+3. Verify provider discovery lists an executable command for that alias. Missing
+   handlers, duplicate aliases, and noncanonical names fail provider validation.
+4. Add tests for the schema, actor permissions, workspace/target scope, successful
+   execution, and domain validation. Use the existing `internal_command_*_test.go`
+   and `agent_runtime_mcp_test.go` suites as references.
+5. Update the appropriate profile or per-agent allowlist and model-facing guidance.
+   Keep the canonical tool alias distinct from the internal command name.
 
 ### Add Planner-Specific Tool Behavior
 
-Planner tools need extra care because approval, preview, and completion policies are enforced after execution.
+Planner tools can change approval, preview, and completion behavior. Runtime
+approval may occur before execution; product validation still runs in Helpin.
 
 Steps:
 
@@ -618,7 +597,8 @@ Steps:
 2. Update this tool contract reference with any model-facing schema or sequence changes.
 3. Update active skill instructions if the model must use a new sequence.
 4. Update completion or approval-preview policy tests if the tool affects handoff requirements.
-5. Verify planner runs derive active policy from the same active skill/tool subset that provides the prompt contract, regardless of backend runtime.
+5. Verify the projected run contains the intended structured approval/completion
+   policy and allowed tools; optional skills must not replace those policies.
 
 Keep planner-specific payload details in this document unless a separate
 runtime-owned reference is introduced outside `docs/plans`.

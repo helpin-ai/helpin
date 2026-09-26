@@ -33,7 +33,6 @@ const (
 	agentRuntimeV2ReplayThroughSummaryKey         = "agent_runtime_v2_replay_through"
 	agentRuntimeLatestUsageSummaryKey             = "agent_runtime_latest_usage"
 	agentRuntimeV2ReplayPageSize                  = 250
-	agentRuntimeEventCodexAuthStateChanged        = "codex_auth.state_changed"
 	agentRuntimeExecutionStageAuthCompleted       = "auth_completed"
 	agentRuntimeExecutionStageAwaitingAuth        = "awaiting_auth"
 	agentRuntimeCoverageCompletionError           = "the agent finished without a durable support coverage disposition; create or update review-ready documentation, record a routed or blocked finding, then call complete_support_coverage_gap"
@@ -101,6 +100,7 @@ type AgentRuntimeProjectionService struct {
 	runMessageRepo      agentRuntimeProjectionMessageRepository
 	artifactRepo        agentRuntimeProjectionArtifactRepository
 	interactionRepo     agentRuntimeProjectionInteractionRepository
+	attentionNotifier   agentAttentionNotifier
 	sessionSnapshotRepo agentRuntimeProjectionSessionSnapshotRepository
 	usageMeter          *AIUsageMeter
 	agentRuntimeClient  agentRuntimeSignalClient
@@ -328,7 +328,7 @@ func (s *AgentRuntimeProjectionService) ReconcileMappedRuns(ctx context.Context,
 		if runtimeRunID == "" {
 			continue
 		}
-		if strings.TrimSpace(derefString(run.ExecutionStage)) == "cancelling" {
+		if strings.TrimSpace(derefString(run.ExecutionStage)) == "cancelling" || (run.TargetType == supportPreviewTarget && s.nowUTC().Sub(run.CreatedAt) > 3*time.Minute) {
 			runtimeRun, err := s.agentRuntimeClient.CancelRun(ctx, runtimeRunID)
 			if err != nil {
 				slog.WarnContext(ctx, "agent runtime cancellation reconciliation failed",
@@ -616,6 +616,10 @@ func reconciliationEventForRuntimeRun(runtimeRun *AgentRuntimeRun, localRun mode
 	default:
 		return AgentRuntimeEventEnvelope{}, false
 	}
+	var summary map[string]json.RawMessage
+	if json.Unmarshal(runtimeRun.OutputSummary, &summary) == nil && len(summary["interrupted_external_effects"]) > 0 {
+		event.Data["interrupted_external_effects"] = summary["interrupted_external_effects"]
+	}
 	if usage, ok := usageFromRuntimeOutputSummary(runtimeRun.OutputSummary); ok {
 		event.Data["usage"] = map[string]any{
 			"total_tokens":            usage.TotalTokens,
@@ -680,6 +684,9 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 	if err != nil {
 		return err
 	}
+	if model.IsLocalAgentRun(run) {
+		return ErrCLIForbidden
+	}
 	if ignore, err := s.ignoreStaleTurnLifecycle(ctx, run, event); err != nil {
 		return err
 	} else if ignore {
@@ -693,6 +700,16 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 	changed, err := seedTerminalUsageBaseline(run)
 	if err != nil {
 		return err
+	}
+	if isTerminalRuntimeEvent(event.Type) {
+		if effects, ok := event.Data["interrupted_external_effects"]; ok {
+			payload, err := json.Marshal(map[string]any{"interrupted_external_effects": effects})
+			if err != nil {
+				return err
+			}
+			run.OutputSummary = mergeRuntimeOutputSummaryPayload(run.OutputSummary, payload)
+			changed = true
+		}
 	}
 	runtimeName := agentRuntimeName
 	if run.ExternalRuntime == nil || strings.TrimSpace(*run.ExternalRuntime) != runtimeName {
@@ -741,8 +758,12 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		if !suppressLifecycle {
 			pauseReason := normalizeRuntimePauseReason(eventDataString(event.Data, "pause_reason"))
 			changed = setRunStatus(run, model.AgentRunStatusPaused, pauseReason) || changed
+			changed = clearRuntimeResumeStage(run) || changed
+			changed = clearRuntimePauseStage(run) || changed
 		}
 	case agentruntime.EventRunCompleted:
+		changed = clearRuntimeResumeStage(run) || changed
+		changed = clearRuntimePauseStage(run) || changed
 		if run.CompletedAt == nil {
 			run.CompletedAt = &now
 			changed = true
@@ -758,6 +779,8 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		}
 		changed = setRunStatus(run, model.AgentRunStatusCompleted, model.AgentRunPauseReasonNone) || changed
 	case agentruntime.EventRunFailed:
+		changed = clearRuntimeResumeStage(run) || changed
+		changed = clearRuntimePauseStage(run) || changed
 		if run.CompletedAt == nil {
 			run.CompletedAt = &now
 			changed = true
@@ -770,6 +793,8 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		}
 		changed = setRunStatus(run, model.AgentRunStatusFailed, model.AgentRunPauseReasonNone) || changed
 	case agentruntime.EventRunCancelled:
+		changed = clearRuntimeResumeStage(run) || changed
+		changed = clearRuntimePauseStage(run) || changed
 		if run.CompletedAt == nil {
 			run.CompletedAt = &now
 			changed = true
@@ -818,12 +843,7 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		if err := s.mirrorRuntimePlanUpdated(ctx, run, event); err != nil {
 			return err
 		}
-	case agentRuntimeEventCodexAuthStateChanged:
-		authChanged, err := s.applyCodexAuthStateChanged(ctx, run, event)
-		if err != nil {
-			return err
-		}
-		changed = authChanged || changed
+
 	default:
 		return nil
 	}
@@ -944,6 +964,9 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		s.runFinalizers.FinalizeTerminalRun(ctx, run, runtimeSummaryAvailable)
 	}
 	if !changed {
+		if isTerminalAgentRunStatus(run.Status) && s.attentionNotifier != nil {
+			return errors.Join(settlementErr, s.attentionNotifier.MarkAgentAttentionResolved(ctx, run.WorkspaceID, run.ID))
+		}
 		return settlementErr
 	}
 	model.NormalizeAgentRunPauseState(run)
@@ -951,6 +974,9 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		return err
 	}
 	s.notifyRunChange(ctx, run, model.AgentRunChangeState)
+	if isTerminalAgentRunStatus(run.Status) && s.attentionNotifier != nil {
+		settlementErr = errors.Join(settlementErr, s.attentionNotifier.MarkAgentAttentionResolved(ctx, run.WorkspaceID, run.ID))
+	}
 	if hookPtr := s.supportChatPauseHook.Load(); hookPtr != nil && event.Type == agentruntime.EventRunPaused &&
 		run.Status == model.AgentRunStatusPaused && run.PauseReason == model.AgentRunPauseReasonUserMessage {
 		hook := *hookPtr
@@ -1335,42 +1361,39 @@ func (s *AgentRuntimeProjectionService) maybeCancelOverage(ctx context.Context, 
 	if !ok {
 		return false, nil
 	}
-	agent, err := s.agentRepo.GetByID(ctx, run.WorkspaceID, run.AgentID)
+	if s.usageMeter.usage == nil {
+		return false, errors.New("AI usage lifecycle is required")
+	}
+	metering, ok := agentRunMeteringContext(run)
+	if ok {
+		if err := s.usageMeter.usage.Heartbeat(ctx, metering); err != nil {
+			return false, err
+		}
+	}
+	if !ok || metering.EnforcementMode != model.AIUsageEnforcementStrict || metering.MaxBillableMicrousd <= 0 {
+		return false, nil
+	}
+	charge, err := s.usageMeter.agentRunUsageCharge(run, usage, metering)
 	if err != nil {
 		return false, err
 	}
-	if s.usageMeter.usage != nil {
-		if metering, ok := agentRunMeteringContext(run); ok {
-			if heartbeatErr := s.usageMeter.usage.Heartbeat(ctx, metering); heartbeatErr != nil {
-				return false, heartbeatErr
-			}
-		}
-		if !agentRunUsageExceedsBudget(run, usage) {
-			return false, nil
-		}
-		err = model.ErrAIUsageExhausted
-	} else {
-		err = s.usageMeter.PreflightUsage(ctx, AIUsageMeterInput{
-			WorkspaceID:       run.WorkspaceID,
-			FeatureKey:        AgentRunAIUsageFeature(agent),
-			InputTokens:       usage.InputTokens,
-			OutputTokens:      int(agentRunTokenTelemetry(run, usage).OutputTokens),
-			ReasoningTokens:   usage.ReasoningOutputTokens,
-			CachedInputTokens: usage.CachedInputTokens,
-			Metadata: map[string]interface{}{
-				"run_id":         run.ID,
-				"runtime_run_id": runtimeRunID,
-				"agent_id":       run.AgentID,
-				"checkpoint":     true,
-			},
-		})
-	}
-	if err == nil {
+	if charge < metering.MaxBillableMicrousd {
 		return false, nil
 	}
-	if !isAIUsageCreditLimitError(err) {
-		return false, err
+	// The launch estimate bounds the initial hold, not the entire runtime. Grow
+	// the hold against the workspace allowance before cancelling the run.
+	if charge < math.MaxInt64 {
+		metering.MaxBillableMicrousd = charge + 1
+		if err := s.usageMeter.usage.Heartbeat(ctx, metering); err == nil {
+			if err := storeAgentRunMeteringContext(run, metering); err != nil {
+				return false, err
+			}
+			return true, nil
+		} else if !errors.Is(err, model.ErrAIUsageExhausted) {
+			return false, err
+		}
 	}
+
 	if _, cancelErr := s.agentRuntimeClient.CancelRun(ctx, runtimeRunID); cancelErr != nil {
 		return false, fmt.Errorf("cancel over-budget agent runtime run: %w", cancelErr)
 	}
@@ -1521,7 +1544,16 @@ func (s *AgentRuntimeProjectionService) persistRuntimeCodingSessionStreamSnapsho
 		return false
 	}
 
-	snapshot = model.ApplyCodingSessionStreamEvent(snapshot, eventType, event.Data, s.eventTime(event))
+	payload := event.Data
+	if eventType == "plan.updated" {
+		payload = make(map[string]any, len(event.Data)+2)
+		for key, value := range event.Data {
+			payload[key] = value
+		}
+		payload["_plan_event_id"] = runtimeEventIdentity(event)
+		payload["_plan_sequence"] = event.SequenceNo
+	}
+	snapshot = model.ApplyCodingSessionStreamEvent(snapshot, eventType, payload, s.eventTime(event))
 	if snapshot != nil && s.eventProtocol == "v2" && event.SequenceNo > snapshot.ThroughSequence {
 		snapshot.ThroughSequence = event.SequenceNo
 	}
@@ -1581,6 +1613,10 @@ func (s *AgentRuntimeProjectionService) persistRuntimeCodingSessionStreamSnapsho
 }
 
 func (s *AgentRuntimeProjectionService) publishRuntimeCodingSessionEvent(run *model.AgentRun, event AgentRuntimeEventEnvelope) {
+	if run != nil && run.TargetType == supportPreviewTarget {
+		return
+	}
+
 	if s == nil || s.wsPublisher == nil || run == nil {
 		return
 	}
@@ -1683,60 +1719,6 @@ func (s *AgentRuntimeProjectionService) mirrorRuntimePlanUpdated(ctx context.Con
 		Metadata:      agentRuntimeProjectionMustJSON(map[string]any{"source": "agent-runtime-event", "runtime_event_type": event.Type}),
 		CreatedAt:     s.eventTime(event),
 	})
-}
-
-func (s *AgentRuntimeProjectionService) applyCodexAuthStateChanged(ctx context.Context, run *model.AgentRun, event AgentRuntimeEventEnvelope) (bool, error) {
-	if err := s.createRuntimeArtifact(ctx, run, AgentRuntimeArtifact{
-		ID:            runtimeEventIdentity(event),
-		ArtifactType:  model.AgentRunArtifactTypeCodexAuthState,
-		Format:        "json",
-		StorageMode:   "inline",
-		InlineContent: eventDataJSON(event.Data),
-		Metadata: agentRuntimeProjectionMustJSON(map[string]any{
-			"source":             "agent-runtime-event",
-			"runtime_event_type": event.Type,
-		}),
-		CreatedAt: s.eventTime(event),
-	}); err != nil {
-		return false, err
-	}
-
-	state := strings.TrimSpace(eventDataString(event.Data, "state"))
-	switch state {
-	case model.CodexAuthStateRequired, model.CodexAuthStatePending:
-		if run.ExecutionStage == nil || strings.TrimSpace(*run.ExecutionStage) != agentRuntimeExecutionStageAwaitingAuth {
-			run.ExecutionStage = strPtr(agentRuntimeExecutionStageAwaitingAuth)
-			return true, nil
-		}
-		return false, nil
-	case model.CodexAuthStateConnected:
-		if run.ExecutionStage != nil && strings.TrimSpace(*run.ExecutionStage) == agentRuntimeExecutionStageAuthCompleted {
-			return false, nil
-		}
-		if strings.TrimSpace(run.Status) != model.AgentRunStatusPaused || strings.TrimSpace(run.PauseReason) != model.AgentRunPauseReasonAuthentication {
-			return false, nil
-		}
-		runtimeRunID := strings.TrimSpace(event.RunID)
-		if runtimeRunID == "" {
-			runtimeRunID = strings.TrimSpace(derefString(run.ExternalRuntimeID))
-		}
-		if runtimeRunID == "" {
-			return false, fmt.Errorf("agent runtime auth connected event missing run id")
-		}
-		if s.agentRuntimeClient == nil {
-			return false, fmt.Errorf("agent runtime client is not configured")
-		}
-		if _, err := s.agentRuntimeClient.ResumeRun(ctx, runtimeRunID, AgentRuntimeResumeRunRequest{
-			Intent:     model.AgentRunResumeIntentAuthCompleted,
-			TurnPolicy: runtimeResumeTurnPolicy(run),
-		}); err != nil {
-			return false, err
-		}
-		run.ExecutionStage = strPtr(agentRuntimeExecutionStageAuthCompleted)
-		return true, nil
-	default:
-		return false, nil
-	}
 }
 
 func (s *AgentRuntimeProjectionService) reconcileRuntimeTranscript(ctx context.Context, run *model.AgentRun, runtimeRunID string) error {
@@ -1993,9 +1975,8 @@ func (s *AgentRuntimeProjectionService) upsertRuntimeInteraction(ctx context.Con
 				return err
 			}
 			s.publishRuntimeInteractionEvent(run, updated)
-			return nil
 		}
-		return nil
+		return s.syncInteractionAttention(ctx, run, updated)
 	}
 	interactionKind := projectedRuntimeInteractionKind(runtimeInteraction, run.RuntimeKind)
 	interaction := &model.AgentRunInteraction{
@@ -2034,10 +2015,14 @@ func (s *AgentRuntimeProjectionService) upsertRuntimeInteraction(ctx context.Con
 	}
 	s.publishRuntimeInteractionEvent(run, *interaction)
 	s.notifyRunChange(ctx, run, model.AgentRunChangeInteraction)
-	return nil
+	return s.syncInteractionAttention(ctx, run, *interaction)
 }
 
 func (s *AgentRuntimeProjectionService) publishRuntimeInteractionEvent(run *model.AgentRun, interaction model.AgentRunInteraction) {
+	if run != nil && run.TargetType == supportPreviewTarget {
+		return
+	}
+
 	if s == nil || s.wsPublisher == nil || run == nil {
 		return
 	}
@@ -2636,15 +2621,6 @@ func timePointersEqual(left, right *time.Time) bool {
 	return left.UTC().Equal(right.UTC())
 }
 
-func isAIUsageCreditLimitError(err error) bool {
-	if err == nil {
-		return false
-	}
-	return errors.Is(err, model.ErrAIUsageExhausted) ||
-		errors.Is(err, model.ErrExtraAIUsageUnavailable) ||
-		errors.Is(err, model.ErrBillingWorkspaceLocked)
-}
-
 func (s *AgentRuntimeProjectionService) resolveRun(ctx context.Context, event AgentRuntimeEventEnvelope) (*model.AgentRun, error) {
 	hostRunID := strings.TrimSpace(event.HostRunID)
 	if hostRunID == "" {
@@ -2773,12 +2749,22 @@ func clearRuntimeResumeStage(run *model.AgentRun) bool {
 	}
 }
 
+func clearRuntimePauseStage(run *model.AgentRun) bool {
+	if run == nil || strings.TrimSpace(derefString(run.ExecutionStage)) != "pausing" {
+		return false
+	}
+	run.ExecutionStage = nil
+	return true
+}
+
 func normalizeRuntimePauseReason(reason string) string {
 	switch strings.TrimSpace(reason) {
 	case model.AgentRunPauseReasonHumanApproval:
 		return model.AgentRunPauseReasonHumanApproval
 	case model.AgentRunPauseReasonUserMessage:
 		return model.AgentRunPauseReasonUserMessage
+	case model.AgentRunPauseReasonManual:
+		return model.AgentRunPauseReasonManual
 	case model.AgentRunPauseReasonAuthentication, "auth":
 		return model.AgentRunPauseReasonAuthentication
 	case model.AgentRunPauseReasonNone:

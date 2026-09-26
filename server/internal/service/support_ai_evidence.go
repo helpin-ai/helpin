@@ -34,21 +34,6 @@ var (
 	freePlanClaimPattern = regexp.MustCompile(`(?i)\bfree\s+(?:plan|tier)\b|\bfree\s+forever\b`)
 )
 
-func selectSupportEvidenceContext(
-	_ SupportQueryPlanContract,
-	_ supportEvidenceCoverage,
-	results []KnowledgeSearchResult,
-	limit int,
-) []KnowledgeSearchResult {
-	if limit <= 0 || len(results) == 0 {
-		return nil
-	}
-	if len(results) <= limit {
-		return results
-	}
-	return results[:limit]
-}
-
 func validateSupportAnswer(
 	_ SupportQueryPlanContract,
 	_ supportEvidenceCoverage,
@@ -123,15 +108,6 @@ func validateSupportAnswer(
 	validation.Reasons = dedupeQueries(validation.Reasons)
 	sort.Strings(validation.Reasons)
 	return validation
-}
-
-func supportStringListContains(values []string, expected string) bool {
-	for _, value := range values {
-		if value == expected {
-			return true
-		}
-	}
-	return false
 }
 
 func normalizedNumericValues(text string) map[string]struct{} {

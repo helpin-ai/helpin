@@ -1,17 +1,16 @@
 import { cn } from '@/lib/utils';
-import { getEpicBadgeTextColor, resolveEpicColor } from './epicColor';
+import { EpicColorSwatch } from './EpicColorSwatch';
 
 export function EpicBadge({ name, color, className }: { name: string; color?: string | null; className?: string }) {
-  const backgroundColor = resolveEpicColor(color);
   return (
     <span
       title={name}
       className={cn(
-        'inline-flex min-w-0 max-w-full items-center rounded-sm px-1.5 py-0.5 text-xs font-medium',
+        'inline-flex min-w-0 max-w-full items-center gap-1.5 text-xs text-muted-foreground',
         className,
       )}
-      style={{ backgroundColor, color: getEpicBadgeTextColor(backgroundColor) }}
     >
+      <EpicColorSwatch color={color} />
       <span className="truncate">{name}</span>
     </span>
   );

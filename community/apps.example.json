@@ -1,0 +1,40 @@
+{
+  "apps": [{
+    "app_id": "helpin",
+    "event_protocol": "v2",
+    "require_run_model_credentials": true,
+    "context_endpoint": "http://helpin-api:8080/api/internal/agent-runtime/target-context",
+    "context_token_env": "HELPIN_INTERNAL_API_SECRET",
+    "model_credential_callback": {
+      "url": "http://helpin-api:8080/api/internal/agent-runtime/model-credentials/refresh",
+      "token_env": "HELPIN_INTERNAL_API_SECRET"
+    },
+    "mcp_providers": [{
+      "name": "helpin", "transport": "http",
+      "url": "http://helpin-api:8080/api/internal/agent-runtime/mcp/helpin",
+      "token_env": "HELPIN_INTERNAL_API_SECRET", "tool_namespace": "none",
+      "refresh_interval": "30s", "startup_policy": "required",
+      "unknown_refresh_cooldown": "30s"
+    }],
+    "skill_provider": {
+      "transport": "http",
+      "base_url": "http://helpin-api:8080/api/internal/agent-runtime/skills",
+      "package_base_url": "http://helpin-api:8080/api/internal/agent-runtime/skill-packages",
+      "token_env": "HELPIN_INTERNAL_API_SECRET",
+      "package_token_env": "HELPIN_INTERNAL_API_SECRET"
+    },
+    "workspace_provider": {
+      "transport": "repository",
+      "base_url": "http://helpin-api:8080/api/internal/agent-runtime/workspace",
+      "token_env": "HELPIN_INTERNAL_API_SECRET"
+    },
+    "browser": {
+      "enabled": false,
+      "artifact_provider": {
+        "upload_endpoint": "http://helpin-api:8080/api/internal/agent-runtime/artifacts",
+        "token_env": "HELPIN_INTERNAL_API_SECRET"
+      }
+    },
+    "model_endpoints": []
+  }]
+}

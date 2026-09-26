@@ -1,6 +1,8 @@
-# Helpin
+# Helpin contributor instructions
 
-Unified platform for product development, marketing task management, sales (CRM), customer support, and internal/external knowledge — powered by AI agents that work autonomously or with human approval. Helpin eliminates silos between teams and helps them operate at 10X speed by offloading work to AI agents.
+Use this reference when changing Helpin code: it explains repository layout, commands, and implementation conventions for contributors and coding agents. Helpin combines support, documentation, project management, CRM, and AI execution; availability depends on the edition and deployment. For installation, start with the [Community guide](community/README.md). For documentation changes, follow the [documentation skill](.agents/skills/helpin-documentation/SKILL.md) and [writing guide](docs/documentation-guide.md).
+
+Source-reviewed September 18, 2026 against manifests and implementation. Commands below describe development workflows; they are not evidence that a deployment or test suite passed.
 
 ## Small Fix Workflow
 
@@ -12,15 +14,15 @@ When the user shares a URL to an image or screenshot, always download it using `
 
 ## Architecture
 
-- **Backend**: Go 1.24 + Chi router + GORM (PostgreSQL) + Temporal workflows
+- **Backend**: Go (toolchain pin `1.26.7` in `.go-version`; module minimum `1.25.0` in `server/go.mod`) + Chi router + GORM (PostgreSQL) + Temporal workflows
 - **Frontend**: React 19 + Vite 7 + TypeScript 5.9 + TanStack Router + TanStack Query + Zustand + shadcn/ui
 - **Database**: PostgreSQL (pgcrypto for UUIDs) — in-cluster Postgres on stage/prod k8s (`helpin-pg-cluster`, db `app`), Docker Postgres for local dev
-- **Storage**: AWS S3 / MinIO (presigned URLs + direct upload)
-- **Infra**: Kubernetes with Traefik, Doppler secrets, GHCR container registry
+- **Storage**: S3-compatible object storage (Garage in the Community bundle; AWS S3 or MinIO elsewhere) with presigned URLs and direct upload
+- **Infra**: Docker Compose for Community; Kubernetes with Traefik for the hosted service; GHCR container registry
 
 ## Monorepo Setup
 
-- **Package manager**: pnpm v10 with workspaces (`packages/*`)
+- **Package manager**: pnpm version pinned in `package.json`; workspace membership is defined in `pnpm-workspace.yaml`
 - **Build orchestrator**: Turborepo (`turbo.json`) — handles dependency ordering across packages
 - **Build order**: `shared` → `widget-core` → `frontend` (turbo resolves via `^build`)
 
@@ -43,13 +45,13 @@ pnpm dev                  # Dev servers for all packages (turbo dev)
 cd server
 go run ./cmd/api
 ```
-Requires: `DATABASE_URL`, `JWT_SECRET`, `NATS_URL` env vars. See `server/.env.example` for all options.
+Configuration requires `DATABASE_URL` and `JWT_SECRET`; messaging and agent execution also need the configured services, including NATS. See [server environment options](server/.env.example) and the [local Runtime guide](docs/agent-runtime-local-setup.md).
 
 ### Frontend
 ```bash
 cd frontend
 pnpm dev                  # Vite dev server (--host 0.0.0.0)
-pnpm build                # tsc -b && vite build (4GB heap)
+pnpm build                # Community build wrapper: typecheck + Vite (4GB heap)
 ```
 Requires: `VITE_API_URL` (defaults to `http://localhost:8080/api`).
 Frontend embeds `widget-core` via Vite alias (not npm import).
@@ -77,22 +79,22 @@ Depends on `@helpin-ai/shared`. Built with Vite + `vite-plugin-dts` (rollup type
 #### `packages/sdk-js` — Embeddable JS SDK
 ```bash
 cd packages/sdk-js
-pnpm build                # tsc && vite build → dist/ (UMD + ES + CJS)
+pnpm build                # TypeScript + Vite loader/chunks + separate ESM bundle
 pnpm test                 # vitest run (jsdom, v8 coverage)
-pnpm test:e2e             # playwright (chromium)
+pnpm test:e2e             # Builds SDK, then runs playwright.local.config.ts projects
 pnpm start                # concurrent dev + example server + mock server
 ```
-Independent package (no workspace deps). Multi-format output: `lib.js` (UMD), `helpin.es.js`, `helpin.cjs.js`.
+Uses workspace development dependencies on `widget-core` and `shared`. Browser output includes the `lib.js` loader and generated SDK chunks; the separate ESM build produces `helpin.es.js`. The manifest does not export a separate CommonJS bundle. Use `pnpm test:e2e:widget` for the mocked Chromium widget suite; the generic E2E config includes additional browser/device projects.
 
 ### Testing
 
-All TypeScript packages use **Vitest** + **jsdom**:
+Widget unit suites use **Vitest** + **jsdom**. Scripts and environments vary by package; `shared`, for example, declares build and typecheck but no test script:
 
 | Package | Command | Environment | Coverage |
 |---------|---------|-------------|----------|
 | widget-core | `pnpm test` | jsdom | — |
 | sdk-js | `pnpm test` | jsdom | v8 |
-| sdk-js (e2e) | `pnpm test:e2e` | Playwright/chromium | — |
+| sdk-js (widget browser) | `pnpm test:e2e:widget` | Playwright/Chromium | — |
 
 ## Project Structure
 
@@ -104,7 +106,7 @@ server/                          # Go API server
     authorization/               # RBAC engine, permissions, middleware
     config/                      # Environment configuration
     crypto/                      # AES-256-GCM encryption helpers
-    email/                       # Postmark email client
+    email/                       # Postmark/SMTP clients and templates
     githubapp/                   # GitHub OAuth + App integration
     handler/                     # HTTP request handlers
     llm/                         # Model-agnostic LLM provider (Claude + OpenAI)
@@ -119,7 +121,7 @@ server/                          # Go API server
     temporalapp/                 # Temporal workflow setup
     websocket/                   # WebSocket hub + handler
     worker/                      # Background job workers
-  migrations/                    # Sequential SQL migrations (001–032+)
+  migrations/                    # Legacy SQL references; use internal/dbmigrate/sql for new migrations
 
 frontend/                        # React SPA
   src/
@@ -160,19 +162,16 @@ packages/                        # pnpm workspace packages
     src/core/widget.ts           # Widget initialization + DOM injection
     dist/                        # Built output (UMD + ES + CJS)
 
-k8s/                             # Kubernetes manifests
-  stage/                         # Staging (stage.helpin.ai)
-  prod/                          # Production (helpin.ai)
+helpin-ai/gitops                 # Hosted Kubernetes manifests (separate private repo)
 
 .github/workflows/               # CI/CD pipelines
-  ci.yml                         # PR checks (go vet + build, npm build)
-  deploy-staging.yml             # develop → stage
-  deploy-prod.yml                # main → prod
+  ci.yml                         # PR checks; inspect workflow for exact jobs
+  deploy-*.yml                   # Hosted-service deployments
 ```
 
 ## Branches
-- `develop` → Staging (stage.helpin.ai)
-- `main` → Production (helpin.ai)
+- `develop`: integration branch; open pull requests against it
+- `main`: release branch for the hosted service
 
 ---
 
@@ -185,6 +184,7 @@ Every feature follows this layering:
 - **Repository** (`internal/repository/`): GORM database queries
 
 ```go
+// Illustrative layering only; signatures/error handling vary by feature.
 // Handler
 func (h *WorkspaceHandler) Update(w http.ResponseWriter, r *http.Request) {
     id := chi.URLParam(r, "id")
@@ -246,7 +246,7 @@ r.With(authorization.RequireOwner(authz)).Delete("/", h.Workspace.Delete)
 
 ### DI Wiring
 All dependencies are wired in `cmd/api/main.go`:
-1. Config → DB connection → AutoMigrate
+1. Config → DB connection → AutoMigrate when enabled
 2. Repositories created from `*gorm.DB`
 3. Services created from repositories + external clients (S3, email, Temporal)
 4. Handlers created from services
@@ -254,10 +254,14 @@ All dependencies are wired in `cmd/api/main.go`:
 
 ### Database Migrations
 
-**Two migration systems** (both active):
+**Two migration paths**:
 
-1. **GORM AutoMigrate** — runs on startup, handles struct-level schema creation (add tables/columns). Cannot drop columns or tables.
-2. **dbmigrate** (`server/internal/dbmigrate/`) — versioned SQL migrations for everything AutoMigrate cannot do: data migrations, table drops, cutover tasks, constraint changes, backfills.
+Community Compose disables AutoMigrate and applies versioned SQL through its
+migration service. Ship versioned SQL for schema additions as well as destructive
+or data changes; model changes alone do not migrate those installations.
+
+1. **GORM AutoMigrate** — runs on startup only when `RUN_AUTO_MIGRATE=true`, handles struct-level schema creation (add tables/columns). Cannot drop columns or tables.
+2. **dbmigrate** (`server/internal/dbmigrate/`) — versioned SQL migrations, including additive schema, data migrations, table drops, cutovers, constraints, and backfills. This is the schema path when AutoMigrate is disabled.
 
 **dbmigrate CLI** (`server/cmd/migrate/`):
 ```bash
@@ -266,19 +270,19 @@ go run ./cmd/migrate status          # Show all migrations (applied/pending)
 go run ./cmd/migrate head            # Show latest applied migration
 go run ./cmd/migrate pending         # List only unapplied migrations
 go run ./cmd/migrate validate        # CI check — exit 1 if issues found
-go run ./cmd/migrate repair          # Fix checksums after post-apply file edits
+go run ./cmd/migrate repair          # Explicit checksum repair; not a routine schema update
 go run ./cmd/migrate create <name>   # Scaffold new migration file
 ```
 
 **Migration files**: `server/internal/dbmigrate/sql/YYYYMMDDNNNN_name.sql` (embedded via `//go:embed`)
 
 **When to use which**:
-- **AutoMigrate**: Adding new models/columns (struct changes picked up automatically)
+- **AutoMigrate**: Development schema additions when enabled; also provide versioned SQL for installations where it is disabled
 - **dbmigrate**: Dropping tables/columns, data backfills, constraint changes, renaming, cutover tasks, any DDL that AutoMigrate cannot express
 
 **Rules**:
 - Migrations MUST be idempotent (`IF NOT EXISTS`, `IF EXISTS`)
-- Never edit an already-applied migration file — create a new one instead (or run `migrate repair` if you must)
+- Never edit an already-applied migration file — create a new migration. Checksum repair changes recorded checksums; it does not apply the changed SQL to an existing database
 - Legacy SQL migrations in `server/migrations/` are reference docs only — new migrations go in `server/internal/dbmigrate/sql/`
 
 ### Workspace Key & Task Key
@@ -351,7 +355,7 @@ Deals carry a `commercial_motion` inherited from
 
 **Key packages:**
 - `internal/crypto/` — AES-256-GCM token encryption (`CRM_ENCRYPTION_KEY` env)
-- `internal/oauth/` — Gmail OAuth2 flow (scopes: `gmail.readonly`, `gmail.send`, `gmail.modify`, `calendar.readonly`)
+- `internal/oauth/` — Gmail OAuth2 flow (scopes: `gmail.readonly`, `gmail.send`, `calendar.readonly`)
 - `internal/sync/` — Gmail REST API client (message sync, send, token auto-refresh)
 - `internal/llm/` — Model-agnostic LLM interface (`Provider` interface with Claude + OpenAI adapters)
 - `internal/service/crm_signal_detection.go` — verified LLM signal extraction from emails/calendar/support
@@ -420,7 +424,7 @@ matches the version exactly and an unmapped version would silently go quiet.
 
 ### Agents And Automation Model
 
-Canonical reference: `docs/AGENTS_AND_AUTOMATION.md`
+Canonical reference: `docs/agents-and-automation.md`
 
 Use this taxonomy when working on backend agent features:
 
@@ -493,7 +497,7 @@ slog.SetDefault(logger)
 slog.Info("task created", "task_id", task.ID, "workspace_id", task.WorkspaceID)
 slog.Error("failed to save", "error", err, "task_id", id)
 
-// Context-aware (carries request_id, user_id from middleware)
+// Context-aware; include request/user fields explicitly unless a handler enriches them
 slog.InfoContext(ctx, "comment added", "entity_id", entityID)
 slog.ErrorContext(ctx, "notification emit failed", "error", err)
 
@@ -623,12 +627,12 @@ const useWorkspaceStore = create<State>((set) => ({
 const workspace = useWorkspaceStore((s) => s.currentWorkspace);
 ```
 
-Key stores: `authStore`, `workspaceStore`, `organizationStore`, `quarterStore`, `globalCreateStore`, `boardDisplayStore`
+Key stores: `authStore`, `workspaceStore`, `organizationStore`, `globalCreateStore`, `boardDisplayStore`
 
 ### UI Components
 - **shadcn/ui**: 30+ installed components (Button, Card, Dialog, Popover, Table, etc.)
 - **Radix UI**: Headless primitives underlying shadcn
-- **lucide-react**: Icon library
+- **Icons**: Use the centralized `@/lib/icons` exports and design-system guidance
 - **CVA** (class-variance-authority): Component variants
 - **cn()**: `clsx` + `tailwind-merge` for className composition
 - **sonner**: Toast notifications
@@ -650,8 +654,8 @@ Key stores: `authStore`, `workspaceStore`, `organizationStore`, `quarterStore`, 
 - Settings/workspace types: `src/lib/types.ts`
 - PM module types: `src/lib/pmTypes.ts`
 - CRM module types: `src/lib/crmTypes.ts`
-- Permission type: union of 23 permission strings
-- All backend JSON responses have matching TS interfaces
+- Permission type: see the current `Permission` union in `src/lib/types.ts`
+- Keep frontend response interfaces aligned with the backend JSON contract
 
 ### RBAC (Frontend)
 ```tsx
@@ -692,7 +696,7 @@ if (has('pm.edit')) { /* show edit button */ }
 | `zustand` | Client state management |
 | `shadcn/ui` + `@radix-ui` | Component library |
 | `tailwindcss` 4 | Utility-first CSS |
-| `lucide-react` | Icons |
+| `@/lib/icons` | Centralized icon exports |
 | `sonner` | Toast notifications |
 | `@tiptap/react` | Rich text editor |
 | `@dnd-kit` | Drag and drop |

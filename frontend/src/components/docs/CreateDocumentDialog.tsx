@@ -21,8 +21,8 @@ import { useCreateDocsDocument, useDocsSpaces, useDocsCollections } from '@/hook
 import { StoredIcon } from '@/components/ui/icon-picker'
 import { toast } from 'sonner'
 import { CollectionTreePicker } from '@/components/docs/CollectionTreePicker'
-import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog'
-import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired'
+import { UpgradeRequiredDialog } from '@edition'
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@edition/errors';
 
 interface CreateDocumentDialogProps {
   wsId: string

@@ -1,4 +1,18 @@
-# HelpScout Docs Import Research
+# Help Scout documentation import research
+
+This March research records API and conversion options considered for importing Help Scout articles. It is for contributors tracing the importer design, not a current vendor API reference or deployment recipe. Vendor limits, product comparisons, external library advice, and linked sources below were not reverified during this repository review.
+
+## Source review — 2026-09-18
+
+- [The Help Scout client](../../server/internal/helpscout/client.go) implements Docs API v1 collection/category/article pagination and per-article reads, using Basic authentication with an empty password. It retries 429 responses with `Retry-After` and proactively backs off near quota exhaustion. Those client choices do not independently verify today's vendor quotas or permissions.
+- The recommended Node conversion service is not the current implementation. [The Go converter](../../server/internal/docsimport/html_to_tiptap.go) parses HTML with `golang.org/x/net/html` and returns canonical Tiptap nodes plus warnings. [Import conversion orchestration](../../server/internal/service/docs_import_ai.go) can optionally use AI-produced Markdown, validates retained source facts, and falls back to deterministic conversion on failure; media requiring preservation is routed through the deterministic path. Neither path guarantees arbitrary HTML/CSS round-trip fidelity.
+- [The importer](../../server/internal/service/docs_import.go) supports `draft`, `published`, and `match_source` modes. Draft mode can fetch an available source draft; match-source keeps the published version for published articles. It creates one imported document, not separate published and draft versions.
+- Category resolution chooses the first recognized category (by ID, slug, or name), then the uncategorized destination. Title, article slug, source HTML/provenance, and legacy redirects are handled explicitly. The long metadata wishlist below is not proof that keywords, all category associations, source authors/timestamps, related articles, or engagement metrics are preserved.
+- [Image processing](../../server/internal/helpscout/images.go) downloads/uploads when an uploader exists and keeps failed source URLs with warnings. A completed import therefore does not guarantee independence from Help Scout image hosting. Redirect rows also do not by themselves provision redirects on an old external domain or rewrite every internal article link.
+- [The Temporal workflow](../../server/internal/temporalapp/docs_import_workflow.go) runs one durable import activity with retries and heartbeats, rather than four separate Go/Node activities. [Its adapter](../../server/internal/service/docs_import_temporal.go) reads an encrypted stored request; article provenance is written after required article steps as a resume checkpoint. This does not make all writes an atomic transaction.
+- Existing converter/import tests were inspected only. No vendor account, import job, image download, live redirect, or source-domain migration was executed. Product help should point to the hosted help center, while this page retains engineering research and implementation limits.
+
+## Original research — 2026-03-18
 
 > Research date: 2026-03-18
 
@@ -347,7 +361,7 @@ const json = generateJSON(htmlString, [
 ```
 
 **Pros**:
-- Uses the exact same parsing rules as TipTap editor — guaranteed round-trip fidelity
+- Can reuse configured TipTap parsing rules; matching extensions does not guarantee round-trip fidelity for arbitrary source HTML
 - Extensions list must match what your editor supports (unknown HTML is stripped)
 - Server-side via `@tiptap/html` uses a virtual DOM (no browser needed)
 - Widely used and maintained by TipTap team
@@ -383,7 +397,7 @@ Available Go packages:
 - `cozy/prosemirror-go` — Port of prosemirror-model/transform for collaborative editing servers. **Does NOT include DOM parsing** (HTML → JSON). Only useful for document manipulation, not conversion.
 - `karitham/prosemirror`, `nicksrandall/prosemirror-go`, `wenj91/prosemirror-go` — Various Go implementations, mostly focused on JSON → HTML rendering, not the reverse direction.
 
-**Verdict**: No Go library supports HTML → ProseMirror JSON conversion. The DOM parsing logic is fundamentally browser/JS-dependent.
+**Historical assessment:** The surveyed libraries did not supply the desired converter. This does not imply conversion requires JavaScript: Helpin now implements HTML-to-Tiptap conversion in Go, as described in the source review above.
 
 ### Option D: Frontend-side Conversion
 
@@ -391,7 +405,7 @@ Use TipTap's built-in `editor.commands.setContent(html)` on the frontend, then e
 
 **Pros**:
 - Zero backend work needed
-- Guaranteed compatibility with editor
+- Compatibility depends on the configured editor schema and supported source HTML
 - Can preview during import
 
 **Cons**:

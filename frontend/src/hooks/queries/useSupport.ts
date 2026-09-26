@@ -1,3 +1,6 @@
+import { SupportTranslationSendError } from '@/lib/supportTranslationError';
+import type { CreateTaskFromConversationRequest } from '@/lib/pmTypes';
+import type { WidgetOriginSettings } from '@/lib/pmTypes';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { queryKeys } from '@/lib/queryKeys';
@@ -7,7 +10,7 @@ import { supportAttachmentService } from '@/lib/services/supportAttachmentServic
 import { agentService } from '@/lib/services/agentService';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { nextCursor, unwrap, unwrapRequired } from '@/lib/queryUtils';
-import { isUpgradeRequiredError } from '@/lib/upgradeRequired';
+import { isUpgradeRequiredError } from '@edition/errors';
 import {
   extractConversationListConversations,
   getNextConversationIdAfterRemoval,
@@ -99,11 +102,15 @@ export type SupportConversationFilters = {
 export type SupportConversationGlobalSearchFilters = SupportConversationSearchParams;
 
 type SendMessagePayload = {
+  send_original?: boolean;
+  auto_translate?: boolean;
+  translation_target_language?: string;
   content: string;
   client_message_id?: string;
   is_internal?: boolean;
   ai_assisted?: boolean;
   delivery_mode?: SupportReplyDeliveryMode;
+  email_subject?: string;
   channels?: Array<'chat' | 'email'>;
   attachment_ids?: string[];
   cc_emails?: string[];
@@ -145,7 +152,7 @@ export function buildOptimisticSupportMessage({
     message_type: 'reply',
     is_internal: Boolean(payload.is_internal),
     via_channel: payload.delivery_mode ? (payload.delivery_mode === 'email_only' ? 'email' : 'widget') : payload.channels?.includes('email') ? 'email' : 'widget',
-    ...(payload.delivery_mode && !payload.is_internal ? { metadata: JSON.stringify({ delivery_mode: payload.delivery_mode }) } : {}),
+    ...(payload.delivery_mode && !payload.is_internal ? { metadata: JSON.stringify({ delivery_mode: payload.delivery_mode, ...(payload.email_subject !== undefined ? { email_subject: payload.email_subject } : {}) }) } : {}),
     created_at: now,
     updated_at: now,
   };
@@ -231,13 +238,15 @@ export function useSupportRoutingUsage(workspaceId: string) {
 export function useUpdateChatSettings(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (settings: Partial<SupportInboxSettings>) =>
+    mutationFn: (settings: Partial<SupportInboxSettings & WidgetOriginSettings>) =>
       supportService.updateInstallationSettings(workspaceId, settings).then(unwrap),
     onSuccess: async (installation) => {
       queryClient.setQueryData(queryKeys.support.installation(workspaceId), installation);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.support.installation(workspaceId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.support.routingUsage(workspaceId) }),
+        queryClient.invalidateQueries({ queryKey: ['support', workspaceId, 'translation'] }),
+        queryClient.invalidateQueries({ queryKey: ['support', workspaceId, 'message-translation'] }),
       ]);
     },
     onError: (error: Error) => {
@@ -259,6 +268,26 @@ export function useRegenerateWidgetKey(workspaceId: string) {
   });
 }
 
+/**
+ * Reveal/rotate the widget identity signing secret. The secret is returned to
+ * the caller only and never written to the query cache.
+ */
+export function useRevealWidgetSigningSecret(workspaceId: string) {
+  return useMutation({
+    mutationFn: () => supportService.revealWidgetSigningSecret(workspaceId).then(unwrap),
+  });
+}
+
+export function useRotateWidgetSigningSecret(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => supportService.rotateWidgetSigningSecret(workspaceId).then(unwrap),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.support.installation(workspaceId) });
+    },
+  });
+}
+
 // ── Conversations ───────────────────────────────────────────────────
 
 export function useConversations(workspaceId: string, filters?: SupportConversationFilters) {
@@ -266,6 +295,23 @@ export function useConversations(workspaceId: string, filters?: SupportConversat
     queryKey: [...queryKeys.support.conversations(workspaceId), filters] as const,
     queryFn: async (): Promise<ConversationListResponse> => loadConversationListPage(workspaceId, filters),
     enabled: !!workspaceId,
+    staleTime: 15_000,
+  });
+}
+
+/**
+ * Whether the workspace has any conversation the user can see, regardless of
+ * view or status. Separates a brand-new inbox (onboarding) from inbox zero.
+ * Keyed under conversations() so new/removed conversations refresh it.
+ */
+export function useHasAnySupportConversation(workspaceId: string, enabled = true) {
+  return useQuery({
+    queryKey: [...queryKeys.support.conversations(workspaceId), 'any'] as const,
+    queryFn: async (): Promise<boolean> => {
+      const page = await loadConversationListPage(workspaceId, { page: 1, per_page: 1 });
+      return (page.data?.length ?? 0) > 0;
+    },
+    enabled: !!workspaceId && enabled,
     staleTime: 15_000,
   });
 }
@@ -363,7 +409,11 @@ export function useCreateSupportInboxView(workspaceId: string) {
   return useMutation({
     mutationFn: (payload: CreateSupportInboxViewRequest) =>
       supportService.createInboxView(workspaceId, payload).then(unwrap),
-    onSuccess: () => {
+    onSuccess: (view) => {
+      queryClient.setQueryData<SupportInboxView[]>(queryKeys.support.inboxViews(workspaceId), (current) => [
+        ...(current ?? []).filter((item) => item.id !== view.id),
+        view,
+      ]);
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViews(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViewCounts(workspaceId) });
     },
@@ -942,7 +992,10 @@ export function useSendMessage(workspaceId: string, conversationId: string | nul
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: SendMessagePayload) =>
-      supportService.createConversationMessage(workspaceId, conversationId!, payload).then(unwrap),
+      (payload.is_internal ? supportService.createConversationMessage(workspaceId, conversationId!, payload) : supportService.sendConversationReply(workspaceId, conversationId!, payload)).then((response) => {
+        if (response.status === 422) throw new SupportTranslationSendError();
+        return unwrap(response);
+      }),
     onMutate: async (payload) => {
       if (!conversationId) return { previousMessages: undefined as SupportMessagePages | undefined, optimisticId: '' };
       const key = queryKeys.support.messages(workspaceId, conversationId);
@@ -950,7 +1003,7 @@ export function useSendMessage(workspaceId: string, conversationId: string | nul
       const previousMessages = queryClient.getQueryData<SupportMessagePages>(key);
       const now = new Date().toISOString();
       const optimisticId = payload.client_message_id?.trim()
-        || `optimistic-${conversationId}-${crypto.randomUUID()}`;
+        || crypto.randomUUID();
       payload.client_message_id = optimisticId;
       const optimistic = buildOptimisticSupportMessage({
         workspaceId,
@@ -960,6 +1013,7 @@ export function useSendMessage(workspaceId: string, conversationId: string | nul
         now,
         optimisticId,
       });
+      if (!payload.is_internal) optimistic.pending_send="preparing";
       queryClient.setQueryData<SupportMessagePages>(key, (current) => appendMessageToNewestPage(current, optimistic));
       return { previousMessages, optimisticId };
     },
@@ -970,16 +1024,19 @@ export function useSendMessage(workspaceId: string, conversationId: string | nul
             queryKeys.support.messages(workspaceId, conversationId),
             (current) => replaceMessageInPages(current, context.optimisticId, message),
           );
+        } else {
+          queryClient.setQueryData<SupportMessagePages>(queryKeys.support.messages(workspaceId, conversationId), current => appendMessageToNewestPage(current, message));
         }
       }
+      queryClient.invalidateQueries({ queryKey: ['support',workspaceId,'pending-sends',conversationId] });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
       invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },
     onError: (error: Error, _payload, context) => {
-      if (conversationId && context?.previousMessages) {
-        queryClient.setQueryData(queryKeys.support.messages(workspaceId, conversationId), context.previousMessages);
+      if (conversationId && context?.optimisticId) {
+        queryClient.setQueryData<SupportMessagePages>(queryKeys.support.messages(workspaceId, conversationId), current => removeMessageFromPages(current, context.optimisticId));
       }
-      toast.error('Failed to send message', { description: error.message });
+      if (!(error instanceof SupportTranslationSendError)) toast.error('Failed to send message', { description: error.message });
     },
   });
 }
@@ -1041,13 +1098,12 @@ export function useUploadSupportAttachment(workspaceId: string, conversationId: 
         },
       ));
 
-      // Step 2: Upload to S3 via presigned PUT URL
+      // Step 2: Match the private presigned PUT; do not add a public-read ACL.
       const uploadResp = await fetch(initData.upload_url, {
         method: 'PUT',
         body: file,
         headers: {
           'Content-Type': file.type || 'application/octet-stream',
-          'x-amz-acl': 'public-read',
         },
       });
       if (!uploadResp.ok) throw new Error('Upload to storage failed');
@@ -1236,8 +1292,9 @@ export function useRunConversationAgent(workspaceId: string) {
 export function useCreateTaskFromConversation(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ conversationId, teamId }: { conversationId: string; teamId: string }) =>
+    mutationFn: ({ conversationId, teamId, draft }: { conversationId: string; teamId: string; draft?: Omit<CreateTaskFromConversationRequest, 'team_id'> }) =>
       supportService.createTaskFromConversation(workspaceId, conversationId, {
+        ...draft,
         team_id: teamId,
       }).then(unwrap),
     onSuccess: (_data, { conversationId }) => {

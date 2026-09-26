@@ -195,7 +195,7 @@ export const automationService = {
   deleteAgent: (workspaceId: string, id: string) =>
     api.del(`/automation/agents/${id}${qs(workspaceId)}`),
 
-  startRun: (workspaceId: string, payload: { target_type: string; target_id: string; agent_id: string; additional_context?: string; base_branch?: string; working_branch?: string }) =>
+  startRun: (workspaceId: string, payload: { delivery_mode?: 'publish' | 'preview'; target_type: string; target_id: string; agent_id: string; additional_context?: string; base_branch?: string; working_branch?: string }) =>
     api.post<AgentRun>(`/automation/runs${qs(workspaceId)}`, payload),
 
   listWorkspaceRuns: (workspaceId: string, page = 1, perPage = 100) =>

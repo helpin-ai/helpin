@@ -29,16 +29,13 @@ const PR_STATUS_COLORS: Record<string, string> = {
 };
 
 const DELIVERY_STATE_CONFIG: Record<string, { label: string; className: string }> = {
-  idle: { label: 'Idle', className: 'bg-muted text-muted-foreground' },
-  queued: { label: 'Queued', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
-  running: { label: 'Running', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
-  awaiting_approval: { label: 'Awaiting Approval', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
-  pushed: { label: 'Branch Pushed', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
-  pr_open: { label: 'PR Open', className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
-  pr_merged: { label: 'PR Merged', className: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400' },
-  pr_failed: { label: 'PR Failed', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
-  completed: { label: 'Completed', className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
-  failed: { label: 'Failed', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
+  unconfigured: { label: 'Not configured', className: 'bg-muted text-muted-foreground' },
+  ready: { label: 'Configured', className: 'bg-muted text-muted-foreground' },
+  in_progress: { label: 'Changes pushed', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
+  pr_open: { label: 'PR open', className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
+  merged: { label: 'PR merged', className: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400' },
+  closed: { label: 'PR closed without merging', className: 'bg-muted text-muted-foreground' },
+  pr_failed: { label: 'PR publishing failed', className: 'bg-destructive/10 text-destructive' },
 };
 
 interface Props {

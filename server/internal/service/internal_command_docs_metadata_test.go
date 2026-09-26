@@ -30,7 +30,7 @@ func TestDocsUpdateDocumentMetadataCommandUpdatesOnlyBoundedFields(t *testing.T)
 	svc.SetDocsOrganizationServices(NewDocsSpaceService(spaceRepo, nil), nil)
 
 	output, err := svc.Execute(context.Background(), model.InternalCommandContext{WorkspaceID: "ws-doc-meta", ActorID: ownerID, ActorRole: model.RoleOwner, TargetType: "document", TargetID: doc.ID}, "docs.update_document_metadata", json.RawMessage(`{
-		"document_id":"doc-meta","title":"New title","clear_owner":true,"clear_excerpt":true,"tags":["runbook","approved"],"is_pinned":true
+		"document_id":"doc-meta","title":"GTM &amp; Marketing","clear_owner":true,"clear_excerpt":true,"tags":["runbook","approved"],"is_pinned":true
 	}`))
 	if err != nil {
 		t.Fatalf("update document metadata: %v", err)
@@ -39,14 +39,14 @@ func TestDocsUpdateDocumentMetadataCommandUpdatesOnlyBoundedFields(t *testing.T)
 	if err := json.Unmarshal(output, &result); err != nil {
 		t.Fatalf("decode output: %v", err)
 	}
-	if result["title"] != "New title" || result["is_pinned"] != true {
+	if result["title"] != "GTM & Marketing" || result["is_pinned"] != true {
 		t.Fatalf("unexpected result: %#v", result)
 	}
 	updated, err := docRepo.GetByID(context.Background(), doc.ID)
 	if err != nil {
 		t.Fatalf("load updated document: %v", err)
 	}
-	if updated.OwnerID != nil || updated.Excerpt != nil || updated.Title != "New title" || !updated.IsPinned || len(updated.Tags) != 2 {
+	if updated.OwnerID != nil || updated.Excerpt != nil || updated.Title != "GTM & Marketing" || !updated.IsPinned || len(updated.Tags) != 2 {
 		t.Fatalf("bounded metadata was not persisted: %#v", updated)
 	}
 }
@@ -77,5 +77,45 @@ func TestDocsUpdateDocumentMetadataRejectsConflictingTarget(t *testing.T) {
 	_, err := svc.Execute(context.Background(), model.InternalCommandContext{WorkspaceID: "ws", TargetType: "document", TargetID: "doc-1"}, "docs.update_document_metadata", json.RawMessage(`{"document_id":"doc-2","title":"No"}`))
 	if err == nil || !strings.Contains(err.Error(), "conflicts") {
 		t.Fatalf("expected conflicting target error, got %v", err)
+	}
+}
+
+func TestCreateDocumentNormalizesAgentTitleOnce(t *testing.T) {
+	for _, tt := range []struct{ title, want string }{
+		{"Helpin Open Source — GTM &amp; Marketing Plan", "Helpin Open Source — GTM & Marketing Plan"},
+		{"Examples &amp;amp;", "Examples &amp;"},
+		{"GTM & Marketing", "GTM & Marketing"},
+	} {
+		t.Run(tt.title, func(t *testing.T) {
+			db := setupDocsDeletionTestDB(t)
+			space := model.DocsSpace{ID: "space", WorkspaceID: "ws", Name: "Internal", Slug: "internal", Type: model.SpaceTypeInternal, Visibility: model.SpaceVisibilityWorkspaceWide, CreatedBy: "owner"}
+			if err := db.Create(&space).Error; err != nil {
+				t.Fatal(err)
+			}
+			repo := repository.NewDocsDocumentRepository(db)
+			svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+			svc.SetDocsCreateDependencies(NewDocsDocumentService(repo, repository.NewDocsSpaceRepository(db), nil, false), nil)
+			input, _ := json.Marshal(map[string]string{"space_id": "space", "title": tt.title})
+			output, err := svc.Execute(context.Background(), model.InternalCommandContext{WorkspaceID: "ws", ActorID: "owner", ActorRole: model.RoleOwner}, "docs.create_document", input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var result struct {
+				Title string `json:"title"`
+			}
+			if err := json.Unmarshal(output, &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.Title != tt.want {
+				t.Fatalf("title = %q, want %q", result.Title, tt.want)
+			}
+			var stored model.DocsDocument
+			if err := db.First(&stored).Error; err != nil {
+				t.Fatal(err)
+			}
+			if stored.Title != tt.want {
+				t.Fatalf("stored title = %q, want %q", stored.Title, tt.want)
+			}
+		})
 	}
 }

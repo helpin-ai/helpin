@@ -55,6 +55,12 @@ describe('resolveAgentLiveProgress', () => {
     })?.label).toBe('Waiting for approval');
   });
 
+  it('shows the pending pause before execution has stopped', () => {
+    expect(resolveAgentLiveProgress({
+      run: run({ execution_stage: 'pausing' }), stream: stream(), currentPlan: null, sending: false,
+    })?.label).toBe('Pausing…');
+  });
+
   it('only labels an explicit human-input pause as waiting for a reply', () => {
     expect(resolveAgentLiveProgress({
       run: run({ status: 'paused', pause_reason: 'human_input' }), stream: stream(), currentPlan: null, sending: false,

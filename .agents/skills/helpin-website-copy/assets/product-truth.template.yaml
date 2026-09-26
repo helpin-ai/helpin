@@ -1,0 +1,42 @@
+schema_version: 1
+record_kind: template
+# All entries are unverified questions to resolve, not a feature catalog.
+release: null
+deployment: null
+maintainer: null
+updated_at: null
+claims:
+  - id: module-availability
+    question: Which modules are included in the target offering and release?
+    statement: null
+    status: unverified
+    sources: []
+    checked_at: null
+    qualifier: null
+    conflict: null
+  - id: commercial-offer
+    question: What prices, billing unit, trial, allowances, and plan gates are approved?
+    statement: null
+    status: unverified
+    sources: []
+    checked_at: null
+    qualifier: null
+    conflict: null
+  - id: agent-capabilities
+    question: Which roles, tools, approval settings, and triggers are available?
+    statement: null
+    status: unverified
+    sources: []
+    checked_at: null
+    qualifier: null
+    conflict: null
+  - id: deployment-and-license
+    question: Which deployment paths, services, and license terms apply?
+    statement: null
+    status: unverified
+    sources: []
+    checked_at: null
+    qualifier: null
+    conflict: null
+# For each source record path_or_url, revision, scope, owner when relevant,
+# and what the source establishes. Never store secrets or customer data.

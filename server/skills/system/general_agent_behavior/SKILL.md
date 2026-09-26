@@ -5,8 +5,6 @@ metadata:
   title: Engineering Planner Operating Rules
   supported_runtimes:
     - native_sdk
-    - codex
-    - opencode
 ---
 
 Operate directly with tools. Do not produce a JSON handoff for another system to execute. Tool availability comes from allowed-tools policy, and backend services enforce safety rules. Do not try to work around those rules.

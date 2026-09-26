@@ -1,4 +1,5 @@
 {
+  "license": "AGPL-3.0-only",
   "name": "@helpin-ai/nextjs-example",
   "version": "0.0.0",
   "private": true,

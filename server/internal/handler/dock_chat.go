@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -23,6 +24,17 @@ type DockChatHandler struct {
 // NewDockChatHandler creates a DockChatHandler.
 func NewDockChatHandler(dockChatService *service.DockChatService, agentService *service.AgentService) *DockChatHandler {
 	return &DockChatHandler{dockChatService: dockChatService, agentService: agentService}
+}
+
+// AIDefaults exposes the Ask Agent launch default to workspace members.
+func (h *DockChatHandler) AIDefaults(w http.ResponseWriter, r *http.Request) {
+	defaults, err := h.agentService.AskAgentDefaults(r.Context(), getWorkspaceID(r))
+	if err != nil {
+		slog.ErrorContext(r.Context(), "failed to load Ask Agent default", "error", err)
+		writeError(w, http.StatusInternalServerError, "Unable to load the agent's AI default")
+		return
+	}
+	writeJSON(w, http.StatusOK, defaults)
 }
 
 // ListChats handles GET /api/dock/chats.
@@ -265,6 +277,34 @@ func (h *DockChatHandler) CancelChatRun(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, cancelled)
 }
 
+// PauseChatRun handles POST /api/dock/chats/{chatID}/run/pause.
+func (h *DockChatHandler) PauseChatRun(w http.ResponseWriter, r *http.Request) {
+	run, ok := h.resolveChatRun(w, r)
+	if !ok {
+		return
+	}
+	paused, err := h.agentService.PauseRun(r.Context(), getWorkspaceID(r), run.ID, middleware.GetUserID(r.Context()))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, paused)
+}
+
+// ResumeChatRun handles POST /api/dock/chats/{chatID}/run/resume.
+func (h *DockChatHandler) ResumeChatRun(w http.ResponseWriter, r *http.Request) {
+	run, ok := h.resolveChatRun(w, r)
+	if !ok {
+		return
+	}
+	resumed, err := h.agentService.ResumeManuallyPausedRun(r.Context(), getWorkspaceID(r), run.ID, middleware.GetUserID(r.Context()))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resumed)
+}
+
 // ListRuns handles GET /api/dock/runs.
 func (h *DockChatHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 	response, err := h.agentService.ListDockRunsForActor(
@@ -410,37 +450,37 @@ func (h *DockChatHandler) CancelRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, cancelled)
 }
 
-// StartRunAuth handles POST /api/dock/runs/{runID}/auth/device-code/start.
-func (h *DockChatHandler) StartRunAuth(w http.ResponseWriter, r *http.Request) {
+// PauseRun handles POST /api/dock/runs/{runID}/pause.
+func (h *DockChatHandler) PauseRun(w http.ResponseWriter, r *http.Request) {
 	run, ok := h.resolveDockRun(w, r)
 	if !ok {
 		return
 	}
-	state, err := h.agentService.StartCodexDeviceCodeAuth(
-		r.Context(), getWorkspaceID(r), run.ID, middleware.GetUserID(r.Context()),
-	)
+	paused, err := h.agentService.PauseRun(r.Context(), getWorkspaceID(r), run.ID, middleware.GetUserID(r.Context()))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "failed to start agent sign-in")
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, state)
+	writeJSON(w, http.StatusOK, paused)
 }
 
-// CancelRunAuth handles POST /api/dock/runs/{runID}/auth/device-code/cancel.
-func (h *DockChatHandler) CancelRunAuth(w http.ResponseWriter, r *http.Request) {
+// ResumeRun handles POST /api/dock/runs/{runID}/resume.
+func (h *DockChatHandler) ResumeRun(w http.ResponseWriter, r *http.Request) {
 	run, ok := h.resolveDockRun(w, r)
 	if !ok {
 		return
 	}
-	state, err := h.agentService.CancelCodexDeviceCodeAuth(
-		r.Context(), getWorkspaceID(r), run.ID, middleware.GetUserID(r.Context()),
-	)
+	resumed, err := h.agentService.ResumeManuallyPausedRun(r.Context(), getWorkspaceID(r), run.ID, middleware.GetUserID(r.Context()))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "failed to cancel agent sign-in")
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, state)
+	writeJSON(w, http.StatusOK, resumed)
 }
+
+// StartRunAuth handles POST /api/dock/runs/{runID}/auth/device-code/start.
+
+// CancelRunAuth handles POST /api/dock/runs/{runID}/auth/device-code/cancel.
 
 func (h *DockChatHandler) resolveChatRun(w http.ResponseWriter, r *http.Request) (*model.AgentRun, bool) {
 	workspaceID := getWorkspaceID(r)

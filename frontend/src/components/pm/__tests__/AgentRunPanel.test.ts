@@ -216,6 +216,14 @@ describe('getTaskAgentRunSuggestedAgent', () => {
     })?.id).toBe('lens');
   });
 
+  it('does not advance to review from unpublished preview changes', () => {
+    expect(getTaskAgentRunSuggestedAgent({
+      agents,
+      runs: [run({ agent_id: 'scribe', status: 'completed' }), run({ agent_id: 'forge', status: 'completed', input: { delivery_mode: 'preview' } })],
+      activeRun: null,
+    })?.id).toBe('forge');
+  });
+
   it('shows the active run agent while blocked', () => {
     expect(getTaskAgentRunSuggestedAgent({
       agents,

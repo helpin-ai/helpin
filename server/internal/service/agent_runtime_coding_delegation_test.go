@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -93,7 +94,7 @@ func TestRuntimeAgentFromHelpinAgentInjectsRepositoryWorkspaceMode(t *testing.T)
 		IsSystem:        true,
 		Name:            "Forge",
 		PresetKey:       model.AgentPresetCodeBuilder,
-		RuntimeKind:     "codex",
+		RuntimeKind:     "native_sdk",
 		ExecutionConfig: []byte(`{"reasoning_effort":"high"}`),
 	}
 	out := runtimeAgentFromHelpinAgent(codeBuilder, "helpin")
@@ -120,7 +121,7 @@ func TestRuntimeAgentFromHelpinAgentInjectsRepositoryWorkspaceMode(t *testing.T)
 		IsSystem:    true,
 		Name:        "Mira",
 		PresetKey:   model.AgentPresetMarketer,
-		RuntimeKind: "codex",
+		RuntimeKind: "native_sdk",
 	}
 	if config := runtimeAgentFromHelpinAgent(marketer, "helpin").ExecutionConfig; len(config) > 0 {
 		nonRepoValues := map[string]interface{}{}
@@ -213,7 +214,7 @@ func TestRuntimeAgentFromHelpinAgentRegistersManagedCommandAgentSkills(t *testin
 		Name:             "Sub-agent",
 		PresetKey:        model.AgentPresetCommandAgent,
 		PresetVersionKey: "command_agent_default",
-		RuntimeKind:      "codex",
+		RuntimeKind:      "native_sdk",
 		AllowedTools: mustJSONStringSlice([]string{
 			agentcontract.ToolFindSkills,
 			agentcontract.ToolReadSkill,
@@ -272,7 +273,7 @@ func TestRuntimeAgentFromHelpinAgentSendsScribeAsOnePromptWithoutCoreSkillRefs(t
 		Name:             "Scribe",
 		PresetKey:        model.AgentPresetTaskPlanner,
 		PresetVersionKey: "task_planner_default",
-		RuntimeKind:      "codex",
+		RuntimeKind:      "native_sdk",
 		SystemPrompt:     defaultSystemPromptForPreset(model.AgentPresetTaskPlanner),
 		// Reproduce a persisted partial selection from before the approval
 		// skill became a required Scribe core skill.
@@ -309,7 +310,7 @@ func TestRuntimeAgentFromHelpinAgentSendsAtlasAsOnePromptWithOnlyToolSkillReload
 		Name:             "Atlas",
 		PresetKey:        model.AgentPresetEpicPlanner,
 		PresetVersionKey: "epic_planner_default",
-		RuntimeKind:      "codex",
+		RuntimeKind:      "native_sdk",
 		SystemPrompt:     defaultSystemPromptForPreset(model.AgentPresetEpicPlanner),
 		AllowedTools: mustJSONStringSlice([]string{
 			agentcontract.ToolPublishTaskPlan,
@@ -473,7 +474,7 @@ func TestRuntimeAgentFromHelpinAgentRequiresScribePlanDocument(t *testing.T) {
 		ID:          "agent-scribe",
 		IsSystem:    true,
 		PresetKey:   model.AgentPresetTaskPlanner,
-		RuntimeKind: "codex",
+		RuntimeKind: "native_sdk",
 	}
 	var config map[string]interface{}
 	if err := json.Unmarshal(runtimeAgentFromHelpinAgent(scribe, "helpin").ExecutionConfig, &config); err != nil {
@@ -652,7 +653,7 @@ func seedCodingDelegationAgent(t *testing.T, db *gorm.DB, presetKey, invocationM
 		skills, trigger_mode, provider, execution_config, allowed_tools, allowed_commands, allowed_targets, approval_mode,
 		max_concurrent_runs, default_invocation_mode, created_at, updated_at
 	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		"agent-1", "ws-1", true, "Forge", presetKey, "Code Builder", "idle", "codex",
+		"agent-1", "ws-1", true, "Forge", presetKey, "Code Builder", "idle", "native_sdk",
 		[]byte("[]"), "manual", "openai", []byte(`{"reasoning_effort":"high"}`), []byte("[]"), []byte("[]"), []byte("[]"), "never",
 		1, invocationMode, now, now,
 	)
@@ -828,6 +829,83 @@ func TestStartTargetRunUsesRegisteredRuntimeAgentToolContract(t *testing.T) {
 	}
 	if got := runtimeClient.startRunCalls[0].AllowedTools; !slices.Equal(got, []string{"read_files"}) {
 		t.Fatalf("run tools must use the registered runtime agent contract, got %#v", got)
+	}
+}
+
+func TestDockRunAdmissionPersistsBeforeRuntimeStart(t *testing.T) {
+	db := setupCodingDelegationTestDB(t)
+	mustExec(t, db, `ALTER TABLE agent_run_messages ADD COLUMN delivery_status TEXT NOT NULL DEFAULT 'pending'`)
+	now := time.Now().UTC()
+	seedCodingDelegationAgent(t, db, model.AgentPresetAskAgent, model.InvocationModeInteractive, now)
+
+	persisted := false
+	runtimeClient := &fakeAgentRuntimeSignalClient{}
+	runtimeClient.startRunHook = func(req AgentRuntimeStartRunRequest) {
+		if !persisted {
+			t.Error("runtime start ran before durable dock admission")
+		}
+		run, err := repository.NewAgentRunRepository(db).GetByID(context.Background(), "ws-1", req.HostRunID)
+		if err != nil || run == nil {
+			t.Errorf("persisted run unavailable at runtime start: run=%#v err=%v", run, err)
+		} else if run.ExternalRuntimeID != nil {
+			t.Errorf("runtime mapping was bound before StartRun: %v", run.ExternalRuntimeID)
+		}
+	}
+	svc := newCodingDelegationService(t, db, runtimeClient)
+	actorID, chatID := "user-1", "chat-1"
+	run, err := svc.startTargetRunWithOptions(context.Background(), "ws-1", "workspace", "ws-1", model.StartAgentRunRequest{
+		AgentID: "agent-1",
+	}, &actorID, nil, nil, nil, startTargetRunOptions{
+		dockChatID:      &chatID,
+		clientMessageID: "message-1",
+		afterPersist: func(run *model.AgentRun) error {
+			persisted = true
+			stored, err := repository.NewAgentRunRepository(db).GetByID(context.Background(), "ws-1", run.ID)
+			if err != nil || stored == nil || stored.Status != model.AgentRunStatusQueued {
+				return fmt.Errorf("queued run was not durable before admission: run=%#v err=%v", stored, err)
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("start dock run: %v", err)
+	}
+	if run == nil || !persisted || len(runtimeClient.startRunCalls) != 1 {
+		t.Fatalf("unexpected admission result: run=%#v persisted=%v starts=%d", run, persisted, len(runtimeClient.startRunCalls))
+	}
+}
+
+func TestDockRunCancelledDuringRuntimeAdmissionIsNotReactivated(t *testing.T) {
+	db := setupCodingDelegationTestDB(t)
+	mustExec(t, db, `ALTER TABLE agent_run_messages ADD COLUMN delivery_status TEXT NOT NULL DEFAULT 'pending'`)
+	now := time.Now().UTC()
+	seedCodingDelegationAgent(t, db, model.AgentPresetAskAgent, model.InvocationModeInteractive, now)
+	runtimeClient := &fakeAgentRuntimeSignalClient{}
+	runtimeClient.startRunHook = func(req AgentRuntimeStartRunRequest) {
+		if err := db.Model(&model.AgentRun{}).
+			Where("workspace_id = ? AND id = ?", "ws-1", req.HostRunID).
+			Updates(map[string]any{"status": model.AgentRunStatusCancelled, "completed_at": time.Now().UTC()}).Error; err != nil {
+			t.Errorf("cancel admitted run: %v", err)
+		}
+	}
+	svc := newCodingDelegationService(t, db, runtimeClient)
+	actorID, chatID := "user-1", "chat-1"
+	run, err := svc.startTargetRunWithOptions(context.Background(), "ws-1", "workspace", "ws-1", model.StartAgentRunRequest{
+		AgentID: "agent-1",
+	}, &actorID, nil, nil, nil, startTargetRunOptions{dockChatID: &chatID, clientMessageID: "message-1"})
+	if err == nil || !strings.Contains(err.Error(), "cancelled during runtime admission") {
+		t.Fatalf("cancelled admission returned run=%#v err=%v", run, err)
+	}
+	if len(runtimeClient.startRunCalls) != 1 || len(runtimeClient.cancelCalls) != 1 {
+		t.Fatalf("runtime admission/cancellation calls = %d/%d, want 1/1", len(runtimeClient.startRunCalls), len(runtimeClient.cancelCalls))
+	}
+	stored, getErr := repository.NewAgentRunRepository(db).GetByID(context.Background(), "ws-1", runtimeClient.startRunCalls[0].HostRunID)
+	if getErr != nil || stored == nil || stored.Status != model.AgentRunStatusCancelled || stored.ExternalRuntimeID != nil {
+		t.Fatalf("cancelled run was reactivated: run=%#v err=%v", stored, getErr)
+	}
+	var agentStatus string
+	if scanErr := db.Table("agents").Select("status").Where("id = ?", "agent-1").Scan(&agentStatus).Error; scanErr != nil || agentStatus != "idle" {
+		t.Fatalf("cancelled admission left agent status %q: %v", agentStatus, scanErr)
 	}
 }
 

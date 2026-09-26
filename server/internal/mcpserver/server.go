@@ -10,12 +10,12 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/ratelimit"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
@@ -33,8 +33,8 @@ type Handler struct {
 }
 
 // NewHandler creates the hosted public MCP protocol handler.
-func NewHandler(mcpService *service.MCPService) *Handler {
-	handler := &Handler{service: mcpService, limiter: newRequestLimiter()}
+func NewHandler(mcpService *service.MCPService, limiter *ratelimit.Limiter) *Handler {
+	handler := &Handler{service: mcpService, limiter: &requestLimiter{shared: limiter}}
 	handler.streamable = mcp.NewStreamableHTTPHandler(handler.serverForRequest, &mcp.StreamableHTTPOptions{
 		Stateless:    true,
 		JSONResponse: true,
@@ -57,12 +57,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if !h.limiter.Allow(principal) {
+	if !h.limiter.Allow(r.Context(), principal) {
 		h.service.RecordProtocolEvent(r.Context(), principal, "rate_limit", "denied", "general_request_limit")
 		w.Header().Set("Retry-After", "60")
 		http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
 		return
 	}
+	principal = principalForPath(principal, r.URL.Path)
 	r.Body = http.MaxBytesReader(w, r.Body, _maxBodyBytes)
 	ctx := context.WithValue(r.Context(), principalContextKey{}, principal)
 	h.streamable.ServeHTTP(w, r.WithContext(ctx))
@@ -88,7 +89,7 @@ func (h *Handler) serverForRequest(r *http.Request) *mcp.Server {
 	for _, definition := range tools {
 		definition := definition
 		server.AddTool(protocolTool(definition), func(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			if !h.limiter.AllowTool(principal, definition) {
+			if !h.limiter.AllowTool(ctx, principal, definition) {
 				h.service.RecordProtocolEvent(ctx, principal, "rate_limit", "denied", "tool_class_limit")
 				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: "This Helpin tool is temporarily rate limited. Retry after 60 seconds."}}}, nil
 			}
@@ -214,7 +215,7 @@ func (h *Handler) addWorkflowPrompts(server *mcp.Server, tools []service.MCPTool
 		{
 			name: "docs_maintenance", title: "Maintain Helpin documentation",
 			description:  "Find stale Helpin documentation and prepare safe draft updates.",
-			text:         "List Docs spaces and collections before choosing a location. Search and read the relevant Helpin documents and linked product work. Identify stale or unsupported claims before editing. Use the narrowest available draft mutation with a stable idempotency key. Create a space or collection only when the user requested a new location. Do not publish, unpublish, or delete documentation.",
+			text:         "List Docs spaces and collections before choosing a location. Search and read the relevant Helpin documents and linked product work. Identify stale or unsupported claims before editing. Use the narrowest available draft mutation with a stable idempotency key. Create a space or collection only when the user requested a new location. Publish, unpublish, or archive documentation only when the user explicitly asks, and never delete it.",
 			requiredTool: "list_documents",
 		},
 		{
@@ -279,6 +280,21 @@ func (h *Handler) validOrigin(r *http.Request) bool {
 	return false
 }
 
+// ReadOnlyPath is the endpoint that exposes only read tools, whatever the
+// connection's grant allows.
+const ReadOnlyPath = "/mcp/readonly"
+
+// principalForPath forces read-only mode on the read-only endpoint without
+// mutating the authenticated principal.
+func principalForPath(principal *model.MCPPrincipal, requestPath string) *model.MCPPrincipal {
+	if principal == nil || strings.TrimSuffix(requestPath, "/") != ReadOnlyPath {
+		return principal
+	}
+	readOnly := *principal
+	readOnly.ReadOnly = true
+	return &readOnly
+}
+
 func bearerToken(header string) string {
 	parts := strings.Fields(header)
 	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
@@ -288,6 +304,10 @@ func bearerToken(header string) string {
 }
 
 func publicToolError(err error) string {
+	var toolErr *service.MCPToolError
+	if errors.As(err, &toolErr) {
+		return toolErr.Code + ": " + toolErr.Message
+	}
 	switch {
 	case errors.Is(err, service.ErrMCPUnauthorized):
 		return "The Helpin connection is no longer authorized. Reconnect it and retry."
@@ -310,60 +330,23 @@ func publicToolError(err error) string {
 
 type principalContextKey struct{}
 
-type requestLimiter struct {
-	mu      sync.Mutex
-	windows map[string]*requestWindow
+type requestLimiter struct{ shared *ratelimit.Limiter }
+
+func principalRateKey(principal *model.MCPPrincipal) string {
+	actor := "user:" + principal.UserID
+	if principal.ServicePrincipalID != "" {
+		actor = "service:" + principal.ServicePrincipalID
+	}
+	return principal.WorkspaceID + ":" + actor
 }
 
-type requestWindow struct {
-	started time.Time
-	count   int
+func (l *requestLimiter) Allow(ctx context.Context, principal *model.MCPPrincipal) bool {
+	return l.shared.Allow(ctx, "mcp", principalRateKey(principal), false)
 }
 
-func newRequestLimiter() *requestLimiter {
-	return &requestLimiter{windows: make(map[string]*requestWindow)}
-}
-
-func (l *requestLimiter) Allow(principal *model.MCPPrincipal) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	now := time.Now()
-	principalKey := principal.ConnectionID
-	if principalKey == "" {
-		principalKey = "service:" + principal.ServicePrincipalID
-	}
-	return l.allowKey(now, "p:"+principalKey, 60, time.Minute) && l.allowKey(now, "w:"+principal.WorkspaceID, 180, time.Minute)
-}
-
-func (l *requestLimiter) AllowTool(principal *model.MCPPrincipal, tool service.MCPToolDefinition) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	now := time.Now()
-	principalKey := principal.ConnectionID
-	if principalKey == "" {
-		principalKey = "service:" + principal.ServicePrincipalID
-	}
-	if tool.Name == "search_workspace" && !l.allowKey(now, "search:"+principalKey, 20, time.Minute) {
-		return false
-	}
-	if tool.Mutating && !l.allowKey(now, "write:"+principalKey, 20, time.Minute) {
-		return false
-	}
-	if tool.Name == "start_agent_run" && !l.allowKey(now, "agent-start:"+principal.UserID, 10, time.Hour) {
-		return false
-	}
-	return true
-}
-
-func (l *requestLimiter) allowKey(now time.Time, key string, maximum int, duration time.Duration) bool {
-	window := l.windows[key]
-	if window == nil || now.Sub(window.started) >= duration {
-		l.windows[key] = &requestWindow{started: now, count: 1}
+func (l *requestLimiter) AllowTool(ctx context.Context, principal *model.MCPPrincipal, tool service.MCPToolDefinition) bool {
+	if !tool.Mutating && tool.Name != "search_workspace" {
 		return true
 	}
-	if window.count >= maximum {
-		return false
-	}
-	window.count++
-	return true
+	return l.shared.Allow(ctx, "mcp", principalRateKey(principal), true)
 }

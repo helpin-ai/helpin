@@ -6,7 +6,6 @@ server/bin/
 server/tmp/
 server/data/*.mmdb
 server/temporal-worker
-server/migrate
 
 # Node
 frontend/node_modules/
@@ -56,6 +55,8 @@ waqar-images/
 .agents/skills/*
 !.agents/skills/helpin-design-system/
 !.agents/skills/helpin-design-system/**
+!.agents/skills/helpin-documentation/
+!.agents/skills/helpin-documentation/**
 .worktrees/
 node_modules/
 .pnpm-store/
@@ -65,5 +66,17 @@ packages/*/lib/
 *.log
 .gocache/
 .playwright-mcp/
+.agent-runtime/
 # Build cache
 .cache/
+__pycache__/
+
+# Local scratch artifacts (intentional assets belong in component directories)
+/*.png
+/scratch/
+/artifacts/
+/test-results/
+/playwright-report/
+
+# Generated Community bundles and operator CLI release assets
+/release-artifacts/

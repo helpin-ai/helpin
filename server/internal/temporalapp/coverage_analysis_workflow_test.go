@@ -3,6 +3,7 @@ package temporalapp
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 )
 
 type fakeCoverageDailyAnalyzer struct {
+	mu                sync.Mutex
 	workspaces        []string
 	runs              []coverageAnalysisRunCall
 	err               error
@@ -28,7 +30,10 @@ func (f *fakeCoverageDailyAnalyzer) ListWorkspacesForDailyAnalysis(ctx context.C
 }
 
 func (f *fakeCoverageDailyAnalyzer) RunWorkspaceDailyAnalysis(ctx context.Context, workspaceID string, windowStart, windowEnd time.Time) error {
+	// Temporal executes the child activities concurrently.
+	f.mu.Lock()
 	f.runs = append(f.runs, coverageAnalysisRunCall{workspaceID: workspaceID, windowStart: windowStart, windowEnd: windowEnd})
+	f.mu.Unlock()
 	if err := f.errorsByWorkspace[workspaceID]; err != nil {
 		return err
 	}
@@ -36,6 +41,12 @@ func (f *fakeCoverageDailyAnalyzer) RunWorkspaceDailyAnalysis(ctx context.Contex
 		return f.err
 	}
 	return nil
+}
+
+func (f *fakeCoverageDailyAnalyzer) recordedRuns() []coverageAnalysisRunCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]coverageAnalysisRunCall(nil), f.runs...)
 }
 
 func TestCoverageDailyAnalysisWorkflow_FansOutWorkspaces(t *testing.T) {
@@ -58,15 +69,16 @@ func TestCoverageDailyAnalysisWorkflow_FansOutWorkspaces(t *testing.T) {
 	if err := env.GetWorkflowError(); err != nil {
 		t.Fatalf("workflow error: %v", err)
 	}
-	if len(analyzer.runs) != 2 {
-		t.Fatalf("expected 2 workspace runs, got %+v", analyzer.runs)
+	runs := analyzer.recordedRuns()
+	if len(runs) != 2 {
+		t.Fatalf("expected 2 workspace runs, got %+v", runs)
 	}
 	seen := map[string]bool{}
-	for _, run := range analyzer.runs {
+	for _, run := range runs {
 		seen[run.workspaceID] = true
 	}
 	if !seen["ws-1"] || !seen["ws-2"] {
-		t.Fatalf("unexpected workspace runs: %+v", analyzer.runs)
+		t.Fatalf("unexpected workspace runs: %+v", runs)
 	}
 }
 
@@ -92,10 +104,11 @@ func TestCoverageWorkspaceAnalysisWorkflow_CallsActivityWithWindow(t *testing.T)
 	if err := env.GetWorkflowError(); err != nil {
 		t.Fatalf("workflow error: %v", err)
 	}
-	if len(analyzer.runs) != 1 {
-		t.Fatalf("expected one workspace run, got %+v", analyzer.runs)
+	runs := analyzer.recordedRuns()
+	if len(runs) != 1 {
+		t.Fatalf("expected one workspace run, got %+v", runs)
 	}
-	run := analyzer.runs[0]
+	run := runs[0]
 	if run.workspaceID != "ws-1" || !run.windowStart.Equal(windowStart) || !run.windowEnd.Equal(windowEnd) {
 		t.Fatalf("unexpected activity input: %+v", run)
 	}
@@ -143,11 +156,12 @@ func TestCoverageDailyAnalysisWorkflow_WorkspaceFailureDoesNotStopLaterWorkspace
 		t.Fatalf("parent workflow should isolate child failures: %v", err)
 	}
 	seenWS2 := false
-	for _, run := range analyzer.runs {
+	runs := analyzer.recordedRuns()
+	for _, run := range runs {
 		seenWS2 = seenWS2 || run.workspaceID == "ws-2"
 	}
 	if !seenWS2 {
-		t.Fatalf("expected later workspace to run despite ws-1 retries, got %+v", analyzer.runs)
+		t.Fatalf("expected later workspace to run despite ws-1 retries, got %+v", runs)
 	}
 }
 
@@ -165,8 +179,9 @@ func TestCoverageDailyAnalysisWorkflow_UsesThreeHourWindow(t *testing.T) {
 	if err := env.GetWorkflowError(); err != nil {
 		t.Fatal(err)
 	}
-	if len(analyzer.runs) != 1 || analyzer.runs[0].windowEnd.Sub(analyzer.runs[0].windowStart) != 3*time.Hour {
-		t.Fatalf("unexpected analysis window: %+v", analyzer.runs)
+	runs := analyzer.recordedRuns()
+	if len(runs) != 1 || runs[0].windowEnd.Sub(runs[0].windowStart) != 3*time.Hour {
+		t.Fatalf("unexpected analysis window: %+v", runs)
 	}
 }
 

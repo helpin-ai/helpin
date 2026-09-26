@@ -5,7 +5,8 @@ import {
   stripDockPageContext,
   type DockChildRunResult,
 } from '@/lib/dockTypes';
-import type { CodingSessionStreamState } from '@/lib/pmTypes';
+import { stripFollowUpSuggestions } from './followUpSuggestions';
+import type { CodingSessionLiveAssistantMessage, CodingSessionLiveTurnSegment, CodingSessionStreamState } from '@/lib/pmTypes';
 
 /** Minimal run shape the composer needs (AgentRun and CodingSession both fit). */
 export interface DockRunLike {
@@ -22,19 +23,6 @@ export interface DockComposerState {
 /** Only runs that are actively producing events should expose a live transcript tail. */
 export function isDockTranscriptStreaming(run: DockRunLike | null): boolean {
   return run?.status === 'queued' || run?.status === 'running';
-}
-
-/** Interaction kinds answered through structured cards, not the composer. */
-const STRUCTURED_INTERACTION_KINDS = new Set([
-  'approval_request',
-  'review_checkpoint',
-  'permissions_approval',
-  'command_execution_approval',
-  'file_change_approval',
-]);
-
-export function isStructuredInteractionKind(kind: string | undefined): boolean {
-  return !!kind && STRUCTURED_INTERACTION_KINDS.has(kind);
 }
 
 /**
@@ -55,7 +43,7 @@ export function resolveDockComposerState(
     return { visible: true, enabled: true, placeholder: 'Ask anything, or tell an agent what to do' };
   }
   if (hasStructuredInteraction) {
-    return { visible: false, enabled: false, placeholder: '' };
+    return { visible: true, enabled: false, placeholder: 'Respond to the agent above' };
   }
   switch (run.status) {
     case 'completed':
@@ -68,6 +56,8 @@ export function resolveDockComposerState(
       return { visible: true, enabled: false, placeholder: 'Agent is working…' };
     case 'paused':
       switch (run.pause_reason) {
+        case 'manual':
+          return { visible: true, enabled: false, placeholder: 'Agent paused — resume to continue' };
         case 'awaiting_user_message':
           return { visible: true, enabled: true, placeholder: 'Reply…' };
         case 'human_input':
@@ -92,6 +82,16 @@ export interface DockTranscriptTransform {
   childResults: DockChildResultEntry[];
 }
 
+function chatAssistantMessage(message: CodingSessionLiveAssistantMessage): CodingSessionLiveAssistantMessage {
+  return { ...message, content: stripFollowUpSuggestions(message.content) };
+}
+
+function chatTurnSegment(segment: CodingSessionLiveTurnSegment): CodingSessionLiveTurnSegment {
+  return segment.kind === 'assistant_message'
+    ? { ...segment, assistant_message: chatAssistantMessage(segment.assistant_message) }
+    : segment;
+}
+
 /**
  * Rewrites a run stream for chat display: strips <page_context> blocks from
  * user messages and extracts <child_run_result> messages into structured
@@ -102,7 +102,11 @@ export function transformDockStream(stream: CodingSessionStreamState, order: 'ti
   const messages = [];
   for (const message of stream.transcript_messages) {
     if (message.role !== 'user') {
-      messages.push(message);
+      messages.push(message.role === 'assistant' ? {
+        ...message,
+        content: stripFollowUpSuggestions(message.content),
+        turn_segments: message.turn_segments?.map(chatTurnSegment),
+      } : message);
       continue;
     }
     const childResult = parseDockChildResult(message.content);
@@ -129,7 +133,12 @@ export function transformDockStream(stream: CodingSessionStreamState, order: 'ti
     return a.sequence_no - b.sequence_no;
   });
   return {
-    stream: { ...stream, transcript_messages: messages },
+    stream: {
+      ...stream,
+      transcript_messages: messages,
+      live_assistant_message: stream.live_assistant_message ? chatAssistantMessage(stream.live_assistant_message) : null,
+      live_turn_segments: stream.live_turn_segments.map(chatTurnSegment),
+    },
     childResults,
   };
 }

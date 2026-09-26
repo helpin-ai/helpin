@@ -5,7 +5,6 @@ metadata:
   title: SimpleDiag Network Diagrams (nwdiag)
   supported_runtimes:
     - native_sdk
-    - codex
 ---
 
 # SimpleDiag network diagrams

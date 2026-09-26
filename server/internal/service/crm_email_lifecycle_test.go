@@ -74,6 +74,7 @@ func setupCRMEmailLifecycleTestDB(t *testing.T) *gorm.DB {
 			ON crm_contacts(workspace_id, lower(email))
 			WHERE email IS NOT NULL`,
 		`CREATE TABLE IF NOT EXISTS crm_email_accounts (
+			signature TEXT NOT NULL DEFAULT '',
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			member_id TEXT NOT NULL,
@@ -163,6 +164,9 @@ func setupCRMEmailLifecycleTestDB(t *testing.T) *gorm.DB {
 		}
 	}
 
+	if err := db.AutoMigrate(&model.CRMMailboxSendingPolicy{}, &model.CRMEmailSendReservation{}); err != nil {
+		t.Fatal(err)
+	}
 	return db
 }
 
@@ -179,7 +183,8 @@ func (f *fakeGmailOAuthProvider) ExchangeCode(ctx context.Context, code string) 
 }
 
 type fakeMailboxClient struct {
-	profile *sync.GmailProfile
+	profile   *sync.GmailProfile
+	sendCalls int
 }
 
 func (f *fakeMailboxClient) GetMailboxProfile(ctx context.Context, accessToken string) (*sync.GmailProfile, error) {
@@ -191,6 +196,7 @@ func (f *fakeMailboxClient) GetValidToken(ctx context.Context, account *model.CR
 }
 
 func (f *fakeMailboxClient) SendMessage(ctx context.Context, accessToken, from string, to []string, cc []string, subject, bodyHTML string) (*sync.GmailSendResult, error) {
+	f.sendCalls++
 	return &sync.GmailSendResult{ID: "sent-1", ThreadID: "thread-1"}, nil
 }
 

@@ -6,7 +6,8 @@ export type WorkspaceOnboardingUseCase =
   | 'customer_support'
   | 'help_center_docs'
   | 'internal_docs'
-  | 'sales_crm';
+  | 'sales_crm'
+  | 'automation';
 
 export type WorkspaceOnboardingUseCaseOption = {
   value: WorkspaceOnboardingUseCase;
@@ -46,6 +47,12 @@ export const ONBOARDING_USE_CASE_OPTIONS: WorkspaceOnboardingUseCaseOption[] = [
     description: 'AI agents help manage follow-ups, summarize customer context, and support sales workflows.',
     replaces: 'Replaces HubSpot, Pipedrive, Salesforce',
   },
+  {
+    value: 'automation',
+    label: 'Automate repeatable work',
+    description: 'AI agents run recurring work on triggers and schedules, with approval where you want it.',
+    replaces: 'Replaces Zapier, Make, n8n',
+  },
 ];
 
 const setupGoalByUseCase: Record<WorkspaceOnboardingUseCase, SetupGoalKey> = {
@@ -54,6 +61,7 @@ const setupGoalByUseCase: Record<WorkspaceOnboardingUseCase, SetupGoalKey> = {
   help_center_docs: 'help_center_docs',
   internal_docs: 'internal_docs',
   sales_crm: 'sales_crm',
+  automation: 'automation_mastery',
 };
 
 export function mapOnboardingUseCasesToSetupGoals(useCases: WorkspaceOnboardingUseCase[]): SetupGoalKey[] {

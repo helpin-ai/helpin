@@ -1,3 +1,4 @@
+import type { WidgetOriginSettings, WidgetSigningSecretResponse } from '@/lib/pmTypes';
 import { api } from '../api';
 import type { AssignableMember } from '../types';
 import type {
@@ -229,6 +230,13 @@ export const supportService = {
     api.post<SendSupportConversationTranscriptResponse>(`/support/inbox/conversations/${conversationId}/transcript${qs(workspaceId)}`, payload),
   createConversationMessage: (workspaceId: string, conversationId: string, payload: CreateMessageRequest) =>
     api.post<SupportMessage>(`/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`, payload),
+  sendConversationReply: async (workspaceId: string, conversationId: string, payload: CreateMessageRequest) => {
+    const response = await api.post<SupportMessage>(`/support/inbox/conversations/${conversationId}/translation/sends${qs(workspaceId)}`, payload);
+    if (response.isMissingRoute) {
+      return api.post<SupportMessage>(`/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`, payload);
+    }
+    return response;
+  },
   deleteConversationMessage: (workspaceId: string, conversationId: string, messageId: string, undo = false) => {
     let path = `/support/inbox/conversations/${conversationId}/messages/${messageId}${qs(workspaceId)}`;
     if (undo) path += '&undo=1';
@@ -258,6 +266,9 @@ export const supportService = {
     `/support/inbox/conversations/${conversationId}/create-task${qs(workspaceId)}`,
     payload,
   ),
+  changeConversationAIControl: (workspaceId: string, conversationId: string, payload: { action: 'pause' | 'return'; expected_version: number; confirm_human_request?: boolean }) =>
+    api.post<{ updated: boolean }>(`/support/inbox/conversations/${conversationId}/ai-control?workspace_id=${workspaceId}`, payload),
+
   assignConversationAgent: (workspaceId: string, conversationId: string, payload: AssignConversationAgentRequest) =>
     api.post(`/support/inbox/conversations/${conversationId}/assign-agent${qs(workspaceId)}`, payload),
   assignConversationUser: (workspaceId: string, conversationId: string, payload: AssignConversationUserRequest) =>
@@ -307,10 +318,14 @@ export const supportService = {
     api.get<SupportInstallationResponse>(`/support/inbox/installations${qs(workspaceId)}`),
   getRoutingUsageStatus: (workspaceId: string) =>
     api.get<SupportRoutingUsageStatus>(`/support/inbox/routing-usage${qs(workspaceId)}`),
-  updateInstallationSettings: (workspaceId: string, settings: Partial<SupportInboxSettings>) =>
+  updateInstallationSettings: (workspaceId: string, settings: Partial<SupportInboxSettings & WidgetOriginSettings>) =>
     api.patch<SupportInstallationResponse>(`/support/inbox/installations${qs(workspaceId)}`, settings),
   regenerateWidgetKey: (workspaceId: string) =>
     api.post<SupportInstallationResponse>(`/support/inbox/installations/regenerate-key${qs(workspaceId)}`, {}),
+  revealWidgetSigningSecret: (workspaceId: string) =>
+    api.post<WidgetSigningSecretResponse>(`/support/inbox/installations/reveal-secret${qs(workspaceId)}`, {}),
+  rotateWidgetSigningSecret: (workspaceId: string) =>
+    api.post<WidgetSigningSecretResponse>(`/support/inbox/installations/rotate-secret${qs(workspaceId)}`, {}),
   /**
    * @deprecated Use WebSocket `support:typing:start` / `support:typing:stop` messages instead.
    * Kept as HTTP fallback for clients without an active WebSocket connection.

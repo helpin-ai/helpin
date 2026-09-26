@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -20,7 +21,7 @@ type CRMContactService struct {
 	contactRepo    *repository.CRMContactRepository
 	activityRepo   *repository.CRMActivityRepository
 	timelineRepo   *repository.CRMCompanyTimelineRepository
-	entitlementSvc *EntitlementService
+	entitlementSvc EntitlementPolicy
 	wsPublisher    websocket.EventPublisher
 	summaryRefresh CompanySummaryRefreshRequester
 	motionSignals  interface {
@@ -66,7 +67,7 @@ func (s *CRMContactService) SetTimelineRepository(repo *repository.CRMCompanyTim
 	return s
 }
 
-func (s *CRMContactService) SetEntitlementService(entitlementSvc *EntitlementService) *CRMContactService {
+func (s *CRMContactService) SetEntitlementService(entitlementSvc EntitlementPolicy) *CRMContactService {
 	s.entitlementSvc = entitlementSvc
 	return s
 }
@@ -490,17 +491,36 @@ func displayActivityEmail(email string) string {
 	return email
 }
 
-// Delete removes a contact.
-func (s *CRMContactService) Delete(ctx context.Context, id string) error {
+// Delete removes a contact and anonymizes its linked support identity. Message
+// and comment text is retained, so this is not a complete personal-data erasure.
+func (s *CRMContactService) Delete(ctx context.Context, workspaceID, id string) error {
+	if strings.TrimSpace(workspaceID) == "" {
+		return fmt.Errorf("workspace_id is required")
+	}
 	contact, err := s.contactRepo.GetByID(ctx, id)
 	if err != nil {
 		return err
 	}
 	if contact == nil {
+		return nil
+	}
+	if contact.WorkspaceID != workspaceID {
 		return fmt.Errorf("contact not found")
 	}
-	s.requestCompanySummaryRefresh(ctx, contact.WorkspaceID, contact.ID)
-	return s.contactRepo.Delete(ctx, id)
+	conversationIDs, err := s.contactRepo.DeleteAnonymizingSupport(ctx, workspaceID, id)
+	if err != nil {
+		return err
+	}
+	s.requestCompanySummaryRefresh(ctx, workspaceID, id)
+	if s.wsPublisher != nil {
+		s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "crm_contact", EntityID: id, WorkspaceID: workspaceID})
+	}
+	for _, conversationID := range conversationIDs {
+		if s.wsPublisher != nil {
+			s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "support_conversation", EntityID: conversationID, WorkspaceID: workspaceID, Data: json.RawMessage(`{"reason":"customer_anonymized"}`)})
+		}
+	}
+	return nil
 }
 
 func (s *CRMContactService) requestCompanySummaryRefresh(ctx context.Context, workspaceID, contactID string) {

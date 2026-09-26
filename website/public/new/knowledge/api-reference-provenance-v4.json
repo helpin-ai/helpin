@@ -1,0 +1,41 @@
+{
+  "page": "/products/knowledge#knowledge-api",
+  "section": "Give developers a reference they can work with.",
+  "asset_type": "Generated illustrative demo edited from the user-provided real Helpin public API reference screenshot",
+  "tool": "Direct OpenAI Images edit API; previously authorized custom 4K runner",
+  "model": "gpt-image-2.5-sunburst",
+  "quality": "high",
+  "native_dimensions": [
+    3840,
+    2160
+  ],
+  "source_url": "https://storage.googleapis.com/vm-dev-screenshots/Sep%2020/Screenshot%202026-09-20%20at%204.06.25%E2%80%AFPM.png",
+  "source_role": "Edit target: actual API reference layout, typography, operation sidebar, and request playground",
+  "prompt": "api-reference-prompt-v1.txt",
+  "correction_prompts": [
+    "api-reference-correction-v2.txt",
+    "api-reference-correction-v3.txt",
+    "api-reference-correction-v4.txt"
+  ],
+  "final_edit_mask": {
+    "dimensions": [
+      3840,
+      2160
+    ],
+    "transparent_rectangle": [
+      2720,
+      1290,
+      3780,
+      1544
+    ],
+    "purpose": "Constrain correction to the cURL request panel"
+  },
+  "master": "output/imagegen/knowledge-api-reference/api-reference-3840-v4.webp",
+  "published_derivatives": [
+    "website/public/new/knowledge/api-reference-3840-v4.webp",
+    "website/public/new/knowledge/api-reference-1920-v4.webp",
+    "website/public/new/knowledge/api-reference-960-v4.webp"
+  ],
+  "edits": "OrbitDesk identity and fictional integration API; visible request playground; valid JSON response; matching v1 integration endpoint; native 4K 16:9 viewport.",
+  "encoding": "Proportional Sharp WebP exports, quality 94, no upscaling"
+}

@@ -1,10 +1,11 @@
 {
+  "license": "Apache-2.0",
   "name": "@helpin-ai/widget-embed",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "main": "dist/pixel.js",
-  "files": ["dist"],
+  "files": ["dist", "LICENSE", "NOTICE"],
   "scripts": {
     "build": "vite build",
     "typecheck": "tsc --noEmit"

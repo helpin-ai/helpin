@@ -19,6 +19,8 @@ type ContentCrawler interface {
 
 // CrawlRecord is the unified output for each crawled page.
 type CrawlRecord struct {
+	// SkipReason is set for policy skips; these records contain no content.
+	SkipReason string
 	URL        string
 	Title      string
 	HTTPStatus int

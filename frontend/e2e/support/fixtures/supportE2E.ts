@@ -155,7 +155,7 @@ const WORKSPACE_SETTINGS = {
   team_repo_defaults: [],
 }
 
-const SUPPORT_INSTALLATION = {
+export const SUPPORT_INSTALLATION = {
   id: 'install-1',
   workspace_id: WORKSPACE_ID,
   widget_key: 'widget-key',
@@ -251,6 +251,7 @@ export const SUPPORT_MESSAGES = [
 ]
 
 type MockOptions = {
+  pmAccess?: boolean
   unreadCount?: number
 }
 
@@ -368,7 +369,7 @@ export async function installSupportAppMocks(page: Page, options: MockOptions = 
       return fulfillJSON(route, WORKSPACE_MEMBERSHIP)
     }
     if (method === 'GET' && path === `/api/workspaces/${WORKSPACE_ID}/me`) {
-      return fulfillJSON(route, WORKSPACE_ACCESS)
+      return fulfillJSON(route, options.pmAccess ? { ...WORKSPACE_ACCESS, modules: ['support', 'pm'], permissions: [...WORKSPACE_ACCESS.permissions, 'pm.read', 'pm.edit'] } : WORKSPACE_ACCESS)
     }
     if (method === 'GET' && path === '/api/settings' && url.searchParams.get('workspace_id') === WORKSPACE_ID) {
       return fulfillJSON(route, WORKSPACE_SETTINGS)
@@ -411,11 +412,18 @@ export async function installSupportAppMocks(page: Page, options: MockOptions = 
     if (method === 'GET' && path === `/api/support/inbox/conversations/${CONVERSATION_ID}` && url.searchParams.get('workspace_id') === WORKSPACE_ID) {
       return fulfillJSON(route, buildConversation(unreadCount))
     }
+    if (method === 'GET' && path === `/api/support/inbox/conversations/${CONVERSATION_ID}/translation`) {
+      return fulfillJSON(route, { available: false, unavailable_reason: 'Translation is not configured.', languages: { en: 'English', de: 'German' }, preference: { reading_language: 'en', auto_translate_incoming: true, auto_translate_outgoing: true }, conversation: { customer_language: '', translation_mode: 'inherit' } })
+    }
     if (method === 'GET' && path === `/api/support/inbox/conversations/${CONVERSATION_ID}/messages` && url.searchParams.get('workspace_id') === WORKSPACE_ID) {
       return fulfillJSON(route, SUPPORT_MESSAGES)
     }
     if (method === 'GET' && path === `/api/support/inbox/conversations/${CONVERSATION_ID}/message-pages` && url.searchParams.get('workspace_id') === WORKSPACE_ID) {
       return fulfillJSON(route, { data: SUPPORT_MESSAGES, has_more: false })
+    }
+
+    if (method === 'POST' && path === `/api/support/inbox/conversations/${CONVERSATION_ID}/task-triage`) {
+      return fulfillJSON(route, { status: 'disabled', source_kind: 'support_conversation', source_id: CONVERSATION_ID, teams: [], labels: [], candidates: [] })
     }
 
     return fulfillJSON(route, { error: `Unhandled e2e API mock for ${method} ${path}` }, 500)

@@ -68,14 +68,11 @@ function reportMissingClient(): void {
 
 function useHelpin(): HelpinClient {
   const client = useContext(HelpinContext);
-  if (!client) {
-    reportMissingClient();
-    return noopClient;
-  }
 
   const id = useCallback(
-    (userData: UserProps, doNotSendEvent?: boolean): Promise<void> =>
-      client?.id(userData, doNotSendEvent),
+    async (userData: UserProps, doNotSendEvent?: boolean): Promise<void> => {
+      await client?.id(userData, doNotSendEvent);
+    },
     [client],
   );
 
@@ -173,6 +170,13 @@ function useHelpin(): HelpinClient {
     ): void => client?.unset(propertyName, opts),
     [client],
   );
+
+  // Hooks above always run so the hook order stays stable when the client
+  // appears after the first render (for example after server rendering).
+  if (!client) {
+    reportMissingClient();
+    return noopClient;
+  }
 
   return {
     ...client,

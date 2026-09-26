@@ -15,7 +15,7 @@ var branchTokenSanitizer = regexp.MustCompile(`[^a-z0-9]+`)
 type GitIntegration struct {
 	ID                       string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID              *string    `json:"workspace_id,omitempty" gorm:"type:uuid;index"` // legacy return workspace for older installs
-	OrganizationID           *string    `json:"organization_id" gorm:"type:uuid;index"`
+	OrganizationID           *string    `json:"organization_id" gorm:"type:uuid;not null;index"`
 	Provider                 string     `json:"provider" gorm:"not null"` // github, gitlab
 	DisplayName              string     `json:"display_name" gorm:"not null"`
 	CredentialMode           string     `json:"credential_mode" gorm:"not null;default:'github_app'"`

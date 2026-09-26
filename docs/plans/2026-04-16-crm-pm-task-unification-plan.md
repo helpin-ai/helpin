@@ -1,4 +1,19 @@
-# CRM / PM Task Unification & CRM Data Model Trim
+# CRM and PM task unification plan
+
+This historical plan records the move from task-shaped CRM activity to shared PM
+tasks. It is useful migration context for contributors; the proposed sales-only
+creation flow and blanket sequence-deletion scope no longer describe the product.
+
+## Source review — 2026-09-18
+
+- [CRM activity types](../../server/internal/model/crm_activity.go) now contain note, call, meeting, and email; PM tasks are the follow-up primitive. [LinkedTasksPanel](../../frontend/src/components/crm/LinkedTasksPanel.tsx) lists and creates shared PM tasks, with contact/deal filters and `company_rollup_id` for company context.
+- The panel selects from existing accessible teams and remembers a workspace-specific choice in browser `localStorage`. It does not require a sales team or silently create one. Without PM edit access or an accessible team it disables creation. Task creation and CRM association are separate API calls, so an association failure can leave a created task unlinked.
+- [SettingsService.EnsureDefaultTeam](../../server/internal/service/settings.go) exists separately. It chooses the earliest-created team of the requested type and resolves handle uniqueness races by re-querying, rather than the proposed row lock or alphabetical preference. The actor is added as team owner on creation. Its existence does not mean the CRM task panel invokes it.
+- [The activity migration](../../server/internal/dbmigrate/sql/202604170001_crm_task_activity_to_pm_task.sql) creates task/association records then deletes task-type activities. Its actual insert does not preserve the full source row in `custom_properties` as the risk mitigation proposed, and it leaves `completed` false even when choosing the workflow's `Lost` state for past occurrences. The final deletion targets all task activities, not only the inserted mapping; do not treat this historical SQL as a reusable recovery procedure.
+- [The trim migration](../../server/internal/dbmigrate/sql/202604170002_drop_crm_hubspot_bloat.sql) removed the old property/list/sequence tables. Later [CRM outreach models](../../server/internal/model/crm_outreach.go) introduce email sequences, enrollments, and deliveries. The old “delete sequences” instruction is therefore not a current cleanup task.
+- Schema rollout, tenant migration results, and production data-loss claims were not verified. Preserve versioned migrations; use current authorization and schema tooling rather than replaying the historical hard-cutover checklist. The old `story.state_entered` wording is legacy naming, not a reason to add another CRM task event.
+
+## Original plan
 
 ## Status
 
@@ -160,7 +175,7 @@ The following tables are present, backed by GORM models and migrations, but are 
 | `CRMPropertyDefinition`     | `server/internal/model/crm_property.go`   | Every CRM object already has `custom_properties JSONB`. The schema registry adds UI complexity with no customer ask — an AI-first product doesn't need a no-code field builder. |
 | `CRMPropertyGroup`          | `server/internal/model/crm_property.go`   | Only exists to organize property definitions in a settings UI that does not exist.                            |
 | `CRMList` (smart + static)  | `server/internal/model/crm_list.go`       | The query-builder layer (CLAUDE.md "Query Builder Conventions") is the canonical segmentation primitive. Adding a second one bifurcates the story. |
-| `CRMSequence` + enrollments | `server/internal/model/crm_sequence.go`   | Outbound email cadences are a whole product surface. Until a customer asks, the agent/automation layer (`AGENTS_AND_AUTOMATION.md`) is a better substrate for any cadence-like behavior. |
+| `CRMSequence` + enrollments | `server/internal/model/crm_sequence.go`   | Outbound email cadences are a whole product surface. Until a customer asks, the agent/automation layer (`agents-and-automation.md`) is a better substrate for any cadence-like behavior. |
 
 What **stays**:
 
@@ -221,7 +236,7 @@ Both migrations are idempotent. They run through the existing `dbmigrate` runner
 
 ### Automation / Agents
 
-- `docs/AGENTS_AND_AUTOMATION.md` lists `story.state_entered` as an automation trigger. That event already fires on `pm_tasks` post-rename; it will now fire for sales-team tasks too, giving the CRM autonomy layer a native way to react to task state changes without a CRM-specific event type.
+- `docs/agents-and-automation.md` lists `story.state_entered` as an automation trigger. That event already fires on `pm_tasks` post-rename; it will now fire for sales-team tasks too, giving the CRM autonomy layer a native way to react to task state changes without a CRM-specific event type.
 
 ## Frontend Changes
 

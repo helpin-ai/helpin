@@ -171,7 +171,7 @@ func TestEmit_UpdatesExistingNotificationAndAddsEvent(t *testing.T) {
 	}
 }
 
-func TestEmit_SkipsNotificationWhenWorkspaceCategoryDisablesInApp(t *testing.T) {
+func TestEmit_EmailStillSendsWhenInAppDisabled(t *testing.T) {
 	db := newNotificationServiceTestDB(t)
 	ctx := context.Background()
 	now := time.Date(2026, time.March, 10, 10, 0, 0, 0, time.UTC)
@@ -181,6 +181,7 @@ func TestEmit_SkipsNotificationWhenWorkspaceCategoryDisablesInApp(t *testing.T) 
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		"pref-1", "user-1", "ws-1", false, `{"comments":{"in_app":false,"email":true}}`, now, now)
 
+	seedNotificationServiceUser(t, db, "user-1", "user@example.com", "Recipient", now)
 	emailer := &stubEmailSender{}
 	service := NewNotificationService(
 		repository.NewNotificationRepository(db),
@@ -208,12 +209,17 @@ func TestEmit_SkipsNotificationWhenWorkspaceCategoryDisablesInApp(t *testing.T) 
 		t.Fatalf("Emit: %v", err)
 	}
 
-	assertNotificationServiceCount(t, db, "notifications", 0)
-	assertNotificationServiceCount(t, db, "notification_events", 0)
-	assertNotificationServiceCount(t, db, "notification_deliveries", 0)
-	if len(emailer.sent) != 0 {
-		t.Fatalf("sent email count = %d, want 0", len(emailer.sent))
+	assertNotificationServiceCount(t, db, "notifications", 1)
+	assertNotificationServiceCount(t, db, "notification_events", 1)
+	assertNotificationServiceCount(t, db, "notification_deliveries", 2)
+	if len(emailer.sent) != 1 {
+		t.Fatalf("sent email count = %d, want 1", len(emailer.sent))
 	}
+	page, err := service.List(ctx, "user-1", "ws-1", "", "", 20, nil)
+	if err != nil || len(page.Data) != 0 || page.UnreadCount != 0 {
+		t.Fatalf("email-only notification leaked into inbox: %+v %v", page, err)
+	}
+
 }
 
 func TestEmit_SkipFollowersLimitsDeliveryToExplicitRecipients(t *testing.T) {
@@ -620,6 +626,8 @@ func newNotificationServiceTestDB(t *testing.T) *gorm.DB {
 			totp_verified BOOLEAN NOT NULL DEFAULT 0,
 			recovery_codes_encrypted TEXT,
 			is_platform_admin BOOLEAN NOT NULL DEFAULT 0,
+			is_server_admin BOOLEAN NOT NULL DEFAULT 0,
+			signup_verification_pending BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

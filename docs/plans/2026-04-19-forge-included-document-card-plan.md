@@ -1,12 +1,23 @@
 ---
-title: Forge initial-message UI: link color + "included document" card
+title: "Forge initial-message links and included document cards"
 date: 2026-04-19
 owner: azhar
 status: proposed
 scope: frontend only
 ---
 
-# Forge initial-message UI improvements
+# Forge initial-message links and included document cards
+
+This historical frontend proposal explains an included-document card and readable links for the first coding-session message. It remains a design record; the current transcript architecture differs from its component and backend assumptions.
+
+## Source review — 2026-09-18
+
+- The proposed `IncludedDocumentCard.tsx` and `initialMessageMarkers.ts` files are absent. [CodingTranscriptPane](../../frontend/src/components/pm/CodingSession/CodingTranscriptPane.tsx) renders shared transcript segments and working groups, and does not accept the proposed `runContext` prop. Do not treat the plan as an implemented UI contract.
+- [MarkdownContent](../../frontend/src/components/pm/CodingSession/MarkdownContent.tsx) now uses Streamdown and Helpin reference resolution. Its links still use `text-primary`; it does not expose the proposed `anchorTone`. Assess any contrast issue in the actual shared transcript renderer before applying the older bubble-specific patch.
+- Run inputs still expose plan/spec document IDs in the [agent model](../../server/internal/model/agent.go), but the old `worker/prompt.go` and `temporalapp/activities.go` emitters are gone. Current prompt/context sources include [agentcontract prompts](../../server/internal/agentcontract/prompt.go) and [Runtime launch context](../../server/internal/service/agent_runtime_launch_context.go). Historical line-number markers are not a reliable current parsing contract.
+- The proposal resolves card clicks to a modal with a secondary Docs link; its older goal/manual-test wording says direct new tab and is internally inconsistent. Use the resolved modal decision if reviving this proposal. Claims of zero regression risk are not validated; no visual, contrast, or interaction tests were run in this review.
+
+## Original proposal
 
 Two small UX fixes on the Forge coding-session surface. **Backend behavior is
 intentionally unchanged** — the agent still receives the plan / spec document
@@ -579,7 +590,7 @@ No new endpoint.
 ## Rollout order
 
 1. **Step 1 — link color fix** (scoped via `anchorTone` prop). Ship
-   immediately; zero regression risk for the preview consumers.
+   after checking the affected transcript and preview consumers.
 2. **Steps 2 + 3 + 4 — fetch run metadata, add `IncludedDocumentCard`,
    render card list**. Visible improvement, no content is hidden yet.
 3. **Step 5 — strip inlined doc sections from the bubble**. Ship only

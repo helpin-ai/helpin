@@ -43,8 +43,8 @@ describe('roadmap planning helpers', () => {
     const invalid = roadmapEpic({ name: 'Invalid', start: 'not-a-date', target: '2026-09-01' });
 
     expect(getRoadmapEpicRange(scheduled)).toMatchObject({
-      start: new Date('2026-09-01T00:00:00.000Z'),
-      target: new Date('2026-09-30T00:00:00.000Z'),
+      start: new Date(2026, 8, 1),
+      target: new Date(2026, 8, 30),
     });
     expect(getRoadmapEpicRange(partial)).toBeNull();
     expect(getRoadmapEpicRange(reversed)).toBeNull();

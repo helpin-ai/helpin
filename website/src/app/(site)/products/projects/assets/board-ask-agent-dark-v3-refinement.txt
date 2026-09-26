@@ -1,0 +1,8 @@
+Precise correction of this generated fictional Helpin product illustration. Keep the entire composition, dimensions, dark colors, task titles, ownership avatars, typography, Ask Agent summary, controls, and workspace identity unchanged. Change only these small UI text details:
+1. In the Ready column header, keep the document/task count 2. Change the number beside the small estimate/bar-chart icon from 0 to 5 (3+2 points).
+2. In the In Progress column header, keep task count 2. Change the estimate number 0 to 5 (3+2 points).
+3. In the In Review column header, keep task count 2. Change the estimate number 0 to 3 (2+1 points).
+4. The assistant message byline in the right-hand conversation currently says OrbitDesk next to the robot icon and 10:24 AM. Replace ONLY that response byline with Helpin AI. Preserve OrbitDesk as the workspace name in the top-left and in Search OrbitDesk.
+5. Remove the small red notification count badge showing 12 at the very top-left; keep the bell and other header icons.
+6. Remove the 88% setup progress ring and its Setup label from the far-left navigation rail. Leave that spot clean with the ordinary uninterrupted dark rail. Preserve other global navigation icons.
+Do not change anything else. Native 3840x2160, crisp screenshot text, same actual Helpin dark theme. No additional changes or redesign.

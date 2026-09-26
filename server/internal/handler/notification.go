@@ -14,14 +14,14 @@ import (
 
 // NotificationHandler handles notification HTTP endpoints.
 type NotificationHandler struct {
-	notifService   *service.NotificationService
+	notifService    *service.NotificationService
 	followerService *service.FollowerService
 }
 
 // NewNotificationHandler creates a new notification handler.
 func NewNotificationHandler(notifService *service.NotificationService, followerService *service.FollowerService) *NotificationHandler {
 	return &NotificationHandler{
-		notifService:   notifService,
+		notifService:    notifService,
 		followerService: followerService,
 	}
 }
@@ -64,7 +64,7 @@ func (h *NotificationHandler) GetUnreadCount(w http.ResponseWriter, r *http.Requ
 	userID := middleware.GetUserID(r.Context())
 	workspaceID := getWorkspaceID(r)
 
-	count, err := h.notifService.UnreadCount(r.Context(), userID, workspaceID)
+	count, err := h.notifService.UnreadCount(r.Context(), userID, workspaceID, r.URL.Query().Get("timezone"))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to get unread count")
 		return

@@ -1,0 +1,106 @@
+/* Compact brand essentials, with the same forest, fine grids, and type as the website. */
+.hp3 .brand-page .wrap { max-width: 1120px; }
+.hp3 .brand-header { padding-block: 40px 48px; }
+.hp3 .brand-banner { position: relative; isolation: isolate; display: grid; grid-template-columns: 1.2fr 1fr; gap: 40px; align-items: center; padding: 44px 48px 52px; border: 1px solid #244533; border-radius: 16px; overflow: hidden; color: #fff; background: radial-gradient(ellipse at 80% 10%, #204a32, transparent 65%), #081b16; }
+.hp3 .brand-banner::before { content: ''; position: absolute; inset: 0; z-index: -1; background-image: linear-gradient(#b8ddbb0a 1px, transparent 1px), linear-gradient(90deg, #b8ddbb0a 1px, transparent 1px); background-size: 48px 48px; mask-image: linear-gradient(90deg, transparent, #000); }
+.hp3 .brand-banner .eyebrow { font: 10px var(--mono); letter-spacing: .09em; color: #b8ddbb; }
+.hp3 .brand-header h1 { font-size: clamp(40px, 4.4vw, 62px); line-height: 1.04; letter-spacing: -.045em; margin-block: 22px 18px; text-wrap: initial; }
+.hp3 .brand-header p { font-size: 15px; color: #bfd2c5; max-width: 380px; line-height: 1.8; }
+.hp3 .brand-download { margin-top: 25px; }
+.hp3 .brand-download .btn { height: 44px; background: #d9ebd7; color: #123523; }
+.hp3 .brand-download .btn:hover { background: #ecf5e9; }
+.hp3 .brand-download > span { display: block; font-size: 10px; color: #b3c9bb; margin-top: 10px; }
+.hp3 .brand-banner-art { text-align: center; }
+.hp3 .brand-banner-art svg { display: block; width: 100%; max-width: 360px; margin-inline: auto; }
+.hp3 .brand-banner-art > span { display: block; font-size: 11px; line-height: 1.7; color: #b3c9bb; margin-top: 6px; }
+.hp3 .brand-banner-strip { position: absolute; bottom: 0; left: 0; right: 0; height: 8px; display: grid; grid-template-columns: 2fr 2fr 1fr 1fr 1fr 1fr; }
+.hp3 .brand-banner-strip i:nth-child(1) { background: #081b16; }
+.hp3 .brand-banner-strip i:nth-child(2) { background: #0f7a50; }
+.hp3 .brand-banner-strip i:nth-child(3) { background: #b8ddbb; }
+.hp3 .brand-banner-strip i:nth-child(4) { background: #131514; }
+.hp3 .brand-banner-strip i:nth-child(5) { background: #fff; }
+.hp3 .brand-banner-strip i:nth-child(6) { background: #f6f8f7; }
+.hp3 .brand-page section { padding-block: 44px; scroll-margin-top: 80px; }
+.hp3 .brand-page #brand-logo { border-top: 0; padding-top: 0; }
+.hp3 .brand-section-heading { display: flex; justify-content: space-between; align-items: end; gap: 32px; margin-bottom: 26px; }
+.hp3 .brand-section-heading > div > span { display: block; font: 10px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--em); margin-bottom: 10px; }
+.hp3 .brand-section-heading h2 { font-size: 29px; line-height: 1.2; letter-spacing: -.035em; }
+.hp3 .brand-section-heading > p { color: var(--t2); font-size: 13px; max-width: 390px; }
+.hp3 .brand-section-heading a, .hp3 .brand-contact a { text-decoration: underline; text-underline-offset: 3px; }
+.hp3 .brand-logo-grid, .hp3 .brand-type-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px; }
+.hp3 .brand-logo-card { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.hp3 .brand-logo-stage { position: relative; min-height: 230px; display: grid; place-items: center; padding: 42px 16px 16px; }
+.hp3 .brand-stage-label { position: absolute; top: 20px; left: 24px; font: 9px var(--mono); letter-spacing: .02em; color: var(--t3); }
+.hp3 .brand-logo-stage [data-helpin-brand-lockup] { font-size: 54px; gap: 10px; }
+.hp3 .brand-logo-stage img { width: 58px; height: 58px; }
+.hp3 .brand-logo-ink { background: radial-gradient(#cfd6d2 .7px, transparent .7px), #f6f8f7; background-size: 16px 16px; }
+.hp3 .brand-logo-white { background: radial-gradient(ellipse at 70% 10%, #24463280, transparent 70%), #081b16; color: #fff; }
+.hp3 .brand-logo-white .brand-stage-label { color: #b3c9bb; }
+.hp3 .brand-logo-caption { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center; padding: 16px 20px; }
+.hp3 .brand-logo-caption h3 { font-size: 14px; }
+.hp3 .brand-logo-caption > div { display: flex; gap: 8px; }
+.hp3 .brand-logo-caption a { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--t2); min-height: 32px; border: 1px solid var(--border); border-radius: 6px; padding-inline: 9px; }
+.hp3 .brand-logo-caption a:hover { color: var(--em); background: var(--bg2); border-color: var(--border-2); }
+.hp3 .brand-page #brand-colors { background: #f6f8f780; }
+.hp3 .brand-palette { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 12px; }
+.hp3 .brand-color { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: #fff; }
+.hp3 .brand-swatch { height: 130px; border-bottom: 1px solid #1315140d; padding: 14px; display: flex; align-items: flex-end; }
+.hp3 .brand-swatch > span { font: 10px var(--mono); }
+.hp3 .brand-color-info { padding: 16px 12px 10px; }
+.hp3 .brand-color-info h3 { font-size: 13px; }
+.hp3 .brand-color-use { font-size: 10px; color: var(--t3); margin-top: 5px; }
+.hp3 .brand-color-value { display: flex; justify-content: space-between; align-items: center; gap: 4px; margin-top: 12px; padding-top: 6px; border-top: 1px solid var(--border); }
+.hp3 .brand-color-value code { font: 11px var(--mono); user-select: all; }
+.hp3 .brand-color-value button { display: grid; place-items: center; width: 28px; height: 32px; flex: none; border-radius: 4px; border: 0; background: transparent; color: var(--t2); cursor: pointer; }
+.hp3 .brand-color-value button:hover { background: var(--em-t); color: var(--em); }
+.hp3 .brand-copy-status { min-height: 22px; margin-top: 12px; font-size: 11px; color: var(--t3); }
+.hp3 .brand-type-grid article { padding: 28px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg2); }
+.hp3 .brand-type-top { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.hp3 .brand-type-label, .hp3 .brand-type-weight { color: var(--t2); font: 10px var(--mono); }
+.hp3 .brand-type-grid h3 { font-size: 18px; margin-top: 14px; }
+.hp3 .brand-type-grid .brand-type-specimen { font-size: clamp(27px,2.8vw,37px); line-height: 1.25; letter-spacing: -.03em; color: var(--ink); margin-block: 28px; }
+.hp3 .brand-type-bottom { border-top: 1px solid var(--border); padding-top: 18px; }
+.hp3 .brand-type-bottom > span { font-size: 14px; letter-spacing: .02em; }
+.hp3 .brand-type-bottom p { font-size: 12px; color: var(--t2); margin-top: 8px; }
+.hp3 .brand-type-grid .brand-type-mono { background: #081b16; border-color: #244533; color: #f2f8f4; }
+.hp3 .brand-type-mono h3, .hp3 .brand-type-mono .brand-type-specimen, .hp3 .brand-type-mono .brand-type-bottom > span { font-family: var(--mono); }
+.hp3 .brand-type-mono .brand-type-specimen { font-size: clamp(24px,2.5vw,33px); line-height: 1.4; color: #b8ddbb; }
+.hp3 .brand-type-mono .brand-type-label, .hp3 .brand-type-mono .brand-type-weight, .hp3 .brand-type-mono .brand-type-bottom p { color: #b3c9bb; }
+.hp3 .brand-type-mono .brand-type-bottom { border-color: #355044; }
+.hp3 .brand-contact { display: flex; justify-content: space-between; gap: 12px; border-top: 1px solid var(--border); margin-top: 36px; padding-top: 22px; font-size: 13px; color: var(--t2); }
+@media (max-width: 1000px) {
+  .hp3 .brand-palette { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .hp3 .brand-banner { padding-inline: 32px; gap: 20px; }
+}
+@media (max-width: 760px) {
+  .hp3 .brand-header { padding-block: 24px 36px; }
+  .hp3 .brand-banner { grid-template-columns: 1fr; padding: 32px 28px 36px; }
+  .hp3 .brand-banner-art { display: none; }
+  .hp3 .brand-header h1 { font-size: 48px; }
+  .hp3 .brand-header p { max-width: 440px; }
+  .hp3 .brand-section-heading { display: block; }
+  .hp3 .brand-section-heading > p { margin-top: 12px; }
+  .hp3 .brand-logo-grid, .hp3 .brand-type-grid { gap: 16px; }
+  .hp3 .brand-logo-stage [data-helpin-brand-lockup] { font-size: 43px; gap: 7px; }
+  .hp3 .brand-logo-stage img { width: 46px; height: 46px; }
+  .hp3 .brand-logo-caption { padding-inline: 16px; }
+  .hp3 .brand-type-grid article { padding: 24px; }
+}
+@media (max-width: 600px) {
+  .hp3 .brand-page section { padding-block: 32px; }
+  .hp3 .brand-logo-grid, .hp3 .brand-type-grid { grid-template-columns: 1fr; }
+  .hp3 .brand-logo-stage { min-height: 190px; }
+  .hp3 .brand-palette { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+  .hp3 .brand-swatch { height: 105px; }
+  .hp3 .brand-type-grid .brand-type-specimen { font-size: 30px; }
+  .hp3 .brand-type-mono .brand-type-specimen { font-size: 27px; }
+}
+@media (max-width: 360px) {
+  .hp3 .brand-banner { padding-inline: 22px; }
+  .hp3 .brand-header h1 { font-size: 40px; }
+  .hp3 .brand-download .btn { padding-inline: 12px; font-size: 13px; }
+  .hp3 .brand-download > span { font-size: 9px; }
+  .hp3 .brand-stage-label { left: 16px; font-size: 8px; }
+  .hp3 .brand-type-grid .brand-type-specimen { font-size: 26px; }
+  .hp3 .brand-type-mono .brand-type-specimen { font-size: 24px; }
+}

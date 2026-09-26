@@ -26,7 +26,7 @@ func NewPMLabelService(labelRepo *repository.PMLabelRepository, wsPublisher *web
 // ListByWorkspace lists labels by workspace.
 func (s *PMLabelService) ListByWorkspace(ctx context.Context, workspaceID string, teamID *string, includeShared bool) ([]model.PMLabel, error) {
 	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace_id is required")
+		return nil, errCommandInput("workspace_id is required")
 	}
 	return s.labelRepo.ListByWorkspace(ctx, workspaceID, repository.PMLabelListOptions{
 		TeamID:        teamID,
@@ -37,7 +37,7 @@ func (s *PMLabelService) ListByWorkspace(ctx context.Context, workspaceID string
 // ListWithStats returns labels with task/epic completion stats.
 func (s *PMLabelService) ListWithStats(ctx context.Context, workspaceID string, teamID *string, includeShared bool, archived *bool) ([]model.LabelWithStats, error) {
 	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace_id is required")
+		return nil, errCommandInput("workspace_id is required")
 	}
 	return s.labelRepo.ListWithStats(ctx, workspaceID, repository.PMLabelListOptions{
 		TeamID:        teamID,
@@ -49,7 +49,7 @@ func (s *PMLabelService) ListWithStats(ctx context.Context, workspaceID string, 
 // Create creates a label after uniqueness validation.
 func (s *PMLabelService) Create(ctx context.Context, req model.CreateLabelRequest) (*model.PMLabel, error) {
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
-		return nil, fmt.Errorf("workspace_id and name are required")
+		return nil, errCommandInput("workspace_id and name are required")
 	}
 	name := strings.TrimSpace(req.Name)
 	teamID := normalizeOptionalID(req.TeamID)
@@ -84,7 +84,7 @@ func (s *PMLabelService) Update(ctx context.Context, id string, req model.Update
 		return nil, err
 	}
 	if label == nil {
-		return nil, fmt.Errorf("label not found")
+		return nil, errCommandNotFound("label")
 	}
 
 	if req.TeamID != nil {
@@ -132,7 +132,7 @@ func (s *PMLabelService) Delete(ctx context.Context, id string) error {
 		return err
 	}
 	if label == nil {
-		return fmt.Errorf("label not found")
+		return errCommandNotFound("label")
 	}
 	if err := s.labelRepo.Delete(ctx, id); err != nil {
 		s.logger.ErrorContext(ctx, "failed to delete label", "error", err, "label_id", id)

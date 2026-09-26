@@ -66,6 +66,21 @@ func NewOpenAIProvider(apiKey, baseURL, model string) *OpenAIProvider {
 	}
 }
 
+// NewOpenAICompatibleProvider creates a Chat Completions client for an
+// administrator-approved endpoint. An empty API key sends no Authorization
+// header, for endpoints that require no authentication.
+func NewOpenAICompatibleProvider(apiKey, baseURL string) *OpenAIProvider {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" {
+		return nil
+	}
+	return &OpenAIProvider{
+		apiKey:     apiKey,
+		baseURL:    baseURL,
+		httpClient: &http.Client{Timeout: 5 * time.Minute},
+	}
+}
+
 func (p *OpenAIProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
 	if p == nil {
 		return nil, fmt.Errorf("openai provider is not configured")
@@ -101,7 +116,9 @@ func (p *OpenAIProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+	if p.apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+	}
 
 	resp, err := p.httpClient.Do(httpReq)
 	if err != nil {

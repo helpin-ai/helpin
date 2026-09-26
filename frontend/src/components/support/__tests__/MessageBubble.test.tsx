@@ -39,6 +39,7 @@ function renderBubble(
 
   return {
     container,
+    queryClient,
     cleanup: () => {
       act(() => {
         root.unmount()
@@ -50,6 +51,188 @@ function renderBubble(
 }
 
 describe('MessageBubble', () => {
+  it.each(['queued', 'preparing', 'sending', 'translating'] as const)('keeps %s delivery status below the bubble', (pending) => {
+    const rendered = renderBubble({ id: 'sending', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'user', message_type: 'reply', is_internal: false, content: 'Hello', pending_send: pending, created_at: '2026-09-24T10:00:00Z', updated_at: '2026-09-24T10:00:00Z' });
+    try {
+      const expected = pending === 'translating' ? 'Translating…' : 'Sending…';
+      expect(rendered.container.textContent).toContain(expected);
+      expect(rendered.container.querySelector('[data-slot="support-message-bubble-frame"]')?.textContent).not.toContain(expected);
+      expect(rendered.container.textContent).not.toContain('Preparing…');
+    } finally { rendered.cleanup(); }
+  });
+
+  it('keeps translation controls and timestamp together inside the bubble', () => {
+    const rendered = renderBubble({ id: 'translated', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'customer', message_type: 'reply', is_internal: false, content: 'Hello', created_at: '2026-09-24T10:00:00Z', updated_at: '2026-09-24T10:00:00Z' }, undefined, { translationFooter: <button>Show original</button> });
+    try {
+      const footer = rendered.container.querySelector('[data-slot="support-message-footer"]');
+      expect(footer?.querySelector('button')?.textContent).toBe('Show original');
+      expect(footer?.querySelector('time')?.dateTime).toBe('2026-09-24T10:00:00Z');
+      expect(footer?.closest('[data-slot="support-message-bubble-frame"]')).not.toBeNull();
+    } finally { rendered.cleanup(); }
+  });
+
+  it.each(['ai_paused', 'ai_returned'] as const)('renders %s with the recorded actor', (event) => {
+    const rendered = renderBubble({
+      id: 'activity', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'user',
+      sender_user_id: 'arooj', sender_display_name: 'Arooj Bukhari', message_type: 'system', system_event_type: event, is_internal: true,
+      content: event === 'ai_returned' ? 'Returned to AI. AI will respond to the next customer message.' : 'AI paused.',
+      created_at: '2026-09-18T10:38:14Z', updated_at: '2026-09-18T10:38:14Z',
+    })
+    try {
+      expect(rendered.container.textContent).toContain(event === 'ai_paused' ? 'Arooj paused AI.' : 'Arooj returned the conversation to AI.')
+      expect(rendered.container.querySelector('[data-support-ai-activity]')).not.toBeNull()
+      expect(rendered.container.textContent).not.toContain('left a private note')
+    } finally { rendered.cleanup() }
+  })
+
+  it('keeps a legacy pause note accessible without displaying another handoff card', () => {
+    const rendered = renderBubble({
+      id: 'pause', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'agent',
+      sender_user_id: 'former-member', sender_display_name: 'AI control', message_type: 'note', is_internal: true,
+      content: 'AI handoff with historical context',
+      metadata: JSON.stringify({ ai_handoff_brief: true, agent_authored: false, reason: 'paused_by_teammate' }),
+      created_at: '2026-09-18T10:38:14Z', updated_at: '2026-09-18T10:38:14Z',
+    })
+    try {
+      expect(rendered.container.textContent).toContain('A teammate paused AI.')
+      expect(rendered.container.querySelector('[data-support-ai-handoff]')).toBeNull()
+      const details = rendered.container.querySelector('details')
+      expect(details?.open).toBe(false)
+      expect(details?.querySelector('summary')?.textContent).toBe('View original note')
+      expect(details?.textContent).toContain('historical context')
+      act(() => { details!.open = true })
+      expect(details?.open).toBe(true)
+    } finally { rendered.cleanup() }
+  })
+
+  it('does not mistake ordinary private notes for AI activity', () => {
+    const rendered = renderBubble({
+      id: 'ordinary', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'user',
+      sender_display_name: 'Arooj Bukhari', message_type: 'note', is_internal: true,
+      content: 'Returned to AI. AI will respond to the next customer message.', metadata: '{invalid',
+      created_at: '2026-09-18T10:38:14Z', updated_at: '2026-09-18T10:38:14Z',
+    })
+    try {
+      expect(rendered.container.textContent).toContain('left a private note')
+      expect(rendered.container.querySelector('[data-support-ai-activity]')).toBeNull()
+    } finally { rendered.cleanup() }
+  })
+
+  it('renders a legacy return note as an attributed activity', () => {
+    const rendered = renderBubble({
+      id: 'return', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'agent',
+      sender_user_id: 'arooj', sender_display_name: 'AI control', message_type: 'note', is_internal: true,
+      content: 'Returned to AI. AI will respond to the next customer message.', metadata: '{}',
+      created_at: '2026-09-18T10:38:14Z', updated_at: '2026-09-18T10:38:14Z',
+    }, null, { teammateDisplayName: 'Arooj Bukhari' })
+    try {
+      expect(rendered.container.textContent).toContain('Arooj returned the conversation to AI')
+      expect(rendered.container.textContent).not.toContain('left a private note')
+    } finally { rendered.cleanup() }
+  })
+
+  it('shows an AI handoff with expandable investigation details', () => {
+    const rendered = renderBubble({
+      id: 'handoff', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'agent',
+      sender_display_name: 'AI control', message_type: 'note', is_internal: true,
+      content: 'AI handoff\n\nIssue\nWorkspace switch fails\n\nAlready tried / suggested\n- Checked related tickets\n\nStill unresolved\n- Verify call sites\n\nReason for handoff\ncannot answer',
+      metadata: JSON.stringify({ ai_handoff_brief: true, agent_authored: true }),
+      created_at: '2026-09-18T10:32:14Z', updated_at: '2026-09-18T10:32:14Z',
+    })
+    try {
+      expect(rendered.container.textContent).not.toContain('left a private note')
+      expect(rendered.container.textContent).toContain('Workspace switch fails')
+      const details = rendered.container.querySelector('details')
+      expect(details).not.toBeNull()
+      expect(details?.open).toBe(false)
+      expect(details?.querySelector('summary')?.textContent).toBe('View details')
+      expect(details?.textContent).toContain('Checked related tickets')
+      expect(details?.textContent).not.toContain('Workspace switch fails')
+      expect(rendered.container.textContent?.match(/Checked related tickets/g)).toHaveLength(1)
+    } finally { rendered.cleanup() }
+  })
+
+  it.each([true, false])('shows saved visitor feedback below the AI bubble (%s)', async (helpful) => {
+    const message: SupportMessage = {
+      id: 'feedback-answer', workspace_id: 'ws-1', conversation_id: 'conv-1',
+      sender_type: 'ai', content: 'A useful answer', message_type: 'reply', is_internal: false,
+      metadata: JSON.stringify({ visitor_feedback: { helpful, submitted_at: '2026-09-13T12:00:00Z' } }),
+      created_at: '2026-09-13T11:59:00Z', updated_at: '2026-09-13T12:00:00Z',
+    }
+    const rendered = renderBubble(message)
+    try {
+      const row = rendered.container.querySelector('[data-slot="support-answer-feedback"]')
+      const frame = rendered.container.querySelector('[data-slot="support-message-bubble-frame"]')
+      const label = helpful ? 'Visitor marked helpful' : 'Visitor marked unhelpful'
+      const badge = row?.querySelector('[role="img"]')
+      expect(badge?.getAttribute('aria-label')).toBe(label)
+      expect(frame?.contains(row)).toBe(false)
+      expect(row?.className).toContain('justify-start')
+      await act(async () => { badge!.dispatchEvent(new FocusEvent('focusin', { bubbles: true })) })
+      expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(label)
+    } finally { rendered.cleanup() }
+  })
+
+  it.each([
+    { sender: 'customer', via: 'email', source: 'widget', expected: 'via Email' },
+    { sender: 'customer', via: 'widget', source: 'email', expected: 'via Chat' },
+    { sender: 'user', via: 'email', source: 'widget', expected: 'via Email' },
+    { sender: 'user', via: 'email', source: 'widget', mode: 'chat_and_email', expected: 'via Chat + email' },
+    { sender: 'user', via: 'email', source: 'email', internal: true, expected: null },
+  ] as const)('uses the message channel in the time tooltip: $sender/$via/$source/$expected', async ({ sender, via, source, expected, ...options }) => {
+    const message: SupportMessage = {
+      id: 'channel-message', workspace_id: 'ws-1', conversation_id: 'conv-1',
+      sender_type: sender, content: 'Message channel', message_type: 'reply',
+      is_internal: 'internal' in options && options.internal,
+      via_channel: via,
+      metadata: 'mode' in options ? JSON.stringify({ delivery_mode: options.mode }) : undefined,
+      created_at: '2026-09-13T09:04:00Z', updated_at: '2026-09-13T09:04:00Z',
+    }
+    const rendered = renderBubble(message, undefined, { source })
+    try {
+      const trigger = rendered.container.querySelector('time')?.closest('[data-slot="tooltip-trigger"]')
+      expect(trigger).toBeTruthy()
+      await act(async () => { trigger!.dispatchEvent(new FocusEvent('focusin', { bubbles: true })) })
+      const tooltip = document.querySelector('[role="tooltip"]')
+      expect(tooltip).toBeTruthy()
+      if (expected) expect(tooltip?.textContent).toContain(expected)
+      else expect(tooltip?.textContent).not.toContain('via ')
+    } finally { rendered.cleanup() }
+  })
+
+  it.each([
+    ['customer', false],
+    ['user', false],
+    ['ai', false],
+    ['agent', false],
+    ['user', true],
+  ] as const)('shows a clock time on grouped %s messages (note: %s)', (senderType, isInternal) => {
+    const createdAt = '2026-09-13T09:04:00.000Z'
+    const message: SupportMessage = {
+      id: 'timed-message', workspace_id: 'ws-1', conversation_id: 'conv-1',
+      sender_type: senderType, content: 'Yes', message_type: 'reply',
+      is_internal: isInternal, created_at: createdAt, updated_at: createdAt,
+    }
+    const rendered = renderBubble(message, null, { isConsecutive: true, isLastInGroup: false })
+    const time = rendered.container.querySelector('time')
+    expect(time?.getAttribute('datetime')).toBe(createdAt)
+    expect(time?.textContent).toBe(new Date(createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }))
+    expect(time?.getAttribute('title')).toBeTruthy()
+    rendered.cleanup()
+  })
+
+  it('shows one timestamp for an image-only message', () => {
+    const message: SupportMessage = {
+      id: 'timed-image', workspace_id: 'ws-1', conversation_id: 'conv-1',
+      sender_type: 'customer', content: '', message_type: 'reply', is_internal: false,
+      created_at: '2026-09-13T09:04:00.000Z', updated_at: '2026-09-13T09:04:00.000Z',
+      attachments: [{ id: 'image-1', file_name: 'photo.png', file_type: 'image/png', file_size: 100, file_key: 'photo.png' }],
+    }
+    const rendered = renderBubble(message)
+    expect(rendered.container.querySelectorAll('time')).toHaveLength(1)
+    rendered.cleanup()
+  })
+
   beforeEach(() => {
     if (!globalThis.ResizeObserver) {
       globalThis.ResizeObserver = class ResizeObserver {
@@ -70,6 +253,22 @@ describe('MessageBubble', () => {
       loading: false,
       serverUnreachable: false,
     })
+  })
+
+  it.each([
+    { senderID: 'teammate-2', expectedName: 'Teammate' },
+    { senderID: undefined, expectedName: 'Teammate' },
+    { senderID: 'viewer-1', expectedName: 'Viewer' },
+  ])('only falls back to the viewer name for their own message ($senderID)', ({ senderID, expectedName }) => {
+    const rendered = renderBubble({
+      id: 'reply', workspace_id: 'ws-1', conversation_id: 'conv-1',
+      sender_type: 'user', sender_user_id: senderID,
+      sender_avatar_url: '/sender.png', content: 'Hello', is_internal: false,
+      created_at: '2026-09-15T09:00:00Z', updated_at: '2026-09-15T09:00:00Z',
+    })
+    try {
+      expect(rendered.container.querySelector('img[src="/sender.png"]')?.getAttribute('alt')).toBe(expectedName)
+    } finally { rendered.cleanup() }
   })
 
   it('removes markdown hard-break escapes when seeding shortcut content', () => {
@@ -661,7 +860,7 @@ Can I export my data?`,
     read.cleanup()
   })
 
-  it('opens message info when an email delivery marker is clicked', () => {
+  it('opens the original email from message info for an emailed chat reply', () => {
     const message: SupportMessage = {
       id: 'msg-email-info-1',
       workspace_id: 'ws-1',
@@ -672,13 +871,23 @@ Can I export my data?`,
       content: 'Following up here.',
       message_type: 'reply',
       is_internal: false,
-      via_channel: 'email',
+      via_channel: 'widget',
       email_delivery_status: 'delivered',
       created_at: '2026-04-24T12:18:09.000Z',
       updated_at: '2026-04-24T12:20:00.000Z',
     }
 
     const rendered = renderBubble(message, 'delivered_email')
+    rendered.queryClient.setQueryData(['support', 'ws-1', 'conversations', 'conv-1', 'messages', message.id, 'info'], {
+      id: message.id, sent_at: message.created_at, sender: { name: 'Agent', type: 'user' },
+      from: 'support@example.com', origin: 'email', type: 'text', email_direction: 'outbound',
+      email_delivery_status_label: 'Delivered via email',
+    })
+    rendered.queryClient.setQueryData(['support', 'ws-1', 'messages', message.id, 'email'], {
+      id: 'email-log', message_id: message.id, direction: 'outbound', subject: 'Original email subject',
+      from_email: 'support@example.com', to_email: 'customer@example.com', stripped_text: message.content,
+      created_at: message.created_at,
+    })
     const marker = findButtonByText(rendered.container, 'Delivered via email')
     expect(marker).toBeTruthy()
 
@@ -687,6 +896,12 @@ Can I export my data?`,
     })
 
     expect(document.body.textContent).toContain('Message info')
+    const viewEmail = findButtonByText(document.body, 'View original email')
+    expect(viewEmail).toBeTruthy()
+    act(() => viewEmail!.click())
+    expect(document.body.textContent).toContain('Original email subject')
+    expect(document.body.textContent).toContain('customer@example.com')
+    expect(document.body.textContent).not.toContain('Message info')
     rendered.cleanup()
   })
 
@@ -826,7 +1041,7 @@ Can I export my data?`,
     rendered.cleanup()
   })
 
-  it('anchors message actions to the text bubble instead of image attachments', () => {
+  it('keeps text and image attachments together in the bubble with message actions', () => {
     const message: SupportMessage = {
       id: 'msg-with-image-attachment',
       workspace_id: 'ws-1',
@@ -861,7 +1076,7 @@ Can I export my data?`,
     expect(actions).toBeTruthy()
     expect(attachment).toBeTruthy()
     expect(bubbleFrame?.contains(actions)).toBe(true)
-    expect(bubbleFrame?.contains(attachment)).toBe(false)
+    expect(bubbleFrame?.contains(attachment)).toBe(true)
 
     cleanup()
   })
@@ -1077,4 +1292,23 @@ Can I export my data?`,
     expect(spam.container.textContent).not.toContain('Delivered via email')
     spam.cleanup()
   })
+})
+
+it.each([false, true])('attributes participant mail and preserves team-only privacy (%s)', (unknown) => {
+  const message: SupportMessage = {
+    id: 'participant-email', workspace_id: 'ws-1', conversation_id: 'conv-1',
+    sender_type: 'customer', sender_display_name: 'Colleague', content: 'My reply',
+    message_type: 'reply', is_internal: unknown, via_channel: 'email',
+    email_from: 'colleague@example.com', email_to: 'support@example.com', email_cc: ['customer@example.com'],
+    metadata: JSON.stringify({ email_sender: 'colleague@example.com', email_participant_sender: true, email_unknown_sender: unknown }),
+    created_at: '2026-09-21T09:00:00Z', updated_at: '2026-09-21T09:00:00Z',
+  }
+  const rendered = renderBubble(message, undefined, { customerEmail: 'customer@example.com', fallbackAvatarUrl: 'https://example.com/customer-avatar.png' })
+  try {
+    expect(rendered.container.querySelector('img[src="https://example.com/customer-avatar.png"]')).toBeNull()
+    if (unknown) expect(rendered.container.textContent).toContain('Team only')
+    expect(rendered.container.querySelector('details')).toBeNull()
+    expect(rendered.container.textContent).not.toContain('To: support@example.com')
+    if (!unknown) expect(rendered.container.textContent).not.toContain('Colleague')
+  } finally { rendered.cleanup() }
 })

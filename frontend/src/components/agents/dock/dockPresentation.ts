@@ -18,13 +18,13 @@ export function presentDockRun(
   pauseReason: AgentRunPauseReason,
   attentionKind?: DockRunSummary['attention_kind'],
 ): DockRunPresentation {
-  if (attentionKind === 'approval' || (status === 'paused' && pauseReason === 'human_approval')) {
+  if (status === 'paused' && (attentionKind === 'approval' || pauseReason === 'human_approval')) {
     return attentionPresentation('Approve');
   }
-  if (attentionKind === 'authentication' || (status === 'paused' && pauseReason === 'authentication')) {
+  if (status === 'paused' && (attentionKind === 'authentication' || pauseReason === 'authentication')) {
     return attentionPresentation('Sign in');
   }
-  if (attentionKind === 'input' || (status === 'paused' && pauseReason === 'human_input')) {
+  if (status === 'paused' && (attentionKind === 'input' || pauseReason === 'human_input')) {
     return attentionPresentation('Needs you');
   }
   switch (status) {
@@ -70,6 +70,7 @@ function attentionPresentation(label: string): DockRunPresentation {
 }
 
 export function dockRunTitle(summary: DockRunSummary): string {
+  if (summary.run.dock_chat_id) return summary.run.target_info?.title?.trim() || 'Ask Agent conversation';
   const target = summary.run.target_info;
   const title = target?.title?.trim();
   const key = target?.task_key?.trim();

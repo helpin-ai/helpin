@@ -42,7 +42,7 @@ type AgentRunRepositoryDeliveryResult struct {
 // duplicate. Returns (nil, nil) when the run resolves to nothing deliverable
 // (no branch, branch equals base, or a provider without PR semantics).
 func (s *GitService) FinalizeDelegatedRunDelivery(ctx context.Context, run *model.AgentRun, delivery AgentRunRepositoryDelivery) (*AgentRunRepositoryDeliveryResult, error) {
-	if s == nil || run == nil {
+	if s == nil || run == nil || agentRunIsPreview(run) {
 		return nil, nil
 	}
 	taskTarget, epicTarget, err := s.delegatedRunDeliveryTargets(ctx, run)
@@ -159,7 +159,7 @@ func delegatedRunDeliveryBranches(run *model.AgentRun, taskTarget *model.TaskDel
 func (s *GitService) ensureDelegatedRunPullRequest(ctx context.Context, integration *model.GitIntegration, repo *model.GitRepository, head, base, title, body string) (*AgentRunRepositoryDeliveryResult, error) {
 	switch strings.ToLower(strings.TrimSpace(integration.Provider)) {
 	case "github":
-		if s.githubApp == nil {
+		if !s.hasGitHubApp(ctx) {
 			return nil, fmt.Errorf("github app is not configured")
 		}
 		if integration.InstallationID == nil || strings.TrimSpace(*integration.InstallationID) == "" {

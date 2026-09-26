@@ -1,32 +1,23 @@
-/**
- * Module-level feature flags.
- * Modules listed here are only visible to the specified emails.
- * Modules NOT listed are visible to everyone.
- */
-const GATED_MODULES: Record<string, string[]> = {
-  crm: [
-    'waqar@contentstudio.io',
-    'azhar@contentstudio.io',
-    'amad@usermaven.com',
-    'waqar.azeem1986@gmail.com',
-  ],
-  support: [
-    'waqar@contentstudio.io',
-    'azhar@contentstudio.io',
-    'amad@usermaven.com',
-    'waqar.azeem1986@gmail.com',
-  ],
-};
+import type { AuthConfig } from '@/lib/services/authService';
 
-export function isModuleEnabled(moduleId: string, userEmail?: string): boolean {
-  const resolvedModuleId = moduleId === 'agents' ? 'automation' : moduleId;
-  const allowedEmails = GATED_MODULES[resolvedModuleId];
-  if (!allowedEmails) return true;
-  if (!userEmail) return false;
-  return allowedEmails.includes(userEmail.toLowerCase());
+/** Workspace access returned by the server is the module visibility authority.
+ * No staff email allowlist is shipped in either edition. */
+export function isModuleEnabled(_moduleId: string, _userEmail?: string): boolean {
+  return true;
 }
 
-// Coordinate with the backend SETUP_SUCCESS_ENABLED flag to avoid exposing a route the API has disabled.
-export function isSetupSuccessEnabled(): boolean {
+/**
+ * The API reports whether it serves the workspace Setup guide
+ * (`setup_guide_enabled` from /auth/config; on by default in Community).
+ * The build-time VITE_SETUP_SUCCESS_ENABLED flag is only a fallback for an API
+ * that predates the field or whose configuration has not loaded, so a
+ * prebuilt dashboard never exposes a route the API has disabled.
+ */
+export function isSetupSuccessEnabled(
+  config?: Pick<AuthConfig, 'setup_guide_enabled'> | null,
+): boolean {
+  if (typeof config?.setup_guide_enabled === 'boolean') {
+    return config.setup_guide_enabled;
+  }
   return import.meta.env.VITE_SETUP_SUCCESS_ENABLED === 'true';
 }

@@ -1,4 +1,27 @@
-# Test Scenarios: Conversation Triage & Routing
+# Historical conversation triage and routing scenarios
+
+This checklist describes an earlier routing UI. Use it as a source of test ideas,
+not as current click-by-click instructions or evidence that the scenarios pass.
+Source comparison on 2026-09-17 found the following changes:
+
+- The inbox wizard has Details, Members & Assignment, and Routing steps, followed
+  by a completion screen. Routing contains rule-based conditions and an **AI
+  routing** switch; the old “Eligible for AI Routing” label is obsolete.
+- **Automated routing** is the global setting. The current UI explains that it
+  checks manual rules first and then AI. Turning it off disables both; the inbox
+  dialog allows saving rules and prompts while displaying a warning that they
+  will not run.
+- Current conditions include message text, sender email, and email domain. The
+  rule-card layout, section order, labels, and validation messages in the older
+  scenarios below must be updated when turning them into executable tests.
+
+Use the [inbox wizard](../frontend/src/components/support/TeamInboxDialog.tsx),
+[step definitions](../frontend/src/components/support/teamInboxDialogFlow.ts), and
+[routing settings](../frontend/src/components/settings/ConversationRoutingTab.tsx)
+as the current UI references. This source review did not execute the manual
+scenarios, verify model-generated routing outcomes, or validate their remaining
+backend expectations.
+
 
 ## Prerequisites
 - A workspace with at least 2 team inboxes created (e.g. "Sales", "Technical Support")

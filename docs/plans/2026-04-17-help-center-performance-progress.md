@@ -1,5 +1,14 @@
 # Help Center Performance — Progress Tracker
 
+> Source review, 2026-09-17
+
+Historical performance analysis and rollout record from April. Current delivery
+uses [TanStack Start SSR](../../help-center/vite.config.ts), HTML/redirect caches in
+[serve.mjs](../../help-center/serve.mjs), and optional shared render caching.
+The old SPA-only waterfalls and absence-of-caching diagnosis must be reproduced
+before treating them as current defects. This audit did not measure latency or
+revalidate the historical production observations.
+
 **Plan:** `docs/plans/2026-04-17-help-center-performance-plan.md`
 **Started:** 2026-04-17
 **Scope this tracker:** Phases 1, 2, 3 only. Phase 0/4/5/6 deferred.

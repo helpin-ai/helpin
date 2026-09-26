@@ -3,6 +3,7 @@ import type {
   AssignableMember,
   MemberWithUser,
   Workspace,
+  WorkspaceModule,
   WorkspaceAccess,
   WorkspaceMember,
   WorkspaceMemberPresenceStatus,
@@ -13,7 +14,12 @@ export const workspacesService = {
     api.get<Workspace[]>(organizationId ? `/workspaces?organization_id=${organizationId}` : '/workspaces'),
   create: (data: { name: string; slug: string; workspace_key: string; organization_id: string; description?: string; company_product_context?: string; website_url?: string; timezone?: string; setup_goals?: string[] }) =>
     api.post<Workspace>('/workspaces', data),
-  generateCompanyProductDescription: (data: { workspace_name: string; website_url: string; workspace_id?: string }) =>
+  /**
+   * Drafts company/product context from a website. With `workspace_id` the
+   * server uses that workspace's AI connection. Failures answer 400 (bad URL)
+   * or 422 with a sentence that can be shown to the person as is.
+   */
+  generateCompanyProductDescription: (data: { website_url: string; workspace_id?: string; workspace_name?: string }) =>
     api.post<{ description: string; company_product_context: string }>('/workspaces/context/generate-description', data),
   getBySlug: (slug: string) => api.get<Workspace>(`/workspaces/by-slug/${slug}`),
   update: (id: string, data: Partial<Workspace>) =>
@@ -28,7 +34,7 @@ export const workspacesService = {
     api.put(`/workspaces/${id}/members/${memberId}`, data),
   removeMember: (id: string, memberId: string) =>
     api.del(`/workspaces/${id}/members/${memberId}`),
-  listAssignableMembers: (id: string) => api.get<AssignableMember[]>(`/workspaces/${id}/assignable-members`),
+  listAssignableMembers: (id: string, module?: WorkspaceModule) => api.get<AssignableMember[]>(`/workspaces/${id}/assignable-members${module ? `?module=${module}` : ''}`),
   getKeyHistory: (id: string) => api.get<{ id: string; workspace_id: string; old_key: string; new_key: string; changed_at: string; changed_by: string }[]>(`/workspaces/${id}/key-history`),
 
   uploadLogo: async (id: string, file: File): Promise<{ data: Workspace | null; error: string | null }> => {

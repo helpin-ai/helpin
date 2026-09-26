@@ -352,3 +352,18 @@ func stringSlicesEqual(a, b []string) bool {
 	}
 	return true
 }
+
+func TestSupportSearchFindsEmailNoticeHistory(t *testing.T) {
+	db := setupSupportConversationSearchTestDB(t)
+	repo := NewSupportConversationRepository(db)
+	ws := "workspace-notice"
+	insertSearchConversation(t, db, model.SupportConversation{ID: "notice-conv", WorkspaceID: ws, DisplayID: 72, Subject: "Automatic reply", Status: "resolved"})
+	insertMessage(t, db, model.SupportMessage{ID: "notice-message", WorkspaceID: ws, ConversationID: "notice-conv", SenderType: "customer", MessageType: model.SupportMessageTypeEmailNotice, Content: "I am out of the office until September 21."})
+	resp, err := repo.Search(context.Background(), ConversationRepositorySearchParams{SupportConversationSearchParams: model.SupportConversationSearchParams{WorkspaceID: ws, Query: "September", Pagination: model.PMPagination{Page: 1, PerPage: 50}}, Role: model.RoleOwner})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Total != 1 || len(resp.Data) != 1 || resp.Data[0].Snippet == "" || !searchContainsString(resp.Data[0].MatchedFields, "message") {
+		t.Fatalf("notice missing from search: %+v", resp)
+	}
+}

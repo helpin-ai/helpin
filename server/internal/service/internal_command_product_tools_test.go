@@ -156,7 +156,7 @@ func TestListConversationMessagesCommandDefaultsToNewestTwentyInChronologicalOrd
 func TestListConversationMessagesCommandReturnsOlderPagesAndSafeAttachments(t *testing.T) {
 	db := newTestDB(t)
 	seedProductToolConversation(t, db)
-	mustExec(t, db, `CREATE TABLE support_attachments (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, conversation_id TEXT NOT NULL, message_id TEXT, file_name TEXT NOT NULL, file_size INTEGER NOT NULL, content_type TEXT NOT NULL, storage_key TEXT NOT NULL, public_url TEXT NOT NULL, is_uploaded BOOLEAN NOT NULL, uploaded_by_type TEXT NOT NULL, created_at DATETIME)`)
+	mustExec(t, db, `CREATE TABLE support_attachments (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, conversation_id TEXT NOT NULL, message_id TEXT, file_name TEXT NOT NULL, file_size INTEGER NOT NULL, content_type TEXT NOT NULL, content_id TEXT NOT NULL DEFAULT '', processing_status TEXT NOT NULL DEFAULT '', processing_error TEXT NOT NULL DEFAULT '', storage_key TEXT NOT NULL, public_url TEXT NOT NULL, is_uploaded BOOLEAN NOT NULL, uploaded_by_type TEXT NOT NULL, created_at DATETIME)`)
 	mustExec(t, db, `INSERT INTO support_attachments (id, workspace_id, conversation_id, message_id, file_name, file_size, content_type, storage_key, public_url, is_uploaded, uploaded_by_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"att-1", "ws-1", "conv-1", "msg-1", "error.png", 2048, "image/png", "private/ws-1/error.png", "https://files.example/error.png", true, "customer", time.Now())
 
@@ -210,6 +210,7 @@ func TestListConversationMessagesCommandDefaultsToSupportContextAttachedToAskCha
 	createProductToolAgentRunTables(t, db)
 	mustExec(t, db, `ALTER TABLE agent_runs ADD COLUMN dock_chat_id TEXT`)
 	mustExec(t, db, `CREATE TABLE dock_chats (
+execution_enabled boolean NOT NULL DEFAULT false,
 		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
 		title TEXT, visibility TEXT NOT NULL DEFAULT 'private', module_id TEXT,
 		support_conversation_id TEXT, active_run_id TEXT, last_message_at DATETIME,

@@ -272,6 +272,18 @@ func (s *DocsChangeProposalService) Discard(ctx context.Context, workspaceID, do
 	return proposal, nil
 }
 
+// BaseChanged reports whether the content a proposal replaces has changed
+// since the proposal was created. It compares the markdown captured at
+// proposal time with the current rendering of the same document or block.
+// A proposal without a captured base is never reported as changed.
+func (s *DocsChangeProposalService) BaseChanged(ctx context.Context, proposal *model.DocsChangeProposal) bool {
+	if s == nil || proposal == nil || strings.TrimSpace(proposal.BaseMarkdown) == "" {
+		return false
+	}
+	current := s.baseMarkdownForProposal(ctx, proposal.WorkspaceID, proposal.DocumentID, proposal.Scope, proposal.BlockID)
+	return strings.TrimSpace(current) != strings.TrimSpace(proposal.BaseMarkdown)
+}
+
 func (s *DocsChangeProposalService) loadPending(ctx context.Context, workspaceID, proposalID string) (*model.DocsChangeProposal, error) {
 	if s == nil || s.proposalRepo == nil {
 		return nil, fmt.Errorf("docs change proposal service is not configured")
@@ -284,7 +296,7 @@ func (s *DocsChangeProposalService) loadPending(ctx context.Context, workspaceID
 		return nil, ErrDocsChangeProposalNotFound
 	}
 	if proposal.Status != model.DocsChangeProposalStatusPending {
-		return nil, fmt.Errorf("proposal is already resolved")
+		return nil, ErrDocsChangeProposalResolved
 	}
 	return proposal, nil
 }

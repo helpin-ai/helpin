@@ -7,12 +7,20 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
+  const editionPath = env.VITE_EDITION === 'ee' ? './src/ee/edition' : './src/edition/community'
   const hmrHost = env.VITE_HMR_HOST?.trim()
   const hmrClientPort = Number(env.VITE_HMR_CLIENT_PORT) || undefined
 
   return {
   plugins: [
-    TanStackRouterVite({ autoCodeSplitting: true }),
+    TanStackRouterVite({
+      autoCodeSplitting: true,
+      ...(env.VITE_EDITION === 'ee' ? {} : {
+        routeFileIgnorePattern: '(^|/)(billing|billing-preview)\\.tsx$',
+        generatedRouteTree: './.tanstack/routeTree.community.gen.js',
+        disableTypes: true,
+      }),
+    }),
     react({
       babel: {
         plugins: ['babel-plugin-react-compiler'],
@@ -33,7 +41,8 @@ export default defineConfig(({ mode }) => {
     headers: {
       'Cache-Control': 'no-store',
     },
-    allowedHosts: ["helpin-dev-fe.tryunhide.com", "dev-azhar.helpin.ai", "azhar.dev.helpin.ai"],
+    // Extra dev hostnames (comma-separated), e.g. a tunnel or LAN name; localhost is always allowed.
+    allowedHosts: (env.VITE_ALLOWED_HOSTS ?? "").split(",").map((h) => h.trim()).filter(Boolean),
     ...(hmrHost ? {
       hmr: { host: hmrHost, protocol: "wss", clientPort: hmrClientPort ?? 443 },
     } : {}),
@@ -41,6 +50,12 @@ export default defineConfig(({ mode }) => {
   resolve: {
     dedupe: ['react', 'react-dom', '@tanstack/react-query', 'zustand'],
     alias: {
+      "@edition": path.resolve(__dirname, editionPath),
+      // Keep the shared route type catalog stable; the Community runtime tree
+      // is generated separately and never registers commercial routes.
+      ...(env.VITE_EDITION === 'ee' ? {} : {
+        './routeTree.gen': path.resolve(__dirname, './.tanstack/routeTree.community.gen.js'),
+      }),
       "@": path.resolve(__dirname, "./src"),
       // The published package declares lib/index.js as its main entry but only
       // ships the ESM build. Resolve that shipped entry explicitly for Vite.
@@ -61,6 +76,7 @@ export default defineConfig(({ mode }) => {
       '**/.idea/**',
       '**/.git/**',
       '**/.cache/**',
+      ...(env.VITE_EDITION === 'ee' ? [] : ['**/src/ee/**']),
     ],
   },
 }})

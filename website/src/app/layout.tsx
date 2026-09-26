@@ -1,24 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import Script from 'next/script';
-import { Plus_Jakarta_Sans, Instrument_Serif } from 'next/font/google';
-import { Navbar } from '@/components/Navbar';
-import { Footer } from '@/components/Footer';
 import { createPageMetadata, PAGE_SEO, SITE_URL } from '@/lib/metadata';
 import './globals.css';
-
-const jakarta = Plus_Jakarta_Sans({
-  subsets: ['latin'],
-  variable: '--font-sans',
-  display: 'swap',
-});
-
-const instrumentSerif = Instrument_Serif({
-  weight: '400',
-  style: ['normal', 'italic'],
-  subsets: ['latin'],
-  variable: '--font-display',
-  display: 'swap',
-});
 
 export const metadata: Metadata = {
   ...createPageMetadata(PAGE_SEO.home),
@@ -49,11 +32,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${jakarta.variable} ${instrumentSerif.variable}`}>
-      <body className="min-h-screen bg-background font-sans text-foreground antialiased">
-        <Navbar />
+    <html lang="en">
+      <body>
         <main>{children}</main>
-        <Footer />
 
         {/* Usermaven */}
         <Script

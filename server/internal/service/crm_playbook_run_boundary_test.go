@@ -34,7 +34,7 @@ func playbookRunBoundaryFixture(t *testing.T) (*gorm.DB, *repository.AgentRunRep
 	db := f.Open(t)
 	f.Exec(t, db, `CREATE TABLE agent_runs (id uuid PRIMARY KEY,workspace_id uuid,agent_id uuid,target_type text,target_id uuid,
 		input jsonb,status text,pause_reason text,approval_state text,external_runtime text,external_runtime_id text,
-		created_at timestamp,updated_at timestamp)`)
+		dock_chat_id uuid,created_at timestamp,updated_at timestamp)`)
 	run := model.AgentRun{ID: uuid.NewString(), WorkspaceID: f.Workspace, AgentID: uuid.NewString(), TargetType: "crm_company", TargetID: f.Company,
 		Input: playbookRunContextJSON(t), Status: "paused", PauseReason: model.AgentRunPauseReasonHumanApproval, ApprovalState: "pending",
 		ExternalRuntime: f.Ptr(agentRuntimeName), ExternalRuntimeID: f.Ptr("runtime-run"), CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
@@ -176,7 +176,7 @@ func TestCRMPlaybookRuntimeCallbacksCannotDropTheirStoredScope(t *testing.T) {
 }
 
 func TestCRMPlaybookRunCannotContinueHandoffOrResumeThroughAuthentication(t *testing.T) {
-	for _, action := range []string{"continue", "handoff", "authentication", "runtime resume"} {
+	for _, action := range []string{"continue", "handoff", "runtime resume"} {
 		t.Run(action, func(t *testing.T) {
 			db, repo, run := playbookRunBoundaryFixture(t)
 			if action == "continue" {
@@ -191,8 +191,6 @@ func TestCRMPlaybookRunCannotContinueHandoffOrResumeThroughAuthentication(t *tes
 				_, err = svc.ContinueTerminalRun(ctx, run.WorkspaceID, run.ID, f.SalesUser, model.ContinueAgentRunRequest{})
 			case "handoff":
 				_, err = svc.HandoffRun(ctx, run.WorkspaceID, run.ID, f.SalesUser, model.HandoffAgentRunRequest{Reason: "Please finish this"})
-			case "authentication":
-				_, _, err = svc.loadRunAndAgentForCodexAuth(ctx, run.WorkspaceID, run.ID)
 			case "runtime resume":
 				_, _, err = svc.resumeAgentRuntimeRunWithIntent(ctx, run.WorkspaceID, &run, *run.ExternalRuntimeID, f.SalesUser, model.ResumeAgentRunRequest{}, model.AgentRunResumeIntentAuthCompleted)
 			}

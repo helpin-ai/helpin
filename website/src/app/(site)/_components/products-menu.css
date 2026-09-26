@@ -1,0 +1,96 @@
+/* Keep centering and entry motion ahead of the generic .nav-panel rules,
+   regardless of stylesheet order after loading another marketing route. */
+.hp3 .nav-panel.nav-product-panel {
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(1180px, calc(100vw - 48px));
+  grid-template-columns: minmax(0, 1.8fr) minmax(320px, 1fr);
+  padding: 8px;
+  border-radius: 14px;
+  max-height: calc(100dvh - 96px);
+  overflow-y: auto;
+  box-shadow: 0 24px 64px #1315141c, 0 4px 12px #13151408;
+  animation: products-menu-enter .18s ease-out;
+}
+.hp3 .nav-products-main { min-width: 0; }
+.hp3 .nav-products-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 8px; padding: 10px 12px 12px; }
+.hp3 .nav-product { display: flex; align-items: center; gap: 13px; min-width: 0; padding: 14px 12px; border-radius: 9px; transition: background-color .16s ease; }
+.hp3 .nav-product:hover, .hp3 .nav-product:focus-visible { background: var(--bg2); }
+.hp3 .nav-product-art { display: grid; place-items: center; width: 42px; height: 42px; flex: none; border: 1px solid var(--border); border-radius: 11px; background: #f7faf8; color: #3d5b4b; transition: color .16s ease, background-color .16s ease; }
+.hp3 .nav-product:hover .nav-product-art, .hp3 .nav-product:focus-visible .nav-product-art { color: var(--em); background: var(--em-t); }
+.hp3 .nav-product-copy { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.hp3 .nav-product-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 15px; line-height: 1.4; font-weight: 600; letter-spacing: -.015em; }
+.hp3 .nav-product-title > svg { flex: none; color: var(--em); opacity: .75; transform: none; transition: opacity .16s ease, transform .16s ease; }
+.hp3 .nav-product:hover .nav-product-title > svg, .hp3 .nav-product:focus-visible .nav-product-title > svg { opacity: 1; transform: none; }
+.hp3 .nav-product-value { margin-top: 4px; font-size: 13px; line-height: 1.5; color: var(--t3); text-wrap: pretty; }
+.hp3 .nav-products-footer { display: flex; align-items: center; padding: 14px 12px 7px; margin: 0 24px; border-top: 1px solid var(--border); }
+.hp3 .nav-products-intro {padding:18px 24px 8px}
+.hp3 .nav-products-intro>span,.hp3 .nav-products-agent-copy>small{display:block;font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;line-height:1.7;color:#365c48}
+.hp3 .nav-products-intro h2{font-size:18px;line-height:1.4;font-weight:600;letter-spacing:-.025em;margin:7px 0 4px}
+.hp3 .nav-products-intro p{font-size:13px;line-height:1.6;color:var(--t3)}
+.hp3 .nav-products-agent-link{position:relative;isolation:isolate;overflow:hidden;display:flex;flex-direction:column;align-items:flex-start;gap:17px;padding:26px 24px 22px;border:1px solid var(--art-dark-border);border-radius:10px;background:radial-gradient(ellipse at 100% 0%,#1a4a35a0,transparent 65%),var(--art-dark);color:var(--on-dark)}
+.hp3 .nav-products-agent-link:hover,.hp3 .nav-products-agent-link:focus-visible{background-color:var(--art-dark-soft)}
+.hp3 .nav-products-agent-icon{display:grid;place-items:center;width:52px;height:52px;border:1px solid var(--art-dark-border);border-radius:13px;background:var(--art-dark-raised);color:var(--on-dark-accent)}
+.hp3 .nav-products-agent-copy{position:relative;max-width:245px}
+.hp3 .nav-products-agent-copy>small{font-size:8px;color:var(--on-dark-accent);letter-spacing:.12em}
+.hp3 .nav-products-agent-copy b{display:block;font-size:25px;font-weight:600;line-height:1.3;letter-spacing:-.03em;margin-top:9px}
+.hp3 .nav-products-agent-copy>span{display:block;margin-top:8px;font-size:13px;line-height:1.65;color:var(--on-dark-muted)}
+.hp3 .nav-products-agent-cta{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;margin-top:auto;padding:12px 10px;border-radius:999px;background:#a4ebc0;color:#103924;font-size:12px;font-weight:600;line-height:1.5}
+.hp3 .nav-products-agent-cta svg{flex:none;transition:transform .16s ease}
+.hp3 .nav-products-agent-link:hover .nav-products-agent-cta svg{transform:translateX(3px)}
+.hp3 .nav-products-explore{display:flex;flex-direction:column;gap:3px;border-radius:4px;font-size:12px;font-weight:500;color:var(--t2)}
+.hp3 .nav-products-explore>span{display:flex;align-items:center;gap:8px}
+.hp3 .nav-products-explore small{font-size:11px;font-weight:400;color:var(--t3)}
+.hp3 .nav-products-explore:hover{color:var(--em)}
+@keyframes products-menu-enter { from { opacity: 0; translate: 0 -5px; } to { opacity: 1; translate: 0 0; } }
+@media (max-width: 1000px) {
+  .hp3 .nav-mobile-panel .nav-products-agent-link{margin:0;min-height:315px}
+  .hp3 .nav-mobile-panel .nav-products-agent-copy{max-width:360px}
+  .hp3 .nav-mobile-panel .nav-agent-card{margin-block:18px}
+
+  .hp3 .nav-mobile-panel .nav-mobile-agent { background: var(--art-dark); border-color: var(--art-dark-border); color: var(--on-dark); }
+  .hp3 .nav-mobile-panel .nav-mobile-agent small { color: var(--on-dark-muted); }
+  .hp3 .nav-mobile-panel .nav-mobile-agent > svg { color: var(--on-dark-accent); }
+  .hp3 .nav-mobile-products { gap: 4px 16px; }
+  .hp3 .nav-mobile-products .nav-product { padding: 16px 3px; }
+  .hp3 .nav-mobile-products .nav-product-title > svg { opacity: 1; transform: none; }
+}
+@media (max-width: 540px) {
+  .hp3 .nav-mobile-products .nav-product + .nav-product { border-top: 1px solid var(--border); border-radius: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hp3 .nav-panel.nav-product-panel { animation: none; }
+  .hp3 .nav-product, .hp3 .nav-product-art, .hp3 .nav-product-title > svg, .hp3 .nav-products-agent-link, .hp3 .nav-products-agent-cta svg { transition: none; }
+}
+
+/* Customer context arrives in sequence; the complete state remains readable. */
+.hp3 .nav-agent-card{position:relative;min-width:0;display:flex}
+.hp3 .nav-agent-card .nav-products-agent-link{width:100%;gap:14px;padding-top:22px}
+.hp3 .nav-agent-motion{width:100%;max-width:330px;align-self:center;height:112px;flex:none}
+.hp3 .nav-agent-motion>svg{display:block;width:100%;height:100%;overflow:visible;fill:none;color:#bce2cb}
+.hp3 .nav-agent-track{stroke:#bce2cb26;stroke-width:1.2}
+.hp3 .nav-agent-signal{stroke:#9cdbb3;stroke-width:1.8;stroke-linecap:round;opacity:.65}
+.hp3 .nav-agent-source-tile{fill:var(--art-dark-raised);stroke:#bce2cb40;stroke-width:1}
+.hp3 .nav-agent-hub{fill:#1b4931;stroke:#9cdbb380;stroke-width:1}
+.hp3 .nav-agent-received-ring{stroke:#9cdbb330;stroke-width:1}
+.hp3 .nav-agent-ready circle{fill:#a4ebc0;stroke:var(--art-dark);stroke-width:2}
+.hp3 .nav-agent-ready path{stroke:#103924;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.hp3 .nav-agent-card .nav-products-agent-copy{max-width:none}
+.hp3 .nav-agent-card .nav-products-agent-copy b{margin-top:0}
+.hp3 .nav-agent-playback{position:absolute;top:9px;right:9px;width:26px;height:26px;display:grid;place-items:center;z-index:2;border:1px solid #bce2cb26;border-radius:50%;background:var(--art-dark-soft);color:#b2c6ba;cursor:pointer}
+.hp3 .nav-agent-playback:hover{color:#edf5ef;background:var(--art-dark-raised)}
+.hp3 .nav-agent-playback:focus-visible{outline:2px solid #a4ebc0;outline-offset:3px}
+/* While playing, each element's resting style is its final keyframe and the animations use
+   backwards fill: the sequence looks identical, but finished animations end instead of holding
+   compositor layers until the next replay. The SVG gets its own layer so the drawing signals
+   repaint only this small canvas, not the card and its gradient. */
+.hp3 .nav-agent-card[data-playing=true] .nav-agent-motion>svg{will-change:transform}
+.hp3 .nav-agent-card[data-playing=true] .nav-agent-signal{stroke-dasharray:12 88;stroke-dashoffset:-100;opacity:0;animation:nav-context-transfer 2.2s ease-in-out backwards}
+.hp3 .nav-agent-card[data-playing=true] .nav-agent-source-1 .nav-agent-signal{animation-delay:.65s}
+.hp3 .nav-agent-card[data-playing=true] .nav-agent-source-2 .nav-agent-signal{animation-delay:1.3s}
+.hp3 .nav-agent-card[data-playing=true] .nav-agent-received-ring{transform-origin:249px 56px;transform:scale(1.12);opacity:.35;animation:nav-context-received 2s 2.6s ease-out backwards}
+.hp3 .nav-agent-card[data-playing=true] .nav-agent-ready{animation:nav-context-ready .45s 3.4s ease-out backwards;transform-origin:274px 80px}
+@keyframes nav-context-transfer{0%{stroke-dashoffset:12;opacity:0}15%{opacity:1}80%{stroke-dashoffset:-88;opacity:1}100%{stroke-dashoffset:-100;opacity:0}}
+@keyframes nav-context-received{0%{transform:scale(.85);opacity:.2}40%{opacity:1}100%{transform:scale(1.12);opacity:.35}}
+@keyframes nav-context-ready{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:scale(1)}}
+@media(prefers-reduced-motion:reduce){.hp3 .nav-agent-card[data-playing=true] .nav-agent-motion *{animation:none!important}.hp3 .nav-agent-playback{display:none}}

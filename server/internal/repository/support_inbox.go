@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
@@ -109,6 +110,17 @@ func (r *SupportMessageRepository) ListConversationPageBefore(
 // a missing value would silently render via the legacy fallback path.
 // Enforcing here means new emitters can't forget the event type.
 func (r *SupportMessageRepository) Create(ctx context.Context, message *model.SupportMessage) error {
+	if message != nil && message.TranslationID != "" {
+		return r.createTranslatedMessage(ctx, message)
+	}
+	return r.create(ctx, message)
+}
+
+func (r *SupportMessageRepository) create(ctx context.Context, message *model.SupportMessage) error {
+	if message != nil && message.PendingGuard != nil {
+		return r.createPendingMessage(ctx, message)
+	}
+
 	if message != nil && message.MessageType == "system" {
 		if message.SystemEventType == nil || !model.IsValidSupportSystemEventType(*message.SystemEventType) {
 			return fmt.Errorf("create message: system message requires a valid system_event_type")
@@ -118,7 +130,7 @@ func (r *SupportMessageRepository) Create(ctx context.Context, message *model.Su
 		return fmt.Errorf("create message: %w", err)
 	}
 	// Bump parent conversation's updated_at so it moves to top of inbox list
-	if message.ConversationID != "" {
+	if message.ConversationID != "" && !model.IsSupportEmailNotice(message) {
 		r.db.WithContext(ctx).
 			Model(&model.SupportConversation{}).
 			Where("id = ?", message.ConversationID).
@@ -158,12 +170,7 @@ func (r *SupportMessageRepository) GetByIDs(ctx context.Context, ids []string) (
 // Link previews are enriched after message creation so a slow external page
 // cannot delay the reply acknowledgement.
 func (r *SupportMessageRepository) UpdateMetadata(ctx context.Context, id, metadata string) error {
-	if err := r.db.WithContext(ctx).Model(&model.SupportMessage{}).
-		Where("id = ?", id).
-		Update("metadata", metadata).Error; err != nil {
-		return fmt.Errorf("update message metadata: %w", err)
-	}
-	return nil
+	return r.updateEnrichedMetadata(ctx, id, metadata)
 }
 
 // ListEmailFallbackReconciliationCandidates returns recent outbound replies
@@ -185,6 +192,8 @@ func (r *SupportMessageRepository) ListEmailFallbackReconciliationCandidates(ctx
 		Where("support_messages.is_internal = ?", false).
 		Where("COALESCE(NULLIF(support_messages.message_type, ''), 'reply') = ?", "reply").
 		Where("support_messages.sender_type <> ?", "customer").
+		// Sample conversations use fictional customers; never email them.
+		Where(NotSampleDataSQL("sc.id")).
 		Where("support_messages.created_at <= ?", before).
 		Where("(support_messages.created_at >= ? OR ("+explicitEmail+"))", after).
 		Where("(support_messages.cancellable_until IS NULL OR support_messages.cancellable_until <= ?)", before).
@@ -364,13 +373,27 @@ func (r *SupportInboxInstallationRepository) ListAllActive(ctx context.Context) 
 }
 
 // RegenerateKeys updates just the widget_key and secret_key columns.
-func (r *SupportInboxInstallationRepository) RegenerateKeys(ctx context.Context, id, widgetKey, secretKey string) error {
-	return r.rotateKeys(ctx, id, &widgetKey, secretKey, "")
+func (r *SupportInboxInstallationRepository) RegenerateKeys(ctx context.Context, id, widgetKey, secretKey, actorUserID string) error {
+	return r.rotateKeys(ctx, id, &widgetKey, secretKey, actorUserID)
 }
 
 // RotateSecret rotates only the server/signing secret and retains its read alias.
 func (r *SupportInboxInstallationRepository) RotateSecret(ctx context.Context, id, secretKey, actorUserID string) error {
 	return r.rotateKeys(ctx, id, nil, secretKey, actorUserID)
+}
+
+// RecordSecretReveal audits an administrator viewing the signing secret.
+func (r *SupportInboxInstallationRepository) RecordSecretReveal(ctx context.Context, inst *model.SupportWidgetInstallation, actorUserID string) error {
+	audit := model.SupportCredentialRotationAudit{
+		WorkspaceID:    inst.WorkspaceID,
+		InstallationID: inst.ID,
+		ActorUserID:    actorUserID,
+		RotationKind:   model.CredentialAuditSigningSecretRevealed,
+	}
+	if err := r.db.WithContext(ctx).Create(&audit).Error; err != nil {
+		return fmt.Errorf("audit widget secret reveal: %w", err)
+	}
+	return nil
 }
 
 func (r *SupportInboxInstallationRepository) rotateKeys(
@@ -419,7 +442,7 @@ func (r *SupportInboxInstallationRepository) rotateKeys(
 				WorkspaceID:    installation.WorkspaceID,
 				InstallationID: installation.ID,
 				ActorUserID:    actorUserID,
-				RotationKind:   "server_signing_secret",
+				RotationKind:   model.CredentialAuditSigningSecretRotated,
 			}
 			if err := tx.Create(&audit).Error; err != nil {
 				return fmt.Errorf("audit widget secret rotation: %w", err)
@@ -920,14 +943,6 @@ func conversationHumanInboxCondition(alias string) string {
 		conversationHumanQueueCondition(alias),
 		alias,
 		alias,
-	)
-}
-
-func conversationHumanResolvedCondition(alias string) string {
-	return fmt.Sprintf("(%s.status = '%s' AND NOT (%s))",
-		alias,
-		model.SupportConversationStatusResolved,
-		conversationResolvedByAICondition(alias),
 	)
 }
 
@@ -1473,7 +1488,7 @@ func (r *SupportConversationRepository) applySupportSearchFilters(query *gorm.DB
 			WHERE sm_search.workspace_id = %s.workspace_id
 			  AND sm_search.conversation_id = %s.id
 			  AND sm_search.deleted_at IS NULL
-			  AND sm_search.message_type = 'reply'
+			  AND sm_search.message_type IN ('reply', 'email_notice')
 			  AND sm_search.system_event_type IS NULL
 			  AND sm_search.search_vector @@ websearch_to_tsquery('simple', ?)
 		)`, alias, alias),
@@ -1490,7 +1505,7 @@ func (r *SupportConversationRepository) applySupportSearchFilters(query *gorm.DB
 			WHERE sm_search.workspace_id = %s.workspace_id
 			  AND sm_search.conversation_id = %s.id
 			  AND sm_search.deleted_at IS NULL
-			  AND sm_search.message_type = 'reply'
+			  AND sm_search.message_type IN ('reply', 'email_notice')
 			  AND sm_search.system_event_type IS NULL
 			  AND LOWER(COALESCE(sm_search.content, '')) LIKE ? ESCAPE '\'
 		)`, alias, alias),
@@ -1548,7 +1563,7 @@ func supportSearchScoreSQL(query string) (string, []any) {
 		WHERE sm_score.workspace_id = support_conversations.workspace_id
 		  AND sm_score.conversation_id = support_conversations.id
 		  AND sm_score.deleted_at IS NULL
-		  AND sm_score.message_type = 'reply'
+		  AND sm_score.message_type IN ('reply', 'email_notice')
 		  AND sm_score.system_event_type IS NULL
 		  AND LOWER(COALESCE(sm_score.content, '')) LIKE ? ESCAPE '\'
 	) THEN 5 ELSE 0 END`)
@@ -1584,7 +1599,7 @@ func supportSearchPostgresScoreSQL(query string) (string, []any) {
 		WHERE sm_score.workspace_id = support_conversations.workspace_id
 		  AND sm_score.conversation_id = support_conversations.id
 		  AND sm_score.deleted_at IS NULL
-		  AND sm_score.message_type = 'reply'
+		  AND sm_score.message_type IN ('reply', 'email_notice')
 		  AND sm_score.system_event_type IS NULL
 		  AND sm_score.search_vector @@ websearch_to_tsquery('simple', ?)
 	) THEN 5 ELSE 0 END`)
@@ -1628,7 +1643,7 @@ func (r *SupportConversationRepository) searchSnippet(ctx context.Context, works
 
 	var message model.SupportMessage
 	err := r.db.WithContext(ctx).
-		Where(`workspace_id = ? AND conversation_id = ? AND deleted_at IS NULL AND message_type = 'reply' AND system_event_type IS NULL AND LOWER(COALESCE(content, '')) LIKE ? ESCAPE '\'`,
+		Where(`workspace_id = ? AND conversation_id = ? AND deleted_at IS NULL AND message_type IN ('reply', 'email_notice') AND system_event_type IS NULL AND LOWER(COALESCE(content, '')) LIKE ? ESCAPE '\'`,
 			workspaceID, conversationID, pattern).
 		Order("created_at DESC").
 		First(&message).Error
@@ -1876,6 +1891,9 @@ func (r *SupportConversationRepository) ListCoverageAnalysisCandidatesPage(ctx c
 	query := r.db.WithContext(ctx).
 		Where("workspace_id = ?", workspaceID).
 		Where("status <> ?", model.SupportConversationStatusSpam).
+		// Sample conversations are not real customer demand; keep them out of
+		// AI coverage analysis.
+		Where(NotSampleDataSQL("support_conversations.id")).
 		Where(`(
 			(updated_at >= ? AND updated_at < ?)
 			OR (resolved_at IS NOT NULL AND resolved_at >= ? AND resolved_at < ?)
@@ -1906,6 +1924,7 @@ func (r *SupportConversationRepository) ListWorkspacesForCoverageAnalysisCandida
 		Model(&model.SupportConversation{}).
 		Distinct("workspace_id").
 		Where("status <> ?", model.SupportConversationStatusSpam).
+		Where(NotSampleDataSQL("support_conversations.id")).
 		Where(`(
 			(updated_at >= ? AND updated_at < ?)
 			OR (resolved_at IS NOT NULL AND resolved_at >= ? AND resolved_at < ?)
@@ -2052,14 +2071,26 @@ func (r *SupportConversationRepository) Update(ctx context.Context, conversation
 	if conversation.Status == "resolved" || conversation.Status == "closed" || conversation.Status == "spam" {
 		conversation.DelayedTeamReplySentFor = conversation.AIEscalatedAt
 	}
-	if err := r.db.WithContext(ctx).Save(conversation).Error; err != nil {
-		return fmt.Errorf("update conversation: %w", err)
+	// A pre-takeover snapshot must never restore old ownership/control fields.
+	result := r.db.WithContext(ctx).Model(conversation).Where("workspace_id = ? AND ai_control_version = ?", conversation.WorkspaceID, conversation.AIControlVersion).Select("*").Updates(conversation)
+	if result.Error != nil {
+		return fmt.Errorf("update conversation: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrSupportAIControlConflict
 	}
 	return nil
 }
 
 // UpdateFields updates specific fields on a conversation by ID and workspace.
 func (r *SupportConversationRepository) UpdateFields(ctx context.Context, workspaceID, conversationID string, fields map[string]any) error {
+	// Legacy channel-policy and email takeover paths also revoke prior runs.
+	if _, changesOwnership := fields["human_takeover"]; changesOwnership {
+		fields = maps.Clone(fields)
+		fields["ai_control_version"] = gorm.Expr("ai_control_version + 1")
+		fields["ai_active_run_id"] = nil
+	}
+
 	if status, ok := fields["status"].(string); ok && (status == "resolved" || status == "closed" || status == "spam") {
 		fields = maps.Clone(fields)
 		fields["delayed_team_reply_sent_for"] = gorm.Expr("ai_escalated_at")
@@ -2321,6 +2352,19 @@ func (r *SupportConversationRepository) MarkUnread(ctx context.Context, conversa
 // Delete permanently removes a conversation and its messages.
 func (r *SupportConversationRepository) Delete(ctx context.Context, workspaceID, conversationID string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Explicit conversation deletion remains available after anonymization.
+		// Remove the parent first so message cleanup cannot resurrect projections
+		// on a read-only conversation. Everything still commits atomically.
+		var conversation model.SupportConversation
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("workspace_id = ? AND id = ?", workspaceID, conversationID).Find(&conversation).Error; err != nil {
+			return err
+		}
+		if conversation.AnonymizedAt != nil {
+			if err := tx.Where("workspace_id = ? AND id = ?", workspaceID, conversationID).Delete(&model.SupportConversation{}).Error; err != nil {
+				return fmt.Errorf("delete anonymized conversation: %w", err)
+			}
+		}
+
 		if err := tx.Where("workspace_id = ? AND conversation_id = ?", workspaceID, conversationID).Delete(&model.SupportMessage{}).Error; err != nil {
 			return fmt.Errorf("delete conversation messages: %w", err)
 		}
@@ -2726,8 +2770,8 @@ func (r *SupportInboxSessionRepository) UpdateSessionsByAnonymousID(ctx context.
 	return nil
 }
 
-// UpgradeIdentityProvenanceByAnonymousID records stronger identity evidence without downgrading
-// an existing verified identity.
+// UpgradeIdentityProvenanceByAnonymousID records evidence for the identity just
+// applied to these sessions. Replacing identity also replaces its verification.
 func (r *SupportInboxSessionRepository) UpgradeIdentityProvenanceByAnonymousID(
 	ctx context.Context,
 	workspaceID, anonymousID, method, trust string,
@@ -2738,18 +2782,11 @@ func (r *SupportInboxSessionRepository) UpgradeIdentityProvenanceByAnonymousID(
 		"identity_method": method,
 		"identity_trust":  trust,
 	}
-	if verifiedAt != nil {
-		updates["identity_verified_at"] = *verifiedAt
-	}
-	if verifierVersion != nil {
-		updates["identity_verifier_version"] = *verifierVersion
-	}
+	updates["identity_verified_at"] = verifiedAt
+	updates["identity_verifier_version"] = verifierVersion
 
 	query := r.db.WithContext(ctx).Model(&model.SupportWidgetSession{}).
 		Where("workspace_id = ? AND anonymous_id = ?", workspaceID, anonymousID)
-	if trust != model.IdentityTrustVerified {
-		query = query.Where("identity_trust <> ?", model.IdentityTrustVerified)
-	}
 	if err := query.Updates(updates).Error; err != nil {
 		return fmt.Errorf("upgrade session identity provenance: %w", err)
 	}

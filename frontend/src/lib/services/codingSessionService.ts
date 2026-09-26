@@ -9,7 +9,6 @@ import type {
   CodingSessionInteraction,
   CodingSessionRepoState,
   ContinueAgentRunRequest,
-  CodexAuthState,
   ResolveCodingSessionInteractionRequest,
   ResumeAgentRunRequest,
   SendAgentRunMessageRequest,
@@ -43,8 +42,4 @@ export const codingSessionService = {
     api.post(`/pm/coding-sessions/${sessionId}/request-changes${qs(workspaceId)}`, payload),
   cancel: (workspaceId: string, sessionId: string) =>
     api.post(`/pm/coding-sessions/${sessionId}/cancel${qs(workspaceId)}`, {}),
-  startDeviceCodeAuth: (workspaceId: string, sessionId: string) =>
-    api.post<CodexAuthState>(`/pm/coding-sessions/${sessionId}/auth/device-code/start${qs(workspaceId)}`, {}),
-  cancelDeviceCodeAuth: (workspaceId: string, sessionId: string) =>
-    api.post<CodexAuthState>(`/pm/coding-sessions/${sessionId}/auth/device-code/cancel${qs(workspaceId)}`, {}),
 };

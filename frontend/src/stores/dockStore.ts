@@ -2,6 +2,14 @@ import { create } from 'zustand';
 import type { DockChat, DockChatDetail } from '@/lib/dockTypes';
 import type { AgentRunMessage } from '@/lib/pmTypes';
 
+const TRANSCRIPT_VIEW_KEY = 'helpin:agent-dock-transcript-view';
+export type DockTranscriptView = 'timeline' | 'detailed';
+
+function readTranscriptView(): DockTranscriptView {
+  try { return localStorage.getItem(TRANSCRIPT_VIEW_KEY) === 'detailed' ? 'detailed' : 'timeline'; }
+  catch { return 'timeline'; }
+}
+
 const COLLAPSED_KEY = 'helpin:ask-agents-dock-collapsed';
 const SELECTION_KEY_PREFIX = 'helpin:agent-dock-selection:';
 
@@ -21,6 +29,8 @@ export interface DockTranscriptCacheEntry {
 }
 
 interface DockState {
+  transcriptView: DockTranscriptView;
+  setTranscriptView: (view: DockTranscriptView) => void;
   collapsed: boolean;
   view: DockView;
   tab: DockTab;
@@ -76,6 +86,11 @@ function writeSelection(state: Pick<DockState, 'workspaceId' | 'tab' | 'activeCh
 }
 
 export const useDockStore = create<DockState>((set, get) => ({
+  transcriptView: readTranscriptView(),
+  setTranscriptView: (transcriptView) => {
+    try { localStorage.setItem(TRANSCRIPT_VIEW_KEY, transcriptView); } catch { /* Best-effort persistence. */ }
+    set({ transcriptView });
+  },
   collapsed: readCollapsed(),
   view: 'chat',
   tab: 'agents',

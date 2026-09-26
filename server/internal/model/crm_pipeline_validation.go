@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -26,6 +27,13 @@ func ValidateCRMPipelineStages(stages []CRMPipelineStage) error {
 	for i := range stages {
 		stage := &stages[i]
 		stage.Name = strings.TrimSpace(stage.Name)
+		if stage.Color == "" {
+			stage.Color = DefaultCRMStageColor(stage.StageType, stage.Position)
+		}
+		if !crmStageColorPattern.MatchString(stage.Color) {
+			return &CRMPipelineValidationError{Message: "stage color must be a six-digit hex color"}
+		}
+		stage.Color = strings.ToLower(stage.Color)
 		if stage.Name == "" {
 			return &CRMPipelineValidationError{Message: "stage name cannot be empty"}
 		}
@@ -114,4 +122,20 @@ func ValidateCRMPipelineStageChanges(existing, stages []CRMPipelineStage, migrat
 		}
 	}
 	return nil
+}
+
+var crmStageColorPattern = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+
+// DefaultCRMStageColor returns the task-palette default for a pipeline stage.
+func DefaultCRMStageColor(stageType string, position int) string {
+	if stageType == CRMStageTypeWon {
+		return "#45a557"
+	}
+	if stageType == CRMStageTypeLost {
+		return "#e2564a"
+	}
+	if position < 0 {
+		position = 0
+	}
+	return []string{"#788596", "#4e8fea", "#c7a53d"}[position%3]
 }

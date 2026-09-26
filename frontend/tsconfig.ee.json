@@ -1,0 +1,29 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.ee.tsbuildinfo",
+    "paths": {
+      "@edition": [
+        "./src/ee/edition"
+      ],
+      "@edition/*": [
+        "./src/ee/edition/*"
+      ],
+      "@/*": [
+        "./src/*"
+      ],
+      "@helpin-ai/shared": [
+        "../packages/shared/src/index.ts"
+      ],
+      "@helpin-ai/support-core": [
+        "../packages/support-core/src/index.ts"
+      ],
+      "@helpin-ai/widget-core": [
+        "../packages/widget-core/dist/index.d.ts"
+      ]
+    }
+  },
+  "exclude": [
+    "src/**/__tests__/**"
+  ]
+}

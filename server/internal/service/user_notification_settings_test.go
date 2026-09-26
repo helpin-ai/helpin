@@ -297,3 +297,41 @@ func TestUserNotificationSettingsService_Update_MultipleUpdatesPreserveValues(t 
 		t.Fatalf("timezone = %q, want Europe/Paris", settings.Timezone)
 	}
 }
+
+func TestUserNotificationSettingsService_FirstSaveEmailOff(t *testing.T) {
+	db := newUserSettingsTestDB(t)
+	svc := NewUserNotificationSettingsService(repository.NewUserNotificationSettingsRepository(db))
+	off := false
+	settings, err := svc.Update(context.Background(), "audit-new-user", model.UpdateUserNotificationSettingsRequest{EmailEnabled: &off})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.EmailEnabled {
+		t.Fatal("first save changed requested email_enabled=false back to true")
+	}
+}
+func TestUserNotificationSettingsService_FirstSaveSunday(t *testing.T) {
+	db := newUserSettingsTestDB(t)
+	svc := NewUserNotificationSettingsService(repository.NewUserNotificationSettingsRepository(db))
+	day := 0
+	settings, err := svc.Update(context.Background(), "audit-new-user", model.UpdateUserNotificationSettingsRequest{EmailDigestDay: &day})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.EmailDigestDay != 0 {
+		t.Fatalf("first save changed Sunday (0) to %d", settings.EmailDigestDay)
+	}
+}
+
+func TestUserNotificationSettingsService_InitialTimezonePreservesSavedChoice(t *testing.T) {
+	svc := NewUserNotificationSettingsService(repository.NewUserNotificationSettingsRepository(newUserSettingsTestDB(t)))
+	ctx := context.Background()
+	first, err := svc.Get(ctx, "new", "Asia/Karachi")
+	if err != nil || first.Timezone != "Asia/Karachi" {
+		t.Fatalf("initial timezone: %+v %v", first, err)
+	}
+	second, err := svc.Get(ctx, "new", "America/New_York")
+	if err != nil || second.Timezone != "Asia/Karachi" {
+		t.Fatalf("overwrote timezone: %+v %v", second, err)
+	}
+}

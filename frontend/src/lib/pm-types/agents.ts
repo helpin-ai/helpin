@@ -1,3 +1,4 @@
+import type { AI_MODELS } from '../../generated/aiModels';
 import type { SpecClarification } from './project';
 import type { AgentSkillRef } from './skills';
 import type { AutomationRule } from './automations';
@@ -14,7 +15,8 @@ export type AgentPresetKey =
   | 'marketer'
   | 'code_builder'
   | 'review_agent'
-  | 'command_agent';
+  | 'command_agent'
+  | 'ask_agent';
 export type AgentStatus = 'idle' | 'working' | 'error' | 'paused';
 export type AgentIconKey =
   | 'violet_star'
@@ -34,10 +36,9 @@ export type AgentApprovalMode = 'preset_default' | 'never' | 'risk_based' | 'mut
 export type AgentModelProvider = 'anthropic' | 'openai' | 'openrouter';
 export type AgentModelTier = 'small' | 'medium' | 'large' | 'flagship';
 export type AgentInvocationMode = 'interactive' | 'autonomous';
-export type AgentRunPauseReason = 'none' | 'human_input' | 'human_approval' | 'authentication' | 'awaiting_user_message';
-export type CodexAuthStateStatus = 'required' | 'pending' | 'connected' | 'failed' | 'cancelled';
+export type AgentRunPauseReason = 'none' | 'human_input' | 'human_approval' | 'authentication' | 'awaiting_user_message' | 'manual';
 export type AgentReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
-export type AgentServiceTier = 'standard' | 'fast' | 'flex';
+export type AgentServiceTier = typeof AI_MODELS.service_tiers[number] | 'default' | 'priority';
 
 export interface AgentExecutionConfig {
   reasoning_effort?: AgentReasoningEffort;
@@ -57,6 +58,7 @@ export interface AgentExecutionConfig {
 }
 
 export interface Agent {
+  ai_profile_id?: string | null;
   id: string;
   workspace_id: string;
   is_system: boolean;
@@ -146,6 +148,7 @@ export interface AgentRun {
   agent_id: string;
   task_id?: string;
   conversation_id?: string;
+  dock_chat_id?: string | null;
   target_type: AgentTargetType;
   target_id: string;
   runtime_kind: AgentRuntimeKind;
@@ -273,7 +276,13 @@ export interface AgentRunStreamEvent {
   error?: string;
 }
 
+export type AgentRunDeliveryMode = 'publish' | 'preview';
+
 export interface StartAgentRunRequest {
+ ai_profile_id?: string;
+  model_connection_id?: string;
+  model_name?: string;
+  delivery_mode?: AgentRunDeliveryMode;
   agent_id?: string;
   additional_context?: string;
   allowed_tools?: string[];
@@ -442,18 +451,6 @@ export interface ResumeAgentRunRequest {
   send_message?: boolean;
 }
 
-export interface CodexAuthState {
-  provider?: string;
-  auth_mode?: string;
-  state: CodexAuthStateStatus;
-  login_id?: string;
-  auth_url?: string;
-  verification_url?: string;
-  user_code?: string;
-  plan_type?: string;
-  error?: string;
-  updated_at: string;
-}
 
 export interface TaskImplementationBrief {
   approach: string;
@@ -531,6 +528,7 @@ export interface AgentRunArtifact {
 }
 
 export interface CreateAgentRequest {
+  ai_profile_id?: string | null;
   workspace_id: string;
   name: string;
   icon_key?: AgentIconKey;
@@ -640,6 +638,7 @@ export interface AgentTemplateStarterFlowField {
 }
 
 export interface CreateAgentFromTemplateOverrides {
+  ai_profile_id?: string | null;
   role?: string;
   icon_key?: AgentIconKey;
   runtime_kind?: AgentRuntimeKind;
@@ -685,6 +684,7 @@ export interface CreateAgentFromTemplateResponse {
 }
 
 export interface UpdateAgentRequest {
+  ai_profile_id?: string | null;
   name?: string;
   icon_key?: AgentIconKey;
   preset_key?: AgentPresetKey;
@@ -716,6 +716,7 @@ export interface UpdateAgentRequest {
 }
 
 export interface AgentVersion {
+  ai_profile_id?: string | null;
   id: string;
   workspace_id: string;
   agent_id: string;
@@ -741,6 +742,7 @@ export interface AgentVersion {
 }
 
 export interface CreateAgentVersionRequest {
+  ai_profile_id?: string | null;
   label: string;
   description?: string;
   source_version_id?: string;
@@ -758,6 +760,7 @@ export interface CreateAgentVersionRequest {
 }
 
 export interface UpdateAgentVersionRequest {
+  ai_profile_id?: string | null;
   label?: string;
   description?: string;
   runtime_kind?: AgentRuntimeKind;

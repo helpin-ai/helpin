@@ -427,11 +427,13 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all(workspaceId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.unreadCount(workspaceId) })
 
-      if (event.action === 'created') {
+      if (event.action === 'created' || event.action === 'updated') {
         const data = event.data ?? {}
         const eventType = typeof data.event_type === 'string' ? data.event_type : ''
         const recipientId = typeof data.recipient_id === 'string' ? data.recipient_id : ''
         const parentTaskId = typeof data.parent_task_id === 'string' ? data.parent_task_id : ''
+        const chatId = typeof data.dock_chat_id === 'string' ? data.dock_chat_id : ''
+        const runId = typeof data.run_id === 'string' ? data.run_id : ''
         const selfId = selfIdRef.current
         if (
           eventType === 'task.agent_attention_required'
@@ -443,11 +445,17 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
           toast('Agent needs your attention', {
             description: 'An agent has paused and is waiting for your input.',
             duration: 10_000,
-            action: slug && parentTaskId ? {
+            action: chatId ? {
+              label: 'Open chat',
+              onClick: () => window.dispatchEvent(new CustomEvent('helpin:ask-agents', { detail: { chatId } })),
+            } : slug && parentTaskId ? {
               label: 'Open task',
               onClick: () => {
                 window.location.href = `/w/${slug}/pm/tasks?task=${parentTaskId}`
               },
+            } : runId ? {
+              label: 'Open agent',
+              onClick: () => window.dispatchEvent(new CustomEvent('helpin:ask-agents', { detail: { runId } })),
             } : undefined,
           })
         }
@@ -472,6 +480,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
           scheduleAgentRunInvalidation(queryKeys.automation.agentUsage(workspaceId, eventAgentId))
         } else {
           scheduleAgentRunInvalidation(queryKeys.automation.agentsRoot(workspaceId))
+          scheduleAgentRunInvalidation(queryKeys.dock.aiDefaults(workspaceId))
         }
         if (event.parent_type === 'task' && event.parent_id) {
           scheduleAgentRunInvalidation(queryKeys.pm.task(workspaceId, event.parent_id))
@@ -586,6 +595,11 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
           typingTimers.current.set(timerKey, timer)
         }
       } else {
+        if (event.data?.reason === 'customer_anonymized') {
+          queryClient.invalidateQueries({ queryKey: queryKeys.support.messages(workspaceId, event.entity_id) })
+          queryClient.invalidateQueries({ queryKey: queryKeys.support.visitorContext(workspaceId, event.entity_id) })
+          useSupportPresenceStore.getState().setTyping(event.entity_id, false)
+        }
         const statusPatch = supportConversationStatusPatchFromEvent(event)
         if (statusPatch) {
           queryClient.setQueriesData<SupportConversationListCache>(
@@ -626,7 +640,18 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     } else if (event.entity === 'support_teammate_presence') {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.teammatePresence(workspaceId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.memberPresence(workspaceId) })
+    } else if (event.entity === 'support_translation') {
+      queryClient.invalidateQueries({ queryKey: ['support',workspaceId,'translation',event.entity_id] })
+      queryClient.invalidateQueries({ queryKey: ['support',workspaceId,'cached-translations',event.entity_id] })
+    } else if (event.entity === 'support_pending_send') {
+      queryClient.invalidateQueries({ queryKey: ['support',workspaceId,'pending-sends',event.parent_id] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.messages(workspaceId,event.parent_id!) })
     } else if (event.entity === 'support_conversation_message') {
+      if (event.action === 'updated' && event.parent_id) {
+        // Metadata updates (including visitor votes) are quiet refetches, not new replies.
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.messages(workspaceId, event.parent_id) })
+        return
+      }
       if (event.parent_id) {
         const s = useSupportPresenceStore.getState()
         // Clear typing state for whoever sent this message
@@ -674,6 +699,13 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
             conversation_id: parentId,
             content: messageData.content,
             sender_type: messageData.sender_type,
+            // Live events use the widget projection; normalize its sender fields
+            // before storing a staff inbox message. Only user replies identify
+            // their author via actor_id (customer/AI actors are not teammates).
+            sender_display_name: messageData.sender_display_name ?? messageData.sender_name,
+            sender_avatar_url: messageData.sender_avatar_url ?? messageData.sender_avatar,
+            sender_user_id: messageData.sender_user_id
+              ?? (messageData.sender_type === 'user' ? event.actor_id : undefined),
             is_internal: Boolean(messageData.is_internal),
             created_at: createdAt,
             updated_at: typeof messageData.updated_at === 'string' ? messageData.updated_at : createdAt,
@@ -846,7 +878,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     const keys = [
       queryKeys.automation.runsRoot(workspaceId), queryKeys.automation.runAttentionCount(workspaceId),
       queryKeys.automation.activityRoot(workspaceId), queryKeys.automation.overview(workspaceId),
-      queryKeys.automation.agentFleet(workspaceId), queryKeys.automation.agentsRoot(workspaceId),
+      queryKeys.automation.agentFleet(workspaceId), queryKeys.automation.agentsRoot(workspaceId), queryKeys.dock.aiDefaults(workspaceId),
       queryKeys.notifications.all(workspaceId), queryKeys.support.teammatePresence(workspaceId),
       queryKeys.workspaces.memberPresence(workspaceId), queryKeys.support.workspaceUnread(),
       queryKeys.support.routingUsage(workspaceId), queryKeys.support.unreadStats(workspaceId),

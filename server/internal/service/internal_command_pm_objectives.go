@@ -207,10 +207,10 @@ func (s *InternalCommandService) executePMCreateObjective(ctx context.Context, m
 		return nil, fmt.Errorf("parse create objective input: %w", err)
 	}
 	if strings.TrimSpace(req.Name) == "" {
-		return nil, fmt.Errorf("name is required")
+		return nil, errCommandInput("name is required")
 	}
 	if strings.TrimSpace(req.ObjectiveType) == "" {
-		return nil, fmt.Errorf("objective_type is required")
+		return nil, errCommandInput("objective_type is required")
 	}
 	teamIDs, err := s.validatePMObjectiveTeams(ctx, meta.WorkspaceID, req.TeamIDs)
 	if err != nil {
@@ -262,7 +262,7 @@ func (s *InternalCommandService) executePMUpdateObjective(ctx context.Context, m
 		return nil, fmt.Errorf("parse update objective input: %w", err)
 	}
 	if !pmObjectiveUpdateHasEditableField(req) {
-		return nil, fmt.Errorf("at least one editable field is required")
+		return nil, errCommandInput("at least one editable field is required")
 	}
 	objectiveID, err := resolvePMObjectiveCommandID(meta, req.ObjectiveID, true)
 	if err != nil {
@@ -398,16 +398,16 @@ func (s *InternalCommandService) executePMUpdateKeyResult(ctx context.Context, m
 		return nil, fmt.Errorf("parse update key result input: %w", err)
 	}
 	if req.Name == nil && req.ResultType == nil && req.InitialValue == nil && req.CurrentValue == nil && req.TargetValue == nil && req.Note == nil {
-		return nil, fmt.Errorf("at least one editable field is required")
+		return nil, errCommandInput("at least one editable field is required")
 	}
 	for _, value := range []*float64{req.InitialValue, req.CurrentValue, req.TargetValue} {
 		if value != nil && (math.IsNaN(*value) || math.IsInf(*value, 0)) {
-			return nil, fmt.Errorf("key result numeric values must be finite")
+			return nil, errCommandInput("key result numeric values must be finite")
 		}
 	}
 	keyResultID := strings.TrimSpace(req.KeyResultID)
 	if keyResultID == "" {
-		return nil, fmt.Errorf("key_result_id is required")
+		return nil, errCommandInput("key_result_id is required")
 	}
 	objectiveID, err := resolvePMObjectiveCommandID(meta, "", true)
 	if err != nil {
@@ -453,11 +453,11 @@ func (s *InternalCommandService) requirePMObjectiveCommandDependencies(requireEp
 func (s *InternalCommandService) loadPMCommandObjective(ctx context.Context, meta model.InternalCommandContext, objectiveID string, write bool) (*model.ObjectiveWithDetails, error) {
 	objective, err := s.objectiveService.GetByID(ctx, objectiveID, meta.WorkspaceID)
 	if err != nil {
-		return nil, fmt.Errorf("objective not found")
+		return nil, errCommandNotFound("objective")
 	}
 	if write {
 		if err := requireCanManageTeams(ctx, objective.Teams); err != nil {
-			return nil, fmt.Errorf("objective not found")
+			return nil, errCommandNotFound("objective")
 		}
 		if err := requireCommandAgentTeams(meta, objective.Teams); err != nil {
 			return nil, err
@@ -473,11 +473,11 @@ func resolvePMObjectiveCommandID(meta model.InternalCommandContext, explicit str
 		targetID = strings.TrimSpace(meta.TargetID)
 	}
 	if rejectConflict && explicit != "" && targetID != "" && explicit != targetID {
-		return "", fmt.Errorf("objective_id conflicts with the current objective target")
+		return "", errCommandInput("objective_id conflicts with the current objective target")
 	}
 	objectiveID := firstNonEmptyCommand(explicit, targetID)
 	if objectiveID == "" {
-		return "", fmt.Errorf("objective_id is required")
+		return "", errCommandInput("objective_id is required")
 	}
 	return objectiveID, nil
 }
@@ -531,7 +531,7 @@ func (s *InternalCommandService) validatePMObjectiveOptionalLabel(ctx context.Co
 	}
 	labelID := strings.TrimSpace(*value)
 	if labelID == "" {
-		return nil, fmt.Errorf("label_id is required when supplied")
+		return nil, errCommandInput("label_id is required when supplied")
 	}
 	label, err := s.objectiveService.labelRepo.GetByID(ctx, labelID)
 	if err != nil {
@@ -574,7 +574,7 @@ func normalizePMObjectiveCommandIDs(values []string, field string) ([]string, er
 	for _, raw := range values {
 		value := strings.TrimSpace(raw)
 		if value == "" {
-			return nil, fmt.Errorf("%s ID must not be empty", field)
+			return nil, errCommandInput("%s ID must not be empty", field)
 		}
 		if _, ok := seen[value]; ok {
 			continue
@@ -655,13 +655,6 @@ func formatPMObjectiveCommandDate(value *time.Time) string {
 	return value.UTC().Format(internalCommandDateOnlyLayout)
 }
 
-func nonNilCommandStrings(values []string) []string {
-	if values == nil {
-		return []string{}
-	}
-	return values
-}
-
 func boundedPMObjectiveCommandStrings(values []string) []string {
 	if len(values) == 0 {
 		return []string{}
@@ -678,7 +671,7 @@ func decodePMObjectiveCommandInput(input json.RawMessage, target any) error {
 func validatePMKeyResultNumbers(values ...float64) error {
 	for _, value := range values {
 		if math.IsNaN(value) || math.IsInf(value, 0) {
-			return fmt.Errorf("key result numeric values must be finite")
+			return errCommandInput("key result numeric values must be finite")
 		}
 	}
 	return nil

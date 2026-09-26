@@ -84,7 +84,7 @@ func (s *InternalCommandService) executePMListSprints(ctx context.Context, meta 
 		switch status {
 		case model.PMSprintStatusUnstarted, model.PMSprintStatusStarted, model.PMSprintStatusDone:
 		default:
-			return nil, fmt.Errorf("status must be one of unstarted, started, done")
+			return nil, errCommandInput("status must be one of unstarted, started, done")
 		}
 		req.Status = &status
 	}
@@ -238,7 +238,7 @@ func (s *InternalCommandService) executePMUpdateSprint(ctx context.Context, meta
 		return nil, fmt.Errorf("parse update sprint input: %w", err)
 	}
 	if req.Name == nil && req.Description == nil && req.StartDate == nil && req.EndDate == nil && req.TeamID == nil && req.LabelIDs == nil {
-		return nil, fmt.Errorf("at least one editable field is required")
+		return nil, errCommandInput("at least one editable field is required")
 	}
 	sprintID, err := resolvePMSprintCommandID(meta, req.SprintID, true)
 	if err != nil {
@@ -298,7 +298,7 @@ func (s *InternalCommandService) executePMUpdateSprint(ctx context.Context, meta
 func (s *InternalCommandService) validatePMSprintTeam(ctx context.Context, workspaceID, teamID string) error {
 	teamID = strings.TrimSpace(teamID)
 	if teamID == "" {
-		return fmt.Errorf("team_id is required")
+		return errCommandInput("team_id is required")
 	}
 	if s == nil || s.settingsRepo == nil {
 		return fmt.Errorf("team repository is not configured")
@@ -334,7 +334,7 @@ func resolvePMSprintCommandID(meta model.InternalCommandContext, explicit string
 		targetID = strings.TrimSpace(meta.TargetID)
 	}
 	if mutating && explicit != "" && targetID != "" && explicit != targetID {
-		return "", fmt.Errorf("sprint_id conflicts with current sprint target")
+		return "", errCommandInput("sprint_id conflicts with current sprint target")
 	}
 	if explicit != "" {
 		return explicit, nil
@@ -342,14 +342,14 @@ func resolvePMSprintCommandID(meta model.InternalCommandContext, explicit string
 	if targetID != "" {
 		return targetID, nil
 	}
-	return "", fmt.Errorf("sprint_id is required")
+	return "", errCommandInput("sprint_id is required")
 }
 
 func parsePMSprintCommandDate(field, value string) (time.Time, error) {
 	value = strings.TrimSpace(value)
 	parsed, err := time.Parse("2006-01-02", value)
 	if err != nil || parsed.Format("2006-01-02") != value {
-		return time.Time{}, fmt.Errorf("%s must be YYYY-MM-DD", field)
+		return time.Time{}, errCommandInput("%s must be YYYY-MM-DD", field)
 	}
 	return parsed.UTC(), nil
 }
@@ -357,7 +357,7 @@ func parsePMSprintCommandDate(field, value string) (time.Time, error) {
 func validatePMSprintCommandLabels(ctx context.Context, sprintService *PMSprintService, workspaceID string, labelIDs []string, teamID *string) ([]string, error) {
 	trimmed := commandTrimStringSlice(labelIDs)
 	if len(labelIDs) > 0 && len(trimmed) != len(labelIDs) {
-		return nil, fmt.Errorf("label_ids must not contain empty values")
+		return nil, errCommandInput("label_ids must not contain empty values")
 	}
 	if sprintService == nil {
 		return nil, fmt.Errorf("sprint service is not configured")

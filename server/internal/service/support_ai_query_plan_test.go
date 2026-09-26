@@ -13,13 +13,6 @@ type scriptedSupportPlannerLLM struct {
 	requests  []llm.ChatRequest
 }
 
-type blockingSupportPlannerLLM struct{}
-
-func (f *blockingSupportPlannerLLM) ChatCompletion(ctx context.Context, _ llm.ChatRequest) (*llm.ChatResponse, error) {
-	<-ctx.Done()
-	return nil, ctx.Err()
-}
-
 func (f *scriptedSupportPlannerLLM) ChatCompletion(_ context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
 	f.requests = append(f.requests, req)
 	if len(f.responses) == 0 {
@@ -65,19 +58,5 @@ func TestBuildConversationMessagesTreatsAIAsAssistant(t *testing.T) {
 	}
 	if messages[2].Role != "assistant" {
 		t.Fatalf("user role = %q, want assistant", messages[2].Role)
-	}
-}
-
-func TestDefaultSupportQueryPlanGreeting(t *testing.T) {
-	plan := defaultSupportQueryPlan("Hello!")
-	if plan.Decision != supportDecisionAnswer {
-		t.Fatalf("decision = %q, want conservative answer fallback", plan.Decision)
-	}
-	if plan.GreetingReply != "" || len(plan.SearchQueries) != 1 {
-		t.Fatalf("plan = %+v, want no deterministic reply and one sufficiency query", plan)
-	}
-	mixed := defaultSupportQueryPlan("hi, how do I reset my password?")
-	if mixed.Decision != supportDecisionAnswer {
-		t.Fatalf("decision = %q, want answer for greeting+question", mixed.Decision)
 	}
 }

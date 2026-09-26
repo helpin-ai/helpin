@@ -1,0 +1,23 @@
+{
+  "page": "/products/knowledge#knowledge-library",
+  "section": "Make your docs feel like part of your product.",
+  "asset_type": "Generated illustrative demo edited from the user-provided real Helpin public help-center screenshot",
+  "tool": "Direct OpenAI Images edit API; previously authorized custom 4K runner",
+  "model": "gpt-image-2.5-sunburst",
+  "quality": "high",
+  "native_dimensions": [
+    3840,
+    2160
+  ],
+  "source_url": "https://storage.googleapis.com/vm-dev-screenshots/Sep%2020/Screenshot%202026-09-20%20at%204.00.39%E2%80%AFPM.png",
+  "source_role": "Edit target: actual public help-center layout, typography, navigation, and table of contents",
+  "prompt": "help-center-prompt-v1.txt",
+  "master": "output/imagegen/knowledge-reader/help-center-3840-v1.webp",
+  "published_derivatives": [
+    "website/public/new/knowledge/help-center-3840-v1.webp",
+    "website/public/new/knowledge/help-center-1920-v1.webp",
+    "website/public/new/knowledge/help-center-960-v1.webp"
+  ],
+  "edits": "OrbitDesk identity; consistent Slack integration onboarding guide; forest-green accents; extended 16:9 viewport; source product layout preserved.",
+  "encoding": "Proportional Sharp WebP exports, quality 94, no upscaling"
+}

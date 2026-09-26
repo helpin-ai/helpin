@@ -76,6 +76,8 @@ const SETTINGS_TITLES: Record<string, string> = {
   repositories: 'Repositories Settings',
   security: 'Security',
   'support-ai-assistant': 'Support AI Assistant Settings',
+  'support-translation': 'Support Translation Settings',
+  'system-status': 'System Status Settings',
   'task-templates': 'Task Templates Settings',
   teams: 'Teams Settings',
   workflows: 'Workflows Settings',

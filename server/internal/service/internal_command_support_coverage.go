@@ -127,7 +127,7 @@ func (s *InternalCommandService) executeCompleteSupportCoverageGap(ctx context.C
 	}
 	if req.Outcome == SupportCoverageAgentOutcomeResolved || req.Outcome == SupportCoverageAgentOutcomeReviewReady || req.DocumentID != "" {
 		if req.DocumentID == "" {
-			return nil, fmt.Errorf("document_id is required for %s", req.Outcome)
+			return nil, errCommandInput("document_id is required for %s", req.Outcome)
 		}
 		if err := s.requireCommandDocumentInWorkspace(ctx, meta.WorkspaceID, req.DocumentID); err != nil {
 			return nil, err
@@ -210,28 +210,28 @@ func normalizeCompleteSupportCoverageGapRequest(req *completeSupportCoverageGapR
 
 func validateCompleteSupportCoverageGapRequest(req completeSupportCoverageGapRequest) error {
 	if req.Summary == "" {
-		return fmt.Errorf("summary is required")
+		return errCommandInput("summary is required")
 	}
 	if len([]rune(req.Summary)) > 1200 {
-		return fmt.Errorf("summary must be 1200 characters or fewer")
+		return errCommandInput("summary must be 1200 characters or fewer")
 	}
 	if req.DocumentationEvidence == "" {
-		return fmt.Errorf("documentation_evidence is required")
+		return errCommandInput("documentation_evidence is required")
 	}
 	if len([]rune(req.DocumentationEvidence)) > 2000 {
-		return fmt.Errorf("documentation_evidence must be 2000 characters or fewer")
+		return errCommandInput("documentation_evidence must be 2000 characters or fewer")
 	}
 	switch req.SourceStatus {
 	case SupportCoverageAgentSourceVerified, SupportCoverageAgentSourceNotFound, SupportCoverageAgentSourceUnavailable:
 		if req.SourceEvidence == "" {
-			return fmt.Errorf("source_evidence is required when source_status is %s", req.SourceStatus)
+			return errCommandInput("source_evidence is required when source_status is %s", req.SourceStatus)
 		}
 	case SupportCoverageAgentSourceNotApplicable:
 	default:
-		return fmt.Errorf("source_status must be verified, not_found, not_applicable, or unavailable")
+		return errCommandInput("source_status must be verified, not_found, not_applicable, or unavailable")
 	}
 	if len([]rune(req.SourceEvidence)) > 2000 {
-		return fmt.Errorf("source_evidence must be 2000 characters or fewer")
+		return errCommandInput("source_evidence must be 2000 characters or fewer")
 	}
 
 	switch req.Outcome {
@@ -240,7 +240,7 @@ func validateCompleteSupportCoverageGapRequest(req completeSupportCoverageGapReq
 			return fmt.Errorf("resolved requires action document_created or document_updated")
 		}
 		if req.DocumentID == "" {
-			return fmt.Errorf("document_id is required for resolved")
+			return errCommandInput("document_id is required for resolved")
 		}
 		if req.SourceStatus == SupportCoverageAgentSourceNotFound || req.SourceStatus == SupportCoverageAgentSourceUnavailable {
 			return fmt.Errorf("resolved requires verified or not_applicable source_status")
@@ -250,19 +250,19 @@ func validateCompleteSupportCoverageGapRequest(req completeSupportCoverageGapReq
 		case SupportCoverageAgentActionDocumentCreated, SupportCoverageAgentActionDocumentUpdated:
 		case SupportCoverageAgentActionProposalSubmitted:
 			if req.ProposalID == "" {
-				return fmt.Errorf("proposal_id is required for proposal_submitted")
+				return errCommandInput("proposal_id is required for proposal_submitted")
 			}
 		default:
 			return fmt.Errorf("review_ready requires a document or proposal action")
 		}
 		if req.DocumentID == "" {
-			return fmt.Errorf("document_id is required for review_ready")
+			return errCommandInput("document_id is required for review_ready")
 		}
 	case SupportCoverageAgentOutcomeRouted:
 		switch req.Action {
 		case SupportCoverageAgentActionExistingDocsSufficient:
 			if req.DocumentID == "" {
-				return fmt.Errorf("document_id is required when existing docs are sufficient")
+				return errCommandInput("document_id is required when existing docs are sufficient")
 			}
 		case SupportCoverageAgentActionFeatureNotFound:
 			if req.SourceStatus != SupportCoverageAgentSourceNotFound {
@@ -273,17 +273,17 @@ func validateCompleteSupportCoverageGapRequest(req completeSupportCoverageGapReq
 			return fmt.Errorf("routed requires existing_docs_sufficient, feature_not_found, or non_doc_gap action")
 		}
 		if req.HandoffOwner == "" {
-			return fmt.Errorf("handoff_owner is required for routed")
+			return errCommandInput("handoff_owner is required for routed")
 		}
 	case SupportCoverageAgentOutcomeBlocked:
 		if req.Action != SupportCoverageAgentActionSourceUnavailable || req.SourceStatus != SupportCoverageAgentSourceUnavailable {
 			return fmt.Errorf("blocked requires action source_unavailable and source_status unavailable")
 		}
 		if req.HandoffOwner == "" {
-			return fmt.Errorf("handoff_owner is required for blocked")
+			return errCommandInput("handoff_owner is required for blocked")
 		}
 	default:
-		return fmt.Errorf("outcome must be resolved, review_ready, routed, or blocked")
+		return errCommandInput("outcome must be resolved, review_ready, routed, or blocked")
 	}
 	return nil
 }

@@ -116,7 +116,8 @@ func newDockEventsTestHandler(t *testing.T) (*DockChatHandler, *gorm.DB) {
 		`CREATE TABLE agent_runs (id TEXT PRIMARY KEY, workspace_id TEXT, agent_id TEXT, dock_chat_id TEXT,
 			triggered_by_user_id TEXT, status TEXT, pause_reason TEXT, runtime_kind TEXT, approval_state TEXT,
 			output_summary BLOB, created_at DATETIME, updated_at DATETIME)`,
-		`CREATE TABLE dock_chats (id TEXT PRIMARY KEY, workspace_id TEXT, user_id TEXT, visibility TEXT, active_run_id TEXT)`,
+		`CREATE TABLE dock_chats (
+execution_enabled boolean NOT NULL DEFAULT false,id TEXT PRIMARY KEY, workspace_id TEXT, user_id TEXT, visibility TEXT, active_run_id TEXT)`,
 		`CREATE TABLE agent_run_messages (id TEXT PRIMARY KEY, workspace_id TEXT, run_id TEXT, role TEXT,
 			content TEXT, sequence_no INTEGER, created_at DATETIME)`,
 		`CREATE TABLE agent_run_artifacts (id TEXT PRIMARY KEY, workspace_id TEXT, run_id TEXT, sequence_no INTEGER, created_at DATETIME)`,
@@ -148,7 +149,7 @@ func newDockEventsTestHandler(t *testing.T) (*DockChatHandler, *gorm.DB) {
 			t.Fatal(err)
 		}
 	}
-	if err := db.Exec(`INSERT INTO dock_chats VALUES ('chat-1', 'ws-1', 'owner', 'private', 'chat-run')`).Error; err != nil {
+	if err := db.Exec(`INSERT INTO dock_chats (id, workspace_id, user_id, visibility, active_run_id) VALUES ('chat-1', 'ws-1', 'owner', 'private', 'chat-run')`).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`UPDATE agent_runs SET dock_chat_id = 'chat-1' WHERE id = 'chat-run'`).Error; err != nil {

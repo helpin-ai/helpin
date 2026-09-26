@@ -1,10 +1,27 @@
+//go:build ee
+
 package main
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 )
+
+func TestExportMatchesCommittedPublicPricing(t *testing.T) {
+	var output bytes.Buffer
+	if err := run([]string{"export", "--format", "typescript"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile("../../../frontend/src/ee/generated/aiPricing.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(output.Bytes(), want) {
+		t.Fatal("public pricing export differs; regenerate the committed artifact")
+	}
+}
 
 func TestRunValidateReportsActivePricingVersion(t *testing.T) {
 	var output bytes.Buffer
@@ -12,7 +29,7 @@ func TestRunValidateReportsActivePricingVersion(t *testing.T) {
 	if err := run([]string{"validate"}, &output); err != nil {
 		t.Fatalf("run() error = %v", err)
 	}
-	if got := output.String(); got != "pricing 2026-09-10 valid\n" {
+	if got := output.String(); got != "pricing 2026-09-23 valid\n" {
 		t.Fatalf("run() output = %q", got)
 	}
 }
@@ -36,7 +53,7 @@ func TestRunExportTypeScriptIsDeterministic(t *testing.T) {
 	if first.String() != second.String() {
 		t.Fatal("TypeScript export is not deterministic")
 	}
-	for _, expected := range []string{"export const AI_PRICING", `"pricing_version": "2026-09-10`, "catalogSha256"} {
+	for _, expected := range []string{"export const AI_PRICING", `"pricing_version": "2026-09-23`, "catalogSha256"} {
 		if !strings.Contains(first.String(), expected) {
 			t.Fatalf("export missing %q: %s", expected, first.String())
 		}

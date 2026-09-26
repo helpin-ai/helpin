@@ -117,14 +117,14 @@ func (s *InternalCommandService) executePrepareDockExecution(ctx context.Context
 	}
 	req.Summary = strings.TrimSpace(req.Summary)
 	if req.Summary == "" {
-		return nil, fmt.Errorf("summary is required")
+		return nil, errCommandInput("summary is required")
 	}
 	if len(req.Operations) == 0 {
-		return nil, fmt.Errorf("operations is required")
+		return nil, errCommandInput("operations is required")
 	}
 	req.ExpectedOutcomes = normalizeStringSlice(req.ExpectedOutcomes)
 	if len(req.ExpectedOutcomes) == 0 {
-		return nil, fmt.Errorf("expected_outcomes is required")
+		return nil, errCommandInput("expected_outcomes is required")
 	}
 	run, err := s.resolveDockChatRun(ctx, meta)
 	if err != nil {
@@ -137,14 +137,14 @@ func (s *InternalCommandService) executePrepareDockExecution(ctx context.Context
 			op.MaxCalls = 1
 		}
 		if op.MaxCalls < 1 || op.MaxCalls > 20 {
-			return nil, fmt.Errorf("operation %d max_calls must be between 1 and 20", index+1)
+			return nil, errCommandInput("operation %d max_calls must be between 1 and 20", index+1)
 		}
 		if len(op.Constraints) == 0 {
-			return nil, fmt.Errorf("operation %d constraints must contain at least one exact target field", index+1)
+			return nil, errCommandInput("operation %d constraints must contain at least one exact target field", index+1)
 		}
 		def, ok := s.definitionByToolAlias(op.ToolName)
 		if !ok || !def.Mutating {
-			return nil, fmt.Errorf("operation %d tool_name must name a mutating Helpin tool", index+1)
+			return nil, errCommandInput("operation %d tool_name must name a mutating Helpin tool", index+1)
 		}
 		if !dockAllowsDirectMutation(def) {
 			return nil, fmt.Errorf("tool %q requires a dedicated approval or child agent", op.ToolName)
@@ -261,7 +261,7 @@ func (s *InternalCommandService) resolvedDockExecutionApproval(ctx context.Conte
 	}
 	interactionID = strings.TrimSpace(interactionID)
 	if interactionID == "" {
-		return nil, "", fmt.Errorf("approval_interaction_id is required")
+		return nil, "", errCommandInput("approval_interaction_id is required")
 	}
 	interaction, err := s.agentRunInteractionRepo.GetByID(ctx, meta.WorkspaceID, run.ID, interactionID)
 	if err != nil {
@@ -301,11 +301,11 @@ func (s *InternalCommandService) resolvedDockExecutionApproval(ctx context.Conte
 		} `json:"raw_input"`
 	}
 	if json.Unmarshal(interaction.RequestPayload, &request) != nil || strings.TrimSpace(firstNonEmptyString(request.Kind, request.Phase)) != dockExecutionApprovalPhase {
-		return nil, "", fmt.Errorf("approval must use phase %q", dockExecutionApprovalPhase)
+		return nil, "", errCommandInput("approval must use phase %q", dockExecutionApprovalPhase)
 	}
 	proposalID := strings.TrimSpace(firstNonEmptyString(request.Action.ProposalID, request.RawInput.Action.ProposalID))
 	if proposalID == "" {
-		return nil, "", fmt.Errorf("approval action proposal_id is required")
+		return nil, "", errCommandInput("approval action proposal_id is required")
 	}
 	return interaction, proposalID, nil
 }

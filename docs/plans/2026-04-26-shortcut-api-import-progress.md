@@ -1,8 +1,44 @@
-# Shortcut API Import Progress Tracker
+# Shortcut API import progress tracker
 
 **Date:** 2026-04-26
-**PRD:** `docs/prd-shortcut-api-importer.md`
-**Status:** In progress
+**PRD:** `docs/prds/shortcut-api-importer.md`
+**Status:** Historical progress snapshot; see current source comparison below.
+
+## Current source comparison — 2026-09-18
+
+This tracker records April implementation progress for contributors. Its unchecked
+boxes are not a reliable current backlog, and checked tests are historical results.
+
+The [Shortcut client](../../server/internal/service/shortcut_api.go) still lives in
+`service/`, rather than the proposed new package. It implements a per-client
+200-request/minute limiter with burst 10, bounded response reads, retry delay handling,
+and `POST /stories/search`. This configured limit is not a verified current vendor
+quota or a global limit shared across all imports.
+
+[API imports](../../server/internal/service/pm_import_shortcut_api.go) now persist
+preview jobs, provide polling status, and can retain encrypted preview metadata.
+Preview scans still run in a goroutine; durable import execution uses Temporal and
+an encrypted payload. These are different lifecycle guarantees. The stored preview
+snapshot omits full story payloads, so it is not an immutable full-data snapshot.
+
+The [router](../../server/internal/router/router.go) gates imports with `pm.import`.
+The actual execute path is `/api/workspaces/{id}/import/shortcut/api/execute`,
+without an import-ID path segment. Cancellation and retry routes also exist.
+The [wizard](../../frontend/src/components/pm/ShortcutImportWizard.tsx) has preview
+polling as well as WebSocket progress, contrary to the unchecked polling item.
+The proposed `shortcut_api_import_enabled` flag was not found in the router or
+configuration; do not assume it protects rollout.
+
+[Comment import](../../server/internal/service/pm_import.go) falls back to the
+importing actor for unmapped authors and adds attribution when a source name is
+available. [Media import](../../server/internal/service/shortcut_media_import.go)
+has bounded download handling and storage-dependent behavior; the old unchecked
+media tasks do not mean media support is absent. Successful transfer of every file
+or a total-job byte guarantee is not established by this review.
+
+Legacy CSV backend routes and code remain. The original large-workspace, real-data,
+and publication checks below remain historical open questions unless separately
+verified. No live Shortcut requests, imports, or runtime tests were run here.
 
 ## Legend
 

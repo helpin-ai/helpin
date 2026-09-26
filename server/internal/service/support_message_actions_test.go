@@ -382,3 +382,47 @@ func TestSupportMessageActionsInfoDistinguishesEmailDeliveryStates(t *testing.T)
 		t.Fatalf("accepted-only message should not be delivered or failed: %#v", sentInfo)
 	}
 }
+
+func TestSupportMessageInfoEmailStatusRespectsDirection(t *testing.T) {
+	now := time.Now()
+	channel := "email"
+	for _, tc := range []struct{ name, direction, sender, want string }{
+		{"incoming customer", "inbound", "customer", "received"},
+		{"incoming participant", "inbound", "user", "received"},
+		{"outgoing reply", "outbound", "user", "sent"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			status, label := supportMessageInfoEmailStatus(&model.SupportMessage{SenderType: tc.sender, ViaChannel: &channel}, &model.SupportEmailLog{Direction: tc.direction, Status: "sent"}, now)
+			if status != tc.want {
+				t.Fatalf("status %q, want %q", status, tc.want)
+			}
+			if tc.want == "received" && label != "Received via email" {
+				t.Fatalf("label %q", label)
+			}
+		})
+	}
+}
+
+func TestSupportMessageActionsInfoIncomingEmailDetails(t *testing.T) {
+	ctx := context.Background()
+	svc, messages, logs, _, redisServer := setupSupportMessageActionsTestEnv(t)
+	defer redisServer.Close()
+	channel := "email"
+	msg := createActionMessage(t, messages, model.SupportMessage{SenderType: "customer", ViaChannel: &channel})
+	if err := logs.Create(ctx, &model.SupportEmailLog{
+		ID: "99999999-9999-9999-9999-999999999999", WorkspaceID: msg.WorkspaceID, ConversationID: msg.ConversationID,
+		MessageIDs: model.DocsStringArray{msg.ID}, Direction: "inbound", Status: "sent", FromEmail: "form@example.com", ReplyTo: "customer@example.com", ToEmail: "support@example.com",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	info, err := svc.Info(ctx, msg.WorkspaceID, msg.ConversationID, "", msg.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.EmailDirection != "inbound" || info.ReplyTo != "customer@example.com" || info.EmailDeliveryStatus != "received" {
+		t.Fatalf("incorrect incoming details: %#v", info)
+	}
+	if info.Delivered != nil {
+		t.Fatal("received message reported as an outbound delivery")
+	}
+}

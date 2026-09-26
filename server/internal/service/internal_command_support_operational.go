@@ -215,7 +215,7 @@ func (s *InternalCommandService) executeSupportMoveConversation(ctx context.Cont
 		return nil, err
 	}
 	if strings.TrimSpace(req.InboxID) == "" {
-		return nil, fmt.Errorf("inbox_id is required")
+		return nil, errCommandInput("inbox_id is required")
 	}
 	if err := s.requireSupportOperationalServices(false); err != nil {
 		return nil, err
@@ -247,7 +247,7 @@ func (s *InternalCommandService) executeSupportConversationTag(ctx context.Conte
 		return nil, err
 	}
 	if strings.TrimSpace(req.TagID) == "" {
-		return nil, fmt.Errorf("tag_id is required")
+		return nil, errCommandInput("tag_id is required")
 	}
 	if err := s.requireSupportOperationalServices(true); err != nil {
 		return nil, err
@@ -287,7 +287,7 @@ func (s *InternalCommandService) executeSupportLinkConversationTask(ctx context.
 	}
 	taskID := normalizeOptionalCommandString(req.TaskID)
 	if !req.Clear && taskID == nil {
-		return nil, fmt.Errorf("task_id or clear is required")
+		return nil, errCommandInput("task_id or clear is required")
 	}
 	if taskID != nil {
 		if s.taskService == nil {
@@ -295,7 +295,7 @@ func (s *InternalCommandService) executeSupportLinkConversationTask(ctx context.
 		}
 		detail, loadErr := s.taskService.GetByID(ctx, *taskID)
 		if loadErr != nil || detail == nil || detail.Task.WorkspaceID != meta.WorkspaceID {
-			return nil, fmt.Errorf("task not found")
+			return nil, errCommandNotFound("task")
 		}
 	}
 	if err := s.supportInboxService.UpdateConversationLinkedTask(s.supportOperationalContext(ctx, meta), meta.WorkspaceID, id, taskID, fallbackActor(meta)); err != nil {
@@ -325,7 +325,7 @@ func (s *InternalCommandService) executeSupportLinkConversationContact(ctx conte
 	}
 	contactID := normalizeOptionalCommandString(req.ContactID)
 	if !req.Clear && contactID == nil {
-		return nil, fmt.Errorf("contact_id or clear is required")
+		return nil, errCommandInput("contact_id or clear is required")
 	}
 	conversation, err := s.supportInboxService.UpdateConversationCRMContact(s.supportOperationalContext(ctx, meta), meta.WorkspaceID, id, contactID, fallbackActor(meta))
 	if err != nil {
@@ -362,14 +362,14 @@ func resolveSupportConversationCommandID(meta model.InternalCommandContext, expl
 	if targetType == "conversation" || targetType == "support_conversation" {
 		targetID := strings.TrimSpace(meta.TargetID)
 		if explicit != "" && targetID != "" && explicit != targetID {
-			return "", fmt.Errorf("conversation_id conflicts with the current support conversation target")
+			return "", errCommandInput("conversation_id conflicts with the current support conversation target")
 		}
 		if explicit == "" {
 			explicit = targetID
 		}
 	}
 	if explicit == "" {
-		return "", fmt.Errorf("conversation_id is required")
+		return "", errCommandInput("conversation_id is required")
 	}
 	return explicit, nil
 }

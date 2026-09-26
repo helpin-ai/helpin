@@ -32,6 +32,23 @@ func TestDockRunAttentionKind(t *testing.T) {
 	}
 }
 
+func TestNormalizeDockRunCollectionOnlyRaisesExplicitAttention(t *testing.T) {
+	stage := "awaiting_input"
+	runs := []model.AgentRun{
+		{ID: "passive", Status: model.AgentRunStatusPaused, PauseReason: model.AgentRunPauseReasonNone},
+		{ID: "awaiting-reply", Status: model.AgentRunStatusPaused, PauseReason: model.AgentRunPauseReasonUserMessage},
+		{ID: "question", Status: model.AgentRunStatusPaused, PauseReason: model.AgentRunPauseReasonHumanInput},
+		{ID: "stage-request", Status: model.AgentRunStatusPaused, PauseReason: model.AgentRunPauseReasonNone, ExecutionStage: &stage},
+	}
+	normalized := (&AgentService{}).normalizeDockRunCollection(runs)
+	want := []string{"", "", "input", "input"}
+	for i, run := range normalized {
+		if got := dockRunAttentionKind(run); got != want[i] {
+			t.Errorf("%s attention = %q, want %q", run.ID, got, want[i])
+		}
+	}
+}
+
 func TestGetDockRunForActorEnforcesOwnershipAndExcludesChatRuns(t *testing.T) {
 	svc, _ := setupAgentRunActivityTest(t)
 	ownerID := "user-1"

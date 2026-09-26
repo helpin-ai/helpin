@@ -159,6 +159,8 @@ export function GapDetailPane({
   wsSlug,
   loading,
   canGenerate,
+  canEdit,
+  statusUpdating,
   canRunDocumentationAgent,
   startingDocumentationAgent,
   externalSpaces,
@@ -190,6 +192,8 @@ export function GapDetailPane({
   wsSlug: string
   loading: boolean
   canGenerate: boolean
+  canEdit: boolean
+  statusUpdating: boolean
   canRunDocumentationAgent: boolean
   startingDocumentationAgent: boolean
   externalSpaces: DocsSpace[]
@@ -226,10 +230,6 @@ export function GapDetailPane({
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [regenerateLockedUntil])
-
-  useEffect(() => {
-    setQuickDraftOpen(false)
-  }, [gap.id])
 
   const draftSuggestion = gap.suggestions.find((s) => s.status === 'draft') ?? null
   const appliedSuggestion = gap.suggestions.find((s) => s.status === 'applied') ?? null
@@ -312,11 +312,14 @@ export function GapDetailPane({
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close gap details"
             className="-mr-1 -mt-1 shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
           >
             <Cancel01Icon className="h-4 w-4" />
           </button>
         </div>
+
+        {generateError && <p role="alert" className="mt-3 text-sm text-destructive">{generateError}</p>}
 
         {diagnosis && (
           <p className="mt-3 text-sm leading-relaxed text-foreground">{diagnosis}</p>
@@ -842,7 +845,7 @@ export function GapDetailPane({
                 <GapAddSplitButton
                   gap={gap}
                   suggestion={draftSuggestion}
-                  disabled={applying}
+                  disabled={applying || !canGenerate}
                   onPrimary={() => onApplySuggestion(draftSuggestion.id)}
                   onOverride={handleOverride}
                 />
@@ -852,6 +855,7 @@ export function GapDetailPane({
             <div className="mt-3 flex justify-end gap-2">
               <button
                 type="button"
+                disabled={!canEdit || applying}
                 onClick={() => onDiscardSuggestion(draftSuggestion.id)}
                 className="rounded-md border border-border/60 px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted"
               >
@@ -859,6 +863,7 @@ export function GapDetailPane({
               </button>
               <button
                 type="button"
+                disabled={!canGenerate}
                 onClick={() => onSetConfirmSuggestion(draftSuggestion.id)}
                 className="rounded-md bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
               >
@@ -869,25 +874,26 @@ export function GapDetailPane({
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2 bg-muted/20 p-4">
+      <div className="flex flex-wrap items-center gap-2 border-t border-quiet-divider-strong p-4">
         <Badge variant="secondary" className={`text-xs ${STATUS_COLORS[gap.status] ?? ''}`}>
           {GAP_STATUS_LABELS[gap.status] ?? gap.status}
         </Badge>
         <button
           type="button"
           onClick={handleRegenerate}
-          disabled={regenerateDisabled || gap.status !== 'open'}
+          disabled={!canEdit || regenerateDisabled || gap.status !== 'open'}
           className="inline-flex items-center gap-1 rounded-md border border-border/60 px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted disabled:opacity-50"
         >
           <ArrowReloadHorizontalIcon className="h-3 w-3" />
           {regenerateDisabled ? `Regenerate in ${regenerateSeconds}s` : 'Regenerate suggestion'}
         </button>
         <div className="flex-1" />
-        {gap.status === 'open' && (
+        {canEdit && gap.status === 'open' && (
           <>
             <button
               type="button"
               onClick={() => onStatusUpdate(gap.id, 'rejected')}
+              disabled={statusUpdating}
               className="rounded-md border border-border/60 px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted"
             >
               Reject
@@ -895,6 +901,7 @@ export function GapDetailPane({
             <button
               type="button"
               onClick={() => onStatusUpdate(gap.id, 'done')}
+              disabled={statusUpdating}
               className="inline-flex items-center gap-1 rounded-md bg-green-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-green-700"
             >
               <CheckmarkCircle02Icon className="h-3 w-3" />
@@ -902,10 +909,11 @@ export function GapDetailPane({
             </button>
           </>
         )}
-        {(gap.status === 'rejected' || gap.status === 'done') && (
+        {canEdit && (gap.status === 'rejected' || gap.status === 'done') && (
           <button
             type="button"
             onClick={() => onStatusUpdate(gap.id, 'open')}
+            disabled={statusUpdating}
             className="rounded-md border border-border/60 px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted"
           >
             Reopen

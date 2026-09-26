@@ -1,0 +1,11 @@
+# PR schema coverage is selected by CI; retain the manual entry point.
+name: Community schema parity
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fresh-ledger-matches-api:
+    uses: ./.github/workflows/postgres-check.yml
+    with:
+      suite: schema

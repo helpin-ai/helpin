@@ -19,8 +19,8 @@ import {
 import { rewritePMCommentDraft } from '@/lib/services/pmCommentService'
 import { unwrap } from '@/lib/queryUtils'
 import { toast } from 'sonner'
-import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog'
-import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired'
+import { UpgradeRequiredDialog } from '@edition'
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@edition/errors';
 import type { WorkspaceTeam, AssignableMember } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import {

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -20,11 +22,13 @@ type S3Client struct {
 	bucket        string
 	endpointURL   string
 	publicBaseURL string
+	appBaseURL    string
+	privateBucket bool
 }
 
 // NewS3Client creates a new S3Client from the given configuration.
 // If accessKeyID is empty, S3 features are disabled and nil is returned.
-func NewS3Client(accessKeyID, secretAccessKey, bucket, region, endpointURL, publicBaseURL string) *S3Client {
+func NewS3Client(accessKeyID, secretAccessKey, bucket, region, endpointURL, publicBaseURL string, presignEndpoint ...string) *S3Client {
 	if accessKeyID == "" || bucket == "" {
 		return nil
 	}
@@ -44,6 +48,12 @@ func NewS3Client(accessKeyID, secretAccessKey, bucket, region, endpointURL, publ
 
 	client := s3.NewFromConfig(cfg, opts...)
 	presignClient := s3.NewPresignClient(client)
+	// Sign against the externally reachable S3 origin without changing the
+	// internal transport used for deletion, server uploads, and bucket setup.
+	if len(presignEndpoint) > 0 && presignEndpoint[0] != "" {
+		browserClient := s3.NewFromConfig(cfg, func(o *s3.Options) { o.BaseEndpoint = aws.String(presignEndpoint[0]); o.UsePathStyle = true })
+		presignClient = s3.NewPresignClient(browserClient)
+	}
 
 	return &S3Client{
 		client:        client,
@@ -52,6 +62,17 @@ func NewS3Client(accessKeyID, secretAccessKey, bucket, region, endpointURL, publ
 		endpointURL:   endpointURL,
 		publicBaseURL: publicBaseURL,
 	}
+}
+
+// CheckBucket confirms that the bucket exists and the credentials can reach it.
+func (s *S3Client) CheckBucket(ctx context.Context) error {
+	if s == nil {
+		return fmt.Errorf("object storage is not configured")
+	}
+	if _, err := s.client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: aws.String(s.bucket)}); err != nil {
+		return fmt.Errorf("head bucket: %w", err)
+	}
+	return nil
 }
 
 // EnsureCORS sets a permissive CORS policy on the bucket so that browsers
@@ -80,6 +101,19 @@ func (s *S3Client) EnsureCORS(ctx context.Context) error {
 
 // PublicURL constructs a direct public URL for the given storage key.
 func (s *S3Client) PublicURL(key string) string {
+	if s.privateBucket && s.appBaseURL != "" && strings.HasPrefix(key, "docs-import/") {
+		parts := strings.SplitN(key, "/", 3)
+		if len(parts) == 3 {
+			return s.appBaseURL + "/api/docs/images/content?workspace_id=" + url.QueryEscape(parts[1]) + "&key=" + url.QueryEscape(key)
+		}
+	}
+	if s.privateBucket {
+		if !PublicAssetKey(key) {
+			return ""
+		}
+		return s.appBaseURL + "/api/public/assets/" + key
+	}
+
 	baseURL := s.publicBaseURL
 	if baseURL == "" {
 		baseURL = s.endpointURL
@@ -95,7 +129,7 @@ func (s *S3Client) PublicURL(key string) string {
 
 // HasPublicURL returns true when the endpoint URL is configured (public access possible).
 func (s *S3Client) HasPublicURL() bool {
-	return s.publicBaseURL != "" || s.endpointURL != ""
+	return !s.privateBucket && (s.publicBaseURL != "" || s.endpointURL != "")
 }
 
 // GeneratePresignedPutURL generates a presigned PUT URL for uploading a file.
@@ -108,7 +142,7 @@ func (s *S3Client) GeneratePresignedPutURL(key, contentType string, size int64, 
 		ContentType:   aws.String(contentType),
 		ContentLength: aws.Int64(size),
 	}
-	if publicRead {
+	if publicRead && !s.privateBucket {
 		input.ACL = s3types.ObjectCannedACLPublicRead
 	}
 
@@ -132,7 +166,7 @@ func (s *S3Client) PutObject(ctx context.Context, key, contentType string, size 
 	if size >= 0 {
 		input.ContentLength = aws.Int64(size)
 	}
-	if publicRead {
+	if publicRead && !s.privateBucket {
 		input.ACL = s3types.ObjectCannedACLPublicRead
 	}
 	if _, err := s.client.PutObject(ctx, input); err != nil {
@@ -192,6 +226,19 @@ func (s *S3Client) GetObject(ctx context.Context, key string) ([]byte, error) {
 	return data, nil
 }
 
+// HeadObject returns the stored size of an object, or an error when it does
+// not exist. It verifies client-side uploads without downloading them.
+func (s *S3Client) HeadObject(ctx context.Context, key string) (int64, error) {
+	result, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("head S3 object: %w", err)
+	}
+	return aws.ToInt64(result.ContentLength), nil
+}
+
 // DeleteObject deletes an object from S3.
 func (s *S3Client) DeleteObject(ctx context.Context, key string) error {
 	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
@@ -202,4 +249,45 @@ func (s *S3Client) DeleteObject(ctx context.Context, key string) error {
 		return fmt.Errorf("delete S3 object: %w", err)
 	}
 	return nil
+}
+
+// ConfigureAssetAccess keeps imported Docs media authenticated. Private bucket
+// mode uses presigned requests, never ACLs, and exposes only public asset keys.
+func (s *S3Client) ConfigureAssetAccess(appBaseURL string, privateBucket bool) {
+	if s == nil {
+		return
+	}
+	s.appBaseURL = strings.TrimRight(appBaseURL, "/")
+	s.privateBucket = privateBucket
+}
+
+func (s *S3Client) PrivateBucket() bool { return s != nil && s.privateBucket }
+
+func PublicAssetKey(key string) bool {
+	if key == "" || path.Clean(key) != key || strings.ContainsAny(key, "\\%?#") {
+		return false
+	}
+	parts := strings.Split(key, "/")
+	if len(parts) < 4 || parts[1] == "" {
+		return false
+	}
+	return parts[0] == "helpcenter" || (parts[0] == "users" && parts[2] == "avatar") || (parts[0] == "workspaces" && parts[2] == "logo")
+}
+
+func DocsImageKey(key, workspaceID string) bool {
+	return workspaceID != "" && strings.HasPrefix(key, "docs-import/"+workspaceID+"/") && path.Clean(key) == key && !strings.ContainsAny(key, "\\%?#")
+}
+
+// DocsImageKeyFromURL recognizes only this deployment's authenticated asset URL.
+func (s *S3Client) DocsImageKeyFromURL(raw, workspaceID string) (string, bool) {
+	u, err := url.Parse(raw)
+	if err != nil || s.appBaseURL == "" {
+		return "", false
+	}
+	base, err := url.Parse(s.appBaseURL)
+	if err != nil || u.Scheme != base.Scheme || u.Host != base.Host || u.Path != "/api/docs/images/content" {
+		return "", false
+	}
+	key := u.Query().Get("key")
+	return key, u.Query().Get("workspace_id") == workspaceID && DocsImageKey(key, workspaceID)
 }

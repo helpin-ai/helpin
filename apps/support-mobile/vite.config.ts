@@ -114,7 +114,8 @@ export default defineConfig(({ mode }) => {
       port: 5176,
       strictPort: true,
       host: host || '0.0.0.0',
-      allowedHosts: ['mobile.azhar.dev.helpin.ai'],
+      // Extra dev hostnames (comma-separated); localhost is always allowed.
+      allowedHosts: (process.env.VITE_ALLOWED_HOSTS ?? '').split(',').map((h) => h.trim()).filter(Boolean),
       hmr: host ? { protocol: 'ws', host, port: 5177 } : undefined,
       // The push plugin's guest-js bridge is imported by the webview and
       // must remain watchable. Ignore generated/native build output only;

@@ -18,6 +18,26 @@ function DeliveryIcons({ mode }: { mode: SupportReplyDeliveryMode }) {
   );
 }
 
+function DeliveryOptionLabel({ mode }: { mode: SupportReplyDeliveryMode }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+      {mode !== "email_only" && (
+        <span className="inline-flex items-center gap-1.5">
+          <BubbleChatIcon aria-hidden="true" className="size-3.5" />
+          {mode === "chat_only" ? "Chat only" : "Chat"}
+        </span>
+      )}
+      {mode === "chat_and_email" && <span>+</span>}
+      {mode !== "chat_only" && (
+        <span className="inline-flex items-center gap-1.5">
+          <Mail01Icon aria-hidden="true" className="size-3.5" />
+          {mode === "email_only" ? "Email only" : "email"}
+        </span>
+      )}
+    </span>
+  );
+}
+
 export function ReplyDeliverySelector({
   mode,
   onChange,
@@ -25,7 +45,6 @@ export function ReplyDeliverySelector({
   email,
   emailUnavailableReason,
   chatUnavailableReason,
-  automaticFallback,
 }: {
   mode: SupportReplyDeliveryMode;
   onChange: (mode: SupportReplyDeliveryMode) => void;
@@ -33,7 +52,6 @@ export function ReplyDeliverySelector({
   email: string;
   emailUnavailableReason?: string;
   chatUnavailableReason?: string;
-  automaticFallback: boolean;
 }) {
   const unavailableReason =
     mode === "chat_only"
@@ -43,13 +61,9 @@ export function ReplyDeliverySelector({
         : emailUnavailableReason || chatUnavailableReason;
   const description =
     unavailableReason ||
-    (automaticFallback
-      ? mode === "email_only"
-        ? `Email to ${email}, using this inbox’s automatic delivery rules.`
-        : `Chat now, with automatic email fallback to ${email} if needed.`
-      : mode === "chat_only"
-        ? "Only visible in the customer’s chat widget."
-        : `${REPLY_DELIVERY_LABELS[mode]} to ${email}. Email is queued even if the customer is online.`);
+    (mode === "chat_only"
+      ? "Only visible in the customer’s chat widget."
+      : `${REPLY_DELIVERY_LABELS[mode]} to ${email}.`);
   const options: SupportReplyDeliveryMode[] = [
     "chat_only",
     "chat_and_email",
@@ -62,7 +76,7 @@ export function ReplyDeliverySelector({
       selected={[mode]}
       onSelect={(value) => onChange(value as SupportReplyDeliveryMode)}
       disabled={disabled}
-      contentClassName="w-72"
+      contentClassName="w-60"
       contentProps={{ side: "top", align: "end" }}
       triggerWrapper={(trigger) => (
         <QuickTooltip label={description}>{trigger}</QuickTooltip>
@@ -90,30 +104,13 @@ export function ReplyDeliverySelector({
                 : value === "email_only"
                   ? emailUnavailableReason
                   : emailUnavailableReason || chatUnavailableReason;
-            const detail =
-              reason ||
-              (value === "chat_only"
-                ? "Only in the chat widget"
-                : value === "email_only"
-                  ? `Email to ${email}; hidden from chat`
-                  : `Chat and email to ${email}`);
+
             return {
               value,
               label: REPLY_DELIVERY_LABELS[value],
               disabled: !!reason,
-              leading: (
-                <span className="flex gap-1">
-                  <DeliveryIcons mode={value} />
-                </span>
-              ),
-              content: (
-                <span className="min-w-0">
-                  <span className="block">{REPLY_DELIVERY_LABELS[value]}</span>
-                  <span className="mt-0.5 block whitespace-normal break-words text-xs text-muted-foreground">
-                    {detail}
-                  </span>
-                </span>
-              ),
+              tooltip: reason,
+              content: <DeliveryOptionLabel mode={value} />,
             };
           }),
         },

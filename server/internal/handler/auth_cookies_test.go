@@ -9,7 +9,7 @@ import (
 
 func TestSecureCookie(t *testing.T) {
 	t.Run("false for plain http remote dev host", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "http://91.98.85.12:8080/api/auth/signin", nil)
+		req := httptest.NewRequest(http.MethodPost, "http://203.0.113.10:8080/api/auth/signin", nil)
 
 		if secureCookie(req) {
 			t.Fatal("expected non-secure cookie for plain HTTP remote dev host")

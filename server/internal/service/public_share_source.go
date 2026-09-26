@@ -114,7 +114,6 @@ func sanitizePublicCodingSession(session *model.CodingSession) {
 	}
 	session.WorkspaceID = ""
 	session.SystemPrompt = nil
-	session.AuthState = nil
 	session.TriggeredByUser = nil
 	session.TargetID = ""
 	if session.StreamStateSnapshot != nil {

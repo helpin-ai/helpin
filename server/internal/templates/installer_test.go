@@ -940,6 +940,7 @@ func setupInstallerTestDB(t *testing.T) *gorm.DB {
 	}
 	statements := []string{
 		`CREATE TABLE agents (
+ ai_profile_id TEXT,
 			id text PRIMARY KEY,
 			workspace_id text NOT NULL,
 			is_system boolean NOT NULL DEFAULT false,

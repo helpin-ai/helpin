@@ -5,6 +5,7 @@ import "time"
 type ModuleID string
 
 const (
+	ModuleAgents     ModuleID = "agents"
 	ModulePM         ModuleID = "pm"
 	ModuleDocs       ModuleID = "docs"
 	ModuleCRM        ModuleID = "crm"
@@ -13,6 +14,7 @@ const (
 )
 
 var allWorkspaceModules = []ModuleID{
+	ModuleAgents,
 	ModulePM,
 	ModuleDocs,
 	ModuleCRM,

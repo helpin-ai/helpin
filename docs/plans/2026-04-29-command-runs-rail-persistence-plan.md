@@ -1,8 +1,47 @@
-# Command Runs Rail Persistence & Scoping Plan
+# Command runs rail persistence and scoping plan
 
 **Date:** 2026-04-29
-**Status:** Proposed
+**Status:** Historical proposal; backend portions implemented, original frontend superseded.
 **Scope:** Tighten what happens when a user closes/refreshes the rail, so the rail reliably reflects "my recent command runs" without depending on incidental WebSocket events.
+
+
+## Current implementation review
+
+Source-compared on 2026-09-17. Use this page to understand the original rail
+persistence decisions, not to implement its checklist unchanged.
+
+The [router](../../server/internal/router/router.go) exposes recent runs at
+`GET /api/pm/agent-runs/recent?workspace_id=…&limit=20`, guarded by `pm.read`.
+The [handler](../../server/internal/handler/agent.go) gets the actor from the
+request context. The [repository](../../server/internal/repository/agent.go)
+filters by workspace and triggering user. Invalid limits, including values above
+50, reset to 20; they are not clamped to 50. This query has neither a last-day
+cutoff nor the proposed join excluding runs from dismissed plans.
+
+[Plan dismissal](../../server/internal/service/command_bar_plans.go) and the
+[versioned migration](../../server/internal/dbmigrate/sql/202604290001_command_bar_plan_dismissals.sql)
+exist. The actual routes use `/api/command-bar/plans/dismiss` and
+`/api/command-bar/plans/{id}/dismiss`, with workspace supplied separately.
+Dismissal skips unknown or non-owned plans; listing filters dismissed IDs after
+fetching records. Its fetch window is capped at 50, so many dismissed records can
+still shrink the returned visible window. Entity-specific plan listing deliberately
+uses different visibility rules and ignores personal dismissal.
+
+The original `CommandBarRunRail` and `useCommandBarRunStore` are no longer the
+frontend entry points. The current [Dock store](../../frontend/src/stores/dockStore.ts)
+persists collapsed state and workspace-specific tab/chat/run selection with
+best-effort localStorage writes. It does not implement the proposed
+`helpin:cmdk-rail` Zustand persist slice. Current Dock run queries separate chat
+runs from non-chat activity; the legacy recent-runs endpoint is not sufficient
+to describe that surface.
+
+The absolute isolation statement and acceptance criteria below are historical
+requirements, not a completed security audit or fresh test results. In particular,
+actor-filtered database queries do not by themselves prove every WebSocket and
+client cache path. The old Clear all behavior, rollback, 404 fallback, and restore
+UI should not be assumed to describe the current Dock.
+
+## Original proposal
 
 ## Problem
 

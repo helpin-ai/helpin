@@ -19,13 +19,16 @@ func executionFixture(t *testing.T, index int) (*gorm.DB, *repository.CRMPlayboo
 	return executionDefinitionFixture(t, index, playbookDefinition(index))
 }
 
-func executionDefinitionFixture(t *testing.T, index int, definition model.CRMPlaybookDefinition) (*gorm.DB, *repository.CRMPlaybookExecutionRepository, model.CRMPlaybook, model.CRMSituation, model.CRMPlaybookConnection) {
+func executionDefinitionFixture(t *testing.T, index int, definition model.CRMPlaybookDefinition, profiles ...*AIProfileService) (*gorm.DB, *repository.CRMPlaybookExecutionRepository, model.CRMPlaybook, model.CRMSituation, model.CRMPlaybookConnection) {
 	t.Helper()
 	db, svc, ctx := playbookFixture(t)
 	flow, agent := f.PlaybookConnectionStorage(t, db)
 	f.PlaybookExecutionStorage(t, db)
 	f.Exec(t, db, "UPDATE automation_rules SET trigger_type = ? WHERE id = ?", model.CRMPlaybookWorkDue, flow)
 	f.Exec(t, db, "UPDATE agents SET allowed_tools = ? WHERE id = ?", []byte(`["get_crm_company","get_crm_contact","get_crm_deal"]`), agent)
+	if len(profiles) != 0 {
+		svc.SetAIProfileService(profiles[0])
+	}
 	pb := readyPlaybookDefinition(t, svc, ctx, definition)
 	selection := model.CRMPlaybookConnectionSelection{PlaybookVersionID: *pb.PublishedVersionID, ExpectedRevision: pb.Revision, FlowID: flow, AgentID: agent}
 	review, err := svc.ReviewConnection(ctx, f.Workspace, pb.ID, selection)

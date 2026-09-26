@@ -56,10 +56,6 @@ export function CompaniesPage() {
     [assignableMembers],
   );
 
-  const handleImportClick = () => {
-    if (!wsSlug) return;
-    void navigate({ to: '/w/$slug/settings/import', params: { slug: wsSlug } });
-  };
 
   return (
     <div className="flex h-full flex-col">
@@ -106,7 +102,6 @@ export function CompaniesPage() {
           <CRMDataEmptyState
             kind="companies"
             onCreateClick={() => setShowCreate(true)}
-            onImportClick={handleImportClick}
           />
         ) : showNoResultsState ? (
           <CRMNoResultsState

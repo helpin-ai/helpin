@@ -16,7 +16,7 @@ func TestSupportMessageEventIncludesMessageType(t *testing.T) {
 		ConversationID:    "conv-1",
 		SenderType:        "agent",
 		MessageType:       "system",
-		SystemEventType:   model.SupportSystemEventTypeStrPtr(model.SystemEventAIEscalated),
+		SystemEventType:   model.SupportSystemEventTypeStrPtr(model.SystemEventDelayedTeamReply),
 		SenderDisplayName: stringPtr("Helpin AI"),
 		Content:           "Let me connect you with a team member who can help further.",
 		CreatedAt:         time.Date(2026, 4, 15, 14, 0, 0, 0, time.UTC),
@@ -38,8 +38,8 @@ func TestSupportMessageEventIncludesMessageType(t *testing.T) {
 	if payload.SenderType != "agent" {
 		t.Fatalf("sender_type = %q, want agent", payload.SenderType)
 	}
-	if payload.SystemEventType == nil || *payload.SystemEventType != model.SystemEventAIEscalated {
-		t.Fatalf("system_event_type = %v, want %q", payload.SystemEventType, model.SystemEventAIEscalated)
+	if payload.SystemEventType == nil || *payload.SystemEventType != model.SystemEventDelayedTeamReply {
+		t.Fatalf("system_event_type = %v, want %q", payload.SystemEventType, model.SystemEventDelayedTeamReply)
 	}
 }
 

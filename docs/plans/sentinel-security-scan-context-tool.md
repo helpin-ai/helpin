@@ -1,4 +1,18 @@
-# Sentinel Scanner Tools Plan
+# Sentinel scanner tools and normalized findings
+
+This undated historical plan explains why Sentinel uses dedicated scanner tools instead of parsing command output. It is useful to contributors maintaining security-triage contracts, but the proposed Go parser and scanner commands below are not an implementation inventory for this repository.
+
+## Source review — 2026-09-18
+
+- [The tool catalog](../../server/internal/agentcontract/tool_catalog.json) declares `scan_semgrep`, `scan_trivy`, and `scan_gitleaks`; [tool constants](../../server/internal/agentcontract/tool_constants.go) also normalize legacy `run_*` aliases. The proposed aggregate `get_security_scan_context` is not present.
+- Current schemas add `summary_only`, `detail_level`, `page`, `page_size`, and category/rule/package/vulnerability/path filters. `max_findings` is documented as legacy; page size defaults to 100 with a maximum of 200. `scan_git_history` is already exposed, so the “later add” note below is historical.
+- The [Sentinel template](../../server/internal/service/agent_templates.go) and [security-triage skill](../../server/skills/system/security_triage/SKILL.md) instruct summary-first scans, compact pagination, repository inspection, duplicate checks, and creation/commenting of remediation tasks. “Read-only” refers to repository files; Sentinel can mutate Helpin tasks and labels.
+- The template command allowlist contains `git`, `rg`, `grep`, `find`, `cat`, `ls`, `head`, `tail`, and `pwd`, with no `python3`. This is the template configuration, not a claim that every custom agent in every deployment shares that allowlist.
+- Scanner execution availability depends on the deployed Agent Runtime image and configuration. The Helpin tree contains catalog contracts, prompts, rules, and tests for template policy, but the proposed `SecurityScanFinding` parser implementation was not found here. This review therefore does not prove scanner CLI defaults, cache locations, normalization, redaction, or runtime error handling; verify those against the paired Runtime implementation before changing that contract.
+- Each dedicated tool selects one scanner. The original “only fail when every requested scanner fails” wording belongs to an aggregate design; the current skill tells the agent to report one scanner's failure and continue with other configured scanner calls. An execution/parsing warning with zero findings is not proof of a clean scan.
+- No security scan, runtime execution, vendor lookup, or parser test was run during this documentation review. JSON examples and cache/Temporal-worker assumptions below preserve the original proposal rather than verified deployment guarantees.
+
+## Original plan
 
 ## Summary
 

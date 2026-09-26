@@ -75,13 +75,13 @@ func main() {
 
 	switch cmd {
 	case "up":
-		if err := dbmigrate.Up(ctx, db); err != nil {
+		if err := dbmigrate.Up(ctx, db, editionMigrationSources()...); err != nil {
 			fatalf("run migrations: %v", err)
 		}
 		fmt.Println("migrations applied")
 
 	case "status":
-		rows, err := dbmigrate.Status(ctx, db)
+		rows, err := dbmigrate.Status(ctx, db, editionMigrationSources()...)
 		if err != nil {
 			fatalf("migration status: %v", err)
 		}
@@ -121,7 +121,7 @@ func main() {
 		fmt.Printf("%s\t%s\t%s\n", row.Version, row.Name, appliedAt)
 
 	case "pending":
-		rows, err := dbmigrate.Pending(ctx, db)
+		rows, err := dbmigrate.Pending(ctx, db, editionMigrationSources()...)
 		if err != nil {
 			fatalf("pending migrations: %v", err)
 		}
@@ -134,7 +134,7 @@ func main() {
 		}
 
 	case "validate":
-		issues, err := dbmigrate.Validate(ctx, db)
+		issues, err := dbmigrate.Validate(ctx, db, editionMigrationSources()...)
 		if err != nil {
 			fatalf("validate migrations: %v", err)
 		}
@@ -148,7 +148,7 @@ func main() {
 		os.Exit(1)
 
 	case "repair":
-		repaired, err := dbmigrate.Repair(ctx, db)
+		repaired, err := dbmigrate.Repair(ctx, db, editionMigrationSources()...)
 		if err != nil {
 			fatalf("repair migrations: %v", err)
 		}

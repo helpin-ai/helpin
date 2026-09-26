@@ -865,6 +865,7 @@ func TestPMEpicServiceUpdateRejectsTeamMoveIncompatibleWithAssignedAgent(t *test
 func seedTeamScopedEpicAgent(t *testing.T, db *gorm.DB, svc *PMEpicService, workspaceID, agentID, teamID string) {
 	t.Helper()
 	mustExec(t, db, `CREATE TABLE agents (
+ ai_profile_id TEXT,
 		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, is_system BOOLEAN NOT NULL DEFAULT 0,
 		name TEXT NOT NULL, preset_key TEXT, preset_version_key TEXT, status TEXT,
 		runtime_kind TEXT, skills TEXT, allowed_tools TEXT, allowed_commands TEXT,

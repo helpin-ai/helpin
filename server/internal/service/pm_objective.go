@@ -68,7 +68,7 @@ func (s *PMObjectiveService) requireAdmin(ctx context.Context, workspaceID, acto
 // List returns objectives with details for a workspace.
 func (s *PMObjectiveService) List(ctx context.Context, workspaceID string, filters model.PMObjectiveListFilters) ([]model.ObjectiveWithDetails, error) {
 	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace_id is required")
+		return nil, errCommandInput("workspace_id is required")
 	}
 	// Objectives are strategic — readable workspace-wide for all roles.
 	// Team filtering is NOT applied to objective lists.
@@ -94,7 +94,7 @@ func (s *PMObjectiveService) List(ctx context.Context, workspaceID string, filte
 // ListPage loads and enriches only the requested objective page.
 func (s *PMObjectiveService) ListPage(ctx context.Context, workspaceID string, filters model.PMObjectiveListFilters, pagination model.PMPagination) ([]model.ObjectiveWithDetails, int64, error) {
 	if workspaceID == "" {
-		return nil, 0, fmt.Errorf("workspace_id is required")
+		return nil, 0, errCommandInput("workspace_id is required")
 	}
 	objectives, total, err := s.objectiveRepo.ListPage(ctx, workspaceID, filters, pagination)
 	if err != nil {
@@ -117,7 +117,7 @@ func (s *PMObjectiveService) ListPage(ctx context.Context, workspaceID string, f
 // ListByIDs returns objective rows for bounded run-target title enrichment.
 func (s *PMObjectiveService) ListByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.PMObjective, error) {
 	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace_id is required")
+		return nil, errCommandInput("workspace_id is required")
 	}
 	return s.objectiveRepo.ListByIDs(ctx, workspaceID, ids)
 }
@@ -131,7 +131,7 @@ func (s *PMObjectiveService) GetByID(ctx context.Context, id string, workspaceID
 		return nil, err
 	}
 	if obj == nil {
-		return nil, fmt.Errorf("objective not found")
+		return nil, errCommandNotFound("objective")
 	}
 	// Objectives are strategic — readable workspace-wide for all roles.
 	enrichSuggestedHealth(obj)
@@ -141,7 +141,7 @@ func (s *PMObjectiveService) GetByID(ctx context.Context, id string, workspaceID
 // Create creates an objective.
 func (s *PMObjectiveService) Create(ctx context.Context, req model.CreateObjectiveRequest, actorID string) (*model.ObjectiveWithDetails, error) {
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
-		return nil, fmt.Errorf("workspace_id and name are required")
+		return nil, errCommandInput("workspace_id and name are required")
 	}
 	if err := requireCanManageTeams(ctx, req.TeamIDs); err != nil {
 		return nil, err
@@ -290,10 +290,10 @@ func (s *PMObjectiveService) Update(ctx context.Context, id string, req model.Up
 		return nil, err
 	}
 	if current == nil {
-		return nil, fmt.Errorf("objective not found")
+		return nil, errCommandNotFound("objective")
 	}
 	if err := requireCanManageTeams(ctx, current.Teams); err != nil {
-		return nil, fmt.Errorf("objective not found")
+		return nil, errCommandNotFound("objective")
 	}
 	obj := current.Objective
 
@@ -445,7 +445,7 @@ func (s *PMObjectiveService) Delete(ctx context.Context, id string, actorID stri
 		return err
 	}
 	if obj == nil {
-		return fmt.Errorf("objective not found")
+		return errCommandNotFound("objective")
 	}
 	if err := s.requireAdmin(ctx, obj.Objective.WorkspaceID, actorID); err != nil {
 		return err
@@ -487,7 +487,7 @@ func (s *PMObjectiveService) AddTeam(ctx context.Context, objectiveID, teamID, a
 		return err
 	}
 	if obj == nil {
-		return fmt.Errorf("objective not found")
+		return errCommandNotFound("objective")
 	}
 	if err := requireCanManageTeams(ctx, obj.Teams); err != nil {
 		return err
@@ -506,7 +506,7 @@ func (s *PMObjectiveService) RemoveTeam(ctx context.Context, objectiveID, teamID
 		return err
 	}
 	if obj == nil {
-		return fmt.Errorf("objective not found")
+		return errCommandNotFound("objective")
 	}
 	if err := requireCanManageTeams(ctx, obj.Teams); err != nil {
 		return err
@@ -525,7 +525,7 @@ func (s *PMObjectiveService) AddOwner(ctx context.Context, objectiveID, ownerRef
 		return err
 	}
 	if obj == nil {
-		return fmt.Errorf("objective not found")
+		return errCommandNotFound("objective")
 	}
 	if err := requireCanManageTeams(ctx, obj.Teams); err != nil {
 		return err
@@ -569,7 +569,7 @@ func (s *PMObjectiveService) RemoveOwner(ctx context.Context, objectiveID, owner
 		return err
 	}
 	if obj == nil {
-		return fmt.Errorf("objective not found")
+		return errCommandNotFound("objective")
 	}
 	if err := requireCanManageTeams(ctx, obj.Teams); err != nil {
 		return err
@@ -592,7 +592,7 @@ func (s *PMObjectiveService) AddEpic(ctx context.Context, objectiveID, epicID, a
 		return err
 	}
 	if obj == nil {
-		return fmt.Errorf("objective not found")
+		return errCommandNotFound("objective")
 	}
 	if err := requireCanManageTeams(ctx, obj.Teams); err != nil {
 		return err
@@ -611,7 +611,7 @@ func (s *PMObjectiveService) RemoveEpic(ctx context.Context, objectiveID, epicID
 		return err
 	}
 	if obj == nil {
-		return fmt.Errorf("objective not found")
+		return errCommandNotFound("objective")
 	}
 	if err := requireCanManageTeams(ctx, obj.Teams); err != nil {
 		return err
@@ -632,14 +632,14 @@ func (s *PMObjectiveService) CreateKeyResult(ctx context.Context, objectiveID st
 		return nil, err
 	}
 	if obj == nil {
-		return nil, fmt.Errorf("objective not found")
+		return nil, errCommandNotFound("objective")
 	}
 	if err := requireCanManageTeams(ctx, obj.Teams); err != nil {
 		return nil, err
 	}
 
 	if strings.TrimSpace(req.Name) == "" {
-		return nil, fmt.Errorf("name is required")
+		return nil, errCommandInput("name is required")
 	}
 	resultType := req.ResultType
 	if resultType == "" {
@@ -688,14 +688,14 @@ func (s *PMObjectiveService) UpdateKeyResult(ctx context.Context, id string, req
 		return nil, err
 	}
 	if kr == nil {
-		return nil, fmt.Errorf("key result not found")
+		return nil, errCommandNotFound("key result")
 	}
 	parentObj, err := s.objectiveRepo.GetByID(ctx, kr.ObjectiveID)
 	if err != nil {
 		return nil, err
 	}
 	if parentObj == nil {
-		return nil, fmt.Errorf("objective not found")
+		return nil, errCommandNotFound("objective")
 	}
 	if err := requireCanManageTeams(ctx, parentObj.Teams); err != nil {
 		return nil, err
@@ -751,7 +751,7 @@ func (s *PMObjectiveService) DeleteKeyResult(ctx context.Context, id string, act
 		return err
 	}
 	if kr == nil {
-		return fmt.Errorf("key result not found")
+		return errCommandNotFound("key result")
 	}
 	parentObj, _ := s.objectiveRepo.GetByID(ctx, kr.ObjectiveID)
 	if parentObj != nil {
@@ -793,10 +793,6 @@ func computeKeyResultProgress(kr *model.PMKeyResult) float64 {
 
 func isValidObjectiveType(v string) bool {
 	return v == model.PMObjectiveTypeTactical || v == model.PMObjectiveTypeStrategic
-}
-
-func isValidObjectiveState(v string) bool {
-	return v == model.PMObjectiveStateNotStarted || v == model.PMObjectiveStateActive || v == model.PMObjectiveStateClosed
 }
 
 func normalizeObjectiveState(v string) (string, bool) {

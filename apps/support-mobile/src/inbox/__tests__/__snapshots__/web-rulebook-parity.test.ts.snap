@@ -39,6 +39,6 @@ exports[`web support rulebook is importable and deterministic per view > view sp
 
 exports[`web support rulebook is importable and deterministic per view > view waiting produces stable request filters 1`] = `
 {
-  "status": "waiting_on_customer",
+  "filter": "waiting",
 }
 `;

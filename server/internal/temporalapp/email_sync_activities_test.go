@@ -114,6 +114,7 @@ func setupEmailSyncActivitiesTestDB(t *testing.T) *gorm.DB {
 			ON crm_contacts(workspace_id, lower(email))
 			WHERE email IS NOT NULL`,
 		`CREATE TABLE crm_email_accounts (
+			signature TEXT NOT NULL DEFAULT '',
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			member_id TEXT NOT NULL,

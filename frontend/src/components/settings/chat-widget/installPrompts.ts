@@ -4,13 +4,14 @@ type WidgetInstallPromptOptions = {
   framework: WidgetInstallFramework;
   widgetKey: string;
   host: string;
+  runtimeURL?: string;
 };
 
 const FRAMEWORK_INSTRUCTIONS: Record<WidgetInstallFramework, string> = {
   html: `This is the HTML / JavaScript integration.
 - Do not install an npm package unless the project already bundles its scripts.
-- Define window.helpin as a command queue before loading https://cdn.helpin.ai/lib.js.
-- Load the script once, preferably before the closing </body> tag, with data-widget-key and data-host attributes.
+- Define window.helpin as a command queue before loading the hosted widget runtime listed below.
+- Load the script once, preferably before the closing </body> tag, with data-widget-key, data-host, and data-support-only="true" attributes.
 - Keep the existing Content Security Policy in mind. If it blocks the widget, report the exact directives that need the Helpin origins rather than weakening the policy.`,
   react: `This is the React integration.
 - Install @helpin-ai/react and @helpin-ai/sdk-js with the package manager already used by the project.
@@ -33,6 +34,7 @@ export function buildWidgetInstallPrompt({
   framework,
   widgetKey,
   host,
+  runtimeURL = `${host}/sdk/lib.js`,
 }: WidgetInstallPromptOptions): string {
   return `Integrate the Helpin support widget into this application.
 
@@ -42,13 +44,13 @@ Helpin configuration:
 - Integration: ${framework === 'html' ? 'HTML / JavaScript' : framework === 'nextjs' ? 'Next.js' : framework === 'react' ? 'React' : 'Vue'}
 - Public widget key: ${widgetKey}
 - Helpin host: ${host}
-- Hosted widget runtime: https://cdn.helpin.ai/lib.js
+- Hosted widget runtime: ${runtimeURL}
 
 ${FRAMEWORK_INSTRUCTIONS[framework]}
 
 Implementation requirements:
 1. Add the widget exactly once in the correct application entry point.
-2. Use the widget key and host above. The widget key is public, but do not expose private API keys, access tokens, session tokens, or unrelated environment variables.
+2. Use the widget key, host, and runtime URL above; package integrations must set widgetRuntimeUrl and supportOnly: true. Add the application origin to the widget installation allow-list before testing. The widget key is public, but do not expose private API keys, access tokens, session tokens, or unrelated environment variables.
 3. After authentication is ready, identify signed-in users with id() using the application's real user model. Include stable user ID and email; include first name, last name, and company only when available. Do not send undefined fields.
 4. Preserve existing authentication, analytics, routing, error handling, and rendering behavior.
 5. Make widget controls available where the product needs them. Supported controls include open(), close(), toggle(), show(), hide(), openMessages(), openNewMessage(content?), openConversation(conversationId), openArticle(articleKey, options?), and shutdown().

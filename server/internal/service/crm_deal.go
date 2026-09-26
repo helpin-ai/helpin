@@ -184,6 +184,7 @@ func (s *CRMDealService) CreatePipeline(ctx context.Context, req model.CreateCRM
 			StageType:   s.StageType,
 			Position:    s.Position,
 			Probability: s.Probability,
+			Color:       s.Color,
 		})
 	}
 
@@ -221,6 +222,16 @@ func (s *CRMDealService) UpdatePipeline(ctx context.Context, id string, req mode
 		opts.Stages = make([]model.CRMPipelineStage, 0, len(req.Stages))
 		for _, item := range req.Stages {
 			stage := model.CRMPipelineStage{Name: item.Name, StageType: item.StageType, Position: item.Position, Probability: item.Probability}
+			if item.Color != nil {
+				stage.Color = *item.Color
+			} else if item.ID != nil {
+				for _, existing := range pipeline.Stages {
+					if existing.ID == *item.ID {
+						stage.Color = existing.Color
+						break
+					}
+				}
+			}
 			if item.ID != nil {
 				if strings.TrimSpace(*item.ID) == "" {
 					return nil, &model.CRMPipelineValidationError{Message: "stage ID cannot be empty; omit it for a new stage"}
@@ -288,6 +299,22 @@ func (s *CRMDealService) create(ctx context.Context, req model.CreateCRMDealRequ
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
 	}
+	revenueType := req.RevenueType
+	if revenueType == "" {
+		revenueType = "one_time"
+	}
+	if !validCRMRevenueType(revenueType) {
+		return nil, fmt.Errorf("invalid revenue_type")
+	}
+	for _, id := range req.ContactIDs {
+		exists, err := s.dealRepo.ObjectExists(ctx, req.WorkspaceID, model.CRMObjectContact, id)
+		if err != nil {
+			return nil, err
+		}
+		if !exists {
+			return nil, fmt.Errorf("participant not found in workspace")
+		}
+	}
 	customer, err := s.resolveCustomer(ctx, req.WorkspaceID, req.ContactID, req.CompanyID)
 	if err != nil {
 		return nil, err
@@ -333,6 +360,7 @@ func (s *CRMDealService) create(ctx context.Context, req model.CreateCRMDealRequ
 		commercialMotion = &motion
 	}
 	deal := &model.CRMDeal{
+		RevenueType:      revenueType,
 		WorkspaceID:      req.WorkspaceID,
 		DisplayID:        displayID,
 		Name:             strings.TrimSpace(req.Name),
@@ -346,7 +374,7 @@ func (s *CRMDealService) create(ctx context.Context, req model.CreateCRMDealRequ
 		Probability:      req.Probability,
 		CustomProperties: model.JSONB(req.CustomProperties),
 	}
-	if err := s.dealRepo.CreateWithCustomer(ctx, deal, customer); err != nil {
+	if err := s.dealRepo.CreateWithCustomer(ctx, deal, customer, req.ContactIDs...); err != nil {
 		return nil, err
 	}
 
@@ -476,6 +504,12 @@ func (s *CRMDealService) update(ctx context.Context, id string, req model.Update
 		return nil, fmt.Errorf("deal not found")
 	}
 
+	if req.RevenueType != nil {
+		if !validCRMRevenueType(*req.RevenueType) {
+			return nil, fmt.Errorf("invalid revenue_type")
+		}
+		deal.RevenueType = *req.RevenueType
+	}
 	previousStageID := deal.StageID
 	previousStageName := previousStageID
 	if deal.Stage != nil {
@@ -528,6 +562,23 @@ func (s *CRMDealService) update(ctx context.Context, id string, req model.Update
 	}
 	if req.CustomProperties != nil {
 		deal.CustomProperties = model.JSONB(req.CustomProperties)
+	}
+
+	if req.PipelineID != nil || req.StageID != nil {
+		pipeline, err := s.dealRepo.GetPipeline(ctx, deal.PipelineID)
+		if err != nil {
+			return nil, err
+		}
+		if pipeline == nil || pipeline.WorkspaceID != deal.WorkspaceID {
+			return nil, fmt.Errorf("pipeline not found in workspace")
+		}
+		stage, err := s.dealRepo.GetStage(ctx, deal.StageID)
+		if err != nil {
+			return nil, err
+		}
+		if stage == nil || stage.PipelineID != deal.PipelineID {
+			return nil, fmt.Errorf("stage not found in pipeline")
+		}
 	}
 
 	// Clear preloaded associations before save
@@ -626,4 +677,8 @@ func (s *CRMDealService) requestCompanySummaryRefresh(ctx context.Context, works
 	if err := s.summaryRefresh.RequestCompanyRefreshForObject(ctx, workspaceID, model.CRMObjectDeal, dealID); err != nil {
 		slog.ErrorContext(ctx, "failed to request company summary refresh from deal", "error", err, "workspace_id", workspaceID, "deal_id", dealID)
 	}
+}
+
+func validCRMRevenueType(value string) bool {
+	return value == "one_time" || value == "monthly" || value == "annual"
 }

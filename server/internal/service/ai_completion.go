@@ -9,10 +9,12 @@ import (
 	"strings"
 	"time"
 
+	sdk "github.com/helpin-ai/agent-runtime-go"
 	"github.com/helpin-ai/helpin/server/internal/aipolicy"
 	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/observability"
 )
 
 // AICompleter is the mandatory product boundary for direct LLM completions.
@@ -37,11 +39,17 @@ type AICompletionRequest struct {
 
 // AICompletionService routes, meters, executes, and reconciles direct completions.
 type AICompletionService struct {
+	metrics  *observability.Metrics
 	provider llm.Provider
-	usage    *AIUsageService
+	usage    AIUsageLifecycle
 	routes   AICompletionRouteRegistry
 	policy   *aipolicy.Registry
 	audit    aipolicy.ExecutionAudit
+}
+
+func (s *AICompletionService) SetMetrics(metrics *observability.Metrics) *AICompletionService {
+	s.metrics = metrics
+	return s
 }
 
 // SetGovernance enables app-wide action policy and execution auditing.
@@ -57,7 +65,7 @@ func (s *AICompletionService) SetGovernance(registry *aipolicy.Registry, audit a
 // NewAICompletionService creates the single direct-completion execution boundary.
 func NewAICompletionService(
 	provider llm.Provider,
-	usage *AIUsageService,
+	usage AIUsageLifecycle,
 	routes AICompletionRouteRegistry,
 ) *AICompletionService {
 	return &AICompletionService{provider: provider, usage: usage, routes: routes}
@@ -142,7 +150,9 @@ func completeAI(ctx context.Context, provider llm.Provider, input AICompletionRe
 			FeatureKey: input.FeatureKey, OperationKey: input.OperationKey,
 			IdempotencyKey: fmt.Sprintf("%s:route:%d", input.IdempotencyKey, index), Metadata: input.Metadata,
 		})
-		response, err := provider.ChatCompletion(legacyCtx, chat)
+		attemptCtx, cancelAttempt := completionAttemptContext(legacyCtx, input.FeatureKey, route)
+		response, err := provider.ChatCompletion(attemptCtx, chat)
+		cancelAttempt()
 		if err == nil && response == nil {
 			err = fmt.Errorf("provider returned no response")
 		}
@@ -156,7 +166,7 @@ func completeAI(ctx context.Context, provider llm.Provider, input AICompletionRe
 			return response, nil
 		}
 		attemptErrors = append(attemptErrors, err)
-		retry := llm.IsRetryableProviderError(err) || input.RetryInvalidOutput
+		retry := llm.IsRetryableProviderError(err) || input.RetryInvalidOutput || (errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil)
 		if !retry || index == len(routes)-1 {
 			break
 		}
@@ -178,14 +188,44 @@ func (s *AICompletionService) completeAttempt(
 	if err != nil {
 		return nil, false, err
 	}
-	attemptKey := fmt.Sprintf("%s:route:%d:%s", input.IdempotencyKey, index, aiUsageStableHash(aiCompletionRouteKey(route)))
+	return s.runMeteredAttempt(ctx, input, meteredCompletionAttempt{
+		client: s.provider, chat: chat, route: route,
+		policyRoute:   aipolicy.Route{Provider: route.Provider, Model: route.Model},
+		key:           fmt.Sprintf("%s:route:%d:%s", input.IdempotencyKey, index, aiUsageStableHash(aiCompletionRouteKey(route))),
+		index:         index,
+		funding:       aiusage.FundingHelpinHosted,
+		retryUnpriced: input.PreferredRoute != nil && policy.PreferRequestRoute,
+	})
+}
+
+// meteredCompletionAttempt is one governed, metered provider call. Catalogued
+// routes run on the server provider router; workspace AI profiles run on a
+// client bound to the profile's connection with the profile's funding policy.
+type meteredCompletionAttempt struct {
+	client llm.Provider
+	chat   llm.ChatRequest
+	// route identifies the executed provider and model for audit and metering.
+	route AICompletionRoute
+	// policyRoute is validated against the action's allowed routes; an empty
+	// route validates the action identity with its default route.
+	policyRoute   aipolicy.Route
+	endpoint      *sdk.ModelEndpoint
+	key           string
+	index         int
+	funding       aiusage.FundingMode
+	flatTariff    *aiusage.FlatTokenTariff
+	retryUnpriced bool
+}
+
+func (s *AICompletionService) runMeteredAttempt(ctx context.Context, input AICompletionRequest, a meteredCompletionAttempt) (*llm.ChatResponse, bool, error) {
+	route, chat, attemptKey, index := a.route, a.chat, a.key, a.index
 	var auditExecution *model.AIActionExecution
 	if s.policy != nil {
 		action, policyErr := aipolicy.ResolveExecution(s.policy, aipolicy.ExecutionContext{
 			WorkspaceID: input.WorkspaceID, ActionKey: input.ActionKey,
 			FeatureKey: input.FeatureKey, IdempotencyKey: input.IdempotencyKey,
 			Attempt: index + 1, Metadata: input.Metadata,
-		}, aipolicy.Route{Provider: route.Provider, Model: route.Model})
+		}, a.policyRoute)
 		if policyErr != nil {
 			return nil, false, policyErr
 		}
@@ -208,19 +248,39 @@ func (s *AICompletionService) completeAttempt(
 	promotional := known && !feature.Chargeable
 	preflight, err := s.usage.Preflight(ctx, PreflightRequest{Metering: MeteringRequest{
 		WorkspaceID: input.WorkspaceID, TaskNature: taskNatureForFeature(input.FeatureKey),
-		FeatureKey: input.FeatureKey, OperationKey: input.OperationKey,
+		FeatureKey: input.FeatureKey, OperationKey: input.OperationKey, Endpoint: a.endpoint,
 		Provider: route.Provider, Model: route.Model, Route: route.Model, ServiceTier: route.ServiceTier,
-		FundingMode: aiusage.FundingHelpinHosted, InputTokensEstimate: estimateChatInputTokens(input.Chat),
+		FundingMode: a.funding, FlatTariff: a.flatTariff, InputTokensEstimate: estimateChatInputTokens(input.Chat),
 		MaximumOutputTokens: int64(input.Chat.MaxTokens), ExecutionID: metadataString(input.Metadata, "execution_id"),
 		IdempotencyKey: attemptKey, Promotional: promotional,
 	}})
 	if err != nil {
 		s.finishCompletionAudit(ctx, auditExecution, nil, "llm_preflight", err)
-		retry := input.PreferredRoute != nil && policy.PreferRequestRoute && errors.Is(err, model.ErrModelUnavailableUnderPricing)
+		retry := a.retryUnpriced && errors.Is(err, model.ErrModelUnavailableUnderPricing)
 		return nil, retry, err
 	}
 
-	response, providerErr := s.provider.ChatCompletion(ctx, chat)
+	attemptStart := time.Now()
+	attemptCtx, cancelAttempt := completionAttemptContext(ctx, input.FeatureKey, route)
+	response, providerErr := a.client.ChatCompletion(attemptCtx, chat)
+	cancelAttempt()
+	attemptDuration := time.Since(attemptStart)
+	attemptOutcome := "provider_error"
+	var measured *aiusage.TokenTelemetry
+	defer func() {
+		if input.FeatureKey == BillingFeatureSupportTranslation {
+			stage := "translation"
+			if input.OperationKey == "quality_review" {
+				stage = "sample_review"
+			}
+			s.metrics.TranslationAttempt(stage, route.Provider, route.Model, attemptOutcome, attemptDuration, measured, preflight.Route.Rates)
+		}
+	}()
+	if response != nil && measurementStatus(response.TokensUsed) == "actual" {
+		u := response.TokensUsed
+		measured = &aiusage.TokenTelemetry{InputTokensTotal: int64(u.InputTokensTotal), CacheReadTokens: int64(u.CacheReadTokens), CacheWriteTokens: int64(u.CacheWriteTokens), CompletionTokensTotal: int64(u.CompletionTokensTotal), OutputTokens: int64(u.OutputTokens), ReasoningTokens: int64(u.ReasoningTokens), CompletionIncludesReasoning: u.CompletionIncludesReasoning}
+	}
+
 	// Finish metering and the audit even when an interactive request times out
 	// or its caller disconnects. Cleanup itself must remain bounded.
 	settlementCtx, cancelSettlement := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
@@ -238,7 +298,7 @@ func (s *AICompletionService) completeAttempt(
 			}
 		}
 		s.finishCompletionAudit(settlementCtx, auditExecution, response, "llm_provider", providerErr)
-		return nil, llm.IsRetryableProviderError(providerErr), providerErr
+		return nil, llm.IsRetryableProviderError(providerErr) || (errors.Is(providerErr, context.DeadlineExceeded) && ctx.Err() == nil), providerErr
 	}
 
 	_, reconcileErr := s.usage.Reconcile(settlementCtx, CompletionUsage{
@@ -259,6 +319,7 @@ func (s *AICompletionService) completeAttempt(
 			"workspace_id", input.WorkspaceID, "feature_key", input.FeatureKey, "error", reconcileErr)
 	}
 
+	attemptOutcome = "invalid_output"
 	if input.RequireComplete && isIncompleteFinishReason(response.FinishReason) {
 		completionErr := fmt.Errorf("model output was incomplete (finish_reason=%s)", response.FinishReason)
 		s.finishCompletionAudit(settlementCtx, auditExecution, response, "llm_contract", completionErr)
@@ -269,6 +330,10 @@ func (s *AICompletionService) completeAttempt(
 			s.finishCompletionAudit(settlementCtx, auditExecution, response, "llm_contract", err)
 			return nil, input.RetryInvalidOutput, err
 		}
+	}
+	attemptOutcome = "success"
+	if reconcileErr != nil {
+		attemptOutcome = "accounting_error"
 	}
 	s.finishCompletionAudit(settlementCtx, auditExecution, response, "", nil)
 	return response, false, nil
@@ -298,6 +363,17 @@ func (s *AICompletionService) finishCompletionAudit(ctx context.Context, executi
 func completionChatRequest(input llm.ChatRequest, route AICompletionRoute) (llm.ChatRequest, error) {
 	input.Provider = route.Provider
 	input.Model = route.Model
+	if route.ProviderOptions != "" {
+		input.ProviderOptions = json.RawMessage(route.ProviderOptions)
+	}
+	if route.DisableReasoning {
+		disabled := false
+		input.Reasoning = &llm.ReasoningConfig{Enabled: &disabled}
+	}
+	if route.Model == "deepseek/deepseek-v4.1-flash" && route.OpenRouterProvider == "coreweave/fp8" {
+		disabled := false
+		input.Reasoning = &llm.ReasoningConfig{Enabled: &disabled}
+	}
 	openRouterProvider := strings.TrimSpace(route.OpenRouterProvider)
 	if openRouterProvider == "" {
 		return input, nil
@@ -351,4 +427,14 @@ func isIncompleteFinishReason(reason string) bool {
 	default:
 		return false
 	}
+}
+
+func completionAttemptContext(ctx context.Context, feature string, route AICompletionRoute) (context.Context, context.CancelFunc) {
+	if route.AttemptTimeout > 0 {
+		return context.WithTimeout(ctx, route.AttemptTimeout)
+	}
+	if feature == BillingFeatureSupportTranslation {
+		return context.WithTimeout(ctx, 12*time.Second)
+	}
+	return context.WithCancel(ctx)
 }

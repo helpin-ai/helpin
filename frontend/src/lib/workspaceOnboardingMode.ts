@@ -1,71 +1,58 @@
-type WorkspaceOnboardingModeInput = {
-  create?: boolean;
-  forceFullPage?: boolean;
-  isLoading: boolean;
-  workspaceCount: number;
-  hasStartedOnboarding: boolean;
-};
-
+/**
+ * URL-addressable steps of the workspace onboarding at `/onboarding?step=`.
+ * Steps after `workspace` also carry `workspace=<slug>` so a reload resumes
+ * against the workspace that was already created.
+ */
 export const workspaceOnboardingSteps = [
-  'details',
-  'use-cases',
-  'learning',
+  'workspace',
+  'ai',
+  'github',
   'context',
   'teams',
   'invite',
+  'finish',
 ] as const;
 
 export type WorkspaceOnboardingStep = (typeof workspaceOnboardingSteps)[number];
 
+/** Step names used by earlier versions of the flow, kept so old links still open it. */
+const legacyStepAliases: Record<string, WorkspaceOnboardingStep> = {
+  details: 'workspace',
+  'use-cases': 'workspace',
+  learning: 'context',
+};
+
 export function parseWorkspaceOnboardingStep(value: unknown): WorkspaceOnboardingStep | undefined {
-  return typeof value === 'string' && workspaceOnboardingSteps.includes(value as WorkspaceOnboardingStep)
-    ? value as WorkspaceOnboardingStep
-    : undefined;
+  if (typeof value !== 'string') return undefined;
+  if (workspaceOnboardingSteps.includes(value as WorkspaceOnboardingStep)) {
+    return value as WorkspaceOnboardingStep;
+  }
+  return legacyStepAliases[value];
 }
 
-export function shouldUseFullPageWorkspaceOnboarding({
-  create,
-  forceFullPage,
-  isLoading,
-  workspaceCount,
-  hasStartedOnboarding,
-}: WorkspaceOnboardingModeInput) {
-  if (isLoading) {
-    return false;
-  }
-  if (forceFullPage) {
-    return true;
-  }
-  if (!create) {
-    return false;
-  }
-  return workspaceCount === 0 || hasStartedOnboarding;
+export function parseWorkspaceOnboardingSlug(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
+/** Choosing an organization only matters when the person belongs to more than one. */
 export function shouldShowWorkspaceOnboardingOrganizationSelector({
-  isFullPageOnboarding,
   organizationCount,
 }: {
-  isFullPageOnboarding: boolean;
   organizationCount: number;
 }) {
-  return !isFullPageOnboarding && organizationCount > 0;
+  return organizationCount > 1;
 }
 
-export function shouldContinueToInviteStepAfterWorkspaceCreate({
-  isFullPageOnboarding,
+/**
+ * Where the owner lands after creating a workspace. Whenever the API serves the
+ * Setup guide, every new workspace opens it; otherwise the owner lands on My Work.
+ */
+export function workspaceCreatedDestination({
+  slug,
+  setupGuideEnabled,
 }: {
-  isFullPageOnboarding: boolean;
+  slug: string;
+  setupGuideEnabled: boolean;
 }) {
-  return isFullPageOnboarding;
-}
-
-export function shouldClearWorkspaceCreateSearchAfterDialogOpen({
-  create,
-  isFullPageOnboarding,
-}: {
-  create?: boolean;
-  isFullPageOnboarding: boolean;
-}) {
-  return Boolean(create) && !isFullPageOnboarding;
+  return setupGuideEnabled ? `/w/${slug}/setup` : `/w/${slug}/pm/my-work`;
 }

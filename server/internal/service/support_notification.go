@@ -110,7 +110,7 @@ func ProcessSupportMentions(
 		slog.ErrorContext(ctx, "emit support mention notification", "error", err, "conversation_id", conv.ID)
 	}
 
-	pushSender.NotifyUsers(ctx, mentionedUserIDs, PushNotification{
+	notifService.sendSupportPush(ctx, pushSender, mentionedUserIDs, conv, "support_conversation.mentioned", "", PushNotification{
 		Title: resolveSupportActorPushTitle(ctx, notifService, actorID, conv.Subject),
 		Body:  truncate(messageContent, 140),
 		Data:  buildSupportPushData(ctx, notifService.workspaceRepo, conv),
@@ -142,7 +142,7 @@ func ProcessSupportCustomerReplyNotification(
 			MailboxID:          conv.MailboxID,
 			OwnerUserID:        conv.OpenedByUserID,
 			EventType:          "support_conversation.customer_reply",
-			Channel:            "in_app",
+			Channel:            "any",
 			RequirePreferences: true,
 			Now:                time.Now(),
 		},
@@ -185,9 +185,33 @@ func ProcessSupportCustomerReplyNotification(
 	if pushTitle == "" {
 		pushTitle = "Customer replied"
 	}
-	pushSender.NotifyUsers(ctx, []string{recipientID}, PushNotification{
+	notifService.sendSupportPush(ctx, pushSender, []string{recipientID}, conv, "support_conversation.customer_reply", selection.TeamID, PushNotification{
 		Title: pushTitle,
 		Body:  truncate(content, 140),
 		Data:  buildSupportPushData(ctx, notifService.workspaceRepo, conv),
 	})
+}
+
+// Push follows the in-app category preference as well as the global pause/mute controls.
+func (s *NotificationService) sendSupportPush(ctx context.Context, sender *PushSenderService, users []string, conv *model.SupportConversation, eventType, teamID string, push PushNotification) {
+	allowedUsers := []string{}
+	for _, userID := range users {
+		allowed, err := s.canReceive(ctx, userID, model.NotificationEventInput{WorkspaceID: conv.WorkspaceID, EntityType: "support_conversation", EntityID: conv.ID, EventType: eventType})
+		if err != nil {
+			s.logger.ErrorContext(ctx, "check support push access", "error", err)
+			continue
+		}
+		if !allowed {
+			continue
+		}
+		enabled, err := s.prefRepo.ShouldNotify(ctx, userID, conv.WorkspaceID, eventType, "in_app", teamID)
+		if err != nil {
+			s.logger.ErrorContext(ctx, "check support push preferences", "error", err)
+			continue
+		}
+		if enabled {
+			allowedUsers = append(allowedUsers, userID)
+		}
+	}
+	sender.NotifyUsers(ctx, allowedUsers, push)
 }

@@ -3,7 +3,6 @@ import type {
   AgentPresetKey,
   AgentRun,
   AgentRunMessage,
-  CodexAuthState,
   CodingSession,
   CodingSessionEventListResponse,
   CodingSessionInteraction,
@@ -14,6 +13,7 @@ import type {
 
 /** One dock conversation with creator-owned settings and explicit visibility. */
 export interface DockChat {
+  execution_enabled?: boolean
   id: string
   workspace_id: string
   user_id: string
@@ -30,9 +30,11 @@ export interface DockChat {
 }
 
 export interface DockChatDetail {
+  work_plans?: import('@/lib/pmTypes').RunPlanArtifact[]
   chat: DockChat
   run?: AgentRun | null
   accepted_message?: AgentRunMessage | null
+  artifacts?: import('@/lib/pmTypes').AgentRunArtifact[]
   plan_ids: string[]
   plans?: CommandBarPlanSummary[]
 }
@@ -43,6 +45,9 @@ export interface DockChatListResponse {
 }
 
 export interface SendDockChatMessageRequest {
+  ai_profile_id?: string;
+  model_connection_id?: string;
+  model_name?: string;
   client_message_id: string
   content: string
   page_context?: CommandBarPageContext
@@ -84,6 +89,7 @@ export interface GenerateDockChatTitleRequest {
 }
 
 export interface UpdateDockChatRequest {
+  execution_enabled?: boolean
   title?: string
   archived?: boolean
   visibility?: DockChatVisibility
@@ -169,8 +175,6 @@ export interface DockRunAPI {
   sendMessage: (workspaceId: string, runId: string, content: string) => Promise<{ data: AgentRunMessage | null; error: string | null }>
   continueRun: (workspaceId: string, runId: string, content?: string) => Promise<{ data: AgentRun | null; error: string | null }>
   cancelRun: (workspaceId: string, runId: string) => Promise<{ data: AgentRun | null; error: string | null }>
-  startAuth: (workspaceId: string, runId: string) => Promise<{ data: CodexAuthState | null; error: string | null }>
-  cancelAuth: (workspaceId: string, runId: string) => Promise<{ data: CodexAuthState | null; error: string | null }>
 }
 
 /**

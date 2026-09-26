@@ -1,9 +1,54 @@
-# Agent "Awaiting Input" — Kanban Prominence + Notification Dispatch
+# Agent attention badges and notification dispatch
 
 **Date:** 2026-04-21
 **Author:** azhar
 **Branch:** `feature/live-chat-events-pipeline` (or new branch off `develop`)
-**Status:** Draft
+**Status:** Historical plan; source-compared 2026-09-18
+
+
+This plan records the original proposal for making paused agent runs visible.
+Use the current notes to distinguish implemented UI from unverified notification
+production; the original “verified” section describes an earlier checkout.
+
+## Current implementation and limits
+
+- [PMTask](../../server/internal/model/pm_task.go) includes
+  `latest_run_pause_reason` with `gorm:"-"`: it is a response enrichment, not
+  the proposed persisted task column. The
+  [repository](../../server/internal/repository/pm_task.go) loads latest-run
+  metadata from `agent_runs`, choosing by started-or-created recency. It does
+  not select only active runs, so a newer terminal run can hide an older pause.
+  The proposed column migration and backfill are not the current design.
+- [TaskCard](../../frontend/src/components/pm/TaskCard.tsx) derives an attention
+  label when the latest run is paused. It supports human input, approval,
+  authentication, and `awaiting_user_message`; unknown nonempty reasons fall
+  back to “Awaiting your input.” Its memo comparison includes pause reason.
+- [Realtime sync](../../frontend/src/hooks/useRealtimeSync.ts) invalidates
+  notification queries and shows a ten-second attention toast for matching
+  `created` events addressed to the signed-in user, excluding self-actor events.
+  Its body is generic, not a task title plus reason-specific subtitle. The CTA
+  uses `parent_task_id` and opens the task URL without an explicit run parameter;
+  the plan's promise that this CTA opens the paused run is not established.
+- [NotificationCenter](../../frontend/src/components/notifications/NotificationCenter.tsx)
+  gives attention rows amber styling. Its navigation separately supports a
+  task/run target when the notification contains the required metadata.
+- The old `server/internal/temporalapp/activities.go` emitter no longer exists.
+  A search of current `server/internal` Go sources found the exact event type in
+  category/notification definitions and tests, but did not establish a current
+  producer emitting it for all pause reasons. UI handling alone does not prove
+  delivery or the proposed one-to-two-second latency.
+- [Coding-session cleanup](../../server/internal/service/coding_session.go)
+  calls [MarkAgentAttentionResolved](../../server/internal/service/notification.go),
+  which marks matching unread notifications as read. This is not deletion or
+  archival and does not by itself prove every terminal path invokes cleanup.
+
+No application tests, live pauses, notification sends, or browser verification
+were performed for this source review. The original rollout and test instructions
+are historical; nullable fields or AutoMigrate assumptions alone do not establish
+safe deployment. Use the current versioned migration process for actual schema
+changes.
+
+## Original plan
 
 ## Problem
 

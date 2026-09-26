@@ -148,10 +148,12 @@ func TestS3ImageUploader_UsesActualPayloadLength(t *testing.T) {
 	if string(store.body) != "png-binary" {
 		t.Fatalf("body = %q", string(store.body))
 	}
-	if !store.publicRead {
-		t.Fatal("expected publicRead to be true")
+	if store.publicRead {
+		t.Fatal("imported Docs images must remain private")
 	}
 	if !strings.HasPrefix(store.key, "docs-import/ws-1/") {
 		t.Fatalf("key = %q", store.key)
 	}
 }
+
+func (f *fakeDocsImageStore) PrivateBucket() bool { return true }

@@ -22,7 +22,7 @@ func TestWidgetSafeSupportMessagesRemovesLinkSecurity(t *testing.T) {
 	if strings.Contains(got[0].Metadata, "link_security") {
 		t.Fatalf("widget metadata leaked link security: %s", got[0].Metadata)
 	}
-	if !strings.Contains(got[0].Metadata, "link_previews") || !strings.Contains(got[0].Metadata, `"other":true`) {
+	if !strings.Contains(got[0].Metadata, "link_previews") || strings.Contains(got[0].Metadata, `"other"`) {
 		t.Fatalf("widget metadata lost safe fields: %s", got[0].Metadata)
 	}
 	if strings.Contains(messages[0].Metadata, `"other":false`) {

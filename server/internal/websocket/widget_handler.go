@@ -12,10 +12,12 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/requestmeta"
+	"github.com/helpin-ai/helpin/server/internal/widgetorigin"
 )
 
 // WidgetService defines the service methods needed by the widget WS handler.
 type WidgetService interface {
+	AuthorizeWidgetOrigin(context.Context, string, widgetorigin.Reference) error
 	GetInstallationByWidgetKey(ctx context.Context, widgetKey string) (*model.SupportWidgetInstallation, error)
 	CreateWidgetSession(ctx context.Context, widgetKey string, anonymousID string, customerName, customerEmail *string, userAgent, pageURL, timezone, locale *string) (*model.SupportWidgetSession, error)
 	UpdateSessionPageURL(ctx context.Context, sessionToken, url string) error
@@ -65,15 +67,18 @@ func (h *WidgetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate widget_key exists
-	_, err := h.service.GetInstallationByWidgetKey(ctx, widgetKey)
-	if err != nil {
-		http.Error(w, "invalid widget key", http.StatusBadRequest)
+	var admissionErr error
+	if len(r.Header.Values("Origin")) <= 1 {
+		admissionErr = h.service.AuthorizeWidgetOrigin(ctx, r.Header.Get("Origin"), widgetorigin.Reference{WidgetKey: widgetKey, SessionToken: legacyToken})
+	}
+	if len(r.Header.Values("Origin")) > 1 || admissionErr != nil {
+		widgetorigin.LogRejection(ctx, r, admissionErr)
+		http.Error(w, "widget origin or credentials are not allowed", http.StatusForbidden)
 		return
 	}
 
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true, // allow cross-origin widget connections
+		InsecureSkipVerify: true, // installation origin policy checked above
 	})
 	if err != nil {
 		slog.Error("widget ws: accept error", "error", err)
@@ -102,7 +107,7 @@ func (h *WidgetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "session:create":
 		session, err = h.handleSessionCreate(ctx, widgetKey, msg, conn)
 	case "session:restore":
-		session, err = h.handleSessionRestore(ctx, widgetKey, msg, conn)
+		session, err = h.handleSessionRestore(ctx, widgetKey, r.Header.Get("Origin"), msg, conn)
 	default:
 		slog.Warn("widget ws: unexpected first message type", "type", msg.Type)
 		conn.Close(websocket.StatusPolicyViolation, "expected session:create or session:restore")
@@ -119,6 +124,15 @@ func (h *WidgetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // serveLegacy handles legacy widget connections that pass session_token in the URL.
 func (h *WidgetHandler) serveLegacy(ctx context.Context, w http.ResponseWriter, r *http.Request, sessionToken string) {
+	var admissionErr error
+	if len(r.Header.Values("Origin")) <= 1 {
+		admissionErr = h.service.AuthorizeWidgetOrigin(ctx, r.Header.Get("Origin"), widgetorigin.Reference{SessionToken: sessionToken})
+	}
+	if len(r.Header.Values("Origin")) > 1 || admissionErr != nil {
+		widgetorigin.LogRejection(ctx, r, admissionErr)
+		http.Error(w, "widget origin or credentials are not allowed", http.StatusForbidden)
+		return
+	}
 	session, err := h.service.GetWidgetSession(ctx, sessionToken)
 	if err != nil {
 		slog.Warn("widget ws: invalid session", "error", err)
@@ -127,7 +141,7 @@ func (h *WidgetHandler) serveLegacy(ctx context.Context, w http.ResponseWriter, 
 	}
 
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true,
+		InsecureSkipVerify: true, // installation origin policy checked above
 	})
 	if err != nil {
 		slog.Error("widget ws: accept error", "error", err)
@@ -144,6 +158,9 @@ func (h *WidgetHandler) serveLegacy(ctx context.Context, w http.ResponseWriter, 
 		AnonymousID:    session.AnonymousID,
 	}
 
+	if conversations, err := h.service.GetVisitorConversations(ctx, session.WorkspaceID, session.AnonymousID); err == nil {
+		h.rememberConversationTeammates(client, conversations)
+	}
 	h.hub.Register(client)
 	if session.AnonymousID != "" {
 		h.hub.SetVisitorOnline(session.WorkspaceID, session.AnonymousID)
@@ -245,8 +262,7 @@ func (h *WidgetHandler) handleSessionCreate(ctx context.Context, widgetKey strin
 
 	session, err := h.service.CreateWidgetSession(ctx, widgetKey, anonymousID, nil, nil, uaPtr, pageURLPtr, tzPtr, localePtr)
 	if err != nil {
-		slog.Error("widget ws: session create failed", "error", err)
-		SendToClient(conn, "session:error", map[string]string{"code": "create_failed", "message": err.Error()})
+		sendWidgetOperationError(ctx, conn, "session:error", "create_failed", err)
 		conn.Close(websocket.StatusInternalError, "session create failed")
 		return nil, err
 	}
@@ -260,7 +276,7 @@ func (h *WidgetHandler) handleSessionCreate(ctx context.Context, widgetKey strin
 	return session, nil
 }
 
-func (h *WidgetHandler) handleSessionRestore(ctx context.Context, widgetKey string, msg model.WidgetWSMessage, conn *websocket.Conn) (*model.SupportWidgetSession, error) {
+func (h *WidgetHandler) handleSessionRestore(ctx context.Context, widgetKey, origin string, msg model.WidgetWSMessage, conn *websocket.Conn) (*model.SupportWidgetSession, error) {
 	typed, err := unmarshalWidgetData[model.WidgetSessionRestoreData](msg.Data)
 	if err != nil {
 		slog.Warn("widget ws: invalid session:restore data", "error", err)
@@ -275,7 +291,20 @@ func (h *WidgetHandler) handleSessionRestore(ctx context.Context, widgetKey stri
 		return nil, nil
 	}
 
-	session, err := h.service.GetWidgetSession(ctx, token)
+	err = h.service.AuthorizeWidgetOrigin(ctx, origin, widgetorigin.Reference{WidgetKey: widgetKey, SessionToken: token})
+	var session *model.SupportWidgetSession
+	if err == nil {
+		session, err = h.service.GetWidgetSession(ctx, token)
+		if err == nil && session != nil {
+			if refresher, ok := h.service.(interface {
+				RefreshWidgetLocale(context.Context, *model.SupportWidgetSession, string) error
+			}); ok {
+				if localeErr := refresher.RefreshWidgetLocale(ctx, session, typed.Locale); localeErr != nil {
+					slog.WarnContext(ctx, "refresh widget locale failed")
+				}
+			}
+		}
+	}
 	if err != nil {
 		// Token invalid/expired/revoked — tell client to recreate
 		slog.Info("widget ws: session restore failed, client should recreate", "error", err)
@@ -353,8 +382,8 @@ func (h *WidgetHandler) sendSessionJoined(ctx context.Context, conn *websocket.C
 		ExpiresAt:      session.ExpiresAt.Format(time.RFC3339),
 		IsAnonymous:    session.IsAnonymous,
 		CustomerEmail:  customerEmail,
-		Conversations:  conversations,
-		Messages:       messages,
+		Conversations:  model.PublicWidgetConversations(conversations),
+		Messages:       model.PublicWidgetMessages(messages),
 		ActiveTeammate: activeTeammate,
 	})
 }
@@ -370,6 +399,19 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 		AnonymousID:    session.AnonymousID,
 	}
 
+	// Subscribe only to teammates already public in this widget's config/history.
+	if provider, ok := h.service.(interface {
+		GetPublicWidgetConfig(context.Context, string) (*model.WidgetConfigResponse, error)
+	}); ok && widgetKey != "" {
+		if config, err := provider.GetPublicWidgetConfig(ctx, widgetKey); err == nil && config != nil {
+			for _, teammate := range config.AvailableTeammates {
+				h.hub.rememberWidgetTeammates(client, teammate.UserID)
+			}
+		}
+	}
+	if conversations, err := h.service.GetVisitorConversations(ctx, session.WorkspaceID, session.AnonymousID); err == nil {
+		h.rememberConversationTeammates(client, conversations)
+	}
 	h.hub.Register(client)
 	if session.AnonymousID != "" {
 		h.hub.SetVisitorOnline(session.WorkspaceID, session.AnonymousID)
@@ -440,7 +482,7 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			previousConversationID := derefStr(client.ConversationID)
 			result, err := h.service.WidgetCreateMessage(ctx, session.SessionToken, content, typed.AttachmentIDs)
 			if err != nil {
-				SendToClient(conn, "connection:error", map[string]string{"code": "send_failed", "message": err.Error()})
+				sendWidgetOperationError(ctx, conn, "connection:error", "send_failed", err)
 				continue
 			}
 			// Re-sync routing from the persisted result instead of the stale handler session.
@@ -455,18 +497,7 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 				}
 			}
 			// Echo back to sender with server-assigned ID
-			SendToClient(conn, "message:received", model.WidgetMessageReceivedPayload{
-				ID:             result.ID,
-				ConversationID: result.ConversationID,
-				Content:        result.Content,
-				SenderType:     result.SenderType,
-				MessageType:    result.MessageType,
-				SenderName:     result.SenderDisplayName,
-				SenderAvatar:   result.SenderAvatarURL,
-				ViaChannel:     derefStr(result.ViaChannel),
-				Attachments:    result.Attachments,
-				CreatedAt:      result.CreatedAt.Format(time.RFC3339),
-			})
+			SendToClient(conn, "message:received", model.PublicWidgetMessage(result))
 
 		case "typing:start":
 			conversationID := derefStr(client.ConversationID)
@@ -524,7 +555,7 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			if email != "" {
 				err = h.service.UpgradeWidgetSession(ctx, session.SessionToken, typed)
 				if err != nil {
-					SendToClient(conn, "connection:error", map[string]string{"code": "upgrade_failed", "message": err.Error()})
+					sendWidgetOperationError(ctx, conn, "connection:error", "upgrade_failed", err)
 					continue
 				}
 				session.CustomerEmail = &email
@@ -552,7 +583,8 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			if convs == nil {
 				convs = []model.SupportConversation{}
 			}
-			SendToClient(conn, "conversations:listed", map[string]any{"conversations": convs})
+			h.rememberConversationTeammates(client, convs)
+			SendToClient(conn, "conversations:listed", map[string]any{"conversations": model.PublicWidgetConversations(convs)})
 
 		case "conversation:escalate":
 			if session.ConversationID == nil {
@@ -578,12 +610,13 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 				"conversation_id": *session.ConversationID,
 				"active_teammate": activeTeammate,
 			})
-			SendToClient(conn, "conversations:listed", map[string]any{"conversations": convs})
+			h.rememberConversationTeammates(client, convs)
+			SendToClient(conn, "conversations:listed", map[string]any{"conversations": model.PublicWidgetConversations(convs)})
 
 		case "conversation:new":
 			// Clear the persisted active conversation before the next message creates a fresh one.
 			if err := h.service.ClearSessionConversation(ctx, session.SessionToken); err != nil {
-				SendToClient(conn, "connection:error", map[string]string{"code": "conversation_reset_failed", "message": err.Error()})
+				sendWidgetOperationError(ctx, conn, "connection:error", "conversation_reset_failed", err)
 				continue
 			}
 			session.ConversationID = nil
@@ -594,7 +627,7 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			// this frame was received above.
 			refreshed, err := h.service.GetWidgetSession(ctx, session.SessionToken)
 			if err != nil {
-				SendToClient(conn, "connection:error", map[string]string{"code": "session_expired", "message": err.Error()})
+				sendWidgetOperationError(ctx, conn, "connection:error", "session_expired", err)
 				return
 			}
 			session.ExpiresAt = refreshed.ExpiresAt
@@ -625,7 +658,7 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 				continue
 			}
 			if err := h.service.SetSessionConversation(ctx, session.SessionToken, convID); err != nil {
-				SendToClient(conn, "connection:error", map[string]string{"code": "conversation_select_failed", "message": err.Error()})
+				sendWidgetOperationError(ctx, conn, "connection:error", "conversation_select_failed", err)
 				continue
 			}
 			// Update session and hub routing to the selected conversation
@@ -643,13 +676,13 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			// Load and send messages for the selected conversation
 			msgs, err := h.service.ListWidgetConversationMessages(ctx, session.WorkspaceID, convID)
 			if err != nil {
-				SendToClient(conn, "connection:error", map[string]string{"code": "load_failed", "message": err.Error()})
+				sendWidgetOperationError(ctx, conn, "connection:error", "load_failed", err)
 				continue
 			}
 			if msgs == nil {
 				msgs = []model.SupportMessage{}
 			}
-			SendToClient(conn, "conversation:messages", map[string]any{"messages": msgs})
+			SendToClient(conn, "conversation:messages", map[string]any{"messages": model.PublicWidgetMessages(msgs)})
 		}
 	}
 }

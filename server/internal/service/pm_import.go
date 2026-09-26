@@ -31,7 +31,7 @@ type PMImportService struct {
 	docsContentSvc    *DocsContentService
 	publisher         *websocket.Publisher
 	temporalClient    tclient.Client
-	entitlementSvc    *EntitlementService
+	entitlementSvc    EntitlementPolicy
 	encryptionKey     []byte
 }
 
@@ -80,7 +80,7 @@ func (s *PMImportService) SetTemporalClient(client tclient.Client) {
 	s.temporalClient = client
 }
 
-func (s *PMImportService) SetEntitlementService(entitlementSvc *EntitlementService) *PMImportService {
+func (s *PMImportService) SetEntitlementService(entitlementSvc EntitlementPolicy) *PMImportService {
 	s.entitlementSvc = entitlementSvc
 	return s
 }
@@ -2098,15 +2098,6 @@ func mapKeys[T any](m map[string]T) []string {
 	return keys
 }
 
-func sortedSetKeys(set map[string]struct{}) []string {
-	keys := make([]string, 0, len(set))
-	for key := range set {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
 func countWorkflowStates(workflows map[string]*shortcutWorkflowAggregate) int {
 	total := 0
 	for _, workflow := range workflows {
@@ -2250,15 +2241,6 @@ func shortcutWorkflowTeamLookupKeys(workflowID, workflowName, teamID string) []s
 
 func shortcutWorkflowStateKey(workflowKey, stateName string) string {
 	return workflowKey + "::" + normalizeShortcutName(stateName)
-}
-
-func shortcutWorkflowStateLookupKeys(workflowID, workflowName, stateName string) []string {
-	keys := shortcutWorkflowLookupKeys(workflowID, workflowName)
-	out := make([]string, 0, len(keys))
-	for _, key := range keys {
-		out = append(out, shortcutWorkflowStateKey(key, stateName))
-	}
-	return out
 }
 
 func shortcutWorkflowStateTeamLookupKeys(workflowID, workflowName, stateName, teamID string) []string {

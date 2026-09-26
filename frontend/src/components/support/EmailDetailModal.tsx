@@ -53,7 +53,7 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] max-w-3xl gap-0 overflow-hidden p-0 sm:max-w-3xl lg:max-w-4xl">
+      <DialogContent aria-describedby={undefined} className="max-h-[85vh] max-w-3xl gap-0 overflow-hidden p-0 sm:max-w-3xl lg:max-w-4xl">
         <DialogTitle className="sr-only">{subject}</DialogTitle>
 
         <div className="flex max-h-[85vh] min-h-0 flex-col">

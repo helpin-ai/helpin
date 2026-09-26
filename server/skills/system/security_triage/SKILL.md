@@ -162,7 +162,7 @@ Gitleaks:
 
 If a scanner is unavailable, fails to execute, or cannot download required data, record the limitation and continue with the remaining scanners. Do not fabricate findings.
 
-The worker image prewarms Trivy vulnerability databases under the read-only image cache and ships local Semgrep rules under `/app/security-rules/semgrep`. The scanner tools seed writable runtime caches under `/tmp/helpin-security-cache` so Kubernetes workers with a read-only root filesystem can still run scanners safely.
+Scanner availability depends on the deployed Agent Runtime image and configuration. Do not assume scanner binaries, prewarmed databases, or bundled rules are installed. The scanner tools own cache preparation and fallback behavior; use their returned warnings and errors to report unavailable scanners or incomplete scans. A zero-finding result with an execution or parsing warning is not evidence that the repository is free of findings.
 
 ## Applicability Triage
 

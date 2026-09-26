@@ -59,6 +59,7 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 			PRIMARY KEY (agent_id, team_id)
 		)`,
 		`CREATE TABLE crm_email_accounts (
+			signature TEXT NOT NULL DEFAULT '',
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			member_id TEXT NOT NULL,
@@ -79,6 +80,7 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 			updated_at DATETIME
 		)`,
 		`CREATE TABLE agents (
+ ai_profile_id TEXT,
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			is_system BOOLEAN NOT NULL DEFAULT 0,
@@ -350,6 +352,41 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 		t.Fatalf("get inventory: %v", err)
 	}
 
+	if result.SemanticConditions.Available || result.SemanticConditions.Reason != "not_configured" {
+		t.Fatalf("unexpected no-key availability: %+v", result.SemanticConditions)
+	}
+	decisions, provider, _, _ := setupJevDecisionTest(t, "primary")
+	decisions.workspaces = map[string]bool{workspaceID: true}
+	svc.SetJevDecisions(decisions)
+	for _, tc := range []struct {
+		mode, reason string
+		available    bool
+	}{
+		{"primary", "", true}, {"shadow", "shadow", false}, {"off", "disabled", false},
+	} {
+		policy := decisions.policies[JevAutomationCondition]
+		policy.Mode = tc.mode
+		decisions.policies[JevAutomationCondition] = policy
+		inventory, err := svc.GetWorkspaceInventory(ctx, workspaceID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if inventory.SemanticConditions.Available != tc.available || inventory.SemanticConditions.Reason != tc.reason {
+			t.Fatalf("%s availability: %+v", tc.mode, inventory.SemanticConditions)
+		}
+	}
+	decisions.workspaces = map[string]bool{"another-workspace": true}
+	inventory, err := svc.GetWorkspaceInventory(ctx, workspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inventory.SemanticConditions.Available || inventory.SemanticConditions.Reason != "workspace_disabled" {
+		t.Fatalf("workspace availability: %+v", inventory.SemanticConditions)
+	}
+	if provider.calls != 0 {
+		t.Fatal("inventory called provider")
+	}
+
 	if len(result.Groups) != 2 {
 		t.Fatalf("expected 2 inventory groups, got %d", len(result.Groups))
 	}
@@ -453,6 +490,7 @@ func TestAutomationActivityIncludesRunsWithoutTriggerExecutions(t *testing.T) {
 	}
 	for _, stmt := range []string{
 		`CREATE TABLE agents (
+ ai_profile_id TEXT,
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			is_system BOOLEAN NOT NULL DEFAULT 0,
@@ -657,6 +695,7 @@ func TestAutomationActivityResolvesTargetDisplayInfo(t *testing.T) {
 
 	stmts := []string{
 		`CREATE TABLE agents (
+ ai_profile_id TEXT,
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			is_system BOOLEAN NOT NULL DEFAULT 0,
@@ -784,6 +823,8 @@ func TestAutomationActivityResolvesTargetDisplayInfo(t *testing.T) {
 			totp_verified BOOLEAN NOT NULL DEFAULT 0,
 			recovery_codes_encrypted TEXT,
 			is_platform_admin BOOLEAN NOT NULL DEFAULT 0,
+			is_server_admin BOOLEAN NOT NULL DEFAULT 0,
+			signup_verification_pending BOOLEAN NOT NULL DEFAULT 0,
 			avatar_url TEXT,
 			avatar_style TEXT,
 			avatar_seed TEXT,

@@ -33,18 +33,18 @@ func (r *emailAIRequestRecorder) Publish(subject string, data []byte, opts ...na
 	return &nats.PubAck{}, nil
 }
 
-func TestEmailCustomerReplyResumesAI(t *testing.T) {
+func TestEmailCustomerReplyDoesNotResumeAI(t *testing.T) {
 	now := time.Now()
 	tests := []struct {
 		name, status, content string
 		change                func(*model.SupportConversation, *model.SupportInboxSettings)
 		want                  int
 	}{
-		{"confirmed resolution", "resolved", "Actually I still need help", nil, 1},
+		{"confirmed resolution", "resolved", "Actually I still need help", nil, 0},
 		{"assumed resolution", "resolved", "No, it still fails", func(c *model.SupportConversation, _ *model.SupportInboxSettings) {
 			c.AIResolutionType = strPtr("assumed")
-		}, 1},
-		{"waiting followup", "waiting_on_customer", "Still broken", nil, 1},
+		}, 0},
+		{"waiting followup", "waiting_on_customer", "Still broken", nil, 0},
 		{"takeover", "resolved", "Help", func(c *model.SupportConversation, _ *model.SupportInboxSettings) { c.HumanTakeover = boolPtr(true) }, 0},
 		{"human request", "resolved", "Help", func(c *model.SupportConversation, _ *model.SupportInboxSettings) { c.CustomerRequestedHumanAt = &now }, 0},
 		{"escalated", "resolved", "Help", func(c *model.SupportConversation, _ *model.SupportInboxSettings) { c.AIState = strPtr("escalated") }, 0},
@@ -88,22 +88,13 @@ func TestEmailCustomerReplyResumesAI(t *testing.T) {
 			if saved.Status != "open" || derefString(saved.MailboxID) != "mailbox-kept" || saved.AIResolvedAt != nil || saved.AIResolutionType != nil {
 				t.Fatalf("unexpected reopened state: %+v", saved)
 			}
-			if tt.want == 1 {
-				if derefString(saved.FlowState) != model.SupportConversationFlowStateAIHandling {
-					t.Fatalf("flow state = %s", derefString(saved.FlowState))
-				}
-				if recorder.events[0] != recorder.events[1] {
-					t.Fatal("retry changed the AI source message")
-				}
-				event := recorder.events[0]
-				msg, err := env.messageRepo.GetByID(context.Background(), event.MessageID)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if event.Content != tt.content || msg.SenderType != "customer" || event.ConversationID != conv.ID {
-					t.Fatalf("unexpected request: %+v", event)
-				}
+			if saved.AssignedAgentID != nil || saved.HumanTakeover == nil || !*saved.HumanTakeover {
+				t.Fatalf("email reply retained AI ownership: %+v", saved)
 			}
+			if derefString(saved.FlowState) == model.SupportConversationFlowStateAIHandling {
+				t.Fatal("email reply returned to AI handling")
+			}
+
 		})
 	}
 }
@@ -132,6 +123,15 @@ func TestFollowUpEmailUsesActualWorkspaceDisplayName(t *testing.T) {
 			env.service.emailClient.SetHTTPClient(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 				if err := json.NewDecoder(req.Body).Decode(&captured); err != nil {
 					t.Fatal(err)
+				}
+				automatic := false
+				for _, header := range captured.Headers {
+					if header.Name == "Auto-Submitted" && header.Value == "auto-replied" {
+						automatic = true
+					}
+				}
+				if !automatic {
+					t.Fatal("AI email missing Auto-Submitted header")
 				}
 				attempts++
 				if attempts == 1 {
@@ -194,7 +194,7 @@ func TestWidgetPostMessageAutomationRespectsHumanOwnership(t *testing.T) {
 	}
 }
 
-func TestEmailCustomerReplyRetriesFailedAIPublish(t *testing.T) {
+func TestEmailCustomerReplyDoesNotPublishAIOnWebhookRetry(t *testing.T) {
 	ctx := context.Background()
 	settings := model.DefaultSupportInboxSettings()
 	settings.AIEnabled = true
@@ -208,8 +208,8 @@ func TestEmailCustomerReplyRetriesFailedAIPublish(t *testing.T) {
 	recorder := &emailAIRequestRecorder{failNext: true}
 	env.service.supportInboxService.supportAIService = &SupportAIService{js: recorder}
 	payload := model.PostmarkInboundPayload{MessageID: "retry-source", OriginalRecipient: "conv-" + conv.ID + "@replies.helpin.ai", To: "conv-" + conv.ID + "@replies.helpin.ai", From: "customer@example.com", FromFull: model.PostmarkAddress{Email: "customer@example.com"}, StrippedTextReply: "Still broken"}
-	if err := env.service.ProcessInboundEmail(ctx, payload, `{}`); !errors.Is(err, ErrInboundEmailAIDispatchRetry) {
-		t.Fatalf("expected retryable publish error, got %v", err)
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{}`); err != nil {
+		t.Fatalf("inbound email should not dispatch AI: %v", err)
 	}
 	logRow, err := env.emailLogRepo.GetByPostmarkMessageID(ctx, payload.MessageID)
 	if err != nil {
@@ -221,8 +221,8 @@ func TestEmailCustomerReplyRetriesFailedAIPublish(t *testing.T) {
 	if err := env.service.ProcessInboundEmail(ctx, payload, `{}`); err != nil {
 		t.Fatal(err)
 	}
-	if len(recorder.events) != 1 || recorder.events[0].MessageID != logRow.MessageIDs[0] || recorder.events[0].Content != "Still broken" {
-		t.Fatalf("retry did not publish saved source: %+v", recorder.events)
+	if len(recorder.events) != 0 {
+		t.Fatalf("email retry dispatched AI: %+v", recorder.events)
 	}
 	messages, err := env.messageRepo.ListByConversation(ctx, conv.WorkspaceID, conv.ID, true)
 	if err != nil {

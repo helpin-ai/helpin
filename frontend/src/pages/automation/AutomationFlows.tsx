@@ -1,3 +1,5 @@
+import { FlowSemanticConditionField } from '@/components/automation/FlowSemanticConditionField';
+import { SequenceAutomationConnections } from '@/components/crm/outreach/SequenceAutomationConnections';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -11,7 +13,7 @@ import {
   SourceCodeIcon,
 } from '@/lib/icons';
 import { toast } from 'sonner';
-import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
+import { UpgradeRequiredDialog } from '@edition';
 import { AutomationShell } from '@/components/automation/AutomationShell';
 import {
   QuietEmptyState,
@@ -51,12 +53,12 @@ import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import { queryKeys } from '@/lib/queryKeys';
 import { unwrap } from '@/lib/queryUtils';
-import type { AutomationInventoryItem, Workspace, WorkspaceTeam } from '@/lib/types';
+import type { AutomationInventoryItem, SemanticConditionAvailability, Workspace, WorkspaceTeam } from '@/lib/types';
 import type { Agent, AgentApprovalMode, AgentRuntimeKind, AgentSkillRef, AgentTargetType, AutomationRule, EpicWithStats, FlowTemplateInput, FlowTemplateManifest, GitRepository, SkillCatalogEntry, Task, ToolCatalogEntry, WorkflowState, WorkflowWithStates } from '@/lib/pmTypes';
 import type { DocsCollection, DocsSpace } from '@/lib/docsTypes';
 import { buildAutomationActivityPath, type FlowTargetMode } from '@/lib/automationUi';
 import { getAgentTeamIds, isAgentVisibleToActor } from '@/lib/agentAccess';
-import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@edition/errors';
 import { cn } from '@/lib/utils';
 import { AGENT_APPROVAL_OPTIONS, agentApprovalDescription } from '@/lib/agentApproval';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -89,6 +91,7 @@ type FlowDraft = {
   triggerType: string;
   workflowId: string;
   triggerStateId: string;
+  semanticCondition: string;
   actionType: 'start_agent_run' | 'move_to_state' | 'merge_branch';
   agentId: string;
   targetMode: FlowTargetMode;
@@ -1282,6 +1285,7 @@ function defaultDraft(): FlowDraft {
   return {
     name: '',
     description: '',
+    semanticCondition: '',
     triggerType: 'github.pull_request_merged',
     workflowId: '',
     triggerStateId: '',
@@ -1419,6 +1423,7 @@ export function draftFromRule(rule: AutomationRule, workflows: WorkflowWithState
   draft.triggerType = rule.trigger_type;
   draft.workflowId = rule.workflow_id ?? '';
   draft.triggerStateId = stringValue(rule.trigger_config?.state_id);
+  draft.semanticCondition = stringValue(rule.trigger_config?.semantic_condition?.text);
   draft.actionType = (rule.action_type as FlowDraft['actionType']) || 'start_agent_run';
   draft.agentId = stringValue(rule.action_config?.agent_id);
   draft.targetMode = (stringValue(rule.action_config?.target_type) as FlowDraft['targetMode']) || 'event';
@@ -1438,7 +1443,7 @@ export function draftFromRule(rule: AutomationRule, workflows: WorkflowWithState
 }
 
 export function serializeDraft(draft: FlowDraft, workspaceId: string, timezone: string) {
-  let triggerConfig: Record<string, string> = {};
+  let triggerConfig: Record<string, unknown> = {};
   if (draft.triggerType === 'task.state_entered') {
     triggerConfig = { state_id: draft.triggerStateId };
   } else if (draft.triggerType === 'agent_run.approved') {
@@ -1454,6 +1459,8 @@ export function serializeDraft(draft: FlowDraft, workspaceId: string, timezone: 
   } else if (draft.triggerType === 'cron') {
     triggerConfig = serializeScheduleConfig(scheduleExpressionForDraftUTC(draft, timezone));
   }
+
+  if (draft.semanticCondition.trim()) triggerConfig.semantic_condition = { text: draft.semanticCondition.trim() };
 
   let actionConfig: Record<string, unknown> = {};
   if (draft.actionType === 'start_agent_run') {
@@ -1490,6 +1497,8 @@ export function serializeDraft(draft: FlowDraft, workspaceId: string, timezone: 
 
 export function validateDraft(draft: FlowDraft) {
   if (!draft.name.trim()) return 'Give the flow a name';
+  if ([...draft.semanticCondition.trim()].length > 500) return 'Keep the semantic condition within 500 characters';
+  if (draft.triggerType === 'cron' && draft.semanticCondition.trim()) return 'Remove the semantic condition before using a schedule';
   if (isWorkflowTrigger(draft.triggerType)) {
     if (!draft.workflowId) return 'Choose a workflow';
     if (!draft.triggerStateId) return 'Choose the state that starts this flow';
@@ -1580,6 +1589,7 @@ function draftLogicRows(draft: FlowDraft, workflows: WorkflowWithStates[], state
   const triggerStateName = statesById.get(draft.triggerStateId)?.name;
   const destinationStateName = statesById.get(draft.targetStateId)?.name;
   const rows: FlowLogicRow[] = [{ connector: 'When', text: triggerLabel(draft.triggerType), tone: 'strong' }];
+  if (draft.semanticCondition.trim()) rows.push({ connector: 'If', text: draft.semanticCondition.trim() });
   const conditions = compactList((() => {
     if (isWorkflowTrigger(draft.triggerType)) {
       const parts = [];
@@ -1990,6 +2000,7 @@ export function flowDetailsSections({
       title: 'Trigger setup',
       rows: compactRows([
         { label: 'Trigger', value: triggerLabel(draft.triggerType) },
+        draft.semanticCondition.trim() ? { label: 'Semantic condition', value: draft.semanticCondition.trim() } : null,
         workflowName ? { label: 'Workflow', value: workflowName } : null,
         triggerStateName ? { label: 'State', value: triggerStateName } : null,
         draft.repoFullName.trim() ? { label: 'Repository', value: draft.repoFullName.trim() } : null,
@@ -2567,6 +2578,8 @@ function PillInput({
 }
 
 export function FlowComposer({
+  semanticConditionAvailability,
+  semanticConditionLoading,
   workspaceId,
   open,
   mode,
@@ -2590,6 +2603,8 @@ export function FlowComposer({
   workspaceId: string;
   open: boolean;
   mode: FlowComposerMode;
+  semanticConditionAvailability?: SemanticConditionAvailability;
+  semanticConditionLoading?: boolean;
   draft: FlowDraft;
   workflows: WorkflowWithStates[];
   statesById: Map<string, WorkflowState>;
@@ -2872,6 +2887,7 @@ export function FlowComposer({
                     <SelectItem value="failure">failure</SelectItem>
                     <SelectItem value="cancelled">cancelled</SelectItem>
                     <SelectItem value="timed_out">timed out</SelectItem>
+                    <SelectItem value="skipped">skipped</SelectItem>
                   </SelectContent>
                 </Select>
               </SentenceRow>
@@ -3055,6 +3071,15 @@ export function FlowComposer({
             )}
 
             <div className="my-1 h-px bg-border/40" />
+
+            <FlowSemanticConditionField
+              availability={semanticConditionAvailability}
+              loading={semanticConditionLoading}
+              disabled={!canEdit || saving}
+              value={draft.semanticCondition}
+              scheduled={isCronTrigger}
+              onChange={(semanticCondition) => updateDraft((current) => ({ ...current, semanticCondition }))}
+            />
 
             <SentenceRow connector="then" tone="strong">
               <Select
@@ -4816,6 +4841,8 @@ export function AutomationFlowsPage({
         onConfirm={() => void handleConfirmDeleteFlow()}
       />
       <FlowComposer
+        semanticConditionAvailability={inventoryQuery.isError ? undefined : inventoryQuery.data?.semantic_conditions}
+        semanticConditionLoading={inventoryQuery.isPending}
         workspaceId={workspaceId}
         open={composerOpen}
         mode={composerMode}
@@ -4872,6 +4899,7 @@ export function AutomationFlowsPage({
         ) : undefined}
       >
 
+      {workspaceSlug && permissions.has('crm.read') && <SequenceAutomationConnections workspaceId={workspaceId} slug={workspaceSlug} />}
       {loading ? (
         <div className="space-y-2">
           <Skeleton className="mb-5 h-8 w-full rounded-lg" />

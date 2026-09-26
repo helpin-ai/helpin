@@ -1,0 +1,283 @@
+# Community 0.1 beta. No external keys are embedded in these images.
+x-helpin-env: &helpin-env
+  DATABASE_URL: postgres://helpin:${HELPIN_DB_PASSWORD:?run setup.sh install}@postgres:5432/helpin?sslmode=disable
+  JWT_SECRET: ${JWT_SECRET:?run setup.sh install}
+  INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:?run setup.sh install}
+  AI_CONNECTION_ENCRYPTION_KEY: ${AI_CONNECTION_ENCRYPTION_KEY:?run setup.sh install}
+  CRM_ENCRYPTION_KEY: ${CRM_ENCRYPTION_KEY:?run setup.sh install}
+  GIT_OAUTH_ENCRYPTION_KEY: ${GIT_OAUTH_ENCRYPTION_KEY:?run setup.sh install}
+  APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8085}
+  CORS_ORIGINS: ${APP_BASE_URL:-http://localhost:8085}
+  PUBLIC_WIDGET_URL: ${PUBLIC_WIDGET_URL:-http://localhost:8085}
+  PUBLIC_SDK_URL: ${PUBLIC_SDK_URL:-http://localhost:8085/sdk/lib.js}
+  AUTH_EMAIL_VERIFICATION_REQUIRED: ${AUTH_EMAIL_VERIFICATION_REQUIRED:-false}
+  HELPIN_ENABLED_MODULES: ${HELPIN_ENABLED_MODULES:-support,docs,agents,pm,crm,automation}
+  # Empty keeps the Community default (Setup guide on); set false to hide it.
+  SETUP_SUCCESS_ENABLED: ${SETUP_SUCCESS_ENABLED:-}
+  AUTHENTICATED_RATE_LIMIT_PER_MINUTE: ${AUTHENTICATED_RATE_LIMIT_PER_MINUTE:-1200}
+  EXPENSIVE_RATE_LIMIT_PER_MINUTE: ${EXPENSIVE_RATE_LIMIT_PER_MINUTE:-120}
+  RUN_AUTO_MIGRATE: "false"
+  NATS_URL: nats://nats:4222
+  REDIS_URL: redis://:${REDIS_PASSWORD:?run setup.sh install}@redis:6379/0
+  TEMPORAL_ADDRESS: temporal:7233
+  TEMPORAL_NAMESPACE: default
+  TEMPORAL_TLS_ENABLED: "false"
+  AGENT_RUNTIME_BASE_URL: http://agent-runtime:8090
+  AGENT_RUNTIME_LAUNCH_ENABLED: 'true'
+  AGENT_RUNTIME_EVENT_PROTOCOL: v2
+  AGENT_RUNTIME_APP_ID: helpin
+  AGENT_RUNTIME_SERVICE_TOKEN: ${AGENT_RUNTIME_SERVICE_TOKEN:?run setup.sh install}
+  AWS_ACCESS_KEY_ID: ${GARAGE_ACCESS_KEY:?run setup.sh install}
+  AWS_SECRET_ACCESS_KEY: ${GARAGE_SECRET_KEY:?run setup.sh install}
+  AWS_S3_BUCKET_NAME: helpin
+  AWS_REGION: garage
+  AWS_S3_ENDPOINT_URL: http://garage:3900
+  AWS_S3_PRESIGN_ENDPOINT_URL: ${PUBLIC_STORAGE_URL:-http://localhost:9005}
+  AWS_S3_PRIVATE_BUCKET: "true"
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_USERNAME: ${SMTP_USERNAME:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  SMTP_FROM: ${SMTP_FROM:-}
+  SMTP_TLS_MODE: ${SMTP_TLS_MODE:-starttls}
+  # Optional: comma-separated addresses of server admins.
+  HELPIN_ADMIN_EMAILS: ${HELPIN_ADMIN_EMAILS:-}
+  CHATGPT_CONNECTIONS_ENABLED: ${CHATGPT_CONNECTIONS_ENABLED:-false}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+  OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+  SENTRY_DSN: ${SENTRY_DSN:-}
+  # Optional: pin an existing GitHub App. Empty uses the App created from the UI.
+  GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+  GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
+  GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}
+  GITHUB_APP_WEBHOOK_SECRET: ${GITHUB_APP_WEBHOOK_SECRET:-}
+  GITHUB_APP_CLIENT_ID: ${GITHUB_APP_CLIENT_ID:-}
+  GITHUB_APP_CLIENT_SECRET: ${GITHUB_APP_CLIENT_SECRET:-}
+  # Optional CRM meeting capture. Empty provider means recall; empty base URLs
+  # use each provider's hosted API.
+  CRM_MEETING_CAPTURE_PROVIDER: ${CRM_MEETING_CAPTURE_PROVIDER:-}
+  RECALL_BASE_URL: ${RECALL_BASE_URL:-}
+  RECALL_API_KEY: ${RECALL_API_KEY:-}
+  RECALL_WEBHOOK_SECRET: ${RECALL_WEBHOOK_SECRET:-}
+  VEXA_BASE_URL: ${VEXA_BASE_URL:-}
+  VEXA_API_KEY: ${VEXA_API_KEY:-}
+  VEXA_WEBHOOK_SECRET: ${VEXA_WEBHOOK_SECRET:-}
+  # Optional Google OAuth client for Gmail and Google Calendar. An empty
+  # redirect URL means APP_BASE_URL/api/crm/email/oauth/callback.
+  GMAIL_CLIENT_ID: ${GMAIL_CLIENT_ID:-}
+  GMAIL_CLIENT_SECRET: ${GMAIL_CLIENT_SECRET:-}
+  GMAIL_OAUTH_REDIRECT_URL: ${GMAIL_OAUTH_REDIRECT_URL:-}
+x-runtime-env: &runtime-env
+  AGENT_RUNTIME_ADDR: :8090
+  AGENT_RUNTIME_STORE_DRIVER: postgres
+  DATABASE_URL: postgres://agent_runtime:${RUNTIME_DB_PASSWORD:?run setup.sh install}@postgres:5432/agent_runtime?sslmode=disable
+  AGENT_RUNTIME_SERVICE_TOKEN: ${AGENT_RUNTIME_SERVICE_TOKEN:?run setup.sh install}
+  AGENT_RUNTIME_MODEL_CREDENTIAL_ENCRYPTION_KEY: ${AGENT_RUNTIME_MODEL_CREDENTIAL_ENCRYPTION_KEY:?run setup.sh install}
+  AGENT_RUNTIME_MCP_CREDENTIAL_ENCRYPTION_KEY: ${AGENT_RUNTIME_MCP_CREDENTIAL_ENCRYPTION_KEY:?run setup.sh install}
+  AGENT_RUNTIME_APP_CONFIG: '@/etc/agent-runtime/apps.json'
+  HELPIN_INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:?run setup.sh install}
+  AGENT_RUNTIME_MODEL_CALLBACK_ALLOW_HTTP: "true"
+  AGENT_RUNTIME_MODEL_CALLBACK_HTTP_HOSTS: helpin-api:8080
+  AGENT_RUNTIME_MCP_ALLOW_HTTP: ${AGENT_RUNTIME_MCP_ALLOW_HTTP:-false}
+  AGENT_RUNTIME_MCP_ALLOW_PRIVATE_NETWORKS: ${AGENT_RUNTIME_MCP_ALLOW_PRIVATE_NETWORKS:-false}
+  AGENT_RUNTIME_MCP_ALLOWED_HOSTS: ${AGENT_RUNTIME_MCP_ALLOWED_HOSTS:-}
+  AGENT_RUNTIME_CHATGPT_ENABLED: ${AGENT_RUNTIME_CHATGPT_ENABLED:-false}
+  # Optional external command review; auto-approval needs passing live evaluations.
+  TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+  AGENT_RUNTIME_TYPESAFE_ENABLED: ${AGENT_RUNTIME_TYPESAFE_ENABLED:-false}
+  AGENT_RUNTIME_TYPESAFE_AUTO_APPROVE: ${AGENT_RUNTIME_TYPESAFE_AUTO_APPROVE:-false}
+  # Deprecated setting is forwarded only to disable stale single-choice opt-ins.
+  AGENT_RUNTIME_TYPESAFE_THRESHOLD: ${AGENT_RUNTIME_TYPESAFE_THRESHOLD:-}
+  AGENT_RUNTIME_TYPESAFE_ASKED_THRESHOLD: ${AGENT_RUNTIME_TYPESAFE_ASKED_THRESHOLD:-0.75}
+  AGENT_RUNTIME_TYPESAFE_HAZARD_THRESHOLD: ${AGENT_RUNTIME_TYPESAFE_HAZARD_THRESHOLD:-0.25}
+  AGENT_RUNTIME_TYPESAFE_ESCALATION_THRESHOLD: ${AGENT_RUNTIME_TYPESAFE_ESCALATION_THRESHOLD:-0.50}
+  AGENT_RUNTIME_TYPESAFE_MODEL: ${AGENT_RUNTIME_TYPESAFE_MODEL:-jev-latest}
+  AGENT_RUNTIME_TYPESAFE_EVALUATED_MODEL: ${AGENT_RUNTIME_TYPESAFE_EVALUATED_MODEL:-jev-1.13.0}
+  AGENT_RUNTIME_EVENT_SINK: nats
+  AGENT_RUNTIME_NATS_URL: nats://nats:4222
+  TEMPORAL_ADDRESS: temporal:7233
+  TEMPORAL_NAMESPACE: default
+  TEMPORAL_TASK_QUEUE_PREFIX: community-runtime-
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.6-pg17-bookworm@sha256:cf134a767f474095eeba57e0117be8e568e011a63f33fbf252f14c9b760f8e6f
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run setup.sh install}
+      HELPIN_DB_PASSWORD: ${HELPIN_DB_PASSWORD:?run setup.sh install}
+      RUNTIME_DB_PASSWORD: ${RUNTIME_DB_PASSWORD:?run setup.sh install}
+      TEMPORAL_DB_PASSWORD: ${TEMPORAL_DB_PASSWORD:?run setup.sh install}
+      VISIBILITY_DB_PASSWORD: ${VISIBILITY_DB_PASSWORD:?run setup.sh install}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sh:/docker-entrypoint-initdb.d/10-databases.sh:ro
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U postgres -d helpin']
+      interval: 5s
+      retries: 20
+  redis:
+    image: redis:7.2.16-alpine@sha256:ccd6aa8d45ff3f033d6fa15b8cc1a50579f65c89f38cf9bb607a954c4f2128ed
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?run setup.sh install}
+    command: [sh, -c, 'exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"']
+    volumes: [redis_data:/data]
+    healthcheck:
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -q PONG']
+      interval: 5s
+      retries: 20
+  nats:
+    image: nats:2.14.7-alpine@sha256:ae5c49895a97b129546e30908012d7c965296c02f8754cd879e9d50ed3edd508
+    restart: unless-stopped
+    command: [-js, --store_dir=/data, -m, '8222']
+    volumes: [nats_data:/data]
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, 'http://localhost:8222/healthz']
+      interval: 5s
+      retries: 20
+  temporal-schema:
+    image: temporalio/admin-tools:1.32.0@sha256:a9f84fb9a374b2374fe2e67c8efc0468ff3f1c66c8a0b14597ec86e349e62bca
+    entrypoint: [/bin/sh, /setup/temporal-schema.sh]
+    environment:
+      TEMPORAL_DB_PASSWORD: ${TEMPORAL_DB_PASSWORD:?run setup.sh install}
+      VISIBILITY_DB_PASSWORD: ${VISIBILITY_DB_PASSWORD:?run setup.sh install}
+    volumes: ['./temporal-schema.sh:/setup/temporal-schema.sh:ro']
+    depends_on:
+      postgres: {condition: service_healthy}
+  temporal:
+    image: temporalio/server:1.32.0@sha256:c3e752127759616bb1615e0f9ba0e21635aeb5fdeb922de4f371c350955f46ae
+    restart: unless-stopped
+    environment:
+      TEMPORAL_SERVER_CONFIG_FILE_PATH: /etc/temporal/community.yaml
+      TEMPORAL_ALLOW_NO_AUTH: 'true'
+      TEMPORAL_DB_PASSWORD: ${TEMPORAL_DB_PASSWORD:?run setup.sh install}
+      VISIBILITY_DB_PASSWORD: ${VISIBILITY_DB_PASSWORD:?run setup.sh install}
+    volumes: ['./temporal.yaml:/etc/temporal/community.yaml:ro']
+    depends_on:
+      temporal-schema: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, nc, -z, '127.0.0.1', '7233']
+      interval: 5s
+      start_period: 30s
+      retries: 30
+  temporal-namespace:
+    image: temporalio/admin-tools:1.32.0@sha256:a9f84fb9a374b2374fe2e67c8efc0468ff3f1c66c8a0b14597ec86e349e62bca
+    entrypoint: [/bin/sh, /setup/temporal-namespace.sh]
+    volumes: ['./temporal-namespace.sh:/setup/temporal-namespace.sh:ro']
+    depends_on:
+      temporal: {condition: service_healthy}
+  garage:
+    image: dxflrs/garage:v2.3.0@sha256:866bd13ed2038ba7e7190e840482bc27234c4afaf77be8cfa439ae088c1e4690
+    restart: unless-stopped
+    environment:
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?run setup.sh install}
+      GARAGE_DEFAULT_ACCESS_KEY: ${GARAGE_ACCESS_KEY:?run setup.sh install}
+      GARAGE_DEFAULT_SECRET_KEY: ${GARAGE_SECRET_KEY:?run setup.sh install}
+      GARAGE_DEFAULT_BUCKET: helpin
+    command: [/garage, server, --single-node, --default-bucket]
+    ports: ['${BIND_ADDRESS:-127.0.0.1}:${STORAGE_PORT:-9005}:3900']
+    volumes: ['garage_data:/var/lib/garage', './garage.toml:/etc/garage.toml:ro']
+    healthcheck:
+      test: [CMD, /garage, bucket, info, helpin]
+      interval: 5s
+      retries: 20
+  helpin-migrate:
+    image: ghcr.io/helpin-ai/helpin-community-migrate:${HELPIN_VERSION:-community-v0.1.0-rc.1}
+    environment: *helpin-env
+    command: [up]
+    depends_on:
+      postgres: {condition: service_healthy}
+  helpin-api:
+    image: ghcr.io/helpin-ai/helpin-community-api:${HELPIN_VERSION:-community-v0.1.0-rc.1}
+    restart: unless-stopped
+    environment: *helpin-env
+    depends_on:
+      helpin-migrate: {condition: service_completed_successfully}
+      garage: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      nats: {condition: service_healthy}
+      temporal-namespace: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, 'http://localhost:8080/health']
+      interval: 10s
+      start_period: 30s
+      retries: 30
+  helpin-worker:
+    image: ghcr.io/helpin-ai/helpin-community-worker:${HELPIN_VERSION:-community-v0.1.0-rc.1}
+    restart: unless-stopped
+    environment: *helpin-env
+    depends_on:
+      helpin-api: {condition: service_healthy}
+  agent-runtime:
+    image: ghcr.io/helpin-ai/agent-runtime:${AGENT_RUNTIME_VERSION:-community-v0.1.0-rc.1}
+    restart: unless-stopped
+    environment: *runtime-env
+    volumes: ['./apps.json:/etc/agent-runtime/apps.json:ro']
+    depends_on:
+      helpin-api: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, curl, -fsS, 'http://localhost:8090/readyz']
+      interval: 10s
+      retries: 30
+  # One worker serves every queue: ordinary chat, coding and run_python share
+  # this process and the execution_workspaces volume. Landlock is applied when
+  # the host kernel and seccomp profile allow it and skipped otherwise.
+  agent-runtime-worker:
+    image: ghcr.io/helpin-ai/agent-runtime:${AGENT_RUNTIME_VERSION:-community-v0.1.0-rc.1}
+    restart: unless-stopped
+    entrypoint: [/agent-runtime-worker, --all-queues]
+    environment:
+      <<: *runtime-env
+      AGENT_RUNTIME_APP_CONFIG: ${AGENT_RUNTIME_EXECUTION_APP_CONFIG:?use setup.sh or export inline app configuration}
+      AGENT_RUNTIME_WORKSPACE_ROOT: /tmp/agent-runtime-workspaces
+      AGENT_RUNTIME_EXECUTION_ISOLATION: best_effort
+    volumes: [execution_workspaces:/tmp/agent-runtime-workspaces]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ulimits:
+      core: {soft: 0, hard: 0}
+    tmpfs: [/tmp]
+    stop_grace_period: 150s
+    depends_on:
+      agent-runtime: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, curl, -fsS, 'http://localhost:8091/readyz']
+      interval: 10s
+      retries: 30
+  helpin-frontend:
+    image: ghcr.io/helpin-ai/helpin-community-frontend:${HELPIN_VERSION:-community-v0.1.0-rc.1}
+    restart: unless-stopped
+    environment:
+      COMMUNITY_TRUSTED_PROXY_CIDR: ${COMMUNITY_TRUSTED_PROXY_CIDR:-127.0.0.1/32}
+    ports: ['${BIND_ADDRESS:-127.0.0.1}:${DASHBOARD_PORT:-8085}:80']
+    depends_on:
+      helpin-api: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, 'http://127.0.0.1/healthz']
+      interval: 10s
+      retries: 10
+  helpin-helpcenter:
+    image: ghcr.io/helpin-ai/helpin-community-helpcenter:${HELPIN_VERSION:-community-v0.1.0-rc.1}
+    restart: unless-stopped
+    environment:
+      INTERNAL_API_URL: http://helpin-api:8080/api
+      VITE_HC_SUBDOMAIN: ${HC_SUBDOMAIN:-demo}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?run setup.sh install}@redis:6379/1
+    ports: ['${BIND_ADDRESS:-127.0.0.1}:${HELPCENTER_PORT:-8086}:3000']
+    depends_on:
+      helpin-api: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://localhost:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      retries: 10
+volumes:
+  execution_workspaces:
+  postgres_data:
+  redis_data:
+  nats_data:
+  garage_data:

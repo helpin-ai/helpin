@@ -20,6 +20,7 @@ import { PipelineRail } from './PipelineRail';
 import { FanOutRail } from './FanOutRail';
 import { DeliveryPlanView, DeliveryProgressBar } from './DeliveryPlanView';
 import { PendingInteractionCard } from './PendingInteractionCard';
+import { DockInteractionPrompt } from './DockInteractionLayer';
 import { DockTranscript } from './DockTranscript';
 import { dockTranscriptHasContent } from './dockTranscriptContent';
 import { useAgentRunStream } from './useAgentRunStream';
@@ -355,16 +356,18 @@ function PlanStrip({
       ) : null}
 
       {pendingInteraction && activeRunId ? (
-        <PendingInteractionCard
-          workspaceId={workspaceId}
-          runId={activeRunId}
-          interaction={pendingInteraction}
-          onResolved={() => {
-            if (!pendingInteraction) return;
-            stream.clearPendingInteraction(pendingInteraction.interaction_id);
-            void stream.refetch();
-          }}
-        />
+        <DockInteractionPrompt id={`${activeRunId}:${pendingInteraction.interaction_id}`}>
+          <PendingInteractionCard
+            workspaceId={workspaceId}
+            runId={activeRunId}
+            interaction={pendingInteraction}
+            onResolved={() => {
+              if (!pendingInteraction) return;
+              stream.clearPendingInteraction(pendingInteraction.interaction_id);
+              void stream.refetch();
+            }}
+          />
+        </DockInteractionPrompt>
       ) : null}
 
       {hasTranscript ? null : resultSlot}
@@ -519,16 +522,18 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen,
       ) : null}
 
       {expanded && pendingInteraction ? (
-        <PendingInteractionCard
-          workspaceId={workspaceId}
-          runId={run.id}
-          interaction={pendingInteraction}
-          onResolved={() => {
-            if (!pendingInteraction) return;
-            stream.clearPendingInteraction(pendingInteraction.interaction_id);
-            void stream.refetch();
-          }}
-        />
+        <DockInteractionPrompt id={`${run.id}:${pendingInteraction.interaction_id}`}>
+          <PendingInteractionCard
+            workspaceId={workspaceId}
+            runId={run.id}
+            interaction={pendingInteraction}
+            onResolved={() => {
+              if (!pendingInteraction) return;
+              stream.clearPendingInteraction(pendingInteraction.interaction_id);
+              void stream.refetch();
+            }}
+          />
+        </DockInteractionPrompt>
       ) : null}
 
       {expanded && !hasTranscript ? resultSlot : null}

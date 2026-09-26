@@ -36,6 +36,9 @@ vi.mock('@/lib/services/pmTaskService', () => ({
 
 import { pmTaskService } from '@/lib/services/pmTaskService'
 import { useRealtimeSync } from '../useRealtimeSync'
+import { toast } from 'sonner'
+
+vi.mock('sonner', () => ({ toast: vi.fn() }))
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
@@ -87,6 +90,30 @@ describe('useRealtimeSync task ordering events', () => {
   afterEach(() => {
     vi.useRealTimers()
     captured.onEvent = null
+  })
+
+  it('opens Ask Agent from attention toasts and ignores other recipients and resolution updates', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    act(() => root.render(<QueryClientProvider client={client}><Harness workspaceId="ws-1" /></QueryClientProvider>))
+    const onOpen = vi.fn()
+    window.addEventListener('helpin:ask-agents', onOpen)
+    const event = { entity: 'notification', action: 'created', workspace_id: 'ws-1', data: { event_type: 'task.agent_attention_required', recipient_id: 'user-1', dock_chat_id: 'chat-1', run_id: 'run-1' } }
+    act(() => captured.onEvent?.(event))
+    expect(toast).toHaveBeenCalledTimes(1)
+    const options = vi.mocked(toast).mock.calls[0][1]
+    expect(options?.action).toMatchObject({ label: 'Open chat' })
+    const action = options?.action as { onClick: () => void }
+    action.onClick()
+    expect(onOpen.mock.calls[0][0].detail).toEqual({ chatId: 'chat-1' })
+    act(() => captured.onEvent?.({ ...event, action: 'updated' }))
+    expect(toast).toHaveBeenCalledTimes(2) // A new interaction on the same run updates the inbox row.
+    act(() => captured.onEvent?.({ ...event, data: { ...event.data, recipient_id: 'other' } }))
+    act(() => captured.onEvent?.({ entity: 'notification', action: 'updated', workspace_id: 'ws-1' }))
+    expect(toast).toHaveBeenCalledTimes(2)
+    window.removeEventListener('helpin:ask-agents', onOpen)
+    act(() => root.unmount())
   })
 
   it('refreshes the board for moved task events instead of hydrating a single task', async () => {
@@ -884,6 +911,31 @@ describe('useRealtimeSync task ordering events', () => {
     container.remove()
   })
 
+  it.each([
+    { sender_type: 'user', sender_name: 'Teammate', sender_avatar: '/teammate.png', expectedID: 'user-2' },
+    { sender_type: 'user', sender_name: 'Legacy name', sender_avatar: '/legacy.png', sender_display_name: 'Teammate', sender_avatar_url: '/teammate.png', sender_user_id: 'actual-author', expectedID: 'actual-author' },
+    { sender_type: 'customer', sender_name: 'Teammate', sender_avatar: '/teammate.png', expectedID: undefined },
+  ])('normalizes realtime sender identity before caching ($sender_type/$expectedID)', async ({ expectedID, ...data }) => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const key = queryKeys.support.messages('ws-1', 'thread')
+    client.setQueryData(key, seedSupportMessagePages([]))
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    try {
+      act(() => root.render(<QueryClientProvider client={client}><Harness workspaceId="ws-1" /></QueryClientProvider>))
+      await act(async () => {
+        captured.onEvent?.({ action: 'created', entity: 'support_conversation_message', entity_id: 'reply', workspace_id: 'ws-1', actor_id: 'user-2', parent_id: 'thread', data: { ...data, content: 'Hello', message_type: 'reply' } })
+      })
+      const [message] = flattenSupportMessagePages(client.getQueryData<SupportMessagePages>(key))
+      expect(message.sender_display_name).toBe('Teammate')
+      expect(message.sender_avatar_url).toBe('/teammate.png')
+      expect(message.sender_user_id).toBe(expectedID)
+    } finally {
+      act(() => root.unmount())
+      client.clear()
+    }
+  })
+
   it('invalidates filtered Waiting lists so new teammate replies can enter an empty view', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const waitingKey = ['support', 'ws-1', 'conversations', 'infinite', { filter: 'waiting' }]
@@ -1013,6 +1065,25 @@ describe('useRealtimeSync task ordering events', () => {
 
     act(() => root.unmount())
     container.remove()
+  })
+
+  it('refreshes cached message identities when a customer is anonymized', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const messageKey = queryKeys.support.messages('ws-1', 'conv-deleted')
+    const visitorKey = queryKeys.support.visitorContext('ws-1', 'conv-deleted')
+    client.setQueryData(messageKey, { messages: [] })
+    client.setQueryData(visitorKey, { name: 'Old name' })
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    act(() => root.render(<QueryClientProvider client={client}><Harness workspaceId="ws-1" /></QueryClientProvider>))
+    await act(async () => {
+      captured.onEvent?.({ action: 'updated', entity: 'support_conversation', entity_id: 'conv-deleted', workspace_id: 'ws-1', data: { reason: 'customer_anonymized' } })
+      await Promise.resolve()
+    })
+    expect(client.getQueryState(messageKey)?.isInvalidated).toBe(true)
+    expect(client.getQueryState(visitorKey)?.isInvalidated).toBe(true)
+    act(() => root.unmount())
+    client.clear()
   })
 
   it('refreshes live company visitor context and conversation associations', async () => {

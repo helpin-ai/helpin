@@ -84,7 +84,7 @@ func (s *InternalCommandService) executePMUpdateEpicDeliveryTarget(ctx context.C
 		return nil, err
 	}
 	if epic == nil || epic.Epic.WorkspaceID != meta.WorkspaceID {
-		return nil, fmt.Errorf("epic not found")
+		return nil, errCommandNotFound("epic")
 	}
 	if err := requireCommandAgentTeam(meta, epic.Epic.TeamID); err != nil {
 		return nil, err
@@ -110,7 +110,7 @@ func validateDeliveryCommandInput(repositoryID, baseBranch, targetBranch *string
 		return nil
 	}
 	if strings.TrimSpace(derefCommandString(repositoryID)) == "" && strings.TrimSpace(derefCommandString(baseBranch)) == "" && strings.TrimSpace(derefCommandString(targetBranch)) == "" {
-		return fmt.Errorf("at least one delivery target field is required")
+		return errCommandInput("at least one delivery target field is required")
 	}
 	return nil
 }

@@ -1,15 +1,20 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AIConnectionPicker } from '@/components/agents/AIConnectionPicker';
+import type { AIConnectionSelection } from '@/lib/services/aiConnectionService';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { BotIcon, GitBranchIcon, Loading01Icon, PlayIcon } from '@/lib/icons';
 import { toast } from 'sonner';
 
 import { AgentAvatar, resolveAgentPersonaKey, type AgentPersonaKey } from '@/components/agents/AgentAvatar';
-import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
+import { UpgradeRequiredDialog } from '@edition';
 import { NextAgentHint } from '@/components/agents/NextAgentHint';
+import { CodingCapacityNotice } from '@/components/agents/CodingCapacityNotice';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
+import { AgentRunDeliveryModePicker } from './AgentRunDeliveryMode';
 import { TaskDeliveryTimeline } from '@/components/pm/TaskDeliveryTimeline';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -22,9 +27,9 @@ import { isAgentAvailableForTarget } from '@/lib/agentAccess';
 import { agentService } from '@/lib/services/agentService';
 import { gitService } from '@/lib/services/gitService';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
-import type { Agent, AgentPresetKey, AgentRun, GitRepository, TaskDeliveryTarget } from '@/lib/pmTypes';
+import type { AgentRunDeliveryMode, Agent, AgentPresetKey, AgentRun, GitRepository, TaskDeliveryTarget } from '@/lib/pmTypes';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from './agentRunConstants';
-import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@edition/errors';
 import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
 import { queryKeys } from '@/lib/queryKeys';
 
@@ -36,6 +41,7 @@ interface Props {
   delivery?: AgentRunDeliveryContext;
   showDevelopmentHistory?: boolean;
   onEditDeliveryContext?: () => void;
+  deliveryContextEditReason?: string;
 }
 
 export interface AgentRunDeliveryContext {
@@ -199,7 +205,7 @@ export function getTaskAgentRunSuggestedAgent<TAgent extends Pick<Agent, 'id' | 
   activeRun,
 }: {
   agents: TAgent[];
-  runs: Pick<AgentRun, 'agent_id' | 'status'>[];
+  runs: Pick<AgentRun, 'agent_id' | 'status' | 'input'>[];
   activeRun: Pick<AgentRun, 'agent_id'> | null | undefined;
 }) {
   if (activeRun) {
@@ -208,7 +214,7 @@ export function getTaskAgentRunSuggestedAgent<TAgent extends Pick<Agent, 'id' | 
 
   const completedPresetKeys = new Set(
     runs
-      .filter((run) => run.status === 'completed')
+      .filter((run) => run.status === 'completed' && run.input?.delivery_mode !== 'preview')
       .map((run) => agents.find((agent) => agent.id === run.agent_id)?.preset_key)
       .filter(Boolean),
   );
@@ -274,6 +280,7 @@ export function AgentRunPanel({
   delivery,
   showDevelopmentHistory = false,
   onEditDeliveryContext,
+  deliveryContextEditReason,
 }: Props) {
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as { run?: string };
@@ -291,6 +298,8 @@ export function AgentRunPanel({
   const [selectedAgentId, setSelectedAgentId] = useState('');
   const [drawerOpen, setDrawerOpen] = useState<boolean>(Boolean(urlRunId));
   const [triggering, setTriggering] = useState(false);
+  const [aiConnection, setAIConnection] = useState<AIConnectionSelection>({});
+  const [deliveryMode, setDeliveryMode] = useState<AgentRunDeliveryMode>('publish');
   const [loadingAgents, setLoadingAgents] = useState(true);
   const [loading, setLoading] = useState(true);
   const [upgradeDialogReason, setUpgradeDialogReason] = useState<UpgradeRequiredReason | null>(null);
@@ -386,7 +395,7 @@ export function AgentRunPanel({
   }, [fetchRuns, taskId]);
 
   const startRun = useCallback(async (agentId: string) => {
-    const res = await agentService.runTask(workspaceId, taskId, { agent_id: agentId });
+    const res = await agentService.runTask(workspaceId, taskId, { agent_id: agentId, delivery_mode: deliveryMode, ...aiConnection });
     if (res.error) {
       const reason = getUpgradeRequiredReason(res.error);
       if (reason) {
@@ -400,7 +409,7 @@ export function AgentRunPanel({
     if (res.data?.id) {
       setRunInUrl(res.data.id);
     }
-  }, [fetchRuns, setRunInUrl, taskId, workspaceId]);
+  }, [aiConnection, deliveryMode, fetchRuns, setRunInUrl, taskId, workspaceId]);
 
   const agentNameById = useMemo(
     () => Object.fromEntries(agents.map((agent) => [agent.id, agent.name])),
@@ -444,6 +453,7 @@ export function AgentRunPanel({
   });
   const launchState = getTaskAgentRunLaunchState({ activeRun, triggering });
   const pickerLabel = getTaskAgentRunPickerLabel({ activeRun, suggestedAgent: selectedAgent });
+  const agentSelectId = useId();
   const agentSelectionDisabled = !!activeRun || triggering;
   const actionDisabledReason = primaryAction.kind === 'open'
     ? null
@@ -468,7 +478,7 @@ export function AgentRunPanel({
   };
 
   const latestCompletedAgent = useMemo(() => {
-    if (!latestRun || latestRun.status !== 'completed') return null;
+    if (!latestRun || latestRun.status !== 'completed' || latestRun.input?.delivery_mode === 'preview') return null;
     return agents.find((agent) => agent.id === latestRun.agent_id) ?? null;
   }, [agents, latestRun]);
   const completedPersonaKeys = useMemo(() => {
@@ -496,6 +506,8 @@ export function AgentRunPanel({
     }
   };
 
+  const executionContext = delivery ? <AgentRunExecutionContext delivery={delivery} onEdit={onEditDeliveryContext} editReason={deliveryContextEditReason} /> : null;
+
   if (
     taskRunnableAgents.length === 0
     && runs.length === 0
@@ -504,13 +516,11 @@ export function AgentRunPanel({
     && !loadingAgents
     && !(showDevelopmentHistory && gitLinksQuery.isPending)
     && !gitLinksQuery.error
-  ) return null;
+  ) return executionContext ? <div className="mt-6">{executionContext}</div> : null;
 
   return (
     <div className="mt-6 space-y-7">
-      {delivery ? (
-        <AgentRunExecutionContext delivery={delivery} onEdit={onEditDeliveryContext} />
-      ) : null}
+      {executionContext}
 
       <section aria-label="Next delivery action">
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-foreground/70">Next action</h2>
@@ -549,47 +559,56 @@ export function AgentRunPanel({
             <Button type="button" size="sm" onClick={handleRunAgent}>{primaryAction.label}</Button>
           </div>
         ) : (
-          <div className="flex flex-wrap items-center gap-3 rounded-md bg-muted/35 px-4 py-3 ring-1 ring-inset ring-border/50">
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              <span className="shrink-0 text-sm text-muted-foreground">{pickerLabel}</span>
-              <Select
-                value={selectedAgentId || '__none__'}
-                onValueChange={(value) => setSelectedAgentId(value === '__none__' ? '' : value)}
-                disabled={agentSelectionDisabled}
-              >
-                <SelectTrigger className="min-w-48 max-w-full">
-                  <SelectValue placeholder={loadingAgents ? 'Loading agents...' : 'Select agent'} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">No agent selected</SelectItem>
-                  {taskRunnableAgents.map((agent) => (
-                    <SelectItem key={agent.id} value={agent.id}>
-                      <div className="flex items-center gap-1.5">
-                        <AgentAvatar agent={agent} className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none" genericBare />
-                        <span>{agent.name}{agent.role ? ` · ${agent.role}` : ''}</span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          <div className="space-y-4 rounded-md bg-muted/35 px-4 py-3 ring-1 ring-inset ring-border/50">
+            {/* One labelled column per choice. A wrapping row collapsed the agent
+                select below its own minimum width and overlapped its neighbour. */}
+            <div className="grid items-start gap-x-4 gap-y-4 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="min-w-0 space-y-2">
+                <Label htmlFor={agentSelectId}>{pickerLabel}</Label>
+                <Select
+                  value={selectedAgentId || '__none__'}
+                  onValueChange={(value) => setSelectedAgentId(value === '__none__' ? '' : value)}
+                  disabled={agentSelectionDisabled}
+                >
+                  <SelectTrigger id={agentSelectId} className="w-full">
+                    <SelectValue placeholder={loadingAgents ? 'Loading agents...' : 'Select agent'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">No agent selected</SelectItem>
+                    {taskRunnableAgents.map((agent) => (
+                      <SelectItem key={agent.id} value={agent.id}>
+                        <div className="flex items-center gap-1.5">
+                          <AgentAvatar agent={agent} className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none" genericBare />
+                          <span>{agent.name}{agent.role ? ` · ${agent.role}` : ''}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <AIConnectionPicker workspaceId={workspaceId} defaultProfileId={selectedAgent?.ai_profile_id} value={aiConnection} onChange={setAIConnection} />
+              {delivery?.selectedRepository ? <AgentRunDeliveryModePicker value={deliveryMode} onChange={setDeliveryMode} /> : null}
             </div>
-            {actionDisabledReason ? <p className="min-w-0 text-xs text-muted-foreground">{actionDisabledReason}</p> : null}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span>
-                  <Button
-                    type="button"
-                    onClick={handleRunAgent}
-                    disabled={loadingAgents || !selectedAgentId || launchState.disabled}
-                    title={primaryAction.status}
-                  >
-                    {triggering ? <Loading01Icon className="animate-spin" /> : <PlayIcon />}
-                    Run agent
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              {actionDisabledReason ? <TooltipContent side="top">{actionDisabledReason}</TooltipContent> : null}
-            </Tooltip>
+            <div className="flex flex-wrap items-center gap-3">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button
+                      type="button"
+                      onClick={handleRunAgent}
+                      disabled={loadingAgents || !selectedAgentId || launchState.disabled}
+                      title={primaryAction.status}
+                    >
+                      {triggering ? <Loading01Icon className="animate-spin" /> : <PlayIcon />}
+                      Run agent
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {actionDisabledReason ? <TooltipContent side="top">{actionDisabledReason}</TooltipContent> : null}
+              </Tooltip>
+              {actionDisabledReason ? <p className="min-w-0 text-xs text-muted-foreground">{actionDisabledReason}</p> : null}
+            </div>
+            <CodingCapacityNotice agent={selectedAgent} />
           </div>
         )}
 
@@ -632,28 +651,39 @@ export function AgentRunPanel({
   );
 }
 
-function AgentRunExecutionContext({
+export function AgentRunExecutionContext({
   delivery,
   onEdit,
+  editReason,
 }: {
   delivery: AgentRunDeliveryContext;
   onEdit?: () => void;
+  editReason?: string;
 }) {
   const repositoryName = delivery.selectedRepository?.full_name ?? delivery.target?.repo_full_name ?? '';
-
-  if (!delivery.loading && !repositoryName) return null;
 
   return (
     <section className="border-y border-border/60 py-4" aria-label="Execution context">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-foreground/70">Execution context</h2>
-        {onEdit ? <Button type="button" variant="outline" size="sm" onClick={onEdit}>Edit context</Button> : null}
+        {onEdit ? (
+          editReason ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span tabIndex={0}><Button type="button" variant="outline" size="sm" disabled>Edit context</Button></span>
+              </TooltipTrigger>
+              <TooltipContent>{editReason}</TooltipContent>
+            </Tooltip>
+          ) : <Button type="button" variant="outline" size="sm" onClick={onEdit}>Edit context</Button>
+        ) : null}
       </div>
       {delivery.loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loading01Icon className="h-4 w-4 animate-spin" />
           Loading execution context…
         </div>
+      ) : !repositoryName ? (
+        <p className="text-sm text-muted-foreground">Not configured</p>
       ) : (
         <div className="grid min-w-0 gap-4 sm:grid-cols-3">
           <ExecutionContextValue label="Repository" value={repositoryName} icon />

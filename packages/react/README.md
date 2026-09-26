@@ -2,7 +2,7 @@
 
 Helpin for React. Analytics, user identification, pageview tracking, and chat widget control — all through a single hook.
 
-This package is a thin React wrapper. The chat widget UI is loaded from the hosted Helpin runtime at `https://cdn.helpin.ai/lib.js`, so future widget UI and CSS updates go live without requiring a React app redeploy after customers upgrade to this wrapper architecture once.
+This package is a thin React wrapper. The chat widget UI is loaded from the hosted Helpin runtime at `https://cdn.helpin.ai/lib.js`, so widget UI and CSS updates ship from the runtime URL without a React app redeploy.
 
 ## Installation
 
@@ -23,6 +23,7 @@ const helpinClient = createClient({
   widgetKey: 'your-widget-key',
   host: 'https://client.helpin.ai',
   autoBoot: false,
+  autoPageview: false, // This guide tracks pageviews explicitly.
   // Optional: use a staging or pinned runtime.
   // widgetRuntimeUrl: 'https://cdn.helpin.ai/lib.js',
 });
@@ -112,7 +113,7 @@ function LearnMore() {
   const { openArticle } = useHelpin();
 
   return (
-    <button onClick={() => openArticle('how-to-add-first-comment-2906b16e')}>
+    <button onClick={() => openArticle('getting-started-2906b16e')}>
       Learn more
     </button>
   );
@@ -123,7 +124,7 @@ For migrations from another help-center provider, map each legacy article ID to 
 
 ## `usePageView()`
 
-Tracks route changes automatically by observing `pushState`, `replaceState`, and `popstate`. Optionally run setup logic or attach extra data before each pageview fires:
+With `autoPageview: false` on the client, this hook tracks route changes by observing `pushState`, `replaceState`, and `popstate`. Optionally run setup logic or attach extra data before each pageview fires:
 
 ```tsx
 import { usePageView } from '@helpin-ai/react';
@@ -141,6 +142,10 @@ function AppShell() {
   return <AppRoutes />;
 }
 ```
+
+Mount one pageview hook per application. Disable the SDK’s `autoPageview` tracker
+when using the hook to avoid duplicate route-change events. The `before` callback
+is synchronous; it does not wait for an asynchronous `id()` call to finish.
 
 | Option | Type | Description |
 | --- | --- | --- |
@@ -173,9 +178,9 @@ function AppShell() {
 ## Configuration notes
 
 - `widgetKey` must be the public key for the intended in-app widget. It can differ from the key embedded in a public help center.
-- `host` is the Helpin application/API origin, for example `https://client.helpin.ai`.
+- `host` is the Helpin application/API origin, for example `https://client.helpin.ai` for Helpin Cloud or your `PUBLIC_WIDGET_URL` for a Community installation.
 - Set `autoBoot: false` when a custom launcher should decide when the widget loads.
-- Widget UI is loaded from `https://cdn.helpin.ai/lib.js` by default. Override `widgetRuntimeUrl` only for a custom, staging, or pinned runtime.
+- Widget UI is loaded from `https://cdn.helpin.ai/lib.js` by default. Self-hosted Community installations set `widgetRuntimeUrl` to their `PUBLIC_SDK_URL` (`<PUBLIC_WIDGET_URL>/sdk/lib.js`); otherwise override it only for a custom, staging, or pinned runtime.
 
 See the [JavaScript SDK reference](../sdk-js/README.md#client-api) for configuration, widget events, and the complete client API.
 

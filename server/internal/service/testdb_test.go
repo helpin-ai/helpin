@@ -21,6 +21,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 	}
 
 	tables := []string{
+		serviceSampleDataItemsSchema,
 		`CREATE TABLE users (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			email TEXT NOT NULL UNIQUE,
@@ -38,6 +39,8 @@ func newTestDB(t *testing.T) *gorm.DB {
 			totp_verified BOOLEAN NOT NULL DEFAULT 0,
 			recovery_codes_encrypted TEXT,
 			is_platform_admin BOOLEAN NOT NULL DEFAULT 0,
+			is_server_admin BOOLEAN NOT NULL DEFAULT 0,
+			signup_verification_pending BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -735,6 +738,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			updated_at DATETIME
 		)`,
 		`CREATE TABLE support_conversations (
+            anonymized_at DATETIME,
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
 			mailbox_id TEXT,
@@ -792,6 +796,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			customer_requested_human_at DATETIME,
 			ai_active_run_id TEXT,
 			human_takeover BOOLEAN NOT NULL DEFAULT 0,
+            ai_control_version BIGINT NOT NULL DEFAULT 0, ai_resumed_at DATETIME, ai_paused_at DATETIME, ai_paused_by_user_id TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

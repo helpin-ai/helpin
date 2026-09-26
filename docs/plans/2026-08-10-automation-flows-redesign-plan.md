@@ -1,4 +1,17 @@
-# Automation Flows Redesign Implementation Plan
+# Automation flows redesign implementation plan
+
+This historical implementation plan explains the automation flow list and detail drawer for maintainers. Much of the redesign exists, but the original “implemented” status does not certify every acceptance criterion against the current code.
+
+## Source review — 2026-09-18
+
+- [AutomationFlows.tsx](../../frontend/src/pages/automation/AutomationFlows.tsx) still contains the presentation helpers, list, and `FlowDetailDrawer`; the proposed separate `flows/` module files do not exist. It uses the current shared `AutomationShell`, so the prototype dimensions and typography are historical design targets.
+- Scope, route filters, and text search precede tab filtering. “My team” uses actor team memberships; “Created by me” compares the stored creator ID. The drawer loads four recent runs only while a rule is selected, and uses a full-width sheet with a 460px desktop maximum.
+- A later `playbook` state now takes precedence over the original five-state sequence. There is a current count/filter mismatch: every non-active/non-paused state increments the attention count, but the attention filter accepts only `error`, `incomplete`, and `needs_review`. Playbook-managed rules can therefore contribute to that count without appearing in its rows. The original claim that counts and rows cannot disagree is a target, not a current guarantee.
+- Drawer selection is resolved from all fetched rules, not the filtered list. Changing filters can leave an already-open drawer visible; deletion removes its resolved rule. The task below to close whenever filtered out is not established by this implementation.
+- [Inventory metrics](../../server/internal/service/automation_inventory.go) include failed and total executions, plus `next_run_at` for enabled valid cron schedules. [Cron calculation](../../server/internal/automationcron/cron.go) normalizes input/output to UTC. Both current rule-create handlers pass the authenticated actor to the engine, which stores `CreatedBy`.
+- Visual fidelity, rendered accessibility, production capability parity, billing workflows, and the original test matrix were not executed in this documentation review. The external design handoff path and old absolute command directories are historical references.
+
+## Original plan
 
 **Date:** 2026-08-10
 **Status:** Implemented

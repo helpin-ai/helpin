@@ -472,6 +472,42 @@ describe('CodingInteractionCard', () => {
     expect(approvalContext?.className).not.toContain('bg-muted/25');
   });
 
+  it('hides TypeSafe score details from approval prompts', () => {
+    renderCard(vi.fn(), buildInteraction({
+      interaction_kind: 'approval_request',
+      title: 'Approve tool call',
+      summary: 'Approve run_command for this agent run. TypeSafe review: external_send=0.97, user_asked=0.77. Scores do not authorize external effects.',
+      request_payload: {
+        tool_name: 'run_command',
+        input: { program: 'curl', args: ['https://data.example/results.csv'] },
+        approval_review: { provider: 'typesafe', scores: { external_send: 0.97 } },
+      },
+    }));
+
+    expect(container.textContent).toContain('Command: curl https://data.example/results.csv');
+    expect(container.textContent).not.toContain('TypeSafe review');
+    expect(container.textContent).not.toContain('external_send=');
+  });
+
+  it('shows the proposed Python source before approval', () => {
+    renderCard(vi.fn(), buildInteraction({
+      interaction_kind: 'approval_request',
+      title: 'Approve tool call',
+      summary: 'Approve run_python for this agent run.',
+      request_payload: {
+        tool_name: 'run_python',
+        input: {
+          source: "from urllib.request import urlopen\nprint(urlopen('https://data.example/results.csv').status)",
+          timeout_seconds: 120,
+        },
+      },
+    }));
+
+    expect(container.textContent).toContain('Python script:');
+    expect(container.textContent).toContain('https://data.example/results.csv');
+    expect(container.textContent).not.toContain('Approve run_python for this agent run.');
+  });
+
   it('does not duplicate the summary when a document preview already represents the request', () => {
     const onResolve = vi.fn();
     renderCard(onResolve, buildInteraction({
@@ -508,8 +544,8 @@ describe('CodingInteractionCard', () => {
     typeTextarea('Looks good. Keep the scope narrow.');
 
     const noteInput = container.querySelector('textarea');
-    expect(noteInput?.className).toContain('focus-visible:border-ring/70');
-    expect(noteInput?.className).toContain('focus-visible:ring-ring/15');
+    expect(noteInput?.className).toContain('focus-visible:border-quiet-text-primary');
+    expect(noteInput?.className).toContain('focus-visible:ring-0');
 
     const approvalActions = container.querySelector('[data-coding-session-approval-actions]');
     expect(approvalActions?.className).toContain('mt-5');
@@ -562,7 +598,7 @@ describe('CodingInteractionCard', () => {
     }));
 
     const textarea = container.querySelector('textarea');
-    expect(textarea?.className).toContain('focus-visible:border-ring/70');
+    expect(textarea?.className).toContain('focus-visible:border-quiet-text-primary');
 
     const declineButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.trim() === 'Decline');
     const cancelButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.trim() === 'Cancel turn');

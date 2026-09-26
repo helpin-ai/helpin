@@ -1,0 +1,50 @@
+name: PostgreSQL regression
+on:
+  workflow_call:
+    inputs:
+      suite:
+        type: string
+        required: true
+permissions:
+  contents: read
+jobs:
+  postgres:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: ${{ inputs.suite == 'schema' && 'pgvector/pgvector:0.8.6-pg17-bookworm@sha256:cf134a767f474095eeba57e0117be8e568e011a63f33fbf252f14c9b760f8e6f' || 'postgres:16' }}
+        env:
+          POSTGRES_PASSWORD: integration-fixture
+          POSTGRES_DB: ci_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ci_test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: .go-version
+          cache-dependency-path: server/go.sum
+      - name: Run migration regressions or fresh-schema and privacy checks
+        working-directory: server
+        env:
+          SUITE: ${{ inputs.suite }}
+          TEST_DATABASE_URL: postgres://postgres:integration-fixture@localhost:5432/ci_test?sslmode=disable
+        run: |
+          case "$SUITE" in
+            migrations)
+              AI_PROFILES_TEST_DATABASE_URL="$TEST_DATABASE_URL" go test -tags integration ./internal/dbmigrate -count=1
+              ;;
+            schema)
+              psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION vector; CREATE EXTENSION pgcrypto;'
+              COMMUNITY_TEST_DATABASE_URL="$TEST_DATABASE_URL" go test -tags integration ./internal/dbmigrate -run '^TestFreshCommunityFoundationPostgres$' -count=1 -v
+              CONTACT_PRIVACY_TEST_DATABASE_URL="$TEST_DATABASE_URL" go test -tags integration ./internal/repository ./internal/service -run '^TestContactAnonymization' -count=1
+              ;;
+            *) exit 1 ;;
+          esac

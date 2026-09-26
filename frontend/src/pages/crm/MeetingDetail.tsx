@@ -1,3 +1,4 @@
+import { meetingProcessingRecovery } from '@edition/config';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
@@ -20,7 +21,8 @@ import {
 } from '@/lib/meetingPresentation';
 import { MeetingProcessingState } from '@/components/crm/MeetingProcessingState';
 import { MeetingStatusText } from '@/components/crm/MeetingStatusText';
-import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
+import { ServerSetupNotice } from '@/components/crm/ServerSetupNotice';
+import { UpgradeRequiredDialog } from '@edition';
 import { MarkdownContent } from '@/components/pm/CodingSession/MarkdownContent';
 import {
   QuietDetailLayout,
@@ -43,6 +45,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
   useAcceptMeetingAction,
   useCRMMeeting,
+  useCRMMeetingSettings,
   useDismissMeetingAction,
   useRetryMeetingProcessing,
   useStartMeetingCapture,
@@ -53,13 +56,15 @@ import { useTeamWorkflow } from '@/hooks/queries/useWorkflows';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useTitle } from '@/hooks/useTitle';
-import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@edition/errors';
 import { resolveMeetingActionStateId } from '@/lib/meetingActionTaskTarget';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { CRMMeetingActionItem, CRMMeetingTranscriptSegment } from '@/lib/crmMeetingTypes';
 
 type MeetingDetailTab = 'overview' | 'transcript';
+
+const CAPTURE_UNAVAILABLE_ID = 'meeting-capture-unavailable';
 
 const titleCase = (value: string) => value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 
@@ -310,6 +315,8 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
   const canEditPM = permissions.has('pm.edit');
   const meetingQuery = useCRMMeeting(workspaceId, meetingId);
   const { data } = meetingQuery;
+  const settingsQuery = useCRMMeetingSettings(workspaceId);
+  const captureUnavailable = settingsQuery.data?.settings.capture_configured === false;
   const startCapture = useStartMeetingCapture(workspaceId, meetingId);
   const stopCapture = useStopMeetingCapture(workspaceId, meetingId);
   const retryProcessing = useRetryMeetingProcessing(workspaceId, meetingId);
@@ -473,7 +480,8 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
       icon={<PlayCircleIcon className="h-4 w-4" />}
       label="Start capture"
       onClick={() => runCommand(() => startCapture.mutateAsync(), 'Helpin is joining the meeting')}
-      disabled={startCapture.isPending}
+      disabled={startCapture.isPending || captureUnavailable}
+      aria-describedby={captureUnavailable ? CAPTURE_UNAVAILABLE_ID : undefined}
     />
   ) : canEditCRM && canStop ? (
     <QuietDetailAction
@@ -576,6 +584,16 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
             </div>
 
             <main className="min-h-0 flex-1 lg:overflow-y-auto">
+              {captureUnavailable && canStart ? (
+                <QuietSection title="Meeting capture">
+                  <ServerSetupNotice
+                    id={CAPTURE_UNAVAILABLE_ID}
+                    title="Meeting capture isn’t set up on this server."
+                    slug={slug}
+                    isServerAdmin={permissions.isServerAdmin}
+                  />
+                </QuietSection>
+              ) : null}
               {meeting.failure_message ? (
                 <QuietSection title="Capture needs attention">
                   <QuietStatusText tone="blocker" className="text-quiet-accent">Capture failed</QuietStatusText>
@@ -586,7 +604,7 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
                 <QuietSection title="Processing paused">
                   <QuietStatusText tone="blocker" className="text-quiet-accent">AI capacity required</QuietStatusText>
                   <p className="mt-1 max-w-[680px] text-sm leading-[1.6] text-quiet-text-tertiary">
-                    The transcript is safe. Upgrade or add AI capacity, then retry processing to create meeting notes.
+                    {meetingProcessingRecovery}
                   </p>
                 </QuietSection>
               ) : null}
@@ -605,17 +623,10 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
                         <MarkdownContent content={data.intelligence.summary_markdown} className="max-w-[760px] text-sm leading-[1.7] text-quiet-text-secondary [text-wrap:pretty]" />
                       </section>
                       {recordingPlayer || data.action_items.length > 0 ? (
-                        <div className={cn(
-                          'border-t border-quiet-divider-light',
-                          recordingPlayer && data.action_items.length > 0 && 'lg:grid lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]',
-                        )}>
-                          {recordingPlayer ? (
-                            <div className={cn(data.action_items.length > 0 && 'lg:border-r lg:border-quiet-divider-light lg:pr-6')}>
-                              {recordingPlayer}
-                            </div>
-                          ) : null}
+                        <div className="border-t border-quiet-divider-light">
+                          {recordingPlayer}
                           {data.action_items.length > 0 ? (
-                            <section className={cn('border-b border-quiet-divider-strong py-5', recordingPlayer && 'lg:pl-6')}>
+                            <section className="border-b border-quiet-divider-strong py-5">
                               <div className="flex items-baseline gap-2">
                                 <h3 className="text-[20px] font-semibold leading-tight tracking-[-0.018em] text-quiet-text-primary">Action items</h3>
                                 <span className="text-[11.5px] tabular-nums text-quiet-muted">{data.action_items.length}</span>
@@ -623,7 +634,7 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
                               <p className="mt-1.5 max-w-[680px] text-[12.5px] leading-5 text-quiet-text-tertiary">
                                 Follow-up work captured from the transcript. Create a task directly, or change its destination first.
                               </p>
-                              <div className={cn('mt-4 grid gap-3', !recordingPlayer && 'md:grid-cols-2')}>
+                              <div className="mt-4 grid gap-3 md:grid-cols-2">
                                 {data.action_items.map((item) => (
                                   <ActionItemRow
                                     key={item.id}

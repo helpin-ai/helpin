@@ -1,0 +1,18 @@
+Precise UI image edit. The supplied image is the approved fictional OrbitDesk task board with a compact floating Ask Agent window in the lower-right corner. Native 3840x2160.
+
+Change ONLY the HEIGHT of the floating Ask Agent window. Make it approximately 50% taller, extending its TOP edge upward while keeping its bottom edge, right edge, width, and horizontal position exactly unchanged. The current window begins around y=1270 and ends around y=2060; the new top should be around y=870, ending at the same y=2060. It must remain a floating overlay with its existing rounded corners, thin border and soft shadow. Do not dock it or add a chat-history sidebar.
+
+Keep the underlying full-width task board, workspace navigation, task cards, column labels, totals, identities, typography, dark palette and all board content unchanged. The taller floating overlay naturally covers part of the lower-right board; that is expected. Do not move the board or its cards to accommodate it. Keep all four column headers and first-row task titles visible above the overlay.
+
+Within Ask Agent, keep the current header, exact conversation text, user and Helpin AI icons, task links, summary-only note, and composer. Keep type sizes unchanged. Position the header at the new top of the window and the composer near the existing bottom. Give the user question and assistant answer a little more vertical spacing; leave comfortable dark breathing room below the answer before the composer. Do not stretch text, add messages, invent content, increase width, or add new controls. Maintain the warm charcoal window and black composer.
+
+Exact existing text to preserve:
+Ask Agent / Sprint 24
+What needs our attention this sprint?
+Helpin AI
+Alex is working on webhook delivery and API retries. Sam’s export fix and Jules’s filter fix are ready for review.
+Next: review ORB-492 and ORB-495. Then confirm when Sam can start Maya’s Slack alert request, ORB-491.
+Summary only · No tasks changed.
+Message agent…
+
+Return the same 3840x2160 image with this single height adjustment. No other design or content changes.

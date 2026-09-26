@@ -21,12 +21,12 @@ describe('custom agent create model', () => {
     expect(createDefaultCustomAgentForm().allowed_targets).toEqual(['task']);
   });
 
-  it('uses a public model-size default without exposing a technical route', () => {
+  it('keeps legacy route metadata while new agents inherit a workspace profile', () => {
     const form = createDefaultCustomAgentForm();
 
     expect(form.name).toBe('');
     expect(form.icon_key).toBe('violet_star');
-    expect(form.runtime_kind).toBe('codex');
+    expect(form.runtime_kind).toBe('native_sdk');
     expect(form.default_invocation_mode).toBe('interactive');
     expect(form.supported_modes).toEqual(['autonomous', 'interactive']);
     expect(form.allowed_targets).toEqual(['task']);
@@ -85,7 +85,7 @@ describe('custom agent create model', () => {
       workspace_id: 'workspace-1',
       name: 'Support Helper',
       icon_key: 'violet_star',
-      model_tier: 'large',
+      ai_profile_id: '',
       system_prompt: 'Help triage support conversations.',
       trigger_mode: 'manual',
       team_ids: ['team-1', 'team-2'],
@@ -163,7 +163,8 @@ describe('custom agent create model', () => {
       ...nativeForm,
       runtime_kind: 'codex' as const,
     };
-    expect(buildCustomAgentCreatePayload('workspace-1', codexForm, true).model_tier).toBe('large');
+    expect(buildCustomAgentCreatePayload('workspace-1', codexForm, true).model_tier).toBeUndefined();
+    expect(buildCustomAgentCreatePayload('workspace-1', { ...nativeForm, ai_profile_id: 'shared-profile' }, true).ai_profile_id).toBe('shared-profile');
   });
 
   it('keeps technical routing hidden regardless of advanced panel state', () => {
@@ -176,7 +177,7 @@ describe('custom agent create model', () => {
     expect(buildCustomAgentCreatePayload('workspace-1', advancedClosedOpenCode, false)).not.toHaveProperty('runtime_kind');
 
     const advancedOpen = { ...base, monthly_token_budget: '5000' };
-    expect(buildCustomAgentCreatePayload('workspace-1', advancedOpen, true)).toMatchObject({ model_tier: 'large' });
+    expect(buildCustomAgentCreatePayload('workspace-1', advancedOpen, true)).toMatchObject({ ai_profile_id: '' });
     expect(buildCustomAgentCreatePayload('workspace-1', advancedOpen, true)).not.toHaveProperty('monthly_token_budget');
   });
 

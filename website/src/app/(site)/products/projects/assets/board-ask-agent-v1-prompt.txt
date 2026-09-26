@@ -1,0 +1,30 @@
+Use case: ui-mockup / precise-object-edit. Produce a native 3840x2160 fictional Helpin Projects marketing screenshot.
+Input 1: public, generated OrbitDesk board; structure, Inter typography, navigation, card style and identity reference. Input 2: public, generated Ask Agent support demonstration; use only its actual Helpin icon, conversation panel and composer design. Both are fictional marketing images, not private workspace captures.
+Create ONE coherent app screenshot with kanban board LEFT and Ask Agent RIGHT, visibly connected to this board. Straight-on edge-to-edge light product UI: white/pale gray surfaces, thin hairlines, dark Inter text, restrained semantic colors. No perspective, browser chrome, external headlines or decorative overlays. The surrounding website section will be black; keep the product image light. Use a 12% app navigation, 53% board, 35% attached Ask Agent panel. Complete panel and composer visible. Favor readable text and few cards over dense tiny UI.
+Identity: OrbitDesk, forest-green square white O. Current teammate Sam Rivera. Customer Maya Chen at Northstar Labs. Other teammates Alex Morgan and Jules Park. No Acme, Shopify, Helpin Studio or actual private data. Preserve the actual Helpin mark from input 2.
+Navigation mirrors input 1: narrow app rail; OrbitDesk; My Work, Objectives, Roadmap, Reports; ENGINEERING with Tasks selected, Epics and Sprints.
+Board header: "Tasks (Engineering)". View "Everything". Controls "Filters", "By States", "+ Add task". Exactly three columns, two cards each. State colors gray/amber/purple. No completed checks on unfinished work.
+Planned (2):
+ORB-491: "Add Slack alerts for failed syncs". Feature, Integrations. Owner Sam Rivera (SR). Customer chip "Northstar Labs".
+ORB-493: "Schedule recurring tasks". Feature, Projects. Owner Jules Park (JP).
+In Progress (2):
+ORB-494: "Fix duplicate webhook deliveries". Bug, Integrations. Owner Alex Morgan (AM).
+ORB-498: "Add retry limits for API requests". Task, API. Owner Alex Morgan (AM).
+In Review (2):
+ORB-492: "Fix incomplete CSV exports". Bug, Reporting. Owner Sam Rivera (SR).
+ORB-495: "Preserve filters after page refresh". Bug, Projects. Owner Jules Park (JP).
+No unnecessary metrics/dates. Same reference card structure with clear spacing.
+Right Ask Agent header: real Helpin icon, "Ask Agent", subtitle "Engineering · Team overview", discreet minimize/close icons. Context chip "Engineering tasks".
+User Sam: "What is the team working on, and what needs attention?"
+Assistant, with Helpin icon: "Here’s the current picture."
+Heading "In progress"
+"Alex is working on webhook delivery and API retry limits."
+Small source links "ORB-494" and "ORB-498".
+Heading "Ready for review"
+"Sam’s CSV export fix and Jules’s filter fix need review."
+Small source links "ORB-492" and "ORB-495".
+Heading "Next to pick up"
+"Scope Maya’s Slack alert request for Northstar Labs."
+Small source link "ORB-491 · Planned".
+Conversational short paragraphs, not a grid of oversized boxes. Each reference MUST match the board's owner/status/title. This is a read-only team summary, not a claim of changing priorities or completing work.
+Bottom composer matches reference: "Engineering tasks" chip, "+ Add context", "Ask a follow-up…", attachment icon, send arrow. No watermark, third-party branding, marketing annotations or invented capabilities. Native 4K, sharp type, full canvas composition, polished actual-product appearance.

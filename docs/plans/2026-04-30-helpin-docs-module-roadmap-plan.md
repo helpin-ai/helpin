@@ -1,4 +1,46 @@
-# Helpin Docs Module Roadmap
+# Helpin Docs module roadmap
+
+
+This historical roadmap explains the April priorities for workspace documentation.
+It is not the current release checklist: several items listed as remaining or
+indefinitely deferred now have implementations.
+
+## Current implementation and limits
+
+Source-compared on 2026-09-18. These notes establish source availability, not
+production rollout, universal permission correctness, or fresh test results.
+
+- [AI-section regeneration](../../server/internal/service/docs_ai_section.go)
+  starts a document-targeted agent run with output type
+  `docs_ai_section_candidate` and includes `publish_ai_section_candidate` in its
+  tool selection. Approval compares the candidate's source content against the
+  current block before applying it. The remaining-work claim that generation
+  still needs to become agent-backed is outdated; this does not prove every
+  proposed provenance field or visual-diff requirement is complete.
+- [Entity embeds](../../frontend/src/components/docs/EntityEmbedExtension.ts)
+  include CRM deal, contact, and company types. The
+  [renderer](../../frontend/src/components/docs/EntityEmbedNodeView.tsx) imports
+  epic drawer navigation. CRM embed absence and mandatory full-page epic
+  navigation should not be treated as current findings.
+- [Saved-view embeds](../../frontend/src/components/docs/SavedViewEmbedNodeView.tsx)
+  fetch PM, CRM, and support data. CRM/support options include predefined views,
+  such as all deals or open conversations; this is not proof of full support for
+  arbitrary user-created saved views in every module.
+- [Task metadata controls](../../frontend/src/components/docs/TaskItemMetadataToolbar.tsx)
+  store assignee IDs and due dates and construct PM task creation requests.
+  The old metadata-only description is incomplete. Source inspection alone does
+  not establish complete notification or conversion parity with PM checklists.
+- [DocsEditor](../../frontend/src/components/docs/DocsEditor.tsx) registers an
+  Excalidraw extension. The indefinitely-deferred whiteboard decision below has
+  been superseded in code; its presence does not prove every export/indexing
+  contract handles that node.
+
+The original P0–P2 completion summary, library preferences, estimates of remaining
+work, and deferred list are historical planning judgments. Use current source and
+the [repository roadmap](../../ROADMAP.md) before choosing new work. No browser,
+provider, agent-run, or application-test validation was performed for this review.
+
+## Original roadmap
 
 ## Status
 

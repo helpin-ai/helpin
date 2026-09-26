@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Collapsible } from 'radix-ui';
+import { buildSettingsHomePath } from '@/lib/settingsDiscovery';
+import { SETTINGS_HOME_LABEL, SETTINGS_SIDEBAR_GROUP_LABELS, SETTINGS_TOP_LEVEL_GROUPS } from '@/lib/settingsSections';
 import { ArrowRight01Icon } from '@/lib/icons';
 import {
   SidebarGroup,
@@ -17,6 +19,7 @@ import { COLLAPSIBLE_SETTINGS_GROUPS } from './state';
 import type { NavGroup } from './types';
 
 type SettingsRailNavProps = {
+  workspaceSlug: string;
   groups: NavGroup[];
   isActive: (link: string) => boolean;
   collapsedGroups: Set<string>;
@@ -25,6 +28,7 @@ type SettingsRailNavProps = {
 };
 
 export function SettingsRailNav({
+  workspaceSlug,
   groups,
   isActive,
   collapsedGroups,
@@ -73,8 +77,21 @@ export function SettingsRailNav({
 
   return (
     <>
-      {groups.map((group, index) => {
+      <div className="sticky top-0 z-10 space-y-1 border-b border-border/50 bg-sidebar pb-3 mb-3">
+        <SidebarMenu>
+          <SidebarMenuItem><SidebarMenuButton asChild isActive={isActive(buildSettingsHomePath(workspaceSlug))}><a href={buildSettingsHomePath(workspaceSlug)} onClick={event => { event.preventDefault(); onNavigate(buildSettingsHomePath(workspaceSlug)); }}>{SETTINGS_HOME_LABEL}</a></SidebarMenuButton></SidebarMenuItem>
+          {groups.filter(group => SETTINGS_TOP_LEVEL_GROUPS.has(group.label)).flatMap(group => group.items).map(item => (
+            <SidebarMenuItem key={item.link}>
+              <SidebarMenuButton asChild isActive={isActive(item.link)}>
+                <a href={item.link} onClick={event => { event.preventDefault(); onNavigate(item.link); }}><item.icon className="size-4 shrink-0 text-sidebar-foreground/75" /><span>{item.label}</span></a>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      </div>
+      {groups.filter(group => !SETTINGS_TOP_LEVEL_GROUPS.has(group.label)).map((group, index) => {
         const isCollapsible = COLLAPSIBLE_SETTINGS_GROUPS.has(group.label);
+        const groupLabel = SETTINGS_SIDEBAR_GROUP_LABELS[group.label] ?? group.label;
         const isOpen = !collapsedGroups.has(group.label);
 
         const menuItems = (
@@ -90,7 +107,7 @@ export function SettingsRailNav({
                     asChild
                     tooltip={item.label}
                     isActive={isActive(item.link) && !hasActiveChild}
-                    className="h-8 rounded-md px-2 text-sm"
+                    className="h-8 rounded-md px-2 text-sm font-normal data-active:font-medium"
                   >
                     <a
                       href={item.link}
@@ -99,7 +116,7 @@ export function SettingsRailNav({
                         onNavigate(item.link);
                       }}
                     >
-                      <item.icon />
+                      <item.icon className="size-4 shrink-0 text-sidebar-foreground/75" />
                       <span>{item.label}</span>
                     </a>
                   </SidebarMenuButton>
@@ -163,14 +180,14 @@ export function SettingsRailNav({
               onOpenChange={() => toggleGroup(group.label)}
               asChild
             >
-              <SidebarGroup className="p-0 pb-3">
-                <Collapsible.Trigger asChild>
-                  <SidebarGroupLabel className="h-7 cursor-pointer select-none px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90 hover:text-muted-foreground">
-                    <span className="flex-1">{group.label}</span>
-                    <ArrowRight01Icon className={`h-3 w-3 shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`} />
-                  </SidebarGroupLabel>
-                </Collapsible.Trigger>
-                <Collapsible.Content>
+              <SidebarGroup className="p-0 pb-1">
+                <SidebarGroupLabel asChild className="h-9 w-full gap-2.5 rounded-md px-2 text-sm font-medium normal-case tracking-normal text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring">
+                  <Collapsible.Trigger type="button" className="cursor-pointer select-none text-left">
+                    <span className="min-w-0 flex-1">{groupLabel}</span>
+                    <ArrowRight01Icon className={`size-4 shrink-0 text-sidebar-foreground/70 transition-transform duration-200 motion-reduce:transition-none ${isOpen ? 'rotate-90' : ''}`} />
+                  </Collapsible.Trigger>
+                </SidebarGroupLabel>
+                <Collapsible.Content className="mb-2 ml-4 mt-1 border-l border-sidebar-border pl-2">
                   {menuItems}
                 </Collapsible.Content>
               </SidebarGroup>
@@ -179,10 +196,10 @@ export function SettingsRailNav({
         }
 
         return (
-          <SidebarGroup key={group.label || index} className="p-0 pb-3">
+          <SidebarGroup key={group.label || index} className="p-0 pb-1">
             {group.label && (
-              <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
-                {group.label}
+              <SidebarGroupLabel className="h-9 px-2 text-sm font-medium text-sidebar-foreground">
+                {groupLabel}
               </SidebarGroupLabel>
             )}
             {menuItems}

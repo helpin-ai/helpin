@@ -85,7 +85,7 @@ const QueryBuilderRuleRow = memo(function QueryBuilderRuleRow({
       <div className="text-[11px] text-muted-foreground">{primaryLabel}</div>
 
       <Select value={rule.field} onValueChange={onFieldChange}>
-        <SelectTrigger className="h-8 w-full text-[11px]">
+        <SelectTrigger aria-label={`Filter ${index + 1} field`} className="h-8 w-full text-[11px]">
           <SelectValue placeholder="Field" />
         </SelectTrigger>
         <SelectContent>
@@ -98,7 +98,7 @@ const QueryBuilderRuleRow = memo(function QueryBuilderRuleRow({
       </Select>
 
       <Select value={rule.operator} onValueChange={(value) => onOperatorChange(value as QueryFilterOperator)}>
-        <SelectTrigger className="h-8 w-full text-[11px]">
+        <SelectTrigger aria-label={`Filter ${index + 1} operator`} className="h-8 w-full text-[11px]">
           <SelectValue placeholder="Operator" />
         </SelectTrigger>
         <SelectContent>
@@ -113,16 +113,20 @@ const QueryBuilderRuleRow = memo(function QueryBuilderRuleRow({
       <div className="min-w-0">
         {!showValue ? (
           <div className="h-8 rounded-md border border-dashed border-border/70 bg-muted/30" />
-        ) : renderValue?.(rule, onValueChange) ?? (field?.type === 'date' && showRange ? (
+        ) : renderValue?.(rule, onValueChange) ?? ((field?.type === 'date' || field?.type === 'number') && showRange ? (
           <div className="grid grid-cols-2 gap-1.5">
             <Input
-              type="date"
+              type={field?.type === 'number' ? 'number' : 'date'}
+              step={field?.type === 'number' ? 'any' : undefined}
+              aria-label={`${field?.label ?? 'Filter'} minimum`}
               value={rule.values?.[0] ?? ''}
               onChange={(event) => onRangeValueChange(0, event.target.value)}
               className="h-8 text-[11px]"
             />
             <Input
-              type="date"
+              type={field?.type === 'number' ? 'number' : 'date'}
+              step={field?.type === 'number' ? 'any' : undefined}
+              aria-label={`${field?.label ?? 'Filter'} maximum`}
               value={rule.values?.[1] ?? ''}
               onChange={(event) => onRangeValueChange(1, event.target.value)}
               className="h-8 text-[11px]"
@@ -151,6 +155,9 @@ const QueryBuilderRuleRow = memo(function QueryBuilderRuleRow({
           </Select>
         ) : (
           <Input
+            type={field?.type === 'number' ? 'number' : 'text'}
+            step={field?.type === 'number' ? 'any' : undefined}
+            aria-label={`${field?.label ?? 'Filter'} value`}
             value={rule.value ?? ''}
             onChange={(event) => onValueChange(event.target.value)}
             placeholder={field?.placeholder ?? 'Enter value'}

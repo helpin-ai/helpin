@@ -342,6 +342,11 @@
   transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+.helpin-launcher--left {
+  left: 20px;
+  right: auto;
+}
+
 .helpin-launcher:hover {
   transform: scale(1.05);
   box-shadow: var(--helpin-shadow-xl);
@@ -2721,6 +2726,9 @@
 }
 
 .helpin-conversation-header {
+  /* Keep the menu above the animated message list's stacking context. */
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -3742,6 +3750,11 @@
     right: calc(16px + env(safe-area-inset-right, 0px));
   }
 
+  .helpin-launcher--left {
+    left: calc(16px + env(safe-area-inset-left, 0px));
+    right: auto;
+  }
+
   .helpin-launcher--open {
     display: none;
   }
@@ -4385,3 +4398,8 @@
 .helpin-attachment-video { width: 100%; min-width: 0; }
 .helpin-attachment-video video { display: block; width: 100%; max-height: 280px; border-radius: 8px; background: #111; }
 .helpin-video-fallback { font-size: 12px; margin: 4px 0; }
+
+/* Natural prose follows its own language; code and URLs retain logical order. */
+.helpin-message-content, .helpin-compose textarea { text-align: start; }
+.helpin-message-content pre, .helpin-message-content code { direction: ltr; unicode-bidi: isolate; text-align: left; }
+.helpin-message-content a { unicode-bidi: isolate; }

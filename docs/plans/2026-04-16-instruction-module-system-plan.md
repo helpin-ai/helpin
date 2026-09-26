@@ -1,8 +1,8 @@
-# Agent Skill System Plan
+# Agent skill system implementation plan
 
 ## Status
 
-Phased rollout for replacing heuristic system-prompt refresh logic with a unified agent-skill system.
+Historical phased rollout for replacing heuristic prompt refresh with a unified agent-skill system. The filename preserves the original instruction-module terminology; the source notes below describe the implemented architecture.
 
 Execution order:
 
@@ -22,6 +22,41 @@ Execution order:
   - before launching the runtime, Helpin stages or installs only the skills allowed for that agent into the runtime-visible skill location
 
 This plan supersedes the narrower "instruction module" framing. Built-in prompt fragments are still part of the solution, but they are treated as first-class packaged agent skills and designed to become the same system users will later import and attach.
+
+This plan explains the original ownership, catalog, and package model for Helpin
+agent skills. Use it as design history; several later phases now exist, while
+runtime delivery and compatibility behavior differ from the initial sketches.
+
+## Source review — 2026-09-18
+
+- [Agent skill references](../../server/internal/model/agent.go) are typed
+  `AgentSkillRefs`, with legacy `string[]` JSON decoding. `Key` is a string, and
+  reference configuration uses `JSONBlob`. Skills are no longer passive raw JSON.
+- Built-in parsing/catalog live in
+  [agentcontract](../../server/internal/agentcontract/skill_loader.go), not the
+  historical worker paths. Workspace skill records, repository, and
+  [package import service](../../server/internal/service/agent_workspace_skills.go)
+  exist. Import reads a bounded archive (10 MB), validates it with the shared
+  parser, and requires package storage; metadata alone is not the ZIP import path.
+- [Library routes](../../server/internal/router/router.go) register catalog,
+  import, create, update, and delete with automation read/edit permission.
+  [SkillCatalog](../../frontend/src/pages/automation/SkillCatalog.tsx) and query
+  hooks provide a current UI surface.
+- [Prompt synchronization](../../server/internal/service/agent_system_prompts.go)
+  retains explicit ownership/version handling **and** `legacyPromptIsManaged`
+  compatibility detection. Its managed predicate also accepts a matching current
+  template version, so the simple nil/non-nil invariant below is incomplete when
+  reading legacy data. Do not remove compatibility logic based on this checklist.
+- Runtime references are assembled in [agent.go](../../server/internal/service/agent.go)
+  and packages resolved through the Runtime host service. Built-in compatibility
+  filters and available-versus-active skill roles apply. The proposed assumption
+  that Codex/OpenCode receive every skill through identical filesystem staging is
+  not established by the presence of [staging helpers](../../server/internal/agentskills/stage.go).
+- Package inclusion does not grant tools or demonstrate activation. Provider
+  execution, package sandbox behavior, and full import/UI acceptance were not
+  tested during this documentation review.
+
+## Original plan
 
 ## Goal
 

@@ -166,6 +166,8 @@ func (NotificationPreference) TableName() string { return "notification_preferen
 
 // Notification category constants for grouping event types.
 const (
+	NotifCategoryCRMSignals      = "crm_signals"
+	NotifCategoryIntegrations    = "integrations"
 	NotifCategoryAssignments     = "assignments"
 	NotifCategoryStatusChanges   = "status_changes"
 	NotifCategoryComments        = "comments"
@@ -179,10 +181,12 @@ const (
 
 // EventTypeToCategory maps individual event types to their notification category.
 var EventTypeToCategory = map[string]string{
-	"task.created":                  NotifCategorySubscriptions,
-	"task.assigned":                 NotifCategoryAssignments,
-	"task.agent_attention_required": NotifCategoryAgentAttention,
-	"objective.assigned":            NotifCategoryAssignments,
+	"crm.signal_ready":                      NotifCategoryCRMSignals,
+	"external_mcp.reauthorization_required": NotifCategoryIntegrations,
+	"task.created":                          NotifCategorySubscriptions,
+	"task.assigned":                         NotifCategoryAssignments,
+	"task.agent_attention_required":         NotifCategoryAgentAttention,
+	"objective.assigned":                    NotifCategoryAssignments,
 
 	"task.status_changed": NotifCategoryStatusChanges,
 	"task.blocked":        NotifCategoryStatusChanges,

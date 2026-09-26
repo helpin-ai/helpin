@@ -2,9 +2,9 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"io"
-	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -13,86 +13,192 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
-const workspaceContextMaxPageBytes = 256 * 1024
-const workspaceContextMaxPromptChars = 18000
+const (
+	workspaceContextMaxPageBytes   = 256 * 1024
+	workspaceContextMaxPromptChars = 18000
+	// workspaceContextFetchBudget bounds reading the website; pages are fetched
+	// concurrently and whatever arrived by then is used.
+	workspaceContextFetchBudget = 15 * time.Second
+	// workspaceContextModelTimeout bounds the model call, including a fallback
+	// route, so the request finishes within about 40 seconds.
+	workspaceContextModelTimeout = 25 * time.Second
+)
+
+// Company/product context generation failure codes. They are part of the
+// HTTP contract: the handler maps each to a fixed user-facing sentence.
+const (
+	WorkspaceContextErrAIUnavailable     = "ai_unavailable"
+	WorkspaceContextErrWebsiteUnreadable = "website_unreadable"
+	WorkspaceContextErrTimeout           = "timeout"
+	WorkspaceContextErrGenerationFailed  = "generation_failed"
+)
+
+// WorkspaceContextError is a company/product context generation failure with
+// a stable code. Err carries internal detail for logs only.
+type WorkspaceContextError struct {
+	Code string
+	Err  error
+}
+
+func (e *WorkspaceContextError) Error() string {
+	if e.Err == nil {
+		return "company/product context generation: " + e.Code
+	}
+	return "company/product context generation: " + e.Code + ": " + e.Err.Error()
+}
+
+func (e *WorkspaceContextError) Unwrap() error { return e.Err }
+
+// WorkspaceContextValidationError rejects invalid input with a message that is
+// safe to show to the user.
+type WorkspaceContextValidationError struct {
+	Message string
+}
+
+func (e *WorkspaceContextValidationError) Error() string { return e.Message }
 
 type workspaceContextLLM interface {
 	ChatCompletion(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error)
 }
 
-type WorkspaceContextFetcher interface {
-	FetchText(ctx context.Context, rawURL string) (string, error)
+// workspaceContextProfiles resolves the workspace default AI profile.
+type workspaceContextProfiles interface {
+	ResolveChatExecution(ctx context.Context, workspace, user string) (*AIProfileExecution, error)
 }
 
-type HTTPWorkspaceContextFetcher struct {
-	Client *http.Client
+// workspaceContextProfileCompleter runs a completion on a resolved profile.
+type workspaceContextProfileCompleter interface {
+	CompleteWithProfile(ctx context.Context, input AICompletionRequest, execution *AIProfileExecution) (*llm.ChatResponse, error)
 }
 
-func (f HTTPWorkspaceContextFetcher) FetchText(ctx context.Context, rawURL string) (string, error) {
-	client := f.Client
-	if client == nil {
-		client = &http.Client{Timeout: 8 * time.Second}
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("User-Agent", "Helpin-Onboarding/1.0")
-	res, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer res.Body.Close()
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return "", fmt.Errorf("fetch %s: status %d", rawURL, res.StatusCode)
-	}
-	body, err := io.ReadAll(io.LimitReader(res.Body, workspaceContextMaxPageBytes))
-	if err != nil {
-		return "", err
-	}
-	return htmlToPlainText(string(body)), nil
+// workspaceContextAvailability reports whether server-configured routes can run a feature.
+type workspaceContextAvailability interface {
+	FeatureAvailable(feature, operation string) bool
 }
 
-func (s *WorkspaceService) GenerateCompanyProductDescription(ctx context.Context, req model.GenerateWorkspaceContextDescriptionRequest) (*model.GenerateWorkspaceContextDescriptionResponse, error) {
-	if s.contextLLM == nil {
-		return nil, fmt.Errorf("company/product context generation is not configured")
-	}
-	websiteURL, err := normalizeWorkspaceWebsiteURL(&req.WebsiteURL)
+type workspaceContextCompletion func(ctx context.Context, input AICompletionRequest) (*llm.ChatResponse, error)
+
+// SetContextAIProfiles lets context generation run on the workspace's default
+// AI profile when a workspace is named.
+func (s *WorkspaceService) SetContextAIProfiles(profiles workspaceContextProfiles) *WorkspaceService {
+	s.contextProfiles = profiles
+	return s
+}
+
+// GenerateCompanyProductDescription drafts company/product context from a
+// public website. AI availability is checked before any page is fetched.
+func (s *WorkspaceService) GenerateCompanyProductDescription(ctx context.Context, userID string, req model.GenerateWorkspaceContextDescriptionRequest) (*model.GenerateWorkspaceContextDescriptionResponse, error) {
+	websiteURL, err := validateWorkspaceContextWebsite(req.WebsiteURL)
 	if err != nil {
 		return nil, err
 	}
-	if websiteURL == nil || strings.TrimSpace(*websiteURL) == "" {
-		return nil, fmt.Errorf("website_url is required")
+	workspaceID := strings.TrimSpace(req.WorkspaceID)
+	complete, err := s.workspaceContextCompletion(ctx, workspaceID, userID)
+	if err != nil {
+		return nil, &WorkspaceContextError{Code: WorkspaceContextErrAIUnavailable, Err: err}
 	}
 
 	fetcher := s.contextFetcher
 	if fetcher == nil {
 		fetcher = HTTPWorkspaceContextFetcher{}
 	}
-	pageText := fetchWorkspaceContextPages(ctx, fetcher, *websiteURL)
+	fetchCtx, cancelFetch := context.WithTimeout(ctx, workspaceContextFetchBudget)
+	pageText := fetchWorkspaceContextPages(fetchCtx, fetcher, websiteURL)
+	cancelFetch()
+	if err := ctx.Err(); err != nil {
+		return nil, &WorkspaceContextError{Code: WorkspaceContextErrTimeout, Err: err}
+	}
 	if strings.TrimSpace(pageText) == "" {
-		return nil, fmt.Errorf("could not read useful text from website")
+		return nil, &WorkspaceContextError{Code: WorkspaceContextErrWebsiteUnreadable, Err: errors.New("no readable text on the website")}
 	}
 	if len(pageText) > workspaceContextMaxPromptChars {
 		pageText = pageText[:workspaceContextMaxPromptChars]
 	}
 
-	completionInput := AICompletionRequest{
-		WorkspaceID:    strings.TrimSpace(req.WorkspaceID),
+	input := workspaceContextCompletionInput(workspaceID, strings.TrimSpace(req.WorkspaceName), websiteURL, pageText)
+	modelCtx, cancelModel := context.WithTimeout(ctx, workspaceContextModelTimeout)
+	defer cancelModel()
+	resp, err := complete(modelCtx, input)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(modelCtx.Err(), context.DeadlineExceeded) {
+			return nil, &WorkspaceContextError{Code: WorkspaceContextErrTimeout, Err: err}
+		}
+		return nil, &WorkspaceContextError{Code: WorkspaceContextErrGenerationFailed, Err: err}
+	}
+	description := normalizeCompanyProductContextPlainText(resp.Content)
+	if description == "" {
+		return nil, &WorkspaceContextError{Code: WorkspaceContextErrGenerationFailed, Err: errors.New("generated context was empty")}
+	}
+	return &model.GenerateWorkspaceContextDescriptionResponse{
+		Description:           description,
+		CompanyProductContext: description,
+	}, nil
+}
+
+// workspaceContextCompletion picks the model: the workspace default AI profile
+// when a workspace is named and it can run directly, otherwise the
+// server-configured routes. It fails when neither is available.
+func (s *WorkspaceService) workspaceContextCompletion(ctx context.Context, workspaceID, userID string) (workspaceContextCompletion, error) {
+	var profileErr error
+	if workspaceID != "" && s.contextProfiles != nil {
+		completer, ok := s.contextLLM.(workspaceContextProfileCompleter)
+		if !ok {
+			profileErr = errors.New("profile completions are not configured")
+		} else if execution, err := s.contextProfiles.ResolveChatExecution(ctx, workspaceID, userID); err != nil {
+			profileErr = err
+		} else {
+			return func(ctx context.Context, input AICompletionRequest) (*llm.ChatResponse, error) {
+				return completer.CompleteWithProfile(ctx, input, execution)
+			}, nil
+		}
+	}
+	if s.contextLLM == nil {
+		return nil, errors.Join(profileErr, errors.New("server AI routes are not configured"))
+	}
+	if available, ok := s.contextLLM.(workspaceContextAvailability); ok && !available.FeatureAvailable(BillingFeatureCompanyProductContext, "") {
+		return nil, errors.Join(profileErr, errors.New("no server AI provider is configured for context generation"))
+	}
+	return func(ctx context.Context, input AICompletionRequest) (*llm.ChatResponse, error) {
+		return completeAI(ctx, s.contextLLM, input)
+	}, nil
+}
+
+// validateWorkspaceContextWebsite normalizes the website and rejects addresses
+// that can never be fetched: non-HTTP schemes, credentials, localhost and
+// literal private, loopback, link-local or metadata addresses.
+func validateWorkspaceContextWebsite(raw string) (string, error) {
+	websiteURL, err := normalizeWorkspaceWebsiteURL(&raw)
+	if err != nil {
+		return "", &WorkspaceContextValidationError{Message: "Enter a valid website address, such as https://example.com."}
+	}
+	if websiteURL == nil || strings.TrimSpace(*websiteURL) == "" {
+		return "", &WorkspaceContextValidationError{Message: "website_url is required"}
+	}
+	parsed, err := url.Parse(*websiteURL)
+	if err != nil || !isAllowedSupportPreviewURL(parsed) {
+		return "", &WorkspaceContextValidationError{Message: "Enter a public website address, such as https://example.com."}
+	}
+	if addr, err := netipParseHost(parsed.Hostname()); err == nil && !isPublicSupportPreviewIP(addr) {
+		return "", &WorkspaceContextValidationError{Message: "Enter a public website address, such as https://example.com."}
+	}
+	return *websiteURL, nil
+}
+
+func workspaceContextCompletionInput(workspaceID, workspaceName, websiteURL, pageText string) AICompletionRequest {
+	return AICompletionRequest{
+		WorkspaceID:    workspaceID,
 		FeatureKey:     BillingFeatureCompanyProductContext,
-		IdempotencyKey: aiUsageIdempotencyKey(strings.TrimSpace(req.WorkspaceID), "company_product_context", aiUsageStableHash(strings.TrimSpace(req.WorkspaceName)+"|"+strings.TrimSpace(*websiteURL))),
+		IdempotencyKey: aiUsageIdempotencyKey(workspaceID, "company_product_context", aiUsageStableHash(workspaceName+"|"+websiteURL)),
 		Metadata: map[string]interface{}{
-			"workspace_name": strings.TrimSpace(req.WorkspaceName),
-			"website_url":    strings.TrimSpace(*websiteURL),
+			"workspace_name": workspaceName,
+			"website_url":    websiteURL,
 		},
 		RequireComplete: true,
-	}
-
-	chatRequest := llm.ChatRequest{
-		SystemPrompt: "You draft compact, factual company/product context for AI agents. Use only the provided website text. Return plain text only.",
-		Messages: []llm.Message{{
-			Role: "user",
-			Content: fmt.Sprintf(`Draft company/product context for workspace %q.
+		Chat: llm.ChatRequest{
+			SystemPrompt: "You draft compact, factual company/product context for AI agents. Use only the provided website text. Return plain text only.",
+			Messages: []llm.Message{{
+				Role: "user",
+				Content: fmt.Sprintf(`Draft company/product context for workspace %q.
 
 Write compact plain text with short labeled sections when useful:
 Start with one unlabeled product summary pointer.
@@ -104,24 +210,12 @@ Competitors:
 Put "- " before each content pointer. Do not include a Product label. Use Competitors only when competitor names or alternatives are clearly present in the website text. Group related tools, channels, platforms, and integrations instead of listing every item. Use short lines and avoid long comma-separated lists. Do not use formatting syntax such as heading markers, bold markers, or code fences. Use as few words as possible without dropping important product facts. Avoid repeated claims, generic marketing language, unsupported claims, and granular website details that should remain in website sources. Keep it useful for support, docs, planning, and engineering agents.
 
 Website text:
-%s`, strings.TrimSpace(req.WorkspaceName), pageText),
-		}},
-		Temperature: 0.2,
-		MaxTokens:   2400,
+%s`, workspaceName, pageText),
+			}},
+			Temperature: 0.2,
+			MaxTokens:   2400,
+		},
 	}
-	completionInput.Chat = chatRequest
-	resp, err := completeAI(ctx, s.contextLLM, completionInput)
-	if err != nil {
-		return nil, fmt.Errorf("generate company/product context: %w", err)
-	}
-	description := normalizeCompanyProductContextPlainText(resp.Content)
-	if description == "" {
-		return nil, fmt.Errorf("generated company/product context was empty")
-	}
-	return &model.GenerateWorkspaceContextDescriptionResponse{
-		Description:           description,
-		CompanyProductContext: description,
-	}, nil
 }
 
 func normalizeCompanyProductContextPlainText(raw string) string {
@@ -166,38 +260,6 @@ func normalizeCompanyProductContextLine(line string, firstContentLine bool) stri
 		return "- " + strings.TrimSpace(line[2:])
 	}
 	return line
-}
-
-func fetchWorkspaceContextPages(ctx context.Context, fetcher WorkspaceContextFetcher, baseURL string) string {
-	candidates := []string{
-		baseURL,
-		joinWebsitePath(baseURL, "/features"),
-		joinWebsitePath(baseURL, "/product"),
-		joinWebsitePath(baseURL, "/solutions"),
-		joinWebsitePath(baseURL, "/pricing"),
-		joinWebsitePath(baseURL, "/about"),
-	}
-	seen := map[string]bool{}
-	var b strings.Builder
-	for _, candidate := range candidates {
-		if seen[candidate] {
-			continue
-		}
-		seen[candidate] = true
-		text, err := fetcher.FetchText(ctx, candidate)
-		if err != nil || strings.TrimSpace(text) == "" {
-			continue
-		}
-		b.WriteString("\n\nURL: ")
-		b.WriteString(candidate)
-		b.WriteString("\n")
-		b.WriteString(strings.TrimSpace(text))
-	}
-	return b.String()
-}
-
-func joinWebsitePath(baseURL string, path string) string {
-	return strings.TrimRight(baseURL, "/") + path
 }
 
 var (

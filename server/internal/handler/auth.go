@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
@@ -23,10 +24,17 @@ import (
 
 // AuthHandler handles authentication HTTP requests.
 type AuthHandler struct {
+	publicWidgetURL  string
+	publicSDKURL     string
 	authService      *service.AuthService
 	googleOAuth      *oauth2.Config
 	appBaseURL       string
 	mobileAppBaseURL string
+	// setupGuideEnabled mirrors the server-side Setup guide gate so prebuilt
+	// clients need no build-time flag.
+	setupGuideEnabled bool
+	// signupPolicy is the self-hosted signup policy; nil means open signup.
+	signupPolicy signupPolicyReader
 }
 
 type GoogleOAuthConfig struct {
@@ -67,7 +75,15 @@ func (h *AuthHandler) Signup(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := h.authService.Signup(r.Context(), req)
 	if err != nil {
+		if isSignupRestricted(err) {
+			writeErrorCode(w, http.StatusForbidden, err.Error(), "signup_restricted")
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if resp.VerificationRequired {
+		writeJSON(w, http.StatusAccepted, model.SignupVerificationResponse{VerificationRequired: true, Email: resp.User.Email})
 		return
 	}
 
@@ -184,6 +200,11 @@ func (h *AuthHandler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp, err := h.authService.SignInWithGoogle(r.Context(), identity)
+	if err != nil && isSignupRestricted(err) {
+		slog.InfoContext(r.Context(), "google signup rejected by signup policy", "error", err)
+		http.Redirect(w, r, h.googleAuthFailureRedirect(client, "signup_restricted"), http.StatusFound)
+		return
+	}
 	if err != nil {
 		slog.ErrorContext(r.Context(), "google auth signin failed", "error", err)
 		http.Redirect(w, r, h.googleAuthFailureRedirect(client, "signin_failed"), http.StatusFound)
@@ -233,6 +254,27 @@ func (h *AuthHandler) Signin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp, err := h.authService.Signin(r.Context(), req)
+	if err != nil {
+		writeAuthError(w, err)
+		return
+	}
+
+	setAuthCookies(w, r, resp.AccessToken, resp.RefreshToken)
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// DemoSignin handles POST /api/auth/demo. It signs the visitor in as the shared
+// read-only demo viewer without a password. Disabled unless DEMO_VIEWER_EMAIL is set.
+func (h *AuthHandler) DemoSignin(w http.ResponseWriter, r *http.Request) {
+	var req model.DemoSigninRequest
+	if r.ContentLength != 0 {
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+	}
+
+	resp, err := h.authService.DemoSignin(r.Context(), req)
 	if err != nil {
 		writeAuthError(w, err)
 		return
@@ -660,6 +702,10 @@ func writeAuthError(w http.ResponseWriter, err error) {
 		writeErrorCode(w, http.StatusUnauthorized, "invalid credentials", "invalid_credentials")
 	case errors.Is(err, service.ErrTwoFAUnavailable):
 		writeErrorCode(w, http.StatusServiceUnavailable, err.Error(), "two_factor_unavailable")
+	case errors.Is(err, service.ErrDemoDisabled):
+		writeErrorCode(w, http.StatusNotFound, err.Error(), "demo_disabled")
+	case errors.Is(err, service.ErrEmailVerificationPending):
+		writeErrorCode(w, http.StatusForbidden, err.Error(), "email_verification_pending")
 	case errors.Is(err, service.ErrBadRequest):
 		writeErrorCode(w, http.StatusBadRequest, strings.TrimPrefix(err.Error(), service.ErrBadRequest.Error()+": "), "bad_request")
 	default:
@@ -702,4 +748,66 @@ func (h *AuthHandler) RegenerateRecoveryCodes(w http.ResponseWriter, r *http.Req
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// GetConfig exposes non-secret authentication capabilities to prebuilt clients.
+func (h *AuthHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
+	policy := h.publicSignupPolicy(r)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"public_widget_url":           h.publicWidgetURL,
+		"public_sdk_url":              h.publicSDKURL,
+		"email_verification_required": h.authService.EmailVerificationRequired(),
+		"app_email_configured":        h.authService.AppEmailConfigured(),
+		"google_login_enabled":        h.googleOAuth != nil,
+		"demo_enabled":                h.authService.DemoEnabled(),
+		"demo_requires_email":         h.authService.DemoRequiresEmail(),
+		"setup_guide_enabled":         h.setupGuideEnabled,
+		"signup_mode":                 policy.Mode,
+		"signup_allowed_domains":      policy.AllowedDomains,
+		"signup_first_user":           policy.FirstUser,
+	})
+}
+
+// publicSignupPolicy returns the server's signup policy, or open signup when
+// the edition has none.
+func (h *AuthHandler) publicSignupPolicy(r *http.Request) model.PublicSignupPolicy {
+	open := model.PublicSignupPolicy{Mode: model.SignupModeOpen, AllowedDomains: []string{}}
+	if h.signupPolicy == nil {
+		return open
+	}
+	policy, err := h.signupPolicy.PublicPolicy(r.Context())
+	if err != nil {
+		// Fail toward the stricter UI; the server enforces the policy anyway.
+		slog.ErrorContext(r.Context(), "read signup policy failed", "error", err)
+		return model.PublicSignupPolicy{Mode: model.SignupModeInviteOnly, AllowedDomains: []string{}}
+	}
+	if policy.AllowedDomains == nil {
+		policy.AllowedDomains = []string{}
+	}
+	return policy
+}
+
+// SetSignupPolicy lets the auth config report the server's signup policy.
+func (h *AuthHandler) SetSignupPolicy(policy signupPolicyReader) {
+	h.signupPolicy = policy
+}
+
+// signupPolicyReader reads the public signup policy.
+type signupPolicyReader interface {
+	PublicPolicy(ctx context.Context) (model.PublicSignupPolicy, error)
+}
+
+func isSignupRestricted(err error) bool {
+	return errors.Is(err, service.ErrSignupInviteOnly) || errors.Is(err, service.ErrSignupDomainNotAllowed) || errors.Is(err, service.ErrSignupVerificationUnavailable)
+}
+
+func (h *AuthHandler) SetPublicWidgetURLs(widget, sdk string) {
+	h.publicWidgetURL = widget
+	h.publicSDKURL = sdk
+}
+
+// SetSetupGuideEnabled reports whether the workspace Setup guide routes are
+// registered, so the dashboard shows the guide only when the API serves it.
+func (h *AuthHandler) SetSetupGuideEnabled(enabled bool) {
+	h.setupGuideEnabled = enabled
 }

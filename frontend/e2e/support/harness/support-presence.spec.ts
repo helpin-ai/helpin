@@ -21,7 +21,7 @@ async function waitForHarness(page: import('@playwright/test').Page) {
 }
 
 function conversationRow(page: import('@playwright/test').Page) {
-  return page.getByRole('button', { name: /Visitor Example/ })
+  return page.locator('[data-conversation-id="conv-1"][role="button"]')
 }
 
 test('agent typing is visible to another agent in list and thread', async ({ browser, baseURL }) => {

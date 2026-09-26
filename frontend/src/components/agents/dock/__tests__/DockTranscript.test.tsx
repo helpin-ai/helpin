@@ -8,12 +8,14 @@ import type {
   CodingSessionStreamState,
   CodingSessionTranscriptMessage,
 } from '@/lib/pmTypes';
+import { useDockStore } from '@/stores/dockStore';
 import { useAuthStore } from '@/stores/authStore';
 import { buildCodingSessionStreamState } from '@/components/pm/CodingSession/codingSessionStream';
 import type { CodingSessionEvent } from '@/lib/pmTypes';
 import { resolveAgentLiveProgress } from '../agentProgress';
 import { AgentLiveStatus } from '../AgentLiveStatus';
 import { DockTranscript } from '../DockTranscript';
+import { transformDockStream } from '../dockChatState';
 
 const mocks = vi.hoisted(() => ({
   resolveTeamMemberAvatarSrc: vi.fn(),
@@ -62,6 +64,7 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  useDockStore.setState({ transcriptView: 'detailed' });
   mocks.resolveTeamMemberAvatarSrc.mockReset();
   mocks.getMessageWorkDetail.mockReset();
   container = document.createElement('div');
@@ -159,6 +162,17 @@ function assistantTurn(id: string, content: string): CodingSessionLiveTurnSegmen
 }
 
 describe('DockTranscript', () => {
+  it('keeps an anchored plan above a follow-up and collapses the earlier plan', () => {
+    const stream = streamWithMessages([userMessage('first', 'Initial request', 1), assistantMessage('answer', 'First response', 3), userMessage('followup', 'Next request', 4)]);
+    stream.current_plan = {origin:{event_id:'plan-event',turn_id:'turn-1',created_at:'2026-08-06T00:00:02Z'},plan:[{step:'Inspect code',status:'completed'}]};
+    act(() => root.render(<DockTranscript stream={stream} active={false} workspaceId="ws-1" />));
+    const plan = container.querySelector('[data-coding-session-plan]')!;
+    expect(plan).not.toBeNull();
+    expect(plan.hasAttribute('open')).toBe(false);
+    expect(container.textContent!.indexOf('Work plan')).toBeLessThan(container.textContent!.indexOf('Next request'));
+    expect(container.textContent!.indexOf('Initial request')).toBeLessThan(container.textContent!.indexOf('Work plan'));
+  });
+
   it('collapses already-loaded standalone run work and keeps the final response visible', () => {
     act(() => {
       root.render(
@@ -757,11 +771,11 @@ describe('DockTranscript', () => {
     expect(text.indexOf('Sub-agent runs')).toBeLessThan(text.indexOf('Beacon failed to start.'));
   });
 
-  it('uses the signed-in user\'s configured avatar for persisted messages', () => {
+  it('shows the sender below the persisted message without an avatar', () => {
     act(() => {
       root.render(
         <DockTranscript
-          stream={streamWithMessages([userMessage('user-1', 'Show my avatar.', 1, 'user-1')])}
+          stream={streamWithMessages([userMessage('user-1', 'Show my message.', 1, 'user-1')])}
           active={false}
           workspaceId="ws-1"
         />,
@@ -769,14 +783,11 @@ describe('DockTranscript', () => {
     });
 
     expect(container.textContent).toContain('Alice Johnson');
-    expect(mocks.resolveTeamMemberAvatarSrc).toHaveBeenCalledWith({
-      avatarUrl: undefined,
-      avatarStyle: 'personas',
-      avatarSeed: 'alice-seed',
-      avatarBackgroundMode: 'color',
-      avatarBackgroundColor: '#fbbf24',
-      fallbackSeed: 'Alice Johnson',
-    });
+    expect(mocks.resolveTeamMemberAvatarSrc).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-message-sender]')?.textContent).toContain('Alice Johnson');
+    expect(container.querySelector('[data-message-sender] time')?.getAttribute('datetime')).toBe('2026-08-06T00:00:01Z');
+    expect(container.querySelector('[data-message-sender] time')?.textContent).toBe(new Date('2026-08-06T00:00:01Z').toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }));
+    expect(container.textContent!.indexOf('Show my message.')).toBeLessThan(container.textContent!.indexOf('Alice Johnson'));
   });
 
   it('shows the teammate who authored each persisted message', () => {
@@ -811,6 +822,26 @@ describe('DockTranscript', () => {
     });
 
     expect(container.textContent).toContain('Bob Smith approved');
+    expect(container.querySelector('[data-dock-decision="approved"]')).not.toBeNull();
+    expect(container.querySelector('[data-message-sender]')).toBeNull();
+  });
+
+  it.each(['approval', 'approval_request_resolution'])('renders %s as an activity decision without a synthetic user message', (messageType) => {
+    act(() => {
+      root.render(<DockTranscript
+        stream={streamWithMessages([
+          userMessage('real-user', 'Approved. Continue.', 1),
+          { ...userMessage('decision', 'Approved. Continue.', 2, 'user-2'), message_type: messageType },
+        ])}
+        active={false}
+        workspaceId="ws-1"
+      />);
+    });
+
+    const decision = container.querySelector('[data-dock-decision="approved"]');
+    expect(decision?.textContent).toBe('Bob Smith approved');
+    expect(container.textContent?.match(/Approved\. Continue\./g)).toHaveLength(1);
+    expect(container.querySelectorAll('[data-message-sender]')).toHaveLength(1);
   });
 
   it('groups adjacent successful calls without timing and keeps failures separate', () => {
@@ -932,5 +963,175 @@ describe('explicit turn delivery in the rendered dock', () => {
     expect(stream.turn_state).toMatchObject({ turn_id: 'turn-2', phase: 'working' });
     expect(status?.label).toBe('Working…');
     expect(status?.startedAt).toBe('2026-09-11T12:00:50Z');
+  });
+});
+
+describe('Timeline view', () => {
+  it('keeps repeated approvals inside one stable activity until the final response and next user turn', () => {
+    useDockStore.setState({ transcriptView: 'timeline' });
+    const messages = [userMessage('request', 'Check the official data.', 1),
+      { ...assistantMessage('progress', 'Checking the official source.', 2), message_type: 'assistant_progress' }];
+    const render = (active = true) => act(() => root.render(<DockTranscript stream={streamWithMessages(messages)} active={active} compactAssistantProgress workspaceId="ws-1" />));
+    render();
+    const activity = container.querySelector('[data-dock-activity-timeline]');
+    for (let i = 0; i < 5; i++) {
+      messages.push({ ...userMessage(`approval-${i}`, i === 2 ? 'Approved.\nOnly use official data.' : 'Approved. Continue.', 3, 'user-2'),
+        message_type: i % 2 ? 'approval_request_resolution' : 'approval' });
+      messages.push({ ...assistantMessage(`progress-${i}`, `Continuing step ${i}.`, 4), message_type: 'assistant_progress' });
+      render();
+      expect(container.querySelectorAll('[data-dock-activity-timeline]')).toHaveLength(1);
+      expect(container.querySelector('[data-dock-activity-timeline]')).toBe(activity);
+    }
+    expect(activity?.querySelectorAll('[data-dock-decision="approved"]')).toHaveLength(5);
+    expect(activity?.textContent).toContain('Bob Smith approved');
+    expect(activity?.querySelector('details')?.textContent).toContain('Only use official data.');
+    expect(container.querySelectorAll('[data-message-sender]')).toHaveLength(1);
+    messages.push({ ...assistantMessage('answer', 'Here are the findings.', 5), message_type: 'assistant_final' });
+    render(false);
+    expect(container.querySelectorAll('[data-dock-activity-timeline]')).toHaveLength(1);
+    expect(container.textContent).toContain('Here are the findings.');
+    expect(activity?.textContent).not.toContain('Here are the findings.');
+    act(() => activity?.querySelector<HTMLButtonElement>('button')?.click());
+    expect(activity?.querySelectorAll('[data-dock-decision="approved"]')).toHaveLength(5);
+    messages.push(userMessage('followup', 'Compare the next dataset.', 6),
+      { ...assistantMessage('next-progress', 'Checking the next dataset.', 7), message_type: 'assistant_progress' });
+    render();
+    expect(container.querySelectorAll('[data-dock-activity-timeline]')).toHaveLength(2);
+  });
+
+  it('loads saved approvals inside the completed activity with their attribution and notes', async () => {
+    useDockStore.setState({ transcriptView: 'timeline' });
+    mocks.getMessageWorkDetail.mockResolvedValue({ data: { messages: [
+      { id: 'saved-progress', workspace_id: 'ws-1', run_id: 'run-1', role: 'assistant', message_type: 'assistant_progress', content: 'Checking the source.', sequence_no: 1, created_at: '2026-08-06T00:00:01Z' },
+      { id: 'saved-approval', workspace_id: 'ws-1', run_id: 'run-1', role: 'user', message_type: 'approval_request_resolution', content: 'Approved.\nKeep the source link.', actor_user_id: 'user-2', sequence_no: 2, created_at: '2026-08-06T00:00:02Z' },
+    ] }, error: null });
+    const summary = { ...assistantMessage('work:saved-answer', '', 3), message_type: 'status',
+      dock_work_summary: { message_id: 'saved-answer', duration_ms: 3000, activity_count: 2 } };
+    act(() => root.render(<DockTranscript stream={streamWithMessages([summary,
+      { ...assistantMessage('saved-answer', 'The findings.', 4), message_type: 'assistant_final' }])}
+      active={false} compactAssistantProgress workspaceId="ws-1" chatId="chat-1" />));
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-dock-work-disclosure] button')?.click());
+    const history = container.querySelector('[aria-label="Activity steps"]');
+    expect(history?.textContent).toContain('Checking the source.');
+    expect(history?.textContent).toContain('Bob Smith approved');
+    expect(history?.querySelector('details')?.textContent).toContain('Keep the source link.');
+    expect(container.querySelectorAll('[data-dock-work-disclosure]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-message-sender]')).toHaveLength(0);
+  });
+
+  it.each([
+    ['awaiting_user_message', 'Activity'],
+    ['human_input', 'Needs your input'],
+    ['human_approval', 'Waiting for approval'],
+    ['authentication', 'Waiting for sign-in'],
+  ] as const)('labels a paused %s turn accurately', (pauseReason, label) => {
+    useDockStore.setState({ transcriptView: 'timeline' });
+    const progress = { ...assistantMessage('progress', 'I will add a paragraph.', 1), message_type: 'assistant_progress' };
+    act(() => root.render(<DockTranscript stream={streamWithMessages([progress])} active={false}
+      compactAssistantProgress runStatus="paused" pauseReason={pauseReason} />));
+    expect(container.querySelector('[data-dock-activity-timeline] > button')?.textContent).toBe(label);
+    if (pauseReason === 'awaiting_user_message') expect(container.textContent).not.toContain('Needs your input');
+  });
+
+  it('shows completed work without a caret or an interactive control when there are no steps', () => {
+    useDockStore.setState({ transcriptView: 'timeline' });
+    const summary = { ...assistantMessage('work:empty-final', '', 2), message_type: 'status',
+      dock_work_summary: { message_id: 'empty-final', duration_ms: 9000, activity_count: 0 } };
+    act(() => root.render(<DockTranscript stream={streamWithMessages([
+      summary, { ...assistantMessage('empty-final', 'Done.', 3), message_type: 'assistant_final' },
+    ])} active={false} workspaceId="ws-1" chatId="chat-1" compactAssistantProgress
+      runStatus="paused" pauseReason="awaiting_user_message" />));
+    const completion = container.querySelector('[data-dock-work-disclosure]');
+    expect(completion?.textContent).toContain('Work completed');
+    expect(completion?.querySelector('button, [data-disclosure-chevron], [aria-expanded]')).toBeNull();
+    expect(mocks.getMessageWorkDetail).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain('Needs your input');
+    expect(container.textContent).toContain('Done.');
+  });
+
+  it('shows live activity with the branded loader and collapses it when the final answer arrives', () => {
+    useDockStore.setState({ transcriptView: 'timeline' });
+    const progress = { ...assistantMessage('progress', 'Reviewing your tasks.', 1), message_type: 'assistant_progress' };
+    const answer = { ...assistantMessage('answer', 'Three tasks need attention.', 2), message_type: 'assistant_final' };
+    act(() => root.render(<DockTranscript stream={streamWithMessages([progress])} active compactAssistantProgress />));
+    expect(container.querySelector('[data-agent-work-loader]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Activity steps"]')?.textContent).toContain('Reviewing your tasks.');
+    act(() => root.render(<DockTranscript stream={streamWithMessages([progress, answer])} active={false} compactAssistantProgress />));
+    expect(container.textContent).toContain('Work completed');
+    expect(container.textContent).toContain('Three tasks need attention.');
+    expect(container.textContent).not.toContain('Reviewing your tasks.');
+    act(() => container.querySelector<HTMLButtonElement>('[data-dock-activity-timeline] > button')?.click());
+    expect(container.textContent).toContain('Reviewing your tasks.');
+  });
+
+  it('preserves manual collapse during streaming and reveals failed steps when work stops', () => {
+    useDockStore.setState({ transcriptView: 'timeline' });
+    const progress = { ...assistantMessage('progress', 'Reviewing your tasks.', 1), message_type: 'assistant_progress' };
+    const tool = toolTurn('search', 'search_tasks', 100, 'running');
+    const render = (active: boolean) => act(() => root.render(<DockTranscript
+      stream={streamWithMessages([progress, { ...assistantMessage('tools', '', 2), turn_segments: [tool] }])}
+      active={active} compactAssistantProgress runStatus={active ? 'running' : 'failed'} />));
+    render(true);
+    act(() => container.querySelector<HTMLButtonElement>('[data-dock-activity-timeline] > button')?.click());
+    render(true);
+    expect(container.querySelector('[aria-label="Activity steps"]')).toBeNull();
+    if (tool.kind !== 'tool_call') throw new Error('Expected a tool');
+    tool.tool_call.status = 'failed';
+    tool.tool_call.result = { error: 'Task search is unavailable.' };
+    render(false);
+    expect(container.textContent).toContain('Some steps failed');
+    expect(container.textContent).toContain('Task search is unavailable.');
+    expect(container.querySelector('[data-agent-work-loader]')).toBeNull();
+  });
+
+  it('keeps an expanded tool row mounted as live execution is saved', () => {
+    useDockStore.setState({ transcriptView: 'timeline' });
+    const live = streamWithMessages([]);
+    live.live_turn_segments = [toolTurn('search', 'search_tasks', 100, 'running', '{"query":"sprint"}')];
+    act(() => root.render(<DockTranscript stream={live} active useRuntimeTimeline compactAssistantProgress />));
+    const button = container.querySelector<HTMLButtonElement>('[aria-label="Activity steps"] button')!;
+    act(() => button.click());
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+    const saved = streamWithMessages([{ ...assistantMessage('tools', '', 1), turn_segments: [toolTurn('search', 'search_tasks', 200, 'completed', '{"query":"sprint"}')] }]);
+    act(() => root.render(<DockTranscript stream={saved} active useRuntimeTimeline compactAssistantProgress />));
+    expect(container.querySelector('[aria-label="Activity steps"] button')).toBe(button);
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+    expect(container.textContent).toContain('{"query":"sprint"}');
+  });
+
+  it('changes presentation without losing messages and persists the preference', () => {
+    useDockStore.setState({ transcriptView: 'timeline' });
+    const progress = { ...assistantMessage('progress', 'Reviewing your tasks.', 1), message_type: 'assistant_progress' };
+    act(() => root.render(<DockTranscript stream={streamWithMessages([progress])} active compactAssistantProgress />));
+    expect(container.querySelector('[data-dock-activity-timeline]')).not.toBeNull();
+    act(() => useDockStore.getState().setTranscriptView('detailed'));
+    expect(container.querySelector('[data-dock-activity-timeline]')).toBeNull();
+    expect(container.textContent).toContain('Reviewing your tasks.');
+    expect(localStorage.getItem('helpin:agent-dock-transcript-view')).toBe('detailed');
+    act(() => useDockStore.getState().setTranscriptView('timeline'));
+    expect(container.querySelector('[data-dock-activity-timeline]')).not.toBeNull();
+  });
+});
+
+
+describe('chat-only follow-up metadata', () => {
+  it.each([true, false])('copies the chat presentation without changing non-chat transcripts (chat=%s)', async (chat) => {
+    const content = 'Task created.\n\n<!-- helpin_follow_up_suggestions ["Review the task"] -->';
+    const source = streamWithMessages([{ ...assistantMessage('answer', content, 1), message_type: 'assistant_final' }]);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const descriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    try {
+      act(() => root.render(<DockTranscript stream={chat ? transformDockStream(source).stream : source} active={false} />));
+      if (chat) expect(container.textContent).not.toContain('helpin_follow_up_suggestions');
+      const copy = container.querySelector<HTMLButtonElement>('button[aria-label="Copy message"]');
+      expect(copy).not.toBeNull();
+      await act(async () => { copy!.click(); });
+      expect(writeText).toHaveBeenCalledWith(chat ? 'Task created.' : content);
+      expect(source.transcript_messages[0].content).toBe(content);
+    } finally {
+      if (descriptor) Object.defineProperty(navigator, 'clipboard', descriptor);
+      else Reflect.deleteProperty(navigator, 'clipboard');
+    }
   });
 });

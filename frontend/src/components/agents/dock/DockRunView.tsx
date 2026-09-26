@@ -1,10 +1,14 @@
+import { dockWorkPlans, hasWorkPlanOrigin } from './dockWorkPlans';
+import activityStyles from './DockActivityTimeline.module.css';
+import { AIExecutionDetails } from "../AIExecutionDetails";
+import { AIConnectionPicker } from '@/components/agents/AIConnectionPicker';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Loading01Icon } from '@/lib/icons';
 import { DockInput } from './DockInput';
 import { DockTranscript } from './DockTranscript';
 import { PendingInteractionCard } from './PendingInteractionCard';
-import { ApprovalAttentionBanner } from './ApprovalAttentionBanner';
+import { DockInteractionLayer } from './DockInteractionLayer';
 import { ScrollToLatestButton } from '@/components/agents/transcript';
 import { CodingPlanPanel } from '@/components/pm/CodingSession/CodingPlanPanel';
 import { dockChatService } from '@/lib/services/dockChatService';
@@ -41,14 +45,9 @@ export function DockRunView({
   const [fallbackInteraction, setFallbackInteraction] = useState<CodingSessionInteraction | null>(null);
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [pausing, setPausing] = useState(false);
+  const [resuming, setResuming] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
-  const [authBusy, setAuthBusy] = useState(false);
-  const [authState, setAuthState] = useState<{
-    verification_url?: string;
-    auth_url?: string;
-    user_code?: string;
-    error?: string;
-  } | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const autoFollowRef = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
@@ -83,23 +82,23 @@ export function DockRunView({
   }), [completedRun, currentPlan, effectiveRun, streamState]);
 
   const refreshInteractions = useCallback(async () => {
-    if (effectiveRun.status !== 'paused') return;
+    if (effectiveRun.status !== 'paused' || effectiveRun.pause_reason === 'manual') return;
     const result = await dockChatService.listRunInteractions(workspaceId, run.id);
     if (!result.data) return;
     const pending = result.data.interactions.filter((interaction) => interaction.status === 'pending');
     const latest = pending[pending.length - 1] as (CodingSessionInteraction & { id?: string }) | undefined;
     setFallbackInteraction(latest ? { ...latest, interaction_id: latest.interaction_id ?? latest.id ?? '' } : null);
-  }, [effectiveRun.status, run.id, workspaceId]);
+  }, [effectiveRun.status, effectiveRun.pause_reason, run.id, workspaceId]);
 
   useEffect(() => {
     if (!active || !networkAvailable) return;
-    if (effectiveRun.status === 'paused') {
+    if (effectiveRun.status === 'paused' && effectiveRun.pause_reason !== 'manual') {
       const timer = window.setTimeout(() => void refreshInteractions(), 0);
       return () => window.clearTimeout(timer);
     }
     const timer = window.setTimeout(() => setFallbackInteraction(null), 0);
     return () => window.clearTimeout(timer);
-  }, [active, networkAvailable, effectiveRun.status, refreshInteractions]);
+  }, [active, networkAvailable, effectiveRun.status, effectiveRun.pause_reason, refreshInteractions]);
 
   useEffect(() => {
     const node = scrollRef.current;
@@ -125,13 +124,9 @@ export function DockRunView({
   useEffect(() => {
     const node = scrollRef.current;
     if (node && autoFollowRef.current) node.scrollTop = node.scrollHeight;
-  }, [streamState, pendingInteraction, fallbackInteraction, sendError]);
+  }, [streamState, sendError]);
 
-  const interaction = pendingInteraction ?? fallbackInteraction;
-  const needsApproval = (
-    (effectiveRun.status === 'paused' && effectiveRun.pause_reason === 'human_approval')
-    || interaction?.interaction_kind.includes('approval') === true
-  );
+  const interaction = effectiveRun.pause_reason === 'manual' ? null : pendingInteraction ?? fallbackInteraction;
   const resolveInteraction = useCallback(async (
     interactionId: string,
     payload: { response_payload: Record<string, unknown>; followup_message?: string },
@@ -195,40 +190,65 @@ export function DockRunView({
     setStopping(false);
   };
 
-  const startAuth = async () => {
-    if (authBusy) return;
-    setAuthBusy(true);
-    const result = await dockChatService.startRunAuth(workspaceId, run.id);
-    if (result.error) toast.error(result.error);
-    else setAuthState(result.data);
-    setAuthBusy(false);
+  const pause = async () => {
+    if (pausePending) return;
+    setPausing(true);
+    try {
+      const result = await dockChatService.pauseRun(workspaceId, run.id);
+      if (result.error) toast.error(result.error);
+      else { onRunChanged(); await refetch(); }
+    } finally {
+      setPausing(false);
+    }
   };
 
-  const cancelAuth = async () => {
-    if (authBusy) return;
-    setAuthBusy(true);
-    const result = await dockChatService.cancelRunAuth(workspaceId, run.id);
-    if (result.error) toast.error(result.error);
-    else setAuthState(null);
-    setAuthBusy(false);
+  const resume = async () => {
+    if (resumePending) return;
+    setResuming(true);
+    try {
+      const result = await dockChatService.resumeRun(workspaceId, run.id);
+      if (result.error) toast.error(result.error);
+      else { onRunChanged(); await refetch(); }
+    } finally {
+      setResuming(false);
+    }
   };
 
   const composerEnabled = effectiveRun.status === 'failed'
     || effectiveRun.status === 'cancelled'
     || (effectiveRun.status === 'paused' && (effectiveRun.pause_reason === 'human_input' || effectiveRun.pause_reason === 'awaiting_user_message') && !interaction);
-  const canStop = effectiveRun.status === 'queued' || effectiveRun.status === 'running';
+  const canPause = effectiveRun.status === 'queued' || effectiveRun.status === 'running';
+  const canResume = effectiveRun.status === 'paused' && effectiveRun.pause_reason === 'manual';
+  const canStop = canPause || canResume;
+  const pausePending = pausing || effectiveRun.execution_stage === 'pausing';
+  const resumePending = resuming || effectiveRun.execution_stage === 'resuming';
   const cancellationPending = stopping || effectiveRun.execution_stage === 'cancelling';
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <DockInteractionLayer
+      active={active}
+      interactionId={interaction?.interaction_id}
+      prompt={interaction && (
+        <PendingInteractionCard
+          workspaceId={workspaceId}
+          runId={run.id}
+          interaction={interaction}
+          resolve={resolveInteraction}
+          onResolved={onRunChanged}
+        />
+      )}
+    >
       <div className="relative min-h-0 flex-1">
-        <div ref={scrollRef} className="absolute inset-0 overflow-y-auto px-3.5 py-3">
+        <div ref={scrollRef} className={`${activityStyles.activityHost} absolute inset-0 overflow-y-auto px-5 py-3 sm:px-6`}>
           {loading && !streamState ? (
             <div className="grid min-h-28 place-items-center text-[#8a8781]"><Loading01Icon className="h-4 w-4 animate-spin" /></div>
           ) : null}
+          <AIExecutionDetails input={run.input} />
           <DockTranscript
             stream={streamState}
             active={transcriptStreaming}
+            runStatus={effectiveRun.status}
+            pauseReason={effectiveRun.pause_reason}
             useRuntimeTimeline={showRuntimeTimeline}
             workspaceId={workspaceId}
             fallbackActor={session?.triggered_by_user}
@@ -238,9 +258,7 @@ export function DockRunView({
           {!loading && !streamState ? (
             <p className="py-8 text-center text-[13px] text-[#8a8781]">No activity has been recorded for this run yet.</p>
           ) : null}
-          {currentPlan ? (
-            <CodingPlanPanel plan={currentPlan} runStatus={effectiveRun.status} title="Work plan" />
-          ) : null}
+
           {effectiveRun.error_message ? (
             <div className="mt-3 rounded-xl border border-[#f2c9c5] bg-[#fdf6f5] p-3 text-[12.5px] text-[#8e2525] dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-200">
               <p className="font-semibold">Run failed</p>
@@ -251,32 +269,9 @@ export function DockRunView({
             </div>
           ) : null}
           {effectiveRun.status === 'paused' && effectiveRun.pause_reason === 'authentication' ? (
-            <div className="mt-3 rounded-xl border border-[#f0c98a] bg-[#fffaf1] p-3 text-[13px] text-[#1c1b19] dark:border-amber-900/70 dark:bg-amber-950/20 dark:text-amber-100">
-              <p className="text-[10.5px] font-bold uppercase tracking-[.1em] text-[#b45309]">Sign-in required</p>
-              <p className="mt-1.5 leading-5">Connect the agent runtime to continue this run.</p>
-              {authState?.user_code ? <code className="mt-2 block select-all rounded-md bg-white px-2 py-1.5 font-mono text-sm dark:bg-[#242320]">{authState.user_code}</code> : null}
-              {authState?.verification_url || authState?.auth_url ? (
-                <div className="mt-2 flex flex-wrap items-center gap-3">
-                  <a href={authState.verification_url || authState.auth_url} target="_blank" rel="noreferrer" className="font-semibold text-[#9a4c05] underline-offset-2 hover:underline">Open sign-in page</a>
-                  <button type="button" onClick={() => void cancelAuth()} disabled={authBusy} className="text-[#8a8781] underline-offset-2 hover:underline disabled:opacity-50">Cancel sign-in</button>
-                </div>
-              ) : (
-                <button type="button" onClick={() => void startAuth()} disabled={authBusy} className="mt-2 rounded-[9px] border border-[#d9b36e] bg-white px-3 py-1.5 font-semibold text-[#8a4608] hover:bg-[#fffdf8] disabled:opacity-50 dark:bg-[#292420]">
-                  {authBusy ? 'Starting…' : 'Start sign-in'}
-                </button>
-              )}
-            </div>
-          ) : null}
-          {interaction ? (
-            <div className="mt-3">
-              <PendingInteractionCard
-                workspaceId={workspaceId}
-                runId={run.id}
-                interaction={interaction}
-                resolve={resolveInteraction}
-                onResolved={onRunChanged}
-              />
-            </div>
+            <div className="mt-3 space-y-2"><p className="text-sm text-muted-foreground">Reconnect the required provider to continue.</p>
+ {typeof run.input?.model_connection_id === 'string' && <AIConnectionPicker workspaceId={workspaceId} locked value={{ model_connection_id: run.input.model_connection_id, model_name: typeof run.input.model_name === 'string' ? run.input.model_name : undefined }} onChange={() => {}} />}
+ </div>
           ) : null}
           {sendError ? (
             <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2 text-xs text-destructive">
@@ -285,17 +280,15 @@ export function DockRunView({
             </div>
           ) : null}
           {liveProgress ? (
-            <div className="mt-2 shrink-0 border-t border-border/40 px-1 pt-2" data-agent-live-status-region>
+            <div className="mt-2 shrink-0 border-t border-border/40 px-1 pt-2" data-agent-live-status-region data-working={liveProgress.tone === 'working'}>
               <AgentLiveStatus progress={liveProgress} />
             </div>
           ) : null}
         </div>
         {!atBottom ? <ScrollToLatestButton onClick={scrollToLatest} /> : null}
       </div>
-      {needsApproval && !atBottom ? (
-        <ApprovalAttentionBanner onReview={scrollToLatest} />
-      ) : null}
-      {(composerEnabled || canStop || effectiveRun.status === 'running' || effectiveRun.status === 'queued') ? (
+      {currentPlan && (!hasWorkPlanOrigin(currentPlan) || !streamState || !dockWorkPlans(streamState).some(plan => plan.origin?.event_id === currentPlan.origin?.event_id)) && <div className="max-h-48 shrink-0 overflow-y-auto px-5" data-current-work-plan><CodingPlanPanel plan={currentPlan} runStatus={effectiveRun.status} title="Current work plan" defaultOpen={false} /></div>}
+      {(composerEnabled || canStop || effectiveRun.status === 'paused' || effectiveRun.status === 'running' || effectiveRun.status === 'queued') ? (
         <div className="border-t border-[#f1efea] dark:border-[#302f2b]">
           <DockInput
             mode="conversation"
@@ -307,10 +300,14 @@ export function DockRunView({
             disabled={!composerEnabled}
             onStop={canStop ? () => void stop() : undefined}
             stopping={cancellationPending}
-            placeholder={cancellationPending ? 'Stopping agent…' : composerEnabled ? `Answer ${summary.agent.name || 'agent'}…` : effectiveRun.status === 'queued' ? 'Agent is starting…' : 'Agent is working…'}
+            onPause={canPause && !cancellationPending ? () => void pause() : undefined}
+            pausing={pausePending}
+            onResume={canResume && !cancellationPending ? () => void resume() : undefined}
+            resuming={resumePending}
+            placeholder={cancellationPending ? 'Stopping agent…' : pausePending ? 'Pausing agent…' : resumePending ? 'Resuming agent…' : canResume ? 'Agent paused — resume to continue' : composerEnabled ? `Answer ${summary.agent.name || 'agent'}…` : effectiveRun.status === 'queued' ? 'Agent is starting…' : 'Agent is working…'}
           />
         </div>
       ) : null}
-    </div>
+    </DockInteractionLayer>
   );
 }

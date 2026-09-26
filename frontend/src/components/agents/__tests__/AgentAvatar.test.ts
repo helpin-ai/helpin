@@ -25,6 +25,13 @@ describe('AgentAvatar persona resolution', () => {
     });
   });
 
+  it('gives the Ask Agent and Sub-agent system presets their own avatars', () => {
+    expect(getAgentPersonaMeta({ presetKey: 'ask_agent' })).toMatchObject({ key: 'ask', label: 'Ask Agent' });
+    expect(getAgentPersonaMeta({ presetKey: 'command_agent' })).toMatchObject({ key: 'sub_agent', label: 'Sub-agent' });
+    expect(resolveAgentPersonaKey({ name: 'Ask Agent' })).toBe('ask');
+    expect(resolveAgentPersonaKey({ name: 'Sub-agent' })).toBe('sub_agent');
+  });
+
   it('uses an explicitly selected custom avatar before name or preset inference', () => {
     expect(resolveAgentPersonaKey({
       agent: { name: 'Forge', preset_key: 'code_builder', icon_key: 'ocean_orbit' },

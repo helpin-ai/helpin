@@ -33,3 +33,23 @@ export function stripBasepath(pathname: string, basepath: string): string {
   }
   return pathname
 }
+
+/**
+ * Router location rewrite that mounts the app under `basepath`.
+ *
+ * Used instead of the router `basepath` option because TanStack Start resets
+ * that option on every SSR request to its build-time value, which would render
+ * unprefixed links for reverse-proxied help centers.
+ */
+export function createBasepathRewrite(basepath: string) {
+  return {
+    input: ({ url }: { url: URL }) => {
+      url.pathname = stripBasepath(url.pathname, basepath)
+      return url
+    },
+    output: ({ url }: { url: URL }) => {
+      url.pathname = url.pathname === '/' ? basepath : `${basepath}${url.pathname}`
+      return url
+    },
+  }
+}

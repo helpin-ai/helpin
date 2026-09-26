@@ -1,0 +1,4 @@
+interface:
+  display_name: "Helpin Website Visuals"
+  short_description: "Consistent Helpin website imagery and motion"
+  default_prompt: "Use $helpin-website-visuals to create product imagery and animated scenes consistent with the Helpin website."

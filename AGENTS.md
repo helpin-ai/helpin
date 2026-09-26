@@ -1,18 +1,35 @@
-# Helpin
+# Helpin contributor instructions
 
-Unified platform for project management, CRM, customer support, knowledge, and AI-assisted execution.
+Unified platform for project management, CRM, customer support, knowledge, and AI-assisted execution. The Community 0.1 beta ships the support, docs, and agents modules; see [ROADMAP.md](ROADMAP.md).
 
 ## Small Fix Workflow
 
 For small, well-scoped fixes, do not create or modify plan, specification, or design documents unless the user explicitly requests them. Inspect the issue, implement the fix, verify it, and commit it directly. Reserve planning, specification, and design documents for substantial multi-step work or explicit user requests.
 
+## Documentation
+
+For documentation creation, explanation, naming, or reorganization, use the
+repo-scoped `$helpin-documentation` skill in `.agents/skills/helpin-documentation/`.
+The shared convention is `docs/documentation-guide.md`. Keep guide names lowercase
+and hyphenated, update incoming references on renames, and validate documentation
+with the checks described there.
+
+## Website copy
+
+For Helpin marketing copy drafts, audits, and implementation, use
+[`helpin-website-copy`](.agents/skills/helpin-website-copy/SKILL.md).
+Preserve the existing page structure and distinguish editorial direction from
+release-specific product evidence. A draft request does not authorize website
+edits. Read maintained product-truth and page-progress records when available;
+use the skill's templates only when initialization is requested or appropriate.
+
 ## Architecture
 
-- **Backend**: Go 1.24 + Chi router + GORM (PostgreSQL/Neon) + Temporal workflows
+- **Backend**: Go 1.26.7 toolchain (`.go-version`; module minimum 1.25.0) + Chi router + GORM (PostgreSQL) + Temporal workflows
 - **Frontend**: React 19 + Vite 7 + TypeScript 5.9 + TanStack Router + TanStack Query + Zustand + shadcn/ui
-- **Database**: Neon PostgreSQL (pgcrypto for UUIDs)
-- **Storage**: AWS S3 / MinIO (presigned URLs + direct upload)
-- **Infra**: Kubernetes with Traefik, Doppler secrets, GHCR container registry
+- **Database**: PostgreSQL with pgvector; see Community Compose for self-hosted defaults
+- **Storage**: S3-compatible object storage (Garage in the Community bundle; AWS S3 or MinIO elsewhere) with presigned URLs and direct upload
+- **Infra**: Docker Compose for Community; Kubernetes with Traefik for the hosted service; GHCR container registry
 
 ## Development
 
@@ -21,26 +38,27 @@ For small, well-scoped fixes, do not create or modify plan, specification, or de
 cd server
 go run ./cmd/api
 ```
-Requires: `DATABASE_URL`, `JWT_SECRET`, `NATS_URL` env vars. See `server/.env.example` for all options.
+Requires `DATABASE_URL` and `JWT_SECRET`, a migrated PostgreSQL database, and reachable NATS. `NATS_URL` defaults to `nats://localhost:4222`. See [backend configuration](server/.env.example) and [local development](docs/development.md) for setup and edition-specific dependencies.
 
 ### Temporal Worker
 ```bash
 cd server
 go run ./cmd/temporal-worker
 ```
-Required for interactive planning sessions and other Temporal-driven realtime updates.
+Runs Temporal-backed workflows. Agent execution also depends on the configured Agent Runtime; running this worker alone does not provision that runtime.
 
 ### Frontend
 ```bash
-cd frontend
-npm install
-npm run dev
+# From the repository root
+pnpm install --frozen-lockfile
+pnpm --filter @helpin-ai/widget-core build
+pnpm --dir frontend dev
 ```
 Requires: `VITE_API_URL` (defaults to `http://localhost:8080/api`)
 
 ### Local Browser Preview
 When starting the frontend for someone who will open it through the machine/network URL
-(for example `http://91.98.85.12:5173`), do not leave `VITE_API_URL` pointed at
+(for example `http://dev.example.test:5173`), do not leave `VITE_API_URL` pointed at
 `localhost`. In that browser, `localhost` means the user's computer, not this dev box,
 and the app will show "unable to reach the server".
 
@@ -50,7 +68,7 @@ cd server
 set -a && . ./.env && set +a && GOCACHE=/tmp/go-build-cache go run ./cmd/api
 
 cd frontend
-VITE_API_URL=http://91.98.85.12:8080/api npm run dev -- --host 0.0.0.0 --port 5173
+VITE_API_URL=http://dev.example.test:8080/api pnpm dev --host 0.0.0.0 --port 5173
 ```
 
 If the user opens `http://localhost:5173` from the same machine running the server,
@@ -66,9 +84,11 @@ docker compose up
 ### Task Runner
 ```bash
 just dev        # Start both backend + frontend
-just backend    # Backend only
+just backend    # Backend only; requires air
 just frontend   # Frontend only
-just build      # Production build
+just dev-full   # Backend, frontend, and Temporal worker
+just build-server    # API and worker build
+just build-frontend  # Frontend production build
 ```
 
 ## Refactors and Migrations
@@ -85,7 +105,7 @@ server/                          # Go API server
     authorization/               # RBAC engine, permissions, middleware
     config/                      # Environment configuration
     crypto/                      # AES-256-GCM encryption helpers
-    email/                       # Postmark email client
+    email/                       # Application email abstraction, SMTP, and Postmark
     githubapp/                   # GitHub OAuth + App integration
     handler/                     # HTTP request handlers
     llm/                         # Model-agnostic LLM provider (Claude + OpenAI)
@@ -99,8 +119,7 @@ server/                          # Go API server
     sync/                        # External API sync clients (Gmail)
     temporalapp/                 # Temporal workflow setup
     websocket/                   # WebSocket hub + handler
-    worker/                      # Background job workers
-  migrations/                    # Sequential SQL migrations (001–032+)
+  migrations/                    # Legacy SQL references; use internal/dbmigrate/sql for new migrations
 
 frontend/                        # React SPA
   src/
@@ -126,31 +145,29 @@ frontend/                        # React SPA
     routes/                      # TanStack Router file-based routes
     stores/                      # Zustand stores (auth, workspace, org, etc.)
 
-k8s/                             # Kubernetes manifests
-  stage/                         # Staging (stage.helpin.ai)
-  prod/                          # Production (helpin.ai)
+helpin-ai/gitops                 # Hosted Kubernetes manifests (separate private repo)
 
 .github/workflows/               # CI/CD pipelines
-  ci.yml                         # PR checks (go vet + build, npm build)
-  deploy-staging.yml             # develop → stage
-  deploy-prod.yml                # main → prod
+  ci.yml                         # PR checks (Go and pnpm validation)
+  deploy-*.yml                   # Hosted-service deployments
 ```
 
 ## Branches
-- `develop` → Staging (stage.helpin.ai)
-- `main` → Production (helpin.ai)
+- `develop`: integration branch; open pull requests against it
+- `main`: release branch for the hosted service
 
 ---
 
 ## Backend Patterns
 
 ### Handler → Service → Repository
-Every feature follows this layering:
+Use this layering for feature changes:
 - **Handler** (`internal/handler/`): HTTP request/response, decode JSON, call service, write response
 - **Service** (`internal/service/`): Business logic, validation, orchestration
 - **Repository** (`internal/repository/`): GORM database queries
 
 ```go
+// Schematic example: consult current Workspace signatures before copying.
 // Handler
 func (h *WorkspaceHandler) Update(w http.ResponseWriter, r *http.Request) {
     id := chi.URLParam(r, "id")
@@ -195,7 +212,7 @@ func (Workspace) TableName() string { return "workspaces" }
 ### RBAC Authorization
 Package: `server/internal/authorization/`
 
-**Role hierarchy** (additive): `viewer → member → manager → admin → owner`
+**Role hierarchy** (additive): `viewer → member → admin → owner`
 
 **Middleware chain**:
 1. `RequireAuth` — validates JWT, injects UserID into context
@@ -211,8 +228,8 @@ r.With(authorization.RequireOwner(authz)).Delete("/", h.Workspace.Delete)
 ```
 
 ### DI Wiring
-All dependencies are wired in `cmd/api/main.go`:
-1. Config → DB connection → AutoMigrate
+The API composition root is `cmd/api/main.go`; Temporal workers also have their own wiring in `cmd/temporal-worker/main.go`:
+1. Config → DB connection → AutoMigrate when enabled
 2. Repositories created from `*gorm.DB`
 3. Services created from repositories + external clients (S3, email, Temporal)
 4. Handlers created from services
@@ -220,9 +237,13 @@ All dependencies are wired in `cmd/api/main.go`:
 
 ### Database Migrations
 
-**Two migration systems** (both active):
+**Two migration paths**:
 
-1. **GORM AutoMigrate** — runs on startup, handles struct-level schema creation (add tables/columns). Cannot drop columns or tables.
+Community Compose disables AutoMigrate and applies versioned SQL through its
+migration service. Ship versioned SQL for schema additions as well as destructive
+or data changes; model changes alone do not migrate those installations.
+
+1. **GORM AutoMigrate** — runs on startup only when `RUN_AUTO_MIGRATE=true`, handles struct-level schema creation (add tables/columns). Cannot drop columns or tables.
 2. **dbmigrate** (`server/internal/dbmigrate/`) — versioned SQL migrations for everything AutoMigrate cannot do: data migrations, table drops, cutover tasks, constraint changes, backfills.
 
 **dbmigrate CLI** (`server/cmd/migrate/`):
@@ -239,12 +260,12 @@ go run ./cmd/migrate create <name>   # Scaffold new migration file
 **Migration files**: `server/internal/dbmigrate/sql/YYYYMMDDNNNN_name.sql` (embedded via `//go:embed`)
 
 **When to use which**:
-- **AutoMigrate**: Adding new models/columns (struct changes picked up automatically)
+- **AutoMigrate**: Development schema additions when enabled; also provide versioned SQL for installations where it is disabled
 - **dbmigrate**: Dropping tables/columns, data backfills, constraint changes, renaming, cutover tasks, any DDL that AutoMigrate cannot express
 
 **Rules**:
 - Migrations MUST be idempotent (`IF NOT EXISTS`, `IF EXISTS`)
-- Never edit an already-applied migration file — create a new one instead (or run `migrate repair` if you must)
+- Never edit an already-applied migration file — create a new one instead (use `migrate repair` only for a reviewed checksum recovery; it does not execute changed SQL)
 - Legacy SQL migrations in `server/migrations/` are reference docs only — new migrations go in `server/internal/dbmigrate/sql/`
 
 ### WebSocket
@@ -360,7 +381,7 @@ matches the version exactly and an unmapped version would silently go quiet.
 
 ### Agents And Automation Model
 
-Canonical reference: `docs/AGENTS_AND_AUTOMATION.md`
+Canonical reference: `docs/agents-and-automation.md`
 
 Use this taxonomy when working on backend agent features:
 
@@ -391,7 +412,7 @@ Current executor model:
   configuration, authorization, triggers, launch surfaces, and product finalizers
 - `runtime_kind` selects the backend adapter (`native_sdk`, `codex`, or `opencode` where configured), not a separate product behavior path
 - planner/review/support behavior is expressed through prompt, skills, allowed tools, targets, and artifact contracts
-- Helpin product and interaction tools are model-facing through MCP runtime names such as `mcp__helpin__update_plan` and `mcp__helpin__request_user_input`; backend policy and persistence still use canonical bare aliases
+- Helpin product and interaction tools use bare canonical names such as `update_plan` and `request_user_input`. Write-side configuration normalization accepts historical aliases; provider calls require exact canonical names
 
 Current trigger surfaces in code:
 
@@ -424,6 +445,8 @@ Direction:
 
 ### Logging
 
+`InfoContext` and `ErrorContext` pass context to the configured handler; they do not automatically attach every request field. Add required safe identifiers explicitly or through the relevant context-aware handler.
+
 **Library**: `log/slog` (Go stdlib, available since Go 1.21)
 
 **Why `slog`**: Zero dependencies, structured JSON output, leveled logging, context-aware, and has native integrations for Chi and GORM. No need for `zap` or `zerolog`.
@@ -445,7 +468,7 @@ slog.SetDefault(logger)
 slog.Info("task created", "task_id", task.ID, "workspace_id", task.WorkspaceID)
 slog.Error("failed to save", "error", err, "task_id", id)
 
-// Context-aware (carries request_id, user_id from middleware)
+// Context-aware; attach required fields explicitly when not supplied by the handler
 slog.InfoContext(ctx, "comment added", "entity_id", entityID)
 slog.ErrorContext(ctx, "notification emit failed", "error", err)
 
@@ -533,7 +556,7 @@ queryKeys.workspaces.settings(wsId)    // ['workspaces', wsId, 'settings']
 const { data, error, status } = await api.get<T>('/path');
 const { data, error } = await api.post<T>('/path', body);
 ```
-- Auto-injects `Authorization: Bearer` from localStorage
+- Uses the shared `@helpin-ai/support-core` client and session adapter; the browser adapter stores tokens in localStorage and sends `Authorization: Bearer`
 - Auto-refreshes token on 401 via `/auth/refresh`
 - Returns `{ data: T | null, error: string | null }`
 
@@ -575,7 +598,7 @@ const useWorkspaceStore = create<State>((set) => ({
 const workspace = useWorkspaceStore((s) => s.currentWorkspace);
 ```
 
-Key stores: `authStore`, `workspaceStore`, `organizationStore`, `quarterStore`, `globalCreateStore`, `boardDisplayStore`
+Key stores: `authStore`, `workspaceStore`, `organizationStore`, `globalCreateStore`, `boardDisplayStore`
 
 ### UI Components
 - **shadcn/ui**: 30+ installed components (Button, Card, Dialog, Popover, Table, etc.)
@@ -598,8 +621,8 @@ Key stores: `authStore`, `workspaceStore`, `organizationStore`, `quarterStore`, 
 - Settings/workspace types: `src/lib/types.ts`
 - PM module types: `src/lib/pmTypes.ts`
 - CRM module types: `src/lib/crmTypes.ts`
-- Permission type: union of 23 permission strings
-- All backend JSON responses have matching TS interfaces
+- Permission types: follow the current definitions in `src/lib/types.ts` and backend `internal/authorization/permissions.go`
+- Keep TypeScript response interfaces synchronized with the backend DTOs you change
 
 ### RBAC (Frontend)
 ```tsx

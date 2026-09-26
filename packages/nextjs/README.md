@@ -2,7 +2,7 @@
 
 Helpin for Next.js. Drop-in analytics, chat widget control, and pageview tracking — with middleware support for server-side events.
 
-This package is a thin Next.js wrapper. Browser clients load the chat widget UI from the hosted Helpin runtime at `https://cdn.helpin.ai/lib.js`, so future widget UI and CSS updates go live without requiring a Next.js app redeploy after customers upgrade to this wrapper architecture once.
+This package is a thin Next.js wrapper. Browser clients load the chat widget UI from the hosted Helpin runtime at `https://cdn.helpin.ai/lib.js`, so widget UI and CSS updates ship from the runtime URL without a Next.js app redeploy.
 
 ## Installation
 
@@ -27,6 +27,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         widgetKey: process.env.NEXT_PUBLIC_HELPIN_WIDGET_KEY!,
         host: process.env.NEXT_PUBLIC_HELPIN_HOST!,
         autoBoot: false,
+        autoPageview: false, // usePageView owns route tracking.
         // Optional: use a staging or pinned runtime.
         // widgetRuntimeUrl: 'https://cdn.helpin.ai/lib.js',
       }),
@@ -124,7 +125,7 @@ export function LearnMore() {
   const { openArticle } = useHelpin();
 
   return (
-    <button onClick={() => openArticle('how-to-add-first-comment-2906b16e')}>
+    <button onClick={() => openArticle('getting-started-2906b16e')}>
       Learn more
     </button>
   );
@@ -135,7 +136,7 @@ For migrations from another help-center provider, map each legacy article ID to 
 
 ## `usePageView()`
 
-Tracks client-side route changes automatically. Optionally run setup logic or attach extra data before each pageview fires:
+With `autoPageview: false` on the client, this hook tracks client-side route changes. Optionally run setup logic or attach extra data before each pageview fires:
 
 ```tsx
 'use client';
@@ -145,6 +146,7 @@ import { createClient, usePageView } from '@helpin-ai/nextjs';
 const helpinClient = createClient({
   widgetKey: process.env.NEXT_PUBLIC_HELPIN_WIDGET_KEY!,
   host: process.env.NEXT_PUBLIC_HELPIN_HOST!,
+  autoPageview: false, // usePageView owns route tracking.
   // widgetRuntimeUrl: 'https://cdn.helpin.ai/lib.js',
 });
 
@@ -162,6 +164,10 @@ export function PageViewTracker() {
 }
 ```
 
+Mount one pageview hook per application. Disable the SDK’s `autoPageview` tracker
+when using the hook to avoid duplicate route-change events. The `before` callback
+is synchronous; it does not wait for an asynchronous `id()` call to finish.
+
 | Option | Type | Description |
 | --- | --- | --- |
 | `before` | `(helpin) => void` | Runs before each pageview event |
@@ -170,7 +176,7 @@ export function PageViewTracker() {
 
 ## Server-Side Tracking
 
-For server-side analytics in middleware, route handlers, or server actions, pair the core SDK with `middlewareEnv(...)`. It extracts request metadata and manages the anonymous visitor ID cookie:
+For server-side analytics where you have a `NextRequest` and a writable `NextResponse`, pair the core SDK with `middlewareEnv(req, res)`. The helper reads request metadata and writes the anonymous visitor cookie to that response. It is not a standalone Server Action helper:
 
 ```ts
 import { NextRequest, NextResponse } from 'next/server';
@@ -205,12 +211,16 @@ export function middleware(req: NextRequest) {
 | `getSourceIp()` | Extract the client IP from request headers |
 | `describeClient()` | Build a `ClientProperties` object from the request |
 
+Pass `{ disableCookies: true }` as the third argument to `middlewareEnv` to skip
+anonymous-cookie creation. `getSourceIp()` reads forwarded headers; your proxy
+configuration determines whether those values are trustworthy.
+
 ## Client vs. Server
 
 | Context | What to use |
 | --- | --- |
 | Browser (analytics + widget) | `createClient(...)` from `@helpin-ai/nextjs` |
-| Server (middleware, route handlers, server actions) | `helpinClient(...)` from `@helpin-ai/sdk-js` + `middlewareEnv(...)` |
+| Server (middleware or route handler with `NextRequest` / `NextResponse`) | `helpinClient(...)` from `@helpin-ai/sdk-js` + `middlewareEnv(...)` |
 
 The chat widget boots automatically in the browser when `widgetKey` and `host` are set. Pass `autoBoot: false` to keep it dormant until you call `show()`, `open()`, or `openNewMessage()` — useful for custom launchers. Widget UI comes from the hosted runtime by default; analytics and server helpers remain in the npm package.
 
@@ -228,10 +238,10 @@ The chat widget boots automatically in the browser when `widgetKey` and `host` a
 ## Configuration notes
 
 - `widgetKey` must be the public key for the intended in-app widget. It can differ from the key embedded in a public help center.
-- `host` is the Helpin application/API origin, for example `https://client.helpin.ai`.
+- `host` is the Helpin application/API origin, for example `https://client.helpin.ai` for Helpin Cloud or your `PUBLIC_WIDGET_URL` for a Community installation.
 - Browser initialization belongs in a Client Component; `createClient()` returns `null` during SSR.
 - Set `autoBoot: false` when a custom launcher should decide when the widget loads.
-- Widget UI is loaded from `https://cdn.helpin.ai/lib.js` by default. Override `widgetRuntimeUrl` only for a custom, staging, or pinned runtime.
+- Widget UI is loaded from `https://cdn.helpin.ai/lib.js` by default. Self-hosted Community installations set `widgetRuntimeUrl` to their `PUBLIC_SDK_URL` (`<PUBLIC_WIDGET_URL>/sdk/lib.js`); otherwise override it only for a custom, staging, or pinned runtime.
 
 See the [JavaScript SDK reference](../sdk-js/README.md#client-api) for configuration, widget events, and the complete client API.
 

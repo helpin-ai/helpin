@@ -155,7 +155,7 @@ function QueueClearState({
             </Button>
             <Button size="sm" variant="outline" onClick={onOpenEmailSettings}>
               <Mail01Icon className="h-4 w-4" />
-              Email sync settings
+              Email settings
             </Button>
             <Button size="sm" variant="outline" onClick={onOpenAutonomySettings}>
               <ChartIncreaseIcon className="h-4 w-4" />

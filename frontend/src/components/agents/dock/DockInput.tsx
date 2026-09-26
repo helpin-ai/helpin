@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import {
   ArrowDown01Icon,
   ArrowUp01Icon,
@@ -15,6 +15,8 @@ import {
   PlusSignIcon,
   Search01Icon,
   StopIcon,
+  PauseIcon,
+  PlayIcon,
   Tick01Icon,
   Cancel01Icon,
   UserIcon,
@@ -111,29 +113,17 @@ export interface DockInputProps {
   disabled?: boolean;
   autoFocus?: boolean;
   textareaRef?: React.RefObject<HTMLTextAreaElement | null>;
-  /** When set, the send button becomes a stop button for the active run. */
+  /** Run controls replace Send while the agent is working or manually paused. */
   onStop?: () => void;
   stopping?: boolean;
+  onPause?: () => void;
+  pausing?: boolean;
+  onResume?: () => void;
+  resuming?: boolean;
   placeholder?: string;
   showShortcutHint?: boolean;
-}
-
-export function shouldUseExpandedComposerLayout({
-  value,
-  scrollHeight,
-  singleLineHeight,
-  currentlyExpanded,
-}: {
-  value: string;
-  scrollHeight: number;
-  singleLineHeight: number;
-  currentlyExpanded: boolean;
-}) {
-  if (!value.trim()) return false;
-  // Once text wraps, keep the text row above the actions until the user
-  // clears the composer. This avoids a flicker at widths where freeing the
-  // action controls makes that same text fit back onto a single line.
-  return currentlyExpanded || scrollHeight > singleLineHeight + 1;
+  profilePicker?: ReactNode;
+  executionPicker?: ReactNode;
 }
 
 export function composerTextareaHeight({
@@ -152,7 +142,7 @@ export function composerTextareaHeight({
 export function composerPlaceholderForContext(contextType?: CommandBarPageContext['entity_type']) {
   return contextType === 'support_conversation'
     ? 'Ask about this conversation…'
-    : 'Ask a question or delegate work to agents…';
+    : 'Message agent…';
 }
 
 export function canClearDockContext(
@@ -162,12 +152,8 @@ export function canClearDockContext(
   return hasClearAction;
 }
 
-export function contextChipMaxWidth(canAddContext: boolean) {
-  return canAddContext ? 'calc(100% - 116px)' : undefined;
-}
-
-export function usesSeparateComposerActionRow(mode: DockInputProps['mode'], expanded: boolean) {
-  return mode === 'conversation' && expanded;
+export function usesSeparateComposerActionRow(mode: DockInputProps['mode']) {
+  return mode === 'conversation';
 }
 
 export function sendControlClassName(disabled: boolean) {
@@ -201,12 +187,17 @@ export function DockInput({
   textareaRef,
   onStop,
   stopping,
+  onPause,
+  pausing,
+  onResume,
+  resuming,
   placeholder: placeholderOverride,
   showShortcutHint = true,
+  profilePicker,
+  executionPicker,
 }: DockInputProps) {
   const localRef = useRef<HTMLTextAreaElement | null>(null);
   const ref = textareaRef ?? localRef;
-  const [expandedComposer, setExpandedComposer] = useState(false);
   const referencePickerRef = useRef<DockReferencePickerHandle | null>(null);
   const mediaInputRef = useRef<HTMLInputElement | null>(null);
   const documentInputRef = useRef<HTMLInputElement | null>(null);
@@ -220,12 +211,6 @@ export function DockInput({
     const singleLineHeight = lineHeight
       + (Number.parseFloat(style.paddingTop) || 0)
       + (Number.parseFloat(style.paddingBottom) || 0);
-    setExpandedComposer((current) => shouldUseExpandedComposerLayout({
-      value,
-      scrollHeight: el.scrollHeight,
-      singleLineHeight,
-      currentlyExpanded: current,
-    }));
     el.style.height = `${composerTextareaHeight({
       value,
       scrollHeight: el.scrollHeight,
@@ -252,9 +237,8 @@ export function DockInput({
   const sendDisabled = (!value.trim() && !hasReadyAttachment) || !!busy || !!disabled;
 
   const canAddReferences = !!workspaceId && !!onAddReference;
-  const canAddContext = !!onAddContext || canAddReferences;
   const showContextRow = mode === 'conversation' && (showChip || !!onAddContext || canAddReferences || references.length > 0);
-  const separateActionRow = usesSeparateComposerActionRow(mode, expandedComposer);
+  const separateActionRow = usesSeparateComposerActionRow(mode);
   const attachmentButton = mode === 'conversation' && onAddMedia ? (
     <>
       <input
@@ -313,7 +297,7 @@ export function DockInput({
       </DropdownMenu>
     </>
   ) : null;
-  const submitControl = onStop ? (
+  const stopControl = onStop ? (
     <button
       type="button"
       onClick={onStop}
@@ -324,7 +308,9 @@ export function DockInput({
         'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition',
         stopping
           ? 'cursor-not-allowed bg-muted text-muted-foreground'
-          : 'bg-foreground text-background hover:bg-foreground/85',
+          : onPause || onResume
+            ? 'bg-muted text-muted-foreground hover:bg-muted/80'
+            : 'bg-foreground text-background hover:bg-foreground/85',
       )}
     >
       {stopping ? (
@@ -333,7 +319,22 @@ export function DockInput({
         <StopIcon className="h-3.5 w-3.5" />
       )}
     </button>
-  ) : (
+  ) : null;
+  const submitControl = onPause || onResume ? (
+    <div className="flex shrink-0 items-center gap-1.5">
+      <button
+        type="button"
+        onClick={onPause ?? onResume}
+        disabled={pausing || resuming}
+        title={pausing ? 'Pausing agent' : resuming ? 'Resuming agent' : onPause ? 'Pause agent' : 'Resume agent'}
+        aria-label={pausing ? 'Pausing agent' : resuming ? 'Resuming agent' : onPause ? 'Pause agent' : 'Resume agent'}
+        className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-foreground text-background transition hover:bg-foreground/85 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {pausing || resuming ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" /> : onPause ? <PauseIcon className="h-3.5 w-3.5" /> : <PlayIcon className="h-3.5 w-3.5" />}
+      </button>
+      {stopControl}
+    </div>
+  ) : stopControl ?? (
     <button
       type="button"
       onClick={onSubmit}
@@ -364,7 +365,6 @@ export function DockInput({
                 activeKey={activeContextKey}
                 onChange={onContextKeyChange}
                 onClear={onClearContext}
-                reserveSpaceForAddContext={canAddContext}
               />
             ) : null}
             {references.map((reference) => (
@@ -406,7 +406,7 @@ export function DockInput({
             ) : null}
           </div>
           {showShortcutHint ? (
-            <span className="shrink-0 text-[11px] text-muted-foreground">
+            <span className="hidden shrink-0 text-[11px] text-muted-foreground sm:inline">
               Press <kbd className="rounded border bg-muted px-1 py-0 font-mono text-[10px]">/</kbd> to open
             </span>
           ) : null}
@@ -475,13 +475,17 @@ export function DockInput({
           disabled={disabled}
           className={cn(
             'block min-w-0 flex-1 resize-none bg-transparent py-1 text-sm leading-5 placeholder:text-muted-foreground focus:outline-none disabled:opacity-60',
-            separateActionRow && 'w-full flex-none',
+            separateActionRow && 'w-full flex-none min-h-[52px]',
           )}
         />
         {separateActionRow ? (
-          <div className="flex w-full items-center justify-between pt-0.5">
+          <div className="flex w-full min-w-0 items-center gap-2 pt-1" data-composer-actions>
             {attachmentButton}
-            {submitControl}
+            <div className="ml-auto flex min-w-0 items-center gap-1.5">
+              {executionPicker}
+              {profilePicker}
+              {submitControl}
+            </div>
           </div>
         ) : submitControl}
       </div>
@@ -495,14 +499,12 @@ function ContextChip({
   activeKey,
   onChange,
   onClear,
-  reserveSpaceForAddContext = false,
 }: {
   context: CommandBarPageContext;
   options: PageContextScopeOption[];
   activeKey?: string | null;
   onChange?: (key: string) => void;
   onClear?: () => void;
-  reserveSpaceForAddContext?: boolean;
 }) {
   const blockScoped = isBlockScopedDocument(context);
   const allTasks = isAllTasksContext(context);
@@ -510,17 +512,17 @@ function ContextChip({
   const hasOptions = options.length > 1 && !!onChange;
   const canClear = canClearDockContext(context.entity_type, !!onClear);
   const chipClassName = cn(
-    'inline-flex max-w-[300px] items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] text-foreground transition',
+    'inline-flex min-w-0 max-w-full items-center gap-1 rounded-full border px-2 py-1 text-[11px] text-foreground transition',
     blockScoped || allTasks ? 'border-orange-500/30 bg-orange-500/10' : 'border-border/70 bg-muted/30',
     hasOptions ? 'cursor-pointer hover:border-foreground/30 hover:bg-muted/50' : '',
   );
   const body = (
     <>
       <ContextIcon type={context.entity_type} />
-      <span className="truncate font-medium">{context.display_title || context.entity_id}</span>
+      <span className="min-w-0 truncate font-medium">{context.display_title || context.entity_id}</span>
       {blockScoped ? (
-        <span className="ml-0.5 inline-flex shrink-0 items-center gap-1 rounded-full bg-background/80 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 dark:text-orange-300">
-          <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
+        <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[10px] font-medium text-orange-700 dark:text-orange-300">
+          <span className="h-1 w-1 rounded-full bg-orange-500" />
           Block selected
         </span>
       ) : null}
@@ -537,7 +539,7 @@ function ContextChip({
         event.stopPropagation();
         onClear?.();
       }}
-      className="-mr-1 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-background hover:text-foreground"
+      className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <Cancel01Icon className="h-3 w-3" />
     </button>
@@ -547,10 +549,11 @@ function ContextChip({
     return (
       <span
         title={title}
+        data-dock-context-chip
         className={chipClassName}
-        style={{ maxWidth: contextChipMaxWidth(reserveSpaceForAddContext) }}
+        style={{ maxWidth: 'min(300px, 100%)' }}
       >
-        {body}
+        <span className="inline-flex min-w-0 flex-1 items-center gap-1.5">{body}</span>
         {clearButton}
       </span>
     );
@@ -561,8 +564,7 @@ function ContextChip({
       <DropdownMenuTrigger
         type="button"
         title={title}
-        className={chipClassName}
-        style={{ maxWidth: contextChipMaxWidth(reserveSpaceForAddContext) }}
+        className="inline-flex min-w-0 flex-1 items-center gap-1.5 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {body}
       </DropdownMenuTrigger>
@@ -590,10 +592,8 @@ function ContextChip({
     </DropdownMenu>
   );
 
-  if (!clearButton) return dropdown;
-
   return (
-    <span className="inline-flex min-w-0 items-center gap-1">
+    <span data-dock-context-chip className={chipClassName} style={{ maxWidth: 'min(300px, 100%)' }}>
       {dropdown}
       {clearButton}
     </span>

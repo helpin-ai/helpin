@@ -6,16 +6,27 @@ are sized from [`CAPACITY_BASELINE.md`](CAPACITY_BASELINE.md).
 
 ## What a merge deploys
 
-A merge to `develop` triggers separate staging workflows:
+Staging uses separate workflows with change filters; a merge does not necessarily
+rebuild every component:
 
 - `Staging Release` builds the API, Temporal worker, and migration image, then
-  commits their immutable image tags under `k8s/stage`;
+  commits their versioned image tags under `helpin/stage` in `helpin-ai/gitops` when its change detector
+  selects `server/`, or when dispatched with `force_all`;
 - `Events Pipeline - Staging` builds the Rust image, then commits its immutable
-  tag to the capture, replay, bootstrap, and writer manifests;
-- the SDK workflow publishes the browser SDK to the staging CDN; and
-- the npm staging workflow publishes package RCs when the PR is merged.
+  tag to the web (capture/replay) and writer manifests for changes under
+  `events-pipeline/` or to that workflow;
+- the SDK workflow publishes to the staging CDN for changes under `packages/sdk-js/`,
+  `packages/widget-core/`, `packages/shared/`, or `.node-version`; and
+- the npm staging workflow publishes package RCs when a PR touching `packages/`
+  is merged. All four workflows also support manual dispatch.
 
-Argo CD is expected to recurse through `k8s/stage`. It creates a dedicated
+Check the [server release workflow](../.github/workflows/deploy-staging.yml),
+[pipeline workflow](../.github/workflows/eventpipeline-staging.yml),
+[SDK workflow](../.github/workflows/deploy-sdk-cdn.yml), and
+[npm workflow](../.github/workflows/publish-npm-staging.yml) before relying on a
+merge to produce new images. Manifest-only edits do not trigger pipeline builds.
+
+Argo CD recurses through `helpin/stage` in `helpin-ai/gitops`. It creates a dedicated
 three-member Helpin Keeper ensemble, a one-shard/two-replica Helpin ClickHouse
 installation, the three-node NATS StatefulSet, two capture/replay StatefulSet
 pods, two writer pods, and the Postgres and ClickHouse migration hooks. The
@@ -128,7 +139,7 @@ The existing `ghcr-helpin-json-key` image-pull secret is also required.
   `clickhouse.altinity.com/chi=clickhouse` in every pod template. Otherwise it
   blocks the new Helpin replicas from the two shared dedicated hosts.
 - Confirm the Argo CD application includes nested directories under
-  `k8s/stage`; otherwise the event-pipeline manifests are never applied.
+  `helpin/stage` in `helpin-ai/gitops`; otherwise the event-pipeline manifests are never applied.
 - Confirm `client.stage.helpin.ai` resolves to the ingress and its wildcard TLS
   secret exists.
 
@@ -144,8 +155,10 @@ events-pipeline/scripts/k8s-preflight.sh helpin
 
 1. Pause Argo CD auto-sync and verify the prerequisites above.
 2. Merge the PR to `develop`.
-3. Wait for `Staging Release`, `Events Pipeline - Staging`, and the staging SDK
-   deployment to succeed. Wait for their manifest-tag commits on `develop`.
+3. Confirm the required builds were selected by their change filters; dispatch
+   missing builds explicitly when new images are needed. Wait for `Staging
+   Release`, `Events Pipeline - Staging`, and any required SDK deployment to
+   succeed, then wait for the image workflows’ manifest-tag commits on `helpin-ai/gitops:main`.
 4. Refresh Argo CD and inspect the rendered diff. The ClickHouse and Postgres
    migration images and every event-pipeline command must use the new tags.
 5. If a capture Deployment from an earlier preview exists, scale it to zero;
@@ -174,7 +187,9 @@ kubectl -n helpin get pods,pvc
 
 Then verify behavior:
 
-1. `GET https://client.stage.helpin.ai/health/readiness` is healthy.
+1. `GET https://client.stage.helpin.ai/health/readiness` responds successfully.
+   Capture readiness only reflects shutdown state; it does not validate token
+   availability, disk writability, or delivery. Complete the checks below.
 2. Capture logs show a non-zero token registry and both enrichment database
    availability metrics are `1` if licensed enrichment is required.
 3. Send one browser event with a staging widget credential and one authenticated
@@ -182,13 +197,29 @@ Then verify behavior:
 4. Confirm exact event IDs in `helpin.events`, and confirm both writer
    ordinals are ready with no fallback, poison spill, DLQ, or redelivery growth.
 5. Confirm the API reports a successful ClickHouse connection and the CRM
-   evaluator records a successful ten-minute run.
+   evaluator records a micro-batch sweep with no failed rules. Its interval is
+   ten minutes, with an initial sweep at startup; micro-batch evaluation is
+   skipped when the ClickHouse client is unavailable.
 6. Confirm the event's `project_id` matches the workspace and its external user
-   or company identity maps to a CRM contact/company. Open CRM Signals and
-   verify the generated signal.
+   or company identity maps to a CRM contact/company. This proves ingestion and
+   identity mapping, not signal generation. To test a signal, choose an enabled
+   rule and supply evidence that satisfies its thresholds and completed evaluation
+   window. Then inspect the recorded evaluation and resulting evidence/signals.
+   A single arbitrary event need not produce a signal.
 
 Seeded deterministic rules intentionally start in shadow mode. They store and
 display evidence but cannot route notifications or create tasks. Collect
 precision feedback first; then activate an eligible exact rule version and an
 explicit routing-policy version through the `/api/crm/signals/...` endpoints.
-That promotion is a product decision, not a deployment step.
+That promotion is a product decision, not a deployment step. Rule shadow mode
+is separate from workspace rollout mode: the current workspace default is `live`,
+and an existing workspace may already have activated rules and routing. Inspect
+its actual settings before assuming a deployment cannot cause actions.
+
+Source references: [capture health](rust-capture/src/health.rs),
+[CRM evaluator](../server/internal/service/crm_signal_rule_evaluator.go),
+[rule activation](../server/internal/repository/crm_signal_activation.go),
+[workspace rollout default](../server/internal/dbmigrate/sql/202608280003_crm_motion_aware_signal_spine.sql),
+and [ClickHouse retention](../server/internal/chmigrate/sql/202608250001_create_helpin_events.sql).
+These describe this checkout; cluster readiness, node inventory, secret contents,
+and delivery still require verification in the target environment.

@@ -12,3 +12,8 @@ describe('automation tools sidebar navigation', () => {
     expect(isSidebarLinkActive(`${toolsLink}/connections`, {}, toolsLink)).toBe(true);
   });
 });
+
+it('highlights settings home only on the homepage', () => {
+  expect(isSidebarLinkActive('/w/acme/settings', {}, '/w/acme/settings')).toBe(true);
+  expect(isSidebarLinkActive('/w/acme/settings/crm-email', {}, '/w/acme/settings')).toBe(false);
+});

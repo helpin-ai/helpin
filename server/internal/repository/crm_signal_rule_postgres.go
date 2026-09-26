@@ -67,7 +67,7 @@ func (r *CRMSignalRepository) activationStalledCandidates(ctx context.Context, c
 	err := r.db.WithContext(ctx).Raw(`SELECT state.workspace_id, state.company_id,
 		(state.state->>'onboarding_started_at')::timestamptz AS onboarding_started
 		FROM crm_company_commercial_states state
-		WHERE state.state ? 'onboarding_started_at' AND NOT (state.state ? 'first_value_at')
+		WHERE jsonb_exists(state.state, 'onboarding_started_at') AND NOT jsonb_exists(state.state, 'first_value_at')
 		AND (state.state->>'onboarding_started_at')::timestamptz <= ?`, end.AddDate(0, 0, -days)).Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("evaluate activation stalled: %w", err)
@@ -184,7 +184,7 @@ func (r *CRMSignalRepository) supportVolumeSpikeCandidates(ctx context.Context, 
 		WHERE crm_company_id IS NOT NULL AND created_at >= ? AND created_at < ? AND status <> 'spam'
 		GROUP BY workspace_id, crm_company_id
 		HAVING COUNT(*) FILTER (WHERE created_at >= ?) >= ?
-			AND COUNT(*) FILTER (WHERE created_at >= ?) >= GREATEST(1, COUNT(*) FILTER (WHERE created_at < ?) * ?)
+			AND COUNT(*) FILTER (WHERE created_at >= ?) >= GREATEST(1, COUNT(*) FILTER (WHERE created_at < ?) * CAST(? AS double precision))
 	`, end.AddDate(0, 0, -recentDays), end.AddDate(0, 0, -recentDays), end.AddDate(0, 0, -(recentDays+baselineDays)), end,
 		end.AddDate(0, 0, -recentDays), minimumRecent, end.AddDate(0, 0, -recentDays), end.AddDate(0, 0, -recentDays), multiplier*float64(recentDays)/float64(baselineDays)).Scan(&rows).Error
 	if err != nil {
@@ -297,7 +297,7 @@ func (r *CRMSignalRepository) supportCSATCandidates(ctx context.Context, config 
 	err := r.db.WithContext(ctx).Raw(`
 		WITH ratings AS (
 			SELECT c.workspace_id, c.crm_company_id AS company_id, m.created_at,
-				CASE WHEN COALESCE(m.metadata::jsonb ->> 'rating','') ~ '^[0-9]+([.][0-9]+)?$'
+				CASE WHEN COALESCE(m.metadata::jsonb ->> 'rating','') ~ '^[0-9]+([.][0-9]+){0,1}$'
 					THEN (m.metadata::jsonb ->> 'rating')::numeric END AS rating
 			FROM support_messages m JOIN support_conversations c ON c.id = m.conversation_id
 			WHERE c.crm_company_id IS NOT NULL AND m.message_type = 'csat_survey'

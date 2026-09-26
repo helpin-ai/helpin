@@ -21,12 +21,13 @@ import type {
   CodingSessionInteraction,
   ResolveCodingSessionInteractionRequest,
   AgentRunMessage,
-  CodexAuthState,
 } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
 
 export const dockChatService = {
+  getAIDefaults: (workspaceId: string) =>
+    api.get<{ ai_profile_id: string | null }>(`/dock/ai-defaults${qs(workspaceId)}`),
 	getPublicShare: (workspaceId: string, resourceType: PublicShareResourceType, resourceId: string) =>
 		api.get<PublicShareLink | null>(`/dock/shares/${resourceType}/${encodeURIComponent(resourceId)}${qs(workspaceId)}`),
 	createPublicShare: (workspaceId: string, resourceType: PublicShareResourceType, resourceId: string) =>
@@ -44,11 +45,12 @@ export const dockChatService = {
     const query = new URLSearchParams({ workspace_id: workspaceId, conversation_id: conversationId });
     return api.get<DockChat | null>(`/dock/chats/support-conversation?${query.toString()}`);
   },
-  createChat: (workspaceId: string, title = '', supportConversationId?: string, moduleId?: DockChatModule | null) =>
+  createChat: (workspaceId: string, title = '', supportConversationId?: string, moduleId?: DockChatModule | null, executionEnabled = false) =>
     api.post<DockChat>(`/dock/chats${qs(workspaceId)}`, {
       title,
       ...(supportConversationId ? { support_conversation_id: supportConversationId } : {}),
       ...(moduleId ? { module_id: moduleId, visibility: 'module' } : {}),
+      ...(executionEnabled ? { execution_enabled: true } : {}),
     }),
   getChat: (workspaceId: string, chatId: string, signal?: AbortSignal) =>
     api.get<DockChatDetail>(`/dock/chats/${encodeURIComponent(chatId)}${qs(workspaceId)}`, { signal }),
@@ -93,6 +95,10 @@ export const dockChatService = {
     ),
   cancelChatRun: (workspaceId: string, chatId: string) =>
     api.post<AgentRun>(`/dock/chats/${encodeURIComponent(chatId)}/run/cancel${qs(workspaceId)}`),
+  pauseChatRun: (workspaceId: string, chatId: string) =>
+    api.post<AgentRun>(`/dock/chats/${encodeURIComponent(chatId)}/run/pause${qs(workspaceId)}`),
+  resumeChatRun: (workspaceId: string, chatId: string) =>
+    api.post<AgentRun>(`/dock/chats/${encodeURIComponent(chatId)}/run/resume${qs(workspaceId)}`),
   listRuns: (workspaceId: string, cursor?: string | null, limit = 30, signal?: AbortSignal) => {
     const query = new URLSearchParams({ workspace_id: workspaceId, limit: String(limit) });
     if (cursor) query.set('cursor', cursor);
@@ -124,8 +130,8 @@ export const dockChatService = {
     api.post<AgentRun>(`/dock/runs/${encodeURIComponent(runId)}/continue${qs(workspaceId)}`, content ? { content } : {}),
   cancelRun: (workspaceId: string, runId: string) =>
     api.post<AgentRun>(`/dock/runs/${encodeURIComponent(runId)}/cancel${qs(workspaceId)}`, {}),
-  startRunAuth: (workspaceId: string, runId: string) =>
-    api.post<CodexAuthState>(`/dock/runs/${encodeURIComponent(runId)}/auth/device-code/start${qs(workspaceId)}`, {}),
-  cancelRunAuth: (workspaceId: string, runId: string) =>
-    api.post<CodexAuthState>(`/dock/runs/${encodeURIComponent(runId)}/auth/device-code/cancel${qs(workspaceId)}`, {}),
+  pauseRun: (workspaceId: string, runId: string) =>
+    api.post<AgentRun>(`/dock/runs/${encodeURIComponent(runId)}/pause${qs(workspaceId)}`, {}),
+  resumeRun: (workspaceId: string, runId: string) =>
+    api.post<AgentRun>(`/dock/runs/${encodeURIComponent(runId)}/resume${qs(workspaceId)}`, {}),
 };

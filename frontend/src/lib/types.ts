@@ -12,6 +12,8 @@ export interface User {
   mfa_satisfied_in_token?: boolean;
   email_verified?: boolean;
   email_verified_at?: string;
+  /** Administers this self-hosted server (Community); always false elsewhere. */
+  is_server_admin?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -205,9 +207,11 @@ export type Permission =
   | 'notifications.read'
   | 'notifications.manage'
   | 'search.read'
-  | 'ws.connect';
+  | 'ws.connect'
+  /** Client-side only: the signed-in account administers this self-hosted server (see usePermissions). */
+  | 'server.admin';
 
-export type WorkspaceModule = 'pm' | 'docs' | 'crm' | 'support' | 'automation';
+export type WorkspaceModule = 'pm' | 'docs' | 'crm' | 'support' | 'automation' | 'agents';
 export type ManagedWorkspaceModule = Extract<WorkspaceModule, 'crm' | 'support' | 'automation'>;
 export type ModuleGrantSubjectType = 'team' | 'workspace_member';
 
@@ -245,6 +249,7 @@ export interface WorkspaceAccess {
     role: string;
   }[];
   modules: WorkspaceModule[];
+  can_use_ask_agents: boolean;
   security_policy?: WorkspaceMFAPolicy;
 }
 
@@ -449,6 +454,8 @@ export interface Invitation {
   accepted_at?: string;
   created_at: string;
   join_url?: string;
+  /** Set on create: false when the server has no email, so the join link must be shared by hand. */
+  email_sent?: boolean;
 }
 
 export interface InviteInfo {
@@ -523,7 +530,13 @@ export interface AutomationTriggerCatalogEntry {
   create_rule_search?: WorkflowRuleSearchPreset;
 }
 
+export interface SemanticConditionAvailability {
+  available: boolean;
+  reason?: 'not_configured' | 'workspace_disabled' | 'disabled' | 'shadow';
+}
+
 export interface AutomationInventoryResponse {
+  semantic_conditions?: SemanticConditionAvailability;
   groups: AutomationInventoryGroup[];
   items: AutomationInventoryItem[];
   trigger_catalog: AutomationTriggerCatalogEntry[];
@@ -594,6 +607,8 @@ export interface AutomationTriggerExecutionListItem {
   target_title?: string;
   target_key?: string;
   run_id?: string;
+  condition_outcome?: string;
+  condition_assessment_id?: string;
   status: string;
   error_message?: string;
   fired_at: string;

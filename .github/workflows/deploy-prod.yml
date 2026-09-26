@@ -5,7 +5,6 @@ on:
     branches:
       - main
     paths-ignore:
-      - "k8s/**"
       - "**.md"
   workflow_dispatch:
     inputs:
@@ -15,16 +14,13 @@ on:
         default: true
 
 permissions:
-  contents: write
-  packages: write
-  pull-requests: read
+  contents: read
 
 concurrency:
   group: production-release
   cancel-in-progress: false
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/helpin-ai/helpin
 
@@ -39,15 +35,17 @@ jobs:
       frontend: ${{ steps.filter.outputs.frontend }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Detect changed paths
         id: filter
+        env:
+          FORCE_ALL: ${{ inputs.force_all || false }}
+          BASE: ${{ github.event.before || '' }}
         run: |
-          FORCE_ALL="${{ github.event.inputs.force_all || 'false' }}"
-
           if [ "$FORCE_ALL" = "true" ]; then
             echo "Force all: building everything"
             echo "server=true" >> "$GITHUB_OUTPUT"
@@ -56,7 +54,6 @@ jobs:
             exit 0
           fi
 
-          BASE="${{ github.event.before || '' }}"
           if [ -n "$BASE" ] && [ "$BASE" != "0000000000000000000000000000000000000000" ] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
             CHANGED=$(git diff --name-only "$BASE" HEAD)
           else
@@ -78,7 +75,7 @@ jobs:
           if echo "$CHANGED" | grep -qE '^(frontend/|packages/)'; then
             FRONTEND=true
           fi
-          if echo "$CHANGED" | grep -qE '^(pnpm-lock\.yaml|pnpm-workspace\.yaml)$'; then
+          if echo "$CHANGED" | grep -qE '^(pnpm-lock\.yaml|pnpm-workspace\.yaml|\.node-version)$'; then
             HELPCENTER=true
             FRONTEND=true
           fi
@@ -100,8 +97,9 @@ jobs:
       helpcenter_prev: ${{ steps.versions.outputs.helpcenter_prev }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -125,14 +123,18 @@ jobs:
           echo "Helpcenter release: ${HELPCENTER_TAG:-skipped}"
 
   build-server:
+    permissions:
+      contents: read
+      packages: write
     name: Build Server Image
     runs-on: arc-runners-helpin-ai
     needs: [version, changes]
     if: needs.changes.outputs.server == 'true' && needs.version.outputs.server_tag != ''
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           path: build-prod-server
 
       - name: Prepare Docker socket
@@ -143,12 +145,15 @@ jobs:
           docker version
 
       - name: Log in to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
       - name: Build and push server images
         run: |
           docker buildx build \
             -f build-prod-server/server/Dockerfile \
+            --build-arg GO_BUILD_TAGS=ee \
             --target api \
             -t ${{ env.IMAGE_PREFIX }}/server:${{ needs.version.outputs.server_tag }} \
             -t ${{ env.IMAGE_PREFIX }}/server:sha-${{ github.sha }} \
@@ -159,6 +164,7 @@ jobs:
             build-prod-server/server/
           docker buildx build \
             -f build-prod-server/server/Dockerfile \
+            --build-arg GO_BUILD_TAGS=ee \
             --target temporal-worker \
             -t ${{ env.IMAGE_PREFIX }}/temporal-worker:${{ needs.version.outputs.server_tag }} \
             -t ${{ env.IMAGE_PREFIX }}/temporal-worker:sha-${{ github.sha }} \
@@ -169,6 +175,7 @@ jobs:
             build-prod-server/server/
           docker buildx build \
             -f build-prod-server/server/Dockerfile \
+            --build-arg GO_BUILD_TAGS=ee \
             --target migrate \
             -t ${{ env.IMAGE_PREFIX }}/server-migrate:${{ needs.version.outputs.server_tag }} \
             -t ${{ env.IMAGE_PREFIX }}/server-migrate:sha-${{ github.sha }} \
@@ -179,14 +186,18 @@ jobs:
             build-prod-server/server/
 
   build-helpcenter:
+    permissions:
+      contents: read
+      packages: write
     name: Build Help Center Image
     runs-on: arc-runners-helpin-ai
     needs: [version, changes]
     if: needs.changes.outputs.helpcenter == 'true' && needs.version.outputs.helpcenter_tag != ''
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           path: build-prod-helpcenter
 
       - name: Prepare Docker socket
@@ -197,7 +208,9 @@ jobs:
           docker version
 
       - name: Log in to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
       - name: Build and push helpcenter image
         run: |
@@ -216,24 +229,28 @@ jobs:
     if: needs.changes.outputs.frontend == 'true'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           path: build-prod-netlify
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          package-manager-cache: false
+          node-version-file: build-prod-netlify/.node-version
 
       - name: Install Doppler CLI
-        run: curl -Ls --tlsv1.2 --proto "=https" --retry 3 https://cli.doppler.com/install.sh | sudo sh
+        run: bash build-prod-netlify/scripts/ci/install-tool.sh doppler
 
       - name: Download secrets to .env
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_FRONTEND_PROD }}
         run: |
           cd build-prod-netlify/frontend
-          doppler secrets download -t ${{ secrets.DOPPLER_TOKEN_FRONTEND_PROD }} --format=env-no-quotes --no-file > .env
+          doppler secrets download --format=env-no-quotes --no-file > .env
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 10
 
@@ -246,8 +263,9 @@ jobs:
             --filter @helpin-ai/widget-embed... \
             --filter @helpin-ai/react... \
             --filter @helpin-ai/nextjs... \
-            --filter frontend... \
+            --filter frontend^... \
             build
+          pnpm --dir frontend run build:ee
 
       - name: Link Netlify site
         working-directory: build-prod-netlify
@@ -264,6 +282,8 @@ jobs:
         run: pnpm --package=netlify-cli@24.2.0 dlx netlify deploy --filter frontend --dir frontend/dist --no-build --prod
 
   release:
+    permissions:
+      contents: write
     name: Create Official Release
     runs-on: arc-runners-helpin-ai
     needs: [version, changes, build-server, build-helpcenter]
@@ -273,8 +293,9 @@ jobs:
       (needs.build-server.result == 'success' || needs.build-helpcenter.result == 'success')
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: true
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
           path: prod-release
@@ -371,12 +392,19 @@ jobs:
             --notes-file release_notes.md \
             --latest
 
+      - name: Checkout gitops manifests
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: helpin-ai/gitops
+          ref: main
+          token: ${{ secrets.GITOPS_TOKEN }}
+          path: gitops
+
       - name: Update K8s manifests
-        working-directory: prod-release
         run: |
           SERVER_TAG="${{ needs.version.outputs.server_tag }}"
           HELPCENTER_TAG="${{ needs.version.outputs.helpcenter_tag }}"
-          MANIFEST_DIR="k8s/prod"
+          MANIFEST_DIR="gitops/helpin/prod"
           UPDATED=""
 
           if [ -n "$SERVER_TAG" ]; then
@@ -398,14 +426,12 @@ jobs:
             UPDATED="${UPDATED:+$UPDATED, }helpcenter→$HELPCENTER_TAG"
           fi
 
-          git add k8s/
-          git commit -m "chore: update prod images ($UPDATED) [skip ci]" || echo "No manifest changes"
+          # The smoke ConfigMap is generated from ops/widget-smoke in this repo.
+          python3 prod-release/scripts/monitoring/generate-smoke-manifest.py \
+            "$MANIFEST_DIR/monitoring-smoke-config.yaml"
 
-      - name: Push all changes
-        working-directory: prod-release
-        run: |
-          git pull --rebase origin main
-          git push origin main
+          bash prod-release/scripts/ci/push-gitops.sh gitops \
+            "chore: update helpin prod images ($UPDATED)" helpin/prod
 
       - name: Clean up RC tags
         working-directory: prod-release

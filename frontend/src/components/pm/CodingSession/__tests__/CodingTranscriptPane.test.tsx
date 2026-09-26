@@ -157,6 +157,16 @@ function buildReviewArtifact(overrides: Partial<AgentRunArtifact> = {}): AgentRu
 }
 
 describe('CodingTranscriptPane', () => {
+  it.each([
+    ['human_approval', 'Waiting for approval'],
+    ['human_input', 'Waiting for your reply'],
+    ['authentication', 'Waiting for sign-in'],
+  ] as const)('shows the shared waiting status for %s', (pause_reason, label) => {
+    act(() => root.render(<CodingTranscriptPane transcriptMessages={[]} liveAssistantMessage={null} liveReasoningMessage={null} liveTurnSegments={[]} session={buildSession({ status: 'paused', pause_reason })} />));
+    expect(container.querySelector('[data-agent-live-status]')?.textContent).toBe(label);
+    expect(container.querySelector('[data-agent-work-loader]')).toBeNull();
+  });
+
   it('uses the chat Worked for disclosure for completed agent-run work', () => {
     act(() => {
       root.render(
@@ -330,7 +340,7 @@ describe('CodingTranscriptPane', () => {
     });
 
     expect(container.textContent).not.toContain('Loading the approval details…');
-    expect(container.textContent).toContain('Authentication required');
+    expect(container.textContent).toContain('Reconnect the required provider');
   });
 
   it('does not label a human-input pause as awaiting approval', () => {
@@ -457,7 +467,9 @@ describe('CodingTranscriptPane', () => {
       container.textContent.indexOf('Second streamed chunk.'),
     );
     expect(container.querySelectorAll('.markdown-caret')).toHaveLength(0);
-    expect(container.querySelector('[data-agent-streaming-status]')).toBeNull();
+    const status = container.querySelector('[data-agent-live-status]');
+    expect(status).not.toBeNull();
+    expect(container.textContent.indexOf('Second streamed chunk.')).toBeLessThan(container.textContent.indexOf(status!.textContent!));
   });
 
   it('does not append review history artifacts to the main transcript', () => {
@@ -528,10 +540,10 @@ describe('CodingTranscriptPane', () => {
       );
     });
 
-    const streamingStatus = container.querySelector('[data-agent-streaming-status]');
-    expect(streamingStatus?.textContent).toBe('Thinking…');
+    const streamingStatus = container.querySelector('[data-agent-live-status]');
+    expect(streamingStatus?.textContent).toContain('Working');
     expect(streamingStatus?.querySelector('.agent-streaming-text')).not.toBeNull();
-    expect(container.querySelectorAll('[data-agent-streaming-status]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-agent-live-status]')).toHaveLength(1);
     expect(container.querySelector('.animate-bounce')).toBeNull();
     expect(container.querySelector('[data-agent-working-spinner]')).toBeNull();
   });

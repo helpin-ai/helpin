@@ -98,7 +98,7 @@ export interface MountWidgetOptions {
     articleSlug?: string;
   };
   onImageClick?: (src: string, alt: string) => void;
-  onAnswerFeedback?: (messageId: string, helpful: boolean) => void;
+  onAnswerFeedback?: (messageId: string, helpful: boolean) => Promise<boolean>;
   queuedMessageCount?: number;
   csatSubmitted?: boolean;
   onCsatSubmit?: (rating: number, feedback?: string) => void;
@@ -209,6 +209,7 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
           buttonColor: config.branding?.buttonColor,
           buttonIconColor: config.branding?.buttonIconColor,
           icon: config.branding?.launcherIcon || 'chat_bubble',
+          position: config.branding?.widgetPosition,
         })
       : null,
   );

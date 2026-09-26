@@ -55,6 +55,24 @@ function stream(
 }
 
 describe('mergePersistedChatMessages', () => {
+  it('does not append an uncorrelated runtime user echo beside the accepted message', () => {
+    const saved = { ...persisted(1, 'Continue', '2026-09-21T09:00:00Z'), client_message_id: 'submission-1' };
+    const echo = transcript(3, 'Continue', '2026-09-21T09:00:00.100Z');
+    expect(mergePersistedChatMessages(stream([echo]), [saved])?.transcript_messages.map(m => m.content)).toEqual(['Continue']);
+  });
+
+  it('keeps distinct identical submissions and accepts a durable websocket row before its page', () => {
+    const saved = { ...persisted(1, 'Continue', '2026-09-21T09:00:00Z'), client_message_id: 'submission-1' };
+    const incoming = { ...transcript(3, 'Continue', '2026-09-21T09:00:01Z'), event_id: 'msg:saved-2', client_message_id: 'submission-2' };
+    expect(mergePersistedChatMessages(stream([incoming]), [saved])?.transcript_messages).toHaveLength(2);
+  });
+
+  it('reconciles message pages by submission identity even when row IDs differ', () => {
+    const saved = { ...persisted(1, 'Continue', '2026-09-21T09:00:00Z'), client_message_id: 'submission-1' };
+    const confirmed = { ...saved, id: 'canonical-row', delivery_status: 'sent' as const };
+    expect(mergeMessagePages([saved], [confirmed])).toEqual([confirmed]);
+  });
+
   it('restores a locally failed message when delivery is authoritatively confirmed', () => {
     const confirmed = { ...persisted(2, 'Delivered', '2026-08-15T10:00:00Z'),
       role: 'user' as const, client_message_id: 'lost-ack', delivery_status: 'sent' as const };
@@ -136,7 +154,7 @@ describe('mergePersistedChatMessages', () => {
     const merged = mergePersistedChatMessages(
       stream([
         transcript(1, 'older snapshot history', '2026-08-13T20:50:21Z'),
-        transcript(3, 'new live tail', '2026-08-14T12:08:07Z'),
+        { ...transcript(3, 'new live tail', '2026-08-14T12:08:07Z'), event_id: 'msg:new-live-tail' },
       ]),
       [persisted(2, 'durable tail', '2026-08-14T12:08:04Z')],
     );
@@ -334,6 +352,52 @@ describe('hasAuthoritativeDockRuntimeTimeline', () => {
 });
 
 describe('mergeMessagePages', () => {
+  it('replaces the entire approved turn with its summary without resurrecting decisions from older pages', () => {
+    const user = persisted(1, 'Check the data.', '2026-09-18T12:00:00Z');
+    const progress = { ...persisted(2, 'Searching.', '2026-09-18T12:00:01Z'), message_type: 'assistant_progress' };
+    const approval = { ...persisted(3, 'Approved. Continue.', '2026-09-18T12:00:02Z'), message_type: 'approval_request_resolution' };
+    const answer = { ...persisted(4, 'The findings.', '2026-09-18T12:00:03Z'), message_type: 'assistant_final' };
+    const summary = { ...answer, id: `work:${answer.id}`, message_type: 'status', content: '',
+      dock_work_summary: { message_id: answer.id, duration_ms: 3000, activity_count: 2 } };
+    expect(mergeMessagePages([user, progress, approval], [summary, answer]).map(message => message.id)).toEqual([user.id, summary.id, answer.id]);
+    expect(mergeMessagePages([summary, answer], [user, progress, approval]).map(message => message.id)).toEqual([user.id, summary.id, answer.id]);
+  });
+
+  it('replaces streamed progress and late tool metadata with one completed summary without touching other turns', () => {
+    const user = persisted(43, 'Add a paragraph.', '2026-09-18T12:59:29Z');
+    const progress = { ...persisted(44, 'I will add a paragraph.', '2026-09-18T12:59:33Z'), message_type: 'assistant_progress' };
+    const final = { ...persisted(45, 'Added the paragraph.', '2026-09-18T12:59:38Z'), role: 'assistant' as const, message_type: 'assistant_final' };
+    const tools = { ...persisted(46, '', '2026-09-18T12:59:37Z'), message_type: 'assistant_progress' };
+    const summary = { ...final, id: `work:${final.id}`, content: '', message_type: 'status',
+      dock_work_summary: { message_id: tools.id, duration_ms: 9000, activity_count: 2 } };
+    const old = persisted(42, 'Previous answer.', '2026-09-18T12:58:00Z');
+    const nextUser = persisted(47, 'Another question.', '2026-09-18T13:00:00Z');
+    const nextProgress = { ...persisted(48, 'Checking.', '2026-09-18T13:00:01Z'), message_type: 'assistant_progress' };
+    const current = [old, user, progress, final, tools, nextUser, nextProgress];
+    const expected = [old.id, user.id, summary.id, final.id, nextUser.id, nextProgress.id];
+    expect(mergeMessagePages(current, [summary, final]).map(message => message.id)).toEqual(expected);
+    // Older pages arriving later must not resurrect the same progress.
+    expect(mergeMessagePages([summary, final], [user, progress, tools]).map(message => message.id))
+      .toEqual([user.id, summary.id, final.id]);
+    // Also reconcile a cache populated before the fix.
+    const snapshot = stream([], [{ kind: 'assistant_message', segment_id: progress.id,
+      assistant_message: { message_id: progress.id, content: progress.content, message_type: 'assistant_progress',
+        status: 'completed', tool_calls: [], started_at: progress.created_at } }]);
+    const merged = mergePersistedChatMessages(snapshot, [...current, summary]);
+    expect(merged?.transcript_messages.map(message => message.event_id)).toEqual(expected.map(id => `msg:${id}`));
+    expect(merged?.live_turn_segments).toEqual([]);
+  });
+
+  it('keeps unrelated runs and history outside a compact summary when a page starts mid-turn', () => {
+    const old = { ...persisted(2, 'Earlier progress.', '2026-09-18T12:00:00Z'), message_type: 'assistant_progress' };
+    const progress = { ...persisted(4, 'Current progress.', '2026-09-18T12:01:00Z'), message_type: 'assistant_progress' };
+    const unrelated = { ...progress, id: 'other-run', run_id: 'run-2' };
+    const summary = { ...persisted(6, '', '2026-09-18T12:01:09Z'), id: 'work:answer', message_type: 'status',
+      dock_work_summary: { message_id: 'answer', duration_ms: 9000, activity_count: 1 } };
+    expect(mergeMessagePages([old, progress, unrelated], [summary]).map(message => message.id))
+      .toEqual([old.id, unrelated.id, summary.id]);
+  });
+
   it('deduplicates and restores stable sequence order across pagination', () => {
     const merged = mergeMessagePages(
       [persisted(51, 'later', '2026-08-14T00:00:51Z')],

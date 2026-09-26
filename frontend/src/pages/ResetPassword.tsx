@@ -23,13 +23,13 @@ export default function ResetPassword() {
       <PublicPageShell>
         <Card className="w-full">
           <CardHeader className="text-center">
-            <CardTitle className="text-2xl">Invalid link</CardTitle>
+            <CardTitle role="heading" aria-level={1} className="text-2xl">Invalid link</CardTitle>
             <CardDescription>This password reset link is invalid or has expired.</CardDescription>
           </CardHeader>
           <CardFooter className="flex flex-col gap-4 mt-4">
-            <Link to="/forgot-password">
-              <Button variant="outline" className="w-full">Request a new link</Button>
-            </Link>
+            <Button asChild variant="outline" className="w-full">
+              <Link to="/forgot-password">Request a new link</Link>
+            </Button>
           </CardFooter>
         </Card>
       </PublicPageShell>
@@ -65,13 +65,13 @@ export default function ResetPassword() {
       <PublicPageShell>
         <Card className="w-full">
           <CardHeader className="text-center">
-            <CardTitle className="text-2xl">Password reset</CardTitle>
-            <CardDescription>Your password has been reset successfully. You can now sign in with your new password.</CardDescription>
+            <CardTitle role="heading" aria-level={1} className="text-2xl">Password reset</CardTitle>
+            <CardDescription>You can now sign in with your new password.</CardDescription>
           </CardHeader>
           <CardFooter className="flex flex-col gap-4 mt-4">
-            <Link to="/login" className="w-full">
-              <Button className="w-full">Sign in</Button>
-            </Link>
+            <Button asChild className="w-full">
+              <Link to="/login">Sign in</Link>
+            </Button>
           </CardFooter>
         </Card>
       </PublicPageShell>
@@ -82,18 +82,18 @@ export default function ResetPassword() {
     <PublicPageShell>
       <Card className="w-full">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Set a new password</CardTitle>
+          <CardTitle role="heading" aria-level={1} className="text-2xl">Set a new password</CardTitle>
           <CardDescription>Choose a new password for your account</CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="password">New password</Label>
-              <Input id="password" type="password" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} required minLength={8} />
+              <Input id="password" autoComplete="new-password" type="password" placeholder="At least 8 characters" value={password} onChange={e => setPassword(e.target.value)} required minLength={8} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="confirm">Confirm password</Label>
-              <Input id="confirm" type="password" placeholder="••••••••" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required minLength={8} />
+              <Input id="confirm" autoComplete="new-password" type="password" placeholder="••••••••" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required minLength={8} />
             </div>
           </CardContent>
           <CardFooter className="flex flex-col gap-4 mt-4">

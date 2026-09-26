@@ -2,9 +2,7 @@ package service
 
 import (
 	"context"
-	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -28,6 +26,11 @@ import (
 )
 
 var ErrTaskDeliveryTargetRequired = errors.New("task has no delivery target configured")
+
+// ErrDeliveryRepositoryUnavailable means the selected repository is missing,
+// disabled, or not connected for PM delivery in this workspace.
+var ErrDeliveryRepositoryUnavailable = errors.New("repository is not available for PM delivery")
+
 var ErrEpicDeliveryTargetRequired = errors.New("epic has no delivery target configured")
 
 // GitService contains git integration and task delivery business logic.
@@ -52,7 +55,11 @@ type GitService struct {
 	availableRepos   *availableReposCache
 	appBaseURL       string
 	githubAppSlug    string
+	githubAppSource  githubapp.CredentialSource
 	stateSecret      string
+	// installClaimEnabled allows linking installations that arrive without
+	// Helpin state (Community's private App); see ClaimGitHubInstallation.
+	installClaimEnabled bool
 }
 
 func (s *GitService) SetEpicDeliveryDependencies(deliveryRepo *repository.EpicDeliveryTargetRepository, epicRepo *repository.PMEpicRepository) *GitService {
@@ -451,7 +458,7 @@ func (s *GitService) SyncRepositories(ctx context.Context, workspaceID, integrat
 		if integration.InstallationID == nil || *integration.InstallationID == "" {
 			return nil, fmt.Errorf("integration has no installation_id")
 		}
-		if s.githubApp == nil {
+		if !s.hasGitHubApp(ctx) {
 			return nil, fmt.Errorf("github app credentials are not configured")
 		}
 		repos, err := s.githubApp.ListInstallationRepositories(ctx, *integration.InstallationID)
@@ -630,7 +637,7 @@ func (s *GitService) ResolveReleaseKind(ctx context.Context, workspaceID, repoFu
 	if integration.InstallationID == nil || strings.TrimSpace(*integration.InstallationID) == "" {
 		return "unknown", fmt.Errorf("integration has no installation_id")
 	}
-	if s.githubApp == nil {
+	if !s.hasGitHubApp(ctx) {
 		return "unknown", fmt.Errorf("github app is not configured")
 	}
 	owner, repoName, err := splitRepositoryFullName(repo.FullName)
@@ -676,7 +683,7 @@ func (s *GitService) ListRepositoryBranches(ctx context.Context, workspaceID, re
 
 	switch integration.Provider {
 	case "github":
-		if s.githubApp == nil {
+		if !s.hasGitHubApp(ctx) {
 			return nil, fmt.Errorf("github app credentials are not configured")
 		}
 		parts := strings.SplitN(strings.TrimSpace(repo.FullName), "/", 2)
@@ -750,11 +757,11 @@ func (s *GitService) UpdateRepositorySelection(ctx context.Context, workspaceID,
 
 // GetGitHubInstallURL returns either a fresh install URL or the repo-picker action
 // for an existing installation visible to this organization.
-func (s *GitService) GetGitHubInstallURL(ctx context.Context, workspaceID, actorID string, forceInstall bool) (string, string, *string, error) {
+func (s *GitService) GetGitHubInstallURL(ctx context.Context, workspaceID, actorID string, forceInstall bool, returnTo string) (string, string, *string, error) {
 	if workspaceID == "" {
 		return "", "", nil, fmt.Errorf("workspace_id is required")
 	}
-	if s.githubApp == nil || s.githubAppSlug == "" {
+	if !s.hasGitHubApp(ctx) || s.gitHubAppSlug(ctx) == "" {
 		return "", "", nil, fmt.Errorf("github app onboarding is not configured")
 	}
 	if s.workspaceRepo == nil {
@@ -770,14 +777,17 @@ func (s *GitService) GetGitHubInstallURL(ctx context.Context, workspaceID, actor
 	if workspace.OrganizationID == nil || strings.TrimSpace(*workspace.OrganizationID) == "" {
 		return "", "", nil, fmt.Errorf("workspace organization is required")
 	}
-	return s.GetGitHubInstallURLForOrganization(ctx, strings.TrimSpace(*workspace.OrganizationID), workspaceID, actorID, forceInstall)
+	return s.GetGitHubInstallURLForOrganization(ctx, strings.TrimSpace(*workspace.OrganizationID), workspaceID, actorID, forceInstall, returnTo)
 }
 
-func (s *GitService) GetGitHubInstallURLForOrganization(ctx context.Context, organizationID, returnWorkspaceID, actorID string, forceInstall bool) (string, string, *string, error) {
+// GetGitHubInstallURLForOrganization returns the install URL (with signed
+// state carrying returnTo) or the repo-picker action for an existing
+// installation.
+func (s *GitService) GetGitHubInstallURLForOrganization(ctx context.Context, organizationID, returnWorkspaceID, actorID string, forceInstall bool, returnTo string) (string, string, *string, error) {
 	if strings.TrimSpace(organizationID) == "" {
 		return "", "", nil, fmt.Errorf("organization_id is required")
 	}
-	if s.githubApp == nil || s.githubAppSlug == "" {
+	if !s.hasGitHubApp(ctx) || s.gitHubAppSlug(ctx) == "" {
 		return "", "", nil, fmt.Errorf("github app onboarding is not configured")
 	}
 	if !s.isOrgAdminOrOwner(ctx, organizationID, actorID) {
@@ -794,20 +804,11 @@ func (s *GitService) GetGitHubInstallURLForOrganization(ctx context.Context, org
 		}
 	}
 
-	state, err := s.signGitHubInstallState(organizationID, returnWorkspaceID, actorID)
+	installURL, err := s.gitHubAppInstallURL(s.gitHubAppSlug(ctx), organizationID, returnWorkspaceID, actorID, returnTo)
 	if err != nil {
 		return "", "", nil, err
 	}
-
-	installURL := url.URL{
-		Scheme: "https",
-		Host:   "github.com",
-		Path:   "/apps/" + s.githubAppSlug + "/installations/new",
-	}
-	query := installURL.Query()
-	query.Set("state", state)
-	installURL.RawQuery = query.Encode()
-	return installURL.String(), "install", nil, nil
+	return installURL, "install", nil, nil
 }
 
 func (s *GitService) githubInstallationManageURL(integration *model.GitIntegration) string {
@@ -833,7 +834,7 @@ func (s *GitService) CompleteGitHubInstall(ctx context.Context, stateToken, inst
 	if installationID == "" {
 		return withGitHubInstallStatus(redirectURL, "error", "GitHub did not return an installation ID.", nil), nil
 	}
-	if s.githubApp == nil {
+	if !s.hasGitHubApp(ctx) {
 		return withGitHubInstallStatus(redirectURL, "error", "GitHub App credentials are not configured on the server.", nil), nil
 	}
 
@@ -955,28 +956,6 @@ func normalizeGitLabTokenAuthType(raw string) (string, error) {
 	}
 }
 
-// ResolveGitHubWebhookIntegration verifies the webhook signature and resolves the installation.
-func (s *GitService) ResolveGitHubWebhookIntegration(ctx context.Context, installationID string, body []byte, signature string) (*model.GitIntegration, error) {
-	if strings.TrimSpace(installationID) == "" {
-		return nil, fmt.Errorf("installation_id is required")
-	}
-
-	integration, err := s.integrationRepo.GetByInstallationID(ctx, "github", installationID)
-	if err != nil {
-		return nil, err
-	}
-	if integration == nil {
-		return nil, fmt.Errorf("no workspace matches github installation %s", installationID)
-	}
-	if integration.WebhookSecret != nil && *integration.WebhookSecret != "" {
-		expected := signGitHubWebhook(*integration.WebhookSecret, body)
-		if !hmac.Equal([]byte(expected), []byte(signature)) {
-			return nil, fmt.Errorf("invalid github webhook signature")
-		}
-	}
-	return integration, nil
-}
-
 // ListAvailableReposOptions tunes a single ListAvailableRepos call.
 type ListAvailableReposOptions struct {
 	Search  string // optional GitLab search term
@@ -1041,7 +1020,7 @@ func (s *GitService) ListAvailableRepos(ctx context.Context, workspaceID, integr
 	if integration.InstallationID == nil || strings.TrimSpace(*integration.InstallationID) == "" {
 		return nil, fmt.Errorf("integration has no installation_id")
 	}
-	if s.githubApp == nil {
+	if !s.hasGitHubApp(ctx) {
 		return nil, fmt.Errorf("github app credentials are not configured")
 	}
 
@@ -1100,7 +1079,7 @@ func (s *GitService) WireRepositories(ctx context.Context, currentWorkspaceID, i
 		if integration.InstallationID == nil || strings.TrimSpace(*integration.InstallationID) == "" {
 			return nil, nil, fmt.Errorf("integration has no installation_id")
 		}
-		if s.githubApp == nil {
+		if !s.hasGitHubApp(ctx) {
 			return nil, nil, fmt.Errorf("github app credentials are not configured")
 		}
 		available, err := s.githubApp.ListInstallationRepositories(ctx, *integration.InstallationID)
@@ -1515,7 +1494,7 @@ func (s *GitService) UpdateTaskDeliveryTarget(ctx context.Context, workspaceID, 
 			return nil, err
 		}
 		if repo == nil {
-			return nil, fmt.Errorf("repository is not available for PM delivery")
+			return nil, ErrDeliveryRepositoryUnavailable
 		}
 		target.RepositoryID = &repo.ID
 		target.RepoFullName = &repo.FullName
@@ -1539,7 +1518,7 @@ func (s *GitService) UpdateTaskDeliveryTarget(ctx context.Context, workspaceID, 
 			return nil, err
 		}
 		if repo == nil {
-			return nil, fmt.Errorf("repository is not available for PM delivery")
+			return nil, ErrDeliveryRepositoryUnavailable
 		}
 		target.RepositoryID = &repo.ID
 		target.RepoFullName = &repo.FullName
@@ -1636,7 +1615,7 @@ func (s *GitService) UpdateEpicDeliveryTarget(ctx context.Context, workspaceID, 
 			return nil, err
 		}
 		if repo == nil {
-			return nil, fmt.Errorf("repository is not available for PM delivery")
+			return nil, ErrDeliveryRepositoryUnavailable
 		}
 		target.RepositoryID = &repo.ID
 		target.RepoFullName = &repo.FullName
@@ -1660,7 +1639,7 @@ func (s *GitService) UpdateEpicDeliveryTarget(ctx context.Context, workspaceID, 
 			return nil, err
 		}
 		if repo == nil {
-			return nil, fmt.Errorf("repository is not available for PM delivery")
+			return nil, ErrDeliveryRepositoryUnavailable
 		}
 		target.RepositoryID = &repo.ID
 		target.RepoFullName = &repo.FullName
@@ -1742,7 +1721,7 @@ func (s *GitService) EnsureEpicBranch(ctx context.Context, workspaceID, epicID, 
 	if target.RepositoryID == nil || target.RepoFullName == nil || target.IntegrationID == nil || target.BaseBranch == nil || target.EpicBranch == nil {
 		return nil, ErrEpicDeliveryTargetRequired
 	}
-	if s.githubApp == nil {
+	if !s.hasGitHubApp(ctx) {
 		return nil, fmt.Errorf("github app is not configured")
 	}
 	integration, owner, repo, err := s.githubIntegrationAndRepoParts(ctx, workspaceID, *target.IntegrationID, *target.RepoFullName)
@@ -1871,7 +1850,7 @@ func (s *GitService) OpenEpicFinalPullRequest(ctx context.Context, workspaceID, 
 	if target.IntegrationID == nil || target.RepoFullName == nil || target.BaseBranch == nil || target.EpicBranch == nil {
 		return nil, ErrEpicDeliveryTargetRequired
 	}
-	if s.githubApp == nil {
+	if !s.hasGitHubApp(ctx) {
 		return nil, fmt.Errorf("github app is not configured")
 	}
 	integration, owner, repo, err := s.githubIntegrationAndRepoParts(ctx, workspaceID, *target.IntegrationID, *target.RepoFullName)
@@ -1961,7 +1940,7 @@ func (s *GitService) ResolveTaskDeliveryTargetForRun(ctx context.Context, worksp
 			return nil, err
 		}
 		if repo == nil {
-			return nil, fmt.Errorf("repository is not available for PM delivery")
+			return nil, ErrDeliveryRepositoryUnavailable
 		}
 	}
 	return target, nil
@@ -2010,7 +1989,10 @@ func (s *GitService) ResolveTaskRunBranchValues(ctx context.Context, workspaceID
 	return baseBranch, model.BuildTaskWorkingBranch(task, teamDefault, workspace.WorkspaceKey), nil
 }
 
-func (s *GitService) ResolveAgentRuntimeRepositorySpec(ctx context.Context, workspaceID string, target agentruntime.TargetRef, runID string) (*agentruntime.RepositoryWorkspaceSpec, error) {
+// ResolveAgentRuntimeRepositorySpec uses runtimeRunID for checkout naming and
+// helpinRunID for delivery attribution. The Helpin mapping may not exist yet
+// during startup; an empty helpinRunID preserves the previous delivery run.
+func (s *GitService) ResolveAgentRuntimeRepositorySpec(ctx context.Context, workspaceID string, target agentruntime.TargetRef, runtimeRunID, helpinRunID string) (*agentruntime.RepositoryWorkspaceSpec, error) {
 	if s == nil {
 		return nil, fmt.Errorf("git service is not configured")
 	}
@@ -2091,7 +2073,7 @@ func (s *GitService) ResolveAgentRuntimeRepositorySpec(ctx context.Context, work
 			if epicID == "" {
 				return nil, fmt.Errorf("epic-derived task delivery target has no source epic")
 			}
-			if _, err := s.EnsureEpicBranch(ctx, workspaceID, epicID, "", runID); err != nil {
+			if _, err := s.EnsureEpicBranch(ctx, workspaceID, epicID, "", helpinRunID); err != nil {
 				return nil, fmt.Errorf("ensure epic base branch for task checkout: %w", err)
 			}
 		}
@@ -2145,7 +2127,7 @@ func (s *GitService) ResolveAgentRuntimeRepositorySpec(ctx context.Context, work
 		workingBranch = strings.TrimSpace(firstStringValue(target.Metadata, "work_branch", "working_branch"))
 	}
 	if strings.TrimSpace(workingBranch) == "" {
-		workingBranch = fmt.Sprintf("agent-runtime/%s", strings.TrimSpace(runID))
+		workingBranch = fmt.Sprintf("agent-runtime/%s", strings.TrimSpace(runtimeRunID))
 	}
 
 	integration, err := s.integrationRepo.GetByID(ctx, repo.WorkspaceID, repo.IntegrationID)
@@ -2198,7 +2180,7 @@ func (s *GitService) agentRuntimeRepositoryAuth(ctx context.Context, integration
 			if integration.InstallationID == nil || strings.TrimSpace(*integration.InstallationID) == "" {
 				return nil, fmt.Errorf("github installation id is required")
 			}
-			if s.githubApp == nil {
+			if !s.hasGitHubApp(ctx) {
 				return nil, fmt.Errorf("github app client is not configured")
 			}
 			minted, err := s.githubApp.MintInstallationToken(ctx, strings.TrimSpace(*integration.InstallationID))
@@ -2631,7 +2613,7 @@ func pipelineTriggerForProvider(provider string) string {
 // ReconcileOpenPullRequestStatuses repairs missed pull request lifecycle webhooks
 // by comparing persisted open PR links with GitHub's current source of truth.
 func (s *GitService) ReconcileOpenPullRequestStatuses(ctx context.Context, limit int, dryRun bool) (*GitPRReconcileResult, error) {
-	if s.githubApp == nil {
+	if !s.hasGitHubApp(ctx) {
 		return nil, fmt.Errorf("github app is not configured")
 	}
 	if s.linkRepo == nil || s.integrationRepo == nil {
@@ -3100,10 +3082,13 @@ type gitHubInstallState struct {
 	OrganizationID string `json:"organization_id"`
 	WorkspaceID    string `json:"workspace_id,omitempty"`
 	ActorID        string `json:"actor_id,omitempty"`
+	// ReturnTo is the Helpin page to return to; absent in older tokens,
+	// which return to settings.
+	ReturnTo string `json:"return_to,omitempty"`
 	jwt.RegisteredClaims
 }
 
-func (s *GitService) signGitHubInstallState(organizationID, workspaceID, actorID string) (string, error) {
+func (s *GitService) signGitHubInstallState(organizationID, workspaceID, actorID, returnTo string) (string, error) {
 	if s.stateSecret == "" {
 		return "", fmt.Errorf("github app state secret is not configured")
 	}
@@ -3117,6 +3102,7 @@ func (s *GitService) signGitHubInstallState(organizationID, workspaceID, actorID
 		OrganizationID: strings.TrimSpace(organizationID),
 		WorkspaceID:    strings.TrimSpace(workspaceID),
 		ActorID:        strings.TrimSpace(actorID),
+		ReturnTo:       gitHubReturnTo(returnTo),
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -3145,11 +3131,11 @@ func (s *GitService) resolveGitHubInstallState(ctx context.Context, stateToken s
 	if strings.TrimSpace(claims.OrganizationID) == "" {
 		return nil, nil, "", fmt.Errorf("github app callback organization is missing")
 	}
-	workspace, redirectURL, err := s.resolveReturnWorkspace(ctx, claims.OrganizationID, claims.WorkspaceID)
+	workspace, _, err := s.resolveReturnWorkspace(ctx, claims.OrganizationID, claims.WorkspaceID)
 	if err != nil {
 		return nil, nil, "", err
 	}
-	return claims, workspace, redirectURL, nil
+	return claims, workspace, s.gitHubInstallReturnURL(workspace, claims.ReturnTo), nil
 }
 
 func (s *GitService) upsertGitLabTokenCredential(
@@ -3483,9 +3469,9 @@ func withGitHubInstallStatus(baseURL, status, message string, params map[string]
 		return baseURL
 	}
 	query := parsed.Query()
-	query.Set("github_app", status)
+	query.Set(_gitHubResultQueryKey, status)
 	if strings.TrimSpace(message) != "" {
-		query.Set("github_message", message)
+		query.Set(_gitHubMessageQueryKey, message)
 	}
 	for key, value := range params {
 		if strings.TrimSpace(value) == "" {
@@ -3514,12 +3500,6 @@ func generateWebhookSecret() string {
 	buf := make([]byte, 16)
 	_, _ = rand.Read(buf)
 	return hex.EncodeToString(buf)
-}
-
-func signGitHubWebhook(secret string, body []byte) string {
-	mac := hmac.New(sha256.New, []byte(secret))
-	_, _ = mac.Write(body)
-	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
 }
 
 func trimPtr(value *string) *string {

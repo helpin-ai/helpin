@@ -2,6 +2,8 @@ package querybuilder
 
 import (
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,6 +16,8 @@ import (
 type FieldType string
 
 const (
+	// FieldTypeNumber supports finite numeric comparisons and inclusive ranges.
+	FieldTypeNumber FieldType = "number"
 	// FieldTypeText supports text comparison operators.
 	FieldTypeText FieldType = "text"
 	// FieldTypeEnum supports exact-match style operators.
@@ -112,6 +116,8 @@ func isOperatorAllowed(definition FieldDefinition, operator model.QueryFilterOpe
 
 func defaultOperators(fieldType FieldType) []model.QueryFilterOperator {
 	switch fieldType {
+	case FieldTypeNumber:
+		return []model.QueryFilterOperator{model.QueryFilterOpIs, model.QueryFilterOpIsNot, model.QueryFilterOpGT, model.QueryFilterOpGTE, model.QueryFilterOpLT, model.QueryFilterOpLTE, model.QueryFilterOpBetween, model.QueryFilterOpIsEmpty, model.QueryFilterOpIsNotEmpty}
 	case FieldTypeText:
 		return []model.QueryFilterOperator{
 			model.QueryFilterOpIs,
@@ -147,6 +153,8 @@ func defaultOperators(fieldType FieldType) []model.QueryFilterOperator {
 func buildClause(definition FieldDefinition, rule model.QueryFilterRule) (string, []any, error) {
 	expression := definition.ExpressionSQL()
 	switch definition.Type {
+	case FieldTypeNumber:
+		return buildNumberClause(expression, rule)
 	case FieldTypeText:
 		return buildTextClause(expression, rule)
 	case FieldTypeDate:
@@ -317,4 +325,50 @@ func parseDateValue(raw string) (time.Time, time.Time, error) {
 	}
 
 	return time.Time{}, time.Time{}, &ValidationError{Message: fmt.Sprintf("invalid date value %q", raw)}
+}
+
+func buildNumberClause(expression string, rule model.QueryFilterRule) (string, []any, error) {
+	if rule.Operator == model.QueryFilterOpIsEmpty {
+		return expression + " IS NULL", nil, nil
+	}
+	if rule.Operator == model.QueryFilterOpIsNotEmpty {
+		return expression + " IS NOT NULL", nil, nil
+	}
+	parse := func(raw string) (float64, error) {
+		value, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+		if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
+			return 0, &ValidationError{Message: "numeric filter requires a finite number"}
+		}
+		return value, nil
+	}
+	if rule.Operator == model.QueryFilterOpBetween {
+		if len(rule.Values) != 2 {
+			return "", nil, &ValidationError{Message: "numeric range requires two values"}
+		}
+		low, err := parse(rule.Values[0])
+		if err != nil {
+			return "", nil, err
+		}
+		high, err := parse(rule.Values[1])
+		if err != nil {
+			return "", nil, err
+		}
+		if low > high {
+			return "", nil, &ValidationError{Message: "range minimum must not exceed maximum"}
+		}
+		return expression + " BETWEEN ? AND ?", []any{low, high}, nil
+	}
+	if rule.Value == nil {
+		return "", nil, &ValidationError{Message: "numeric filter requires a value"}
+	}
+	value, err := parse(*rule.Value)
+	if err != nil {
+		return "", nil, err
+	}
+	operators := map[model.QueryFilterOperator]string{model.QueryFilterOpIs: "=", model.QueryFilterOpIsNot: "<>", model.QueryFilterOpGT: ">", model.QueryFilterOpGTE: ">=", model.QueryFilterOpLT: "<", model.QueryFilterOpLTE: "<="}
+	operator, ok := operators[rule.Operator]
+	if !ok {
+		return "", nil, &ValidationError{Message: "unsupported numeric operator"}
+	}
+	return expression + " " + operator + " ?", []any{value}, nil
 }

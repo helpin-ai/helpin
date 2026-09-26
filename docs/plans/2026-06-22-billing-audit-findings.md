@@ -1,4 +1,18 @@
-# Billing Integration Audit — Loose Ends & Bugs
+# Billing integration audit findings
+
+This is the historical June 22 billing audit for maintainers investigating earlier design decisions. Its numbered defects and cleanup recommendations describe that branch at that time; they are not a current release-blocker list or authorization to delete schema. Commercial billing now lives under `server/ee` and `frontend/src/ee`.
+
+## Source review — 2026-09-18
+
+- [Current billing routes](../../server/ee/handler/routes.go) add workspace or organization billing-owner middleware. The old assertion that mutations are guarded only by `settings.manage` is obsolete; exact delegated access is determined by the billing service authorization methods.
+- [The repository](../../server/ee/repository/billing.go) now processes Stripe lifecycle mutations, lifecycle outbox insertion, and the processed marker in one transaction. Duplicate webhook handling checks `Processed`. Legacy credit consumption also rechecks limits while holding the billing row lock. Findings 5 and 6 do not describe those current paths.
+- [The billing service](../../server/ee/service/billing.go) expires app-managed trials and rolls active Founder periods forward while resetting legacy credits. Trials are a finite allowance, not monthly subscriptions that necessarily need recurring resets. Founder retains its legacy 100,000-credit constant, while the current usage allowance is represented separately in microusd; do not use this historical credit description as current pricing guidance.
+- Legacy `ConsumeCredits` explicitly avoids fixed-block Stripe charging; active AI usage settles through the usage settlement system. [AI metering](../../server/internal/service/ai_usage_meter.go) now invokes preflight and forwards reasoning-token usage. The claims that there is no preflight and no reasoning-token caller are obsolete; this review does not prove every execution path reserves enough usage.
+- [Billing model constants](../../server/internal/model/billing.go) no longer include `BillingPlanFree`. The old hardcoded deferred-change helper is absent from the current billing service. The proposed deletion list must therefore be reassessed against present callers and migration compatibility.
+- `CanReserveWorkspaceSeat` still checks locked status without counting seats; `past_due` is not included in `billingStatusLocked`, while `unpaid` now is. These are current code observations, not a finding that today's commercial policy requires different behavior.
+- The remaining historical issues, external Stripe prices, migration rollout, live webhook delivery, and commercial UI workflows have not been revalidated end to end. June line numbers and file locations below are historical evidence, not current navigation.
+
+## Original record
 
 Date: 2026-06-22 · Branch: `feature/stripe-billing` (worktree)
 Scope: Stripe integration, usage metering, entitlements, paywalls, frontend billing, spec compliance.
@@ -82,7 +96,7 @@ One org Stripe customer backs **multiple** workspace subscriptions, but `GetBySt
 ## Spec compliance & loose ends
 
 18. **Free plan still live in code despite removal** — `BillingPlanFree = "free"` (`model/billing.go:6`) and ~9 branches still gate on it (`service/billing.go:385,465,554,712,769,1189,1210`, `repository/workspace.go:241`). Migration rewrote rows but left "free" a reachable legacy state. Spec §3/§4 still describe Free as a v1 plan — never reconciled.
-19. **Pricing numbers diverge from the cited source** — spec §4 says Starter $99 / Growth $299; `docs/pricing-strategy.md` says Starter $299 / Growth $799 (+ a Business tier). Confirm actual Stripe prices.
+19. **Pricing numbers diverge from the cited source** — spec §4 says Starter $99 / Growth $299; `docs/strategy/pricing-strategy.md` says Starter $299 / Growth $799 (+ a Business tier). Confirm actual Stripe prices.
 20. **Trial-nudge emails not implemented** — spec §10 requires owner/billing-owner nudges at T-3, T-1, drop. No code (sidebar banner exists; emails don't).
 21. **Standalone in-app card capture is no longer planned for v1** — app-managed trials use **Upgrade** CTAs that route to Stripe Checkout, which creates the subscription and collects/saves the payment method. Stripe Portal remains for existing paid billing management.
 22. **Spec is missing from the branch** — the design spec doesn't exist in the worktree; it lives only on `main` with **uncommitted** edits (the "§17 Implementation Notes" reconciliation). Pending-plan-changes, cancellation state, and payment notices (3 migrations + 4 routes) were added ad hoc with no spec coverage.
@@ -94,7 +108,7 @@ Brittle duplicate detection via error-string match (`repository/billing.go:70` �
 
 ---
 
-# Over-Engineering Review
+## Historical complexity review
 
 Separate lens from the bug audit above: unnecessary complexity, dead abstractions, premature generalization. Method: 2 parallel audits (backend + frontend). The codebase is mostly proportionate — the on-demand block math, billing-notice columns, and metering interfaces all earn their keep. The over-engineering is concentrated in **one dead feature** plus some duplication.
 

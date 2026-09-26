@@ -37,6 +37,7 @@ import {
   useCreateDocAssociation,
   useDeleteDocAssociation,
   useWorkflows,
+  useWorkspaceAccess,
 } from '@/hooks/queries';
 import { crmSearchService } from '@/lib/services/crmService';
 import { searchService, type SearchResult } from '@/lib/services/searchService';
@@ -68,6 +69,8 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
   const location = useLocation();
   const queryClient = useQueryClient();
   const slug = useWorkspaceStore((s) => s.currentWorkspace?.slug ?? '');
+  const { data: access } = useWorkspaceAccess(workspaceId);
+  const pmEnabled = access?.modules?.includes('pm') ?? false;
   const [previewDocId, setPreviewDocId] = useState<string | null>(null);
 
   const associationsQuery = useConversationAssociations(workspaceId, conversationId);
@@ -105,7 +108,7 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
   const [tasksExpanded, setTasksExpanded] = useState(false);
 
-  const { data: workflows = [] } = useWorkflows(workspaceId);
+  const { data: workflows = [] } = useWorkflows(pmEnabled ? workspaceId : '');
   const workflow = workflows[0] ?? null;
   const workflowStateColorById = new Map(
     workflows.flatMap((entry) =>
@@ -259,10 +262,11 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
 
   return (
     <div>
-      <CollapsibleSection
+      {pmEnabled && <CollapsibleSection
+        key={`${workspaceId}:${conversationId}:tasks`}
         title="Tasks"
         count={tasks.length}
-        defaultOpen={tasks.length > 0}
+        autoOpenWhenPopulated
         onAdd={() => setPickerSection('tasks')}
       >
         {tasks.length === 0 ? (
@@ -339,12 +343,13 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
             )}
           </div>
         )}
-      </CollapsibleSection>
+      </CollapsibleSection>}
 
       <CollapsibleSection
+        key={`${workspaceId}:${conversationId}:crm`}
         title="CRM"
         count={crmRecords.length}
-        defaultOpen={crmRecords.length > 0}
+        autoOpenWhenPopulated
         onAdd={() => setPickerSection('crm')}
       >
         {crmRecords.length === 0 ? (
@@ -405,9 +410,10 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
       </CollapsibleSection>
 
       <CollapsibleSection
+        key={`${workspaceId}:${conversationId}:docs`}
         title="Docs"
         count={docs.length}
-        defaultOpen={docs.length > 0}
+        autoOpenWhenPopulated
         onAdd={() => setPickerSection('docs')}
       >
         {docs.length === 0 ? (
@@ -555,7 +561,7 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
       />
 
       {/* Create Task modal — creates and auto-links to this conversation */}
-      {workflow && (
+      {pmEnabled && workflow && (
         <CreateTaskModal
           open={createTaskOpen}
           onOpenChange={setCreateTaskOpen}

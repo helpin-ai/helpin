@@ -264,6 +264,7 @@ func TestSetupRepositoryPersistsGoalsAndReadsVerifiedEvidence(t *testing.T) {
 }
 
 var setupTestSchema = []string{
+	sampleDataItemsTestSchema,
 	`CREATE TABLE setup_goals (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, key TEXT NOT NULL, catalog_version INTEGER NOT NULL DEFAULT 1, source TEXT NOT NULL, status TEXT NOT NULL, position INTEGER NOT NULL, activated_at DATETIME NOT NULL, created_by TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(workspace_id, key))`,
 	`CREATE TABLE setup_intents (workspace_id TEXT PRIMARY KEY, goal_keys TEXT NOT NULL DEFAULT '[]', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
 	`CREATE TABLE setup_achievements (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, goal_key TEXT NOT NULL, task_key TEXT NOT NULL, member_id TEXT NOT NULL DEFAULT '', evidence TEXT NOT NULL, achieved_at DATETIME NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(workspace_id, goal_key, task_key, member_id))`,
@@ -279,7 +280,8 @@ var setupTestSchema = []string{
 	`CREATE TABLE pm_task_owners (task_id TEXT NOT NULL, user_id TEXT NOT NULL)`,
 	`CREATE TABLE pm_sprint_closeouts (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, closed_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
 	`CREATE TABLE git_repositories (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT 1, selected BOOLEAN NOT NULL DEFAULT 1, deleted_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
-	`CREATE TABLE agents (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, is_system BOOLEAN NOT NULL DEFAULT 0, preset_key TEXT NOT NULL DEFAULT '', approval_mode TEXT NOT NULL DEFAULT 'never', template_key TEXT, template_instance_id TEXT, source_template_key TEXT NOT NULL DEFAULT '')`,
+	`CREATE TABLE agents (
+ ai_profile_id TEXT,id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, is_system BOOLEAN NOT NULL DEFAULT 0, preset_key TEXT NOT NULL DEFAULT '', approval_mode TEXT NOT NULL DEFAULT 'never', template_key TEXT, template_instance_id TEXT, source_template_key TEXT NOT NULL DEFAULT '')`,
 	`CREATE TABLE agent_runs (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, agent_id TEXT NOT NULL, status TEXT NOT NULL, approval_state TEXT NOT NULL DEFAULT 'not_required', target_type TEXT NOT NULL DEFAULT 'task', target_id TEXT NOT NULL DEFAULT '', triggered_by_user_id TEXT, output_summary TEXT NOT NULL DEFAULT '{}', completed_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
 	`CREATE TABLE agent_run_artifacts (id TEXT PRIMARY KEY, workspace_id TEXT, run_id TEXT NOT NULL, artifact_type TEXT NOT NULL DEFAULT '', inline_content TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
 	`CREATE TABLE automation_rules (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, enabled BOOLEAN NOT NULL DEFAULT 1, template_key TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
@@ -305,7 +307,8 @@ var setupTestSchema = []string{
 	`CREATE TABLE crm_pipeline_stages (id TEXT PRIMARY KEY, pipeline_id TEXT NOT NULL, stage_type TEXT NOT NULL)`,
 	`CREATE TABLE crm_deals (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, owner_member_id TEXT, amount REAL, close_date DATETIME)`,
 	`CREATE TABLE crm_associations (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, from_object_type TEXT NOT NULL, from_object_id TEXT NOT NULL, to_object_type TEXT NOT NULL, to_object_id TEXT NOT NULL)`,
-	`CREATE TABLE crm_email_accounts (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, is_active BOOLEAN NOT NULL DEFAULT 1, status TEXT NOT NULL)`,
+	`CREATE TABLE crm_email_accounts (signature TEXT NOT NULL DEFAULT '',
+			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, is_active BOOLEAN NOT NULL DEFAULT 1, status TEXT NOT NULL)`,
 	`CREATE TABLE crm_autonomy_settings (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, enabled BOOLEAN NOT NULL DEFAULT 1, auto_create_deals BOOLEAN NOT NULL DEFAULT 1, auto_progress_deals BOOLEAN NOT NULL DEFAULT 1)`,
 	`CREATE TABLE crm_suggestions (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, suggestion_type TEXT NOT NULL, status TEXT NOT NULL, execution_status TEXT, executed_at DATETIME, object_id TEXT)`,
 }

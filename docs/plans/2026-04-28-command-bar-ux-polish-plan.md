@@ -1,4 +1,15 @@
-# Command Bar UX Polish — Plan
+# Command bar UX polish plan
+
+This historical proposal records UX work for the former command-bar interface. Contributors should use it to understand earlier decisions, not as a current backlog: the search and agent surfaces have since diverged.
+
+## Source review — 2026-09-18
+
+- [SearchCommandPalette](../../frontend/src/components/search/SearchCommandPalette.tsx) is now workspace search and navigation, with a 400 ms search debounce and “Search tasks, epics, docs, people…” placeholder. It does not render agent plans, parse requests, or expose the proposed context badge.
+- The old `StepToolPicker.tsx`, `PromotionDialog.tsx`, `CommandBarRunRail.tsx`, `commandBarStore.ts`, and `CommandIntentsSettingsPage.tsx` are absent from their proposed paths. Their tasks cannot be applied mechanically to the current UI.
+- [AskAgentsDock](../../frontend/src/components/agents/AskAgentsDock.tsx) and [dockStore](../../frontend/src/stores/dockStore.ts) own the present agent surface. The dock still consumes [page context](../../frontend/src/components/command-bar/pageContext.tsx), but its root is a fixed overlay, not evidence that the proposed three-state layout column shipped.
+- The original staging claims, screenshots, external dogfooding host, and completion checklist are dated records. Current behavior needs review in the replacement surfaces; this source review does not certify deployment or visual acceptance.
+
+## Original plan
 
 **Date:** 2026-04-28
 **Status:** Draft, not started
@@ -221,7 +232,7 @@ Plan steps appearing, tool picker opening, dialog opening — all currently snap
 
 ## Test plan
 
-- Each top-5 item: dogfood on `helpin-dev-fe.tryunhide.com` with the same flow used to validate v1 (Cmd+K → parse → narrow tools → confirm → rail → save agent).
+- Each top-5 item: validate on the development environment with the same flow used to validate v1 (Cmd+K → parse → narrow tools → confirm → rail → save agent).
 - Status vocabulary unification (X1): visual diff of `STATUS_META` rendering on a single fixture page covering all states.
 - Cross-cutting (X3, X4): manual sweep of every command-bar surface.
 - No new automated tests required; existing typecheck + vite build remain the build gate.

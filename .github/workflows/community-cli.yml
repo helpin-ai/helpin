@@ -1,0 +1,43 @@
+name: Community CLI
+on:
+  pull_request:
+    paths: ['community/**', 'website/public/install.sh', '.github/workflows/community-cli.yml', '.github/workflows/community-release.yml']
+  push:
+    branches: [develop, main]
+    paths: ['community/**', 'website/public/install.sh', '.github/workflows/community-cli.yml', '.github/workflows/community-release.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cli:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-14]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: .go-version
+          cache: false
+      - name: Test operator experience and bootstrap
+        env:
+          GOWORK: off
+        run: |
+          (cd community/cli && go test -race ./... && go vet ./...)
+          python3 -m unittest discover -s community/tests -p 'bootstrap_test.py'
+      - name: Exercise real Compose lifecycle with an isolated fixture
+        if: startsWith(matrix.runner, 'ubuntu-')
+        run: |
+          docker pull alpine:3.20
+          python3 community/cli/acceptance.py
+      - name: Check release packaging
+        if: matrix.runner == 'ubuntu-24.04'
+        env:
+          COMMUNITY_RELEASE_TAG: community-v0.1.0-test
+        run: |
+          python3 community/build-cli.py
+          python3 -m unittest discover -s community/tests -p '*_test.py'

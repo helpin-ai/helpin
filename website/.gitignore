@@ -1,3 +1,6 @@
 .next
 node_modules
 out
+.next-static
+.next-dev
+og-art-options

@@ -96,8 +96,9 @@ func (s *SupportContentSyncService) QueueSourceSync(ctx context.Context, workspa
 		"crawl_source", source.CrawlSource,
 	)
 
-	if s.embedder == nil {
-		msg := "OpenAI-compatible embedding provider is not configured"
+	refreshEmbeddingSource(s.embedder, source.WorkspaceID)
+	if !embeddingsAvailable(ctx, s.embedder, source.WorkspaceID) {
+		msg := embeddingProviderMissingMessage
 		_ = s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncDisabled, 0, source.IndexedPages, source.IndexedChunks, &msg, nil, nil, nil)
 		return nil
 	}
@@ -164,8 +165,9 @@ func (s *SupportContentSyncService) RunSourceSync(ctx context.Context, workspace
 		"include_subdomains", source.IncludeSubdomains,
 		"include_external_links", source.IncludeExternalLinks,
 	)
-	if s.embedder == nil {
-		msg := "OpenAI-compatible embedding provider is not configured"
+	refreshEmbeddingSource(s.embedder, source.WorkspaceID)
+	if !embeddingsAvailable(ctx, s.embedder, source.WorkspaceID) {
+		msg := embeddingProviderMissingMessage
 		return s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncDisabled, 0, source.IndexedPages, source.IndexedChunks, &msg, nil, nil, nil)
 	}
 	if source.SourceType == model.ContentSourceTypeFile {
@@ -189,7 +191,15 @@ func (s *SupportContentSyncService) RunSourceSync(ctx context.Context, workspace
 		indexedChunks int
 	)
 
+	if err := s.sourceRepo.UpdateSyncWarning(ctx, source.ID, nil); err != nil {
+		return err
+	}
+	skippedURLs := map[string]bool{}
 	onPage := func(record crawler.CrawlRecord) error {
+		if record.SkipReason != "" {
+			skippedURLs[record.URL] = true
+			return nil
+		}
 		contentText, format := crawlRecordText(record)
 		if strings.TrimSpace(contentText) == "" {
 			slog.DebugContext(ctx, "support content page skipped: empty content",
@@ -321,6 +331,12 @@ func (s *SupportContentSyncService) RunSourceSync(ctx context.Context, workspace
 		"start_url", source.StartURL,
 	)
 	crawledCount, err := s.crawler.Crawl(ctx, *source, onPage)
+	if len(skippedURLs) > 0 {
+		warning := fmt.Sprintf("%d URLs skipped because the site disallows crawling. Check robots.txt and the crawler access instructions before re-syncing.", len(skippedURLs))
+		if warningErr := s.sourceRepo.UpdateSyncWarning(ctx, source.ID, &warning); warningErr != nil {
+			return warningErr
+		}
+	}
 	if err != nil {
 		slog.ErrorContext(ctx, "support content crawl failed",
 			"workspace_id", workspaceID,
@@ -509,8 +525,9 @@ func (s *SupportContentSyncService) QueueSourceReindex(ctx context.Context, work
 	if source == nil || source.WorkspaceID != workspaceID {
 		return fmt.Errorf("content source not found in workspace")
 	}
-	if s.embedder == nil {
-		msg := "OpenAI-compatible embedding provider is not configured"
+	refreshEmbeddingSource(s.embedder, source.WorkspaceID)
+	if !embeddingsAvailable(ctx, s.embedder, source.WorkspaceID) {
+		msg := embeddingProviderMissingMessage
 		_ = s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncDisabled, 0, source.IndexedPages, source.IndexedChunks, &msg, nil, nil, nil)
 		return nil
 	}
@@ -543,8 +560,9 @@ func (s *SupportContentSyncService) RunSourceReindex(ctx context.Context, worksp
 	if source == nil || source.WorkspaceID != workspaceID {
 		return fmt.Errorf("content source not found in workspace")
 	}
-	if s.embedder == nil {
-		msg := "OpenAI-compatible embedding provider is not configured"
+	refreshEmbeddingSource(s.embedder, source.WorkspaceID)
+	if !embeddingsAvailable(ctx, s.embedder, source.WorkspaceID) {
+		msg := embeddingProviderMissingMessage
 		return s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncDisabled, 0, source.IndexedPages, source.IndexedChunks, &msg, nil, nil, nil)
 	}
 

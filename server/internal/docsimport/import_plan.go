@@ -6,7 +6,7 @@ import (
 )
 
 // ImportPlan is the source-agnostic normalized model that every import
-// adapter (Nextra, Mintlify, Fumadocs, ...) produces. It is free of
+// adapter produces. It is free of
 // Helpin database IDs — the executor resolves source IDs to created
 // Helpin IDs during import execution.
 type ImportPlan struct {

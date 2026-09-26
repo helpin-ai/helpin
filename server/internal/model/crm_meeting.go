@@ -205,6 +205,10 @@ type CRMMeetingSettings struct {
 	AudioRetentionDays      int       `json:"audio_retention_days" gorm:"not null;default:30"`
 	CreatedAt               time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt               time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	// CaptureProvider is the deployment-selected capture provider (recall or vexa).
+	CaptureProvider string `json:"capture_provider" gorm:"-"`
+	// CaptureConfigured reports whether the server has credentials for CaptureProvider.
+	CaptureConfigured bool `json:"capture_configured" gorm:"-"`
 }
 
 func (CRMMeetingSettings) TableName() string { return "crm_meeting_settings" }

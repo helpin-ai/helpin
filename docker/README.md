@@ -1,6 +1,9 @@
-# Local Infrastructure Setup
+# Local development infrastructure
 
-Docker Compose manages all infrastructure services: PostgreSQL, Redis, NATS, and pgAdmin.
+Use the root [Compose file](../docker-compose.yaml) to run PostgreSQL, Redis,
+NATS, and Temporal while developing Helpin on the host. pgAdmin and Temporal UI
+are optional administration tools. For the complete self-hosted application, use
+the [Community installation guide](../community/README.md).
 
 ## Prerequisites
 
@@ -10,9 +13,9 @@ Docker Compose manages all infrastructure services: PostgreSQL, Redis, NATS, and
 
 ```bash
 # 1. Start infrastructure services (from repo root)
-docker compose up -d postgres redis nats pgadmin
+docker compose up -d postgres redis nats temporal temporal-ui pgadmin
 
-# 2. Verify all services are healthy
+# 2. Check service state and available health checks
 docker compose ps
 
 # 3. Copy and configure server env
@@ -24,13 +27,16 @@ Edit `server/.env` and set:
 DATABASE_URL=postgres://helpin:helpin@localhost:5432/helpin?sslmode=disable
 REDIS_URL=redis://:helpin-redis-dev@localhost:6379/0
 NATS_URL=nats://localhost:4222
+TEMPORAL_ADDRESS=localhost:7233
+TEMPORAL_NAMESPACE=default
+TEMPORAL_TLS_ENABLED=false
+TEMPORAL_API_KEY=
 ```
 
-Then start the backend and frontend as usual:
-```bash
-cd server && go run ./cmd/api     # Backend
-cd frontend && pnpm dev           # Frontend (separate terminal)
-```
+These are local development connection values. If you override `REDIS_PASSWORD`,
+use the same password in `REDIS_URL`. Complete the remaining authentication and
+application settings, then follow [local development](../docs/development.md)
+to start the API, frontend, and Temporal worker in separate terminals.
 
 ## Services
 
@@ -38,8 +44,10 @@ cd frontend && pnpm dev           # Frontend (separate terminal)
 |---------|------|---------|
 | PostgreSQL 17 | `5432` | Primary database |
 | Redis 7 | `6379` | WebSocket pub/sub, caching |
-| NATS 2.11 | `4222` | Event streaming (JetStream) |
+| NATS 2.14.5 | `4222` | Event streaming (JetStream) |
 | NATS Monitoring | `8222` | NATS HTTP dashboard |
+| Temporal | `7233` | Workflow service; uses a separate PostgreSQL container |
+| Temporal UI | `8233` | Workflow administration |
 | pgAdmin 4 | `5050` | Database admin UI (accessible remotely) |
 
 ## pgAdmin Access
@@ -52,7 +60,7 @@ cd frontend && pnpm dev           # Frontend (separate terminal)
 
 ```bash
 # Start all infra
-docker compose up -d postgres redis nats pgadmin
+docker compose up -d postgres redis nats temporal temporal-ui pgadmin
 
 # View logs
 docker compose logs -f postgres
@@ -68,7 +76,7 @@ docker compose down -v
 docker compose restart redis
 
 # Connect to Redis with the local default password
-REDISCLI_AUTH=helpin-redis-dev docker compose exec redis redis-cli ping
+docker compose exec -e REDISCLI_AUTH=helpin-redis-dev redis redis-cli ping
 ```
 
 ## Port Conflicts
@@ -89,6 +97,8 @@ docker compose up -d redis
 
 ## Notes
 
-- The `server` and `frontend` services in `docker-compose.yaml` are for full containerized deployment. For local development, run only the infra services (`postgres`, `redis`, `nats`, `pgadmin`) and start the backend/frontend directly.
-- All data is persisted in Docker named volumes (`postgres_data`, `redis_data`, `nats_data`, `pgadmin_data`).
-- PostgreSQL uses a healthcheck — dependent services wait until it's ready.
+- The root Compose file's API and frontend examples are commented out; they are
+  not runnable services. It does define an optional `temporal-worker` container.
+- Temporal starts its own PostgreSQL dependency automatically. Its data persists
+  in `temporal_postgres_data`, alongside the other services' named volumes.
+- These defaults are for local development. Use the Community guide for deployment.

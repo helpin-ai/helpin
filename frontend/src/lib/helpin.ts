@@ -1,10 +1,11 @@
+import { defaultSupportWidgetKey, defaultSupportWidgetHost } from '@edition/config'
 import { createClient } from '@helpin-ai/react'
 import type { OrganizationWithRole, User } from '@/lib/types'
 
-export const helpinClient = createClient({
-  widgetKey: import.meta.env.VITE_HELPIN_WIDGET_KEY || 'b86e7c64e7c93517f0c2f395c7b98701',
-  host: import.meta.env.VITE_HELPIN_HOST || 'https://client.helpin.ai',
-})
+const widgetKey = import.meta.env.VITE_HELPIN_WIDGET_KEY || defaultSupportWidgetKey
+const widgetHost = import.meta.env.VITE_HELPIN_HOST || defaultSupportWidgetHost
+export const helpinClient = widgetKey && widgetHost ? createClient({ widgetKey, host: widgetHost }) : null
+
 
 export function buildHelpinIdentity(user: User, organization?: OrganizationWithRole | null) {
   const nameParts = user.full_name.trim().split(/\s+/).filter(Boolean)

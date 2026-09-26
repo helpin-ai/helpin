@@ -1,0 +1,16 @@
+Use case: precise-object-edit. Input is an approved generated fictional OrbitDesk Projects + Ask Agent marketing screenshot, publicly served at website.azhar.dev.helpin.ai/new/projects/board-ask-agent-3840-v1.webp.
+Create a native 3840x2160 DARK MODE version. Change ONLY the color theme. Preserve ALL typography, exact labels, task IDs, names, counts, ownership, statuses, icons, geometry, column widths, card positions and composer structure. Preserve the clean straight-on, edge-to-edge app screen. No cropping, perspective, blur, browser chrome or new content.
+Use Helpin's actual dark-mode palette from the codebase: app background near-neutral #0a0a0a, sidebar #171717, cards/panels #222222, raised controls #262626, main text #d7d7d7, secondary text #a1a1a1, subtle 10%-white hairline borders. All dark surfaces should be NEUTRAL charcoal, not green-tinted. Header and Ask Agent chat background should remain visibly separated from the task cards. The actual Ask Agent header can use its warm-charcoal dark treatment, subtly close to #242320. Keep small forest-green OrbitDesk O and genuine Helpin logo marks. Preserve semantic amber in-progress, purple in-review, muted-gray planned, blue source links; render pastel badges as subdued dark-tinted badges. White text must remain crisp and highly legible, never low-contrast gray-on-gray. No neon, glow, luminous outlines or fake glass effect.
+EXACT CONTENT MUST REMAIN:
+OrbitDesk workspace. Tasks (Engineering).
+Planned 2: ORB-491 Add Slack alerts for failed syncs / SR / Northstar Labs; ORB-493 Schedule recurring tasks / JP.
+In Progress 2: ORB-494 Fix duplicate webhook deliveries / AM; ORB-498 Add retry limits for API requests / AM.
+In Review 2: ORB-492 Fix incomplete CSV exports / SR; ORB-495 Preserve filters after page refresh / JP.
+Ask Agent: Engineering · Team overview.
+User: What is the team working on, and what needs attention?
+Here’s the current picture.
+In progress: Alex is working on webhook delivery and API retry limits. Links ORB-494 and ORB-498.
+Ready for review: Sam’s CSV export fix and Jules’s filter fix need review. Links ORB-492 and ORB-495.
+Next to pick up: Scope Maya’s Slack alert request for Northstar Labs. Link ORB-491 · Planned.
+Composer: Engineering tasks; Add context; Ask a follow-up…
+In the small context chip above the user message, ensure "Engineering tasks" does not overlap its close icon. Do not change anything else. Maintain an authentic Helpin dark mode interface, not a redesigned product.

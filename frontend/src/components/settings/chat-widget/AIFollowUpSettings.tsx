@@ -1,5 +1,6 @@
 import { Switch } from '@/components/ui/switch';
-import { QuietSection, QuietUnderlineInput } from '@/components/design-system/quiet';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { QuietUnderlineInput } from '@/components/design-system/quiet';
 
 interface Props {
   enabled: boolean;
@@ -14,34 +15,148 @@ interface Props {
 
 export function AIFollowUpSettings(props: Props) {
   return (
-    <QuietSection>
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <label htmlFor="ai-follow-up-enabled" className="text-sm font-medium">Follow up on quiet conversations</label>
-          <p className="text-xs text-muted-foreground">Send a helpful check-in, then a final follow-up before closing if the customer does not reply.</p>
+    <Card className="gap-5 rounded-lg border-border/70">
+      <CardHeader className="flex flex-row items-start justify-between gap-4">
+        <div className="space-y-1">
+          <CardTitle
+            role="heading"
+            aria-level={2}
+            className="text-sm font-semibold text-quiet-text-primary"
+          >
+            <label htmlFor="ai-follow-up-enabled">Follow-ups</label>
+          </CardTitle>
+          <p
+            id="ai-follow-up-help"
+            className="text-sm text-quiet-text-secondary"
+          >
+            Check in when a customer goes quiet, then close the conversation if
+            they don’t reply.
+          </p>
         </div>
-        <Switch id="ai-follow-up-enabled" checked={props.enabled} onCheckedChange={props.onEnabledChange} />
-      </div>
+        <Switch
+          id="ai-follow-up-enabled"
+          aria-label="Follow up on quiet conversations"
+          aria-describedby="ai-follow-up-help"
+          checked={props.enabled}
+          onCheckedChange={props.onEnabledChange}
+        />
+      </CardHeader>
       {props.enabled && (
-        <div className="mt-4 space-y-4">
-          {[
-            { id: 'ai-follow-up-delay', label: 'First follow-up after inactivity (hours)', value: props.delayHours, max: 720, change: props.onDelayChange },
-            { id: 'ai-follow-up-second-delay', label: 'Second follow-up after first (hours)', value: props.secondDelayHours, max: 720, change: props.onSecondDelayChange },
-            { id: 'ai-follow-up-close', label: 'Close after final follow-up (hours)', value: props.closeHours, max: 720, change: props.onCloseChange },
-          ].map(field => (
-            <div key={field.id} className="flex flex-wrap items-center justify-between gap-3">
-              <label htmlFor={field.id} className="text-sm">{field.label}</label>
-              <QuietUnderlineInput id={field.id} type="number" min={1} max={field.max} step={1} value={field.value} className="w-24" onChange={event => {
-                const value = Number(event.target.value);
-                if (Number.isInteger(value) && value >= 1 && value <= field.max) field.change(value);
-              }} />
+        <CardContent className="space-y-4">
+          <p className="text-xs text-quiet-text-secondary">
+            Only conversations with public AI replies are eligible.
+            Conversations handled by a teammate or with outstanding work are
+            excluded.
+          </p>
+          <ol className="divide-y divide-quiet-divider">
+            {[
+              {
+                id: 'ai-follow-up-delay',
+                label: 'First check-in',
+                description: 'After the customer stops replying',
+                value: props.delayHours,
+                change: props.onDelayChange,
+              },
+              {
+                id: 'ai-follow-up-second-delay',
+                label: 'Final follow-up',
+                description:
+                  'After the first check-in, if there is still no reply',
+                value: props.secondDelayHours,
+                change: props.onSecondDelayChange,
+              },
+              {
+                id: 'ai-follow-up-close',
+                label: 'Close conversation',
+                description:
+                  'After the final follow-up, if there is still no reply',
+                value: props.closeHours,
+                change: props.onCloseChange,
+              },
+            ].map((field, index) => (
+              <li
+                key={field.id}
+                className="flex items-start gap-3 py-4 first:pt-0"
+              >
+                <span
+                  aria-hidden="true"
+                  className="pt-1 text-sm tabular-nums text-quiet-text-tertiary"
+                >
+                  {index + 1}.
+                </span>
+                <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-x-6 gap-y-3">
+                  <div className="min-w-0 space-y-1">
+                    <label htmlFor={field.id} className="text-sm font-medium">
+                      {field.label}
+                    </label>
+                    <p
+                      id={`${field.id}-help`}
+                      className="text-xs text-quiet-text-secondary"
+                    >
+                      {field.description}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <QuietUnderlineInput
+                      id={field.id}
+                      type="number"
+                      min={1}
+                      max={720}
+                      step={1}
+                      value={field.value}
+                      aria-describedby={`${field.id}-help ${field.id}-unit`}
+                      className="w-16 text-right tabular-nums"
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        if (
+                          Number.isInteger(value) &&
+                          value >= 1 &&
+                          value <= 720
+                        )
+                          field.change(value);
+                      }}
+                    />
+                    <span
+                      id={`${field.id}-unit`}
+                      className="text-xs text-quiet-text-secondary"
+                    >
+                      hours
+                    </span>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ol>
+          <p className="text-xs text-quiet-text-secondary">
+            Changes apply to new sequences. Existing follow-up sequences keep
+            their saved timings.
+          </p>
+          <p className="text-xs text-quiet-text-secondary">
+            Enabling also includes eligible conversations active in the last 30
+            days.
+          </p>
+          <details className="border-t border-quiet-divider pt-4 text-xs text-quiet-text-secondary">
+            <summary className="w-fit cursor-pointer font-medium text-quiet-text-primary focus-visible:outline-2 focus-visible:outline-ring">
+              Messages and limits
+            </summary>
+            <div className="mt-3 max-w-2xl space-y-2 leading-relaxed">
+              <p>
+                Check-ins refer to the customer’s question, for example: “Were
+                you able to reconnect Gmail using those steps?”
+              </p>
+              <p>
+                The final follow-up explains: “We’ll be closing shortly, but you
+                can reply anytime if you still need help.”
+              </p>
+              <p>
+                Up to 25 conversations are assessed per workspace each day.
+                No-response closures are recorded separately from confirmed
+                resolutions.
+              </p>
             </div>
-          ))}
-          <p className="text-xs text-muted-foreground">For example: “Were you able to reconnect Gmail using those steps?” The final follow-up says “We’ll be closing shortly, but you can reply anytime if you still need help.”</p>
-          <p className="text-xs text-muted-foreground">Existing follow-up sequences keep their saved timings. Changes apply to new sequences.</p>
-          <p className="text-xs text-muted-foreground">Only public AI replies are eligible. Human-owned conversations and outstanding work are excluded. Enabling includes eligible conversations active in the last 30 days, with up to 25 assessments per workspace each day. No-response closures are recorded separately from confirmed resolutions.</p>
-        </div>
+          </details>
+        </CardContent>
       )}
-    </QuietSection>
+    </Card>
   );
 }

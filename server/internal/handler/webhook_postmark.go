@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
-	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -15,7 +14,7 @@ import (
 )
 
 type postmarkEmailProcessor interface {
-	ProcessInboundEmail(context.Context, model.PostmarkInboundPayload, string) error
+	AcceptInboundEmail(context.Context, model.PostmarkInboundPayload, string) error
 	ProcessOpenEvent(context.Context, model.PostmarkOpenPayload, string) error
 	ProcessDeliveryEvent(context.Context, model.PostmarkDeliveryPayload, string) error
 	ProcessBounceEvent(context.Context, model.PostmarkBouncePayload, string) error
@@ -52,15 +51,15 @@ func (h *PostmarkInboundHandler) PostmarkInbound(w http.ResponseWriter, r *http.
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		w.WriteHeader(http.StatusOK)
+		writeError(w, http.StatusBadRequest, "invalid inbound email payload")
 		return
 	}
 	defer r.Body.Close()
 
 	var payload model.PostmarkInboundPayload
 	if err := json.Unmarshal(body, &payload); err != nil {
-		// Postmark retries non-200 responses aggressively; malformed payloads are best-effort ignored.
-		w.WriteHeader(http.StatusOK)
+		// Never acknowledge a payload that could not be durably accepted.
+		writeError(w, http.StatusBadRequest, "invalid inbound email payload")
 		return
 	}
 	slog.InfoContext(r.Context(), "postmark inbound webhook received",
@@ -70,19 +69,14 @@ func (h *PostmarkInboundHandler) PostmarkInbound(w http.ResponseWriter, r *http.
 		"original_recipient", strings.TrimSpace(payload.OriginalRecipient),
 	)
 
-	if h.emailFallbackService != nil {
-		if err := h.emailFallbackService.ProcessInboundEmail(r.Context(), payload, string(body)); err != nil {
-			slog.Warn("postmark inbound processing failed", "error", err, "mailbox_hash", payload.MailboxHash)
-			if errors.Is(err, service.ErrInboundEmailAIDispatchRetry) {
-				writeError(w, http.StatusServiceUnavailable, "inbound email processing temporarily unavailable")
-				return
-			}
-		} else {
-			slog.InfoContext(r.Context(), "postmark inbound webhook processed",
-				"message_id", strings.TrimSpace(payload.MessageID),
-				"message_stream", strings.TrimSpace(payload.MessageStream),
-			)
-		}
+	if h.emailFallbackService == nil {
+		writeError(w, http.StatusServiceUnavailable, "inbound email processing temporarily unavailable")
+		return
+	}
+	if err := h.emailFallbackService.AcceptInboundEmail(r.Context(), payload, string(body)); err != nil {
+		slog.ErrorContext(r.Context(), "inbound receipt persistence failed", "message_id", payload.MessageID, "error", err)
+		writeError(w, http.StatusServiceUnavailable, "inbound email processing temporarily unavailable")
+		return
 	}
 
 	w.WriteHeader(http.StatusOK)

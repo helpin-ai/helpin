@@ -42,6 +42,7 @@ describe('workspace rail navigation', () => {
       'Contacts',
       'Companies',
       'Deals',
+      'Emails',
       'Meetings',
       'Playbooks',
       'Signals',

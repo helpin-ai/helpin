@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { fireEvent, render } from '@testing-library/preact';
+import { fireEvent, render, waitFor } from '@testing-library/preact';
 import { MessageBubble } from '../components/MessageBubble';
 import type { Message } from '../types';
 
@@ -45,9 +45,10 @@ describe('MessageBubble', () => {
     expect(container.querySelector('.helpin-message--system')).toBeTruthy();
   });
 
-  it('renders internal note', () => {
+  it('never renders internal notes', () => {
     const { container } = render(<MessageBubble message={createMessage({ isInternal: true })} />);
-    expect(container.querySelector('.helpin-message--internal')).toBeTruthy();
+    expect(container.textContent).toBe('');
+    expect(container.querySelector('.helpin-message--internal')).toBeNull();
   });
 
   it('displays AI source count and reveals titles in popover', () => {
@@ -88,8 +89,8 @@ describe('MessageBubble', () => {
     expect(container.querySelector('.helpin-message-confidence')).toBeNull();
   });
 
-  it('collects lightweight feedback on completed AI answers', () => {
-    const onAnswerFeedback = vi.fn();
+  it('acknowledges feedback only after it is saved', async () => {
+    const onAnswerFeedback = vi.fn().mockResolvedValue(true);
     const message = createMessage({ role: 'ai', id: 'answer-1' });
     const { getByRole, getByText, queryByRole } = render(
       <MessageBubble message={message} onAnswerFeedback={onAnswerFeedback} />,
@@ -98,8 +99,27 @@ describe('MessageBubble', () => {
     fireEvent.click(getByRole('button', { name: 'This answer was helpful' }));
 
     expect(onAnswerFeedback).toHaveBeenCalledWith('answer-1', true);
-    expect(getByText('Thanks for the feedback')).toBeTruthy();
+    await waitFor(() => expect(getByText('Thanks for the feedback')).toBeTruthy());
     expect(queryByRole('button', { name: 'This answer was not helpful' })).toBeNull();
+  });
+
+  it('keeps feedback retryable after a failed save', async () => {
+    const save = vi.fn().mockRejectedValue(new Error('offline'));
+    const { getByRole, queryByText, getByText } = render(
+      <MessageBubble message={createMessage({ role: 'ai' })} onAnswerFeedback={save} />,
+    );
+    fireEvent.click(getByRole('button', { name: 'This answer was not helpful' }));
+    await waitFor(() => expect(getByText('Couldn’t save. Try again?')).toBeTruthy());
+    expect(queryByText('Thanks for the feedback')).toBeNull();
+    expect((getByRole('button', { name: 'This answer was helpful' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('restores a saved thumbs-down without offering another vote', () => {
+    const { getByText, queryByRole } = render(
+      <MessageBubble message={createMessage({ role: 'ai', answerFeedback: false })} />,
+    );
+    expect(getByText('Thanks for the feedback')).toBeTruthy();
+    expect(queryByRole('button', { name: 'This answer was helpful' })).toBeNull();
   });
 
   it('does not show answer feedback on the static AI welcome message', () => {
@@ -255,4 +275,10 @@ describe('MessageBubble', () => {
     expect(container.querySelector('.helpin-streaming-cursor')).toBeTruthy();
     expect(container.querySelector('.helpin-message-bubble')).toBeTruthy();
   });
+});
+
+it('keeps RTL prose directional without reversing the widget', () => {
+ const {container} = render(<MessageBubble message={{id:'rtl',conversationId:'c',role:'customer',content:'مرحبا https://example.com/123',createdAt:'2026-09-22T10:00:00Z'}} />);
+ expect(container.querySelector('[dir="auto"]')?.textContent).toContain('مرحبا');
+ expect(container.querySelector('.helpin-message')?.getAttribute('dir')).not.toBe('rtl');
 });

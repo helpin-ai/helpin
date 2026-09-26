@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -179,9 +180,10 @@ func (h *CRMContactHandler) Update(w http.ResponseWriter, r *http.Request) {
 // Delete handles DELETE /api/crm/contacts/{id}.
 func (h *CRMContactHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	if err := h.contactService.Delete(r.Context(), id); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	if err := h.contactService.Delete(r.Context(), getWorkspaceID(r), id); err != nil {
+		slog.ErrorContext(r.Context(), "contact anonymization failed", "workspace_id", getWorkspaceID(r), "contact_id", id, "error", err)
+		writeError(w, http.StatusBadRequest, "Could not delete contact. No changes were made.")
 		return
 	}
-	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "contact deleted"})
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "contact deleted; linked support identity anonymized"})
 }

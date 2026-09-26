@@ -3,8 +3,10 @@ import {
   TABLE_CONTAINER,
   TABLE_HEADER,
   TABLE_HEADER_CELL,
+  TABLE_HEADER_CELL_SELECT,
   TABLE_ROW,
   TABLE_CELL,
+  TABLE_CELL_SELECT,
   ROW_HEIGHT,
   CHECKBOX_COL_SIZE,
 } from '@/lib/tableStyles';
@@ -61,7 +63,7 @@ export function ContactsTableSkeleton() {
               {COLUMNS.map((col) => (
                 <div
                   key={col.id}
-                  className={TABLE_HEADER_CELL}
+                  className={col.id === 'select' ? TABLE_HEADER_CELL_SELECT : TABLE_HEADER_CELL}
                   style={{ width: col.width }}
                 >
                   <Skeleton className="h-3 w-12 rounded" />
@@ -80,7 +82,7 @@ export function ContactsTableSkeleton() {
               {COLUMNS.map((col) => (
                 <div
                   key={col.id}
-                  className={TABLE_CELL}
+                  className={col.id === 'select' ? TABLE_CELL_SELECT : TABLE_CELL}
                   style={{ width: col.width }}
                 >
                   <SkeletonCell type={col.type} />

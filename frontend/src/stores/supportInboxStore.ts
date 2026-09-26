@@ -163,12 +163,15 @@ interface SupportInboxState {
   detailSidebarMode: DetailSidebarMode;
   // Create dialog
   createDialogOpen: boolean;
+  createCustomViewOpen: boolean;
   teamInboxDialogOpen: boolean;
   editMailboxId: string | null;
   // Mobile
   activePanel: ActivePanel;
   // Drafts: conversationId → unsent textarea content
   drafts: Record<string, string>;
+  draftAttachmentCounts: Record<string, number>;
+  setDraftAttachmentCount: (conversationId: string, count: number) => void;
 
   // Actions
   setNavFilter: (filter: NavFilter) => void;
@@ -200,6 +203,7 @@ interface SupportInboxState {
   toggleDetailSidebar: () => void;
   setDetailSidebarMode: (mode: DetailSidebarMode) => void;
   setCreateDialogOpen: (open: boolean) => void;
+  setCreateCustomViewOpen: (open: boolean) => void;
   setTeamInboxDialogOpen: (open: boolean) => void;
   setEditMailboxId: (id: string | null) => void;
   setActivePanel: (panel: ActivePanel) => void;
@@ -228,10 +232,13 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     detailSidebarCollapsed: persisted.detailSidebarCollapsed,
     detailSidebarMode: 'details',
     createDialogOpen: false,
+    createCustomViewOpen: false,
     teamInboxDialogOpen: false,
     editMailboxId: null,
     activePanel: 'list',
     drafts: persistedDrafts,
+    draftAttachmentCounts: {},
+    setDraftAttachmentCount: (id, count) => set(state => ({draftAttachmentCounts: {...state.draftAttachmentCounts, [id]: count}})),
 
     setNavFilter: (filter) => {
       const savedFilters = get().builtinViewFilters[supportInboxBuiltinViewKey(filter)];
@@ -413,6 +420,7 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     },
     setDetailSidebarMode: (mode) => set({ detailSidebarMode: mode }),
     setCreateDialogOpen: (open) => set({ createDialogOpen: open }),
+    setCreateCustomViewOpen: (open) => set({ createCustomViewOpen: open }),
     setTeamInboxDialogOpen: (open) => set({ teamInboxDialogOpen: open, ...(!open && { editMailboxId: null }) }),
     setEditMailboxId: (id) => set({ editMailboxId: id }),
     setActivePanel: (panel) => set({ activePanel: panel }),

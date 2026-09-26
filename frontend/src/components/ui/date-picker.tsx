@@ -31,6 +31,8 @@ interface LinkedDatePickerField {
 }
 
 interface DatePickerProps {
+  /** Optional domain-specific trigger, preserving the shared calendar behavior. */
+  trigger?: React.ReactElement;
   /** ISO date string (yyyy-MM-dd) or empty */
   value?: string;
   onChange: (value: string) => void;
@@ -66,6 +68,7 @@ function useDebounce<T>(value: T, delay: number): T {
 }
 
 export function DatePicker({
+  trigger,
   value,
   onChange,
   placeholder = 'Pick a date',
@@ -404,7 +407,7 @@ export function DatePicker({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button
+        {trigger ?? <Button
           variant="outline"
           className={cn(
             'justify-start text-left font-normal',
@@ -416,7 +419,7 @@ export function DatePicker({
         >
           {!hideIcon && <Calendar03Icon className="mr-2 h-3.5 w-3.5" />}
           {triggerSelected ? format(triggerSelected, 'MMM d, yyyy') : triggerPlaceholder}
-        </Button>
+        </Button>}
       </PopoverTrigger>
       <PopoverContent className="w-auto gap-0 overflow-hidden p-0" align="start" side="bottom" collisionPadding={8}>
         {/* Tab header */}

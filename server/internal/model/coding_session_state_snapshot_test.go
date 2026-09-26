@@ -185,3 +185,43 @@ func TestCodingSessionSnapshotRetainsFinalAnswerTypeAfterLaterProgress(t *testin
 		t.Fatalf("lost final answer metadata: %+v", answer)
 	}
 }
+
+func TestWorkPlanOriginSurvivesProgressAndFollowup(t *testing.T) {
+	at := time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC)
+	apply := func(s *CodingSessionStreamSnapshot, turn, step, status, event string, when time.Time) *CodingSessionStreamSnapshot {
+		if s == nil {
+			s = &CodingSessionStreamSnapshot{}
+		}
+		s.TurnState = &CodingSessionTurnState{TurnID: turn, Phase: "working"}
+		return ApplyCodingSessionStreamEvent(s, "plan.updated", map[string]any{"content": `{"plan":[{"step":"` + step + `","status":"` + status + `"}]}`, "_plan_event_id": event}, when)
+	}
+	s := apply(nil, "turn-1", "Inspect", "pending", "event-1", at)
+	s = apply(s, "turn-1", "Inspect", "completed", "event-2", at.Add(time.Second))
+	s = apply(s, "turn-2", "Inspect", "completed", "event-3", at.Add(2*time.Second))
+	if len(s.WorkPlans) != 1 || s.CurrentPlan.Origin.EventID != "event-1" {
+		t.Fatalf("plan moved or duplicated: %#v", s)
+	}
+	s = apply(s, "turn-2", "Revise", "in_progress", "event-4", at.Add(3*time.Second))
+	if len(s.WorkPlans) != 2 || s.WorkPlans[0].Plan[0].Status != "completed" {
+		t.Fatalf("lost previous plan: %#v", s.WorkPlans)
+	}
+	raw, err := EncodeCodingSessionStreamSnapshot(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := DecodeCodingSessionStreamSnapshot(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(restored.WorkPlans) != 2 || restored.CurrentPlan.Origin.EventID != "event-4" {
+		t.Fatal("lost plan history on reload")
+	}
+}
+
+func TestWorkPlanLegacyProgressDoesNotInventOrigin(t *testing.T) {
+	s := &CodingSessionStreamSnapshot{CurrentPlan: &CodingSessionRunPlan{Plan: []CodingSessionRunPlanStep{{Step: "Inspect", Status: "pending"}}}}
+	s = ApplyCodingSessionStreamEvent(s, "plan.updated", map[string]any{"content": `{"plan":[{"step":"Inspect","status":"completed"}]}`}, time.Now())
+	if s.CurrentPlan.Origin != nil || len(s.WorkPlans) != 0 {
+		t.Fatal("invented an original position for a legacy plan")
+	}
+}
