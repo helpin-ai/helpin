@@ -12,7 +12,7 @@ type FAQ = readonly [question: string, answer: string];
 export type IconKey =
   | 'workflow' | 'billing' | 'team' | 'hosting' | 'crm' | 'open' | 'maturity' | 'requests' | 'agents' | 'loop'
   | 'channels' | 'ecosystem' | 'enterprise' | 'reporting' | 'messaging' | 'simplicity' | 'import' | 'mobile'
-  | 'community' | 'deploy' | 'speed';
+  | 'community' | 'deploy' | 'speed' | 'models' | 'docs';
 
 export type StepStatus = 'Available now' | 'Beta' | 'Coming soon' | 'Not yet';
 
@@ -51,7 +51,8 @@ export type Competitor = {
   glance: { label: string; competitor: string; helpin: string }[];
   summary: { title: string; lede: string; competitor: string[]; helpin: string[] };
   /** Common reasons teams look beyond the competitor, each with Helpin's approach. */
-  reasons: { title: string; body: string; icon: IconKey; competitorLane: string[]; helpinLane: string[] }[];
+  /** Omit competitorLane when the competitor's side can't be stated from verified sources. */
+  reasons: { title: string; body: string; icon: IconKey; competitorLane?: string[]; helpinLane: string[] }[];
   tableLede: string;
   table: { group: string; rows: TableRow[] }[];
   strengths: { title: string; body: string; icon: IconKey }[];
@@ -65,6 +66,8 @@ export type Competitor = {
   };
   faqs: FAQ[];
   closing: { title: string; description: string };
+  /** The short comparison video under the hero; its files live in public/new/compare/ (see compareVideo). */
+  video: { seconds: number; summary: string };
   /** Where each competitor fact was checked. Internal record for re-checks; not shown on the page. */
   sources: { label: string; url: string }[];
 };
@@ -80,6 +83,20 @@ export function competitorSeo(competitor: Competitor): PageSeo {
     canonicalPath: `/compare/${competitor.slug}`,
     imagePath: `/og/helpin-compare-${competitor.slug}-green-v4.png`,
     imageAlt: `Helpin vs ${competitor.name}`,
+  };
+}
+
+const VIDEO_PUBLISHED = '2026-09-26';
+
+/** Files and metadata for a competitor's comparison video. Bump the -v suffix when a video is re-cut. */
+export function compareVideo(competitor: Competitor) {
+  const base = `/new/compare/helpin-vs-${competitor.slug}`;
+  return {
+    ...competitor.video,
+    title: `Helpin vs ${competitor.name} in ${competitor.video.seconds} seconds`,
+    src: `${base}-1080p-v1.mp4`,
+    poster: `${base}-poster-1920-v1.webp`,
+    published: VIDEO_PUBLISHED,
   };
 }
 
@@ -133,8 +150,13 @@ const SUPPORT_SETUP = [
   'AI agent guidance and approval rules',
 ];
 
-const AFTER_REPLY_LANE = ['Conversation', 'Task', 'Pull request', 'Follow-up'];
-const HOSTING_LANE = ['Helpin Cloud', 'or your servers'];
+const PRICE_LANE = ['Workspace price', 'AI usage included'];
+const MODELS_LANE = ['Your AI provider', 'Your keys'];
+const DOCS_LANE = ['Conversations', 'Code changes', 'Draft update'];
+const LOOP_LANE = ['Ticket', 'Task', 'Pull request', 'Customer told'];
+const LOOP_BODY = 'In Helpin, agents can run the whole loop: turn the ticket into a task, have a coding agent open the fix, and tell the customer when it ships. You choose which steps need a person’s approval.';
+const MODELS_BODY = 'Helpin’s agents run on the provider and models you choose: always when you self-host, and on Helpin Cloud’s Enterprise plan.';
+const NO_LICENSE = 'Self-hosted, there’s no license fee at all.';
 
 /** Questions every comparison answers the same way. */
 function sharedFaqs(name: string, { selfHost = true } = {}): FAQ[] {
@@ -156,12 +178,12 @@ export const COMPETITORS: Competitor[] = [
     cardLine: 'Per-seat plans plus a fee per AI outcome, compared with one workspace price and connected product work.',
     checked: CHECKED,
     seo: {
-      title: 'Intercom Alternative: Helpin vs Intercom',
-      description: 'Compare Helpin and Intercom on AI support, pricing and self-hosting. Helpin adds projects, CRM and meetings, with one price per workspace and no seat fees.',
+      title: 'Open-Source Intercom Alternative: Helpin vs Intercom',
+      description: 'Compare Helpin and Intercom: open-source AI support on Cloud or self-hosted, with no per-seat or per-resolution fees, plus projects, CRM and meetings.',
     },
     hero: {
       accent: 'when the answer needs a fix.',
-      lede: 'Both answer customers with AI. Intercom is a mature support platform with wide channel coverage. Helpin keeps support next to your projects, CRM, meetings and docs, so the question, the fix and the follow-up stay together.',
+      lede: 'Both answer customers with AI. Intercom is a mature support platform with wide channel coverage. Helpin is open source, runs on Helpin Cloud or your own servers, and keeps the question, the fix and the follow-up on one customer history.',
     },
     glance: [
       { label: 'Pricing', competitor: 'Per seat, plus $0.99 per AI outcome', helpin: 'One workspace price, AI usage included' },
@@ -178,39 +200,40 @@ export const COMPETITORS: Competitor[] = [
       ],
       helpin: [
         'Customer questions often become bugs, features or project tasks.',
-        'You want AI agents that can plan the fix and open a pull request for review.',
+        'You want agents to take a request from ticket to fix to customer update, with the approvals you choose.',
         'You want one price per workspace instead of per seat and per AI outcome.',
-        'You want the option to self-host an open-source product.',
+        'You want an open-source product on Helpin Cloud or your own servers, running on your own AI models.',
+        'You want docs that update from support conversations and the code you ship.',
       ],
     },
     reasons: [
       {
-        title: 'The fix happens in another tool',
-        icon: 'workflow',
-        competitorLane: ['Conversation', 'Jira or another tool'],
-        helpinLane: AFTER_REPLY_LANE,
-        body: 'Intercom focuses on resolving the conversation and hands product work to tools like Jira. In Helpin, a support conversation can become a task on the roadmap, and the history stays attached so the team can follow up when the fix ships.',
-      },
-      {
-        title: 'AI costs rise with every outcome',
+        title: 'No per-seat or per-resolution fees',
         icon: 'billing',
-        competitorLane: ['Seats', '+ $0.99 per outcome'],
-        helpinLane: ['Workspace price', 'AI allowance included'],
-        body: 'Intercom charges $0.99 for each Fin outcome, on top of seats. Helpin includes an AI usage allowance in each Cloud plan, with optional metered overage on paid plans. Self-hosted installs use your own AI provider.',
+        competitorLane: ['Per seat', '+ $0.99 per outcome'],
+        helpinLane: PRICE_LANE,
+        body: `Intercom charges for every full seat, plus $0.99 for each Fin outcome. Helpin charges one price per workspace with unlimited teammates, and each Cloud plan includes an AI usage allowance, with metered overage only if you turn it on. ${NO_LICENSE}`,
       },
       {
-        title: 'Every new teammate is another seat',
-        icon: 'team',
-        competitorLane: ['Paid per full seat'],
-        helpinLane: ['Unlimited teammates'],
-        body: 'Intercom prices by seat, so each full teammate adds cost. Helpin charges per workspace, which makes it easier to give engineering, sales and success access to the same customer history.',
+        title: 'Bring your own AI models',
+        icon: 'models',
+        competitorLane: ['Fin AI Engine', 'Billed per outcome'],
+        helpinLane: MODELS_LANE,
+        body: `Fin runs on Intercom’s own AI engine and is billed per outcome. ${MODELS_BODY}`,
       },
       {
-        title: 'You can’t run it yourself',
-        icon: 'hosting',
-        competitorLane: ['Hosted by Intercom'],
-        helpinLane: HOSTING_LANE,
-        body: 'Intercom is a hosted service. Helpin is open source under AGPL-3.0: use Helpin Cloud, or run the Community edition on your own infrastructure with Docker Compose.',
+        title: 'Docs that keep up with the product',
+        icon: 'docs',
+        competitorLane: ['Conversations', 'Article suggestions'],
+        helpinLane: DOCS_LANE,
+        body: 'Intercom suggests article updates from support conversations. Helpin does too, and also drafts updates from the code changes you ship, because the docs, the tasks and the repository are connected. Nothing goes live until your team publishes it.',
+      },
+      {
+        title: 'From ticket to fix to customer, on its own',
+        icon: 'loop',
+        competitorLane: ['Conversation', 'Jira or another tool'],
+        helpinLane: LOOP_LANE,
+        body: `Intercom resolves the conversation and hands product work to tools like Jira. ${LOOP_BODY}`,
       },
     ],
     tableLede: 'A check means included, a dash means partly or on some plans, and a cross means not available.',
@@ -282,6 +305,7 @@ export const COMPETITORS: Competitor[] = [
       ...sharedFaqs('Intercom'),
     ],
     closing: { title: 'Bring support and the work behind it together.', description: 'Start a 14-day trial of Helpin Cloud with no card, or self-host the open-source edition for free.' },
+    video: { seconds: 39, summary: 'Intercom charges per seat plus $0.99 per AI outcome. Helpin charges one workspace price with AI usage included, and turns the answer into a task, a pull request and a follow-up.' },
     sources: [
       { label: 'Intercom plans explained', url: 'https://www.intercom.com/help/en/articles/9061614-fin-and-intercom-plans-explained' },
       { label: 'Intercom seats', url: 'https://www.intercom.com/help/en/articles/8205716-seats' },
@@ -302,8 +326,8 @@ export const COMPETITORS: Competitor[] = [
     cardLine: 'An established omnichannel help desk, compared with support connected to projects, CRM and meetings.',
     checked: CHECKED,
     seo: {
-      title: 'Zendesk Alternative: Helpin vs Zendesk',
-      description: 'Compare Helpin and Zendesk on AI support, pricing and self-hosting. See where Zendesk leads and where Helpin connects support to projects and CRM.',
+      title: 'Open-Source Zendesk Alternative: Helpin vs Zendesk',
+      description: 'Compare Helpin and Zendesk: an open-source help desk on Cloud or your servers, your own AI models, no per-agent fees, and support tied to projects.',
     },
     hero: {
       accent: 'one history from ticket to release.',
@@ -325,38 +349,39 @@ export const COMPETITORS: Competitor[] = [
       helpin: [
         'Support questions regularly become roadmap and engineering work.',
         'You want CRM, meeting notes and projects in the same product as support.',
-        'You want one price per workspace, with unlimited teammates.',
-        'You want to self-host an open-source product.',
+        'You want one price per workspace, with unlimited teammates and no per-resolution fees.',
+        'You want an open-source product on Helpin Cloud or your own servers, running on your own AI models.',
+        'You want docs that update from support conversations and the code you ship.',
       ],
     },
     reasons: [
       {
-        title: 'The fix happens in another tool',
-        icon: 'workflow',
-        competitorLane: ['Ticket', 'Jira or another tool'],
-        helpinLane: AFTER_REPLY_LANE,
-        body: 'Zendesk manages the ticket and connects to tools like Jira for engineering work. Helpin keeps the conversation, the project task, the pull request and the customer follow-up in one place, so nobody copies context between systems.',
-      },
-      {
-        title: 'Costs grow per agent and per add-on',
+        title: 'No per-agent or per-resolution fees',
         icon: 'billing',
-        competitorLane: ['Per agent', '+ Copilot per agent'],
-        helpinLane: ['Workspace price', 'AI allowance included'],
-        body: 'Zendesk charges per agent, and add-ons such as Copilot are priced per agent too. Helpin charges per workspace with unlimited teammates, and includes an AI usage allowance in each Cloud plan.',
+        competitorLane: ['Per agent', '+ AI resolutions'],
+        helpinLane: PRICE_LANE,
+        body: `Zendesk charges per agent, and AI agent resolutions beyond the included allowance are billed on top, as is Copilot at $50 per agent. Helpin charges one price per workspace with unlimited teammates, and each Cloud plan includes an AI usage allowance. ${NO_LICENSE}`,
       },
       {
-        title: 'The sales CRM is being retired',
-        icon: 'crm',
-        competitorLane: ['Zendesk Sell', 'Retiring August 2027'],
-        helpinLane: ['Contacts', 'Companies', 'Deals'],
-        body: 'Zendesk plans to retire Zendesk Sell in August 2027 and stop offering a sales CRM. Helpin includes contacts, companies and deals, with the support and meeting history attached to each account.',
+        title: 'Bring your own AI models',
+        icon: 'models',
+        competitorLane: ['Zendesk-managed AI', 'Own key through apps'],
+        helpinLane: MODELS_LANE,
+        body: `Zendesk’s AI agents run on models Zendesk manages; using your own OpenAI key goes through Marketplace apps or the API. ${MODELS_BODY}`,
       },
       {
-        title: 'You can’t run it yourself',
-        icon: 'hosting',
-        competitorLane: ['Hosted by Zendesk'],
-        helpinLane: HOSTING_LANE,
-        body: 'Zendesk is a hosted service with a deep admin surface. Helpin is open source under AGPL-3.0: use Helpin Cloud or run it yourself with Docker Compose.',
+        title: 'Docs that keep up with the product',
+        icon: 'docs',
+        competitorLane: ['Tickets', 'Article drafts'],
+        helpinLane: DOCS_LANE,
+        body: 'Zendesk’s Knowledge Builder drafts help center articles from ticket data. Helpin drafts updates from support conversations and from the code changes you ship, so the docs change when the product does. Nothing goes live until your team publishes it.',
+      },
+      {
+        title: 'From ticket to fix to customer, on its own',
+        icon: 'loop',
+        competitorLane: ['Ticket', 'Jira or another tool'],
+        helpinLane: LOOP_LANE,
+        body: `Zendesk manages the ticket and connects to tools like Jira for engineering work. ${LOOP_BODY}`,
       },
     ],
     tableLede: 'A check means included, a dash means partly or on some plans, and a cross means not available.',
@@ -430,6 +455,7 @@ export const COMPETITORS: Competitor[] = [
       ...sharedFaqs('Zendesk'),
     ],
     closing: { title: 'Take the ticket all the way to the release.', description: 'Start a 14-day trial of Helpin Cloud with no card, or self-host the open-source edition for free.' },
+    video: { seconds: 39, summary: 'The ticket says solved while the customer is still stuck. Helpin keeps one history from ticket to release, with CRM built in and one price for unlimited teammates.' },
     sources: [
       { label: 'Zendesk pricing', url: 'https://www.zendesk.com/pricing/' },
       { label: 'Zendesk AI agent resolutions', url: 'https://support.zendesk.com/hc/en-us/articles/9570369117338' },
@@ -448,12 +474,12 @@ export const COMPETITORS: Competitor[] = [
     cardLine: 'A simple shared inbox priced per user, compared with support connected to projects, CRM and meetings.',
     checked: CHECKED,
     seo: {
-      title: 'Help Scout Alternative: Helpin vs Help Scout',
-      description: 'Compare Helpin and Help Scout on shared inbox, AI answers, pricing and self-hosting, and see when projects, CRM and meetings in one place matter.',
+      title: 'Helpin vs Help Scout: Open-Source Alternative',
+      description: 'Compare Helpin and Help Scout: open-source support on Cloud or self-hosted, AI without per-resolution fees, and docs that update from tickets and code.',
     },
     hero: {
       accent: 'a simple inbox, and what comes after it.',
-      lede: 'Help Scout is a well-loved shared inbox that keeps support simple. Helpin covers the inbox too, and adds projects, CRM, meetings and AI agents on the same customer history, with one price per workspace.',
+      lede: 'Help Scout is a well-loved shared inbox that keeps support simple. Helpin is open source, on Helpin Cloud or your own servers, and adds projects, CRM, meetings and AI agents on the same customer history.',
     },
     glance: [
       { label: 'Pricing', competitor: 'Per user, plus $0.75 per AI resolution', helpin: 'One workspace price, AI usage included' },
@@ -471,38 +497,38 @@ export const COMPETITORS: Competitor[] = [
       helpin: [
         'Support questions turn into product work you want to track and ship.',
         'You want CRM, meeting notes and projects alongside support.',
-        'You want AI usage included instead of paying per resolution.',
-        'You want to self-host an open-source product.',
+        'You want one workspace price with AI usage included, instead of per-user and per-resolution fees.',
+        'You want an open-source product on Helpin Cloud or your own servers, running on your own AI models.',
+        'You want docs that update from support conversations and the code you ship.',
       ],
     },
     reasons: [
       {
-        title: 'The work after the reply lives elsewhere',
-        icon: 'workflow',
-        competitorLane: ['Inbox', 'Docs', 'Integrations'],
-        helpinLane: ['Inbox', 'Projects', 'CRM', 'Meetings'],
-        body: 'Help Scout keeps its focus on conversations and docs, and connects to other tools for the rest. Helpin adds projects, CRM and meeting notes, so a request can become tracked work with the customer history attached.',
-      },
-      {
-        title: 'AI resolutions are billed on top',
+        title: 'No per-user or per-resolution fees',
         icon: 'billing',
         competitorLane: ['Per user', '+ $0.75 per resolution'],
-        helpinLane: ['Workspace price', 'AI allowance included'],
-        body: 'Help Scout charges $0.75 for each AI resolution, on top of user fees. Helpin includes an AI usage allowance in each Cloud plan, and self-hosted installs use your own AI provider.',
+        helpinLane: PRICE_LANE,
+        body: `Help Scout charges per user, plus $0.75 for each AI resolution. Helpin charges one price per workspace with unlimited teammates, and each Cloud plan includes an AI usage allowance. ${NO_LICENSE}`,
       },
       {
-        title: 'Every new teammate is another seat',
-        icon: 'team',
-        competitorLane: ['Paid per user'],
-        helpinLane: ['Unlimited teammates'],
-        body: 'Help Scout charges per user. Helpin charges per workspace with unlimited teammates, so engineers and account managers can join without changing the price.',
+        title: 'Bring your own AI models',
+        icon: 'models',
+        competitorLane: ['AI Answers', 'Billed per resolution'],
+        helpinLane: MODELS_LANE,
+        body: `Help Scout’s AI Answers is billed per resolution. Helpin has no per-resolution fees. ${MODELS_BODY}`,
       },
       {
-        title: 'You can’t run it yourself',
-        icon: 'hosting',
-        competitorLane: ['Hosted by Help Scout'],
-        helpinLane: HOSTING_LANE,
-        body: 'Help Scout is a hosted service. Helpin is open source under AGPL-3.0: use Helpin Cloud or run it on your own infrastructure.',
+        title: 'Docs that keep up with the product',
+        icon: 'docs',
+        helpinLane: [...DOCS_LANE, 'Published'],
+        body: 'Helpin’s agents draft help center updates from unanswered questions and from the code changes you ship, because the docs, the tasks and the repository live in one product. Nothing goes live until your team publishes it.',
+      },
+      {
+        title: 'From ticket to fix to customer, on its own',
+        icon: 'loop',
+        competitorLane: ['Conversation', 'Integrations'],
+        helpinLane: LOOP_LANE,
+        body: `Help Scout focuses on conversations and docs, and connects to other tools for product work. ${LOOP_BODY}`,
       },
     ],
     tableLede: 'A check means included, a dash means partly or on some plans, and a cross means not available.',
@@ -577,6 +603,7 @@ export const COMPETITORS: Competitor[] = [
       ...sharedFaqs('Help Scout'),
     ],
     closing: { title: 'Keep support simple, and connect what comes next.', description: 'Start a 14-day trial of Helpin Cloud with no card, or self-host the open-source edition for free.' },
+    video: { seconds: 39, summary: 'Keep a calm inbox and connect what comes next: projects, CRM, meetings and AI agents on one customer history, with AI usage included in one workspace price.' },
     sources: [
       { label: 'Help Scout pricing', url: 'https://www.helpscout.com/pricing/' },
       { label: 'Help Scout AI agent', url: 'https://www.helpscout.com/agent/' },
@@ -594,7 +621,7 @@ export const COMPETITORS: Competitor[] = [
     cardLine: 'Two open-source options: a multichannel inbox, or support connected to projects, CRM and meetings.',
     checked: CHECKED,
     seo: {
-      title: 'Chatwoot Alternative: Helpin vs Chatwoot',
+      title: 'Open-Source Chatwoot Alternative: Helpin vs Chatwoot',
       description: 'Compare Helpin and Chatwoot, two open-source customer support platforms: channels, AI, self-hosting costs, and projects, CRM and meetings.',
     },
     hero: {
@@ -618,36 +645,37 @@ export const COMPETITORS: Competitor[] = [
         'Support questions turn into project work you want to plan and ship.',
         'You want CRM with deals and meeting notes alongside support.',
         'You want every product feature open source, with no paid self-hosted tier.',
+        'You want AI agents, coding agents included, free when self-hosted on your own AI models.',
+        'You want docs that update from support conversations and the code you ship.',
       ],
     },
     reasons: [
       {
-        title: 'Key features sit in a paid edition',
-        icon: 'open',
-        competitorLane: ['MIT core', 'Paid enterprise edition'],
-        helpinLane: ['Every product feature', 'AGPL-3.0'],
-        body: 'Chatwoot’s core is MIT-licensed, while the Captain AI agent, SSO and SLAs sit in a paid enterprise edition, even when self-hosted. Every Helpin product feature is open source under AGPL-3.0; only Cloud billing code is separate.',
+        title: 'No per-agent fees or AI credits',
+        icon: 'billing',
+        competitorLane: ['Per agent', '+ AI credits'],
+        helpinLane: PRICE_LANE,
+        body: 'Chatwoot Cloud charges per agent, and Captain AI runs on monthly credits, with more at $20 per 1,000. Helpin Cloud charges one price per workspace with unlimited teammates and an AI usage allowance included. Self-hosted, Helpin has no paid tier at all.',
       },
       {
-        title: 'The fix happens in another tool',
-        icon: 'workflow',
-        competitorLane: ['Conversation', 'Linear integration'],
-        helpinLane: AFTER_REPLY_LANE,
-        body: 'Chatwoot links issues to Linear. Helpin includes roadmaps, sprints and objectives, so the request, the task and the follow-up share one history. Coding agents open pull requests from the task, on Helpin Cloud or self-hosted.',
+        title: 'Your own AI models, free',
+        icon: 'models',
+        competitorLane: ['Your key', 'Paid plan needed'],
+        helpinLane: ['Your key', 'Free Community edition'],
+        body: 'Self-hosted, both run on your own AI provider. Chatwoot’s Captain needs the paid Premium plan or higher for that. Helpin’s agents, coding agents included, are part of the free Community edition, and every Helpin product feature is open source under AGPL-3.0.',
       },
       {
-        title: 'No deals or meeting notes',
-        icon: 'crm',
-        competitorLane: ['Contacts', 'Companies', 'Segments'],
-        helpinLane: ['Contacts', 'Companies', 'Deals', 'Meetings'],
-        body: 'Chatwoot has contacts, companies and segments. Helpin adds deals and pipelines, plus meeting notes from Meet, Zoom, Teams and Webex, attached to the same account.',
+        title: 'Docs that keep up with the product',
+        icon: 'docs',
+        helpinLane: [...DOCS_LANE, 'Published'],
+        body: 'Helpin’s agents draft help center updates from unanswered questions and from the code changes you ship, because the docs, the tasks and the repository live in one product. Nothing goes live until your team publishes it.',
       },
       {
-        title: 'Cloud pricing grows per agent',
-        icon: 'team',
-        competitorLane: ['$19–$99 per agent'],
-        helpinLane: ['Workspace price', 'Unlimited teammates'],
-        body: 'Chatwoot Cloud charges per agent, with AI metered in credits. Helpin Cloud charges one price per workspace with an AI usage allowance included.',
+        title: 'From ticket to fix to customer, on its own',
+        icon: 'loop',
+        competitorLane: ['Conversation', 'Linear issue'],
+        helpinLane: LOOP_LANE,
+        body: `Chatwoot links conversations to Linear issues. ${LOOP_BODY}`,
       },
     ],
     tableLede: 'A check means included, a dash means partly or on some plans, and a cross means not available.',
@@ -724,6 +752,7 @@ export const COMPETITORS: Competitor[] = [
       ...sharedFaqs('Chatwoot', { selfHost: false }),
     ],
     closing: { title: 'Open source, from the conversation to the release.', description: 'Self-host the Community edition for free, or start a 14-day trial of Helpin Cloud with no card.' },
+    video: { seconds: 37, summary: 'Both are open source. Chatwoot’s AI agent needs a paid plan even when self-hosted; Helpin’s free Community edition includes AI agents, projects and CRM.' },
     sources: [
       { label: 'Chatwoot pricing', url: 'https://www.chatwoot.com/pricing' },
       { label: 'Chatwoot self-hosted plans', url: 'https://www.chatwoot.com/pricing/self-hosted-plans' },
@@ -870,6 +899,7 @@ export const COMPETITORS: Competitor[] = [
       ...sharedFaqs('Linear').filter(([question]) => !question.startsWith('Can we run Helpin alongside')),
     ],
     closing: { title: 'Plan the work with the customer in view.', description: 'Start a 14-day trial of Helpin Cloud with no card, or self-host the open-source edition for free.' },
+    video: { seconds: 35, summary: 'Linear links customer requests from your support tool. Helpin keeps the customer attached to the task, from the support inbox to the pull request and the follow-up.' },
     sources: [
       { label: 'Linear pricing', url: 'https://linear.app/pricing' },
       { label: 'Linear customer requests', url: 'https://linear.app/docs/customer-requests' },

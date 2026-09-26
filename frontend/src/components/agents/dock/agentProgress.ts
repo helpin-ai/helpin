@@ -52,6 +52,10 @@ export function resolveAgentLiveProgress({
   if (run.status === 'paused' && run.pause_reason === 'manual') {
     return { label: 'Paused', startedAt, tone: 'waiting' };
   }
+  // Finishing the parent's reply does not finish delegated work.
+  if (activeSubAgentName?.trim()) {
+    return { label: `Working with ${activeSubAgentName.trim()}…`, startedAt, tone: 'working' };
+  }
   if (turn.answered) return null;
   if (turn.answerPending) return { label: 'Loading answer…', startedAt, tone: 'waiting' };
   if (turn.missingAnswer) return { label: 'Run ended without a final answer', startedAt, tone: 'waiting' };
@@ -77,10 +81,6 @@ export function resolveAgentLiveProgress({
 
   if (run.status === 'queued') return { label: 'Waiting to start…', startedAt, tone: 'working' };
   if (run.status !== 'running') return null;
-
-  if (activeSubAgentName?.trim()) {
-    return { label: `Working with ${activeSubAgentName.trim()}…`, startedAt, tone: 'working' };
-  }
 
   const segments = stream?.live_turn_segments ?? [];
   for (let index = segments.length - 1; index >= 0; index -= 1) {

@@ -63,6 +63,7 @@ const mocks = vi.hoisted(() => ({
 // focused on transcript, message correlation, and composer behavior.
 vi.mock('@/components/agents/AIConnectionPicker', () => ({ AIConnectionPicker: mocks.aiPicker }));
 vi.mock('@/hooks/queries/useAskAgentDefaults', () => ({ useAskAgentDefaults: mocks.useAskAgentDefaults }));
+vi.mock('@/hooks/queries/useAIProfiles', () => ({ useAIProfiles: () => ({ data: [] }) }));
 
 vi.mock('@/lib/helpin', () => ({ resetHelpinIdentity: vi.fn() }));
 
@@ -1490,6 +1491,53 @@ describe('AskAgentsDock', () => {
     expect(loadEarlier?.textContent).toContain('Loading…');
     expect(loadEarlier?.querySelector('svg')?.classList.contains('animate-spin')).toBe(true);
   });
+
+  it('refreshes a delegated agent after the parent replies and retains it through a failed refresh', async () => {
+    const parent = { id: 'run-1', status: 'paused', pause_reason: 'awaiting_user_message' } as never;
+    mocks.getChat.mockImplementation(async () => ({ data: chatDetail({
+      chat: { ...CHAT, active_run_id: 'run-1' }, run: parent, plan_ids: ['review-plan'],
+    }), error: null }));
+    const child = {
+      id: 'review-run', status: 'running', pause_reason: 'none', input: {}, output_summary: {},
+      created_at: '2026-08-14T08:23:21Z', updated_at: '2026-08-14T08:23:21Z',
+    };
+    const reviewPlan: CommandBarPlanSummary = {
+      id: 'review-plan', status: 'running', plan_kind: 'one_shot_command', prompt: 'Review support conversations',
+      steps: [{ agent_id: 'reviewer', agent_name: 'Support reviewer', instructions: 'Review the latest 100 conversations' }],
+      run_ids_by_step: { 0: 'review-run' }, current_step_index: 0, run_count: 1,
+      created_at: child.created_at, updated_at: child.updated_at, runs: [child as never],
+    };
+    mocks.getPlan.mockResolvedValue({ data: { plan: reviewPlan }, error: null });
+    mocks.getRunSnapshot.mockResolvedValue({ data: child, error: null });
+    mocks.listMessages.mockResolvedValue({ data: { messages: [{
+      id: 'request', workspace_id: 'ws-1', run_id: 'run-1', dock_chat_id: 'chat-1',
+      dock_chat_sequence: 1, role: 'user', content: 'Review the latest 100 conversations', message_type: 'prompt',
+      sequence_no: 1, created_at: '2026-08-14T08:23:00Z', delivery_status: 'sent',
+    }, {
+      id: 'handoff', workspace_id: 'ws-1', run_id: 'run-1', dock_chat_id: 'chat-1',
+      dock_chat_sequence: 2, role: 'assistant', content: 'I started the reviewer.', message_type: 'assistant_final',
+      sequence_no: 2, created_at: '2026-08-14T08:23:40Z', delivery_status: 'sent',
+    }], next_before: null }, error: null });
+    await renderDock();
+    await waitForText('Working with Support reviewer');
+    expect(document.querySelector('[data-agent-dock-sub-agent-runs]')?.textContent).toContain('Running');
+
+    mocks.getPlan.mockResolvedValue({ data: null, error: 'temporarily unavailable' });
+    await act(async () => window.dispatchEvent(new CustomEvent('agent_run-updated', {
+      detail: { entity_id: 'review-run', update_kind: 'lifecycle' },
+    })));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 200)); });
+    expect(mocks.getPlan.mock.calls.length).toBeGreaterThan(1);
+    expect(document.querySelector('[data-agent-dock-sub-agent-runs]')?.textContent).toContain('Support reviewer');
+
+    mocks.getPlan.mockResolvedValue({ data: { plan: { ...reviewPlan, status: 'completed',
+      runs: [{ ...child, status: 'completed' }],
+    } }, error: null });
+    // No child socket event: the fallback poll must settle the visible row.
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 5_100)); });
+    expect(document.querySelector('[data-agent-dock-sub-agent-runs]')?.textContent).toContain('Completed');
+    expect(document.body.textContent).not.toContain('Working with Support reviewer');
+  }, 10_000);
 
   it('loads an older failed sub-agent attempt from its visible result marker', async () => {
     mocks.listMessages.mockResolvedValue({

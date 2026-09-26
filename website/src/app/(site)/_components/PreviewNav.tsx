@@ -11,10 +11,16 @@ import { DOCS } from './docsLinks';
 
 type MenuName = 'product';
 
-export function PreviewNav() {
+/**
+ * `tone="dark"` for pages that open on a dark hero: the nav takes the hero's colour while
+ * the hero is beneath it, then turns light once the hero has scrolled away.
+ */
+export function PreviewNav({ tone = 'light' }: { tone?: 'light' | 'dark' }) {
   const pathname = usePathname();
   const [hidden, setHidden] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [overHero, setOverHero] = useState(tone === 'dark');
+  const dark = tone === 'dark' && overHero;
   const [open, setOpen] = useState<MenuName | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const nav = useRef<HTMLElement>(null);
@@ -71,6 +77,10 @@ export function PreviewNav() {
   useEffect(() => { if (expanded) setHidden(false); }, [expanded]);
 
   useEffect(() => {
+    // The hero is the first section after the nav.
+    const hero = tone === 'dark' && nav.current
+      ? [...document.querySelectorAll('section')].find(section => nav.current!.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING)
+      : undefined;
     let previousY = Math.max(0, window.scrollY);
     let travel = 0;
     let frame = 0;
@@ -80,6 +90,7 @@ export function PreviewNav() {
       const delta = y - previousY;
       previousY = y;
       setScrolled(y > 12);
+      if (hero && nav.current) setOverHero(hero.getBoundingClientRect().bottom > nav.current.offsetHeight);
       if (y <= 60 || expandedRef.current || nav.current?.querySelector(':focus-visible')) {
         travel = 0; setHidden(false); return;
       }
@@ -93,7 +104,7 @@ export function PreviewNav() {
     const onScroll = () => { if (!frame) frame = window.requestAnimationFrame(update); };
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => { window.removeEventListener('scroll', onScroll); window.cancelAnimationFrame(frame); };
-  }, []);
+  }, [tone]);
 
   const keyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === 'Escape' && expanded) {
@@ -117,12 +128,12 @@ export function PreviewNav() {
   return (
     <>
       {expanded ? <div className="nav-backdrop" aria-hidden="true" onClick={close} /> : null}
-      <nav ref={nav} className="pnav" aria-label="Main navigation" data-hidden={hidden && !expanded} data-scrolled={scrolled} data-expanded={expanded}
+      <nav ref={nav} className="pnav" aria-label="Main navigation" data-tone={dark ? 'dark' : 'light'} data-hidden={hidden && !expanded} data-scrolled={scrolled} data-expanded={expanded}
         onKeyDown={keyDown}
         onBlurCapture={event => { if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)) close(); }}
         onFocusCapture={event => { if (event.target.matches(':focus-visible')) setHidden(false); }}>
         <div className="wrap nav-bar">
-          <Link href="/" className="logo" aria-label="Helpin homepage" onClick={close}><HelpinBrand /></Link>
+          <Link href="/" className="logo" aria-label="Helpin homepage" onClick={close}><HelpinBrand variant={dark ? 'light-on-dark' : 'dark-on-light'} /></Link>
           <div className="navlinks">
             <button ref={productToggle} className="nav-trigger" aria-expanded={open === 'product'} aria-controls="preview-product-menu" onPointerEnter={enterProduct} onPointerLeave={leaveProduct} onClick={event => { cancelHoverClose(); setOpen(openedByHover.current && event.detail > 0 ? 'product' : open === 'product' ? null : 'product'); openedByHover.current = false; }} onKeyDown={event => openWithKeyboard(event, 'product')}>Products<ChevronDown size={13} /></button>
             <Link className="nav-direct" href="/developers" onClick={close}>Developers</Link>

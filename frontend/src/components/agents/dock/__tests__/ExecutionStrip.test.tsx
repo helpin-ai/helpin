@@ -95,6 +95,32 @@ function plan(overrides: Partial<CommandBarRunPlan> = {}): CommandBarRunPlan {
 }
 
 describe('ExecutionStrip actions', () => {
+  it('shows a compact task while keeping the full sub-agent brief behind expansion', () => {
+    const instructions = 'Review recent support conversations (start with list_support_conversations sorted by recency). '
+      + 'Read each conversation using list_conversation_messages. Produce a summary of issues and positive feedback. '
+      + 'Result handoff: include representative examples and references.';
+    act(() => root.render(<ExecutionStrip kind="plan" workspaceId="ws-1"
+      plan={plan({ steps: [{ agent_id: 'agent-1', agent_name: 'Sub-agent', instructions }] })}
+      runsById={{ 'run-1': run() }} />));
+
+    const toggle = container.querySelector<HTMLButtonElement>('button[aria-expanded]')!;
+    expect(toggle.textContent).toContain('Sub-agent');
+    expect(toggle.textContent).toContain('Running');
+    expect(toggle.textContent).toContain('Review recent support conversations');
+    expect(toggle.textContent).not.toContain('list_support_conversations');
+    expect(container.textContent).not.toContain('Result handoff');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+
+    act(() => toggle.click());
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    const details = document.getElementById(toggle.getAttribute('aria-controls')!);
+    expect(details?.textContent).toContain('Task instructions');
+    expect(details?.textContent).toContain(instructions);
+
+    act(() => toggle.click());
+    expect(container.textContent).not.toContain('Result handoff');
+  });
+
   it('keeps every child-run assistant segment visible', () => {
     mocks.streamState = {
       transcript_messages: [

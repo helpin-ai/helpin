@@ -1,7 +1,8 @@
 import Link from 'next/link';
+import { preload } from 'react-dom';
 import {
-  ArrowRight, ArrowUpRight, Award, BarChart3, Blocks, Bot, CalendarCheck, Check, ChevronRight, Feather, GitBranch,
-  GitPullRequest, Handshake, Import, Inbox, type LucideIcon, Megaphone, MessagesSquare, Minus, PenLine, RefreshCw,
+  ArrowRight, ArrowUpRight, Award, BarChart3, Blocks, BookOpenCheck, Bot, CalendarCheck, Check, ChevronRight, Cloud, Cpu, Feather,
+  GitBranch, GitPullRequest, Handshake, Import, Inbox, type LucideIcon, Megaphone, MessagesSquare, Minus, PenLine, RefreshCw,
   Rocket, Scale, Server, ShieldCheck, Smartphone, Sprout, Users, Wallet, X, Zap,
 } from 'lucide-react';
 import { SITE_URL } from '@/lib/metadata';
@@ -13,8 +14,8 @@ import { PreviewFooter } from '../_components/PreviewFooter';
 import { PlatformClosing } from '../_components/platform/PlatformParts';
 import { CtaNote, CtaRow, DEMO_URL, FAQList, GITHUB_URL, SIGNUP_URL } from '../_components/ui';
 import { ARTICLES, HELPIN_ARTICLE } from './article-data';
-import { cellStatus, COMPETITORS, competitorSeo, formatChecked, type Cell, type Competitor, type IconKey, type Status } from './compare-data';
-import { HeroMatchup } from './HeroMatchup';
+import { cellStatus, COMPETITORS, competitorSeo, compareVideo, formatChecked, type Cell, type Competitor, type IconKey, type Status } from './compare-data';
+import { CompareFilm } from './CompareFilm';
 import { InViewOnce } from './InViewOnce';
 import { LazyPreview } from './LazyPreview';
 import { PriceCalculator } from './PriceCalculator';
@@ -24,7 +25,7 @@ const ICONS: Record<IconKey, LucideIcon> = {
   workflow: GitPullRequest, billing: Wallet, team: Users, hosting: Server, crm: Handshake, open: GitBranch,
   maturity: Sprout, requests: Inbox, agents: Bot, loop: RefreshCw, channels: MessagesSquare, ecosystem: Blocks,
   enterprise: ShieldCheck, reporting: BarChart3, messaging: Megaphone, simplicity: Feather, import: Import,
-  mobile: Smartphone, community: Award, deploy: Rocket, speed: Zap,
+  mobile: Smartphone, community: Award, deploy: Rocket, speed: Zap, models: Cpu, docs: BookOpenCheck,
 };
 
 const STATUS: Record<Status, { Icon: LucideIcon; label: string }> = {
@@ -35,11 +36,6 @@ const STATUS: Record<Status, { Icon: LucideIcon; label: string }> = {
 
 export function HelpinMark({ size = 20, tone = 'light' }: { size?: number; tone?: 'light' | 'dark' }) {
   return <img className="cmp-mark" src={tone === 'dark' ? '/brand/helpin-icon-white.svg' : '/brand/helpin-icon-ink.svg'} width={size} height={size} alt="" />;
-}
-
-// A neutral initial, never the other company's logo.
-export function Monogram({ name }: { name: string }) {
-  return <span className="cmp-monogram" aria-hidden="true">{name.charAt(0)}</span>;
 }
 
 function Value({ value, status }: { value: Cell; status?: Status }) {
@@ -66,7 +62,7 @@ function Side({ name, children }: { name: string; children: React.ReactNode }) {
   const helpin = name === 'Helpin';
   return (
     <div className="cmp-side" data-product={helpin ? 'helpin' : 'rival'}>
-      <span className="cmp-side-name">{helpin ? <HelpinMark size={18} /> : <Monogram name={name} />}{name}</span>
+      <span className="cmp-side-name">{helpin ? <HelpinMark size={18} /> : null}{name}</span>
       <p>{children}</p>
     </div>
   );
@@ -101,6 +97,30 @@ function Versus({ name, competitor, helpin, verdict }: { name: string; competito
   );
 }
 
+// The same product two ways: hosted by Helpin, or the open-source Community edition.
+function Editions() {
+  return (
+    <div className="cmp-editions">
+      <article>
+        <header><Cloud size={20} aria-hidden="true" /><div><h3>Helpin Cloud</h3><span>Hosted by Helpin</span></div></header>
+        <ul>
+          {['One price per workspace, unlimited teammates', 'AI usage allowance included in every plan', 'Your own AI keys on Enterprise', 'Managed by Helpin, with support'].map(item => <li key={item}><Check size={14} strokeWidth={2.4} aria-hidden="true" />{item}</li>)}
+        </ul>
+        <a className="btn btn-primary" href={SIGNUP_URL}>Start free trial<ArrowRight size={15} aria-hidden="true" /></a>
+        <small>14 days, no card required</small>
+      </article>
+      <article>
+        <header><GitBranch size={20} aria-hidden="true" /><div><h3>Community edition</h3><span>Open source · AGPL-3.0 · 0.2 beta</span></div></header>
+        <ul>
+          {['Free, with no plan limits or seat counts', 'Every product, coding agents included', 'Runs on your own AI provider and keys', 'Docker Compose on your own servers'].map(item => <li key={item}><Check size={14} strokeWidth={2.4} aria-hidden="true" />{item}</li>)}
+        </ul>
+        <Link className="btn btn-secondary" href="/self-hosting">Self-host free<ArrowRight size={15} aria-hidden="true" /></Link>
+        <small><a href={GITHUB_URL} target="_blank" rel="noopener noreferrer">View the code on GitHub</a></small>
+      </article>
+    </div>
+  );
+}
+
 function ComparisonTable({ competitor }: { competitor: Competitor }) {
   const { name } = competitor;
   return (
@@ -111,8 +131,8 @@ function ComparisonTable({ competitor }: { competitor: Competitor }) {
         <thead role="rowgroup">
           <tr role="row">
             <th scope="col" role="columnheader">Capability</th>
-            <th scope="col" role="columnheader" className="cmp-table-product"><span className="cmp-table-name"><HelpinMark size={18} />Helpin</span><span>Cloud or self-hosted</span></th>
-            <th scope="col" role="columnheader" className="cmp-table-product"><span className="cmp-table-name"><Monogram name={name} />{name}</span><span>{competitor.category}</span></th>
+            <th scope="col" role="columnheader" className="cmp-table-product"><span className="cmp-table-name"><HelpinMark size={18} />Helpin</span><span>Open source · Cloud or self-hosted</span></th>
+            <th scope="col" role="columnheader" className="cmp-table-product"><span className="cmp-table-name">{name}</span><span>{competitor.category}</span></th>
           </tr>
         </thead>
         {competitor.table.map(group => (
@@ -138,12 +158,16 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
   const others = COMPETITORS.filter(item => item.slug !== competitor.slug);
   const checked = formatChecked(competitor.checked);
   const seo = competitorSeo(competitor);
+  const support = competitor.group === 'Customer support';
+  const video = compareVideo(competitor);
+  // The poster is the hero's largest image, so fetch it early.
+  preload(video.poster, { as: 'image', fetchPriority: 'high' });
   const toc = [
     { id: 'overview', label: 'At a glance' },
-    { id: 'features', label: 'Core features' },
     { id: 'why-switch', label: 'Why teams switch' },
+    { id: 'features', label: 'Core features' },
     { id: 'pricing', label: 'Pricing and value' },
-    { id: 'hosting', label: 'Hosting and data' },
+    { id: 'hosting', label: 'Cloud or open source' },
     { id: 'switching', label: 'Switching' },
     { id: 'strengths', label: `Where ${name} is stronger` },
     { id: 'fit', label: 'Which one fits' },
@@ -161,13 +185,22 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
         ],
       },
       { ...article({ headline: seo.title, description: seo.description, path: seo.canonicalPath, date: competitor.checked }), image: `${SITE_URL}${seo.imagePath}` },
+      {
+        '@type': 'VideoObject',
+        name: video.title,
+        description: video.summary,
+        thumbnailUrl: `${SITE_URL}${video.poster}`,
+        contentUrl: `${SITE_URL}${video.src}`,
+        uploadDate: video.published,
+        duration: `PT${video.seconds}S`,
+      },
       organization,
     ],
   };
 
   return (
     <>
-      <PreviewNav />
+      <PreviewNav tone="dark" />
       <div className="platform-page compare-page">
         <JsonLd data={structured} />
         <section className="platform-hero motion-hero">
@@ -176,18 +209,18 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
             <div className="platform-breadcrumb"><Link href="/">Helpin</Link><ChevronRight size={12} aria-hidden="true" /><Link href="/compare">Compare</Link><ChevronRight size={12} aria-hidden="true" /><span>{name}</span></div>
             <div className="platform-hero-grid">
               <div className="platform-hero-copy">
-                <span className="eyebrow">{name} alternative · {competitor.category}</span>
+                <span className="eyebrow">Open-source {name} alternative · {competitor.category}</span>
                 <h1>Helpin vs {name}: <span>{competitor.hero.accent}</span></h1>
                 <p className="lede">{competitor.hero.lede}</p>
                 <CtaRow primaryLabel="Start free trial" primaryHref={SIGNUP_URL} secondaryHref={DEMO_URL} secondaryLabel="Talk to us about switching" />
                 <CtaNote trial support />
                 <div className="platform-hero-points">
+                  <span><GitBranch size={14} aria-hidden="true" />Open source · Cloud or self-hosted</span>
                   <span><PenLine size={14} aria-hidden="true" />By the Helpin team</span>
                   <span><CalendarCheck size={14} aria-hidden="true" />Verified {checked}</span>
-                  <span><Scale size={14} aria-hidden="true" />Strengths on both sides</span>
                 </div>
               </div>
-              <HeroMatchup name={name} glance={competitor.glance} />
+              <CompareFilm id="video" name={name} video={video} />
             </div>
           </div>
         </section>
@@ -200,8 +233,9 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
               <Toc items={toc} />
               <div className="cmp-aside-cta">
                 <strong>Try Helpin free</strong>
-                <p>14-day trial, no card. Or self-host the open-source edition.</p>
+                <p>14-day Cloud trial, no card. Or self-host the open-source Community edition for free.</p>
                 <a className="btn btn-primary" href={SIGNUP_URL}>Start free trial →</a>
+                <Link className="cmp-aside-link" href="/self-hosting">Self-host free<ArrowRight size={13} aria-hidden="true" /></Link>
               </div>
             </aside>
 
@@ -218,28 +252,16 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
                 <p className="cmp-small">Comparison data verified {checked}.</p>
               </section>
 
-              <section id="features" className="cmp-block">
-                <h2>Core feature comparison</h2>
-                <p>Feature names can sound alike across tools. What matters is how each product handles the work, and what your team does next.</p>
-                {copy.features.map(feature => (
-                  <div key={feature.id} id={feature.id} className="cmp-feature">
-                    <h3>{feature.title}</h3>
-                    <Versus name={name} competitor={feature.competitor} helpin={feature.helpin} verdict={feature.verdict} />
-                    {feature.preview ? <LazyPreview product={feature.preview.product} label={feature.preview.label} /> : null}
-                  </div>
-                ))}
-              </section>
-
               <section id="why-switch" className="cmp-block">
-                <h2>Why teams look beyond {name}</h2>
-                <p>Four common reasons teams give for looking elsewhere, and how Helpin handles each one.</p>
+                <h2>{support ? `Why support teams switch from ${name}` : `Why teams look beyond ${name}`}</h2>
+                <p>{support ? 'Helpin is open source, on Helpin Cloud or your own servers. Beyond that, these are the four differences support teams notice first.' : 'Four common reasons teams give for looking elsewhere, and how Helpin handles each one.'}</p>
                 <div className="cmp-diff-grid">
                   {competitor.reasons.map((reason, index) => {
                     const Icon = ICONS[reason.icon];
                     return (
                       <InViewOnce as="article" key={reason.title} className="cmp-diff-card">
-                        <div className="cmp-diff-art" role="img" aria-label={`${name}: ${reason.competitorLane.join(', then ')}. Helpin: ${reason.helpinLane.join(', then ')}.`}>
-                          <Lane label={name} steps={reason.competitorLane} />
+                        <div className="cmp-diff-art" role="img" aria-label={`${reason.competitorLane ? `${name}: ${reason.competitorLane.join(', then ')}. ` : ''}Helpin: ${reason.helpinLane.join(', then ')}.`}>
+                          {reason.competitorLane ? <Lane label={name} steps={reason.competitorLane} /> : null}
                           <Lane label="Helpin" steps={reason.helpinLane} helpin />
                         </div>
                         <div className="cmp-diff-copy">
@@ -253,6 +275,19 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
                 </div>
               </section>
 
+              <section id="features" className="cmp-block">
+                <h2>Core feature comparison</h2>
+                <p>Feature names can sound alike across tools. What matters is how each product handles the work, and what your team does next.</p>
+                {copy.features.map(feature => (
+                  <div key={feature.id} id={feature.id} className="cmp-feature">
+                    <h3>{feature.title}</h3>
+                    <Versus name={name} competitor={feature.competitor} helpin={feature.helpin} verdict={feature.verdict} />
+                    {feature.preview ? <LazyPreview product={feature.preview.product} label={feature.preview.label} /> : null}
+                  </div>
+                ))}
+              </section>
+
+
               <section id="pricing" className="cmp-block">
                 <h2>Pricing and value</h2>
                 <Versus name={name} competitor={copy.pricing} helpin={HELPIN_ARTICLE.pricing} />
@@ -262,8 +297,10 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
               </section>
 
               <section id="hosting" className="cmp-block">
-                <h2>Hosting and data</h2>
+                <h2>Cloud or open source</h2>
+                <p>Helpin is the same product either way. Let us run it on Helpin Cloud, or self-host the open-source Community edition on your own servers.</p>
                 <Versus name={name} competitor={copy.hosting} helpin={HELPIN_ARTICLE.hosting} />
+                <Editions />
               </section>
 
               <section id="switching" className="cmp-block">
@@ -273,7 +310,7 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
                 <p>{competitor.switching.lede}</p>
                 <div className="cmp-checklists">
                   <article>
-                    <h4><Monogram name={name} />Take from {name}</h4>
+                    <h4>Take from {name}</h4>
                     <ul>{competitor.switching.take.map(item => <li key={item}><ArrowRight size={14} aria-hidden="true" />{item}</li>)}</ul>
                   </article>
                   <article>
@@ -311,7 +348,7 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
                 <p>{competitor.summary.lede}</p>
                 <div className="cmp-choose">
                   <article className="cmp-choose-rival">
-                    <header><Monogram name={name} /><h3>Choose {name} if…</h3></header>
+                    <header><h3>Choose {name} if…</h3></header>
                     <ul>{competitor.summary.competitor.map(item => <li key={item}><ArrowRight size={15} aria-hidden="true" />{item}</li>)}</ul>
                   </article>
                   <article className="cmp-choose-helpin">
@@ -351,7 +388,6 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
 export function CompareCard({ competitor }: { competitor: Competitor }) {
   return (
     <Link className="cmp-card" href={`/compare/${competitor.slug}`}>
-      <div className="cmp-card-names"><HelpinMark size={26} /><span>vs</span><Monogram name={competitor.name} /></div>
       <span className="cmp-card-category">{competitor.category}</span>
       <strong>Helpin vs {competitor.name}</strong>
       <p>{competitor.cardLine}</p>
