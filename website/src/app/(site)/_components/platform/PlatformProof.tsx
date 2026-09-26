@@ -15,9 +15,10 @@ const PRODUCTS = [
   { name: 'Agents', preview: 'agents', Icon: Bot, title: 'Put the history to work.', body: 'Use specialists to answer questions, plan tasks, and follow up after the release. Choose their tools and the actions that need review.', href: '/products/ai-agents' },
 ] as const;
 
-export function CommunityShowcase() {
-  const [active, setActive] = useState(0);
-  const [visited, setVisited] = useState(() => new Set([0]));
+export function CommunityShowcase({ initial = 'Support' }: { initial?: (typeof PRODUCTS)[number]['name'] } = {}) {
+  const start = Math.max(0, PRODUCTS.findIndex(product => product.name === initial));
+  const [active, setActive] = useState(start);
+  const [visited, setVisited] = useState(() => new Set([start]));
   const id = useId();
   function select(index: number) {
     setVisited(previous => new Set(previous).add(index));

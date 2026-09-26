@@ -28,6 +28,7 @@ Key facts:
 
 - [Developers](https://helpin.ai/developers): widget SDKs, MCP and CLI
 - [Compare Helpin](https://helpin.ai/compare): side-by-side comparisons with Intercom, Zendesk, Help Scout, Chatwoot and Linear
+- [Intercom alternatives](https://helpin.ai/compare/intercom-alternatives) and [Zendesk alternatives](https://helpin.ai/compare/zendesk-alternatives): six tools compared on pricing, AI and hosting
 - [Documentation](https://helpin.ai/docs): help center and developer guides
 - [Source code](https://github.com/helpin-ai/helpin): GitHub repository
 
