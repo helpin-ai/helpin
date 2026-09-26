@@ -2,6 +2,8 @@ import { notFound } from 'next/navigation';
 import { createPageMetadata } from '@/lib/metadata';
 import { ComparePage } from '../ComparePage';
 import { COMPETITORS, competitorSeo } from '../compare-data';
+import '../../_components/platform/platform.css';
+import '../../_components/platform/platform-polish.css';
 import '../compare.css';
 
 export const dynamicParams = false;

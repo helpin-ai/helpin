@@ -6,28 +6,41 @@ import type { PageSeo } from '../../../lib/metadata.ts';
 export type Cell = boolean | string;
 type FAQ = readonly [question: string, answer: string];
 
+// Icons are resolved in ComparePage so this file stays plain data.
+export type IconKey =
+  | 'workflow' | 'billing' | 'team' | 'hosting' | 'crm' | 'open' | 'maturity' | 'requests' | 'agents' | 'loop'
+  | 'channels' | 'ecosystem' | 'enterprise' | 'reporting' | 'messaging' | 'simplicity' | 'import' | 'mobile'
+  | 'community' | 'deploy' | 'speed';
+
+export type StepStatus = 'Available now' | 'Beta' | 'Coming soon' | 'Not yet';
+
+export type Bill = {
+  plan: string;
+  lines: readonly (readonly [label: string, value: string])[];
+  total: string;
+  totalNote: string;
+};
+
 export type Competitor = {
   slug: string;
   name: string;
+  group: 'Customer support' | 'Project management';
   category: string;
   cardLine: string;
   checked: string;
   seo: { title: string; description: string };
-  hero: { title: string; lede: string };
+  /** The H1 reads "Helpin vs {name}: {accent}". */
+  hero: { accent: string; lede: string };
+  /** Four short rows for the hero's at-a-glance card. */
+  glance: { label: string; helpin: string; competitor: string }[];
   summary: { title: string; lede: string; competitor: string[]; helpin: string[] };
   tableLede: string;
   table: { group: string; rows: { label: string; helpin: Cell; competitor: Cell }[] }[];
   differencesTitle: string;
-  differences: { title: string; body: string }[];
-  strengths: { title: string; body: string }[];
-  cost?: {
-    title: string;
-    lede: string;
-    helpin: { amount: string; detail: string };
-    competitor: { amount: string; detail: string };
-    note: string;
-  };
-  switching: { title: string; body: string[] };
+  differences: { title: string; body: string; icon: IconKey; competitorLane: string[]; helpinLane: string[] }[];
+  strengths: { title: string; body: string; icon: IconKey }[];
+  cost?: { title: string; lede: string; helpin: Bill; competitor: Bill; note: string };
+  switching: { title: string; lede: string; steps: { title: string; body: string; status: StepStatus }[] };
   faqs: FAQ[];
   closing: { title: string; description: string };
   sources: { label: string; url: string }[];
@@ -64,12 +77,33 @@ const HELPIN = {
   mcp: 'Hosted and self-hosted (beta)',
 };
 
-const SWITCH_NOTE = 'Most teams start Helpin alongside their current tool: install the widget on a few pages, connect a support address, and move queues over when the team is ready.';
+const HELPIN_GROWTH: Bill = {
+  plan: 'Growth, billed annually',
+  lines: [['One workspace', '$239'], ['8 teammates', 'Included'], ['AI usage', '$239 allowance included']],
+  total: '$239/mo',
+  totalNote: 'The price stays the same for 8 or 80 teammates.',
+};
+
+const RUN_ALONGSIDE = (name: string) => ({
+  title: `Run Helpin alongside ${name}`,
+  body: 'Install the widget on a few pages and connect a support address. Move queues over when your team is ready.',
+  status: 'Available now' as const,
+});
+
+const REBUILD_DOCS = {
+  title: 'Rebuild your help center',
+  body: 'Recreate your articles in Helpin Knowledge and publish them on your own domain.',
+  status: 'Available now' as const,
+};
+
+const AFTER_REPLY_LANE = ['Conversation', 'Task', 'Pull request', 'Follow-up'];
+const HOSTING_LANE = ['Helpin Cloud', 'or your servers'];
 
 export const COMPETITORS: Competitor[] = [
   {
     slug: 'intercom',
     name: 'Intercom',
+    group: 'Customer support',
     category: 'AI customer support',
     cardLine: 'Per-seat plans plus a fee per AI outcome, compared with one workspace price and connected product work.',
     checked: CHECKED,
@@ -78,9 +112,15 @@ export const COMPETITORS: Competitor[] = [
       description: 'Compare Helpin and Intercom on AI support, pricing and self-hosting. Helpin adds projects, CRM and meetings, with one price per workspace and no seat fees.',
     },
     hero: {
-      title: 'Helpin vs Intercom: when the answer needs a fix.',
-      lede: 'Both answer customers with AI. Intercom is a mature support platform with wide channel coverage. Helpin keeps support next to your projects, CRM, meetings and docs, so the question, the fix and the follow-up stay together. You can also self-host it.',
+      accent: 'when the answer needs a fix.',
+      lede: 'Both answer customers with AI. Intercom is a mature support platform with wide channel coverage. Helpin keeps support next to your projects, CRM, meetings and docs, so the question, the fix and the follow-up stay together.',
     },
+    glance: [
+      { label: 'Pricing', helpin: 'Per workspace', competitor: 'Per seat' },
+      { label: 'AI agent', helpin: 'Allowance included', competitor: '$0.99 per outcome' },
+      { label: 'Beyond support', helpin: 'Projects, CRM, meetings', competitor: 'Through integrations' },
+      { label: 'Self-hosting', helpin: 'Open source', competitor: 'Hosted only' },
+    ],
     summary: {
       title: 'Different tools for different teams.',
       lede: 'If support is a self-contained function, Intercom is a strong choice. If customer questions regularly turn into product work, Helpin keeps that work connected.',
@@ -133,39 +173,58 @@ export const COMPETITORS: Competitor[] = [
     differences: [
       {
         title: 'What happens after the reply',
+        icon: 'workflow',
+        competitorLane: ['Conversation', 'Jira or another tool'],
+        helpinLane: AFTER_REPLY_LANE,
         body: 'Intercom focuses on resolving the conversation, and hands product work to tools like Jira. In Helpin, a support conversation can become a task on the roadmap. The history stays attached, so the team and its agents can follow up when the fix ships.',
       },
       {
         title: 'How AI is billed',
+        icon: 'billing',
+        competitorLane: ['Seats', '+ $0.99 per outcome'],
+        helpinLane: ['Workspace price', 'AI allowance included'],
         body: 'Intercom charges $0.99 for each Fin outcome, on top of seats. Helpin includes an AI usage allowance in each Cloud plan. On an active paid plan you can turn on metered overage at the published rates, and self-hosted installs use your own AI provider.',
       },
       {
         title: 'Who can use it',
+        icon: 'team',
+        competitorLane: ['Paid per full seat'],
+        helpinLane: ['Unlimited teammates'],
         body: 'Intercom prices by seat, so each full teammate adds cost. Helpin charges per workspace with unlimited teammates, which makes it easier to give engineering, sales and success access to the same customer history.',
       },
       {
         title: 'Where it runs',
+        icon: 'hosting',
+        competitorLane: ['Hosted by Intercom'],
+        helpinLane: HOSTING_LANE,
         body: 'Intercom is a hosted service. Helpin is open source under AGPL-3.0. Use Helpin Cloud, or run the Community edition on your own infrastructure with Docker Compose.',
       },
     ],
     strengths: [
-      { title: 'Channels.', body: 'Phone and voice AI, WhatsApp, SMS, social channels, Slack, Discord and Microsoft Teams. Helpin supports web chat and email.' },
-      { title: 'Ecosystem.', body: 'More than 450 apps and integrations, and native mobile SDKs for iOS and Android.' },
-      { title: 'Maturity.', body: 'Over 30,000 customers and years of support-specific features, including SLAs, SSO and custom reports.' },
-      { title: 'Proactive messaging.', body: 'Product tours, surveys and targeted in-app messages through add-ons.' },
+      { icon: 'channels', title: 'Channels.', body: 'Phone and voice AI, WhatsApp, SMS, social channels, Slack, Discord and Microsoft Teams. Helpin supports web chat and email.' },
+      { icon: 'ecosystem', title: 'Ecosystem.', body: 'More than 450 apps and integrations, and native mobile SDKs for iOS and Android.' },
+      { icon: 'maturity', title: 'Maturity.', body: 'Over 30,000 customers and years of support-specific features, including SLAs, SSO and custom reports.' },
+      { icon: 'messaging', title: 'Proactive messaging.', body: 'Product tours, surveys and targeted in-app messages through add-ons.' },
     ],
     cost: {
       title: 'What a team of eight might pay.',
-      lede: 'List prices for eight support teammates, billed annually. Channel usage and add-ons are excluded.',
-      helpin: { amount: '$239 a month', detail: 'Growth plan for the whole workspace, including custom agents, automation and AI routing, with $239 of AI usage included each month. The price stays the same for 8 or 80 teammates.' },
-      competitor: { amount: '$680 a month + AI', detail: 'Advanced plan at $85 a seat. Fin adds $0.99 per outcome, so 1,000 AI outcomes a month would bring the total to about $1,670.' },
-      note: 'Helpin AI usage is measured in tokens rather than outcomes, so the cost of 1,000 conversations depends on their length and the model used.',
+      lede: 'List prices for eight support teammates and 1,000 AI outcomes a month, billed annually. Channel usage and add-ons are excluded.',
+      helpin: HELPIN_GROWTH,
+      competitor: {
+        plan: 'Advanced, billed annually',
+        lines: [['8 seats × $85', '$680'], ['1,000 Fin outcomes × $0.99', '$990']],
+        total: '$1,670/mo',
+        totalNote: 'Channel usage and add-ons are billed separately.',
+      },
+      note: 'Helpin measures AI usage in tokens rather than outcomes, so what 1,000 conversations use depends on their length and the model. On paid plans, you can turn on metered overage beyond the allowance.',
     },
     switching: {
       title: 'Moving from Intercom.',
-      body: [
-        'An importer for Intercom conversations and contacts is coming soon. Until then, Intercom can export conversations as CSV or through its API, and help articles can be recreated in Helpin Knowledge.',
-        SWITCH_NOTE,
+      lede: 'Start with part of your support, then move the rest when you’re ready.',
+      steps: [
+        RUN_ALONGSIDE('Intercom'),
+        REBUILD_DOCS,
+        { title: 'Import conversations and contacts', status: 'Coming soon', body: 'An Intercom importer is coming soon. Until then, Intercom exports conversations as CSV or through its API.' },
       ],
     },
     faqs: [
@@ -189,6 +248,7 @@ export const COMPETITORS: Competitor[] = [
   {
     slug: 'zendesk',
     name: 'Zendesk',
+    group: 'Customer support',
     category: 'Help desk',
     cardLine: 'An established omnichannel help desk, compared with support connected to projects, CRM and meetings.',
     checked: CHECKED,
@@ -197,9 +257,15 @@ export const COMPETITORS: Competitor[] = [
       description: 'Compare Helpin and Zendesk on AI support, pricing and self-hosting. See where Zendesk leads and where Helpin connects support to projects and CRM.',
     },
     hero: {
-      title: 'Helpin vs Zendesk: one history from ticket to release.',
-      lede: 'Zendesk is an established help desk with deep omnichannel and contact center features. Helpin is a newer, open-source platform that keeps support, projects, CRM, meetings and docs on one customer history, with AI agents working across them.',
+      accent: 'one history from ticket to release.',
+      lede: 'Zendesk is an established help desk with deep omnichannel and contact center features. Helpin is a newer, open-source platform that keeps support, projects, CRM, meetings and docs on one customer history.',
     },
+    glance: [
+      { label: 'Pricing', helpin: 'Per workspace', competitor: 'Per agent' },
+      { label: 'AI agent', helpin: 'Allowance included', competitor: 'Per verified resolution' },
+      { label: 'CRM', helpin: 'Included', competitor: 'Sell retires in 2027' },
+      { label: 'Self-hosting', helpin: 'Open source', competitor: 'Hosted only' },
+    ],
     summary: {
       title: 'A help desk, or a connected workspace.',
       lede: 'Zendesk is built for large, multichannel service teams. Helpin suits product-led teams whose support questions turn into product and account work.',
@@ -252,39 +318,58 @@ export const COMPETITORS: Competitor[] = [
     differences: [
       {
         title: 'Tickets and the work behind them',
+        icon: 'workflow',
+        competitorLane: ['Ticket', 'Jira or another tool'],
+        helpinLane: AFTER_REPLY_LANE,
         body: 'Zendesk manages the ticket and connects to tools like Jira for engineering work. Helpin keeps the conversation, the project task, the pull request and the customer follow-up in one place, so nobody has to copy context between systems.',
       },
       {
         title: 'Pricing as the team grows',
+        icon: 'billing',
+        competitorLane: ['Per agent', '+ Copilot per agent'],
+        helpinLane: ['Workspace price', 'AI allowance included'],
         body: 'Zendesk charges per agent, and add-ons such as Copilot are priced per agent too. Helpin charges per workspace with unlimited teammates, and includes an AI usage allowance in each Cloud plan.',
       },
       {
         title: 'Customer relationships',
+        icon: 'crm',
+        competitorLane: ['Zendesk Sell', 'Retiring August 2027'],
+        helpinLane: ['Contacts', 'Companies', 'Deals'],
         body: 'Zendesk plans to retire Zendesk Sell in August 2027 and stop offering a sales CRM. Helpin includes contacts, companies and deals, with the support and meeting history attached to each account.',
       },
       {
         title: 'Setup and ownership',
+        icon: 'hosting',
+        competitorLane: ['Hosted by Zendesk'],
+        helpinLane: HOSTING_LANE,
         body: 'Zendesk is a hosted service with a deep admin surface. Helpin is open source under AGPL-3.0: use Helpin Cloud or run it yourself with Docker Compose.',
       },
     ],
     strengths: [
-      { title: 'Omnichannel and voice.', body: 'Native contact center, IVR and messaging channels. Helpin supports web chat and email.' },
-      { title: 'Enterprise controls.', body: 'SSO, SLA policies, sandboxes, custom roles and approval workflows.' },
-      { title: 'Ecosystem.', body: 'More than 1,800 marketplace apps and mobile SDKs for iOS and Android.' },
-      { title: 'Reporting.', body: 'Mature dashboards and analytics for large service teams.' },
+      { icon: 'channels', title: 'Omnichannel and voice.', body: 'Native contact center, IVR and messaging channels. Helpin supports web chat and email.' },
+      { icon: 'enterprise', title: 'Enterprise controls.', body: 'SSO, SLA policies, sandboxes, custom roles and approval workflows.' },
+      { icon: 'ecosystem', title: 'Ecosystem.', body: 'More than 1,800 marketplace apps and mobile SDKs for iOS and Android.' },
+      { icon: 'reporting', title: 'Reporting.', body: 'Mature dashboards and analytics for large service teams.' },
     ],
     cost: {
       title: 'What a team of eight might pay.',
       lede: 'List prices for eight support agents, billed annually. Add-ons and AI resolutions beyond the included allowance are excluded.',
-      helpin: { amount: '$239 a month', detail: 'Growth plan for the whole workspace, including custom agents, automation and AI routing, with $239 of AI usage included each month. The price stays the same for 8 or 80 teammates.' },
-      competitor: { amount: '$440 a month + AI', detail: 'Suite Team at $55 an agent. Verified AI resolutions beyond the included allowance are billed separately, and Copilot is $50 per agent.' },
-      note: 'Zendesk does not publish its price per verified resolution, so we have not estimated it.',
+      helpin: HELPIN_GROWTH,
+      competitor: {
+        plan: 'Suite Team, billed annually',
+        lines: [['8 agents × $55', '$440'], ['Verified AI resolutions', 'Billed separately'], ['Copilot, if added', '$50 per agent']],
+        total: '$440/mo + AI',
+        totalNote: 'Zendesk doesn’t publish its price per verified resolution.',
+      },
+      note: 'We haven’t estimated Zendesk’s AI resolution costs because the price per resolution isn’t published.',
     },
     switching: {
       title: 'Moving from Zendesk.',
-      body: [
-        'An importer for Zendesk tickets and contacts is coming soon. Zendesk account owners can request ticket and user exports today, and help articles can be recreated in Helpin Knowledge.',
-        SWITCH_NOTE,
+      lede: 'Start with part of your support, then move the rest when you’re ready.',
+      steps: [
+        RUN_ALONGSIDE('Zendesk'),
+        REBUILD_DOCS,
+        { title: 'Import tickets and contacts', status: 'Coming soon', body: 'A Zendesk importer is coming soon. Until then, Zendesk account owners can request ticket and user exports.' },
       ],
     },
     faqs: [
@@ -307,6 +392,7 @@ export const COMPETITORS: Competitor[] = [
   {
     slug: 'help-scout',
     name: 'Help Scout',
+    group: 'Customer support',
     category: 'Shared inbox',
     cardLine: 'A simple shared inbox priced per user, compared with support connected to projects, CRM and meetings.',
     checked: CHECKED,
@@ -315,9 +401,15 @@ export const COMPETITORS: Competitor[] = [
       description: 'Compare Helpin and Help Scout on shared inbox, AI answers, pricing and self-hosting, and see when projects, CRM and meetings in one place matter.',
     },
     hero: {
-      title: 'Helpin vs Help Scout: a simple inbox, and what comes after it.',
+      accent: 'a simple inbox, and what comes after it.',
       lede: 'Help Scout is a well-loved shared inbox that keeps support simple. Helpin covers the inbox too, and adds projects, CRM, meetings and AI agents on the same customer history, with one price per workspace.',
     },
+    glance: [
+      { label: 'Pricing', helpin: 'Per workspace', competitor: 'Per user' },
+      { label: 'AI answers', helpin: 'Allowance included', competitor: '$0.75 per resolution' },
+      { label: 'Beyond support', helpin: 'Projects, CRM, meetings', competitor: 'Through integrations' },
+      { label: 'Self-hosting', helpin: 'Open source', competitor: 'Hosted only' },
+    ],
     summary: {
       title: 'Simple support, or support connected to everything else.',
       lede: 'Both are friendly for small teams. The difference is how far past the inbox you want to go.',
@@ -370,39 +462,58 @@ export const COMPETITORS: Competitor[] = [
     differences: [
       {
         title: 'Beyond the inbox',
+        icon: 'workflow',
+        competitorLane: ['Inbox', 'Docs', 'Integrations'],
+        helpinLane: ['Inbox', 'Projects', 'CRM', 'Meetings'],
         body: 'Help Scout keeps its focus on conversations and docs, and connects to other tools for the rest. Helpin adds projects, CRM and meeting notes, so a request can become tracked work with the customer history attached.',
       },
       {
         title: 'How AI is billed',
+        icon: 'billing',
+        competitorLane: ['Per user', '+ $0.75 per resolution'],
+        helpinLane: ['Workspace price', 'AI allowance included'],
         body: 'Help Scout charges $0.75 for each AI resolution, on top of user fees. Helpin includes an AI usage allowance in each Cloud plan, and self-hosted installs use your own AI provider.',
       },
       {
         title: 'Growing the team',
+        icon: 'team',
+        competitorLane: ['Paid per user'],
+        helpinLane: ['Unlimited teammates'],
         body: 'Help Scout charges per user. Helpin charges per workspace with unlimited teammates, so engineers and account managers can join without changing the price.',
       },
       {
         title: 'Where it runs',
+        icon: 'hosting',
+        competitorLane: ['Hosted by Help Scout'],
+        helpinLane: HOSTING_LANE,
         body: 'Help Scout is a hosted service. Helpin is open source under AGPL-3.0: use Helpin Cloud or run it on your own infrastructure.',
       },
     ],
     strengths: [
-      { title: 'Simplicity.', body: 'A calm, email-like inbox that reviewers consistently praise for ease of use.' },
-      { title: 'Channels.', body: 'WhatsApp, Instagram, Messenger and SMS on paid plans. Helpin supports web chat and email.' },
-      { title: 'Free plan and migration.', body: 'A free plan for up to five users, and a built-in importer for conversations from Zendesk, Intercom and more than 30 other tools.' },
-      { title: 'Mobile.', body: 'Beacon SDKs for iOS and Android.' },
+      { icon: 'simplicity', title: 'Simplicity.', body: 'A calm, email-like inbox that reviewers consistently praise for ease of use.' },
+      { icon: 'channels', title: 'Channels.', body: 'WhatsApp, Instagram, Messenger and SMS on paid plans. Helpin supports web chat and email.' },
+      { icon: 'import', title: 'Free plan and migration.', body: 'A free plan for up to five users, and a built-in importer for conversations from Zendesk, Intercom and more than 30 other tools.' },
+      { icon: 'mobile', title: 'Mobile.', body: 'Beacon SDKs for iOS and Android.' },
     ],
     cost: {
       title: 'What a team of eight might pay.',
-      lede: 'List prices for eight support teammates, billed annually.',
-      helpin: { amount: '$239 a month', detail: 'Growth plan for the whole workspace, including custom agents, automation and AI routing, with $239 of AI usage included each month.' },
-      competitor: { amount: '$360 a month + AI', detail: 'Plus plan at $45 a user. AI Answers add $0.75 per resolution, so 300 AI resolutions a month would bring the total to about $585.' },
+      lede: 'List prices for eight support teammates and 300 AI resolutions a month, billed annually.',
+      helpin: HELPIN_GROWTH,
+      competitor: {
+        plan: 'Plus, billed annually',
+        lines: [['8 users × $45', '$360'], ['300 AI resolutions × $0.75', '$225']],
+        total: '$585/mo',
+        totalNote: 'Prepaying for AI resolutions can lower the rate.',
+      },
       note: 'For a smaller budget, Helpin Starter is $79 a month billed annually, and Help Scout Standard is $25 a user.',
     },
     switching: {
       title: 'Moving from Help Scout.',
-      body: [
-        'Helpin can import your Help Scout Docs articles today. Conversation history is not imported yet.',
-        SWITCH_NOTE,
+      lede: 'Bring your docs over today, and keep older conversations where they are.',
+      steps: [
+        RUN_ALONGSIDE('Help Scout'),
+        { title: 'Import your Help Scout Docs', status: 'Available now', body: 'Bring your Help Scout Docs articles into Helpin Knowledge.' },
+        { title: 'Move conversation history', status: 'Not yet', body: 'Conversation history isn’t imported yet. Keep Help Scout available for older threads while new ones arrive in Helpin.' },
       ],
     },
     faqs: [
@@ -424,6 +535,7 @@ export const COMPETITORS: Competitor[] = [
   {
     slug: 'chatwoot',
     name: 'Chatwoot',
+    group: 'Customer support',
     category: 'Open-source support',
     cardLine: 'Two open-source options: a multichannel inbox, or support connected to projects, CRM and meetings.',
     checked: CHECKED,
@@ -432,9 +544,15 @@ export const COMPETITORS: Competitor[] = [
       description: 'Compare Helpin and Chatwoot, two open-source customer support platforms: channels, AI, self-hosting costs, and projects, CRM and meetings.',
     },
     hero: {
-      title: 'Helpin vs Chatwoot: two open-source ways to run support.',
+      accent: 'two open-source ways to run support.',
       lede: 'Both are open source and both can run on your own servers. Chatwoot is a mature, multichannel inbox. Helpin is a newer platform that connects support to projects, CRM, meetings and docs, with AI agents working across them.',
     },
+    glance: [
+      { label: 'License', helpin: 'AGPL-3.0', competitor: 'MIT core, paid enterprise' },
+      { label: 'Self-hosted AI', helpin: 'Included', competitor: 'Paid plan' },
+      { label: 'Channels', helpin: 'Web chat and email', competitor: 'Chat, email, social, more' },
+      { label: 'Beyond support', helpin: 'Projects, CRM, meetings', competitor: 'Through integrations' },
+    ],
     summary: {
       title: 'Both open. Built for different jobs.',
       lede: 'Chatwoot focuses on channels and the inbox. Helpin focuses on what happens after the conversation.',
@@ -485,39 +603,63 @@ export const COMPETITORS: Competitor[] = [
     differences: [
       {
         title: 'What is open',
+        icon: 'open',
+        competitorLane: ['MIT core', 'Paid enterprise edition'],
+        helpinLane: ['Every product feature', 'AGPL-3.0'],
         body: 'Chatwoot’s core is MIT-licensed, while features such as the Captain AI agent, SSO and SLAs sit in a paid enterprise edition, even when self-hosted. Every Helpin product feature is open source under AGPL-3.0; only Cloud billing code is separate.',
       },
       {
         title: 'After the conversation',
+        icon: 'workflow',
+        competitorLane: ['Conversation', 'Linear integration'],
+        helpinLane: AFTER_REPLY_LANE,
         body: 'Chatwoot links issues to Linear. Helpin includes roadmaps, sprints and objectives, so the request, the task and the follow-up share one history. Coding agents can open a pull request for review on Helpin Cloud, and are coming to the Community edition in 0.2.',
       },
       {
         title: 'Customer relationships',
+        icon: 'crm',
+        competitorLane: ['Contacts', 'Companies', 'Segments'],
+        helpinLane: ['Contacts', 'Companies', 'Deals', 'Meetings'],
         body: 'Chatwoot has contacts, companies and segments. Helpin adds deals and pipelines, plus meeting notes from Meet, Zoom, Teams and Webex, attached to the same account.',
       },
       {
         title: 'Maturity',
+        icon: 'maturity',
+        competitorLane: ['Years of releases', 'Large community'],
+        helpinLane: ['Community 0.1 beta', 'Moving quickly'],
         body: 'Chatwoot has years of releases and a large community. Helpin’s Community edition is a 0.1 beta, so expect a younger project that is moving quickly.',
       },
     ],
     strengths: [
-      { title: 'Channels.', body: 'WhatsApp, Facebook, Instagram, TikTok, Telegram, LINE, SMS and voice. Helpin supports web chat and email.' },
-      { title: 'Maturity and community.', body: 'Tens of thousands of GitHub stars and roughly monthly releases.' },
-      { title: 'Deployment options.', body: 'Official Docker, Kubernetes Helm charts, a Linux installer and cloud marketplace images.' },
-      { title: 'Mobile.', body: 'An agent app for iOS and Android, and mobile widget SDKs.' },
+      { icon: 'channels', title: 'Channels.', body: 'WhatsApp, Facebook, Instagram, TikTok, Telegram, LINE, SMS and voice. Helpin supports web chat and email.' },
+      { icon: 'community', title: 'Maturity and community.', body: 'Tens of thousands of GitHub stars and roughly monthly releases.' },
+      { icon: 'deploy', title: 'Deployment options.', body: 'Official Docker, Kubernetes Helm charts, a Linux installer and cloud marketplace images.' },
+      { icon: 'mobile', title: 'Mobile.', body: 'An agent app for iOS and Android, and mobile widget SDKs.' },
     ],
     cost: {
-      title: 'What a team of eight might pay.',
+      title: 'What self-hosting might cost a team of eight.',
       lede: 'Self-hosted, both core products are free. The difference is the AI agent.',
-      helpin: { amount: '$0 + your AI provider', detail: 'The Community edition includes the support and workspace AI agents. Connect OpenAI, Anthropic, OpenRouter or a compatible endpoint and pay the provider directly.' },
-      competitor: { amount: '$152 a month + your AI provider', detail: 'Self-hosted Captain AI needs the Premium plan at $19 an agent, and your own OpenAI-compatible key.' },
-      note: 'On Cloud, Helpin Growth is $239 a month billed annually for the whole workspace. Chatwoot Business is $39 an agent, or $312 a month for eight.',
+      helpin: {
+        plan: 'Community edition, self-hosted',
+        lines: [['License', '$0'], ['8 teammates', 'Included'], ['Support and workspace AI agents', 'Included']],
+        total: '$0 + AI provider',
+        totalNote: 'Connect OpenAI, Anthropic, OpenRouter or a compatible endpoint and pay the provider directly.',
+      },
+      competitor: {
+        plan: 'Premium, self-hosted',
+        lines: [['Community edition', '$0'], ['Captain AI: 8 agents × $19', '$152']],
+        total: '$152/mo + AI provider',
+        totalNote: 'Captain uses your own OpenAI-compatible key.',
+      },
+      note: 'Both exclude your hosting costs. On Cloud, Helpin Growth is $239 a month billed annually for the whole workspace, and Chatwoot Business is $39 an agent, or $312 a month for eight.',
     },
     switching: {
       title: 'Moving from Chatwoot.',
-      body: [
-        'There is no Chatwoot importer yet. Both products have APIs, and help articles can be recreated in Helpin Knowledge.',
-        SWITCH_NOTE,
+      lede: 'Start with part of your support, then move the rest when you’re ready.',
+      steps: [
+        RUN_ALONGSIDE('Chatwoot'),
+        REBUILD_DOCS,
+        { title: 'Import conversations', status: 'Not yet', body: 'There is no Chatwoot importer yet. Both products have APIs if you need to move records yourself.' },
       ],
     },
     faqs: [
@@ -540,6 +682,7 @@ export const COMPETITORS: Competitor[] = [
   {
     slug: 'linear',
     name: 'Linear',
+    group: 'Project management',
     category: 'Project management',
     cardLine: 'A fast issue tracker that connects to your support tool, compared with projects and support in one product.',
     checked: CHECKED,
@@ -548,9 +691,15 @@ export const COMPETITORS: Competitor[] = [
       description: 'Compare Helpin Projects and Linear: roadmaps, sprints, coding agents and pricing, and what changes when support, CRM and meetings live alongside the work.',
     },
     hero: {
-      title: 'Helpin vs Linear: plan the work with the customer attached.',
+      accent: 'plan the work with the customer attached.',
       lede: 'Linear is a fast, focused issue tracker that connects to your support tool. Helpin includes projects and support in one product, along with CRM, meetings and docs, so the request, the task and the follow-up share one history.',
     },
+    glance: [
+      { label: 'Support inbox', helpin: 'Built in', competitor: 'Through integrations' },
+      { label: 'Pricing', helpin: 'Per workspace', competitor: 'Per user' },
+      { label: 'Coding agents', helpin: 'See the customer context', competitor: 'Linear Agent and partners' },
+      { label: 'Self-hosting', helpin: 'Open source', competitor: 'Hosted only' },
+    ],
     summary: {
       title: 'A focused tracker, or projects with the customer built in.',
       lede: 'Many teams love Linear for engineering. Helpin is for teams that want customer requests and the work behind them in the same place.',
@@ -602,39 +751,63 @@ export const COMPETITORS: Competitor[] = [
     differences: [
       {
         title: 'Where customer requests come from',
+        icon: 'requests',
+        competitorLane: ['Intercom or Zendesk', 'Linear issue'],
+        helpinLane: ['Support inbox', 'Task'],
         body: 'Linear links requests from tools like Intercom and Zendesk, which needs its Business plan. In Helpin the support inbox, help center and CRM are part of the product, so the conversation is already attached to the task.',
       },
       {
         title: 'What the coding agent sees',
+        icon: 'agents',
+        competitorLane: ['Issue', 'Coding agent'],
+        helpinLane: ['Conversation and history', 'Task', 'Pull request'],
         body: 'Both can hand an issue to a coding agent. Helpin’s agents also see the customer conversation, earlier workarounds and account context behind the task, and open a pull request for your team to review.',
       },
       {
         title: 'Closing the loop',
+        icon: 'loop',
+        competitorLane: ['Release', 'Support tool', 'Customer'],
+        helpinLane: ['Release', 'Same conversation'],
         body: 'When work ships in Linear, the update goes back through your support tool. In Helpin, the same history holds the release and the original conversation, so the team can follow up with the customer from one place.',
       },
       {
         title: 'Pricing and hosting',
+        icon: 'hosting',
+        competitorLane: ['Per user', 'Hosted only'],
+        helpinLane: ['Per workspace', 'Cloud or self-hosted'],
         body: 'Linear charges per user and is hosted only. Helpin charges per workspace with unlimited teammates, and is open source, so you can self-host it.',
       },
     ],
     strengths: [
-      { title: 'Speed and design.', body: 'A fast, keyboard-first tracker that engineering teams consistently praise.' },
-      { title: 'Adoption.', body: 'Used by more than 40,000 companies, with a large community of templates and practices.' },
-      { title: 'Agent ecosystem.', body: 'Assign issues to Linear Agent or to third-party agents such as Cursor, Codex, Copilot and Devin.' },
-      { title: 'Mobile and imports.', body: 'Native iOS and Android apps, and importers for Jira, GitHub Issues, Asana and Shortcut.' },
+      { icon: 'speed', title: 'Speed and design.', body: 'A fast, keyboard-first tracker that engineering teams consistently praise.' },
+      { icon: 'community', title: 'Adoption.', body: 'Used by more than 40,000 companies, with a large community of templates and practices.' },
+      { icon: 'agents', title: 'Agent ecosystem.', body: 'Assign issues to Linear Agent or to third-party agents such as Cursor, Codex, Copilot and Devin.' },
+      { icon: 'mobile', title: 'Mobile and imports.', body: 'Native iOS and Android apps, and importers for Jira, GitHub Issues, Asana and Shortcut.' },
     ],
     cost: {
       title: 'What a team of twenty might pay.',
       lede: 'List prices for twenty people across engineering, product and support, billed annually.',
-      helpin: { amount: '$239 a month', detail: 'Growth plan for the whole workspace: projects, support, CRM, meetings and docs, with $239 of AI usage included each month.' },
-      competitor: { amount: '$320 a month + support tool', detail: 'Business plan at $16 a user, which includes the Intercom and Zendesk integrations. Your support tool is priced separately, and coding sessions use prepaid AI credits.' },
+      helpin: {
+        plan: 'Growth, billed annually',
+        lines: [['One workspace', '$239'], ['20 teammates', 'Included'], ['Support, CRM and meetings', 'Included']],
+        total: '$239/mo',
+        totalNote: 'Includes $239 of AI usage each month.',
+      },
+      competitor: {
+        plan: 'Business, billed annually',
+        lines: [['20 users × $16', '$320'], ['Support tool', 'Priced separately'], ['Coding sessions', 'Prepaid AI credits']],
+        total: '$320/mo + support tool',
+        totalNote: 'Business includes the Intercom and Zendesk integrations.',
+      },
       note: 'Linear’s Basic plan is $10 a user, but customer-request integrations with support tools need Business.',
     },
     switching: {
       title: 'Moving from Linear.',
-      body: [
-        'There is no Linear importer yet. Linear exports issues to CSV and through its API. Helpin’s agents can also connect to Linear through MCP, so you can start with Helpin for support while engineering stays in Linear.',
-        'Helpin can import projects from Shortcut today.',
+      lede: 'You don’t have to move everything at once. Many teams start with support.',
+      steps: [
+        { title: 'Keep Linear, connect it through MCP', status: 'Beta', body: 'Helpin’s agents can use Linear’s tools through MCP, so engineering can stay in Linear while support runs in Helpin.' },
+        { title: 'Plan new work in Helpin Projects', status: 'Available now', body: 'Roadmaps, sprints and objectives, with the customer conversation attached to each task.' },
+        { title: 'Import Linear issues', status: 'Not yet', body: 'There is no Linear importer yet. Linear exports issues to CSV and through its API. Helpin imports projects from Shortcut today.' },
       ],
     },
     faqs: [
