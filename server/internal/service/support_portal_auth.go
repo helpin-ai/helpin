@@ -133,6 +133,9 @@ func (s *PortalAuthService) CreateRequest(ctx context.Context, workspaceID strin
 }
 
 func (s *PortalAuthService) Requests(ctx context.Context, workspaceID, identityID, status string) ([]model.SupportPortalRequest, error) {
+	if err := s.repo.ReconcileRequests(ctx, workspaceID, identityID); err != nil {
+		return nil, err
+	}
 	return s.repo.ListRequests(ctx, workspaceID, identityID, status)
 }
 

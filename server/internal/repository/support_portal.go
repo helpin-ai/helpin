@@ -51,7 +51,11 @@ func (r *SupportPortalRepository) FindReference(ctx context.Context, workspaceID
 
 func (r *SupportPortalRepository) FindReferenceForIdentity(ctx context.Context, workspaceID, reference, identityID string) (*model.SupportPortalRequestReference, error) {
 	var item model.SupportPortalRequestReference
-	err := r.db.WithContext(ctx).Where("workspace_id = ? AND reference = ? AND portal_identity_id = ?", workspaceID, reference, identityID).First(&item).Error
+	err := r.db.WithContext(ctx).Table("support_portal_request_references AS refs").Select("refs.*").
+		Joins("JOIN support_conversations AS conv ON conv.id = refs.conversation_id AND conv.workspace_id = refs.workspace_id").
+		Joins("JOIN support_portal_identities AS identity ON identity.id = refs.portal_identity_id AND identity.workspace_id = refs.workspace_id").
+		Where("refs.workspace_id = ? AND refs.reference = ? AND refs.portal_identity_id = ? AND conv.portal_visible = true AND conv.status <> ? AND conv.channel <> ? AND conv.source <> ? AND conv.deleted_at IS NULL", workspaceID, reference, identityID, model.SupportConversationStatusSpam, "internal", "internal").
+		Where(portalContinuityGuard, model.IdentityTrustVerified, model.IdentityTrustVerified).First(&item).Error
 	if err == gorm.ErrRecordNotFound {
 		return nil, nil
 	}
