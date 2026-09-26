@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -26,5 +27,27 @@ func TestPortalSessionCookieIsHttpOnlyScopedAndCleared(t *testing.T) {
 	cookie := cleared.Result().Cookies()[0]
 	if cookie.MaxAge != -1 || cookie.Value != "" || cookie.Path != cookies[0].Path {
 		t.Fatalf("cookie not cleared: %+v", cookie)
+	}
+}
+
+func TestPortalSessionIgnoresOtherCredentials(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		modify func(*http.Request)
+		want   string
+	}{
+		{"anonymous", func(*http.Request) {}, ""},
+		{"workspace bearer", func(r *http.Request) { r.Header.Set("Authorization", "Bearer workspace-token") }, ""},
+		{"portal bearer", func(r *http.Request) { r.Header.Set("Authorization", "Bearer portal-token") }, ""},
+		{"widget cookie", func(r *http.Request) { r.AddCookie(&http.Cookie{Name: "widget_session", Value: "widget-token"}) }, ""},
+		{"portal cookie", func(r *http.Request) { r.AddCookie(&http.Cookie{Name: portalCookie, Value: "portal-token"}) }, "portal-token"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "/api/public/portal/slug/session", nil)
+			tc.modify(r)
+			if got := portalSessionCookie(r); got != tc.want {
+				t.Fatalf("portal credential = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
