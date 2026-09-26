@@ -36,6 +36,7 @@ type Handlers struct {
 	Health              *handler.HealthHandler
 	Auth                *handler.AuthHandler
 	PortalAuth          *handler.PortalAuthHandler
+	CustomerPortal      *handler.CustomerPortalHandler
 	Passkey             *handler.PasskeyHandler
 	Organization        *handler.OrganizationHandler
 	Workspace           *handler.WorkspaceHandler
@@ -316,6 +317,20 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		}
 
 		// ---- Public routes ----
+		if h.CustomerPortal != nil {
+			r.Route("/public/portal/{slug}", func(r chi.Router) {
+				if h.WidgetRateLimit != nil {
+					r.Use(h.WidgetRateLimit)
+				}
+				r.Get("", h.CustomerPortal.Config)
+				r.Get("/", h.CustomerPortal.Config)
+				r.Post("/auth/magic-link", h.CustomerPortal.RequestLink)
+				r.Post("/auth/exchange", h.CustomerPortal.Exchange)
+				r.Get("/session", h.CustomerPortal.Session)
+				r.Delete("/session", h.CustomerPortal.Logout)
+				r.Get("/requests", h.CustomerPortal.Requests)
+			})
+		}
 		if h.PortalAuth != nil {
 			r.Route("/portal/auth", func(r chi.Router) {
 				if h.WidgetRateLimit != nil {

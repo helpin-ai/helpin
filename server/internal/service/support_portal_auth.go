@@ -57,6 +57,28 @@ func (s *PortalAuthService) enabled(ctx context.Context, workspaceID string) boo
 	return settings != nil && settings.PortalEnabled
 }
 
+func (s *PortalAuthService) WorkspaceID(ctx context.Context, slug string) (string, error) {
+	ws, err := s.repo.WorkspaceBySlug(ctx, slug)
+	if err != nil {
+		return "", ErrPortalAuthInvalid
+	}
+	if !s.enabled(ctx, ws.ID) {
+		return "", ErrPortalAuthInvalid
+	}
+	return ws.ID, nil
+}
+
+func (s *PortalAuthService) Configuration(ctx context.Context, workspaceID string) (map[string]any, error) {
+	if !s.enabled(ctx, workspaceID) {
+		return nil, ErrPortalAuthInvalid
+	}
+	return map[string]any{"enabled": true, "requests_only": true, "intake_enabled": false, "branding": map[string]string{"name": "Support portal"}}, nil
+}
+
+func (s *PortalAuthService) Requests(ctx context.Context, workspaceID, identityID string) ([]model.SupportPortalRequest, error) {
+	return s.repo.ListRequests(ctx, workspaceID, identityID)
+}
+
 // RequestLink deliberately returns the same result for unknown workspaces and
 // emails. No identity is created until the mailbox owner proves possession.
 func (s *PortalAuthService) RequestLink(ctx context.Context, workspaceID, address string) {
@@ -75,7 +97,12 @@ func (s *PortalAuthService) RequestLink(ctx context.Context, workspaceID, addres
 		slog.ErrorContext(ctx, "portal link persistence failed", "workspace_id", workspaceID, "error", err)
 		return
 	}
-	target := strings.TrimRight(s.baseURL, "/") + "/portal/auth?workspace_id=" + url.QueryEscape(workspaceID) + "&token=" + url.QueryEscape(secret)
+	ws, err := s.repo.WorkspaceByID(ctx, workspaceID)
+	if err != nil {
+		slog.ErrorContext(ctx, "portal workspace lookup failed", "workspace_id", workspaceID, "error", err)
+		return
+	}
+	target := strings.TrimRight(s.baseURL, "/") + "/portal/" + url.PathEscape(ws.Slug) + "/callback?token=" + url.QueryEscape(secret)
 	if err := s.sender.SendEmail(address, "Sign in to your support portal", "<p>Use this link to sign in (valid for 15 minutes): <a href=\""+html.EscapeString(target)+"\">Sign in</a></p>", "Sign in to your support portal (valid for 15 minutes): "+target); err != nil {
 		slog.ErrorContext(ctx, "portal link delivery failed", "workspace_id", workspaceID, "error", err)
 	}
@@ -99,6 +126,9 @@ func (s *PortalAuthService) Exchange(ctx context.Context, workspaceID, secret st
 			return nil, err
 		}
 		if err := tx.Where("workspace_id = ? AND email = ?", workspaceID, link.Email).First(&identity).Error; err != nil {
+			return nil, err
+		}
+		if err := s.repo.AssociateVerifiedEmail(tx, workspaceID, link.Email, identity.ID); err != nil {
 			return nil, err
 		}
 		return &model.PortalSession{ID: uuid.NewString(), WorkspaceID: workspaceID, IdentityID: identity.ID, TokenHash: portalHash(sessionSecret), ExpiresAt: time.Now().Add(7 * 24 * time.Hour)}, nil
