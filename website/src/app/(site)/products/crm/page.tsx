@@ -90,7 +90,7 @@ const FAQS = [
 export default function CRMPage() {
   return (
     <>
-      <PreviewNav />
+      <PreviewNav tone="dark" />
       <div className="crm-page">
         <section className="crm-hero motion-hero" aria-labelledby="crm-title"><HeroVortex variant="orbit" tone="dark" />
           <div className="wrap">
