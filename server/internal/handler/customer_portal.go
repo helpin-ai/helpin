@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -170,4 +171,63 @@ func (h *CustomerPortalHandler) Requests(w http.ResponseWriter, r *http.Request)
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, response)
+}
+
+func (h *CustomerPortalHandler) RequestDetail(w http.ResponseWriter, r *http.Request) {
+	id, identity := h.authorized(w, r)
+	if identity == nil {
+		return
+	}
+	detail, err := h.auth.RequestDetail(r.Context(), id, identity.ID, chi.URLParam(r, "reference"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "unable to load request")
+		return
+	}
+	if detail == nil {
+		writeError(w, http.StatusNotFound, "request not found")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, detail)
+}
+
+func (h *CustomerPortalHandler) Reply(w http.ResponseWriter, r *http.Request) {
+	id, identity := h.authorized(w, r)
+	if identity == nil {
+		return
+	}
+	var body struct {
+		Content string `json:"content"`
+	}
+	if err := decodeJSON(r, &body); err != nil || strings.TrimSpace(body.Content) == "" {
+		writeError(w, http.StatusBadRequest, "enter a reply")
+		return
+	}
+	detail, err := h.auth.RequestDetail(r.Context(), id, identity.ID, chi.URLParam(r, "reference"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "unable to load request")
+		return
+	}
+	if detail == nil {
+		writeError(w, http.StatusNotFound, "request not found")
+		return
+	}
+	if !detail.CanReply {
+		writeError(w, http.StatusConflict, "this request cannot receive replies")
+		return
+	}
+	err = h.auth.Reply(r.Context(), id, identity, detail.Reference, body.Content)
+	if errors.Is(err, service.ErrPortalRequestNotFound) {
+		writeError(w, http.StatusNotFound, "request not found")
+		return
+	}
+	if errors.Is(err, service.ErrPortalReplyUnavailable) {
+		writeError(w, http.StatusConflict, "this request cannot receive replies")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "unable to send reply")
+		return
+	}
+	h.RequestDetail(w, r)
 }
