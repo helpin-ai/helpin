@@ -34,7 +34,7 @@ func TestPortalCreateRequestProjectsFirstCustomerMessage(t *testing.T) {
 	workspaceID := uuid.NewString()
 	identity := &model.SupportPortalIdentity{ID: uuid.NewString(), WorkspaceID: workspaceID, Email: "customer@example.com"}
 	flowState := model.SupportConversationFlowStateWaitingForHuman
-	conversation, request, err := NewPortalAuthRepository(db).CreateRequest(context.Background(), workspaceID, identity, "Help", "Please help", "REQ-123", nil, nil, nil, &flowState)
+	conversation, request, err := NewPortalAuthRepository(db).CreateRequest(context.Background(), workspaceID, identity, "Help", "Please help", "REQ-123", nil, nil, nil, &flowState, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}

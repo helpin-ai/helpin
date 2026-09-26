@@ -17,7 +17,7 @@ type PortalAuthRepository struct{ db *gorm.DB }
 func NewPortalAuthRepository(db *gorm.DB) *PortalAuthRepository { return &PortalAuthRepository{db: db} }
 
 // CreateRequest commits the inbox conversation, customer message and portal reference together.
-func (r *PortalAuthRepository) CreateRequest(ctx context.Context, workspaceID string, identity *model.SupportPortalIdentity, subject, description, reference string, mailboxID, ownerID, crmContactID, flowState *string) (*model.SupportConversation, *model.SupportPortalRequest, error) {
+func (r *PortalAuthRepository) CreateRequest(ctx context.Context, workspaceID string, identity *model.SupportPortalIdentity, subject, description, reference string, mailboxID, ownerID, crmContactID, flowState *string, attachmentIDs []string, sessionID string) (*model.SupportConversation, *model.SupportPortalRequest, error) {
 	conversation := &model.SupportConversation{
 		ID: uuid.NewString(), WorkspaceID: workspaceID, Subject: subject,
 		Status: "open", Priority: "medium", Channel: "portal", Source: "portal",
@@ -36,6 +36,11 @@ func (r *PortalAuthRepository) CreateRequest(ctx context.Context, workspaceID st
 		}
 		if err := tx.Create(message).Error; err != nil {
 			return err
+		}
+		if len(attachmentIDs) > 0 {
+			if err := NewSupportAttachmentRepository(tx).LinkPortalAttachments(ctx, attachmentIDs, workspaceID, sessionID, "", conversation.ID, message.ID); err != nil {
+				return err
+			}
 		}
 		conversation.ApplyMessageProjection(*message)
 		if err := tx.Model(conversation).Updates(map[string]any{

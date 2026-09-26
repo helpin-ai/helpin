@@ -119,20 +119,28 @@ func (h *CustomerPortalHandler) CreateRequest(w http.ResponseWriter, r *http.Req
 		return
 	}
 	var body struct {
-		Subject string `json:"subject"`
-		Message string `json:"message"`
+		Subject       string   `json:"subject"`
+		Message       string   `json:"message"`
+		AttachmentIDs []string `json:"attachment_ids"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	request, err := h.auth.CreateRequest(r.Context(), id, identity, body.Subject, body.Message)
+	session, err := h.auth.SessionForToken(r.Context(), id, portalSessionCookie(r))
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid portal session")
+		return
+	}
+	request, err := h.auth.CreateRequest(r.Context(), id, identity, body.Subject, body.Message, body.AttachmentIDs, session.ID)
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrPortalRequestInvalid):
 			writeError(w, http.StatusBadRequest, err.Error())
 		case errors.Is(err, service.ErrPortalIntakeDisabled):
 			writeError(w, http.StatusForbidden, err.Error())
+		case errors.Is(err, service.ErrPortalAttachmentsUnavailable), errors.Is(err, service.ErrPortalAttachmentsInvalid):
+			writeError(w, http.StatusBadRequest, err.Error())
 		default:
 			writeError(w, http.StatusInternalServerError, "unable to create request")
 		}
@@ -197,7 +205,8 @@ func (h *CustomerPortalHandler) Reply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Content string `json:"content"`
+		Content       string   `json:"content"`
+		AttachmentIDs []string `json:"attachment_ids"`
 	}
 	if err := decodeJSON(r, &body); err != nil || strings.TrimSpace(body.Content) == "" {
 		writeError(w, http.StatusBadRequest, "enter a reply")
@@ -216,7 +225,12 @@ func (h *CustomerPortalHandler) Reply(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "this request cannot receive replies")
 		return
 	}
-	err = h.auth.Reply(r.Context(), id, identity, detail.Reference, body.Content)
+	session, err := h.auth.SessionForToken(r.Context(), id, portalSessionCookie(r))
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid portal session")
+		return
+	}
+	err = h.auth.Reply(r.Context(), id, identity, detail.Reference, body.Content, body.AttachmentIDs, session.ID)
 	if errors.Is(err, service.ErrPortalRequestNotFound) {
 		writeError(w, http.StatusNotFound, "request not found")
 		return
@@ -225,9 +239,57 @@ func (h *CustomerPortalHandler) Reply(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "this request cannot receive replies")
 		return
 	}
+	if errors.Is(err, service.ErrPortalAttachmentsUnavailable) || errors.Is(err, service.ErrPortalAttachmentsInvalid) {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "unable to send reply")
 		return
 	}
 	h.RequestDetail(w, r)
+}
+
+func (h *CustomerPortalHandler) UploadAttachment(w http.ResponseWriter, r *http.Request) {
+	id, identity := h.authorized(w, r)
+	if identity == nil {
+		return
+	}
+	session, err := h.auth.AttachmentSession(r.Context(), id, portalSessionCookie(r))
+	if err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
+	var body model.CreateSupportAttachmentRequest
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	result, err := h.auth.UploadAttachment(r.Context(), id, identity.ID, session.ID, chi.URLParam(r, "reference"), body)
+	if errors.Is(err, service.ErrPortalRequestNotFound) {
+		writeError(w, http.StatusNotFound, "request not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, result)
+}
+
+func (h *CustomerPortalHandler) ConfirmAttachment(w http.ResponseWriter, r *http.Request) {
+	id, identity := h.authorized(w, r)
+	if identity == nil {
+		return
+	}
+	session, err := h.auth.AttachmentSession(r.Context(), id, portalSessionCookie(r))
+	if err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
+	if err := h.auth.ConfirmAttachment(r.Context(), id, identity.ID, session.ID, chi.URLParam(r, "reference"), chi.URLParam(r, "attachmentId")); err != nil {
+		writeError(w, http.StatusBadRequest, "attachment unavailable")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

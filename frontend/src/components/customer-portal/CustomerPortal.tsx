@@ -26,6 +26,29 @@ import {
   type CustomerPortalRequestFilter,
 } from '@/lib/services/customerPortalService'
 
+type PortalFile = { id: string; name: string }
+
+function PortalAttachments({ slug, reference, files, onChange, onUploading }: { slug: string; reference?: string; files: PortalFile[]; onChange: (files: PortalFile[]) => void; onUploading: (pending: boolean) => void }) {
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  return <div className="mt-4">
+    <Label>Attachments</Label>
+    <Input type="file" className="mt-2" disabled={uploading} onChange={async (event) => {
+      const file = event.target.files?.[0]
+      if (!file) return
+      setUploading(true)
+      onUploading(true)
+      setError(null)
+      try { onChange([...files, await customerPortalService.uploadAttachment(slug, file, reference)]) }
+      catch (reason) { setError(reason instanceof Error ? reason.message : 'File upload failed.') }
+      finally { setUploading(false); onUploading(false); event.target.value = '' }
+    }} />
+    {uploading && <p role="status" className="mt-2 text-sm">Uploading…</p>}
+    {files.map((file) => <p key={file.id} className="mt-2 text-sm">{file.name} <button type="button" className="underline" onClick={() => onChange(files.filter((item) => item.id !== file.id))}>Remove</button></p>)}
+    {error && <p role="alert" className="mt-2 text-sm text-destructive">{error}</p>}
+  </div>
+}
+
 type PortalStatus = 'loading' | 'unavailable' | 'anonymous' | 'authenticated'
 
 interface PortalContextValue {
@@ -383,6 +406,8 @@ export function CustomerPortalHome() {
   const [showRequestForm, setShowRequestForm] = useState(false)
   const [subject, setSubject] = useState('')
   const [message, setMessage] = useState('')
+  const [requestFiles, setRequestFiles] = useState<PortalFile[]>([])
+  const [requestUploading, setRequestUploading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submissionError, setSubmissionError] = useState<string | null>(null)
 
@@ -410,16 +435,19 @@ export function CustomerPortalHome() {
 
   async function createRequest(event: FormEvent) {
     event.preventDefault()
+    if (requestUploading) return
     setSubmitting(true)
     setSubmissionError(null)
     try {
       const request = await customerPortalService.createRequest(slug, {
         subject: subject.trim(),
         message: message.trim(),
+        attachment_ids: requestFiles.map((file) => file.id),
       })
       setReload((current) => current + 1)
       setSubject('')
       setMessage('')
+      setRequestFiles([])
       setShowRequestForm(false)
     } catch (requestError) {
       if (handleSessionError(requestError)) return
@@ -492,10 +520,11 @@ export function CustomerPortalHome() {
                 required
               />
             </div>
+            {configuration?.file_uploads_enabled && <PortalAttachments slug={slug} files={requestFiles} onChange={setRequestFiles} onUploading={setRequestUploading} />}
             {submissionError ? (
               <p className="mt-3 text-sm text-destructive" role="alert">{submissionError}</p>
             ) : null}
-            <Button className="mt-5" type="submit" disabled={submitting}>
+            <Button className="mt-5" type="submit" disabled={submitting || requestUploading}>
               {submitting ? 'Sending…' : 'Send request'}
             </Button>
           </form>
@@ -534,6 +563,8 @@ export function CustomerPortalRequestPage({ reference }: { reference: string }) 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reply, setReply] = useState('')
+  const [replyFiles, setReplyFiles] = useState<PortalFile[]>([])
+  const [replyUploading, setReplyUploading] = useState(false)
   const [sending, setSending] = useState(false)
 
   useEffect(() => {
@@ -551,12 +582,13 @@ export function CustomerPortalRequestPage({ reference }: { reference: string }) 
 
   async function send(event: FormEvent) {
     event.preventDefault()
-    if (!request?.can_reply || !reply.trim()) return
+    if (!request?.can_reply || !reply.trim() || replyUploading) return
     setSending(true)
     setError(null)
     try {
-      setRequest(await customerPortalService.reply(slug, reference, reply.trim()))
+      setRequest(await customerPortalService.reply(slug, reference, reply.trim(), replyFiles.map((file) => file.id)))
       setReply('')
+      setReplyFiles([])
     } catch (reason) {
       if (handleSessionError(reason)) return
       if (reason instanceof CustomerPortalApiError && (reason.status === 409 || reason.status === 404)) {
@@ -584,7 +616,8 @@ export function CustomerPortalRequestPage({ reference }: { reference: string }) 
         {request.can_reply ? <form onSubmit={(event) => void send(event)} className="mt-8">
           <Label htmlFor="portal-reply">Reply</Label>
           <Textarea id="portal-reply" className="mt-2 min-h-28" value={reply} onChange={(event) => setReply(event.target.value)} required />
-          <Button type="submit" disabled={sending || !reply.trim()} className="mt-4">{sending ? 'Sending…' : 'Send reply'}</Button>
+          {configuration?.file_uploads_enabled && <PortalAttachments slug={slug} reference={reference} files={replyFiles} onChange={setReplyFiles} onUploading={setReplyUploading} />}
+          <Button type="submit" disabled={sending || replyUploading || !reply.trim()} className="mt-4">{sending ? 'Sending…' : 'Send reply'}</Button>
         </form> : <p className="mt-8 text-sm text-muted-foreground">This request cannot receive replies.</p>}
       </>}
     </main>
