@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowRight, BookOpen, Bot, CalendarCheck, Check, ChevronRight, FileSearch, FolderKanban, Handshake, Inbox, Mic, PenLine, RefreshCw, Scale } from 'lucide-react';
+import { ArrowRight, BookOpen, BookOpenCheck, Bot, CalendarCheck, Check, ChevronRight, Cpu, FileSearch, FolderKanban, GitBranch, Handshake, Inbox, Mic, PenLine, RefreshCw, Scale, Wallet } from 'lucide-react';
 import { createPageMetadata, PAGE_SEO, SITE_URL } from '@/lib/metadata';
 import { JsonLd } from '@/lib/structured-data';
 import { CustomerLogos } from '../_components/CustomerLogos';
@@ -19,6 +19,14 @@ import '../_components/platform/platform-polish.css';
 import './compare.css';
 
 export const metadata = createPageMetadata(PAGE_SEO.compare);
+
+// The differences support teams notice first. Helpin-only claims; each comparison page says where the other tool stands.
+const ADVANTAGES = [
+  { Icon: Wallet, title: 'No seat or resolution fees', body: 'One price per workspace with unlimited teammates. Cloud plans include AI usage, and self-hosting is free.' },
+  { Icon: Cpu, title: 'Bring your own AI models', body: 'Run the agents on the provider and models you choose: always when you self-host, and on Cloud Enterprise.' },
+  { Icon: BookOpenCheck, title: 'Docs that keep up with the product', body: 'Agents draft doc updates from support conversations and the code changes you ship. Your team publishes.' },
+  { Icon: RefreshCw, title: 'From ticket to fix to customer', body: 'Agents turn the ticket into a task, open the fix and tell the customer when it ships, with the approvals you choose.' },
+];
 
 const CHECKED = formatChecked(COMPETITORS[0].checked);
 const MATRIX_COLUMNS = MATRIX_TOOLS.map(slug => COMPETITORS.find(item => item.slug === slug)!).map(({ slug, name, category }) => ({ slug, name, category }));
@@ -100,13 +108,13 @@ export default function CompareHub() {
             <div className="platform-hero-copy">
               <span className="eyebrow">Compare Helpin</span>
               <h1>Why teams switch <span>to Helpin.</span></h1>
-              <p className="lede">One customer history for support, projects, CRM, meetings and docs, with AI agents that do the work in between. See how Helpin compares with Intercom, Zendesk, Help Scout, Chatwoot and Linear, including where they’re stronger.</p>
+              <p className="lede">Open source, on Helpin Cloud or your own servers: one customer history for support, projects, CRM, meetings and docs, with AI agents that do the work in between. See how Helpin compares with Intercom, Zendesk, Help Scout, Chatwoot and Linear, including where they’re stronger.</p>
               <CtaRow primaryLabel="Start free trial" primaryHref={SIGNUP_URL} secondaryHref={DEMO_URL} secondaryLabel="Talk to us about switching" />
               <CtaNote trial support />
               <div className="platform-hero-points">
+                <span><GitBranch size={14} aria-hidden="true" />Open source · Cloud or self-hosted</span>
                 <span><PenLine size={14} aria-hidden="true" />By the Helpin team</span>
                 <span><CalendarCheck size={14} aria-hidden="true" />Verified {CHECKED}</span>
-                <span><Scale size={14} aria-hidden="true" />Strengths on both sides</span>
               </div>
             </div>
           </div>
@@ -124,7 +132,10 @@ export default function CompareHub() {
 
         <section id="why-teams-switch" className="platform-soft">
           <div className="wrap">
-            <div className="platform-centered"><SectionHead eyebrow="Why teams switch" title="Less switching between tools. More done for the customer." lede="The same history powers every part of Helpin, so the work after the reply doesn’t get lost between products." /></div>
+            <div className="platform-centered"><SectionHead eyebrow="Why teams switch" title="Less switching between tools. More done for the customer." lede="Helpin is open source, on Helpin Cloud or your own servers. These are the differences teams notice first, and one history runs through every part of the product." /></div>
+            <ul className="cmp-advantages">
+              {ADVANTAGES.map(({ Icon, title, body }) => <li key={title}><Icon size={20} aria-hidden="true" /><h3>{title}</h3><p>{body}</p></li>)}
+            </ul>
             <div className="cmp-reason-rows">
               {REASONS.map((reason, index) => (
                 <article key={reason.title} className={index % 2 ? 'cmp-reason-row cmp-reason-row-flip' : 'cmp-reason-row'}>
