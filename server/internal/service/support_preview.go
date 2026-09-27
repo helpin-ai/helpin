@@ -17,7 +17,7 @@ import (
 
 const supportPreviewTarget = "support_preview"
 
-var supportPreviewTools = []string{"search_knowledge", "send_support_reply", "escalate_to_human", "list_conversation_messages", "get_support_conversation"}
+var supportPreviewTools = []string{"search_knowledge", "send_support_reply", "escalate_to_human", "skip_support_reply", "list_conversation_messages", "get_support_conversation"}
 
 // SupportPreviewService launches ordinary, metered Runtime runs with an isolated
 // target. No live conversation, processing attempt, or visitor message is created.
@@ -122,7 +122,7 @@ func (s *SupportPreviewService) Start(ctx context.Context, workspaceID, agentID 
 
 func supportPreviewAllowedTools(agent *model.Agent) ([]string, []string, error) {
 	var tools, excluded []string
-	for _, name := range agentcontract.NormalizeToolNames(parseJSONStringSlice(agent.AllowedTools)) {
+	for _, name := range agentcontract.NormalizeToolNames(runtimeAgentFromHelpinAgent(agent, "").AllowedTools) {
 		if slices.Contains(supportPreviewTools, name) {
 			tools = append(tools, name)
 		} else {

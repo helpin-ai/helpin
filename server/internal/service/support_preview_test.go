@@ -292,3 +292,28 @@ func TestSupportPreviewGenericRunSurfacesDoNotLeakText(t *testing.T) {
 		t.Fatal("preview broadcast to workspace")
 	}
 }
+
+func TestSupportPreviewSkipReplyHasNoLiveEffects(t *testing.T) {
+	db, preview, commands, _, ctx := previewFixture(t)
+	result, err := preview.Start(ctx, "workspace", "agent-1", model.SupportAIPreviewRequest{Message: "A notification with no question"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta := model.InternalCommandContext{WorkspaceID: "workspace", AgentID: "agent-1", RunID: "run_runtime_1", TargetType: supportPreviewTarget, TargetID: result.RunID}
+	if _, err = commands.Execute(ctx, meta, "support.skip_reply", json.RawMessage(`{"reason":"spam","summary":"Impersonation with unrelated link"}`)); err != nil {
+		t.Fatal(err)
+	}
+	got, err := preview.Get(ctx, "workspace", "agent-1", result.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.FinalDecision != "no_reply" || got.Answer != nil {
+		t.Fatalf("unexpected outcome: %+v", got)
+	}
+	for _, table := range []string{"support_conversations", "support_messages"} {
+		var count int64
+		if err = db.Table(table).Count(&count).Error; err != nil || count != 0 {
+			t.Fatalf("preview modified %s: %d %v", table, count, err)
+		}
+	}
+}

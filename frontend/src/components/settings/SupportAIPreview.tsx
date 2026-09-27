@@ -41,7 +41,7 @@ export function SupportAIPreview({ workspaceId, agentId }: { workspaceId: string
       {error && <p role="alert" className="text-sm text-destructive">{error.message}</p>}
       {response && <div className="space-y-2" aria-live="polite">
         {response.provider && <p className="text-xs text-muted-foreground">{response.provider} / {response.model}</p>}
-        <p className="text-sm">{response.final_decision === 'pending' ? 'Waiting for the assistant…' : `${response.final_decision}: ${response.final_reason.replaceAll('_', ' ')}`}</p>
+        <p className="text-sm">{response.final_decision === 'pending' ? 'Waiting for the assistant…' : `${response.final_decision === 'no_reply' ? 'No reply sent' : response.final_decision}: ${response.final_reason.replaceAll('_', ' ')}`}</p>
         {response.answer && <>
           {!response.answer.can_answer && <p className="text-sm text-destructive">This proposed reply failed validation and would not be sent.</p>}
           <p className="whitespace-pre-wrap rounded-md bg-muted p-3 text-sm">{response.answer.content}</p>

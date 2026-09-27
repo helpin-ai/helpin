@@ -93,6 +93,7 @@ var runtimeToolRiskLevels = map[string]string{
 	"update_conversation_status":    RiskLevelRoutine,
 	"complete_support_coverage_gap": RiskLevelRoutine,
 	"finish_support_follow_up":      RiskLevelSensitive,
+	"skip_support_reply":            RiskLevelSensitive,
 	"send_support_reply":            RiskLevelSensitive, "escalate_to_human": RiskLevelSensitive,
 	"run_epic_delivery_pipeline": RiskLevelDestructive,
 	// Image tools only create new private artifacts on the workspace's own AI

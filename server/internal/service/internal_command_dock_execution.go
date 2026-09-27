@@ -328,7 +328,7 @@ func dockAllowsDirectMutation(def InternalCommandDefinition) bool {
 		return false
 	}
 	switch strings.TrimSpace(def.Tool.Alias) {
-	case "send_support_reply", "escalate_to_human":
+	case "send_support_reply", "escalate_to_human", "skip_support_reply":
 		return false
 	default:
 		return true
