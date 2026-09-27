@@ -235,7 +235,7 @@ export function useSupportRoutingUsage(workspaceId: string) {
   });
 }
 
-export function useUpdateChatSettings(workspaceId: string) {
+function useUpdateInstallationSettings(workspaceId: string, label: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (settings: Partial<SupportInboxSettings & WidgetOriginSettings>) =>
@@ -250,9 +250,17 @@ export function useUpdateChatSettings(workspaceId: string) {
       ]);
     },
     onError: (error: Error) => {
-      toast.error('Failed to update chat settings', { description: error.message });
+      toast.error(`Failed to update ${label}`, { description: error.message });
     },
   });
+}
+
+export function useUpdateChatSettings(workspaceId: string) {
+  return useUpdateInstallationSettings(workspaceId, 'chat settings');
+}
+
+export function useUpdateCustomerPortalSettings(workspaceId: string) {
+  return useUpdateInstallationSettings(workspaceId, 'customer portal settings');
 }
 
 export function useRegenerateWidgetKey(workspaceId: string) {

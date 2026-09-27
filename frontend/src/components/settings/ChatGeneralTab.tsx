@@ -136,10 +136,6 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
   const [replyTimePreset, setReplyTimePreset] = useState<string>('few_minutes');
   const [replyTimeCustomMinutes, setReplyTimeCustomMinutes] = useState<number | null>(null);
   const [specialNoticeText, setSpecialNoticeText] = useState<string>('');
-  const [portalEnabled, setPortalEnabled] = useState(false);
-  const [portalRequestsOnly, setPortalRequestsOnly] = useState(false);
-  const [portalAnonymousIntakeEnabled, setPortalAnonymousIntakeEnabled] = useState(false);
-  const [portalIntakeEnabled, setPortalIntakeEnabled] = useState(false);
   const [emailFallbackDelaySecs, setEmailFallbackDelaySecs] = useState(DEFAULT_EMAIL_FALLBACK_DELAY_SECS);
   const [emailFallbackFromName, setEmailFallbackFromName] = useState('');
   const [emailFallbackMaxDeliveryAgeMins, setEmailFallbackMaxDeliveryAgeMins] = useState(10);
@@ -171,10 +167,6 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
       setRequireEmail(s.require_email_before_chat);
       setRequirePhone(s.require_phone_after_email);
       setWelcomeMessage(s.welcome_message);
-      setPortalEnabled(s.portal_enabled ?? false);
-      setPortalRequestsOnly(s.portal_requests_only ?? false);
-      setPortalAnonymousIntakeEnabled(s.portal_anonymous_intake_enabled ?? false);
-      setPortalIntakeEnabled(s.portal_intake_enabled ?? false);
       setBrandColor(s.brand_color);
       setShowBranding(canRemoveBranding ? s.show_branding : true);
       setLauncherPosition(s.launcher_position);
@@ -273,10 +265,6 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
     reply_time_preset: replyTimePreset,
     reply_time_custom_minutes: replyTimePreset === 'custom' ? replyTimeCustomMinutes : null,
     special_notice_text: specialNoticeText.trim() ? specialNoticeText : null,
-    portal_enabled: portalEnabled,
-    portal_requests_only: portalRequestsOnly,
-    portal_anonymous_intake_enabled: portalAnonymousIntakeEnabled,
-    portal_intake_enabled: portalIntakeEnabled,
     email_fallback_enabled: true,
     email_fallback_delay_secs: emailFallbackDelaySecs,
     email_fallback_from_name: emailFallbackFromName,
@@ -937,63 +925,6 @@ function Dashboard() {
         <div className="flex-1 space-y-3 p-4">
         {saveIndicator}
         {data && <WidgetOriginSettings key={workspaceId} workspaceId={workspaceId} installation={data} canManageSigningSecret={canManageSigningSecret} />}
-        {/* Customer Portal */}
-        <section className="border-y border-border/70 px-2 py-5" aria-labelledby="customer-portal-settings-heading">
-          <div className="mb-5">
-            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Customer portal</p>
-            <h2 id="customer-portal-settings-heading" className="mt-1 text-sm font-medium">Portal access and intake</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Configure customer portal access and new-request intake.</p>
-            <p className="mt-3 text-xs text-muted-foreground" aria-live="polite">
-              Portal setting: <span className="font-medium text-foreground">{portalEnabled ? 'On' : 'Off'}</span>
-              {' · '}
-              Intake setting: <span className="font-medium text-foreground">{portalIntakeEnabled ? 'On' : 'Off'}</span>
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">These settings do not confirm customer availability; the public portal service must also be ready.</p>
-          </div>
-
-          <div className="divide-y divide-border/70">
-            <div className="flex items-center justify-between gap-6 py-3">
-              <div>
-                <Label htmlFor="portal-enabled" className="text-sm">Enable customer portal</Label>
-                <p className="text-xs text-muted-foreground">Allow customers to access the portal.</p>
-              </div>
-              <Switch id="portal-enabled" checked={portalEnabled} onCheckedChange={setPortalEnabled} />
-            </div>
-            <div className="flex items-center justify-between gap-6 py-3">
-              <div>
-                <Label htmlFor="portal-requests-only" className="text-sm">Requests-only mode</Label>
-                <p className="text-xs text-muted-foreground">Limit the portal to customer support requests.</p>
-              </div>
-              <Switch id="portal-requests-only" checked={portalRequestsOnly} onCheckedChange={setPortalRequestsOnly} />
-            </div>
-            <div className="flex items-center justify-between gap-6 py-3">
-              <div>
-                <Label htmlFor="portal-anonymous-intake" className="text-sm">Allow anonymous intake</Label>
-                <p className="text-xs text-muted-foreground">Let visitors submit requests without signing in.</p>
-              </div>
-              <Switch id="portal-anonymous-intake" checked={portalAnonymousIntakeEnabled} onCheckedChange={setPortalAnonymousIntakeEnabled} />
-            </div>
-            <div className="flex items-center justify-between gap-6 py-3">
-              <div>
-                <Label htmlFor="portal-intake-enabled" className="text-sm">Enable portal intake</Label>
-                <p className="text-xs text-muted-foreground">Allow new requests to be submitted through the portal.</p>
-              </div>
-              <Switch id="portal-intake-enabled" checked={portalIntakeEnabled} onCheckedChange={setPortalIntakeEnabled} />
-            </div>
-          </div>
-
-          <div className="mt-5 border-t border-border/70 pt-4">
-            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Planned portal features</p>
-            <div className="mt-2 divide-y divide-border/70">
-              {['Forms', 'SLA policies', 'CSAT surveys', 'Organization sharing', 'In-portal knowledge'].map((feature) => (
-                <div key={feature} className="flex items-center justify-between gap-4 py-2.5 text-sm text-muted-foreground">
-                  <span>{feature}</span>
-                  <span className="text-xs">Coming soon</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
         {/* Widget Installation */}
         <div className={supportSectionClass}>
           <button

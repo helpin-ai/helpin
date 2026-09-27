@@ -7,7 +7,7 @@ export function workspaceSurface(path: string): WorkspaceModule | null {
     if (page?.startsWith('crm-')) return 'crm';
     if (['workflows', 'delivery', 'labels', 'task-templates', 'recurring-tasks'].includes(page)) return 'pm';
     if (page === 'automations') return 'automation';
-    if (['support-ai-assistant', 'support-translation', 'chat-general', 'inboxes-routing'].includes(page)) return 'support';
+    if (['support-ai-assistant', 'support-translation', 'chat-general', 'customer-portal', 'inboxes-routing'].includes(page)) return 'support';
     if (['helpcenter', 'redirects', 'knowledge'].includes(page)) return 'docs';
     if (['ai', 'ai-connections', 'external-mcp'].includes(page)) return 'agents';
   }

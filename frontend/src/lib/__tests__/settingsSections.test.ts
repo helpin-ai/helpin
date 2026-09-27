@@ -77,12 +77,13 @@ describe('getSettingsSidebarGroups', () => {
     expect(withSettingsRead).toContain('external-mcp');
   });
 
-  it('puts inbox and widget setup before AI assistant', () => {
+  it('puts inbox, widget, and portal settings before AI assistant', () => {
     const supportGroup = getSettingsSidebarGroups(true).find((group) => group.label === 'Support');
 
-    expect(supportGroup?.sections.map((section) => section.id).slice(0, 3)).toEqual([
+    expect(supportGroup?.sections.map((section) => section.id).slice(0, 4)).toEqual([
       'inboxes-routing',
       'chat-general',
+      'customer-portal',
       'support-ai-assistant',
     ]);
   });
