@@ -272,12 +272,12 @@ function ObjectiveCard({
             {stateCfg.label}
           </QuietStatusText>
           {objective.state !== 'closed' && (
-            <span className={`text-xs ${health.className}`}>
+            <span className={`ml-auto whitespace-nowrap text-xs ${health.className}`}>
               {health.label}
             </span>
           )}
           {dateLabel && (
-            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+            <span className="ml-auto flex items-center gap-1 whitespace-nowrap text-xs text-muted-foreground">
               <Calendar03Icon className="h-3 w-3" />
               {dateLabel}
             </span>
