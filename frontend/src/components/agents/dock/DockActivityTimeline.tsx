@@ -116,7 +116,7 @@ export function DockActivityTimeline({ group, runStatus, pauseReason, resolveAct
   const summary = (
     <button type="button" className={styles.summary} aria-expanded={expanded} aria-controls={detailsId} onClick={() => { setManuallyToggled(true); setExpanded(!expanded); }}>
       <span className={cn(styles.summaryIcon, failed ? 'text-destructive' : 'text-muted-foreground')} aria-hidden="true">
-        {offline ? <span className="h-1.5 w-1.5 rounded-full bg-amber-500" /> : group.active ? <AskAgentWorkAnimation className="h-5 w-5" /> : failed || (!group.completed && (runStatus === 'failed' || runStatus === 'cancelled')) ? <Cancel01Icon className="h-4 w-4" /> : <Tick01Icon className="h-3.5 w-3.5" />}
+        {offline ? <span className="h-1.5 w-1.5 rounded-full bg-amber-500" /> : group.active ? <AskAgentWorkAnimation /> : failed || (!group.completed && (runStatus === 'failed' || runStatus === 'cancelled')) ? <Cancel01Icon className="h-4 w-4" /> : <Tick01Icon className="h-3.5 w-3.5" />}
       </span>
       <span className={styles.label} role={group.active ? 'status' : undefined}>{label}</span>
       {!offline && duration !== undefined && duration > 0 && <span className={styles.elapsed}>{formatCodingSessionElapsed(duration)}</span>}
