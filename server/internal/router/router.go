@@ -1340,6 +1340,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/objectives/{id}/epics", h.PMObjective.AddEpic)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/objectives/{id}/epics/{epicId}", h.PMObjective.RemoveEpic)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/objectives/{id}/key-results", h.PMObjective.CreateKeyResult)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/key-results/{id}/activity", h.PMObjective.ListKeyResultActivity)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/key-results/{id}", h.PMObjective.UpdateKeyResult)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/key-results/{id}", h.PMObjective.DeleteKeyResult)
 

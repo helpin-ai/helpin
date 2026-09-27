@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { QuietPrimaryAction, QuietTextAction, QuietUnderlineInput } from '@/components/design-system/quiet';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/design-system/quiet-dropdown-select';
-import { Checkbox } from '@/components/ui/checkbox';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import type { CreateKeyResultRequest, KeyResult, KeyResultType } from '@/lib/pmTypes';
@@ -16,9 +15,7 @@ export function KeyResultEditorDialog({ result, onClose, onSave, onDelete }: {
   const [name, setName] = useState(result?.name ?? '');
   const [type, setType] = useState<KeyResultType>(result?.result_type ?? 'percent');
   const [start, setStart] = useState(String(result?.result_type === 'boolean' ? 0 : result?.initial_value ?? 0));
-  const [current, setCurrent] = useState(String(result?.result_type === 'boolean' ? result.progress : result?.current_value ?? 0));
   const [target, setTarget] = useState(String(result?.result_type === 'boolean' ? 100 : result?.target_value ?? 100));
-  const [complete, setComplete] = useState((result?.progress ?? 0) >= 100);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isCompletion = type === 'boolean';
@@ -27,15 +24,15 @@ export function KeyResultEditorDialog({ result, onClose, onSave, onDelete }: {
     event.preventDefault();
     if (saving || !name.trim()) return;
     const initialValue = isCompletion ? 0 : Number(start);
-    const currentValue = isCompletion ? (complete ? 1 : 0) : result ? Number(current) : initialValue;
+    const currentValue = isCompletion ? 0 : initialValue;
     const targetValue = isCompletion ? 1 : Number(target);
-    if (![initialValue, currentValue, targetValue].every(Number.isFinite) || (!isCompletion && (!start.trim() || !target.trim() || (result && !current.trim())))) {
+    if (![initialValue, targetValue].every(Number.isFinite) || (!isCompletion && (!start.trim() || !target.trim()))) {
       setError('Enter a valid number in each value field.');
       return;
     }
     setSaving(true); setError(null);
     try {
-      await onSave({ name: name.trim(), result_type: type, initial_value: initialValue, current_value: currentValue, target_value: targetValue });
+      await onSave({ name: name.trim(), result_type: type, initial_value: initialValue, ...(!result ? { current_value: currentValue } : {}), target_value: targetValue });
       onClose();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not save key result. Try again.');
@@ -78,12 +75,9 @@ export function KeyResultEditorDialog({ result, onClose, onSave, onDelete }: {
               <SelectContent><SelectItem value="percent">Percentage</SelectItem><SelectItem value="numeric">Number</SelectItem><SelectItem value="boolean">Complete / incomplete</SelectItem></SelectContent>
             </Select>
           </div>
-          {isCompletion ? (
-            <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-quiet-text-secondary"><Checkbox checked={complete} disabled={saving} onCheckedChange={checked => setComplete(checked === true)} />Completed</label>
-          ) : (
-            <div className={`grid gap-4 ${result ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
+          {!isCompletion && (
+            <div className="grid gap-4 sm:grid-cols-2">
               {numberField('key-result-start', 'Starting value', start, setStart)}
-              {result && numberField('key-result-current', 'Current value', current, setCurrent)}
               {numberField('key-result-target', 'Target value', target, setTarget)}
             </div>
           )}

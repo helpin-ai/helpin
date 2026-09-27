@@ -2,9 +2,11 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -701,47 +703,81 @@ func (s *PMObjectiveService) UpdateKeyResult(ctx context.Context, id string, req
 		return nil, err
 	}
 
-	if req.Name != nil {
-		name := strings.TrimSpace(*req.Name)
-		if name == "" {
-			return nil, fmt.Errorf("name cannot be empty")
+	updated, err := s.krRepo.UpdateWithActivity(ctx, id, func(kr *model.PMKeyResult) (*model.PMActivityLog, error) {
+		previousValue := kr.CurrentValue
+		if req.Name != nil {
+			name := strings.TrimSpace(*req.Name)
+			if name == "" {
+				return nil, fmt.Errorf("name cannot be empty")
+			}
+			kr.Name = name
 		}
-		kr.Name = name
-	}
-	if req.ResultType != nil {
-		if !isValidKeyResultType(*req.ResultType) {
-			return nil, fmt.Errorf("invalid result_type")
+		if req.ResultType != nil {
+			if !isValidKeyResultType(*req.ResultType) {
+				return nil, fmt.Errorf("invalid result_type")
+			}
+			kr.ResultType = *req.ResultType
 		}
-		kr.ResultType = *req.ResultType
-	}
-	if req.InitialValue != nil {
-		kr.InitialValue = *req.InitialValue
-	}
-	if req.CurrentValue != nil {
-		kr.CurrentValue = *req.CurrentValue
-	}
-	if req.TargetValue != nil {
-		kr.TargetValue = *req.TargetValue
-	}
-	if req.Note != nil {
-		kr.Note = req.Note
-		now := time.Now()
-		kr.NoteUpdatedBy = optionalActor(actorID)
-		kr.NoteUpdatedAt = &now
-	}
-	if req.Position != nil {
-		kr.Position = *req.Position
-	}
-	kr.Progress = computeKeyResultProgress(kr)
-	kr.UpdatedBy = optionalActor(actorID)
+		if req.InitialValue != nil {
+			kr.InitialValue = *req.InitialValue
+		}
+		if req.CurrentValue != nil {
+			kr.CurrentValue = *req.CurrentValue
+		}
+		if req.TargetValue != nil {
+			kr.TargetValue = *req.TargetValue
+		}
+		if req.Note != nil {
+			kr.Note = req.Note
+			now := time.Now()
+			kr.NoteUpdatedBy = optionalActor(actorID)
+			kr.NoteUpdatedAt = &now
+		}
+		if req.Position != nil {
+			kr.Position = *req.Position
+		}
+		kr.Progress = computeKeyResultProgress(kr)
+		kr.UpdatedBy = optionalActor(actorID)
 
-	if err := s.krRepo.Update(ctx, kr); err != nil {
+		if req.CurrentValue == nil || previousValue == kr.CurrentValue {
+			return nil, nil
+		}
+		oldValue := strconv.FormatFloat(previousValue, 'f', -1, 64)
+		newValue := strconv.FormatFloat(kr.CurrentValue, 'f', -1, 64)
+		field := "current_value"
+		metadata, err := json.Marshal(map[string]interface{}{"result_type": kr.ResultType, "target_value": kr.TargetValue})
+		if err != nil {
+			return nil, err
+		}
+		return &model.PMActivityLog{
+			WorkspaceID: parentObj.Objective.WorkspaceID, EntityType: "key_result", EntityID: id,
+			ActorID: optionalActor(actorID), Action: "updated", FieldName: &field,
+			OldValue: &oldValue, NewValue: &newValue, Metadata: metadata,
+		}, nil
+	})
+	if err != nil {
 		return nil, err
 	}
+	kr = updated
 	if parentObj != nil {
 		s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "key_result", EntityID: id, WorkspaceID: parentObj.Objective.WorkspaceID, ActorID: actorID, ParentType: "objective", ParentID: kr.ObjectiveID})
 	}
 	return kr, nil
+}
+
+// ListKeyResultActivity returns value updates only after checking workspace scope.
+func (s *PMObjectiveService) ListKeyResultActivity(ctx context.Context, workspaceID, id string, pagination model.PMPagination) ([]model.ActivityLogEntry, int64, error) {
+	if workspaceID == "" {
+		return nil, 0, errCommandInput("workspace_id is required")
+	}
+	kr, err := s.krRepo.GetByID(ctx, id, workspaceID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if kr == nil {
+		return nil, 0, errCommandNotFound("key result")
+	}
+	return s.activitySvc.ListEntity(ctx, "key_result", id, pagination)
 }
 
 // DeleteKeyResult hard-deletes a key result.
@@ -777,9 +813,7 @@ func computeKeyResultProgress(kr *model.PMKeyResult) float64 {
 			return 100
 		}
 		return 0
-	case model.PMKeyResultTypePercent:
-		return math.Min(math.Max(kr.CurrentValue, 0), 100)
-	case model.PMKeyResultTypeNumeric:
+	case model.PMKeyResultTypePercent, model.PMKeyResultTypeNumeric:
 		denom := kr.TargetValue - kr.InitialValue
 		if denom == 0 {
 			return 0
