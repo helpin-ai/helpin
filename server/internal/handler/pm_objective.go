@@ -262,3 +262,23 @@ func (h *PMObjectiveHandler) DeleteKeyResult(w http.ResponseWriter, r *http.Requ
 	}
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "key result deleted"})
 }
+
+// ListKeyResultActivity handles GET /api/pm/key-results/{id}/activity.
+func (h *PMObjectiveHandler) ListKeyResultActivity(w http.ResponseWriter, r *http.Request) {
+	pagination := queryPagination(r)
+	pagination.Page = max(1, pagination.Page)
+	if pagination.PerPage <= 0 {
+		pagination.PerPage = 20
+	}
+	pagination.PerPage = min(100, pagination.PerPage)
+	entries, total, err := h.objectiveService.ListKeyResultActivity(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"), pagination)
+	if err != nil {
+		writeError(w, objectiveErrorStatus(err), err.Error())
+		return
+	}
+	if entries == nil {
+		entries = []model.ActivityLogEntry{}
+	}
+	totalPages := int((total + int64(pagination.PerPage) - 1) / int64(pagination.PerPage))
+	writeJSON(w, http.StatusOK, model.PaginatedResponse{Data: entries, Total: int(total), Page: pagination.Page, PerPage: pagination.PerPage, TotalPages: totalPages})
+}

@@ -1,3 +1,4 @@
+import { ObjectiveQuarterBoard } from './ObjectiveQuarterBoard';
 import { QuietEmptyState, QuietFilterDropdown, QuietPageHeader, QuietPrimaryAction, QuietSearchInput, QuietStatusText, QuietTextAction } from '@/components/design-system/quiet';
 import { PMFilterBar, type PMFilterDefinition, type PMFilterOption } from '@/components/pm/PMFilterControls';
 import { OwnerAvatarFilterRow } from '@/components/pm/OwnerAvatarFilterRow';
@@ -176,20 +177,18 @@ export function ObjectivesPage() {
         <PMFilterBar definitions={definitions} values={filters} visibleKeys={visibleKeys}
           onToggle={toggleFilter} onRemove={key => setFilters(current => ({ ...current, [key]: [] }))} onClearAll={clearAll} />
       </div>
-      <div role="region" aria-label="Objectives" className="min-h-0 flex-1 overflow-auto p-4 pb-20 md:p-6 md:pb-24">
-        {isLoading ? <div role="status" className="flex items-center gap-2 py-8 text-sm text-quiet-text-tertiary"><Loading01Icon className="h-4 w-4 animate-spin" />Loading objectives…</div>
-          : isError ? <QuietEmptyState title="Couldn’t load objectives" description="Try loading your objectives again."
-            action={<QuietTextAction onClick={() => void refetch()}>Retry</QuietTextAction>} />
-          : filtered.length > 0 ? (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {filtered.map(objective => <MemoObjectiveCard key={objective.objective.id} data={objective}
-                slug={workspace?.slug ?? ''} canEdit={canEdit} isAdmin={isAdmin} onArchive={handleArchive} />)}
-            </div>
-          ) : <QuietEmptyState title={hasFilters ? 'No objectives match these filters' : 'Create your first objective'}
-            description={hasFilters ? 'Adjust your search or clear filters to see more objectives.' : 'Define a goal, add measurable key results, and connect the epics that contribute to it.'}
-            action={hasFilters ? <QuietTextAction onClick={clearAll}>Clear filters</QuietTextAction>
-              : canEdit ? <CreateObjectiveButton disabled={!canCreateObjective} onClick={() => openCreate('objective')} /> : undefined} />}
-      </div>
+      {isLoading ? <div role="status" className="flex items-center gap-2 p-6 text-sm text-quiet-text-tertiary"><Loading01Icon className="h-4 w-4 animate-spin" />Loading objectives…</div>
+        : isError ? <QuietEmptyState title="Couldn’t load objectives" description="Try loading your objectives again."
+          action={<QuietTextAction onClick={() => void refetch()}>Retry</QuietTextAction>} />
+        : <ObjectiveQuarterBoard key={workspaceId} objectives={filtered} allObjectives={objectives}
+          emptyState={hasFilters && filtered.length === 0 ? <QuietEmptyState title="No objectives match these filters"
+            description="Adjust your search or clear filters to see more objectives."
+            action={<QuietTextAction onClick={clearAll}>Clear filters</QuietTextAction>} /> : undefined}
+          canCreate={canCreateObjective} expandClosed={!!query || filters.state?.[0] === 'closed'}
+          onCreate={objectiveDates => openCreate('objective', { objectiveDates, teamId: filterTeam || undefined })}
+          renderCard={objective => <MemoObjectiveCard data={objective} slug={workspace?.slug ?? ''}
+            canEdit={canEdit} isAdmin={isAdmin} onArchive={handleArchive} />} />}
+
     </div>
   );
 }
@@ -273,12 +272,12 @@ function ObjectiveCard({
             {stateCfg.label}
           </QuietStatusText>
           {objective.state !== 'closed' && (
-            <span className={`text-xs ${health.className}`}>
+            <span className={`ml-auto whitespace-nowrap text-xs ${health.className}`}>
               {health.label}
             </span>
           )}
           {dateLabel && (
-            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+            <span className="ml-auto flex items-center gap-1 whitespace-nowrap text-xs text-muted-foreground">
               <Calendar03Icon className="h-3 w-3" />
               {dateLabel}
             </span>

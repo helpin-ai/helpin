@@ -9,6 +9,7 @@ import { queryKeys } from '@/lib/queryKeys';
 import { unwrap } from '@/lib/queryUtils';
 import { useObjectiveAutosave } from './useObjectiveAutosave';
 import { ObjectiveKeyResultRow } from './ObjectiveKeyResultRow';
+import { LogKeyResultDialog } from './LogKeyResultDialog';
 import { KeyResultEditorDialog } from './KeyResultEditorDialog';
 import { QuietBreadcrumbs, QuietDetailHeader, QuietDetailLayout, QuietEmptyState, QuietMetricBlock, QuietMetricGrid, QuietSectionHeader, QuietStatusText, QuietTextAction, QuietTitleInput } from '@/components/design-system/quiet';
 import { EpicColorSwatch } from '@/components/pm/EpicColorSwatch';
@@ -59,7 +60,6 @@ import { UserAvatar } from '@/components/pm/UserAvatar';
 import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
 import type {
   AttachmentResponse,
-  KeyResult,
   CreateKeyResultRequest,
   ObjectiveHealth,
   ObjectiveState,
@@ -260,25 +260,11 @@ export function ObjectiveDetailPage() {
   useTitle(form?.name ? `${form.name} — Objective` : 'Objective');
 
   const [keyResultEditor, setKeyResultEditor] = useState<{ resultId?: string } | null>(null);
+  const [logResultId, setLogResultId] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [editingDescription, setEditingDescription] = useState(false);
   const descriptionEditStartRef = useRef('');
   const removedDescriptionAttachments = useRef(new Set<string>());
-
-  const keyResultSaves = useRef(new Map<string, () => Promise<void>>());
-  const [dirtyKeyResults, setDirtyKeyResults] = useState<Set<string>>(() => new Set());
-  const registerKeyResultSave = useCallback((id: string, save: (() => Promise<void>) | null) => {
-    if (save) keyResultSaves.current.set(id, save);
-    else keyResultSaves.current.delete(id);
-  }, []);
-  const onKeyResultDirtyChange = useCallback((id: string, isDirty: boolean) => {
-    setDirtyKeyResults(current => {
-      if (current.has(id) === isDirty) return current;
-      const next = new Set(current);
-      if (isDirty) next.add(id); else next.delete(id);
-      return next;
-    });
-  }, []);
 
   const cleanupDescriptionAttachments = useCallback(async (description: string) => {
     if (!workspaceId) return;
@@ -321,15 +307,14 @@ export function ObjectiveDetailPage() {
 
   const flushAll = async () => {
     await flush();
-    await Promise.all([...keyResultSaves.current.values()].map(save => save()));
     await cleanupDescriptionAttachments(form?.description ?? savedDescriptionRef.current);
   };
   useBlocker({
     shouldBlockFn: async () => {
-      if (!dirty && dirtyKeyResults.size === 0 && !editingDescription) return false;
+      if (!dirty && !editingDescription) return false;
       try { await flushAll(); return false; } catch { return true; }
     },
-    enableBeforeUnload: dirty || dirtyKeyResults.size > 0,
+    enableBeforeUnload: dirty,
   });
 
 
@@ -416,9 +401,13 @@ export function ObjectiveDetailPage() {
     await refreshObjectives();
   };
 
-  const handleUpdateKeyResult = (updated: KeyResult) => {
+  const handleLogKeyResult = async (currentValue: number) => {
+    if (!workspaceId || !logResultId || !canManageObjective) throw new Error('You do not have permission to log this result.');
+    await flush();
+    const updated = unwrap(await pmObjectiveService.updateKeyResult(workspaceId, logResultId, { current_value: currentValue }));
     setData(previous => previous ? { ...previous, key_results: previous.key_results.map(kr => kr.id === updated.id ? updated : kr) } : previous);
-    void refreshObjectives();
+    await queryClient.invalidateQueries({ queryKey: queryKeys.pm.keyResultActivity(workspaceId, logResultId) });
+    await refreshObjectives();
   };
   const handleDeleteKeyResult = async (id: string) => {
     if (!workspaceId || !canManageObjective) throw new Error('You do not have permission to edit this objective.');
@@ -577,8 +566,8 @@ export function ObjectiveDetailPage() {
               <ul className="mt-2 border-t border-quiet-divider-light">
                 {data.key_results.map(kr => (
                   <ObjectiveKeyResultRow key={kr.id} kr={kr} workspaceId={workspaceId!} memberMap={memberMap}
-                    onUpdate={handleUpdateKeyResult} onEdit={() => setKeyResultEditor({ resultId: kr.id })}
-                    registerSave={registerKeyResultSave} onDirtyChange={onKeyResultDirtyChange} readOnly={!canManageObjective} />
+                    onEdit={() => setKeyResultEditor({ resultId: kr.id })} onLog={() => setLogResultId(kr.id)}
+                    startDate={data.objective.planned_start_date} deadline={data.objective.deadline} readOnly={!canManageObjective} />
                 ))}
               </ul>
             ) : (
@@ -896,6 +885,11 @@ export function ObjectiveDetailPage() {
         </>
         )}
       />
+
+      {logResultId && canManageObjective && data.key_results.some(kr => kr.id === logResultId) && (
+        <LogKeyResultDialog key={logResultId} result={data.key_results.find(kr => kr.id === logResultId)!}
+          onClose={() => setLogResultId(null)} onSave={handleLogKeyResult} />
+      )}
 
       {keyResultEditor && canManageObjective && (
         <KeyResultEditorDialog key={keyResultEditor.resultId ?? 'new'}

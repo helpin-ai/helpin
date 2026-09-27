@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
+import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { ObjectivesPage } from '../Objectives';
 import { ObjectiveDetailPage } from '../ObjectiveDetail';
 import type { ObjectiveWithDetails } from '@/lib/pmTypes';
@@ -40,10 +41,12 @@ function objective(id: string, name: string, owner: string): ObjectiveWithDetail
 const response = <T,>(data: T) => ({ data, error: null, status: 200 });
 const settle = () => new Promise(resolve => setTimeout(resolve, 25));
 beforeEach(() => {
+  vi.spyOn(pmObjectiveService, 'keyResultActivity').mockResolvedValue(response({ data: [], total: 0, page: 1, per_page: 20, total_pages: 0 }));
   records = [objective('one', 'Launch platform', 'alice'), objective('two', 'Improve retention', 'bob')];
   context.permissions.canEdit = true; context.permissions.isAdmin = true;
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   HTMLElement.prototype.scrollIntoView = vi.fn();
+  HTMLElement.prototype.scrollTo = vi.fn();
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
   vi.spyOn(pmObjectiveService, 'list').mockImplementation(async (_ws, filters) => response(records.filter(record => !filters?.state || record.objective.state === filters.state)));
   vi.spyOn(pmObjectiveService, 'get').mockImplementation(async (_ws, id) => response(records.find(record => record.objective.id === id)!));
@@ -52,7 +55,7 @@ beforeEach(() => {
     return response(records.find(record => record.objective.id === id)!);
   });
 });
-afterEach(() => { act(() => root?.unmount()); document.body.innerHTML = ''; vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { act(() => root?.unmount()); document.body.innerHTML = ''; vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); useGlobalCreateStore.getState().closeCreate(); });
 
 async function render(path = '/w/acme/pm/objectives') {
   const rootRoute = createRootRoute({ component: Outlet });
@@ -80,6 +83,82 @@ async function change(input: HTMLInputElement | HTMLTextAreaElement, value: stri
 function button(container: HTMLElement, text: string) { return [...container.querySelectorAll('button')].find(element => element.textContent === text)!; }
 
 describe('Objectives redesign', () => {
+  it('groups by end date once, with Unscheduled first and newest quarters on the left', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-27T12:00:00Z'));
+    const annual = objective('annual', 'Annual growth', 'alice');
+    annual.objective.planned_start_date = '2026-01-01T00:00:00Z';
+    annual.objective.deadline = '2026-12-31T00:00:00Z';
+    const boundary = objective('boundary', 'March boundary', 'bob');
+    boundary.objective.deadline = '2026-03-31T23:30:00-07:00';
+    const old = objective('old', 'Last year goal', 'alice');
+    old.objective.deadline = '2025-12-31';
+    records.push(annual, boundary, old);
+    const { container } = await render();
+    const columns = [...container.querySelectorAll('[data-objective-column]')];
+    expect(columns.map(col => col.getAttribute('aria-label'))).toEqual(['Unscheduled', 'Q4, 2026', 'Q3, 2026', 'Q2, 2026', 'Q1, 2026']);
+    expect(columns[0].textContent).toContain('Launch platform');
+    expect(columns[1].textContent).toContain('Annual growth');
+    expect(columns[4].textContent).toContain('March boundary');
+    expect(container.querySelectorAll('a[href$="/annual"]')).toHaveLength(1);
+    expect(container.textContent).not.toContain('Last year goal');
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Previous year"]')!.click());
+    expect(container.querySelector('[aria-label="Q4, 2025"]')?.textContent).toContain('Last year goal');
+    expect(container.querySelector('[aria-label="Unscheduled"]')?.textContent).toContain('Launch platform');
+  });
+
+  it('filters overdue dates without treating today or closed objectives as overdue', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-27T12:00:00Z'));
+    records = ['past', 'today', 'closed'].map(id => objective(id, id + ' goal', 'alice'));
+    records[0].objective.deadline = '2026-06-30';
+    records[1].objective.deadline = '2026-09-27T00:00:00Z';
+    records[2].objective.deadline = '2026-06-30';
+    records[2].objective.state = 'closed';
+    const { container } = await render();
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Show overdue objectives"]')!.click());
+    expect(container.querySelectorAll('article')).toHaveLength(1);
+    expect(container.querySelector('[aria-label="Q2, 2026"]')?.textContent).toContain('past goal');
+    expect(container.textContent).not.toContain('today goal');
+    expect(container.textContent).not.toContain('closed goal');
+  });
+
+  it('opens the existing create flow with quarter dates, resets them for Unscheduled, and respects permissions', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-27T12:00:00Z'));
+    const { container } = await render();
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Add objective to Q4, 2026"]')!.click());
+    expect(useGlobalCreateStore.getState().initialObjectiveDates).toEqual({ startDate: '2026-10-01', endDate: '2026-12-31' });
+    await act(async () => useGlobalCreateStore.getState().closeCreate());
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Add objective to Unscheduled"]')!.click());
+    expect(useGlobalCreateStore.getState().initialObjectiveDates).toBeUndefined();
+    await act(async () => useGlobalCreateStore.getState().closeCreate());
+    context.permissions.canEdit = false;
+    await change(container.querySelector<HTMLInputElement>('[aria-label="Search objectives"]')!, 'Launch');
+    expect(container.querySelector('[aria-label^="Add objective to"]')).toBeNull();
+  });
+
+  it('keeps the selected year when a search has no matches', async () => {
+    const { container } = await render();
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Previous year"]')!.click());
+    const selected = container.querySelector('[aria-label^="Year:"]')?.textContent;
+    await change(container.querySelector<HTMLInputElement>('[aria-label="Search objectives"]')!, 'missing objective');
+    expect(container.textContent).toContain('No objectives match these filters');
+    expect(container.querySelector('[aria-label^="Year:"]')?.textContent).toBe(selected);
+    await change(container.querySelector<HTMLInputElement>('[aria-label="Search objectives"]')!, '');
+    expect(container.querySelector('[aria-label^="Year:"]')?.textContent).toBe(selected);
+  });
+
+  it('collapses closed objectives by default and reveals them for an explicit search', async () => {
+    records[0].objective.state = 'closed';
+    const { container } = await render();
+    expect(container.querySelector('a[href$="/one"]')).toBeNull();
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Closed objectives in Unscheduled"]')!.click());
+    expect(container.querySelector('a[href$="/one"]')).not.toBeNull();
+    await change(container.querySelector<HTMLInputElement>('[aria-label="Search objectives"]')!, 'Launch platform');
+    expect(container.querySelector('a[href$="/one"]')).not.toBeNull();
+  });
+
   it('keeps cards and synchronizes owner avatars, search, and editable filter pills', async () => {
     const { container } = await render();
     expect(container.querySelectorAll('article')).toHaveLength(2);
@@ -151,14 +230,19 @@ describe('Objectives redesign', () => {
     expect(section.textContent).toContain('Current');
     expect(section.textContent).toContain('Target');
     expect(section.textContent).toContain('50%');
-    expect(section.textContent).toContain('Started at 20%');
+    expect(section.textContent).toContain('At start');
+    expect(section.textContent).toContain('20%');
+    expect(section.querySelector('input')).toBeNull();
     expect(section.textContent).not.toContain('boolean');
     expect(section.textContent).not.toContain('outcome progress');
-    expect(section.querySelector('[aria-label="Progress for Increase activation"]')?.getAttribute('aria-valuenow')).toBe('50');
-    const completion = section.querySelector<HTMLButtonElement>('[role="checkbox"][aria-label="Mark Launch onboarding done"]')!;
-    await act(async () => completion.click());
+    expect(section.textContent).toContain('50% achieved');
+    expect(section.querySelector('[role="progressbar"]')).toBeNull();
+    await act(async () => section.querySelector<HTMLButtonElement>('[aria-label="Log result for Launch onboarding"]')!.click());
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    await act(async () => dialog.querySelector<HTMLButtonElement>('[role="checkbox"]')!.click());
+    await act(async () => button(dialog, 'Log result').click());
     expect(update).toHaveBeenCalledWith('ws', 'launch', { current_value: 1 });
-    expect(section.querySelector('[role="checkbox"]')?.getAttribute('aria-checked')).toBe('true');
+    expect(section.textContent).toContain('Complete');
   });
 
   it('keeps key-result values readable and removes editing controls for viewers', async () => {
@@ -173,7 +257,8 @@ describe('Objectives redesign', () => {
     expect(section.textContent).toContain('10');
     expect(section.querySelector('input')).toBeNull();
     expect(section.querySelector('[aria-label^="Delete key result"]')).toBeNull();
-    expect(section.querySelector('[aria-label="Progress for Reduce support wait time"]')?.getAttribute('aria-valuenow')).toBe('60');
+    expect(section.textContent).toContain('60% achieved');
+    expect(section.querySelector('[aria-label^="Log result"]')).toBeNull();
   });
 
   it('opens a visible editor for the full key result and retains changes after a failed save', async () => {
@@ -190,6 +275,7 @@ describe('Objectives redesign', () => {
     await act(async () => edit!.click());
     const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]')!;
     expect(dialog().textContent).toContain('Edit key result');
+    expect(dialog().querySelector('#key-result-current')).toBeNull();
     expect(dialog().querySelector<HTMLInputElement>('#key-result-target')!.value).toBe('50');
     await change(dialog().querySelector<HTMLInputElement>('#key-result-name')!, 'Increase activation');
     await change(dialog().querySelector<HTMLInputElement>('#key-result-target')!, '60');
@@ -197,32 +283,49 @@ describe('Objectives redesign', () => {
     expect(dialog().textContent).toContain('Could not save changes');
     expect(dialog().querySelector<HTMLInputElement>('#key-result-target')!.value).toBe('60');
     await act(async () => button(dialog(), 'Save changes').click());
-    expect(update).toHaveBeenLastCalledWith('ws', 'kr', { name: 'Increase activation', result_type: 'percent', initial_value: 20, current_value: 35, target_value: 60 });
+    expect(update).toHaveBeenLastCalledWith('ws', 'kr', { name: 'Increase activation', result_type: 'percent', initial_value: 20, target_value: 60 });
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(container.textContent).toContain('Increase activation');
   });
 
-  it('saves a key-result value before navigation and preserves the draft after failure', async () => {
-    const result = { id: 'kr', objective_id: 'one', name: 'Activation', result_type: 'percent' as const, initial_value: 0, current_value: 20, target_value: 100, progress: 20, position: 0, created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z' };
-    records[0].key_results = [result];
-    vi.spyOn(pmObjectiveService, 'updateKeyResult').mockResolvedValueOnce({ data: null, error: 'Cannot save result', status: 500 }).mockImplementation(async (_ws, _id, patch) => {
-      const updated = { ...result, ...patch };
+  it('logs results only through a dialog and preserves the entered value after failure', async () => {
+    const kr = { id: 'kr', objective_id: 'one', name: 'Activation', result_type: 'numeric' as const, initial_value: 20, current_value: 35, target_value: 50, progress: 50, position: 0, created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z' };
+    records[0].key_results = [kr];
+    const update = vi.spyOn(pmObjectiveService, 'updateKeyResult').mockResolvedValueOnce({ data: null, error: 'Cannot save result', status: 500 }).mockImplementation(async (_ws, _id, patch) => {
+      const updated = { ...kr, ...patch };
       records[0] = { ...records[0], key_results: [updated] };
       return response(updated);
     });
-    const { container, router } = await render('/w/acme/pm/objectives/one');
-    await change(container.querySelector<HTMLInputElement>('[aria-label="Current value for Activation"]')!, '45');
-    await act(async () => button(container, 'Objectives').click());
+    const { container } = await render('/w/acme/pm/objectives/one');
+    expect(container.querySelector('[aria-label="Current value for Activation"]')).toBeNull();
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Log result for Activation"]')!.click());
+    const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(dialog().textContent).not.toContain('increment');
+    await change(dialog().querySelector<HTMLInputElement>('#key-result-value')!, '45');
+    expect(update).not.toHaveBeenCalled();
+    await act(async () => button(dialog(), 'Log result').click());
+    expect(dialog().textContent).toContain('Cannot save result');
+    expect(dialog().querySelector<HTMLInputElement>('#key-result-value')!.value).toBe('45');
+    await act(async () => button(dialog(), 'Log result').click());
+    expect(update).toHaveBeenLastCalledWith('ws', 'kr', { current_value: 45 });
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.textContent).toContain('45');
+  });
+
+  it('shows actual value history with earlier entries collapsed and paginated', async () => {
+    records[0].key_results = [{ id: 'kr', objective_id: 'one', name: 'Signups', result_type: 'numeric', initial_value: 13, current_value: 18, target_value: 100, progress: 6, position: 0, created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-27T00:00:00Z' }];
+    const entry = (id: string, value: string) => ({ activity: { id, workspace_id: 'ws', entity_type: 'key_result', entity_id: 'kr', actor_id: 'alice-user', action: 'updated', field_name: 'current_value', new_value: value, created_at: '2026-09-26T12:00:00Z' } });
+    vi.mocked(pmObjectiveService.keyResultActivity).mockImplementation(async (_ws, _id, page) => response({ data: page === 1 ? [entry('a', '18'), entry('b', '16')] : [entry('c', '14')], total: 3, page: page ?? 1, per_page: 2, total_pages: 2 }));
+    const { container } = await render('/w/acme/pm/objectives/one');
+    expect(container.textContent).toContain('Alice changed the current value to 18');
+    expect(container.textContent).not.toContain('changed the current value to 16');
+    await act(async () => button(container, 'Show 2 earlier updates').click());
+    expect(container.textContent).toContain('changed the current value to 16');
+    await act(async () => button(container, 'Show more updates').click());
     await act(settle);
-    expect(router.state.location.pathname).toBe('/w/acme/pm/objectives/one');
-    expect(container.textContent).toContain('Cannot save result');
-    expect(container.querySelector<HTMLInputElement>('[aria-label="Current value for Activation"]')!.value).toBe('45');
-    await act(async () => button(container, 'Retry').click());
-    await act(settle);
-    expect(pmObjectiveService.updateKeyResult).toHaveBeenLastCalledWith('ws', 'kr', { current_value: 45 });
-    await act(async () => button(container, 'Objectives').click());
-    await act(settle);
-    expect(router.state.location.pathname).toBe('/w/acme/pm/objectives');
+    expect(container.textContent).toContain('changed the current value to 14');
+    await act(async () => button(container, 'Hide earlier updates').click());
+    expect(container.textContent).not.toContain('changed the current value to 14');
   });
 
   it('keeps existing status filtering single-select when edited from a pill', async () => {
