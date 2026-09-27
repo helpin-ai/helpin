@@ -30,6 +30,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/requestmeta"
 	"github.com/helpin-ai/helpin/server/internal/tiptap"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
+	"gorm.io/gorm"
 )
 
 // SupportInboxService contains support business logic.
@@ -2215,13 +2216,6 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	msg.Metadata = mergeSupportMessageMetadata(msg.Metadata, req.Channels, req.CCEmails, req.BCCEmails)
 	msg.Metadata = withSupportDeliveryMode(msg.Metadata, req.DeliveryMode)
 	portalReply := senderType == "customer" && ctx.Value(portalReplySourceKey{}) == true
-	// Do not append a portal reply to a resolved request if reopening fails.
-	if portalReply && !msg.IsInternal && messageType == "reply" &&
-		(conv.Status == model.SupportConversationStatusWaitingOnCustomer || conv.Status == model.SupportConversationStatusResolved) {
-		if err := s.reopenForCustomerReply(ctx, workspaceID, ticketID, conv); err != nil {
-			return nil, err
-		}
-	}
 	if senderType == "user" && !msg.IsInternal && messageType == "reply" {
 		if err := s.pauseForTeammate(ctx, conv, derefString(senderUserID), "teammate_replied", map[string]any{"opened_by_user_id": senderUserID}); err != nil {
 			return nil, err
@@ -2234,7 +2228,60 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		s.emitTeammateJoinedIfFirstReply(ctx, workspaceID, ticketID, strings.TrimSpace(*senderUserID), derefString(senderDisplayName), senderAvatarURL, clientMessageID)
 	}
 
-	if explicitEmail {
+	if portalReply {
+		audit, _ := ctx.Value(portalReplyAuditKey{}).(portalReplyAudit)
+		wasResolved := conv.Status == model.SupportConversationStatusWaitingOnCustomer || conv.Status == model.SupportConversationStatusResolved
+		updatedConv := *conv
+		err := s.conversationRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if wasResolved {
+				flowState := defaultConversationFlowState(conv.OpenedByUserID, conv.AssignedUserID, conv.AssignedAgentID)
+				if conv.HumanTakeover != nil && *conv.HumanTakeover {
+					flowState = model.SupportConversationFlowStateAssignedToHuman
+				}
+				if err := repository.NewSupportConversationRepository(tx).UpdateFields(ctx, workspaceID, ticketID, map[string]any{
+					"status": model.SupportConversationStatusOpen, "flow_state": flowState,
+					"resolved_at": nil, "closed_at": nil, "updated_at": time.Now(),
+				}); err != nil {
+					return err
+				}
+				updatedConv.Status, updatedConv.FlowState = model.SupportConversationStatusOpen, &flowState
+				updatedConv.ResolvedAt, updatedConv.ClosedAt = nil, nil
+			}
+			if err := s.messageRepo.WithTx(tx).Create(ctx, msg); err != nil {
+				return err
+			}
+			if len(req.AttachmentIDs) > 0 {
+				if audit.SessionID == "" {
+					return ErrPortalAttachmentsInvalid
+				}
+				if err := repository.NewSupportAttachmentRepository(tx).LinkPortalAttachments(ctx, req.AttachmentIDs, workspaceID, audit.SessionID, ticketID, ticketID, msg.ID); err != nil {
+					return fmt.Errorf("%w: %v", ErrPortalAttachmentsInvalid, err)
+				}
+			}
+			if audit.IdentityID != "" {
+				metadata, _ := json.Marshal(map[string]string{"message_id": msg.ID})
+				if err := tx.Create(&model.SupportPortalAuditEvent{ID: uuid.NewString(), WorkspaceID: workspaceID, ConversationID: ticketID, PortalIdentityID: &audit.IdentityID, ActorType: model.SupportPortalActorCustomer, EventType: model.SupportPortalAuditReplyCreated, Metadata: string(metadata), OccurredAt: time.Now().UTC()}).Error; err != nil {
+					return err
+				}
+				if wasResolved {
+					if err := tx.Create(&model.SupportPortalAuditEvent{ID: uuid.NewString(), WorkspaceID: workspaceID, ConversationID: ticketID, PortalIdentityID: &audit.IdentityID, ActorType: model.SupportPortalActorCustomer, EventType: model.SupportPortalAuditRequestReopened, Metadata: string(metadata), OccurredAt: time.Now().UTC()}).Error; err != nil {
+						return err
+					}
+				}
+				for _, attachmentID := range req.AttachmentIDs {
+					attachmentMetadata, _ := json.Marshal(map[string]string{"attachment_id": attachmentID, "message_id": msg.ID})
+					if err := tx.Create(&model.SupportPortalAuditEvent{ID: uuid.NewString(), WorkspaceID: workspaceID, ConversationID: ticketID, PortalIdentityID: &audit.IdentityID, ActorType: model.SupportPortalActorCustomer, EventType: model.SupportPortalAuditAttachmentUploaded, Metadata: string(attachmentMetadata), OccurredAt: time.Now().UTC()}).Error; err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		*conv = updatedConv
+	} else if explicitEmail {
 		if err := s.createExplicitEmailMessage(ctx, msg, conv, explicitDelay, req.EmailSubject); err != nil {
 			return nil, err
 		}
@@ -2250,8 +2297,10 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 
 	// Link pre-uploaded attachments to this message.
 	if s.attachmentService != nil && len(req.AttachmentIDs) > 0 {
-		if err := s.attachmentService.LinkToMessage(ctx, req.AttachmentIDs, msg.ID); err != nil {
-			slog.ErrorContext(ctx, "link attachments to support message", "error", err, "message_id", msg.ID)
+		if !portalReply {
+			if err := s.attachmentService.LinkToMessage(ctx, req.AttachmentIDs, msg.ID); err != nil {
+				slog.ErrorContext(ctx, "link attachments to support message", "error", err, "message_id", msg.ID)
+			}
 		}
 		// Hydrate for WS broadcast.
 		msgs := []model.SupportMessage{*msg}

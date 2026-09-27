@@ -79,10 +79,7 @@ func (s *SupportPortalService) EnsureRequestReference(ctx context.Context, works
 			return nil, err
 		}
 		item := &model.SupportPortalRequestReference{ID: uuid.NewString(), WorkspaceID: workspaceID, ConversationID: conversationID, PortalIdentityID: portalIdentityID, Reference: reference}
-		if err := s.repo.CreateReference(ctx, item); err == nil {
-			if err := s.RecordAuditEvent(ctx, workspaceID, conversationID, portalIdentityID, model.SupportPortalActorSystem, nil, model.SupportPortalAuditRequestCreated, "{}"); err != nil {
-				return nil, err
-			}
+		if err := s.repo.CreateReferenceWithAudit(ctx, item); err == nil {
 			return item, nil
 		}
 	}

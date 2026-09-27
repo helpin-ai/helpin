@@ -14,10 +14,15 @@ import (
 )
 
 func TestCrawlRobotsLinksSitemapsAndRedirects(t *testing.T) {
+	const entryToken = "crawl-entry"
 	var robots, forbidden atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" && r.URL.Query().Get("entry") != entryToken {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		if r.UserAgent() != crawlerUserAgent {
-			t.Errorf("user agent = %q", r.UserAgent())
+			t.Errorf("user agent on %s = %q", r.URL.Path, r.UserAgent())
 		}
 		switch r.URL.Path {
 		case "/robots.txt":
@@ -41,7 +46,7 @@ func TestCrawlRobotsLinksSitemapsAndRedirects(t *testing.T) {
 	}))
 	defer srv.Close()
 	skips := map[string]bool{}
-	n, err := crawlWithColly(context.Background(), model.SupportContentSource{StartURL: srv.URL, CrawlSource: "all", CrawlDepth: 3, CrawlLimit: 20}, nil, newTestLogger(t), func(r CrawlRecord) error {
+	n, err := crawlWithColly(context.Background(), model.SupportContentSource{StartURL: srv.URL + "/?entry=" + entryToken, CrawlSource: "all", CrawlDepth: 3, CrawlLimit: 20}, nil, newTestLogger(t), func(r CrawlRecord) error {
 		if r.SkipReason != "" {
 			skips[r.URL] = true
 			if r.Markdown != "" {

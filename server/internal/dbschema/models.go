@@ -97,6 +97,7 @@ func AutoMigrationModels() []any {
 		&model.SupportPortalIdentity{},
 		&model.PortalMagicLink{},
 		&model.PortalSession{},
+		&model.PortalIntakeSession{},
 		&model.SupportPortalRequestReference{},
 		&model.SupportPortalAuditEvent{},
 		&model.SupportMailbox{},

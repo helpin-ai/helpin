@@ -86,6 +86,33 @@ func TestSupportPortalProjectsCanonicalConversationWithOpaqueStableReference(t *
 	}
 }
 
+func TestSupportPortalReferenceRollsBackWhenAuditUnavailable(t *testing.T) {
+	svc, db := setupSupportPortalService(t)
+	ctx := context.Background()
+	conversation := &model.SupportConversation{ID: "audit-failure-conversation", WorkspaceID: "ws-1", Subject: "Help", Status: model.SupportConversationStatusOpen, Channel: "email", Source: "email", PortalVisible: true, CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	createSupportPortalConversation(t, db, conversation)
+	identity, err := svc.FindOrCreateIdentity(ctx, "ws-1", "customer@example.com", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("UPDATE support_conversations SET customer_email = ? WHERE id = ?", identity.Email, conversation.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("DROP TABLE support_portal_audit_events").Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.EnsureRequestReference(ctx, "ws-1", conversation.ID, identity.ID); err == nil {
+		t.Fatal("expected audit persistence failure")
+	}
+	var count int64
+	if err := db.Model(&model.SupportPortalRequestReference{}).Where("conversation_id = ?", conversation.ID).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("created %d references without audit event", count)
+	}
+}
+
 func TestSupportPortalDeniesHiddenInternalSpamAndDeletedConversations(t *testing.T) {
 	for _, tc := range []struct {
 		name         string

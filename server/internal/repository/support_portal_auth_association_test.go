@@ -15,7 +15,7 @@ func TestPortalAuthAssociateVerifiedEmailScopedAndVisible(t *testing.T) {
 	}
 	for _, sql := range []string{
 		`CREATE TABLE crm_contacts (id TEXT PRIMARY KEY, workspace_id TEXT, email TEXT)`,
-		`CREATE TABLE support_conversations (id TEXT PRIMARY KEY, workspace_id TEXT, customer_email TEXT, crm_contact_id TEXT, portal_visible BOOLEAN, status TEXT, channel TEXT, source TEXT, deleted_at DATETIME, subject TEXT, created_at DATETIME, updated_at DATETIME, last_public_message_at DATETIME, resolved_at DATETIME)`,
+		`CREATE TABLE support_conversations (id TEXT PRIMARY KEY, workspace_id TEXT, customer_email TEXT, crm_contact_id TEXT, portal_visible BOOLEAN, portal_visibility_changed_at DATETIME, primary_recipient_state TEXT, status TEXT, channel TEXT, source TEXT, deleted_at DATETIME, subject TEXT, created_at DATETIME, updated_at DATETIME, last_public_message_at DATETIME, resolved_at DATETIME)`,
 		`CREATE TABLE support_widget_sessions (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, customer_email TEXT, identity_trust TEXT, identity_verified_at DATETIME)`,
 		`CREATE TABLE support_portal_identities (id TEXT PRIMARY KEY, workspace_id TEXT, email TEXT)`,
 		`INSERT INTO support_portal_identities VALUES ('identity-a','workspace-a','alice@example.com'), ('identity-b','workspace-a','alice@example.com')`,
@@ -32,6 +32,7 @@ func TestPortalAuthAssociateVerifiedEmailScopedAndVisible(t *testing.T) {
    ('internal','workspace-a','alice@example.com',NULL,1,'open','internal','internal'),
    ('other-workspace','workspace-b','alice@example.com',NULL,1,'open','email','email')`,
 		`INSERT INTO support_widget_sessions VALUES ('verified','workspace-a','contact-match','alice@example.com','verified','2026-01-01'), ('unsigned','workspace-a','unverified','alice@example.com','untrusted',NULL), ('different','workspace-a','mismatched','bob@example.com','verified','2026-01-01'), ('first','workspace-a','ambiguous','alice@example.com','verified','2026-01-01'), ('second','workspace-a','ambiguous','bob@example.com','verified','2026-01-01')`,
+		`UPDATE support_conversations SET portal_visibility_changed_at = '2026-01-01' WHERE id = 'hidden'`,
 	} {
 		if err := db.Exec(sql).Error; err != nil {
 			t.Fatal(err)
@@ -58,7 +59,7 @@ func TestPortalAuthAssociateVerifiedEmailScopedAndVisible(t *testing.T) {
 	if len(requests) != 0 {
 		t.Fatalf("existing ownership changed: %v", requests)
 	}
-	if err := db.Table("support_conversations").Where("id = ?", "email-match").Update("portal_visible", false).Error; err != nil {
+	if err := db.Table("support_conversations").Where("id = ?", "email-match").Updates(map[string]any{"portal_visible": false, "portal_visibility_changed_at": "2026-01-01"}).Error; err != nil {
 		t.Fatal(err)
 	}
 	requests, err = repo.ListRequests(context.Background(), "workspace-a", "identity-a", "")
@@ -149,7 +150,7 @@ func TestPortalAuthReconcileRequestsAfterSessionEstablished(t *testing.T) {
 	}
 	for _, sql := range []string{
 		`CREATE TABLE support_portal_identities (id TEXT PRIMARY KEY, workspace_id TEXT, email TEXT)`,
-		`CREATE TABLE support_conversations (id TEXT PRIMARY KEY, workspace_id TEXT, customer_email TEXT, portal_visible BOOLEAN, status TEXT, channel TEXT, source TEXT, deleted_at DATETIME, subject TEXT, created_at DATETIME, last_public_message_at DATETIME, resolved_at DATETIME)`,
+		`CREATE TABLE support_conversations (id TEXT PRIMARY KEY, workspace_id TEXT, customer_email TEXT, portal_visible BOOLEAN, portal_visibility_changed_at DATETIME, primary_recipient_state TEXT, status TEXT, channel TEXT, source TEXT, deleted_at DATETIME, subject TEXT, created_at DATETIME, last_public_message_at DATETIME, resolved_at DATETIME)`,
 		`CREATE TABLE support_widget_sessions (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, customer_email TEXT, identity_trust TEXT, identity_verified_at DATETIME)`,
 		`CREATE TABLE support_portal_request_references (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT UNIQUE, portal_identity_id TEXT, reference TEXT UNIQUE, created_at DATETIME)`,
 		`INSERT INTO support_portal_identities VALUES ('alice','ws','alice@example.com')`,
@@ -163,7 +164,7 @@ func TestPortalAuthReconcileRequestsAfterSessionEstablished(t *testing.T) {
 	if err := repo.ReconcileRequests(ctx, "ws", "missing"); err == nil {
 		t.Fatal("unknown identity must not reconcile")
 	}
-	if err := db.Exec(`INSERT INTO support_conversations (id, workspace_id, customer_email, portal_visible, status, channel, source) VALUES ('email','ws','alice@example.com',1,'open','email','email'), ('widget','ws','alice@example.com',1,'open','widget','widget')`).Error; err != nil {
+	if err := db.Exec(`INSERT INTO support_conversations (id, workspace_id, customer_email, portal_visible, status, channel, source) VALUES ('email','ws','alice@example.com',0,'open','email','email'), ('widget','ws','alice@example.com',0,'open','widget','widget')`).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := repo.ReconcileRequests(ctx, "ws", "alice"); err != nil {

@@ -33,6 +33,7 @@ import { Route as AuthenticatedWSlugRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedOauthAuthorizeRouteImport } from './routes/_authenticated/oauth/authorize'
 import { Route as AuthenticatedGithubInstalledRouteImport } from './routes/_authenticated/github/installed'
 import { Route as AuthenticatedWSlugIndexRouteImport } from './routes/_authenticated/w/$slug/index'
+import { Route as PortalSlugRequestsReferenceRouteImport } from './routes/portal/$slug/requests/$reference'
 import { Route as AuthenticatedWSlugTeamGoalsRouteImport } from './routes/_authenticated/w/$slug/team-goals'
 import { Route as AuthenticatedWSlugTasksRouteImport } from './routes/_authenticated/w/$slug/tasks'
 import { Route as AuthenticatedWSlugSupportRouteImport } from './routes/_authenticated/w/$slug/support'
@@ -258,6 +259,12 @@ const AuthenticatedWSlugIndexRoute = AuthenticatedWSlugIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedWSlugRoute,
 } as any)
+const PortalSlugRequestsReferenceRoute =
+  PortalSlugRequestsReferenceRouteImport.update({
+    id: '/requests/$reference',
+    path: '/requests/$reference',
+    getParentRoute: () => PortalSlugRoute,
+  } as any)
 const AuthenticatedWSlugTeamGoalsRoute =
   AuthenticatedWSlugTeamGoalsRouteImport.update({
     id: '/team-goals',
@@ -892,10 +899,10 @@ export interface FileRoutesByFullPath {
   '/github/installed': typeof AuthenticatedGithubInstalledRoute
   '/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
-  '/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
   '/portal/$slug/callback': typeof PortalSlugCallbackRoute
   '/portal/$slug/sign-in': typeof PortalSlugSignInRoute
   '/portal/$slug/': typeof PortalSlugIndexRoute
+  '/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
   '/w/$slug/automation': typeof AuthenticatedWSlugAutomationRouteWithChildren
   '/w/$slug/crm': typeof AuthenticatedWSlugCrmRouteWithChildren
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
@@ -905,6 +912,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/support': typeof AuthenticatedWSlugSupportInboxRouteWithChildren
   '/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
   '/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
+  '/portal/$slug/requests/$reference': typeof PortalSlugRequestsReferenceRoute
   '/w/$slug/': typeof AuthenticatedWSlugIndexRoute
   '/w/$slug/automation/activity': typeof AuthenticatedWSlugAutomationActivityRoute
   '/w/$slug/automation/agents': typeof AuthenticatedWSlugAutomationAgentsRoute
@@ -1017,16 +1025,17 @@ export interface FileRoutesByTo {
   '/shared/$shareToken': typeof SharedShareTokenRoute
   '/github/installed': typeof AuthenticatedGithubInstalledRoute
   '/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
-  '/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
   '/portal/$slug/callback': typeof PortalSlugCallbackRoute
   '/portal/$slug/sign-in': typeof PortalSlugSignInRoute
   '/portal/$slug': typeof PortalSlugIndexRoute
+  '/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
   '/w/$slug/notifications': typeof AuthenticatedWSlugNotificationsRoute
   '/w/$slug/setup': typeof AuthenticatedWSlugSetupRoute
   '/w/$slug/support': typeof AuthenticatedWSlugSupportInboxIndexRoute
   '/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
   '/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
+  '/portal/$slug/requests/$reference': typeof PortalSlugRequestsReferenceRoute
   '/w/$slug': typeof AuthenticatedWSlugIndexRoute
   '/w/$slug/automation/activity': typeof AuthenticatedWSlugAutomationActivityRoute
   '/w/$slug/automation/agents': typeof AuthenticatedWSlugAutomationAgentsRoute
@@ -1141,10 +1150,10 @@ export interface FileRoutesById {
   '/_authenticated/github/installed': typeof AuthenticatedGithubInstalledRoute
   '/_authenticated/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/_authenticated/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
-  '/_authenticated/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
   '/portal/$slug/callback': typeof PortalSlugCallbackRoute
   '/portal/$slug/sign-in': typeof PortalSlugSignInRoute
   '/portal/$slug/': typeof PortalSlugIndexRoute
+  '/_authenticated/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
   '/_authenticated/w/$slug/automation': typeof AuthenticatedWSlugAutomationRouteWithChildren
   '/_authenticated/w/$slug/crm': typeof AuthenticatedWSlugCrmRouteWithChildren
   '/_authenticated/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
@@ -1154,6 +1163,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/support': typeof AuthenticatedWSlugSupportRouteWithChildren
   '/_authenticated/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
   '/_authenticated/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
+  '/portal/$slug/requests/$reference': typeof PortalSlugRequestsReferenceRoute
   '/_authenticated/w/$slug/': typeof AuthenticatedWSlugIndexRoute
   '/_authenticated/w/$slug/automation/activity': typeof AuthenticatedWSlugAutomationActivityRoute
   '/_authenticated/w/$slug/automation/agents': typeof AuthenticatedWSlugAutomationAgentsRoute
@@ -1271,10 +1281,10 @@ export interface FileRouteTypes {
     | '/github/installed'
     | '/oauth/authorize'
     | '/w/$slug'
-    | '/oauth/cli/authorize'
     | '/portal/$slug/callback'
     | '/portal/$slug/sign-in'
     | '/portal/$slug/'
+    | '/oauth/cli/authorize'
     | '/w/$slug/automation'
     | '/w/$slug/crm'
     | '/w/$slug/dashboard'
@@ -1284,6 +1294,7 @@ export interface FileRouteTypes {
     | '/w/$slug/support'
     | '/w/$slug/tasks'
     | '/w/$slug/team-goals'
+    | '/portal/$slug/requests/$reference'
     | '/w/$slug/'
     | '/w/$slug/automation/activity'
     | '/w/$slug/automation/agents'
@@ -1396,16 +1407,17 @@ export interface FileRouteTypes {
     | '/shared/$shareToken'
     | '/github/installed'
     | '/oauth/authorize'
-    | '/oauth/cli/authorize'
     | '/portal/$slug/callback'
     | '/portal/$slug/sign-in'
     | '/portal/$slug'
+    | '/oauth/cli/authorize'
     | '/w/$slug/dashboard'
     | '/w/$slug/notifications'
     | '/w/$slug/setup'
     | '/w/$slug/support'
     | '/w/$slug/tasks'
     | '/w/$slug/team-goals'
+    | '/portal/$slug/requests/$reference'
     | '/w/$slug'
     | '/w/$slug/automation/activity'
     | '/w/$slug/automation/agents'
@@ -1519,10 +1531,10 @@ export interface FileRouteTypes {
     | '/_authenticated/github/installed'
     | '/_authenticated/oauth/authorize'
     | '/_authenticated/w/$slug'
-    | '/_authenticated/oauth/cli/authorize'
     | '/portal/$slug/callback'
     | '/portal/$slug/sign-in'
     | '/portal/$slug/'
+    | '/_authenticated/oauth/cli/authorize'
     | '/_authenticated/w/$slug/automation'
     | '/_authenticated/w/$slug/crm'
     | '/_authenticated/w/$slug/dashboard'
@@ -1532,6 +1544,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/support'
     | '/_authenticated/w/$slug/tasks'
     | '/_authenticated/w/$slug/team-goals'
+    | '/portal/$slug/requests/$reference'
     | '/_authenticated/w/$slug/'
     | '/_authenticated/w/$slug/automation/activity'
     | '/_authenticated/w/$slug/automation/agents'
@@ -1814,6 +1827,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/w/$slug/'
       preLoaderRoute: typeof AuthenticatedWSlugIndexRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/portal/$slug/requests/$reference': {
+      id: '/portal/$slug/requests/$reference'
+      path: '/requests/$reference'
+      fullPath: '/portal/$slug/requests/$reference'
+      preLoaderRoute: typeof PortalSlugRequestsReferenceRouteImport
+      parentRoute: typeof PortalSlugRoute
     }
     '/_authenticated/w/$slug/team-goals': {
       id: '/_authenticated/w/$slug/team-goals'
@@ -2909,12 +2929,14 @@ interface PortalSlugRouteChildren {
   PortalSlugCallbackRoute: typeof PortalSlugCallbackRoute
   PortalSlugSignInRoute: typeof PortalSlugSignInRoute
   PortalSlugIndexRoute: typeof PortalSlugIndexRoute
+  PortalSlugRequestsReferenceRoute: typeof PortalSlugRequestsReferenceRoute
 }
 
 const PortalSlugRouteChildren: PortalSlugRouteChildren = {
   PortalSlugCallbackRoute: PortalSlugCallbackRoute,
   PortalSlugSignInRoute: PortalSlugSignInRoute,
   PortalSlugIndexRoute: PortalSlugIndexRoute,
+  PortalSlugRequestsReferenceRoute: PortalSlugRequestsReferenceRoute,
 }
 
 const PortalSlugRouteWithChildren = PortalSlugRoute._addFileChildren(

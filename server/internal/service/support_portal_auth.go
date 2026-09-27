@@ -83,11 +83,149 @@ func (s *PortalAuthService) Configuration(ctx context.Context, workspaceID strin
 	if settings == nil {
 		return nil, ErrPortalAuthInvalid
 	}
-	return map[string]any{"enabled": true, "requests_only": settings.PortalRequestsOnly, "intake_enabled": settings.PortalIntakeEnabled, "file_uploads_enabled": settings.FileUploadsEnabled, "branding": map[string]string{"name": "Support portal"}}, nil
+	return map[string]any{"enabled": true, "requests_only": settings.PortalRequestsOnly, "intake_enabled": settings.PortalIntakeEnabled, "anonymous_intake_enabled": settings.PortalAnonymousIntakeEnabled && settings.PortalIntakeEnabled, "file_uploads_enabled": settings.FileUploadsEnabled, "branding": map[string]string{"name": "Support portal"}}, nil
 }
 
 var ErrPortalAttachmentsUnavailable = errors.New("portal file uploads are disabled")
 var ErrPortalAttachmentsInvalid = errors.New("one or more attachments are unavailable")
+var ErrPortalAnonymousIntakeDisabled = errors.New("anonymous portal intake is disabled")
+
+func (s *PortalAuthService) anonymousIntakeSettings(ctx context.Context, workspaceID string) (*model.SupportInboxSettings, error) {
+	_, settings, err := s.inbox.GetInstallation(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if settings == nil || !settings.PortalEnabled || !settings.PortalIntakeEnabled || !settings.PortalAnonymousIntakeEnabled {
+		return nil, ErrPortalAnonymousIntakeDisabled
+	}
+	return settings, nil
+}
+
+func (s *PortalAuthService) StartAnonymousIntake(ctx context.Context, workspaceID, address string) (string, error) {
+	if _, err := s.anonymousIntakeSettings(ctx, workspaceID); err != nil {
+		return "", err
+	}
+	address = strings.TrimSpace(address)
+	parsed, err := mail.ParseAddress(address)
+	if err != nil || parsed.Address != address {
+		return "", ErrPortalAuthInvalid
+	}
+	secret, err := portalSecret()
+	if err != nil {
+		return "", err
+	}
+	if err := s.repo.CreateIntakeSession(ctx, &model.PortalIntakeSession{
+		ID: uuid.NewString(), WorkspaceID: workspaceID, Email: strings.ToLower(address),
+		TokenHash: portalHash(secret), ExpiresAt: time.Now().Add(time.Hour),
+	}); err != nil {
+		return "", err
+	}
+	return secret, nil
+}
+
+func (s *PortalAuthService) anonymousIntakeSession(ctx context.Context, workspaceID, secret string) (*model.PortalIntakeSession, *model.SupportInboxSettings, error) {
+	settings, err := s.anonymousIntakeSettings(ctx, workspaceID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(secret) != 64 {
+		return nil, nil, ErrPortalAuthInvalid
+	}
+	if _, err := hex.DecodeString(secret); err != nil {
+		return nil, nil, ErrPortalAuthInvalid
+	}
+	session, err := s.repo.FindIntakeSession(ctx, workspaceID, portalHash(secret), time.Now())
+	if err != nil {
+		return nil, nil, ErrPortalAuthInvalid
+	}
+	return session, settings, nil
+}
+
+func (s *PortalAuthService) UploadAnonymousAttachment(ctx context.Context, workspaceID, secret string, req model.CreateSupportAttachmentRequest) (*model.SupportAttachmentResponse, error) {
+	session, settings, err := s.anonymousIntakeSession(ctx, workspaceID, secret)
+	if err != nil {
+		return nil, err
+	}
+	if !settings.FileUploadsEnabled || s.inbox.attachmentService == nil {
+		return nil, ErrPortalAttachmentsUnavailable
+	}
+	return s.inbox.attachmentService.Create(ctx, req, workspaceID, "", "customer", nil, &session.ID)
+}
+
+func (s *PortalAuthService) ConfirmAnonymousAttachment(ctx context.Context, workspaceID, secret, attachmentID string) error {
+	session, settings, err := s.anonymousIntakeSession(ctx, workspaceID, secret)
+	if err != nil {
+		return err
+	}
+	if !settings.FileUploadsEnabled || s.inbox.attachmentService == nil {
+		return ErrPortalAttachmentsUnavailable
+	}
+	if !s.inbox.attachmentService.PortalAttachmentOwned(ctx, attachmentID, workspaceID, session.ID, "") {
+		return ErrPortalAttachmentsInvalid
+	}
+	return s.inbox.attachmentService.ConfirmUpload(ctx, attachmentID, "customer", nil, &session.ID)
+}
+
+func (s *PortalAuthService) CreateAnonymousRequest(ctx context.Context, workspaceID, secret, subject, description string, attachmentIDs []string) error {
+	session, settings, err := s.anonymousIntakeSession(ctx, workspaceID, secret)
+	if err != nil {
+		return err
+	}
+	subject, description = strings.TrimSpace(subject), strings.TrimSpace(description)
+	if subject == "" || description == "" || len([]rune(subject)) > 200 {
+		return ErrPortalRequestInvalid
+	}
+	if len(attachmentIDs) > 0 {
+		if !settings.FileUploadsEnabled || s.inbox.attachmentService == nil {
+			return ErrPortalAttachmentsUnavailable
+		}
+		if err := s.inbox.attachmentService.ValidatePortalAttachments(ctx, attachmentIDs, workspaceID, session.ID, ""); err != nil {
+			return ErrPortalAttachmentsInvalid
+		}
+	}
+	mailboxID, mailbox, err := s.inbox.maybeApplyMailboxRoutingForChannel(ctx, workspaceID, nil, true, "portal")
+	if err != nil {
+		return err
+	}
+	ownerID, flowState, err := s.inbox.determineMailboxOwner(ctx, workspaceID, mailbox, nil)
+	if err != nil {
+		return err
+	}
+	var contactID *string
+	if s.inbox.contactRepo != nil {
+		contactID = s.inbox.matchOrCreateCRMContact(ctx, workspaceID, &session.Email, nil)
+	}
+	reference, err := newPortalReference()
+	if err != nil {
+		return err
+	}
+	var conversation *model.SupportConversation
+	err = s.repo.ConsumeIntakeSession(ctx, workspaceID, portalHash(secret), time.Now(), func(tx *gorm.DB, current *model.PortalIntakeSession) error {
+		identity := model.SupportPortalIdentity{ID: uuid.NewString(), WorkspaceID: workspaceID, Email: current.Email}
+		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "workspace_id"}, {Name: "email"}}, DoNothing: true}).Create(&identity).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("workspace_id = ? AND email = ?", workspaceID, current.Email).First(&identity).Error; err != nil {
+			return err
+		}
+		var createErr error
+		conversation, _, createErr = s.repo.WithTx(tx).CreateRequest(ctx, workspaceID, &identity, subject, description, reference, mailboxID, ownerID, contactID, &flowState, attachmentIDs, current.ID)
+		return createErr
+	})
+	if err != nil {
+		return err
+	}
+	if s.inbox.wsPublisher != nil {
+		s.inbox.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "support_conversation", EntityID: conversation.ID, WorkspaceID: workspaceID})
+	}
+	if s.inbox.triageService != nil {
+		if err := s.inbox.triageService.HydrateConversation(ctx, conversation); err != nil {
+			slog.ErrorContext(ctx, "hydrate anonymous portal conversation triage", "error", err, "workspace_id", workspaceID, "conversation_id", conversation.ID)
+		}
+	}
+	s.RequestLink(ctx, workspaceID, session.Email)
+	return nil
+}
 
 func (s *PortalAuthService) SessionForToken(ctx context.Context, workspaceID, secret string) (*model.PortalSession, error) {
 	if _, err := s.Validate(ctx, workspaceID, secret); err != nil {
@@ -282,16 +420,17 @@ func (s *PortalAuthService) Reply(ctx context.Context, workspaceID string, ident
 			return ErrPortalAttachmentsInvalid
 		}
 	}
-	msg, err := s.inbox.CreateConversationMessage(context.WithValue(ctx, portalReplySourceKey{}, true), workspaceID, conv.ID, model.CreateMessageRequest{Content: content, MessageType: "reply"}, "customer", nil, nil, identity.DisplayName)
-	if err == nil && len(attachmentIDs) > 0 {
-		if err = s.inbox.attachmentService.LinkPortalAttachments(ctx, attachmentIDs, workspaceID, sessionID, conv.ID, msg.ID); err != nil {
-			return ErrPortalAttachmentsInvalid
-		}
-	}
+	ctx = context.WithValue(ctx, portalReplySourceKey{}, true)
+	ctx = context.WithValue(ctx, portalReplyAuditKey{}, portalReplyAudit{IdentityID: identity.ID, SessionID: sessionID})
+	_, err = s.inbox.CreateConversationMessage(ctx, workspaceID, conv.ID, model.CreateMessageRequest{
+		Content: content, MessageType: "reply", AttachmentIDs: attachmentIDs,
+	}, "customer", nil, nil, identity.DisplayName)
 	return err
 }
 
 type portalReplySourceKey struct{}
+type portalReplyAuditKey struct{}
+type portalReplyAudit struct{ IdentityID, SessionID string }
 
 // RequestLink deliberately returns the same result for unknown workspaces and
 // emails. No identity is created until the mailbox owner proves possession.

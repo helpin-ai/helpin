@@ -27,3 +27,17 @@ type PortalSession struct {
 }
 
 func (PortalSession) TableName() string { return "support_portal_sessions" }
+
+// PortalIntakeSession scopes unverified uploads and can create one request only.
+// It never grants read or reply access to an existing conversation.
+type PortalIntakeSession struct {
+	ID          string    `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID string    `gorm:"type:uuid;not null;index"`
+	Email       string    `gorm:"not null"`
+	TokenHash   string    `gorm:"uniqueIndex;not null"`
+	ExpiresAt   time.Time `gorm:"not null"`
+	UsedAt      *time.Time
+	CreatedAt   time.Time `gorm:"autoCreateTime"`
+}
+
+func (PortalIntakeSession) TableName() string { return "support_portal_intake_sessions" }

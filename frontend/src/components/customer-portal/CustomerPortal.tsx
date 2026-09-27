@@ -28,18 +28,18 @@ import {
 
 type PortalFile = { id: string; name: string }
 
-function PortalAttachments({ slug, reference, files, onChange, onUploading }: { slug: string; reference?: string; files: PortalFile[]; onChange: (files: PortalFile[]) => void; onUploading: (pending: boolean) => void }) {
+function PortalAttachments({ slug, reference, intakeToken, files, onChange, onUploading }: { slug: string; reference?: string; intakeToken?: string; files: PortalFile[]; onChange: (files: PortalFile[]) => void; onUploading: (pending: boolean) => void }) {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   return <div className="mt-4">
-    <Label>Attachments</Label>
-    <Input type="file" className="mt-2" disabled={uploading} onChange={async (event) => {
+    <Label htmlFor="portal-attachment-file">Attachments</Label>
+    <Input id="portal-attachment-file" type="file" className="mt-2" disabled={uploading} onChange={async (event) => {
       const file = event.target.files?.[0]
       if (!file) return
       setUploading(true)
       onUploading(true)
       setError(null)
-      try { onChange([...files, await customerPortalService.uploadAttachment(slug, file, reference)]) }
+      try { onChange([...files, await (intakeToken ? customerPortalService.uploadAnonymousAttachment(slug, intakeToken, file) : customerPortalService.uploadAttachment(slug, file, reference))]) }
       catch (reason) { setError(reason instanceof Error ? reason.message : 'File upload failed.') }
       finally { setUploading(false); onUploading(false); event.target.value = '' }
     }} />
@@ -216,6 +216,68 @@ export function CustomerPortalProvider({ slug }: { slug: string }) {
   )
 }
 
+function AnonymousIntakeForm({ slug, fileUploadsEnabled }: { slug: string; fileUploadsEnabled: boolean }) {
+  const [email, setEmail] = useState('')
+  const [token, setToken] = useState('')
+  const [subject, setSubject] = useState('')
+  const [message, setMessage] = useState('')
+  const [files, setFiles] = useState<PortalFile[]>([])
+  const [uploading, setUploading] = useState(false)
+  const [working, setWorking] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function start(event: FormEvent) {
+    event.preventDefault()
+    setWorking(true)
+    setError(null)
+    try {
+      const session = await customerPortalService.startAnonymousIntake(slug, email.trim())
+      setToken(session.intake_token)
+    } catch {
+      setError('Unable to start a request. Please try again.')
+    } finally { setWorking(false) }
+  }
+
+  async function send(event: FormEvent) {
+    event.preventDefault()
+    if (uploading || !token) return
+    setWorking(true)
+    setError(null)
+    try {
+      await customerPortalService.createAnonymousRequest(slug, token, {
+        subject: subject.trim(), message: message.trim(), attachment_ids: files.map((file) => file.id),
+      })
+      setSubmitted(true)
+      setToken('')
+      setFiles([])
+    } catch {
+      setError('Your request could not be sent. Please try again.')
+    } finally { setWorking(false) }
+  }
+
+  return <section className="mt-12 border-t border-border pt-8" aria-labelledby="anonymous-intake-heading">
+    <h2 id="anonymous-intake-heading" className="text-lg font-semibold">Send a request without signing in</h2>
+    {submitted ? <p className="mt-3 text-sm text-muted-foreground" role="status">Request received. Check your email for a link to view and reply to it.</p> : !token ? (
+      <form className="mt-5" onSubmit={start}>
+        <Label htmlFor="intake-email">Your email address</Label>
+        <Input id="intake-email" type="email" autoComplete="email" required className="mt-2" value={email} onChange={(event) => setEmail(event.target.value)} />
+        {error && <p className="mt-3 text-sm text-destructive" role="alert">{error}</p>}
+        <Button className="mt-4" type="submit" disabled={working}>{working ? 'Starting…' : 'Continue'}</Button>
+      </form>
+    ) : (
+      <form className="mt-5 space-y-4" onSubmit={send}>
+        <p className="text-sm text-muted-foreground">Requesting as {email}. <button type="button" className="underline" onClick={() => { setToken(''); setFiles([]) }}>Change email</button></p>
+        <div><Label htmlFor="intake-subject">Subject</Label><Input id="intake-subject" required maxLength={200} className="mt-2" value={subject} onChange={(event) => setSubject(event.target.value)} /></div>
+        <div><Label htmlFor="intake-message">How can we help?</Label><Textarea id="intake-message" required className="mt-2 min-h-32" value={message} onChange={(event) => setMessage(event.target.value)} /></div>
+        {fileUploadsEnabled && <PortalAttachments slug={slug} intakeToken={token} files={files} onChange={setFiles} onUploading={setUploading} />}
+        {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+        <Button type="submit" disabled={working || uploading}>{working ? 'Sending…' : 'Send request'}</Button>
+      </form>
+    )}
+  </section>
+}
+
 export function CustomerPortalSignIn() {
   const { configuration, slug, status } = usePortal()
   const [email, setEmail] = useState('')
@@ -302,6 +364,7 @@ export function CustomerPortalSignIn() {
             </Button>
           </form>
         )}
+        {configuration?.anonymous_intake_enabled && <AnonymousIntakeForm slug={slug} fileUploadsEnabled={configuration.file_uploads_enabled} />}
       </main>
     </PortalFrame>
   )
@@ -439,7 +502,7 @@ export function CustomerPortalHome() {
     setSubmitting(true)
     setSubmissionError(null)
     try {
-      const request = await customerPortalService.createRequest(slug, {
+      await customerPortalService.createRequest(slug, {
         subject: subject.trim(),
         message: message.trim(),
         attachment_ids: requestFiles.map((file) => file.id),
@@ -601,10 +664,10 @@ export function CustomerPortalRequestPage({ reference }: { reference: string }) 
   if (status !== 'authenticated') return null
   return <PortalFrame>
     <main className="mx-auto max-w-3xl px-6 py-12 sm:px-10">
-      <Link to="/portal/$slug/" params={{ slug }} className="text-sm text-muted-foreground underline-offset-4 hover:underline">← All requests</Link>
+      <Link to="/portal/$slug" params={{ slug }} className="text-sm text-muted-foreground underline-offset-4 hover:underline">← All requests</Link>
       {loading ? <Skeleton className="mt-8 h-24 w-full" /> : error && !request ? <p role="alert" className="mt-8">{error}</p> : request && <>
         <h1 className="mt-8 text-3xl font-semibold tracking-tight">{request.subject}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{request.reference} · {request.status.replaceAll('_', ' ')} · Last activity {new Date(request.last_activity_at).toLocaleString()}</p>
+        <p className="mt-2 text-sm text-muted-foreground">{request.reference} · {request.status.replaceAll('_', ' ')}{request.last_activity_at && ` · Last activity ${new Date(request.last_activity_at).toLocaleString()}`}</p>
         <ol className="mt-10 divide-y divide-border border-y border-border">
           {request.messages.map((message) => <li key={message.id} className="py-6">
             <p className="text-sm text-muted-foreground">{message.sender_type === 'customer' ? 'You' : message.sender_name || 'Support'} · {new Date(message.created_at).toLocaleString()}</p>

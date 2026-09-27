@@ -29,7 +29,7 @@ func TestPortalHTTPAuthorizationAndVisibility(t *testing.T) {
 		`CREATE TABLE support_widget_installations (id TEXT PRIMARY KEY, workspace_id TEXT, settings TEXT, active BOOLEAN)`,
 		`CREATE TABLE support_portal_identities (id TEXT PRIMARY KEY, workspace_id TEXT, email TEXT, display_name TEXT)`,
 		`CREATE TABLE support_portal_sessions (id TEXT PRIMARY KEY, workspace_id TEXT, identity_id TEXT, token_hash TEXT, expires_at DATETIME, revoked_at DATETIME)`,
-		`CREATE TABLE support_conversations (id TEXT PRIMARY KEY, workspace_id TEXT, customer_email TEXT, subject TEXT, status TEXT, channel TEXT, source TEXT, portal_visible BOOLEAN, created_at DATETIME, last_public_message_at DATETIME, resolved_at DATETIME, deleted_at DATETIME, anonymized_at DATETIME)`,
+		`CREATE TABLE support_conversations (id TEXT PRIMARY KEY, workspace_id TEXT, customer_email TEXT, subject TEXT, status TEXT, channel TEXT, source TEXT, portal_visible BOOLEAN, portal_visibility_changed_at DATETIME, primary_recipient_state TEXT, created_at DATETIME, last_public_message_at DATETIME, resolved_at DATETIME, deleted_at DATETIME, anonymized_at DATETIME)`,
 		`CREATE TABLE support_portal_request_references (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, portal_identity_id TEXT, reference TEXT)`,
 		`CREATE TABLE support_widget_sessions (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, customer_email TEXT, identity_trust TEXT, identity_verified_at DATETIME)`,
 		`CREATE TABLE support_messages (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, content TEXT, message_type TEXT, sender_type TEXT, is_internal BOOLEAN, created_at DATETIME)`,
@@ -74,7 +74,11 @@ func TestPortalHTTPAuthorizationAndVisibility(t *testing.T) {
 		if row.reference == "deleted" {
 			deleted = time.Now()
 		}
-		if err := db.Exec(`INSERT INTO support_conversations (id, workspace_id, customer_email, subject, status, channel, source, portal_visible, created_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, convID, workspace, row.email, "subject-"+row.reference, row.status, row.channel, row.channel, row.visible, time.Now(), deleted).Error; err != nil {
+		var visibilityChanged any
+		if row.reference == "hidden" {
+			visibilityChanged = time.Now()
+		}
+		if err := db.Exec(`INSERT INTO support_conversations (id, workspace_id, customer_email, subject, status, channel, source, portal_visible, portal_visibility_changed_at, created_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, convID, workspace, row.email, "subject-"+row.reference, row.status, row.channel, row.channel, row.visible, visibilityChanged, time.Now(), deleted).Error; err != nil {
 			t.Fatal(err)
 		}
 		if err := db.Exec(`INSERT INTO support_portal_request_references (id, workspace_id, conversation_id, portal_identity_id, reference) VALUES (?, ?, ?, ?, ?)`, uuid.NewString(), workspace, convID, row.owner, row.reference).Error; err != nil {

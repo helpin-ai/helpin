@@ -56,6 +56,109 @@ func (h *CustomerPortalHandler) RequestLink(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *CustomerPortalHandler) StartAnonymousIntake(w http.ResponseWriter, r *http.Request) {
+	id := h.workspace(w, r)
+	if id == "" {
+		return
+	}
+	var body struct {
+		Email string `json:"email"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	token, err := h.auth.StartAnonymousIntake(r.Context(), id, body.Email)
+	if errors.Is(err, service.ErrPortalAnonymousIntakeDisabled) {
+		writeError(w, http.StatusForbidden, "anonymous intake unavailable")
+		return
+	}
+	if errors.Is(err, service.ErrPortalAuthInvalid) {
+		writeError(w, http.StatusBadRequest, "enter a valid email address")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "unable to start request")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusCreated, map[string]string{"intake_token": token})
+}
+
+func (h *CustomerPortalHandler) UploadAnonymousAttachment(w http.ResponseWriter, r *http.Request) {
+	id := h.workspace(w, r)
+	if id == "" {
+		return
+	}
+	var body model.CreateSupportAttachmentRequest
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	result, err := h.auth.UploadAnonymousAttachment(r.Context(), id, portalBearer(r), body)
+	if errors.Is(err, service.ErrPortalAuthInvalid) {
+		writeError(w, http.StatusUnauthorized, "invalid intake session")
+		return
+	}
+	if errors.Is(err, service.ErrPortalAnonymousIntakeDisabled) || errors.Is(err, service.ErrPortalAttachmentsUnavailable) {
+		writeError(w, http.StatusForbidden, "attachments unavailable")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "attachment unavailable")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusCreated, result)
+}
+
+func (h *CustomerPortalHandler) ConfirmAnonymousAttachment(w http.ResponseWriter, r *http.Request) {
+	id := h.workspace(w, r)
+	if id == "" {
+		return
+	}
+	err := h.auth.ConfirmAnonymousAttachment(r.Context(), id, portalBearer(r), chi.URLParam(r, "attachmentId"))
+	if errors.Is(err, service.ErrPortalAuthInvalid) {
+		writeError(w, http.StatusUnauthorized, "invalid intake session")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "attachment unavailable")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *CustomerPortalHandler) CreateAnonymousRequest(w http.ResponseWriter, r *http.Request) {
+	id := h.workspace(w, r)
+	if id == "" {
+		return
+	}
+	var body struct {
+		Subject       string   `json:"subject"`
+		Message       string   `json:"message"`
+		AttachmentIDs []string `json:"attachment_ids"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	err := h.auth.CreateAnonymousRequest(r.Context(), id, portalBearer(r), body.Subject, body.Message, body.AttachmentIDs)
+	switch {
+	case errors.Is(err, service.ErrPortalAuthInvalid):
+		writeError(w, http.StatusUnauthorized, "invalid intake session")
+	case errors.Is(err, service.ErrPortalAnonymousIntakeDisabled):
+		writeError(w, http.StatusForbidden, "anonymous intake unavailable")
+	case errors.Is(err, service.ErrPortalRequestInvalid), errors.Is(err, service.ErrPortalAttachmentsInvalid), errors.Is(err, service.ErrPortalAttachmentsUnavailable):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case err != nil:
+		writeError(w, http.StatusInternalServerError, "unable to create request")
+	default:
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusAccepted)
+	}
+}
+
 func portalSessionCookie(r *http.Request) string {
 	cookie, err := r.Cookie(portalCookie)
 	if err != nil {

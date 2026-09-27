@@ -9,6 +9,7 @@ export interface CustomerPortalConfiguration {
   enabled: boolean
   requests_only: boolean
   intake_enabled: boolean
+  anonymous_intake_enabled: boolean
   file_uploads_enabled: boolean
   branding: CustomerPortalBranding
 }
@@ -97,7 +98,7 @@ async function portalRequest<T>(
     throw new CustomerPortalApiError(response.status, message)
   }
 
-  if (response.status === 204) return undefined as T
+  if (response.status === 204 || response.status === 202) return undefined as T
   return response.json() as Promise<T>
 }
 
@@ -110,6 +111,14 @@ export const customerPortalService = {
     portalRequest<void>(slug, '/auth/magic-link', {
       method: 'POST',
       body: JSON.stringify({ email }),
+    }),
+  startAnonymousIntake: (slug: string, email: string) =>
+    portalRequest<{ intake_token: string }>(slug, '/intake/session', {
+      method: 'POST', body: JSON.stringify({ email }),
+    }),
+  createAnonymousRequest: (slug: string, token: string, input: CreateCustomerPortalRequestInput) =>
+    portalRequest<void>(slug, '/intake/requests', {
+      method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(input),
     }),
   exchangeMagicLink: (slug: string, token: string) =>
     portalRequest<CustomerPortalSession>(slug, '/auth/exchange', {
@@ -135,6 +144,17 @@ export const customerPortalService = {
     const uploaded = await fetch(result.upload_url, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
     if (!uploaded.ok) throw new Error('File upload failed.')
     await portalRequest<void>(slug, `${path}/${encodeURIComponent(result.attachment.id)}/confirm`, { method: 'PATCH' })
+    return { id: result.attachment.id, name: file.name }
+  },
+  uploadAnonymousAttachment: async (slug: string, token: string, file: File) => {
+    if (file.size <= 0 || file.size > 100 * 1024 * 1024) throw new Error('File must be under 100 MB.')
+    const headers = { Authorization: `Bearer ${token}` }
+    const result = await portalRequest<{ attachment: { id: string }; upload_url: string }>(slug, '/intake/attachments', {
+      method: 'POST', headers, body: JSON.stringify({ file_name: file.name, file_size: file.size, content_type: file.type }),
+    })
+    const uploaded = await fetch(result.upload_url, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
+    if (!uploaded.ok) throw new Error('File upload failed.')
+    await portalRequest<void>(slug, `/intake/attachments/${encodeURIComponent(result.attachment.id)}/confirm`, { method: 'PATCH', headers })
     return { id: result.attachment.id, name: file.name }
   },
   createRequest: (slug: string, input: CreateCustomerPortalRequestInput) =>

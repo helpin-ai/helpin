@@ -2096,8 +2096,30 @@ func (s *EmailFallbackService) fireEmailBatch(ctx context.Context, conversationI
 	}
 	preparedPending, emailAttachments := s.prepareEmailAttachments(ctx, pending)
 	htmlBody, textBody := s.renderBodies(preparedPending, agentName, workspaceName, chatLink, unsubscribeEmail)
-	if settings.PortalEnabled && conv.PortalVisible && workspace != nil && strings.TrimSpace(s.appBaseURL) != "" {
+	portalEmailEligible := conv.Channel == "email" && conv.Source == "email" &&
+		conv.Status != model.SupportConversationStatusSpam && conv.DeletedAt == nil &&
+		strings.TrimSpace(conv.PrimaryRecipientState) != model.SupportPrimaryRecipientStateUnconfirmed &&
+		strings.TrimSpace(derefString(conv.CustomerEmail)) != ""
+	if settings.PortalEnabled && workspace != nil && strings.TrimSpace(s.appBaseURL) != "" && (conv.PortalVisible || portalEmailEligible && conv.PortalVisibilityChangedAt == nil) {
 		portalURL := strings.TrimRight(s.appBaseURL, "/") + "/portal/" + url.PathEscape(workspace.Slug)
+		if portalEmailEligible && !conv.PortalVisible && conv.PortalVisibilityChangedAt == nil {
+			result := s.convRepo.DB().WithContext(ctx).Model(&model.SupportConversation{}).
+				Where("id = ? AND workspace_id = ? AND portal_visible = false AND portal_visibility_changed_at IS NULL", conv.ID, conv.WorkspaceID).
+				Update("portal_visible", true)
+			if result.Error != nil {
+				s.logger.WarnContext(ctx, "portal email visibility update failed", "workspace_id", conv.WorkspaceID, "conversation_id", conv.ID, "error", result.Error)
+			} else if result.RowsAffected == 1 {
+				conv.PortalVisible = true
+			}
+		}
+		if conv.PortalVisible && portalEmailEligible {
+			portal := NewSupportPortalService(repository.NewSupportPortalRepository(s.convRepo.DB()))
+			if identity, err := portal.FindOrCreateIdentity(ctx, conv.WorkspaceID, *conv.CustomerEmail, conv.CustomerName); err != nil {
+				s.logger.WarnContext(ctx, "portal email identity lookup failed", "workspace_id", conv.WorkspaceID, "conversation_id", conv.ID, "error", err)
+			} else if _, err := portal.EnsureRequestReference(ctx, conv.WorkspaceID, conv.ID, identity.ID); err != nil {
+				s.logger.WarnContext(ctx, "portal email reference creation failed", "workspace_id", conv.WorkspaceID, "conversation_id", conv.ID, "error", err)
+			}
+		}
 		var reference struct {
 			Reference string
 		}

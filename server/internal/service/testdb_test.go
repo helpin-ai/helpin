@@ -787,6 +787,8 @@ func newTestDB(t *testing.T) *gorm.DB {
 			visitor_country_code TEXT,
 			visitor_country_name TEXT,
 			view_search_document TEXT,
+			portal_visible BOOLEAN NOT NULL DEFAULT 0,
+			portal_visibility_changed_at DATETIME,
 			ai_state TEXT,
 			ai_resolved_at DATETIME,
 			ai_escalated_at DATETIME,
@@ -798,8 +800,9 @@ func newTestDB(t *testing.T) *gorm.DB {
 			human_takeover BOOLEAN NOT NULL DEFAULT 0,
             ai_control_version BIGINT NOT NULL DEFAULT 0, ai_resumed_at DATETIME, ai_paused_at DATETIME, ai_paused_by_user_id TEXT,
 			created_at DATETIME,
-			updated_at DATETIME
-		)`,
+			updated_at DATETIME,
+			deleted_at DATETIME
+			)`,
 		`CREATE TABLE support_conversation_user_states (
 			workspace_id TEXT NOT NULL,
 			conversation_id TEXT NOT NULL,

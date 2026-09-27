@@ -26,6 +26,7 @@ func TestPortalCreateRequestProjectsFirstCustomerMessage(t *testing.T) {
 		`ALTER TABLE support_conversations ADD COLUMN portal_visibility_changed_at DATETIME`,
 		`ALTER TABLE support_conversations ADD COLUMN deleted_at DATETIME`,
 		`CREATE TABLE support_portal_request_references (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, portal_identity_id TEXT, reference TEXT, created_at DATETIME)`,
+		`CREATE TABLE support_portal_audit_events (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, portal_identity_id TEXT, actor_type TEXT, actor_user_id TEXT, event_type TEXT, metadata TEXT, occurred_at DATETIME, created_at DATETIME)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatal(err)
@@ -100,5 +101,51 @@ func TestPortalAuthTokensAreScopedSingleUseAndRevocable(t *testing.T) {
 	}
 	if _, err := repo.FindSession(ctx, "workspace-a", "session-hash", now); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("revoked session: %v", err)
+	}
+}
+
+func TestPortalIntakeSessionIsScopedOneUseAndRollsBack(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE TABLE support_portal_intake_sessions (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, email TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, expires_at DATETIME NOT NULL, used_at DATETIME, created_at DATETIME)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	repo := NewPortalAuthRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+	session := &model.PortalIntakeSession{ID: uuid.NewString(), WorkspaceID: "workspace-a", Email: "customer@example.com", TokenHash: "hash", ExpiresAt: now.Add(time.Hour)}
+	if err := repo.CreateIntakeSession(ctx, session); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.FindIntakeSession(ctx, "workspace-b", "hash", now); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("cross-workspace intake token: %v", err)
+	}
+	if _, err := repo.FindIntakeSession(ctx, "workspace-a", "hash", now.Add(time.Hour)); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("expired intake token: %v", err)
+	}
+	failure := errors.New("request creation failed")
+	if err := repo.ConsumeIntakeSession(ctx, "workspace-a", "hash", now, func(_ *gorm.DB, _ *model.PortalIntakeSession) error { return failure }); !errors.Is(err, failure) {
+		t.Fatalf("failed request: %v", err)
+	}
+	if _, err := repo.FindIntakeSession(ctx, "workspace-a", "hash", now); err != nil {
+		t.Fatalf("failed request consumed token: %v", err)
+	}
+	created := 0
+	if err := repo.ConsumeIntakeSession(ctx, "workspace-a", "hash", now, func(_ *gorm.DB, current *model.PortalIntakeSession) error {
+		if current.Email != session.Email {
+			t.Fatalf("wrong email: %s", current.Email)
+		}
+		created++
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.ConsumeIntakeSession(ctx, "workspace-a", "hash", now, func(_ *gorm.DB, _ *model.PortalIntakeSession) error { created++; return nil }); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("reused intake token: %v", err)
+	}
+	if created != 1 {
+		t.Fatalf("created %d requests with one token", created)
 	}
 }

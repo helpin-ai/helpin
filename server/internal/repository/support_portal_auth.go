@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"strings"
 	"time"
@@ -15,6 +16,35 @@ import (
 type PortalAuthRepository struct{ db *gorm.DB }
 
 func NewPortalAuthRepository(db *gorm.DB) *PortalAuthRepository { return &PortalAuthRepository{db: db} }
+
+func (r *PortalAuthRepository) WithTx(tx *gorm.DB) *PortalAuthRepository {
+	return &PortalAuthRepository{db: tx}
+}
+
+func (r *PortalAuthRepository) CreateIntakeSession(ctx context.Context, session *model.PortalIntakeSession) error {
+	return r.db.WithContext(ctx).Create(session).Error
+}
+
+func (r *PortalAuthRepository) FindIntakeSession(ctx context.Context, workspaceID, hash string, now time.Time) (*model.PortalIntakeSession, error) {
+	var session model.PortalIntakeSession
+	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND token_hash = ? AND used_at IS NULL AND expires_at > ?", workspaceID, hash, now).First(&session).Error; err != nil {
+		return nil, err
+	}
+	return &session, nil
+}
+
+func (r *PortalAuthRepository) ConsumeIntakeSession(ctx context.Context, workspaceID, hash string, now time.Time, create func(*gorm.DB, *model.PortalIntakeSession) error) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var session model.PortalIntakeSession
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("workspace_id = ? AND token_hash = ? AND used_at IS NULL AND expires_at > ?", workspaceID, hash, now).First(&session).Error; err != nil {
+			return err
+		}
+		if err := create(tx, &session); err != nil {
+			return err
+		}
+		return tx.Model(&session).Update("used_at", now).Error
+	})
+}
 
 // CreateRequest commits the inbox conversation, customer message and portal reference together.
 func (r *PortalAuthRepository) CreateRequest(ctx context.Context, workspaceID string, identity *model.SupportPortalIdentity, subject, description, reference string, mailboxID, ownerID, crmContactID, flowState *string, attachmentIDs []string, sessionID string) (*model.SupportConversation, *model.SupportPortalRequest, error) {
@@ -61,10 +91,30 @@ func (r *PortalAuthRepository) CreateRequest(ctx context.Context, workspaceID st
 		}).Error; err != nil {
 			return err
 		}
-		return tx.Create(&model.SupportPortalRequestReference{
+		if err := tx.Create(&model.SupportPortalRequestReference{
 			ID: uuid.NewString(), WorkspaceID: workspaceID, ConversationID: conversation.ID,
 			PortalIdentityID: identity.ID, Reference: reference,
-		}).Error
+		}).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&model.SupportPortalAuditEvent{
+			ID: uuid.NewString(), WorkspaceID: workspaceID, ConversationID: conversation.ID,
+			PortalIdentityID: &identity.ID, ActorType: model.SupportPortalActorCustomer,
+			EventType: model.SupportPortalAuditRequestCreated, Metadata: "{}", OccurredAt: time.Now().UTC(),
+		}).Error; err != nil {
+			return err
+		}
+		for _, attachmentID := range attachmentIDs {
+			metadata, _ := json.Marshal(map[string]string{"attachment_id": attachmentID})
+			if err := tx.Create(&model.SupportPortalAuditEvent{
+				ID: uuid.NewString(), WorkspaceID: workspaceID, ConversationID: conversation.ID,
+				PortalIdentityID: &identity.ID, ActorType: model.SupportPortalActorCustomer,
+				EventType: model.SupportPortalAuditAttachmentUploaded, Metadata: string(metadata), OccurredAt: time.Now().UTC(),
+			}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, nil, err
@@ -92,6 +142,27 @@ func (r *PortalAuthRepository) WorkspaceByID(ctx context.Context, id string) (*m
 // Widget-originated conversations also require matching verified widget provenance.
 func (r *PortalAuthRepository) AssociateVerifiedEmail(tx *gorm.DB, workspaceID, email, identityID string) error {
 	email = strings.ToLower(strings.TrimSpace(email))
+	// A verified mailbox owner may claim older customer conversations. An explicit
+	// visibility decision (including an opt-out) is never overwritten here.
+	if err := tx.Exec(`UPDATE support_conversations AS conv SET portal_visible = true
+		WHERE conv.workspace_id = ? AND conv.portal_visible = false
+		AND conv.portal_visibility_changed_at IS NULL AND conv.deleted_at IS NULL
+		AND conv.status <> ? AND conv.channel <> 'internal' AND conv.source <> 'internal'
+		AND lower(trim(conv.customer_email)) = ?
+		AND ((conv.channel = 'email' AND conv.source = 'email'
+			AND COALESCE(conv.primary_recipient_state, 'confirmed') = 'confirmed')
+		OR ((conv.channel = 'widget' OR conv.source = 'widget')
+			AND EXISTS (SELECT 1 FROM support_widget_sessions AS session
+				WHERE session.workspace_id = conv.workspace_id AND session.conversation_id = conv.id
+				AND session.identity_trust = ? AND session.identity_verified_at IS NOT NULL
+				AND lower(trim(session.customer_email)) = ?)
+			AND NOT EXISTS (SELECT 1 FROM support_widget_sessions AS other
+				WHERE other.workspace_id = conv.workspace_id AND other.conversation_id = conv.id
+				AND other.identity_trust = ? AND other.identity_verified_at IS NOT NULL
+				AND lower(trim(other.customer_email)) <> ?)))`, workspaceID, model.SupportConversationStatusSpam,
+		email, model.IdentityTrustVerified, email, model.IdentityTrustVerified, email).Error; err != nil {
+		return err
+	}
 	var ambiguousIDs []string
 	if err := tx.Model(&model.SupportConversation{}).
 		Where("workspace_id = ? AND portal_visible = true AND channel = ? AND deleted_at IS NULL AND lower(trim(customer_email)) = ?", workspaceID, "widget", email).

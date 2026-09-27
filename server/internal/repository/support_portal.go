@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"gorm.io/gorm"
@@ -70,6 +73,19 @@ func (r *SupportPortalRepository) CreateReference(ctx context.Context, reference
 		return fmt.Errorf("create portal request reference: %w", err)
 	}
 	return nil
+}
+
+func (r *SupportPortalRepository) CreateReferenceWithAudit(ctx context.Context, reference *model.SupportPortalRequestReference) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(reference).Error; err != nil {
+			return err
+		}
+		return tx.Create(&model.SupportPortalAuditEvent{
+			ID: uuid.NewString(), WorkspaceID: reference.WorkspaceID, ConversationID: reference.ConversationID,
+			PortalIdentityID: &reference.PortalIdentityID, ActorType: model.SupportPortalActorSystem,
+			EventType: model.SupportPortalAuditRequestCreated, Metadata: "{}", OccurredAt: time.Now().UTC(),
+		}).Error
+	})
 }
 
 func (r *SupportPortalRepository) FindVisibleConversation(ctx context.Context, workspaceID, conversationID string) (*model.SupportConversation, error) {
