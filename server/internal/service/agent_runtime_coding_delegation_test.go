@@ -258,11 +258,16 @@ func TestRuntimeAgentFromHelpinAgentAlwaysIncludesSupportDeliveryContract(t *tes
 		staleWorkspacePrompt,
 		"Required live-support delivery contract",
 		"send_support_reply",
+		"skip_support_reply",
+		"Required no-reply handling",
 		"Plain assistant text is never delivered",
 	} {
 		if !strings.Contains(out.SystemPrompt, required) {
 			t.Fatalf("runtime support prompt missing %q:\n%s", required, out.SystemPrompt)
 		}
+	}
+	if !slices.Contains(out.AllowedTools, "skip_support_reply") {
+		t.Fatal("existing Echo copies must receive the no-reply tool")
 	}
 }
 

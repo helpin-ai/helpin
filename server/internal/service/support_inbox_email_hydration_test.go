@@ -159,3 +159,22 @@ func TestHydrateEmailBodiesProjectsLegacyHTMLInMemory(t *testing.T) {
 		t.Fatal("legacy rich HTML was discarded")
 	}
 }
+
+func TestHydrateOutgoingEmailKeepsAuthoredReply(t *testing.T) {
+	for _, sender := range []string{"ai", "agent"} {
+		t.Run(sender, func(t *testing.T) {
+			messages := []model.SupportMessage{{ID: "sent", SenderType: sender, ViaChannel: strPtr("email"), Content: "Let me connect you with a team member."}}
+			logs := []model.SupportEmailLog{{Direction: "outbound", MessageIDs: model.DocsStringArray{"sent"}, Status: "delivered", FromEmail: "support@example.com", ToEmail: "customer@example.com", HTMLBody: "<p>Please type your reply above this line</p><p>Reply</p><footer>Powered by Helpin AI</footer>", StrippedText: "Please type your reply above this line\nReply\nPowered by Helpin AI"}}
+			hydrateEmailBodiesFromLogs(messages, logs)
+			if messages[0].EmailVisibleText != "" || messages[0].HTMLBody != "" || messages[0].StrippedText != "" {
+				t.Fatalf("transport wrapper leaked into thread: %+v", messages[0])
+			}
+			if messages[0].Content != "Let me connect you with a team member." || messages[0].EmailDeliveryStatus != "delivered" || messages[0].EmailFrom != "support@example.com" || messages[0].EmailTo != "customer@example.com" {
+				t.Fatalf("authored reply or delivery details lost: %+v", messages[0])
+			}
+			if logs[0].HTMLBody == "" || logs[0].StrippedText == "" {
+				t.Fatal("original email must remain available in email details")
+			}
+		})
+	}
+}

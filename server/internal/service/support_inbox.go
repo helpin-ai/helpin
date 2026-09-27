@@ -1934,6 +1934,18 @@ func hydrateEmailBodiesFromLogs(messages []model.SupportMessage, logs []model.Su
 		if log == nil {
 			continue
 		}
+		// Outgoing logs include transport copy (reply marker, signature and footer).
+		// The thread already has the authored Content; the full email stays in its log.
+		if log.Direction == "outbound" {
+			messages[i].EmailDeliveryStatus = log.Status
+			messages[i].EmailDeliveryError = log.ErrorMessage
+			messages[i].EmailFrom = log.FromEmail
+			messages[i].EmailTo = log.ToEmail
+			messages[i].EmailReplyTo = log.ReplyTo
+			messages[i].EmailCC = log.CCEmails
+			messages[i].EmailBCC = log.BCCEmails
+			continue
+		}
 		if messages[i].ViaChannel != nil && *messages[i].ViaChannel == "email" {
 			projection := inboundhtml.ProcessedContent{
 				HTML:                 log.HTMLBody,
@@ -1980,13 +1992,6 @@ func hydrateEmailBodiesFromLogs(messages []model.SupportMessage, logs []model.Su
 			messages[i].EmailFrom = log.FromEmail
 			messages[i].EmailTo = log.ToEmail
 			messages[i].EmailReplyTo = log.ReplyTo
-			messages[i].EmailCC = log.CCEmails
-			messages[i].EmailBCC = log.BCCEmails
-		}
-		if log.Direction == "outbound" {
-			messages[i].EmailDeliveryStatus = log.Status
-			messages[i].EmailDeliveryError = log.ErrorMessage
-			messages[i].EmailTo = log.ToEmail
 			messages[i].EmailCC = log.CCEmails
 			messages[i].EmailBCC = log.BCCEmails
 		}

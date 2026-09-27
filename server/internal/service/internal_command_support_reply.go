@@ -108,6 +108,7 @@ func normalizeSupportReplyKind(kind string) string {
 }
 
 func (s *InternalCommandService) registerSupportReplyCommands() {
+	s.registerSupportSkipReplyCommand()
 	s.register(InternalCommandDefinition{
 		Name:                 "support.send_reply",
 		Module:               "support",

@@ -16,7 +16,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
-const supportChatNudgeContent = "System correction: you ended your turn without responding to the visitor. You MUST respond now with exactly one call to send_support_reply, or hand off with escalate_to_human. Do not end your turn silently."
+const supportChatNudgeContent = "System correction: you ended your turn without responding to the visitor. Finish with exactly one appropriate action: send_support_reply for a reply, escalate_to_human for a genuine inquiry needing a teammate, or skip_support_reply for spam/notifications needing no reply. Do not stop without a terminal tool outcome."
 
 // OnSupportChatRunPaused runs after the projection persists a chat run's
 // pause. Cheap no-op for non-support-chat runs.

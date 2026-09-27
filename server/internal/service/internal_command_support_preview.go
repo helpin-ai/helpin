@@ -41,6 +41,15 @@ func (s *InternalCommandService) executeSupportPreviewCommand(ctx context.Contex
 		return def.Execute(ctx, meta, input)
 	case "support.send_reply":
 		return s.executeSupportSendReply(ctx, meta, input)
+	case "support.skip_reply":
+		req, err := parseSupportSkipReply(input)
+		if err != nil {
+			return nil, err
+		}
+		response := supportPreviewResponse(run, snapshot)
+		response.FinalDecision = "no_reply"
+		response.FinalReason = req.Reason
+		return s.storeSupportPreviewOutcome(ctx, run, response)
 	case "support.escalate_to_human":
 		var req struct {
 			Reason string `json:"reason"`
