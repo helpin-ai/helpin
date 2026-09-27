@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
+import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { ObjectivesPage } from '../Objectives';
 import { ObjectiveDetailPage } from '../ObjectiveDetail';
 import type { ObjectiveWithDetails } from '@/lib/pmTypes';
@@ -45,6 +46,7 @@ beforeEach(() => {
   context.permissions.canEdit = true; context.permissions.isAdmin = true;
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   HTMLElement.prototype.scrollIntoView = vi.fn();
+  HTMLElement.prototype.scrollTo = vi.fn();
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
   vi.spyOn(pmObjectiveService, 'list').mockImplementation(async (_ws, filters) => response(records.filter(record => !filters?.state || record.objective.state === filters.state)));
   vi.spyOn(pmObjectiveService, 'get').mockImplementation(async (_ws, id) => response(records.find(record => record.objective.id === id)!));
@@ -53,7 +55,7 @@ beforeEach(() => {
     return response(records.find(record => record.objective.id === id)!);
   });
 });
-afterEach(() => { act(() => root?.unmount()); document.body.innerHTML = ''; vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { act(() => root?.unmount()); document.body.innerHTML = ''; vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); useGlobalCreateStore.getState().closeCreate(); });
 
 async function render(path = '/w/acme/pm/objectives') {
   const rootRoute = createRootRoute({ component: Outlet });
@@ -81,6 +83,82 @@ async function change(input: HTMLInputElement | HTMLTextAreaElement, value: stri
 function button(container: HTMLElement, text: string) { return [...container.querySelectorAll('button')].find(element => element.textContent === text)!; }
 
 describe('Objectives redesign', () => {
+  it('groups by end date once, with Unscheduled first and newest quarters on the left', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-27T12:00:00Z'));
+    const annual = objective('annual', 'Annual growth', 'alice');
+    annual.objective.planned_start_date = '2026-01-01T00:00:00Z';
+    annual.objective.deadline = '2026-12-31T00:00:00Z';
+    const boundary = objective('boundary', 'March boundary', 'bob');
+    boundary.objective.deadline = '2026-03-31T23:30:00-07:00';
+    const old = objective('old', 'Last year goal', 'alice');
+    old.objective.deadline = '2025-12-31';
+    records.push(annual, boundary, old);
+    const { container } = await render();
+    const columns = [...container.querySelectorAll('[data-objective-column]')];
+    expect(columns.map(col => col.getAttribute('aria-label'))).toEqual(['Unscheduled', 'Q4, 2026', 'Q3, 2026', 'Q2, 2026', 'Q1, 2026']);
+    expect(columns[0].textContent).toContain('Launch platform');
+    expect(columns[1].textContent).toContain('Annual growth');
+    expect(columns[4].textContent).toContain('March boundary');
+    expect(container.querySelectorAll('a[href$="/annual"]')).toHaveLength(1);
+    expect(container.textContent).not.toContain('Last year goal');
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Previous year"]')!.click());
+    expect(container.querySelector('[aria-label="Q4, 2025"]')?.textContent).toContain('Last year goal');
+    expect(container.querySelector('[aria-label="Unscheduled"]')?.textContent).toContain('Launch platform');
+  });
+
+  it('filters overdue dates without treating today or closed objectives as overdue', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-27T12:00:00Z'));
+    records = ['past', 'today', 'closed'].map(id => objective(id, id + ' goal', 'alice'));
+    records[0].objective.deadline = '2026-06-30';
+    records[1].objective.deadline = '2026-09-27T00:00:00Z';
+    records[2].objective.deadline = '2026-06-30';
+    records[2].objective.state = 'closed';
+    const { container } = await render();
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Show overdue objectives"]')!.click());
+    expect(container.querySelectorAll('article')).toHaveLength(1);
+    expect(container.querySelector('[aria-label="Q2, 2026"]')?.textContent).toContain('past goal');
+    expect(container.textContent).not.toContain('today goal');
+    expect(container.textContent).not.toContain('closed goal');
+  });
+
+  it('opens the existing create flow with quarter dates, resets them for Unscheduled, and respects permissions', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-27T12:00:00Z'));
+    const { container } = await render();
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Add objective to Q4, 2026"]')!.click());
+    expect(useGlobalCreateStore.getState().initialObjectiveDates).toEqual({ startDate: '2026-10-01', endDate: '2026-12-31' });
+    await act(async () => useGlobalCreateStore.getState().closeCreate());
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Add objective to Unscheduled"]')!.click());
+    expect(useGlobalCreateStore.getState().initialObjectiveDates).toBeUndefined();
+    await act(async () => useGlobalCreateStore.getState().closeCreate());
+    context.permissions.canEdit = false;
+    await change(container.querySelector<HTMLInputElement>('[aria-label="Search objectives"]')!, 'Launch');
+    expect(container.querySelector('[aria-label^="Add objective to"]')).toBeNull();
+  });
+
+  it('keeps the selected year when a search has no matches', async () => {
+    const { container } = await render();
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Previous year"]')!.click());
+    const selected = container.querySelector('[aria-label^="Year:"]')?.textContent;
+    await change(container.querySelector<HTMLInputElement>('[aria-label="Search objectives"]')!, 'missing objective');
+    expect(container.textContent).toContain('No objectives match these filters');
+    expect(container.querySelector('[aria-label^="Year:"]')?.textContent).toBe(selected);
+    await change(container.querySelector<HTMLInputElement>('[aria-label="Search objectives"]')!, '');
+    expect(container.querySelector('[aria-label^="Year:"]')?.textContent).toBe(selected);
+  });
+
+  it('collapses closed objectives by default and reveals them for an explicit search', async () => {
+    records[0].objective.state = 'closed';
+    const { container } = await render();
+    expect(container.querySelector('a[href$="/one"]')).toBeNull();
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Closed objectives in Unscheduled"]')!.click());
+    expect(container.querySelector('a[href$="/one"]')).not.toBeNull();
+    await change(container.querySelector<HTMLInputElement>('[aria-label="Search objectives"]')!, 'Launch platform');
+    expect(container.querySelector('a[href$="/one"]')).not.toBeNull();
+  });
+
   it('keeps cards and synchronizes owner avatars, search, and editable filter pills', async () => {
     const { container } = await render();
     expect(container.querySelectorAll('article')).toHaveLength(2);

@@ -1208,6 +1208,8 @@ function MultiSelectPopover({
 }
 
 function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
+  const initialDates = useGlobalCreateStore((s) => s.initialObjectiveDates);
+  const initialTeamId = useGlobalCreateStore((s) => s.initialTeamId);
   const queryClient = useQueryClient();
   const confirm = useConfirm();
   const { data: access } = useWorkspaceAccess(workspaceId);
@@ -1225,10 +1227,10 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
     description: '',
     objectiveType: 'tactical' as ObjectiveType,
     state: 'not_started' as ObjectiveState,
-    teamIds: [] as string[],
+    teamIds: initialTeamId ? [initialTeamId] : [],
     ownerMemberIds: [] as string[],
-    startDate: '',
-    targetDate: '',
+    startDate: initialDates?.startDate ?? '',
+    targetDate: initialDates?.endDate ?? '',
   });
   const [submitting, setSubmitting] = useState(false);
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
