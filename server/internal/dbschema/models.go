@@ -94,12 +94,9 @@ func AutoMigrationModels() []any {
 		&model.SupportConversation{},
 		&model.SupportConversationTriage{},
 		&model.SupportConversationTriageEvent{},
-		&model.SupportPortalIdentity{},
-		&model.PortalMagicLink{},
-		&model.PortalSession{},
-		&model.PortalIntakeSession{},
-		&model.SupportPortalRequestReference{},
-		&model.SupportPortalAuditEvent{},
+		// Portal identity, auth, intake, reference, and audit tables are owned
+		// by versioned SQL migrations 20260925000101 through 202609250003.
+		// GORM cannot safely reconcile their PostgreSQL unique constraints.
 		&model.SupportMailbox{},
 		&model.SupportMailboxMembership{},
 		&model.SupportTriageRule{},
