@@ -1068,6 +1068,23 @@ describe('Timeline view', () => {
     expect(container.textContent).toContain('Done.');
   });
 
+  it('uses delegated progress in the visible activity summary and preserves blocked states', () => {
+    useDockStore.setState({ transcriptView: 'timeline' });
+    const progress = { ...assistantMessage('progress', 'Reviewing your tasks.', 1), message_type: 'assistant_progress' };
+    const render = (liveProgress?: { label: string; tone: 'working' | 'waiting'; delegated: boolean }) => act(() => root.render(
+      <DockTranscript stream={streamWithMessages([progress])} active compactAssistantProgress liveProgress={liveProgress} />,
+    ));
+    render({ label: 'Research Agent is running', tone: 'working', delegated: true });
+    expect(container.querySelector('[data-dock-activity-timeline] > button')?.textContent).toContain('Research Agent is running');
+    expect(container.querySelector('[data-agent-work-loader]')).not.toBeNull();
+    render({ label: 'Research Agent needs approval', tone: 'waiting', delegated: true });
+    expect(container.querySelector('[data-dock-activity-timeline] > button')?.textContent).toContain('Research Agent needs approval');
+    expect(container.querySelector('[data-agent-work-loader]')).toBeNull();
+    render();
+    expect(container.querySelector('[data-dock-activity-timeline] > button')?.textContent).toContain('Working…');
+    expect(container.textContent).not.toContain('Research Agent');
+  });
+
   it('shows live activity with the branded loader and collapses it when the final answer arrives', () => {
     useDockStore.setState({ transcriptView: 'timeline' });
     const progress = { ...assistantMessage('progress', 'Reviewing your tasks.', 1), message_type: 'assistant_progress' };

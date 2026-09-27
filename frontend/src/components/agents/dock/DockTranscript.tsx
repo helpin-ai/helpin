@@ -5,6 +5,7 @@ import { Fragment, useState, type ReactNode } from 'react';
 import { useDockStore } from '@/stores/dockStore';
 import { Tick01Icon } from '@/lib/icons';
 import { DockActivitySteps } from './DockActivityTimeline';
+import type { AgentLiveProgress } from './agentProgress';
 import { AgentTimelineEntry } from './AgentTimelineEntry';
 import { buildDockActivityTimeline } from './buildDockActivityTimeline';
 import { DockAnswerSegment } from './DockAnswerSegment';
@@ -207,6 +208,7 @@ export function DockTranscript({
   historyWorkOnly = false,
   runStatus,
   pauseReason,
+  liveProgress,
   subAgentRuns = [],
   savedWorkPlans = [],
   latestSubmission,
@@ -235,6 +237,7 @@ export function DockTranscript({
   pauseReason?: AgentRunPauseReason;
   /** Delegated work inserted between the messages surrounding its launch. */
   subAgentRuns?: DockSubAgentTimelineItem[];
+  liveProgress?: AgentLiveProgress | null;
   savedWorkPlans?: RunPlanArtifact[];
   /** Segments already visible before the latest local send, including undated snapshots. */
   latestSubmission?: DockMessageSubmission | null;
@@ -441,6 +444,7 @@ export function DockTranscript({
                 <AgentTimelineEntry
                   segment={entry.segment}
                   workingGroup={workingGroup}
+                  liveProgress={liveProgress}
                   runStatus={runStatus}
                   pauseReason={pauseReason}
                   resolveActor={resolveTranscriptActor}

@@ -833,27 +833,16 @@ export function ChatView({
     [chatId, clearPendingInteraction, onChatChanged, refetch, refreshDetail, workspaceId],
   );
 
-  const activeSubAgentName = useMemo(() => {
-    for (const plan of plans) {
-      for (const [stepIndex, runId] of Object.entries(plan.run_ids_by_step ?? {})) {
-        const childRun = plan.runs?.find((candidate) => candidate.id === runId);
-        if (!childRun || !['queued', 'running'].includes(childRun.status)) continue;
-        return plan.steps[Number(stepIndex)]?.agent_name?.trim() || 'another agent';
-      }
-    }
-    return null;
-  }, [plans]);
-
   const liveProgress = useMemo(() => resolveAgentLiveProgress({
     run,
     stream: transformed?.stream ?? null,
     currentPlan,
-    activeSubAgentName,
+    delegatedPlans: plans,
     sending: sending || !!pendingEcho,
     localStartedAt: launchStartedAt,
-  }), [activeSubAgentName, currentPlan, launchStartedAt, run, sending, transformed, pendingEcho]);
+  }), [plans, currentPlan, launchStartedAt, run, sending, transformed, pendingEcho]);
 
-  const displayedLiveProgress = analyzingMedia ? {
+  const displayedLiveProgress: ReturnType<typeof resolveAgentLiveProgress> = analyzingMedia ? {
     label: analyzingMediaLabel || 'Analyzing attachment…',
     tone: 'working' as const,
     startedAt: launchStartedAt ?? new Date().toISOString(),
@@ -1016,6 +1005,7 @@ export function ChatView({
             fallbackActor={streamController.session?.triggered_by_user}
             savedWorkPlans={detail?.work_plans}
             subAgentRuns={subAgentTimelineItems}
+            liveProgress={displayedLiveProgress}
             compactAssistantProgress
           />
         )}
@@ -1077,6 +1067,7 @@ export function ChatView({
             className="mt-2 shrink-0 border-t border-border/40 px-1 pt-2"
             data-agent-live-status-region
             data-working={displayedLiveProgress.tone === 'working'}
+            data-delegated={displayedLiveProgress.delegated}
           >
             <AgentLiveStatus progress={displayedLiveProgress} />
           </div>

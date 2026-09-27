@@ -70,7 +70,8 @@ export function AgentLiveStatus({ progress: sourceProgress }: { progress: AgentL
         </span>
       ) : null}
       <span className={cn(
-        'min-w-0 flex-1 truncate',
+        'min-w-0 flex-1',
+        progress.delegated ? 'whitespace-normal break-words' : 'truncate',
         !progress.completed && progress.tone === 'working' && 'agent-streaming-text',
       )} title={label}>{label}</span>
     </div>

@@ -1519,8 +1519,17 @@ describe('AskAgentsDock', () => {
       sequence_no: 2, created_at: '2026-08-14T08:23:40Z', delivery_status: 'sent',
     }], next_before: null }, error: null });
     await renderDock();
-    await waitForText('Working with Support reviewer');
+    await waitForText('Support reviewer is running · Ask Agent is waiting');
     expect(document.querySelector('[data-agent-dock-sub-agent-runs]')?.textContent).toContain('Running');
+
+    mocks.getPlan.mockResolvedValue({ data: { plan: { ...reviewPlan,
+      runs: [{ ...child, status: 'paused', pause_reason: 'human_approval' }],
+    } }, error: null });
+    await act(async () => window.dispatchEvent(new CustomEvent('agent_run-updated', {
+      detail: { entity_id: 'review-run', update_kind: 'lifecycle' },
+    })));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 200)); });
+    await waitForText('Support reviewer needs approval · Ask Agent is waiting');
 
     mocks.getPlan.mockResolvedValue({ data: null, error: 'temporarily unavailable' });
     await act(async () => window.dispatchEvent(new CustomEvent('agent_run-updated', {
@@ -1536,7 +1545,7 @@ describe('AskAgentsDock', () => {
     // No child socket event: the fallback poll must settle the visible row.
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 5_100)); });
     expect(document.querySelector('[data-agent-dock-sub-agent-runs]')?.textContent).toContain('Completed');
-    expect(document.body.textContent).not.toContain('Working with Support reviewer');
+    expect(document.body.textContent).not.toContain('Ask Agent is waiting');
   }, 10_000);
 
   it('loads an older failed sub-agent attempt from its visible result marker', async () => {
