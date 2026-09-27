@@ -33,6 +33,7 @@ import {
   Delete01Icon,
   FolderInputIcon,
   InboxIcon,
+  LanguageCircleIcon,
   Link01Icon,
   Mail01Icon,
   MailOpenIcon,
@@ -209,7 +210,10 @@ export function ConversationActionsMenu({
           {trigger}
         </DropdownMenuTrigger>
         <DropdownMenuContent align={align} className="w-64">
-          <DropdownMenuItem onClick={() => setTranslationOpen(true)} className={itemClassName}>Live Translate</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setTranslationOpen(true)} className={itemClassName}>
+            <LanguageCircleIcon className={iconClassName} />
+            Live Translate
+          </DropdownMenuItem>
           {aiControl.item && <>{aiControl.item}<DropdownMenuSeparator /></>}
           <DropdownMenuItem onClick={handleToggleReadState} className={itemClassName}>
             <MailOpenIcon className={iconClassName} />
