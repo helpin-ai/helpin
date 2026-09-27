@@ -96,10 +96,10 @@ describe('Objectives redesign', () => {
     records.push(annual, boundary, old);
     const { container } = await render();
     const columns = [...container.querySelectorAll('[data-objective-column]')];
-    expect(columns.map(col => col.getAttribute('aria-label'))).toEqual(['Unscheduled', 'Q4, 2026', 'Q3, 2026', 'Q2, 2026', 'Q1, 2026']);
+    expect(columns.map(col => col.getAttribute('aria-label'))).toEqual(['Unscheduled', 'Q4, 2026', 'Q3, 2026', 'Q1, 2026']);
     expect(columns[0].textContent).toContain('Launch platform');
     expect(columns[1].textContent).toContain('Annual growth');
-    expect(columns[4].textContent).toContain('March boundary');
+    expect(columns[3].textContent).toContain('March boundary');
     expect(container.querySelectorAll('a[href$="/annual"]')).toHaveLength(1);
     expect(container.textContent).not.toContain('Last year goal');
     await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Previous year"]')!.click());
@@ -149,14 +149,30 @@ describe('Objectives redesign', () => {
     expect(container.querySelector('[aria-label^="Year:"]')?.textContent).toBe(selected);
   });
 
-  it('collapses closed objectives by default and reveals them for an explicit search', async () => {
+  it('shows closed objectives directly without a collapsed section', async () => {
     records[0].objective.state = 'closed';
     const { container } = await render();
-    expect(container.querySelector('a[href$="/one"]')).toBeNull();
-    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Closed objectives in Unscheduled"]')!.click());
+    expect(container.querySelector('[aria-label="Closed objectives in Unscheduled"]')).toBeNull();
     expect(container.querySelector('a[href$="/one"]')).not.toBeNull();
     await change(container.querySelector<HTMLInputElement>('[aria-label="Search objectives"]')!, 'Launch platform');
     expect(container.querySelector('a[href$="/one"]')).not.toBeNull();
+  });
+
+  it('hides empty Unscheduled and past quarters, keeps current and future quarters, and forbids adding in the past', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-27T12:00:00Z'));
+    records = [objective('old', 'Closed previous goal', 'alice')];
+    records[0].objective.deadline = '2026-06-30';
+    records[0].objective.state = 'closed';
+    const { container } = await render();
+    expect([...container.querySelectorAll('[data-objective-column]')].map(col => col.getAttribute('aria-label'))).toEqual(['Q4, 2026', 'Q3, 2026', 'Q2, 2026']);
+    expect(container.querySelector('[aria-label="Q2, 2026"]')?.textContent).toContain('Closed previous goal');
+    expect(container.querySelector('[aria-label="Add objective to Q2, 2026"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Add objective to Q4, 2026"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Add objective to Q3, 2026"]')).not.toBeNull();
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Previous year"]')!.click());
+    expect(container.querySelectorAll('[data-objective-column]')).toHaveLength(0);
+    expect(container.textContent).toContain('No objectives for 2025');
   });
 
   it('keeps cards and synchronizes owner avatars, search, and editable filter pills', async () => {
