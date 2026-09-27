@@ -184,7 +184,7 @@ export function ObjectivesPage() {
           emptyState={hasFilters && filtered.length === 0 ? <QuietEmptyState title="No objectives match these filters"
             description="Adjust your search or clear filters to see more objectives."
             action={<QuietTextAction onClick={clearAll}>Clear filters</QuietTextAction>} /> : undefined}
-          canCreate={canCreateObjective} expandClosed={!!query || filters.state?.[0] === 'closed'}
+          canCreate={canCreateObjective}
           onCreate={objectiveDates => openCreate('objective', { objectiveDates, teamId: filterTeam || undefined })}
           renderCard={objective => <MemoObjectiveCard data={objective} slug={workspace?.slug ?? ''}
             canEdit={canEdit} isAdmin={isAdmin} onArchive={handleArchive} />} />}
@@ -267,17 +267,17 @@ function ObjectiveCard({
         </div>
 
         {/* Meta row */}
-        <div className="mt-2 mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
-          <QuietStatusText className={stateCfg.color}>
-            {stateCfg.label}
+        <div className="mt-2 mb-3 flex min-w-0 items-center gap-x-2">
+          <QuietStatusText className={`${stateCfg.color} min-w-0 whitespace-nowrap`}>
+            <span className="truncate" title={stateCfg.label}>{stateCfg.label}</span>
           </QuietStatusText>
           {objective.state !== 'closed' && (
-            <span className={`ml-auto whitespace-nowrap text-xs ${health.className}`}>
+            <span className={`ml-auto shrink-0 whitespace-nowrap text-xs ${health.className}`}>
               {health.label}
             </span>
           )}
           {dateLabel && (
-            <span className="ml-auto flex items-center gap-1 whitespace-nowrap text-xs text-muted-foreground">
+            <span className="ml-auto flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-muted-foreground">
               <Calendar03Icon className="h-3 w-3" />
               {dateLabel}
             </span>

@@ -3,7 +3,7 @@ import { test, expect, type Page } from '@playwright/test';
 const base = { workspace_id: 'ws', objective_type: 'strategic', state: 'active', health: 'on_track', position: 0, archived: false, created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z' };
 const records = [
   { id: 'annual', name: 'Reach our annual growth target', planned_start_date: '2026-01-01', deadline: '2026-12-31' },
-  { id: 'current', name: 'Make publishing feel effortless', planned_start_date: '2026-07-01', deadline: '2026-09-30' },
+  { id: 'current', name: 'Increase MRR to 170K', planned_start_date: '2026-08-10', deadline: '2026-09-30', state: 'not_started' },
   { id: 'past', name: 'Improve trial conversion', deadline: '2026-06-30', health: 'off_track' },
   { id: 'old', name: 'Previous year objective', deadline: '2025-12-31' },
   { id: 'unscheduled', name: 'Explore a partner program' },
@@ -28,19 +28,17 @@ async function setup(page: Page, readonly = false) {
   return writes;
 }
 
-test('retains card content, groups once, reveals closed goals, and navigates to details', async ({ page }) => {
+test('retains card content, groups once, shows closed goals, and navigates to details', async ({ page }) => {
   await setup(page);
   await page.goto('/e2e/pm/harness/objectives.html');
-  await expect(page.locator('[data-objective-column]')).toHaveCount(5);
+  await expect(page.locator('[data-objective-column]')).toHaveCount(4);
   await page.screenshot({ path: '/tmp/helpin-objectives-desktop.png' });
-  await expect(page.locator('[data-objective-column] > div:first-child h2')).toHaveText(['Unscheduled', 'Q4, 2026', 'Q3, 2026', 'Q2, 2026', 'Q1, 2026']);
+  await expect(page.locator('[data-objective-column] > div:first-child h2')).toHaveText(['Unscheduled', 'Q4, 2026', 'Q3, 2026', 'Q2, 2026']);
   const annual = page.getByRole('region', { name: 'Q4, 2026', exact: true });
   await expect(annual.getByText('KR Progress')).toBeVisible();
   await expect(annual.getByText('Epic Progress')).toBeVisible();
   await expect(annual.getByText('Publishing experience')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Reach our annual growth target' })).toHaveCount(1);
-  await expect(page.getByRole('link', { name: 'Completed onboarding' })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Closed objectives in Q3, 2026' }).click();
   await expect(page.getByRole('link', { name: 'Completed onboarding' })).toBeVisible();
   await page.getByRole('button', { name: 'Previous year' }).click();
   await expect(page.getByRole('region', { name: 'Q4, 2025', exact: true }).getByRole('link')).toHaveText('Previous year objective');
@@ -80,4 +78,28 @@ for (const theme of ['light', 'dark']) test(`mobile ${theme}: only board scrolls
   const inset = await page.getByRole('region', { name: 'Objectives by quarter' }).evaluate(el => parseFloat(getComputedStyle(el).paddingLeft));
   await expect.poll(() => page.getByRole('region', { name: 'Q3, 2026', exact: true }).evaluate(el => Math.round(el.getBoundingClientRect().left))).toBe(inset);
   await page.screenshot({ path: `/tmp/helpin-objectives-${theme}-mobile.png` });
+});
+
+
+test('keeps the screenshot metadata on one line and centers the Sprint-style add action', async ({ page }) => {
+  await setup(page);
+  await page.setViewportSize({ width: 1100, height: 850 });
+  await page.goto('/e2e/pm/harness/objectives.html');
+  const column = page.getByRole('region', { name: 'Q3, 2026', exact: true });
+  const card = column.locator('article').filter({ hasText: 'Increase MRR to 170K' });
+  await expect(card).toBeVisible();
+  const state = await card.getByText('Not Started', { exact: true }).boundingBox();
+  const health = await card.getByText('On Track', { exact: true }).boundingBox();
+  const date = await card.getByText('Aug 10 → Sep 30', { exact: true }).boundingBox();
+  expect(Math.abs(state!.y + state!.height / 2 - date!.y - date!.height / 2)).toBeLessThan(2);
+  expect(Math.abs(health!.y + health!.height / 2 - date!.y - date!.height / 2)).toBeLessThan(2);
+  const add = column.getByRole('button', { name: 'Add objective to Q3, 2026' });
+  const bounds = await add.boundingBox();
+  const columnBounds = await column.boundingBox();
+  expect(Math.abs(bounds!.x + bounds!.width / 2 - columnBounds!.x - columnBounds!.width / 2)).toBeLessThan(1);
+  expect(await add.evaluate(el => getComputedStyle(el).justifyContent)).toBe('center');
+  const background = await add.evaluate(el => getComputedStyle(el).backgroundColor);
+  await add.hover();
+  await expect.poll(() => add.evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe(background);
+  await page.screenshot({ path: '/tmp/helpin-objectives-alignment.png' });
 });
