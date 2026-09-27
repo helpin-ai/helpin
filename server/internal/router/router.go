@@ -322,7 +322,6 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				if h.WidgetRateLimit != nil {
 					r.Use(h.WidgetRateLimit)
 				}
-				r.Get("", h.CustomerPortal.Config)
 				r.Get("/", h.CustomerPortal.Config)
 				r.Post("/auth/magic-link", h.CustomerPortal.RequestLink)
 				r.Post("/auth/exchange", h.CustomerPortal.Exchange)
