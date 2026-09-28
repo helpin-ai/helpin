@@ -110,7 +110,7 @@ export const PAGE_SEO = {
   compare: {
     title: 'Compare Helpin with Intercom, Zendesk, Linear and more',
     description:
-      'Side-by-side comparisons of Helpin with Intercom, Zendesk, Help Scout, Chatwoot and Linear: features, pricing for a sample team, and what switching involves.',
+      'Helpin side by side with Intercom, Zendesk, Help Scout, Chatwoot, Linear, Jira and Plane: features, pricing for a sample team and what switching involves.',
     canonicalPath: '/compare',
     imagePath: '/og/helpin-compare-green-v4.png',
     imageAlt: 'Compare Helpin',

@@ -12,6 +12,8 @@ const MAX_SEATS = 100;
 const TICKS = [1, 25, 50, 75, 100];
 
 const money = (value: number) => `$${Math.round(value).toLocaleString('en-US')}`;
+// Unit prices keep their cents (Jira's $9.05), so the line's arithmetic reads true.
+const unitMoney = (value: number) => (Number.isInteger(value) ? money(value) : `$${value.toFixed(2)}`);
 const share = (value: number, total: number) => `${total > 0 ? (value / total) * 100 : 0}%`;
 const unitPrice = (plan: CalculatorPlan, billing: Billing) => (billing === 'monthly' && plan.monthly !== undefined ? plan.monthly : plan.annual);
 const count = (value: number, [one, many]: readonly [string, string]) => `${value.toLocaleString('en-US')} ${value === 1 ? one : many}`;
@@ -128,7 +130,7 @@ export function PriceCalculator({ name, calculator }: { name: string; calculator
   const billedSeats = Math.max(seats, plan.minSeats ?? 1);
   const seatCost = billedSeats * perSeat;
   const rivalMonthly = seatCost + aiCost;
-  const rivalLines: Line[] = [[`${billedSeats} × ${plan.name} at ${money(perSeat)}`, money(seatCost)]];
+  const rivalLines: Line[] = [[`${billedSeats} × ${plan.name} at ${unitMoney(perSeat)}`, money(seatCost)]];
   if (ai) rivalLines.push([`${volume.toLocaleString('en-US')} ${aiName} × $${ai.price.toFixed(2)}`, money(aiCost)]);
   const rivalNote = [
     plan.minSeats && seats < plan.minSeats ? `${plan.name} has a ${plan.minSeats}-seat minimum.` : '',
