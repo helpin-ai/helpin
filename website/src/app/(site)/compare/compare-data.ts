@@ -1054,6 +1054,7 @@ export const COMPETITORS: Competitor[] = [
       ...sharedFaqs('Plane', { selfHost: false }),
     ],
     closing: { title: 'Open source, with the customer in the loop.', description: 'Self-host the Community edition for free, or start a 14-day trial of Helpin Cloud with no card.' },
+    video: { seconds: 38, summary: 'Both are open source. Customer requests fly in from email and chat and miss a tracker that starts at the work item; in Helpin every request lands in one inbox, becomes a task with the customer attached, and the reply flies back.' },
     sources: [
       { label: 'Plane pricing', url: 'https://plane.so/pricing' },
       { label: 'Plane billing and plans', url: 'https://docs.plane.so/workspaces-and-users/billing-and-plans' },
@@ -1209,6 +1210,7 @@ export const COMPETITORS: Competitor[] = [
       ...sharedFaqs('Jira').filter(([question]) => !question.startsWith('Can we run Helpin alongside')),
     ],
     closing: { title: 'Keep the customer next to the work.', description: 'Start a 14-day trial of Helpin Cloud with no card, or self-host the open-source edition for free.' },
+    video: { seconds: 37, summary: 'A customer’s request sinks into the backlog while support, feedback and meeting notes live in separate Atlassian products. Helpin brings it back up with the customer attached, from the task to the pull request and the reply.' },
     sources: [
       { label: 'Jira pricing', url: 'https://www.atlassian.com/software/jira/pricing' },
       { label: 'Atlassian cloud price tables (current and from October 13, 2026)', url: 'https://www.atlassian.com/licensing/future-pricing/cloud/list/pricing-tables' },
