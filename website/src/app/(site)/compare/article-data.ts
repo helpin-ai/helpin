@@ -3,7 +3,7 @@
 // and /pricing. Shared Helpin paragraphs keep every page describing Helpin the same way.
 import type { ProductPreviewName } from '../_components/product-previews/ProductPreview';
 
-export type ArticleFeature = {
+type ArticleFeature = {
   id: string;
   title: string;
   competitor: string;

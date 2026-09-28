@@ -14,9 +14,9 @@ export type IconKey =
   | 'channels' | 'ecosystem' | 'enterprise' | 'reporting' | 'messaging' | 'simplicity' | 'import' | 'mobile'
   | 'community' | 'deploy' | 'speed' | 'models' | 'docs';
 
-export type StepStatus = 'Available now' | 'Beta' | 'Coming soon' | 'Not yet';
+type StepStatus = 'Available now' | 'Beta' | 'Coming soon' | 'Not yet';
 
-export type TableRow = { label: string; helpin: Cell; competitor: Cell; helpinStatus?: Status; competitorStatus?: Status };
+type TableRow = { label: string; helpin: Cell; competitor: Cell; helpinStatus?: Status; competitorStatus?: Status };
 
 export type CalculatorPlan = { name: string; annual: number; monthly?: number; minSeats?: number };
 
