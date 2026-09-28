@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Maximize2, Volume2, VolumeX } from 'lucide-react';
 import type { compareVideo } from './compare-data';
 
-type Props = { id: string; name: string; video: ReturnType<typeof compareVideo> };
+type Props = { id: string; name: string; video: NonNullable<ReturnType<typeof compareVideo>> };
 
 // The comparison video in the hero. It plays muted and on a loop as soon as the page is
 // interactive and a quarter of it is on screen, and pauses while it's scrolled away.
