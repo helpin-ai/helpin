@@ -84,7 +84,7 @@ export function createDefaultCustomAgentForm(): CustomAgentFormData {
     allowed_targets: ['task'],
     allowed_tools: [],
     skills: [],
-    approval_mode: 'mutating_tools',
+    approval_mode: 'risk_based',
     max_concurrent_runs: '1',
     default_invocation_mode: 'interactive',
   };

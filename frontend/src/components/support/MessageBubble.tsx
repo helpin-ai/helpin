@@ -343,6 +343,8 @@ export const MessageBubble = memo(function MessageBubble({
   }, [message.id, message.workspace_id, message.conversation_id, queryClient]);
   const currentUser = useAuthStore((s) => s.user);
   const aiMeta = useMemo<AIMessageMetadata | null>(() => parseAIMessageMetadata(message.metadata), [message.metadata]);
+  const aiConfidence = typeof aiMeta?.ai_confidence === 'number' && Number.isFinite(aiMeta.ai_confidence)
+    && aiMeta.ai_confidence >= 0 && aiMeta.ai_confidence <= 1 ? aiMeta.ai_confidence : null;
   const linkPreviews = useMemo<SupportLinkPreview[]>(() => parseSupportLinkPreviews(message.metadata), [message.metadata]);
   const linkSecurity = useMemo<SupportLinkSecurity[]>(() => parseSupportLinkSecurity(message.metadata), [message.metadata]);
   const displayedReceiptStatus: SupportReceiptStatus = isExternalSupportEmailReply(message.metadata)
@@ -805,7 +807,7 @@ export const MessageBubble = memo(function MessageBubble({
     : 'Received via email';
   const hasEmailReceiptStatus = displayedReceiptStatus === 'sending_email' || displayedReceiptStatus === 'sent_email' || displayedReceiptStatus === 'delivered_email' || displayedReceiptStatus === 'read_email' || displayedReceiptStatus === 'sent_outside_helpin';
   const showStandaloneEmailBadge = !deliveryMode && hasEmailBadge && !(hasEmailReceiptStatus && !isCustomer);
-  const hasStatusBelow = !!deliveryMode || !!displayedReceiptStatus || !!aiMeta || hasEmailBadge;
+  const hasStatusBelow = !!deliveryMode || !!displayedReceiptStatus || aiConfidence !== null || !!aiMeta?.ai_sources?.length || hasEmailBadge;
   const bubbleWidthClass = hasEmailBody && !renderEmailBodyAsForwardedText
     ? 'min-w-0 w-[min(92%,64rem)] max-w-[calc(100%-2.25rem)]'
     : hasTableContent
@@ -1036,7 +1038,7 @@ export const MessageBubble = memo(function MessageBubble({
                 <span>Delivered to email</span>
               )}
             </div>
-          ) : aiMeta ? (
+          ) : aiMeta && (aiConfidence !== null || !!aiMeta.ai_sources?.length || !!displayedReceiptStatus) ? (
             // AI message: combined footer — confidence + sources cluster + receipt.
             // For agent messages the parent wrapper isn't bubble-width, so
             // justify-between would scatter the chips across the whole row.
@@ -1048,10 +1050,12 @@ export const MessageBubble = memo(function MessageBubble({
                 }`}
               >
                 <div className="inline-flex items-center gap-1.5 text-[11px]">
-                  <span className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 font-medium text-primary">
-                    <CheckmarkCircle02Icon className="h-3 w-3" />
-                    {(aiMeta.ai_confidence * 100).toFixed(0)}% confident
-                  </span>
+                  {aiConfidence !== null && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 font-medium text-primary">
+                      <CheckmarkCircle02Icon className="h-3 w-3" />
+                      {(aiConfidence * 100).toFixed(0)}% confident
+                    </span>
+                  )}
                   {aiMeta.ai_sources?.length > 0 && (
                     <button
                       type="button"

@@ -116,8 +116,13 @@ func compactKnowledgeSearchResults(results []KnowledgeSearchResult) []compactKno
 		limit = supportAIRetrievalTraceMaxResults
 	}
 	compact := make([]compactKnowledgeSearchResult, 0, limit)
-	for i := 0; i < limit; i++ {
-		result := results[i]
+	for _, result := range results {
+		if result.SourceType == "external_mcp" {
+			continue
+		}
+		if len(compact) == limit {
+			break
+		}
 		compact = append(compact, compactKnowledgeSearchResult{
 			ID:            strings.TrimSpace(result.ID),
 			ReferenceID:   strings.TrimSpace(result.ReferenceID),

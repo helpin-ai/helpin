@@ -4,7 +4,6 @@ import { describe, it } from 'node:test';
 import { inflateSync } from 'node:zlib';
 
 const { createPageMetadata, PAGE_SEO } = await import('../src/lib/metadata.ts');
-const { marketingMetadata } = await import('../src/app/(site)/_components/marketing-metadata.ts');
 const marketingRoutes = ['/product', '/products/customer-support', '/products/projects', '/products/crm', '/products/meetings', '/products/knowledge', '/products/ai-agents', '/developers', '/self-hosting', '/branding'];
 
 function decodeRgbaPng(png) {
@@ -64,17 +63,22 @@ function decodeRgbaPng(png) {
 
 describe('website SEO metadata', () => {
   it('defines a complete, unique contract for every public route', () => {
-    const expectedRoutes = ['home', 'pricing', 'privacy', 'terms'];
-    assert.deepEqual(Object.keys(PAGE_SEO), expectedRoutes);
+    const expectedRoutes = Object.keys(PAGE_SEO);
+    assert.deepEqual(
+      Object.values(PAGE_SEO).map(page => page.canonicalPath).sort(),
+      ['/', '/pricing', '/privacy', '/terms', '/compare', ...marketingRoutes].sort(),
+    );
 
     const titles = new Set();
+    const descriptions = new Set();
     for (const route of expectedRoutes) {
       const page = PAGE_SEO[route];
       const metadata = createPageMetadata(page);
 
-      assert.ok(page.title.length > 10);
+      assert.ok(page.title.length > 10 && page.title.length <= 60, `${page.title} should fit in search results`);
       assert.ok(page.description.length >= 50 && page.description.length <= 160);
-      assert.match(page.canonicalPath, /^\/(?:pricing|privacy|terms)?$/);
+      assert.match(page.canonicalPath, /^\/[a-z0-9/-]*$/);
+      assert.ok(existsSync(new URL('../public' + page.imagePath, import.meta.url)));
       assert.match(page.imagePath, /^\/og\/helpin-[a-z0-9-]+\.png$/);
       assert.match(page.imageAlt, /Helpin/);
       assert.equal(metadata.alternates?.canonical, page.canonicalPath);
@@ -84,7 +88,6 @@ describe('website SEO metadata', () => {
       assert.equal(metadata.openGraph?.type, 'website');
       assert.deepEqual(metadata.openGraph?.images, [{
         url: page.imagePath,
-        secureUrl: page.imagePath,
         width: 1200,
         height: 630,
         type: 'image/png',
@@ -106,20 +109,19 @@ describe('website SEO metadata', () => {
       assert.equal('keywords' in metadata, false);
       assert.equal(titles.has(page.title), false);
       titles.add(page.title);
+      assert.equal(descriptions.has(page.description), false, `${route} needs its own description`);
+      descriptions.add(page.description);
     }
   });
 
-  it('gives every marketing page a public canonical and branded social image', () => {
-    for (const path of marketingRoutes) {
-      const metadata = marketingMetadata('Helpin — ' + path, path);
-      const image = metadata.openGraph.images[0];
-      assert.match(image.url, /-green-v4\.png$/);
-      assert.equal(metadata.twitter.images[0].url, image.url);
-      assert.equal(metadata.alternates.canonical, path);
-      assert.equal(metadata.openGraph.url, path);
-      assert.equal(metadata.robots.index, true);
-      assert.ok(existsSync(new URL('../public' + image.url, import.meta.url)));
-    }
+  it('lists every public page in the sitemap and points robots.txt at it', async () => {
+    const { default: sitemap } = await import('../src/app/sitemap.ts');
+    const { default: robots } = await import('../src/app/robots.ts');
+    const { COMPETITORS } = await import('../src/app/(site)/compare/compare-data.ts');
+    const urls = sitemap().map(entry => entry.url);
+    const pages = Object.values(PAGE_SEO).map(page => page.canonicalPath === '/' ? 'https://helpin.ai' : 'https://helpin.ai' + page.canonicalPath);
+    assert.deepEqual(urls, [...pages, ...COMPETITORS.map(item => `https://helpin.ai/compare/${item.slug}`)]);
+    assert.equal(robots().sitemap, 'https://helpin.ai/sitemap.xml');
   });
 
   it('ships social images as optimized 1200 by 630 PNG files', () => {
@@ -156,6 +158,22 @@ describe('website SEO metadata', () => {
         }
       }
       assert.ok(darkPixels > 100 && lightPixels > 100, `${relativePath} should render the Helpin mark`);
+    }
+  });
+
+  it('gives every comparison page complete, unique, sourced metadata', async () => {
+    const { COMPETITORS, competitorSeo } = await import('../src/app/(site)/compare/compare-data.ts');
+    const titles = new Set(Object.values(PAGE_SEO).map(page => page.title));
+    for (const competitor of COMPETITORS) {
+      const page = competitorSeo(competitor);
+      assert.ok(page.title.length <= 60, `${page.title} should fit in search results`);
+      assert.ok(page.description.length >= 50 && page.description.length <= 160, `${competitor.slug} description length`);
+      assert.equal(titles.has(page.title), false);
+      titles.add(page.title);
+      assert.match(competitor.checked, /^\d{4}-\d{2}-\d{2}$/);
+      assert.ok(competitor.sources.length >= 3, `${competitor.slug} needs sources`);
+      assert.ok(competitor.strengths.length >= 3, `${competitor.slug} should say where the competitor is stronger`);
+      assert.ok(existsSync(new URL('../public' + page.imagePath, import.meta.url)), `${page.imagePath} should exist`);
     }
   });
 });

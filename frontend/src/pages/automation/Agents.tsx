@@ -1,5 +1,5 @@
 import type { AIConnectionSelection } from '@/lib/services/aiConnectionService';
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { CodingCapacityNotice } from '@/components/agents/CodingCapacityNotice';
 import { useNavigate } from '@tanstack/react-router';
 import { Collapsible } from 'radix-ui';
@@ -2424,9 +2424,10 @@ export function AgentRow({
 // AgentsPage
 // ---------------------------------------------------------------------------
 
-export function AgentsPage() {
+export function AgentsPage({ requestedAgentId }: { requestedAgentId?: string } = {}) {
   useTitle('Agents');
   const navigate = useNavigate();
+  const openedRequestedAgentId = useRef<string | null>(null);
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const workspaceId = workspace?.id;
   const repositoriesSettingsHref = workspace?.slug ? buildSettingsRoutePath(workspace.slug, 'repositories') : undefined;
@@ -2436,6 +2437,7 @@ export function AgentsPage() {
   const { teams: accessibleTeams, isAdmin } = useAccessibleTeams(workspaceId ?? '');
 
   const [presets, setPresets] = useState<AgentPresetDefinition[]>([]);
+  const [presetsLoadedFor, setPresetsLoadedFor] = useState<string | null>(null);
   const [toolCatalog, setToolCatalog] = useState<ToolCatalogResponse | null>(null);
   const [skillCatalog, setSkillCatalog] = useState<SkillCatalogResponse | null>(null);
   const agentFleetQuery = useAutomationAgentFleet(workspaceId ?? '');
@@ -2589,6 +2591,7 @@ export function AgentsPage() {
     if (!res.error && res.data) {
       setPresets(res.data);
     }
+    setPresetsLoadedFor(workspaceId);
   }, [workspaceId]);
 
   const loadToolCatalog = useCallback(async () => {
@@ -3078,6 +3081,18 @@ export function AgentsPage() {
     setDialogOpen(false);
     void loadCustomAgentVersions(agent);
   };
+
+  useEffect(() => {
+    if (!requestedAgentId || openedRequestedAgentId.current === requestedAgentId || agentFleetQuery.isLoading) return;
+    const requested = agents.find((agent) => agent.id === requestedAgentId);
+    if (!requested) return;
+    if (requested.is_system && presetsLoadedFor !== workspaceId) return;
+    const timer = setTimeout(() => {
+      openedRequestedAgentId.current = requestedAgentId;
+      openEditDialog(requested);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [requestedAgentId, agents, agentFleetQuery.isLoading, presetsLoadedFor, workspaceId, openEditDialog]);
 
   const openDeleteDialog = (agent: Agent) => {
     if (agent.is_system) return;

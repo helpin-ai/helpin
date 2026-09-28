@@ -1,6 +1,6 @@
 import { HeroVortex } from '../../_components/HeroVortex';
 import { DEMO_URL, FAQList } from '../../_components/ui';
-import { marketingMetadata } from '../../_components/marketing-metadata';
+import { createPageMetadata, PAGE_SEO } from '@/lib/metadata';
 import Link from 'next/link';
 import { ArrowRight, BookOpen, ChevronRight, Code2, FolderOpen, History, Languages, Link2, ShieldCheck, Search, Server, Braces } from 'lucide-react';
 import { PreviewNav } from '../../_components/PreviewNav';
@@ -14,7 +14,7 @@ import { PublishingDemoV2 } from './publishing-demo-v2';
 import './knowledge.css';
 import { KnowledgeWorkspace, KnowledgeReader, KnowledgeAPI } from './knowledge-previews';
 
-export const metadata = marketingMetadata("Knowledge \u2014 Helpin", "/products/knowledge");
+export const metadata = createPageMetadata(PAGE_SEO.knowledge);
 const FEATURES = [
   { Icon: FolderOpen, title: 'Find the right guide.', body: 'Organize articles into collections. Give longer guides a table of contents so readers can jump to the part they need.' },
   { Icon: Search, title: 'Ask in your own words.', body: 'Enable AI answers with article citations, so readers can check the guidance behind the response.' },
@@ -58,13 +58,13 @@ const FAQS = [
   ],
   [
     "Can we self-host Knowledge?",
-    "Yes. Community includes every module by default, including docs and the help center. It is free under AGPL-3.0 with no plan limits. Community is currently a 0.1 beta.",
+    "Yes. Community includes every module by default, including docs and the help center. It is free under AGPL-3.0 with no plan limits. Community is currently a 0.2 beta.",
     "/self-hosting#whats-included",
     "See what’s included"
   ]
 ] as const;
 export default function KnowledgePage() {
-  return <><PreviewNav /><main className="knowledge-page">
+  return <><PreviewNav tone="dark" /><main className="knowledge-page">
     <section className="knowledge-hero motion-hero" aria-labelledby="knowledge-title"><HeroVortex variant="flow" tone="dark" /><div className="wrap">
       <div className="knowledge-breadcrumb"><Link href="/">Helpin</Link><ChevronRight size={12} /><span>Knowledge</span></div>
       <div className="knowledge-hero-copy"><span className="eyebrow">Help center, product docs, and team knowledge</span><h1 id="knowledge-title">Better docs for your customers.<br /><span>Better answers from your AI agents.</span></h1><p className="lede">Publish help articles, product guides, and API docs in one place. Agents draft updates from support gaps and shipped changes. Nothing goes live until your team publishes it.</p><CtaRow primaryLabel="Start free trial" secondaryHref={DEMO_URL} secondaryLabel="Book a demo" /><p className="knowledge-supporting-note">14-day free trial · No card required</p><div className="knowledge-hero-points"><span><Server size={14} />Your own domain</span><span><Search size={14} />Search and AI answers</span><span><Code2 size={14} />Interactive API docs</span><span><ShieldCheck size={14} />Your team publishes</span></div></div>

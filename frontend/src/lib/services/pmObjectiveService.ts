@@ -1,5 +1,7 @@
 import { api } from '../api';
 import type {
+  ActivityLogEntry,
+  PaginatedResponse,
   CreateKeyResultRequest,
   CreateObjectiveRequest,
   KeyResult,
@@ -78,6 +80,9 @@ export const pmObjectiveService = {
 
   updateKeyResult: (workspaceId: string, id: string, payload: UpdateKeyResultRequest) =>
     api.put<KeyResult>(`/pm/key-results/${id}${qs(workspaceId)}`, payload),
+
+  keyResultActivity: (workspaceId: string, id: string, page = 1) =>
+    api.get<PaginatedResponse<ActivityLogEntry[]>>(`/pm/key-results/${id}/activity${qs(workspaceId)}&page=${page}&per_page=20`),
 
   deleteKeyResult: (workspaceId: string, id: string) =>
     api.del(`/pm/key-results/${id}${qs(workspaceId)}`),

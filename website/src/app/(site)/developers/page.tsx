@@ -1,6 +1,6 @@
 import { HeroVortex } from '../_components/HeroVortex';
 import { CtaRow } from '../_components/ui';
-import { marketingMetadata } from '../_components/marketing-metadata';
+import { createPageMetadata, PAGE_SEO } from '@/lib/metadata';
 import Link from 'next/link';
 import { ArrowRight, BookOpen, Braces, KeyRound, MessagesSquare, Plug, Terminal, Webhook } from 'lucide-react';
 import { PreviewNav } from '../_components/PreviewNav';
@@ -14,7 +14,7 @@ import '../_components/platform/platform-polish.css';
 import './developers-copy.css';
 import { DOCS } from '../_components/docsLinks';
 
-export const metadata = marketingMetadata("Developers \u2014 Helpin", "/developers");
+export const metadata = createPageMetadata(PAGE_SEO.developers);
 const FAQS = [
   [
     "Where should I start?",
@@ -49,7 +49,7 @@ const FAQS = [
     "GitHub and GitLab repository events, such as a pull request opened, merged, or closed, or a review requested, plus workspace events and schedules. A matching automation rule starts the selected agent with its tools and approvals. Outbound webhooks aren’t available yet."
   ]
 ] as const;
-export default function DevelopersPage(){return <><PreviewNav/><div className="platform-page developers-page">
+export default function DevelopersPage(){return <><PreviewNav tone="dark"/><div className="platform-page developers-page">
  <section className="platform-hero motion-hero"><HeroVortex variant="connections" tone="dark" /><div className="wrap"><PlatformBreadcrumb label="Developers"/><div className="platform-hero-grid"><div className="platform-hero-copy"><span className="eyebrow">SDKs, MCP, and events for AI agents</span><h1>Connect your product. <span>Give AI agents the tools to act.</span></h1><p className="lede">Bring support into your app, identify the customer behind each conversation, and give agents access to the tools behind the work.</p><CtaRow primaryLabel="Start free trial" /><p className="developer-supporting-note">Open source · Self-host free, or let us run it</p></div><div><DeveloperHeroScene/><p className="developer-demo-caption">Your app starts the conversation. Agents work with the tools you connect.</p></div></div></div></section>
  <nav className="platform-page-nav" aria-label="On this page"><div className="wrap"><strong>Developers</strong><a href="#sdk">SDKs</a><a href="#identity">Identity</a><a href="#mcp">MCP</a><a href="#webhooks">Events & automation</a><a href="#developer-resources">Resources</a></div></nav>
 

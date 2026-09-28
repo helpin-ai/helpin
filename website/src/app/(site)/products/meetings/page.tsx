@@ -1,6 +1,6 @@
 import { HeroVortex } from '../../_components/HeroVortex';
 import {  DEMO_URL, FAQList } from '../../_components/ui';
-import { marketingMetadata } from '../../_components/marketing-metadata';
+import { createPageMetadata, PAGE_SEO } from '@/lib/metadata';
 import Link from 'next/link';
 import { ArrowRight, CalendarDays, ChevronRight, Mic, Settings2 } from 'lucide-react';
 import { PreviewNav } from '../../_components/PreviewNav';
@@ -13,7 +13,7 @@ import { MeetingWorkspace } from './meeting-workspace';
 import { MeetingAgenda } from './meeting-agenda';
 import { MeetingContext } from './meeting-context';
 
-export const metadata = marketingMetadata("Meetings \u2014 Helpin", "/products/meetings");
+export const metadata = createPageMetadata(PAGE_SEO.meetings);
 const PLATFORMS = [['google_meet', 'Google Meet'], ['zoom', 'Zoom'], ['teams', 'Microsoft Teams'], ['webex', 'Webex']];
 const FAQS = [
   [
@@ -56,10 +56,10 @@ const FAQS = [
     "Yes. Configure its name, joining preferences, and recording settings.",
     "/products/meetings#meeting-capture"
   ],
-  ["Can we self-host Meetings?", "Yes. Meetings is included in Helpin Community, free under AGPL-3.0 with no plan limits. Community is in 0.1 beta. Capture needs a Recall.ai account or a Vexa deployment (hosted or self-hosted); Webex requires Recall.ai. Calendar sync needs a Google OAuth app, and summaries need an AI provider.", "/self-hosting#whats-included"]
+  ["Can we self-host Meetings?", "Yes. Meetings is included in Helpin Community, free under AGPL-3.0 with no plan limits. Community is in 0.2 beta. Capture needs a Recall.ai account or a Vexa deployment (hosted or self-hosted); Webex requires Recall.ai. Calendar sync needs a Google OAuth app, and summaries need an AI provider.", "/self-hosting#whats-included"]
 ] as const;
 export default function MeetingsPage() {
-  return <><PreviewNav /><main className="meetings-page">
+  return <><PreviewNav tone="dark" /><main className="meetings-page">
     <section className="meetings-hero motion-hero" aria-labelledby="meetings-title"><HeroVortex variant="flow" tone="dark" /><div className="wrap">
       <div className="meetings-breadcrumb"><Link href="/">Helpin</Link><ChevronRight size={12}/><span>Meetings</span></div>
       <div className="meetings-hero-copy"><span className="eyebrow">Meetings</span><h1 id="meetings-title">Meeting notes that become <span>tracked work.</span></h1><p className="lede">Helpin’s notetaker joins your Google Meet, Zoom, Microsoft Teams, and Webex calls. You get a transcript, summary, decisions, and action items. Turn action items into tasks, send the follow-up, and keep the meeting linked to the contact, company, and deal.</p><CtaRow primaryLabel="Start free trial" secondaryHref={DEMO_URL} secondaryLabel="Book a demo" /><p className="meetings-supporting-note">14-day free trial · No card required</p><div className="meetings-platforms">{PLATFORMS.map(([id,label])=><span key={id}><img src={`/new/meetings/${id}.svg`} width={19} height={19} alt=""/>{label}</span>)}</div></div>

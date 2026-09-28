@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // CodingTranscriptPane internally calls useWorkspaceMembers (TanStack Query).
 // Stub it so tests don't need a QueryClientProvider — they only assert
@@ -26,6 +26,7 @@ vi.mock('@tanstack/react-virtual', () => ({
 }));
 
 import { CodingTranscriptPane } from '../CodingSession/CodingTranscriptPane';
+import { useDockStore } from '@/stores/dockStore';
 import type {
   AgentRunArtifact,
   CodingSession,
@@ -197,6 +198,10 @@ function buildVerdictOnlyReviewArtifact(overrides: Partial<AgentRunArtifact> = {
 }
 
 describe('CodingInterruptionPanel', () => {
+  beforeEach(() => {
+    useDockStore.setState({ transcriptView: 'detailed' });
+  });
+
   afterEach(() => {
     document.body.innerHTML = '';
   });

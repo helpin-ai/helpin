@@ -25,6 +25,14 @@ export const AI_MODELS = {
     },
     {
       "provider": "openrouter",
+      "canonical_model": "gpt-6-luna",
+      "selection_model": "openai/gpt-6-luna",
+      "label": "GPT-6 Luna",
+      "tier": "small",
+      "enabled": true
+    },
+    {
+      "provider": "openrouter",
       "canonical_model": "glm-5.3-flash",
       "selection_model": "z-ai/glm-5.3-flash:exacto",
       "label": "GLM 5.3 Flash",

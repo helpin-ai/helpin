@@ -36,7 +36,7 @@ agent:
       {{raw_configuration_json}}
     allowed_tools: [get_pull_request_diff, find_tasks_for_git_changes, create_document, link_document_to_object, create_task, add_task_comment]
     allowed_targets: [repository, document]
-    approval_mode: always
+    approval_mode: risk_based
 trigger:
   type: event
   event: github.pull_request_merged

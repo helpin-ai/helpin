@@ -44,6 +44,7 @@ export function DesktopSupportSidebar({ workspaceId, wsSlug }: DesktopSupportSid
           inboxScopes={inboxScopes}
           selectedMailboxId={selectedMailboxId}
           canManageSettings
+          showCustomViews={false}
           wsSlug={wsSlug}
           pathname={pathname}
           onNavFilterChange={setNavFilter}
@@ -52,9 +53,9 @@ export function DesktopSupportSidebar({ workspaceId, wsSlug }: DesktopSupportSid
           onEditMailbox={(id) => { setEditMailboxId(id); setTeamInboxDialogOpen(true) }}
           onArchiveMailbox={(id) => archiveMailbox.mutate(id)}
           onNavigate={(to) => navigate({ to })}
-          // Custom inbox views are a web-only feature; desktop does not render
-          // them (no `customViews` passed), so these handlers are never invoked.
+          // Custom inbox views are hidden in desktop.
           onCustomViewSelect={() => {}}
+          onCreateCustomView={() => {}}
           onEditCustomView={() => {}}
           onDeleteCustomView={() => {}}
         />

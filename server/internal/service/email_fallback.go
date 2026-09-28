@@ -112,6 +112,18 @@ func inboundPayloadProjection(payload model.PostmarkInboundPayload) inboundEmail
 	}
 }
 
+// Notification excerpts must be more conservative than stored messages: an
+// ambiguous HTML projection may contain an entire quoted thread.
+func supportEmailNotificationPreview(payload model.PostmarkInboundPayload, projection inboundEmailProjection) string {
+	if reply := strings.TrimSpace(stripSupportEmailReplyDelimiter(payload.StrippedTextReply)); reply != "" {
+		return reply
+	}
+	if projection.HasQuotedContent {
+		return strings.TrimSpace(projection.VisibleText)
+	}
+	return ""
+}
+
 // inboundPayloadBodies is retained for callers/tests that only need the two
 // legacy display variants.
 func inboundPayloadBodies(payload model.PostmarkInboundPayload) (markdown, htmlBody string) {
@@ -1318,7 +1330,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 	}
 
 	if !isTeammateReply && !isNotice {
-		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, s.pushSenderService, conv, content, senderName)
+		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, s.pushSenderService, conv, supportEmailNotificationPreview(payload, projection), senderName, createdMsg.ID)
 	}
 	if !isTeammateReply && !isNotice && !unknownSender && s.supportInboxService != nil {
 		s.supportInboxService.recordSupportEvent(SupportEventInput{
@@ -3843,7 +3855,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 	}
 
 	if !isNotice {
-		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, s.pushSenderService, conversation, content, customerName)
+		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, s.pushSenderService, conversation, supportEmailNotificationPreview(payload, projection), customerName, message.ID)
 	}
 	if !isNotice && s.supportInboxService != nil {
 		s.supportInboxService.recordSupportEvent(SupportEventInput{

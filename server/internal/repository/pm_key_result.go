@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
@@ -58,12 +59,30 @@ func (r *PMKeyResultRepository) Create(ctx context.Context, kr *model.PMKeyResul
 	return nil
 }
 
-// Update saves a key result.
-func (r *PMKeyResultRepository) Update(ctx context.Context, kr *model.PMKeyResult) error {
-	if err := r.db.WithContext(ctx).Save(kr).Error; err != nil {
-		return fmt.Errorf("update key result: %w", err)
+// UpdateWithActivity applies a mutation to the locked latest result and commits its
+// value history in the same transaction.
+func (r *PMKeyResultRepository) UpdateWithActivity(ctx context.Context, id string, mutate func(*model.PMKeyResult) (*model.PMActivityLog, error)) (*model.PMKeyResult, error) {
+	var result model.PMKeyResult
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&result, "id = ?", id).Error; err != nil {
+			return err
+		}
+		activity, err := mutate(&result)
+		if err != nil {
+			return err
+		}
+		if err := tx.Save(&result).Error; err != nil {
+			return err
+		}
+		if activity != nil {
+			return NewPMActivityRepository(tx).Create(ctx, activity)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("update key result: %w", err)
 	}
-	return nil
+	return &result, nil
 }
 
 // Delete hard-deletes a key result.

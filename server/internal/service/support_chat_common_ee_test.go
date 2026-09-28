@@ -19,10 +19,10 @@ func TestSupportGreetingMetersLunaAndAuditsOneCompletion(t *testing.T) {
 	if err != nil || !handled {
 		t.Fatalf("handled=%v err=%v", handled, err)
 	}
-	if store.reserveCalls != 1 || store.reconcile.Entry.ModelTier != "small" || store.reconcile.Entry.FeatureKey != BillingFeatureSupportAIReply || store.reconcile.Entry.CanonicalModel != "gpt-5.6-luna" {
+	if store.reserveCalls != 1 || store.reconcile.Entry.ModelTier != "small" || store.reconcile.Entry.FeatureKey != BillingFeatureSupportAIReply || store.reconcile.Entry.CanonicalModel != "gpt-6-luna" {
 		t.Fatalf("unexpected usage: reserves=%d entry=%+v", store.reserveCalls, store.reconcile.Entry)
 	}
-	if len(audit.started) != 1 || len(audit.finished) != 1 || audit.started[0].Model != "openai/gpt-5.6-luna" {
+	if len(audit.started) != 1 || len(audit.finished) != 1 || audit.started[0].Model != "openai/gpt-6-luna" {
 		t.Fatalf("audit start/finish=%+v/%+v", audit.started, audit.finished)
 	}
 }

@@ -50,6 +50,8 @@ import type { SupportInboxEmptyState } from './ConversationList';
 import { SupportInboxPanelHeader } from './SupportInboxPanelHeader';
 import { ReplyComposerLoading } from './ReplyComposerLoading';
 import { getInitialThreadScrollTarget, getPrependRestoredScrollTop, isNearThreadBottom, isNearThreadTop, shouldAutoScrollThread, shouldMarkOpenThreadRead } from './threadAutoScroll';
+import { getScrollDateIndicator } from './threadDateIndicator';
+import { cn } from '@/lib/utils';
 import type { UpgradeRequiredReason } from '@edition';
 
 interface MessageThreadProps {
@@ -179,24 +181,42 @@ function resolveAgentIdentity(
 
 function DaySeparator({
   label,
-  isSticky,
+  floating = false,
+  phase = 'visible',
   separatorRef,
 }: {
   label: string;
-  isSticky: boolean;
+  floating?: boolean;
+  phase?: 'visible' | 'handoff' | 'hidden';
   separatorRef?: (node: HTMLDivElement | null) => void;
 }) {
-  return (
-    <div ref={separatorRef} className="sticky top-0 z-[1] my-5 flex items-center gap-3">
-      <div className="h-px flex-1 bg-border" aria-hidden />
-      <span
-        className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold text-foreground/75 ${
-          isSticky ? 'bg-white dark:bg-background' : 'bg-muted'
-        }`}
-        style={{ border: 'none', boxShadow: 'none', outline: 'none' }}
+  const dateLabel = (
+    <span className="shrink-0 rounded-full bg-muted px-3 py-1 text-xs font-semibold text-foreground/75">
+      {label}
+    </span>
+  );
+
+  if (floating) {
+    return (
+      <div
+        data-support-floating-date
+        aria-hidden="true"
+        className={cn(
+          'flex justify-center motion-reduce:transition-none',
+          phase === 'handoff' ? 'transition-none translate-y-0 opacity-0'
+            : 'transition-[opacity,transform] duration-200 ease-out',
+          phase === 'visible' ? 'translate-y-0 opacity-100' : phase === 'hidden' ? '-translate-y-2 opacity-0' : null,
+        )}
       >
-        {label}
-      </span>
+        {dateLabel}
+      </div>
+    );
+  }
+
+  return (
+    <div ref={separatorRef} data-support-day-separator className="my-5 flex items-center gap-3">
+      <div className="h-px flex-1 bg-border" aria-hidden />
+      {dateLabel}
       <div className="h-px flex-1 bg-border" aria-hidden />
     </div>
   );
@@ -297,6 +317,7 @@ export function MessageThread({
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const previousConversationIdRef = useRef<string | null>(conversationId);
   const separatorRefs = useRef(new Map<number, HTMLDivElement>());
+  const lastDateScrollTopRef = useRef(0);
   const isNearBottomRef = useRef(true);
   const [upgradeDialogReason, setUpgradeDialogReason] = useState<UpgradeRequiredReason | null>(null);
   const pendingInitialScrollRef = useRef(false);
@@ -348,7 +369,7 @@ export function MessageThread({
   taskReviewSourceRef.current = `${workspaceId}:${conversationId}`;
 
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
-  const [activeStickySeparator, setActiveStickySeparator] = useState<number | null>(null);
+  const [floatingDate, setFloatingDate] = useState<{ conversationId: string | null; label: string; phase: 'visible' | 'handoff' | 'hidden' }>({ conversationId: null, label: '', phase: 'hidden' });
   const [isThreadTransitioning, setIsThreadTransitioning] = useState(false);
   const lastOpenThreadReadMessageIdRef = useRef<string | null>(null);
   const assignedAgentId = conversation?.assigned_agent_id ?? null;
@@ -823,22 +844,8 @@ export function MessageThread({
     const viewport = scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLDivElement | null;
     if (!viewport) return;
 
-    let frame = 0;
-    const updateActiveStickySeparator = () => {
-      frame = 0;
-      const scrollTop = viewport.scrollTop;
-      let nextActive: number | null = null;
-
-      for (const [index, node] of separatorRefs.current.entries()) {
-        if (node.offsetTop < scrollTop) {
-          if (nextActive === null || index > nextActive) {
-            nextActive = index;
-          }
-        }
-      }
-
-      setActiveStickySeparator((current) => (current === nextActive ? current : nextActive));
-    };
+    let hideTimer: number | undefined;
+    lastDateScrollTopRef.current = viewport.scrollTop;
 
     const onScroll = () => {
       isNearBottomRef.current = isNearThreadBottom(viewport);
@@ -849,21 +856,41 @@ export function MessageThread({
         };
         void fetchNextPage();
       }
-      if (frame) return;
-      frame = window.requestAnimationFrame(updateActiveStickySeparator);
+
+      const scrollTop = viewport.scrollTop;
+      const viewportTop = viewport.getBoundingClientRect().top;
+      const floatingAnchor = scrollAreaRef.current?.parentElement?.querySelector<HTMLElement>('[data-support-floating-date-anchor]');
+      const floatingTop = (floatingAnchor?.getBoundingClientRect().top ?? viewportTop + 8) - viewportTop;
+      const separators = [...separatorRefs.current.entries()]
+        .sort(([a], [b]) => a - b)
+        .map(([, node]) => ({
+          top: (node.querySelector('span') ?? node).getBoundingClientRect().top - viewportTop + scrollTop,
+          label: node.textContent?.trim() ?? '',
+        }));
+      const label = getScrollDateIndicator({ scrollTop, previousScrollTop: lastDateScrollTopRef.current, floatingTop, separators });
+
+      window.clearTimeout(hideTimer);
+      if (label) {
+        setFloatingDate((current) => current.conversationId === conversationId && current.label === label && current.phase === 'visible'
+          ? current : { conversationId, label, phase: 'visible' });
+        hideTimer = window.setTimeout(() => {
+          setFloatingDate((current) => ({ ...current, phase: 'hidden' }));
+        }, 1000);
+      } else {
+        const phase = scrollTop < lastDateScrollTopRef.current ? 'handoff' : 'hidden';
+        setFloatingDate((current) => current.phase === phase ? current : { ...current, phase });
+      }
+      lastDateScrollTopRef.current = scrollTop;
     };
 
     isNearBottomRef.current = isNearThreadBottom(viewport);
-    updateActiveStickySeparator();
     viewport.addEventListener('scroll', onScroll, { passive: true });
 
     return () => {
       viewport.removeEventListener('scroll', onScroll);
-      if (frame) {
-        window.cancelAnimationFrame(frame);
-      }
+      window.clearTimeout(hideTimer);
     };
-  }, [fetchNextPage, hasNextPage, isFetchNextPageError, isFetchingNextPage, visibleGroupedMessages]);
+  }, [conversationId, fetchNextPage, hasNextPage, isFetchNextPageError, isFetchingNextPage, visibleGroupedMessages]);
 
   // Treat a stale conversation id (e.g., previous selection that no longer
   // matches the active filter, or a deleted conversation) the same as no
@@ -1161,9 +1188,10 @@ export function MessageThread({
 
       {/* Messages area with light background (Crisp-style) */}
       <LiveTranslateBar workspaceId={workspaceId} conversationId={conversationId} editable={!!access?.permissions?.includes('support.edit')} />
+      <div className="relative min-h-0 min-w-0 flex-1">
       <ScrollArea
         ref={scrollAreaRef}
-        className="min-h-0 min-w-0 flex-1 bg-muted/20 dark:bg-sidebar [&>[data-slot=scroll-area-viewport]>div]:!block [&>[data-slot=scroll-area-viewport]>div]:!w-full [&>[data-slot=scroll-area-viewport]>div]:!min-w-0 [&>[data-slot=scroll-area-viewport]>div]:!max-w-full"
+        className="h-full min-w-0 bg-muted/20 dark:bg-sidebar [&>[data-slot=scroll-area-viewport]>div]:!block [&>[data-slot=scroll-area-viewport]>div]:!w-full [&>[data-slot=scroll-area-viewport]>div]:!min-w-0 [&>[data-slot=scroll-area-viewport]>div]:!max-w-full"
       >
         <div data-support-message-list className="w-full min-w-0 max-w-full overflow-x-hidden px-4 pb-10 pt-2">
           {isThreadLoading && <MessageSkeleton />}
@@ -1205,7 +1233,6 @@ export function MessageThread({
                 <DaySeparator
                   key={`sep-${idx}`}
                   label={item.label}
-                  isSticky={activeStickySeparator === idx}
                   separatorRef={(node) => {
                     if (node) {
                       separatorRefs.current.set(idx, node);
@@ -1249,6 +1276,14 @@ export function MessageThread({
           <div ref={messagesEndRef} />
         </div>
       </ScrollArea>
+      <div data-support-floating-date-anchor className="pointer-events-none absolute inset-x-0 top-2 z-10 flex justify-center">
+        <DaySeparator
+          label={floatingDate.conversationId === conversationId ? floatingDate.label : ''}
+          floating
+          phase={floatingDate.conversationId === conversationId ? floatingDate.phase : 'hidden'}
+        />
+      </div>
+      </div>
 
       {/* Soft gradient fade between thread and composer */}
       <div className="pointer-events-none h-3 -mt-3 relative z-10 bg-gradient-to-t from-background to-transparent" />

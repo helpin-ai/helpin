@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { queryKeys } from '@/lib/queryKeys'
 import React, { act } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -62,15 +63,18 @@ describe('CRM records in existing automation builders', () => {
     expect(serializeDraft(draftFromRule(rule, [], 'UTC'), 'ws-1', 'UTC').action_config).toEqual(rule.action_config);
   });
 
-  it('uses a CRM picker in the Flow composer without changing the current record or agent', () => {
+  it.each([false, true])('keeps one dialog and preserves the selected CRM record when embedded=%s', (embedded) => {
     const draft = draftFromRule({ ...baseRule, action_config: { agent_id: 'agent-1', target_type: 'crm_company', target_id: 'record-1' } }, [], 'UTC');
     const onDraftChange = vi.fn();
-    render(<FlowComposer
+    const composer = <FlowComposer
+      embedded={embedded}
       workspaceId="ws-1" open mode="edit" draft={draft}
       workflows={[]} statesById={new Map()} agents={[{ id: 'agent-1', name: 'Sales assistant', allowed_targets: ['crm_company'], team_ids: [] } as unknown as Agent]}
       accessibleTeamIds={new Set()} canSeeAllAgents tasks={[]} epics={[]} repositories={[]}
       timezone="UTC" saving={false} canEdit onOpenChange={vi.fn()} onDraftChange={onDraftChange} onSave={vi.fn()}
-    />);
+    />;
+    render(embedded ? <Dialog open><DialogContent>{composer}</DialogContent></Dialog> : composer);
+    expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
     expect(document.body.textContent).toContain('a specific company');
     const picker = document.querySelector('[data-testid="crm-picker"]');
     expect(picker?.getAttribute('data-type')).toBe('crm_company');

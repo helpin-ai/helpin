@@ -361,7 +361,7 @@ func validateAIUsageOperation(operationKey, taskNature string, resolved aiusage.
 	case "":
 		return nil
 	case aiusage.AIUsageOperationSupportGreeting:
-		if resolved.Provider != "openrouter" || resolved.CanonicalModel != "gpt-5.6-luna" || resolved.Route != "openai/gpt-5.6-luna" || resolved.Tier != aiusage.TierSmall {
+		if resolved.Provider != "openrouter" || resolved.CanonicalModel != "gpt-6-luna" || resolved.Route != "openai/gpt-6-luna" || resolved.Tier != aiusage.TierSmall {
 			return fmt.Errorf("%w: %s requires the approved small greeting model", model.ErrModelUnavailableUnderPricing, operationKey)
 		}
 		return nil

@@ -365,7 +365,9 @@ export function ChatView({
     };
     const onRun = (event: Event) => {
       const payload = (event as CustomEvent<{ entity_id?: string; update_kind?: string; data?: { change_kind?: string } }>).detail;
-      if (payload?.entity_id === run?.id && payload.update_kind !== 'duplicate') recover(payload.data?.change_kind === 'message');
+      const relevantRun = payload?.entity_id === run?.id
+        || plans.some(plan => Object.values(plan.run_ids_by_step ?? {}).includes(payload?.entity_id ?? ''));
+      if (relevantRun && payload?.update_kind !== 'duplicate') recover(payload?.data?.change_kind === 'message');
     };
     const onSession = (event: Event) => {
       const payload = (event as CustomEvent<{ parent_id?: string; data?: { type?: string } }>).detail;
@@ -387,7 +389,19 @@ export function ChatView({
       window.removeEventListener('agent_run-updated', onRun);
       window.removeEventListener('coding_session-updated', onRun);
     };
-  }, [chatId, networkAvailable, refreshConversation, refreshDetail, run?.id]);
+  }, [chatId, networkAvailable, plans, refreshConversation, refreshDetail, run?.id]);
+
+  // Delegated work can outlive the parent's answer. Keep discovering launches
+  // and reconciling child status even when the parent is waiting for a reply.
+  const hasRunningPlan = plans.some(plan => plan.status === 'running');
+  const parentStreaming = isDockTranscriptStreaming(run);
+  useEffect(() => {
+    if (!chatId || !networkAvailable || (!parentStreaming && !hasRunningPlan)) return;
+    const timer = window.setInterval(() => {
+      if (isDockNetworkAvailable()) void refreshDetail(true);
+    }, 5_000);
+    return () => window.clearInterval(timer);
+  }, [chatId, networkAvailable, parentStreaming, hasRunningPlan, refreshDetail]);
 
   // A visible fallback snapshot can discover a lifecycle change without WS.
   // Re-read authoritative chat detail instead of replacing an accepted send
@@ -457,6 +471,7 @@ export function ChatView({
   // their surrounding history is paged in instead of disappearing at a
   // separate plan limit.
   useEffect(() => {
+    if (!networkAvailable) return;
     const planIds = visiblePlanIDsKey ? visiblePlanIDsKey.split(',') : [];
     if (planIds.length === 0) {
       const timer = window.setTimeout(() => setPlans([]), 0);
@@ -464,14 +479,20 @@ export function ChatView({
     }
     let cancelled = false;
     void (async () => {
-      const results = await Promise.all(planIds.map((id) => commandBarService.getPlan(workspaceId, id)));
+      const results = await Promise.allSettled(planIds.map((id) => commandBarService.getPlan(workspaceId, id)));
       if (cancelled) return;
-      setPlans(results.flatMap((res) => (res.data?.plan ? [res.data.plan] : [])));
+      // A transient failed refresh must not make running work disappear.
+      setPlans(previous => planIds.flatMap((id, index) => {
+        const result = results[index];
+        const plan = result.status === 'fulfilled' ? result.value.data?.plan : null;
+        const retained = plan ?? previous.find(candidate => candidate.id === id);
+        return retained ? [retained] : [];
+      }));
     })();
     return () => {
       cancelled = true;
     };
-  }, [visiblePlanIDsKey, workspaceId]);
+  }, [chatId, detail, networkAvailable, visiblePlanIDsKey, workspaceId]);
 
   // Authoritative pending-interaction fallback: when the run is paused on a
   // human interaction but the event stream hasn't surfaced it (missed WS
@@ -816,7 +837,7 @@ export function ChatView({
     for (const plan of plans) {
       for (const [stepIndex, runId] of Object.entries(plan.run_ids_by_step ?? {})) {
         const childRun = plan.runs?.find((candidate) => candidate.id === runId);
-        if (!childRun || !ACTIVE_RUN_STATUSES.has(childRun.status)) continue;
+        if (!childRun || !['queued', 'running'].includes(childRun.status)) continue;
         return plan.steps[Number(stepIndex)]?.agent_name?.trim() || 'another agent';
       }
     }
@@ -927,6 +948,7 @@ export function ChatView({
       prompt={effectiveInteraction && (dockConfirm ? (
         <DockPlanConfirmCard
           payload={dockConfirm}
+          workspaceId={workspaceId}
           onDecision={(decision, note) => resolveInteraction(effectiveInteraction.interaction_id, {
             response_payload: { decision }, followup_message: note,
           })}

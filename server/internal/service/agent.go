@@ -272,6 +272,10 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 	if normalizePresetKey(agent.EffectivePresetKey()) == model.AgentPresetAskAgent {
 		out.AllowedTools = appendPresetTools(out.AllowedTools, askAgentPresetTools())
 	}
+	// The live-support terminal action must also reach existing preset copies.
+	if normalizePresetKey(agent.EffectivePresetKey()) == model.AgentPresetSupportAgent {
+		out.AllowedTools = appendPresetTools(out.AllowedTools, []string{"skip_support_reply"})
+	}
 	// Preview uses an isolated host target, while retaining the saved agent prompt.
 	if slices.Contains(out.AllowedTargets, "support_conversation") && !slices.Contains(out.AllowedTargets, supportPreviewTarget) {
 		out.AllowedTargets = append(out.AllowedTargets, supportPreviewTarget)
@@ -583,7 +587,7 @@ func buildRuntimeStartRunRequest(run *model.AgentRun, agent *model.Agent, runtim
 				return AgentRuntimeStartRunRequest{}, fmt.Errorf("preview requires executable tool %s", name)
 			}
 		}
-		instructions += "\nThis is an isolated support preview. Use the supplied conversation snapshot as the customer context. Use the normal search_knowledge and send_support_reply or escalate_to_human tools; the host captures the outcome without contacting a customer. Other tools are unavailable in preview. After the outcome, end your turn."
+		instructions += "\nThis is an isolated support preview. Use the supplied conversation snapshot as the customer context. Use search_knowledge and finish with send_support_reply, escalate_to_human or skip_support_reply; the host captures the outcome without contacting a customer. Other tools are unavailable in preview. After the outcome, end your turn."
 	}
 
 	if err := validateScheduledSupportFollowUpTools(run, allowedTools); err != nil {
@@ -3404,7 +3408,7 @@ func (s *AgentService) createCustomAgent(ctx context.Context, req model.CreateAg
 		return nil, err
 	}
 
-	approvalMode := "always"
+	approvalMode := "risk_based"
 	if req.ApprovalMode != nil && *req.ApprovalMode != "" {
 		approvalMode = *req.ApprovalMode
 	}
@@ -6630,6 +6634,13 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	}
 
 	runtimeAgent = runtimeAgentForDockExecution(run, runtimeAgent)
+	if params.targetType != supportPreviewTarget {
+		runtimeAgent, err = s.projectEnabledExternalMCPTools(ctx, params.workspaceID, runtimeAgent)
+		if err != nil {
+			s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
+			return nil, err
+		}
+	}
 
 	params.agent.Status = "working"
 	if params.taskID != nil {
@@ -6664,7 +6675,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	}
 	resolvedMCP := &ExternalMCPResolvedRun{}
 	selectedExternalTools := make([]string, 0)
-	for _, tool := range parseJSONStringSlice(params.agent.AllowedTools) {
+	for _, tool := range registeredRuntimeAgent.AllowedTools {
 		tool = strings.TrimSpace(tool)
 		if strings.HasPrefix(tool, "mcp__") && !strings.HasPrefix(tool, "mcp__helpin__") {
 			selectedExternalTools = append(selectedExternalTools, tool)

@@ -152,7 +152,7 @@ func TestSupportGreetingUsesLunaWithoutStartingAgent(t *testing.T) {
 		t.Fatalf("calls = %d", len(provider.requests))
 	}
 	req := provider.requests[0]
-	if req.Model != "openai/gpt-5.6-luna" || req.Provider != "openrouter" || req.Reasoning.Effort != "low" || req.MaxTokens != 256 {
+	if req.Model != "openai/gpt-6-luna" || req.Provider != "openrouter" || req.Reasoning.Effort != "low" || req.MaxTokens != 256 {
 		t.Fatalf("unexpected route: %+v", req)
 	}
 	if len(req.Messages) != 1 || req.Messages[0].Content != source.Content {

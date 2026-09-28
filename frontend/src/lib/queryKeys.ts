@@ -108,6 +108,7 @@ export const queryKeys = {
       filters ? (['pm', wsId, 'tasks', filters] as const) : (['pm', wsId, 'tasks'] as const),
     task: (wsId: string, id: string) => ['pm', wsId, 'tasks', id] as const,
     taskByDisplayId: (wsId: string, displayId: string) => ['pm', wsId, 'tasks', 'displayId', displayId] as const,
+    keyResultActivity: (wsId: string, id: string) => ['pm', wsId, 'key-results', id, 'activity'] as const,
     taskActivity: (wsId: string, taskId: string) => ['pm', wsId, 'tasks', taskId, 'activity'] as const,
 
     board: (wsId: string, workflowId?: string, filters?: Record<string, unknown>) =>

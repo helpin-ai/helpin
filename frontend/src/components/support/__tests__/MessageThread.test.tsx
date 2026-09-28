@@ -112,6 +112,52 @@ describe('MessageThread', () => {
     document.body.innerHTML = ''
   })
 
+  it('shows a temporary date while scrolling up and yields to the inline day separator', async () => {
+    const messages = [
+      { id: 'older', conversation_id: 'conv-1', sender_type: 'customer', content: 'Earlier', is_internal: false, created_at: '2026-09-10T12:00:00Z' },
+      { id: 'newer', conversation_id: 'conv-1', sender_type: 'customer', content: 'Later', is_internal: false, created_at: '2026-09-11T12:00:00Z' },
+    ]
+    supportHooks.useConversation.mockReturnValue({ isFetched: true, data: { id: 'conv-1', workspace_id: 'ws-1', status: 'open', source: 'widget' } })
+    supportHooks.useConversationMessages.mockReturnValue({ isLoading: false, data: seedSupportMessagePages(messages as never), hasNextPage: false })
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    const client = createTestQueryClient()
+    try {
+      await act(async () => root.render(<QueryClientProvider client={client}><MessageThread workspaceId="ws-1" conversationId="conv-1" /></QueryClientProvider>))
+      const viewport = container.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]')!
+      const separators = [...container.querySelectorAll<HTMLElement>('[data-support-day-separator]')]
+      const pill = container.querySelector<HTMLElement>('[data-support-floating-date]')!
+      expect(separators).toHaveLength(2)
+      expect(separators[1].classList.contains('sticky')).toBe(false)
+      const inlineLabels = separators.map((separator) => separator.querySelector('span')!)
+      inlineLabels.forEach((label, index) => {
+        vi.spyOn(label, 'getBoundingClientRect').mockImplementation(() => ({ top: (index ? 500 : 100) - viewport.scrollTop } as DOMRect))
+      })
+      vi.spyOn(pill.parentElement!, 'getBoundingClientRect').mockImplementation(() => ({ top: 8 } as DOMRect))
+      vi.spyOn(pill.querySelector('span')!, 'getBoundingClientRect').mockImplementation(() => ({ top: 0 } as DOMRect))
+
+      await act(async () => { viewport.scrollTop = 700; viewport.dispatchEvent(new Event('scroll')) })
+      await act(async () => { viewport.scrollTop = 650; viewport.dispatchEvent(new Event('scroll')) })
+      expect(pill.textContent).toBe(separators[1].textContent)
+      expect(pill.className).toContain('opacity-100')
+
+      await act(async () => { viewport.scrollTop = 515; viewport.dispatchEvent(new Event('scroll')) })
+      expect(pill.className).toContain('opacity-100')
+      await act(async () => { viewport.scrollTop = 492; viewport.dispatchEvent(new Event('scroll')) })
+      expect(pill.className).toContain('opacity-0')
+      expect(pill.className).toContain('translate-y-0')
+      expect(pill.classList.contains('transition-none')).toBe(true)
+      await act(async () => { viewport.scrollTop = 480; viewport.dispatchEvent(new Event('scroll')) })
+      expect(pill.textContent).toBe(separators[0].textContent)
+      expect(pill.className).toContain('opacity-100')
+      act(() => { vi.advanceTimersByTime(1000) })
+      expect(pill.className).toContain('opacity-0')
+    } finally {
+      act(() => root.unmount())
+      client.clear()
+    }
+  })
+
   it('preserves messages and comments but hides the composer after customer deletion', async () => {
     supportHooks.useConversation.mockReturnValue({ isFetched: true, data: { id: 'conv-1', workspace_id: 'ws-1', status: 'resolved', anonymized_at: '2026-09-16T00:00:00Z' } })
     supportHooks.useConversationMessages.mockReturnValue({ isLoading: false, data: seedSupportMessagePages([

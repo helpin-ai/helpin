@@ -73,6 +73,13 @@ func TestEmit_CreatesNotificationAndImmediateEmailDelivery(t *testing.T) {
 	if eventCount != 1 {
 		t.Fatalf("notification event count = %d, want 1", eventCount)
 	}
+	var recorded model.NotificationEvent
+	if err := db.WithContext(ctx).Where("notification_id = ?", notif.ID).First(&recorded).Error; err != nil {
+		t.Fatal(err)
+	}
+	if recorded.Metadata["digest_preview"] != "Please review the new comment" {
+		t.Fatalf("event digest preview = %v", recorded.Metadata["digest_preview"])
+	}
 
 	deliveries := loadNotificationServiceDeliveries(t, db)
 	if len(deliveries) != 2 {

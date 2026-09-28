@@ -1938,6 +1938,18 @@ func hydrateEmailBodiesFromLogs(messages []model.SupportMessage, logs []model.Su
 		if log == nil {
 			continue
 		}
+		// Outgoing logs include transport copy (reply marker, signature and footer).
+		// The thread already has the authored Content; the full email stays in its log.
+		if log.Direction == "outbound" {
+			messages[i].EmailDeliveryStatus = log.Status
+			messages[i].EmailDeliveryError = log.ErrorMessage
+			messages[i].EmailFrom = log.FromEmail
+			messages[i].EmailTo = log.ToEmail
+			messages[i].EmailReplyTo = log.ReplyTo
+			messages[i].EmailCC = log.CCEmails
+			messages[i].EmailBCC = log.BCCEmails
+			continue
+		}
 		if messages[i].ViaChannel != nil && *messages[i].ViaChannel == "email" {
 			projection := inboundhtml.ProcessedContent{
 				HTML:                 log.HTMLBody,
@@ -1984,13 +1996,6 @@ func hydrateEmailBodiesFromLogs(messages []model.SupportMessage, logs []model.Su
 			messages[i].EmailFrom = log.FromEmail
 			messages[i].EmailTo = log.ToEmail
 			messages[i].EmailReplyTo = log.ReplyTo
-			messages[i].EmailCC = log.CCEmails
-			messages[i].EmailBCC = log.BCCEmails
-		}
-		if log.Direction == "outbound" {
-			messages[i].EmailDeliveryStatus = log.Status
-			messages[i].EmailDeliveryError = log.ErrorMessage
-			messages[i].EmailTo = log.ToEmail
 			messages[i].EmailCC = log.CCEmails
 			messages[i].EmailBCC = log.BCCEmails
 		}
@@ -2333,7 +2338,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 
 	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType == "customer" {
 		senderName := derefString(msg.SenderDisplayName)
-		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, s.pushSenderService, conv, msg.Content, senderName)
+		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, s.pushSenderService, conv, msg.Content, senderName, msg.ID)
 		if !portalReply && (conv.Status == model.SupportConversationStatusWaitingOnCustomer || conv.Status == model.SupportConversationStatusResolved) {
 			if err := s.reopenForCustomerReply(ctx, workspaceID, ticketID, conv); err != nil {
 				slog.ErrorContext(ctx, "failed to reopen support conversation after customer reply", "error", err, "conversation_id", ticketID)

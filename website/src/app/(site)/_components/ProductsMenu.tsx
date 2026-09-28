@@ -62,7 +62,7 @@ export function AskAgentMenuCard() {
 export const ProductsMenu = memo(function ProductsMenu() {
   return <>
     <div className="nav-products-main">
-      <div className="nav-products-intro"><h2>Everything you need to build exceptional customer experiences</h2></div>
+      <div className="nav-products-intro"><p className="nav-products-title">Everything you need to build exceptional customer experiences</p></div>
       <div className="nav-products-grid">{PRODUCTS.map(item => <ProductLink item={item} key={item.label} />)}</div>
     </div>
     <AskAgentMenuCard/>

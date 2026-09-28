@@ -19,6 +19,16 @@
     },
     {
       "provider": "openrouter",
+      "canonical_model": "gpt-6-luna",
+      "label": "GPT-6 Luna",
+      "aliases": [
+        "openai/gpt-6-luna"
+      ],
+      "tier": "small",
+      "enabled": true
+    },
+    {
+      "provider": "openrouter",
       "canonical_model": "glm-5.3-flash",
       "label": "GLM 5.3 Flash",
       "aliases": [
@@ -224,6 +234,18 @@
       "cache_read_support": true,
       "cache_write_support": true,
       "context_window": 272000,
+      "maximum_output": 128000,
+      "enabled": true
+    },
+    {
+      "provider": "openrouter",
+      "canonical_model": "gpt-6-luna",
+      "route": "openai/gpt-6-luna",
+      "service_tier": "standard",
+      "tier": "small",
+      "cache_read_support": true,
+      "cache_write_support": true,
+      "context_window": 1050000,
       "maximum_output": 128000,
       "enabled": true
     },

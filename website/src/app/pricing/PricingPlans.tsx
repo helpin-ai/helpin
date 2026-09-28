@@ -32,7 +32,7 @@ export function PricingPlans() {
         <a className="btn btn-secondary" href="/self-hosting">Read the self-hosting guide<ArrowRight size={16} aria-hidden="true" /></a>
         <dl className="pricing-plan-metrics"><div><dt>Teammates</dt><dd>Unlimited</dd></div><div><dt>AI usage</dt><dd>Your provider keys</dd></div></dl>
         <ul>{SELF_HOSTED_FEATURES.map(feature => <li key={feature}><Check size={14} strokeWidth={2} aria-hidden="true" /><span>{feature}</span></li>)}</ul>
-        <p className="pricing-plan-aside">Community 0.1 is in beta. <a href={GITHUB_URL}>View on GitHub</a></p>
+        <p className="pricing-plan-aside">Community 0.2 is in beta. <a href={GITHUB_URL}>View on GitHub</a></p>
       </article>
 
       {PLANS.map(plan => {

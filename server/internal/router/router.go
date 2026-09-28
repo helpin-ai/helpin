@@ -966,6 +966,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requireCommandBarEdit()).Post("/plans/{planID}/cancel", h.CommandBar.CancelPlan)
 				r.With(requireCommandBarEdit()).Post("/plans/{planID}/resume", h.CommandBar.ResumePlan)
 				r.With(requireCommandBarEdit()).Post("/plans/{planID}/retry", h.CommandBar.RetryPlan)
+				r.With(requireCommandBarEdit()).Post("/plans/{planID}/restart-paused-step", h.CommandBar.RestartPausedEpicStep)
 				r.With(requireCommandBarRead()).Post("/plans/dismiss", h.CommandBar.DismissPlans)
 				r.With(requireCommandBarRead()).Post("/plans/{planID}/dismiss", h.CommandBar.DismissPlan)
 				r.With(requirePerm(authorization.PermSettingsManage)).Post("/runs/{runID}/promote-agent", h.CommandBar.PromoteRunToAgent)
@@ -1374,6 +1375,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/objectives/{id}/epics", h.PMObjective.AddEpic)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/objectives/{id}/epics/{epicId}", h.PMObjective.RemoveEpic)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/objectives/{id}/key-results", h.PMObjective.CreateKeyResult)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/key-results/{id}/activity", h.PMObjective.ListKeyResultActivity)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/key-results/{id}", h.PMObjective.UpdateKeyResult)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/key-results/{id}", h.PMObjective.DeleteKeyResult)
 

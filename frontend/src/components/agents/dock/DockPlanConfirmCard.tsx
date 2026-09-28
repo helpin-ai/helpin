@@ -3,9 +3,11 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { QuietUnderlineTextarea } from '@/components/design-system/quiet';
 import type { DockPlanConfirmPayload, DockPlanConfirmStep } from '@/lib/dockTypes';
+import { useAIProfiles } from '@/hooks/queries/useAIProfiles';
 
 interface DockPlanConfirmCardProps {
   payload: DockPlanConfirmPayload;
+  workspaceId?: string;
   onDecision: (decision: 'approve' | 'request_changes', note?: string) => Promise<{ error: string | null }>;
 }
 
@@ -17,7 +19,7 @@ interface DockPlanConfirmCardProps {
  * matches the approved payload, so this card is the human gate, not the
  * enforcement point.
  */
-export function DockPlanConfirmCard({ payload, onDecision }: DockPlanConfirmCardProps) {
+export function DockPlanConfirmCard({ payload, onDecision, workspaceId = '' }: DockPlanConfirmCardProps) {
   const [acting, setActing] = useState<'approve' | 'request_changes' | null>(null);
   const [rejecting, setRejecting] = useState(false);
   const [note, setNote] = useState('');
@@ -33,7 +35,9 @@ export function DockPlanConfirmCard({ payload, onDecision }: DockPlanConfirmCard
     }
   };
 
-  const action = payload.action ?? {};
+  const action = payload.action ?? payload.raw_input?.action ?? {};
+  const profiles = useAIProfiles(workspaceId, { enabled: !!workspaceId && !!action.epic_id });
+  const approvedProfile = profiles.data?.find((profile) => profile.id === action.ai_profile_id);
   const steps = action.steps ?? [];
 
   return (
@@ -48,6 +52,11 @@ export function DockPlanConfirmCard({ payload, onDecision }: DockPlanConfirmCard
       <div className="font-semibold text-foreground">
         {payload.summary?.trim() || payload.title?.trim() || 'The agent wants to run this — confirm?'}
       </div>
+      {action.epic_id ? <div className="mt-3 border-t border-border/60 pt-3 text-xs text-muted-foreground">
+        <div>Epic <span className="font-mono text-foreground">{action.epic_id}</span></div>
+        <div className="mt-1">AI profile: <span className="text-foreground">{action.ai_profile_id ? approvedProfile ? `${approvedProfile.name}${approvedProfile.scope === 'personal' ? ' (personal)' : ' (shared)'}` : action.ai_profile_id : 'Agent defaults'}</span></div>
+        <div className="mt-1">To change the profile, request changes before approval.</div>
+      </div> : null}
       {steps.length > 0 && (
         <ol className="mt-3 divide-y divide-border/60 border-y border-border/60" data-agent-dock-plan-steps>
           {steps.map((step, index) => (

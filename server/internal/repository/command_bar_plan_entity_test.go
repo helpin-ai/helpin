@@ -35,6 +35,7 @@ func setupCommandBarPlanTestDB(t *testing.T) *gorm.DB {
 			page_context BLOB NOT NULL DEFAULT '{}',
 			steps BLOB NOT NULL DEFAULT '[]',
 			run_ids_by_step BLOB NOT NULL DEFAULT '{}',
+			profile_binding BLOB,
 			current_step_index INTEGER NOT NULL DEFAULT 0,
 			run_count INTEGER NOT NULL DEFAULT 0,
 			error_message TEXT,

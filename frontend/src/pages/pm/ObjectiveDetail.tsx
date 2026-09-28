@@ -8,7 +8,10 @@ import { useObjective } from '@/hooks/queries/useObjectives';
 import { queryKeys } from '@/lib/queryKeys';
 import { unwrap } from '@/lib/queryUtils';
 import { useObjectiveAutosave } from './useObjectiveAutosave';
-import { QuietBreadcrumbs, QuietDetailHeader, QuietDetailLayout, QuietEmptyState, QuietMetricBlock, QuietMetricGrid, QuietPrimaryAction, QuietSectionHeader, QuietStatusText, QuietTextAction, QuietTitleInput, QuietUnderlineInput } from '@/components/design-system/quiet';
+import { ObjectiveKeyResultRow } from './ObjectiveKeyResultRow';
+import { LogKeyResultDialog } from './LogKeyResultDialog';
+import { KeyResultEditorDialog } from './KeyResultEditorDialog';
+import { QuietBreadcrumbs, QuietDetailHeader, QuietDetailLayout, QuietEmptyState, QuietMetricBlock, QuietMetricGrid, QuietSectionHeader, QuietStatusText, QuietTextAction, QuietTitleInput } from '@/components/design-system/quiet';
 import { EpicColorSwatch } from '@/components/pm/EpicColorSwatch';
 import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
 import { QuietDropdown } from '@/components/design-system/quiet-dropdown';
@@ -31,8 +34,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Progress } from '@/components/ui/progress';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/design-system/quiet-dropdown-select';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { Attachments } from '@/components/pm/Attachments';
@@ -54,19 +55,16 @@ import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { RichTextMentionContent } from '@/components/pm/RichTextMentionContent';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 import { FollowButton } from '@/components/notifications/FollowButton';
-import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { MultiMemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
 import type {
   AttachmentResponse,
-  KeyResult,
-  KeyResultType,
+  CreateKeyResultRequest,
   ObjectiveHealth,
   ObjectiveState,
   ObjectiveWithDetails,
   UpdateObjectiveRequest,
-  UpdateKeyResultRequest,
 } from '@/lib/pmTypes';
 import { getEpicDoneTaskCount, getEpicTaskCount } from '@/lib/pmTypes';
 import { OBJECTIVE_STATE_CONFIG } from '@/lib/pmConstants';
@@ -172,173 +170,6 @@ function MultiValueList({
   );
 }
 
-// ── Key Result Row ─────────────────────────────────────────────────
-
-function KeyResultRow({
-  kr,
-  workspaceId,
-  memberMap,
-  onUpdate,
-  onDelete,
-  readOnly,
-  registerSave,
-  onDirtyChange,
-}: {
-  kr: KeyResult;
-  workspaceId: string;
-  memberMap: Map<string, string>;
-  onUpdate: (updated: KeyResult) => void;
-  onDelete: () => void;
-  readOnly?: boolean;
-  registerSave: (id: string, save: (() => Promise<void>) | null) => void;
-  onDirtyChange: (id: string, dirty: boolean) => void;
-}) {
-  const [editingName, setEditingName] = useState(false);
-  const [nameDraft, setName] = useState<string | null>(null);
-  const [valueDraft, setCurrentValue] = useState<string | null>(null);
-  const name = nameDraft ?? kr.name;
-  const currentValue = valueDraft ?? String(kr.current_value);
-  const [source, setSource] = useState(kr);
-
-  const { queuePatch, flush, saving, dirty, error } = useObjectiveAutosave<UpdateKeyResultRequest>({
-    pendingUploads: 0,
-    debounceMs: null,
-    save: async patch => {
-      const { data, error: saveError } = await pmObjectiveService.updateKeyResult(workspaceId, kr.id, patch);
-      if (saveError || !data) throw new Error(saveError ?? 'Could not save key result');
-      onUpdate(data);
-    },
-  });
-  if (source !== kr && !dirty) {
-    setSource(kr); setName(null); setCurrentValue(null);
-  }
-  useEffect(() => {
-    registerSave(kr.id, flush);
-    return () => registerSave(kr.id, null);
-  }, [registerSave, kr.id, flush]);
-  useEffect(() => {
-    onDirtyChange(kr.id, dirty);
-    return () => onDirtyChange(kr.id, false);
-  }, [onDirtyChange, kr.id, dirty]);
-
-  const saveValue = () => { void flush().catch(() => undefined); };
-  const saveName = async () => {
-    try { await flush(); setEditingName(false); } catch { /* Keep the edit and show Retry. */ }
-  };
-
-  const lastUpdated = formatDistanceToNow(parseISO(kr.updated_at), { addSuffix: true });
-  const updatedByName = kr.updated_by ? memberMap.get(kr.updated_by) : undefined;
-
-  return (
-    <div className="group flex flex-wrap items-center gap-3 border-b border-quiet-divider-light py-3">
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          {!readOnly && editingName ? (
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => { setName(e.target.value); queuePatch({ name: e.target.value.trim() || kr.name }); }}
-              onBlur={saveName}
-              onKeyDown={(e) => e.key === 'Enter' && saveName()}
-              className="w-full bg-transparent text-sm font-medium focus:outline-none"
-              autoFocus
-            />
-          ) : !readOnly ? (
-            <button
-              type="button"
-              className="text-sm font-medium text-foreground hover:underline cursor-pointer text-left truncate"
-              onClick={() => setEditingName(true)}
-            >
-              {kr.name}
-            </button>
-          ) : (
-            <span className="text-sm font-medium text-foreground text-left truncate">{kr.name}</span>
-          )}
-        </div>
-        <div className="mt-0.5 flex items-center gap-1.5">
-          <span className="text-[11px] text-quiet-text-tertiary">{kr.result_type}</span>
-          {kr.result_type === 'boolean' ? (
-            readOnly ? (
-              <span className={`rounded px-1 py-0.5 text-xs ${
-                kr.progress >= 100
-                  ? 'text-quiet-positive'
-                  : 'text-quiet-text-tertiary'
-              }`}>
-                {kr.progress >= 100 ? 'Done' : 'Not done'}
-              </span>
-            ) : (
-              <button
-                type="button"
-                className={`rounded px-1 py-0.5 text-xs cursor-pointer ${
-                  kr.progress >= 100
-                    ? 'text-quiet-positive'
-                    : 'text-quiet-text-tertiary'
-                }`}
-                aria-label={`Mark ${kr.name} ${kr.progress >= 100 ? 'not done' : 'done'}`}
-                disabled={saving}
-                onClick={async () => {
-                  const newVal = kr.current_value >= kr.target_value ? 0 : kr.target_value;
-                  queuePatch({ current_value: newVal });
-                  await flush().catch(() => undefined);
-                }}
-              >
-                {kr.progress >= 100 ? 'Done' : 'Not done'}
-              </button>
-            )
-          ) : (
-            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-              <span>{kr.initial_value}</span>
-              <span>→</span>
-              {readOnly ? (
-                <span className="w-14 text-center font-medium text-foreground">{kr.current_value}</span>
-              ) : (
-                <QuickTooltip label="Current value — edit to update progress">
-                  <input
-                    type="number"
-                    value={currentValue}
-                    aria-label={`Current value for ${kr.name}`}
-                    onChange={(e) => {
-                      setCurrentValue(e.target.value);
-                      const value = Number(e.target.value);
-                      queuePatch({ current_value: e.target.value.trim() && Number.isFinite(value) ? value : kr.current_value });
-                    }}
-                    onBlur={saveValue}
-                    onKeyDown={(e) => e.key === 'Enter' && saveValue()}
-                    className="w-14 border-0 border-b border-quiet-field bg-transparent px-1 py-0.5 text-xs text-center font-medium text-quiet-text-primary focus-visible:outline-2 focus-visible:outline-quiet-text-primary"
-                  />
-                </QuickTooltip>
-              )}
-              <span>→ {kr.target_value}</span>
-            </div>
-          )}
-        </div>
-      </div>
-      <div className="flex shrink-0 flex-col items-end gap-1">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground tabular-nums">{Math.round(kr.progress)}%</span>
-          <div className="w-24">
-            <Progress value={kr.progress} className="h-1.5 bg-quiet-divider-light [&>[data-slot=progress-indicator]]:bg-quiet-positive" />
-          </div>
-          {!readOnly && (
-            <button
-              type="button"
-              className="text-quiet-text-tertiary sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 hover:text-destructive cursor-pointer transition-opacity"
-              onClick={onDelete}
-              aria-label={`Delete key result ${kr.name}`}
-            >
-              <Delete01Icon className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
-        {error && <div className="flex items-center gap-2 text-xs text-destructive" role="alert">{error}<QuietTextAction onClick={() => void flush().catch(() => undefined)}>Retry</QuietTextAction></div>}
-        <span className={`text-[11px] text-muted-foreground ${readOnly ? '' : 'pr-6'}`}>
-          {updatedByName ? `${updatedByName}, ${lastUpdated}` : `Updated ${lastUpdated}`}
-        </span>
-      </div>
-    </div>
-  );
-}
-
 // ── Link Epic Popover ──────────────────────────────────────────────
 
 function LinkEpicPopover({
@@ -428,31 +259,12 @@ export function ObjectiveDetailPage() {
 
   useTitle(form?.name ? `${form.name} — Objective` : 'Objective');
 
-  // ── Key result modal state
-  const [krModalOpen, setKrModalOpen] = useState(false);
-  const [newKrName, setNewKrName] = useState('');
-  const [newKrType, setNewKrType] = useState<KeyResultType>('percent');
-  const [newKrStart, setNewKrStart] = useState('0');
-  const [newKrTarget, setNewKrTarget] = useState('100');
+  const [keyResultEditor, setKeyResultEditor] = useState<{ resultId?: string } | null>(null);
+  const [logResultId, setLogResultId] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [editingDescription, setEditingDescription] = useState(false);
   const descriptionEditStartRef = useRef('');
   const removedDescriptionAttachments = useRef(new Set<string>());
-
-  const keyResultSaves = useRef(new Map<string, () => Promise<void>>());
-  const [dirtyKeyResults, setDirtyKeyResults] = useState<Set<string>>(() => new Set());
-  const registerKeyResultSave = useCallback((id: string, save: (() => Promise<void>) | null) => {
-    if (save) keyResultSaves.current.set(id, save);
-    else keyResultSaves.current.delete(id);
-  }, []);
-  const onKeyResultDirtyChange = useCallback((id: string, isDirty: boolean) => {
-    setDirtyKeyResults(current => {
-      if (current.has(id) === isDirty) return current;
-      const next = new Set(current);
-      if (isDirty) next.add(id); else next.delete(id);
-      return next;
-    });
-  }, []);
 
   const cleanupDescriptionAttachments = useCallback(async (description: string) => {
     if (!workspaceId) return;
@@ -495,15 +307,14 @@ export function ObjectiveDetailPage() {
 
   const flushAll = async () => {
     await flush();
-    await Promise.all([...keyResultSaves.current.values()].map(save => save()));
     await cleanupDescriptionAttachments(form?.description ?? savedDescriptionRef.current);
   };
   useBlocker({
     shouldBlockFn: async () => {
-      if (!dirty && dirtyKeyResults.size === 0 && !editingDescription) return false;
+      if (!dirty && !editingDescription) return false;
       try { await flushAll(); return false; } catch { return true; }
     },
-    enableBeforeUnload: dirty || dirtyKeyResults.size > 0,
+    enableBeforeUnload: dirty,
   });
 
 
@@ -575,29 +386,35 @@ export function ObjectiveDetailPage() {
     }
   };
 
-  const handleCreateKeyResult = async () => {
-    if (!workspaceId || !data || !newKrName.trim()) return;
-    const startVal = Number(newKrStart);
-    const targetVal = newKrType === 'boolean' ? 1 : Number(newKrTarget);
-    if (!Number.isFinite(startVal) || !Number.isFinite(targetVal)) {
-      toast.error('Enter valid initial and target values');
-      return;
-    }
-    const result = await runMutation(() => pmObjectiveService.createKeyResult(workspaceId, objectiveId, {
-      name: newKrName.trim(), result_type: newKrType,
-      initial_value: startVal, current_value: startVal, target_value: targetVal,
-    }));
-    if (result.ok) {
-      setNewKrName(''); setNewKrType('percent'); setNewKrStart('0'); setNewKrTarget('100'); setKrModalOpen(false);
-    }
+  const handleSaveKeyResult = async (values: CreateKeyResultRequest) => {
+    if (!workspaceId || !data || !canManageObjective) throw new Error('You do not have permission to edit this objective.');
+    await flush();
+    const resultId = keyResultEditor?.resultId;
+    const response = resultId
+      ? await pmObjectiveService.updateKeyResult(workspaceId, resultId, values)
+      : await pmObjectiveService.createKeyResult(workspaceId, objectiveId, values);
+    if (response.error || !response.data) throw new Error(response.error ?? 'Could not save key result');
+    const updated = response.data;
+    setData(previous => previous ? { ...previous, key_results: resultId
+      ? previous.key_results.map(kr => kr.id === resultId ? updated : kr)
+      : [...previous.key_results, updated] } : previous);
+    await refreshObjectives();
   };
 
-  const handleUpdateKeyResult = (updated: KeyResult) => {
+  const handleLogKeyResult = async (currentValue: number) => {
+    if (!workspaceId || !logResultId || !canManageObjective) throw new Error('You do not have permission to log this result.');
+    await flush();
+    const updated = unwrap(await pmObjectiveService.updateKeyResult(workspaceId, logResultId, { current_value: currentValue }));
     setData(previous => previous ? { ...previous, key_results: previous.key_results.map(kr => kr.id === updated.id ? updated : kr) } : previous);
-    void refreshObjectives();
+    await queryClient.invalidateQueries({ queryKey: queryKeys.pm.keyResultActivity(workspaceId, logResultId) });
+    await refreshObjectives();
   };
   const handleDeleteKeyResult = async (id: string) => {
-    if (workspaceId) await runMutation(() => pmObjectiveService.deleteKeyResult(workspaceId, id));
+    if (!workspaceId || !canManageObjective) throw new Error('You do not have permission to edit this objective.');
+    await flush();
+    unwrap(await pmObjectiveService.deleteKeyResult(workspaceId, id));
+    setData(previous => previous ? { ...previous, key_results: previous.key_results.filter(kr => kr.id !== id) } : previous);
+    await refreshObjectives();
   };
   const handleAddTeam = async (teamId: string) => {
     if (workspaceId) await runMutation(() => pmObjectiveService.addTeam(workspaceId, objectiveId, teamId));
@@ -737,59 +554,29 @@ export function ObjectiveDetailPage() {
             )}
           </section>
 
-          {/* ── Key Results ─────────────────────────────────────── */}
-          <div className="mt-8">
-            <div className="flex items-center justify-between mb-4">
-              <QuietSectionHeader title="Key Results" count={data.key_results.length} />
-              <div className="flex items-center gap-2">
-                {data.key_results.length > 0 && (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="text-xs text-muted-foreground cursor-help border-b border-dotted border-muted-foreground/40">{krAvgProgress}% outcome progress</span>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="max-w-[240px] text-xs">
-                        Average progress across all key results. Each key result's progress is: (current − initial) ÷ (target − initial).
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                )}
-                {canEdit && (
-                  <ManagerOnlyTooltip disabled={!canManageObjective}>
-                    <QuietTextAction
-                      disabled={!canManageObjective}
-                      onClick={() => setKrModalOpen(true)}
-                    >
-                      <PlusSignIcon className="mr-1 h-3 w-3" />
-                      Add Key Results
-                    </QuietTextAction>
-                  </ManagerOnlyTooltip>
-                )}
-              </div>
-            </div>
+          <section className="mt-8" aria-label="Key results">
+            <QuietSectionHeader title="Key Results" count={data.key_results.length} action={canEdit ? (
+              <ManagerOnlyTooltip disabled={!canManageObjective}>
+                <QuietTextAction disabled={!canManageObjective} onClick={() => setKeyResultEditor({})}>
+                  <PlusSignIcon className="size-3.5" />Add key result
+                </QuietTextAction>
+              </ManagerOnlyTooltip>
+            ) : undefined} />
             {data.key_results.length > 0 ? (
-              <div className="space-y-2">
-                {data.key_results.map((kr) => (
-                  <KeyResultRow
-                    key={kr.id}
-                    kr={kr}
-                    workspaceId={workspaceId!}
-                    memberMap={memberMap}
-                    onUpdate={handleUpdateKeyResult}
-                    onDelete={() => handleDeleteKeyResult(kr.id)}
-                    registerSave={registerKeyResultSave}
-                    onDirtyChange={onKeyResultDirtyChange}
-                    readOnly={!canManageObjective}
-                  />
+              <ul className="mt-2 border-t border-quiet-divider-light">
+                {data.key_results.map(kr => (
+                  <ObjectiveKeyResultRow key={kr.id} kr={kr} workspaceId={workspaceId!} memberMap={memberMap}
+                    onEdit={() => setKeyResultEditor({ resultId: kr.id })} onLog={() => setLogResultId(kr.id)}
+                    startDate={data.objective.planned_start_date} deadline={data.objective.deadline} readOnly={!canManageObjective} />
                 ))}
-              </div>
+              </ul>
             ) : (
-              <div className="border-y border-quiet-divider-light py-5 text-left">
-                <p className="text-sm text-muted-foreground">No key results yet</p>
-                <p className="mt-1 text-xs text-muted-foreground/60">Add key results to track outcome progress</p>
+              <div className="mt-2 border-y border-quiet-divider-light py-5">
+                <p className="text-sm font-medium text-quiet-text-primary">No key results yet</p>
+                <p className="mt-1 text-sm text-quiet-text-tertiary">Add a measurable outcome to track this objective.</p>
               </div>
             )}
-          </div>
+          </section>
 
           {/* ── Epics ───────────────────────────────────────────── */}
           <div className="mt-8">
@@ -1099,102 +886,17 @@ export function ObjectiveDetailPage() {
         )}
       />
 
-      {/* ── Add Key Result Modal ─────────────────────────────────── */}
-      <Dialog open={krModalOpen} onOpenChange={setKrModalOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Add Key Result</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div>
-              <label htmlFor="key-result-name" className="text-sm font-medium text-quiet-text-secondary">Name</label>
-              <QuietUnderlineInput
-                id="key-result-name"
-                type="text"
-                value={newKrName}
-                onChange={(e) => setNewKrName(e.target.value)}
-                placeholder="e.g., Increase activation rate"
-                className="mt-1"
-                autoFocus
-              />
-            </div>
-            <div className={`grid gap-3 ${newKrType === 'boolean' ? 'grid-cols-1' : 'grid-cols-3'}`}>
-              <div>
-                <div className="flex items-center gap-1">
-                  <label htmlFor="key-result-type" className="text-sm font-medium text-quiet-text-secondary">Measure as</label>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <InformationCircleIcon className="h-3 w-3 text-muted-foreground/60 cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="max-w-[220px] text-xs">
-                        <p className="font-medium mb-1">Measurement types:</p>
-                        <p><strong>Boolean</strong> — Done / Not done</p>
-                        <p><strong>Percent</strong> — 0–100%</p>
-                        <p><strong>Numeric</strong> — Custom range (e.g. 0→50 users)</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
-                <Select value={newKrType} onValueChange={(v) => {
-                  setNewKrType(v as KeyResultType);
-                  if (v === 'boolean') { setNewKrStart('0'); setNewKrTarget('1'); }
-                  else if (v === 'percent') { setNewKrStart('0'); setNewKrTarget('100'); }
-                }}>
-                  <SelectTrigger id="key-result-type" variant="underline" className="mt-1 w-full px-0.5">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="percent">Percent</SelectItem>
-                    <SelectItem value="numeric">Numeric</SelectItem>
-                    <SelectItem value="boolean">Boolean</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {newKrType !== 'boolean' && (
-                <>
-                  <div>
-                    <label htmlFor="key-result-start" className="text-sm font-medium text-quiet-text-secondary">Starting value</label>
-                    <div className="relative mt-1">
-                      <QuietUnderlineInput
-                        id="key-result-start"
-                        type="number"
-                        value={newKrStart}
-                        onChange={(e) => setNewKrStart(e.target.value)}
-                        className={newKrType === 'percent' ? 'pr-7' : undefined}
-                      />
-                      {newKrType === 'percent' && (
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">%</span>
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <label htmlFor="key-result-target" className="text-sm font-medium text-quiet-text-secondary">Target value</label>
-                    <div className="relative mt-1">
-                      <QuietUnderlineInput
-                        id="key-result-target"
-                        type="number"
-                        value={newKrTarget}
-                        onChange={(e) => setNewKrTarget(e.target.value)}
-                        className={newKrType === 'percent' ? 'pr-7' : undefined}
-                      />
-                      {newKrType === 'percent' && (
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">%</span>
-                      )}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-          <DialogFooter>
-            <QuietTextAction onClick={() => setKrModalOpen(false)}>Cancel</QuietTextAction>
-            <QuietPrimaryAction onClick={handleCreateKeyResult} disabled={!canManageObjective || !newKrName.trim()}>
-              Add Key Result
-            </QuietPrimaryAction>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {logResultId && canManageObjective && data.key_results.some(kr => kr.id === logResultId) && (
+        <LogKeyResultDialog key={logResultId} result={data.key_results.find(kr => kr.id === logResultId)!}
+          onClose={() => setLogResultId(null)} onSave={handleLogKeyResult} />
+      )}
+
+      {keyResultEditor && canManageObjective && (
+        <KeyResultEditorDialog key={keyResultEditor.resultId ?? 'new'}
+          result={data.key_results.find(kr => kr.id === keyResultEditor.resultId)}
+          onClose={() => setKeyResultEditor(null)} onSave={handleSaveKeyResult}
+          onDelete={keyResultEditor.resultId ? () => handleDeleteKeyResult(keyResultEditor.resultId!) : undefined} />
+      )}
 
       <ConfirmDialog
         open={deleteConfirmOpen}

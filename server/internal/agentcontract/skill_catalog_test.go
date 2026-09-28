@@ -171,6 +171,20 @@ func TestEchoSystemPromptUsesCustomerSafeResearchFallback(t *testing.T) {
 	}
 }
 
+func TestEchoPromptsConstrainPrivateMCPResearch(t *testing.T) {
+	for name, prompt := range map[string]string{
+		"default":            echoSystemPrompt,
+		"saved":              EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, "You are Echo."),
+		"old_private_policy": EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, "You are Echo.\n\n## Required private data policy\nUse MCP for internal triage, then hand off."),
+	} {
+		for _, required := range []string{"assigned read-only MCP tools", "current customer and workspace", "never cite raw logs", "verified customer", "exact MCP tool name", "reply when", "hand off"} {
+			if !strings.Contains(strings.ToLower(prompt), strings.ToLower(required)) {
+				t.Errorf("%s Echo prompt missing %q", name, required)
+			}
+		}
+	}
+}
+
 func TestEnsureSupportRuntimeDeliveryContractProtectsWorkspacePromptCopies(t *testing.T) {
 	staleSnapshot := "You are Echo.\n\n## Answer quality\nAnswer from evidence."
 	prompt := EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, staleSnapshot)
@@ -568,6 +582,42 @@ func TestEchoPromptDefaultsGenericProductReferencesToWorkspace(t *testing.T) {
 	} {
 		if !strings.Contains(*prompt, expected) {
 			t.Fatalf("Echo prompt does not contain %q\n%s", expected, *prompt)
+		}
+	}
+}
+
+func TestEchoConversationGuidanceCoversMixedIntentsAndPlainReplies(t *testing.T) {
+	prompt := BuiltInPresetPrompt(model.AgentPresetSupportAgent)
+	if prompt == nil {
+		t.Fatal("expected Echo system prompt")
+	}
+	for _, text := range []string{*prompt, EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, "Saved workspace prompt")} {
+		for _, expected := range []string{
+			"Reassess the latest message",
+			"Sales or evaluation",
+			"Feedback or feature request",
+			"Billing or account changes",
+			"simple language",
+			"Do not use em dashes",
+		} {
+			if !strings.Contains(text, expected) {
+				t.Errorf("Echo guidance missing %q", expected)
+			}
+		}
+	}
+	if strings.Contains(*prompt, "when the request involves refunds/billing changes/account deletion/legal/security incidents") {
+		t.Fatal("Echo must distinguish public policy questions from requests needing human action")
+	}
+}
+
+func TestSupportSkillGuidesMixedConversations(t *testing.T) {
+	skill, ok := GetBuiltInSkill("support_triage_response")
+	if !ok {
+		t.Fatal("expected support skill")
+	}
+	for _, expected := range []string{"Sales or evaluation", "Feedback or feature request", "simple language", "Do not use em dashes"} {
+		if !strings.Contains(skill.Instructions, expected) {
+			t.Errorf("support skill missing %q", expected)
 		}
 	}
 }

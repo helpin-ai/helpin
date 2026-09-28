@@ -4,6 +4,7 @@ import { ArrowUpRight, Mail } from 'lucide-react';
 import { HelpinBrand } from '@/components/HelpinBrand';
 import { GITHUB_URL, GithubIcon } from './ui';
 import { DOCS } from './docsLinks';
+import { COMPETITORS } from '../compare/compare-data';
 
 // Keep the footer focused on current pages; detailed capabilities live on each page.
 const COLUMNS = [
@@ -19,6 +20,10 @@ const COLUMNS = [
     { label: 'Developers', href: '/developers' },
     { label: 'Self-hosting', href: '/self-hosting' },
     { label: 'Documentation', href: DOCS.home },
+  ] },
+  { title: 'Compare', links: [
+    ...COMPETITORS.map(competitor => ({ label: `vs ${competitor.name}`, href: `/compare/${competitor.slug}` })),
+    { label: 'All comparisons', href: '/compare' },
   ] },
   { title: 'Community', links: [
     { label: 'Contributing', href: `${GITHUB_URL}/blob/develop/CONTRIBUTING.md` },

@@ -18,6 +18,15 @@ var legacyNativeVersions = map[string]string{
 	"20260915000101": "202609150001",
 }
 
+// The unreleased portal branch used version numbers later assigned on develop.
+// Keep the portal SQL byte-for-byte identical so installations that applied the
+// branch can move their recorded versions without replaying the migrations.
+var legacyPortalVersions = map[string]string{
+	"20260925000201": "202609250002",
+	"20260925000301": "202609250003",
+	"20260927000101": "202609270001",
+}
+
 type migrationVersionMove struct {
 	from string
 	to   Migration
@@ -27,6 +36,9 @@ func legacyVersionMoves(migrations []Migration, applied map[string]appliedMigrat
 	var moves []migrationVersionMove
 	for _, migration := range migrations {
 		oldVersion, known := legacyNativeVersions[migration.Version]
+		if portalVersion, portalKnown := legacyPortalVersions[migration.Version]; portalKnown {
+			oldVersion, known = portalVersion, true
+		}
 		// The local pre-release fix briefly occupied the original CRM version.
 		// Its unchanged SQL now has its own version; preserve that applied row
 		// just like the native-runtime rows, without accepting arbitrary hashes.

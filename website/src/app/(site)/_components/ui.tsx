@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { faqPage, JsonLd } from '@/lib/structured-data';
 
 export const DEMO_URL = 'https://cal.com/helpin-ai/30min';
 export const SIGNUP_URL = 'https://app.helpin.ai/register';
@@ -45,5 +46,5 @@ export function CtaNote({ trial = false, support = false }: { trial?: boolean; s
 }
 export type FAQItem = readonly [question: string, answer: string, href?: string, label?: string];
 export function FAQList({ items, className }: { items: readonly FAQItem[]; className: string }) {
-  return <div className={className}>{items.map(([question, answer, href, label]) => <details key={question}><summary>{question}</summary><p>{answer}{href && <> <a className="faq-more" href={href}>{label ?? 'Learn more'} →</a></>}</p></details>)}</div>;
+  return <div className={className}><JsonLd data={faqPage(items)} />{items.map(([question, answer, href, label]) => <details key={question}><summary>{question}</summary><p>{answer}{href && <> <a className="faq-more" href={href}>{label ?? 'Learn more'} →</a></>}</p></details>)}</div>;
 }

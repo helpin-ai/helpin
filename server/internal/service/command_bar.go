@@ -113,7 +113,7 @@ func commandBarCreateAgentRequestFromDraft(workspaceID string, draft model.Custo
 		allowedTargets = normalizeStringSlice(req.AllowedTargets)
 	}
 	modelTier := firstNonEmptyString(strings.TrimSpace(draft.ModelTier), "small")
-	approvalMode := firstNonEmptyString(strings.TrimSpace(draft.ApprovalMode), "mutating_tools")
+	approvalMode := firstNonEmptyString(strings.TrimSpace(draft.ApprovalMode), "risk_based")
 	invocationMode := firstNonEmptyString(strings.TrimSpace(draft.DefaultInvocationMode), "interactive")
 	maxRuns := draft.MaxConcurrentRuns
 	if maxRuns <= 0 {
@@ -302,6 +302,9 @@ func commandBarPlanSummary(record model.CommandBarPlanRecord, runs []model.Agent
 	_ = json.Unmarshal(record.PageContext, &pageContext)
 	var steps []model.CommandBarPlanStep
 	_ = json.Unmarshal(record.Steps, &steps)
+	var binding model.AIExecutionSelection
+	_ = json.Unmarshal(record.ProfileBinding, &binding)
+	owner, _ := binding.PersonalOwner()
 	return model.CommandBarPlanSummary{
 		ID:               record.ID,
 		Status:           record.Status,
@@ -318,6 +321,8 @@ func commandBarPlanSummary(record model.CommandBarPlanRecord, runs []model.Agent
 		CreatedAt:        record.CreatedAt,
 		UpdatedAt:        record.UpdatedAt,
 		Runs:             runs,
+		AIProfileID:      binding.ProfileID,
+		AIProfileOwnerID: owner,
 	}
 }
 

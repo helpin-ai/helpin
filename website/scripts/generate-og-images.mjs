@@ -48,7 +48,7 @@ const COLORS = {
 };
 
 // Bump when card content changes so social platforms fetch the new image instead of a cached one.
-// Update the matching paths in src/lib/metadata.ts and src/app/(site)/_components/marketing-metadata.ts.
+// Update the matching paths in src/lib/metadata.ts and src/app/(site)/compare/compare-data.ts.
 const VERSION = 'v4';
 
 const variants = [
@@ -106,8 +106,14 @@ const productCards = [
   ['knowledge', 'KNOWLEDGE', ['Better docs for', 'your customers.'], 'Better answers from your AI agents.'],
   ['ai-agents', 'AI AGENTS', ['AI agents that turn', 'customer history', 'into action.'], 'Your team sets the tools, permissions and approvals.'],
   ['developers', 'FOR DEVELOPERS', ['Connect your product.'], 'Give AI agents the tools to act, with SDKs, MCP and events.'],
-  ['self-hosting', 'OPEN SOURCE', ['Same product.', 'You choose who', 'runs it.'], 'Free under AGPL-3.0, no plan limits. Community 0.1 beta.'],
+  ['self-hosting', 'OPEN SOURCE', ['Same product.', 'You choose who', 'runs it.'], 'Free under AGPL-3.0, no plan limits. Community 0.2 beta.'],
   ['branding', 'THE HELPIN BRAND', ['One customer history.'], 'A shared workspace for your team and AI agents.'],
+  ['compare', 'COMPARE HELPIN', ['How Helpin', 'compares.'], 'Intercom, Zendesk, Help Scout, Chatwoot and Linear.'],
+  ['compare-intercom', 'HELPIN VS INTERCOM', ['Helpin vs', 'Intercom'], 'Features, pricing and switching, side by side.'],
+  ['compare-zendesk', 'HELPIN VS ZENDESK', ['Helpin vs', 'Zendesk'], 'Features, pricing and switching, side by side.'],
+  ['compare-help-scout', 'HELPIN VS HELP SCOUT', ['Helpin vs', 'Help Scout'], 'Features, pricing and switching, side by side.'],
+  ['compare-chatwoot', 'HELPIN VS CHATWOOT', ['Helpin vs', 'Chatwoot'], 'Two open-source options, side by side.'],
+  ['compare-linear', 'HELPIN VS LINEAR', ['Helpin vs', 'Linear'], 'Project tracking and customer context, side by side.'],
 ];
 for (const [slug, eyebrow, headline, support] of productCards) {
   variants.push({ output: resolve(websiteRoot, `public/og/helpin-${slug}-green-${VERSION}.png`), eyebrow, headline, support, visual: 'connected', art: slug });

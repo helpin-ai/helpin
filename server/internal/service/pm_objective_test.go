@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -276,5 +278,100 @@ func TestPMObjectiveService_Create_ReassignsTemporaryAttachmentIDs(t *testing.T)
 	}
 	if attachment.EntityID != objective.Objective.ID {
 		t.Fatalf("entity_id = %q, want %q", attachment.EntityID, objective.Objective.ID)
+	}
+}
+
+func TestKeyResultValueHistory(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	seedUser(t, db, "kr-author", "kr@example.com", "Arooj", "hash")
+	seedWorkspace(t, db, "kr-workspace", "Results", "results", "kr-author")
+	seedWorkspaceMember(t, db, "kr-member", "kr-workspace", "kr-author", "kr@example.com", "Arooj", model.RoleAdmin)
+	svc := NewPMObjectiveService(repository.NewPMObjectiveRepository(db), repository.NewPMKeyResultRepository(db), repository.NewPMLabelRepository(db), nil, repository.NewWorkspaceRepository(db), NewPMActivityService(repository.NewPMActivityRepository(db)), nil, nil)
+	obj, err := svc.Create(ctx, model.CreateObjectiveRequest{WorkspaceID: "kr-workspace", Name: "Results", ObjectiveType: model.PMObjectiveTypeStrategic}, "kr-author")
+	if err != nil {
+		t.Fatal(err)
+	}
+	kr, err := svc.CreateKeyResult(ctx, obj.Objective.ID, model.CreateKeyResultRequest{Name: "Signups", ResultType: "numeric", InitialValue: 13, CurrentValue: 13, TargetValue: 100}, "kr-author")
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := 18.0
+	if _, err = svc.UpdateKeyResult(ctx, kr.ID, model.UpdateKeyResultRequest{CurrentValue: &value}, "kr-author"); err != nil {
+		t.Fatal(err)
+	}
+	entries, total, err := svc.ListKeyResultActivity(ctx, "kr-workspace", kr.ID, model.PMPagination{Page: 1, PerPage: 20})
+	if err != nil || total != 1 {
+		t.Fatalf("history: total=%d err=%v", total, err)
+	}
+	entry := entries[0]
+	if entry.Actor == nil || entry.Actor.FullName != "Arooj" || *entry.Activity.OldValue != "13" || *entry.Activity.NewValue != "18" {
+		t.Fatalf("bad history: %+v", entry)
+	}
+	name := "Renamed signups"
+	if _, err = svc.UpdateKeyResult(ctx, kr.ID, model.UpdateKeyResultRequest{Name: &name}, "kr-author"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = svc.UpdateKeyResult(ctx, kr.ID, model.UpdateKeyResultRequest{CurrentValue: &value}, "kr-author"); err != nil {
+		t.Fatal(err)
+	}
+	_, total, err = svc.ListKeyResultActivity(ctx, "kr-workspace", kr.ID, model.PMPagination{Page: 1, PerPage: 20})
+	if err != nil || total != 1 {
+		t.Fatalf("settings or unchanged value added false history: total=%d err=%v", total, err)
+	}
+	if _, _, err = svc.ListKeyResultActivity(ctx, "other-workspace", kr.ID, model.PMPagination{}); err == nil {
+		t.Fatal("cross-workspace history allowed")
+	}
+	mustExec(t, db, "CREATE TRIGGER fail_result_history BEFORE INSERT ON pm_activity_log WHEN NEW.entity_type = 'key_result' BEGIN SELECT RAISE(FAIL, 'history unavailable'); END")
+	value = 20
+	if _, err = svc.UpdateKeyResult(ctx, kr.ID, model.UpdateKeyResultRequest{CurrentValue: &value}, "kr-author"); err == nil {
+		t.Fatal("expected history failure")
+	}
+	persisted, err := repository.NewPMKeyResultRepository(db).GetByID(ctx, kr.ID)
+	if err != nil || persisted.CurrentValue != 18 {
+		t.Fatalf("value was not rolled back: %+v %v", persisted, err)
+	}
+}
+
+func TestComputeKeyResultProgressUsesBaselineAndTarget(t *testing.T) {
+	for _, resultType := range []string{"numeric", "percent"} {
+		for _, tc := range []struct{ start, current, target, want float64 }{
+			{20, 35, 50, 50}, {60, 30, 10, 60}, {0, 110, 100, 100}, {20, 10, 50, 0}, {10, 10, 10, 0},
+		} {
+			got := computeKeyResultProgress(&model.PMKeyResult{ResultType: resultType, InitialValue: tc.start, CurrentValue: tc.current, TargetValue: tc.target})
+			if got != tc.want {
+				t.Errorf("%s %+v: got %v", resultType, tc, got)
+			}
+		}
+	}
+}
+
+func TestPercentageKeyResultProgressBackfill(t *testing.T) {
+	db := newTestDB(t)
+	sql, err := os.ReadFile("../dbmigrate/sql/202609270001_key_result_percentage_progress.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	when := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	for i, tc := range []struct{ start, current, target, want float64 }{
+		{20, 35, 50, 50}, {60, 30, 10, 60}, {0, 110, 100, 100}, {20, 10, 50, 0}, {10, 10, 10, 0},
+	} {
+		id := fmt.Sprintf("percent-%d", i)
+		row := model.PMKeyResult{ID: id, ObjectiveID: "objective", Name: "Percentage", ResultType: "percent", InitialValue: tc.start, CurrentValue: tc.current, TargetValue: tc.target, Progress: tc.current, UpdatedAt: when}
+		if err := db.Create(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+		for run := 0; run < 2; run++ {
+			if err := db.Exec(string(sql)).Error; err != nil {
+				t.Fatal(err)
+			}
+			var got model.PMKeyResult
+			if err := db.First(&got, "id = ?", id).Error; err != nil {
+				t.Fatal(err)
+			}
+			if got.Progress != tc.want || !got.UpdatedAt.Equal(when) || got.CurrentValue != tc.current {
+				t.Fatalf("bad backfill: %+v", got)
+			}
+		}
 	}
 }

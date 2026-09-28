@@ -22,6 +22,7 @@ func buildSupportConversationEntitySnapshot(conv *model.SupportConversation) mod
 	}
 	if conv.DisplayID > 0 {
 		snapshot["identifier"] = fmt.Sprintf("#c%d", conv.DisplayID)
+		snapshot["display_id"] = conv.DisplayID
 	}
 	return snapshot
 }
@@ -123,7 +124,7 @@ func ProcessSupportCustomerReplyNotification(
 	pushSender *PushSenderService,
 	conv *model.SupportConversation,
 	content,
-	senderName string,
+	senderName, messageID string,
 ) {
 	if notifService == nil || conv == nil {
 		return
@@ -163,12 +164,16 @@ func ProcessSupportCustomerReplyNotification(
 	)
 
 	if err := notifService.Emit(ctx, model.NotificationEventInput{
-		WorkspaceID:         conv.WorkspaceID,
-		EventType:           "support_conversation.customer_reply",
-		EntityType:          "support_conversation",
-		EntityID:            conv.ID,
-		Title:               fmt.Sprintf("Customer replied in %s", conv.Subject),
-		Body:                truncate(content, 200),
+		WorkspaceID: conv.WorkspaceID,
+		EventType:   "support_conversation.customer_reply",
+		EntityType:  "support_conversation",
+		EntityID:    conv.ID,
+		Title:       fmt.Sprintf("Customer replied in %s", conv.Subject),
+		Body:        truncate(content, 200),
+		Metadata: model.JSONB{
+			"support_message_id": messageID,
+			"support_email_body": truncate(content, 1200),
+		},
 		Category:            model.NotifCategorySupportReplies,
 		Priority:            "high",
 		ActorSnapshot:       buildSupportActorSnapshot(senderName),

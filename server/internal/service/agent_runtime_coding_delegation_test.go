@@ -258,11 +258,16 @@ func TestRuntimeAgentFromHelpinAgentAlwaysIncludesSupportDeliveryContract(t *tes
 		staleWorkspacePrompt,
 		"Required live-support delivery contract",
 		"send_support_reply",
+		"skip_support_reply",
+		"Required no-reply handling",
 		"Plain assistant text is never delivered",
 	} {
 		if !strings.Contains(out.SystemPrompt, required) {
 			t.Fatalf("runtime support prompt missing %q:\n%s", required, out.SystemPrompt)
 		}
+	}
+	if !slices.Contains(out.AllowedTools, "skip_support_reply") {
+		t.Fatal("existing Echo copies must receive the no-reply tool")
 	}
 }
 
@@ -496,12 +501,17 @@ func TestRuntimeAgentFromHelpinAgentPropagatesNativeToolBudget(t *testing.T) {
 		{
 			name:  "system default",
 			agent: &model.Agent{IsSystem: true, PresetKey: model.AgentPresetMarketer, RuntimeKind: "native_sdk"},
-			want:  50,
+			want:  2000,
+		},
+		{
+			name:  "forge",
+			agent: &model.Agent{IsSystem: true, PresetKey: model.AgentPresetCodeBuilder, RuntimeKind: "native_sdk"},
+			want:  2000,
 		},
 		{
 			name:  "planner",
 			agent: &model.Agent{IsSystem: true, PresetKey: model.AgentPresetEpicPlanner, RuntimeKind: "native_sdk"},
-			want:  300,
+			want:  2000,
 		},
 		{
 			name:  "ask agent",
@@ -511,7 +521,7 @@ func TestRuntimeAgentFromHelpinAgentPropagatesNativeToolBudget(t *testing.T) {
 		{
 			name:  "custom agent",
 			agent: &model.Agent{IsSystem: false, RuntimeKind: "native_sdk"},
-			want:  300,
+			want:  2000,
 		},
 		{
 			name: "per-agent override",
