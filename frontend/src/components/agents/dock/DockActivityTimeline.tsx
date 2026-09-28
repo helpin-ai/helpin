@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { AskAgentWorkAnimation } from '@/components/agents/AskAgentWorkAnimation';
 import { Cancel01Icon, ClipboardIcon, CodeIcon, File01Icon, Search01Icon, Tick01Icon } from '@/lib/icons';
 import { cn } from '@/lib/utils';
@@ -34,7 +34,18 @@ function ActivityRow({ segment, active }: { segment: TranscriptSegment; active: 
   const running = active && tool?.status === 'running';
   const label = tool ? describeToolCall(tool).primaryLabel : segment.kind === 'assistant' ? segment.content : 'Reasoning';
   const narration = segment.kind === 'assistant';
-  const longNarration = narration && (label.length > 160 || label.includes('\n'));
+  const previewRef = useRef<HTMLParagraphElement>(null);
+  const [clipped, setClipped] = useState(false);
+  useLayoutEffect(() => {
+    const preview = previewRef.current;
+    if (!preview) return;
+    // Measure the actual two-line preview, including font and dock-width changes.
+    const measure = () => setClipped(preview.scrollHeight > preview.clientHeight + 1);
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(preview);
+    return () => observer?.disconnect();
+  }, [label, open]);
   if (segment.kind !== 'tool' && segment.kind !== 'assistant' && segment.kind !== 'reasoning') return null;
   return (
     <li className={cn(styles.row, narration && styles.narration)} data-state={failed ? 'failed' : running ? 'running' : 'completed'}>
@@ -44,8 +55,8 @@ function ActivityRow({ segment, active }: { segment: TranscriptSegment; active: 
       <div className={styles.step}>
         {narration ? (
           <>
-            {!open && <p className={cn(styles.narrativeText, longNarration && styles.preview)}>{label}</p>}
-            {longNarration && <button type="button" className={styles.expand} aria-expanded={open} aria-controls={detailsId} onClick={() => setOpen(!open)}>{open ? 'Hide update' : 'Read update'}</button>}
+            {!open && <p ref={previewRef} className={cn(styles.narrativeText, styles.preview)}>{label}</p>}
+            {(clipped || open) && <button type="button" className={styles.expand} aria-expanded={open} aria-controls={detailsId} onClick={() => setOpen(!open)}>{open ? 'Hide update' : 'Read update'}</button>}
           </>
         ) : (
           <button type="button" className={styles.stepButton} aria-expanded={open} aria-controls={detailsId} onClick={() => setOpen(!open)}>

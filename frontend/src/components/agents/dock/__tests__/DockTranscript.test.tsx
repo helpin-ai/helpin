@@ -1085,6 +1085,46 @@ describe('Timeline view', () => {
     expect(container.textContent).not.toContain('Research Agent');
   });
 
+  it('offers Read update only for clipped text and rechecks on resize and content changes', () => {
+    useDockStore.setState({ transcriptView: 'timeline' });
+    let textHeight = 48;
+    let onResize = () => {};
+    const height = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(48);
+    const scroll = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(() => textHeight);
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: () => void) { onResize = callback; }
+      observe() {}
+      disconnect() {}
+    });
+    try {
+      const render = (content: string) => act(() => root.render(<DockTranscript
+        stream={streamWithMessages([{ ...assistantMessage('progress', content, 1), message_type: 'assistant_progress' }])}
+        active compactAssistantProgress />));
+      const content = 'I am checking the billing access rules and account recovery options. '.repeat(3);
+      render(content);
+      expect(container.textContent).not.toContain('Read update');
+      textHeight = 72;
+      act(() => onResize());
+      const button = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Read update')!;
+      expect(button).toBeDefined();
+      act(() => button.click());
+      expect(button.textContent).toBe('Hide update');
+      expect(container.querySelector(`[id="${button.getAttribute('aria-controls')}"]`)?.textContent).toContain(content.trim());
+      act(() => button.click());
+      expect(button.textContent).toBe('Read update');
+      textHeight = 48;
+      act(() => onResize());
+      expect(container.textContent).not.toContain('Read update');
+      textHeight = 72;
+      render('A short update can still wrap in a narrow window.');
+      expect(container.textContent).toContain('Read update');
+    } finally {
+      height.mockRestore();
+      scroll.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('shows each tool action once and keeps Working steady across tool updates', () => {
     useDockStore.setState({ transcriptView: 'timeline' });
     const render = (status: 'running' | 'completed') => act(() => root.render(<DockTranscript
