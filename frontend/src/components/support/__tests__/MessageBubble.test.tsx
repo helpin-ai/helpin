@@ -101,12 +101,17 @@ describe('MessageBubble', () => {
     const rendered = renderBubble({
       id: 'activity', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'user',
       sender_user_id: 'arooj', sender_display_name: 'Arooj Bukhari', message_type: 'system', system_event_type: event, is_internal: true,
+      sender_avatar_url: 'https://example.com/arooj.png',
       content: event === 'ai_returned' ? 'Returned to AI. AI will respond to the next customer message.' : 'AI paused.',
       created_at: '2026-09-18T10:38:14Z', updated_at: '2026-09-18T10:38:14Z',
     })
     try {
-      expect(rendered.container.textContent).toContain(event === 'ai_paused' ? 'Arooj paused AI.' : 'Arooj returned the conversation to AI.')
+      expect(rendered.container.textContent).toContain(event === 'ai_paused' ? 'Arooj Paused AI.' : 'Arooj returned the conversation to AI.')
       expect(rendered.container.querySelector('[data-support-ai-activity]')).not.toBeNull()
+      const callout = rendered.container.querySelector('[data-support-system-callout]')
+      expect(callout?.firstElementChild?.getAttribute('src')).toBe('https://example.com/arooj.png')
+      expect(rendered.container.querySelector('time')).toBeNull()
+      if (event === 'ai_paused') expect(callout?.querySelector('strong')?.textContent).toBe('Paused AI')
       expect(rendered.container.textContent).not.toContain('left a private note')
     } finally { rendered.cleanup() }
   })
@@ -120,7 +125,7 @@ describe('MessageBubble', () => {
       created_at: '2026-09-18T10:38:14Z', updated_at: '2026-09-18T10:38:14Z',
     })
     try {
-      expect(rendered.container.textContent).toContain('A teammate paused AI.')
+      expect(rendered.container.textContent).toContain('A teammate Paused AI.')
       expect(rendered.container.querySelector('[data-support-ai-handoff]')).toBeNull()
       const details = rendered.container.querySelector('details')
       expect(details?.open).toBe(false)

@@ -564,6 +564,7 @@ export const MessageBubble = memo(function MessageBubble({
       message={message}
       activity={aiActivity}
       teammateName={teammateDisplayName}
+      avatarUrl={resolvedAvatarUrl}
       detailsContent={<Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{message.content}</Markdown>}
     />;
   }
