@@ -29,46 +29,6 @@
 /* Shared marks */
 .hp3 .cmp-mark { display: block; flex: none; }
 
-/* Hero: three comparison cards on the forest art surface (HeroMatchup) */
-.hp3 .cmp-hero-scene { margin: 0; overflow: hidden; border: 1px solid #ffffff1f; border-radius: 16px; background: linear-gradient(160deg, var(--art-dark-soft), var(--art-dark) 60%); box-shadow: 0 30px 80px #0006; color: #dce8e0; }
-.hp3 .cmp-hero-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px 18px 14px 22px; border-bottom: 1px solid var(--art-dark-border); }
-.hp3 .cmp-hero-versus { display: flex; align-items: center; gap: 9px; min-width: 0; font-size: 13px; }
-.hp3 .cmp-hero-versus strong { font-weight: 600; color: #edf5ef; white-space: nowrap; }
-.hp3 .cmp-hero-versus em { margin: 0 3px; color: #7f988a; font-family: var(--mono); font-size: 10.5px; font-style: normal; text-transform: uppercase; }
-.hp3 .cmp-hero-toolbar button { display: grid; place-items: center; flex: none; width: 28px; height: 28px; border: 1px solid #496251; border-radius: 50%; background: #ffffff04; color: #b6ccbc; cursor: pointer; }
-.hp3 .cmp-hero-toolbar button:hover { background: var(--art-dark-raised); }
-.hp3 .cmp-hero-toolbar button:focus-visible { outline: 2px solid var(--on-dark-accent); outline-offset: 3px; }
-.hp3 .cmp-hero-cards { display: grid; gap: 12px; margin: 0; padding: 18px; list-style: none; }
-.hp3 .cmp-hero-card { padding: 14px 14px 14px; border: 1px solid var(--art-dark-border); border-radius: 12px; background: #ffffff05; }
-.hp3 .cmp-hero-card-label { display: flex; align-items: center; gap: 10px; margin-bottom: 11px; padding-left: 2px; color: #95ad9f; font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
-.hp3 .cmp-hero-card-label span { color: #6f8a7b; }
-.hp3 .cmp-hero-card-body { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
-.hp3 .cmp-hero-side { min-width: 0; padding: 11px 13px 12px; border-radius: 9px; }
-.hp3 .cmp-hero-side-name { display: block; margin-bottom: 5px; color: #8fa99a; font-size: 10.5px; font-weight: 500; }
-.hp3 .cmp-hero-side p { font-size: 13px; line-height: 1.45; }
-.hp3 .cmp-hero-rival { border: 1px dashed #ffffff21; }
-.hp3 .cmp-hero-rival p { color: #b3c5b9; }
-.hp3 .cmp-hero-helpin { border: 1px solid #8ed2a247; background: linear-gradient(135deg, #214932, var(--art-dark-raised)); }
-.hp3 .cmp-hero-helpin .cmp-hero-side-name { color: #9cdbb3; }
-.hp3 .cmp-hero-helpin p { display: flex; gap: 7px; color: #eef8f1; font-weight: 500; }
-.hp3 .cmp-hero-helpin p svg { flex: none; margin-top: 3px; color: var(--on-dark-accent); }
-.hp3 .cmp-hero-vs { position: absolute; left: 50%; top: 50%; z-index: 1; display: grid; place-items: center; width: 26px; height: 26px; margin: -13px 0 0 -13px; border: 1px solid #ffffff21; border-radius: 50%; background: var(--art-dark); color: #8fa99a; font-family: var(--mono); font-size: 9px; text-transform: uppercase; }
-.hp3 .cmp-hero-foot { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 13px 22px 15px; border-top: 1px solid var(--art-dark-border); color: #8fa99a; font-size: 11.5px; }
-.hp3 .cmp-hero-foot a { display: inline-flex; align-items: center; gap: 6px; color: #b8d6c0; font-weight: 500; }
-.hp3 .cmp-hero-foot a:hover { color: var(--on-dark); }
-
-/* Hero playback: each card fills in turn, the other tool's side first. */
-@keyframes cmp-hero-card { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
-@keyframes cmp-hero-side { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
-@keyframes cmp-hero-helpin { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
-@keyframes cmp-hero-glow { 0% { box-shadow: 0 0 0 0 #9cdbb300; } 35% { box-shadow: 0 0 0 4px #9cdbb326, 0 0 28px #9cdbb322; } 100% { box-shadow: 0 0 0 0 #9cdbb300; } }
-.hp3 .cmp-hero-scene[data-playing=true] .cmp-hero-card { animation: cmp-hero-card .55s cubic-bezier(.22,1,.36,1) both; animation-delay: calc(.2s + var(--i) * 1.5s); }
-.hp3 .cmp-hero-scene[data-playing=true] .cmp-hero-rival { animation: cmp-hero-side .5s cubic-bezier(.22,1,.36,1) both; animation-delay: calc(.45s + var(--i) * 1.5s); }
-.hp3 .cmp-hero-scene[data-playing=true] .cmp-hero-vs { animation: cmp-pop .4s cubic-bezier(.22,1,.36,1) both; animation-delay: calc(.75s + var(--i) * 1.5s); }
-.hp3 .cmp-hero-scene[data-playing=true] .cmp-hero-helpin { animation: cmp-hero-helpin .55s cubic-bezier(.22,1,.36,1) both, cmp-hero-glow 1.4s ease-out both; animation-delay: calc(1s + var(--i) * 1.5s), calc(1.3s + var(--i) * 1.5s); }
-.hp3 .cmp-hero-scene[data-playing=true] .cmp-hero-helpin svg { animation: cmp-pop .4s cubic-bezier(.22,1,.36,1) both; animation-delay: calc(1.35s + var(--i) * 1.5s); }
-.hp3 .cmp-hero-scene[data-playing=true] .cmp-hero-foot { animation: cmp-fade .5s ease 4.9s both; }
-
 /* Hub board: every comparison as a row */
 
 /* Short answer */
@@ -460,8 +420,7 @@
 @media (prefers-reduced-motion: reduce) {
   .hp3 :is(.cmp-card, .cmp-card-link svg, .cmp-toc a, .cmp-calc-segmented button, .cmp-calc-bar-track > span, .cmp-growth-now, .cmp-growth-dot, .cmp-growth-tag) { transition: none; }
   .hp3 .cmp-merge :is(li, path, .cmp-merge-helpin) { animation: none !important; opacity: 1 !important; stroke-dashoffset: 0 !important; transform: none !important; }
-  .hp3 [data-motion] :is(li, li::after, li::before, dl > div, p, .cmp-lane-label, .cmp-status),
-  .hp3 .cmp-hero-scene :is(.cmp-hero-card, .cmp-hero-side, .cmp-hero-vs, svg, .cmp-hero-foot) { animation: none !important; opacity: 1 !important; transform: none !important; }
+  .hp3 [data-motion] :is(li, li::after, li::before, dl > div, p, .cmp-lane-label, .cmp-status) { animation: none !important; opacity: 1 !important; transform: none !important; }
   .hp3 .cmp-card:hover { transform: none; }
 }
 
@@ -485,7 +444,6 @@
   .hp3 .cmp-merge-lines { display: none; }
   .hp3 .cmp-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .hp3 .cmp-diff-grid, .hp3 .cmp-choose { grid-template-columns: 1fr; }
-  .hp3 .cmp-hero-scene { max-width: 680px; width: 100%; margin-inline: auto; }
   .hp3 .compare-page .platform-section-intro .platform-text-link { margin-top: 18px; }
 }
 @media (max-width: 680px) {
@@ -536,13 +494,6 @@
   .hp3 .cmp-mx-short { display: inline; }
   .hp3 .cmp-mx-table thead .cmp-mx-helpin .btn, .hp3 .cmp-mx-table thead .btn { width: 100%; justify-content: center; }
   .hp3 .cmp-choose article { padding: 24px 20px; }
-  .hp3 .cmp-hero-toolbar { padding-inline: 16px 12px; }
-  .hp3 .cmp-hero-versus { gap: 7px; font-size: 12px; }
-  .hp3 .cmp-hero-cards { gap: 10px; padding: 12px; }
-  .hp3 .cmp-hero-card { padding: 12px 10px; }
-  .hp3 .cmp-hero-side { padding: 10px; }
-  .hp3 .cmp-hero-side p { font-size: 12px; }
-  .hp3 .cmp-hero-foot { padding-inline: 16px; }
   .hp3 .cmp-diff-art { padding: 16px 14px; }
   .hp3 .cmp-diff-copy { padding: 20px 20px 24px; }
   .hp3 .cmp-diff-copy h3 { font-size: 19px; }
