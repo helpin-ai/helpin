@@ -51,6 +51,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/oauth"
 	"github.com/helpin-ai/helpin/server/internal/observability"
+	"github.com/helpin-ai/helpin/server/internal/publicapi"
 	"github.com/helpin-ai/helpin/server/internal/ratelimit"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/router"
@@ -1804,6 +1805,21 @@ func main() {
 	helpcenterAISearchService.SetAutoIndexer(docsEmbeddingService)
 
 	requestLimiter := ratelimit.New(redisClient, ratelimit.Config{RequestsPerMinute: cfg.AuthenticatedRateLimit, ExpensivePerMinute: cfg.ExpensiveRateLimit})
+
+	// Public REST API: a documented adapter over the MCP tool layer, so it shares
+	// service-account tokens, scopes, read-only enforcement, audit, and rate limits.
+	var publicAPIHandler http.Handler
+	if cfg.PublicAPIEnabled {
+		publicAPIServerURL := ""
+		if cfg.PublicAPIBaseURL != "" {
+			publicAPIServerURL = cfg.PublicAPIBaseURL + publicapi.BasePath
+		}
+		restAPI, err := publicapi.NewHandler(mcpService, requestLimiter, publicAPIServerURL)
+		if err != nil {
+			fatalWithSentry("failed to initialize public API", err)
+		}
+		publicAPIHandler = restAPI
+	}
 	var demoReadOnly func(http.Handler) http.Handler
 	if authService.DemoEnabled() {
 		demoReadOnly = middleware.DemoReadOnly(authService.IsDemoUser)
@@ -1862,6 +1878,7 @@ func main() {
 		AgentRuntimeHost:    handler.NewAgentRuntimeHostHandler(agentRuntimeHostService).SetProjectionService(agentRuntimeProjectionService),
 		CLI:                 handler.NewCLIHandler(cliService),
 		MCP:                 handler.NewMCPHandler(mcpService, requestLimiter),
+		PublicAPI:           publicAPIHandler,
 		ExternalMCP:         handler.NewExternalMCPHandler(externalMCPService, agentService, authzService, cfg.AppBaseURL),
 		SupportInbox:        handler.NewSupportInboxHandler(supportInboxService, agentService, supportMessageActionsService),
 		SupportInboxView:    handler.NewSupportInboxViewHandler(supportInboxViewService),
