@@ -8,6 +8,7 @@ import type {
   CodingSessionStreamState,
   CodingSessionTranscriptMessage,
 } from '@/lib/pmTypes';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useDockStore } from '@/stores/dockStore';
 import { useAuthStore } from '@/stores/authStore';
 import { buildCodingSessionStreamState } from '@/components/pm/CodingSession/codingSessionStream';
@@ -1083,6 +1084,25 @@ describe('Timeline view', () => {
     render();
     expect(container.querySelector('[data-dock-activity-timeline] > button')?.textContent).toContain('Working…');
     expect(container.textContent).not.toContain('Research Agent');
+  });
+
+  it('renders Helpin links in the timeline preview without exposing Markdown syntax', () => {
+    useDockStore.setState({ transcriptView: 'timeline' });
+    const previousWorkspace = useWorkspaceStore.getState().currentWorkspace;
+    useWorkspaceStore.setState({ currentWorkspace: { id: 'ws-1', slug: 'contentstudio' } as never });
+    try {
+      const content = 'I’ll use Engineering’s [Customer Support](helpin://epics/epic-1) epic and active sprint, [Sep 21 - Oct 04 - 2026](helpin://sprints/sprint-1).';
+      act(() => root.render(<DockTranscript
+        stream={streamWithMessages([{ ...assistantMessage('progress', content, 1), message_type: 'assistant_progress' }])}
+        active compactAssistantProgress />));
+      expect(container.querySelector('a[data-helpin-reference="epics"]')?.textContent).toBe('Customer Support');
+      expect(container.querySelector('a[data-helpin-reference="epics"]')?.getAttribute('href')).toBe('/w/contentstudio/pm/epics/epic-1');
+      expect(container.querySelector('a[data-helpin-reference="sprints"]')?.getAttribute('href')).toBe('/w/contentstudio/pm/sprints/sprint-1');
+      expect(container.textContent).not.toContain('helpin://');
+      expect(container.textContent).not.toContain('[Customer Support]');
+    } finally {
+      act(() => useWorkspaceStore.setState({ currentWorkspace: previousWorkspace }));
+    }
   });
 
   it('offers Read update only for clipped text and rechecks on resize and content changes', () => {

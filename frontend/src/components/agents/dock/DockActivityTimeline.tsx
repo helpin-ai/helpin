@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { canonicalToolName } from '@/lib/toolNames';
 import { TranscriptSegmentView, type TranscriptSegment } from '@/components/agents/transcript';
 import { DisclosureChevron } from '@/components/agents/transcript/DisclosureChevron';
+import { MarkdownContent } from '@/components/pm/CodingSession/MarkdownContent';
 import { describeToolCall } from '@/components/pm/CodingSession/toolCallPresentation';
 import { formatCodingSessionElapsed } from '@/components/pm/CodingSession/codingSessionPresentation';
 import type { AgentRunPauseReason, CodingSessionActor, CodingSessionTranscriptMessage } from '@/lib/pmTypes';
@@ -34,7 +35,7 @@ function ActivityRow({ segment, active }: { segment: TranscriptSegment; active: 
   const running = active && tool?.status === 'running';
   const label = tool ? describeToolCall(tool).primaryLabel : segment.kind === 'assistant' ? segment.content : 'Reasoning';
   const narration = segment.kind === 'assistant';
-  const previewRef = useRef<HTMLParagraphElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
   const [clipped, setClipped] = useState(false);
   useLayoutEffect(() => {
     const preview = previewRef.current;
@@ -55,7 +56,9 @@ function ActivityRow({ segment, active }: { segment: TranscriptSegment; active: 
       <div className={styles.step}>
         {narration ? (
           <>
-            {!open && <p ref={previewRef} className={cn(styles.narrativeText, styles.preview)}>{label}</p>}
+            {!open && <div ref={previewRef} className={cn(styles.narrativeText, styles.preview)}>
+              <MarkdownContent content={label} className="text-[13px] leading-[1.6] text-muted-foreground" />
+            </div>}
             {(clipped || open) && <button type="button" className={styles.expand} aria-expanded={open} aria-controls={detailsId} onClick={() => setOpen(!open)}>{open ? 'Hide update' : 'Read update'}</button>}
           </>
         ) : (
