@@ -787,10 +787,10 @@ var baseRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "support.add_conversation_note",
 		Alias:       "add_support_conversation_note",
 		Category:    "Support / Triage",
-		Description: "Add an internal note to a support conversation immediately. Visible only to teammates; never sent to the customer. Does not change conversation status or AI control. Use for useful findings or requested notes, not routine progress. This does not replace a customer reply.",
+		Description: "Post a team-only note immediately; no customer delivery or status/AI-control change. Check existing conversation notes and linked-task context first. Write only when requested or when new actionable information is missing from both. Creating or linking a task alone needs no note. Use 1-3 short sentences or bullets unless more detail is requested. Include only the new finding, blocker, or next step; link existing details instead of repeating the thread, task, progress, or an unsolicited draft reply. Label hypotheses clearly: code behavior alone does not verify this customer's root cause. Attribute observations to their actual source. Omit secrets. A note does not replace a customer reply.",
 		InputSchema: closedObjectSchema(map[string]any{
 			"conversation_id": optionalIDSchema("Support conversation ID. Omit only when the run targets that conversation."),
-			"content":         map[string]any{"type": "string", "minLength": 1, "description": "Concise internal note in Markdown."},
+			"content":         map[string]any{"type": "string", "minLength": 1, "description": "Brief internal note in Markdown. Only new actionable information or explicitly requested content; no repeated summaries or unverified conclusions stated as facts."},
 		}, []string{"content"}),
 	},
 	{
