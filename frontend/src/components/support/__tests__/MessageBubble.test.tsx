@@ -101,12 +101,17 @@ describe('MessageBubble', () => {
     const rendered = renderBubble({
       id: 'activity', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'user',
       sender_user_id: 'arooj', sender_display_name: 'Arooj Bukhari', message_type: 'system', system_event_type: event, is_internal: true,
+      sender_avatar_url: 'https://example.com/arooj.png',
       content: event === 'ai_returned' ? 'Returned to AI. AI will respond to the next customer message.' : 'AI paused.',
       created_at: '2026-09-18T10:38:14Z', updated_at: '2026-09-18T10:38:14Z',
     })
     try {
-      expect(rendered.container.textContent).toContain(event === 'ai_paused' ? 'Arooj paused AI.' : 'Arooj returned the conversation to AI.')
+      expect(rendered.container.textContent).toContain(event === 'ai_paused' ? 'Arooj Paused AI.' : 'Arooj returned the conversation to AI.')
       expect(rendered.container.querySelector('[data-support-ai-activity]')).not.toBeNull()
+      const callout = rendered.container.querySelector('[data-support-system-callout]')
+      expect(callout?.firstElementChild?.getAttribute('src')).toBe('https://example.com/arooj.png')
+      expect(rendered.container.querySelector('time')).toBeNull()
+      if (event === 'ai_paused') expect(callout?.querySelector('strong')?.textContent).toBe('Paused AI')
       expect(rendered.container.textContent).not.toContain('left a private note')
     } finally { rendered.cleanup() }
   })
@@ -120,7 +125,7 @@ describe('MessageBubble', () => {
       created_at: '2026-09-18T10:38:14Z', updated_at: '2026-09-18T10:38:14Z',
     })
     try {
-      expect(rendered.container.textContent).toContain('A teammate paused AI.')
+      expect(rendered.container.textContent).toContain('A teammate Paused AI.')
       expect(rendered.container.querySelector('[data-support-ai-handoff]')).toBeNull()
       const details = rendered.container.querySelector('details')
       expect(details?.open).toBe(false)
@@ -139,10 +144,30 @@ describe('MessageBubble', () => {
       created_at: '2026-09-18T10:38:14Z', updated_at: '2026-09-18T10:38:14Z',
     })
     try {
-      expect(rendered.container.textContent).toContain('left a private note')
+      expect(rendered.container.textContent).toContain('Internal note')
+      expect(rendered.container.textContent).not.toContain('left a private note')
       expect(rendered.container.querySelector('[data-support-ai-activity]')).toBeNull()
     } finally { rendered.cleanup() }
   })
+
+  it.each([true, false])('uses the author avatar and reply grouping for internal notes (last: %s)', (isLastInGroup) => {
+    const rendered = renderBubble({
+      id: 'note-avatar', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'user',
+      sender_user_id: 'arooj', sender_display_name: 'Arooj Bukhari', sender_avatar_url: 'https://example.com/arooj.png',
+      message_type: 'note', is_internal: true, content: 'Please review the account.',
+      created_at: '2026-09-18T10:38:14Z', updated_at: '2026-09-18T10:38:14Z',
+    }, undefined, { isLastInGroup });
+    try {
+      const note = rendered.container.querySelector('[data-support-internal-note]');
+      expect(note?.textContent).toContain('Internal note');
+      expect(note?.textContent).not.toContain('Arooj Bukhari');
+      expect(note?.className).not.toContain('border-r-');
+      expect(note?.querySelector('time')?.dateTime).toBe('2026-09-18T10:38:14Z');
+      const avatar = rendered.container.querySelector('img[alt="Arooj Bukhari"]');
+      if (isLastInGroup) expect(avatar?.getAttribute('src')).toBe('https://example.com/arooj.png');
+      else expect(avatar).toBeNull();
+    } finally { rendered.cleanup(); }
+  });
 
   it('renders a legacy return note as an attributed activity', () => {
     const rendered = renderBubble({
@@ -1203,7 +1228,7 @@ Can I export my data?`,
 
     const { container, cleanup } = renderBubble(message)
 
-    const noteCard = container.querySelector('.border-r-amber-400')
+    const noteCard = container.querySelector('[data-support-internal-note]')
     expect(noteCard).toBeTruthy()
 
     const fileLink = container.querySelector('a[href="https://cdn.example.com/diagnostics.pdf"]')

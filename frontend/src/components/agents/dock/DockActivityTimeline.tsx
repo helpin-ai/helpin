@@ -1,10 +1,11 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { AskAgentWorkAnimation } from '@/components/agents/AskAgentWorkAnimation';
 import { Cancel01Icon, ClipboardIcon, CodeIcon, File01Icon, Search01Icon, Tick01Icon } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 import { canonicalToolName } from '@/lib/toolNames';
 import { TranscriptSegmentView, type TranscriptSegment } from '@/components/agents/transcript';
 import { DisclosureChevron } from '@/components/agents/transcript/DisclosureChevron';
+import { MarkdownContent } from '@/components/pm/CodingSession/MarkdownContent';
 import { describeToolCall } from '@/components/pm/CodingSession/toolCallPresentation';
 import { formatCodingSessionElapsed } from '@/components/pm/CodingSession/codingSessionPresentation';
 import type { AgentRunPauseReason, CodingSessionActor, CodingSessionTranscriptMessage } from '@/lib/pmTypes';
@@ -34,7 +35,18 @@ function ActivityRow({ segment, active }: { segment: TranscriptSegment; active: 
   const running = active && tool?.status === 'running';
   const label = tool ? describeToolCall(tool).primaryLabel : segment.kind === 'assistant' ? segment.content : 'Reasoning';
   const narration = segment.kind === 'assistant';
-  const longNarration = narration && (label.length > 160 || label.includes('\n'));
+  const previewRef = useRef<HTMLDivElement>(null);
+  const [clipped, setClipped] = useState(false);
+  useLayoutEffect(() => {
+    const preview = previewRef.current;
+    if (!preview || open) return;
+    // Measure the actual two-line preview, including font and dock-width changes.
+    const measure = () => setClipped(preview.scrollHeight > preview.clientHeight + 1);
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(preview);
+    return () => observer?.disconnect();
+  }, [label, open]);
   if (segment.kind !== 'tool' && segment.kind !== 'assistant' && segment.kind !== 'reasoning') return null;
   return (
     <li className={cn(styles.row, narration && styles.narration)} data-state={failed ? 'failed' : running ? 'running' : 'completed'}>
@@ -44,8 +56,10 @@ function ActivityRow({ segment, active }: { segment: TranscriptSegment; active: 
       <div className={styles.step}>
         {narration ? (
           <>
-            {!open && <p className={cn(styles.narrativeText, longNarration && styles.preview)}>{label}</p>}
-            {longNarration && <button type="button" className={styles.expand} aria-expanded={open} aria-controls={detailsId} onClick={() => setOpen(!open)}>{open ? 'Hide update' : 'Read update'}</button>}
+            <div id={detailsId} ref={previewRef} className={cn(styles.narrativeText, !open && styles.preview)}>
+              <MarkdownContent content={label} className="text-[13px] leading-[1.6] text-muted-foreground" />
+            </div>
+            {(clipped || open) && <button type="button" className={styles.expand} aria-expanded={open} aria-controls={detailsId} onClick={() => setOpen(!open)}>{open ? 'Show less' : 'Show more'}</button>}
           </>
         ) : (
           <button type="button" className={styles.stepButton} aria-expanded={open} aria-controls={detailsId} onClick={() => setOpen(!open)}>
@@ -54,7 +68,7 @@ function ActivityRow({ segment, active }: { segment: TranscriptSegment; active: 
             <DisclosureChevron open={open} className="mt-1 h-3 w-3 shrink-0" />
           </button>
         )}
-        {open && <div id={detailsId} className={styles.details}>
+        {open && !narration && <div id={detailsId} className={styles.details}>
           {tool ? <div className="space-y-2">
             {tool.result?.error && <p className="whitespace-pre-wrap text-destructive">{tool.result.error}</p>}
             {tool.args_text.trim() && <div><span className="text-[11px] font-medium">Input</span><pre className="mt-1 whitespace-pre-wrap break-words text-[11px]">{tool.args_text}</pre></div>}
@@ -103,12 +117,11 @@ export function DockActivityTimeline({ group, runStatus, pauseReason, resolveAct
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [group.active]);
-  const latestTool = [...group.segments].reverse().find(segment => segment.kind === 'tool' && segment.toolCall.status === 'running');
   const toolStarts = group.segments.flatMap(segment => segment.kind === 'tool' && segment.toolCall.started_at ? [Date.parse(segment.toolCall.started_at)] : []).filter(Number.isFinite);
   const startedAt = group.startedAt ?? (toolStarts.length ? Math.min(...toolStarts) : undefined);
   const duration = group.durationMs ?? (group.active && startedAt !== undefined ? Math.max(0, now - startedAt) : undefined);
   const label = offline ? 'Offline — live updates paused' : delegated ? delegated.label : failed ? 'Some steps failed'
-    : group.active ? (latestTool?.kind === 'tool' ? describeToolCall(latestTool.toolCall).primaryLabel : 'Working…')
+    : group.active ? 'Working…'
     : group.completed || group.durationMs !== undefined ? 'Work completed'
     : runStatus === 'cancelled' ? 'Stopped'
     : runStatus === 'failed' ? 'Couldn’t finish'

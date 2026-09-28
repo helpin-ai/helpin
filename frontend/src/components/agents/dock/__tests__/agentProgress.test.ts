@@ -32,7 +32,7 @@ function delegatedPlan(child: Partial<AgentRun> = {}): CommandBarPlanSummary {
 }
 
 describe('resolveAgentLiveProgress', () => {
-  it('uses one friendly status for a running tool', () => {
+  it('keeps the working status steady while the transcript shows the running tool', () => {
     const result = resolveAgentLiveProgress({
       run: run(), currentPlan: null, sending: false,
       stream: stream({ live_turn_segments: [{
@@ -40,13 +40,13 @@ describe('resolveAgentLiveProgress', () => {
         tool_call: { tool_call_id: 'tool-1', parent_message_id: 'message-1', tool_name: 'mcp__helpin__list_tasks', args_text: '{}', status: 'running' },
       }] }),
     });
-    expect(result?.label).toBe('List Tasks…');
+    expect(result?.label).toBe('Working…');
   });
 
-  it('prefers an active plan step over generic working', () => {
+  it('keeps plan details out of the working status', () => {
     const currentPlan = { plan: [{ step: 'Compare the billing options', status: 'in_progress' }] } as RunPlanArtifact;
     expect(resolveAgentLiveProgress({ run: run(), stream: stream(), currentPlan, sending: false })?.label)
-      .toBe('Compare the billing options');
+      .toBe('Working…');
   });
 
   it('identifies an active delegated agent', () => {

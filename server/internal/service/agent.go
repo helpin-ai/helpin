@@ -272,9 +272,9 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 	if normalizePresetKey(agent.EffectivePresetKey()) == model.AgentPresetAskAgent {
 		out.AllowedTools = appendPresetTools(out.AllowedTools, askAgentPresetTools())
 	}
-	// The live-support terminal action must also reach existing preset copies.
+	// Managed support capabilities must also reach existing preset copies.
 	if normalizePresetKey(agent.EffectivePresetKey()) == model.AgentPresetSupportAgent {
-		out.AllowedTools = appendPresetTools(out.AllowedTools, []string{"skip_support_reply"})
+		out.AllowedTools = appendPresetTools(out.AllowedTools, []string{"skip_support_reply", "add_support_conversation_note"})
 	}
 	// Preview uses an isolated host target, while retaining the saved agent prompt.
 	if slices.Contains(out.AllowedTargets, "support_conversation") && !slices.Contains(out.AllowedTargets, supportPreviewTarget) {

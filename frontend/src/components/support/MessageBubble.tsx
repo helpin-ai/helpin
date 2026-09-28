@@ -564,6 +564,7 @@ export const MessageBubble = memo(function MessageBubble({
       message={message}
       activity={aiActivity}
       teammateName={teammateDisplayName}
+      avatarUrl={resolvedAvatarUrl}
       detailsContent={<Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{message.content}</Markdown>}
     />;
   }
@@ -730,45 +731,6 @@ export const MessageBubble = memo(function MessageBubble({
     );
   }
 
-  // ── Internal note: right-aligned card with amber accent ──
-  if (isInternal) {
-    return (
-      <>
-        <div className={`flex justify-end ${isConsecutive ? 'mt-1' : 'mt-5'}`}>
-          <div className="max-w-[85%]">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div className="flow-root rounded-lg border-r-[3px] border-r-amber-400 bg-amber-50 px-4 py-2.5 [overflow-wrap:anywhere] dark:bg-amber-950/20">
-                  <div className="mb-1.5 flex items-center gap-1.5">
-                    <StickyNote01Icon className="h-3 w-3 text-amber-500 dark:text-amber-400" />
-                    <span className="text-[11px] text-amber-600 dark:text-amber-400">
-                      <span className="font-semibold">{resolvedSenderName}</span>
-                      <span className="font-normal">{inboundIdentity.email_unknown_sender ? ' · Team only' : ' left a private note'}</span>
-                    </span>
-                  </div>
-                  {hasDisplayContent && (
-                    <div className="prose-chat inline text-sm leading-relaxed text-amber-900 [&>p:last-child]:inline dark:text-amber-200">
-                      {mentionParts ? (
-                        <p className="whitespace-pre-wrap">{mentionParts}</p>
-                      ) : (
-                        <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{visibleContent}</Markdown>
-                      )}
-                    </div>
-                  )}
-                  {renderFileAttachments('note', hasDisplayContent ? 'mt-2' : 'mt-1.5')}
-                  {renderImageAttachments(hasDisplayContent || fileAttachments.length > 0 ? 'mt-2' : 'mt-1.5')}
-                  {renderBubbleTime('float-right ml-2 mt-1 text-amber-700/70 dark:text-amber-300/70')}
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side="top">{inboundIdentity.email_unknown_sender ? "This sender is not a participant. Only your team can see this message; no automatic reply is sent." : tooltipContent}</TooltipContent>
-            </Tooltip>
-          </div>
-        </div>
-      </>
-    );
-  }
-
-  // ── Chat bubble ──
   const avatarEl = isCustomer ? (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -792,6 +754,53 @@ export const MessageBubble = memo(function MessageBubble({
     </Tooltip>
   );
 
+  const bubbleWidthClass = hasEmailBody && !renderEmailBodyAsForwardedText
+    ? 'min-w-0 w-[min(92%,64rem)] max-w-[calc(100%-2.25rem)]'
+    : hasTableContent
+      ? 'min-w-0 max-w-[min(85%,46rem)] lg:max-w-[min(85%,48rem)]'
+      : 'min-w-0 max-w-[min(85%,42rem)]';
+
+  // ── Internal note: team bubble with the same author avatar as replies ──
+  if (isInternal) {
+    return (
+      <>
+        <div className={`flex min-w-0 max-w-full justify-end ${isConsecutive ? 'mt-1' : 'mt-5'}`}>
+          <div className={bubbleWidthClass}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div data-support-internal-note className={`flow-root rounded-2xl border border-border/40 bg-amber-50 px-3.5 py-2 [overflow-wrap:anywhere] dark:bg-amber-950/20 ${isLastInGroup ? 'rounded-br-sm' : ''}`}>
+                  <div className="mb-1.5 flex items-center gap-1.5">
+                    <StickyNote01Icon className="h-3 w-3 text-amber-500 dark:text-amber-400" />
+                    <span className="text-[11px] text-amber-600 dark:text-amber-400">
+                      {inboundIdentity.email_unknown_sender ? 'Team only' : 'Internal note'}
+                    </span>
+                  </div>
+                  {hasDisplayContent && (
+                    <div className="prose-chat inline text-sm leading-relaxed text-amber-900 [&>p:last-child]:inline dark:text-amber-200">
+                      {mentionParts ? (
+                        <p className="whitespace-pre-wrap">{mentionParts}</p>
+                      ) : (
+                        <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{visibleContent}</Markdown>
+                      )}
+                    </div>
+                  )}
+                  {renderFileAttachments('note', hasDisplayContent ? 'mt-2' : 'mt-1.5')}
+                  {renderImageAttachments(hasDisplayContent || fileAttachments.length > 0 ? 'mt-2' : 'mt-1.5')}
+                  {renderBubbleTime('float-right ml-2 mt-1 text-amber-700/70 dark:text-amber-300/70')}
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="top">{inboundIdentity.email_unknown_sender ? "This sender is not a participant. Only your team can see this message; no automatic reply is sent." : tooltipContent}</TooltipContent>
+            </Tooltip>
+          </div>
+          <div className="ml-2 flex w-7 shrink-0 flex-col justify-end">
+            {showAvatar && avatarEl}
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // ── Chat bubble ──
   const hasEmailBadge = message.via_channel === 'email';
   const inboundFromEmail = isCustomer ? emailAddressFromHeader(message.email_from) : '';
   const inboundReplyToEmail = isCustomer ? emailAddressFromHeader(message.email_reply_to) : '';
@@ -808,11 +817,6 @@ export const MessageBubble = memo(function MessageBubble({
   const hasEmailReceiptStatus = displayedReceiptStatus === 'sending_email' || displayedReceiptStatus === 'sent_email' || displayedReceiptStatus === 'delivered_email' || displayedReceiptStatus === 'read_email' || displayedReceiptStatus === 'sent_outside_helpin';
   const showStandaloneEmailBadge = !deliveryMode && hasEmailBadge && !(hasEmailReceiptStatus && !isCustomer);
   const hasStatusBelow = !!deliveryMode || !!displayedReceiptStatus || aiConfidence !== null || !!aiMeta?.ai_sources?.length || hasEmailBadge;
-  const bubbleWidthClass = hasEmailBody && !renderEmailBodyAsForwardedText
-    ? 'min-w-0 w-[min(92%,64rem)] max-w-[calc(100%-2.25rem)]'
-    : hasTableContent
-      ? 'min-w-0 max-w-[min(85%,46rem)] lg:max-w-[min(85%,48rem)]'
-      : 'min-w-0 max-w-[min(85%,42rem)]';
   const messageActionsMenu = (
     <MessageActionsMenu
       alignSide={isCustomer ? 'right' : 'left'}
