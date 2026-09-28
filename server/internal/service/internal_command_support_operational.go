@@ -12,6 +12,7 @@ import (
 
 func (s *InternalCommandService) registerSupportOperationalCommands() {
 	definitions := []InternalCommandDefinition{
+		{Name: "support.add_conversation_note", Module: "support", Mutating: true, SupportedTargetTypes: []string{"workspace", "conversation", "support_conversation"}, Tool: mustCommandToolMetadata("support.add_conversation_note"), Execute: s.executeSupportAddConversationNote},
 		{Name: "support.list_conversations", Module: "support", SupportedTargetTypes: []string{"workspace", "conversation", "support_conversation"}, Tool: mustCommandToolMetadata("support.list_conversations"), Execute: s.executeSupportListConversations},
 		{Name: "support.get_conversation", Module: "support", SupportedTargetTypes: []string{"workspace", "conversation", "support_conversation"}, Tool: mustCommandToolMetadata("support.get_conversation"), Execute: s.executeSupportGetConversation},
 		{Name: "support.list_tags", Module: "support", SupportedTargetTypes: []string{"workspace", "conversation", "support_conversation"}, Tool: mustCommandToolMetadata("support.list_tags"), Execute: s.executeSupportListTags},

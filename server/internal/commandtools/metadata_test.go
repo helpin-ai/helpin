@@ -4,6 +4,7 @@ import "testing"
 
 func TestSafeOperationalToolMetadata(t *testing.T) {
 	expected := map[string]string{
+		"add_support_conversation_note":       "Support / Triage",
 		"update_task_delivery_target":         "PM / Delivery",
 		"update_epic_delivery_target":         "PM / Delivery",
 		"update_document_metadata":            "Docs",

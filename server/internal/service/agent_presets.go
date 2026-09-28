@@ -844,6 +844,8 @@ func askAgentPresetTools() []string {
 		"read_files", "list_directory", "repository_search", "list_symbols",
 		"read_symbol", "trace_symbol", "get_pull_request_diff", "get_check_run_logs",
 		"get_release_context", "find_tasks_for_git_changes",
+		// Team-only support notes.
+		"add_support_conversation_note",
 		// Scoped direct execution.
 		"prepare_dock_execution", "activate_dock_execution", "finish_dock_execution",
 		// Agent orchestration.

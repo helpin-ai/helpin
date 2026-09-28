@@ -77,6 +77,9 @@ func TestExcludedPresetRuntimeProfilesHaveNoNewPMTools(t *testing.T) {
 }
 
 func TestOperationalRuntimeProfilesExposeRelevantSafeTools(t *testing.T) {
+	if !slices.Contains(GetRuntimeProfile(model.AgentPresetSupportAgent).AllowedTools, "add_support_conversation_note") {
+		t.Fatal("Echo must have access to internal notes")
+	}
 	tests := []struct {
 		preset string
 		tools  []string

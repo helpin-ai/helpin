@@ -91,6 +91,7 @@ var runtimeToolRiskLevels = map[string]string{
 	"ensure_crm_contact_company": RiskLevelRoutine, "enrich_crm_contact": RiskLevelRoutine,
 	"enrich_crm_company": RiskLevelRoutine, "draft_support_reply": RiskLevelRoutine,
 	"update_conversation_status":    RiskLevelRoutine,
+	"add_support_conversation_note": RiskLevelRoutine,
 	"complete_support_coverage_gap": RiskLevelRoutine,
 	"finish_support_follow_up":      RiskLevelSensitive,
 	"skip_support_reply":            RiskLevelSensitive,
@@ -781,6 +782,16 @@ var baseRuntimeTools = []RuntimeToolMetadata{
 			"conversation_id": optionalIDSchema("Support conversation ID."),
 			"inbox_id":        optionalIDSchema("Destination inbox or mailbox ID."),
 		}, []string{"conversation_id", "inbox_id"}),
+	},
+	{
+		CommandName: "support.add_conversation_note",
+		Alias:       "add_support_conversation_note",
+		Category:    "Support / Triage",
+		Description: "Add an internal note to a support conversation immediately. Visible only to teammates; never sent to the customer. Does not change conversation status or AI control. Use for useful findings or requested notes, not routine progress. This does not replace a customer reply.",
+		InputSchema: closedObjectSchema(map[string]any{
+			"conversation_id": optionalIDSchema("Support conversation ID. Omit only when the run targets that conversation."),
+			"content":         map[string]any{"type": "string", "minLength": 1, "description": "Concise internal note in Markdown."},
+		}, []string{"content"}),
 	},
 	{
 		CommandName: "support.add_conversation_tag",

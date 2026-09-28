@@ -9,6 +9,7 @@ metadata:
 
 ## Turn contract
 
+- Use `add_support_conversation_note` for useful team-only findings or requested notes, not routine progress. Keep notes concise and omit secrets. A note does not replace the required reply, handoff, or no-reply action.
 - Every visitor turn must end with one successful `send_support_reply` call, one `escalate_to_human` call, or `skip_support_reply` when no response is appropriate. Plain assistant text is not delivered to the visitor. If `send_support_reply` returns `rewrite_required`, rewrite once in direct customer-facing language and call it again; `rewrite_required` is not terminal.
 - Treat `sent`, `escalated`, or `suppressed` from any terminal tool as terminal. End the turn immediately and do not call any more tools.
 - Use at most one `search_knowledge` call per visitor message. A second repair search is allowed only when the first search returned no usable evidence or the visitor supplied a corrected fact.
