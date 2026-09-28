@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 const (
 	SupportPortalAuditRequestCreated     = "request_created"
@@ -45,12 +48,14 @@ func (SupportPortalIdentity) TableName() string { return "support_portal_identit
 // reference to the canonical support conversation. The reference is the only
 // request identifier exposed to portal clients.
 type SupportPortalRequestReference struct {
-	ID               string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID      string    `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex:idx_support_portal_request_reference,priority:1"`
-	ConversationID   string    `json:"-" gorm:"type:uuid;not null;uniqueIndex:idx_support_portal_request_conversation,priority:1"`
-	PortalIdentityID string    `json:"-" gorm:"type:uuid;not null;index"`
-	Reference        string    `json:"reference" gorm:"not null;uniqueIndex:idx_support_portal_request_reference,priority:2"`
-	CreatedAt        time.Time `json:"created_at" gorm:"autoCreateTime"`
+	ID               string `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID      string `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex:idx_support_portal_request_reference,priority:1"`
+	ConversationID   string `json:"-" gorm:"type:uuid;not null;uniqueIndex:idx_support_portal_request_conversation,priority:1"`
+	PortalIdentityID string `json:"-" gorm:"type:uuid;not null;index"`
+	Reference        string `json:"reference" gorm:"not null;uniqueIndex:idx_support_portal_request_reference,priority:2"`
+	// CustomerLastReadAt is when the customer last opened the request.
+	CustomerLastReadAt *time.Time `json:"-"`
+	CreatedAt          time.Time  `json:"created_at" gorm:"autoCreateTime"`
 }
 
 func (SupportPortalRequestReference) TableName() string { return "support_portal_request_references" }
@@ -85,16 +90,60 @@ type SupportPortalRequest struct {
 	LastActivityAt      *time.Time `json:"last_activity_at,omitempty"`
 	ResolvedAt          *time.Time `json:"resolved_at,omitempty"`
 	LastPublicMessageAt *time.Time `json:"-"`
+	// Number is the short ticket number agents also see (display_id).
+	Number int `json:"number" gorm:"column:display_id"`
+	// LastMessagePreview is a plain-text excerpt of the latest public message.
+	LastMessagePreview string `json:"last_message_preview,omitempty" gorm:"-"`
+	// LastMessageFrom is "customer" or "support".
+	LastMessageFrom string `json:"last_message_from,omitempty" gorm:"-"`
+	// Unread is true when support replied after the customer last opened it.
+	Unread bool `json:"unread" gorm:"-"`
+
+	LastPublicSenderType     *string    `json:"-"`
+	CustomerAwaitingResponse bool       `json:"-"`
+	LastMessageContent       *string    `json:"-"`
+	CustomerLastReadAt       *time.Time `json:"-"`
 }
 
-// PortalRequestStatus exposes only the customer-facing lifecycle, never internal states.
-func PortalRequestStatus(status string) string {
+// PortalRequestStatus exposes the customer-facing lifecycle. Open requests
+// awaiting a customer reply share the inbox's derived Waiting view.
+func PortalRequestStatus(status, lastPublicSenderType string, customerAwaitingResponse bool) string {
 	switch NormalizeSupportConversationStatus(status) {
 	case SupportConversationStatusResolved:
 		return SupportConversationStatusResolved
 	case SupportConversationStatusWaitingOnCustomer:
 		return SupportConversationStatusWaitingOnCustomer
+	case SupportConversationStatusOpen:
+		if lastPublicSenderType == "user" && !customerAwaitingResponse {
+			return SupportConversationStatusWaitingOnCustomer
+		}
 	default:
-		return "active"
 	}
+	return "active"
+}
+
+// PortalMessagePreview turns message text (often Markdown) into a short
+// plain-text excerpt for the request list.
+func PortalMessagePreview(content string) string {
+	replacer := strings.NewReplacer("**", "", "__", "", "`", "", "#", "", "> ", "", "\r", " ", "\n", " ", "\t", " ")
+	text := strings.Join(strings.Fields(replacer.Replace(content)), " ")
+	for _, bullet := range []string{"- ", "* "} {
+		text = strings.TrimPrefix(text, bullet)
+	}
+	const limit = 140
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text
+	}
+	return strings.TrimSpace(string(runes[:limit])) + "…"
+}
+
+// PortalSenderAvatar is a teammate's avatar as the app draws it: an uploaded
+// image, or a generated one from its style, seed and background.
+type PortalSenderAvatar struct {
+	URL             *string `json:"url,omitempty" gorm:"column:avatar_url"`
+	Style           *string `json:"style,omitempty" gorm:"column:avatar_style"`
+	Seed            *string `json:"seed,omitempty" gorm:"column:avatar_seed"`
+	BackgroundMode  *string `json:"background_mode,omitempty" gorm:"column:avatar_background_mode"`
+	BackgroundColor *string `json:"background_color,omitempty" gorm:"column:avatar_background_color"`
 }

@@ -25,7 +25,7 @@ func TestPortalCreateRequestProjectsFirstCustomerMessage(t *testing.T) {
 		`ALTER TABLE support_conversations ADD COLUMN email_thread_participants TEXT`,
 		`ALTER TABLE support_conversations ADD COLUMN crm_company_id TEXT`,
 		`ALTER TABLE support_conversations ADD COLUMN portal_visibility_changed_at DATETIME`,
-		`CREATE TABLE support_portal_request_references (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, portal_identity_id TEXT, reference TEXT, created_at DATETIME)`,
+		`CREATE TABLE support_portal_request_references (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, portal_identity_id TEXT, reference TEXT, customer_last_read_at DATETIME, created_at DATETIME)`,
 		`CREATE TABLE support_portal_audit_events (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, portal_identity_id TEXT, actor_type TEXT, actor_user_id TEXT, event_type TEXT, metadata TEXT, occurred_at DATETIME, created_at DATETIME)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {

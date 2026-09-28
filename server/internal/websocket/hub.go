@@ -39,6 +39,9 @@ type Client struct {
 	ConversationID    *string         // set for widget clients, scopes which events they receive
 	PublicTeammateIDs map[string]bool // protected by Hub.mu; identities already public to this visitor
 	AnonymousID       string          // set for widget clients, used for visitor online tracking
+	// Portal is set for customer portal clients. They are neither agents nor
+	// widget visitors and only receive signals for their own requests.
+	Portal *PortalScope
 }
 
 // Hub manages all active WebSocket clients grouped by workspace.
@@ -169,7 +172,7 @@ func (h *Hub) Unregister(c *Client) {
 
 	// Clean up presence and broadcast stop events for internal (agent) clients.
 	// Use BroadcastAll so disconnect events reach other pods too.
-	if !c.IsWidget {
+	if !c.IsWidget && c.Portal == nil {
 		ctx := context.Background()
 		viewingCleared, typingCleared, err := h.Presence.ClearAllForConn(ctx, c.WorkspaceID, c.UserID, c.ConnID)
 		if err != nil {
@@ -324,6 +327,14 @@ func (h *Hub) Broadcast(event Event) {
 	}
 
 	for _, c := range targets {
+		// Portal clients are routed first: they must never fall through to the
+		// internal-client rules, which deliver every workspace event.
+		if c.Portal != nil {
+			if payload := portalPayload(c.Portal, event, len(widgetEventData) > 0); payload != nil {
+				h.write(c, payload)
+			}
+			continue
+		}
 		if c.IsWidget && event.Entity == "support_conversation_message" && len(widgetEventData) == 0 {
 			continue
 		}
@@ -365,14 +376,19 @@ func (h *Hub) Broadcast(event Event) {
 			slog.Debug("[ws] delivering typing event to client",
 				"client_user", c.UserID, "is_widget", c.IsWidget)
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		err := c.Conn.Write(ctx, websocket.MessageText, payload)
-		cancel()
-		if err != nil {
-			log.Printf("[ws] write failed for user=%s, evicting: %v", c.UserID, err)
-			h.Unregister(c)
-			c.Conn.Close(websocket.StatusGoingAway, "write failed")
-		}
+		h.write(c, payload)
+	}
+}
+
+// write sends a payload to one client, evicting it if the write fails.
+func (h *Hub) write(c *Client, payload []byte) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	err := c.Conn.Write(ctx, websocket.MessageText, payload)
+	cancel()
+	if err != nil {
+		log.Printf("[ws] write failed for user=%s, evicting: %v", c.UserID, err)
+		h.Unregister(c)
+		c.Conn.Close(websocket.StatusGoingAway, "write failed")
 	}
 }
 

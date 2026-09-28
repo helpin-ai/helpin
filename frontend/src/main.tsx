@@ -28,6 +28,11 @@ function normalizePathname(pathname: string) {
 const isLogoutPath =
   typeof window !== 'undefined' && normalizePathname(window.location.pathname) === '/logout'
 
+// The customer portal is public and has its own session. Staff session checks
+// and developer tools never run there.
+const isCustomerPortalPath =
+  typeof window !== 'undefined' && /^\/portal(\/|$)/.test(normalizePathname(window.location.pathname))
+
 if (isLogoutPath) {
   void clearClientSession().finally(() => {
     window.location.replace('/login')
@@ -64,6 +69,10 @@ function InnerApp() {
   const serverUnreachable = useAuthStore((s) => s.serverUnreachable)
 
   useEffect(() => {
+    if (isCustomerPortalPath) {
+      useAuthStore.setState({ loading: false })
+      return
+    }
     useAuthStore.getState().initialize()
   }, [])
 
@@ -97,9 +106,11 @@ function App() {
       <QueryClientProvider client={queryClient}>
         <HelpinIdentitySync />
         <InnerApp />
-        <div className="helpin-query-devtools">
-          <ReactQueryDevtools initialIsOpen={false} buttonPosition="top-right" />
-        </div>
+        {isCustomerPortalPath ? null : (
+          <div className="helpin-query-devtools">
+            <ReactQueryDevtools initialIsOpen={false} buttonPosition="top-right" />
+          </div>
+        )}
       </QueryClientProvider>
     </HelpinProvider>
   )

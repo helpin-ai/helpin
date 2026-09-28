@@ -15,11 +15,12 @@ func TestPortalAuthAssociateVerifiedEmailScopedAndVisible(t *testing.T) {
 	}
 	for _, sql := range []string{
 		`CREATE TABLE crm_contacts (id TEXT PRIMARY KEY, workspace_id TEXT, email TEXT)`,
-		`CREATE TABLE support_conversations (id TEXT PRIMARY KEY, workspace_id TEXT, customer_email TEXT, crm_contact_id TEXT, portal_visible BOOLEAN, portal_visibility_changed_at DATETIME, primary_recipient_state TEXT, status TEXT, channel TEXT, source TEXT, deleted_at DATETIME, subject TEXT, created_at DATETIME, updated_at DATETIME, last_public_message_at DATETIME, resolved_at DATETIME)`,
+		`CREATE TABLE support_conversations (id TEXT PRIMARY KEY, workspace_id TEXT, display_id INTEGER, last_public_message_id TEXT, last_public_sender_type TEXT, customer_awaiting_response BOOLEAN DEFAULT 0, customer_email TEXT, crm_contact_id TEXT, portal_visible BOOLEAN, portal_visibility_changed_at DATETIME, primary_recipient_state TEXT, status TEXT, channel TEXT, source TEXT, deleted_at DATETIME, subject TEXT, created_at DATETIME, updated_at DATETIME, last_public_message_at DATETIME, resolved_at DATETIME)`,
+		`CREATE TABLE support_messages (id TEXT PRIMARY KEY, content TEXT)`,
 		`CREATE TABLE support_widget_sessions (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, customer_email TEXT, identity_trust TEXT, identity_verified_at DATETIME)`,
 		`CREATE TABLE support_portal_identities (id TEXT PRIMARY KEY, workspace_id TEXT, email TEXT)`,
 		`INSERT INTO support_portal_identities VALUES ('identity-a','workspace-a','alice@example.com'), ('identity-b','workspace-a','alice@example.com')`,
-		`CREATE TABLE support_portal_request_references (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT UNIQUE, portal_identity_id TEXT, reference TEXT UNIQUE, created_at DATETIME)`,
+		`CREATE TABLE support_portal_request_references (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT UNIQUE, portal_identity_id TEXT, reference TEXT UNIQUE, customer_last_read_at DATETIME, created_at DATETIME)`,
 		`INSERT INTO crm_contacts VALUES ('contact-a','workspace-a','alice@example.com')`,
 		`INSERT INTO support_conversations (id, workspace_id, customer_email, crm_contact_id, portal_visible, status, channel, source) VALUES
    ('email-match','workspace-a','ALICE@example.com',NULL,1,'open','email','email'),
@@ -146,9 +147,10 @@ func TestPortalAuthReconcileRequestsAfterSessionEstablished(t *testing.T) {
 	}
 	for _, sql := range []string{
 		`CREATE TABLE support_portal_identities (id TEXT PRIMARY KEY, workspace_id TEXT, email TEXT)`,
-		`CREATE TABLE support_conversations (id TEXT PRIMARY KEY, workspace_id TEXT, customer_email TEXT, portal_visible BOOLEAN, portal_visibility_changed_at DATETIME, primary_recipient_state TEXT, status TEXT, channel TEXT, source TEXT, deleted_at DATETIME, subject TEXT, created_at DATETIME, last_public_message_at DATETIME, resolved_at DATETIME)`,
+		`CREATE TABLE support_conversations (id TEXT PRIMARY KEY, workspace_id TEXT, display_id INTEGER, last_public_message_id TEXT, last_public_sender_type TEXT, customer_awaiting_response BOOLEAN DEFAULT 0, customer_email TEXT, portal_visible BOOLEAN, portal_visibility_changed_at DATETIME, primary_recipient_state TEXT, status TEXT, channel TEXT, source TEXT, deleted_at DATETIME, subject TEXT, created_at DATETIME, updated_at DATETIME, last_public_message_at DATETIME, resolved_at DATETIME)`,
+		`CREATE TABLE support_messages (id TEXT PRIMARY KEY, content TEXT)`,
 		`CREATE TABLE support_widget_sessions (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, customer_email TEXT, identity_trust TEXT, identity_verified_at DATETIME)`,
-		`CREATE TABLE support_portal_request_references (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT UNIQUE, portal_identity_id TEXT, reference TEXT UNIQUE, created_at DATETIME)`,
+		`CREATE TABLE support_portal_request_references (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT UNIQUE, portal_identity_id TEXT, reference TEXT UNIQUE, customer_last_read_at DATETIME, created_at DATETIME)`,
 		`INSERT INTO support_portal_identities VALUES ('alice','ws','alice@example.com')`,
 	} {
 		if err := db.Exec(sql).Error; err != nil {

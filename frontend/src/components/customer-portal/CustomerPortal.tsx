@@ -15,23 +15,21 @@ import {
   QuietConversationComposer,
   QuietComposerEditorSurface,
   QuietEmptyState,
-  QuietIconAction,
-  QuietListRow,
   QuietMetaLine,
   QuietPageHeader,
   QuietPrimaryAction,
-  QuietSectionHeader,
-  QuietStatusText,
   QuietTextAction,
   QuietUnderlineInput,
   QuietUnderlineTextarea,
 } from '@/components/design-system/quiet'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ArrowReloadHorizontalIcon } from '@/lib/icons'
 import { cn } from '@/lib/utils'
-import { SupportAttachmentGallery } from '@/components/support/SupportAttachmentGallery'
+import { PortalActivityRow, PortalMessage } from './PortalConversation'
+import { PortalRequestTable, RequestStatusText } from './PortalRequestTable'
+import { requestNumber } from './portalRequestFormat'
+import { formatPortalRelativeTime } from './portalTime'
+import { usePortalLiveUpdates } from './usePortalLiveUpdates'
 import { PortalAttachmentTray } from './PortalAttachmentTray'
 import { pastedFiles, usePortalFileDrop } from './portalFileDrop'
 import { usePortalAttachmentUploads } from './usePortalAttachmentUploads'
@@ -43,7 +41,6 @@ import {
   type CustomerPortalRequest,
   type CustomerPortalRequestDetail,
   type CustomerPortalSession,
-  type CustomerPortalRequestFilter,
 } from '@/lib/services/customerPortalService'
 
 
@@ -55,18 +52,17 @@ import {
  * Quiet prose measure. It uses no backdrop card; the portal lives outside
  * the authenticated app shell.
  */
-function PortalShell({ children, account, width = 'prose' }: { children: ReactNode; account?: ReactNode; width?: 'prose' | 'form' }) {
+function PortalShell({ children, account, width = 'prose' }: { children: ReactNode; account?: ReactNode; width?: 'prose' | 'form' | 'wide' }) {
   const { configuration } = usePortalOptional()
   const name = configuration?.branding.name || 'Customer support'
-  const columnClassName = width === 'form' ? 'max-w-[480px]' : 'max-w-[760px]'
+  // The request table uses the wide column; threads and forms keep a reading measure.
+  const columnClassName = width === 'form' ? 'max-w-[480px]' : width === 'wide' ? 'max-w-[1080px]' : 'max-w-[760px]'
   return (
     <div className="min-h-svh bg-background text-quiet-text-primary">
       <header className="border-b border-quiet-divider-strong">
         <div className={cn('mx-auto flex h-14 w-full items-center justify-between gap-4 px-4 sm:px-6', columnClassName)}>
           <div className="flex min-w-0 items-center gap-2.5">
-            {configuration?.branding.logo_url ? (
-              <img src={configuration.branding.logo_url} alt="" className="size-6 shrink-0 object-contain" />
-            ) : null}
+            <PortalBrandMark name={name} logoUrl={configuration?.branding.logo_url} color={configuration?.branding.brand_color} />
             <span className="truncate text-sm font-semibold tracking-[-0.008em]">{name}</span>
           </div>
           {account}
@@ -76,6 +72,20 @@ function PortalShell({ children, account, width = 'prose' }: { children: ReactNo
         {children}
       </main>
     </div>
+  )
+}
+
+/** PortalBrandMark shows the workspace logo, or its initial in the brand colour. */
+function PortalBrandMark({ name, logoUrl, color }: { name: string; logoUrl?: string | null; color?: string | null }) {
+  if (logoUrl) return <img src={logoUrl} alt="" className="size-7 shrink-0 rounded-md object-contain" />
+  return (
+    <span
+      aria-hidden="true"
+      className="flex size-7 shrink-0 items-center justify-center rounded-md bg-quiet-action text-[12px] font-semibold text-quiet-action-ink"
+      style={color ? { backgroundColor: color, color: '#fff' } : undefined}
+    >
+      {name.trim().charAt(0).toUpperCase() || 'S'}
+    </span>
   )
 }
 
@@ -504,73 +514,12 @@ export function CustomerPortalCallback({ token }: { token?: string }) {
 
 // ── Requests ────────────────────────────────────────────────────────────
 
-const requestFilters: { value: CustomerPortalRequestFilter; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'active', label: 'Active' },
-  { value: 'waiting_on_customer', label: 'Waiting on you' },
-  { value: 'resolved', label: 'Resolved' },
-]
-
-type RequestStatus = CustomerPortalRequest['status']
-
-const requestStatus: Record<RequestStatus, { label: string; tone: 'current' | 'blocker' | 'positive' }> = {
-  active: { label: 'Active', tone: 'current' },
-  waiting_on_customer: { label: 'Waiting on you', tone: 'blocker' },
-  resolved: { label: 'Resolved', tone: 'positive' },
-}
-
-function RequestStatusText({ status }: { status: RequestStatus }) {
-  const meta = requestStatus[status] ?? requestStatus.active
-  return <QuietStatusText tone={meta.tone}>{meta.label}</QuietStatusText>
-}
-
-function formatDate(value: string | null | undefined, withTime = false) {
-  if (!value) return null
-  const date = new Date(value)
-  return withTime
-    ? date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
-    : date.toLocaleDateString(undefined, { dateStyle: 'medium' })
-}
-
-function RequestList({ requests, filter, slug }: { requests: CustomerPortalRequest[]; filter: CustomerPortalRequestFilter; slug: string }) {
-  if (requests.length === 0) {
-    return filter === 'all' ? (
-      <QuietEmptyState className="px-3 sm:px-3" title="No requests yet" description="Requests you send to support will appear here with their latest status." />
-    ) : (
-      <QuietEmptyState className="px-3 sm:px-3" title="No matching requests" description="No requests have this status. Choose another filter to see the rest." />
-    )
-  }
-
-  return (
-    <ul className="border-t border-quiet-divider-strong">
-      {requests.map((request) => (
-        <li key={request.reference}>
-          <Link
-            to="/portal/$slug/requests/$reference"
-            params={{ slug, reference: request.reference }}
-            aria-label={request.subject}
-            className="block focus-visible:bg-quiet-row-hover focus-visible:outline-none"
-          >
-            <QuietListRow
-              className="px-3"
-              state={request.status === 'waiting_on_customer' ? 'blocker' : 'none'}
-              title={<span className="block truncate">{request.subject}</span>}
-              detail={<QuietMetaLine items={[request.reference, request.last_activity_at ? `Updated ${formatDate(request.last_activity_at)}` : null]} />}
-              trailing={<RequestStatusText status={request.status} />}
-            />
-          </Link>
-        </li>
-      ))}
-    </ul>
-  )
-}
-
 function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated, handleSessionError }: {
   slug: string
   fileUploadsEnabled: boolean
   policy?: CustomerPortalAttachmentPolicy
   onCancel: () => void
-  onCreated: () => void
+  onCreated: (reference: string) => void
   handleSessionError: (error: unknown) => boolean
 }) {
   const [subject, setSubject] = useState('')
@@ -589,13 +538,13 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
     setSubmitting(true)
     setError(null)
     try {
-      await customerPortalService.createRequest(slug, {
+      const created = await customerPortalService.createRequest(slug, {
         subject: subject.trim(),
         message: message.trim(),
         attachment_ids: uploads.attachmentIds,
       })
       uploads.clear()
-      onCreated()
+      onCreated(created.reference)
     } catch (requestError) {
       if (handleSessionError(requestError)) return
       setError('Your request could not be sent. Please try again.')
@@ -605,13 +554,12 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
   }
 
   return (
-    <form className={cn('mt-6 space-y-5 border-t border-quiet-divider-strong pt-6 transition-colors', dragging && 'bg-quiet-row-hover')} onSubmit={createRequest} aria-labelledby="new-request-heading" {...dropProps}>
-      <QuietSectionHeader title={<span id="new-request-heading">New request</span>} />
+    <form className={cn('-mx-3 mt-8 max-w-[784px] space-y-6 rounded-lg px-3 py-3 transition-colors', dragging && 'bg-quiet-row-hover')} onSubmit={createRequest} aria-label="New request" {...dropProps}>
       <PortalField id="request-subject" label="Subject">
-        <QuietUnderlineInput id="request-subject" value={subject} onChange={(event) => setSubject(event.target.value)} required maxLength={200} />
+        <QuietUnderlineInput id="request-subject" value={subject} onChange={(event) => setSubject(event.target.value)} required maxLength={200} placeholder="A short summary, e.g. “Invoices export is missing VAT”" />
       </PortalField>
       <PortalField id="request-message" label="How can we help?">
-        <QuietUnderlineTextarea id="request-message" rows={4} className="max-h-none min-h-24" value={message} onPaste={onPaste} onChange={(event) => setMessage(event.target.value)} required />
+        <QuietUnderlineTextarea id="request-message" rows={6} className="max-h-none min-h-32" value={message} onPaste={onPaste} onChange={(event) => setMessage(event.target.value)} required placeholder="What happened, what you expected, and any steps to reproduce it." />
       </PortalField>
       <PortalDropCue visible={dragging} />
       {fileUploadsEnabled ? <PortalAttachmentTray uploads={uploads} policy={policy} /> : null}
@@ -626,121 +574,100 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
 
 export function CustomerPortalHome() {
   const { configuration, handleSessionError, slug, status } = usePortal()
-  const [filter, setFilter] = useState<CustomerPortalRequestFilter>('all')
   const [reload, setReload] = useState(0)
-  const [showRequestForm, setShowRequestForm] = useState(false)
-  // Each load is keyed by filter and reload; a result for another key is stale.
-  const loadKey = `${filter}:${reload}`
-  const [result, setResult] = useState<{ key: string; requests: CustomerPortalRequest[]; error: string | null } | null>(null)
-  const loading = result?.key !== loadKey
-  const requests = result?.requests ?? []
-  const error = loading ? null : result?.error ?? null
+  // The skeleton shows only on the first load, so live refreshes keep the
+  // table, its filters and its open groups in place.
+  const [result, setResult] = useState<{ requests: CustomerPortalRequest[]; error: string | null } | null>(null)
+  const supportName = configuration?.branding.name || 'Support'
+  const refresh = useCallback(() => setReload((current) => current + 1), [])
+
+  usePortalLiveUpdates(slug, status === 'authenticated', { onChange: refresh })
 
   useEffect(() => {
     if (status !== 'authenticated') return
     let active = true
+    // Every request is loaded once; the table filters and counts them locally.
     customerPortalService
-      .requests(slug, filter)
+      .requests(slug, 'all')
       .then((nextRequests) => {
-        if (active) setResult({ key: loadKey, requests: nextRequests, error: null })
+        if (active) setResult({ requests: nextRequests, error: null })
       })
       .catch((requestError) => {
         if (!active || handleSessionError(requestError)) return
-        setResult({ key: loadKey, requests: [], error: 'Your requests could not be loaded.' })
+        setResult((previous) => previous?.requests.length ? previous : { requests: [], error: 'Your requests could not be loaded.' })
       })
     return () => {
       active = false
     }
-  }, [handleSessionError, slug, status, filter, loadKey])
+  }, [handleSessionError, slug, status, reload])
 
   if (status !== 'authenticated') return null
 
   return (
-    <PortalShell account={<PortalAccount />}>
+    <PortalShell account={<PortalAccount />} width="wide">
       <QuietPageHeader
         title="Your requests"
-        actions={configuration?.intake_enabled && !showRequestForm ? (
-          <QuietPrimaryAction onClick={() => setShowRequestForm(true)}>New request</QuietPrimaryAction>
+        actions={configuration?.intake_enabled ? (
+          <QuietPrimaryAction asChild>
+            <Link to="/portal/$slug/new" params={{ slug }}>New request</Link>
+          </QuietPrimaryAction>
         ) : null}
       />
 
-      {showRequestForm ? (
-        <NewRequestForm
-          slug={slug}
-          fileUploadsEnabled={Boolean(configuration?.file_uploads_enabled)}
-          policy={configuration?.attachments}
-          handleSessionError={handleSessionError}
-          onCancel={() => setShowRequestForm(false)}
-          onCreated={() => {
-            setShowRequestForm(false)
-            setReload((current) => current + 1)
-          }}
-        />
-      ) : null}
-
-      <section className="mt-8" aria-label="Request history">
-        <div className="flex items-end justify-between gap-4">
-          <Tabs value={filter} onValueChange={(value) => setFilter(value as CustomerPortalRequestFilter)} className="min-w-0">
-            <TabsList variant="quiet" aria-label="Filter requests by status" className="flex-wrap gap-x-5 gap-y-0 border-b-0">
-              {requestFilters.map((item) => (
-                <TabsTrigger key={item.value} value={item.value}>{item.label}</TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-          <QuietIconAction className="mb-1.5 shrink-0" aria-label="Refresh requests" title="Refresh requests" onClick={() => setReload((current) => current + 1)}>
-            <ArrowReloadHorizontalIcon className="size-[15px]" />
-          </QuietIconAction>
-        </div>
-        {loading ? (
+      <section className="mt-4" aria-label="Request history">
+        {!result ? (
           <div className="border-t border-quiet-divider-strong" role="status" aria-label="Loading requests">
             {[0, 1, 2].map((item) => (
-              <div key={item} className="border-b border-quiet-divider-light px-3 py-3">
-                <Skeleton className="h-4 w-2/3 rounded-sm" />
-                <Skeleton className="mt-2 h-3 w-1/3 rounded-sm" />
+              <div key={item} className="space-y-2 border-b border-quiet-divider-light px-2 py-3 motion-safe:animate-pulse">
+                <div className="h-2 w-16 bg-quiet-icon-well" />
+                <div className="h-3 w-3/5 bg-quiet-icon-well" />
+                <div className="h-2 w-2/5 bg-quiet-icon-well" />
               </div>
             ))}
           </div>
-        ) : error ? (
+        ) : result.error ? (
           <QuietEmptyState
-            className="px-3 sm:px-3"
-            title={error}
+            title={result.error}
             description="Check your connection and try again."
-            action={<QuietTextAction onClick={() => setReload((current) => current + 1)}>Try again</QuietTextAction>}
+            action={<QuietTextAction onClick={refresh}>Try again</QuietTextAction>}
           />
         ) : (
-          <RequestList requests={requests} filter={filter} slug={slug} />
+          <PortalRequestTable requests={result.requests} slug={slug} supportName={supportName} onRefresh={refresh} />
         )}
       </section>
     </PortalShell>
   )
 }
 
-// ── Request detail ──────────────────────────────────────────────────────
-
-function PortalMessage({ message }: { message: CustomerPortalRequestDetail['messages'][number] }) {
-  const fromCustomer = message.sender_type === 'customer'
+export function CustomerPortalNewRequestPage() {
+  const { configuration, handleSessionError, slug, status } = usePortal()
+  const navigate = useNavigate()
+  if (status !== 'authenticated') return null
+  const backToRequests = () => void navigate({ to: '/portal/$slug', params: { slug } })
   return (
-    <li className="py-3">
-      <QuietMetaLine
-        className="mb-1.5 text-[12px]"
-        items={[
-          <span key="sender" className="font-medium text-quiet-text-secondary">{fromCustomer ? 'You' : message.sender_type === 'ai' ? `${message.sender_name || 'Echo'} · AI` : message.sender_name || 'Support'}</span>,
-          <time key="time" dateTime={message.created_at}>{formatDate(message.created_at, true)}</time>,
-        ]}
+    <PortalShell account={<PortalAccount />} width="wide">
+      <QuietPageHeader
+        navigation={<QuietBreadcrumbs onBack={backToRequests} backLabel="Back to all requests" items={[{ id: 'requests', label: 'Requests', onClick: backToRequests }]} />}
+        title="New request"
+        description="Tell us what you need. We’ll reply here and by email."
       />
-      <div className={cn('rounded-xl px-4 py-3', fromCustomer ? 'bg-quiet-row-hover' : 'bg-quiet-hover')}>
-        {message.content ? <p className="whitespace-pre-wrap break-words text-[14px] leading-[1.7] text-quiet-text-primary">{message.content}</p> : null}
-        {message.attachments?.length ? (
-          <SupportAttachmentGallery
-            className={message.content ? 'mt-3' : ''}
-            thumbnailSize="md"
-            attachments={message.attachments.map((file) => ({ ...file, file_key: '' }))}
-          />
-        ) : null}
-      </div>
-    </li>
+      {configuration?.intake_enabled ? (
+        <NewRequestForm
+          slug={slug}
+          fileUploadsEnabled={Boolean(configuration?.file_uploads_enabled)}
+          policy={configuration?.attachments}
+          handleSessionError={handleSessionError}
+          onCancel={backToRequests}
+          onCreated={(reference) => void navigate({ to: '/portal/$slug/requests/$reference', params: { slug, reference } })}
+        />
+      ) : (
+        <QuietEmptyState className="mt-8" title="New requests are turned off" description="Contact support through your usual channel." action={<QuietTextAction onClick={backToRequests}>All requests</QuietTextAction>} />
+      )}
+    </PortalShell>
   )
 }
+
+// ── Request detail ──────────────────────────────────────────────────────
 
 function ReplyComposer({ slug, reference, fileUploadsEnabled, policy, sending, onSend }: {
   slug: string
@@ -807,19 +734,40 @@ export function CustomerPortalRequestPage({ reference }: { reference: string }) 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [typing, setTyping] = useState(false)
+  const typingTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
+  usePortalLiveUpdates(slug, status === 'authenticated', {
+    onChange: (changed) => {
+      if (changed === null || changed === reference) setRefreshKey((current) => current + 1)
+    },
+    onTyping: (changed, isTyping) => {
+      if (changed !== reference) return
+      clearTimeout(typingTimer.current)
+      setTyping(isTyping)
+      // A lost "stopped" signal must not leave the indicator on forever.
+      if (isTyping) typingTimer.current = setTimeout(() => setTyping(false), 8000)
+    },
+  })
+  useEffect(() => () => clearTimeout(typingTimer.current), [])
 
   useEffect(() => {
     if (status !== 'authenticated') return
     let active = true
     customerPortalService.requestDetail(slug, reference)
-      .then((detail) => { if (active) setRequest(detail) })
+      .then((detail) => {
+        if (!active) return
+        setRequest(detail)
+        setError(null)
+      })
       .catch((reason) => {
         if (!active || handleSessionError(reason)) return
         setError(reason instanceof CustomerPortalApiError && reason.status === 404 ? 'This request is unavailable.' : 'Unable to load this request. Please try again.')
       })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [slug, reference, status, handleSessionError])
+  }, [slug, reference, status, handleSessionError, refreshKey])
 
   async function send(content: string, attachmentIds: string[]) {
     if (!request?.can_reply) return false
@@ -843,20 +791,17 @@ export function CustomerPortalRequestPage({ reference }: { reference: string }) 
   const backToRequests = () => void navigate({ to: '/portal/$slug', params: { slug } })
 
   return (
-    <PortalShell account={<PortalAccount />}>
+    <PortalShell account={<PortalAccount />} width="wide">
       <QuietPageHeader
         navigation={<QuietBreadcrumbs onBack={backToRequests} backLabel="Back to all requests" items={[{ id: 'requests', label: 'Requests', onClick: backToRequests }]} />}
         title={request?.subject ?? 'Request'}
         description={request ? (
           <QuietMetaLine
             className="text-[12px]"
-            items={[
-              request.reference,
-              request.last_activity_at ? `Updated ${formatDate(request.last_activity_at, true)}` : null,
-              <RequestStatusText key="status" status={request.status} />,
-            ]}
+            items={[requestNumber(request), request.last_activity_at ? `Updated ${formatPortalRelativeTime(request.last_activity_at)}` : null]}
           />
         ) : null}
+        actions={request ? <RequestStatusText status={request.status} /> : null}
       />
 
       {loading ? (
@@ -869,9 +814,13 @@ export function CustomerPortalRequestPage({ reference }: { reference: string }) 
       ) : request ? (
         <>
           <ol className="mt-6 border-t border-quiet-divider-strong pt-3" aria-label="Messages">
-            {request.messages.map((message) => <PortalMessage key={message.id} message={message} />)}
+            {request.messages.map((message) => <PortalMessage key={message.id} message={message} supportName={configuration?.branding.name || 'Support'} />)}
+            {request.ai_processing ? (
+              <PortalActivityRow label={`${configuration?.branding.assistant_name || 'The AI assistant'} is working on your request…`} />
+            ) : typing ? (
+              <PortalActivityRow label={`${configuration?.branding.name || 'Support'} is replying…`} />
+            ) : null}
           </ol>
-          {request.ai_processing ? <p className="mt-2 text-sm text-quiet-text-secondary" role="status">Echo is working on your request.</p> : null}
           {error ? <PortalError className="mt-4">{error}</PortalError> : null}
           {request.can_reply ? (
             <ReplyComposer slug={slug} reference={reference} fileUploadsEnabled={Boolean(configuration?.file_uploads_enabled)} policy={configuration?.attachments} sending={sending} onSend={send} />

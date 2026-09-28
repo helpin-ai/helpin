@@ -290,7 +290,7 @@ func TestCustomerPortalAnonymousIntakeNeedsReplyDelivery(t *testing.T) {
 	svc, _, _, ws := setupCustomerPortalService(t)
 	ctx := context.Background()
 	svc.inbox.SetEmailFallbackService(nil)
-	if svc.Configuration(ws).AnonymousIntakeEnabled {
+	if svc.Configuration(context.Background(), ws).AnonymousIntakeEnabled {
 		t.Fatal("portal offers intake without reply delivery")
 	}
 	if _, err := svc.StartAnonymousIntake(ctx, ws, "customer@example.com"); !errors.Is(err, ErrPortalAnonymousIntakeDisabled) {
@@ -441,7 +441,7 @@ func TestCustomerPortalAnonymousIntakeNeedsApplicationEmail(t *testing.T) {
 			base, _, _, ws := setupCustomerPortalService(t)
 			ctx := context.Background()
 			svc := NewCustomerPortalService(base.repo, base.inbox, tt.sender, base.baseURL)
-			if svc.Configuration(ws).AnonymousIntakeEnabled {
+			if svc.Configuration(context.Background(), ws).AnonymousIntakeEnabled {
 				t.Fatal("portal offers intake without application email")
 			}
 			if _, err := svc.StartAnonymousIntake(ctx, ws, "customer@example.com"); !errors.Is(err, ErrPortalAnonymousIntakeDisabled) {

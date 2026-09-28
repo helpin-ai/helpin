@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"strings"
 	"time"
@@ -16,18 +17,22 @@ import (
 
 // PortalMessage is a customer-safe conversation message.
 type PortalMessage struct {
-	ID          string                   `json:"id"`
-	Content     string                   `json:"content"`
-	SenderType  string                   `json:"sender_type"`
-	SenderName  *string                  `json:"sender_name,omitempty"`
-	ViaChannel  string                   `json:"via_channel,omitempty"`
-	Attachments []model.WidgetAttachment `json:"attachments,omitempty"`
-	CreatedAt   time.Time                `json:"created_at"`
+	ID           string  `json:"id"`
+	Content      string  `json:"content"`
+	SenderType   string  `json:"sender_type"`
+	SenderName   *string `json:"sender_name,omitempty"`
+	SenderAvatar *string `json:"sender_avatar,omitempty"`
+	// SenderAvatarStyle lets the portal draw a teammate's generated avatar.
+	SenderAvatarStyle *model.PortalSenderAvatar `json:"sender_avatar_style,omitempty"`
+	ViaChannel        string                    `json:"via_channel,omitempty"`
+	Attachments       []model.WidgetAttachment  `json:"attachments,omitempty"`
+	CreatedAt         time.Time                 `json:"created_at"`
 }
 
 // PortalRequestDetail is a customer-safe request with its public messages.
 type PortalRequestDetail struct {
 	Reference      string          `json:"reference"`
+	Number         int             `json:"number"`
 	Subject        string          `json:"subject"`
 	Status         string          `json:"status"`
 	LastActivityAt time.Time       `json:"last_activity_at"`
@@ -228,25 +233,43 @@ func (s *CustomerPortalService) RequestDetail(ctx context.Context, access *Porta
 	if err != nil {
 		return nil, err
 	}
-	detail := &PortalRequestDetail{Reference: reference, Subject: conv.Subject, Status: model.PortalRequestStatus(conv.Status), LastActivityAt: conv.CreatedAt, CanReply: conv.AnonymizedAt == nil, Messages: []PortalMessage{}}
+	assistant := s.assistantName(ctx, &access.Workspace)
+	detail := &PortalRequestDetail{Reference: reference, Number: conv.DisplayID, Subject: conv.Subject, Status: model.PortalRequestStatus(conv.Status, derefString(conv.LastPublicSenderType), conv.CustomerAwaitingResponse), LastActivityAt: conv.CreatedAt, CanReply: conv.AnonymizedAt == nil, Messages: []PortalMessage{}}
 	detail.AIProcessing = conv.FlowState != nil && *conv.FlowState == model.SupportConversationFlowStateAIHandling &&
 		!supportConversationHumanOwned(conv) && conv.LastCustomerMessageID != nil &&
 		conv.LastPublicMessageID != nil && *conv.LastPublicMessageID == *conv.LastCustomerMessageID
+	avatars := s.portalSenderAvatars(ctx, access.Workspace.ID, messages)
 	for i := range messages {
 		msg := &messages[i]
 		if !portalMessageVisible(msg) {
 			continue
 		}
-		detail.Messages = append(detail.Messages, projectPortalMessage(msg))
+		public := projectPortalMessage(msg, assistant)
+		if public.SenderType == "user" && msg.SenderUserID != nil {
+			if avatar, ok := avatars[*msg.SenderUserID]; ok {
+				applyPortalSenderAvatar(&public, avatar)
+			}
+		}
+		detail.Messages = append(detail.Messages, public)
 		if msg.CreatedAt.After(detail.LastActivityAt) {
 			detail.LastActivityAt = msg.CreatedAt
 		}
 	}
+	if err := s.repo.MarkRequestRead(ctx, access.Workspace.ID, access.Identity.ID, reference, time.Now().UTC()); err != nil {
+		slog.WarnContext(ctx, "portal request read state update failed", "workspace_id", access.Workspace.ID, "error", err)
+	}
 	return detail, nil
 }
 
-func projectPortalMessage(msg *model.SupportMessage) PortalMessage {
-	public := PortalMessage{ID: msg.ID, Content: msg.Content, SenderType: msg.SenderType, SenderName: msg.SenderDisplayName, CreatedAt: msg.CreatedAt}
+// projectPortalMessage returns the customer-safe message. Every automated
+// reply carries the one assistant name; people keep their name and avatar.
+func projectPortalMessage(msg *model.SupportMessage, assistant string) PortalMessage {
+	public := PortalMessage{ID: msg.ID, Content: msg.Content, SenderType: msg.SenderType, SenderName: msg.SenderDisplayName, SenderAvatar: msg.SenderAvatarURL, CreatedAt: msg.CreatedAt}
+	if portalMessageFromAssistant(msg) {
+		public.SenderType = "ai"
+		public.SenderName = &assistant
+		public.SenderAvatar = nil
+	}
 	if msg.ViaChannel != nil {
 		public.ViaChannel = *msg.ViaChannel
 	}
@@ -257,6 +280,54 @@ func projectPortalMessage(msg *model.SupportMessage) PortalMessage {
 		public.Attachments = append(public.Attachments, model.WidgetAttachment{ID: attachment.ID, FileName: attachment.FileName, FileType: attachment.FileType, FileSize: attachment.FileSize, URL: attachment.URL})
 	}
 	return public
+}
+
+// portalSenderAvatars loads the current avatars of the teammates in a thread.
+// A failed lookup leaves the stored avatar URLs and initials in place.
+func (s *CustomerPortalService) portalSenderAvatars(ctx context.Context, workspaceID string, messages []model.SupportMessage) map[string]model.PortalSenderAvatar {
+	seen := map[string]bool{}
+	var ids []string
+	for i := range messages {
+		if id := messages[i].SenderUserID; id != nil && messages[i].SenderType == "user" && !seen[*id] {
+			seen[*id] = true
+			ids = append(ids, *id)
+		}
+	}
+	avatars, err := s.repo.PortalSenderAvatars(ctx, ids)
+	if err != nil {
+		slog.WarnContext(ctx, "portal sender avatar lookup failed", "workspace_id", workspaceID, "error", err)
+		return nil
+	}
+	return avatars
+}
+
+// applyPortalSenderAvatar shows the teammate's current avatar: their uploaded
+// image, else the generated avatar the app draws for them.
+func applyPortalSenderAvatar(public *PortalMessage, avatar model.PortalSenderAvatar) {
+	if url := strings.TrimSpace(derefString(avatar.URL)); url != "" {
+		public.SenderAvatar = &url
+		return
+	}
+	// A removed upload must not linger from the stored message.
+	public.SenderAvatar = nil
+	if strings.TrimSpace(derefString(avatar.Style)) != "" && strings.TrimSpace(derefString(avatar.Seed)) != "" {
+		public.SenderAvatarStyle = &model.PortalSenderAvatar{Style: avatar.Style, Seed: avatar.Seed, BackgroundMode: avatar.BackgroundMode, BackgroundColor: avatar.BackgroundColor}
+	}
+}
+
+// portalMessageFromAssistant reports automated replies: AI messages, agent
+// automation, and older AI senders stored as agent with an ai_agent_id.
+func portalMessageFromAssistant(msg *model.SupportMessage) bool {
+	if msg.SenderType == "ai" || msg.SenderType == "agent" {
+		return true
+	}
+	if msg.SenderType == "customer" || msg.Metadata == "" {
+		return false
+	}
+	var role struct {
+		AIAgentID string `json:"ai_agent_id"`
+	}
+	return json.Unmarshal([]byte(msg.Metadata), &role) == nil && role.AIAgentID != ""
 }
 
 func portalMessageVisible(msg *model.SupportMessage) bool {

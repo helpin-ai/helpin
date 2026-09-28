@@ -30,8 +30,8 @@ func TestPortalHTTPAuthorizationAndVisibility(t *testing.T) {
 		`CREATE TABLE support_portal_identities (id TEXT PRIMARY KEY, workspace_id TEXT, email TEXT, display_name TEXT, crm_contact_id TEXT)`,
 		`CREATE TABLE crm_contacts (id TEXT PRIMARY KEY, workspace_id TEXT, email TEXT, portal_access TEXT)`,
 		`CREATE TABLE support_portal_sessions (id TEXT PRIMARY KEY, workspace_id TEXT, identity_id TEXT, crm_contact_id TEXT, token_hash TEXT, expires_at DATETIME, revoked_at DATETIME, reconciled_at DATETIME)`,
-		`CREATE TABLE support_conversations (id TEXT PRIMARY KEY, workspace_id TEXT, customer_email TEXT, subject TEXT, status TEXT, channel TEXT, source TEXT, portal_visible BOOLEAN, portal_visibility_changed_at DATETIME, primary_recipient_state TEXT, created_at DATETIME, last_public_message_at DATETIME, resolved_at DATETIME, anonymized_at DATETIME)`,
-		`CREATE TABLE support_portal_request_references (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, portal_identity_id TEXT, reference TEXT)`,
+		`CREATE TABLE support_conversations (id TEXT PRIMARY KEY, workspace_id TEXT, display_id INTEGER, last_public_message_id TEXT, last_public_sender_type TEXT, customer_awaiting_response BOOLEAN, customer_email TEXT, subject TEXT, status TEXT, channel TEXT, source TEXT, portal_visible BOOLEAN, portal_visibility_changed_at DATETIME, primary_recipient_state TEXT, created_at DATETIME, last_public_message_at DATETIME, resolved_at DATETIME, anonymized_at DATETIME)`,
+		`CREATE TABLE support_portal_request_references (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, portal_identity_id TEXT, reference TEXT, customer_last_read_at DATETIME)`,
 		`CREATE TABLE support_widget_sessions (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, customer_email TEXT, identity_trust TEXT, identity_verified_at DATETIME)`,
 		`CREATE TABLE support_messages (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, content TEXT, message_type TEXT, sender_type TEXT, is_internal BOOLEAN, created_at DATETIME)`,
 	} {

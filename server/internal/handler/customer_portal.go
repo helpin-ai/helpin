@@ -81,7 +81,7 @@ func (h *CustomerPortalHandler) Config(w http.ResponseWriter, r *http.Request) {
 	if ws == nil {
 		return
 	}
-	writeJSON(w, http.StatusOK, h.portal.Configuration(ws))
+	writeJSON(w, http.StatusOK, h.portal.Configuration(r.Context(), ws))
 }
 
 // RequestLink emails a sign-in link without disclosing whether the slug,
@@ -264,7 +264,11 @@ func (h *CustomerPortalHandler) Requests(w http.ResponseWriter, r *http.Request)
 	}
 	response := make([]map[string]any, 0, len(requests))
 	for _, request := range requests {
-		response = append(response, map[string]any{"reference": request.Reference, "subject": request.Subject, "status": request.Status, "last_activity_at": request.LastActivityAt})
+		response = append(response, map[string]any{
+			"reference": request.Reference, "number": request.Number, "subject": request.Subject, "status": request.Status,
+			"last_activity_at": request.LastActivityAt, "last_message_preview": request.LastMessagePreview,
+			"last_message_from": request.LastMessageFrom, "unread": request.Unread,
+		})
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, response)

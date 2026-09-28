@@ -49,3 +49,11 @@ type PortalIntakeSession struct {
 }
 
 func (PortalIntakeSession) TableName() string { return "support_portal_intake_sessions" }
+
+// PortalSocketGrant is an authenticated portal socket: the customer and the
+// requests it may receive signals for, keyed by conversation ID.
+type PortalSocketGrant struct {
+	WorkspaceID string
+	IdentityID  string
+	References  map[string]string
+}

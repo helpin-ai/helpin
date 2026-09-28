@@ -16,6 +16,8 @@ async function mockPortal(page: Page) {
   let detail: Record<string, unknown> = { ...request, can_reply: true, messages: [question] }
   const uploaded: { id: string; name: string; type: string; size: number }[] = []
   let replyBody: { content: string; attachment_ids: string[] } | null = null
+  // Keep the live-update socket open so the polling fallback never refetches mid-test.
+  await page.routeWebSocket(/\/public\/portal\/example\/ws$/, () => {})
   await page.route(`${storage}/**`, (route) => {
     if (route.request().method() === 'PUT') return route.fulfill({ status: 200 })
     return route.fulfill({ status: 200, contentType: 'image/png', body: png })
@@ -96,6 +98,8 @@ test('customers attach files by picker, drop, and send them without text', async
   await preview.click()
   await expect(page.locator('img[alt="shot.png"]')).toHaveCount(2)
   await page.keyboard.press('Escape')
+  // Move off the thumbnail so its hover preview does not count as an image.
+  await page.mouse.move(0, 0)
   await expect(page.locator('img[alt="shot.png"]')).toHaveCount(1)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 })

@@ -20,6 +20,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
 // Customer portal errors. Handlers translate them into public responses.
@@ -96,9 +97,13 @@ func (s *CustomerPortalService) senderReady() bool {
 
 // PortalWorkspace is a workspace whose portal is enabled.
 type PortalWorkspace struct {
-	ID       string
-	Slug     string
-	Settings model.SupportInboxSettings
+	ID      string
+	Slug    string
+	Name    string
+	LogoURL string
+	// WebsiteURL supplies the favicon fallback the app uses for workspaces.
+	WebsiteURL string
+	Settings   model.SupportInboxSettings
 }
 
 // PortalAccess is an authenticated portal session in one workspace.
@@ -143,19 +148,87 @@ func (s *CustomerPortalService) ResolveWorkspace(ctx context.Context, slug strin
 	if settings == nil || !settings.PortalEnabled {
 		return nil, ErrPortalUnavailable
 	}
-	return &PortalWorkspace{ID: ws.ID, Slug: ws.Slug, Settings: *settings}, nil
+	return &PortalWorkspace{ID: ws.ID, Slug: ws.Slug, Name: ws.Name, LogoURL: derefString(ws.LogoURL), WebsiteURL: derefString(ws.WebsiteURL), Settings: *settings}, nil
 }
 
 // Configuration returns the public configuration for an enabled portal.
-func (s *CustomerPortalService) Configuration(ws *PortalWorkspace) PortalConfiguration {
+func (s *CustomerPortalService) Configuration(ctx context.Context, ws *PortalWorkspace) PortalConfiguration {
 	return PortalConfiguration{
 		Enabled:                true,
 		IntakeEnabled:          ws.Settings.PortalIntakeEnabled,
 		AnonymousIntakeEnabled: s.anonymousIntakeEnabled(ws),
 		FileUploadsEnabled:     ws.Settings.FileUploadsEnabled,
 		Attachments:            PortalAttachmentPolicy{SupportAttachmentPolicy: CurrentSupportAttachmentPolicy(), MaxFiles: PortalMaxAttachmentsPerMessage},
-		Branding:               map[string]string{"name": "Support portal"},
+		Branding:               s.branding(ctx, ws),
 	}
+}
+
+// branding presents the portal as the workspace's own support, using the
+// same name, logo, and colour customers see in the chat widget, falling
+// back to the workspace's name and logo.
+func (s *CustomerPortalService) branding(ctx context.Context, ws *PortalWorkspace) map[string]string {
+	name := strings.TrimSpace(ws.Settings.WidgetName)
+	if name == "" {
+		name = strings.TrimSpace(ws.Name)
+	}
+	if name == "" {
+		name = "Customer support"
+	}
+	branding := map[string]string{"name": name, "assistant_name": s.assistantName(ctx, ws)}
+	// As in the app: the widget logo, the workspace logo, then the site's favicon.
+	for _, logo := range []string{ws.Settings.LogoURL, ws.LogoURL, portalFaviconURL(ws.WebsiteURL)} {
+		if logo = strings.TrimSpace(logo); logo != "" {
+			branding["logo_url"] = logo
+			break
+		}
+	}
+	if color := strings.TrimSpace(ws.Settings.BrandColor); color != "" {
+		branding["brand_color"] = color
+	}
+	return branding
+}
+
+// portalFaviconURL mirrors the app's favicon helper: the website's host,
+// without www, through Google's favicon service at 128px.
+func portalFaviconURL(website string) string {
+	website = strings.TrimSpace(website)
+	if website == "" {
+		return ""
+	}
+	if !strings.Contains(website, "://") {
+		website = "https://" + website
+	}
+	parsed, err := url.Parse(website)
+	if err != nil || parsed.Hostname() == "" {
+		return ""
+	}
+	host := strings.TrimPrefix(strings.ToLower(parsed.Hostname()), "www.")
+	return "https://www.google.com/s2/favicons?domain=" + url.QueryEscape(host) + "&sz=128"
+}
+
+// defaultPortalAssistantName labels AI replies when no agent name is set.
+const defaultPortalAssistantName = "AI assistant"
+
+// assistantName is the one name customers see on every AI reply: the portal
+// AI agent, else the support AI agent, else a neutral label.
+func (s *CustomerPortalService) assistantName(ctx context.Context, ws *PortalWorkspace) string {
+	if s.inbox == nil || s.inbox.agentRepo == nil {
+		return defaultPortalAssistantName
+	}
+	for _, id := range []*string{ws.Settings.PortalAIAgentID, ws.Settings.AIAgentID} {
+		if id == nil || strings.TrimSpace(*id) == "" {
+			continue
+		}
+		agent, err := s.inbox.agentRepo.GetByID(ctx, ws.ID, *id)
+		if err != nil {
+			slog.WarnContext(ctx, "portal assistant lookup failed", "workspace_id", ws.ID, "error", err)
+			continue
+		}
+		if agent != nil && strings.TrimSpace(agent.Name) != "" {
+			return strings.TrimSpace(agent.Name)
+		}
+	}
+	return defaultPortalAssistantName
 }
 
 // RequestLink emails a sign-in link to an eligible address. It deliberately
@@ -351,6 +424,27 @@ func (s *CustomerPortalService) Authenticate(ctx context.Context, ws *PortalWork
 		return nil, ErrPortalAuthInvalid
 	}
 	return &PortalAccess{Workspace: *ws, Session: *session, Identity: identity}, nil
+}
+
+// AuthenticatePortalSocket validates a portal session for a live-update
+// socket and lists the requests it may receive signals for.
+func (s *CustomerPortalService) AuthenticatePortalSocket(ctx context.Context, slug, sessionSecret string) (*model.PortalSocketGrant, error) {
+	ws, err := s.ResolveWorkspace(ctx, slug)
+	if err != nil {
+		return nil, websocket.ErrPortalSocketUnauthorized
+	}
+	access, err := s.Authenticate(ctx, ws, sessionSecret)
+	if errors.Is(err, ErrPortalAuthInvalid) {
+		return nil, websocket.ErrPortalSocketUnauthorized
+	}
+	if err != nil {
+		return nil, err
+	}
+	references, err := s.repo.OwnedRequestReferences(ctx, ws.ID, access.Identity.ID)
+	if err != nil {
+		return nil, fmt.Errorf("list portal socket requests: %w", err)
+	}
+	return &model.PortalSocketGrant{WorkspaceID: ws.ID, IdentityID: access.Identity.ID, References: references}, nil
 }
 
 // Logout revokes a session secret.

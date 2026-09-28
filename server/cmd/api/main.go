@@ -1760,6 +1760,7 @@ func main() {
 
 	// Widget WebSocket handler — authenticates via session_token, not JWT.
 	widgetWsHandler := ws.NewWidgetHandler(wsHub, supportInboxService)
+	portalWsHandler := ws.NewPortalHandler(wsHub, customerPortalService, cfg.AppBaseURL)
 
 	// Initialize handlers.
 	emailDiagnosticsConfig := model.EmailDiagnosticsConfig{
@@ -2228,6 +2229,7 @@ func main() {
 		if widgetWsHandler != nil {
 			sentryWidgetWSHandler = middleware.SentryHTTP(middleware.SentryRequestContext(widgetWsHandler))
 		}
+		sentryPortalWSHandler := middleware.SentryHTTP(middleware.SentryRequestContext(portalWsHandler))
 		topHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			if req.URL.Path == "/api/ws" && sentryWSHandler != nil {
 				sentryWSHandler.ServeHTTP(w, req)
@@ -2235,6 +2237,11 @@ func main() {
 			}
 			if req.URL.Path == "/widget/ws" && sentryWidgetWSHandler != nil {
 				sentryWidgetWSHandler.ServeHTTP(w, req)
+				return
+			}
+			// Customer portal live updates also bypass Chi for the upgrade.
+			if _, ok := ws.PortalSocketSlug(req.URL.Path); ok {
+				sentryPortalWSHandler.ServeHTTP(w, req)
 				return
 			}
 			r.ServeHTTP(w, req)

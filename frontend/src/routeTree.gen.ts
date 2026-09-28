@@ -28,6 +28,7 @@ import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
 import { Route as PortalSlugIndexRouteImport } from './routes/portal/$slug/index'
 import { Route as PortalSlugSignInRouteImport } from './routes/portal/$slug/sign-in'
+import { Route as PortalSlugNewRouteImport } from './routes/portal/$slug/new'
 import { Route as PortalSlugCallbackRouteImport } from './routes/portal/$slug/callback'
 import { Route as AuthenticatedWSlugRouteImport } from './routes/_authenticated/w/$slug'
 import { Route as AuthenticatedOauthAuthorizeRouteImport } from './routes/_authenticated/oauth/authorize'
@@ -231,6 +232,11 @@ const PortalSlugIndexRoute = PortalSlugIndexRouteImport.update({
 const PortalSlugSignInRoute = PortalSlugSignInRouteImport.update({
   id: '/sign-in',
   path: '/sign-in',
+  getParentRoute: () => PortalSlugRoute,
+} as any)
+const PortalSlugNewRoute = PortalSlugNewRouteImport.update({
+  id: '/new',
+  path: '/new',
   getParentRoute: () => PortalSlugRoute,
 } as any)
 const PortalSlugCallbackRoute = PortalSlugCallbackRouteImport.update({
@@ -907,6 +913,7 @@ export interface FileRoutesByFullPath {
   '/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
   '/portal/$slug/callback': typeof PortalSlugCallbackRoute
+  '/portal/$slug/new': typeof PortalSlugNewRoute
   '/portal/$slug/sign-in': typeof PortalSlugSignInRoute
   '/portal/$slug/': typeof PortalSlugIndexRoute
   '/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
@@ -1034,6 +1041,7 @@ export interface FileRoutesByTo {
   '/github/installed': typeof AuthenticatedGithubInstalledRoute
   '/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/portal/$slug/callback': typeof PortalSlugCallbackRoute
+  '/portal/$slug/new': typeof PortalSlugNewRoute
   '/portal/$slug/sign-in': typeof PortalSlugSignInRoute
   '/portal/$slug': typeof PortalSlugIndexRoute
   '/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
@@ -1160,6 +1168,7 @@ export interface FileRoutesById {
   '/_authenticated/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/_authenticated/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
   '/portal/$slug/callback': typeof PortalSlugCallbackRoute
+  '/portal/$slug/new': typeof PortalSlugNewRoute
   '/portal/$slug/sign-in': typeof PortalSlugSignInRoute
   '/portal/$slug/': typeof PortalSlugIndexRoute
   '/_authenticated/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
@@ -1292,6 +1301,7 @@ export interface FileRouteTypes {
     | '/oauth/authorize'
     | '/w/$slug'
     | '/portal/$slug/callback'
+    | '/portal/$slug/new'
     | '/portal/$slug/sign-in'
     | '/portal/$slug/'
     | '/oauth/cli/authorize'
@@ -1419,6 +1429,7 @@ export interface FileRouteTypes {
     | '/github/installed'
     | '/oauth/authorize'
     | '/portal/$slug/callback'
+    | '/portal/$slug/new'
     | '/portal/$slug/sign-in'
     | '/portal/$slug'
     | '/oauth/cli/authorize'
@@ -1544,6 +1555,7 @@ export interface FileRouteTypes {
     | '/_authenticated/oauth/authorize'
     | '/_authenticated/w/$slug'
     | '/portal/$slug/callback'
+    | '/portal/$slug/new'
     | '/portal/$slug/sign-in'
     | '/portal/$slug/'
     | '/_authenticated/oauth/cli/authorize'
@@ -1804,6 +1816,13 @@ declare module '@tanstack/react-router' {
       path: '/sign-in'
       fullPath: '/portal/$slug/sign-in'
       preLoaderRoute: typeof PortalSlugSignInRouteImport
+      parentRoute: typeof PortalSlugRoute
+    }
+    '/portal/$slug/new': {
+      id: '/portal/$slug/new'
+      path: '/new'
+      fullPath: '/portal/$slug/new'
+      preLoaderRoute: typeof PortalSlugNewRouteImport
       parentRoute: typeof PortalSlugRoute
     }
     '/portal/$slug/callback': {
@@ -2950,6 +2969,7 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
 
 interface PortalSlugRouteChildren {
   PortalSlugCallbackRoute: typeof PortalSlugCallbackRoute
+  PortalSlugNewRoute: typeof PortalSlugNewRoute
   PortalSlugSignInRoute: typeof PortalSlugSignInRoute
   PortalSlugIndexRoute: typeof PortalSlugIndexRoute
   PortalSlugRequestsReferenceRoute: typeof PortalSlugRequestsReferenceRoute
@@ -2957,6 +2977,7 @@ interface PortalSlugRouteChildren {
 
 const PortalSlugRouteChildren: PortalSlugRouteChildren = {
   PortalSlugCallbackRoute: PortalSlugCallbackRoute,
+  PortalSlugNewRoute: PortalSlugNewRoute,
   PortalSlugSignInRoute: PortalSlugSignInRoute,
   PortalSlugIndexRoute: PortalSlugIndexRoute,
   PortalSlugRequestsReferenceRoute: PortalSlugRequestsReferenceRoute,

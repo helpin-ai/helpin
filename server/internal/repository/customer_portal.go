@@ -369,12 +369,15 @@ func (r *CustomerPortalRepository) ownedRequests(ctx context.Context, workspaceI
 func (r *CustomerPortalRepository) ListRequests(ctx context.Context, workspaceID, identityID, status string) ([]model.SupportPortalRequest, error) {
 	var requests []model.SupportPortalRequest
 	query := r.ownedRequests(ctx, workspaceID, identityID).
-		Select("refs.reference, conv.subject, conv.status, conv.created_at, conv.last_public_message_at, conv.resolved_at")
+		Select(`refs.reference, conv.subject, conv.status, conv.created_at, conv.last_public_message_at, conv.resolved_at,
+			conv.display_id, conv.last_public_sender_type, conv.customer_awaiting_response, refs.customer_last_read_at,
+			(SELECT msg.content FROM support_messages AS msg WHERE msg.id = conv.last_public_message_id) AS last_message_content`)
+	waitingCondition := "(" + conversationWaitingOnCustomerCondition("conv") + " OR conv.status = 'waiting')"
 	switch status {
 	case "active":
-		query = query.Where("conv.status NOT IN ?", []string{model.SupportConversationStatusWaitingOnCustomer, "waiting", model.SupportConversationStatusResolved, "closed"})
+		query = query.Where("NOT "+waitingCondition).Where("conv.status NOT IN ?", []string{model.SupportConversationStatusResolved, "closed"})
 	case model.SupportConversationStatusWaitingOnCustomer:
-		query = query.Where("conv.status IN ?", []string{model.SupportConversationStatusWaitingOnCustomer, "waiting"})
+		query = query.Where(waitingCondition)
 	case model.SupportConversationStatusResolved:
 		query = query.Where("conv.status IN ?", []string{model.SupportConversationStatusResolved, "closed"})
 	}
@@ -387,9 +390,72 @@ func (r *CustomerPortalRepository) ListRequests(ctx context.Context, workspaceID
 		} else {
 			requests[i].LastActivityAt = &requests[i].CreatedAt
 		}
-		requests[i].Status = model.PortalRequestStatus(requests[i].Status)
+		requests[i].Status = model.PortalRequestStatus(requests[i].Status, crmContactStringValue(requests[i].LastPublicSenderType), requests[i].CustomerAwaitingResponse)
+		projectPortalRequestActivity(&requests[i])
 	}
 	return requests, nil
+}
+
+// projectPortalRequestActivity derives the list's latest-message preview, who
+// sent it, and whether support replied since the customer last looked.
+func projectPortalRequestActivity(request *model.SupportPortalRequest) {
+	request.LastMessagePreview = model.PortalMessagePreview(crmContactStringValue(request.LastMessageContent))
+	switch crmContactStringValue(request.LastPublicSenderType) {
+	case "":
+		return
+	case "customer":
+		request.LastMessageFrom = "customer"
+	default:
+		request.LastMessageFrom = "support"
+		request.Unread = request.LastPublicMessageAt != nil &&
+			(request.CustomerLastReadAt == nil || request.LastPublicMessageAt.After(*request.CustomerLastReadAt))
+	}
+}
+
+// PortalSenderAvatars returns the current avatar settings of the teammates
+// who wrote the given messages, keyed by user ID. Only avatar fields are read.
+func (r *CustomerPortalRepository) PortalSenderAvatars(ctx context.Context, userIDs []string) (map[string]model.PortalSenderAvatar, error) {
+	avatars := map[string]model.PortalSenderAvatar{}
+	if len(userIDs) == 0 {
+		return avatars, nil
+	}
+	var rows []struct {
+		ID string
+		model.PortalSenderAvatar
+	}
+	if err := r.db.WithContext(ctx).Table("users").
+		Select("id, avatar_url, avatar_style, avatar_seed, avatar_background_mode, avatar_background_color").
+		Where("id IN ?", userIDs).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		avatars[row.ID] = row.PortalSenderAvatar
+	}
+	return avatars, nil
+}
+
+// MarkRequestRead records that the customer opened a request.
+func (r *CustomerPortalRepository) MarkRequestRead(ctx context.Context, workspaceID, identityID, reference string, now time.Time) error {
+	return r.db.WithContext(ctx).Model(&model.SupportPortalRequestReference{}).
+		Where("workspace_id = ? AND portal_identity_id = ? AND reference = ?", workspaceID, identityID, reference).
+		Update("customer_last_read_at", now).Error
+}
+
+// OwnedRequestReferences maps the identity's visible conversations to their
+// public references.
+func (r *CustomerPortalRepository) OwnedRequestReferences(ctx context.Context, workspaceID, identityID string) (map[string]string, error) {
+	var rows []struct {
+		ConversationID string
+		Reference      string
+	}
+	if err := r.ownedRequests(ctx, workspaceID, identityID).Select("conv.id AS conversation_id, refs.reference").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	references := make(map[string]string, len(rows))
+	for _, row := range rows {
+		references[row.ConversationID] = row.Reference
+	}
+	return references, nil
 }
 
 // FindRequest resolves a reference the identity may read, or nil.

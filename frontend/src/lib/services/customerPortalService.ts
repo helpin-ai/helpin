@@ -4,6 +4,10 @@ import type { SupportAttachmentPolicy } from '@/lib/supportAttachmentFiles'
 export interface CustomerPortalBranding {
   name: string
   logo_url?: string | null
+  /** Brand colour from the chat widget, as a CSS colour. */
+  brand_color?: string | null
+  /** The one name shown on every AI reply. */
+  assistant_name?: string | null
 }
 
 export interface CustomerPortalConfiguration {
@@ -42,9 +46,15 @@ export interface CustomerPortalSession {
 
 export interface CustomerPortalRequest {
   reference: string
+  /** Short ticket number agents also see. */
+  number?: number
   subject: string
   status: 'active' | 'waiting_on_customer' | 'resolved'
   last_activity_at: string | null
+  last_message_preview?: string
+  last_message_from?: 'customer' | 'support'
+  /** Support replied since the customer last opened the request. */
+  unread?: boolean
 }
 
 export interface CustomerPortalRequestDetail extends CustomerPortalRequest {
@@ -55,6 +65,9 @@ export interface CustomerPortalRequestDetail extends CustomerPortalRequest {
     content: string
     sender_type: string
     sender_name?: string | null
+    sender_avatar?: string | null
+    /** A teammate's generated avatar, drawn as in the app. */
+    sender_avatar_style?: { style?: string | null; seed?: string | null; background_mode?: string | null; background_color?: string | null } | null
     via_channel?: string
     created_at: string
     attachments?: Array<{ id: string; file_name: string; file_type: string; file_size: number; url: string }>
@@ -116,6 +129,14 @@ async function portalRequest<T>(
 
   if (response.status === 204 || response.status === 202) return undefined as T
   return response.json() as Promise<T>
+}
+
+/** customerPortalSocketUrl is the live-update socket for a portal. */
+export function customerPortalSocketUrl(slug: string) {
+  const base = new URL(API_BASE, window.location.href)
+  base.protocol = base.protocol === 'https:' ? 'wss:' : 'ws:'
+  base.pathname = `${base.pathname.replace(/\/$/, '')}/public/portal/${encodeURIComponent(slug)}/ws`
+  return base.toString()
 }
 
 export const customerPortalService = {
