@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -11,12 +12,31 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/querybuilder"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
 // CRMContactHandler handles CRM contact HTTP endpoints.
 type CRMContactHandler struct {
 	contactService *service.CRMContactService
+	authz          *authorization.AuthzService
+}
+
+// SetAuthorization lets the handler recognize support admins, who alone may
+// change the email of or delete a contact with a customer portal decision.
+func (h *CRMContactHandler) SetAuthorization(authz *authorization.AuthzService) *CRMContactHandler {
+	h.authz = authz
+	return h
+}
+
+// withPortalAccessAuthority marks support admin requests for the contact
+// repository's portal guard.
+func (h *CRMContactHandler) withPortalAccessAuthority(r *http.Request) context.Context {
+	actor := authorization.GetActor(r.Context())
+	if h.authz != nil && actor != nil && h.authz.Can(actor, authorization.PermSupportAdmin) {
+		return repository.WithPortalAccessAuthority(r.Context())
+	}
+	return r.Context()
 }
 
 // NewCRMContactHandler creates a new CRMContactHandler.
@@ -169,7 +189,11 @@ func (h *CRMContactHandler) Update(w http.ResponseWriter, r *http.Request) {
 		actorUserID = actor.UserID
 		actorMemberID = actor.WorkspaceMemberID
 	}
-	contact, err := h.contactService.UpdateWithActor(r.Context(), id, req, actorUserID, actorMemberID)
+	contact, err := h.contactService.UpdateWithActor(h.withPortalAccessAuthority(r), id, req, actorUserID, actorMemberID)
+	if errors.Is(err, repository.ErrPortalProtectedContact) {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -180,7 +204,10 @@ func (h *CRMContactHandler) Update(w http.ResponseWriter, r *http.Request) {
 // Delete handles DELETE /api/crm/contacts/{id}.
 func (h *CRMContactHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	if err := h.contactService.Delete(r.Context(), getWorkspaceID(r), id); err != nil {
+	if err := h.contactService.Delete(h.withPortalAccessAuthority(r), getWorkspaceID(r), id); errors.Is(err, repository.ErrPortalProtectedContact) {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	} else if err != nil {
 		slog.ErrorContext(r.Context(), "contact anonymization failed", "workspace_id", getWorkspaceID(r), "contact_id", id, "error", err)
 		writeError(w, http.StatusBadRequest, "Could not delete contact. No changes were made.")
 		return

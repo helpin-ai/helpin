@@ -35,8 +35,8 @@ type Handlers struct {
 	Assets              *handler.AssetHandler
 	Health              *handler.HealthHandler
 	Auth                *handler.AuthHandler
-	PortalAuth          *handler.PortalAuthHandler
 	CustomerPortal      *handler.CustomerPortalHandler
+	CustomerPortalAdmin *handler.CustomerPortalAdminHandler
 	Passkey             *handler.PasskeyHandler
 	Organization        *handler.OrganizationHandler
 	Workspace           *handler.WorkspaceHandler
@@ -339,17 +339,6 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Get("/requests/{reference}", h.CustomerPortal.RequestDetail)
 				r.Post("/requests/{reference}/replies", h.CustomerPortal.Reply)
 				r.Post("/requests", h.CustomerPortal.CreateRequest)
-			})
-		}
-		if h.PortalAuth != nil {
-			r.Route("/portal/auth", func(r chi.Router) {
-				if h.WidgetRateLimit != nil {
-					r.Use(h.WidgetRateLimit)
-				}
-				r.Post("/request-link", h.PortalAuth.RequestLink)
-				r.Post("/exchange", h.PortalAuth.Exchange)
-				r.Get("/session", h.PortalAuth.Session)
-				r.Post("/logout", h.PortalAuth.Logout)
 			})
 		}
 		r.Get("/auth/config", h.Auth.GetConfig)
@@ -1154,6 +1143,14 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/installations/reveal-secret", h.SupportInbox.RevealWidgetSecret)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/installations/rotate-secret", h.SupportInbox.RotateWidgetSecret)
 
+				// Customer portal access
+				if h.CustomerPortalAdmin != nil {
+					r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/portal/access", h.CustomerPortalAdmin.AccessSummary)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/portal/contacts/{contactId}/access", h.CustomerPortalAdmin.ContactAccess)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Put("/inbox/portal/contacts/{contactId}/access", h.CustomerPortalAdmin.UpdateContactAccess)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/conversations/{id}/portal-confirmation", h.CustomerPortalAdmin.ResendIntakeConfirmation)
+				}
+
 				// Canned responses
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/canned-responses", h.SupportInbox.ListCannedResponses)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/canned-responses/search", h.SupportInbox.SearchCannedResponses)
@@ -1169,6 +1166,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				// File attachments
 				if h.SupportAttachment != nil {
+					r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/attachments/policy", h.SupportAttachment.Policy)
 					r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{convId}/attachments", h.SupportAttachment.Create)
 					r.With(requirePerm(authorization.PermSupportEdit)).Patch("/inbox/attachments/{attachmentId}/confirm", h.SupportAttachment.ConfirmUpload)
 					r.With(requirePerm(authorization.PermSupportEdit)).Delete("/inbox/attachments/{attachmentId}", h.SupportAttachment.Delete)

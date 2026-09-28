@@ -47,6 +47,11 @@ func supportFollowUpEligible(conv *model.SupportConversation, episode *model.Sup
 		return false
 	}
 	channel := model.SupportAIReplyChannel(conv, nil)
+	// Portal requests are asynchronous tickets. Their inactivity policy needs
+	// its own customer notification and is not inherited from widget chat.
+	if channel == "portal" {
+		return false
+	}
 	if len(replyChannels) > 0 {
 		channel = replyChannels[0]
 	}

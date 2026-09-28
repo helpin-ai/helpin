@@ -42,13 +42,6 @@ func (t *robotsTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		t.report(req.URL.String(), err)
 		return nil, err
 	}
-	// Robots policy is evaluated for this agent, so the request sent to the
-	// origin must use the same identity, including redirected fetches.
-	req = req.Clone(req.Context())
-	if req.Header == nil {
-		req.Header = make(http.Header)
-	}
-	req.Header.Set("User-Agent", crawlerUserAgent)
 	return t.base.RoundTrip(req)
 }
 

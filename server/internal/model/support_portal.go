@@ -8,23 +8,35 @@ const (
 	SupportPortalAuditAttachmentUploaded = "attachment_uploaded"
 	SupportPortalAuditRequestReopened    = "request_reopened"
 	SupportPortalAuditVisibilityChanged  = "visibility_changed"
+	SupportPortalAuditConfirmationResent = "confirmation_resent"
 
 	SupportPortalActorCustomer = "customer"
 	SupportPortalActorUser     = "user"
 	SupportPortalActorSystem   = "system"
+
+	// PortalAccessAllowed and PortalAccessBlocked are CRM contact portal
+	// decisions; a nil decision means none was made.
+	PortalAccessAllowed = "allowed"
+	PortalAccessBlocked = "blocked"
+
+	// Portal access modes decide who may sign in to the customer portal.
+	SupportPortalAccessModeApprovedContacts = "approved_contacts"
+	SupportPortalAccessModeAnyVerifiedEmail = "any_verified_email"
 )
 
 // SupportPortalIdentity is the stable customer identity used to authorize
 // portal requests in one workspace. Authentication providers can bind their
 // subject to AuthSubject without changing a request's conversation ownership.
 type SupportPortalIdentity struct {
-	ID          string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID string    `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex:idx_support_portal_identity_email,priority:1;uniqueIndex:idx_support_portal_identity_subject,priority:1"`
-	Email       string    `json:"email" gorm:"not null;uniqueIndex:idx_support_portal_identity_email,priority:2"`
-	DisplayName *string   `json:"display_name,omitempty"`
-	AuthSubject *string   `json:"-" gorm:"uniqueIndex:idx_support_portal_identity_subject,priority:2,where:auth_subject IS NOT NULL"`
-	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ID          string  `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID string  `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex:idx_support_portal_identity_email,priority:1;uniqueIndex:idx_support_portal_identity_subject,priority:1"`
+	Email       string  `json:"email" gorm:"not null;uniqueIndex:idx_support_portal_identity_email,priority:2"`
+	DisplayName *string `json:"display_name,omitempty"`
+	AuthSubject *string `json:"-" gorm:"uniqueIndex:idx_support_portal_identity_subject,priority:2,where:auth_subject IS NOT NULL"`
+	// CRMContactID is the approved contact this identity signed in as.
+	CRMContactID *string   `json:"-" gorm:"type:uuid"`
+	CreatedAt    time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt    time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (SupportPortalIdentity) TableName() string { return "support_portal_identities" }

@@ -24,6 +24,7 @@ vi.mock('@/hooks/queries/useSupport', () => ({
   useDeleteCannedResponse: () => mocks.mutation,
   useUpdateConversationEmailRecipients: () => mocks.mutation,
   useUploadSupportAttachment: () => mocks.mutation,
+  useSupportAttachmentPolicy: () => ({ data: { max_bytes: 100 * 1024 * 1024, content_types: ['image/png', 'image/jpeg', 'application/pdf', 'text/plain', 'video/mp4'] } }),
 }));
 vi.mock('@/hooks/queries/useSupportTranslation', () => ({
  useSupportTranslationOptions: () => ({ data: { available: mocks.translation, languages: { en: 'English', de: 'German' }, conversation: { customer_language: 'de' }, preference: { reading_language: 'en', auto_translate_incoming: true, auto_translate_outgoing: true } } }),
@@ -50,15 +51,16 @@ vi.mock('@/components/ui/dropdown-menu', () => {
 describe('ReplyComposer AI loading state', () => {
   let container: HTMLDivElement;
   let root: Root;
-  function setup(emailConversation = false, widgetConversation = false) {
+  function setup(emailConversation = false, widgetConversation = false, portalVisible?: boolean, emailDeliveryEnabled = true) {
     mocks.send.mockReset();
-    mocks.conversation = emailConversation ? { source: 'email', customer_email: 'customer@example.com', subject: 'Invoice question' }
+    mocks.conversation = portalVisible !== undefined ? { source: 'portal', channel: 'portal', portal_visible: portalVisible, customer_email: 'customer@example.com' }
+      : emailConversation ? { source: 'email', customer_email: 'customer@example.com', subject: 'Invoice question' }
       : widgetConversation ? { source: 'widget', anonymous_id: 'visitor-1', customer_email: 'customer@example.com' } : null;
     useSupportInboxStore.setState({ replyMode: 'reply', drafts: { 'conv-1': '**Original** draft' } });
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
-    act(() => { root.render(<TooltipProvider><ReplyComposer workspaceId="ws-1" conversationId="conv-1" emailDeliveryEnabled /></TooltipProvider>); });
+    act(() => { root.render(<TooltipProvider><ReplyComposer workspaceId="ws-1" conversationId="conv-1" emailDeliveryEnabled={emailDeliveryEnabled} /></TooltipProvider>); });
   }
   function button(label: string) {
     const found = [...container.querySelectorAll('button')].find((element) => element.textContent === label);
@@ -72,6 +74,22 @@ describe('ReplyComposer AI loading state', () => {
     mocks.translation = false;
     saveReplySubject('ws-1', 'conv-1');
     clearReplyDeliveryDraft('ws-1', 'conv-1');
+  });
+
+  it('sends a visible portal reply without a widget session or email delivery', async () => {
+    setup(false, false, true, false);
+    const send = button('Send');
+    expect(send.disabled).toBe(false);
+    await act(async () => { send.click(); });
+    expect(mocks.send).toHaveBeenCalledWith(expect.objectContaining({ delivery_mode: 'chat_only', channels: ['chat'] }));
+  });
+
+  it('routes hidden portal intake replies through email', async () => {
+    setup(false, false, false, true);
+    const send = button('Send');
+    expect(send.disabled).toBe(false);
+    await act(async () => { send.click(); });
+    expect(mocks.send).toHaveBeenCalledWith(expect.objectContaining({ delivery_mode: 'email_only', channels: ['email'] }));
   });
 
   it('offers an explicit original send after translation fails and preserves delivery and retry identity', async () => {

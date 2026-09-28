@@ -313,6 +313,32 @@ func TestSupportExplicitChatRequiresWidgetSession(t *testing.T) {
 	}
 }
 
+func TestSupportPortalReplyWithoutWidgetSession(t *testing.T) {
+	for _, visible := range []bool{false, true} {
+		t.Run(fmt.Sprintf("visible=%t", visible), func(t *testing.T) {
+			env, conv := deliveryModeFixture(t)
+			conv.AnonymousID = nil
+			conv.Source, conv.Channel, conv.PortalVisible = "portal", "portal", visible
+			if err := env.convRepo.Update(context.Background(), conv); err != nil {
+				t.Fatal(err)
+			}
+			msg, err := env.service.supportInboxService.CreateConversationMessage(context.Background(), conv.WorkspaceID, conv.ID, explicitDeliveryRequest(t, "chat_only"), "user", nil, nil, nil)
+			if !visible {
+				if err == nil || !strings.Contains(err.Error(), "chat session") {
+					t.Fatalf("hidden portal reply: message=%+v error=%v", msg, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if msg == nil || !portalMessageVisible(msg) || msg.DeliveryMode() != model.SupportDeliveryChatOnly {
+				t.Fatalf("visible portal reply=%+v", msg)
+			}
+		})
+	}
+}
+
 func TestSupportExplicitDeliveryNullMetadata(t *testing.T) {
 	msg := model.SupportMessage{Metadata: withSupportDeliveryMode("null", "email_only")}
 	if !msg.ExplicitEmailDelivery() {

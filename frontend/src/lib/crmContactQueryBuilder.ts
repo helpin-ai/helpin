@@ -19,6 +19,12 @@ const LEAD_STATUSES: Array<{ value: LeadStatus; label: string }> = [
   { value: 'unqualified', label: 'Unqualified' },
 ];
 
+// "Is empty" matches contacts without a portal decision.
+const PORTAL_ACCESS_OPTIONS: Array<{ value: 'allowed' | 'blocked'; label: string }> = [
+  { value: 'allowed', label: 'Allowed' },
+  { value: 'blocked', label: 'Blocked' },
+];
+
 export function buildCRMContactQueryFields(assignableMembers: AssignableMember[]): QueryBuilderFieldDefinition[] {
   return [
     {
@@ -68,6 +74,13 @@ export function buildCRMContactQueryFields(assignableMembers: AssignableMember[]
         value: member.id,
         label: member.display_name || member.email,
       })),
+    },
+    {
+      field: 'portal_access',
+      label: 'Portal access',
+      type: 'enum',
+      placeholder: 'Select portal access',
+      options: PORTAL_ACCESS_OPTIONS,
     },
     {
       field: 'source',

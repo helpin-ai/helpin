@@ -225,6 +225,7 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 	if err != nil {
 		return nil, err
 	}
+	*settings = effectiveSupportAISettings(*settings, conv)
 	if !supportAIConversationSupported(conv) {
 		s.closeEscalatedSupportCommandRun(ctx, meta)
 		return mustJSON(map[string]any{"status": "suppressed", "next_action": "AI replies are not enabled for this message channel. End your turn."}), nil
@@ -348,7 +349,26 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 	}
 	sources := buildAISources(sourceRefIDs, evidence)
 	var message *model.SupportMessage
-	if shouldCreatePublicSupportAIReply(*settings) {
+	publicAllowed := shouldCreatePublicSupportAIReply(*settings)
+	if conv.Channel == "portal" {
+		contacts, accessErr := repository.NewCustomerPortalRepository(supportAI.conversationRepo.DB()).ContactsForEmail(ctx, meta.WorkspaceID, derefString(conv.CustomerEmail))
+		if accessErr != nil || !evaluatePortalEligibility(settings.EffectivePortalAccessMode(), contacts).Eligible {
+			supportAI.stopPortalAITurn(ctx, meta.WorkspaceID, conversationID)
+			return mustJSON(map[string]any{"status": "suppressed", "next_action": "Portal access changed. End your turn."}), nil
+		}
+		var dispatch struct{ ModeAtEnqueue string }
+		if err := supportAI.conversationRepo.DB().WithContext(ctx).Table("support_portal_ai_dispatches").
+			Select("mode_at_enqueue").Where("source_message_id = ? AND workspace_id = ?", source.ID, meta.WorkspaceID).
+			Take(&dispatch).Error; err != nil {
+			supportAI.stopPortalAITurn(ctx, meta.WorkspaceID, conversationID)
+			return mustJSON(map[string]any{"status": "suppressed", "next_action": "Portal AI authorization changed. End your turn."}), nil
+		}
+		publicAllowed = publicAllowed && dispatch.ModeAtEnqueue == "ai_first"
+	}
+	if publicAllowed {
+		if conv.Channel == "portal" {
+			ctx = context.WithValue(ctx, portalAIReplyChannelKey{}, true)
+		}
 		message, err = supportAI.publishAIReply(ctx, meta.WorkspaceID, conversationID, agentID, content, supportReplyModelLabel, 0, gate.Confidence, sources, kind, "", "", progressState, conv.CustomerEmail, conv.CustomerPhone, turn.ID, replyRunID)
 	} else {
 		message, err = supportAI.publishAIInternalNote(ctx, meta.WorkspaceID, conversationID, agentID, "Suggested reply:\n\n"+content, supportReplyModelLabel, 0, gate.Confidence, sources, kind, "", "", progressState, conv.CustomerEmail, conv.CustomerPhone, turn.ID, replyRunID)

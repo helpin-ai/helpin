@@ -32,6 +32,9 @@ func (r *CRMContactRepository) DeleteAnonymizingSupport(ctx context.Context, wor
 		if err != nil {
 			return err
 		}
+		if err := guardPortalProtectedContact(ctx, tx, workspaceID, contactID, nil, true); err != nil {
+			return err
+		}
 		var anonymousIDs []string
 		if err := tx.Model(&model.CRMIdentityLink{}).Where("workspace_id = ? AND contact_id = ?", workspaceID, contactID).Pluck("anonymous_id", &anonymousIDs).Error; err != nil {
 			return err

@@ -1,4 +1,5 @@
 import type { WidgetOriginSettings, WidgetSigningSecretResponse } from '@/lib/pmTypes';
+import type { SupportAttachmentPolicy } from '@/lib/supportAttachmentFiles';
 import { api } from '../api';
 import type { AssignableMember } from '../types';
 import type {
@@ -23,6 +24,9 @@ import type {
   ConversationStatus,
   SupportInstallationResponse,
   SupportInboxSettings,
+  CustomerPortalAccessSummary,
+  CustomerPortalContactAccess,
+  CustomerPortalContactAccessValue,
   SupportRoutingUsageStatus,
   ConversationListResponse,
   UnreadStats,
@@ -266,7 +270,7 @@ export const supportService = {
     `/support/inbox/conversations/${conversationId}/create-task${qs(workspaceId)}`,
     payload,
   ),
-  changeConversationAIControl: (workspaceId: string, conversationId: string, payload: { action: 'pause' | 'return'; expected_version: number; confirm_human_request?: boolean }) =>
+  changeConversationAIControl: (workspaceId: string, conversationId: string, payload: { action: 'pause' | 'return' | 'run_now'; expected_version: number; confirm_human_request?: boolean }) =>
     api.post<{ updated: boolean }>(`/support/inbox/conversations/${conversationId}/ai-control?workspace_id=${workspaceId}`, payload),
 
   assignConversationAgent: (workspaceId: string, conversationId: string, payload: AssignConversationAgentRequest) =>
@@ -326,6 +330,19 @@ export const supportService = {
     api.post<WidgetSigningSecretResponse>(`/support/inbox/installations/reveal-secret${qs(workspaceId)}`, {}),
   rotateWidgetSigningSecret: (workspaceId: string) =>
     api.post<WidgetSigningSecretResponse>(`/support/inbox/installations/rotate-secret${qs(workspaceId)}`, {}),
+
+  getAttachmentPolicy: (workspaceId: string) =>
+    api.get<SupportAttachmentPolicy>(`/support/inbox/attachments/policy${qs(workspaceId)}`),
+
+  // Customer portal access (support admins)
+  getPortalAccessSummary: (workspaceId: string) =>
+    api.get<CustomerPortalAccessSummary>(`/support/inbox/portal/access${qs(workspaceId)}`),
+  getContactPortalAccess: (workspaceId: string, contactId: string) =>
+    api.get<CustomerPortalContactAccess>(`/support/inbox/portal/contacts/${encodeURIComponent(contactId)}/access${qs(workspaceId)}`),
+  setContactPortalAccess: (workspaceId: string, contactId: string, portalAccess: CustomerPortalContactAccessValue | null) =>
+    api.put<CustomerPortalContactAccess>(`/support/inbox/portal/contacts/${encodeURIComponent(contactId)}/access${qs(workspaceId)}`, { portal_access: portalAccess }),
+  resendPortalConfirmation: (workspaceId: string, conversationId: string) =>
+    api.post<void>(`/support/inbox/conversations/${encodeURIComponent(conversationId)}/portal-confirmation${qs(workspaceId)}`, {}),
   /**
    * @deprecated Use WebSocket `support:typing:start` / `support:typing:stop` messages instead.
    * Kept as HTTP fallback for clients without an active WebSocket connection.

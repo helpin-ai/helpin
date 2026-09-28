@@ -40,30 +40,35 @@ func CRMLifecycleIsHigherOrEqual(current, target string) bool {
 
 // CRMContact represents a CRM contact.
 type CRMContact struct {
-	ID               string      `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID      string      `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	DisplayID        string      `json:"display_id" gorm:"not null"`
-	FirstName        string      `json:"first_name" gorm:"not null"`
-	LastName         *string     `json:"last_name"`
-	Email            *string     `json:"email" gorm:"index"`
-	Phone            *string     `json:"phone"`
-	JobTitle         *string     `json:"job_title"`
-	Description      *string     `json:"description"`
-	Labels           StringArray `json:"labels" gorm:"type:text[];default:'{}'"`
-	PrimaryLocation  *string     `json:"primary_location"`
-	CountryCode      *string     `json:"country_code" gorm:"size:8"`
-	CountryName      *string     `json:"country_name" gorm:"size:128"`
-	LinkedInURL      *string     `json:"linkedin_url" gorm:"column:linkedin_url"`
-	FacebookURL      *string     `json:"facebook_url"`
-	InstagramURL     *string     `json:"instagram_url"`
-	AngelListURL     *string     `json:"angellist_url" gorm:"column:angellist_url"`
-	XURL             *string     `json:"x_url"`
-	LifecycleStage   string      `json:"lifecycle_stage" gorm:"not null;default:'subscriber'"`
-	LeadStatus       string      `json:"lead_status" gorm:"not null;default:'new'"`
-	OwnerMemberID    *string     `json:"owner_member_id" gorm:"type:uuid;index"`
-	AvatarURL        *string     `json:"avatar_url"`
-	Source           *string     `json:"source"`
-	CustomProperties JSONB       `json:"custom_properties" gorm:"type:jsonb;default:'{}'"`
+	ID              string      `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID     string      `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	DisplayID       string      `json:"display_id" gorm:"not null"`
+	FirstName       string      `json:"first_name" gorm:"not null"`
+	LastName        *string     `json:"last_name"`
+	Email           *string     `json:"email" gorm:"index"`
+	Phone           *string     `json:"phone"`
+	JobTitle        *string     `json:"job_title"`
+	Description     *string     `json:"description"`
+	Labels          StringArray `json:"labels" gorm:"type:text[];default:'{}'"`
+	PrimaryLocation *string     `json:"primary_location"`
+	CountryCode     *string     `json:"country_code" gorm:"size:8"`
+	CountryName     *string     `json:"country_name" gorm:"size:128"`
+	LinkedInURL     *string     `json:"linkedin_url" gorm:"column:linkedin_url"`
+	FacebookURL     *string     `json:"facebook_url"`
+	InstagramURL    *string     `json:"instagram_url"`
+	AngelListURL    *string     `json:"angellist_url" gorm:"column:angellist_url"`
+	XURL            *string     `json:"x_url"`
+	LifecycleStage  string      `json:"lifecycle_stage" gorm:"not null;default:'subscriber'"`
+	LeadStatus      string      `json:"lead_status" gorm:"not null;default:'new'"`
+	// PortalAccess is the support admin's customer portal decision: nil,
+	// PortalAccessAllowed or PortalAccessBlocked. GORM never writes it, so
+	// generic contact updates, imports and automatic creation cannot change
+	// it; only CustomerPortalRepository.SetContactPortalAccess does.
+	PortalAccess     *string `json:"portal_access,omitempty" gorm:"->"`
+	OwnerMemberID    *string `json:"owner_member_id" gorm:"type:uuid;index"`
+	AvatarURL        *string `json:"avatar_url"`
+	Source           *string `json:"source"`
+	CustomProperties JSONB   `json:"custom_properties" gorm:"type:jsonb;default:'{}'"`
 	// EmailStatus tracks whether the contact's email address is deliverable.
 	// Values: "valid" (default), "invalid". Set to "invalid" after a hard
 	// bounce, bad-address Postmark bounce, or spam complaint. Used to

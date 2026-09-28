@@ -22,6 +22,7 @@ import {
   MapPinIcon,
   PlusSignIcon,
   Tag01Icon,
+  Shield01Icon,
   TelephoneIcon,
   UserIcon,
   ZapIcon,
@@ -77,6 +78,8 @@ import { supportService } from '@/lib/services/supportService';
 import { ContactLimitNotice, isContactLimitError } from '@edition';
 import { useTitle } from '@/hooks/useTitle';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
+import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
+import { ContactPortalAccessControl } from '@/components/crm/ContactPortalAccessControl';
 import { cn } from '@/lib/utils';
 import type {
   HelpcenterSocialPlatform,
@@ -577,6 +580,8 @@ export function ContactDetailPage({
 
   // ── Data hooks ──
   const { data: contact, isLoading, error: contactError } = useContact(wsId, contactId);
+  const { data: workspaceAccess } = useWorkspaceAccess(wsId);
+  const permissions = usePermissions(workspaceAccess);
   useRegisterPageContext(contact ? {
     entity_type: 'crm_contact',
     entity_id: contact.id,
@@ -1395,6 +1400,15 @@ export function ContactDetailPage({
                       value={form.lead_status}
                       options={leadStatusOptions}
                       onChange={(value) => updateField('lead_status', value, { lead_status: value })}
+                    />
+                  </MetadataRow>
+
+                  <MetadataRow icon={Shield01Icon} label="Portal">
+                    <ContactPortalAccessControl
+                      workspaceId={wsId}
+                      contactId={contact.id}
+                      currentAccess={contact.portal_access}
+                      canManage={permissions.has('support.admin')}
                     />
                   </MetadataRow>
 

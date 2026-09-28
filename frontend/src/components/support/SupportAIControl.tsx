@@ -28,14 +28,21 @@ export function useSupportAIControl(conversation: SupportConversation) {
   const { has } = usePermissions(access);
   const { data: installation } = useChatSettings(conversation.workspace_id);
   const { data: members } = useWorkspaceMembers(conversation.workspace_id);
+  const portal = (conversation.channel ?? conversation.source) === 'portal';
   const paused = Boolean(
     conversation.human_takeover ||
     conversation.assigned_user_id ||
     conversation.opened_by_user_id ||
     conversation.customer_requested_human_at ||
-    conversation.ai_state === 'escalated',
+    conversation.ai_state === 'escalated' ||
+    (portal && conversation.flow_state !== 'ai_handling' && !conversation.assigned_agent_id),
   );
-  const enabled = Boolean(
+  const portalMode = installation?.settings.portal_ai_mode ?? 'off';
+  const portalAgent = installation?.settings.portal_ai_agent_id || installation?.settings.ai_agent_id;
+  const enabled = portal ? Boolean(
+    installation?.active && installation.settings.portal_enabled && portalAgent &&
+    ['ai_first', 'internal_note'].includes(portalMode),
+  ) : Boolean(
     installation?.active &&
     installation.settings.ai_enabled &&
     installation.settings.ai_agent_id &&
@@ -51,8 +58,9 @@ export function useSupportAIControl(conversation: SupportConversation) {
   const eligible =
     !conversation.anonymized_at &&
     !['resolved', 'spam'].includes(conversation.status) &&
-    ['widget', 'email'].includes(conversation.channel ?? conversation.source) &&
-    (channels === 'both' || channels === channel);
+    (portal ? Boolean(conversation.portal_visible) :
+      ['widget', 'email'].includes(conversation.channel ?? conversation.source) &&
+      (channels === 'both' || channels === channel));
   const pausedBy = members?.find(
     (member) => member.user_id === conversation.ai_paused_by_user_id,
   )?.full_name;
@@ -61,7 +69,7 @@ export function useSupportAIControl(conversation: SupportConversation) {
       action,
       confirmed,
     }: {
-      action: 'pause' | 'return';
+      action: 'pause' | 'return' | 'run_now';
       confirmed: boolean;
     }) =>
       supportService
@@ -99,9 +107,9 @@ export function useSupportAIControl(conversation: SupportConversation) {
     (!conversation.last_customer_message_at ||
       new Date(conversation.last_customer_message_at) <=
         new Date(conversation.ai_resumed_at));
-  const unavailable = paused && (!enabled || !eligible);
+  const unavailable = paused && (!enabled || !eligible || (portal && portalMode !== 'ai_first'));
   const disabled = mutation.isPending || unavailable;
-  const label = paused ? 'Resume AI' : 'Pause AI';
+  const label = paused ? (portal ? 'Ask Echo to handle' : 'Resume AI') : 'Pause AI';
   const status = paused
     ? pausedBy
       ? `AI paused by ${pausedBy}.`
@@ -111,8 +119,12 @@ export function useSupportAIControl(conversation: SupportConversation) {
       : 'AI disabled.';
   const explanation = paused
     ? unavailable
-      ? 'Enable AI for this channel to return the conversation.'
-      : 'AI will respond to the next customer message. Resuming releases human assignment.'
+      ? portal && portalMode === 'internal_note'
+        ? 'Private suggestions are generated for new unassigned requests. Enable customer replies to ask Echo to take over this request.'
+        : 'Enable AI for this channel to return the conversation.'
+      : portal
+        ? 'Echo will answer the latest unanswered customer message. This releases human assignment.'
+        : 'AI will respond to the next customer message. Resuming releases human assignment.'
     : `${waiting ? 'Waiting for the next customer message. ' : ''}Stop AI replies and follow-ups.`;
   const Icon = mutation.isPending
     ? Loading01Icon
@@ -134,7 +146,7 @@ export function useSupportAIControl(conversation: SupportConversation) {
                 setConfirmReturnFor(conversation.id);
               else
                 mutation.mutate({
-                  action: paused ? 'return' : 'pause',
+                  action: paused ? (portal ? 'run_now' : 'return') : 'pause',
                   confirmed: false,
                 });
             }}
@@ -161,10 +173,10 @@ export function useSupportAIControl(conversation: SupportConversation) {
     >
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Resume AI for this conversation?</AlertDialogTitle>
+          <AlertDialogTitle>{portal ? 'Ask Echo to handle this request?' : 'Resume AI for this conversation?'}</AlertDialogTitle>
           <AlertDialogDescription>
             The customer requested a human. Resuming releases human assignment
-            and allows AI to respond to their next message. The request remains
+            and allows AI to respond to {portal ? 'their latest unanswered message' : 'their next message'}. The request remains
             in the conversation history.
           </AlertDialogDescription>
         </AlertDialogHeader>
@@ -176,10 +188,10 @@ export function useSupportAIControl(conversation: SupportConversation) {
             disabled={mutation.isPending}
             onClick={(event) => {
               event.preventDefault();
-              mutation.mutate({ action: 'return', confirmed: true });
+              mutation.mutate({ action: portal ? 'run_now' : 'return', confirmed: true });
             }}
           >
-            Resume AI
+            {portal ? 'Ask Echo to handle' : 'Resume AI'}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

@@ -95,6 +95,7 @@ func (s *SupportChatService) notifySupportPlanSettled(ctx context.Context, plan 
 	if err != nil {
 		return err
 	}
+	*settings = effectiveSupportAISettings(*settings, conv)
 	allowed, err := s.channelAllowsPendingTurn(ctx, *settings, conv)
 	if err != nil {
 		return err

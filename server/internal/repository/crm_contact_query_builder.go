@@ -33,6 +33,10 @@ var crmContactFilterDefinitions = querybuilder.Definitions{
 		Column: "owner_member_id",
 		Type:   querybuilder.FieldTypeID,
 	},
+	"portal_access": {
+		Column: "portal_access",
+		Type:   querybuilder.FieldTypeEnum,
+	},
 	"source": {
 		Column: "source",
 		Type:   querybuilder.FieldTypeText,

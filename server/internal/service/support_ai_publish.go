@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"gorm.io/gorm"
@@ -14,6 +15,8 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
+
+type portalAIReplyChannelKey struct{}
 
 func supportMessagePromptText(msg model.SupportMessage) string {
 	base := strings.TrimSpace(msg.Content)
@@ -98,11 +101,28 @@ func (s *SupportAIService) publishAIReply(
 		MessageType:       "reply",
 		Metadata:          string(metadataJSON),
 	}
+	if ctx.Value(portalAIReplyChannelKey{}) == true {
+		channel := "portal"
+		aiMsg.ViaChannel = &channel
+		if s.agentRepo != nil {
+			if agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID); err == nil && agent != nil && strings.TrimSpace(agent.Name) != "" {
+				aiMsg.SenderDisplayName = strPtr(agent.Name)
+			}
+		}
+	}
 	if s.linkPreviewService != nil {
 		s.linkPreviewService.EnrichMessage(ctx, aiMsg)
 	}
 	if err := s.createSupportAIReply(ctx, aiMsg, processingID); err != nil {
 		return nil, fmt.Errorf("create AI message: %w", err)
+	}
+	if aiMsg.ViaChannel != nil && *aiMsg.ViaChannel == "portal" && s.portalReplyNotifier != nil {
+		conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
+		if err != nil {
+			slog.WarnContext(ctx, "load portal conversation for AI reply email", "conversation_id", conversationID, "error", err)
+		} else if err := s.portalReplyNotifier.OnAgentReply(context.WithoutCancel(ctx), workspaceID, aiMsg, conv); err != nil {
+			slog.WarnContext(ctx, "enqueue portal AI reply email", "message_id", aiMsg.ID, "error", err)
+		}
 	}
 
 	publishSupportAIMessageStream(s.wsPublisher, workspaceID, aiMsg, "ai:"+agentID)

@@ -117,13 +117,15 @@ func TestSupportAttachmentCreateSizeAndTypeValidation(t *testing.T) {
 		mime, wantError string
 	}{
 		{"exactly100MiB video", 100 * 1024 * 1024, "video/mp4", ""},
-		{"over100MiB", 100*1024*1024 + 1, "video/mp4", "file exceeds maximum size of 100MB"},
-		{"empty", 0, "video/mp4", "file_size must be positive"},
-		{"negative", -1, "video/mp4", "file_size must be positive"},
-		{"missing content type", 512, "", "content_type is required"},
-		{"unsupported type", 512, "application/x-executable", "file type application/x-executable is not allowed"},
+		{"over100MiB", 100*1024*1024 + 1, "video/mp4", "recording exceeds the maximum size of 100MB"},
+		{"empty", 0, "video/mp4", "recording is empty"},
+		{"negative", -1, "video/mp4", "recording is empty"},
+		{"missing content type", 512, "", "the file type of recording could not be determined"},
+		{"unsupported type", 512, "application/x-executable", "application/x-executable files are not supported"},
 		{"quicktime video", 512, "video/quicktime", ""},
 		{"webm video", 512, "video/webm", ""},
+		{"heic photo", 512, "image/heic", ""},
+		{"heif photo", 512, "image/heif", ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			db := newTestDB(t)
@@ -134,6 +136,9 @@ func TestSupportAttachmentCreateSizeAndTypeValidation(t *testing.T) {
 			if tt.wantError != "" {
 				if err == nil || err.Error() != tt.wantError {
 					t.Fatalf("error = %v, want %q", err, tt.wantError)
+				}
+				if message, ok := IsSupportAttachmentRejected(err); !ok || message != tt.wantError {
+					t.Fatalf("validation error is not a rejection: %v", err)
 				}
 				var count int64
 				if err := db.Model(&model.SupportAttachment{}).Count(&count).Error; err != nil {
@@ -189,5 +194,30 @@ func TestDeleteUnsentWidgetOwnershipAndSentProtection(t *testing.T) {
 				t.Fatal("attachment deletion violated ownership or sent protection")
 			}
 		})
+	}
+}
+
+func TestSupportAttachmentPolicyMatchesValidation(t *testing.T) {
+	policy := CurrentSupportAttachmentPolicy()
+	if policy.MaxBytes != maxSupportFileSize {
+		t.Fatalf("max bytes = %d", policy.MaxBytes)
+	}
+	seen := map[string]bool{}
+	for _, contentType := range policy.ContentTypes {
+		seen[contentType] = true
+		if !supportAttachmentContentTypes[contentType] {
+			t.Fatalf("policy lists %s, which validation rejects", contentType)
+		}
+	}
+	for _, contentType := range []string{"image/png", "image/heic", "video/mp4", "application/pdf"} {
+		if !seen[contentType] {
+			t.Fatalf("policy is missing %s", contentType)
+		}
+	}
+	if len(seen) != len(supportAttachmentContentTypes) {
+		t.Fatalf("policy lists %d types, validation allows %d", len(seen), len(supportAttachmentContentTypes))
+	}
+	if allowedMIMETypes["image/heic"] {
+		t.Fatal("HEIC must stay out of the shared PM attachment types")
 	}
 }

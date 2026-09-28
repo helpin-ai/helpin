@@ -717,7 +717,7 @@ func main() {
 		SetMessageRepo(supportMessageRepo).
 		SetUserRepo(userRepo)
 	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMailboxRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo, userRepo, docsSpaceRepo, docsCollectionRepo, docsHelpcenterRepo)
-	portalAuthService := service.NewPortalAuthService(repository.NewPortalAuthRepository(db), supportInboxService, appEmailClient, cfg.AppBaseURL)
+	customerPortalService := service.NewCustomerPortalService(repository.NewCustomerPortalRepository(db), supportInboxService, appEmailClient, cfg.AppBaseURL)
 	supportInboxService.SetProductAnalyticsService(productAnalytics)
 	supportInboxService.SetDocsSearchRepository(docsSearchRepo)
 	supportInboxService.SetCRMCompanyRepository(crmCompanyRepo)
@@ -1501,6 +1501,7 @@ func main() {
 	supportAIService.SetMailboxRepository(supportMailboxRepo)
 	supportAIService.SetTriageService(supportInboxTriageService)
 	supportAIService.SetLinkPreviewService(supportLinkPreviewService)
+	supportAIService.SetPortalReplyNotifier(emailFallbackService)
 	supportAIService.SetCuratedGuidanceRepository(curatedGuidanceRepo)
 	if reranker := service.NewHTTPSupportKnowledgeReranker(cfg.SupportRerankerURL, cfg.SupportRerankerModel, cfg.SupportRerankerAPIKey); reranker != nil {
 		supportAIService.SetKnowledgeReranker(service.NewGovernedSupportKnowledgeReranker(reranker, aiActionRegistry, aiActionExecutionRepo))
@@ -1579,6 +1580,8 @@ func main() {
 		agentRuntimeProjectionService.SetSupportChatPauseHook(supportChatService.OnSupportChatRunPaused)
 	}
 	if projectionCtx != nil {
+		portalAIDispatchService := service.NewPortalAIDispatchService(repository.NewPortalAIDispatchRepository(db), supportAIService)
+		go portalAIDispatchService.Start(projectionCtx)
 		go func() {
 			if err := supportChatService.StartSupportChatSweep(projectionCtx, 30*time.Second, 30*time.Second, 50); err != nil {
 				slog.Error("support chat sweep stopped", "error", err)
@@ -1864,8 +1867,8 @@ func main() {
 		MCP:                 handler.NewMCPHandler(mcpService, requestLimiter),
 		ExternalMCP:         handler.NewExternalMCPHandler(externalMCPService, agentService, authzService, cfg.AppBaseURL),
 		SupportInbox:        handler.NewSupportInboxHandler(supportInboxService, agentService, supportMessageActionsService),
-		PortalAuth:          handler.NewPortalAuthHandler(portalAuthService),
-		CustomerPortal:      handler.NewCustomerPortalHandler(portalAuthService),
+		CustomerPortal:      handler.NewCustomerPortalHandler(customerPortalService),
+		CustomerPortalAdmin: handler.NewCustomerPortalAdminHandler(customerPortalService),
 		SupportInboxView:    handler.NewSupportInboxViewHandler(supportInboxViewService),
 		SupportTag:          handler.NewSupportTagHandler(supportTagService),
 		SupportInboxWidget:  handler.NewSupportInboxWidgetHandler(supportInboxService),
@@ -1880,7 +1883,7 @@ func main() {
 		Notification:        handler.NewNotificationHandler(notificationService, followerService),
 		UserNotifSettings:   handler.NewUserNotificationSettingsHandler(userNotifSettingsService),
 		PushDevice:          handler.NewPushDeviceHandler(pushDeviceService),
-		CRMContact:          handler.NewCRMContactHandler(crmContactService),
+		CRMContact:          handler.NewCRMContactHandler(crmContactService).SetAuthorization(authzService),
 		CRMCompany:          handler.NewCRMCompanyHandler(crmCompanyService),
 		CRMDeal:             handler.NewCRMDealHandler(crmDealService),
 		CRMAssociation:      handler.NewCRMAssociationHandler(crmAssociationService),

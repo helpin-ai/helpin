@@ -88,9 +88,6 @@ type SupportConversation struct {
 
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
-	// DeletedAt supports explicit portal-ineligibility checks without changing
-	// the existing permanent-delete behavior of support conversations.
-	DeletedAt *time.Time `json:"-" gorm:"index"`
 
 	// Virtual fields — populated by SELECT subqueries, not stored as columns.
 	LastMessage                  *string                    `json:"last_message,omitempty" gorm:"->"`
@@ -1404,9 +1401,14 @@ type SupportInboxSettings struct {
 
 	// Customer Portal
 	PortalEnabled                bool `json:"portal_enabled"`
-	PortalRequestsOnly           bool `json:"portal_requests_only"`
 	PortalAnonymousIntakeEnabled bool `json:"portal_anonymous_intake_enabled"`
 	PortalIntakeEnabled          bool `json:"portal_intake_enabled"`
+	// PortalAccessMode is SupportPortalAccessModeApprovedContacts or
+	// SupportPortalAccessModeAnyVerifiedEmail.
+	PortalAccessMode string `json:"portal_access_mode"`
+	// Portal AI is configured independently from chat and email AI.
+	PortalAIMode    string  `json:"portal_ai_mode"`
+	PortalAIAgentID *string `json:"portal_ai_agent_id,omitempty"`
 
 	// CSAT
 	CSATEnabled bool `json:"csat_enabled"`
@@ -1509,9 +1511,10 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		LauncherPosition:                "bottom_right",
 		LauncherIcon:                    "chat_bubble",
 		PortalEnabled:                   false,
-		PortalRequestsOnly:              false,
 		PortalAnonymousIntakeEnabled:    false,
 		PortalIntakeEnabled:             false,
+		PortalAccessMode:                SupportPortalAccessModeApprovedContacts,
+		PortalAIMode:                    "off",
 		CSATEnabled:                     false,
 		FileUploadsEnabled:              true,
 		ForceVisitorIdentity:            false,
@@ -1585,9 +1588,11 @@ type UpdateInstallationSettingsRequest struct {
 	ForwardedEmailDetectionMode     *string                     `json:"forwarded_email_detection_mode,omitempty"`
 	ForwardedEmailMinConfidence     *int                        `json:"forwarded_email_min_confidence,omitempty"`
 	PortalEnabled                   *bool                       `json:"portal_enabled,omitempty"`
-	PortalRequestsOnly              *bool                       `json:"portal_requests_only,omitempty"`
 	PortalAnonymousIntakeEnabled    *bool                       `json:"portal_anonymous_intake_enabled,omitempty"`
 	PortalIntakeEnabled             *bool                       `json:"portal_intake_enabled,omitempty"`
+	PortalAccessMode                *string                     `json:"portal_access_mode,omitempty"`
+	PortalAIMode                    *string                     `json:"portal_ai_mode,omitempty"`
+	PortalAIAgentID                 *string                     `json:"portal_ai_agent_id,omitempty"`
 	WidgetName                      *string                     `json:"widget_name,omitempty"`
 	WidgetAvatarURL                 *string                     `json:"widget_avatar_url,omitempty"`
 	WidgetHelpSpaceIDs              []string                    `json:"widget_help_space_ids,omitempty"`
@@ -1986,4 +1991,13 @@ type SupportAIControlRequest struct {
 	Action              string `json:"action"`
 	ExpectedVersion     int64  `json:"expected_version"`
 	ConfirmHumanRequest bool   `json:"confirm_human_request"`
+}
+
+// EffectivePortalAccessMode returns the portal access mode, treating any
+// unknown value as the safer approved-contacts mode.
+func (s SupportInboxSettings) EffectivePortalAccessMode() string {
+	if s.PortalAccessMode == SupportPortalAccessModeAnyVerifiedEmail {
+		return SupportPortalAccessModeAnyVerifiedEmail
+	}
+	return SupportPortalAccessModeApprovedContacts
 }

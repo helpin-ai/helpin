@@ -4,7 +4,7 @@ const slug = 'example'
 const root = `/portal/${slug}`
 const api = `/api/public/portal/${slug}`
 const customer = { customer: { id: 'customer-1', email: 'customer@example.com' } }
-const config = { enabled: true, requests_only: false, intake_enabled: true, anonymous_intake_enabled: true, file_uploads_enabled: false, branding: { name: 'Example support' } }
+const config = { enabled: true, intake_enabled: true, anonymous_intake_enabled: true, file_uploads_enabled: false, branding: { name: 'Example support' } }
 const request = { reference: 'REQ-1', subject: 'Existing request', status: 'resolved', last_activity_at: '2026-01-01T12:00:00Z' }
 const detail = { ...request, can_reply: true, messages: [{ id: 'message-1', content: 'Customer question', sender_type: 'customer', created_at: '2026-01-01T12:00:00Z' }] }
 
@@ -66,7 +66,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 375, height: 812 
       await page.getByLabel('Reply').fill('Please reopen this request')
       await page.getByRole('button', { name: 'Send reply' }).click()
       await expect(page.getByText('Please reopen this request')).toBeVisible()
-      await page.getByRole('link', { name: 'All requests' }).click()
+      await page.getByRole('button', { name: 'Back to all requests' }).click()
       await page.getByRole('button', { name: 'New request' }).click()
       await page.getByLabel('Subject').fill('New issue')
       await page.getByLabel('How can we help?').fill('A new customer issue')
@@ -83,7 +83,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 375, height: 812 
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     })
 
-    test('anonymous intake sends a request and prompts email verification', async ({ page }) => {
+    test('anonymous intake sends a request and points the sender to email', async ({ page }) => {
       await mockPortal(page, { anonymous: true })
       await page.goto(`${root}/sign-in`)
       await page.getByLabel('Your email address').fill('public@example.com')
@@ -91,7 +91,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 375, height: 812 
       await page.getByLabel('Subject').fill('A public request')
       await page.getByLabel('How can we help?').fill('Please help me')
       await page.getByRole('button', { name: 'Send request' }).click()
-      await expect(page.getByText('Request received. Check your email for a link to view and reply to it.')).toBeVisible()
+      await expect(page.getByText('Request received. We’ve emailed you about next steps, and our team will reply by email.')).toBeVisible()
       await expect(page.getByText('Existing request')).toHaveCount(0)
     })
 

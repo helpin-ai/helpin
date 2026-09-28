@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { ArrowLeft01Icon, ArrowRight01Icon, AttachmentIcon, Cancel01Icon, Download04Icon } from '@/lib/icons';
 import { SupportPendingAttachment } from './SupportPendingAttachment';
 import type { SupportAttachmentPayload } from '@/lib/pmTypes';
+import { isPreviewableImageType } from '@/lib/supportAttachmentFiles';
 
 type SupportAttachmentGalleryTone = 'default' | 'note';
 type SupportAttachmentThumbnailSize = 'sm' | 'md';
@@ -21,8 +22,9 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// HEIC/HEIF photos are listed as downloads because most browsers cannot show them.
 function isImageAttachment(attachment: SupportAttachmentPayload): boolean {
-  return attachment.file_type.startsWith('image/') && !!attachment.url;
+  return isPreviewableImageType(attachment.file_type) && !!attachment.url;
 }
 
 function normalizeIndex(index: number, length: number): number {

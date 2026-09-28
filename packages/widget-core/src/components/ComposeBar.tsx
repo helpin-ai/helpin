@@ -22,8 +22,9 @@ interface ComposeBarProps {
   workspaceName?: string;
 }
 
+// HEIC/HEIF photos are shown as files: most browsers cannot display them.
 function isImageType(type: string): boolean {
-  return type.startsWith('image/') && type !== 'image/svg+xml';
+  return type.startsWith('image/') && type !== 'image/svg+xml' && type !== 'image/heic' && type !== 'image/heif';
 }
 
 function formatFileSize(bytes: number): string {

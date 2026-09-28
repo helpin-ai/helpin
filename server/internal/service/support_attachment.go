@@ -44,19 +44,19 @@ func (s *SupportAttachmentService) Create(
 		return nil, fmt.Errorf("file storage is not configured")
 	}
 	if strings.TrimSpace(req.FileName) == "" {
-		return nil, fmt.Errorf("file_name is required")
+		return nil, rejectSupportAttachment("file_name is required")
 	}
 	if req.FileSize <= 0 {
-		return nil, fmt.Errorf("file_size must be positive")
+		return nil, rejectSupportAttachment("%s is empty", req.FileName)
 	}
 	if req.FileSize > maxSupportFileSize {
-		return nil, fmt.Errorf("file exceeds maximum size of %s", formatByteLimit(maxSupportFileSize))
+		return nil, rejectSupportAttachment("%s exceeds the maximum size of %s", req.FileName, formatByteLimit(maxSupportFileSize))
 	}
 	if req.ContentType == "" {
-		return nil, fmt.Errorf("content_type is required")
+		return nil, rejectSupportAttachment("the file type of %s could not be determined", req.FileName)
 	}
-	if !allowedMIMETypes[req.ContentType] {
-		return nil, fmt.Errorf("file type %s is not allowed", req.ContentType)
+	if !supportAttachmentContentTypes[req.ContentType] {
+		return nil, rejectSupportAttachment("%s files are not supported", req.ContentType)
 	}
 
 	conversationID = strings.TrimSpace(conversationID)
@@ -201,7 +201,7 @@ func (s *SupportAttachmentService) StoreInboundEmailAttachment(ctx context.Conte
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
-	if !allowedMIMETypes[contentType] {
+	if !supportAttachmentContentTypes[contentType] {
 		return nil, fmt.Errorf("file type %s is not allowed", contentType)
 	}
 	data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(req.Base64Content))

@@ -11,7 +11,7 @@ import type { SupportConversation } from '@/lib/pmTypes';
 const state = vi.hoisted(() => ({ edit: true, enabled: true }));
 vi.mock('@/hooks/queries/useSession', () => ({ useWorkspaceAccess: () => ({ data: {} }), usePermissions: () => ({ has: () => state.edit }) }));
 vi.mock('@/hooks/queries/useWorkspaces', () => ({ useWorkspaceMembers: () => ({ data: [{ user_id: 'teammate', full_name: 'Sam' }] }) }));
-vi.mock('@/hooks/queries/useSupport', () => ({ useChatSettings: () => ({ data: { active: true, settings: { ai_enabled: state.enabled, ai_agent_id: 'agent', ai_response_mode: 'ai_first' } } }) }));
+vi.mock('@/hooks/queries/useSupport', () => ({ useChatSettings: () => ({ data: { active: true, settings: { ai_enabled: state.enabled, ai_agent_id: 'agent', ai_response_mode: 'ai_first', portal_enabled: state.enabled, portal_ai_mode: 'ai_first' } } }) }));
 vi.mock('@/lib/services/supportService', () => ({ supportService: { changeConversationAIControl: vi.fn() } }));
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -39,6 +39,16 @@ async function select() { expect(item()).toBeTruthy(); await act(async () => ite
 it('pauses from the menu and includes the displayed version', async () => {
   await render(); expect(item()?.getAttribute('aria-label')).toBe('Pause AI'); await select();
   expect(supportService.changeConversationAIControl).toHaveBeenCalledWith('ws', 'conv', { action: 'pause', expected_version: 4, confirm_human_request: false });
+});
+it('offers a portal-only action that asks Echo to answer an existing request', async () => {
+  await render({ ...conversation, source: 'portal', channel: 'portal', portal_visible: true, ai_state: undefined, human_takeover: true });
+  expect(item()?.getAttribute('aria-label')).toBe('Ask Echo to handle');
+  await select();
+  expect(supportService.changeConversationAIControl).toHaveBeenCalledWith('ws', 'conv', { action: 'run_now', expected_version: 4, confirm_human_request: false });
+});
+it('offers the portal action for an unassigned existing request', async () => {
+  await render({ ...conversation, source: 'portal', channel: 'portal', portal_visible: true, ai_state: undefined, assigned_agent_id: undefined, flow_state: 'waiting_for_human' });
+  expect(item()?.getAttribute('aria-label')).toBe('Ask Echo to handle');
 });
 it('explains ownership release and the next-message wait in a tooltip for Resume AI', async () => {
   await render({ ...conversation, human_takeover: true, ai_paused_by_user_id: 'teammate' });

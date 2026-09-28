@@ -800,9 +800,8 @@ func newTestDB(t *testing.T) *gorm.DB {
 			human_takeover BOOLEAN NOT NULL DEFAULT 0,
             ai_control_version BIGINT NOT NULL DEFAULT 0, ai_resumed_at DATETIME, ai_paused_at DATETIME, ai_paused_by_user_id TEXT,
 			created_at DATETIME,
-			updated_at DATETIME,
-			deleted_at DATETIME
-			)`,
+			updated_at DATETIME
+		)`,
 		`CREATE TABLE support_conversation_user_states (
 			workspace_id TEXT NOT NULL,
 			conversation_id TEXT NOT NULL,
@@ -1179,6 +1178,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			x_url TEXT,
 			lifecycle_stage TEXT NOT NULL DEFAULT 'subscriber',
 			lead_status TEXT NOT NULL DEFAULT 'new',
+			portal_access TEXT,
 			owner_member_id TEXT,
 			avatar_url TEXT,
 			source TEXT,

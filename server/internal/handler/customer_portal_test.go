@@ -1,32 +1,68 @@
 package handler
 
 import (
+	"context"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/go-chi/chi/v5"
 )
 
-func TestPortalSessionCookieIsHttpOnlyScopedAndCleared(t *testing.T) {
+func portalSlugRequest(method, target, slug string) *http.Request {
+	r := httptest.NewRequest(method, target, nil)
+	routeContext := chi.NewRouteContext()
+	routeContext.URLParams.Add("slug", slug)
+	return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, routeContext))
+}
+
+func TestPortalSessionCookieIsHttpOnlyAndScopedToSlug(t *testing.T) {
+	request := portalSlugRequest(http.MethodPost, "https://app.example.com/api/public/portal/acme/auth/exchange", "acme")
+	request.Header.Set("X-Forwarded-Proto", "https")
 	recorder := httptest.NewRecorder()
-	setPortalCookie(recorder, "session-secret", 7*24*60*60)
+	setPortalCookie(recorder, request, "session-secret", 7*24*60*60)
 	cookies := recorder.Result().Cookies()
-	if len(cookies) != 1 || !cookies[0].HttpOnly || !cookies[0].Secure || cookies[0].Path != "/api/public/portal/" || cookies[0].Value != "session-secret" {
+	if len(cookies) != 1 || !cookies[0].HttpOnly || !cookies[0].Secure || cookies[0].Path != "/api/public/portal/acme" || cookies[0].Value != "session-secret" {
 		t.Fatalf("unexpected session cookie: %+v", cookies)
 	}
 	if !strings.Contains(recorder.Header().Get("Set-Cookie"), "SameSite=Lax") {
 		t.Fatal("missing SameSite=Lax")
 	}
-	request := httptest.NewRequest("GET", "/api/public/portal/slug/session", nil)
-	request.AddCookie(cookies[0])
-	if got := portalSessionCookie(request); got != "session-secret" {
-		t.Fatalf("session cookie: %q", got)
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	cleared := httptest.NewRecorder()
-	setPortalCookie(cleared, "", -1)
-	cookie := cleared.Result().Cookies()[0]
-	if cookie.MaxAge != -1 || cookie.Value != "" || cookie.Path != cookies[0].Path {
-		t.Fatalf("cookie not cleared: %+v", cookie)
+	origin, _ := url.Parse("https://app.example.com/api/public/portal/acme/auth/exchange")
+	jar.SetCookies(origin, cookies)
+	for target, want := range map[string]int{
+		"https://app.example.com/api/public/portal/acme/session":       1,
+		"https://app.example.com/api/public/portal/acme/requests/r1":   1,
+		"https://app.example.com/api/public/portal/other/session":      0,
+		"https://app.example.com/api/public/portal/acme-other/session": 0,
+	} {
+		u, _ := url.Parse(target)
+		if got := len(jar.Cookies(u)); got != want {
+			t.Errorf("%s receives %d portal cookies, want %d", target, got, want)
+		}
+	}
+}
+
+func TestPortalSessionCookieClearsSlugAndLegacyPaths(t *testing.T) {
+	request := portalSlugRequest(http.MethodDelete, "/api/public/portal/acme/session", "acme")
+	recorder := httptest.NewRecorder()
+	clearPortalCookie(recorder, request, portalCookiePath(request))
+	clearPortalCookie(recorder, request, portalCookieRoot)
+	cookies := recorder.Result().Cookies()
+	if len(cookies) != 2 || cookies[0].Path != "/api/public/portal/acme" || cookies[1].Path != "/api/public/portal/" {
+		t.Fatalf("unexpected cleared cookies: %+v", cookies)
+	}
+	for _, cookie := range cookies {
+		if cookie.MaxAge != -1 || cookie.Value != "" {
+			t.Fatalf("cookie not cleared: %+v", cookie)
+		}
 	}
 }
 

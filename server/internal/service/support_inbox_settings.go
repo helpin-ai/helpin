@@ -11,9 +11,11 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/helpin-ai/helpin/server/internal/deployment"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
@@ -171,6 +173,16 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.AIResponseMode != nil {
 		current.AIResponseMode = *patch.AIResponseMode
 	}
+	if patch.PortalAIMode != nil {
+		current.PortalAIMode = *patch.PortalAIMode
+	}
+	if patch.PortalAIAgentID != nil {
+		if value := strings.TrimSpace(*patch.PortalAIAgentID); value != "" {
+			current.PortalAIAgentID = &value
+		} else {
+			current.PortalAIAgentID = nil
+		}
+	}
 	if patch.AIPreRouterMode != nil {
 		current.AIPreRouterMode = *patch.AIPreRouterMode
 	}
@@ -314,14 +326,14 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.PortalEnabled != nil {
 		current.PortalEnabled = *patch.PortalEnabled
 	}
-	if patch.PortalRequestsOnly != nil {
-		current.PortalRequestsOnly = *patch.PortalRequestsOnly
-	}
 	if patch.PortalAnonymousIntakeEnabled != nil {
 		current.PortalAnonymousIntakeEnabled = *patch.PortalAnonymousIntakeEnabled
 	}
 	if patch.PortalIntakeEnabled != nil {
 		current.PortalIntakeEnabled = *patch.PortalIntakeEnabled
+	}
+	if patch.PortalAccessMode != nil {
+		current.PortalAccessMode = strings.TrimSpace(*patch.PortalAccessMode)
 	}
 	if patch.WidgetName != nil {
 		current.WidgetName = *patch.WidgetName
@@ -712,6 +724,9 @@ func (s *SupportInboxService) UpdateInstallationSettings(ctx context.Context, wo
 	if supportTranslationLanguages[merged.DefaultAgentLanguage] == "" {
 		return nil, nil, fmt.Errorf("unsupported default translation language")
 	}
+	if err := s.validatePortalSettings(ctx, workspaceID, merged, req); err != nil {
+		return nil, nil, err
+	}
 	if merged.DelayedTeamReplyMinutes < 1 || merged.DelayedTeamReplyMinutes > 1440 {
 		return nil, nil, fmt.Errorf("delayed team reply wait must be between 1 and 1440 minutes")
 	}
@@ -770,7 +785,39 @@ func (s *SupportInboxService) UpdateInstallationSettings(ctx context.Context, wo
 	}
 	inst.Settings = string(raw)
 
-	if err := s.installationRepo.Update(ctx, inst); err != nil {
+	stopPortalAI := current.PortalEnabled && current.PortalAIMode != "off" && (!merged.PortalEnabled || merged.PortalAIMode == "off")
+	if stopPortalAI {
+		var stopped []model.SupportConversation
+		err = s.conversationRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := repository.NewSupportInboxInstallationRepository(tx).Update(ctx, inst); err != nil {
+				return err
+			}
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("workspace_id = ? AND channel = ? AND (ai_state = ? OR flow_state = ? OR ai_active_run_id IS NOT NULL)", workspaceID, "portal", "pending", model.SupportConversationFlowStateAIHandling).
+				Find(&stopped).Error; err != nil {
+				return err
+			}
+			if len(stopped) == 0 {
+				return nil
+			}
+			ids := make([]string, 0, len(stopped))
+			for _, conv := range stopped {
+				ids = append(ids, conv.ID)
+			}
+			return tx.Model(&model.SupportConversation{}).Where("workspace_id = ? AND id IN ?", workspaceID, ids).
+				Updates(map[string]any{"human_takeover": true, "assigned_agent_id": nil,
+					"ai_state": "escalated", "flow_state": model.SupportConversationFlowStateWaitingForHuman,
+					"ai_active_run_id": nil, "ai_control_version": gorm.Expr("ai_control_version + 1")}).Error
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		if s.supportAIService != nil {
+			for _, conv := range stopped {
+				s.supportAIService.cancelControlledRun(ctx, workspaceID, conv.ID, derefString(conv.AIActiveRunID))
+			}
+		}
+	} else if err := s.installationRepo.Update(ctx, inst); err != nil {
 		return nil, nil, err
 	}
 
@@ -1067,4 +1114,59 @@ func (s *SupportInboxService) UpdateCannedResponse(ctx context.Context, workspac
 // DeleteCannedResponse deletes a canned response.
 func (s *SupportInboxService) DeleteCannedResponse(ctx context.Context, workspaceID, id string) error {
 	return s.cannedResponseRepo.Delete(ctx, workspaceID, id)
+}
+
+// ErrPortalReplyDeliveryUnavailable reports that anonymous portal intake
+// cannot be enabled because agents could not reply to submitters by email.
+var ErrPortalReplyDeliveryUnavailable = errors.New("requests without sign-in need outbound email: an application email sender for confirmations, plus Redis and the Postmark reply server so agents can reply")
+
+func (s *SupportInboxService) validatePortalSettings(ctx context.Context, workspaceID string, merged model.SupportInboxSettings, req model.UpdateInstallationSettingsRequest) error {
+	if merged.PortalAccessMode != model.SupportPortalAccessModeApprovedContacts && merged.PortalAccessMode != model.SupportPortalAccessModeAnyVerifiedEmail {
+		return fmt.Errorf("unsupported portal access mode")
+	}
+	if merged.PortalAIMode != "off" && merged.PortalAIMode != "internal_note" && merged.PortalAIMode != "ai_first" {
+		return fmt.Errorf("portal_ai_mode must be off, internal_note, or ai_first")
+	}
+	if merged.PortalAIMode != "off" {
+		agentID := strings.TrimSpace(derefString(merged.PortalAIAgentID))
+		if agentID == "" {
+			agentID = strings.TrimSpace(derefString(merged.AIAgentID))
+		}
+		if agentID == "" || s.agentRepo == nil {
+			return fmt.Errorf("a support agent is required for portal AI")
+		}
+		agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
+		if err != nil || agent == nil {
+			return fmt.Errorf("selected portal AI agent was not found")
+		}
+		if err := validateAgentTarget(agent, "support_conversation"); err != nil {
+			return fmt.Errorf("selected portal AI agent must support conversations: %w", err)
+		}
+	}
+	// Only a request that turns anonymous intake on is refused, so unrelated
+	// saves keep working if delivery is later unconfigured; the portal itself
+	// stops offering intake at runtime in that case.
+	if req.PortalAnonymousIntakeEnabled != nil && *req.PortalAnonymousIntakeEnabled && !s.PortalIntakeEmailAvailable() {
+		return ErrPortalReplyDeliveryUnavailable
+	}
+	return nil
+}
+
+// PortalReplyDeliveryAvailable reports whether agent replies on portal
+// requests can reach customers by email.
+func (s *SupportInboxService) PortalReplyDeliveryAvailable() bool {
+	return s.emailFallbackService.ReplyDeliveryAvailable()
+}
+
+// SetPortalConfirmationEmailReady registers the check for the application
+// sender that emails portal confirmations and intake receipts.
+func (s *SupportInboxService) SetPortalConfirmationEmailReady(ready func() bool) {
+	s.portalConfirmationEmailReady = ready
+}
+
+// PortalIntakeEmailAvailable reports whether anonymous portal intake can
+// email its submitter: a confirmation or receipt from the application sender,
+// and later agent replies through support email.
+func (s *SupportInboxService) PortalIntakeEmailAvailable() bool {
+	return s.portalConfirmationEmailReady != nil && s.portalConfirmationEmailReady() && s.PortalReplyDeliveryAvailable()
 }

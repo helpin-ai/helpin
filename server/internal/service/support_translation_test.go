@@ -123,6 +123,27 @@ func TestTranslationSendAutomaticallyPreservesDeliveryAndDeduplicates(t *testing
 		})
 	}
 }
+
+func TestTranslatedPortalReplyUsesPortalSurfaceWithoutWidgetSession(t *testing.T) {
+	env, conv, _ := translationFixture(t)
+	conv.Source, conv.Channel, conv.PortalVisible, conv.AnonymousID = "portal", "portal", true, nil
+	if err := env.convRepo.Update(context.Background(), conv); err != nil {
+		t.Fatal(err)
+	}
+	req := explicitDeliveryRequest(t, "chat_only")
+	req.Content = "Hello, we are looking into it."
+	req.AutoTranslate = true
+	req.TranslationTargetLanguage = "de"
+	req.ClientMessageID = uuid.NewString()
+	actor := "22222222-2222-2222-2222-222222222222"
+	msg, err := env.service.supportInboxService.CreateConversationMessage(context.Background(), conv.WorkspaceID, conv.ID, req, "user", &actor, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg == nil || !portalMessageVisible(msg) {
+		t.Fatalf("portal message=%+v", msg)
+	}
+}
 func TestTranslationFailureNeverSendsOriginal(t *testing.T) {
 	env, c, p := translationFixture(t)
 	p.fail = true

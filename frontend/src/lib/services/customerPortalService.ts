@@ -1,4 +1,5 @@
-import { API_BASE } from '@/lib/api'
+import { API_BASE, uploadToS3 } from '@/lib/api'
+import type { SupportAttachmentPolicy } from '@/lib/supportAttachmentFiles'
 
 export interface CustomerPortalBranding {
   name: string
@@ -7,11 +8,26 @@ export interface CustomerPortalBranding {
 
 export interface CustomerPortalConfiguration {
   enabled: boolean
-  requests_only: boolean
   intake_enabled: boolean
   anonymous_intake_enabled: boolean
   file_uploads_enabled: boolean
+  attachments?: CustomerPortalAttachmentPolicy
   branding: CustomerPortalBranding
+}
+
+/** Server upload rules plus the portal's per-message file limit. */
+export interface CustomerPortalAttachmentPolicy extends SupportAttachmentPolicy {
+  max_files: number
+}
+
+export interface CustomerPortalUploadOptions {
+  onProgress?: (percent: number) => void
+  signal?: AbortSignal
+}
+
+export interface CustomerPortalUploadedFile {
+  id: string
+  name: string
 }
 
 export interface CustomerPortalCustomer {
@@ -33,6 +49,7 @@ export interface CustomerPortalRequest {
 
 export interface CustomerPortalRequestDetail extends CustomerPortalRequest {
   can_reply: boolean
+  ai_processing?: boolean
   messages: Array<{
     id: string
     content: string
@@ -46,11 +63,10 @@ export interface CustomerPortalRequestDetail extends CustomerPortalRequest {
 
 export type CustomerPortalRequestFilter = 'all' | CustomerPortalRequest['status']
 
-interface CreatedCustomerPortalRequest {
-  id: string
-  subject: string
-  status: string
+export interface CreatedCustomerPortalRequest extends CustomerPortalRequest {
+  created_at: string
   updated_at: string
+  resolved_at?: string | null
 }
 
 export interface CreateCustomerPortalRequestInput {
@@ -135,31 +151,34 @@ export const customerPortalService = {
     portalRequest<CustomerPortalRequestDetail>(slug, `/requests/${encodeURIComponent(reference)}/replies`, {
       method: 'POST', body: JSON.stringify({ content, attachment_ids }),
     }),
-  uploadAttachment: async (slug: string, file: File, reference?: string) => {
-    if (file.size <= 0 || file.size > 100 * 1024 * 1024) throw new Error('File must be under 100 MB.')
+  uploadAttachment: (slug: string, file: File, reference?: string, options: CustomerPortalUploadOptions = {}) => {
     const path = reference ? `/requests/${encodeURIComponent(reference)}/attachments` : '/attachments'
-    const result = await portalRequest<{ attachment: { id: string }; upload_url: string }>(slug, path, {
-      method: 'POST', body: JSON.stringify({ file_name: file.name, file_size: file.size, content_type: file.type }),
-    })
-    const uploaded = await fetch(result.upload_url, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
-    if (!uploaded.ok) throw new Error('File upload failed.')
-    await portalRequest<void>(slug, `${path}/${encodeURIComponent(result.attachment.id)}/confirm`, { method: 'PATCH' })
-    return { id: result.attachment.id, name: file.name }
+    return uploadPortalFile(slug, path, file, {}, options)
   },
-  uploadAnonymousAttachment: async (slug: string, token: string, file: File) => {
-    if (file.size <= 0 || file.size > 100 * 1024 * 1024) throw new Error('File must be under 100 MB.')
-    const headers = { Authorization: `Bearer ${token}` }
-    const result = await portalRequest<{ attachment: { id: string }; upload_url: string }>(slug, '/intake/attachments', {
-      method: 'POST', headers, body: JSON.stringify({ file_name: file.name, file_size: file.size, content_type: file.type }),
-    })
-    const uploaded = await fetch(result.upload_url, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
-    if (!uploaded.ok) throw new Error('File upload failed.')
-    await portalRequest<void>(slug, `/intake/attachments/${encodeURIComponent(result.attachment.id)}/confirm`, { method: 'PATCH', headers })
-    return { id: result.attachment.id, name: file.name }
-  },
+  uploadAnonymousAttachment: (slug: string, token: string, file: File, options: CustomerPortalUploadOptions = {}) =>
+    uploadPortalFile(slug, '/intake/attachments', file, { Authorization: `Bearer ${token}` }, options),
   createRequest: (slug: string, input: CreateCustomerPortalRequestInput) =>
     portalRequest<CreatedCustomerPortalRequest>(slug, '/requests', {
       method: 'POST',
       body: JSON.stringify(input),
     }),
+}
+
+// uploadPortalFile registers the file, uploads it to storage with progress,
+// then confirms it. Validation errors from the server surface as messages.
+async function uploadPortalFile(
+  slug: string,
+  path: string,
+  file: File,
+  headers: Record<string, string>,
+  { onProgress, signal }: CustomerPortalUploadOptions,
+): Promise<CustomerPortalUploadedFile> {
+  const result = await portalRequest<{ attachment: { id: string }; upload_url: string }>(slug, path, {
+    method: 'POST', headers, signal,
+    body: JSON.stringify({ file_name: file.name, file_size: file.size, content_type: file.type }),
+  })
+  const uploaded = await uploadToS3(result.upload_url, file, onProgress, undefined, signal)
+  if (!uploaded.ok) throw new Error(uploaded.error === 'Upload cancelled' ? 'Upload cancelled' : 'File upload failed. Please try again.')
+  await portalRequest<void>(slug, `${path}/${encodeURIComponent(result.attachment.id)}/confirm`, { method: 'PATCH', headers, signal })
+  return { id: result.attachment.id, name: file.name }
 }

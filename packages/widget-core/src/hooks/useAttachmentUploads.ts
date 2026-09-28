@@ -68,7 +68,7 @@ export function useAttachmentUploads(scope: string, upload?: UploadAttachment) {
       const videoType = videoTypes[extension];
       if (videoType && (!file.type || file.type === 'application/octet-stream' || file.type === 'video/avi')) file = new File([file], file.name, { type: videoType, lastModified: file.lastModified });
       const id = `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined;
+      const previewUrl = file.type.startsWith('image/') && file.type !== 'image/heic' && file.type !== 'image/heif' ? URL.createObjectURL(file) : undefined;
       entries.current.set(id, { file, previewUrl });
       rows.push({ id, fileName: file.name, fileType: file.type || 'application/octet-stream', fileSize: file.size, previewUrl, status: 'uploading', progress: 0 });
     }

@@ -206,7 +206,11 @@ func (r *CRMContactRepository) ListByEmails(ctx context.Context, workspaceID str
 // Update updates a contact.
 func (r *CRMContactRepository) Update(ctx context.Context, contact *model.CRMContact) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		result := tx.Model(&model.CRMContact{}).Where("workspace_id = ? AND id = ?", contact.WorkspaceID, contact.ID).Select("*").Updates(contact)
+		if err := guardPortalProtectedContact(ctx, tx, contact.WorkspaceID, contact.ID, contact.Email, false); err != nil {
+			return err
+		}
+		// portal_access is read-only here; SetContactPortalAccess owns it.
+		result := tx.Model(&model.CRMContact{}).Where("workspace_id = ? AND id = ?", contact.WorkspaceID, contact.ID).Select("*").Omit("portal_access").Updates(contact)
 		if result.Error != nil {
 			return fmt.Errorf("update contact: %w", result.Error)
 		}

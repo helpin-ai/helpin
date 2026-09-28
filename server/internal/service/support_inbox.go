@@ -64,23 +64,26 @@ type SupportInboxService struct {
 	conversationAgentRunner func(ctx context.Context, workspaceID, conversationID string) (*model.AgentRun, error)
 	supportAIService        *SupportAIService
 	emailFallbackService    *EmailFallbackService
-	notificationService     *NotificationService
-	pushSenderService       *PushSenderService
-	workspaceRepo           *repository.WorkspaceRepository
-	authzService            *authorization.AuthzService
-	attachmentService       *SupportAttachmentService
-	linkPreviewService      SupportMessageLinkPreviewer
-	presence                websocket.PresenceProvider
-	statusOverrideRepo      *repository.SupportTeammateStatusOverrideRepository
-	emailLogRepo            *repository.SupportEmailLogRepository
-	triageEventRepo         *repository.SupportConversationTriageEventRepository
-	postmarkDomainClient    *email.DomainClient
-	triageService           *SupportInboxTriageService
-	taskService             *PMTaskService
-	geoIPResolver           geoip.Resolver
-	supportEventRecorder    SupportEventRecorder
-	entitlementSvc          EntitlementPolicy
-	routeDomain             string
+	// portalConfirmationEmailReady reports whether the application sender
+	// used for portal confirmations and receipts is configured.
+	portalConfirmationEmailReady func() bool
+	notificationService          *NotificationService
+	pushSenderService            *PushSenderService
+	workspaceRepo                *repository.WorkspaceRepository
+	authzService                 *authorization.AuthzService
+	attachmentService            *SupportAttachmentService
+	linkPreviewService           SupportMessageLinkPreviewer
+	presence                     websocket.PresenceProvider
+	statusOverrideRepo           *repository.SupportTeammateStatusOverrideRepository
+	emailLogRepo                 *repository.SupportEmailLogRepository
+	triageEventRepo              *repository.SupportConversationTriageEventRepository
+	postmarkDomainClient         *email.DomainClient
+	triageService                *SupportInboxTriageService
+	taskService                  *PMTaskService
+	geoIPResolver                geoip.Resolver
+	supportEventRecorder         SupportEventRecorder
+	entitlementSvc               EntitlementPolicy
+	routeDomain                  string
 }
 
 func (s *SupportInboxService) SetDocsSearchRepository(docsSearchRepo *repository.DocsSearchRepository) {
@@ -2052,8 +2055,9 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		return nil, fmt.Errorf("confirm the primary recipient before sending an email reply")
 	}
 
+	portalReplySurface := conv.Channel == "portal" && conv.Source == "portal" && conv.PortalVisible
 	if (req.DeliveryMode == model.SupportDeliveryChatOnly || req.DeliveryMode == model.SupportDeliveryChatAndEmail) &&
-		strings.TrimSpace(derefString(conv.AnonymousID)) == "" && conv.Source != "widget" {
+		strings.TrimSpace(derefString(conv.AnonymousID)) == "" && conv.Source != "widget" && !portalReplySurface {
 		return nil, fmt.Errorf("this conversation has no chat session; choose email only")
 	}
 
@@ -2249,6 +2253,11 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 			}
 			if err := s.messageRepo.WithTx(tx).Create(ctx, msg); err != nil {
 				return err
+			}
+			if mode, ok := ctx.Value(portalReplyAIKey{}).(string); ok && mode != "" {
+				if err := repository.EnqueuePortalAIDispatch(ctx, tx, workspaceID, ticketID, msg.ID, mode); err != nil {
+					return err
+				}
 			}
 			if len(req.AttachmentIDs) > 0 {
 				if audit.SessionID == "" {

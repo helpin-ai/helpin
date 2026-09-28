@@ -218,7 +218,12 @@ func (r *AIMessageProcessingRepository) createReply(ctx context.Context, process
 			if err := json.Unmarshal([]byte(installation.Settings), &settings); err != nil {
 				return err
 			}
-			if !settings.AIEnabled || (settings.AIResponseMode != "ai_first" && settings.AIResponseMode != "internal_note") {
+			if conversation.Channel == "portal" {
+				if !settings.PortalEnabled || (settings.PortalAIMode != "ai_first" && settings.PortalAIMode != "internal_note") ||
+					(!message.IsInternal && settings.PortalAIMode != "ai_first") {
+					return nil
+				}
+			} else if !settings.AIEnabled || (settings.AIResponseMode != "ai_first" && settings.AIResponseMode != "internal_note") {
 				return nil
 			}
 		}

@@ -682,6 +682,12 @@ func (s *EmailFallbackService) StartReconciler(ctx context.Context) {
 	}
 }
 
+// ReplyDeliveryAvailable reports whether agent replies can be emailed to
+// customers: the outbox needs Redis and the Postmark reply client.
+func (s *EmailFallbackService) ReplyDeliveryAvailable() bool {
+	return s != nil && s.redis != nil && s.emailClient != nil
+}
+
 // OnAgentReply enqueues an outbound email candidate when the feature is enabled.
 func (s *EmailFallbackService) OnAgentReply(ctx context.Context, workspaceID string, msg *model.SupportMessage, conv *model.SupportConversation) error {
 	if s == nil {
@@ -2096,43 +2102,31 @@ func (s *EmailFallbackService) fireEmailBatch(ctx context.Context, conversationI
 	}
 	preparedPending, emailAttachments := s.prepareEmailAttachments(ctx, pending)
 	htmlBody, textBody := s.renderBodies(preparedPending, agentName, workspaceName, chatLink, unsubscribeEmail)
+	// The portal link is advisory: signing in claims eligible email conversations
+	// (see CustomerPortalRepository.AssociateVerifiedEmail), so sending never
+	// changes visibility or creates identities for an unverified address.
 	portalEmailEligible := conv.Channel == "email" && conv.Source == "email" &&
-		conv.Status != model.SupportConversationStatusSpam && conv.DeletedAt == nil &&
+		conv.Status != model.SupportConversationStatusSpam &&
 		strings.TrimSpace(conv.PrimaryRecipientState) != model.SupportPrimaryRecipientStateUnconfirmed &&
 		strings.TrimSpace(derefString(conv.CustomerEmail)) != ""
 	if settings.PortalEnabled && workspace != nil && strings.TrimSpace(s.appBaseURL) != "" && (conv.PortalVisible || portalEmailEligible && conv.PortalVisibilityChangedAt == nil) {
 		portalURL := strings.TrimRight(s.appBaseURL, "/") + "/portal/" + url.PathEscape(workspace.Slug)
-		if portalEmailEligible && !conv.PortalVisible && conv.PortalVisibilityChangedAt == nil {
-			result := s.convRepo.DB().WithContext(ctx).Model(&model.SupportConversation{}).
-				Where("id = ? AND workspace_id = ? AND portal_visible = false AND portal_visibility_changed_at IS NULL", conv.ID, conv.WorkspaceID).
-				Update("portal_visible", true)
-			if result.Error != nil {
-				s.logger.WarnContext(ctx, "portal email visibility update failed", "workspace_id", conv.WorkspaceID, "conversation_id", conv.ID, "error", result.Error)
-			} else if result.RowsAffected == 1 {
-				conv.PortalVisible = true
-			}
+		portalRepo := repository.NewCustomerPortalRepository(s.convRepo.DB())
+		// Only customers who may sign in get the link; others would hit a dead end.
+		contacts, err := portalRepo.ContactsForEmail(ctx, conv.WorkspaceID, derefString(conv.CustomerEmail))
+		portalEligible := err == nil && evaluatePortalEligibility(settings.EffectivePortalAccessMode(), contacts).Eligible
+		if err != nil {
+			s.logger.WarnContext(ctx, "portal email eligibility lookup failed", "workspace_id", conv.WorkspaceID, "conversation_id", conv.ID, "error", err)
 		}
-		if conv.PortalVisible && portalEmailEligible {
-			portal := NewSupportPortalService(repository.NewSupportPortalRepository(s.convRepo.DB()))
-			if identity, err := portal.FindOrCreateIdentity(ctx, conv.WorkspaceID, *conv.CustomerEmail, conv.CustomerName); err != nil {
-				s.logger.WarnContext(ctx, "portal email identity lookup failed", "workspace_id", conv.WorkspaceID, "conversation_id", conv.ID, "error", err)
-			} else if _, err := portal.EnsureRequestReference(ctx, conv.WorkspaceID, conv.ID, identity.ID); err != nil {
-				s.logger.WarnContext(ctx, "portal email reference creation failed", "workspace_id", conv.WorkspaceID, "conversation_id", conv.ID, "error", err)
-			}
-		}
-		var reference struct {
-			Reference string
-		}
-		if err := s.convRepo.DB().WithContext(ctx).Table("support_portal_request_references AS refs").
-			Select("refs.reference").Joins("JOIN support_portal_identities AS identity ON identity.id = refs.portal_identity_id AND identity.workspace_id = refs.workspace_id").
-			Where("refs.workspace_id = ? AND refs.conversation_id = ? AND lower(identity.email) = lower(?)", conv.WorkspaceID, conv.ID, strings.TrimSpace(derefString(conv.CustomerEmail))).
-			Take(&reference).Error; err == nil {
-			portalURL += "/requests/" + url.PathEscape(reference.Reference)
-		} else if err != gorm.ErrRecordNotFound {
+		if reference, err := portalRepo.ReferenceForCustomer(ctx, conv.WorkspaceID, conv.ID, derefString(conv.CustomerEmail)); err != nil {
 			s.logger.WarnContext(ctx, "portal email link lookup failed", "workspace_id", conv.WorkspaceID, "conversation_id", conv.ID, "error", err)
+		} else if reference != "" {
+			portalURL += "/requests/" + url.PathEscape(reference)
 		}
-		htmlBody += `<p><a href="` + html.EscapeString(portalURL) + `">View your request in the support portal</a> (sign-in required)</p>`
-		textBody += "\n\nView your request in the support portal (sign-in required):\n" + portalURL
+		if portalEligible {
+			htmlBody += `<p><a href="` + html.EscapeString(portalURL) + `">View your request in the support portal</a> (sign-in required)</p>`
+			textBody += "\n\nView your request in the support portal (sign-in required):\n" + portalURL
+		}
 	}
 
 	var postmarkMessageID, sentFromAddress, fromFallbackReason, fromSource string

@@ -17,6 +17,12 @@ type SupportAttachmentHandler struct {
 	inboxService      *service.SupportInboxService
 }
 
+// Policy handles GET /api/support/inbox/attachments/policy: the size and
+// type rules the composer applies before uploading.
+func (h *SupportAttachmentHandler) Policy(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, service.CurrentSupportAttachmentPolicy())
+}
+
 // NewSupportAttachmentHandler creates a new SupportAttachmentHandler.
 func NewSupportAttachmentHandler(
 	attachmentService *service.SupportAttachmentService,

@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,7 +25,6 @@ func TestPortalCreateRequestProjectsFirstCustomerMessage(t *testing.T) {
 		`ALTER TABLE support_conversations ADD COLUMN email_thread_participants TEXT`,
 		`ALTER TABLE support_conversations ADD COLUMN crm_company_id TEXT`,
 		`ALTER TABLE support_conversations ADD COLUMN portal_visibility_changed_at DATETIME`,
-		`ALTER TABLE support_conversations ADD COLUMN deleted_at DATETIME`,
 		`CREATE TABLE support_portal_request_references (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, portal_identity_id TEXT, reference TEXT, created_at DATETIME)`,
 		`CREATE TABLE support_portal_audit_events (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, portal_identity_id TEXT, actor_type TEXT, actor_user_id TEXT, event_type TEXT, metadata TEXT, occurred_at DATETIME, created_at DATETIME)`,
 	} {
@@ -35,11 +35,13 @@ func TestPortalCreateRequestProjectsFirstCustomerMessage(t *testing.T) {
 	workspaceID := uuid.NewString()
 	identity := &model.SupportPortalIdentity{ID: uuid.NewString(), WorkspaceID: workspaceID, Email: "customer@example.com"}
 	flowState := model.SupportConversationFlowStateWaitingForHuman
-	conversation, request, err := NewPortalAuthRepository(db).CreateRequest(context.Background(), workspaceID, identity, "Help", "Please help", "REQ-123", nil, nil, nil, &flowState, nil, "")
+	conversation, request, err := NewCustomerPortalRepository(db).CreateRequest(context.Background(), PortalRequestDraft{
+		WorkspaceID: workspaceID, Identity: identity, Email: identity.Email, Subject: "Help", Description: "Please help", FlowState: &flowState,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if request.Reference != "REQ-123" || request.LastActivityAt == nil {
+	if !strings.HasPrefix(request.Reference, "req_") || request.LastActivityAt == nil || !stored(t, db, conversation.ID).PortalVisible {
 		t.Fatalf("unexpected portal request: %+v", request)
 	}
 	var stored model.SupportConversation
@@ -61,14 +63,14 @@ func TestPortalAuthTokensAreScopedSingleUseAndRevocable(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, statement := range []string{
-		`CREATE TABLE support_portal_magic_links (id TEXT PRIMARY KEY, workspace_id TEXT, email TEXT, token_hash TEXT, expires_at DATETIME, used_at DATETIME, created_at DATETIME)`,
-		`CREATE TABLE support_portal_sessions (id TEXT PRIMARY KEY, workspace_id TEXT, identity_id TEXT, token_hash TEXT, expires_at DATETIME, revoked_at DATETIME, created_at DATETIME)`,
+		`CREATE TABLE support_portal_magic_links (id TEXT PRIMARY KEY, workspace_id TEXT, email TEXT, token_hash TEXT, conversation_id TEXT, expires_at DATETIME, used_at DATETIME, created_at DATETIME)`,
+		`CREATE TABLE support_portal_sessions (id TEXT PRIMARY KEY, workspace_id TEXT, identity_id TEXT, crm_contact_id TEXT, token_hash TEXT, expires_at DATETIME, revoked_at DATETIME, reconciled_at DATETIME, created_at DATETIME)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
-	repo := NewPortalAuthRepository(db)
+	repo := NewCustomerPortalRepository(db)
 	ctx := context.Background()
 	now := time.Now()
 	link := &model.PortalMagicLink{ID: "link", WorkspaceID: "workspace-a", Email: "customer@example.com", TokenHash: "link-hash", ExpiresAt: now.Add(time.Minute)}
@@ -112,7 +114,7 @@ func TestPortalIntakeSessionIsScopedOneUseAndRollsBack(t *testing.T) {
 	if err := db.Exec(`CREATE TABLE support_portal_intake_sessions (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, email TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, expires_at DATETIME NOT NULL, used_at DATETIME, created_at DATETIME)`).Error; err != nil {
 		t.Fatal(err)
 	}
-	repo := NewPortalAuthRepository(db)
+	repo := NewCustomerPortalRepository(db)
 	ctx := context.Background()
 	now := time.Now()
 	session := &model.PortalIntakeSession{ID: uuid.NewString(), WorkspaceID: "workspace-a", Email: "customer@example.com", TokenHash: "hash", ExpiresAt: now.Add(time.Hour)}
@@ -147,5 +149,44 @@ func TestPortalIntakeSessionIsScopedOneUseAndRollsBack(t *testing.T) {
 	}
 	if created != 1 {
 		t.Fatalf("created %d requests with one token", created)
+	}
+}
+
+func stored(t *testing.T, db *gorm.DB, conversationID string) model.SupportConversation {
+	t.Helper()
+	var conversation model.SupportConversation
+	if err := db.First(&conversation, "id = ?", conversationID).Error; err != nil {
+		t.Fatal(err)
+	}
+	return conversation
+}
+
+func TestPortalMarkSessionReconciledOncePerInterval(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE TABLE support_portal_sessions (id TEXT PRIMARY KEY, workspace_id TEXT, identity_id TEXT, crm_contact_id TEXT, token_hash TEXT, expires_at DATETIME, revoked_at DATETIME, reconciled_at DATETIME, created_at DATETIME)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO support_portal_sessions (id, workspace_id, identity_id, token_hash, expires_at) VALUES ('session', 'ws', 'identity', 'hash', ?)`, time.Now().Add(time.Hour)).Error; err != nil {
+		t.Fatal(err)
+	}
+	repo := NewCustomerPortalRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+	for _, tc := range []struct {
+		name string
+		at   time.Time
+		want bool
+	}{
+		{"first read reconciles", now, true},
+		{"read within interval skips", now.Add(time.Minute), false},
+		{"read after interval reconciles", now.Add(6 * time.Minute), true},
+	} {
+		got, err := repo.MarkSessionReconciled(ctx, "session", tc.at, 5*time.Minute)
+		if err != nil || got != tc.want {
+			t.Fatalf("%s: got %v err %v, want %v", tc.name, got, err, tc.want)
+		}
 	}
 }

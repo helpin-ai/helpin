@@ -38,7 +38,7 @@ func TestPortalAuthAssociateVerifiedEmailScopedAndVisible(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	repo := NewPortalAuthRepository(db)
+	repo := NewCustomerPortalRepository(db)
 	if err := repo.AssociateVerifiedEmail(db, "workspace-a", "alice@example.com", "identity-a"); err != nil {
 		t.Fatal(err)
 	}
@@ -127,10 +127,6 @@ func TestPortalAuthAssociateVerifiedEmailScopedAndVisible(t *testing.T) {
 	if err != nil || conversation != nil {
 		t.Fatalf("conflicting widget reference readable: %v %v", conversation, err)
 	}
-	projectionRef, err := NewSupportPortalRepository(db).FindReferenceForIdentity(context.Background(), "workspace-a", ref, "identity-a")
-	if err != nil || projectionRef != nil {
-		t.Fatalf("conflicting widget reference projected: %v %v", projectionRef, err)
-	}
 	if err := db.Exec(`DELETE FROM support_widget_sessions WHERE id = 'late-conflict'`).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +155,7 @@ func TestPortalAuthReconcileRequestsAfterSessionEstablished(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	repo := NewPortalAuthRepository(db)
+	repo := NewCustomerPortalRepository(db)
 	ctx := context.Background()
 	if err := repo.ReconcileRequests(ctx, "ws", "missing"); err == nil {
 		t.Fatal("unknown identity must not reconcile")
