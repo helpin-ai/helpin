@@ -1,4 +1,3 @@
-import { describeToolCall } from '@/components/pm/CodingSession/toolCallPresentation';
 import { resolveVisibleTurn } from './agentTurnState';
 import { isRuntimeControlToolName } from '@/lib/toolNames';
 import type { AgentRun, CodingSessionStreamState, CommandBarPlanSummary, RunPlanArtifact } from '@/lib/pmTypes';
@@ -124,14 +123,14 @@ export function resolveAgentLiveProgress({
     if (segment.kind !== 'tool_call') continue;
     if (isRuntimeControlToolName(segment.tool_call.tool_name)) continue;
     if (segment.tool_call.status === 'running') {
-      return { label: `${describeToolCall(segment.tool_call).primaryLabel}…`, startedAt, tone: 'working' };
+      return { label: 'Working…', startedAt, tone: 'working' };
     }
     break;
   }
 
   const lastSegment = segments[segments.length - 1];
   const step = activePlanStep(currentPlan);
-  if (step) return { label: step, startedAt, tone: 'working' };
+  if (step) return { label: 'Working…', startedAt, tone: 'working' };
 
   if (
     lastSegment?.kind === 'assistant_message'

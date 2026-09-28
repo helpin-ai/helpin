@@ -1085,6 +1085,23 @@ describe('Timeline view', () => {
     expect(container.textContent).not.toContain('Research Agent');
   });
 
+  it('shows each tool action once and keeps Working steady across tool updates', () => {
+    useDockStore.setState({ transcriptView: 'timeline' });
+    const render = (status: 'running' | 'completed') => act(() => root.render(<DockTranscript
+      stream={streamWithMessages([{ ...assistantMessage('tools', '', 1),
+        turn_segments: [toolTurn('lookup', 'list_tasks', 100, status)] }])}
+      active compactAssistantProgress />));
+    render('running');
+    const summary = container.querySelector('[data-dock-activity-timeline] > button');
+    expect(summary?.textContent).toContain('Working…');
+    expect(summary?.textContent).not.toContain('List Tasks');
+    expect(container.textContent?.match(/List Tasks/g)).toHaveLength(1);
+    expect(container.querySelector('[data-agent-work-loader]')).not.toBeNull();
+    render('completed');
+    expect(container.querySelector('[data-dock-activity-timeline] > button')?.textContent).toContain('Working…');
+    expect(container.textContent?.match(/List Tasks/g)).toHaveLength(1);
+  });
+
   it('shows live activity with the branded loader and collapses it when the final answer arrives', () => {
     useDockStore.setState({ transcriptView: 'timeline' });
     const progress = { ...assistantMessage('progress', 'Reviewing your tasks.', 1), message_type: 'assistant_progress' };

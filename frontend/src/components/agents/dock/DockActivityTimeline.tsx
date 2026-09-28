@@ -103,12 +103,11 @@ export function DockActivityTimeline({ group, runStatus, pauseReason, resolveAct
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [group.active]);
-  const latestTool = [...group.segments].reverse().find(segment => segment.kind === 'tool' && segment.toolCall.status === 'running');
   const toolStarts = group.segments.flatMap(segment => segment.kind === 'tool' && segment.toolCall.started_at ? [Date.parse(segment.toolCall.started_at)] : []).filter(Number.isFinite);
   const startedAt = group.startedAt ?? (toolStarts.length ? Math.min(...toolStarts) : undefined);
   const duration = group.durationMs ?? (group.active && startedAt !== undefined ? Math.max(0, now - startedAt) : undefined);
   const label = offline ? 'Offline — live updates paused' : delegated ? delegated.label : failed ? 'Some steps failed'
-    : group.active ? (latestTool?.kind === 'tool' ? describeToolCall(latestTool.toolCall).primaryLabel : 'Working…')
+    : group.active ? 'Working…'
     : group.completed || group.durationMs !== undefined ? 'Work completed'
     : runStatus === 'cancelled' ? 'Stopped'
     : runStatus === 'failed' ? 'Couldn’t finish'
