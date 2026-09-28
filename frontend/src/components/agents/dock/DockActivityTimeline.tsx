@@ -39,7 +39,7 @@ function ActivityRow({ segment, active }: { segment: TranscriptSegment; active: 
   const [clipped, setClipped] = useState(false);
   useLayoutEffect(() => {
     const preview = previewRef.current;
-    if (!preview) return;
+    if (!preview || open) return;
     // Measure the actual two-line preview, including font and dock-width changes.
     const measure = () => setClipped(preview.scrollHeight > preview.clientHeight + 1);
     measure();
@@ -56,10 +56,10 @@ function ActivityRow({ segment, active }: { segment: TranscriptSegment; active: 
       <div className={styles.step}>
         {narration ? (
           <>
-            {!open && <div ref={previewRef} className={cn(styles.narrativeText, styles.preview)}>
+            <div id={detailsId} ref={previewRef} className={cn(styles.narrativeText, !open && styles.preview)}>
               <MarkdownContent content={label} className="text-[13px] leading-[1.6] text-muted-foreground" />
-            </div>}
-            {(clipped || open) && <button type="button" className={styles.expand} aria-expanded={open} aria-controls={detailsId} onClick={() => setOpen(!open)}>{open ? 'Hide update' : 'Read update'}</button>}
+            </div>
+            {(clipped || open) && <button type="button" className={styles.expand} aria-expanded={open} aria-controls={detailsId} onClick={() => setOpen(!open)}>{open ? 'Show less' : 'Show more'}</button>}
           </>
         ) : (
           <button type="button" className={styles.stepButton} aria-expanded={open} aria-controls={detailsId} onClick={() => setOpen(!open)}>
@@ -68,7 +68,7 @@ function ActivityRow({ segment, active }: { segment: TranscriptSegment; active: 
             <DisclosureChevron open={open} className="mt-1 h-3 w-3 shrink-0" />
           </button>
         )}
-        {open && <div id={detailsId} className={styles.details}>
+        {open && !narration && <div id={detailsId} className={styles.details}>
           {tool ? <div className="space-y-2">
             {tool.result?.error && <p className="whitespace-pre-wrap text-destructive">{tool.result.error}</p>}
             {tool.args_text.trim() && <div><span className="text-[11px] font-medium">Input</span><pre className="mt-1 whitespace-pre-wrap break-words text-[11px]">{tool.args_text}</pre></div>}

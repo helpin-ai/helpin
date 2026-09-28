@@ -1105,7 +1105,7 @@ describe('Timeline view', () => {
     }
   });
 
-  it('offers Read update only for clipped text and rechecks on resize and content changes', () => {
+  it('offers Show more only for clipped text and rechecks on resize and content changes', () => {
     useDockStore.setState({ transcriptView: 'timeline' });
     let textHeight = 48;
     let onResize = () => {};
@@ -1122,22 +1122,27 @@ describe('Timeline view', () => {
         active compactAssistantProgress />));
       const content = 'I am checking the billing access rules and account recovery options. '.repeat(3);
       render(content);
-      expect(container.textContent).not.toContain('Read update');
+      expect(container.textContent).not.toContain('Show more');
       textHeight = 72;
       act(() => onResize());
-      const button = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Read update')!;
+      const button = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Show more')!;
       expect(button).toBeDefined();
+      const update = container.querySelector(`[id="${button.getAttribute('aria-controls')}"]`);
+      expect(update?.textContent).toContain(content.trim());
+      expect(button.previousElementSibling).toBe(update);
       act(() => button.click());
-      expect(button.textContent).toBe('Hide update');
+      expect(button.textContent).toBe('Show less');
+      expect(button.previousElementSibling).toBe(update);
+      expect(container.querySelector(`[id="${button.getAttribute('aria-controls')}"]`)).toBe(update);
       expect(container.querySelector(`[id="${button.getAttribute('aria-controls')}"]`)?.textContent).toContain(content.trim());
       act(() => button.click());
-      expect(button.textContent).toBe('Read update');
+      expect(button.textContent).toBe('Show more');
       textHeight = 48;
       act(() => onResize());
-      expect(container.textContent).not.toContain('Read update');
+      expect(container.textContent).not.toContain('Show more');
       textHeight = 72;
       render('A short update can still wrap in a narrow window.');
-      expect(container.textContent).toContain('Read update');
+      expect(container.textContent).toContain('Show more');
     } finally {
       height.mockRestore();
       scroll.mockRestore();
