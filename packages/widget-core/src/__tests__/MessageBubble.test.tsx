@@ -40,6 +40,24 @@ describe('MessageBubble', () => {
     expect(container.querySelector('.helpin-message--ai')).toBeTruthy();
   });
 
+  it('uses the Helpin mark for AI replies, preserving teammate photos and the welcome logo', () => {
+    const ai = render(<MessageBubble message={createMessage({ role: 'ai', senderAvatar: '/old-ai.png' })} />);
+    expect(ai.container.querySelector('svg.helpin-message-avatar')).toBeTruthy();
+    expect(ai.container.querySelector('img')).toBeNull();
+
+    const teammate = render(<MessageBubble message={createMessage({ role: 'agent', senderName: 'Arooj', senderAvatar: '/arooj.png' })} />);
+    expect(teammate.container.querySelector('img')?.getAttribute('src')).toBe('/arooj.png');
+    expect(teammate.container.querySelector('svg.helpin-message-avatar')).toBeNull();
+
+    const welcome = render(<MessageBubble message={createMessage({ role: 'ai', id: '__intro__', senderAvatar: '/logo.png' })} />);
+    expect(welcome.container.querySelector('.helpin-message-brand-logo')?.getAttribute('src')).toBe('/logo.png');
+  });
+
+  it('does not repeat the AI avatar for consecutive messages', () => {
+    const { container } = render(<MessageBubble message={createMessage({ role: 'ai' })} isFirstInGroup={false} />);
+    expect(container.querySelector('.helpin-message-agent-header')).toBeNull();
+  });
+
   it('renders system message', () => {
     const { container } = render(<MessageBubble message={createMessage({ role: 'system' })} />);
     expect(container.querySelector('.helpin-message--system')).toBeTruthy();

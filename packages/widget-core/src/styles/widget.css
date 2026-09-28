@@ -2098,7 +2098,6 @@
   max-width: 80%;
   background: var(--helpin-primary);
   color: var(--helpin-primary-foreground);
-  border-bottom-right-radius: 4px;
 }
 
 .helpin-message--agent,
@@ -2106,7 +2105,6 @@
 .helpin-message--system {
   background: var(--helpin-bg-muted);
   color: var(--helpin-fg);
-  border-bottom-left-radius: 4px;
 }
 
 .helpin-message--internal {
@@ -3138,7 +3136,7 @@
   background: var(--helpin-bg-muted);
 }
 
-/* Agent Message: avatar left, name right, bubbles indented below (Crisp-style) */
+/* Sender header above a reply bubble aligned with the thread edge. */
 .helpin-message-agent-header {
   display: flex;
   align-items: center;
@@ -3147,8 +3145,8 @@
 }
 
 .helpin-message-avatar {
-  width: 26px;
-  height: 26px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
@@ -3171,8 +3169,8 @@
 }
 
 .helpin-message-avatar-placeholder {
-  width: 26px;
-  height: 26px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: var(--helpin-bg-muted);
   color: var(--helpin-fg-secondary);
@@ -3186,13 +3184,12 @@
 
 .helpin-message-agent-name {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 400;
   color: var(--helpin-fg-secondary);
 }
 
-/* Bubble wrapper — indented to align with name (avatar width + gap) */
+/* Keep replies aligned with the sender avatar. */
 .helpin-message-agent-bubble-wrap {
-  padding-left: 34px; /* 26px avatar + 8px gap */
   width: 100%;
   min-width: 0;
   box-sizing: border-box;

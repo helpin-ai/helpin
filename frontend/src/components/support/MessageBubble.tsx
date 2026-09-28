@@ -1,3 +1,4 @@
+import { AskAgentAvatar } from '@/components/agents/AskAgentAvatar';
 import { SupportAIActivity } from './SupportAIActivity';
 import { getSupportAIActivity } from './supportAIActivity';
 import { PendingSendStatus } from './PendingSendStatus';
@@ -737,6 +738,13 @@ export const MessageBubble = memo(function MessageBubble({
         {fallbackAvatar}
       </TooltipTrigger>
       <TooltipContent side="left"><span className="text-xs font-medium">{resolvedSenderName}</span></TooltipContent>
+    </Tooltip>
+  ) : isAI || isAgent ? (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <AskAgentAvatar plateStyle="solid" radius={50} className="h-7 w-7" decorative={false} label={resolvedSenderName} />
+      </TooltipTrigger>
+      <TooltipContent side="right"><span className="text-xs font-medium">{resolvedSenderName}</span></TooltipContent>
     </Tooltip>
   ) : resolvedAvatarUrl ? (
     <Tooltip>

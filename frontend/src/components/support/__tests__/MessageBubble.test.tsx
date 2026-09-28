@@ -51,6 +51,22 @@ function renderBubble(
 }
 
 describe('MessageBubble', () => {
+  it.each(['ai', 'agent'] as const)('uses the Helpin avatar for %s replies and internal notes', (senderType) => {
+    for (const internal of [false, true]) {
+      const rendered = renderBubble({
+        id: 'ai-avatar', workspace_id: 'ws', conversation_id: 'conv', sender_type: senderType,
+        message_type: internal ? 'note' : 'reply', is_internal: internal, content: 'A useful update.',
+        sender_display_name: 'Helpin AI', sender_avatar_url: '/old-ai.png',
+        created_at: '2026-09-28T10:00:00Z', updated_at: '2026-09-28T10:00:00Z',
+      });
+      try {
+        expect(rendered.container.querySelector('.ask-agent-avatar')).not.toBeNull();
+        expect(rendered.container.querySelector('img[src="/old-ai.png"]')).toBeNull();
+        if (internal) expect(rendered.container.textContent).toContain('Internal note');
+      } finally { rendered.cleanup(); }
+    }
+  });
+
   it('does not show confidence for an AI follow-up without a score', () => {
     const rendered = renderBubble({
       id: 'follow-up', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'ai',
