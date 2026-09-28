@@ -57,7 +57,7 @@ const REASONS = [
 
 const TOOLS = [
   { Icon: Inbox, name: 'Help desk', examples: 'Like Intercom, Zendesk or Help Scout' },
-  { Icon: FolderKanban, name: 'Issue tracker', examples: 'Like Linear' },
+  { Icon: FolderKanban, name: 'Issue tracker', examples: 'Like Linear, Jira or Plane' },
   { Icon: Handshake, name: 'CRM', examples: 'Contacts, companies and deals' },
   { Icon: Mic, name: 'Meeting notetaker', examples: 'Calls, decisions and action items' },
   { Icon: BookOpen, name: 'Knowledge base', examples: 'Help center and product docs' },
@@ -108,7 +108,7 @@ export default function CompareHub() {
             <div className="platform-hero-copy">
               <span className="eyebrow">Compare Helpin</span>
               <h1>Why teams switch <span>to Helpin.</span></h1>
-              <p className="lede">Open source, on Helpin Cloud or your own servers: one customer history for support, projects, CRM, meetings and docs, with AI agents that do the work in between. See how Helpin compares with Intercom, Zendesk, Help Scout, Chatwoot and Linear, including where they’re stronger.</p>
+              <p className="lede">Open source, on Helpin Cloud or your own servers: one customer history for support, projects, CRM, meetings and docs, with AI agents that do the work in between. See how Helpin compares with Intercom, Zendesk, Help Scout, Chatwoot, Linear, Jira and Plane, including where they’re stronger.</p>
               <CtaRow primaryLabel="Start free trial" primaryHref={SIGNUP_URL} secondaryHref={DEMO_URL} secondaryLabel="Talk to us about switching" />
               <CtaNote trial support />
               <div className="platform-hero-points">

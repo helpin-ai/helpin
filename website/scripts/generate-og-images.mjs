@@ -108,12 +108,14 @@ const productCards = [
   ['developers', 'FOR DEVELOPERS', ['Connect your product.'], 'Give AI agents the tools to act, with SDKs, MCP and events.'],
   ['self-hosting', 'OPEN SOURCE', ['Same product.', 'You choose who', 'runs it.'], 'Free under AGPL-3.0, no plan limits. Community 0.2 beta.'],
   ['branding', 'THE HELPIN BRAND', ['One customer history.'], 'A shared workspace for your team and AI agents.'],
-  ['compare', 'COMPARE HELPIN', ['How Helpin', 'compares.'], 'Intercom, Zendesk, Help Scout, Chatwoot and Linear.'],
+  ['compare', 'COMPARE HELPIN', ['How Helpin', 'compares.'], 'Intercom, Zendesk, Help Scout, Chatwoot, Linear, Jira and Plane.'],
   ['compare-intercom', 'HELPIN VS INTERCOM', ['Helpin vs', 'Intercom'], 'Features, pricing and switching, side by side.'],
   ['compare-zendesk', 'HELPIN VS ZENDESK', ['Helpin vs', 'Zendesk'], 'Features, pricing and switching, side by side.'],
   ['compare-help-scout', 'HELPIN VS HELP SCOUT', ['Helpin vs', 'Help Scout'], 'Features, pricing and switching, side by side.'],
   ['compare-chatwoot', 'HELPIN VS CHATWOOT', ['Helpin vs', 'Chatwoot'], 'Two open-source options, side by side.'],
   ['compare-linear', 'HELPIN VS LINEAR', ['Helpin vs', 'Linear'], 'Project tracking and customer context, side by side.'],
+  ['compare-plane', 'HELPIN VS PLANE', ['Helpin vs', 'Plane'], 'Two open-source options, side by side.'],
+  ['compare-jira', 'HELPIN VS JIRA', ['Helpin vs', 'Jira'], 'Project tracking and customer context, side by side.'],
 ];
 for (const [slug, eyebrow, headline, support] of productCards) {
   variants.push({ output: resolve(websiteRoot, `public/og/helpin-${slug}-green-${VERSION}.png`), eyebrow, headline, support, visual: 'connected', art: slug });
