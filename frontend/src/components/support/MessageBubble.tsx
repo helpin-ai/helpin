@@ -1,3 +1,6 @@
+import { AskAgentAvatar } from '@/components/agents/AskAgentAvatar';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { ContactAvatarImage } from '@/components/ui/contact-avatar-image';
 import { SupportAIActivity } from './SupportAIActivity';
 import { getSupportAIActivity } from './supportAIActivity';
 import { PendingSendStatus } from './PendingSendStatus';
@@ -734,9 +737,25 @@ export const MessageBubble = memo(function MessageBubble({
   const avatarEl = isCustomer ? (
     <Tooltip>
       <TooltipTrigger asChild>
-        {fallbackAvatar}
+        <Avatar className="h-7 w-7 shadow-sm">
+          <ContactAvatarImage
+            email={inboundIdentity.email_sender || emailAddressFromHeader(message.email_from) || (inboundIdentity.email_participant_sender ? undefined : customerEmail)}
+            src={resolvedAvatarUrl}
+            alt={resolvedSenderName}
+          />
+          <AvatarFallback className={`text-[10.5px] font-semibold leading-none ${getAvatarColor(avatarSeed)}`}>
+            {getInitial(resolvedSenderName)}
+          </AvatarFallback>
+        </Avatar>
       </TooltipTrigger>
       <TooltipContent side="left"><span className="text-xs font-medium">{resolvedSenderName}</span></TooltipContent>
+    </Tooltip>
+  ) : isAI || isAgent ? (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <AskAgentAvatar plateStyle="solid" radius={50} className="h-7 w-7" decorative={false} label={resolvedSenderName} />
+      </TooltipTrigger>
+      <TooltipContent side="right"><span className="text-xs font-medium">{resolvedSenderName}</span></TooltipContent>
     </Tooltip>
   ) : resolvedAvatarUrl ? (
     <Tooltip>

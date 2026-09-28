@@ -8,11 +8,51 @@ import {
 } from '@/hooks/queries'
 import type { RootRouteData } from '@/lib/rootLoader'
 
-export function prefetchHomeRouteData(
-  _queryClient: QueryClient,
-  _rootData: RootRouteData,
+/**
+ * Loads the sidebar tree for a space. On the server it is awaited so the
+ * sidebar ships in the rendered HTML instead of popping in after hydration.
+ * In the browser it only warms the cache: client navigations must not wait
+ * on it, and the tree is usually cached from the first page already.
+ */
+async function prefetchSpaceNavigation(
+  queryClient: QueryClient,
+  rootData: RootRouteData,
+  spaceSlug: string | undefined,
 ) {
-  return Promise.resolve()
+  if (!spaceSlug) return
+  const prefetch = queryClient.prefetchQuery(
+    spaceNavigationQueryOptions(
+      rootData.subdomain,
+      rootData.activeLocale,
+      spaceSlug,
+      rootData.multilingualEnabled,
+    ),
+  )
+  if (typeof window === 'undefined') await prefetch
+}
+
+// Most help centers have one space, so its tree can load alongside the
+// article or collection instead of after it.
+function onlySpaceSlug(rootData: RootRouteData) {
+  return rootData.spaces.length === 1 ? rootData.spaces[0]?.slug : undefined
+}
+
+export async function prefetchHomeRouteData(
+  queryClient: QueryClient,
+  rootData: RootRouteData,
+) {
+  await prefetchSpaceNavigation(queryClient, rootData, rootData.spaces[0]?.slug)
+}
+
+export async function prefetchSpaceRouteData(
+  queryClient: QueryClient,
+  rootData: RootRouteData,
+  spaceSlug: string,
+) {
+  const space = rootData.spaces.find(
+    (candidate) => candidate.slug.toLowerCase() === spaceSlug.toLowerCase(),
+  )
+  await prefetchSpaceNavigation(queryClient, rootData, space?.slug)
 }
 
 export async function prefetchArticleRouteData(
@@ -20,17 +60,24 @@ export async function prefetchArticleRouteData(
   rootData: RootRouteData,
   articleKey: string,
 ) {
-  const article = await queryClient
-    .fetchQuery(
-      articleQueryOptions(
-        rootData.subdomain,
-        rootData.activeLocale,
-        articleKey,
-        rootData.multilingualEnabled,
-      ),
-    )
-    .catch(() => null)
+  const guessedSpaceSlug = onlySpaceSlug(rootData)
+  const [article] = await Promise.all([
+    queryClient
+      .fetchQuery(
+        articleQueryOptions(
+          rootData.subdomain,
+          rootData.activeLocale,
+          articleKey,
+          rootData.multilingualEnabled,
+        ),
+      )
+      .catch(() => null),
+    prefetchSpaceNavigation(queryClient, rootData, guessedSpaceSlug),
+  ])
 
+  if (article?.space_slug && article.space_slug !== guessedSpaceSlug) {
+    await prefetchSpaceNavigation(queryClient, rootData, article.space_slug)
+  }
 
   return article
 }
@@ -40,17 +87,24 @@ export async function prefetchCollectionRouteData(
   rootData: RootRouteData,
   collectionSlug: string,
 ) {
-  const collection = await queryClient
-    .fetchQuery(
-      collectionQueryOptions(
-        rootData.subdomain,
-        rootData.activeLocale,
-        collectionSlug,
-        rootData.multilingualEnabled,
-      ),
-    )
-    .catch(() => null)
+  const guessedSpaceSlug = onlySpaceSlug(rootData)
+  const [collection] = await Promise.all([
+    queryClient
+      .fetchQuery(
+        collectionQueryOptions(
+          rootData.subdomain,
+          rootData.activeLocale,
+          collectionSlug,
+          rootData.multilingualEnabled,
+        ),
+      )
+      .catch(() => null),
+    prefetchSpaceNavigation(queryClient, rootData, guessedSpaceSlug),
+  ])
 
+  if (collection?.space_slug && collection.space_slug !== guessedSpaceSlug) {
+    await prefetchSpaceNavigation(queryClient, rootData, collection.space_slug)
+  }
 
   return collection
 }

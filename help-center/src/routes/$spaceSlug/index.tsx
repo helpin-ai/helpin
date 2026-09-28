@@ -2,6 +2,8 @@ import { createFileRoute } from '@tanstack/react-router'
 import { CollectionRouteView } from '@/components/routes/CollectionRouteView'
 import { LoadingState } from '@/components/LoadingState'
 import { useDocsContext } from '@/contexts/DocsContext'
+import { prefetchSpaceRouteData } from '@/lib/routeData'
+import { loadRootRouteData } from '@/lib/rootLoader'
 
 // The canonical non-multilingual space URL is /{spaceSlug}, which is exactly
 // this index route. It must render the space view itself — redirecting from
@@ -9,6 +11,10 @@ import { useDocsContext } from '@/contexts/DocsContext'
 // previous occurrence). Non-space slugs are redirected by the parent layout's
 // beforeLoad before this component renders.
 export const Route = createFileRoute('/$spaceSlug/')({
+  loader: async ({ context, location, params }) => {
+    const rootData = await loadRootRouteData(context.queryClient, location.pathname)
+    await prefetchSpaceRouteData(context.queryClient, rootData, params.spaceSlug)
+  },
   component: SpaceIndex,
 })
 

@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { QueryClient } from '@tanstack/react-query'
 import {
   helpCenterConfigQueryOptions,
+  spaceNavigationQueryOptions,
   spacesQueryOptions,
 } from '@/hooks/queries'
 import { prefetchCollectionRouteData } from '@/lib/routeData'
@@ -206,10 +207,17 @@ describe('hosted help-center mock server integration', () => {
       'custom-brand-domains',
     ])
 
+    // The server render awaits the sidebar tree so it ships in the HTML.
+    expect(
+      queryClient.getQueryData(
+        spaceNavigationQueryOptions('replug', 'en', 'help-center', false).queryKey,
+      ),
+    ).toEqual(mockNavigation)
     expect(requests).toEqual([
       '/api/hc/replug/config',
       '/api/hc/replug/spaces',
       '/api/hc/replug/c/brands',
+      '/api/hc/replug/spaces/help-center/navigation',
     ])
   })
 })

@@ -1,5 +1,5 @@
 import { promisify } from 'node:util'
-import { brotliCompress, gzip } from 'node:zlib'
+import { brotliCompress, constants, gzip } from 'node:zlib'
 
 const brotli = promisify(brotliCompress)
 const gzipAsync = promisify(gzip)
@@ -32,9 +32,18 @@ export function appendVary(currentValue, name) {
   return values.join(', ')
 }
 
+// Bodies compressed here are rendered or proxied per request, so favor speed:
+// Brotli's default quality 11 takes ~50ms on a 100KB page, quality 5 ~2ms
+// for a few percent more bytes. Static assets are precompressed at build time.
+const DYNAMIC_BROTLI_QUALITY = 5
+
 export async function compressBody(body, encoding) {
   const input = Buffer.isBuffer(body) ? body : Buffer.from(body)
-  if (encoding === 'br') return brotli(input)
+  if (encoding === 'br') {
+    return brotli(input, {
+      params: { [constants.BROTLI_PARAM_QUALITY]: DYNAMIC_BROTLI_QUALITY },
+    })
+  }
   if (encoding === 'gzip') return gzipAsync(input)
   return input
 }
@@ -47,4 +56,15 @@ export function compressedAssetPath(filePath, encoding, existsSync) {
     return { encoding, filePath: `${filePath}.gz` }
   }
   return { encoding: '', filePath }
+}
+
+export function isCompressibleContentType(contentType = '') {
+  const type = contentType.split(';')[0].trim().toLowerCase()
+  return (
+    type.startsWith('text/') ||
+    type === 'application/json' ||
+    type.endsWith('+json') ||
+    type === 'application/javascript' ||
+    type === 'application/xml'
+  )
 }

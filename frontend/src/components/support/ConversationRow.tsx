@@ -6,6 +6,8 @@ import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { type AgentTypingState, useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { ContactAvatarImage } from '@/components/ui/contact-avatar-image';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { SupportConversation } from '@/lib/pmTypes';
 import { timeAgo, getInitial, getAvatarColor } from './helpers';
@@ -421,9 +423,12 @@ export const ConversationRow = memo(function ConversationRow({
       <div className="flex items-center gap-3">
         {/* Avatar */}
         <div className="relative shrink-0">
-          <div className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold ${getAvatarColor(conversation.customer_email || conversation.customer_name || conversation.id)}`}>
-            {getInitial(displayName)}
-          </div>
+          <Avatar className="h-9 w-9">
+            <ContactAvatarImage email={conversation.customer_email} alt={displayName} />
+            <AvatarFallback className={`text-xs font-semibold ${getAvatarColor(conversation.customer_email || conversation.customer_name || conversation.id)}`}>
+              {getInitial(displayName)}
+            </AvatarFallback>
+          </Avatar>
           {isVisitorOnline && (
             <span className="absolute -left-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-green-400 ring-2 ring-background shadow-sm" />
           )}

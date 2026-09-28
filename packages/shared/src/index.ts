@@ -14,3 +14,5 @@ export {
 export { formatReplyTimeCopy } from './reply-time';
 export { EMOJI_CATEGORIES, EMOJI_SEARCH_INDEX, searchEmojis } from './emoji-data';
 export type { EmojiCategory } from './emoji-data';
+export { ASK_AGENT_BODY_PATH } from './ask-agent-mark';
+export { DEFAULT_PRIVACY_NOTICE_TEXT, getPrivacyPolicyURL } from './widget-privacy';

@@ -38,7 +38,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { cn } from '@/lib/utils'
+import { cn, getInitials } from '@/lib/utils'
 import type { Notification, NotificationFilter } from '@/lib/notificationTypes'
 
 const FILTERS: { key: NotificationFilter; label: string; icon: typeof InboxIcon }[] = [
@@ -308,7 +308,7 @@ function NotificationDetail({ notification }: { notification: Notification }) {
           <div className="rounded-lg border p-4">
             <div className="flex items-center gap-2 mb-2">
               <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
-                {actorName.charAt(0).toUpperCase()}
+                {getInitials(actorName)}
               </div>
               <div>
                 <p className="text-sm font-medium text-primary">{actorName}</p>
@@ -348,7 +348,7 @@ function NotificationDetail({ notification }: { notification: Notification }) {
             <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">Activity</h3>
             <div className="flex items-start gap-3 rounded-lg border p-3">
               <div className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[10px] font-medium">
-                {actorName.charAt(0).toUpperCase()}
+                {getInitials(actorName)}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm">

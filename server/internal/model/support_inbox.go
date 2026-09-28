@@ -1303,6 +1303,11 @@ type SupportInboxSettings struct {
 	RequirePhoneAfterEmail bool   `json:"require_phone_after_email"`
 	WelcomeMessage         string `json:"welcome_message"`
 
+	// Optional visitor-facing privacy notice.
+	PrivacyNoticeEnabled bool   `json:"privacy_notice_enabled"`
+	PrivacyPolicyURL     string `json:"privacy_policy_url"`
+	PrivacyNoticeText    string `json:"privacy_notice_text"`
+
 	// CRM Integration
 	AutoCreateCRMContact  bool   `json:"auto_create_crm_contact"`
 	DefaultLifecycleStage string `json:"default_lifecycle_stage"` // subscriber, lead, opportunity
@@ -1416,6 +1421,7 @@ type SupportRoutingUsageStatus struct {
 // DefaultSupportInboxSettings returns settings with sensible defaults.
 func DefaultSupportInboxSettings() SupportInboxSettings {
 	return SupportInboxSettings{
+		PrivacyNoticeText:              "By chatting with us, you agree to our",
 		TranslationIncomingEnabled:     true,
 		TranslationOutgoingEnabled:     true,
 		TranslationEnabled:             true,
@@ -1502,6 +1508,9 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 
 // UpdateInstallationSettingsRequest is a PATCH payload with pointer fields.
 type UpdateInstallationSettingsRequest struct {
+	PrivacyNoticeEnabled            *bool                       `json:"privacy_notice_enabled,omitempty"`
+	PrivacyPolicyURL                *string                     `json:"privacy_policy_url,omitempty"`
+	PrivacyNoticeText               *string                     `json:"privacy_notice_text,omitempty"`
 	TranslationIncomingEnabled      *bool                       `json:"translation_incoming_enabled,omitempty"`
 	TranslationOutgoingEnabled      *bool                       `json:"translation_outgoing_enabled,omitempty"`
 	TranslationCustomerLanguage     *string                     `json:"translation_customer_language,omitempty"`
@@ -1826,16 +1835,23 @@ type WidgetHelpArticle struct {
 	PublicPath  *string `json:"public_path,omitempty"`
 }
 
+type WidgetConfigPrivacyNotice struct {
+	Enabled   bool   `json:"enabled"`
+	PolicyURL string `json:"policyUrl"`
+	Text      string `json:"text"`
+}
+
 // WidgetConfigResponse is the public-facing widget config matching the
 // TypeScript WidgetConfig interface in packages/shared/src/types/widget-config.ts.
 type WidgetConfigResponse struct {
-	WorkspaceID        string                   `json:"workspaceId"`
-	WorkspaceName      string                   `json:"workspaceName,omitempty"`
-	Branding           WidgetConfigBranding     `json:"branding"`
-	Features           WidgetConfigFeatures     `json:"features"`
-	Availability       WidgetConfigAvailability `json:"availability"`
-	AvailableTeammates []WidgetActiveTeammate   `json:"availableTeammates,omitempty"`
-	HelpSpaces         []WidgetHelpSpace        `json:"helpSpaces"`
+	PrivacyNotice      WidgetConfigPrivacyNotice `json:"privacyNotice"`
+	WorkspaceID        string                    `json:"workspaceId"`
+	WorkspaceName      string                    `json:"workspaceName,omitempty"`
+	Branding           WidgetConfigBranding      `json:"branding"`
+	Features           WidgetConfigFeatures      `json:"features"`
+	Availability       WidgetConfigAvailability  `json:"availability"`
+	AvailableTeammates []WidgetActiveTeammate    `json:"availableTeammates,omitempty"`
+	HelpSpaces         []WidgetHelpSpace         `json:"helpSpaces"`
 }
 
 // ── Visitor Context DTOs ─────────────────────────────────────────────

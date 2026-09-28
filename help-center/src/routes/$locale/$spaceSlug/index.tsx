@@ -3,6 +3,7 @@ import { CollectionRouteView } from '@/components/routes/CollectionRouteView'
 import { LoadingState } from '@/components/LoadingState'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { prefixBasepath } from '@/lib/pathUtils'
+import { prefetchSpaceRouteData } from '@/lib/routeData'
 import { loadRootRouteData } from '@/lib/rootLoader'
 
 export const Route = createFileRoute('/$locale/$spaceSlug/')({
@@ -29,6 +30,10 @@ export const Route = createFileRoute('/$locale/$spaceSlug/')({
         href: `/${params.spaceSlug}`,
       })
     }
+  },
+  loader: async ({ context, location, params }) => {
+    const rootData = await loadRootRouteData(context.queryClient, location.pathname)
+    await prefetchSpaceRouteData(context.queryClient, rootData, params.spaceSlug)
   },
   component: LocalizedSpaceIndex,
 })

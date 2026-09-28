@@ -2,6 +2,7 @@ import { FunctionComponent } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Message, Attachment, WidgetConfig } from '../types';
 import { renderMarkdown } from '../utils/markdownRenderer';
+import { AskAgentAvatar } from './AskAgentAvatar';
 import { FileTextIcon, ThumbsDownIcon, ThumbsUpIcon } from './icons';
 
 interface MessageBubbleProps {
@@ -348,6 +349,8 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
                 >
                   <img src={agentAvatar} alt={displayName} className="helpin-message-brand-logo" />
                 </span>
+              ) : isAI ? (
+                <AskAgentAvatar />
               ) : agentAvatar ? (
                 <img src={agentAvatar} alt={displayName} className="helpin-message-avatar" />
               ) : displayName ? (

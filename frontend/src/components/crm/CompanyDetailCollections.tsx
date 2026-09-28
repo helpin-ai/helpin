@@ -311,7 +311,7 @@ export function CompanyContactsView({
                 className="grid w-full grid-cols-[minmax(0,1fr)_180px_120px_100px] items-center gap-4 border-b border-border/50 px-4 py-3 text-left hover:bg-muted/25 sm:px-6 lg:px-8"
               >
                 <span className="flex min-w-0 items-center gap-2.5">
-                  <UserAvatar name={name} className="h-7 w-7 shrink-0" fallbackClassName="text-[10px]" />
+                  <UserAvatar name={name} email={contact.email} avatarUrl={contact.avatar_url} className="h-7 w-7 shrink-0" fallbackClassName="text-[10px]" />
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-medium">{name}</span>
                     <span className="block truncate text-xs text-muted-foreground">{contact.email || 'No email'}</span>
