@@ -73,6 +73,7 @@ type Handlers struct {
 	AIProfile           *handler.AIProfileHandler
 	CLI                 *handler.CLIHandler
 	MCP                 *handler.MCPHandler
+	PublicAPI           http.Handler
 	ExternalMCP         *handler.ExternalMCPHandler
 	SupportInbox        *handler.SupportInboxHandler
 	SupportInboxView    *handler.SupportInboxViewHandler
@@ -207,6 +208,11 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Get("/.well-known/oauth-protected-resource", h.MCP.ProtectedResourceMetadata)
 		r.Handle("/mcp", http.HandlerFunc(h.MCP.Protocol))
 		r.Handle("/mcp/readonly", http.HandlerFunc(h.MCP.Protocol))
+	}
+	if h.PublicAPI != nil {
+		// Curated public REST API; bearer-token only, no cookies, so CORS stays closed.
+		r.Handle("/public/v1", h.PublicAPI)
+		r.Handle("/public/v1/*", h.PublicAPI)
 	}
 
 	// ---- Public widget routes for client.helpin.ai (no JWT, open CORS) ----
