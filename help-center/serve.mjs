@@ -24,6 +24,7 @@ import {
 } from './serverCompression.mjs'
 
 import { createSharedRenderCache, helpcenterIdentifierTag } from './serverRenderCache.mjs'
+import { createPortalMount, isPortalPagePath, portalApiSlug } from './portalMount.mjs'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const CLIENT_DIR = path.join(__dirname, 'dist', 'client')
 
@@ -78,6 +79,11 @@ async function tryServeStatic(request, url, response, basepath = '') {
 }
 
 const PORT = Number.parseInt(process.env.PORT || '3000', 10)
+// The customer portal build, mounted at /requests (see portalMount.mjs).
+const portalMount = createPortalMount({
+  apiBase: process.env.INTERNAL_API_URL,
+  portalDir: path.join(__dirname, 'portal'),
+})
 const HTML_CACHE_TTL_MS = Number.parseInt(
   process.env.HTML_CACHE_TTL_MS || '120000',
   10,
@@ -658,6 +664,14 @@ async function handleRequest(request, response) {
   routeUrl.pathname = internalPath
 
   await requestContextStorage.run(hcContext, async () => {
+    if (isPortalPagePath(internalPath)) {
+      await portalMount.handlePage(request, response, internalPath, hcContext, {
+        serveStaticFile: (req, res, filePath) => serveStaticFile(req, res, filePath),
+        writeBody: writeCompressedBody,
+      })
+      return
+    }
+
     if (internalPath === '/robots.txt') {
       await handleRobotsTxt(request, response, hcContext)
       return
@@ -676,6 +690,19 @@ async function handleRequest(request, response) {
       // The public help-center is not a proxy for staff or internal APIs.
       let decodedPath
       try { decodedPath = decodeURIComponent(routeUrl.pathname) } catch { decodedPath = '' }
+      // The portal API is proxied only for the portal this host serves.
+      if (portalApiSlug(routeUrl.pathname) !== null && !decodedPath.includes('..')) {
+        if (!(await portalMount.allowedApiPath(routeUrl.pathname, hcContext))) {
+          response.statusCode = 404
+          response.end('Not found')
+          return
+        }
+        await portalMount.proxyApi(request, response, routeUrl, hcContext, {
+          buildHeaders: buildProxyHeaders,
+          readBody: (req) => (shouldReadBody(req.method || 'GET') ? Readable.toWeb(req) : undefined),
+        })
+        return
+      }
       if (!decodedPath.startsWith('/api/hc/') || decodedPath.includes('..') || decodedPath.includes('\\')) {
         response.statusCode = 404
         response.end('Not found')
@@ -794,6 +821,24 @@ const server = http.createServer((request, response) => {
     response.setHeader('Content-Type', 'text/plain; charset=utf-8')
     response.end('Internal Server Error')
   })
+})
+
+// The portal's live-update socket, proxied like the rest of its API.
+server.on('upgrade', (request, socket, head) => {
+  const { host, rawHost, protocol } = resolveHostInfo(request)
+  const url = new URL(request.url || '/', `${protocol}://${host}`)
+  const resolved = resolveHelpCenterContext(host, url.pathname, url.search, {
+    rawHost,
+    tenant: request.headers['x-helpin-hc-tenant'],
+    basepath: request.headers['x-helpin-hc-basepath'],
+    forwardedPrefix: request.headers['x-forwarded-prefix'],
+  })
+  const internalPath = stripBasepath(url.pathname, resolved.basepath)
+  portalMount.proxyUpgrade(request, socket, head, internalPath, { subdomain: resolved.subdomain, basepath: resolved.basepath })
+    .catch((error) => {
+      console.error('portal socket proxy error', error)
+      socket.destroy()
+    })
 })
 
 server.listen(PORT, '0.0.0.0', () => {

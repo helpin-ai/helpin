@@ -84,6 +84,22 @@ func (h *CustomerPortalHandler) Config(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, h.portal.Configuration(r.Context(), ws))
 }
 
+// HelpcenterPortal handles GET /api/hc/{subdomain}/portal: the help center
+// server asks which portal it serves at /requests on a help center host.
+func (h *CustomerPortalHandler) HelpcenterPortal(w http.ResponseWriter, r *http.Request) {
+	slug, err := h.portal.HelpcenterPortalSlug(r.Context(), chi.URLParam(r, "subdomain"))
+	if errors.Is(err, service.ErrPortalUnavailable) {
+		writeError(w, http.StatusNotFound, "portal not found")
+		return
+	}
+	if err != nil {
+		slog.ErrorContext(r.Context(), "help center portal lookup failed", "error", err)
+		writeError(w, http.StatusServiceUnavailable, "portal temporarily unavailable")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"slug": slug})
+}
+
 // RequestLink emails a sign-in link without disclosing whether the slug,
 // address, or workspace exists.
 func (h *CustomerPortalHandler) RequestLink(w http.ResponseWriter, r *http.Request) {

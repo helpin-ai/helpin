@@ -26,6 +26,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { PortalActivityRow, PortalMessage } from './PortalConversation'
+import { portalPublicRedirect } from './portalPaths'
 import { PortalRequestTable, RequestStatusText } from './PortalRequestTable'
 import { requestNumber } from './portalRequestFormat'
 import { formatPortalRelativeTime } from './portalTime'
@@ -223,6 +224,12 @@ export function CustomerPortalProvider({ slug }: { slug: string }) {
         if (!active) return
         if (!nextConfiguration.enabled) {
           setStatus('unavailable')
+          return
+        }
+        // A portal served on the help center is reached there, not in the app.
+        const publicPage = portalPublicRedirect(nextConfiguration.public_url, window.location, slug)
+        if (publicPage) {
+          window.location.replace(publicPage)
           return
         }
         setConfiguration(nextConfiguration)

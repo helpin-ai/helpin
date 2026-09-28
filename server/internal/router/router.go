@@ -422,6 +422,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Route("/hc/{subdomain}", func(r chi.Router) {
 			r.Get("/config", h.Docs.PublicGetConfig)
 			r.Get("/bootstrap", h.Docs.PublicGetBootstrap)
+			if h.CustomerPortal != nil {
+				r.Get("/portal", h.CustomerPortal.HelpcenterPortal)
+			}
 			r.Get("/{locale}/spaces", h.Docs.PublicGetSpaces)
 			r.Get("/{locale}/spaces/{spaceSlug}/navigation", h.Docs.PublicGetSpaceNavigation)
 			r.Get("/{locale}/spaces/{spaceSlug}/api-references", h.Docs.PublicListAPIReferences)

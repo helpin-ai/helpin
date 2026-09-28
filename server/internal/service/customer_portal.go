@@ -70,6 +70,8 @@ type CustomerPortalService struct {
 	inbox   *SupportInboxService
 	sender  portalEmailSender
 	baseURL string
+	// helpcenterDomain, when set, serves portals on help centers at /requests.
+	helpcenterDomain string
 }
 
 // NewCustomerPortalService creates the customer portal service. It registers
@@ -121,6 +123,9 @@ type PortalConfiguration struct {
 	FileUploadsEnabled     bool                   `json:"file_uploads_enabled"`
 	Attachments            PortalAttachmentPolicy `json:"attachments"`
 	Branding               map[string]string      `json:"branding"`
+	// PublicURL is where this portal is served; the app's /portal path
+	// redirects there.
+	PublicURL string `json:"public_url"`
 }
 
 // PortalAttachmentPolicy is the upload rules the portal UI applies before
@@ -160,6 +165,7 @@ func (s *CustomerPortalService) Configuration(ctx context.Context, ws *PortalWor
 		FileUploadsEnabled:     ws.Settings.FileUploadsEnabled,
 		Attachments:            PortalAttachmentPolicy{SupportAttachmentPolicy: CurrentSupportAttachmentPolicy(), MaxFiles: PortalMaxAttachmentsPerMessage},
 		Branding:               s.branding(ctx, ws),
+		PublicURL:              s.PublicURL(ctx, ws),
 	}
 }
 
@@ -273,7 +279,7 @@ func (s *CustomerPortalService) sendLink(ctx context.Context, ws *PortalWorkspac
 		slog.ErrorContext(ctx, "portal link persistence failed", "workspace_id", ws.ID, "error", err)
 		return false
 	}
-	target := s.portalURL(ws.Slug) + "/callback?token=" + url.QueryEscape(secret)
+	target := s.address(ctx, ws.ID, ws.Slug).callback(secret)
 	subject, htmlBody, textBody := portalLinkEmail(target, conversationID != nil)
 	if err := s.sender.SendEmail(address, subject, htmlBody, textBody); err != nil {
 		slog.ErrorContext(ctx, "portal link delivery failed", "workspace_id", ws.ID, "error", err)
@@ -316,10 +322,6 @@ func portalLinkEmail(target string, confirmation bool) (subject, htmlBody, textB
 	return "Sign in to your support portal",
 		`<p>Use this link to sign in (valid for 15 minutes): <a href="` + escaped + `">Sign in</a></p>`,
 		"Sign in to your support portal (valid for 15 minutes): " + target
-}
-
-func (s *CustomerPortalService) portalURL(slug string) string {
-	return strings.TrimRight(s.baseURL, "/") + "/portal/" + url.PathEscape(slug)
 }
 
 // Exchange consumes a sign-in link and returns a new session secret. The

@@ -1304,6 +1304,8 @@ export interface CustomerPortalAccessSummary {
   conflicts: number;
   conflict_emails: string[];
   anonymous_intake_delivery_available: boolean;
+  /** Where customers reach the portal: the help center at /requests, or the app. */
+  public_url?: string;
 }
 
 export interface CustomerPortalContactAccess {

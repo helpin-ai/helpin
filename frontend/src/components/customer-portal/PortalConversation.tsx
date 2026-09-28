@@ -1,8 +1,8 @@
+import { useEffect, useState } from 'react'
 import Markdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { SupportAttachmentGallery } from '@/components/support/SupportAttachmentGallery'
 import { BotIcon } from '@/lib/icons'
-import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar'
 import type { CustomerPortalRequestDetail } from '@/lib/services/customerPortalService'
 import { cn } from '@/lib/utils'
 import { formatPortalAbsoluteTime, formatPortalRelativeTime } from './portalTime'
@@ -45,7 +45,31 @@ export function PortalMessageContent({ content, markdown }: { content: string; m
   )
 }
 
+type GeneratedAvatar = NonNullable<PortalMessageData['sender_avatar_style']>
+
+/**
+ * useGeneratedAvatar draws a teammate's generated avatar. The avatar library
+ * is loaded only when a thread needs it, keeping it out of the portal bundle.
+ */
+function useGeneratedAvatar(avatar: GeneratedAvatar | null | undefined) {
+  const key = avatar?.style && avatar.seed ? JSON.stringify([avatar.style, avatar.seed, avatar.background_mode, avatar.background_color]) : ''
+  const [drawn, setDrawn] = useState<{ key: string; src?: string }>({ key: '' })
+  useEffect(() => {
+    if (!key) return undefined
+    let active = true
+    const [style, seed, backgroundMode, backgroundColor] = JSON.parse(key) as (string | null | undefined)[]
+    void import('@/lib/teamMemberAvatar').then(({ resolveTeamMemberAvatarSrc }) => {
+      if (!active) return
+      setDrawn({ key, src: resolveTeamMemberAvatarSrc({ avatarStyle: style, avatarSeed: seed, avatarBackgroundMode: backgroundMode, avatarBackgroundColor: backgroundColor }) })
+    })
+    return () => { active = false }
+  }, [key])
+  return drawn.key === key ? drawn.src : undefined
+}
+
 function SenderAvatar({ message }: { message: PortalMessageData }) {
+  // The teammate's uploaded photo, else the generated avatar the app shows.
+  const generatedSrc = useGeneratedAvatar(message.sender_type === 'ai' || message.sender_avatar ? null : message.sender_avatar_style)
   if (message.sender_type === 'ai') {
     return (
       <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-quiet-icon-well text-quiet-text-tertiary" aria-hidden="true">
@@ -53,14 +77,7 @@ function SenderAvatar({ message }: { message: PortalMessageData }) {
       </span>
     )
   }
-  // The teammate's uploaded photo, else the generated avatar the app shows.
-  const generated = message.sender_avatar_style
-  const src = message.sender_avatar || (generated ? resolveTeamMemberAvatarSrc({
-    avatarStyle: generated.style,
-    avatarSeed: generated.seed,
-    avatarBackgroundMode: generated.background_mode,
-    avatarBackgroundColor: generated.background_color,
-  }) : undefined)
+  const src = message.sender_avatar || generatedSrc
   if (src) {
     return <img src={src} alt="" className="size-7 shrink-0 rounded-full object-cover" />
   }

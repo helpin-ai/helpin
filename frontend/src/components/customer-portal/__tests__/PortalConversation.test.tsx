@@ -60,6 +60,9 @@ describe('PortalMessage', () => {
       id: 'm9', sender_type: 'user', sender_name: 'Priya', content: 'Hi', created_at: new Date().toISOString(),
       sender_avatar_style: { style: 'micah', seed: 'seed-1', background_mode: 'color', background_color: '#f97316' },
     })
+    // The avatar library loads on demand.
+    await act(async () => { await import('@/lib/teamMemberAvatar') })
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
     const img = container.querySelector('img')
     expect(img?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/)
     expect(container.textContent).not.toContain('PPriya')

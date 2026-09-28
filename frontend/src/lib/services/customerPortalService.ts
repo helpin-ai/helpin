@@ -1,6 +1,15 @@
 import { API_BASE, uploadToS3 } from '@/lib/api'
 import type { SupportAttachmentPolicy } from '@/lib/supportAttachmentFiles'
 
+// The app calls the API directly. On a help center the portal calls the
+// help center's own /api, so its session cookie stays first-party.
+let portalApiBase = API_BASE
+
+/** setCustomerPortalApiBase points portal API calls at another API root. */
+export function setCustomerPortalApiBase(base: string) {
+  portalApiBase = base.replace(/\/+$/, '')
+}
+
 export interface CustomerPortalBranding {
   name: string
   logo_url?: string | null
@@ -17,6 +26,8 @@ export interface CustomerPortalConfiguration {
   file_uploads_enabled: boolean
   attachments?: CustomerPortalAttachmentPolicy
   branding: CustomerPortalBranding
+  /** Where customers reach this portal; the app's /portal path redirects there. */
+  public_url?: string
 }
 
 /** Server upload rules plus the portal's per-message file limit. */
@@ -108,7 +119,7 @@ async function portalRequest<T>(
   if (init?.body) headers.set('Content-Type', 'application/json')
 
   const response = await fetch(
-    `${API_BASE}/public/portal/${encodeURIComponent(slug)}${path}`,
+    `${portalApiBase}/public/portal/${encodeURIComponent(slug)}${path}`,
     {
       ...init,
       credentials: 'include',
@@ -133,7 +144,7 @@ async function portalRequest<T>(
 
 /** customerPortalSocketUrl is the live-update socket for a portal. */
 export function customerPortalSocketUrl(slug: string) {
-  const base = new URL(API_BASE, window.location.href)
+  const base = new URL(portalApiBase, window.location.href)
   base.protocol = base.protocol === 'https:' ? 'wss:' : 'ws:'
   base.pathname = `${base.pathname.replace(/\/$/, '')}/public/portal/${encodeURIComponent(slug)}/ws`
   return base.toString()

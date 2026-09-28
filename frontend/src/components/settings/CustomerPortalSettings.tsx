@@ -88,7 +88,8 @@ function CustomerPortalSettingsEditor({ workspaceId, workspaceSlug, editable, in
     save: (value) => update.mutateAsync(value),
   });
 
-  const portalURL = `${window.location.origin}/portal/${encodeURIComponent(workspaceSlug)}`;
+  // The server knows where the portal is served (the help center, or the app).
+  const portalURL = summary.data?.public_url || `${window.location.origin}/portal/${encodeURIComponent(workspaceSlug)}`;
   // Intake without sign-in is only offered when agents can reply by email.
   const deliveryUnavailable = summary.data?.anonymous_intake_delivery_available === false;
 

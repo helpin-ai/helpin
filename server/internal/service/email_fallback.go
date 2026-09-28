@@ -477,6 +477,7 @@ type EmailFallbackService struct {
 	pushSenderService      *PushSenderService
 	replyDomain            string
 	appBaseURL             string
+	portalLinks            portalRequestLinker
 	logger                 *slog.Logger
 	podID                  string
 	pollInterval           time.Duration
@@ -504,6 +505,17 @@ type EmailFallbackBackfillResult struct {
 }
 
 // SetNotificationService injects the notification service used for support reply alerts.
+// portalRequestLinker links to a request in a workspace's customer portal.
+type portalRequestLinker interface {
+	PortalRequestURL(ctx context.Context, workspaceID, slug, reference string) string
+}
+
+// SetPortalLinks links reply emails to each workspace's portal address.
+func (s *EmailFallbackService) SetPortalLinks(links portalRequestLinker) *EmailFallbackService {
+	s.portalLinks = links
+	return s
+}
+
 func (s *EmailFallbackService) SetNotificationService(notificationService *NotificationService) *EmailFallbackService {
 	if s == nil {
 		return nil
@@ -2130,8 +2142,13 @@ func (s *EmailFallbackService) fireEmailBatch(ctx context.Context, conversationI
 		if err != nil {
 			s.logger.WarnContext(ctx, "portal email eligibility lookup failed", "workspace_id", conv.WorkspaceID, "conversation_id", conv.ID, "error", err)
 		}
-		if reference, err := portalRepo.ReferenceForCustomer(ctx, conv.WorkspaceID, conv.ID, derefString(conv.CustomerEmail)); err != nil {
+		reference, err := portalRepo.ReferenceForCustomer(ctx, conv.WorkspaceID, conv.ID, derefString(conv.CustomerEmail))
+		if err != nil {
 			s.logger.WarnContext(ctx, "portal email link lookup failed", "workspace_id", conv.WorkspaceID, "conversation_id", conv.ID, "error", err)
+			reference = ""
+		}
+		if s.portalLinks != nil {
+			portalURL = s.portalLinks.PortalRequestURL(ctx, conv.WorkspaceID, workspace.Slug, reference)
 		} else if reference != "" {
 			portalURL += "/requests/" + url.PathEscape(reference)
 		}

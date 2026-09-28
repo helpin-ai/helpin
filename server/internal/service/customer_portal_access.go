@@ -86,6 +86,8 @@ type PortalAccessSummary struct {
 	Conflicts                        int64    `json:"conflicts"`
 	ConflictEmails                   []string `json:"conflict_emails"`
 	AnonymousIntakeDeliveryAvailable bool     `json:"anonymous_intake_delivery_available"`
+	// PublicURL is where customers reach the portal.
+	PublicURL string `json:"public_url"`
 }
 
 // AccessSummary returns portal access counts for a workspace.
@@ -102,7 +104,12 @@ func (s *CustomerPortalService) AccessSummary(ctx context.Context, workspaceID s
 	if err != nil {
 		return nil, err
 	}
+	slug, err := s.repo.WorkspaceSlug(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
 	return &PortalAccessSummary{
+		PublicURL:                        s.address(ctx, workspaceID, slug).home(),
 		AccessMode:                       mode,
 		AllowedContacts:                  counts.AllowedContacts,
 		Conflicts:                        counts.Conflicts,

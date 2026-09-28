@@ -718,6 +718,7 @@ func main() {
 		SetUserRepo(userRepo)
 	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMailboxRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo, userRepo, docsSpaceRepo, docsCollectionRepo, docsHelpcenterRepo)
 	customerPortalService := service.NewCustomerPortalService(repository.NewCustomerPortalRepository(db), supportInboxService, appEmailClient, cfg.AppBaseURL)
+	customerPortalService.SetHelpcenterHostedDomain(cfg.HelpcenterHostedDomain)
 	supportInboxService.SetProductAnalyticsService(productAnalytics)
 	supportInboxService.SetDocsSearchRepository(docsSearchRepo)
 	supportInboxService.SetCRMCompanyRepository(crmCompanyRepo)
@@ -741,6 +742,7 @@ func main() {
 		podID,
 	)
 	emailFallbackService.SetCRMContactRepository(crmContactRepo)
+	emailFallbackService.SetPortalLinks(customerPortalService)
 	supportMessageActionsService := service.NewSupportMessageActionsService(supportMessageRepo, emailFallbackService, supportEmailLogRepo, wsPublisher)
 	supportAttachmentService := service.NewSupportAttachmentService(supportAttachmentRepo, s3Client)
 	emailFallbackService.SetAttachmentService(supportAttachmentService)
