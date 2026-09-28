@@ -1,4 +1,5 @@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { ContactAvatarImage } from '@/components/ui/contact-avatar-image';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import { cn, getInitials } from '@/lib/utils';
 
@@ -59,6 +60,8 @@ function bumpAvatarDimensions(className?: string) {
 
 interface UserAvatarProps {
   name?: string | null;
+  /** Opt contact avatars into Gravatar; team avatars remain unchanged. */
+  email?: string | null;
   avatarUrl?: string | null;
   avatarStyle?: string | null;
   avatarSeed?: string | null;
@@ -72,6 +75,7 @@ interface UserAvatarProps {
 
 export function UserAvatar({
   name,
+  email,
   avatarUrl,
   avatarStyle,
   avatarSeed,
@@ -97,7 +101,11 @@ export function UserAvatar({
   return (
     <span className="relative inline-flex shrink-0">
       <Avatar className={cn('h-7 w-7 border border-border/80', avatarClassName)}>
-        <AvatarImage src={resolvedAvatarUrl} alt={name ?? ''} />
+        {email ? (
+          <ContactAvatarImage email={email} src={resolvedAvatarUrl} alt={name ?? ''} />
+        ) : (
+          <AvatarImage src={resolvedAvatarUrl} alt={name ?? ''} />
+        )}
         <AvatarFallback className={cn('text-[9px] font-semibold', color.bg, color.text, fallbackClassName)}>
           {getInitials(name)}
         </AvatarFallback>

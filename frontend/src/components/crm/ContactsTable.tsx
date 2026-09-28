@@ -312,7 +312,7 @@ export function ContactsTable({
                   onRowClick(info.row.original.id);
                 }}
               >
-                <UserAvatar name={fullName} className="h-6 w-6 shrink-0" />
+                <UserAvatar name={fullName} email={info.row.original.email} avatarUrl={info.row.original.avatar_url} className="h-6 w-6 shrink-0" />
                 <span className="truncate">{fullName}</span>
               </button>
             );

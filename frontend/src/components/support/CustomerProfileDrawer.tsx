@@ -219,7 +219,7 @@ export function CustomerProfileDrawer({
       <div className="min-h-0 flex-1 overflow-y-auto pb-8">
           <div className="border-b border-border/50 px-5 py-5">
             <div className="flex items-center gap-3">
-              <UserAvatar name={displayName} className="h-11 w-11 shrink-0" fallbackClassName="text-sm font-semibold" />
+              <UserAvatar name={displayName} email={contact?.email || conversation?.customer_email} avatarUrl={contact?.avatar_url} className="h-11 w-11 shrink-0" fallbackClassName="text-sm font-semibold" />
               <div className="min-w-0 flex-1">
                 {contact ? (
                   <EditableText

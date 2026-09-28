@@ -6,6 +6,8 @@ import type { LifecycleStage } from '@/lib/crmTypes';
 interface ContactHeaderProps {
   firstName: string;
   lastName: string;
+  email?: string;
+  avatarUrl?: string;
   jobTitle?: string;
   companyName?: string;
   companyHref?: string;
@@ -38,6 +40,8 @@ export function getContactHeaderSubtitleParts(jobTitle?: string, companyName?: s
 export function ContactHeader({
   firstName,
   lastName,
+  email,
+  avatarUrl,
   jobTitle,
   companyName,
   companyHref,
@@ -72,6 +76,8 @@ export function ContactHeader({
       avatar={(
         <UserAvatar
           name={initialName || 'Untitled'}
+          email={email}
+          avatarUrl={avatarUrl}
           fallbackColorSeed={avatarColorSeed}
           className={contactHeaderAvatarClassName}
           fallbackClassName="text-sm font-semibold"
