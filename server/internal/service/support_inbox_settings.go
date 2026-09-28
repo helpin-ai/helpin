@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -147,6 +148,15 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	}
 	if patch.RequirePhoneAfterEmail != nil {
 		current.RequirePhoneAfterEmail = *patch.RequirePhoneAfterEmail
+	}
+	if patch.PrivacyNoticeEnabled != nil {
+		current.PrivacyNoticeEnabled = *patch.PrivacyNoticeEnabled
+	}
+	if patch.PrivacyPolicyURL != nil {
+		current.PrivacyPolicyURL = strings.TrimSpace(*patch.PrivacyPolicyURL)
+	}
+	if patch.PrivacyNoticeText != nil {
+		current.PrivacyNoticeText = strings.TrimSpace(*patch.PrivacyNoticeText)
 	}
 	if patch.WelcomeMessage != nil {
 		current.WelcomeMessage = *patch.WelcomeMessage
@@ -360,6 +370,19 @@ var hexColorRegex = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
 // validateSettings checks settings field constraints.
 func (s *SupportInboxService) validateSettings(ctx context.Context, workspaceID string, settings model.SupportInboxSettings) error {
+	if settings.PrivacyNoticeEnabled {
+		policyURL, err := url.Parse(settings.PrivacyPolicyURL)
+		if err != nil || policyURL.Hostname() == "" || (policyURL.Scheme != "https" && policyURL.Scheme != "http") || policyURL.User != nil {
+			return fmt.Errorf("privacy policy URL must be a valid http or https URL")
+		}
+	}
+	if settings.PrivacyNoticeEnabled && strings.TrimSpace(settings.PrivacyNoticeText) == "" {
+		return fmt.Errorf("privacy notice text is required")
+	}
+	if len([]rune(settings.PrivacyNoticeText)) > 500 {
+		return fmt.Errorf("privacy notice text must be at most 500 characters")
+	}
+
 	if settings.AIConfidenceThreshold < 0 || settings.AIConfidenceThreshold > 1 {
 		return fmt.Errorf("ai_confidence_threshold must be between 0.0 and 1.0")
 	}

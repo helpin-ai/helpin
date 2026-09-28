@@ -2603,6 +2603,39 @@
 }
 
 /* Compose Wrapper */
+/* Compact privacy notice, centered as a group above the composer. */
+.helpin-privacy-notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--helpin-border) 55%, transparent);
+  border-radius: 10px;
+  color: color-mix(in srgb, var(--helpin-fg-secondary) 88%, var(--helpin-bg));
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+}
+.helpin-privacy-notice p { flex: 0 1 auto; min-width: 0; text-wrap: balance; }
+.helpin-privacy-notice a { color: var(--helpin-fg-secondary); white-space: nowrap; text-decoration: underline; text-underline-offset: 3px; }
+.helpin-privacy-dismiss {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--helpin-fg-secondary);
+  cursor: pointer;
+}
+.helpin-privacy-dismiss:hover { color: var(--helpin-fg); background: var(--helpin-bg-muted); }
+.helpin-privacy-dismiss:focus-visible, .helpin-privacy-notice a:focus-visible { outline: 2px solid var(--helpin-primary); outline-offset: 2px; }
+
 .helpin-compose-wrapper {
   padding: 12px 16px 10px;
   flex-shrink: 0;
@@ -2843,6 +2876,8 @@
 }
 
 .helpin-conversation-menu-item {
+  display: block;
+  text-decoration: none;
   width: 100%;
   border: none;
   background: transparent;

@@ -130,6 +130,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
         ? 'home'
         : 'help';
   const [activeView, setActiveView] = useState<WidgetView>(initialView);
+  const [draftPrivacyDismissed, setDraftPrivacyDismissed] = useState(false);
   const [previousView, setPreviousView] = useState<WidgetBaseView>(initialPreviousView);
   const [activeHelpSpaceSlug, setActiveHelpSpaceSlug] = useState<string | null>(null);
   const [activeCollectionSlug, setActiveCollectionSlug] = useState<string | null>(null);
@@ -279,6 +280,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   };
 
   const handleStartNewConversation = (fromView: WidgetBaseView) => {
+    setDraftPrivacyDismissed(false);
     handleStartConversation(fromView);
     onStartNewConversation?.();
   };
@@ -422,6 +424,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
               handleNavigate(view);
             }}
             onSelectConversation={(id) => {
+              setDraftPrivacyDismissed(false);
               onSelectConversation(id);
               setActiveView('conversation');
               onViewChange?.('conversation');
@@ -430,6 +433,8 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
         )}
         {activeView === 'conversation' && (
           <ConversationView
+            draftPrivacyDismissed={draftPrivacyDismissed}
+            onDismissDraftPrivacy={() => setDraftPrivacyDismissed(true)}
             config={config}
             conversation={activeConversation}
             messages={messages}
@@ -471,6 +476,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
               config={config}
               conversations={enrichedConversations}
               onSelectConversation={(id) => {
+                setDraftPrivacyDismissed(false);
                 onSelectConversation(id);
                 setPreviousView('messages');
                 setActiveView('conversation');

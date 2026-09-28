@@ -1,5 +1,5 @@
 import { SUPPORT_FILE_ACCEPT } from '../hooks/useAttachmentUploads';
-import { FunctionComponent } from 'preact';
+import { FunctionComponent, type ComponentChildren } from 'preact';
 import { useState, useRef, useEffect } from 'preact/hooks';
 import { PaperclipIcon, SendIcon, XIcon } from './icons';
 import { EmojiPicker } from './EmojiPicker';
@@ -7,6 +7,7 @@ import { BrandAttribution } from './BrandAttribution';
 import type { PendingAttachment } from '../types';
 
 interface ComposeBarProps {
+  notice?: ComponentChildren;
   onSend: (content: string, attachmentIds?: string[]) => void;
   onTyping?: (content: string) => void;
   onFilesSelected?: (files: File[]) => void;
@@ -33,6 +34,7 @@ function formatFileSize(bytes: number): string {
 }
 
 export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
+  notice,
   onSend,
   onTyping,
   onFilesSelected,
@@ -147,6 +149,7 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
 
   return (
     <div className="helpin-compose-wrapper">
+      {notice}
       <form
         className={`helpin-compose-bar ${isDragOver ? 'helpin-compose-bar--dragover' : ''}`}
         onSubmit={handleSubmit}

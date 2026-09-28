@@ -5,6 +5,8 @@ import { mountWidget, unmountWidget, type WidgetConfig } from '@helpin-ai/widget
 import '@helpin-ai/widget-core/styles';
 
 interface WidgetPreviewProps {
+  privacyNotice?: WidgetConfig['privacyNotice'];
+  initialView?: 'home' | 'conversation';
   brandColor: string;
   showBranding: boolean;
   launcherPosition: string;
@@ -31,6 +33,8 @@ interface WidgetPreviewProps {
  * with its own bundled Preact instance — no dual-instance __H errors.
  */
 export function WidgetPreview({
+  privacyNotice,
+  initialView = 'home',
   brandColor,
   showBranding,
   launcherPosition,
@@ -63,6 +67,7 @@ export function WidgetPreview({
     mountWidget(el, {
       config: {
         workspaceId: workspaceName,
+        privacyNotice,
         workspaceName,
         branding: {
           primaryColor: brandColor,
@@ -95,11 +100,11 @@ export function WidgetPreview({
       isOpen,
       onClose: () => setIsOpen(false),
       onLauncherClick: () => setIsOpen((open) => !open),
-      initialView: 'home',
+      initialView,
       widgetKey,
       host,
     });
-  }, [brandColor, showBranding, launcherPosition, launcherIcon, welcomeMessage, workspaceName, workspaceLogoUrl, colorScheme, buttonColor, buttonIconColor, logoUrl, isOpen, helpSpaces, availability, aiFirst, showTalkToHuman, escalationMessage, widgetKey, host]);
+  }, [privacyNotice, initialView, brandColor, showBranding, launcherPosition, launcherIcon, welcomeMessage, workspaceName, workspaceLogoUrl, colorScheme, buttonColor, buttonIconColor, logoUrl, isOpen, helpSpaces, availability, aiFirst, showTalkToHuman, escalationMessage, widgetKey, host]);
 
   // Unmount only when the React component itself unmounts
   useEffect(() => {

@@ -22,6 +22,7 @@ export const SPECIAL_NOTICE_MAX_LENGTH = 500;
 
 export interface WidgetConfig {
   workspaceId: string;
+  privacyNotice?: { enabled: boolean; policyUrl: string; text: string };
   workspaceName?: string;
   visitorName?: string;
   availableTeammates?: Array<{

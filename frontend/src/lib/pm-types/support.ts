@@ -1153,6 +1153,9 @@ export interface SupportInboxSettings {
   require_email_before_chat: boolean;
   require_phone_after_email: boolean;
   welcome_message: string;
+  privacy_notice_enabled?: boolean;
+  privacy_policy_url?: string;
+  privacy_notice_text?: string;
   ai_enabled: boolean;
   ai_agent_id: string | null;
   ai_confidence_threshold: number;
