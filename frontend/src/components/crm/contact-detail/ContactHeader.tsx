@@ -75,7 +75,7 @@ export function ContactHeader({
       breadcrumbs={<QuietBreadcrumbs items={[{ id: 'contacts', label: 'Contacts', onClick: onBack }]} onBack={onBack} backLabel="Back to contacts" />}
       avatar={(
         <UserAvatar
-          name={initialName || 'Untitled'}
+          name={initialName || email || 'Untitled'}
           email={email}
           avatarUrl={avatarUrl}
           fallbackColorSeed={avatarColorSeed}

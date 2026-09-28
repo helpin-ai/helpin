@@ -107,7 +107,7 @@ export function UserAvatar({
           <AvatarImage src={resolvedAvatarUrl} alt={name ?? ''} />
         )}
         <AvatarFallback className={cn('text-[9px] font-semibold', color.bg, color.text, fallbackClassName)}>
-          {getInitials(name)}
+          {getInitials(name?.trim() || email)}
         </AvatarFallback>
       </Avatar>
       {presenceIndicatorClass ? (
