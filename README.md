@@ -11,10 +11,11 @@ questions, plan work, and follow up—with approvals where you need them.
 [Website](https://helpin.ai) · [Open Helpin Cloud](https://app.helpin.ai) ·
 [Get started](#get-started) · [Contribute](CONTRIBUTING.md)
 
-![Helpin support inbox showing Maya’s CSV export conversation, the linked EXP-142 task, and customer details.](docs/images/helpin-support-workflow.webp)
+![Helpin support inbox: Maya’s CSV export conversation with an investigation note, the linked EXP-142 task, a drafted reply waiting for review, and her customer details.](docs/images/helpin-support-inbox.webp)
 
-*Illustrative product preview with fictional data. The conversation, existing
-task, and customer record stay in view. Available modules depend on your deployment.*
+*Product preview with fictional data. The conversation, the existing task, and
+the customer record stay in view, and the drafted reply waits for your team.
+Available modules depend on your deployment.*
 
 ## Get started
 
@@ -36,8 +37,8 @@ Compose v2, Bash, OpenSSL, curl, and `sha256sum` or `shasum`.
 Start with **8 GiB RAM and 20 GiB free disk** for evaluation; source builds need
 more. These are starting points, not production capacity limits.
 
-**Install with the CLI.** Once the website installer and a Community release
-with CLI assets are published, run:
+**Install with the CLI.** Once a Community release with CLI assets is
+published, run the installer from the website:
 
 ```sh
 curl -fsSL https://helpin.ai/install.sh | bash
@@ -100,6 +101,31 @@ determine which additional capabilities you can use.
 Projects also supports maintenance, infrastructure, and internal initiatives.
 Link customer context when it is relevant.
 
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/images/helpin-projects-delivery.webp"><img src="docs/images/helpin-projects-delivery.webp" alt="Helpin Projects: the PRJ-214 task for an admin-only SSO pilot, with the plan reviewed, coding and code-review agents completed, and Sam Rivera reviewing the change before merge."></a>
+      <br><sub><b>Projects</b> · Agents prepare and review the change. A teammate approves the merge.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/images/helpin-crm-contacts.webp"><img src="docs/images/helpin-crm-contacts.webp" alt="Helpin CRM: a contacts list with each contact’s lifecycle stage, status, and owner."></a>
+      <br><sub><b>CRM</b> · Contacts, companies, and deals next to the conversations behind them.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/images/helpin-meetings-review.webp"><img src="docs/images/helpin-meetings-review.webp" alt="Helpin Meetings: an SSO rollout review with a transcript summary, the recording, a quoted commitment, next steps, and links to the contact, company, deal, epic, and task."></a>
+      <br><sub><b>Meetings</b> · Commitments from the call become linked next steps.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/images/helpin-knowledge-help-center.webp"><img src="docs/images/helpin-knowledge-help-center.webp" alt="Helpin Knowledge: a help-center space with collections, an API reference entry point, and recently updated guides."></a>
+      <br><sub><b>Knowledge</b> · Help-center guides, internal docs, and an API reference.</sub>
+    </td>
+  </tr>
+</table>
+
+*Product previews with fictional data.*
+
 ## See the difference in one request
 
 *An illustrative workflow; available actions depend on your configuration.*
@@ -131,6 +157,8 @@ is not a sent message.
 
 Ask Agent is where your team starts: ask about an account, investigate a request,
 or prepare a plan. Specialist agents handle focused work when needed.
+
+![Ask Agent coordinating a Northstar rollout review: findings from the support, coding, docs, and CRM specialists, the next steps, and a customer update ready for review.](docs/images/helpin-ask-agent.webp)
 
 > “What is blocking this customer’s rollout, and what have we already tried?”
 
