@@ -26,7 +26,7 @@
 @keyframes sweep { from { background-position: 100% 0; } to { background-position: 0% 0; } }
 @media (prefers-reduced-motion: reduce), (forced-colors: active) { .shimmer { animation: none; background: none; color: var(--muted-foreground); } }
 
-.activityHost:has([data-dock-activity-timeline][data-running='true']) [data-agent-live-status-region][data-working='true'] { display: none; }
+.activityHost:has([data-dock-activity-timeline][data-running='true']) [data-agent-live-status-region]:is([data-working='true'], [data-delegated='true']) { display: none; }
 
 .disclosure { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 220ms ease, opacity 160ms ease; }
 .disclosure[data-open='true'] { grid-template-rows: 1fr; opacity: 1; }

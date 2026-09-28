@@ -67,8 +67,8 @@ describe('AgentLiveStatus', () => {
     });
     expect(container.querySelector('.agent-streaming-text')).not.toBeNull();
     const loader = container.querySelector('[data-agent-work-loader]');
-    expect(loader?.classList.contains('h-7')).toBe(true);
-    expect(loader?.classList.contains('w-7')).toBe(true);
+    expect(loader?.classList.contains('h-4')).toBe(true);
+    expect(loader?.classList.contains('w-4')).toBe(true);
   });
 
   it('uses a dot before elapsed time for every in-progress phase', () => {
