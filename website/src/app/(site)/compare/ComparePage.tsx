@@ -16,7 +16,6 @@ import { CtaNote, CtaRow, DEMO_URL, FAQList, GITHUB_URL, SIGNUP_URL } from '../_
 import { ARTICLES, HELPIN_ARTICLE } from './article-data';
 import { cellStatus, COMPETITORS, competitorSeo, compareVideo, formatChecked, type Cell, type Competitor, type IconKey, type Status } from './compare-data';
 import { CompareFilm } from './CompareFilm';
-import { HeroMatchup } from './HeroMatchup';
 import { InViewOnce } from './InViewOnce';
 import { LazyPreview } from './LazyPreview';
 import { PriceCalculator } from './PriceCalculator';
@@ -162,7 +161,7 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
   const support = competitor.group === 'Customer support';
   const video = compareVideo(competitor);
   // The poster is the hero's largest image, so fetch it early.
-  if (video) preload(video.poster, { as: 'image', fetchPriority: 'high' });
+  preload(video.poster, { as: 'image', fetchPriority: 'high' });
   const toc = [
     { id: 'overview', label: 'At a glance' },
     { id: 'why-switch', label: 'Why teams switch' },
@@ -186,7 +185,7 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
         ],
       },
       { ...article({ headline: seo.title, description: seo.description, path: seo.canonicalPath, date: competitor.checked }), image: `${SITE_URL}${seo.imagePath}` },
-      ...(video ? [{
+      {
         '@type': 'VideoObject',
         name: video.title,
         description: video.summary,
@@ -194,7 +193,7 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
         contentUrl: `${SITE_URL}${video.src}`,
         uploadDate: video.published,
         duration: `PT${video.seconds}S`,
-      }] : []),
+      },
       organization,
     ],
   };
@@ -221,7 +220,7 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
                   <span><CalendarCheck size={14} aria-hidden="true" />Verified {checked}</span>
                 </div>
               </div>
-              {video ? <CompareFilm id="video" name={name} video={video} /> : <HeroMatchup name={name} glance={competitor.glance} />}
+              <CompareFilm id="video" name={name} video={video} />
             </div>
           </div>
         </section>
