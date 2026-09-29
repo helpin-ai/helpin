@@ -66,8 +66,8 @@ export type Competitor = {
   };
   faqs: FAQ[];
   closing: { title: string; description: string };
-  /** The hero video; its files live in public/new/compare/ (see compareVideo). Without one, the hero shows the glance cards. */
-  video?: { seconds: number; summary: string };
+  /** The hero video; its files live in public/new/compare/ (see compareVideo). */
+  video: { seconds: number; summary: string };
   /** Where each competitor fact was checked. Internal record for re-checks; not shown on the page. */
   sources: { label: string; url: string }[];
 };
@@ -90,7 +90,6 @@ const VIDEO_PUBLISHED = '2026-09-26';
 
 /** Files and metadata for a competitor's comparison video. Bump the -v suffix when a video is re-cut. */
 export function compareVideo(competitor: Competitor) {
-  if (!competitor.video) return null;
   const base = `/new/compare/helpin-vs-${competitor.slug}`;
   return {
     ...competitor.video,
