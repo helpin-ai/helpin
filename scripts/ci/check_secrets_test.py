@@ -10,11 +10,11 @@ class SecretScanTest(unittest.TestCase):
     def test_flags_provider_tokens(self):
         self.assertEqual(self.names('X: "dp.st.dev.' + 'a' * 40 + '"'), ['Doppler token'])
         self.assertEqual(self.names('k=AKIA' + 'A' * 16), ['AWS access key'])
-        self.assertEqual(self.names('-----BEGIN RSA PRIVATE KEY-----'), ['Private key'])
+        self.assertEqual(self.names('-----BEGIN RSA ' + 'PRIVATE KEY-----'), ['Private key'])
         self.assertEqual(self.names('MAXMIND_LICENSE_KEY=' + 'a1' * 10), ['MaxMind license key'])
 
     def test_flags_remote_database_password_only(self):
-        self.assertEqual(self.names('u=postgres://app:S3cretPassw0rd@pg-prod.corp.net:5432/x'), ['Database URL with password'])
+        self.assertEqual(self.names('u=postgres://app:' + 'S3cretPassw0rd' + '@pg-prod.corp.net:5432/x'), ['Database URL with password'])
         self.assertEqual(self.names('u=postgres://postgres:postgres@localhost:5432/x'), [])
         self.assertEqual(self.names('u=postgres://user:${DB_PASSWORD}@prod-host/x'), [])
 
