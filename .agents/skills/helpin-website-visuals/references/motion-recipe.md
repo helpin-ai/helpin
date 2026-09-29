@@ -4,7 +4,7 @@ Use motion to explain a short workflow. Match the existing website's calm pacing
 
 ## Lifecycle
 
-Use `useBentoPlayback` from `website/src/app/new/_components/`. It starts just before a scene enters view (currently a 120px root margin), stops once offscreen or the document is hidden, respects reduced motion, and supplies a cycle key. Do not replace this with a 50% visibility cutoff: it caused restarts and jitter near section boundaries. Check the current hook implementation before changing it. Small bentos may use short cycles; full inbox/board stories use longer cycles (roughly 19–30 seconds) so the finished state can be read.
+Use `useBentoPlayback` from `website/src/app/(site)/_components/`. It starts just before a scene enters view (currently a 120px root margin), stops once offscreen or the document is hidden, respects reduced motion, and supplies a cycle key. Do not replace this with a 50% visibility cutoff: it caused restarts and jitter near section boundaries. Check the current hook implementation before changing it. Small bentos may use short cycles; full inbox/board stories use longer cycles (roughly 19–30 seconds) so the finished state can be read.
 
 - Render a complete, readable static scene first.
 - Apply animation selectors only under `data-playing="true"`.

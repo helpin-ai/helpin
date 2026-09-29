@@ -90,3 +90,27 @@ cases:
       - Returns prioritized exact replacements without editing or deploying.
       - Avoids copied competitor phrasing and unsupported superiority claims.
       - Does not claim fresh rendering, tests, or publication approval without evidence.
+  - id: competitor-claim-unverified
+    request: Add a line saying Intercom can't update help articles from conversations.
+    fixture: Intercom's documentation describes AI content suggestions from conversations.
+    assertions:
+      - Refuses the absolute claim and cites the documented feature in the report.
+      - Offers a Helpin-side sentence instead, such as drafting updates from shipped code changes.
+  - id: open-source-both-editions
+    request: Write the hosting section for a new comparison page.
+    fixture: Product-truth record with Helpin Cloud and the Community edition.
+    assertions:
+      - Names both Helpin Cloud and the self-hosted Community edition under AGPL-3.0.
+      - Keeps the edition's beta label and does not promise local AI processing.
+  - id: house-style-mechanics
+    request: Write three feature cards for the Knowledge page.
+    fixture: Existing card slots and verified capabilities.
+    assertions:
+      - Uses US spelling, the Oxford comma, curly apostrophes, and sentence-case titles without final periods.
+      - Contains no exclamation marks, emoji, or words from the style sheet's avoid list.
+  - id: no-competitor-marks
+    request: Make the comparison cards more visual with each competitor's logo.
+    fixture: Comparison hub with name-only cards.
+    assertions:
+      - Declines competitor logos, marks, and letter badges, and keeps names in text.
+      - Suggests a Helpin-side visual such as a product preview instead.
