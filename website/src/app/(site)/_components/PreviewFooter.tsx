@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { HeroVortex } from './HeroVortex';
 import { ArrowUpRight, Mail } from 'lucide-react';
 import { HelpinBrand } from '@/components/HelpinBrand';
-import { GITHUB_URL, GithubIcon } from './ui';
+import { DISCORD_URL, DiscordIcon, GITHUB_URL, GithubIcon } from './ui';
 import { DOCS } from './docsLinks';
 import { COMPETITORS } from '../compare/compare-data';
 
@@ -26,6 +26,7 @@ const COLUMNS = [
     { label: 'All comparisons', href: '/compare' },
   ] },
   { title: 'Community', links: [
+    { label: 'Join our Discord', href: DISCORD_URL },
     { label: 'Contributing', href: `${GITHUB_URL}/blob/develop/CONTRIBUTING.md` },
     { label: 'Releases', href: `${GITHUB_URL}/releases` },
     { label: 'Report an issue', href: `${GITHUB_URL}/issues` },
@@ -71,6 +72,7 @@ export function PreviewFooter({ homepage = false }: { homepage?: boolean }) {
         <div className="footer-community">
           <div className="footer-socials">
             <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" aria-label="Helpin on GitHub"><GithubIcon size={18} /></a>
+            <a href={DISCORD_URL} target="_blank" rel="noopener noreferrer" aria-label="Helpin on Discord"><DiscordIcon size={18} /></a>
             <a href="mailto:hello@helpin.ai" aria-label="Email Helpin"><Mail size={18} aria-hidden="true" /></a>
           </div>
         </div>
