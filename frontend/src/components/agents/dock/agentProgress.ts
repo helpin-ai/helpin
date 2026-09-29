@@ -95,6 +95,12 @@ export function resolveAgentLiveProgress({
   if (turn.answerPending) return { label: 'Loading answer…', startedAt, tone: 'waiting' };
   if (turn.missingAnswer) return { label: 'Run ended without a final answer', startedAt, tone: 'waiting' };
 
+  // Accepting a follow-up marks the run as resuming before the runtime
+  // updates its paused status. Keep feedback visible through that handoff.
+  if (run.status === 'paused' && run.execution_stage === 'resuming') {
+    return { label: 'Starting…', startedAt, tone: 'working' };
+  }
+
   if (run.status === 'paused') {
     switch (run.pause_reason) {
       case 'human_approval':

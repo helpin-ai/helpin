@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -74,6 +76,91 @@ execution_enabled boolean NOT NULL DEFAULT false,
 			}
 			if got != tt.want {
 				t.Fatalf("CanAccessAgentRun = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPublicDockMessagesExcludeInternalData(t *testing.T) {
+	actor := "private-user"
+	messages := []model.AgentRunMessage{
+		{ID: "question", Role: "user", MessageType: "prompt", WorkspaceID: "private-workspace", RunID: "private-run", ActorUserID: &actor,
+			Content: "Check Sentry.\n<page_context>{\"id\":\"private-context\"}</page_context>"},
+		{ID: "progress", Role: "assistant", MessageType: "assistant_progress", Content: "private-progress"},
+		{ID: "answer", Role: "assistant", MessageType: "assistant_final", Content: "**The findings.**\n<!-- helpin_follow_up_suggestions [\"private-suggestion\"] -->",
+			ContentBlocks: json.RawMessage(`[{"type":"text","text":"private-block"}]`)},
+		{ID: "tool", Role: "tool", MessageType: "tool_result", Content: "private-tool-result"},
+		{ID: "child", Role: "user", MessageType: "user_reply", Content: "<child_run_result>private-child</child_run_result>"},
+		{ID: "system", Role: "system", Content: "private-system"},
+	}
+	got := publicDockMessages(messages)
+	if len(got) != 2 {
+		t.Fatalf("want only question and answer, got %d messages", len(got))
+	}
+	if got[0].Content != "Check Sentry." || got[1].Content != "**The findings.**" {
+		t.Fatalf("unexpected visible content: %#v", got)
+	}
+	encoded, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "private-") {
+		t.Fatalf("private data in public JSON: %s", encoded)
+	}
+	var rows []map[string]any
+	if err := json.Unmarshal(encoded, &rows); err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range rows {
+		for key := range row {
+			if key != "id" && key != "role" && key != "content" {
+				t.Fatalf("unexpected public field %q", key)
+			}
+		}
+	}
+	if !strings.Contains(messages[0].Content, "page_context") {
+		t.Fatal("mutated stored message")
+	}
+}
+
+func TestPublicDockMessagesStripContextAndIncompleteMarkers(t *testing.T) {
+	for _, tag := range []string{"page_context", "references", "attachments", "source_attachments", "attachment_analysis", "previous_conversation", "child_run_result"} {
+		for _, suffix := range []string{"</" + tag + ">", ""} {
+			t.Run(tag+suffix, func(t *testing.T) {
+				got := publicDockMessages([]model.AgentRunMessage{{ID: "user", Role: "user", MessageType: "user_reply", Content: "Visible question\n<" + tag + ">private-context" + suffix}})
+				if len(got) != 1 || got[0].Content != "Visible question" {
+					t.Fatalf("context leaked: %#v", got)
+				}
+			})
+		}
+	}
+	got := publicDockMessages([]model.AgentRunMessage{{ID: "answer", Role: "assistant", MessageType: "assistant_final", Content: "Answer\n<!-- helpin_follow_up_suggestions ["}})
+	if len(got) != 1 || got[0].Content != "Answer" {
+		t.Fatalf("partial marker leaked: %#v", got)
+	}
+}
+
+func TestPublicDockMessagesOnlyExposeConversationText(t *testing.T) {
+	for _, message := range []model.AgentRunMessage{
+		{Role: "assistant", MessageType: "assistant_progress", Content: "internal progress"},
+		{Role: "assistant", MessageType: "reasoning", Content: "internal reasoning"},
+		{Role: "assistant", MessageType: "status", Content: "internal status"},
+		{Role: "assistant", MessageType: "future_runtime_type", Content: "internal metadata"},
+		{Role: "user", MessageType: "approval_request_resolution", Content: "internal decision"},
+		{Role: "tool", MessageType: "tool_result", Content: "internal tool result"},
+	} {
+		t.Run(message.MessageType, func(t *testing.T) {
+			if got := publicDockMessages([]model.AgentRunMessage{message}); len(got) != 0 {
+				t.Fatalf("internal record exposed: %#v", got)
+			}
+		})
+	}
+	for _, messageType := range []string{"", "message", "assistant_turn", "assistant_final"} {
+		t.Run("visible-"+messageType, func(t *testing.T) {
+			const content = "**Answer**\n\n`config/sentry.php`\n\n- First finding"
+			got := publicDockMessages([]model.AgentRunMessage{{ID: "answer", Role: "assistant", MessageType: messageType, Content: content}})
+			if len(got) != 1 || got[0].Content != content {
+				t.Fatalf("lost visible answer: %#v", got)
 			}
 		})
 	}

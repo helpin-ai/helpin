@@ -138,6 +138,22 @@ describe('resolveAgentLiveProgress', () => {
     })?.label).toBe('Starting…');
   });
 
+  it.each(['awaiting_user_message', 'human_input', 'human_approval'] as const)(
+    'keeps a status after a follow-up is accepted from %s', (pause_reason) => {
+      const input = {
+        run: run({ status: 'paused', pause_reason, execution_stage: 'resuming' }),
+        stream: stream(), currentPlan: null, sending: false,
+        localStartedAt: '2026-08-14T10:05:00Z',
+      };
+      expect(resolveAgentLiveProgress(input)).toMatchObject({
+        label: 'Starting…', tone: 'working', startedAt: input.localStartedAt,
+      });
+      expect(resolveAgentLiveProgress({ ...input,
+        run: run({ status: 'running', execution_stage: 'running' }),
+      })?.label).toBe('Working…');
+    },
+  );
+
   it('starts a follow-up timer from the newly submitted message', () => {
     const result = resolveAgentLiveProgress({
       run: run({ started_at: '2026-08-14T10:00:00Z' }),
