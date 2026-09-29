@@ -1,6 +1,7 @@
 import { PAGE_SEO, SITE_URL } from './metadata.ts';
 
 const GITHUB_URL = 'https://github.com/helpin-ai/helpin';
+const DISCORD_URL = 'https://discord.gg/23WcB2chf';
 
 type JsonLdData = Record<string, unknown>;
 
@@ -18,7 +19,7 @@ export const organization = {
   url: SITE_URL,
   logo: `${SITE_URL}/icon-512.png`,
   email: 'hello@helpin.ai',
-  sameAs: [GITHUB_URL],
+  sameAs: [GITHUB_URL, DISCORD_URL],
 };
 
 export const website = {
