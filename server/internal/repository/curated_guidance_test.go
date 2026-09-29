@@ -8,11 +8,13 @@ import (
 func TestCuratedGuidancePostgresVectorOrderUsesRankedProjection(t *testing.T) {
 	sql := curatedGuidancePostgresSearchSQL(
 		"CASE WHEN embedding IS NULL THEN 0 ELSE 1 END AS vector_score",
-		"AND language = ''",
 		"",
 		"(lexical_score + vector_score) DESC",
 	)
 
+	if strings.Contains(sql, "AND language") || strings.Contains(sql, "OR language") {
+		t.Fatalf("guidance must not be filtered by the customer's language: %s", sql)
+	}
 	rankedFrom := strings.Index(sql, "FROM ranked")
 	vectorOrder := strings.Index(sql, "ORDER BY (lexical_score + vector_score) DESC")
 	if !strings.Contains(sql, "WITH ranked AS") || rankedFrom < 0 || vectorOrder < rankedFrom {

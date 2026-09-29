@@ -62,7 +62,7 @@ describe('CuratedGuidanceField', () => {
     expect(container.textContent).toContain('Growth starts at $49 per month');
     expect(container.textContent).toContain('What is your pricing?');
     expect(container.textContent).toContain('Answer Guidance');
-    expect(container.textContent).toContain('Applies to:');
+    expect(container.textContent).toContain('Example questions');
   });
 
   it('explains when answer guidance is useful', async () => {
@@ -99,6 +99,10 @@ describe('CuratedGuidanceField', () => {
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     expect(answer).toBeInstanceOf(HTMLTextAreaElement);
     expect(answer?.className).toContain('field-sizing-content');
+    expect(container.querySelector('#new-guidance-language')).toBeNull();
+    const options = container.querySelector('details');
+    expect(options?.querySelector('summary')?.textContent).toContain('Additional options');
+    expect(options?.open).toBe(false);
   });
 
   it('edits existing guidance in place', async () => {
@@ -118,6 +122,17 @@ describe('CuratedGuidanceField', () => {
       'Growth starts at $49 per month. Enterprise pricing is custom.',
     );
     expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.querySelector('#edit-guidance-language')).toBeNull();
+    expect(container.querySelector('#edit-guidance-patterns')).toHaveProperty('value', 'What is your pricing?\nHow much does it cost?');
+    const saveButton = container.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    await act(async () => saveButton.click());
+    expect(mutations.update).toHaveBeenCalledWith({
+      agentId: 'agent-1', guidanceId: 'guidance-1',
+      payload: {
+        title: 'Current pricing', question_patterns: ['What is your pricing?', 'How much does it cost?'],
+        answer: 'Growth starts at $49 per month. Enterprise pricing is custom.', status: 'active',
+      },
+    });
   });
 
   it('saves new guidance only after the explicit save action', async () => {
@@ -142,7 +157,6 @@ describe('CuratedGuidanceField', () => {
     };
 
     await setValue('#new-guidance-title', 'Refund policy');
-    await setValue('#new-guidance-patterns', 'Can I get a refund?\nDo you offer refunds?');
     await setValue('#new-guidance-answer', 'Refunds are available within 14 days.');
 
     expect(mutations.create).not.toHaveBeenCalled();
@@ -157,7 +171,7 @@ describe('CuratedGuidanceField', () => {
       agentId: 'empty-agent',
       payload: {
         title: 'Refund policy',
-        question_patterns: ['Can I get a refund?', 'Do you offer refunds?'],
+        question_patterns: [],
         answer: 'Refunds are available within 14 days.',
         language: '',
         intent: 'unknown',

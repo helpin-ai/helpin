@@ -26,7 +26,6 @@ type GuidanceDraft = {
   title: string;
   questionPatterns: string;
   answer: string;
-  language: string;
   status: CuratedGuidanceStatus;
 };
 
@@ -34,7 +33,6 @@ const emptyDraft: GuidanceDraft = {
   title: '',
   questionPatterns: '',
   answer: '',
-  language: '',
   status: 'active',
 };
 
@@ -44,7 +42,6 @@ function guidanceDraft(item?: CuratedGuidance): GuidanceDraft {
     title: item.title,
     questionPatterns: item.question_patterns.join('\n'),
     answer: item.answer,
-    language: item.language,
     status: item.status,
   };
 }
@@ -54,13 +51,13 @@ function editablePayloadFromDraft(draft: GuidanceDraft) {
     title: draft.title.trim(),
     question_patterns: draft.questionPatterns.split('\n').map((value) => value.trim()).filter(Boolean),
     answer: draft.answer.trim(),
-    language: draft.language.trim().toLowerCase(),
   };
 }
 
 function createPayloadFromDraft(draft: GuidanceDraft): CreateCuratedGuidanceRequest {
   return {
     ...editablePayloadFromDraft(draft),
+    language: '',
     intent: 'unknown',
     topics: [],
   };
@@ -77,7 +74,6 @@ function draftsMatch(left: GuidanceDraft, right: GuidanceDraft) {
   return left.title === right.title
     && left.questionPatterns === right.questionPatterns
     && left.answer === right.answer
-    && left.language === right.language
     && left.status === right.status;
 }
 
@@ -113,42 +109,18 @@ function GuidanceEditor({
       <div>
         <p className="text-sm font-medium">{editingExisting ? 'Edit answer guidance' : 'New answer guidance'}</p>
         <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-          Show Helpin which customer questions this applies to and the answer you want it to follow.
+          Add the facts and policies Helpin should follow. It adapts the answer to the customer’s question and language.
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_10rem]">
-        <div className="space-y-2">
-          <Label htmlFor={`${idPrefix}-title`}>Title</Label>
-          <Input
-            id={`${idPrefix}-title`}
-            value={draft.title}
-            onChange={(event) => onChange({ title: event.target.value })}
-            placeholder="Current pricing"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor={`${idPrefix}-language`}>Language</Label>
-          <Input
-            id={`${idPrefix}-language`}
-            value={draft.language}
-            onChange={(event) => onChange({ language: event.target.value })}
-            placeholder="en (optional)"
-          />
-        </div>
-      </div>
-
       <div className="space-y-2">
-        <Label htmlFor={`${idPrefix}-patterns`}>Customer questions</Label>
-        <Textarea
-          id={`${idPrefix}-patterns`}
-          value={draft.questionPatterns}
-          onChange={(event) => onChange({ questionPatterns: event.target.value })}
-          placeholder={'What is your pricing?\nHow much does Usermaven cost?'}
-          rows={4}
-          className="min-h-24 max-h-64 overflow-y-auto rounded-lg border-border bg-background"
+        <Label htmlFor={`${idPrefix}-title`}>Title</Label>
+        <Input
+          id={`${idPrefix}-title`}
+          value={draft.title}
+          onChange={(event) => onChange({ title: event.target.value })}
+          placeholder="Current pricing"
         />
-        <p className="text-xs text-muted-foreground">One question per line. Include different ways customers ask the same thing.</p>
       </div>
 
       <div className="space-y-2">
@@ -162,6 +134,22 @@ function GuidanceEditor({
           className="min-h-40 rounded-lg border-border bg-background"
         />
       </div>
+
+      <details className="text-sm">
+        <summary className="w-fit cursor-pointer rounded-sm text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Additional options</summary>
+        <div className="mt-3 space-y-2">
+          <Label htmlFor={`${idPrefix}-patterns`}>Example questions (optional)</Label>
+          <Textarea
+            id={`${idPrefix}-patterns`}
+            value={draft.questionPatterns}
+            onChange={(event) => onChange({ questionPatterns: event.target.value })}
+            placeholder={'What is your pricing?\nHow much does Usermaven cost?'}
+            rows={3}
+            className="max-h-64 overflow-y-auto rounded-lg border-border bg-background"
+          />
+          <p className="text-xs text-muted-foreground">Add examples to help match unusual wording. One question per line.</p>
+        </div>
+      </details>
 
       {editingExisting ? (
         <div className="max-w-xs space-y-2">
@@ -242,7 +230,7 @@ export function CuratedGuidanceField({ workspaceId, agentId }: { workspaceId: st
   };
 
   const saving = createGuidance.isPending || updateGuidance.isPending;
-  const valid = draft.title.trim().length > 0 && draft.answer.trim().length > 0 && draft.questionPatterns.trim().length > 0;
+  const valid = draft.title.trim().length > 0 && draft.answer.trim().length > 0;
   const editorOpen = editing !== undefined;
   const updateDraft = (change: Partial<GuidanceDraft>) => setDraft((current) => ({ ...current, ...change }));
 
@@ -316,7 +304,12 @@ export function CuratedGuidanceField({ workspaceId, agentId }: { workspaceId: st
                             {item.status === 'disabled' ? <Badge variant="outline">Disabled</Badge> : null}
                           </div>
                           <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{item.answer}</p>
-                          <p className="mt-1 truncate text-xs text-muted-foreground">Applies to: {item.question_patterns.join(' · ')}</p>
+                          {item.question_patterns.length > 0 && (
+                            <details className="mt-1 text-xs text-muted-foreground">
+                              <summary className="w-fit cursor-pointer">Example questions</summary>
+                              <ul className="mt-1 space-y-1">{item.question_patterns.map((question, index) => <li key={index}>{question}</li>)}</ul>
+                            </details>
+                          )}
                         </div>
                         <div className="flex shrink-0 gap-1">
                           <Button type="button" variant="ghost" size="icon" className="h-8 w-8" disabled={editorOpen} aria-label={`Edit ${item.title}`} onClick={() => openEditor(item)}>

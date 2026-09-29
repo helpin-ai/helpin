@@ -298,20 +298,21 @@ func TestCuratedGuidanceSearchEnforcesScopeStatusAndValidity(t *testing.T) {
 			t.Fatalf("create guidance %s: %v", items[idx].ID, err)
 		}
 	}
-	results, err := repo.Search(context.Background(), "ws-1", "agent-1", "", "pricing", "", "", 10)
-	if err != nil {
-		t.Fatalf("search guidance: %v", err)
+	for _, language := range []string{"", "en", "fr"} {
+		results, err := repo.Search(context.Background(), "ws-1", "agent-1", language, "pricing", "", "", 10)
+		if err != nil {
+			t.Fatalf("search guidance: %v", err)
+		}
+		if len(results) != 2 {
+			t.Fatalf("language %q: expected both eligible entries, got %+v", language, results)
+		}
+		for _, result := range results {
+			if result.ID != "eligible" && result.ID != "english-only" {
+				t.Fatalf("scope leak: %+v", result)
+			}
+		}
 	}
-	if len(results) != 1 || results[0].ID != "eligible" {
-		t.Fatalf("scope leak in guidance results: %+v", results)
-	}
-	results, err = repo.Search(context.Background(), "ws-1", "agent-1", "en", "pricing", "", "", 10)
-	if err != nil {
-		t.Fatalf("search English guidance: %v", err)
-	}
-	if len(results) != 2 {
-		t.Fatalf("expected unscoped and English guidance only, got %+v", results)
-	}
+
 }
 
 func TestNormalizeSupportLanguage(t *testing.T) {

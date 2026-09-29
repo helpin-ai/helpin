@@ -55,7 +55,8 @@ func (s *SupportAIService) searchSingleQuery(
 	var results []KnowledgeSearchResult
 
 	// Curated guidance is queried as its own source pool. Its repository applies
-	// workspace, agent, status, validity, and language filters before ranking.
+	// workspace, agent, status, and validity filters before ranking. Guidance
+	// applies across customer languages, including entries with legacy language tags.
 	if s.curatedGuidanceRepo != nil {
 		guidanceResults, err := s.curatedGuidanceRepo.Search(
 			ctx,
