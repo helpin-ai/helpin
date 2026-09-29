@@ -41,7 +41,7 @@ const FAQS = [
   ],
   [
     "Who helps us if something breaks?",
-    "Community support is on GitHub. Enterprise adds deployment help and support terms."
+    "Community support is on GitHub and Discord. Enterprise adds deployment help and support terms."
   ],
   [
     "Can we move from Zendesk or Intercom?",
