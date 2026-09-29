@@ -923,8 +923,12 @@ function Dashboard() {
     return (
       <div className="space-y-4">
         {saveIndicator}
+        {data?.settings.ai_agent_id && (
+          <div className="flex justify-end">
+            <SupportAIPreview key={`${workspaceId}:${data.settings.ai_agent_id}`} workspaceId={workspaceId} agentId={data.settings.ai_agent_id} />
+          </div>
+        )}
         {aiAssistantSection}
-        {data?.settings.ai_agent_id && <SupportAIPreview key={`${workspaceId}:${data.settings.ai_agent_id}`} workspaceId={workspaceId} agentId={data.settings.ai_agent_id} />}
         <CuratedGuidanceField
           key={aiAgentId}
           workspaceId={workspaceId}
