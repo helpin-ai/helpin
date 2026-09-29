@@ -2650,7 +2650,7 @@ describe('follow-up message correlation', () => {
     mocks.sendMessage.mockImplementation((_workspace, _chat, payload) => new Promise((resolve) => {
       accepted = { ...earlier, id: 'message-followup', client_message_id: payload.client_message_id, content,
         dock_chat_sequence: 2, sequence_no: 2, message_type: 'user_reply', created_at: '2026-09-07T10:00:01Z' };
-      accept = () => resolve((order === 'failed-send' || order === 'lost-ack') ? { data: null, error: 'Delivery rejected' } : { data: chatDetail({ chat, run, accepted_message: accepted as never }), error: null });
+      accept = () => resolve((order === 'failed-send' || order === 'lost-ack') ? { data: null, error: 'Delivery rejected' } : { data: chatDetail({ chat, run: { ...run as object, execution_stage: 'resuming' } as never, accepted_message: accepted as never }), error: null });
     }));
     await renderEmbeddedDock({ entity_type: 'support_conversation', entity_id: 'conv-42', display_title: 'Support question' });
     await waitForCondition(() => !dockTextarea().disabled && mocks.getChatRun.mock.calls.length > 0, 'Chat not ready');
@@ -2678,7 +2678,10 @@ describe('follow-up message correlation', () => {
     const before = bubbles();
     const originalRow = [...scroll.querySelectorAll('p')].find((node) => node.textContent === content);
     expect(originalRow).toBeDefined();
-    if (order === 'ack-first') await act(async () => accept());
+    if (order === 'ack-first') {
+      await act(async () => accept());
+      expect(document.querySelector('[data-agent-live-status]')?.textContent).toContain('Starting…');
+    }
     await act(async () => {
       window.dispatchEvent(new CustomEvent('coding_session_event-created', { detail: {
         parent_id: 'run-1', entity_id: 'msg:message-followup', data: {
