@@ -8,7 +8,7 @@ import { DisclosureChevron } from '@/components/agents/transcript/DisclosureChev
 import { MarkdownContent } from '@/components/pm/CodingSession/MarkdownContent';
 import { describeToolCall } from '@/components/pm/CodingSession/toolCallPresentation';
 import { formatCodingSessionElapsed } from '@/components/pm/CodingSession/codingSessionPresentation';
-import type { AgentRunPauseReason, CodingSessionActor, CodingSessionTranscriptMessage } from '@/lib/pmTypes';
+import type { AgentRunPauseReason, CodingSessionActor, CodingSessionLiveToolCall, CodingSessionTranscriptMessage } from '@/lib/pmTypes';
 import { DockDecisionRow } from './DockDecisionRow';
 import type { DockWorkingGroupEntry } from './dockWorkingGroups';
 import type { AgentLiveProgress } from './agentProgress';
@@ -22,18 +22,24 @@ function ActivityIcon({ name }: { name: string }) {
   return <Icon className="h-4 w-4" />;
 }
 
-function ActivityRow({ segment, active }: { segment: TranscriptSegment; active: boolean }) {
-  const [open, setOpen] = useState(segment.kind === 'tool' && segment.toolCall.status === 'failed');
+function ActivityRow({ segment, active, toolCalls = [] }: { segment: TranscriptSegment; active: boolean; toolCalls?: CodingSessionLiveToolCall[] }) {
+  const failedCount = toolCalls.filter(tool => tool.status === 'failed').length;
+  const failed = failedCount > 0;
+  const [open, setOpen] = useState(failed);
   const detailsId = useId();
   const tool = segment.kind === 'tool' ? segment.toolCall : null;
-  const failed = tool?.status === 'failed';
-  const [wasFailed, setWasFailed] = useState(failed);
-  if (wasFailed !== failed) {
-    setWasFailed(failed);
-    if (failed) setOpen(true);
+  const [knownFailures, setKnownFailures] = useState(failedCount);
+  if (knownFailures !== failedCount) {
+    setKnownFailures(failedCount);
+    if (failedCount > knownFailures) setOpen(true);
   }
-  const running = active && tool?.status === 'running';
-  const label = tool ? describeToolCall(tool).primaryLabel : segment.kind === 'assistant' ? segment.content : 'Reasoning';
+  const running = active && toolCalls.some(tool => tool.status === 'running');
+  const repeated = toolCalls.length > 1;
+  const presentation = tool ? describeToolCall(tool) : null;
+  // A group may search different queries or read different documents. Its
+  // heading describes the action, while each call retains its own details.
+  const label = presentation ? repeated ? presentation.secondaryLabel : presentation.primaryLabel
+    : segment.kind === 'assistant' ? segment.content : 'Reasoning';
   const narration = segment.kind === 'assistant';
   const previewRef = useRef<HTMLDivElement>(null);
   const [clipped, setClipped] = useState(false);
@@ -65,15 +71,20 @@ function ActivityRow({ segment, active }: { segment: TranscriptSegment; active: 
           <button type="button" className={styles.stepButton} aria-expanded={open} aria-controls={detailsId} onClick={() => setOpen(!open)}>
             <span className="sr-only">{failed ? 'Failed: ' : running ? 'In progress: ' : tool ? 'Completed: ' : ''}</span>
             <span className={cn(running && styles.shimmer)}>{label}</span>
+            {repeated && <span className="shrink-0 tabular-nums">×{toolCalls.length}</span>}
+            {repeated && failed && <span className="shrink-0 text-destructive">{failedCount} failed</span>}
             <DisclosureChevron open={open} className="mt-1 h-3 w-3 shrink-0" />
           </button>
         )}
         {open && !narration && <div id={detailsId} className={styles.details}>
-          {tool ? <div className="space-y-2">
-            {tool.result?.error && <p className="whitespace-pre-wrap text-destructive">{tool.result.error}</p>}
-            {tool.args_text.trim() && <div><span className="text-[11px] font-medium">Input</span><pre className="mt-1 whitespace-pre-wrap break-words text-[11px]">{tool.args_text}</pre></div>}
-            {(tool.result?.content || tool.result?.output_summary) && <div><span className="text-[11px] font-medium">Result</span><pre className="mt-1 whitespace-pre-wrap break-words text-[11px]">{tool.result.content || tool.result.output_summary}</pre></div>}
-            {!tool.args_text.trim() && !tool.result && <p>No additional details.</p>}
+          {tool ? <div className="space-y-3">
+            {toolCalls.map((call, index) => <div key={call.tool_call_id} className={cn("space-y-2", repeated && index > 0 && "border-t border-border/60 pt-3")}>
+              {repeated && <p className={cn("text-[11px] font-medium", call.status === 'failed' && "text-destructive")}>Call {index + 1} · {call.status === 'failed' ? 'Failed' : call.status === 'running' ? active ? 'In progress' : 'Interrupted' : 'Completed'}</p>}
+              {call.result?.error && <p className="whitespace-pre-wrap text-destructive">{call.result.error}</p>}
+              {call.args_text.trim() && <div><span className="text-[11px] font-medium">Input</span><pre className="mt-1 whitespace-pre-wrap break-words text-[11px]">{call.args_text}</pre></div>}
+              {(call.result?.content || call.result?.output_summary) && <div><span className="text-[11px] font-medium">Result</span><pre className="mt-1 whitespace-pre-wrap break-words text-[11px]">{call.result.content || call.result.output_summary}</pre></div>}
+              {!call.args_text.trim() && !call.result && <p>No additional details.</p>}
+            </div>)}
           </div> : <TranscriptSegmentView segment={segment} options={{ expandable: true, showReasoningDetails: true, collapseLongAssistantContent: false, assistantPresentation: 'progress' }} />}
         </div>}
       </div>
@@ -153,9 +164,25 @@ export function DockActivityTimeline({ group, runStatus, pauseReason, resolveAct
 }
 
 export function DockActivitySteps({ segments, active = false, resolveActor }: { segments: TranscriptSegment[]; active?: boolean; resolveActor?: ResolveActor }) {
+  const steps: { segment: TranscriptSegment; toolCalls?: CodingSessionLiveToolCall[] }[] = [];
+  for (const segment of segments) {
+    const previous = steps.at(-1);
+    if (segment.kind === 'tool') {
+      const name = canonicalToolName(segment.toolCall.tool_name);
+      if (name && previous?.segment.kind === 'tool' && canonicalToolName(previous.segment.toolCall.tool_name) === name) {
+        previous.toolCalls!.push(segment.toolCall);
+      } else {
+        steps.push({ segment, toolCalls: [segment.toolCall] });
+      }
+    } else {
+      // Keep even invisible boundaries while grouping, so a final answer or
+      // new user request cannot join two otherwise identical actions.
+      steps.push({ segment });
+    }
+  }
   return <ol className={styles.list} aria-label="Activity steps">
-    {segments.filter(segment => segment.kind !== 'assistant' || !segment.final).map(segment => segment.kind === 'review_decision'
+    {steps.filter(({ segment }) => segment.kind !== 'assistant' || !segment.final).map(({ segment, toolCalls }) => segment.kind === 'review_decision'
       ? <li key={segment.id} className="relative"><DockDecisionRow message={segment.message} actor={resolveActor?.(segment.message) ?? null} timeline /></li>
-      : <ActivityRow key={segment.kind === 'tool' ? segment.toolCall.tool_call_id : segment.kind === 'assistant' ? segment.messageId ?? segment.id.replace(/^live:/, '') : segment.kind === 'reasoning' ? segment.reasoning.message_id : segment.id} segment={segment} active={active} />)}
+      : <ActivityRow key={segment.kind === 'tool' ? segment.toolCall.tool_call_id : segment.kind === 'assistant' ? segment.messageId ?? segment.id.replace(/^live:/, '') : segment.kind === 'reasoning' ? segment.reasoning.message_id : segment.id} segment={segment} toolCalls={toolCalls} active={active} />)}
   </ol>;
 }
