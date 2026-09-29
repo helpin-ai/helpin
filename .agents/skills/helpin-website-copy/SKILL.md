@@ -1,9 +1,9 @@
 ---
 name: helpin-website-copy
-description: Write, refine, audit, or implement Helpin website copy with clear AI-agent positioning, shared customer history, concrete outcomes, and preserved page sections. Use for Helpin homepages, product pages, pricing, developer and self-hosting pages, FAQs, CTAs, and product demos. Do not use for unrelated brands, general application development, or changing product behavior.
+description: Write, refine, audit, or implement Helpin website copy in the house voice and style, with clear AI-agent positioning, shared customer history, open source on Cloud or self-hosted, concrete outcomes, and preserved page sections. Use for Helpin homepages, product pages, pricing, developer and self-hosting pages, comparison pages, release posts, FAQs, CTAs, SEO titles, and product demos. Do not use for unrelated brands, general application development, or changing product behavior.
 metadata:
   author: Helpin
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # Helpin website copy
@@ -12,11 +12,13 @@ Write as Helpin's product marketer and UI copy editor. Improve the existing stor
 
 ## 1. Load the right context
 
-Always read [positioning and voice](references/positioning-and-voice.md), [claim verification](references/claim-verification.md), and the relevant entry in [page playbooks](references/page-playbooks.md).
+Always read [positioning and voice](references/positioning-and-voice.md), [the style sheet](references/style-sheet.md), [claim verification](references/claim-verification.md), and the relevant entry in [page playbooks](references/page-playbooks.md).
+
+For page structure, components, SEO metadata, and release checks, pair this skill with `helpin-website-pages`. For imagery, videos, and motion, use `helpin-website-visuals`.
 
 Read [demo scenarios](references/demo-scenarios.md) when editing examples, animation text, screenshots, agent conversations, or workflow states. Read [the review checklist](references/review-checklist.md) before delivering.
 
-Prefer the repository's maintained product-truth and site-copy-state records. When absent, use [the product-truth template](assets/product-truth.template.yaml) and [the site-state template](assets/site-copy-state.template.yaml) as optional starting points. Their seeded claims are unverified; they are not a feature catalog.
+Prefer the repository's maintained product-truth and site-copy-state records; the product-truth record lives at `docs/website-copy/product-truth.yaml`. When absent, use [the product-truth template](assets/product-truth.template.yaml) and [the site-state template](assets/site-copy-state.template.yaml) as optional starting points. Their seeded claims are unverified; they are not a feature catalog.
 
 Do not load every reference or reproduce every earlier page by default. Read the material relevant to this task and the neighboring pages needed to prevent repetition.
 
@@ -51,6 +53,8 @@ Preserve these elements unless the user explicitly authorizes a structural chang
 
 Lead with a recognizable customer or team outcome. Explain how relevant history improves the decision. Show the product capability that makes action possible. Explain control where it matters.
 
+Helpin is open source. Wherever hosting, pricing, trust, or a competitor comes up, name both editions: Helpin Cloud and the self-hosted Community edition. For support audiences, lead with the four advantages in [positioning and voice](references/positioning-and-voice.md): no per-seat or per-resolution fees, your own AI models, docs that keep up with the product, and agents that take a ticket to a fix and a customer update.
+
 Support, Projects, CRM, Meetings, and Knowledge are useful products in their own right. Their shared context strengthens agents; it does not reduce the products to “memory.”
 
 Keep full project management visible: roadmaps, sprints, objectives, dependencies, ownership, maintenance, and internal work, where verified. Do not make every project a support ticket or require every task to have a customer.
@@ -63,13 +67,13 @@ Customer history is a mechanism to prove, not an exclusive moat to assert. Never
 
 ## 4. Write clear, calm, specific copy
 
-Use plain English, concrete verbs, short paragraphs, and natural sentences. Prefer answer, investigate, assign, plan, review, send, publish, and release over abstract transformation language.
+Follow [the style sheet](references/style-sheet.md) for voice, mechanics, naming, vocabulary, and CTA labels: US English, the Oxford comma, curly quotes, sentence-case headings that end with a period, and no exclamation marks. Use plain English, concrete verbs, short paragraphs, and natural sentences. Prefer answer, investigate, assign, plan, review, send, publish, and release over abstract transformation language.
 
 Headlines should make sense on first reading. Give each one a clear job and one main idea. Read the headline and description together: the description must add information, not restate the headline.
 
 The user liked “AI agents that do more than answer.” Treat this as a reference for directness, not a mandatory hero for every page. Do not automatically reuse “know your customers” or “move work forward” when the specific action is clearer.
 
-Avoid default positioning such as “all-in-one,” “operating system,” “revolutionary,” “game-changing,” “10x,” and “seamless.” Avoid intern/tenure metaphors, competitor insults, and unsupported “only,” “complete,” or “everything” claims. Do not copy another brand's phrasing.
+Avoid default positioning such as “all-in-one,” “operating system,” “revolutionary,” “game-changing,” “10x,” and “seamless”; the style sheet lists the rest. Avoid intern/tenure metaphors, competitor insults, and unsupported “only,” “complete,” or “everything” claims. Do not copy another brand's phrasing. Refer to other products by name only, never with their logos or marks.
 
 Use these as editing targets, not rigid laws:
 

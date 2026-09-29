@@ -4,7 +4,7 @@ Use for website section colors, product previews, and animation selection. The a
 
 ## Color roles
 
-The shared tokens live on `.hp3` in `website/src/app/new/new.css`.
+The shared tokens live on `.hp3` in `website/src/app/(site)/new.css`.
 
 | Layer / role | Token | Value / reference |
 | --- | --- | --- |
@@ -47,7 +47,7 @@ Give the outer Kanban preview container an explicit charcoal background and matc
 
 ## Approved implementation references
 
-Paths below start at `website/src/app/new/`.
+Paths below start at `website/src/app/(site)/`.
 
 | Need | Reference | What to reuse |
 | --- | --- | --- |
