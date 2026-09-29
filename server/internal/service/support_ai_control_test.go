@@ -13,6 +13,8 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
+	"github.com/nats-io/nats.go"
 )
 
 type failingControlRunCloser struct{ calls []string }
@@ -377,5 +379,67 @@ func TestSupportAIControlTogglePreservesExistingBrief(t *testing.T) {
 		if !event.IsInternal || derefString(event.SenderUserID) != "teammate" || derefString(event.SenderDisplayName) != "Arooj Bukhari" || event.WidgetVisible() {
 			t.Fatalf("incorrect activity attribution: %+v", event)
 		}
+	}
+}
+
+type handoffEventRecorder struct {
+	nats.JetStreamContext
+	events []websocket.Event
+}
+
+func (r *handoffEventRecorder) Publish(_ string, data []byte, _ ...nats.PubOpt) (*nats.PubAck, error) {
+	var event websocket.Event
+	if err := json.Unmarshal(data, &event); err != nil {
+		return nil, err
+	}
+	r.events = append(r.events, event)
+	return &nats.PubAck{}, nil
+}
+
+func TestSupportHandoffEventPrecedesBriefInHistoryAndBroadcast(t *testing.T) {
+	for _, reason := range []string{"customer_requested", "provider_unavailable"} {
+		t.Run(reason, func(t *testing.T) {
+			svc, db, conv, settings := setupAIControlTest(t)
+			raw, _ := json.Marshal(settings)
+			mustExec(t, db, `INSERT INTO support_widget_installations(id,workspace_id,widget_key,secret_key,settings,active) VALUES ('install','ws','key','secret',?,true)`, string(raw))
+			recorder := &handoffEventRecorder{}
+			ai := &SupportAIService{conversationRepo: svc.conversationRepo, messageRepo: svc.messageRepo, installationRepo: repository.NewSupportInboxInstallationRepository(db), handoffRepo: repository.NewAgentHandoffRepository(db), wsPublisher: websocket.NewOrderedJetStreamPublisher(recorder)}
+			if err := ai.EscalateToHuman(context.Background(), "ws", conv.ID, reason); err != nil {
+				t.Fatal(err)
+			}
+			rows, err := svc.messageRepo.ListByConversation(context.Background(), "ws", conv.ID, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			eventIndex, noteIndex := -1, -1
+			for i, row := range rows {
+				if row.SystemEventType != nil && *row.SystemEventType == systemEventForEscalationReason(reason) {
+					eventIndex = i
+				}
+				if strings.Contains(row.Metadata, `"ai_handoff_brief":true`) {
+					noteIndex = i
+				}
+			}
+			if eventIndex < 0 || noteIndex != eventIndex+1 {
+				t.Fatalf("handoff event index %d, brief index %d", eventIndex, noteIndex)
+			}
+			if rows[noteIndex].CreatedAt.UnixMilli() <= rows[eventIndex].CreatedAt.UnixMilli() {
+				t.Fatal("handoff and brief must sort correctly at browser timestamp precision")
+			}
+			ids := []string{}
+			for _, event := range recorder.events {
+				if event.Entity == "support_conversation_message" {
+					ids = append(ids, event.EntityID)
+				}
+			}
+			if len(ids) != len(rows) {
+				t.Fatalf("broadcasts %v do not match %d saved messages", ids, len(rows))
+			}
+			for i := range rows {
+				if ids[i] != rows[i].ID {
+					t.Fatalf("broadcast order differs at %d", i)
+				}
+			}
+		})
 	}
 }

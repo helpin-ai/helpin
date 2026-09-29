@@ -226,6 +226,9 @@ func TestSupportFollowUpIntentionalHandoffRecordsVisibleEventOnce(t *testing.T) 
 	if len(notes) != 1 || !notes[0].IsInternal || notes[0].WidgetVisible() || !strings.Contains(notes[0].Content, "Still unresolved") {
 		t.Fatalf("missing private handoff brief: %+v", notes)
 	}
+	if notes[0].CreatedAt.UnixMilli() <= events[0].CreatedAt.UnixMilli() {
+		t.Fatal("handoff brief must sort after the escalation event")
+	}
 
 }
 
