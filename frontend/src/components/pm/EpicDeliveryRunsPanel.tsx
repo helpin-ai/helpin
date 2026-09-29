@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { QuietPrimaryAction } from '@/components/design-system/quiet';
 import { useAuthStore } from '@/stores/authStore';
 import { EpicDeliveryProfileSelect } from './EpicDeliveryProfileSelect';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/design-system/quiet-dropdown-select';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import { DeliveryPlanView } from '@/components/agents/dock/DeliveryPlanView';
 import { StatusDot } from '@/components/agents/dock/StatusDot';
@@ -248,7 +249,7 @@ export function EpicDeliveryRunsPanel({
       <Dialog open={restartOpen} onOpenChange={setRestartOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Restart delivery step</DialogTitle><DialogDescription>A paused run will be cancelled. Completed steps stay complete. Your profile choice applies to this step and future AI steps.</DialogDescription></DialogHeader>
-          {restartableSteps.length > 1 ? <div className="space-y-2"><label className="text-xs font-medium">Step to restart</label><select className="w-full border-b border-border bg-transparent py-2 text-sm" value={restartStepIndex ?? ''} onChange={(event) => { setRestartStepIndex(Number(event.target.value)); setReviewedPartialWork(false); }}>{restartableSteps.map(({ index }) => <option key={index} value={index}>{index + 1}. {plan.steps[index].agent_name}: {plan.steps[index].target.display_title}</option>)}</select></div> : null}
+          {restartableSteps.length > 1 ? <div className="space-y-2"><label className="text-xs font-medium">Step to restart</label><Select value={restartStepIndex === null ? undefined : String(restartStepIndex)} onValueChange={(next) => { setRestartStepIndex(Number(next)); setReviewedPartialWork(false); }}><SelectTrigger variant="underline" className="w-full" aria-label="Step to restart"><SelectValue placeholder="Choose a step" /></SelectTrigger><SelectContent>{restartableSteps.map(({ index }) => <SelectItem key={index} value={String(index)}>{index + 1}. {plan.steps[index].agent_name}: {plan.steps[index].target.display_title}</SelectItem>)}</SelectContent></Select></div> : null}
           {restartStep ? <Button variant="outline" size="sm" className="justify-start" onClick={() => { setSelectedRunId(restartStep.run.id); setDrawerOpen(true); }}>Inspect existing run and branch work</Button> : null}
           <label className="flex items-start gap-2 text-xs text-muted-foreground"><input type="checkbox" className="mt-0.5" checked={reviewedPartialWork} onChange={(event) => setReviewedPartialWork(event.target.checked)} />I reviewed the existing run and task branch before restarting.</label>
           <EpicDeliveryProfileSelect workspaceId={workspaceId} value={restartProfileId} onChange={setRestartProfileId} disabled={busy} />

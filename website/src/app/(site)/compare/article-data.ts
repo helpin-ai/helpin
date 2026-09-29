@@ -3,7 +3,7 @@
 // and /pricing. Shared Helpin paragraphs keep every page describing Helpin the same way.
 import type { ProductPreviewName } from '../_components/product-previews/ProductPreview';
 
-export type ArticleFeature = {
+type ArticleFeature = {
   id: string;
   title: string;
   competitor: string;
@@ -328,6 +328,120 @@ export const ARTICLES: Record<string, Article> = {
     pricing: 'Linear charges per user: Basic is $10 and Business $16 a month billed annually, with a free plan for up to 250 issues. Coding sessions use prepaid AI credits, the integrations with support tools need Business, and your support tool is priced separately.',
     hosting: 'Linear is a hosted service, and there’s no way to run it on your own infrastructure.',
     onboarding: 'Linear imports from Jira, GitHub Issues, Asana and Shortcut, and exports issues as CSV or through its API. Helpin doesn’t import from Linear yet, but its agents can use Linear’s tools through MCP, so you can run both during a move.',
+  },
+  plane: {
+    intro: [
+      'Plane and Helpin are both open source, and both can run on your own servers. Plane is a project tracker. Helpin puts projects next to support, CRM, meetings and docs.',
+      'Plane says more than 50,000 teams use it. It covers work items, cycles, modules, pages, initiatives and dashboards, adds Plane AI and agents on its paid plans, and can hand a work item to Cursor’s coding agent.',
+      'Helpin includes roadmaps, sprints and objectives alongside a support inbox, help center and CRM, so the request, the task, the pull request and the follow-up share one customer history. Every product feature is open source, AI agents included.',
+      guide('Plane'),
+    ],
+    difference: [
+      { lead: 'Plane is built around the work item:', text: 'planning and tracking projects, with requests collected through Intake and linked to customer profiles on its Business plan.' },
+      { lead: 'Helpin is built around the customer:', text: 'the conversation, the work it becomes and the follow-up, in one open-source product.' },
+    ],
+    features: [
+      {
+        id: 'planning', title: 'Roadmaps, cycles and sprints',
+        competitor: 'Plane organizes work into work items, cycles, modules and epics, with list, board, calendar, Gantt and spreadsheet layouts. Pro adds initiatives, milestones, a wiki, dashboards and time tracking; Business adds recurring work items, a workflow and project templates.',
+        helpin: 'Helpin Projects covers roadmaps, sprints, objectives, epics, dependencies, estimates and triage, with velocity and sprint reports. Tasks can carry the customer requests and conversations behind them.',
+        verdict: 'Plane offers more planning views and depth. Helpin’s planning keeps customer context on the work.',
+        preview: PREVIEW.projects,
+      },
+      {
+        id: 'ai-agents', title: 'AI and coding agents',
+        competitor: 'Plane AI answers questions, builds work items and runs agents on mentions, events or schedules. On Cloud it uses monthly credits: 500 per seat on Pro and 1,000 on Business, with none on Free and no top-up. You can assign a work item to Cursor’s coding agent, which opens a GitHub pull request.',
+        helpin: 'Helpin’s agents answer customers, plan the work and prepare follow-ups. Its coding agents work from the task and the customer conversation behind it, and open a GitHub pull request or GitLab merge request for your team to review. On Cloud, usage comes from the AI allowance in your plan; self-hosted, the agents are part of the free Community edition and use your own AI provider.',
+        verdict: 'Both put AI next to the work. Helpin’s agents also cover support, and they’re included in the free edition.',
+        preview: PREVIEW.agents,
+      },
+      {
+        id: 'customer-requests', title: 'Customer requests and support',
+        competitor: 'Plane collects requests through Intake, with public forms and an intake email address on Business, and links them to customer profiles with Customers on Business. Its Desk help desk is listed as coming soon, and there’s no live chat.',
+        helpin: 'Helpin includes the support inbox, chat widget and help center, so requests start in the same product as the task. When the work ships, the team can follow up in the original conversation.',
+        verdict: 'If requests come from your own team, Plane’s Intake covers it. If they come from customers, Helpin puts the conversation next to the work.',
+        preview: PREVIEW.inbox,
+      },
+      {
+        id: 'crm', title: 'Customer records and meetings',
+        competitor: 'Plane’s Customers feature on Business gives each customer a profile with fields such as stage, contract status and revenue, linked to their requests. It has no deals, pipelines or meeting notetaker; Plane AI can search Granola meeting notes through a connector.',
+        helpin: HELPIN.crm,
+        verdict: 'If account context matters to your roadmap, Helpin keeps deals and meetings next to the work.',
+        preview: PREVIEW.crm,
+      },
+      {
+        id: 'self-hosting', title: 'Open source and self-hosting',
+        competitor: 'Plane’s Community Edition is AGPL-3.0 and matches the Free plan. Plane AI, agents, time tracking, Customers and SSO need the closed-source Commercial Edition, with a license key bound to one workspace and one machine. Plane supports Docker, Kubernetes and an air-gapped edition on Enterprise Grid.',
+        helpin: HELPIN.hosting,
+        verdict: 'Plane has more deployment options. Helpin’s free edition includes more of the product.',
+      },
+      {
+        id: 'developers', title: 'Git, API and integrations',
+        competitor: 'Plane connects to GitHub, GitLab, Slack and Sentry on Pro and above, offers a REST API with webhooks, an MIT-licensed MCP server and native mobile apps, and imports from Jira, Linear, Asana and ClickUp.',
+        helpin: 'Helpin links GitHub pull requests and GitLab merge requests to tasks and updates delivery status when work merges. It offers a Helpin MCP server (in beta), connections to external MCP servers, including Plane Cloud’s, and web SDKs for your product.',
+        verdict: 'Plane has more integrations and importers. Helpin can reach Plane Cloud through MCP, so the two can run side by side.',
+      },
+    ],
+    pricing: 'Plane charges per seat: Pro is $6 and Business $13 a month billed annually ($8 and $15 billed monthly), with a free plan for up to 12 seats. Plane AI uses monthly credits included per seat on the paid plans, with no top-up. Helpin charges one price per workspace, so it can cost more for a small team and less as the team grows.',
+    hosting: 'Plane’s Community Edition is open source under AGPL-3.0 and matches its Free plan. Paid features, including Plane AI, run in the closed-source Commercial Edition with a license key and your own AI provider. An air-gapped edition is available on Enterprise Grid, with a 100-seat minimum.',
+    onboarding: 'Plane imports from Jira, Linear, Asana and ClickUp, and exports work items as CSV, Excel or JSON. Helpin doesn’t import from Plane yet, but its agents can use Plane Cloud’s tools through MCP, so you can run both during a move.',
+  },
+  jira: {
+    intro: [
+      'Jira and Helpin both help teams plan and ship work, and both let AI agents pick up tasks. Jira is a widely used issue tracker with a large ecosystem. Helpin puts projects next to support, CRM, meetings and docs.',
+      'Atlassian sells the help desk, product feedback, docs and meeting notes as separate products: Jira Service Management inside Service Collection, Jira Product Discovery, Confluence and Loom. Its Rovo AI and coding agents work across them.',
+      'Helpin includes roadmaps, sprints and objectives alongside a support inbox, help center and CRM, so the request, the task, the pull request and the follow-up share one customer history. It’s open source and charges per workspace.',
+      guide('Jira'),
+    ],
+    difference: [
+      { lead: 'Jira is built around the work item:', text: 'planning and tracking work at any scale, with support and customer feedback in separate Atlassian products.' },
+      { lead: 'Helpin is built around the customer:', text: 'the request, the work it becomes and the follow-up, in one open-source product.' },
+    ],
+    features: [
+      {
+        id: 'planning', title: 'Roadmaps, boards and sprints',
+        competitor: 'Jira organizes work into projects, boards and sprints for Scrum and Kanban teams. Premium adds advanced planning, capacity management, approvals and sandboxes; Enterprise adds multiple sites and Atlassian Analytics.',
+        helpin: 'Helpin Projects covers roadmaps, sprints, objectives, epics, dependencies, estimates and triage, with velocity and sprint reports. Tasks can carry the customer requests and conversations behind them.',
+        verdict: 'For large programs of work, Jira’s planning goes further. Helpin’s planning keeps customer context on the work.',
+        preview: PREVIEW.projects,
+      },
+      {
+        id: 'coding-agents', title: 'AI and coding agents',
+        competitor: 'Paid Jira plans include Rovo agents and can assign work items to the Jira Coding Agent or to third-party coding agents such as Claude, Cursor and GitHub Copilot. They draw on Rovo credits: 25 per user on Standard, 70 on Premium and 150 on Enterprise, with extra usage billed from December 3, 2026. The Jira Coding Agent works with GitHub and Bitbucket repositories.',
+        helpin: 'Helpin’s coding agents work from the task and the customer conversation behind it, and open a GitHub pull request or GitLab merge request for your team to review. On Cloud, usage comes from the AI allowance in your plan; self-hosted, they’re part of the free Community edition and use your own AI provider.',
+        verdict: 'Jira offers a wider choice of agents. Helpin’s agents start with the customer context, and AI usage is part of the plan.',
+        preview: PREVIEW.agents,
+      },
+      {
+        id: 'customer-requests', title: 'Customer requests and support',
+        competitor: 'Jira can create work items from emails sent by licensed users, and Atlassian points help-desk teams to Jira Service Management. It’s now sold inside Service Collection and priced per agent, with portal, email and chat channels, and customer-service features on new sites live in its Customer Service Management app. Zendesk’s own app links tickets to Jira.',
+        helpin: 'Helpin includes the support inbox, chat widget and help center, so requests start in the same product as the task. When the work ships, the team can follow up in the original conversation.',
+        verdict: 'With Atlassian, support is another product and another bill. Helpin puts the conversation next to the work.',
+        preview: PREVIEW.inbox,
+      },
+      {
+        id: 'crm', title: 'Customer records and meetings',
+        competitor: 'Atlassian doesn’t offer a CRM, and expects its customer service tools to work alongside one. Loom’s Business + AI plan records Zoom, Google Meet and Teams calls and writes notes to Confluence, and Rovo can suggest Jira updates from them.',
+        helpin: HELPIN.crm,
+        verdict: 'If account context matters to your roadmap, Helpin keeps deals and meetings next to the work.',
+        preview: PREVIEW.crm,
+      },
+      {
+        id: 'hosting', title: 'Hosting and open source',
+        competitor: 'Jira Cloud is hosted by Atlassian. Data Center, the self-managed edition, closed to new customers on March 30, 2026, and becomes read-only on March 28, 2029. Jira isn’t open source.',
+        helpin: HELPIN.hosting,
+        verdict: 'If you need to run on your own servers, Helpin is open source and self-hostable.',
+      },
+      {
+        id: 'developers', title: 'Git, API and integrations',
+        competitor: 'Jira connects to GitHub, GitLab and Bitbucket, offers a REST API and webhooks, native iOS and Android apps, the official Rovo MCP Server and more than 4,000 Marketplace apps.',
+        helpin: 'Helpin links GitHub pull requests and GitLab merge requests to tasks and updates delivery status when work merges. It offers a Helpin MCP server (in beta), connections to external MCP servers, including Atlassian’s, and web SDKs for your product.',
+        verdict: 'Jira’s ecosystem is far larger. Helpin can reach Jira through MCP, so the two can run side by side.',
+      },
+    ],
+    pricing: 'Jira charges per user. Billed monthly, Standard is $9.05 and Premium $18.30 a user for up to 100 users; annual plans are priced by user tier, such as $9,050 a year for 100 users on Standard. The free plan covers up to 10 users, and Atlassian raises these prices on October 13, 2026. The help desk, product feedback, docs and meeting notes are priced separately.',
+    hosting: 'Jira Cloud is hosted by Atlassian. New customers can no longer buy Data Center, the self-managed edition, and Data Center products become read-only on March 28, 2029. Jira isn’t open source.',
+    onboarding: 'Jira imports from CSV, Asana, monday, ClickUp, Trello, Linear, GitHub, GitLab and more, and exports work items as CSV, Excel or XML. Helpin doesn’t import from Jira yet, but its agents can use Jira’s tools through MCP, so you can run both during a move.',
   },
 };
 

@@ -9,6 +9,9 @@ target/
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
 .env
+.env.*
+!.env.example
+!.env.*.example
 data/GeoLite2-City.mmdb
 data/tls/producer
 data/tls/consumer

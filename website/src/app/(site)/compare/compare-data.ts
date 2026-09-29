@@ -14,9 +14,9 @@ export type IconKey =
   | 'channels' | 'ecosystem' | 'enterprise' | 'reporting' | 'messaging' | 'simplicity' | 'import' | 'mobile'
   | 'community' | 'deploy' | 'speed' | 'models' | 'docs';
 
-export type StepStatus = 'Available now' | 'Beta' | 'Coming soon' | 'Not yet';
+type StepStatus = 'Available now' | 'Beta' | 'Coming soon' | 'Not yet';
 
-export type TableRow = { label: string; helpin: Cell; competitor: Cell; helpinStatus?: Status; competitorStatus?: Status };
+type TableRow = { label: string; helpin: Cell; competitor: Cell; helpinStatus?: Status; competitorStatus?: Status };
 
 export type CalculatorPlan = { name: string; annual: number; monthly?: number; minSeats?: number };
 
@@ -66,7 +66,7 @@ export type Competitor = {
   };
   faqs: FAQ[];
   closing: { title: string; description: string };
-  /** The short comparison video under the hero; its files live in public/new/compare/ (see compareVideo). */
+  /** The hero video; its files live in public/new/compare/ (see compareVideo). */
   video: { seconds: number; summary: string };
   /** Where each competitor fact was checked. Internal record for re-checks; not shown on the page. */
   sources: { label: string; url: string }[];
@@ -109,6 +109,8 @@ export function cellStatus(value: Cell, status?: Status): Status | undefined {
 }
 
 const CHECKED = '2026-09-26';
+/** Plane and Jira were added later, from sources checked on this date. */
+const CHECKED_LATER = '2026-09-28';
 
 // Shared Helpin facts, so every page states them the same way.
 const HELPIN = {
@@ -910,6 +912,321 @@ export const COMPETITORS: Competitor[] = [
       { label: 'Linear exports', url: 'https://linear.app/docs/exporting-data' },
       { label: 'Linear MCP server', url: 'https://linear.app/docs/mcp' },
       { label: 'Linear mobile apps', url: 'https://linear.app/mobile' },
+    ],
+  },
+  {
+    slug: 'plane',
+    name: 'Plane',
+    group: 'Project management',
+    category: 'Open-source project management',
+    cardLine: 'Two open-source options: a project tracker, or projects with support, CRM and meetings on one customer history.',
+    checked: CHECKED_LATER,
+    seo: {
+      title: 'Open-Source Plane Alternative: Helpin vs Plane',
+      description: 'Compare Helpin and Plane, two open-source tools: projects, AI agents, self-hosting and pricing, and what changes when support, CRM and meetings share the work.',
+    },
+    hero: {
+      accent: 'open-source projects with the customer included.',
+      lede: 'Both are open source and both can run on your own servers. Plane is a popular project tracker with a growing AI layer. Helpin puts projects next to a support inbox, help center, CRM and meetings, so the request, the task and the follow-up share one customer history.',
+    },
+    glance: [
+      { label: 'Customer support', competitor: 'Help desk coming soon; Intake forms on Business', helpin: 'Inbox, chat widget and help center built in' },
+      { label: 'Open-source edition', competitor: 'Free-plan features; AI needs the paid edition', helpin: 'Every product feature, AI agents included' },
+      { label: 'Pricing', competitor: 'Per seat, with AI credits per seat', helpin: 'One workspace price, AI usage included' },
+    ],
+    summary: {
+      title: 'Both open source. Different scope.',
+      lede: 'Plane focuses on planning and tracking the work. Helpin adds the customer side: support, CRM and meetings on the same history as the work.',
+      competitor: [
+        'You want a dedicated project tracker with cycles, modules, initiatives and dashboards.',
+        'You need SOC 2 Type II and ISO 27001, or an air-gapped Enterprise deployment.',
+        'You want native mobile apps and importers from Jira, Linear, Asana and ClickUp.',
+        'You have a small team and want a free plan for up to 12 seats.',
+      ],
+      helpin: [
+        'Customer requests arrive in your own support inbox and become tasks with the conversation attached.',
+        'You want a CRM with deals and meeting notes next to your roadmap.',
+        'You want AI agents, coding agents included, in the free self-hosted edition.',
+        'You want one price per workspace instead of per seat.',
+      ],
+    },
+    reasons: [
+      {
+        title: 'Customer requests start somewhere else',
+        icon: 'requests',
+        competitorLane: ['Intake form or email', 'Work item'],
+        helpinLane: ['Support inbox', 'Task', 'Pull request', 'Customer told'],
+        body: 'Plane collects requests through Intake, with public forms and an intake email address on the Business plan, and lists its Desk help desk as coming soon. Helpin includes the support inbox, chat widget and help center, so the customer’s conversation is already attached to the task, and the team can follow up in it when the work ships.',
+      },
+      {
+        title: 'AI and agents need the paid edition',
+        icon: 'open',
+        competitorLane: ['Community: Free-plan features', 'AI: Commercial Edition'],
+        helpinLane: ['Every product feature', 'AGPL-3.0'],
+        body: `Plane’s Community Edition matches its Free plan. Plane AI, agents, time tracking, Customers and SSO need the closed-source Commercial Edition and a license key. Every Helpin product feature is open source under AGPL-3.0, AI agents and coding agents included. ${NO_LICENSE}`,
+      },
+      {
+        title: 'AI is metered in credits per seat',
+        icon: 'billing',
+        competitorLane: ['Per seat', '+ AI credits per seat'],
+        helpinLane: PRICE_LANE,
+        body: 'Plane Cloud charges per seat, and Plane AI draws on monthly credits: 500 per seat on Pro and 1,000 on Business, none on Free, and no top-up. Helpin charges one price per workspace with unlimited teammates, and each Cloud plan includes an AI usage allowance, with metered overage only if you turn it on.',
+      },
+      {
+        title: 'No CRM or meeting notes',
+        icon: 'crm',
+        competitorLane: ['Customers', 'Work items'],
+        helpinLane: ['Contacts', 'Companies', 'Deals', 'Meetings'],
+        body: 'Plane’s Customers feature, on Business, gives each customer a profile linked to their requests. Helpin adds a CRM with contacts, companies, deals and pipelines, plus meeting notes from Google Meet, Zoom, Microsoft Teams and Webex, on the same account as the work.',
+      },
+    ],
+    tableLede: 'A check means included, a dash means partly or on some plans, and a cross means not available.',
+    table: [
+      {
+        group: 'Open source and pricing',
+        rows: [
+          row('License', 'AGPL-3.0 for every product feature', 'AGPL-3.0 Community Edition; paid features in a closed-source Commercial Edition', ['yes', 'partial']),
+          row('Self-hosted AI agents', 'Included; connect your own AI provider', 'Commercial Edition, with your own AI provider', ['yes', 'partial']),
+          row('Cloud price model', 'Per workspace', 'Per seat: Pro $6, Business $13 a month billed annually'),
+          row('Free plan', 'Self-hosted Community edition', 'Up to 12 seats on Cloud, and the self-hosted Community Edition'),
+          row('Cloud AI', HELPIN.ai, '500 credits per seat on Pro, 1,000 on Business, none on Free'),
+          row('Free trial', HELPIN.trial, '14 days of Business'),
+        ],
+      },
+      {
+        group: 'Planning',
+        rows: [
+          row('Roadmaps and sprints', true, 'Cycles, modules, initiatives and milestones', [undefined, 'yes']),
+          row('Triage', true, 'Intake; forms and email on Business', [undefined, 'yes']),
+          row('GitHub and GitLab', 'PR and MR linking', 'On Pro and above', ['yes', 'yes']),
+          row('Coding agents', HELPIN.coding, 'Assign work items to Cursor on Pro and above', ['yes', 'yes']),
+          row('Native mobile apps', false, 'iOS and Android', [undefined, 'yes']),
+        ],
+      },
+      {
+        group: 'Customers',
+        rows: [
+          row('Support inbox and live chat', HELPIN.channels, 'Help desk coming soon', ['yes', 'no']),
+          row('Help center', HELPIN.helpCenter, 'Published pages on Pro', ['yes', 'partial']),
+          row('Customer profiles', 'Contacts and companies with every conversation and task', 'Customers on Business', ['yes', 'partial']),
+          row('CRM with deals', HELPIN.crm, false, ['yes']),
+          row('Meeting notes', HELPIN.meetings, 'Search Granola notes through Plane AI', ['yes', 'partial']),
+          row('MCP server', HELPIN.mcp, 'Hosted for Plane Cloud, or run locally', ['yes', 'yes']),
+        ],
+      },
+    ],
+    strengths: [
+      { icon: 'speed', title: 'Planning depth.', body: 'Cycles, modules, epics, initiatives, milestones, dashboards and estimates, with list, board, calendar, Gantt and spreadsheet layouts.' },
+      { icon: 'community', title: 'Adoption.', body: 'Plane says more than 50,000 teams use it, and its repository has about 60,000 GitHub stars.' },
+      { icon: 'enterprise', title: 'Compliance and deployment.', body: 'SOC 2 Type II and ISO 27001:2022, SAML and OIDC, Kubernetes, and an air-gapped edition on Enterprise Grid.' },
+      { icon: 'mobile', title: 'Mobile and imports.', body: 'Native iOS, Android and desktop apps, and importers for Jira, Linear, Asana and ClickUp.' },
+    ],
+    calculator: {
+      seatsLabel: 'People on the team',
+      seatsUnit: ['person', 'people'],
+      seats: 20,
+      plans: [{ name: 'Pro', annual: 6, monthly: 8 }, { name: 'Business', annual: 13, monthly: 15 }],
+      plan: 1,
+      helpinPlan: 'growth',
+      notes: [
+        'Business is the Plane plan with Customers and intake forms. Plane AI uses monthly credits included per seat, with no top-up, so AI isn’t priced here.',
+        'For small teams on Pro, Plane costs less than Helpin, and its free plan covers up to 12 seats.',
+      ],
+    },
+    switching: {
+      title: 'Moving from Plane.',
+      lede: 'You don’t have to move everything at once. Many teams start with support.',
+      take: ['Work items, as CSV, Excel or JSON', 'Pages you want to keep as docs', 'Cycles and modules you want to plan in Helpin'],
+      setUp: ['GitHub or GitLab connection', 'Roadmap, sprints and objectives', 'Support inbox and help center', 'Plane connection for agents, through MCP (beta)'],
+      steps: [
+        { title: 'Keep Plane, connect it through MCP', status: 'Beta', body: 'Helpin’s agents can use Plane Cloud’s tools through its hosted MCP server, so engineering can stay in Plane while support runs in Helpin.' },
+        { title: 'Plan new work in Helpin Projects', status: 'Available now', body: 'Roadmaps, sprints and objectives, with the customer conversation attached to each task.' },
+        { title: 'Import Plane work items', status: 'Not yet', body: 'There is no Plane importer yet. Plane exports work items as CSV, Excel or JSON, and Helpin imports projects from Shortcut today.' },
+      ],
+    },
+    faqs: [
+      ['Is Helpin a Plane alternative?', 'For teams that want projects, support and CRM in one open-source product, yes. If you want a dedicated project tracker with deep planning features, Plane is a strong choice.'],
+      ['Are Helpin and Plane both open source?', 'Yes. Plane’s Community Edition is AGPL-3.0 and matches its Free plan; its paid features run in a closed-source Commercial Edition. Every Helpin product feature is open source under AGPL-3.0.'],
+      ['Which is better for self-hosting?', 'Plane has more deployment options, including Kubernetes and an air-gapped Enterprise edition. Helpin’s free Community edition includes AI agents, support, projects and CRM, and is currently a 0.2 beta.'],
+      ['Does Plane have a help desk?', 'Plane lists its Desk help desk as coming soon. Today it collects requests through Intake, with public forms and email on Business, and links them to customer profiles with Customers on Business.'],
+      ['Can Helpin import from Plane?', 'Not yet. Plane exports work items as CSV, Excel or JSON, and Helpin imports projects from Shortcut today.'],
+      ...sharedFaqs('Plane', { selfHost: false }),
+    ],
+    closing: { title: 'Open source, with the customer in the loop.', description: 'Self-host the Community edition for free, or start a 14-day trial of Helpin Cloud with no card.' },
+    video: { seconds: 38, summary: 'Both are open source. Customer requests fly in from email and chat and miss a tracker that starts at the work item; in Helpin every request lands in one inbox, becomes a task with the customer attached, and the reply flies back.' },
+    sources: [
+      { label: 'Plane pricing', url: 'https://plane.so/pricing' },
+      { label: 'Plane billing and plans', url: 'https://docs.plane.so/workspaces-and-users/billing-and-plans' },
+      { label: 'Plane AI credits', url: 'https://docs.plane.so/ai/plane-ai-credits' },
+      { label: 'Plane self-hosted editions', url: 'https://developers.plane.so/self-hosting/editions-and-versions' },
+      { label: 'Plane self-hosting 101', url: 'https://developers.plane.so/self-hosting/self-hosting-101' },
+      { label: 'Plane license', url: 'https://github.com/makeplane/plane/blob/preview/LICENSE.txt' },
+      { label: 'Plane Customers', url: 'https://docs.plane.so/customers' },
+      { label: 'Plane home (Desk coming soon)', url: 'https://plane.so/' },
+      { label: 'Plane and Cursor', url: 'https://docs.plane.so/integrations/cursor' },
+      { label: 'Plane MCP server', url: 'https://developers.plane.so/dev-tools/mcp-server' },
+      { label: 'Plane importers', url: 'https://docs.plane.so/importers/overview' },
+      { label: 'Plane export', url: 'https://docs.plane.so/core-concepts/export' },
+      { label: 'Plane compliance', url: 'https://plane.so/blog/plane-wins-all-top-compliance-certifications' },
+      { label: 'Plane air-gapped requirements', url: 'https://developers.plane.so/self-hosting/methods/airgapped-requirements' },
+      { label: 'Plane open source', url: 'https://plane.so/open-source' },
+    ],
+  },
+  {
+    slug: 'jira',
+    name: 'Jira',
+    group: 'Project management',
+    category: 'Project management',
+    cardLine: 'A widely used issue tracker with support, feedback and meeting notes sold as separate products, compared with one workspace for all of it.',
+    checked: CHECKED_LATER,
+    seo: {
+      title: 'Open-Source Jira Alternative: Helpin vs Jira',
+      description: 'Compare Helpin and Jira: projects, AI agents, support and pricing, and what changes when your support inbox, CRM and meetings live alongside the work.',
+    },
+    hero: {
+      accent: 'the customer’s request and the work, in one place.',
+      lede: 'Jira is a widely used issue tracker with a large app ecosystem; Atlassian sells its help desk, product feedback and meeting notes as separate products. Helpin puts projects, a support inbox, help center, CRM and meetings in one open-source workspace, so the request, the task and the follow-up share one customer history.',
+    },
+    glance: [
+      { label: 'Customer support', competitor: 'A separate product, priced per agent', helpin: 'Inbox, chat widget and help center built in' },
+      { label: 'Self-hosting', competitor: 'Data Center closed to new customers', helpin: 'Open source: Cloud or your servers' },
+      { label: 'AI', competitor: 'Rovo credits per user, overage billed from December', helpin: 'AI usage included in the workspace price' },
+    ],
+    summary: {
+      title: 'A tracker for the work, or one workspace for the customer and the work.',
+      lede: 'Jira is built to plan and track work at any scale. Helpin is for teams that want customer requests, the work behind them and the follow-up in one product.',
+      competitor: [
+        'You run large engineering programs that need advanced planning, approvals and many sites.',
+        'You depend on the Atlassian ecosystem: Confluence, Bitbucket and more than 4,000 Marketplace apps.',
+        'You want Rovo and a wide choice of coding agents, including Claude, Cursor and GitHub Copilot.',
+        'You have a small team: Jira’s free plan covers up to 10 users.',
+      ],
+      helpin: [
+        'Support questions become tasks with the customer conversation attached.',
+        'You want support, CRM and meeting notes in the same product as your roadmap.',
+        'You want to run on your own servers with an open-source product.',
+        'You want one workspace price with AI usage included.',
+      ],
+    },
+    reasons: [
+      {
+        title: 'Support is a separate product',
+        icon: 'requests',
+        competitorLane: ['Service Collection', 'Linked work item'],
+        helpinLane: ['Support inbox', 'Task', 'Pull request', 'Customer told'],
+        body: 'Jira points help-desk teams to Jira Service Management, which is now sold inside Atlassian’s Service Collection and priced per agent. In Helpin the support inbox, chat widget and help center are part of the product, so the conversation is already attached to the task, and the team can follow up in it when the work ships.',
+      },
+      {
+        title: 'Self-hosting is winding down',
+        icon: 'hosting',
+        competitorLane: ['Data Center', 'Read-only in March 2029'],
+        helpinLane: ['Helpin Cloud', 'or your servers'],
+        body: `Atlassian stopped selling Data Center to new customers on March 30, 2026, and Data Center products become read-only on March 28, 2029. Helpin is open source under AGPL-3.0: use Helpin Cloud, or run the Community edition on your own servers with Docker Compose. ${NO_LICENSE}`,
+      },
+      {
+        title: 'AI is metered in credits',
+        icon: 'billing',
+        competitorLane: ['Per user', '+ Rovo credits'],
+        helpinLane: PRICE_LANE,
+        body: 'Paid Jira plans include Rovo credits per user each month: 25 on Standard, 70 on Premium and 150 on Enterprise. From December 3, 2026, extra usage is billed at $0.01 a credit by default, and Rovo Dev is a separate $20 per developer a month. Helpin charges one price per workspace, and each Cloud plan includes an AI usage allowance, with metered overage only if you turn it on.',
+      },
+      {
+        title: 'No CRM, and meeting notes cost extra',
+        icon: 'crm',
+        competitorLane: ['Jira', 'Loom', 'Your CRM'],
+        helpinLane: ['Contacts', 'Companies', 'Deals', 'Meetings'],
+        body: 'Atlassian doesn’t offer a CRM, and automatic meeting notes come with Loom’s Business + AI plan. Helpin includes contacts, companies, deals and pipelines, plus a meeting notetaker for Google Meet, Zoom, Microsoft Teams and Webex, on the same account as the work.',
+      },
+    ],
+    tableLede: 'A check means included, a dash means partly or on some plans, and a cross means not available.',
+    table: [
+      {
+        group: 'Pricing',
+        rows: [
+          row('Price model', 'Per workspace', 'Per user: Standard $9.05, Premium $18.30 a month billed monthly, for up to 100 users'),
+          row('Free plan', 'Self-hosted Community edition', 'Up to 10 users'),
+          row('AI', HELPIN.ai, 'Rovo credits per user; extra usage billed from December 3, 2026'),
+          row('Support inbox', 'Included', 'Service Collection: free for 3 agents, then $25 an agent a month for up to 15'),
+          row('Open source and self-hosting', HELPIN.selfHost, 'Data Center closed to new customers', ['yes', 'no']),
+        ],
+      },
+      {
+        group: 'Planning',
+        rows: [
+          row('Roadmaps and sprints', true, 'Boards and sprints; advanced planning on Premium', [undefined, 'yes']),
+          row('GitHub and GitLab', 'PR and MR linking', 'GitHub, GitLab and Bitbucket', ['yes', 'yes']),
+          row('Coding agents', HELPIN.coding, 'Rovo, Jira Coding Agent, Claude, Cursor and GitHub Copilot', ['yes', 'yes']),
+          row('App marketplace', 'MCP connections and web SDKs', 'More than 4,000 Marketplace apps', ['partial', 'yes']),
+          row('Native mobile apps', false, 'iOS and Android', [undefined, 'yes']),
+        ],
+      },
+      {
+        group: 'Customers',
+        rows: [
+          row('Support inbox and live chat', HELPIN.channels, 'Service Collection, priced per agent', ['yes', 'partial']),
+          row('Help center', HELPIN.helpCenter, 'Knowledge base with Service Collection and Confluence', ['yes', 'partial']),
+          row('CRM with deals', HELPIN.crm, false, ['yes']),
+          row('Meeting notes', HELPIN.meetings, 'Loom Business + AI, a separate product', ['yes', 'partial']),
+          row('MCP server', HELPIN.mcp, 'Rovo MCP Server', ['yes', 'yes']),
+        ],
+      },
+    ],
+    strengths: [
+      { icon: 'ecosystem', title: 'Ecosystem.', body: 'More than 4,000 Marketplace apps, and close links to Confluence, Bitbucket, GitHub and GitLab.' },
+      { icon: 'enterprise', title: 'Scale and controls.', body: 'Advanced planning, capacity management, approvals, sandboxes and uptime SLAs on Premium, and multiple sites and analytics on Enterprise.' },
+      { icon: 'agents', title: 'Agent choice.', body: 'Rovo agents, the Jira Coding Agent and third-party coding agents such as Claude, Cursor and GitHub Copilot, plus an official MCP server.' },
+      { icon: 'mobile', title: 'Mobile and imports.', body: 'Native iOS and Android apps, and importers for Asana, monday, ClickUp, Trello, Linear, GitHub and more.' },
+    ],
+    calculator: {
+      seatsLabel: 'People on the team',
+      seatsUnit: ['person', 'people'],
+      seats: 20,
+      plans: [{ name: 'Standard', annual: 7.54, monthly: 9.05 }, { name: 'Premium', annual: 15.25, monthly: 18.30 }],
+      plan: 0,
+      helpinPlan: 'growth',
+      notes: [
+        'Jira prices annual plans by user tier; the annual rates shown are the 100-user tier. Atlassian raises these list prices on October 13, 2026.',
+        'Jira doesn’t include a support inbox. Service Collection is free for 3 agents, then $25 an agent a month for up to 15; Loom and Confluence are priced separately too.',
+      ],
+    },
+    switching: {
+      title: 'Moving from Jira.',
+      lede: 'You don’t have to move everything at once. Many teams start with support.',
+      take: ['Work items, as CSV, Excel or XML', 'Projects and sprints you want to plan in Helpin', 'Confluence pages you want to keep as docs'],
+      setUp: ['GitHub or GitLab connection', 'Roadmap, sprints and objectives', 'Support inbox and help center', 'Jira connection for agents, through MCP (beta)'],
+      steps: [
+        { title: 'Keep Jira, connect it through MCP', status: 'Beta', body: 'Helpin’s agents can use Jira’s tools through Atlassian’s Rovo MCP Server, so engineering can stay in Jira while support runs in Helpin. Your Atlassian admin may need to allow Helpin’s domain.' },
+        { title: 'Plan new work in Helpin Projects', status: 'Available now', body: 'Roadmaps, sprints and objectives, with the customer conversation attached to each task.' },
+        { title: 'Import Jira work items', status: 'Not yet', body: 'There is no Jira importer yet. Jira exports work items as CSV, Excel or XML, and Helpin imports projects from Shortcut today.' },
+      ],
+    },
+    faqs: [
+      ['Is Helpin a Jira alternative?', 'For teams that want projects, support and CRM in one open-source product, yes. If you run large engineering programs that depend on advanced planning and the Atlassian ecosystem, Jira is a strong choice.'],
+      ['Can I still self-host Jira?', 'Atlassian stopped selling Data Center to new customers on March 30, 2026. Existing customers can buy until March 30, 2028, and Data Center products become read-only on March 28, 2029. Helpin’s Community edition is open source and runs on your own servers.'],
+      ['Does Jira include a help desk?', 'No. Atlassian points help-desk teams to Jira Service Management, now part of its Service Collection and priced per agent, with a free plan for 3 agents. Helpin includes the support inbox, chat widget and help center.'],
+      ['How does Jira bill for AI?', 'Paid Jira plans include Rovo credits per user each month: 25 on Standard, 70 on Premium and 150 on Enterprise. From December 3, 2026, extra usage is billed at $0.01 a credit, and that’s on by default. Rovo Dev is priced separately at $20 per developer a month.'],
+      ['Can Helpin import from Jira?', 'Not yet. Jira exports work items as CSV, Excel or XML, and Helpin’s agents can use Jira’s tools through MCP while you move.'],
+      ...sharedFaqs('Jira').filter(([question]) => !question.startsWith('Can we run Helpin alongside')),
+    ],
+    closing: { title: 'Keep the customer next to the work.', description: 'Start a 14-day trial of Helpin Cloud with no card, or self-host the open-source edition for free.' },
+    video: { seconds: 37, summary: 'A customer’s request sinks into the backlog while support, feedback and meeting notes live in separate Atlassian products. Helpin brings it back up with the customer attached, from the task to the pull request and the reply.' },
+    sources: [
+      { label: 'Jira pricing', url: 'https://www.atlassian.com/software/jira/pricing' },
+      { label: 'Atlassian cloud price tables (current and from October 13, 2026)', url: 'https://www.atlassian.com/licensing/future-pricing/cloud/list/pricing-tables' },
+      { label: 'Atlassian future pricing FAQ', url: 'https://www.atlassian.com/licensing/future-pricing/cloud/list/faqs' },
+      { label: 'Rovo usage limits and extra usage billing', url: 'https://support.atlassian.com/rovo/docs/rovo-usage-limits/' },
+      { label: 'Rovo Dev pricing', url: 'https://www.atlassian.com/software/rovo-dev/pricing' },
+      { label: 'Agents in Jira', url: 'https://support.atlassian.com/jira-software-cloud/docs/collaborate-on-work-items-with-ai-agents/' },
+      { label: 'Jira Coding Agent repositories', url: 'https://support.atlassian.com/jira-software-cloud/docs/supported-repositories-for-jira-coding-agent/' },
+      { label: 'Rovo MCP Server', url: 'https://www.atlassian.com/platform/rovo-mcp' },
+      { label: 'Data Center end of life', url: 'https://www.atlassian.com/licensing/data-center-end-of-life' },
+      { label: 'Jira email and help desks', url: 'https://support.atlassian.com/jira-cloud-administration/docs/create-issues-and-comments-from-email/' },
+      { label: 'Service Collection pricing', url: 'https://www.atlassian.com/collections/service/pricing' },
+      { label: 'Customer Service Management', url: 'https://www.atlassian.com/software/customer-service-management' },
+      { label: 'Loom pricing', url: 'https://www.atlassian.com/software/loom/pricing' },
+      { label: 'Atlassian Marketplace', url: 'https://www.atlassian.com/software/marketplace' },
+      { label: 'Jira importers', url: 'https://support.atlassian.com/jira-software-cloud/docs/import-data-into-jira/' },
+      { label: 'Jira export', url: 'https://support.atlassian.com/jira-software-cloud/docs/export-search-results/' },
     ],
   },
 ];
