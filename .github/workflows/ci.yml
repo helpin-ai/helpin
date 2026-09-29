@@ -69,6 +69,8 @@ jobs:
           python3 -m unittest discover -s scripts/docs -p '*_test.py'
           python3 scripts/docs/check_names.py
           python3 scripts/docs/check_links.py
+      - name: Check for committed secrets
+        run: python3 scripts/ci/check_secrets.py
       - name: Validate CI policy and workflows
         run: |
           python3 -m unittest discover -s scripts/ci -p '*_test.py'

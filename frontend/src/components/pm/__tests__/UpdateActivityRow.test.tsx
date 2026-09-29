@@ -23,7 +23,7 @@ describe('UpdateActivityRow', () => {
 
     expect(markup).toContain('min-w-0 flex-1 truncate text-foreground/70');
     expect(markup.match(/font-semibold text-foreground\/90/g)).toHaveLength(3);
-    expect(markup).toContain('>AM</span>');
+    expect(markup).toContain('>A</span>');
     expect(markup).not.toContain('block truncate font-medium');
   });
 

@@ -23,7 +23,7 @@ import subprocess
 import sys
 
 destination = Path(sys.argv[1])
-paths = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z', 'server', 'packages/shared/test-data', 'frontend/src/generated/aiModels.ts']).split(b'\0')
+paths = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z', 'server', 'packages/shared/test-data', 'frontend/src/generated/aiModels.ts', 'docs/api/openapi.json']).split(b'\0')
 for item in set(paths):
     if not item:
         continue
