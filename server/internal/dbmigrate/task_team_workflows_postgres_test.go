@@ -71,6 +71,24 @@ UPDATE pm_tasks SET started = true, moved_at = '2026-09-25' WHERE id IN ('in-pro
 UPDATE pm_tasks SET completed = true, completed_at = '2026-09-26' WHERE id IN ('done', 'archived');
 UPDATE pm_tasks SET archived = true WHERE id = 'archived';
 CREATE TABLE before_repair AS SELECT * FROM pm_tasks;
+CREATE TABLE pm_task_templates (id text PRIMARY KEY, workspace_id text, team_id text, workflow_state_id text,
+    name text DEFAULT 'Saved task', updated_at timestamptz DEFAULT '2026-09-25');
+INSERT INTO pm_task_templates (id, workspace_id, team_id, workflow_state_id) VALUES
+    ('saved-todo', 'ws', 'eng', 'old-todo'), ('saved-review', 'ws', 'eng', 'old-review'),
+    ('shared', 'ws', NULL, 'old-todo'), ('unmatched', 'ws', 'eng', 'old-backlog'),
+    ('other-workflow', 'ws', 'eng', 'sales-todo'), ('cross-workspace', 'other', 'eng', 'old-todo');
+CREATE TABLE pm_recurring_templates (id text PRIMARY KEY, workspace_id text, team_id text, seed_payload jsonb, config jsonb,
+    next_run_at timestamptz DEFAULT '2026-10-01', generated_count integer DEFAULT 3,
+    updated_at timestamptz DEFAULT '2026-09-25');
+INSERT INTO pm_recurring_templates (id, workspace_id, team_id, seed_payload, config) VALUES
+    ('recurring', 'ws', 'eng', '{"name":"Weekly report","workflow_id":"default","workflow_state_id":"old-review","priority":"high"}',
+     '{"frequency":"weekly","completion_state_ids":["old-done","unknown-state"],"interval":2}'),
+    ('trigger-only', 'ws', 'eng', '{"workflow_id":"engineering","workflow_state_id":"eng-todo"}',
+     '{"completion_state_ids":["old-done"]}'),
+    ('unmatched', 'ws', 'eng', '{"workflow_id":"default","workflow_state_id":"old-backlog"}', '{}'),
+    ('teamless', 'ws', NULL, '{"workflow_id":"default","workflow_state_id":"old-todo"}', '{}'),
+    ('cross-workspace', 'other', 'eng', '{"workflow_id":"default","workflow_state_id":"old-todo"}', '{}');
+CREATE TABLE recurring_before_repair AS SELECT * FROM pm_recurring_templates;
 `)
 	if err != nil {
 		t.Fatal(err)
@@ -110,5 +128,52 @@ CREATE TABLE before_repair AS SELECT * FROM pm_tasks;
 WHERE (t.workspace_id, t.team_id, t.archived, t.completed, t.started, t.completed_at, t.moved_at)
 IS DISTINCT FROM (b.workspace_id, b.team_id, b.archived, b.completed, b.started, b.completed_at, b.moved_at)`).Scan(&changed); err != nil || changed != 0 {
 		t.Fatalf("repair changed ownership or lifecycle: count=%d, err=%v", changed, err)
+	}
+
+	templateMigration, err := os.ReadFile("sql/202609290002_repair_template_team_workflows.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, wantCount := range []int64{2, 0} {
+		result, err := db.ExecContext(ctx, string(templateMigration))
+		if err != nil {
+			t.Fatal(err)
+		}
+		count, err := result.RowsAffected()
+		if err != nil || count != wantCount {
+			t.Fatalf("template pass %d: changed %d recurrences, want %d; err=%v", i, count, wantCount, err)
+		}
+	}
+	for _, tc := range []struct{ id, state string }{
+		{"saved-todo", "eng-todo"}, {"saved-review", "eng-review"}, {"shared", "old-todo"},
+		{"unmatched", "old-backlog"}, {"other-workflow", "sales-todo"}, {"cross-workspace", "old-todo"},
+	} {
+		var state string
+		if err := db.QueryRowContext(ctx, "SELECT workflow_state_id FROM pm_task_templates WHERE id = $1", tc.id).Scan(&state); err != nil {
+			t.Fatal(err)
+		}
+		if state != tc.state {
+			t.Errorf("saved template %s: state=%s, want %s", tc.id, state, tc.state)
+		}
+	}
+	var correct bool
+	if err := db.QueryRowContext(ctx, `SELECT seed_payload->>'workflow_id' = 'engineering'
+    AND seed_payload->>'workflow_state_id' = 'eng-review'
+    AND config->'completion_state_ids' = '["eng-done","unknown-state"]'::jsonb
+    FROM pm_recurring_templates WHERE id = 'recurring'`).Scan(&correct); err != nil || !correct {
+		t.Fatalf("recurring seed/trigger not repaired: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT config->'completion_state_ids' = '["eng-done"]'::jsonb
+    FROM pm_recurring_templates WHERE id = 'trigger-only'`).Scan(&correct); err != nil || !correct {
+		t.Fatalf("completion trigger was not independently repaired: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM pm_recurring_templates t JOIN recurring_before_repair b USING (id)
+WHERE (t.workspace_id, t.team_id, t.next_run_at, t.generated_count,
+       t.seed_payload - 'workflow_id' - 'workflow_state_id', t.config - 'completion_state_ids')
+IS DISTINCT FROM (b.workspace_id, b.team_id, b.next_run_at, b.generated_count,
+       b.seed_payload - 'workflow_id' - 'workflow_state_id', b.config - 'completion_state_ids')
+OR (t.id NOT IN ('recurring','trigger-only') AND (t.seed_payload, t.config, t.updated_at)
+    IS DISTINCT FROM (b.seed_payload, b.config, b.updated_at))`).Scan(&changed); err != nil || changed != 0 {
+		t.Fatalf("template repair changed unrelated data: count=%d, err=%v", changed, err)
 	}
 }

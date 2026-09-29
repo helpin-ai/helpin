@@ -99,21 +99,7 @@ func (s *PMTaskService) resolveTaskWorkflowUpdate(ctx context.Context, current *
 		if err != nil {
 			return "", "", err
 		}
-		stateID = ""
-		if previous != nil {
-			for _, state := range workflow.States {
-				if state.StateType != previous.StateType {
-					continue
-				}
-				if stateID == "" {
-					stateID = state.ID
-				}
-				if strings.EqualFold(strings.TrimSpace(state.Name), strings.TrimSpace(previous.Name)) {
-					stateID = state.ID
-					break
-				}
-			}
-		}
+		stateID = matchingTaskWorkflowState(workflow, previous)
 		if stateID == "" {
 			return "", "", errCommandInput("select a status in the destination workflow; no equivalent status exists")
 		}
@@ -124,4 +110,51 @@ func (s *PMTaskService) resolveTaskWorkflowUpdate(ctx context.Context, current *
 		}
 	}
 	return "", "", errCommandInput("workflow_state_id must belong to workflow_id")
+}
+
+func matchingTaskWorkflowState(workflow *model.WorkflowWithStates, previous *model.PMWorkflowState) string {
+	if previous == nil {
+		return ""
+	}
+	var fallback, named string
+	for _, state := range workflow.States {
+		if state.ID == previous.ID {
+			return state.ID
+		}
+		if state.StateType != previous.StateType {
+			continue
+		}
+		if fallback == "" {
+			fallback = state.ID
+		}
+		if named == "" && strings.EqualFold(strings.TrimSpace(state.Name), strings.TrimSpace(previous.Name)) {
+			named = state.ID
+		}
+	}
+	if named != "" {
+		return named
+	}
+	return fallback
+}
+
+// Resolve inherited defaults without relaxing validation of explicit statuses.
+func (s *PMTaskService) applyTemplateWorkflowState(ctx context.Context, req *model.CreateTaskRequest, stateID string) error {
+	if strings.TrimSpace(stringValue(req.TeamID)) == "" {
+		req.WorkflowStateID = stateID
+		return nil
+	}
+	workflow, err := s.taskWorkflow(ctx, req.WorkspaceID, strings.TrimSpace(*req.TeamID), strings.TrimSpace(req.WorkflowID))
+	if err != nil {
+		return err
+	}
+	previous, err := s.workflowRepo.GetStateByID(ctx, stateID)
+	if err != nil {
+		return err
+	}
+	stateID = matchingTaskWorkflowState(workflow, previous)
+	if stateID == "" {
+		return errCommandInput("select a status in the team's workflow; the template has no equivalent status")
+	}
+	req.WorkflowStateID = stateID
+	return nil
 }

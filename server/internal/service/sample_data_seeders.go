@@ -207,14 +207,9 @@ func (pmSampleSeeder) Seed(ctx context.Context, env *SampleDataEnv) error {
 	if err != nil {
 		return err
 	}
-	workflow, err := workflowRepo.GetDefaultWorkflow(ctx, env.WorkspaceID)
+	workflow, err := tasks.taskWorkflow(ctx, env.WorkspaceID, teamID, "")
 	if err != nil {
 		return err
-	}
-	if workflow == nil || len(workflow.States) == 0 {
-		if workflow, err = workflowRepo.SeedDefaultWorkflow(ctx, env.WorkspaceID); err != nil {
-			return err
-		}
 	}
 	epicStates, err := workflowRepo.SeedDefaultEpicStates(ctx, env.WorkspaceID)
 	if err != nil {

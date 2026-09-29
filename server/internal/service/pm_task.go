@@ -951,7 +951,9 @@ func (s *PMTaskService) applyTemplateDefaultsToCreateRequest(ctx context.Context
 		req.SprintID = tmpl.SprintID
 	}
 	if strings.TrimSpace(req.WorkflowStateID) == "" && tmpl.WorkflowStateID != nil {
-		req.WorkflowStateID = *tmpl.WorkflowStateID
+		if err := s.applyTemplateWorkflowState(ctx, req, *tmpl.WorkflowStateID); err != nil {
+			return err
+		}
 	}
 	if req.Deadline == nil && tmpl.Deadline != nil && strings.TrimSpace(*tmpl.Deadline) != "" {
 		parsed, err := time.Parse("2006-01-02", strings.TrimSpace(*tmpl.Deadline))

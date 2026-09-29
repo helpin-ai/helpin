@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
 func seedTaskTeamWorkflow(t *testing.T, env taskTestEnv, teamID string) string {
@@ -154,5 +155,55 @@ func TestPMTaskUpdateRejectsUnrelatedWorkflow(t *testing.T) {
 	_, err = env.svc.Update(context.Background(), created.Task.ID, model.UpdateTaskRequest{WorkflowID: &env.wfID, WorkflowStateID: &env.stTodo}, env.userID)
 	if err == nil {
 		t.Fatal("accepted workspace workflow despite team workflow")
+	}
+}
+
+func TestPMTaskCreateMapsInheritedTemplateStatusToTeam(t *testing.T) {
+	for _, shared := range []bool{false, true} {
+		name := "team template"
+		if shared {
+			name = "shared template"
+		}
+		t.Run(name, func(t *testing.T) {
+			env := newTaskTestEnv(t)
+			env.svc.SetTaskTemplateRepository(repository.NewPMTaskTemplateRepository(env.db))
+			template := model.PMTaskTemplate{ID: "old-template", WorkspaceID: env.wsID, TeamID: &env.teamID, Name: name, WorkflowStateID: &env.stInProgress}
+			if shared {
+				template.TeamID = nil
+			}
+			if err := env.db.Create(&template).Error; err != nil {
+				t.Fatal(err)
+			}
+			workflowID := seedTaskTeamWorkflow(t, env, env.teamID)
+			created, err := env.svc.Create(context.Background(), model.CreateTaskRequest{WorkspaceID: env.wsID, Name: "From template", TeamID: &env.teamID, TemplateID: &template.ID}, env.userID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if created.Task.WorkflowID != workflowID || created.Task.WorkflowStateID != workflowID+"-started" {
+				t.Fatal("inherited status did not map to the selected team")
+			}
+		})
+	}
+}
+
+func TestPMTaskTemplateDoesNotRemapExplicitStatus(t *testing.T) {
+	env := newTaskTestEnv(t)
+	env.svc.SetTaskTemplateRepository(repository.NewPMTaskTemplateRepository(env.db))
+	template := model.PMTaskTemplate{ID: "shared-template", WorkspaceID: env.wsID, Name: "Shared template", WorkflowStateID: &env.stTodo}
+	if err := env.db.Create(&template).Error; err != nil {
+		t.Fatal(err)
+	}
+	workflowID := seedTaskTeamWorkflow(t, env, env.teamID)
+	req := model.CreateTaskRequest{WorkspaceID: env.wsID, Name: "Selected status", TeamID: &env.teamID, TemplateID: &template.ID, WorkflowStateID: workflowID + "-done"}
+	created, err := env.svc.Create(context.Background(), req, env.userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Task.WorkflowStateID != req.WorkflowStateID || !created.Task.Completed {
+		t.Fatal("template replaced the explicitly selected status")
+	}
+	req.WorkflowStateID = env.stTodo
+	if _, err := env.svc.Create(context.Background(), req, env.userID); err == nil {
+		t.Fatal("explicit status from another workflow was silently remapped")
 	}
 }
