@@ -20,3 +20,13 @@ export function resolveTaskTeamWorkflow(
   }
   return workflows.find((candidate) => !candidate.workflow.team_id) ?? null;
 }
+
+export function resolveTaskTeamState(
+  workflow: WorkflowWithStates,
+  previous?: WorkflowState | null,
+): WorkflowState | null {
+  const matches = workflow.states.filter((state) => state.state_type === previous?.state_type);
+  return matches.find((state) => state.name.trim().toLowerCase() === previous?.name.trim().toLowerCase())
+    ?? matches[0]
+    ?? null;
+}

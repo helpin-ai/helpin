@@ -11,6 +11,7 @@ import (
 
 func TestPMTriageReviewedSupportDraftCreatesExactlyReviewedWork(t *testing.T) {
 	env := newTaskTestEnv(t)
+	workflowID := seedTaskTeamWorkflow(t, env, env.teamID)
 	ctx := context.Background()
 	conversations := repository.NewSupportConversationRepository(env.db)
 	messages := repository.NewSupportMessageRepository(env.db)
@@ -43,6 +44,9 @@ func TestPMTriageReviewedSupportDraftCreatesExactlyReviewedWork(t *testing.T) {
 	task, err := repository.NewPMTaskRepository(env.db).GetRawByID(ctx, created.TaskID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if task.WorkflowID != workflowID || task.WorkflowStateID != workflowID+"-todo" {
+		t.Fatalf("support task did not use team workflow: %s/%s", task.WorkflowID, task.WorkflowStateID)
 	}
 	if task.Name != name || derefString(task.Description) != description || task.TaskType != taskType || task.Priority != priority {
 		t.Fatalf("reviewed fields changed: %+v", task)

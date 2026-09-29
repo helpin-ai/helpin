@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { WorkflowWithStates } from '@/lib/pmTypes';
 import {
   resolveTaskTeamWorkflow,
+  resolveTaskTeamState,
   resolveTaskWorkflowStates,
 } from '../taskWorkflowResolution';
 
@@ -33,6 +34,23 @@ function workflow(id: string, stateId: string, teamId?: string): WorkflowWithSta
 }
 
 describe('task workflow resolution', () => {
+  it('preserves progress and prefers the matching status name on a team change', () => {
+    const destination = workflow('team', 'todo', 'team-a');
+    const started = { ...destination.states[0], id: 'started', name: 'In Progress', state_type: 'started' as const };
+    const review = { ...started, id: 'review', name: 'In Review' };
+    destination.states.push(started, review);
+    const previous = { ...review, id: 'old-review', name: ' in review ' };
+
+    expect(resolveTaskTeamState(destination, previous)?.id).toBe('review');
+    expect(resolveTaskTeamState(destination, { ...previous, name: 'Doing' })?.id).toBe('started');
+  });
+
+  it('does not reset completed tasks when the destination lacks a completed status', () => {
+    const destination = workflow('team', 'todo', 'team-a');
+    const completed = { ...destination.states[0], state_type: 'done' as const };
+    expect(resolveTaskTeamState(destination, completed)).toBeNull();
+  });
+
   it('uses the task workflow states instead of stale fallback states', () => {
     const defaultWorkflow = workflow('default-workflow', 'default-state');
     const teamWorkflow = workflow('team-workflow', 'team-state', 'team-a');

@@ -928,7 +928,6 @@ func TestResolveTaskCreationWorkflowValidatesExplicitWorkflowTeamScope(t *testin
 	db := newTestDB(t)
 	workflowRepo := repository.NewPMWorkflowRepository(db)
 	taskService := &PMTaskService{workflowRepo: workflowRepo}
-	svc := NewInternalCommandService(nil, taskService, nil, nil, nil, nil, nil, nil)
 
 	now := time.Now()
 	mustExec(t, db, `INSERT INTO pm_workflows (id, workspace_id, name, team_id, default_state_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -942,7 +941,7 @@ func TestResolveTaskCreationWorkflowValidatesExplicitWorkflowTeamScope(t *testin
 
 	workflowID := "wf-team-b"
 	stateID := "state-team-b"
-	_, _, err := svc.resolveTaskCreationWorkflow(context.Background(), "ws-1", "team-a", &workflowID, &stateID)
+	_, _, err := taskService.resolveTaskWorkflow(context.Background(), "ws-1", "team-a", workflowID, stateID)
 	if err == nil {
 		t.Fatal("expected explicit workflow/state pair from another team to be rejected")
 	}
@@ -952,7 +951,7 @@ func TestResolveTaskCreationWorkflowValidatesExplicitWorkflowTeamScope(t *testin
 
 	workflowID = "wf-team-a"
 	stateID = "state-team-a"
-	resolvedWorkflowID, resolvedStateID, err := svc.resolveTaskCreationWorkflow(context.Background(), "ws-1", "team-a", &workflowID, &stateID)
+	resolvedWorkflowID, resolvedStateID, err := taskService.resolveTaskWorkflow(context.Background(), "ws-1", "team-a", workflowID, stateID)
 	if err != nil {
 		t.Fatalf("expected matching explicit workflow/state pair to resolve: %v", err)
 	}
@@ -965,7 +964,6 @@ func TestResolveTaskCreationWorkflowRejectsStateOutsideWorkflow(t *testing.T) {
 	db := newTestDB(t)
 	workflowRepo := repository.NewPMWorkflowRepository(db)
 	taskService := &PMTaskService{workflowRepo: workflowRepo}
-	svc := NewInternalCommandService(nil, taskService, nil, nil, nil, nil, nil, nil)
 
 	now := time.Now()
 	mustExec(t, db, `INSERT INTO pm_workflows (id, workspace_id, name, team_id, default_state_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -979,11 +977,11 @@ func TestResolveTaskCreationWorkflowRejectsStateOutsideWorkflow(t *testing.T) {
 
 	workflowID := "wf-team-a"
 	stateID := "state-team-b"
-	_, _, err := svc.resolveTaskCreationWorkflow(context.Background(), "ws-1", "team-a", &workflowID, &stateID)
+	_, _, err := taskService.resolveTaskWorkflow(context.Background(), "ws-1", "team-a", workflowID, stateID)
 	if err == nil {
 		t.Fatal("expected explicit state from another workflow to be rejected")
 	}
-	if !strings.Contains(err.Error(), "state_id does not belong to workflow_id") {
+	if !strings.Contains(err.Error(), "workflow_state_id must belong to workflow_id") {
 		t.Fatalf("expected workflow/state mismatch error, got %v", err)
 	}
 }
