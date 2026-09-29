@@ -109,14 +109,14 @@
 /* Price calculator: controls, then the answer, then the arithmetic behind it */
 .hp3 .cmp-calc { overflow: hidden; border: 1px solid var(--border); border-radius: 18px; background: var(--bg); box-shadow: 0 1px 2px #081b160a, 0 18px 48px #081b160d; }
 .hp3 .cmp-calc-controls { display: grid; gap: 22px; padding: 26px 28px 24px; }
-.hp3 .cmp-calc-sliders { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px 40px; }
-.hp3 .cmp-calc-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px 20px; padding-top: 22px; border-top: 1px dashed var(--border-2); }
+.hp3 .cmp-calc-sliders { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 40px; }
+.hp3 .cmp-calc-options { display: flex; flex-wrap: wrap; gap: 18px 32px; padding-top: 22px; border-top: 1px dashed var(--border-2); }
 .hp3 .cmp-calc-field { display: grid; align-content: start; gap: 10px; min-width: 0; }
 .hp3 .cmp-calc-label { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; color: var(--t2); font-size: 13px; font-weight: 500; }
 .hp3 .cmp-calc-label output { color: var(--ink); font-size: 20px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-.hp3 .cmp-calc-segmented { display: flex; flex-wrap: wrap; gap: 2px; padding: 3px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg2); }
-.hp3 .cmp-calc-controls > .cmp-calc-field .cmp-calc-segmented { max-width: 340px; }
-.hp3 .cmp-calc-segmented button { flex: 1 1 auto; min-width: 0; padding: 8px 10px; border: 0; border-radius: 7px; background: transparent; color: var(--t2); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap; transition: color .15s, background .15s, box-shadow .15s; }
+/* Toggles fit their labels instead of stretching across the column. */
+.hp3 .cmp-calc-segmented { display: inline-flex; flex-wrap: wrap; gap: 2px; width: max-content; max-width: 100%; padding: 3px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg2); }
+.hp3 .cmp-calc-segmented button { flex: none; min-width: 0; padding: 7px 14px; border: 0; border-radius: 7px; background: transparent; color: var(--t2); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap; transition: color .15s, background .15s, box-shadow .15s; }
 .hp3 .cmp-calc-segmented button:hover { color: var(--ink); }
 .hp3 .cmp-calc-segmented button[aria-pressed=true] { background: #fff; color: var(--ink); font-weight: 600; box-shadow: 0 0 0 1px var(--border-2), 0 1px 3px #081b1614; }
 .hp3 .cmp-calc-segmented button:focus-visible { outline: 2px solid var(--em); outline-offset: 1px; }
@@ -430,9 +430,9 @@
   .hp3 .cmp-table tbody td { border-top: 0; padding-top: 8px; }
   .hp3 .cmp-table .cmp-cell { gap: 8px; }
   .hp3 .cmp-calc-controls { padding: 22px 20px; }
-  .hp3 .cmp-calc-options { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 10px; }
-  .hp3 .cmp-calc-options > :first-child:not(:last-child) { grid-column: 1 / -1; }
-  .hp3 .cmp-calc-segmented button { padding-inline: 6px; }
+  .hp3 .cmp-calc-options { gap: 16px 20px; }
+  .hp3 .cmp-calc-sliders { grid-template-columns: 1fr; }
+  .hp3 .cmp-calc-segmented button { padding-inline: 11px; }
   .hp3 .cmp-calc-context { font-size: 10px; line-height: 1.7; }
   .hp3 .cmp-calc-result { padding: 22px 20px 22px; }
   .hp3 .cmp-calc-quotes { grid-template-columns: 1fr; gap: 12px; }
