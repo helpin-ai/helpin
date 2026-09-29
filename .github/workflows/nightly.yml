@@ -26,7 +26,7 @@ jobs:
   # are slow and noisy (~3x test runtime) — fine for nightly, never on PR.
   server-race:
     name: Server (-race)
-    runs-on: arc-runners-helpin-ai
+    runs-on: ubuntu-24.04
     # -race adds ~3x runtime over plain go test; plan budget allows generous.
     timeout-minutes: 45
     # Postgres service intentionally omitted — the in-cluster k8s API
@@ -56,7 +56,7 @@ jobs:
   # Mocked support inbox Playwright suite. Deterministic — no external services.
   playwright-support:
     name: Playwright (support, mocked)
-    runs-on: arc-runners-helpin-ai
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -91,7 +91,7 @@ jobs:
   # Mocked SDK widget Playwright suite.
   playwright-widget:
     name: Playwright (widget, mocked)
-    runs-on: arc-runners-helpin-ai
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

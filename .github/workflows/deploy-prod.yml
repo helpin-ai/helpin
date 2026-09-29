@@ -27,7 +27,7 @@ env:
 jobs:
   changes:
     name: Detect Changes
-    runs-on: arc-runners-helpin-ai
+    runs-on: ubuntu-24.04
     if: "!contains(github.event.head_commit.message, '[skip ci]')"
     outputs:
       server: ${{ steps.filter.outputs.server }}
@@ -87,7 +87,7 @@ jobs:
 
   version:
     name: Determine Release Versions
-    runs-on: arc-runners-helpin-ai
+    runs-on: ubuntu-24.04
     needs: changes
     if: needs.changes.outputs.server == 'true' || needs.changes.outputs.helpcenter == 'true'
     outputs:
@@ -127,7 +127,7 @@ jobs:
       contents: read
       packages: write
     name: Build Server Image
-    runs-on: arc-runners-helpin-ai
+    runs-on: ubuntu-24.04
     needs: [version, changes]
     if: needs.changes.outputs.server == 'true' && needs.version.outputs.server_tag != ''
     steps:
@@ -190,7 +190,7 @@ jobs:
       contents: read
       packages: write
     name: Build Help Center Image
-    runs-on: arc-runners-helpin-ai
+    runs-on: ubuntu-24.04
     needs: [version, changes]
     if: needs.changes.outputs.helpcenter == 'true' && needs.version.outputs.helpcenter_tag != ''
     steps:
@@ -224,7 +224,7 @@ jobs:
 
   deploy-netlify:
     name: Build & Deploy Frontend to Netlify
-    runs-on: arc-runners-helpin-ai
+    runs-on: ubuntu-24.04
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     steps:
@@ -285,7 +285,7 @@ jobs:
     permissions:
       contents: write
     name: Create Official Release
-    runs-on: arc-runners-helpin-ai
+    runs-on: ubuntu-24.04
     needs: [version, changes, build-server, build-helpcenter]
     if: |
       always() &&
