@@ -1,6 +1,6 @@
 # Page playbooks
 
-Read the entry for the actual page. These ten priorities guide the story inside its existing structure; they are not a required route list, section plan, or feature catalog.
+Read the entry for the actual page. These priorities guide the story inside its existing structure; they are not a required route list, section plan, or feature catalog.
 
 ## 1. Homepage
 
@@ -41,6 +41,24 @@ Explain the full offered product within the confirmed release scope, who operate
 ## 10. Pricing
 
 Help visitors compare the actual offer: price, billing unit, included capacity, usage, plan gates, and deployment choice. Use platform language for positioning when appropriate while retaining the correct billing unit. Concision must not remove material conditions. Do not invent savings percentages or a comparison calculator's assumptions.
+
+## 11. Comparison hub and “Helpin vs X” pages
+
+The hub (`/compare`) lets a visitor weigh Helpin against the tools they use; each `/compare/<slug>` page is a long-form guide a buyer can trust. Honesty is the product here: a page that hides the other tool's strengths loses the reader.
+
+- Lead with the difference the buyer will feel. For support tools, that's the four advantages in [positioning and voice](positioning-and-voice.md); for trackers such as Linear, Plane, and Jira, it's projects with the customer attached.
+- Name both editions: open source on the Community edition, or Helpin Cloud.
+- State competitor facts only from their own pricing and documentation, checked on a recorded date (`CHECKED` in `compare-data.ts`). Keep source URLs in the data's `sources` field; they are not shown on the page.
+- Keep “Where X is stronger” honest and specific, and say when the other tool costs less. The calculator uses list prices only.
+- Refer to other products by name only: no logos, marks, or letter badges.
+- Keep the byline and trademark line: written by the Helpin team, verified date, “X is a trademark of its owner; Helpin is not affiliated with it.”
+- Titles follow “Open-Source X Alternative: Helpin vs X (year)” when that fits in 60 characters; otherwise “Helpin vs X: Open-Source Alternative”.
+
+Adding a competitor touches `compare-data.ts` (facts, table, calculator, FAQs), `article-data.ts` (the guide's prose), `matrix-data.ts` (hub table), the hero video and poster in `website/public/new/compare/`, and an OG card in `website/scripts/generate-og-images.mjs`. The sitemap and the footer's Compare column pick the new page up automatically.
+
+## 12. Release announcements and changelog
+
+When the team adds a changelog or release posts, write one post per public release, titled with the version and its two or three headline changes. Open with a one-line summary, give each headline change a short section with a product visual and a link to try it or read the docs, then list smaller improvements and fixes. Add upgrade notes for self-hosters (commands and breaking changes) and credit community contributors. Link to the full GitHub release notes rather than pasting the pull-request list.
 
 ## Future pages and “next page”
 

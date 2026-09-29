@@ -1,6 +1,6 @@
 ---
 name: helpin-website-visuals
-description: Create consistent Helpin marketing website product imagery and animated workflow scenes. Use when adding or revising website product pages, generated demo screenshots, bento illustrations, and website motion; excludes the application UI and unrelated websites.
+description: Create consistent Helpin marketing website product imagery, videos, heroes, and animated workflow scenes. Use when adding or revising website product pages, hero treatments, generated demo screenshots, comparison videos, bento illustrations, and website motion; excludes the application UI and unrelated websites.
 ---
 
 # Helpin website visuals
@@ -11,12 +11,12 @@ Create product-led visuals for Helpin's marketing website. Keep each scene groun
 
 Resolve paths below from the Helpin repository root (the directory containing `website/` and `AGENTS.md`). If invoked from the parent workspace, locate that repository first.
 
-- Brand and typography: `website/src/app/new/layout.tsx` and `new.css`.
+- Brand and typography: fonts load in `website/src/app/(site)/_components/MarketingShell.tsx`; tokens live on `.hp3` in `website/src/app/(site)/new.css`.
 - Existing product imagery: `website/public/new/product/`.
 - Canonical demo identity: `output/imagegen/product-orbitdesk/` when present. Those corrected references take precedence over older images still bearing Helpin Studio or using OrbitDesk as the customer company.
-- Palette authorities: the homepage, `website/src/app/new/products/customer-support/`, and `website/src/app/new/products/ai-agents/`.
+- Palette authorities: the homepage, `website/src/app/(site)/products/customer-support/`, and `website/src/app/(site)/products/ai-agents/`.
 - Read [palette and scene references](references/palette-and-scenes.md) before styling a section or choosing a product preview. It maps approved surface roles and HTML animation examples to their source files.
-- Animated illustration references: `website/src/app/new/_components/AgentControlArt.tsx`, `CustomerRecordBento.tsx`, and `AskAgentBento.tsx`.
+- Animated illustration references: `website/src/app/(site)/_components/AgentControlArt.tsx`, `CustomerRecordBento.tsx`, and `AskAgentBento.tsx`.
 - Playback and reveals: `useBentoPlayback.ts` and `ScrollReveal.tsx` in that components directory.
 
 Inspect the closest approved visual and its consuming code before starting. Existing references guide composition; do not copy a screenshot's accidental text or identity inconsistencies.
@@ -30,7 +30,7 @@ Inspect the closest approved visual and its consuming code before starting. Exis
 
 ## Shared visual contract
 
-Use `website/src/app/new/new.css` as the token authority. Use white and cool gray for light sections, emerald for accents, near-black for dark marketing sections, and the approved forest surfaces for dark workflow art. Reuse the semantic roles in [palette and scene references](references/palette-and-scenes.md); avoid inventing a separate olive, lime, or warm-gray palette for each product page.
+Use `website/src/app/(site)/new.css` as the token authority: ink `#131514`, emerald `--em` `#0F7A50` for accents, white and cool gray (`--bg`, `--bg2`) for light sections, near-black `--surface-dark` `#090909` for dark marketing sections, and the forest `--art-dark*` surfaces with `--on-dark-accent` `#9CDBB3` for dark workflow art. Reuse the semantic roles in [palette and scene references](references/palette-and-scenes.md); avoid inventing a separate olive, lime, or warm-gray palette for each product page.
 
 Keep the full Projects Kanban/task previews in their approved charcoal/sage palette; see the explicit exception in the palette reference. Do not wash those screens in the forest-green workflow colors.
 
@@ -44,6 +44,18 @@ Demo identity, unless the user specifies another scenario:
 - **Sam Rivera** is the teammate; use the existing avatar or sage SR initials as appropriate.
 - **Helpin AI** and **Ask Agent** retain their product names.
 - Continue the section’s established story: Support uses Maya’s incomplete CSV export and EXP-142; Projects uses Slack alerts for failed syncs and ORB-491. Older SSO demos remain valid in their original sections but are not the default for new work. Keep customer names, task IDs, owners, and statuses consistent across a sequence. Distinguish proposed work, approved changes, merged code, and sent customer updates.
+
+## Heroes, nav, and page rhythm
+
+- **Dark hero** (most inner pages): `platform-hero motion-hero` on the near-black surface with `<HeroVortex variant="…" tone="dark" />`, and the page passes `<PreviewNav tone="dark" />` so the nav matches the hero until it scrolls away. **Light hero** (home, `/product`): white surface, `<HeroVortex tone="light" />`, default nav. Never leave a white nav above a dark hero.
+- Below the hero, alternate white and soft-gray (`--bg2`) sections, with at most one dark `section-motion` band per page for rhythm. The footer and the final CTA carry their own treatments.
+- Show at most three cards per row on desktop and wrap the rest; two on tablet; one on phones.
+- Refer to other products by name only. No competitor logos, marks, screenshots, or letter badges.
+
+## Product demos and comparison videos
+
+- Prefer the shared `ProductPreview` (`website/src/app/(site)/_components/product-previews/`, `theme="light" | "dark"`) for platform UI. Below the fold, load it lazily into a placeholder of the same height (see `LazyPreview` in the compare route) so nothing shifts.
+- Comparison pages open on a short hero video per competitor: `website/public/new/compare/helpin-vs-<slug>-1080p-v<n>.mp4` with a `helpin-vs-<slug>-poster-1920-v<n>.webp` poster, played by `CompareFilm`. The videos are produced in the separate helpin-video-framework project with its own skills; bump the `-v` suffix when a video is re-cut, and keep the poster in sync.
 
 ## Images
 

@@ -1,0 +1,117 @@
+schema_version: 1
+record_kind: product-truth
+# What helpin.ai may say, where each fact comes from, and when it was checked.
+# Code sources win over this file when they disagree; update this file when they change.
+# Statuses: verified (checked in code or on the live site), owner-approved (the product
+# owner approved stating it as committed direction; implementation may still lag),
+# stale (past its re-check date), conflicted (sources disagree; don't publish).
+release: Community 0.2 beta; Helpin Cloud
+deployment: https://helpin.ai (production, deployed from main)
+maintainer: Helpin team
+updated_at: 2026-09-29
+claims:
+  - id: editions-and-license
+    question: How is Helpin offered, and under which licenses?
+    statement: >-
+      Helpin is open source. Helpin Cloud is hosted by Helpin; the Community edition is
+      self-hosted with Docker Compose. The application is AGPL-3.0-only. Directories named
+      ee/ (Cloud billing, AI usage metering, hosted AI connections) use the Helpin
+      Enterprise License, and the public SDKs and widgets (packages/sdk-js, react, vue,
+      nextjs, shared, widget-core, widget-embed, and widget/) use Apache-2.0.
+    status: verified
+    sources:
+      - LICENSE (licensing scopes)
+      - https://github.com/helpin-ai/helpin (public repository, checked 2026-09-29)
+    checked_at: 2026-09-29
+    qualifier: Say “open source under AGPL-3.0”; only Cloud billing and hosted AI sit outside it.
+    conflict: null
+
+  - id: community-scope
+    question: What does the self-hosted Community edition include?
+    statement: >-
+      Community 0.2 includes every product: support, docs and help center, AI agents
+      including coding agents, projects, CRM with meetings, and automation. Only Cloud
+      billing and hosted AI are left out. Self-hosted installs use your own AI providers.
+    status: owner-approved
+    sources:
+      - Owner decisions 2026-09-23 and 2026-09-26 (Community 0.2 ships all products, coding agents included)
+      - website/src/app/(site)/self-hosting/page.tsx
+    checked_at: 2026-09-29
+    qualifier: Label it “Community 0.2 beta” where the version matters.
+    conflict: community/README.md still titles the guide “Helpin Community 0.1 beta”.
+
+  - id: commercial-offer
+    question: What are the prices, billing unit, trial, and AI allowance?
+    statement: >-
+      One price per workspace with unlimited teammates. Starter is $79 a month billed
+      annually ($99 monthly); Growth is $239 a month billed annually ($299 monthly). Every
+      Cloud plan includes an AI usage allowance; paid plans can turn on metered overage. The
+      trial is 14 days on Growth, with no card required. The Community edition is free.
+    status: verified
+    sources:
+      - website/src/app/pricing/pricing-data.ts (PLANS, AI_ALLOWANCE; authoritative)
+      - website/src/app/(site)/_components/ui.tsx (CtaNote)
+    checked_at: 2026-09-29
+    qualifier: Read prices from pricing-data.ts; never retype them from this file.
+    conflict: null
+
+  - id: own-ai-models
+    question: Can customers bring their own AI models and keys?
+    statement: >-
+      Yes. Self-hosted installs always use your own AI providers. On Helpin Cloud, your own
+      AI provider keys are available on the Enterprise plan; other Cloud plans include AI
+      usage.
+    status: owner-approved
+    sources:
+      - Owner decision 2026-09-22 (your own keys on Cloud = Enterprise)
+    checked_at: 2026-09-29
+    qualifier: Self-hosting doesn't make external AI processing local.
+    conflict: null
+
+  - id: support-advantages
+    question: What do we lead with for support buyers?
+    statement: >-
+      No per-seat or per-resolution fees; bring your own AI models; docs that keep up with
+      the product, drafted from support conversations and shipped code changes; and agents
+      that take a ticket to a task, a coding agent's pull request, and a customer update when
+      it ships, with the approvals your team chooses.
+    status: owner-approved
+    sources:
+      - Owner feedback 2026-09-26 on the comparison pages
+    checked_at: 2026-09-29
+    qualifier: >-
+      Credit competitors with similar features (Intercom and Zendesk draft help-center
+      content from conversations; Zendesk accepts your own OpenAI key through apps or its
+      API). The edge is shipped code changes and one product from ticket to release.
+    conflict: null
+
+  - id: committed-direction
+    question: Which not-yet-complete capabilities may the site state as available?
+    statement: >-
+      Customer follow-up in the original conversation when linked work ships (with
+      approvals); plain SMTP for self-hosted support email; Zendesk and Intercom import
+      (“coming soon” in FAQs); CRM CSV import with column mapping; meeting follow-up sent
+      from Helpin through connected Gmail; timestamped transcript evidence for meeting
+      decisions; Ask Agent reading meetings; per-action approvals; merge moves the task to
+      Done; sample data for local self-hosted evaluation.
+    status: owner-approved
+    sources:
+      - Owner decision 2026-09-22 (build the capability rather than remove the claim)
+    checked_at: 2026-09-29
+    qualifier: Re-check each item before a release; some may have shipped or been dropped.
+    conflict: null
+
+  - id: competitor-facts
+    question: Where do facts about other products live?
+    statement: >-
+      Comparison facts for Intercom, Zendesk, Help Scout, Chatwoot, Linear, Plane, and Jira
+      live in website/src/app/(site)/compare/compare-data.ts, with the date checked
+      (CHECKED) and internal source URLs per competitor.
+    status: verified
+    sources:
+      - website/src/app/(site)/compare/compare-data.ts
+    checked_at: 2026-09-26
+    qualifier: Re-check before any edit that touches them, and by 2026-12-26 at the latest.
+    conflict: null
+# For each source record path_or_url, revision, scope, owner when relevant,
+# and what the source establishes. Never store secrets or customer data.

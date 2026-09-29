@@ -14,14 +14,23 @@ The shared convention is `docs/documentation-guide.md`. Keep guide names lowerca
 and hyphenated, update incoming references on renames, and validate documentation
 with the checks described there.
 
-## Website copy
+## Website
 
-For Helpin marketing copy drafts, audits, and implementation, use
-[`helpin-website-copy`](.agents/skills/helpin-website-copy/SKILL.md).
+For the marketing site in `website/` (helpin.ai), use the three website skills:
+
+- [`helpin-website-copy`](.agents/skills/helpin-website-copy/SKILL.md) for
+  voice, house style, positioning, claims, and copy drafts, audits, or edits.
+- [`helpin-website-pages`](.agents/skills/helpin-website-pages/SKILL.md) for
+  page structure, shared components, SEO metadata, QA, and release.
+- [`helpin-website-visuals`](.agents/skills/helpin-website-visuals/SKILL.md)
+  for product imagery, heroes, videos, and motion.
+
 Preserve the existing page structure and distinguish editorial direction from
 release-specific product evidence. A draft request does not authorize website
-edits. Read maintained product-truth and page-progress records when available;
-use the skill's templates only when initialization is requested or appropriate.
+edits. Product facts and owner decisions the site may state live in
+[`docs/website-copy/product-truth.yaml`](docs/website-copy/product-truth.yaml);
+code sources such as `website/src/app/pricing/pricing-data.ts` win when they
+disagree.
 
 ## Architecture
 
