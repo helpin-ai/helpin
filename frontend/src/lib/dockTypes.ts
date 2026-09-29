@@ -145,10 +145,16 @@ export interface PublicShareLink {
 	url: string
 }
 
+export interface PublicSharedMessage {
+	id: string
+	role: 'user' | 'assistant'
+	content: string
+}
+
 export interface PublicSharedDockChat {
 	title: string
 	open_path?: string
-	messages: AgentRunMessage[]
+	messages: PublicSharedMessage[]
 	updated_at: string
 }
 
