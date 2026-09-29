@@ -202,8 +202,8 @@ func (r *PMWorkflowRepository) ReorderStates(ctx context.Context, workflowID str
 func (r *PMWorkflowRepository) GetDefaultWorkflow(ctx context.Context, workspaceID string) (*model.WorkflowWithStates, error) {
 	var wf model.PMWorkflow
 	if err := r.db.WithContext(ctx).
-		Where("workspace_id = ?", workspaceID).
-		Order("CASE WHEN team_id IS NULL THEN 0 ELSE 1 END, created_at ASC").
+		Where("workspace_id = ? AND team_id IS NULL", workspaceID).
+		Order("created_at ASC").
 		First(&wf).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil

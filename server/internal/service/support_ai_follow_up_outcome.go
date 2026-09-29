@@ -269,7 +269,8 @@ func (s *SupportFollowUpService) finishHandoff(ctx context.Context, tx *gorm.DB,
 	if err != nil {
 		return nil, err
 	}
-	sent := buildSupportHandoffNote(conv, history, "Follow-up assessment: "+reason, SupportHandoffBrief{}, now)
+	// Separate the note from the event at browser timestamp precision too.
+	sent := buildSupportHandoffNote(conv, history, "Follow-up assessment: "+reason, SupportHandoffBrief{}, now.Add(time.Millisecond))
 	metadata, _ := json.Marshal(map[string]any{"reason": reason, "support_follow_up_id": e.ID, "ai_handoff_brief": true})
 	sent.Metadata = string(metadata)
 	event := &model.SupportMessage{WorkspaceID: conv.WorkspaceID, ConversationID: conv.ID, SenderType: "ai", SenderDisplayName: strPtr(helpinAIDisplayName), MessageType: "system", SystemEventType: strPtr(model.SystemEventAIEscalated), IsInternal: true, Content: "Follow-up assessment requested a teammate: " + reason, Metadata: string(metadata), CreatedAt: now}

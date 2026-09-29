@@ -20,13 +20,12 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
-import { cn } from '@/lib/utils';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 type GuidanceDraft = {
   title: string;
   questionPatterns: string;
   answer: string;
-  language: string;
   status: CuratedGuidanceStatus;
 };
 
@@ -34,7 +33,6 @@ const emptyDraft: GuidanceDraft = {
   title: '',
   questionPatterns: '',
   answer: '',
-  language: '',
   status: 'active',
 };
 
@@ -44,7 +42,6 @@ function guidanceDraft(item?: CuratedGuidance): GuidanceDraft {
     title: item.title,
     questionPatterns: item.question_patterns.join('\n'),
     answer: item.answer,
-    language: item.language,
     status: item.status,
   };
 }
@@ -54,13 +51,13 @@ function editablePayloadFromDraft(draft: GuidanceDraft) {
     title: draft.title.trim(),
     question_patterns: draft.questionPatterns.split('\n').map((value) => value.trim()).filter(Boolean),
     answer: draft.answer.trim(),
-    language: draft.language.trim().toLowerCase(),
   };
 }
 
 function createPayloadFromDraft(draft: GuidanceDraft): CreateCuratedGuidanceRequest {
   return {
     ...editablePayloadFromDraft(draft),
+    language: '',
     intent: 'unknown',
     topics: [],
   };
@@ -77,7 +74,6 @@ function draftsMatch(left: GuidanceDraft, right: GuidanceDraft) {
   return left.title === right.title
     && left.questionPatterns === right.questionPatterns
     && left.answer === right.answer
-    && left.language === right.language
     && left.status === right.status;
 }
 
@@ -86,7 +82,6 @@ function GuidanceEditor({
   editingExisting,
   saving,
   valid,
-  standalone = false,
   onChange,
   onCancel,
   onSave,
@@ -95,7 +90,6 @@ function GuidanceEditor({
   editingExisting: boolean;
   saving: boolean;
   valid: boolean;
-  standalone?: boolean;
   onChange: (change: Partial<GuidanceDraft>) => void;
   onCancel: () => void;
   onSave: () => void;
@@ -104,51 +98,20 @@ function GuidanceEditor({
 
   return (
     <form
-      className={cn('space-y-4 bg-muted/10 p-4', standalone && 'rounded-lg border')}
+      className="space-y-4"
       onSubmit={(event) => {
         event.preventDefault();
         onSave();
       }}
     >
-      <div>
-        <p className="text-sm font-medium">{editingExisting ? 'Edit answer guidance' : 'New answer guidance'}</p>
-        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-          Show Helpin which customer questions this applies to and the answer you want it to follow.
-        </p>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_10rem]">
-        <div className="space-y-2">
-          <Label htmlFor={`${idPrefix}-title`}>Title</Label>
-          <Input
-            id={`${idPrefix}-title`}
-            value={draft.title}
-            onChange={(event) => onChange({ title: event.target.value })}
-            placeholder="Current pricing"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor={`${idPrefix}-language`}>Language</Label>
-          <Input
-            id={`${idPrefix}-language`}
-            value={draft.language}
-            onChange={(event) => onChange({ language: event.target.value })}
-            placeholder="en (optional)"
-          />
-        </div>
-      </div>
-
       <div className="space-y-2">
-        <Label htmlFor={`${idPrefix}-patterns`}>Customer questions</Label>
-        <Textarea
-          id={`${idPrefix}-patterns`}
-          value={draft.questionPatterns}
-          onChange={(event) => onChange({ questionPatterns: event.target.value })}
-          placeholder={'What is your pricing?\nHow much does Usermaven cost?'}
-          rows={4}
-          className="min-h-24 max-h-64 overflow-y-auto rounded-lg border-border bg-background"
+        <Label htmlFor={`${idPrefix}-title`}>Title</Label>
+        <Input
+          id={`${idPrefix}-title`}
+          value={draft.title}
+          onChange={(event) => onChange({ title: event.target.value })}
+          placeholder="Current pricing"
         />
-        <p className="text-xs text-muted-foreground">One question per line. Include different ways customers ask the same thing.</p>
       </div>
 
       <div className="space-y-2">
@@ -162,6 +125,22 @@ function GuidanceEditor({
           className="min-h-40 rounded-lg border-border bg-background"
         />
       </div>
+
+      <details className="text-sm">
+        <summary className="w-fit cursor-pointer rounded-sm text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Additional options</summary>
+        <div className="mt-3 space-y-2">
+          <Label htmlFor={`${idPrefix}-patterns`}>Example questions (optional)</Label>
+          <Textarea
+            id={`${idPrefix}-patterns`}
+            value={draft.questionPatterns}
+            onChange={(event) => onChange({ questionPatterns: event.target.value })}
+            placeholder={'What is your pricing?\nHow much does Usermaven cost?'}
+            rows={3}
+            className="max-h-64 overflow-y-auto rounded-lg border-border bg-background"
+          />
+          <p className="text-xs text-muted-foreground">Add examples to help match unusual wording. One question per line.</p>
+        </div>
+      </details>
 
       {editingExisting ? (
         <div className="max-w-xs space-y-2">
@@ -206,6 +185,7 @@ export function CuratedGuidanceField({ workspaceId, agentId }: { workspaceId: st
   };
 
   const requestCloseEditor = () => {
+    if (createGuidance.isPending || updateGuidance.isPending) return;
     if (editing !== undefined && !draftsMatch(draft, guidanceDraft(editing ?? undefined))) {
       setConfirmDiscard(true);
       return;
@@ -242,7 +222,7 @@ export function CuratedGuidanceField({ workspaceId, agentId }: { workspaceId: st
   };
 
   const saving = createGuidance.isPending || updateGuidance.isPending;
-  const valid = draft.title.trim().length > 0 && draft.answer.trim().length > 0 && draft.questionPatterns.trim().length > 0;
+  const valid = draft.title.trim().length > 0 && draft.answer.trim().length > 0;
   const editorOpen = editing !== undefined;
   const updateDraft = (change: Partial<GuidanceDraft>) => setDraft((current) => ({ ...current, ...change }));
 
@@ -267,12 +247,12 @@ export function CuratedGuidanceField({ workspaceId, agentId }: { workspaceId: st
             <div className="rounded-lg border border-dashed px-4 py-6 text-center">
               <p className="text-sm font-medium">Select a support agent first</p>
               <p className="mx-auto mt-1 max-w-lg text-xs leading-5 text-muted-foreground">
-                Answer guidance belongs to the support agent that replies to customers. Choose an agent in Configuration above, then add the answers it should follow.
+                Answer guidance belongs to the support agent that replies to customers. Choose an agent in the Setup tab, then add the answers it should follow.
               </p>
             </div>
           ) : isLoading ? (
             <div className="space-y-2"><Skeleton className="h-20 rounded-lg" /><Skeleton className="h-20 rounded-lg" /></div>
-          ) : items.length === 0 && !editorOpen ? (
+          ) : items.length === 0 ? (
             <div className="rounded-lg border border-dashed px-4 py-6 text-center">
               <p className="text-sm font-medium">Guide answers where consistency matters</p>
               <p className="mx-auto mt-1 max-w-lg text-xs leading-5 text-muted-foreground">
@@ -281,53 +261,33 @@ export function CuratedGuidanceField({ workspaceId, agentId }: { workspaceId: st
             </div>
           ) : (
             <div className="space-y-3">
-              {editing === null ? (
-                <GuidanceEditor
-                  draft={draft}
-                  editingExisting={false}
-                  saving={saving}
-                  valid={valid}
-                  standalone
-                  onChange={updateDraft}
-                  onCancel={requestCloseEditor}
-                  onSave={() => void save()}
-                />
-              ) : null}
               {items.length > 0 ? (
                 <div className="divide-y rounded-lg border">
                   {items.map((item) => (
-                    editing?.id === item.id ? (
-                      <GuidanceEditor
-                        key={item.id}
-                        draft={draft}
-                        editingExisting
-                        saving={saving}
-                        valid={valid}
-                        onChange={updateDraft}
-                        onCancel={requestCloseEditor}
-                        onSave={() => void save()}
-                      />
-                    ) : (
-                      <div key={item.id} className="flex items-start gap-3 p-3">
-                        <PinIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="text-sm font-medium">{item.title}</p>
-                            {item.status === 'disabled' ? <Badge variant="outline">Disabled</Badge> : null}
-                          </div>
-                          <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{item.answer}</p>
-                          <p className="mt-1 truncate text-xs text-muted-foreground">Applies to: {item.question_patterns.join(' · ')}</p>
+                    <div key={item.id} className="flex items-start gap-3 p-3">
+                      <PinIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-medium">{item.title}</p>
+                          {item.status === 'disabled' ? <Badge variant="outline">Disabled</Badge> : null}
                         </div>
-                        <div className="flex shrink-0 gap-1">
-                          <Button type="button" variant="ghost" size="icon" className="h-8 w-8" disabled={editorOpen} aria-label={`Edit ${item.title}`} onClick={() => openEditor(item)}>
-                            <PencilEdit01Icon className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-destructive" disabled={editorOpen} aria-label={`Delete ${item.title}`} onClick={() => setDeleting(item)}>
-                            <Delete01Icon className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
+                        <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{item.answer}</p>
+                        {item.question_patterns.length > 0 && (
+                          <details className="mt-1 text-xs text-muted-foreground">
+                            <summary className="w-fit cursor-pointer">Example questions</summary>
+                            <ul className="mt-1 space-y-1">{item.question_patterns.map((question, index) => <li key={index}>{question}</li>)}</ul>
+                          </details>
+                        )}
                       </div>
-                    )
+                      <div className="flex shrink-0 gap-1">
+                        <Button type="button" variant="ghost" size="icon" className="h-8 w-8" disabled={editorOpen} aria-label={`Edit ${item.title}`} onClick={() => openEditor(item)}>
+                          <PencilEdit01Icon className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-destructive" disabled={editorOpen} aria-label={`Delete ${item.title}`} onClick={() => setDeleting(item)}>
+                          <Delete01Icon className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
                   ))}
                 </div>
               ) : null}
@@ -335,6 +295,26 @@ export function CuratedGuidanceField({ workspaceId, agentId }: { workspaceId: st
           )}
         </div>
       </div>
+
+      <Dialog open={editorOpen} onOpenChange={(open) => { if (!open) requestCloseEditor(); }}>
+        <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader className="pr-8">
+            <DialogTitle>{editing ? 'Edit answer guidance' : 'New answer guidance'}</DialogTitle>
+            <DialogDescription>
+              Add the facts and policies Helpin should follow. It adapts the answer to the customer’s question and language.
+            </DialogDescription>
+          </DialogHeader>
+          <GuidanceEditor
+            draft={draft}
+            editingExisting={Boolean(editing)}
+            saving={saving}
+            valid={valid}
+            onChange={updateDraft}
+            onCancel={requestCloseEditor}
+            onSave={() => void save()}
+          />
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
         <AlertDialogContent>

@@ -7,7 +7,7 @@ import { PendingSendStatus } from './PendingSendStatus';
 import { memo, useCallback, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, LinkSquare01Icon, File01Icon, RotateLeft01Icon, StickyNote01Icon, CancelCircleIcon, Mail01Icon, AlertCircleIcon, BotIcon, UserIcon, ZapIcon, BubbleChatIcon } from '@/lib/icons';
+import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, LinkSquare01Icon, File01Icon, RotateLeft01Icon, StickyNote01Icon, CancelCircleIcon, Mail01Icon, AlertCircleIcon, UserIcon, ZapIcon, BubbleChatIcon } from '@/lib/icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { EmailDetailModal } from './EmailDetailModal';
@@ -608,16 +608,9 @@ export const MessageBubble = memo(function MessageBubble({
     const escalationLabel = isEscalationEvent ? ESCALATION_LABELS[eventType] : null;
     const isRuleRoutingEvent = eventType === 'triage_routed' && message.content.trim().toLowerCase().startsWith('routing rule ');
     const isAIRoutingEvent = eventType === 'triage_routed' && !isRuleRoutingEvent;
-    const automatedEventIcon = isRuleRoutingEvent
-      ? { label: 'Routing rule', icon: <ZapIcon className="h-3 w-3" />, className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' }
-      : isAIRoutingEvent
-        ? { label: 'AI routing', icon: <BotIcon className="h-3 w-3" />, className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' }
-        : null;
-    const escalationIcon = eventType === 'customer_requested_human'
-      ? <UserIcon className="h-3 w-3" />
-      : eventType === 'ai_escalated'
-        ? <BotIcon className="h-3 w-3" />
-        : null;
+    const showAIAvatar = eventType !== 'customer_requested_human' && !isRuleRoutingEvent
+      && (isAI || isAgent || isAIRoutingEvent || eventType === 'ai_escalated');
+    const aiStatusAvatar = <AskAgentAvatar plateStyle="solid" radius={50} className="h-5 w-5 shrink-0" decorative={false} label={isAIRoutingEvent ? 'AI routing' : HELPIN_AI_DISPLAY_NAME} />;
     const systemDisplayContent = escalationLabel ?? supportSystemEventDisplayContent(eventType, message.content, resolvedSenderName);
     const taskID = eventType === 'task_created'
       ? supportTaskIDFromMetadata(message.metadata) ?? linkedTaskId
@@ -668,7 +661,7 @@ export const MessageBubble = memo(function MessageBubble({
       ? 'rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800 shadow-sm dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200'
       : 'rounded-full bg-slate-700 px-4 py-2 text-white shadow-sm';
     const resolvedActorAvatar = stateEventKind === 'resolved' ? (
-      resolvedAvatarUrl ? (
+      showAIAvatar ? aiStatusAvatar : resolvedAvatarUrl ? (
         <img src={resolvedAvatarUrl} alt={resolvedSenderName} className="h-5 w-5 rounded-full object-cover" />
       ) : (
         <div aria-label={resolvedSenderName} className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold leading-none ${getAvatarColor(avatarSeed)}`}>
@@ -687,13 +680,13 @@ export const MessageBubble = memo(function MessageBubble({
           <Tooltip>
             <TooltipTrigger asChild>
               <div data-support-system-callout className={`flex min-w-0 items-center gap-2 ${eventType === 'task_created' ? 'max-w-[70%]' : 'max-w-full'} ${isEscalationEvent ? escalationPillClass : defaultPillClass}`}>
-                {isEscalationEvent ? (
+                {showAIAvatar ? aiStatusAvatar : isEscalationEvent ? (
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-                    {escalationIcon}
+                    <UserIcon className="h-3 w-3" />
                   </span>
-                ) : automatedEventIcon ? (
-                  <span aria-label={automatedEventIcon.label} className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${automatedEventIcon.className}`}>
-                    {automatedEventIcon.icon}
+                ) : isRuleRoutingEvent ? (
+                  <span aria-label="Routing rule" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                    <ZapIcon className="h-3 w-3" />
                   </span>
                 ) : resolvedAvatarUrl ? (
                   <img src={resolvedAvatarUrl} alt={resolvedSenderName} className="h-5 w-5 rounded-full object-cover" />
@@ -719,7 +712,7 @@ export const MessageBubble = memo(function MessageBubble({
           <TooltipTrigger asChild>
             <div data-support-system-callout className={`flex min-w-0 max-w-full items-center gap-2.5 [overflow-wrap:anywhere] ${statePillClass}`}>
               {statusIcon ?? <CheckmarkCircle02Icon className="h-4 w-4 shrink-0" />}
-              {resolvedActorAvatar}
+              {resolvedActorAvatar ?? (showAIAvatar ? aiStatusAvatar : null)}
               <span className={`min-w-0 ${stateEventKind === 'resolved' ? 'font-medium' : 'text-sm font-medium'}`}>{systemDisplayNode}</span>
             </div>
           </TooltipTrigger>

@@ -723,7 +723,7 @@ function Dashboard() {
   );
   const businessHoursSettingsHref = workspace?.slug ? `/w/${workspace.slug}/settings/chat-general` : null;
 
-  const aiAssistantSection = (
+  const aiSetupSection = (
     <>
       <Card className="gap-5 rounded-lg border-border/70">
         <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -776,6 +776,11 @@ function Dashboard() {
         </CardContent>
       </Card>
 
+    </>
+  );
+
+  const aiHandoffSection = (
+    <>
       <SettingsSection title="Human handoff" description="Reply limits, customer messages, and team routing.">
         <div className="space-y-5 pt-4">
           <div className="grid gap-6 sm:grid-cols-2">
@@ -923,13 +928,27 @@ function Dashboard() {
     return (
       <div className="space-y-4">
         {saveIndicator}
-        {aiAssistantSection}
-        {data?.settings.ai_agent_id && <SupportAIPreview key={`${workspaceId}:${data.settings.ai_agent_id}`} workspaceId={workspaceId} agentId={data.settings.ai_agent_id} />}
-        <CuratedGuidanceField
-          key={aiAgentId}
-          workspaceId={workspaceId}
-          agentId={aiAgentId === NO_AGENT_VALUE ? undefined : aiAgentId}
-        />
+        {data?.settings.ai_agent_id && (
+          <div className="flex justify-end">
+            <SupportAIPreview key={`${workspaceId}:${data.settings.ai_agent_id}`} workspaceId={workspaceId} agentId={data.settings.ai_agent_id} />
+          </div>
+        )}
+        <Tabs defaultValue="setup">
+          <TabsList variant="line" aria-label="AI assistant settings" className="max-w-full overflow-x-auto">
+            <TabsTrigger value="setup">Setup</TabsTrigger>
+            <TabsTrigger value="answers">Answers</TabsTrigger>
+            <TabsTrigger value="handoff">Handoff &amp; follow-up</TabsTrigger>
+          </TabsList>
+          <TabsContent value="setup" className="mt-4">{aiSetupSection}</TabsContent>
+          <TabsContent value="answers" className="mt-4">
+            <CuratedGuidanceField
+              key={aiAgentId}
+              workspaceId={workspaceId}
+              agentId={aiAgentId === NO_AGENT_VALUE ? undefined : aiAgentId}
+            />
+          </TabsContent>
+          <TabsContent value="handoff" className="mt-4 space-y-4">{aiHandoffSection}</TabsContent>
+        </Tabs>
       </div>
     );
   }

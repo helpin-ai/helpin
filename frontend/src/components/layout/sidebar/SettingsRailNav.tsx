@@ -113,6 +113,14 @@ export function SettingsRailNav({
                       href={item.link}
                       onClick={(event) => {
                         event.preventDefault();
+                        if (hasChildren) {
+                          setCollapsedItems((previous) => {
+                            if (!previous.has(item.link)) return previous;
+                            const next = new Set(previous);
+                            next.delete(item.link);
+                            return next;
+                          });
+                        }
                         onNavigate(item.link);
                       }}
                     >

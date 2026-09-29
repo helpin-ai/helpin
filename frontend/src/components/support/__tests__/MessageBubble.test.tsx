@@ -1379,3 +1379,14 @@ it.each([false, true])('attributes participant mail and preserves team-only priv
     if (!unknown) expect(rendered.container.textContent).not.toContain('Colleague')
   } finally { rendered.cleanup() }
 })
+
+it.each(['tag_added', 'tag_removed', 'ai_escalated', 'resolved'] as const)('uses the Ask Agent avatar for AI %s activity', (system_event_type) => {
+ const rendered = renderBubble({
+  id: 'ai-event', workspace_id: 'ws-1', conversation_id: 'conv-1',
+  sender_type: 'ai', sender_display_name: 'Helpin AI', message_type: 'system',
+  system_event_type, content: 'Helpin AI added tag waiting on customer.', is_internal: true,
+  created_at: '2026-09-29T10:00:00Z', updated_at: '2026-09-29T10:00:00Z',
+ });
+ try { expect(rendered.container.querySelector('[data-support-system-callout] .ask-agent-avatar')).not.toBeNull(); }
+ finally { rendered.cleanup(); }
+});

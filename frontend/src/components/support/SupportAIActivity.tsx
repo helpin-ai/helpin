@@ -1,7 +1,7 @@
+import { AskAgentAvatar } from '@/components/agents/AskAgentAvatar';
 import { useState, type ReactNode } from 'react';
 import type { AIActivity } from './supportAIActivity';
 import type { SupportMessage } from '@/lib/pmTypes';
-import { BotIcon } from '@/lib/icons';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { formatMessageTime, formatTimestamp, getAvatarColor, getInitial } from './helpers';
 
@@ -58,7 +58,7 @@ export function SupportAIActivity({ message, activity, teammateName, avatarUrl, 
   return <div className="my-4 flex justify-end" data-support-ai-handoff>
     <section aria-label="AI handoff summary" className="w-full max-w-lg rounded-lg border border-amber-200/70 bg-amber-50/60 p-3 dark:border-amber-900/50 dark:bg-amber-950/20">
       <div className="mb-2 flex items-center gap-2">
-        <BotIcon className="size-3.5 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+        <AskAgentAvatar plateStyle="solid" radius={50} className="h-5 w-5 shrink-0" />
         <span className="text-xs font-semibold">AI handoff</span>
         <span className="text-[11px] text-muted-foreground">Team only</span>
         <span className="ml-auto">{time}</span>

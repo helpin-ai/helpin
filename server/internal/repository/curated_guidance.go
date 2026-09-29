@@ -29,7 +29,7 @@ type CuratedGuidanceRepository struct {
 	db *gorm.DB
 }
 
-func curatedGuidancePostgresSearchSQL(vectorSelect, languageSQL, matchSQL, vectorOrder string) string {
+func curatedGuidancePostgresSearchSQL(vectorSelect, matchSQL, vectorOrder string) string {
 	return fmt.Sprintf(`
 		WITH ranked AS (
 			SELECT id, workspace_id, agent_id, title, answer, intent, language, updated_at,
@@ -46,13 +46,12 @@ func curatedGuidancePostgresSearchSQL(vectorSelect, languageSQL, matchSQL, vecto
 			  AND (valid_from IS NULL OR valid_from <= ?)
 			  AND (valid_until IS NULL OR valid_until > ?)
 			  %s
-			  %s
 		)
 		SELECT id, workspace_id, agent_id, title, answer, intent, language,
 		       lexical_score, vector_score
 		FROM ranked
 		ORDER BY %s, updated_at DESC
-		LIMIT ?`, vectorSelect, languageSQL, matchSQL, vectorOrder)
+		LIMIT ?`, vectorSelect, matchSQL, vectorOrder)
 }
 
 func NewCuratedGuidanceRepository(db *gorm.DB) *CuratedGuidanceRepository {
@@ -114,7 +113,7 @@ func (r *CuratedGuidanceRepository) Search(
 	ctx context.Context,
 	workspaceID string,
 	agentID string,
-	language string,
+	_ string, // Legacy language argument; guidance applies across customer languages.
 	query string,
 	queryEmbedding string,
 	embeddingModel string,
@@ -134,11 +133,6 @@ func (r *CuratedGuidanceRepository) Search(
 		Where("audience_policy_id IS NULL AND brand_id IS NULL").
 		Where("(valid_from IS NULL OR valid_from <= ?)", time.Now()).
 		Where("(valid_until IS NULL OR valid_until > ?)", time.Now())
-	if language != "" {
-		base = base.Where("(language = '' OR language = ?)", language)
-	} else {
-		base = base.Where("language = ''")
-	}
 
 	if r.db.Dialector.Name() != "postgres" {
 		var items []model.CuratedGuidance
@@ -173,13 +167,6 @@ func (r *CuratedGuidanceRepository) Search(
 		return []CuratedGuidanceSearchResult{}, nil
 	}
 	params := []any{tsQuery, workspaceID, agentID, model.CuratedGuidanceStatusActive, time.Now(), time.Now()}
-	languageSQL := ""
-	if language != "" {
-		languageSQL = " AND (language = '' OR language = ?)"
-		params = append(params, language)
-	} else {
-		languageSQL = " AND language = ''"
-	}
 	vectorSelect := "0::double precision AS vector_score"
 	vectorOrder := "lexical_score DESC"
 	matchSQL := `AND (
@@ -197,7 +184,7 @@ func (r *CuratedGuidanceRepository) Search(
 		params = append(params, tsQuery)
 	}
 	params = append(params, limit)
-	sql := curatedGuidancePostgresSearchSQL(vectorSelect, languageSQL, matchSQL, vectorOrder)
+	sql := curatedGuidancePostgresSearchSQL(vectorSelect, matchSQL, vectorOrder)
 	var results []CuratedGuidanceSearchResult
 	if err := r.db.WithContext(ctx).Raw(sql, params...).Scan(&results).Error; err != nil {
 		return nil, fmt.Errorf("search curated guidance: %w", err)

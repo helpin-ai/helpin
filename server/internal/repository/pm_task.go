@@ -2108,7 +2108,7 @@ func (r *PMTaskRepository) UpdateStartedCompleted(ctx context.Context, taskID st
 		updates["started"] = true
 		updates["completed"] = true
 		updates["moved_at"] = now
-		updates["completed_at"] = now
+		updates["completed_at"] = gorm.Expr("COALESCE(completed_at, ?)", now)
 		updates["started_at"] = gorm.Expr("COALESCE(started_at, ?)", now)
 	case model.PMStateTypeStarted:
 		updates["started"] = true
