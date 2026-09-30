@@ -1,12 +1,12 @@
 export type ExternalAgentStatus = 'active' | 'disabled' | 'error';
 
-export type ExternalAgentSkill = {
+type ExternalAgentSkill = {
   id: string;
   name: string;
   description?: string;
 };
 
-export type ExternalAgentCapabilities = {
+type ExternalAgentCapabilities = {
   streaming?: boolean;
   push_notifications?: boolean;
 };
