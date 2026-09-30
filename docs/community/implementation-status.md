@@ -1,6 +1,8 @@
 # Community 0.1 implementation and verification
 
-Historical implementation evidence recorded September 16, 2026. At that time,
+Historical implementation evidence recorded September 16, 2026, for the
+Community 0.1 candidate, which was never published. It predates the Community
+0.2 candidate and does not verify it. At that time,
 Community work was consolidated on feature branches in both repositories. Test
 totals, scan findings and migration heads below are a dated record, not current
 checkout or release verification. This document is historical and is excluded

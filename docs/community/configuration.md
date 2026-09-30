@@ -2,7 +2,7 @@
 
 This reference is for operators configuring a Community installation. It lists
 the environment settings the bundle supports and their defaults; use it after
-installation and before public deployment. Community 0.1 is a beta. The
+installation and before public deployment. Community 0.2 is a beta. The
 supported bundle sets explicit local defaults; running the binaries directly
 retains conservative authentication defaults.
 
