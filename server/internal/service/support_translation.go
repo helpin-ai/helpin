@@ -84,6 +84,13 @@ func (s *SupportInboxService) translationOptions(ctx context.Context, workspaceI
 		return result, nil
 	}
 	if s.translations.unconfigured {
+		// Queued replies are fenced on the stored policy revision at delivery,
+		// so report the real row even though translation is forced off here.
+		policy, err := s.translations.repo.LiveConversation(ctx, workspaceID, conversationID, false, "")
+		if err != nil {
+			return nil, err
+		}
+		result.Conversation = *policy
 		result.Preference.AutoTranslateIncoming = false
 		result.Preference.AutoTranslateOutgoing = false
 		result.Conversation.TranslationMode = "off"
