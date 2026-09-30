@@ -95,6 +95,8 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y ripgrep
             scripts/check-community-backend.sh
+            # The source check expects shared widget code to be built, as in CI.
+            pnpm --filter @helpin-ai/widget-core build
             scripts/check-community-frontend.sh
             (cd ../agent-runtime && go test ./...)
           fi
