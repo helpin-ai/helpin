@@ -11,7 +11,8 @@ an upstream digest requires the clean-install and restore gates; do not rebuild
 infrastructure merely to change a scan result.
 
 The 2026-09-16 amd64 scan found **24 fixable high/critical findings in PostgreSQL,
-2 in NATS, and 0 in Garage**. These are accepted beta exceptions through
+2 in NATS, and 0 in Garage**; the 2026-09-30 release scan added a 25th in
+PostgreSQL (CVE-2026-89157). These are accepted beta exceptions through
 2026-10-16, not a claim that these images contain no vulnerabilities. Exact CVE,
 package, installed version and image digest are recorded in
 `community/upstream-image-exceptions.json`. The image check fails on additional
@@ -22,9 +23,12 @@ scan and acceptance run before inclusion in a release.
 - PostgreSQL: 22 Go standard-library findings occur in the upstream `gosu`
   privilege-dropping executable. It runs during container startup, not as an
   application network server. This limits exposure to network-related Go flaws;
-  it does not remove the findings. Two further findings affect Debian's
-  `libpcre2-8-0`. The bundle exposes no PostgreSQL host port and gives applications
-  separate non-superuser roles. Vulnerable packages remain installed.
+  it does not remove the findings. Three further findings affect Debian's
+  `libpcre2-8-0` 10.42-1. Debian fixed it in 10.42-1+deb12u1, but pgvector has
+  not published a rebuilt image since 2026-08-13; pin one when it does. PostgreSQL
+  does not use PCRE2 for its own regular expressions. The bundle exposes no
+  PostgreSQL host port and gives applications separate non-superuser roles.
+  Vulnerable packages remain installed.
 - NATS: two findings are CVE-2026-14456 in Alpine `libcrypto3` and `libssl3`.
   The broker is reachable only inside the Compose network. It is not rebuilt or
   declared safe merely because the libraries may not be on a normal request path.
