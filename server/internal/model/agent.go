@@ -878,6 +878,9 @@ type AgentExecutionConfig struct {
 	MaxToolSteps    *int                            `json:"max_tool_steps,omitempty"`
 	OpenRouter      *AgentOpenRouterExecutionConfig `json:"openrouter,omitempty"`
 	NativeContext   *AgentNativeContextConfig       `json:"native_context,omitempty"`
+	// ExternalA2AAgentID links an a2a runtime agent to its external_a2a_agents
+	// connection. It is set only by the external agents service.
+	ExternalA2AAgentID *string `json:"external_a2a_agent_id,omitempty"`
 }
 
 // AgentOpenRouterExecutionConfig contains OpenRouter-only request controls.
@@ -1103,6 +1106,14 @@ func (c AgentExecutionConfig) Normalize() AgentExecutionConfig {
 			c.ServiceTier = &value
 		}
 	}
+	if c.ExternalA2AAgentID != nil {
+		value := strings.TrimSpace(*c.ExternalA2AAgentID)
+		if value == "" {
+			c.ExternalA2AAgentID = nil
+		} else {
+			c.ExternalA2AAgentID = &value
+		}
+	}
 	if c.OpenRouter != nil {
 		quantizations := make([]string, 0, len(c.OpenRouter.providerQuantizations()))
 		seen := make(map[string]struct{}, len(c.OpenRouter.providerQuantizations()))
@@ -1138,7 +1149,8 @@ func (c *AgentOpenRouterExecutionConfig) providerQuantizations() []string {
 func (c AgentExecutionConfig) IsZero() bool {
 	normalized := c.Normalize()
 	return normalized.ReasoningEffort == nil && normalized.ServiceTier == nil &&
-		normalized.MaxToolSteps == nil && normalized.OpenRouter == nil && normalized.NativeContext == nil
+		normalized.MaxToolSteps == nil && normalized.OpenRouter == nil && normalized.NativeContext == nil &&
+		normalized.ExternalA2AAgentID == nil
 }
 
 func ParseAgentExecutionConfig(raw []byte) (AgentExecutionConfig, error) {

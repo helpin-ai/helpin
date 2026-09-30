@@ -146,7 +146,7 @@ func TestInstallGeneratesSecretsAndRepeatPreservesEverything(t *testing.T) {
 		t.Fatal("secrets reused")
 	}
 	// Modules enabled by default need their own stable 32-byte hex keys.
-	for _, key := range []string{"CRM_ENCRYPTION_KEY", "GIT_OAUTH_ENCRYPTION_KEY"} {
+	for _, key := range []string{"CRM_ENCRYPTION_KEY", "GIT_OAUTH_ENCRYPTION_KEY", "EXTERNAL_A2A_ENCRYPTION_KEY"} {
 		if decoded, err := hex.DecodeString(values[key]); err != nil || len(decoded) != 32 {
 			t.Fatalf("%s is not a generated 32-byte hex key", key)
 		}

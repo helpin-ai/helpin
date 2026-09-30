@@ -37,6 +37,7 @@ import {
   AiNetworkIcon,
   DashboardSpeed01Icon,
   ServerStack01Icon,
+  UserSharingIcon,
 } from '@hugeicons/core-free-icons';
 
 export type IconComponent = FC<{ className?: string; style?: CSSProperties }>;
@@ -78,6 +79,7 @@ const InboxesRouting = hi(Route01Icon);
 const Access = hi(Shield01Icon);
 const MCP = hi(PlugSocketIcon);
 const ExternalMCP = hi(Globe02Icon);
+const ExternalAgents = hi(UserSharingIcon);
 const AIConnections = hi(Key01Icon);
 const WorkspaceAI = hi(AiNetworkIcon);
 const SystemStatus = hi(DashboardSpeed01Icon);
@@ -93,6 +95,7 @@ export type SettingsSection =
   | 'server'
   | 'mcp'
   | 'external-mcp'
+  | 'external-agents'
   | 'billing'
   | 'repositories'
   | 'knowledge'
@@ -284,6 +287,15 @@ const allSettingsSections: SettingsSectionMeta[] = [
     label: 'External tools (MCP)',
     description: 'Connect remote MCP servers and choose which tools Helpin agents may use.',
     icon: ExternalMCP,
+    group: 'Integrations & data',
+    requiredPermission: 'settings.read',
+  },
+  {
+    id: 'external-agents',
+    keywords: ['a2a', 'agent2agent', 'agent card', 'remote agent', 'hermes'],
+    label: 'External agents',
+    description: 'Connect agents that run outside Helpin and assign them tasks over A2A.',
+    icon: ExternalAgents,
     group: 'Integrations & data',
     requiredPermission: 'settings.read',
   },
