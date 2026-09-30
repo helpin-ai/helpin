@@ -145,7 +145,7 @@ export interface PublicShareLink {
 	url: string
 }
 
-export interface PublicSharedMessage {
+interface PublicSharedMessage {
 	id: string
 	role: 'user' | 'assistant'
 	content: string

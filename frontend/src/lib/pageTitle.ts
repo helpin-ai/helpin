@@ -59,6 +59,7 @@ const SETTINGS_TITLES: Record<string, string> = {
   'crm-email': 'Email Accounts Settings',
   'crm-pipelines': 'Pipelines Settings',
   delivery: 'Delivery Settings',
+  'external-agents': 'External Agents Settings',
   'external-mcp': 'External MCP Settings',
   general: 'General Settings',
   'git-connections': 'Git Connections Settings',

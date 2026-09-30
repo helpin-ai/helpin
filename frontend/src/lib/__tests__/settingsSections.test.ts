@@ -50,7 +50,8 @@ describe('getSettingsSidebarGroups', () => {
     const sections = workspaceGroup?.sections.map((section) => section.id) ?? [];
     expect(sections).toContain('mcp');
     expect(sections.indexOf('external-mcp')).toBe(sections.indexOf('repositories') + 1);
-    expect(sections.indexOf('mcp')).toBe(sections.indexOf('external-mcp') + 1);
+    expect(sections.indexOf('external-agents')).toBe(sections.indexOf('external-mcp') + 1);
+    expect(sections.indexOf('mcp')).toBe(sections.indexOf('external-agents') + 1);
   });
 
   it('labels the inbound workspace surface MCP access', () => {
@@ -75,6 +76,23 @@ describe('getSettingsSidebarGroups', () => {
 
     expect(withoutSettingsRead).not.toContain('external-mcp');
     expect(withSettingsRead).toContain('external-mcp');
+  });
+
+  it('exposes external agents only with settings read permission, in the agents module', () => {
+    const withoutSettingsRead = getSettingsSidebarGroups(true, new Set(['workspace.read']))
+      .flatMap((group) => group.sections.map((section) => section.id));
+    const withSettingsRead = getSettingsSidebarGroups(true, new Set(['workspace.read', 'settings.read']))
+      .flatMap((group) => group.sections.map((section) => section.id));
+    const withoutAgentsModule = getSettingsSidebarGroups(true, new Set(['workspace.read', 'settings.read']), ['pm'])
+      .flatMap((group) => group.sections.map((section) => section.id));
+
+    expect(withoutSettingsRead).not.toContain('external-agents');
+    expect(withSettingsRead).toContain('external-agents');
+    expect(withoutAgentsModule).not.toContain('external-agents');
+    expect(SETTINGS_ROUTE_SECTIONS.find((section) => section.id === 'external-agents')).toMatchObject({
+      label: 'External agents',
+      group: 'Integrations & data',
+    });
   });
 
   it('puts inbox and widget setup before AI assistant', () => {

@@ -181,9 +181,14 @@ type Config struct {
 	ExternalMCPOAuthClientSecret      string
 	ExternalMCPOAuthClientAuthMethod  string
 	ExternalMCPAllowInsecureLocalhost bool
-	WebAuthnRPID                      string
-	WebAuthnRPOrigins                 []string
-	PlatformAdminEmails               []string
+	// ExternalA2AEncryptionKey protects external A2A agent tokens. External
+	// agents are unavailable (HTTP 503) when it is empty.
+	ExternalA2AEncryptionKey string
+	// ExternalA2AAllowedPrivateHosts may resolve to private addresses and use HTTP.
+	ExternalA2AAllowedPrivateHosts []string
+	WebAuthnRPID                   string
+	WebAuthnRPOrigins              []string
+	PlatformAdminEmails            []string
 	// ServerAdminEmails (HELPIN_ADMIN_EMAILS) designates self-hosted server
 	// admins by email (Community only).
 	ServerAdminEmails []string
@@ -537,6 +542,8 @@ func Load() (*Config, error) {
 		ExternalMCPOAuthClientSecret:           strings.TrimSpace(os.Getenv("EXTERNAL_MCP_OAUTH_CLIENT_SECRET")),
 		ExternalMCPOAuthClientAuthMethod:       strings.TrimSpace(firstNonEmpty(os.Getenv("EXTERNAL_MCP_OAUTH_CLIENT_AUTH_METHOD"), "none")),
 		ExternalMCPAllowInsecureLocalhost:      parseBoolEnv(os.Getenv("EXTERNAL_MCP_ALLOW_INSECURE_LOCALHOST")),
+		ExternalA2AEncryptionKey:               strings.TrimSpace(os.Getenv("EXTERNAL_A2A_ENCRYPTION_KEY")),
+		ExternalA2AAllowedPrivateHosts:         parseCSV(os.Getenv("EXTERNAL_A2A_ALLOWED_PRIVATE_HOSTS")),
 		WebAuthnRPID:                           webAuthnRPID,
 		WebAuthnRPOrigins:                      webAuthnRPOrigins,
 		PlatformAdminEmails:                    parseCSV(os.Getenv("PLATFORM_ADMIN_EMAILS")),

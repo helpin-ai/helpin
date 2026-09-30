@@ -132,7 +132,60 @@ func (s *PMAttachmentService) CreateImported(ctx context.Context, req model.Crea
 	return resp, nil
 }
 
+// AgentAttachmentUpload is a server-side upload of a file delivered by an agent.
+type AgentAttachmentUpload struct {
+	WorkspaceID string
+	TaskID      string
+	FileName    string
+	ContentType string
+	Size        int64
+	// MaxSize replaces the interactive upload limit for agent deliverables.
+	MaxSize int64
+	// UserID is the member accountable for the file (uploaded_by_id).
+	UserID  string
+	AgentID string
+	Body    io.Reader
+}
+
+// CreateAgentTaskAttachment stores an agent-delivered file on a task and
+// attributes it to the agent.
+func (s *PMAttachmentService) CreateAgentTaskAttachment(ctx context.Context, upload AgentAttachmentUpload) (*model.PMAttachment, error) {
+	if upload.MaxSize > 0 && upload.Size > upload.MaxSize {
+		return nil, fmt.Errorf("file exceeds maximum size of %s", formatByteLimit(upload.MaxSize))
+	}
+	agentID := strings.TrimSpace(upload.AgentID)
+	var agentIDPtr *string
+	if agentID != "" {
+		agentIDPtr = &agentID
+	}
+	attachment, err := s.prepareAttachmentWithLimit(ctx, model.CreateAttachmentRequest{
+		EntityType: "task", EntityID: upload.TaskID, FileName: upload.FileName,
+		FileSize: upload.Size, ContentType: upload.ContentType, Private: true,
+	}, upload.WorkspaceID, upload.UserID, agentIDPtr, max(upload.MaxSize, maxFileSize))
+	if err != nil {
+		return nil, err
+	}
+	if err := s.s3Client.PutObject(ctx, attachment.StorageKey, attachment.ContentType, attachment.FileSize, upload.Body, false); err != nil {
+		_ = s.attachmentRepo.Delete(ctx, attachment.ID)
+		return nil, fmt.Errorf("upload attachment: %w", err)
+	}
+	if err := s.attachmentRepo.ConfirmUpload(ctx, attachment.ID); err != nil {
+		_ = s.s3Client.DeleteObject(ctx, attachment.StorageKey)
+		_ = s.attachmentRepo.Delete(ctx, attachment.ID)
+		return nil, err
+	}
+	attachment.IsUploaded = true
+	if s.wsPublisher != nil {
+		s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "attachment", EntityID: attachment.ID, WorkspaceID: attachment.WorkspaceID, ParentType: attachment.EntityType, ParentID: attachment.EntityID})
+	}
+	return attachment, nil
+}
+
 func (s *PMAttachmentService) prepareAttachment(ctx context.Context, req model.CreateAttachmentRequest, workspaceID, userID string) (*model.PMAttachment, error) {
+	return s.prepareAttachmentWithLimit(ctx, req, workspaceID, userID, nil, maxFileSize)
+}
+
+func (s *PMAttachmentService) prepareAttachmentWithLimit(ctx context.Context, req model.CreateAttachmentRequest, workspaceID, userID string, agentID *string, sizeLimit int64) (*model.PMAttachment, error) {
 	if s.s3Client == nil {
 		return nil, fmt.Errorf("file storage is not configured")
 	}
@@ -148,8 +201,8 @@ func (s *PMAttachmentService) prepareAttachment(ctx context.Context, req model.C
 	if req.FileSize <= 0 {
 		return nil, fmt.Errorf("file_size must be positive")
 	}
-	if req.FileSize > maxFileSize {
-		return nil, fmt.Errorf("file exceeds maximum size of %s", formatByteLimit(maxFileSize))
+	if req.FileSize > sizeLimit {
+		return nil, fmt.Errorf("file exceeds maximum size of %s", formatByteLimit(sizeLimit))
 	}
 	if req.ContentType == "" {
 		return nil, fmt.Errorf("content_type is required")
@@ -159,13 +212,14 @@ func (s *PMAttachmentService) prepareAttachment(ctx context.Context, req model.C
 	}
 
 	attachment := &model.PMAttachment{
-		WorkspaceID:  workspaceID,
-		EntityType:   req.EntityType,
-		EntityID:     req.EntityID,
-		FileName:     strings.TrimSpace(req.FileName),
-		FileSize:     req.FileSize,
-		ContentType:  req.ContentType,
-		UploadedByID: userID,
+		WorkspaceID:       workspaceID,
+		EntityType:        req.EntityType,
+		EntityID:          req.EntityID,
+		FileName:          strings.TrimSpace(req.FileName),
+		FileSize:          req.FileSize,
+		ContentType:       req.ContentType,
+		UploadedByID:      userID,
+		UploadedByAgentID: agentID,
 	}
 
 	if err := s.attachmentRepo.Create(ctx, attachment); err != nil {

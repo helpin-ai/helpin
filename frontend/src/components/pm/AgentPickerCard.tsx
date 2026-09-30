@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react';
 
 import { AgentAvatar, getAgentPersonaMeta } from '@/components/agents/AgentAvatar';
+import { ExternalAgentBadge } from '@/components/agents/ExternalAgentBadge';
 import { Button } from '@/components/ui/button';
 import { useAgents } from '@/hooks/queries/useAgents';
 import { Loading01Icon, PlayIcon } from '@/lib/icons';
@@ -154,6 +155,7 @@ export function AgentPickerCard({
                 <span className="min-w-0 flex-1 truncate text-left">
                   {selectedAgent ? formatAgentOptionLabel(selectedAgent) : isLoading ? 'Loading agents...' : 'No agent selected'}
                 </span>
+                <ExternalAgentBadge agent={selectedAgent} />
               </>
             )}
             renderOption={(optionValue) => {
@@ -177,7 +179,10 @@ export function AgentPickerCard({
                 <>
                   <AgentAvatar agent={agent} className="h-5 w-5 shrink-0 rounded-md" />
                   <span className="min-w-0 flex-1 text-left">
-                    <span className="block truncate">{formatAgentOptionLabel(agent)}</span>
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate">{formatAgentOptionLabel(agent)}</span>
+                      <ExternalAgentBadge agent={agent} />
+                    </span>
                     <span className="block truncate text-[11px] font-normal text-muted-foreground">{meta.role}</span>
                   </span>
                 </>

@@ -106,6 +106,8 @@ type AgentRuntimeProjectionService struct {
 	agentRuntimeClient  agentRuntimeSignalClient
 	runFinalizers       *AgentRunFinalizerService
 	playbookExecution   atomic.Pointer[CRMPlaybookExecutionService]
+	// a2aProjector is attached after the NATS consumer may already run.
+	a2aProjector atomic.Pointer[ExternalA2AService]
 	// supportChatPauseHook is set after the NATS consumer may already be
 	// running, so access is atomic.
 	supportChatPauseHook atomic.Pointer[supportChatPauseHookFunc]
@@ -116,6 +118,17 @@ type AgentRuntimeProjectionService struct {
 	v2ReplayMu           sync.Mutex
 	v2ReplayThrough      map[string]int64
 	projectionLocks      [128]sync.Mutex
+}
+
+// agentRuntimeEventA2ATask reports an external A2A agent's task state.
+const agentRuntimeEventA2ATask = "a2a.task"
+
+// SetExternalA2AProjector attaches the projection of a2a.task events and
+// upload-link revocation for external agent runs.
+func (s *AgentRuntimeProjectionService) SetExternalA2AProjector(projector *ExternalA2AService) {
+	if s != nil {
+		s.a2aProjector.Store(projector)
+	}
 }
 
 // SetCRMPlaybookExecution attaches durable follow-through without changing ordinary finalizers.
@@ -843,6 +856,14 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		if err := s.mirrorRuntimePlanUpdated(ctx, run, event); err != nil {
 			return err
 		}
+	case agentRuntimeEventA2ATask:
+		// External agent progress changes no lifecycle state; its product
+		// side effects (comments, files, remote context) are idempotent.
+		if projector := s.a2aProjector.Load(); projector != nil {
+			if err := projector.ProjectA2ATaskEvent(ctx, run, event.Data); err != nil {
+				return err
+			}
+		}
 
 	default:
 		return nil
@@ -880,7 +901,7 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		usage = maxAgentRuntimeUsage(usage, previous)
 		hasUsage = true
 	}
-	if !hasUsage && isTerminalRuntimeEvent(event.Type) && s.usageMeter != nil && s.usageMeter.usage != nil {
+	if !hasUsage && isTerminalRuntimeEvent(event.Type) && s.usageMeter != nil && s.usageMeter.usage != nil && !isExternalA2ARun(run) {
 		hasUsage = true
 	}
 	if hasUsage {
@@ -950,6 +971,14 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 	if observer := s.playbookExecution.Load(); observer != nil && isTerminalAgentRunStatus(run.Status) {
 		if crm, err := crmPlaybookInput(run.Input); err == nil && crm != nil {
 			if err := observer.ObserveTerminalRun(ctx, *run); err != nil {
+				return err
+			}
+		}
+	}
+	if isTerminalAgentRunStatus(run.Status) && isExternalA2ARun(run) {
+		// Upload links die with the run, including on replayed terminal events.
+		if projector := s.a2aProjector.Load(); projector != nil {
+			if err := projector.RevokeRunUploadTokens(ctx, run.ID); err != nil {
 				return err
 			}
 		}
@@ -1404,7 +1433,7 @@ func (s *AgentRuntimeProjectionService) maybeCancelOverage(ctx context.Context, 
 }
 
 func (s *AgentRuntimeProjectionService) maybeConsumeTerminalUsage(ctx context.Context, run *model.AgentRun, event AgentRuntimeEventEnvelope, usage agentRuntimeUsagePayload) (bool, error) {
-	if s == nil || run == nil || s.usageMeter == nil || s.agentRepo == nil {
+	if s == nil || run == nil || s.usageMeter == nil || s.agentRepo == nil || isExternalA2ARun(run) {
 		return false, nil
 	}
 	if !isTerminalRuntimeEvent(event.Type) && !(isTerminalAgentRunStatus(run.Status) && event.Type == agentruntime.EventUsageCheckpoint) {

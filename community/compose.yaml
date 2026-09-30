@@ -6,6 +6,12 @@ x-helpin-env: &helpin-env
   AI_CONNECTION_ENCRYPTION_KEY: ${AI_CONNECTION_ENCRYPTION_KEY:?run setup.sh install}
   CRM_ENCRYPTION_KEY: ${CRM_ENCRYPTION_KEY:?run setup.sh install}
   GIT_OAUTH_ENCRYPTION_KEY: ${GIT_OAUTH_ENCRYPTION_KEY:?run setup.sh install}
+  # External A2A agents. An .env from before this key existed leaves them off
+  # (HTTP 503) until `helpin upgrade` generates it.
+  EXTERNAL_A2A_ENCRYPTION_KEY: ${EXTERNAL_A2A_ENCRYPTION_KEY:-}
+  EXTERNAL_A2A_ALLOWED_PRIVATE_HOSTS: ${EXTERNAL_A2A_ALLOWED_PRIVATE_HOSTS:-}
+  # Upload links for external agents; empty uses APP_BASE_URL.
+  PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-}
   APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8085}
   CORS_ORIGINS: ${APP_BASE_URL:-http://localhost:8085}
   PUBLIC_WIDGET_URL: ${PUBLIC_WIDGET_URL:-http://localhost:8085}

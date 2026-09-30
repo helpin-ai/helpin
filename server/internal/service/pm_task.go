@@ -40,6 +40,7 @@ type PMTaskService struct {
 	agentService        *AgentService
 	gitService          *GitService
 	recurringService    *PMRecurringTemplateService
+	assignmentRuns      assignmentRunTracker
 	logger              *slog.Logger
 }
 
@@ -616,6 +617,10 @@ func (s *PMTaskService) create(ctx context.Context, req model.CreateTaskRequest,
 
 	s.logger.InfoContext(ctx, "task created", "task_id", newTask.ID, "workspace_id", newTask.WorkspaceID, "actor_id", actorID)
 	s.triageTask(ctx, newTask.WorkspaceID, newTask.ID)
+	if !req.RunOnCreate {
+		// CreateWithAgentRun starts the requested run itself.
+		s.dispatchAssignmentRun(ctx, newTask.WorkspaceID, newTask.ID, newTask.AssignedAgentID, actorID)
+	}
 	detail, err := s.taskRepo.GetByID(ctx, newTask.ID)
 	if err != nil {
 		return nil, err
@@ -1466,12 +1471,16 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 	if req.ExternalID != nil {
 		current.ExternalID = req.ExternalID
 	}
+	var newlyAssignedAgentID *string
 	if req.AssignedAgentID != nil {
 		nextAgentID := nullableString(req.AssignedAgentID)
 		if nextAgentID != nil && s.agentService != nil {
 			if err := s.agentService.ValidateRunnableTargetAgent(ctx, current.WorkspaceID, *nextAgentID, "task", current.TeamID); err != nil {
 				return nil, err
 			}
+		}
+		if nextAgentID != nil && derefString(current.AssignedAgentID) != *nextAgentID {
+			newlyAssignedAgentID = nextAgentID
 		}
 		current.AssignedAgentID = nextAgentID
 	}
@@ -1596,6 +1605,7 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 			}
 		}
 	}
+	s.dispatchAssignmentRun(ctx, current.WorkspaceID, current.ID, newlyAssignedAgentID, actorID)
 	if len(addedOwnerIDs) > 0 {
 		s.trackProductEvent(ctx, ProductAnalyticsEvent{
 			SemanticKey: fmt.Sprintf("task_assigned:%s:%d", current.ID, current.UpdatedAt.UnixNano()),
