@@ -127,6 +127,58 @@ func TestDigestEntriesShowPreviewAndOpenEachItem(t *testing.T) {
 	}
 }
 
+func TestDigestTaskLinksAreVisiblyLinkedWithoutBoldText(t *testing.T) {
+	db := newNotificationDigestTestDB(t)
+	mustExecDigest(t, db, `CREATE TABLE workspaces (id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL)`)
+	mustExecDigest(t, db, `INSERT INTO workspaces VALUES ('ws', 'Acme', 'acme')`)
+	svc := NewNotificationService(nil, nil, nil, nil, nil, repository.NewWorkspaceRepository(db), nil, nil, "https://app.helpin.ai")
+	_, htmlBody, textBody := svc.renderDigestEmail(context.Background(), []digestNotificationItem{{WorkspaceID: "ws", Title: "Sam updated <Task & one>", EntityType: "task", EntityID: "task-1", EventCount: 1}})
+	link := "https://app.helpin.ai/w/acme/pm/tasks/task-1"
+	want := `href="` + link + `" target="_blank" style="color:#2563eb;text-decoration:underline;font-weight:400;"`
+	if !strings.Contains(htmlBody, want) || !strings.Contains(textBody, link) {
+		t.Fatal("task must have a visible, normal-weight link in HTML and its URL in plain text")
+	}
+	if !strings.Contains(htmlBody, "Sam updated &lt;Task &amp; one&gt;") {
+		t.Fatal("notification title must be escaped")
+	}
+}
+
+func TestProcessPendingDigestsCombinesWorkspacesIntoOneEmail(t *testing.T) {
+	db := newNotificationDigestTestDB(t)
+	ctx := context.Background()
+	now := time.Date(2026, time.March, 10, 10, 0, 0, 0, time.UTC)
+	mustExecDigest(t, db, `INSERT INTO users (id, email, password_hash, full_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, "user-1", "user@example.com", "hash", "Digest User", now, now)
+	mustExecDigest(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, badge_mode, timezone, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, "settings-1", "user-1", true, "daily", "09:00", 1, false, "all", "UTC", now, now)
+	mustExecDigest(t, db, `CREATE TABLE workspaces (id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL)`)
+	mustExecDigest(t, db, `INSERT INTO workspaces VALUES ('ws-1', 'Acme', 'acme'), ('ws-2', 'Beta', 'beta')`)
+	seedNotificationDigestCase(t, db, now)
+	mustExecDigest(t, db, `UPDATE notifications SET status = 'unread', workspace_id = 'ws-2' WHERE id = 'notif-due-read'`)
+	emailer := &stubEmailSender{}
+	svc := NewNotificationService(repository.NewNotificationRepository(db), repository.NewNotificationPreferenceRepository(db), repository.NewUserNotificationSettingsRepository(db), nil, repository.NewUserRepository(db), repository.NewWorkspaceRepository(db), nil, emailer, "https://app.helpin.ai")
+	if err := svc.ProcessPendingDigests(ctx, now); err != nil {
+		t.Fatal(err)
+	}
+	if len(emailer.sent) != 1 {
+		t.Fatalf("want one combined digest, got %d", len(emailer.sent))
+	}
+	for _, link := range []string{"https://app.helpin.ai/w/acme/pm/tasks/task-1", "https://app.helpin.ai/w/beta/pm/tasks/task-2"} {
+		if !strings.Contains(emailer.sent[0].htmlBody, `href="`+link+`"`) || !strings.Contains(emailer.sent[0].textBody, link) {
+			t.Fatalf("missing task link %s", link)
+		}
+	}
+	if !strings.Contains(emailer.sent[0].htmlBody, "All workspaces") || !strings.Contains(emailer.sent[0].htmlBody, "You have notifications enabled across 2 workspaces") {
+		t.Fatal("combined digest footer must describe all workspaces")
+	}
+	assertDeliveryStatus(t, db, "delivery-due-unread", "delivered")
+	assertDeliveryStatus(t, db, "delivery-due-read", "delivered")
+	if err := svc.ProcessPendingDigests(ctx, now); err != nil {
+		t.Fatal(err)
+	}
+	if len(emailer.sent) != 1 {
+		t.Fatal("digest was sent again in the same period")
+	}
+}
+
 func TestBuildDigestItemsKeepsItemContext(t *testing.T) {
 	now := time.Now()
 	items, _, _ := buildDigestItems([]repository.PendingDigestDelivery{{DeliveryID: "delivery", NotificationID: "notification", WorkspaceID: "ws", NotificationStatus: "unread", EventTitle: "Mentioned you", EventMetadata: model.JSONB{"digest_preview": "Please review"}, EntityType: "epic", EntityID: "epic-1", CreatedAt: now}}, now)

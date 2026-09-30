@@ -1477,7 +1477,7 @@ func (s *NotificationService) renderDigestEmail(ctx context.Context, items []dig
 		for _, item := range grouped[workspaceID] {
 			line := html.EscapeString(digestItemLine(item))
 			if link := digestItemURL(s.appBaseURL, workspaceSlugs[workspaceID], item); link != "" {
-				line = fmt.Sprintf(`<a href="%s" target="_blank" style="color:#18181b;text-decoration:none;font-weight:600;">%s</a>`, html.EscapeString(link), line)
+				line = fmt.Sprintf(`<a href="%s" target="_blank" style="color:#2563eb;text-decoration:underline;font-weight:400;">%s</a>`, html.EscapeString(link), line)
 			}
 			previewHTML := ""
 			if preview := digestItemPreview(item); preview != "" {
@@ -1513,10 +1513,12 @@ func (s *NotificationService) renderDigestEmail(ctx context.Context, items []dig
                         </tr>`, html.EscapeString(ctaURL))
 	}
 
-	// Use the first workspace name for the header; fall back to "Helpin".
-	headerWorkspaceName := "Helpin"
-	if len(workspaceOrder) > 0 {
+	// Label the scope of the combined digest, not just its first workspace.
+	headerWorkspaceName := "All workspaces"
+	footerContext := fmt.Sprintf("You have notifications enabled across %d workspaces", len(workspaceOrder))
+	if len(workspaceOrder) == 1 {
 		headerWorkspaceName = workspaceNames[workspaceOrder[0]]
+		footerContext = fmt.Sprintf("You have notifications enabled on %s", headerWorkspaceName)
 	}
 
 	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
@@ -1584,7 +1586,7 @@ func (s *NotificationService) renderDigestEmail(ctx context.Context, items []dig
 		len(items),
 		wsSections.String(),
 		ctaHTML,
-		emailtpl.NotificationFooterHTML(fmt.Sprintf("You have notifications enabled on %s", headerWorkspaceName)),
+		emailtpl.NotificationFooterHTML(footerContext),
 	)
 
 	return subject, htmlBody, strings.TrimSpace(textBody.String())
