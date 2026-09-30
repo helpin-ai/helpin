@@ -388,6 +388,12 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Post("/webhooks/meeting-capture/{provider}", h.CRMMeeting.Webhook)
 		}
 
+		// External providers redirect the browser without a Helpin bearer header.
+		// Relay to the app; exchanging the code remains an authenticated POST.
+		if h.ExternalMCP != nil {
+			r.Get("/external-mcp/oauth/callback", h.ExternalMCP.OAuthCallbackRedirect)
+		}
+
 		// ---- Public Gmail OAuth callback (Google redirects here without JWT) ----
 		r.Get("/crm/email/oauth/callback", h.CRMEmail.OAuthCallbackRedirect)
 
@@ -616,7 +622,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				})
 			}
 			if h.ExternalMCP != nil {
-				r.Get("/external-mcp/oauth/callback", h.ExternalMCP.OAuthCallback)
+				r.Post("/external-mcp/oauth/callback", h.ExternalMCP.OAuthCallback)
 				r.Route("/external-mcp", func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceID)
 					r.Use(wsActive)

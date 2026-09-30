@@ -38,6 +38,7 @@ import { Route as AuthenticatedWSlugDocsRouteImport } from './routes/_authentica
 import { Route as AuthenticatedWSlugDashboardRouteImport } from './routes/_authenticated/w/$slug/dashboard'
 import { Route as AuthenticatedWSlugCrmRouteImport } from './routes/_authenticated/w/$slug/crm'
 import { Route as AuthenticatedWSlugAutomationRouteImport } from './routes/_authenticated/w/$slug/automation'
+import { Route as AuthenticatedOauthExternalMcpCallbackRouteImport } from './routes/_authenticated/oauth/external-mcp/callback'
 import { Route as AuthenticatedOauthCliAuthorizeRouteImport } from './routes/_authenticated/oauth/cli/authorize'
 import { Route as AuthenticatedWSlugSprintsIndexRouteImport } from './routes/_authenticated/w/$slug/sprints/index'
 import { Route as AuthenticatedWSlugSettingsIndexRouteImport } from './routes/_authenticated/w/$slug/settings/index'
@@ -283,6 +284,12 @@ const AuthenticatedWSlugAutomationRoute =
     id: '/automation',
     path: '/automation',
     getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedOauthExternalMcpCallbackRoute =
+  AuthenticatedOauthExternalMcpCallbackRouteImport.update({
+    id: '/oauth/external-mcp/callback',
+    path: '/oauth/external-mcp/callback',
+    getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedOauthCliAuthorizeRoute =
   AuthenticatedOauthCliAuthorizeRouteImport.update({
@@ -868,6 +875,7 @@ export interface FileRoutesByFullPath {
   '/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
   '/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
+  '/oauth/external-mcp/callback': typeof AuthenticatedOauthExternalMcpCallbackRoute
   '/w/$slug/automation': typeof AuthenticatedWSlugAutomationRouteWithChildren
   '/w/$slug/crm': typeof AuthenticatedWSlugCrmRouteWithChildren
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
@@ -990,6 +998,7 @@ export interface FileRoutesByTo {
   '/github/installed': typeof AuthenticatedGithubInstalledRoute
   '/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
+  '/oauth/external-mcp/callback': typeof AuthenticatedOauthExternalMcpCallbackRoute
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
   '/w/$slug/notifications': typeof AuthenticatedWSlugNotificationsRoute
   '/w/$slug/setup': typeof AuthenticatedWSlugSetupRoute
@@ -1110,6 +1119,7 @@ export interface FileRoutesById {
   '/_authenticated/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/_authenticated/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
   '/_authenticated/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
+  '/_authenticated/oauth/external-mcp/callback': typeof AuthenticatedOauthExternalMcpCallbackRoute
   '/_authenticated/w/$slug/automation': typeof AuthenticatedWSlugAutomationRouteWithChildren
   '/_authenticated/w/$slug/crm': typeof AuthenticatedWSlugCrmRouteWithChildren
   '/_authenticated/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
@@ -1236,6 +1246,7 @@ export interface FileRouteTypes {
     | '/oauth/authorize'
     | '/w/$slug'
     | '/oauth/cli/authorize'
+    | '/oauth/external-mcp/callback'
     | '/w/$slug/automation'
     | '/w/$slug/crm'
     | '/w/$slug/dashboard'
@@ -1358,6 +1369,7 @@ export interface FileRouteTypes {
     | '/github/installed'
     | '/oauth/authorize'
     | '/oauth/cli/authorize'
+    | '/oauth/external-mcp/callback'
     | '/w/$slug/dashboard'
     | '/w/$slug/notifications'
     | '/w/$slug/setup'
@@ -1477,6 +1489,7 @@ export interface FileRouteTypes {
     | '/_authenticated/oauth/authorize'
     | '/_authenticated/w/$slug'
     | '/_authenticated/oauth/cli/authorize'
+    | '/_authenticated/oauth/external-mcp/callback'
     | '/_authenticated/w/$slug/automation'
     | '/_authenticated/w/$slug/crm'
     | '/_authenticated/w/$slug/dashboard'
@@ -1802,6 +1815,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/w/$slug/automation'
       preLoaderRoute: typeof AuthenticatedWSlugAutomationRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/oauth/external-mcp/callback': {
+      id: '/_authenticated/oauth/external-mcp/callback'
+      path: '/oauth/external-mcp/callback'
+      fullPath: '/oauth/external-mcp/callback'
+      preLoaderRoute: typeof AuthenticatedOauthExternalMcpCallbackRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/oauth/cli/authorize': {
       id: '/_authenticated/oauth/cli/authorize'
@@ -2814,6 +2834,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedOauthAuthorizeRoute: typeof AuthenticatedOauthAuthorizeRoute
   AuthenticatedWSlugRoute: typeof AuthenticatedWSlugRouteWithChildren
   AuthenticatedOauthCliAuthorizeRoute: typeof AuthenticatedOauthCliAuthorizeRoute
+  AuthenticatedOauthExternalMcpCallbackRoute: typeof AuthenticatedOauthExternalMcpCallbackRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -2824,6 +2845,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedOauthAuthorizeRoute: AuthenticatedOauthAuthorizeRoute,
   AuthenticatedWSlugRoute: AuthenticatedWSlugRouteWithChildren,
   AuthenticatedOauthCliAuthorizeRoute: AuthenticatedOauthCliAuthorizeRoute,
+  AuthenticatedOauthExternalMcpCallbackRoute:
+    AuthenticatedOauthExternalMcpCallbackRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
