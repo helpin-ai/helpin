@@ -4,7 +4,11 @@ import type { OrganizationWithRole, User } from '@/lib/types'
 
 const widgetKey = import.meta.env.VITE_HELPIN_WIDGET_KEY || defaultSupportWidgetKey
 const widgetHost = import.meta.env.VITE_HELPIN_HOST || defaultSupportWidgetHost
-export const helpinClient = widgetKey && widgetHost ? createClient({ widgetKey, host: widgetHost }) : null
+// The SDK starts pageview timers when the client is created. Under Vitest
+// they outlive each file's jsdom and throw after teardown, so tests run
+// without a client, as the Community edition does.
+const isTestRun = import.meta.env.MODE === 'test'
+export const helpinClient = widgetKey && widgetHost && !isTestRun ? createClient({ widgetKey, host: widgetHost }) : null
 
 
 export function buildHelpinIdentity(user: User, organization?: OrganizationWithRole | null) {
