@@ -123,9 +123,11 @@ bucket public to bypass an authorization or URL configuration problem.
 ## Migration or restore fails
 
 Keep the failing migration version and redacted error text. Do not edit applied
-SQL, reset the migration ledger, or delete volumes as a repair shortcut. Community
-0.1 supports clean installation and same-release restore; cross-version upgrade
-support is planned for 0.2. A previous image alone does not undo a schema change.
+SQL, reset the migration ledger, or delete volumes as a repair shortcut. Clean
+installation and same-release restore are supported. `helpin upgrade` moves only
+to a release that declares a tested upgrade path from the installed tag; see
+[upgrade an installation](cli.md#upgrade-an-installation). A previous image alone
+does not undo a schema change.
 Use the [backup and restore guide](backups.md) with the matching databases, object
 storage, bundle, and encryption keys.
 

@@ -27,9 +27,9 @@ capacity, agent capabilities, and AI usage.
 
 ### Run Helpin yourself
 
-**Community 0.1 beta** focuses on support chat, the shared inbox, help-center
-articles, and support agents. Projects, CRM navigation, and broader automation
-are outside its default supported surface. Read the
+**Community 0.2 beta** includes support chat, the shared inbox, and the help
+center, together with Docs, Projects, CRM, automation, and AI agents, including
+coding agents. Read the
 [release scope and known limitations](ROADMAP.md) before choosing a deployment.
 
 You need Linux or macOS on amd64 or arm64, Docker Engine or Docker Desktop,
@@ -85,9 +85,9 @@ attention.
 
 ## What you can do
 
-This is the broader Helpin workspace. The Community beta starts with the
-support-focused scope described above; Cloud plans and configured integrations
-determine which additional capabilities you can use.
+This is the broader Helpin workspace. Community 0.2 enables Support, Docs,
+Projects, CRM, automation, and agents by default; Cloud plans and configured
+integrations determine which additional capabilities you can use.
 
 | Product | What it gives your team |
 | --- | --- |
