@@ -141,6 +141,9 @@ jobs:
       - name: Record image identities
         working-directory: helpin/community
         run: |
+          # compose.yaml requires the inline app config; load it from the build configuration.
+          AGENT_RUNTIME_EXECUTION_APP_CONFIG="$(cat "$(dirname -- "$COMMUNITY_ENV_FILE")/apps.json")"
+          export AGENT_RUNTIME_EXECUTION_APP_CONFIG
           mkdir -p release-artifacts
           docker compose --env-file "$COMMUNITY_ENV_FILE" config --images | sort -u > release-artifacts/images-local.txt
           xargs docker image inspect --format '{{.Id}} {{.Architecture}}' < release-artifacts/images-local.txt > release-artifacts/tested-images.txt
@@ -152,6 +155,8 @@ jobs:
         working-directory: helpin/community
         run: |
           test -s ../../agent-runtime/LICENSE
+          AGENT_RUNTIME_EXECUTION_APP_CONFIG="$(cat "$(dirname -- "$COMMUNITY_ENV_FILE")/apps.json")"
+          export AGENT_RUNTIME_EXECUTION_APP_CONFIG
           ./check-images.sh
           sed -n '/^ghcr.io\/helpin-ai\//p' release-artifacts/images-local.txt > release-artifacts/application-images.txt
           mapfile -t images < release-artifacts/application-images.txt
