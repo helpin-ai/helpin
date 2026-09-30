@@ -35,10 +35,10 @@ before public disclosure. We do not promise a response deadline or a bounty.
 
 | Version | Supported |
 | --- | --- |
-| Latest published 0.1 patch | Yes |
-| Earlier 0.1 patches and unpublished builds | No |
+| Latest published 0.2 patch | Yes |
+| Earlier 0.2 patches and unpublished builds | No |
 
-Community 0.1 is a beta. Subscribe to release notices, apply patches promptly,
+Community 0.2 is a beta. Subscribe to release notices, apply patches promptly,
 and keep backups of the databases, object store, and encryption keys.
 
 ## Operator responsibilities

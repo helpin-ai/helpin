@@ -29,6 +29,17 @@ const auth = await request('/api/auth/signup', { method: 'POST', status: 201, bo
 token = auth.access_token;
 assert.ok(token);
 assert.notEqual(auth.user.email_verified, true);
+// Signup becomes invite-only once the first account exists, but every
+// acceptance step that imports this fixture signs up its own owner. On this
+// disposable install the first owner, the server admin, reopens signup.
+const adminHeaders = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+const signupPolicy = await fetch(`${base}/api/instance/signup-policy`, { headers: adminHeaders });
+if (signupPolicy.ok && (await signupPolicy.json()).mode !== 'open') {
+  const opened = await fetch(`${base}/api/instance/signup-policy`, {
+    method: 'PUT', headers: adminHeaders, body: JSON.stringify({ mode: 'open', allowed_domains: [] }),
+  });
+  assert.equal(opened.status, 200, 'PUT /api/instance/signup-policy: open signup for later acceptance steps');
+}
 const org = await request('/api/organizations', { method: 'POST', status: 201, body: { name: 'Community Test', slug: `community-${suffix}` } });
 const ws = await request('/api/workspaces', { method: 'POST', status: 201, body: {
   name: 'Support Test', slug: `support-${suffix}`, workspace_key: 'TEST', organization_id: org.id, timezone: 'UTC', setup_goals: [],

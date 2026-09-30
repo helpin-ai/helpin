@@ -40,7 +40,7 @@ content. Never attach `.env`, database dumps, or raw support archives.
 ## What to expect
 
 Community support is best effort. No response deadline or service-level
-agreement is promised. Community 0.1 is a beta: only the latest published 0.1
+agreement is promised. Community 0.2 is a beta: only the latest published 0.2
 patch is supported, as described in the [security policy](SECURITY.md).
 
 ## Security vulnerabilities

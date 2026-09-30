@@ -1,24 +1,27 @@
 # Community beta scope and known limitations
 
-This page describes what Community 0.1 includes, what is outside its supported
-surface, the limitations we track, and what is planned next. It applies to the
-published Community bundle; the release notes of your bundle record changes.
+This page describes what Community 0.2 includes, what is outside the bundle,
+the limitations we track, and what is planned next. It applies to the Community
+bundle; the release notes of your bundle record changes.
 
-## What Community 0.1 includes
+## What Community 0.2 includes
 
-The first release focuses on support chat, visitor identification, and public
-help-center articles, with agents assisting that workflow. All modules are
-enabled by default: `support,docs,agents,pm,crm,automation`. Operators can
-narrow the surface with `HELPIN_ENABLED_MODULES`.
+Community 0.2 includes every product surface: support chat with visitor
+identification, the shared inbox, and the public help center; Docs; Projects;
+CRM; automation; and agents, including coding agents. All modules are enabled
+by default: `support,docs,agents,pm,crm,automation`.
 
-## Included by default, outside the support focus
+New in 0.2, external A2A agents connect under **Settings → External agents**.
+They need `EXTERNAL_A2A_ENCRYPTION_KEY`, which the installer generates; see
+[configuration](docs/community/configuration.md).
 
-PM, CRM, and automation builders are included in the default modules, but this
-release's support-focused scope sets the supported bar. Operators who want only
-the support surface can set `HELPIN_ENABLED_MODULES=support,docs,agents`; shared
-customer services remain available to Support either way, and some agent APIs,
-including coding-session routes, are classified under Agents. Coding workflows
-are outside this release's support-focused scope.
+## Narrow the enabled modules
+
+Operators can narrow the surface with `HELPIN_ENABLED_MODULES`; Support
+requires Docs. For only the support surface, set
+`HELPIN_ENABLED_MODULES=support,docs,agents`. Shared customer services remain
+available to Support either way, and some agent APIs, including coding-session
+routes, are classified under Agents.
 
 Subscription billing, payment UI, the analytics collector, ClickHouse, and the
 desktop, mobile, admin, and email notice apps are not part of the Community
@@ -42,19 +45,25 @@ bundle.
   still require the optional Postmark integration.
 - The support-only SDK does not collect analytics events. ClickHouse and an
   analytics collector are not part of the bundle.
+- One Runtime worker runs chat, coding, and Python execution. Its `community`
+  image omits Node, Go, and browser automation. See
+  [optional Ask Agent execution](community/README.md#optional-ask-agent-execution)
+  for isolation limits and [deployment](docs/community/deployment.md#services-and-data)
+  for the image contents.
 
 These are tracked limitations, not a claim that an untested deployment is ready
 for public traffic. Follow the release gate and published patch notes.
 
-## Planned for 0.2
+## Planned work
 
-Community packaging maintainers plan tested upgrades from 0.1, automated
-public-edge/ACME fixtures, cached SDK loader upgrade compatibility, Postmark
-support-delivery fixtures, and a signing-secret setup UI. The 0.1 guide already
-includes backup/restore and external proxy instructions. The operator CLI now
-implements backup, restore, and compatibility-gated upgrades; full-stack upgrade
-evidence and published compatible releases remain separate requirements. These items
-are plans, not evidence of shipped features or completed deployment checks.
+Community packaging maintainers plan tested upgrade paths between published
+releases, automated public-edge/ACME fixtures, cached SDK loader upgrade
+compatibility, Postmark support-delivery fixtures, and a signing-secret setup
+UI. The installation guides already include backup/restore and external proxy
+instructions. The operator CLI implements backup, restore, and
+compatibility-gated upgrades; full-stack upgrade evidence and published
+compatible releases remain separate requirements. These items are plans, not
+evidence of shipped features or completed deployment checks.
 
 ## Implementation references
 
