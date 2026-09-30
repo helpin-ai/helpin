@@ -14,6 +14,11 @@
         "installed": "10.42-1"
       },
       {
+        "id": "CVE-2026-89157",
+        "package": "libpcre2-8-0",
+        "installed": "10.42-1"
+      },
+      {
         "id": "CVE-2025-68121",
         "package": "stdlib",
         "installed": "v1.24.6"
