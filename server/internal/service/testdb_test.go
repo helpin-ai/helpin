@@ -508,6 +508,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			url TEXT,
 			is_uploaded BOOLEAN NOT NULL DEFAULT 0,
 			uploaded_by_id TEXT,
+			uploaded_by_agent_id TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

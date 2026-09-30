@@ -454,6 +454,12 @@ func validateAndMarshalExternalMCPHeaders(headers map[string]string) ([]byte, er
 }
 
 func parseExternalMCPEncryptionKey(value string) ([]byte, error) {
+	return parseAES256Key(value, "EXTERNAL_MCP_ENCRYPTION_KEY")
+}
+
+// parseAES256Key accepts 32 raw bytes, 64 hex characters, or base64-encoded
+// 32 bytes. An empty value returns a nil key.
+func parseAES256Key(value, envName string) ([]byte, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return nil, nil
@@ -469,7 +475,7 @@ func parseExternalMCPEncryptionKey(value string) ([]byte, error) {
 	if len(value) == 32 {
 		return []byte(value), nil
 	}
-	return nil, fmt.Errorf("EXTERNAL_MCP_ENCRYPTION_KEY must be 32 raw bytes, 64 hex characters, or base64-encoded 32 bytes")
+	return nil, fmt.Errorf("%s must be 32 raw bytes, 64 hex characters, or base64-encoded 32 bytes", envName)
 }
 
 func (s *ExternalMCPService) aad(workspaceID, serverID, field string) []byte {

@@ -62,6 +62,16 @@ type AgentRuntimeHostService struct {
 	artifactRepo      agentRuntimeBrowserArtifactRepository
 	assetStore        agentRuntimeBrowserAssetStore
 	playbookExecution *CRMPlaybookExecutionService
+	externalA2A       *ExternalA2AService
+}
+
+// SetExternalA2AService enables per-turn connection details for runs of
+// external A2A agents.
+func (s *AgentRuntimeHostService) SetExternalA2AService(externalA2A *ExternalA2AService) *AgentRuntimeHostService {
+	if s != nil {
+		s.externalA2A = externalA2A
+	}
+	return s
 }
 
 type agentRuntimeBrowserAssetStore interface {
@@ -720,6 +730,23 @@ func (s *AgentRuntimeHostService) ResolveTargetContext(ctx context.Context, req 
 	if workspaceID != "" {
 		resp.Target.Metadata["workspace_id"] = workspaceID
 		resp.Data["workspace_id"] = workspaceID
+	}
+	if s.externalA2A != nil {
+		// Only runs of an active external agent receive connection details.
+		a2a, err := s.externalA2A.TargetContextData(ctx, ExternalA2AContextRequest{
+			RuntimeRunID: req.RunID,
+			HostRunID:    runtimeMetadataString("helpin_run_id", req.Metadata, req.Target.Metadata),
+			AgentID:      callbackAgentID,
+			WorkspaceID:  workspaceID,
+			TargetType:   resp.Target.Type,
+			TargetID:     resp.Target.ID,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if a2a != nil {
+			resp.Data["a2a"] = a2a
+		}
 	}
 	return resp, nil
 }

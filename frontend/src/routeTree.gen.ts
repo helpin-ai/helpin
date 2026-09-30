@@ -68,6 +68,7 @@ import { Route as AuthenticatedWSlugSettingsImportRouteImport } from './routes/_
 import { Route as AuthenticatedWSlugSettingsHelpcenterRouteImport } from './routes/_authenticated/w/$slug/settings/helpcenter'
 import { Route as AuthenticatedWSlugSettingsGeneralRouteImport } from './routes/_authenticated/w/$slug/settings/general'
 import { Route as AuthenticatedWSlugSettingsExternalMcpRouteImport } from './routes/_authenticated/w/$slug/settings/external-mcp'
+import { Route as AuthenticatedWSlugSettingsExternalAgentsRouteImport } from './routes/_authenticated/w/$slug/settings/external-agents'
 import { Route as AuthenticatedWSlugSettingsDeliveryRouteImport } from './routes/_authenticated/w/$slug/settings/delivery'
 import { Route as AuthenticatedWSlugSettingsCrmPipelinesRouteImport } from './routes/_authenticated/w/$slug/settings/crm-pipelines'
 import { Route as AuthenticatedWSlugSettingsCrmMeetingsRouteImport } from './routes/_authenticated/w/$slug/settings/crm-meetings'
@@ -461,6 +462,12 @@ const AuthenticatedWSlugSettingsExternalMcpRoute =
   AuthenticatedWSlugSettingsExternalMcpRouteImport.update({
     id: '/settings/external-mcp',
     path: '/settings/external-mcp',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedWSlugSettingsExternalAgentsRoute =
+  AuthenticatedWSlugSettingsExternalAgentsRouteImport.update({
+    id: '/settings/external-agents',
+    path: '/settings/external-agents',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugSettingsDeliveryRoute =
@@ -916,6 +923,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/settings/crm-meetings': typeof AuthenticatedWSlugSettingsCrmMeetingsRoute
   '/w/$slug/settings/crm-pipelines': typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
   '/w/$slug/settings/delivery': typeof AuthenticatedWSlugSettingsDeliveryRoute
+  '/w/$slug/settings/external-agents': typeof AuthenticatedWSlugSettingsExternalAgentsRoute
   '/w/$slug/settings/external-mcp': typeof AuthenticatedWSlugSettingsExternalMcpRoute
   '/w/$slug/settings/general': typeof AuthenticatedWSlugSettingsGeneralRoute
   '/w/$slug/settings/helpcenter': typeof AuthenticatedWSlugSettingsHelpcenterRoute
@@ -1034,6 +1042,7 @@ export interface FileRoutesByTo {
   '/w/$slug/settings/crm-meetings': typeof AuthenticatedWSlugSettingsCrmMeetingsRoute
   '/w/$slug/settings/crm-pipelines': typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
   '/w/$slug/settings/delivery': typeof AuthenticatedWSlugSettingsDeliveryRoute
+  '/w/$slug/settings/external-agents': typeof AuthenticatedWSlugSettingsExternalAgentsRoute
   '/w/$slug/settings/external-mcp': typeof AuthenticatedWSlugSettingsExternalMcpRoute
   '/w/$slug/settings/general': typeof AuthenticatedWSlugSettingsGeneralRoute
   '/w/$slug/settings/helpcenter': typeof AuthenticatedWSlugSettingsHelpcenterRoute
@@ -1158,6 +1167,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/settings/crm-meetings': typeof AuthenticatedWSlugSettingsCrmMeetingsRoute
   '/_authenticated/w/$slug/settings/crm-pipelines': typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
   '/_authenticated/w/$slug/settings/delivery': typeof AuthenticatedWSlugSettingsDeliveryRoute
+  '/_authenticated/w/$slug/settings/external-agents': typeof AuthenticatedWSlugSettingsExternalAgentsRoute
   '/_authenticated/w/$slug/settings/external-mcp': typeof AuthenticatedWSlugSettingsExternalMcpRoute
   '/_authenticated/w/$slug/settings/general': typeof AuthenticatedWSlugSettingsGeneralRoute
   '/_authenticated/w/$slug/settings/helpcenter': typeof AuthenticatedWSlugSettingsHelpcenterRoute
@@ -1284,6 +1294,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/crm-meetings'
     | '/w/$slug/settings/crm-pipelines'
     | '/w/$slug/settings/delivery'
+    | '/w/$slug/settings/external-agents'
     | '/w/$slug/settings/external-mcp'
     | '/w/$slug/settings/general'
     | '/w/$slug/settings/helpcenter'
@@ -1402,6 +1413,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/crm-meetings'
     | '/w/$slug/settings/crm-pipelines'
     | '/w/$slug/settings/delivery'
+    | '/w/$slug/settings/external-agents'
     | '/w/$slug/settings/external-mcp'
     | '/w/$slug/settings/general'
     | '/w/$slug/settings/helpcenter'
@@ -1525,6 +1537,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/settings/crm-meetings'
     | '/_authenticated/w/$slug/settings/crm-pipelines'
     | '/_authenticated/w/$slug/settings/delivery'
+    | '/_authenticated/w/$slug/settings/external-agents'
     | '/_authenticated/w/$slug/settings/external-mcp'
     | '/_authenticated/w/$slug/settings/general'
     | '/_authenticated/w/$slug/settings/helpcenter'
@@ -2011,6 +2024,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/external-mcp'
       fullPath: '/w/$slug/settings/external-mcp'
       preLoaderRoute: typeof AuthenticatedWSlugSettingsExternalMcpRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/settings/external-agents': {
+      id: '/_authenticated/w/$slug/settings/external-agents'
+      path: '/settings/external-agents'
+      fullPath: '/w/$slug/settings/external-agents'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsExternalAgentsRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/settings/delivery': {
@@ -2669,6 +2689,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugSettingsCrmMeetingsRoute: typeof AuthenticatedWSlugSettingsCrmMeetingsRoute
   AuthenticatedWSlugSettingsCrmPipelinesRoute: typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
   AuthenticatedWSlugSettingsDeliveryRoute: typeof AuthenticatedWSlugSettingsDeliveryRoute
+  AuthenticatedWSlugSettingsExternalAgentsRoute: typeof AuthenticatedWSlugSettingsExternalAgentsRoute
   AuthenticatedWSlugSettingsExternalMcpRoute: typeof AuthenticatedWSlugSettingsExternalMcpRoute
   AuthenticatedWSlugSettingsGeneralRoute: typeof AuthenticatedWSlugSettingsGeneralRoute
   AuthenticatedWSlugSettingsHelpcenterRoute: typeof AuthenticatedWSlugSettingsHelpcenterRoute
@@ -2750,6 +2771,8 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
     AuthenticatedWSlugSettingsCrmPipelinesRoute,
   AuthenticatedWSlugSettingsDeliveryRoute:
     AuthenticatedWSlugSettingsDeliveryRoute,
+  AuthenticatedWSlugSettingsExternalAgentsRoute:
+    AuthenticatedWSlugSettingsExternalAgentsRoute,
   AuthenticatedWSlugSettingsExternalMcpRoute:
     AuthenticatedWSlugSettingsExternalMcpRoute,
   AuthenticatedWSlugSettingsGeneralRoute:

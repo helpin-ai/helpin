@@ -8,6 +8,7 @@ import {
   getTaskAgentRunSelectedAgentId,
   getTaskAgentRunSuggestedAgent,
 } from '../AgentRunPanel';
+import { taskAgentRunUsesAIConnection } from '@/lib/externalAgents';
 import type { Agent, AgentRun } from '@/lib/pmTypes';
 
 function run(overrides: Partial<AgentRun>): AgentRun {
@@ -282,5 +283,13 @@ describe('getTaskAgentRunExecutionContextLockReason', () => {
         activeRunAgentName: null,
       }),
     ).toBeNull();
+  });
+});
+
+describe('taskAgentRunUsesAIConnection', () => {
+  it('skips the AI connection choice for external A2A agents', () => {
+    expect(taskAgentRunUsesAIConnection({ runtime_kind: 'a2a' })).toBe(false);
+    expect(taskAgentRunUsesAIConnection({ runtime_kind: 'native_sdk' })).toBe(true);
+    expect(taskAgentRunUsesAIConnection(undefined)).toBe(true);
   });
 });

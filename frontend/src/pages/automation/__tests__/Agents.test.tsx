@@ -20,6 +20,7 @@ import {
   runNowTargetOptions,
   sortAgentsForDisplay,
 } from '../Agents';
+import { agentEditorKind } from '@/lib/externalAgents';
 import type { Agent, AgentModelProviderOption, AgentPresetDefinition, AgentRun } from '@/lib/pmTypes';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -413,5 +414,13 @@ describe('getAgentProviderConfigState', () => {
       providerMessage: '',
       modelMessage: 'Select a compatible AI provider first.',
     });
+  });
+});
+
+describe('agentEditorKind', () => {
+  it('routes external A2A agents to the read-only summary instead of the editor', () => {
+    expect(agentEditorKind({ is_system: false, runtime_kind: 'a2a' })).toBe('external');
+    expect(agentEditorKind({ is_system: false, runtime_kind: 'native_sdk' })).toBe('custom');
+    expect(agentEditorKind({ is_system: true, runtime_kind: 'native_sdk' })).toBe('system');
   });
 });
