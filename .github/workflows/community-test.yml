@@ -107,6 +107,8 @@ jobs:
           directory=$(mktemp -d "$RUNNER_TEMP/community-build.XXXXXX")
           cp helpin/community/{setup.sh,.env.example,apps.example.json} "$directory/"
           "$directory/setup.sh" install
+          # compose.yaml requires the inline app config; setup.sh exports it only when starting.
+          export AGENT_RUNTIME_EXECUTION_APP_CONFIG="$(cat "$directory/apps.json")"
           echo "COMMUNITY_ENV_FILE=$directory/.env" >> "$GITHUB_ENV"
           echo "COMMUNITY_SOURCE_REVISION=$(git -C helpin rev-parse HEAD)" >> "$GITHUB_ENV"
           export COMMUNITY_SOURCE_REVISION=$(git -C helpin rev-parse HEAD)
