@@ -150,6 +150,8 @@ type notificationDeliveryPlan struct {
 }
 
 type digestNotificationItem struct {
+	ActorName      string
+	EntityTitle    string
 	NotificationID string
 	WorkspaceID    string
 	Title          string
@@ -1316,6 +1318,8 @@ func buildDigestItems(deliveries []repository.PendingDigestDelivery, now time.Ti
 				group.item.Title = title
 			}
 			group.item.Body = digestPreviewFromMetadata(delivery.EventMetadata)
+			group.item.ActorName, _ = delivery.ActorSnapshot["name"].(string)
+			group.item.EntityTitle, _ = delivery.EntitySnapshot["title"].(string)
 		}
 
 		group.item.EventCount++
@@ -1475,10 +1479,7 @@ func (s *NotificationService) renderDigestEmail(ctx context.Context, items []dig
                         <td style="padding-bottom: 20px;">
                           <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0">`, wsName)
 		for _, item := range grouped[workspaceID] {
-			line := html.EscapeString(digestItemLine(item))
-			if link := digestItemURL(s.appBaseURL, workspaceSlugs[workspaceID], item); link != "" {
-				line = fmt.Sprintf(`<a href="%s" target="_blank" style="color:#2563eb;text-decoration:underline;font-weight:400;">%s</a>`, html.EscapeString(link), line)
-			}
+			line := digestItemHTML(item, digestItemURL(s.appBaseURL, workspaceSlugs[workspaceID], item))
 			previewHTML := ""
 			if preview := digestItemPreview(item); preview != "" {
 				previewHTML = fmt.Sprintf(`<p style="margin:4px 0 0;font-size:13px;line-height:1.45;color:#71717a;">%s</p>`, html.EscapeString(preview))
@@ -1590,6 +1591,35 @@ func (s *NotificationService) renderDigestEmail(ctx context.Context, items []dig
 	)
 
 	return subject, htmlBody, strings.TrimSpace(textBody.String())
+}
+
+// Use stored names rather than guessing which words in an activity are a person or task.
+func digestItemHTML(item digestNotificationItem, link string) string {
+	title := item.Title
+	actorHTML := ""
+	if name := strings.TrimSpace(item.ActorName); name != "" && strings.HasPrefix(title, name+" ") {
+		actorHTML = `<strong style="color:#18181b;font-weight:600;">` + html.EscapeString(name) + `</strong> `
+		title = strings.TrimPrefix(title, name+" ")
+	}
+	linkHTML := func(label string) string {
+		return fmt.Sprintf(`<a href="%s" target="_blank" style="color:#2563eb;text-decoration:underline;font-weight:400;">%s</a>`, html.EscapeString(link), html.EscapeString(label))
+	}
+	line := html.EscapeString(title)
+	if link != "" {
+		if index := strings.LastIndex(title, item.EntityTitle); item.EntityTitle != "" && index >= 0 {
+			line = html.EscapeString(title[:index]) + linkHTML(item.EntityTitle) + html.EscapeString(title[index+len(item.EntityTitle):])
+		} else {
+			label := "View item"
+			if item.EntityType == "task" {
+				label = "View task"
+			}
+			line += ` <span style="white-space:nowrap;">` + linkHTML(label) + `</span>`
+		}
+	}
+	if item.EventCount > 1 {
+		line += fmt.Sprintf(` <span style="color:#71717a;font-weight:400;">(+%d more update%s)</span>`, item.EventCount-1, pluralSuffix(item.EventCount-1))
+	}
+	return actorHTML + line
 }
 
 func digestItemLine(item digestNotificationItem) string {

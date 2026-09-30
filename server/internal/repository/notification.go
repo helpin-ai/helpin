@@ -50,6 +50,8 @@ type PendingDigestDelivery struct {
 	EntityType         string
 	EntityID           string
 	EventMetadata      model.JSONB
+	ActorSnapshot      model.JSONB
+	EntitySnapshot     model.JSONB
 	CreatedAt          time.Time
 }
 
@@ -202,6 +204,7 @@ func (r *NotificationRepository) listPendingDeliveriesByChannel(ctx context.Cont
 			ne.event_type,
 			ne.title AS event_title,
  n.entity_type, n.entity_id, ne.metadata AS event_metadata,
+            ne.actor_snapshot, n.entity_snapshot,
 			nd.created_at
 		`).
 		Joins("JOIN notification_events ne ON ne.id = nd.notification_event_id").

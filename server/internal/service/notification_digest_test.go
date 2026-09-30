@@ -127,6 +127,36 @@ func TestDigestEntriesShowPreviewAndOpenEachItem(t *testing.T) {
 	}
 }
 
+func TestDigestItemHTMLHighlightsOnlyActorAndLinksEntity(t *testing.T) {
+	tests := []struct {
+		name   string
+		item   digestNotificationItem
+		want   []string
+		absent []string
+	}{
+		{name: "assignment", item: digestNotificationItem{Title: "Sam Lee assigned you to Fix billing", ActorName: "Sam Lee", EntityTitle: "Fix billing", EntityType: "task", EventCount: 1}, want: []string{`>Sam Lee</strong> assigned you to <a `, `>Fix billing</a>`}, absent: []string{">View task</a>", "<strong>Fix billing"}},
+		{name: "status update and grouped count", item: digestNotificationItem{Title: "Sam Lee moved Fix billing to In Progress", ActorName: "Sam Lee", EntityTitle: "Fix billing", EventCount: 4}, want: []string{`>Sam Lee</strong> moved <a `, `>Fix billing</a> to In Progress`, `>(+3 more updates)</span>`}},
+		{name: "escaped names", item: digestNotificationItem{Title: "Sam <Lee> assigned you to Fix <billing> & refunds", ActorName: "Sam <Lee>", EntityTitle: "Fix <billing> & refunds"}, want: []string{`>Sam &lt;Lee&gt;</strong>`, `>Fix &lt;billing&gt; &amp; refunds</a>`}, absent: []string{"<Lee>", "<billing>"}},
+		{name: "legacy entry", item: digestNotificationItem{Title: "Sam Lee updated Fix billing", EntityType: "task"}, want: []string{"Sam Lee updated Fix billing", ">View task</a>"}, absent: []string{"<strong"}},
+		{name: "renamed task", item: digestNotificationItem{Title: "Sam Lee updated Old name", ActorName: "Sam Lee", EntityTitle: "New name", EntityType: "task"}, want: []string{">Sam Lee</strong> updated Old name", ">View task</a>"}, absent: []string{">New name</a>"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := digestItemHTML(tt.item, "https://app.helpin.ai/w/acme/pm/tasks/task-1")
+			for _, want := range tt.want {
+				if !strings.Contains(got, want) {
+					t.Errorf("missing %q in %s", want, got)
+				}
+			}
+			for _, absent := range tt.absent {
+				if strings.Contains(got, absent) {
+					t.Errorf("unexpected %q in %s", absent, got)
+				}
+			}
+		})
+	}
+}
+
 func TestDigestTaskLinksAreVisiblyLinkedWithoutBoldText(t *testing.T) {
 	db := newNotificationDigestTestDB(t)
 	mustExecDigest(t, db, `CREATE TABLE workspaces (id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL)`)
@@ -152,6 +182,8 @@ func TestProcessPendingDigestsCombinesWorkspacesIntoOneEmail(t *testing.T) {
 	mustExecDigest(t, db, `CREATE TABLE workspaces (id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL)`)
 	mustExecDigest(t, db, `INSERT INTO workspaces VALUES ('ws-1', 'Acme', 'acme'), ('ws-2', 'Beta', 'beta')`)
 	seedNotificationDigestCase(t, db, now)
+	mustExecDigest(t, db, `UPDATE notification_events SET title = 'Sam Lee updated Task A', actor_snapshot = '{"name":"Sam Lee"}' WHERE id = 'event-due-unread'`)
+	mustExecDigest(t, db, `UPDATE notifications SET entity_snapshot = '{"title":"Task A"}' WHERE id = 'notif-due-unread'`)
 	mustExecDigest(t, db, `UPDATE notifications SET status = 'unread', workspace_id = 'ws-2' WHERE id = 'notif-due-read'`)
 	emailer := &stubEmailSender{}
 	svc := NewNotificationService(repository.NewNotificationRepository(db), repository.NewNotificationPreferenceRepository(db), repository.NewUserNotificationSettingsRepository(db), nil, repository.NewUserRepository(db), repository.NewWorkspaceRepository(db), nil, emailer, "https://app.helpin.ai")
@@ -165,6 +197,9 @@ func TestProcessPendingDigestsCombinesWorkspacesIntoOneEmail(t *testing.T) {
 		if !strings.Contains(emailer.sent[0].htmlBody, `href="`+link+`"`) || !strings.Contains(emailer.sent[0].textBody, link) {
 			t.Fatalf("missing task link %s", link)
 		}
+	}
+	if !strings.Contains(emailer.sent[0].htmlBody, `>Sam Lee</strong> updated <a `) || !strings.Contains(emailer.sent[0].htmlBody, `>Task A</a>`) {
+		t.Fatal("actor and entity snapshots must reach digest formatting")
 	}
 	if !strings.Contains(emailer.sent[0].htmlBody, "All workspaces") || !strings.Contains(emailer.sent[0].htmlBody, "You have notifications enabled across 2 workspaces") {
 		t.Fatal("combined digest footer must describe all workspaces")
