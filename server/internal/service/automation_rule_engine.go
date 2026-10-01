@@ -1089,6 +1089,10 @@ func (e *AutomationRuleEngine) CreateRule(ctx context.Context, workspaceID strin
 // actor. The actor is supplied by trusted server code and is never accepted
 // from the public request payload.
 func (e *AutomationRuleEngine) CreateRuleForActor(ctx context.Context, workspaceID, actorID string, req model.CreateAutomationRuleRequest) (*model.AutomationRule, error) {
+	return e.createRuleForActor(ctx, workspaceID, actorID, req, "", true)
+}
+
+func (e *AutomationRuleEngine) createRuleForActor(ctx context.Context, workspaceID, actorID string, req model.CreateAutomationRuleRequest, ruleID string, enabled bool) (*model.AutomationRule, error) {
 	if e.entitlementSvc != nil {
 		if err := e.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureAutomationFlows); err != nil {
 			return nil, err
@@ -1108,10 +1112,11 @@ func (e *AutomationRuleEngine) CreateRuleForActor(ctx context.Context, workspace
 	}
 
 	rule := &model.AutomationRule{
+		ID:            ruleID,
 		WorkspaceID:   workspaceID,
 		Name:          req.Name,
 		Description:   req.Description,
-		Enabled:       true,
+		Enabled:       enabled,
 		TeamID:        req.TeamID,
 		WorkflowID:    req.WorkflowID,
 		TriggerType:   req.TriggerType,
@@ -1127,7 +1132,7 @@ func (e *AutomationRuleEngine) CreateRuleForActor(ctx context.Context, workspace
 		rule.StopOnMatch = *req.StopOnMatch
 	}
 
-	if err := e.ruleRepo.Create(ctx, rule); err != nil {
+	if err := e.ruleRepo.CreateWithEnabled(ctx, rule, enabled); err != nil {
 		return nil, err
 	}
 	if err := e.syncRuleSchedule(ctx, rule, false); err != nil {
@@ -1150,6 +1155,10 @@ func (e *AutomationRuleEngine) CreateRuleForActor(ctx context.Context, workspace
 
 // UpdateRule updates an existing automation rule.
 func (e *AutomationRuleEngine) UpdateRule(ctx context.Context, workspaceID, ruleID string, req model.UpdateAutomationRuleRequest) (*model.AutomationRule, error) {
+	return e.updateRule(ctx, workspaceID, ruleID, req, nil)
+}
+
+func (e *AutomationRuleEngine) updateRule(ctx context.Context, workspaceID, ruleID string, req model.UpdateAutomationRuleRequest, expected *time.Time) (*model.AutomationRule, error) {
 	rule, err := e.ruleRepo.GetByID(ctx, workspaceID, ruleID)
 	if err != nil {
 		return nil, err
@@ -1159,6 +1168,12 @@ func (e *AutomationRuleEngine) UpdateRule(ctx context.Context, workspaceID, rule
 	}
 	if rule.TriggerType == model.CRMPlaybookWorkDue {
 		return nil, fmt.Errorf("manage this Flow from its CRM Playbook")
+	}
+	if req.TeamID != nil {
+		rule.TeamID = nilIfEmpty(*req.TeamID)
+	}
+	if req.WorkflowID != nil {
+		rule.WorkflowID = nilIfEmpty(*req.WorkflowID)
 	}
 	wasScheduled := rule.TriggerType == model.TriggerCron && rule.Enabled
 	previousTrigger, previousConfig := rule.TriggerType, rule.TriggerConfig
@@ -1208,7 +1223,12 @@ func (e *AutomationRuleEngine) UpdateRule(ctx context.Context, workspaceID, rule
 		}
 	}
 
-	if err := e.ruleRepo.Update(ctx, rule); err != nil {
+	if expected != nil {
+		err = e.ruleRepo.UpdateIfUnchanged(ctx, rule, *expected)
+	} else {
+		err = e.ruleRepo.Update(ctx, rule)
+	}
+	if err != nil {
 		return nil, err
 	}
 	if err := e.syncRuleSchedule(ctx, rule, wasScheduled); err != nil {

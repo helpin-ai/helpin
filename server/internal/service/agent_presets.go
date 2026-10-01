@@ -811,6 +811,7 @@ func commandAgentAvailableSkills() []string {
 // interactions, and selective child-agent orchestration.
 func askAgentPresetTools() []string {
 	return appendPresetTools([]string{
+		"get_flow_builder_context", "preview_flow", "save_flow",
 		// Skills, interaction, and progress.
 		"read_chat_history",
 		"find_skills", "read_skill",

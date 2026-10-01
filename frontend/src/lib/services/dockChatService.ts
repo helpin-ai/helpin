@@ -26,6 +26,8 @@ import type {
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
 
 export const dockChatService = {
+  createFlowBuilder: (workspaceId: string, options: { templateKey?: string; flowId?: string }) =>
+    api.post<DockChat>(`/dock/chats${qs(workspaceId)}`, { flow_builder: true, flow_template_key: options.templateKey, flow_id: options.flowId }),
   getAIDefaults: (workspaceId: string) =>
     api.get<{ ai_profile_id: string | null }>(`/dock/ai-defaults${qs(workspaceId)}`),
 	getPublicShare: (workspaceId: string, resourceType: PublicShareResourceType, resourceId: string) =>

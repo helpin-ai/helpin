@@ -19,6 +19,7 @@ const (
 // backed the chat carry AgentRun.DockChatID, so the full history is a real FK
 // chain rather than a heuristic match.
 type DockChat struct {
+	FlowBuilder           *FlowBuilderState   `json:"flow_builder,omitempty" gorm:"type:jsonb;serializer:json"`
 	CoverageGapID         *string             `json:"coverage_gap_id,omitempty" gorm:"type:uuid;index"`
 	InitialContext        *DockContextMessage `json:"initial_context,omitempty" gorm:"type:jsonb;serializer:json"`
 	ExecutionEnabled      bool                `json:"execution_enabled" gorm:"not null;default:false"`
@@ -45,6 +46,9 @@ func (DockChat) TableName() string { return "dock_chats" }
 
 // CreateDockChatRequest is the payload for creating a dock chat.
 type CreateDockChatRequest struct {
+	FlowID                string              `json:"flow_id,omitempty"`
+	FlowBuilder           bool                `json:"flow_builder,omitempty"`
+	FlowTemplateKey       string              `json:"flow_template_key,omitempty"`
 	CoverageGapID         *string             `json:"coverage_gap_id,omitempty"`
 	Title                 string              `json:"title"`
 	SupportConversationID *string             `json:"support_conversation_id,omitempty"`
