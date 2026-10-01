@@ -7,6 +7,10 @@ const PREFIX = 'helpin:desktop:'
 export const DESKTOP_SETTINGS_EVENT = 'helpin:desktop-settings'
 const settingKey = (userId: string) => `${PREFIX}${userId}:enabled`
 
+export function isDesktopPreferenceStorageKey(key: string): boolean {
+  return /^helpin:desktop:[^:]+:enabled$/.test(key)
+}
+
 export function getDesktopPermission(): DesktopPermission {
   return typeof Notification === 'undefined' || !window.isSecureContext ? 'unsupported' : Notification.permission
 }
@@ -71,7 +75,7 @@ export function trackDesktopFocus(userId: string): () => void {
   }
 }
 
-function anyTabFocused(userId: string) {
+export function anyTabFocused(userId: string) {
   if (document.visibilityState === 'visible' && document.hasFocus()) return true
   const lease = JSON.parse(localStorage.getItem(`${PREFIX}${userId}:focus`) || 'null')
   return lease && Date.now() - lease.at < 45_000

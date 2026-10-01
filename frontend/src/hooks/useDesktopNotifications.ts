@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { useAuthStore } from '@/stores/authStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
-import { deliverDesktopNotification, getDesktopPermission, isDesktopEnabled, trackDesktopFocus } from '@/lib/desktopNotifications'
+import { anyTabFocused, deliverDesktopNotification, getDesktopPermission, isDesktopEnabled, trackDesktopFocus } from '@/lib/desktopNotifications'
 import { notificationsService } from '@/lib/services/notificationsService'
 import { queryKeys } from '@/lib/queryKeys'
 import { unwrapRequired } from '@/lib/queryUtils'
@@ -26,6 +26,9 @@ export function useDesktopNotifications(workspaceId: string) {
     if (workspace?.id !== workspaceId) return
     const isCurrent = () => useAuthStore.getState().user?.id === userId
     try {
+      // Foreground activity must not become a delayed popup after a tab switch.
+      // Delivery checks focus again in case the user returns during the request.
+      if (anyTabFocused(userId)) return
       // Recheck saved pause, mute and category settings, including changes made in another tab.
       const preferences = await queryClient.fetchQuery({
         queryKey: queryKeys.notifications.preferences(workspaceId),
