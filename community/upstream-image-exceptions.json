@@ -236,5 +236,31 @@
         "installed": "v1.81.0"
       }
     ]
+  },
+  "redis:7.2.16-alpine@sha256:29e8589c3f9ba699b5f7aa4b3c7733c58852a3626439e619aa0ee78de08c6ca0": {
+    "expires": "2026-10-16",
+    "reason": "Beta upstream image exception; see docs/community/upstream-images.md.",
+    "findings": [
+      {
+        "id": "CVE-2026-75804",
+        "package": "libcrypto3",
+        "installed": "3.3.7-r1"
+      },
+      {
+        "id": "CVE-2026-75804",
+        "package": "libssl3",
+        "installed": "3.3.7-r1"
+      },
+      {
+        "id": "CVE-2026-84782",
+        "package": "libcrypto3",
+        "installed": "3.3.7-r1"
+      },
+      {
+        "id": "CVE-2026-84782",
+        "package": "libssl3",
+        "installed": "3.3.7-r1"
+      }
+    ]
   }
 }

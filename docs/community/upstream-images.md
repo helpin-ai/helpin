@@ -12,7 +12,7 @@ infrastructure merely to change a scan result.
 
 The 2026-09-16 amd64 scan found **24 fixable high/critical findings in PostgreSQL,
 2 in NATS, and 0 in Garage**; the 2026-09-30 release scan added a 25th in
-PostgreSQL (CVE-2026-89157). These are accepted beta exceptions through
+PostgreSQL (CVE-2026-89157) and 4 in Redis. These are accepted beta exceptions through
 2026-10-16, not a claim that these images contain no vulnerabilities. Exact CVE,
 package, installed version and image digest are recorded in
 `community/upstream-image-exceptions.json`. The image check fails on additional
@@ -29,6 +29,12 @@ scan and acceptance run before inclusion in a release.
   does not use PCRE2 for its own regular expressions. The bundle exposes no
   PostgreSQL host port and gives applications separate non-superuser roles.
   Vulnerable packages remain installed.
+- Redis: four findings are CVE-2026-75804 (QUIC connection flow control) and
+  CVE-2026-84782 (DTLS handshake) in Alpine `libcrypto3` and `libssl3` 3.3.7-r1,
+  found by the 2026-10-01 release scan. Alpine fixed them in 3.3.7-r2, but the
+  `redis:7.2.16-alpine` image has not been rebuilt since 2026-09-17; pin the
+  rebuild when it appears. Redis uses neither QUIC nor DTLS, and the bundle
+  exposes no Redis port outside the Compose network.
 - NATS: two findings are CVE-2026-14456 in Alpine `libcrypto3` and `libssl3`.
   The broker is reachable only inside the Compose network. It is not rebuilt or
   declared safe merely because the libraries may not be on a normal request path.
