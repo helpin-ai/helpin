@@ -412,3 +412,18 @@ prompt-injection risk but is not a guarantee of model resistance. The regression
 suite checks hostile source delimiters, forged evidence/policy fields, saved
 preset upgrades, and the existing server-side reply gate; it is not a live-model
 security evaluation.
+
+## Voice input
+
+Ask Agent and agent-run replies support recording up to five minutes, then
+transcribing into an editable draft for manual sending. Set the instance's
+`OPENROUTER_API_KEY`; optional `OPENROUTER_BASE_URL` overrides the provider endpoint.
+Without that key, the microphone is hidden. Voice uses this instance connection,
+not an agent's selected model or a workspace's personal AI connection.
+
+Community records audio duration without Helpin billing; the operator pays their
+provider directly. Cloud uses its Enterprise usage policy. Microphone access
+requires HTTPS or localhost. Audio is held in memory and sent to the configured
+provider after recording stops; Helpin does not persist the recording. Apply
+versioned migrations, including `202610010002_voice_input_usage.sql`, through the
+normal upgrade process.

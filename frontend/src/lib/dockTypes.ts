@@ -13,6 +13,7 @@ import type {
 
 /** One dock conversation with creator-owned settings and explicit visibility. */
 export interface DockChat {
+  flow_builder?: import('./flowBuilderTypes').FlowBuilderState;
   execution_enabled?: boolean
   id: string
   workspace_id: string
@@ -293,6 +294,7 @@ export function stripDockPageContext(content: string): string {
   let visible = content
   for (const [open, close] of [
     [DOCK_PAGE_CONTEXT_OPEN, DOCK_PAGE_CONTEXT_CLOSE],
+    ['<flow_builder_instructions>', '</flow_builder_instructions>'],
     [DOCK_REFERENCES_OPEN, DOCK_REFERENCES_CLOSE],
     [DOCK_ATTACHMENTS_OPEN, DOCK_ATTACHMENTS_CLOSE],
     [DOCK_SOURCE_ATTACHMENTS_OPEN, DOCK_SOURCE_ATTACHMENTS_CLOSE],

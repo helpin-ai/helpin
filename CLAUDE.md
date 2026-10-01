@@ -1,5 +1,9 @@
 # Helpin contributor instructions
 
+## Community and cloud boundaries
+
+Follow the mandatory [Community/cloud boundary rules](AGENTS.md#community-and-cloud-boundaries) before changing or publishing code, docs, configuration, or assets. Ask the owner when edition ownership or public visibility needs a decision; a build exclusion does not make source private.
+
 Use this reference when changing Helpin code: it explains repository layout, commands, and implementation conventions for contributors and coding agents. Helpin combines support, documentation, project management, CRM, and AI execution; availability depends on the edition and deployment. For installation, start with the [Community guide](community/README.md). For documentation changes, follow the [documentation skill](.agents/skills/helpin-documentation/SKILL.md) and [writing guide](docs/documentation-guide.md).
 
 Source-reviewed September 18, 2026 against manifests and implementation. Commands below describe development workflows; they are not evidence that a deployment or test suite passed.

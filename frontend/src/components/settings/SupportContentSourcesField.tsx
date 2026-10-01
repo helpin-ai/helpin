@@ -41,6 +41,7 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { createWebsiteSourceDraft } from '@/lib/knowledgeSourceWebsiteForm';
 import type { CreateSupportContentSourceRequest, SupportContentSource, UpdateSupportContentSourceRequest } from '@/lib/pmTypes';
 import { CRAWL_SOURCE_OPTIONS, STATUS_META, STEP_ORDER, type WizardStep } from './support-content-sources/constants';
 import { PageContentPreview } from './support-content-sources/PageContentPreview';
@@ -440,7 +441,7 @@ export function SupportContentSourcesField({
                               <p>For best results, sync <strong>support-focused content</strong> like help articles, product guides, or knowledge base pages.</p>
                               <p>Avoid marketing pages, product listings, or pages with complex layouts — these can reduce answer quality.</p>
                               <p>For multilingual sites, syncing one language version is sufficient unless the content differs between languages.</p>
-                              <p>New content is checked and synced automatically every 7 days.</p>
+                              <p>Website content is checked and synced automatically every day.</p>
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
@@ -831,7 +832,7 @@ function createDefaultDraft(): ContentSourceDraft {
     includeExternalLinks: false,
     includeSubdomains: false,
     includePatternsText: '',
-    excludePatternsText: '',
+    excludePatternsText: createWebsiteSourceDraft().excludePatternsText,
     maxAgeSeconds: '86400',
     jsonPrompt: '',
     jsonResponseFormatText: '',

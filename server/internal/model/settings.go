@@ -57,6 +57,7 @@ type WorkspaceTeam struct {
 	ID                   string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID          string    `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex:idx_workspace_team_handle,priority:1"`
 	Name                 string    `json:"name" gorm:"not null"`
+	Color                *string   `json:"color"`
 	Handle               *string   `json:"handle" gorm:"uniqueIndex:idx_workspace_team_handle,priority:2"`
 	Description          *string   `json:"description"`
 	ManagerID            *string   `json:"manager_id" gorm:"type:uuid"`
@@ -264,6 +265,7 @@ type FullWorkspaceConfig struct {
 type CreateTeamRequest struct {
 	WorkspaceID     string  `json:"workspace_id"`
 	Name            string  `json:"name"`
+	Color           *string `json:"color"`
 	Handle          *string `json:"handle"`
 	Description     *string `json:"description"`
 	ManagerID       *string `json:"manager_id"`
@@ -282,6 +284,7 @@ type EnsureDefaultTeamRequest struct {
 // UpdateTeamRequest is the payload for updating a team.
 type UpdateTeamRequest struct {
 	Name            *string `json:"name"`
+	Color           *string `json:"color"`
 	Handle          *string `json:"handle"`
 	Description     *string `json:"description"`
 	ManagerID       *string `json:"manager_id"`

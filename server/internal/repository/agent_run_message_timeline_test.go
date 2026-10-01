@@ -16,7 +16,7 @@ func TestAgentRunMessageRepositoryDockChatTimelineSpansRunsAndPaginates(t *testi
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE dock_chats (
+	if err := db.Exec(`CREATE TABLE dock_chats ( flow_builder TEXT,
 execution_enabled boolean NOT NULL DEFAULT false,
 		id TEXT PRIMARY KEY,
 		workspace_id TEXT NOT NULL,

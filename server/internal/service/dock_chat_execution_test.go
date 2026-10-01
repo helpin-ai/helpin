@@ -184,7 +184,7 @@ func TestDockExecutionRequiresTrustedAuthorization(t *testing.T) {
 
 func TestDockExecutionCanBeSelectedWhenCreatingChat(t *testing.T) {
 	db := newInteractiveApprovalTestDB(t)
-	if err := db.Exec(`CREATE TABLE dock_chats (
+	if err := db.Exec(`CREATE TABLE dock_chats ( flow_builder TEXT,
  coverage_gap_id TEXT, initial_context TEXT,
 		id TEXT PRIMARY KEY, workspace_id TEXT, user_id TEXT, title TEXT,
 		visibility TEXT, module_id TEXT, support_conversation_id TEXT,
@@ -256,7 +256,7 @@ func TestDockExecutionTransitionCancelsWithoutWideningRun(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db := newInteractiveApprovalTestDB(t)
-			if err := db.Exec(`CREATE TABLE dock_chats (
+			if err := db.Exec(`CREATE TABLE dock_chats ( flow_builder TEXT,
  coverage_gap_id TEXT, initial_context TEXT,id TEXT PRIMARY KEY, workspace_id TEXT, user_id TEXT, title TEXT, visibility TEXT, module_id TEXT, support_conversation_id TEXT, active_run_id TEXT, next_message_sequence INTEGER DEFAULT 0, execution_enabled BOOLEAN NOT NULL DEFAULT false, last_message_at DATETIME, archived_at DATETIME, created_at DATETIME, updated_at DATETIME)`).Error; err != nil {
 				t.Fatal(err)
 			}

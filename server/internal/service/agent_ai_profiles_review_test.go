@@ -288,7 +288,7 @@ func TestDockChatLaunchWithProfile(t *testing.T) {
 	if err := db.Exec("UPDATE agents SET preset_key=? WHERE id='ask-agent'", model.AgentPresetAskAgent).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec(`CREATE TABLE dock_chats (
+	if err := db.Exec(`CREATE TABLE dock_chats ( flow_builder TEXT,
  coverage_gap_id TEXT, initial_context TEXT,
 execution_enabled boolean NOT NULL DEFAULT false,
  id TEXT PRIMARY KEY, workspace_id TEXT, user_id TEXT, title TEXT,

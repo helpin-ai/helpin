@@ -56,7 +56,7 @@ func TestDockChatListCursorPagination(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE dock_chats (
+	if err := db.Exec(`CREATE TABLE dock_chats ( flow_builder TEXT,
  coverage_gap_id TEXT, initial_context TEXT,
 execution_enabled boolean NOT NULL DEFAULT false,
 		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
@@ -159,7 +159,7 @@ func TestDockChatVisibilityScopesListAndReadAccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE dock_chats (
+	if err := db.Exec(`CREATE TABLE dock_chats ( flow_builder TEXT,
  coverage_gap_id TEXT, initial_context TEXT,
 execution_enabled boolean NOT NULL DEFAULT false,
 		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
@@ -225,7 +225,7 @@ func TestDockChatCreateReusesSupportConversationChat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE dock_chats (
+	if err := db.Exec(`CREATE TABLE dock_chats ( flow_builder TEXT,
  coverage_gap_id TEXT, initial_context TEXT,
 execution_enabled boolean NOT NULL DEFAULT false,
 		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
@@ -262,7 +262,7 @@ func TestDockChatFindSupportConversationChatDoesNotCreateMissingRow(t *testing.T
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE dock_chats (
+	if err := db.Exec(`CREATE TABLE dock_chats ( flow_builder TEXT,
  coverage_gap_id TEXT, initial_context TEXT,
 execution_enabled boolean NOT NULL DEFAULT false,
 		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
@@ -295,7 +295,7 @@ func TestDockChatCreatePreservesArchivedSupportConversationChat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE dock_chats (
+	if err := db.Exec(`CREATE TABLE dock_chats ( flow_builder TEXT,
  coverage_gap_id TEXT, initial_context TEXT,
 execution_enabled boolean NOT NULL DEFAULT false,
 		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
@@ -352,7 +352,7 @@ func TestDockChatListHydratesActiveRunStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE dock_chats (
+	if err := db.Exec(`CREATE TABLE dock_chats ( flow_builder TEXT,
  coverage_gap_id TEXT, initial_context TEXT,
 execution_enabled boolean NOT NULL DEFAULT false,
 		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
@@ -417,7 +417,7 @@ func TestDockChatGenerateTitleUsesSemanticCompletion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE dock_chats (
+	if err := db.Exec(`CREATE TABLE dock_chats ( flow_builder TEXT,
  coverage_gap_id TEXT, initial_context TEXT,
 execution_enabled boolean NOT NULL DEFAULT false,
 		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
@@ -539,7 +539,7 @@ func TestDockChatGenerateTitlePreservesManualTitle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE dock_chats (
+	if err := db.Exec(`CREATE TABLE dock_chats ( flow_builder TEXT,
  coverage_gap_id TEXT, initial_context TEXT,
 execution_enabled boolean NOT NULL DEFAULT false,
 		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,

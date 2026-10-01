@@ -13,7 +13,7 @@ export function VoiceMicrophone({ enabled, onStart }: { enabled: boolean; onStar
         <Mic01Icon className="h-4 w-4" />
       </Button>
     </TooltipTrigger>
-    <TooltipContent>Dictate up to 5 minutes · review before sending</TooltipContent>
+    <TooltipContent className="z-[70]">Dictate up to 5 minutes · review before sending</TooltipContent>
   </Tooltip>;
 }
 

@@ -29,3 +29,5 @@ Run the naming/link checks and relevant documentation tests from the guide.
 For bulk moves, compare link errors before and after so pre-existing historical
 failures are distinguished from regressions. Report the changed names, validation,
 and any external links or publication steps that remain unverified.
+
+Before committing documentation or assets, apply the [Community/cloud boundary rules](../../../AGENTS.md#community-and-cloud-boundaries). Public repository branches expose tracked plans, screenshots, and operational details too. Ask the owner about unresolved publication scope and keep private evidence outside the repository.

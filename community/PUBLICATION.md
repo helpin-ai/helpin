@@ -4,6 +4,21 @@ The licenses in LICENSE apply to this repository. Adding them does not
 authorize publication of the existing repository history. Do not publish
 while any item below is unresolved.
 
+## Ongoing changes in the public repository
+
+The repository was confirmed publicly readable on October 1, 2026. The unchecked
+items below are unresolved records, not evidence that source is still private
+or that publication was approved. In particular, confirm the owner decision on
+public Enterprise source versus a private overlay before treating this as settled.
+
+For every change and push, follow the [Community/cloud boundary rules](../AGENTS.md#community-and-cloud-boundaries).
+Review all outgoing commits, including merges, docs, assets, fixtures, and
+workflow artifacts. Community build exclusion and the Enterprise license do not
+prevent public source disclosure. Stop only the disputed publication work and
+ask the owner when scope is unclear; continue independently safe work.
+
+## Recorded publication checklist
+
 - [x] Add AGPL-3.0-only for Helpin Community, separate enterprise terms for all
   `ee/` directories, and Apache-2.0 for Runtime, its Go/Python SDKs, and Helpin's
   public SDK/widget packages. See the root LICENSE for exact scopes.

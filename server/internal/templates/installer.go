@@ -36,14 +36,17 @@ type TemplateAgentValidator interface {
 }
 
 type InstallRequest struct {
-	WorkspaceID    string
-	TemplateKey    string
-	ActorID        string
-	Name           string
-	Description    string
-	AgentName      string
-	Inputs         map[string]any
-	AgentOverrides *model.CreateAgentFromTemplateOverrides
+	RuleID            string
+	Paused            bool
+	SemanticCondition string
+	WorkspaceID       string
+	TemplateKey       string
+	ActorID           string
+	Name              string
+	Description       string
+	AgentName         string
+	Inputs            map[string]any
+	AgentOverrides    *model.CreateAgentFromTemplateOverrides
 }
 
 type InstallResult struct {
@@ -103,8 +106,20 @@ func (i *Installer) Install(ctx context.Context, req InstallRequest) (*InstallRe
 		if err != nil {
 			return err
 		}
+		if req.RuleID != "" {
+			rule.ID = req.RuleID
+		}
+		if err := applyInstallOptions(rule, req); err != nil {
+			return err
+		}
 		if err := tx.Create(rule).Error; err != nil {
 			return internalErrorf(err, "could not create flow")
+		}
+		if req.Paused {
+			rule.Enabled = false
+			if err := tx.Model(rule).Update("enabled", false).Error; err != nil {
+				return err
+			}
 		}
 		if err := logTemplateActivity(ctx, tx, workspaceID, rule.ID, actorID, "template.installed", map[string]any{
 			"template_key":         tmpl.Key,
@@ -126,7 +141,7 @@ func (i *Installer) Install(ctx context.Context, req InstallRequest) (*InstallRe
 		)
 		return nil, err
 	}
-	if result.Rule != nil && result.Rule.TriggerType == model.TriggerCron && i.scheduleManager != nil {
+	if result.Rule != nil && result.Rule.Enabled && result.Rule.TriggerType == model.TriggerCron && i.scheduleManager != nil {
 		if err := i.scheduleManager.StartRuleScheduleForRule(ctx, result.Rule); err != nil {
 			if cleanupErr := i.rollbackInstalledInstance(ctx, workspaceID, instanceID); cleanupErr != nil {
 				slog.ErrorContext(ctx, "failed to roll back flow template after schedule start failure",
@@ -175,7 +190,7 @@ func (i *Installer) rollbackInstalledInstance(ctx context.Context, workspaceID, 
 	})
 }
 
-func (i *Installer) resolveAgent(ctx context.Context, tx *gorm.DB, tmpl Template, workspaceID, instanceID string, templateVersion int, agentName string, inputs map[string]any, overrides *model.CreateAgentFromTemplateOverrides) (*model.Agent, error) {
+func (i *Installer) resolveAgent(ctx context.Context, tx *gorm.DB, tmpl Template, workspaceID, instanceID string, templateVersion int, agentName string, inputs map[string]any, overrides *model.CreateAgentFromTemplateOverrides, preview ...bool) (*model.Agent, error) {
 	mode, err := tmpl.Agent.mode()
 	if err != nil {
 		return nil, err
@@ -252,6 +267,9 @@ func (i *Installer) resolveAgent(ctx context.Context, tx *gorm.DB, tmpl Template
 			if err := i.agentValidator.ValidateTemplateAgent(ctx, agent); err != nil {
 				return nil, validationErrorf("template agent is invalid: %s", err.Error())
 			}
+		}
+		if len(preview) > 0 && preview[0] {
+			return agent, nil
 		}
 		if err := tx.WithContext(ctx).Create(agent).Error; err != nil {
 			return nil, internalErrorf(err, "could not create template agent")
@@ -535,6 +553,11 @@ func validateInstallInputs(tmpl Template, inputs map[string]any) error {
 		}
 	}
 	return nil
+}
+
+// InputVisible reports whether a conditional template input is currently applicable.
+func InputVisible(input Input, inputs map[string]any) bool {
+	return templateInputVisible(input, inputs)
 }
 
 func templateInputVisible(input Input, inputs map[string]any) bool {

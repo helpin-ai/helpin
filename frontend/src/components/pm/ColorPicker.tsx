@@ -342,7 +342,7 @@ export function ColorPicker({
   shape?: 'circle' | 'square';
   presets?: readonly string[];
 }) {
-  const isCustom = !presets.includes(value);
+  const isCustom = Boolean(value) && !presets.includes(value);
   const [customOpen, setCustomOpen] = useState(false);
   const [hsv, setHsv] = useState<HSV>(() => hexToHsv(value || '#3b82f6'));
   const [hexInput, setHexInput] = useState(value);

@@ -50,7 +50,7 @@ const (
 )
 
 var dockChatUntrustedContextPatterns = func() []*regexp.Regexp {
-	tags := []string{"previous_conversation", "child_run_result", "page_context", "references", "attachments", "source_attachments", "attachment_analysis"}
+	tags := []string{"previous_conversation", "child_run_result", "page_context", "references", "attachments", "source_attachments", "attachment_analysis", "flow_builder_instructions"}
 	patterns := make([]*regexp.Regexp, 0, len(tags))
 	for _, tag := range tags {
 		patterns = append(patterns, regexp.MustCompile("(?is)<"+tag+">.*?</"+tag+">"))
@@ -66,6 +66,7 @@ type dockChatCursor struct {
 // DockChatService owns private and shared dock conversations whose turns are
 // executed by an agent-runtime chat-mode run of the ask_agent preset.
 type DockChatService struct {
+	flowBuilder           *flowBuilderDependencies
 	coverageContextReader coverageDockContextReader
 	chatRepo              *repository.DockChatRepository
 	runRepo               *repository.AgentRunRepository
@@ -209,6 +210,9 @@ func (s *DockChatService) FindSupportConversationChat(ctx context.Context, works
 // CreateChat creates an empty chat; its backing run starts lazily on the
 // first message.
 func (s *DockChatService) CreateChat(ctx context.Context, workspaceID, userID string, req model.CreateDockChatRequest) (*model.DockChat, error) {
+	if req.FlowBuilder || req.FlowTemplateKey != "" || req.FlowID != "" {
+		return s.createFlowBuilderChat(ctx, workspaceID, userID, req)
+	}
 	if req.CoverageGapID != nil {
 		return s.createCoverageChat(ctx, workspaceID, userID, req)
 	}
@@ -276,6 +280,9 @@ func (s *DockChatService) updateChatLocked(ctx context.Context, workspaceID, use
 	chat, err := s.ownedChat(ctx, workspaceID, userID, chatID)
 	if err != nil {
 		return nil, err
+	}
+	if chat.FlowBuilder != nil && (req.ExecutionEnabled != nil || req.Visibility != nil) {
+		return nil, fmt.Errorf("flow builder conversations stay private and cannot execute work")
 	}
 	updates := map[string]interface{}{}
 	if req.ExecutionEnabled != nil && *req.ExecutionEnabled != chat.ExecutionEnabled {
@@ -410,6 +417,14 @@ func (s *DockChatService) sendMessageLocked(ctx context.Context, workspaceID, us
 	if err != nil {
 		return nil, err
 	}
+	if chat.FlowBuilder != nil {
+		if _, err := s.authorizeFlowBuilder(ctx, chat, userID); err != nil {
+			return nil, err
+		}
+		if chat.FlowBuilder.CreatedFlowID != "" {
+			return nil, fmt.Errorf("this flow has already been saved")
+		}
+	}
 	if chat.CoverageGapID != nil {
 		if err := s.authorizeCoverageChatTurn(ctx, chat, userID); err != nil {
 			return nil, err
@@ -467,6 +482,9 @@ func (s *DockChatService) sendMessageLocked(ctx context.Context, workspaceID, us
 		return nil, err
 	}
 	composed := composeDockChatTurn(content, req.PageContext, references, attachments, sourceAttachments, analysis)
+	if chat.FlowBuilder != nil {
+		composed += "\n\n" + flowBuilderInstructions
+	}
 	if chat.CoverageGapID != nil {
 		detail, err := s.coverageGapDetail(ctx, workspaceID, *chat.CoverageGapID)
 		if err != nil {

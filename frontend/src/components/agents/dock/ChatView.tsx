@@ -7,7 +7,7 @@ import { AIConnectionPicker } from '@/components/agents/AIConnectionPicker';
 import { AISettingsLink } from '@/components/agents/AISettingsLink';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { AIConnectionSelection } from '@/lib/services/aiConnectionService';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { ArrowRight01Icon, ArrowUp01Icon, Loading01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
@@ -58,7 +58,18 @@ import { useDockStore } from '@/stores/dockStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { isDockNetworkAvailable, useDockNetworkActivity } from './useDockNetworkActivity';
 
+export interface ChatTaskSurface {
+  initialMessage?: string;
+  emptyState: ReactNode;
+  placeholder: string;
+  onDetailChange?: (detail: DockChatDetail | null) => void;
+  onError?: (error: unknown) => boolean;
+  renderPreview?: (detail: DockChatDetail | null, interaction: CodingSessionInteraction | null, insert: (message: string) => void) => ReactNode;
+  renderInteraction?: (interaction: CodingSessionInteraction, detail: DockChatDetail | null, resolve: (interactionId: string, payload: { response_payload: Record<string, unknown>; followup_message?: string }) => Promise<{error: string | null}>) => ReactNode;
+}
+
 interface ChatViewProps {
+  taskSurface?: ChatTaskSurface;
   workspaceId: string;
   chatId?: string;
   rosterRunId?: string | null;
@@ -104,6 +115,7 @@ function newClientMessageID() {
  * without PM permissions can use their own dock.
  */
 export function ChatView({
+  taskSurface,
   workspaceId,
   chatId,
   rosterRunId,
@@ -140,6 +152,9 @@ export function ChatView({
   const [changingExecution, setChangingExecution] = useState(false);
   const [draftExecutionEnabled, setDraftExecutionEnabled] = useState(false);
   const [detail, setDetail] = useState<DockChatDetail | null>(cachedTranscript?.detail ?? null);
+  const taskDetailChanged = taskSurface?.onDetailChange;
+  useEffect(() => { taskDetailChanged?.(detail); }, [detail, taskDetailChanged]);
+  const taskError = taskSurface?.onError;
   const [detailLoading, setDetailLoading] = useState(!!chatId && !cachedTranscript);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [plans, setPlans] = useState<CommandBarPlanSummary[]>([]);
@@ -184,7 +199,7 @@ export function ChatView({
   const coverageContext = requiredPageContext?.entity_type === 'support_coverage_gap'
     ? requiredPageContext
     : detail?.chat.coverage_gap_id ? { entity_type: 'support_coverage_gap' as const, entity_id: detail.chat.coverage_gap_id, display_title: detail.chat.title } : null;
-  const effectivePageContext = coverageContext ?? (contextCleared ? null : (requiredPageContext ?? pageContext));
+  const effectivePageContext = taskSurface ? null : coverageContext ?? (contextCleared ? null : (requiredPageContext ?? pageContext));
 
   useEffect(() => {
     if (!initialDraft) return;
@@ -452,9 +467,15 @@ export function ChatView({
     )), 0);
     return () => window.clearTimeout(timer);
   }, [sendError, sendErrorDelivered]);
+  const initialTaskMessage = taskSurface?.initialMessage;
   const transformed = useMemo(
-    () => (mergedStream ? transformDockStream(mergedStream, 'sequence') : null),
-    [mergedStream],
+    () => {
+      if (!mergedStream) return null;
+      const result = transformDockStream(mergedStream, 'sequence');
+      if (!initialTaskMessage) return result;
+      return { ...result, stream: { ...result.stream, transcript_messages: result.stream.transcript_messages.filter(message => !(message.role === 'user' && message.content.trim() === initialTaskMessage)) } };
+    },
+    [mergedStream, initialTaskMessage],
   );
   const visibleTurn = resolveVisibleTurn(transformed?.stream ?? null, launchStartedAt);
   const answerRecoveryKey = visibleTurn.answerPending || visibleTurn.missingAnswer
@@ -657,7 +678,7 @@ export function ChatView({
         if (res.error || !res.data) {
           setFailedClientMessageIds((current) => new Set([...current, clientMessageId]));
           setPendingEcho(null);
-          setSendError({ message: res.error ?? 'Failed to send message', content, references: messageReferences, clientMessageId });
+          if (!taskError?.(res.error)) setSendError({ message: res.error ?? 'Failed to send message', content, references: messageReferences, clientMessageId });
           return;
         }
 		if (res.data.accepted_message) {
@@ -705,6 +726,7 @@ export function ChatView({
         // Successor run: useAgentRunStream will reset and fetch with the returned
         // run id instead of invoking this render's predecessor refetch closure.
       } catch (error) {
+        if (taskError?.(error)) return;
         setFailedClientMessageIds((current) => new Set([...current, clientMessageId]));
         setPendingEcho(null);
         setSendError({
@@ -717,7 +739,7 @@ export function ChatView({
         setSending(false);
       }
     },
-    [readOnly, agentDefaultUnavailable, aiConnection, chatId, currentUserId, detail?.chat.title, draftExecutionEnabled, effectivePageContext, mediaAttachments, mergedStream, onChatChanged, onCreateChat, references, refetch, refreshMessages, run, sending, workspaceId],
+    [taskError, readOnly, agentDefaultUnavailable, aiConnection, chatId, currentUserId, detail?.chat.title, draftExecutionEnabled, effectivePageContext, mediaAttachments, mergedStream, onChatChanged, onCreateChat, references, refetch, refreshMessages, run, sending, workspaceId],
   );
 
   const submit = async () => {
@@ -830,6 +852,13 @@ export function ChatView({
       setStopping(false);
     }
   }, [cancellationPending, chatId, refetch, refreshDetail, workspaceId]);
+
+  const initialTaskSent = useRef(false);
+  useEffect(() => {
+    if (!taskSurface?.initialMessage || initialTaskSent.current || agentDefaultUnavailable || sending || run || !active) return;
+    initialTaskSent.current = true;
+    void sendContent(taskSurface.initialMessage, []);
+  }, [taskSurface?.initialMessage, agentDefaultUnavailable, sending, run, active, sendContent]);
 
   const resolveInteraction = useCallback(
     async (interactionId: string, payload: { response_payload: Record<string, unknown>; followup_message?: string }) => {
@@ -956,7 +985,7 @@ export function ChatView({
     <DockInteractionLayer
       active={active}
       interactionId={effectiveInteraction?.interaction_id}
-      prompt={effectiveInteraction && (dockConfirm ? (
+      prompt={effectiveInteraction && <TaskSurfaceInteraction surface={taskSurface} interaction={effectiveInteraction} detail={detail} onResolve={resolveInteraction} fallback={dockConfirm ? (
         <DockPlanConfirmCard
           payload={dockConfirm}
           workspaceId={workspaceId}
@@ -976,7 +1005,7 @@ export function ChatView({
             void refetch();
           }}
         />
-      ) : null)}
+      ) : null} />}
     >
       <div className="relative flex min-h-0 flex-1 flex-col">
       <div ref={scrollRef} data-agent-dock-chat-scroll className={`${activityStyles.activityHost} min-h-0 flex-1 overflow-y-auto px-5 pb-24 pt-3 sm:px-6`}>
@@ -1010,7 +1039,7 @@ export function ChatView({
         )}
         {!(detail?.chat.initial_context ?? contextMessage) && !detailLoading && !run && !pendingEcho && !sending && !hasTranscriptMessages && (
           <p className="py-6 text-center text-sm text-muted-foreground">
-            {requiredPageContext?.entity_type === 'support_conversation'
+            {taskSurface ? taskSurface.emptyState : requiredPageContext?.entity_type === 'support_conversation'
               ? 'Ask about this conversation, draft a reply, investigate the issue, or have an agent take the next step.'
               : 'Ask a question about your workspace, or describe work for an agent to do.'}
           </p>
@@ -1032,8 +1061,9 @@ export function ChatView({
             compactAssistantProgress
           />
         )}
+        {taskSurface?.renderPreview && <TaskSurfacePreview render={taskSurface.renderPreview} detail={detail} interaction={effectiveInteraction} onChange={insertSuggestion} />}
         <DockArtifactDownloads workspaceId={workspaceId} artifacts={detail?.artifacts ?? []} />
-        {followUpSuggestions.length > 0 && (
+        {!taskSurface && followUpSuggestions.length > 0 && (
           <div className="mt-2 border-t border-border/40 pt-1" data-agent-follow-up-suggestions>
             {followUpSuggestions.map((suggestion) => (
               <Tooltip key={suggestion}>
@@ -1130,7 +1160,7 @@ export function ChatView({
                 voiceIdentity={chatId ?? 'draft'}
                 active={active}
                 mode="conversation"
-                executionPicker={!coverageContext && (!chatId || (detail && detail.chat.user_id === currentUserId)) ? (
+                executionPicker={!taskSurface && !coverageContext && (!chatId || (detail && detail.chat.user_id === currentUserId)) ? (
                   <DockExecutionPicker
                     enabled={Boolean(executionEnabled)}
                     disabled={executionPickerDisabled}
@@ -1149,7 +1179,7 @@ export function ChatView({
                 onChange={setValue}
                 onSubmit={() => void submit()}
                 pageContext={effectivePageContext}
-                contextOptions={requiredPageContext ? [] : scopeOptions}
+                contextOptions={taskSurface || requiredPageContext ? [] : scopeOptions}
                 activeContextKey={activeScopeKey}
                 onContextKeyChange={(key) => {
                   setContextCleared(false);
@@ -1158,7 +1188,7 @@ export function ChatView({
                 onClearContext={coverageContext ? undefined : () => setContextCleared(true)}
                 workspaceId={workspaceId}
                 references={references}
-                onAddReference={(reference) => {
+                onAddReference={taskSurface ? undefined : (reference) => {
                   setReferences((current) => {
                     if (current.length >= 10) {
                       toast.error('You can attach up to 10 references.');
@@ -1176,7 +1206,7 @@ export function ChatView({
                   ));
                 }}
                 mediaAttachments={mediaAttachments}
-                onAddMedia={(files) => void addMediaAttachments(files)}
+                onAddMedia={taskSurface ? undefined : (files) => void addMediaAttachments(files)}
                 onRemoveMedia={removeMediaAttachment}
                 busy={sending}
                 disabled={!composer.enabled}
@@ -1188,7 +1218,7 @@ export function ChatView({
                 pausing={pausePending}
                 onResume={canResume && !cancellationPending ? () => void handleResume() : undefined}
                 resuming={resumePending}
-                placeholder={cancellationPending ? 'Stopping agent…' : pausePending ? 'Pausing agent…' : resumePending ? 'Resuming agent…' : undefined}
+                placeholder={cancellationPending ? 'Stopping agent…' : pausePending ? 'Pausing agent…' : resumePending ? 'Resuming agent…' : taskSurface?.placeholder}
                 showShortcutHint={showComposerShortcutHint}
               />
           </div>
@@ -1196,4 +1226,25 @@ export function ChatView({
       )}
     </DockInteractionLayer>
   );
+}
+
+// Component boundaries keep event callbacks out of render-prop evaluation in
+// the parent, including callbacks that consult the current conversation refs.
+function TaskSurfacePreview({render,detail,interaction,onChange}: {
+  render: NonNullable<ChatTaskSurface['renderPreview']>;
+  detail: DockChatDetail | null;
+  interaction: CodingSessionInteraction | null;
+  onChange: (message: string) => void;
+}) {
+  return render(detail,interaction,onChange);
+}
+
+function TaskSurfaceInteraction({surface,detail,interaction,onResolve,fallback}: {
+  surface?: ChatTaskSurface;
+  detail: DockChatDetail | null;
+  interaction: CodingSessionInteraction;
+  onResolve: Parameters<NonNullable<ChatTaskSurface['renderInteraction']>>[2];
+  fallback: ReactNode;
+}) {
+  return surface?.renderInteraction?.(interaction,detail,onResolve) ?? fallback;
 }

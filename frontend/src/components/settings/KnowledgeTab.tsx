@@ -43,6 +43,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { CrawlerAccessHelp } from './CrawlerAccessHelp';
 import { KnowledgeIndexedContent } from './KnowledgeIndexedContent';
+import { KnowledgeSourceSync } from './KnowledgeSourceSync';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@edition/errors';
 import { cn } from '@/lib/utils';
@@ -594,7 +595,7 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
                     <TableHead>Type</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Indexed</TableHead>
-                    <TableHead>Last sync</TableHead>
+                    <TableHead>Sync</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -639,7 +640,7 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
                           <KnowledgeIndexedContent source={source} workspaceId={workspaceId} workspaceSlug={workspaceSlug} agentId={chatWidgetAgentId} />
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
-                          {source.lastSyncAt ? formatSourceSyncTime(source.lastSyncAt) : 'Not synced yet'}
+                          <KnowledgeSourceSync source={source} />
                         </TableCell>
 	                        <TableCell>
 	                          <div className="flex justify-end gap-1">
@@ -1277,14 +1278,6 @@ function knowledgeSourceStatusMeta(status: string) {
     default:
       return { label: 'Unknown', className: 'border-border/70 bg-muted text-muted-foreground' };
   }
-}
-
-function formatSourceSyncTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return 'Sync time unavailable';
-  }
-  return `Last synced ${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
 }
 
 function suggestFileSourceName(fileName: string) {

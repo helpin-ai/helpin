@@ -28,7 +28,7 @@ func TestPublicShareSourceCanAccessAgentRun(t *testing.T) {
 	)`).Error; err != nil {
 		t.Fatalf("create agent runs: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE dock_chats (
+	if err := db.Exec(`CREATE TABLE dock_chats ( flow_builder TEXT,
  coverage_gap_id TEXT, initial_context TEXT,
 execution_enabled boolean NOT NULL DEFAULT false,
 		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,

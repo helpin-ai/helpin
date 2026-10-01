@@ -123,10 +123,10 @@ func (c *CloudflareCrawlClient) StartCrawl(ctx context.Context, source model.Sup
 		options["includeSubdomains"] = true
 	}
 	if len(source.IncludePatterns) > 0 {
-		options["includePatterns"] = []string(source.IncludePatterns)
+		options["includePatterns"] = cloudflareURLPatterns([]string(source.IncludePatterns))
 	}
 	if len(source.ExcludePatterns) > 0 {
-		options["excludePatterns"] = []string(source.ExcludePatterns)
+		options["excludePatterns"] = cloudflareURLPatterns([]string(source.ExcludePatterns))
 	}
 	if len(options) > 0 {
 		body["options"] = options
@@ -221,6 +221,24 @@ func (c *CloudflareCrawlClient) GetCrawlResult(ctx context.Context, jobID string
 	return &envelope.Result, nil
 }
 
+// cloudflareURLPatterns translates path-only rules to URL globs. A trailing
+// wildcard keeps the local crawler's recursive path behavior with Cloudflare's
+// double-star syntax.
+func cloudflareURLPatterns(patterns []string) []string {
+	result := make([]string, 0, len(patterns))
+	for _, pattern := range patterns {
+		pattern = strings.TrimSpace(pattern)
+		if strings.HasPrefix(pattern, "/") {
+			pattern = "*://*" + pattern
+		}
+		if strings.HasSuffix(pattern, "*") && !strings.HasSuffix(pattern, "**") {
+			pattern += "*"
+		}
+		result = append(result, pattern)
+	}
+	return result
+}
+
 // joinCloudflareErrors formats API error messages into a single string.
 func joinCloudflareErrors(errors []struct {
 	Message string `json:"message"`
@@ -284,6 +302,20 @@ func crawlWithCloudflare(
 			}
 			if record.Status != "completed" {
 				continue
+			}
+			// Apply the saved exclusions before indexing, including query URLs
+			// that may not match the provider's full-URL glob exactly.
+			if parsed, err := url.Parse(recordURL); err == nil {
+				excluded := false
+				for _, pattern := range source.ExcludePatterns {
+					if matchURLPattern(parsed, strings.TrimSpace(pattern)) {
+						excluded = true
+						break
+					}
+				}
+				if excluded {
+					continue
+				}
 			}
 			text := cfRecordText(record)
 			if strings.TrimSpace(text) == "" {

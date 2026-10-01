@@ -1702,6 +1702,8 @@ func main() {
 		SetMediaSourceService(supportInboxService).
 		SetMediaAnalyzer(pmAttachmentService, supportLLMProvider)
 	publicShareRepo := repository.NewPublicShareRepository(db)
+	dockChatService.SetFlowBuilder(ruleEngine, flowTemplateRegistry, flowTemplateInstaller)
+	commandService.SetFlowBuilderChat(dockChatService)
 	publicShareSource := service.NewPublicShareSource(dockChatService, agentService, dockChatRepo, agentRunMessageRepo, workspaceRepo)
 	publicShareService := service.NewPublicShareService(publicShareRepo, publicShareSource, cfg.AppBaseURL)
 	if runFinalizers != nil {

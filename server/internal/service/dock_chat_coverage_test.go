@@ -32,7 +32,7 @@ func coverageDockService(t *testing.T) (*DockChatService, *model.SupportCoverage
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec(`CREATE TABLE dock_chats (
+	if err := db.Exec(`CREATE TABLE dock_chats ( flow_builder TEXT,
  id TEXT PRIMARY KEY, workspace_id TEXT, user_id TEXT, title TEXT, visibility TEXT,
  module_id TEXT, support_conversation_id TEXT, coverage_gap_id TEXT, initial_context TEXT,
  execution_enabled BOOLEAN DEFAULT false, active_run_id TEXT, archived_at DATETIME,

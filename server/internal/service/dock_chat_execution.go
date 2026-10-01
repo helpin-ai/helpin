@@ -42,13 +42,16 @@ func (s *DockChatService) authorizeChatExecution(ctx context.Context, workspaceI
 // longer holds that permission the conversation degrades to ordinary tools
 // instead of failing, until an authorized actor turns the setting off.
 func (s *DockChatService) effectiveChatExecution(ctx context.Context, chat *model.DockChat, userID string) bool {
-	if chat == nil || !chat.ExecutionEnabled {
+	if chat == nil || chat.FlowBuilder != nil || !chat.ExecutionEnabled {
 		return false
 	}
 	return s.authorizeChatExecution(ctx, chat.WorkspaceID, userID) == nil
 }
 
 func (s *DockChatService) scopedChatExecutionTools(ctx context.Context, chat *model.DockChat, userID string, agent *model.Agent) ([]string, error) {
+	if chat.FlowBuilder != nil {
+		return flowBuilderTools(), nil
+	}
 	if !s.effectiveChatExecution(ctx, chat, userID) {
 		return s.scopedChatTools(ctx, chat.WorkspaceID, userID, agent)
 	}

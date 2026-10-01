@@ -47,6 +47,12 @@ describe('knowledgeSourceWebsiteForm', () => {
     });
   });
 
+  it('prefills blog exclusions and lets the user remove them before creating a source', () => {
+    const draft = createWebsiteSourceDraft({ initialUrl: 'https://example.com' });
+    expect(buildWebsiteSourcePayload(draft).exclude_patterns).toEqual(['/blog', '/blog/*', '*://blog.*/**']);
+    expect(buildWebsiteSourcePayload({ ...draft, excludePatternsText: '' }).exclude_patterns).toEqual([]);
+  });
+
   it('creates an editable draft from an existing website source', () => {
     const source: SupportContentSource = {
       id: 'source-1',

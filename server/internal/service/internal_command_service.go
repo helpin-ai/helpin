@@ -44,6 +44,7 @@ func (d InternalCommandDefinition) RiskLevel() string {
 }
 
 type InternalCommandService struct {
+	flowBuilderChat       *DockChatService
 	imageService          *AgentImageService
 	jevDecisions          *JevDecisionService
 	agentService          *AgentService
@@ -366,6 +367,7 @@ func NewInternalCommandService(
 	}
 	svc.registerDefaults()
 	svc.registerDockExecutionCommands()
+	svc.registerFlowBuilderCommands()
 	return svc
 }
 

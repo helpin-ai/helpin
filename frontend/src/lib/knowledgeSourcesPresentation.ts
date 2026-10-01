@@ -27,6 +27,10 @@ export type KnowledgeSourceRow = {
   progress: number;
   countLabel: string;
   lastSyncAt?: string | null;
+  syncStartedAt?: string | null;
+  syncCompletedAt?: string | null;
+  nextSyncAt?: string | null;
+  indexedChunks?: number;
   error?: string | null;
   warning?: string | null;
 };
@@ -43,6 +47,8 @@ type WebsiteSourceLike = Pick<
   | 'sync_status'
   | 'sync_progress'
   | 'indexed_pages'
+  | 'indexed_chunks'
+  | 'next_sync_at'
   | 'last_sync_started_at'
   | 'last_sync_completed_at'
   | 'last_sync_error'
@@ -61,6 +67,7 @@ type KnowledgeSourceLike = Pick<
   | 'sync_status'
   | 'sync_progress'
   | 'indexed_documents'
+  | 'indexed_chunks'
   | 'last_sync_started_at'
   | 'last_sync_completed_at'
   | 'last_sync_error'
@@ -113,7 +120,9 @@ export function buildKnowledgeSourceRows({
       status: source.sync_status,
       progress: source.sync_progress ?? 0,
       countLabel: `${source.indexed_pages ?? 0} ${(source.indexed_pages ?? 0) === 1 ? 'page' : 'pages'}`,
-      lastSyncAt: source.last_sync_completed_at ?? source.last_sync_started_at ?? null,
+      ...knowledgeSyncTimes(source.last_sync_started_at, source.last_sync_completed_at),
+      nextSyncAt: isFile ? null : source.next_sync_at ?? null,
+      indexedChunks: source.indexed_chunks ?? 0,
       error: source.last_sync_error ?? null,
       warning: source.last_sync_warning ?? null,
     };
@@ -141,12 +150,19 @@ export function buildKnowledgeSourceRows({
       status: source.sync_status,
       progress: source.sync_progress ?? 0,
       countLabel: `${source.indexed_documents ?? 0} ${(source.indexed_documents ?? 0) === 1 ? 'article' : 'articles'}`,
-      lastSyncAt: source.last_sync_completed_at ?? source.last_sync_started_at ?? null,
+      ...knowledgeSyncTimes(source.last_sync_started_at, source.last_sync_completed_at),
+      nextSyncAt: null,
+      indexedChunks: source.indexed_chunks ?? 0,
       error: source.last_sync_error ?? null,
     });
   }
 
   return rows;
+}
+
+function knowledgeSyncTimes(started?: string | null, completed?: string | null) {
+  const currentCompletion = completed && (!started || Date.parse(completed) >= Date.parse(started)) ? completed : null;
+  return { lastSyncAt: currentCompletion ?? started ?? null, syncStartedAt: started ?? null, syncCompletedAt: currentCompletion };
 }
 
 export function knowledgeSourceCanBeManaged(

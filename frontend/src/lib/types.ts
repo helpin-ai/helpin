@@ -380,6 +380,7 @@ export interface WorkspaceTeam {
   id: string;
   workspace_id: string;
   name: string;
+  color?: string | null;
   handle?: string;
   description?: string;
   manager_id?: string;

@@ -196,6 +196,8 @@ type CreateAutomationRuleRequest struct {
 
 // UpdateAutomationRuleRequest is the payload for updating a rule.
 type UpdateAutomationRuleRequest struct {
+	TeamID        *string          `json:"team_id,omitempty"`
+	WorkflowID    *string          `json:"workflow_id,omitempty"`
 	Name          *string          `json:"name"`
 	Description   *string          `json:"description"`
 	Enabled       *bool            `json:"enabled"`

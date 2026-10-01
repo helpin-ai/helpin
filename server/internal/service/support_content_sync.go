@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	htmlstd "html"
 	"io"
@@ -77,6 +78,10 @@ func NewSupportContentSyncService(
 }
 
 func (s *SupportContentSyncService) QueueSourceSync(ctx context.Context, workspaceID, contentSourceID string) error {
+	return s.queueSourceSync(ctx, workspaceID, contentSourceID, nil)
+}
+
+func (s *SupportContentSyncService) queueSourceSync(ctx context.Context, workspaceID, contentSourceID string, autoSyncSince *time.Time) error {
 	if s == nil || s.sourceRepo == nil {
 		return nil
 	}
@@ -86,6 +91,15 @@ func (s *SupportContentSyncService) QueueSourceSync(ctx context.Context, workspa
 	}
 	if source == nil || source.WorkspaceID != workspaceID {
 		return fmt.Errorf("content source not found in workspace")
+	}
+	if autoSyncSince != nil {
+		claimed, err := s.sourceRepo.ClaimAutoSync(ctx, source.ID, *autoSyncSince)
+		if err != nil {
+			return err
+		}
+		if !claimed {
+			return nil
+		}
 	}
 	slog.InfoContext(ctx, "queueing support content source sync",
 		"workspace_id", workspaceID,
@@ -113,8 +127,10 @@ func (s *SupportContentSyncService) QueueSourceSync(ctx context.Context, workspa
 		_ = s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncDisabled, 0, source.IndexedPages, source.IndexedChunks, &msg, nil, nil, nil)
 		return nil
 	}
-	if err := s.sourceRepo.MarkSyncQueued(ctx, source.ID); err != nil {
-		return err
+	if autoSyncSince == nil {
+		if err := s.sourceRepo.MarkSyncQueued(ctx, source.ID); err != nil {
+			return err
+		}
 	}
 	if s.starter == nil {
 		err = fmt.Errorf("Temporal content sync pipeline is not configured")
@@ -232,6 +248,17 @@ func (s *SupportContentSyncService) RunSourceSync(ctx context.Context, workspace
 		chunks := chunkStructuredDocument(title, contentText)
 		if len(chunks) == 0 {
 			return s.chunkRepo.ReplacePageChunks(ctx, savedPage.ID, nil)
+		}
+		states, err := s.chunkRepo.ListReusableEmbeddingStates(ctx, source.WorkspaceID, savedPage.ID, s.embeddingModel, contentChunkEmbeddingVersion, docsEmbeddingDimensions)
+		if err != nil {
+			return err
+		}
+		if matchingKnowledgeIndex(title, chunks, states) {
+			indexedPages++
+			indexedChunks += len(chunks)
+			keepPageIDs = append(keepPageIDs, savedPage.ID)
+			keepURLs = append(keepURLs, savedPage.URL)
+			return s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncRunning, progressFor(indexedPages, source.CrawlLimit), indexedPages, indexedChunks, nil, nil, &startedAt, nil)
 		}
 
 		embedCtx := withAIActionMetering(ctx, source.WorkspaceID, aipolicy.ActionSupportKnowledgeEmbed, "support_content_crawl_embed", savedPage.ContentHash, map[string]interface{}{
@@ -451,6 +478,14 @@ func (s *SupportContentSyncService) runFileSourceSync(ctx context.Context, sourc
 		completedAt := time.Now()
 		return s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncReady, 100, 1, 0, nil, nil, &startedAt, &completedAt)
 	}
+	states, err := s.chunkRepo.ListReusableEmbeddingStates(ctx, source.WorkspaceID, savedPage.ID, s.embeddingModel, contentChunkEmbeddingVersion, docsEmbeddingDimensions)
+	if err != nil {
+		return errors.Join(err, s.markSourceFailed(ctx, source.ID, err, &startedAt, source.IndexedPages, source.IndexedChunks))
+	}
+	if matchingKnowledgeIndex(fileName, fileKnowledgeChunks(contentText), states) {
+		completedAt := time.Now()
+		return s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncReady, 100, 1, len(chunks), nil, nil, &startedAt, &completedAt)
+	}
 
 	embedCtx := withAIActionMetering(ctx, source.WorkspaceID, aipolicy.ActionSupportKnowledgeEmbed, "support_upload_embed", savedPage.ContentHash, map[string]interface{}{
 		"surface": "support_content_upload", "source_id": source.ID, "page_id": savedPage.ID,
@@ -589,8 +624,20 @@ func (s *SupportContentSyncService) RunSourceReindex(ctx context.Context, worksp
 		}
 
 		chunks := chunkStructuredDocument(page.Title, page.ContentText)
+		if source.SourceType == model.ContentSourceTypeFile {
+			chunks = fileKnowledgeChunks(page.ContentText)
+		}
 		if len(chunks) == 0 {
 			_ = s.chunkRepo.ReplacePageChunks(ctx, page.ID, nil)
+			continue
+		}
+		states, err := s.chunkRepo.ListReusableEmbeddingStates(ctx, source.WorkspaceID, page.ID, s.embeddingModel, contentChunkEmbeddingVersion, docsEmbeddingDimensions)
+		if err != nil {
+			return errors.Join(err, s.markSourceFailed(ctx, source.ID, err, &startedAt, source.IndexedPages, source.IndexedChunks))
+		}
+		if matchingKnowledgeIndex(page.Title, chunks, states) {
+			indexedPages++
+			indexedChunks += len(chunks)
 			continue
 		}
 

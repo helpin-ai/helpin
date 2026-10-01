@@ -1,4 +1,5 @@
 import { Collapsible } from 'radix-ui';
+import { TeamBadge } from '@/components/workspace/TeamBadge';
 import { ArrowRight01Icon, MoreVerticalIcon, ArrowReloadHorizontalIcon, Setting06Icon, PlusSignIcon } from '@/lib/icons';
 import {
   DropdownMenu,
@@ -23,6 +24,7 @@ import { SidebarSectionAction } from './SidebarSectionAction';
 type Team = {
   id: string;
   name: string;
+  color?: string | null;
   sprints_enabled?: boolean;
 };
 
@@ -92,7 +94,9 @@ export function ProjectsTeamsNav({
                 <div className="group/team relative flex items-center">
                   <Collapsible.Trigger asChild>
                     <SidebarMenuButton className="h-8 flex-1 rounded-md px-2 cursor-pointer">
-                      <ArrowRight01Icon className={`h-3.5 w-3.5 shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                      <TeamBadge name={team.name} color={team.color} className="h-5 w-5 rounded-[4px]">
+                        <ArrowRight01Icon className={`h-3.5 w-3.5 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                      </TeamBadge>
                       <span className="truncate">{team.name}</span>
                     </SidebarMenuButton>
                   </Collapsible.Trigger>
