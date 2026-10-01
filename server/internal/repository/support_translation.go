@@ -255,17 +255,27 @@ func (r *SupportTranslationRepository) ForSentMessage(ctx context.Context, works
 // LatestCustomerMessageID supplies language-detection evidence when a teammate
 // sends before an incoming display translation has populated the language hint.
 func (r *SupportTranslationRepository) LatestCustomerMessageID(ctx context.Context, workspaceID, conversationID string) (string, error) {
+	return r.latestCustomerMessageID(ctx, workspaceID, conversationID, false)
+}
+
+// LatestMeaningfulCustomerMessageID skips short acknowledgments when detecting
+// a missing language for display, without changing outgoing reply detection.
+func (r *SupportTranslationRepository) LatestMeaningfulCustomerMessageID(ctx context.Context, workspaceID, conversationID string) (string, error) {
+	return r.latestCustomerMessageID(ctx, workspaceID, conversationID, true)
+}
+
+func (r *SupportTranslationRepository) latestCustomerMessageID(ctx context.Context, workspaceID, conversationID string, meaningfulOnly bool) (string, error) {
 	var conv model.SupportConversation
 	if err := r.db.WithContext(ctx).Where("workspace_id=? AND id=?", workspaceID, conversationID).First(&conv).Error; err != nil {
 		return "", err
 	}
 	var messages []model.SupportMessage
-	err := r.db.WithContext(ctx).Select("id,metadata").Where("workspace_id=? AND conversation_id=? AND sender_type='customer' AND message_type='reply' AND is_internal=false AND deleted_at IS NULL AND content<>''", workspaceID, conversationID).Order("created_at DESC,id DESC").Limit(100).Find(&messages).Error
+	err := r.db.WithContext(ctx).Select("id,metadata,content").Where("workspace_id=? AND conversation_id=? AND sender_type='customer' AND message_type='reply' AND is_internal=false AND deleted_at IS NULL AND content<>''", workspaceID, conversationID).Order("created_at DESC,id DESC").Limit(100).Find(&messages).Error
 	if err != nil {
 		return "", err
 	}
 	for _, msg := range messages {
-		if primaryLanguageSender(msg.Metadata, conv.CustomerEmail) {
+		if primaryLanguageSender(msg.Metadata, conv.CustomerEmail) && (!meaningfulOnly || model.MeaningfulSupportLanguageText(msg.Content)) {
 			return msg.ID, nil
 		}
 	}

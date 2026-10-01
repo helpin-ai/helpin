@@ -6,24 +6,24 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { LiveTranslateBar } from '../LiveTranslateBar';
 
-const mocks = vi.hoisted(() => ({ save: vi.fn(), mode: 'on' }));
+const mocks = vi.hoisted(() => ({ save: vi.fn(), mode: 'on', detected: 'zh-CN', selected: '' }));
 vi.mock('@/hooks/queries/useSupportTranslation', () => ({
   setLiveTranslate: mocks.save,
   translationOptionsKey: () => ['support', 'ws', 'translation', 'conv'],
   useSupportTranslationOptions: () => ({ data: {
-    available: true, conversation: { customer_language: '', translation_mode: mocks.mode },
-    detected_customer_language: 'zh-CN', preference: { reading_language: 'en' },
+    available: true, conversation: { customer_language: mocks.selected, translation_mode: mocks.mode },
+    detected_customer_language: mocks.detected, preference: { reading_language: 'en' },
     languages: { 'zh-CN': 'Chinese (Simplified)', en: 'English' },
   } }),
 }));
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const cleanups: (() => void)[] = [];
-afterEach(() => { cleanups.splice(0).forEach(cleanup => cleanup()); mocks.save.mockReset(); mocks.mode = 'on'; });
-function render(editable = true) {
+afterEach(() => { cleanups.splice(0).forEach(cleanup => cleanup()); mocks.save.mockReset(); mocks.mode = 'on'; mocks.detected = 'zh-CN'; mocks.selected = ''; });
+function render(editable = true, forceVisible = false) {
   const container = document.createElement('div'); document.body.appendChild(container);
   const root = createRoot(container); const client = new QueryClient();
   act(() => root.render(<QueryClientProvider client={client}><TooltipProvider>
-    <LiveTranslateBar workspaceId="ws" conversationId="conv" editable={editable} />
+    <LiveTranslateBar workspaceId="ws" conversationId="conv" editable={editable} forceVisible={forceVisible} />
   </TooltipProvider></QueryClientProvider>));
   cleanups.push(() => { act(() => root.unmount()); client.clear(); container.remove(); });
   return container;
@@ -55,4 +55,26 @@ it('preserves the translation state when changing the customer language', async 
     select.value = 'zh-CN'; select.dispatchEvent(new Event('change', { bubbles: true }));
   });
   expect(mocks.save).toHaveBeenCalledWith('ws', 'conv', false, 'zh-CN');
+});
+
+it.each(['', 'en'])('hides the automatic bar for unknown or matching language %s', detected => {
+  mocks.detected = detected;
+  expect(render().textContent).toBe('');
+});
+it('keeps unknown language selectable from the manual menu', () => {
+  mocks.detected = '';
+  const container = render(true, true);
+  expect(container.querySelector('select')?.selectedOptions[0].textContent).toBe('Select customer language');
+  expect(container.textContent).not.toContain('Unknown language');
+});
+it('keeps same-language settings accessible from the manual menu', () => {
+  mocks.detected = 'en';
+  expect(render(true, true).querySelector('select')).not.toBeNull();
+});
+it('uses the manual language without labelling it as detected', () => {
+  mocks.detected = '';
+  mocks.selected = 'zh-CN';
+  const container = render();
+  expect(container.querySelector('select')?.value).toBe('zh-CN');
+  expect(container.textContent).not.toContain('(detected)');
 });
