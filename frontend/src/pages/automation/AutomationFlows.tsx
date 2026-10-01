@@ -1808,7 +1808,7 @@ function FlowDetails({
               </div>
               <DialogDescription className="sr-only">Details and actions for {rule.name}</DialogDescription>
               {(canEdit && !managed || managed && workspaceSlug || rule.trigger_type === 'cron' && canRunNowAction) ? (
-                <div className="flex flex-wrap items-center gap-2 pt-2">
+                <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
                   {managed && workspaceSlug ? <Button size="sm" asChild><a href={`/w/${encodeURIComponent(workspaceSlug)}/crm/playbooks/${encodeURIComponent(stringValue(rule.trigger_config?.playbook_id))}`}>Manage in Playbook Setup</a></Button> : null}
                   {canEdit && !managed ? <Button size="sm" onClick={() => onEdit(rule)}>Edit flow</Button> : null}
                   {rule.trigger_type === 'cron' && canRunNowAction ? (
