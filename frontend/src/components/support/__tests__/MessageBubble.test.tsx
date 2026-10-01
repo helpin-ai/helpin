@@ -51,6 +51,56 @@ function renderBubble(
 }
 
 describe('MessageBubble', () => {
+  it.each([
+    ['**Billing update**\\\nPlease review @teammate.', true],
+    ['**Billing update**\\\nContact person@example.com.', false],
+  ])('preserves note markdown with mentions and email addresses: %s', (content, hasMention) => {
+    const rendered = renderBubble({
+      id: 'formatted-note', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'user',
+      sender_user_id: 'viewer', message_type: 'note', is_internal: true, content,
+      created_at: '2026-09-18T10:38:14Z', updated_at: '2026-09-18T10:38:14Z',
+    });
+    try {
+      const note = rendered.container.querySelector('[data-support-internal-note]');
+      expect(note?.querySelector('strong')?.textContent).toBe('Billing update');
+      expect(note?.querySelector('br')).not.toBeNull();
+      expect(note?.textContent).not.toContain('**');
+      expect(note?.textContent).not.toContain('\\');
+      expect(Boolean(note?.querySelector('.mention-highlight'))).toBe(hasMention);
+    } finally { rendered.cleanup(); }
+  });
+
+  it('highlights mentions inside formatted notes while preserving links and code', () => {
+    const rendered = renderBubble({
+      id: 'mention-note', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'user',
+      sender_user_id: 'viewer', message_type: 'note', is_internal: true,
+      content: '- **@teammate**\n- `@code C:\\temp`\n- [@linked](https://example.com/@linked)',
+      created_at: '2026-09-18T10:38:14Z', updated_at: '2026-09-18T10:38:14Z',
+    });
+    try {
+      const note = rendered.container.querySelector('[data-support-internal-note]');
+      expect(note?.querySelectorAll('li')).toHaveLength(3);
+      expect(note?.querySelector('strong .mention-highlight')?.textContent).toBe('@teammate');
+      expect(note?.querySelectorAll('.mention-highlight')).toHaveLength(1);
+      expect(note?.querySelector('code')?.textContent).toBe('@code C:\\temp');
+      expect(note?.querySelector('a')?.getAttribute('href')).toBe('https://example.com/@linked');
+    } finally { rendered.cleanup(); }
+  });
+
+  it.each(['@teammate', '\\*literal\\* @teammate'])('highlights a standalone mention and respects escaped Markdown: %s', (content) => {
+    const rendered = renderBubble({
+      id: 'literal-note', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'user',
+      sender_user_id: 'viewer', message_type: 'note', is_internal: true, content,
+      created_at: '2026-09-18T10:38:14Z', updated_at: '2026-09-18T10:38:14Z',
+    });
+    try {
+      const note = rendered.container.querySelector('[data-support-internal-note]');
+      expect(note?.querySelector('.mention-highlight')?.textContent).toBe('@teammate');
+      expect(note?.querySelector('em')).toBeNull();
+      if (content.startsWith('\\')) expect(note?.textContent).toContain('*literal*');
+    } finally { rendered.cleanup(); }
+  });
+
   it.each(['ai', 'agent'] as const)('uses the Helpin avatar for %s replies and internal notes', (senderType) => {
     for (const internal of [false, true]) {
       const rendered = renderBubble({

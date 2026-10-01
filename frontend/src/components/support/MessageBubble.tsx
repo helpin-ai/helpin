@@ -37,27 +37,46 @@ export function sanitizeSupportShortcutSeed(content: string): string {
   return content.replace(/\\(\r?\n)/g, '$1');
 }
 
-/** Splits text on @mention patterns and wraps them in highlight spans. */
-function renderMentionHighlights(content: string): ReactNode[] | null {
-  const regex = /@([a-zA-Z0-9][a-zA-Z0-9._-]*)/g;
-  const parts: ReactNode[] = [];
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-  let key = 0;
-  while ((match = regex.exec(content)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(content.slice(lastIndex, match.index));
+type MentionNode = {
+  type: string;
+  tagName?: string;
+  value?: string;
+  properties?: Record<string, unknown>;
+  children?: MentionNode[];
+};
+
+/** Highlight parsed note text without changing Markdown, links, or code. */
+function rehypeNoteMentions() {
+  return (tree: MentionNode) => {
+    function visit(node: MentionNode) {
+      if (!node.children || ['a', 'code', 'pre'].includes(node.tagName ?? '')) return;
+      node.children = node.children.flatMap((child): MentionNode[] => {
+        if (child.type !== 'text' || !child.value) {
+          visit(child);
+          return [child];
+        }
+        const parts: MentionNode[] = [];
+        let offset = 0;
+        // A mention starts at a word boundary, never inside an email address.
+        for (const match of child.value.matchAll(/(?<![\w.@/+-])@[a-zA-Z0-9][a-zA-Z0-9._-]*/g)) {
+          const index = match.index;
+          if (index > offset) parts.push({ type: 'text', value: child.value.slice(offset, index) });
+          parts.push({
+            type: 'element', tagName: 'span', properties: { className: ['mention-highlight'] },
+            children: [{ type: 'text', value: match[0] }],
+          });
+          offset = index + match[0].length;
+        }
+        if (!parts.length) return [child];
+        if (offset < child.value.length) parts.push({ type: 'text', value: child.value.slice(offset) });
+        return parts;
+      });
     }
-    parts.push(
-      <span key={key++} className="mention-highlight">{match[0]}</span>
-    );
-    lastIndex = match.index + match[0].length;
-  }
-  if (lastIndex < content.length) {
-    parts.push(content.slice(lastIndex));
-  }
-  return parts.length > 1 ? parts : null;
+    visit(tree);
+  };
 }
+
+const NOTE_REHYPE_PLUGINS = [rehypeNoteMentions];
 
 function containsMarkdownTable(content: string): boolean {
   return /\|(?:[^\n|]+\|){1,}[^\n]*\n\|(?:\s*[-:]+\s*\|){1,}/m.test(content) || /<table[\s>]/i.test(content);
@@ -447,12 +466,6 @@ export const MessageBubble = memo(function MessageBubble({
   const visibleContent = translatedContent ?? (forwardedDisplayContent || projectedEmailVisibleContent || displayContent);
   const hasTableContent = useMemo(() => containsMarkdownTable(visibleContent), [visibleContent]);
 
-  // Highlight @mentions in internal notes
-  const mentionParts = useMemo(() => {
-    if (!isInternal) return null;
-    return renderMentionHighlights(visibleContent);
-  }, [visibleContent, isInternal]);
-
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [emailDetailOpen, setEmailDetailOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
@@ -789,11 +802,7 @@ export const MessageBubble = memo(function MessageBubble({
                   </div>
                   {hasDisplayContent && (
                     <div className="prose-chat inline text-sm leading-relaxed text-amber-900 [&>p:last-child]:inline dark:text-amber-200">
-                      {mentionParts ? (
-                        <p className="whitespace-pre-wrap">{mentionParts}</p>
-                      ) : (
-                        <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{visibleContent}</Markdown>
-                      )}
+                      <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={NOTE_REHYPE_PLUGINS} components={markdownComponents}>{visibleContent}</Markdown>
                     </div>
                   )}
                   {renderFileAttachments('note', hasDisplayContent ? 'mt-2' : 'mt-1.5')}
