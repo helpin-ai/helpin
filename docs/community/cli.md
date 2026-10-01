@@ -36,7 +36,7 @@ starts application services. For an explicit version or destination:
 
 ```sh
 curl -fsSL https://helpin.ai/install.sh | \
-  HELPIN_VERSION=community-v0.2.0-rc.1 HELPIN_BIN_DIR="$HOME/.local/bin" bash
+  HELPIN_VERSION=community-v0.2.0-rc.2 HELPIN_BIN_DIR="$HOME/.local/bin" bash
 ```
 
 Use a tag listed on the releases page; the example tag is not a promise of
@@ -174,8 +174,8 @@ A previously downloaded bundle is supported:
 
 ```sh
 helpin install --yes --mode local \
-  --bundle /path/to/helpin-community-v0.2.0-rc.1.tar.gz \
-  --checksum /path/to/helpin-community-v0.2.0-rc.1.tar.gz.sha256
+  --bundle /path/to/helpin-community-v0.2.0-rc.2.tar.gz \
+  --checksum /path/to/helpin-community-v0.2.0-rc.2.tar.gz.sha256
 ```
 
 Container images must still be available locally or downloadable. A checksum
