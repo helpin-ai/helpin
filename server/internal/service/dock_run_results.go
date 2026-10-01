@@ -14,7 +14,7 @@ const (
 
 const dockChildHandoffInstruction = "Result handoff: End with a self-contained summary of at most 2,500 characters. Lead with the concrete findings the parent needs, and reference durable artifacts or changed files for supporting detail."
 
-const supportChildHandoffInstruction = "Support research handoff: Report only directly observed facts. For web research, use only pages on the official product website from the target context and include every exact page URL used; do not use third-party sources or infer missing details. For repository research, include the relevant file paths and symbols and distinguish observed behavior from anything not found. Do not mention internal tools or run IDs."
+const supportChildHandoffInstruction = "Support research handoff: Report only directly observed facts. Use configured knowledge sources for public product facts; do not perform web research or fetch outside pages. For repository research, include the relevant file paths and symbols and distinguish observed behavior from anything not found. Distinguish current behavior from historical descriptions and unconfirmed availability; do not infer discontinuation from missing documentation. Do not mention internal tools or run IDs."
 
 type dockRunArtifactReference struct {
 	ArtifactID   string `json:"artifact_id"`

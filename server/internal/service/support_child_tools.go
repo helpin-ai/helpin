@@ -34,10 +34,6 @@ var supportChildReadOnlyTools = map[string]bool{
 	"get_task_context":           true,
 	"list_workspace_teams":       true,
 	"list_conversation_messages": true,
-	// Web research.
-	"fetch_url":  true,
-	"crawl_url":  true,
-	"web_search": true,
 }
 
 const (
@@ -65,4 +61,26 @@ func supportStepsAreReadOnly(steps []dockLaunchStep) bool {
 		}
 	}
 	return true
+}
+
+// supportStepsUseWebResearch detects launches that would bypass configured
+// knowledge sources. These are rejected even if a legacy approval exists.
+func supportStepsUseWebResearch(steps []dockLaunchStep) bool {
+	for _, step := range steps {
+		for _, tool := range step.AllowedTools {
+			if isSupportWebResearchTool(tool) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isSupportWebResearchTool(tool string) bool {
+	switch strings.TrimSpace(tool) {
+	case "web_search", "fetch_url", "crawl_url":
+		return true
+	default:
+		return false
+	}
 }

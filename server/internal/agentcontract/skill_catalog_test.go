@@ -153,10 +153,11 @@ func TestEchoSystemPromptPrefersCanonicalWebsiteSourcesOverBlogs(t *testing.T) {
 	}
 }
 
-func TestEchoSystemPromptUsesCustomerSafeResearchFallback(t *testing.T) {
+func TestEchoSystemPromptUsesCustomerSafeRepositoryChecks(t *testing.T) {
 	for _, guidance := range []string{
 		"never mention a knowledge base",
-		"search only the official product website",
+		"configured knowledge sources",
+		"Do not launch web research",
 		"implementation-specific behavior",
 		"list_symbols, read_symbol, and read_files",
 		"Prefer read_symbol when a declaration is known",
@@ -208,6 +209,26 @@ func TestEnsureSupportRuntimeDeliveryContractProtectsWorkspacePromptCopies(t *te
 	}
 	if got := EnsureSupportRuntimeDeliveryContract(model.AgentPresetMarketer, staleSnapshot); got != staleSnapshot {
 		t.Fatalf("non-support prompt changed: %q", got)
+	}
+}
+
+func TestEchoKnowledgeBoundaryOverridesSavedWebFallback(t *testing.T) {
+	stale := "You are Echo.\n\n## Required live-support delivery contract\nIf knowledge is insufficient, launch web_search against the official website."
+	for name, prompt := range map[string]string{
+		"default": echoSystemPrompt,
+		"saved":   EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, stale),
+	} {
+		t.Run(name, func(t *testing.T) {
+			for _, required := range []string{"configured knowledge sources", "Do not launch web research", "Historical descriptions", "Missing documentation does not prove", "overrides older instructions"} {
+				if !strings.Contains(prompt, required) {
+					t.Errorf("effective prompt missing %q", required)
+				}
+			}
+			effective := EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, prompt)
+			if twice := EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, effective); twice != effective {
+				t.Fatal("source policy duplicated on repeated launch")
+			}
+		})
 	}
 }
 

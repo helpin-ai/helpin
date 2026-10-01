@@ -38,19 +38,17 @@ type SupportChatService struct {
 	runCloser        supportChatRunCloser
 	supportAIService *SupportAIService
 	evidenceRepo     *repository.SupportRunEvidenceRepository
-	workspaceRepo    *repository.WorkspaceRepository
 	followUpService  *SupportFollowUpService
 	jev              *SupportJevService
 }
 
-// SetResearchEvidenceDependencies wires the stores used to turn completed
+// SetResearchEvidenceDependencies wires the store used to turn completed
 // read-only child research into server-validatable support evidence.
-func (s *SupportChatService) SetResearchEvidenceDependencies(evidenceRepo *repository.SupportRunEvidenceRepository, workspaceRepo *repository.WorkspaceRepository) {
+func (s *SupportChatService) SetResearchEvidenceDependencies(evidenceRepo *repository.SupportRunEvidenceRepository) {
 	if s == nil {
 		return
 	}
 	s.evidenceRepo = evidenceRepo
-	s.workspaceRepo = workspaceRepo
 }
 
 type supportChatRunCloser interface {

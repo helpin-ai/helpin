@@ -41,6 +41,25 @@ func TestAISourcesExcludePrivateMCPResultsEvenIfMisclassified(t *testing.T) {
 	}
 }
 
+func TestAISourcesCleanMarkdownDelimiters(t *testing.T) {
+	for _, rawURL := range []string{"https://product.example/docs/setup`", " `https://product.example/docs/setup` "} {
+		t.Run(rawURL, func(t *testing.T) {
+			results := []KnowledgeSearchResult{{ReferenceID: "content:setup", SourceType: knowledgeSourceTypeContent, Title: "Setup", URL: rawURL}}
+			sources := buildAISources([]string{"content:setup"}, results)
+			if len(sources) != 1 || sources[0].URL != "https://product.example/docs/setup" {
+				t.Fatalf("citation = %+v, want clean setup URL", sources)
+			}
+		})
+	}
+}
+
+func TestAISourcesExcludeLegacyWebResearch(t *testing.T) {
+	results := []KnowledgeSearchResult{{ReferenceID: "child-result:old-web", SourceType: supportChildSourceOfficialWeb, URL: "https://product.example/blog/legacy"}}
+	if sources := buildAISources([]string{"child-result:old-web"}, results); len(sources) != 0 {
+		t.Fatalf("unapproved web research became a visible source: %+v", sources)
+	}
+}
+
 func TestRegisteredPrivateMCPEvidenceCanValidateWithoutVisibleSource(t *testing.T) {
 	evidence := []KnowledgeSearchResult{{ID: "mcp-result", ReferenceID: "mcp-result", SourceType: "external_mcp", IsInternal: true, Title: "Customer logs", Content: "The customer's import failed on September 25 because its CSV contained duplicate headers."}}
 	contract := &AIResponseContract{Content: "Your import failed because the CSV has duplicate headers.", CanAnswer: true, Confidence: 0.95, SourceDocIDs: []string{"mcp-result"}, Claims: []AIResponseClaim{{Text: "The CSV has duplicate headers.", EvidenceIDs: []string{"mcp-result"}}}}

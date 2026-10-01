@@ -148,7 +148,7 @@ func TestSupportResearchAcknowledgmentKeepsTurnOpenForFinalAnswer(t *testing.T) 
 	if !chat.waitingForSupportResult(ctx, run, conv.ID) {
 		t.Fatal("undelivered completed result is still pending")
 	}
-	evidence := model.SupportRunEvidence{ID: "evidence", WorkspaceID: "ws", RunID: "run", EvidenceID: "child-result:plan", ReferenceID: "child-result:plan", SourceType: supportChildSourceOfficialWeb, Content: "The Pro plan costs $49 per month and includes 10 seats.", VectorScore: .9, CombinedScore: .9}
+	evidence := model.SupportRunEvidence{ID: "evidence", WorkspaceID: "ws", RunID: "run", EvidenceID: "child-result:plan", ReferenceID: "child-result:plan", SourceType: supportChildSourceRepository, IsInternal: true, Content: "The Pro plan costs $49 per month and includes 10 seats.", VectorScore: .9, CombinedScore: .9}
 	if err := commands.supportRunEvidenceRepo.UpsertBatch(ctx, []model.SupportRunEvidence{evidence}); err != nil {
 		t.Fatal(err)
 	}

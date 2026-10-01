@@ -1571,7 +1571,7 @@ func main() {
 		supportAIService,
 	)
 	supportChatService.SetJevService(supportJevService)
-	supportChatService.SetResearchEvidenceDependencies(supportRunEvidenceRepo, workspaceRepo)
+	supportChatService.SetResearchEvidenceDependencies(supportRunEvidenceRepo)
 	supportFollowUpRepo := repository.NewSupportFollowUpRepository(db)
 	supportFollowUpService := service.NewSupportFollowUpService(supportFollowUpRepo, supportChatService)
 	commandService.SetSupportFollowUpService(supportFollowUpService)

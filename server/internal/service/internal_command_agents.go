@@ -515,6 +515,9 @@ func (s *InternalCommandService) executeDockLaunch(ctx context.Context, meta mod
 	var supportConversationID *string
 	switch kind {
 	case orchestratorRunSupport:
+		if supportStepsUseWebResearch(steps) {
+			return nil, errCommandInput("web research is not allowed for customer support replies; use configured knowledge sources, ask a focused clarification, or escalate to a human")
+		}
 		conversationID := strings.TrimSpace(chatRun.TargetID)
 		supportConversationID = &conversationID
 		if err := s.checkSupportChildCaps(ctx, meta.WorkspaceID, conversationID); err != nil {
