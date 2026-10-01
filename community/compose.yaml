@@ -192,13 +192,13 @@ services:
       interval: 5s
       retries: 20
   helpin-migrate:
-    image: ghcr.io/helpin-ai/helpin-community-migrate:${HELPIN_VERSION:-community-v0.2.0-rc.1}
+    image: ghcr.io/helpin-ai/helpin-community-migrate:${HELPIN_VERSION:-community-v0.2.0-rc.2}
     environment: *helpin-env
     command: [up]
     depends_on:
       postgres: {condition: service_healthy}
   helpin-api:
-    image: ghcr.io/helpin-ai/helpin-community-api:${HELPIN_VERSION:-community-v0.2.0-rc.1}
+    image: ghcr.io/helpin-ai/helpin-community-api:${HELPIN_VERSION:-community-v0.2.0-rc.2}
     restart: unless-stopped
     environment: *helpin-env
     depends_on:
@@ -213,13 +213,13 @@ services:
       start_period: 30s
       retries: 30
   helpin-worker:
-    image: ghcr.io/helpin-ai/helpin-community-worker:${HELPIN_VERSION:-community-v0.2.0-rc.1}
+    image: ghcr.io/helpin-ai/helpin-community-worker:${HELPIN_VERSION:-community-v0.2.0-rc.2}
     restart: unless-stopped
     environment: *helpin-env
     depends_on:
       helpin-api: {condition: service_healthy}
   agent-runtime:
-    image: ghcr.io/helpin-ai/agent-runtime:${AGENT_RUNTIME_VERSION:-community-v0.2.0-rc.1}
+    image: ghcr.io/helpin-ai/agent-runtime:${AGENT_RUNTIME_VERSION:-community-v0.2.0-rc.2}
     restart: unless-stopped
     environment: *runtime-env
     volumes: ['./apps.json:/etc/agent-runtime/apps.json:ro']
@@ -233,7 +233,7 @@ services:
   # this process and the execution_workspaces volume. Landlock is applied when
   # the host kernel and seccomp profile allow it and skipped otherwise.
   agent-runtime-worker:
-    image: ghcr.io/helpin-ai/agent-runtime:${AGENT_RUNTIME_VERSION:-community-v0.2.0-rc.1}
+    image: ghcr.io/helpin-ai/agent-runtime:${AGENT_RUNTIME_VERSION:-community-v0.2.0-rc.2}
     restart: unless-stopped
     entrypoint: [/agent-runtime-worker, --all-queues]
     environment:
@@ -256,7 +256,7 @@ services:
       interval: 10s
       retries: 30
   helpin-frontend:
-    image: ghcr.io/helpin-ai/helpin-community-frontend:${HELPIN_VERSION:-community-v0.2.0-rc.1}
+    image: ghcr.io/helpin-ai/helpin-community-frontend:${HELPIN_VERSION:-community-v0.2.0-rc.2}
     restart: unless-stopped
     environment:
       COMMUNITY_TRUSTED_PROXY_CIDR: ${COMMUNITY_TRUSTED_PROXY_CIDR:-127.0.0.1/32}
@@ -268,7 +268,7 @@ services:
       interval: 10s
       retries: 10
   helpin-helpcenter:
-    image: ghcr.io/helpin-ai/helpin-community-helpcenter:${HELPIN_VERSION:-community-v0.2.0-rc.1}
+    image: ghcr.io/helpin-ai/helpin-community-helpcenter:${HELPIN_VERSION:-community-v0.2.0-rc.2}
     restart: unless-stopped
     environment:
       INTERNAL_API_URL: http://helpin-api:8080/api
