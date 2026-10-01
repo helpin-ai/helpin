@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
+import { useDesktopNotifications } from './useDesktopNotifications'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { useWebSocket, type DocsPresenceSnapshot, type WSEvent, type WSSend, type PresenceSnapshot } from './useWebSocket'
@@ -230,6 +231,7 @@ function patchAgentRunCache(current: unknown, event: WSEvent): unknown {
 
 export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
   const queryClient = useQueryClient()
+  const deliverDesktop = useDesktopNotifications(workspaceId)
   const agentRunTracker = useRef(createAgentRunUpdateTracker())
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const typingTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
@@ -424,6 +426,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         }
       }
     } else if (event.entity === 'notification') {
+      void deliverDesktop(event)
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all(workspaceId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.unreadCount(workspaceId) })
 
@@ -772,7 +775,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         })
       )
     }
-  }, [scheduleRefresh, scheduleAgentRunInvalidation, scheduleSupportCounterInvalidation, workspaceId, queryClient])
+  }, [deliverDesktop, scheduleRefresh, scheduleAgentRunInvalidation, scheduleSupportCounterInvalidation, workspaceId, queryClient])
 
   const onPresenceSnapshot = useCallback((snapshot: PresenceSnapshot) => {
     const convId = snapshot.conversation_id

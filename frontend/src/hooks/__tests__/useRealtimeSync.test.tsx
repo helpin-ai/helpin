@@ -39,6 +39,7 @@ import { useRealtimeSync } from '../useRealtimeSync'
 import { toast } from 'sonner'
 
 vi.mock('sonner', () => ({ toast: vi.fn() }))
+vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }))
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
