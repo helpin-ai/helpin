@@ -239,7 +239,7 @@ func buildAISources(sourceDocIDs []string, searchResults []KnowledgeSearchResult
 
 	byDocID := map[string]KnowledgeSearchResult{}
 	for _, result := range searchResults {
-		if result.IsInternal || result.SourceType == "external_mcp" {
+		if result.IsInternal || result.SourceType == "external_mcp" || result.SourceType == supportChildSourceOfficialWeb {
 			continue
 		}
 		current, ok := byDocID[result.ReferenceID]
@@ -266,7 +266,7 @@ func buildAISources(sourceDocIDs []string, searchResults []KnowledgeSearchResult
 			Snippet:    excerptText(result.Content, 180),
 			Confidence: supportEvidenceRetrievalQuality(result),
 			SourceType: result.SourceType,
-			URL:        result.URL,
+			URL:        strings.Trim(strings.TrimSpace(result.URL), "`"),
 		})
 	}
 	return sources

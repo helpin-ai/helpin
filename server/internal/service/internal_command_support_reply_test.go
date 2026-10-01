@@ -163,6 +163,29 @@ func TestEvaluateSupportReplyGate(t *testing.T) {
 			wantReason: "low_confidence",
 		},
 		{
+			name: "public answer without configured knowledge escalates",
+			input: supportReplyGateInput{
+				Kind: "answer",
+				Contract: &AIResponseContract{
+					Content: "Open the legacy tab.", CanAnswer: true, Confidence: 1,
+					Claims: []AIResponseClaim{{Text: "Open the legacy tab.", EvidenceIDs: []string{"missing"}}},
+				},
+				Threshold: 0.7,
+			},
+			wantReason: "answer_validation_" + supportValidationUngrounded,
+		},
+		{
+			name: "clarification does not require missing product evidence",
+			input: supportReplyGateInput{
+				Kind: "clarify",
+				Contract: &AIResponseContract{
+					Content: "Which account are you trying to reconnect?", CanAnswer: true, Confidence: 0.8,
+				},
+				Threshold: 0.7,
+			},
+			wantOK: true,
+		},
+		{
 			name: "conversational reply passes without evidence",
 			input: supportReplyGateInput{
 				Kind:      "conversational",
@@ -195,6 +218,35 @@ func TestNormalizeSupportReplyKind(t *testing.T) {
 	}
 	if normalizeSupportReplyKind("unknown") != supportReplyKindAnswer {
 		t.Error("unknown kind should default to answer")
+	}
+}
+
+func TestSupportReplyGateRejectsLegacyWebEvidence(t *testing.T) {
+	for _, kind := range []string{"answer", "conversational"} {
+		for _, citeIn := range []string{"claims", "sources"} {
+			t.Run(kind+"/"+citeIn, func(t *testing.T) {
+				evidence := supportGateEvidence()
+				evidence = append(evidence, KnowledgeSearchResult{ID: "child-result:old-web", ReferenceID: "child-result:old-web", SourceType: supportChildSourceOfficialWeb, Content: "The Pro plan costs $49 per month.", VectorScore: 0.9})
+				contract := &AIResponseContract{Content: "The Pro plan costs $49 per month.", CanAnswer: true, Confidence: 0.95, SourceDocIDs: []string{"chunk-1"}, Claims: []AIResponseClaim{{Text: "The Pro plan costs $49 per month.", EvidenceIDs: []string{"chunk-1"}}}}
+				if citeIn == "claims" {
+					contract.Claims[0].EvidenceIDs = []string{"child-result:old-web"}
+				} else {
+					contract.SourceDocIDs = []string{"child-result:old-web"}
+				}
+				gate := evaluateSupportReplyGate(supportReplyGateInput{Kind: kind, Contract: contract, Evidence: evidence, Threshold: 0.7})
+				if gate.OK || gate.EscalationReason != "answer_validation_unapproved_source" {
+					t.Fatalf("legacy web reply verdict = %+v, want unapproved source", gate)
+				}
+			})
+		}
+	}
+}
+
+func TestSupportReplyGateIgnoresUncitedLegacyWebEvidence(t *testing.T) {
+	evidence := append(supportGateEvidence(), KnowledgeSearchResult{ID: "old-web", SourceType: supportChildSourceOfficialWeb})
+	contract := &AIResponseContract{Content: "The Pro plan costs $49 per month.", CanAnswer: true, Confidence: 0.9, SourceDocIDs: []string{"chunk-1"}, Claims: []AIResponseClaim{{Text: "The Pro plan costs $49 per month.", EvidenceIDs: []string{"chunk-1"}}}}
+	if gate := evaluateSupportReplyGate(supportReplyGateInput{Kind: "answer", Contract: contract, Evidence: evidence, Threshold: 0.7}); !gate.OK {
+		t.Fatalf("configured knowledge was rejected: %+v", gate)
 	}
 }
 

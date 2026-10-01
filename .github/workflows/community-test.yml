@@ -24,13 +24,17 @@ jobs:
       GOWORK: off
       COMMUNITY_ARCH: ${{ inputs.architecture }}
     steps:
-      - name: Free unused hosted-runner SDK space
-        # This job uses fresh GitHub-hosted Linux runners, never the ARC pool.
-        # Keep Docker and the Node/Go tool caches; none of these SDKs are used.
+      - name: Check free disk space
+        # Hosted runners start with 85+ GB free, so the SDKs they ship are left
+        # in place: deleting them took about 8 minutes. Fail early if an image
+        # change ever leaves too little room for the images and their archive.
         run: |
           df -h /
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
-          df -h /
+          available=$(df --output=avail -BG / | tail -1 | tr -dc 0-9)
+          if (( available < 40 )); then
+            echo "::error::Only ${available} GB free; Community builds and image exports need 40 GB."
+            exit 1
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -118,19 +122,21 @@ jobs:
           export COMMUNITY_RUNTIME_REVISION=$(cat helpin/community/runtime-revision.txt)
           docker compose --env-file "$directory/.env" -f helpin/community/compose.yaml -f helpin/community/compose.build.yaml build --print > "$RUNNER_TEMP/community-bake.json"
           python3 - <<'PY'
-          import json, os
+          import datetime, json, os
           from pathlib import Path
           build = json.loads((Path(os.environ['RUNNER_TEMP']) / 'community-bake.json').read_text())
+          # The OS package layers key on the date, so they pick up security
+          # updates daily while the application layers stay cached.
+          today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('cache<<CACHE\n')
               for target in build['target']:
                   scope = f"community-{os.environ['COMMUNITY_ARCH']}-{target}"
+                  output.write(f'{target}.cache-from=type=gha,scope={scope}\n')
+                  output.write(f'{target}.args.OS_PACKAGES_DATE={today}\n')
                   if os.environ['EXPORT_IMAGES'] == 'true':
-                      # Release images pick up today's base images and OS security
-                      # updates; cached package layers would keep older versions.
-                      output.write(f'{target}.no-cache=true\n{target}.pull=true\n')
-                  else:
-                      output.write(f'{target}.cache-from=type=gha,scope={scope}\n')
+                      # Release images also resolve their base images afresh.
+                      output.write(f'{target}.pull=true\n')
                   if os.environ['TRUSTED'] == 'true':
                       output.write(f'{target}.cache-to=type=gha,scope={scope},mode=max\n')
               output.write('CACHE\n')

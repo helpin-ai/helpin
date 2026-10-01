@@ -63,6 +63,19 @@ func (r *DockChatRepository) ListBySupportConversation(ctx context.Context, work
 	return chats, nil
 }
 
+// FindByCoverageGap selects the one active thread associated with this gap.
+func (r *DockChatRepository) FindByCoverageGap(ctx context.Context, workspaceID, gapID string) (*model.DockChat, error) {
+	var chat model.DockChat
+	err := r.db.WithContext(ctx).Where("workspace_id = ? AND coverage_gap_id = ? AND archived_at IS NULL", workspaceID, gapID).First(&chat).Error
+	if err == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &chat, nil
+}
+
 // ListVisible returns the requester's private chats plus chats shared with the
 // workspace or with a module the requester can access.
 func (r *DockChatRepository) ListVisible(ctx context.Context, workspaceID, userID string, modules []model.ModuleID, limit int, before *time.Time, beforeID string) ([]model.DockChat, error) {

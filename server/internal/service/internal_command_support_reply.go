@@ -60,6 +60,11 @@ type supportReplyGateResult struct {
 func evaluateSupportReplyGate(input supportReplyGateInput) supportReplyGateResult {
 	kind := normalizeSupportReplyKind(input.Kind)
 	result := supportReplyGateResult{ValidationOutcome: supportValidationPass}
+	if supportReplyCitesWebResearch(input.Evidence, input.Contract) {
+		result.ValidationOutcome = "unapproved_source"
+		result.EscalationReason = "answer_validation_" + result.ValidationOutcome
+		return result
+	}
 
 	if kind == supportReplyKindAnswer {
 		validation := validateSupportAnswer(SupportQueryPlanContract{}, supportEvidenceCoverage{}, input.Evidence, input.Contract)
@@ -92,6 +97,29 @@ func evaluateSupportReplyGate(input supportReplyGateInput) supportReplyGateResul
 
 	result.OK = true
 	return result
+}
+
+// supportReplyCitesWebResearch also rejects legacy evidence saved before the
+// web fallback was removed. Relabeling a reply must not bypass the boundary.
+func supportReplyCitesWebResearch(evidence []KnowledgeSearchResult, response *AIResponseContract) bool {
+	if response == nil {
+		return false
+	}
+	citations := make(map[string]bool)
+	for _, id := range response.SourceDocIDs {
+		citations[id] = true
+	}
+	for _, claim := range response.Claims {
+		for _, id := range claim.EvidenceIDs {
+			citations[id] = true
+		}
+	}
+	for _, source := range evidence {
+		if source.SourceType == supportChildSourceOfficialWeb && (citations[source.ID] || citations[source.ReferenceID]) {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeSupportReplyKind(kind string) string {

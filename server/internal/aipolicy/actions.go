@@ -3,6 +3,7 @@ package aipolicy
 import "time"
 
 const (
+	ActionVoiceTranscription         = "agents.voice.transcribe.v1"
 	ActionSupportCoverageAnalyze     = "support.coverage.analyze.v1"
 	ActionSupportCoverageRefine      = "support.coverage.refine.v1"
 	ActionSupportCoverageEmbed       = "support.coverage.embed.v1"
@@ -28,6 +29,7 @@ type featureSeed struct {
 
 func defaultActions() []Action {
 	actions := []Action{
+		{Key: ActionVoiceTranscription, PolicyVersion: "v2", FeatureKey: "voice_transcription", Label: "Voice input", Category: CategoryAgents, Origin: "ask", Modality: ModalityAudio, DefaultProvider: "openrouter", DefaultModel: "openai/gpt-transcribe", AllowedModels: map[string][]string{"openrouter": {"openai/gpt-transcribe"}}, Timeout: 90 * time.Second, RetryClass: RetryNone, Autonomy: AutonomyAssist, DataClass: DataClassCustomerContent, Chargeable: true},
 		coverageChatAction(ActionSupportCoverageAnalyze, "Coverage gap analysis"),
 		coverageChatAction(ActionSupportCoverageRefine, "Coverage recommendation refinement"),
 		coverageEmbeddingAction(),

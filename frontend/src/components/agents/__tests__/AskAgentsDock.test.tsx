@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
 	toastSuccess: vi.fn(),
   listChats: vi.fn(),
   findSupportConversationChat: vi.fn(),
+  findCoverageGapChat: vi.fn(),
   createChat: vi.fn(),
   getChat: vi.fn(),
   updateChat: vi.fn(),
@@ -64,6 +65,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/components/agents/AIConnectionPicker', () => ({ AIConnectionPicker: mocks.aiPicker }));
 vi.mock('@/hooks/queries/useAskAgentDefaults', () => ({ useAskAgentDefaults: mocks.useAskAgentDefaults }));
 vi.mock('@/hooks/queries/useAIProfiles', () => ({ useAIProfiles: () => ({ data: [] }) }));
+// Voice capture is covered by the provider-backed DockInput voice tests.
+vi.mock('@/hooks/useVoiceComposer', () => ({
+  useVoiceComposer: () => ({ busy: false, microphone: null, feedback: null, cancel: vi.fn() }),
+}));
 
 vi.mock('@/lib/helpin', () => ({ resetHelpinIdentity: vi.fn() }));
 
@@ -78,6 +83,7 @@ vi.mock('@/lib/services/dockChatService', () => ({
   dockChatService: {
     listChats: mocks.listChats,
     findSupportConversationChat: mocks.findSupportConversationChat,
+    findCoverageGapChat: mocks.findCoverageGapChat,
     createChat: mocks.createChat,
     getChat: mocks.getChat,
     updateChat: mocks.updateChat,
@@ -193,6 +199,7 @@ beforeEach(() => {
   });
   useAuthStore.setState({ user: { id: 'user-1', email: 'owner@example.com' } as never });
   mocks.listChats.mockResolvedValue({ data: { chats: [CHAT] }, error: null });
+  mocks.findCoverageGapChat.mockResolvedValue({ data: null, error: null });
   mocks.findSupportConversationChat.mockResolvedValue({ data: null, error: null });
   mocks.createChat.mockResolvedValue({ data: null, error: 'not configured' });
   mocks.listRuns.mockResolvedValue({ data: { runs: [], attention_count: 0 }, error: null });
@@ -266,7 +273,8 @@ async function renderEmbeddedDock(
           <AskAgentsDock
             presentation="embedded"
             requiredPageContext={requiredPageContext}
-            associatedSupportConversationId={requiredPageContext.entity_id}
+            associatedSupportConversationId={requiredPageContext.entity_type === 'support_coverage_gap' ? undefined : requiredPageContext.entity_id}
+            associatedCoverageGapId={requiredPageContext.entity_type === 'support_coverage_gap' ? requiredPageContext.entity_id : undefined}
             active={active}
             onClose={onClose}
           />
@@ -533,6 +541,26 @@ describe('AskAgentsDock', () => {
       'global Ask Agents panel did not open',
     );
     expect(useDockStore.getState().collapsed).toBe(false);
+  });
+
+  it('opens a saved gap thread with source links without executing a run', async () => {
+    useWorkspaceStore.setState({ currentWorkspace: { id: 'ws-1', name: 'Acme', slug: 'workspace' } as never });
+    const gapChat: DockChat = { ...CHAT, coverage_gap_id: 'gap-1', initial_context: {
+      content: 'Customers need invoice corrections. The help center has no correction process.',
+      captured_at: '2026-09-30T10:00:00Z',
+      references: [{ entity_type: 'support_conversation', entity_id: 'conv-42', display_title: 'Invoice correction request' }],
+    } };
+    mocks.listChats.mockResolvedValue({ data: { chats: [gapChat] }, error: null });
+    mocks.getChat.mockResolvedValue({ data: chatDetail({ chat: gapChat }), error: null });
+    await renderEmbeddedDock({ entity_type: 'support_coverage_gap', entity_id: 'gap-1', display_title: 'Invoice corrections' });
+    await waitForCondition(() => document.body.textContent?.includes('The help center has no correction process.') ?? false, 'saved findings missing');
+    expect(document.body.querySelector('a[href="/w/workspace/support/conv-42"]')).not.toBeNull();
+    expect(document.body.textContent).toContain('Prepare a fix');
+    expect(document.body.querySelector('[aria-label="Remove document context"]')).toBeNull();
+    expect(document.body.querySelector('[data-dock-context-chip]')?.textContent).toBe('Coverage gap');
+    expect(document.body.querySelector('textarea')).not.toBeNull();
+    expect(mocks.createChat).not.toHaveBeenCalled();
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
   it('reopens the chat associated with the active support conversation', async () => {
@@ -1606,17 +1634,21 @@ describe('AskAgentsDock', () => {
   });
 
   it('reconciles immediately when a message continues on the same run', async () => {
-    const run = { id: 'run-1', status: 'running', pause_reason: 'none' } as never;
+    const run = { id: 'run-1', status: 'paused', pause_reason: 'awaiting_user_message' } as never;
     const detail = chatDetail({
       chat: { ...CHAT, active_run_id: 'run-1' },
       run,
     });
     mocks.getChat.mockResolvedValue({ data: detail, error: null });
     mocks.getChatRun.mockResolvedValue({
-      data: { id: 'run-1', status: 'running', stream_state_snapshot: null },
+      data: { id: 'run-1', status: 'paused', pause_reason: 'awaiting_user_message', stream_state_snapshot: null },
       error: null,
     });
-    mocks.sendMessage.mockResolvedValue({ data: detail, error: null });
+    mocks.sendMessage.mockImplementation(async () => {
+      const continued = { id: 'run-1', status: 'running', pause_reason: 'none' } as NonNullable<DockChatDetail['run']>;
+      mocks.getChatRun.mockResolvedValue({ data: { ...continued, stream_state_snapshot: null }, error: null });
+      return { data: { ...detail, run: continued }, error: null };
+    });
 
     await renderDock();
     await waitForText('Sprint questions');
@@ -1626,9 +1658,15 @@ describe('AskAgentsDock', () => {
     const textarea = dockTextarea();
     await act(async () => {
       setTextareaValue(textarea, 'continue this run');
+    });
+    await act(async () => {
       textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     });
-    await flush();
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
+    await waitForCondition(
+      () => mocks.getChatRun.mock.calls.length > snapshotCallsBeforeSend && mocks.listChatRunEvents.mock.calls.length > eventCallsBeforeSend,
+      'the continued run should reconcile its snapshot and events',
+    );
 
     expect(mocks.getChatRun.mock.calls.length).toBeGreaterThan(snapshotCallsBeforeSend);
     expect(mocks.listChatRunEvents.mock.calls.length).toBeGreaterThan(eventCallsBeforeSend);

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -35,18 +35,16 @@ import { GapDetailPane } from '@/components/support/coverage/GapDetailPane'
 import { PMFilterBar } from '@/components/pm/PMFilterControls'
 import { GapList } from '@/components/support/coverage/GapList'
 import { CoverageEmptyState } from '@/components/support/coverage/CoverageEmptyState'
-import { useAgents } from '@/hooks/queries/useAgents'
 import { useDocsCollections, useDocsSpaces } from '@/hooks/queries/useDocs'
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession'
 import { Loading01Icon } from '@/lib/icons'
-import { isAgentAvailableForTarget } from '@/lib/agentAccess'
-import { agentService } from '@/lib/services/agentService'
 import { supportCoverageService } from '@/lib/services/supportCoverageService'
 import {
   formatClusterRebuildSuccess,
   isClusterRebuildResult,
 } from '@/lib/supportCoverageClusterRebuild'
 import type {
+  CoverageSuggestionReview,
   SupportCoverageClusterRebuildRun,
   SupportCoverageGapDetail,
   SupportCoverageGapListItem,
@@ -85,6 +83,7 @@ export function SupportCoveragePage() {
   const [reloadKey, setReloadKey] = useState(0)
   const [detailError, setDetailError] = useState<string | null>(null)
   const detailRequest = useRef(0)
+  const detailRefreshRequest = useRef(0)
   const activeGapId = useRef<string | null>(null)
   const listRequest = useRef(0)
   const [upgradeReason, setUpgradeReason] =
@@ -106,12 +105,6 @@ export function SupportCoveragePage() {
   const [targetSpaceId, setTargetSpaceId] = useState('')
   const [targetCollectionId, setTargetCollectionId] = useState('')
   const [applying, setApplying] = useState(false)
-  const [confirmSuggestionId, setConfirmSuggestionId] = useState<string | null>(
-    null,
-  )
-  const [startingDocsAgentGapId, setStartingDocsAgentGapId] = useState<
-    string | null
-  >(null)
   const [coverageSurface, setCoverageSurface] = useState('gaps')
   const [topicsV2, setTopicsV2] = useState<CoverageTopicV2[]>([])
   const [signalsV2, setSignalsV2] = useState<CoverageSignalV2[]>([])
@@ -129,15 +122,10 @@ export function SupportCoveragePage() {
     Record<string, string>
   >({})
 
-  const { data: agents = [] } = useAgents(wsId)
   const { data: spaces } = useDocsSpaces(wsId)
   const { data: collections } = useDocsCollections(wsId, targetSpaceId)
   const { data: access } = useWorkspaceAccess(wsId)
   const { has, isAdmin } = usePermissions(access)
-  const accessibleTeamIds = useMemo(
-    () => new Set((access?.team_memberships ?? []).map((team) => team.team_id)),
-    [access?.team_memberships],
-  )
   const canGenerate = has('support.edit') && has('docs.edit')
   const canRebuildClusters = has('settings.manage')
   const canReviewMergeSuggestions = has('support.edit')
@@ -218,16 +206,6 @@ export function SupportCoveragePage() {
   }, [wsId, rebuildingClusters, listFilters])
   const externalSpaces =
     spaces?.filter((space) => space.type === 'external_capable') ?? []
-  const documentationAgent = agents.find(
-    (agent) =>
-      agent.is_system &&
-      agent.preset_key === 'documentation_agent' &&
-      isAgentAvailableForTarget(agent, {
-        targetType: 'support_coverage_gap',
-        accessibleTeamIds,
-        canSeeAllAgents: isAdmin,
-      }),
-  )
 
   useEffect(() => {
     if (!wsId) return
@@ -389,18 +367,21 @@ export function SupportCoveragePage() {
   const refreshGap = async (gapId: string) => {
     if (activeGapId.current !== gapId) return
     const request = detailRequest.current
+    const refreshRequest = ++detailRefreshRequest.current
     const [{ data }, suggestionsRes] = await Promise.all([
       supportCoverageService.getGap(wsId, gapId),
       supportCoverageService.listMergeSuggestions(wsId, gapId),
     ])
-    if (request !== detailRequest.current) return
+    if (request !== detailRequest.current || refreshRequest !== detailRefreshRequest.current) return
     if (data) setSelectedGap(data)
     else toast.error('Could not refresh the gap. Close it and try again.')
     if (suggestionsRes.data) setMergeSuggestions(suggestionsRes.data)
+    return data
   }
 
   const refreshList = async () => {
-    const request = listRequest.current
+    const request = ++listRequest.current
+    setLoadingMore(false)
     const [{ data }, , summaryRes] = await Promise.all([
       supportCoverageService.listGaps(wsId, listFilters(1)),
       refreshMergeSuggestionCount(),
@@ -447,7 +428,6 @@ export function SupportCoveragePage() {
     setSelectedGap(null)
     setDetailLoading(true)
     setGenerateError(null)
-    setConfirmSuggestionId(null)
     setTargetSpaceId('')
     setTargetCollectionId('')
     setMergeSuggestions([])
@@ -456,8 +436,12 @@ export function SupportCoveragePage() {
       supportCoverageService.listMergeSuggestions(wsId, gapId),
     ])
     if (request !== detailRequest.current) return
-    if (data) setSelectedGap(data)
-    else setDetailError('Could not load this gap. Try again.')
+    if (data) {
+      setSelectedGap(data)
+      const proposal = data.suggestions.find(suggestion => suggestion.status === 'draft' && suggestion.is_active !== false && !suggestion.superseded_at)
+      setTargetSpaceId(proposal?.target_space_id ?? '')
+      setTargetCollectionId(proposal?.target_collection_id ?? '')
+    } else setDetailError('Could not load this gap. Try again.')
     if (suggestionsRes.data) setMergeSuggestions(suggestionsRes.data)
     setDetailLoading(false)
   }
@@ -470,7 +454,6 @@ export function SupportCoveragePage() {
     setSelectedGap(null)
     setDetailLoading(false)
     setGenerateError(null)
-    setConfirmSuggestionId(null)
     setMergeSuggestions([])
     setMergeActionSuggestionId(null)
   }
@@ -575,26 +558,26 @@ export function SupportCoveragePage() {
 
   const handleApplySuggestion = async (
     suggestionId: string,
-    override?: {
-      route?: 'create_article' | 'update_article'
-      target_document_id?: string
-    },
+    override?: CoverageSuggestionReview,
   ) => {
+    if (applying || !selectedGap) return null
+    const gapId = selectedGap.id
     setApplying(true)
     const { error } = await supportCoverageService.applySuggestion(
       wsId,
       suggestionId,
       override,
     )
-    setApplying(false)
     if (error) {
+      setApplying(false)
       showAIError(error)
-      return
+      return null
     }
-    toast.success('Suggestion applied')
-    setConfirmSuggestionId(null)
-    if (selectedGap) await refreshGap(selectedGap.id)
+    toast.success('Draft saved for review. Gap remains open.')
+    const refreshed = await refreshGap(gapId)
     await refreshList()
+    setApplying(false)
+    return refreshed?.suggestions.find(suggestion => suggestion.id === suggestionId)?.result_document_id ?? null
   }
 
   const handleDiscardSuggestion = async (suggestionId: string) => {
@@ -618,23 +601,6 @@ export function SupportCoveragePage() {
     await refreshGap(gapId)
   }
 
-  const handleRunDocumentationAgent = async (gapId: string) => {
-    if (!wsId || !documentationAgent || startingDocsAgentGapId) return
-    setStartingDocsAgentGapId(gapId)
-    const { error } = await agentService.startRun(wsId, {
-      agent_id: documentationAgent.id,
-      target_type: 'support_coverage_gap',
-      target_id: gapId,
-      additional_context:
-        'Convert this support coverage gap into the right documentation work. Draft or propose changes for review before publishing.',
-    })
-    setStartingDocsAgentGapId(null)
-    if (error) {
-      showAIError(error)
-      return
-    }
-    toast.success('Quill started')
-  }
 
   return (
     <QuietPageViewport contentClassName="space-y-5">
@@ -967,7 +933,7 @@ export function SupportCoveragePage() {
           side="right"
           showCloseButton={false}
           overlayClassName="bg-black/20"
-          className="overflow-y-auto border-l border-border/50 bg-card p-0 shadow-2xl data-[side=right]:w-full data-[side=right]:sm:w-[min(1000px,calc(100vw-24px))] data-[side=right]:sm:max-w-none"
+          className="block overflow-y-auto border-l border-border/50 bg-card p-0 shadow-2xl data-[side=right]:w-full data-[side=right]:sm:w-[min(780px,calc(100vw-24px))] data-[side=right]:sm:max-w-none"
         >
           <SheetTitle className="sr-only">Coverage gap details</SheetTitle>
           <SheetDescription className="sr-only">
@@ -979,16 +945,11 @@ export function SupportCoveragePage() {
               key={selectedGap.id}
               gap={selectedGap}
               wsSlug={wsSlug}
+              onRefresh={() => { void refreshGap(selectedGap.id); void refreshList() }}
               loading={detailLoading}
               canGenerate={canGenerate}
               canEdit={canReviewMergeSuggestions}
               statusUpdating={statusUpdating}
-              canRunDocumentationAgent={
-                canGenerate && Boolean(documentationAgent)
-              }
-              startingDocumentationAgent={
-                startingDocsAgentGapId === selectedGap.id
-              }
               externalSpaces={externalSpaces}
               collections={collections}
               targetSpaceId={targetSpaceId}
@@ -996,7 +957,6 @@ export function SupportCoveragePage() {
               generating={generating}
               generateError={generateError}
               applying={applying}
-              confirmSuggestionId={confirmSuggestionId}
               mergeSuggestions={mergeSuggestions}
               canReviewMergeSuggestions={canReviewMergeSuggestions}
               mergeActionSuggestionId={mergeActionSuggestionId}
@@ -1008,10 +968,8 @@ export function SupportCoveragePage() {
               onTargetCollectionChange={setTargetCollectionId}
               onSuggestImprovements={handleSuggestImprovements}
               onDraftNewArticle={handleDraftNewArticle}
-              onRunDocumentationAgent={handleRunDocumentationAgent}
               onApplySuggestion={handleApplySuggestion}
               onDiscardSuggestion={handleDiscardSuggestion}
-              onSetConfirmSuggestion={setConfirmSuggestionId}
               onApplyMergeSuggestion={handleApplyMergeSuggestion}
               onDismissMergeSuggestion={handleDismissMergeSuggestion}
               onStatusUpdate={handleStatusUpdate}

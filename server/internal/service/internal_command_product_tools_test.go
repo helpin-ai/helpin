@@ -210,6 +210,7 @@ func TestListConversationMessagesCommandDefaultsToSupportContextAttachedToAskCha
 	createProductToolAgentRunTables(t, db)
 	mustExec(t, db, `ALTER TABLE agent_runs ADD COLUMN dock_chat_id TEXT`)
 	mustExec(t, db, `CREATE TABLE dock_chats (
+ coverage_gap_id TEXT, initial_context TEXT,
 execution_enabled boolean NOT NULL DEFAULT false,
 		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
 		title TEXT, visibility TEXT NOT NULL DEFAULT 'private', module_id TEXT,

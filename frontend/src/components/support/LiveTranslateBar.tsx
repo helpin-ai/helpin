@@ -22,10 +22,11 @@ export function LiveTranslateBar({ workspaceId, conversationId, editable, forceV
   if (!data) return forceVisible ? <p className="text-sm text-muted-foreground">
     {query.isError ? <button type="button" onClick={() => void query.refetch()}>Could not load. Retry</button> : 'Loading…'}
   </p> : null;
-  const language = data.conversation.customer_language || data.detected_customer_language || '';
+  const detectedLanguage = data.detected_customer_language || '';
+  const language = data.conversation.customer_language || detectedLanguage;
   const reading = data.preference.reading_language;
   const enabled = data.conversation.translation_mode === 'on';
-  if (language === reading && !forceVisible) return null;
+  if ((!language || language === reading) && !forceVisible) return null;
   const actionLabel = enabled ? 'Pause live translation' : 'Resume live translation';
   return <div className="flex shrink-0 flex-wrap items-center justify-center gap-x-2 gap-y-1 text-center border-b border-border/50 bg-muted/30 px-4 py-2 text-xs">
     <span className="font-medium" title="Automatically translates new messages and replies in this conversation.">Live translate from</span>
@@ -36,7 +37,7 @@ export function LiveTranslateBar({ workspaceId, conversationId, editable, forceV
       value={data.conversation.customer_language}
       onChange={event => save.mutate({ enabled, language: event.target.value })}
     >
-      <option value="">{language ? `${languageFlag(language)} ${data.languages[language]} (detected)` : 'Unknown language'}</option>
+      <option value="">{detectedLanguage ? `${languageFlag(detectedLanguage)} ${data.languages[detectedLanguage]} (detected)` : 'Select customer language'}</option>
       {Object.entries(data.languages).map(([code, name]) => <option key={code} value={code}>{languageFlag(code)} {name}</option>)}
     </select>
     <span>to</span>

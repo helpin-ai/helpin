@@ -256,6 +256,7 @@ func TestResumeRunForAgentRuntimeRunSignalsRuntimeAndKeepsLocalSideEffects(t *te
 func TestResumeDockAskRunSendsExplicitCompletionPolicy(t *testing.T) {
 	db := newInteractiveApprovalTestDB(t)
 	mustExec(t, db, `CREATE TABLE dock_chats (
+ coverage_gap_id TEXT, initial_context TEXT,
 execution_enabled boolean NOT NULL DEFAULT false,
 		id text PRIMARY KEY,
 		workspace_id text NOT NULL,

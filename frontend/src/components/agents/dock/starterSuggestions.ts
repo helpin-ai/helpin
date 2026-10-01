@@ -8,6 +8,11 @@ export interface StarterSuggestion {
 }
 
 const STARTER_SUGGESTIONS: Record<ContextType, StarterSuggestion[]> = {
+  support_coverage_gap: [
+    { label: 'Prepare a fix', prompt: 'Investigate this coverage gap using the linked conversations and documents. Prepare the right fix for review. Ask only for essential missing facts. Keep documentation unpublished and leave the gap open.' },
+    { label: 'Check the evidence', prompt: 'Check the current evidence for this gap. Explain what is missing and whether the recommended fix still fits. Link the source conversations and documents.' },
+    { label: 'Find existing guidance', prompt: 'Find existing documentation that could answer this customer need. Explain whether we should improve it or fix retrieval, with links to the relevant articles.' },
+  ],
   support_conversation: [
     { label: 'Draft a reply', prompt: 'Review this support conversation and draft a helpful, accurate reply to the customer. Flag anything that needs clarification before sending.' },
     { label: 'Investigate the issue', prompt: 'Investigate the customer issue using this conversation. Identify the likely cause, supporting evidence, and the best next step.' },

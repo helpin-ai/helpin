@@ -21,12 +21,31 @@ export interface DockChat {
   visibility: DockChatVisibility
   module_id?: DockChatModule | null
   support_conversation_id?: string | null
+  coverage_gap_id?: string | null
+  initial_context?: DockContextMessage | null
   active_run_id?: string | null
   active_run_status?: AgentRun['status'] | null
   last_message_at?: string | null
   archived_at?: string | null
   created_at: string
   updated_at: string
+}
+
+export interface DockContextMessage {
+  content: string
+  captured_at: string
+  references?: DockEntityReference[]
+  sources?: DockContextSource[]
+  source_summary?: string
+  details?: { label: string; content: string }[]
+}
+
+export interface DockContextSource {
+  id: string
+  label: string
+  content?: string
+  captured_at?: string
+  reference?: DockEntityReference
 }
 
 export interface DockChatDetail {
@@ -100,6 +119,7 @@ export type DockChatModule = 'support' | 'crm' | 'pm' | 'docs'
 
 export function dockChatModuleForContext(context?: CommandBarPageContext | null): DockChatModule | null {
   switch (context?.entity_type) {
+    case 'support_coverage_gap':
     case 'support_conversation':
       return 'support'
     case 'crm_contact':

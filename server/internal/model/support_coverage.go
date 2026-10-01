@@ -370,25 +370,34 @@ type SupportCoverageGapFilter struct {
 // SupportCoverageGapListItem is a row in the gap inbox table.
 type SupportCoverageGapListItem struct {
 	SupportCoverageGap
-	TopicTitle           string  `json:"topic_title"`
-	CanonicalTitle       string  `json:"canonical_title"`
-	EvidenceText         string  `json:"evidence_text" gorm:"column:evidence_text"`
-	CustomerNeedText     string  `json:"customer_need_text" gorm:"column:customer_need_text"`
-	SuggestionCount      int     `json:"suggestion_count"`
-	RelatedArticleID     *string `json:"related_article_id"`
-	Evidence30d          int     `json:"evidence_30d" gorm:"column:evidence_30d"`
-	ImpactTier           string  `json:"impact_tier" gorm:"-"`
-	DistinctCustomers30d int     `json:"distinct_customers_30d" gorm:"column:distinct_customers_30d"`
-	DistinctCustomersAll int     `json:"distinct_customers_all" gorm:"column:distinct_customers_all"`
-	EvidenceAll          int     `json:"evidence_all" gorm:"column:evidence_all"`
-	ImpactExplanation    string  `json:"impact_explanation" gorm:"-"`
-	SplitReviewNeeded    bool    `json:"split_review_needed" gorm:"-"`
-	RecurrenceReopened   bool    `json:"recurrence_reopened" gorm:"-"`
+	TopicTitle       string  `json:"topic_title"`
+	CanonicalTitle   string  `json:"canonical_title"`
+	EvidenceText     string  `json:"evidence_text" gorm:"column:evidence_text"`
+	CustomerNeedText string  `json:"customer_need_text" gorm:"column:customer_need_text"`
+	SuggestionCount  int     `json:"suggestion_count"`
+	RelatedArticleID *string `json:"related_article_id"`
+	SupportCoverageImpactMetrics
+	SplitReviewNeeded  bool `json:"split_review_needed" gorm:"-"`
+	RecurrenceReopened bool `json:"recurrence_reopened" gorm:"-"`
+}
+
+// SupportCoverageImpactMetrics contains derived counts, independent of the evidence preview limit.
+type SupportCoverageImpactMetrics struct {
+	Evidence30d          int    `json:"evidence_30d" gorm:"column:evidence_30d"`
+	Conversations30d     int    `json:"conversations_30d" gorm:"column:conversations_30d"`
+	ConversationsAll     int    `json:"conversations_all" gorm:"column:conversations_all"`
+	EvidenceRecords30d   int    `json:"evidence_records_30d" gorm:"column:evidence_records_30d"`
+	ImpactTier           string `json:"impact_tier" gorm:"-"`
+	DistinctCustomers30d int    `json:"distinct_customers_30d" gorm:"column:distinct_customers_30d"`
+	DistinctCustomersAll int    `json:"distinct_customers_all" gorm:"column:distinct_customers_all"`
+	EvidenceAll          int    `json:"evidence_all" gorm:"column:evidence_all"`
+	ImpactExplanation    string `json:"impact_explanation" gorm:"-"`
 }
 
 // SupportCoverageGapDetail is the full gap detail with evidence
 // and suggestions.
 type SupportCoverageGapDetail struct {
+	SupportCoverageImpactMetrics
 	SupportCoverageGap
 	TopicTitle          string                              `json:"topic_title"`
 	StatusChangedByName string                              `json:"status_changed_by_name"`

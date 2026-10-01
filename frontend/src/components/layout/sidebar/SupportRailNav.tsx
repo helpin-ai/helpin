@@ -127,7 +127,7 @@ export function SupportRailNav({
     );
   };
 
-  const supportMenuRowClassName = 'grid h-8 grid-cols-[1rem_minmax(0,1fr)_1rem] items-center gap-2 rounded-md px-2 text-sm';
+  const supportMenuRowClassName = 'grid h-8 grid-cols-[1rem_minmax(0,1fr)_minmax(1rem,max-content)] items-center gap-2 rounded-md px-2 text-sm';
   const trailingSlotClassName = 'relative flex h-5 min-w-4 shrink-0 items-center justify-center';
   const trailingMenuButtonClassName = 'absolute inset-0 inline-flex h-5 min-w-4 items-center justify-center rounded-sm text-muted-foreground transition-opacity hover:text-foreground';
 

@@ -19,16 +19,18 @@ const (
 // backed the chat carry AgentRun.DockChatID, so the full history is a real FK
 // chain rather than a heuristic match.
 type DockChat struct {
-	ExecutionEnabled      bool               `json:"execution_enabled" gorm:"not null;default:false"`
-	ID                    string             `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID           string             `json:"workspace_id" gorm:"type:uuid;not null;index:idx_dock_chats_ws_user,priority:1;uniqueIndex:idx_dock_chats_support_conversation,priority:1,where:archived_at IS NULL"`
-	UserID                string             `json:"user_id" gorm:"type:uuid;not null;index:idx_dock_chats_ws_user,priority:2;uniqueIndex:idx_dock_chats_support_conversation,priority:2,where:archived_at IS NULL"`
-	Title                 string             `json:"title"`
-	Visibility            DockChatVisibility `json:"visibility" gorm:"type:text;not null;default:'private';index"`
-	ModuleID              *ModuleID          `json:"module_id,omitempty" gorm:"type:text;index"`
-	SupportConversationID *string            `json:"support_conversation_id,omitempty" gorm:"type:uuid;index;uniqueIndex:idx_dock_chats_support_conversation,priority:3,where:archived_at IS NULL"`
-	ActiveRunID           *string            `json:"active_run_id,omitempty" gorm:"type:uuid;index"`
-	NextMessageSequence   int64              `json:"-" gorm:"->;not null;default:0"`
+	CoverageGapID         *string             `json:"coverage_gap_id,omitempty" gorm:"type:uuid;index"`
+	InitialContext        *DockContextMessage `json:"initial_context,omitempty" gorm:"type:jsonb;serializer:json"`
+	ExecutionEnabled      bool                `json:"execution_enabled" gorm:"not null;default:false"`
+	ID                    string              `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID           string              `json:"workspace_id" gorm:"type:uuid;not null;index:idx_dock_chats_ws_user,priority:1;uniqueIndex:idx_dock_chats_support_conversation,priority:1,where:archived_at IS NULL"`
+	UserID                string              `json:"user_id" gorm:"type:uuid;not null;index:idx_dock_chats_ws_user,priority:2;uniqueIndex:idx_dock_chats_support_conversation,priority:2,where:archived_at IS NULL"`
+	Title                 string              `json:"title"`
+	Visibility            DockChatVisibility  `json:"visibility" gorm:"type:text;not null;default:'private';index"`
+	ModuleID              *ModuleID           `json:"module_id,omitempty" gorm:"type:text;index"`
+	SupportConversationID *string             `json:"support_conversation_id,omitempty" gorm:"type:uuid;index;uniqueIndex:idx_dock_chats_support_conversation,priority:3,where:archived_at IS NULL"`
+	ActiveRunID           *string             `json:"active_run_id,omitempty" gorm:"type:uuid;index"`
+	NextMessageSequence   int64               `json:"-" gorm:"->;not null;default:0"`
 	// ActiveRunStatus is a read-only projection used by chat roster surfaces.
 	// It is hydrated from ActiveRunID and is not stored on the chat row.
 	ActiveRunStatus string     `json:"active_run_status,omitempty" gorm:"-"`
@@ -43,11 +45,35 @@ func (DockChat) TableName() string { return "dock_chats" }
 
 // CreateDockChatRequest is the payload for creating a dock chat.
 type CreateDockChatRequest struct {
+	CoverageGapID         *string             `json:"coverage_gap_id,omitempty"`
 	Title                 string              `json:"title"`
 	SupportConversationID *string             `json:"support_conversation_id,omitempty"`
 	Visibility            *DockChatVisibility `json:"visibility,omitempty"`
 	ModuleID              *ModuleID           `json:"module_id,omitempty"`
 	ExecutionEnabled      bool                `json:"execution_enabled,omitempty"`
+}
+
+// DockContextMessage is a saved, source-grounded brief, not a generated run turn.
+type DockContextMessage struct {
+	Content       string                `json:"content"`
+	CapturedAt    time.Time             `json:"captured_at"`
+	References    []DockEntityReference `json:"references,omitempty"`
+	Sources       []DockContextSource   `json:"sources,omitempty"`
+	SourceSummary string                `json:"source_summary,omitempty"`
+	Details       []DockContextDetail   `json:"details,omitempty"`
+}
+
+type DockContextSource struct {
+	ID         string               `json:"id"`
+	Label      string               `json:"label"`
+	Content    string               `json:"content,omitempty"`
+	CapturedAt *time.Time           `json:"captured_at,omitempty"`
+	Reference  *DockEntityReference `json:"reference,omitempty"`
+}
+
+type DockContextDetail struct {
+	Label   string `json:"label"`
+	Content string `json:"content"`
 }
 
 // UpdateDockChatRequest is the payload for renaming or archiving a dock chat.

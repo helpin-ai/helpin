@@ -11,6 +11,9 @@ import "strings"
 // support-launched child run may carry without human approval. Never derived
 // from model input.
 var supportChildReadOnlyTools = map[string]bool{
+	// Focused third-party context research; Echo's prompt governs its purpose.
+	"web_search": true,
+	"fetch_url":  true,
 	// Repository inspection (bug checks).
 	"checkout_repositories": true,
 	"list_repositories":     true,
@@ -34,10 +37,6 @@ var supportChildReadOnlyTools = map[string]bool{
 	"get_task_context":           true,
 	"list_workspace_teams":       true,
 	"list_conversation_messages": true,
-	// Web research.
-	"fetch_url":  true,
-	"crawl_url":  true,
-	"web_search": true,
 }
 
 const (
@@ -65,4 +64,13 @@ func supportStepsAreReadOnly(steps []dockLaunchStep) bool {
 		}
 	}
 	return true
+}
+
+func isSupportWebResearchTool(tool string) bool {
+	switch strings.TrimSpace(tool) {
+	case "web_search", "fetch_url", "crawl_url":
+		return true
+	default:
+		return false
+	}
 }

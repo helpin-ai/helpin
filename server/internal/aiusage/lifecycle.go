@@ -24,6 +24,7 @@ type AIUsageLifecycle interface {
 
 // MeteringRequest identifies and bounds one model execution.
 type MeteringRequest struct {
+	AudioMillisecondsEstimate                                                              int64
 	Endpoint                                                                               *sdk.ModelEndpoint
 	WorkspaceID, TaskNature, FeatureKey, OperationKey, Provider, Model, Route, ServiceTier string
 	FundingMode                                                                            FundingMode
@@ -60,6 +61,7 @@ type PreflightRequest struct{ Metering MeteringRequest }
 
 // CompletionUsage contains terminal provider telemetry.
 type CompletionUsage struct {
+	AudioMilliseconds int64
 	Context           MeteringContext
 	Telemetry         TokenTelemetry
 	PaidTools         []PaidToolUsage

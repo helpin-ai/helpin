@@ -150,6 +150,8 @@ type notificationDeliveryPlan struct {
 }
 
 type digestNotificationItem struct {
+	ActorName      string
+	EntityTitle    string
 	NotificationID string
 	WorkspaceID    string
 	Title          string
@@ -212,6 +214,18 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 		recipientSet[uid] = struct{}{}
 	}
 
+	var taskContext *repository.TaskNotificationContext
+	if event.EntityType == "task" {
+		var err error
+		taskContext, err = s.notifRepo.TaskNotificationContext(ctx, event.WorkspaceID, event.EntityID)
+		if err != nil {
+			s.logger.WarnContext(ctx, "failed to load task notification context", "error", err, "task_id", event.EntityID)
+		}
+		if taskContext != nil && !event.SkipFollowers && taskContext.RequesterID != "" {
+			recipientSet[taskContext.RequesterID] = struct{}{}
+		}
+	}
+
 	// Auto-populate ActorSnapshot if not provided
 	if len(event.ActorSnapshot) == 0 && event.ActorID != "" {
 		if actor, err := s.userRepo.GetByID(ctx, event.ActorID); err == nil && actor != nil {
@@ -272,6 +286,14 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 	now := time.Now()
 
 	for recipientID := range recipientSet {
+		follows := false
+		for _, id := range followers {
+			if id == recipientID {
+				follows = true
+				break
+			}
+		}
+		event := taskRecipientEvent(event, taskContext, recipientID, follows)
 		log := s.logger.With("recipient_id", recipientID, "entity_id", event.EntityID)
 
 		allowed, err := s.canReceive(ctx, recipientID, event)
@@ -724,7 +746,7 @@ func (s *NotificationService) renderImmediateEmail(ctx context.Context, event mo
 	}
 
 	subject := fmt.Sprintf("[%s] %s", workspaceName, event.Title)
-	if actorName != "Someone" && strings.TrimSpace(event.Title) != "" && (event.EventType == "comment.created" || event.EventType == "comment.mention" || strings.HasSuffix(event.EventType, ".comment") || strings.HasSuffix(event.EventType, ".mention")) {
+	if actorName != "Someone" && !strings.HasPrefix(event.Title, actorName+" ") && strings.TrimSpace(event.Title) != "" && (event.EventType == "comment.created" || event.EventType == "comment.mention" || strings.HasSuffix(event.EventType, ".comment") || strings.HasSuffix(event.EventType, ".mention")) {
 		subject = fmt.Sprintf("%s %s [%s]", actorName, strings.TrimSpace(event.Title), workspaceName)
 	}
 	textBody := event.Title
@@ -740,9 +762,15 @@ func (s *NotificationService) renderImmediateEmail(ctx context.Context, event mo
 	actorLine := fmt.Sprintf(`<strong style="color: #111111; font-weight: 600;">%s</strong> %s`,
 		html.EscapeString(actorName), html.EscapeString(immediateEmailActionText(event)))
 
+	// Personalized task activity already names and links the task in the action.
+	_, personalized := event.Metadata[notificationActionKey]
+	if personalized {
+		actorLine = digestItemHTML(digestNotificationItem{Title: event.Title, ActorName: actorName, EntityTitle: entityTitle, EntityType: event.EntityType}, entityURL)
+	}
+
 	// Build the task/entity block if we have a title.
 	taskBlockHTML := ""
-	if entityTitle != "" && event.Category != model.NotifCategorySupportReplies {
+	if entityTitle != "" && !personalized && event.Category != model.NotifCategorySupportReplies {
 		taskBlockHTML = emailtpl.TaskBlockHTML(entityDisplayID, entityTitle)
 	}
 
@@ -833,6 +861,9 @@ func (s *NotificationService) renderImmediateEmail(ctx context.Context, event mo
 
 // immediateEmailActionText returns a human-readable action phrase for the actor line.
 func immediateEmailActionText(event model.NotificationEventInput) string {
+	if action, _ := event.Metadata[notificationActionKey].(string); action != "" {
+		return action
+	}
 	if event.EventType == "checklist.mention" {
 		return "mentioned you in a checklist item"
 	}
@@ -891,6 +922,9 @@ func notificationEntityNoun(entityType string) string {
 
 // immediateEmailFooterText returns a contextual one-liner for the email footer.
 func immediateEmailFooterText(event model.NotificationEventInput, workspaceName, displayID string) string {
+	if _, ok := event.Metadata[notificationActionKey]; ok {
+		return "Notification from " + workspaceName
+	}
 	switch event.Category {
 	case model.NotifCategoryMentions:
 		return fmt.Sprintf("You were mentioned in %s", workspaceName)
@@ -1316,6 +1350,8 @@ func buildDigestItems(deliveries []repository.PendingDigestDelivery, now time.Ti
 				group.item.Title = title
 			}
 			group.item.Body = digestPreviewFromMetadata(delivery.EventMetadata)
+			group.item.ActorName, _ = delivery.ActorSnapshot["name"].(string)
+			group.item.EntityTitle, _ = delivery.EntitySnapshot["title"].(string)
 		}
 
 		group.item.EventCount++
@@ -1475,10 +1511,7 @@ func (s *NotificationService) renderDigestEmail(ctx context.Context, items []dig
                         <td style="padding-bottom: 20px;">
                           <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0">`, wsName)
 		for _, item := range grouped[workspaceID] {
-			line := html.EscapeString(digestItemLine(item))
-			if link := digestItemURL(s.appBaseURL, workspaceSlugs[workspaceID], item); link != "" {
-				line = fmt.Sprintf(`<a href="%s" target="_blank" style="color:#18181b;text-decoration:none;font-weight:600;">%s</a>`, html.EscapeString(link), line)
-			}
+			line := digestItemHTML(item, digestItemURL(s.appBaseURL, workspaceSlugs[workspaceID], item))
 			previewHTML := ""
 			if preview := digestItemPreview(item); preview != "" {
 				previewHTML = fmt.Sprintf(`<p style="margin:4px 0 0;font-size:13px;line-height:1.45;color:#71717a;">%s</p>`, html.EscapeString(preview))
@@ -1513,10 +1546,12 @@ func (s *NotificationService) renderDigestEmail(ctx context.Context, items []dig
                         </tr>`, html.EscapeString(ctaURL))
 	}
 
-	// Use the first workspace name for the header; fall back to "Helpin".
-	headerWorkspaceName := "Helpin"
-	if len(workspaceOrder) > 0 {
+	// Label the scope of the combined digest, not just its first workspace.
+	headerWorkspaceName := "All workspaces"
+	footerContext := fmt.Sprintf("You have notifications enabled across %d workspaces", len(workspaceOrder))
+	if len(workspaceOrder) == 1 {
 		headerWorkspaceName = workspaceNames[workspaceOrder[0]]
+		footerContext = fmt.Sprintf("You have notifications enabled on %s", headerWorkspaceName)
 	}
 
 	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
@@ -1548,14 +1583,14 @@ func (s *NotificationService) renderDigestEmail(ctx context.Context, items []dig
 
                 <!-- Heading -->
                 <tr>
-                  <td style="padding-bottom: 4px;">
+                  <td align="center" style="padding-bottom: 4px; text-align: center;">
                     <h1 style="margin: 0; font-size: 18px; font-weight: 700; color: #111111; line-height: 1.3;">Notification digest</h1>
                   </td>
                 </tr>
 
                 <!-- Subtext -->
                 <tr>
-                  <td style="padding-bottom: 24px;">
+                  <td align="center" style="padding-bottom: 24px; text-align: center;">
                     <p style="margin: 0; font-size: 14px; color: #555555;">You have %d unread notifications</p>
                   </td>
                 </tr>
@@ -1584,10 +1619,39 @@ func (s *NotificationService) renderDigestEmail(ctx context.Context, items []dig
 		len(items),
 		wsSections.String(),
 		ctaHTML,
-		emailtpl.NotificationFooterHTML(fmt.Sprintf("You have notifications enabled on %s", headerWorkspaceName)),
+		emailtpl.NotificationFooterHTML(footerContext),
 	)
 
 	return subject, htmlBody, strings.TrimSpace(textBody.String())
+}
+
+// Use stored names rather than guessing which words in an activity are a person or task.
+func digestItemHTML(item digestNotificationItem, link string) string {
+	title := item.Title
+	actorHTML := ""
+	if name := strings.TrimSpace(item.ActorName); name != "" && strings.HasPrefix(title, name+" ") {
+		actorHTML = `<strong style="color:#18181b;font-weight:600;">` + html.EscapeString(name) + `</strong> `
+		title = strings.TrimPrefix(title, name+" ")
+	}
+	linkHTML := func(label string) string {
+		return fmt.Sprintf(`<a href="%s" target="_blank" style="color:#2563eb;text-decoration:underline;font-weight:400;">%s</a>`, html.EscapeString(link), html.EscapeString(label))
+	}
+	line := html.EscapeString(title)
+	if link != "" {
+		if index := strings.LastIndex(title, item.EntityTitle); item.EntityTitle != "" && index >= 0 {
+			line = html.EscapeString(title[:index]) + linkHTML(item.EntityTitle) + html.EscapeString(title[index+len(item.EntityTitle):])
+		} else {
+			label := "View item"
+			if item.EntityType == "task" {
+				label = "View task"
+			}
+			line += ` <span style="white-space:nowrap;">` + linkHTML(label) + `</span>`
+		}
+	}
+	if item.EventCount > 1 {
+		line += fmt.Sprintf(` <span style="color:#71717a;font-weight:400;">(+%d more update%s)</span>`, item.EventCount-1, pluralSuffix(item.EventCount-1))
+	}
+	return actorHTML + line
 }
 
 func digestItemLine(item digestNotificationItem) string {

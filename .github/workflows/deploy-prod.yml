@@ -233,6 +233,20 @@ jobs:
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     steps:
+      - name: Validate Netlify credentials
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID_PROD }}
+        run: |
+          if [ -z "$NETLIFY_AUTH_TOKEN" ]; then
+            echo "::error::Missing NETLIFY_AUTH_TOKEN. Add a Netlify personal access token to GitHub Actions secrets."
+            exit 1
+          fi
+          if [ -z "$NETLIFY_SITE_ID" ]; then
+            echo "::error::Missing NETLIFY_SITE_ID_PROD. Add the Netlify production Project ID to GitHub Actions secrets."
+            exit 1
+          fi
+
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -272,19 +286,12 @@ jobs:
             build
           pnpm --dir frontend run build:ee
 
-      - name: Link Netlify site
-        working-directory: build-prod-netlify
-        env:
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID_PROD }}
-        run: |
-          mkdir -p .netlify
-          printf '{\"siteId\":\"%s\"}\n' "$NETLIFY_SITE_ID" > .netlify/state.json
-
       - name: Deploy to Netlify
         working-directory: build-prod-netlify
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-        run: pnpm --package=netlify-cli@24.2.0 dlx netlify deploy --filter frontend --dir frontend/dist --no-build --prod
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID_PROD }}
+        run: pnpm --package=netlify-cli@24.2.0 dlx netlify deploy --site "$NETLIFY_SITE_ID" --filter frontend --dir frontend/dist --no-build --prod
 
   release:
     permissions:

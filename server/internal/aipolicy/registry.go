@@ -12,6 +12,7 @@ import (
 type Modality string
 
 const (
+	ModalityAudio         Modality = "audio"
 	ModalityChat          Modality = "chat"
 	ModalityEmbedding     Modality = "embedding"
 	ModalityRerank        Modality = "rerank"
@@ -180,7 +181,7 @@ func routeAllowed(action Action, route Route) bool {
 
 func validModality(modality Modality) bool {
 	switch modality {
-	case ModalityChat, ModalityEmbedding, ModalityRerank, ModalityExternalAgent, ModalityImage:
+	case ModalityAudio, ModalityChat, ModalityEmbedding, ModalityRerank, ModalityExternalAgent, ModalityImage:
 		return true
 	default:
 		return false

@@ -119,6 +119,8 @@ export const agentService = {
   // Knowledge Sources
   listKnowledgeSources: (workspaceId: string, agentId: string) =>
     api.get<import('../pmTypes').AgentKnowledgeSource[]>(`/pm/agents/${agentId}/knowledge-sources${qs(workspaceId)}`),
+  listIndexedKnowledgeDocuments: (workspaceId: string, agentId: string, sourceId: string) =>
+    api.get<{ id: string; title: string }[]>(`/pm/agents/${agentId}/knowledge-sources/${sourceId}/indexed-documents${qs(workspaceId)}`),
   updateKnowledgeSources: (workspaceId: string, agentId: string, sources: import('../pmTypes').AgentKnowledgeSourceRequest[]) =>
     api.put<import('../pmTypes').AgentKnowledgeSource[]>(`/pm/agents/${agentId}/knowledge-sources${qs(workspaceId)}`, { sources }),
   reindexKnowledgeSource: (workspaceId: string, agentId: string, spaceId: string) =>
@@ -143,8 +145,8 @@ export const agentService = {
     api.put<import('../pmTypes').SupportContentSource>(`/pm/content-sources/${contentSourceId}${qs(workspaceId)}`, payload),
   deleteContentSource: (workspaceId: string, contentSourceId: string) =>
     api.del(`/pm/content-sources/${contentSourceId}${qs(workspaceId)}`),
-  listContentSourcePages: (workspaceId: string, contentSourceId: string) =>
-    api.get<import('../pmTypes').SupportContentPage[]>(`/pm/content-sources/${contentSourceId}/pages${qs(workspaceId)}`),
+  listContentSourcePages: (workspaceId: string, contentSourceId: string, indexedOnly = false) =>
+    api.get<import('../pmTypes').SupportContentPage[]>(`/pm/content-sources/${contentSourceId}/pages${qs(workspaceId)}${indexedOnly ? '&indexed=true' : ''}`),
   getContentSourcePage: (workspaceId: string, contentSourceId: string, pageId: string) =>
     api.get<import('../pmTypes').SupportContentPage>(`/pm/content-sources/${contentSourceId}/pages/${pageId}${qs(workspaceId)}`),
   reindexContentSource: (workspaceId: string, contentSourceId: string) =>

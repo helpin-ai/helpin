@@ -98,12 +98,35 @@ func (h *ExternalMCPHandler) StartOAuth(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, result)
 }
 
+// OAuthCallbackRedirect only relays the provider response to the signed-in app.
+// It never consumes state, exchanges a code, or grants access without authentication.
+func (h *ExternalMCPHandler) OAuthCallbackRedirect(w http.ResponseWriter, r *http.Request) {
+	query := url.Values{}
+	for _, key := range []string{"state", "code", "error"} {
+		if value := r.URL.Query().Get(key); value != "" {
+			query.Set(key, value)
+		}
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	http.Redirect(w, r, h.appBaseURL+"/oauth/external-mcp/callback?"+query.Encode(), http.StatusFound)
+}
+
 // OAuthCallback is authenticated but deliberately does not trust a workspace
 // header; the single-use state record supplies and binds the workspace.
 func (h *ExternalMCPHandler) OAuthCallback(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		State string `json:"state"`
+		Code  string `json:"code"`
+		Error string `json:"error"`
+	}
+	if err := decodeExternalMCPJSON(w, r, &req); err != nil {
+		writeErrorCode(w, http.StatusBadRequest, "invalid OAuth callback", "invalid_request")
+		return
+	}
 	result, err := h.service.CompleteOAuth(
-		r.Context(), middleware.GetUserID(r.Context()), r.URL.Query().Get("state"),
-		r.URL.Query().Get("code"), r.URL.Query().Get("error"), h.authorizeOAuthCallback,
+		r.Context(), middleware.GetUserID(r.Context()), req.State,
+		req.Code, req.Error, h.authorizeOAuthCallback,
 	)
 	returnPath := "/workspaces"
 	if result != nil && strings.TrimSpace(result.ReturnPath) != "" {
@@ -127,7 +150,8 @@ func (h *ExternalMCPHandler) OAuthCallback(w http.ResponseWriter, r *http.Reques
 		query.Set("external_mcp_server_id", result.ServerID)
 	}
 	redirectURL.RawQuery = query.Encode()
-	http.Redirect(w, r, redirectURL.String(), http.StatusFound)
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]string{"redirect_url": redirectURL.String()})
 }
 
 func (h *ExternalMCPHandler) authorizeOAuthCallback(ctx context.Context, workspaceID, userID string) error {

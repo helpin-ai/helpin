@@ -16,6 +16,7 @@ type AIExecutionUsage struct {
 	ReasoningTokens   int64     `json:"reasoning_tokens"`
 	CacheReadTokens   int64     `json:"cache_read_tokens"`
 	CacheWriteTokens  int64     `json:"cache_write_tokens"`
+	AudioMilliseconds int64     `json:"audio_milliseconds" gorm:"not null;default:0"`
 	MeasurementStatus string    `json:"measurement_status"`
 	PaidTools         JSONBlob  `json:"paid_tools" gorm:"type:jsonb"`
 	CreatedAt         time.Time `json:"created_at"`

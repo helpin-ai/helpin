@@ -195,12 +195,24 @@ func (s *SupportContentSourceService) Reindex(ctx context.Context, workspaceID, 
 // ListPages returns all crawled pages for a content source after verifying
 // that the source belongs to the workspace.
 func (s *SupportContentSourceService) ListPages(ctx context.Context, workspaceID, contentSourceID string) ([]model.SupportContentPage, error) {
+	return s.listPages(ctx, workspaceID, contentSourceID, false)
+}
+
+// ListIndexedPages returns only pages with a persisted searchable index.
+func (s *SupportContentSourceService) ListIndexedPages(ctx context.Context, workspaceID, contentSourceID string) ([]model.SupportContentPage, error) {
+	return s.listPages(ctx, workspaceID, contentSourceID, true)
+}
+
+func (s *SupportContentSourceService) listPages(ctx context.Context, workspaceID, contentSourceID string, indexedOnly bool) ([]model.SupportContentPage, error) {
 	source, err := s.repo.GetByID(ctx, contentSourceID)
 	if err != nil {
 		return nil, err
 	}
 	if source == nil || source.WorkspaceID != workspaceID {
 		return nil, fmt.Errorf("content source not found in workspace")
+	}
+	if indexedOnly {
+		return s.pageRepo.ListIndexedByContentSourceID(ctx, workspaceID, contentSourceID)
 	}
 	return s.pageRepo.ListByContentSourceID(ctx, contentSourceID)
 }

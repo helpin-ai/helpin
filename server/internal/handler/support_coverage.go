@@ -421,7 +421,7 @@ func (h *SupportCoverageHandler) CreateArticleDraftSuggestion(w http.ResponseWri
 			writeError(w, http.StatusConflict, "gap is no longer open")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeBillingAwareError(w, http.StatusInternalServerError, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, suggestion)
@@ -448,7 +448,7 @@ func (h *SupportCoverageHandler) CreateArticleUpdateSuggestion(w http.ResponseWr
 	}
 	suggestion, err := h.draftSvc.GenerateArticleUpdate(r.Context(), wsID, gapID, req.TargetDocumentID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeBillingAwareError(w, http.StatusInternalServerError, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, suggestion)
@@ -464,28 +464,24 @@ func (h *SupportCoverageHandler) ApplySuggestion(w http.ResponseWriter, r *http.
 	suggestionID := chi.URLParam(r, "suggestionId")
 	userID := middleware.GetUserID(r.Context())
 	var req struct {
-		Route            string `json:"route"`
-		SuggestionType   string `json:"suggestion_type"`
-		TargetDocumentID string `json:"target_document_id"`
+		service.CoverageSuggestionReview
+		SuggestionType string `json:"suggestion_type"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-
-	overrideType := req.Route
-	if overrideType == "" {
-		overrideType = req.SuggestionType
+	if req.Route == "" {
+		req.Route = req.SuggestionType
 	}
-
-	var err error
-	if overrideType != "" || req.TargetDocumentID != "" {
-		err = h.draftSvc.ApplySuggestionWithOverride(r.Context(), wsID, suggestionID, userID, overrideType, req.TargetDocumentID)
-	} else {
-		err = h.draftSvc.ApplySuggestion(r.Context(), wsID, suggestionID, userID)
-	}
+	err := h.draftSvc.ApplyReviewedSuggestion(r.Context(), wsID, suggestionID, userID, req.CoverageSuggestionReview)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		if errors.Is(err, service.ErrCoverageDraftReview) {
+			writeError(w, http.StatusBadRequest, err.Error())
+		} else {
+			slog.ErrorContext(r.Context(), "coverage draft save failed", "error", err)
+			writeBillingAwareError(w, http.StatusInternalServerError, err)
+		}
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})

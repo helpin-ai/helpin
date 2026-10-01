@@ -1652,9 +1652,9 @@ export function useCreateCuratedGuidance(workspaceId: string) {
       agentService.createCuratedGuidance(workspaceId, agentId, payload).then(unwrap),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.curatedGuidance(workspaceId, variables.agentId) });
-      toast.success('Answer guidance created');
+      toast.success('Preferred answer created');
     },
-    onError: (error: Error) => toast.error('Failed to create answer guidance', { description: error.message }),
+    onError: (error: Error) => toast.error('Failed to create preferred answer', { description: error.message }),
   });
 }
 
@@ -1665,9 +1665,9 @@ export function useUpdateCuratedGuidance(workspaceId: string) {
       agentService.updateCuratedGuidance(workspaceId, agentId, guidanceId, payload).then(unwrap),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.curatedGuidance(workspaceId, variables.agentId) });
-      toast.success('Answer guidance updated');
+      toast.success('Preferred answer updated');
     },
-    onError: (error: Error) => toast.error('Failed to update answer guidance', { description: error.message }),
+    onError: (error: Error) => toast.error('Failed to update preferred answer', { description: error.message }),
   });
 }
 
@@ -1678,9 +1678,9 @@ export function useDeleteCuratedGuidance(workspaceId: string) {
       agentService.deleteCuratedGuidance(workspaceId, agentId, guidanceId).then(unwrap),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.curatedGuidance(workspaceId, variables.agentId) });
-      toast.success('Answer guidance removed');
+      toast.success('Preferred answer removed');
     },
-    onError: (error: Error) => toast.error('Failed to remove answer guidance', { description: error.message }),
+    onError: (error: Error) => toast.error('Failed to remove preferred answer', { description: error.message }),
   });
 }
 

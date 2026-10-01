@@ -691,7 +691,7 @@ function Dashboard() {
   const saveIndicator = (
     <SettingsSaveBar>
       <SettingsAutosaveGuard isDirty={autosave.isDirty} error={autosave.error} onRetry={autosave.retry} />
-      <span className="mr-auto text-xs text-muted-foreground">Changes save automatically</span>
+      {!isAIAssistantPage && <span className="mr-auto text-xs text-muted-foreground">Changes save automatically</span>}
       <SettingsSaveStatus status={autosave.status} error={autosave.error} onRetry={autosave.retry} />
     </SettingsSaveBar>
   );
@@ -936,7 +936,7 @@ function Dashboard() {
         <Tabs defaultValue="setup">
           <TabsList variant="line" aria-label="AI assistant settings" className="max-w-full overflow-x-auto">
             <TabsTrigger value="setup">Setup</TabsTrigger>
-            <TabsTrigger value="answers">Answers</TabsTrigger>
+            <TabsTrigger value="answers">Preferred answers</TabsTrigger>
             <TabsTrigger value="handoff">Handoff &amp; follow-up</TabsTrigger>
           </TabsList>
           <TabsContent value="setup" className="mt-4">{aiSetupSection}</TabsContent>

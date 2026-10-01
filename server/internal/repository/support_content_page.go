@@ -86,6 +86,21 @@ func (r *SupportContentPageRepository) ListByContentSourceID(ctx context.Context
 	return pages, nil
 }
 
+// ListIndexedByContentSourceID excludes crawled pages without searchable chunks.
+func (r *SupportContentPageRepository) ListIndexedByContentSourceID(ctx context.Context, workspaceID, contentSourceID string) ([]model.SupportContentPage, error) {
+	pages := []model.SupportContentPage{}
+	err := r.db.WithContext(ctx).Table("support_content_pages AS p").
+		Select("p.id, p.workspace_id, p.content_source_id, p.url, p.title, p.http_status, p.content_format, p.content_hash, LENGTH(p.content_text) AS content_length, p.last_crawled_at, p.created_at, p.updated_at").
+		Where("p.workspace_id = ? AND p.content_source_id = ?", workspaceID, contentSourceID).
+		Where("p.http_status >= 200 AND p.http_status < 300").
+		Where(`EXISTS (SELECT 1 FROM support_content_chunks c WHERE c.page_id = p.id AND c.workspace_id = p.workspace_id AND c.content_source_id = p.content_source_id)`).
+		Order("LOWER(p.title), p.id").Find(&pages).Error
+	if err != nil {
+		return nil, fmt.Errorf("list indexed content pages: %w", err)
+	}
+	return pages, nil
+}
+
 // ListByContentSourceIDWithContent returns all pages for a content source
 // including the content_text column. Use this for reindex operations that need
 // to re-chunk and re-embed existing content without re-crawling.

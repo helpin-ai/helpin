@@ -374,6 +374,24 @@ export async function installSupportAppMocks(page: Page, options: MockOptions = 
     if (method === 'GET' && path === '/api/settings' && url.searchParams.get('workspace_id') === WORKSPACE_ID) {
       return fulfillJSON(route, WORKSPACE_SETTINGS)
     }
+    if (method === 'GET' && ['/api/automation/agents', '/api/docs/spaces', '/api/docs/collections', '/api/automation/runs'].includes(path)) {
+      return fulfillJSON(route, [])
+    }
+    if (method === 'GET' && path === '/api/support/coverage/summary') {
+      return fulfillJSON(route, { new_gaps_this_week: 0, top_recurring_gaps: 0, gaps_fixed_this_week: 0, total_open_gaps: 0, total_evidence_count: 0, handoffs_after_fixes: 0 })
+    }
+    if (method === 'GET' && path === '/api/support/coverage/gaps') {
+      return fulfillJSON(route, { items: [], total: 0, page: 1, per_page: 50, total_pages: 0 })
+    }
+    if (method === 'GET' && ['/api/support/coverage/v2/topics', '/api/support/coverage/v2/signals'].includes(path)) {
+      return fulfillJSON(route, { items: [] })
+    }
+    if (method === 'GET' && path === '/api/support/coverage/v2/health') {
+      return fulfillJSON(route, { latest_batch: null, failures: [], healthy: true, rollout: { read_v2_enabled: false, capture_enabled: false } })
+    }
+    if (method === 'GET' && path === '/api/support/coverage/clusters/rebuild/latest') {
+      return fulfillJSON(route, null)
+    }
     if (method === 'GET' && path === `/api/workspaces/${WORKSPACE_ID}/members`) {
       return fulfillJSON(route, WORKSPACE_MEMBERS)
     }

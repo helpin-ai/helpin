@@ -65,6 +65,7 @@ type Handlers struct {
 	PMRecurringTemplate *handler.PMRecurringTemplateHandler
 	Search              *handler.SearchHandler
 	CommandBar          *handler.CommandBarHandler
+	VoiceInput          *handler.VoiceInputHandler
 	DockChat            *handler.DockChatHandler
 	PublicShare         *handler.PublicShareHandler
 	Agent               *handler.AgentHandler
@@ -393,6 +394,12 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Post("/a2a/uploads", h.ExternalA2A.Upload)
 		}
 
+		// External providers redirect the browser without a Helpin bearer header.
+		// Relay to the app; exchanging the code remains an authenticated POST.
+		if h.ExternalMCP != nil {
+			r.Get("/external-mcp/oauth/callback", h.ExternalMCP.OAuthCallbackRedirect)
+		}
+
 		// ---- Public Gmail OAuth callback (Google redirects here without JWT) ----
 		r.Get("/crm/email/oauth/callback", h.CRMEmail.OAuthCallbackRedirect)
 
@@ -621,7 +628,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				})
 			}
 			if h.ExternalMCP != nil {
-				r.Get("/external-mcp/oauth/callback", h.ExternalMCP.OAuthCallback)
+				r.Post("/external-mcp/oauth/callback", h.ExternalMCP.OAuthCallback)
 				r.Route("/external-mcp", func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceID)
 					r.Use(wsActive)
@@ -976,9 +983,14 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Use(middleware.RequireWorkspaceID)
 				r.Use(wsActive)
 				r.Get("/ai-defaults", h.DockChat.AIDefaults)
+				if h.VoiceInput != nil {
+					r.With(requireCommandBarRead()).Get("/transcriptions", h.VoiceInput.Capabilities)
+					r.With(requireCommandBarRead()).Post("/transcriptions", h.VoiceInput.Transcribe)
+				}
 				r.With(requireCommandBarRead()).Get("/chats", h.DockChat.ListChats)
 				r.With(requireCommandBarRead()).Post("/chats", h.DockChat.CreateChat)
 				r.With(requireCommandBarRead()).Get("/chats/support-conversation", h.DockChat.FindSupportConversationChat)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/chats/coverage-gap", h.DockChat.FindCoverageGapChat)
 				r.With(requireCommandBarRead()).Get("/chats/{chatID}", h.DockChat.GetChat)
 				r.With(requireCommandBarRead()).Patch("/chats/{chatID}", h.DockChat.UpdateChat)
 				r.With(requireCommandBarRead()).Get("/chats/{chatID}/messages", h.DockChat.ListMessages)
@@ -1405,6 +1417,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				if h.SupportAI != nil {
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/knowledge-sources", h.SupportAI.GetKnowledgeSources)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/knowledge-sources/{sourceId}/indexed-documents", h.SupportAI.ListIndexedKnowledgeDocuments)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/agents/{id}/support-preview", h.SupportAI.PreviewSupportReply)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Get("/agents/{id}/support-preview/{runId}", h.SupportAI.GetSupportPreview)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Delete("/agents/{id}/support-preview/{runId}", h.SupportAI.CancelSupportPreview)

@@ -61,7 +61,7 @@ describe('CuratedGuidanceField', () => {
     expect(document.body.textContent).toContain('Current pricing');
     expect(document.body.textContent).toContain('Growth starts at $49 per month');
     expect(document.body.textContent).toContain('What is your pricing?');
-    expect(document.body.textContent).toContain('Answer Guidance');
+    expect(document.body.textContent).toContain('Preferred answers');
     expect(document.body.textContent).toContain('Example questions');
   });
 
@@ -70,7 +70,7 @@ describe('CuratedGuidanceField', () => {
       root.render(<CuratedGuidanceField workspaceId="workspace-1" agentId="empty-agent" />);
     });
 
-    expect(document.body.textContent).toContain('Guide answers where consistency matters');
+    expect(document.body.textContent).toContain('No preferred answers yet');
     expect(document.body.textContent).toContain('pricing, refunds, plan limits, security, and company policies');
   });
 
@@ -88,14 +88,14 @@ describe('CuratedGuidanceField', () => {
       root.render(<CuratedGuidanceField workspaceId="workspace-1" agentId="empty-agent" />);
     });
 
-    const addButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent?.includes('Add guidance'));
+    const addButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent?.includes('Add preferred answer'));
     await act(async () => {
       addButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
     const answer = document.querySelector('#new-guidance-answer');
-    expect(document.body.textContent).toContain('New answer guidance');
-    expect(document.body.textContent).toContain('Changes take effect after you save.');
+    expect(document.body.textContent).toContain('New preferred answer');
+    expect(document.body.textContent).not.toContain('Changes take effect after you save.');
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
     expect(answer).toBeInstanceOf(HTMLTextAreaElement);
     expect(answer?.className).toContain('field-sizing-content');
@@ -115,7 +115,7 @@ describe('CuratedGuidanceField', () => {
       editButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    expect(document.body.textContent).toContain('Edit answer guidance');
+    expect(document.body.textContent).toContain('Edit preferred answer');
     expect(document.querySelector('#edit-guidance-title')).toHaveProperty('value', 'Current pricing');
     expect(document.querySelector('#edit-guidance-answer')).toHaveProperty(
       'value',
@@ -140,7 +140,7 @@ describe('CuratedGuidanceField', () => {
       root.render(<CuratedGuidanceField workspaceId="workspace-1" agentId="empty-agent" />);
     });
 
-    const addButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent?.includes('Add guidance'));
+    const addButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent?.includes('Add preferred answer'));
     await act(async () => {
       addButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
@@ -161,7 +161,7 @@ describe('CuratedGuidanceField', () => {
 
     expect(mutations.create).not.toHaveBeenCalled();
 
-    const saveButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent?.includes('Save guidance'));
+    const saveButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent?.includes('Save answer'));
     expect(saveButton?.disabled).toBe(false);
     await act(async () => {
       saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -186,7 +186,7 @@ describe('CuratedGuidanceField', () => {
       root.render(<CuratedGuidanceField workspaceId="workspace-1" agentId="empty-agent" />);
     });
 
-    const addButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent?.includes('Add guidance'));
+    const addButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent?.includes('Add preferred answer'));
     await act(async () => {
       addButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
@@ -207,7 +207,7 @@ describe('CuratedGuidanceField', () => {
     });
 
     expect(document.body.textContent).toContain('Discard unsaved changes?');
-    expect(document.body.textContent).toContain('New answer guidance');
+    expect(document.body.textContent).toContain('New preferred answer');
     const keepEditing = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Keep editing');
     await act(async () => keepEditing?.click());
     expect(document.querySelector('#new-guidance-title')).toHaveProperty('value', 'Refund policy');

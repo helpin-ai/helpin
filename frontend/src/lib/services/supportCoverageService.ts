@@ -1,5 +1,6 @@
 import { api } from '../api'
 import type {
+  CoverageSuggestionReview,
   SupportCoverageGapListResponse,
   SupportCoverageGapDetail,
   SupportCoverageClusterRebuildResult,
@@ -73,7 +74,7 @@ export const supportCoverageService = {
   applySuggestion: (
     wsId: string,
     suggestionId: string,
-    payload?: { route?: string; suggestion_type?: string; target_document_id?: string }
+    payload?: CoverageSuggestionReview
   ) =>
     api.post(`/support/coverage/suggestions/${suggestionId}/apply${qs(wsId)}`, payload ?? {}),
 

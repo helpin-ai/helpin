@@ -119,6 +119,10 @@ function NotificationListItem({
 }) {
   const isUnread = notification.status === 'unread'
   const identifier = notification.entity_snapshot?.identifier
+  const actorName = notification.actor_snapshot?.name
+  const actionTitle = actorName && notification.title.startsWith(`${actorName} `)
+    ? notification.title.slice(actorName.length + 1)
+    : notification.title
 
   return (
     <div
@@ -151,7 +155,7 @@ function NotificationListItem({
             {notification.actor_snapshot?.name && (
               <span className="text-primary">{notification.actor_snapshot.name}</span>
             )}{' '}
-            {notification.title}
+            {actionTitle}
           </p>
           <span className="shrink-0 text-[11px] text-muted-foreground whitespace-nowrap mt-0.5">
             {getTimeAgo(notification.last_event_at)}

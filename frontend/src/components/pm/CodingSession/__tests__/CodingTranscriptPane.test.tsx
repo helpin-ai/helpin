@@ -13,6 +13,8 @@ import type {
   CodingSessionTranscriptMessage,
 } from '@/lib/pmTypes';
 
+vi.mock('@/hooks/useVoiceComposer', () => ({ useVoiceComposer: () => ({ busy: false, microphone: null, feedback: null, cancel: vi.fn() }) }));
+
 const scrollToIndexMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@tanstack/react-virtual', () => ({

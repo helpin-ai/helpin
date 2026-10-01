@@ -83,7 +83,7 @@ func (r *AIExecutionUsageRepository) RecordExecutionUsage(ctx context.Context, e
 }
 
 func sameExecutionUsage(a, b model.AIExecutionUsage) bool {
-	return a.RunID == b.RunID && a.FeatureKey == b.FeatureKey && a.Provider == b.Provider && a.Model == b.Model &&
+	return a.AudioMilliseconds == b.AudioMilliseconds && a.RunID == b.RunID && a.FeatureKey == b.FeatureKey && a.Provider == b.Provider && a.Model == b.Model &&
 		a.InputTokens == b.InputTokens && a.OutputTokens == b.OutputTokens && a.ReasoningTokens == b.ReasoningTokens &&
 		a.CacheReadTokens == b.CacheReadTokens && a.CacheWriteTokens == b.CacheWriteTokens &&
 		a.MeasurementStatus == b.MeasurementStatus && bytes.Equal(a.PaidTools, b.PaidTools)

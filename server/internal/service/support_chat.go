@@ -38,19 +38,17 @@ type SupportChatService struct {
 	runCloser        supportChatRunCloser
 	supportAIService *SupportAIService
 	evidenceRepo     *repository.SupportRunEvidenceRepository
-	workspaceRepo    *repository.WorkspaceRepository
 	followUpService  *SupportFollowUpService
 	jev              *SupportJevService
 }
 
-// SetResearchEvidenceDependencies wires the stores used to turn completed
+// SetResearchEvidenceDependencies wires the store used to turn completed
 // read-only child research into server-validatable support evidence.
-func (s *SupportChatService) SetResearchEvidenceDependencies(evidenceRepo *repository.SupportRunEvidenceRepository, workspaceRepo *repository.WorkspaceRepository) {
+func (s *SupportChatService) SetResearchEvidenceDependencies(evidenceRepo *repository.SupportRunEvidenceRepository) {
 	if s == nil {
 		return
 	}
 	s.evidenceRepo = evidenceRepo
-	s.workspaceRepo = workspaceRepo
 }
 
 type supportChatRunCloser interface {
@@ -265,7 +263,7 @@ func (s *SupportChatService) startOrResumeChatRun(ctx context.Context, conv *mod
 
 // startSupportChatRun creates a (possibly successor) chat run for the
 // conversation with transcript carry-forward and repoints ai_active_run_id.
-func (s *SupportChatService) startSupportChatRun(ctx context.Context, conv *model.SupportConversation, agent *model.Agent, composed string, previousRun *model.AgentRun, pendingEvidence *model.SupportRunEvidence) error {
+func (s *SupportChatService) startSupportChatRun(ctx context.Context, conv *model.SupportConversation, agent *model.Agent, composed string, previousRun *model.AgentRun, pendingEvidence []model.SupportRunEvidence) error {
 	if !supportAIConversationSupported(conv) {
 		return nil
 	}
@@ -318,9 +316,9 @@ func (s *SupportChatService) startSupportChatRun(ctx context.Context, conv *mode
 	if err != nil {
 		return fmt.Errorf("start support chat run: %w", err)
 	}
-	if pendingEvidence != nil && !s.persistSupportChildEvidence(ctx, run.ID, pendingEvidence) {
+	if len(pendingEvidence) > 0 && !s.persistSupportChildEvidence(ctx, run.ID, pendingEvidence) {
 		slog.WarnContext(ctx, "support chat: child evidence persistence failed before successor launch",
-			"workspace_id", workspaceID, "run_id", run.ID, "evidence_id", pendingEvidence.EvidenceID)
+			"workspace_id", workspaceID, "run_id", run.ID)
 	}
 	bound, bindErr := s.conversationRepo.BindAIRun(ctx, conv, run.ID)
 	if bindErr != nil || !bound {

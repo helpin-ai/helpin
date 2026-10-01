@@ -4997,6 +4997,9 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		if detail == nil {
 			return nil, fmt.Errorf("support coverage gap not found")
 		}
+		if detail.Status != model.SupportCoverageGapStatusOpen {
+			return nil, fmt.Errorf("reopen the coverage gap before starting new assistant work")
+		}
 
 		agent, err := s.requireRunnableAgent(ctx, workspaceID, agentID, "support_coverage_gap")
 		if err != nil {
@@ -5474,6 +5477,10 @@ func (s *AgentService) ContinueTerminalRun(ctx context.Context, workspaceID, run
 	}
 	switch strings.TrimSpace(run.Status) {
 	case model.AgentRunStatusFailed, model.AgentRunStatusCancelled:
+	case model.AgentRunStatusCompleted:
+		if run.TargetType != "support_coverage_gap" || strings.TrimSpace(derefString(req.Content)) == "" {
+			return nil, fmt.Errorf("completed coverage work needs a follow-up message to continue")
+		}
 	default:
 		return nil, fmt.Errorf("only failed or cancelled runs can be continued")
 	}

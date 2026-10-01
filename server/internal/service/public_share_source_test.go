@@ -29,6 +29,7 @@ func TestPublicShareSourceCanAccessAgentRun(t *testing.T) {
 		t.Fatalf("create agent runs: %v", err)
 	}
 	if err := db.Exec(`CREATE TABLE dock_chats (
+ coverage_gap_id TEXT, initial_context TEXT,
 execution_enabled boolean NOT NULL DEFAULT false,
 		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
 		title TEXT, visibility TEXT NOT NULL, module_id TEXT, support_conversation_id TEXT,

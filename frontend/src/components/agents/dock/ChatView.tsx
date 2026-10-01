@@ -1,3 +1,5 @@
+import { DockContextMessage } from './DockContextMessage';
+import type { DockContextMessage as ContextMessage } from '@/lib/dockTypes';
 import { dockWorkPlans, hasWorkPlanOrigin } from './dockWorkPlans';
 import activityStyles from './DockActivityTimeline.module.css';
 import { useAskAgentDefaults } from "@/hooks/queries/useAskAgentDefaults";
@@ -35,7 +37,7 @@ import { AgentLiveStatus } from './AgentLiveStatus';
 import { resolveAgentLiveProgress } from './agentProgress';
 import { resolveVisibleTurn } from './agentTurnState';
 import { chatFollowUpSuggestions } from './followUpSuggestions';
-import { starterSuggestionsForContext } from './starterSuggestions';
+import { starterSuggestionsForContext, type StarterSuggestion } from './starterSuggestions';
 import { focusComposerAtEnd } from './composerFocus';
 import { planSummaryToRunPlan } from './planSummary';
 import type { AgentRunStreamState } from './useAgentRunStream';
@@ -78,6 +80,11 @@ interface ChatViewProps {
   onRunIdChange?: (runId: string | null) => void;
   requiredPageContext?: CommandBarPageContext | null;
   showComposerShortcutHint?: boolean;
+  contextMessage?: ContextMessage;
+  starterSuggestions?: StarterSuggestion[];
+  readOnly?: boolean;
+  readOnlyReason?: string;
+  onWorkCompleted?: () => void;
 }
 
 const ACTIVE_RUN_STATUSES = new Set(['queued', 'running', 'paused']);
@@ -117,6 +124,11 @@ export function ChatView({
   onRunIdChange,
   requiredPageContext,
   showComposerShortcutHint,
+  contextMessage,
+  starterSuggestions: contextualSuggestions,
+  readOnly = false,
+  readOnlyReason,
+  onWorkCompleted,
 }: ChatViewProps) {
   const browserAvailable = useDockNetworkActivity();
   const networkAvailable = browserAvailable && active;
@@ -167,10 +179,12 @@ export function ChatView({
   const [atBottom, setAtBottom] = useState(true);
   const { pageContext, scopeOptions, activeScopeKey, setActiveScopeKey } = usePageContextState();
   const [contextCleared, setContextCleared] = useState(false);
-  // A context supplied by the source surface starts attached, but it must not
-  // trap the chat there. Clearing it affects only subsequent turns in this
-  // dock chat; it never changes the underlying support conversation.
-  const effectivePageContext = contextCleared ? null : (requiredPageContext ?? pageContext);
+  // Coverage threads keep their gap attached across navigation and follow-ups.
+  // Other source contexts retain the standard dock clearing behavior.
+  const coverageContext = requiredPageContext?.entity_type === 'support_coverage_gap'
+    ? requiredPageContext
+    : detail?.chat.coverage_gap_id ? { entity_type: 'support_coverage_gap' as const, entity_id: detail.chat.coverage_gap_id, display_title: detail.chat.title } : null;
+  const effectivePageContext = coverageContext ?? (contextCleared ? null : (requiredPageContext ?? pageContext));
 
   useEffect(() => {
     if (!initialDraft) return;
@@ -589,7 +603,7 @@ export function ChatView({
     if (node && autoFollowRef.current) node.scrollTop = node.scrollHeight;
   }, [transformed, currentPlan, visibleSendError]);
 
-  const effectiveInteraction = run?.pause_reason === 'manual' ? null : pendingInteraction ?? fallbackInteraction;
+  const effectiveInteraction = readOnly || run?.pause_reason === 'manual' ? null : pendingInteraction ?? fallbackInteraction;
   const dockConfirm = effectiveInteraction ? parseDockPlanConfirm(effectiveInteraction.request_payload) : null;
   const composer = resolveDockComposerState(
     run ? { status: run.status, pause_reason: run.pause_reason } : null,
@@ -599,7 +613,7 @@ export function ChatView({
 
   const sendContent = useCallback(
     async (content: string, messageReferences: DockEntityReference[] = references, retryClientMessageID?: string) => {
-      if (!content || sending || agentDefaultUnavailable) return;
+      if (readOnly || !content || sending || agentDefaultUnavailable) return;
       const clientMessageId = retryClientMessageID ?? newClientMessageID();
       const needsTitle = !detail?.chat.title.trim();
       setSending(true);
@@ -703,7 +717,7 @@ export function ChatView({
         setSending(false);
       }
     },
-    [agentDefaultUnavailable, aiConnection, chatId, currentUserId, detail?.chat.title, draftExecutionEnabled, effectivePageContext, mediaAttachments, mergedStream, onChatChanged, onCreateChat, references, refetch, refreshMessages, run, sending, workspaceId],
+    [readOnly, agentDefaultUnavailable, aiConnection, chatId, currentUserId, detail?.chat.title, draftExecutionEnabled, effectivePageContext, mediaAttachments, mergedStream, onChatChanged, onCreateChat, references, refetch, refreshMessages, run, sending, workspaceId],
   );
 
   const submit = async () => {
@@ -867,7 +881,7 @@ export function ChatView({
   });
 
   const starterSuggestions = !hasTranscriptMessages && !value.trim() && !sending && !pendingEcho
-    ? starterSuggestionsForContext(effectivePageContext?.entity_type)
+    ? contextualSuggestions ?? starterSuggestionsForContext(effectivePageContext?.entity_type)
     : [];
 
   const runsById = useMemo(() => {
@@ -926,6 +940,14 @@ export function ChatView({
     });
   }, [plans, runsById, transformed, workspaceId]);
 
+  const settledWorkKey = [run && !ACTIVE_RUN_STATUSES.has(run.status) ? `${run.id}:${run.status}` : '', ...plans.filter(plan => ['completed', 'failed', 'cancelled'].includes(plan.status)).map(plan => `${plan.id}:${plan.status}`)].filter(Boolean).join('|');
+  const notifiedWorkKey = useRef('');
+  useEffect(() => {
+    if (!settledWorkKey || notifiedWorkKey.current === settledWorkKey) return;
+    notifiedWorkKey.current = settledWorkKey;
+    onWorkCompleted?.();
+  }, [settledWorkKey, onWorkCompleted]);
+
   const runtimeStream = transformed?.stream ?? streamState;
   const showRuntimeTimeline = isDockTranscriptStreaming(run)
     || (run?.status !== 'cancelled' && runtimeStream !== null && hasAuthoritativeDockRuntimeTimeline(runtimeStream));
@@ -959,6 +981,7 @@ export function ChatView({
       <div className="relative flex min-h-0 flex-1 flex-col">
       <div ref={scrollRef} data-agent-dock-chat-scroll className={`${activityStyles.activityHost} min-h-0 flex-1 overflow-y-auto px-5 pb-24 pt-3 sm:px-6`}>
       <div className="space-y-3">
+        {(detail?.chat.initial_context ?? contextMessage) && <DockContextMessage message={(detail?.chat.initial_context ?? contextMessage)!} compact={hasTranscriptMessages} />}
 		{nextMessagesBefore && (
 		  <div className="flex justify-center">
 		    <Button
@@ -985,7 +1008,7 @@ export function ChatView({
             <button type="button" className="font-semibold hover:underline" onClick={() => void refreshConversation()}>Retry</button>
           </div>
         )}
-        {!detailLoading && !run && !pendingEcho && !sending && !hasTranscriptMessages && (
+        {!(detail?.chat.initial_context ?? contextMessage) && !detailLoading && !run && !pendingEcho && !sending && !hasTranscriptMessages && (
           <p className="py-6 text-center text-sm text-muted-foreground">
             {requiredPageContext?.entity_type === 'support_conversation'
               ? 'Ask about this conversation, draft a reply, investigate the issue, or have an agent take the next step.'
@@ -1080,7 +1103,8 @@ export function ChatView({
       {run?.status === 'paused' && run.pause_reason === 'authentication' && workspaceSlug && (
         <div className="px-3.5 py-2"><AISettingsLink slug={workspaceSlug} className="text-xs underline text-quiet-text-secondary">Review AI access to continue</AISettingsLink></div>
       )}
-      {composer.visible && (
+      {readOnly && readOnlyReason && <p className="border-t border-border/40 px-5 py-3 text-xs text-muted-foreground">{readOnlyReason}</p>}
+      {composer.visible && !readOnly && (
         <div className="border-t border-border/60">
           {starterSuggestions.length > 0 && composer.enabled && (
             <div className="px-3.5 pt-2" data-agent-starter-suggestions>
@@ -1103,8 +1127,10 @@ export function ChatView({
           )}
           <div className="p-2">
               <DockInput
+                voiceIdentity={chatId ?? 'draft'}
+                active={active}
                 mode="conversation"
-                executionPicker={(!chatId || (detail && detail.chat.user_id === currentUserId)) ? (
+                executionPicker={!coverageContext && (!chatId || (detail && detail.chat.user_id === currentUserId)) ? (
                   <DockExecutionPicker
                     enabled={Boolean(executionEnabled)}
                     disabled={executionPickerDisabled}
@@ -1129,7 +1155,7 @@ export function ChatView({
                   setContextCleared(false);
                   setActiveScopeKey(key);
                 }}
-                onClearContext={() => setContextCleared(true)}
+                onClearContext={coverageContext ? undefined : () => setContextCleared(true)}
                 workspaceId={workspaceId}
                 references={references}
                 onAddReference={(reference) => {
