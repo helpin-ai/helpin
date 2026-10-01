@@ -14,6 +14,7 @@ export type KnowledgeSourceTypeOption = {
 export type KnowledgeSourceRow = {
   id: string;
   sourceId: string;
+  knowledgeSourceId?: string;
   type: KnowledgeSourceType;
   typeLabel: string;
   scopeType?: 'space' | 'collection' | 'article';
@@ -128,6 +129,7 @@ export function buildKnowledgeSourceRows({
     rows.push({
       id: `helpin_docs:${source.id}`,
       sourceId: space.id,
+      knowledgeSourceId: source.id,
       type: 'helpin_docs',
       typeLabel: docsSourceTypeLabel(source.scope_type),
       scopeType: source.scope_type ?? 'space',

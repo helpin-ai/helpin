@@ -193,6 +193,7 @@ export const queryKeys = {
     detail: (wsId: string, id: string) => ['agents', wsId, id] as const,
     runs: (wsId: string, agentId: string) => ['agents', wsId, agentId, 'runs'] as const,
     knowledgeSources: (wsId: string, agentId: string) => ['agents', wsId, agentId, 'knowledge-sources'] as const,
+    indexedKnowledgeContent: (wsId: string, sourceId: string) => ['agents', wsId, 'indexed-content', sourceId] as const,
     curatedGuidance: (wsId: string, agentId: string) => ['agents', wsId, agentId, 'curated-guidance'] as const,
     contentSources: (wsId: string) => ['agents', wsId, 'content-sources'] as const,
     contentSourcePages: (wsId: string, contentSourceId: string) =>

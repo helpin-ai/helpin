@@ -42,6 +42,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { CrawlerAccessHelp } from './CrawlerAccessHelp';
+import { KnowledgeIndexedContent } from './KnowledgeIndexedContent';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@edition/errors';
 import { cn } from '@/lib/utils';
@@ -634,7 +635,9 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
                             {status.label}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{source.countLabel}</TableCell>
+                        <TableCell>
+                          <KnowledgeIndexedContent source={source} workspaceId={workspaceId} workspaceSlug={workspaceSlug} agentId={chatWidgetAgentId} />
+                        </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {source.lastSyncAt ? formatSourceSyncTime(source.lastSyncAt) : 'Not synced yet'}
                         </TableCell>

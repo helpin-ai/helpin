@@ -1400,6 +1400,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				if h.SupportAI != nil {
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/knowledge-sources", h.SupportAI.GetKnowledgeSources)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/knowledge-sources/{sourceId}/indexed-documents", h.SupportAI.ListIndexedKnowledgeDocuments)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/agents/{id}/support-preview", h.SupportAI.PreviewSupportReply)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Get("/agents/{id}/support-preview/{runId}", h.SupportAI.GetSupportPreview)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Delete("/agents/{id}/support-preview/{runId}", h.SupportAI.CancelSupportPreview)

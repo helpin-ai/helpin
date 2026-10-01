@@ -37,6 +37,12 @@ type AgentKnowledgeSource struct {
 
 func (AgentKnowledgeSource) TableName() string { return "agent_knowledge_sources" }
 
+// IndexedKnowledgeDocument identifies an article present in the knowledge index.
+type IndexedKnowledgeDocument struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+}
+
 // KnowledgeSourceScopeRequest identifies a scoped docs source for an agent.
 type KnowledgeSourceScopeRequest struct {
 	ScopeType    string  `json:"scope_type"`
