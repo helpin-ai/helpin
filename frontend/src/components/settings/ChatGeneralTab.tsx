@@ -691,7 +691,7 @@ function Dashboard() {
   const saveIndicator = (
     <SettingsSaveBar>
       <SettingsAutosaveGuard isDirty={autosave.isDirty} error={autosave.error} onRetry={autosave.retry} />
-      <span className="mr-auto text-xs text-muted-foreground">Changes save automatically</span>
+      {!isAIAssistantPage && <span className="mr-auto text-xs text-muted-foreground">Changes save automatically</span>}
       <SettingsSaveStatus status={autosave.status} error={autosave.error} onRetry={autosave.retry} />
     </SettingsSaveBar>
   );
