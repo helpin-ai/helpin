@@ -1410,6 +1410,30 @@ func main() {
 		SetAgentRepository(agentRepo).
 		SetBrowserAssetStore(agentRunArtifactRepo, s3Client).
 		SetWorkspaceSkillStore(workspaceSkillRepo, s3Client)
+	// External A2A agents stay unavailable (HTTP 503) without an encryption key.
+	externalA2APublicAPI := cfg.PublicAPIBaseURL
+	for _, candidate := range []string{cfg.CLIPublicBaseURL, cfg.AppBaseURL} {
+		if strings.TrimSpace(externalA2APublicAPI) == "" {
+			externalA2APublicAPI = candidate
+		}
+	}
+	externalA2AService, err := service.NewExternalA2AService(
+		repository.NewExternalA2ARepository(db),
+		agentService,
+		service.ExternalA2AServiceConfig{
+			EncryptionKey:       cfg.ExternalA2AEncryptionKey,
+			AllowedPrivateHosts: cfg.ExternalA2AAllowedPrivateHosts,
+			PublicAPIBaseURL:    externalA2APublicAPI,
+		},
+	)
+	if err != nil {
+		fatalWithSentry("failed to initialize external A2A agent service", err)
+	}
+	externalA2AService.SetTaskCollaborators(pmCommentService, pmAttachmentService)
+	if externalA2AService.Enabled() {
+		pmCommentService.SetTaskCommentRouter(externalA2AService)
+		agentRuntimeHostService.SetExternalA2AService(externalA2AService)
+	}
 	var agentRuntimeProjectionService *service.AgentRuntimeProjectionService
 	var runFinalizers *service.AgentRunFinalizerService
 	if strings.TrimSpace(cfg.AgentRuntimeBaseURL) != "" {
@@ -1432,6 +1456,9 @@ func main() {
 			SetCodingSessionSnapshotRepository(codingSessionStateSnapshotRepo).
 			SetWebSocketPublisher(agentRuntimeProjectionPublisher).
 			SetRunFinalizers(runFinalizers)
+		if externalA2AService.Enabled() {
+			agentRuntimeProjectionService.SetExternalA2AProjector(externalA2AService)
+		}
 		agentService.SetAgentRuntimeProjectionService(agentRuntimeProjectionService)
 	}
 	agentRuntimeProjectionCancel := context.CancelFunc(func() {})
@@ -1886,6 +1913,7 @@ func main() {
 		MCP:                 handler.NewMCPHandler(mcpService, requestLimiter),
 		PublicAPI:           publicAPIHandler,
 		ExternalMCP:         handler.NewExternalMCPHandler(externalMCPService, agentService, authzService, cfg.AppBaseURL),
+		ExternalA2A:         handler.NewExternalA2AHandler(externalA2AService),
 		SupportInbox:        handler.NewSupportInboxHandler(supportInboxService, agentService, supportMessageActionsService),
 		SupportInboxView:    handler.NewSupportInboxViewHandler(supportInboxViewService),
 		SupportTag:          handler.NewSupportTagHandler(supportTagService),
@@ -2354,6 +2382,23 @@ func main() {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		fatalWithSentry("server forced to shutdown", err)
 	}
+	// Drain comment-driven external agent work and file imports after requests
+	// stop; anything still running after the bound is cancelled.
+	backgroundCtx, backgroundCancel := context.WithTimeout(context.Background(), 20*time.Second)
+	if err := externalA2AService.Shutdown(backgroundCtx); err != nil {
+		slog.Warn("external agent background work did not finish before shutdown timeout", "error", err)
+	}
+	assignmentRunsDone := make(chan struct{})
+	go func() {
+		pmTaskService.WaitForAssignmentRuns()
+		close(assignmentRunsDone)
+	}()
+	select {
+	case <-assignmentRunsDone:
+	case <-backgroundCtx.Done():
+		slog.Warn("assignment run starts did not finish before shutdown timeout")
+	}
+	backgroundCancel()
 
 	slog.Info("server stopped")
 }

@@ -56,12 +56,13 @@ migrator logs. Do not paste credentials or full environment files into issues.
 
 One Postgres server holds separate Helpin, Runtime, Temporal and visibility
 databases with separate users. NATS JetStream, Temporal and Redis are required by
-this supported bundle. Garage supplies S3-compatible storage. Optional coding is
-outside the support beta. No ClickHouse/event collector or automatic analytics
-service runs. Runtime browser tools are disabled in `apps.json` by default.
-The bundle uses Runtime's `community` image target, which omits Node, browser
-automation and coding toolchains. Use Runtime's separately tested full images
-when deliberately enabling those optional capabilities.
+this supported bundle. Garage supplies S3-compatible storage. No
+ClickHouse/event collector or automatic analytics service runs. Runtime browser
+tools are disabled in `apps.json` by default. The bundle uses Runtime's
+`community` image target, which includes Git, Python, and ripgrep for agent
+execution, including coding agents, but omits Node, Go, and browser automation.
+Use Runtime's separately tested full images when a workload needs those
+toolchains or browser tools.
 
 The tested pins are PostgreSQL 17 with pgvector 0.8.6, Redis 7.2.16,
 NATS 2.14.7, and Temporal 1.32.0. Temporal's schema and namespace jobs are

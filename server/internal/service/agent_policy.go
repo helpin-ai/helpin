@@ -98,6 +98,10 @@ func validateTriggerModeForAgent(triggerMode string, agent *model.Agent) error {
 		presetKey = agent.EffectivePresetKey()
 	}
 	allowed := allowedTriggerModesForPresetKey(presetKey)
+	if isExternalA2AAgent(agent) {
+		// External agents work tickets they are assigned or mentioned on.
+		allowed = []string{"manual", "auto_on_assignment"}
+	}
 	if len(allowed) == 0 {
 		allowed = []string{"manual"}
 	}
@@ -244,6 +248,15 @@ func parseAndValidateExecutionConfig(agent *model.Agent) (model.AgentExecutionCo
 	}
 
 	runtimeKind := strings.TrimSpace(agent.RuntimeKind)
+	if config.ExternalA2AAgentID != nil && runtimeKind != model.AgentRuntimeKindA2A {
+		return model.AgentExecutionConfig{}, fmt.Errorf("execution_config.external_a2a_agent_id is managed by External agents")
+	}
+	if runtimeKind == model.AgentRuntimeKindA2A {
+		if config.NativeContext != nil || config.MaxToolSteps != nil || config.ReasoningEffort != nil || config.ServiceTier != nil || config.OpenRouter != nil {
+			return model.AgentExecutionConfig{}, fmt.Errorf("external agents do not accept model execution settings")
+		}
+		return config, nil
+	}
 	if config.NativeContext != nil {
 		if runtimeKind != "native_sdk" {
 			return model.AgentExecutionConfig{}, fmt.Errorf("execution_config.native_context is only supported for runtime_kind native_sdk")
@@ -481,6 +494,12 @@ func validateRuntimeForAgent(agent *model.Agent) error {
 
 func validateRuntimeForAgentWithPreset(agent *model.Agent, presetOverride *model.AgentPresetDefinition) error {
 	if agent == nil {
+		return nil
+	}
+	if isExternalA2AAgent(agent) {
+		if agent.IsSystem || normalizePresetKey(agent.EffectivePresetKey()) != "" || externalA2AAgentIDFromConfig(agent.ExecutionConfig) == "" {
+			return fmt.Errorf("runtime_kind a2a is reserved for agents connected under External agents")
+		}
 		return nil
 	}
 	if agent.RuntimeKind != "native_sdk" {

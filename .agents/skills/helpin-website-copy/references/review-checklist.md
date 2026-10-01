@@ -7,6 +7,9 @@ Use before delivery. Mark checks as passed, failed, not run, or not applicable; 
 - Section order, IDs, cards, tabs, FAQs, anchors, and demo states match the inventory.
 - Every authorized text slot is covered, including a11y labels and hidden states.
 - Headlines are understandable; descriptions add information; repeated sections have distinct jobs.
+- House style holds: US English, Oxford comma, curly quotes, sentence case, headline periods, no exclamation marks, CTA labels from the style sheet.
+- Hosting, pricing, and comparison copy names both Helpin Cloud and the self-hosted Community edition.
+- Competitor statements come from their own current documentation, credit similar features, and use names only, with no logos or badges.
 - Product depth remains visible; agents are neither a vague promise nor forced into every headline.
 - Ask Agent and specialists have distinct roles; the roster was not assumed from an old draft.
 - Material claims have scoped evidence; unknowns/conflicts are in the report, not customer-facing placeholders.

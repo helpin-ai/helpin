@@ -147,14 +147,19 @@ class ChecksTest(unittest.TestCase):
             directory = Path(temporary)
             (directory / 'community-bake.json').write_text(json.dumps({'target': {'helpin-api': {}, 'agent-runtime': {}}}))
             for trusted in ('true', 'false'):
-                output = directory / trusted
-                with patch.dict(os.environ, {'RUNNER_TEMP': temporary, 'GITHUB_OUTPUT': str(output), 'COMMUNITY_ARCH': 'amd64', 'TRUSTED': trusted}):
-                    exec(compile(body, 'cache-policy', 'exec'), {})
-                lines = output.read_text().splitlines()
-                self.assertEqual(lines[0], 'cache<<CACHE')
-                self.assertEqual(lines[-1], 'CACHE')
-                self.assertEqual(sum('.cache-from=' in line for line in lines), 2)
-                self.assertEqual(sum('.cache-to=' in line for line in lines), 2 if trusted == 'true' else 0)
+                for export in ('true', 'false'):
+                    output = directory / f'{trusted}-{export}'
+                    with patch.dict(os.environ, {'RUNNER_TEMP': temporary, 'GITHUB_OUTPUT': str(output), 'COMMUNITY_ARCH': 'amd64',
+                                                 'TRUSTED': trusted, 'EXPORT_IMAGES': export}):
+                        exec(compile(body, 'cache-policy', 'exec'), {})
+                    lines = output.read_text().splitlines()
+                    self.assertEqual(lines[0], 'cache<<CACHE')
+                    self.assertEqual(lines[-1], 'CACHE')
+                    # Release (export) builds start fresh so cached layers cannot hold back OS security updates.
+                    self.assertEqual(sum('.cache-from=' in line for line in lines), 0 if export == 'true' else 2)
+                    self.assertEqual(sum(line.endswith('.no-cache=true') for line in lines), 2 if export == 'true' else 0)
+                    self.assertEqual(sum(line.endswith('.pull=true') for line in lines), 2 if export == 'true' else 0)
+                    self.assertEqual(sum('.cache-to=' in line for line in lines), 2 if trusted == 'true' else 0)
 
     def test_required_status(self):
         needs = {'changes': {'result': 'success', 'outputs': {k: 'false' for k in GROUPS}},

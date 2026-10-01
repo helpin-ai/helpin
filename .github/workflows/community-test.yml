@@ -95,6 +95,8 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y ripgrep
             scripts/check-community-backend.sh
+            # The source check expects shared widget code to be built, as in CI.
+            pnpm --filter @helpin-ai/widget-core build
             scripts/check-community-frontend.sh
             (cd ../agent-runtime && go test ./...)
           fi
@@ -103,10 +105,13 @@ jobs:
         id: build
         env:
           TRUSTED: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+          EXPORT_IMAGES: ${{ inputs.export-images }}
         run: |
           directory=$(mktemp -d "$RUNNER_TEMP/community-build.XXXXXX")
           cp helpin/community/{setup.sh,.env.example,apps.example.json} "$directory/"
           "$directory/setup.sh" install
+          # compose.yaml requires the inline app config; setup.sh exports it only when starting.
+          export AGENT_RUNTIME_EXECUTION_APP_CONFIG="$(cat "$directory/apps.json")"
           echo "COMMUNITY_ENV_FILE=$directory/.env" >> "$GITHUB_ENV"
           echo "COMMUNITY_SOURCE_REVISION=$(git -C helpin rev-parse HEAD)" >> "$GITHUB_ENV"
           export COMMUNITY_SOURCE_REVISION=$(git -C helpin rev-parse HEAD)
@@ -120,7 +125,12 @@ jobs:
               output.write('cache<<CACHE\n')
               for target in build['target']:
                   scope = f"community-{os.environ['COMMUNITY_ARCH']}-{target}"
-                  output.write(f'{target}.cache-from=type=gha,scope={scope}\n')
+                  if os.environ['EXPORT_IMAGES'] == 'true':
+                      # Release images pick up today's base images and OS security
+                      # updates; cached package layers would keep older versions.
+                      output.write(f'{target}.no-cache=true\n{target}.pull=true\n')
+                  else:
+                      output.write(f'{target}.cache-from=type=gha,scope={scope}\n')
                   if os.environ['TRUSTED'] == 'true':
                       output.write(f'{target}.cache-to=type=gha,scope={scope},mode=max\n')
               output.write('CACHE\n')
@@ -139,6 +149,9 @@ jobs:
       - name: Record image identities
         working-directory: helpin/community
         run: |
+          # compose.yaml requires the inline app config; load it from the build configuration.
+          AGENT_RUNTIME_EXECUTION_APP_CONFIG="$(cat "$(dirname -- "$COMMUNITY_ENV_FILE")/apps.json")"
+          export AGENT_RUNTIME_EXECUTION_APP_CONFIG
           mkdir -p release-artifacts
           docker compose --env-file "$COMMUNITY_ENV_FILE" config --images | sort -u > release-artifacts/images-local.txt
           xargs docker image inspect --format '{{.Id}} {{.Architecture}}' < release-artifacts/images-local.txt > release-artifacts/tested-images.txt
@@ -150,6 +163,8 @@ jobs:
         working-directory: helpin/community
         run: |
           test -s ../../agent-runtime/LICENSE
+          AGENT_RUNTIME_EXECUTION_APP_CONFIG="$(cat "$(dirname -- "$COMMUNITY_ENV_FILE")/apps.json")"
+          export AGENT_RUNTIME_EXECUTION_APP_CONFIG
           ./check-images.sh
           sed -n '/^ghcr.io\/helpin-ai\//p' release-artifacts/images-local.txt > release-artifacts/application-images.txt
           mapfile -t images < release-artifacts/application-images.txt

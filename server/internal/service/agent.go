@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	sdk "github.com/helpin-ai/agent-runtime-go"
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/agentcontract"
@@ -241,6 +242,9 @@ func shouldRetryAgentRuntimeStart(err error) bool {
 func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeAgent {
 	if agent == nil {
 		return AgentRuntimeAgent{}
+	}
+	if isExternalA2AAgent(agent) {
+		return runtimeAgentFromExternalA2AAgent(agent, appID)
 	}
 	effectiveSystemPrompt := strings.TrimSpace(derefString(agent.SystemPrompt))
 	if effectiveSystemPrompt == "" {
@@ -837,6 +841,8 @@ type AgentService struct {
 	agentRuntimeClient         agentRuntimeSignalClient
 	agentRuntimeProjection     agentRuntimeEventProjector
 	agentRuntimeLaunchEnabled  bool
+	externalA2ANames           externalA2ANameSyncer
+	externalA2AConnections     externalA2AConnectionReader
 	mcpRepo                    *repository.MCPRepository
 	externalMCPService         *ExternalMCPService
 	aiConnections              *AIConnectionService
@@ -3526,6 +3532,11 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	if req.TeamID != nil && req.TeamIDs != nil {
 		return nil, fmt.Errorf("team_ids and legacy team_id cannot both be set")
 	}
+	if isExternalA2AAgent(agent) {
+		if req, err = sanitizeExternalA2AAgentUpdate(agent, req); err != nil {
+			return nil, err
+		}
+	}
 	if agent.IsSystem {
 		if req.ModelTier != nil {
 			return nil, fmt.Errorf("built-in model size is Helpin-managed")
@@ -3782,6 +3793,11 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 
 	if err := s.agentRepo.Update(ctx, agent); err != nil {
 		return nil, err
+	}
+	if isExternalA2AAgent(agent) && req.Name != nil && s.externalA2ANames != nil {
+		if err := s.externalA2ANames.SyncNameForAgent(ctx, agent.WorkspaceID, agent.ID, agent.Name); err != nil {
+			return nil, err
+		}
 	}
 
 	if s.activitySvc != nil {
@@ -6526,9 +6542,23 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		return nil, err
 	}
 
-	selectedModel, credential, billingAgent, err := s.prepareAIConnectionRun(ctx, &params)
-	if err != nil {
-		return nil, err
+	// External (a2a) agents run no model: skip AI profile/connection selection
+	// and AI usage metering, which would otherwise reserve model spend.
+	externalA2A := isExternalA2AAgent(params.agent)
+	var (
+		selectedModel *sdk.RunModel
+		credential    *sdk.ModelCredential
+		billingAgent  = params.agent
+	)
+	if externalA2A {
+		if params.aiProfileID != "" || params.modelConnectionID != "" || params.modelName != "" {
+			return nil, fmt.Errorf("external agents do not use an AI profile or model")
+		}
+	} else {
+		selectedModel, credential, billingAgent, err = s.prepareAIConnectionRun(ctx, &params)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	resolved := agentcontract.ResolveAgentProfile(params.agent, params.invocationMode)
@@ -6591,7 +6621,9 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 			}
 		}
 	}
-	if err := PreflightAgentRunAIUsage(ctx, s.aiUsageMeter, run, billingAgent); err != nil {
+	if externalA2A {
+		// No AI usage reservation is made for external agents.
+	} else if err := PreflightAgentRunAIUsage(ctx, s.aiUsageMeter, run, billingAgent); err != nil {
 		s.recordTriggerExecution(ctx, params.workspaceID, params.agent.ID, params.trigger, params.targetType, params.targetID, nil, err)
 		return nil, err
 	}
@@ -6861,6 +6893,9 @@ func (s *AgentService) requireRunnableAgent(ctx context.Context, workspaceID, ag
 		return nil, err
 	}
 	if err := validateAgentTarget(agent, targetType); err != nil {
+		return nil, err
+	}
+	if err := s.requireActiveExternalA2AConnection(ctx, workspaceID, agent); err != nil {
 		return nil, err
 	}
 	if !agent.IsSystem && s.entitlementSvc != nil {
@@ -7742,6 +7777,9 @@ func (s *AgentService) validateModelRouting(agent *model.Agent) error {
 		return err
 	}
 	agent.ExecutionConfig = model.MarshalAgentExecutionConfig(config)
+	if isExternalA2AAgent(agent) {
+		return nil
+	}
 	if agent.Provider == nil {
 		if agent.Model == nil || strings.TrimSpace(*agent.Model) == "" {
 			return nil
@@ -7770,6 +7808,12 @@ func (s *AgentService) validateModelRouting(agent *model.Agent) error {
 
 func (s *AgentService) validateRuntimeProviderCompatibility(agent *model.Agent) error {
 	if agent == nil {
+		return nil
+	}
+	if isExternalA2AAgent(agent) {
+		if strings.TrimSpace(derefString(agent.Provider)) != "" || strings.TrimSpace(derefString(agent.Model)) != "" || derefString(agent.AIProfileID) != "" {
+			return fmt.Errorf("external agents do not use a model, provider, or AI profile")
+		}
 		return nil
 	}
 	if agent.RuntimeKind != "" && agent.RuntimeKind != "native_sdk" {

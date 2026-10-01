@@ -27,7 +27,18 @@ type PMCommentService struct {
 	notificationService *NotificationService
 	workspaceRepo       *repository.WorkspaceRepository
 	s3Client            *storage.S3Client
+	commentRouter       taskCommentRouter
 	logger              *slog.Logger
+}
+
+// taskCommentRouter receives human task comments that may address an agent.
+type taskCommentRouter interface {
+	RouteTaskComment(ctx context.Context, workspaceID string, comment *model.PMComment)
+}
+
+// SetTaskCommentRouter forwards human task comments to external agents.
+func (s *PMCommentService) SetTaskCommentRouter(router taskCommentRouter) {
+	s.commentRouter = router
 }
 
 // NewPMCommentService creates a new PMCommentService.
@@ -204,6 +215,9 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 		}
 	}
 	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "comment", EntityID: comment.ID, WorkspaceID: workspaceID, ActorID: authorID, ParentType: req.EntityType, ParentID: req.EntityID})
+	if s.commentRouter != nil && comment.AgentID == nil && req.EntityType == "task" {
+		s.commentRouter.RouteTaskComment(ctx, workspaceID, comment)
+	}
 
 	// Emit notification for comment.
 	if s.notificationService != nil {

@@ -1,7 +1,7 @@
 import type { AIMessageMetadata, SupportConversation, SupportLinkPreview, SupportLinkSecurity, SupportMessage } from '@/lib/pmTypes';
 import { getReplyDeliveryMode } from './replyDelivery';
 export { AVATAR_COLORS, getAvatarColor } from '@/lib/avatarColor';
-export { getInitials as getInitial } from '@/lib/utils';
+export { getInitials as getInitial } from '@/lib/initials';
 
 export const HELPIN_AI_DISPLAY_NAME = 'Helpin AI';
 

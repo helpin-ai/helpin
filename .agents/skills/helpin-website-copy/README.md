@@ -8,12 +8,13 @@ A reusable writing and review skill for Helpin's website. It captures the copy d
 
 - `SKILL.md`: The main workflow, writing rules, preservation contract, and delivery format.
 - `references/positioning-and-voice.md`: Brand direction, vocabulary, headline discipline, and before/after examples.
-- `references/page-playbooks.md`: Distinct priorities for ten page types and a method for future pages.
+- `references/style-sheet.md`: House style: voice, mechanics, naming, vocabulary, CTA labels, and search snippets.
+- `references/page-playbooks.md`: Distinct priorities for each page type, including comparison pages and release posts, and a method for future pages.
 - `references/demo-scenarios.md`: Fictional examples and rules for truthful workflow states.
 - `references/claim-verification.md`: Evidence, availability, permission, and publication rules.
 - `references/review-checklist.md`: Editorial, factual, structural, and implementation checks.
 - `assets/`: Templates for a page brief, product-truth register, page-progress record, review report, and repository instructions.
-- `tests/acceptance-cases.yaml`: Fourteen evaluation cases covering expected behavior and common regressions.
+- `tests/acceptance-cases.yaml`: Evaluation cases covering expected behavior and common regressions.
 
 Install the complete folder, not only SKILL.md: the main instructions reference the other files.
 
@@ -28,7 +29,7 @@ Choose the repository-scoped location for the coding agent you use:
 
 These paths follow the official documentation checked on September 21, 2026. Host capabilities and discovery behavior can change; consult the cited documentation when using another version.
 
-Keep one canonical copy. Do not maintain two independent copies that can drift; the documented hosts support symlinked skill folders when that fits your repository policy. An agent without native skill discovery can still be told to read the complete skill folder explicitly.
+In this repository the canonical copy is `.agents/skills/helpin-website-copy/`, and `.claude/skills/helpin-website-copy` is a symlink to it. Keep one canonical copy. Do not maintain two independent copies that can drift; the documented hosts support symlinked skill folders when that fits your repository policy. An agent without native skill discovery can still be told to read the complete skill folder explicitly.
 
 No files have been installed in your repository by creating this package. If a directory already exists at the destination, review and merge it rather than blindly replacing it.
 

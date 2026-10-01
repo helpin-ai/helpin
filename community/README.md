@@ -1,8 +1,8 @@
-# Helpin Community 0.1 beta
+# Helpin Community 0.2 beta
 
 This guide is for operators installing the self-hosted Community bundle. It
 covers requirements, installation, the first support conversation, and
-day-to-day commands. Community 0.1 is a beta; read the
+day-to-day commands. Community 0.2 is a beta; read the
 [scope and known limitations](../ROADMAP.md) before serving production traffic.
 Contributors building from a source checkout should use the
 [development guide](https://github.com/helpin-ai/helpin/blob/develop/docs/community/development.md)

@@ -28,7 +28,8 @@ export type AgentIconKey =
   | 'sky_quill'
   | 'amber_lens';
 export type AgentRunStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
-export type AgentRuntimeKind = 'opencode' | 'codex' | 'native_sdk';
+/** `a2a` agents are external agents reached over the A2A protocol; see Settings → External agents. */
+export type AgentRuntimeKind = 'opencode' | 'codex' | 'native_sdk' | 'a2a';
 export type AgentTriggerMode = 'manual' | 'auto_on_assignment' | 'auto_on_event';
 export type AgentTargetType = 'task' | 'support_conversation' | 'support_coverage_gap' | 'epic' | 'sprint' | 'objective' | 'document' | 'crm_deal' | 'crm_contact' | 'crm_company' | 'repository' | 'workspace';
 export type AgentApprovalState = 'not_required' | 'pending' | 'approved' | 'rejected';

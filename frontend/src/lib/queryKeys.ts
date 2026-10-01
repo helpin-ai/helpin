@@ -92,6 +92,11 @@ export const queryKeys = {
     externalServers: (wsId: string) => ['mcp', wsId, 'external', 'servers'] as const,
   },
 
+  externalAgents: {
+    root: (wsId: string) => ['external-agents', wsId] as const,
+    list: (wsId: string) => ['external-agents', wsId, 'list'] as const,
+  },
+
   ai: {
     root: (wsId: string) => ['ai', wsId] as const,
     connections: (wsId: string) => ['ai', wsId, 'connections'] as const,
