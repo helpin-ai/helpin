@@ -19,7 +19,7 @@ func TestAskAgentNotificationAccessIsOwnerScopedWithoutAutomation(t *testing.T) 
 		`CREATE TABLE agent_runs (id TEXT, workspace_id TEXT, dock_chat_id TEXT)`,
 		`CREATE TABLE dock_chats ( flow_builder TEXT,id TEXT, workspace_id TEXT, user_id TEXT, archived_at DATETIME)`,
 		`INSERT INTO agent_runs VALUES ('run','ws','chat')`,
-		`INSERT INTO dock_chats VALUES ('chat','ws','owner',NULL)`,
+		`INSERT INTO dock_chats (id, workspace_id, user_id, archived_at) VALUES ('chat','ws','owner',NULL)`,
 	} {
 		mustExecNotificationService(t, db, stmt)
 	}

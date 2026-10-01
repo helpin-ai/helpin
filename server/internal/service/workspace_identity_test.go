@@ -1092,6 +1092,7 @@ func createSettingsIdentityTables(t *testing.T, db *gorm.DB) {
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			name TEXT NOT NULL,
+			color TEXT,
 			handle TEXT,
 			description TEXT,
 			manager_id TEXT,

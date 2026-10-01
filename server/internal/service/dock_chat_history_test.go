@@ -97,7 +97,7 @@ func historyCommandFixture(t *testing.T) (*gorm.DB, *InternalCommandService) {
 		`CREATE TABLE agent_runs (id TEXT PRIMARY KEY, workspace_id TEXT, dock_chat_id TEXT, triggered_by_user_id TEXT, external_runtime TEXT, external_runtime_id TEXT)`,
 		`CREATE TABLE dock_chats ( flow_builder TEXT,id TEXT PRIMARY KEY, workspace_id TEXT, user_id TEXT, visibility TEXT)`,
 		`INSERT INTO agent_runs VALUES ('run', 'ws', 'chat', 'owner', '', '')`,
-		`INSERT INTO dock_chats VALUES ('chat', 'ws', 'owner', 'private')`,
+		`INSERT INTO dock_chats (id, workspace_id, user_id, visibility) VALUES ('chat', 'ws', 'owner', 'private')`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatal(err)
