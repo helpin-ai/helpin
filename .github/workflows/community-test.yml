@@ -105,6 +105,7 @@ jobs:
         id: build
         env:
           TRUSTED: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+          EXPORT_IMAGES: ${{ inputs.export-images }}
         run: |
           directory=$(mktemp -d "$RUNNER_TEMP/community-build.XXXXXX")
           cp helpin/community/{setup.sh,.env.example,apps.example.json} "$directory/"
@@ -124,7 +125,12 @@ jobs:
               output.write('cache<<CACHE\n')
               for target in build['target']:
                   scope = f"community-{os.environ['COMMUNITY_ARCH']}-{target}"
-                  output.write(f'{target}.cache-from=type=gha,scope={scope}\n')
+                  if os.environ['EXPORT_IMAGES'] == 'true':
+                      # Release images pick up today's base images and OS security
+                      # updates; cached package layers would keep older versions.
+                      output.write(f'{target}.no-cache=true\n{target}.pull=true\n')
+                  else:
+                      output.write(f'{target}.cache-from=type=gha,scope={scope}\n')
                   if os.environ['TRUSTED'] == 'true':
                       output.write(f'{target}.cache-to=type=gha,scope={scope},mode=max\n')
               output.write('CACHE\n')

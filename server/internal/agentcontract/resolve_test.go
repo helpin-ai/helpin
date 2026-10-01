@@ -31,6 +31,31 @@ func TestResolveAgentProfileTreatsReadFilesAsRepositoryAccess(t *testing.T) {
 	}
 }
 
+func TestResolveAgentProfileGivesExternalA2AAgentsNoToolsOrRepo(t *testing.T) {
+	// Connected agents are stored with empty tool lists, which must not fall
+	// back to the default profile's repository tools.
+	resolved := ResolveAgentProfile(&model.Agent{
+		RuntimeKind:     model.AgentRuntimeKindA2A,
+		AllowedTools:    []byte(`[]`),
+		AllowedCommands: []byte(`[]`),
+		AllowedTargets:  []byte(`["task"]`),
+		ApprovalMode:    "never",
+	})
+
+	if resolved.RequiresRepo {
+		t.Fatal("external A2A agents must not require a repository")
+	}
+	if len(resolved.Tools) != 0 || len(resolved.Commands) != 0 {
+		t.Fatalf("external A2A agents get no Helpin tools, got tools %v commands %v", resolved.Tools, resolved.Commands)
+	}
+	if resolved.Queue != QueueForRuntime(model.AgentRuntimeKindA2A, model.InvocationModeAutonomous) {
+		t.Fatalf("unexpected queue %q", resolved.Queue)
+	}
+	if !slices.Equal(resolved.TargetTypes, []string{"task"}) {
+		t.Fatalf("unexpected targets %v", resolved.TargetTypes)
+	}
+}
+
 func TestResolveApprovalStateByMode(t *testing.T) {
 	tests := []struct {
 		name string

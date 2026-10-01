@@ -92,6 +92,8 @@ func newExternalA2ATestEnv(t *testing.T) *externalA2ATestEnv {
 		runMessageRepo: repository.NewAgentRunMessageRepository(db),
 		taskRepo:       repository.NewPMTaskRepository(db),
 		activitySvc:    activity,
+		// Task runs resolve a delivery target; this task has none, as most do.
+		gitService: &GitService{deliveryRepo: repository.NewTaskDeliveryTargetRepository(db), taskRepo: repository.NewPMTaskRepository(db)},
 	}
 	env.agents.SetAgentRuntimeClient(env.runtime)
 	env.agents.SetAgentRuntimeLaunchEnabled(true)
@@ -469,6 +471,37 @@ func TestExternalA2ATerminalEventRevokesUploadLinks(t *testing.T) {
 	}
 }
 
+func TestDisabledExternalAgentGetsNoRun(t *testing.T) {
+	env := newExternalA2ATestEnv(t)
+	ctx := context.Background()
+	record := env.connect(t, "")
+	disabled, active := model.ExternalA2AStatusDisabled, model.ExternalA2AStatusActive
+	if _, err := env.svc.Update(ctx, env.workspaceID, record.ID, env.userID, model.UpdateExternalA2AAgentRequest{Status: &disabled}); err != nil {
+		t.Fatal(err)
+	}
+	tasks := &PMTaskService{agentService: env.agents, logger: slog.Default()}
+	tasks.dispatchAssignmentRun(ctx, env.workspaceID, env.taskID, &record.AgentID, env.userID)
+	tasks.WaitForAssignmentRuns()
+	if n := env.count(t, `SELECT COUNT(*) FROM agent_runs WHERE agent_id = ?`, record.AgentID); n != 0 {
+		t.Fatalf("assignment to a disabled agent started %d run(s)", n)
+	}
+	_, err := env.agents.startTargetRun(ctx, env.workspaceID, "task", env.taskID, model.StartAgentRunRequest{AgentID: record.AgentID}, &env.userID, nil, nil, nil)
+	if !errors.Is(err, ErrExternalA2AAgentInactive) || !errors.Is(err, ErrAgentRunTargetNotAllowed) || !strings.Contains(err.Error(), "is disabled") {
+		t.Fatalf("manual start error = %v", err)
+	}
+	if len(env.runtime.startRunCalls) != 0 {
+		t.Fatalf("runtime starts = %d", len(env.runtime.startRunCalls))
+	}
+	if _, err := env.svc.Update(ctx, env.workspaceID, record.ID, env.userID, model.UpdateExternalA2AAgentRequest{Status: &active}); err != nil {
+		t.Fatal(err)
+	}
+	tasks.dispatchAssignmentRun(ctx, env.workspaceID, env.taskID, &record.AgentID, env.userID)
+	tasks.WaitForAssignmentRuns()
+	if n := env.count(t, `SELECT COUNT(*) FROM agent_runs WHERE agent_id = ?`, record.AgentID); n != 1 {
+		t.Fatalf("runs after re-enabling = %d, want 1", n)
+	}
+}
+
 func TestAutoOnAssignmentStartsExactlyOneRun(t *testing.T) {
 	env := newExternalA2ATestEnv(t)
 	record := env.connect(t, "")
@@ -552,6 +585,13 @@ func TestCommentMentionStartsExternalRunWhenIdle(t *testing.T) {
 }
 
 var externalA2ATestSchema = []string{
+	`CREATE TABLE task_delivery_targets (
+		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, task_id TEXT NOT NULL UNIQUE,
+		repository_id TEXT, repo_full_name TEXT, integration_id TEXT, base_branch TEXT, working_branch TEXT,
+		delivery_state TEXT NOT NULL DEFAULT 'unconfigured', target_source TEXT NOT NULL DEFAULT 'manual',
+		source_epic_id TEXT, active_pr_number INTEGER, active_pr_title TEXT, active_pr_url TEXT, active_pr_status TEXT,
+		last_commit_sha TEXT, last_run_id TEXT, last_synced_at DATETIME, created_at DATETIME, updated_at DATETIME
+	)`,
 	`CREATE TABLE agents (
 		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, is_system BOOLEAN NOT NULL DEFAULT 0, name TEXT NOT NULL,
 		icon_key TEXT NOT NULL DEFAULT '', preset_key TEXT, preset_version_key TEXT, source_preset_key TEXT,
