@@ -285,6 +285,7 @@ func (r *SettingsRepository) CreateTeam(ctx context.Context, req model.CreateTea
 		t := &model.WorkspaceTeam{
 			WorkspaceID:     req.WorkspaceID,
 			Name:            req.Name,
+			Color:           req.Color,
 			Handle:          req.Handle,
 			Description:     req.Description,
 			ManagerID:       managerID,
@@ -319,6 +320,13 @@ func (r *SettingsRepository) UpdateTeam(ctx context.Context, id string, req mode
 		updates := map[string]interface{}{}
 		if req.Name != nil {
 			updates["name"] = *req.Name
+		}
+		if req.Color != nil {
+			if *req.Color == "" {
+				updates["color"] = nil
+			} else {
+				updates["color"] = *req.Color
+			}
 		}
 		if req.Handle != nil {
 			updates["handle"] = *req.Handle

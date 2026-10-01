@@ -12,7 +12,9 @@ import { SCALE_LABELS } from '@/lib/estimateScales';
 import type { WorkspaceTeam, MemberWithUser, Invitation, TeamUserMembership, InvitationTeamPreassignment, TeamEstimateSettings, TeamFieldVisibility, TeamRepoDefault } from '@/lib/types';
 import type { Agent, AutomationRule, GitRepository, WorkflowWithStates } from '@/lib/pmTypes';
 import type { SettingsSection } from '@/lib/settingsSections';
-import { UserAvatar, getAvatarColor } from '@/components/pm/UserAvatar';
+import { UserAvatar } from '@/components/pm/UserAvatar';
+import { TeamBadge } from '@/components/workspace/TeamBadge';
+import { TeamColorField } from './TeamColorField';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,7 +24,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { cn, getInitials } from '@/lib/utils';
+import { cn } from '@/lib/utils';
+import { randomTeamColor } from '@/lib/teamColor';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ArrowRight01Icon, ViewIcon, File01Icon, GitBranchIcon, GitPullRequestIcon, LayoutGridIcon, PlusSignIcon, ArrowReloadHorizontalIcon, Settings02Icon, Tag01Icon, Delete01Icon, UserGroupIcon, Cancel01Icon, type IconComponent } from '@/lib/icons';
 import { useDocsSpaces, useUpdateDocsSpace } from '@/hooks/queries';
@@ -68,6 +71,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editTeam, setEditTeam] = useState<WorkspaceTeam | null>(null);
   const [name, setName] = useState('');
+  const [color, setColor] = useState('');
   const [handle, setHandle] = useState('');
   const [description, setDescription] = useState('');
   const [teamType, setTeamType] = useState<TeamType>('engineering');
@@ -237,6 +241,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
   const openCreate = () => {
     setEditTeam(null);
     setName('');
+    setColor(randomTeamColor());
     setHandle('');
     setDescription('');
     setTeamType('engineering');
@@ -248,6 +253,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
   const openEdit = (team: WorkspaceTeam) => {
     setEditTeam(team);
     setName(team.name);
+    setColor(team.color ?? '');
     setHandle(team.handle ?? '');
     setDescription(team.description ?? '');
     setTeamType(normalizeTeamType(team.team_type));
@@ -267,6 +273,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
     setSaving(true);
     const payload = {
       name,
+      color,
       handle: handle.trim() ? slugifyTeamHandle(handle) : undefined,
       description: description || undefined,
       team_type: teamType,
@@ -439,7 +446,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
             key: 'general',
             icon: Settings02Icon,
             title: 'General',
-            description: 'Name, identifier, team type, and task defaults',
+            description: 'Name, color, and team type',
             meta: [selectedTeam.handle ? `@${selectedTeam.handle}` : '', normalizeTeamType(selectedTeam.team_type) === 'engineering' ? 'Engineering / dev team' : 'Non-engineering team']
               .filter(Boolean)
               .join(' · '),
@@ -623,14 +630,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
           </button>
 
           <div className="flex items-center gap-4">
-            {(() => {
-              const color = getAvatarColor(selectedTeam.name);
-              return (
-                <div className={cn('flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-base font-semibold', color.bg, color.text)}>
-                  {getInitials(selectedTeam.name)}
-                </div>
-              );
-            })()}
+            <TeamBadge name={selectedTeam.name} color={selectedTeam.color} className="h-12 w-12 rounded-xl text-base" />
             <div className="flex min-w-0 flex-1 items-center justify-between">
               <h2 className="text-xl font-semibold tracking-tight">{selectedTeam.name}</h2>
               {teamEditable && (
@@ -708,6 +708,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                     <p className="text-xs text-muted-foreground">Used for mentions like @{slugifyTeamHandle(handle || name) || 'team'}.</p>
                   </div>
                 )}
+                <TeamColorField name={name} value={color} onChange={setColor} showDefault={!!editTeam} />
                 <div className="space-y-2">
                   <Label>Description <span className="text-muted-foreground font-normal">(optional)</span></Label>
                   <Textarea
@@ -1323,14 +1324,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                     >
                       <TableCell>
                         <div className="flex items-center gap-3">
-                          {(() => {
-                            const color = getAvatarColor(team.name);
-                            return (
-                              <div className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-semibold', color.bg, color.text)}>
-                                {getInitials(team.name)}
-                              </div>
-                            );
-                          })()}
+                          <TeamBadge name={team.name} color={team.color} />
                           <span className="font-medium">{team.name}</span>
                         </div>
                       </TableCell>
@@ -1497,6 +1491,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                 <Label>Name</Label>
                 <Input value={name} onChange={e => setName(e.target.value)} required />
               </div>
+              <TeamColorField name={name} value={color} onChange={setColor} showDefault={false} />
               <div className="space-y-2">
                 <Label>Description <span className="text-muted-foreground font-normal">(optional)</span></Label>
                 <Textarea

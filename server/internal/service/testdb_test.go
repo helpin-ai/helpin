@@ -146,6 +146,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
 			name TEXT NOT NULL,
+			color TEXT,
 			handle TEXT,
 			description TEXT,
 			manager_id TEXT,
