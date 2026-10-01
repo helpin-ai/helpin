@@ -2,6 +2,7 @@ import { supportQueryKeys } from '@helpin-ai/support-core'
 import { CRM_RECORD_TARGETS, type CRMRecordTargetType } from './agentCRMTargets'
 
 export const queryKeys = {
+  voiceInput: (workspaceId: string) => ['voice-input', workspaceId] as const,
   user: {
     me: ['user', 'me'] as const,
   },

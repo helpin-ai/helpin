@@ -291,6 +291,9 @@ export function DockRunView({
       {(composerEnabled || canStop || effectiveRun.status === 'paused' || effectiveRun.status === 'running' || effectiveRun.status === 'queued') ? (
         <div className="border-t border-[#f1efea] dark:border-[#302f2b]">
           <DockInput
+            workspaceId={workspaceId}
+            voiceIdentity={run.id}
+            active={active}
             mode="conversation"
             value={draft}
             onChange={onDraftChange}

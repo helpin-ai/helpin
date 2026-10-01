@@ -1,3 +1,4 @@
+import { useVoiceComposer } from '@/hooks/useVoiceComposer';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
@@ -452,6 +453,9 @@ export function CodingTranscriptPane({
 
       {resolvedMessageComposer.visible ? (
         <MessageInput
+          key={sessionScrollKey}
+          workspaceId={session?.workspace_id}
+          voiceIdentity={sessionScrollKey}
           onSend={onSendMessage}
           sending={sendingMessage}
           enabled={resolvedMessageComposer.enabled && Boolean(onSendMessage)}
@@ -615,12 +619,16 @@ function InterruptionOverlay({
 }
 
 function MessageInput({
+  workspaceId,
+  voiceIdentity,
   onSend,
   sending,
   enabled,
   placeholder,
   disabledReason,
 }: {
+  workspaceId?: string;
+  voiceIdentity: string;
   onSend?: (content: string) => Promise<void>;
   sending: boolean;
   enabled: boolean;
@@ -630,6 +638,10 @@ function MessageInput({
   const [value, setValue] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const disabled = !enabled || sending;
+  const voice = useVoiceComposer({
+    workspaceId, identity: voiceIdentity, enabled: !disabled, value, onChange: setValue,
+    onReady: () => textareaRef.current?.focus(),
+  });
   const resizeTextarea = useCallback((textarea = textareaRef.current) => {
     if (!textarea) return;
     textarea.style.height = 'auto';
@@ -644,7 +656,7 @@ function MessageInput({
 
   const handleSubmit = async () => {
     const trimmed = value.trim();
-    if (!trimmed || disabled || !onSend) return;
+    if (!trimmed || disabled || voice.busy || !onSend) return;
     await onSend(trimmed);
     setValue('');
   };
@@ -660,7 +672,8 @@ function MessageInput({
             resizeTextarea(e.currentTarget);
           }}
           onKeyDown={(e) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            if (e.key === 'Escape' && voice.busy) { e.preventDefault(); voice.cancel(); return; }
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !e.nativeEvent.isComposing) {
               e.preventDefault();
               void handleSubmit();
             }
@@ -671,17 +684,19 @@ function MessageInput({
           title={disabledReason}
           rows={1}
         />
+        {!voice.busy && voice.microphone}
         <Button
           size="icon"
           className="h-10 w-10 shrink-0 rounded-full"
           onClick={() => void handleSubmit()}
-          disabled={!enabled || !value.trim() || sending}
+          disabled={!enabled || !value.trim() || sending || voice.busy}
           data-coding-session-message-submit
           title={disabledReason}
         >
           {sending ? <Loading01Icon className="h-5 w-5 animate-spin" /> : <ArrowUp02Icon className="h-5 w-5" />}
         </Button>
       </div>
+      {voice.feedback}
     </div>
   );
 }

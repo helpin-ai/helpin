@@ -1824,6 +1824,11 @@ func main() {
 	if authService.DemoEnabled() {
 		demoReadOnly = middleware.DemoReadOnly(authService.IsDemoUser)
 	}
+	var voiceProvider service.VoiceTranscriber
+	if strings.TrimSpace(cfg.OpenRouterAPIKey) != "" {
+		voiceProvider = llm.NewOpenRouterTranscriptionClient(cfg.OpenRouterAPIKey, cfg.OpenRouterBaseURL, nil)
+	}
+	voiceInputService := service.NewVoiceInputService(voiceProvider, aiUsageService, aiActionRegistry, aiActionExecutionRepo)
 	handlers := router.Handlers{
 		Metrics:                   metrics,
 		AuthenticatedRateLimit:    middleware.AuthenticatedRateLimit(requestLimiter),
@@ -1867,6 +1872,7 @@ func main() {
 		Search:              handler.NewSearchHandler(searchService),
 		CommandBar:          handler.NewCommandBarHandler(commandBarService, authzService),
 		DockChat:            handler.NewDockChatHandler(dockChatService, agentService),
+		VoiceInput:          handler.NewVoiceInputHandler(voiceInputService),
 		PublicShare:         handler.NewPublicShareHandler(publicShareService),
 		PMAutomation:        handler.NewPMAutomationHandler(pmAutomationService),
 		AutomationRule:      handler.NewAutomationRuleHandler(ruleEngine),

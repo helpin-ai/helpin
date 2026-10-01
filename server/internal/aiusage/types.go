@@ -49,15 +49,16 @@ type PaidToolUsage struct {
 
 // ResolvedRoute is the immutable pricing identity attached to one execution.
 type ResolvedRoute struct {
-	Provider       string
-	CanonicalModel string
-	Route          string
-	ServiceTier    string
-	Tier           Tier
-	Rates          TokenRates
-	RateSnapshot   json.RawMessage
-	ContextWindow  int64
-	MaximumOutput  int64
+	AudioMicrousdPerMinute int64
+	Provider               string
+	CanonicalModel         string
+	Route                  string
+	ServiceTier            string
+	Tier                   Tier
+	Rates                  TokenRates
+	RateSnapshot           json.RawMessage
+	ContextWindow          int64
+	MaximumOutput          int64
 }
 
 // PublicPricing is the public, read-only pricing response.

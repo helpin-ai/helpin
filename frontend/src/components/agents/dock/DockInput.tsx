@@ -1,3 +1,4 @@
+import { useVoiceComposer } from '@/hooks/useVoiceComposer';
 import { useEffect, useRef, type ReactNode } from 'react';
 import {
   ArrowDown01Icon,
@@ -105,6 +106,8 @@ export interface DockInputProps {
   onContextKeyChange?: (key: string) => void;
   onClearContext?: () => void;
   workspaceId?: string;
+  voiceIdentity?: string;
+  active?: boolean;
   references?: DockEntityReference[];
   onAddReference?: (reference: DockEntityReference) => void;
   onRemoveReference?: (reference: DockEntityReference) => void;
@@ -178,6 +181,8 @@ export function DockInput({
   onContextKeyChange,
   onClearContext,
   workspaceId,
+  voiceIdentity = 'draft',
+  active = true,
   references = [],
   onAddReference,
   onRemoveReference,
@@ -201,6 +206,10 @@ export function DockInput({
 }: DockInputProps) {
   const localRef = useRef<HTMLTextAreaElement | null>(null);
   const ref = textareaRef ?? localRef;
+  const voice = useVoiceComposer({
+    workspaceId, identity: voiceIdentity, enabled: active && !disabled && !busy && mode === 'conversation',
+    value, onChange, onReady: () => ref.current?.focus(),
+  });
   const referencePickerRef = useRef<DockReferencePickerHandle | null>(null);
   const mediaInputRef = useRef<HTMLInputElement | null>(null);
   const documentInputRef = useRef<HTMLInputElement | null>(null);
@@ -237,7 +246,7 @@ export function DockInput({
   // chip tells the user "your input runs against this thing."
   const showChip = !!pageContext && (pageContext.entity_type !== 'workspace' || !!pageContext.metadata?.context_scope);
   const hasReadyAttachment = mediaAttachments.some((attachment) => attachment.status === 'ready');
-  const sendDisabled = (!value.trim() && !hasReadyAttachment) || !!busy || !!disabled;
+  const sendDisabled = (!value.trim() && !hasReadyAttachment) || !!busy || !!disabled || voice.busy;
 
   const canAddReferences = !!workspaceId && !!onAddReference;
   const showContextRow = mode === 'conversation' && (showChip || !!onAddContext || canAddReferences || references.length > 0);
@@ -468,9 +477,10 @@ export function DockInput({
               referencePickerRef.current?.open();
               return;
             }
-            if (e.key === 'Enter' && !e.shiftKey) {
+            if (e.key === 'Escape' && voice.busy) { e.preventDefault(); voice.cancel(); return; }
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
-              onSubmit();
+              if (!sendDisabled) onSubmit();
             }
           }}
           rows={1}
@@ -481,12 +491,14 @@ export function DockInput({
             separateActionRow && 'w-full flex-none min-h-[52px]',
           )}
         />
-        {separateActionRow ? (
+        {voice.feedback}
+        {voice.busy ? null : separateActionRow ? (
           <div className="flex w-full min-w-0 items-center gap-2 pt-1" data-composer-actions>
             {attachmentButton}
             <div className="ml-auto flex min-w-0 items-center gap-1.5">
               {executionPicker}
               {profilePicker}
+              {voice.microphone}
               {submitControl}
             </div>
           </div>

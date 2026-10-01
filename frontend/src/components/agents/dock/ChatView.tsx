@@ -1127,6 +1127,8 @@ export function ChatView({
           )}
           <div className="p-2">
               <DockInput
+                voiceIdentity={chatId ?? 'draft'}
+                active={active}
                 mode="conversation"
                 executionPicker={!coverageContext && (!chatId || (detail && detail.chat.user_id === currentUserId)) ? (
                   <DockExecutionPicker

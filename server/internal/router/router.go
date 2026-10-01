@@ -65,6 +65,7 @@ type Handlers struct {
 	PMRecurringTemplate *handler.PMRecurringTemplateHandler
 	Search              *handler.SearchHandler
 	CommandBar          *handler.CommandBarHandler
+	VoiceInput          *handler.VoiceInputHandler
 	DockChat            *handler.DockChatHandler
 	PublicShare         *handler.PublicShareHandler
 	Agent               *handler.AgentHandler
@@ -965,6 +966,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Use(middleware.RequireWorkspaceID)
 				r.Use(wsActive)
 				r.Get("/ai-defaults", h.DockChat.AIDefaults)
+				if h.VoiceInput != nil {
+					r.With(requireCommandBarRead()).Get("/transcriptions", h.VoiceInput.Capabilities)
+					r.With(requireCommandBarRead()).Post("/transcriptions", h.VoiceInput.Transcribe)
+				}
 				r.With(requireCommandBarRead()).Get("/chats", h.DockChat.ListChats)
 				r.With(requireCommandBarRead()).Post("/chats", h.DockChat.CreateChat)
 				r.With(requireCommandBarRead()).Get("/chats/support-conversation", h.DockChat.FindSupportConversationChat)

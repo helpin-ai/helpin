@@ -54,6 +54,9 @@ func (s *AIUsageService) ResolveMeteringContext(input MeteringRequest) (Metering
 	if s == nil {
 		return MeteringContext{}, model.ErrPricingConfigurationMissing
 	}
+	if input.OperationKey == aiusage.OperationVoiceTranscription {
+		return resolveVoiceMetering(input)
+	}
 	if input.FundingMode == aiusage.FundingCustomerFlat {
 		return s.resolveFlatMeteringContext(input)
 	}
@@ -183,6 +186,13 @@ func (s *AIUsageService) prepareCompletion(ctx context.Context, input Completion
 	if err != nil {
 		return model.AIUsageLedgerEntry{}, 0, 0, false, err
 	}
+	if input.Context.OperationKey == aiusage.OperationVoiceTranscription {
+		audioCharge, audioErr := voiceChargeMicrousd(input.Context, input.AudioMilliseconds)
+		if audioErr != nil {
+			return model.AIUsageLedgerEntry{}, 0, 0, false, audioErr
+		}
+		charge = pricing.Charge{PublishedEquivalentMicrousd: audioCharge, HostedMicrousd: audioCharge, FinalMicrousd: audioCharge}
+	}
 	if input.Context.FundingMode == aiusage.FundingCustomerFlat && input.CumulativeTelemetry != nil {
 		charge, err = flatCheckpointCharge(input, toolMicrousd)
 		if err != nil {
@@ -233,7 +243,11 @@ func (s *AIUsageService) prepareCompletion(ctx context.Context, input Completion
 		charged = input.Context.MaxBillableMicrousd
 	}
 	entry.FinalChargedMicrousd = charged
-	metadata, _ := json.Marshal(map[string]int64{"absorbed_microusd": absorbed})
+	metadataValues := map[string]int64{"absorbed_microusd": absorbed}
+	if input.Context.OperationKey == aiusage.OperationVoiceTranscription {
+		metadataValues["audio_milliseconds"] = input.AudioMilliseconds
+	}
+	metadata, _ := json.Marshal(metadataValues)
 	entry.Metadata = model.JSONBlob(metadata)
 	return entry, charged, absorbed, false, nil
 }
@@ -282,6 +296,12 @@ func (s *AIUsageService) SuspendReservation(ctx context.Context, metering Meteri
 }
 
 func (s *AIUsageService) deterministicBound(input MeteringRequest, metering MeteringContext) (int64, error) {
+	if input.OperationKey == aiusage.OperationVoiceTranscription {
+		if input.AudioMillisecondsEstimate <= 0 || input.AudioMillisecondsEstimate > aiusage.MaxVoiceMilliseconds {
+			return 0, fmt.Errorf("invalid audio bound")
+		}
+		return voiceChargeMicrousd(metering, input.AudioMillisecondsEstimate)
+	}
 	if input.InputTokensEstimate < 0 || input.MaximumOutputTokens < 0 {
 		return 0, fmt.Errorf("invalid AI usage token bound")
 	}
