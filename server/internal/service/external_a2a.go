@@ -96,6 +96,8 @@ func NewExternalA2AService(repo *repository.ExternalA2ARepository, agents *Agent
 	if agents != nil && repo != nil {
 		// Renames in the generic agent editor keep the connection name in step.
 		agents.externalA2ANames = repo
+		// Runs of a disabled or failing connection are refused at launch.
+		agents.externalA2AConnections = repo
 	}
 	stopCtx, stopBackground := context.WithCancel(context.Background())
 	return &ExternalA2AService{
