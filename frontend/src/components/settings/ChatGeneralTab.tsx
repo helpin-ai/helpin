@@ -936,7 +936,7 @@ function Dashboard() {
         <Tabs defaultValue="setup">
           <TabsList variant="line" aria-label="AI assistant settings" className="max-w-full overflow-x-auto">
             <TabsTrigger value="setup">Setup</TabsTrigger>
-            <TabsTrigger value="answers">Answers</TabsTrigger>
+            <TabsTrigger value="answers">Preferred answers</TabsTrigger>
             <TabsTrigger value="handoff">Handoff &amp; follow-up</TabsTrigger>
           </TabsList>
           <TabsContent value="setup" className="mt-4">{aiSetupSection}</TabsContent>

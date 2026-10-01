@@ -120,7 +120,7 @@ function GuidanceEditor({
           id={`${idPrefix}-answer`}
           value={draft.answer}
           onChange={(event) => onChange({ answer: event.target.value })}
-          placeholder="Explain the answer Helpin should follow. Include important facts, limits, and qualifiers."
+          placeholder="Describe when to use this answer and how Helpin should respond. Include key facts, conditions or exceptions, and when to hand off to your team."
           rows={8}
           className="min-h-40 rounded-lg border-border bg-background"
         />
@@ -152,12 +152,9 @@ function GuidanceEditor({
         </div>
       ) : null}
 
-      <div className="flex flex-col-reverse gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-xs text-muted-foreground">Changes take effect after you save.</p>
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" disabled={saving} onClick={onCancel}>Cancel</Button>
-          <Button type="submit" disabled={!valid || saving}>{saving ? 'Saving…' : editingExisting ? 'Save changes' : 'Save guidance'}</Button>
-        </div>
+      <div className="flex justify-end gap-2 border-t pt-4">
+        <Button type="button" variant="outline" disabled={saving} onClick={onCancel}>Cancel</Button>
+        <Button type="submit" disabled={!valid || saving}>{saving ? 'Saving…' : editingExisting ? 'Save changes' : 'Save answer'}</Button>
       </div>
     </form>
   );
@@ -231,14 +228,14 @@ export function CuratedGuidanceField({ workspaceId, agentId }: { workspaceId: st
       <div className="overflow-hidden rounded-lg border border-border/70 bg-card">
         <div className="flex items-start justify-between gap-4 p-4">
           <div>
-            <p className="text-sm font-medium">Answer Guidance</p>
+            <p className="text-sm font-medium">Preferred answers</p>
             <p className="mt-0.5 text-sm text-muted-foreground">
-              Set preferred answers for recurring or sensitive customer questions.
+              Tell Helpin when and how to respond to recurring or sensitive questions.
             </p>
           </div>
           <Button type="button" size="sm" variant="outline" disabled={!agentId || editorOpen} onClick={() => openEditor(null)}>
             <PlusSignIcon className="h-4 w-4" />
-            Add guidance
+            Add preferred answer
           </Button>
         </div>
 
@@ -247,16 +244,16 @@ export function CuratedGuidanceField({ workspaceId, agentId }: { workspaceId: st
             <div className="rounded-lg border border-dashed px-4 py-6 text-center">
               <p className="text-sm font-medium">Select a support agent first</p>
               <p className="mx-auto mt-1 max-w-lg text-xs leading-5 text-muted-foreground">
-                Answer guidance belongs to the support agent that replies to customers. Choose an agent in the Setup tab, then add the answers it should follow.
+                Choose an agent in the Setup tab, then add its preferred answers.
               </p>
             </div>
           ) : isLoading ? (
             <div className="space-y-2"><Skeleton className="h-20 rounded-lg" /><Skeleton className="h-20 rounded-lg" /></div>
           ) : items.length === 0 ? (
             <div className="rounded-lg border border-dashed px-4 py-6 text-center">
-              <p className="text-sm font-medium">Guide answers where consistency matters</p>
+              <p className="text-sm font-medium">No preferred answers yet</p>
               <p className="mx-auto mt-1 max-w-lg text-xs leading-5 text-muted-foreground">
-                Add a preferred answer for questions that come up repeatedly or need careful wording. Common examples include pricing, refunds, plan limits, security, and company policies.
+                Add answers for pricing, refunds, plan limits, security, and company policies.
               </p>
             </div>
           ) : (
@@ -299,9 +296,9 @@ export function CuratedGuidanceField({ workspaceId, agentId }: { workspaceId: st
       <Dialog open={editorOpen} onOpenChange={(open) => { if (!open) requestCloseEditor(); }}>
         <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader className="pr-8">
-            <DialogTitle>{editing ? 'Edit answer guidance' : 'New answer guidance'}</DialogTitle>
+            <DialogTitle>{editing ? 'Edit preferred answer' : 'New preferred answer'}</DialogTitle>
             <DialogDescription>
-              Add the facts and policies Helpin should follow. It adapts the answer to the customer’s question and language.
+              Helpin adapts your instructions to the customer’s question and language.
             </DialogDescription>
           </DialogHeader>
           <GuidanceEditor
@@ -320,7 +317,7 @@ export function CuratedGuidanceField({ workspaceId, agentId }: { workspaceId: st
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
-            <AlertDialogDescription>Your changes to this answer guidance have not been saved.</AlertDialogDescription>
+            <AlertDialogDescription>Your changes to this preferred answer have not been saved.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep editing</AlertDialogCancel>
@@ -331,7 +328,7 @@ export function CuratedGuidanceField({ workspaceId, agentId }: { workspaceId: st
 
       <AlertDialog open={Boolean(deleting)} onOpenChange={(open) => !open && setDeleting(null)}>
         <AlertDialogContent>
-          <AlertDialogHeader><AlertDialogTitle>Remove answer guidance?</AlertDialogTitle><AlertDialogDescription>Helpin will immediately stop using “{deleting?.title}” when answering customer questions.</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogHeader><AlertDialogTitle>Remove preferred answer?</AlertDialogTitle><AlertDialogDescription>Helpin will immediately stop using “{deleting?.title}” when answering customer questions.</AlertDialogDescription></AlertDialogHeader>
           <AlertDialogFooter><AlertDialogCancel disabled={deleteGuidance.isPending}>Cancel</AlertDialogCancel><AlertDialogAction variant="destructive" disabled={deleteGuidance.isPending} onClick={() => void remove()}>{deleteGuidance.isPending ? 'Removing…' : 'Remove'}</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
