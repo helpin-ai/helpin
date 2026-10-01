@@ -1,4 +1,3 @@
-import { SupportFollowUpStatus } from './SupportFollowUpStatus';
 import { memo, useEffect, useState, type JSX, type ReactNode, type SVGProps } from 'react';
 import { formatDistance } from 'date-fns';
 import * as Flags from 'country-flag-icons/react/3x2';
@@ -451,7 +450,6 @@ export function ConversationDetailSidebar({
           />
         ) : (
         <div className={cn('h-full overflow-y-auto pb-16 transition-all duration-200 ease-out', customerProfileOpen ? 'pointer-events-none -translate-x-2 opacity-0' : 'translate-x-0 opacity-100')}>
-          <SupportFollowUpStatus conversation={conversation} />
           {/* ── Contact Card ─────────────────────────────── */}
           <div className="flex flex-col items-center gap-1.5 px-3 py-4 border-b border-border/50">
             <div className="relative">
