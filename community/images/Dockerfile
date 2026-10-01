@@ -27,9 +27,12 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -trimpath -ldflags='-s 
     CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -trimpath -ldflags='-s -w' -o /out/migrate ./cmd/migrate
 
 FROM debian:bookworm-slim AS server-base
+# CI passes the build date so OS security updates refresh daily while the
+# application layers stay cached.
+ARG OS_PACKAGES_DATE=unset
 COPY LICENSE LICENSE-AGPL-3.0 LICENSE-APACHE-2.0 /usr/share/licenses/helpin/
 COPY ee/LICENSE /usr/share/licenses/helpin/ee/LICENSE
-RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends ca-certificates tzdata wget && rm -rf /var/lib/apt/lists/* && useradd --uid 10001 --create-home app
+RUN echo "OS packages as of $OS_PACKAGES_DATE" && apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends ca-certificates tzdata wget && rm -rf /var/lib/apt/lists/* && useradd --uid 10001 --create-home app
 WORKDIR /app
 USER app
 FROM server-base AS api
@@ -45,18 +48,20 @@ FROM server-base AS migrate
 COPY --from=go-build /out/migrate /app/migrate
 ENTRYPOINT ["/app/migrate"]
 FROM nginx:1.28.0-alpine AS frontend
+ARG OS_PACKAGES_DATE=unset
 COPY LICENSE LICENSE-AGPL-3.0 LICENSE-APACHE-2.0 /usr/share/licenses/helpin/
 COPY ee/LICENSE /usr/share/licenses/helpin/ee/LICENSE
-RUN apk upgrade --no-cache
+RUN echo "OS packages as of $OS_PACKAGES_DATE" && apk upgrade --no-cache
 ENV COMMUNITY_TRUSTED_PROXY_CIDR=127.0.0.1/32
 COPY --from=frontend-build /workspace/frontend/dist /usr/share/nginx/html
 COPY community/images/nginx.conf /etc/nginx/templates/default.conf.template
 EXPOSE 80
 FROM node:24.21.0-bookworm-slim@sha256:2fe369e969550cde8e867afc3fe370b260140cab4a23d467074295b42163d553 AS helpcenter
+ARG OS_PACKAGES_DATE=unset
 COPY LICENSE LICENSE-AGPL-3.0 LICENSE-APACHE-2.0 /usr/share/licenses/helpin/
 COPY ee/LICENSE /usr/share/licenses/helpin/ee/LICENSE
 ENV NODE_ENV=production PORT=3000
-RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/* && \
+RUN echo "OS packages as of $OS_PACKAGES_DATE" && apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/* && \
     rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx /opt/yarn* /usr/local/bin/yarn*
 WORKDIR /workspace/help-center
 COPY --from=helpcenter-build /out/help-center/node_modules ./node_modules

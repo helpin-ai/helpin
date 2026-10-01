@@ -77,6 +77,12 @@ remove their own resources. They do not upload raw logs or credential-bearing tr
 - Main CI selects jobs through `scripts/ci/checks.py`. Mobile includes frontend
   changes; root configuration and workflow changes select all checks. Documentation
   changes run lightweight contract/link checks without rebuilding the stack.
+- Frontend Vitest runs in three shards. The Community frontend job builds and
+  checks the artifact in one job and runs the Community tests in three more;
+  `scripts/check-community-frontend.sh [all|build|test] [vitest args]` does the
+  same locally, and releases run `all`.
+- Image builds pass `OS_PACKAGES_DATE`, so OS package layers refresh daily while
+  application layers stay cached; release builds also pull fresh base images.
 - Community jobs build and test with the `ee/` directories absent. Enterprise jobs
   own the `-tags ee` builds and tests.
 - PostgreSQL 16 checks historical migrations; PostgreSQL 17/pgvector checks the
