@@ -52,7 +52,11 @@ scan and acceptance run before inclusion in a release.
   as beta exceptions through 2026-10-16 only until a patched upstream release is
   pinned; operators who cannot accept them should use `--proxy external`.
 
-Review upstream refreshes at each release and before exceptions expire. Prefer a
+Review upstream refreshes at each release and before exceptions expire. The
+daily **Community upstream image scan** workflow scans these pinned images on
+amd64 and arm64 with `community/check-upstream-images.sh`; it opens or updates
+an issue when a new finding has no exception or an exception expires within a
+week, so neither first appears during a release scan. Prefer a
 patched upstream pin, rerun scans and install/restore, then delete resolved
 exceptions. Reassess any exception if ports, privileges or network exposure change.
 Retain image SBOMs and the exception inventory in release evidence.

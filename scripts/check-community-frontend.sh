@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Build and test a frontend source archive without commercial code or prices.
+# Usage: check-community-frontend.sh [all|build|test] [vitest args, e.g. --shard=1/3]
+# CI runs "build" and sharded "test" jobs in parallel; releases run "all".
 set -euo pipefail
+mode=${1:-all}
+[[ $mode == all || $mode == build || $mode == test ]] || { echo "unknown mode: $mode" >&2; exit 2; }
+shift $(( $# > 0 ? 1 : 0 ))
 cd "$(dirname "$0")/.."
 community_frontend_dir=$(mktemp -d)
 trap 'rm -rf "$community_frontend_dir"' EXIT
@@ -31,6 +36,10 @@ cd "$community_frontend_dir/frontend"
 test ! -e src/ee
 export VITE_EDITION=community
 export NODE_OPTIONS=--max-old-space-size=4096
-node scripts/build.mjs
-node scripts/check-community-artifact.mjs
-node_modules/.bin/vitest run --minWorkers=1 --maxWorkers="${COMMUNITY_TEST_WORKERS:-2}"
+if [[ $mode != test ]]; then
+  node scripts/build.mjs
+  node scripts/check-community-artifact.mjs
+fi
+if [[ $mode != build ]]; then
+  node_modules/.bin/vitest run --minWorkers=1 --maxWorkers="${COMMUNITY_TEST_WORKERS:-2}" "$@"
+fi
