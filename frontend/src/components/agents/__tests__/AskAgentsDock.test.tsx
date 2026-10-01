@@ -65,6 +65,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/components/agents/AIConnectionPicker', () => ({ AIConnectionPicker: mocks.aiPicker }));
 vi.mock('@/hooks/queries/useAskAgentDefaults', () => ({ useAskAgentDefaults: mocks.useAskAgentDefaults }));
 vi.mock('@/hooks/queries/useAIProfiles', () => ({ useAIProfiles: () => ({ data: [] }) }));
+// Voice capture is covered by the provider-backed DockInput voice tests.
+vi.mock('@/hooks/useVoiceComposer', () => ({
+  useVoiceComposer: () => ({ busy: false, microphone: null, feedback: null, cancel: vi.fn() }),
+}));
 
 vi.mock('@/lib/helpin', () => ({ resetHelpinIdentity: vi.fn() }));
 
@@ -1630,17 +1634,21 @@ describe('AskAgentsDock', () => {
   });
 
   it('reconciles immediately when a message continues on the same run', async () => {
-    const run = { id: 'run-1', status: 'running', pause_reason: 'none' } as never;
+    const run = { id: 'run-1', status: 'paused', pause_reason: 'awaiting_user_message' } as never;
     const detail = chatDetail({
       chat: { ...CHAT, active_run_id: 'run-1' },
       run,
     });
     mocks.getChat.mockResolvedValue({ data: detail, error: null });
     mocks.getChatRun.mockResolvedValue({
-      data: { id: 'run-1', status: 'running', stream_state_snapshot: null },
+      data: { id: 'run-1', status: 'paused', pause_reason: 'awaiting_user_message', stream_state_snapshot: null },
       error: null,
     });
-    mocks.sendMessage.mockResolvedValue({ data: detail, error: null });
+    mocks.sendMessage.mockImplementation(async () => {
+      const continued = { id: 'run-1', status: 'running', pause_reason: 'none' } as NonNullable<DockChatDetail['run']>;
+      mocks.getChatRun.mockResolvedValue({ data: { ...continued, stream_state_snapshot: null }, error: null });
+      return { data: { ...detail, run: continued }, error: null };
+    });
 
     await renderDock();
     await waitForText('Sprint questions');
@@ -1650,9 +1658,15 @@ describe('AskAgentsDock', () => {
     const textarea = dockTextarea();
     await act(async () => {
       setTextareaValue(textarea, 'continue this run');
+    });
+    await act(async () => {
       textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     });
-    await flush();
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
+    await waitForCondition(
+      () => mocks.getChatRun.mock.calls.length > snapshotCallsBeforeSend && mocks.listChatRunEvents.mock.calls.length > eventCallsBeforeSend,
+      'the continued run should reconcile its snapshot and events',
+    );
 
     expect(mocks.getChatRun.mock.calls.length).toBeGreaterThan(snapshotCallsBeforeSend);
     expect(mocks.listChatRunEvents.mock.calls.length).toBeGreaterThan(eventCallsBeforeSend);
