@@ -45,6 +45,7 @@ const TYPE_LABEL: Record<CommandBarPageContext['entity_type'], string> = {
   // Keep the dock chip compact; the conversation itself is already obvious
   // from the support surface and its title.
   support_conversation: 'Support',
+  support_coverage_gap: 'Coverage gap',
   workspace: 'Workspace',
   repository: 'Repository',
 };
@@ -61,6 +62,7 @@ function ContextIcon({ type, className = 'h-3 w-3 shrink-0' }: { type: CommandBa
       return <UserIcon className={className} />;
     case 'crm_deal':
       return <Briefcase01Icon className={className} />;
+    case 'support_coverage_gap':
     case 'support_conversation':
       return <Message01Icon className={className} />;
     case 'repository':
@@ -140,6 +142,7 @@ export function composerTextareaHeight({
 }
 
 export function composerPlaceholderForContext(contextType?: CommandBarPageContext['entity_type']) {
+  if (contextType === 'support_coverage_gap') return 'Ask about this gap, or describe a fix…';
   return contextType === 'support_conversation'
     ? 'Ask about this conversation…'
     : 'Message agent…';
@@ -519,7 +522,7 @@ function ContextChip({
   const body = (
     <>
       <ContextIcon type={context.entity_type} />
-      <span className="min-w-0 truncate font-medium">{context.display_title || context.entity_id}</span>
+      <span className="min-w-0 truncate font-medium">{context.entity_type === 'support_coverage_gap' ? 'Coverage gap' : context.display_title || context.entity_id}</span>
       {blockScoped ? (
         <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[10px] font-medium text-orange-700 dark:text-orange-300">
           <span className="h-1 w-1 rounded-full bg-orange-500" />

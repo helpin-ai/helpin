@@ -45,9 +45,12 @@ export const dockChatService = {
     const query = new URLSearchParams({ workspace_id: workspaceId, conversation_id: conversationId });
     return api.get<DockChat | null>(`/dock/chats/support-conversation?${query.toString()}`);
   },
-  createChat: (workspaceId: string, title = '', supportConversationId?: string, moduleId?: DockChatModule | null, executionEnabled = false) =>
+  findCoverageGapChat: (workspaceId: string, gapId: string) =>
+    api.get<DockChat | null>(`/dock/chats/coverage-gap${qs(workspaceId)}&gap_id=${encodeURIComponent(gapId)}`),
+  createChat: (workspaceId: string, title = '', supportConversationId?: string, moduleId?: DockChatModule | null, executionEnabled = false, coverageGapId?: string) =>
     api.post<DockChat>(`/dock/chats${qs(workspaceId)}`, {
       title,
+      ...(coverageGapId ? { coverage_gap_id: coverageGapId } : {}),
       ...(supportConversationId ? { support_conversation_id: supportConversationId } : {}),
       ...(moduleId ? { module_id: moduleId, visibility: 'module' } : {}),
       ...(executionEnabled ? { execution_enabled: true } : {}),

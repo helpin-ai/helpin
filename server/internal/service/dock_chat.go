@@ -66,20 +66,21 @@ type dockChatCursor struct {
 // DockChatService owns private and shared dock conversations whose turns are
 // executed by an agent-runtime chat-mode run of the ask_agent preset.
 type DockChatService struct {
-	chatRepo            *repository.DockChatRepository
-	runRepo             *repository.AgentRunRepository
-	runMessageRepo      *repository.AgentRunMessageRepository
-	artifactRepo        *repository.AgentRunArtifactRepository
-	planRepo            *repository.CommandBarPlanRepository
-	agentService        *AgentService
-	commandService      *InternalCommandService
-	authz               *authorization.AuthzService
-	titleLLM            dockChatTitleLLM
-	pmAttachmentRepo    *repository.PMAttachmentRepository
-	pmAttachmentService *PMAttachmentService
-	supportInboxService *SupportInboxService
-	mediaLLM            dockChatMediaLLM
-	externalMediaClient *http.Client
+	coverageContextReader coverageDockContextReader
+	chatRepo              *repository.DockChatRepository
+	runRepo               *repository.AgentRunRepository
+	runMessageRepo        *repository.AgentRunMessageRepository
+	artifactRepo          *repository.AgentRunArtifactRepository
+	planRepo              *repository.CommandBarPlanRepository
+	agentService          *AgentService
+	commandService        *InternalCommandService
+	authz                 *authorization.AuthzService
+	titleLLM              dockChatTitleLLM
+	pmAttachmentRepo      *repository.PMAttachmentRepository
+	pmAttachmentService   *PMAttachmentService
+	supportInboxService   *SupportInboxService
+	mediaLLM              dockChatMediaLLM
+	externalMediaClient   *http.Client
 }
 
 // SetArtifactRepository exposes durable private outputs in Dock chat details.
@@ -208,6 +209,9 @@ func (s *DockChatService) FindSupportConversationChat(ctx context.Context, works
 // CreateChat creates an empty chat; its backing run starts lazily on the
 // first message.
 func (s *DockChatService) CreateChat(ctx context.Context, workspaceID, userID string, req model.CreateDockChatRequest) (*model.DockChat, error) {
+	if req.CoverageGapID != nil {
+		return s.createCoverageChat(ctx, workspaceID, userID, req)
+	}
 	visibility, moduleID, err := s.resolveCreateVisibility(ctx, workspaceID, userID, req)
 	if err != nil {
 		return nil, err
@@ -307,6 +311,9 @@ func (s *DockChatService) updateChatLocked(ctx context.Context, workspaceID, use
 		}
 	}
 	if req.Visibility != nil {
+		if chat.CoverageGapID != nil && *req.Visibility != model.DockChatVisibilityModule {
+			return nil, ErrDockChatInvalidVisibility
+		}
 		visibility := *req.Visibility
 		if !validDockChatVisibility(visibility) || (visibility == model.DockChatVisibilityModule && chat.ModuleID == nil) {
 			return nil, ErrDockChatInvalidVisibility
@@ -345,6 +352,7 @@ func (s *DockChatService) GetChat(ctx context.Context, workspaceID, userID, chat
 	if err != nil {
 		return nil, err
 	}
+
 	return s.chatDetail(ctx, chat)
 }
 
@@ -402,6 +410,16 @@ func (s *DockChatService) sendMessageLocked(ctx context.Context, workspaceID, us
 	if err != nil {
 		return nil, err
 	}
+	if chat.CoverageGapID != nil {
+		if err := s.authorizeCoverageChatTurn(ctx, chat, userID); err != nil {
+			return nil, err
+		}
+		detail, err := s.coverageGapDetail(ctx, workspaceID, *chat.CoverageGapID)
+		if err != nil {
+			return nil, err
+		}
+		req.PageContext = map[string]interface{}{"entity_type": "support_coverage_gap", "entity_id": detail.ID, "display_title": detail.Title}
+	}
 	clientMessageID := strings.TrimSpace(req.ClientMessageID)
 	if clientMessageID == "" {
 		clientMessageID = uuid.NewString()
@@ -449,6 +467,13 @@ func (s *DockChatService) sendMessageLocked(ctx context.Context, workspaceID, us
 		return nil, err
 	}
 	composed := composeDockChatTurn(content, req.PageContext, references, attachments, sourceAttachments, analysis)
+	if chat.CoverageGapID != nil {
+		detail, err := s.coverageGapDetail(ctx, workspaceID, *chat.CoverageGapID)
+		if err != nil {
+			return nil, err
+		}
+		composed += "\n\n" + coverageDockTurnContext(detail)
+	}
 
 	var currentRun *model.AgentRun
 	if chat.ActiveRunID != nil {
@@ -741,6 +766,9 @@ func (s *DockChatService) canAccessChat(ctx context.Context, chat *model.DockCha
 	if chat == nil {
 		return false, nil
 	}
+	if chat.CoverageGapID != nil && s.authz != nil {
+		return s.canAccessDockChatModule(ctx, chat.WorkspaceID, userID, model.ModuleSupport)
+	}
 	if strings.TrimSpace(chat.UserID) == strings.TrimSpace(userID) {
 		return true, nil
 	}
@@ -1026,6 +1054,9 @@ func initialDockExecutionRepositoryID(executionEnabled bool, contexts []model.Ag
 
 func dockChatAttachedContexts(chat *model.DockChat, pageContext map[string]interface{}, references []model.DockEntityReference) []model.AgentRunContextReference {
 	contexts := make([]model.AgentRunContextReference, 0, len(references)+2)
+	if chat != nil && chat.CoverageGapID != nil {
+		contexts = append(contexts, model.AgentRunContextReference{EntityType: "support_coverage_gap", EntityID: *chat.CoverageGapID})
+	}
 	if chat != nil && chat.SupportConversationID != nil && strings.TrimSpace(*chat.SupportConversationID) != "" {
 		contexts = append(contexts, model.AgentRunContextReference{EntityType: "support_conversation", EntityID: strings.TrimSpace(*chat.SupportConversationID)})
 	}

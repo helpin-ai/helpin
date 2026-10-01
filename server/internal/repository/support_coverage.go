@@ -700,14 +700,11 @@ func (r *SupportCoverageRepository) CountEvidence30d(ctx context.Context, gapID 
 // never scans support_events.
 func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID string, filter model.SupportCoverageGapFilter) ([]model.SupportCoverageGapListItem, int64, error) {
 	evidenceCutoff := time.Now().AddDate(0, 0, -30)
-	customerIdentityExpr := "COALESCE(NULLIF(sc.crm_contact_id, ''), NULLIF(LOWER(sc.customer_email), ''), NULLIF(sc.anonymous_id, ''), e.conversation_id, e.id)"
-	if r.db.Dialector.Name() == "postgres" {
-		customerIdentityExpr = "COALESCE(sc.crm_contact_id::text, NULLIF(LOWER(sc.customer_email), ''), NULLIF(sc.anonymous_id, ''), e.conversation_id::text, e.id::text)"
-	}
-	evidence30dExpr := "(SELECT COUNT(DISTINCT COALESCE(e.conversation_id, e.id)) FROM support_gap_evidence e WHERE e.gap_id = g.id AND e.created_at > ?)"
-	evidenceAllExpr := "(SELECT COUNT(*) FROM support_gap_evidence e WHERE e.gap_id = g.id)"
-	distinctCustomers30dExpr := fmt.Sprintf("(SELECT COUNT(DISTINCT %s) FROM support_gap_evidence e LEFT JOIN support_conversations sc ON sc.id = e.conversation_id WHERE e.gap_id = g.id AND e.created_at > ?)", customerIdentityExpr)
-	distinctCustomersAllExpr := fmt.Sprintf("(SELECT COUNT(DISTINCT %s) FROM support_gap_evidence e LEFT JOIN support_conversations sc ON sc.id = e.conversation_id WHERE e.gap_id = g.id)", customerIdentityExpr)
+	metrics := supportCoverageMetricExpressions(r.db.Dialector.Name())
+	evidence30dExpr := metrics.evidence30d
+	evidenceAllExpr := metrics.evidenceAll
+	distinctCustomers30dExpr := metrics.customers30d
+	distinctCustomersAllExpr := metrics.customersAll
 	actionableBonusExpr := supportCoverageActionableBonusExpr(r.db.Dialector.Name())
 	kbBonusExpr := "CASE WHEN g.nearest_content_score <= 0 THEN 2 WHEN g.failure_mode IN ('no_retrieval', 'weak_retrieval') AND g.nearest_content_score > 0 THEN 2 ELSE 0 END"
 	impactExpr := fmt.Sprintf("((%s) * 4 + (%s) * 12 + (%s) + COALESCE(g.confidence, 0) * 2 + %s + %s)", evidence30dExpr, distinctCustomers30dExpr, evidenceAllExpr, kbBonusExpr, actionableBonusExpr)
@@ -722,8 +719,11 @@ func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID st
 			%s AS distinct_customers_30d,
 			%s AS distinct_customers_all,
 			%s AS evidence_all,
+			%s AS conversations_30d,
+			%s AS conversations_all,
+			%s AS evidence_records_30d,
 			%s AS impact_score,
-			%s AS computed_impact_score`, evidence30dExpr, distinctCustomers30dExpr, distinctCustomersAllExpr, evidenceAllExpr, impactExpr, impactExpr), evidenceCutoff, evidenceCutoff, evidenceCutoff, evidenceCutoff, evidenceCutoff, evidenceCutoff).
+			%s AS computed_impact_score`, evidence30dExpr, distinctCustomers30dExpr, distinctCustomersAllExpr, evidenceAllExpr, metrics.conversations30d, metrics.conversationsAll, metrics.records30d, impactExpr, impactExpr), evidenceCutoff, evidenceCutoff, evidenceCutoff, evidenceCutoff, evidenceCutoff, evidenceCutoff, evidenceCutoff, evidenceCutoff).
 		Joins("LEFT JOIN support_coverage_topics t ON t.id = g.topic_id").
 		Where("g.workspace_id = ?", workspaceID).
 		Where("g.status != ?", model.SupportCoverageGapStatusMerged)
@@ -839,24 +839,11 @@ func supportCoverageActionableBonusExpr(dialect string) string {
 }
 
 func supportCoverageImpactExplanation(item model.SupportCoverageGapListItem) string {
-	conversations := item.EvidenceAll
-	if conversations == 0 {
-		conversations = item.EvidenceCount
-	}
-	customers := item.DistinctCustomers30d
-	if customers == 0 {
-		customers = item.DistinctCustomersAll
-	}
-	parts := []string{fmt.Sprintf("%d conversations", conversations)}
-	if customers > 0 {
-		parts = append(parts, fmt.Sprintf("%d customers this month", customers))
-	}
+	signal := "no nearby content"
 	if item.NearestContentScore > 0 {
-		parts = append(parts, "existing content nearby")
-	} else {
-		parts = append(parts, "no nearby content")
+		signal = "existing content nearby"
 	}
-	return strings.Join(parts, ", ")
+	return supportCoverageMetricsExplanation(item.SupportCoverageImpactMetrics) + ", " + signal
 }
 
 func mustMarshalRawMessage(value any) json.RawMessage {
@@ -943,6 +930,11 @@ func (r *SupportCoverageRepository) GetGapDetail(ctx context.Context, workspaceI
 		return nil, fmt.Errorf("get gap: %w", err)
 	}
 
+	metrics, err := r.getGapImpactMetrics(ctx, workspaceID, gapID)
+	if err != nil {
+		return nil, err
+	}
+
 	var topicTitle string
 	if gap.TopicID != nil {
 		var topic model.SupportCoverageTopic
@@ -956,7 +948,7 @@ func (r *SupportCoverageRepository) GetGapDetail(ctx context.Context, workspaceI
 		Table("support_gap_evidence AS e").
 		Select("e.*, COALESCE(sm.sender_type, '') AS sender_role").
 		Joins("LEFT JOIN support_messages sm ON sm.id = e.message_id AND sm.workspace_id = e.workspace_id").
-		Where("e.gap_id = ?", gapID).
+		Where("e.gap_id = ? AND e.workspace_id = ?", gapID, workspaceID).
 		Order("e.created_at DESC").
 		Limit(50).
 		Find(&evidence).Error; err != nil {
@@ -990,21 +982,27 @@ func (r *SupportCoverageRepository) GetGapDetail(ctx context.Context, workspaceI
 	}
 
 	var suggestions []model.SupportGapSuggestion
-	r.db.WithContext(ctx).
-		Where("gap_id = ?", gapID).
+	if err := r.db.WithContext(ctx).
+		Where("gap_id = ? AND workspace_id = ?", gapID, workspaceID).
 		Order("created_at DESC").
-		Find(&suggestions)
+		Find(&suggestions).Error; err != nil {
+		return nil, fmt.Errorf("list gap suggestions: %w", err)
+	}
 
 	var recommendations []model.SupportCoverageRecommendation
-	r.db.WithContext(ctx).
-		Where("gap_id = ?", gapID).
+	if err := r.db.WithContext(ctx).
+		Where("gap_id = ? AND workspace_id = ?", gapID, workspaceID).
 		Order("CASE WHEN priority = 'primary' THEN 0 ELSE 1 END, created_at DESC").
-		Find(&recommendations)
+		Find(&recommendations).Error; err != nil {
+		return nil, fmt.Errorf("list gap recommendations: %w", err)
+	}
 
 	var relatedArticles []model.SupportCoverageGapArticle
-	r.db.WithContext(ctx).
-		Where("gap_id = ?", gapID).
-		Find(&relatedArticles)
+	if err := r.db.WithContext(ctx).
+		Where("gap_id = ? AND workspace_id = ?", gapID, workspaceID).
+		Find(&relatedArticles).Error; err != nil {
+		return nil, fmt.Errorf("list gap articles: %w", err)
+	}
 
 	// Resolve article titles from documents table.
 	for i := range relatedArticles {
@@ -1022,18 +1020,20 @@ func (r *SupportCoverageRepository) GetGapDetail(ctx context.Context, workspaceI
 		}
 	}
 
+	metrics.ImpactExplanation = supportCoverageImpactExplanation(model.SupportCoverageGapListItem{SupportCoverageGap: gap, SupportCoverageImpactMetrics: metrics})
 	splitReviewNeeded, recurrenceReopened := supportCoverageGapReviewFlags(gap.Metadata)
 	return &model.SupportCoverageGapDetail{
-		SupportCoverageGap:  gap,
-		TopicTitle:          topicTitle,
-		StatusChangedByName: statusChangedByName,
-		AnalysisExplanation: analysisExplanation,
-		Recommendations:     recommendations,
-		Evidence:            evidence,
-		Suggestions:         suggestions,
-		RelatedArticles:     relatedArticles,
-		SplitReviewNeeded:   splitReviewNeeded,
-		RecurrenceReopened:  recurrenceReopened,
+		SupportCoverageImpactMetrics: metrics,
+		SupportCoverageGap:           gap,
+		TopicTitle:                   topicTitle,
+		StatusChangedByName:          statusChangedByName,
+		AnalysisExplanation:          analysisExplanation,
+		Recommendations:              recommendations,
+		Evidence:                     evidence,
+		Suggestions:                  suggestions,
+		RelatedArticles:              relatedArticles,
+		SplitReviewNeeded:            splitReviewNeeded,
+		RecurrenceReopened:           recurrenceReopened,
 	}, nil
 }
 

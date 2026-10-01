@@ -1,3 +1,4 @@
+import type { StarterSuggestion } from './dock/starterSuggestions';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
@@ -20,7 +21,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useDockStore } from '@/stores/dockStore';
 import { dockChatService } from '@/lib/services/dockChatService';
-import { dockChatModuleForContext, type DockChat, type DockChatVisibility, type DockEntityReference, type DockRunSummary } from '@/lib/dockTypes';
+import { dockChatModuleForContext, type DockChat, type DockChatVisibility, type DockContextMessage, type DockEntityReference, type DockRunSummary } from '@/lib/dockTypes';
 import type { CommandBarPageContext } from '@/lib/pmTypes';
 import { DockTranscriptViewPicker } from './dock/DockTranscriptViewPicker';
 import { DockRoster } from './dock/DockRoster';
@@ -63,6 +64,13 @@ interface AskAgentsDockProps {
   presentation?: 'floating' | 'embedded';
   requiredPageContext?: CommandBarPageContext | null;
   associatedSupportConversationId?: string;
+  associatedCoverageGapId?: string;
+  contextMessage?: DockContextMessage;
+  starterSuggestions?: StarterSuggestion[];
+  readOnly?: boolean;
+  readOnlyReason?: string;
+  showEmbeddedHeader?: boolean;
+  onWorkCompleted?: () => void;
   active?: boolean;
   hideCollapsedTrigger?: boolean;
   onClose?: () => void;
@@ -72,11 +80,20 @@ export function AskAgentsDock({
   presentation = 'floating',
   requiredPageContext,
   associatedSupportConversationId,
+  associatedCoverageGapId,
+  contextMessage,
+  starterSuggestions,
+  readOnly = false,
+  readOnlyReason,
+  showEmbeddedHeader = true,
+  onWorkCompleted,
   active = true,
   hideCollapsedTrigger = false,
   onClose,
 }: AskAgentsDockProps = {}) {
   const embedded = presentation === 'embedded';
+  const associationId = associatedCoverageGapId ?? associatedSupportConversationId;
+  const associationField = associatedCoverageGapId ? 'coverage_gap_id' : 'support_conversation_id';
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const currentUserId = useAuthStore((state) => state.user?.id);
   const pageContext = usePageContext();
@@ -138,21 +155,21 @@ export function AskAgentsDock({
   } | null>(null);
   const [draftChat, setDraftChat] = useState(false);
   const [draftIdentity, setDraftIdentity] = useState({ generation: 0, chatId: null as string | null });
-  const [supportChatError, setSupportChatError] = useState<{ associationKey: string; message: string } | null>(null);
-  const [supportChatRetry, setSupportChatRetry] = useState(0);
+  const [associatedChatError, setAssociatedChatError] = useState<{ associationKey: string; message: string } | null>(null);
+  const [associatedChatRetry, setAssociatedChatRetry] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const askTriggerRef = useRef<HTMLButtonElement | null>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const focusTargetRef = useRef<DockFocusTarget>('header');
-  const ensuredSupportConversationRef = useRef<string | null>(null);
+  const ensuredAssociationRef = useRef<string | null>(null);
   const draftStoreKey = activeChatId
     ? `chat:${activeChatId}`
     : embedded
-      ? `support:${associatedSupportConversationId ?? 'unknown'}:draft`
+      ? `${workspaceId}:${associationField}:${associationId ?? 'unknown'}:draft`
       : 'global:draft';
-  const supportAssociationKey = workspaceId && associatedSupportConversationId
-    ? `${workspaceId}:${associatedSupportConversationId}`
+  const associationKey = workspaceId && associationId
+    ? `${workspaceId}:${associationField}:${associationId}`
     : null;
 
   const orderedRuns = useMemo(() => [...runs].sort((left, right) => {
@@ -189,17 +206,17 @@ export function AskAgentsDock({
     ? `global:draft:${draftIdentity.generation}`
     : draftChat
     ? embedded
-      ? `support:${associatedSupportConversationId ?? 'unknown'}:draft`
+      ? `${workspaceId}:${associationField}:${associationId ?? 'unknown'}:draft`
       : 'global:draft'
     : activeChat?.id ?? draftStoreKey;
-  const activeChatMatchesSupportConversation = Boolean(
-    activeChat && activeChat.support_conversation_id === associatedSupportConversationId,
+  const activeChatMatchesAssociation = Boolean(
+    activeChat && activeChat[associationField] === associationId,
   );
-  const currentSupportChatError = supportChatError?.associationKey === supportAssociationKey
-    ? supportChatError.message
+  const currentAssociatedChatError = associatedChatError?.associationKey === associationKey
+    ? associatedChatError.message
     : null;
-  const resolvingSupportChat = Boolean(
-    embedded && active && supportAssociationKey && !activeChatMatchesSupportConversation && !draftChat && !currentSupportChatError,
+  const resolvingAssociatedChat = Boolean(
+    embedded && active && associationKey && !activeChatMatchesAssociation && !draftChat && !currentAssociatedChatError,
   );
   const selectedChatId = activeChat?.id ?? null;
   const activeChatRunId = chatRunOverride?.chatId === selectedChatId
@@ -287,62 +304,64 @@ export function AskAgentsDock({
 
   useEffect(() => {
     if (!embedded) return;
-    ensuredSupportConversationRef.current = null;
+    ensuredAssociationRef.current = null;
     setEmbeddedActiveChatId(null);
     setDraftChat(false);
-    setSupportChatError(null);
-  }, [associatedSupportConversationId, embedded]);
+    setAssociatedChatError(null);
+  }, [associationId, associationField, embedded]);
 
   useEffect(() => {
-    if (!active || !workspaceId || !associatedSupportConversationId || chatsLoading) return;
-    const associationKey = `${workspaceId}:${associatedSupportConversationId}`;
+    if (!active || !workspaceId || !associationId || chatsLoading) return;
+    const associationKey = `${workspaceId}:${associationField}:${associationId}`;
     const associatedChat = chats.find(
-      (chat) => chat.support_conversation_id === associatedSupportConversationId,
+      (chat) => chat[associationField] === associationId,
     );
     if (associatedChat) {
       setDraftChat(false);
-      setSupportChatError(null);
-      ensuredSupportConversationRef.current = associationKey;
+      setAssociatedChatError(null);
+      ensuredAssociationRef.current = associationKey;
       if (activeChatId !== associatedChat.id) {
         setActiveChatId(associatedChat.id);
       }
       setTab('chats');
       return;
     }
-    if (ensuredSupportConversationRef.current === associationKey) return;
-    ensuredSupportConversationRef.current = associationKey;
-    setSupportChatError(null);
-    void dockChatService.findSupportConversationChat(workspaceId, associatedSupportConversationId).then((result) => {
-      if (ensuredSupportConversationRef.current !== associationKey) return;
+    if (ensuredAssociationRef.current === associationKey) return;
+    ensuredAssociationRef.current = associationKey;
+    setAssociatedChatError(null);
+    void (associatedCoverageGapId
+      ? dockChatService.findCoverageGapChat(workspaceId, associatedCoverageGapId)
+      : dockChatService.findSupportConversationChat(workspaceId, associationId)).then((result) => {
+      if (ensuredAssociationRef.current !== associationKey) return;
       if (result.error) {
-        ensuredSupportConversationRef.current = null;
+        ensuredAssociationRef.current = null;
         const message = result.error;
-        setSupportChatError({ associationKey, message });
+        setAssociatedChatError({ associationKey, message });
         toast.error(message);
         return;
       }
       if (!result.data) {
         setDraftChat(true);
         setEmbeddedActiveChatId(null);
-        setSupportChatError(null);
+        setAssociatedChatError(null);
         focusTargetRef.current = 'composer';
         return;
       }
       upsertChat(result.data);
       setDraftChat(false);
-      setSupportChatError(null);
+      setAssociatedChatError(null);
       setActiveChatId(result.data.id);
       setTab('chats');
       focusTargetRef.current = 'composer';
     });
-  }, [active, activeChatId, associatedSupportConversationId, chats, chatsLoading, setActiveChatId, setTab, supportChatRetry, upsertChat, workspaceId]);
+  }, [active, activeChatId, associationId, associationField, associatedCoverageGapId, chats, chatsLoading, setActiveChatId, setTab, associatedChatRetry, upsertChat, workspaceId]);
 
-  const retrySupportChat = useCallback(() => {
-    if (!supportAssociationKey) return;
-    ensuredSupportConversationRef.current = null;
-    setSupportChatError(null);
-    setSupportChatRetry((current) => current + 1);
-  }, [supportAssociationKey]);
+  const retryAssociatedChat = useCallback(() => {
+    if (!associationKey) return;
+    ensuredAssociationRef.current = null;
+    setAssociatedChatError(null);
+    setAssociatedChatRetry((current) => current + 1);
+  }, [associationKey]);
 
   useEffect(() => {
     if (runsLoading) return;
@@ -405,7 +424,9 @@ export function AskAgentsDock({
     if (!workspaceId) return null;
     const supportConversationId = embedded ? associatedSupportConversationId : undefined;
     const moduleId = embedded ? 'support' : creationModule;
-    const result = await dockChatService.createChat(workspaceId, '', supportConversationId, moduleId, options?.executionEnabled);
+    const result = embedded && associatedCoverageGapId
+      ? await dockChatService.createChat(workspaceId, '', undefined, moduleId, options?.executionEnabled, associatedCoverageGapId)
+      : await dockChatService.createChat(workspaceId, '', supportConversationId, moduleId, options?.executionEnabled);
     if (result.error || !result.data) {
       toast.error(result.error ?? 'Failed to create chat');
       return null;
@@ -416,7 +437,7 @@ export function AskAgentsDock({
     setActiveChatId(result.data.id);
     setTab('chats');
     return result.data;
-  }, [associatedSupportConversationId, creationModule, embedded, invalidateChats, setActiveChatId, setTab, upsertChat, workspaceId]);
+  }, [associatedSupportConversationId, associatedCoverageGapId, creationModule, embedded, invalidateChats, setActiveChatId, setTab, upsertChat, workspaceId]);
 
   useLayoutEffect(() => {
     if (collapsed && !embedded) return;
@@ -564,7 +585,7 @@ export function AskAgentsDock({
         data-helpin-dock-presentation="embedded"
         className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#fffefa] dark:bg-[#242320]"
       >
-        <DockPaneHeader
+        {showEmbeddedHeader && <DockPaneHeader
           key={`embedded:${activeChat?.id ?? 'empty'}`}
           tab="chats"
           run={null}
@@ -581,20 +602,20 @@ export function AskAgentsDock({
           onRenameChat={renameChat}
           onArchiveChat={archiveChat}
           onUpdateVisibility={updateChatVisibility}
-          chatPlaceholder={resolvingSupportChat
+          chatPlaceholder={resolvingAssociatedChat
             ? { title: 'Opening chat…', subtitle: 'Loading conversation context' }
-            : currentSupportChatError
+            : currentAssociatedChatError
               ? { title: 'Conversation chat', subtitle: 'Unable to open' }
               : undefined}
-        />
-        {resolvingSupportChat ? (
-          <SupportChatLoadingPane />
-        ) : currentSupportChatError ? (
-          <SupportChatErrorPane message={currentSupportChatError} onRetry={retrySupportChat} />
+        />}
+        {resolvingAssociatedChat ? (
+          <DockChatLoadingPane />
+        ) : currentAssociatedChatError ? (
+          <DockChatErrorPane message={currentAssociatedChatError} onRetry={retryAssociatedChat} />
         ) : activeChat || draftChat ? (
           <ChatView
             // Creating the first chat must preserve the pending send and run state.
-            key={supportAssociationKey ?? chatViewKey}
+            key={associationKey ?? chatViewKey}
             workspaceId={workspaceId}
             chatId={activeChat?.id}
             rosterRunId={activeChat?.active_run_id}
@@ -612,6 +633,11 @@ export function AskAgentsDock({
             onPresenceChange={handleChatPresenceChange}
             onRunIdChange={handleChatRunIdChange}
             requiredPageContext={requiredPageContext}
+            contextMessage={activeChat?.initial_context ?? contextMessage}
+            starterSuggestions={starterSuggestions}
+            readOnly={readOnly || Boolean(associatedCoverageGapId && activeChat && activeChat.user_id !== currentUserId)}
+            readOnlyReason={readOnlyReason ?? (associatedCoverageGapId && activeChat && activeChat.user_id !== currentUserId ? 'This conversation is managed by a teammate. You can review their work here.' : undefined)}
+            onWorkCompleted={onWorkCompleted}
             showComposerShortcutHint={requiredPageContext?.entity_type !== 'support_conversation'}
             scrollToLatestRequest={chatScrollRequest}
           />
@@ -711,7 +737,7 @@ export function AskAgentsDock({
                 onArchiveChat={archiveChat}
                 onUpdateVisibility={updateChatVisibility}
               />
-              {sharedChatLink.pending ? <SupportChatLoadingPane /> : sharedChatLink.error ? <SupportChatErrorPane message={sharedChatLink.error} onRetry={sharedChatLink.retry} /> : tab === 'agents' ? (
+              {sharedChatLink.pending ? <DockChatLoadingPane /> : sharedChatLink.error ? <DockChatErrorPane message={sharedChatLink.error} onRetry={sharedChatLink.retry} /> : tab === 'agents' ? (
                 activeRun ? (
                   <DockRunView
                     key={activeRun.run.id}
@@ -1202,7 +1228,7 @@ function EmptyChatPane({ onNewChat }: { onNewChat: () => void }) {
   );
 }
 
-function SupportChatLoadingPane() {
+function DockChatLoadingPane() {
   return (
     <div className="relative min-h-0 flex-1 px-4 py-5" role="status" aria-label="Opening conversation chat">
       <span className="sr-only">Opening conversation chat…</span>
@@ -1227,7 +1253,7 @@ function SupportChatLoadingPane() {
   );
 }
 
-function SupportChatErrorPane({ message, onRetry }: { message: string; onRetry: () => void }) {
+function DockChatErrorPane({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <div className="grid min-h-0 flex-1 place-items-center px-6 text-center">
       <div>

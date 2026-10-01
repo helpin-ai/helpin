@@ -117,6 +117,7 @@ func newDockEventsTestHandler(t *testing.T) (*DockChatHandler, *gorm.DB) {
 			triggered_by_user_id TEXT, status TEXT, pause_reason TEXT, runtime_kind TEXT, approval_state TEXT,
 			output_summary BLOB, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE dock_chats (
+ coverage_gap_id TEXT, initial_context TEXT,
 execution_enabled boolean NOT NULL DEFAULT false,id TEXT PRIMARY KEY, workspace_id TEXT, user_id TEXT, visibility TEXT, active_run_id TEXT)`,
 		`CREATE TABLE agent_run_messages (id TEXT PRIMARY KEY, workspace_id TEXT, run_id TEXT, role TEXT,
 			content TEXT, sequence_no INTEGER, created_at DATETIME)`,

@@ -280,7 +280,11 @@ func (s *SupportCoverageService) ListTopicsDueForEnrichment(ctx context.Context,
 
 // GetGapDetail returns a gap with its evidence, suggestions, and related articles.
 func (s *SupportCoverageService) GetGapDetail(ctx context.Context, workspaceID, gapID string) (*model.SupportCoverageGapDetail, error) {
-	return s.coverageRepo.GetGapDetail(ctx, workspaceID, gapID)
+	detail, err := s.coverageRepo.GetGapDetail(ctx, workspaceID, gapID)
+	if detail != nil {
+		detail.ImpactTier = ImpactTier(detail.Evidence30d)
+	}
+	return detail, err
 }
 
 func (s *SupportCoverageService) RegenerateGap(ctx context.Context, workspaceID, gapID string) error {

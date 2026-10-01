@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
 	toastSuccess: vi.fn(),
   listChats: vi.fn(),
   findSupportConversationChat: vi.fn(),
+  findCoverageGapChat: vi.fn(),
   createChat: vi.fn(),
   getChat: vi.fn(),
   updateChat: vi.fn(),
@@ -78,6 +79,7 @@ vi.mock('@/lib/services/dockChatService', () => ({
   dockChatService: {
     listChats: mocks.listChats,
     findSupportConversationChat: mocks.findSupportConversationChat,
+    findCoverageGapChat: mocks.findCoverageGapChat,
     createChat: mocks.createChat,
     getChat: mocks.getChat,
     updateChat: mocks.updateChat,
@@ -193,6 +195,7 @@ beforeEach(() => {
   });
   useAuthStore.setState({ user: { id: 'user-1', email: 'owner@example.com' } as never });
   mocks.listChats.mockResolvedValue({ data: { chats: [CHAT] }, error: null });
+  mocks.findCoverageGapChat.mockResolvedValue({ data: null, error: null });
   mocks.findSupportConversationChat.mockResolvedValue({ data: null, error: null });
   mocks.createChat.mockResolvedValue({ data: null, error: 'not configured' });
   mocks.listRuns.mockResolvedValue({ data: { runs: [], attention_count: 0 }, error: null });
@@ -266,7 +269,8 @@ async function renderEmbeddedDock(
           <AskAgentsDock
             presentation="embedded"
             requiredPageContext={requiredPageContext}
-            associatedSupportConversationId={requiredPageContext.entity_id}
+            associatedSupportConversationId={requiredPageContext.entity_type === 'support_coverage_gap' ? undefined : requiredPageContext.entity_id}
+            associatedCoverageGapId={requiredPageContext.entity_type === 'support_coverage_gap' ? requiredPageContext.entity_id : undefined}
             active={active}
             onClose={onClose}
           />
@@ -533,6 +537,26 @@ describe('AskAgentsDock', () => {
       'global Ask Agents panel did not open',
     );
     expect(useDockStore.getState().collapsed).toBe(false);
+  });
+
+  it('opens a saved gap thread with source links without executing a run', async () => {
+    useWorkspaceStore.setState({ currentWorkspace: { id: 'ws-1', name: 'Acme', slug: 'workspace' } as never });
+    const gapChat: DockChat = { ...CHAT, coverage_gap_id: 'gap-1', initial_context: {
+      content: 'Customers need invoice corrections. The help center has no correction process.',
+      captured_at: '2026-09-30T10:00:00Z',
+      references: [{ entity_type: 'support_conversation', entity_id: 'conv-42', display_title: 'Invoice correction request' }],
+    } };
+    mocks.listChats.mockResolvedValue({ data: { chats: [gapChat] }, error: null });
+    mocks.getChat.mockResolvedValue({ data: chatDetail({ chat: gapChat }), error: null });
+    await renderEmbeddedDock({ entity_type: 'support_coverage_gap', entity_id: 'gap-1', display_title: 'Invoice corrections' });
+    await waitForCondition(() => document.body.textContent?.includes('The help center has no correction process.') ?? false, 'saved findings missing');
+    expect(document.body.querySelector('a[href="/w/workspace/support/conv-42"]')).not.toBeNull();
+    expect(document.body.textContent).toContain('Prepare a fix');
+    expect(document.body.querySelector('[aria-label="Remove document context"]')).toBeNull();
+    expect(document.body.querySelector('[data-dock-context-chip]')?.textContent).toBe('Coverage gap');
+    expect(document.body.querySelector('textarea')).not.toBeNull();
+    expect(mocks.createChat).not.toHaveBeenCalled();
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
   it('reopens the chat associated with the active support conversation', async () => {

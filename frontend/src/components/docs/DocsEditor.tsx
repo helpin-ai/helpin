@@ -820,6 +820,7 @@ function ImportExportMenu({
 interface DocsEditorProps {
   title?: string
   showTitle?: boolean
+  showFileMenu?: boolean
   onTitleChange?: (title: string) => void
   onTitleCancel?: () => void
   slug?: string
@@ -857,6 +858,7 @@ interface DocsEditorProps {
 export function DocsEditor({
   title,
   showTitle = true,
+  showFileMenu = true,
   onTitleChange,
   onTitleCancel,
   slug,
@@ -1960,7 +1962,7 @@ export function DocsEditor({
           </div>
         )}
         {/* Import/Export — right-aligned, floating */}
-        {!readOnly && (
+        {!readOnly && showFileMenu && (
           <div className="sticky top-2 z-10 flex items-center justify-end gap-2 px-4 pointer-events-none">
             <div className="pointer-events-auto">
               <ImportExportMenu

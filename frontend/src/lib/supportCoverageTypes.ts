@@ -26,6 +26,9 @@ export interface SupportCoverageGapListItem {
   confidence: number
   evidence_count: number
   evidence_30d: number
+  conversations_30d?: number
+  conversations_all?: number
+  evidence_records_30d?: number
   evidence_all?: number
   distinct_customers_30d?: number
   distinct_customers_all?: number
@@ -78,6 +81,7 @@ export interface SupportGapSuggestion {
   title: string
   content: unknown
   evidence_summary: string
+  target_collection_id?: string | null
   target_space_id: string | null
   target_document_id: string | null
   target_document_title?: string | null
@@ -123,6 +127,9 @@ export interface SupportCoverageGapDetail {
   confidence: number
   evidence_count: number
   evidence_30d?: number
+  conversations_30d?: number
+  conversations_all?: number
+  evidence_records_30d?: number
   evidence_all?: number
   distinct_customers_30d?: number
   distinct_customers_all?: number
@@ -349,4 +356,13 @@ export const GAP_STATUS_LABELS: Record<SupportCoverageGapStatus, string> = {
   open: 'Open',
   done: 'Done',
   rejected: 'Rejected',
+}
+
+export interface CoverageSuggestionReview {
+  route?: 'create_article' | 'update_article'
+  target_document_id?: string
+  target_space_id?: string
+  target_collection_id?: string
+  title?: string
+  content?: unknown
 }

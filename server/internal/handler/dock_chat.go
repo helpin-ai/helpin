@@ -73,6 +73,15 @@ func (h *DockChatHandler) FindSupportConversationChat(w http.ResponseWriter, r *
 	writeJSON(w, http.StatusOK, chat)
 }
 
+func (h *DockChatHandler) FindCoverageGapChat(w http.ResponseWriter, r *http.Request) {
+	chat, err := h.dockChatService.FindCoverageGapChat(r.Context(), getWorkspaceID(r), middleware.GetUserID(r.Context()), r.URL.Query().Get("gap_id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, "Coverage conversation is unavailable")
+		return
+	}
+	writeJSON(w, http.StatusOK, chat)
+}
+
 // CreateChat handles POST /api/dock/chats.
 func (h *DockChatHandler) CreateChat(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)

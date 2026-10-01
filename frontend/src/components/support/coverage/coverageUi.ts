@@ -56,12 +56,15 @@ export function coverageTopicLabel(issueKey: string): string {
 
 export function formatCoverageImpact(gap: Partial<SupportCoverageGapListItem | SupportCoverageGapDetail>): string {
   if (gap.impact_explanation) return gap.impact_explanation
-  const conversations = gap.evidence_all ?? gap.evidence_count ?? 0
-  const customers = gap.distinct_customers_30d ?? gap.distinct_customers_all ?? 0
-  const parts = [`${conversations} ${conversations === 1 ? 'conversation' : 'conversations'}`]
-  if (customers > 0) parts.push(`${customers} ${customers === 1 ? 'customer' : 'customers'} this month`)
-  parts.push(coverageKbSignal(gap))
-  return parts.join(', ')
+  const conversations = gap.conversations_30d
+  if (conversations !== undefined) {
+    const parts = [`${conversations} ${conversations === 1 ? 'conversation' : 'conversations'}`]
+    const customers = gap.distinct_customers_30d ?? 0
+    if (customers > 0) parts.push(`${customers} known ${customers === 1 ? 'customer' : 'customers'}`)
+    return parts.join(' · ') + ' in the last 30 days'
+  }
+  const records = gap.evidence_all ?? gap.evidence_count ?? 0
+  return `${records} ${records === 1 ? 'evidence record' : 'evidence records'}`
 }
 
 // Mirrors the backend ImpactTier(evidence30d) cutoffs so the detail drawer can show a
@@ -88,7 +91,10 @@ export function coverageDiagnosis(
   if (gap.gap_kind === 'data') {
     return 'The AI lacked the customer or account data needed to answer this.'
   }
-  if (gap.gap_kind === 'action' || gap.gap_kind === 'policy') {
+  if (gap.gap_kind === 'policy') {
+    return 'The AI needs an agreed policy or escalation rule to answer this safely.'
+  }
+  if (gap.gap_kind === 'action') {
     return 'The AI couldn’t perform the action this request needs.'
   }
 
@@ -136,7 +142,7 @@ export function coveragePrimaryAddLabel(
   suggestion?: SupportGapSuggestion | null,
 ): string {
   if (suggestion?.suggestion_type === 'update_article') {
-    const articleTitle = gap.related_articles[0]?.article_title
+    const articleTitle = suggestion.target_document_title || gap.related_articles.find(article => article.document_id === suggestion.target_document_id)?.article_title || (!suggestion.target_document_id ? gap.related_articles[0]?.article_title : undefined)
     return articleTitle ? `Add to "${articleTitle}"` : 'Add to article'
   }
   return 'Create new article'
