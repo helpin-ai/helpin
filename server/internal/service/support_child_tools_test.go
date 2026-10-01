@@ -59,9 +59,9 @@ func TestSupportStepsAreReadOnly(t *testing.T) {
 			want: true,
 		},
 		{
-			name:  "web search cannot bypass configured knowledge",
+			name:  "external web research is read-only",
 			steps: []dockLaunchStep{{AllowedTools: []string{"web_search", "fetch_url"}}},
-			want:  false,
+			want:  true,
 		},
 		{
 			name:  "web fetch mixed with repository tools",
@@ -79,16 +79,16 @@ func TestSupportStepsAreReadOnly(t *testing.T) {
 	}
 }
 
-func TestSupportLaunchRejectsWebResearchBeforeDispatch(t *testing.T) {
-	for _, tool := range []string{"web_search", "fetch_url", "crawl_url"} {
+func TestSupportExternalResearchLaunchUsesReadOnlyPath(t *testing.T) {
+	for _, tool := range []string{"web_search", "fetch_url"} {
 		t.Run(tool, func(t *testing.T) {
 			_, commands, db, _, _, meta := setupSupportProgressTest(t)
 			mustExec(t, db, `UPDATE agent_runs SET input=? WHERE id='run'`, []byte(`{"trigger":{"trigger_type":"support_chat"}}`))
 			commands.agentService = &AgentService{}
-			steps := []dockLaunchStep{{Instructions: "Research this product", AllowedTools: []string{" " + tool + " "}}}
-			_, err := commands.executeDockLaunch(context.Background(), meta, steps, "old-approval", "Research")
-			if err == nil || !strings.Contains(err.Error(), "web research is not allowed") {
-				t.Fatalf("launch error = %v, want source-boundary rejection", err)
+			steps := []dockLaunchStep{{Instructions: "Check the provider's official error documentation", AllowedTools: []string{" " + tool + " "}}}
+			_, err := commands.executeDockLaunch(context.Background(), meta, steps, "", "Research")
+			if err == nil || !strings.Contains(err.Error(), "requires agent_id") {
+				t.Fatalf("launch error = %v, want agent selection after read-only admission", err)
 			}
 		})
 	}

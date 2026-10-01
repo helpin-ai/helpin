@@ -124,8 +124,8 @@ func (s *SupportChatService) notifySupportPlanSettled(ctx context.Context, plan 
 	if err != nil {
 		return err
 	}
-	if evidence := s.prepareSupportChildEvidence(ctx, plan, block); evidence != nil && s.persistSupportChildEvidence(ctx, chatRun.ID, evidence) {
-		block, err = addEvidenceIDToChildRunResultBlock(block, evidence.EvidenceID)
+	if evidence := s.prepareSupportChildEvidence(ctx, plan, block); len(evidence) > 0 && s.persistSupportChildEvidence(ctx, chatRun.ID, evidence) {
+		block, err = addSupportEvidenceToChildRunResultBlock(block, evidence)
 		if err != nil {
 			return err
 		}
@@ -174,8 +174,8 @@ func (s *SupportChatService) deliverPlanResultViaSuccessor(ctx context.Context, 
 		return err
 	}
 	evidence := s.prepareSupportChildEvidence(ctx, plan, block)
-	if evidence != nil {
-		block, err = addEvidenceIDToChildRunResultBlock(block, evidence.EvidenceID)
+	if len(evidence) > 0 {
+		block, err = addSupportEvidenceToChildRunResultBlock(block, evidence)
 		if err != nil {
 			return err
 		}
@@ -188,24 +188,22 @@ func (s *SupportChatService) deliverPlanResultViaSuccessor(ctx context.Context, 
 }
 
 // prepareSupportChildEvidence converts a completed read-only child handoff
-// into evidence that the reply gate can validate. Web research is excluded
-// because it bypasses configured knowledge sources. Repository and
-// live-workspace reads remain internal.
-func (s *SupportChatService) prepareSupportChildEvidence(ctx context.Context, plan *model.CommandBarPlanRecord, block string) *model.SupportRunEvidence {
+// into evidence that the reply gate can validate. Web evidence comes from
+// fetched page text; repository and live-workspace reads remain internal.
+func (s *SupportChatService) prepareSupportChildEvidence(ctx context.Context, plan *model.CommandBarPlanRecord, block string) []model.SupportRunEvidence {
 	if s == nil || s.evidenceRepo == nil || plan == nil || strings.TrimSpace(plan.Status) != model.CommandBarPlanStatusCompleted {
 		return nil
 	}
-	evidenceContent := childRunResultEvidenceContent(block)
-	if evidenceContent == "" {
-		return nil
-	}
-
 	var steps []model.CommandBarPlanStep
 	if err := json.Unmarshal(plan.Steps, &steps); err != nil || len(steps) == 0 {
 		return nil
 	}
 	hasWeb, hasRepository := supportChildResearchKinds(steps)
 	if hasWeb {
+		return s.prepareSupportWebEvidence(ctx, plan)
+	}
+	evidenceContent := childRunResultEvidenceContent(block)
+	if evidenceContent == "" {
 		return nil
 	}
 	evidenceID := supportChildEvidencePrefix + strings.TrimSpace(plan.ID)
@@ -231,21 +229,46 @@ func (s *SupportChatService) prepareSupportChildEvidence(ctx context.Context, pl
 		row.VectorScore = 0.85
 		row.CombinedScore = 0.85
 	}
-	return row
+	return []model.SupportRunEvidence{*row}
 }
 
-func (s *SupportChatService) persistSupportChildEvidence(ctx context.Context, runID string, evidence *model.SupportRunEvidence) bool {
-	if s == nil || s.evidenceRepo == nil || evidence == nil || strings.TrimSpace(runID) == "" {
+func (s *SupportChatService) persistSupportChildEvidence(ctx context.Context, runID string, evidence []model.SupportRunEvidence) bool {
+	if s == nil || s.evidenceRepo == nil || len(evidence) == 0 || strings.TrimSpace(runID) == "" {
 		return false
 	}
-	row := *evidence
-	row.RunID = strings.TrimSpace(runID)
-	if err := s.evidenceRepo.UpsertBatch(ctx, []model.SupportRunEvidence{row}); err != nil {
+	rows := append([]model.SupportRunEvidence(nil), evidence...)
+	for i := range rows {
+		rows[i].RunID = strings.TrimSpace(runID)
+	}
+	if err := s.evidenceRepo.UpsertBatch(ctx, rows); err != nil {
 		slog.WarnContext(ctx, "support child evidence persistence failed",
-			"error", err, "workspace_id", row.WorkspaceID, "run_id", row.RunID, "evidence_id", row.EvidenceID)
+			"error", err, "workspace_id", rows[0].WorkspaceID, "run_id", runID)
 		return false
 	}
 	return true
+}
+
+func addSupportEvidenceToChildRunResultBlock(block string, evidence []model.SupportRunEvidence) (string, error) {
+	payload := strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(block), dockChildResultOpenTag), dockChildResultCloseTag)
+	var result dockChildRunResult
+	if err := json.Unmarshal([]byte(payload), &result); err != nil {
+		return "", err
+	}
+	for _, row := range evidence {
+		if row.SourceType != supportSourceExternalWeb {
+			result.EvidenceID = row.EvidenceID
+			continue
+		}
+		result.Evidence = append(result.Evidence, supportChildPageEvidence{
+			EvidenceID: row.EvidenceID, SourceType: row.SourceType,
+			Title: row.Title, URL: row.URL, Content: row.Content,
+		})
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return "", err
+	}
+	return dockChildResultOpenTag + string(encoded) + dockChildResultCloseTag, nil
 }
 
 func supportChildResearchKinds(steps []model.CommandBarPlanStep) (hasWeb, hasRepository bool) {

@@ -23,12 +23,21 @@ const (
 // launched from that chat settles. The FE renders it as a result chip; the
 // ask_agent prompt tells the model to summarize it for the user.
 type dockChildRunResult struct {
-	EvidenceID string               `json:"evidence_id,omitempty"`
-	PlanID     string               `json:"plan_id"`
-	Status     string               `json:"status"`
-	Prompt     string               `json:"prompt,omitempty"`
-	Error      string               `json:"error,omitempty"`
-	Runs       []dockChildRunReport `json:"runs"`
+	EvidenceID string                     `json:"evidence_id,omitempty"`
+	Evidence   []supportChildPageEvidence `json:"evidence,omitempty"`
+	PlanID     string                     `json:"plan_id"`
+	Status     string                     `json:"status"`
+	Prompt     string                     `json:"prompt,omitempty"`
+	Error      string                     `json:"error,omitempty"`
+	Runs       []dockChildRunReport       `json:"runs"`
+}
+
+type supportChildPageEvidence struct {
+	EvidenceID string `json:"evidence_id"`
+	SourceType string `json:"source_type"`
+	Title      string `json:"title,omitempty"`
+	URL        string `json:"url"`
+	Content    string `json:"content"`
 }
 
 type dockChildRunReport struct {

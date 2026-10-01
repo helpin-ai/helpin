@@ -11,6 +11,9 @@ import "strings"
 // support-launched child run may carry without human approval. Never derived
 // from model input.
 var supportChildReadOnlyTools = map[string]bool{
+	// Focused third-party context research; Echo's prompt governs its purpose.
+	"web_search": true,
+	"fetch_url":  true,
 	// Repository inspection (bug checks).
 	"checkout_repositories": true,
 	"list_repositories":     true,
@@ -61,19 +64,6 @@ func supportStepsAreReadOnly(steps []dockLaunchStep) bool {
 		}
 	}
 	return true
-}
-
-// supportStepsUseWebResearch detects launches that would bypass configured
-// knowledge sources. These are rejected even if a legacy approval exists.
-func supportStepsUseWebResearch(steps []dockLaunchStep) bool {
-	for _, step := range steps {
-		for _, tool := range step.AllowedTools {
-			if isSupportWebResearchTool(tool) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func isSupportWebResearchTool(tool string) bool {

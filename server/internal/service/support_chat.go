@@ -263,7 +263,7 @@ func (s *SupportChatService) startOrResumeChatRun(ctx context.Context, conv *mod
 
 // startSupportChatRun creates a (possibly successor) chat run for the
 // conversation with transcript carry-forward and repoints ai_active_run_id.
-func (s *SupportChatService) startSupportChatRun(ctx context.Context, conv *model.SupportConversation, agent *model.Agent, composed string, previousRun *model.AgentRun, pendingEvidence *model.SupportRunEvidence) error {
+func (s *SupportChatService) startSupportChatRun(ctx context.Context, conv *model.SupportConversation, agent *model.Agent, composed string, previousRun *model.AgentRun, pendingEvidence []model.SupportRunEvidence) error {
 	if !supportAIConversationSupported(conv) {
 		return nil
 	}
@@ -316,9 +316,9 @@ func (s *SupportChatService) startSupportChatRun(ctx context.Context, conv *mode
 	if err != nil {
 		return fmt.Errorf("start support chat run: %w", err)
 	}
-	if pendingEvidence != nil && !s.persistSupportChildEvidence(ctx, run.ID, pendingEvidence) {
+	if len(pendingEvidence) > 0 && !s.persistSupportChildEvidence(ctx, run.ID, pendingEvidence) {
 		slog.WarnContext(ctx, "support chat: child evidence persistence failed before successor launch",
-			"workspace_id", workspaceID, "run_id", run.ID, "evidence_id", pendingEvidence.EvidenceID)
+			"workspace_id", workspaceID, "run_id", run.ID)
 	}
 	bound, bindErr := s.conversationRepo.BindAIRun(ctx, conv, run.ID)
 	if bindErr != nil || !bound {

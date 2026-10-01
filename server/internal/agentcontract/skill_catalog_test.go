@@ -219,7 +219,7 @@ func TestEchoKnowledgeBoundaryOverridesSavedWebFallback(t *testing.T) {
 		"saved":   EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, stale),
 	} {
 		t.Run(name, func(t *testing.T) {
-			for _, required := range []string{"configured knowledge sources", "Do not launch web research", "Historical descriptions", "Missing documentation does not prove", "overrides older instructions"} {
+			for _, required := range []string{"configured knowledge sources", "Do not launch web research to fill product knowledge gaps", "third-party", "include_domains", "Stop when", "Historical descriptions", "Missing documentation does not prove", "overrides older instructions"} {
 				if !strings.Contains(prompt, required) {
 					t.Errorf("effective prompt missing %q", required)
 				}
@@ -229,6 +229,10 @@ func TestEchoKnowledgeBoundaryOverridesSavedWebFallback(t *testing.T) {
 				t.Fatal("source policy duplicated on repeated launch")
 			}
 		})
+	}
+	oldBan := "You are Echo.\n\n## Required support knowledge source policy\nDo not launch web research."
+	if prompt := EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, oldBan); !strings.Contains(prompt, "supersedes earlier blanket bans") {
+		t.Fatal("saved blanket web ban was not superseded by the current external-context policy")
 	}
 }
 
