@@ -46,11 +46,11 @@ func (f *URLFilter) Allowed(rawURL string) bool {
 		}
 	}
 
-	// Include patterns: if set, URL path must match at least one.
+	// Include patterns: if set, the URL must match at least one.
 	if len(f.includePatterns) > 0 {
 		matched := false
 		for _, pattern := range f.includePatterns {
-			if matchPattern(parsed.Path, strings.TrimSpace(pattern)) {
+			if matchURLPattern(parsed, strings.TrimSpace(pattern)) {
 				matched = true
 				break
 			}
@@ -60,14 +60,35 @@ func (f *URLFilter) Allowed(rawURL string) bool {
 		}
 	}
 
-	// Exclude patterns: URL path must not match any.
+	// Exclude patterns: the URL must not match any.
 	for _, pattern := range f.excludePatterns {
-		if matchPattern(parsed.Path, strings.TrimSpace(pattern)) {
+		if matchURLPattern(parsed, strings.TrimSpace(pattern)) {
 			return false
 		}
 	}
 
 	return true
+}
+
+// matchURLPattern preserves path-only rules while supporting URL globs such as
+// "*://blog.*/**" for hostname exclusions.
+func matchURLPattern(parsed *url.URL, pattern string) bool {
+	scheme, remainder, fullURL := strings.Cut(pattern, "://")
+	if !fullURL {
+		return matchPattern(parsed.Path, pattern)
+	}
+	host, urlPath, hasPath := strings.Cut(remainder, "/")
+	if !matchPattern(parsed.Scheme, scheme) || !matchPattern(strings.ToLower(parsed.Host), strings.ToLower(host)) {
+		return false
+	}
+	if !hasPath {
+		return true
+	}
+	actualPath := parsed.Path
+	if actualPath == "" {
+		actualPath = "/"
+	}
+	return matchPattern(actualPath, "/"+urlPath)
 }
 
 // matchPattern performs glob-style matching. It uses path.Match for simple
@@ -84,7 +105,7 @@ func matchPattern(urlPath, pattern string) bool {
 
 	// Handle common wildcard patterns like "/docs/*" or "*.html".
 	if strings.HasSuffix(pattern, "*") {
-		prefix := strings.TrimSuffix(pattern, "*")
+		prefix := strings.TrimRight(pattern, "*")
 		return strings.HasPrefix(urlPath, prefix)
 	}
 	if strings.HasPrefix(pattern, "*") {

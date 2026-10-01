@@ -41,6 +41,7 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { createWebsiteSourceDraft } from '@/lib/knowledgeSourceWebsiteForm';
 import type { CreateSupportContentSourceRequest, SupportContentSource, UpdateSupportContentSourceRequest } from '@/lib/pmTypes';
 import { CRAWL_SOURCE_OPTIONS, STATUS_META, STEP_ORDER, type WizardStep } from './support-content-sources/constants';
 import { PageContentPreview } from './support-content-sources/PageContentPreview';
@@ -831,7 +832,7 @@ function createDefaultDraft(): ContentSourceDraft {
     includeExternalLinks: false,
     includeSubdomains: false,
     includePatternsText: '',
-    excludePatternsText: '',
+    excludePatternsText: createWebsiteSourceDraft().excludePatternsText,
     maxAgeSeconds: '86400',
     jsonPrompt: '',
     jsonResponseFormatText: '',
