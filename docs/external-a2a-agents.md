@@ -87,7 +87,11 @@ Errors use `{ "error": "message" }`.
 1. **Start.** Assigning a task to an agent whose trigger mode is
    `auto_on_assignment` starts a task run, unless that agent already has an
    active run on the task. This applies to every agent with that trigger mode.
-   A run can also be started manually or by an automation rule.
+   A run can also be started manually or by an automation rule. The task needs
+   no repository: external agents get no Helpin tools. A disabled connection, or
+   one whose card refresh failed, starts no run; assigning or starting one is
+   refused with "external agent <name> is disabled; enable it in Settings →
+   External agents".
 2. **Connection details.** At the start of every turn Agent Runtime asks Helpin
    for the target context. For a non-terminal run of an active external agent
    in the same workspace, Helpin adds `data.a2a`: the connection, the decrypted
@@ -139,6 +143,28 @@ the file to the run's task. The endpoint accepts one multipart `file` field.
 
 Uploads are streamed to a temporary file rather than held in memory. The API
 server's 5-minute read timeout bounds slow uploads.
+
+## Connect Hermes
+
+Enable the `a2a` gateway platform in Hermes with a per-peer token, for example
+`A2A_PEER_TOKENS=helpin:<token>`, `A2A_TRUSTED_PEERS=helpin`, `A2A_HOST=0.0.0.0`
+and `A2A_PUBLIC_URL` set to the address Helpin reaches. Add it in Helpin with
+the card URL and the same token. Hermes behaves as follows:
+
+- It advertises streaming, so Agent Runtime streams each turn and a cancelled
+  run cancels the Hermes task.
+- A reply starting with `[INPUT_REQUIRED]` is a question: the run pauses and the
+  next human comment on the task answers it. Mention this marker in the task
+  description when you want Hermes to ask before it acts.
+- It runs tasks in one live session. A task sent while another is working
+  interrupts it, and the interrupted task ends with "Hermes finished without a
+  reply". Give Hermes one task at a time.
+- It rejects a conversation after `A2A_MAX_PINGPONG_TURNS` turns (default 5,
+  at most 20) and fails a task after `A2A_REPLY_TIMEOUT` seconds (default 300).
+  A task's conversation spans its runs and follow-up comments, so raise the
+  turn limit for long threads.
+- It returns text only. It attaches files by running the upload command from
+  the first message, which needs the upload link to be reachable from Hermes.
 
 ## Security
 
