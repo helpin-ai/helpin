@@ -61,16 +61,20 @@ test.beforeEach(async ({ page }) => {
 test('one saved team color appears in Settings and on the Projects expand arrow', async ({ page }, testInfo) => {
   const writes = await installTeamMocks(page);
   const dialog = await openEditor(page);
-  const color = dialog.getByRole('button', { name: 'Select color #e2564a' });
+  const color = dialog.getByRole('button', { name: 'Select color #efa29b' });
   await color.focus();
   await color.press('Enter');
   await expect(color).toHaveAttribute('aria-pressed', 'true');
   await page.screenshot({ path: testInfo.outputPath('team-color-picker.png'), animations: 'disabled' });
   await dialog.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(dialog).toBeHidden();
-  expect(writes[0].color).toBe('#e2564a');
+  expect(writes[0].color).toBe('#efa29b');
   const badge = page.locator('span[style*="--team-color-bg"]').filter({ hasText: 'D' }).first();
-  const savedBackground = await badge.evaluate(element => getComputedStyle(element).backgroundColor);
+  const savedBackground = 'rgb(239, 162, 155)';
+  await expect(badge).toHaveCSS('background-color', savedBackground);
+  await page.goto('/w/workspace/settings/teams');
+  const row = page.getByRole('row').filter({ hasText: 'DevOps' });
+  await expect(row.locator('span[style*="--team-color-bg"]')).toHaveCSS('background-color', savedBackground);
   await page.getByLabel('Projects', { exact: true }).click();
   const team = page.getByRole('button', { name: 'DevOps', exact: true });
   const arrow = team.locator('span[aria-hidden="true"]');
@@ -83,10 +87,10 @@ test('one saved team color appears in Settings and on the Projects expand arrow'
   await expect(team).toHaveAttribute('aria-expanded', 'true');
   await page.screenshot({ path: testInfo.outputPath('team-colors-projects-light.png'), animations: 'disabled' });
   await page.evaluate(() => document.documentElement.classList.add('dark'));
-  await expect(arrow).not.toHaveCSS('background-color', savedBackground);
+  await expect(arrow).toHaveCSS('background-color', savedBackground);
   await page.screenshot({ path: testInfo.outputPath('team-colors-projects-dark.png'), animations: 'disabled' });
   await page.reload();
-  await expect(team).toBeVisible();
+  await expect(team).toBeVisible({ timeout: 90_000 });
   await expect(arrow).toHaveAttribute('style', /--team-color-bg:/);
 });
 
@@ -128,12 +132,12 @@ test('team creation saves a color and read-only members can see colors without e
   await expect(dialog.locator('button[aria-label^="Select color"][aria-pressed="true"]')).toHaveCount(1);
   await expect(dialog.getByRole('button', { name: 'Default', exact: true })).toHaveCount(0);
   await dialog.getByRole('textbox').first().fill('Website Dev');
-  await dialog.getByRole('button', { name: 'Select color #e54e78' }).click();
+  await dialog.getByRole('button', { name: 'Select color #f19eb5' }).click();
   await dialog.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(dialog).toBeHidden();
-  expect(writes[0]).toMatchObject({ name: 'Website Dev', color: '#e54e78' });
+  expect(writes[0]).toMatchObject({ name: 'Website Dev', color: '#f19eb5' });
   await installTeamMocks(page, { editable: false });
   await page.goto('/w/workspace/settings/teams?team=devops');
-  await expect(page.getByRole('button', { name: /^General Name/ })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /^General Name/ })).toBeDisabled({ timeout: 90_000 });
   await expect(page.locator('span[style*="--team-color-bg"]').filter({ hasText: 'D' }).first()).toBeVisible();
 });

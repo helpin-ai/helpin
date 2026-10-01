@@ -9,7 +9,8 @@ import (
 
 var teamColorHex = regexp.MustCompile(`^#(?:[0-9a-f]{3}|[0-9a-f]{6})$`)
 
-var teamPresetColors = [...]string{"#4e8fea", "#2da88e", "#45a557", "#c7a53d", "#e58c3a", "#e2564a", "#e54e78", "#8b5cf6"}
+// Match the saved swatches in the shared Epic and team color picker.
+var teamPresetColors = [...]string{"#a6ade6", "#9ec1f3", "#94d2e7", "#8ccfc1", "#99cea3", "#b8ce97", "#e0ce94", "#f1c093", "#efa29b", "#f19eb5", "#e79dcb", "#d69ee1", "#bfa5fa", "#9bcae8", "#cbb9a8", "#c1c9d3"}
 
 func randomTeamColor() string {
 	return teamPresetColors[rand.IntN(len(teamPresetColors))]
