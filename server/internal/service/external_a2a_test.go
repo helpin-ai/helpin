@@ -471,6 +471,37 @@ func TestExternalA2ATerminalEventRevokesUploadLinks(t *testing.T) {
 	}
 }
 
+func TestDisabledExternalAgentGetsNoRun(t *testing.T) {
+	env := newExternalA2ATestEnv(t)
+	ctx := context.Background()
+	record := env.connect(t, "")
+	disabled, active := model.ExternalA2AStatusDisabled, model.ExternalA2AStatusActive
+	if _, err := env.svc.Update(ctx, env.workspaceID, record.ID, env.userID, model.UpdateExternalA2AAgentRequest{Status: &disabled}); err != nil {
+		t.Fatal(err)
+	}
+	tasks := &PMTaskService{agentService: env.agents, logger: slog.Default()}
+	tasks.dispatchAssignmentRun(ctx, env.workspaceID, env.taskID, &record.AgentID, env.userID)
+	tasks.WaitForAssignmentRuns()
+	if n := env.count(t, `SELECT COUNT(*) FROM agent_runs WHERE agent_id = ?`, record.AgentID); n != 0 {
+		t.Fatalf("assignment to a disabled agent started %d run(s)", n)
+	}
+	_, err := env.agents.startTargetRun(ctx, env.workspaceID, "task", env.taskID, model.StartAgentRunRequest{AgentID: record.AgentID}, &env.userID, nil, nil, nil)
+	if !errors.Is(err, ErrExternalA2AAgentInactive) || !errors.Is(err, ErrAgentRunTargetNotAllowed) || !strings.Contains(err.Error(), "is disabled") {
+		t.Fatalf("manual start error = %v", err)
+	}
+	if len(env.runtime.startRunCalls) != 0 {
+		t.Fatalf("runtime starts = %d", len(env.runtime.startRunCalls))
+	}
+	if _, err := env.svc.Update(ctx, env.workspaceID, record.ID, env.userID, model.UpdateExternalA2AAgentRequest{Status: &active}); err != nil {
+		t.Fatal(err)
+	}
+	tasks.dispatchAssignmentRun(ctx, env.workspaceID, env.taskID, &record.AgentID, env.userID)
+	tasks.WaitForAssignmentRuns()
+	if n := env.count(t, `SELECT COUNT(*) FROM agent_runs WHERE agent_id = ?`, record.AgentID); n != 1 {
+		t.Fatalf("runs after re-enabling = %d, want 1", n)
+	}
+}
+
 func TestAutoOnAssignmentStartsExactlyOneRun(t *testing.T) {
 	env := newExternalA2ATestEnv(t)
 	record := env.connect(t, "")

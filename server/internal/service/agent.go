@@ -842,6 +842,7 @@ type AgentService struct {
 	agentRuntimeProjection     agentRuntimeEventProjector
 	agentRuntimeLaunchEnabled  bool
 	externalA2ANames           externalA2ANameSyncer
+	externalA2AConnections     externalA2AConnectionReader
 	mcpRepo                    *repository.MCPRepository
 	externalMCPService         *ExternalMCPService
 	aiConnections              *AIConnectionService
@@ -6885,6 +6886,9 @@ func (s *AgentService) requireRunnableAgent(ctx context.Context, workspaceID, ag
 		return nil, err
 	}
 	if err := validateAgentTarget(agent, targetType); err != nil {
+		return nil, err
+	}
+	if err := s.requireActiveExternalA2AConnection(ctx, workspaceID, agent); err != nil {
 		return nil, err
 	}
 	if !agent.IsSystem && s.entitlementSvc != nil {

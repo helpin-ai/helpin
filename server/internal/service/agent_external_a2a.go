@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -17,6 +18,34 @@ const agentRunTriggerTypeTaskAssigned = "task_assigned"
 // linked agent's name.
 type externalA2ANameSyncer interface {
 	SyncNameForAgent(ctx context.Context, workspaceID, agentID, name string) error
+}
+
+// externalA2AConnectionReader resolves the connection behind an external agent.
+type externalA2AConnectionReader interface {
+	GetByAgentID(ctx context.Context, workspaceID, agentID string) (*model.ExternalA2AAgent, error)
+}
+
+// ErrExternalA2AAgentInactive means the agent's connection is disabled or
+// failing, so a run could not reach it. It is a kind of not-allowed launch.
+var ErrExternalA2AAgentInactive = fmt.Errorf("external agent connection is not active: %w", ErrAgentRunTargetNotAllowed)
+
+// requireActiveExternalA2AConnection rejects runs of an external agent whose
+// connection is not active; without one the run could only fail later.
+func (s *AgentService) requireActiveExternalA2AConnection(ctx context.Context, workspaceID string, agent *model.Agent) error {
+	if !isExternalA2AAgent(agent) || s.externalA2AConnections == nil {
+		return nil
+	}
+	record, err := s.externalA2AConnections.GetByAgentID(ctx, workspaceID, agent.ID)
+	if err != nil {
+		return err
+	}
+	if record == nil {
+		return agentRunPreconditionError(ErrExternalA2AAgentInactive, "external agent %s has no connection", agent.Name)
+	}
+	if record.Status != model.ExternalA2AStatusActive {
+		return agentRunPreconditionError(ErrExternalA2AAgentInactive, "external agent %s is %s; enable it in Settings → External agents", agent.Name, record.Status)
+	}
+	return nil
 }
 
 // isExternalA2AAgent reports whether runs of agent are delegated to a remote
@@ -204,6 +233,13 @@ func (s *AgentService) StartAssignmentRun(ctx context.Context, workspaceID, task
 	}
 	if strings.TrimSpace(agent.TriggerMode) != "auto_on_assignment" {
 		return nil, nil
+	}
+	// A disabled or failing connection keeps the assignment without a run.
+	if err := s.requireActiveExternalA2AConnection(ctx, workspaceID, agent); errors.Is(err, ErrExternalA2AAgentInactive) {
+		slog.InfoContext(ctx, "skip assignment run for inactive external agent", "workspace_id", workspaceID, "task_id", taskID, "agent_id", agentID)
+		return nil, nil
+	} else if err != nil {
+		return nil, err
 	}
 	active, err := s.runRepo.ListActiveByTarget(ctx, workspaceID, "task", taskID)
 	if err != nil {
