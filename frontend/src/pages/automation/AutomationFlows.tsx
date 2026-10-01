@@ -3335,7 +3335,7 @@ export function AutomationFlowsPage({
               ))}
               </TabsList>
             </Tabs>
-            <div className="flex min-w-0 flex-col gap-2 xs:flex-row sm:justify-end">
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:justify-end">
               <QuietSearchInput
                 containerClassName="min-w-0 sm:w-52"
                 aria-label="Search flows"
@@ -3344,7 +3344,7 @@ export function AutomationFlowsPage({
                 placeholder="Search flows"
               />
               <Select value={scopeFilter} onValueChange={(value) => setScopeFilter(value as typeof scopeFilter)}>
-                <SelectTrigger aria-label="Flow scope" className={cn(quietUnderlineControlClassName, 'w-full justify-between xs:w-36')}><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label="Flow scope" className={cn(quietUnderlineControlClassName, 'w-full justify-between sm:w-36')}><SelectValue /></SelectTrigger>
                 <SelectContent><SelectItem value="workspace">Workspace-wide</SelectItem><SelectItem value="team">My team</SelectItem><SelectItem value="mine">Created by me</SelectItem></SelectContent>
               </Select>
             </div>
