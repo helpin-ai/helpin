@@ -70,6 +70,13 @@ func ResolveAgentProfile(agent *model.Agent, invocationMode ...string) ResolvedP
 		resolved.ApprovalMode = agent.ApprovalMode
 	}
 
+	// External A2A agents work with their own tools. Helpin lends them none, so
+	// the default profile's repository tools must not make a run need a repo.
+	if strings.TrimSpace(agent.RuntimeKind) == model.AgentRuntimeKindA2A {
+		resolved.Tools, resolved.Commands, resolved.RequiresRepo = []string{}, []string{}, false
+		return resolved
+	}
+
 	if strings.TrimSpace(agent.RuntimeKind) == "native_sdk" && agentHasAvailableSkills(agent) {
 		resolved.Tools = appendMissingTools(resolved.Tools, ToolFindSkills, ToolReadSkill)
 	}
