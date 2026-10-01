@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -272,6 +273,18 @@ func (s *DocsEmbeddingService) syncSpace(ctx context.Context, workspaceID, space
 				return err
 			}
 			chunksByDocumentID[doc.ID] = 0
+			continue
+		}
+		states, err := s.chunkRepo.ListReusableEmbeddingStates(ctx, workspaceID, doc.ID, s.embeddingModel, contentChunkEmbeddingVersion, docsEmbeddingDimensions)
+		if err != nil {
+			return errors.Join(err, s.markSourcesFailed(ctx, sources, err, &startedAt))
+		}
+		if matchingKnowledgeIndex(doc.Title, chunks, states) {
+			totalChunks += len(chunks)
+			chunksByDocumentID[doc.ID] = len(chunks)
+			if err := s.updateAllSyncStates(ctx, sources, model.KnowledgeSourceSyncRunning, progressFor(idx+1, len(eligibleDocs)), idx+1, totalChunks, nil, &startedAt, nil); err != nil {
+				return err
+			}
 			continue
 		}
 

@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -47,7 +48,17 @@ func NewSupportContentSourceService(
 }
 
 func (s *SupportContentSourceService) List(ctx context.Context, workspaceID string) ([]model.SupportContentSource, error) {
-	return s.repo.ListByWorkspace(ctx, workspaceID)
+	sources, err := s.repo.ListByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	next := model.NextContentSourceAutoSync(time.Now())
+	for i := range sources {
+		if sources[i].SourceType == model.ContentSourceTypeWebsite && sources[i].SyncStatus != model.KnowledgeSourceSyncDisabled {
+			sources[i].NextSyncAt = &next
+		}
+	}
+	return sources, nil
 }
 
 func (s *SupportContentSourceService) Create(ctx context.Context, workspaceID string, req model.CreateSupportContentSourceRequest) (*model.SupportContentSource, error) {
@@ -188,6 +199,9 @@ func (s *SupportContentSourceService) Reindex(ctx context.Context, workspaceID, 
 	}
 	if existing == nil || existing.WorkspaceID != workspaceID {
 		return fmt.Errorf("content source not found in workspace")
+	}
+	if existing.SourceType == model.ContentSourceTypeWebsite {
+		return s.syncService.QueueSourceSync(ctx, workspaceID, id)
 	}
 	return s.syncService.QueueSourceReindex(ctx, workspaceID, id)
 }

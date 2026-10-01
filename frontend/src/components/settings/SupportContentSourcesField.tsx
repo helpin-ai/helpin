@@ -440,7 +440,7 @@ export function SupportContentSourcesField({
                               <p>For best results, sync <strong>support-focused content</strong> like help articles, product guides, or knowledge base pages.</p>
                               <p>Avoid marketing pages, product listings, or pages with complex layouts — these can reduce answer quality.</p>
                               <p>For multilingual sites, syncing one language version is sufficient unless the content differs between languages.</p>
-                              <p>New content is checked and synced automatically every 7 days.</p>
+                              <p>Website content is checked and synced automatically every day.</p>
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>

@@ -6,6 +6,9 @@ import (
 )
 
 const (
+	// ContentSourceAutoSyncHourUTC is the daily website refresh slot.
+	ContentSourceAutoSyncHourUTC = 2
+
 	ContentSourceTypeWebsite = "website"
 	ContentSourceTypeFile    = "file"
 
@@ -56,11 +59,22 @@ type SupportContentSource struct {
 	LastCrawlJobID       *string         `json:"last_crawl_job_id"`
 	LastSyncStartedAt    *time.Time      `json:"last_sync_started_at" gorm:"type:timestamptz"`
 	LastSyncCompletedAt  *time.Time      `json:"last_sync_completed_at" gorm:"type:timestamptz"`
+	NextSyncAt           *time.Time      `json:"next_sync_at" gorm:"-"`
 	CreatedAt            time.Time       `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt            time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (SupportContentSource) TableName() string { return "support_content_sources" }
+
+// NextContentSourceAutoSync returns the next daily website refresh in UTC.
+func NextContentSourceAutoSync(now time.Time) time.Time {
+	now = now.UTC()
+	next := time.Date(now.Year(), now.Month(), now.Day(), ContentSourceAutoSyncHourUTC, 0, 0, 0, time.UTC)
+	if !next.After(now) {
+		next = next.AddDate(0, 0, 1)
+	}
+	return next
+}
 
 // AgentContentSource links a support agent to a content source for RAG retrieval.
 type AgentContentSource struct {

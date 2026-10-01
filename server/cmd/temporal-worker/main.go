@@ -563,7 +563,7 @@ func main() {
 		cfg.OpenAIEmbeddingModel,
 		contentCrawler,
 		s3Client,
-		nil,
+		temporalapp.NewRunEngine(temporalClient, cfg.TemporalNamespace),
 	)
 	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo).
 		SetActivityService(pmActivityService)
@@ -745,6 +745,11 @@ func main() {
 		slog.Error("failed to ensure shared scheduled event delivery", "error", err)
 	}
 	scheduleCancel()
+	knowledgeScheduleCtx, knowledgeScheduleCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	if err := temporalapp.NewRunEngine(temporalClient, cfg.TemporalNamespace).EnsureDailyContentSourceSync(knowledgeScheduleCtx); err != nil {
+		slog.Error("daily knowledge refresh schedule unavailable", "error", err)
+	}
+	knowledgeScheduleCancel()
 	routingScheduleCtx, routingScheduleCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	if err := temporalapp.NewRunEngine(temporalClient, cfg.TemporalNamespace).EnsureMeetingFollowUpRouting(routingScheduleCtx); err != nil {
 		slog.Warn("meeting follow-up routing schedule unavailable", "error", err)
@@ -919,7 +924,11 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 
 	// Register content source sync workflow and activities.
 	w.RegisterWorkflow(temporalapp.ContentSourceSyncWorkflow)
+	w.RegisterWorkflow(temporalapp.DailyContentSourceSyncWorkflow)
 	if contentSourceSyncActivities != nil {
+		w.RegisterActivityWithOptions(contentSourceSyncActivities.QueueDailySourceSync, activity.RegisterOptions{
+			Name: "ContentSourceSyncActivities.QueueDailySourceSync",
+		})
 		w.RegisterActivityWithOptions(contentSourceSyncActivities.SyncContentSourceActivity, activity.RegisterOptions{
 			Name: "ContentSourceSyncActivities.SyncContentSourceActivity",
 		})

@@ -948,6 +948,7 @@ export interface SupportContentSource {
   last_crawl_job_id?: string | null;
   last_sync_started_at?: string | null;
   last_sync_completed_at?: string | null;
+  next_sync_at?: string | null;
   created_at: string;
   updated_at: string;
 }

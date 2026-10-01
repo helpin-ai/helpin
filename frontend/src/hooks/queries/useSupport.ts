@@ -1631,7 +1631,7 @@ export function useAgentKnowledgeSources(workspaceId: string, agentId?: string) 
       const sources = query.state.data as AgentKnowledgeSource[] | undefined;
       return sources?.some((source) => source.sync_status === 'queued' || source.sync_status === 'running')
         ? 2_000
-        : false;
+        : 60_000;
     },
   });
 }
@@ -1734,7 +1734,7 @@ export function useSupportContentSources(workspaceId: string) {
       const sources = query.state.data as SupportContentSource[] | undefined;
       return sources?.some((source) => source.sync_status === 'queued' || source.sync_status === 'running')
         ? 2_000
-        : false;
+        : 60_000;
     },
   });
 }
