@@ -1,5 +1,9 @@
 # Backend contributor guide
 
+## Community and cloud boundaries
+
+Follow the mandatory [Community/cloud boundary rules](../AGENTS.md#community-and-cloud-boundaries) before changing or publishing code, docs, configuration, or assets. Ask the owner when edition ownership or public visibility needs a decision; a build exclusion does not make source private.
+
 Use this guide when changing the Go API or Temporal worker. These are contribution conventions, not a claim that every existing file conforms. Start with [local development](../docs/development.md); Community is the default build and Enterprise uses `-tags ee`.
 
 ## Tech Stack

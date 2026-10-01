@@ -1,5 +1,9 @@
 # Backend contributor instructions
 
+## Community and cloud boundaries
+
+Follow the mandatory [Community/cloud boundary rules](../AGENTS.md#community-and-cloud-boundaries) before changing or publishing code, docs, configuration, or assets. Ask the owner when edition ownership or public visibility needs a decision; a build exclusion does not make source private.
+
 Use this reference when changing the Go API, product workers, or database layer. It describes contributor conventions and current entry points; examples illustrate patterns rather than guaranteeing every existing file conforms. Run commands below from `server/`. For documentation work, follow the [documentation guide](../docs/documentation-guide.md); for a complete local stack, use the [Community development guide](../docs/community/development.md).
 
 Source-reviewed September 18, 2026 against the manifests, router, migration CLI, and test fixtures. No service or database tests were run as part of this documentation review.

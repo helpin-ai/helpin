@@ -54,6 +54,7 @@ x-helpin-env: &helpin-env
   OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
   OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+  OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-}
   SENTRY_DSN: ${SENTRY_DSN:-}
   # Optional: pin an existing GitHub App. Empty uses the App created from the UI.
   GITHUB_APP_ID: ${GITHUB_APP_ID:-}

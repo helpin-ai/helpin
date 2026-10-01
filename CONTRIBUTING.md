@@ -39,6 +39,11 @@ Use the pinned Go and pnpm versions from the build files.
 
 ## Make a change
 
+Classify the change as shared Community, Enterprise/cloud-only, or private material
+and follow the [edition boundary rules](AGENTS.md#community-and-cloud-boundaries).
+Ask the maintainer when ownership or publication scope is unclear. Enterprise
+licensing and build exclusions do not hide source in a public repository.
+
 - Community Go commands omit `-tags ee`; changes that touch enterprise code also
   require the `-tags ee` checks.
 - Public visitor APIs must preserve workspace, origin, session, and identity

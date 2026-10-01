@@ -7,6 +7,13 @@
 <!-- Explain the resulting behavior. Note edition scope, breaking changes,
      migrations, or deployment steps where relevant. -->
 
+## Edition and publication review
+
+<!-- State Community/cloud scope and any owner decision. Confirm affected builds
+     and behavior in both editions. Review the full outgoing range for private
+     code, credentials, customer data, docs, fixtures, and assets. EE licensing
+     or build exclusion does not make source private. Flag unresolved decisions. -->
+
 ## Validation
 
 <!-- List checks actually run and their results. Explain anything not tested.
