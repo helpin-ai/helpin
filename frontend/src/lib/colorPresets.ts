@@ -28,4 +28,3 @@ export const EPIC_PRESET_COLORS = PRESET_COLORS.map((color) => {
   });
   return `#${channels.join('')}`;
 });
-
