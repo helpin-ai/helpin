@@ -155,9 +155,10 @@ class ChecksTest(unittest.TestCase):
                     lines = output.read_text().splitlines()
                     self.assertEqual(lines[0], 'cache<<CACHE')
                     self.assertEqual(lines[-1], 'CACHE')
-                    # Release (export) builds start fresh so cached layers cannot hold back OS security updates.
-                    self.assertEqual(sum('.cache-from=' in line for line in lines), 0 if export == 'true' else 2)
-                    self.assertEqual(sum(line.endswith('.no-cache=true') for line in lines), 2 if export == 'true' else 0)
+                    # OS package layers key on the date; release builds also pull fresh base images.
+                    self.assertEqual(sum('.cache-from=' in line for line in lines), 2)
+                    self.assertEqual(sum(line.endswith('.no-cache=true') for line in lines), 0)
+                    self.assertEqual(sum(re.search(r'\.args\.OS_PACKAGES_DATE=\d{4}-\d{2}-\d{2}$', line) is not None for line in lines), 2)
                     self.assertEqual(sum(line.endswith('.pull=true') for line in lines), 2 if export == 'true' else 0)
                     self.assertEqual(sum('.cache-to=' in line for line in lines), 2 if trusted == 'true' else 0)
 

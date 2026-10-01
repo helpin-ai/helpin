@@ -1,0 +1,44 @@
+name: Warm CI caches
+
+# Pull request CI can restore caches saved on its base branch but not those
+# saved by other pull requests. Build the cached artifacts on develop and main
+# so every pull request starts warm. Caches unused for 7 days expire, hence the
+# weekly refresh.
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - events-pipeline/rust-capture/**
+      - .github/workflows/warm-caches.yml
+  schedule:
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: warm-caches-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  eventpipeline:
+    name: Events Pipeline build cache
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libssl-dev
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: 1.88.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: events-pipeline/rust-capture
+          shared-key: eventpipeline
+      - name: Build capture, replay, bootstrap, and writer tests
+        working-directory: events-pipeline/rust-capture
+        run: cargo test --locked --no-run
