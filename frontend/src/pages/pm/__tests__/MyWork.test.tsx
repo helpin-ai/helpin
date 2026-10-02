@@ -16,7 +16,7 @@ const stableMocks = vi.hoisted(() => ({
     isLoading: false,
   },
   accessibleTeams: {
-    teams: [{ id: 'team-1', name: 'Engineering' }],
+    teams: [{ id: 'team-1', name: 'Engineering', color: '#4e8fea' }],
     hasTeams: true,
     isAdmin: false,
     loading: false,
@@ -107,7 +107,7 @@ describe('MyWorkPage', () => {
     localStorage.clear()
     stableMocks.canEdit = true
     stableMocks.access.isLoading = false
-    stableMocks.accessibleTeams.teams = [{ id: 'team-1', name: 'Engineering' }]
+    stableMocks.accessibleTeams.teams = [{ id: 'team-1', name: 'Engineering', color: '#4e8fea' }]
     stableMocks.accessibleTeams.hasTeams = true
     stableMocks.accessibleTeams.isAdmin = false
     stableMocks.accessibleTeams.loading = false
@@ -158,6 +158,9 @@ describe('MyWorkPage', () => {
     expect(container.textContent).toContain('High')
     expect(container.textContent).toContain('Blocked')
     expect(container.textContent).toContain('Agent running')
+    const teamMark = container.querySelector<HTMLElement>('[data-team-color]')
+    expect(teamMark?.style.backgroundColor).toBe('rgb(78, 143, 234)')
+    expect(teamMark?.classList.contains('size-[8px]')).toBe(true)
 
     act(() => {
       root.unmount()

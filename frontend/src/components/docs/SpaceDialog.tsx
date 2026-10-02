@@ -1,3 +1,4 @@
+import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { useEffect, useState } from 'react'
 import {
   Dialog,
@@ -216,7 +217,7 @@ export function SpaceDialog({ wsId, open, onOpenChange, space, defaultType }: Sp
                                 : 'border-border text-muted-foreground hover:border-primary/50 hover:text-foreground'
                             }`}
                           >
-                            {team.name}
+                            <TeamLabel team={team} />
                           </button>
                         )
                       })}

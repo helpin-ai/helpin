@@ -94,17 +94,16 @@ export function ProjectsTeamsNav({
                 <div className="group/team relative flex items-center">
                   <Collapsible.Trigger asChild>
                     <SidebarMenuButton className="h-8 flex-1 rounded-md px-2 cursor-pointer">
-                      <TeamBadge name={team.name} color={team.color} className="h-5 w-5 rounded-[4px]">
-                        <ArrowRight01Icon className={`h-3.5 w-3.5 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-                      </TeamBadge>
-                      <span className="truncate">{team.name}</span>
+                      <TeamBadge name={team.name} color={team.color} className="h-[20px] w-[20px] rounded-[4px] text-xs" />
+                      <span className="min-w-0 flex-1 truncate">{team.name}</span>
+                      <ArrowRight01Icon className={`mr-3 h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
                     </SidebarMenuButton>
                   </Collapsible.Trigger>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button
                         type="button"
-                        className="absolute right-1 flex h-5 w-5 items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted group-hover/team:opacity-100 data-[state=open]:opacity-100"
+                        className="absolute right-1 flex h-[20px] w-[20px] items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted group-hover/team:opacity-100 data-[state=open]:opacity-100"
                       >
                         <MoreVerticalIcon className="h-3.5 w-3.5 text-muted-foreground" />
                       </button>

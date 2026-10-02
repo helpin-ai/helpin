@@ -1,8 +1,8 @@
 import type { CSSProperties } from 'react';
-import { EPIC_PRESET_COLORS } from './colorPresets';
+import { PRESET_COLORS } from './colorPresets';
 import { getEpicBadgeTextColor } from '@/components/pm/epicColor';
 
-export const TEAM_PRESET_COLORS = EPIC_PRESET_COLORS;
+export const TEAM_PRESET_COLORS = PRESET_COLORS;
 
 export function randomTeamColor(): string {
   return TEAM_PRESET_COLORS[Math.floor(Math.random() * TEAM_PRESET_COLORS.length)];
@@ -27,4 +27,13 @@ export function teamColorStyle(value?: string | null): (CSSProperties & Record<s
     '--team-color-bg-dark': hex,
     '--team-color-fg-dark': foreground,
   };
+}
+
+/** Stable identity for teams whose saved color has been reset. */
+export function resolveTeamColor(name: string, color?: string | null): string {
+  const saved = normalizeTeamColor(color);
+  if (saved) return saved;
+  let hash = 0;
+  for (const character of name.toLowerCase()) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+  return TEAM_PRESET_COLORS[hash % TEAM_PRESET_COLORS.length];
 }

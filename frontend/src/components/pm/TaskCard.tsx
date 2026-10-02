@@ -1,3 +1,4 @@
+import { TeamLabel } from '@/components/workspace/TeamLabel';
 import type React from 'react';
 import { memo, useCallback, useContext, useMemo, useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
@@ -48,6 +49,7 @@ interface TaskCardProps {
   onOpenAgentRun?: (task: Task) => void;
   isOverlay?: boolean;
   teamName?: string;
+  teamColor?: string | null;
   /** @deprecated Use BoardDataContext instead */
   workspaceId?: string;
   /** @deprecated Use BoardDataContext instead */
@@ -150,6 +152,7 @@ function TaskCardComponent({
   onOpenAgentRun: onOpenAgentRunProp,
   isOverlay = false,
   teamName,
+  teamColor,
   workspaceId: workspaceIdProp,
   assignableMembers: assignableMembersProp,
   ownerNameMap: ownerNameMapProp,
@@ -462,7 +465,7 @@ function TaskCardComponent({
 
         {teamName && (
               <span className={cn(pillBase, 'shrink-0 border-border bg-muted/50 text-muted-foreground')}>
-                {teamName}
+                <TeamLabel team={{ name: teamName, color: teamColor }} />
               </span>
         )}
       </div>
@@ -898,6 +901,7 @@ export const TaskCard = memo(TaskCardComponent, (prev, next) => {
   return renderedTaskFieldsEqual(prev.task, next.task)
     && prev.isOverlay === next.isOverlay
     && prev.teamName === next.teamName
+    && prev.teamColor === next.teamColor
     && prev.showStateBadge === next.showStateBadge;
 });
 TaskCard.displayName = 'TaskCard';

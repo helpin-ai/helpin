@@ -1,3 +1,4 @@
+import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { useState, type FormEvent } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -135,7 +136,7 @@ export function EditMemberDialog({ workspaceId, member, teams, initialTeamIds, g
                     {teams.filter(team => team.name.toLowerCase().includes(teamSearch.trim().toLowerCase())).map(team => (
                       <label key={team.id} className="flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm hover:bg-muted/50 has-disabled:cursor-default">
                         <Checkbox checked={teamIds.includes(team.id)} disabled={!canEditTeams || saving || (isSelf && savedTeamIds.includes(team.id))} onCheckedChange={checked => setTeamIds(current => checked ? [...current, team.id] : current.filter(id => id !== team.id))} />
-                        {team.name}
+                        <TeamLabel team={team} />
                       </label>
                     ))}
                     {!teams.some(team => team.name.toLowerCase().includes(teamSearch.trim().toLowerCase())) && <p className="p-3 text-sm text-muted-foreground">{teams.length ? 'No teams match your search.' : 'No teams in this workspace yet.'}</p>}

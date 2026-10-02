@@ -48,7 +48,7 @@ func TestCreateTeam_Color(t *testing.T) {
 				t.Fatalf("GetTeamByID: %v", err)
 			}
 			if tc.want == "" {
-				if stored.Color == nil || !slices.Contains([]string{"#a6ade6", "#9ec1f3", "#94d2e7", "#8ccfc1", "#99cea3", "#b8ce97", "#e0ce94", "#f1c093", "#efa29b", "#f19eb5", "#e79dcb", "#d69ee1", "#bfa5fa", "#9bcae8", "#cbb9a8", "#c1c9d3"}, *stored.Color) {
+				if stored.Color == nil || !slices.Contains([]string{"#5e6ad2", "#4e8fea", "#3daed4", "#2da88e", "#45a557", "#7da642", "#c7a53d", "#e58c3a", "#e2564a", "#e54e78", "#d44ca0", "#b44ec9", "#8b5cf6", "#4a9ed6", "#a08060", "#788596"}, *stored.Color) {
 					t.Fatalf("expected an automatic palette color, got %v", stored.Color)
 				}
 			} else if stored.Color == nil || *stored.Color != tc.want {

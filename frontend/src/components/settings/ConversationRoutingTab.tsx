@@ -1,3 +1,4 @@
+import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { SettingsSaveBar } from './SettingsSaveBar';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Alert01Icon, ArchiveIcon, ArrowDown01Icon, DragDropVerticalIcon, InboxIcon, InformationCircleIcon, PencilEdit01Icon, PlusSignIcon, Settings02Icon, UndoIcon, UserGroupIcon } from '@/lib/icons';
@@ -1326,7 +1327,7 @@ export function ConversationRoutingTab({
                     </SelectTrigger>
                     <SelectContent>
                       {teams.map((team) => (
-                        <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>
+                        <SelectItem key={team.id} value={team.id}><TeamLabel team={team} /></SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

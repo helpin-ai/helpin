@@ -1,3 +1,4 @@
+import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from 'react';
 import { CheckListIcon, Copy01Icon, File01Icon, Loading01Icon, PencilEdit01Icon, PlusSignIcon, Delete01Icon, SparklesIcon, UserGroupIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
@@ -86,6 +87,7 @@ const STARTER_TEMPLATES: StarterTemplate[] = [
 function TemplateCard({
   template,
   teamName,
+  teamColor,
   stateName,
   onEdit,
   onDuplicate,
@@ -94,6 +96,7 @@ function TemplateCard({
 }: {
   template: TaskTemplate;
   teamName?: string;
+  teamColor?: string | null;
   stateName?: string;
   onEdit: () => void;
   onDuplicate: () => void;
@@ -129,7 +132,7 @@ function TemplateCard({
 
       <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
         <span className="rounded-md border border-border/60 bg-background px-2 py-1 text-xs text-muted-foreground">
-          {teamName ?? 'Shared'}
+          {teamName ? <TeamLabel team={{name:teamName,color:teamColor}} /> : 'Shared'}
         </span>
         <span className="rounded-md border border-border/60 bg-muted/40 px-2 py-1 text-xs text-muted-foreground">
           {defaultStateLabel}
@@ -428,7 +431,7 @@ export function TaskTemplatesSettings({
             <SelectItem value="__all__">All templates</SelectItem>
             {teams.map((team) => (
               <SelectItem key={team.id} value={team.id}>
-                {team.name} templates
+                <TeamLabel team={team} /> templates
               </SelectItem>
             ))}
           </SelectContent>
@@ -482,7 +485,7 @@ export function TaskTemplatesSettings({
               <TemplateCard
                 key={template.id}
                 template={template}
-                teamName={template.team_id ? teamMap.get(template.team_id) : undefined}
+                teamName={template.team_id ? teamMap.get(template.team_id) : undefined} teamColor={teams.find(team=>team.id===template.team_id)?.color}
                 stateName={template.workflow_state_id ? workflowStateMap.get(template.workflow_state_id) : undefined}
                 canManage={canManageTeamTemplate(template.team_id)}
                 onEdit={() => {

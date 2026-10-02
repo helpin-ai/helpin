@@ -1,3 +1,4 @@
+import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { useEffect, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import { useLocation, useNavigate } from '@tanstack/react-router'
@@ -122,7 +123,7 @@ export function TaskItemMetadataToolbar({ editor }: { editor: Editor }) {
             <option value="">Select team</option>
             {teams.map((team) => (
               <option key={team.id} value={team.id}>
-                {team.name}
+                <TeamLabel team={team} />
               </option>
             ))}
           </select>

@@ -1,3 +1,4 @@
+import { TeamColorMark } from '@/components/workspace/TeamLabel';
 import { TaskTriageSection } from './TaskTriageSection';
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { useTitle } from '@/hooks/useTitle';
@@ -1524,7 +1525,7 @@ function TaskDetailPanelBody({
                 value={form.team_id || '__none__'}
                 options={[
                   ...(teams.length === 0 ? [{ value: '__none__', label: 'Select team' }] : []),
-                  ...teams.map((t) => ({ value: t.id, label: t.name })),
+                  ...teams.map((t) => ({ value: t.id, label: t.name, icon: <TeamColorMark team={t} /> })),
                 ]}
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;

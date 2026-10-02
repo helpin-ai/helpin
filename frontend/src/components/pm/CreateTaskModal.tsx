@@ -1,3 +1,4 @@
+import { TeamColorMark } from '@/components/workspace/TeamLabel';
 import { TaskDraftSuggestions } from './TaskDraftSuggestions';
 import { EPIC_PICKER_WIDTH } from '@/components/pm/epicPickerGroups';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -1571,7 +1572,7 @@ export function CreateTaskModal({
                       value={form.team_id || "__none__"}
                       options={[
                         ...(teams.length === 0 ? [{ value: "__none__", label: "Select team" }] : []),
-                        ...teams.map((t) => ({ value: t.id, label: t.name })),
+                        ...teams.map((t) => ({ value: t.id, label: t.name, icon: <TeamColorMark team={t} /> })),
                       ]}
                       onChange={(value) =>
                         {

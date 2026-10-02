@@ -1,3 +1,4 @@
+import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useOrganizationMembers, useWorkspaceMemberPresenceMap } from '@/hooks/queries';
@@ -398,7 +399,7 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
                       <TableCell><span className="text-sm">{workspaceRoleLabel(member.role).replace('Workspace ', '')}</span></TableCell>
                       <TableCell>
                         {workspaceWide ? <span className="text-sm text-muted-foreground">All teams</span> : memberTeams.length ? (
-                          <div className="flex max-w-[240px] flex-wrap gap-1.5">{memberTeams.map(team => <Badge key={team.id} variant="outline" className="max-w-full text-xs font-normal"><span className="truncate">{team.name}</span></Badge>)}</div>
+                          <div className="flex max-w-[240px] flex-wrap gap-1.5">{memberTeams.map(team => <Badge key={team.id} variant="outline" className="max-w-full text-xs font-normal"><TeamLabel team={team} /></Badge>)}</div>
                         ) : <span className="text-sm text-muted-foreground">No teams</span>}
                       </TableCell>
                       <TableCell>
@@ -655,7 +656,7 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
                                   : 'border-border text-muted-foreground hover:border-primary/50 hover:text-foreground'
                               }`}
                             >
-                              {team.name}
+                              <TeamLabel team={team} />
                             </button>
                           );
                         })}

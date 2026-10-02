@@ -1,3 +1,4 @@
+import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loading01Icon, PencilEdit01Icon, PlusSignIcon, Tag01Icon, Delete01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
@@ -160,7 +161,7 @@ function LabelForm({
             <SelectItem value="__shared__">All teams</SelectItem>
             {teams.map((team) => (
               <SelectItem key={team.id} value={team.id}>
-                {team.name}
+                <TeamLabel team={team} />
               </SelectItem>
             ))}
           </SelectContent>

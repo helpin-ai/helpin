@@ -1,3 +1,4 @@
+import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { useEffect, useRef, useState } from 'react'
 import {
   Dialog,
@@ -79,7 +80,7 @@ export function CreateTaskDialog({
               <SelectContent>
                 {teams.map((team) => (
                   <SelectItem key={team.id} value={team.id}>
-                    {team.name}
+                    <TeamLabel team={team} />
                   </SelectItem>
                 ))}
               </SelectContent>

@@ -1,3 +1,4 @@
+import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { Copy01Icon, PauseIcon, PlayIcon, Forward01Icon, Delete01Icon, ZapIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import type { RecurringTemplateDetail } from '@/lib/pmTypes';
@@ -6,6 +7,7 @@ import { RecurringTemplateSummary } from '@/components/pm/RecurringTemplateSumma
 interface RecurringTemplateListProps {
   templates: RecurringTemplateDetail[];
   teamNames?: Map<string, string>;
+  teamColors?: Map<string, string | null | undefined>;
   ownerNames?: Map<string, string>;
   onView?: (template: RecurringTemplateDetail) => void;
   onEdit?: (template: RecurringTemplateDetail) => void;
@@ -20,6 +22,7 @@ interface RecurringTemplateListProps {
 export function RecurringTemplateList({
   templates,
   teamNames,
+  teamColors,
   ownerNames,
   onView,
   onEdit,
@@ -72,7 +75,7 @@ export function RecurringTemplateList({
             />
 
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              {teamName ? <span>Team: {teamName}</span> : null}
+              {teamName ? <TeamLabel team={{name:teamName,color:teamColors?.get(item.template.team_id ?? '')}} /> : null}
               {ownerName ? <span>Owner: {ownerName}</span> : null}
               {item.seed.name ? <span>Task seed: {item.seed.name}</span> : null}
             </div>

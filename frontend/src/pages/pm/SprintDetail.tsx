@@ -1,3 +1,4 @@
+import { TeamColorMark } from '@/components/workspace/TeamLabel';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getRouteApi, useLocation, useNavigate } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
@@ -622,7 +623,7 @@ export function SprintDetailPage() {
                 value={form.team_id || '__none__'}
                 options={[
                   { value: '__none__', label: 'Select team' },
-                  ...teams.map((t) => ({ value: t.id, label: t.name })),
+                  ...teams.map((t) => ({ value: t.id, label: t.name, icon: <TeamColorMark team={t} /> })),
                 ]}
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;

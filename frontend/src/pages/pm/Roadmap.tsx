@@ -1,3 +1,4 @@
+import { TeamColorMark } from '@/components/workspace/TeamLabel';
 import { QuietDropdown } from '@/components/design-system/quiet-dropdown';
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
@@ -382,6 +383,7 @@ export function RoadmapPage() {
                   zoom={zoom}
                   slug={slug}
                   teamNameMap={teamNameMap}
+                  teamColorMap={new Map(teams.map(team=>[team.id,team.color]))}
                   memberNameMap={memberNameMap}
                 />
               </section>
@@ -466,7 +468,7 @@ function RoadmapToolbar({
     {
       key: 'team',
       label: 'Team',
-      options: teams.map((team) => ({ value: team.id, label: team.name })),
+      options: teams.map((team) => ({ value: team.id, label: team.name, icon: <TeamColorMark team={team} /> })),
       singleSelect: true,
       searchableValues: true,
     },

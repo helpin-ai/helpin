@@ -1,3 +1,4 @@
+import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { createColumnHelper } from '@tanstack/react-table';
 import { Loading01Icon, MoreHorizontalIcon, PencilEdit01Icon, PlusSignIcon, Tag01Icon, Delete01Icon } from '@/lib/icons';
@@ -106,7 +107,7 @@ function LabelDialog({
                   <SelectItem value="__shared__">For everyone</SelectItem>
                   {teams.map((team) => (
                     <SelectItem key={team.id} value={team.id}>
-                      {team.name}
+                      <TeamLabel team={team} />
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -367,7 +368,7 @@ export function LabelsPage() {
               <SelectItem value="__shared__">For everyone</SelectItem>
               {teams.map((team) => (
                 <SelectItem key={team.id} value={team.id}>
-                  {team.name} labels
+                  <TeamLabel team={team} /> labels
                 </SelectItem>
               ))}
             </SelectContent>
