@@ -124,6 +124,7 @@ export function DocsLibraryRow({
   proposalBadge,
   onOpen,
   actions,
+  selection,
   compact = false,
 }: {
   title: string
@@ -133,6 +134,7 @@ export function DocsLibraryRow({
   proposalBadge?: ReactNode
   onOpen: () => void
   actions?: ReactNode
+  selection?: ReactNode
   compact?: boolean
 }) {
   const updatedLabel = timeAgo(updatedAt)
@@ -146,6 +148,7 @@ export function DocsLibraryRow({
         compact ? 'min-h-10' : 'min-h-[54px]',
       )}
     >
+      {selection && <div className="flex shrink-0 items-center pl-3 pr-1">{selection}</div>}
       <button
         type="button"
         onClick={onOpen}

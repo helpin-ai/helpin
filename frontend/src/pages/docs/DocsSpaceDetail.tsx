@@ -283,11 +283,13 @@ export function DocsSpaceDetail() {
 
           {scopedDocs.length > 0 ? (
             <DocumentsTable
-                documents={scopedDocs}
-                collectionPaths={collectionPaths}
-                showCollectionPath={view.kind === 'space_root'}
-                hasCollections={(collections ?? []).length > 0}
-                wsSlug={wsSlug}
+              wsId={wsId}
+              selectionScope={`${spaceId}:${view.kind}:${view.kind === 'collection' ? view.node.collection.id : ''}`}
+              documents={scopedDocs}
+              collectionPaths={collectionPaths}
+              showCollectionPath={view.kind === 'space_root'}
+              hasCollections={(collections ?? []).length > 0}
+              wsSlug={wsSlug}
               filterStatus={filterStatus}
               onFilterStatus={setFilterStatus}
               sortField={sortField}

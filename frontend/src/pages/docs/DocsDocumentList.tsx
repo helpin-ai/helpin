@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
+import { DocsBulkToolbar, DocsSelectionCheckbox } from '@/components/docs/DocsBulkToolbar'
+import { useDocsSelection } from '@/components/docs/useDocsSelection'
 import {
   ArchiveIcon,
   Tick01Icon,
@@ -139,6 +141,8 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
     })
   }, [documents, sortField, sortDir])
 
+  const selection = useDocsSelection(`${wsId}:${filterMode}:${filterStatus}:${membershipId}`, displayDocs)
+
   const handleDuplicateDoc = async (doc: DocsDocument) => {
     setDuplicatingDocId(doc.id)
     try {
@@ -275,10 +279,12 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
             />
           </div>
 
+          {canEditDocs && <DocsBulkToolbar key={selection.scope} wsId={wsId} selection={selection} />}
           <DocsLibraryList ariaLabel={title}>
             {displayDocs.map((doc: DocsDocument) => (
               <DocsLibraryRow
                 key={doc.id}
+                selection={canEditDocs ? <DocsSelectionCheckbox doc={doc} selection={selection} /> : undefined}
                 title={doc.title}
                 status={doc.status}
                 updatedAt={doc.updated_at}
@@ -293,6 +299,7 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
                       <button
                         type="button"
                         className="rounded p-1.5 text-foreground/50 transition-colors hover:bg-muted hover:text-foreground"
+                        disabled={selection.busy}
                         aria-label={`More options for ${doc.title}`}
                       >
                         <MoreHorizontalIcon className="h-4 w-4" />
