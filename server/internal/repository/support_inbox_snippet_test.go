@@ -1,6 +1,9 @@
 package repository
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestCleanMessageSnippet(t *testing.T) {
 	tests := []struct {
@@ -9,6 +12,20 @@ func TestCleanMessageSnippet(t *testing.T) {
 		limit int
 		want  string
 	}{
+
+		{name: "linked newsletter image with parentheses", raw: `[![Logo](https://img.example.com/logo(2).png)](https://track.example.com/click(1)) Weekly news`, limit: 100, want: "Logo Weekly news"},
+		{name: "image without alt text", raw: `![](https://img.example.com/pixel.png) Your weekly update`, limit: 100, want: "Your weekly update"},
+		{name: "reference image and link", raw: "![Logo][img] [Read the update][story]\n\n[img]: https://img.example.com/logo.png\n[story]: https://track.example.com/story", limit: 100, want: "Logo Read the update"},
+		{name: "html newsletter skips styles and scripts", raw: `<html><head><style>.logo {display:block}</style><title>Newsletter</title></head><body><script>alert(1)</script><img src="https://img.example.com/a.png"><p>Your &ldquo;weekly&rdquo; update</p></body></html>`, limit: 100, want: "Your “weekly” update"},
+		{name: "quoted angle bracket in image attribute", raw: `<img alt="" title="a > b" src="https://img.example.com/a.png"><p>Hello there</p>`, limit: 100, want: "Hello there"},
+		{name: "encoded html", raw: `&lt;img src=&quot;https://img.example.com/a.png&quot;&gt;&lt;p&gt;New updates&lt;/p&gt;`, limit: 100, want: "New updates"},
+		{name: "truncated html image", raw: `<img src="https://img.example.com/` + strings.Repeat("x", 500), limit: 100, want: ""},
+		{name: "truncated markdown image", raw: `![Logo](https://img.example.com/` + strings.Repeat("x", 500), limit: 100, want: "Logo"},
+		{name: "truncated linked image", raw: `[![Logo](https://img.example.com/logo.png)](https://track.example.com/` + strings.Repeat("x", 500), limit: 100, want: "Logo"},
+		{name: "hidden tracking content", raw: `<span style="display: none">https://track.example.com/pixel</span><span hidden>hidden</span><p>Weekly&nbsp;news</p>`, limit: 100, want: "Weekly news"},
+		{name: "image alt is a URL", raw: `![https://img.example.com/logo.png](https://img.example.com/logo.png) News`, limit: 100, want: "News"},
+		{name: "unicode truncation", raw: `<p>你好世界朋友</p>`, limit: 4, want: "你好世界…"},
+		{name: "literal comparison preserved", raw: `The value is 2 < 3 and 5 > 4`, limit: 100, want: "The value is 2 < 3 and 5 > 4"},
 		{
 			name:  "plain text passes through",
 			raw:   "Hi Marco, Thanks for the reply",
@@ -79,7 +96,7 @@ func TestCleanMessageSnippet(t *testing.T) {
 			name:  "html tags stripped",
 			raw:   "Hi <b>Ryan</b>, before we move on&hellip; &amp; thanks",
 			limit: 100,
-			want:  "Hi Ryan, before we move on&hellip; & thanks",
+			want:  "Hi Ryan, before we move on… & thanks",
 		},
 		{
 			name:  "Note prefix preserved with cleaned body",
