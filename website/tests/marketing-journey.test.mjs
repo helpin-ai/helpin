@@ -17,7 +17,8 @@ const marketingCopy = Object.values(files).join('\n');
 
 describe('marketing launch journey', () => {
   it('uses the new homepage and its current conversion paths', () => {
-    assert.match(files.home, /AI agents that do more than answer\./);
+    assert.match(files.home, /<HeroHeadline \/>/);
+    assert.match(files.home, /Let AI agents answer customers, keep help docs current/);
     assert.match(files.home, /<CtaRow primaryLabel="Start free trial"/);
     assert.match(files.actions, /https:\/\/app\.helpin\.ai\/register/);
     assert.match(files.actions, /https:\/\/cal\.com\/helpin-ai\/30min/);
