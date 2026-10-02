@@ -927,18 +927,21 @@ function Dashboard() {
   if (isAIAssistantPage) {
     return (
       <div className="space-y-4">
-        {saveIndicator}
-        {data?.settings.ai_agent_id && (
-          <div className="flex justify-end">
-            <SupportAIPreview key={`${workspaceId}:${data.settings.ai_agent_id}`} workspaceId={workspaceId} agentId={data.settings.ai_agent_id} />
-          </div>
-        )}
+        <SettingsAutosaveGuard isDirty={autosave.isDirty} error={autosave.error} onRetry={autosave.retry} />
         <Tabs defaultValue="setup">
-          <TabsList variant="line" aria-label="AI assistant settings" className="max-w-full overflow-x-auto">
-            <TabsTrigger value="setup">Setup</TabsTrigger>
-            <TabsTrigger value="answers">Preferred answers</TabsTrigger>
-            <TabsTrigger value="handoff">Handoff &amp; follow-up</TabsTrigger>
-          </TabsList>
+          <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 bg-background">
+            <TabsList variant="line" aria-label="AI assistant settings" className="max-w-full overflow-x-auto">
+              <TabsTrigger value="setup">Setup</TabsTrigger>
+              <TabsTrigger value="answers">Preferred answers</TabsTrigger>
+              <TabsTrigger value="handoff">Handoff &amp; follow-up</TabsTrigger>
+            </TabsList>
+            <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-3">
+              <SettingsSaveStatus status={autosave.status} error={autosave.error} onRetry={autosave.retry} />
+              {data?.settings.ai_agent_id && (
+                <SupportAIPreview key={`${workspaceId}:${data.settings.ai_agent_id}`} workspaceId={workspaceId} agentId={data.settings.ai_agent_id} />
+              )}
+            </div>
+          </div>
           <TabsContent value="setup" className="mt-4">{aiSetupSection}</TabsContent>
           <TabsContent value="answers" className="mt-4">
             <CuratedGuidanceField
