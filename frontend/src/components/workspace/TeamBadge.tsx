@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { resolveTeamColor, teamColorStyle } from '@/lib/teamColor';
+import { resolveTeamColor, teamColorStyle, TEAM_PRESET_COLORS } from '@/lib/teamColor';
 import { cn } from '@/lib/utils';
 
 /** Decorative team identity; the adjacent team name supplies the accessible label. */
@@ -9,7 +9,11 @@ export function TeamBadge({ name, color, className, children }: {
   className?: string;
   children?: ReactNode;
 }) {
-  const style = teamColorStyle(resolveTeamColor(name, color));
+  const resolvedColor = resolveTeamColor(name, color);
+  const style = teamColorStyle(resolvedColor);
+  // Preset badges use the white initials shown in the team identity design.
+  // Custom shades retain their contrast-aware text (including white backgrounds).
+  if (style && TEAM_PRESET_COLORS.includes(resolvedColor)) style['--team-color-fg'] = '#ffffff';
   return (
     <span
       aria-hidden="true"

@@ -95,15 +95,18 @@ export function ProjectsTeamsNav({
                   <Collapsible.Trigger asChild>
                     <SidebarMenuButton className="h-8 flex-1 rounded-md px-2 cursor-pointer">
                       <TeamBadge name={team.name} color={team.color} className="h-[20px] w-[20px] rounded-[4px] text-xs" />
-                      <span className="min-w-0 flex-1 truncate">{team.name}</span>
-                      <ArrowRight01Icon className={`mr-3 h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                      <span className="min-w-0 flex-1 truncate pr-5">{team.name}</span>
+                      <span data-team-chevron aria-hidden="true" className="-mr-0.5 flex h-5 w-5 shrink-0 items-center justify-center">
+                        <ArrowRight01Icon className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                      </span>
                     </SidebarMenuButton>
                   </Collapsible.Trigger>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button
                         type="button"
-                        className="absolute right-1 flex h-[20px] w-[20px] items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted group-hover/team:opacity-100 data-[state=open]:opacity-100"
+                        aria-label={`Team actions for ${team.name}`}
+                        className="absolute right-7 flex h-5 w-5 items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted group-hover/team:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
                       >
                         <MoreVerticalIcon className="h-3.5 w-3.5 text-muted-foreground" />
                       </button>
