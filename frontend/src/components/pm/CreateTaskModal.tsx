@@ -1355,6 +1355,21 @@ export function CreateTaskModal({
                             next[idx] = { ...next[idx], text: e.target.value };
                             setForm((prev) => ({ ...prev, checklist_items: next }));
                           }}
+                          onKeyDown={(event) => {
+                            if (event.key !== 'Enter' || event.nativeEvent.isComposing || event.keyCode === 229) return;
+                            event.preventDefault();
+                            event.stopPropagation();
+                            if (!item.text.trim()) return;
+                            const nextInput = event.currentTarget.parentElement?.nextElementSibling?.querySelector('input');
+                            if (nextInput) {
+                              nextInput.focus();
+                            } else {
+                              setForm((prev) => ({
+                                ...prev,
+                                checklist_items: [...prev.checklist_items, { text: '', position: prev.checklist_items.length }],
+                              }));
+                            }
+                          }}
                           placeholder="Item text"
                           className="flex-1 bg-transparent text-sm py-1 outline-none placeholder:text-muted-foreground/50"
                         />
