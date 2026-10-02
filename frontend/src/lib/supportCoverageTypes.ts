@@ -218,6 +218,7 @@ export interface SupportCoverageGapMergeSuggestion {
 }
 
 export interface SupportCoverageSummary {
+  unreviewed_detection_count?: number
   new_gaps_this_week: number
   top_recurring_gaps: number
   gaps_fixed_this_week: number
@@ -263,6 +264,11 @@ export interface CoverageTopicV2 {
   conversation_count: number
   customer_count: number
   updated_at: string
+}
+
+export interface CoverageInsightPage<T> {
+  items: T[] | null
+  total?: number
 }
 
 export interface CoverageTopicDetailV2 {

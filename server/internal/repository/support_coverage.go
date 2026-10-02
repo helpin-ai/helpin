@@ -727,8 +727,13 @@ func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID st
 		Joins("LEFT JOIN support_coverage_topics t ON t.id = g.topic_id").
 		Where("g.workspace_id = ?", workspaceID).
 		Where("g.status != ?", model.SupportCoverageGapStatusMerged)
-	if !filter.ShowRaw {
+	if filter.ReviewOnly {
+		q = applyRawEventDetectionGaps(q, "g", false)
+	} else if !filter.ShowRaw {
 		q = applyHideRawEventDetectionGaps(q, "g")
+	}
+	if filter.ConversationID != "" {
+		q = applyCoverageConversationFilter(q, "g", filter.ConversationID)
 	}
 
 	if filter.Status != "" {
@@ -767,8 +772,13 @@ func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID st
 	countQ := r.db.WithContext(ctx).
 		Table("support_coverage_gaps").
 		Where("workspace_id = ? AND status != ?", workspaceID, model.SupportCoverageGapStatusMerged)
-	if !filter.ShowRaw {
+	if filter.ReviewOnly {
+		countQ = applyRawEventDetectionGaps(countQ, "support_coverage_gaps", false)
+	} else if !filter.ShowRaw {
 		countQ = applyHideRawEventDetectionGaps(countQ, "support_coverage_gaps")
+	}
+	if filter.ConversationID != "" {
+		countQ = applyCoverageConversationFilter(countQ, "support_coverage_gaps", filter.ConversationID)
 	}
 	if filter.Status != "" {
 		countQ = countQ.Where("status = ?", filter.Status)
@@ -866,8 +876,21 @@ func supportCoverageGapReviewFlags(raw json.RawMessage) (bool, bool) {
 }
 
 func applyHideRawEventDetectionGaps(q *gorm.DB, tableAlias string) *gorm.DB {
+	return applyRawEventDetectionGaps(q, tableAlias, true)
+}
+
+func applyCoverageConversationFilter(q *gorm.DB, tableAlias, conversationID string) *gorm.DB {
+	return q.Where(fmt.Sprintf(`EXISTS (SELECT 1 FROM support_gap_evidence ce
+		WHERE ce.gap_id = %s.id AND ce.workspace_id = %s.workspace_id AND ce.conversation_id = ?)`, tableAlias, tableAlias), conversationID)
+}
+
+func applyRawEventDetectionGaps(q *gorm.DB, tableAlias string, hide bool) *gorm.DB {
+	prefix := ""
+	if hide {
+		prefix = "NOT "
+	}
 	return q.Where(
-		fmt.Sprintf(`NOT (%s AND %s.v1_gap_type = ? AND %s.confidence < ?)`,
+		prefix+fmt.Sprintf(`(%s AND %s.v1_gap_type = ? AND %s.confidence < ?)`,
 			metadataSourceEqualsCondition(q, tableAlias),
 			tableAlias,
 			tableAlias,
@@ -1389,41 +1412,44 @@ func (r *SupportCoverageRepository) GetSummary(ctx context.Context, workspaceID 
 	weekAgo := now.AddDate(0, 0, -7)
 	summary := &model.SupportCoverageSummary{}
 
-	var newGaps, openGaps, fixedGaps int64
-
-	r.db.WithContext(ctx).
-		Model(&model.SupportCoverageGap{}).
-		Where("workspace_id = ? AND status != ? AND created_at >= ?",
-			workspaceID, model.SupportCoverageGapStatusMerged, weekAgo).
-		Count(&newGaps)
+	visible := func() *gorm.DB {
+		return applyHideRawEventDetectionGaps(r.db.WithContext(ctx).
+			Table("support_coverage_gaps g").
+			Where("g.workspace_id = ? AND g.status != ?", workspaceID, model.SupportCoverageGapStatusMerged), "g")
+	}
+	var newGaps, openGaps, fixedGaps, reviewGaps, totalEvidence int64
+	if err := visible().Where("g.created_at >= ?", weekAgo).Count(&newGaps).Error; err != nil {
+		return nil, fmt.Errorf("count new coverage gaps: %w", err)
+	}
+	if err := visible().Where("g.status = ?", model.SupportCoverageGapStatusOpen).Count(&openGaps).Error; err != nil {
+		return nil, fmt.Errorf("count open coverage gaps: %w", err)
+	}
+	if err := visible().Where("g.status = ? AND g.updated_at >= ?", model.SupportCoverageGapStatusDone, weekAgo).Count(&fixedGaps).Error; err != nil {
+		return nil, fmt.Errorf("count fixed coverage gaps: %w", err)
+	}
+	if err := applyRawEventDetectionGaps(r.db.WithContext(ctx).Table("support_coverage_gaps g").
+		Where("g.workspace_id = ? AND g.status = ?", workspaceID, model.SupportCoverageGapStatusOpen), "g", false).Count(&reviewGaps).Error; err != nil {
+		return nil, fmt.Errorf("count unreviewed coverage detections: %w", err)
+	}
+	if err := visible().Joins("JOIN support_gap_evidence e ON e.gap_id = g.id AND e.workspace_id = g.workspace_id").
+		Count(&totalEvidence).Error; err != nil {
+		return nil, fmt.Errorf("count visible coverage evidence: %w", err)
+	}
 	summary.NewGapsThisWeek = int(newGaps)
-
-	r.db.WithContext(ctx).
-		Model(&model.SupportCoverageGap{}).
-		Where("workspace_id = ? AND status = ?",
-			workspaceID, model.SupportCoverageGapStatusOpen).
-		Count(&openGaps)
 	summary.TotalOpenGaps = int(openGaps)
-
-	r.db.WithContext(ctx).
-		Model(&model.SupportCoverageGap{}).
-		Where("workspace_id = ? AND status = ? AND updated_at >= ?",
-			workspaceID, model.SupportCoverageGapStatusDone, weekAgo).
-		Count(&fixedGaps)
 	summary.GapsFixedThisWeek = int(fixedGaps)
-
-	var totalEvidence int64
-	r.db.WithContext(ctx).
-		Table("support_gap_evidence").
-		Where("workspace_id = ?", workspaceID).
-		Count(&totalEvidence)
+	summary.UnreviewedDetectionCount = int(reviewGaps)
 	summary.TotalEvidenceCount = int(totalEvidence)
 
 	var lastRun model.SupportCoverageAnalysisRun
-	if err := r.db.WithContext(ctx).
+	err := r.db.WithContext(ctx).
 		Where("workspace_id = ? AND status = ?", workspaceID, model.SupportCoverageAnalysisRunStatusCompleted).
 		Order("completed_at DESC").
-		First(&lastRun).Error; err == nil && lastRun.CompletedAt != nil {
+		First(&lastRun).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("find last coverage analysis: %w", err)
+	}
+	if err == nil {
 		summary.LastAnalyzedAt = lastRun.CompletedAt
 	}
 

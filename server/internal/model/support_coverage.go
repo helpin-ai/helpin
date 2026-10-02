@@ -363,6 +363,8 @@ type SupportCoverageGapFilter struct {
 	Search              string `json:"search"`
 	HasMergeSuggestions bool   `json:"has_merge_suggestions"`
 	ShowRaw             bool   `json:"show_raw"`
+	ReviewOnly          bool   `json:"review_only"`
+	ConversationID      string `json:"conversation_id"`
 	Page                int    `json:"page"`
 	PerPage             int    `json:"per_page"`
 }
@@ -428,11 +430,12 @@ type SupportConversationCoverageState struct {
 
 // SupportCoverageSummary is returned by the summary endpoint.
 type SupportCoverageSummary struct {
-	NewGapsThisWeek    int        `json:"new_gaps_this_week"`
-	TopRecurringGaps   int        `json:"top_recurring_gaps"`
-	GapsFixedThisWeek  int        `json:"gaps_fixed_this_week"`
-	TotalOpenGaps      int        `json:"total_open_gaps"`
-	TotalEvidenceCount int        `json:"total_evidence_count"`
-	HandoffsAfterFixes int        `json:"handoffs_after_fixes"`
-	LastAnalyzedAt     *time.Time `json:"last_analyzed_at,omitempty"`
+	UnreviewedDetectionCount int        `json:"unreviewed_detection_count"`
+	NewGapsThisWeek          int        `json:"new_gaps_this_week"`
+	TopRecurringGaps         int        `json:"top_recurring_gaps"`
+	GapsFixedThisWeek        int        `json:"gaps_fixed_this_week"`
+	TotalOpenGaps            int        `json:"total_open_gaps"`
+	TotalEvidenceCount       int        `json:"total_evidence_count"`
+	HandoffsAfterFixes       int        `json:"handoffs_after_fixes"`
+	LastAnalyzedAt           *time.Time `json:"last_analyzed_at,omitempty"`
 }

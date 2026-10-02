@@ -71,6 +71,13 @@ func (s *SupportCoverageV2Service) ListTopics(ctx context.Context, workspaceID s
 	return s.repo.ListTopics(ctx, workspaceID, limit, offset)
 }
 
+func (s *SupportCoverageV2Service) CountTopics(ctx context.Context, workspaceID string) (int64, error) {
+	if err := s.requireRead(ctx, workspaceID); err != nil {
+		return 0, err
+	}
+	return s.repo.CountTopics(ctx, workspaceID)
+}
+
 func (s *SupportCoverageV2Service) GetTopic(ctx context.Context, workspaceID, topicID string) (*CoverageTopicDetailV2, error) {
 	if err := s.requireRead(ctx, workspaceID); err != nil {
 		return nil, err
@@ -87,6 +94,13 @@ func (s *SupportCoverageV2Service) ListSignals(ctx context.Context, workspaceID 
 		return nil, err
 	}
 	return s.repo.ListUnreviewedSignals(ctx, workspaceID, limit, offset)
+}
+
+func (s *SupportCoverageV2Service) CountSignals(ctx context.Context, workspaceID string) (int64, error) {
+	if err := s.requireRead(ctx, workspaceID); err != nil {
+		return 0, err
+	}
+	return s.repo.CountUnreviewedSignals(ctx, workspaceID)
 }
 
 func (s *SupportCoverageV2Service) ReviewSignal(ctx context.Context, workspaceID, signalID, topicID, actorID string) error {

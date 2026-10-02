@@ -11,6 +11,48 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestCoverageInsightPagesIncludeTotals(t *testing.T) {
+	db := setupCoverageV2TestDB(t, "pagination")
+	repo := NewCoverageV2Repository(db)
+	for i := 0; i < 28; i++ {
+		id := fmt.Sprintf("item-%02d", i)
+		if err := db.Exec(`INSERT INTO coverage_topics (id, workspace_id, canonical_key, title, customer_need, status, assignment_policy, metadata) VALUES (?, 'ws-1', ?, ?, 'Need help', 'open', 'v1', ?)`, id, id, id, []byte(`{}`)).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Exec(`INSERT INTO coverage_unreviewed_signals (id, workspace_id, signal_key, source_kind, source_id, normalized_query, meaningful_tokens, confidence, status, observed_at, metadata) VALUES (?, 'ws-1', ?, 'conversation', ?, 'Need help', 2, 0.4, 'unreviewed', ?, ?)`, id, id, id, time.Now().UTC(), []byte(`{}`)).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Exec(`UPDATE coverage_topics SET status = 'archived' WHERE id = 'item-00'`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`UPDATE coverage_unreviewed_signals SET status = 'dismissed' WHERE id = 'item-00'`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`UPDATE coverage_topics SET workspace_id = 'ws-2' WHERE id = 'item-01'`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`UPDATE coverage_unreviewed_signals SET workspace_id = 'ws-2' WHERE id = 'item-01'`).Error; err != nil {
+		t.Fatal(err)
+	}
+	topics, err := repo.ListTopics(context.Background(), "ws-1", 25, 25)
+	if err != nil || len(topics) != 1 {
+		t.Fatalf("topic second page: %d, %v", len(topics), err)
+	}
+	signals, err := repo.ListUnreviewedSignals(context.Background(), "ws-1", 25, 25)
+	if err != nil || len(signals) != 1 {
+		t.Fatalf("signal second page: %d, %v", len(signals), err)
+	}
+	topicCount, err := repo.CountTopics(context.Background(), "ws-1")
+	if err != nil || topicCount != 26 {
+		t.Fatalf("topic total: %d, %v", topicCount, err)
+	}
+	signalCount, err := repo.CountUnreviewedSignals(context.Background(), "ws-1")
+	if err != nil || signalCount != 26 {
+		t.Fatalf("signal total: %d, %v", signalCount, err)
+	}
+}
+
 func TestCoverageV2ClaimIsOwnerCheckedAndLeaseIsReclaimable(t *testing.T) {
 	db := setupCoverageV2TestDB(t, "claim")
 	repo := NewCoverageV2Repository(db)

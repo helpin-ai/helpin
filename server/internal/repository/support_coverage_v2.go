@@ -561,6 +561,13 @@ func (r *CoverageV2Repository) ListTopics(ctx context.Context, workspaceID strin
 	return topics, err
 }
 
+func (r *CoverageV2Repository) CountTopics(ctx context.Context, workspaceID string) (int64, error) {
+	var total int64
+	err := r.db.WithContext(ctx).Model(&model.CoverageTopicV2{}).
+		Where("workspace_id = ? AND status <> ?", workspaceID, model.CoverageTopicArchived).Count(&total).Error
+	return total, err
+}
+
 func (r *CoverageV2Repository) GetTopic(ctx context.Context, workspaceID, topicID string) (*model.CoverageTopicV2, []model.CoverageFinding, error) {
 	var topic model.CoverageTopicV2
 	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND id = ?", workspaceID, topicID).First(&topic).Error; err != nil {
@@ -585,6 +592,13 @@ func (r *CoverageV2Repository) ListUnreviewedSignals(ctx context.Context, worksp
 	err := r.db.WithContext(ctx).Where("workspace_id = ? AND status = ?", workspaceID, model.CoverageSignalUnreviewed).
 		Order("observed_at DESC, id ASC").Limit(limit).Offset(max(0, offset)).Find(&signals).Error
 	return signals, err
+}
+
+func (r *CoverageV2Repository) CountUnreviewedSignals(ctx context.Context, workspaceID string) (int64, error) {
+	var total int64
+	err := r.db.WithContext(ctx).Model(&model.CoverageUnreviewedSignal{}).
+		Where("workspace_id = ? AND status = ?", workspaceID, model.CoverageSignalUnreviewed).Count(&total).Error
+	return total, err
 }
 
 func (r *CoverageV2Repository) ReviewSignal(ctx context.Context, workspaceID, signalID, topicID, actorID string) error {

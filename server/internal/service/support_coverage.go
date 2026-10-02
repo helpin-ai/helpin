@@ -390,6 +390,12 @@ func IsGapResolutionConflict(err error) bool {
 
 // ReclassifyGap changes the v1 gap type.
 func (s *SupportCoverageService) ReclassifyGap(ctx context.Context, workspaceID, gapID, v1GapType string) error {
+	switch v1GapType {
+	case model.SupportCoverageV1GapMissingArticle, model.SupportCoverageV1GapWeakArticle,
+		model.SupportCoverageV1GapOutdatedOrConflictingArticle, model.SupportCoverageV1GapNeedsReview:
+	default:
+		return fmt.Errorf("unsupported gap classification")
+	}
 	return s.coverageRepo.ReclassifyGap(ctx, workspaceID, gapID, v1GapType)
 }
 

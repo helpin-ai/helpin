@@ -20,6 +20,15 @@ import type {
   CoverageTopicV2,
 } from '@/lib/supportCoverageTypes'
 import { timeAgo } from '@/lib/utils'
+import { coverageHealthPresentation } from './coverageHealth'
+
+interface InsightPagination {
+  total?: number
+  hasMore: boolean
+  loadingMore: boolean
+  loadMoreError: string | null
+  loadMore: () => unknown
+}
 
 interface CoverageInsightsProps {
   topics: CoverageTopicV2[]
@@ -28,6 +37,10 @@ interface CoverageInsightsProps {
   selectedTopic: CoverageTopicDetailV2 | null
   topicLoading: boolean
   loading: boolean
+  topicsLoading: boolean
+  signalsLoading: boolean
+  topicPagination: InsightPagination
+  signalPagination: InsightPagination
   errors: Record<string, string>
   wsSlug: string
   signalTopicSelections: Record<string, string>
@@ -42,6 +55,25 @@ interface CoverageInsightsProps {
   onDismissSignal: (signalId: string) => void
   onRetryAttempt: (attemptId: string) => void
   onRefresh: () => void
+  onOpenConversationGaps: (conversationId: string) => void
+}
+
+function InsightListFooter({ count, label, pagination }: { count: number; label: string; pagination: InsightPagination }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 pt-3">
+      <span className="text-xs text-quiet-text-tertiary">
+        Showing {count}{typeof pagination.total === 'number' ? ` of ${pagination.total}` : ''} {label}
+      </span>
+      <div className="flex items-center gap-3">
+        {pagination.loadMoreError && <span role="alert" className="text-xs text-destructive">Could not load more. Try again.</span>}
+        {pagination.hasMore && (
+          <Button variant="outline" size="sm" disabled={pagination.loadingMore} onClick={() => { void pagination.loadMore() }}>
+            {pagination.loadingMore ? 'Loading…' : pagination.loadMoreError ? 'Try again' : 'Load more'}
+          </Button>
+        )}
+      </div>
+    </div>
+  )
 }
 
 function EmptyState({
@@ -74,8 +106,9 @@ export function CoverageInsights(props: CoverageInsightsProps) {
     canEdit,
     canManage,
   } = props
+  const analysisState = health ? coverageHealthPresentation(health) : null
   const state = (surface: string) =>
-    loading ? (
+    (surface === 'topics' ? props.topicsLoading : surface === 'signals' ? props.signalsLoading : loading) ? (
       <p role="status" className="py-8 text-quiet-text-tertiary">
         Loading coverage…
       </p>
@@ -130,12 +163,20 @@ export function CoverageInsights(props: CoverageInsightsProps) {
               ))}
             </div>
           ))}
+        {!props.topicsLoading && !errors.topics && topics.length > 0 && (
+          <InsightListFooter count={topics.length} label="topics" pagination={props.topicPagination} />
+        )}
       </TabsContent>
       <TabsContent value="signals">
         <p className="mb-4 text-sm text-quiet-text-tertiary">
           These signals need human review. Attach relevant evidence to a
           customer topic, or dismiss it.
         </p>
+        {canEdit && signals.length > 0 && props.topicPagination.hasMore && (
+          <Button className="mb-3" size="sm" variant="ghost" disabled={props.topicPagination.loadingMore} onClick={() => { void props.topicPagination.loadMore() }}>
+            {props.topicPagination.loadingMore ? 'Loading topics…' : 'Load more topics to choose from'}
+          </Button>
+        )}
         {state('signals') ??
           (signals.length === 0 ? (
             <EmptyState
@@ -216,6 +257,9 @@ export function CoverageInsights(props: CoverageInsightsProps) {
               ))}
             </div>
           ))}
+        {!props.signalsLoading && !errors.signals && signals.length > 0 && (
+          <InsightListFooter count={signals.length} label="signals" pagination={props.signalPagination} />
+        )}
       </TabsContent>
       <TabsContent value="health">
         {state('health') ??
@@ -227,14 +271,9 @@ export function CoverageInsights(props: CoverageInsightsProps) {
           ) : (
             <>
               <p className="text-sm font-semibold">
-                {!health.rollout.capture_enabled
-                  ? 'Coverage analysis is paused'
-                  : !health.latest_batch
-                    ? 'Waiting for the first analysis'
-                    : health.healthy
-                      ? 'No analysis failures'
-                      : 'Some conversations need another attempt'}
+                {analysisState?.title}
               </p>
+              {analysisState?.description && <p className="mt-2 max-w-xl text-sm text-quiet-text-tertiary">{analysisState.description}</p>}
               {health.latest_batch && (
                 <p className="mt-2 text-sm text-quiet-text-tertiary">
                   {health.latest_batch.succeeded_count} of{' '}
@@ -361,6 +400,10 @@ export function CoverageInsights(props: CoverageInsightsProps) {
                 </div>
               </dl>
               {finding.conversation_id ? (
+                <div className="flex flex-wrap items-center gap-4">
+                  <Button size="sm" variant="outline" onClick={() => props.onOpenConversationGaps(finding.conversation_id!)}>
+                    View open gaps
+                  </Button>
                 <a
                   href={`/w/${encodeURIComponent(wsSlug)}/support/${encodeURIComponent(finding.conversation_id)}`}
                   target="_blank"
@@ -370,6 +413,7 @@ export function CoverageInsights(props: CoverageInsightsProps) {
                   View source conversation
                   <span className="sr-only"> (opens in a new tab)</span>
                 </a>
+                </div>
               ) : (
                 <p className="text-xs text-quiet-text-tertiary">
                   Source conversation unavailable.
