@@ -310,7 +310,6 @@ export function CreateTaskModal({
   const [stateId, setStateId] = useState(initialStateId ?? '');
   const [saveTaskAsTemplate, setSaveTaskAsTemplate] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [draftCheckPending, setDraftCheckPending] = useState(false);
   const confirm = useConfirm();
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const [descriptionEditorKey, setDescriptionEditorKey] = useState(0);
@@ -860,7 +859,7 @@ export function CreateTaskModal({
   }, [form.team_id, workflow, stateId, workspaceId]);
 
   const submit = useCallback(async (createAnother = false) => {
-    if (!canSubmit || submitting || draftCheckPending) return;
+    if (!canSubmit || submitting) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -1033,7 +1032,6 @@ export function CreateTaskModal({
   }, [
     canSubmit,
     submitting,
-    draftCheckPending,
     form,
     stateId,
     descriptionMode,
@@ -1298,7 +1296,6 @@ export function CreateTaskModal({
                   teamId={form.team_id}
                   taskType={form.task_type}
                   disabled={submitting}
-                  onPending={setDraftCheckPending}
                   onApply={(field, value) => {
                     setTaskTypeDirty(field === 'task_type');
                     setForm((previous) => ({ ...previous, ...(field === 'team' ? { team_id: value } : { task_type: value as TaskType }) }));
@@ -1897,7 +1894,7 @@ export function CreateTaskModal({
                 type="button"
                 variant="ghost"
                 onClick={() => submit(true)}
-                disabled={!canSubmit || submitting || draftCheckPending}
+                disabled={!canSubmit || submitting}
               >
                 Save & create another
               </Button>
@@ -1905,7 +1902,7 @@ export function CreateTaskModal({
             <Button
               type="button"
               onClick={() => submit(false)}
-              disabled={!canSubmit || submitting || draftCheckPending}
+              disabled={!canSubmit || submitting}
             >
               {submitting ? <Loading01Icon className="h-4 w-4 animate-spin" /> : null}
               {submitting ? "Saving..." : assignedAgentId && !isTemplateMode ? "Save & run agent" : "Save"}

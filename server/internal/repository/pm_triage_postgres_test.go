@@ -203,3 +203,23 @@ func TestPMTriagePostgresLabelSuppressionAndRevision(t *testing.T) {
 		t.Fatalf("unexpected automatic activity count %d", events)
 	}
 }
+
+func TestPMTriagePostgresCandidateRanking(t *testing.T) {
+	env := setupPMTriagePostgres(t)
+	specific := uuid.NewString()
+	for i := 0; i < 20; i++ {
+		if err := env.db.Exec("INSERT INTO pm_tasks(id,workspace_id,team_id,name,description,updated_at) VALUES(?,?,?,?,?,?)", uuid.NewString(), env.workspace, env.team, "Page error", "", env.revision).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := env.db.Exec("INSERT INTO pm_tasks(id,workspace_id,team_id,name,description,updated_at) VALUES(?,?,?,?,?,?)", specific, env.workspace, env.team, "OAuth callback", "", env.revision.Add(-time.Hour)).Error; err != nil {
+		t.Fatal(err)
+	}
+	candidates, err := NewPMTaskRepository(env.db).FindTriageCandidates(context.Background(), PMTriageScope{WorkspaceID: env.workspace, TeamIDs: []string{env.team}}, env.task, "Page error OAuth callback")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 21 || candidates[0].ID != specific {
+		t.Fatalf("unexpected PostgreSQL ranking: %+v", candidates)
+	}
+}
