@@ -19,6 +19,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
@@ -2762,82 +2763,90 @@ function FlowTemplateGallery({
   );
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[86vh] flex-col gap-4 p-6 sm:max-w-[720px]">
-        <DialogHeader>
-          <DialogTitle>New flow</DialogTitle>
-          <DialogDescription>Pick a starting point, or build one from an empty trigger.</DialogDescription>
-        </DialogHeader>
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="right"
+        className="w-full gap-0 p-0 data-[side=right]:w-full data-[side=right]:sm:w-[880px] data-[side=right]:!max-w-[880px]"
+      >
+        <SheetHeader className="shrink-0 border-b border-quiet-divider-strong px-6 py-5 pr-14">
+          <SheetTitle>New flow</SheetTitle>
+          <SheetDescription className="sr-only">Choose a template or build a custom flow.</SheetDescription>
+          <Button variant="outline" className="mt-3 self-start" onClick={() => onPick(null)}>
+            <PlusSignIcon className="size-4" />
+            Build a custom flow
+          </Button>
+        </SheetHeader>
 
-        <QuietSearchInput
-          aria-label="Search flow templates"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search templates..."
-        />
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-6">
+          <QuietSearchInput
+            aria-label="Search flow templates"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search templates..."
+          />
 
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <Tabs value={category} onValueChange={setCategory}>
-            <TabsList variant="line" className="max-w-full flex-wrap justify-start">
-            {['all', ...categories].map((item) => {
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <Tabs value={category} onValueChange={setCategory}>
+              <TabsList variant="line" className="max-w-full flex-wrap justify-start">
+              {['all', ...categories].map((item) => {
+                return (
+                  <TabsTrigger
+                    key={item}
+                    value={item}
+                  >
+                    {item === 'all' ? 'All' : TEMPLATE_CATEGORY_LABELS[item] ?? item}
+                  </TabsTrigger>
+                );
+              })}
+              </TabsList>
+            </Tabs>
+          </div>
+
+          <div className="grid auto-rows-min content-start gap-2.5 sm:grid-cols-2">
+            {loading && Array.from({ length: 6 }).map((_, index) => (
+              <div key={index} className="rounded-lg border border-border/60 p-4">
+                <Skeleton className="h-8 w-8 rounded-lg" />
+                <Skeleton className="mt-3 h-4 w-28" />
+                <Skeleton className="mt-2 h-10 w-full" />
+              </div>
+            ))}
+            {!loading && error && (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/[0.03] p-4 text-sm sm:col-span-2">
+                <p className="font-medium text-destructive">Templates could not be loaded</p>
+                <p className="mt-1 text-muted-foreground">{error}</p>
+              </div>
+            )}
+            {!loading && !error && visibleTemplates.length === 0 && (
+              <div className="rounded-lg border border-border/60 bg-muted/20 p-4 text-sm sm:col-span-2">
+                <p className="font-medium">No templates available</p>
+                <p className="mt-1 text-muted-foreground">
+                  {trimmedSearch ? 'No templates match this search.' : category === 'all' ? 'No flow templates are available in this workspace yet.' : 'No templates match this category.'}
+                </p>
+              </div>
+            )}
+            {!loading && !error && visibleTemplates.map((template) => {
+              const kind = template.trigger.type === 'cron'
+                ? 'Schedule'
+                : (template.trigger.event?.split('.')[0] || templatePrimaryCategory(template)).replaceAll('_', ' ');
               return (
-                <TabsTrigger
-                  key={item}
-                  value={item}
+                <button
+                  key={template.key}
+                  type="button"
+                  onClick={() => onPick(template)}
+                  className={cn(
+                    'group relative flex min-h-[112px] flex-col items-start gap-2 overflow-hidden rounded-lg border border-border bg-popover p-[14px] text-left transition-colors duration-100 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  )}
                 >
-                  {item === 'all' ? 'All' : TEMPLATE_CATEGORY_LABELS[item] ?? item}
-                </TabsTrigger>
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{kind}</span>
+                  <p className="text-sm font-medium leading-tight">{template.name}</p>
+                  <p className="text-pretty text-xs leading-relaxed text-muted-foreground">{template.short_description}</p>
+                </button>
               );
             })}
-            </TabsList>
-          </Tabs>
+          </div>
         </div>
-
-        <div className="grid h-[52vh] min-h-[360px] auto-rows-min content-start gap-2.5 overflow-y-auto pr-1 sm:grid-cols-2">
-          {loading && Array.from({ length: 6 }).map((_, index) => (
-            <div key={index} className="rounded-lg border border-border/60 p-4">
-              <Skeleton className="h-8 w-8 rounded-lg" />
-              <Skeleton className="mt-3 h-4 w-28" />
-              <Skeleton className="mt-2 h-10 w-full" />
-            </div>
-          ))}
-          {!loading && error && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/[0.03] p-4 text-sm sm:col-span-2">
-              <p className="font-medium text-destructive">Templates could not be loaded</p>
-              <p className="mt-1 text-muted-foreground">{error}</p>
-            </div>
-          )}
-          {!loading && !error && visibleTemplates.length === 0 && (
-            <div className="rounded-lg border border-border/60 bg-muted/20 p-4 text-sm sm:col-span-2">
-              <p className="font-medium">No templates available</p>
-              <p className="mt-1 text-muted-foreground">
-                {trimmedSearch ? 'No templates match this search.' : category === 'all' ? 'No flow templates are available in this workspace yet.' : 'No templates match this category.'}
-              </p>
-            </div>
-          )}
-          {!loading && !error && visibleTemplates.map((template) => {
-            const kind = template.trigger.type === 'cron'
-              ? 'Schedule'
-              : (template.trigger.event?.split('.')[0] || templatePrimaryCategory(template)).replaceAll('_', ' ');
-            return (
-              <button
-                key={template.key}
-                type="button"
-                onClick={() => onPick(template)}
-                className={cn(
-                  'group relative flex min-h-[112px] flex-col items-start gap-2 overflow-hidden rounded-lg border border-border bg-popover p-[14px] text-left transition-colors duration-100 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                )}
-              >
-                <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{kind}</span>
-                <p className="text-sm font-medium leading-tight">{template.name}</p>
-                <p className="text-pretty text-xs leading-relaxed text-muted-foreground">{template.short_description}</p>
-              </button>
-            );
-          })}
-        </div>
-        <Button variant="outline" className="w-full border-dashed" onClick={() => onPick(null)}>Build a custom flow</Button>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   );
 }
 
