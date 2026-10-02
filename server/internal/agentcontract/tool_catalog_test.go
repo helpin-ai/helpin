@@ -262,6 +262,8 @@ func TestSafeOperationalToolCatalogContracts(t *testing.T) {
 	expected := map[string]string{
 		"update_task_delivery_target": "PM / Delivery", "update_epic_delivery_target": "PM / Delivery",
 		"update_document_metadata": "Docs",
+		"archive_document":         "Docs",
+		"restore_document":         "Docs",
 		"get_crm_contact":          "CRM / Discovery", "get_crm_company": "CRM / Discovery", "get_crm_deal": "CRM / Discovery",
 		"list_crm_companies": "CRM / Discovery", "list_crm_pipelines": "CRM / Discovery", "list_crm_associations": "CRM / Discovery",
 		"update_crm_contact": "CRM / Operations", "update_crm_company": "CRM / Operations", "update_crm_deal": "CRM / Operations",

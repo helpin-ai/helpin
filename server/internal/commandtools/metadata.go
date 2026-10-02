@@ -66,6 +66,7 @@ func runtimeToolRiskLevel(alias string) string {
 }
 
 var runtimeToolRiskLevels = map[string]string{
+	"archive_document": RiskLevelDestructive, "restore_document": RiskLevelRoutine,
 	"create_space": RiskLevelRoutine, "create_collection": RiskLevelRoutine,
 	"create_document": RiskLevelRoutine, "update_space": RiskLevelRoutine,
 	"update_collection": RiskLevelRoutine, "move_document": RiskLevelRoutine,
@@ -593,6 +594,16 @@ var baseRuntimeTools = []RuntimeToolMetadata{
 		Category:    "PM / Delivery",
 		Description: "Set or clear the repository and branch delivery target for an accessible epic.",
 		InputSchema: deliveryTargetSchema("epic_id", "epic_branch"),
+	},
+	{
+		CommandName: "docs.archive_document", Alias: "archive_document", Category: "Docs",
+		Description: "Archive an accessible document without deleting its content. Only archive when requested. Live Help Center articles must be unpublished in Helpin first. Reversible with restore_document.",
+		InputSchema: requiredEntityIDSchema("document_id"),
+	},
+	{
+		CommandName: "docs.restore_document", Alias: "restore_document", Category: "Docs",
+		Description: "Restore an accessible archived document to draft without publishing it.",
+		InputSchema: requiredEntityIDSchema("document_id"),
 	},
 	{
 		CommandName: "docs.update_document_metadata",

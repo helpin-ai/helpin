@@ -386,10 +386,10 @@ func TestListAgentPresetsIncludesDocumentationAgent(t *testing.T) {
 func TestOperationalPresetsExposeRelevantSafeTools(t *testing.T) {
 	expected := map[string][]string{
 		model.AgentPresetCRMOperator:        {"get_crm_contact", "get_crm_company", "get_crm_deal", "list_crm_companies", "list_crm_pipelines", "list_crm_associations", "create_crm_deal", "update_crm_contact", "update_crm_company", "update_crm_deal", "add_crm_activity", "link_crm_objects", "unlink_crm_association", "set_primary_contact_company"},
-		model.AgentPresetDocumentationAgent: {"update_document_metadata"},
+		model.AgentPresetDocumentationAgent: {"update_document_metadata", "archive_document", "restore_document"},
 		model.AgentPresetSupportAgent:       {"list_support_conversations", "assign_support_conversation", "update_support_conversation_subject"},
 		model.AgentPresetCommandAgent:       {"get_crm_contact", "create_crm_deal", "update_crm_contact", "list_support_conversations", "assign_support_conversation", "link_support_conversation_task", "update_document_metadata"},
-		model.AgentPresetAskAgent:           {"get_crm_contact", "list_crm_pipelines", "create_crm_deal"},
+		model.AgentPresetAskAgent:           {"get_crm_contact", "list_crm_pipelines", "create_crm_deal", "archive_document", "restore_document"},
 	}
 	byKey := map[string]model.AgentPresetDefinition{}
 	for _, preset := range ListAgentPresets() {
@@ -519,7 +519,7 @@ func TestManagedAskAgentCapabilitiesUpgradePinnedSnapshots(t *testing.T) {
 		"checkout_repositories", "repository_search", "read_files",
 		"read_symbol", "trace_symbol",
 		"find_skills", "read_skill", "update_plan",
-		"get_my_capabilities", "search_workspace", "search_documents", "create_document",
+		"get_my_capabilities", "search_workspace", "search_documents", "create_document", "archive_document", "restore_document",
 		"insert_document_block", "preview_md", "preview_json", "list_task_checklist",
 		"list_epic_tasks", "ensure_task_label", "assign_task_agent", "set_task_dependencies",
 		"update_task_state", "update_task_delivery_target", "update_epic_delivery_target",
@@ -551,7 +551,7 @@ func TestManagedDocumentationAgentCapabilitiesUpgradePinnedSnapshots(t *testing.
 		AllowedTools: []string{"read_document", "write_document_content"},
 	})
 	for _, toolName := range []string{
-		"insert_document_artifact", "edit_document", "list_task_checklist", "list_epic_tasks",
+		"insert_document_artifact", "edit_document", "list_task_checklist", "list_epic_tasks", "archive_document", "restore_document",
 		"get_pull_request_diff", "search_knowledge",
 	} {
 		if !slices.Contains(preset.AllowedTools, toolName) {

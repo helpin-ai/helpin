@@ -2015,6 +2015,7 @@ func (s *InternalCommandService) registerDefaults() {
 	s.registerDocsRuntimeToolCommands()
 	s.registerDocsOrganizationCommands()
 	s.registerDocsMetadataCommands()
+	s.registerDocsLifecycleCommands()
 	s.registerPMOperationalCommands()
 	s.registerPMDeliveryCommands()
 	s.registerWorkspaceSearchCommands()
