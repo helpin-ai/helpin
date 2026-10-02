@@ -310,6 +310,7 @@ export interface CoverageBatchV2 {
 }
 
 export interface CoveragePipelineHealthV2 {
+  reanalysis_status?: 'queued' | 'running' | 'failed' | 'unavailable'
   latest_batch: CoverageBatchV2 | null
   failures: CoverageAnalysisAttemptV2[]
   healthy: boolean

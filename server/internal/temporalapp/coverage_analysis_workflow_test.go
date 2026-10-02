@@ -12,11 +12,12 @@ import (
 )
 
 type fakeCoverageDailyAnalyzer struct {
-	mu                sync.Mutex
-	workspaces        []string
-	runs              []coverageAnalysisRunCall
-	err               error
-	errorsByWorkspace map[string]error
+	mu                 sync.Mutex
+	reanalysisRequests []string
+	workspaces         []string
+	runs               []coverageAnalysisRunCall
+	err                error
+	errorsByWorkspace  map[string]error
 }
 
 type coverageAnalysisRunCall struct {
@@ -188,5 +189,26 @@ func TestCoverageDailyAnalysisWorkflow_UsesThreeHourWindow(t *testing.T) {
 func TestCoverageDailyAnalysisWorkflow_ConcurrencyBound(t *testing.T) {
 	if CoverageAnalysisMaxWorkspaceChildren != 10 {
 		t.Fatalf("workspace child concurrency = %d, want 10", CoverageAnalysisMaxWorkspaceChildren)
+	}
+}
+
+func (f *fakeCoverageDailyAnalyzer) RunWorkspaceReanalysis(ctx context.Context, workspaceID string, start, end time.Time, requestID string) error {
+	f.mu.Lock()
+	f.reanalysisRequests = append(f.reanalysisRequests, requestID)
+	f.mu.Unlock()
+	return f.RunWorkspaceDailyAnalysis(ctx, workspaceID, start, end)
+}
+func TestCoverageWorkspaceAnalysisWorkflow_ExplicitReanalysisReachesAnalyzer(t *testing.T) {
+	suite := &testsuite.WorkflowTestSuite{}
+	env := suite.NewTestWorkflowEnvironment()
+	analyzer := &fakeCoverageDailyAnalyzer{}
+	activities := NewCoverageAnalysisActivities(analyzer)
+	env.RegisterActivityWithOptions(activities.RunWorkspaceAnalysisActivity, activity.RegisterOptions{Name: CoverageRunWorkspaceAnalysisActivityName})
+	env.ExecuteWorkflow(CoverageWorkspaceAnalysisWorkflow, CoverageWorkspaceAnalysisInput{WorkspaceID: "ws-1", Reanalyze: true, RequestID: "request"})
+	if err := env.GetWorkflowError(); err != nil {
+		t.Fatal(err)
+	}
+	if len(analyzer.reanalysisRequests) != 1 || analyzer.reanalysisRequests[0] != "request" {
+		t.Fatalf("missing reassessment flag: %+v", analyzer.reanalysisRequests)
 	}
 }

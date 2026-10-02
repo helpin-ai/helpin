@@ -1985,7 +1985,7 @@ func main() {
 			supportEventService,
 			service.NewSupportCoverageDraftService(supportCoverageRepo, docsDocumentService, docsContentService, docsVersionService, llmProvider),
 			supportCoverageClusterRebuildService,
-		).SetCoverageV2Service(service.NewSupportCoverageV2Service(supportCoverageV2Repo).SetRolloutPolicy(supportCoverageRolloutPolicy)),
+		).SetCoverageV2Service(service.NewSupportCoverageV2Service(supportCoverageV2Repo).SetRolloutPolicy(supportCoverageRolloutPolicy).SetTemporalClient(temporalClient)),
 		TLSAsk: handler.NewTLSAskHandler(tlsAskService),
 	}
 

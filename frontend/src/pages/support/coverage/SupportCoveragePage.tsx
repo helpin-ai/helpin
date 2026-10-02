@@ -6,6 +6,8 @@ import {
   QuietPageViewport,
 } from '@/components/design-system/quiet'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { CoverageAnalysisActions } from '@/components/support/coverage/CoverageAnalysisActions'
+import { coverageAnalysisControl } from '@/components/support/coverage/coverageHealth'
 import { CoverageInsights } from '@/components/support/coverage/CoverageInsights'
 import { UpgradeRequiredDialog } from '@edition'
 import {
@@ -113,6 +115,8 @@ export function SupportCoveragePage() {
   )
   const topicsQuery = useCoverageInsightPages(wsId, 'topics', Boolean(healthV2?.rollout.read_v2_enabled), supportCoverageService.listTopicsV2)
   const signalsQuery = useCoverageInsightPages(wsId, 'signals', Boolean(healthV2?.rollout.read_v2_enabled), supportCoverageService.listSignalsV2)
+  const refreshTopics = topicsQuery.refresh
+  const refreshSignals = signalsQuery.refresh
   const topicsV2 = topicsQuery.items
   const signalsV2 = signalsQuery.items
   const [selectedTopicV2, setSelectedTopicV2] =
@@ -120,7 +124,16 @@ export function SupportCoveragePage() {
   const [topicLoading, setTopicLoading] = useState(false)
   const [insightErrors, setInsightErrors] = useState<Record<string, string>>({})
   const [pendingSignalId, setPendingSignalId] = useState<string | null>(null)
-  const [pendingAttemptId, setPendingAttemptId] = useState<string | null>(null)
+  const [submittingAnalysis, setSubmittingAnalysis] = useState(false)
+  const analysisSubmission = useRef(false)
+  const analysisRequest = useRef(0)
+  const healthSnapshot = useRef<CoveragePipelineHealthV2 | null>(null)
+  const analysisWorkspace = useRef(wsId)
+  useEffect(() => {
+    analysisRequest.current += 1
+    analysisSubmission.current = false
+    healthSnapshot.current = null
+  }, [wsId])
   const topicRequest = useRef(0)
   const [signalTopicSelections, setSignalTopicSelections] = useState<
     Record<string, string>
@@ -129,7 +142,7 @@ export function SupportCoveragePage() {
   const { data: spaces } = useDocsSpaces(wsId)
   const { data: collections } = useDocsCollections(wsId, targetSpaceId)
   const { data: access } = useWorkspaceAccess(wsId)
-  const { has, isAdmin } = usePermissions(access)
+  const { has } = usePermissions(access)
   const canGenerate = has('support.edit') && has('docs.edit')
   const canRebuildClusters = has('settings.manage')
   const canReviewMergeSuggestions = has('support.edit')
@@ -218,6 +231,11 @@ export function SupportCoveragePage() {
     let cancelled = false
 
     async function loadCoverage() {
+      if (analysisWorkspace.current !== wsId) {
+        analysisWorkspace.current = wsId
+        setHealthV2(null)
+        setSubmittingAnalysis(false)
+      }
       listRequest.current += 1
       setLoadingMore(false)
       setLoading(true)
@@ -260,6 +278,7 @@ export function SupportCoveragePage() {
       setLatestClusterRun(latestClusterRes.data ?? null)
       setLoadedPage(1)
       setMergeSuggestionCount(mergeSuggestionRes.data?.total ?? 0)
+      healthSnapshot.current = healthV2Res.data ?? null
       setHealthV2(healthV2Res.data ?? null)
       if (!healthV2Res.data?.rollout.read_v2_enabled) {
         setCoverageSurface((current) =>
@@ -283,6 +302,17 @@ export function SupportCoveragePage() {
       const { data, error } = await supportCoverageService.getPipelineHealthV2(wsId)
       if (cancelled) return
       if (data) {
+        const previous = healthSnapshot.current
+        const wasActive = previous?.reanalysis_status === 'queued' || previous?.reanalysis_status === 'running' || previous?.latest_batch?.status === 'running'
+        const nowActive = data.reanalysis_status === 'queued' || data.reanalysis_status === 'running' || data.latest_batch?.status === 'running'
+        if (wasActive && !nowActive) {
+          setReloadKey(key => key + 1)
+          if (data.rollout.read_v2_enabled) {
+            void refreshTopics()
+            void refreshSignals()
+          }
+        }
+        healthSnapshot.current = data
         setHealthV2(data)
         if (!data.rollout.read_v2_enabled) {
           setCoverageSurface(current => current === 'topics' || current === 'signals' ? 'gaps' : current)
@@ -299,7 +329,7 @@ export function SupportCoveragePage() {
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [wsId])
+  }, [wsId, refreshTopics, refreshSignals])
 
   const openTopicV2 = async (topicId: string) => {
     const request = ++topicRequest.current
@@ -353,22 +383,45 @@ export function SupportCoveragePage() {
     setPendingSignalId(null)
   }
 
-  const replayAttemptV2 = async (attemptId: string) => {
-    if (pendingAttemptId) return
-    setPendingAttemptId(attemptId)
-    const { error } = await supportCoverageService.replayAttemptV2(
-      wsId,
-      attemptId,
-    )
-    if (error) {
-      setPendingAttemptId(null)
-      toast.error('Failed to queue retry')
-      return
+  const reanalyze = async () => {
+    if (analysisSubmission.current || !has('settings.manage') || coverageAnalysisControl(insightErrors.health ? null : healthV2).disabled) return
+    analysisSubmission.current = true
+    setSubmittingAnalysis(true)
+    const request = ++analysisRequest.current
+    try {
+      const { error } = await supportCoverageService.triggerReanalysis(wsId)
+      if (request !== analysisRequest.current) return
+      if (error) {
+        toast.error(error)
+      } else {
+        toast.success('Re-analysis queued')
+        setHealthV2(current => current ? { ...current, reanalysis_status: 'queued' } : current)
+        setReloadKey(key => key + 1)
+        if (healthV2?.rollout.read_v2_enabled) {
+          void refreshTopics()
+          void refreshSignals()
+        }
+      }
+      const { data, error: healthError } = await supportCoverageService.getPipelineHealthV2(wsId)
+      if (request !== analysisRequest.current) return
+      if (data) {
+        healthSnapshot.current = data
+        setHealthV2(data)
+      }
+      setInsightErrors(current => {
+        const next = { ...current }
+        if (healthError) next.health = 'Could not load analysis status.'
+        else delete next.health
+        return next
+      })
+    } catch {
+      if (request === analysisRequest.current) toast.error('Could not queue re-analysis. Reload the page and try again.')
+    } finally {
+      if (request === analysisRequest.current) {
+        analysisSubmission.current = false
+        setSubmittingAnalysis(false)
+      }
     }
-    toast.success('Coverage attempt queued for retry')
-    const { data } = await supportCoverageService.getPipelineHealthV2(wsId)
-    if (data) setHealthV2(data)
-    setPendingAttemptId(null)
   }
 
   const showAIError = (error: string) => {
@@ -632,25 +685,25 @@ export function SupportCoveragePage() {
   const refreshCoverage = () => {
     setReloadKey(key => key + 1)
     if (healthV2?.rollout.read_v2_enabled) {
-      void topicsQuery.refresh()
-      void signalsQuery.refresh()
+      void refreshTopics()
+      void refreshSignals()
     }
   }
 
   return (
     <QuietPageViewport contentClassName="space-y-5">
       <QuietPageHeader
+        className="[&>div]:flex-col sm:[&>div]:flex-row [&>div>div:last-child]:self-start sm:[&>div>div:last-child]:self-auto"
         title="Support coverage"
-        description="Find recurring customer needs, review the evidence, and close the gaps in your support."
+        description="Find recurring customer needs, review the evidence, and close support gaps. Analysis runs automatically every 3 hours."
         actions={
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={loading}
-            onClick={refreshCoverage}
-          >
-            Refresh
-          </Button>
+          <CoverageAnalysisActions
+            health={insightErrors.health ? null : healthV2}
+            canReanalyze={has('settings.manage')}
+            submitting={submittingAnalysis}
+            loading={loading}
+            onReanalyze={() => { void reanalyze() }}
+          />
         }
       />
       {summary &&
@@ -712,9 +765,6 @@ export function SupportCoveragePage() {
                   <span className="text-quiet-muted">{signalsQuery.total ?? (signalsQuery.hasMore ? `${signalsV2.length}+` : signalsV2.length)}</span>
                 </TabsTrigger>
               </>
-            )}
-            {(healthV2?.rollout.read_v2_enabled || isAdmin) && (
-              <TabsTrigger value="health">Analysis status</TabsTrigger>
             )}
           </TabsList>
         </div>
@@ -917,11 +967,6 @@ export function SupportCoveragePage() {
                     setShowMergeSuggestionsOnly(false)
                   }}
                   onShowOpen={() => setStatusFilter('open')}
-                  onViewAnalysis={
-                    healthV2?.rollout.read_v2_enabled || isAdmin
-                      ? () => setCoverageSurface('health')
-                      : undefined
-                  }
                 />
               ) : (
                 <GapList
@@ -954,7 +999,6 @@ export function SupportCoveragePage() {
         <CoverageInsights
           topics={topicsV2}
           signals={signalsV2}
-          health={healthV2}
           selectedTopic={selectedTopicV2}
           topicLoading={topicLoading}
           wsSlug={wsSlug}
@@ -974,7 +1018,6 @@ export function SupportCoveragePage() {
             setKindFilter('all')
             setCoverageSurface('gaps')
           }}
-          loading={loading}
           signalTopicSelections={signalTopicSelections}
           onSelectSignalTopic={(signalId, topicId) =>
             setSignalTopicSelections((current) => ({
@@ -991,10 +1034,7 @@ export function SupportCoveragePage() {
           onAttachSignal={reviewSignalV2}
           onDismissSignal={dismissSignalV2}
           canEdit={canReviewMergeSuggestions}
-          canManage={canRebuildClusters}
           pendingSignalId={pendingSignalId}
-          pendingAttemptId={pendingAttemptId}
-          onRetryAttempt={replayAttemptV2}
           onRefresh={refreshCoverage}
         />
       </Tabs>

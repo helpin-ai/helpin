@@ -375,3 +375,64 @@ func setupCoverageV2TestDB(t *testing.T, name string) *gorm.DB {
 func coverageFindingFixture(id, attemptID string) *model.CoverageFinding {
 	return &model.CoverageFinding{ID: id, WorkspaceID: "ws-1", LogicalWorkKey: "work-1", AnalysisAttemptID: attemptID, SourceKind: "conversation", SourceID: "conversation-1", CustomerNeed: "reset password", AIFailure: "could not answer", FixType: "update_article", FixTarget: "Password help", Rationale: "missing steps", SuggestedChange: "Add reset steps", Confidence: .9}
 }
+
+func TestCoverageReanalysisKeepsHumanTopicDecisions(t *testing.T) {
+	db := setupCoverageV2TestDB(t, "manual_reanalysis")
+	repo := NewCoverageV2Repository(db)
+	ctx := context.Background()
+	original := coverageFindingFixture("old", "attempt-old")
+	if err := repo.ReplaceCurrentFinding(ctx, original); err != nil {
+		t.Fatal(err)
+	}
+	membership := &model.CoverageTopicMembership{WorkspaceID: "ws-1", FindingID: "old", TopicID: "human-topic", DecisionSource: model.CoverageMembershipManual, PolicyVersion: "v1"}
+	if err := repo.SetCurrentMembership(ctx, membership); err != nil {
+		t.Fatal(err)
+	}
+	fresh := coverageFindingFixture("fresh", "attempt-fresh")
+	fresh.CustomerNeed = "updated explanation"
+	reviewed, err := repo.ReplaceCurrentFindingPreservingReview(ctx, fresh)
+	if err != nil || !reviewed {
+		t.Fatalf("review was not preserved: %v", err)
+	}
+	var current []model.CoverageTopicMembership
+	if err := db.Where("workspace_id = ? AND valid_to IS NULL", "ws-1").Find(&current).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != 1 || current[0].FindingID != "fresh" || current[0].TopicID != "human-topic" || current[0].DecisionSource != model.CoverageMembershipManual {
+		t.Fatalf("lost decision: %+v", current)
+	}
+	var count int64
+	db.Model(&model.CoverageFinding{}).Where("workspace_id = ? AND logical_work_key = ? AND is_current = ?", "ws-1", fresh.LogicalWorkKey, true).Count(&count)
+	if count != 1 {
+		t.Fatal("duplicate current evidence")
+	}
+}
+
+func TestCoverageReanalysisRetiresSupersededAutomaticEvidence(t *testing.T) {
+	db := setupCoverageV2TestDB(t, "automatic_reanalysis")
+	repo := NewCoverageV2Repository(db)
+	ctx := context.Background()
+	original := coverageFindingFixture("old", "attempt-old")
+	if err := repo.ReplaceCurrentFinding(ctx, original); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.SetCurrentMembership(ctx, &model.CoverageTopicMembership{WorkspaceID: "ws-1", FindingID: "old", TopicID: "old-topic", DecisionSource: model.CoverageMembershipAutomatic, PolicyVersion: "v1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.UpsertUnreviewedSignal(ctx, &model.CoverageUnreviewedSignal{WorkspaceID: "ws-1", FindingID: &original.ID, SourceKind: "conversation", SourceID: "c", SignalKey: "old-key", NormalizedQuery: "old", Status: model.CoverageSignalUnreviewed, ObservedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	reviewed, err := repo.ReplaceCurrentFindingPreservingReview(ctx, coverageFindingFixture("fresh", "attempt-fresh"))
+	if err != nil || reviewed {
+		t.Fatalf("automatic evidence incorrectly treated as reviewed: %v", err)
+	}
+	var count int64
+	db.Model(&model.CoverageTopicMembership{}).Where("workspace_id = ? AND valid_to IS NULL", "ws-1").Count(&count)
+	if count != 0 {
+		t.Fatal("old evidence still counted in topic")
+	}
+	db.Model(&model.CoverageUnreviewedSignal{}).Where("workspace_id = ?", "ws-1").Count(&count)
+	if count != 0 {
+		t.Fatal("duplicate review entry for superseded evidence")
+	}
+}

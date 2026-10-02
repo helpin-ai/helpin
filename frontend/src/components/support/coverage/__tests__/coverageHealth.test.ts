@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CoveragePipelineHealthV2 } from '@/lib/supportCoverageTypes'
-import { coverageHealthPresentation } from '../coverageHealth'
+import { coverageHealthPresentation, coverageAnalysisControl } from '../coverageHealth'
 
 const health = (status?: string): CoveragePipelineHealthV2 => ({
   healthy: true,
@@ -44,4 +44,27 @@ describe('coverage analysis status', () => {
     value.failures = [{ id: 'attempt' } as CoveragePipelineHealthV2['failures'][number]]
     expect(coverageHealthPresentation(value).title).toBe('Analysis needs attention')
   })
+})
+
+describe('compact analysis control', () => {
+ it('hides routine completed and waiting states', () => {
+  expect(coverageAnalysisControl(health('succeeded')).pill).toBeNull()
+  expect(coverageAnalysisControl(health()).pill).toBeNull()
+ })
+ it('shows persisted work and prevents duplicates', () => {
+  const value={...health('succeeded'),reanalysis_status:'queued' as const}
+  expect(coverageAnalysisControl(value)).toMatchObject({pill:'Queued',disabled:true})
+  expect(coverageAnalysisControl({...value,reanalysis_status:'running'})).toMatchObject({pill:'Analyzing',disabled:true})
+ })
+ it('explains pauses', () => {
+  const value=health('succeeded'); value.rollout.pause_reasons=['terminal_failure_rate']
+  expect(coverageAnalysisControl(value)).toMatchObject({pill:'Paused',disabled:true})
+  expect(coverageAnalysisControl(value).description).toContain('too many analysis failures')
+ })
+ it('allows retry after failure but blocks unknown/disabled states', () => {
+  expect(coverageAnalysisControl(health('failed'))).toMatchObject({pill:'Needs attention',disabled:false})
+  expect(coverageAnalysisControl(null)).toMatchObject({pill:'Status unavailable',disabled:true})
+  const value=health(); value.rollout.capture_enabled=false
+  expect(coverageAnalysisControl(value)).toMatchObject({pill:'Not enabled',disabled:true})
+ })
 })

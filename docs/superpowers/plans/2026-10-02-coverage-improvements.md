@@ -50,3 +50,32 @@ merged, or classified as part of this UI work.
 Application deployment is separate from this branch update. The existing backlog remains
 available for manual classification or rejection; no bulk record changes or
 historical reanalysis were performed.
+
+## Approved follow-up: Re-analyze controls
+
+Keep Last analyzed in the summary. Remove Refresh and Analysis status. Explain
+the three-hour cadence in the description. Re-analyze reassesses eligible
+conversations from the last 30 days against current knowledge. Use the existing
+settings.manage permission and an accessible explanatory tooltip. Only show
+queued/running, paused/disabled, failure, or unavailable status pills. Prevent
+duplicate submissions; persist progress across page reloads.
+
+- [x] Regression tests for reassessment, stable evidence identity, duplicate
+  workflows, persisted progress and concise UI states.
+- [x] Extend the Temporal endpoint with explicit reanalysis: bypass incremental
+  cursor and completed-work caches only for manual runs; preserve idempotent
+  retries, existing gaps and human reviews.
+- [x] Expose workflow progress through health polling; replace the tab with
+  the conditional pill and remove obsolete empty-state navigation.
+- [x] Coverage backend/frontend tests, lint, typecheck, build/vet and UI review.
+
+No new worktree or subagents.
+
+Follow-up verification: all five backend coverage packages passed; Go vet and
+build passed. All 50 frontend coverage/pagination tests passed, alongside lint
+and TypeScript. A synthetic local browser verified the scope tooltip, duplicate
+submission prevention, queued/paused pills and 390px layout with no overflow or
+exceptions. Preview files were removed.
+
+Deploy the API, Temporal worker and frontend together to enable explicit
+reassessment. No production analysis was triggered during implementation.

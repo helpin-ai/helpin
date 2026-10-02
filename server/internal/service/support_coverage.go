@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/temporalapp"
@@ -423,6 +424,8 @@ func (s *SupportCoverageService) TriggerReanalysis(ctx context.Context, workspac
 	windowStart := now.Add(-30 * 24 * time.Hour)
 	input := temporalapp.CoverageWorkspaceAnalysisInput{
 		WorkspaceID: workspaceID,
+		Reanalyze:   true,
+		RequestID:   uuid.NewString(),
 		WindowStart: windowStart,
 		WindowEnd:   now,
 	}

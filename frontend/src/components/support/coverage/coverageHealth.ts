@@ -29,3 +29,25 @@ export function coverageHealthPresentation(health: CoveragePipelineHealthV2) {
   }
   return { title: 'Analysis completed', description: '' }
 }
+
+export function coverageAnalysisControl(health: CoveragePipelineHealthV2 | null, submitting = false) {
+  if (!health || health.reanalysis_status === 'unavailable') {
+    return { pill: 'Status unavailable', disabled: true, description: 'Reload the page to check whether analysis is available.' }
+  }
+  if (!health.rollout.capture_enabled) {
+    return { pill: 'Not enabled', disabled: true, description: 'An administrator needs to enable coverage analysis.' }
+  }
+  if (health.rollout.pause_reasons?.length) {
+    return { pill: 'Paused', disabled: true, description: coverageHealthPresentation(health).description }
+  }
+  if (health.reanalysis_status === 'running' || health.latest_batch?.status === 'running') {
+    return { pill: 'Analyzing', disabled: true, description: 'Conversations are being checked. Results appear when analysis finishes.' }
+  }
+  if (submitting || health.reanalysis_status === 'queued' || health.latest_batch?.status === 'queued') {
+    return { pill: 'Queued', disabled: true, description: 'Analysis is queued and will start when a worker is available.' }
+  }
+  if (health.reanalysis_status === 'failed' || health.failures.length || health.latest_batch?.status === 'failed' || health.latest_batch?.status === 'partial_failed' || !health.healthy) {
+    return { pill: 'Needs attention', disabled: false, description: 'Some conversations could not be analyzed. Re-analyze to try again; contact an administrator if the issue continues.' }
+  }
+  return { pill: null, disabled: false, description: '' }
+}

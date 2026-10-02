@@ -14,13 +14,11 @@ import {
   SelectValue,
 } from '@/components/design-system/quiet-dropdown-select'
 import type {
-  CoveragePipelineHealthV2,
   CoverageSignalV2,
   CoverageTopicDetailV2,
   CoverageTopicV2,
 } from '@/lib/supportCoverageTypes'
 import { timeAgo } from '@/lib/utils'
-import { coverageHealthPresentation } from './coverageHealth'
 
 interface InsightPagination {
   total?: number
@@ -33,10 +31,8 @@ interface InsightPagination {
 interface CoverageInsightsProps {
   topics: CoverageTopicV2[]
   signals: CoverageSignalV2[]
-  health: CoveragePipelineHealthV2 | null
   selectedTopic: CoverageTopicDetailV2 | null
   topicLoading: boolean
-  loading: boolean
   topicsLoading: boolean
   signalsLoading: boolean
   topicPagination: InsightPagination
@@ -45,15 +41,12 @@ interface CoverageInsightsProps {
   wsSlug: string
   signalTopicSelections: Record<string, string>
   pendingSignalId: string | null
-  pendingAttemptId: string | null
   canEdit: boolean
-  canManage: boolean
   onSelectSignalTopic: (signalId: string, topicId: string) => void
   onOpenTopic: (topicId: string) => void
   onCloseTopic: () => void
   onAttachSignal: (signalId: string) => void
   onDismissSignal: (signalId: string) => void
-  onRetryAttempt: (attemptId: string) => void
   onRefresh: () => void
   onOpenConversationGaps: (conversationId: string) => void
 }
@@ -97,18 +90,14 @@ export function CoverageInsights(props: CoverageInsightsProps) {
   const {
     topics,
     signals,
-    health,
     selectedTopic,
     topicLoading,
-    loading,
     errors,
     wsSlug,
     canEdit,
-    canManage,
   } = props
-  const analysisState = health ? coverageHealthPresentation(health) : null
   const state = (surface: string) =>
-    (surface === 'topics' ? props.topicsLoading : surface === 'signals' ? props.signalsLoading : loading) ? (
+    (surface === 'topics' ? props.topicsLoading : props.signalsLoading) ? (
       <p role="status" className="py-8 text-quiet-text-tertiary">
         Loading coverage…
       </p>
@@ -260,71 +249,6 @@ export function CoverageInsights(props: CoverageInsightsProps) {
         {!props.signalsLoading && !errors.signals && signals.length > 0 && (
           <InsightListFooter count={signals.length} label="signals" pagination={props.signalPagination} />
         )}
-      </TabsContent>
-      <TabsContent value="health">
-        {state('health') ??
-          (!health ? (
-            <EmptyState
-              title="Analysis status unavailable"
-              description="Refresh to check the latest analysis status."
-            />
-          ) : (
-            <>
-              <p className="text-sm font-semibold">
-                {analysisState?.title}
-              </p>
-              {analysisState?.description && <p className="mt-2 max-w-xl text-sm text-quiet-text-tertiary">{analysisState.description}</p>}
-              {health.latest_batch && (
-                <p className="mt-2 text-sm text-quiet-text-tertiary">
-                  {health.latest_batch.succeeded_count} of{' '}
-                  {health.latest_batch.candidate_count} conversations analyzed ·{' '}
-                  {health.latest_batch.status.replaceAll('_', ' ')}
-                  {health.latest_batch.completed_at
-                    ? ` · ${timeAgo(health.latest_batch.completed_at)}`
-                    : ''}
-                </p>
-              )}
-              <div className="mt-4 divide-y divide-quiet-divider-light">
-                {health.failures.map((failure) => (
-                  <div
-                    key={failure.id}
-                    className="flex items-start justify-between gap-4 py-4"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium">
-                        Conversation analysis needs attention
-                      </p>
-                      <p className="mt-1 text-xs text-quiet-text-tertiary">
-                        {timeAgo(failure.created_at)} ·{' '}
-                        {failure.retry_budget_used} retries
-                      </p>
-                      <details className="mt-2 text-xs text-quiet-text-tertiary">
-                        <summary className="cursor-pointer">
-                          Technical details
-                        </summary>
-                        <p className="mt-2 break-words">
-                          {failure.failure_class || failure.stage}:{' '}
-                          {failure.failure_message || 'Waiting for retry'}
-                        </p>
-                      </details>
-                    </div>
-                    {canManage && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={Boolean(props.pendingAttemptId)}
-                        onClick={() => props.onRetryAttempt(failure.id)}
-                      >
-                        {props.pendingAttemptId === failure.id
-                          ? 'Queuing…'
-                          : 'Retry'}
-                      </Button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </>
-          ))}
       </TabsContent>
       <Sheet
         open={Boolean(selectedTopic) || topicLoading}

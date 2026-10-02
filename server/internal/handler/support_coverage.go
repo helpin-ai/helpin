@@ -566,6 +566,16 @@ func (h *SupportCoverageHandler) TriggerReanalysis(w http.ResponseWriter, r *htt
 		writeError(w, http.StatusBadRequest, "workspace_id is required")
 		return
 	}
+	if h.coverageV2Svc != nil {
+		if err := h.coverageV2Svc.EnsureReanalysisEnabled(r.Context(), wsID); err != nil {
+			if errors.Is(err, service.ErrCoverageReanalysisPaused) {
+				writeError(w, http.StatusConflict, err.Error())
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "could not check analysis availability")
+			return
+		}
+	}
 	if err := h.coverageSvc.TriggerReanalysis(r.Context(), wsID); err != nil {
 		if errors.Is(err, service.ErrReanalysisAlreadyRunning) {
 			writeError(w, http.StatusConflict, "reanalysis already in progress")
