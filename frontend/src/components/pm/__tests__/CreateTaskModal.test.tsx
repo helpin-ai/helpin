@@ -631,6 +631,51 @@ describe('CreateTaskModal', () => {
     })
   })
 
+  it('continues checklist entry with Enter without creating the task or extra blank rows', async () => {
+    const onCreate = vi.fn(async () => ({ id: 'task-1' }))
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    try {
+      await act(async () => {
+        root.render(<CreateTaskModal open onOpenChange={vi.fn()} workspaceId="ws-1" workflow={workflow} initialStateId="state-1" onCreate={onCreate} />)
+      })
+      const clickButton = async (text: string) => {
+        const button = Array.from(container.querySelectorAll('button')).find((node) => node.textContent?.trim() === text)
+        expect(button).toBeTruthy()
+        await act(async () => { button!.click() })
+      }
+      const inputs = () => Array.from(container.querySelectorAll<HTMLInputElement>('input[placeholder="Item text"]'))
+      const enter = async (input: HTMLInputElement, isComposing = false) => {
+        const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, isComposing })
+        await act(async () => { input.dispatchEvent(event) })
+        return event
+      }
+      await clickButton('Checklist')
+      await clickButton('Add item')
+      await act(async () => { setInputValue(inputs()[0], 'Check logs') })
+      await enter(inputs()[0], true)
+      expect(inputs()).toHaveLength(1)
+      expect((await enter(inputs()[0])).defaultPrevented).toBe(true)
+      expect(inputs().map((input) => input.value)).toEqual(['Check logs', ''])
+      expect(document.activeElement).toBe(inputs()[1])
+      await enter(inputs()[1])
+      expect(inputs()).toHaveLength(2)
+      await act(async () => { setInputValue(inputs()[1], 'Verify fix') })
+      await enter(inputs()[1])
+      expect(inputs()).toHaveLength(3)
+      expect(document.activeElement).toBe(inputs()[2])
+      await act(async () => { inputs()[0].focus() })
+      await enter(inputs()[0])
+      expect(document.activeElement).toBe(inputs()[1])
+      expect(inputs()).toHaveLength(3)
+      expect(onCreate).not.toHaveBeenCalled()
+    } finally {
+      await act(async () => { root.unmount() })
+      container.remove()
+    }
+  })
+
   it('creates a task and saves it as a template when requested', async () => {
     const onCreate = vi.fn(async () => ({ id: 'task-1' }))
     const onOpenChange = vi.fn()
