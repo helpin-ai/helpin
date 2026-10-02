@@ -81,6 +81,12 @@ export function anyTabFocused(userId: string) {
   return lease && Date.now() - lease.at < 45_000
 }
 
+// Count Unicode code points so truncation never leaves half a surrogate pair.
+function desktopPreview(text: string, limit: number): string {
+  const characters = Array.from(text.replace(/\s+/g, ' ').trim())
+  return characters.length > limit ? characters.slice(0, limit - 1).join('').trimEnd() + '…' : characters.join('')
+}
+
 interface DeliveryOptions {
   userId: string
   workspaceId: string
@@ -106,8 +112,8 @@ export async function deliverDesktopNotification(event: WSEvent, options: Delive
     // Consume foreground events too, so a second tab cannot show them later.
     localStorage.setItem(key, JSON.stringify([...recent, [eventKey, now]]))
     if (anyTabFocused(userId)) return
-    const notification = new Notification(event.data!.title as string, {
-      body: typeof event.data?.body === 'string' ? event.data.body.slice(0, 240) : undefined,
+    const notification = new Notification(desktopPreview(event.data!.title as string, 120), {
+      body: typeof event.data?.body === 'string' ? desktopPreview(event.data.body, 240) : undefined,
       tag: `${PREFIX}${userId}:${workspaceId}:${event.entity_id}`,
     })
     notification.onclick = () => {

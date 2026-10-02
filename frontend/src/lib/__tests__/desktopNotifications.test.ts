@@ -44,6 +44,17 @@ describe('desktop notification policy', () => {
 })
 
 describe('browser delivery', () => {
+  it('truncates long titles and descriptions without splitting Unicode characters', async () => {
+    const longEvent = { ...event, data: { ...event.data, title: 'A'.repeat(118) + '😀XYZ', body: 'B'.repeat(238) + '😀XYZ' } }
+    await deliverDesktopNotification(longEvent, { userId: 'u1', workspaceId: 'w1', preferences, isCurrent: () => true, onClick: vi.fn() })
+    expect(show).toHaveBeenCalledWith('A'.repeat(118) + '😀…', expect.objectContaining({ body: 'B'.repeat(238) + '😀…' }))
+  })
+  it('keeps short text intact and collapses excess whitespace for the banner', async () => {
+    const shortEvent = { ...event, data: { ...event.data, title: '  Sarah replied to conversation #1245 ', body: 'Hello\n\n  there 👋' } }
+    await deliverDesktopNotification(shortEvent, { userId: 'u1', workspaceId: 'w1', preferences, isCurrent: () => true, onClick: vi.fn() })
+    expect(show).toHaveBeenCalledWith('Sarah replied to conversation #1245', expect.objectContaining({ body: 'Hello there 👋' }))
+  })
+
   it('deduplicates local-hub events without suppressing later updates to the same notification', async () => {
     const options = { userId: 'u1', workspaceId: 'w1', preferences, isCurrent: () => true, onClick: vi.fn() }
     const localEvent = { ...event, event_id: undefined, sent_at: undefined, data: { ...event.data, delivery_id: 'delivery-1' } }
