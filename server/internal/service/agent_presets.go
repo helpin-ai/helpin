@@ -829,7 +829,7 @@ func askAgentPresetTools() []string {
 		"list_spaces", "list_documents", "list_collections",
 		"read_document", "get_document_blocks", "search_documents",
 		"create_space", "create_collection", "create_document", "update_space",
-		"update_collection", "move_document", "write_document_content",
+		"update_collection", "move_document", "archive_document", "restore_document", "write_document_content",
 		"update_document_block", "edit_document", "insert_document_block", "insert_document_artifact",
 		"link_document_to_object", "preview_md", "preview_json",
 		"publish_document_change_proposal", "publish_ai_section_candidate",
@@ -932,7 +932,7 @@ func enforceManagedDocumentationAgentCapabilities(preset model.AgentPresetDefini
 	}
 	preset.AllowedTools = appendPresetTools(preset.AllowedTools, []string{
 		"read_document", "get_document_blocks", "find_skills", "read_skill",
-		"edit_document",
+		"edit_document", "archive_document", "restore_document",
 		"insert_document_artifact",
 		"list_task_checklist",
 		"list_epic_tasks",
