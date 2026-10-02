@@ -207,9 +207,12 @@ export function installFlowBuilderFixture() {
           "assistant",
           "This flow runs **Code Reviewer** when **a pull request opens** in **acme/web-app** targeting **main**. It is currently **active**.\n\nWhat would you like to change?",
         );
-      else if (c.turn === 1)
+      else if (c.turn === 1) {
+        // A validation probe can persist before all questions are answered.
+        c.state.draft = { ...fixtureFlow, description: "Validation probe." };
+        c.state.revision = "probe-revision";
         message("assistant", "Which repository should this flow use?");
-      else propose(body.content);
+      } else propose(body.content);
       return send({ ...detail(), accepted_message: accepted });
     }
     if (path.endsWith("/messages"))
