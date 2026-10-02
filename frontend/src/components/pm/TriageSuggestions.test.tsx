@@ -24,6 +24,16 @@ async function render(value = view(), disabled = false) {
   await act(async () => root.render(<TriageSuggestions view={value} disabled={disabled} currentType="feature" currentTeam="other" taskHref={(id) => `/tasks/${id}`} onReview={onReview} />));
 }
 describe('Triage suggestion review', () => {
+  it('puts possible duplicates before related work and classification changes', async () => {
+    const value = view();
+    value.candidates.unshift({ id: 'related', name: 'Related task', display_id: 41 });
+    value.assessment!.matches.unshift({ task_id: 'related', relationship: 'relates_to', probability: .99 });
+    await render(value);
+    const rows = [...container.querySelectorAll('li')].map((row) => row.textContent);
+    expect(rows[0]).toContain('Possible duplicate');
+    expect(rows[1]).toContain('Related work');
+    expect(rows[2]).toContain('Type: bug');
+  });
   it('requires an explicit click and sends the exact saved suggestion', async () => {
     await render();
     expect(onReview).not.toHaveBeenCalled();

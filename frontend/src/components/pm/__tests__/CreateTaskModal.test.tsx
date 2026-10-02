@@ -7,6 +7,7 @@ import type { WorkflowWithStates } from '@/lib/pmTypes'
 import { uploadToS3 } from '@/lib/api'
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService'
 import { pmLabelService } from '@/lib/services/pmLabelService'
+import { pmTriageService } from '@/lib/services/pmTriageService'
 import { pmTaskService } from '@/lib/services/pmTaskService'
 import { pmTaskTemplateService } from '@/lib/services/pmTaskTemplateService'
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService'
@@ -800,6 +801,26 @@ describe('CreateTaskModal', () => {
     act(() => {
       root.unmount()
     })
+  })
+
+  it('allows saving while optional draft suggestions are still loading', async () => {
+    vi.mocked(pmTriageService.analyzeDraft).mockImplementationOnce(() => new Promise(() => {}))
+    const onCreate = vi.fn(async () => ({ id: 'task-1' }))
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    try {
+      await act(async () => { root.render(<CreateTaskModal open onOpenChange={vi.fn()} workspaceId="ws-1" workflow={workflow} initialStateId="state-1" initialTeamId="team-1" onCreate={onCreate} />) })
+      await act(async () => { setInputValue(container.querySelector<HTMLInputElement>('#task-title')!, 'Save without waiting') })
+      await settleDraftCheck()
+      const save = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Save')!
+      expect(save.disabled).toBe(false)
+      await act(async () => { save.click() })
+      expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ name: 'Save without waiting' }))
+    } finally {
+      await act(async () => { root.unmount() })
+      container.remove()
+    }
   })
 
   it('preserves sidebar selections when saving and creating another task', async () => {

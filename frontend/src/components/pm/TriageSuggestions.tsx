@@ -5,6 +5,7 @@ import type { TriageReview, TriageView } from '@/lib/services/pmTriageService';
 interface Props {
   view: TriageView;
   disabled?: boolean;
+  showComparisonSummary?: boolean;
   currentType?: string;
   currentTeam?: string;
   taskHref: (id: string) => string;
@@ -12,14 +13,14 @@ interface Props {
 }
 
 /** Shared review rows for tasks and support feedback. No mutation happens on render. */
-export function TriageSuggestions({ view, disabled, currentType, currentTeam, taskHref, onReview }: Props) {
+export function TriageSuggestions({ view, disabled, currentType, currentTeam, taskHref, onReview, showComparisonSummary = true }: Props) {
   const assessment = view.assessment;
   if (!assessment || !view.id) return null;
   const visible = getVisibleTriageSuggestions(view, currentType, currentTeam);
   return (
     <div className="min-w-0 text-sm text-quiet-text-secondary">
       {visible.length === 0 ? (
-        <p>{assessment.actionable ? 'No new suggestions to review.' : 'There is not enough evidence of concrete product work yet.'}</p>
+        <p>No suggestions to review.</p>
       ) : (
         <ul className="divide-y divide-quiet-divider-light">
           {visible.map((row) => (
@@ -35,7 +36,7 @@ export function TriageSuggestions({ view, disabled, currentType, currentTeam, ta
           ))}
         </ul>
       )}
-      <p className="mt-2 text-xs text-quiet-text-tertiary">Compared with {assessment.candidates_checked} accessible {assessment.candidates_checked === 1 ? 'task' : 'tasks'}. Other matches may exist.</p>
+      {showComparisonSummary && <p className="mt-2 text-xs text-quiet-text-tertiary">Compared with {assessment.candidates_checked} accessible {assessment.candidates_checked === 1 ? 'task' : 'tasks'}. Other matches may exist.</p>}
     </div>
   );
 }

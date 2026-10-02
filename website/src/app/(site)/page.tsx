@@ -4,6 +4,7 @@ import { CustomerLogos } from './_components/CustomerLogos';
 import { PreviewNav } from './_components/PreviewNav';
 import { ConnectedWorkspace } from './_components/ConnectedWorkspace';
 import { PreviewFooter } from './_components/PreviewFooter';
+import { HeroHeadline } from './_components/HeroHeadline';
 import { HeroVortex } from './_components/HeroVortex';
 import { LoopWire } from './_components/LoopWire';
 import { ProductPreview } from './_components/product-previews';
@@ -79,9 +80,9 @@ export default function HomePage() {
         <HeroVortex />
         <div className="wrap hero-wrap">
           <div className="hero-inner">
-            <span className="eyebrow">An open-source alternative to <Link className="eyebrow-link" href="/compare/intercom">Intercom</Link> and <Link className="eyebrow-link" href="/compare/linear">Linear</Link></span>
-            <h1>AI agents that do more than answer.</h1>
-            <p className="lede">Helpin gives AI agents the full customer context to resolve questions, take action, and follow through—across support, projects, CRM, meetings, and docs.</p>
+            <span className="eyebrow">AI-FIRST, OPEN-SOURCE ALTERNATIVE TO <Link className="eyebrow-link" href="/compare/intercom">INTERCOM</Link> AND <Link className="eyebrow-link" href="/compare/linear">LINEAR</Link></span>
+            <HeroHeadline />
+            <p className="lede">Let AI agents answer customers, keep help docs current, follow up with leads, update customer records, and turn requests into code, all in one workspace. You decide what needs approval; your agents take care of the rest.</p>
             <CtaRow primaryLabel="Start free trial" />
             <p className="cta-note">Open source · Self-host free, or let us run it</p>
 

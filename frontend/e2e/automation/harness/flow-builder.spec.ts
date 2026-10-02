@@ -68,3 +68,25 @@ test('edit introduction fits a narrow screen', async ({ page }) => {
   await expect(page.getByText('What would you like to change?', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
+
+for (const mode of ['custom', 'template']) {
+  test(`${mode} hides validation drafts until explicit final approval`, async ({ page }) => {
+    await page.goto(`${path}?mode=${mode}`, { waitUntil: 'domcontentloaded' });
+    if (mode === 'custom') {
+      await page.getByPlaceholder('Describe your flow…').fill('Review new pull requests');
+      await page.getByPlaceholder('Describe your flow…').press('Enter');
+    }
+    await expect(page.getByText('Which repository should this flow use?', { exact: true })).toBeVisible();
+    const summary = page.getByRole('region', { name: 'Flow summary' });
+    await expect(summary).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Yes, create flow' })).toHaveCount(0);
+    const reply = page.getByPlaceholder('Reply or ask for a change…');
+    await reply.fill('acme/web-app');
+    await reply.press('Enter');
+    await expect(summary).toBeVisible();
+    await expect(page.getByText('Create this flow?', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Done', exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Yes, create flow' }).click();
+    await expect(page.getByRole('button', { name: 'Done', exact: true })).toBeVisible();
+  });
+}
