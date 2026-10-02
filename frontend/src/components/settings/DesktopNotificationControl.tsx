@@ -1,45 +1,9 @@
-import { useState, useSyncExternalStore } from 'react'
-import { useAuthStore } from '@/stores/authStore'
-import { DESKTOP_SETTINGS_EVENT, getDesktopPermission, isDesktopEnabled, setDesktopEnabled } from '@/lib/desktopNotifications'
+import { useDesktopNotificationSettings } from '@/hooks/useDesktopNotificationSettings'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 
-function subscribe(callback: () => void) {
-  window.addEventListener('storage', callback)
-  window.addEventListener('focus', callback)
-  window.addEventListener(DESKTOP_SETTINGS_EVENT, callback)
-  return () => {
-    window.removeEventListener('storage', callback)
-    window.removeEventListener('focus', callback)
-    window.removeEventListener(DESKTOP_SETTINGS_EVENT, callback)
-  }
-}
-
 export function DesktopNotificationControl() {
-  const userId = useAuthStore(state => state.user?.id) ?? ''
-  const permission = useSyncExternalStore(subscribe, getDesktopPermission, () => 'unsupported' as const)
-  const enabled = useSyncExternalStore(subscribe, () => isDesktopEnabled(userId), () => false)
-  const [pending, setPending] = useState(false)
-  const [error, setError] = useState('')
-
-  const toggle = async (value: boolean) => {
-    setError('')
-    setPending(true)
-    try {
-      if (value && getDesktopPermission() !== 'granted') {
-        const result = await Notification.requestPermission()
-        window.dispatchEvent(new Event(DESKTOP_SETTINGS_EVENT))
-        if (result !== 'granted') {
-          if (result === 'default') setError('Permission wasn’t granted. Turn this on again when you’re ready.')
-          return
-        }
-      }
-      // Permission prompts can outlive a session change.
-      if (useAuthStore.getState().user?.id === userId) setDesktopEnabled(userId, value)
-    } catch {
-      setError('Couldn’t save desktop notifications. Check your browser permissions and try again.')
-    } finally { setPending(false) }
-  }
+  const { userId, permission, enabled, pending, error, setError, toggle } = useDesktopNotificationSettings()
 
   const test = () => {
     setError('')

@@ -15,8 +15,16 @@ export function getDesktopPermission(): DesktopPermission {
   return typeof Notification === 'undefined' || !window.isSecureContext ? 'unsupported' : Notification.permission
 }
 
+export function getDesktopChoice(userId: string): boolean | null {
+  if (!userId) return false
+  try {
+    const value = localStorage.getItem(settingKey(userId))
+    return value === null ? null : value === 'true'
+  } catch { return false }
+}
+
 export function isDesktopEnabled(userId: string): boolean {
-  try { return !!userId && localStorage.getItem(settingKey(userId)) === 'true' } catch { return false }
+  return getDesktopChoice(userId) === true
 }
 
 export function setDesktopEnabled(userId: string, enabled: boolean) {
