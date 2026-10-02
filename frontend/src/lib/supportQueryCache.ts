@@ -242,13 +242,17 @@ function patchConversationForMessageActivity(
 
   const senderType = patch.message?.sender_type as MessageSenderType;
   const content = typeof patch.message?.content === 'string' ? patch.message.content : '';
+  // Realtime carries the full body, not the server's cleaned snippet. Use the
+  // subject until the immediately following list refetch resolves rich content.
+  const hasMarkup = /<[a-z!/]|&(?:[a-z]+|#\w+);|!?\[[^\]]*\](?:\(|\[)/i.test(content);
+  const preview = hasMarkup ? undefined : content || conversation.last_message;
   const senderDisplayName = typeof patch.message?.sender_display_name === 'string'
     ? patch.message.sender_display_name
     : conversation.last_message_sender_display_name;
 
   return {
     ...next,
-    last_message: advancesMessage ? content || conversation.last_message : conversation.last_message,
+    last_message: advancesMessage ? preview : conversation.last_message,
     last_message_sender_type: senderType,
     last_public_message_id: patch.messageId ?? conversation.last_public_message_id,
     last_public_message_at: patch.timestamp,
