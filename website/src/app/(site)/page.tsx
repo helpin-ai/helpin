@@ -21,7 +21,7 @@ import { PLANS } from '../pricing/pricing-data';
 
 export const metadata = createPageMetadata(PAGE_SEO.home);
 const HERO_VIDEO = '/new/home/helpin-launch-1080p-v1.mp4';
-const HERO_POSTER = '/new/home/helpin-launch-poster-1600-v2.webp';
+const HERO_POSTER = '/new/home/helpin-launch-poster-1600-v3.webp';
 const HOME_JSON_LD = {
   '@context': 'https://schema.org',
   '@graph': [organization, website, softwareApplication(PLANS), {
