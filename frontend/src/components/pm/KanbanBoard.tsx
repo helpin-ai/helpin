@@ -1251,7 +1251,7 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
         <QuietPageHeader
           variant="shell"
           title="Tasks"
-          context={teamLabel ? <TeamLabel team={{name:teamLabel,color:teams.find(team=>team.id===teamId)?.color}} /> : null}
+          context={teamLabel || null}
           actions={
             <QuietPrimaryAction className="gap-1.5" disabled={!workflow} onClick={() => handleCreateForState(workflow?.states[0]?.id ?? '')}>
               <PlusSignIcon className="h-4 w-4" />
