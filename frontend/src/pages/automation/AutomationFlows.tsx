@@ -2768,10 +2768,10 @@ function FlowTemplateGallery({
         side="right"
         className="w-full gap-0 p-0 data-[side=right]:w-full data-[side=right]:sm:w-[880px] data-[side=right]:!max-w-[880px]"
       >
-        <SheetHeader className="shrink-0 border-b border-quiet-divider-strong px-6 py-5 pr-14">
-          <SheetTitle>New flow</SheetTitle>
+        <SheetHeader className="shrink-0 border-b border-quiet-divider-strong px-6 py-5">
+          <SheetTitle className="pr-8">New flow</SheetTitle>
           <SheetDescription className="sr-only">Choose a template or build a custom flow.</SheetDescription>
-          <Button variant="outline" className="mt-3 self-start" onClick={() => onPick(null)}>
+          <Button variant="outline" className="mt-3 self-end" onClick={() => onPick(null)}>
             <PlusSignIcon className="size-4" />
             Build a custom flow
           </Button>
