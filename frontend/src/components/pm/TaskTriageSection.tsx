@@ -6,6 +6,8 @@ import { unwrapRequired } from '@/lib/queryUtils';
 import { queryKeys } from '@/lib/queryKeys';
 import type { TaskDetail } from '@/lib/pmTypes';
 import { useAuthStore } from '@/stores/authStore';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
+import { InformationCircleIcon } from '@/lib/icons';
 import { TriageSuggestions } from './TriageSuggestions';
 
 export function TaskTriageSection({ workspaceId, workspaceSlug, detail, disabled, onTaskUpdated }: {
@@ -41,6 +43,12 @@ export function TaskTriageSection({ workspaceId, workspaceSlug, detail, disabled
   const view = query.data;
   if (view?.status === 'disabled' || view?.status === 'shadow') return null;
   const taskHref = (id: string) => `/w/${encodeURIComponent(workspaceSlug)}/pm/tasks/${encodeURIComponent(id)}`;
+  const assessment = view?.assessment;
+  const suggestionHelp = [
+    'Based on this task’s saved title and description.',
+    assessment ? `Compared with ${assessment.candidates_checked} accessible ${assessment.candidates_checked === 1 ? 'task' : 'tasks'}. Other matches may exist.` : null,
+    assessment && !assessment.actionable ? 'There is not enough evidence of concrete product work yet.' : null,
+  ].filter(Boolean).join(' ');
   const messages = {
     input_limit: 'This task has more context than suggestions can assess. You can triage it manually.',
     daily_limit: 'Suggestions have reached today’s limit. You can continue manually.',
@@ -48,15 +56,23 @@ export function TaskTriageSection({ workspaceId, workspaceSlug, detail, disabled
     failed: 'Suggestions are temporarily unavailable. You can continue manually.',
   };
   return (
-    <QuietSection title="Task suggestions" className="px-0 sm:px-0 lg:px-0" action={
+    <QuietSection title={
+      <span className="inline-flex items-center gap-1.5">
+        Task suggestions
+        <QuickTooltip label={suggestionHelp}>
+          <button type="button" aria-label="About task suggestions" className="inline-flex rounded-sm text-quiet-text-tertiary hover:text-foreground focus-visible:outline-auto">
+            <InformationCircleIcon className="size-3.5" />
+          </button>
+        </QuickTooltip>
+      </span>
+    } className="px-0 sm:px-0 lg:px-0" action={
       <QuietTextAction className="focus-visible:underline" disabled={disabled || query.isFetching || review.isPending} onClick={() => { review.reset(); void query.refetch(); }}>Refresh</QuietTextAction>
     }>
-      <p className="mb-2 text-xs text-quiet-text-tertiary">Based on <a className="underline underline-offset-4" href={taskHref(detail.task.id)}>this task’s saved title and description</a>.</p>
       {disabled ? <p className="text-sm text-quiet-text-secondary">Save your changes to review suggestions.</p> : null}
       {query.isFetching ? <p role="status" className="text-sm text-quiet-text-secondary">Checking task suggestions…</p> : null}
       {query.error || review.error ? <p role="alert" className="text-sm text-destructive">{(review.error || query.error)?.message}</p> : null}
       {view && view.status in messages ? <p role="status" className="text-sm text-quiet-text-secondary">{messages[view.status as keyof typeof messages]}</p> : null}
-      {view?.status === 'ready' ? <TriageSuggestions view={view} disabled={disabled || query.isFetching || review.isPending} currentType={detail.task.task_type} currentTeam={detail.task.team_id ?? undefined} taskHref={taskHref} onReview={(request) => review.mutate(request)} /> : null}
+      {view?.status === 'ready' ? <TriageSuggestions showComparisonSummary={false} view={view} disabled={disabled || query.isFetching || review.isPending} currentType={detail.task.task_type} currentTeam={detail.task.team_id ?? undefined} taskHref={taskHref} onReview={(request) => review.mutate(request)} /> : null}
       {review.isPending ? <p role="status" className="mt-2 text-xs text-quiet-text-tertiary">Saving review…</p> : null}
     </QuietSection>
   );
