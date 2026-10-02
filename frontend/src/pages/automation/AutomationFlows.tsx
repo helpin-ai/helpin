@@ -2771,19 +2771,22 @@ function FlowTemplateGallery({
         <SheetHeader className="shrink-0 border-b border-quiet-divider-strong px-6 py-5">
           <SheetTitle className="pr-8">New flow</SheetTitle>
           <SheetDescription className="sr-only">Choose a template or build a custom flow.</SheetDescription>
-          <Button variant="outline" className="mt-3 self-end" onClick={() => onPick(null)}>
-            <PlusSignIcon className="size-4" />
-            Build a custom flow
-          </Button>
         </SheetHeader>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-6">
-          <QuietSearchInput
-            aria-label="Search flow templates"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search templates..."
-          />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <QuietSearchInput
+              containerClassName="min-w-0 flex-1"
+              aria-label="Search flow templates"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search templates..."
+            />
+            <Button variant="outline" className="h-9 shrink-0" onClick={() => onPick(null)}>
+              <PlusSignIcon className="size-4" />
+              Build a custom flow
+            </Button>
+          </div>
 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <Tabs value={category} onValueChange={setCategory}>
