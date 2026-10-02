@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
-import { getAvatarColor } from '@/components/pm/UserAvatar';
-import { teamColorStyle } from '@/lib/teamColor';
-import { cn, getInitials } from '@/lib/utils';
+import { resolveTeamColor, teamColorStyle, TEAM_PRESET_COLORS } from '@/lib/teamColor';
+import { cn } from '@/lib/utils';
 
 /** Decorative team identity; the adjacent team name supplies the accessible label. */
 export function TeamBadge({ name, color, className, children }: {
@@ -10,21 +9,22 @@ export function TeamBadge({ name, color, className, children }: {
   className?: string;
   children?: ReactNode;
 }) {
-  const style = teamColorStyle(color);
-  const fallback = getAvatarColor(name.toLowerCase());
+  const resolvedColor = resolveTeamColor(name, color);
+  const style = teamColorStyle(resolvedColor);
+  // Preset badges use the white initials shown in the team identity design.
+  // Custom shades retain their contrast-aware text (including white backgrounds).
+  if (style && TEAM_PRESET_COLORS.includes(resolvedColor)) style['--team-color-fg'] = '#ffffff';
   return (
     <span
       aria-hidden="true"
       className={cn(
-        'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-semibold',
-        style
-          ? 'bg-[var(--team-color-bg)] text-[var(--team-color-fg)] dark:bg-[var(--team-color-bg-dark)] dark:text-[var(--team-color-fg-dark)]'
-          : [fallback.bg, fallback.text],
+        'flex h-[20px] w-[20px] shrink-0 items-center justify-center rounded-[4px] text-xs font-semibold',
+        'bg-[var(--team-color-bg)] text-[var(--team-color-fg)]',
         className,
       )}
       style={style}
     >
-      {children ?? getInitials(name)}
+      {children ?? name.trim().charAt(0).toUpperCase()}
     </span>
   );
 }

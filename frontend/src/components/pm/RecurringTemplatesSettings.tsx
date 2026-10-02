@@ -1,3 +1,4 @@
+import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft01Icon, ArrowRight01Icon, Loading01Icon, PlayCircleIcon, ArrowReloadHorizontalIcon } from '@/lib/icons';
@@ -207,7 +208,7 @@ export function RecurringTemplatesSettings({ workspaceId, initialTeamId, editabl
             <SelectItem value="__all__">All teams</SelectItem>
             {teams.map((team) => (
               <SelectItem key={team.id} value={team.id}>
-                {team.name}
+                <TeamLabel team={team} />
               </SelectItem>
             ))}
           </SelectContent>
@@ -227,6 +228,7 @@ export function RecurringTemplatesSettings({ workspaceId, initialTeamId, editabl
         <RecurringTemplateList
           templates={templates}
           teamNames={teamNames}
+          teamColors={new Map(teams.map(team=>[team.id,team.color]))}
           ownerNames={ownerNames}
           onView={async (item) => {
             const detail = await loadTemplateDetail(item.template.id);

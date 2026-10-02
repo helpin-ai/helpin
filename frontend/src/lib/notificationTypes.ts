@@ -89,7 +89,7 @@ export interface NotificationPreferences {
   user_id: string
   workspace_id: string
   mute_workspace: boolean
-  channel_preferences: Record<string, { in_app?: boolean; email?: boolean }>
+  channel_preferences: Record<string, { in_app?: boolean; email?: boolean; desktop?: boolean }>
   // Backward compat: account-level fields overlaid by backend
   do_not_disturb: boolean
   dnd_until?: string | null
@@ -103,7 +103,7 @@ export interface NotificationPreferences {
 
 export interface UpdateNotificationPreferencesRequest {
   mute_workspace?: boolean
-  channel_preferences?: Record<string, { in_app?: boolean; email?: boolean }>
+  channel_preferences?: Record<string, { in_app?: boolean; email?: boolean; desktop?: boolean }>
 }
 
 export interface EntityFollower {

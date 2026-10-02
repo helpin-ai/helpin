@@ -109,6 +109,7 @@ export function QuietFilterDropdown(props: QuietFilterDropdownProps) {
               className={cn(quietSelectTriggerClassName, 'inline-flex h-8 items-center justify-between gap-1.5 px-2 text-ui')}
             >
               {icon && <span className="shrink-0" aria-hidden="true">{icon}</span>}
+              {selected.length === 1 && options.find(option => option.value === selected[0])?.leading}
               {showLabel === 'inline' && <span className="shrink-0 text-quiet-text-tertiary">{label}:</span>}
               <span className="truncate">{props.multiple && selected.length > 1 && !showLabel ? `${label}: ` : ''}{summary}</span>
               <ArrowDown01Icon aria-hidden="true" className="size-3.5 shrink-0 text-quiet-text-tertiary" />

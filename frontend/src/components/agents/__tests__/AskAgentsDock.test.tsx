@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AskAgentsDock } from '../AskAgentsDock';
+import { FlowBuilderDrawer } from '@/components/automation/FlowBuilderDrawer';
 import { PageContextProvider } from '@/components/command-bar/pageContext';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -11,6 +12,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useDockStore } from '@/stores/dockStore';
 import type { DockChat, DockChatDetail, DockRunSummary } from '@/lib/dockTypes';
 import type { CommandBarPageContext, CommandBarPlanSummary } from '@/lib/pmTypes';
+import type { FlowTemplateManifest } from '@/lib/pmTypes';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 (globalThis as typeof globalThis & { ResizeObserver: typeof ResizeObserver }).ResizeObserver = class ResizeObserver {
@@ -85,6 +87,7 @@ vi.mock('@/lib/services/dockChatService', () => ({
     findSupportConversationChat: mocks.findSupportConversationChat,
     findCoverageGapChat: mocks.findCoverageGapChat,
     createChat: mocks.createChat,
+    createFlowBuilder: mocks.createChat,
     getChat: mocks.getChat,
     updateChat: mocks.updateChat,
     sendMessage: mocks.sendMessage,
@@ -247,6 +250,51 @@ async function renderDock() {
   });
   await flush();
 }
+
+it('starts a custom flow with the Ask Agent composer under the introduction and switches to chat on submit', async () => {
+  mocks.createChat.mockImplementation(() => new Promise(() => {}));
+  await act(async () => {
+    root.render(
+      <TooltipProvider>
+        <PageContextProvider>
+          <FlowBuilderDrawer workspaceId="ws-1" open onOpenChange={vi.fn()} agents={[]} workflows={[]} onSaved={vi.fn()} initialBrief="Summarize our work every Monday" />
+        </PageContextProvider>
+      </TooltipProvider>,
+    );
+  });
+  const textarea = document.body.querySelector<HTMLTextAreaElement>('textarea')!;
+  await waitForCondition(() => textarea.value === 'Summarize our work every Monday', 'initial flow brief was not inserted');
+  expect(textarea.value).toBe('Summarize our work every Monday');
+  expect(document.body.textContent).toContain('What would you like to automate?');
+  expect(document.querySelector('[data-chat-composer-placement="intro"]')?.contains(textarea)).toBe(true);
+  expect(document.querySelector('[data-composer-actions]')).not.toBeNull();
+  await act(async () => {
+    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  });
+  expect(mocks.createChat).toHaveBeenCalledTimes(1);
+  expect(document.querySelector('[data-chat-composer-placement="intro"]')).toBeNull();
+  expect(document.body.textContent).toContain('Summarize our work every Monday');
+});
+
+it('shows a failed template run instead of leaving the flow builder blank', async () => {
+  const failed = chatDetail({ run: { id: 'failed-builder', status: 'failed', error_message: 'Required skill tool is unavailable' } as DockChatDetail['run'] });
+  mocks.createChat.mockResolvedValue({ data: CHAT, error: null });
+  mocks.getChat.mockResolvedValue({ data: failed, error: null });
+  mocks.sendMessage.mockResolvedValue({ data: failed, error: null });
+  await act(async () => {
+    root.render(
+      <TooltipProvider>
+        <PageContextProvider>
+          <FlowBuilderDrawer workspaceId="ws-1" open onOpenChange={vi.fn()} agents={[]} workflows={[]} onSaved={vi.fn()} template={{ key: 'review_merged_prs', name: 'Review merged PRs' } as FlowTemplateManifest} />
+        </PageContextProvider>
+      </TooltipProvider>,
+    );
+  });
+  await waitForCondition(() => mocks.sendMessage.mock.calls.length === 1, 'template setup was not submitted');
+  await waitForCondition(() => document.querySelector('[role="alert"]') !== null, 'failed template run was not shown');
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain('The agent couldn’t complete this request');
+  expect(document.querySelector('[data-chat-composer-placement="intro"]')).toBeNull();
+});
 
 async function renderDockWithHiddenTrigger() {
   await act(async () => {

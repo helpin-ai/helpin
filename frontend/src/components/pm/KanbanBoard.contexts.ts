@@ -10,6 +10,7 @@ export interface BoardDataContextValue {
   agentById: Map<string, Agent>;
   assignableMembers: AssignableMember[];
   automatedStateIds: Set<string>;
+  findTeamColor: (teamId: string | undefined) => string | null | undefined;
   findTeamName: (teamId: string | undefined) => string | undefined;
 }
 

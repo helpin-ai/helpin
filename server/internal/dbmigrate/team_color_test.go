@@ -10,6 +10,61 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestSolidTeamColors(t *testing.T) {
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sql string
+	for _, migration := range migrations {
+		if migration.Version == "202610020001" {
+			sql = migration.SQL
+		}
+	}
+	if sql == "" {
+		t.Fatal("missing solid team color migration")
+	}
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	if err := db.Exec(`CREATE TABLE workspace_teams (id text PRIMARY KEY, color text)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO workspace_teams VALUES ('blue', '#9ec1f3'), ('red', '#efa29b'), ('solid', '#4e8fea'), ('custom', '#123456'), ('unset', NULL)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := db.Exec(sql).Error; err != nil {
+			t.Fatal(err)
+		}
+		var rows []struct {
+			ID    string
+			Color *string
+		}
+		if err := db.Raw(`SELECT id, color FROM workspace_teams`).Scan(&rows).Error; err != nil {
+			t.Fatal(err)
+		}
+		want := map[string]string{"blue": "#4e8fea", "red": "#e2564a", "solid": "#4e8fea", "custom": "#123456"}
+		for _, row := range rows {
+			if row.ID == "unset" {
+				if row.Color != nil {
+					t.Fatal("reset team colors must remain unset")
+				}
+				continue
+			}
+			if row.Color == nil || *row.Color != want[row.ID] {
+				t.Fatalf("unexpected color for %s: %v", row.ID, row.Color)
+			}
+		}
+	}
+}
+
 func TestTeamColorBackfill(t *testing.T) {
 	migrations, err := loadMigrations()
 	if err != nil {

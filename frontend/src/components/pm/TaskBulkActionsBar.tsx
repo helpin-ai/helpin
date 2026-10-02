@@ -1,3 +1,4 @@
+import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { EpicColorSwatch } from './EpicColorSwatch';
 import { EPIC_PICKER_WIDTH, groupEpicsByLifecycle } from './epicPickerGroups';
 import { useCallback, useMemo, useState } from 'react';
@@ -654,7 +655,7 @@ export function TaskBulkActionsBar({
                   <SelectContent>
                     {teams.map((team) => (
                       <SelectItem key={team.id} value={team.id}>
-                        {team.name}
+                        <TeamLabel team={team} />
                       </SelectItem>
                     ))}
                   </SelectContent>

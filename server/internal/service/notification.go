@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	emailtpl "github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -22,6 +24,11 @@ import (
 // clients can filter (e.g. toast only for agent-attention events) without making
 // a follow-up fetch.
 type notificationWSData struct {
+	DeliveryID   string `json:"delivery_id"`
+	Title        string `json:"title,omitempty"`
+	Body         string `json:"body,omitempty"`
+	EntityID     string `json:"entity_id,omitempty"`
+	Status       string `json:"status,omitempty"`
 	EventType    string `json:"event_type,omitempty"`
 	Category     string `json:"category,omitempty"`
 	Priority     string `json:"priority,omitempty"`
@@ -32,13 +39,23 @@ type notificationWSData struct {
 	RunID        string `json:"run_id,omitempty"`
 }
 
-func buildNotificationWSData(recipientID string, event model.NotificationEventInput, priority string) json.RawMessage {
+func buildNotificationWSData(recipientID string, event model.NotificationEventInput, priority, status string) json.RawMessage {
 	parentTaskID, _ := event.Metadata["task_id"].(string)
 	dockChatID, _ := event.Metadata["dock_chat_id"].(string)
 	runID, _ := event.Metadata["run_id"].(string)
+	// Match the settings categories even for older emitters using singular names.
+	category := model.EventTypeToCategory[event.EventType]
+	if category == "" {
+		category = event.Category
+	}
 	payload := notificationWSData{
+		DeliveryID:   uuid.NewString(),
+		Title:        event.Title,
+		Body:         event.Body,
+		EntityID:     event.EntityID,
+		Status:       status,
 		EventType:    event.EventType,
-		Category:     event.Category,
+		Category:     category,
 		Priority:     priority,
 		RecipientID:  recipientID,
 		EntityType:   event.EntityType,
@@ -407,7 +424,7 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 					TargetUserID: recipientID,
 					WorkspaceID:  event.WorkspaceID,
 					ActorID:      event.ActorID,
-					Data:         buildNotificationWSData(recipientID, event, priority),
+					Data:         buildNotificationWSData(recipientID, event, priority, existing.Status),
 				})
 			}
 		} else {
@@ -460,7 +477,7 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 					TargetUserID: recipientID,
 					WorkspaceID:  event.WorkspaceID,
 					ActorID:      event.ActorID,
-					Data:         buildNotificationWSData(recipientID, event, priority),
+					Data:         buildNotificationWSData(recipientID, event, priority, notif.Status),
 				})
 			}
 		}

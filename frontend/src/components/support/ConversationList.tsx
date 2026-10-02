@@ -863,9 +863,10 @@ export function ConversationList({
         </DialogContent>
       </Dialog>
 
-      {/* Conversation list */}
+      {/* Keep the scroll offset when activity sorting moves a row to the top.
+          Browser scroll anchoring can otherwise follow that row and jump the list. */}
       <div
-        className="flex-1 min-h-0 overflow-y-auto pb-16"
+        className="flex-1 min-h-0 overflow-y-auto pb-16 [overflow-anchor:none]"
         data-support-conversation-scroll
         onScroll={handleListScroll}
       >

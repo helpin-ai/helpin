@@ -155,6 +155,7 @@ function FlowBuilderConversation({
   );
   const taskSurface = useMemo<ChatTaskSurface>(
     () => ({
+      emptyStateLayout: flow || template ? undefined : 'form',
       initialMessage: flow
         ? "Describe the current flow and ask what I would like to change."
         : template
@@ -166,11 +167,11 @@ function FlowBuilderConversation({
             {flow ? "Reading this flow…" : "Preparing your template…"}
           </span>
         ) : (
-          <span className="block py-8 text-left">
-            <strong className="block text-xl font-semibold tracking-tight text-foreground">
+          <span className="block text-left">
+            <strong className="block text-base font-semibold text-foreground">
               What would you like to automate?
             </strong>
-            <span className="mt-2 block">
+            <span className="mt-1 block">
               Describe when it should run and what it should do.
             </span>
           </span>

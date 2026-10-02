@@ -60,6 +60,7 @@ import { isDockNetworkAvailable, useDockNetworkActivity } from './useDockNetwork
 
 export interface ChatTaskSurface {
   initialMessage?: string;
+  emptyStateLayout?: 'form';
   emptyState: ReactNode;
   placeholder: string;
   onDetailChange?: (detail: DockChatDetail | null) => void;
@@ -980,6 +981,8 @@ export function ChatView({
   const runtimeStream = transformed?.stream ?? streamState;
   const showRuntimeTimeline = isDockTranscriptStreaming(run)
     || (run?.status !== 'cancelled' && runtimeStream !== null && hasAuthoritativeDockRuntimeTimeline(runtimeStream));
+  const showIntroComposer = taskSurface?.emptyStateLayout === 'form'
+    && !detailLoading && !run && !pendingEcho && !sending && !hasTranscriptMessages;
 
   return (
     <DockInteractionLayer
@@ -1007,8 +1010,8 @@ export function ChatView({
         />
       ) : null} />}
     >
-      <div className="relative flex min-h-0 flex-1 flex-col">
-      <div ref={scrollRef} data-agent-dock-chat-scroll className={`${activityStyles.activityHost} min-h-0 flex-1 overflow-y-auto px-5 pb-24 pt-3 sm:px-6`}>
+      <div className={`relative flex min-h-0 flex-col ${showIntroComposer ? 'shrink-0' : 'flex-1'}`}>
+      <div ref={scrollRef} data-agent-dock-chat-scroll className={`${activityStyles.activityHost} min-h-0 overflow-y-auto ${showIntroComposer ? 'px-5 pb-3 pt-5 sm:px-6' : 'flex-1 px-5 pb-24 pt-3 sm:px-6'}`}>
       <div className="space-y-3">
         {(detail?.chat.initial_context ?? contextMessage) && <DockContextMessage message={(detail?.chat.initial_context ?? contextMessage)!} compact={hasTranscriptMessages} />}
 		{nextMessagesBefore && (
@@ -1038,7 +1041,7 @@ export function ChatView({
           </div>
         )}
         {!(detail?.chat.initial_context ?? contextMessage) && !detailLoading && !run && !pendingEcho && !sending && !hasTranscriptMessages && (
-          <p className="py-6 text-center text-sm text-muted-foreground">
+          <p className={`${showIntroComposer ? 'text-left' : 'py-6 text-center'} text-sm text-muted-foreground`}>
             {taskSurface ? taskSurface.emptyState : requiredPageContext?.entity_type === 'support_conversation'
               ? 'Ask about this conversation, draft a reply, investigate the issue, or have an agent take the next step.'
               : 'Ask a question about your workspace, or describe work for an agent to do.'}
@@ -1115,6 +1118,17 @@ export function ChatView({
             </div>
           </div>
         )}
+        {taskSurface && run?.status === 'failed' && !sending && (
+          <div role="alert" className="flex items-start justify-between gap-3 py-3 text-sm text-destructive">
+            <p>The agent couldn’t complete this request. Try sending your message again.</p>
+            {run.error_message && (
+              <Tooltip>
+                <TooltipTrigger asChild><button type="button" className="shrink-0 underline underline-offset-4">Details</button></TooltipTrigger>
+                <TooltipContent className="max-w-sm whitespace-normal break-words">{run.error_message}</TooltipContent>
+              </Tooltip>
+            )}
+          </div>
+        )}
         {displayedLiveProgress ? (
           <div
             className="mt-2 shrink-0 border-t border-border/40 px-1 pt-2"
@@ -1135,9 +1149,9 @@ export function ChatView({
       )}
       {readOnly && readOnlyReason && <p className="border-t border-border/40 px-5 py-3 text-xs text-muted-foreground">{readOnlyReason}</p>}
       {composer.visible && !readOnly && (
-        <div className="border-t border-border/60">
+        <div data-chat-composer-placement={showIntroComposer ? 'intro' : 'bottom'} className={showIntroComposer ? 'flex shrink-0 flex-col px-5 sm:px-6' : 'border-t border-border/60'}>
           {starterSuggestions.length > 0 && composer.enabled && (
-            <div className="px-3.5 pt-2" data-agent-starter-suggestions>
+            <div className={showIntroComposer ? 'order-last pt-3' : 'px-3.5 pt-2'} data-agent-starter-suggestions>
               <div className="flex flex-wrap gap-1.5">
                 {starterSuggestions.map((suggestion) => (
                   <button
@@ -1155,7 +1169,7 @@ export function ChatView({
               </div>
             </div>
           )}
-          <div className="p-2">
+          <div className={showIntroComposer ? '-mx-3.5' : 'p-2'}>
               <DockInput
                 voiceIdentity={chatId ?? 'draft'}
                 active={active}

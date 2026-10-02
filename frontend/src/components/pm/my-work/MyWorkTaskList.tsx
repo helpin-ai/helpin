@@ -1,3 +1,4 @@
+import { TeamColorMark } from '@/components/workspace/TeamLabel';
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowRight01Icon, InformationCircleIcon, Settings02Icon } from '@/lib/icons';
 import type { Task } from '@/lib/pmTypes';
@@ -11,7 +12,7 @@ import { cn } from '@/lib/utils';
 import { defaultMyWorkPreferences, filterMyWork, groupMyWork, matchesMyWorkFilter, myWorkFilters, type MyWorkPreferences } from './myWorkModel';
 import { MyWorkTaskRow } from './MyWorkTaskRow';
 
-type Props = { tasks: Task[]; workspaceId: string; memberId: string; assigned: boolean; members: MemberWithUser[]; teams: {id:string;name:string}[]; findTeamName: (id?:string)=>string|undefined; canEdit: boolean; onOpen: (task:Task)=>void; onChanged: ()=>void };
+type Props = { tasks: Task[]; workspaceId: string; memberId: string; assigned: boolean; members: MemberWithUser[]; teams: {id:string;name:string;color?:string|null}[]; findTeamName: (id?:string)=>string|undefined; canEdit: boolean; onOpen: (task:Task)=>void; onChanged: ()=>void };
 function readPreferences(key: string): MyWorkPreferences {
   try {
     const saved = JSON.parse(localStorage.getItem(key) || '{}');
@@ -38,7 +39,7 @@ export function MyWorkTaskList(props: Props) {
   const groups = groupMyWork(matches,prefs,props.assigned,props.findTeamName,now,props.memberId);
   const countTasks = filterMyWork(props.tasks,{...prefs,filter:'All',showCompleted:false},props.assigned?()=>'':ownerNames,now);
   const definitions: PMFilterDefinition<'team'|'priority'>[] = [
-    {key:'team',label:'Team',singleSelect:true,options:props.teams.map(team=>({value:team.id,label:team.name}))},
+    {key:'team',label:'Team',singleSelect:true,options:props.teams.map(team=>({value:team.id,label:team.name,icon:<TeamColorMark team={team}/>}))},
     {key:'priority',label:'Priority',singleSelect:true,options:Object.entries(PRIORITY_CONFIG).map(([value,config])=>({value,label:config.label}))},
   ];
   const active = new Set(definitions.filter(def=>prefs[def.key]).map(def=>def.key));
@@ -74,11 +75,11 @@ function TaskGroup({group,prefs,now,...props}:Props & {group:ReturnType<typeof g
   return <section aria-label={group.label} className="border-b border-quiet-divider-strong">
     <div className="flex min-h-12 items-center gap-1">
       <button type="button" aria-expanded={open} onClick={()=>setCollapsed(value=>!value)} className="flex items-center gap-2 rounded-sm py-2 text-xs font-semibold text-quiet-text-primary focus-visible:outline-2 focus-visible:outline-ring">
-        <ArrowRight01Icon className={cn('size-3 text-quiet-text-tertiary',open&&'rotate-90')}/>{group.label} <span className="font-normal tabular-nums text-quiet-text-tertiary">({group.tasks.length})</span>
+        <ArrowRight01Icon className={cn('size-3 text-quiet-text-tertiary',open&&'rotate-90')}/>{prefs.group==='team' && props.teams.some(team=>team.name===group.label) && <TeamColorMark team={props.teams.find(team=>team.name===group.label)!}/>} {group.label} <span className="font-normal tabular-nums text-quiet-text-tertiary">({group.tasks.length})</span>
       </button>
       {group.label==='Focus now' && <QuickTooltip label="Focus order is based on due dates, blockers, priority, active state, and recent updates."><button type="button" aria-label="How focus order works" className="rounded-sm p-1 text-quiet-muted focus-visible:outline-2 focus-visible:outline-ring"><InformationCircleIcon className="size-3.5"/></button></QuickTooltip>}
     </div>
-    {open && <div className="pb-3"><div className="divide-y divide-quiet-divider-light">{visible.map(task=><MyWorkTaskRow key={task.id} task={task} workspaceId={props.workspaceId} teamName={props.findTeamName(task.team_id) || task.team_name} owners={(task.owner_member_ids || []).map(id => { const member = props.members.find(member => member.id === id); return { ...member, id, full_name: member?.full_name || member?.email || 'Workspace member' }; })} compact={prefs.compact} canEdit={props.canEdit} needsInput={!task.completed && task.latest_run_status==='paused' && (props.assigned || Boolean(task.owner_member_ids?.includes(props.memberId)))} now={now} onOpen={()=>props.onOpen(task)} onChanged={props.onChanged}/>)}</div>
+    {open && <div className="pb-3"><div className="divide-y divide-quiet-divider-light">{visible.map(task=><MyWorkTaskRow key={task.id} task={task} workspaceId={props.workspaceId} teamName={props.findTeamName(task.team_id) || task.team_name} teamColor={props.teams.find(team=>team.id===task.team_id)?.color} owners={(task.owner_member_ids || []).map(id => { const member = props.members.find(member => member.id === id); return { ...member, id, full_name: member?.full_name || member?.email || 'Workspace member' }; })} compact={prefs.compact} canEdit={props.canEdit} needsInput={!task.completed && task.latest_run_status==='paused' && (props.assigned || Boolean(task.owner_member_ids?.includes(props.memberId)))} now={now} onOpen={()=>props.onOpen(task)} onChanged={props.onChanged}/>)}</div>
       {!searching && group.tasks.length>10 && <QuietTextAction onClick={()=>setShowAll(value=>!value)} className="mt-3">{showAll?'Show less':`Show ${group.tasks.length-10} more`}</QuietTextAction>}
     </div>}
   </section>;

@@ -933,11 +933,16 @@ func (s *AgentRuntimeHostService) ExecuteCommand(ctx context.Context, req agentr
 // runtimeExecutionAgentSuffix marks the runtime agent record that
 // runtimeAgentForDockExecution projects for execution-enabled Dock runs.
 const runtimeExecutionAgentSuffix = "-execution"
+const runtimeFlowBuilderAgentSuffix = "-flow-builder"
 
 // runtimeAgentBaseID maps a runtime agent ID back to the Helpin agent ID so
 // callbacks from execution runs pass the same agent checks as ordinary runs.
 func runtimeAgentBaseID(id string) string {
-	return strings.TrimSuffix(strings.TrimSpace(id), runtimeExecutionAgentSuffix)
+	id = strings.TrimSpace(id)
+	if strings.HasSuffix(id, runtimeFlowBuilderAgentSuffix) {
+		return strings.TrimSuffix(id, runtimeFlowBuilderAgentSuffix)
+	}
+	return strings.TrimSuffix(id, runtimeExecutionAgentSuffix)
 }
 
 func (s *AgentRuntimeHostService) enrichCommandAgentScope(ctx context.Context, meta *model.InternalCommandContext) error {
@@ -953,7 +958,12 @@ func (s *AgentRuntimeHostService) enrichCommandAgentScope(ctx context.Context, m
 			return err
 		}
 		var input model.AgentRunInputPayload
-		if run == nil || run.WorkspaceID != meta.WorkspaceID || run.DockChatID == nil || json.Unmarshal(run.Input, &input) != nil || !input.ExecutionEnabled || baseID != run.AgentID {
+		if run == nil || run.WorkspaceID != meta.WorkspaceID || run.DockChatID == nil || json.Unmarshal(run.Input, &input) != nil || baseID != run.AgentID {
+			return ErrAgentRuntimeHostForbidden
+		}
+		executionProjection := meta.AgentID == run.AgentID+runtimeExecutionAgentSuffix && input.ExecutionEnabled
+		builderProjection := meta.AgentID == run.AgentID+runtimeFlowBuilderAgentSuffix && isFlowBuilderRun(run)
+		if !executionProjection && !builderProjection {
 			return ErrAgentRuntimeHostForbidden
 		}
 		meta.AgentID = run.AgentID
