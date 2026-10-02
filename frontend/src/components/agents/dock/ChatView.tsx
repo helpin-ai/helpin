@@ -1,3 +1,4 @@
+import { useNotificationView } from '@/hooks/useNotificationView';
 import { DockContextMessage } from './DockContextMessage';
 import type { DockContextMessage as ContextMessage } from '@/lib/dockTypes';
 import { dockWorkPlans, hasWorkPlanOrigin } from './dockWorkPlans';
@@ -232,6 +233,8 @@ export function ChatView({
 
   const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.id === workspaceId ? state.currentWorkspace.slug : undefined);
   const run = detail?.run ?? null;
+  useNotificationView(workspaceId, 'chat', chatId, active);
+  useNotificationView(workspaceId, 'run', run?.id, active);
   const executionEnabled = detail?.chat.execution_enabled ?? draftExecutionEnabled;
   const acceptedSelection = run?.input?.ai_selection;
   const acceptedProfileId = acceptedSelection && typeof acceptedSelection === 'object' && 'profile_id' in acceptedSelection && typeof acceptedSelection.profile_id === 'string'
@@ -936,12 +939,12 @@ export function ChatView({
       const resultEntry = resultByPlanID.get(plan.id);
       const resultSequence = resultEntry?.sequenceNo;
       const createdTimestamp = Date.parse(plan.created_at);
-      const active = plan.status === 'running';
+      const planRunning = plan.status === 'running';
       // A recent-plan response can reach farther back than the loaded message
       // page. Do not strand an old plan at the top of the visible page; reveal
       // it when its surrounding page/result marker is loaded.
       if (
-        !active
+        !planRunning
         && resultSequence === undefined
         && firstVisibleTimestamp !== null
         && Number.isFinite(createdTimestamp)
@@ -960,6 +963,7 @@ export function ChatView({
         runCount: Math.max(plan.run_count, plan.steps.length, 1),
         content: (
           <ExecutionStrip
+            active={active}
             kind="plan"
             workspaceId={workspaceId}
             plan={displayPlan}
@@ -968,7 +972,7 @@ export function ChatView({
         ),
       }];
     });
-  }, [plans, runsById, transformed, workspaceId]);
+  }, [active, plans, runsById, transformed, workspaceId]);
 
   const settledWorkKey = [run && !ACTIVE_RUN_STATUSES.has(run.status) ? `${run.id}:${run.status}` : '', ...plans.filter(plan => ['completed', 'failed', 'cancelled'].includes(plan.status)).map(plan => `${plan.id}:${plan.status}`)].filter(Boolean).join('|');
   const notifiedWorkKey = useRef('');

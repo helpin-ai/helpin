@@ -1,3 +1,4 @@
+import { useNotificationView } from '@/hooks/useNotificationView';
 import { useId, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import type { AgentRun } from '@/lib/pmTypes';
@@ -46,6 +47,7 @@ import {
 export type StripAction = 'rerun' | 'save_as_agent' | 'open' | 'retry' | 'resume' | 'cancel';
 
 interface PlanStripProps {
+  active?: boolean;
   kind: 'plan';
   workspaceId: string;
   plan: CommandBarRunPlan;
@@ -61,6 +63,7 @@ interface PlanStripProps {
 }
 
 interface RunStripProps {
+  active?: boolean;
   kind: 'run';
   workspaceId: string;
   run: AgentRun;
@@ -174,6 +177,7 @@ interface InternalProps {
 }
 
 function PlanStrip({
+  active = true,
   workspaceId,
   plan,
   runsById,
@@ -214,6 +218,7 @@ function PlanStrip({
     }
     return null;
   })();
+  useNotificationView(workspaceId, 'run', activeRunId, active);
   const stream = useAgentRunStream(workspaceId, activeRunId, !!activeRunId);
   // Single-step plans (one-shot / known-agent) render the run's full output
   // inline, the same way standalone runs do. Stream the lone run while active,
@@ -480,11 +485,12 @@ function PlanStrip({
   );
 }
 
-function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen, compact }: RunStripProps & InternalProps) {
+function RunStrip({ active = true, workspaceId, run, busy, onAction, resultSlot, open, setOpen, compact }: RunStripProps & InternalProps) {
   const state = classifyRun(run);
   const dot: DotKind = activityToDot(state, state === 'running');
   const isActive = ACTIVE_RUN_STATUSES.has(run.status);
   const expanded = open;
+  useNotificationView(workspaceId, 'run', run.id, active && expanded);
   // Stream while the run is active, and also once after it finishes whenever the
   // row is expanded, so the agent's full output renders inline in the dock
   // instead of only behind the session sheet. Don't poll terminal runs.
