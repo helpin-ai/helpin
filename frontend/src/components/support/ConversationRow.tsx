@@ -1,5 +1,5 @@
 import { memo, useMemo, useState, type KeyboardEvent } from 'react';
-import { ArrowTurnBackwardIcon, BotIcon, CheckmarkCircle02Icon, Mail01Icon, Message01Icon, MoreHorizontalIcon } from '@/lib/icons';
+import { ArrowTurnBackwardIcon, BotIcon, CheckmarkCircle02Icon, Mail01Icon, Message01Icon, MoreHorizontalIcon, StickyNote01Icon } from '@/lib/icons';
 import type { TicketSource } from '@/lib/pm-types/support';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
@@ -507,7 +507,14 @@ export const ConversationRow = memo(function ConversationRow({
                 </>
               ) : isNotePreview(conversation.last_message) ? (
                 <>
-                  <span className="font-medium text-amber-600 dark:text-amber-400">Note: </span>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span role="img" aria-label="Internal note" className="inline-flex shrink-0 text-amber-600 dark:text-amber-400">
+                        <StickyNote01Icon aria-hidden="true" className="h-3.5 w-3.5" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">Internal note</TooltipContent>
+                  </Tooltip>
                   <span className="min-w-0 truncate text-muted-foreground">{stripNotePrefix(conversation.last_message ?? '')}</span>
                 </>
               ) : (
