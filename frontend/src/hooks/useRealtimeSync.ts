@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import { useDesktopNotifications } from './useDesktopNotifications'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { isViewingNotificationTarget } from '@/lib/notificationView'
 import { useWebSocket, type DocsPresenceSnapshot, type WSEvent, type WSSend, type PresenceSnapshot } from './useWebSocket'
 import { usePMBoardStore } from '@/stores/pmBoardStore'
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore'
@@ -443,6 +444,9 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
           && !!selfId
           && recipientId === selfId
           && event.actor_id !== selfId
+          && data.status === 'unread'
+          && !isViewingNotificationTarget(workspaceId, 'chat', chatId)
+          && !isViewingNotificationTarget(workspaceId, 'run', runId)
         ) {
           const slug = useWorkspaceStore.getState().currentWorkspace?.slug
           toast('Agent needs your attention', {
@@ -669,7 +673,8 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         // accompanying an escalation) are refetch signals only — backend
         // strips event.data for IsInternal rows, so skipping when data is
         // absent prevents double pings on a single conversational event.
-        if (event.data && event.actor_id !== selfIdRef.current) {
+        if (event.data && event.actor_id !== selfIdRef.current
+          && !isViewingNotificationTarget(workspaceId, 'support_conversation', event.parent_id)) {
           playNotificationSound()
         }
 

@@ -1,3 +1,4 @@
+import { useNotificationView } from '@/hooks/useNotificationView';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { CheckmarkCircle02Icon, Clock01Icon, SecurityCheckIcon, CancelCircleIcon } from '@/lib/icons';
@@ -51,10 +52,12 @@ const STATUS_ICON = {
 
 export function CodingSessionSurface({
   sessionId,
+  active = true,
   embedded = false,
   showBackToRuns = true,
 }: {
   sessionId: string;
+  active?: boolean;
   embedded?: boolean;
   showBackToRuns?: boolean;
 }) {
@@ -62,6 +65,7 @@ export function CodingSessionSurface({
   const workspaceId = workspace?.id ?? '';
   const workspaceSlug = workspace?.slug ?? '';
   const [activeSessionId, setActiveSessionId] = useState(sessionId);
+  useNotificationView(workspaceId, 'run', activeSessionId, active);
 
   const [session, setSession] = useState<CodingSession | null>(null);
   const [events, setEvents] = useState<CodingSessionEvent[]>([]);

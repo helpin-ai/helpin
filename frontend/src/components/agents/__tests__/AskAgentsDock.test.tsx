@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { isViewingNotificationTarget } from '@/lib/notificationView';
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -274,6 +275,29 @@ it('starts a custom flow with the Ask Agent composer under the introduction and 
   expect(mocks.createChat).toHaveBeenCalledTimes(1);
   expect(document.querySelector('[data-chat-composer-placement="intro"]')).toBeNull();
   expect(document.body.textContent).toContain('Summarize our work every Monday');
+});
+
+it('tracks an open flow builder for notification suppression and releases it when closed', async () => {
+  const focus = vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+  const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+  const detail = chatDetail({ run: { id: 'builder-run', status: 'paused' } as DockChatDetail['run'] });
+  mocks.createChat.mockResolvedValue({ data: CHAT, error: null });
+  mocks.getChat.mockResolvedValue({ data: detail, error: null });
+  mocks.sendMessage.mockResolvedValue({ data: detail, error: null });
+  const renderBuilder = (open: boolean) => <TooltipProvider><PageContextProvider>
+    <FlowBuilderDrawer workspaceId="ws-1" open={open} onOpenChange={vi.fn()} agents={[]} workflows={[]} onSaved={vi.fn()} template={{ key: 'review_merged_prs', name: 'Review merged PRs' } as FlowTemplateManifest} />
+  </PageContextProvider></TooltipProvider>;
+  try {
+    await act(async () => root.render(renderBuilder(true)));
+    await waitForCondition(() => isViewingNotificationTarget('ws-1', 'chat', CHAT.id), 'flow builder was not registered as visible');
+    await waitForCondition(() => isViewingNotificationTarget('ws-1', 'run', 'builder-run'), 'flow run was not registered after loading');
+    await act(async () => root.render(renderBuilder(false)));
+    expect(isViewingNotificationTarget('ws-1', 'chat', CHAT.id)).toBe(false);
+    expect(isViewingNotificationTarget('ws-1', 'run', 'builder-run')).toBe(false);
+  } finally {
+    focus.mockRestore();
+    visibility.mockRestore();
+  }
 });
 
 it('shows a failed template run instead of leaving the flow builder blank', async () => {
