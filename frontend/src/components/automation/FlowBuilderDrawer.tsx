@@ -183,10 +183,7 @@ function FlowBuilderConversation({
           : "Describe your flow…",
       onDetailChange: detailChanged,
       onError: showError,
-      renderPreview: (detail, interaction) =>
-        !detail?.chat.flow_builder?.revision || isFlowApproval(interaction)
-          ? null
-          : preview(detail),
+      // Drafts can be validation probes; show the summary only for final approval.
       renderInteraction: (interaction, detail, resolve) => {
         if (!isFlowApproval(interaction)) return undefined;
         const payload = interaction.request_payload as {
@@ -201,14 +198,14 @@ function FlowBuilderConversation({
         };
         const revision =
           payload.action?.revision ?? payload.raw_input?.action?.revision;
+        const valid =
+          !!revision && revision === detail?.chat.flow_builder?.revision;
         return (
           <FlowBuilderConfirmation
             key={interaction.interaction_id}
             editing={!!flow}
-            valid={
-              !!revision && revision === detail?.chat.flow_builder?.revision
-            }
-            preview={preview(detail)}
+            valid={valid}
+            preview={valid ? preview(detail) : null}
             onResolve={(decision, message) =>
               resolve(interaction.interaction_id, {
                 response_payload: { decision },

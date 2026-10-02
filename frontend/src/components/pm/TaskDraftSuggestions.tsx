@@ -5,7 +5,7 @@ import { unwrapRequired } from '@/lib/queryUtils';
 import { getVisibleTriageSuggestions } from './triageSuggestionRows';
 import { TriageSuggestions } from './TriageSuggestions';
 
-export function TaskDraftSuggestions({ workspaceId, workspaceSlug, name, description, teamId, taskType, disabled, onPending, onApply, onOpenTask }: {
+export function TaskDraftSuggestions({ workspaceId, workspaceSlug, name, description, teamId, taskType, disabled, onApply, onOpenTask }: {
   workspaceId: string;
   workspaceSlug: string;
   name: string;
@@ -13,7 +13,6 @@ export function TaskDraftSuggestions({ workspaceId, workspaceSlug, name, descrip
   teamId: string;
   taskType: string;
   disabled: boolean;
-  onPending: (pending: boolean) => void;
   onApply: (field: 'task_type' | 'team', value: string) => void;
   onOpenTask: (id: string) => void;
 }) {
@@ -21,9 +20,9 @@ export function TaskDraftSuggestions({ workspaceId, workspaceSlug, name, descrip
   const [view, setView] = useState<TriageView | null>(null);
   const [checking, setChecking] = useState(false);
   useEffect(() => {
-    if (!name.trim() || !teamId) { setView(null); onPending(false); return; }
+    if (!name.trim() || !teamId) { setView(null); return; }
     let cancelled = false;
-    setView(null); setChecking(true); onPending(true);
+    setView(null); setChecking(true);
     const timer = window.setTimeout(async () => {
       try {
         const result = unwrapRequired(await pmTriageService.analyzeDraft(workspaceId, { draft_id: draftId, name, description, team_id: teamId }), 'Task matching');
@@ -31,11 +30,11 @@ export function TaskDraftSuggestions({ workspaceId, workspaceSlug, name, descrip
       } catch {
         if (!cancelled) setView(null);
       } finally {
-        if (!cancelled) { setChecking(false); onPending(false); }
+        if (!cancelled) { setChecking(false); }
       }
     }, 700);
-    return () => { cancelled = true; window.clearTimeout(timer); onPending(false); };
-  }, [workspaceId, draftId, name, description, teamId, onPending]);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [workspaceId, draftId, name, description, teamId]);
   if (!name.trim() || !teamId || checking || view?.status !== 'ready' || getVisibleTriageSuggestions(view, taskType, teamId).length === 0) return null;
   const review = (request: TriageReview) => {
     if (request.dismiss) { setView((current) => current ? { ...current, reviewed: { ...current.reviewed, [`${request.action}:${request.value}`]: 'dismissed' } } : current); return; }

@@ -347,3 +347,33 @@ func TestPMTriageProviderFailureDoesNotFailTaskCreation(t *testing.T) {
 		t.Fatalf("missing failed provider audit: %+v", attempts)
 	}
 }
+
+func TestPMTriageBackfillsBoundedCandidateContext(t *testing.T) {
+	triage, provider, _, db := setupPMTriageService(t)
+	for i := 0; i < 25; i++ {
+		description := "Invoice export fails"
+		if i < 12 {
+			description = strings.Repeat("Invoice export fails ", 1000)
+		}
+		if err := db.Exec("INSERT INTO pm_tasks(id,workspace_id,team_id,display_id,name,description,updated_at,archived) VALUES(?,?,?,?,?,?,?,false)", fmt.Sprintf("candidate-%02d", i), "workspace", "mine", i+10, "CSV export crash", description, time.Now()).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	view, err := triage.Analyze(pmTriageMemberContext(), "workspace", "task", "source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(view.Candidates) != 10 || view.Assessment.CandidatesChecked != 10 {
+		t.Fatalf("expected ten fitting candidates: %+v", view)
+	}
+	if provider.calls != 1 || len(provider.states[0]) > 16000 {
+		t.Fatal("provider calls or context grew beyond bounds")
+	}
+	for _, candidate := range view.Candidates {
+		for i := 0; i < 12; i++ {
+			if candidate.ID == fmt.Sprintf("candidate-%02d", i) {
+				t.Fatal("oversized candidate included")
+			}
+		}
+	}
+}
