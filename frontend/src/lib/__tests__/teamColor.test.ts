@@ -20,6 +20,8 @@ describe('team colors', () => {
     };
     for (const color of ['#ffffff', '#000000', ...TEAM_PRESET_COLORS]) {
       const style = teamColorStyle(color)!;
+      expect(style['--team-color-bg']).toBe(color);
+      expect(style['--team-color-bg-dark']).toBe(color);
       for (const suffix of ['', '-dark']) {
         const bg = luminance(style[`--team-color-bg${suffix}`]);
         const fg = luminance(style[`--team-color-fg${suffix}`]);

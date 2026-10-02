@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { isDesktopPreferenceStorageKey } from '@/lib/desktopNotifications';
 import type { User } from '@/lib/types';
 import { authService, type AuthConfig } from '@/lib/services/authService';
 import { passkeyService } from '@/lib/services/passkeyService';
@@ -59,7 +60,13 @@ export async function clearClientSession() {
   await clearSession();
 
   try {
-    localStorage.clear();
+    // Keep only per-user browser notification choices; remove session and workspace data.
+    for (const key of Object.keys(localStorage)) {
+      const value = localStorage.getItem(key);
+      if (!isDesktopPreferenceStorageKey(key) || (value !== 'true' && value !== 'false')) {
+        localStorage.removeItem(key);
+      }
+    }
   } catch {
     // Ignore storage access failures during logout.
   }

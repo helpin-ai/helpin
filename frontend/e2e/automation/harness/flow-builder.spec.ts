@@ -2,6 +2,29 @@ import { expect, test } from '@playwright/test';
 test.setTimeout(60_000);
 const path = '/e2e/automation/harness/flow-builder.html';
 
+for (const width of [1440, 390]) {
+  test(`custom flow starts with the Ask Agent input beneath its prompt at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto(`${path}?mode=custom`, { waitUntil: 'domcontentloaded' });
+    const input = page.getByPlaceholder('Describe your flow…');
+    await expect(input).toBeVisible();
+    const heading = await page.getByText('What would you like to automate?', { exact: true }).boundingBox();
+    const box = await input.boundingBox();
+    expect(heading).not.toBeNull();
+    expect(box).not.toBeNull();
+    expect(box!.y).toBeGreaterThan(heading!.y + heading!.height);
+    expect(box!.y - heading!.y - heading!.height).toBeLessThan(100);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+    await expect(page.locator('[data-composer-actions]')).toBeVisible();
+    await page.screenshot({ path: `/tmp/flow-builder-intro-${width}.png` });
+    await input.fill('Review new pull requests');
+    await input.press('Enter');
+    await expect(page.getByText('Which repository should this flow use?', { exact: true })).toBeVisible();
+    const reply = await page.getByPlaceholder('Reply or ask for a change…').boundingBox();
+    expect(reply!.y).toBeGreaterThan(500);
+  });
+}
+
 test('editing describes the flow, reviews changes as prose, then saves after approval', async ({ page }) => {
   await page.goto(`${path}?mode=edit`, { waitUntil: 'domcontentloaded' });
   await expect(page.getByText('What would you like to change?', { exact: true })).toBeVisible();

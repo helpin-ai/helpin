@@ -62,6 +62,16 @@ func runtimeAgentForDockExecution(run *model.AgentRun, agent AgentRuntimeAgent) 
 	if run == nil || run.DockChatID == nil {
 		return agent
 	}
+	if isFlowBuilderRun(run) {
+		// Keep the builder's narrow tools separate from Ask Agent's skill
+		// dependencies and from concurrent ordinary Dock conversations.
+		agent.ID += runtimeFlowBuilderAgentSuffix
+		agent.Name = "Flow Builder"
+		agent.Skills = nil
+		agent.AllowedTools = flowBuilderTools()
+		agent.SystemPrompt = flowBuilderInstructions
+		return agent
+	}
 	var input model.AgentRunInputPayload
 	if json.Unmarshal(run.Input, &input) != nil || !input.ExecutionEnabled {
 		return agent

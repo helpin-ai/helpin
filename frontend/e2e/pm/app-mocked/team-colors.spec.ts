@@ -18,7 +18,7 @@ async function installTeamMocks(page: Page, options: { failOnce?: boolean; edita
     if (path === '/api/auth/config') return json({ email_verification_required: false, app_email_configured: true, google_login_enabled: false });
     if (path === `/api/workspaces/${WORKSPACE_ID}/me`) return json({
       workspace_id: WORKSPACE_ID, modules: ['pm', 'support', 'docs'],
-      membership: { role: options.editable === false ? 'member' : 'owner', status: 'active' }, team_memberships: [],
+      membership: { id: 'member-1', role: options.editable === false ? 'member' : 'owner', status: 'active' }, team_memberships: [],
       permissions: ['workspace.read', 'settings.read', 'pm.read', 'pm.edit', 'support.read', 'docs.read', ...(options.editable === false ? [] : ['team.manage', 'settings.manage'])],
     });
     if (path === '/api/settings' && method === 'GET') return json({
@@ -70,23 +70,39 @@ test('one saved team color appears in Settings and on the Projects expand arrow'
   await expect(dialog).toBeHidden();
   expect(writes[0].color).toBe('#e2564a');
   const badge = page.locator('span[style*="--team-color-bg"]').filter({ hasText: 'D' }).first();
-  const savedBackground = await badge.evaluate(element => getComputedStyle(element).backgroundColor);
+  const savedBackground = 'rgb(226, 86, 74)';
+  await expect(badge).toHaveCSS('background-color', savedBackground);
+  await page.goto('/w/workspace/settings/teams');
+  const row = page.getByRole('row').filter({ hasText: 'DevOps' });
+  await expect(row.locator('span[style*="--team-color-bg"]')).toHaveCSS('background-color', savedBackground);
   await page.getByLabel('Projects', { exact: true }).click();
   const team = page.getByRole('button', { name: 'DevOps', exact: true });
-  const arrow = team.locator('span[aria-hidden="true"]');
+  const arrow = team.locator('span[style*="--team-color-bg"]');
   await expect(arrow).toHaveCSS('background-color', savedBackground);
+  await expect(arrow).toHaveText('D');
+  await expect(arrow).toHaveCSS('width', '20px');
+  await expect(arrow).toHaveCSS('color', 'rgb(255, 255, 255)');
+  const plusBounds = await page.getByRole('button', { name: 'Create team', exact: true }).locator('svg').boundingBox();
+  const chevronBounds = await team.locator('[data-team-chevron] svg').boundingBox();
+  expect(plusBounds).not.toBeNull();
+  expect(chevronBounds).not.toBeNull();
+  expect(Math.abs((plusBounds!.x + plusBounds!.width / 2) - (chevronBounds!.x + chevronBounds!.width / 2))).toBeLessThan(1);
   const nameColor = await page.getByRole('button', { name: 'Engineering', exact: true }).locator('span.truncate').evaluate(element => getComputedStyle(element).color);
   await expect(team.locator('span.truncate')).toHaveCSS('color', nameColor);
-  await team.click();
+  await team.locator('[data-team-chevron]').click();
   await expect(team).toHaveAttribute('aria-expanded', 'false');
-  await team.click();
+  await team.locator('[data-team-chevron]').click();
   await expect(team).toHaveAttribute('aria-expanded', 'true');
+  await page.mouse.move(500, 500);
+  await page.locator('[data-slot="sidebar-inner"]').screenshot({ path: testInfo.outputPath('team-sidebar-light.png'), animations: 'disabled' });
   await page.screenshot({ path: testInfo.outputPath('team-colors-projects-light.png'), animations: 'disabled' });
   await page.evaluate(() => document.documentElement.classList.add('dark'));
-  await expect(arrow).not.toHaveCSS('background-color', savedBackground);
+  await expect(arrow).toHaveCSS('background-color', savedBackground);
+  await expect(arrow).toHaveCSS('color', 'rgb(255, 255, 255)');
+  await page.locator('[data-slot="sidebar-inner"]').screenshot({ path: testInfo.outputPath('team-sidebar-dark.png'), animations: 'disabled' });
   await page.screenshot({ path: testInfo.outputPath('team-colors-projects-dark.png'), animations: 'disabled' });
   await page.reload();
-  await expect(team).toBeVisible();
+  await expect(team).toBeVisible({ timeout: 90_000 });
   await expect(arrow).toHaveAttribute('style', /--team-color-bg:/);
 });
 
@@ -134,6 +150,30 @@ test('team creation saves a color and read-only members can see colors without e
   expect(writes[0]).toMatchObject({ name: 'Website Dev', color: '#e54e78' });
   await installTeamMocks(page, { editable: false });
   await page.goto('/w/workspace/settings/teams?team=devops');
-  await expect(page.getByRole('button', { name: /^General Name/ })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /^General Name/ })).toBeDisabled({ timeout: 90_000 });
   await expect(page.locator('span[style*="--team-color-bg"]').filter({ hasText: 'D' }).first()).toBeVisible();
+});
+
+test('My Work uses an eight-pixel team square in rows and the team filter', async ({ page }, testInfo) => {
+  await installTeamMocks(page);
+  await page.route('**/api/pm/tasks?**', route => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({ data: [{
+      id: 'color-task', workspace_id: WORKSPACE_ID, team_id: 'devops',
+      name: 'Review deployment checklist', task_key: 'DEV-1', priority: 'none',
+      state_name: 'Backlog', state_type: 'backlog', completed: false, blocked: false,
+      deadline: null, updated_at: '2026-10-02T00:00:00Z', latest_run_status: null,
+    }], total: 1 }),
+  }));
+  await page.goto('/w/workspace/pm/my-work');
+  await expect(page.getByText('Review deployment checklist', { exact: true })).toBeVisible({ timeout: 90_000 });
+  const mark = page.locator('[data-team-color]').first();
+  await expect(mark).toHaveCSS('background-color', 'rgb(45, 168, 142)');
+  await expect(mark).toHaveCSS('width', '8px');
+  await expect(mark).toHaveCSS('height', '8px');
+  await page.screenshot({ path: testInfo.outputPath('my-work-team-colors.png'), animations: 'disabled' });
+  await page.getByRole('button', { name: /Filters/ }).click();
+  await page.getByRole('option', { name: 'Team', exact: true }).click();
+  const option = page.getByRole('option', { name: 'DevOps', exact: true });
+  await expect(option.locator('[data-team-color]')).toHaveCSS('width', '8px');
 });

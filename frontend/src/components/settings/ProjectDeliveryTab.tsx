@@ -1,3 +1,4 @@
+import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { gitService } from '@/lib/services/gitService';
@@ -105,7 +106,7 @@ export function ProjectDeliveryTab({ workspaceId, editable, teams = [], teamRepo
                 return (
                   <li key={team.id} className="flex items-center justify-between gap-3 px-4 py-3">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{team.name}</p>
+                      <p className="truncate text-sm font-medium"><TeamLabel team={team} /></p>
                       <p className="truncate text-xs text-muted-foreground">{meta}</p>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">

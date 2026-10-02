@@ -1,3 +1,4 @@
+import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { TaskListGroupingDropdown } from './TaskListGroupingDropdown';
 import { useQuietDropdownFocusReturn } from '@/components/design-system/use-quiet-dropdown-focus-return';
 import { PMFilterPill, PMFilterTrigger } from './PMFilterControls';
@@ -2584,7 +2585,7 @@ function InlineTeamCell({
         onClick={(e) => { e.stopPropagation(); setOpen(true); }}
       >
         {teamName ? (
-          <span className="truncate">{teamName}</span>
+          <TeamLabel team={{ name: teamName, color: teams.find(team => team.id === task.team_id)?.color }} />
         ) : (
           <span className="text-muted-foreground">No Team</span>
         )}
@@ -2601,7 +2602,7 @@ function InlineTeamCell({
           onClick={(e) => { e.stopPropagation(); setOpen(true); }}
         >
           {teamName ? (
-            <span className="truncate">{teamName}</span>
+            <TeamLabel team={{ name: teamName, color: teams.find(team => team.id === task.team_id)?.color }} />
           ) : (
             <span className="text-muted-foreground">No Team</span>
           )}
@@ -2629,7 +2630,7 @@ function InlineTeamCell({
                     }}
                     className="flex items-center gap-2 text-ui"
                   >
-                    <span className="truncate">{t.name}</span>
+                    <TeamLabel team={t} />
 
                   </QuietDropdownItem>
                 ))}

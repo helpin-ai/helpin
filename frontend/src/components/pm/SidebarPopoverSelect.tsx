@@ -11,6 +11,7 @@ interface SidebarPopoverSelectOption<T extends string = string> {
   value: T;
   label: string;
   className?: string;
+  icon?: React.ReactNode;
 }
 
 export interface SidebarPopoverSelectGroup<T extends string = string> {
@@ -87,6 +88,7 @@ export function SidebarPopoverSelect<T extends string>({
         options: group.options.map((option) => ({
           value: option.value,
           label: option.label,
+          leading: option.icon,
           content: renderOption?.(option.value),
           className: option.className,
         })),
@@ -105,6 +107,7 @@ export function SidebarPopoverSelect<T extends string>({
             triggerClassName,
           )}
         >
+          {(groups?.flatMap(group => group.options) ?? options)?.find(option => option.value === value)?.icon}
           {renderTrigger()}
           {showChevron && (
             <ArrowDown01Icon className="ml-auto h-3.5 w-3.5 shrink-0 text-muted-foreground" />

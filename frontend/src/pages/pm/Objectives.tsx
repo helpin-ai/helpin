@@ -1,3 +1,4 @@
+import { TeamColorMark } from '@/components/workspace/TeamLabel';
 import { ObjectiveQuarterBoard } from './ObjectiveQuarterBoard';
 import { QuietEmptyState, QuietFilterDropdown, QuietPageHeader, QuietPrimaryAction, QuietSearchInput, QuietStatusText, QuietTextAction } from '@/components/design-system/quiet';
 import { PMFilterBar, type PMFilterDefinition, type PMFilterOption } from '@/components/pm/PMFilterControls';
@@ -130,7 +131,7 @@ export function ObjectivesPage() {
     })) },
     { key: 'state', label: 'Status', singleSelect: true, options: stateFilterOptions },
     { key: 'health', label: 'Health', singleSelect: true, options: healthFilterOptions },
-    { key: 'team', label: 'Team', singleSelect: true, searchableValues: true, options: teams.map(team => ({ value: team.id, label: team.name })) },
+    { key: 'team', label: 'Team', singleSelect: true, searchableValues: true, options: teams.map(team => ({ value: team.id, label: team.name, icon: <TeamColorMark team={team} /> })) },
     { key: 'type', label: 'Type', singleSelect: true, options: typeFilterOptions },
   ], [members, teams]);
   const toggleFilter = (key: ObjectiveFilterKey, value: string) => setFilters(current => {

@@ -1,6 +1,5 @@
 import { FlowBuilderDrawer } from '@/components/automation/FlowBuilderDrawer';
 import { FlowSemanticConditionField } from '@/components/automation/FlowSemanticConditionField';
-import { SequenceAutomationConnections } from '@/components/crm/outreach/SequenceAutomationConnections';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowRight01Icon, FilterIcon, MoreHorizontalIcon, PlusSignIcon } from '@/lib/icons';
@@ -1809,7 +1808,7 @@ function FlowDetails({
               </div>
               <DialogDescription className="sr-only">Details and actions for {rule.name}</DialogDescription>
               {(canEdit && !managed || managed && workspaceSlug || rule.trigger_type === 'cron' && canRunNowAction) ? (
-                <div className="flex flex-wrap items-center gap-2 pt-2">
+                <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
                   {managed && workspaceSlug ? <Button size="sm" asChild><a href={`/w/${encodeURIComponent(workspaceSlug)}/crm/playbooks/${encodeURIComponent(stringValue(rule.trigger_config?.playbook_id))}`}>Manage in Playbook Setup</a></Button> : null}
                   {canEdit && !managed ? <Button size="sm" onClick={() => onEdit(rule)}>Edit flow</Button> : null}
                   {rule.trigger_type === 'cron' && canRunNowAction ? (
@@ -3285,7 +3284,6 @@ export function AutomationFlowsPage({
         ) : undefined}
       >
 
-      {workspaceSlug && permissions.has('crm.read') && <SequenceAutomationConnections workspaceId={workspaceId} slug={workspaceSlug} />}
       {loading ? (
         <div className="space-y-2">
           <Skeleton className="mb-5 h-8 w-full rounded-lg" />
@@ -3337,7 +3335,7 @@ export function AutomationFlowsPage({
               ))}
               </TabsList>
             </Tabs>
-            <div className="flex min-w-0 flex-col gap-2 xs:flex-row sm:justify-end">
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:justify-end">
               <QuietSearchInput
                 containerClassName="min-w-0 sm:w-52"
                 aria-label="Search flows"
@@ -3346,7 +3344,7 @@ export function AutomationFlowsPage({
                 placeholder="Search flows"
               />
               <Select value={scopeFilter} onValueChange={(value) => setScopeFilter(value as typeof scopeFilter)}>
-                <SelectTrigger aria-label="Flow scope" className={cn(quietUnderlineControlClassName, 'w-full justify-between xs:w-36')}><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label="Flow scope" className={cn(quietUnderlineControlClassName, 'w-full justify-between sm:w-36')}><SelectValue /></SelectTrigger>
                 <SelectContent><SelectItem value="workspace">Workspace-wide</SelectItem><SelectItem value="team">My team</SelectItem><SelectItem value="mine">Created by me</SelectItem></SelectContent>
               </Select>
             </div>

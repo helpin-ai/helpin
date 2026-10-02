@@ -1,3 +1,4 @@
+import { TeamColorMark, TeamLabel } from '@/components/workspace/TeamLabel';
 import { EPIC_PICKER_WIDTH } from '@/components/pm/epicPickerGroups';
 import { DetailMetadataRow as MetadataRow } from '@/components/pm/DetailMetadataRow';
 import { DetailDescriptionEditButton } from '@/components/pm/DetailDescriptionEditButton';
@@ -118,7 +119,7 @@ function MultiValueList({
   readOnly,
 }: {
   items: string[];
-  allOptions: { id: string; name: string }[];
+  allOptions: { id: string; name: string; color?: string | null }[];
   onAdd: (id: string) => void;
   onRemove: (id: string) => void;
   placeholder: string;
@@ -135,7 +136,7 @@ function MultiValueList({
       )}
       {selected.map((item) => (
         <div key={item.id} className="flex items-center justify-between gap-2 py-0.5 text-xs">
-          <span className="truncate">{item.name}</span>
+          <TeamLabel team={item} />
           <ManagerOnlyTooltip disabled={!!readOnly}>
             <button
               type="button"
@@ -161,7 +162,7 @@ function MultiValueList({
         </ManagerOnlyTooltip>
       ) : (
         <QuietDropdown label={placeholder} open={open} onOpenChange={setOpen} onSelect={onAdd}
-          options={available.map(option => ({ value: option.id, label: option.name }))} empty="No more options"
+          options={available.map(option => ({ value: option.id, label: option.name, leading: <TeamColorMark team={option} /> }))} empty="No more options"
           trigger={<button type="button" className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-ui text-muted-foreground transition-colors hover:bg-accent cursor-pointer">
             <PlusSignIcon className="h-3 w-3" />{placeholder}
           </button>} />
@@ -726,7 +727,7 @@ export function ObjectiveDetailPage() {
             <MetadataRow icon={UserGroupIcon} label="Teams">
               <MultiValueList
                 items={data.teams}
-                allOptions={teams.map((t) => ({ id: t.id, name: t.name }))}
+                allOptions={teams.map((t) => ({ id: t.id, name: t.name, color: t.color }))}
                 onAdd={handleAddTeam}
                 onRemove={handleRemoveTeam}
                 placeholder="Add team"

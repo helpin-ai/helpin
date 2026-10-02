@@ -1,3 +1,4 @@
+import { TeamLabel } from '@/components/workspace/TeamLabel';
 import type { AIConnectionSelection } from '@/lib/services/aiConnectionService';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { CodingCapacityNotice } from '@/components/agents/CodingCapacityNotice';
@@ -5134,7 +5135,7 @@ export function AgentsPage({ requestedAgentId }: { requestedAgentId?: string } =
                         <SelectContent>
                           {visibleTeams.map((team) => (
                             <SelectItem key={team.id} value={team.id}>
-                              {team.name}
+                              <TeamLabel team={team} />
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -5327,7 +5328,7 @@ export function AgentsPage({ requestedAgentId }: { requestedAgentId?: string } =
                         <SelectContent>
                           {visibleTeams.map((team) => (
                             <SelectItem key={team.id} value={team.id}>
-                              {team.name}
+                              <TeamLabel team={team} />
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -5546,7 +5547,7 @@ export function AgentsPage({ requestedAgentId }: { requestedAgentId?: string } =
                         <SelectContent>
                           {visibleTeams.map((team) => (
                             <SelectItem key={team.id} value={team.id}>
-                              {team.name}
+                              <TeamLabel team={team} />
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -5754,7 +5755,7 @@ export function AgentsPage({ requestedAgentId }: { requestedAgentId?: string } =
                           <SelectItem value="_none">All teams (workspace-wide)</SelectItem>
                           {visibleTeams.map((team) => (
                             <SelectItem key={team.id} value={team.id}>
-                              {team.name}
+                              <TeamLabel team={team} />
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -6143,7 +6144,7 @@ export function AgentsPage({ requestedAgentId }: { requestedAgentId?: string } =
                           <SelectContent>
                             {visibleTeams.map((team) => (
                               <SelectItem key={team.id} value={team.id}>
-                                {team.name}
+                                <TeamLabel team={team} />
                               </SelectItem>
                             ))}
                           </SelectContent>

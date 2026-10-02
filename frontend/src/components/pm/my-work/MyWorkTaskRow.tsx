@@ -1,3 +1,4 @@
+import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { useState } from 'react';
 import { format, parseISO } from 'date-fns';
 import { toast } from 'sonner';
@@ -23,8 +24,8 @@ function agentLabel(task: Task) {
   if (task.latest_run_status !== 'paused') return runLabels[task.latest_run_status] || `Agent ${task.latest_run_status}`;
   return ({human_approval:'Agent needs approval', authentication:'Agent needs auth', awaiting_user_message:'Agent awaiting reply'} as Record<string,string>)[task.latest_run_pause_reason || ''] || 'Agent needs input';
 }
-export function MyWorkTaskRow({ task, workspaceId, teamName, owners, compact, canEdit, needsInput, now, onOpen, onChanged }: {
-  task: Task; workspaceId: string; teamName?: string; owners: Pick<MemberWithUser, 'id' | 'full_name' | 'avatar_url' | 'avatar_style' | 'avatar_seed' | 'avatar_background_mode' | 'avatar_background_color'>[]; compact: boolean; canEdit: boolean; needsInput: boolean; now: Date; onOpen: () => void; onChanged: () => void;
+export function MyWorkTaskRow({ task, workspaceId, teamName, teamColor, owners, compact, canEdit, needsInput, now, onOpen, onChanged }: {
+  task: Task; workspaceId: string; teamName?: string; teamColor?: string | null; owners: Pick<MemberWithUser, 'id' | 'full_name' | 'avatar_url' | 'avatar_style' | 'avatar_seed' | 'avatar_background_mode' | 'avatar_background_color'>[]; compact: boolean; canEdit: boolean; needsInput: boolean; now: Date; onOpen: () => void; onChanged: () => void;
 }) {
   const [saving,setSaving] = useState(false);
   const [states,setStates] = useState<WorkflowState[]>([]);
@@ -66,7 +67,7 @@ export function MyWorkTaskRow({ task, workspaceId, teamName, owners, compact, ca
         <QuickTooltip label={task.name}><span className={cn('min-w-0 truncate text-[13.5px] font-medium leading-5',task.completed && 'text-quiet-text-tertiary line-through')}>{task.name}</span></QuickTooltip>
       </button>
       <div className="col-start-2 mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-quiet-text-tertiary">
-        {teamName && <span className="@min-[820px]:hidden">{teamName}</span>}{owners.length ? <span className="inline-flex min-w-0 flex-wrap items-center gap-1.5">
+        {teamName && <span className="@min-[820px]:hidden"><TeamLabel team={{name:teamName,color:teamColor}} /></span>}{owners.length ? <span className="inline-flex min-w-0 flex-wrap items-center gap-1.5">
           <span>Assigned to</span>
           {owners.map(owner => <span key={owner.id} className="inline-flex min-w-0 items-center gap-1">
             <UserAvatar name={owner.full_name} avatarUrl={owner.avatar_url} avatarStyle={owner.avatar_style} avatarSeed={owner.avatar_seed} avatarBackgroundMode={owner.avatar_background_mode} avatarBackgroundColor={owner.avatar_background_color} className="size-4" fallbackClassName="text-[8px]" />
@@ -77,7 +78,7 @@ export function MyWorkTaskRow({ task, workspaceId, teamName, owners, compact, ca
         {label && <QuietStatusText tone={tone} pulse={runStatus==='running'}><RunIcon className={cn('size-3',runStatus==='running' && 'motion-safe:animate-spin')} />{label}</QuietStatusText>}
       </div>
     </div>
-    <span className="hidden min-w-0 truncate text-xs text-quiet-text-tertiary @min-[820px]:block" title={teamName}>{teamName || '—'}</span>
+    <span className="hidden min-w-0 truncate text-xs text-quiet-text-tertiary @min-[820px]:block" title={teamName}>{teamName ? <TeamLabel team={{name:teamName,color:teamColor}} /> : '—'}</span>
     {canEdit ? <QuietDropdown label={`Stage for ${task.task_key}`} trigger={<button type="button" aria-label={`Change stage for ${task.task_key}`} className={propertyClass} disabled={saving}>{stage}</button>} selected={[task.workflow_state_id]} loading={stateLoading} error={stateError || undefined} onOpenChange={open=>void loadStates(open)} options={states.map(state=>({value:state.id,label:state.name,leading:<StateTypeIcon stateType={state.state_type} className="size-3.5" style={state.color?{color:state.color}:undefined}/>}))} onSelect={id=>void save({},id)} /> : <span className={propertyClass}>{stage}</span>}
     {canEdit ? <QuietDropdown label={`Priority for ${task.task_key}`} trigger={<button type="button" aria-label={`Change priority for ${task.task_key}`} disabled={saving} className={propertyClass}><PriorityIcon priority={task.priority} className="size-3.5" />{PRIORITY_CONFIG[task.priority].label}</button>} selected={[task.priority]} options={Object.entries(PRIORITY_CONFIG).map(([value,config])=>({value,label:config.label,leading:<PriorityIcon priority={value as Task['priority']} className="size-3.5"/>}))} onSelect={priority=>void save({priority:priority as Task['priority']})} /> : <span className={propertyClass}><PriorityIcon priority={task.priority} className="size-3.5"/>{PRIORITY_CONFIG[task.priority].label}</span>}
     <Tooltip>

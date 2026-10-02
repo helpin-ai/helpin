@@ -1,3 +1,4 @@
+import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { useTableSurface } from '@/hooks/useTableSurface';
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -943,7 +944,7 @@ function InlineEpicTeamCell({ entry, teams, teamMap, onUpdate }: { entry: EpicWi
             setOpen(true);
           }}
         >
-          {teamName ? <span className="truncate">{teamName}</span> : <span className="text-muted-foreground">No team</span>}
+          {teamName ? <TeamLabel team={{ name: teamName, color: teams.find(team => team.id === entry.epic.team_id)?.color }} /> : <span className="text-muted-foreground">No team</span>}
         </button>
       </PopoverTrigger>
       {open ? (
@@ -963,7 +964,7 @@ function InlineEpicTeamCell({ entry, teams, teamMap, onUpdate }: { entry: EpicWi
                       setOpen(false);
                     }}
                   >
-                    <span className="truncate">{team.name}</span>
+                    <TeamLabel team={team} />
 
                   </QuietDropdownItem>
                 ))}

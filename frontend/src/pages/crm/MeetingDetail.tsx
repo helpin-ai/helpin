@@ -1,3 +1,4 @@
+import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { meetingProcessingRecovery } from '@edition/config';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
@@ -181,7 +182,7 @@ function ActionItemRow({
                     <SelectTrigger id={`meeting-action-${item.id}-team`} size="sm" className={cn(quietUnderlineControlClassName, 'mt-1.5 w-full justify-between')}>
                       <SelectValue placeholder="Select team" />
                     </SelectTrigger>
-                    <SelectContent>{teams.map((team) => <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>)}</SelectContent>
+                    <SelectContent>{teams.map((team) => <SelectItem key={team.id} value={team.id}><TeamLabel team={team} /></SelectItem>)}</SelectContent>
                   </Select>
                 </div>
                 <div>

@@ -754,10 +754,52 @@ func TestAgentRuntimeHostPreviewRepositorySpecUsesSavedRunPolicy(t *testing.T) {
 }
 
 func TestRuntimeAgentBaseIDStripsExecutionSuffix(t *testing.T) {
-	for input, want := range map[string]string{"agent-1": "agent-1", "agent-1-execution": "agent-1", " agent-1-execution ": "agent-1", "": ""} {
+	for input, want := range map[string]string{"agent-1": "agent-1", "agent-1-execution": "agent-1", " agent-1-execution ": "agent-1", "agent-1-flow-builder": "agent-1", "": ""} {
 		if got := runtimeAgentBaseID(input); got != want {
 			t.Errorf("runtimeAgentBaseID(%q) = %q, want %q", input, got, want)
 		}
+	}
+}
+
+func TestFlowBuilderRuntimeCommandScopeChecksPersistedRun(t *testing.T) {
+	db := setupAgentScopeTestDB(t)
+	mustExec(t, db, `ALTER TABLE agent_runs ADD COLUMN dock_chat_id TEXT`)
+	mustExec(t, db, `INSERT INTO agents (id, workspace_id, name) VALUES ('ask', 'workspace', 'Ask Agent')`)
+	mustExec(t, db, `UPDATE agents SET allowed_tools = CAST(allowed_tools AS BLOB), allowed_commands = CAST(allowed_commands AS BLOB), allowed_targets = CAST(allowed_targets AS BLOB)`)
+	input, err := json.Marshal(model.AgentRunInputPayload{AllowedTools: flowBuilderTools()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO agent_runs (id, workspace_id, agent_id, target_type, target_id, dock_chat_id, external_runtime, external_runtime_id, input, output_summary) VALUES ('run', 'workspace', 'ask', 'workspace', 'workspace', 'chat', 'agent-runtime', 'runtime-run', ?, ?)`, []byte(input), []byte(`{}`)).Error; err != nil {
+		t.Fatal(err)
+	}
+	host := &AgentRuntimeHostService{runRepo: repository.NewAgentRunRepository(db), agentRepo: repository.NewAgentRepository(db)}
+	for _, tc := range []struct {
+		name, agentID, workspaceID, runtimeRunID string
+		allowed                                  bool
+	}{
+		{"builder", "ask-flow-builder", "workspace", "runtime-run", true},
+		{"foreign agent", "other-flow-builder", "workspace", "runtime-run", false},
+		{"foreign workspace", "ask-flow-builder", "other", "runtime-run", false},
+		{"unknown run", "ask-flow-builder", "workspace", "other", false},
+		{"execution suffix", "ask-execution", "workspace", "runtime-run", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			meta := model.InternalCommandContext{AgentID: tc.agentID, WorkspaceID: tc.workspaceID, RunID: tc.runtimeRunID}
+			err := host.enrichCommandAgentScope(context.Background(), &meta)
+			if tc.allowed {
+				if err != nil || meta.AgentID != "ask" || !meta.AgentScopeResolved {
+					t.Fatalf("builder scope: %#v, %v", meta, err)
+				}
+			} else if !errors.Is(err, ErrAgentRuntimeHostForbidden) {
+				t.Fatalf("expected forbidden, got %v", err)
+			}
+		})
+	}
+	mustExec(t, db, `UPDATE agent_runs SET input = CAST('{}' AS BLOB) WHERE id = 'run'`)
+	meta := model.InternalCommandContext{AgentID: "ask-flow-builder", WorkspaceID: "workspace", RunID: "runtime-run"}
+	if err := host.enrichCommandAgentScope(context.Background(), &meta); !errors.Is(err, ErrAgentRuntimeHostForbidden) {
+		t.Fatalf("ordinary run accepted builder identity: %v", err)
 	}
 }
 
