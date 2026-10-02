@@ -802,7 +802,7 @@ describe('CreateTaskModal', () => {
     })
   })
 
-  it('shows a minimal success toast before resetting the form when saving and creating another task', async () => {
+  it('preserves sidebar selections when saving and creating another task', async () => {
     const onCreate = vi.fn(async () => ({ id: 'task-1' }))
     const onOpenChange = vi.fn()
     const container = document.createElement('div')
@@ -838,6 +838,13 @@ describe('CreateTaskModal', () => {
       await Promise.resolve()
     })
 
+    const highPriority = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.trim() === 'High')
+    expect(highPriority).toBeTruthy()
+    await act(async () => { highPriority!.click() })
+    const inProgress = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.trim() === 'In Progress')
+    expect(inProgress).toBeTruthy()
+    await act(async () => { inProgress!.click() })
+
     await settleDraftCheck()
 
     await act(async () => {
@@ -851,12 +858,26 @@ describe('CreateTaskModal', () => {
         name: 'New task',
         workspace_id: 'ws-1',
         workflow_id: 'workflow-1',
-        workflow_state_id: 'state-1',
+        workflow_state_id: 'state-2',
       }),
     )
     expect(showEntityCreatedToast).not.toHaveBeenCalled()
     expect(toastSuccess).toHaveBeenCalledWith('Task created. Ready for the next one.')
     expect(pmTaskService.saveAsTemplate).not.toHaveBeenCalled()
+    expect(titleInput!.value).toBe('')
+    expect(onOpenChange).not.toHaveBeenCalled()
+    expect(onCreate).toHaveBeenLastCalledWith(expect.objectContaining({ priority: 'high' }))
+
+    await act(async () => { setInputValue(titleInput!, 'Next task') })
+    await settleDraftCheck()
+    await act(async () => { saveAndCreateAnotherButton!.click() })
+    expect(onCreate).toHaveBeenCalledTimes(2)
+    expect(onCreate).toHaveBeenLastCalledWith(expect.objectContaining({
+      name: 'Next task',
+      priority: 'high',
+      team_id: 'team-1',
+      workflow_state_id: 'state-2',
+    }))
 
     act(() => {
       root.unmount()

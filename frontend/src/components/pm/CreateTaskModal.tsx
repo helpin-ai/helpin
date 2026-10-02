@@ -1003,26 +1003,17 @@ export function CreateTaskModal({
         }
 
         if (createAnother && !agentRunUpgradeReason) {
-          const resetTeam = teams.find((team) => team.id === (initialTeamId ?? ''));
           setDescriptionEditorKey((current) => current + 1);
           setDescriptionMode('rich');
           setSourceMarkdown('');
-          setForm({
-            ...defaultState,
-            name: initialName ?? '',
-            task_type: initialTaskType ?? (resetTeam?.default_task_type as TaskType | undefined) ?? 'feature',
-            priority: initialPriority ?? defaultState.priority,
-            severity: initialSeverity ?? defaultState.severity,
-            requester_member_id: currentMemberId,
-            team_id: initialTeamId ?? '',
-            epic_id: initialEpicId ?? '',
-            owner_member_ids: initialOwnerMemberId ? [initialOwnerMemberId] : [],
-            sprint_id: initialSprintId ?? '',
-          });
-          setTaskTypeDirty(Boolean(initialTaskType));
-          setStateId(initialStateId ?? '');
+          setForm((current) => ({
+            ...current,
+            name: '',
+            description: '',
+            checklist_items: [],
+            external_links: [],
+          }));
           setPendingFiles([]);
-          setRecurringDraft(null);
           setSaveTaskAsTemplate(false);
           setAssignedAgentId(undefined);
         } else if (!agentRunUpgradeReason) {
@@ -1052,16 +1043,6 @@ export function CreateTaskModal({
     selectedTemplateId,
     uploadPendingFilesForEntity,
     resolveSubmitWorkflow,
-    initialStateId,
-    initialName,
-    initialTaskType,
-    initialPriority,
-    initialSeverity,
-    currentMemberId,
-    initialTeamId,
-    initialEpicId,
-    initialOwnerMemberId,
-    initialSprintId,
     isTemplateMode,
     editingTemplate,
     onCreate,
@@ -1070,7 +1051,6 @@ export function CreateTaskModal({
     pendingFiles,
     recurringDraft,
     sourceMarkdown,
-    teams,
     assignedAgentId,
   ]);
 
