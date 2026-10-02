@@ -425,6 +425,18 @@
 .hp3 .hero .lede { font-size: 18px; max-width: 54ch; }
 .hp3 .hero-workflow { margin: 72px 0 0; position: relative; z-index: 1; }
 .hp3 .hero-workflow .wire { margin-top: 0; }
+.hp3 .homepage-hero .hero-film { margin-top: clamp(40px, 5vw, 72px); }
+.hp3 .hero-film video {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--art-dark);
+}
+.hp3 .hero-film video:focus-visible { outline: 3px solid var(--em); outline-offset: 4px; }
+.hp3 .hero-film figcaption { margin-top: 12px; color: var(--t2); font-size: 14px; text-align: center; }
 .hp3 .hero-evaluation { position: relative; z-index: 1; margin-top: 36px; padding-top: 24px; border-top: 1px solid var(--border); text-align: center; }
 @media (max-width: 600px) { .hp3 .hero-workflow { margin-top: 48px; } }
 /* Phone: the record must never widen the page. A late rule had reset it to two columns. */

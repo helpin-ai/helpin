@@ -6,7 +6,6 @@ import { ConnectedWorkspace } from './_components/ConnectedWorkspace';
 import { PreviewFooter } from './_components/PreviewFooter';
 import { HeroHeadline } from './_components/HeroHeadline';
 import { HeroVortex } from './_components/HeroVortex';
-import { LoopWire } from './_components/LoopWire';
 import { ProductPreview } from './_components/product-previews';
 import { ProductExplorer } from './_components/ProductExplorer';
 import { HostingDiagram } from './_components/HostingDiagram';
@@ -16,12 +15,27 @@ import { AskAgentBento } from './_components/AskAgentBento';
 import { CustomerRecordBento } from './_components/CustomerRecordBento';
 import { CtaRow, GithubIcon, SectionHead, GITHUB_URL } from './_components/ui';
 import { DOCS } from './_components/docsLinks';
-import { createPageMetadata, PAGE_SEO } from '@/lib/metadata';
+import { createPageMetadata, PAGE_SEO, SITE_URL } from '@/lib/metadata';
 import { JsonLd, organization, softwareApplication, website } from '@/lib/structured-data';
 import { PLANS } from '../pricing/pricing-data';
 
 export const metadata = createPageMetadata(PAGE_SEO.home);
-const HOME_JSON_LD = { '@context': 'https://schema.org', '@graph': [organization, website, softwareApplication(PLANS)] };
+const HERO_VIDEO = '/new/home/helpin-launch-1080p-v1.mp4';
+const HERO_POSTER = '/new/home/helpin-launch-poster-1600-v1.webp';
+const HOME_JSON_LD = {
+  '@context': 'https://schema.org',
+  '@graph': [organization, website, softwareApplication(PLANS), {
+    '@type': 'VideoObject',
+    '@id': `${SITE_URL}/#intro-video`,
+    name: 'Introducing Helpin',
+    description: 'An introduction to Helpin, bringing customer support, projects, and customer records into one workspace.',
+    thumbnailUrl: `${SITE_URL}${HERO_POSTER}`,
+    contentUrl: `${SITE_URL}${HERO_VIDEO}`,
+    uploadDate: '2026-10-02T16:50:29Z',
+    duration: 'PT1M2.4S',
+    inLanguage: 'en',
+  }],
+};
 
 const RECORD_FACTS = [
   {
@@ -87,7 +101,22 @@ export default function HomePage() {
             <p className="cta-note">Open source · Self-host free, or let us run it</p>
 
           </div>
-          <figure className="hero-workflow"><LoopWire /></figure>
+          <figure className="hero-workflow hero-film" id="intro-video">
+            <video
+              controls
+              playsInline
+              preload="none"
+              width={1920}
+              height={1080}
+              poster={HERO_POSTER}
+              aria-label="Introducing Helpin"
+              aria-describedby="intro-video-caption"
+            >
+              <source src={HERO_VIDEO} type="video/mp4" />
+              <a href={HERO_VIDEO}>Watch the Helpin introduction</a>
+            </video>
+            <figcaption id="intro-video-caption">Introducing Helpin · 1 minute</figcaption>
+          </figure>
           <div className="hero-evaluation">
             <p className="hero-replaces">Move off separate support, project, and CRM tools, or connect the ones you keep.</p>
             <CustomerLogos />
