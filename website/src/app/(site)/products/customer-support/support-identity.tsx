@@ -2,32 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import { Check, FileSearch, LockKeyhole, Pause, Play, ShieldCheck, Sparkles } from 'lucide-react';
-import { useBentoPlayback } from '../../_components/useBentoPlayback';
+import { useWorkflowPlayback } from '../../_components/useWorkflowPlayback';
+import { StreamingText } from '../../_components/StreamingText';
 import './support-identity.css';
 
 export function SupportIdentity({ variant = 'support' }: { variant?: 'support' | 'developer' }) {
   const developer = variant === 'developer';
-  const { container, playing } = useBentoPlayback(17000);
   const [paused, setPaused] = useState(false);
-  const [frame, setFrame] = useState(4);
-  const active = playing && !paused;
-
-  useEffect(() => {
-    if (!active) return;
-    let timers: ReturnType<typeof setTimeout>[] = [];
-    const start = () => {
-      timers.forEach(clearTimeout);
-      setFrame(0);
-      timers = [1900, 4600, 7600, 10800].map((time, index) =>
-        setTimeout(() => setFrame(index + 1), time),
-      );
-    };
-    start();
-    const interval = setInterval(start, 17000);
-    return () => { timers.forEach(clearTimeout); clearInterval(interval); };
-  }, [active]);
-
-  const phase = active ? frame : 4;
+  const {container, playing: active, phase} = useWorkflowPlayback({paused, beats:[0,1900,4600,7600,10800], duration:17000});
   const verified = phase >= 1;
   const found = phase >= 2;
   const drafted = phase >= 3;
@@ -45,19 +27,19 @@ export function SupportIdentity({ variant = 'support' }: { variant?: 'support' |
           </div>
           <div className="sia-wire" data-active={phase === 1}><i /></div>
           <div className="sia-investigation" data-active={verified}>
-            <div className="sia-agent-heading"><img src="/brand/helpin-icon-white.svg" width={21} height={21} alt="" /><div><strong>Ask Agent</strong><span>{developer ? 'Investigate Maya’s reported export.' : 'Investigate the reported export'}</span></div><span className="sia-status">{found ? 'Finding ready' : verified ? 'Checking logs' : 'Ready'}</span></div>
+            <div className="sia-agent-heading"><img src="/brand/helpin-icon-white.svg" width={21} height={21} alt="" /><div><strong>Helpin AI</strong><span>{developer ? 'Investigate Maya’s reported export.' : 'Investigate the reported export'}</span></div><span className="sia-status">{found ? 'Finding ready' : verified ? 'Checking logs' : 'Ready'}</span></div>
             <div className="sia-tool"><FileSearch size={17} /><div><strong>Account export logs</strong><span>Your MCP server · Selected tool</span></div>{found ? <Check size={15} /> : <i className="sia-working" />}</div>
             <div className="sia-result" data-ready={found}><span>EXPORT LOG · NORTHSTAR LABS</span><p>{developer ? 'The export retrieved 10,000 contacts. The request for the remaining contacts did not complete.' : 'The export stopped before retrieving the remaining contacts.'}</p><small>{developer ? 'Northstar Labs access confirmed by the tool.' : 'Customer access checked by your tool'}</small></div>
           </div>
           <div className="sia-wire" data-active={phase === 3}><i /></div>
           <div className="sia-response" data-ready={drafted}>
             <div className="sia-response-heading"><span><Sparkles size={13} />Customer reply</span><span>{readyForReview ? <Check size={13} /> : null}{readyForReview ? 'Ready for review' : 'Draft'}</span></div>
-            <p>{developer ? 'Maya previously tried a smaller export, but still needs the full list. Attach this finding to EXP-142.' : 'Findings attached to the customer’s request'}</p>
+            <p><StreamingText text="Hi Maya, I checked your export logs. The remaining pages weren’t retrieved. I’ve added the findings to EXP-142 for Sam to investigate." active={active && phase === 3} pending={phase < 3} duration={2100}/></p>
             <div className="sia-review"><img src="/new/avatars/sam.webp" width={21} height={21} alt="" /><span>{readyForReview ? (developer ? 'Draft prepared · Awaiting review' : 'Customer reply ready for review') : 'Preparing a reply for Sam’s review'}</span></div>
           </div>
         </div>
       </div>
-      <p className="sia-caption">{developer ? 'The agent gets what it needs to investigate—not unrestricted access.' : 'Verified identity. Limited access. An informed next step.'}</p>
+
     </div>
   );
 }

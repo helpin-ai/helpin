@@ -1,62 +1,49 @@
 'use client';
 
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { ArrowUpRight } from 'lucide-react';
 import { ProductPreview, type ProductPreviewName } from './product-previews';
 
 const AREAS = [
   {
     id: 'inbox', label: 'Support', href: '/products/customer-support',
-    title: 'Answer the question without losing the story.',
-    description: 'Handle chat and email in one inbox. Let agents use past conversations and product knowledge to answer, investigate, or hand off—with the findings and customer request attached.',
+    title: 'Answer customer questions and keep track of every conversation.',
+    description: <>Manage chat and email in <span className="home-feature">shared team inboxes</span>. The Echo agent can use <span className="home-feature">your docs</span> and check <span className="home-feature">connected tools</span> for <span className="home-feature">code, logs, and customer account details</span> before replying. It can follow up to see if the customer still needs help and bring your team in when needed.</>,
   },
   {
     id: 'meetings', label: 'Meetings', href: '/products/meetings',
-    title: 'Keep the commitments, not just the recording.',
-    description: 'Capture calls, review summaries, and turn decisions into tasks and follow-ups. Keep the transcript linked so the next step stays grounded in what was actually agreed.',
+    title: 'Keep the notes and action items from your meetings.',
+    description: <>Record internal meetings and customer calls, then get <span className="home-feature">AI summaries and action items</span>. Use Helpin AI to <span className="home-feature">create follow-up tasks</span> so the decisions made in a meeting turn into work your team can track.</>,
   },
   {
     id: 'projects', label: 'Projects', href: '/products/projects',
-    title: 'Plan roadmaps. Run sprints. Track delivery.',
-    description: 'Manage epics, tasks, dependencies, and objectives in one place. Let agents help break down the work while your team sets priorities, assigns owners, and keeps relevant customer requests attached.',
+    title: 'AI agents plan and build. Your team reviews.',
+    description: <>Organize <span className="home-feature">tasks, stories, epics, and sprints</span>, and track progress against your <span className="home-feature">roadmap and objectives</span>. Scribe can plan a change, Forge can write the code, and Lens can review it.</>,
   },
   {
     id: 'crm', label: 'CRM', href: '/products/crm',
-    title: 'See the relationship behind the deal.',
-    description: 'Manage contacts, companies, and pipelines alongside their conversations and open work. Understand renewal concerns, spot buying signals, and prepare the next step with the supporting history in view.',
+    title: 'See which leads need a follow-up and what to say.',
+    description: <>Keep contacts, deals, emails, and meeting notes together. The Beacon agent helps you <span className="home-feature">spot buying interest</span>, understand what is holding up a deal, and <span className="home-feature">prepare a follow-up</span> based on the conversation.</>,
   },
   {
     id: 'knowledge', label: 'Knowledge', href: '/products/knowledge',
-    title: 'Turn recurring questions into useful answers.',
-    description: 'Publish help articles and internal docs. Use agents to draft guidance from recurring questions and prepare updates as your product changes—ready for your team to review.',
+    title: 'Keep your help docs and internal guides up to date as your product changes.',
+    description: <>Use <span className="home-feature">internal docs spaces</span> for team guides and processes. The Quill agent can prepare <span className="home-feature">article updates</span> from new releases and unanswered customer questions, including fresh <span className="home-feature">screenshots</span> and <span className="home-feature">browser recordings</span>. Your team reviews and publishes the changes so customers and teammates have current instructions.</>,
   },
-] as const satisfies ReadonlyArray<{ id: ProductPreviewName; label: string; href: string; title: string; description: string }>;
+] as const satisfies ReadonlyArray<{ id: ProductPreviewName; label: string; href: string; title: string; description: ReactNode }>;
+
+const TAB_DURATIONS_MS = [14000, 13000, 28500, 14500, 14000];
 
 export function ProductExplorer() {
   const [active, setActive] = useState(0);
-  const [preloadPreviews, setPreloadPreviews] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const elapsed = useRef(0);
   const [horizontal, setHorizontal] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(true);
-  const [scrollDriven, setScrollDriven] = useState(false);
   const track = useRef<HTMLDivElement>(null);
   const container = useRef<HTMLDivElement>(null);
   const tabList = useRef<HTMLDivElement>(null);
   const tabs = useRef<Array<HTMLButtonElement | null>>([]);
-  const geometry = useRef({ start: 0, step: 1 });
-
-  useEffect(() => {
-    const element = track.current;
-    if (!element) return;
-    // Prepare all five scenes before the walkthrough enters view. Hidden demos
-    // pause through useBentoPlayback and retain their state between selections.
-    const observer = new IntersectionObserver(([entry]) => {
-      if (!entry.isIntersecting) return;
-      setPreloadPreviews(true);
-      observer.disconnect();
-    }, { rootMargin: '800px 0px' });
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
 
   useEffect(() => {
     const narrow = window.matchMedia('(max-width: 760px)');
@@ -78,76 +65,41 @@ export function ProductExplorer() {
     const rail = track.current;
     const scene = container.current;
     if (!rail || !scene) return;
-    let frame = 0;
-    let enabled = false;
+    const duration = TAB_DURATIONS_MS[active];
+    rail.style.setProperty('--px-progress', String(reducedMotion ? 1 : elapsed.current / duration));
+    if (focused || reducedMotion) return;
 
-    const update = () => {
-      frame = 0;
-      if (!enabled) return;
-      const { start, step } = geometry.current;
-      const position = Math.max(0, Math.min(AREAS.length, (window.scrollY - start) / step));
-      const index = Math.min(AREAS.length - 1, Math.floor(position));
-      const fraction = Math.min(1, position - index);
-      // Fade only around scene boundaries. Holding the scroll holds the frame.
-      const entering = index === 0 ? 1 : Math.min(1, fraction / 0.16);
-      const leaving = index === AREAS.length - 1 ? 1 : Math.min(1, (1 - fraction) / 0.12);
-      const opacity = Math.max(0, Math.min(entering, leaving));
-      rail.style.setProperty('--px-opacity', String(opacity));
-      rail.style.setProperty('--px-shift', `${(1 - opacity) * 12}px`);
-      rail.style.setProperty('--px-progress', String(fraction));
-      setActive(index);
-    };
-    const schedule = () => { if (!frame) frame = window.requestAnimationFrame(update); };
-    const measure = () => {
-      const top = parseFloat(getComputedStyle(scene).top) || 80;
-      const preview = scene.querySelector<HTMLElement>('.px-panel:not([hidden]) .product-preview');
-      // Fit the embedded demo beneath the copy before deciding whether the scene
-      // can pin. Fixed-height demos otherwise disable the walkthrough on laptops.
-      if (!reducedMotion && !horizontal && preview) {
-        const chromeHeight = scene.offsetHeight - preview.offsetHeight;
-        const available = window.innerHeight - top - 16 - chromeHeight;
-        rail.style.setProperty('--px-preview-height', `${Math.max(320, Math.min(640, available))}px`);
-      } else {
-        rail.style.removeProperty('--px-preview-height');
+    let frame = 0;
+    let previous: number | null = null;
+    let visible = false;
+    const tick = (now: number) => {
+      if (previous !== null) elapsed.current += now - previous;
+      previous = now;
+      rail.style.setProperty('--px-progress', String(Math.min(1, elapsed.current / duration)));
+      if (elapsed.current >= duration) {
+        elapsed.current = 0;
+        setActive(index => (index + 1) % AREAS.length);
+        return;
       }
-      const sceneHeight = scene.offsetHeight;
-      // Keep manual tabs where a readable demo cannot fit, and for reduced motion.
-      enabled = !reducedMotion && sceneHeight <= window.innerHeight - top - 12;
-      setScrollDriven(enabled);
-      if (enabled) {
-        const step = window.innerHeight * 0.7;
-        rail.style.height = `${sceneHeight + step * AREAS.length}px`;
-        geometry.current = { start: rail.getBoundingClientRect().top + window.scrollY - top, step };
-        schedule();
-      } else {
-        rail.style.removeProperty('height');
-        rail.style.removeProperty('--px-opacity');
-        rail.style.removeProperty('--px-shift');
-        rail.style.removeProperty('--px-progress');
-      }
+      frame = window.requestAnimationFrame(tick);
     };
-    measure();
-    const resize = new ResizeObserver(measure);
-    resize.observe(scene);
-    // Earlier lazy-loaded content can change this section's document offset.
-    resize.observe(document.body);
-    // The navigation hides while scrolling down. Reclaim its reserved space,
-    // then restore the clearance when scrolling back up brings it into view.
-    const navigation = document.querySelector('.hp3 .pnav');
-    const navigationObserver = new MutationObserver(measure);
-    if (navigation) navigationObserver.observe(navigation, { attributes: true, attributeFilter: ['data-hidden'] });
-    window.addEventListener('scroll', schedule, { passive: true });
-    window.addEventListener('resize', measure);
-    return () => {
-      resize.disconnect();
-      navigationObserver.disconnect();
-      window.removeEventListener('scroll', schedule);
-      window.removeEventListener('resize', measure);
+    const updatePlayback = () => {
       window.cancelAnimationFrame(frame);
-      rail.style.removeProperty('height');
-      rail.style.removeProperty('--px-preview-height');
+      previous = null;
+      if (visible && !document.hidden) frame = window.requestAnimationFrame(tick);
     };
-  }, [horizontal, reducedMotion]);
+    const observer = new IntersectionObserver(([entry]) => {
+      visible = entry.isIntersecting && entry.intersectionRatio >= 0.15;
+      updatePlayback();
+    }, { threshold: [0, 0.15] });
+    observer.observe(scene);
+    document.addEventListener('visibilitychange', updatePlayback);
+    return () => {
+      observer.disconnect();
+      document.removeEventListener('visibilitychange', updatePlayback);
+      window.cancelAnimationFrame(frame);
+    };
+  }, [active, focused, reducedMotion]);
 
   useEffect(() => {
     if (!horizontal) return;
@@ -160,11 +112,9 @@ export function ProductExplorer() {
   }, [active, horizontal]);
 
   function selectTab(index: number) {
+    elapsed.current = 0;
+    track.current?.style.setProperty('--px-progress', reducedMotion ? '1' : '0');
     setActive(index);
-    if (scrollDriven) {
-      const { start, step } = geometry.current;
-      window.scrollTo({ top: start + (index + 0.35) * step, behavior: 'instant' });
-    }
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
@@ -181,8 +131,8 @@ export function ProductExplorer() {
     tabs.current[next]?.focus({ preventScroll: true });
   }
 
-  return <div ref={track} className={`px-scroll-track${scrollDriven ? ' is-scroll-driven' : ''}`}>
-    <div ref={container} className="product-explorer">
+  return <div ref={track} className="px-scroll-track">
+    <div ref={container} className="product-explorer" onFocusCapture={() => setFocused(true)} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false); }}>
     <div className="px-navigation">
       <div ref={tabList} className="px-tabs" role="tablist" aria-label="Product areas" aria-orientation={horizontal ? 'horizontal' : 'vertical'}>
         {AREAS.map(({ id, label }, index) => <button key={id} ref={node => { tabs.current[index] = node; }} type="button" role="tab" id={`product-tab-${id}`} aria-controls={`product-panel-${id}`} aria-selected={active === index} tabIndex={active === index ? 0 : -1} onClick={() => selectTab(index)} onKeyDown={event => onKeyDown(event, index)}>{label}{active === index && <span className="px-tab-progress" aria-hidden="true" />}</button>)}
@@ -191,7 +141,7 @@ export function ProductExplorer() {
     {AREAS.map((area, index) => <div className="px-panel" role="tabpanel" id={`product-panel-${area.id}`} aria-labelledby={`product-tab-${area.id}`} hidden={active !== index} tabIndex={0} key={area.id}>
       <div className="px-copy"><h3>{area.title}</h3>{' '}<p>{area.description}</p><a href={area.href}>Explore {area.id === 'inbox' ? 'customer support' : area.id === 'crm' ? 'CRM' : area.label.toLowerCase()} <ArrowUpRight size={15} aria-hidden="true" /></a></div>
       <div className="px-stage">
-        {(active === index || preloadPreviews) && <ProductPreview product={area.id} theme="light" />}
+        {(active === index) && <ProductPreview product={area.id} theme="light" workflow />}
       </div>
     </div>)}
     </div>

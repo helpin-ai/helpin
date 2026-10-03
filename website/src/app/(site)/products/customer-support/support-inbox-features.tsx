@@ -1,16 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import { ArrowDown, Check, Inbox, ListFilter, Mail, Pause, Play, ReceiptText, Route, Tag } from 'lucide-react';
+import { Check, Inbox, Languages, ListFilter, Pause, Play, ReceiptText, Route, Tag } from 'lucide-react';
 import { useBentoPlayback } from '../../_components/useBentoPlayback';
+import { SupportLiveTranslate } from './support-live-translate';
 import './support-inbox-features.css';
 
 const FEATURES = [
   {
-    id: 'email', label: 'Email forwarding', icon: Mail,
-    title: 'Your address. A shared inbox.',
-    copy: 'Forward incoming support email to Helpin and reply from your verified address.',
-    description: 'Email travels from support@orbitdesk.example into the OrbitDesk shared inbox. The CSV export request arrives, and the forwarding setup is verified.',
+    id: 'translate', label: 'Live Translate', icon: Languages,
+    title: 'Reply without a language barrier.',
+    copy: 'Read new messages in your language and write replies in yours. Helpin AI translates them for the customer, with the original always available.',
+    description: 'A Spanish customer message is translated into English. A teammate writes in English, and Helpin sends the reply in Spanish.',
   },
   {
     id: 'routing', label: 'Routing and assignment', icon: Route,
@@ -27,19 +28,6 @@ const FEATURES = [
 ] as const;
 
 type Feature = typeof FEATURES[number];
-
-function EmailWorkflow() {
-  return <>
-    <div className="ops-source"><span>YOUR SUPPORT ADDRESS</span><div><Mail size={17} /><strong>support@orbitdesk.example</strong></div></div>
-    <div className="ops-delivery"><span className="ops-delivery-line" /><span className="ops-envelope"><Mail size={15} /></span><span className="ops-delivery-caption">Email forwarding</span><ArrowDown size={13} /></div>
-    <div className="ops-mailbox">
-      <div className="ops-mailbox-heading"><Inbox size={16} /><strong>Shared inbox</strong><span>OrbitDesk</span></div>
-      <div className="ops-mail-row ops-arrival"><span className="ops-unread" /><div><strong>CSV export missing contacts</strong><span>Maya Chen · Northstar Labs</span></div><Mail size={13} /></div>
-      <div className="ops-mail-row ops-existing"><span className="ops-unread" /><div><strong>Update our billing details</strong><span>Alex Morgan · Email</span></div><Mail size={13} /></div>
-    </div>
-    <div className="ops-complete ops-delivered"><Check size={13} /><span>Email and chat, together.</span></div>
-  </>;
-}
 
 function RoutingWorkflow() {
   return <>
@@ -66,19 +54,23 @@ function OrganizeWorkflow() {
   </>;
 }
 
-function WorkflowCard({ feature, index }: { feature: Feature; index: number }) {
+function WorkflowArt({ feature }: { feature: Feature }) {
   const { container, playing, cycle } = useBentoPlayback(9000);
   const [paused, setPaused] = useState(false);
-  const Icon = feature.icon;
-  return <article className="ops-card" aria-labelledby={`ops-title-${feature.id}`}>
-    <div ref={container} className={`ops-art ops-art-${feature.id}`} data-playing={playing && !paused}>
+  return <div ref={container} className={`ops-art ops-art-${feature.id}`} data-playing={playing && !paused}>
       <div className="ops-art-toolbar"><span><span className="ops-workspace-mark">O</span>OrbitDesk</span><button type="button" aria-label={`${paused ? 'Play' : 'Pause'} ${feature.label.toLowerCase()} animation`} aria-pressed={paused} onClick={() => setPaused(value => !value)}>{paused ? <Play size={12} aria-hidden="true" /> : <Pause size={12} aria-hidden="true" />}</button></div>
-      <div key={cycle} className="ops-scene" role="img" aria-label={feature.description}><div aria-hidden="true">{feature.id === 'email' ? <EmailWorkflow /> : feature.id === 'routing' ? <RoutingWorkflow /> : <OrganizeWorkflow />}</div></div>
-    </div>
+      <div key={cycle} className="ops-scene" role="img" aria-label={feature.description}><div aria-hidden="true">{feature.id === 'routing' ? <RoutingWorkflow /> : <OrganizeWorkflow />}</div></div>
+    </div>;
+}
+
+function WorkflowCard({ feature, index }: { feature: Feature; index: number }) {
+  const Icon = feature.icon;
+  return <article id={feature.id === 'translate' ? 'support-live-translate' : undefined} className="ops-card" aria-labelledby={`ops-title-${feature.id}`}>
+    {feature.id === 'translate' ? <SupportLiveTranslate /> : <WorkflowArt feature={feature} />}
     <div className="ops-card-copy"><span className="ops-card-label"><Icon size={14} aria-hidden="true" />{feature.label}<span>0{index + 1}</span></span><h3 id={`ops-title-${feature.id}`}>{feature.title}</h3><p>{feature.copy}</p></div>
   </article>;
 }
 
 export function SupportInboxFeatures() {
-  return <><div className="ops-cards">{FEATURES.map((feature, index) => <WorkflowCard key={feature.id} feature={feature} index={index} />)}</div><p className="ops-plan-note">Round-robin assignment and AI conversation routing are included in Growth and when you self-host.</p></>;
+  return <><div className="ops-cards">{FEATURES.map((feature, index) => <WorkflowCard key={feature.id} feature={feature} index={index} />)}</div></>;
 }

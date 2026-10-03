@@ -5,7 +5,7 @@ import { PreviewNav } from './(site)/_components/PreviewNav';
 import { PreviewFooter } from './(site)/_components/PreviewFooter';
 
 export const metadata: Metadata = {
-  title: 'Page not found — Helpin',
+  title: 'Page not found · Helpin',
   robots: { index: false, follow: true },
 };
 
@@ -19,8 +19,8 @@ export default function NotFound() {
           <h1>We couldn’t find that page.</h1>
           <p className="lede">The link may be old, or the page may have moved.</p>
           <div className="cta-row">
-            <Link className="btn btn-primary" href="/">Go to the homepage →</Link>
-            <Link className="btn btn-secondary" href="/product">Explore the product →</Link>
+            <Link prefetch={false} className="btn btn-primary" href="/">Go to the homepage →</Link>
+            <Link prefetch={false} className="btn btn-secondary" href="/product">Explore the product →</Link>
           </div>
         </div>
       </section>

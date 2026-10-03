@@ -32,6 +32,8 @@ import {
   Search,
 } from "lucide-react";
 import "./agent-directory.css";
+import { useBentoPlayback } from '../useBentoPlayback';
+import { FlowTemplatesPreview } from './FlowTemplatesPreview';
 
 // App references: Agents.tsx AgentRow/AgentCard/system drawer, AutomationShell,
 // sidebar/config.ts, and AgentAvatar.tsx. Prepared OrbitDesk data only.
@@ -51,7 +53,7 @@ const AGENTS = [
   },
   {
     name: "Scribe",
-    role: "Coding task planner",
+    role: "Task planning agent",
     purpose:
       "Break approved work into clear tasks with requirements and acceptance criteria.",
     mode: "Interactive",
@@ -94,7 +96,7 @@ const AGENTS = [
   },
   {
     name: "Lens",
-    role: "Code reviewer",
+    role: "Code review agent",
     purpose:
       "Check the proposed fix against the original requirements and flag what needs attention.",
     mode: "Interactive",
@@ -170,7 +172,7 @@ function Avatar({ name, size = 32 }: { name: string; size?: number }) {
     <img
       className="adp-avatar"
       style={{ "--avatar-size": `${size}px` } as CSSProperties}
-      src={`/new/agents/${name.toLowerCase()}.svg`}
+      src={`/new/agents/${name.replace(/ agent$/, "").toLowerCase()}.svg`}
       width={size}
       height={size}
       alt=""
@@ -186,13 +188,32 @@ function RunBars({ pending = false }: { pending?: boolean }) {
     </span>
   );
 }
-export function AgentDirectoryPreview() {
+export function AgentDirectoryPreview({ showFlows = false }: { showFlows?: boolean }) {
   const [view, setView] = useState<"list" | "cards">("list");
+  const [section, setSection] = useState<'agents' | 'flows'>('agents');
+  const [selectedFlow, setSelectedFlow] = useState<number | null>(null);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
   const [tab, setTab] = useState<(typeof TABS)[number]>("Versions");
   const dialog = useRef<HTMLDialogElement>(null);
   const id = useId();
   const agent = selected === null ? null : AGENTS[selected];
+  const { container, playing } = useBentoPlayback(0, showFlows && !hovered && !focused && selected === null && selectedFlow === null);
+  useEffect(() => {
+    if (!playing) return;
+    const timer = setTimeout(() => setSection(current => current === 'agents' ? 'flows' : 'agents'), 9000);
+    return () => clearTimeout(timer);
+  }, [playing, section]);
+  function changeSection(next: 'agents' | 'flows') {
+    setSelectedFlow(null);
+    setSection(next);
+  }
+  function backToTemplates() {
+    const previous = selectedFlow;
+    setSelectedFlow(null);
+    requestAnimationFrame(() => document.getElementById(`${id}-flow-${previous}`)?.focus({ preventScroll: true }));
+  }
   useEffect(() => {
     if (selected !== null && !dialog.current?.open) dialog.current?.showModal();
   }, [selected]);
@@ -217,7 +238,9 @@ export function AgentDirectoryPreview() {
     document.getElementById(`${id}-tab-${next}`)?.focus();
   }
   return (
-    <div className="adp" role="region" tabIndex={0} aria-label="OrbitDesk agents workspace preview">
+    <div className="adp" ref={container} data-show-flows={showFlows} data-playing={playing} role="region" tabIndex={0} aria-label={showFlows ? "OrbitDesk agents and flows workspace preview" : "OrbitDesk agents workspace preview"}
+      onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
+      onFocusCapture={() => setFocused(true)} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false); }}>
       <div className="adp-frame">
         <aside className="adp-sidebar preview-sidebar" aria-label="Workspace navigation">
           <div className="adp-brand">
@@ -257,14 +280,13 @@ export function AgentDirectoryPreview() {
             </div>
             <div className="adp-module">
               <div className="adp-nav-items">
-                <span>
-                  <Workflow size={16} />
-                  Flows
-                </span>
-                <span data-active="true">
-                  <Bot size={16} />
-                  Agents
-                </span>
+                {showFlows ? <>
+                  <button type="button" aria-label="Show flow templates" aria-pressed={section === 'flows'} data-active={section === 'flows'} onClick={() => changeSection('flows')}><Workflow size={16} />Flows</button>
+                  <button type="button" aria-label="Show agents" aria-pressed={section === 'agents'} data-active={section === 'agents'} onClick={() => changeSection('agents')}><Bot size={16} />Agents</button>
+                </> : <>
+                  <span><Workflow size={16} />Flows</span>
+                  <span data-active="true"><Bot size={16} />Agents</span>
+                </>}
                 <span>
                   <Clock3 size={16} />
                   Activity<i>1</i>
@@ -291,14 +313,18 @@ export function AgentDirectoryPreview() {
           </div>
         </aside>
         <div className="adp-main">
+          {showFlows && <div className="adp-mobile-sections" role="group" aria-label="Automation views">
+            <button type="button" aria-label="Show agents" aria-pressed={section === 'agents'} onClick={() => changeSection('agents')}><Bot size={15} />Agents</button>
+            <button type="button" aria-label="Show flow templates" aria-pressed={section === 'flows'} onClick={() => changeSection('flows')}><Workflow size={15} />Flows</button>
+          </div>}
           <header className="adp-header">
             <div>
-              <h3>Agents</h3>
+              <h3>{section === 'flows' ? 'Flow templates' : 'Agents'}</h3>
               <p>
-                Built-in and custom agents for manual runs and automated flows.
+                {section === 'flows' ? 'Start with a template. Choose its tools and approval rules.' : 'Built-in and custom agents for manual runs and automated flows.'}
               </p>
             </div>
-            <div
+            {section === 'agents' && <div
               className="adp-view"
               role="group"
               aria-label="Agent directory view"
@@ -319,9 +345,9 @@ export function AgentDirectoryPreview() {
               >
                 <LayoutGrid size={16} />
               </button>
-            </div>
+            </div>}
           </header>
-          <div className="adp-scroll" data-view={view}>
+          {section === 'flows' ? <FlowTemplatesPreview selected={selectedFlow} onSelect={setSelectedFlow} onBack={backToTemplates} id={id} /> : <div className="adp-scroll" data-view={view}>
             {view === "list" && (
               <div className="adp-columns" aria-hidden="true">
                 <span>Agent</span>
@@ -339,14 +365,14 @@ export function AgentDirectoryPreview() {
                     className="adp-agent"
                     type="button"
                     onClick={() => openAgent(index)}
-                    aria-label={`Open ${item.role}`}
+                    aria-label={`Open ${item.name}`}
                   >
                     <span className="adp-identity">
                       <Avatar name={item.name} />
                       <span>
-                        <strong>{item.role}</strong>
+                        <strong>{item.name}</strong>
                         <span className="adp-role">
-                          Specialist agent
+                          {item.role}
                           <i>System</i>
                         </span>
                       </span>
@@ -386,7 +412,7 @@ export function AgentDirectoryPreview() {
                 </li>
               ))}
             </ul>
-          </div>
+          </div>}
         </div>
       </div>
       <dialog
@@ -403,7 +429,7 @@ export function AgentDirectoryPreview() {
             <header className="adp-dialog-header">
               <Avatar name={agent.name} size={44} />
               <div>
-                <h3 id={`${id}-title`}>{agent.role}</h3>
+                <h3 id={`${id}-title`}>{agent.name}</h3>
                 <p>{agent.role} · OrbitDesk</p>
               </div>
               <button

@@ -418,13 +418,50 @@
 .hp3 .hero-inner { gap: 18px; max-width: 760px; }
 .hp3 .hero h1 { font-size: clamp(2.4rem, 4.4vw, 3.5rem); }
 /* Give the homepage introduction room above the copy and before the workflow. */
-.hp3 section.homepage-hero { padding-top: clamp(96px, 11.12vw, 160px); }
+.hp3 section.homepage-hero { padding-top: clamp(80px, 9vw, 128px); }
 .hp3 .homepage-hero .hero-inner { max-width: 1040px; }
+.hp3 .homepage-hero .hero-inner > .eyebrow {
+  padding: 6px 14px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: linear-gradient(#fff, #fff) padding-box, linear-gradient(110deg, #58b78c, #6daebe, #9fba71, #58b78c) border-box;
+  background-size: 100% 100%, 300% 100%;
+  background-position: 0 0, 0% 50%;
+  box-shadow: inset 0 -8px 10px rgba(63, 191, 131, .08);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: .02em;
+  text-transform: none;
+  text-wrap: balance;
+  animation: hero-eyebrow-gradient 8s ease-in-out infinite;
+  transition: box-shadow .3s ease;
+}
+.hp3 .homepage-hero .hero-inner > .eyebrow:is(:hover, :focus-within) {
+  box-shadow: inset 0 -8px 12px rgba(63, 191, 131, .14);
+}
+@keyframes hero-eyebrow-gradient {
+  50% { background-position: 0 0, 100% 50%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hp3 .homepage-hero .hero-inner > .eyebrow { animation: none; transition: none; }
+}
 .hp3 .homepage-hero .hero-workflow { margin-top: clamp(96px, 11.12vw, 160px); }
 .hp3 .hero h1 > span { display: block; text-wrap: balance; }
 .hp3 .hero .lede { font-size: 18px; max-width: 54ch; }
 .hp3 .hero-workflow { margin: 72px 0 0; position: relative; z-index: 1; }
 .hp3 .hero-workflow .wire { margin-top: 0; }
+.hp3 .homepage-hero .hero-film { margin-top: clamp(40px, 5vw, 72px); }
+.hp3 .hero-film video {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--art-dark);
+}
+.hp3 .hero-film video:focus-visible { outline: 3px solid var(--em); outline-offset: 4px; }
+.hp3 .hero-film figcaption { margin-top: 12px; color: var(--t2); font-size: 14px; text-align: center; }
 .hp3 .hero-evaluation { position: relative; z-index: 1; margin-top: 36px; padding-top: 24px; border-top: 1px solid var(--border); text-align: center; }
 @media (max-width: 600px) { .hp3 .hero-workflow { margin-top: 48px; } }
 /* Phone: the record must never widen the page. A late rule had reset it to two columns. */
@@ -721,6 +758,8 @@
 @media (prefers-reduced-motion: reduce) { .hp3 .hosting-art[data-playing="true"] .hosting-flow { animation: none; } }
 /* 06 control */
 .hp3 #control > .wrap { max-width: 1200px; }
+.hp3 #control > .wrap > .sec-head { margin-inline: auto; text-align: center; }
+.hp3 #control > .wrap > .sec-head .lede { margin-inline: auto; }
 .hp3 .control-screenshot { margin: 0 0 48px; }
 .hp3 .control-screenshot a { display: block; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 16px 48px rgba(19,21,20,.07); }
 .hp3 .control-screenshot a:focus-visible { outline: 2px solid var(--em); outline-offset: 5px; }
@@ -748,20 +787,23 @@
 .hp3 .ca-tool-highlight { fill: #edf6f0; opacity: 0; }
 .hp3 .ca-node-active { fill: #eaf5ed; fill-opacity: .25; stroke: #8bbb9c; opacity: 0; }
 .hp3 .ca-pending, .hp3 .ca-cursor { visibility: hidden; }
-.hp3 .ca-approved, .hp3 .ca-success-badge, .hp3 .ca-success-ripple { transform-box: fill-box; transform-origin: center; }
+.hp3 .ca-approved, .hp3 .ca-success-badge, .hp3 .ca-approve-button, .hp3 .ca-click-ripple { transform-box: fill-box; transform-origin: center; }
 .hp3 .ca-approved .ca-tick { stroke: #fff; }
-.hp3 .ca-success-outline, .hp3 .ca-success-ripple { opacity: 0; }
-.hp3 .ca-cursor { color: #233b2d; filter: drop-shadow(0 2px 2px rgba(0,0,0,.1)); }
+.hp3 .ca-success-outline, .hp3 .ca-click-ripple { opacity: 0; }
+.hp3 .ca-cursor { transform-origin: 0 0; filter: drop-shadow(0 2px 2px rgba(0,0,0,.18)); }
+.hp3 #approval-demo { scroll-margin-top: 96px; }
 .hp3 .control-art[data-playing="true"] .ca-tick { stroke-dasharray: 1; animation: ca-draw .4s ease var(--ca-delay) both; }
 .hp3 .control-art[data-playing="true"] .ca-tool-highlight { animation: ca-highlight 1.1s ease var(--ca-delay) both; }
 .hp3 .control-art[data-playing="true"] .ca-node-active { animation: ca-highlight 1.3s ease var(--ca-delay) both; }
 .hp3 .control-art[data-playing="true"] .ca-route { stroke-dasharray: 1; animation: ca-draw 2.1s ease .1s both; }
-.hp3 .control-art[data-playing="true"] .ca-pending { animation: ca-pending 2.3s steps(1, end) both; }
-.hp3 .control-art[data-playing="true"] .ca-approved { animation: ca-approved .5s cubic-bezier(.2,.8,.2,1) 2.3s both; }
-.hp3 .control-art[data-playing="true"] .ca-success-badge { animation: ca-badge .45s cubic-bezier(.2,.8,.2,1) 2.45s both; }
-.hp3 .control-art[data-playing="true"] .ca-success-ripple { animation: ca-ripple .85s ease-out 2.45s both; }
-.hp3 .control-art[data-playing="true"] .ca-success-outline { animation: ca-success-outline 1.15s ease 2.3s both; }
-.hp3 .control-art[data-playing="true"] .ca-cursor { animation: ca-cursor 1.4s cubic-bezier(.2,.8,.2,1) 1s both; }
+/* Read the draft, approach, pause, click, then hold the approved result. */
+.hp3 .control-art[data-playing="true"] .ca-pending { animation: ca-pending 2.4s steps(1, end) both; }
+.hp3 .control-art[data-playing="true"] .ca-approve-button { animation: ca-click-press .28s ease 2.1s both; }
+.hp3 .control-art[data-playing="true"] .ca-click-ripple { animation: ca-click-ripple .65s ease-out 2.1s both; }
+.hp3 .control-art[data-playing="true"] .ca-approved { animation: ca-approved .4s cubic-bezier(.2,.8,.2,1) 2.4s both; }
+.hp3 .control-art[data-playing="true"] .ca-success-badge { animation: ca-badge .45s cubic-bezier(.2,.8,.2,1) 2.55s both; }
+.hp3 .control-art[data-playing="true"] .ca-success-outline { animation: ca-success-outline 1.15s ease 2.4s both; }
+.hp3 .control-art[data-playing="true"] .ca-cursor { animation: ca-cursor 2.4s linear .4s both; }
 @keyframes ca-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
 @keyframes ca-highlight { 0%,100% { opacity: 0; } 25%,60% { opacity: 1; } }
 @keyframes ca-pending { from { visibility: visible; } to { visibility: hidden; } }
@@ -772,11 +814,19 @@
   100% { visibility: visible; opacity: 1; transform: translateY(0) scale(1); }
 }
 @keyframes ca-badge { 0% { transform: scale(.4); } 70% { transform: scale(1.12); } 100% { transform: scale(1); } }
-@keyframes ca-ripple { 0% { opacity: .6; transform: scale(1); } 100% { opacity: 0; transform: scale(1.13,1.55); } }
+@keyframes ca-click-press { 0%,100% { transform: scale(1); } 40% { transform: scale(.96); } }
+@keyframes ca-click-ripple { 0% { opacity: .8; transform: scale(.6); } 100% { opacity: 0; transform: scale(3); } }
 @keyframes ca-success-outline { 0% { opacity: 0; } 30% { opacity: .75; } 100% { opacity: .3; } }
-@keyframes ca-cursor { 0% { visibility: hidden; transform: translate(48px,26px); } 15% { visibility: visible; } 65%,85% { visibility: visible; transform: translate(0,0); } 100% { visibility: hidden; transform: translate(0,0); } }
+@keyframes ca-cursor {
+  0% { visibility: hidden; opacity: 0; transform: translate(64px,38px); }
+  15% { visibility: visible; opacity: 1; transform: translate(64px,38px); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  50%,70% { visibility: visible; opacity: 1; transform: translate(0,0) scale(1); }
+  75% { transform: translate(0,0) scale(.86); }
+  82%,88% { visibility: visible; opacity: 1; transform: translate(0,0) scale(1); }
+  100% { visibility: hidden; opacity: 0; transform: translate(0,0) scale(1); }
+}
 @media (prefers-reduced-motion: reduce) {
-  .hp3 .control-art[data-playing="true"] :is(.ca-tick, .ca-tool-highlight, .ca-node-active, .ca-route, .ca-pending, .ca-approved, .ca-cursor, .ca-success-badge, .ca-success-ripple, .ca-success-outline) { animation: none; }
+  .hp3 .control-art[data-playing="true"] :is(.ca-tick, .ca-tool-highlight, .ca-node-active, .ca-route, .ca-pending, .ca-approved, .ca-cursor, .ca-approve-button, .ca-click-ripple, .ca-success-badge, .ca-success-outline) { animation: none; }
 }
 /* 09 integrations */
 .hp3 .intg { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 32px; border-top: 1px solid var(--border); padding-top: 28px; }
@@ -803,7 +853,7 @@
 /* Interactive homepage product explorer. */
 .hp3 #product > .wrap > .sec-head { margin-inline: auto; text-align: center; }
 .hp3 #product > .wrap > .sec-head .lede { margin-inline: auto; }
-.hp3 .inline-link { font-size: 16px; font-weight: 600; color: var(--em); margin-left: 12px; }
+.hp3 .inline-link { font-size: 16px; font-weight: 600; color: var(--em); }
 .hp3 .inline-link:hover { border-bottom: 1px solid var(--em); }
 /* Product page */
 .hp3 section.page-hero { padding-block: 56px 24px; }
@@ -977,7 +1027,7 @@
 .hp3 .ab-panel-title { font-size: 18px; font-weight: 600; }
 .hp3 .ab-answer-title { font-size: 23px; font-weight: 600; letter-spacing: -.5px; }
 .hp3 .ab-svg .ab-detail { font-size: 17px; fill: #b5c9bd; }
-.hp3 .ab-svg .ab-caption { font-size: 11px; fill: #95b9a7; letter-spacing: .15px; }
+.hp3 .ab-svg .ab-caption { font-size: 13px; fill: #95b9a7; letter-spacing: .15px; }
 .hp3 .ab-panel { stroke: rgba(196,216,204,.14); stroke-width: 1.1; }
 .hp3 .ab-wire { stroke: #477c61; stroke-width: 1.5; }
 .hp3 .ab-flow { stroke: #74efb6; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 16 100; stroke-dashoffset: 116; opacity: 0; filter: drop-shadow(0 0 3px #3fbf83); }
@@ -987,11 +1037,14 @@
 .hp3 .ab-scene[data-playing="true"] .ab-result-glow { animation: ab-illuminate 1.4s ease var(--ab-delay) both; }
 .hp3 .ab-scene[data-playing="true"] .ab-answer-reveal { animation: ab-resolve .8s ease var(--ab-delay) both; }
 .hp3 .ab-scene[data-playing="true"] .ab-check { animation: ab-resolve .45s ease var(--ab-delay) both; }
+.hp3 .ab-svg .ab-working { opacity: 0; font-size: 14px; fill: #b5c9bd; }
+.hp3 .ab-scene[data-playing="true"] .ab-working { animation: ab-working var(--ab-duration) step-end var(--ab-delay) forwards; }
+@keyframes ab-working { 0%, 99% { opacity: .8; } 100% { opacity: 0; } }
 @keyframes ab-travel { 0% { opacity: 0; stroke-dashoffset: 116; } 15%, 80% { opacity: 1; } 100% { opacity: 0; stroke-dashoffset: 0; } }
 @keyframes ab-illuminate { 0% { opacity: .25; } 45% { opacity: 1; filter: drop-shadow(0 0 5px rgba(63,191,131,.35)); } 100% { opacity: .45; } }
-@keyframes ab-resolve { from { opacity: .35; } to { opacity: 1; } }
+@keyframes ab-resolve { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
-  .hp3 .ab-scene[data-playing="true"] .ab-flow, .hp3 .ab-scene[data-playing="true"] .ab-node-glow, .hp3 .ab-scene[data-playing="true"] .ab-result-glow, .hp3 .ab-scene[data-playing="true"] .ab-answer-reveal, .hp3 .ab-scene[data-playing="true"] .ab-check { animation: none; }
+  .hp3 .ab-scene[data-playing="true"] .ab-flow, .hp3 .ab-scene[data-playing="true"] .ab-node-glow, .hp3 .ab-scene[data-playing="true"] .ab-result-glow, .hp3 .ab-scene[data-playing="true"] .ab-answer-reveal, .hp3 .ab-scene[data-playing="true"] .ab-check, .hp3 .ab-scene[data-playing="true"] .ab-working { animation: none; }
 }
 @media (hover: hover) and (pointer: fine) {
   .hp3 .ask-agent-capabilities article:hover { border-color: rgba(129,222,176,.5); }
@@ -1024,9 +1077,8 @@
   .hp3 .ask-agent-intro .lede { font-size: 17px; }
   .hp3 .ask-agent-capabilities { grid-template-columns: minmax(0, 1fr); }
 }
-.hp3 .px-scroll-track { --px-opacity: 1; --px-shift: 0px; --px-progress: 1; position: relative; }
-.hp3 .product-explorer { top: 80px; display: grid; grid-template-columns: 220px minmax(0, 1fr); background: #fff; }
-.hp3 .is-scroll-driven .product-explorer { position: sticky; }
+.hp3 .px-scroll-track { --px-progress: 0; position: relative; }
+.hp3 .product-explorer { display: grid; grid-template-columns: 220px minmax(0, 1fr); background: #fff; }
 .hp3 .px-navigation { padding: 64px 0; }
 .hp3 .px-tabs { display: grid; gap: 4px; }
 .hp3 .px-tabs button { position: relative; border: 0; border-radius: 0; padding: 13px 38px; background: transparent; color: var(--t3); font: inherit; font-size: 16px; text-align: left; cursor: pointer; opacity: .65; transition: color .45s ease, opacity .45s ease; }
@@ -1045,7 +1097,6 @@
 .hp3 .px-copy a { display: flex; align-items: center; gap: 6px; width: fit-content; margin-top: 18px; font-size: 13px; letter-spacing: 0; font-weight: 600; color: var(--em); }
 .hp3 .px-copy a:hover { text-decoration: underline; }
 .hp3 .px-stage { padding: 24px; background: #f5f6f7; }
-.hp3 .px-panel:not([hidden]) .px-copy, .hp3 .px-panel:not([hidden]) .px-stage { opacity: var(--px-opacity); transform: translateY(var(--px-shift)); }
 @media (max-width: 960px) and (min-width: 761px) {
   .hp3 .product-explorer { grid-template-columns: 160px minmax(0, 1fr); }
   .hp3 .px-tabs button { padding-inline: 26px; }
@@ -1055,20 +1106,18 @@
 @media (max-width: 760px) {
   .hp3 .product-explorer { grid-template-columns: minmax(0, 1fr); }
   .hp3 .px-navigation { padding: 0 0 12px; min-width: 0; }
-  .hp3 .px-tabs { display: flex; gap: 0; overflow-x: auto; scrollbar-width: thin; scroll-padding-inline: 12px; }
+  .hp3 .px-tabs { display: flex; flex: 1; min-width: 0; gap: 0; overflow-x: auto; scrollbar-width: thin; scroll-padding-inline: 12px; }
   .hp3 .px-tabs button { flex-shrink: 0; padding: 18px 16px; font-size: 14px; }
   .hp3 .px-tabs button[aria-selected="true"]::before, .hp3 .px-tab-progress { left: 16px; right: 16px; top: auto; bottom: 0; width: auto; height: 2px; transform-origin: left; }
   .hp3 .px-tab-progress { transform: scaleX(var(--px-progress)); }
-  .hp3 .product-explorer { top: 72px; }
   .hp3 .px-copy { padding: 28px 24px; min-height: 275px; font-size: 20px; }
   .hp3 .px-stage { padding: 16px; }
 }
 @media (max-width: 380px) {
   .hp3 .px-copy { min-height: 320px; }
 }
-/* Give the pinned product UI the space released by the hiding navigation. */
+/* Keep the product tour compact on wider screens. */
 @media (min-width: 761px) and (prefers-reduced-motion: no-preference) {
-  .hp3:has(.pnav[data-hidden="true"]) .product-explorer { top: 16px; }
   .hp3 .px-copy { min-height: 0; padding: 16px 32px; font-size: clamp(18px, 1.7vw, 22px); }
   .hp3 .px-stage { padding-block: 16px; }
   .hp3 .px-navigation { padding-block: 32px; }
@@ -1310,3 +1359,24 @@
 /* Named competitors in the homepage eyebrow link to their comparisons. */
 .hp3 .eyebrow-link { color: inherit; text-decoration: underline; text-decoration-color: currentColor; text-decoration-thickness: 1px; text-underline-offset: 3px; text-decoration-style: dotted; }
 .hp3 .eyebrow-link:hover { text-decoration-style: solid; }
+
+/* Subtle emphasis for important homepage capabilities; these remain plain text. */
+.hp3 .home-feature {
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: .22em;
+  text-decoration-skip-ink: auto;
+}
+
+/* Compact next steps after the homepage's main capability sections. */
+.hp3 .home-section-actions { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 16px 24px; margin-top: 36px; }
+.hp3 .home-section-actions .btn-primary { background: var(--em); border-color: var(--em); }
+.hp3 .home-section-actions .btn-primary:hover { background: var(--em-h); border-color: var(--em-h); }
+.hp3 :is(#record, #ask-agent) .home-section-actions .btn-primary { background: #d5efc8; border-color: #d5efc8; color: #123221; }
+.hp3 :is(#record, #ask-agent) .home-section-actions .btn-primary:hover { background: #e3f6dc; border-color: #e3f6dc; }
+.hp3 :is(#record, #ask-agent) .home-section-actions .btn-link { color: #81deb0; border-color: #456958; }
+.hp3 :is(#record, #ask-agent) .home-section-actions .btn-link:hover { border-color: #81deb0; }
+
+/* Tool selection and scheduled work reveal the change at the point of action. */
+.hp3 .control-art .ca-choice-focus{animation:none;opacity:0}.hp3 .control-art .ca-choice-focus[data-active=true]{opacity:1;fill:#eef7f1}.hp3 .ca-step-node{animation:ca-step-arrive .35s ease both}.hp3 .ca-choice-cursor{animation:ca-choice-pointer 1.1s ease both}.hp3 .ca-choice-ripple{animation:ca-choice-ring 1.1s ease both}.hp3 .control-art[data-playing=false] :is(.ca-choice-cursor,.ca-choice-ripple,.ca-step-node){animation-play-state:paused}@keyframes ca-step-arrive{from{opacity:0}to{opacity:1}}@keyframes ca-choice-pointer{0%{opacity:0;transform:translate(22px,18px)}35%,80%{opacity:1;transform:translate(0,0)}60%{transform:scale(.85)}100%{opacity:0}}@keyframes ca-choice-ring{0%,45%{opacity:0;transform:scale(.2)}60%{opacity:1}100%{opacity:0;transform:scale(2.3)}}@media(prefers-reduced-motion:reduce){.hp3 .ca-choice-cursor{display:none}.hp3 .ca-step-node{animation:none}}

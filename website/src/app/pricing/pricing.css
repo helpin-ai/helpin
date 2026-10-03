@@ -98,12 +98,12 @@
 .hp3 .pricing-disclosure .btn-link { font-size: 14px; }
 
 /* Plan comparison */
-.hp3 .pricing-table { width: 100%; border: 1px solid var(--border-2); border-radius: 12px; border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: 14px; line-height: 1.5; }
-.hp3 .pricing-feature-column { width: 44%; }
+.hp3 .pricing-table { width: 100%; overflow: visible; border: 1px solid var(--border-2); border-radius: 12px; border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: 14px; line-height: 1.5; }
+.hp3 .pricing-feature-column { width: 34%; }
 .hp3 .pricing-table th, .hp3 .pricing-table td { padding: 13px 24px; border-bottom: 1px solid var(--border); text-align: center; vertical-align: middle; background: var(--bg); }
 .hp3 .pricing-table th { font-weight: 400; }
 .hp3 .pricing-table th:first-child { text-align: left; }
-.hp3 .pricing-table thead th { position: sticky; top: 60px; z-index: 3; padding-block: 20px; box-shadow: 0 1px 0 var(--border-2); }
+.hp3 .pricing-table thead th { position: sticky; top: 72px; z-index: 3; padding: 32px 20px 24px; box-shadow: 0 1px 0 var(--border-2); }
 .hp3 .pricing-table thead th:first-child { border-top-left-radius: 11px; }
 .hp3 .pricing-table thead th:last-child { border-top-right-radius: 11px; }
 .hp3 .pricing-table-plan { display: block; font-size: 18px; font-weight: 600; letter-spacing: -.02em; }
@@ -112,7 +112,7 @@
 .hp3 .pricing-table thead .btn-primary { background: var(--em); border-color: var(--em); color: #fff; }
 .hp3 .pricing-table thead .btn-primary:hover { background: var(--em-h); border-color: var(--em-h); }
 .hp3 .pricing-table [data-plan=Growth], .hp3 .pricing-table thead th[data-featured=true] { background: #f7faf8; }
-.hp3 .pricing-table-group th { padding-block: 10px; font-size: 12px; font-weight: 600; letter-spacing: .02em; color: var(--t2); background: var(--bg2); }
+.hp3 .pricing-table-group th { padding-block: 16px; font-size: 12px; font-weight: 600; letter-spacing: .02em; color: var(--t2); background: var(--bg2); }
 .hp3 .pricing-table tbody th[scope=row] { color: var(--t2); }
 .hp3 .pricing-table tbody td { font-weight: 500; font-variant-numeric: tabular-nums; }
 .hp3 .pricing-table tbody:last-child tr:last-child :is(th, td) { border-bottom: 0; }
@@ -173,14 +173,32 @@
   .hp3 .pricing-disclosure > summary { padding-inline: 20px; }
   .hp3 .pricing-disclosure > div, .hp3 .pricing-disclosure > dl { padding-inline: 20px; }
   .hp3 .pricing-shared dl, .hp3 .pricing-rate-notes { grid-template-columns: 1fr; }
-  .hp3 .pricing-feature-column { width: 40%; }
+  .hp3 .pricing-feature-column { width: 31%; }
   .hp3 .pricing-table { font-size: 12px; }
   .hp3 .pricing-table th, .hp3 .pricing-table td { padding: 12px 8px; }
-  .hp3 .pricing-table thead th { padding-block: 16px; }
-  .hp3 .pricing-table-plan { font-size: 15px; }
-  .hp3 .pricing-table-price { font-size: 11px; }
+  .hp3 .pricing-table thead th { padding: 24px 6px 20px; }
+  .hp3 .pricing-table-plan { display:flex; align-items:center; justify-content:center; min-height:39px; font-size:13px; }
+  .hp3 .pricing-table-price { font-size: 11px; min-height: 34px; margin-top: 6px; }
   .hp3 .pricing-table thead .btn { height: 30px; margin-top: 8px; padding: 0 8px; border: 0; background: transparent; color: var(--em); font-size: 12px; }
   .hp3 .pricing-table thead .btn-primary { background: transparent; color: var(--em); }
   .hp3 .pricing-table thead .btn svg { display: none; }
   .hp3 .pricing-included svg { width: 15px; height: 15px; }
 }
+
+/* Give the hero breathing room and Enterprise a full section within the plans. */
+.hp3 .pricing-page .pricing-hero{padding-top:100px}
+.hp3 .pricing-enterprise-strip{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr);gap:64px;margin-top:56px;padding:48px;border-color:#c8d7cc;background:radial-gradient(ellipse at 100% 0,#e3eee5,transparent 70%),#f5f8f5;border-radius:16px}
+.hp3 .pricing-enterprise-copy .eyebrow{display:flex;align-items:center;gap:9px;margin-bottom:19px;color:#376447}
+.hp3 .pricing-enterprise-copy h2{font-size:32px;line-height:1.2;letter-spacing:-.025em;margin:0 0 17px;max-width:420px}
+.hp3 .pricing-enterprise-copy p{font-size:15px;line-height:1.8;max-width:470px;margin-bottom:25px}
+.hp3 .pricing-enterprise-features{list-style:none;padding:0;margin:0;display:grid;gap:0}
+.hp3 .pricing-enterprise-features li{display:flex;align-items:center;gap:13px;font-size:15px;padding:18px 0;border-bottom:1px solid #d7e3da}.hp3 .pricing-enterprise-features li:last-child{border:0}.hp3 .pricing-enterprise-features svg{color:#3c7950;flex:none}
+@media(max-width:760px){.hp3 .pricing-page .pricing-hero{padding-top:64px}.hp3 .pricing-enterprise-strip{grid-template-columns:1fr;gap:24px;padding:30px;margin-top:40px}.hp3 .pricing-enterprise-copy h2{font-size:28px}.hp3 .pricing-enterprise-copy p{margin-bottom:22px}.hp3 .pricing-enterprise-features li{padding:14px 0;font-size:14px}}
+@media(max-width:440px){.hp3 .pricing-enterprise-strip{padding:25px}.hp3 .pricing-enterprise-copy .btn{width:100%;font-size:13px}}
+
+/* Center introductions to full-width pricing sections. */
+.hp3 .pricing-page :is(.pricing-comparison,.pricing-ai-section)>.wrap>.sec-head{max-width:760px;margin:0 auto 44px;text-align:center;justify-items:center}
+.hp3 .pricing-page :is(.pricing-comparison,.pricing-ai-section) .sec-head .lede{max-width:650px;margin-inline:auto}
+.hp3 .pricing-table-feature-label{font-size:13px;color:var(--t2)}
+.hp3 .pricing-table tbody:first-of-type .pricing-table-group th{padding-top:18px}
+@media(max-width:680px){.hp3 .pricing-page :is(.pricing-comparison,.pricing-ai-section)>.wrap>.sec-head{margin-bottom:32px}.hp3 .pricing-table-feature-label{font-size:11px}.hp3 .pricing-table thead .btn{padding-inline:2px}}

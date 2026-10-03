@@ -103,7 +103,7 @@
 .hp3 .cmp-diff-copy h3 { margin-bottom: 10px; color: #edf5ef; font-size: 21px; line-height: 1.3; letter-spacing: -.02em; }
 .hp3 .cmp-diff-copy p { color: #b2c5b9; font-size: 14px; line-height: 1.8; }
 
-/* Where the competitor is stronger */
+/* Specific requirements to check before switching */
 .hp3 .cmp-strength-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 0; }
 
 /* Price calculator: controls, then the answer, then the arithmetic behind it */
@@ -313,7 +313,7 @@
 .hp3 .cmp-versus { overflow: hidden; margin-bottom: 22px; border: 1px solid var(--border); border-radius: 16px; background: var(--bg); }
 .hp3 .cmp-sides { position: relative; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .hp3 .cmp-side { padding: 22px 28px 24px; }
-.hp3 .cmp-side[data-product=helpin] { border-left: 1px solid var(--border); background: linear-gradient(180deg, #f3f9f5, #f8fbf9); }
+.hp3 .cmp-side[data-product=helpin] { border-right: 1px solid var(--border); background: linear-gradient(180deg, #f3f9f5, #f8fbf9); }
 .hp3 .cmp-versus-badge { position: absolute; top: 20px; left: 50%; display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--border); border-radius: 50%; background: var(--bg); color: var(--t3); font-family: var(--mono); font-size: 10px; letter-spacing: .04em; transform: translateX(-50%); }
 .hp3 .cmp-side-name { display: flex; align-items: center; gap: 9px; margin-bottom: 10px; font-size: 14px; font-weight: 600; }
 .hp3 .cmp-side p { color: var(--t2); font-size: 15px; line-height: 1.75; }
@@ -348,7 +348,13 @@
 .hp3 .cmp-byline { margin-top: 32px; color: var(--t3); font-size: 13px; line-height: 1.75; }
 .hp3 .cmp-byline a { color: var(--t2); text-decoration: underline; text-underline-offset: 3px; }
 
-/* Sources */
+/* Sources stay available without interrupting the comparison. */
+.hp3 .cmp-sources{margin-top:32px;border-top:1px solid var(--border);padding-top:20px;font-size:13px;color:var(--t2)}
+.hp3 .cmp-sources summary{cursor:pointer;font-weight:500;width:fit-content}
+.hp3 .cmp-sources ul{display:flex;flex-wrap:wrap;gap:12px 24px;list-style:none;padding:18px 0 0;margin:0}
+.hp3 .cmp-sources a{display:inline-flex;align-items:center;gap:5px;text-decoration:underline;text-underline-offset:3px}
+.hp3 .cmp-sources summary:focus-visible{outline:2px solid var(--em);outline-offset:5px}
+
 
 /* Entrance sequences (InViewOnce). "waiting" holds the start state offscreen;
    "playing" runs once. Server HTML and reduced motion keep the finished state. */
@@ -397,7 +403,7 @@
 }
 @media (max-width: 960px) {
   .hp3 .cmp-article { grid-template-columns: 1fr; gap: 28px; }
-  .hp3 .cmp-article-aside { position: static; }
+  .hp3 .cmp-article-aside { display: none; }
   .hp3 .cmp-toc ol { grid-template-columns: repeat(2, minmax(0, 1fr)); border-left: 0; gap: 0 16px; }
   .hp3 .cmp-toc a { border-left: 0; padding-left: 0; }
   .hp3 .cmp-toc a[aria-current] { border-left: 0; }
@@ -413,7 +419,7 @@
 @media (max-width: 680px) {
   .hp3 .cmp-advantages { grid-template-columns: 1fr; margin-bottom: 48px; }
   .hp3 .cmp-side { padding: 20px 20px 22px; }
-  .hp3 .cmp-side[data-product=helpin] { border-top: 1px solid var(--border); border-left: 0; }
+  .hp3 .cmp-side[data-product=helpin] { border-bottom: 1px solid var(--border); border-right: 0; }
   .hp3 .cmp-versus-badge { display: none; }
   .hp3 .cmp-verdict { padding: 16px 20px; }
   /* Phones: each capability becomes a heading over the two products, side by side */

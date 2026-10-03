@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ArrowRight, BookOpen, Braces, ChevronDown, Menu, Server, X } from 'lucide-react';
 import { HelpinBrand } from '@/components/HelpinBrand';
-import { GITHUB_URL, SIGNUP_URL, GithubIcon } from './ui';
+import { DISCORD_URL, GITHUB_URL, SIGNUP_URL, DiscordIcon, GithubIcon } from './ui';
 import { AskAgentMenuCard, PRODUCTS, ProductLink, ProductsMenu } from './ProductsMenu';
 import { DOCS } from './docsLinks';
 
@@ -133,16 +133,17 @@ export function PreviewNav({ tone = 'light' }: { tone?: 'light' | 'dark' }) {
         onBlurCapture={event => { if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)) close(); }}
         onFocusCapture={event => { if (event.target.matches(':focus-visible')) setHidden(false); }}>
         <div className="wrap nav-bar">
-          <Link href="/" className="logo" aria-label="Helpin homepage" onClick={close}><HelpinBrand variant={dark ? 'light-on-dark' : 'dark-on-light'} /></Link>
+          <Link prefetch={false} href="/" className="logo" aria-label="Helpin homepage" onClick={close}><HelpinBrand variant={dark ? 'light-on-dark' : 'dark-on-light'} /></Link>
           <div className="navlinks">
             <button ref={productToggle} className="nav-trigger" aria-expanded={open === 'product'} aria-controls="preview-product-menu" onPointerEnter={enterProduct} onPointerLeave={leaveProduct} onClick={event => { cancelHoverClose(); setOpen(openedByHover.current && event.detail > 0 ? 'product' : open === 'product' ? null : 'product'); openedByHover.current = false; }} onKeyDown={event => openWithKeyboard(event, 'product')}>Products<ChevronDown size={13} /></button>
-            <Link className="nav-direct" href="/developers" onClick={close}>Developers</Link>
-            <Link className="nav-direct" href="/pricing" onClick={close}>Pricing</Link>
+            <Link prefetch={false} className="nav-direct" href="/developers" onClick={close}>Developers</Link>
+            <Link prefetch={false} className="nav-direct" href="/pricing" onClick={close}>Pricing</Link>
           </div>
           <div className="navright">
             <a className="gh" href={GITHUB_URL} target="_blank" rel="noopener noreferrer" aria-label="Helpin on GitHub"><GithubIcon /><span>GitHub</span></a>
+            <a className="gh" href={DISCORD_URL} target="_blank" rel="noopener noreferrer" aria-label="Helpin on Discord"><DiscordIcon /><span>Discord</span></a>
             <a className="nav-signin" href="https://app.helpin.ai">Sign in</a>
-            <Link className="btn btn-primary" href={SIGNUP_URL} onClick={close}>Start free<ArrowRight size={15} /></Link>
+            <Link prefetch={false} className="btn btn-primary" href={SIGNUP_URL} onClick={close}>Start free<ArrowRight size={15} /></Link>
             <button ref={mobileToggle} className="nav-mobile-toggle" type="button" aria-expanded={mobileOpen} aria-controls="preview-mobile-menu" aria-label={mobileOpen ? 'Close navigation' : 'Open navigation'} onClick={() => { setMobileOpen(!mobileOpen); setOpen(null); }}>{mobileOpen ? <X size={21} /> : <Menu size={21} />}</button>
           </div>
         </div>
@@ -156,10 +157,11 @@ export function PreviewNav({ tone = 'light' }: { tone?: 'light' | 'dark' }) {
           <p className="nav-section-label">Products</p>
           <div className="nav-mobile-products">{PRODUCTS.map(item => <ProductLink item={item} key={item.label} />)}</div>
           <AskAgentMenuCard/>
-          <div className="nav-mobile-resources"><Link href="/pricing">Pricing<ArrowRight size={13} /></Link>
-            <Link href="/developers"><Braces size={17} />Developers<ArrowRight size={13} /></Link>
-            <Link href="/self-hosting"><Server size={17} />Open source & self-hosting<ArrowRight size={13} /></Link>
+          <div className="nav-mobile-resources"><Link prefetch={false} href="/pricing">Pricing<ArrowRight size={13} /></Link>
+            <Link prefetch={false} href="/developers"><Braces size={17} />Developers<ArrowRight size={13} /></Link>
+            <Link prefetch={false} href="/self-hosting"><Server size={17} />Open source & self-hosting<ArrowRight size={13} /></Link>
             <a href={DOCS.home}><BookOpen size={17} />Documentation</a>
+            <a href={DISCORD_URL} target="_blank" rel="noopener noreferrer"><DiscordIcon size={17} />Join our Discord<ArrowRight size={13} /></a>
           </div>
           <div className="nav-mobile-bottom"><a href={GITHUB_URL} target="_blank" rel="noopener noreferrer"><GithubIcon size={17} />View on GitHub</a><a href="https://app.helpin.ai">Sign in<ArrowRight size={14} /></a></div>
         </div>

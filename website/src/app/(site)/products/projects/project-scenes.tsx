@@ -1,42 +1,24 @@
 'use client';
 
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
-import { Check, GitPullRequest, MessageSquare, Pause, Play } from 'lucide-react';
+import { useState } from 'react';
+import { BookOpen, Check, Code2, GitPullRequest, ListChecks, MessageSquare, Pause, Play } from 'lucide-react';
 import { ProjectIntake } from './project-intake';
 import { SprintPlanning, RoadmapPlanning } from './planning-scenes';
-import { useBentoPlayback } from '../../_components/useBentoPlayback';
+import { useWorkflowPlayback } from '../../_components/useWorkflowPlayback';
+import { WorkflowAgent, WorkflowSources } from '../../_components/WorkflowParts';
+import './project-scene-story.css';
 
-type Variant = 'context'|'sprint'|'roadmap'|'agents';
-const SCENES: Record<Variant,{label:string;description:string}> = {
-  context: { label: 'customer request', description: 'Illustrative request-to-task workflow in OrbitDesk. Maya at Northstar Labs asks to test SSO with selected administrators first. Ask Agent prepares requirements, Engineering as the team, High priority, Sam as owner, and Sprint 24. Sam approves the plan, then task PRJ-214 is created with the original conversation and company linked. The conversation also shows the linked task.' },
-  sprint: { label: 'sprint planning', description: 'Illustrative sprint planning and closeout. Two selected backlog tasks join six existing tasks in Sprint 24. Later, six of eight tasks are completed. The two unfinished tasks carry into Sprint 25, retaining the original sprint history.' },
-  roadmap: { label: 'roadmap', description: 'Illustrative roadmap: the objective Make enterprise SSO easier to roll out groups three scheduled epics: Identity mapping, SSO pilot, and Rollout readiness, with dates and health visible.' },
-  agents: { label: 'project agents', description: 'Illustrative agent workflow: Planning agent prepares an admin-only SSO pilot, Coding task planner refines task PRJ-214, Coding agent prepares changes and tests, and Code reviewer returns review findings. Sam reviews the proposed change, which is not merged.' },
-};
-function Step({children,at=0,className=''}:{children:ReactNode;at?:number;className?:string}) { return <div className={`ps-step ${className}`} style={{'--ps-delay':`${at}s`} as CSSProperties}>{children}</div>; }
-function Agents() { return <>
-  <div className="ps-agent-task"><span className="ps-key">PRJ-214</span><h3>Add an admin-only SSO pilot</h3><span><MessageSquare size={12} />Northstar’s rollout discussion attached</span></div>
-  <div className="ps-agent-steps">{[
-    {name:'Planning agent',file:'atlas',action:'Define the scope.',detail:'An admin-only pilot—not a company-wide rollout.'},
-    {name:'Coding task planner',file:'scribe',action:'Work through the implementation.',detail:'Identify the enrollment controls, mapping checks, and acceptance criteria.'},
-    {name:'Coding agent',file:'forge',action:'Prepare the change.',detail:'Add pilot controls and tests for accounts outside the pilot.'},
-    {name:'Code reviewer',file:'lens',action:'Check the result.',detail:'Review access boundaries, test coverage, and remaining verification.'},
-  ].map((agent,index)=><Step at={.4+index*.8} key={agent.name}><img src={`/new/agents/${agent.file}.svg`} width={34} height={34} alt="" /><div><span>{agent.name}</span><strong>{agent.action}</strong><small>{agent.detail}</small></div><Check size={14} /></Step>)}</div>
-  <Step at={4} className="ps-human-review"><GitPullRequest size={18} /><div><strong>Ready for Sam’s review</strong><span>Proposed changes · Not merged</span></div><img src="/new/avatars/sam.webp" width={27} height={27} alt="" /></Step>
-</>; }
-export function ProjectScene({variant}:{variant:Variant}) {
-  const planning = variant === 'sprint' || variant === 'roadmap' || variant === 'context';
-  const {container,playing,cycle}=useBentoPlayback(variant === 'sprint' ? 18000 : planning ? 14000 : 10000);
-  const [paused,setPaused]=useState(false);
-  const active = playing && !paused;
-  const [frame, setFrame] = useState(3);
-  useEffect(() => {
-    if (!active || !planning) return;
-    setFrame(0);
-    const times = variant === 'sprint' ? [2000, 5500, 8500, 11000] : [2000, 4500, 7000];
-    const timers = times.map((time, index) => setTimeout(() => setFrame(index + 1), time));
-    return () => timers.forEach(clearTimeout);
-  }, [active, planning, cycle, variant]);
-  const phase = active ? frame : variant === 'sprint' ? 4 : 3;
-  return <div className={`project-scene ps-${variant}`} ref={container} data-playing={active} data-phase={planning ? phase : undefined}><div className="ps-toolbar"><span><span className="ps-workspace">O</span>OrbitDesk<span className="ps-toolbar-separator">/</span>{variant==='context'?'Requests':variant==='roadmap'?'Roadmap':variant==='sprint'?'Sprints':'Projects'}</span><button type="button" aria-label={`${paused?'Play':'Pause'} ${SCENES[variant].label} animation`} aria-pressed={paused} onClick={()=>setPaused(!paused)}>{paused?<Play size={12} aria-hidden="true"/>:<Pause size={12} aria-hidden="true"/>}</button></div><div className="ps-scene-content" key={cycle} role="img" aria-label={SCENES[variant].description}><div aria-hidden="true">{variant==='context'?<ProjectIntake phase={phase}/>:variant==='sprint'?<SprintPlanning phase={phase}/>:variant==='roadmap'?<RoadmapPlanning phase={phase}/>:<Agents/>}</div></div></div>;
+type Variant = 'context' | 'sprint' | 'roadmap' | 'agents';
+const BEATS = { context: [0,1200,3000,4800,7400,9200], sprint: [0,2400,5500,8200,10600], roadmap: [0,2400,4800,7600], agents: [0,1200,3000,4800,6600,8500,10400] };
+function Agents({ phase }: { phase: number }) {
+  return <div className="ps-agent-story"><div className="ps-agent-task"><span className="ps-key">PRJ-214</span><h3>Add an admin-only SSO pilot</h3><span><MessageSquare size={12} />Maya’s rollout request attached</span></div>
+    <WorkflowAgent name="Scribe" role="Coding task planner" status={phase === 0 ? 'Thinking…' : phase < 4 ? 'Reading the scope and codebase' : phase < 6 ? 'Coordinating implementation and review' : 'Ready for Sam’s review'} working={phase > 0 && phase < 6} />
+    <div className="ps-agent-stage">{phase > 0 && phase < 4 && <WorkflowSources sources={[{icon:ListChecks,label:'Task requirements',detail:'Pilot access for selected admins only'},{icon:Code2,label:'Connected repository',detail:'Enrollment controls and role mapping'},{icon:BookOpen,label:'Team instructions',detail:'Access-boundary tests required'}]} phase={phase} />}
+    {phase >= 4 && <div className="wf-outcome"><div className="ps-agent-run"><img src="/new/agents/forge.svg" width={30} height={30} alt="" /><div><strong>Forge</strong><span>{phase < 5 ? 'Adding pilot controls and tests…' : 'Pilot controls and tests ready'}</span></div>{phase >= 5 && <Check size={14} />}</div>{phase >= 5 && <div className="ps-agent-run"><img src="/new/agents/lens.svg" width={30} height={30} alt="" /><div><strong>Lens</strong><span>{phase < 6 ? 'Reviewing access boundaries…' : 'Review findings attached'}</span></div>{phase >= 6 && <Check size={14} />}</div>}{phase >= 6 && <div className="ps-human-review"><GitPullRequest size={18} /><div><strong>Pull request ready for Sam</strong><span>Awaiting approval</span></div><img src="/new/avatars/sam.webp" width={27} height={27} alt="" /></div>}</div>}</div>
+  </div>;
+}
+export function ProjectScene({ variant }: { variant: Variant }) {
+  const [paused,setPaused] = useState(false);
+  const { container, playing, phase, cycle, reducedMotion } = useWorkflowPlayback({ paused, beats: BEATS[variant], duration: variant === 'sprint' ? 16500 : 15500, resetKey: variant });
+  return <div className={`project-scene ps-${variant}`} ref={container} data-playing={playing} data-phase={phase}><div className="ps-toolbar"><span><span className="ps-workspace">O</span>OrbitDesk<span className="ps-toolbar-separator">/</span>{variant==='context'?'Requests':variant==='roadmap'?'Roadmap':variant==='sprint'?'Sprints':'Projects'}</span>{!reducedMotion && <button type="button" aria-label={`${paused?'Play':'Pause'} ${variant} animation`} aria-pressed={paused} onClick={()=>setPaused(!paused)}>{paused?<Play size={12}/>:<Pause size={12}/>}</button>}</div><div className="ps-scene-content" key={cycle}>{variant==='context'?<ProjectIntake phase={phase}/>:variant==='sprint'?<SprintPlanning phase={phase}/>:variant==='roadmap'?<RoadmapPlanning phase={phase}/>:<Agents phase={phase}/>}</div></div>;
 }

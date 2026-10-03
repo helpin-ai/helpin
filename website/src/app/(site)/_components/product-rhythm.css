@@ -1,0 +1,16 @@
+/* Product pages share the homepage's type and spacing. Purpose-specific
+   comparison, developer and deployment layouts keep their own composition. */
+.hp3 :is(.agents-page,.support-page,.projects-page,.crm-page,.knowledge-page,.meetings-page) section .sec-head h2{font-size:clamp(1.75rem,3vw,2.5rem);line-height:1.15;letter-spacing:-.02em}
+.hp3 :is(.agents-page,.support-page,.projects-page,.crm-page,.knowledge-page,.meetings-page) section .sec-head{gap:16px}
+.hp3 :is(.agents-page,.support-page,.projects-page,.crm-page,.knowledge-page,.meetings-page) section .sec-head .lede{font-size:16px;line-height:1.7}
+.hp3 :is(.agents-page,.support-page,.projects-page,.crm-page,.knowledge-page,.meetings-page)>section:not(:first-child):not(.final-cta)>.wrap:not([class*="-faq"]){max-width:1120px}
+@media(min-width:961px){.hp3 :is(.agents-split,.projects-split,.crm-split,.knowledge-split,.meetings-split){gap:64px}}
+@media(max-width:600px){.hp3 :is(.agents-page,.support-page,.projects-page,.crm-page,.knowledge-page,.meetings-page)>section:not(:first-child):not(.final-cta){padding-block:56px}.hp3 :is(.agents-page,.support-page,.projects-page,.crm-page,.knowledge-page,.meetings-page) section .sec-head .lede{font-size:15px;line-height:1.7}}
+
+/* One FAQ layout across product, platform, comparison, and pricing pages. */
+.hp3 section .wrap:is(.support-faq-grid,.projects-faq-grid,.agents-faq-grid,.crm-faq-grid,.knowledge-faq-grid,.meetings-faq-grid,.platform-faq-grid,.pricing-faq){display:grid;grid-template-columns:minmax(0,1fr);gap:38px;max-width:800px;margin-inline:auto}
+.hp3 section .wrap:is(.support-faq-grid,.projects-faq-grid,.agents-faq-grid,.crm-faq-grid,.knowledge-faq-grid,.meetings-faq-grid,.platform-faq-grid,.pricing-faq) .sec-head{max-width:760px;margin:0 auto;text-align:center;justify-items:center}
+.hp3 section .wrap:is(.support-faq-grid,.projects-faq-grid,.agents-faq-grid,.crm-faq-grid,.knowledge-faq-grid,.meetings-faq-grid,.platform-faq-grid,.pricing-faq) .sec-head h2{margin-inline:auto}
+.hp3 .pricing-faq .pricing-faq-contact{text-align:center;margin-top:16px}
+.hp3 .cmp-block#questions{max-width:800px;margin-inline:auto}.hp3 .cmp-block#questions>h2{text-align:center}
+@media(max-width:600px){.hp3 section .wrap:is(.support-faq-grid,.projects-faq-grid,.agents-faq-grid,.crm-faq-grid,.knowledge-faq-grid,.meetings-faq-grid,.platform-faq-grid,.pricing-faq){gap:28px}}

@@ -41,7 +41,7 @@ export function PreviewFooter({ homepage = false }: { homepage?: boolean }) {
       <div className="wrap">
         <div className="footer-main">
           <div className="footer-brand">
-            <Link href="/" className="logo" aria-label="Helpin homepage">
+            <Link prefetch={false} href="/" className="logo" aria-label="Helpin homepage">
               <HelpinBrand variant="light-on-dark" />
             </Link>
             <p>One customer history.<br />{homepage ? "A shared workspace for your team and AI agents." : <>A workspace for your team<br />and agents.</>}</p>
@@ -60,7 +60,7 @@ export function PreviewFooter({ homepage = false }: { homepage?: boolean }) {
                       ) : link.href.startsWith('mailto:') ? (
                         <a href={link.href}>{link.label}</a>
                       ) : (
-                        <Link href={link.href}>{link.label}</Link>
+                        <Link prefetch={false} href={link.href}>{link.label}</Link>
                       )}
                     </li>
                   ))}
@@ -76,12 +76,12 @@ export function PreviewFooter({ homepage = false }: { homepage?: boolean }) {
             <a href="mailto:hello@helpin.ai" aria-label="Email Helpin"><Mail size={18} aria-hidden="true" /></a>
           </div>
         </div>
-        {homepage && <p className="footer-descriptor">Helpin — Support, projects, CRM, meetings, and docs. Connected by customer history. Powered by AI agents.</p>}
+        {homepage && <p className="footer-descriptor">Helpin brings support, projects, CRM, meetings, and docs together for your team and AI agents.</p>}
         <div className="footer-bottom">
           <nav className="footer-legal" aria-label="Legal and brand resources">
-            <Link href="/branding">Branding</Link>
-            <Link href="/privacy">Privacy</Link>
-            <Link href="/terms">Terms</Link>
+            <Link prefetch={false} href="/branding">Branding</Link>
+            <Link prefetch={false} href="/privacy">Privacy</Link>
+            <Link prefetch={false} href="/terms">Terms</Link>
             <a href={`${GITHUB_URL}/blob/develop/SECURITY.md`} target="_blank" rel="noopener noreferrer">Security</a>
           </nav>
           <p>© {new Date().getFullYear()} Helpin AI.</p>

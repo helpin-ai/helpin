@@ -22,13 +22,13 @@ export const DEMO_CONFIG: WidgetConfig = {
 
 const SCRIPT: Omit<Message, 'conversationId' | 'isInternal' | 'createdAt'>[] = [
   { id: 'question', role: 'customer', content: 'Our export is still incomplete. Any progress since yesterday?' },
-  { id: 'answer', role: 'ai', senderAvatar: '/brand/helpin-icon-ink.svg', content: 'I found your earlier report: 10,000 contacts exported instead of 18,400. Let me check the latest logs.', aiReplyKind: 'answer' },
+  { id: 'answer', role: 'ai', senderAvatar: '/brand/helpin-icon-ink.svg', content: 'I found yesterday’s report. I’ll check the export logs.', aiReplyKind: 'answer' },
   { id: 'followup', role: 'customer', content: 'The smaller report worked, but we still need the full list.' },
-  { id: 'handoff', role: 'ai', senderAvatar: '/brand/helpin-icon-ink.svg', content: 'The full export is still stopping at 10,000 rows. Your filters look right. I’m passing your report and the findings to Sam.' },
+  { id: 'handoff', role: 'ai', senderAvatar: '/brand/helpin-icon-ink.svg', content: 'The logs show a pagination issue. I’m passing the findings to Sam.' },
   { id: 'joined', role: 'system', content: 'Sam Rivera joined the conversation', systemEventType: 'teammate_joined', senderName: 'Sam Rivera', senderAvatar: '/new/avatars/sam.webp' },
-  { id: 'teammate', role: 'agent', content: 'Hi Maya, I have your earlier messages and the logs. I’ve linked them to the engineering task. We’ll update you here when the fix is ready.', senderName: 'Sam Rivera', senderAvatar: '/new/avatars/sam.webp' },
+  { id: 'teammate', role: 'agent', content: 'Hi Maya, I’ve linked the report to engineering. We’ll update you here.', senderName: 'Sam Rivera', senderAvatar: '/new/avatars/sam.webp' },
   { id: 'released', role: 'system', senderName: 'Release status', content: 'After the team confirms the release' },
-  { id: 'resolved', role: 'ai', senderAvatar: '/brand/helpin-icon-ink.svg', content: 'The export fix has been released, Maya. Please run your report again and let us know whether all 18,400 contacts are included.' },
+  { id: 'resolved', role: 'ai', senderAvatar: '/brand/helpin-icon-ink.svg', content: 'The fix is live, Maya. Please try the full export again.' },
 ];
 
 export const DEMO_MESSAGES: Message[] = SCRIPT.map(message => ({

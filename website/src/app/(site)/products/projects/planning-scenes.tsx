@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react';
+import { WorkflowClick } from '../../_components/WorkflowParts';
 import { ArrowDown, CalendarDays, Check, CheckCheck, Flag, GitBranch, Target } from 'lucide-react';
 
 export function SprintPlanning({ phase }: { phase: number }) {
@@ -7,16 +8,17 @@ export function SprintPlanning({ phase }: { phase: number }) {
   const closed = phase >= 3;
   return <div className="pp-sprint" data-stage={phase}>
     <div className="pp-heading"><div><span className="pp-eyebrow">ENGINEERING</span><h3>Sprint 24</h3></div><span className="pp-status" data-tone={closed ? 'sage' : 'neutral'}>{closed ? <Check size={12} /> : <i />}{closed ? 'Completed' : planning ? 'Planned' : 'Active'}</span></div>
-    <div className="pp-date"><CalendarDays size={12} />Today–Oct 2</div>
+    <div className="pp-date"><CalendarDays size={12} />Sep 21–Oct 2</div>
     <div className="pp-progress-label"><span>{planning ? <><strong>{phase === 0 ? '6' : '8'} tasks</strong> {phase === 0 ? 'already planned' : 'committed to the sprint'}</> : <><strong>6 of 8</strong> tasks completed</>}</span><strong>{planning ? (phase === 0 ? '2 selected' : 'Ready to start') : '75%'}</strong></div>
     <div className="pp-progress">{Array.from({ length: 8 }, (_, index) => <span key={index} data-done={index < 6 || phase === 1} style={{ '--pp-delay': `${index * .14}s` } as CSSProperties}>{!planning && index < 6 && <Check size={11} />}</span>)}</div>
     <div className="pp-progress-legend"><span><i />{planning ? 'Sprint commitment' : '6 completed'}</span><span><i />{planning ? 'Owners stay attached' : '2 unfinished'}</span></div>
     <div className="pp-transfer" data-carried={moved}>
-      <div className="pp-source"><div className="pp-source-summary"><CheckCheck size={20} /><span><strong>{planning ? '8 tasks committed to Sprint 24' : 'Completed work stays recorded in Sprint 24.'}</strong><small>{planning ? 'Selected work is ready for the team' : 'Two unfinished tasks carried forward'}</small></span></div></div>
+      <div className="pp-source"><div className="pp-source-summary"><CheckCheck size={20} /><span><strong>{planning ? (phase === 0 ? '2 backlog tasks selected' : '8 tasks committed to Sprint 24') : 'Completed work stays recorded in Sprint 24.'}</strong><small>{planning ? (phase === 0 ? 'Add them to the 6 planned tasks' : 'Selected work is ready for the team') : (moved ? 'Two unfinished tasks carried forward' : '2 unfinished tasks to carry forward')}</small></span></div></div>
       <div className="pp-transfer-path"><span /><ArrowDown size={14} /><span className="pp-transfer-caption">{planning ? 'Backlog → Sprint 24' : 'Sprint 24 → Sprint 25'}</span><span /></div>
-      <div className="pp-destination"><div><h4>{planning ? 'Sprint 24' : 'Sprint 25'}</h4><span className="pp-status" data-tone={moved ? 'sage' : 'neutral'}>{moved ? (planning ? '2 tasks added' : '2 carried over') : 'Planned'}</span></div><span className="pp-date"><CalendarDays size={11} />{planning ? 'Today–Oct 2' : 'Oct 5–16'}</span></div>
+      <div className="pp-destination"><div><h4>{planning ? 'Sprint 24' : 'Sprint 25'}</h4><span className="pp-status" data-tone={moved ? 'sage' : 'neutral'}>{moved ? (planning ? '2 tasks added' : '2 carried over') : 'Planned'}</span></div><span className="pp-date"><CalendarDays size={11} />{planning ? 'Sep 21–Oct 2' : 'Oct 5–16'}</span></div>
       <div className="pp-carry-tasks">{[{ key: 'PRJ-214', title: 'Add an admin-only SSO pilot', owner: 'Sam' }, { key: 'PRJ-217', title: 'Prepare the SSO pilot guide', owner: 'Jules' }].map(task => <div key={task.key}><span className="pp-task-state" /><div><small>{task.key}</small><strong>{task.title}</strong></div>{task.owner === 'Sam' ? <img src="/new/avatars/sam.webp" width={22} height={22} alt="" /> : <span className="pp-owner pp-owner-jules">JP</span>}</div>)}</div>
     </div>
+    {(phase === 0 || phase === 2) && <div className="pp-action-demo">{phase === 0 ? 'Add to Sprint 24' : 'Complete sprint'}<WorkflowClick delay={600} /></div>}
     <div className="pp-closeout" data-recorded={phase === 4}><CheckCheck size={14} /><span>{['Choose the next tasks from the backlog', 'Sprint commitment recorded', 'At closeout · Review the unfinished work', 'Carryover keeps the original sprint linked', 'Sprint 24 closeout recorded'][phase]}</span></div>
   </div>;
 }
@@ -29,7 +31,7 @@ const epics = [
 export function RoadmapPlanning({ phase }: { phase: number }) {
   const focus = epics[Math.min(phase, 2)];
   return <div className="pp-roadmap">
-    <div className="pp-objective"><span><Target size={19} /></span><div><small>OBJECTIVE</small><strong>Make enterprise SSO easier to roll out.</strong></div><span className="pp-epic-count">3 epics</span></div>
+    <div className="pp-objective"><span><Target size={19} /></span><div><small>OBJECTIVE</small><strong>Increase ARR by $500k this quarter.</strong></div><span className="pp-epic-count">3 epics</span></div>
     <div className="pp-months"><span>SEP</span><span>OCT</span><span>NOV</span></div>
     <div className="pp-roadmap-rows">{epics.map((epic, index) => <div className="pp-epic" data-focused={phase === index} data-drawn={phase >= index} key={epic.name} style={{ '--pp-start': `${epic.start}%`, '--pp-width': `${epic.width}%` } as CSSProperties}>
       <div className="pp-epic-heading"><strong>{epic.name}</strong><span className="pp-status" data-tone={epic.tone}><i />{epic.health}</span></div>

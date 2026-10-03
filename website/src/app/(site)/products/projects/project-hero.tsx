@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Check, CheckCheck, GitMerge, GitPullRequest, Mail, MessageSquare, Pause, Play, Rocket } from 'lucide-react';
 import { ProjectAgentBadge, ProjectHeroBoard } from './project-hero-board';
-import { useBentoPlayback } from '../../_components/useBentoPlayback';
+import { useWorkflowPlayback } from '../../_components/useWorkflowPlayback';
+import { WorkflowClick } from '../../_components/WorkflowParts';
 import './project-hero.css';
 import './project-hero-light.css';
 import { TaskCalendarIcon, TaskFeatureIcon, TaskIcon, TaskPriorityIcon, TaskSprintIcon, TaskTickIcon, type TaskIconName } from './task-demo-icons';
@@ -15,50 +16,23 @@ function Property({ icon, label, children }: { icon: TaskIconName | ReactNode; l
 // Presentational snapshot of TaskDetailPanel / QuietDetailHeader, using the same
 // Inter font, field order and icon geometry, with marketing surface colors. No app mutations.
 export function ProjectHero({ theme = 'dark' }: { theme?: 'light' | 'dark' }) {
-  const { container, playing, cycle, reducedMotion } = useBentoPlayback(30000);
   const [paused, setPaused] = useState(false);
-  const active = playing && !paused;
-  const [frame, setFrame] = useState(7);
-  const elapsed = useRef(0);
-  const lastCycle = useRef(cycle);
-  useEffect(() => {
-    if (lastCycle.current !== cycle) {
-      lastCycle.current = cycle;
-      elapsed.current = 0;
-      setFrame(0);
-    }
-    if (!active) return;
-    if (elapsed.current === 0) setFrame(0);
-    const started = performance.now();
-    const timings = [2500, 6500, 10500, 14000, 17500, 21000, 23000];
-    const timers = timings.flatMap((time, index) => time > elapsed.current
-      ? [setTimeout(() => setFrame(index + 1), time - elapsed.current)] : []);
-    return () => {
-      elapsed.current += performance.now() - started;
-      timers.forEach(clearTimeout);
-    };
-  }, [active, cycle]);
-  // Visibility pauses preserve the task's column. Explicit pause and reduced
-  // motion show the completed story; pressing play starts a fresh run.
-  const phase = paused || reducedMotion ? 7 : frame;
-  function togglePlayback() {
-    if (paused) { elapsed.current = 0; setFrame(0); }
-    setPaused(value => !value);
-  }
+  const { container, playing: active, cycle, phase, reducedMotion } = useWorkflowPlayback({ paused, beats: [0,2500,6500,10500,14000,17500,21000,23000], duration: 30000 });
+  function togglePlayback() { setPaused(value => !value); }
   const state = ['Ready', 'In Progress', 'In Review', 'In Review', 'Done'][Math.min(phase, 4)];
   const colors = ['#818cf8', '#d99552', '#af73c3', '#af73c3', '#83b397'];
   const captions = ['TASK CREATED · CUSTOMER HISTORY ATTACHED', 'CODING AGENT BUILDS · TASK MOVES TO IN PROGRESS', 'CODE REVIEWER CHECKS · TASK MOVES TO IN REVIEW', 'SAM REVIEWS · MERGE AWAITS APPROVAL', 'CHANGE MERGED · TASK COMPLETE', 'RELEASE PUBLISHED · FOLLOW-UP PREPARED', 'SAM APPROVES · CUSTOMER UPDATE READY', 'CUSTOMER NOTIFIED · LOOP CLOSED'];
   const delay = (seconds: number) => ({ '--task-delay': `${seconds}s` }) as CSSProperties;
   return <div className="project-hero-art" data-theme={theme} ref={container} data-playing={active} data-phase={phase}>
-    <div className="project-hero-art-label"><span>{captions[phase]}</span><button type="button" aria-label={`${paused ? 'Play' : 'Pause'} project delivery animation`} aria-pressed={paused} onClick={togglePlayback}>{paused ? <Play size={12} /> : <Pause size={12} />}</button></div>
-    <div className="project-hero-stage" key={cycle} role="img" aria-label="Illustrative OrbitDesk delivery workflow. PRJ-214 adds an admin-only SSO pilot for Northstar Labs. Sam reviews the plan and linked rollout discussion. Coding agent prepares pilot controls and tests; Code reviewer checks them. Sam reviews the proposed changes before merging. The team separately confirms the release. Only after release does Sam approve the customer update, which is sent to Maya with the setup guide and checklist.">
+
+    <div className="project-hero-stage" key={cycle} role="region" aria-label="Illustrative OrbitDesk delivery workflow. PRJ-214 adds an admin-only SSO pilot for Northstar Labs. Sam reviews the plan and linked rollout discussion. Coding agent prepares pilot controls and tests; Code reviewer checks them. Sam reviews the proposed changes before merging. The team separately confirms the release. Only after release does Sam approve the customer update, which is sent to Maya with the setup guide and checklist.">
       <ProjectHeroBoard phase={phase} />
-      <div className="project-hero-task" aria-hidden="true"><div>
+      <div className="project-hero-task"><div>
         <div className="pth-header">
           <div className="pth-breadcrumb"><span><TaskIcon name="CheckListIcon" />Tasks</span><TaskIcon name="ArrowRight01Icon" /><span><TaskIcon name="Layers01Icon" />SSO pilot</span><TaskIcon name="ArrowRight01Icon" /><span><TaskSprintIcon />Sprint 24</span></div>
           <h2>Add an admin-only SSO pilot</h2>
           <div className="pth-meta"><span>PRJ-214</span><i />Engineering</div>
-          <div className="pth-actions"><div><TaskIcon name="Link01Icon" /><TaskIcon name="MoreVerticalIcon" /><TaskIcon name="ArrowUpRight01Icon" /><TaskIcon name="Cancel01Icon" /></div><span className="pth-saved"><TaskTickIcon />All changes saved</span></div>
+          <div className="pth-actions"><div><TaskIcon name="Link01Icon" /><TaskIcon name="MoreVerticalIcon" /><TaskIcon name="ArrowUpRight01Icon" /><TaskIcon name="Cancel01Icon" /></div><span className="pth-saved"><TaskTickIcon />Saved</span>{!reducedMotion && <button className="pth-inline-playback" type="button" aria-label={`${paused ? 'Play' : 'Pause'} project delivery animation`} aria-pressed={paused} onClick={togglePlayback}>{paused ? <Play size={12} /> : <Pause size={12} />}</button>}</div>
         </div>
         <div className="pth-layout">
           <div className="pth-main">
@@ -72,14 +46,14 @@ export function ProjectHero({ theme = 'dark' }: { theme?: 'light' | 'dark' }) {
             </div>
             <div className="pth-delivery" hidden={phase === 0}>
               <div className="pth-delivery-repo"><TaskIcon name="GitBranchIcon" /><span>orbitdesk / app<small>prj-214-sso-pilot → main</small></span></div>
-              <p className="pth-delivery-context">Northstar’s admin-only SSO pilot. The rollout discussion stays attached through every handoff.</p>
+              <p className="pth-delivery-context">PRJ-214 · Customer request and repository attached</p>
               <div className="pth-delivery-timeline">
-                <div data-complete="true"><span className="pth-delivery-dot"><Check size={10} /></span><div><strong>Plan reviewed</strong><p>Sam confirmed the scope and linked the rollout discussion.</p></div></div>
-                <div data-complete={phase > 1} data-current={phase === 1}><span className="pth-delivery-dot">{phase > 1 && <Check size={10} />}</span><div><strong><ProjectAgentBadge agent="forge" working={phase === 1} />Coding agent <small>{phase === 1 ? 'running' : 'completed'}</small></strong><p>{phase === 1 ? 'Preparing pilot controls and tests.' : 'Change prepared · Coding agent added the pilot controls and tests.'}</p></div></div>
-                <div data-complete={phase > 2} data-current={phase === 2} data-pending={phase < 2}><span className="pth-delivery-dot">{phase > 2 && <Check size={10} />}</span><div><strong><ProjectAgentBadge agent="lens" working={phase === 2} />Code reviewer <small>{phase < 2 ? 'queued' : phase === 2 ? 'running' : 'completed'}</small></strong><p>{phase > 2 ? 'Code and test coverage reviewed. Ready for Sam.' : 'Review the change against the customer requirements.'}</p></div></div>
-                <div data-complete={phase >= 4} data-current={phase === 3} data-pending={phase < 3}><span className="pth-delivery-dot">{phase >= 4 && <Check size={10} />}</span><div><strong><img src="/new/avatars/sam.webp" width={22} height={22} alt="" />Sam Rivera <small>{phase >= 4 ? 'approved' : phase === 3 ? 'reviewing' : 'pending'}</small></strong><p>{phase >= 4 ? 'Review completed · Agent findings and proposed changes reviewed by Sam.' : 'Review Change #728 before merging into main.'}</p></div></div>
-                <div data-complete={phase >= 4} data-pending={phase < 4}><span className="pth-delivery-dot">{phase >= 4 && <Check size={10} />}</span><div><strong>{phase >= 4 ? <GitMerge size={18} /> : <GitPullRequest size={18} />}Change #728 <small>{phase >= 4 ? 'merged' : 'awaiting approval'}</small></strong><p>{phase >= 4 ? 'Merged into main. PRJ-214 moved to Done.' : 'Add an admin-only SSO pilot'}</p></div></div>
-                <div data-complete={phase >= 5} data-pending={phase < 5}><span className="pth-delivery-dot">{phase >= 5 && <Check size={10} />}</span><div><strong><Rocket size={18} />{phase >= 5 ? 'Release confirmed' : 'Release pending'}</strong><p>{phase >= 5 ? 'The team released the approved change.' : 'A merged change still needs release confirmation.'}</p></div></div>
+                <div hidden={phase > 1} data-complete="true"><span className="pth-delivery-dot"><Check size={10} /></span><div><strong>Plan reviewed</strong><p>Sam confirmed the scope and linked the rollout discussion.</p></div></div>
+                <div hidden={phase > 2} data-complete={phase > 1} data-current={phase === 1}><span className="pth-delivery-dot">{phase > 1 && <Check size={10} />}</span><div><strong><ProjectAgentBadge agent="forge" working={phase === 1} />Coding agent <small>{phase === 1 ? 'running' : 'completed'}</small></strong><p>{phase === 1 ? 'Reading the request and codebase. Preparing pilot controls and tests.' : 'Change prepared · Coding agent added the pilot controls and tests.'}</p></div></div>
+                <div hidden={phase < 2 || phase > 3} data-complete={phase > 2} data-current={phase === 2} data-pending={phase < 2}><span className="pth-delivery-dot">{phase > 2 && <Check size={10} />}</span><div><strong><ProjectAgentBadge agent="lens" working={phase === 2} />Code reviewer <small>{phase < 2 ? 'queued' : phase === 2 ? 'running' : 'completed'}</small></strong><p>{phase > 2 ? 'Code and test coverage reviewed. Ready for Sam.' : 'Review the change against the customer requirements.'}</p></div></div>
+                <div hidden={phase < 3 || phase > 4} data-complete={phase >= 4} data-current={phase === 3} data-pending={phase < 3}><span className="pth-delivery-dot">{phase >= 4 && <Check size={10} />}</span><div><strong><img src="/new/avatars/sam.webp" width={22} height={22} alt="" />Sam Rivera <small>{phase >= 4 ? 'approved' : phase === 3 ? 'reviewing' : 'pending'}</small></strong><p>{phase >= 4 ? 'Review completed · Agent findings and proposed changes reviewed by Sam.' : 'Review Change #728 before merging into main.'}</p>{phase === 3 && <span className="pth-approve-action">Approve &amp; merge<WorkflowClick delay={1600} /></span>}</div></div>
+                <div hidden={phase < 4} data-complete={phase >= 4} data-pending={phase < 4}><span className="pth-delivery-dot">{phase >= 4 && <Check size={10} />}</span><div><strong>{phase >= 4 ? <GitMerge size={18} /> : <GitPullRequest size={18} />}Change #728 <small>{phase >= 4 ? 'merged' : 'awaiting approval'}</small></strong><p>{phase >= 4 ? 'Merged into main. PRJ-214 moved to Done.' : 'Add an admin-only SSO pilot'}</p></div></div>
+                <div hidden={phase < 5} data-complete={phase >= 5} data-pending={phase < 5}><span className="pth-delivery-dot">{phase >= 5 && <Check size={10} />}</span><div><strong><Rocket size={18} />{phase >= 5 ? 'Release confirmed' : 'Release pending'}</strong><p>{phase >= 5 ? 'The team released the approved change.' : 'A merged change still needs release confirmation.'}</p></div></div>
               </div>
             </div>
           </div>
@@ -98,8 +72,8 @@ export function ProjectHero({ theme = 'dark' }: { theme?: 'light' | 'dark' }) {
       </div>
     </div>
       <div className="pth-followup" data-visible={phase >= 5} data-approved={phase >= 6} data-sent={phase === 7} aria-hidden="true">
-        <div className="pth-followup-header"><img src={theme === 'light' ? '/brand/helpin-icon-ink.svg' : '/brand/helpin-icon-white.svg'} width={26} height={26} alt="" /><span><strong>Ask Agent</strong><small>Back to the customer</small></span><span className="pth-followup-status">{phase === 7 ? <><CheckCheck size={12} />Sent</> : phase === 6 ? <><Check size={12} />Approved</> : 'For review'}</span></div>
-        <div className="pth-followup-body"><div className="pth-release"><Rocket size={13} /><span>Release confirmed</span><small>PRJ-214</small></div><p className="pth-followup-explainer">The team released the approved change. The customer follow-up is prepared for review.</p><div className="pth-followup-customer"><img src="/new/avatars/maya.webp" width={25} height={25} alt="" /><span><strong>Maya Chen</strong><small>Northstar Labs · Original conversation</small></span></div><div className="pth-followup-message"><div><Mail size={13} /><strong>{phase === 7 ? 'Customer update sent' : 'Customer update prepared'}</strong></div><p>Hi Maya, the admin-only SSO pilot is ready. Here’s the setup guide and checklist for your team.</p></div><div className="pth-followup-approval"><img src="/new/avatars/sam.webp" width={21} height={21} alt="" /><span>{phase >= 6 ? 'After release · Approved by Sam' : 'After release · Waiting for Sam’s approval'}</span><Check size={13} /></div></div>
+        <div className="pth-followup-header"><img src={theme === 'light' ? '/brand/helpin-icon-ink.svg' : '/brand/helpin-icon-white.svg'} width={26} height={26} alt="" /><span><strong>Helpin AI</strong><small>Back to the customer</small></span><span className="pth-followup-status">{phase === 7 ? <><CheckCheck size={12} />Sent</> : phase === 6 ? <><Check size={12} />Approved</> : 'For review'}</span></div>
+        <div className="pth-followup-body"><div className="pth-release"><Rocket size={13} /><span>Release confirmed</span><small>PRJ-214</small></div><p className="pth-followup-explainer">The team released the approved change. The customer follow-up is prepared for review.</p><div className="pth-followup-customer"><img src="/new/avatars/maya.webp" width={25} height={25} alt="" /><span><strong>Maya Chen</strong><small>Northstar Labs · Original conversation</small></span></div><div className="pth-followup-message"><div><Mail size={13} /><strong>{phase === 7 ? 'Customer update sent' : 'Customer update prepared'}</strong></div><p>Hi Maya, the admin-only SSO pilot is ready. Here’s the setup guide and checklist for your team.</p></div><div className="pth-followup-approval"><img src="/new/avatars/sam.webp" width={21} height={21} alt="" /><span className={phase === 5 ? 'pth-followup-action' : undefined}>{phase >= 6 ? 'After release · Approved by Sam' : 'Approve customer update'}{phase === 5 && <WorkflowClick delay={2300} />}</span><Check size={13} /></div></div>
         <div className="pth-followup-footer">{phase === 7 ? <CheckCheck size={14} /> : <MessageSquare size={14} />}<span>{phase === 7 ? 'Sent to Maya · Customer loop closed' : 'Reply to Maya’s original conversation'}</span></div>
       </div>
     </div>

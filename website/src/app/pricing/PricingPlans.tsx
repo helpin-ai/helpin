@@ -55,13 +55,12 @@ export function PricingPlans() {
 
     <div className="pricing-plan-footnote">
       <p>Self-hosting is free and complete. Cloud adds hosting, included AI, and support. Cloud plans start with a 14-day Growth trial, no card required. Prices in USD, taxes extra.</p>
-      <a href="#compare-plans">Compare Cloud plans<ArrowRight size={14} aria-hidden="true" /></a>
+      <a href="#compare-plans">Compare all plans<ArrowRight size={14} aria-hidden="true" /></a>
     </div>
 
-    <div id="enterprise" className="pricing-enterprise-strip">
-      <Building2 size={20} aria-hidden="true" />
-      <p><strong>Enterprise</strong> A commercial license for teams that can’t use AGPL, your own AI provider keys on Cloud, deployment help, and support terms.</p>
-      <a className="btn-link" href={DEMO_URL} target="_blank" rel="noopener noreferrer">Talk to us<ArrowRight size={14} aria-hidden="true" /></a>
-    </div>
+    <article id="enterprise" className="pricing-enterprise-strip" aria-labelledby="enterprise-heading">
+      <div className="pricing-enterprise-copy"><span className="eyebrow"><Building2 size={17} aria-hidden="true" />Enterprise</span><h2 id="enterprise-heading">Helpin, set up for your company.</h2><p>Need a commercial license, a custom AI setup, or help with deployment? We’ll work through the requirements with your team.</p><a className="btn btn-primary" href={DEMO_URL} target="_blank" rel="noopener noreferrer">Talk to us about Enterprise<ArrowRight size={16} aria-hidden="true" /></a></div>
+      <ul className="pricing-enterprise-features">{['Commercial licensing', 'Custom AI setup', 'Deployment help', 'Support terms for your team'].map(feature => <li key={feature}><Check size={17} aria-hidden="true" />{feature}</li>)}</ul>
+    </article>
   </div></section>;
 }
