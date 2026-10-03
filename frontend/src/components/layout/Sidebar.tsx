@@ -26,7 +26,7 @@ import {
   SidebarHeader,
 } from '@/components/ui/sidebar';
 import { WorkspaceSwitcher } from '@/components/layout/WorkspaceSwitcher';
-import { SidebarHeaderToggle } from '@/components/layout/WorkspaceSidebarToggle';
+import { SidebarSearchButton } from './sidebar/SidebarSearchButton';
 import { TrialBanner } from '@edition';
 import { NotificationCenter } from '@/components/notifications/NotificationCenter';
 import { useSupportTeammatePresence, useUpdateMySupportTeammatePresence } from '@/hooks/queries/useSupport';
@@ -341,7 +341,7 @@ export function Sidebar() {
             <WorkspaceSwitcher onCreateWorkspace={() => navigate({ to: '/onboarding', search: { step: 'workspace' } })} />
           </div>
           <NotificationCenter />
-          <SidebarHeaderToggle />
+          <SidebarSearchButton />
         </div>
       </SidebarHeader>
 

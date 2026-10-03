@@ -13,7 +13,7 @@ export function SidebarSearchButton() {
           aria-label="Search your workspace"
           aria-keyshortcuts="Meta+K Control+K"
           onClick={openSearch}
-          className="flex size-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          className="flex size-11 shrink-0 cursor-pointer md:size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
           <Search01Icon className="h-4 w-4" aria-hidden="true" />
         </button>
