@@ -4,6 +4,7 @@ import { isModuleEnabled } from '@/lib/featureFlags';
 import type { WorkspaceModule } from '@/lib/types';
 import type { RailId, RailItem } from './types';
 import { SidebarRunsButton } from './SidebarRunsButton';
+import { SidebarSearchButton } from './SidebarSearchButton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 type SidebarRailProps = {
@@ -95,6 +96,7 @@ export function SidebarRail({
             {theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           </TooltipContent>
         </Tooltip>
+        <SidebarSearchButton />
         {canUseAskAgents && <SidebarRunsButton />}
         {accountMenu}
       </div>

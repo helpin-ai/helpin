@@ -52,7 +52,6 @@ import { SettingsRailNav } from './sidebar/SettingsRailNav';
 import { StandardRailNav } from './sidebar/StandardRailNav';
 import { CrmRailNav } from './sidebar/CrmRailNav';
 import { SupportRailNav } from './sidebar/SupportRailNav';
-import { SidebarSearchFooter } from './sidebar/SidebarSearchFooter';
 import { useSetupGuideEnabled } from '@/hooks/useSetupGuideEnabled';
 import type { SupportInboxView } from '@/lib/pmTypes';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -538,7 +537,6 @@ export function Sidebar() {
               />
             )}
             </div>
-            <SidebarSearchFooter workspaceName={currentWorkspace?.name} />
           </div>
         </div>
         <TrialBanner />
