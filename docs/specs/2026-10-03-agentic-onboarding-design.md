@@ -18,6 +18,8 @@ The initial audience is new workspace owners. Invited teammates can have a later
 
 Helpin is both open source and Cloud. The shared onboarding experience must adapt to the installation, available modules, permissions, integrations, and AI readiness. It cannot assume that every owner has Helpin-managed services.
 
+The existing **Ask Agent chat is the onboarding surface**. Owners learn to use the same agent interface they will return to for everyday work. Setup progress and structured actions belong in that conversation, with focused product settings opened when needed.
+
 ## Owner goals
 
 Ask: **What would you like your team to do with Helpin?**
@@ -54,15 +56,17 @@ The sequence is based on actual state. A workspace with existing knowledge shoul
 
 ## User experience
 
-Show one clear recommended action, its expected result, and a brief reason when that helps the owner decide. Keep deeper explanations in contextual help. Native forms, connection buttons, and previews should handle structured tasks; conversation handles ambiguity and corrections.
+Use the existing Ask Agent dock, conversation history, composer, questions, approvals, and inline work plan. Show one clear recommended action, its expected result, and a brief reason when that helps the owner decide. Keep deeper explanations in contextual help. Native forms, connection buttons, and previews should handle structured tasks within the conversation or open the relevant product surface and return to the same chat.
 
 The agent should do useful preparation: suggest company context, organize imported material, draft settings, or prepare real work for review. Distinguish proposed changes from saved configuration and verified results.
 
-Owners need easy ways to edit, change priority, postpone optional work, continue manually, and return later. Persist progress across reloads, connection callbacks, and sessions. Completion elsewhere in Helpin should update onboarding without asking the owner to repeat the action.
+Owners need easy ways to edit, change priority, postpone optional work, continue manually, and return later. Persist progress across reloads, connection callbacks, and sessions. Reopen the owner's existing onboarding conversation and carry its journey state across successor runs. Closing the dock must not discard setup progress. Completion elsewhere in Helpin should update onboarding without asking the owner to repeat the action.
 
 Show concise working and waiting states. When a step fails, retain completed work and offer a specific recovery action. Avoid repeated prompts while waiting for an import or connection. A dismissed recommendation should not immediately reappear without a relevant state change.
 
-Use accessible native controls and keyboard navigation. Keep the current task understandable on small screens. Exact screen placement and the relationship between the initial onboarding shell and the existing Setup page remain design decisions.
+Use accessible native controls and keyboard navigation. Keep the current task understandable on small screens. Entry into Ask Agent after workspace creation and the relationship with the existing Setup page remain design decisions; the choice of chat as the onboarding surface is settled.
+
+The first mockups should show this conversation across welcome and goal selection, context preparation, knowledge review, trying and correcting an AI answer, connection and launch approval, and returning to normal work. Include a Community state before AI is connected. System readiness UI must clearly distinguish unavailable AI from an actual agent response; provider credentials belong in the established settings surface, outside the conversation.
 
 ## Learning AI through setup
 
@@ -108,6 +112,7 @@ The following are code and documentation foundations inspected in the `waqar-fix
 | [Use case selection](../../frontend/src/lib/workspaceOnboardingUseCases.ts) | Maps owner choices to setup goals. |
 | [Setup service](../../server/internal/service/setup.go), [catalog](../../server/internal/service/setup_catalog.go), and [models](../../server/internal/model/setup.go) | Goals, task dependencies, evidence, recommendations, achievements, and personal preferences. |
 | [Agents and automation](../agents-and-automation.md) | Product-owned system agents use the shared agent execution path and durable `agent_run` records. |
+| [Ask Agent dock](../agent-dock.md) and [chat view](../../frontend/src/components/agents/dock/ChatView.tsx) | Existing conversation, run continuation, structured interactions, approvals, and inline work-plan surfaces to reuse. |
 | [AI usage metering](../ai-usage-metering.md) | Existing accounting and launch policy to preserve through edition contracts. |
 | [Edition architecture](../../ARCHITECTURE.md#editions-and-module-availability) | Shared code and commercial extension boundaries; module availability is separate from licensing. |
 
@@ -115,7 +120,7 @@ The [earlier setup design](2026-07-09-setup-success-journeys-design.md) includes
 
 ## Proposed technical responsibilities
 
-Use one product-owned onboarding system agent with the normal `agent_run` executor and Agent Runtime lifecycle. Onboarding behavior comes from its instructions, effective skills, allowed tools, and target context. This does not require a separate execution engine.
+Use the existing Ask Agent system preset and normal `agent_run` executor and Agent Runtime lifecycle. Express onboarding behavior through effective instructions, skills, allowed tools, and durable journey context associated with the chat. Onboarding should not require the owner to choose or switch to a separate agent. The exact context and skill activation contract remains an implementation decision.
 
 Persist a journey that can span multiple runs. Proposed state includes selected goals and priority, confirmed context, current milestone, linked run and artifact references, approval or input waits, blockers, optional postponements, evidence, and behavior version. Reuse existing setup records where their semantics fit. Exact schema and run target contracts require implementation design.
 
@@ -173,7 +178,7 @@ Keep this as the single design record while the scope is refined. A proposed del
 
 1. Choose the first owner journey and define its required setup, AI-learning milestones, edition behavior, and completion evidence.
 2. Audit the current journey and establish measurement, preserving existing capabilities.
-3. Add the agent, persistent state, and compact guided UI for that journey, including manual fallback and recovery.
+3. Add onboarding behavior and persistent journey state to Ask Agent, with focused interactions, manual fallback, and recovery.
 4. Validate representative Community and Cloud conditions, then pilot with controlled behavior versions.
 5. Review failures and adoption, improve the journey, and expand to additional owner goals based on evidence.
 
@@ -185,7 +190,7 @@ Implementation verification should cover AI-ready and AI-unconfigured installati
 
 - Which owner journey should ship first? Customer support is the worked example, not a committed first release.
 - What are the exact required milestones and observable completion criteria for that journey?
-- Where should the guided experience live, and how should it connect to the existing Setup page and agent dock?
+- When should the onboarding conversation open, and how should the existing Setup page link to it while avoiding duplicated progress?
 - Which configuration actions may run immediately, and which require a preview and approval?
 - What AI resources are available during Cloud onboarding, and how should Community explain provider setup and usage?
 - What evaluation data may be retained or shared in each edition, and how can self-hosted operators optionally contribute feedback?
