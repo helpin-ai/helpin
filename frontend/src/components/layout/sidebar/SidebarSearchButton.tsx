@@ -1,9 +1,11 @@
 import { Search01Icon } from '@/lib/icons';
 import { useSearchCommandStore } from '@/stores/searchCommandStore';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { isMacPlatform } from '../workspaceSwitcherShortcuts';
 
 export function SidebarSearchButton() {
   const openSearch = useSearchCommandStore((state) => state.openSearch);
+  const shortcut = isMacPlatform() ? '⌘K' : 'Ctrl+K';
 
   return (
     <Tooltip>
@@ -18,7 +20,12 @@ export function SidebarSearchButton() {
           <Search01Icon className="h-4 w-4" aria-hidden="true" />
         </button>
       </TooltipTrigger>
-      <TooltipContent side="right">Search your workspace</TooltipContent>
+      <TooltipContent side="right">
+        <span className="flex items-center gap-2">
+          Search your workspace
+          <kbd className="text-xs opacity-70">{shortcut}</kbd>
+        </span>
+      </TooltipContent>
     </Tooltip>
   );
 }
