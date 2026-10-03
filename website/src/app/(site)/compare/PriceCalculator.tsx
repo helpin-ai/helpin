@@ -15,6 +15,7 @@ const money = (value: number) => `$${Math.round(value).toLocaleString('en-US')}`
 const unitMoney = (value: number) => (Number.isInteger(value) ? money(value) : `$${value.toFixed(2)}`);
 const share = (value: number, total: number) => `${total > 0 ? (value / total) * 100 : 0}%`;
 const unitPrice = (plan: CalculatorPlan, billing: Billing) => (billing === 'monthly' && plan.monthly !== undefined ? plan.monthly : plan.annual);
+const annualTier = (plan: CalculatorPlan, billing: Billing, seats: number) => billing === 'annual' ? plan.annualTiers?.find(tier => seats <= tier.maxSeats) : undefined;
 const count = (value: number, [one, many]: readonly [string, string]) => `${value.toLocaleString('en-US')} ${value === 1 ? one : many}`;
 
 function Segmented<T extends string | number>({ label, value, options, onChange }: { label: string; value: T; options: readonly (readonly [T, string])[]; onChange: (value: T) => void }) {
@@ -85,13 +86,19 @@ export function PriceCalculator({ name, calculator }: { name: string; calculator
   const ai = !selfHosted ? calculator.ai : undefined;
   const aiCost = ai ? volume * ai.price : 0;
   const aiName = ai?.label.replace(' a month', '');
-  const rivalAt = (size: number) => Math.max(size, plan.minSeats ?? 1) * perSeat + aiCost;
+  const seatPriceAt = (size: number) => {
+    const band = annualTier(plan, billing, size);
+    return band ? band.price / 12 : Math.max(size, plan.minSeats ?? 1) * perSeat;
+  };
+  const rivalAt = (size: number) => seatPriceAt(size) + aiCost;
   const billedSeats = Math.max(seats, plan.minSeats ?? 1);
-  const seatCost = billedSeats * perSeat;
+  const tier = annualTier(plan, billing, seats);
+  const seatCost = seatPriceAt(seats);
   const rivalMonthly = seatCost + aiCost;
-  const rivalLines: Line[] = [[`${billedSeats} × ${plan.name} at ${unitMoney(perSeat)}`, money(seatCost)]];
+  const rivalLines: Line[] = [[tier ? `${plan.name}, up to ${tier.maxSeats} people` : `${billedSeats} × ${plan.name} at ${unitMoney(perSeat)}`, money(seatCost)]];
   if (ai) rivalLines.push([`${volume.toLocaleString('en-US')} ${aiName} × $${ai.price.toFixed(2)}`, money(aiCost)]);
   const rivalNote = [
+    tier ? `${money(tier.price)} billed annually for up to ${tier.maxSeats} people.` : '',
     plan.minSeats && seats < plan.minSeats ? `${plan.name} has a ${plan.minSeats}-seat minimum.` : '',
     billing === 'monthly' && !selfHosted && plan.monthly === undefined ? 'Monthly price not published; annual rate shown.' : '',
   ].filter(Boolean).join(' ');
@@ -102,15 +109,15 @@ export function PriceCalculator({ name, calculator }: { name: string; calculator
   const helpinLines: Line[] = selfHosted
     ? [['Community edition license', '$0'], [count(seats, calculator.seatsUnit), 'Included'], ['AI agents', 'Your AI provider']]
     : [[`${helpinPlan.name} plan, one workspace`, money(helpinMonthly)], [count(seats, calculator.seatsUnit), 'Included'], ['AI usage allowance', `${money(allowance)} included`]];
-  const helpinNote = selfHosted ? '' : `${helpinKey === 'starter' ? 'Starter includes 10 teams, 5,000 contacts and 500 documents. ' : ''}Heavy AI use can go past the allowance; overage is metered.`;
+  const helpinNote = selfHosted ? '' : `${helpinKey === 'starter' ? 'Starter includes 10 teams, 5,000 contacts and 500 documents. ' : ''}Every Cloud plan includes an AI allowance. Extra usage is metered only if you enable it.`;
 
   const billed = selfHosted ? 'self-hosted' : `billed ${billing === 'annual' ? 'annually' : 'monthly'}`;
   const yearlyGap = Math.abs(rivalMonthly - helpinMonthly) * 12;
   const leader = rivalMonthly > helpinMonthly ? 'helpin' : rivalMonthly < helpinMonthly ? 'rival' : 'even';
   const verdict = leader === 'helpin'
-    ? <>Helpin costs <em>{money(yearlyGap)} less</em> a year than {name}.</>
+    ? <>Helpin is an estimated <em>{money(yearlyGap)} less</em> a year on these inputs.</>
     : leader === 'rival'
-      ? <>{name} costs <em>{money(yearlyGap)} less</em> a year than Helpin.</>
+      ? <>{name} is an estimated <em>{money(yearlyGap)} less</em> a year on these inputs.</>
       : <>Helpin and {name} cost the same at these list prices.</>;
 
   return (
@@ -133,8 +140,8 @@ export function PriceCalculator({ name, calculator }: { name: string; calculator
       <div className="cmp-calc-result" data-leader={leader}>
         <p className="cmp-calc-context">Estimated at list prices · {count(seats, calculator.seatsUnit)}{ai ? ` · ${volume.toLocaleString('en-US')} ${aiName} a month` : ''} · {billed}</p>
         <div className="cmp-calc-quotes">
-          <Quote name={name} plan={plan.name} lines={rivalLines} monthly={rivalMonthly} note={rivalNote} />
           <Quote name="Helpin" helpin plan={selfHosted ? 'Community edition' : helpinPlan.name} lines={helpinLines} monthly={helpinMonthly} note={helpinNote} />
+          <Quote name={name} plan={plan.name} lines={rivalLines} monthly={rivalMonthly} note={rivalNote} />
         </div>
       </div>
 

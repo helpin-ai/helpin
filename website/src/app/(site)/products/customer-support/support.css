@@ -184,3 +184,8 @@
 
 /* Identity now lives in the controls section; details link to Developers. */
 .hp3 .support-controls-link { margin-top: 32px; text-align: center; }
+
+/* Keep the coverage example close to the problem it explains. */
+.hp3 .support-knowledge-grid{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:64px;align-items:center}
+.hp3 .support-knowledge-grid .sec-head{margin-bottom:0}
+@media(max-width:960px){.hp3 .support-knowledge-grid{grid-template-columns:1fr;gap:32px}}

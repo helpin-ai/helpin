@@ -9,7 +9,7 @@ import { ArrowRight, BookOpen, Bot, Building2, FolderKanban, MessagesSquare, Vid
 const PRODUCTS = [
   { name: 'Support', preview: 'inbox', Icon: MessagesSquare, title: 'Answer with the earlier conversation in view.', body: 'Handle chat and email together. Give teammates and agents the history to investigate the question and hand it over without starting again.', href: '/products/customer-support' },
   { name: 'Meetings', preview: 'meetings', Icon: Video, title: 'Keep the commitments after the call.', body: 'Capture the discussion, review decisions, and turn agreed next steps into linked work.', href: '/products/meetings' },
-  { name: 'Projects', preview: 'projects', Icon: FolderKanban, title: 'Manage the plan—not just the requests.', body: 'Organize roadmaps, sprints, dependencies, and objectives. Keep relevant customer needs attached while your team manages product development, maintenance, and internal work.', href: '/products/projects' },
+  { name: 'Projects', preview: 'projects', Icon: FolderKanban, title: 'Manage the plan and the everyday work.', body: 'Organize roadmaps, sprints, dependencies, and objectives. Keep relevant customer needs attached while your team manages product development, maintenance, and internal work.', href: '/products/projects' },
   { name: 'CRM', preview: 'crm', Icon: Building2, title: 'See the relationship behind the deal.', body: 'Manage contacts, companies, and pipelines alongside the conversations and work that explain the next move.', href: '/products/crm' },
   { name: 'Knowledge', preview: 'knowledge', Icon: BookOpen, title: 'Give people and agents a useful place to look.', body: 'Publish customer guides, maintain internal docs, and select the knowledge your agents can use.', href: '/products/knowledge' },
   { name: 'Agents', preview: 'agents', Icon: Bot, title: 'Put the history to work.', body: 'Use specialists to answer questions, plan tasks, and follow up after the release. Choose their tools and the actions that need review.', href: '/products/ai-agents' },
@@ -31,7 +31,7 @@ export function CommunityShowcase({ initial = 'Support' }: { initial?: (typeof P
     {PRODUCTS.map((product, index) => <div id={`${id}-${index}`} key={product.preview} hidden={active !== index}>
       {visited.has(index) && <>
         <div className="community-product-stage"><ProductPreview product={product.preview} theme="light" /></div>
-        <div className="community-product-caption"><div><h3>{product.title}</h3><p>{product.body}</p></div><Link className="platform-text-link" href={product.href}>Explore {product.name === 'Agents' ? 'AI Agents' : product.name}<ArrowRight size={15}/></Link></div>
+        <div className="community-product-caption"><div><h3>{product.title}</h3><p>{product.body}</p></div><Link prefetch={false} className="platform-text-link" href={product.href}>Explore {product.name === 'Agents' ? 'AI Agents' : product.name}<ArrowRight size={15}/></Link></div>
       </>}
     </div>)}
   </div>;

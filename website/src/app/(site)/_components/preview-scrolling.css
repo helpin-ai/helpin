@@ -1,13 +1,21 @@
-/* Marketing demos should only consume vertical scrolling after interaction.
-   Keep native scrolling, touch gestures, and keyboard focus; no wheel interception.
-   Dialogs are deliberately excluded so their content stays reachable. */
-.hp3 :is(.product-preview, .adp, .crm-workspace, .mw-preview, .kp-workspace, .aaw-scene, .support-workspace):not(:focus-within)
-  :is(.product-preview-viewport, .adp-scroll, .cw-table-scroll, .cw-record-content,
-      .cw-properties, .cw-crm, .cw-apps, .mw-panel, .kp-library,
-      .kp-workspace-nav, .kp-space-nav, .kp-app-rail, .kp-code pre,
-      .aaw-roster-list, .aaw-content, .swi-messages, .swi-queues, .swi-list,
-      .pth-layout, .pth-followup) {
-  overflow-y: hidden;
+/* Inline demos leave vertical scrolling to the page, even after a control
+   receives focus. Horizontal browsing and scripted animation remain available.
+   Scope this to mockup panes; real navigation and opened dialogs stay usable. */
+.hp3 :is(
+  .product-preview-viewport, .adp-scroll,
+  .cw-table-scroll, .cw-record-content, .cw-properties, .cw-crm, .cw-apps,
+  .cw-detail-tabs, .crm-deal-table-scroll, .crm-deal-agent,
+  .cp-content, .cp-table-scroll, .cp-tabs, .cp-steps ol,
+  .mw-panel, .kp-library, .kp-workspace-nav, .kp-space-nav, .kp-app-rail,
+  .kp-code pre, .aaw-roster-list, .aaw-content,
+  .swi-messages, .swi-queues, .swi-list, .pth-layout, .pth-followup,
+  .support-widget-transcript, .support-widget-mount .helpin-message-list,
+  .sdk-widget-mount .helpin-message-list, .sdk-code pre, .sdk-install,
+  .platform-selector
+) {
+  /* Component styles load lazily; this invariant must hold in any load order. */
+  overflow-y: hidden !important;
+  overscroll-behavior-y: auto;
 }
 
 .hp3 .adp:focus-visible {

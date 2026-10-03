@@ -1,3 +1,4 @@
+import { WorkScene } from '../../_components/WorkScene';
 import { HeroVortex } from '../../_components/HeroVortex';
 import { DEMO_URL, FAQList } from '../../_components/ui';
 import { createPageMetadata, PAGE_SEO } from '@/lib/metadata';
@@ -5,6 +6,8 @@ import Link from "next/link";
 import {
   ArrowRight,
   Building2,
+  CheckCircle2,
+  MessagesSquare,
   ChevronRight,
   FileInput,
   ListFilter,
@@ -16,7 +19,7 @@ import { PreviewNav } from "../../_components/PreviewNav";
 import { PreviewFooter } from "../../_components/PreviewFooter";
 import { ConnectedWorkspace } from "../../_components/ConnectedWorkspace";
 import { CtaRow, SectionHead } from "../../_components/ui";
-import { CRMPipeline, CRMSignals } from "./crm-scenes";
+import { CRMPipeline } from "./crm-scenes";
 import { CRMPlaybook } from "./crm-playbook";
 import { CRMWorkspace } from "./crm-workspace";
 import "./crm.css";
@@ -80,10 +83,6 @@ const FAQS = [
     "Can we bring our existing data and email?",
     "Yes. Import contacts, companies, and deals from CSV and map the columns before processing. Connect Gmail and Google Calendar. Zendesk and Intercom import is coming soon."
   ],
-  [
-    "What is included on each plan?",
-    "On Cloud, Starter includes 5,000 contacts. Growth adds unlimited contacts and deal automation. Both are included when you self-host, with no plan limits."
-  ],
   ["Can we self-host CRM?", "Yes. CRM, including meetings, is part of the AGPL-3.0 product: free, with no plan limits. Community is in 0.2 beta. Your team runs the installation and covers hosting and provider costs.", "/self-hosting#whats-included"]
 ] as const;
 
@@ -94,31 +93,27 @@ export default function CRMPage() {
       <div className="crm-page">
         <section className="crm-hero motion-hero" aria-labelledby="crm-title"><HeroVortex variant="orbit" tone="dark" />
           <div className="wrap">
-            <div className="crm-breadcrumb">
-              <Link href="/">Helpin</Link>
-              <ChevronRight size={12} />
-              <span>CRM</span>
-            </div>
+
             <div className="crm-hero-copy">
               <span className="eyebrow">CRM for SaaS teams</span>
               <h1 id="crm-title">
-                Every deal,{" "}
-                <span>with the whole customer history.</span>
+                Know who needs a follow-up.{" "}
+                <span>Your agent prepares it.</span>
               </h1>
               <p className="lede">
-                Manage contacts, companies, and deals with the email, meetings, support conversations, and project work behind them. Ask Agent prepares you for calls and drafts follow-ups from that history.
+                The Beacon agent helps your team spot buying interest, understand a stalled deal, and prepare the next message. Keep contacts, deals, email, and customer conversations together.
               </p>
               <CtaRow primaryLabel="Start free trial" secondaryHref={DEMO_URL} secondaryLabel="Book a demo" /><p className="crm-supporting-note">14-day free trial · No card required<br />Open source · Self-host free, or let us run it</p>
             </div>
-            <CRMWorkspace /><p className="crm-demo-caption">Contacts and companies, each with an owner and the full history.</p>
+            <CRMWorkspace deals /><p className="crm-demo-caption">Contacts, companies, and deals, with the customer history connected.</p>
             <div className="crm-outcomes">
-              {[
-                ["01", "Know the account.", "See what your customer has asked, discussed, and agreed."],
-                ["02", "Find the next step.", "Signals flag buying intent, risk, and expansion, and quote the message behind each."],
-                ["03", "Follow through.", "Give the next step an owner and keep the work connected."],
-              ].map(([n, title, body]) => (
-                <div key={n}>
-                  <span>{n}</span>
+              {([
+                [MessagesSquare, "Know the account.", "See the customer’s conversations, meeting decisions, and open issues in one place."],
+                [Sparkles, "Find the next step.", "AI spots buying interest, renewal risks, and expansion opportunities, with the source attached."],
+                [CheckCircle2, "Follow through.", "Give every follow-up an owner. Agents help prepare the next action with the account context."],
+              ] as const).map(([Icon, title, body]) => (
+                <div key={title}>
+                  <span className="crm-outcome-icon"><Icon size={21} strokeWidth={1.5} aria-hidden="true" /></span>
                   <div>
                     <strong>{title}</strong>
                     <p>{body}</p>
@@ -134,26 +129,26 @@ export default function CRMPage() {
             <div className="crm-centered">
               <SectionHead
                 eyebrow="One account. A shared history."
-                title="Walk into the next call already up to speed."
-                lede="Bring the latest email, meeting decisions, support issues, and linked work into one view. Ask Agent to bring you up to speed before you speak—without asking every team for an update."
+                title="Get the account update before the call."
+                lede="Ask Agent what changed since your last conversation. See the open issue, latest email, and meeting decision before choosing what to say."
               />
             </div>
             <CRMWorkspace mode="account" /><p className="crm-demo-caption">Email, meeting notes, and the linked task, summarized on one record.</p>
             <div className="crm-record-benefits">
               <article>
-                <h3>Catch up before the call.</h3>
+                <h3>Ask for a quick briefing.</h3>
                 <p>
                   An AI summary on every record, regenerated on demand.
                 </p>
               </article>
               <article>
-                <h3>Give the next teammate a starting point.</h3>
+                <h3>Make the handoff easier.</h3>
                 <p>
                   Tasks, emails, meetings, calls, deals, support, and notes in one timeline.
                 </p>
               </article>
               <article>
-                <h3>Keep the relationship in view.</h3>
+                <h3>See the work the customer is waiting for.</h3>
                 <p>
                   Linked project tasks show what engineering owes the customer.
                 </p>
@@ -167,8 +162,8 @@ export default function CRMPage() {
             <div className="crm-centered">
               <SectionHead
                 eyebrow="Pipelines"
-                title="See where each deal stands, and why."
-                lede="Track each deal alongside the email, meetings, and support activity that explain it."
+                title="Keep the pipeline useful, not just up to date."
+                lede="See the conversation behind a deal stage. Use agent assistance and configured deal rules to keep the record moving with the relationship."
               />
             </div>
             <CRMPipeline /><p className="crm-demo-caption">Separate pipelines for new business, renewals, and expansion.</p>
@@ -181,21 +176,15 @@ export default function CRMPage() {
         </section>
 
         <section id="crm-signals" className="crm-dark section-motion"><HeroVortex variant="converge" tone="dark" />
-          <div className="wrap">
-            <div className="crm-section-intro">
+          <div className="wrap crm-split">
+            <div>
               <SectionHead
                 eyebrow="Signals"
-                title="Spot the opportunity. Understand the concern."
-                lede="Helpin reads email, meetings, support conversations, and linked project work for buying intent, risk, and expansion. Each signal quotes the message it came from."
+                title="Spot buying interest while the conversation is fresh."
+                lede="A prospect asks about plans in chat. A customer mentions adding a team. Helpin finds these signals in conversations and meetings, with a source you can check before the Beacon agent helps you follow up."
               />
-              <span className="crm-small-label">
-                CUSTOMER EVIDENCE → NEXT ACTION
-              </span>
             </div>
-            <CRMSignals />
-            <p className="crm-dark-note">
-              Every signal links to its source. You decide what happens next.
-            </p>
+            <WorkScene variant="sales" />
           </div>
         </section>
 
@@ -205,14 +194,14 @@ export default function CRMPage() {
             <div className="crm-centered cp-intro">
               <SectionHead
                 eyebrow="Playbooks"
-                title="Give every follow-up milestones, owners, and approvals."
-                lede="Turn a signal into a plan with milestones and success criteria. With automation on, an agent checks progress on a schedule and proposes next steps for your approval."
+                title="Know who to follow up with, and what to say."
+                lede="Set a follow-up plan and owner. With automation enabled, an agent checks progress on a schedule and prepares the next action. Your approval rules decide what it can send or change."
               />
-              <Link className="crm-text-link" href="/products/ai-agents">
+              <Link prefetch={false} className="crm-text-link" href="/products/ai-agents">
                 Explore AI agents <ArrowRight size={16} />
               </Link>
             </div>
-            <CRMPlaybook /><p className="crm-demo-caption">Resolve the concern. Confirm the outcome. Agree on what comes next.</p>
+            <CRMPlaybook />
           </div>
         </section>
 
@@ -220,7 +209,7 @@ export default function CRMPage() {
           <div className="wrap">
             <SectionHead
               eyebrow="The essentials, connected"
-              title="Everyday CRM, covered."
+              title="Your everyday CRM. With agents to help."
             />
             <div className="crm-feature-grid">
               {ESSENTIALS.map(({ Icon, title, body }) => (
@@ -237,11 +226,11 @@ export default function CRMPage() {
         <section id="crm-faq">
           <div className="wrap crm-faq-grid">
             <SectionHead
-              eyebrow="Before you bring your relationships over"
-              title="Get to know Helpin CRM."
+              eyebrow="Questions, answered"
+              title="FAQs about Helpin’s CRM"
             />
             <div className="crm-faqs">
-              <FAQList items={FAQS} className="faq-items" /><Link className="crm-text-link" href="/self-hosting">Explore self-hosting<ArrowRight size={16} /></Link>
+              <FAQList items={FAQS} className="faq-items" /><Link prefetch={false} className="crm-text-link" href="/self-hosting">Explore self-hosting<ArrowRight size={16} /></Link>
             </div>
           </div>
         </section>
@@ -253,9 +242,9 @@ export default function CRMPage() {
             <ConnectedWorkspace />
             <div className="final">
               <span className="eyebrow">Start with the history.</span>
-              <h2 id="crm-final-title">Your deals, next to<br />the work behind them.</h2>
+              <h2 id="crm-final-title">Give your sales team<br />a useful next step.</h2>
               <p className="lede">
-                Import your contacts, connect Gmail and Google Calendar, and give your team and Ask Agent the same customer history.
+                Bring your contacts and connect Gmail and Google Calendar. The Beacon agent helps your team catch up, prioritize, and follow through.
               </p>
               <CtaRow primaryLabel="Start free trial" secondaryHref={DEMO_URL} secondaryLabel="Book a demo" /><p className="crm-supporting-note">14-day free trial · No card required<br />Open source · Self-host free, or let us run it</p>
             </div>

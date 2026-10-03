@@ -168,3 +168,5 @@
  .hp3 .kp2-demo *, .hp3 .kp2-demo *::before, .hp3 .kp2-demo *::after { animation: none !important; transition: none !important; }
  .hp3 .kp2-pause, .hp3 .kp2-packet, .hp3 .kp2-mobile-packet { display: none; }
 }
+
+.hp3 .kp2-demo:not([data-phase="3"]) .kp2-doc-body,.hp3 .kp2-response[data-ready=false]{visibility:hidden}.hp3 .kp2-demo[data-phase="3"] .kp2-doc-body{animation:wf-arrive .4s both}

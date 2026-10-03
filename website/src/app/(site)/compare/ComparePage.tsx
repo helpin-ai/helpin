@@ -1,10 +1,6 @@
 import Link from 'next/link';
 import { preload } from 'react-dom';
-import {
-  ArrowRight, ArrowUpRight, Award, BarChart3, Blocks, BookOpenCheck, Bot, CalendarCheck, Check, ChevronRight, Cloud, Cpu, Feather,
-  GitBranch, GitPullRequest, Handshake, Import, Inbox, type LucideIcon, Megaphone, MessagesSquare, Minus, PenLine, RefreshCw,
-  Rocket, Scale, Server, ShieldCheck, Smartphone, Sprout, Users, Wallet, X, Zap,
-} from 'lucide-react';
+import { ArrowRight, ArrowUpRight, Award, BarChart3, Blocks, BookOpenCheck, Bot, CalendarCheck, Check, Cloud, Cpu, Feather, GitBranch, GitPullRequest, Handshake, Import, Inbox, type LucideIcon, Megaphone, MessagesSquare, Minus, PenLine, RefreshCw, Rocket, Scale, Server, ShieldCheck, Smartphone, Sprout, Users, Wallet, X, Zap } from 'lucide-react';
 import { SITE_URL } from '@/lib/metadata';
 import { article, JsonLd, organization } from '@/lib/structured-data';
 import { CustomerLogos } from '../_components/CustomerLogos';
@@ -19,7 +15,6 @@ import { CompareFilm } from './CompareFilm';
 import { InViewOnce } from './InViewOnce';
 import { LazyPreview } from './LazyPreview';
 import { PriceCalculator } from './PriceCalculator';
-import { Toc } from './Toc';
 
 const ICONS: Record<IconKey, LucideIcon> = {
   workflow: GitPullRequest, billing: Wallet, team: Users, hosting: Server, crm: Handshake, open: GitBranch,
@@ -88,9 +83,9 @@ function Versus({ name, competitor, helpin, verdict }: { name: string; competito
   return (
     <div className="cmp-versus">
       <div className="cmp-sides">
-        <Side name={name}>{competitor}</Side>
-        <span className="cmp-versus-badge" aria-hidden="true">vs</span>
         <Side name="Helpin">{helpin}</Side>
+        <span className="cmp-versus-badge" aria-hidden="true">vs</span>
+        <Side name={name}>{competitor}</Side>
       </div>
       {verdict ? <p className="cmp-verdict"><Scale size={15} aria-hidden="true" /><span><b>The difference:</b> {verdict}</span></p> : null}
     </div>
@@ -110,11 +105,11 @@ function Editions() {
         <small>14 days, no card required</small>
       </article>
       <article>
-        <header><GitBranch size={20} aria-hidden="true" /><div><h3>Community edition</h3><span>Open source · AGPL-3.0 · 0.2 beta</span></div></header>
+        <header><GitBranch size={20} aria-hidden="true" /><div><h3>Community edition</h3><span>Open source · AGPL-3.0</span></div></header>
         <ul>
           {['Free, with no plan limits or seat counts', 'Every product, coding agents included', 'Runs on your own AI provider and keys', 'Docker Compose on your own servers'].map(item => <li key={item}><Check size={14} strokeWidth={2.4} aria-hidden="true" />{item}</li>)}
         </ul>
-        <Link className="btn btn-secondary" href="/self-hosting">Self-host free<ArrowRight size={15} aria-hidden="true" /></Link>
+        <Link prefetch={false} className="btn btn-secondary" href="/self-hosting">Self-host free<ArrowRight size={15} aria-hidden="true" /></Link>
         <small><a href={GITHUB_URL} target="_blank" rel="noopener noreferrer">View the code on GitHub</a></small>
       </article>
     </div>
@@ -162,17 +157,6 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
   const video = compareVideo(competitor);
   // The poster is the hero's largest image, so fetch it early.
   preload(video.poster, { as: 'image', fetchPriority: 'high' });
-  const toc = [
-    { id: 'overview', label: 'At a glance' },
-    { id: 'why-switch', label: 'Why teams switch' },
-    { id: 'features', label: 'Core features' },
-    { id: 'pricing', label: 'Pricing and value' },
-    { id: 'hosting', label: 'Cloud or open source' },
-    { id: 'switching', label: 'Switching' },
-    { id: 'strengths', label: `Where ${name} is stronger` },
-    { id: 'fit', label: 'Which one fits' },
-    { id: 'questions', label: 'Questions' },
-  ];
   const structured = {
     '@context': 'https://schema.org',
     '@graph': [
@@ -206,11 +190,11 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
         <section className="platform-hero motion-hero">
           <HeroVortex variant="connections" tone="dark" />
           <div className="wrap">
-            <div className="platform-breadcrumb"><Link href="/">Helpin</Link><ChevronRight size={12} aria-hidden="true" /><Link href="/compare">Compare</Link><ChevronRight size={12} aria-hidden="true" /><span>{name}</span></div>
+
             <div className="platform-hero-grid">
               <div className="platform-hero-copy">
-                <span className="eyebrow">Open-source {name} alternative · {competitor.category}</span>
-                <h1>Helpin vs {name}: <span>{competitor.hero.accent}</span></h1>
+                <span className="eyebrow">Helpin vs {name} · Open-source alternative</span>
+                <h1>All your customer context in one place.<br /><span>{support ? 'No per-seat or per-resolution fees.' : 'No per-seat fees.'}</span></h1>
                 <p className="lede">{competitor.hero.lede}</p>
                 <CtaRow primaryLabel="Start free trial" primaryHref={SIGNUP_URL} secondaryHref={DEMO_URL} secondaryLabel="Talk to us about switching" />
                 <CtaNote trial support />
@@ -220,7 +204,7 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
                   <span><CalendarCheck size={14} aria-hidden="true" />Verified {checked}</span>
                 </div>
               </div>
-              <CompareFilm id="video" name={name} video={video} />
+              <CompareFilm id="video" video={video} />
             </div>
           </div>
         </section>
@@ -230,12 +214,11 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
         <section className="cmp-article-section">
           <div className="wrap cmp-article">
             <aside className="cmp-article-aside">
-              <Toc items={toc} />
               <div className="cmp-aside-cta">
                 <strong>Try Helpin free</strong>
                 <p>14-day Cloud trial, no card. Or self-host the open-source Community edition for free.</p>
                 <a className="btn btn-primary" href={SIGNUP_URL}>Start free trial →</a>
-                <Link className="cmp-aside-link" href="/self-hosting">Self-host free<ArrowRight size={13} aria-hidden="true" /></Link>
+                <Link prefetch={false} className="cmp-aside-link" href="/self-hosting">Self-host free<ArrowRight size={13} aria-hidden="true" /></Link>
               </div>
             </aside>
 
@@ -247,14 +230,14 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
                   <strong>The main difference is what each product is built around:</strong>
                   <ul>{copy.difference.map(item => <li key={item.lead}><b>{item.lead}</b> {item.text}</li>)}</ul>
                 </div>
-                <p>Here’s how the two compare across the capabilities teams ask about most. {competitor.tableLede}</p>
+                <p>{competitor.tableLede}</p>
                 <ComparisonTable competitor={competitor} />
                 <p className="cmp-small">Comparison data verified {checked}.</p>
               </section>
 
               <section id="why-switch" className="cmp-block">
-                <h2>{support ? `Why support teams switch from ${name}` : `Why teams look beyond ${name}`}</h2>
-                <p>{support ? 'Helpin is open source, on Helpin Cloud or your own servers. Beyond that, these are the four differences support teams notice first.' : 'Four common reasons teams give for looking elsewhere, and how Helpin handles each one.'}</p>
+                <h2>Why choose Helpin over {name}?</h2>
+                <p>Give agents the context and tools to carry out work, keep your team in control, and bring everyone into the same fast workspace.</p>
                 <div className="cmp-diff-grid">
                   {competitor.reasons.map((reason, index) => {
                     const Icon = ICONS[reason.icon];
@@ -291,9 +274,11 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
               <section id="pricing" className="cmp-block">
                 <h2>Pricing and value</h2>
                 <Versus name={name} competitor={copy.pricing} helpin={HELPIN_ARTICLE.pricing} />
-                <h3 className="cmp-subhead">Estimate what your team would pay</h3>
-                <p>Change the team size, plans and AI volume to match your team. The estimate uses list prices and says plainly when {name} costs less. <Link href="/pricing">See Helpin pricing</Link>.</p>
-                <PriceCalculator name={name} calculator={competitor.calculator} />
+                {competitor.calculator ? <>
+                  <h3 className="cmp-subhead">Estimate what your team would pay</h3>
+                  <p>Compare the plans for your team size and AI usage. Check the notes for costs outside the estimate, including any extra tools you need. <Link prefetch={false} href="/pricing">See Helpin pricing</Link>.</p>
+                  <PriceCalculator name={name} calculator={competitor.calculator} />
+                </> : <p>Compare the included teammates, AI allowance and the tools your team needs alongside the inbox. <Link prefetch={false} href="/pricing">See Helpin plans and allowances</Link>.</p>}
               </section>
 
               <section id="hosting" className="cmp-block">
@@ -333,8 +318,8 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
               </section>
 
               <section id="strengths" className="cmp-block">
-                <h2>Where {name} is stronger</h2>
-                <p>{name} is a good product. These are the areas where it’s ahead of Helpin today.</p>
+                <h2>Check the features your team depends on.</h2>
+                <p>These specific requirements are worth checking as you plan your move from {name}.</p>
                 <div className="cmp-strength-list">
                   {competitor.strengths.map(strength => {
                     const Icon = ICONS[strength.icon];
@@ -344,25 +329,26 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
               </section>
 
               <section id="fit" className="cmp-block">
-                <h2>Which one fits your team?</h2>
+                <h2>{competitor.summary.title}</h2>
                 <p>{competitor.summary.lede}</p>
                 <div className="cmp-choose">
-                  <article className="cmp-choose-rival">
-                    <header><h3>Choose {name} if…</h3></header>
-                    <ul>{competitor.summary.competitor.map(item => <li key={item}><ArrowRight size={15} aria-hidden="true" />{item}</li>)}</ul>
-                  </article>
                   <article className="cmp-choose-helpin">
                     <header><HelpinMark size={30} tone="dark" /><h3>Choose Helpin if…</h3></header>
                     <ul>{competitor.summary.helpin.map(item => <li key={item}><Check size={15} strokeWidth={2.2} aria-hidden="true" />{item}</li>)}</ul>
+                  </article>
+                  <article className="cmp-choose-rival">
+                    <header><h3>Check {name} if…</h3></header>
+                    <ul>{competitor.summary.competitor.map(item => <li key={item}><ArrowRight size={15} aria-hidden="true" />{item}</li>)}</ul>
                   </article>
                 </div>
               </section>
 
               <section id="questions" className="cmp-block">
-                <h2>Questions about Helpin vs {name}</h2>
+                <h2>FAQs about Helpin vs {name}</h2>
                 <FAQList items={competitor.faqs} className="platform-faqs" />
               </section>
 
+              <details className="cmp-sources"><summary>Sources and pricing references</summary><ul>{competitor.sources.map(source => <li key={source.url}><a href={source.url} target="_blank" rel="noopener noreferrer">{source.label}<ArrowUpRight size={13} aria-hidden="true" /></a></li>)}</ul></details>
               <p className="cmp-byline">Written by the Helpin team from {name}’s public pricing and documentation, verified {checked}. Prices are in US dollars and exclude tax. Products change, so check {name}’s site for current details. {name} is a trademark of its owner; Helpin is not affiliated with it. Spot something out of date? Email <a href="mailto:hello@helpin.ai">hello@helpin.ai</a>.</p>
             </article>
           </div>
@@ -372,7 +358,7 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
           <div className="wrap">
             <div className="platform-section-intro">
               <div className="sec-head"><span className="eyebrow">More comparisons</span><h2>See how Helpin compares with other tools.</h2></div>
-              <Link className="platform-text-link" href="/compare">All comparisons<ArrowRight size={15} aria-hidden="true" /></Link>
+              <Link prefetch={false} className="platform-text-link" href="/compare">All comparisons<ArrowRight size={15} aria-hidden="true" /></Link>
             </div>
             <div className="cmp-card-grid">{others.map(item => <CompareCard key={item.slug} competitor={item} />)}</div>
           </div>
@@ -387,7 +373,7 @@ export function ComparePage({ competitor }: { competitor: Competitor }) {
 
 export function CompareCard({ competitor }: { competitor: Competitor }) {
   return (
-    <Link className="cmp-card" href={`/compare/${competitor.slug}`}>
+    <Link prefetch={false} className="cmp-card" href={`/compare/${competitor.slug}`}>
       <span className="cmp-card-category">{competitor.category}</span>
       <strong>Helpin vs {competitor.name}</strong>
       <p>{competitor.cardLine}</p>
