@@ -72,7 +72,7 @@ func CoverageDailyAnalysisWorkflow(ctx workflow.Context) error {
 	}
 
 	windowEnd := workflow.Now(ctx).UTC()
-	windowStart := windowEnd.Add(-3 * time.Hour)
+	windowStart := windowEnd.Add(-12 * time.Hour)
 	selector := workflow.NewSelector(ctx)
 	inflight := 0
 	for _, workspaceID := range workspaceIDs {

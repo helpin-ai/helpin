@@ -166,7 +166,7 @@ func TestCoverageDailyAnalysisWorkflow_WorkspaceFailureDoesNotStopLaterWorkspace
 	}
 }
 
-func TestCoverageDailyAnalysisWorkflow_UsesThreeHourWindow(t *testing.T) {
+func TestCoverageDailyAnalysisWorkflow_UsesTwelveHourWindow(t *testing.T) {
 	testSuite := &testsuite.WorkflowTestSuite{}
 	env := testSuite.NewTestWorkflowEnvironment()
 	start := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
@@ -181,7 +181,7 @@ func TestCoverageDailyAnalysisWorkflow_UsesThreeHourWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	runs := analyzer.recordedRuns()
-	if len(runs) != 1 || runs[0].windowEnd.Sub(runs[0].windowStart) != 3*time.Hour {
+	if len(runs) != 1 || runs[0].windowEnd.Sub(runs[0].windowStart) != 12*time.Hour {
 		t.Fatalf("unexpected analysis window: %+v", runs)
 	}
 }

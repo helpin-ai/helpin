@@ -54,7 +54,7 @@ historical reanalysis were performed.
 ## Approved follow-up: Re-analyze controls
 
 Keep Last analyzed in the summary. Remove Refresh and Analysis status. Explain
-the three-hour cadence in the description. Re-analyze reassesses eligible
+the automatic cadence in the description. Re-analyze reassesses eligible
 conversations from the last 30 days against current knowledge. Use the existing
 settings.manage permission and an accessible explanatory tooltip. Only show
 queued/running, paused/disabled, failure, or unavailable status pills. Prevent
@@ -79,3 +79,10 @@ exceptions. Preview files were removed.
 
 Deploy the API, Temporal worker and frontend together to enable explicit
 reassessment. No production analysis was triggered during implementation.
+
+## Approved cadence adjustment: 12 hours
+
+Change the automatic cron to `0 */12 * * *`, expand the workflow window to
+12 hours, and update page/help text. Keep manual reassessment at 30 days.
+Document recreation of the existing Temporal cron during deployment. Verify
+the existing workflow window test, coverage tests, lint, typecheck, build/vet.

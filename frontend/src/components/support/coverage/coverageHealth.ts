@@ -25,7 +25,7 @@ export function coverageHealthPresentation(health: CoveragePipelineHealthV2) {
     return { title: 'Analysis needs attention', description: 'Review the failed attempts below. An administrator can retry them after resolving the cause.' }
   }
   if (!health.latest_batch) {
-    return { title: 'Waiting for the first analysis', description: 'Eligible conversations are checked every three hours.' }
+    return { title: 'Waiting for the first analysis', description: 'Eligible conversations are checked every 12 hours.' }
   }
   return { title: 'Analysis completed', description: '' }
 }

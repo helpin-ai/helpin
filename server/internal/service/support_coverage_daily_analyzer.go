@@ -30,7 +30,7 @@ const (
 	coverageAnalysisMaxMessageChars         = 2000
 	coverageAnalyzerVersion                 = "v4"
 	coverageAnalysisWorkflowID              = "coverage-analysis-v2"
-	coverageAnalysisCronSchedule            = "0 */3 * * *"
+	coverageAnalysisCronSchedule            = "0 */12 * * *"
 	coverageAnalysisOverlap                 = 2 * time.Hour
 	coverageAnalysisSettleDelay             = 10 * time.Minute
 	coverageAnalysisBootstrapWindow         = 30 * 24 * time.Hour

@@ -695,7 +695,7 @@ export function SupportCoveragePage() {
       <QuietPageHeader
         className="[&>div]:flex-col sm:[&>div]:flex-row [&>div>div:last-child]:self-start sm:[&>div>div:last-child]:self-auto"
         title="Support coverage"
-        description="Find recurring customer needs, review the evidence, and close support gaps. Analysis runs automatically every 3 hours."
+        description="Find recurring customer needs, review the evidence, and close support gaps. Analysis runs automatically every 12 hours."
         actions={
           <CoverageAnalysisActions
             health={insightErrors.health ? null : healthV2}
