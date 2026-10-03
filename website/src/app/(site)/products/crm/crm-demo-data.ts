@@ -364,6 +364,6 @@ export const CONTACTS = [
   },
 ];
 export const ACCOUNT_SUMMARY =
-  "Maya leads operations at Northstar Labs. The annual renewal is under review. She wants an update on the export issue before discussing the next term. EXP-142 is marked In review, and Sam owns the customer follow-up.";
+  "Renewal is waiting on the export fix. EXP-142 is in review. Sam owns the follow-up.";
 export const ACCOUNT_BRIEF =
-  "Start with the export issue. Maya has asked for an update before discussing renewal.\n\nEXP-142 is marked In review. The linked records do not yet confirm a release.\n\nSam should check the release status with engineering, then prepare an update for Maya. The renewal remains under review.";
+  "Check whether EXP-142 has shipped. Sam can then update Maya before revisiting the renewal.";

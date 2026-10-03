@@ -22,427 +22,739 @@ export type Article = {
 };
 
 const HELPIN = {
-  inbox: 'Helpin handles web chat and email in one shared inbox, with team inboxes, tags, saved replies, internal notes, business hours and CSAT surveys. AI conversation routing and round-robin assignment are part of the Growth plan. It doesn’t offer phone, WhatsApp or social channels today.',
-  ai: 'Helpin’s AI agents answer from your docs and the customer’s history, and hand off to your team with what they found. They can also go further: plan the work, open a pull request for review and prepare the follow-up. You choose each agent’s tools and which actions need approval, and usage comes from an allowance included in every Cloud plan.',
-  knowledge: 'Helpin Knowledge publishes help articles, product guides and interactive API reference docs on a Helpin address, your own domain, or a path like /docs through a reverse proxy. Agents draft updates from unanswered questions and shipped changes, and nothing goes live until your team publishes it.',
-  work: 'Helpin includes projects with roadmaps, sprints, objectives and epics. A conversation can become a task with the customer’s history attached, a coding agent can open a GitHub pull request or GitLab merge request for review, and the team can follow up in the original conversation when the fix ships.',
-  crm: 'Helpin includes a CRM with contacts, companies, deals and pipelines, and a meeting notetaker for Google Meet, Zoom, Microsoft Teams and Webex. Decisions and action items from calls stay on the same customer record as the conversations and tasks.',
-  developers: 'Helpin offers web SDKs for JavaScript, React, Next.js and Vue, a Helpin MCP server (in beta, hosted or self-hosted), connections to external MCP servers for agents, and GitHub and GitLab integrations. It doesn’t have native mobile SDKs or a large app marketplace yet.',
-  pricing: 'Helpin charges one price per workspace, with unlimited teammates. Starter is $79 and Growth $239 a month billed annually ($99 and $299 billed monthly), and each includes an AI usage allowance. The self-hosted Community edition is free.',
-  hosting: 'Helpin is open source under AGPL-3.0. Use Helpin Cloud, or run the Community edition (0.2 beta) on your own infrastructure with Docker Compose and your own AI provider. Nothing leaves your servers unless you connect it.',
-  onboarding: 'Helpin’s trial runs for 14 days on the Growth plan, with no card. Our team will help you plan the move: what to set up first, how to run both tools side by side, and when to cut over.',
+  "inbox": "Helpin gives your team a fast shared inbox for chat and email. Echo, the support agent, can answer from your docs and check connected tools for account details, code and logs. It can follow up after a reply or bring in a teammate. Customer history, internal notes and linked tasks stay with the conversation.",
+  "ai": "Ask Helpin AI to investigate an issue and get the work moving. Scribe plans the task, Forge writes and tests the code, Lens reviews it, and Quill updates the docs. Build custom agents and flows in plain language, with your choice of tools, skills and approval rules. Start work in chat or through configured automations.",
+  "knowledge": "Keep your help center and internal docs spaces current as your product changes. Quill can turn unanswered questions and released changes into article updates, with fresh screenshots and browser recordings. Your team reviews and publishes them. Customers can search your help center or ask AI for an answer with article citations.",
+  "work": "A customer’s bug report can become a task with the conversation attached. AI agents can investigate, plan, write code and open a GitHub pull request or GitLab merge request for review. After a confirmed release, configured automation can update affected customers under your approval rules. Objectives, roadmaps, epics and sprints keep the work in view.",
+  "planning": "Plan in a fast workspace with objectives, roadmaps, epics, tasks, stories and sprints. Use triage, dependencies, saved views and reports to keep priorities clear. AI agents can break down a request, take on the code work and prepare it for review. Your team can see the customer need, the plan and the progress together.",
+  "crm": "Keep deals, contacts and companies beside their conversations, meetings and open work. Beacon, the sales agent, can identify buying intent, suggest the next step and carry out approved follow-ups. Record meetings on Google Meet, Zoom, Teams or Webex, then turn decisions into assigned tasks. Your team can see what was promised and what still needs doing.",
+  "developers": "Connect Claude Code, Codex, Cursor, Hermes and other compatible AI tools through Helpin’s MCP server. They can find context, update tasks and docs, and start Helpin agent runs with the access you allow. Helpin agents can also use external MCP tools. GitHub, GitLab and the web SDKs connect your code and product to the same workflow.",
+  "pricing": "Helpin charges per workspace, with unlimited teammates. Starter is $79 and Growth $239 a month billed annually, or $99 and $299 billed monthly. Every Cloud plan includes an AI usage allowance. Extra usage is metered only when you enable it on a paid plan. Self-hosting has no Helpin license fee; you pay for your infrastructure and AI provider.",
+  "hosting": "Run Helpin Cloud or self-host the open-source Community edition with Docker Compose. Support, projects, CRM, docs and AI agents are included under AGPL-3.0. When you self-host, you choose the infrastructure, AI providers and external services your workspace uses.",
+  "onboarding": "Try Helpin Growth for 14 days with no card and $140 of AI usage. Start with one support address or a real project, invite your team, and give the agents a job. We can help you plan the move around the data and tools you already use."
 };
 
-const PREVIEW = {
-  inbox: { product: 'inbox', label: 'Helpin’s shared inbox: the customer’s earlier conversation, linked task and AI draft in one view.' },
-  agents: { product: 'agents', label: 'Helpin’s specialist agents, each with its own tools and approval rules.' },
-  knowledge: { product: 'knowledge', label: 'Helpin Knowledge: help articles and API reference docs on your own domain.' },
-  projects: { product: 'projects', label: 'Helpin Projects: the task, the customer conversation behind it and the agent’s progress.' },
-  crm: { product: 'crm', label: 'Helpin CRM: deals with the conversations, meetings and work behind them.' },
-} as const satisfies Record<string, { product: ProductPreviewName; label: string }>;
-
-const guide = (name: string) => `This guide compares Helpin and ${name} feature by feature, with list prices checked in September 2026, so you can decide which fits the way your team works.`;
-
 export const ARTICLES: Record<string, Article> = {
-  intercom: {
-    intro: [
-      'Intercom and Helpin both help support teams answer customers with AI. They differ in what happens after the answer, in how AI is billed, and in where the product can run.',
-      'Intercom is a mature, support-first platform built around its Fin AI agent, with a broad set of channels and a large app marketplace. In May 2026 the company renamed itself Fin, and Salesforce completed its acquisition in September 2026. The helpdesk product is still called Intercom.',
-      'Helpin is a newer, open-source platform that puts support, projects, CRM, meetings and docs on one customer history, with AI agents that can take a question all the way to a shipped fix.',
-      guide('Intercom'),
+  "intercom": {
+    "intro": [
+      "A customer asks a question. Sometimes the answer is in a guide. Sometimes the product needs fixing. Helpin’s AI agents can handle both kinds of work, with your team in control of what gets approved.",
+      "Intercom brings Fin, a shared inbox and multiple support channels together. Helpin brings support, development, sales, meetings and docs into one fast workspace, so your agents and team can work from the same customer history.",
+      "You pay per workspace, with unlimited teammates and an included AI allowance. There is no separate fee each time AI resolves a conversation."
     ],
-    difference: [
-      { lead: 'Intercom is built around the conversation:', text: 'resolving it quickly across many channels, with Fin handling a growing share on its own.' },
-      { lead: 'Helpin is built around the customer history:', text: 'the conversation, the task it becomes, the pull request that fixes it and the follow-up when it ships.' },
+    "difference": [
+      {
+        "lead": "The answer can lead straight to a fix.",
+        "text": "Echo can investigate the question, coding agents can work on the bug, and Quill can update the guide. Your team reviews the work in one workspace."
+      },
+      {
+        "lead": "Intercom combines Fin with a multichannel inbox.",
+        "text": "It also connects to external data and runs support procedures. Engineering and sales pipelines generally connect through other products."
+      }
     ],
-    features: [
+    "features": [
       {
-        id: 'inbox', title: 'Inbox and channels',
-        competitor: 'Intercom’s shared inbox covers Messenger chat and email on every plan, with phone, WhatsApp, SMS, social channels, Slack, Discord and Microsoft Teams available, several of them billed by usage. Workflows, multiple team inboxes and round-robin assignment arrive on the Advanced plan.',
-        helpin: HELPIN.inbox,
-        verdict: 'If you need phone or messaging apps in the same inbox, Intercom covers far more channels. If chat and email are your main channels, both handle the everyday work well.',
-        preview: PREVIEW.inbox,
+        "id": "inbox",
+        "title": "Inbox and channels",
+        "competitor": "Intercom’s shared inbox covers Messenger chat and email on every plan, with phone, WhatsApp, SMS, social channels, Slack, Discord and Microsoft Teams available, several of them billed by usage. Workflows, multiple team inboxes and round-robin assignment arrive on the Advanced plan.",
+        "helpin": HELPIN.inbox,
+        "verdict": "Helpin keeps chat and email support close to the work needed to solve the problem. Intercom adds phone and social channels.",
+        "preview": {
+          "product": "inbox",
+          "label": "Helpin’s shared inbox: the customer’s earlier conversation, linked task and AI draft in one view."
+        }
       },
       {
-        id: 'ai-agents', title: 'AI agents',
-        competitor: 'Fin is Intercom’s AI agent. It answers from your content and data, hands conversations to your team, and can run multi-step procedures. It’s billed at $0.99 per outcome on top of seats. Copilot helps teammates draft replies, with 10 free conversations per teammate each month before a paid upgrade.',
-        helpin: HELPIN.ai,
-        verdict: 'Fin is a proven, support-focused agent. Helpin’s agents work across support and the product work behind it, with usage included in the plan price.',
-        preview: PREVIEW.agents,
+        "id": "ai-agents",
+        "title": "AI agents that carry out work",
+        "competitor": "Fin answers questions using content and connected data, and can run multistep procedures such as account lookups and other support actions. Intercom charges $0.99 per Fin outcome on top of seats. Its Copilot assists human teammates with replies.",
+        "helpin": HELPIN.ai,
+        "verdict": "Helpin carries AI work across support, code, review and docs, with your team deciding what needs approval.",
+        "preview": {
+          "product": "agents",
+          "label": "Helpin’s specialist agents, each with its own tools and approval rules."
+        }
       },
       {
-        id: 'knowledge', title: 'Help center and knowledge',
-        competitor: 'Intercom includes a public help center on every plan, with multilingual and private help centers on Advanced and multibrand help centers on Expert. Fin uses your articles and other content to answer.',
-        helpin: HELPIN.knowledge,
-        verdict: 'Both publish a help center that feeds their AI. Helpin adds API reference docs and agent-drafted updates your team reviews.',
+        "id": "knowledge",
+        "title": "Help center and internal docs",
+        "competitor": "Intercom includes a public help center on every plan, with multilingual and private help centers on Advanced and multibrand help centers on Expert. Fin uses your articles and other content to answer.",
+        "helpin": HELPIN.knowledge,
+        "verdict": "With Helpin, keeping answers accurate includes updating the guide and capturing the current UI after the product changes."
       },
       {
-        id: 'question-to-fix', title: 'From question to fix',
-        competitor: 'Intercom resolves the conversation and hands engineering work to other tools, such as its Jira integration. The conversation lives in Intercom and the task lives elsewhere, so context has to travel between them.',
-        helpin: HELPIN.work,
-        verdict: 'If support often hands off to engineering, keeping both on one history is Helpin’s biggest difference.',
-        preview: PREVIEW.projects,
+        "id": "question-to-fix",
+        "title": "From question to fix",
+        "competitor": "Intercom can send customer issues to project tools such as Jira. Integrations connect the conversation to engineering work, while planning and code delivery happen in those connected tools.",
+        "helpin": HELPIN.work,
+        "verdict": "Helpin gives the support team, developers and AI agents one place to take a customer issue through to delivery.",
+        "preview": {
+          "product": "projects",
+          "label": "Helpin Projects: the task, the customer conversation behind it and the agent’s progress."
+        }
       },
       {
-        id: 'crm', title: 'Customer records, CRM and meetings',
-        competitor: 'Intercom keeps contacts, companies and leads, and connects to CRMs such as Salesforce and HubSpot for deals. It doesn’t record meetings.',
-        helpin: HELPIN.crm,
-        verdict: 'Teams that already run a separate CRM may be happy with Intercom’s integrations. Teams that want one record per customer get it built in with Helpin.',
-        preview: PREVIEW.crm,
+        "id": "crm",
+        "title": "Customer records, CRM and meetings",
+        "competitor": "Intercom keeps contacts, companies and leads, and connects to CRMs such as Salesforce and HubSpot for deals. It doesn’t record meetings.",
+        "helpin": HELPIN.crm,
+        "verdict": "Helpin turns account history into sales follow-ups and assigned work, with deals and meeting notes built in.",
+        "preview": {
+          "product": "crm",
+          "label": "Helpin CRM: deals with the conversations, meetings and work behind them."
+        }
       },
       {
-        id: 'developers', title: 'Developers and integrations',
-        competitor: 'Intercom offers a REST API, iOS, Android and React Native SDKs, more than 450 apps and integrations, and a hosted MCP server for AI tools.',
-        helpin: HELPIN.developers,
-        verdict: 'Intercom’s ecosystem is far larger today. Helpin focuses on connecting your product, your code and your AI tools.',
-      },
+        "id": "developers",
+        "title": "Developers and integrations",
+        "competitor": "Intercom offers APIs, webhooks, native mobile SDKs and an app marketplace. Its hosted MCP server gives AI tools access to workspace data, and Fin can connect to external MCP tools.",
+        "helpin": HELPIN.developers,
+        "verdict": "Helpin connects your agents to the context and actions across your business. Check Intercom’s native SDKs if mobile chat is essential."
+      }
     ],
-    pricing: 'Intercom charges per seat: $29, $85 or $132 a month billed annually for Essential, Advanced and Expert. Fin adds $0.99 per outcome, and channels such as phone, SMS and WhatsApp, and add-ons such as Copilot and Proactive Support, are billed separately.',
-    hosting: 'Intercom is a hosted service, and there’s no way to run it on your own infrastructure.',
-    onboarding: 'Intercom offers a 14-day trial with no card. It has no one-click importer: moving historical data into Intercom is a scripted, API-based migration, and conversations can be exported as CSV, through the API or to cloud storage.',
+    "pricing": "Intercom charges per seat: $29, $85 or $132 a month billed annually for Essential, Advanced and Expert. Fin adds $0.99 per outcome, and channels such as phone, SMS and WhatsApp, and add-ons such as Copilot and Proactive Support, are billed separately.",
+    "hosting": "Intercom is a hosted service, and there’s no way to run it on your own infrastructure.",
+    "onboarding": "Intercom offers a 14-day trial with no card. It has no one-click importer: moving historical data into Intercom is a scripted, API-based migration, and conversations can be exported as CSV, through the API or to cloud storage."
   },
-  zendesk: {
-    intro: [
-      'Zendesk and Helpin both run customer support with AI agents. Zendesk is an established help desk for large, multichannel service teams. Helpin is a newer, open-source platform that connects support to the work behind it.',
-      'Zendesk offers ticketing, messaging, a native contact center and deep admin controls, with AI agents billed on verified resolutions. It has announced that Zendesk Sell, its sales CRM, will be retired in August 2027.',
-      'Helpin keeps support, projects, CRM, meetings and docs on one customer history, with one price per workspace and an open-source edition you can run yourself.',
-      guide('Zendesk'),
+  "zendesk": {
+    "intro": [
+      "Closing a ticket is useful. Fixing the problem behind it is better. Helpin gives AI agents the customer conversation, the account history and the tools to investigate, write code and prepare a change for review.",
+      "Zendesk brings together ticketing, messaging, voice and AI service tools. Helpin connects chat and email support directly to projects, CRM, meetings and docs in a fast workspace your whole team can use.",
+      "Bring support and development into the same workflow without buying a seat for every teammate. Cloud plans include AI usage, with no per-resolution fee."
     ],
-    difference: [
-      { lead: 'Zendesk is built for service operations:', text: 'routing high volumes of tickets across channels, with the controls large teams need.' },
-      { lead: 'Helpin is built for the work after the ticket:', text: 'the task, the fix, the account and the follow-up, on one customer history.' },
+    "difference": [
+      {
+        "lead": "The ticket and the work share the same context.",
+        "text": "Helpin’s agents can move from support to code, docs and customer follow-up, with the account history close at hand."
+      },
+      {
+        "lead": "Zendesk brings service channels together.",
+        "text": "It includes ticketing, voice and AI actions. Product development and sales workflows connect through other tools."
+      }
     ],
-    features: [
+    "features": [
       {
-        id: 'inbox', title: 'Ticketing and channels',
-        competitor: 'Zendesk covers email, messaging and live chat, social messaging, and voice with IVR through its contact center, with skills-based routing on Suite Professional. Ticketing, macros, automations and SLA policies are deep and mature.',
-        helpin: HELPIN.inbox,
-        verdict: 'For large, multichannel teams, Zendesk’s routing and controls go further. For chat and email support, both cover the everyday work of a support team.',
-        preview: PREVIEW.inbox,
+        "id": "inbox",
+        "title": "Ticketing and channels",
+        "competitor": "Zendesk supports email, chat, messaging and voice. Its contact center provides phone menus, and Suite Professional includes routing by agent skills. Plans also offer ticket rules and response-time policies.",
+        "helpin": HELPIN.inbox,
+        "verdict": "Helpin connects each chat or email to the account and product work. Check Zendesk’s voice tools if you run a phone queue.",
+        "preview": {
+          "product": "inbox",
+          "label": "Helpin’s shared inbox: the customer’s earlier conversation, linked task and AI draft in one view."
+        }
       },
       {
-        id: 'ai-agents', title: 'AI agents',
-        competitor: 'Zendesk’s AI agents are included in every Suite plan and billed per verified resolution beyond a small included allowance; escalated and contained conversations aren’t billed, and Zendesk doesn’t publish the price per resolution. Copilot, which assists your agents, is a $50 per agent add-on on most plans.',
-        helpin: HELPIN.ai,
-        verdict: 'Zendesk’s AI sits inside a mature ticketing system. Helpin’s agents also plan and code the fix, with usage included in the plan price.',
-        preview: PREVIEW.agents,
+        "id": "ai-agents",
+        "title": "AI agents that carry out work",
+        "competitor": "Zendesk’s AI agents can answer questions and carry out actions in connected systems. Suite plans include an automated-resolution allowance; additional resolutions are billed separately. Copilot assists teammates and is listed at $50 per agent per month as an add-on.",
+        "helpin": HELPIN.ai,
+        "verdict": "Helpin’s agents can work on the cause of a ticket, including code and docs, with usage included in every Cloud plan.",
+        "preview": {
+          "product": "agents",
+          "label": "Helpin’s specialist agents, each with its own tools and approval rules."
+        }
       },
       {
-        id: 'knowledge', title: 'Help center and knowledge',
-        competitor: 'Zendesk includes a knowledge base and help center on Suite plans, which its AI agents draw on to answer customers.',
-        helpin: HELPIN.knowledge,
-        verdict: 'Both publish customer help content for people and AI. Helpin adds API reference docs and agent-drafted updates.',
+        "id": "knowledge",
+        "title": "Help center and internal docs",
+        "competitor": "Zendesk includes a knowledge base and help center on Suite plans, which its AI agents draw on to answer customers.",
+        "helpin": HELPIN.knowledge,
+        "verdict": "Helpin connects knowledge gaps to article updates, product changes and fresh UI captures, for customers and your own team."
       },
       {
-        id: 'question-to-fix', title: 'From ticket to fix',
-        competitor: 'Zendesk manages the ticket and connects to tools like Jira for engineering work, so the fix and its status live in another system.',
-        helpin: HELPIN.work,
-        verdict: 'If tickets often become engineering work, keeping both on one history is Helpin’s biggest difference.',
-        preview: PREVIEW.projects,
+        "id": "question-to-fix",
+        "title": "From ticket to fix",
+        "competitor": "Zendesk manages the ticket and connects to tools like Jira for engineering work, so the fix and its status live in another system.",
+        "helpin": HELPIN.work,
+        "verdict": "Helpin keeps the customer report, agent work and reviewed fix connected, so fewer details need to be passed between teams.",
+        "preview": {
+          "product": "projects",
+          "label": "Helpin Projects: the task, the customer conversation behind it and the agent’s progress."
+        }
       },
       {
-        id: 'crm', title: 'CRM and meetings',
-        competitor: 'Zendesk Sell is Zendesk’s sales CRM, but Zendesk plans to retire it on August 31, 2027 and recommends Pipedrive as a migration partner. Zendesk doesn’t record meetings.',
-        helpin: HELPIN.crm,
-        verdict: 'If you rely on Zendesk Sell, you’ll need a new CRM by 2027. Helpin includes one, on the same customer history as support.',
-        preview: PREVIEW.crm,
+        "id": "crm",
+        "title": "CRM and meetings",
+        "competitor": "Zendesk connects service records to external CRMs. Zendesk Sell, its separate sales product, is scheduled to retire on August 31, 2027. Sales pipelines and recorded meeting workflows need separate tools.",
+        "helpin": HELPIN.crm,
+        "verdict": "Helpin includes the sales pipeline and meeting context that help agents choose and carry out the next step.",
+        "preview": {
+          "product": "crm",
+          "label": "Helpin CRM: deals with the conversations, meetings and work behind them."
+        }
       },
       {
-        id: 'developers', title: 'Developers and integrations',
-        competitor: 'Zendesk offers REST APIs, iOS and Android SDKs and more than 1,800 marketplace apps. It’s moving API access from tokens to OAuth, and has announced an MCP server, with an MCP client in early access.',
-        helpin: HELPIN.developers,
-        verdict: 'Zendesk’s marketplace is one of the largest in support software. Helpin focuses on your product, your code and your AI tools.',
-      },
+        "id": "developers",
+        "title": "Developers and integrations",
+        "competitor": "Zendesk offers APIs, mobile SDKs and marketplace integrations. Its MCP client is generally available, so AI workflows can fetch data and take actions in connected tools. Administrators choose which tools those workflows can use.",
+        "helpin": HELPIN.developers,
+        "verdict": "Helpin brings external tools into agent workflows and gives compatible agents access to tasks, conversations and docs."
+      }
     ],
-    pricing: 'Zendesk charges per agent: Suite Team is $55 and Suite Professional $115 a month billed annually, with Enterprise priced on request. AI agent resolutions beyond the included allowance, and Copilot at $50 per agent, are billed separately.',
-    hosting: 'Zendesk is a hosted service, and there’s no way to run it on your own infrastructure.',
-    onboarding: 'Zendesk offers a 14-day trial with no card, running on Suite Professional. Ticket and user exports are off by default and must be enabled by Zendesk on request, and full JSON exports need higher plans.',
+    "pricing": "Zendesk charges per agent: Suite Team is $55 and Suite Professional $115 a month billed annually, with Enterprise priced on request. AI agent resolutions beyond the included allowance, and Copilot at $50 per agent, are billed separately.",
+    "hosting": "Zendesk is a hosted service, and there’s no way to run it on your own infrastructure.",
+    "onboarding": "Zendesk offers a 14-day trial with no card, running on Suite Professional. Ticket and user exports are off by default and must be enabled by Zendesk on request, and full JSON exports need higher plans."
   },
-  'help-scout': {
-    intro: [
-      'Help Scout and Helpin both give small and growing teams a shared inbox with AI. Help Scout keeps support simple. Helpin connects support to projects, CRM, meetings and docs.',
-      'Help Scout is a well-loved, email-like inbox with a Docs knowledge base and a free plan for up to five users. It returned to per-user pricing after a period of contact-based billing, and charges $0.75 per AI resolution.',
-      'Helpin keeps support on one customer history with the work that follows, charges one price per workspace, and can run on your own servers.',
-      guide('Help Scout'),
+  "help-scout": {
+    "intro": [
+      "A simple inbox should not leave your team doing all the follow-up work. In Helpin, AI agents can answer a customer, check their account, create a task and help get the underlying problem fixed.",
+      "Help Scout offers a shared inbox, Docs and AI answers. Helpin keeps chat and email just as central, while giving your team a fast workspace for projects, deals, meetings and the docs that keep answers accurate.",
+      "Invite the people who need the context without adding seat fees. Every Cloud plan includes an AI allowance, and Helpin can import your Help Scout Docs articles."
     ],
-    difference: [
-      { lead: 'Help Scout is built around a calm inbox:', text: 'fast, simple conversations with customers across email, chat and messaging.' },
-      { lead: 'Helpin is built around what happens next:', text: 'turning requests into tracked work, deals and follow-ups on the same history.' },
+    "difference": [
+      {
+        "lead": "Keep the inbox simple and automate what follows.",
+        "text": "Helpin’s agents can investigate issues, do product work and update docs while your team stays in one fast workspace."
+      },
+      {
+        "lead": "Help Scout centers on customer conversations.",
+        "text": "Its inbox, Docs and AI answers cover support, with integrations for projects and sales."
+      }
     ],
-    features: [
+    "features": [
       {
-        id: 'inbox', title: 'Inbox and channels',
-        competitor: 'Help Scout’s inbox covers email, live chat through Beacon, WhatsApp, Instagram, Messenger and SMS, with phone through integrations such as Aircall. Workflows, SLA policies and inbox limits scale with the plan: Standard includes two inboxes and Plus five.',
-        helpin: HELPIN.inbox,
-        verdict: 'Help Scout covers more messaging channels. Both keep everyday email and chat support simple.',
-        preview: PREVIEW.inbox,
+        "id": "inbox",
+        "title": "Inbox and channels",
+        "competitor": "Help Scout’s inbox covers email, live chat through Beacon, WhatsApp, Instagram, Messenger and SMS, with phone through integrations such as Aircall. Workflows, SLA policies and inbox limits scale with the plan: Standard includes two inboxes and Plus five.",
+        "helpin": HELPIN.inbox,
+        "verdict": "Helpin gives chat and email teams a fast inbox with agents that can investigate and follow up. Help Scout adds social channels.",
+        "preview": {
+          "product": "inbox",
+          "label": "Helpin’s shared inbox: the customer’s earlier conversation, linked task and AI draft in one view."
+        }
       },
       {
-        id: 'ai-agents', title: 'AI answers and agents',
-        competitor: 'Help Scout’s AI Answers resolves questions from your Docs at $0.75 per resolution, with spending caps and a discount for prepaying. AI Assist is included on paid plans, and AI Drafts and Summarize come with Plus and Pro.',
-        helpin: HELPIN.ai,
-        verdict: 'Help Scout’s AI focuses on answering. Helpin’s agents also plan the fix and follow up, with usage included in the price.',
-        preview: PREVIEW.agents,
+        "id": "ai-agents",
+        "title": "AI agents that carry out work",
+        "competitor": "Help Scout sells AI Answers at $0.75 per resolution and presents its customer-facing agent as Compass. It answers from Docs and other supplied content. Its agent page lists app connections and email support as coming soon; separate AI Assist, Drafts and Summarize features help teammates in the inbox.",
+        "helpin": HELPIN.ai,
+        "verdict": "Helpin can take a support request into planning, code and review, with the same customer context available throughout.",
+        "preview": {
+          "product": "agents",
+          "label": "Helpin’s specialist agents, each with its own tools and approval rules."
+        }
       },
       {
-        id: 'knowledge', title: 'Help center and knowledge',
-        competitor: 'Help Scout Docs publishes knowledge base sites: two on Standard and three on Plus, with more available as an add-on. AI Answers draws on them.',
-        helpin: HELPIN.knowledge,
-        verdict: 'Both publish help centers that feed AI answers. Helpin can import your Help Scout Docs today.',
+        "id": "knowledge",
+        "title": "Help center and internal docs",
+        "competitor": "Help Scout Docs publishes knowledge base sites: two on Standard and three on Plus, with more available as an add-on. AI Answers draws on them.",
+        "helpin": HELPIN.knowledge,
+        "verdict": "Bring your Help Scout articles into Helpin, then use Quill to keep guides and internal docs current as you ship."
       },
       {
-        id: 'question-to-fix', title: 'From question to fix',
-        competitor: 'Help Scout connects to Jira on the Plus plan and above, so engineering work lives in another tool.',
-        helpin: HELPIN.work,
-        verdict: 'If your conversations often turn into product work, Helpin keeps the request and the fix together.',
-        preview: PREVIEW.projects,
+        "id": "question-to-fix",
+        "title": "From question to fix",
+        "competitor": "Help Scout connects to Jira on the Plus plan and above, so engineering work lives in another tool.",
+        "helpin": HELPIN.work,
+        "verdict": "Helpin connects the conversation to agents that can work on the fix, then supports customer follow-up after release.",
+        "preview": {
+          "product": "projects",
+          "label": "Helpin Projects: the task, the customer conversation behind it and the agent’s progress."
+        }
       },
       {
-        id: 'crm', title: 'Customer records, CRM and meetings',
-        competitor: 'Help Scout keeps customer properties, company profiles and, on higher plans, custom fields, and integrates with HubSpot and Salesforce on Plus. It doesn’t include a deals pipeline or meeting notes.',
-        helpin: HELPIN.crm,
-        verdict: 'If you need deals and meeting notes next to support, Helpin has them built in.',
-        preview: PREVIEW.crm,
+        "id": "crm",
+        "title": "Customer records, CRM and meetings",
+        "competitor": "Help Scout keeps customer properties, company profiles and, on higher plans, custom fields, and integrates with HubSpot and Salesforce on Plus. It doesn’t include a deals pipeline or meeting notes.",
+        "helpin": HELPIN.crm,
+        "verdict": "Helpin helps your team act on sales intent and meeting decisions, with a built-in deal pipeline and owned follow-ups.",
+        "preview": {
+          "product": "crm",
+          "label": "Helpin CRM: deals with the conversations, meetings and work behind them."
+        }
       },
       {
-        id: 'developers', title: 'Developers and integrations',
-        competitor: 'Help Scout offers Inbox, Docs and Chat APIs, webhooks, Beacon SDKs for iOS and Android, more than 100 integrations, and a read-only MCP server launched in July 2026.',
-        helpin: HELPIN.developers,
-        verdict: 'Help Scout has mobile SDKs and a wider integration list. Helpin’s MCP connections let agents act, not just read.',
-      },
+        "id": "developers",
+        "title": "Developers and integrations",
+        "competitor": "Help Scout provides APIs, webhooks, integrations and Beacon SDKs for iOS and Android. Its MCP connection can search conversations and pull information. Current connections are read-only: external agents cannot send replies, change tags or edit Docs through it.",
+        "helpin": HELPIN.developers,
+        "verdict": "Helpin’s MCP tools support permitted changes as well as reading, so your external agents can move the work forward."
+      }
     ],
-    pricing: 'Help Scout charges per user: Standard is $25 and Plus $45 a month billed annually, with Pro from ten users. A free plan covers up to five users and 100 contacts a month, and AI Answers adds $0.75 per resolution.',
-    hosting: 'Help Scout is a hosted service, and there’s no way to run it on your own infrastructure.',
-    onboarding: 'Help Scout offers a 15-day trial with no card and a 30-day money-back guarantee on the first payment. Its built-in importer brings conversations, customers and tags from more than 30 tools. Helpin imports Help Scout Docs today; conversation history isn’t imported yet.',
+    "pricing": "Help Scout charges per user: Standard is $25 and Plus $45 a month billed annually, with Pro from ten users. A free plan covers up to five users and 100 contacts a month, and AI Answers adds $0.75 per resolution.",
+    "hosting": "Help Scout is a hosted service, and there’s no way to run it on your own infrastructure.",
+    "onboarding": "Help Scout offers a 15-day trial with no card and a 30-day money-back guarantee on the first payment. Its built-in importer brings conversations, customers and tags from more than 30 tools. Helpin imports Help Scout Docs today; conversation history isn’t imported yet."
   },
-  chatwoot: {
-    intro: [
-      'Chatwoot and Helpin are both open-source customer support platforms you can run on your own servers. They differ in license, in what the free edition includes, and in how far each goes beyond the inbox.',
-      'Chatwoot is a mature, widely used support inbox with a long list of channels, from WhatsApp to LINE and voice. Its core is MIT-licensed, and features such as the Captain AI agent, SSO and SLAs need a paid enterprise edition, even when self-hosted.',
-      'Helpin is a newer platform under AGPL-3.0 that connects support to projects, CRM, meetings and docs. Its Community edition, currently a 0.2 beta, includes every AI agent at no cost, coding agents too.',
-      guide('Chatwoot'),
+  "chatwoot": {
+    "intro": [
+      "If you are choosing open source, look at what you can actually run. Helpin’s free Community edition includes support, projects, CRM, docs and AI agents that can plan, code, review and follow up.",
+      "Chatwoot offers a shared inbox across chat, email and messaging channels. Helpin puts chat and email beside the product work and customer history in one fast workspace, so agents can act on more than the conversation alone.",
+      "Self-host Helpin with your own AI provider, or choose Cloud with workspace pricing and an included AI allowance. You do not need an extra AI license when you self-host."
     ],
-    difference: [
-      { lead: 'Chatwoot is built around channels:', text: 'one inbox for every way customers reach you, backed by a large open-source community.' },
-      { lead: 'Helpin is built around the customer history:', text: 'support, projects, CRM and meetings in one place, with agents working across them.' },
+    "difference": [
+      {
+        "lead": "Self-host the agents and the work they do.",
+        "text": "Helpin includes support, coding, review, docs and sales agents in its free Community edition. Bring your own AI provider."
+      },
+      {
+        "lead": "Chatwoot connects more messaging channels.",
+        "text": "Its MIT-licensed inbox can be extended with bots and a CLI. Captain requires a paid self-hosted plan."
+      }
     ],
-    features: [
+    "features": [
       {
-        id: 'inbox', title: 'Inbox and channels',
-        competitor: 'Chatwoot’s inbox covers website chat, email, WhatsApp, Facebook, Instagram, TikTok, Telegram, LINE and SMS, with voice calls in beta. On Cloud, automation rules, teams and voice need the Business plan.',
-        helpin: HELPIN.inbox,
-        verdict: 'Chatwoot covers far more channels. If chat and email are enough, both handle the inbox well.',
-        preview: PREVIEW.inbox,
+        "id": "inbox",
+        "title": "Inbox and channels",
+        "competitor": "Chatwoot’s inbox covers website chat, email, WhatsApp, Facebook, Instagram, TikTok, Telegram, LINE and SMS, with voice calls in beta. On Cloud, automation rules, teams and voice need the Business plan.",
+        "helpin": HELPIN.inbox,
+        "verdict": "Helpin connects chat and email to product work and sales. Chatwoot also covers phone and social messaging.",
+        "preview": {
+          "product": "inbox",
+          "label": "Helpin’s shared inbox: the customer’s earlier conversation, linked task and AI draft in one view."
+        }
       },
       {
-        id: 'ai-agents', title: 'AI agents',
-        competitor: 'Captain is Chatwoot’s AI agent and copilot. On Cloud it runs on monthly credits, with more at $20 per 1,000. Self-hosted, it needs a paid plan and your own OpenAI-compatible key.',
-        helpin: `${HELPIN.ai} Self-hosted, every agent, coding agents included, is part of the free Community edition.`,
-        verdict: 'Both let you bring your own model when self-hosting. Helpin includes its agents in the free edition, and they go beyond the inbox.',
-        preview: PREVIEW.agents,
+        "id": "ai-agents",
+        "title": "AI agents that carry out work",
+        "competitor": "Captain answers customers, assists teammates and supports custom support scenarios. Cloud plans include credits, with extra usage available to buy. Self-hosted Captain requires a paid plan and your own AI provider. Chatwoot also supports custom inbox bots.",
+        "helpin": HELPIN.ai,
+        "verdict": "Helpin includes its support, coding, review and docs agents in the free self-hosted edition. Your AI provider bills for usage.",
+        "preview": {
+          "product": "agents",
+          "label": "Helpin’s specialist agents, each with its own tools and approval rules."
+        }
       },
       {
-        id: 'knowledge', title: 'Help center and knowledge',
-        competitor: 'Chatwoot includes a help center with a documentation-style layout, search and per-locale branding, which Captain can use to answer.',
-        helpin: HELPIN.knowledge,
-        verdict: 'Both include a help center. Helpin adds API reference docs and agent-drafted updates.',
+        "id": "knowledge",
+        "title": "Help center and internal docs",
+        "competitor": "Chatwoot includes a help center with a documentation-style layout, search and per-locale branding, which Captain can use to answer.",
+        "helpin": HELPIN.knowledge,
+        "verdict": "Helpin’s docs workflow extends to internal guides, release-driven updates and browser captures of the actual product."
       },
       {
-        id: 'question-to-fix', title: 'From conversation to fix',
-        competitor: 'Chatwoot links conversations to issues through its Linear integration, so planning and engineering happen in another tool.',
-        helpin: HELPIN.work,
-        verdict: 'If conversations turn into product work, Helpin keeps the request, the task and the follow-up together.',
-        preview: PREVIEW.projects,
+        "id": "question-to-fix",
+        "title": "From conversation to fix",
+        "competitor": "Chatwoot links conversations to issues through its Linear integration, so planning and engineering happen in another tool.",
+        "helpin": HELPIN.work,
+        "verdict": "Helpin has the planning, coding and review workflow built in, with the original conversation connected to the task.",
+        "preview": {
+          "product": "projects",
+          "label": "Helpin Projects: the task, the customer conversation behind it and the agent’s progress."
+        }
       },
       {
-        id: 'crm', title: 'Customer records, CRM and meetings',
-        competitor: 'Chatwoot keeps contacts, custom attributes, segments and companies. It doesn’t include a deals pipeline or meeting notes.',
-        helpin: HELPIN.crm,
-        verdict: 'If you need deals and meeting notes next to support, Helpin has them built in.',
-        preview: PREVIEW.crm,
+        "id": "crm",
+        "title": "Customer records, CRM and meetings",
+        "competitor": "Chatwoot keeps contacts, custom attributes, segments and companies. It doesn’t include a deals pipeline or meeting notes.",
+        "helpin": HELPIN.crm,
+        "verdict": "Helpin turns customer context into sales action with deals, meeting notes and Beacon’s follow-ups in the same workspace.",
+        "preview": {
+          "product": "crm",
+          "label": "Helpin CRM: deals with the conversations, meetings and work behind them."
+        }
       },
       {
-        id: 'developers', title: 'Developers and integrations',
-        competitor: 'Chatwoot offers application, platform and client APIs, webhooks, a CLI, and React Native and Flutter SDKs. MCP servers for Chatwoot are community-built.',
-        helpin: HELPIN.developers,
-        verdict: 'Chatwoot has mobile SDKs and a mature API. Helpin ships its own MCP server and connects agents to external tools.',
-      },
+        "id": "developers",
+        "title": "Developers and integrations",
+        "competitor": "Chatwoot offers APIs, webhooks, mobile SDKs and an official CLI for coding agents. Through the CLI, external agents can inspect conversations and prepare support actions for approval. It works with both Cloud and self-hosted installations.",
+        "helpin": HELPIN.developers,
+        "verdict": "Both work with external agents. Helpin also provides built-in agents and an MCP server across support, projects, docs and CRM."
+      }
     ],
-    pricing: 'Chatwoot Cloud charges per agent: $19, $39 or $99 a month, with Captain credits included and extra credits at $20 per 1,000. Self-hosted, the Community edition is free, and the Premium plan that adds Captain costs $19 per agent.',
-    hosting: 'Chatwoot is open source and can be deployed with Docker, Kubernetes, a Linux installer or cloud marketplace images. Features in its enterprise edition need a paid subscription for production use.',
-    onboarding: 'Chatwoot offers a 15-day Cloud trial and a free Hacker plan for up to two agents, and can import from Intercom and Freshdesk. There’s no Chatwoot importer in Helpin yet; both products have APIs if you need to move records yourself.',
+    "pricing": "Chatwoot Cloud charges per agent: $19, $39 or $99 a month, with Captain credits included and extra credits at $20 per 1,000. Self-hosted, the Community edition is free, and the Premium plan that adds Captain costs $19 per agent.",
+    "hosting": "Chatwoot is open source and can be deployed with Docker, Kubernetes, a Linux installer or cloud marketplace images. Features in its enterprise edition need a paid subscription for production use.",
+    "onboarding": "Chatwoot offers a 15-day Cloud trial and a free Hacker plan for up to two agents, and can import from Intercom and Freshdesk. There’s no Chatwoot importer in Helpin yet; both products have APIs if you need to move records yourself."
   },
-  linear: {
-    intro: [
-      'Linear and Helpin both help teams plan and ship software with AI agents. Linear is a fast, focused issue tracker. Helpin puts projects next to support, CRM, meetings and docs.',
-      'Linear is used by more than 40,000 companies and is known for its speed and keyboard-first design. It links customer requests from support tools such as Intercom and Zendesk, and lets you hand issues to Linear Agent or to third-party coding agents.',
-      'Helpin includes roadmaps, sprints and objectives alongside a support inbox and CRM, so the request, the task, the pull request and the follow-up share one customer history. It’s open source and charges per workspace.',
-      guide('Linear'),
+  "linear": {
+    "intro": [
+      "Keep the speed you expect from a modern project tool. Add AI agents that can work from the customer’s first message through planning, code review, docs updates and follow-up.",
+      "Linear brings issues, projects, cycles and agents together. Helpin gives your team a fast planning workspace too, with a shared support inbox, CRM, meeting notes and help center built in. The people doing the work can see why it matters.",
+      "You can use Helpin’s built-in agents, create your own, or connect compatible external agents through MCP. One workspace price includes unlimited teammates, and you can self-host the open-source edition."
     ],
-    difference: [
-      { lead: 'Linear is built around the issue:', text: 'planning and shipping engineering work quickly, with customer context linked in from other tools.' },
-      { lead: 'Helpin is built around the customer:', text: 'the request, the work it becomes and the follow-up, in one product.' },
+    "difference": [
+      {
+        "lead": "Give agents the job and the reason behind it.",
+        "text": "Helpin connects planning and code to live support conversations, deals, meetings and docs in the same product."
+      },
+      {
+        "lead": "Linear connects engineering to customer requests.",
+        "text": "It links feedback and account details to issues, with support conversations handled in connected tools."
+      }
     ],
-    features: [
+    "features": [
       {
-        id: 'planning', title: 'Roadmaps, sprints and triage',
-        competitor: 'Linear organizes work into issues, projects, cycles and initiatives, with a triage inbox, releases and diffs on every plan, and Insights dashboards on Business. It’s widely praised for its speed and design.',
-        helpin: 'Helpin Projects covers roadmaps, sprints, objectives, epics, dependencies, estimates and triage, with velocity and sprint reports. Tasks can carry the customer requests and conversations behind them.',
-        verdict: 'For a pure engineering tracker, Linear is fast and polished. Helpin’s planning is built to keep customer context on the work.',
-        preview: PREVIEW.projects,
+        "id": "planning",
+        "title": "Roadmaps, sprints and triage",
+        "competitor": "Linear organizes work into issues, projects, cycles and initiatives, with triage, views and reporting. Insights dashboards are available on Business. Its interface emphasizes quick navigation and keyboard shortcuts.",
+        "helpin": HELPIN.planning,
+        "verdict": "Helpin combines fast planning with agents that act on the work and built-in access to the customers asking for it.",
+        "preview": {
+          "product": "projects",
+          "label": "Helpin Projects: the task, the customer conversation behind it and the agent’s progress."
+        }
       },
       {
-        id: 'coding-agents', title: 'Coding agents',
-        competitor: 'Linear Agent can write code in cloud coding sessions using Claude Code or Codex, paid for with prepaid AI credits, and you can assign issues to third-party agents such as Cursor, Codex, GitHub Copilot and Devin.',
-        helpin: 'Helpin’s coding agents work from the task and the customer conversation behind it, open a GitHub pull request or GitLab merge request, and wait for your team’s review. On Cloud, usage comes from the AI allowance in your plan; self-hosted, they’re part of the free Community edition and use your own AI provider.',
-        verdict: 'Linear offers the widest choice of agents. Helpin’s agents start with more of the customer context.',
-        preview: PREVIEW.agents,
+        "id": "coding-agents",
+        "title": "AI agents that carry out work",
+        "competitor": "Linear Agent can write code in cloud coding sessions using Claude Code or Codex, paid for with prepaid AI credits, and you can assign issues to third-party agents such as Cursor, Codex, GitHub Copilot and Devin.",
+        "helpin": HELPIN.ai,
+        "verdict": "Both support coding agents. Helpin also connects planning, review, docs upkeep and customer follow-up in the same workspace.",
+        "preview": {
+          "product": "agents",
+          "label": "Helpin’s specialist agents, each with its own tools and approval rules."
+        }
       },
       {
-        id: 'customer-requests', title: 'Customer requests and support',
-        competitor: 'Linear has no customer-facing inbox, live chat or help center. It links customer requests from Slack on every plan, and from Intercom, Zendesk and Front on the Business plan.',
-        helpin: 'Helpin includes the support inbox, chat widget and help center, so requests start in the same product as the task. When the work ships, the team can follow up in the original conversation.',
-        verdict: 'If you’re happy with your support tool, Linear links to it well. If you want support and projects together, Helpin removes the hand-off.',
-        preview: PREVIEW.inbox,
+        "id": "customer-requests",
+        "title": "Customer requests and support",
+        "competitor": "Linear links customer requests to issues and keeps account details such as revenue and customer tier. Connections to tools such as Intercom and Zendesk bring in support context. Customer-facing chat, email and help-center publishing happen in separate tools.",
+        "helpin": HELPIN.inbox,
+        "verdict": "Helpin keeps the actual conversation and the development work together, so agents and people can act on the same history.",
+        "preview": {
+          "product": "inbox",
+          "label": "Helpin’s shared inbox: the customer’s earlier conversation, linked task and AI draft in one view."
+        }
       },
       {
-        id: 'crm', title: 'Customer records and meetings',
-        competitor: 'Linear tracks customer requests and attributes, and can turn Gong call transcripts into requests on Enterprise. It has no CRM or meeting notes of its own.',
-        helpin: HELPIN.crm,
-        verdict: 'If account context matters to your roadmap, Helpin keeps deals and meetings next to the work.',
-        preview: PREVIEW.crm,
+        "id": "crm",
+        "title": "Customer records and meetings",
+        "competitor": "Linear tracks customer requests and attributes, and can turn Gong call transcripts into requests on Enterprise. It has no CRM or meeting notes of its own.",
+        "helpin": HELPIN.crm,
+        "verdict": "Helpin gives your team and agents a deal pipeline, meeting decisions and follow-ups alongside the work customers are waiting for.",
+        "preview": {
+          "product": "crm",
+          "label": "Helpin CRM: deals with the conversations, meetings and work behind them."
+        }
       },
       {
-        id: 'developers', title: 'Git, API and integrations',
-        competitor: 'Linear connects to GitHub and GitLab for pull request linking, and offers a GraphQL API, webhooks, a hosted MCP server and native iOS and Android apps.',
-        helpin: 'Helpin links GitHub pull requests and GitLab merge requests to tasks and updates delivery status when work merges. It offers a Helpin MCP server (in beta) and connections to external MCP servers, including Linear’s.',
-        verdict: 'Both connect to your code. Helpin can also reach Linear through MCP, so the two can run side by side.',
+        "id": "developers",
+        "title": "Git, API and integrations",
+        "competitor": "Linear connects to GitHub and GitLab for pull request linking, and offers a GraphQL API, webhooks, a hosted MCP server and native iOS and Android apps.",
+        "helpin": HELPIN.developers,
+        "verdict": "Helpin supports your existing AI tools and connects agents to external systems, including Linear, through MCP."
       },
       {
-        id: 'knowledge', title: 'Docs and knowledge',
-        competitor: 'Linear includes documents for specs and project updates, but no public help center for customers.',
-        helpin: HELPIN.knowledge,
-        verdict: 'If you publish docs for customers, Helpin covers that in the same product as your roadmap.',
-      },
+        "id": "knowledge",
+        "title": "Help center and internal docs",
+        "competitor": "Linear includes documents for specs and project updates, but no public help center for customers.",
+        "helpin": HELPIN.knowledge,
+        "verdict": "Helpin covers the full docs workflow, from internal decisions to current customer guides with screenshots and browser recordings."
+      }
     ],
-    pricing: 'Linear charges per user: Basic is $10 and Business $16 a month billed annually, with a free plan for up to 250 issues. Coding sessions use prepaid AI credits, the integrations with support tools need Business, and your support tool is priced separately.',
-    hosting: 'Linear is a hosted service, and there’s no way to run it on your own infrastructure.',
-    onboarding: 'Linear imports from Jira, GitHub Issues, Asana and Shortcut, and exports issues as CSV or through its API. Helpin doesn’t import from Linear yet, but its agents can use Linear’s tools through MCP, so you can run both during a move.',
+    "pricing": "Linear charges per user: Basic is $10 and Business $16 a month billed annually, with a free plan for up to 250 issues. Coding sessions use prepaid AI credits, the integrations with support tools need Business, and your support tool is priced separately.",
+    "hosting": "Linear is a hosted service, and there’s no way to run it on your own infrastructure.",
+    "onboarding": "Linear provides importers for tools including Jira, GitHub Issues, Asana and Shortcut. Helpin does not import Linear history yet. You can start a new project in Helpin and connect Linear through MCP while you decide what to move."
   },
-  plane: {
-    intro: [
-      'Plane and Helpin are both open source, and both can run on your own servers. Plane is a project tracker. Helpin puts projects next to support, CRM, meetings and docs.',
-      'Plane says more than 50,000 teams use it. It covers work items, cycles, modules, pages, initiatives and dashboards, adds Plane AI and agents on its paid plans, and can hand a work item to Cursor’s coding agent.',
-      'Helpin includes roadmaps, sprints and objectives alongside a support inbox, help center and CRM, so the request, the task, the pull request and the follow-up share one customer history. Every product feature is open source, AI agents included.',
-      guide('Plane'),
+  "plane": {
+    "intro": [
+      "Your agents need more than a task description. They need the customer’s conversation, the account history, the relevant docs and the code. Helpin brings that context into one fast workspace where agents can do the work.",
+      "Plane combines project planning, a wiki and AI workflows. Helpin combines objectives, roadmaps, sprints and epics with chat and email support, CRM, meetings and agents for planning, coding, review and docs.",
+      "Both offer self-hosting. Helpin includes its AI agents and product features in the free open-source edition, while Cloud uses one workspace price with unlimited teammates."
     ],
-    difference: [
-      { lead: 'Plane is built around the work item:', text: 'planning and tracking projects, with requests collected through Intake and linked to customer profiles on its Business plan.' },
-      { lead: 'Helpin is built around the customer:', text: 'the conversation, the work it becomes and the follow-up, in one open-source product.' },
+    "difference": [
+      {
+        "lead": "Plan, build and follow up in one workspace.",
+        "text": "Helpin’s agents can work across customer support, projects, code, docs and sales. Those capabilities are included when you self-host."
+      },
+      {
+        "lead": "Plane connects projects, knowledge and AI.",
+        "text": "Its paid commercial edition adds AI and agents. Its customer help desk is listed as coming soon."
+      }
     ],
-    features: [
+    "features": [
       {
-        id: 'planning', title: 'Roadmaps, cycles and sprints',
-        competitor: 'Plane organizes work into work items, cycles, modules and epics, with list, board, calendar, Gantt and spreadsheet layouts. Pro adds initiatives, milestones, a wiki, dashboards and time tracking; Business adds recurring work items, a workflow and project templates.',
-        helpin: 'Helpin Projects covers roadmaps, sprints, objectives, epics, dependencies, estimates and triage, with velocity and sprint reports. Tasks can carry the customer requests and conversations behind them.',
-        verdict: 'Plane offers more planning views and depth. Helpin’s planning keeps customer context on the work.',
-        preview: PREVIEW.projects,
+        "id": "planning",
+        "title": "Roadmaps, cycles and sprints",
+        "competitor": "Plane includes work items, cycles, modules, epics and multiple layouts. Paid plans add features such as initiatives, dashboards and time tracking. It also provides workflows, approvals and recurring work items on higher plans.",
+        "helpin": HELPIN.planning,
+        "verdict": "Helpin gives teams structured planning and fast day-to-day work, with AI agents and customer conversations connected to delivery.",
+        "preview": {
+          "product": "projects",
+          "label": "Helpin Projects: the task, the customer conversation behind it and the agent’s progress."
+        }
       },
       {
-        id: 'ai-agents', title: 'AI and coding agents',
-        competitor: 'Plane AI answers questions, builds work items and runs agents on mentions, events or schedules. On Cloud it uses monthly credits: 500 per seat on Pro and 1,000 on Business, with none on Free and no top-up. You can assign a work item to Cursor’s coding agent, which opens a GitHub pull request.',
-        helpin: 'Helpin’s agents answer customers, plan the work and prepare follow-ups. Its coding agents work from the task and the customer conversation behind it, and open a GitHub pull request or GitLab merge request for your team to review. On Cloud, usage comes from the AI allowance in your plan; self-hosted, the agents are part of the free Community edition and use your own AI provider.',
-        verdict: 'Both put AI next to the work. Helpin’s agents also cover support, and they’re included in the free edition.',
-        preview: PREVIEW.agents,
+        "id": "ai-agents",
+        "title": "AI agents that carry out work",
+        "competitor": "Plane AI can answer questions, create work items and run custom agents from mentions, assignments or schedules. Cloud plans use personal AI allowances and a separate shared budget for agent runs. Its Cursor integration can turn assigned work into a GitHub pull request.",
+        "helpin": HELPIN.ai,
+        "verdict": "Helpin’s agents cover the customer question, the code, the review and the guide update. They are included when you self-host.",
+        "preview": {
+          "product": "agents",
+          "label": "Helpin’s specialist agents, each with its own tools and approval rules."
+        }
       },
       {
-        id: 'customer-requests', title: 'Customer requests and support',
-        competitor: 'Plane collects requests through Intake, with public forms and an intake email address on Business, and links them to customer profiles with Customers on Business. Its Desk help desk is listed as coming soon, and there’s no live chat.',
-        helpin: 'Helpin includes the support inbox, chat widget and help center, so requests start in the same product as the task. When the work ships, the team can follow up in the original conversation.',
-        verdict: 'If requests come from your own team, Plane’s Intake covers it. If they come from customers, Helpin puts the conversation next to the work.',
-        preview: PREVIEW.inbox,
+        "id": "customer-requests",
+        "title": "Customer requests and support",
+        "competitor": "Plane collects requests through Intake, with public forms and an intake email address on Business, and links them to customer profiles with Customers on Business. Its Desk help desk is listed as coming soon, and there’s no live chat.",
+        "helpin": HELPIN.inbox,
+        "verdict": "Helpin provides the live conversation as well as the task, so you can answer, investigate and follow up in one place.",
+        "preview": {
+          "product": "inbox",
+          "label": "Helpin’s shared inbox: the customer’s earlier conversation, linked task and AI draft in one view."
+        }
       },
       {
-        id: 'crm', title: 'Customer records and meetings',
-        competitor: 'Plane’s Customers feature on Business gives each customer a profile with fields such as stage, contract status and revenue, linked to their requests. It has no deals, pipelines or meeting notetaker; Plane AI can search Granola meeting notes through a connector.',
-        helpin: HELPIN.crm,
-        verdict: 'If account context matters to your roadmap, Helpin keeps deals and meetings next to the work.',
-        preview: PREVIEW.crm,
+        "id": "crm",
+        "title": "Customer records and meetings",
+        "competitor": "Plane’s Customers feature on Business gives each customer a profile with fields such as stage, contract status and revenue, linked to their requests. It has no deals, pipelines or meeting notetaker; Plane AI can search Granola meeting notes through a connector.",
+        "helpin": HELPIN.crm,
+        "verdict": "Helpin adds sales pipelines and recorded meeting context, with agents that can turn both into action.",
+        "preview": {
+          "product": "crm",
+          "label": "Helpin CRM: deals with the conversations, meetings and work behind them."
+        }
       },
       {
-        id: 'self-hosting', title: 'Open source and self-hosting',
-        competitor: 'Plane’s Community Edition is AGPL-3.0 and matches the Free plan. Plane AI, agents, time tracking, Customers and SSO need the closed-source Commercial Edition, with a license key bound to one workspace and one machine. Plane supports Docker, Kubernetes and an air-gapped edition on Enterprise Grid.',
-        helpin: HELPIN.hosting,
-        verdict: 'Plane has more deployment options. Helpin’s free edition includes more of the product.',
+        "id": "self-hosting",
+        "title": "Open source and self-hosting",
+        "competitor": "Plane has an AGPL-3.0 Community Edition and a separate Commercial Edition for paid features, including AI. It supports Docker, Kubernetes and an air-gapped Enterprise deployment. Self-hosted AI uses your own provider.",
+        "helpin": HELPIN.hosting,
+        "verdict": "Helpin includes support, projects, CRM and AI agents without a self-hosted license fee. Compare deployment needs separately."
       },
       {
-        id: 'developers', title: 'Git, API and integrations',
-        competitor: 'Plane connects to GitHub, GitLab, Slack and Sentry on Pro and above, offers a REST API with webhooks, an MIT-licensed MCP server and native mobile apps, and imports from Jira, Linear, Asana and ClickUp.',
-        helpin: 'Helpin links GitHub pull requests and GitLab merge requests to tasks and updates delivery status when work merges. It offers a Helpin MCP server (in beta), connections to external MCP servers, including Plane Cloud’s, and web SDKs for your product.',
-        verdict: 'Plane has more integrations and importers. Helpin can reach Plane Cloud through MCP, so the two can run side by side.',
-      },
+        "id": "developers",
+        "title": "Git, API and integrations",
+        "competitor": "Plane connects to GitHub, GitLab, Slack and Sentry on Pro and above, offers a REST API with webhooks, an MIT-licensed MCP server and native mobile apps, and imports from Jira, Linear, Asana and ClickUp.",
+        "helpin": HELPIN.developers,
+        "verdict": "Helpin connects built-in and external agents to work across the business. Check specific importers if you need a historical migration."
+      }
     ],
-    pricing: 'Plane charges per seat: Pro is $6 and Business $13 a month billed annually ($8 and $15 billed monthly), with a free plan for up to 12 seats. Plane AI uses monthly credits included per seat on the paid plans, with no top-up. Helpin charges one price per workspace, so it can cost more for a small team and less as the team grows.',
-    hosting: 'Plane’s Community Edition is open source under AGPL-3.0 and matches its Free plan. Paid features, including Plane AI, run in the closed-source Commercial Edition with a license key and your own AI provider. An air-gapped edition is available on Enterprise Grid, with a 100-seat minimum.',
-    onboarding: 'Plane imports from Jira, Linear, Asana and ClickUp, and exports work items as CSV, Excel or JSON. Helpin doesn’t import from Plane yet, but its agents can use Plane Cloud’s tools through MCP, so you can run both during a move.',
+    "pricing": "Plane charges per seat: Pro is $6 and Business $13 a month billed annually, or $8 and $15 billed monthly. Its free plan covers up to 12 seats. Paid Cloud plans include personal AI allowances and a separate workspace allowance for agent runs. Helpin charges per workspace, so inviting another teammate does not increase the subscription.",
+    "hosting": "Plane’s Community Edition is open source under AGPL-3.0 and matches its Free plan. Paid features, including Plane AI, run in the closed-source Commercial Edition with a license key and your own AI provider. An air-gapped edition is available on Enterprise Grid, with a 100-seat minimum.",
+    "onboarding": "Plane imports from Jira, Linear, Asana and ClickUp, and exports work items as CSV, Excel or JSON. Helpin doesn’t import from Plane yet, but its agents can use Plane Cloud’s tools through MCP, so you can run both during a move."
   },
-  jira: {
-    intro: [
-      'Jira and Helpin both help teams plan and ship work, and both let AI agents pick up tasks. Jira is a widely used issue tracker with a large ecosystem. Helpin puts projects next to support, CRM, meetings and docs.',
-      'Atlassian sells the help desk, product feedback, docs and meeting notes as separate products: Jira Service Management inside Service Collection, Jira Product Discovery, Confluence and Loom. Its Rovo AI and coding agents work across them.',
-      'Helpin includes roadmaps, sprints and objectives alongside a support inbox, help center and CRM, so the request, the task, the pull request and the follow-up share one customer history. It’s open source and charges per workspace.',
-      guide('Jira'),
+  "jira": {
+    "intro": [
+      "Spend your day moving work forward, with AI agents taking on the investigation, planning, code and review. Helpin keeps that work in a fast workspace alongside the customer conversations that started it.",
+      "Jira provides project tracking and AI agents within the Atlassian family. Helpin brings objectives, roadmaps, epics and sprints together with support, CRM, meetings and docs, so teams can work from the same context without assembling several products.",
+      "Give agents access to your code and connected tools, choose what needs approval, and keep the progress visible. Helpin charges per workspace with unlimited teammates and offers a free open-source edition you can self-host."
     ],
-    difference: [
-      { lead: 'Jira is built around the work item:', text: 'planning and tracking work at any scale, with support and customer feedback in separate Atlassian products.' },
-      { lead: 'Helpin is built around the customer:', text: 'the request, the work it becomes and the follow-up, in one open-source product.' },
+    "difference": [
+      {
+        "lead": "Bring the customer and the delivery work together.",
+        "text": "Helpin includes agents, planning, support, docs, CRM and meetings in one product, with one workspace price."
+      },
+      {
+        "lead": "Jira connects to the wider Atlassian family.",
+        "text": "Support, knowledge and meeting workflows can span Service Collection, Confluence and Loom."
+      }
     ],
-    features: [
+    "features": [
       {
-        id: 'planning', title: 'Roadmaps, boards and sprints',
-        competitor: 'Jira organizes work into projects, boards and sprints for Scrum and Kanban teams. Premium adds advanced planning, capacity management, approvals and sandboxes; Enterprise adds multiple sites and Atlassian Analytics.',
-        helpin: 'Helpin Projects covers roadmaps, sprints, objectives, epics, dependencies, estimates and triage, with velocity and sprint reports. Tasks can carry the customer requests and conversations behind them.',
-        verdict: 'For large programs of work, Jira’s planning goes further. Helpin’s planning keeps customer context on the work.',
-        preview: PREVIEW.projects,
+        "id": "planning",
+        "title": "Roadmaps, boards and sprints",
+        "competitor": "Jira organizes work into projects, boards and sprints for Scrum and Kanban teams. Premium adds advanced planning, capacity management, approvals and sandboxes; Enterprise adds multiple sites and Atlassian Analytics.",
+        "helpin": HELPIN.planning,
+        "verdict": "Helpin combines structured planning, a fast workspace and agents that carry out the work with the customer context attached.",
+        "preview": {
+          "product": "projects",
+          "label": "Helpin Projects: the task, the customer conversation behind it and the agent’s progress."
+        }
       },
       {
-        id: 'coding-agents', title: 'AI and coding agents',
-        competitor: 'Paid Jira plans include Rovo agents and can assign work items to the Jira Coding Agent or to third-party coding agents such as Claude, Cursor and GitHub Copilot. They draw on Rovo credits: 25 per user on Standard, 70 on Premium and 150 on Enterprise, with extra usage billed from December 3, 2026. The Jira Coding Agent works with GitHub and Bitbucket repositories.',
-        helpin: 'Helpin’s coding agents work from the task and the customer conversation behind it, and open a GitHub pull request or GitLab merge request for your team to review. On Cloud, usage comes from the AI allowance in your plan; self-hosted, they’re part of the free Community edition and use your own AI provider.',
-        verdict: 'Jira offers a wider choice of agents. Helpin’s agents start with the customer context, and AI usage is part of the plan.',
-        preview: PREVIEW.agents,
+        "id": "coding-agents",
+        "title": "AI agents that carry out work",
+        "competitor": "Jira supports Rovo agents and connected coding agents, including tools from Claude, Cursor and GitHub Copilot. Paid plans include Rovo credits; Rovo Dev has separate pricing. Agents can work with issues and connected repositories, with access controlled through the Atlassian setup.",
+        "helpin": HELPIN.ai,
+        "verdict": "Helpin supports built-in, custom and external agents across support, development, docs and sales, with tools and approvals you choose.",
+        "preview": {
+          "product": "agents",
+          "label": "Helpin’s specialist agents, each with its own tools and approval rules."
+        }
       },
       {
-        id: 'customer-requests', title: 'Customer requests and support',
-        competitor: 'Jira can create work items from emails sent by licensed users, and Atlassian points help-desk teams to Jira Service Management. It’s now sold inside Service Collection and priced per agent, with portal, email and chat channels, and customer-service features on new sites live in its Customer Service Management app. Zendesk’s own app links tickets to Jira.',
-        helpin: 'Helpin includes the support inbox, chat widget and help center, so requests start in the same product as the task. When the work ships, the team can follow up in the original conversation.',
-        verdict: 'With Atlassian, support is another product and another bill. Helpin puts the conversation next to the work.',
-        preview: PREVIEW.inbox,
+        "id": "customer-requests",
+        "title": "Customer requests and support",
+        "competitor": "Atlassian provides customer support through its separate Service Collection, which includes Jira Service Management and customer service tools. These can connect tickets and conversations to Jira work. Support subscriptions are priced separately from Jira.",
+        "helpin": HELPIN.inbox,
+        "verdict": "Helpin includes the shared inbox and help center alongside projects, so the question and the work share one history.",
+        "preview": {
+          "product": "inbox",
+          "label": "Helpin’s shared inbox: the customer’s earlier conversation, linked task and AI draft in one view."
+        }
       },
       {
-        id: 'crm', title: 'Customer records and meetings',
-        competitor: 'Atlassian doesn’t offer a CRM, and expects its customer service tools to work alongside one. Loom’s Business + AI plan records Zoom, Google Meet and Teams calls and writes notes to Confluence, and Rovo can suggest Jira updates from them.',
-        helpin: HELPIN.crm,
-        verdict: 'If account context matters to your roadmap, Helpin keeps deals and meetings next to the work.',
-        preview: PREVIEW.crm,
+        "id": "crm",
+        "title": "Customer records and meetings",
+        "competitor": "Atlassian connects to external CRMs for sales pipelines. Meeting recording and AI notes come through Loom, with Confluence and Jira used for the resulting knowledge and work. Rovo can use connected information across these products.",
+        "helpin": HELPIN.crm,
+        "verdict": "Helpin brings deals, customer conversations and meeting follow-ups into the same product as your roadmap and AI agents.",
+        "preview": {
+          "product": "crm",
+          "label": "Helpin CRM: deals with the conversations, meetings and work behind them."
+        }
       },
       {
-        id: 'hosting', title: 'Hosting and open source',
-        competitor: 'Jira Cloud is hosted by Atlassian. Data Center, the self-managed edition, closed to new customers on March 30, 2026, and becomes read-only on March 28, 2029. Jira isn’t open source.',
-        helpin: HELPIN.hosting,
-        verdict: 'If you need to run on your own servers, Helpin is open source and self-hostable.',
+        "id": "hosting",
+        "title": "Hosting and open source",
+        "competitor": "Jira Cloud is hosted by Atlassian. Data Center, the self-managed edition, closed to new customers on March 30, 2026, and becomes read-only on March 28, 2029. Jira isn’t open source.",
+        "helpin": HELPIN.hosting,
+        "verdict": "Helpin gives you a free open-source path to self-hosting, including AI agents, projects, support and CRM."
       },
       {
-        id: 'developers', title: 'Git, API and integrations',
-        competitor: 'Jira connects to GitHub, GitLab and Bitbucket, offers a REST API and webhooks, native iOS and Android apps, the official Rovo MCP Server and more than 4,000 Marketplace apps.',
-        helpin: 'Helpin links GitHub pull requests and GitLab merge requests to tasks and updates delivery status when work merges. It offers a Helpin MCP server (in beta), connections to external MCP servers, including Atlassian’s, and web SDKs for your product.',
-        verdict: 'Jira’s ecosystem is far larger. Helpin can reach Jira through MCP, so the two can run side by side.',
-      },
+        "id": "developers",
+        "title": "Git, API and integrations",
+        "competitor": "Jira connects to GitHub, GitLab and Bitbucket, offers a REST API and webhooks, native iOS and Android apps, the official Rovo MCP Server and more than 4,000 Marketplace apps.",
+        "helpin": HELPIN.developers,
+        "verdict": "Helpin connects to your code and AI tools, and its agents can use Jira through MCP while both products run together."
+      }
     ],
-    pricing: 'Jira charges per user. Billed monthly, Standard is $9.05 and Premium $18.30 a user for up to 100 users; annual plans are priced by user tier, such as $9,050 a year for 100 users on Standard. The free plan covers up to 10 users, and Atlassian raises these prices on October 13, 2026. The help desk, product feedback, docs and meeting notes are priced separately.',
-    hosting: 'Jira Cloud is hosted by Atlassian. New customers can no longer buy Data Center, the self-managed edition, and Data Center products become read-only on March 28, 2029. Jira isn’t open source.',
-    onboarding: 'Jira imports from CSV, Asana, monday, ClickUp, Trello, Linear, GitHub, GitLab and more, and exports work items as CSV, Excel or XML. Helpin doesn’t import from Jira yet, but its agents can use Jira’s tools through MCP, so you can run both during a move.',
+    "pricing": "Jira charges per user. Billed monthly, Standard is $9.05 and Premium $18.30 a user for up to 100 users; annual plans are priced by user tier, such as $9,050 a year for 100 users on Standard. The free plan covers up to 10 users, and Atlassian raises these prices on October 13, 2026. The help desk, product feedback, docs and meeting notes are priced separately.",
+    "hosting": "Jira Cloud is hosted by Atlassian. New customers can no longer buy Data Center, the self-managed edition, and Data Center products become read-only on March 28, 2029. Jira isn’t open source.",
+    "onboarding": "Jira imports from CSV, Asana, monday, ClickUp, Trello, Linear, GitHub, GitLab and more, and exports work items as CSV, Excel or XML. Helpin doesn’t import from Jira yet, but its agents can use Jira’s tools through MCP, so you can run both during a move."
   },
+  "chatbase": {
+    "intro": [
+      "An AI answer can save a customer a few minutes. An agent that works on the underlying problem can save your whole team a round of handoffs. Helpin connects the conversation to the plan, code, review and docs in one fast workspace.",
+      "Chatbase provides customer-facing AI agents, procedures, a helpdesk and connected actions. Helpin covers AI support too, with projects, CRM, meetings and agents that can take on the work after the conversation.",
+      "Both include AI usage in their paid plans. Helpin also gives you unlimited teammates and an open-source edition you can run with your own AI provider."
+    ],
+    "difference": [
+      {
+        "lead": "Helpin brings the customer and the work together.",
+        "text": "Agents can investigate an issue, plan and code a fix, update the guide and follow up after a confirmed release, under your approval rules."
+      },
+      {
+        "lead": "Chatbase builds around customer-facing agents.",
+        "text": "Its procedures, helpdesk and integrations support answers, actions and human handoffs across customer channels."
+      }
+    ],
+    "features": [
+      {
+        "id": "inbox",
+        "title": "Support inbox and customer context",
+        "competitor": "Chatbase includes a helpdesk for live takeover and email follow-up. It brings website, email and social conversations together, with ticket assignment, internal notes and conversation history. Teams can also connect an existing helpdesk.",
+        "helpin": HELPIN.inbox,
+        "verdict": "Helpin connects the support conversation directly to projects, deals and agent work, so more of the next step happens in one place.",
+        "preview": {
+          "product": "inbox",
+          "label": "Helpin’s shared inbox: the customer’s earlier conversation, linked task and AI draft in one view."
+        }
+      },
+      {
+        "id": "ai-agents",
+        "title": "AI agents that carry out work",
+        "competitor": "Chatbase agents can follow procedures, look up information and take actions through connected systems. Procedures describe the steps in plain language, with testing and human handoff available.",
+        "helpin": HELPIN.ai,
+        "verdict": "Helpin extends agent work to planning, coding, review and docs, with the customer context available throughout.",
+        "preview": {
+          "product": "agents",
+          "label": "Helpin’s specialist agents, each with its own tools and approval rules."
+        }
+      },
+      {
+        "id": "knowledge",
+        "title": "Help center and internal docs",
+        "competitor": "Chatbase trains agents on supplied content and can resync sources. Its Agent Page gives customers a place to ask questions using existing documentation. The source articles still need to be maintained.",
+        "helpin": HELPIN.knowledge,
+        "verdict": "Helpin can maintain the underlying guides as well as answer from them, including fresh screenshots and browser recordings."
+      },
+      {
+        "id": "question-to-fix",
+        "title": "From customer report to reviewed fix",
+        "competitor": "Chatbase can collect an issue, create a support ticket and use connected actions to move it along. A project tracker and coding workflow handle the engineering work beyond the helpdesk.",
+        "helpin": HELPIN.work,
+        "verdict": "Helpin has the task, planning, coding and review workflow built in, with the original conversation attached.",
+        "preview": {
+          "product": "projects",
+          "label": "Helpin Projects: the task, the customer conversation behind it and the agent’s progress."
+        }
+      },
+      {
+        "id": "crm",
+        "title": "Sales follow-ups and meeting context",
+        "competitor": "Chatbase can qualify leads, handle pricing questions and book demos. CRM integrations connect those conversations to systems your sales team already uses.",
+        "helpin": HELPIN.crm,
+        "verdict": "Helpin gives agents a built-in deal pipeline and meeting decisions, so sales follow-ups and product work use the same account history.",
+        "preview": {
+          "product": "crm",
+          "label": "Helpin CRM: deals with the conversations, meetings and work behind them."
+        }
+      },
+      {
+        "id": "developers",
+        "title": "External agents and connected tools",
+        "competitor": "Chatbase’s MCP server lets compatible clients manage agents, knowledge sources, conversations and tickets within their permissions. It also provides APIs and web, voice and mobile SDKs.",
+        "helpin": HELPIN.developers,
+        "verdict": "Both connect to external AI tools. Helpin gives those agents access to the wider workspace, including tasks, docs and agent runs."
+      }
+    ],
+    "pricing": "Chatbase’s monthly plans are Hobby at $40, Standard at $150 and Pro at $500. They include 2, 3 and 5 members and different message-credit allowances. Yearly plans have a published 20% discount. Extra message credits, additional AI agents and branding removal have separate prices. Helpin’s subscription includes unlimited teammates; compare the AI allowance and the other tools included too.",
+    "hosting": "Chatbase is a hosted platform. Its open-source SDKs connect to that service; they do not provide a self-hosted Chatbase workspace.",
+    "onboarding": "Chatbase offers a free plan and a seven-day paid-plan trial. When moving to Helpin, start from your existing source content and instructions. There is no direct Chatbase workspace importer, so keep historical records available while you set up and review the new workflow."
+  },
+  "crisp": {
+    "intro": [
+      "A shared inbox gives conversations a place to land. Helpin connects them to the work needed to solve the problem, with AI agents that can investigate, plan, write code and prepare the result for review.",
+      "Crisp combines a shared inbox, Hugo, workflows and a knowledge base. Helpin brings support into the same fast workspace as projects, deals, meetings and agents for coding, review and docs.",
+      "Both use workspace pricing and include AI usage on paid plans. Helpin adds unlimited teammates on every plan and the option to self-host the product and its agents."
+    ],
+    "difference": [
+      {
+        "lead": "Helpin connects support to delivery and sales.",
+        "text": "The customer’s conversation can become agent work, a reviewed fix, a guide update or an owned follow-up in the same product."
+      },
+      {
+        "lead": "Crisp connects support channels and automation.",
+        "text": "Its inbox, Hugo and workflows handle customer conversations, with connected tools extending the actions they can take."
+      }
+    ],
+    "features": [
+      {
+        "id": "inbox",
+        "title": "Support inbox and customer context",
+        "competitor": "Crisp brings chat, email and connected messaging channels into a shared inbox. Its support tools include notes, routing, saved replies and follow-up reminders. Mobile apps let teammates reply while away from their desks.",
+        "helpin": HELPIN.inbox,
+        "verdict": "Helpin keeps the inbox close to product delivery and account work. Crisp also covers social messaging and native mobile access.",
+        "preview": {
+          "product": "inbox",
+          "label": "Helpin’s shared inbox: the customer’s earlier conversation, linked task and AI draft in one view."
+        }
+      },
+      {
+        "id": "ai-agents",
+        "title": "AI agents that carry out work",
+        "competitor": "Hugo answers questions and takes actions through connected services. Crisp also provides visual workflows, task automations and MCP connections for custom tools and data.",
+        "helpin": HELPIN.ai,
+        "verdict": "Helpin carries agent work into planning, code, review and docs, alongside customer support.",
+        "preview": {
+          "product": "agents",
+          "label": "Helpin’s specialist agents, each with its own tools and approval rules."
+        }
+      },
+      {
+        "id": "knowledge",
+        "title": "Help center and internal docs",
+        "competitor": "Crisp includes a customer knowledge base on Essentials and Plus. Hugo can use help content and other connected knowledge to answer customers, while teammates manage the articles.",
+        "helpin": HELPIN.knowledge,
+        "verdict": "Helpin’s docs workflow covers internal spaces and public guides, including agent-prepared release updates and fresh UI captures."
+      },
+      {
+        "id": "question-to-fix",
+        "title": "From support conversation to reviewed fix",
+        "competitor": "Crisp’s task automations can call connected tools to carry out support actions. Engineering planning and code delivery run in the project and development tools you connect to that workflow.",
+        "helpin": HELPIN.work,
+        "verdict": "Helpin includes the project structure and coding workflow, so your team can review the fix beside the customer evidence.",
+        "preview": {
+          "product": "projects",
+          "label": "Helpin Projects: the task, the customer conversation behind it and the agent’s progress."
+        }
+      },
+      {
+        "id": "crm",
+        "title": "Sales follow-ups and meeting context",
+        "competitor": "Crisp keeps customer profiles, custom data and conversation history. It connects to sales systems such as HubSpot and Pipedrive so teams can use customer data in their support workflow.",
+        "helpin": HELPIN.crm,
+        "verdict": "Helpin adds a built-in deal pipeline, recorded meetings and agents that can act on the next sales step.",
+        "preview": {
+          "product": "crm",
+          "label": "Helpin CRM: deals with the conversations, meetings and work behind them."
+        }
+      },
+      {
+        "id": "developers",
+        "title": "External agents and connected tools",
+        "competitor": "Crisp offers APIs, webhooks and mobile SDKs. Hugo can call tools on external MCP servers. Its own MCP server currently exposes knowledge search for compatible AI clients.",
+        "helpin": HELPIN.developers,
+        "verdict": "Helpin’s MCP tools also let external agents update tasks and docs and start agent runs, with the access you allow."
+      }
+    ],
+    "pricing": "Crisp charges per workspace: Mini is $45, Essentials $95 and Plus $295 per month. Plans include 4, 10 and 20 seats respectively; Plus lists additional seats at $10 each per month. Paid plans include Hugo credits, with optional pay-as-you-go. Helpin includes unlimited teammates and an AI allowance, plus projects, CRM and meetings. Neither product charges a standard fee for each resolved conversation.",
+    "hosting": "Crisp is a hosted service. Its SDKs and open-source developer tools connect to Crisp Cloud; the full workspace is not offered as a self-hosted product.",
+    "onboarding": "Crisp offers a free plan and a 14-day trial. To move into Helpin, bring over your help content and workflow instructions, then start with a support address or a few website pages. There is no direct Crisp conversation importer today."
+  }
 };
 
 export const HELPIN_ARTICLE = HELPIN;

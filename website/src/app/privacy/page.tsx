@@ -45,7 +45,7 @@ export default function PrivacyPage() {
             <ul className="list-disc pl-5 space-y-1">
               <li>Your data is never used to train AI models</li>
               <li>Your data is never shared across workspaces</li>
-              <li>You bring your own AI provider API keys — we do not store or access your model outputs beyond what is needed to complete agent tasks</li>
+              <li>Helpin Cloud includes AI usage. Self-hosted installations use your own AI provider keys; Cloud Enterprise also supports your own keys. We process model outputs as needed to provide the agent features</li>
               <li>Agent actions can be configured to require human approval before execution</li>
             </ul>
           </section>
@@ -61,7 +61,7 @@ export default function PrivacyPage() {
             <ul className="list-disc pl-5 space-y-1">
               <li>Infrastructure providers (hosting, storage) under strict data processing agreements</li>
               <li>Payment processors, including Stripe, to process payments, manage subscriptions, prevent fraud, and provide invoices</li>
-              <li>Analytics tools (Usermaven) for product improvement — anonymized where possible</li>
+              <li>Analytics tools (Usermaven) for product improvement, anonymized where possible</li>
               <li>AI model providers selected or configured for your workspace, only as needed to complete agent tasks</li>
               <li>Law enforcement when legally required</li>
             </ul>

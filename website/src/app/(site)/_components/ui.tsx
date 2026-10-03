@@ -37,7 +37,7 @@ export function CtaRow({ secondaryHref = GITHUB_URL, secondaryLabel = 'View on G
   const external = secondaryHref.startsWith('http');
   return (
     <div className="cta-row">
-      <Link className="btn btn-primary" href={primaryHref}>{primaryLabel} →</Link>
+      <Link prefetch={false} className="btn btn-primary" href={primaryHref}>{primaryLabel} →</Link>
       <a className="btn btn-secondary" href={secondaryHref} target={external ? '_blank' : undefined} rel={external ? 'noopener noreferrer' : undefined}>
         {secondaryLabel === 'View on GitHub' ? <GithubIcon /> : null}
         {secondaryLabel} →

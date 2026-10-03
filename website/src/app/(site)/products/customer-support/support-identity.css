@@ -95,3 +95,5 @@
  .hp3 .support-identity-art *{animation:none!important;transition:none!important}
  .hp3 .sia-toolbar button{display:none}
 }
+
+.hp3 .support-identity-art[data-phase="0"] .sia-investigation,.hp3 .support-identity-art[data-phase="0"] .sia-response,.hp3 .support-identity-art[data-phase="1"] .sia-response,.hp3 .support-identity-art[data-phase="2"] .sia-response,.hp3 .sia-result[data-ready=false]{visibility:hidden}.hp3 .sia-investigation[data-active=true]{border-color:#8db09b}.hp3 .sia-response[data-ready=true]{animation:wf-arrive .35s both}

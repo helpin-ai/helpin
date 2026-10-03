@@ -1,6 +1,7 @@
 "use client";
 
 import { StreamingText } from '../../_components/StreamingText';
+import './crm-story.css';
 
 import '../../_components/product-previews/preview-navigation.css';
 
@@ -36,152 +37,12 @@ import { CRMIcon } from "./crm-icons";
 import { CRMCompanyLogo } from "./crm-company-logo";
 import "./crm-workspace.css";
 
+import { CRMAvatar, CRMMark, CRMNavigation, type CRMView } from "./crm-chrome";
+import { CRMPipeline } from "./crm-scenes";
+export { CRMAvatar, CRMMark, CRMNavigation } from "./crm-chrome";
+
 type View = "contacts" | "companies";
-export function CRMAvatar({
-  person = "sam",
-  size = 23,
-}: {
-  person?: string;
-  size?: number;
-}) {
-  return (
-    <img
-      className="cw-avatar"
-      src={`/new/avatars/${person}.webp`}
-      width={size}
-      height={size}
-      alt=""
-    />
-  );
-}
-export function CRMMark() {
-  return (
-    <span className="cw-ai-mark">
-      <img src="/brand/helpin-icon-white.svg" width={15} height={15} alt="" />
-    </span>
-  );
-}
-// Layout and navigation order mirror Sidebar.tsx, SidebarRail, and CrmRailNav.
-export function CRMNavigation({
-  view,
-  onView,
-}: {
-  view: View | "deals" | "playbooks";
-  onView?: (view: View) => void;
-}) {
-  const modules = [
-    ["FolderKanbanIcon", "Projects"],
-    ["Message01Icon", "Support"],
-    ["File01Icon", "Docs"],
-    ["Briefcase01Icon", "CRM"],
-    ["BotIcon", "Automation"],
-    ["Setting07Icon", "Settings"],
-  ] as const;
-  const links = [
-    ["DollarCircleIcon", "Deals"],
-    ["InboxIcon", "Emails"],
-    ["Camera01Icon", "Meetings"],
-    ["BookOpen01Icon", "Playbooks"],
-    ["BulbIcon", "Signals"],
-  ] as const;
-  return (
-    <aside className="cw-nav preview-sidebar">
-      <div className="cw-brand">
-        <b>O</b>
-        <strong>OrbitDesk</strong>
-        <CRMIcon name="ArrowDown01Icon" size={12} />
-        <CRMIcon name="Notification01Icon" size={15} />
-        <CRMIcon name="SidebarLeft01Icon" size={15} />
-      </div>
-      <div className="cw-nav-columns">
-        <div className="cw-apps">
-          <div aria-hidden="true">
-            {modules.map(([name, label]) => (
-              <span key={label} data-selected={label === "CRM"}>
-                <i>
-                  <CRMIcon name={name} />
-                </i>
-                <small>{label}</small>
-              </span>
-            ))}
-          </div>
-          <div className="cw-app-account" aria-hidden="true">
-            <span className="cw-rail-control" title="Switch to dark mode">
-              <CRMIcon name="Sun01Icon" size={14} />
-            </span>
-            <span className="cw-rail-control" title="Ask Agents">
-              <img
-                src="/new/crm/ask-agent-mark.svg"
-                width={24}
-                height={24}
-                alt=""
-              />
-            </span>
-            <span className="cw-account-control" title="Sam Rivera">
-              <CRMAvatar size={32} />
-              <i />
-            </span>
-          </div>
-        </div>
-        <div className="cw-module">
-          <div className="cw-crm">
-            <span>
-              <CRMIcon name="ChartColumnIcon" />
-              Overview
-            </span>
-            {(["contacts", "companies"] as const).map((item) => (
-              <button
-                type="button"
-                key={item}
-                aria-pressed={view === item}
-                onClick={() => onView?.(item)}
-                disabled={!onView}
-              >
-                <CRMIcon
-                  name={
-                    item === "contacts" ? "UserGroupIcon" : "Building03Icon"
-                  }
-                />
-                <span>{item === "contacts" ? "Contacts" : "Companies"}</span>
-              </button>
-            ))}
-            {links.map(([name, label]) => (
-              <span
-                key={label}
-                data-active={
-                  (view === "deals" && label === "Deals") ||
-                  (view === "playbooks" && label === "Playbooks")
-                }
-                className={
-                  label === "Playbooks" ? "cw-nav-separator" : undefined
-                }
-              >
-                <CRMIcon name={name} />
-                {label}
-              </span>
-            ))}
-            <div className="cw-module-footer" aria-hidden="true">
-              <span title="Pipelines">
-                <CRMIcon name="WorkflowSquare01Icon" />
-              </span>
-              <span title="Email Accounts">
-                <CRMIcon name="Mail01Icon" />
-              </span>
-              <span title="Autonomy">
-                <CRMIcon name="SparklesIcon" />
-              </span>
-            </div>
-          </div>
-          <div className="cw-sidebar-search" aria-hidden="true">
-            <CRMIcon name="Search01Icon" size={15} />
-            <span>Search OrbitDesk</span>
-            <small>⌘K</small>
-          </div>
-        </div>
-      </div>
-    </aside>
-  );
-}
+
 const DETAIL_TABS = [
   "Overview",
   "Tasks",
@@ -570,7 +431,7 @@ function AccountAgent({ active, phase }: { active: boolean; phase: number }) {
         <header>
           <CRMMark />
           <span>
-            <strong>Ask Agent</strong>
+            <strong>Helpin AI</strong>
             <small>Your account brief</small>
           </span>
           <MoreHorizontal size={16} />
@@ -582,7 +443,7 @@ function AccountAgent({ active, phase }: { active: boolean; phase: number }) {
           </div>
           <div className="cw-agent-label">
             <CRMMark />
-            Ask Agent
+            Helpin AI
           </div>
           <div className="cw-agent-sources">
             <span data-ready={phase >= 1}>
@@ -601,15 +462,15 @@ function AccountAgent({ active, phase }: { active: boolean; phase: number }) {
           </div>
           <div className="cw-agent-answer">
             <p className="cw-ghost">{ACCOUNT_BRIEF}</p>
-            <p><StreamingText text={ACCOUNT_BRIEF} active={active && phase === 2} pending={active && phase < 2} duration={2400} /></p>
+            <p><StreamingText text={ACCOUNT_BRIEF} active={active && phase === 2} pending={phase < 2} duration={2400} /></p>
           </div>
-          <div className="cw-agent-result" data-ready={phase === 3}>
+          {phase === 3 && <div className="cw-agent-result" data-ready={true}>
             <CRMAvatar />
             <span>
               For Sam: confirm the release status.
               <small>Then prepare Maya’s update.</small>
             </span>
-          </div>
+          </div>}
         </div>
         <div className="cw-agent-composer">
           <span>
@@ -628,12 +489,14 @@ function AccountAgent({ active, phase }: { active: boolean; phase: number }) {
 }
 export function CRMWorkspace({
   mode = "directory",
+  deals = false,
 }: {
   mode?: "directory" | "account";
+  deals?: boolean;
 }) {
   const playback = useCRMPlayback();
   const { container, active, phase, paused, setPaused } = playback;
-  const [manualView, setManualView] = useState<View | null>(null);
+  const [manualView, setManualView] = useState<CRMView | null>(null);
   const [search, setSearch] = useState("");
   const [owner, setOwner] = useState("all");
   const [selected, setSelected] = useState<number | null>(
@@ -644,16 +507,16 @@ export function CRMWorkspace({
   const [manualAgent, setManualAgent] = useState(false);
   const view =
     manualView ??
-    (mode === "directory" && active && phase >= 2 ? "companies" : "contacts");
+    (deals && mode === "directory" && phase >= 3 ? "deals" : mode === "directory" && phase >= 2 ? "companies" : "contacts");
   const showAgent =
-    mode === "account" && (manualAgent ? agent : !active || phase >= 1);
+    mode === "account" && (manualAgent ? agent : phase >= 1);
   const [selection, setSelection] = useState<number[]>([]);
   const [showEmail, setShowEmail] = useState(true);
   const [showCreated, setShowCreated] = useState(true);
   const [groupBy, setGroupBy] = useState("none");
   const searchRef = useRef<HTMLInputElement>(null);
   const id = useId();
-  const changeView = (next: View) => {
+  const changeView = (next: CRMView) => {
     setPaused(true);
     setManualView(next);
     setSelected(null);
@@ -686,22 +549,33 @@ export function CRMWorkspace({
       className={`crm-workspace cw-${mode}`}
       ref={container}
       onFocusCapture={(e) => {
-        if (mode === "directory" && !e.target.closest(".cw-playback")) {
+        if (mode === "directory" && !e.target.closest(".cw-playback, .cw-directory-toolbar")) {
           setManualView(view);
           setPaused(true);
         }
       }}
       data-playing={active}
       data-phase={phase}
+      data-view={view}
     >
+      {mode === "directory" && <div className="cw-directory-toolbar">
+        <div className="cw-preview-tabs" role="group" aria-label="CRM record type">
+          {(["contacts", "companies", ...(deals ? ["deals"] as const : [])] as const).map(value => <button type="button" key={value} aria-pressed={view === value} onClick={() => changeView(value)}>{value === "contacts" ? "Contacts" : value === "companies" ? "Companies" : "Deals"}</button>)}
+        </div>
+        <button type="button" aria-label={`${paused ? "Play" : "Pause"} CRM directory animation`} aria-pressed={paused} onClick={() => {
+          if (paused) { setManualView(null); setSelected(null); setSearch(""); setOwner("all"); }
+          else setManualView(view);
+          setPaused(!paused);
+        }}>{paused ? <Play size={12}/> : <Pause size={12}/>}</button>
+      </div>}
       <div
         className="cw-frame"
         inert={showAgent ? true : undefined}
         aria-hidden={showAgent ? true : undefined}
       >
-        <CRMNavigation view={view} onView={changeView} />
+        <CRMNavigation view={view} onView={changeView} dealsEnabled={deals} />
         <div className="cw-main">
-          {selected === null ? (
+          {view === "deals" ? <CRMPipeline embedded /> : selected === null ? (
             <>
               <header className="cw-list-header">
                 <h3>
@@ -1037,10 +911,10 @@ export function CRMWorkspace({
           id={`${id}-agent`}
           hidden={!showAgent}
         >
-          <AccountAgent active={active} phase={phase} />
+          <AccountAgent active={active} phase={manualAgent ? 3 : phase} />
         </div>
       )}
-      <div className="cw-playback">
+      {mode === "account" && <div className="cw-playback">
         <span>
           <Check size={12} />
           {selected === null
@@ -1048,24 +922,6 @@ export function CRMWorkspace({
             : "Customer history stays attached"}
         </span>
         <div>
-          {mode === "directory" && (
-            <div
-              className="cw-preview-tabs"
-              role="group"
-              aria-label="CRM record type"
-            >
-              {(["contacts", "companies"] as const).map((value) => (
-                <button
-                  type="button"
-                  key={value}
-                  aria-pressed={view === value}
-                  onClick={() => changeView(value)}
-                >
-                  {value === "contacts" ? "Contacts" : "Companies"}
-                </button>
-              ))}
-            </div>
-          )}
           {mode === "account" && (
             <button
               type="button"
@@ -1086,7 +942,7 @@ export function CRMWorkspace({
           )}
           <button
             type="button"
-            aria-label={`${paused ? "Play" : "Pause"} ${mode === "directory" ? "CRM directory" : "account context"} animation`}
+            aria-label={`${paused ? "Play" : "Pause"} account context animation`}
             aria-pressed={paused}
             onClick={() => {
               setManualAgent(false);
@@ -1101,7 +957,7 @@ export function CRMWorkspace({
             {paused ? <Play size={12} /> : <Pause size={12} />}
           </button>
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

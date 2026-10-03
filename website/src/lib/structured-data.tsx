@@ -78,6 +78,6 @@ export function article({ headline, description, path, date }: { headline: strin
     dateModified: date,
     author: { '@type': 'Organization', name: 'Helpin team', url: SITE_URL },
     publisher: { '@id': ORGANIZATION_ID },
-    image: `${SITE_URL}/og/helpin-compare-green-v4.png`,
+    image: `${SITE_URL}/og/helpin-compare-green-v5.png`,
   };
 }

@@ -5,14 +5,20 @@ import {
   ArrowRight,
   Building2,
   CircleDot,
+  FileText,
+  ListChecks,
   ShieldCheck,
   Sparkles,
   X,
 } from "lucide-react";
-import { CRMAvatar, CRMMark, CRMNavigation } from "./crm-workspace";
+import { CRMAvatar, CRMMark, CRMNavigation } from "./crm-chrome";
 import { CRMIcon } from "./crm-icons";
 import { CRMCompanyLogo } from "./crm-company-logo";
 import { COMPANIES } from "./crm-demo-data";
+import { useWorkflowPlayback } from "../../_components/useWorkflowPlayback";
+import { WorkflowAgent, WorkflowSources } from "../../_components/WorkflowParts";
+import { StreamingText } from "../../_components/StreamingText";
+import "./crm-story.css";
 
 // Customer records and pipeline cards share identities; amounts remain numeric so
 // filtered counts and stage totals always reflect the deals actually on screen.
@@ -259,13 +265,14 @@ const PIPELINES = [
 
 // Matches Deals.tsx / DealBoard / DealCard: stage totals, ID, amount pill,
 // probability, close date, and owner. Data and controls stay local to this preview.
-export function CRMPipeline() {
+export function CRMPipeline({ embedded = false }: { embedded?: boolean }) {
   const [pipeline, setPipeline] = useState(1);
-  const [agentOpen, setAgentOpen] = useState(true);
+  const [agentOpen, setAgentOpen] = useState(!embedded);
   const agentClose = useRef<HTMLButtonElement>(null);
   const agentTrigger = useRef<HTMLButtonElement | null>(null);
   function openDeal(index: number, trigger: HTMLButtonElement) {
     setSelected(index);
+    setReplay(value => value + 1);
     agentTrigger.current = trigger;
     setAgentOpen(true);
     requestAnimationFrame(() =>
@@ -277,12 +284,14 @@ export function CRMPipeline() {
     agentTrigger.current?.focus({ preventScroll: true });
   }
   const [selected, setSelected] = useState(0);
-  const [view, setView] = useState<"board" | "list">("board");
+  const [replay, setReplay] = useState(0);
+  const flow = useWorkflowPlayback({ resetKey: `${pipeline}-${selected}-${replay}`, paused: !agentOpen, duration: 15000 });
+  const [view, setView] = useState<"board" | "list">(embedded ? "list" : "board");
   const [search, setSearch] = useState("");
   const id = useId();
   const current = PIPELINES[pipeline];
   const deal = current.deals[selected];
-  const visible = current.deals
+  const visible = (embedded ? current.deals.slice(0, 7) : current.deals)
     .map((item, index) => ({ ...item, index }))
     .filter((item) =>
       (item.name + " " + item.company)
@@ -290,9 +299,9 @@ export function CRMPipeline() {
         .includes(search.toLowerCase()),
     );
   return (
-    <div className="crm-pipeline-demo crm-workspace">
+    <div className="crm-pipeline-demo crm-workspace" ref={flow.container} data-embedded={embedded} data-agent-open={agentOpen} data-playing={flow.playing} data-phase={flow.phase}>
       <div className="crm-pipeline-frame">
-        <CRMNavigation view="deals" />
+        {!embedded && <CRMNavigation view="deals" />}
         <div className="crm-pipeline-main">
           <div className="crm-pipeline-top">
             <div>
@@ -507,7 +516,7 @@ export function CRMPipeline() {
             <header>
               <CRMMark />
               <div>
-                <strong>Ask Agent</strong>
+                <strong>Helpin AI</strong>
                 <small>Understand the next move</small>
               </div>
               <button
@@ -519,7 +528,7 @@ export function CRMPipeline() {
                 <X size={16} />
               </button>
             </header>
-            <div className="crm-deal-agent-body">
+            <div className="crm-deal-agent-body" key={flow.cycle}>
               <div className="crm-deal-agent-record">
                 <CRMCompanyLogo companyIndex={deal.companyIndex} size={20} />
                 <span>
@@ -541,14 +550,14 @@ export function CRMPipeline() {
               </div>
               <div className="crm-deal-agent-answer">
                 <span className="crm-deal-agent-label">
-                  <CRMMark /> Ask Agent
+                  <CRMMark /> Helpin AI
                 </span>
-                <p>{deal.evidence}</p>
-                <span className="crm-deal-agent-source">
+                {flow.phase < 4 ? <><span className="crm-thinking">{flow.phase === 0 ? 'Thinking…' : 'Checking the account context'}</span>{flow.phase > 0 && <WorkflowSources sources={[{icon:Building2,label:deal.company,detail:'Customer account and owner'},{icon:ListChecks,label:deal.name,detail:current.stages[deal.stage]},{icon:FileText,label:deal.source,detail:'Reading the latest customer commitments'}]} phase={flow.phase}/>}</> : <p className="wf-outcome"><StreamingText text={deal.evidence} active={flow.playing} duration={2000}/></p>}
+                {flow.phase >= 4 && <span className="crm-deal-agent-source">
                   <CRMIcon name="File01Icon" size={13} />
                   {deal.source}
-                </span>
-                <div className="crm-deal-agent-next">
+                </span>}
+                {flow.phase >= 5 && <div className="crm-deal-agent-next wf-outcome">
                   <strong>Recommended next step</strong>
                   <p>{deal.note}</p>
                   <span>
@@ -558,12 +567,12 @@ export function CRMPipeline() {
                     />
                     {deal.owner} · Deal owner
                   </span>
-                </div>
+                </div>}
               </div>
             </div>
             <footer>
               <ShieldCheck size={13} />
-              Recommendation only · No message sent · Deal unchanged
+              Suggested next step · For your review
             </footer>
           </aside>
         </div>
@@ -607,10 +616,12 @@ const SIGNALS = [
 
 export function CRMSignals() {
   const [selected, setSelected] = useState(1);
+  const [replay, setReplay] = useState(0);
+  const flow = useWorkflowPlayback({ resetKey: `${selected}-${replay}`, beats: [0,1800,3800,6200], duration: 12500 });
   const id = useId();
   const item = SIGNALS[selected];
   return (
-    <div className="crm-signals-demo">
+    <div className="crm-signals-demo" ref={flow.container} data-playing={flow.playing} data-phase={flow.phase}>
       <div className="crm-signal-choices">
         <span className="crm-mini-label">CUSTOMER SIGNALS</span>
         {SIGNALS.map(({ label, Icon }, i) => (
@@ -619,21 +630,18 @@ export function CRMSignals() {
             type="button"
             aria-pressed={selected === i}
             aria-controls={id}
-            onClick={() => setSelected(i)}
+            onClick={() => { setSelected(i); setReplay(value => value + 1); }}
           >
             <Icon size={18} />
             <span>{label}</span>
             <ArrowRight size={16} />
           </button>
         ))}
-        <p>
-          See the evidence.
-          <br />
-          Choose what happens next.
-        </p>
+
       </div>
       <div
         id={id}
+        key={flow.cycle}
         className="crm-signal-evidence"
         role="region"
         aria-label={item.label + " example"}
@@ -651,18 +659,16 @@ export function CRMSignals() {
           {item.avatar ? <CRMAvatar person={item.avatar} /> : <span className="crm-signal-initials" aria-hidden="true">{item.initials}</span>}
           <span>{item.source}</span>
         </div>
-        <div className="crm-signal-reason">
-          <span className="crm-mini-label">WHY IT MATTERS</span>
-          <p>{item.context}</p>
-        </div>
-        <div className="crm-signal-action">
+        <WorkflowAgent name="Beacon" role="Sales agent" working={flow.phase < 3} status={flow.phase === 0 ? 'Reading the customer signal' : flow.phase < 3 ? 'Checking the account and commitments' : 'Next step ready'} />
+        {flow.phase > 0 && flow.phase < 3 && <div className="crm-signal-reads"><WorkflowSources sources={[{icon:Building2,label:'Customer account',detail:item.context},{icon:FileText,label:'Related customer history',detail:item.evidence}]} phase={flow.phase}/></div>}
+        {flow.phase >= 3 && <div className="crm-signal-action wf-outcome">
           <Sparkles size={19} />
           <div>
             <span className="crm-mini-label">PROPOSED NEXT STEP</span>
             <p>{item.action}</p><div className="crm-signal-owner"><CRMAvatar person={item.ownerAvatar} size={20} /><span>{item.owner}</span></div>
           </div>
-        </div>
-        <p className="crm-signal-evidence-note">{item.evidence}</p>
+        </div>}
+        {flow.phase >= 3 && <p className="crm-signal-evidence-note">{item.evidence}</p>}
       </div>
     </div>
   );

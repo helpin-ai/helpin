@@ -159,3 +159,30 @@
 @media(max-width:600px){.hp3 .cw-account .cw-frame{height:945px}}
 
 .hp3 .crm-page .cp-frame{height:auto;min-height:800px}
+
+.hp3 .crm-hero .crm-outcomes{gap:18px;max-width:none;padding:38px 0 52px}
+.hp3 .crm-hero .crm-outcomes>div{display:flex;flex-direction:column;gap:22px;padding:27px 28px 30px;border:1px solid #acc9b224;background:linear-gradient(140deg,#ffffff06,#ffffff02);border-radius:12px}
+.hp3 .crm-hero .crm-outcomes .crm-outcome-icon{display:grid;place-items:center;width:39px;height:39px;border:1px solid #afcdb72b;border-radius:10px;margin:0;background:#b4d6bd09;color:#a5c9af}
+.hp3 .crm-hero .crm-outcomes strong{display:block;font-size:19px;font-weight:500;letter-spacing:-.015em}
+.hp3 .crm-hero .crm-outcomes p{font-size:14px;line-height:1.75;margin-top:10px;max-width:32ch}
+@media(max-width:760px){.hp3 .crm-hero .crm-outcomes{grid-template-columns:1fr;gap:12px;padding-block:28px 38px}.hp3 .crm-hero .crm-outcomes>div{flex-direction:row;gap:18px;padding:22px}.hp3 .crm-hero .crm-outcomes .crm-outcome-icon{flex:none}.hp3 .crm-hero .crm-outcomes strong{font-size:18px}.hp3 .crm-hero .crm-outcomes p{max-width:none;font-size:13px;margin-top:6px}}
+
+/* Keep deal context in the layout so the complete response needs no inner scroll. */
+.hp3 .crm-pipeline-demo[data-agent-open=true] .crm-pipeline-main{display:grid;grid-template-columns:minmax(0,1fr) 355px;align-items:start}
+.hp3 .crm-pipeline-demo .crm-pipeline-top,.hp3 .crm-pipeline-demo .crm-board-toolbar{grid-column:1/-1}
+.hp3 .crm-pipeline-demo .crm-board,.hp3 .crm-pipeline-demo .crm-deal-table-scroll{min-width:0;overflow-y:hidden}
+.hp3 .crm-pipeline-demo .crm-deal-agent.cw-agent{position:relative;inset:auto;grid-column:2;grid-row:3;width:auto;max-width:none;max-height:none;min-height:625px;margin:16px 16px 20px 0;overflow:visible;box-shadow:0 8px 25px #173a2112;align-self:start}
+.hp3 .crm-pipeline-demo[data-embedded=true]{border:0;border-radius:0;box-shadow:none;overflow:visible;isolation:auto}
+.hp3 .crm-pipeline-demo[data-embedded=true] .crm-pipeline-frame{grid-template-columns:minmax(0,1fr)}
+.hp3 .cw-directory[data-view=deals] .cw-frame{height:auto;min-height:590px}
+.hp3 .cw-directory-toolbar{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--cw-border);background:#fafbfa;gap:15px}
+.hp3 .cw-directory-toolbar .cw-preview-tabs{display:flex;gap:4px}
+.hp3 .cw-directory-toolbar button{display:flex;align-items:center;justify-content:center;background:transparent;border:1px solid transparent;border-radius:6px;padding:6px 10px;font-size:11px;color:#78716c;min-height:29px}
+.hp3 .cw-directory-toolbar button[aria-pressed=true]{background:#fff;border-color:#e2e5e2;box-shadow:0 1px 3px #00000006;color:#1c1a17}
+.hp3 .cw-directory-toolbar>button{border-color:#e2e5e2;padding:6px;background:#fff}
+@media(max-width:1100px){.hp3 .crm-pipeline-demo[data-agent-open=true] .crm-pipeline-main{grid-template-columns:minmax(0,1fr)}.hp3 .crm-pipeline-demo .crm-deal-agent.cw-agent{grid-column:1;grid-row:4;margin:12px 18px 20px;min-height:570px}.hp3 .crm-pipeline-demo[data-agent-open=true] .crm-board,.hp3 .crm-pipeline-demo[data-agent-open=true] .crm-deal-table-scroll{max-height:none}}
+@media(max-width:600px){.hp3 .crm-pipeline-demo .crm-deal-agent.cw-agent{margin:12px;min-height:590px}.hp3 .cw-directory[data-view=deals] .cw-frame{min-height:500px}.hp3 .crm-pipeline-demo .crm-board-toolbar{gap:10px}.hp3 .cw-directory-toolbar{padding:9px 11px}.hp3 .cw-directory-toolbar button{font-size:11px}}
+
+/* Automatic hero view changes retain the same height. */
+.hp3 .crm-pipeline-demo[data-embedded=true] .crm-deal-table-scroll{height:auto;min-height:0}
+.hp3 .crm-pipeline-demo[data-embedded=true] .crm-board{height:auto;min-height:0}

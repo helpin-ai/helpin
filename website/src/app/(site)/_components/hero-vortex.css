@@ -16,6 +16,14 @@
   .hero-vortex-art { --vortex-quiet: ellipse 75% 32% at 50% 40%; }
   .hero-vortex-drift { width: 1000px; height: 860px; margin-left: -500px; top: -210px; opacity: .42; }
 }
+/* On the homepage, concentrate the lines near the buttons and video, fading upward. */
+.hp3 .homepage-hero > .hero-vortex { top: clamp(136px, 14vw, 200px); }
+.hp3 .homepage-hero .hero-vortex-art {
+  mask-image:
+    linear-gradient(to bottom, transparent, #000 50%, #000 75%, transparent),
+    radial-gradient(ellipse 70% 85% at 50% 65%, #000 30%, transparent 95%),
+    radial-gradient(var(--vortex-quiet), rgba(0, 0, 0, .15) 0%, rgba(0, 0, 0, .15) 45%, #000 100%);
+}
 /* Reduced motion: the canvas draws a single still frame, and the entrance is a plain fade. */
 @media (prefers-reduced-motion: reduce) {
   .hero-vortex-art { animation: hero-vortex-fade .6s ease-out backwards; }

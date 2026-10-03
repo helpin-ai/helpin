@@ -3,6 +3,7 @@
 import { memo, useState } from 'react';
 import { useBentoPlayback } from './useBentoPlayback';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { ArrowRight, BookOpen, Bot, Building2, ChevronRight, FileText, Kanban, MessagesSquare, Pause, Play, UserRound, Video } from 'lucide-react';
 import './products-menu.css';
 
@@ -18,7 +19,7 @@ export const PRODUCTS = [
 export function ProductLink({ item }: { item: typeof PRODUCTS[number] }) {
   const Icon = item.icon;
   return (
-    <Link className="nav-product" href={item.href}>
+    <Link prefetch={false} className="nav-product" href={item.href}>
       <span className="nav-product-art" aria-hidden="true"><Icon size={23} strokeWidth={1.5} /></span>
       <span className="nav-product-copy">
         <span className="nav-product-title">{item.label}<ChevronRight size={14} aria-hidden="true" /></span>
@@ -29,12 +30,14 @@ export function ProductLink({ item }: { item: typeof PRODUCTS[number] }) {
 }
 
 export function AskAgentMenuCard() {
+  const homepage = usePathname() === '/';
+  const assistantName = homepage ? 'Helpin AI' : 'Ask Agent';
   const [paused, setPaused] = useState(false);
   const { container, playing, cycle } = useBentoPlayback(7000, !paused);
   return <div className="nav-agent-card" ref={container} data-playing={playing}>
-    <Link href="/products/ai-agents#agent-ask" className="nav-products-agent-link">
+    <Link prefetch={false} href="/products/ai-agents#agent-ask" className="nav-products-agent-link">
       <div className="nav-agent-motion" key={cycle}>
-        <svg viewBox="0 0 300 112" role="img" aria-label="Conversations, documentation, and customer records connect to Ask Agent.">
+        <svg viewBox="0 0 300 112" role="img" aria-label={`Conversations, documentation, and customer records connect to ${assistantName}.`}>
           {[['M48 20H100C135 20 138 56 180 56H222', MessagesSquare, 4], ['M48 56H222', FileText, 40], ['M48 92H100C135 92 138 56 180 56H222', UserRound, 76]].map(([path, Icon, y], index) => {
             const SourceIcon = Icon as typeof MessagesSquare;
             return <g key={index} className={`nav-agent-source nav-agent-source-${index}`}>
@@ -50,10 +53,10 @@ export function AskAgentMenuCard() {
           <g className="nav-agent-ready"><circle cx="274" cy="80" r="9"/><path d="m270 80 3 3 5-6"/></g>
         </svg>
       </div>
-      <span className="nav-products-agent-copy"><b>Ask Agent</b><span>Your workspace assistant. Ask questions, investigate issues, and coordinate specialist agents using customer history.</span></span>
-      <span className="nav-products-agent-cta">See Ask Agent in action<ArrowRight size={15} aria-hidden="true" /></span>
+      <span className="nav-products-agent-copy"><b>{assistantName}</b><span>{homepage ? 'Ask questions about your company’s information and get help from specialist AI agents.' : 'Your workspace assistant. Ask questions, investigate issues, and coordinate specialist agents using customer history.'}</span></span>
+      <span className="nav-products-agent-cta">See {assistantName} in action<ArrowRight size={15} aria-hidden="true" /></span>
     </Link>
-    <button className="nav-agent-playback" type="button" aria-label={`${paused ? 'Play' : 'Pause'} Ask Agent menu animation`} aria-pressed={paused} onClick={() => setPaused(value => !value)}>{paused ? <Play size={12}/> : <Pause size={12}/>}</button>
+    <button className="nav-agent-playback" type="button" aria-label={`${paused ? 'Play' : 'Pause'} ${assistantName} menu animation`} aria-pressed={paused} onClick={() => setPaused(value => !value)}>{paused ? <Play size={12}/> : <Pause size={12}/>}</button>
   </div>;
 }
 
