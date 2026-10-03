@@ -18,13 +18,13 @@ The initial audience is new workspace owners. Invited teammates can have a later
 
 Helpin is both open source and Cloud. The shared onboarding experience must adapt to the installation, available modules, permissions, integrations, and AI readiness. It cannot assume that every owner has Helpin-managed services.
 
-The existing **Ask Agent chat is the onboarding surface**. Owners learn to use the same agent interface they will return to for everyday work. Setup progress and structured actions belong in that conversation, with focused product settings opened when needed.
+The existing **Ask Agent chat is the onboarding surface**, using its normal conversational interaction. Owners learn to use the same agent interface they will return to for everyday work. The agent asks one relevant question at a time and handles setup through conversation and tools. Open focused product settings only when an action requires them.
 
 ## Owner goals
 
 Ask: **What would you like your team to do with Helpin?**
 
-Use practical choices that describe the owner's work. Owners should not need to understand Helpin's modules or configuration to choose a direction. Proposed wording and the associated setup are:
+Learn the owner's intent from their reply in chat. Owners should not need to understand Helpin's modules or configuration to choose a direction. The following intents guide the agent internally; they are not a mandatory selection menu:
 
 | Owner intent | Setup and AI experience |
 | --- | --- |
@@ -34,7 +34,7 @@ Use practical choices that describe the owner's work. Owners should not need to 
 | Manage customers and sales | Establish customer context and a suitable pipeline, then introduce relevant AI-assisted follow-ups. |
 | Automate recurring work | Identify a concrete recurring task, connect what it needs, and test an agent workflow before enabling unattended execution. |
 
-Allow free text and changes to the selected goals. Ask a short follow-up when a goal is ambiguous; for example, knowledge may be internal, customer-facing, or both. Preserve that distinction in the underlying journey even if the initial choice is shared.
+Accept natural replies and changes of direction. Ask a short follow-up when a goal is ambiguous; for example, knowledge may be internal, customer-facing, or both. Preserve that distinction in the underlying journey without making the owner fill out a questionnaire.
 
 Only offer journeys supported by the installation. Module source code or an enabled flag alone does not prove that every capability is available in the installed release. A temporarily unconfigured connection should produce a setup path, while an unsupported capability should not become a mandatory task.
 
@@ -56,7 +56,13 @@ The sequence is based on actual state. A workspace with existing knowledge shoul
 
 ## User experience
 
-Use the existing Ask Agent dock, conversation history, composer, questions, approvals, and inline work plan. Show one clear recommended action, its expected result, and a brief reason when that helps the owner decide. Keep deeper explanations in contextual help. Native forms, connection buttons, and previews should handle structured tasks within the conversation or open the relevant product surface and return to the same chat.
+Use the existing Ask Agent dock, conversation history, composer, and normal interaction and approval behavior. The default experience is a continuous conversation with short messages and one relevant question at a time. Do not introduce an onboarding goal menu, progress strip, stepper, setup cards, or forms inside every message.
+
+The agent keeps the required setup order and progress internally. It explains a next action briefly when useful, does the work it can, and reports the result in the thread. Owners provide context, approve ordinary proposals, and correct results by replying naturally. Use the existing Ask Agent approval controls when the action policy requires them; conversational styling must not bypass backend authorization.
+
+Open the established settings or connection surface for credentials, account authorization, or other interactions that require it, then continue the same conversation. Knowledge and draft answers should read like normal agent responses, with concise source links where appropriate.
+
+An illustrative opening is: “Hi! I can help you get Northstar set up. What would you like to use Helpin for?” If the owner mentions repeated customer questions, the agent can ask: “Do you already have a help center or somewhere you keep your answers?” This is a tone example, not a fixed script.
 
 The agent should do useful preparation: suggest company context, organize imported material, draft settings, or prepare real work for review. Distinguish proposed changes from saved configuration and verified results.
 
@@ -66,7 +72,7 @@ Show concise working and waiting states. When a step fails, retain completed wor
 
 Use accessible native controls and keyboard navigation. Keep the current task understandable on small screens. Entry into Ask Agent after workspace creation and the relationship with the existing Setup page remain design decisions; the choice of chat as the onboarding surface is settled.
 
-The first mockups should show this conversation across welcome and goal selection, context preparation, knowledge review, trying and correcting an AI answer, connection and launch approval, and returning to normal work. Include a Community state before AI is connected. System readiness UI must clearly distinguish unavailable AI from an actual agent response; provider credentials belong in the established settings surface, outside the conversation.
+The mockups should show a normal conversation from learning the owner's intent through context preparation, knowledge review, trying and correcting an AI answer, connection and launch approval, and returning to normal work. Keep earlier turns visible in the conversation history. Include a concise Community readiness message before AI is connected. System readiness UI must clearly distinguish unavailable AI from an actual agent response; provider credentials belong in the established settings surface, outside the conversation.
 
 ## Learning AI through setup
 
