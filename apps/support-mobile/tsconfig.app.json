@@ -32,6 +32,7 @@
       "@/lib/favicon": ["../../frontend/src/lib/favicon.ts"],
       "@/lib/teamMemberAvatar": ["../../frontend/src/lib/teamMemberAvatar.ts"],
       "@/lib/avatarColor": ["../../frontend/src/lib/avatarColor.ts"],
+      "@/lib/initials": ["../../frontend/src/lib/initials.ts"],
       "@/lib/pmTypes": ["../../frontend/src/lib/pmTypes.ts"],
       "@/stores/supportInboxStore": ["../../frontend/src/stores/supportInboxStore.ts"],
       "@/components/support/helpers": ["../../frontend/src/components/support/helpers.ts"],

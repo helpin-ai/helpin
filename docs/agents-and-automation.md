@@ -209,6 +209,31 @@ These belong to the Automation ecosystem, but they are not user-authored flows.
 
 Most user-authored flows are persisted as `automation_rules`.
 
+Custom creation, template setup, and editing use a private Ask Agent drawer.
+The agent resolves workspace entities, asks for missing details, and calls
+`preview_flow` to validate a draft. Templates keep the existing installer;
+editing keeps the flow ID and rejects conflicting external changes. A resolved
+owner approval must match the current draft revision and latest request before
+`save_flow` can persist anything. Retrying a save returns the same flow.
+
+The builder supports the previous custom editor's workflow, GitHub/GitLab and
+schedule triggers, agent/state/merge actions, targets, branch overrides, and
+semantic conditions. Template creation also exposes agent instructions, tools,
+skills, working areas, approval policy and concurrent-run limits. A scoped
+context tool provides real workspace options and optional branch/tool/skill
+catalogs. Existing agent settings remain managed on the agent itself.
+
+Schedules retain the existing five-field UTC storage contract. The agent receives
+the workspace timezone; the review includes the next execution in the selected
+local timezone. These are fixed UTC schedules, not daylight-saving-adjusted
+local schedules. Conditions combine supported exact filters with optional
+meaning-based evaluation; unsupported conditions must be explained rather than
+dropped.
+
+The conversation uses the normal Agent Runtime and AI admission path. Deployment
+requires that runtime connection and the additive `dock_chats.flow_builder`
+migration; there is no sample-response fallback in the application.
+
 Current active action types:
 
 - `start_agent_run`

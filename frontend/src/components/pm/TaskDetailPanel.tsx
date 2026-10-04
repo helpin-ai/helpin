@@ -1,3 +1,4 @@
+import { TeamColorMark } from '@/components/workspace/TeamLabel';
 import { TaskTriageSection } from './TaskTriageSection';
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { useTitle } from '@/hooks/useTitle';
@@ -122,7 +123,7 @@ import { TaskDetailSectionHeading } from '@/components/pm/task-detail/TaskDetail
 import { DetailDescriptionEditorActions } from '@/components/pm/DetailDescriptionEditorActions';
 import { DetailDescriptionEditButton } from '@/components/pm/DetailDescriptionEditButton';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
-import { resolveTaskTeamWorkflow, resolveTaskWorkflowStates } from '@/components/pm/task-detail/taskWorkflowResolution';
+import { resolveTaskTeamState, resolveTaskTeamWorkflow, resolveTaskWorkflowStates } from '@/components/pm/task-detail/taskWorkflowResolution';
 import {
   isEpicSelectableForTaskTeam,
   isSprintSelectableForTaskTeam,
@@ -1524,26 +1525,23 @@ function TaskDetailPanelBody({
                 value={form.team_id || '__none__'}
                 options={[
                   ...(teams.length === 0 ? [{ value: '__none__', label: 'Select team' }] : []),
-                  ...teams.map((t) => ({ value: t.id, label: t.name })),
+                  ...teams.map((t) => ({ value: t.id, label: t.name, icon: <TeamColorMark team={t} /> })),
                 ]}
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
                   const nextWorkflow = resolveTaskTeamWorkflow(workflows, val || null);
-                  const nextState =
-                    nextWorkflow?.states.find((state) => state.is_default)
-                    ?? nextWorkflow?.states[0]
-                    ?? null;
-                  if (nextWorkflow && nextState) {
+                  const nextState = nextWorkflow ? resolveTaskTeamState(nextWorkflow, currentState) : null;
+                  if (nextWorkflow) {
                     setForm((current) => ({
                       ...current,
                       team_id: val,
                       workflow_id: nextWorkflow.workflow.id,
-                      workflow_state_id: nextState.id,
+                      workflow_state_id: nextState?.id ?? '',
                     }));
                     queuePatch({
                       team_id: val,
                       workflow_id: nextWorkflow.workflow.id,
-                      workflow_state_id: nextState.id,
+                      workflow_state_id: nextState?.id ?? '',
                     });
                   } else {
                     updateField('team_id', val, { team_id: val });

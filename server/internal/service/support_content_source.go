@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -47,7 +48,17 @@ func NewSupportContentSourceService(
 }
 
 func (s *SupportContentSourceService) List(ctx context.Context, workspaceID string) ([]model.SupportContentSource, error) {
-	return s.repo.ListByWorkspace(ctx, workspaceID)
+	sources, err := s.repo.ListByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	next := model.NextContentSourceAutoSync(time.Now())
+	for i := range sources {
+		if sources[i].SourceType == model.ContentSourceTypeWebsite && sources[i].SyncStatus != model.KnowledgeSourceSyncDisabled {
+			sources[i].NextSyncAt = &next
+		}
+	}
+	return sources, nil
 }
 
 func (s *SupportContentSourceService) Create(ctx context.Context, workspaceID string, req model.CreateSupportContentSourceRequest) (*model.SupportContentSource, error) {
@@ -189,18 +200,33 @@ func (s *SupportContentSourceService) Reindex(ctx context.Context, workspaceID, 
 	if existing == nil || existing.WorkspaceID != workspaceID {
 		return fmt.Errorf("content source not found in workspace")
 	}
+	if existing.SourceType == model.ContentSourceTypeWebsite {
+		return s.syncService.QueueSourceSync(ctx, workspaceID, id)
+	}
 	return s.syncService.QueueSourceReindex(ctx, workspaceID, id)
 }
 
 // ListPages returns all crawled pages for a content source after verifying
 // that the source belongs to the workspace.
 func (s *SupportContentSourceService) ListPages(ctx context.Context, workspaceID, contentSourceID string) ([]model.SupportContentPage, error) {
+	return s.listPages(ctx, workspaceID, contentSourceID, false)
+}
+
+// ListIndexedPages returns only pages with a persisted searchable index.
+func (s *SupportContentSourceService) ListIndexedPages(ctx context.Context, workspaceID, contentSourceID string) ([]model.SupportContentPage, error) {
+	return s.listPages(ctx, workspaceID, contentSourceID, true)
+}
+
+func (s *SupportContentSourceService) listPages(ctx context.Context, workspaceID, contentSourceID string, indexedOnly bool) ([]model.SupportContentPage, error) {
 	source, err := s.repo.GetByID(ctx, contentSourceID)
 	if err != nil {
 		return nil, err
 	}
 	if source == nil || source.WorkspaceID != workspaceID {
 		return nil, fmt.Errorf("content source not found in workspace")
+	}
+	if indexedOnly {
+		return s.pageRepo.ListIndexedByContentSourceID(ctx, workspaceID, contentSourceID)
 	}
 	return s.pageRepo.ListByContentSourceID(ctx, contentSourceID)
 }

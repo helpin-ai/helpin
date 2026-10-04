@@ -1,3 +1,4 @@
+import { TeamColorMark } from '@/components/workspace/TeamLabel';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   addMonths,
@@ -36,6 +37,7 @@ interface RoadmapTimelineProps {
   zoom: Zoom;
   slug: string;
   teamNameMap: Map<string, string>;
+  teamColorMap?: Map<string, string | null | undefined>;
   memberNameMap: Map<string, string>;
 }
 
@@ -101,6 +103,7 @@ export function RoadmapTimeline({
   zoom,
   slug,
   teamNameMap,
+  teamColorMap,
   memberNameMap,
 }: RoadmapTimelineProps) {
   const scheduled = useMemo(() => getScheduledRoadmapEpics(epics), [epics]);
@@ -269,7 +272,7 @@ export function RoadmapTimeline({
             {!isEpicGrouping ? (
               <div className="flex border-b border-quiet-divider-strong">
                 <div className="sticky left-0 z-10 flex shrink-0 items-center gap-2 border-r border-quiet-divider-strong px-3 py-1.5" style={labelStyle}>
-                  <GroupIcon className="h-[14px] w-[14px] shrink-0 text-quiet-muted" />
+                  {groupBy === 'team' ? <TeamColorMark team={{name:group.name,color:teamColorMap?.get(group.id)}} /> : <GroupIcon className="h-[14px] w-[14px] shrink-0 text-quiet-muted" />}
                   <span className="min-w-0 truncate text-[12.5px] font-semibold text-quiet-text-primary">{group.name}</span>
                   <span className="shrink-0 text-[11.5px] tabular-nums text-quiet-muted">
                     {group.epics.length} {group.epics.length === 1 ? 'epic' : 'epics'}

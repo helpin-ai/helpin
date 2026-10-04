@@ -1,3 +1,4 @@
+import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { WorkspaceTeam } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
@@ -710,7 +711,7 @@ export function CustomAgentCreatePanel({
                           ].join(' ')}
                           onClick={() => toggleTeam(team.id)}
                         >
-                          {team.name}
+                          <TeamLabel team={team} />
                         </button>
                       );
                     })}

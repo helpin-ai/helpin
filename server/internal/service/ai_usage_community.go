@@ -75,6 +75,9 @@ func (s *CommunityAIUsage) Reconcile(ctx context.Context, input CompletionUsage)
 	if input.Context.PolicyMode != "community" {
 		return nil, fmt.Errorf("community usage requires its accepted policy")
 	}
+	if input.AudioMilliseconds < 0 {
+		return nil, fmt.Errorf("invalid audio duration")
+	}
 	tokens, err := aiusage.NormalizeTokens(input.Telemetry)
 	if err != nil {
 		return nil, err
@@ -89,7 +92,8 @@ func (s *CommunityAIUsage) Reconcile(ctx context.Context, input CompletionUsage)
 		return nil, err
 	}
 	entry := model.AIExecutionUsage{
-		WorkspaceID: input.Context.WorkspaceID, IdempotencyKey: input.Context.IdempotencyKey,
+		AudioMilliseconds: input.AudioMilliseconds,
+		WorkspaceID:       input.Context.WorkspaceID, IdempotencyKey: input.Context.IdempotencyKey,
 		RunID: input.RunID, FeatureKey: input.Context.FeatureKey, Provider: input.Context.Route.Provider,
 		Model: input.Context.Route.Route, InputTokens: tokens.InputTokensTotal,
 		OutputTokens: tokens.OutputTokens, ReasoningTokens: tokens.ReasoningTokens,

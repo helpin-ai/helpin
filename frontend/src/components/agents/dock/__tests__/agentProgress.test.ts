@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { AgentRun, CodingSessionStreamState, RunPlanArtifact } from '@/lib/pmTypes';
+import type { AgentRun, CodingSessionStreamState, CommandBarPlanSummary, RunPlanArtifact } from '@/lib/pmTypes';
 import { formatAgentElapsed, resolveAgentLiveProgress } from '../agentProgress';
 
 function run(overrides: Partial<AgentRun> = {}): AgentRun {
@@ -19,8 +19,20 @@ function stream(overrides: Partial<CodingSessionStreamState> = {}): CodingSessio
   };
 }
 
+function delegatedPlan(child: Partial<AgentRun> = {}): CommandBarPlanSummary {
+  return {
+    id: 'plan-1', status: 'running', prompt: 'Research',
+    page_context: { entity_type: 'workspace', entity_id: 'ws-1', display_title: 'Workspace' },
+    steps: [{ agent_id: 'research', agent_name: 'Research Agent', instructions: 'Research',
+      target: { entity_type: 'workspace', entity_id: 'ws-1', display_title: 'Workspace' } }],
+    run_ids_by_step: { 0: 'child-1' }, current_step_index: 0, run_count: 1,
+    created_at: '2026-08-14T10:00:00Z', updated_at: '2026-08-14T10:00:00Z',
+    runs: [run({ id: 'child-1', ...child })],
+  };
+}
+
 describe('resolveAgentLiveProgress', () => {
-  it('uses one friendly status for a running tool', () => {
+  it('keeps the working status steady while the transcript shows the running tool', () => {
     const result = resolveAgentLiveProgress({
       run: run(), currentPlan: null, sending: false,
       stream: stream({ live_turn_segments: [{
@@ -28,19 +40,19 @@ describe('resolveAgentLiveProgress', () => {
         tool_call: { tool_call_id: 'tool-1', parent_message_id: 'message-1', tool_name: 'mcp__helpin__list_tasks', args_text: '{}', status: 'running' },
       }] }),
     });
-    expect(result?.label).toBe('List Tasks…');
+    expect(result?.label).toBe('Working…');
   });
 
-  it('prefers an active plan step over generic working', () => {
+  it('keeps plan details out of the working status', () => {
     const currentPlan = { plan: [{ step: 'Compare the billing options', status: 'in_progress' }] } as RunPlanArtifact;
     expect(resolveAgentLiveProgress({ run: run(), stream: stream(), currentPlan, sending: false })?.label)
-      .toBe('Compare the billing options');
+      .toBe('Working…');
   });
 
   it('identifies an active delegated agent', () => {
     expect(resolveAgentLiveProgress({
-      run: run(), stream: stream(), currentPlan: null, activeSubAgentName: 'Research Agent', sending: false,
-    })?.label).toBe('Working with Research Agent…');
+      run: run(), stream: stream(), currentPlan: null, delegatedPlans: [delegatedPlan()], sending: false,
+    })?.label).toBe('Research Agent is running');
   });
 
   it.each(['paused', 'completed'] as const)('keeps delegated progress visible after the parent is %s and has answered', (status) => {
@@ -50,8 +62,41 @@ describe('resolveAgentLiveProgress', () => {
         event_id: 'handoff', role: 'assistant', content: 'I started the reviewer.',
         message_type: 'assistant_final', timestamp: '2026-08-14T10:00:40Z', sequence_no: 2,
       }] }),
-      currentPlan: null, activeSubAgentName: 'Support reviewer', sending: false,
-    })).toMatchObject({ label: 'Working with Support reviewer…', tone: 'working' });
+      currentPlan: null, delegatedPlans: [delegatedPlan()], sending: false,
+    })).toMatchObject({ label: 'Research Agent is running · Ask Agent is waiting', tone: 'working' });
+  });
+
+  it.each([
+    ['human_approval', 'needs approval'], ['human_input', 'needs your input'],
+    ['authentication', 'needs sign-in'], ['manual', 'is paused'], ['awaiting_user_message', 'is waiting'],
+  ] as const)('preserves delegated %s waits', (pause_reason, label) => {
+    expect(resolveAgentLiveProgress({
+      run: run({ status: 'completed' }), stream: stream(), currentPlan: null, sending: false,
+      delegatedPlans: [delegatedPlan({ status: 'paused', pause_reason })],
+    })).toMatchObject({ label: `Research Agent ${label} · Ask Agent is waiting`, tone: 'waiting', delegated: true });
+  });
+
+  it('shows queued work and pending launches', () => {
+    const input = { run: run(), stream: stream(), currentPlan: null, sending: false };
+    expect(resolveAgentLiveProgress({ ...input, delegatedPlans: [delegatedPlan({ status: 'queued' })] })?.label)
+      .toBe('Research Agent is queued');
+    expect(resolveAgentLiveProgress({ ...input, delegatedPlans: [{ ...delegatedPlan(), runs: [], run_ids_by_step: {} }] })?.label)
+      .toBe('Starting sub-agent…');
+  });
+
+  it('summarizes multiple children without losing an approval blocker', () => {
+    const second = delegatedPlan({ id: 'child-2', status: 'paused', pause_reason: 'human_approval' });
+    second.id = 'plan-2';
+    second.run_ids_by_step = { 0: 'child-2' };
+    expect(resolveAgentLiveProgress({ run: run(), stream: stream(), currentPlan: null, sending: false,
+      delegatedPlans: [delegatedPlan(), second],
+    })).toMatchObject({ label: '2 sub-agents active · Approval needed', tone: 'working' });
+  });
+
+  it('returns to the parent status after children finish, even before the plan settles', () => {
+    expect(resolveAgentLiveProgress({ run: run(), stream: stream(), currentPlan: null, sending: false,
+      delegatedPlans: [delegatedPlan({ status: 'completed' })],
+    })).toMatchObject({ label: 'Working…' });
   });
 
   it('moves to working as soon as the runtime is running, before its first activity arrives', () => {
@@ -92,6 +137,22 @@ describe('resolveAgentLiveProgress', () => {
       sending: true,
     })?.label).toBe('Starting…');
   });
+
+  it.each(['awaiting_user_message', 'human_input', 'human_approval'] as const)(
+    'keeps a status after a follow-up is accepted from %s', (pause_reason) => {
+      const input = {
+        run: run({ status: 'paused', pause_reason, execution_stage: 'resuming' }),
+        stream: stream(), currentPlan: null, sending: false,
+        localStartedAt: '2026-08-14T10:05:00Z',
+      };
+      expect(resolveAgentLiveProgress(input)).toMatchObject({
+        label: 'Starting…', tone: 'working', startedAt: input.localStartedAt,
+      });
+      expect(resolveAgentLiveProgress({ ...input,
+        run: run({ status: 'running', execution_stage: 'running' }),
+      })?.label).toBe('Working…');
+    },
+  );
 
   it('starts a follow-up timer from the newly submitted message', () => {
     const result = resolveAgentLiveProgress({

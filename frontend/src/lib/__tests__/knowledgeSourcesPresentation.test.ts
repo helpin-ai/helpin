@@ -7,6 +7,21 @@ import {
 } from '../knowledgeSourcesPresentation';
 
 describe('knowledgeSourcesPresentation', () => {
+  it('uses the latest sync attempt and the backend next-run time', () => {
+    const [row] = buildKnowledgeSourceRows({
+      websiteSources: [{
+        id: 'site', name: 'Guide', source_type: 'website', start_url: 'https://example.test',
+        sync_status: 'failed', sync_progress: 0, indexed_pages: 2, indexed_chunks: 4,
+        last_sync_started_at: '2026-10-01T02:00:00Z',
+        last_sync_completed_at: '2026-09-30T02:05:00Z',
+        next_sync_at: '2026-10-02T02:00:00Z',
+      }], docsSpaces: [], docsKnowledgeSources: [],
+    });
+    expect(row.lastSyncAt).toBe('2026-10-01T02:00:00Z');
+    expect(row.nextSyncAt).toBe('2026-10-02T02:00:00Z');
+    expect(row.syncCompletedAt).toBeNull();
+    expect(row.indexedChunks).toBe(4);
+  });
   it('builds one unified source list from websites and selected Helpin docs spaces', () => {
     const rows = buildKnowledgeSourceRows({
       websiteSources: [

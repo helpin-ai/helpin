@@ -1,3 +1,4 @@
+import { TeamColorMark } from '@/components/workspace/TeamLabel';
 import { QuietBreadcrumbs, QuietFilterDropdown, QuietPageHeader } from '@/components/design-system/quiet';
 import { useMemo, useState } from 'react'
 import { useTitle } from '@/hooks/useTitle'
@@ -157,7 +158,7 @@ function SprintCloseoutsReport({ onBack }: { onBack: () => void }) {
       {/* Filters */}
       <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-quiet-divider-strong px-4 py-2 md:px-6">
         <QuietFilterDropdown label="Team" showLabel value={teamId}
-          options={[{ value: '', label: 'All teams' }, ...teams.map(team => ({ value: team.id, label: team.name }))]}
+          options={[{ value: '', label: 'All teams' }, ...teams.map(team => ({ value: team.id, label: team.name, leading: <TeamColorMark team={team} /> }))]}
           onChange={value => { setTeamId(value); setSelectedSprintId(''); }} />
         <QuietFilterDropdown label="Period" showLabel value={timeRange} options={TIME_RANGES}
           onChange={value => { setTimeRange(value as TimeRange); setSelectedSprintId(''); }} />

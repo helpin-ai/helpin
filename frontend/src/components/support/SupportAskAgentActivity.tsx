@@ -21,9 +21,9 @@ export function SupportAskAgentActivity({ workspaceId, conversationId }: {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span aria-label={label} className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
+        <span aria-label={label} className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center">
           {activity === 'working' ? (
-            <AskAgentWorkAnimation className="h-5 w-5" />
+            <AskAgentWorkAnimation />
           ) : (
             <span className="h-1.5 w-1.5 rounded-full bg-quiet-accent motion-safe:animate-pulse" />
           )}

@@ -382,10 +382,16 @@ func (h *SupportAIHandler) ListContentSourcePages(w http.ResponseWriter, r *http
 	}
 
 	contentSourceID := chi.URLParam(r, "contentSourceId")
-	pages, err := h.contentSourceSvc.ListPages(r.Context(), workspaceID, contentSourceID)
+	var pages []model.SupportContentPage
+	var err error
+	if r.URL.Query().Get("indexed") == "true" {
+		pages, err = h.contentSourceSvc.ListIndexedPages(r.Context(), workspaceID, contentSourceID)
+	} else {
+		pages, err = h.contentSourceSvc.ListPages(r.Context(), workspaceID, contentSourceID)
+	}
 	if err != nil {
 		slog.ErrorContext(r.Context(), "list content source pages failed", "error", err)
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, http.StatusBadRequest, "Could not load source pages")
 		return
 	}
 	writeJSON(w, http.StatusOK, pages)

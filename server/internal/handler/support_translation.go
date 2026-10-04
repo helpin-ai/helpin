@@ -12,7 +12,7 @@ import (
 )
 
 func (h *SupportInboxHandler) TranslationOptions(w http.ResponseWriter, r *http.Request) {
-	result, err := h.supportService.TranslationOptions(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"), middleware.GetUserID(r.Context()))
+	result, err := h.supportService.TranslationOptionsForDisplay(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"), middleware.GetUserID(r.Context()))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "Translation settings are unavailable for this conversation.")
 		return

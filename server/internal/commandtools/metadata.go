@@ -66,6 +66,7 @@ func runtimeToolRiskLevel(alias string) string {
 }
 
 var runtimeToolRiskLevels = map[string]string{
+	"archive_document": RiskLevelDestructive, "restore_document": RiskLevelRoutine,
 	"create_space": RiskLevelRoutine, "create_collection": RiskLevelRoutine,
 	"create_document": RiskLevelRoutine, "update_space": RiskLevelRoutine,
 	"update_collection": RiskLevelRoutine, "move_document": RiskLevelRoutine,
@@ -91,6 +92,7 @@ var runtimeToolRiskLevels = map[string]string{
 	"ensure_crm_contact_company": RiskLevelRoutine, "enrich_crm_contact": RiskLevelRoutine,
 	"enrich_crm_company": RiskLevelRoutine, "draft_support_reply": RiskLevelRoutine,
 	"update_conversation_status":    RiskLevelRoutine,
+	"add_support_conversation_note": RiskLevelRoutine,
 	"complete_support_coverage_gap": RiskLevelRoutine,
 	"finish_support_follow_up":      RiskLevelSensitive,
 	"skip_support_reply":            RiskLevelSensitive,
@@ -594,6 +596,16 @@ var baseRuntimeTools = []RuntimeToolMetadata{
 		InputSchema: deliveryTargetSchema("epic_id", "epic_branch"),
 	},
 	{
+		CommandName: "docs.archive_document", Alias: "archive_document", Category: "Docs",
+		Description: "Archive an accessible document without deleting its content. Only archive when requested. Live Help Center articles must be unpublished in Helpin first. Reversible with restore_document.",
+		InputSchema: requiredEntityIDSchema("document_id"),
+	},
+	{
+		CommandName: "docs.restore_document", Alias: "restore_document", Category: "Docs",
+		Description: "Restore an accessible archived document to draft without publishing it.",
+		InputSchema: requiredEntityIDSchema("document_id"),
+	},
+	{
 		CommandName: "docs.update_document_metadata",
 		Alias:       "update_document_metadata",
 		Category:    "Docs",
@@ -781,6 +793,16 @@ var baseRuntimeTools = []RuntimeToolMetadata{
 			"conversation_id": optionalIDSchema("Support conversation ID."),
 			"inbox_id":        optionalIDSchema("Destination inbox or mailbox ID."),
 		}, []string{"conversation_id", "inbox_id"}),
+	},
+	{
+		CommandName: "support.add_conversation_note",
+		Alias:       "add_support_conversation_note",
+		Category:    "Support / Triage",
+		Description: "Post a team-only note immediately; no customer delivery or status/AI-control change. Check existing conversation notes and linked-task context first. Write only when requested or when new actionable information is missing from both. Creating or linking a task alone needs no note. Use 1-3 short sentences or bullets unless more detail is requested. Include only the new finding, blocker, or next step; link existing details instead of repeating the thread, task, progress, or an unsolicited draft reply. Label hypotheses clearly: code behavior alone does not verify this customer's root cause. Attribute observations to their actual source. Omit secrets. A note does not replace a customer reply.",
+		InputSchema: closedObjectSchema(map[string]any{
+			"conversation_id": optionalIDSchema("Support conversation ID. Omit only when the run targets that conversation."),
+			"content":         map[string]any{"type": "string", "minLength": 1, "description": "Brief internal note in Markdown. Only new actionable information or explicitly requested content; no repeated summaries or unverified conclusions stated as facts."},
+		}, []string{"content"}),
 	},
 	{
 		CommandName: "support.add_conversation_tag",

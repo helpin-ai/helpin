@@ -1,0 +1,21 @@
+.hp3 .hero-headline { width: 100%; min-width: 0; }
+/* Every phrase stays in the same grid cell, reserving the largest wrapped size. */
+.hp3 .hero h1 > .hero-headline-phrases {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  color: var(--em);
+}
+.hp3 .hero-headline-phrase {
+  grid-area: 1 / 1;
+  opacity: 0;
+  transform: translateY(10px);
+}
+.hp3 .hero-headline[data-playing="true"] .hero-headline-phrase {
+  transition: opacity 300ms ease-out, transform 300ms ease-out;
+}
+.hp3 .hero-headline-phrase[data-state="active"] { opacity: 1; transform: translateY(0); }
+.hp3 .hero-headline-phrase[data-state="outgoing"] { transform: translateY(-10px); }
+@media (prefers-reduced-motion: reduce) {
+  .hp3 .hero-headline .hero-headline-phrase { transition: none; opacity: 0; transform: none; }
+  .hp3 .hero-headline .hero-headline-phrase:first-child { opacity: 1; }
+}

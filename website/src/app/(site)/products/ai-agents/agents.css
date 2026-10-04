@@ -201,10 +201,11 @@
 .hp3 .agents-directory-grid h3 { font-size: 19px; line-height: 1.3; text-wrap: initial; }
 .hp3 .agents-directory-grid article > p { color: var(--t2); font-size: 13px; line-height: 1.8; margin: 12px 0 24px; }
 .hp3 .agents-directory-outcome { margin-top: auto; border-top: 1px solid #e6ece7; padding-top: 15px; font-size: 11px; line-height: 1.6; color: #52745e; }
-.hp3 .agents-custom-strip { display: flex; align-items: center; gap: 18px; padding: 26px 30px; margin-top: 24px; background: #f2f7f3; border: 1px solid #dfe9e1; border-radius: 12px; }
+.hp3 .agents-custom-strip { display: flex; justify-content: center; text-align: center; padding: 32px 30px; margin-top: 24px; background: #f2f7f3; border: 1px solid #dfe9e1; border-radius: 12px; }
+.hp3 .agents-custom-strip > div { max-width: 650px; }
 .hp3 .agents-custom-strip > svg { color: #527c61; flex: none; }
-.hp3 .agents-custom-strip h3 { font-size: 18px; }
-.hp3 .agents-custom-strip p { font-size: 13px; color: #667b6c; margin-top: 5px; }
+.hp3 .agents-custom-strip h3 { font-size: 21px; line-height: 1.35; }
+.hp3 .agents-custom-strip p { font-size: 14px; line-height: 1.75; color: #667b6c; margin-top: 10px; }
 .hp3 .agents-custom-strip a { display: inline-flex; align-items: center; gap: 8px; flex: none; margin-left: auto; font-size: 13px; color: #216b43; font-weight: 500; }
 .hp3 .agents-directory-availability { font-size: 12px; line-height: 1.8; color: #6a7c70; max-width: 740px; text-align: center; margin: 24px auto 0; }
 /* Share the homepage's deep-green Ask Agent stage and native preview frame. */

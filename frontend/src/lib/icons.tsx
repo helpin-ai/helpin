@@ -1,6 +1,7 @@
 import type { FC, CSSProperties } from 'react';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
+  Mic01Icon as _Mic01Icon,
   Activity01Icon as _Activity01Icon,
   Alert01Icon as _Alert01Icon,
   AlertCircleIcon as _AlertCircleIcon,
@@ -462,3 +463,4 @@ export const WorkflowSquare01Icon = /* @__PURE__ */ hi(_WorkflowSquare01Icon);
 export const ZapIcon = /* @__PURE__ */ hi(_ZapIcon);
 export const ZoomInAreaIcon = /* @__PURE__ */ hi(_ZoomInAreaIcon);
 export const ZoomOutAreaIcon = /* @__PURE__ */ hi(_ZoomOutAreaIcon);
+export const Mic01Icon = /* @__PURE__ */ hi(_Mic01Icon);

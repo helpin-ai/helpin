@@ -1,10 +1,13 @@
+import { AskAgentAvatar } from '@/components/agents/AskAgentAvatar';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { ContactAvatarImage } from '@/components/ui/contact-avatar-image';
 import { SupportAIActivity } from './SupportAIActivity';
 import { getSupportAIActivity } from './supportAIActivity';
 import { PendingSendStatus } from './PendingSendStatus';
 import { memo, useCallback, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, LinkSquare01Icon, File01Icon, RotateLeft01Icon, StickyNote01Icon, CancelCircleIcon, Mail01Icon, AlertCircleIcon, BotIcon, UserIcon, ZapIcon, BubbleChatIcon } from '@/lib/icons';
+import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, LinkSquare01Icon, File01Icon, RotateLeft01Icon, StickyNote01Icon, CancelCircleIcon, Mail01Icon, AlertCircleIcon, UserIcon, ZapIcon, BubbleChatIcon } from '@/lib/icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { EmailDetailModal } from './EmailDetailModal';
@@ -34,27 +37,46 @@ export function sanitizeSupportShortcutSeed(content: string): string {
   return content.replace(/\\(\r?\n)/g, '$1');
 }
 
-/** Splits text on @mention patterns and wraps them in highlight spans. */
-function renderMentionHighlights(content: string): ReactNode[] | null {
-  const regex = /@([a-zA-Z0-9][a-zA-Z0-9._-]*)/g;
-  const parts: ReactNode[] = [];
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-  let key = 0;
-  while ((match = regex.exec(content)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(content.slice(lastIndex, match.index));
+type MentionNode = {
+  type: string;
+  tagName?: string;
+  value?: string;
+  properties?: Record<string, unknown>;
+  children?: MentionNode[];
+};
+
+/** Highlight parsed note text without changing Markdown, links, or code. */
+function rehypeNoteMentions() {
+  return (tree: MentionNode) => {
+    function visit(node: MentionNode) {
+      if (!node.children || ['a', 'code', 'pre'].includes(node.tagName ?? '')) return;
+      node.children = node.children.flatMap((child): MentionNode[] => {
+        if (child.type !== 'text' || !child.value) {
+          visit(child);
+          return [child];
+        }
+        const parts: MentionNode[] = [];
+        let offset = 0;
+        // A mention starts at a word boundary, never inside an email address.
+        for (const match of child.value.matchAll(/(?<![\w.@/+-])@[a-zA-Z0-9][a-zA-Z0-9._-]*/g)) {
+          const index = match.index;
+          if (index > offset) parts.push({ type: 'text', value: child.value.slice(offset, index) });
+          parts.push({
+            type: 'element', tagName: 'span', properties: { className: ['mention-highlight'] },
+            children: [{ type: 'text', value: match[0] }],
+          });
+          offset = index + match[0].length;
+        }
+        if (!parts.length) return [child];
+        if (offset < child.value.length) parts.push({ type: 'text', value: child.value.slice(offset) });
+        return parts;
+      });
     }
-    parts.push(
-      <span key={key++} className="mention-highlight">{match[0]}</span>
-    );
-    lastIndex = match.index + match[0].length;
-  }
-  if (lastIndex < content.length) {
-    parts.push(content.slice(lastIndex));
-  }
-  return parts.length > 1 ? parts : null;
+    visit(tree);
+  };
 }
+
+const NOTE_REHYPE_PLUGINS = [rehypeNoteMentions];
 
 function containsMarkdownTable(content: string): boolean {
   return /\|(?:[^\n|]+\|){1,}[^\n]*\n\|(?:\s*[-:]+\s*\|){1,}/m.test(content) || /<table[\s>]/i.test(content);
@@ -444,12 +466,6 @@ export const MessageBubble = memo(function MessageBubble({
   const visibleContent = translatedContent ?? (forwardedDisplayContent || projectedEmailVisibleContent || displayContent);
   const hasTableContent = useMemo(() => containsMarkdownTable(visibleContent), [visibleContent]);
 
-  // Highlight @mentions in internal notes
-  const mentionParts = useMemo(() => {
-    if (!isInternal) return null;
-    return renderMentionHighlights(visibleContent);
-  }, [visibleContent, isInternal]);
-
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [emailDetailOpen, setEmailDetailOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
@@ -564,6 +580,7 @@ export const MessageBubble = memo(function MessageBubble({
       message={message}
       activity={aiActivity}
       teammateName={teammateDisplayName}
+      avatarUrl={resolvedAvatarUrl}
       detailsContent={<Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{message.content}</Markdown>}
     />;
   }
@@ -604,16 +621,9 @@ export const MessageBubble = memo(function MessageBubble({
     const escalationLabel = isEscalationEvent ? ESCALATION_LABELS[eventType] : null;
     const isRuleRoutingEvent = eventType === 'triage_routed' && message.content.trim().toLowerCase().startsWith('routing rule ');
     const isAIRoutingEvent = eventType === 'triage_routed' && !isRuleRoutingEvent;
-    const automatedEventIcon = isRuleRoutingEvent
-      ? { label: 'Routing rule', icon: <ZapIcon className="h-3 w-3" />, className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' }
-      : isAIRoutingEvent
-        ? { label: 'AI routing', icon: <BotIcon className="h-3 w-3" />, className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' }
-        : null;
-    const escalationIcon = eventType === 'customer_requested_human'
-      ? <UserIcon className="h-3 w-3" />
-      : eventType === 'ai_escalated'
-        ? <BotIcon className="h-3 w-3" />
-        : null;
+    const showAIAvatar = eventType !== 'customer_requested_human' && !isRuleRoutingEvent
+      && (isAI || isAgent || isAIRoutingEvent || eventType === 'ai_escalated');
+    const aiStatusAvatar = <AskAgentAvatar plateStyle="solid" radius={50} className="h-5 w-5 shrink-0" decorative={false} label={isAIRoutingEvent ? 'AI routing' : HELPIN_AI_DISPLAY_NAME} />;
     const systemDisplayContent = escalationLabel ?? supportSystemEventDisplayContent(eventType, message.content, resolvedSenderName);
     const taskID = eventType === 'task_created'
       ? supportTaskIDFromMetadata(message.metadata) ?? linkedTaskId
@@ -664,7 +674,7 @@ export const MessageBubble = memo(function MessageBubble({
       ? 'rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800 shadow-sm dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200'
       : 'rounded-full bg-slate-700 px-4 py-2 text-white shadow-sm';
     const resolvedActorAvatar = stateEventKind === 'resolved' ? (
-      resolvedAvatarUrl ? (
+      showAIAvatar ? aiStatusAvatar : resolvedAvatarUrl ? (
         <img src={resolvedAvatarUrl} alt={resolvedSenderName} className="h-5 w-5 rounded-full object-cover" />
       ) : (
         <div aria-label={resolvedSenderName} className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold leading-none ${getAvatarColor(avatarSeed)}`}>
@@ -683,13 +693,13 @@ export const MessageBubble = memo(function MessageBubble({
           <Tooltip>
             <TooltipTrigger asChild>
               <div data-support-system-callout className={`flex min-w-0 items-center gap-2 ${eventType === 'task_created' ? 'max-w-[70%]' : 'max-w-full'} ${isEscalationEvent ? escalationPillClass : defaultPillClass}`}>
-                {isEscalationEvent ? (
+                {showAIAvatar ? aiStatusAvatar : isEscalationEvent ? (
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-                    {escalationIcon}
+                    <UserIcon className="h-3 w-3" />
                   </span>
-                ) : automatedEventIcon ? (
-                  <span aria-label={automatedEventIcon.label} className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${automatedEventIcon.className}`}>
-                    {automatedEventIcon.icon}
+                ) : isRuleRoutingEvent ? (
+                  <span aria-label="Routing rule" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                    <ZapIcon className="h-3 w-3" />
                   </span>
                 ) : resolvedAvatarUrl ? (
                   <img src={resolvedAvatarUrl} alt={resolvedSenderName} className="h-5 w-5 rounded-full object-cover" />
@@ -715,7 +725,7 @@ export const MessageBubble = memo(function MessageBubble({
           <TooltipTrigger asChild>
             <div data-support-system-callout className={`flex min-w-0 max-w-full items-center gap-2.5 [overflow-wrap:anywhere] ${statePillClass}`}>
               {statusIcon ?? <CheckmarkCircle02Icon className="h-4 w-4 shrink-0" />}
-              {resolvedActorAvatar}
+              {resolvedActorAvatar ?? (showAIAvatar ? aiStatusAvatar : null)}
               <span className={`min-w-0 ${stateEventKind === 'resolved' ? 'font-medium' : 'text-sm font-medium'}`}>{systemDisplayNode}</span>
             </div>
           </TooltipTrigger>
@@ -730,51 +740,28 @@ export const MessageBubble = memo(function MessageBubble({
     );
   }
 
-  // ── Internal note: right-aligned card with amber accent ──
-  if (isInternal) {
-    return (
-      <>
-        <div className={`flex justify-end ${isConsecutive ? 'mt-1' : 'mt-5'}`}>
-          <div className="max-w-[85%]">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div className="flow-root rounded-lg border-r-[3px] border-r-amber-400 bg-amber-50 px-4 py-2.5 [overflow-wrap:anywhere] dark:bg-amber-950/20">
-                  <div className="mb-1.5 flex items-center gap-1.5">
-                    <StickyNote01Icon className="h-3 w-3 text-amber-500 dark:text-amber-400" />
-                    <span className="text-[11px] text-amber-600 dark:text-amber-400">
-                      <span className="font-semibold">{resolvedSenderName}</span>
-                      <span className="font-normal">{inboundIdentity.email_unknown_sender ? ' · Team only' : ' left a private note'}</span>
-                    </span>
-                  </div>
-                  {hasDisplayContent && (
-                    <div className="prose-chat inline text-sm leading-relaxed text-amber-900 [&>p:last-child]:inline dark:text-amber-200">
-                      {mentionParts ? (
-                        <p className="whitespace-pre-wrap">{mentionParts}</p>
-                      ) : (
-                        <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{visibleContent}</Markdown>
-                      )}
-                    </div>
-                  )}
-                  {renderFileAttachments('note', hasDisplayContent ? 'mt-2' : 'mt-1.5')}
-                  {renderImageAttachments(hasDisplayContent || fileAttachments.length > 0 ? 'mt-2' : 'mt-1.5')}
-                  {renderBubbleTime('float-right ml-2 mt-1 text-amber-700/70 dark:text-amber-300/70')}
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side="top">{inboundIdentity.email_unknown_sender ? "This sender is not a participant. Only your team can see this message; no automatic reply is sent." : tooltipContent}</TooltipContent>
-            </Tooltip>
-          </div>
-        </div>
-      </>
-    );
-  }
-
-  // ── Chat bubble ──
   const avatarEl = isCustomer ? (
     <Tooltip>
       <TooltipTrigger asChild>
-        {fallbackAvatar}
+        <Avatar className="h-7 w-7 shadow-sm">
+          <ContactAvatarImage
+            email={inboundIdentity.email_sender || emailAddressFromHeader(message.email_from) || (inboundIdentity.email_participant_sender ? undefined : customerEmail)}
+            src={resolvedAvatarUrl}
+            alt={resolvedSenderName}
+          />
+          <AvatarFallback className={`text-[10.5px] font-semibold leading-none ${getAvatarColor(avatarSeed)}`}>
+            {getInitial(resolvedSenderName)}
+          </AvatarFallback>
+        </Avatar>
       </TooltipTrigger>
       <TooltipContent side="left"><span className="text-xs font-medium">{resolvedSenderName}</span></TooltipContent>
+    </Tooltip>
+  ) : isAI || isAgent ? (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <AskAgentAvatar plateStyle="solid" radius={50} className="h-7 w-7" decorative={false} label={resolvedSenderName} />
+      </TooltipTrigger>
+      <TooltipContent side="right"><span className="text-xs font-medium">{resolvedSenderName}</span></TooltipContent>
     </Tooltip>
   ) : resolvedAvatarUrl ? (
     <Tooltip>
@@ -792,6 +779,49 @@ export const MessageBubble = memo(function MessageBubble({
     </Tooltip>
   );
 
+  const bubbleWidthClass = hasEmailBody && !renderEmailBodyAsForwardedText
+    ? 'min-w-0 w-[min(92%,64rem)] max-w-[calc(100%-2.25rem)]'
+    : hasTableContent
+      ? 'min-w-0 max-w-[min(85%,46rem)] lg:max-w-[min(85%,48rem)]'
+      : 'min-w-0 max-w-[min(85%,42rem)]';
+
+  // ── Internal note: team bubble with the same author avatar as replies ──
+  if (isInternal) {
+    return (
+      <>
+        <div className={`flex min-w-0 max-w-full justify-end ${isConsecutive ? 'mt-1' : 'mt-5'}`}>
+          <div className={bubbleWidthClass}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div data-support-internal-note className={`flow-root rounded-2xl border border-border/40 bg-amber-50 px-3.5 py-2 [overflow-wrap:anywhere] dark:bg-amber-950/20 ${isLastInGroup ? 'rounded-br-sm' : ''}`}>
+                  <div className="mb-1.5 flex items-center gap-1.5">
+                    <StickyNote01Icon className="h-3 w-3 text-amber-500 dark:text-amber-400" />
+                    <span className="text-[11px] text-amber-600 dark:text-amber-400">
+                      {inboundIdentity.email_unknown_sender ? 'Team only' : 'Internal note'}
+                    </span>
+                  </div>
+                  {hasDisplayContent && (
+                    <div className="prose-chat inline text-sm leading-relaxed text-amber-900 [&>p:last-child]:inline dark:text-amber-200">
+                      <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={NOTE_REHYPE_PLUGINS} components={markdownComponents}>{visibleContent}</Markdown>
+                    </div>
+                  )}
+                  {renderFileAttachments('note', hasDisplayContent ? 'mt-2' : 'mt-1.5')}
+                  {renderImageAttachments(hasDisplayContent || fileAttachments.length > 0 ? 'mt-2' : 'mt-1.5')}
+                  {renderBubbleTime('float-right ml-2 mt-1 text-amber-700/70 dark:text-amber-300/70')}
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="top">{inboundIdentity.email_unknown_sender ? "This sender is not a participant. Only your team can see this message; no automatic reply is sent." : tooltipContent}</TooltipContent>
+            </Tooltip>
+          </div>
+          <div className="ml-2 flex w-7 shrink-0 flex-col justify-end">
+            {showAvatar && avatarEl}
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // ── Chat bubble ──
   const hasEmailBadge = message.via_channel === 'email';
   const inboundFromEmail = isCustomer ? emailAddressFromHeader(message.email_from) : '';
   const inboundReplyToEmail = isCustomer ? emailAddressFromHeader(message.email_reply_to) : '';
@@ -808,11 +838,6 @@ export const MessageBubble = memo(function MessageBubble({
   const hasEmailReceiptStatus = displayedReceiptStatus === 'sending_email' || displayedReceiptStatus === 'sent_email' || displayedReceiptStatus === 'delivered_email' || displayedReceiptStatus === 'read_email' || displayedReceiptStatus === 'sent_outside_helpin';
   const showStandaloneEmailBadge = !deliveryMode && hasEmailBadge && !(hasEmailReceiptStatus && !isCustomer);
   const hasStatusBelow = !!deliveryMode || !!displayedReceiptStatus || aiConfidence !== null || !!aiMeta?.ai_sources?.length || hasEmailBadge;
-  const bubbleWidthClass = hasEmailBody && !renderEmailBodyAsForwardedText
-    ? 'min-w-0 w-[min(92%,64rem)] max-w-[calc(100%-2.25rem)]'
-    : hasTableContent
-      ? 'min-w-0 max-w-[min(85%,46rem)] lg:max-w-[min(85%,48rem)]'
-      : 'min-w-0 max-w-[min(85%,42rem)]';
   const messageActionsMenu = (
     <MessageActionsMenu
       alignSide={isCustomer ? 'right' : 'left'}

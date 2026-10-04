@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -57,12 +58,70 @@ func TestSupportStepsAreReadOnly(t *testing.T) {
 			},
 			want: true,
 		},
+		{
+			name:  "external web research is read-only",
+			steps: []dockLaunchStep{{AllowedTools: []string{"web_search", "fetch_url"}}},
+			want:  true,
+		},
+		{
+			name:  "web fetch mixed with repository tools",
+			steps: []dockLaunchStep{{AllowedTools: []string{"read_files", "crawl_url"}}},
+			want:  false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := supportStepsAreReadOnly(tt.steps); got != tt.want {
 				t.Errorf("supportStepsAreReadOnly() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSupportExternalResearchLaunchUsesReadOnlyPath(t *testing.T) {
+	for _, tool := range []string{"web_search", "fetch_url"} {
+		t.Run(tool, func(t *testing.T) {
+			_, commands, db, _, _, meta := setupSupportProgressTest(t)
+			mustExec(t, db, `UPDATE agent_runs SET input=? WHERE id='run'`, []byte(`{"trigger":{"trigger_type":"support_chat"}}`))
+			commands.agentService = &AgentService{}
+			steps := []dockLaunchStep{{Instructions: "Check the provider's official error documentation", AllowedTools: []string{" " + tool + " "}}}
+			_, err := commands.executeDockLaunch(context.Background(), meta, steps, "", "Research")
+			if err == nil || !strings.Contains(err.Error(), "requires agent_id") {
+				t.Fatalf("launch error = %v, want agent selection after read-only admission", err)
+			}
+		})
+	}
+}
+
+func TestSupportRepositoryLaunchStillUsesReadOnlyPath(t *testing.T) {
+	_, commands, db, _, _, meta := setupSupportProgressTest(t)
+	mustExec(t, db, `UPDATE agent_runs SET input=? WHERE id='run'`, []byte(`{"trigger":{"trigger_type":"support_chat"}}`))
+	commands.agentService = &AgentService{}
+	steps := []dockLaunchStep{{Instructions: "Check the implementation", AllowedTools: []string{"read_files"}}}
+	_, err := commands.executeDockLaunch(context.Background(), meta, steps, "", "Check implementation")
+	if err == nil || !strings.Contains(err.Error(), "requires agent_id") {
+		t.Fatalf("repository launch error = %v, want agent selection after read-only admission", err)
+	}
+}
+
+func TestSupportChildWebResultCannotBecomeEvidence(t *testing.T) {
+	for _, tools := range [][]string{{"web_search", "fetch_url"}, {"web_search", "read_files"}} {
+		t.Run(strings.Join(tools, "+"), func(t *testing.T) {
+			chat, commands, _, _, _, _ := setupSupportProgressTest(t)
+			chat.evidenceRepo = commands.supportRunEvidenceRepo
+			steps, err := json.Marshal([]model.CommandBarPlanStep{{AllowedTools: tools}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			plan := &model.CommandBarPlanRecord{ID: "plan", WorkspaceID: "ws", Status: model.CommandBarPlanStatusCompleted, Steps: steps}
+			payload, err := json.Marshal(dockChildRunResult{Runs: []dockChildRunReport{{ResultAvailable: true, Summary: "Use the legacy tab. https://product.example/blog/old-feature"}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			block := dockChildResultOpenTag + string(payload) + dockChildResultCloseTag
+			if evidence := chat.prepareSupportChildEvidence(context.Background(), plan, block); evidence != nil {
+				t.Fatalf("web result became answer evidence: %+v", evidence)
 			}
 		})
 	}
@@ -76,19 +135,6 @@ func TestSupportChildResearchKinds(t *testing.T) {
 	hasWeb, hasRepository := supportChildResearchKinds(steps)
 	if !hasWeb || !hasRepository {
 		t.Fatalf("supportChildResearchKinds() = web:%v repo:%v, want both", hasWeb, hasRepository)
-	}
-}
-
-func TestOfficialURLFromChildResult(t *testing.T) {
-	block := `Third party: https://example.com/pricing. Official facts: https://www.usermaven.com/pricing.`
-	if got := officialURLFromChildResult(block, "https://usermaven.com"); got != "https://www.usermaven.com/pricing" {
-		t.Fatalf("officialURLFromChildResult() = %q", got)
-	}
-	if got := officialURLFromChildResult("https://example.com/pricing", "https://usermaven.com"); got != "" {
-		t.Fatalf("third-party URL accepted: %q", got)
-	}
-	if got := officialURLFromChildResult("https://docs.usermaven.com/setup", "usermaven.com"); got != "https://docs.usermaven.com/setup" {
-		t.Fatalf("official subdomain rejected: %q", got)
 	}
 }
 

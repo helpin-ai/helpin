@@ -9,7 +9,7 @@ export function workspaceSurface(path: string): WorkspaceModule | null {
     if (page === 'automations') return 'automation';
     if (['support-ai-assistant', 'support-translation', 'chat-general', 'customer-portal', 'inboxes-routing'].includes(page)) return 'support';
     if (['helpcenter', 'redirects', 'knowledge'].includes(page)) return 'docs';
-    if (['ai', 'ai-connections', 'external-mcp'].includes(page)) return 'agents';
+    if (['ai', 'ai-connections', 'external-mcp', 'external-agents'].includes(page)) return 'agents';
   }
   if (surface === 'automation') return ['agents', 'tools', 'skills'].includes(page) ? 'agents' : 'automation';
   if (surface === 'pm' && page === 'agents') return 'agents';

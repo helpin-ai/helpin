@@ -1,3 +1,4 @@
+import { PrivacyNoticeSettings } from './chat-widget/PrivacyNoticeSettings';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { SettingsSection } from './SettingsSection';
 import { Select as AISelect, SelectTrigger as AISelectTrigger, SelectValue as AISelectValue, SelectContent as AISelectContent, SelectItem as AISelectItem } from '@/components/design-system/quiet-dropdown-select';
@@ -19,9 +20,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { formatReplyTimeCopy, SPECIAL_NOTICE_MAX_LENGTH } from '@helpin-ai/shared';
+import { DEFAULT_PRIVACY_NOTICE_TEXT, getPrivacyPolicyURL, formatReplyTimeCopy, SPECIAL_NOTICE_MAX_LENGTH } from '@helpin-ai/shared';
 import { toast } from 'sonner';
-import { Copy01Icon, CodeIcon, Message01Icon, HelpCircleIcon, Image01Icon, Key01Icon, BotIcon, ArrowDown01Icon, StarIcon } from '@/lib/icons';
+import { Shield01Icon, Copy01Icon, CodeIcon, Message01Icon, HelpCircleIcon, Image01Icon, Key01Icon, BotIcon, ArrowDown01Icon, StarIcon } from '@/lib/icons';
 import { useChatSettings, useUpdateChatSettings, useRegenerateWidgetKey, useDocsSpaces } from '@/hooks/queries';
 import { useWorkspaceBilling } from '@edition';
 import { useSupportAgents, useSupportMailboxes } from '@/hooks/queries/useSupport';
@@ -92,6 +93,9 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
   const [requireEmail, setRequireEmail] = useState(true);
   const [requirePhone, setRequirePhone] = useState(false);
   const [welcomeMessage, setWelcomeMessage] = useState('');
+  const [privacyNoticeEnabled, setPrivacyNoticeEnabled] = useState(false);
+  const [privacyPolicyUrl, setPrivacyPolicyUrl] = useState('');
+  const [privacyNoticeText, setPrivacyNoticeText] = useState(DEFAULT_PRIVACY_NOTICE_TEXT);
 
   // Appearance state
   const [brandColor, setBrandColor] = useState('#6366F1');
@@ -167,6 +171,9 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
       setRequireEmail(s.require_email_before_chat);
       setRequirePhone(s.require_phone_after_email);
       setWelcomeMessage(s.welcome_message);
+      setPrivacyNoticeEnabled(s.privacy_notice_enabled ?? false);
+      setPrivacyPolicyUrl(s.privacy_policy_url ?? '');
+      setPrivacyNoticeText(s.privacy_notice_text || DEFAULT_PRIVACY_NOTICE_TEXT);
       setBrandColor(s.brand_color);
       setShowBranding(canRemoveBranding ? s.show_branding : true);
       setLauncherPosition(s.launcher_position);
@@ -220,10 +227,18 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
   });
   const showAIAssistantEnableBlocker = Boolean(aiAssistantEnableBlocker && (aiEnableAttempted || aiEnabled));
 
+  const privacyNoticeError = privacyNoticeEnabled && !getPrivacyPolicyURL(privacyPolicyUrl)
+    ? 'Enter a valid Privacy Policy URL to save your changes.'
+    : privacyNoticeEnabled && !privacyNoticeText.trim()
+      ? 'Enter notice text to save your changes.'
+      : undefined;
   const settingsDraft: ChatSettingsDraft = {
     require_email_before_chat: requireEmail,
     require_phone_after_email: requirePhone,
     welcome_message: welcomeMessage,
+    privacy_notice_enabled: privacyNoticeEnabled,
+    privacy_policy_url: privacyPolicyUrl.trim(),
+    privacy_notice_text: privacyNoticeText.trim(),
     widget_name: widgetName,
     widget_avatar_url: widgetAvatarUrl,
     widget_help_space_ids: sortHelpSpaceIds(widgetHelpSpaceIds),
@@ -281,7 +296,7 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
   };
   const autosave = useSettingsAutosave({
     scopeKey: workspaceId,
-    enabled: hydrated && !billingLoading,
+    enabled: hydrated && !billingLoading && !privacyNoticeError,
     value: settingsDraft,
     // The hook captures this baseline only once after the form is hydrated.
     // Later query refreshes must not replace edits made while a save is pending.
@@ -655,6 +670,8 @@ function Dashboard() {
       launcherPosition={launcherPosition}
       launcherIcon={launcherIcon}
       welcomeMessage={welcomeMessage}
+      privacyNotice={{ enabled: privacyNoticeEnabled, policyUrl: privacyPolicyUrl, text: privacyNoticeText }}
+      initialView={isExpanded('privacy') ? 'conversation' : 'home'}
       workspaceName={widgetName || workspace?.name}
       workspaceLogoUrl={widgetAvatarUrl || workspace?.logo_url}
       colorScheme={colorScheme}
@@ -674,7 +691,7 @@ function Dashboard() {
   const saveIndicator = (
     <SettingsSaveBar>
       <SettingsAutosaveGuard isDirty={autosave.isDirty} error={autosave.error} onRetry={autosave.retry} />
-      <span className="mr-auto text-xs text-muted-foreground">Changes save automatically</span>
+      {!isAIAssistantPage && <span className="mr-auto text-xs text-muted-foreground">Changes save automatically</span>}
       <SettingsSaveStatus status={autosave.status} error={autosave.error} onRetry={autosave.retry} />
     </SettingsSaveBar>
   );
@@ -706,7 +723,7 @@ function Dashboard() {
   );
   const businessHoursSettingsHref = workspace?.slug ? `/w/${workspace.slug}/settings/chat-general` : null;
 
-  const aiAssistantSection = (
+  const aiSetupSection = (
     <>
       <Card className="gap-5 rounded-lg border-border/70">
         <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -759,6 +776,11 @@ function Dashboard() {
         </CardContent>
       </Card>
 
+    </>
+  );
+
+  const aiHandoffSection = (
+    <>
       <SettingsSection title="Human handoff" description="Reply limits, customer messages, and team routing.">
         <div className="space-y-5 pt-4">
           <div className="grid gap-6 sm:grid-cols-2">
@@ -905,14 +927,31 @@ function Dashboard() {
   if (isAIAssistantPage) {
     return (
       <div className="space-y-4">
-        {saveIndicator}
-        {aiAssistantSection}
-        {data?.settings.ai_agent_id && <SupportAIPreview key={`${workspaceId}:${data.settings.ai_agent_id}`} workspaceId={workspaceId} agentId={data.settings.ai_agent_id} />}
-        <CuratedGuidanceField
-          key={aiAgentId}
-          workspaceId={workspaceId}
-          agentId={aiAgentId === NO_AGENT_VALUE ? undefined : aiAgentId}
-        />
+        <SettingsAutosaveGuard isDirty={autosave.isDirty} error={autosave.error} onRetry={autosave.retry} />
+        <Tabs defaultValue="setup">
+          <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 bg-background">
+            <TabsList variant="line" aria-label="AI assistant settings" className="max-w-full overflow-x-auto">
+              <TabsTrigger value="setup">Setup</TabsTrigger>
+              <TabsTrigger value="answers">Preferred answers</TabsTrigger>
+              <TabsTrigger value="handoff">Handoff &amp; follow-up</TabsTrigger>
+            </TabsList>
+            <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-3">
+              <SettingsSaveStatus status={autosave.status} error={autosave.error} onRetry={autosave.retry} />
+              {data?.settings.ai_agent_id && (
+                <SupportAIPreview key={`${workspaceId}:${data.settings.ai_agent_id}`} workspaceId={workspaceId} agentId={data.settings.ai_agent_id} />
+              )}
+            </div>
+          </div>
+          <TabsContent value="setup" className="mt-4">{aiSetupSection}</TabsContent>
+          <TabsContent value="answers" className="mt-4">
+            <CuratedGuidanceField
+              key={aiAgentId}
+              workspaceId={workspaceId}
+              agentId={aiAgentId === NO_AGENT_VALUE ? undefined : aiAgentId}
+            />
+          </TabsContent>
+          <TabsContent value="handoff" className="mt-4 space-y-4">{aiHandoffSection}</TabsContent>
+        </Tabs>
       </div>
     );
   }
@@ -1106,6 +1145,39 @@ function Dashboard() {
                 />
               </div>
             </div>
+            </div>
+          </div>
+        </div>
+
+        <div className={supportSectionClass}>
+          <button
+            type="button"
+            onClick={() => toggleSection('privacy')}
+            aria-expanded={isExpanded('privacy')}
+            className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
+          >
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              <Shield01Icon className="h-4 w-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">Privacy notice</p>
+              <p className="text-sm text-muted-foreground">Link your privacy policy before visitors start chatting.</p>
+            </div>
+            <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('privacy') && 'rotate-180')} />
+          </button>
+          <div className="accordion-animate" data-open={isExpanded('privacy')}>
+            <div>
+              <div className="border-t border-border px-6 py-6">
+                <PrivacyNoticeSettings
+                  enabled={privacyNoticeEnabled}
+                  policyUrl={privacyPolicyUrl}
+                  text={privacyNoticeText}
+                  error={privacyNoticeError}
+                  onEnabledChange={setPrivacyNoticeEnabled}
+                  onPolicyUrlChange={setPrivacyPolicyUrl}
+                  onTextChange={setPrivacyNoticeText}
+                />
+              </div>
             </div>
           </div>
         </div>

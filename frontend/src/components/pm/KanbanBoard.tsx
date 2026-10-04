@@ -1,3 +1,4 @@
+import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { BoardListViewToggle } from '@/components/design-system/board-list-view-toggle';
 import { TaskListGroupingDropdown } from './TaskListGroupingDropdown';
 import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -154,7 +155,7 @@ function AutomatedStateIndicator({ compact = false }: { compact?: boolean }) {
 }
 
 const Column = memo(function Column({ column, collapsed, isLoadingMore }: ColumnProps) {
-  const { automatedStateIds, findTeamName } = useContext(BoardDataContext)!;
+  const { automatedStateIds, findTeamName, findTeamColor } = useContext(BoardDataContext)!;
   const callbacksRef = useContext(BoardCallbacksContext)!;
   const dragManager = useContext(DragPreviewContext)!;
 
@@ -279,7 +280,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
                 <div key={group.key} className="space-y-2">
                   <div className="rounded-md bg-muted px-3 py-1 text-center text-xs font-semibold text-muted-foreground">{group.label}</div>
                   {group.tasks.map((task) => (
-                    <TaskCard key={task.id} task={task} teamName={findTeamName(task.team_id)} />
+                    <TaskCard key={task.id} task={task} teamName={findTeamName(task.team_id)} teamColor={findTeamColor(task.team_id)} />
                   ))}
                 </div>
               ))
@@ -288,7 +289,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
                 tasks,
                 placeholderIndex: dropPlaceholderIndex,
                 placeholderHeight: dropPlaceholderHeight,
-                renderTask: (task) => <TaskCard key={task.id} task={task} teamName={findTeamName(task.team_id)} />,
+                renderTask: (task) => <TaskCard key={task.id} task={task} teamName={findTeamName(task.team_id)} teamColor={findTeamColor(task.team_id)} />,
               })}
 
           {column.has_more ? (
@@ -322,7 +323,7 @@ interface MemberColumnProps {
 }
 
 const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMore }: MemberColumnProps) {
-  const { findTeamName } = useContext(BoardDataContext)!;
+  const { findTeamName, findTeamColor } = useContext(BoardDataContext)!;
   const callbacksRef = useContext(BoardCallbacksContext)!;
   const dragManager = useContext(DragPreviewContext)!;
 
@@ -425,7 +426,7 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
             tasks,
             placeholderIndex: dropPlaceholderIndex,
             placeholderHeight: dropPlaceholderHeight,
-            renderTask: (task) => <TaskCard key={task.id} task={task} teamName={findTeamName(task.team_id)} showStateBadge />,
+            renderTask: (task) => <TaskCard key={task.id} task={task} teamName={findTeamName(task.team_id)} teamColor={findTeamColor(task.team_id)} showStateBadge />,
           })}
 
           {column.has_more ? (
@@ -452,10 +453,10 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
 });
 MemberColumn.displayName = 'MemberColumn';
 
-const DragOverlayCard = memo(function DragOverlayCard({ manager, resolveTeamName, groupBy }: { manager: DragPreviewManager; resolveTeamName: (id?: string) => string | undefined; groupBy: string }) {
+const DragOverlayCard = memo(function DragOverlayCard({ manager, resolveTeamName, resolveTeamColor, groupBy }: { manager: DragPreviewManager; resolveTeamName: (id?: string) => string | undefined; resolveTeamColor: (id?: string) => string | null | undefined; groupBy: string }) {
   const activeTask = useActiveTask(manager);
   if (!activeTask) return null;
-  return <TaskCard task={activeTask} isOverlay teamName={resolveTeamName(activeTask.team_id)} showStateBadge={groupBy === 'members'} />;
+  return <TaskCard task={activeTask} isOverlay teamName={resolveTeamName(activeTask.team_id)} teamColor={resolveTeamColor(activeTask.team_id)} showStateBadge={groupBy === 'members'} />;
 });
 DragOverlayCard.displayName = 'DragOverlayCard';
 
@@ -1216,8 +1217,9 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
       assignableMembers,
       automatedStateIds,
       findTeamName: resolveTeamName,
+      findTeamColor: (id) => teams.find(team => team.id === id)?.color,
     }),
-    [workspaceId, ownerNameMap, agentById, assignableMembers, automatedStateIds, resolveTeamName, refEpics],
+    [workspaceId, ownerNameMap, agentById, assignableMembers, automatedStateIds, resolveTeamName, refEpics, teams],
   );
 
   // Use a ref so the context value identity never changes — consumers never
@@ -1249,7 +1251,7 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
         <QuietPageHeader
           variant="shell"
           title="Tasks"
-          context={teamLabel}
+          context={teamLabel || null}
           actions={
             <QuietPrimaryAction className="gap-1.5" disabled={!workflow} onClick={() => handleCreateForState(workflow?.states[0]?.id ?? '')}>
               <PlusSignIcon className="h-4 w-4" />
@@ -1274,7 +1276,7 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
                 <SelectItem value="__all__">All teams</SelectItem>
                 {teams.map((t) => (
                   <SelectItem key={t.id} value={t.id}>
-                    {t.name}
+                    <TeamLabel team={t} />
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1342,7 +1344,7 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
                   </div>
 
                   <DragOverlay>
-                    <DragOverlayCard manager={dragManager} resolveTeamName={resolveTeamName} groupBy={groupBy} />
+                    <DragOverlayCard manager={dragManager} resolveTeamName={resolveTeamName} resolveTeamColor={boardData.findTeamColor} groupBy={groupBy} />
                   </DragOverlay>
                 </DndContext>
               </DragPreviewContext.Provider>

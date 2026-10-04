@@ -42,7 +42,7 @@ export function CodingSessionDrawer({
         </SheetHeader>
         {sessionId ? (
           <div className="h-full min-h-0 overflow-hidden">
-            <CodingSessionSurface sessionId={sessionId} embedded showBackToRuns={false} />
+            <CodingSessionSurface sessionId={sessionId} active={open} embedded showBackToRuns={false} />
           </div>
         ) : null}
       </SheetContent>

@@ -3,12 +3,13 @@
 import { useId, useState } from 'react';
 import { CalendarDays, Check, ChevronDown, Pause, Play, Repeat2 } from 'lucide-react';
 import { useMeetingPlayback } from './use-meeting-playback';
+import { WorkflowClick } from '../../_components/WorkflowParts';
 import './meeting-agenda.css';
 
 type Choices = { customer: boolean; internal: boolean; series: boolean; first: boolean; second: boolean };
 
-function CaptureSwitch({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) {
-  return <button type="button" role="switch" aria-label={label} aria-checked={checked} className="ma-switch" onClick={onChange}><span /></button>;
+function CaptureSwitch({ label, checked, onChange, clickDelay }: { label: string; checked: boolean; onChange: () => void; clickDelay?: number }) {
+  return <button type="button" role="switch" aria-label={label} aria-checked={checked} className="ma-switch" onClick={onChange}><span className="ma-switch-thumb" />{clickDelay !== undefined && <WorkflowClick delay={clickDelay} />}</button>;
 }
 
 // A local, interactive representation of Meetings + UpcomingCalendarMeetings.
@@ -42,7 +43,7 @@ export function MeetingAgenda() {
       <div className="ma-section-title"><h4>Upcoming <span>4</span></h4><span>Today–25</span></div>
       <div className="ma-row" data-selected={choices.customer}>
         <div className="ma-row-copy"><div className="ma-meta"><img src="/new/meetings/google_meet.svg" width={13} height={13} alt="" />Google Meet<span>Today · 10:00 AM</span></div><strong>Northstar Labs · SSO rollout review</strong><p>2 external attendees · Ready for automatic joining</p></div>
-        <div className="ma-control"><span>Auto-join</span><CaptureSwitch label="Automatically join Northstar Labs SSO rollout review" checked={choices.customer} onChange={() => update('customer', 'Northstar Labs rollout review')} /></div>
+        <div className="ma-control"><span>Auto-join</span><CaptureSwitch label="Automatically join Northstar Labs SSO rollout review" checked={choices.customer} onChange={() => update('customer', 'Northstar Labs rollout review')} clickDelay={active && phase === 0 && !manual ? 1200 : undefined} /></div>
       </div>
       <div className="ma-row" data-selected={choices.internal}>
         <div className="ma-row-copy"><div className="ma-meta"><img src="/new/meetings/zoom.svg" width={13} height={13} alt="" />Zoom<span>Today · 11:30 AM</span></div><strong>Product team check-in</strong><p>No external attendees</p></div>
@@ -50,11 +51,11 @@ export function MeetingAgenda() {
       </div>
       <div className="ma-row ma-series" data-selected={choices.series}>
         <div className="ma-row-copy"><div className="ma-meta"><img src="/new/meetings/google_meet.svg" width={13} height={13} alt="" />Google Meet<span><Repeat2 size={11} />Recurring</span></div><strong>Northstar Labs · Weekly rollout sync</strong><p>2 external attendees · 2 upcoming occurrences</p><button type="button" className="ma-dates-toggle" aria-expanded={expanded} aria-controls={datesId} onClick={() => { setManual(choices); setOverrides(overrides ?? (phase === 3 ? { second: false } : {})); setPaused(true); setExpanded(!expanded); }}>{expanded ? 'Hide dates' : 'Show dates'}<ChevronDown size={12} /></button></div>
-        <div className="ma-control"><span>Auto-join series</span><CaptureSwitch label="Automatically join recurring series Northstar Labs Weekly rollout sync" checked={choices.series} onChange={() => update('series', 'Weekly rollout series')} /></div>
+        <div className="ma-control"><span>Auto-join series</span><CaptureSwitch label="Automatically join recurring series Northstar Labs Weekly rollout sync" checked={choices.series} onChange={() => update('series', 'Weekly rollout series')} clickDelay={active && phase === 1 && !manual ? 1200 : undefined} /></div>
       </div>
       <div id={datesId} className="ma-dates" hidden={!expanded}>
         <p>Keep the series setting or change a single date.</p>
-        {(['first', 'second'] as const).map((key, index) => <div className="ma-occurrence" key={key} data-selected={choices[key]}><div><span>{index === 0 ? 'This Friday' : 'Next Friday'} · 2:00 PM</span><strong>Helpin will {choices[key] ? 'join' : 'skip'} this occurrence</strong></div><CaptureSwitch label={`Automatically join weekly rollout sync ${index === 0 ? 'this Friday' : 'next Friday'}`} checked={choices[key]} onChange={() => update(key, `${index === 0 ? 'This Friday' : 'Next Friday'} occurrence`)} /></div>)}
+        {(['first', 'second'] as const).map((key, index) => <div className="ma-occurrence" key={key} data-selected={choices[key]}><div><span>{index === 0 ? 'This Friday' : 'Next Friday'} · 2:00 PM</span><strong>Helpin will {choices[key] ? 'join' : 'skip'} this occurrence</strong></div><CaptureSwitch label={`Automatically join weekly rollout sync ${index === 0 ? 'this Friday' : 'next Friday'}`} checked={choices[key]} onChange={() => update(key, `${index === 0 ? 'This Friday' : 'Next Friday'} occurrence`)} clickDelay={active && phase === 2 && index === 1 && !manual ? 2200 : undefined} /></div>)}
       </div>
     </div>
     <div className="ma-summary"><span className="ma-helpin"><img src="/brand/helpin-icon-white.svg" width={13} height={13} alt="" /></span><span>Choose a call, a whole series, or a single date.<small>The host may need to admit the notetaker.</small></span></div>

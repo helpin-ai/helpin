@@ -4,6 +4,8 @@ import { FunctionComponent } from 'preact';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { ActiveTeammate, Conversation, Message, WidgetConfig } from '../types';
 import { MessageList } from './MessageList';
+import { getPrivacyPolicyURL } from '@helpin-ai/shared';
+import { PrivacyNotice } from './PrivacyNotice';
 import { ComposeBar } from './ComposeBar';
 import { TypingIndicator } from './TypingIndicator';
 import { PreChatForm } from './PreChatForm';
@@ -15,6 +17,8 @@ import { ChevronLeftIcon, MoreVerticalIcon, XIcon } from './icons';
 
 
 interface ConversationViewProps {
+  draftPrivacyDismissed?: boolean;
+  onDismissDraftPrivacy?: () => void;
   config: WidgetConfig;
   conversation?: Conversation;
   messages: Message[];
@@ -48,6 +52,8 @@ interface ConversationViewProps {
 }
 
 export const ConversationView: FunctionComponent<ConversationViewProps> = ({
+  draftPrivacyDismissed = false,
+  onDismissDraftPrivacy,
   config,
   conversation,
   messages,
@@ -80,6 +86,12 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   onCsatSubmit,
 }) => {
   const conversationKey = conversation?.id || '__new__';
+  const policyUrl = config.privacyNotice?.enabled ? getPrivacyPolicyURL(config.privacyNotice.policyUrl) : undefined;
+  const hasSentCustomerMessage = messages.some(message => message.role === 'customer' && !message.isInternal && !message.deliveryStatus);
+  const showPrivacyNotice = Boolean(
+    policyUrl && !hasSentCustomerMessage && !draftPrivacyDismissed
+    && (!conversation?.id || messages.length > 0),
+  );
   const [introCreatedAt] = useState(() => new Date().toISOString());
   const [preChatDone, setPreChatDone] = useState(false);
   const [showHumanContactForm, setShowHumanContactForm] = useState(false);
@@ -442,6 +454,9 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
           </button>
           {menuOpen && (
             <div className="helpin-conversation-menu">
+              {policyUrl && (
+                <a className="helpin-conversation-menu-item" href={policyUrl} target="_blank" rel="noopener noreferrer" onClick={() => setMenuOpen(false)}>Privacy Policy</a>
+              )}
               {onToggleExpanded && (
                 <button
                   type="button"
@@ -653,6 +668,16 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
         </div>
       )}
       <ComposeBar
+        notice={showPrivacyNotice && policyUrl ? (
+          <PrivacyNotice
+            key={`${config.workspaceId}:${conversationKey}`}
+            policyUrl={policyUrl}
+            text={config.privacyNotice?.text || ''}
+            workspaceId={config.workspaceId}
+            conversationId={conversation?.id}
+            onDismiss={!conversation?.id ? onDismissDraftPrivacy : undefined}
+          />
+        ) : null}
         onSend={handleSendMessage}
         onTyping={onTyping}
         onFilesSelected={uploads.select}

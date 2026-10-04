@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -18,19 +18,30 @@ import {
 } from '@/components/ui/select'
 import { useDocsSpaces, useDocsCollections, useMoveDocsDocument } from '@/hooks/queries'
 import { toast } from 'sonner'
+import type { MoveDocsDocumentRequest } from '@/lib/docsTypes'
 import { CollectionTreePicker } from './CollectionTreePicker'
 
 interface MoveDocumentDialogProps {
   wsId: string
   open: boolean
   onOpenChange: (open: boolean) => void
-  docId: string
+  docId?: string
   docTitle: string
   currentSpaceId: string
   currentCollectionId?: string | null
+  onMove?: (destination: MoveDocsDocumentRequest) => Promise<void>
+  documentCount?: number
+  pending?: boolean
 }
 
-export function MoveDocumentDialog({
+export function MoveDocumentDialog(props: MoveDocumentDialogProps) {
+  return props.open ? <MoveDocumentDialogContent
+    key={`${props.docId ?? 'bulk'}:${props.currentSpaceId}:${props.currentCollectionId ?? ''}`}
+    {...props}
+  /> : null
+}
+
+function MoveDocumentDialogContent({
   wsId,
   open,
   onOpenChange,
@@ -38,6 +49,9 @@ export function MoveDocumentDialog({
   docTitle,
   currentSpaceId,
   currentCollectionId,
+  onMove,
+  documentCount,
+  pending = false,
 }: MoveDocumentDialogProps) {
   const [spaceId, setSpaceId] = useState(currentSpaceId)
   const [collectionId, setCollectionId] = useState<string | null>(currentCollectionId ?? null)
@@ -46,24 +60,19 @@ export function MoveDocumentDialog({
   const { data: collections } = useDocsCollections(wsId, spaceId)
   const moveDoc = useMoveDocsDocument(wsId)
 
-  useEffect(() => {
-    if (open) {
-      setSpaceId(currentSpaceId)
-      setCollectionId(currentCollectionId ?? null)
-    }
-  }, [open, currentSpaceId, currentCollectionId])
-
-  // Reset collection when space changes.
-  useEffect(() => {
-    if (spaceId !== currentSpaceId) {
-      setCollectionId(null)
-    }
-  }, [spaceId, currentSpaceId])
-
+  const isPending = pending || moveDoc.isPending
   const hasChanged = spaceId !== currentSpaceId || collectionId !== (currentCollectionId ?? null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (isPending || !spaceId) return
+    const destination = { space_id: spaceId, collection_id: collectionId ?? undefined }
+    if (onMove) {
+      await onMove(destination)
+      onOpenChange(false)
+      return
+    }
+    if (!docId) return
     try {
       await moveDoc.mutateAsync({
         id: docId,
@@ -78,21 +87,21 @@ export function MoveDocumentDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(next) => { if (!isPending) onOpenChange(next) }}>
       <DialogContent>
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle>Move document</DialogTitle>
+            <DialogTitle>{documentCount ? `Move ${documentCount} document${documentCount === 1 ? '' : 's'}` : 'Move document'}</DialogTitle>
             <DialogDescription>
-              Move "{docTitle}" to a different space or collection.
+              {documentCount ? 'Choose a destination for the selected documents.' : `Move "${docTitle}" to a different space or collection.`}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-4 py-4">
+          <fieldset disabled={isPending} className="grid gap-4 py-4">
             <div className="grid gap-2">
               <Label>Space</Label>
-              <Select value={spaceId} onValueChange={setSpaceId}>
-                <SelectTrigger>
+              <Select disabled={isPending} value={spaceId} onValueChange={(value) => { setSpaceId(value); setCollectionId(null) }}>
+                <SelectTrigger aria-label="Destination space">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -108,6 +117,7 @@ export function MoveDocumentDialog({
             <div className="grid gap-2">
               <Label>Collection</Label>
               <CollectionTreePicker
+                disabled={isPending}
                 collections={collections ?? []}
                 spaceId={spaceId}
                 value={collectionId}
@@ -115,14 +125,14 @@ export function MoveDocumentDialog({
                 noneLabel="None (Uncategorized)"
               />
             </div>
-          </div>
+          </fieldset>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button type="button" variant="outline" disabled={isPending} onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!hasChanged || moveDoc.isPending}>
-              {moveDoc.isPending ? 'Moving...' : 'Move'}
+            <Button type="submit" disabled={!spaceId || (!onMove && !hasChanged) || isPending}>
+              {isPending ? 'Moving...' : 'Move'}
             </Button>
           </DialogFooter>
         </form>

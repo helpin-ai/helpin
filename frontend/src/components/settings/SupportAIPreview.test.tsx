@@ -26,19 +26,31 @@ it('waits for the captured runtime outcome and identifies a rejected answer', as
   const root = createRoot(container);
   try {
     await act(async () => root.render(<QueryClientProvider client={client}><SupportAIPreview workspaceId="workspace" agentId="agent" /></QueryClientProvider>));
-    const textarea = container.querySelector('textarea')!;
+    expect(container.querySelector('textarea')).toBeNull();
+    const trigger = container.querySelector<HTMLButtonElement>('button')!;
+    expect(trigger.textContent).toBe('Test AI response');
+    await act(async () => trigger.click());
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(dialog).not.toBeNull();
+    const textarea = dialog.querySelector('textarea')!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, 'Customer question');
       textarea.dispatchEvent(new Event('input', { bubbles: true }));
     });
-    await act(async () => container.querySelector('button')!.click());
+    await act(async () => dialog.querySelector('button')!.click());
     for (let i = 0; i < 4; i++) await act(async () => { await vi.advanceTimersByTimeAsync(100); });
     expect(agentService.previewSupportReply).toHaveBeenCalledWith('workspace', 'agent', { message: 'Customer question' });
     expect(agentService.getSupportPreview).toHaveBeenCalledWith('workspace', 'agent', 'run');
-    expect(container.textContent).toContain('would not be sent');
-    expect(container.textContent).toContain('Unverified claim');
-    expect(container.textContent).toContain('openai_compatible / local-model');
-    expect(container.querySelector('button')!.disabled).toBe(false);
+    expect(dialog.textContent).toContain('would not be sent');
+    expect(dialog.textContent).toContain('Unverified claim');
+    expect(dialog.textContent).toContain('openai_compatible / local-model');
+    expect(dialog.querySelector('button')!.disabled).toBe(false);
+    await act(async () => dialog.querySelector<HTMLButtonElement>('[data-slot="dialog-close"]')!.click());
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    await act(async () => trigger.click());
+    expect(document.querySelector('textarea')?.value).toBe('Customer question');
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Unverified claim');
+    expect(agentService.previewSupportReply).toHaveBeenCalledTimes(1);
   } finally {
     await act(async () => root.unmount());
     client.clear(); container.remove();

@@ -2,7 +2,7 @@
 
 This reference is for operators configuring a Community installation. It lists
 the environment settings the bundle supports and their defaults; use it after
-installation and before public deployment. Community 0.1 is a beta. The
+installation and before public deployment. Community 0.2 is a beta. The
 supported bundle sets explicit local defaults; running the binaries directly
 retains conservative authentication defaults.
 
@@ -10,6 +10,7 @@ retains conservative authentication defaults.
 | --- | --- |
 | `HELPIN_ENABLED_MODULES` | Comma-separated product surfaces. Both editions default to all modules: `support,docs,agents,pm,crm,automation`. Support requires Docs. Workspace roles remain in force. Upgrading an installation whose value is still the Community 0.1 default `support,docs,agents` switches it to the new default; any other value is kept. |
 | `CRM_ENCRYPTION_KEY`, `GIT_OAUTH_ENCRYPTION_KEY` | Generated 32-byte hex keys. The first encrypts CRM mail and calendar tokens and the SMTP password saved in **Settings → System status**, and is the fallback key for TOTP and PM import secrets; the second encrypts stored Git provider tokens. Keep them stable and back them up with the databases. `helpin upgrade` generates them when an older `.env` lacks them. |
+| `EXTERNAL_A2A_ENCRYPTION_KEY` | Generated 32-byte hex key that encrypts the tokens of external A2A agents. Keep it stable and back it up with the databases. `helpin upgrade` generates it when an older `.env` lacks it; until then external agents return HTTP 503. `EXTERNAL_A2A_ALLOWED_PRIVATE_HOSTS` optionally lists hosts on a private network that agents may use; upload links use `PUBLIC_API_BASE_URL`, or `APP_BASE_URL` when it is empty. Set it to an address the agent can reach; for an agent on the Compose network that is `http://helpin-frontend`. |
 | `SETUP_SUCCESS_ENABLED` | Optional. Controls the workspace Setup guide. Empty uses the edition default: on in Community, off in Enterprise. Set `false` to hide it. |
 | `AUTH_EMAIL_VERIFICATION_REQUIRED` | Defaults to `true`. Set `false` for local Community signup without mail. Enterprise rejects `false`. This never marks an email verified. |
 | `DEMO_VIEWER_EMAIL` | Optional. Email of an existing account that visitors of `/demo` are signed in as without a password. Give it the `viewer` role in one workspace only, no 2FA, not a platform admin. Every non-read API request from this account is rejected with `demo_read_only`. Empty disables `/demo`. |
@@ -411,3 +412,18 @@ prompt-injection risk but is not a guarantee of model resistance. The regression
 suite checks hostile source delimiters, forged evidence/policy fields, saved
 preset upgrades, and the existing server-side reply gate; it is not a live-model
 security evaluation.
+
+## Voice input
+
+Ask Agent and agent-run replies support recording up to five minutes, then
+transcribing into an editable draft for manual sending. Set the instance's
+`OPENROUTER_API_KEY`; optional `OPENROUTER_BASE_URL` overrides the provider endpoint.
+Without that key, the microphone is hidden. Voice uses this instance connection,
+not an agent's selected model or a workspace's personal AI connection.
+
+Community records audio duration without Helpin billing; the operator pays their
+provider directly. Cloud uses its Enterprise usage policy. Microphone access
+requires HTTPS or localhost. Audio is held in memory and sent to the configured
+provider after recording stops; Helpin does not persist the recording. Apply
+versioned migrations, including `202610010002_voice_input_usage.sql`, through the
+normal upgrade process.

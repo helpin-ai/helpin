@@ -12,6 +12,22 @@ import { filterSupportConversations } from '@/lib/supportInboxFilters';
 import type { ConversationListResponse, SupportConversation } from '@/lib/pmTypes';
 
 describe('supportQueryCache', () => {
+  it.each([
+    '<img src="https://img.example.com/pixel"><p>Newsletter</p>',
+    '[![Logo](https://img.example.com/logo.png)](https://track.example.com/click)',
+    '&lt;img src=&quot;https://img.example.com/logo.png&quot;&gt; News',
+    '[Read more][story]\n\n[story]: https://track.example.com/story',
+  ])('waits for a server-cleaned preview instead of flashing rich message markup: %s', (content) => {
+    const current = { data: [{ id: 'thread', subject: 'Weekly newsletter', status: 'open', last_message: 'Previous reply', list_last_message_at: '2026-09-11T09:00:00Z' }], total: 1 } as ConversationListResponse;
+    const updated = moveConversationToTopForMessageActivity(current, {
+      conversationId: 'thread', messageId: 'newsletter', timestamp: '2026-09-11T09:01:00Z',
+      message: { sender_type: 'customer', message_type: 'reply', content },
+    }) as ConversationListResponse;
+    expect(updated.data[0].last_message).toBeUndefined();
+    expect(updated.data[0].subject).toBe('Weekly newsletter');
+    expect(updated.data[0].last_message_sender_type).toBe('customer');
+  });
+
   it('moves an Open thread in and out of Waiting for public replies, ignoring notes and activity', () => {
     let current = { data: [{ id: 'thread', workspace_id: 'ws-1', display_id: 1, subject: 'Thread', status: 'open', priority: 'medium', source: 'widget', created_at: '2026-09-11T09:00:00Z', updated_at: '2026-09-11T09:00:00Z' }], total: 1, page: 1, per_page: 50, total_pages: 1 } as ConversationListResponse;
     const waiting = () => filterSupportConversations(current.data, { navFilter: 'waiting', mailboxScope: 'all', searchQuery: '' }).length;

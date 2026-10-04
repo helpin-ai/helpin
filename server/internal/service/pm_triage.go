@@ -94,6 +94,9 @@ func (s *PMTriageService) analyzeSource(ctx context.Context, actor *authorizatio
 		return view, nil
 	}
 	for _, task := range candidates {
+		if len(source.input.Candidates) == 10 {
+			break
+		}
 		candidate := pmtriage.Candidate{ID: task.ID, Name: task.Name, Description: pmTriageText(task.Description)}
 		source.input.Candidates = append(source.input.Candidates, candidate)
 		next, buildErr := pmtriage.Build(source.input)

@@ -257,3 +257,10 @@ func withMCPIdempotencyKey(schema map[string]any) map[string]any {
 	schema["required"] = required
 	return schema
 }
+
+// PublicToolCatalog returns the curated tool definitions without requiring a
+// running service, so generated API contracts can be derived from them.
+func PublicToolCatalog() []MCPToolDefinition {
+	service := &MCPService{commands: NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)}
+	return service.buildToolCatalog()
+}

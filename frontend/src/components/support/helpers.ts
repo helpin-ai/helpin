@@ -1,6 +1,7 @@
 import type { AIMessageMetadata, SupportConversation, SupportLinkPreview, SupportLinkSecurity, SupportMessage } from '@/lib/pmTypes';
 import { getReplyDeliveryMode } from './replyDelivery';
 export { AVATAR_COLORS, getAvatarColor } from '@/lib/avatarColor';
+export { getInitials as getInitial } from '@/lib/initials';
 
 export const HELPIN_AI_DISPLAY_NAME = 'Helpin AI';
 
@@ -50,11 +51,6 @@ export function isSameDay(a: string, b: string): boolean {
   const da = new Date(a);
   const db = new Date(b);
   return da.getFullYear() === db.getFullYear() && da.getMonth() === db.getMonth() && da.getDate() === db.getDate();
-}
-
-export function getInitial(name?: string): string {
-  if (!name) return '?';
-  return name.charAt(0).toUpperCase();
 }
 
 export function parseAIMessageMetadata(metadata?: string): AIMessageMetadata | null {

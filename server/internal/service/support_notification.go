@@ -27,6 +27,13 @@ func buildSupportConversationEntitySnapshot(conv *model.SupportConversation) mod
 	return snapshot
 }
 
+func supportNotificationConversationLabel(conv *model.SupportConversation) string {
+	if conv.DisplayID > 0 {
+		return fmt.Sprintf("conversation #%d", conv.DisplayID)
+	}
+	return "conversation"
+}
+
 func buildSupportActorSnapshot(name string) model.JSONB {
 	trimmed := strings.TrimSpace(name)
 	if trimmed == "" {
@@ -100,7 +107,7 @@ func ProcessSupportMentions(
 		EventType:          "support_conversation.mentioned",
 		EntityType:         "support_conversation",
 		EntityID:           conv.ID,
-		Title:              conv.Subject,
+		Title:              "mentioned you in " + supportNotificationConversationLabel(conv),
 		Body:               truncate(messageContent, 200),
 		Category:           model.NotifCategorySupportMentions,
 		Priority:           "high",
@@ -163,12 +170,18 @@ func ProcessSupportCustomerReplyNotification(
 		"selection_reason", selection.Reason,
 	)
 
+	actorName := strings.TrimSpace(senderName)
+	if actorName == "" {
+		actorName = "Customer"
+	}
+	title := actorName + " replied to " + supportNotificationConversationLabel(conv)
+
 	if err := notifService.Emit(ctx, model.NotificationEventInput{
 		WorkspaceID: conv.WorkspaceID,
 		EventType:   "support_conversation.customer_reply",
 		EntityType:  "support_conversation",
 		EntityID:    conv.ID,
-		Title:       fmt.Sprintf("Customer replied in %s", conv.Subject),
+		Title:       title,
 		Body:        truncate(content, 200),
 		Metadata: model.JSONB{
 			"support_message_id": messageID,

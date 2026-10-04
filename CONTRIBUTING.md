@@ -2,8 +2,8 @@
 
 Thanks for helping improve Helpin. This guide explains how to report problems,
 set up a development environment, make a change, and submit a pull request.
-Community 0.1 is a beta focused on support conversations, visitor
-identification, and the public help center; read the
+Community 0.2 is a beta that includes support, the help center, Docs,
+Projects, CRM, automation, and agents; read the
 [installation guide](community/README.md) and
 [scope and known limitations](ROADMAP.md) before starting a change.
 
@@ -38,6 +38,11 @@ conventions.
 Use the pinned Go and pnpm versions from the build files.
 
 ## Make a change
+
+Classify the change as shared Community, Enterprise/cloud-only, or private material
+and follow the [edition boundary rules](AGENTS.md#community-and-cloud-boundaries).
+Ask the maintainer when ownership or publication scope is unclear. Enterprise
+licensing and build exclusions do not hide source in a public repository.
 
 - Community Go commands omit `-tags ee`; changes that touch enterprise code also
   require the `-tags ee` checks.

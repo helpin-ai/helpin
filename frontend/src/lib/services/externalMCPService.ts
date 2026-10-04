@@ -29,6 +29,9 @@ export const externalMCPService = {
       return_path: returnPath,
     }),
 
+  completeOAuth: (response: { state: string; code: string; error: string }) =>
+    api.post<{ redirect_url: string }>('/external-mcp/oauth/callback', response),
+
   refreshTools: (workspaceId: string, serverId: string) =>
     api.post<ExternalMCPServer>(`/external-mcp/servers/${serverId}/tools/refresh${workspaceQuery(workspaceId)}`, {}),
 

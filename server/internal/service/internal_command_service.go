@@ -44,6 +44,7 @@ func (d InternalCommandDefinition) RiskLevel() string {
 }
 
 type InternalCommandService struct {
+	flowBuilderChat       *DockChatService
 	imageService          *AgentImageService
 	jevDecisions          *JevDecisionService
 	agentService          *AgentService
@@ -366,6 +367,7 @@ func NewInternalCommandService(
 	}
 	svc.registerDefaults()
 	svc.registerDockExecutionCommands()
+	svc.registerFlowBuilderCommands()
 	return svc
 }
 
@@ -1064,18 +1066,13 @@ func (s *InternalCommandService) registerDefaults() {
 				deadline = parsed
 			}
 
-			workflowID, stateID, err := s.resolveTaskCreationWorkflow(ctx, meta.WorkspaceID, req.TeamID, req.WorkflowID, req.StateID)
-			if err != nil {
-				return nil, err
-			}
-
 			createReq := model.CreateTaskRequest{
 				WorkspaceID:     meta.WorkspaceID,
 				Name:            req.Name,
 				Description:     req.Description,
 				TaskType:        req.TaskType,
-				WorkflowID:      workflowID,
-				WorkflowStateID: stateID,
+				WorkflowID:      commandDerefString(req.WorkflowID),
+				WorkflowStateID: commandDerefString(req.StateID),
 				EpicID:          req.EpicID,
 				TeamID:          stringPtrOrNil(req.TeamID),
 				OwnerMemberIDs:  req.OwnerMemberIDs,
@@ -2018,6 +2015,7 @@ func (s *InternalCommandService) registerDefaults() {
 	s.registerDocsRuntimeToolCommands()
 	s.registerDocsOrganizationCommands()
 	s.registerDocsMetadataCommands()
+	s.registerDocsLifecycleCommands()
 	s.registerPMOperationalCommands()
 	s.registerPMDeliveryCommands()
 	s.registerWorkspaceSearchCommands()
@@ -2438,90 +2436,6 @@ func firstNonEmptyCommand(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func (s *InternalCommandService) resolveTaskCreationWorkflow(ctx context.Context, workspaceID, teamID string, requestedWorkflowID, requestedStateID *string) (string, string, error) {
-	if s == nil || s.taskService == nil || s.taskService.workflowRepo == nil {
-		return "", "", fmt.Errorf("workflow service is not configured")
-	}
-	teamID = strings.TrimSpace(teamID)
-	if workspaceID == "" || teamID == "" {
-		return "", "", errCommandInput("workspace_id and team_id are required")
-	}
-
-	workflowID := commandDerefString(requestedWorkflowID)
-	stateID := commandDerefString(requestedStateID)
-
-	var workflow *model.WorkflowWithStates
-	if workflowID != "" {
-		loaded, err := s.taskService.workflowRepo.GetByID(ctx, workflowID)
-		if err != nil {
-			return "", "", fmt.Errorf("get workflow: %w", err)
-		}
-		if loaded == nil || loaded.Workflow.WorkspaceID != workspaceID {
-			return "", "", errCommandNotFound("workflow")
-		}
-		if loaded.Workflow.TeamID != nil && strings.TrimSpace(*loaded.Workflow.TeamID) != "" && strings.TrimSpace(*loaded.Workflow.TeamID) != teamID {
-			return "", "", fmt.Errorf("workflow_id does not belong to team_id")
-		}
-		workflow = loaded
-	} else {
-		resolved, err := s.taskService.workflowRepo.GetByTeamID(ctx, workspaceID, teamID)
-		if err != nil {
-			return "", "", fmt.Errorf("resolve team workflow: %w", err)
-		}
-		if resolved == nil {
-			resolved, err = s.taskService.workflowRepo.GetDefaultWorkflow(ctx, workspaceID)
-			if err != nil {
-				return "", "", fmt.Errorf("resolve default workflow: %w", err)
-			}
-			if resolved == nil {
-				resolved, err = s.taskService.workflowRepo.SeedDefaultWorkflow(ctx, workspaceID)
-				if err != nil {
-					return "", "", fmt.Errorf("seed default workflow: %w", err)
-				}
-			}
-		}
-		workflow = resolved
-	}
-	if workflow == nil {
-		return "", "", errCommandNotFound("workflow")
-	}
-
-	if workflowID == "" {
-		workflowID = strings.TrimSpace(workflow.Workflow.ID)
-	}
-	if workflowID == "" {
-		return "", "", fmt.Errorf("workflow_id could not be resolved")
-	}
-	if stateID == "" && workflow.Workflow.DefaultStateID != nil {
-		stateID = strings.TrimSpace(*workflow.Workflow.DefaultStateID)
-	}
-	if stateID == "" {
-		for _, state := range workflow.States {
-			if state.IsDefault {
-				stateID = strings.TrimSpace(state.ID)
-				break
-			}
-		}
-	}
-	if stateID == "" && len(workflow.States) > 0 {
-		stateID = strings.TrimSpace(workflow.States[0].ID)
-	}
-	if stateID == "" {
-		return "", "", fmt.Errorf("workflow has no usable default state")
-	}
-	var matchedState *model.PMWorkflowState
-	for idx := range workflow.States {
-		if strings.TrimSpace(workflow.States[idx].ID) == stateID {
-			matchedState = &workflow.States[idx]
-			break
-		}
-	}
-	if matchedState == nil {
-		return "", "", fmt.Errorf("state_id does not belong to workflow_id")
-	}
-	return workflowID, stateID, nil
 }
 
 func parseInternalCommandTaskDeadline(value string) (*time.Time, error) {

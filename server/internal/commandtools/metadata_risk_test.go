@@ -4,6 +4,8 @@ import "testing"
 
 func TestRuntimeToolRiskMetadata(t *testing.T) {
 	tests := map[string]string{
+		"archive_document":         RiskLevelDestructive,
+		"restore_document":         RiskLevelRoutine,
 		"create_task":              RiskLevelRoutine,
 		"create_document":          RiskLevelRoutine,
 		"write_document_content":   RiskLevelRoutine,

@@ -1,3 +1,4 @@
+import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loading01Icon, PencilEdit01Icon, PlusSignIcon, Tag01Icon, Delete01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
@@ -57,20 +58,20 @@ function LabelCard({
 }) {
   const { label, stats } = entry;
   return (
-    <div className="group relative flex flex-col gap-2.5 rounded-lg border border-border/60 bg-card p-3.5 transition-colors hover:border-border hover:bg-muted/30">
+    <div className="group relative flex min-w-0 flex-col gap-2.5 rounded-lg border border-border/60 bg-card p-3.5 transition-colors hover:border-border hover:bg-muted/30">
       <div className="flex items-start gap-2.5">
         <span
           className="mt-0.5 h-3.5 w-3.5 rounded-full shrink-0 ring-2 ring-background"
           style={{ backgroundColor: label.color || '#64748b' }}
         />
         <div className="min-w-0 flex-1">
-          <span className="text-sm font-medium text-foreground">{label.name}</span>
+          <span className="break-words text-sm font-medium text-foreground">{label.name}</span>
           {label.description && (
             <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{label.description}</p>
           )}
         </div>
         {editable && (
-          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
             <Button
               variant="ghost"
               size="icon-xs"
@@ -160,7 +161,7 @@ function LabelForm({
             <SelectItem value="__shared__">All teams</SelectItem>
             {teams.map((team) => (
               <SelectItem key={team.id} value={team.id}>
-                {team.name}
+                <TeamLabel team={team} />
               </SelectItem>
             ))}
           </SelectContent>
@@ -372,7 +373,7 @@ export function LabelsSettings({ workspaceId, initialTeamId, editable = true }: 
           {shared.length > 0 && (
             <div>
               <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">Shared across teams</h4>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,220px),1fr))] gap-2">
                 {shared.map((entry) => (
                   <LabelCard
                     key={entry.label.id}
@@ -394,7 +395,7 @@ export function LabelsSettings({ workspaceId, initialTeamId, editable = true }: 
               <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">
                 {teamMap.get(teamId) ?? 'Unknown team'}
               </h4>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,220px),1fr))] gap-2">
                 {teamLabels.map((entry) => (
                   <LabelCard
                     key={entry.label.id}

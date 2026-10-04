@@ -5,7 +5,7 @@ x-helpin-build: &helpin-build
   labels:
     org.opencontainers.image.source: https://github.com/helpin-ai/helpin
     org.opencontainers.image.revision: ${COMMUNITY_SOURCE_REVISION:-uncommitted}
-    org.opencontainers.image.version: ${HELPIN_VERSION:-community-v0.1.0-rc.1}
+    org.opencontainers.image.version: ${HELPIN_VERSION:-community-v0.2.0-rc.2}
     ai.helpin.edition: community
 services:
   helpin-api:
@@ -25,4 +25,4 @@ services:
       labels:
         org.opencontainers.image.source: https://github.com/helpin-ai/agent-runtime
         org.opencontainers.image.revision: ${COMMUNITY_RUNTIME_REVISION:-uncommitted}
-        org.opencontainers.image.version: ${AGENT_RUNTIME_VERSION:-community-v0.1.0-rc.1}
+        org.opencontainers.image.version: ${AGENT_RUNTIME_VERSION:-community-v0.2.0-rc.2}

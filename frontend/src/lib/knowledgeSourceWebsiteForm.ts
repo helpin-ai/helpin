@@ -31,7 +31,7 @@ export function createWebsiteSourceDraft({
     includeExternalLinks: false,
     includeSubdomains: false,
     includePatternsText: '',
-    excludePatternsText: '',
+    excludePatternsText: '/blog\n/blog/*\n*://blog.*/**',
   };
 }
 

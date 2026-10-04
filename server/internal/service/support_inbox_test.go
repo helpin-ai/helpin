@@ -1383,7 +1383,7 @@ func TestCreateConversationMessage_CustomerReplyCreatesOwnedSupportNotification(
 	)
 	svc.SetNotificationService(notificationService, repository.NewWorkspaceRepository(db))
 
-	customerName := "Customer"
+	customerName := "Sarah"
 	if _, err := svc.CreateConversationMessage(
 		ctx,
 		workspaceID,
@@ -1409,6 +1409,10 @@ func TestCreateConversationMessage_CustomerReplyCreatesOwnedSupportNotification(
 	}
 	if notifications[0].EventType != "support_conversation.customer_reply" {
 		t.Fatalf("event_type = %q, want support_conversation.customer_reply", notifications[0].EventType)
+	}
+	wantTitle := fmt.Sprintf("Sarah replied to conversation #%d", conv.DisplayID)
+	if notifications[0].Title != wantTitle {
+		t.Fatalf("title = %q, want %q", notifications[0].Title, wantTitle)
 	}
 	if notifications[0].LatestEventCategory != model.NotifCategorySupportReplies {
 		t.Fatalf("latest_event_category = %q, want %q", notifications[0].LatestEventCategory, model.NotifCategorySupportReplies)
@@ -1796,6 +1800,10 @@ func TestCreateConversationMessage_PublicMentionsNotifyWorkspaceMembers(t *testi
 	}
 	if notifications[0].EventType != "support_conversation.mentioned" {
 		t.Fatalf("event_type = %q, want support_conversation.mentioned", notifications[0].EventType)
+	}
+	wantTitle := fmt.Sprintf("Sender User mentioned you in conversation #%d", conv.DisplayID)
+	if notifications[0].Title != wantTitle {
+		t.Fatalf("title = %q, want %q", notifications[0].Title, wantTitle)
 	}
 	if notifications[0].LatestEventCategory != model.NotifCategorySupportMentions {
 		t.Fatalf("latest_event_category = %q, want %q", notifications[0].LatestEventCategory, model.NotifCategorySupportMentions)

@@ -1,3 +1,4 @@
+import { useNotificationView } from '@/hooks/useNotificationView';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from '@tanstack/react-router';
 import { Button } from '@/components/ui/button';
@@ -114,6 +115,7 @@ export function SupportInboxLayout() {
   const params = useParams({ strict: false }) as { conversationId?: string };
   const routeConversationId = params.conversationId ?? null;
   const isMultiPanel = useMinWidth(768);
+  useNotificationView(workspaceId, 'support_conversation', isMultiPanel ? selectedConversationId : routeConversationId);
   const showDetailSidebar = useMinWidth(1280) && !!selectedConversationId;
   const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false);
   const mobileOpenedFromInboxRef = useRef(false);

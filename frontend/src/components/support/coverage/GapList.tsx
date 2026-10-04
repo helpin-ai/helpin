@@ -7,7 +7,7 @@ import {
 import { cn, timeAgo } from '@/lib/utils'
 
 const ROW_GRID_FULL =
-  'grid w-full grid-cols-1 items-center gap-2 px-2 py-4 text-left sm:grid-cols-[minmax(0,1fr)_150px_100px_90px] sm:gap-4'
+  'grid w-full grid-cols-1 items-center gap-2 px-2 py-4 text-left sm:grid-cols-[minmax(0,1fr)_150px_125px_90px] sm:gap-4'
 const ROW_GRID_COMPACT =
   'grid w-full grid-cols-1 items-center gap-2 px-3 py-3 text-left sm:grid-cols-[minmax(0,1fr)_120px_90px] sm:gap-3'
 
@@ -61,7 +61,7 @@ export function GapList({
         >
           <span>Gap</span>
           <span>Needed improvement</span>
-          <span>Evidence · 30d</span>
+          <span>Impact · 30d</span>
           <span>Last seen</span>
         </div>
       )}
@@ -123,7 +123,7 @@ export function GapList({
 
               {!compact && (
                 <span className="text-xs tabular-nums text-muted-foreground">
-                  {gap.evidence_30d} records
+                  {gap.conversations_30d !== undefined && gap.conversations_30d > 0 ? `${gap.conversations_30d} ${gap.conversations_30d === 1 ? 'conversation' : 'conversations'}` : `${gap.evidence_records_30d ?? gap.evidence_30d} records`}
                   <span className="sm:hidden"> in 30 days</span>
                 </span>
               )}

@@ -66,7 +66,7 @@ export function CompareMatrix({ tools }: { tools: Tool[] }) {
             {tools.map((tool, index) => (
               <th key={tool.slug} scope="col" hidden={!shown(index)}>
                 <strong>{tool.name}</strong>
-                <Link className="btn btn-secondary" href={`/compare/${tool.slug}`}><span className="cmp-mx-long">Full comparison</span><span className="cmp-mx-short" aria-hidden="true">Compare</span><ArrowRight size={13} aria-hidden="true" /></Link>
+                <Link prefetch={false} className="btn btn-secondary" href={`/compare/${tool.slug}`}><span className="cmp-mx-long">Full comparison</span><span className="cmp-mx-short" aria-hidden="true">Compare</span><ArrowRight size={13} aria-hidden="true" /></Link>
               </th>
             ))}
           </tr>

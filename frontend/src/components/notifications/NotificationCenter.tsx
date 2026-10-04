@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { AlertCircleIcon, Notification02Icon, TickDouble01Icon, ArchiveIcon, Clock01Icon, Delete01Icon, ViewIcon, ViewOffIcon } from '@/lib/icons'
+import { useDesktopNotificationSettings } from '@/hooks/useDesktopNotificationSettings'
+import { AlertCircleIcon, Notification02Icon, TickDouble01Icon, ArchiveIcon, Clock01Icon, Delete01Icon, ViewIcon, ViewOffIcon, ComputerIcon, Cancel01Icon, ArrowRight02Icon, Settings02Icon } from '@/lib/icons'
 import { formatDistanceToNow } from 'date-fns'
 import { useLocation, useNavigate } from '@tanstack/react-router'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
@@ -16,6 +17,7 @@ import {
   useSnoozeNotification,
 } from '@/hooks/queries'
 import { Button } from '@/components/ui/button'
+import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import {
   Popover,
   PopoverContent,
@@ -184,6 +186,10 @@ export function NotificationCenter() {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace)
   const wsId = workspace?.id || ''
   const slug = workspace?.slug || ''
+  const desktop = useDesktopNotificationSettings()
+  const showDesktopPrompt = !!wsId && !open && desktop.shouldPrompt
+  const canEnableDesktop = !!desktop.userId && (desktop.permission === 'default' || desktop.permission === 'granted')
+    && !(desktop.enabled && desktop.permission === 'granted')
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -227,13 +233,23 @@ export function NotificationCenter() {
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open || showDesktopPrompt} onOpenChange={nextOpen => {
+      if (showDesktopPrompt && !nextOpen) desktop.dismissPrompt()
+      setOpen(nextOpen)
+    }}>
       <PopoverTrigger asChild>
         <Button
           variant="ghost"
           size="icon"
           className="relative h-8 w-8 text-muted-foreground hover:text-foreground"
           aria-label="Notifications"
+          onClick={event => {
+            if (showDesktopPrompt) {
+              event.preventDefault()
+              desktop.dismissPrompt()
+              setOpen(true)
+            }
+          }}
         >
           <Notification02Icon className="h-4 w-4" />
           {unreadCount > 0 && (
@@ -243,25 +259,57 @@ export function NotificationCenter() {
           )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent
-        className="flex w-[480px] max-h-[min(70vh,600px)] flex-col overflow-hidden p-0"
+      {showDesktopPrompt ? (
+        <PopoverContent
+          key="desktop-prompt"
+          aria-label="Enable desktop notifications"
+          align="start"
+          sideOffset={8}
+          className="relative w-[338px] max-w-[calc(100vw-24px)] gap-0 p-5"
+          onOpenAutoFocus={event => event.preventDefault()}
+          onCloseAutoFocus={event => event.preventDefault()}
+        >
+          <Button variant="ghost" size="icon" className="absolute right-1 top-1 h-7 w-7 text-muted-foreground" aria-label="Dismiss notification prompt" onClick={desktop.dismissPrompt}>
+            <Cancel01Icon className="h-3.5 w-3.5" />
+          </Button>
+          <h3 className="pr-3 text-sm font-semibold">Stay updated while working elsewhere</h3>
+          <p className="mt-2 text-xs leading-relaxed text-quiet-text-secondary">Get desktop alerts for customer replies and mentions.</p>
+          <div className="mt-4 flex items-center gap-2">
+            <Button size="sm" disabled={desktop.pending} onClick={() => void desktop.toggle(true)}>{desktop.pending ? 'Enabling…' : 'Enable notifications'}</Button>
+            <Button variant="ghost" size="sm" onClick={desktop.dismissPrompt}>Not now</Button>
+          </div>
+          {desktop.error ? <p role="alert" className="mt-2 text-xs text-destructive">{desktop.error}</p> : null}
+        </PopoverContent>
+      ) : <PopoverContent
+        key="notification-inbox"
+        className="flex w-[480px] max-w-[calc(100vw-24px)] max-h-[min(70vh,600px)] flex-col gap-0 overflow-hidden p-0"
         align="end"
         sideOffset={8}
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b px-4 py-3">
           <h3 className="text-sm font-semibold">Notifications</h3>
-          {unreadCount > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 gap-1.5 text-xs text-muted-foreground"
-              onClick={() => markAllRead.mutate()}
-            >
-              <TickDouble01Icon className="h-3.5 w-3.5" />
-              Mark all read
-            </Button>
-          )}
+          <div className="flex items-center gap-1">
+            {unreadCount > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1.5 text-xs text-muted-foreground"
+                onClick={() => markAllRead.mutate()}
+              >
+                <TickDouble01Icon className="h-3.5 w-3.5" />
+                Mark all read
+              </Button>
+            )}
+            <QuickTooltip label="Notification settings">
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" aria-label="Notification settings" disabled={!slug} onClick={() => {
+                setOpen(false)
+                void navigate({ to: '/w/$slug/settings/$section', params: { slug, section: 'notifications' } })
+              }}>
+                <Settings02Icon className="h-4 w-4" />
+              </Button>
+            </QuickTooltip>
+          </div>
         </div>
 
         {/* Tabs */}
@@ -321,7 +369,19 @@ export function NotificationCenter() {
             </div>
           )}
         </div>
-      </PopoverContent>
+        {canEnableDesktop ? (
+          <div className="shrink-0 border-t">
+            <button type="button" disabled={desktop.pending} onClick={() => void desktop.toggle(true)} className="flex w-full items-center gap-2 px-4 py-3 text-left text-xs text-quiet-text-secondary hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:opacity-50">
+              <ComputerIcon className="h-4 w-4" />
+              {desktop.pending ? 'Enabling…' : 'Enable desktop notifications'}
+              <ArrowRight02Icon className="ml-auto h-3.5 w-3.5" />
+            </button>
+            {desktop.error ? <p role="alert" className="px-4 pb-3 text-xs text-destructive">{desktop.error}</p> : null}
+          </div>
+        ) : desktop.permission === 'denied' ? (
+          <p className="shrink-0 border-t px-4 py-3 text-xs text-quiet-text-secondary">Desktop alerts are blocked. Allow notifications in site settings to enable them.</p>
+        ) : null}
+      </PopoverContent>}
     </Popover>
   )
 }

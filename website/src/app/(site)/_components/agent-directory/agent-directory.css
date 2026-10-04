@@ -155,7 +155,7 @@
   justify-content: space-between;
   padding: 12px 8px;
 }
-.hp3 .adp-nav-items > span {
+.hp3 .adp-nav-items > :is(span, button) {
   height: 34px;
   display: flex;
   align-items: center;
@@ -165,7 +165,7 @@
   border-radius: 5px;
   font-size: calc(12px + var(--preview-font-step, 0px));
 }
-.hp3 .adp-nav-items > span[data-active="true"] {
+.hp3 .adp-nav-items > :is(span, button)[data-active="true"] {
   background: #e1e1e5;
   color: #242427;
   font-weight: 500;
@@ -877,4 +877,81 @@
   .hp3 .adp * {
     transition: none !important;
   }
+}
+
+/* The homepage alternates between the agent directory and real flow templates.
+   Both views keep the same frame height and leave wheel scrolling to the page. */
+.hp3 .adp-nav-items > button { width: 100%; border: 0; background: transparent; text-align: left; }
+.hp3 .adp-nav-items > button:hover { background: #e7e7eb; }
+.hp3 .adp-mobile-sections { display: none; }
+.hp3 .adp[data-show-flows="true"] .adp-frame { height: 720px; }
+.hp3 .adp[data-show-flows="true"] .adp-agent { min-width: 0; min-height: 64px; padding-block: 11px; }
+.hp3 .adp[data-show-flows="true"] .adp-columns { min-width: 0; }
+.hp3 .adp[data-show-flows="true"] .adp-scroll[data-view="cards"] { padding-top: 16px; }
+.hp3 .adp[data-show-flows="true"] .adp-scroll[data-view="cards"] .adp-agents { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.hp3 .adp[data-show-flows="true"] .adp-scroll[data-view="cards"] .adp-agent { padding: 14px; gap: 8px; }
+.hp3 .adp[data-show-flows="true"] .adp-scroll[data-view="cards"] :is(.adp-config, .adp-runs, .adp-last, .adp-flows) { display: none; }
+.hp3 .adp[data-show-flows="true"] .adp-purpose { min-height: 0; font-size: 12px; line-height: 1.5; }
+.hp3 .adp-flow-templates { list-style: none; margin: 0; padding: 24px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.hp3 .adp-flow-templates > li { padding: 0; margin: 0; min-width: 0; }
+.hp3 .adp-flow-card { width: 100%; height: 100%; min-height: 218px; border: 1px solid #e3e3e7; border-radius: 9px; padding: 20px; background: #fff; color: #303036; text-align: left; display: flex; flex-direction: column; gap: 10px; transition: border-color .15s, background .15s; }
+.hp3 .adp-flow-card:hover { background: #f7faf8; border-color: #9fbaa9; }
+.hp3 .adp-flow-card-top { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.hp3 .adp-flow-card-top > i { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 8px; background: #edf3ef; color: #4e6f5d; }
+.hp3 .adp-flow-card-top > small { font-size: 11px; color: #71717a; }
+.hp3 .adp-flow-card-top > svg { margin-left: auto; color: #9a9aa2; }
+.hp3 .adp-flow-card > strong { font-size: 15px; line-height: 1.4; font-weight: 550; }
+.hp3 .adp-flow-description { color: #777780; font-size: 13px; line-height: 1.6; }
+.hp3 .adp-flow-owner { display: flex; align-items: center; gap: 6px; padding-top: 16px; margin-top: auto; color: #787881; font-size: 11px; }
+.hp3 .adp-flow-owner > svg { flex-shrink: 0; }
+.hp3 .adp-flow-owner > span { margin-left: auto; color: #3a7051; white-space: nowrap; }
+.hp3 .adp-flow-detail { padding: 20px 28px 24px; min-width: 0; overflow: clip; }
+.hp3 .adp-flow-back { display: inline-flex; align-items: center; gap: 6px; border: 0; padding: 0; background: none; color: #75757f; font-size: 12px; }
+.hp3 .adp-flow-back:hover { color: #2f6a4c; }
+.hp3 .adp-flow-detail > h4 { margin: 16px 0 22px; font: 550 18px/1.4 HelpinAgentUI, sans-serif; letter-spacing: -.3px; }
+.hp3 .adp-flow-detail > h4:focus { outline: none; }
+.hp3 .adp-flow-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.hp3 .adp-flow-step { display: flex; align-items: flex-start; gap: 14px; margin: 0; padding: 13px 16px; border: 1px solid #e5e8e6; border-radius: 8px; background: #fcfdfc; position: relative; }
+.hp3 .adp-flow-step:not(:last-child)::after { content: ''; position: absolute; left: 33px; top: calc(100% + 1px); height: 12px; width: 1px; background: #cddbd2; }
+.hp3 .adp-flow-step > i { display: grid; place-items: center; flex: 0 0 34px; height: 34px; background: #edf3ef; color: #557661; border-radius: 7px; }
+.hp3 .adp-flow-step > div { min-width: 0; }
+.hp3 .adp-flow-step small { display: block; color: #80838a; font-size: 10px; line-height: 1.4; margin-bottom: 3px; }
+.hp3 .adp-flow-step strong { display: block; font-size: 13px; font-weight: 550; line-height: 1.5; }
+.hp3 .adp-flow-step p { margin: 4px 0 0; color: #7d8188; font-size: 12px; line-height: 1.5; }
+.hp3 .adp-flow-context { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.hp3 .adp-flow-context > span { display: flex; align-items: center; gap: 4px; font-size: 10px; line-height: 1.5; color: #5a7263; background: #f0f5f1; border-radius: 4px; padding: 3px 6px; }
+.hp3 .adp-flow-approval { background: #fdfaf3; border-color: #e9ddbd; }
+.hp3 .adp-flow-approval > i { color: #9d7839; background: #f6eedc; }
+.hp3 .adp-flow-approval small { color: #927443; }
+@media (max-width: 1000px) {
+  .hp3 .adp-mobile-sections { display: flex; padding: 12px 20px 0; gap: 6px; }
+  .hp3 .adp-mobile-sections button { display: flex; align-items: center; gap: 7px; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 6px 12px; font-size: 12px; color: #7b7b85; }
+  .hp3 .adp-mobile-sections button[aria-pressed="true"] { color: #345c45; background: #eff5f0; border-color: #deeadf; }
+  .hp3 .adp[data-show-flows="true"] .adp-header { padding-block: 14px 18px; }
+}
+@media (max-width: 600px) {
+  .hp3 .adp-mobile-sections { padding: 10px 12px 0; }
+  .hp3 .adp[data-show-flows="true"] .adp-scroll[data-view="cards"] .adp-agent { padding: 12px 9px; }
+  .hp3 .adp[data-show-flows="true"] .adp-scroll[data-view="cards"] .adp-role i,
+  .hp3 .adp[data-show-flows="true"] .adp-purpose { display: none; }
+  .hp3 .adp[data-show-flows="true"] .adp-scroll[data-view="cards"] .adp-identity { gap: 7px; }
+  .hp3 .adp-flow-templates { gap: 10px; padding: 16px 12px; }
+  .hp3 .adp-flow-card { padding: 14px 12px; min-height: 224px; gap: 8px; }
+  .hp3 .adp-flow-card-top { gap: 7px; margin-bottom: 3px; }
+  .hp3 .adp-flow-card-top > i { width: 27px; height: 27px; }
+  .hp3 .adp-flow-card-top > svg { display: none; }
+  .hp3 .adp-flow-card-top > small { font-size: 10px; }
+  .hp3 .adp-flow-card > strong { font-size: 13px; }
+  .hp3 .adp-flow-description { font-size: 11px; }
+  .hp3 .adp-flow-owner { font-size: 10px; padding-top: 8px; flex-wrap: wrap; }
+  .hp3 .adp-flow-owner > svg { display: none; }
+  .hp3 .adp-flow-owner > span { margin-left: 0; flex-basis: 100%; }
+  .hp3 .adp-flow-detail { padding: 16px 12px; }
+  .hp3 .adp-flow-detail > h4 { font-size: 16px; margin: 12px 0 16px; }
+  .hp3 .adp-flow-step { padding: 12px; gap: 10px; }
+  .hp3 .adp-flow-step > i { flex-basis: 28px; height: 28px; }
+  .hp3 .adp-flow-step:not(:last-child)::after { left: 26px; }
+  .hp3 .adp-flow-step strong { font-size: 12px; }
+  .hp3 .adp-flow-step p { font-size: 11px; }
+  .hp3 .adp-flow-context > span { font-size: 9px; }
 }

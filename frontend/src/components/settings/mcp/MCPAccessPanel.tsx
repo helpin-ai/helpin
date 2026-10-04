@@ -390,7 +390,7 @@ function MCPServiceAccounts({ workspaceId, dashboard }: { workspaceId: string; d
       <Card className={LINEAR_CARD_CLASS}>
         <CardHeader>
           <div className="flex items-start justify-between gap-4">
-            <div><CardTitle className="text-base">Automation accounts</CardTitle><CardDescription>Restricted credentials for workflows that run without a person signing in. Secrets are shown once.</CardDescription></div>
+            <div><CardTitle className="text-base">Automation accounts</CardTitle><CardDescription>Restricted tokens for the Helpin REST API, MCP, and workflows that run without a person signing in. Secrets are shown once.</CardDescription></div>
             <Button size="sm" onClick={() => setCreateOpen(true)} disabled={!dashboard.policy.service_accounts_enabled}>Create automation account</Button>
           </div>
         </CardHeader>

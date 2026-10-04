@@ -1,20 +1,20 @@
-import { describeToolCall } from '@/components/pm/CodingSession/toolCallPresentation';
 import { resolveVisibleTurn } from './agentTurnState';
 import { isRuntimeControlToolName } from '@/lib/toolNames';
-import type { AgentRun, CodingSessionStreamState, RunPlanArtifact } from '@/lib/pmTypes';
+import type { AgentRun, CodingSessionStreamState, CommandBarPlanSummary, RunPlanArtifact } from '@/lib/pmTypes';
 
 export interface AgentLiveProgress {
   label: string;
   startedAt?: string;
   tone: 'working' | 'waiting';
   completed?: boolean;
+  delegated?: boolean;
 }
 
 interface ResolveAgentLiveProgressInput {
   run: Pick<AgentRun, 'status' | 'pause_reason' | 'execution_stage' | 'started_at' | 'created_at'> | null;
   stream: Pick<CodingSessionStreamState, 'transcript_messages' | 'live_turn_segments' | 'live_reasoning_message' | 'activity_events' | 'turn_state'> | null;
   currentPlan: RunPlanArtifact | null;
-  activeSubAgentName?: string | null;
+  delegatedPlans?: CommandBarPlanSummary[];
   sending: boolean;
   localStartedAt?: string;
 }
@@ -22,6 +22,38 @@ interface ResolveAgentLiveProgressInput {
 function activePlanStep(plan: RunPlanArtifact | null): string | null {
   const step = plan?.plan?.find((candidate) => candidate.status === 'in_progress')?.step?.trim();
   return step || null;
+}
+
+function delegatedProgress(plans: CommandBarPlanSummary[]): AgentLiveProgress | null {
+  const children = plans.filter(plan => plan.status === 'running').flatMap(plan =>
+    Object.entries(plan.run_ids_by_step ?? {}).flatMap(([index, id]) => {
+      const child = plan.runs?.find(run => run.id === id);
+      return child && ['queued', 'running', 'paused'].includes(child.status)
+        ? [{ name: plan.steps[Number(index)]?.agent_name?.trim() || 'Sub-agent', run: child }] : [];
+    }));
+  if (!children.length) {
+    return plans.some(plan => plan.status === 'running' && !plan.runs?.length)
+      ? { label: 'Starting sub-agent…', tone: 'working', delegated: true } : null;
+  }
+  const blockers: Partial<Record<AgentRun['pause_reason'], string>> = {
+    human_approval: 'Approval needed', human_input: 'Your input needed', authentication: 'Sign-in needed',
+  };
+  const active = children.some(child => child.run.status !== 'paused');
+  let label: string;
+  if (children.length === 1) {
+    const { name, run } = children[0];
+    const state = run.status === 'running' ? 'is running' : run.status === 'queued' ? 'is queued'
+      : run.pause_reason === 'human_approval' ? 'needs approval'
+      : run.pause_reason === 'human_input' ? 'needs your input'
+      : run.pause_reason === 'authentication' ? 'needs sign-in'
+      : run.pause_reason === 'manual' ? 'is paused' : 'is waiting';
+    label = `${name} ${state}`;
+  } else {
+    const blocker = children.filter(child => child.run.status === 'paused')
+      .map(child => blockers[child.run.pause_reason]).find(Boolean);
+    label = `${children.length} sub-agents ${active ? 'active' : 'waiting'}${blocker ? ` · ${blocker}` : ''}`;
+  }
+  return { label, tone: active ? 'working' : 'waiting', delegated: true };
 }
 
 /**
@@ -32,7 +64,7 @@ export function resolveAgentLiveProgress({
   run,
   stream,
   currentPlan,
-  activeSubAgentName,
+  delegatedPlans = [],
   sending,
   localStartedAt,
 }: ResolveAgentLiveProgressInput): AgentLiveProgress | null {
@@ -53,12 +85,21 @@ export function resolveAgentLiveProgress({
     return { label: 'Paused', startedAt, tone: 'waiting' };
   }
   // Finishing the parent's reply does not finish delegated work.
-  if (activeSubAgentName?.trim()) {
-    return { label: `Working with ${activeSubAgentName.trim()}…`, startedAt, tone: 'working' };
+  const delegated = delegatedProgress(delegatedPlans);
+  if (delegated) {
+    const waiting = run.status === 'completed'
+      || (run.status === 'paused' && run.pause_reason === 'awaiting_user_message');
+    return { ...delegated, startedAt, label: `${delegated.label}${waiting ? ' · Ask Agent is waiting' : ''}` };
   }
   if (turn.answered) return null;
   if (turn.answerPending) return { label: 'Loading answer…', startedAt, tone: 'waiting' };
   if (turn.missingAnswer) return { label: 'Run ended without a final answer', startedAt, tone: 'waiting' };
+
+  // Accepting a follow-up marks the run as resuming before the runtime
+  // updates its paused status. Keep feedback visible through that handoff.
+  if (run.status === 'paused' && run.execution_stage === 'resuming') {
+    return { label: 'Starting…', startedAt, tone: 'working' };
+  }
 
   if (run.status === 'paused') {
     switch (run.pause_reason) {
@@ -88,14 +129,14 @@ export function resolveAgentLiveProgress({
     if (segment.kind !== 'tool_call') continue;
     if (isRuntimeControlToolName(segment.tool_call.tool_name)) continue;
     if (segment.tool_call.status === 'running') {
-      return { label: `${describeToolCall(segment.tool_call).primaryLabel}…`, startedAt, tone: 'working' };
+      return { label: 'Working…', startedAt, tone: 'working' };
     }
     break;
   }
 
   const lastSegment = segments[segments.length - 1];
   const step = activePlanStep(currentPlan);
-  if (step) return { label: step, startedAt, tone: 'working' };
+  if (step) return { label: 'Working…', startedAt, tone: 'working' };
 
   if (
     lastSegment?.kind === 'assistant_message'

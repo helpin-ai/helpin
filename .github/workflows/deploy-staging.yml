@@ -27,7 +27,7 @@ env:
 jobs:
   changes:
     name: Detect Changes
-    runs-on: arc-runners-helpin-ai
+    runs-on: ubuntu-24.04
     outputs:
       server: ${{ steps.filter.outputs.server }}
       helpcenter: ${{ steps.filter.outputs.helpcenter }}
@@ -86,7 +86,7 @@ jobs:
 
   version:
     name: Determine RC Versions
-    runs-on: arc-runners-helpin-ai
+    runs-on: ubuntu-24.04
     needs: changes
     if: needs.changes.outputs.server == 'true' || needs.changes.outputs.helpcenter == 'true'
     outputs:
@@ -155,7 +155,7 @@ jobs:
       contents: read
       packages: write
     name: Build Server Image
-    runs-on: arc-runners-helpin-ai
+    runs-on: ubuntu-24.04
     needs: [version, changes]
     if: needs.changes.outputs.server == 'true' && needs.version.outputs.server_tag != ''
     steps:
@@ -176,6 +176,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+      # GitHub-hosted runners start with the default docker driver, which cannot
+      # export the registry build cache used below.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Build and push server images
         run: |
@@ -218,7 +223,7 @@ jobs:
       contents: read
       packages: write
     name: Build Help Center Image
-    runs-on: arc-runners-helpin-ai
+    runs-on: ubuntu-24.04
     needs: [version, changes]
     if: needs.changes.outputs.helpcenter == 'true' && needs.version.outputs.helpcenter_tag != ''
     steps:
@@ -252,10 +257,24 @@ jobs:
 
   deploy-netlify:
     name: Build & Deploy Frontend to Netlify
-    runs-on: arc-runners-helpin-ai
+    runs-on: ubuntu-24.04
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     steps:
+      - name: Validate Netlify credentials
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID_STAGE }}
+        run: |
+          if [ -z "$NETLIFY_AUTH_TOKEN" ]; then
+            echo "::error::Missing NETLIFY_AUTH_TOKEN. Add a Netlify personal access token to GitHub Actions secrets."
+            exit 1
+          fi
+          if [ -z "$NETLIFY_SITE_ID" ]; then
+            echo "::error::Missing NETLIFY_SITE_ID_STAGE. Add the Netlify staging Project ID to GitHub Actions secrets."
+            exit 1
+          fi
+
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -295,25 +314,18 @@ jobs:
             build
           pnpm --dir frontend run build:ee
 
-      - name: Link Netlify site
-        working-directory: build-stg-netlify
-        env:
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID_STAGE }}
-        run: |
-          mkdir -p .netlify
-          printf '{\"siteId\":\"%s\"}\n' "$NETLIFY_SITE_ID" > .netlify/state.json
-
       - name: Deploy to Netlify
         working-directory: build-stg-netlify
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-        run: pnpm --package=netlify-cli@24.2.0 dlx netlify deploy --filter frontend --dir frontend/dist --no-build --prod-if-unlocked
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID_STAGE }}
+        run: pnpm --package=netlify-cli@24.2.0 dlx netlify deploy --site "$NETLIFY_SITE_ID" --filter frontend --dir frontend/dist --no-build --prod-if-unlocked
 
   release:
     permissions:
       contents: write
     name: Create RC Release & Update Manifests
-    runs-on: arc-runners-helpin-ai
+    runs-on: ubuntu-24.04
     needs: [version, changes, build-server, build-helpcenter]
     if: |
       always() &&

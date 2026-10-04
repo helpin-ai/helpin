@@ -1,5 +1,9 @@
 # Helpin contributor instructions
 
+## Community and cloud boundaries
+
+Follow the mandatory [Community/cloud boundary rules](AGENTS.md#community-and-cloud-boundaries) before changing or publishing code, docs, configuration, or assets. Ask the owner when edition ownership or public visibility needs a decision; a build exclusion does not make source private.
+
 Use this reference when changing Helpin code: it explains repository layout, commands, and implementation conventions for contributors and coding agents. Helpin combines support, documentation, project management, CRM, and AI execution; availability depends on the edition and deployment. For installation, start with the [Community guide](community/README.md). For documentation changes, follow the [documentation skill](.agents/skills/helpin-documentation/SKILL.md) and [writing guide](docs/documentation-guide.md).
 
 Source-reviewed September 18, 2026 against manifests and implementation. Commands below describe development workflows; they are not evidence that a deployment or test suite passed.
@@ -534,6 +538,10 @@ logger.Info("emitting notification", "event_type", event.EventType)
 ### Helpin Design System
 
 For product UI work under `frontend/`, read `.agents/skills/helpin-design-system/SKILL.md` and its routed references. Quiet Hairline is the visual authority; centralized Helpin components remain the behavior and accessibility authority.
+
+### Marketing website
+
+For the marketing site in `website/` (helpin.ai), use the `helpin-website-copy`, `helpin-website-pages`, and `helpin-website-visuals` skills (`.claude/skills/` links to `.agents/skills/`). They hold the house voice and style, page anatomy, SEO, QA, and release steps. Product facts the site may state live in `docs/website-copy/product-truth.yaml`. The product UI rules above do not apply to the website.
 
 ### TanStack Router (File-Based)
 Routes are defined in `src/routes/` and auto-generated into `routeTree.gen.ts`:

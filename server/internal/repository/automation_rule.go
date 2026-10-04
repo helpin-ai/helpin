@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -23,6 +24,32 @@ func NewAutomationRuleRepository(db *gorm.DB) *AutomationRuleRepository {
 func (r *AutomationRuleRepository) Create(ctx context.Context, rule *model.AutomationRule) error {
 	if err := r.db.WithContext(ctx).Create(rule).Error; err != nil {
 		return fmt.Errorf("create automation rule: %w", err)
+	}
+	return nil
+}
+
+// CreateWithEnabled preserves an explicit paused state despite the model default.
+func (r *AutomationRuleRepository) CreateWithEnabled(ctx context.Context, rule *model.AutomationRule, enabled bool) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(rule).Error; err != nil {
+			return err
+		}
+		rule.Enabled = enabled
+		if !enabled {
+			return tx.Model(rule).Update("enabled", false).Error
+		}
+		return nil
+	})
+}
+
+// UpdateIfUnchanged rejects concurrent edits instead of overwriting them.
+func (r *AutomationRuleRepository) UpdateIfUnchanged(ctx context.Context, rule *model.AutomationRule, expected time.Time) error {
+	result := r.db.WithContext(ctx).Model(&model.AutomationRule{}).Where("workspace_id = ? AND id = ? AND updated_at = ?", rule.WorkspaceID, rule.ID, expected).Select("*").Updates(rule)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("this flow changed elsewhere; reopen it before making changes")
 	}
 	return nil
 }

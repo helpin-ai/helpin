@@ -7,6 +7,8 @@ import { BotIcon, GitBranchIcon, Loading01Icon, PlayIcon } from '@/lib/icons';
 import { toast } from 'sonner';
 
 import { AgentAvatar, resolveAgentPersonaKey, type AgentPersonaKey } from '@/components/agents/AgentAvatar';
+import { ExternalAgentBadge } from '@/components/agents/ExternalAgentBadge';
+import { taskAgentRunUsesAIConnection } from '@/lib/externalAgents';
 import { UpgradeRequiredDialog } from '@edition';
 import { NextAgentHint } from '@/components/agents/NextAgentHint';
 import { CodingCapacityNotice } from '@/components/agents/CodingCapacityNotice';
@@ -395,7 +397,9 @@ export function AgentRunPanel({
   }, [fetchRuns, taskId]);
 
   const startRun = useCallback(async (agentId: string) => {
-    const res = await agentService.runTask(workspaceId, taskId, { agent_id: agentId, delivery_mode: deliveryMode, ...aiConnection });
+    const runAgent = agents.find((agent) => agent.id === agentId);
+    const connection = taskAgentRunUsesAIConnection(runAgent) ? aiConnection : {};
+    const res = await agentService.runTask(workspaceId, taskId, { agent_id: agentId, delivery_mode: deliveryMode, ...connection });
     if (res.error) {
       const reason = getUpgradeRequiredReason(res.error);
       if (reason) {
@@ -409,7 +413,7 @@ export function AgentRunPanel({
     if (res.data?.id) {
       setRunInUrl(res.data.id);
     }
-  }, [aiConnection, deliveryMode, fetchRuns, setRunInUrl, taskId, workspaceId]);
+  }, [agents, aiConnection, deliveryMode, fetchRuns, setRunInUrl, taskId, workspaceId]);
 
   const agentNameById = useMemo(
     () => Object.fromEntries(agents.map((agent) => [agent.id, agent.name])),
@@ -580,13 +584,16 @@ export function AgentRunPanel({
                         <div className="flex items-center gap-1.5">
                           <AgentAvatar agent={agent} className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none" genericBare />
                           <span>{agent.name}{agent.role ? ` · ${agent.role}` : ''}</span>
+                          <ExternalAgentBadge agent={agent} />
                         </div>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              <AIConnectionPicker workspaceId={workspaceId} defaultProfileId={selectedAgent?.ai_profile_id} value={aiConnection} onChange={setAIConnection} />
+              {taskAgentRunUsesAIConnection(selectedAgent) ? (
+                <AIConnectionPicker workspaceId={workspaceId} defaultProfileId={selectedAgent?.ai_profile_id} value={aiConnection} onChange={setAIConnection} />
+              ) : null}
               {delivery?.selectedRepository ? <AgentRunDeliveryModePicker value={deliveryMode} onChange={setDeliveryMode} /> : null}
             </div>
             <div className="flex flex-wrap items-center gap-3">

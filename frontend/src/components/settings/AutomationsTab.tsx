@@ -1,3 +1,4 @@
+import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { pmAutomationService } from '@/lib/services/pmAutomationService';
@@ -141,7 +142,7 @@ export function AutomationsTab({ workspaceId, teams, editable = true }: {
             return (
               <div key={team.id} className="flex items-center justify-between rounded-lg border border-border/60 px-4 py-3">
                 <div>
-                  <p className="text-sm font-medium">{team.name}</p>
+                  <p className="text-sm font-medium"><TeamLabel team={team} /></p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     {hasAutoCreate
                       ? <>{`${durationWeeks}-week sprints · Starts ${startDayLabel}`}{hasAutoCreate && <> · <span className="text-emerald-600">Auto-create ✓</span></>}{hasRollOver && <> · <span className="text-emerald-600">Roll over ✓</span></>}</>

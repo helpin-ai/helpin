@@ -51,8 +51,8 @@ describe('coverage UI helpers', () => {
   })
 
   it('singularizes a one-conversation impact line', () => {
-    expect(formatCoverageImpact({ evidence_all: 1, distinct_customers_30d: 1, failure_mode: 'missing_content' }))
-      .toBe('1 conversation, 1 customer this month, No nearby content')
+    expect(formatCoverageImpact({ conversations_30d: 1, distinct_customers_30d: 1, failure_mode: 'missing_content' }))
+      .toBe('1 conversation · 1 known customer in the last 30 days')
   })
 
   it('derives impact tier from recent (30d) evidence, matching backend cutoffs', () => {
@@ -79,5 +79,15 @@ describe('coverage UI helpers', () => {
 
   it('omits the diagnosis when the gap is genuinely unclassified', () => {
     expect(coverageDiagnosis({ failure_mode: '', gap_kind: 'content', v1_gap_type: 'needs_review' })).toBeNull()
+  })
+
+  it('explains missing policy without claiming an action failed', () => {
+    expect(coverageDiagnosis({ failure_mode: '', gap_kind: 'policy', v1_gap_type: 'needs_review' }))
+      .toBe('The AI needs an agreed policy or escalation rule to answer this safely.')
+  })
+
+  it('never labels evidence records as conversations or historical customers as recent', () => {
+    expect(formatCoverageImpact({ evidence_all: 12, distinct_customers_all: 4 }))
+      .toBe('12 evidence records')
   })
 })

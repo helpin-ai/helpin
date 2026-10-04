@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
+import { DocsBulkToolbar, DocsSelectionCheckbox } from '@/components/docs/DocsBulkToolbar'
+import { useDocsSelection } from '@/components/docs/useDocsSelection'
 import {
   ArchiveIcon,
   ArchiveRestoreIcon,
@@ -50,6 +52,8 @@ export interface DocumentsTableProps {
   hasCollections: boolean
   /** Workspace slug — needed for doc-row navigation. */
   wsSlug: string
+  wsId: string
+  selectionScope: string
 
   // Filter / sort state is lifted to the caller so it survives
   // navigation between scopes.
@@ -96,6 +100,8 @@ export function DocumentsTable({
   showCollectionPath,
   hasCollections,
   wsSlug,
+  wsId,
+  selectionScope,
   filterStatus,
   onFilterStatus,
   sortField,
@@ -141,6 +147,8 @@ export function DocumentsTable({
     }
     return sortDir === 'asc' ? cmp : -cmp
   })
+
+  const selection = useDocsSelection(`${wsId}:${selectionScope}:${filterStatus}:${searchQuery}`, displayDocs)
 
   return (
     <>
@@ -201,6 +209,7 @@ export function DocumentsTable({
         </div>
       )}
 
+      {canEdit && displayDocs.length > 0 && <DocsBulkToolbar key={selection.scope} wsId={wsId} selection={selection} />}
       {displayDocs.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 px-4 max-w-md mx-auto">
           {hasCollections ? (
@@ -243,6 +252,7 @@ export function DocumentsTable({
           {displayDocs.map((doc) => (
             <DocsLibraryRow
               key={doc.id}
+              selection={canEdit ? <DocsSelectionCheckbox doc={doc} selection={selection} /> : undefined}
               title={doc.title}
               status={doc.status}
               updatedAt={doc.updated_at}
@@ -260,6 +270,7 @@ export function DocumentsTable({
                     <button
                       type="button"
                       className="rounded p-1.5 text-foreground/50 transition-colors hover:bg-muted hover:text-foreground"
+                      disabled={selection.busy}
                       aria-label={`More options for ${doc.title}`}
                     >
                       <MoreHorizontalIcon className="h-4 w-4" />

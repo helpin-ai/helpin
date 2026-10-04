@@ -86,6 +86,40 @@ func TestDockExecutionProjectionIsOptInAndSeparate(t *testing.T) {
 	}
 }
 
+func TestFlowBuilderRuntimeProjectionDoesNotInheritAskSkills(t *testing.T) {
+	agent := &model.Agent{ID: "ask", IsSystem: true, PresetKey: model.AgentPresetAskAgent, PresetVersionKey: "ask_agent_default", RuntimeKind: "native_sdk", AllowedTools: mustJSONStringSlice(askAgentPresetTools())}
+	ordinary := runtimeAgentFromHelpinAgent(agent, "helpin")
+	if len(ordinary.Skills) == 0 {
+		t.Fatal("fixture must include Ask Agent skills")
+	}
+	input, err := json.Marshal(model.AgentRunInputPayload{AllowedTools: flowBuilderTools()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := &model.AgentRun{ID: "run", AgentID: "ask", WorkspaceID: "workspace", TargetType: "workspace", TargetID: "workspace", DockChatID: stringPointer("chat"), Input: input}
+	projected := runtimeAgentForDockExecution(run, ordinary)
+	if len(projected.Skills) != 0 {
+		t.Fatalf("flow builder inherited %d unrelated skills", len(projected.Skills))
+	}
+	if projected.ID == ordinary.ID || runtimeAgentBaseID(projected.ID) != ordinary.ID {
+		t.Fatalf("builder must use an isolated runtime record with the same host owner: %q", projected.ID)
+	}
+	if !sameNormalizedToolSet(projected.AllowedTools, flowBuilderTools()) || projected.SystemPrompt != flowBuilderInstructions {
+		t.Fatal("builder runtime contract must contain only builder tools and instructions")
+	}
+	request, err := runtimeStartRunRequest(run, agent, projected)
+	if err != nil || request.AgentID != projected.ID || !sameNormalizedToolSet(request.AllowedTools, flowBuilderTools()) {
+		t.Fatalf("builder launch contract: %#v, %v", request, err)
+	}
+	if len(ordinary.Skills) == 0 || ordinary.ID != "ask" {
+		t.Fatal("ordinary Ask Agent was modified")
+	}
+	run.DockChatID = nil
+	if got := runtimeAgentForDockExecution(run, ordinary); got.ID != ordinary.ID || len(got.Skills) == 0 {
+		t.Fatal("non-Dock run was projected as a builder")
+	}
+}
+
 func TestTrustedDockUserHistoryExcludesMixedTranscriptAndApprovalReplies(t *testing.T) {
 	db := newInteractiveApprovalTestDB(t)
 	for _, statement := range []string{
@@ -184,7 +218,8 @@ func TestDockExecutionRequiresTrustedAuthorization(t *testing.T) {
 
 func TestDockExecutionCanBeSelectedWhenCreatingChat(t *testing.T) {
 	db := newInteractiveApprovalTestDB(t)
-	if err := db.Exec(`CREATE TABLE dock_chats (
+	if err := db.Exec(`CREATE TABLE dock_chats ( flow_builder TEXT,
+ coverage_gap_id TEXT, initial_context TEXT,
 		id TEXT PRIMARY KEY, workspace_id TEXT, user_id TEXT, title TEXT,
 		visibility TEXT, module_id TEXT, support_conversation_id TEXT,
 		active_run_id TEXT, next_message_sequence INTEGER DEFAULT 0,
@@ -255,7 +290,8 @@ func TestDockExecutionTransitionCancelsWithoutWideningRun(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db := newInteractiveApprovalTestDB(t)
-			if err := db.Exec(`CREATE TABLE dock_chats (id TEXT PRIMARY KEY, workspace_id TEXT, user_id TEXT, title TEXT, visibility TEXT, module_id TEXT, support_conversation_id TEXT, active_run_id TEXT, next_message_sequence INTEGER DEFAULT 0, execution_enabled BOOLEAN NOT NULL DEFAULT false, last_message_at DATETIME, archived_at DATETIME, created_at DATETIME, updated_at DATETIME)`).Error; err != nil {
+			if err := db.Exec(`CREATE TABLE dock_chats ( flow_builder TEXT,
+ coverage_gap_id TEXT, initial_context TEXT,id TEXT PRIMARY KEY, workspace_id TEXT, user_id TEXT, title TEXT, visibility TEXT, module_id TEXT, support_conversation_id TEXT, active_run_id TEXT, next_message_sequence INTEGER DEFAULT 0, execution_enabled BOOLEAN NOT NULL DEFAULT false, last_message_at DATETIME, archived_at DATETIME, created_at DATETIME, updated_at DATETIME)`).Error; err != nil {
 				t.Fatal(err)
 			}
 			now := time.Now().UTC()

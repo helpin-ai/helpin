@@ -201,6 +201,34 @@ func TestNormalizeURL(t *testing.T) {
 	}
 }
 
+func TestURLFilterBlogExclusions(t *testing.T) {
+	filter := NewURLFilter(model.SupportContentSource{
+		StartURL: "https://example.com", IncludeSubdomains: true,
+		ExcludePatterns: model.DocsStringArray{"/blog", "/blog/*", "*://blog.*/**"},
+	})
+	for _, tc := range []struct {
+		url     string
+		allowed bool
+	}{
+		{"https://example.com/blog", false},
+		{"https://example.com/blog?category=news", false},
+		{"https://example.com/blog/guide/intro", false},
+		{"https://blog.example.com", false},
+		{"https://blog.example.com/", false},
+		{"https://BLOG.example.com/news/launch", false},
+		{"http://blog.example.com/news/launch", false},
+		{"https://example.com/blogging-guide", true},
+		{"https://example.com/docs/guide", true},
+		{"https://help.example.com/guide", true},
+	} {
+		t.Run(tc.url, func(t *testing.T) {
+			if got := filter.Allowed(tc.url); got != tc.allowed {
+				t.Fatalf("Allowed(%s) = %v, want %v", tc.url, got, tc.allowed)
+			}
+		})
+	}
+}
+
 func TestMatchPattern(t *testing.T) {
 	tests := []struct {
 		name    string

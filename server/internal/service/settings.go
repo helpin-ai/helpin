@@ -94,6 +94,15 @@ func (s *SettingsService) CreateTeam(ctx context.Context, req model.CreateTeamRe
 	if strings.TrimSpace(req.WorkspaceID) == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
 	}
+	color, err := normalizeTeamColor(req.Color)
+	if err != nil {
+		return nil, err
+	}
+	if color == nil || *color == "" {
+		chosen := randomTeamColor()
+		color = &chosen
+	}
+	req.Color = color
 	handle, err := s.prepareTeamHandle(ctx, req.WorkspaceID, req.Handle, req.Name, nil)
 	if err != nil {
 		return nil, err
@@ -285,6 +294,11 @@ func (s *SettingsService) firstAvailableTeamHandle(ctx context.Context, workspac
 
 // UpdateTeam modifies a team.
 func (s *SettingsService) UpdateTeam(ctx context.Context, id string, req model.UpdateTeamRequest) (*model.WorkspaceTeam, error) {
+	color, err := normalizeTeamColor(req.Color)
+	if err != nil {
+		return nil, err
+	}
+	req.Color = color
 	current, err := s.settingsRepo.GetTeamByID(ctx, id)
 	if err != nil {
 		return nil, err

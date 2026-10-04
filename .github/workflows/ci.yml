@@ -19,7 +19,7 @@ concurrency:
 jobs:
   changes:
     name: Detect Changes
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
+    runs-on: ubuntu-24.04
     outputs:
       server: ${{ steps.filter.outputs.server }}
       frontend: ${{ steps.filter.outputs.frontend }}
@@ -69,6 +69,8 @@ jobs:
           python3 -m unittest discover -s scripts/docs -p '*_test.py'
           python3 scripts/docs/check_names.py
           python3 scripts/docs/check_links.py
+      - name: Check for committed secrets
+        run: python3 scripts/ci/check_secrets.py
       - name: Validate CI policy and workflows
         run: |
           python3 -m unittest discover -s scripts/ci -p '*_test.py'
@@ -91,7 +93,7 @@ jobs:
     name: Events Pipeline CI
     needs: [changes, workflow-checks]
     if: needs.changes.outputs.eventpipeline == 'true'
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -115,6 +117,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           toolchain: 1.88.0
+      # Restores the build that warm-caches.yml saves from develop and main;
+      # a cache saved inside one pull request is not visible to the next.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: events-pipeline/rust-capture
+          shared-key: eventpipeline
+          save-if: false
       - name: Test capture, replay, bootstrap, and writer binaries
         working-directory: events-pipeline/rust-capture
         run: cargo test --locked
@@ -124,7 +133,7 @@ jobs:
     name: Server CI
     needs: [changes, workflow-checks]
     if: needs.changes.outputs.server == 'true'
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
+    runs-on: ubuntu-24.04
     # Plan budget: ≤ 6 min for vet+build. Generous timeout so transient
     # network blips don't fail the run for the wrong reason.
     timeout-minutes: 12
@@ -155,7 +164,7 @@ jobs:
     name: Community without EE source
     needs: [changes, workflow-checks]
     if: needs.changes.outputs.server == 'true'
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -192,7 +201,7 @@ jobs:
     name: Server Tests
     needs: [changes, workflow-checks]
     if: needs.changes.outputs.server == 'true'
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     # Existing test suite uses in-memory SQLite (see server/CLAUDE.md).
     # `services: postgres` is aspirational and currently breaks on our
@@ -230,7 +239,7 @@ jobs:
     name: Frontend CI
     needs: [changes, workflow-checks]
     if: needs.changes.outputs.frontend == 'true'
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
+    runs-on: ubuntu-24.04
     # Compile both editions, including cold TypeScript caches.
     timeout-minutes: 15
     steps:
@@ -252,11 +261,16 @@ jobs:
           pnpm --dir frontend run build:ee
 
   frontend-tests:
-    name: Frontend Vitest
+    name: Frontend Vitest (${{ matrix.shard }}/3)
     needs: [changes, workflow-checks]
     if: needs.changes.outputs.frontend == 'true'
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      # Collecting 500+ test modules dominates; shards split it across runners.
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -274,14 +288,19 @@ jobs:
       - name: Build widget-core (frontend imports compiled output)
         run: pnpm --filter @helpin-ai/widget-core build
       - name: Frontend Vitest
-        run: pnpm --dir frontend run test:ee
+        run: pnpm --dir frontend run test:ee --shard=${{ matrix.shard }}/3
 
   community-frontend:
-    name: Community frontend without EE source
+    name: Community frontend without EE source (${{ matrix.part }})
     needs: [changes, workflow-checks]
     if: needs.changes.outputs.frontend == 'true'
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      # The build/artifact check and the Community test shards run in parallel.
+      matrix:
+        part: [build, tests 1/3, tests 2/3, tests 3/3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -298,15 +317,22 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build shared widget code
         run: pnpm --filter @helpin-ai/widget-core build
-      - name: Build and test community distribution
-        run: bash scripts/check-community-frontend.sh
+      - name: Build or test community distribution
+        env:
+          PART: ${{ matrix.part }}
+        run: |
+          if [[ $PART == build ]]; then
+            bash scripts/check-community-frontend.sh build
+          else
+            bash scripts/check-community-frontend.sh test --shard="${PART#tests }"
+          fi
 
   # ------------------------ Packages ------------------------
   packages-tests:
     name: Package Vitest
     needs: [changes, workflow-checks]
     if: needs.changes.outputs.packages == 'true'
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
+    runs-on: ubuntu-24.04
     # Plan budget: ≤ 3 min for all packages combined.
     timeout-minutes: 8
     steps:
@@ -368,7 +394,7 @@ jobs:
     name: Help Center CI
     needs: [changes, workflow-checks]
     if: needs.changes.outputs.helpcenter == 'true'
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
+    runs-on: ubuntu-24.04
     # Plan budget: ≤ 3 min build + test.
     timeout-minutes: 8
     steps:
@@ -402,7 +428,7 @@ jobs:
     name: Admin CI
     needs: [changes, workflow-checks]
     if: needs.changes.outputs.admin == 'true'
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -431,7 +457,7 @@ jobs:
     name: Support Desktop CI
     needs: [changes, workflow-checks]
     if: needs.changes.outputs.desktop == 'true'
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -472,7 +498,7 @@ jobs:
     name: Support Mobile CI
     needs: [changes, workflow-checks]
     if: needs.changes.outputs.mobile == 'true'
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
+    runs-on: ubuntu-24.04
     # cargo check of the tauri stack is heavy on a cold cache (rust-cache
     # keeps warm runs fast); generous timeout so a cache miss doesn't fail
     # the run for the wrong reason.

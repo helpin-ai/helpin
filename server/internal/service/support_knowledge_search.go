@@ -55,7 +55,8 @@ func (s *SupportAIService) searchSingleQuery(
 	var results []KnowledgeSearchResult
 
 	// Curated guidance is queried as its own source pool. Its repository applies
-	// workspace, agent, status, validity, and language filters before ranking.
+	// workspace, agent, status, and validity filters before ranking. Guidance
+	// applies across customer languages, including entries with legacy language tags.
 	if s.curatedGuidanceRepo != nil {
 		guidanceResults, err := s.curatedGuidanceRepo.Search(
 			ctx,
@@ -238,7 +239,7 @@ func buildAISources(sourceDocIDs []string, searchResults []KnowledgeSearchResult
 
 	byDocID := map[string]KnowledgeSearchResult{}
 	for _, result := range searchResults {
-		if result.IsInternal || result.SourceType == "external_mcp" {
+		if result.IsInternal || result.SourceType == "external_mcp" || result.SourceType == supportChildSourceOfficialWeb {
 			continue
 		}
 		current, ok := byDocID[result.ReferenceID]
@@ -265,7 +266,7 @@ func buildAISources(sourceDocIDs []string, searchResults []KnowledgeSearchResult
 			Snippet:    excerptText(result.Content, 180),
 			Confidence: supportEvidenceRetrievalQuality(result),
 			SourceType: result.SourceType,
-			URL:        result.URL,
+			URL:        strings.Trim(strings.TrimSpace(result.URL), "`"),
 		})
 	}
 	return sources

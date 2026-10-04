@@ -2,6 +2,20 @@
 
 Use this reference for editorial direction, not release facts. The central story is that customer history improves the next action, the products provide places to act, and the team controls the process.
 
+## What Helpin leads with
+
+These are owner-confirmed messages as of September 2026. Check the product-truth record before reusing a qualifier, because plans and releases change.
+
+1. **One customer history, with agents that act on it.** Support, Projects, CRM, Meetings, and Knowledge share one history, and AI agents use it to answer, plan, and follow up.
+2. **Open source, on Helpin Cloud or your own servers.** Name both editions wherever hosting, pricing, trust, or comparisons come up: Helpin Cloud, hosted by Helpin, and the self-hosted Community edition under AGPL-3.0. Don't mention one without the other.
+3. **For support buyers, four advantages lead:**
+   - **No per-seat or per-resolution fees.** One price per workspace with unlimited teammates; every Cloud plan includes an AI usage allowance, and overage is metered only if a paid plan turns it on. Self-hosting has no license fee.
+   - **Bring your own AI models.** Always when self-hosted; on Helpin Cloud, on the Enterprise plan. Every other Cloud plan includes AI usage.
+   - **Docs that keep up with the product.** Agents draft help-center updates from support conversations and from the code changes you ship. Nothing goes live until your team publishes it.
+   - **From ticket to fix to customer.** Agents can turn a ticket into a task, have a coding agent open the fix as a pull request, and tell the customer when it ships. Your team chooses which steps need approval.
+
+Other tools have parts of these; Intercom and Zendesk both suggest article updates from support conversations, for example. State what Helpin does and credit the other tool where it's true, rather than claiming others can't. See [claim verification](claim-verification.md).
+
 ## Give each layer a job
 
 - History: what was asked, tried, promised, and recorded afterward.

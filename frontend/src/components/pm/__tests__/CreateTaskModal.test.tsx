@@ -7,6 +7,7 @@ import type { WorkflowWithStates } from '@/lib/pmTypes'
 import { uploadToS3 } from '@/lib/api'
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService'
 import { pmLabelService } from '@/lib/services/pmLabelService'
+import { pmTriageService } from '@/lib/services/pmTriageService'
 import { pmTaskService } from '@/lib/services/pmTaskService'
 import { pmTaskTemplateService } from '@/lib/services/pmTaskTemplateService'
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService'
@@ -631,6 +632,51 @@ describe('CreateTaskModal', () => {
     })
   })
 
+  it('continues checklist entry with Enter without creating the task or extra blank rows', async () => {
+    const onCreate = vi.fn(async () => ({ id: 'task-1' }))
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    try {
+      await act(async () => {
+        root.render(<CreateTaskModal open onOpenChange={vi.fn()} workspaceId="ws-1" workflow={workflow} initialStateId="state-1" onCreate={onCreate} />)
+      })
+      const clickButton = async (text: string) => {
+        const button = Array.from(container.querySelectorAll('button')).find((node) => node.textContent?.trim() === text)
+        expect(button).toBeTruthy()
+        await act(async () => { button!.click() })
+      }
+      const inputs = () => Array.from(container.querySelectorAll<HTMLInputElement>('input[placeholder="Item text"]'))
+      const enter = async (input: HTMLInputElement, isComposing = false) => {
+        const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, isComposing })
+        await act(async () => { input.dispatchEvent(event) })
+        return event
+      }
+      await clickButton('Checklist')
+      await clickButton('Add item')
+      await act(async () => { setInputValue(inputs()[0], 'Check logs') })
+      await enter(inputs()[0], true)
+      expect(inputs()).toHaveLength(1)
+      expect((await enter(inputs()[0])).defaultPrevented).toBe(true)
+      expect(inputs().map((input) => input.value)).toEqual(['Check logs', ''])
+      expect(document.activeElement).toBe(inputs()[1])
+      await enter(inputs()[1])
+      expect(inputs()).toHaveLength(2)
+      await act(async () => { setInputValue(inputs()[1], 'Verify fix') })
+      await enter(inputs()[1])
+      expect(inputs()).toHaveLength(3)
+      expect(document.activeElement).toBe(inputs()[2])
+      await act(async () => { inputs()[0].focus() })
+      await enter(inputs()[0])
+      expect(document.activeElement).toBe(inputs()[1])
+      expect(inputs()).toHaveLength(3)
+      expect(onCreate).not.toHaveBeenCalled()
+    } finally {
+      await act(async () => { root.unmount() })
+      container.remove()
+    }
+  })
+
   it('creates a task and saves it as a template when requested', async () => {
     const onCreate = vi.fn(async () => ({ id: 'task-1' }))
     const onOpenChange = vi.fn()
@@ -757,7 +803,27 @@ describe('CreateTaskModal', () => {
     })
   })
 
-  it('shows a minimal success toast before resetting the form when saving and creating another task', async () => {
+  it('allows saving while optional draft suggestions are still loading', async () => {
+    vi.mocked(pmTriageService.analyzeDraft).mockImplementationOnce(() => new Promise(() => {}))
+    const onCreate = vi.fn(async () => ({ id: 'task-1' }))
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    try {
+      await act(async () => { root.render(<CreateTaskModal open onOpenChange={vi.fn()} workspaceId="ws-1" workflow={workflow} initialStateId="state-1" initialTeamId="team-1" onCreate={onCreate} />) })
+      await act(async () => { setInputValue(container.querySelector<HTMLInputElement>('#task-title')!, 'Save without waiting') })
+      await settleDraftCheck()
+      const save = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Save')!
+      expect(save.disabled).toBe(false)
+      await act(async () => { save.click() })
+      expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ name: 'Save without waiting' }))
+    } finally {
+      await act(async () => { root.unmount() })
+      container.remove()
+    }
+  })
+
+  it('preserves sidebar selections when saving and creating another task', async () => {
     const onCreate = vi.fn(async () => ({ id: 'task-1' }))
     const onOpenChange = vi.fn()
     const container = document.createElement('div')
@@ -793,6 +859,13 @@ describe('CreateTaskModal', () => {
       await Promise.resolve()
     })
 
+    const highPriority = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.trim() === 'High')
+    expect(highPriority).toBeTruthy()
+    await act(async () => { highPriority!.click() })
+    const inProgress = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.trim() === 'In Progress')
+    expect(inProgress).toBeTruthy()
+    await act(async () => { inProgress!.click() })
+
     await settleDraftCheck()
 
     await act(async () => {
@@ -806,12 +879,26 @@ describe('CreateTaskModal', () => {
         name: 'New task',
         workspace_id: 'ws-1',
         workflow_id: 'workflow-1',
-        workflow_state_id: 'state-1',
+        workflow_state_id: 'state-2',
       }),
     )
     expect(showEntityCreatedToast).not.toHaveBeenCalled()
     expect(toastSuccess).toHaveBeenCalledWith('Task created. Ready for the next one.')
     expect(pmTaskService.saveAsTemplate).not.toHaveBeenCalled()
+    expect(titleInput!.value).toBe('')
+    expect(onOpenChange).not.toHaveBeenCalled()
+    expect(onCreate).toHaveBeenLastCalledWith(expect.objectContaining({ priority: 'high' }))
+
+    await act(async () => { setInputValue(titleInput!, 'Next task') })
+    await settleDraftCheck()
+    await act(async () => { saveAndCreateAnotherButton!.click() })
+    expect(onCreate).toHaveBeenCalledTimes(2)
+    expect(onCreate).toHaveBeenLastCalledWith(expect.objectContaining({
+      name: 'Next task',
+      priority: 'high',
+      team_id: 'team-1',
+      workflow_state_id: 'state-2',
+    }))
 
     act(() => {
       root.unmount()

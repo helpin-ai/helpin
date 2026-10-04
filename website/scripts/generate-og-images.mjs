@@ -49,7 +49,7 @@ const COLORS = {
 
 // Bump when card content changes so social platforms fetch the new image instead of a cached one.
 // Update the matching paths in src/lib/metadata.ts and src/app/(site)/compare/compare-data.ts.
-const VERSION = 'v4';
+const VERSION = 'v5';
 
 const variants = [
   {
@@ -63,7 +63,7 @@ const variants = [
   {
     output: resolve(websiteRoot, `public/og/helpin-pricing-green-${VERSION}.png`),
     eyebrow: 'HELPIN PRICING',
-    headline: ['Every module.', 'Every teammate.', 'One price.'],
+    headline: ['Your team.', 'Your AI agents.', 'One workspace.'],
     support: 'Self-host free, or let us run it with AI included.',
     visual: 'pricing',
   },
@@ -98,22 +98,26 @@ const variants = [
 ];
 
 const productCards = [
-  ['product', 'THE HELPIN PRODUCT', ['Everything in Helpin,', 'attached to', 'the customer.'], 'Support, projects, CRM, meetings, docs and AI agents.'],
-  ['customer-support', 'CUSTOMER SUPPORT', ['AI agents that', 'know the history.'], 'No per-seat or per-resolution fees.'],
+  ['product', 'THE HELPIN PRODUCT', ['Your teams.', 'Your AI agents.', 'Working together.'], 'Support, projects, CRM, meetings, docs and AI agents.'],
+  ['customer-support', 'CUSTOMER SUPPORT', ['Let the Echo agent', 'help your customers.'], 'Answer, follow up, and hand over with the history attached.'],
   ['projects', 'PROJECTS', ['Plan the work.', 'Build with AI agents', 'that know why.'], 'Roadmaps, sprints and objectives in one workspace.'],
-  ['crm', 'CRM', ['Every deal, with', 'the whole customer', 'history.'], 'Contacts, companies and deals, with signals and playbooks.'],
-  ['meetings', 'MEETINGS', ['Meeting notes that', 'become tracked work.'], 'Meet, Zoom, Teams and Webex calls, linked to the customer.'],
-  ['knowledge', 'KNOWLEDGE', ['Better docs for', 'your customers.'], 'Better answers from your AI agents.'],
-  ['ai-agents', 'AI AGENTS', ['AI agents that turn', 'customer history', 'into action.'], 'Your team sets the tools, permissions and approvals.'],
-  ['developers', 'FOR DEVELOPERS', ['Connect your product.'], 'Give AI agents the tools to act, with SDKs, MCP and events.'],
-  ['self-hosting', 'OPEN SOURCE', ['Same product.', 'You choose who', 'runs it.'], 'Free under AGPL-3.0, no plan limits. Community 0.2 beta.'],
+  ['crm', 'CRM', ['Know who needs', 'a follow-up.'], 'Let the Beacon agent help with your next step.'],
+  ['meetings', 'MEETINGS', ['AI takes the notes.', 'Your agents help', 'with the next step.'], 'Meet, Zoom, Teams and Webex calls, linked to the customer.'],
+  ['knowledge', 'KNOWLEDGE', ['Help docs that', 'keep up.'], 'Let the Quill agent help with the upkeep.'],
+  ['ai-agents', 'AI AGENTS', ['AI agents that take', 'work off your', 'team’s list.'], 'Your team sets the tools, permissions and approvals.'],
+  ['developers', 'FOR DEVELOPERS', ['Give your agents', 'the facts.'], 'Give AI agents the tools to act, with SDKs, MCP and events.'],
+  ['self-hosting', 'OPEN SOURCE', ['Your team.', 'Your agents.', 'Your servers.'], 'Free under AGPL-3.0, no plan limits. Community 0.2 beta.'],
   ['branding', 'THE HELPIN BRAND', ['One customer history.'], 'A shared workspace for your team and AI agents.'],
-  ['compare', 'COMPARE HELPIN', ['How Helpin', 'compares.'], 'Intercom, Zendesk, Help Scout, Chatwoot and Linear.'],
+  ['compare', 'COMPARE HELPIN', ['How Helpin', 'compares.'], 'Compare AI agents, customer context and workspace pricing.'],
   ['compare-intercom', 'HELPIN VS INTERCOM', ['Helpin vs', 'Intercom'], 'Features, pricing and switching, side by side.'],
   ['compare-zendesk', 'HELPIN VS ZENDESK', ['Helpin vs', 'Zendesk'], 'Features, pricing and switching, side by side.'],
   ['compare-help-scout', 'HELPIN VS HELP SCOUT', ['Helpin vs', 'Help Scout'], 'Features, pricing and switching, side by side.'],
   ['compare-chatwoot', 'HELPIN VS CHATWOOT', ['Helpin vs', 'Chatwoot'], 'Two open-source options, side by side.'],
+  ['compare-chatbase', 'HELPIN VS CHATBASE', ['Helpin vs', 'Chatbase'], 'AI agents, customer context and the work after the reply.'],
+  ['compare-crisp', 'HELPIN VS CRISP', ['Helpin vs', 'Crisp'], 'AI support, product work and unlimited teammates.'],
   ['compare-linear', 'HELPIN VS LINEAR', ['Helpin vs', 'Linear'], 'Project tracking and customer context, side by side.'],
+  ['compare-plane', 'HELPIN VS PLANE', ['Helpin vs', 'Plane'], 'Two open-source options, side by side.'],
+  ['compare-jira', 'HELPIN VS JIRA', ['Helpin vs', 'Jira'], 'Project tracking and customer context, side by side.'],
 ];
 for (const [slug, eyebrow, headline, support] of productCards) {
   variants.push({ output: resolve(websiteRoot, `public/og/helpin-${slug}-green-${VERSION}.png`), eyebrow, headline, support, visual: 'connected', art: slug });

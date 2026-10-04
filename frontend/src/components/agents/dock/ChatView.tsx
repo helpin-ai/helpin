@@ -1,3 +1,6 @@
+import { useNotificationView } from '@/hooks/useNotificationView';
+import { DockContextMessage } from './DockContextMessage';
+import type { DockContextMessage as ContextMessage } from '@/lib/dockTypes';
 import { dockWorkPlans, hasWorkPlanOrigin } from './dockWorkPlans';
 import activityStyles from './DockActivityTimeline.module.css';
 import { useAskAgentDefaults } from "@/hooks/queries/useAskAgentDefaults";
@@ -5,7 +8,7 @@ import { AIConnectionPicker } from '@/components/agents/AIConnectionPicker';
 import { AISettingsLink } from '@/components/agents/AISettingsLink';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { AIConnectionSelection } from '@/lib/services/aiConnectionService';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { ArrowRight01Icon, ArrowUp01Icon, Loading01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
@@ -35,7 +38,7 @@ import { AgentLiveStatus } from './AgentLiveStatus';
 import { resolveAgentLiveProgress } from './agentProgress';
 import { resolveVisibleTurn } from './agentTurnState';
 import { chatFollowUpSuggestions } from './followUpSuggestions';
-import { starterSuggestionsForContext } from './starterSuggestions';
+import { starterSuggestionsForContext, type StarterSuggestion } from './starterSuggestions';
 import { focusComposerAtEnd } from './composerFocus';
 import { planSummaryToRunPlan } from './planSummary';
 import type { AgentRunStreamState } from './useAgentRunStream';
@@ -56,7 +59,19 @@ import { useDockStore } from '@/stores/dockStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { isDockNetworkAvailable, useDockNetworkActivity } from './useDockNetworkActivity';
 
+export interface ChatTaskSurface {
+  initialMessage?: string;
+  emptyStateLayout?: 'form';
+  emptyState: ReactNode;
+  placeholder: string;
+  onDetailChange?: (detail: DockChatDetail | null) => void;
+  onError?: (error: unknown) => boolean;
+  renderPreview?: (detail: DockChatDetail | null, interaction: CodingSessionInteraction | null, insert: (message: string) => void) => ReactNode;
+  renderInteraction?: (interaction: CodingSessionInteraction, detail: DockChatDetail | null, resolve: (interactionId: string, payload: { response_payload: Record<string, unknown>; followup_message?: string }) => Promise<{error: string | null}>) => ReactNode;
+}
+
 interface ChatViewProps {
+  taskSurface?: ChatTaskSurface;
   workspaceId: string;
   chatId?: string;
   rosterRunId?: string | null;
@@ -78,6 +93,11 @@ interface ChatViewProps {
   onRunIdChange?: (runId: string | null) => void;
   requiredPageContext?: CommandBarPageContext | null;
   showComposerShortcutHint?: boolean;
+  contextMessage?: ContextMessage;
+  starterSuggestions?: StarterSuggestion[];
+  readOnly?: boolean;
+  readOnlyReason?: string;
+  onWorkCompleted?: () => void;
 }
 
 const ACTIVE_RUN_STATUSES = new Set(['queued', 'running', 'paused']);
@@ -97,6 +117,7 @@ function newClientMessageID() {
  * without PM permissions can use their own dock.
  */
 export function ChatView({
+  taskSurface,
   workspaceId,
   chatId,
   rosterRunId,
@@ -117,6 +138,11 @@ export function ChatView({
   onRunIdChange,
   requiredPageContext,
   showComposerShortcutHint,
+  contextMessage,
+  starterSuggestions: contextualSuggestions,
+  readOnly = false,
+  readOnlyReason,
+  onWorkCompleted,
 }: ChatViewProps) {
   const browserAvailable = useDockNetworkActivity();
   const networkAvailable = browserAvailable && active;
@@ -128,6 +154,9 @@ export function ChatView({
   const [changingExecution, setChangingExecution] = useState(false);
   const [draftExecutionEnabled, setDraftExecutionEnabled] = useState(false);
   const [detail, setDetail] = useState<DockChatDetail | null>(cachedTranscript?.detail ?? null);
+  const taskDetailChanged = taskSurface?.onDetailChange;
+  useEffect(() => { taskDetailChanged?.(detail); }, [detail, taskDetailChanged]);
+  const taskError = taskSurface?.onError;
   const [detailLoading, setDetailLoading] = useState(!!chatId && !cachedTranscript);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [plans, setPlans] = useState<CommandBarPlanSummary[]>([]);
@@ -167,10 +196,12 @@ export function ChatView({
   const [atBottom, setAtBottom] = useState(true);
   const { pageContext, scopeOptions, activeScopeKey, setActiveScopeKey } = usePageContextState();
   const [contextCleared, setContextCleared] = useState(false);
-  // A context supplied by the source surface starts attached, but it must not
-  // trap the chat there. Clearing it affects only subsequent turns in this
-  // dock chat; it never changes the underlying support conversation.
-  const effectivePageContext = contextCleared ? null : (requiredPageContext ?? pageContext);
+  // Coverage threads keep their gap attached across navigation and follow-ups.
+  // Other source contexts retain the standard dock clearing behavior.
+  const coverageContext = requiredPageContext?.entity_type === 'support_coverage_gap'
+    ? requiredPageContext
+    : detail?.chat.coverage_gap_id ? { entity_type: 'support_coverage_gap' as const, entity_id: detail.chat.coverage_gap_id, display_title: detail.chat.title } : null;
+  const effectivePageContext = taskSurface ? null : coverageContext ?? (contextCleared ? null : (requiredPageContext ?? pageContext));
 
   useEffect(() => {
     if (!initialDraft) return;
@@ -202,6 +233,8 @@ export function ChatView({
 
   const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.id === workspaceId ? state.currentWorkspace.slug : undefined);
   const run = detail?.run ?? null;
+  useNotificationView(workspaceId, 'chat', chatId, active);
+  useNotificationView(workspaceId, 'run', run?.id, active);
   const executionEnabled = detail?.chat.execution_enabled ?? draftExecutionEnabled;
   const acceptedSelection = run?.input?.ai_selection;
   const acceptedProfileId = acceptedSelection && typeof acceptedSelection === 'object' && 'profile_id' in acceptedSelection && typeof acceptedSelection.profile_id === 'string'
@@ -438,9 +471,15 @@ export function ChatView({
     )), 0);
     return () => window.clearTimeout(timer);
   }, [sendError, sendErrorDelivered]);
+  const initialTaskMessage = taskSurface?.initialMessage;
   const transformed = useMemo(
-    () => (mergedStream ? transformDockStream(mergedStream, 'sequence') : null),
-    [mergedStream],
+    () => {
+      if (!mergedStream) return null;
+      const result = transformDockStream(mergedStream, 'sequence');
+      if (!initialTaskMessage) return result;
+      return { ...result, stream: { ...result.stream, transcript_messages: result.stream.transcript_messages.filter(message => !(message.role === 'user' && message.content.trim() === initialTaskMessage)) } };
+    },
+    [mergedStream, initialTaskMessage],
   );
   const visibleTurn = resolveVisibleTurn(transformed?.stream ?? null, launchStartedAt);
   const answerRecoveryKey = visibleTurn.answerPending || visibleTurn.missingAnswer
@@ -589,7 +628,7 @@ export function ChatView({
     if (node && autoFollowRef.current) node.scrollTop = node.scrollHeight;
   }, [transformed, currentPlan, visibleSendError]);
 
-  const effectiveInteraction = run?.pause_reason === 'manual' ? null : pendingInteraction ?? fallbackInteraction;
+  const effectiveInteraction = readOnly || run?.pause_reason === 'manual' ? null : pendingInteraction ?? fallbackInteraction;
   const dockConfirm = effectiveInteraction ? parseDockPlanConfirm(effectiveInteraction.request_payload) : null;
   const composer = resolveDockComposerState(
     run ? { status: run.status, pause_reason: run.pause_reason } : null,
@@ -599,7 +638,7 @@ export function ChatView({
 
   const sendContent = useCallback(
     async (content: string, messageReferences: DockEntityReference[] = references, retryClientMessageID?: string) => {
-      if (!content || sending || agentDefaultUnavailable) return;
+      if (readOnly || !content || sending || agentDefaultUnavailable) return;
       const clientMessageId = retryClientMessageID ?? newClientMessageID();
       const needsTitle = !detail?.chat.title.trim();
       setSending(true);
@@ -643,7 +682,7 @@ export function ChatView({
         if (res.error || !res.data) {
           setFailedClientMessageIds((current) => new Set([...current, clientMessageId]));
           setPendingEcho(null);
-          setSendError({ message: res.error ?? 'Failed to send message', content, references: messageReferences, clientMessageId });
+          if (!taskError?.(res.error)) setSendError({ message: res.error ?? 'Failed to send message', content, references: messageReferences, clientMessageId });
           return;
         }
 		if (res.data.accepted_message) {
@@ -691,6 +730,7 @@ export function ChatView({
         // Successor run: useAgentRunStream will reset and fetch with the returned
         // run id instead of invoking this render's predecessor refetch closure.
       } catch (error) {
+        if (taskError?.(error)) return;
         setFailedClientMessageIds((current) => new Set([...current, clientMessageId]));
         setPendingEcho(null);
         setSendError({
@@ -703,7 +743,7 @@ export function ChatView({
         setSending(false);
       }
     },
-    [agentDefaultUnavailable, aiConnection, chatId, currentUserId, detail?.chat.title, draftExecutionEnabled, effectivePageContext, mediaAttachments, mergedStream, onChatChanged, onCreateChat, references, refetch, refreshMessages, run, sending, workspaceId],
+    [taskError, readOnly, agentDefaultUnavailable, aiConnection, chatId, currentUserId, detail?.chat.title, draftExecutionEnabled, effectivePageContext, mediaAttachments, mergedStream, onChatChanged, onCreateChat, references, refetch, refreshMessages, run, sending, workspaceId],
   );
 
   const submit = async () => {
@@ -817,6 +857,13 @@ export function ChatView({
     }
   }, [cancellationPending, chatId, refetch, refreshDetail, workspaceId]);
 
+  const initialTaskSent = useRef(false);
+  useEffect(() => {
+    if (!taskSurface?.initialMessage || initialTaskSent.current || agentDefaultUnavailable || sending || run || !active) return;
+    initialTaskSent.current = true;
+    void sendContent(taskSurface.initialMessage, []);
+  }, [taskSurface?.initialMessage, agentDefaultUnavailable, sending, run, active, sendContent]);
+
   const resolveInteraction = useCallback(
     async (interactionId: string, payload: { response_payload: Record<string, unknown>; followup_message?: string }) => {
       if (!chatId) return { error: 'Chat is not ready' };
@@ -833,27 +880,16 @@ export function ChatView({
     [chatId, clearPendingInteraction, onChatChanged, refetch, refreshDetail, workspaceId],
   );
 
-  const activeSubAgentName = useMemo(() => {
-    for (const plan of plans) {
-      for (const [stepIndex, runId] of Object.entries(plan.run_ids_by_step ?? {})) {
-        const childRun = plan.runs?.find((candidate) => candidate.id === runId);
-        if (!childRun || !['queued', 'running'].includes(childRun.status)) continue;
-        return plan.steps[Number(stepIndex)]?.agent_name?.trim() || 'another agent';
-      }
-    }
-    return null;
-  }, [plans]);
-
   const liveProgress = useMemo(() => resolveAgentLiveProgress({
     run,
     stream: transformed?.stream ?? null,
     currentPlan,
-    activeSubAgentName,
+    delegatedPlans: plans,
     sending: sending || !!pendingEcho,
     localStartedAt: launchStartedAt,
-  }), [activeSubAgentName, currentPlan, launchStartedAt, run, sending, transformed, pendingEcho]);
+  }), [plans, currentPlan, launchStartedAt, run, sending, transformed, pendingEcho]);
 
-  const displayedLiveProgress = analyzingMedia ? {
+  const displayedLiveProgress: ReturnType<typeof resolveAgentLiveProgress> = analyzingMedia ? {
     label: analyzingMediaLabel || 'Analyzing attachment…',
     tone: 'working' as const,
     startedAt: launchStartedAt ?? new Date().toISOString(),
@@ -878,7 +914,7 @@ export function ChatView({
   });
 
   const starterSuggestions = !hasTranscriptMessages && !value.trim() && !sending && !pendingEcho
-    ? starterSuggestionsForContext(effectivePageContext?.entity_type)
+    ? contextualSuggestions ?? starterSuggestionsForContext(effectivePageContext?.entity_type)
     : [];
 
   const runsById = useMemo(() => {
@@ -903,12 +939,12 @@ export function ChatView({
       const resultEntry = resultByPlanID.get(plan.id);
       const resultSequence = resultEntry?.sequenceNo;
       const createdTimestamp = Date.parse(plan.created_at);
-      const active = plan.status === 'running';
+      const planRunning = plan.status === 'running';
       // A recent-plan response can reach farther back than the loaded message
       // page. Do not strand an old plan at the top of the visible page; reveal
       // it when its surrounding page/result marker is loaded.
       if (
-        !active
+        !planRunning
         && resultSequence === undefined
         && firstVisibleTimestamp !== null
         && Number.isFinite(createdTimestamp)
@@ -927,6 +963,7 @@ export function ChatView({
         runCount: Math.max(plan.run_count, plan.steps.length, 1),
         content: (
           <ExecutionStrip
+            active={active}
             kind="plan"
             workspaceId={workspaceId}
             plan={displayPlan}
@@ -935,17 +972,27 @@ export function ChatView({
         ),
       }];
     });
-  }, [plans, runsById, transformed, workspaceId]);
+  }, [active, plans, runsById, transformed, workspaceId]);
+
+  const settledWorkKey = [run && !ACTIVE_RUN_STATUSES.has(run.status) ? `${run.id}:${run.status}` : '', ...plans.filter(plan => ['completed', 'failed', 'cancelled'].includes(plan.status)).map(plan => `${plan.id}:${plan.status}`)].filter(Boolean).join('|');
+  const notifiedWorkKey = useRef('');
+  useEffect(() => {
+    if (!settledWorkKey || notifiedWorkKey.current === settledWorkKey) return;
+    notifiedWorkKey.current = settledWorkKey;
+    onWorkCompleted?.();
+  }, [settledWorkKey, onWorkCompleted]);
 
   const runtimeStream = transformed?.stream ?? streamState;
   const showRuntimeTimeline = isDockTranscriptStreaming(run)
     || (run?.status !== 'cancelled' && runtimeStream !== null && hasAuthoritativeDockRuntimeTimeline(runtimeStream));
+  const showIntroComposer = taskSurface?.emptyStateLayout === 'form'
+    && !detailLoading && !run && !pendingEcho && !sending && !hasTranscriptMessages;
 
   return (
     <DockInteractionLayer
       active={active}
       interactionId={effectiveInteraction?.interaction_id}
-      prompt={effectiveInteraction && (dockConfirm ? (
+      prompt={effectiveInteraction && <TaskSurfaceInteraction surface={taskSurface} interaction={effectiveInteraction} detail={detail} onResolve={resolveInteraction} fallback={dockConfirm ? (
         <DockPlanConfirmCard
           payload={dockConfirm}
           workspaceId={workspaceId}
@@ -965,11 +1012,12 @@ export function ChatView({
             void refetch();
           }}
         />
-      ) : null)}
+      ) : null} />}
     >
-      <div className="relative flex min-h-0 flex-1 flex-col">
-      <div ref={scrollRef} data-agent-dock-chat-scroll className={`${activityStyles.activityHost} min-h-0 flex-1 overflow-y-auto px-5 pb-24 pt-3 sm:px-6`}>
+      <div className={`relative flex min-h-0 flex-col ${showIntroComposer ? 'shrink-0' : 'flex-1'}`}>
+      <div ref={scrollRef} data-agent-dock-chat-scroll className={`${activityStyles.activityHost} min-h-0 overflow-y-auto ${showIntroComposer ? 'px-5 pb-3 pt-5 sm:px-6' : 'flex-1 px-5 pb-24 pt-3 sm:px-6'}`}>
       <div className="space-y-3">
+        {(detail?.chat.initial_context ?? contextMessage) && <DockContextMessage message={(detail?.chat.initial_context ?? contextMessage)!} compact={hasTranscriptMessages} />}
 		{nextMessagesBefore && (
 		  <div className="flex justify-center">
 		    <Button
@@ -996,9 +1044,9 @@ export function ChatView({
             <button type="button" className="font-semibold hover:underline" onClick={() => void refreshConversation()}>Retry</button>
           </div>
         )}
-        {!detailLoading && !run && !pendingEcho && !sending && !hasTranscriptMessages && (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            {requiredPageContext?.entity_type === 'support_conversation'
+        {!(detail?.chat.initial_context ?? contextMessage) && !detailLoading && !run && !pendingEcho && !sending && !hasTranscriptMessages && (
+          <p className={`${showIntroComposer ? 'text-left' : 'py-6 text-center'} text-sm text-muted-foreground`}>
+            {taskSurface ? taskSurface.emptyState : requiredPageContext?.entity_type === 'support_conversation'
               ? 'Ask about this conversation, draft a reply, investigate the issue, or have an agent take the next step.'
               : 'Ask a question about your workspace, or describe work for an agent to do.'}
           </p>
@@ -1016,11 +1064,13 @@ export function ChatView({
             fallbackActor={streamController.session?.triggered_by_user}
             savedWorkPlans={detail?.work_plans}
             subAgentRuns={subAgentTimelineItems}
+            liveProgress={displayedLiveProgress}
             compactAssistantProgress
           />
         )}
+        {taskSurface?.renderPreview && <TaskSurfacePreview render={taskSurface.renderPreview} detail={detail} interaction={effectiveInteraction} onChange={insertSuggestion} />}
         <DockArtifactDownloads workspaceId={workspaceId} artifacts={detail?.artifacts ?? []} />
-        {followUpSuggestions.length > 0 && (
+        {!taskSurface && followUpSuggestions.length > 0 && (
           <div className="mt-2 border-t border-border/40 pt-1" data-agent-follow-up-suggestions>
             {followUpSuggestions.map((suggestion) => (
               <Tooltip key={suggestion}>
@@ -1072,11 +1122,23 @@ export function ChatView({
             </div>
           </div>
         )}
+        {taskSurface && run?.status === 'failed' && !sending && (
+          <div role="alert" className="flex items-start justify-between gap-3 py-3 text-sm text-destructive">
+            <p>The agent couldn’t complete this request. Try sending your message again.</p>
+            {run.error_message && (
+              <Tooltip>
+                <TooltipTrigger asChild><button type="button" className="shrink-0 underline underline-offset-4">Details</button></TooltipTrigger>
+                <TooltipContent className="max-w-sm whitespace-normal break-words">{run.error_message}</TooltipContent>
+              </Tooltip>
+            )}
+          </div>
+        )}
         {displayedLiveProgress ? (
           <div
             className="mt-2 shrink-0 border-t border-border/40 px-1 pt-2"
             data-agent-live-status-region
             data-working={displayedLiveProgress.tone === 'working'}
+            data-delegated={displayedLiveProgress.delegated}
           >
             <AgentLiveStatus progress={displayedLiveProgress} />
           </div>
@@ -1089,10 +1151,11 @@ export function ChatView({
       {run?.status === 'paused' && run.pause_reason === 'authentication' && workspaceSlug && (
         <div className="px-3.5 py-2"><AISettingsLink slug={workspaceSlug} className="text-xs underline text-quiet-text-secondary">Review AI access to continue</AISettingsLink></div>
       )}
-      {composer.visible && (
-        <div className="border-t border-border/60">
+      {readOnly && readOnlyReason && <p className="border-t border-border/40 px-5 py-3 text-xs text-muted-foreground">{readOnlyReason}</p>}
+      {composer.visible && !readOnly && (
+        <div data-chat-composer-placement={showIntroComposer ? 'intro' : 'bottom'} className={showIntroComposer ? 'flex shrink-0 flex-col px-5 sm:px-6' : 'border-t border-border/60'}>
           {starterSuggestions.length > 0 && composer.enabled && (
-            <div className="px-3.5 pt-2" data-agent-starter-suggestions>
+            <div className={showIntroComposer ? 'order-last pt-3' : 'px-3.5 pt-2'} data-agent-starter-suggestions>
               <div className="flex flex-wrap gap-1.5">
                 {starterSuggestions.map((suggestion) => (
                   <button
@@ -1110,10 +1173,12 @@ export function ChatView({
               </div>
             </div>
           )}
-          <div className="p-2">
+          <div className={showIntroComposer ? '-mx-3.5' : 'p-2'}>
               <DockInput
+                voiceIdentity={chatId ?? 'draft'}
+                active={active}
                 mode="conversation"
-                executionPicker={(!chatId || (detail && detail.chat.user_id === currentUserId)) ? (
+                executionPicker={!taskSurface && !coverageContext && (!chatId || (detail && detail.chat.user_id === currentUserId)) ? (
                   <DockExecutionPicker
                     enabled={Boolean(executionEnabled)}
                     disabled={executionPickerDisabled}
@@ -1132,16 +1197,16 @@ export function ChatView({
                 onChange={setValue}
                 onSubmit={() => void submit()}
                 pageContext={effectivePageContext}
-                contextOptions={requiredPageContext ? [] : scopeOptions}
+                contextOptions={taskSurface || requiredPageContext ? [] : scopeOptions}
                 activeContextKey={activeScopeKey}
                 onContextKeyChange={(key) => {
                   setContextCleared(false);
                   setActiveScopeKey(key);
                 }}
-                onClearContext={() => setContextCleared(true)}
+                onClearContext={coverageContext ? undefined : () => setContextCleared(true)}
                 workspaceId={workspaceId}
                 references={references}
-                onAddReference={(reference) => {
+                onAddReference={taskSurface ? undefined : (reference) => {
                   setReferences((current) => {
                     if (current.length >= 10) {
                       toast.error('You can attach up to 10 references.');
@@ -1159,7 +1224,7 @@ export function ChatView({
                   ));
                 }}
                 mediaAttachments={mediaAttachments}
-                onAddMedia={(files) => void addMediaAttachments(files)}
+                onAddMedia={taskSurface ? undefined : (files) => void addMediaAttachments(files)}
                 onRemoveMedia={removeMediaAttachment}
                 busy={sending}
                 disabled={!composer.enabled}
@@ -1171,7 +1236,7 @@ export function ChatView({
                 pausing={pausePending}
                 onResume={canResume && !cancellationPending ? () => void handleResume() : undefined}
                 resuming={resumePending}
-                placeholder={cancellationPending ? 'Stopping agent…' : pausePending ? 'Pausing agent…' : resumePending ? 'Resuming agent…' : undefined}
+                placeholder={cancellationPending ? 'Stopping agent…' : pausePending ? 'Pausing agent…' : resumePending ? 'Resuming agent…' : taskSurface?.placeholder}
                 showShortcutHint={showComposerShortcutHint}
               />
           </div>
@@ -1179,4 +1244,25 @@ export function ChatView({
       )}
     </DockInteractionLayer>
   );
+}
+
+// Component boundaries keep event callbacks out of render-prop evaluation in
+// the parent, including callbacks that consult the current conversation refs.
+function TaskSurfacePreview({render,detail,interaction,onChange}: {
+  render: NonNullable<ChatTaskSurface['renderPreview']>;
+  detail: DockChatDetail | null;
+  interaction: CodingSessionInteraction | null;
+  onChange: (message: string) => void;
+}) {
+  return render(detail,interaction,onChange);
+}
+
+function TaskSurfaceInteraction({surface,detail,interaction,onResolve,fallback}: {
+  surface?: ChatTaskSurface;
+  detail: DockChatDetail | null;
+  interaction: CodingSessionInteraction;
+  onResolve: Parameters<NonNullable<ChatTaskSurface['renderInteraction']>>[2];
+  fallback: ReactNode;
+}) {
+  return surface?.renderInteraction?.(interaction,detail,onResolve) ?? fallback;
 }

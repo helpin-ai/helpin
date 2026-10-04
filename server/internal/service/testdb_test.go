@@ -146,6 +146,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
 			name TEXT NOT NULL,
+			color TEXT,
 			handle TEXT,
 			description TEXT,
 			manager_id TEXT,
@@ -508,6 +509,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			url TEXT,
 			is_uploaded BOOLEAN NOT NULL DEFAULT 0,
 			uploaded_by_id TEXT,
+			uploaded_by_agent_id TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

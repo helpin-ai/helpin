@@ -1,18 +1,20 @@
+import { AskAgentAvatar } from '@/components/agents/AskAgentAvatar';
 import { useState, type ReactNode } from 'react';
 import type { AIActivity } from './supportAIActivity';
 import type { SupportMessage } from '@/lib/pmTypes';
-import { BotIcon } from '@/lib/icons';
-import { formatMessageTime, formatTimestamp } from './helpers';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { formatMessageTime, formatTimestamp, getAvatarColor, getInitial } from './helpers';
 
 function handoffSections(content: string) {
   const match = content.match(/^AI handoff\n\nIssue\n([\s\S]*?)\n\nAlready tried \/ suggested\n([\s\S]*?)\n\nStill unresolved\n([\s\S]*?)\n\nReason for handoff\n([\s\S]*)$/);
   return match ? { issue: match[1], checked: match[2], next: match[3], reason: match[4] } : null;
 }
 
-export function SupportAIActivity({ message, activity, teammateName, detailsContent }: {
+export function SupportAIActivity({ message, activity, teammateName, avatarUrl, detailsContent }: {
   message: SupportMessage;
   activity: AIActivity;
   teammateName?: string;
+  avatarUrl?: string;
   detailsContent?: ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -28,11 +30,23 @@ export function SupportAIActivity({ message, activity, teammateName, detailsCont
   );
 
   if (activity !== 'handoff') {
-    return <div className="my-4 text-xs text-muted-foreground" data-support-ai-activity>
-      <div className="flex flex-wrap items-center justify-center gap-2">
-        <BotIcon className="size-3.5 shrink-0" aria-hidden="true" />
-        <span>{actor} {activity === 'pause' ? 'paused AI' : 'returned the conversation to AI'}.</span>
-        {time}
+    return <div className="my-5 text-xs text-muted-foreground" data-support-ai-activity>
+      <div className="flex items-center justify-center">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div data-support-system-callout tabIndex={0} className="flex min-w-0 max-w-full items-center gap-2 rounded-full px-3 py-1 [overflow-wrap:anywhere] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              {avatarUrl ? (
+                <img src={avatarUrl} alt={name || actor} className="h-5 w-5 shrink-0 rounded-full object-cover" />
+              ) : (
+                <div aria-label={name || actor} className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold leading-none ${getAvatarColor(message.sender_user_id || name || actor)}`}>
+                  {getInitial(name || actor)}
+                </div>
+              )}
+              <span className="min-w-0">{actor} {activity === 'pause' ? <strong className="font-semibold">Paused AI</strong> : 'returned the conversation to AI'}.</span>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="top"><div className="text-xs">{formatTimestamp(message.created_at)}</div></TooltipContent>
+        </Tooltip>
       </div>
       {activity === 'return' && <p className="mt-1 text-center">AI will respond to the next customer message.</p>}
       {message.message_type === 'note' && activity === 'pause' && <div className="mx-auto max-w-lg">{details('View original note')}</div>}
@@ -44,7 +58,7 @@ export function SupportAIActivity({ message, activity, teammateName, detailsCont
   return <div className="my-4 flex justify-end" data-support-ai-handoff>
     <section aria-label="AI handoff summary" className="w-full max-w-lg rounded-lg border border-amber-200/70 bg-amber-50/60 p-3 dark:border-amber-900/50 dark:bg-amber-950/20">
       <div className="mb-2 flex items-center gap-2">
-        <BotIcon className="size-3.5 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+        <AskAgentAvatar plateStyle="solid" radius={50} className="h-5 w-5 shrink-0" />
         <span className="text-xs font-semibold">AI handoff</span>
         <span className="text-[11px] text-muted-foreground">Team only</span>
         <span className="ml-auto">{time}</span>

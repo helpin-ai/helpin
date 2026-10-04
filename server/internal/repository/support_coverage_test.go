@@ -262,6 +262,58 @@ func setupSupportCoverageTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func TestSupportCoverageImpactSeparatesRecordsConversationsAndKnownCustomers(t *testing.T) {
+	db := setupSupportCoverageTestDB(t)
+	repo := NewSupportCoverageRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+	gap := model.SupportCoverageGap{ID: "impact-gap", WorkspaceID: "ws-1", DedupeKey: "impact", Title: "Impact", Status: "open", Metadata: json.RawMessage(`{}`), FirstSeenAt: now, LastSeenAt: now}
+	if err := db.Create(&gap).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO support_conversations (id, workspace_id, customer_email) VALUES ('recent', 'ws-1', 'one@example.com'), ('old', 'ws-1', 'old@example.com'), ('foreign', 'ws-2', 'foreign@example.com')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	for i, conv := range []string{"recent", "recent", "old", "foreign", ""} {
+		ev := model.SupportGapEvidence{ID: fmt.Sprintf("impact-%d", i), WorkspaceID: "ws-1", GapID: gap.ID, EvidenceType: "daily_conversation_analysis", CreatedAt: now}
+		if conv != "" {
+			ev.ConversationID = &conv
+		}
+		if conv == "old" {
+			ev.CreatedAt = now.Add(-40 * 24 * time.Hour)
+		}
+		if err := repo.CreateEvidence(ctx, &ev); err != nil {
+			t.Fatal(err)
+		}
+	}
+	items, _, err := repo.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail, err := repo.GetGapDetail(ctx, "ws-1", gap.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, payload := range []any{items[0], detail} {
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got map[string]any
+		if err := json.Unmarshal(raw, &got); err != nil {
+			t.Fatal(err)
+		}
+		for key, expected := range map[string]float64{"evidence_all": 5, "evidence_records_30d": 4, "conversations_all": 3, "conversations_30d": 2, "distinct_customers_30d": 1, "distinct_customers_all": 2} {
+			if got[key] != expected {
+				t.Errorf("%T: %s = %v, want %v", payload, key, got[key], expected)
+			}
+		}
+		if explanation, _ := got["impact_explanation"].(string); !strings.Contains(explanation, "last 30 days") || strings.Contains(explanation, "5 conversations") {
+			t.Errorf("misleading impact: %q", explanation)
+		}
+	}
+}
+
 func TestSupportCoverageActionableBonusExprUsesPostgresBooleanLiteral(t *testing.T) {
 	expr := supportCoverageActionableBonusExpr("postgres")
 
@@ -728,7 +780,7 @@ func TestSupportCoverageRepositoryListGapsRanksByExplainableImpact(t *testing.T)
 	if items[0].ImpactScore <= items[1].ImpactScore {
 		t.Fatalf("impact scores not ranked: first=%f second=%f", items[0].ImpactScore, items[1].ImpactScore)
 	}
-	if items[0].ImpactExplanation == "" || !strings.Contains(items[0].ImpactExplanation, "4 customers") || !strings.Contains(items[0].ImpactExplanation, "no nearby content") {
+	if items[0].ImpactExplanation == "" || !strings.Contains(items[0].ImpactExplanation, "4 known customers") || !strings.Contains(items[0].ImpactExplanation, "no nearby content") {
 		t.Fatalf("impact explanation missing components: %q", items[0].ImpactExplanation)
 	}
 }

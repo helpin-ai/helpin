@@ -1,4 +1,5 @@
 import { Collapsible } from 'radix-ui';
+import { TeamBadge } from '@/components/workspace/TeamBadge';
 import { ArrowRight01Icon, MoreVerticalIcon, ArrowReloadHorizontalIcon, Setting06Icon, PlusSignIcon } from '@/lib/icons';
 import {
   DropdownMenu,
@@ -23,6 +24,7 @@ import { SidebarSectionAction } from './SidebarSectionAction';
 type Team = {
   id: string;
   name: string;
+  color?: string | null;
   sprints_enabled?: boolean;
 };
 
@@ -92,15 +94,19 @@ export function ProjectsTeamsNav({
                 <div className="group/team relative flex items-center">
                   <Collapsible.Trigger asChild>
                     <SidebarMenuButton className="h-8 flex-1 rounded-md px-2 cursor-pointer">
-                      <ArrowRight01Icon className={`h-3.5 w-3.5 shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-                      <span className="truncate">{team.name}</span>
+                      <TeamBadge name={team.name} color={team.color} className="h-[20px] w-[20px] rounded-[4px] text-xs" />
+                      <span className="min-w-0 flex-1 truncate pr-5">{team.name}</span>
+                      <span data-team-chevron aria-hidden="true" className="-mr-0.5 flex h-5 w-5 shrink-0 items-center justify-center">
+                        <ArrowRight01Icon className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                      </span>
                     </SidebarMenuButton>
                   </Collapsible.Trigger>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button
                         type="button"
-                        className="absolute right-1 flex h-5 w-5 items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted group-hover/team:opacity-100 data-[state=open]:opacity-100"
+                        aria-label={`Team actions for ${team.name}`}
+                        className="absolute right-7 flex h-5 w-5 items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted group-hover/team:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
                       >
                         <MoreVerticalIcon className="h-3.5 w-3.5 text-muted-foreground" />
                       </button>

@@ -1,3 +1,4 @@
+import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { QuietDropdown } from '@/components/design-system/quiet-dropdown';
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -657,7 +658,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                   </SelectTrigger>
                   <SelectContent>
                     {teams.map((t) => (
-                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                      <SelectItem key={t.id} value={t.id}><TeamLabel team={t} /></SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -1112,7 +1113,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                   </SelectTrigger>
                   <SelectContent>
                     {teams.filter((t) => t.sprints_enabled !== false).map((t) => (
-                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                      <SelectItem key={t.id} value={t.id}><TeamLabel team={t} /></SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

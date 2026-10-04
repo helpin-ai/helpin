@@ -2,6 +2,37 @@
 
 Unified platform for project management, CRM, customer support, knowledge, and AI-assisted execution. The Community 0.1 beta ships the support, docs, and agents modules; see [ROADMAP.md](ROADMAP.md).
 
+## Community and cloud boundaries
+
+Helpin ships both open-source Community and hosted cloud editions. Before every
+change, classify code, configuration, migrations, docs, fixtures, and assets as
+shared Community, Enterprise/cloud-only, or private operational material. Follow
+[edition architecture](ARCHITECTURE.md#editions-and-module-availability),
+[LICENSE](LICENSE), and the [publication gate](community/PUBLICATION.md).
+
+- Keep shared product behavior usable in both editions. Put subscription billing,
+  commercial pricing/charging, payment UI, and hosted entitlements in the existing
+  `server/ee/` and `frontend/src/ee/` implementations behind edition contracts.
+  Community must work without EE source, billing tables, or Helpin-managed credentials.
+- Build tags, feature flags, hidden UI, and Enterprise licenses do not make tracked
+  source private. A push to any branch of a public repository exposes its files
+  and reachable history, including docs, screenshots, fixtures, and workflow data.
+  Keep credentials, customer data, private strategy, and private cloud operations
+  out of this repository; do not copy them into plans or review evidence.
+- If feature ownership or public visibility is unclear, ask the owner before
+  implementing the disputed boundary or committing/pushing the material. Do not
+  infer open-source approval from a cloud deployment request or a prior push.
+  Continue independent, clearly classified work while the decision is pending.
+- Before pushing, inspect the full outgoing commit range, not only the last diff.
+  Verify affected behavior in both editions; for boundary changes run
+  `scripts/check-community-backend.sh`, `scripts/check-community-frontend.sh`,
+  relevant `go test -tags ee` checks, and the hosted frontend build/tests.
+  Run `python3 scripts/ci/check_secrets.py`; its passing result is not a complete
+  history, personal-data, or confidentiality review. Record scope and limitations.
+- Never change repository visibility, rewrite published history, move EE source
+  into the open-source scope, or publish unresolved material without an explicit
+  owner decision. Follow the publication gate for releases and public exports.
+
 ## Small Fix Workflow
 
 For small, well-scoped fixes, do not create or modify plan, specification, or design documents unless the user explicitly requests them. Inspect the issue, implement the fix, verify it, and commit it directly. Reserve planning, specification, and design documents for substantial multi-step work or explicit user requests.
@@ -14,14 +45,23 @@ The shared convention is `docs/documentation-guide.md`. Keep guide names lowerca
 and hyphenated, update incoming references on renames, and validate documentation
 with the checks described there.
 
-## Website copy
+## Website
 
-For Helpin marketing copy drafts, audits, and implementation, use
-[`helpin-website-copy`](.agents/skills/helpin-website-copy/SKILL.md).
+For the marketing site in `website/` (helpin.ai), use the three website skills:
+
+- [`helpin-website-copy`](.agents/skills/helpin-website-copy/SKILL.md) for
+  voice, house style, positioning, claims, and copy drafts, audits, or edits.
+- [`helpin-website-pages`](.agents/skills/helpin-website-pages/SKILL.md) for
+  page structure, shared components, SEO metadata, QA, and release.
+- [`helpin-website-visuals`](.agents/skills/helpin-website-visuals/SKILL.md)
+  for product imagery, heroes, videos, and motion.
+
 Preserve the existing page structure and distinguish editorial direction from
 release-specific product evidence. A draft request does not authorize website
-edits. Read maintained product-truth and page-progress records when available;
-use the skill's templates only when initialization is requested or appropriate.
+edits. Product facts and owner decisions the site may state live in
+[`docs/website-copy/product-truth.yaml`](docs/website-copy/product-truth.yaml);
+code sources such as `website/src/app/pricing/pricing-data.ts` win when they
+disagree.
 
 ## Architecture
 

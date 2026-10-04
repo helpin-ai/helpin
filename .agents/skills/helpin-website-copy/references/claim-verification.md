@@ -16,6 +16,16 @@ Use this reference to decide whether a claim is ready for the intended release. 
 
 Record claim, source path or URL, revision/release, deployment scope, date checked, status, qualifier, and remaining conflict. Do not store secrets or private customer excerpts in the evidence register.
 
+## Claims about other products
+
+Comparison copy carries the most legal and trust risk. Before naming another product:
+
+- Use the product's own pricing pages and documentation, checked on a recorded date. Reviews and third-party roundups can point you somewhere but are not evidence on their own.
+- Quote list prices with the billing period and currency, and say what the comparison leaves out (add-ons, usage, taxes).
+- Don't say a product lacks something unless its documentation confirms it. Prefer describing what Helpin does. When the other product has a similar feature, credit it: for example, Intercom and Zendesk both draft help-center content from support conversations, and Zendesk accepts your own OpenAI key through Marketplace apps or its API.
+- Treat competitor facts as stale after about 90 days, and re-check them before any edit that touches them.
+- Refer to other products by name only; never use their logos or brand marks.
+
 ## Conflicts and unknowns
 
 A broken public link means the link could not be verified; it does not establish that the feature is unavailable. A product owner's offering decision may differ from an older release guide. Preserve the decision and identify the release conflict privately rather than silently narrowing or expanding the offering.

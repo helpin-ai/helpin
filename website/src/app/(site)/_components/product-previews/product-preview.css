@@ -52,10 +52,6 @@
 .hp3 .product-preview[data-product="projects"][data-theme="light"] .product-preview-viewport { background: #f6f6f7; border-color: #e4e4e7; }
 .hp3 .product-preview[data-product="projects"][data-theme="light"] .project-hero-art-label { background: #f6f6f7; }
 
-/* The pinned frame must not consume page scrolling for a few pixels of outer
-   overflow. Each demo keeps its own scrollable message, table, or document pane. */
-.hp3 .is-scroll-driven .product-preview-viewport { overflow: clip; overscroll-behavior-y: auto; }
-
 /* A tab revisit resumes the delivery state instead of replaying the hero's
    delayed board-to-task entrance. Card movement and delivery steps still play. */
 .hp3 .product-preview[data-product="projects"] .project-hero-art .project-hero-board,
@@ -63,3 +59,7 @@
 
 .hp3 .product-preview[data-product="agents"] .adp { max-width: none; }
 .hp3 .product-preview[data-product="agents"] .adp-frame { height: calc(var(--preview-height) - 2px); border: 0; border-radius: 0; }
+
+.hp3 .product-preview[data-workflow=true][data-product=knowledge] .product-preview-canvas{display:flex;align-items:center;justify-content:center;background:#f4f7f5;padding:16px}.hp3 .product-preview[data-workflow=true] .work-scene{width:min(600px,100%)}.hp3 .product-preview[data-workflow=true] .ws-story-body{min-height:440px}.hp3 .product-preview[data-workflow=true] .work-scene .ws-top button{display:none}.hp3 .product-preview[data-product=projects] .project-hero-stage{height:calc(var(--preview-height) - 28px)}
+/* The homepage tour owns timing; its embedded demos do not add another control. */
+.hp3 .product-preview[data-workflow=true] button:is([aria-label^="Pause "],[aria-label^="Play "]){display:none}

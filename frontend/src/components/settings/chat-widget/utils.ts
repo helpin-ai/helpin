@@ -1,7 +1,7 @@
 import { getAIReplyChannels } from './responseModes';
 import type { BusinessHoursDay, SupportInboxSettings } from '@/lib/pmTypes';
 import type { WidgetConfig } from '@helpin-ai/widget-core';
-import { formatReplyTimeCopy } from '@helpin-ai/shared';
+import { DEFAULT_PRIVACY_NOTICE_TEXT, formatReplyTimeCopy } from '@helpin-ai/shared';
 import { DEFAULT_DELAYED_TEAM_REPLY_MINUTES, DEFAULT_DELAYED_TEAM_REPLY_MESSAGE, DEFAULT_DELAYED_TEAM_REPLY_MESSAGE_NO_EMAIL } from './delayedTeamReply';
 import { DAYS, DEFAULT_BUSINESS_HOURS_DAY } from './constants';
 import { getChatWidgetAIResponseModeForUI, isChatWidgetAIResponseModeActive } from './responseModes';
@@ -204,6 +204,9 @@ export function buildSettingsDraftFromServer(settings: SupportInboxSettings): Ch
 
   return {
     ...rest,
+    privacy_notice_enabled: rest.privacy_notice_enabled ?? false,
+    privacy_policy_url: rest.privacy_policy_url ?? '',
+    privacy_notice_text: rest.privacy_notice_text || DEFAULT_PRIVACY_NOTICE_TEXT,
     ai_follow_up_enabled: rest.ai_follow_up_enabled ?? false,
     ai_follow_up_delay_hours: rest.ai_follow_up_delay_hours ?? 24,
     ai_follow_up_close_hours: rest.ai_follow_up_close_hours ?? 48,

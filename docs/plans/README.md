@@ -185,3 +185,5 @@ Implementation plans, progress notes, and audits. Dated documents record the sta
 - [Support Unread Badges and Read Tracking Plan](support-unread-badges-and-read-tracking-plan.md)
 - [Test Suite, CI, and Email E2E Plan](test-suite-ci-email-plan.md)
 - [Widget Messenger Security Implementation Plan](widget-messenger-security-implementation-plan.md)
+
+- [Agent Voice Input](2026-10-01-agent-voice-input.md)

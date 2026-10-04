@@ -304,9 +304,16 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		}
 	}
 	note := buildSupportHandoffNote(conv, history, reason, brief, now)
-	messages := []*model.SupportMessage{replyMsg, escalationSystemMsg}
+	messages := []*model.SupportMessage{replyMsg, escalationSystemMsg, note}
 	if systemEventForEscalationReason(reason) == model.SystemEventCustomerRequestedHuman {
-		messages = []*model.SupportMessage{escalationSystemMsg, replyMsg}
+		messages = []*model.SupportMessage{escalationSystemMsg, note, replyMsg}
+	}
+	// Keep the handoff brief immediately after its event, including when the
+	// browser compares timestamps at millisecond precision.
+	for index, message := range messages {
+		if message != nil {
+			message.CreatedAt = now.Truncate(time.Millisecond).Add(time.Duration(index) * time.Millisecond)
+		}
 	}
 	oldRun, changed, err := s.conversationRepo.ChangeAIControl(ctx, workspaceID, conversationID, func(current *model.SupportConversation) (map[string]any, *model.SupportMessage, error) {
 		if brief.ExpectedControlVersion != nil && (current.AIControlVersion != *brief.ExpectedControlVersion || derefString(current.LastPublicMessageID) != brief.ExpectedMessageID || model.SupportAIConversationBlocked(current) || supportConversationHumanOwned(current)) {
@@ -318,7 +325,7 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		if current.AnonymizedAt != nil || (current.HumanTakeover != nil && *current.HumanTakeover) || derefString(current.AIState) == "escalated" {
 			return nil, nil, nil
 		}
-		return fields, note, nil
+		return fields, nil, nil
 	}, messages...)
 	if err != nil {
 		return fmt.Errorf("update conversation for escalation: %w", err)
@@ -328,7 +335,17 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 	}
 	s.cancelControlledRun(ctx, workspaceID, conversationID, oldRun)
 	s.localizeSupportHandoffNote(ctx, note)
-	s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, note, "ai:handoff"))
+	// Use the same order for persistence and live updates.
+	for _, message := range messages {
+		if message == nil {
+			continue
+		}
+		actor := "ai:escalation"
+		if message == note {
+			actor = "ai:handoff"
+		}
+		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, message, actor))
+	}
 	if selection != nil && strings.TrimSpace(selection.UserID) != "" && s.assignmentSystemMessageEmitter != nil {
 		s.assignmentSystemMessageEmitter(ctx, workspaceID, conversationID, selection.UserID)
 	}
@@ -390,18 +407,7 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 	}
 	s.recordSupportEvent(handoffEvent)
 
-	// 4. Broadcast events
-	// Publish in persisted order so inbox clients that refetch on either signal
-	// render the same sequence as a later full reload.
-	if escalationSystemMsg != nil && systemEventForEscalationReason(reason) == model.SystemEventCustomerRequestedHuman {
-		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, escalationSystemMsg, "ai:escalation"))
-	}
-	if replyMsg != nil {
-		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, replyMsg, "ai:escalation"))
-	}
-	if escalationSystemMsg != nil && systemEventForEscalationReason(reason) != model.SystemEventCustomerRequestedHuman {
-		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, escalationSystemMsg, "ai:escalation"))
-	}
+	// 4. Broadcast the conversation state change.
 	escalatedData, _ := json.Marshal(map[string]any{
 		"conversation_id":    conversationID,
 		"flow_state":         fields["flow_state"],

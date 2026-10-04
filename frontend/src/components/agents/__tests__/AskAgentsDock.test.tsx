@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
+import { isViewingNotificationTarget } from '@/lib/notificationView';
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AskAgentsDock } from '../AskAgentsDock';
+import { FlowBuilderDrawer } from '@/components/automation/FlowBuilderDrawer';
 import { PageContextProvider } from '@/components/command-bar/pageContext';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -11,6 +13,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useDockStore } from '@/stores/dockStore';
 import type { DockChat, DockChatDetail, DockRunSummary } from '@/lib/dockTypes';
 import type { CommandBarPageContext, CommandBarPlanSummary } from '@/lib/pmTypes';
+import type { FlowTemplateManifest } from '@/lib/pmTypes';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 (globalThis as typeof globalThis & { ResizeObserver: typeof ResizeObserver }).ResizeObserver = class ResizeObserver {
@@ -28,6 +31,7 @@ const mocks = vi.hoisted(() => ({
 	toastSuccess: vi.fn(),
   listChats: vi.fn(),
   findSupportConversationChat: vi.fn(),
+  findCoverageGapChat: vi.fn(),
   createChat: vi.fn(),
   getChat: vi.fn(),
   updateChat: vi.fn(),
@@ -64,6 +68,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/components/agents/AIConnectionPicker', () => ({ AIConnectionPicker: mocks.aiPicker }));
 vi.mock('@/hooks/queries/useAskAgentDefaults', () => ({ useAskAgentDefaults: mocks.useAskAgentDefaults }));
 vi.mock('@/hooks/queries/useAIProfiles', () => ({ useAIProfiles: () => ({ data: [] }) }));
+// Voice capture is covered by the provider-backed DockInput voice tests.
+vi.mock('@/hooks/useVoiceComposer', () => ({
+  useVoiceComposer: () => ({ busy: false, microphone: null, feedback: null, cancel: vi.fn() }),
+}));
 
 vi.mock('@/lib/helpin', () => ({ resetHelpinIdentity: vi.fn() }));
 
@@ -78,7 +86,9 @@ vi.mock('@/lib/services/dockChatService', () => ({
   dockChatService: {
     listChats: mocks.listChats,
     findSupportConversationChat: mocks.findSupportConversationChat,
+    findCoverageGapChat: mocks.findCoverageGapChat,
     createChat: mocks.createChat,
+    createFlowBuilder: mocks.createChat,
     getChat: mocks.getChat,
     updateChat: mocks.updateChat,
     sendMessage: mocks.sendMessage,
@@ -193,6 +203,7 @@ beforeEach(() => {
   });
   useAuthStore.setState({ user: { id: 'user-1', email: 'owner@example.com' } as never });
   mocks.listChats.mockResolvedValue({ data: { chats: [CHAT] }, error: null });
+  mocks.findCoverageGapChat.mockResolvedValue({ data: null, error: null });
   mocks.findSupportConversationChat.mockResolvedValue({ data: null, error: null });
   mocks.createChat.mockResolvedValue({ data: null, error: 'not configured' });
   mocks.listRuns.mockResolvedValue({ data: { runs: [], attention_count: 0 }, error: null });
@@ -241,6 +252,74 @@ async function renderDock() {
   await flush();
 }
 
+it('starts a custom flow with the Ask Agent composer under the introduction and switches to chat on submit', async () => {
+  mocks.createChat.mockImplementation(() => new Promise(() => {}));
+  await act(async () => {
+    root.render(
+      <TooltipProvider>
+        <PageContextProvider>
+          <FlowBuilderDrawer workspaceId="ws-1" open onOpenChange={vi.fn()} agents={[]} workflows={[]} onSaved={vi.fn()} initialBrief="Summarize our work every Monday" />
+        </PageContextProvider>
+      </TooltipProvider>,
+    );
+  });
+  const textarea = document.body.querySelector<HTMLTextAreaElement>('textarea')!;
+  await waitForCondition(() => textarea.value === 'Summarize our work every Monday', 'initial flow brief was not inserted');
+  expect(textarea.value).toBe('Summarize our work every Monday');
+  expect(document.body.textContent).toContain('What would you like to automate?');
+  expect(document.querySelector('[data-chat-composer-placement="intro"]')?.contains(textarea)).toBe(true);
+  expect(document.querySelector('[data-composer-actions]')).not.toBeNull();
+  await act(async () => {
+    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  });
+  expect(mocks.createChat).toHaveBeenCalledTimes(1);
+  expect(document.querySelector('[data-chat-composer-placement="intro"]')).toBeNull();
+  expect(document.body.textContent).toContain('Summarize our work every Monday');
+});
+
+it('tracks an open flow builder for notification suppression and releases it when closed', async () => {
+  const focus = vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+  const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+  const detail = chatDetail({ run: { id: 'builder-run', status: 'paused' } as DockChatDetail['run'] });
+  mocks.createChat.mockResolvedValue({ data: CHAT, error: null });
+  mocks.getChat.mockResolvedValue({ data: detail, error: null });
+  mocks.sendMessage.mockResolvedValue({ data: detail, error: null });
+  const renderBuilder = (open: boolean) => <TooltipProvider><PageContextProvider>
+    <FlowBuilderDrawer workspaceId="ws-1" open={open} onOpenChange={vi.fn()} agents={[]} workflows={[]} onSaved={vi.fn()} template={{ key: 'review_merged_prs', name: 'Review merged PRs' } as FlowTemplateManifest} />
+  </PageContextProvider></TooltipProvider>;
+  try {
+    await act(async () => root.render(renderBuilder(true)));
+    await waitForCondition(() => isViewingNotificationTarget('ws-1', 'chat', CHAT.id), 'flow builder was not registered as visible');
+    await waitForCondition(() => isViewingNotificationTarget('ws-1', 'run', 'builder-run'), 'flow run was not registered after loading');
+    await act(async () => root.render(renderBuilder(false)));
+    expect(isViewingNotificationTarget('ws-1', 'chat', CHAT.id)).toBe(false);
+    expect(isViewingNotificationTarget('ws-1', 'run', 'builder-run')).toBe(false);
+  } finally {
+    focus.mockRestore();
+    visibility.mockRestore();
+  }
+});
+
+it('shows a failed template run instead of leaving the flow builder blank', async () => {
+  const failed = chatDetail({ run: { id: 'failed-builder', status: 'failed', error_message: 'Required skill tool is unavailable' } as DockChatDetail['run'] });
+  mocks.createChat.mockResolvedValue({ data: CHAT, error: null });
+  mocks.getChat.mockResolvedValue({ data: failed, error: null });
+  mocks.sendMessage.mockResolvedValue({ data: failed, error: null });
+  await act(async () => {
+    root.render(
+      <TooltipProvider>
+        <PageContextProvider>
+          <FlowBuilderDrawer workspaceId="ws-1" open onOpenChange={vi.fn()} agents={[]} workflows={[]} onSaved={vi.fn()} template={{ key: 'review_merged_prs', name: 'Review merged PRs' } as FlowTemplateManifest} />
+        </PageContextProvider>
+      </TooltipProvider>,
+    );
+  });
+  await waitForCondition(() => mocks.sendMessage.mock.calls.length === 1, 'template setup was not submitted');
+  await waitForCondition(() => document.querySelector('[role="alert"]') !== null, 'failed template run was not shown');
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain('The agent couldn’t complete this request');
+  expect(document.querySelector('[data-chat-composer-placement="intro"]')).toBeNull();
+});
+
 async function renderDockWithHiddenTrigger() {
   await act(async () => {
     root.render(
@@ -266,7 +345,8 @@ async function renderEmbeddedDock(
           <AskAgentsDock
             presentation="embedded"
             requiredPageContext={requiredPageContext}
-            associatedSupportConversationId={requiredPageContext.entity_id}
+            associatedSupportConversationId={requiredPageContext.entity_type === 'support_coverage_gap' ? undefined : requiredPageContext.entity_id}
+            associatedCoverageGapId={requiredPageContext.entity_type === 'support_coverage_gap' ? requiredPageContext.entity_id : undefined}
             active={active}
             onClose={onClose}
           />
@@ -533,6 +613,26 @@ describe('AskAgentsDock', () => {
       'global Ask Agents panel did not open',
     );
     expect(useDockStore.getState().collapsed).toBe(false);
+  });
+
+  it('opens a saved gap thread with source links without executing a run', async () => {
+    useWorkspaceStore.setState({ currentWorkspace: { id: 'ws-1', name: 'Acme', slug: 'workspace' } as never });
+    const gapChat: DockChat = { ...CHAT, coverage_gap_id: 'gap-1', initial_context: {
+      content: 'Customers need invoice corrections. The help center has no correction process.',
+      captured_at: '2026-09-30T10:00:00Z',
+      references: [{ entity_type: 'support_conversation', entity_id: 'conv-42', display_title: 'Invoice correction request' }],
+    } };
+    mocks.listChats.mockResolvedValue({ data: { chats: [gapChat] }, error: null });
+    mocks.getChat.mockResolvedValue({ data: chatDetail({ chat: gapChat }), error: null });
+    await renderEmbeddedDock({ entity_type: 'support_coverage_gap', entity_id: 'gap-1', display_title: 'Invoice corrections' });
+    await waitForCondition(() => document.body.textContent?.includes('The help center has no correction process.') ?? false, 'saved findings missing');
+    expect(document.body.querySelector('a[href="/w/workspace/support/conv-42"]')).not.toBeNull();
+    expect(document.body.textContent).toContain('Prepare a fix');
+    expect(document.body.querySelector('[aria-label="Remove document context"]')).toBeNull();
+    expect(document.body.querySelector('[data-dock-context-chip]')?.textContent).toBe('Coverage gap');
+    expect(document.body.querySelector('textarea')).not.toBeNull();
+    expect(mocks.createChat).not.toHaveBeenCalled();
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
   it('reopens the chat associated with the active support conversation', async () => {
@@ -1519,8 +1619,17 @@ describe('AskAgentsDock', () => {
       sequence_no: 2, created_at: '2026-08-14T08:23:40Z', delivery_status: 'sent',
     }], next_before: null }, error: null });
     await renderDock();
-    await waitForText('Working with Support reviewer');
+    await waitForText('Support reviewer is running · Ask Agent is waiting');
     expect(document.querySelector('[data-agent-dock-sub-agent-runs]')?.textContent).toContain('Running');
+
+    mocks.getPlan.mockResolvedValue({ data: { plan: { ...reviewPlan,
+      runs: [{ ...child, status: 'paused', pause_reason: 'human_approval' }],
+    } }, error: null });
+    await act(async () => window.dispatchEvent(new CustomEvent('agent_run-updated', {
+      detail: { entity_id: 'review-run', update_kind: 'lifecycle' },
+    })));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 200)); });
+    await waitForText('Support reviewer needs approval · Ask Agent is waiting');
 
     mocks.getPlan.mockResolvedValue({ data: null, error: 'temporarily unavailable' });
     await act(async () => window.dispatchEvent(new CustomEvent('agent_run-updated', {
@@ -1536,7 +1645,7 @@ describe('AskAgentsDock', () => {
     // No child socket event: the fallback poll must settle the visible row.
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 5_100)); });
     expect(document.querySelector('[data-agent-dock-sub-agent-runs]')?.textContent).toContain('Completed');
-    expect(document.body.textContent).not.toContain('Working with Support reviewer');
+    expect(document.body.textContent).not.toContain('Ask Agent is waiting');
   }, 10_000);
 
   it('loads an older failed sub-agent attempt from its visible result marker', async () => {
@@ -1597,17 +1706,21 @@ describe('AskAgentsDock', () => {
   });
 
   it('reconciles immediately when a message continues on the same run', async () => {
-    const run = { id: 'run-1', status: 'running', pause_reason: 'none' } as never;
+    const run = { id: 'run-1', status: 'paused', pause_reason: 'awaiting_user_message' } as never;
     const detail = chatDetail({
       chat: { ...CHAT, active_run_id: 'run-1' },
       run,
     });
     mocks.getChat.mockResolvedValue({ data: detail, error: null });
     mocks.getChatRun.mockResolvedValue({
-      data: { id: 'run-1', status: 'running', stream_state_snapshot: null },
+      data: { id: 'run-1', status: 'paused', pause_reason: 'awaiting_user_message', stream_state_snapshot: null },
       error: null,
     });
-    mocks.sendMessage.mockResolvedValue({ data: detail, error: null });
+    mocks.sendMessage.mockImplementation(async () => {
+      const continued = { id: 'run-1', status: 'running', pause_reason: 'none' } as NonNullable<DockChatDetail['run']>;
+      mocks.getChatRun.mockResolvedValue({ data: { ...continued, stream_state_snapshot: null }, error: null });
+      return { data: { ...detail, run: continued }, error: null };
+    });
 
     await renderDock();
     await waitForText('Sprint questions');
@@ -1617,9 +1730,15 @@ describe('AskAgentsDock', () => {
     const textarea = dockTextarea();
     await act(async () => {
       setTextareaValue(textarea, 'continue this run');
+    });
+    await act(async () => {
       textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     });
-    await flush();
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
+    await waitForCondition(
+      () => mocks.getChatRun.mock.calls.length > snapshotCallsBeforeSend && mocks.listChatRunEvents.mock.calls.length > eventCallsBeforeSend,
+      'the continued run should reconcile its snapshot and events',
+    );
 
     expect(mocks.getChatRun.mock.calls.length).toBeGreaterThan(snapshotCallsBeforeSend);
     expect(mocks.listChatRunEvents.mock.calls.length).toBeGreaterThan(eventCallsBeforeSend);
@@ -2641,7 +2760,7 @@ describe('follow-up message correlation', () => {
     mocks.sendMessage.mockImplementation((_workspace, _chat, payload) => new Promise((resolve) => {
       accepted = { ...earlier, id: 'message-followup', client_message_id: payload.client_message_id, content,
         dock_chat_sequence: 2, sequence_no: 2, message_type: 'user_reply', created_at: '2026-09-07T10:00:01Z' };
-      accept = () => resolve((order === 'failed-send' || order === 'lost-ack') ? { data: null, error: 'Delivery rejected' } : { data: chatDetail({ chat, run, accepted_message: accepted as never }), error: null });
+      accept = () => resolve((order === 'failed-send' || order === 'lost-ack') ? { data: null, error: 'Delivery rejected' } : { data: chatDetail({ chat, run: { ...run as object, execution_stage: 'resuming' } as never, accepted_message: accepted as never }), error: null });
     }));
     await renderEmbeddedDock({ entity_type: 'support_conversation', entity_id: 'conv-42', display_title: 'Support question' });
     await waitForCondition(() => !dockTextarea().disabled && mocks.getChatRun.mock.calls.length > 0, 'Chat not ready');
@@ -2669,7 +2788,10 @@ describe('follow-up message correlation', () => {
     const before = bubbles();
     const originalRow = [...scroll.querySelectorAll('p')].find((node) => node.textContent === content);
     expect(originalRow).toBeDefined();
-    if (order === 'ack-first') await act(async () => accept());
+    if (order === 'ack-first') {
+      await act(async () => accept());
+      expect(document.querySelector('[data-agent-live-status]')?.textContent).toContain('Starting…');
+    }
     await act(async () => {
       window.dispatchEvent(new CustomEvent('coding_session_event-created', { detail: {
         parent_id: 'run-1', entity_id: 'msg:message-followup', data: {

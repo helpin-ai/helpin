@@ -3,7 +3,7 @@ import { COMPARISON_FEATURES, PLANS } from "./pricing-data";
 import { SectionHead } from "../(site)/_components/ui";
 
 type Value = boolean | string | undefined;
-type Feature = { name: string; starter?: Value; growth?: Value };
+type Feature = { name: string; selfHosted?: Value; starter?: Value; growth?: Value };
 type Group = { name: string; rows: Feature[] };
 
 const ALL: Group[] = [];
@@ -11,11 +11,10 @@ for (const row of COMPARISON_FEATURES) {
   if ("category" in row && row.category) ALL.push({ name: row.name, rows: [] });
   else ALL.at(-1)?.rows.push(row);
 }
-// The table carries what changes between plans, plus stated limits.
-// Everything both plans include identically moves to the list beneath it.
+// Keep differences and limits in the table; shared product features sit below it.
 const isLimit = (row: Feature) =>
-  typeof row.starter === "string" || typeof row.growth === "string";
-const differs = (row: Feature) => row.starter !== row.growth;
+  typeof row.selfHosted === "string" || typeof row.starter === "string" || typeof row.growth === "string";
+const differs = (row: Feature) => row.selfHosted !== row.starter || row.starter !== row.growth;
 const TABLE = ALL.map((group) => ({
   ...group,
   rows: group.rows.filter((row) => differs(row) || isLimit(row)),
@@ -39,7 +38,7 @@ function Cell({ value, plan }: { value: Value; plan: string }) {
     return (
       <td data-plan={plan}>
         <span className="pricing-not-included">
-          <span aria-hidden="true">—</span>
+          <span aria-hidden="true">Not included</span>
           <span className="sr-only">Not included</span>
         </span>
       </td>
@@ -51,20 +50,26 @@ export function CloudComparison() {
   return (
     <section id="compare-plans" className="pricing-comparison">
       <div className="wrap">
-        <SectionHead eyebrow="Compare Cloud plans" title="What changes between Starter and Growth." />
+        <SectionHead eyebrow="Compare plans" title="See what’s included in each plan." />
         <table className="pricing-table">
           <caption className="sr-only">
-            Starter and Growth Cloud limits and features. Checkmarks mean
-            included and dashes mean not included.
+            Self-hosted, Starter, and Growth features, limits, hosting, and support.
+            Checkmarks mean included.
           </caption>
           <colgroup>
             <col className="pricing-feature-column" />
             <col />
             <col />
+            <col />
           </colgroup>
           <thead>
             <tr>
-              <th scope="col"><span className="sr-only">Feature</span></th>
+              <th scope="col"><span className="pricing-table-feature-label">Features and limits</span></th>
+              <th scope="col">
+                <span className="pricing-table-plan">Self-hosted</span>
+                <span className="pricing-table-price">Free · your servers</span>
+                <a className="btn btn-secondary" href="/self-hosting" aria-label="Explore self-hosted Helpin">Self-host<ArrowRight size={14} aria-hidden="true" /></a>
+              </th>
               {PLANS.map((plan) => (
                 <th scope="col" key={plan.key} data-featured={plan.popular}>
                   <span className="pricing-table-plan">{plan.name}</span>
@@ -84,13 +89,14 @@ export function CloudComparison() {
           {TABLE.map((group) => (
             <tbody key={group.name}>
               <tr className="pricing-table-group">
-                <th scope="rowgroup" colSpan={3}>
+                <th scope="rowgroup" colSpan={4}>
                   {group.name}
                 </th>
               </tr>
               {group.rows.map((row) => (
                 <tr key={row.name}>
                   <th scope="row">{row.name}</th>
+                  <Cell value={row.selfHosted} plan="Self-hosted" />
                   <Cell value={row.starter} plan="Starter" />
                   <Cell value={row.growth} plan="Growth" />
                 </tr>
@@ -99,7 +105,7 @@ export function CloudComparison() {
           ))}
         </table>
         <details className="pricing-disclosure pricing-shared">
-          <summary>Included in both plans</summary>
+          <summary>Included in every option</summary>
           <dl>
             {SHARED.map((group) => (
               <div key={group.name}>

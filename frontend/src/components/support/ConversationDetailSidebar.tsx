@@ -1,4 +1,3 @@
-import { SupportFollowUpStatus } from './SupportFollowUpStatus';
 import { memo, useEffect, useState, type JSX, type ReactNode, type SVGProps } from 'react';
 import { formatDistance } from 'date-fns';
 import * as Flags from 'country-flag-icons/react/3x2';
@@ -13,6 +12,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { UserAvatar } from '@/components/pm/UserAvatar';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { ContactAvatarImage } from '@/components/ui/contact-avatar-image';
 import { findAssignableMember, formatAssignableMemberName } from '@/lib/assignableMembers';
 import { SidebarAssociations } from './SidebarAssociations';
 import { SidebarOtherConversations, SidebarVisitorContext } from './SidebarVisitorContext';
@@ -450,13 +451,15 @@ export function ConversationDetailSidebar({
           />
         ) : (
         <div className={cn('h-full overflow-y-auto pb-16 transition-all duration-200 ease-out', customerProfileOpen ? 'pointer-events-none -translate-x-2 opacity-0' : 'translate-x-0 opacity-100')}>
-          <SupportFollowUpStatus conversation={conversation} />
           {/* ── Contact Card ─────────────────────────────── */}
           <div className="flex flex-col items-center gap-1.5 px-3 py-4 border-b border-border/50">
             <div className="relative">
-              <div className={`flex h-12 w-12 items-center justify-center rounded-full text-base font-semibold ${getAvatarColor(conversation.customer_email || conversation.customer_name || conversation.id)}`}>
-                {getInitial(conversation.customer_name || conversation.customer_email)}
-              </div>
+              <Avatar className="h-12 w-12">
+                <ContactAvatarImage email={conversation.customer_email} alt={conversation.customer_name || conversation.customer_email || 'Customer'} />
+                <AvatarFallback className={`text-base font-semibold ${getAvatarColor(conversation.customer_email || conversation.customer_name || conversation.id)}`}>
+                  {getInitial(conversation.customer_name || conversation.customer_email)}
+                </AvatarFallback>
+              </Avatar>
               {isVisitorOnline && (
                 <span className="absolute -left-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-green-400 ring-2 ring-background shadow-sm" />
               )}

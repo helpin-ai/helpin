@@ -811,6 +811,7 @@ func commandAgentAvailableSkills() []string {
 // interactions, and selective child-agent orchestration.
 func askAgentPresetTools() []string {
 	return appendPresetTools([]string{
+		"get_flow_builder_context", "preview_flow", "save_flow",
 		// Skills, interaction, and progress.
 		"read_chat_history",
 		"find_skills", "read_skill",
@@ -828,7 +829,7 @@ func askAgentPresetTools() []string {
 		"list_spaces", "list_documents", "list_collections",
 		"read_document", "get_document_blocks", "search_documents",
 		"create_space", "create_collection", "create_document", "update_space",
-		"update_collection", "move_document", "write_document_content",
+		"update_collection", "move_document", "archive_document", "restore_document", "write_document_content",
 		"update_document_block", "edit_document", "insert_document_block", "insert_document_artifact",
 		"link_document_to_object", "preview_md", "preview_json",
 		"publish_document_change_proposal", "publish_ai_section_candidate",
@@ -844,6 +845,8 @@ func askAgentPresetTools() []string {
 		"read_files", "list_directory", "repository_search", "list_symbols",
 		"read_symbol", "trace_symbol", "get_pull_request_diff", "get_check_run_logs",
 		"get_release_context", "find_tasks_for_git_changes",
+		// Team-only support notes.
+		"add_support_conversation_note",
 		// Scoped direct execution.
 		"prepare_dock_execution", "activate_dock_execution", "finish_dock_execution",
 		// Agent orchestration.
@@ -929,7 +932,7 @@ func enforceManagedDocumentationAgentCapabilities(preset model.AgentPresetDefini
 	}
 	preset.AllowedTools = appendPresetTools(preset.AllowedTools, []string{
 		"read_document", "get_document_blocks", "find_skills", "read_skill",
-		"edit_document",
+		"edit_document", "archive_document", "restore_document",
 		"insert_document_artifact",
 		"list_task_checklist",
 		"list_epic_tasks",

@@ -1008,6 +1008,8 @@ export function ContactDetailPage({
       <ContactHeader
         firstName={form.first_name}
         lastName={form.last_name}
+        email={contact.email}
+        avatarUrl={contact.avatar_url}
         jobTitle={form.job_title}
         companyName={primaryCompanyAssociation?.linked_object_name ?? undefined}
         companyHref={

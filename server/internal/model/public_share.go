@@ -30,12 +30,19 @@ type PublicShareLink struct {
 	URL   string `json:"url"`
 }
 
+// PublicSharedMessage deliberately excludes storage, actor, and runtime metadata.
+type PublicSharedMessage struct {
+	ID      string `json:"id"`
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
 // PublicSharedDockChat is the live, public projection of an Ask chat.
 type PublicSharedDockChat struct {
-	Title     string            `json:"title"`
-	OpenPath  string            `json:"open_path,omitempty"`
-	Messages  []AgentRunMessage `json:"messages"`
-	UpdatedAt time.Time         `json:"updated_at"`
+	Title     string                `json:"title"`
+	OpenPath  string                `json:"open_path,omitempty"`
+	Messages  []PublicSharedMessage `json:"messages"`
+	UpdatedAt time.Time             `json:"updated_at"`
 }
 
 // PublicSharedAgentRun is the live, public projection of an agent run.

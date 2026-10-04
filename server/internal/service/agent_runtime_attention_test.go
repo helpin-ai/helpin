@@ -129,7 +129,7 @@ func TestRuntimeAttentionKindsAndRouting(t *testing.T) {
 				t.Fatalf("unexpected routing: %+v", e)
 			}
 			var payload notificationWSData
-			if err := json.Unmarshal(buildNotificationWSData("owner", e, "high"), &payload); err != nil {
+			if err := json.Unmarshal(buildNotificationWSData("owner", e, "high", "unread"), &payload); err != nil {
 				t.Fatal(err)
 			}
 			if payload.RunID != "run" || payload.ParentTaskID != "task" {

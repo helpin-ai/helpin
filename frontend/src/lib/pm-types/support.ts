@@ -951,6 +951,7 @@ export interface SupportContentSource {
   last_crawl_job_id?: string | null;
   last_sync_started_at?: string | null;
   last_sync_completed_at?: string | null;
+  next_sync_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1156,6 +1157,9 @@ export interface SupportInboxSettings {
   require_email_before_chat: boolean;
   require_phone_after_email: boolean;
   welcome_message: string;
+  privacy_notice_enabled?: boolean;
+  privacy_policy_url?: string;
+  privacy_notice_text?: string;
   ai_enabled: boolean;
   ai_agent_id: string | null;
   ai_confidence_threshold: number;

@@ -691,10 +691,6 @@ func (s *InternalCommandService) executeCreatePMTask(ctx context.Context, meta m
 			return nil, err
 		}
 	}
-	workflowID, stateID, err := s.resolveTaskCreationWorkflow(ctx, meta.WorkspaceID, req.TeamID, stringPtrOrNil(commandDerefString(req.WorkflowID)), stringPtrOrNil(commandDerefString(req.StateID)))
-	if err != nil {
-		return nil, err
-	}
 	checklistItems := make([]model.CreateChecklistItemRequest, 0, len(req.ChecklistItems))
 	for index, item := range req.ChecklistItems {
 		var dueDate *time.Time
@@ -714,8 +710,8 @@ func (s *InternalCommandService) executeCreatePMTask(ctx context.Context, meta m
 		Name:            req.Name,
 		Description:     normalizeTaskDescriptionRichText(req.Description),
 		TaskType:        strings.TrimSpace(req.TaskType),
-		WorkflowID:      workflowID,
-		WorkflowStateID: stateID,
+		WorkflowID:      commandDerefString(req.WorkflowID),
+		WorkflowStateID: commandDerefString(req.StateID),
 		EpicID:          stringPtrOrNil(epicID),
 		SprintID:        stringPtrOrNil(sprintID),
 		TeamID:          stringPtrOrNil(req.TeamID),

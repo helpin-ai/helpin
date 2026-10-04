@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { QuietSection } from '@/components/design-system/quiet';
 import { pmTriageService, type TriageReview, type TriageView } from '@/lib/services/pmTriageService';
 import { unwrapRequired } from '@/lib/queryUtils';
+import { getVisibleTriageSuggestions } from './triageSuggestionRows';
 import { TriageSuggestions } from './TriageSuggestions';
 
-export function TaskDraftSuggestions({ workspaceId, workspaceSlug, name, description, teamId, taskType, disabled, onPending, onApply, onOpenTask }: {
+export function TaskDraftSuggestions({ workspaceId, workspaceSlug, name, description, teamId, taskType, disabled, onApply, onOpenTask }: {
   workspaceId: string;
   workspaceSlug: string;
   name: string;
@@ -12,31 +13,29 @@ export function TaskDraftSuggestions({ workspaceId, workspaceSlug, name, descrip
   teamId: string;
   taskType: string;
   disabled: boolean;
-  onPending: (pending: boolean) => void;
   onApply: (field: 'task_type' | 'team', value: string) => void;
   onOpenTask: (id: string) => void;
 }) {
   const [draftId] = useState(newDraftID);
   const [view, setView] = useState<TriageView | null>(null);
-  const [error, setError] = useState('');
   const [checking, setChecking] = useState(false);
   useEffect(() => {
-    if (!name.trim() || !teamId) { setView(null); onPending(false); return; }
+    if (!name.trim() || !teamId) { setView(null); return; }
     let cancelled = false;
-    setView(null); setError(''); setChecking(true); onPending(true);
+    setView(null); setChecking(true);
     const timer = window.setTimeout(async () => {
       try {
         const result = unwrapRequired(await pmTriageService.analyzeDraft(workspaceId, { draft_id: draftId, name, description, team_id: teamId }), 'Task matching');
         if (!cancelled) setView(result);
-      } catch (cause) {
-        if (!cancelled) setError(cause instanceof Error ? cause.message : 'Task matching is unavailable.');
+      } catch {
+        if (!cancelled) setView(null);
       } finally {
-        if (!cancelled) { setChecking(false); onPending(false); }
+        if (!cancelled) { setChecking(false); }
       }
     }, 700);
-    return () => { cancelled = true; window.clearTimeout(timer); onPending(false); };
-  }, [workspaceId, draftId, name, description, teamId, onPending]);
-  if (!name.trim() || !teamId || view?.status === 'disabled' || view?.status === 'shadow') return null;
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [workspaceId, draftId, name, description, teamId]);
+  if (!name.trim() || !teamId || checking || view?.status !== 'ready' || getVisibleTriageSuggestions(view, taskType, teamId).length === 0) return null;
   const review = (request: TriageReview) => {
     if (request.dismiss) { setView((current) => current ? { ...current, reviewed: { ...current.reviewed, [`${request.action}:${request.value}`]: 'dismissed' } } : current); return; }
     if (request.action === 'match') onOpenTask(request.value);
@@ -44,10 +43,7 @@ export function TaskDraftSuggestions({ workspaceId, workspaceSlug, name, descrip
   };
   return <QuietSection title="Existing work and suggestions">
     <p className="mb-2 text-xs text-quiet-text-tertiary">Based on <a href="#task-title" className="underline underline-offset-4">this draft’s title and description</a>.</p>
-    {checking ? <p role="status" className="text-sm text-quiet-text-secondary">Checking existing work before creation…</p> : null}
-    {error ? <p role="status" className="text-sm text-quiet-text-secondary">{error} You can still save this task.</p> : null}
     {view?.status === 'ready' ? <TriageSuggestions view={view} currentType={taskType} currentTeam={teamId} disabled={disabled || checking} taskHref={(id) => `/w/${encodeURIComponent(workspaceSlug)}/pm/tasks/${encodeURIComponent(id)}`} onReview={review} /> : null}
-    {view && !['ready', 'disabled', 'shadow'].includes(view.status) ? <p className="text-sm text-quiet-text-secondary">Matching could not finish for this draft. You can still save it.</p> : null}
   </QuietSection>;
 }
 

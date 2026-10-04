@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -76,7 +77,7 @@ func (s *PublicShareSource) PublicDockChat(ctx context.Context, workspaceID, cha
 	if workspace, workspaceErr := s.workspaceRepo.GetByID(ctx, workspaceID); workspaceErr == nil && workspace != nil {
 		openPath = "/w/" + workspace.Slug + "?ask_chat=" + chat.ID
 	}
-	return &model.PublicSharedDockChat{Title: chat.Title, OpenPath: openPath, Messages: compactDockChatMessagePage(messages), UpdatedAt: chat.UpdatedAt}, nil
+	return &model.PublicSharedDockChat{Title: chat.Title, OpenPath: openPath, Messages: publicDockMessages(messages), UpdatedAt: chat.UpdatedAt}, nil
 }
 
 // PublicAgentRun returns the latest authenticated run projection with private fields removed.
@@ -208,4 +209,49 @@ func isPublicSecretKey(key string) bool {
 	default:
 		return strings.HasSuffix(normalized, "_api_key") || strings.HasSuffix(normalized, "_secret")
 	}
+}
+
+var publicDockContextPatterns = func() []*regexp.Regexp {
+	patterns := make([]*regexp.Regexp, 0, 7)
+	for _, tag := range []string{"previous_conversation", "child_run_result", "page_context", "references", "attachments", "source_attachments", "attachment_analysis"} {
+		// Truncated context is private too: discard it through the end of the message.
+		patterns = append(patterns, regexp.MustCompile("(?is)<"+tag+">.*?(?:</"+tag+">|$)"))
+	}
+	return patterns
+}()
+
+var publicDockSuggestions = regexp.MustCompile(`(?is)<!--\s*helpin_follow_up_suggestions\b.*?(?:-->|$)`)
+
+func publicDockMessages(messages []model.AgentRunMessage) []model.PublicSharedMessage {
+	result := make([]model.PublicSharedMessage, 0, len(messages))
+	for _, message := range compactDockChatMessagePage(messages) {
+		// Only conversation text belongs in a public chat. Unknown message types
+		// must opt in rather than automatically exposing new runtime records.
+		allowed := false
+		switch message.Role {
+		case "user":
+			switch message.MessageType {
+			case "", "message", "prompt", "user_reply":
+				allowed = true
+			}
+		case "assistant":
+			switch message.MessageType {
+			case "", "message", "assistant_turn", "assistant_final":
+				allowed = true
+			}
+		}
+		if !allowed {
+			continue
+		}
+		content := message.Content
+		for _, pattern := range publicDockContextPatterns {
+			content = pattern.ReplaceAllString(content, "")
+		}
+		content = strings.TrimSpace(publicDockSuggestions.ReplaceAllString(content, ""))
+		if content == "" {
+			continue
+		}
+		result = append(result, model.PublicSharedMessage{ID: message.ID, Role: message.Role, Content: content})
+	}
+	return result
 }

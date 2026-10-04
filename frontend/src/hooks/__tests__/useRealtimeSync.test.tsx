@@ -8,6 +8,7 @@ import { usePMBoardStore } from '@/stores/pmBoardStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore'
 import { useSupportInboxStore } from '@/stores/supportInboxStore'
+import { registerNotificationView } from '@/lib/notificationView'
 import { queryKeys } from '@/lib/queryKeys'
 import type { ConversationListResponse, SupportMessage } from '@/lib/pmTypes'
 import { flattenSupportMessagePages, seedSupportMessagePages, type SupportMessagePages } from '@/lib/supportMessagePages'
@@ -39,6 +40,7 @@ import { useRealtimeSync } from '../useRealtimeSync'
 import { toast } from 'sonner'
 
 vi.mock('sonner', () => ({ toast: vi.fn() }))
+vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }))
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
@@ -99,7 +101,7 @@ describe('useRealtimeSync task ordering events', () => {
     act(() => root.render(<QueryClientProvider client={client}><Harness workspaceId="ws-1" /></QueryClientProvider>))
     const onOpen = vi.fn()
     window.addEventListener('helpin:ask-agents', onOpen)
-    const event = { entity: 'notification', action: 'created', workspace_id: 'ws-1', data: { event_type: 'task.agent_attention_required', recipient_id: 'user-1', dock_chat_id: 'chat-1', run_id: 'run-1' } }
+    const event = { entity: 'notification', action: 'created', workspace_id: 'ws-1', data: { status: 'unread', event_type: 'task.agent_attention_required', recipient_id: 'user-1', dock_chat_id: 'chat-1', run_id: 'run-1' } }
     act(() => captured.onEvent?.(event))
     expect(toast).toHaveBeenCalledTimes(1)
     const options = vi.mocked(toast).mock.calls[0][1]
@@ -114,6 +116,65 @@ describe('useRealtimeSync task ordering events', () => {
     expect(toast).toHaveBeenCalledTimes(2)
     window.removeEventListener('helpin:ask-agents', onOpen)
     act(() => root.unmount())
+  })
+
+  it('suppresses attention toasts only for the matching focused chat or run', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const root = createRoot(document.createElement('div'))
+    const focus = vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    const unregister = registerNotificationView('ws-1', 'chat', 'flow-chat')
+    const unregisterRun = registerNotificationView('ws-1', 'run', 'task-run')
+    act(() => root.render(<QueryClientProvider client={client}><Harness workspaceId="ws-1" /></QueryClientProvider>))
+    const event = { entity: 'notification', action: 'created', workspace_id: 'ws-1', data: { status: 'unread', event_type: 'task.agent_attention_required', recipient_id: 'user-1', dock_chat_id: 'flow-chat', run_id: 'run-1' } }
+    act(() => captured.onEvent?.(event))
+    act(() => captured.onEvent?.({ ...event, data: { ...event.data, dock_chat_id: '', run_id: 'task-run' } }))
+    expect(toast).not.toHaveBeenCalled()
+    act(() => captured.onEvent?.({ ...event, data: { ...event.data, dock_chat_id: 'another-chat' } }))
+    expect(toast).toHaveBeenCalledTimes(1)
+    focus.mockReturnValue(false)
+    act(() => captured.onEvent?.(event))
+    expect(toast).toHaveBeenCalledTimes(2)
+    focus.mockReturnValue(true)
+    visibility.mockReturnValue('hidden')
+    act(() => captured.onEvent?.(event))
+    expect(toast).toHaveBeenCalledTimes(3)
+    visibility.mockReturnValue('visible')
+    unregister()
+    act(() => captured.onEvent?.(event))
+    expect(toast).toHaveBeenCalledTimes(4)
+    act(() => captured.onEvent?.({ ...event, data: { ...event.data, status: 'read' } }))
+    expect(toast).toHaveBeenCalledTimes(4)
+    unregisterRun()
+    focus.mockRestore()
+    visibility.mockRestore()
+    act(() => root.unmount())
+    client.clear()
+  })
+
+  it('keeps the visible support conversation quiet but plays sound for other or background conversations', () => {
+    const play = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('Audio', class { play = play; volume = 0; currentTime = 0 })
+    const focus = vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    const unregister = registerNotificationView('ws-1', 'support_conversation', 'conv-visible')
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const root = createRoot(document.createElement('div'))
+    act(() => root.render(<QueryClientProvider client={client}><Harness workspaceId="ws-1" /></QueryClientProvider>))
+    const event = { entity: 'support_conversation_message', action: 'created', workspace_id: 'ws-1', parent_id: 'conv-visible', entity_id: 'message-1', actor_id: 'widget:visitor', data: { id: 'message-1', content: 'Hello', sender_type: 'customer' } }
+    act(() => captured.onEvent?.(event))
+    expect(play).not.toHaveBeenCalled()
+    act(() => captured.onEvent?.({ ...event, parent_id: 'another-conversation' }))
+    expect(play).toHaveBeenCalledTimes(1)
+    focus.mockReturnValue(false)
+    act(() => captured.onEvent?.(event))
+    expect(play).toHaveBeenCalledTimes(2)
+    unregister()
+    focus.mockRestore()
+    visibility.mockRestore()
+    vi.unstubAllGlobals()
+    act(() => root.unmount())
+    client.clear()
   })
 
   it('refreshes the board for moved task events instead of hydrating a single task', async () => {

@@ -67,6 +67,7 @@ type Handlers struct {
 	PMRecurringTemplate *handler.PMRecurringTemplateHandler
 	Search              *handler.SearchHandler
 	CommandBar          *handler.CommandBarHandler
+	VoiceInput          *handler.VoiceInputHandler
 	DockChat            *handler.DockChatHandler
 	PublicShare         *handler.PublicShareHandler
 	Agent               *handler.AgentHandler
@@ -75,7 +76,9 @@ type Handlers struct {
 	AIProfile           *handler.AIProfileHandler
 	CLI                 *handler.CLIHandler
 	MCP                 *handler.MCPHandler
+	PublicAPI           http.Handler
 	ExternalMCP         *handler.ExternalMCPHandler
+	ExternalA2A         *handler.ExternalA2AHandler
 	SupportInbox        *handler.SupportInboxHandler
 	SupportInboxView    *handler.SupportInboxViewHandler
 	SupportTag          *handler.SupportTagHandler
@@ -209,6 +212,11 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Get("/.well-known/oauth-protected-resource", h.MCP.ProtectedResourceMetadata)
 		r.Handle("/mcp", http.HandlerFunc(h.MCP.Protocol))
 		r.Handle("/mcp/readonly", http.HandlerFunc(h.MCP.Protocol))
+	}
+	if h.PublicAPI != nil {
+		// Curated public REST API; bearer-token only, no cookies, so CORS stays closed.
+		r.Handle("/public/v1", h.PublicAPI)
+		r.Handle("/public/v1/*", h.PublicAPI)
 	}
 
 	// ---- Public widget routes for client.helpin.ai (no JWT, open CORS) ----
@@ -406,6 +414,16 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		}
 		if h.CRMMeeting != nil {
 			r.Post("/webhooks/meeting-capture/{provider}", h.CRMMeeting.Webhook)
+		}
+		// ---- External agent file uploads (per-run bearer upload token, no JWT) ----
+		if h.ExternalA2A != nil {
+			r.Post("/a2a/uploads", h.ExternalA2A.Upload)
+		}
+
+		// External providers redirect the browser without a Helpin bearer header.
+		// Relay to the app; exchanging the code remains an authenticated POST.
+		if h.ExternalMCP != nil {
+			r.Get("/external-mcp/oauth/callback", h.ExternalMCP.OAuthCallbackRedirect)
 		}
 
 		// ---- Public Gmail OAuth callback (Google redirects here without JWT) ----
@@ -639,7 +657,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				})
 			}
 			if h.ExternalMCP != nil {
-				r.Get("/external-mcp/oauth/callback", h.ExternalMCP.OAuthCallback)
+				r.Post("/external-mcp/oauth/callback", h.ExternalMCP.OAuthCallback)
 				r.Route("/external-mcp", func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceID)
 					r.Use(wsActive)
@@ -651,6 +669,18 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermSettingsManage)).Post("/servers/{serverID}/oauth/start", h.ExternalMCP.StartOAuth)
 					r.With(requirePerm(authorization.PermSettingsManage)).Post("/servers/{serverID}/tools/refresh", h.ExternalMCP.RefreshTools)
 					r.With(requirePerm(authorization.PermSettingsManage)).Put("/servers/{serverID}/tools", h.ExternalMCP.UpdateTools)
+				})
+			}
+			if h.ExternalA2A != nil {
+				r.Route("/workspaces/{id}/external-agents", func(r chi.Router) {
+					r.Use(authorization.ExtractWorkspaceIDParam)
+					r.Use(wsActive)
+					r.With(requirePerm(authorization.PermSettingsRead)).Get("/", h.ExternalA2A.List)
+					r.With(requirePerm(authorization.PermSettingsManage)).Post("/preview", h.ExternalA2A.Preview)
+					r.With(requirePerm(authorization.PermSettingsManage)).Post("/", h.ExternalA2A.Create)
+					r.With(requirePerm(authorization.PermSettingsManage)).Patch("/{externalAgentID}", h.ExternalA2A.Update)
+					r.With(requirePerm(authorization.PermSettingsManage)).Post("/{externalAgentID}/refresh-card", h.ExternalA2A.RefreshCard)
+					r.With(requirePerm(authorization.PermSettingsManage)).Delete("/{externalAgentID}", h.ExternalA2A.Delete)
 				})
 			}
 
@@ -982,9 +1012,14 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Use(middleware.RequireWorkspaceID)
 				r.Use(wsActive)
 				r.Get("/ai-defaults", h.DockChat.AIDefaults)
+				if h.VoiceInput != nil {
+					r.With(requireCommandBarRead()).Get("/transcriptions", h.VoiceInput.Capabilities)
+					r.With(requireCommandBarRead()).Post("/transcriptions", h.VoiceInput.Transcribe)
+				}
 				r.With(requireCommandBarRead()).Get("/chats", h.DockChat.ListChats)
 				r.With(requireCommandBarRead()).Post("/chats", h.DockChat.CreateChat)
 				r.With(requireCommandBarRead()).Get("/chats/support-conversation", h.DockChat.FindSupportConversationChat)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/chats/coverage-gap", h.DockChat.FindCoverageGapChat)
 				r.With(requireCommandBarRead()).Get("/chats/{chatID}", h.DockChat.GetChat)
 				r.With(requireCommandBarRead()).Patch("/chats/{chatID}", h.DockChat.UpdateChat)
 				r.With(requireCommandBarRead()).Get("/chats/{chatID}/messages", h.DockChat.ListMessages)
@@ -1420,6 +1455,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				if h.SupportAI != nil {
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/knowledge-sources", h.SupportAI.GetKnowledgeSources)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/knowledge-sources/{sourceId}/indexed-documents", h.SupportAI.ListIndexedKnowledgeDocuments)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/agents/{id}/support-preview", h.SupportAI.PreviewSupportReply)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Get("/agents/{id}/support-preview/{runId}", h.SupportAI.GetSupportPreview)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Delete("/agents/{id}/support-preview/{runId}", h.SupportAI.CancelSupportPreview)

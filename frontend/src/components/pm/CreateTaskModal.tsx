@@ -1,3 +1,4 @@
+import { TeamColorMark } from '@/components/workspace/TeamLabel';
 import { TaskDraftSuggestions } from './TaskDraftSuggestions';
 import { EPIC_PICKER_WIDTH } from '@/components/pm/epicPickerGroups';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -309,7 +310,6 @@ export function CreateTaskModal({
   const [stateId, setStateId] = useState(initialStateId ?? '');
   const [saveTaskAsTemplate, setSaveTaskAsTemplate] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [draftCheckPending, setDraftCheckPending] = useState(false);
   const confirm = useConfirm();
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const [descriptionEditorKey, setDescriptionEditorKey] = useState(0);
@@ -859,7 +859,7 @@ export function CreateTaskModal({
   }, [form.team_id, workflow, stateId, workspaceId]);
 
   const submit = useCallback(async (createAnother = false) => {
-    if (!canSubmit || submitting || draftCheckPending) return;
+    if (!canSubmit || submitting) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -1002,26 +1002,17 @@ export function CreateTaskModal({
         }
 
         if (createAnother && !agentRunUpgradeReason) {
-          const resetTeam = teams.find((team) => team.id === (initialTeamId ?? ''));
           setDescriptionEditorKey((current) => current + 1);
           setDescriptionMode('rich');
           setSourceMarkdown('');
-          setForm({
-            ...defaultState,
-            name: initialName ?? '',
-            task_type: initialTaskType ?? (resetTeam?.default_task_type as TaskType | undefined) ?? 'feature',
-            priority: initialPriority ?? defaultState.priority,
-            severity: initialSeverity ?? defaultState.severity,
-            requester_member_id: currentMemberId,
-            team_id: initialTeamId ?? '',
-            epic_id: initialEpicId ?? '',
-            owner_member_ids: initialOwnerMemberId ? [initialOwnerMemberId] : [],
-            sprint_id: initialSprintId ?? '',
-          });
-          setTaskTypeDirty(Boolean(initialTaskType));
-          setStateId(initialStateId ?? '');
+          setForm((current) => ({
+            ...current,
+            name: '',
+            description: '',
+            checklist_items: [],
+            external_links: [],
+          }));
           setPendingFiles([]);
-          setRecurringDraft(null);
           setSaveTaskAsTemplate(false);
           setAssignedAgentId(undefined);
         } else if (!agentRunUpgradeReason) {
@@ -1041,7 +1032,6 @@ export function CreateTaskModal({
   }, [
     canSubmit,
     submitting,
-    draftCheckPending,
     form,
     stateId,
     descriptionMode,
@@ -1051,16 +1041,6 @@ export function CreateTaskModal({
     selectedTemplateId,
     uploadPendingFilesForEntity,
     resolveSubmitWorkflow,
-    initialStateId,
-    initialName,
-    initialTaskType,
-    initialPriority,
-    initialSeverity,
-    currentMemberId,
-    initialTeamId,
-    initialEpicId,
-    initialOwnerMemberId,
-    initialSprintId,
     isTemplateMode,
     editingTemplate,
     onCreate,
@@ -1069,7 +1049,6 @@ export function CreateTaskModal({
     pendingFiles,
     recurringDraft,
     sourceMarkdown,
-    teams,
     assignedAgentId,
   ]);
 
@@ -1317,7 +1296,6 @@ export function CreateTaskModal({
                   teamId={form.team_id}
                   taskType={form.task_type}
                   disabled={submitting}
-                  onPending={setDraftCheckPending}
                   onApply={(field, value) => {
                     setTaskTypeDirty(field === 'task_type');
                     setForm((previous) => ({ ...previous, ...(field === 'team' ? { team_id: value } : { task_type: value as TaskType }) }));
@@ -1353,6 +1331,21 @@ export function CreateTaskModal({
                             const next = [...form.checklist_items];
                             next[idx] = { ...next[idx], text: e.target.value };
                             setForm((prev) => ({ ...prev, checklist_items: next }));
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key !== 'Enter' || event.nativeEvent.isComposing || event.keyCode === 229) return;
+                            event.preventDefault();
+                            event.stopPropagation();
+                            if (!item.text.trim()) return;
+                            const nextInput = event.currentTarget.parentElement?.nextElementSibling?.querySelector('input');
+                            if (nextInput) {
+                              nextInput.focus();
+                            } else {
+                              setForm((prev) => ({
+                                ...prev,
+                                checklist_items: [...prev.checklist_items, { text: '', position: prev.checklist_items.length }],
+                              }));
+                            }
                           }}
                           placeholder="Item text"
                           className="flex-1 bg-transparent text-sm py-1 outline-none placeholder:text-muted-foreground/50"
@@ -1571,7 +1564,7 @@ export function CreateTaskModal({
                       value={form.team_id || "__none__"}
                       options={[
                         ...(teams.length === 0 ? [{ value: "__none__", label: "Select team" }] : []),
-                        ...teams.map((t) => ({ value: t.id, label: t.name })),
+                        ...teams.map((t) => ({ value: t.id, label: t.name, icon: <TeamColorMark team={t} /> })),
                       ]}
                       onChange={(value) =>
                         {
@@ -1901,7 +1894,7 @@ export function CreateTaskModal({
                 type="button"
                 variant="ghost"
                 onClick={() => submit(true)}
-                disabled={!canSubmit || submitting || draftCheckPending}
+                disabled={!canSubmit || submitting}
               >
                 Save & create another
               </Button>
@@ -1909,7 +1902,7 @@ export function CreateTaskModal({
             <Button
               type="button"
               onClick={() => submit(false)}
-              disabled={!canSubmit || submitting || draftCheckPending}
+              disabled={!canSubmit || submitting}
             >
               {submitting ? <Loading01Icon className="h-4 w-4 animate-spin" /> : null}
               {submitting ? "Saving..." : assignedAgentId && !isTemplateMode ? "Save & run agent" : "Save"}

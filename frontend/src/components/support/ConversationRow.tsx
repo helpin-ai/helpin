@@ -1,11 +1,13 @@
 import { memo, useMemo, useState, type KeyboardEvent } from 'react';
-import { ArrowTurnBackwardIcon, BotIcon, CheckmarkCircle02Icon, GlobeIcon, Mail01Icon, Message01Icon, MoreHorizontalIcon } from '@/lib/icons';
+import { ArrowTurnBackwardIcon, BotIcon, CheckmarkCircle02Icon, GlobeIcon, Mail01Icon, Message01Icon, MoreHorizontalIcon, StickyNote01Icon } from '@/lib/icons';
 import type { TicketSource } from '@/lib/pm-types/support';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { type AgentTypingState, useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { ContactAvatarImage } from '@/components/ui/contact-avatar-image';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { SupportConversation } from '@/lib/pmTypes';
 import { timeAgo, getInitial, getAvatarColor } from './helpers';
@@ -422,9 +424,12 @@ export const ConversationRow = memo(function ConversationRow({
       <div className="flex items-center gap-3">
         {/* Avatar */}
         <div className="relative shrink-0">
-          <div className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold ${getAvatarColor(conversation.customer_email || conversation.customer_name || conversation.id)}`}>
-            {getInitial(displayName)}
-          </div>
+          <Avatar className="h-9 w-9">
+            <ContactAvatarImage email={conversation.customer_email} alt={displayName} />
+            <AvatarFallback className={`text-xs font-semibold ${getAvatarColor(conversation.customer_email || conversation.customer_name || conversation.id)}`}>
+              {getInitial(displayName)}
+            </AvatarFallback>
+          </Avatar>
           {isVisitorOnline && (
             <span className="absolute -left-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-green-400 ring-2 ring-background shadow-sm" />
           )}
@@ -503,7 +508,14 @@ export const ConversationRow = memo(function ConversationRow({
                 </>
               ) : isNotePreview(conversation.last_message) ? (
                 <>
-                  <span className="font-medium text-amber-600 dark:text-amber-400">Note: </span>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span role="img" aria-label="Internal note" className="inline-flex shrink-0 text-amber-600 dark:text-amber-400">
+                        <StickyNote01Icon aria-hidden="true" className="h-3.5 w-3.5" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">Internal note</TooltipContent>
+                  </Tooltip>
                   <span className="min-w-0 truncate text-muted-foreground">{stripNotePrefix(conversation.last_message ?? '')}</span>
                 </>
               ) : (

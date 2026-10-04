@@ -73,7 +73,6 @@ page's status and the corresponding current guide before using its instructions.
 | [Operations](ops/README.md) | Migration, deployment, and infrastructure procedures |
 | [Research](research/README.md) | Investigations and comparative assessments |
 | [Strategy](strategy/README.md) | Product direction and business planning |
-| [Mockups](mockups/README.md) | HTML design references |
 | [Manual testing](testing/README.md) | Browser test pages |
 | [Notifications](notifications/README.md) | Notification design research |
 | [Roles and permissions](rbac/README.md) | Access-control analysis |

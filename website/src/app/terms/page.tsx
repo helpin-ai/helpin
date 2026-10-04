@@ -13,7 +13,7 @@ export default function TermsPage() {
 
           <section>
             <h2 className="legal-section-title">2. Description of Service</h2>
-            <p className="leading-relaxed">Helpin is an AI-powered operating system that brings project management, documentation, customer support, CRM, and knowledge management into one connected platform. AI agents operate within your workspace to automate and assist with work across these functions.</p>
+            <p className="leading-relaxed">Helpin provides customer support, project management, documentation, CRM, and meeting tools. AI agents can help answer questions and perform work using the tools, instructions, and approval settings configured in your workspace.</p>
           </section>
 
           <section>
@@ -45,7 +45,7 @@ export default function TermsPage() {
               <li>AI agents may produce imperfect results and should be reviewed</li>
               <li>You are responsible for configuring appropriate approval modes</li>
               <li>Agent actions taken with your approval are your responsibility</li>
-              <li>You provide your own API keys for AI model providers</li>
+              <li>Self-hosted installations use your own AI provider keys. Helpin Cloud includes AI usage, with your own provider keys available on Enterprise</li>
             </ul>
           </section>
 

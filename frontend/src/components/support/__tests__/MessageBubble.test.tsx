@@ -51,6 +51,72 @@ function renderBubble(
 }
 
 describe('MessageBubble', () => {
+  it.each([
+    ['**Billing update**\\\nPlease review @teammate.', true],
+    ['**Billing update**\\\nContact person@example.com.', false],
+  ])('preserves note markdown with mentions and email addresses: %s', (content, hasMention) => {
+    const rendered = renderBubble({
+      id: 'formatted-note', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'user',
+      sender_user_id: 'viewer', message_type: 'note', is_internal: true, content,
+      created_at: '2026-09-18T10:38:14Z', updated_at: '2026-09-18T10:38:14Z',
+    });
+    try {
+      const note = rendered.container.querySelector('[data-support-internal-note]');
+      expect(note?.querySelector('strong')?.textContent).toBe('Billing update');
+      expect(note?.querySelector('br')).not.toBeNull();
+      expect(note?.textContent).not.toContain('**');
+      expect(note?.textContent).not.toContain('\\');
+      expect(Boolean(note?.querySelector('.mention-highlight'))).toBe(hasMention);
+    } finally { rendered.cleanup(); }
+  });
+
+  it('highlights mentions inside formatted notes while preserving links and code', () => {
+    const rendered = renderBubble({
+      id: 'mention-note', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'user',
+      sender_user_id: 'viewer', message_type: 'note', is_internal: true,
+      content: '- **@teammate**\n- `@code C:\\temp`\n- [@linked](https://example.com/@linked)',
+      created_at: '2026-09-18T10:38:14Z', updated_at: '2026-09-18T10:38:14Z',
+    });
+    try {
+      const note = rendered.container.querySelector('[data-support-internal-note]');
+      expect(note?.querySelectorAll('li')).toHaveLength(3);
+      expect(note?.querySelector('strong .mention-highlight')?.textContent).toBe('@teammate');
+      expect(note?.querySelectorAll('.mention-highlight')).toHaveLength(1);
+      expect(note?.querySelector('code')?.textContent).toBe('@code C:\\temp');
+      expect(note?.querySelector('a')?.getAttribute('href')).toBe('https://example.com/@linked');
+    } finally { rendered.cleanup(); }
+  });
+
+  it.each(['@teammate', '\\*literal\\* @teammate'])('highlights a standalone mention and respects escaped Markdown: %s', (content) => {
+    const rendered = renderBubble({
+      id: 'literal-note', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'user',
+      sender_user_id: 'viewer', message_type: 'note', is_internal: true, content,
+      created_at: '2026-09-18T10:38:14Z', updated_at: '2026-09-18T10:38:14Z',
+    });
+    try {
+      const note = rendered.container.querySelector('[data-support-internal-note]');
+      expect(note?.querySelector('.mention-highlight')?.textContent).toBe('@teammate');
+      expect(note?.querySelector('em')).toBeNull();
+      if (content.startsWith('\\')) expect(note?.textContent).toContain('*literal*');
+    } finally { rendered.cleanup(); }
+  });
+
+  it.each(['ai', 'agent'] as const)('uses the Helpin avatar for %s replies and internal notes', (senderType) => {
+    for (const internal of [false, true]) {
+      const rendered = renderBubble({
+        id: 'ai-avatar', workspace_id: 'ws', conversation_id: 'conv', sender_type: senderType,
+        message_type: internal ? 'note' : 'reply', is_internal: internal, content: 'A useful update.',
+        sender_display_name: 'Helpin AI', sender_avatar_url: '/old-ai.png',
+        created_at: '2026-09-28T10:00:00Z', updated_at: '2026-09-28T10:00:00Z',
+      });
+      try {
+        expect(rendered.container.querySelector('.ask-agent-avatar')).not.toBeNull();
+        expect(rendered.container.querySelector('img[src="/old-ai.png"]')).toBeNull();
+        if (internal) expect(rendered.container.textContent).toContain('Internal note');
+      } finally { rendered.cleanup(); }
+    }
+  });
+
   it('does not show confidence for an AI follow-up without a score', () => {
     const rendered = renderBubble({
       id: 'follow-up', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'ai',
@@ -101,12 +167,17 @@ describe('MessageBubble', () => {
     const rendered = renderBubble({
       id: 'activity', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'user',
       sender_user_id: 'arooj', sender_display_name: 'Arooj Bukhari', message_type: 'system', system_event_type: event, is_internal: true,
+      sender_avatar_url: 'https://example.com/arooj.png',
       content: event === 'ai_returned' ? 'Returned to AI. AI will respond to the next customer message.' : 'AI paused.',
       created_at: '2026-09-18T10:38:14Z', updated_at: '2026-09-18T10:38:14Z',
     })
     try {
-      expect(rendered.container.textContent).toContain(event === 'ai_paused' ? 'Arooj paused AI.' : 'Arooj returned the conversation to AI.')
+      expect(rendered.container.textContent).toContain(event === 'ai_paused' ? 'Arooj Paused AI.' : 'Arooj returned the conversation to AI.')
       expect(rendered.container.querySelector('[data-support-ai-activity]')).not.toBeNull()
+      const callout = rendered.container.querySelector('[data-support-system-callout]')
+      expect(callout?.firstElementChild?.getAttribute('src')).toBe('https://example.com/arooj.png')
+      expect(rendered.container.querySelector('time')).toBeNull()
+      if (event === 'ai_paused') expect(callout?.querySelector('strong')?.textContent).toBe('Paused AI')
       expect(rendered.container.textContent).not.toContain('left a private note')
     } finally { rendered.cleanup() }
   })
@@ -120,7 +191,7 @@ describe('MessageBubble', () => {
       created_at: '2026-09-18T10:38:14Z', updated_at: '2026-09-18T10:38:14Z',
     })
     try {
-      expect(rendered.container.textContent).toContain('A teammate paused AI.')
+      expect(rendered.container.textContent).toContain('A teammate Paused AI.')
       expect(rendered.container.querySelector('[data-support-ai-handoff]')).toBeNull()
       const details = rendered.container.querySelector('details')
       expect(details?.open).toBe(false)
@@ -139,10 +210,30 @@ describe('MessageBubble', () => {
       created_at: '2026-09-18T10:38:14Z', updated_at: '2026-09-18T10:38:14Z',
     })
     try {
-      expect(rendered.container.textContent).toContain('left a private note')
+      expect(rendered.container.textContent).toContain('Internal note')
+      expect(rendered.container.textContent).not.toContain('left a private note')
       expect(rendered.container.querySelector('[data-support-ai-activity]')).toBeNull()
     } finally { rendered.cleanup() }
   })
+
+  it.each([true, false])('uses the author avatar and reply grouping for internal notes (last: %s)', (isLastInGroup) => {
+    const rendered = renderBubble({
+      id: 'note-avatar', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'user',
+      sender_user_id: 'arooj', sender_display_name: 'Arooj Bukhari', sender_avatar_url: 'https://example.com/arooj.png',
+      message_type: 'note', is_internal: true, content: 'Please review the account.',
+      created_at: '2026-09-18T10:38:14Z', updated_at: '2026-09-18T10:38:14Z',
+    }, undefined, { isLastInGroup });
+    try {
+      const note = rendered.container.querySelector('[data-support-internal-note]');
+      expect(note?.textContent).toContain('Internal note');
+      expect(note?.textContent).not.toContain('Arooj Bukhari');
+      expect(note?.className).not.toContain('border-r-');
+      expect(note?.querySelector('time')?.dateTime).toBe('2026-09-18T10:38:14Z');
+      const avatar = rendered.container.querySelector('img[alt="Arooj Bukhari"]');
+      if (isLastInGroup) expect(avatar?.getAttribute('src')).toBe('https://example.com/arooj.png');
+      else expect(avatar).toBeNull();
+    } finally { rendered.cleanup(); }
+  });
 
   it('renders a legacy return note as an attributed activity', () => {
     const rendered = renderBubble({
@@ -1203,7 +1294,7 @@ Can I export my data?`,
 
     const { container, cleanup } = renderBubble(message)
 
-    const noteCard = container.querySelector('.border-r-amber-400')
+    const noteCard = container.querySelector('[data-support-internal-note]')
     expect(noteCard).toBeTruthy()
 
     const fileLink = container.querySelector('a[href="https://cdn.example.com/diagnostics.pdf"]')
@@ -1338,3 +1429,14 @@ it.each([false, true])('attributes participant mail and preserves team-only priv
     if (!unknown) expect(rendered.container.textContent).not.toContain('Colleague')
   } finally { rendered.cleanup() }
 })
+
+it.each(['tag_added', 'tag_removed', 'ai_escalated', 'resolved'] as const)('uses the Ask Agent avatar for AI %s activity', (system_event_type) => {
+ const rendered = renderBubble({
+  id: 'ai-event', workspace_id: 'ws-1', conversation_id: 'conv-1',
+  sender_type: 'ai', sender_display_name: 'Helpin AI', message_type: 'system',
+  system_event_type, content: 'Helpin AI added tag waiting on customer.', is_internal: true,
+  created_at: '2026-09-29T10:00:00Z', updated_at: '2026-09-29T10:00:00Z',
+ });
+ try { expect(rendered.container.querySelector('[data-support-system-callout] .ask-agent-avatar')).not.toBeNull(); }
+ finally { rendered.cleanup(); }
+});

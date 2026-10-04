@@ -265,6 +265,9 @@ func TestPMCommandCreateTask(t *testing.T) {
 	if err := env.db.First(&created, "id = ?", result.TaskID).Error; err != nil {
 		t.Fatalf("load created task: %v", err)
 	}
+	if created.WorkflowID != "wf-a" || created.WorkflowStateID != "state-a" {
+		t.Fatalf("agent task did not use team workflow: %s/%s", created.WorkflowID, created.WorkflowStateID)
+	}
 	if created.SprintID == nil || *created.SprintID != "sprint-a" || created.Severity != model.PMTaskSeverityMajor || !created.Blocked || created.Blocker == nil || *created.Blocker != "Awaiting API" {
 		t.Fatalf("created task = %#v", created)
 	}

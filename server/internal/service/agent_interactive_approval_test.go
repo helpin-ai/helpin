@@ -1046,7 +1046,8 @@ func TestResumeRunAllowsPausedApprovalRuns(t *testing.T) {
 		`ALTER TABLE agent_run_messages ADD COLUMN dock_chat_sequence INTEGER`,
 		`ALTER TABLE agent_run_messages ADD COLUMN client_message_id TEXT`,
 		`ALTER TABLE agent_run_messages ADD COLUMN delivery_status TEXT NOT NULL DEFAULT 'sent'`,
-		`CREATE TABLE dock_chats (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, next_message_sequence INTEGER NOT NULL DEFAULT 0, updated_at DATETIME)`,
+		`CREATE TABLE dock_chats ( flow_builder TEXT,
+ coverage_gap_id TEXT, initial_context TEXT,id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, next_message_sequence INTEGER NOT NULL DEFAULT 0, updated_at DATETIME)`,
 		`INSERT INTO dock_chats (id, workspace_id, next_message_sequence, updated_at) VALUES ('chat-1', 'ws-1', 1, CURRENT_TIMESTAMP)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {

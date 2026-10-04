@@ -3,6 +3,7 @@ import {
   appendVary,
   compressedAssetPath,
   compressBody,
+  isCompressibleContentType,
   negotiateEncoding,
 } from './serverCompression.mjs'
 
@@ -31,5 +32,21 @@ describe('server compression', () => {
     const input = 'help center '.repeat(200)
     const compressed = await compressBody(input, 'gzip')
     expect(compressed.byteLength).toBeLessThan(Buffer.byteLength(input))
+  })
+
+  it('compresses Brotli bodies that round-trip', async () => {
+    const { brotliDecompressSync } = await import('node:zlib')
+    const input = JSON.stringify({ items: Array.from({ length: 200 }, (_, i) => ({ i })) })
+    const compressed = await compressBody(input, 'br')
+    expect(compressed.byteLength).toBeLessThan(Buffer.byteLength(input))
+    expect(brotliDecompressSync(compressed).toString()).toBe(input)
+  })
+
+  it('compresses JSON and text but not binary types', () => {
+    expect(isCompressibleContentType('application/json; charset=utf-8')).toBe(true)
+    expect(isCompressibleContentType('application/problem+json')).toBe(true)
+    expect(isCompressibleContentType('text/html')).toBe(true)
+    expect(isCompressibleContentType('image/png')).toBe(false)
+    expect(isCompressibleContentType('')).toBe(false)
   })
 })

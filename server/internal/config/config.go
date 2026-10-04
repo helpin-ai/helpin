@@ -174,6 +174,10 @@ type Config struct {
 	MCPCRMEnabled                     bool
 	MCPSupportEnabled                 bool
 	MCPPublicBaseURL                  string
+	// PublicAPIEnabled mounts the public REST API; it still requires MCP service tokens.
+	PublicAPIEnabled bool
+	// PublicAPIBaseURL is the externally reachable API origin advertised in the OpenAPI document.
+	PublicAPIBaseURL                  string
 	AIConnectionEncryptionKey         string
 	ChatGPTConnectionsEnabled         bool
 	ChatGPTClientID                   string
@@ -185,9 +189,14 @@ type Config struct {
 	ExternalMCPOAuthClientSecret      string
 	ExternalMCPOAuthClientAuthMethod  string
 	ExternalMCPAllowInsecureLocalhost bool
-	WebAuthnRPID                      string
-	WebAuthnRPOrigins                 []string
-	PlatformAdminEmails               []string
+	// ExternalA2AEncryptionKey protects external A2A agent tokens. External
+	// agents are unavailable (HTTP 503) when it is empty.
+	ExternalA2AEncryptionKey string
+	// ExternalA2AAllowedPrivateHosts may resolve to private addresses and use HTTP.
+	ExternalA2AAllowedPrivateHosts []string
+	WebAuthnRPID                   string
+	WebAuthnRPOrigins              []string
+	PlatformAdminEmails            []string
 	// ServerAdminEmails (HELPIN_ADMIN_EMAILS) designates self-hosted server
 	// admins by email (Community only).
 	ServerAdminEmails []string
@@ -530,6 +539,8 @@ func Load() (*Config, error) {
 		MCPCRMEnabled:                          parseBoolEnvDefaultTrue(os.Getenv("MCP_CRM_ENABLED")),
 		MCPSupportEnabled:                      parseBoolEnvDefaultTrue(os.Getenv("MCP_SUPPORT_ENABLED")),
 		MCPPublicBaseURL:                       strings.TrimRight(strings.TrimSpace(firstNonEmpty(os.Getenv("MCP_PUBLIC_BASE_URL"), appBaseURL)), "/"),
+		PublicAPIEnabled:                       parseBoolEnvDefaultTrue(os.Getenv("PUBLIC_API_ENABLED")),
+		PublicAPIBaseURL:                       strings.TrimRight(strings.TrimSpace(os.Getenv("PUBLIC_API_BASE_URL")), "/"),
 		AIConnectionEncryptionKey:              strings.TrimSpace(os.Getenv("AI_CONNECTION_ENCRYPTION_KEY")),
 		ChatGPTConnectionsEnabled:              parseBoolEnv(os.Getenv("CHATGPT_CONNECTIONS_ENABLED")),
 		ChatGPTClientID:                        strings.TrimSpace(os.Getenv("CHATGPT_OAUTH_CLIENT_ID")),
@@ -541,6 +552,8 @@ func Load() (*Config, error) {
 		ExternalMCPOAuthClientSecret:           strings.TrimSpace(os.Getenv("EXTERNAL_MCP_OAUTH_CLIENT_SECRET")),
 		ExternalMCPOAuthClientAuthMethod:       strings.TrimSpace(firstNonEmpty(os.Getenv("EXTERNAL_MCP_OAUTH_CLIENT_AUTH_METHOD"), "none")),
 		ExternalMCPAllowInsecureLocalhost:      parseBoolEnv(os.Getenv("EXTERNAL_MCP_ALLOW_INSECURE_LOCALHOST")),
+		ExternalA2AEncryptionKey:               strings.TrimSpace(os.Getenv("EXTERNAL_A2A_ENCRYPTION_KEY")),
+		ExternalA2AAllowedPrivateHosts:         parseCSV(os.Getenv("EXTERNAL_A2A_ALLOWED_PRIVATE_HOSTS")),
 		WebAuthnRPID:                           webAuthnRPID,
 		WebAuthnRPOrigins:                      webAuthnRPOrigins,
 		PlatformAdminEmails:                    parseCSV(os.Getenv("PLATFORM_ADMIN_EMAILS")),

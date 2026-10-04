@@ -796,23 +796,12 @@ func (r *SupportConversationRepository) textPrefixExpr(column string, limit int)
 
 var (
 	mdAutolinkPattern       = regexp.MustCompile(`<((?:https?|mailto):[^>\s]+)>`)
-	mdImageInlinePattern    = regexp.MustCompile(`!\[([^\]]*)\]\([^)]*\)`)
-	mdLinkInlinePattern     = regexp.MustCompile(`\[([^\]]+)\]\([^)]*\)`)
-	mdHTMLTagPattern        = regexp.MustCompile(`<[^>]+>`)
-	mdHeadingPattern        = regexp.MustCompile(`(?m)^\s{0,3}#{1,6}\s+`)
-	mdBlockquotePattern     = regexp.MustCompile(`(?m)^\s{0,3}>\s?`)
-	mdListBulletPattern     = regexp.MustCompile(`(?m)^\s{0,3}(?:[-*+]|\d+[.)])\s+`)
 	mdTableSepPattern       = regexp.MustCompile(`(?m)^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$`)
-	mdHardBreakPattern      = regexp.MustCompile(`\\\r?\n`)
-	mdEmphasisPattern       = regexp.MustCompile("(\\*\\*|__|\\*|_|`)")
-	whitespacePattern       = regexp.MustCompile(`\s+`)
 	spaceBeforePunctPattern = regexp.MustCompile(`\s+([,.;:!?\)])`)
 )
 
-// cleanMessageSnippet renders a plain-text preview of a Markdown or HTML
-// message body for inbox row display. It unwraps autolinks, link/image
-// syntax, and table separators, strips emphasis markers, collapses
-// whitespace, and truncates to limit characters with an ellipsis.
+// cleanMessageSnippet extracts readable text before applying the display limit.
+// Cached previews can end halfway through HTML or a Markdown image/link.
 func cleanMessageSnippet(raw string, limit int) string {
 	const notePrefix = "Note: "
 	hasNote := strings.HasPrefix(raw, notePrefix)
@@ -820,20 +809,8 @@ func cleanMessageSnippet(raw string, limit int) string {
 		raw = strings.TrimPrefix(raw, notePrefix)
 	}
 
-	cleaned := raw
-	cleaned = mdAutolinkPattern.ReplaceAllString(cleaned, "$1")
-	cleaned = mdImageInlinePattern.ReplaceAllString(cleaned, "$1")
-	cleaned = mdLinkInlinePattern.ReplaceAllString(cleaned, "$1")
-	cleaned = mdTableSepPattern.ReplaceAllString(cleaned, " ")
-	cleaned = mdHardBreakPattern.ReplaceAllString(cleaned, "\n")
-	cleaned = mdHTMLTagPattern.ReplaceAllString(cleaned, " ")
-	cleaned = strings.NewReplacer("&nbsp;", " ", "&amp;", "&", "&lt;", "<", "&gt;", ">", "&#39;", "'", "&quot;", `"`).Replace(cleaned)
-	cleaned = mdHeadingPattern.ReplaceAllString(cleaned, "")
-	cleaned = mdBlockquotePattern.ReplaceAllString(cleaned, "")
-	cleaned = mdListBulletPattern.ReplaceAllString(cleaned, "")
-	cleaned = strings.ReplaceAll(cleaned, "|", " ")
-	cleaned = mdEmphasisPattern.ReplaceAllString(cleaned, "")
-	cleaned = whitespacePattern.ReplaceAllString(cleaned, " ")
+	cleaned := snippetPlainText(raw)
+	cleaned = strings.Join(strings.Fields(cleaned), " ")
 	cleaned = spaceBeforePunctPattern.ReplaceAllString(cleaned, "$1")
 	cleaned = strings.TrimSpace(cleaned)
 

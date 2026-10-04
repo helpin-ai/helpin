@@ -20,6 +20,7 @@ import {
   appendVary,
   compressBody,
   compressedAssetPath,
+  isCompressibleContentType,
   negotiateEncoding,
 } from './serverCompression.mjs'
 
@@ -131,12 +132,36 @@ function firstHeaderValue(value) {
   return normalizeHeaderValue(value).split(',')[0].trim()
 }
 
-async function writeCompressedBody(request, response, body) {
+// Compressed bodies per cached page and encoding, so cache hits skip the
+// compressor. Keyed by entry object: a re-rendered page is a new entry.
+const compressedCacheBodies = new WeakMap()
+
+function compressCachedBody(cacheEntry, input, encoding) {
+  let bodies = compressedCacheBodies.get(cacheEntry)
+  if (!bodies) {
+    bodies = new Map()
+    compressedCacheBodies.set(cacheEntry, bodies)
+  }
+  let output = bodies.get(encoding)
+  if (!output) {
+    output = compressBody(input, encoding)
+    output.catch(() => bodies.delete(encoding))
+    bodies.set(encoding, output)
+  }
+  return output
+}
+
+async function writeCompressedBody(request, response, body, cacheEntry) {
   const input = Buffer.isBuffer(body) ? body : Buffer.from(body)
   const encoding = input.byteLength >= 1024
     ? negotiateEncoding(request.headers['accept-encoding'])
     : ''
-  const output = encoding ? await compressBody(input, encoding) : input
+  let output = input
+  if (encoding) {
+    output = cacheEntry
+      ? await compressCachedBody(cacheEntry, input, encoding)
+      : await compressBody(input, encoding)
+  }
   response.setHeader('Vary', appendVary(response.getHeader('Vary'), 'Accept-Encoding'))
   response.removeHeader('Content-Length')
   if (encoding) {
@@ -299,7 +324,7 @@ async function writeCachedResponse(request, nodeResponse, cached) {
     nodeResponse.setHeader(name, value)
   }
 
-  await writeCompressedBody(request, nodeResponse, cached.body)
+  await writeCompressedBody(request, nodeResponse, cached.body, cached)
 }
 
 function isApiRequest(url) {
@@ -317,6 +342,9 @@ function buildProxyHeaders(request) {
   headers.delete('host')
   headers.delete('connection')
   headers.delete('content-length')
+  // fetch() decodes compressed bodies but keeps Content-Encoding, which would
+  // mislabel the relayed body. Ask upstream for identity and compress here.
+  headers.delete('accept-encoding')
   return headers
 }
 
@@ -352,6 +380,20 @@ async function proxyApiRequest(request, nodeResponse, url) {
   })
 
   const proxyResponse = await fetch(proxyRequest)
+  if (
+    proxyResponse.body &&
+    !proxyResponse.headers.has('content-encoding') &&
+    isCompressibleContentType(proxyResponse.headers.get('content-type') ?? '')
+  ) {
+    nodeResponse.statusCode = proxyResponse.status
+    for (const [name, value] of proxyResponse.headers.entries()) {
+      if (['connection', 'content-length', 'keep-alive', 'transfer-encoding'].includes(name)) continue
+      nodeResponse.setHeader(name, value)
+    }
+    const body = Buffer.from(await proxyResponse.arrayBuffer())
+    await writeCompressedBody(request, nodeResponse, body)
+    return
+  }
   await writeFetchResponse(nodeResponse, proxyResponse, targetUrl)
 }
 
@@ -782,8 +824,9 @@ async function handleRequest(request, response) {
       const headersToCache = Array.from(fetchResponse.headers.entries())
         .filter(([name]) => !['cache-control', 'content-encoding', 'content-length'].includes(name))
       headersToCache.push(['cache-control', 'public, max-age=0, must-revalidate'])
+      let cacheEntry
       if (isHtmlRequest(request, routeUrl)) {
-        const cacheEntry = {
+        cacheEntry = {
           body,
           expiresAt: Date.now() + HTML_CACHE_TTL_MS,
           headers: headersToCache,
@@ -805,7 +848,7 @@ async function handleRequest(request, response) {
       for (const [name, value] of headersToCache) {
         response.setHeader(name, value)
       }
-      await writeCompressedBody(request, response, body)
+      await writeCompressedBody(request, response, body, cacheEntry)
       return
     }
 

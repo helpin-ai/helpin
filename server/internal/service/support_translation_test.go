@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/decision"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -454,6 +455,72 @@ func TestTranslationUnconfiguredServerSendsReplies(t *testing.T) {
 		t.Fatalf("reply blocked on a server without translation: %v", err)
 	}
 	if sent.Content != "Hello" || p.calls != 0 {
+		t.Fatalf("content=%q calls=%d", sent.Content, p.calls)
+	}
+}
+
+// queuedReplyMembers makes every requested user an active workspace member.
+type queuedReplyMembers struct{}
+
+func (queuedReplyMembers) GetMembership(_ context.Context, _, user string) (*authorization.MemberInfo, error) {
+	return &authorization.MemberInfo{ID: user, Status: "active", Role: "member"}, nil
+}
+
+func (queuedReplyMembers) GetTeamMemberships(context.Context, string) ([]authorization.TeamRole, error) {
+	return nil, nil
+}
+
+// The dashboard queues replies and a worker delivers them behind a fence on
+// the conversation's stored translation policy revision. Without a
+// translation provider the queued reply must still carry that revision, or
+// every teammate reply on a Community install fails as "Not sent".
+func TestTranslationUnconfiguredServerDeliversQueuedReply(t *testing.T) {
+	env, c, p := translationFixture(t)
+	s := env.service.supportInboxService
+	ctx := context.Background()
+	user := "22222222-2222-2222-2222-222222222222"
+	if err := env.messageRepo.DB().AutoMigrate(&model.SupportPendingSend{}); err != nil {
+		t.Fatal(err)
+	}
+	// The visitor's first message stores the conversation policy at revision 1.
+	if _, err := s.translations.repo.LiveConversation(ctx, c.WorkspaceID, c.ID, true, ""); err != nil {
+		t.Fatal(err)
+	}
+	s.translations.available = false
+	s.SetTranslationProviderConfigured(false)
+	// The delivery fence re-checks the replying teammate's permissions.
+	s.SetAuthzService(authorization.NewAuthzService(env.messageRepo.DB(), queuedReplyMembers{}, nil))
+
+	req := explicitDeliveryRequest(t, "chat_only")
+	req.Content = "Reply without a translation provider"
+	req.ClientMessageID = "87654321-4321-4321-4321-210987654321"
+	if _, err := s.QueueSupportSend(ctx, c.WorkspaceID, c.ID, user, req); err != nil {
+		t.Fatalf("queue reply: %v", err)
+	}
+	var job model.SupportPendingSend
+	db := env.messageRepo.DB()
+	if err := db.Where("conversation_id = ? AND user_id = ?", c.ID, user).First(&job).Error; err != nil {
+		t.Fatal(err)
+	}
+	if job.Revision != 1 {
+		t.Fatalf("queued reply revision = %d, want the stored policy revision 1", job.Revision)
+	}
+	// Deliver it as the send worker does, through the revision fence.
+	job.Status, job.Attempts = "sending", 1
+	if err := db.Model(&job).Updates(map[string]any{"status": job.Status, "attempts": job.Attempts}).Error; err != nil {
+		t.Fatal(err)
+	}
+	options, err := s.translationOptions(ctx, c.WorkspaceID, c.ID, user, true)
+	if err != nil || options.Conversation.Revision != job.Revision {
+		t.Fatalf("worker options = %+v, err = %v", options, err)
+	}
+	work := context.WithValue(ctx, supportSendPolicyKey{}, supportSendPolicySnapshot{job.WorkspaceID, job.ConversationID, job.UserID, options})
+	work = context.WithValue(work, supportSendGuardKey{}, &job)
+	sent, err := s.CreateConversationMessage(work, c.WorkspaceID, c.ID, req, "user", &job.UserID, nil, nil)
+	if err != nil {
+		t.Fatalf("queued reply blocked on a server without translation: %v", err)
+	}
+	if sent.Content != req.Content || p.calls != 0 {
 		t.Fatalf("content=%q calls=%d", sent.Content, p.calls)
 	}
 }

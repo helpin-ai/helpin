@@ -1140,6 +1140,7 @@ func (s *SupportInboxService) buildWidgetConfigResponse(ctx context.Context, ins
 	hasOnlineAgent := s.hasOnlineSupportTeammate(ctx, inst.WorkspaceID, now)
 
 	return &model.WidgetConfigResponse{
+		PrivacyNotice: model.WidgetConfigPrivacyNotice{Enabled: settings.PrivacyNoticeEnabled, PolicyURL: settings.PrivacyPolicyURL, Text: settings.PrivacyNoticeText},
 		WorkspaceID:   inst.WorkspaceID,
 		WorkspaceName: settings.WidgetName,
 		Branding: model.WidgetConfigBranding{

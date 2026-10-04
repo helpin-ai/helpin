@@ -1,5 +1,4 @@
-import Link from 'next/link';
-import { ArrowRight, ChevronRight } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { ConnectedWorkspace } from '../ConnectedWorkspace';
 import { CtaRow, CtaNote, FAQList, type FAQItem, GITHUB_URL } from '../ui';
 
@@ -7,9 +6,6 @@ export const REPO = `${GITHUB_URL}/blob/develop`;
 export function DocLink({href,children}:{href:string;children:React.ReactNode}) {
   const external = /^https?:\/\//.test(href);
   return <a className="platform-text-link" href={href} {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}>{children}<ArrowRight size={15}/></a>;
-}
-export function PlatformBreadcrumb({label}:{label:string}) {
-  return <div className="platform-breadcrumb"><Link href="/">Helpin</Link><ChevronRight size={12}/><span>{label}</span></div>;
 }
 export function PlatformFAQ({items}:{items:readonly FAQItem[]}) {
   return <FAQList items={items} className="platform-faqs" />;

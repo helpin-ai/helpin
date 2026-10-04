@@ -1,3 +1,4 @@
+import { TeamLabel } from '@/components/workspace/TeamLabel';
 import type { AIConnectionSelection } from '@/lib/services/aiConnectionService';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { CodingCapacityNotice } from '@/components/agents/CodingCapacityNotice';
@@ -92,6 +93,9 @@ import type {
 import type { DocsCollection, DocsSpace } from '@/lib/docsTypes';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { ExternalAgentBadge } from '@/components/agents/ExternalAgentBadge';
+import { ExternalAgentSummarySheet } from '@/components/agents/ExternalAgentSummarySheet';
+import { agentEditorKind, isExternalAgent } from '@/lib/externalAgents';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import {
   Sheet,
@@ -2040,6 +2044,7 @@ function AgentCard({
               <h3 className="truncate text-sm font-semibold">{agent.name}</h3>
               <AgentStatusBadge stats={stats} onOpenRun={onOpenRun} />
               {agent.is_system ? <Badge variant="outline" className="text-[10px]">System</Badge> : null}
+              <ExternalAgentBadge agent={agent} />
             </div>
             <p className="text-xs text-muted-foreground">{role}</p>
             <p className="line-clamp-2 text-sm text-muted-foreground">{purpose}</p>
@@ -2078,9 +2083,9 @@ function AgentCard({
                   </DropdownMenuItem>
                 ) : null}
                 <DropdownMenuItem onClick={() => onOpen(agent)}>
-                  Edit
+                  {agentEditorKind(agent) === 'external' ? 'View details' : 'Edit'}
                 </DropdownMenuItem>
-                {!agent.is_system ? (
+                {agentEditorKind(agent) === 'custom' ? (
                   <DropdownMenuItem
                     className="text-destructive focus:text-destructive"
                     onClick={() => onDelete(agent)}
@@ -2270,7 +2275,7 @@ export function AgentActions({
           </DropdownMenuItem>
           {canEdit ? (
             <DropdownMenuItem onClick={() => onOpen(agent)}>
-              Edit
+              {agentEditorKind(agent) === 'external' ? 'View details' : 'Edit'}
             </DropdownMenuItem>
           ) : null}
           {stats?.lastRun ? (
@@ -2278,7 +2283,7 @@ export function AgentActions({
               Open latest run
             </DropdownMenuItem>
           ) : null}
-          {canEdit && !agent.is_system ? (
+          {canEdit && agentEditorKind(agent) === 'custom' ? (
             <DropdownMenuItem
               className="text-destructive focus:text-destructive"
               onClick={() => onDelete(agent)}
@@ -2371,6 +2376,7 @@ export function AgentRow({
             <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5">
               <span className="truncate text-xs text-muted-foreground">{role}</span>
               {agent.is_system ? <Badge variant="outline" className="h-5 px-1.5 text-[10px]">System</Badge> : null}
+              <ExternalAgentBadge agent={agent} />
             </div>
             <CodingCapacityNotice agent={agent} className="mt-1" />
           </div>
@@ -2379,7 +2385,7 @@ export function AgentRow({
 
       <div className="min-w-0 space-y-1">
         <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Config</p>
-        <p className="truncate text-sm font-medium text-foreground"><AIProfileLabel workspaceId={agent.workspace_id} profileId={agent.ai_profile_id} /></p>
+        <p className="truncate text-sm font-medium text-foreground">{isExternalAgent(agent) ? 'External agent (A2A)' : <AIProfileLabel workspaceId={agent.workspace_id} profileId={agent.ai_profile_id} />}</p>
         <p className="truncate text-xs text-muted-foreground">{invocationLabel}</p>
       </div>
 
@@ -2532,6 +2538,7 @@ export function AgentsPage({ requestedAgentId }: { requestedAgentId?: string } =
   const [agentAnalytics, setAgentAnalytics] = useState<AgentAnalyticsResponse | null>(null);
   const [agentAnalyticsLoading, setAgentAnalyticsLoading] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
+  const [externalSummaryAgent, setExternalSummaryAgent] = useState<Agent | null>(null);
   const [agentUsage, setAgentUsage] = useState<AgentTriggerUsageSummary | null>(null);
   const [agentUsageLoading, setAgentUsageLoading] = useState(false);
   const [form, setForm] = useState<AgentFormData>(createEmptyCustomForm());
@@ -3055,6 +3062,10 @@ export function AgentsPage({ requestedAgentId }: { requestedAgentId?: string } =
   };
 
   const openEditDialog = (agent: Agent) => {
+    if (agentEditorKind(agent) === 'external') {
+      setExternalSummaryAgent(agent);
+      return;
+    }
     void Promise.all([loadToolCatalog(), loadSkillCatalog()]);
     setEditingAgent(agent);
     setTemplateDraft(null);
@@ -3095,7 +3106,7 @@ export function AgentsPage({ requestedAgentId }: { requestedAgentId?: string } =
   }, [requestedAgentId, agents, agentFleetQuery.isLoading, presetsLoadedFor, workspaceId, openEditDialog]);
 
   const openDeleteDialog = (agent: Agent) => {
-    if (agent.is_system) return;
+    if (agentEditorKind(agent) !== 'custom') return;
     setEditingAgent(agent);
     setDeleteConfirmOpen(true);
   };
@@ -5124,7 +5135,7 @@ export function AgentsPage({ requestedAgentId }: { requestedAgentId?: string } =
                         <SelectContent>
                           {visibleTeams.map((team) => (
                             <SelectItem key={team.id} value={team.id}>
-                              {team.name}
+                              <TeamLabel team={team} />
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -5317,7 +5328,7 @@ export function AgentsPage({ requestedAgentId }: { requestedAgentId?: string } =
                         <SelectContent>
                           {visibleTeams.map((team) => (
                             <SelectItem key={team.id} value={team.id}>
-                              {team.name}
+                              <TeamLabel team={team} />
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -5536,7 +5547,7 @@ export function AgentsPage({ requestedAgentId }: { requestedAgentId?: string } =
                         <SelectContent>
                           {visibleTeams.map((team) => (
                             <SelectItem key={team.id} value={team.id}>
-                              {team.name}
+                              <TeamLabel team={team} />
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -5744,7 +5755,7 @@ export function AgentsPage({ requestedAgentId }: { requestedAgentId?: string } =
                           <SelectItem value="_none">All teams (workspace-wide)</SelectItem>
                           {visibleTeams.map((team) => (
                             <SelectItem key={team.id} value={team.id}>
-                              {team.name}
+                              <TeamLabel team={team} />
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -6133,7 +6144,7 @@ export function AgentsPage({ requestedAgentId }: { requestedAgentId?: string } =
                           <SelectContent>
                             {visibleTeams.map((team) => (
                               <SelectItem key={team.id} value={team.id}>
-                                {team.name}
+                                <TeamLabel team={team} />
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -6579,6 +6590,13 @@ export function AgentsPage({ requestedAgentId }: { requestedAgentId?: string } =
       ) : null}
 
       {renderSystemDrawer()}
+
+      <ExternalAgentSummarySheet
+        agent={externalSummaryAgent}
+        workspaceId={workspaceId ?? ''}
+        workspaceSlug={workspace?.slug}
+        onOpenChange={(open) => { if (!open) setExternalSummaryAgent(null); }}
+      />
 
       {/* ---- New custom version dialog ---- */}
       <Dialog

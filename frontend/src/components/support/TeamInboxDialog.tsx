@@ -1,3 +1,4 @@
+import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ArrowRight02Icon, Tick01Icon, ArrowLeft01Icon, HelpCircleIcon, PlusSignIcon, Cancel01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
@@ -788,7 +789,7 @@ export function TeamInboxDialog({
                     <SelectItem value="none">No linked team</SelectItem>
                     {supportTeamOptions.map(({ team, disabledReason }) => (
                       <TeamSelectItem key={team.id} value={team.id} disabledReason={disabledReason}>
-                        {team.name} · {teamMemberCounts.get(team.id) ?? 0} members
+                        <TeamLabel team={team} /> · {teamMemberCounts.get(team.id) ?? 0} members
                       </TeamSelectItem>
                     ))}
                   </SelectContent>

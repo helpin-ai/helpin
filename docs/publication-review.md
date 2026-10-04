@@ -5,6 +5,49 @@ a publication triage, not a secret scan, legal clearance, or authorization to ma
 the repository public. The follow-up cleanup below removes obsolete documents
 from the working tree; Git history has not been rewritten.
 
+## October 1, 2026 production-change review
+
+The public [production workflow](https://github.com/helpin-ai/helpin/actions/runs/36885241443)
+succeeded for `9c87e3571` (`server-v0.95.458`). This review compared that promotion
+with `2175af66f`; it does not attest to live cluster state or audit the complete
+repository history. The local verification tree differed from that production
+revision only by the microphone tooltip layer fix before this review's changes.
+
+- Voice capture/transcription, support coverage, indexed knowledge, translation,
+  notification, and OAuth changes remain in shared product code. Voice duration
+  telemetry uses the shared migration and Community usage recorder; commercial
+  duration rates, reservations, and charging remain under `server/ee/`.
+- Community uses an operator-owned instance OpenRouter key for voice, with no
+  Helpin billing. Workspace/personal AI connections alone do not enable voice.
+  The review corrected missing `OPENROUTER_BASE_URL` forwarding in Community
+  Compose and documented that configuration.
+- The tracked-file credential scan and the same scanner applied to 196 text
+  blobs introduced by the promotion found no matches. This is a pattern-based
+  check, not a guarantee against all credentials or personal information.
+- Enterprise implementation source is publicly readable under separate license.
+  The publication checklist still lacks a recorded owner decision on public
+  Enterprise source versus a private overlay. Build exclusion does not resolve
+  that confidentiality decision.
+- The new coverage UX research includes private-preview references and deployment
+  identifiers. Its Helpin screenshots use mocked fixture data; two screenshots
+  were visually sampled. Publication approval for those references and third-party
+  screenshots is not established by a passing secret scan.
+
+Verification passed: Community backend builds and tests with `server/ee` removed;
+Community frontend build and artifact scan with `frontend/src/ee` removed;
+158 focused Community UI tests; hosted frontend build and 139 focused hosted UI
+tests; hosted Go regression suites for billing, API composition, services,
+handlers, routing, repositories, providers, and action policy; Community bundle
+packaging and documentation tests. Both frontend builds reported chunk-size
+warnings. The broader agent-guide link check found one pre-existing missing
+website skill target in `AGENTS.md`; maintained-guide and new-link checks passed.
+No live provider request, production database migration, deployed-image scan,
+or complete historical confidentiality review was performed.
+
+Follow the [ongoing boundary rules](../AGENTS.md#community-and-cloud-boundaries)
+for future changes. Do not interpret this scoped review as full publication
+clearance; the historical dispositions below remain unresolved records.
+
 ## Documentation destinations
 
 Product tutorials belong in the hosted help center, which is planned; until it

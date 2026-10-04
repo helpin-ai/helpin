@@ -1,4 +1,6 @@
 import { type ReactNode } from 'react';
+import { DesktopNotificationControl } from './DesktopNotificationControl';
+import { desktopCategoryEnabled } from '@/lib/desktopNotifications';
 import { SettingsSection } from './SettingsSection';
 import { Card, CardContent } from '@/components/ui/card';
 import { InformationCircleIcon } from '@/lib/icons';
@@ -128,6 +130,7 @@ export function AccountNotificationPreferences({ cardClassName }: CardClassNameP
         <PreferenceRow title="Pause all notifications">
           <Switch aria-label="Pause all notifications" checked={dndActive} disabled={updateSettings.isPending} onCheckedChange={handleDndToggle} />
         </PreferenceRow>
+        <DesktopNotificationControl />
         <PreferenceRow title="Email notifications">
           <Switch aria-label="Email notifications" checked={emailEnabled} disabled={updateSettings.isPending} onCheckedChange={(value) => handleToggle('email_enabled', value)} />
         </PreferenceRow>
@@ -238,7 +241,7 @@ function NotificationCategoriesCard({
   const { data: prefs, isLoading } = useNotificationPreferences(workspaceId);
   const updatePrefs = useUpdateNotificationPreferences(workspaceId);
 
-  const handleToggle = (categoryKey: string, channel: 'in_app' | 'email', value: boolean) => {
+  const handleToggle = (categoryKey: string, channel: 'in_app' | 'email' | 'desktop', value: boolean) => {
     const nextPreferences = { ...(prefs?.channel_preferences ?? {}) };
     nextPreferences[categoryKey] = {
       ...(nextPreferences[categoryKey] ?? {}),
@@ -261,13 +264,13 @@ function NotificationCategoriesCard({
   return (
     <SettingsSection title={title} className={cardClassName}>
       <div>
-        <div className="grid grid-cols-[minmax(0,1fr)_56px_56px] items-center gap-2 border-b border-quiet-divider-strong py-2 text-xs text-quiet-text-secondary sm:grid-cols-[minmax(0,1fr)_80px_80px]">
+        <div className="grid grid-cols-[minmax(0,1fr)_48px_56px_48px] items-center gap-2 border-b border-quiet-divider-strong py-2 text-xs text-quiet-text-secondary sm:grid-cols-[minmax(0,1fr)_72px_72px_72px]">
           <span><span className="sr-only">Activity type</span></span>
-          <span className="text-center">In-app</span><span className="text-center">Email</span>
+          <span className="text-center">In-app</span><QuickTooltip label="Desktop alerts follow your enabled in-app categories. Enable desktop notifications for this browser in Account settings."><span tabIndex={0} className="text-center">Desktop</span></QuickTooltip><span className="text-center">Email</span>
         </div>
         <div className="divide-y divide-quiet-divider-strong">
           {categories.map((category) => (
-            <div key={category.key} className="grid grid-cols-[minmax(0,1fr)_56px_56px] items-center gap-2 py-3 sm:grid-cols-[minmax(0,1fr)_80px_80px]">
+            <div key={category.key} className="grid grid-cols-[minmax(0,1fr)_48px_56px_48px] items-center gap-2 py-3 sm:grid-cols-[minmax(0,1fr)_72px_72px_72px]">
               <div className="flex min-w-0 items-center gap-1">
                 <span className="text-sm">{category.label}</span>
                 <PreferenceHelp title={category.label}>
@@ -276,6 +279,9 @@ function NotificationCategoriesCard({
               </div>
               <div className="flex justify-center">
                 <Switch aria-label={`${category.label}: in-app`} checked={isChannelEnabled(prefs, category.key, 'in_app')} disabled={updatePrefs.isPending} onCheckedChange={(value) => handleToggle(category.key, 'in_app', value)} />
+              </div>
+              <div className="flex justify-center">
+                <Switch aria-label={`${category.label}: desktop`} checked={prefs ? desktopCategoryEnabled(prefs, category.key) : false} disabled={!prefs || updatePrefs.isPending || !isChannelEnabled(prefs, category.key, 'in_app')} onCheckedChange={(value) => handleToggle(category.key, 'desktop', value)} />
               </div>
               <div className="flex justify-center">
                 {category.supportsEmail === false ? <span aria-label="Email not available" className="text-xs text-quiet-text-tertiary">—</span> : (

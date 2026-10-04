@@ -1,3 +1,4 @@
+import { useNotificationView } from '@/hooks/useNotificationView';
 import { dockWorkPlans, hasWorkPlanOrigin } from './dockWorkPlans';
 import activityStyles from './DockActivityTimeline.module.css';
 import { AIExecutionDetails } from "../AIExecutionDetails";
@@ -41,6 +42,7 @@ export function DockRunView({
   onRunContinued,
 }: DockRunViewProps) {
   const run = summary.run;
+  useNotificationView(workspaceId, 'run', run.id, active);
   const networkAvailable = useDockNetworkActivity();
   const [fallbackInteraction, setFallbackInteraction] = useState<CodingSessionInteraction | null>(null);
   const [sending, setSending] = useState(false);
@@ -291,6 +293,9 @@ export function DockRunView({
       {(composerEnabled || canStop || effectiveRun.status === 'paused' || effectiveRun.status === 'running' || effectiveRun.status === 'queued') ? (
         <div className="border-t border-[#f1efea] dark:border-[#302f2b]">
           <DockInput
+            workspaceId={workspaceId}
+            voiceIdentity={run.id}
+            active={active}
             mode="conversation"
             value={draft}
             onChange={onDraftChange}

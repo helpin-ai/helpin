@@ -77,12 +77,15 @@ func TestExcludedPresetRuntimeProfilesHaveNoNewPMTools(t *testing.T) {
 }
 
 func TestOperationalRuntimeProfilesExposeRelevantSafeTools(t *testing.T) {
+	if !slices.Contains(GetRuntimeProfile(model.AgentPresetSupportAgent).AllowedTools, "add_support_conversation_note") {
+		t.Fatal("Echo must have access to internal notes")
+	}
 	tests := []struct {
 		preset string
 		tools  []string
 	}{
 		{model.AgentPresetEpicPlanner, []string{"update_task_delivery_target", "update_epic_delivery_target"}},
-		{model.AgentPresetDocumentationAgent, []string{"update_document_metadata"}},
+		{model.AgentPresetDocumentationAgent, []string{"update_document_metadata", "archive_document", "restore_document"}},
 		{model.AgentPresetSupportAgent, []string{"list_support_conversations", "get_support_conversation", "list_support_tags", "list_support_inboxes", "list_support_assignees", "assign_support_conversation", "move_support_conversation", "add_support_conversation_tag", "remove_support_conversation_tag", "link_support_conversation_task", "link_support_conversation_contact", "update_support_conversation_subject"}},
 	}
 	for _, tt := range tests {
