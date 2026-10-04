@@ -28,7 +28,6 @@ type supportTranslationService struct {
 	metrics   *observability.Metrics
 	repo      *repository.SupportTranslationRepository
 	provider  llm.Provider
-	jev       *JevDecisionService
 	route     AICompletionRoute
 	available bool
 	// unconfigured means this server has no translation provider at all (for
@@ -37,8 +36,8 @@ type supportTranslationService struct {
 	unconfigured bool
 }
 
-func (s *SupportInboxService) SetTranslations(repo *repository.SupportTranslationRepository, provider llm.Provider, jev *JevDecisionService, route AICompletionRoute, available bool) *SupportInboxService {
-	s.translations = &supportTranslationService{repo: repo, provider: provider, jev: jev, route: route, available: available}
+func (s *SupportInboxService) SetTranslations(repo *repository.SupportTranslationRepository, provider llm.Provider, route AICompletionRoute, available bool) *SupportInboxService {
+	s.translations = &supportTranslationService{repo: repo, provider: provider, route: route, available: available}
 	return s
 }
 

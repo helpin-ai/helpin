@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/decision"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/observability"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
@@ -183,5 +185,23 @@ func TestJevProductDecisionFailuresSettleAndConsumeCap(t *testing.T) {
 				t.Fatalf("failed attempt escaped cap: %+v %v", result, err)
 			}
 		})
+	}
+}
+
+func TestJevProductDecisionMetrics(t *testing.T) {
+	svc, _, _, _ := setupJevDecisionTest(t, "primary")
+	m := observability.NewMetrics()
+	svc.SetMetrics(m)
+	for range 2 {
+		if _, err := svc.Decide(context.Background(), jevTestRequest()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w := httptest.NewRecorder()
+	m.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/metrics", nil))
+	for _, outcome := range []string{"ready", "cached"} {
+		if !strings.Contains(w.Body.String(), `helpin_ai_decisions_total{operation="answer_evidence",outcome="`+outcome+`"} 1`) {
+			t.Fatalf("missing answer evidence %s metric", outcome)
+		}
 	}
 }
