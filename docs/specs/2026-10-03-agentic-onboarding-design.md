@@ -22,17 +22,20 @@ The existing **Ask Agent chat is the onboarding surface**, using its normal conv
 
 ## Owner goals
 
-Ask: **What would you like your team to do with Helpin?**
+Ask: **What brought you to Helpin?**
 
-Learn the owner's intent from their reply in chat. Owners should not need to understand Helpin's modules or configuration to choose a direction. The following intents guide the agent internally; they are not a mandatory selection menu:
+Learn the owner's intent from their reply in chat. Owners should not need to understand Helpin's modules or configuration to choose a direction. Frame suggested replies around work AI can do for them and the ongoing benefit. These optional suggestions cover the onboarding journeys; owners can always write their own reply:
 
-| Owner intent | Setup and AI experience |
+| Suggested AI outcome | Setup and AI experience |
 | --- | --- |
-| Support our customers | Prepare support channels and trusted knowledge, then help the owner review and steer AI answers. |
-| Plan and deliver projects | Establish the necessary team structure and real project work, then introduce AI-assisted planning and execution. |
-| Organize and share knowledge | Prepare useful content and appropriate access, then demonstrate AI working with that knowledge. |
-| Manage customers and sales | Establish customer context and a suitable pipeline, then introduce relevant AI-assisted follow-ups. |
-| Automate recurring work | Identify a concrete recurring task, connect what it needs, and test an agent workflow before enabling unattended execution. |
+| Letting AI answer customer questions | Prepare support channels and trusted knowledge, then help the owner review and steer AI answers. |
+| Planning and delivering projects with AI | Start with real project work, then introduce AI planning and tasks an agent can execute. |
+| Keeping our CRM updated automatically | Establish customer context and a suitable pipeline, then review AI-proposed updates and follow-ups before configuring automation. |
+| Keeping our help docs updated | Connect existing public help docs and relevant change sources, then review suggested corrections and missing answers. |
+| Getting answers from our team’s knowledge | Prepare trusted internal content and appropriate access, then try AI answers grounded in that knowledge. |
+| Letting agents handle recurring work | Identify a concrete recurring task, connect what it needs, and test an agent workflow before enabling unattended execution. |
+| Getting AI help to switch tools | Understand the existing tool and data, then help plan the move and identify useful AI workflows for the new setup. |
+| Exploring what AI can do for us | Discover where the team spends time and recommend a useful AI workflow to try. |
 
 Accept natural replies and changes of direction. Ask a short follow-up when a goal is ambiguous; for example, knowledge may be internal, customer-facing, or both. Preserve that distinction in the underlying journey without making the owner fill out a questionnaire.
 
@@ -60,7 +63,7 @@ Reuse Ask Agent's conversation history, composer, and normal interaction and app
 
 Offer optional answer suggestions directly beneath the current agent question inside the conversation thread. Reuse Ask Agent's compact suggestion-button style and click behavior: selecting a suggestion fills the composer so the owner can edit or send it. Free-text replies remain available. Show suggestions only for the unanswered question and adapt them to the conversation. Include every relevant available path, without an arbitrary option limit or a “Show more” gate; let the buttons wrap naturally.
 
-The welcome should cover all six onboarding journeys: customer support, projects and teamwork, sales/CRM, public help-center documentation, internal knowledge, and automation. Also offer moving from another tool and exploring Helpin. Keep public and internal knowledge distinct. The mockup labels are “Support our customers”, “Organize our team’s work”, “Manage sales & CRM”, “Create a help center”, “Organize internal knowledge”, “Automate busywork”, “Move from another tool”, and “Just exploring”. Production suggestions follow the installation's capabilities and should include new journeys as they become available.
+The welcome should cover all six onboarding journeys: customer support, projects and teamwork, sales/CRM, public help-center documentation, internal knowledge, and automation. Also offer moving from another tool and exploring Helpin. Keep public and internal knowledge distinct. Use the benefit-focused labels in the owner goals table, and preserve that intent in the suggested message and the agent's follow-up. Production suggestions follow the installation's capabilities and should include new journeys as they become available.
 
 The agent keeps the required setup order and progress internally. It explains a next action briefly when useful, does the work it can, and reports the result in the thread. Owners provide context, approve ordinary proposals, and correct results by replying naturally. Use the existing Ask Agent approval controls when the action policy requires them; conversational styling must not bypass backend authorization.
 
