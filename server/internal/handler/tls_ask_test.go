@@ -64,7 +64,8 @@ func newTLSAskTestHandler(t *testing.T, customDomain string) *TLSAskHandler {
 		id TEXT PRIMARY KEY,
 		workspace_id TEXT NOT NULL,
 		subdomain TEXT NOT NULL,
-		custom_domain TEXT
+		custom_domain TEXT,
+		custom_domain_status TEXT DEFAULT 'verified'
 	)`).Error; err != nil {
 		t.Fatalf("create table: %v", err)
 	}

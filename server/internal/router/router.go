@@ -1652,6 +1652,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// Help Center Config — docs.admin
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/helpcenter/config", h.Docs.GetHelpcenterConfig)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Put("/helpcenter/config", h.Docs.UpdateHelpcenterConfig)
+				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/helpcenter/config/verify-domain", h.Docs.VerifyHelpcenterCustomDomain)
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/helpcenter/locales", h.Docs.GetHelpcenterLocales)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Put("/helpcenter/locales", h.Docs.UpdateHelpcenterLocales)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/helpcenter/upload", h.Docs.UploadHelpcenterAsset)

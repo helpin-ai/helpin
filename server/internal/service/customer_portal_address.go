@@ -102,7 +102,8 @@ func helpcenterPublicBase(hc *repository.PortalHelpcenterAddress, hostedDomain s
 	}
 	switch hc.PublicURLMode {
 	case model.HelpcenterPublicURLModeCustomDomain:
-		if domain := portalHostname(derefString(hc.CustomDomain)); domain != "" {
+		// An unverified custom domain doesn't serve yet; use the hosted address.
+		if domain := portalHostname(derefString(hc.CustomDomain)); domain != "" && hc.CustomDomainLive {
 			return "https://" + domain
 		}
 	case model.HelpcenterPublicURLModeReverseProxy:

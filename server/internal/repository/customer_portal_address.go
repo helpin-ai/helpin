@@ -10,8 +10,10 @@ import (
 // PortalHelpcenterAddress is where a workspace's help center is served. The
 // customer portal is mounted on it at /requests.
 type PortalHelpcenterAddress struct {
-	Subdomain            string
-	CustomDomain         *string
+	Subdomain    string
+	CustomDomain *string
+	// CustomDomainLive is true once the custom domain is verified.
+	CustomDomainLive     bool
 	PublicURLMode        string
 	ReverseProxyHost     *string
 	ReverseProxyBasePath *string
@@ -22,7 +24,7 @@ type PortalHelpcenterAddress struct {
 func (r *CustomerPortalRepository) HelpcenterAddress(ctx context.Context, workspaceID string) (*PortalHelpcenterAddress, error) {
 	var configs []model.DocsHelpcenterConfig
 	if err := r.db.WithContext(ctx).
-		Select("subdomain", "custom_domain", "public_url_mode", "reverse_proxy_host", "reverse_proxy_base_path").
+		Select("subdomain", "custom_domain", "custom_domain_status", "public_url_mode", "reverse_proxy_host", "reverse_proxy_base_path").
 		Where("workspace_id = ?", workspaceID).Limit(1).Find(&configs).Error; err != nil {
 		return nil, err
 	}
@@ -31,7 +33,7 @@ func (r *CustomerPortalRepository) HelpcenterAddress(ctx context.Context, worksp
 	}
 	cfg := configs[0]
 	return &PortalHelpcenterAddress{
-		Subdomain: cfg.Subdomain, CustomDomain: cfg.CustomDomain, PublicURLMode: cfg.PublicURLMode,
+		Subdomain: cfg.Subdomain, CustomDomain: cfg.CustomDomain, CustomDomainLive: cfg.CustomDomainLive(), PublicURLMode: cfg.PublicURLMode,
 		ReverseProxyHost: cfg.ReverseProxyHost, ReverseProxyBasePath: cfg.ReverseProxyBasePath,
 	}, nil
 }
@@ -46,10 +48,14 @@ func (r *CustomerPortalRepository) WorkspaceSlugForHelpcenter(ctx context.Contex
 	// Subdomains win over custom domains, as in help center resolution.
 	for _, column := range []string{"hc.subdomain", "hc.custom_domain"} {
 		var slugs []string
-		if err := r.db.WithContext(ctx).Table("docs_helpcenter_configs AS hc").
+		query := r.db.WithContext(ctx).Table("docs_helpcenter_configs AS hc").
 			Joins("JOIN workspaces AS ws ON ws.id = hc.workspace_id").
-			Where("lower("+column+") = ?", identifier).
-			Limit(1).Pluck("ws.slug", &slugs).Error; err != nil {
+			Where("lower("+column+") = ?", identifier)
+		if column == "hc.custom_domain" {
+			// Only a verified custom domain serves the portal.
+			query = query.Where("hc.custom_domain_status IN ?", liveHelpcenterDomainStatuses)
+		}
+		if err := query.Limit(1).Pluck("ws.slug", &slugs).Error; err != nil {
 			return "", err
 		}
 		if len(slugs) > 0 {

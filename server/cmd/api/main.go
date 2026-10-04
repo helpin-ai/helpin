@@ -1101,6 +1101,10 @@ func main() {
 	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, docsRedirectRepo, s3Client, wsPublisher)
 	docsHelpcenterService.SetSearchRepository(docsHelpcenterSearchRepo)
 	docsHelpcenterService.SetPublicationArtifactDependencies(agentRunArtifactRepo, s3Client)
+	// Custom domains serve only after ownership (TXT) and DNS (CNAME) checks.
+	if cfg.HelpcenterCustomDomainTarget != "" {
+		docsHelpcenterService.SetCustomDomainVerification(cfg.HelpcenterCustomDomainTarget, nil, notificationService, settingsRepo)
+	}
 	docsHelpcenterService.SetPublicationAttachmentRepository(pmAttachmentRepo)
 	tlsAskService := service.NewTLSAskService(docsHelpcenterRepo, cfg.TLSAskExtraAllowedDomains)
 
@@ -2048,6 +2052,14 @@ func main() {
 		usageBaselineSync.Run(usageBaselineCtx)
 	}()
 
+	// Re-check help center custom domains: pending ones hourly, live ones daily.
+	domainCheckCtx, domainCheckCancel := context.WithCancel(context.Background())
+	domainCheckDone := make(chan struct{})
+	go func() {
+		defer close(domainCheckDone)
+		docsHelpcenterService.RunCustomDomainChecks(domainCheckCtx)
+	}()
+
 	// Route only policy-eligible, versioned signals. Delivery rows make every
 	// channel idempotent across replicas and restarts.
 	signalRouteDone := make(chan struct{})
@@ -2294,6 +2306,7 @@ func main() {
 	signalRuleCancel()
 	commercialStateCancel()
 	usageBaselineCancel()
+	domainCheckCancel()
 	editionCancel()
 	select {
 	case <-customerIOOutboxDone:
@@ -2324,6 +2337,11 @@ func main() {
 	case <-usageBaselineDone:
 	case <-time.After(6 * time.Second):
 		slog.Warn("CRM usage-baseline synchronizer did not stop before shutdown timeout")
+	}
+	select {
+	case <-domainCheckDone:
+	case <-time.After(6 * time.Second):
+		slog.Warn("help center domain checks did not stop before shutdown timeout")
 	}
 	inboundCancel()
 	if emailFallbackCancel != nil {

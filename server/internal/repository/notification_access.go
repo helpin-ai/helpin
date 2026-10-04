@@ -40,7 +40,7 @@ func (r *NotificationRepository) CanReadNotificationResource(ctx context.Context
 			entityType, entityID = "task", taskID
 		}
 	}
-	table := map[string]string{"task": "pm_tasks", "epic": "pm_epics", "sprint": "pm_sprints", "objective": "pm_objectives", "doc": "docs_documents", "document": "docs_documents", "support_conversation": "support_conversations", "crm_signal": "crm_signals", "external_mcp_server": "external_mcp_servers", "agent_run": "agent_runs"}[entityType]
+	table := map[string]string{"task": "pm_tasks", "epic": "pm_epics", "sprint": "pm_sprints", "objective": "pm_objectives", "doc": "docs_documents", "document": "docs_documents", "support_conversation": "support_conversations", "crm_signal": "crm_signals", "external_mcp_server": "external_mcp_servers", "agent_run": "agent_runs", "helpcenter_config": "docs_helpcenter_configs"}[entityType]
 	if table == "" {
 		return false, nil
 	}

@@ -217,6 +217,8 @@ export const docsService = {
     api.get<DocsHelpcenterConfig>(`/docs/helpcenter/config${qs(wsId)}`),
   updateHelpcenterConfig: (wsId: string, payload: UpdateDocsHelpcenterConfigRequest) =>
     api.put<DocsHelpcenterConfig>(`/docs/helpcenter/config${qs(wsId)}`, payload),
+  verifyHelpcenterCustomDomain: (wsId: string) =>
+    api.post<DocsHelpcenterConfig>(`/docs/helpcenter/config/verify-domain${qs(wsId)}`, {}),
   getHelpcenterLocales: (wsId: string) =>
     api.get<DocsHelpcenterLocalesConfig>(`/docs/helpcenter/locales${qs(wsId)}`),
   updateHelpcenterLocales: (wsId: string, payload: UpdateDocsHelpcenterLocalesRequest) =>

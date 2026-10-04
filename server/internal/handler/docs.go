@@ -1540,6 +1540,27 @@ func (h *DocsHandler) ResolveEmbed(w http.ResponseWriter, r *http.Request) {
 
 // ─── Help Center Config ─────────────────────────────────────────────────────
 
+// helpcenterConfigResponse is the admin view of the help center config, with
+// the DNS records its custom domain needs.
+type helpcenterConfigResponse struct {
+	*model.DocsHelpcenterConfig
+	// CustomDomainTarget is the CNAME target; empty when domains aren't verified.
+	CustomDomainTarget         string `json:"custom_domain_target,omitempty"`
+	CustomDomainChallengeName  string `json:"custom_domain_challenge_name,omitempty"`
+	CustomDomainChallengeValue string `json:"custom_domain_challenge_value,omitempty"`
+}
+
+func (h *DocsHandler) helpcenterConfigResponse(cfg *model.DocsHelpcenterConfig) any {
+	if cfg == nil {
+		return nil
+	}
+	resp := helpcenterConfigResponse{DocsHelpcenterConfig: cfg, CustomDomainTarget: h.helpcenterSvc.CustomDomainTarget()}
+	if resp.CustomDomainTarget != "" {
+		resp.CustomDomainChallengeName, resp.CustomDomainChallengeValue = service.CustomDomainChallenge(cfg)
+	}
+	return resp
+}
+
 func (h *DocsHandler) GetHelpcenterConfig(w http.ResponseWriter, r *http.Request) {
 	wsID := middleware.GetWorkspaceID(r.Context())
 	cfg, err := h.helpcenterSvc.GetConfig(r.Context(), wsID)
@@ -1547,7 +1568,23 @@ func (h *DocsHandler) GetHelpcenterConfig(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, cfg)
+	writeJSON(w, http.StatusOK, h.helpcenterConfigResponse(cfg))
+}
+
+// VerifyHelpcenterCustomDomain checks the custom domain's DNS records now.
+func (h *DocsHandler) VerifyHelpcenterCustomDomain(w http.ResponseWriter, r *http.Request) {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	cfg, err := h.helpcenterSvc.VerifyCustomDomain(r.Context(), wsID)
+	if errors.Is(err, service.ErrHelpcenterDomainNotSet) {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err != nil {
+		slog.ErrorContext(r.Context(), "help center domain check failed", "workspace_id", wsID, "error", err)
+		writeError(w, http.StatusInternalServerError, "unable to check the custom domain")
+		return
+	}
+	writeJSON(w, http.StatusOK, h.helpcenterConfigResponse(cfg))
 }
 
 func (h *DocsHandler) UpdateHelpcenterConfig(w http.ResponseWriter, r *http.Request) {
@@ -1562,7 +1599,7 @@ func (h *DocsHandler) UpdateHelpcenterConfig(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, cfg)
+	writeJSON(w, http.StatusOK, h.helpcenterConfigResponse(cfg))
 }
 
 func (h *DocsHandler) UpdateHelpcenterArticleMetadata(w http.ResponseWriter, r *http.Request) {

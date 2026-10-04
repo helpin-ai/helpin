@@ -17,7 +17,7 @@ import {
 import { formatDistanceToNow } from 'date-fns'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation'
-import { getExternalMCPNotificationTarget, getNotificationTaskRunTarget } from '@/lib/notificationNavigation'
+import { getSettingsNotificationTarget, getNotificationTaskRunTarget } from '@/lib/notificationNavigation'
 import {
   useNotifications,
   useUnreadCount,
@@ -249,9 +249,9 @@ function NotificationDetail({ notification }: { notification: Notification }) {
   const handleNavigateToEntity = () => {
     const type = notification.entity_type
     const id = notification.entity_id
-    const externalMCPRoute = getExternalMCPNotificationTarget(notification, wsSlug)
-    if (externalMCPRoute) {
-      navigate({ to: externalMCPRoute })
+    const settingsRoute = getSettingsNotificationTarget(notification, wsSlug)
+    if (settingsRoute) {
+      navigate({ to: settingsRoute })
       return
     }
     const taskRunTarget = getNotificationTaskRunTarget(notification)

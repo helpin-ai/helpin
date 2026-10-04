@@ -17,6 +17,7 @@ Customers need no extra DNS, certificates, or settings. The portal reuses the he
 | Where | Variable | Production | Staging |
 |-------|----------|------------|---------|
 | API server | `HELPCENTER_HOSTED_DOMAIN` | `helpin.center` | `stage.helpin.center` |
+| API server | `HELPCENTER_CUSTOM_DOMAIN_TARGET` (optional) | defaults to `HELPCENTER_HOSTED_DOMAIN` | the staging custom-domain entry, if it differs |
 
 When it is unset, portal links and redirects stay in the app. The help center image always includes the portal, but it serves `/requests` only when the API reports a portal for the host, which it does only while this variable is set.
 
@@ -34,6 +35,28 @@ When it is unset, portal links and redirects stay in the app. The help center im
 - **Links:**
   - Sign-in emails, "view your request" links in reply emails, and the address in **Settings → Customer portal** use the help center address plus `/requests`. That address follows the help center's public URL mode: custom domain, reverse proxy, or `{subdomain}.<HELPCENTER_HOSTED_DOMAIN>`.
   - The app's `/portal/{slug}` path redirects there and keeps the page.
+
+## Custom domain verification
+
+A help center custom domain, and so the portal on it, is served only after two DNS records are in place:
+
+| Type | Name | Value | Purpose |
+|------|------|-------|---------|
+| CNAME | `help.acme.com` | `helpin.center` (the custom domain target) | Routes visitors to Helpin's custom-domain entry (Caddy) |
+| TXT | `_helpin-challenge.help.acme.com` | `helpin-verify=<workspace token>` | Proves this workspace owns the domain |
+
+A CNAME alone shows the domain points at Helpin, not which workspace it belongs to. Without the TXT token, a leftover CNAME could be claimed by any workspace, which is a subdomain takeover.
+
+- **Statuses:**
+  - `pending`: the domain was entered but isn't proven yet. The help center and portal stay on the hosted subdomain, the TLS ask denies certificates for it, and public config omits it.
+  - `verified`: the domain is live.
+  - `failing`: the domain was verified but no longer points at Helpin. It keeps serving so a DNS blip doesn't take it offline.
+- **When checks run:** saving a new domain checks it immediately, and **Check DNS** in Help center settings re-checks on demand.
+- **Background loop:** every 10 minutes the API retries pending domains (each at most hourly) and re-checks live domains daily. Each domain is claimed by one replica per round.
+- **Admin alerts:** workspace admins and owners get one notification per change. "Live" and "working again" are in-app only; "stopped pointing to Helpin" also goes by email.
+- **Conflicts:** an unverified claim by another workspace gives way when the owner enters the domain. A domain verified by another workspace is refused.
+- **Existing domains:** domains in use before this change were marked verified by the migration, and the daily check covers them from then on.
+- **Community installs:** with no target configured, custom domains serve as entered, as before.
 
 ## Infrastructure
 

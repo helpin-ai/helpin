@@ -14,14 +14,19 @@ import (
 
 func addPortalHelpcenter(t *testing.T, db *gorm.DB, workspaceID, subdomain, mode, customDomain, proxyHost, proxyPath string) {
 	t.Helper()
-	if err := db.Exec(`CREATE TABLE IF NOT EXISTS docs_helpcenter_configs (id TEXT PRIMARY KEY, workspace_id TEXT UNIQUE, subdomain TEXT, custom_domain TEXT, public_url_mode TEXT, reverse_proxy_host TEXT, reverse_proxy_base_path TEXT)`).Error; err != nil {
+	addPortalHelpcenterWithStatus(t, db, workspaceID, subdomain, mode, customDomain, proxyHost, proxyPath, model.HelpcenterDomainVerified)
+}
+
+func addPortalHelpcenterWithStatus(t *testing.T, db *gorm.DB, workspaceID, subdomain, mode, customDomain, proxyHost, proxyPath, status string) {
+	t.Helper()
+	if err := db.Exec(`CREATE TABLE IF NOT EXISTS docs_helpcenter_configs (id TEXT PRIMARY KEY, workspace_id TEXT UNIQUE, subdomain TEXT, custom_domain TEXT, custom_domain_status TEXT, public_url_mode TEXT, reverse_proxy_host TEXT, reverse_proxy_base_path TEXT)`).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`DELETE FROM docs_helpcenter_configs WHERE workspace_id = ?`, workspaceID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec(`INSERT INTO docs_helpcenter_configs (id, workspace_id, subdomain, custom_domain, public_url_mode, reverse_proxy_host, reverse_proxy_base_path) VALUES (?, ?, ?, NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''))`,
-		uuid.NewString(), workspaceID, subdomain, customDomain, mode, proxyHost, proxyPath).Error; err != nil {
+	if err := db.Exec(`INSERT INTO docs_helpcenter_configs (id, workspace_id, subdomain, custom_domain, custom_domain_status, public_url_mode, reverse_proxy_host, reverse_proxy_base_path) VALUES (?, ?, ?, NULLIF(?, ''), ?, ?, NULLIF(?, ''), NULLIF(?, ''))`,
+		uuid.NewString(), workspaceID, subdomain, customDomain, status, mode, proxyHost, proxyPath).Error; err != nil {
 		t.Fatal(err)
 	}
 }
@@ -49,6 +54,12 @@ func TestPortalIsServedOnTheHelpCenterAtRequests(t *testing.T) {
 				t.Fatalf("PublicURL = %q, want %q", got, tc.want)
 			}
 		})
+	}
+
+	// An unverified custom domain doesn't serve yet: links use the hosted address.
+	addPortalHelpcenterWithStatus(t, db, ws.ID, "acme-help", model.HelpcenterPublicURLModeCustomDomain, "help.acme.com", "", "", model.HelpcenterDomainPending)
+	if got := svc.PublicURL(ctx, ws); got != "https://acme-help.helpin.center/requests" {
+		t.Fatalf("pending custom domain = %q, want the hosted address", got)
 	}
 
 	addPortalHelpcenter(t, db, ws.ID, "acme-help", model.HelpcenterPublicURLModeHostedSubdomain, "", "", "")
@@ -93,6 +104,10 @@ func TestHelpcenterHostsFindTheirPortal(t *testing.T) {
 		if slug, err := svc.HelpcenterPortalSlug(ctx, identifier); err != nil || slug != "acme" {
 			t.Errorf("HelpcenterPortalSlug(%q) = %q, %v", identifier, slug, err)
 		}
+	}
+	addPortalHelpcenterWithStatus(t, db, ws.ID, "acme-help", model.HelpcenterPublicURLModeCustomDomain, "help.acme.com", "", "", model.HelpcenterDomainPending)
+	if _, err := svc.HelpcenterPortalSlug(ctx, "help.acme.com"); !errors.Is(err, ErrPortalUnavailable) {
+		t.Fatalf("pending custom domain serves the portal: %v", err)
 	}
 	if _, err := svc.HelpcenterPortalSlug(ctx, "unknown"); !errors.Is(err, ErrPortalUnavailable) {
 		t.Fatalf("unknown help center = %v", err)
