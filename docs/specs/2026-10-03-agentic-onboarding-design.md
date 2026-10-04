@@ -56,7 +56,7 @@ The sequence is based on actual state. A workspace with existing knowledge shoul
 
 ## User experience
 
-Use the existing Ask Agent dock, conversation history, composer, and normal interaction and approval behavior. The default experience is a continuous conversation with short messages and one relevant question at a time. Do not introduce an onboarding goal menu, progress strip, stepper, setup cards, or forms inside every message.
+Reuse Ask Agent's conversation history, composer, and normal interaction and approval behavior. Present onboarding as a standalone chat on a clean background, without the workspace navigation, chat sidebar, agent roster, or application UI behind it. The default experience is a continuous conversation with short messages and one relevant question at a time. Do not introduce an onboarding goal menu, progress strip, stepper, setup cards, or forms inside every message.
 
 The agent keeps the required setup order and progress internally. It explains a next action briefly when useful, does the work it can, and reports the result in the thread. Owners provide context, approve ordinary proposals, and correct results by replying naturally. Use the existing Ask Agent approval controls when the action policy requires them; conversational styling must not bypass backend authorization.
 
