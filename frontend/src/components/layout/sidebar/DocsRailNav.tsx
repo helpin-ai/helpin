@@ -135,16 +135,24 @@ function SpacePickerRow({
           </span>
         </span>
       </button>
-      {active && <Tick01Icon className="h-3.5 w-3.5 shrink-0" />}
       {canEditDocs && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
               aria-label={`Manage ${space.name}`}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md opacity-0 transition-opacity hover:bg-background group-hover/space-option:opacity-100 data-[state=open]:opacity-100"
+              className={cn(
+                'group/space-menu relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-opacity hover:bg-background group-hover/space-option:opacity-100 group-focus-within/space-option:opacity-100 data-[state=open]:opacity-100',
+                !active && 'opacity-0',
+              )}
             >
-              <MoreVerticalIcon className="h-3.5 w-3.5" />
+              {active && (
+                <Tick01Icon className="absolute h-3.5 w-3.5 group-hover/space-option:opacity-0 group-focus-within/space-option:opacity-0 group-data-[state=open]/space-menu:opacity-0" />
+              )}
+              <MoreVerticalIcon className={cn(
+                'h-3.5 w-3.5',
+                active && 'opacity-0 group-hover/space-option:opacity-100 group-focus-within/space-option:opacity-100 group-data-[state=open]/space-menu:opacity-100',
+              )} />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="right" align="start">
@@ -158,6 +166,11 @@ function SpacePickerRow({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+      )}
+      {!canEditDocs && active && (
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center">
+          <Tick01Icon className="h-3.5 w-3.5" />
+        </span>
       )}
     </div>
   )
@@ -413,7 +426,11 @@ export function DocsRailNav({
     .sort((a, b) => a.position - b.position || a.title.localeCompare(b.title))
   const uncategorizedExpanded = expanded.has('__uncategorized__')
 
-  const filteredSpaces = spaces.filter((space) =>
+  const orderedSpaces = [
+    ...spaces.filter((space) => space.type === 'internal'),
+    ...spaces.filter((space) => space.type === 'external_capable'),
+  ]
+  const filteredSpaces = orderedSpaces.filter((space) =>
     space.name.toLowerCase().includes(spaceQuery.trim().toLowerCase()),
   )
   const internalSpaces = filteredSpaces.filter((space) => space.type === 'internal')
@@ -509,7 +526,7 @@ export function DocsRailNav({
             setSwitcherOpen(open)
             if (open) {
               setSpaceQuery('')
-              setHighlightedSpaceIndex(0)
+              setHighlightedSpaceIndex(Math.max(0, orderedSpaces.findIndex((space) => space.id === activeSpaceId)))
             }
           }}
         >
