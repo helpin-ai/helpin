@@ -1053,13 +1053,15 @@ describe('AskAgentsDock', () => {
   });
 
   it('opens chat actions above the dock and archives a conversation', async () => {
-    mocks.updateChat.mockResolvedValue({
-      data: { ...CHAT, archived_at: '2026-08-10T00:00:00Z' },
-      error: null,
-    });
+    let finishArchive!: (result: { data: DockChat; error: null }) => void;
+    mocks.updateChat.mockReturnValue(new Promise((resolve) => { finishArchive = resolve; }));
+    mocks.listRuns.mockResolvedValue({ data: { runs: [{
+      ...DOCK_RUN, run: { ...DOCK_RUN.run, dock_chat_id: CHAT.id },
+    }] }, error: null });
     await renderDock();
     await waitForText('Sprint questions');
 
+    expect(document.querySelectorAll('.agent-dock-stack-item')).toHaveLength(1);
     const trigger = document.body.querySelector<HTMLButtonElement>('[aria-label="Actions for Sprint questions"]');
     expect(trigger).not.toBeNull();
     expect(trigger?.className).toContain('absolute');
@@ -1085,6 +1087,11 @@ describe('AskAgentsDock', () => {
     await flush();
 
     expect(mocks.updateChat).toHaveBeenCalledWith('ws-1', 'chat-1', { archived: true });
+    await act(async () => useDockStore.getState().setCollapsed(true));
+    expect(document.querySelectorAll('.agent-dock-stack-item')).toHaveLength(0);
+    expect(document.querySelector('.agent-dock-attention-badge')).toBeNull();
+    expect(useDockStore.getState().chats).toEqual([]);
+    await act(async () => finishArchive({ data: { ...CHAT, archived_at: '2026-08-10T00:00:00Z' }, error: null }));
   });
 
   it('sends a message through the dock chat service', async () => {
