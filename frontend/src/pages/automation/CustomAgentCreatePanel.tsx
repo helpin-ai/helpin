@@ -206,6 +206,9 @@ export function CustomAgentCreatePanel({
   };
 
   const startBlank = () => {
+    // A late AI response must not replace the manual setup the user chose.
+    draftRequestRef.current += 1;
+    setDrafting(false);
     onChange({
       ...createDefaultCustomAgentForm(),
       ...form,

@@ -21,6 +21,8 @@ const (
 
 type CoverageWorkspaceAnalysisInput struct {
 	WorkspaceID string    `json:"workspace_id"`
+	Reanalyze   bool      `json:"reanalyze,omitempty"`
+	RequestID   string    `json:"request_id,omitempty"`
 	WindowStart time.Time `json:"window_start"`
 	WindowEnd   time.Time `json:"window_end"`
 }
@@ -46,6 +48,15 @@ func (a *CoverageAnalysisActivities) ListWorkspacesActivity(ctx context.Context)
 func (a *CoverageAnalysisActivities) RunWorkspaceAnalysisActivity(ctx context.Context, input CoverageWorkspaceAnalysisInput) error {
 	activity.GetLogger(ctx).Info("running workspace coverage daily analysis", "workspace_id", input.WorkspaceID)
 	activity.RecordHeartbeat(ctx, input.WorkspaceID, "started")
+	if input.Reanalyze {
+		analyzer, ok := a.analyzer.(interface {
+			RunWorkspaceReanalysis(context.Context, string, time.Time, time.Time, string) error
+		})
+		if !ok || input.RequestID == "" {
+			return fmt.Errorf("coverage reanalysis is not configured")
+		}
+		return analyzer.RunWorkspaceReanalysis(ctx, input.WorkspaceID, input.WindowStart, input.WindowEnd, input.RequestID)
+	}
 	return a.analyzer.RunWorkspaceDailyAnalysis(ctx, input.WorkspaceID, input.WindowStart, input.WindowEnd)
 }
 
@@ -61,7 +72,7 @@ func CoverageDailyAnalysisWorkflow(ctx workflow.Context) error {
 	}
 
 	windowEnd := workflow.Now(ctx).UTC()
-	windowStart := windowEnd.Add(-3 * time.Hour)
+	windowStart := windowEnd.Add(-12 * time.Hour)
 	selector := workflow.NewSelector(ctx)
 	inflight := 0
 	for _, workspaceID := range workspaceIDs {

@@ -123,7 +123,7 @@ function PlanStepRow({ step, runStatus }: { step: RunPlanStep; runStatus?: Agent
     }
     return (
       <li className={cn(
-        'flex items-start gap-2.5 rounded-lg px-2.5 py-1.5 text-sm',
+        '-mx-2.5 flex items-start gap-2.5 rounded-lg px-2.5 py-1.5 text-sm',
         'bg-amber-50 dark:bg-amber-950/30',
       )}>
         <Loading01Icon className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-amber-600 dark:text-amber-400" />

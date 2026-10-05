@@ -24,7 +24,7 @@ func TestSupportCoverageHandlerAllowRegenerateDebouncesPerUserGap(t *testing.T) 
 }
 
 func TestSupportCoverageGapFilterFromRequestParsesPagination(t *testing.T) {
-	req := httptest.NewRequest("GET", "/api/support/coverage/gaps?status=open&gap_kind=content&page=3&per_page=40&show_raw=true&has_merge_suggestions=true", nil)
+	req := httptest.NewRequest("GET", "/api/support/coverage/gaps?status=open&gap_kind=content&page=3&per_page=40&show_raw=true&has_merge_suggestions=true&review_only=true&conversation_id=conv-1", nil)
 
 	filter := supportCoverageGapFilterFromRequest(req)
 
@@ -45,5 +45,8 @@ func TestSupportCoverageGapFilterFromRequestParsesPagination(t *testing.T) {
 	}
 	if !filter.HasMergeSuggestions {
 		t.Fatal("has_merge_suggestions should be true")
+	}
+	if !filter.ReviewOnly || filter.ConversationID != "conv-1" {
+		t.Fatalf("review and conversation filters not parsed: %+v", filter)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/temporalapp"
@@ -390,6 +391,12 @@ func IsGapResolutionConflict(err error) bool {
 
 // ReclassifyGap changes the v1 gap type.
 func (s *SupportCoverageService) ReclassifyGap(ctx context.Context, workspaceID, gapID, v1GapType string) error {
+	switch v1GapType {
+	case model.SupportCoverageV1GapMissingArticle, model.SupportCoverageV1GapWeakArticle,
+		model.SupportCoverageV1GapOutdatedOrConflictingArticle, model.SupportCoverageV1GapNeedsReview:
+	default:
+		return fmt.Errorf("unsupported gap classification")
+	}
 	return s.coverageRepo.ReclassifyGap(ctx, workspaceID, gapID, v1GapType)
 }
 
@@ -417,6 +424,8 @@ func (s *SupportCoverageService) TriggerReanalysis(ctx context.Context, workspac
 	windowStart := now.Add(-30 * 24 * time.Hour)
 	input := temporalapp.CoverageWorkspaceAnalysisInput{
 		WorkspaceID: workspaceID,
+		Reanalyze:   true,
+		RequestID:   uuid.NewString(),
 		WindowStart: windowStart,
 		WindowEnd:   now,
 	}

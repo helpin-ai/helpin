@@ -89,7 +89,7 @@ func NewSupportInboxTriageService(
 	}
 }
 
-// SetJevService injects typed routing and automatic conversation tagging.
+// SetJevService injects typed routing. Tagging runs in its durable worker.
 func (s *SupportInboxTriageService) SetJevService(jev *SupportJevService) { s.jev = jev }
 
 // SetLocalDecisionClient injects optional local-first routing. Configure before serving requests.
@@ -231,24 +231,6 @@ func (s *SupportInboxTriageService) EvaluateAndRoute(ctx context.Context, worksp
 	conversation, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
 	if err != nil || conversation == nil {
 		return nil, err
-	}
-	// Tagging is independent of routing ownership/settings, but requires the AI entitlement.
-	if s.jev.enabled(workspaceID) && s.jev.config.TagsMode != "off" {
-		tagAllowed := s.entitlementSvc == nil || s.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureAIConversationRouting) == nil
-		if tagAllowed {
-			msg, tagErr := s.messageRepo.GetByID(ctx, messageID)
-			if tagErr == nil && msg != nil && msg.WorkspaceID == workspaceID && msg.ConversationID == conversationID && !msg.IsInternal && msg.SenderType == "customer" && msg.MessageType == "reply" {
-				history, historyErr := s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, true)
-				if historyErr != nil {
-					tagErr = historyErr
-				} else {
-					tagErr = s.jev.TagConversation(ctx, workspaceID, conversationID, msg, history)
-				}
-			}
-			if tagErr != nil {
-				slog.WarnContext(ctx, "Jev tagging unavailable", "workspace_id", workspaceID, "conversation_id", conversationID, "error", tagErr)
-			}
-		}
 	}
 	if supportConversationHumanOwned(conversation) {
 		slog.InfoContext(ctx, "support triage skipped: conversation is human-owned", "workspace_id", workspaceID, "conversation_id", conversationID)
