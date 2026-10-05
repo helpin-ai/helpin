@@ -37,6 +37,8 @@ shared Community, Enterprise/cloud-only, or private operational material. Follow
 
 For small, well-scoped fixes, do not create or modify plan, specification, or design documents unless the user explicitly requests them. Inspect the issue, implement the fix, verify it, and commit it directly. Reserve planning, specification, and design documents for substantial multi-step work or explicit user requests.
 
+Do not write or run tests for small, low-risk changes such as copy, capitalization, spacing, colors, or minor styling. Use judgment to test when behavior, complexity, or regression risk warrants it, or when explicitly requested. For simple edits, reviewing the source or diff is sufficient verification; avoid repetitive browser checks, screenshots, or test suites. Build only when needed to update the preview or deliver the change.
+
 ## Documentation
 
 For documentation creation, explanation, naming, or reorganization, use the

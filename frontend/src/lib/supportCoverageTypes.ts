@@ -218,6 +218,7 @@ export interface SupportCoverageGapMergeSuggestion {
 }
 
 export interface SupportCoverageSummary {
+  unreviewed_detection_count?: number
   new_gaps_this_week: number
   top_recurring_gaps: number
   gaps_fixed_this_week: number
@@ -265,6 +266,11 @@ export interface CoverageTopicV2 {
   updated_at: string
 }
 
+export interface CoverageInsightPage<T> {
+  items: T[] | null
+  total?: number
+}
+
 export interface CoverageTopicDetailV2 {
   topic: CoverageTopicV2
   findings: CoverageFindingV2[]
@@ -304,6 +310,7 @@ export interface CoverageBatchV2 {
 }
 
 export interface CoveragePipelineHealthV2 {
+  reanalysis_status?: 'queued' | 'running' | 'failed' | 'unavailable'
   latest_batch: CoverageBatchV2 | null
   failures: CoverageAnalysisAttemptV2[]
   healthy: boolean

@@ -1103,3 +1103,31 @@ func TestCoverageConversationAnalysisInputSetsHasHumanReplyFalseWhenNoUserMessag
 		t.Fatal("expected HasHumanReply=false when no user messages exist")
 	}
 }
+
+func TestCoverageManualReanalysisDoesNotSkipUnchangedConversation(t *testing.T) {
+	db := setupCoverageFindingUpsertTestDB(t)
+	repo := repository.NewSupportCoverageAnalysisRepository(db)
+	response := llm.ChatResponse{Content: `{"is_support_query":true,"conversation_type":"support_query","classification_reason":"support question","has_gap":false,"gap_kind":"","gap_category":"","canonical_title":"","customer_need":"Billing help","ai_failure":"","human_resolution":"","decision_reason":"Current knowledge covers this","search_query":"","should_run_retrieval":false,"recommended_fixes":[],"confidence":0.9}`}
+	provider := &scriptedSupportPlannerLLM{responses: []llm.ChatResponse{response, response}}
+	analyzer := NewSupportCoverageDailyAnalyzer(provider, "openai", "gpt-5.5").SetCoverageRepositories(repository.NewSupportCoverageRepository(db), repo).SetConversationRepositories(nil, repository.NewSupportMessageRepository(db))
+	now := time.Now().UTC()
+	if err := db.Exec(`INSERT INTO support_messages (id,workspace_id,conversation_id,sender_type,message_type,content,created_at) VALUES ('m','ws-1','c','customer','reply','How do I update billing details?',?)`, now).Error; err != nil {
+		t.Fatal(err)
+	}
+	conversation := model.SupportConversation{ID: "c", WorkspaceID: "ws-1", Subject: "Billing help", Status: "open", UpdatedAt: now}
+	for _, run := range []string{"first", "automatic-repeat"} {
+		if _, err := analyzer.runConversationCoverageAnalysis(context.Background(), "ws-1", run, "", conversation, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := analyzer.runConversationCoverageAnalysis(withCoverageReanalysis(context.Background(), "request"), "ws-1", "manual-repeat", "", conversation, nil); err != nil {
+		t.Fatal(err)
+	}
+	var rows []model.SupportCoverageConversationAnalysis
+	if err := db.Find(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].RunID != "manual-repeat" {
+		t.Fatalf("did not reassess: %+v", rows)
+	}
+}

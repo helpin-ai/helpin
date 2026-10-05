@@ -397,3 +397,34 @@ func TestSupportCoverageAnalysisRepository_ReplaceRecommendationsPreservesDecisi
 		}
 	}
 }
+
+func TestCoverageReanalysisRefreshesResultWithoutDuplicatingEvidenceIdentity(t *testing.T) {
+	db := setupSupportCoverageAnalysisTestDB(t)
+	repo := NewSupportCoverageAnalysisRepository(db)
+	ctx := context.Background()
+	old := &model.SupportCoverageConversationAnalysis{WorkspaceID: "ws-1", RunID: "old-run", ConversationID: "c", TranscriptHash: "hash", AnalyzerVersion: "v4", HasGap: true, CustomerNeed: "old"}
+	if err := repo.RecordConversationAnalysis(ctx, old); err != nil {
+		t.Fatal(err)
+	}
+	fresh := &model.SupportCoverageConversationAnalysis{WorkspaceID: "ws-1", RunID: "new-run", ConversationID: "c", TranscriptHash: "hash", AnalyzerVersion: "v4", Status: "skipped", HasGap: false, CustomerNeed: "updated", RawOutput: []byte("{}"), MaterializationMetadata: []byte("{}")}
+	if err := repo.RefreshConversationAnalysis(ctx, fresh); err != nil {
+		t.Fatal(err)
+	}
+	var rows []model.SupportCoverageConversationAnalysis
+	if err := db.Find(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].ID != old.ID || rows[0].RunID != "new-run" || rows[0].HasGap || rows[0].CustomerNeed != "updated" {
+		t.Fatalf("stale or duplicate: %+v", rows)
+	}
+	fresh.WorkspaceID = "ws-2"
+	fresh.ID = ""
+	if err := repo.RefreshConversationAnalysis(ctx, fresh); err != nil {
+		t.Fatal(err)
+	}
+	var count int64
+	db.Model(&model.SupportCoverageConversationAnalysis{}).Where("workspace_id = ?", "ws-1").Count(&count)
+	if count != 1 {
+		t.Fatal("workspace isolation violated")
+	}
+}

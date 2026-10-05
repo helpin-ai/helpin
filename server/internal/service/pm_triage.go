@@ -14,6 +14,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/decision"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/observability"
 	"github.com/helpin-ai/helpin/server/internal/pmtriage"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
@@ -29,6 +30,7 @@ type PMTriageConfig struct {
 // PMTriageService evaluates existing tasks and public support feedback.
 // Mutations are intentionally handled through the existing reviewed task flows.
 type PMTriageService struct {
+	metrics     *observability.Metrics
 	config      PMTriageConfig
 	provider    decision.Provider
 	assessments *repository.PMTriageRepository
@@ -54,6 +56,13 @@ func NewPMTriageService(config PMTriageConfig, provider decision.Provider, asses
 		return nil, errors.New("PM triage dependencies required")
 	}
 	return &PMTriageService{config: config, provider: provider, assessments: assessments, usage: usage, tasks: tasks, workspaces: workspaces, labels: labels, support: support}, nil
+}
+
+// SetMetrics attaches content-free operational monitoring.
+func (s *PMTriageService) SetMetrics(metrics *observability.Metrics) {
+	if s != nil {
+		s.metrics = metrics
+	}
 }
 
 // Analyze resolves current permissions before retrieving source or candidate text.
@@ -132,7 +141,22 @@ func (s *PMTriageService) enabled(workspaceID string) bool {
 	return !configured
 }
 
-func (s *PMTriageService) evaluate(ctx context.Context, actor *authorization.Actor, sourceHash string, request *pmtriage.Request, view *model.PMTriageView) (*model.PMTriageView, error) {
+func (s *PMTriageService) evaluate(ctx context.Context, actor *authorization.Actor, sourceHash string, request *pmtriage.Request, view *model.PMTriageView) (resultOut *model.PMTriageView, errOut error) {
+	started := time.Now()
+	existingStatus := ""
+	defer func() {
+		outcome := "error"
+		if errOut == nil && resultOut != nil {
+			outcome = resultOut.Status
+			if existingStatus != "" {
+				outcome = existingStatus
+				if existingStatus == "ready" {
+					outcome = "cached"
+				}
+			}
+		}
+		s.metrics.Decision("pm_triage", outcome, time.Since(started))
+	}()
 	identity, err := json.Marshal(struct {
 		Version, Model, Mode, SourceHash, State string
 		Threshold                               float64
@@ -154,6 +178,7 @@ func (s *PMTriageService) evaluate(ctx context.Context, actor *authorization.Act
 	view.Status = record.Status
 	view.Reviewed = record.Reviewed
 	if !admission.CallProvider {
+		existingStatus = record.Status
 		if record.Status == "ready" && s.config.Mode == "primary" {
 			encoded, err := json.Marshal(record.Outcome["assessment"])
 			if err != nil {

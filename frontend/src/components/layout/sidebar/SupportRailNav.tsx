@@ -206,21 +206,6 @@ export function SupportRailNav({
       <SidebarSeparator className="mx-2 my-1" />
 
       <SidebarGroup className="p-0 pb-3">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              isActive={isOnCoverage}
-              className={supportMenuRowClassName}
-              onClick={() => onNavigate(`/w/${wsSlug}/support/coverage`)}
-            >
-              <FileSearchIcon className="h-4 w-4" />
-              <span className="min-w-0 truncate">Coverage Gaps</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarGroup>
-
-      <SidebarGroup className="p-0 pb-3">
         <SidebarGroupLabel className="flex h-7 items-center justify-between px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
           <span>Team Inboxes</span>
           {canManageSettings && mailboxes.length > 0 && (
@@ -406,8 +391,22 @@ export function SupportRailNav({
         </SidebarMenu>
       </SidebarGroup>}
 
-      <div className="support-bottom-bar sticky bottom-0 z-10 -mx-2 mt-auto border-t border-border/70 bg-[#fafafa] px-2 py-2 dark:bg-sidebar">
-        <div className="flex items-center justify-around">
+      <div className="support-bottom-bar sticky bottom-0 z-10 -mx-2 mt-auto bg-[#fafafa] px-2 py-2 dark:bg-sidebar">
+        <SidebarGroup className="p-0 pb-2">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                isActive={isOnCoverage}
+                className={supportMenuRowClassName}
+                onClick={() => onNavigate(`/w/${wsSlug}/support/coverage`)}
+              >
+                <FileSearchIcon className="h-4 w-4" />
+                <span className="min-w-0 truncate">Coverage Gaps</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarGroup>
+        <div className="flex items-center justify-around border-t border-border/70 pt-2">
           <Tooltip>
             <TooltipTrigger asChild>
               <button

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -44,7 +45,12 @@ func (h *SupportCoverageHandler) ListTopicsV2(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	total, err := h.coverageV2Svc.CountTopics(r.Context(), middleware.GetWorkspaceID(r.Context()))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to count customer topics")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": total})
 }
 
 func (h *SupportCoverageHandler) GetTopicV2(w http.ResponseWriter, r *http.Request) {
@@ -74,7 +80,12 @@ func (h *SupportCoverageHandler) ListSignalsV2(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	total, err := h.coverageV2Svc.CountSignals(r.Context(), middleware.GetWorkspaceID(r.Context()))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to count review signals")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": total})
 }
 
 func (h *SupportCoverageHandler) ReviewSignalV2(w http.ResponseWriter, r *http.Request) {
@@ -210,6 +221,12 @@ func (h *SupportCoverageHandler) GetSummary(w http.ResponseWriter, r *http.Reque
 func (h *SupportCoverageHandler) ListGaps(w http.ResponseWriter, r *http.Request) {
 	wsID := middleware.GetWorkspaceID(r.Context())
 	filter := supportCoverageGapFilterFromRequest(r)
+	if filter.ConversationID != "" {
+		if _, err := uuid.Parse(filter.ConversationID); err != nil {
+			writeError(w, http.StatusBadRequest, "conversation_id must be a valid UUID")
+			return
+		}
+	}
 	gaps, total, err := h.coverageSvc.ListGaps(r.Context(), wsID, filter)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -231,6 +248,8 @@ func supportCoverageGapFilterFromRequest(r *http.Request) model.SupportCoverageG
 		Search:              r.URL.Query().Get("search"),
 		HasMergeSuggestions: r.URL.Query().Get("has_merge_suggestions") == "true",
 		ShowRaw:             r.URL.Query().Get("show_raw") == "true",
+		ReviewOnly:          r.URL.Query().Get("review_only") == "true",
+		ConversationID:      r.URL.Query().Get("conversation_id"),
 		Page:                queryInt(r, "page", 1),
 		PerPage:             queryInt(r, "per_page", 25),
 	}
@@ -546,6 +565,16 @@ func (h *SupportCoverageHandler) TriggerReanalysis(w http.ResponseWriter, r *htt
 	if wsID == "" {
 		writeError(w, http.StatusBadRequest, "workspace_id is required")
 		return
+	}
+	if h.coverageV2Svc != nil {
+		if err := h.coverageV2Svc.EnsureReanalysisEnabled(r.Context(), wsID); err != nil {
+			if errors.Is(err, service.ErrCoverageReanalysisPaused) {
+				writeError(w, http.StatusConflict, err.Error())
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "could not check analysis availability")
+			return
+		}
 	}
 	if err := h.coverageSvc.TriggerReanalysis(r.Context(), wsID); err != nil {
 		if errors.Is(err, service.ErrReanalysisAlreadyRunning) {

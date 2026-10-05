@@ -56,6 +56,27 @@ func (s *SupportCoverageDailyAnalyzer) materializeRunFindings(ctx context.Contex
 	remaining := make([]coverageMaterializedFinding, 0, len(findings))
 	touchedOpenGapIDs := map[string]struct{}{}
 	for _, finding := range findings {
+		if coverageReanalysisRequest(ctx) != "" {
+			// Reassessment of the same transcript keeps its existing gap and evidence
+			// identity, even if its freshly generated wording or category changes.
+			prior, err := s.coverageRepo.FindGapByEvidenceSourceKey(ctx, workspaceID, coverageEvidenceSourceKey(finding.Analysis.ID))
+			if err != nil {
+				return nil, err
+			}
+			if prior != nil {
+				if err := s.analysisRepo.SetConversationAnalysisGap(ctx, finding.Analysis.ID, prior.ID, finding.Analysis.PrimaryRecommendationType); err != nil {
+					return nil, err
+				}
+				if prior.Status == model.SupportCoverageGapStatusOpen {
+					if err := s.applyMaterializedGapKnowledgeMatch(ctx, workspaceID, prior.ID, finding, now); err != nil {
+						return nil, err
+					}
+				}
+				result.ExistingGapAttached++
+				result.AlreadyMaterialized++
+				continue
+			}
+		}
 		existing, err := s.matchExistingMaterializedGap(ctx, workspaceID, finding)
 		if err != nil {
 			return nil, err

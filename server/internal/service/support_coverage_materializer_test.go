@@ -707,3 +707,42 @@ func seedMaterializerDocsSpace(t *testing.T, db *gorm.DB, id, workspaceID string
 		t.Fatalf("seed docs space: %v", err)
 	}
 }
+
+func TestCoverageManualReanalysisDoesNotCreateAnotherGapForExistingEvidence(t *testing.T) {
+	db := setupCoverageFindingUpsertTestDB(t)
+	repo := repository.NewSupportCoverageAnalysisRepository(db)
+	analyzer := NewSupportCoverageDailyAnalyzer(nil, "", "").SetCoverageRepositories(repository.NewSupportCoverageRepository(db), repo).SetEmbeddingProvider(&fakeCoverageEmbeddingProvider{}, "")
+	ctx := context.Background()
+	seedMaterializerAnalysis(t, repo, "analysis", "run-1", "c", "Reset password instructions", "Password reset", time.Now())
+	if _, err := analyzer.materializeRunFindings(ctx, "ws-1", "run-1"); err != nil {
+		t.Fatal(err)
+	}
+	var analysis model.SupportCoverageConversationAnalysis
+	if err := db.First(&analysis, "id = ?", "analysis").Error; err != nil {
+		t.Fatal(err)
+	}
+	oldGap := *analysis.GapID
+	analysis.RunID = "manual-run"
+	analysis.GapID = nil
+	analysis.GapKind = "context"
+	analysis.GapCategory = model.SupportCoverageGapCategoryContext
+	analysis.CustomerNeed = "Account verification context"
+	analysis.CanonicalTitle = "Account verification"
+	if err := repo.RefreshConversationAnalysis(ctx, &analysis); err != nil {
+		t.Fatal(err)
+	}
+	result, err := analyzer.materializeRunFindings(withCoverageReanalysis(ctx, "request"), "ws-1", "manual-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.NewGapsCreated != 0 || result.EvidenceInserted != 0 {
+		t.Fatalf("duplicate gap/evidence: %+v", result)
+	}
+	var refreshed model.SupportCoverageConversationAnalysis
+	if err := db.First(&refreshed, "id = ?", "analysis").Error; err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.GapID == nil || *refreshed.GapID != oldGap {
+		t.Fatal("lost original reviewed gap")
+	}
+}

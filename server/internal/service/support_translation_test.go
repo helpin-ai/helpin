@@ -11,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
-	"github.com/helpin-ai/helpin/server/internal/decision"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -65,7 +64,7 @@ func translationFixture(t *testing.T) (*emailFallbackTestEnv, *model.SupportConv
 		t.Fatal(err)
 	}
 	p := &translationTestProvider{}
-	env.service.supportInboxService.SetTranslations(repository.NewSupportTranslationRepository(db), p, nil, AICompletionRoute{Provider: "openrouter", Model: "deepseek/deepseek-v4-flash-0731"}, true)
+	env.service.supportInboxService.SetTranslations(repository.NewSupportTranslationRepository(db), p, AICompletionRoute{Provider: "openrouter", Model: "deepseek/deepseek-v4-flash-0731"}, true)
 	setTranslationWorkspaceSettings(t, env, conv.WorkspaceID, func(settings *model.SupportInboxSettings) { settings.TranslationCustomerLanguage = "de" })
 	return env, conv, p
 }
@@ -228,34 +227,22 @@ func TestTranslationProtectedTextRoundTrip(t *testing.T) {
 	}
 }
 
-func TestTranslationNeverUsesJevAsSendGate(t *testing.T) {
-	for _, tc := range []struct {
-		name, mode, choice string
-		wantError          bool
-	}{
-		{"accepted", "primary", "yes", false}, {"rejected", "primary", "no", false}, {"uncertain", "primary", "uncertain", false}, {"shadow", "shadow", "no", false}, {"off", "off", "no", false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			env, c, _ := translationFixture(t)
-			s := env.service.supportInboxService
-			jev, p, _, jevDB := setupJevDecisionTest(t, tc.mode)
-			if err := jevDB.Exec("INSERT INTO workspaces(id) VALUES (?)", c.WorkspaceID).Error; err != nil {
-				t.Fatal(err)
-			}
-			jev.policies[JevTranslationReview] = decision.Policy{Mode: tc.mode, Threshold: .95, DailyLimit: 10}
-			jev.workspaces = map[string]bool{c.WorkspaceID: true}
-			p.choices = map[string]string{"meaning": tc.choice}
-			s.translations.jev = jev
-			req := explicitDeliveryRequest(t, "chat_only")
-			req.Content = "Hello"
-			req.AutoTranslate = true
-			req.TranslationTargetLanguage = "de"
-			req.ClientMessageID = uuid.NewString()
-			_, err := s.CreateConversationMessage(context.Background(), c.WorkspaceID, c.ID, req, "user", strPtr("22222222-2222-2222-2222-222222222222"), nil, nil)
-			if (err != nil) != tc.wantError {
-				t.Fatalf("send err=%v wantError=%v", err, tc.wantError)
-			}
-		})
+func TestTranslationSendDoesNotRequireDecisionProvider(t *testing.T) {
+	env, c, _ := translationFixture(t)
+	s := env.service.supportInboxService
+	req := explicitDeliveryRequest(t, "chat_only")
+	req.Content = "Hello"
+	req.AutoTranslate = true
+	req.TranslationTargetLanguage = "de"
+	req.ClientMessageID = uuid.NewString()
+	actor := "22222222-2222-2222-2222-222222222222"
+	sent, err := s.CreateConversationMessage(context.Background(), c.WorkspaceID, c.ID, req, "user", &actor, nil, nil)
+	if err != nil || sent.Content != "Hallo" {
+		t.Fatalf("translated send=%+v err=%v", sent, err)
+	}
+	options, err := s.TranslationOptions(context.Background(), c.WorkspaceID, c.ID, actor)
+	if err != nil || options.JevReview {
+		t.Fatalf("unexpected decision review dependency: %+v %v", options, err)
 	}
 }
 
@@ -284,37 +271,29 @@ func TestTranslationDetectsCustomerLanguageOnSend(t *testing.T) {
 	}
 }
 
-func TestTranslationUnavailableJevDoesNotBlockOrDuplicateSend(t *testing.T) {
+func TestTranslationRetryDoesNotDuplicateSend(t *testing.T) {
 	env, c, p := translationFixture(t)
 	s := env.service.supportInboxService
 	ctx := context.Background()
-	jev, reviewer, _, db := setupJevDecisionTest(t, "primary")
-	if err := db.Exec("INSERT INTO workspaces(id) VALUES (?)", c.WorkspaceID).Error; err != nil {
-		t.Fatal(err)
-	}
-	jev.policies[JevTranslationReview] = decision.Policy{Mode: "primary", Threshold: .95, DailyLimit: 10}
-	jev.workspaces = map[string]bool{c.WorkspaceID: true}
-	s.translations.jev = jev
-	reviewer.err = errors.New("temporary failure")
 	req := explicitDeliveryRequest(t, "chat_only")
 	req.Content = "Hello"
 	req.AutoTranslate = true
 	req.TranslationTargetLanguage = "de"
 	req.ClientMessageID = uuid.NewString()
 	actor := strPtr("22222222-2222-2222-2222-222222222222")
-	if _, err := s.CreateConversationMessage(ctx, c.WorkspaceID, c.ID, req, "user", actor, nil, nil); err != nil {
+	first, err := s.CreateConversationMessage(ctx, c.WorkspaceID, c.ID, req, "user", actor, nil, nil)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if err := env.messageRepo.DB().Model(&model.SupportTranslation{}).Where("conversation_id = ?", c.ID).Update("updated_at", time.Now().Add(-2*time.Minute)).Error; err != nil {
 		t.Fatal(err)
 	}
-	reviewer.err = nil
 	sent, err := s.CreateConversationMessage(ctx, c.WorkspaceID, c.ID, req, "user", actor, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sent.Content != "Hallo" || reviewer.calls != 0 || p.calls != 1 {
-		t.Fatalf("retry result=%q reviewCalls=%d calls=%d", sent.Content, reviewer.calls, p.calls)
+	if sent.ID != first.ID || sent.Content != "Hallo" || p.calls != 1 {
+		t.Fatalf("retry result=%q ids=%s/%s calls=%d", sent.Content, first.ID, sent.ID, p.calls)
 	}
 }
 
@@ -555,7 +534,7 @@ func TestTranslationWorkspacePolicyRevalidatedAfterGeneration(t *testing.T) {
 	}
 }
 
-func TestTranslationSameLanguagePreservesOriginalWithoutJev(t *testing.T) {
+func TestTranslationSameLanguagePreservesOriginal(t *testing.T) {
 	for _, responseText := range []string{"", "A model rewrite must never replace the original."} {
 		t.Run(responseText, func(t *testing.T) {
 			env, c, p := translationFixture(t)
@@ -563,15 +542,6 @@ func TestTranslationSameLanguagePreservesOriginalWithoutJev(t *testing.T) {
 			p.responseLanguage = "en"
 			p.responseText = responseText
 			setTranslationWorkspaceSettings(t, env, c.WorkspaceID, func(settings *model.SupportInboxSettings) { settings.TranslationCustomerLanguage = "en" })
-			jev, reviewer, _, jevDB := setupJevDecisionTest(t, "primary")
-			if err := jevDB.Exec("INSERT INTO workspaces(id) VALUES (?)", c.WorkspaceID).Error; err != nil {
-				t.Fatal(err)
-			}
-			jev.policies[JevTranslationReview] = decision.Policy{Mode: "primary", Threshold: .95, DailyLimit: 10}
-			jev.workspaces = map[string]bool{c.WorkspaceID: true}
-			reviewer.choices = map[string]string{"meaning": "no"}
-			reviewer.err = errors.New("review provider unavailable")
-			s.translations.jev = jev
 			req := explicitDeliveryRequest(t, "chat_only")
 			req.Content = "Hello, please check https://example.com/reset for ORDER-123."
 			req.ClientMessageID = uuid.NewString()
@@ -580,8 +550,8 @@ func TestTranslationSameLanguagePreservesOriginalWithoutJev(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if sent.Content != req.Content || reviewer.calls != 0 {
-				t.Fatalf("unchanged reply=%q review calls=%d", sent.Content, reviewer.calls)
+			if sent.Content != req.Content {
+				t.Fatalf("unchanged reply=%q", sent.Content)
 			}
 			retry, err := s.CreateConversationMessage(context.Background(), c.WorkspaceID, c.ID, req, "user", actor, nil, nil)
 			if err != nil {
@@ -828,15 +798,7 @@ func TestTranslationSendOriginalBypassesProviderAndDeduplicates(t *testing.T) {
 func TestTranslationLongEnglishEmailUsesLLMAndPreservesOriginal(t *testing.T) {
 	env, c, provider := translationFixture(t)
 	setTranslationWorkspaceSettings(t, env, c.WorkspaceID, func(settings *model.SupportInboxSettings) { settings.TranslationCustomerLanguage = "" })
-	jev, classifier, _, db := setupJevDecisionTest(t, "primary")
-	if err := db.Exec("INSERT INTO workspaces(id) VALUES (?)", c.WorkspaceID).Error; err != nil {
-		t.Fatal(err)
-	}
-	jev.workspaces = map[string]bool{c.WorkspaceID: true}
-	jev.policies[JevLanguageDetection] = decision.Policy{Mode: "primary", Threshold: .95, DailyLimit: 100}
-	classifier.choices["language"] = "en"
 	s := env.service.supportInboxService
-	s.translations.jev = jev
 	provider.responseLanguage = "en"
 	msg := &model.SupportMessage{ID: uuid.NewString(), WorkspaceID: c.WorkspaceID, ConversationID: c.ID, SenderType: "customer", MessageType: "reply", Content: strings.Repeat("Our Instagram posts are failing. Please help.\n", 220)}
 	if err := env.messageRepo.Create(context.Background(), msg); err != nil {
@@ -850,7 +812,7 @@ func TestTranslationLongEnglishEmailUsesLLMAndPreservesOriginal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sent.Content != req.Content || sent.TranslationID != "" || provider.calls == 0 || classifier.calls != 0 {
+	if sent.Content != req.Content || sent.TranslationID != "" || provider.calls == 0 {
 		t.Fatalf("same-language send translated: %q calls=%d", sent.Content, provider.calls)
 	}
 	options, err := s.TranslationOptions(context.Background(), c.WorkspaceID, c.ID, actor)
@@ -875,16 +837,9 @@ func TestTranslationLongMessagePreservesAllContent(t *testing.T) {
 	}
 }
 
-func TestTranslationLongReplyDoesNotCallJev(t *testing.T) {
+func TestTranslationLongReplyPreservesAllContent(t *testing.T) {
 	env, c, _ := translationFixture(t)
-	jev, reviewer, _, db := setupJevDecisionTest(t, "primary")
-	if err := db.Exec("INSERT INTO workspaces(id) VALUES (?)", c.WorkspaceID).Error; err != nil {
-		t.Fatal(err)
-	}
-	jev.workspaces = map[string]bool{c.WorkspaceID: true}
-	jev.policies[JevTranslationReview] = decision.Policy{Mode: "primary", Threshold: .95, DailyLimit: 100}
 	s := env.service.supportInboxService
-	s.translations.jev = jev
 	req := explicitDeliveryRequest(t, "email_only")
 	req.Content = strings.Repeat("Hello, please check the account details.\n", 300)
 	req.ClientMessageID = uuid.NewString()
@@ -892,13 +847,8 @@ func TestTranslationLongReplyDoesNotCallJev(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sent.Content != strings.TrimSpace(strings.ReplaceAll(req.Content, "Hello", "Hallo")) || reviewer.calls != 0 {
-		t.Fatalf("long reply/review incomplete: calls=%d", reviewer.calls)
-	}
-	for _, state := range reviewer.states {
-		if len(state) > 16000 {
-			t.Fatal("review exceeded Jev input limit")
-		}
+	if sent.Content != strings.TrimSpace(strings.ReplaceAll(req.Content, "Hello", "Hallo")) {
+		t.Fatalf("long reply incomplete: bytes=%d", len(sent.Content))
 	}
 }
 

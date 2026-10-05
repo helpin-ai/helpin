@@ -341,6 +341,79 @@ func coverageLeaseResult(result *gorm.DB) error {
 	return nil
 }
 
+// ReplaceCurrentFindingPreservingReview refreshes evidence while carrying forward
+// a person's topic selection or dismissal. It reports whether automatic
+// assignment must be skipped for the replacement finding.
+func (r *CoverageV2Repository) ReplaceCurrentFindingPreservingReview(ctx context.Context, finding *model.CoverageFinding) (bool, error) {
+	if finding == nil || finding.WorkspaceID == "" || finding.LogicalWorkKey == "" {
+		return false, fmt.Errorf("valid finding is required")
+	}
+	reviewed := false
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var old model.CoverageFinding
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("workspace_id = ? AND logical_work_key = ? AND is_current = ?", finding.WorkspaceID, finding.LogicalWorkKey, true).First(&old).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		var memberships []model.CoverageTopicMembership
+		var signals []model.CoverageUnreviewedSignal
+		if old.ID != "" {
+			if err := tx.Where("workspace_id = ? AND finding_id = ? AND valid_to IS NULL", finding.WorkspaceID, old.ID).Find(&memberships).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("workspace_id = ? AND finding_id = ? AND status <> ?", finding.WorkspaceID, old.ID, model.CoverageSignalUnreviewed).Find(&signals).Error; err != nil {
+				return err
+			}
+		}
+		reviewed = len(signals) > 0
+		for _, membership := range memberships {
+			if membership.DecisionSource != model.CoverageMembershipAutomatic {
+				reviewed = true
+			}
+		}
+		if reviewed {
+			finding.AssignmentStatus = old.AssignmentStatus
+		}
+		repo := NewCoverageV2Repository(tx)
+		if err := repo.ReplaceCurrentFinding(ctx, finding); err != nil {
+			return err
+		}
+		now := time.Now().UTC()
+		for _, membership := range memberships {
+			if err := tx.Model(&model.CoverageTopicMembership{}).Where("workspace_id = ? AND id = ?", finding.WorkspaceID, membership.ID).Update("valid_to", now).Error; err != nil {
+				return err
+			}
+			if membership.DecisionSource != model.CoverageMembershipAutomatic {
+				membership.ID = uuid.NewString()
+				membership.FindingID = finding.ID
+				membership.ValidFrom = now
+				membership.CreatedAt = now
+				if err := tx.Create(&membership).Error; err != nil {
+					return err
+				}
+			}
+			if err := repo.RefreshTopicCounts(ctx, finding.WorkspaceID, membership.TopicID); err != nil {
+				return err
+			}
+		}
+		// The replacement is assigned afresh; retire only unreviewed queue entries
+		// for superseded evidence. Human reviews are carried forward below.
+		if old.ID != "" {
+			if err := tx.Where("workspace_id = ? AND finding_id = ? AND status = ?", finding.WorkspaceID, old.ID, model.CoverageSignalUnreviewed).Delete(&model.CoverageUnreviewedSignal{}).Error; err != nil {
+				return err
+			}
+		}
+		for _, signal := range signals {
+			if err := tx.Model(&model.CoverageUnreviewedSignal{}).Where("workspace_id = ? AND id = ?", finding.WorkspaceID, signal.ID).
+				Updates(map[string]any{"finding_id": finding.ID, "normalized_query": finding.CustomerNeed, "confidence": finding.Confidence}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return reviewed, err
+}
+
 // ReplaceCurrentFinding keeps history and atomically advances the logical item.
 func (r *CoverageV2Repository) ReplaceCurrentFinding(ctx context.Context, finding *model.CoverageFinding) error {
 	if finding == nil || finding.WorkspaceID == "" || finding.LogicalWorkKey == "" {
@@ -561,6 +634,13 @@ func (r *CoverageV2Repository) ListTopics(ctx context.Context, workspaceID strin
 	return topics, err
 }
 
+func (r *CoverageV2Repository) CountTopics(ctx context.Context, workspaceID string) (int64, error) {
+	var total int64
+	err := r.db.WithContext(ctx).Model(&model.CoverageTopicV2{}).
+		Where("workspace_id = ? AND status <> ?", workspaceID, model.CoverageTopicArchived).Count(&total).Error
+	return total, err
+}
+
 func (r *CoverageV2Repository) GetTopic(ctx context.Context, workspaceID, topicID string) (*model.CoverageTopicV2, []model.CoverageFinding, error) {
 	var topic model.CoverageTopicV2
 	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND id = ?", workspaceID, topicID).First(&topic).Error; err != nil {
@@ -585,6 +665,13 @@ func (r *CoverageV2Repository) ListUnreviewedSignals(ctx context.Context, worksp
 	err := r.db.WithContext(ctx).Where("workspace_id = ? AND status = ?", workspaceID, model.CoverageSignalUnreviewed).
 		Order("observed_at DESC, id ASC").Limit(limit).Offset(max(0, offset)).Find(&signals).Error
 	return signals, err
+}
+
+func (r *CoverageV2Repository) CountUnreviewedSignals(ctx context.Context, workspaceID string) (int64, error) {
+	var total int64
+	err := r.db.WithContext(ctx).Model(&model.CoverageUnreviewedSignal{}).
+		Where("workspace_id = ? AND status = ?", workspaceID, model.CoverageSignalUnreviewed).Count(&total).Error
+	return total, err
 }
 
 func (r *CoverageV2Repository) ReviewSignal(ctx context.Context, workspaceID, signalID, topicID, actorID string) error {

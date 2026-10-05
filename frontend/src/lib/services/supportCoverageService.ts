@@ -1,4 +1,5 @@
 import { api } from '../api'
+import type { CoverageInsightPage } from '../supportCoverageTypes'
 import type {
   CoverageSuggestionReview,
   SupportCoverageGapListResponse,
@@ -18,14 +19,14 @@ import type {
 const qs = (wsId: string) => `?workspace_id=${encodeURIComponent(wsId)}`
 
 export const supportCoverageService = {
-	listTopicsV2: (wsId: string) =>
-	  api.get<{ items: CoverageTopicV2[] }>(`/support/coverage/v2/topics${qs(wsId)}`),
+	listTopicsV2: (wsId: string, limit = 25, offset = 0) =>
+	  api.get<CoverageInsightPage<CoverageTopicV2>>(`/support/coverage/v2/topics${qs(wsId)}&limit=${limit}&offset=${offset}`),
 
 	getTopicV2: (wsId: string, topicId: string) =>
 	  api.get<CoverageTopicDetailV2>(`/support/coverage/v2/topics/${topicId}${qs(wsId)}`),
 
-	listSignalsV2: (wsId: string) =>
-	  api.get<{ items: CoverageSignalV2[] }>(`/support/coverage/v2/signals${qs(wsId)}`),
+	listSignalsV2: (wsId: string, limit = 25, offset = 0) =>
+	  api.get<CoverageInsightPage<CoverageSignalV2>>(`/support/coverage/v2/signals${qs(wsId)}&limit=${limit}&offset=${offset}`),
 
 	reviewSignalV2: (wsId: string, signalId: string, topicId: string) =>
 	  api.post<{ status: string }>(`/support/coverage/v2/signals/${signalId}/review${qs(wsId)}`, { topic_id: topicId }),
