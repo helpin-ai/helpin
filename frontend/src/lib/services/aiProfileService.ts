@@ -21,6 +21,7 @@ export interface AIProfileRoute {
 }
 
 export interface AIProfile {
+  // Legacy API field name: controls visibility in all model pickers, not execution.
   hidden_from_ask_agent?: boolean;
   primary_policy?: AIConnectionPolicyView;
   fallback_policy?: AIConnectionPolicyView;

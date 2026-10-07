@@ -84,7 +84,7 @@ export function AIProfilePicker({
   const inheritedId = defaultProfileId || personalDefaultId || settings.data?.default_profile_id;
   const profiles = query.data.filter(
     (p) => (!sharedOnly || p.scope === "workspace") &&
-      (!inDock || !p.hidden_from_ask_agent || p.id === value || p.id === inheritedId),
+      (!p.hidden_from_ask_agent || p.id === value || p.id === inheritedId),
   );
   const selectedId =
     value || inheritedId;

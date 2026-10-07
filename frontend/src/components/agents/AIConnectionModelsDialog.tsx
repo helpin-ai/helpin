@@ -131,7 +131,7 @@ export function AIConnectionModelsDialog({
       !(await confirm({
         title: `Remove “${profile.name}”?`,
         description:
-          "Remove this saved configuration. Models used by agents must be reassigned first. To only hide it from Ask Agent, use the toggle instead.",
+          "Remove this saved configuration. Models used by agents must be reassigned first. To only hide it from model pickers, use the toggle instead.",
         confirmText: "Remove",
         variant: "destructive",
       }))
@@ -216,10 +216,10 @@ export function AIConnectionModelsDialog({
           <div className="flex items-center justify-between px-6 pb-2 text-xs text-muted-foreground">
             <span>Model</span>
             <span className="flex items-center gap-1">
-              Show in Ask Agent
+              Show in model pickers
               <AISetupHelp
                 label="About model visibility"
-                description="Turn on to add a model to Ask Agent. Hiding it later keeps it available for manual runs and, if workspace-wide, agent selection. Existing chats and defaults keep their model. Newly discovered models are not added automatically."
+                description="Show in Ask Agent and agent model pickers. Hidden models stay on the AI models settings page. Existing selections and defaults keep working. Newly discovered models are not added automatically."
               />
             </span>
           </div>
@@ -291,7 +291,7 @@ export function AIConnectionModelsDialog({
                       )}
                     </div>
                     <Switch
-                      aria-label={`Show ${model.name} in Ask Agent`}
+                      aria-label={`Show ${model.name} in model pickers`}
                       checked={false}
                       disabled={!canEnable || busy}
                       onCheckedChange={() => void enable(model)}
@@ -328,7 +328,6 @@ export function AIConnectionModelsDialog({
           )}
           <div className="px-6 py-4">
             {canManage &&
-            connection.provider !== "openai_chatgpt" &&
             connection.funding !== "managed" ? (
               <details>
                 <summary className="cursor-pointer text-sm text-muted-foreground">
@@ -356,7 +355,9 @@ export function AIConnectionModelsDialog({
                   />
                   <AISetupHelp
                     label="About custom model IDs"
-                    description="Use the exact ID from your provider when discovery does not list a model. Provider access and runtime support are still required."
+                    description={connection.provider === "openai_chatgpt"
+                      ? "ChatGPT uses a maintained model list. For a newer model, enter the exact ID supported by the subscription runtime. Availability in the ChatGPT app alone does not confirm runtime access."
+                      : "Use the exact ID from your provider when discovery does not list a model. Provider access and runtime support are still required."}
                   />
                   <Button
                     size="sm"

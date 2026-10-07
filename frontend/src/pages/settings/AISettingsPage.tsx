@@ -70,12 +70,7 @@ function AISettingsContent({
     enabled: connections.data?.enabled === true,
   });
   const all = connections.data?.connections ?? [];
-  const enabled = (profiles.data ?? []).filter(
-    (p) =>
-      !p.hidden_from_ask_agent ||
-      p.id === settings.data?.personal_default_profile_id ||
-      p.id === settings.data?.default_profile_id,
-  );
+  const models = profiles.data ?? [];
   const editable = (scope: string) =>
     scope === "personal" || canManageWorkspace;
   const selected = all.find((c) => c.id === modelsFor?.id) ?? modelsFor;
@@ -127,7 +122,7 @@ function AISettingsContent({
         <span className="text-sm font-medium">
           Models
           {!profiles.isPending && !profiles.isError
-            ? ` · ${enabled.length}`
+            ? ` · ${models.length}`
             : ""}
         </span>
         <div className="flex items-center gap-2">
@@ -169,10 +164,10 @@ function AISettingsContent({
             </Button>
           </AlertDescription>
         </Alert>
-      ) : enabled.length === 0 ? (
+      ) : models.length === 0 ? (
         <AIEmptyHero
           icon={AiNetworkIcon}
-          title="No models enabled"
+          title="No models added"
           description="Add models from a connected provider, or connect a new one."
         />
       ) : (
@@ -198,7 +193,7 @@ function AISettingsContent({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {enabled.map((profile) => (
+              {models.map((profile) => (
                 <AIModelTableRow
                   key={profile.id}
                   workspaceId={workspaceId}
@@ -298,8 +293,7 @@ function AISettingsContent({
                         modelCount={
                           profiles.data?.filter(
                             (p) =>
-                              p.primary.connection_id === connection.id &&
-                              !p.hidden_from_ask_agent,
+                              p.primary.connection_id === connection.id,
                           ).length
                         }
                       />

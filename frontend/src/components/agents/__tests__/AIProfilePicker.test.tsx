@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AIProfilePicker } from "../AIProfilePicker";
 import { AIConnectionPicker } from "../AIConnectionPicker";
+import { EpicDeliveryProfileSelect } from '@/components/pm/EpicDeliveryProfileSelect';
 import {
   aiProfileService,
   type AIProfile,
@@ -216,12 +217,51 @@ it("keeps an existing run locked even when its profile is no longer listed", asy
   expect(trigger?.textContent).toBe('Saved model');
 });
 
-it('hides models only in Ask Agent while retaining its inherited default', async () => {
-  vi.mocked(aiProfileService.list).mockResolvedValue({ data: profiles.map(p => ({...p, hidden_from_ask_agent: true})), error: null });
-  await act(async () => root.render(<QueryClientProvider client={client}><TooltipProvider><AIProfilePicker workspaceId="ws" inDock compact onChange={() => {}} /></TooltipProvider></QueryClientProvider>));
+it.each([
+  { surface: 'Ask Agent', inDock: true, sharedOnly: false },
+  { surface: 'manual runs', inDock: false, sharedOnly: false },
+  { surface: 'agent configuration', inDock: false, sharedOnly: true },
+])('hides new choices in $surface while retaining the inherited default', async ({ inDock, sharedOnly }) => {
+  vi.mocked(aiProfileService.list).mockResolvedValue({ data: [
+    ...profiles,
+    { ...profiles[1], id: 'hidden-workspace' },
+  ].map(p => ({ ...p, hidden_from_ask_agent: true })), error: null });
+  await act(async () => root.render(<QueryClientProvider client={client}><TooltipProvider><AIProfilePicker workspaceId="ws" inDock={inDock} sharedOnly={sharedOnly} compact onChange={() => {}} /></TooltipProvider></QueryClientProvider>));
+  await openPicker();
+  expect(document.querySelector('[cmdk-item][data-value="personal"]')).toBeNull();
+  expect(document.querySelector('[cmdk-item][data-value="hidden-workspace"]')).toBeNull();
+  expect(document.querySelector('[cmdk-item][data-value="workspace"]')).not.toBeNull();
+});
+
+it.each([true, false])('preserves an explicitly selected hidden model with sharedOnly=%s', async (sharedOnly) => {
+  vi.mocked(aiProfileService.list).mockResolvedValue({ data: [
+    ...profiles,
+    { ...profiles[1], id: 'saved', name: 'Saved choice', hidden_from_ask_agent: true },
+  ], error: null });
+  const onChange = vi.fn();
+  await act(async () => root.render(<QueryClientProvider client={client}><TooltipProvider>
+    <AIProfilePicker workspaceId="ws" value="saved" sharedOnly={sharedOnly} onChange={onChange} />
+  </TooltipProvider></QueryClientProvider>));
+  await openPicker();
+  expect(document.querySelector('[cmdk-item][data-value="saved"]')?.textContent).toContain('Saved choice');
+  expect(onChange).not.toHaveBeenCalled();
+});
+
+it('filters delivery model choices but preserves its saved selection and agent defaults', async () => {
+  const choices = [
+    ...profiles.map(p => ({ ...p, hidden_from_ask_agent: true })),
+    { ...profiles[1], id: 'visible', name: 'Visible choice' },
+  ];
+  client.setQueryData(queryKeys.ai.profiles('ws'), choices);
+  vi.mocked(aiProfileService.list).mockResolvedValue({ data: choices, error: null });
+  await act(async () => root.render(<QueryClientProvider client={client}><TooltipProvider>
+    <EpicDeliveryProfileSelect workspaceId="ws" value="workspace" onChange={() => {}} />
+  </TooltipProvider></QueryClientProvider>));
   await openPicker();
   expect(document.querySelector('[cmdk-item][data-value="personal"]')).toBeNull();
   expect(document.querySelector('[cmdk-item][data-value="workspace"]')).not.toBeNull();
+  expect(document.querySelector('[cmdk-item][data-value="visible"]')).not.toBeNull();
+  expect(document.querySelector('[cmdk-item][data-value="__defaults__"]')).not.toBeNull();
 });
 
 it('uses the personal default only in Ask Agent and preserves explicit agent defaults', async () => {

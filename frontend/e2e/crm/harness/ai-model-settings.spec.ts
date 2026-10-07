@@ -115,10 +115,10 @@ for (const width of [1280, 390])
       dialog.getByText("Careful answers", { exact: true }),
     ).toBeVisible();
     await expect(
-      dialog.getByRole("switch", { name: "Show New model in Ask Agent" }),
+      dialog.getByRole("switch", { name: "Show New model in model pickers" }),
     ).not.toBeChecked();
     const toggle = dialog.getByRole("switch", {
-      name: "Show Careful answers in Ask Agent",
+      name: "Show Careful answers in model pickers",
     });
     await toggle.click();
     await expect(toggle).not.toBeChecked();
@@ -129,7 +129,7 @@ for (const width of [1280, 390])
       .getByRole("button", { name: "About model visibility" })
       .focus();
     await expect(page.getByRole("tooltip")).toContainText(
-      "Saved agent configurations",
+      "Existing selections and defaults keep working",
     );
     await page.keyboard.press("Escape");
     await dialog.getByRole("searchbox", { name: "Search models" }).focus();
@@ -142,6 +142,17 @@ for (const width of [1280, 390])
       path: `/tmp/ai-model-settings-${width}.png`,
       fullPage: true,
     });
+    await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+    const savedRow = page.getByRole('row').filter({ hasText: 'Careful answers' });
+    await expect(savedRow).toBeVisible();
+    await expect(savedRow).toContainText('Hidden from pickers');
+    await savedRow.getByRole('button', { name: 'Actions for Careful answers' }).click();
+    await page.getByRole('menuitem', { name: 'Show in model pickers', exact: true }).click();
+    await expect(savedRow).not.toContainText('Hidden from pickers');
+    expect(writes).toEqual([
+      { revision: 3, hidden_from_ask_agent: true },
+      { revision: 4, hidden_from_ask_agent: false },
+    ]);
   });
 
 test("members have personal setup and read-only shared models", async ({
@@ -153,7 +164,7 @@ test("members have personal setup and read-only shared models", async ({
   await page.getByRole("button", {name:"Actions for Careful answers"}).click();
   await expect(page.getByRole("menuitem",{name:"Set workspace default"})).toHaveCount(0);
   await expect(page.getByRole("menuitem",{name:"Model settings"})).toHaveCount(0);
-  await expect(page.getByRole("menuitem",{name:"Hide from Ask Agent"})).toHaveCount(0);
+  await expect(page.getByRole("menuitem",{name:"Hide from model pickers"})).toHaveCount(0);
   await page.getByRole("menuitem",{name:"Make my default"}).click();
   await page.getByRole("button", {name:"Actions for Careful answers"}).click();
   await expect(page.getByRole("menuitem",{name:"Use workspace default"})).toBeVisible();
@@ -162,7 +173,7 @@ test("members have personal setup and read-only shared models", async ({
   await expect(page.getByRole("tab")).toHaveCount(0);
   await page.getByRole("button", { name: "Models for Team OpenAI" }).click();
   await expect(
-    page.getByRole("switch", { name: "Show Careful answers in Ask Agent" }),
+    page.getByRole("switch", { name: "Show Careful answers in model pickers" }),
   ).toBeDisabled();
   await expect(
     page.getByRole("button", { name: "Refresh models" }),

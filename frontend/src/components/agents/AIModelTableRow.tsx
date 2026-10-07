@@ -70,7 +70,7 @@ export function AIModelTableRow({
     : policy?.allowed === false
       ? "Unavailable"
       : profile.hidden_from_ask_agent
-        ? "Hidden"
+        ? "Hidden from pickers"
         : info!.label;
   const statusTone =
     !connection ||
@@ -164,7 +164,7 @@ export function AIModelTableRow({
                 : policy?.allowed === false
                   ? (policy.message ?? "Unavailable for new runs.")
                   : profile.hidden_from_ask_agent
-                    ? "Hidden from Ask Agent’s new choices, but still available for manual runs and, if workspace-wide, agent selection. Shown here because it remains a default."
+                    ? "Hidden from new choices in Ask Agent and agent model pickers. Existing selections and defaults keep working. You can always manage it here."
                     : connection.status === "connected"
                       ? "The connection is available. This does not verify that the provider can run this particular model."
                       : "Reconnect this connection to use its models for new runs."
@@ -260,14 +260,14 @@ export function AIModelTableRow({
                           hidden: !profile.hidden_from_ask_agent,
                         }),
                       profile.hidden_from_ask_agent
-                        ? "Model shown in Ask Agent"
-                        : "Model hidden from Ask Agent",
+                        ? "Model shown in model pickers"
+                        : "Model hidden from model pickers",
                     )
                   }
                 >
                   {profile.hidden_from_ask_agent
-                    ? "Show in Ask Agent"
-                    : "Hide from Ask Agent"}
+                    ? "Show in model pickers"
+                    : "Hide from model pickers"}
                 </DropdownMenuItem>
               </>
             )}

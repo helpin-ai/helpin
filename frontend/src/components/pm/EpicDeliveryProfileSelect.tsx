@@ -8,25 +8,26 @@ export function EpicDeliveryProfileSelect({ workspaceId, value, onChange, disabl
   disabled?: boolean;
 }) {
   const profiles = useAIProfiles(workspaceId);
+  const choices = (profiles.data ?? []).filter(profile => !profile.hidden_from_ask_agent || profile.id === value);
   return (
     <div className="space-y-2">
-      <label className="text-xs font-medium text-foreground">AI profile for all agent steps</label>
+      <label className="text-xs font-medium text-foreground">AI model for all agent steps</label>
       <Select value={value || '__defaults__'} onValueChange={(next) => onChange(next === '__defaults__' ? '' : next)} disabled={disabled || profiles.isPending}>
-        <SelectTrigger variant="underline" className="w-full" aria-label="AI profile for delivery agents"><SelectValue placeholder="Agent defaults" /></SelectTrigger>
+        <SelectTrigger variant="underline" className="w-full" aria-label="AI model for delivery agents"><SelectValue placeholder="Agent defaults" /></SelectTrigger>
         <SelectContent>
           <SelectItem value="__defaults__">Agent defaults</SelectItem>
           <SelectGroup>
-            <SelectLabel>Shared profiles</SelectLabel>
-            {(profiles.data ?? []).filter((profile) => profile.scope === 'workspace').map((profile) => <SelectItem key={profile.id} value={profile.id}>{profile.name}</SelectItem>)}
+            <SelectLabel>Workspace-wide models</SelectLabel>
+            {choices.filter((profile) => profile.scope === 'workspace').map((profile) => <SelectItem key={profile.id} value={profile.id}>{profile.name}</SelectItem>)}
           </SelectGroup>
           <SelectGroup>
-            <SelectLabel>My profiles</SelectLabel>
-            {(profiles.data ?? []).filter((profile) => profile.scope === 'personal').map((profile) => <SelectItem key={profile.id} value={profile.id}>{profile.name}</SelectItem>)}
+            <SelectLabel>Personal models</SelectLabel>
+            {choices.filter((profile) => profile.scope === 'personal').map((profile) => <SelectItem key={profile.id} value={profile.id}>{profile.name}</SelectItem>)}
           </SelectGroup>
         </SelectContent>
       </Select>
-      {profiles.isError ? <p className="text-xs text-destructive">Profiles could not be loaded. Agent defaults remain available.</p> : null}
-      <p className="text-xs text-muted-foreground">An explicit profile is saved for future steps. Personal profiles remain tied to your account.</p>
+      {profiles.isError ? <p className="text-xs text-destructive">Models could not be loaded. Agent defaults remain available.</p> : null}
+      <p className="text-xs text-muted-foreground">Your model choice is saved for future steps. Personal models remain tied to your account.</p>
     </div>
   );
 }

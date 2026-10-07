@@ -95,7 +95,7 @@ export function AIConfiguredModelRow({
         </DropdownMenu>
       )}
       <Switch
-        aria-label={`Show ${profile.name} in Ask Agent`}
+        aria-label={`Show ${profile.name} in model pickers`}
         checked={!profile.hidden_from_ask_agent}
         disabled={!editable || busy}
         onCheckedChange={onVisibility}

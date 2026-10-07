@@ -78,7 +78,7 @@ it('asks for configuration when the deployment has no AI connection support', as
 it('offers connections without a profile creation step', async () => {
   vi.mocked(aiConnectionService.list).mockResolvedValue({ data: { enabled: true, connections: [], models: [] }, error: null });
   await render('workspace');
-  expect(document.body.textContent).toContain('No models enabled');
+  expect(document.body.textContent).toContain('No models added');
   expect(document.body.textContent).not.toContain('Create profile');
   expect(document.body.textContent).not.toContain('No profiles yet');
 });
@@ -109,7 +109,7 @@ it('opens model selection on a connection and enables a discovered model without
   await act(async () => { document.querySelector<HTMLButtonElement>('[aria-label="Choose OpenAI"]')?.click(); });
   await act(async () => { document.querySelector<HTMLButtonElement>('[aria-label="Models for Team key"]')?.click(); });
   for (let i=0;i<5;i++) await act(async () => {await new Promise(r => setTimeout(r,0));});
-  const toggle=document.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Show New model in Ask Agent"]');
+  const toggle=document.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Show New model in model pickers"]');
   expect(toggle).not.toBeNull();
   await act(async () => toggle!.click());
   expect(aiProfileService.enableModel).toHaveBeenCalledWith('ws', {name:'New model',connection_id:'c1',model:'gpt-new'});
@@ -122,6 +122,28 @@ it('keeps existing configurations reachable when their connection is unavailable
   await render('workspace');
   expect(document.body.textContent).toContain('Legacy variant');
   expect(document.body.textContent).toContain('Connection missing');
+});
+
+it('lets a ChatGPT connection add a model by its exact runtime ID', async () => {
+  vi.mocked(aiConnectionService.list).mockResolvedValue({ data: { enabled: true, connections: [
+    { id: 'chatgpt', name: 'My ChatGPT', provider: 'openai_chatgpt', scope: 'personal', user_id: 'me', status: 'connected' },
+  ], models: [] }, error: null });
+  vi.mocked(aiConnectionService.models).mockResolvedValue({ data: { models: [], source: 'catalog', stale: false }, error: null });
+  vi.mocked(aiProfileService.enableModel).mockResolvedValue({ data: null, error: null });
+  await render('personal');
+  await act(async () => { Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Manage connections')?.click(); });
+  await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Models for My ChatGPT"]')?.click());
+  for (let i = 0; i < 5; i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  const input = document.querySelector<HTMLInputElement>('[aria-label="Model ID"]');
+  expect(input).not.toBeNull();
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'future-chatgpt-model');
+    input!.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await act(async () => input!.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  expect(aiProfileService.enableModel).toHaveBeenCalledWith('ws', {
+    connection_id: 'chatgpt', model: 'future-chatgpt-model', name: 'future-chatgpt-model',
+  });
 });
 
 it('opens Manage connections without automatically opening a connection tooltip', async () => {
@@ -140,7 +162,7 @@ it('opens Manage connections without automatically opening a connection tooltip'
 });
 
 
-it('shows enabled models from both scopes and marks the effective default beside the model', async () => {
+it('keeps hidden models in settings and marks the effective default beside the model', async () => {
   vi.mocked(aiConnectionService.list).mockResolvedValue({data:{enabled:true,connections:[
     {id:'team',name:'Team key',provider:'openai',scope:'workspace',user_id:null,status:'connected'},
     {id:'mine',name:'My key',provider:'anthropic',scope:'personal',user_id:'me',status:'disconnected'},
@@ -155,7 +177,9 @@ it('shows enabled models from both scopes and marks the effective default beside
   expect(Array.from(document.querySelectorAll('thead th')).map(el=>el.textContent)).toEqual(['Model','Connection','Access','Status','Actions']);
   expect(document.body.textContent).toContain('Shared model');
   expect(document.body.textContent).toContain('My model');
-  expect(document.body.textContent).not.toContain('Hidden model');
+  expect(document.body.textContent).toContain('Hidden model');
+  const hiddenRow = Array.from(document.querySelectorAll('tbody tr')).find(el => el.textContent?.includes('Hidden model'));
+  expect(hiddenRow?.textContent).toContain('Hidden from pickers');
   expect(document.body.textContent).toContain('Workspace-wide');
   const row=Array.from(document.querySelectorAll('tbody tr')).find(el=>el.textContent?.includes('My model'));
   expect(row?.querySelector('td')?.textContent).toContain('Default');
