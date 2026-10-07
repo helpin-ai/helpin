@@ -54,8 +54,8 @@ export function DockPlanConfirmCard({ payload, onDecision, workspaceId = '' }: D
       </div>
       {action.epic_id ? <div className="mt-3 border-t border-border/60 pt-3 text-xs text-muted-foreground">
         <div>Epic <span className="font-mono text-foreground">{action.epic_id}</span></div>
-        <div className="mt-1">AI profile: <span className="text-foreground">{action.ai_profile_id ? approvedProfile ? `${approvedProfile.name}${approvedProfile.scope === 'personal' ? ' (personal)' : ' (shared)'}` : action.ai_profile_id : 'Agent defaults'}</span></div>
-        <div className="mt-1">To change the profile, request changes before approval.</div>
+        <div className="mt-1">AI model: <span className="text-foreground">{action.ai_profile_id ? approvedProfile ? `${approvedProfile.name}${approvedProfile.scope === 'personal' ? ' (personal)' : ' (shared)'}` : action.ai_profile_id : 'Agent defaults'}</span></div>
+        <div className="mt-1">To change the model, request changes before approval.</div>
       </div> : null}
       {steps.length > 0 && (
         <ol className="mt-3 divide-y divide-border/60 border-y border-border/60" data-agent-dock-plan-steps>

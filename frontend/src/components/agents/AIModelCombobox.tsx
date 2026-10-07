@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import type { DiscoveredAIModel } from "@/lib/services/aiConnectionService";
 import { QuietDropdown } from "@/components/design-system/quiet-dropdown";
 import { quietUnderlineControlClassName } from "@/components/design-system/quiet";
 import { catalogLabel, catalogTier, modelCatalogFor } from "@/lib/aiProviders";
@@ -17,7 +18,9 @@ export function AIModelCombobox({
   value,
   disabled,
   onChange,
+  models,
 }: {
+  models?: DiscoveredAIModel[];
   id?: string;
   provider: string;
   value: string;
@@ -26,7 +29,7 @@ export function AIModelCombobox({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const catalog = useMemo(() => modelCatalogFor(provider), [provider]);
+  const catalog = useMemo(() => models ? [{key: 'connection', label: '', description: '', models: models.map(m => ({selectionModel: m.id, canonicalModel: m.id, label: m.name}))}] : modelCatalogFor(provider), [provider, models]);
   const trimmed = query.trim();
   const known = catalog.some((group) =>
     group.models.some((model) => model.selectionModel === trimmed),
@@ -116,7 +119,7 @@ export function AIModelCombobox({
             )}
           >
             <span className={cn("truncate", !value && "text-muted-foreground")}>
-              {catalogLabel(provider, value) || value || "Choose model"}
+              {models?.find(m => m.id === value)?.name || catalogLabel(provider, value) || value || "Choose model"}
             </span>
             <ArrowUpDownIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           </button>
@@ -130,7 +133,7 @@ export function AIModelCombobox({
         <p className="text-xs text-muted-foreground">
           {tier.label} · {tier.description}
         </p>
-      ) : value && provider !== "openai_chatgpt" && !catalogLabel(provider, value) ? (
+      ) : value && provider !== "openai_chatgpt" && !catalogLabel(provider, value) && !models?.some(m => m.id === value) ? (
         <p className="text-xs text-muted-foreground">
           Custom model. Make sure your provider accepts this id.
         </p>

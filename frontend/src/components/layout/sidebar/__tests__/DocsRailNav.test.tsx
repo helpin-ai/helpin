@@ -90,11 +90,49 @@ describe('DocsRailNav', () => {
   beforeEach(() => {
     location.pathname = '/w/acme/docs/documents/doc-1'
     location.search = {}
+    spaces.splice(1)
     localStorage.clear()
   })
 
   afterEach(() => {
     document.body.innerHTML = ''
+  })
+
+  it('starts keyboard navigation on the current space when opening and reopening the picker', () => {
+    spaces.push({ ...spaces[0], id: 'space-2', name: 'Support docs' })
+    location.pathname = '/w/acme/docs/spaces/space-2'
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const onNavigate = vi.fn()
+
+    act(() => root.render(
+      <TooltipProvider>
+        <DocsRailNav wsId="ws-1" wsSlug="acme" canEditDocs isActive={() => false}
+          openCreate={vi.fn()} onNavigate={onNavigate} />
+      </TooltipProvider>,
+    ))
+    try {
+      const trigger = container.querySelector<HTMLButtonElement>('[aria-haspopup="listbox"]')!
+      act(() => trigger.click())
+      let input = document.querySelector<HTMLInputElement>('[role="combobox"]')!
+      expect(document.querySelector('[role="option"][aria-selected="true"]')?.id).toBe('docs-space-option-space-2')
+      expect(input.getAttribute('aria-activedescendant')).toBe('docs-space-option-space-2')
+
+      act(() => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true })))
+      expect(input.getAttribute('aria-activedescendant')).toBe('docs-space-option-space-1')
+      act(() => trigger.click())
+      act(() => trigger.click())
+      input = document.querySelector<HTMLInputElement>('[role="combobox"]')!
+      expect(input.getAttribute('aria-activedescendant')).toBe('docs-space-option-space-2')
+      act(() => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+      expect(onNavigate).toHaveBeenCalledWith({
+        to: '/w/$slug/docs/spaces/$spaceId', params: { slug: 'acme', spaceId: 'space-2' },
+      })
+    } finally {
+      act(() => root.unmount())
+      container.remove()
+    }
   })
 
   it('renders one active space with quick links and the active document tree', () => {

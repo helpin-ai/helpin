@@ -1191,7 +1191,7 @@ export function ChatView({
                 ) : !aiConnection.ai_profile_id && agentDefaults.isPending ? (
                   <span role="status" className="text-xs text-quiet-text-secondary">Loading…</span>
                 ) : !aiConnection.ai_profile_id && agentDefaults.isError ? (
-                  <button type="button" className="text-xs text-quiet-text-secondary hover:text-foreground" title="Retry loading the agent’s default profile" onClick={() => void agentDefaults.refetch()}>Retry default</button>
+                  <button type="button" className="text-xs text-quiet-text-secondary hover:text-foreground" title="Retry loading the agent’s default model" onClick={() => void agentDefaults.refetch()}>Retry default</button>
                 ) : <AIConnectionPicker workspaceId={workspaceId} inDock compact defaultProfileId={askAgentDefault} value={aiConnection} onChange={setAIConnection} disabled={sending} />}
                 value={value}
                 onChange={setValue}

@@ -41,11 +41,11 @@ export function AIProfileEditor({
   const [fallback, setFallback] = useState<AIProfileRoute | null>(profile?.fallback ?? null);
   const save = useSaveAIProfile(workspaceId);
 
-  // Both routes stay inside the page's scope; a shared profile must never point
-  // at someone's personal connection.
+  // Primaries stay in scope. Preserve existing authorized shared fallbacks
+  // on personal configurations without offering other members' connections.
   const scoped = connections.filter((connection) => connection.scope === scope);
-  const fallbackOptions = scoped.filter(
-    (connection) => connection.id !== primary.connection_id,
+  const fallbackOptions = connections.filter(
+    (connection) => connection.id !== primary.connection_id && (connection.scope === scope || connection.id === profile?.fallback?.connection_id),
   );
 
   function validate(): string | null {
@@ -72,13 +72,13 @@ export function AIProfileEditor({
         value: { name: name.trim(), scope, primary, fallback, revision: profile?.revision },
         id: profile?.id,
       });
-      toast.success(profile ? "Profile updated" : "Profile created");
+      toast.success(profile ? "Model settings updated" : "Model added");
       onClose();
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Could not save the profile.";
+      const message = error instanceof Error ? error.message : "Could not save model settings.";
       toast.error(
         message.toLowerCase().includes("revision")
-          ? "This profile changed elsewhere. Close and reopen it to edit the latest version."
+          ? "This model configuration changed elsewhere. Close and reopen it to edit the latest version."
           : message,
       );
     }
@@ -96,10 +96,10 @@ export function AIProfileEditor({
         if (nameField) { event.preventDefault(); nameField.focus(); }
       }}>
         <DialogHeader className="space-y-1.5 border-b border-border/60 px-6 py-4 text-left">
-          <DialogTitle>{profile ? `Edit “${profile.name}”` : "Create AI profile"}</DialogTitle>
+          <DialogTitle>{profile ? `Edit “${profile.name}”` : "Add model"}</DialogTitle>
           <div className="flex items-center gap-1">
-            <DialogDescription>{scope === "personal" ? "Personal profile · Only you" : "Workspace profile · Shared with members"}</DialogDescription>
-            <AISetupHelp label="About this profile" description={scope === "personal" ? "For your manual runs in this workspace. Changes apply to new runs." : "For workspace members and automation. Changes apply to new runs."} />
+            <DialogDescription>{scope === "personal" ? "Personal model · Only you" : "Workspace model · Shared with members"}</DialogDescription>
+            <AISetupHelp label="About this model" description={scope === "personal" ? "For your manual runs in this workspace. Changes apply to new runs." : "For workspace members and automation. Changes apply to new runs."} />
           </div>
         </DialogHeader>
 
@@ -111,7 +111,7 @@ export function AIProfileEditor({
           }}
         >
           <div className="space-y-1.5">
-            <Label htmlFor={`${id}-name`}>Profile name</Label>
+            <Label htmlFor={`${id}-name`}>Display name</Label>
             <QuietUnderlineInput
               id={`${id}-name`}
               value={name}
@@ -125,14 +125,15 @@ export function AIProfileEditor({
           <section>
             {fallback && <h3 className="mb-3 text-sm font-medium">Primary model</h3>}
             <AIRouteFields
+              workspaceId={workspaceId}
               route={primary}
               onChange={setPrimary}
               connections={scoped}
               disabled={save.isPending}
               emptyHint={
                 scope === "personal"
-                  ? "Add a personal connection before creating a profile."
-                  : "Add a shared connection before creating a profile."
+                  ? "Add a personal connection before adding a model."
+                  : "Add a shared connection before adding a model."
               }
             />
           </section>
@@ -147,6 +148,7 @@ export function AIProfileEditor({
             {fallback &&
               (primary.connection_id ? (
                 <AIRouteFields
+                  workspaceId={workspaceId}
                   route={fallback}
                   onChange={setFallback}
                   connections={fallbackOptions}
@@ -159,7 +161,7 @@ export function AIProfileEditor({
           </section>
 
           <button type="submit" className="sr-only">
-            {profile ? "Save changes" : "Create profile"}
+            {profile ? "Save changes" : "Add model"}
           </button>
         </form>
 
@@ -174,7 +176,7 @@ export function AIProfileEditor({
             Cancel
           </Button>
           <Button type="button" size="sm" disabled={save.isPending} onClick={() => void submit()}>
-            {save.isPending ? "Saving…" : profile ? "Save changes" : "Create profile"}
+            {save.isPending ? "Saving…" : profile ? "Save changes" : "Add model"}
           </Button>
         </DialogFooter>
       </DialogContent>

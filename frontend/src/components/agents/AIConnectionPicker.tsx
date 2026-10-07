@@ -25,7 +25,7 @@ export function AIConnectionPicker({
 }) {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   if (locked && value.model_connection_id && !value.ai_profile_id) {
-    if (compact) return <span className="text-xs text-quiet-text-secondary" title="This conversation keeps its saved AI configuration">Saved profile</span>;
+    if (compact) return <span className="text-xs text-quiet-text-secondary" title="This conversation keeps its saved AI configuration">Saved model</span>;
     return (
       <div className="space-y-2">
         <p className="text-xs text-quiet-text-secondary">

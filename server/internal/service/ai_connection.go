@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -39,6 +40,7 @@ type aiConnectionSecret struct {
 	Device *chatgptauth.DeviceSession `json:"device,omitempty"`
 }
 type AIConnectionService struct {
+	modelHTTP       *http.Client
 	admissionPolicy AIConnectionAdmissionPolicy
 	repo            *repository.AIConnectionRepository
 	key             []byte
@@ -60,7 +62,7 @@ func NewAIConnectionService(repo *repository.AIConnectionRepository, catalog *ai
 	if err != nil {
 		return nil, err
 	}
-	return &AIConnectionService{repo: repo, key: key, cfg: cfg, oauth: oauth, catalog: catalog, runtime: runtime}, nil
+	return &AIConnectionService{modelHTTP: &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}, repo: repo, key: key, cfg: cfg, oauth: oauth, catalog: catalog, runtime: runtime}, nil
 }
 func (s *AIConnectionService) Enabled() bool { return s != nil && len(s.key) == 32 && s.runtime != nil }
 func (s *AIConnectionService) Models() []aimodel.PublicModel {
@@ -337,6 +339,9 @@ func (s *AIConnectionService) Reconnect(ctx context.Context, workspace, user, id
 			secret.APIKey = apiKey
 			c.Status = "connected"
 		}
+		// Model access may differ for the replacement key.
+		c.DiscoveredModels = nil
+		c.ModelsFetchedAt = nil
 		// A user-supplied key takes ownership from the environment for good.
 		c.CredentialSource = nil
 		if err := s.seal(c, secret); err != nil {

@@ -4,7 +4,7 @@ import { queryKeys } from '@/lib/queryKeys'
 import { unwrap } from '@/lib/queryUtils'
 
 function invalidateAI(queryClient: ReturnType<typeof useQueryClient>, workspaceId: string) {
-  queryClient.invalidateQueries({ queryKey: queryKeys.ai.root(workspaceId) })
+  return queryClient.invalidateQueries({ queryKey: queryKeys.ai.root(workspaceId) })
 }
 
 export function useAIProfiles(workspaceId: string, options: { enabled?: boolean; staleTime?: number } = {}) {
@@ -50,6 +50,23 @@ export function useSetDefaultAIProfile(workspaceId: string) {
   return useMutation({
     mutationFn: async (profileId: string | null) =>
       unwrap(await aiProfileService.setDefault(workspaceId, profileId)),
+    onSuccess: () => invalidateAI(queryClient, workspaceId),
+  })
+}
+
+export function useSetAIModelVisibility(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ profile, hidden }: { profile: AIProfile; hidden: boolean }) =>
+      unwrap(await aiProfileService.setVisibility(workspaceId, profile, hidden)),
+    onSuccess: () => invalidateAI(queryClient, workspaceId),
+  })
+}
+
+export function useEnableAIModel(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (value: {connection_id: string; model: string; name: string}) => unwrap(await aiProfileService.enableModel(workspaceId, value)),
     onSuccess: () => invalidateAI(queryClient, workspaceId),
   })
 }

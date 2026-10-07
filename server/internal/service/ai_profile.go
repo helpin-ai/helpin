@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	sdk "github.com/helpin-ai/agent-runtime-go"
@@ -225,4 +226,59 @@ func (s *AIProfileService) SetDefault(ctx context.Context, workspace, user, id s
 		}
 	}
 	return s.repo.SetDefault(ctx, workspace, p)
+}
+
+// SetVisibility changes picker presentation, never execution eligibility.
+func (s *AIProfileService) SetVisibility(ctx context.Context, workspace, user, id string, revision int64, hidden bool) (*model.AIProfile, error) {
+	if err := s.requireMember(ctx, workspace, user); err != nil {
+		return nil, err
+	}
+	p, err := s.repo.Get(ctx, workspace, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.authorizeProfile(ctx, workspace, user, p, true); err != nil {
+		return nil, err
+	}
+	if err := s.repo.SetVisibility(ctx, workspace, id, revision, hidden); err != nil {
+		return nil, err
+	}
+	return s.repo.Get(ctx, workspace, id)
+}
+
+// EnableModel reuses existing variants and derives ownership from the connection.
+func (s *AIProfileService) EnableModel(ctx context.Context, workspace, user string, req model.EnableAIModelRequest) (*model.AIProfile, error) {
+	if err := s.requireMember(ctx, workspace, user); err != nil {
+		return nil, err
+	}
+	c, err := s.connections.repo.Get(ctx, req.ConnectionID)
+	if err != nil {
+		return nil, err
+	}
+	if c == nil || c.WorkspaceID != workspace || c.SupersededBy != nil {
+		return nil, ErrAIConnection
+	}
+	req.Model = strings.TrimSpace(req.Model)
+	if req.Model == "" || len(req.Model) > 200 || strings.ContainsAny(req.Model, "\r\n") {
+		return nil, errors.New("invalid model ID")
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		name = req.Model
+	}
+	if len(name) > 100 {
+		name = name[:100]
+		for !utf8.ValidString(name) {
+			name = name[:len(name)-1]
+		}
+	}
+	p := &model.AIProfile{ID: uuid.NewString(), WorkspaceID: workspace, Scope: c.Scope, UserID: c.UserID, Name: name, Revision: 1,
+		Primary: model.AIProfileRoute{ConnectionID: c.ID, Model: sdk.RunModel{Provider: c.Provider, Model: req.Model, Endpoint: c.Endpoint, Controls: &sdk.ModelControls{}}}}
+	if err := s.authorizeProfile(ctx, workspace, user, p, true); err != nil {
+		return nil, err
+	}
+	if err := s.validatePrimaryRoute(ctx, workspace, user, p.Scope, &p.Primary); err != nil {
+		return nil, err
+	}
+	return s.repo.EnableModel(ctx, p)
 }

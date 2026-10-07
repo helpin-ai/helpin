@@ -9,6 +9,8 @@ import (
 // AIConnection belongs to a workspace or one of its members. Secret material is never
 // serialized; device sessions and OAuth refresh tokens remain app-owned.
 type AIConnection struct {
+	DiscoveredModels []DiscoveredAIModel `json:"-" gorm:"serializer:json;type:jsonb"`
+	ModelsFetchedAt  *time.Time          `json:"-"`
 	// Superseded generated defaults remain readable for frozen run selections,
 	// but are no longer offered when configuring new profiles.
 	SupersededBy    *string                 `json:"-" gorm:"type:uuid"`
@@ -78,4 +80,17 @@ type AIConnectionPolicyView struct {
 	Allowed bool                       `json:"allowed"`
 	Message string                     `json:"message,omitempty"`
 	Pricing *AIExecutionPolicySnapshot `json:"pricing,omitempty"`
+}
+
+// DiscoveredAIModel contains public provider metadata, never credentials.
+type DiscoveredAIModel struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+type AIConnectionModels struct {
+	Models    []DiscoveredAIModel `json:"models"`
+	Source    string              `json:"source"`
+	FetchedAt *time.Time          `json:"fetched_at,omitempty"`
+	Stale     bool                `json:"stale"`
+	Warning   string              `json:"warning,omitempty"`
 }

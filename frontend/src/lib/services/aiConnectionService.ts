@@ -46,6 +46,14 @@ export interface AIConnectionTestResult {
   latency_ms: number;
   error?: string;
 }
+export interface DiscoveredAIModel { id: string; name: string }
+export interface AIConnectionModels {
+  models: DiscoveredAIModel[];
+  source: 'provider' | 'catalog' | 'manual';
+  stale: boolean;
+  fetched_at?: string;
+  warning?: string;
+}
 export interface AIConnectionModel {
   provider: string;
   selection_model: string;
@@ -67,6 +75,8 @@ export interface AIConnectionLogin {
 const path = (workspace: string, suffix = "") =>
   `/ai-connections${suffix}?workspace_id=${encodeURIComponent(workspace)}`;
 export const aiConnectionService = {
+  models: (workspace: string, id: string) => api.get<AIConnectionModels>(path(workspace, `/${encodeURIComponent(id)}/models`)),
+  refreshModels: (workspace: string, id: string) => api.post<AIConnectionModels>(path(workspace, `/${encodeURIComponent(id)}/models/refresh`), {}),
   endpoints: (workspace: string) =>
     api.get<AIModelEndpoint[] | null>(path(workspace, "/endpoints")),
   list: (workspace: string) =>

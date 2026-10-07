@@ -134,7 +134,7 @@ export function AskAgentsDock({
   const {
     runs, runsLoading, chatsLoading, runsError, chatsError,
     nextChatCursor, loadingMoreChats, nextRunCursor, loadingMoreRuns,
-    refreshRuns, refreshChats, loadMoreRuns, loadMoreChats, updateChatRunStatus, invalidateChats,
+    refreshRuns, refreshChats, loadMoreRuns, loadMoreChats, updateChatRunStatus, invalidateChats, archiveChat,
   } = useDockRoster(workspaceId, currentUserId, active, active && (embedded || !collapsed));
   const sharedChatLink = useSharedChatLink(workspaceId, !embedded, !chatsLoading);
   const openChatLink = sharedChatLink.open;
@@ -261,20 +261,6 @@ export function AskAgentsDock({
     setChats(useDockStore.getState().chats.map((chat) => chat.id === chatId ? result.data! : chat));
     return true;
   }, [invalidateChats, setChats, workspaceId]);
-
-  const archiveChat = useCallback(async (chatId: string) => {
-    if (!workspaceId) return false;
-    const result = await dockChatService.updateChat(workspaceId, chatId, { archived: true });
-    if (result.error || !result.data) {
-      toast.error(result.error ?? 'Failed to archive conversation');
-      return false;
-    }
-    invalidateChats();
-    const remaining = useDockStore.getState().chats.filter((chat) => chat.id !== chatId);
-    setChats(remaining);
-    if (useDockStore.getState().activeChatId === chatId) setActiveChatId(remaining[0]?.id ?? null);
-    return true;
-  }, [invalidateChats, setActiveChatId, setChats, workspaceId]);
 
   const updateChatVisibility = useCallback(async (chatId: string, visibility: DockChatVisibility) => {
     if (!workspaceId) return false;

@@ -254,7 +254,7 @@ const allSettingsSections: SettingsSectionMeta[] = [
     id: 'ai-connections',
     sidebar: false,
     label: 'Personal AI setup',
-    description: 'Your API keys and ChatGPT login, plus the profiles that use them.',
+    description: 'Connect providers and choose your personal AI models.',
     icon: AIConnections,
     group: 'AI & knowledge',
     requiredPermission: 'workspace.read',
@@ -262,7 +262,7 @@ const allSettingsSections: SettingsSectionMeta[] = [
   {
     id: 'ai',
     label: 'AI setup',
-    description: 'Workspace and personal AI connections, profiles, and the workspace default.',
+    description: 'Connect providers and choose which models appear in Ask Agent.',
     keywords: ['personal AI', 'workspace AI', 'API keys', 'ChatGPT', 'models', 'profiles'],
     icon: WorkspaceAI,
     group: 'AI & knowledge',

@@ -7,7 +7,7 @@ export function AIProfileLabel({ workspaceId, profileId }: { workspaceId?: strin
 
 function NamedProfile({ workspaceId, profileId }: { workspaceId?: string; profileId: string }) {
   const query = useAIProfiles(workspaceId ?? "", { enabled: !!profileId, staleTime: 30_000 });
-  if (query.isPending) return <>Loading profile…</>;
-  if (query.isError) return <>Profile unavailable</>;
-  return <>{query.data.find((profile) => profile.id === profileId)?.name ?? "Saved profile unavailable"}</>;
+  if (query.isPending) return <>Loading model…</>;
+  if (query.isError) return <>Model unavailable</>;
+  return <>{query.data.find((profile) => profile.id === profileId)?.name ?? "Saved model unavailable"}</>;
 }
