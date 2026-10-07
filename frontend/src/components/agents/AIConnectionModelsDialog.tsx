@@ -52,8 +52,14 @@ export function AIConnectionModelsDialog({
   const [search, setSearch] = useState("");
   const [custom, setCustom] = useState("");
   const [editing, setEditing] = useState<AIProfile | null>(null);
+  const liveDiscovery =
+    connection.funding !== "managed" &&
+    ["openai", "anthropic", "openrouter", "openai_chatgpt"].includes(connection.provider);
+  const canRefresh = canManage && liveDiscovery && connection.status === "connected";
   const profiles = useAIProfiles(workspaceId);
-  const discovered = useConnectionModels(workspaceId, connection.id);
+  const discovered = useConnectionModels(workspaceId, connection.id, true, {
+    refreshOnOpen: canRefresh,
+  });
   const refresh = useRefreshConnectionModels(workspaceId, connection.id);
   const save = useEnableAIModel(workspaceId);
   const visibility = useSetAIModelVisibility(workspaceId);
@@ -99,9 +105,18 @@ export function AIConnectionModelsDialog({
     editable &&
     connection.status === "connected" &&
     connection.policy?.allowed !== false;
-  const liveDiscovery =
-    connection.funding !== "managed" &&
-    ["openai", "anthropic", "openrouter"].includes(connection.provider);
+
+  async function refreshList() {
+    if (!canRefresh) {
+      await discovered.refetch();
+      return;
+    }
+    try {
+      await refresh.mutateAsync();
+    } catch {
+      toast.error("Could not refresh models.");
+    }
+  }
 
   async function enable(model: DiscoveredAIModel) {
     try {
@@ -184,7 +199,7 @@ export function AIConnectionModelsDialog({
               containerClassName="flex-1"
             />
             {canManage && liveDiscovery && (
-              <QuickTooltip label="Refresh from the provider. The list also refreshes automatically when older than six hours; your visibility choices stay unchanged.">
+              <QuickTooltip label="Models refresh when you open this chooser. Refresh again to check for new models; your saved choices stay unchanged.">
                 <Button
                   size="icon"
                   variant="ghost"
@@ -194,13 +209,7 @@ export function AIConnectionModelsDialog({
                     discovered.isFetching ||
                     connection.status !== "connected"
                   }
-                  onClick={async () => {
-                    try {
-                      await refresh.mutateAsync();
-                    } catch {
-                      toast.error("Could not refresh models.");
-                    }
-                  }}
+                  onClick={() => void refreshList()}
                 >
                   <ArrowReloadHorizontalIcon
                     className={
@@ -233,7 +242,8 @@ export function AIConnectionModelsDialog({
                 {discovered.data?.warning ?? "Could not load available models."}{" "}
                 <button
                   className="underline"
-                  onClick={() => void discovered.refetch()}
+                  disabled={refresh.isPending || discovered.isFetching}
+                  onClick={() => void refreshList()}
                 >
                   Retry
                 </button>
@@ -356,7 +366,7 @@ export function AIConnectionModelsDialog({
                   <AISetupHelp
                     label="About custom model IDs"
                     description={connection.provider === "openai_chatgpt"
-                      ? "ChatGPT uses a maintained model list. For a newer model, enter the exact ID supported by the subscription runtime. Availability in the ChatGPT app alone does not confirm runtime access."
+                      ? "Use the exact subscription-runtime ID if a model is missing after refresh. The model must be available to your connected ChatGPT account."
                       : "Use the exact ID from your provider when discovery does not list a model. Provider access and runtime support are still required."}
                   />
                   <Button

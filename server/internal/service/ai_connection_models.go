@@ -49,7 +49,7 @@ func (s *AIConnectionService) ConnectionModels(ctx context.Context, workspace, u
 			result.Models = append(result.Models, model.DiscoveredAIModel{ID: m.SelectionModel, Name: m.Label})
 		}
 	}
-	if c.Funding == "managed" || c.Provider == "openai_chatgpt" {
+	if c.Funding == "managed" {
 		return result, nil
 	}
 	if c.Provider == "openai_compatible" {
@@ -75,7 +75,11 @@ func (s *AIConnectionService) ConnectionModels(ctx context.Context, workspace, u
 	if err != nil {
 		return nil, err
 	}
-	models, err := discoverProviderModels(ctx, s.modelHTTP, c.Provider, credential.APIKey)
+	authToken := credential.APIKey
+	if c.Provider == "openai_chatgpt" {
+		authToken = credential.AccessToken
+	}
+	models, err := discoverProviderModels(ctx, s.modelHTTP, c.Provider, authToken)
 	if err != nil {
 		// Provider bodies and transport errors can contain secrets: don't expose them.
 		slog.WarnContext(ctx, "AI model discovery failed", "workspace_id", workspace, "connection_id", id, "provider", c.Provider)
@@ -90,18 +94,23 @@ func (s *AIConnectionService) ConnectionModels(ctx context.Context, workspace, u
 	return &model.AIConnectionModels{Models: models, Source: "provider", FetchedAt: &at}, nil
 }
 
+type providerModelEntry struct {
+	ID                  string   `json:"id"`
+	Slug                string   `json:"slug"`
+	Visibility          string   `json:"visibility"`
+	Name                string   `json:"name"`
+	DisplayName         string   `json:"display_name"`
+	SupportedParameters []string `json:"supported_parameters"`
+	Architecture        struct {
+		OutputModalities []string `json:"output_modalities"`
+	} `json:"architecture"`
+}
+
 type providerModelPage struct {
-	Data []struct {
-		ID                  string   `json:"id"`
-		Name                string   `json:"name"`
-		DisplayName         string   `json:"display_name"`
-		SupportedParameters []string `json:"supported_parameters"`
-		Architecture        struct {
-			OutputModalities []string `json:"output_modalities"`
-		} `json:"architecture"`
-	} `json:"data"`
-	HasMore bool   `json:"has_more"`
-	LastID  string `json:"last_id"`
+	Data    []providerModelEntry `json:"data"`
+	Models  []providerModelEntry `json:"models"`
+	HasMore bool                 `json:"has_more"`
+	LastID  string               `json:"last_id"`
 }
 
 // Fixed provider URLs and disabled redirects prevent discovery from forwarding
@@ -109,7 +118,7 @@ type providerModelPage struct {
 func discoverProviderModels(ctx context.Context, client *http.Client, provider, key string) ([]model.DiscoveredAIModel, error) {
 	endpoint := ""
 	switch provider {
-	case "openai":
+	case "openai", "openai_chatgpt":
 		endpoint = "https://api.openai.com/v1/models"
 	case "anthropic":
 		endpoint = "https://api.anthropic.com/v1/models?limit=1000"
@@ -155,6 +164,11 @@ func discoverProviderModels(ctx context.Context, client *http.Client, provider, 
 			if err := json.Unmarshal(body, &payload); err != nil {
 				return err
 			}
+			if provider == "openai_chatgpt" {
+				// ChatGPT plan OAuth returns account-specific slugs, not the
+				// API-key catalog's data/id schema. Preserve its display order.
+				payload.Data = payload.Models
+			}
 			if payload.Data == nil {
 				return errors.New("missing model list")
 			}
@@ -164,6 +178,12 @@ func discoverProviderModels(ctx context.Context, client *http.Client, provider, 
 			return nil, decodeErr
 		}
 		for _, m := range payload.Data {
+			if provider == "openai_chatgpt" {
+				if m.Visibility != "list" {
+					continue
+				}
+				m.ID = m.Slug
+			}
 			if m.ID == "" || len(m.ID) > 200 || strings.ContainsAny(m.ID, "\r\n") || seen[m.ID] {
 				continue
 			}
@@ -184,7 +204,9 @@ func discoverProviderModels(ctx context.Context, client *http.Client, provider, 
 			models = append(models, model.DiscoveredAIModel{ID: m.ID, Name: name})
 		}
 		if provider != "anthropic" || !payload.HasMore {
-			sort.Slice(models, func(i, j int) bool { return models[i].ID < models[j].ID })
+			if provider != "openai_chatgpt" {
+				sort.Slice(models, func(i, j int) bool { return models[i].ID < models[j].ID })
+			}
 			return models, nil
 		}
 		if payload.LastID == "" || payload.LastID == cursor {

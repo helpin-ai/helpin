@@ -45,6 +45,7 @@ beforeEach(() => {
   frame.permissions = new Set(['workspace.update']);
   vi.mocked(aiProfileService.list).mockResolvedValue({ data: [], error: null });
   vi.mocked(aiProfileService.settings).mockResolvedValue({ data: { default_profile_id: null }, error: null });
+  vi.mocked(aiConnectionService.refreshModels).mockImplementation((workspace, id) => aiConnectionService.models(workspace, id));
 });
 
 afterEach(() => {
@@ -111,6 +112,7 @@ it('opens model selection on a connection and enables a discovered model without
   for (let i=0;i<5;i++) await act(async () => {await new Promise(r => setTimeout(r,0));});
   const toggle=document.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Show New model in model pickers"]');
   expect(toggle).not.toBeNull();
+  expect(aiConnectionService.refreshModels).toHaveBeenCalledWith('ws', 'c1');
   await act(async () => toggle!.click());
   expect(aiProfileService.enableModel).toHaveBeenCalledWith('ws', {name:'New model',connection_id:'c1',model:'gpt-new'});
   expect(document.body.textContent).not.toContain('Profile name');
@@ -122,6 +124,25 @@ it('keeps existing configurations reachable when their connection is unavailable
   await render('workspace');
   expect(document.body.textContent).toContain('Legacy variant');
   expect(document.body.textContent).toContain('Connection missing');
+});
+
+it('retries the provider when an automatic refresh returns a cached list with a warning', async () => {
+  vi.mocked(aiConnectionService.list).mockResolvedValue({ data: { enabled: true, connections: [
+    { id: 'refresh', name: 'Refresh key', provider: 'openai', scope: 'personal', user_id: 'me', status: 'connected' },
+  ], models: [] }, error: null });
+  vi.mocked(aiConnectionService.models).mockResolvedValue({ data: { models: [], source: 'provider', stale: false }, error: null });
+  vi.mocked(aiConnectionService.refreshModels)
+    .mockResolvedValueOnce({ data: { models: [], source: 'provider', stale: true, warning: 'Could not refresh models.' }, error: null })
+    .mockResolvedValueOnce({ data: { models: [{ id: 'new-id', name: 'Fresh model' }], source: 'provider', stale: false }, error: null });
+  await render('personal');
+  await act(async () => { Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Manage connections')?.click(); });
+  await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Models for Refresh key"]')?.click());
+  for (let i = 0; i < 5; i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  expect(document.body.textContent).toContain('Could not refresh models.');
+  await act(async () => { Array.from(document.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Retry')?.click(); });
+  for (let i = 0; i < 5; i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  expect(aiConnectionService.refreshModels).toHaveBeenCalledTimes(2);
+  expect(document.body.textContent).toContain('Fresh model');
 });
 
 it('lets a ChatGPT connection add a model by its exact runtime ID', async () => {
@@ -136,6 +157,7 @@ it('lets a ChatGPT connection add a model by its exact runtime ID', async () => 
   for (let i = 0; i < 5; i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
   const input = document.querySelector<HTMLInputElement>('[aria-label="Model ID"]');
   expect(input).not.toBeNull();
+  expect(aiConnectionService.refreshModels).toHaveBeenCalledWith('ws', 'chatgpt');
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'future-chatgpt-model');
     input!.dispatchEvent(new Event('input', { bubbles: true }));

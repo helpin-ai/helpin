@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/helpin-ai/agent-runtime-go/chatgptauth"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
@@ -101,5 +102,52 @@ func TestConnectionModelsExpiredCacheRefreshes(t *testing.T) {
 	result, err := s.ConnectionModels(context.Background(), "workspace", "owner", primary.ConnectionID, false)
 	if err != nil || len(result.Models) != 1 || result.Models[0].ID != "gpt-new" {
 		t.Fatalf("expired cache: %+v %v", result, err)
+	}
+}
+
+func TestChatGPTConnectionModelsRefreshAccountCatalog(t *testing.T) {
+	profiles, _, _ := setupAIProfileTest(t)
+	s := profiles.connections
+	s.cfg.ChatGPTEnabled = true
+	ctx := context.Background()
+	c := &model.AIConnection{ID: "chatgpt-models", WorkspaceID: "workspace", Scope: "personal", UserID: strPtr("owner"), Provider: "openai_chatgpt", Name: "ChatGPT", Funding: "customer", Status: "connected"}
+	if err := s.seal(c, aiConnectionSecret{Token: &chatgptauth.Token{AccessToken: "test-oauth-access", AccountID: "test-account", ExpiresAt: time.Now().Add(time.Hour)}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.repo.Create(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.repo.SaveDiscoveredModels(ctx, c.ID, []model.DiscoveredAIModel{{ID: "old-choice", Name: "Old choice"}}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	body := `{"models":[{"slug":"gpt-6.1-sol","display_name":"GPT-6.1 Sol","visibility":"list"},{"slug":"a-model","display_name":"Another model","visibility":"list"},{"slug":"hidden-choice","visibility":"hidden"},{"slug":"gpt-6.1-sol","visibility":"list"}]}`
+	s.modelHTTP = &http.Client{Transport: modelListTransport(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if r.URL.String() != "https://api.openai.com/v1/models" || r.Header.Get("Authorization") != "Bearer test-oauth-access" {
+			t.Fatal("incorrect ChatGPT discovery endpoint or credential")
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+	})}
+	cached, err := s.ConnectionModels(ctx, "workspace", "owner", c.ID, false)
+	if err != nil || len(cached.Models) != 1 || cached.Models[0].ID != "old-choice" || calls != 0 {
+		t.Fatalf("lost fresh account cache: %+v %v", cached, err)
+	}
+	fresh, err := s.ConnectionModels(ctx, "workspace", "owner", c.ID, true)
+	if err != nil || len(fresh.Models) != 2 || fresh.Models[0].ID != "gpt-6.1-sol" || fresh.Models[0].Name != "GPT-6.1 Sol" || fresh.Models[1].ID != "a-model" || calls != 1 || fresh.Source != "provider" {
+		t.Fatalf("account discovery: %+v %v", fresh, err)
+	}
+	if _, err := s.ConnectionModels(ctx, "workspace", "teammate", c.ID, true); err == nil || calls != 1 {
+		t.Fatal("another member could refresh a personal catalog")
+	}
+	body = `{"error":"test-secret-must-not-be-returned"}`
+	stale, err := s.ConnectionModels(ctx, "workspace", "owner", c.ID, true)
+	if err != nil || len(stale.Models) != 2 || !stale.Stale || strings.Contains(stale.Warning, "secret") || stale.Warning == "" {
+		t.Fatalf("refresh failure lost the catalog or exposed upstream data: %+v %v", stale, err)
+	}
+	body = `{"models":[]}`
+	empty, err := s.ConnectionModels(ctx, "workspace", "owner", c.ID, true)
+	if err != nil || empty.Source != "provider" || len(empty.Models) != 0 || empty.Stale {
+		t.Fatalf("empty account catalog not respected: %+v %v", empty, err)
 	}
 }
