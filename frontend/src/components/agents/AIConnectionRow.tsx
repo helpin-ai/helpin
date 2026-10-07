@@ -4,16 +4,22 @@ import { AIConnectionStatusBadge } from "./AIConnectionStatusBadge";
 import { ProviderIconTile } from "./ProviderIcon";
 import { useDisconnectAIConnection } from "@/hooks/queries/useAIConnections";
 import { providerLabel } from "@/lib/aiProviders";
+import { AISetupHelp } from "./AISetupHelp";
 import type { AIConnection } from "@/lib/services/aiConnectionService";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { QuickTooltip } from "@/components/ui/quick-tooltip";
 import { TableCell, TableRow } from "@/components/ui/table";
-import { ArrowReloadHorizontalIcon, Key01Icon, Unlink01Icon } from "@/lib/icons";
+import {
+  ArrowReloadHorizontalIcon,
+  Key01Icon,
+  Unlink01Icon,
+} from "@/lib/icons";
 
 function expiryLabel(connection: AIConnection): string | null {
-  if (!connection.expires_at || connection.status === "disconnected") return null;
+  if (!connection.expires_at || connection.status === "disconnected")
+    return null;
   const at = new Date(connection.expires_at);
   return Number.isFinite(at.getTime())
     ? `Access expires ${at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
@@ -55,7 +61,9 @@ export function AIConnectionRow({
       await disconnect.mutateAsync(connection.id);
       toast.success("Connection disconnected");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not disconnect.");
+      toast.error(
+        error instanceof Error ? error.message : "Could not disconnect.",
+      );
     }
   }
 
@@ -66,15 +74,17 @@ export function AIConnectionRow({
           <ProviderIconTile provider={connection.provider} />
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">{connection.name}</p>
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">
-              {connection.scope === "personal" ? "Personal" : "Workspace"}
-              {managed ? " · Managed by your administrator" : ""}
-            </p>
+            <AISetupHelp
+              label={`Connection details for ${connection.name}`}
+              description={`${providerLabel(connection.provider)}${connection.endpoint ? ` · ${connection.endpoint.base_url}${connection.endpoint.auth_mode === "none" ? " · No API key is sent" : ""}` : ""}${managed ? " · Managed by your administrator" : ""}${expiry ? ` · ${expiry}` : ""}`}
+            />
           </div>
         </div>
       </TableCell>
       <TableCell>
-        <span className="text-sm">{providerLabel(connection.provider)}</span>
+        <span className="whitespace-nowrap text-sm">
+          {connection.scope === "personal" ? "Personal" : "Workspace-wide"}
+        </span>
       </TableCell>
       <TableCell>
         <div className="flex flex-wrap items-center gap-1.5">
@@ -85,26 +95,27 @@ export function AIConnectionRow({
             </Badge>
           )}
         </div>
+        <AIConnectionPolicyNotice policy={connection.policy} />
       </TableCell>
-      <TableCell>
-        <div className="max-w-[320px] space-y-0.5 text-xs text-muted-foreground">
-          {connection.endpoint && (
-            <p className="break-all">
-              {connection.endpoint.base_url}
-              {connection.endpoint.auth_mode === "none" ? " · No API key is sent" : ""}
-            </p>
-          )}
-          <AIConnectionPolicyNotice policy={connection.policy} />
-          {expiry && <p>{expiry}</p>}
-        </div>
-      </TableCell>
-      {onModels && <TableCell className="text-right"><Button variant="outline" size="sm" aria-label={`Models for ${connection.name}`} onClick={onModels}>Models{modelCount !== undefined ? ` · ${modelCount}` : ''}</Button></TableCell>}
-      {canManage && (
+      {onModels && (
         <TableCell className="text-right">
-          {managed ? (
-            <span className="text-xs text-muted-foreground">Managed</span>
-          ) : (
-            <div className="flex justify-end gap-1 transition-opacity [@media(hover:hover)]:opacity-0 group-hover/connection:opacity-100 group-focus-within/connection:opacity-100 data-[attention=true]:opacity-100" data-attention={connection.status !== "connected"}>
+          <Button
+            variant="outline"
+            size="sm"
+            aria-label={`Models for ${connection.name}`}
+            onClick={onModels}
+          >
+            Models{modelCount !== undefined ? ` · ${modelCount}` : ""}
+          </Button>
+        </TableCell>
+      )}
+      {canManage ? (
+        <TableCell className="text-right">
+          {managed ? null : (
+            <div
+              className="flex justify-end gap-1 transition-opacity [@media(hover:hover)]:opacity-0 group-hover/connection:opacity-100 group-focus-within/connection:opacity-100 data-[attention=true]:opacity-100"
+              data-attention={connection.status !== "connected"}
+            >
               {connection.status === "pending" ? (
                 <QuickTooltip label="Continue login">
                   <Button
@@ -126,7 +137,10 @@ export function AIConnectionRow({
                     aria-label={`Reconnect ${connection.name}`}
                     onClick={() => onReconnect(connection)}
                   >
-                    <ArrowReloadHorizontalIcon className="h-4 w-4" aria-hidden="true" />
+                    <ArrowReloadHorizontalIcon
+                      className="h-4 w-4"
+                      aria-hidden="true"
+                    />
                   </Button>
                 </QuickTooltip>
               )}
@@ -145,6 +159,8 @@ export function AIConnectionRow({
             </div>
           )}
         </TableCell>
+      ) : (
+        <TableCell />
       )}
     </TableRow>
   );

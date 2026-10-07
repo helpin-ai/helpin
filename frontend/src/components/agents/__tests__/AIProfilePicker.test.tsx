@@ -223,3 +223,12 @@ it('hides models only in Ask Agent while retaining its inherited default', async
   expect(document.querySelector('[cmdk-item][data-value="personal"]')).toBeNull();
   expect(document.querySelector('[cmdk-item][data-value="workspace"]')).not.toBeNull();
 });
+
+it('uses the personal default only in Ask Agent and preserves explicit agent defaults', async () => {
+  vi.mocked(aiProfileService.settings).mockResolvedValue({data:{default_profile_id:'workspace',personal_default_profile_id:'personal'},error:null});
+  for (const [inDock, defaultProfileId, expected] of [[true, undefined, 'personal profile'], [false, undefined, 'workspace profile'], [true, 'workspace', 'workspace profile']] as const) {
+    await act(async () => root.render(<QueryClientProvider client={client}><TooltipProvider><AIProfilePicker workspaceId="ws" inDock={inDock} compact defaultProfileId={defaultProfileId} onChange={() => {}} /></TooltipProvider></QueryClientProvider>));
+    for (let i=0;i<8;i++) await act(async()=>{await new Promise(resolve=>setTimeout(resolve,0));});
+    expect(document.querySelector('[data-slot="select-trigger"]')?.textContent).toBe(expected);
+  }
+});

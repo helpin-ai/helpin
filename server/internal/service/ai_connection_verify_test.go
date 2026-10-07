@@ -33,7 +33,7 @@ func (p *fakeTestProvider) ChatCompletion(_ context.Context, req llm.ChatRequest
 func setupAIConnectionVerifyTest(t *testing.T, fake *fakeTestProvider) (*AIConnectionService, string, *gorm.DB) {
 	t.Helper()
 	s, db := setupAIConnectionTest(t)
-	if err := db.AutoMigrate(&model.AIProfile{}, &model.AIWorkspaceSettings{}); err != nil {
+	if err := db.AutoMigrate(&model.AIProfile{}, &model.AIWorkspaceSettings{}, &model.AIPersonalSettings{}); err != nil {
 		t.Fatal(err)
 	}
 	s.SetTestProviderFactory(func(string, sdk.ModelCredential) (llm.Provider, error) { return fake, nil })
@@ -162,7 +162,7 @@ func TestAIConnectionTestAgainstOpenAICompatibleServer(t *testing.T) {
 	}))
 	defer server.Close()
 	s, db := setupAIConnectionTest(t)
-	if err := db.AutoMigrate(&model.AIProfile{}, &model.AIWorkspaceSettings{}); err != nil {
+	if err := db.AutoMigrate(&model.AIProfile{}, &model.AIWorkspaceSettings{}, &model.AIPersonalSettings{}); err != nil {
 		t.Fatal(err)
 	}
 	s.SetTestProviderFactory(func(_ string, credential sdk.ModelCredential) (llm.Provider, error) {

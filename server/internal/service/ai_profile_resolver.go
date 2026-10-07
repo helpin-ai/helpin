@@ -13,6 +13,8 @@ type AIProfileSelectionRequest struct {
 	ProfileID      string
 	AgentProfileID string
 	Unattended     bool
+	// UsePersonalDefault is set only by the new Ask Agent chat launch surface.
+	UsePersonalDefault bool
 	// Direct means the caller executes the route itself instead of launching it
 	// through Agent Runtime, so runtime readiness is only required where the
 	// runtime approves the destination (compatible endpoints).
@@ -31,6 +33,13 @@ func (s *AIProfileService) Resolve(ctx context.Context, workspace, user string, 
 	if id == "" {
 		id, source = req.AgentProfileID, "agent"
 	}
+	if id == "" && req.UsePersonalDefault && !req.Unattended && user != "" {
+		settings, err := s.repo.PersonalSettings(ctx, workspace, user)
+		if err != nil {
+			return nil, nil, err
+		}
+		id, source = derefString(settings.DefaultProfileID), "personal"
+	}
 	if id == "" {
 		settings, err := s.repo.Settings(ctx, workspace)
 		if err != nil {
@@ -48,7 +57,7 @@ func (s *AIProfileService) Resolve(ctx context.Context, workspace, user string, 
 	if err := s.authorizeProfile(ctx, workspace, user, p, false); err != nil {
 		return nil, nil, err
 	}
-	if p.Scope == "personal" && (req.Unattended || source != "override") {
+	if p.Scope == "personal" && (req.Unattended || (source != "override" && source != "personal")) {
 		return nil, nil, errors.New("personal profiles require an explicit manual selection")
 	}
 	if err := s.validatePrimaryRoute(ctx, workspace, user, p.Scope, &p.Primary); err != nil {

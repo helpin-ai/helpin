@@ -28,7 +28,7 @@ function routeSummary(route: {
 /** Everything the compact route line leaves to hover. */
 function routeDetail(
   profile: AIProfile,
-  defaultSource: "Agent" | "Workspace" | null,
+  defaultSource: "Agent" | "Personal" | "Workspace" | null,
 ): string {
   const parts = [
     defaultSource ? `${defaultSource} default: ${profile.name}` : profile.name,
@@ -80,13 +80,14 @@ export function AIProfilePicker({
         {compact ? "Retry models" : "Retry loading AI models"}
       </QuietTextAction>
     );
-  const inheritedId = defaultProfileId || settings.data?.default_profile_id;
+  const personalDefaultId = inDock && !sharedOnly ? settings.data?.personal_default_profile_id : null;
+  const inheritedId = defaultProfileId || personalDefaultId || settings.data?.default_profile_id;
   const profiles = query.data.filter(
     (p) => (!sharedOnly || p.scope === "workspace") &&
       (!inDock || !p.hidden_from_ask_agent || p.id === value || p.id === inheritedId),
   );
   const selectedId =
-    value || defaultProfileId || settings.data?.default_profile_id;
+    value || inheritedId;
   const selected = profiles.find((p) => p.id === selectedId);
   const blockedPolicy = selected?.primary_policy?.allowed === false;
   const inherited = profiles.find((p) => p.id === inheritedId);
@@ -97,7 +98,7 @@ export function AIProfilePicker({
     || a.id.localeCompare(b.id),
   );
   if (compact && !value && !defaultProfileId && settings.isError) {
-    return <QuietTextAction type="button" title="Retry loading the workspace default" onClick={() => void settings.refetch()}>Retry default</QuietTextAction>;
+    return <QuietTextAction type="button" title="Retry loading the default" onClick={() => void settings.refetch()}>Retry default</QuietTextAction>;
   }
   if (compact && !value && !disabled && profiles.length === 0 && workspace?.id === workspaceId) {
     return <AISettingsLink slug={workspace.slug} className="whitespace-nowrap text-xs text-quiet-text-secondary">Set up AI</AISettingsLink>;
@@ -180,7 +181,7 @@ export function AIProfilePicker({
       {!compact && selected && (
         // One compact route line. The full detail (source, exact model,
         // fallback, pricing) is on hover so the launch form stays scannable.
-        <QuickTooltip label={routeDetail(selected, value ? null : defaultProfileId ? "Agent" : "Workspace")}>
+        <QuickTooltip label={routeDetail(selected, value ? null : defaultProfileId ? "Agent" : personalDefaultId ? "Personal" : "Workspace")}>
           <p className="flex w-fit items-center gap-1.5 text-xs text-quiet-text-secondary">
             <ProviderIcon
               provider={selected.primary.model.provider}

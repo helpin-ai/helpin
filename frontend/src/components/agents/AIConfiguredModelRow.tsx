@@ -5,7 +5,6 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { QuickTooltip } from "@/components/ui/quick-tooltip";
 import {
-  CheckmarkCircle02Icon,
   PencilEdit01Icon,
   Delete01Icon,
   MoreHorizontalIcon,
@@ -24,8 +23,6 @@ export function AIConfiguredModelRow({
   notListed,
   editable,
   busy,
-  defaultReady,
-  onDefault,
   onEdit,
   onRemove,
   onVisibility,
@@ -35,13 +32,19 @@ export function AIConfiguredModelRow({
   notListed: boolean;
   editable: boolean;
   busy: boolean;
-  defaultReady: boolean;
-  onDefault: () => void;
   onEdit: () => void;
   onRemove: () => void;
   onVisibility: (shown: boolean) => void;
 }) {
   const modelID = profile.primary.model.model;
+  const modelName =
+    catalogLabel(profile.primary.model.provider, modelID) ?? modelID;
+  const detail = [
+    profile.name !== modelName ? modelName : null,
+    profile.fallback ? "Fallback configured" : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <div className="flex items-center gap-3 border-b py-3 last:border-0">
       <div className="min-w-0 flex-1">
@@ -61,10 +64,9 @@ export function AIConfiguredModelRow({
             </QuickTooltip>
           )}
         </div>
-        <p className="truncate text-xs text-muted-foreground">
-          {catalogLabel(profile.primary.model.provider, modelID) ?? modelID}
-          {profile.fallback ? " · Fallback configured" : ""}
-        </p>
+        {detail && (
+          <p className="truncate text-xs text-muted-foreground">{detail}</p>
+        )}
         <AIConnectionPolicyNotice policy={profile.primary_policy} />
       </div>
       {editable && (
@@ -85,20 +87,6 @@ export function AIConfiguredModelRow({
               <PencilEdit01Icon className="size-4" />
               Model settings
             </DropdownMenuItem>
-            {profile.scope === "workspace" && (
-              <DropdownMenuItem
-                disabled={
-                  !defaultReady ||
-                  (!isDefault && profile.primary_policy?.allowed === false)
-                }
-                onSelect={onDefault}
-              >
-                <CheckmarkCircle02Icon className="size-4" />
-                {isDefault
-                  ? "Clear workspace default"
-                  : "Set as workspace default"}
-              </DropdownMenuItem>
-            )}
             <DropdownMenuItem variant="destructive" onSelect={onRemove}>
               <Delete01Icon className="size-4" />
               Remove configuration

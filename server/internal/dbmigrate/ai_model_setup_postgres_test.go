@@ -65,3 +65,57 @@ func TestAIModelSetupPreservesExistingProfilesPostgres(t *testing.T) {
 		t.Fatalf("credential changed: %v", err)
 	}
 }
+
+func TestAIPersonalDefaultsPostgres(t *testing.T) {
+	dsn := os.Getenv("AI_PROFILES_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("isolated PostgreSQL fixture required")
+	}
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	schema := fmt.Sprintf("ai_personal_defaults_%d", time.Now().UnixNano())
+	if _, err := db.Exec("CREATE SCHEMA " + schema); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if _, err := db.Exec("DROP SCHEMA " + schema + " CASCADE"); err != nil {
+			t.Error(err)
+		}
+	}()
+	if _, err := db.Exec("SET search_path TO " + schema); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE workspaces(id uuid PRIMARY KEY); CREATE TABLE users(id uuid PRIMARY KEY); CREATE TABLE ai_profiles(id uuid PRIMARY KEY);
+ INSERT INTO workspaces VALUES ('00000000-0000-0000-0000-000000000001');
+ INSERT INTO users VALUES ('00000000-0000-0000-0000-000000000002');
+ INSERT INTO ai_profiles VALUES ('00000000-0000-0000-0000-000000000003');`); err != nil {
+		t.Fatal(err)
+	}
+	data, err := migrationFiles.ReadFile("sql/202610070002_ai_personal_defaults.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if _, err := db.Exec(string(data)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO ai_personal_settings(workspace_id,user_id,default_profile_id) VALUES ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000003'); DELETE FROM ai_profiles;`); err != nil {
+		t.Fatal(err)
+	}
+	var cleared bool
+	if err := db.QueryRow(`SELECT default_profile_id IS NULL FROM ai_personal_settings`).Scan(&cleared); err != nil || !cleared {
+		t.Fatalf("profile cleanup: %v", err)
+	}
+	if _, err := db.Exec(`DELETE FROM users`); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := db.QueryRow(`SELECT count(*) FROM ai_personal_settings`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("user cleanup: %v", err)
+	}
+}

@@ -9,7 +9,6 @@ import {
   useAISettings,
   useEnableAIModel,
   useSetAIModelVisibility,
-  useSetDefaultAIProfile,
   useDeleteAIProfile,
 } from "@/hooks/queries/useAIProfiles";
 import type {
@@ -27,6 +26,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { QuietSearchInput } from "@/components/design-system/quiet";
 import { Input } from "@/components/ui/input";
 import { QuickTooltip } from "@/components/ui/quick-tooltip";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -58,16 +58,12 @@ export function AIConnectionModelsDialog({
   const save = useEnableAIModel(workspaceId);
   const visibility = useSetAIModelVisibility(workspaceId);
   const remove = useDeleteAIProfile(workspaceId);
-  const settings = useAISettings(workspaceId, {
-    enabled: connection.scope === "workspace",
-  });
-  const setDefault = useSetDefaultAIProfile(workspaceId);
+  const settings = useAISettings(workspaceId);
   const confirm = useConfirm();
   const busy =
     save.isPending ||
     visibility.isPending ||
-    remove.isPending ||
-    setDefault.isPending;
+    remove.isPending;
   const existing = (profiles.data ?? []).filter(
     (p) => p.primary.connection_id === connection.id,
   );
@@ -130,17 +126,6 @@ export function AIConnectionModelsDialog({
       );
     }
   }
-  async function chooseDefault(profile: AIProfile) {
-    try {
-      await setDefault.mutateAsync(
-        settings.data?.default_profile_id === profile.id ? null : profile.id,
-      );
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Could not update default.",
-      );
-    }
-  }
   async function deleteModel(profile: AIProfile) {
     if (
       !(await confirm({
@@ -191,12 +176,12 @@ export function AIConnectionModelsDialog({
             </div>
           </DialogHeader>
           <div className="flex items-center gap-2 px-6 py-3">
-            <Input
+            <QuietSearchInput
               aria-label="Search models"
               placeholder="Search models…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="h-9"
+              containerClassName="flex-1"
             />
             {canManage && liveDiscovery && (
               <QuickTooltip label="Refresh from the provider. The list also refreshes automatically when older than six hours; your visibility choices stay unchanged.">
@@ -273,7 +258,7 @@ export function AIConnectionModelsDialog({
                 {savedRows.map((profile) => {
                   const modelID = profile.primary.model.model;
                   const isDefault =
-                    settings.data?.default_profile_id === profile.id;
+                    (settings.data?.personal_default_profile_id || settings.data?.default_profile_id) === profile.id;
                   const notListed =
                     discovered.data?.source === "provider" &&
                     !discovered.data.stale &&
@@ -286,8 +271,6 @@ export function AIConnectionModelsDialog({
                       notListed={notListed}
                       editable={editable}
                       busy={busy}
-                      defaultReady={!settings.isPending && !settings.isError}
-                      onDefault={() => void chooseDefault(profile)}
                       onEdit={() => setEditing(profile)}
                       onRemove={() => void deleteModel(profile)}
                       onVisibility={(shown) => void toggle(profile, shown)}
@@ -399,6 +382,7 @@ export function AIConnectionModelsDialog({
               </span>
             )}
           </div>
+          <div className="flex justify-end border-t px-6 py-3"><Button size="sm" disabled={busy} onClick={onClose}>Done</Button></div>
         </DialogContent>
       </Dialog>
       {editing && (

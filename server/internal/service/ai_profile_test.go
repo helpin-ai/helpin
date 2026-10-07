@@ -22,7 +22,7 @@ func setupAIProfileTestDB(t *testing.T) (*AIProfileService, model.AIProfileRoute
 	t.Helper()
 	connections, db := setupAIConnectionTest(t)
 	connections.SetAuthorizationService(authorization.NewAuthzService(db, connectionMembers{}, nil))
-	if err := db.AutoMigrate(&model.AIProfile{}, &model.AIWorkspaceSettings{}); err != nil {
+	if err := db.AutoMigrate(&model.AIProfile{}, &model.AIWorkspaceSettings{}, &model.AIPersonalSettings{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`CREATE TABLE workspaces (id TEXT PRIMARY KEY); INSERT INTO workspaces VALUES ('workspace')`).Error; err != nil {
