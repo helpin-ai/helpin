@@ -187,7 +187,7 @@ function AISettingsContent({
                     Access
                     <AISetupHelp
                       label="About model access"
-                      description="Personal models are available only to you. Workspace-wide models are shared with workspace members. Only administrators can change shared model settings."
+                      description="Personal models are for your Ask Agent chats and manual runs. Workspace-wide models can also be assigned to agents for scheduled and automated runs. Only administrators can change shared model settings."
                     />
                   </span>
                 </TableHead>
@@ -268,7 +268,7 @@ function AISettingsContent({
             <DialogHeader className="text-left">
               <DialogTitle>Manage connections</DialogTitle>
               <DialogDescription>
-                Manage access and choose which models appear in Ask Agent.
+                Manage provider access and the models available through each connection.
               </DialogDescription>
             </DialogHeader>
             {all.length ? (

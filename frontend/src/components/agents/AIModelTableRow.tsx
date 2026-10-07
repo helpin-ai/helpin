@@ -111,7 +111,7 @@ export function AIModelTableRow({
               label={
                 isPersonalDefault
                   ? "Your default for new Ask Agent chats in this workspace. Saved chats and explicit agent choices keep their models."
-                  : "Inherited workspace default. Choose Make my default on another model to override it for your new chats."
+                  : "Used for new Ask Agent chats and agents without their own model. Make my default sets a personal choice for new chats only."
               }
             >
               <Badge variant="secondary" tabIndex={0}>
@@ -164,7 +164,7 @@ export function AIModelTableRow({
                 : policy?.allowed === false
                   ? (policy.message ?? "Unavailable for new runs.")
                   : profile.hidden_from_ask_agent
-                    ? "Hidden from the model list, but retained here because it is a default. Change the default to hide this row."
+                    ? "Hidden from Ask Agent’s new choices, but still available for manual runs and, if workspace-wide, agent selection. Shown here because it remains a default."
                     : connection.status === "connected"
                       ? "The connection is available. This does not verify that the provider can run this particular model."
                       : "Reconnect this connection to use its models for new runs."

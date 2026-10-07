@@ -254,7 +254,7 @@ const allSettingsSections: SettingsSectionMeta[] = [
     id: 'ai-connections',
     sidebar: false,
     label: 'AI models',
-    description: 'Manage AI connections, models, and defaults.',
+    description: 'Connect models for Ask Agent and agents, with personal or workspace-wide access.',
     icon: AIConnections,
     group: 'AI & knowledge',
     requiredPermission: 'workspace.read',
@@ -262,7 +262,7 @@ const allSettingsSections: SettingsSectionMeta[] = [
   {
     id: 'ai',
     label: 'AI models',
-    description: 'Manage AI connections, models, and defaults.',
+    description: 'Connect models for Ask Agent and agents, with personal or workspace-wide access.',
     keywords: ['personal AI', 'workspace AI', 'API keys', 'ChatGPT', 'models', 'profiles'],
     icon: WorkspaceAI,
     group: 'AI & knowledge',

@@ -162,15 +162,15 @@ export function AIConnectionModelsDialog({
             <div className="flex items-center gap-1">
               <DialogDescription>
                 {connection.scope === "personal"
-                  ? "Personal · Only you"
-                  : "Workspace · Shared with members"}
+                  ? "Personal · Your chats and manual runs"
+                  : "Workspace-wide · Chats, agents, and automations"}
               </DialogDescription>
               <AISetupHelp
                 label="About model access"
                 description={
                   connection.scope === "personal"
-                    ? "These models use your personal connection for manual runs in this workspace."
-                    : "Members can use these models. Only workspace administrators can change this connection and its model settings."
+                    ? "Only you can use this connection. Choose its models in Ask Agent or when starting a manual run. Agent defaults and scheduled runs require a workspace-wide model."
+                    : "Members can choose these models in Ask Agent or assign them to agents, including scheduled and automated runs. Only administrators can change shared model settings."
                 }
               />
             </div>
@@ -219,7 +219,7 @@ export function AIConnectionModelsDialog({
               Show in Ask Agent
               <AISetupHelp
                 label="About model visibility"
-                description="Hiding a model removes it from new choices in Ask Agent. Saved agent configurations, workspace defaults, and existing conversations keep their selection. New models start hidden."
+                description="Turn on to add a model to Ask Agent. Hiding it later keeps it available for manual runs and, if workspace-wide, agent selection. Existing chats and defaults keep their model. Newly discovered models are not added automatically."
               />
             </span>
           </div>
