@@ -32,6 +32,7 @@ import { QuickTooltip } from "@/components/ui/quick-tooltip";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { ArrowReloadHorizontalIcon } from "@/lib/icons";
 import { AISetupHelp } from "./AISetupHelp";
+import { AIModelNewBadge } from "./AIModelNewBadge";
 import { AIConfiguredModelRow } from "./AIConfiguredModelRow";
 import { AIProfileEditor } from "./AIProfileEditor";
 import { AIConnectionPolicyNotice } from "./AIConnectionPolicyNotice";
@@ -74,7 +75,7 @@ export function AIConnectionModelsDialog({
     (p) => p.primary.connection_id === connection.id,
   );
   const known = new Set(existing.map((p) => p.primary.model.model));
-  const available =
+  const available: DiscoveredAIModel[] =
     discovered.data?.source === "catalog" && connection.funding !== "managed"
       ? [
           ...new Map(
@@ -100,6 +101,17 @@ export function AIConnectionModelsDialog({
   const newRows = available.filter(
     (m) => !known.has(m.id) && matches(m.name, m.id),
   );
+  const recentCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const recentDiscoveries = new Map(
+    available.flatMap((model) => {
+      const discoveredAt = Date.parse(model.discovered_at ?? "");
+      return discoveredAt > recentCutoff ? [[model.id, discoveredAt] as const] : [];
+    }),
+  );
+  const rows = [
+    ...savedRows.map((profile) => ({ id: profile.primary.model.model, profile, model: null })),
+    ...newRows.map((model) => ({ id: model.id, profile: null, model })),
+  ].sort((a, b) => (recentDiscoveries.get(b.id) ?? 0) - (recentDiscoveries.get(a.id) ?? 0));
   const editable = canManage && !profiles.isPending && !profiles.isError;
   const canEnable =
     editable &&
@@ -265,49 +277,55 @@ export function AIConnectionModelsDialog({
               </p>
             ) : (
               <>
-                {savedRows.map((profile) => {
-                  const modelID = profile.primary.model.model;
-                  const isDefault =
-                    (settings.data?.personal_default_profile_id || settings.data?.default_profile_id) === profile.id;
-                  const notListed =
-                    discovered.data?.source === "provider" &&
-                    !discovered.data.stale &&
-                    !availableIDs.has(modelID);
+                {rows.map(({ id: modelID, profile, model }) => {
+                  const isNew = recentDiscoveries.has(modelID);
+                  if (profile) {
+                    const isDefault =
+                      (settings.data?.personal_default_profile_id || settings.data?.default_profile_id) === profile.id;
+                    const notListed =
+                      discovered.data?.source === "provider" &&
+                      !discovered.data.stale &&
+                      !availableIDs.has(modelID);
+                    return (
+                      <AIConfiguredModelRow
+                        key={profile.id}
+                        profile={profile}
+                        isDefault={isDefault}
+                        notListed={notListed}
+                        isNew={isNew}
+                        editable={editable}
+                        busy={busy}
+                        onEdit={() => setEditing(profile)}
+                        onRemove={() => void deleteModel(profile)}
+                        onVisibility={(shown) => void toggle(profile, shown)}
+                      />
+                    );
+                  }
                   return (
-                    <AIConfiguredModelRow
-                      key={profile.id}
-                      profile={profile}
-                      isDefault={isDefault}
-                      notListed={notListed}
-                      editable={editable}
-                      busy={busy}
-                      onEdit={() => setEditing(profile)}
-                      onRemove={() => void deleteModel(profile)}
-                      onVisibility={(shown) => void toggle(profile, shown)}
-                    />
+                    <div
+                      key={model.id}
+                      className="flex items-center gap-3 border-b py-3 last:border-0"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="truncate text-sm">{model.name}</p>
+                          {isNew && <AIModelNewBadge />}
+                        </div>
+                        {model.id !== model.name && (
+                          <p className="truncate text-xs text-muted-foreground">
+                            {model.id}
+                          </p>
+                        )}
+                      </div>
+                      <Switch
+                        aria-label={`Show ${model.name} in model pickers`}
+                        checked={false}
+                        disabled={!canEnable || busy}
+                        onCheckedChange={() => void enable(model)}
+                      />
+                    </div>
                   );
                 })}
-                {newRows.map((model) => (
-                  <div
-                    key={model.id}
-                    className="flex items-center gap-3 border-b py-3 last:border-0"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm">{model.name}</p>
-                      {model.id !== model.name && (
-                        <p className="truncate text-xs text-muted-foreground">
-                          {model.id}
-                        </p>
-                      )}
-                    </div>
-                    <Switch
-                      aria-label={`Show ${model.name} in model pickers`}
-                      checked={false}
-                      disabled={!canEnable || busy}
-                      onCheckedChange={() => void enable(model)}
-                    />
-                  </div>
-                ))}
                 {discovered.isPending && (
                   <p
                     role="status"

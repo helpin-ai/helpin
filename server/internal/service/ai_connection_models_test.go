@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -149,5 +150,68 @@ func TestChatGPTConnectionModelsRefreshAccountCatalog(t *testing.T) {
 	empty, err := s.ConnectionModels(ctx, "workspace", "owner", c.ID, true)
 	if err != nil || empty.Source != "provider" || len(empty.Models) != 0 || empty.Stale {
 		t.Fatalf("empty account catalog not respected: %+v %v", empty, err)
+	}
+}
+
+func TestConnectionModelsTracksNewDiscoveriesAcrossRefreshes(t *testing.T) {
+	for _, provider := range []string{"openai", "anthropic"} {
+		t.Run(provider, func(t *testing.T) {
+			profiles, _, _ := setupAIProfileTest(t)
+			s := profiles.connections
+			ctx := context.Background()
+			c := &model.AIConnection{ID: "discovery", WorkspaceID: "workspace", Scope: "workspace", Provider: provider, Name: "Discovery", Funding: "customer", Status: "connected"}
+			if err := s.seal(c, aiConnectionSecret{APIKey: "test-key"}); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.repo.Create(ctx, c); err != nil {
+				t.Fatal(err)
+			}
+			body := `{"data":[{"id":"gpt-existing"}]}`
+			s.modelHTTP = &http.Client{Transport: modelListTransport(func(r *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+			})}
+			fetch := func(refresh bool) []map[string]any {
+				t.Helper()
+				result, err := s.ConnectionModels(ctx, "workspace", "owner", c.ID, refresh)
+				if err != nil {
+					t.Fatal(err)
+				}
+				encoded, err := json.Marshal(result.Models)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var rows []map[string]any
+				if err := json.Unmarshal(encoded, &rows); err != nil {
+					t.Fatal(err)
+				}
+				return rows
+			}
+			baseline := fetch(true)
+			if baseline[0]["discovered_at"] != nil {
+				t.Fatal("initial catalog should establish a baseline")
+			}
+			body = `{"data":[{"id":"gpt-existing"},{"id":"gpt-new"}]}`
+			refreshed := fetch(true)
+			if refreshed[0]["discovered_at"] != nil {
+				t.Fatal("baseline model was marked new")
+			}
+			discoveredAt, ok := refreshed[1]["discovered_at"].(string)
+			if !ok || discoveredAt == "" {
+				t.Fatal("newly discovered model has no discovery time")
+			}
+			if _, err := time.Parse(time.RFC3339Nano, discoveredAt); err != nil {
+				t.Fatal(err)
+			}
+			if got := fetch(true)[1]["discovered_at"]; got != discoveredAt {
+				t.Fatalf("refresh reset discovery time: %v", got)
+			}
+			if got := fetch(false)[1]["discovered_at"]; got != discoveredAt {
+				t.Fatalf("cache lost discovery time: %v", got)
+			}
+			body = `{"error":"offline"}`
+			if got := fetch(true)[1]["discovered_at"]; got != discoveredAt {
+				t.Fatalf("failure lost discovery time: %v", got)
+			}
+		})
 	}
 }

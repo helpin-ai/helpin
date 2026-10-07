@@ -206,3 +206,29 @@ it('keeps hidden models in settings and marks the effective default beside the m
   const row=Array.from(document.querySelectorAll('tbody tr')).find(el=>el.textContent?.includes('My model'));
   expect(row?.querySelector('td')?.textContent).toContain('Default');
 });
+
+it('puts recent discoveries before saved models and older choices, without marking the baseline or expired discoveries new', async () => {
+  const now = Date.now();
+  vi.mocked(aiConnectionService.list).mockResolvedValue({ data: { enabled: true, connections: [
+    { id: 'discoveries', name: 'Discovery key', provider: 'openai', scope: 'workspace', user_id: null, status: 'connected' },
+  ], models: [] }, error: null });
+  vi.mocked(aiProfileService.list).mockResolvedValue({ data: [
+    { id: 'saved', workspace_id: 'ws', user_id: null, scope: 'workspace', name: 'Saved model', revision: 1, primary: { connection_id: 'discoveries', model: { provider: 'openai', model: 'gpt-saved', controls: {} } }, fallback: null },
+  ], error: null });
+  vi.mocked(aiConnectionService.models).mockResolvedValue({ data: { models: [
+    { id: 'gpt-baseline', name: 'Baseline model' },
+    { id: 'gpt-expired', name: 'Older discovery', discovered_at: new Date(now - 8 * 86400000).toISOString() },
+    { id: 'gpt-recent', name: 'Recent discovery', discovered_at: new Date(now - 86400000).toISOString() },
+    { id: 'gpt-latest', name: 'Latest discovery', discovered_at: new Date(now - 1000).toISOString() },
+  ], source: 'provider', stale: false }, error: null });
+  await render('workspace');
+  await act(async () => { Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Manage connections')?.click(); });
+  await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Models for Discovery key"]')?.click());
+  for (let i = 0; i < 5; i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  const dialog = Array.from(document.querySelectorAll('[role="dialog"]')).find(el => el.textContent?.includes('Discovery key models'))!;
+  const toggles = Array.from(dialog.querySelectorAll('[role="switch"]'));
+  expect(toggles.map(el => el.getAttribute('aria-label'))).toEqual([
+    'Show Latest discovery in model pickers', 'Show Recent discovery in model pickers', 'Show Saved model in model pickers', 'Show Baseline model in model pickers', 'Show Older discovery in model pickers',
+  ]);
+  expect(Array.from(dialog.querySelectorAll('span')).filter(el => el.textContent === 'New')).toHaveLength(2);
+});

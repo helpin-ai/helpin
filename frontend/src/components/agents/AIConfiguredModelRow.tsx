@@ -15,12 +15,14 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
+import { AIModelNewBadge } from "./AIModelNewBadge";
 import { AIConnectionPolicyNotice } from "./AIConnectionPolicyNotice";
 
 export function AIConfiguredModelRow({
   profile,
   isDefault,
   notListed,
+  isNew = false,
   editable,
   busy,
   onEdit,
@@ -30,6 +32,7 @@ export function AIConfiguredModelRow({
   profile: AIProfile;
   isDefault: boolean;
   notListed: boolean;
+  isNew?: boolean;
   editable: boolean;
   busy: boolean;
   onEdit: () => void;
@@ -52,6 +55,7 @@ export function AIConfiguredModelRow({
           <span className="break-words text-sm font-medium">
             {profile.name}
           </span>
+          {isNew && <AIModelNewBadge />}
           {isDefault && <Badge variant="secondary">Default</Badge>}
           {notListed && (
             <QuickTooltip label="This model is absent from the provider's latest list. It may be unavailable or require different access. Edit it to choose a replacement; saved agents are never switched automatically.">

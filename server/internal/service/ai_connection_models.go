@@ -88,6 +88,21 @@ func (s *AIConnectionService) ConnectionModels(ctx context.Context, workspace, u
 		return result, nil
 	}
 	at := time.Now().UTC()
+	// The first successful discovery establishes a baseline. Later additions
+	// retain their discovery time across refreshes in the existing JSON cache.
+	if c.ModelsFetchedAt != nil {
+		previous := make(map[string]*time.Time, len(c.DiscoveredModels))
+		for _, m := range c.DiscoveredModels {
+			previous[m.ID] = m.DiscoveredAt
+		}
+		for i := range models {
+			if discoveredAt, known := previous[models[i].ID]; known {
+				models[i].DiscoveredAt = discoveredAt
+			} else {
+				models[i].DiscoveredAt = &at
+			}
+		}
+	}
 	if err := s.repo.SaveDiscoveredModels(ctx, id, models, at); err != nil {
 		return nil, err
 	}
