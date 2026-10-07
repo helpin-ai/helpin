@@ -57,6 +57,7 @@ export function AIConnectionDialog({
   mode,
   models,
   onOpenChange,
+  onConnected,
 }: {
   workspaceId: string;
   scope: "personal" | "workspace";
@@ -64,6 +65,7 @@ export function AIConnectionDialog({
   mode: AIConnectionDialogMode;
   models: AIConnectionModel[];
   onOpenChange: (open: boolean) => void;
+  onConnected?: (connection: AIConnection) => void;
 }) {
   const id = useId();
   const reconnecting = mode.kind === "reconnect" ? mode.connection : undefined;
@@ -164,6 +166,7 @@ export function AIConnectionDialog({
       }
       toast.success(reconnecting ? "Connection updated" : "Connection added");
       onOpenChange(false);
+      onConnected?.(result.connection);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not save the connection.");
     }
@@ -190,7 +193,7 @@ export function AIConnectionDialog({
               ? "Replace the stored credential. Runs already accepted keep their route."
               : scope === "personal"
                 ? "Only you can use this connection, for your manual runs and chats."
-                : "Members can select this connection. Shared profiles can use it for automation."} />
+                : "Members can select this connection. Shared models can be used for automation."} />
           </div>
         </DialogHeader>
 
@@ -375,8 +378,8 @@ export function AIConnectionDialog({
         </div>
 
         <DialogFooter className="border-t border-border/60 px-6 py-3">
-          <Button id={`${id}-cancel`} type="button" size="sm" variant="ghost" onClick={() => onOpenChange(false)}>
-            {device.phase === "connected" ? "Done" : "Cancel"}
+          <Button id={`${id}-cancel`} type="button" size="sm" variant="ghost" onClick={() => { onOpenChange(false); if (device.phase === "connected" && login) onConnected?.(login.connection); }}>
+            {device.phase === "connected" ? onConnected ? "Choose models" : "Done" : "Cancel"}
           </Button>
           {!showDeviceLogin && (
             <Button type="button" size="sm" disabled={pending} onClick={() => void submit()}>

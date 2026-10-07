@@ -26,12 +26,16 @@ export function AIConnectionRow({
   canManage,
   onReconnect,
   onContinueLogin,
+  onModels,
+  modelCount,
 }: {
   workspaceId: string;
   connection: AIConnection;
   canManage: boolean;
   onReconnect: (connection: AIConnection) => void;
   onContinueLogin: (connection: AIConnection) => void;
+  onModels?: () => void;
+  modelCount?: number;
 }) {
   const confirm = useConfirm();
   const disconnect = useDisconnectAIConnection(workspaceId);
@@ -42,7 +46,7 @@ export function AIConnectionRow({
     const confirmed = await confirm({
       title: `Disconnect “${connection.name}”?`,
       description:
-        "Profiles that use this connection stop working for new runs. Runs already accepted keep their route.",
+        "Models that use this connection stop working for new runs. Runs already accepted keep their route.",
       confirmText: "Disconnect",
       variant: "destructive",
     });
@@ -94,6 +98,7 @@ export function AIConnectionRow({
           {expiry && <p>{expiry}</p>}
         </div>
       </TableCell>
+      {onModels && <TableCell className="text-right"><Button variant="outline" size="sm" aria-label={`Models for ${connection.name}`} onClick={onModels}>Models{modelCount !== undefined ? ` · ${modelCount}` : ''}</Button></TableCell>}
       {canManage && (
         <TableCell className="text-right">
           {managed ? (

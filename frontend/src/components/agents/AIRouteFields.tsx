@@ -1,4 +1,5 @@
 import { useId, useState } from "react";
+import { useConnectionModels } from "@/hooks/queries/useAIConnections";
 import { AISetupHelp } from "./AISetupHelp";
 import { ArrowRight01Icon } from "@/lib/icons";
 import { AIConnectionPolicyNotice } from "./AIConnectionPolicyNotice";
@@ -29,11 +30,13 @@ function unavailableReason(connection: AIConnection): string | null {
 
 export function AIRouteFields({
   route,
+  workspaceId,
   onChange,
   connections,
   disabled,
   emptyHint,
 }: {
+  workspaceId: string;
   route: AIProfileRoute;
   onChange: (route: AIProfileRoute) => void;
   connections: AIConnection[];
@@ -41,6 +44,7 @@ export function AIRouteFields({
   emptyHint?: string;
 }) {
   const id = useId();
+  const discovered = useConnectionModels(workspaceId, route.connection_id, !!route.connection_id);
   const connection = connections.find((entry) => entry.id === route.connection_id);
   const controls = providerControls(route.model.provider);
   const showTwoColumns =
@@ -111,6 +115,7 @@ export function AIRouteFields({
         <Label htmlFor={`${id}-model`}>Model</Label>
         <AIModelCombobox
           id={`${id}-model`}
+          models={discovered.data?.source === "provider" ? discovered.data.models : undefined}
           provider={route.model.provider}
           value={route.model.model}
           disabled={disabled || !route.connection_id}

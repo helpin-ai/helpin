@@ -585,6 +585,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.Post("/{connectionID}/poll", h.AIConnection.Poll)
 					r.Post("/{connectionID}/reconnect", h.AIConnection.Reconnect)
 					r.Post("/{connectionID}/test", h.AIConnection.Test)
+					r.Get("/{connectionID}/models", h.AIConnection.Models)
+					r.Post("/{connectionID}/models/refresh", h.AIConnection.Models)
 					r.Delete("/{connectionID}", h.AIConnection.Disconnect)
 				})
 			}
@@ -595,7 +597,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.Use(wsActive)
 					r.Get("/", h.AIProfile.List)
 					r.Post("/", h.AIProfile.Save)
+					r.Post("/models", h.AIProfile.EnableModel)
 					r.Put("/{profileID}", h.AIProfile.Save)
+					r.Put("/{profileID}/visibility", h.AIProfile.SetVisibility)
 					r.Delete("/{profileID}", h.AIProfile.Delete)
 				})
 				r.With(middleware.RequireWorkspaceID, wsActive).Get("/ai-settings", h.AIProfile.Settings)

@@ -213,5 +213,13 @@ it("keeps an existing run locked even when its profile is no longer listed", asy
   }
   const trigger=document.querySelector<HTMLButtonElement>('[data-slot="select-trigger"]');
   expect(trigger?.disabled).toBe(true);
-  expect(trigger?.textContent).toBe('Saved profile');
+  expect(trigger?.textContent).toBe('Saved model');
+});
+
+it('hides models only in Ask Agent while retaining its inherited default', async () => {
+  vi.mocked(aiProfileService.list).mockResolvedValue({ data: profiles.map(p => ({...p, hidden_from_ask_agent: true})), error: null });
+  await act(async () => root.render(<QueryClientProvider client={client}><TooltipProvider><AIProfilePicker workspaceId="ws" inDock compact onChange={() => {}} /></TooltipProvider></QueryClientProvider>));
+  await openPicker();
+  expect(document.querySelector('[cmdk-item][data-value="personal"]')).toBeNull();
+  expect(document.querySelector('[cmdk-item][data-value="workspace"]')).not.toBeNull();
 });

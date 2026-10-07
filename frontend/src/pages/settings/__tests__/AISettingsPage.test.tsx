@@ -9,10 +9,10 @@ import { aiConnectionService } from '@/lib/services/aiConnectionService';
 import { aiProfileService } from '@/lib/services/aiProfileService';
 
 vi.mock('@/lib/services/aiConnectionService', () => ({
-  aiConnectionService: { list: vi.fn(), endpoints: vi.fn(), create: vi.fn(), reconnect: vi.fn(), poll: vi.fn(), disconnect: vi.fn() },
+  aiConnectionService: { list: vi.fn(), endpoints: vi.fn(), create: vi.fn(), reconnect: vi.fn(), poll: vi.fn(), disconnect: vi.fn(), models: vi.fn(), refreshModels: vi.fn() },
 }));
 vi.mock('@/lib/services/aiProfileService', () => ({
-  aiProfileService: { list: vi.fn(), save: vi.fn(), remove: vi.fn(), settings: vi.fn(), setDefault: vi.fn() },
+  aiProfileService: { list: vi.fn(), save: vi.fn(), remove: vi.fn(), settings: vi.fn(), setDefault: vi.fn(), setVisibility: vi.fn(), enableModel: vi.fn() },
 }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
@@ -74,83 +74,48 @@ it('asks for configuration when the deployment has no AI connection support', as
   expect(document.body.textContent).toContain('AI connections are not configured');
 });
 
-it('explains why a profile cannot be created before a connection exists', async () => {
+
+it('offers connections without a profile creation step', async () => {
   vi.mocked(aiConnectionService.list).mockResolvedValue({ data: { enabled: true, connections: [], models: [] }, error: null });
   await render('workspace');
   expect(document.body.textContent).toContain('No connections yet');
-  expect(document.body.textContent).toContain('Add a connection first');
-  const create = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Create profile');
-  expect(create?.disabled).toBe(true);
-  expect(document.body.textContent).not.toContain('Add a connection before creating a profile.');
-  await act(async () => { create?.parentElement?.focus(); });
-  expect(document.querySelector('[role="tooltip"]')?.textContent).toContain('Add a connection before creating a profile.');
+  expect(document.body.textContent).not.toContain('Create profile');
+  expect(document.body.textContent).not.toContain('No profiles yet');
 });
 
-it('keeps default selection in the profiles list without a separate section', async () => {
-  vi.mocked(aiConnectionService.list).mockResolvedValue({
-    data: {
-      enabled: true,
-      models: [],
-      connections: [{ id: 'c1', scope: 'workspace', user_id: null, name: 'Team key', provider: 'openai', status: 'connected' }],
-    },
-    error: null,
-  });
-  await render('workspace');
-  expect(document.body.textContent).not.toContain('Create a shared profile to choose a default.');
-  expect(document.querySelector('#workspace-ai-default')).toBeNull();
-});
-
-it('does not repeat the section description in the page body', async () => {
-  vi.mocked(aiConnectionService.list).mockResolvedValue({ data: { enabled: true, connections: [], models: [] }, error: null });
-  await render('workspace');
-  const description = 'Shared connections, profiles, and the default profile agents inherit.';
-  const occurrences = document.body.textContent!.split(description).length - 1;
-  expect(occurrences).toBe(1);
-});
-
-it('tells a member without manage permission that the page is read-only', async () => {
+it('gives members personal setup and read-only workspace models without scope tabs', async () => {
   frame.permissions = new Set();
   vi.mocked(aiConnectionService.list).mockResolvedValue({ data: { enabled: true, connections: [], models: [] }, error: null });
   await render('workspace');
-  expect(document.body.textContent).toContain('Connections are read-only');
-  expect(Array.from(document.querySelectorAll('button')).some((b) => b.textContent?.includes('Add connection'))).toBe(false);
+  expect(document.querySelector('[role="tab"]')).toBeNull();
+  expect(document.body.textContent).toContain('Personal connections');
+  expect(Array.from(document.querySelectorAll('button')).some(b => b.textContent === 'Add connection' && !b.disabled)).toBe(true);
 });
 
-it('makes keyword-only retrieval and separate server AI wiring visible', async () => {
-  vi.mocked(aiConnectionService.list).mockResolvedValue({data:{enabled:true, connections:[],models:[],knowledge:{embeddings_configured:false,embedding_model:'text-embedding-3-small',embedding_dimensions:1536,chat_providers:[]}},error:null});
-  await render('workspace');
-  expect(document.body.textContent).toContain('keyword matching only');
-  expect(document.body.textContent).toContain('Profiles below apply to agent runs');
-  expect(document.body.textContent).toContain('No server chat provider is configured');
-});
-
-it('names the workspace connection that serves embeddings', async () => {
-  vi.mocked(aiConnectionService.list).mockResolvedValue({data:{enabled:true, connections:[],models:[],knowledge:{embeddings_configured:true,embedding_model:'text-embedding-3-small',embedding_dimensions:1536,embedding_source:'workspace',embedding_provider:'openrouter',embedding_detail:"Using this workspace's OpenRouter connection",chat_providers:[]}},error:null});
-  await render('workspace');
-  expect(document.body.textContent).toContain("Using this workspace's OpenRouter connection for embeddings: text-embedding-3-small (1536 dimensions)");
-  expect(document.body.textContent).not.toContain('keyword matching only');
-});
-
-it('orders Workspace before Personal and keeps management scoped when switching tabs', async () => {
-  frame.permissions = new Set();
-  vi.mocked(aiConnectionService.list).mockResolvedValue({ data: { enabled: true, connections: [], models: [] }, error: null });
-  await render('workspace');
-  const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
-  expect(tabs.map(tab => tab.textContent)).toEqual(['Workspace', 'Personal']);
-  expect(tabs[0].getAttribute('aria-selected')).toBe('true');
-  expect(document.body.textContent).toContain('Connections are read-only');
-  await act(async () => { tabs[1].dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 })); });
-  expect(tabs[1].getAttribute('aria-selected')).toBe('true');
-  expect(document.body.textContent).not.toContain('Connections are read-only');
-  expect(document.body.textContent).not.toContain('Default profile');
-  expect(Array.from(document.querySelectorAll('button')).some(button => button.textContent === 'Add connection' && !button.disabled)).toBe(true);
-  await act(async () => { tabs[0].dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 })); });
-  expect(document.body.textContent).toContain('Connections are read-only');
-});
-
-it('keeps personal setup links on the Personal tab', async () => {
+it('lets admins choose workspace or personal setup', async () => {
   vi.mocked(aiConnectionService.list).mockResolvedValue({ data: { enabled: true, connections: [], models: [] }, error: null });
   await render('personal');
+  expect(Array.from(document.querySelectorAll('[role="tab"]')).map(t => t.textContent)).toEqual(['Workspace', 'Personal']);
   expect(document.querySelector('[role="tab"][data-state="active"]')?.textContent).toBe('Personal');
-  expect(document.body.textContent).not.toContain('Default profile');
+});
+
+it('opens model selection on a connection and enables a discovered model without naming a profile', async () => {
+  vi.mocked(aiConnectionService.list).mockResolvedValue({ data: { enabled:true, connections:[{id:'c1', name:'Team key', provider:'openai', scope:'workspace', user_id:null, status:'connected'}], models:[] }, error:null });
+  vi.mocked(aiConnectionService.models).mockResolvedValue({data:{models:[{id:'gpt-new', name:'New model'}],source:'provider',stale:false},error:null});
+  vi.mocked(aiProfileService.enableModel).mockResolvedValue({data:null,error:null});
+  await render('workspace');
+  await act(async () => { document.querySelector<HTMLButtonElement>('[aria-label="Models for Team key"]')?.click(); });
+  for (let i=0;i<5;i++) await act(async () => {await new Promise(r => setTimeout(r,0));});
+  const toggle=document.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Show New model in Ask Agent"]');
+  expect(toggle).not.toBeNull();
+  await act(async () => toggle!.click());
+  expect(aiProfileService.enableModel).toHaveBeenCalledWith('ws', {name:'New model',connection_id:'c1',model:'gpt-new'});
+  expect(document.body.textContent).not.toContain('Profile name');
+});
+
+it('keeps existing configurations reachable when their connection is unavailable', async () => {
+  vi.mocked(aiConnectionService.list).mockResolvedValue({data:{enabled:true,connections:[],models:[]},error:null});
+  vi.mocked(aiProfileService.list).mockResolvedValue({data:[{id:'old',workspace_id:'ws',user_id:null,scope:'workspace',name:'Legacy variant',revision:1,primary:{connection_id:'missing',model:{provider:'openai',model:'gpt-old',controls:{}}},fallback:null}],error:null});
+  await render('workspace');
+  expect(document.querySelector('button[aria-label="Models for unavailable connection missing"]')).not.toBeNull();
 });

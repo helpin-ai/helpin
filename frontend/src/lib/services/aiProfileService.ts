@@ -21,6 +21,7 @@ export interface AIProfileRoute {
 }
 
 export interface AIProfile {
+  hidden_from_ask_agent?: boolean;
   primary_policy?: AIConnectionPolicyView;
   fallback_policy?: AIConnectionPolicyView;
   id: string;
@@ -42,6 +43,9 @@ const path = (workspace: string, suffix = "") =>
   `/ai-profiles${suffix}?workspace_id=${encodeURIComponent(workspace)}`;
 
 export const aiProfileService = {
+  enableModel: (workspace: string, value: {connection_id: string; model: string; name: string}) => api.post<AIProfile>(path(workspace, '/models'), value),
+  setVisibility: (workspace: string, profile: AIProfile, hidden: boolean) =>
+    api.put<AIProfile>(path(workspace, `/${encodeURIComponent(profile.id)}/visibility`), {revision: profile.revision, hidden_from_ask_agent: hidden}),
   list: (workspace: string) => api.get<AIProfile[]>(path(workspace, "/")),
   save: (workspace: string, value: SaveAIProfile, id?: string) =>
     id

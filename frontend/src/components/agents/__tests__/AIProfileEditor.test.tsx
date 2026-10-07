@@ -9,6 +9,8 @@ import type { AIConnection } from '@/lib/services/aiConnectionService';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
 
+vi.mock('@/hooks/queries/useAIConnections', () => ({ useConnectionModels: () => ({data: undefined}) }));
+
 vi.mock('@/lib/services/aiProfileService', () => ({
   aiProfileService: { save: vi.fn(), list: vi.fn(), remove: vi.fn(), settings: vi.fn(), setDefault: vi.fn() },
 }));

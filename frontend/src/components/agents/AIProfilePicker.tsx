@@ -71,23 +71,24 @@ export function AIProfilePicker({
   if (query.isPending)
     return (
       <p role="status" className="text-xs text-quiet-text-secondary">
-        {compact ? "Loading…" : "Loading AI profiles…"}
+        {compact ? "Loading…" : "Loading AI models…"}
       </p>
     );
   if (query.isError)
     return (
       <QuietTextAction type="button" onClick={() => void query.refetch()}>
-        {compact ? "Retry profiles" : "Retry loading AI profiles"}
+        {compact ? "Retry models" : "Retry loading AI models"}
       </QuietTextAction>
     );
+  const inheritedId = defaultProfileId || settings.data?.default_profile_id;
   const profiles = query.data.filter(
-    (p) => !sharedOnly || p.scope === "workspace",
+    (p) => (!sharedOnly || p.scope === "workspace") &&
+      (!inDock || !p.hidden_from_ask_agent || p.id === value || p.id === inheritedId),
   );
   const selectedId =
     value || defaultProfileId || settings.data?.default_profile_id;
   const selected = profiles.find((p) => p.id === selectedId);
   const blockedPolicy = selected?.primary_policy?.allowed === false;
-  const inheritedId = defaultProfileId || settings.data?.default_profile_id;
   const inherited = profiles.find((p) => p.id === inheritedId);
   profiles.sort((a, b) =>
     Number(b.id === inheritedId) - Number(a.id === inheritedId)
@@ -101,11 +102,11 @@ export function AIProfilePicker({
   if (compact && !value && !disabled && profiles.length === 0 && workspace?.id === workspaceId) {
     return <AISettingsLink slug={workspace.slug} className="whitespace-nowrap text-xs text-quiet-text-secondary">Set up AI</AISettingsLink>;
   }
-  const compactName = selected?.name ?? (value ? disabled ? "Saved profile" : "Profile unavailable" : settings.isFetching && !defaultProfileId ? "Loading…" : "Choose profile");
+  const compactName = selected?.name ?? (value ? disabled ? "Saved model" : "Model unavailable" : settings.isFetching && !defaultProfileId ? "Loading…" : "Choose model");
 
   return (
     <div className={compact ? "min-w-0 max-w-full" : "min-w-0 space-y-2"}>
-      {!compact && <Label htmlFor={id}>AI profile</Label>}
+      {!compact && <Label htmlFor={id}>AI model</Label>}
       <Select
         value={value || inherited?.id || "default"}
         disabled={disabled}
@@ -116,8 +117,8 @@ export function AIProfilePicker({
         }
       >
         <SelectTrigger id={id} variant={compact ? "ghost" : "underline"} size={compact ? "sm" : "default"}
-          aria-label={compact ? `Change AI profile: ${compactName}` : "AI profile"}
-          title={compact ? disabled ? "This conversation keeps its saved AI profile" : "Change AI profile" : undefined}
+          aria-label={compact ? `Change AI model: ${compactName}` : "AI model"}
+          title={compact ? disabled ? "This conversation keeps its saved AI model" : "Change AI model" : undefined}
           className={compact ? "max-w-[180px] h-7 gap-1 rounded-md px-2 text-xs text-quiet-text-secondary hover:text-quiet-text-primary" : "w-full px-0.5"}>
           <SelectValue placeholder={sharedOnly ? "Workspace default" : "Agent default"}>
             {compact ? compactName : undefined}
@@ -131,12 +132,12 @@ export function AIProfilePicker({
         >
           {!inherited && !compact && (
             <SelectItem value="default" disabled={compact}>
-              {compact ? "Choose profile" : sharedOnly ? "Workspace default" : "Agent default"}
+              {compact ? "Choose model" : sharedOnly ? "Workspace default" : "Agent default"}
             </SelectItem>
           )}
           {value && !selected && (
             <SelectItem value={value} disabled>
-              Saved profile · unavailable for new runs
+              Saved model · unavailable for new runs
             </SelectItem>
           )}
           {profiles.map((p) => (
@@ -172,7 +173,7 @@ export function AIProfilePicker({
       )}
       {!compact && !value && !selected && !settings.isError && !settings.isFetching && (
         <p role="status" className="text-xs text-quiet-text-secondary">
-          No available default profile. Select a profile or configure the
+          No available default model. Select a model or configure the
           workspace default.
         </p>
       )}
@@ -204,7 +205,7 @@ export function AIProfilePicker({
           slug={workspace.slug}
           shared={sharedOnly}
         >
-          Manage AI profiles
+          Manage AI models
         </AISettingsLink>
       )}
     </div>

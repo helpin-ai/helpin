@@ -98,3 +98,56 @@ func (r *AIProfileRepository) SetDefault(ctx context.Context, workspace string, 
 		return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "workspace_id"}}, DoUpdates: clause.AssignmentColumns([]string{"default_profile_id", "updated_at"})}).Create(&settings).Error
 	})
 }
+
+// SetVisibility leaves routes and all referencing agents/defaults intact.
+func (r *AIProfileRepository) SetVisibility(ctx context.Context, workspace, id string, revision int64, hidden bool) error {
+	result := r.db.WithContext(ctx).Model(&model.AIProfile{}).Where("workspace_id = ? AND id = ? AND revision = ? AND deleted_at IS NULL", workspace, id, revision).
+		Updates(map[string]any{"hidden_from_ask_agent": hidden, "revision": revision + 1, "updated_at": time.Now().UTC()})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrAIProfileChanged
+	}
+	return nil
+}
+
+// EnableModel serializes one-click additions on the connection across replicas.
+// Existing variants are retained, including their names, controls and fallbacks.
+func (r *AIProfileRepository) EnableModel(ctx context.Context, p *model.AIProfile) (*model.AIProfile, error) {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var connection model.AIConnection
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND workspace_id = ?", p.Primary.ConnectionID, p.WorkspaceID).First(&connection).Error; err != nil {
+			return err
+		}
+		var existing []model.AIProfile
+		query := tx.Where("workspace_id = ? AND scope = ? AND deleted_at IS NULL", p.WorkspaceID, p.Scope)
+		if p.UserID == nil {
+			query = query.Where("user_id IS NULL")
+		} else {
+			query = query.Where("user_id = ?", *p.UserID)
+		}
+		if err := query.Order("hidden_from_ask_agent,created_at,id").Find(&existing).Error; err != nil {
+			return err
+		}
+		for i := range existing {
+			candidate := &existing[i]
+			if candidate.Primary.ConnectionID != p.Primary.ConnectionID || candidate.Primary.Model.Model != p.Primary.Model.Model {
+				continue
+			}
+			if candidate.HiddenFromAskAgent {
+				result := tx.Model(candidate).Where("revision = ?", candidate.Revision).Updates(map[string]any{"hidden_from_ask_agent": false, "revision": candidate.Revision + 1, "updated_at": time.Now().UTC()})
+				if result.Error != nil {
+					return result.Error
+				}
+				if result.RowsAffected != 1 {
+					return ErrAIProfileChanged
+				}
+			}
+			p = candidate
+			return nil
+		}
+		return tx.Create(p).Error
+	})
+	return p, err
+}

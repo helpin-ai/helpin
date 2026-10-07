@@ -20,7 +20,7 @@ func NewAIProfileHandler(s *service.AIProfileService) *AIProfileHandler {
 
 func (h *AIProfileHandler) failure(w http.ResponseWriter, err error) {
 	if errors.Is(err, repository.ErrAIProfileInUse) {
-		writeError(w, http.StatusConflict, "This profile is used by agents. Change their AI profile before deleting it.")
+		writeError(w, http.StatusConflict, "This model configuration is used by agents. Change their model before deleting it.")
 		return
 	}
 	if errors.Is(err, repository.ErrAIProfileChanged) {
@@ -31,7 +31,7 @@ func (h *AIProfileHandler) failure(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusForbidden, "AI profile or connection is unavailable for this workspace member")
 		return
 	}
-	writeError(w, http.StatusBadRequest, "Unable to save AI settings. Check the profile, connection, model, and controls.")
+	writeError(w, http.StatusBadRequest, "Unable to save AI settings. Check the connection, model, and controls.")
 }
 
 func (h *AIProfileHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -101,4 +101,35 @@ func (h *AIProfileHandler) SetDefault(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.Settings(w, r)
+}
+
+func (h *AIProfileHandler) SetVisibility(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Revision int64 `json:"revision"`
+		Hidden   *bool `json:"hidden_from_ask_agent"`
+	}
+	if decodeAIConnection(w, r, &req) != nil || req.Hidden == nil || req.Revision < 1 {
+		writeError(w, 400, "model visibility and revision are required")
+		return
+	}
+	p, err := h.service.SetVisibility(r.Context(), middleware.GetWorkspaceID(r.Context()), middleware.GetUserID(r.Context()), chi.URLParam(r, "profileID"), req.Revision, *req.Hidden)
+	if err != nil {
+		h.failure(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
+}
+
+func (h *AIProfileHandler) EnableModel(w http.ResponseWriter, r *http.Request) {
+	var req model.EnableAIModelRequest
+	if decodeAIConnection(w, r, &req) != nil {
+		writeError(w, 400, "invalid model selection")
+		return
+	}
+	p, err := h.service.EnableModel(r.Context(), middleware.GetWorkspaceID(r.Context()), middleware.GetUserID(r.Context()), req)
+	if err != nil {
+		h.failure(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
 }

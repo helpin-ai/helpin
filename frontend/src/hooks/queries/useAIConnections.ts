@@ -81,3 +81,22 @@ export function useDisconnectAIConnection(workspaceId: string) {
     onSuccess: () => invalidateAI(queryClient, workspaceId),
   })
 }
+
+const connectionModelsKey = (workspaceId: string, id: string) => [...queryKeys.ai.root(workspaceId), 'models', id] as const
+export function useConnectionModels(workspaceId: string, id: string, enabled = true) {
+  return useQuery({
+    queryKey: connectionModelsKey(workspaceId, id),
+    queryFn: async () => unwrapRequired(await aiConnectionService.models(workspaceId, id), 'Connection models'),
+    enabled: Boolean(workspaceId && id) && enabled,
+    staleTime: 5 * 60_000,
+    refetchInterval: 6 * 60 * 60_000,
+    retry: false,
+  })
+}
+export function useRefreshConnectionModels(workspaceId: string, id: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async () => unwrapRequired(await aiConnectionService.refreshModels(workspaceId, id), 'Connection models'),
+    onSuccess: data => queryClient.setQueryData(connectionModelsKey(workspaceId, id), data),
+  })
+}
