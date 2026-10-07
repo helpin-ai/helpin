@@ -86,6 +86,8 @@ type AIConnectionPolicyView struct {
 type DiscoveredAIModel struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+	// DiscoveredAt is absent for the initial catalog baseline.
+	DiscoveredAt *time.Time `json:"discovered_at,omitempty"`
 }
 type AIConnectionModels struct {
 	Models    []DiscoveredAIModel `json:"models"`

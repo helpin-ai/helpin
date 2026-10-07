@@ -84,7 +84,7 @@ export function AIProfilePicker({
   const inheritedId = defaultProfileId || personalDefaultId || settings.data?.default_profile_id;
   const profiles = query.data.filter(
     (p) => (!sharedOnly || p.scope === "workspace") &&
-      (!inDock || !p.hidden_from_ask_agent || p.id === value || p.id === inheritedId),
+      (!p.hidden_from_ask_agent || p.id === value || p.id === inheritedId),
   );
   const selectedId =
     value || inheritedId;
@@ -107,7 +107,18 @@ export function AIProfilePicker({
 
   return (
     <div className={compact ? "min-w-0 max-w-full" : "min-w-0 space-y-2"}>
-      {!compact && <Label htmlFor={id}>AI model</Label>}
+      {!compact && (
+        <div className="space-y-1">
+          <Label htmlFor={id}>AI model</Label>
+          <p id={`${id}-help`} className="text-xs text-quiet-text-secondary">
+            {sharedOnly
+              ? "Workspace-wide models for this agent’s manual and automated runs."
+              : inDock
+                ? "Personal or workspace-wide models for this chat."
+                : "Personal or workspace-wide models for this run only."}
+          </p>
+        </div>
+      )}
       <Select
         value={value || inherited?.id || "default"}
         disabled={disabled}
@@ -119,6 +130,7 @@ export function AIProfilePicker({
       >
         <SelectTrigger id={id} variant={compact ? "ghost" : "underline"} size={compact ? "sm" : "default"}
           aria-label={compact ? `Change AI model: ${compactName}` : "AI model"}
+          aria-describedby={!compact ? `${id}-help` : undefined}
           title={compact ? disabled ? "This conversation keeps its saved AI model" : "Change AI model" : undefined}
           className={compact ? "max-w-[180px] h-7 gap-1 rounded-md px-2 text-xs text-quiet-text-secondary hover:text-quiet-text-primary" : "w-full px-0.5"}>
           <SelectValue placeholder={sharedOnly ? "Workspace default" : "Agent default"}>

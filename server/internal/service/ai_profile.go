@@ -308,7 +308,7 @@ func (s *AIProfileService) SetPersonalDefault(ctx context.Context, workspace, us
 			return err
 		}
 		if p.HiddenFromAskAgent {
-			return errors.New("show this model in Ask Agent before making it your default")
+			return errors.New("show this model in model pickers before making it your default")
 		}
 		if err := s.validatePrimaryRoute(ctx, workspace, user, p.Scope, &p.Primary); err != nil {
 			return err

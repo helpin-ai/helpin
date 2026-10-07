@@ -7,7 +7,7 @@ import { workspaceOnboardingSteps, type WorkspaceOnboardingStep } from './worksp
  * facts the onboarding flow branches on.
  */
 /** Where workspace AI keys are managed after onboarding. */
-export const AI_SETTINGS_PATH_LABEL = 'Settings → AI & knowledge → AI setup';
+export const AI_SETTINGS_PATH_LABEL = 'Settings → AI & knowledge → AI models';
 
 export type OnboardingConditions = {
   /** The API edition. Cloud/Enterprise manage AI for the workspace. */

@@ -46,7 +46,7 @@ export interface AIConnectionTestResult {
   latency_ms: number;
   error?: string;
 }
-export interface DiscoveredAIModel { id: string; name: string }
+export interface DiscoveredAIModel { id: string; name: string; discovered_at?: string }
 export interface AIConnectionModels {
   models: DiscoveredAIModel[];
   source: 'provider' | 'catalog' | 'manual';

@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useRef } from 'react'
 import { aiConnectionService } from '@/lib/services/aiConnectionService'
 import { queryKeys } from '@/lib/queryKeys'
 import { unwrap, unwrapRequired } from '@/lib/queryUtils'
@@ -83,11 +84,22 @@ export function useDisconnectAIConnection(workspaceId: string) {
 }
 
 const connectionModelsKey = (workspaceId: string, id: string) => [...queryKeys.ai.root(workspaceId), 'models', id] as const
-export function useConnectionModels(workspaceId: string, id: string, enabled = true) {
+export function useConnectionModels(workspaceId: string, id: string, enabled = true, { refreshOnOpen = false }: { refreshOnOpen?: boolean } = {}) {
+  const refreshedConnection = useRef<string | null>(null)
   return useQuery({
     queryKey: connectionModelsKey(workspaceId, id),
-    queryFn: async () => unwrapRequired(await aiConnectionService.models(workspaceId, id), 'Connection models'),
+    queryFn: async () => {
+      const connectionKey = `${workspaceId}/${id}`
+      const refresh = refreshOnOpen && refreshedConnection.current !== connectionKey
+      // Refresh once per opening; saving visibility or model settings should
+      // invalidate the local list without repeatedly contacting the provider.
+      if (refresh) refreshedConnection.current = connectionKey
+      return unwrapRequired(await (refresh
+        ? aiConnectionService.refreshModels(workspaceId, id)
+        : aiConnectionService.models(workspaceId, id)), 'Connection models')
+    },
     enabled: Boolean(workspaceId && id) && enabled,
+    refetchOnMount: refreshOnOpen ? 'always' : true,
     staleTime: 5 * 60_000,
     refetchInterval: 6 * 60 * 60_000,
     retry: false,

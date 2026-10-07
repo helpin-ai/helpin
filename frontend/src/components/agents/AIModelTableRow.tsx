@@ -70,7 +70,7 @@ export function AIModelTableRow({
     : policy?.allowed === false
       ? "Unavailable"
       : profile.hidden_from_ask_agent
-        ? "Hidden"
+        ? "Hidden from pickers"
         : info!.label;
   const statusTone =
     !connection ||
@@ -111,7 +111,7 @@ export function AIModelTableRow({
               label={
                 isPersonalDefault
                   ? "Your default for new Ask Agent chats in this workspace. Saved chats and explicit agent choices keep their models."
-                  : "Inherited workspace default. Choose Make my default on another model to override it for your new chats."
+                  : "Used for new Ask Agent chats and agents without their own model. Make my default sets a personal choice for new chats only."
               }
             >
               <Badge variant="secondary" tabIndex={0}>
@@ -164,7 +164,7 @@ export function AIModelTableRow({
                 : policy?.allowed === false
                   ? (policy.message ?? "Unavailable for new runs.")
                   : profile.hidden_from_ask_agent
-                    ? "Hidden from the model list, but retained here because it is a default. Change the default to hide this row."
+                    ? "Hidden from new choices in Ask Agent and agent model pickers. Existing selections and defaults keep working. You can always manage it here."
                     : connection.status === "connected"
                       ? "The connection is available. This does not verify that the provider can run this particular model."
                       : "Reconnect this connection to use its models for new runs."
@@ -260,14 +260,14 @@ export function AIModelTableRow({
                           hidden: !profile.hidden_from_ask_agent,
                         }),
                       profile.hidden_from_ask_agent
-                        ? "Model shown in Ask Agent"
-                        : "Model hidden from Ask Agent",
+                        ? "Model shown in model pickers"
+                        : "Model hidden from model pickers",
                     )
                   }
                 >
                   {profile.hidden_from_ask_agent
-                    ? "Show in Ask Agent"
-                    : "Hide from Ask Agent"}
+                    ? "Show in model pickers"
+                    : "Hide from model pickers"}
                 </DropdownMenuItem>
               </>
             )}

@@ -32,6 +32,7 @@ import { QuickTooltip } from "@/components/ui/quick-tooltip";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { ArrowReloadHorizontalIcon } from "@/lib/icons";
 import { AISetupHelp } from "./AISetupHelp";
+import { AIModelNewBadge } from "./AIModelNewBadge";
 import { AIConfiguredModelRow } from "./AIConfiguredModelRow";
 import { AIProfileEditor } from "./AIProfileEditor";
 import { AIConnectionPolicyNotice } from "./AIConnectionPolicyNotice";
@@ -52,8 +53,14 @@ export function AIConnectionModelsDialog({
   const [search, setSearch] = useState("");
   const [custom, setCustom] = useState("");
   const [editing, setEditing] = useState<AIProfile | null>(null);
+  const liveDiscovery =
+    connection.funding !== "managed" &&
+    ["openai", "anthropic", "openrouter", "openai_chatgpt"].includes(connection.provider);
+  const canRefresh = canManage && liveDiscovery && connection.status === "connected";
   const profiles = useAIProfiles(workspaceId);
-  const discovered = useConnectionModels(workspaceId, connection.id);
+  const discovered = useConnectionModels(workspaceId, connection.id, true, {
+    refreshOnOpen: canRefresh,
+  });
   const refresh = useRefreshConnectionModels(workspaceId, connection.id);
   const save = useEnableAIModel(workspaceId);
   const visibility = useSetAIModelVisibility(workspaceId);
@@ -68,7 +75,7 @@ export function AIConnectionModelsDialog({
     (p) => p.primary.connection_id === connection.id,
   );
   const known = new Set(existing.map((p) => p.primary.model.model));
-  const available =
+  const available: DiscoveredAIModel[] =
     discovered.data?.source === "catalog" && connection.funding !== "managed"
       ? [
           ...new Map(
@@ -94,14 +101,34 @@ export function AIConnectionModelsDialog({
   const newRows = available.filter(
     (m) => !known.has(m.id) && matches(m.name, m.id),
   );
+  const recentCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const recentDiscoveries = new Map(
+    available.flatMap((model) => {
+      const discoveredAt = Date.parse(model.discovered_at ?? "");
+      return discoveredAt > recentCutoff ? [[model.id, discoveredAt] as const] : [];
+    }),
+  );
+  const rows = [
+    ...savedRows.map((profile) => ({ id: profile.primary.model.model, profile, model: null })),
+    ...newRows.map((model) => ({ id: model.id, profile: null, model })),
+  ].sort((a, b) => (recentDiscoveries.get(b.id) ?? 0) - (recentDiscoveries.get(a.id) ?? 0));
   const editable = canManage && !profiles.isPending && !profiles.isError;
   const canEnable =
     editable &&
     connection.status === "connected" &&
     connection.policy?.allowed !== false;
-  const liveDiscovery =
-    connection.funding !== "managed" &&
-    ["openai", "anthropic", "openrouter"].includes(connection.provider);
+
+  async function refreshList() {
+    if (!canRefresh) {
+      await discovered.refetch();
+      return;
+    }
+    try {
+      await refresh.mutateAsync();
+    } catch {
+      toast.error("Could not refresh models.");
+    }
+  }
 
   async function enable(model: DiscoveredAIModel) {
     try {
@@ -131,7 +158,7 @@ export function AIConnectionModelsDialog({
       !(await confirm({
         title: `Remove “${profile.name}”?`,
         description:
-          "Remove this saved configuration. Models used by agents must be reassigned first. To only hide it from Ask Agent, use the toggle instead.",
+          "Remove this saved configuration. Models used by agents must be reassigned first. To only hide it from model pickers, use the toggle instead.",
         confirmText: "Remove",
         variant: "destructive",
       }))
@@ -162,15 +189,15 @@ export function AIConnectionModelsDialog({
             <div className="flex items-center gap-1">
               <DialogDescription>
                 {connection.scope === "personal"
-                  ? "Personal · Only you"
-                  : "Workspace · Shared with members"}
+                  ? "Personal · Your chats and manual runs"
+                  : "Workspace-wide · Chats, agents, and automations"}
               </DialogDescription>
               <AISetupHelp
                 label="About model access"
                 description={
                   connection.scope === "personal"
-                    ? "These models use your personal connection for manual runs in this workspace."
-                    : "Members can use these models. Only workspace administrators can change this connection and its model settings."
+                    ? "Only you can use this connection. Choose its models in Ask Agent or when starting a manual run. Agent defaults and scheduled runs require a workspace-wide model."
+                    : "Members can choose these models in Ask Agent or assign them to agents, including scheduled and automated runs. Only administrators can change shared model settings."
                 }
               />
             </div>
@@ -184,7 +211,7 @@ export function AIConnectionModelsDialog({
               containerClassName="flex-1"
             />
             {canManage && liveDiscovery && (
-              <QuickTooltip label="Refresh from the provider. The list also refreshes automatically when older than six hours; your visibility choices stay unchanged.">
+              <QuickTooltip label="Models refresh when you open this chooser. Refresh again to check for new models; your saved choices stay unchanged.">
                 <Button
                   size="icon"
                   variant="ghost"
@@ -194,13 +221,7 @@ export function AIConnectionModelsDialog({
                     discovered.isFetching ||
                     connection.status !== "connected"
                   }
-                  onClick={async () => {
-                    try {
-                      await refresh.mutateAsync();
-                    } catch {
-                      toast.error("Could not refresh models.");
-                    }
-                  }}
+                  onClick={() => void refreshList()}
                 >
                   <ArrowReloadHorizontalIcon
                     className={
@@ -216,10 +237,10 @@ export function AIConnectionModelsDialog({
           <div className="flex items-center justify-between px-6 pb-2 text-xs text-muted-foreground">
             <span>Model</span>
             <span className="flex items-center gap-1">
-              Show in Ask Agent
+              Show in model pickers
               <AISetupHelp
                 label="About model visibility"
-                description="Hiding a model removes it from new choices in Ask Agent. Saved agent configurations, workspace defaults, and existing conversations keep their selection. New models start hidden."
+                description="Show in Ask Agent and agent model pickers. Hidden models stay on the AI models settings page. Existing selections and defaults keep working. Newly discovered models are not added automatically."
               />
             </span>
           </div>
@@ -233,7 +254,8 @@ export function AIConnectionModelsDialog({
                 {discovered.data?.warning ?? "Could not load available models."}{" "}
                 <button
                   className="underline"
-                  onClick={() => void discovered.refetch()}
+                  disabled={refresh.isPending || discovered.isFetching}
+                  onClick={() => void refreshList()}
                 >
                   Retry
                 </button>
@@ -255,49 +277,55 @@ export function AIConnectionModelsDialog({
               </p>
             ) : (
               <>
-                {savedRows.map((profile) => {
-                  const modelID = profile.primary.model.model;
-                  const isDefault =
-                    (settings.data?.personal_default_profile_id || settings.data?.default_profile_id) === profile.id;
-                  const notListed =
-                    discovered.data?.source === "provider" &&
-                    !discovered.data.stale &&
-                    !availableIDs.has(modelID);
+                {rows.map(({ id: modelID, profile, model }) => {
+                  const isNew = recentDiscoveries.has(modelID);
+                  if (profile) {
+                    const isDefault =
+                      (settings.data?.personal_default_profile_id || settings.data?.default_profile_id) === profile.id;
+                    const notListed =
+                      discovered.data?.source === "provider" &&
+                      !discovered.data.stale &&
+                      !availableIDs.has(modelID);
+                    return (
+                      <AIConfiguredModelRow
+                        key={profile.id}
+                        profile={profile}
+                        isDefault={isDefault}
+                        notListed={notListed}
+                        isNew={isNew}
+                        editable={editable}
+                        busy={busy}
+                        onEdit={() => setEditing(profile)}
+                        onRemove={() => void deleteModel(profile)}
+                        onVisibility={(shown) => void toggle(profile, shown)}
+                      />
+                    );
+                  }
                   return (
-                    <AIConfiguredModelRow
-                      key={profile.id}
-                      profile={profile}
-                      isDefault={isDefault}
-                      notListed={notListed}
-                      editable={editable}
-                      busy={busy}
-                      onEdit={() => setEditing(profile)}
-                      onRemove={() => void deleteModel(profile)}
-                      onVisibility={(shown) => void toggle(profile, shown)}
-                    />
+                    <div
+                      key={model.id}
+                      className="flex items-center gap-3 border-b py-3 last:border-0"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="truncate text-sm">{model.name}</p>
+                          {isNew && <AIModelNewBadge />}
+                        </div>
+                        {model.id !== model.name && (
+                          <p className="truncate text-xs text-muted-foreground">
+                            {model.id}
+                          </p>
+                        )}
+                      </div>
+                      <Switch
+                        aria-label={`Show ${model.name} in model pickers`}
+                        checked={false}
+                        disabled={!canEnable || busy}
+                        onCheckedChange={() => void enable(model)}
+                      />
+                    </div>
                   );
                 })}
-                {newRows.map((model) => (
-                  <div
-                    key={model.id}
-                    className="flex items-center gap-3 border-b py-3 last:border-0"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm">{model.name}</p>
-                      {model.id !== model.name && (
-                        <p className="truncate text-xs text-muted-foreground">
-                          {model.id}
-                        </p>
-                      )}
-                    </div>
-                    <Switch
-                      aria-label={`Show ${model.name} in Ask Agent`}
-                      checked={false}
-                      disabled={!canEnable || busy}
-                      onCheckedChange={() => void enable(model)}
-                    />
-                  </div>
-                ))}
                 {discovered.isPending && (
                   <p
                     role="status"
@@ -328,7 +356,6 @@ export function AIConnectionModelsDialog({
           )}
           <div className="px-6 py-4">
             {canManage &&
-            connection.provider !== "openai_chatgpt" &&
             connection.funding !== "managed" ? (
               <details>
                 <summary className="cursor-pointer text-sm text-muted-foreground">
@@ -356,7 +383,9 @@ export function AIConnectionModelsDialog({
                   />
                   <AISetupHelp
                     label="About custom model IDs"
-                    description="Use the exact ID from your provider when discovery does not list a model. Provider access and runtime support are still required."
+                    description={connection.provider === "openai_chatgpt"
+                      ? "Use the exact subscription-runtime ID if a model is missing after refresh. The model must be available to your connected ChatGPT account."
+                      : "Use the exact ID from your provider when discovery does not list a model. Provider access and runtime support are still required."}
                   />
                   <Button
                     size="sm"

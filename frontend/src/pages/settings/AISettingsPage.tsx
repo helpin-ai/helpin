@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   AIConnectionDialog,
   type AIConnectionDialogMode,
@@ -58,6 +58,7 @@ function AISettingsContent({
 }) {
   const [adding, setAdding] = useState(false);
   const [managing, setManaging] = useState(false);
+  const connectionsDialogRef = useRef<HTMLDivElement>(null);
   const [dialog, setDialog] = useState<AIConnectionDialogMode | null>(null);
   const [modelsFor, setModelsFor] = useState<AIConnection | null>(null);
   const [editing, setEditing] = useState<AIProfile | null>(null);
@@ -69,12 +70,7 @@ function AISettingsContent({
     enabled: connections.data?.enabled === true,
   });
   const all = connections.data?.connections ?? [];
-  const enabled = (profiles.data ?? []).filter(
-    (p) =>
-      !p.hidden_from_ask_agent ||
-      p.id === settings.data?.personal_default_profile_id ||
-      p.id === settings.data?.default_profile_id,
-  );
+  const models = profiles.data ?? [];
   const editable = (scope: string) =>
     scope === "personal" || canManageWorkspace;
   const selected = all.find((c) => c.id === modelsFor?.id) ?? modelsFor;
@@ -126,7 +122,7 @@ function AISettingsContent({
         <span className="text-sm font-medium">
           Models
           {!profiles.isPending && !profiles.isError
-            ? ` · ${enabled.length}`
+            ? ` · ${models.length}`
             : ""}
         </span>
         <div className="flex items-center gap-2">
@@ -168,10 +164,10 @@ function AISettingsContent({
             </Button>
           </AlertDescription>
         </Alert>
-      ) : enabled.length === 0 ? (
+      ) : models.length === 0 ? (
         <AIEmptyHero
           icon={AiNetworkIcon}
-          title="No models enabled"
+          title="No models added"
           description="Add models from a connected provider, or connect a new one."
         />
       ) : (
@@ -186,7 +182,7 @@ function AISettingsContent({
                     Access
                     <AISetupHelp
                       label="About model access"
-                      description="Personal models are available only to you. Workspace-wide models are shared with workspace members. Only administrators can change shared model settings."
+                      description="Personal models are for your Ask Agent chats and manual runs. Workspace-wide models can also be assigned to agents for scheduled and automated runs. Only administrators can change shared model settings."
                     />
                   </span>
                 </TableHead>
@@ -197,7 +193,7 @@ function AISettingsContent({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {enabled.map((profile) => (
+              {models.map((profile) => (
                 <AIModelTableRow
                   key={profile.id}
                   workspaceId={workspaceId}
@@ -255,11 +251,19 @@ function AISettingsContent({
             if (!open) setManaging(false);
           }}
         >
-          <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+          <DialogContent
+            ref={connectionsDialogRef}
+            className="max-h-[85vh] overflow-y-auto sm:max-w-3xl"
+            onOpenAutoFocus={(event) => {
+              // Announce the dialog without opening the first row's help tooltip.
+              event.preventDefault();
+              connectionsDialogRef.current?.focus();
+            }}
+          >
             <DialogHeader className="text-left">
               <DialogTitle>Manage connections</DialogTitle>
               <DialogDescription>
-                Manage access and choose which models appear in Ask Agent.
+                Manage provider access and the models available through each connection.
               </DialogDescription>
             </DialogHeader>
             {all.length ? (
@@ -289,8 +293,7 @@ function AISettingsContent({
                         modelCount={
                           profiles.data?.filter(
                             (p) =>
-                              p.primary.connection_id === connection.id &&
-                              !p.hidden_from_ask_agent,
+                              p.primary.connection_id === connection.id,
                           ).length
                         }
                       />
