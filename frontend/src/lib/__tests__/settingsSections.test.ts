@@ -135,10 +135,10 @@ describe('getSettingsSidebarGroups', () => {
     expect(ids).not.toContain('server');
   });
 
-  it('exposes a single AI setup entry to members with workspace read access', () => {
+  it('exposes a single AI models entry to members with workspace read access', () => {
     const sections = getSettingsSidebarGroups(false, new Set(['workspace.read']))
       .flatMap((group) => group.sections);
-    expect(sections.find((section) => section.id === 'ai')?.label).toBe('AI setup');
+    expect(sections.find((section) => section.id === 'ai')?.label).toBe('AI models');
     expect(sections.some((section) => section.id === 'ai-connections')).toBe(false);
   });
 });
