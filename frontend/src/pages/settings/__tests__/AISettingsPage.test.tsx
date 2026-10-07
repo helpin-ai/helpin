@@ -124,6 +124,21 @@ it('keeps existing configurations reachable when their connection is unavailable
   expect(document.body.textContent).toContain('Connection missing');
 });
 
+it('opens Manage connections without automatically opening a connection tooltip', async () => {
+  vi.mocked(aiConnectionService.list).mockResolvedValue({ data: { enabled: true, connections: [
+    { id: 'team', name: 'Team key', provider: 'openai', scope: 'workspace', user_id: null, status: 'connected' },
+  ], models: [] }, error: null });
+  await render('workspace');
+  await act(async () => {
+    Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Manage connections')?.click();
+  });
+  expect(document.activeElement).toBe(document.querySelector('[role="dialog"]'));
+  expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  const details = document.querySelector<HTMLButtonElement>('[aria-label="Connection details for Team key"]');
+  await act(async () => details?.focus());
+  expect(document.querySelector('[role="tooltip"]')).not.toBeNull();
+});
+
 
 it('shows enabled models from both scopes and marks the effective default beside the model', async () => {
   vi.mocked(aiConnectionService.list).mockResolvedValue({data:{enabled:true,connections:[

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   AIConnectionDialog,
   type AIConnectionDialogMode,
@@ -58,6 +58,7 @@ function AISettingsContent({
 }) {
   const [adding, setAdding] = useState(false);
   const [managing, setManaging] = useState(false);
+  const connectionsDialogRef = useRef<HTMLDivElement>(null);
   const [dialog, setDialog] = useState<AIConnectionDialogMode | null>(null);
   const [modelsFor, setModelsFor] = useState<AIConnection | null>(null);
   const [editing, setEditing] = useState<AIProfile | null>(null);
@@ -255,7 +256,15 @@ function AISettingsContent({
             if (!open) setManaging(false);
           }}
         >
-          <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+          <DialogContent
+            ref={connectionsDialogRef}
+            className="max-h-[85vh] overflow-y-auto sm:max-w-3xl"
+            onOpenAutoFocus={(event) => {
+              // Announce the dialog without opening the first row's help tooltip.
+              event.preventDefault();
+              connectionsDialogRef.current?.focus();
+            }}
+          >
             <DialogHeader className="text-left">
               <DialogTitle>Manage connections</DialogTitle>
               <DialogDescription>
