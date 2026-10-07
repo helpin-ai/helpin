@@ -70,3 +70,11 @@ export function useEnableAIModel(workspaceId: string) {
     onSuccess: () => invalidateAI(queryClient, workspaceId),
   })
 }
+
+export function useSetPersonalDefaultAIProfile(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (profileId: string | null) => unwrap(await aiProfileService.setPersonalDefault(workspaceId, profileId)),
+    onSuccess: () => invalidateAI(queryClient, workspaceId),
+  })
+}

@@ -12,7 +12,7 @@ vi.mock('@/lib/services/aiConnectionService', () => ({
   aiConnectionService: { list: vi.fn(), endpoints: vi.fn(), create: vi.fn(), reconnect: vi.fn(), poll: vi.fn(), disconnect: vi.fn(), models: vi.fn(), refreshModels: vi.fn() },
 }));
 vi.mock('@/lib/services/aiProfileService', () => ({
-  aiProfileService: { list: vi.fn(), save: vi.fn(), remove: vi.fn(), settings: vi.fn(), setDefault: vi.fn(), setVisibility: vi.fn(), enableModel: vi.fn() },
+  aiProfileService: { list: vi.fn(), save: vi.fn(), remove: vi.fn(), settings: vi.fn(), setDefault: vi.fn(), setPersonalDefault: vi.fn(), setVisibility: vi.fn(), enableModel: vi.fn() },
 }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
@@ -78,7 +78,7 @@ it('asks for configuration when the deployment has no AI connection support', as
 it('offers connections without a profile creation step', async () => {
   vi.mocked(aiConnectionService.list).mockResolvedValue({ data: { enabled: true, connections: [], models: [] }, error: null });
   await render('workspace');
-  expect(document.body.textContent).toContain('No connections yet');
+  expect(document.body.textContent).toContain('No models enabled');
   expect(document.body.textContent).not.toContain('Create profile');
   expect(document.body.textContent).not.toContain('No profiles yet');
 });
@@ -88,15 +88,15 @@ it('gives members personal setup and read-only workspace models without scope ta
   vi.mocked(aiConnectionService.list).mockResolvedValue({ data: { enabled: true, connections: [], models: [] }, error: null });
   await render('workspace');
   expect(document.querySelector('[role="tab"]')).toBeNull();
-  expect(document.body.textContent).toContain('Personal connections');
-  expect(Array.from(document.querySelectorAll('button')).some(b => b.textContent === 'Add connection' && !b.disabled)).toBe(true);
+  expect(document.body.textContent).toContain('Add models');
+  expect(Array.from(document.querySelectorAll('button')).some(b => b.textContent === 'Add models' && !b.disabled)).toBe(true);
 });
 
-it('lets admins choose workspace or personal setup', async () => {
+it('shows a unified model table without scope tabs for admins', async () => {
   vi.mocked(aiConnectionService.list).mockResolvedValue({ data: { enabled: true, connections: [], models: [] }, error: null });
   await render('personal');
-  expect(Array.from(document.querySelectorAll('[role="tab"]')).map(t => t.textContent)).toEqual(['Workspace', 'Personal']);
-  expect(document.querySelector('[role="tab"][data-state="active"]')?.textContent).toBe('Personal');
+  expect(document.querySelector('[role="tab"]')).toBeNull();
+  expect(document.body.textContent).toContain('Add models');
 });
 
 it('opens model selection on a connection and enables a discovered model without naming a profile', async () => {
@@ -104,6 +104,9 @@ it('opens model selection on a connection and enables a discovered model without
   vi.mocked(aiConnectionService.models).mockResolvedValue({data:{models:[{id:'gpt-new', name:'New model'}],source:'provider',stale:false},error:null});
   vi.mocked(aiProfileService.enableModel).mockResolvedValue({data:null,error:null});
   await render('workspace');
+  await act(async () => { Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Add models')?.click(); });
+  for (let i=0;i<5;i++) await act(async () => {await new Promise(r => setTimeout(r,0));});
+  await act(async () => { document.querySelector<HTMLButtonElement>('[aria-label="Choose OpenAI"]')?.click(); });
   await act(async () => { document.querySelector<HTMLButtonElement>('[aria-label="Models for Team key"]')?.click(); });
   for (let i=0;i<5;i++) await act(async () => {await new Promise(r => setTimeout(r,0));});
   const toggle=document.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Show New model in Ask Agent"]');
@@ -117,5 +120,28 @@ it('keeps existing configurations reachable when their connection is unavailable
   vi.mocked(aiConnectionService.list).mockResolvedValue({data:{enabled:true,connections:[],models:[]},error:null});
   vi.mocked(aiProfileService.list).mockResolvedValue({data:[{id:'old',workspace_id:'ws',user_id:null,scope:'workspace',name:'Legacy variant',revision:1,primary:{connection_id:'missing',model:{provider:'openai',model:'gpt-old',controls:{}}},fallback:null}],error:null});
   await render('workspace');
-  expect(document.querySelector('button[aria-label="Models for unavailable connection missing"]')).not.toBeNull();
+  expect(document.body.textContent).toContain('Legacy variant');
+  expect(document.body.textContent).toContain('Connection missing');
+});
+
+
+it('shows enabled models from both scopes and marks the effective default beside the model', async () => {
+  vi.mocked(aiConnectionService.list).mockResolvedValue({data:{enabled:true,connections:[
+    {id:'team',name:'Team key',provider:'openai',scope:'workspace',user_id:null,status:'connected'},
+    {id:'mine',name:'My key',provider:'anthropic',scope:'personal',user_id:'me',status:'disconnected'},
+  ],models:[]},error:null});
+  vi.mocked(aiProfileService.list).mockResolvedValue({data:[
+    {id:'team-model',workspace_id:'ws',scope:'workspace',user_id:null,name:'Shared model',revision:1,primary:{connection_id:'team',model:{provider:'openai',model:'gpt-test',controls:{}}},fallback:null},
+    {id:'my-model',workspace_id:'ws',scope:'personal',user_id:'me',name:'My model',revision:1,primary:{connection_id:'mine',model:{provider:'anthropic',model:'claude-test',controls:{}}},fallback:null},
+    {id:'hidden',workspace_id:'ws',scope:'personal',user_id:'me',name:'Hidden model',hidden_from_ask_agent:true,revision:1,primary:{connection_id:'mine',model:{provider:'anthropic',model:'old',controls:{}}},fallback:null},
+  ],error:null});
+  vi.mocked(aiProfileService.settings).mockResolvedValue({data:{default_profile_id:'team-model',personal_default_profile_id:'my-model'},error:null});
+  await render('workspace');
+  expect(Array.from(document.querySelectorAll('thead th')).map(el=>el.textContent)).toEqual(['Model','Connection','Access','Status','Actions']);
+  expect(document.body.textContent).toContain('Shared model');
+  expect(document.body.textContent).toContain('My model');
+  expect(document.body.textContent).not.toContain('Hidden model');
+  expect(document.body.textContent).toContain('Workspace-wide');
+  const row=Array.from(document.querySelectorAll('tbody tr')).find(el=>el.textContent?.includes('My model'));
+  expect(row?.querySelector('td')?.textContent).toContain('Default');
 });

@@ -69,6 +69,9 @@ func (r *AIProfileRepository) Delete(ctx context.Context, workspace, id string, 
 		if count != 0 {
 			return ErrAIProfileInUse
 		}
+		if err := tx.Model(&model.AIPersonalSettings{}).Where("workspace_id = ? AND default_profile_id = ?", workspace, id).Update("default_profile_id", nil).Error; err != nil {
+			return err
+		}
 		return tx.Model(&model.AIWorkspaceSettings{}).Where("workspace_id = ? AND default_profile_id = ?", workspace, id).Update("default_profile_id", nil).Error
 	})
 }
@@ -150,4 +153,30 @@ func (r *AIProfileRepository) EnableModel(ctx context.Context, p *model.AIProfil
 		return tx.Create(p).Error
 	})
 	return p, err
+}
+
+func (r *AIProfileRepository) PersonalSettings(ctx context.Context, workspace, user string) (*model.AIPersonalSettings, error) {
+	s := model.AIPersonalSettings{WorkspaceID: workspace, UserID: user}
+	err := r.db.WithContext(ctx).Where("workspace_id = ? AND user_id = ?", workspace, user).First(&s).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		err = nil
+	}
+	return &s, err
+}
+
+func (r *AIProfileRepository) SetPersonalDefault(ctx context.Context, workspace, user string, profile *model.AIProfile) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		settings := model.AIPersonalSettings{WorkspaceID: workspace, UserID: user, UpdatedAt: time.Now().UTC()}
+		if profile != nil {
+			var p model.AIProfile
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("workspace_id = ? AND id = ? AND (scope = ? OR user_id = ?) AND deleted_at IS NULL", workspace, profile.ID, "workspace", user).First(&p).Error; err != nil {
+				return err
+			}
+			if p.Revision != profile.Revision {
+				return ErrAIProfileChanged
+			}
+			settings.DefaultProfileID = &p.ID
+		}
+		return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "workspace_id"}, {Name: "user_id"}}, DoUpdates: clause.AssignmentColumns([]string{"default_profile_id", "updated_at"})}).Create(&settings).Error
+	})
 }

@@ -14,7 +14,7 @@ import (
 func standardProfilesFixture(t *testing.T) (*AIStandardProfiles, *AIConnectionService, *gorm.DB) {
 	t.Helper()
 	connections, db := setupAIConnectionTest(t)
-	if err := db.AutoMigrate(&model.AIProfile{}, &model.AIWorkspaceSettings{}); err != nil {
+	if err := db.AutoMigrate(&model.AIProfile{}, &model.AIWorkspaceSettings{}, &model.AIPersonalSettings{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`CREATE TABLE workspaces(id TEXT PRIMARY KEY); INSERT INTO workspaces VALUES ('workspace'),('other')`).Error; err != nil {
@@ -420,7 +420,7 @@ func TestStandardProfilesRotateOnlyEnvironmentCredentials(t *testing.T) {
 
 func TestAgentCreationUsesConnectedProviderRoute(t *testing.T) {
 	db := newAgentServiceTestDB(t)
-	if err := db.AutoMigrate(&model.AIConnection{}, &model.AIProfile{}, &model.AIWorkspaceSettings{}); err != nil {
+	if err := db.AutoMigrate(&model.AIConnection{}, &model.AIProfile{}, &model.AIWorkspaceSettings{}, &model.AIPersonalSettings{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`CREATE TABLE workspaces(id TEXT PRIMARY KEY); INSERT INTO workspaces VALUES ('ws-test')`).Error; err != nil {
@@ -454,7 +454,7 @@ func TestAgentCreationUsesConnectedProviderRoute(t *testing.T) {
 
 func TestAgentCreationAssignsStandardProfiles(t *testing.T) {
 	db := newAgentServiceTestDB(t)
-	if err := db.AutoMigrate(&model.AIConnection{}, &model.AIProfile{}, &model.AIWorkspaceSettings{}); err != nil {
+	if err := db.AutoMigrate(&model.AIConnection{}, &model.AIProfile{}, &model.AIWorkspaceSettings{}, &model.AIPersonalSettings{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`CREATE TABLE workspaces(id TEXT PRIMARY KEY); INSERT INTO workspaces VALUES ('ws-test')`).Error; err != nil {

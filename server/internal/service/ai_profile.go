@@ -207,7 +207,16 @@ func (s *AIProfileService) Settings(ctx context.Context, workspace, user string)
 	if err := s.requireMember(ctx, workspace, user); err != nil {
 		return nil, err
 	}
-	return s.repo.Settings(ctx, workspace)
+	settings, err := s.repo.Settings(ctx, workspace)
+	if err != nil {
+		return nil, err
+	}
+	personal, err := s.repo.PersonalSettings(ctx, workspace, user)
+	if err != nil {
+		return nil, err
+	}
+	settings.PersonalDefaultProfileID = personal.DefaultProfileID
+	return settings, nil
 }
 
 func (s *AIProfileService) SetDefault(ctx context.Context, workspace, user, id string) error {
@@ -281,4 +290,35 @@ func (s *AIProfileService) EnableModel(ctx context.Context, workspace, user stri
 		return nil, err
 	}
 	return s.repo.EnableModel(ctx, p)
+}
+
+// SetPersonalDefault never changes workspace or agent defaults.
+func (s *AIProfileService) SetPersonalDefault(ctx context.Context, workspace, user, id string) error {
+	if err := s.requireMember(ctx, workspace, user); err != nil {
+		return err
+	}
+	var p *model.AIProfile
+	if id != "" {
+		var err error
+		p, err = s.repo.Get(ctx, workspace, id)
+		if err != nil {
+			return err
+		}
+		if err := s.authorizeProfile(ctx, workspace, user, p, false); err != nil {
+			return err
+		}
+		if p.HiddenFromAskAgent {
+			return errors.New("show this model in Ask Agent before making it your default")
+		}
+		if err := s.validatePrimaryRoute(ctx, workspace, user, p.Scope, &p.Primary); err != nil {
+			return err
+		}
+		if _, err := s.selectionPolicy(ctx, workspace, p.Primary); err != nil {
+			return err
+		}
+		if _, _, err := s.routeCredential(ctx, workspace, user, false, p.Primary); err != nil {
+			return err
+		}
+	}
+	return s.repo.SetPersonalDefault(ctx, workspace, user, p)
 }

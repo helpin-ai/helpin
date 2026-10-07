@@ -604,6 +604,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				})
 				r.With(middleware.RequireWorkspaceID, wsActive).Get("/ai-settings", h.AIProfile.Settings)
 				r.With(middleware.RequireWorkspaceID, wsActive).Put("/ai-settings", h.AIProfile.SetDefault)
+				r.With(middleware.RequireWorkspaceID, wsActive).Put("/ai-settings/personal", h.AIProfile.SetPersonalDefault)
 			}
 
 			if h.AgentRuntimeHost != nil {

@@ -133,3 +133,22 @@ func (h *AIProfileHandler) EnableModel(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, p)
 }
+
+func (h *AIProfileHandler) SetPersonalDefault(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ProfileID *string `json:"default_profile_id"`
+	}
+	if decodeAIConnection(w, r, &req) != nil {
+		writeError(w, http.StatusBadRequest, "invalid AI settings request")
+		return
+	}
+	id := ""
+	if req.ProfileID != nil {
+		id = *req.ProfileID
+	}
+	if err := h.service.SetPersonalDefault(r.Context(), middleware.GetWorkspaceID(r.Context()), middleware.GetUserID(r.Context()), id); err != nil {
+		h.failure(w, err)
+		return
+	}
+	h.Settings(w, r)
+}

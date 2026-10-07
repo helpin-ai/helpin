@@ -77,9 +77,9 @@ const stateOptions: { value: ObjectiveState; label: string; className: string }[
 ).map(([value, cfg]) => ({ value, label: cfg.label, className: cfg.color }));
 
 const healthOptions: { value: ObjectiveHealth; label: string; color: string }[] = [
-  { value: 'on_track', label: 'On track', color: 'text-green-600' },
-  { value: 'at_risk', label: 'At risk', color: 'text-yellow-600' },
-  { value: 'off_track', label: 'Off track', color: 'text-red-600' },
+  { value: 'on_track', label: 'On track', color: 'text-green-600 dark:text-green-400' },
+  { value: 'at_risk', label: 'At risk', color: 'text-yellow-600 dark:text-yellow-400' },
+  { value: 'off_track', label: 'Off track', color: 'text-red-600 dark:text-red-400' },
 ];
 
 const OBJECTIVE_MANAGER_TOOLTIP = 'Only team managers can edit objectives. Ask your team manager for access.';

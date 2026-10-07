@@ -190,7 +190,7 @@ export function SaveIndicator({ status, lastSavedAt }: { status: SaveStatus; las
       )
     case 'saved':
       return (
-        <span className="flex items-center gap-1 text-[11px] text-green-600">
+        <span className="flex items-center gap-1 text-[11px] text-green-600 dark:text-green-400">
           <Tick01Icon className="h-3 w-3" />
           Saved
         </span>

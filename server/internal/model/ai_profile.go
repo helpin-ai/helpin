@@ -45,9 +45,10 @@ type SaveAIProfileRequest struct {
 
 // AIWorkspaceSettings holds the shared default independently of commercial policy.
 type AIWorkspaceSettings struct {
-	WorkspaceID      string    `json:"workspace_id" gorm:"type:uuid;primaryKey"`
-	DefaultProfileID *string   `json:"default_profile_id" gorm:"type:uuid"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	PersonalDefaultProfileID *string   `json:"personal_default_profile_id" gorm:"-"`
+	WorkspaceID              string    `json:"workspace_id" gorm:"type:uuid;primaryKey"`
+	DefaultProfileID         *string   `json:"default_profile_id" gorm:"type:uuid"`
+	UpdatedAt                time.Time `json:"updated_at"`
 }
 
 func (AIWorkspaceSettings) TableName() string { return "ai_workspace_settings" }
@@ -97,3 +98,13 @@ type EnableAIModelRequest struct {
 	Model        string `json:"model"`
 	Name         string `json:"name"`
 }
+
+// AIPersonalSettings is a user's default for new Ask Agent chats in one workspace.
+type AIPersonalSettings struct {
+	WorkspaceID      string    `json:"-" gorm:"type:uuid;primaryKey"`
+	UserID           string    `json:"-" gorm:"type:uuid;primaryKey"`
+	DefaultProfileID *string   `json:"personal_default_profile_id" gorm:"type:uuid"`
+	UpdatedAt        time.Time `json:"-"`
+}
+
+func (AIPersonalSettings) TableName() string { return "ai_personal_settings" }

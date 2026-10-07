@@ -2106,7 +2106,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
               )}
               {att.status === 'error' && (
                 <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-red-500/20 border border-red-400">
-                  <span className="text-[9px] font-medium text-red-600">Failed</span>
+                  <span className="text-[9px] font-medium text-red-600 dark:text-red-400">Failed</span>
                 </div>
               )}
               <button

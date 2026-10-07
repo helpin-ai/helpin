@@ -47,12 +47,13 @@ function ConnectionHelp({ label, description }: { label: string; description: st
 }
 
 export type AIConnectionDialogMode =
-  | { kind: "add" }
+  | { kind: "add"; provider?: AIProviderKey }
   | { kind: "reconnect"; connection: AIConnection; autoPoll?: boolean };
 
 export function AIConnectionDialog({
   workspaceId,
-  scope,
+  scope: initialScope,
+  canChooseScope = false,
   open,
   mode,
   models,
@@ -61,6 +62,7 @@ export function AIConnectionDialog({
 }: {
   workspaceId: string;
   scope: "personal" | "workspace";
+  canChooseScope?: boolean;
   open: boolean;
   mode: AIConnectionDialogMode;
   models: AIConnectionModel[];
@@ -68,6 +70,8 @@ export function AIConnectionDialog({
   onConnected?: (connection: AIConnection) => void;
 }) {
   const id = useId();
+  const [scope, setScope] = useState(initialScope);
+  const chosenProvider = mode.kind === "add" ? mode.provider : undefined;
   const reconnecting = mode.kind === "reconnect" ? mode.connection : undefined;
   const [name, setName] = useState("");
   const [provider, setProvider] = useState<string>("openai");
@@ -91,6 +95,7 @@ export function AIConnectionDialog({
   // Reset every field when the dialog opens so a previous key never lingers.
   useEffect(() => {
     if (!open) return;
+    setScope(initialScope);
     setLogin(undefined);
     setApiKey("");
     if (reconnecting) {
@@ -99,13 +104,13 @@ export function AIConnectionDialog({
       setEndpointId(reconnecting.endpoint?.id ?? "");
       return;
     }
-    const first = availableProviders[0] ?? "openai";
+    const first = chosenProvider ?? availableProviders[0] ?? "openai";
     setProvider(first);
     setName(providerMeta[first as AIProviderKey]?.shortLabel ?? "");
     setEndpointId("");
     // availableProviders is derived from props that are stable while open.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, reconnecting?.id]);
+  }, [open, reconnecting?.id, chosenProvider, initialScope]);
 
   const endpoint = reconnecting
     ? reconnecting.endpoint
@@ -223,7 +228,7 @@ export function AIConnectionDialog({
                 void submit();
               }}
             >
-              {!reconnecting && (
+              {!reconnecting && !chosenProvider && (
                 <div className="space-y-1.5">
                   <div className="flex items-center gap-1">
                     <Label htmlFor={`${id}-provider`}>Provider</Label>
@@ -264,6 +269,16 @@ export function AIConnectionDialog({
                 </div>
               )}
 
+              {chosenProvider && <p className="flex items-center gap-2 text-sm"><ProviderIcon provider={provider} className="size-4" />{providerLabel(provider)}</p>}
+              {!reconnecting && canChooseScope && providerMeta[provider as AIProviderKey]?.scopes.includes("workspace") && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-1"><Label htmlFor={`${id}-access`}>Access</Label><ConnectionHelp label="About connection access" description="Personal models are available only to you. Workspace-wide models are shared with workspace members. Access is fixed when the connection is created." /></div>
+                  <Select value={scope} onValueChange={(value) => setScope(value as "personal" | "workspace")} disabled={pending}>
+                    <SelectTrigger id={`${id}-access`} aria-label="Access" variant="underline" className="w-full px-0.5"><SelectValue /></SelectTrigger>
+                    <SelectContent><SelectItem value="personal">Personal</SelectItem><SelectItem value="workspace">Workspace-wide</SelectItem></SelectContent>
+                  </Select>
+                </div>
+              )}
               {!reconnecting && (
                 <div className="space-y-1.5">
                   <Label htmlFor={`${id}-name`}>Connection name</Label>
