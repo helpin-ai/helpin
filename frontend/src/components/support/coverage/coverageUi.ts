@@ -44,7 +44,7 @@ export function coverageSuggestionPreview(suggestion: SupportGapSuggestion): str
 }
 
 export function coverageConfidenceLabel(confidence: number): { text: string; className: string } {
-  if (confidence >= 0.7) return { text: 'High confidence', className: 'text-green-600' }
+  if (confidence >= 0.7) return { text: 'High confidence', className: 'text-green-600 dark:text-green-400' }
   if (confidence >= 0.4) return { text: 'Medium confidence', className: 'text-amber-600' }
   return { text: 'Low confidence', className: 'text-muted-foreground' }
 }

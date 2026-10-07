@@ -105,7 +105,7 @@ export function ImportHistory({ workspaceId, source }: { workspaceId: string; so
                   </TableCell>
                   <TableCell>
                     <span className="text-sm">
-                      <span className="text-green-600">{job.completed}</span>
+                      <span className="text-green-600 dark:text-green-400">{job.completed}</span>
                       {job.failed > 0 && (
                         <span className="text-destructive ml-1">/ {job.failed} failed</span>
                       )}
