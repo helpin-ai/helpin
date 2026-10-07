@@ -5,7 +5,7 @@ import { ProviderIcon } from "./ProviderIcon";
 import { useId } from "react";
 import { AISettingsLink } from "@/components/agents/AISettingsLink";
 import { useAIProfiles, useAISettings } from "@/hooks/queries/useAIProfiles";
-import { catalogLabel, providerShortLabel } from "@/lib/aiProviders";
+import { catalogLabel, providerShortLabel, modelNameWithThinking } from "@/lib/aiProviders";
 import { QuickTooltip } from "@/components/ui/quick-tooltip";
 import { Badge } from "@/components/ui/badge";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -103,7 +103,7 @@ export function AIProfilePicker({
   if (compact && !value && !disabled && profiles.length === 0 && workspace?.id === workspaceId) {
     return <AISettingsLink slug={workspace.slug} className="whitespace-nowrap text-xs text-quiet-text-secondary">Set up AI</AISettingsLink>;
   }
-  const compactName = selected?.name ?? (value ? disabled ? "Saved model" : "Model unavailable" : settings.isFetching && !defaultProfileId ? "Loading…" : "Choose model");
+  const compactName = selected ? modelNameWithThinking(selected.name, selected.primary.model.controls.reasoning_effort) : (value ? disabled ? "Saved model" : "Model unavailable" : settings.isFetching && !defaultProfileId ? "Loading…" : "Choose model");
 
   return (
     <div className={compact ? "min-w-0 max-w-full" : "min-w-0 space-y-2"}>
@@ -157,12 +157,12 @@ export function AIProfilePicker({
             <SelectItem
               key={p.id}
               value={p.id}
-              textValue={p.name}
+              textValue={modelNameWithThinking(p.name, p.primary.model.controls.reasoning_effort)}
               disabled={p.primary_policy?.allowed === false}
             >
               <span className="flex min-w-0 w-full items-center gap-2">
                 {!compact && <ProviderIcon provider={p.primary.model.provider} className="h-3.5 w-3.5 shrink-0" />}
-                <span className="truncate">{p.name}</span>
+                <span className="truncate">{modelNameWithThinking(p.name, p.primary.model.controls.reasoning_effort)}</span>
                 {p.id === inherited?.id && (
                   <Badge variant="secondary" className="shrink-0 text-[10px]">
                     Default

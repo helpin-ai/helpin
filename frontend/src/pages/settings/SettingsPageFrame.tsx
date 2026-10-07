@@ -25,11 +25,12 @@ type SettingsPageFrameProps = {
    *  Useful when the child component renders its own header
    *  (e.g. TeamsTab showing a specific team's name). */
   hideHeader?: boolean;
+  descriptionSuffix?: string;
   headerAction?: (context: SettingsPageContext) => ReactNode;
   children: (context: SettingsPageContext) => ReactNode;
 };
 
-export function SettingsPageFrame({ section, hideHeader, headerAction, children }: SettingsPageFrameProps) {
+export function SettingsPageFrame({ section, hideHeader, descriptionSuffix, headerAction, children }: SettingsPageFrameProps) {
   const sectionLabel = SETTINGS_ROUTE_SECTIONS.find((s) => s.id === section)?.label;
   useTitle(sectionLabel ? `${sectionLabel} Settings` : 'Settings');
 
@@ -43,10 +44,12 @@ export function SettingsPageFrame({ section, hideHeader, headerAction, children 
   const permissions = usePermissions(access);
   const sectionMeta = SETTINGS_ROUTE_SECTIONS.find((candidate) => candidate.id === section);
 
+  const description = [sectionMeta?.description, descriptionSuffix].filter(Boolean).join(' ') || undefined;
+
   const pageHeader = sectionMeta && !hideHeader ? (
     <QuietPageHeader
       title={sectionMeta.label}
-      description={sectionMeta.description || undefined}
+      description={description}
     />
   ) : null;
 
@@ -98,7 +101,7 @@ export function SettingsPageFrame({ section, hideHeader, headerAction, children 
       {sectionMeta && !hideHeader ? (
         <QuietPageHeader
           title={sectionMeta.label}
-          description={sectionMeta.description || undefined}
+          description={description}
           actions={headerAction?.(context)}
         />
       ) : null}

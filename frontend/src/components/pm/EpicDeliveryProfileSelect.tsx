@@ -1,3 +1,4 @@
+import { modelNameWithThinking } from "@/lib/aiProviders";
 import { useAIProfiles } from '@/hooks/queries/useAIProfiles';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/design-system/quiet-dropdown-select';
 
@@ -18,11 +19,11 @@ export function EpicDeliveryProfileSelect({ workspaceId, value, onChange, disabl
           <SelectItem value="__defaults__">Agent defaults</SelectItem>
           <SelectGroup>
             <SelectLabel>Workspace-wide models</SelectLabel>
-            {choices.filter((profile) => profile.scope === 'workspace').map((profile) => <SelectItem key={profile.id} value={profile.id}>{profile.name}</SelectItem>)}
+            {choices.filter((profile) => profile.scope === 'workspace').map((profile) => <SelectItem key={profile.id} value={profile.id}>{modelNameWithThinking(profile.name, profile.primary.model.controls.reasoning_effort)}</SelectItem>)}
           </SelectGroup>
           <SelectGroup>
             <SelectLabel>Personal models</SelectLabel>
-            {choices.filter((profile) => profile.scope === 'personal').map((profile) => <SelectItem key={profile.id} value={profile.id}>{profile.name}</SelectItem>)}
+            {choices.filter((profile) => profile.scope === 'personal').map((profile) => <SelectItem key={profile.id} value={profile.id}>{modelNameWithThinking(profile.name, profile.primary.model.controls.reasoning_effort)}</SelectItem>)}
           </SelectGroup>
         </SelectContent>
       </Select>

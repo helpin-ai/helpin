@@ -6,6 +6,9 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { AISettingsPage } from '../AISettingsPage';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { aiConnectionService } from '@/lib/services/aiConnectionService';
+import { aiUsagePricingText } from '@edition/ai';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
+import type { AIExecutionPolicySnapshot } from '@/lib/services/aiConnectionService';
 import { aiProfileService } from '@/lib/services/aiProfileService';
 
 vi.mock('@/lib/services/aiConnectionService', () => ({
@@ -18,13 +21,14 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const frame = vi.hoisted(() => ({ permissions: new Set<string>(['workspace.update']) }));
 vi.mock('../SettingsPageFrame', () => ({
-  SettingsPageFrame: ({ section, children }: { section: string; children: (ctx: unknown) => React.ReactNode }) => (
+  SettingsPageFrame: ({ section, descriptionSuffix, children }: { section: string; descriptionSuffix?: string; children: (ctx: unknown) => React.ReactNode }) => (
     <div>
       <h1>{section === 'ai' ? 'AI' : 'AI connections'}</h1>
       <p>
         {section === 'ai'
           ? 'Shared connections, profiles, and the default profile agents inherit.'
           : 'Your API keys and ChatGPT login, plus the profiles that use them.'}
+        {descriptionSuffix}
       </p>
       {children({ workspaceId: 'ws', permissions: { has: (perm: string) => frame.permissions.has(perm) } })}
     </div>
@@ -36,6 +40,7 @@ let root: Root;
 let client: QueryClient;
 
 beforeEach(() => {
+  useWorkspaceStore.setState({ currentWorkspace: { id: 'ws', slug: 'test', name: 'Test' } });
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   HTMLElement.prototype.scrollIntoView = vi.fn();
   const container = document.createElement('div');
@@ -51,6 +56,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   client.clear();
+  useWorkspaceStore.setState({ currentWorkspace: null });
   document.body.innerHTML = '';
   vi.unstubAllGlobals();
   vi.clearAllMocks();
@@ -231,4 +237,24 @@ it('puts recent discoveries before saved models and older choices, without marki
     'Show Latest discovery in model pickers', 'Show Recent discovery in model pickers', 'Show Saved model in model pickers', 'Show Baseline model in model pickers', 'Show Older discovery in model pickers',
   ]);
   expect(Array.from(dialog.querySelectorAll('span')).filter(el => el.textContent === 'New')).toHaveLength(2);
+});
+
+it('shows common pricing in the page subtext without repeating usage tooltips on models or connections', async () => {
+  const pricing = ([
+    { mode: 'community', funding_mode: 'customer_unbilled' },
+    { mode: 'ee', funding_mode: 'customer_funded_flat', flat_tariff: { version: 'v1', currency: 'USD', microusd_per_million: 0, accounting_version: 'v1' } },
+  ] as AIExecutionPolicySnapshot[]).find(policy => aiUsagePricingText(policy))!;
+  const expected = aiUsagePricingText(pricing)!;
+  const policy = { allowed: true, pricing };
+  vi.mocked(aiConnectionService.list).mockResolvedValue({ data: { enabled: true, connections: [
+    { id: 'priced', name: 'My provider', provider: 'openai', scope: 'personal', user_id: 'me', status: 'connected', funding: 'customer', policy },
+  ], models: [] }, error: null });
+  vi.mocked(aiProfileService.list).mockResolvedValue({ data: [
+    { id: 'priced-model', workspace_id: 'ws', user_id: 'me', scope: 'personal', name: 'My model', revision: 1, primary: { connection_id: 'priced', model: { provider: 'openai', model: 'gpt-model', controls: {} } }, fallback: null, primary_policy: policy },
+  ], error: null });
+  await render('personal');
+  expect(document.body.textContent).toContain(expected);
+  expect(document.querySelector('[aria-label="Usage details for My model"]')).toBeNull();
+  await act(async () => { Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Manage connections')?.click(); });
+  expect(document.querySelector('[aria-label="Usage details"]')).toBeNull();
 });

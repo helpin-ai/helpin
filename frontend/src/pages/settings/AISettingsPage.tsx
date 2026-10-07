@@ -1,3 +1,5 @@
+import { AIModelsPricingContext, sharedAIModelsPricing } from "@/components/agents/AIModelsPricingContext";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useRef, useState } from "react";
 import {
   AIConnectionDialog,
@@ -36,16 +38,21 @@ import { SettingsPageFrame } from "./SettingsPageFrame";
 
 // Retain legacy routes; both now land on the same model list.
 export function AISettingsPage(_props: { scope?: "personal" | "workspace" }) {
+  const workspaceId = useWorkspaceStore(state => state.currentWorkspace?.id ?? "");
+  const connections = useAIConnections(workspaceId);
+  const pricing = sharedAIModelsPricing((connections.data?.connections ?? []).map(connection => connection.policy));
   return (
-    <SettingsPageFrame section="ai">
-      {({ workspaceId, permissions }) => (
-        <AISettingsContent
-          key={workspaceId}
-          workspaceId={workspaceId}
-          canManageWorkspace={permissions.has("workspace.update")}
-        />
-      )}
-    </SettingsPageFrame>
+    <AIModelsPricingContext.Provider value={pricing}>
+      <SettingsPageFrame section="ai" descriptionSuffix={pricing ?? undefined}>
+        {({ workspaceId, permissions }) => (
+          <AISettingsContent
+            key={workspaceId}
+            workspaceId={workspaceId}
+            canManageWorkspace={permissions.has("workspace.update")}
+          />
+        )}
+      </SettingsPageFrame>
+    </AIModelsPricingContext.Provider>
   );
 }
 

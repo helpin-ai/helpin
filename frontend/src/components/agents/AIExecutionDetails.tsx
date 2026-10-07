@@ -1,4 +1,4 @@
-import { AIConnectionPolicyNotice } from "./AIConnectionPolicyNotice";
+import { AIUsagePricing } from "@edition/ai";
 import type { AIExecutionPolicySnapshot } from "@/lib/services/aiConnectionService";
 import { providerShortLabel } from "@/lib/aiProviders";
 
@@ -47,7 +47,7 @@ export function AIExecutionDetails({
             Endpoint: {endpoint.id} · {endpoint.auth_mode === "none" ? "No authentication" : "API key"}
           </p>
         )}
-        <AIConnectionPolicyNotice policy={{ allowed: true, pricing }} />
+        <AIUsagePricing policy={pricing} />
       </div>
     </details>
   );

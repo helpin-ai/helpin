@@ -1,5 +1,5 @@
 import type { AIProfile } from "@/lib/services/aiProfileService";
-import { catalogLabel } from "@/lib/aiProviders";
+import { catalogLabel, modelNameWithThinking } from "@/lib/aiProviders";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
@@ -53,7 +53,7 @@ export function AIConfiguredModelRow({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="break-words text-sm font-medium">
-            {profile.name}
+            {modelNameWithThinking(profile.name, profile.primary.model.controls.reasoning_effort)}
           </span>
           {isNew && <AIModelNewBadge />}
           {isDefault && <Badge variant="secondary">Default</Badge>}

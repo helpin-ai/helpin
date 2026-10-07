@@ -1,3 +1,5 @@
+import { useContext } from "react";
+import { AIModelsPricingContext } from "./AIModelsPricingContext";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,6 +15,7 @@ import { QuickTooltip } from "@/components/ui/quick-tooltip";
 import { MoreHorizontalIcon } from "@/lib/icons";
 import {
   catalogLabel,
+  modelNameWithThinking,
   connectionStatusInfo,
   providerLabel,
 } from "@/lib/aiProviders";
@@ -44,6 +47,7 @@ export function AIModelTableRow({
   onEdit: () => void;
   onReconnect: () => void;
 }) {
+  const sharedPricing = useContext(AIModelsPricingContext);
   const personalDefault = useSetPersonalDefaultAIProfile(workspaceId);
   const workspaceDefault = useSetDefaultAIProfile(workspaceId);
   const visibility = useSetAIModelVisibility(workspaceId);
@@ -59,6 +63,7 @@ export function AIModelTableRow({
     (settings?.personal_default_profile_id || settings?.default_profile_id) ===
     profile.id;
   const policy = profile.primary_policy ?? connection?.policy;
+  const pricing = aiUsagePricingText(policy?.pricing);
   const ready =
     !!settings &&
     connection?.status === "connected" &&
@@ -83,6 +88,7 @@ export function AIModelTableRow({
   const modelName =
     catalogLabel(profile.primary.model.provider, profile.primary.model.model) ??
     profile.primary.model.model;
+  const displayName = modelNameWithThinking(modelName, profile.primary.model.controls.reasoning_effort);
   const normalizedName = (name: string) =>
     name.toLowerCase().replace(/[^a-z0-9]/g, "");
   const hasCustomName =
@@ -103,8 +109,8 @@ export function AIModelTableRow({
     <TableRow>
       <TableCell className="min-w-[180px] max-w-[300px] py-4">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="truncate text-sm font-medium" title={modelName}>
-            {modelName}
+          <span className="truncate text-sm font-medium" title={displayName}>
+            {displayName}
           </span>
           {isDefault && (
             <QuickTooltip
@@ -170,12 +176,9 @@ export function AIModelTableRow({
                       : "Reconnect this connection to use its models for new runs."
             }
           />
-          {policy?.pricing && (
+          {pricing && pricing !== sharedPricing && (
             <QuickTooltip
-              label={
-                aiUsagePricingText(policy.pricing) ??
-                "Usage follows your connection policy."
-              }
+              label={pricing}
             >
               <button
                 type="button"

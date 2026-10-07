@@ -217,3 +217,11 @@ export function catalogTier(provider: string, model: string) {
   if (!entry) return undefined;
   return AI_MODELS.tiers.find((tier) => tier.key === entry.tier);
 }
+
+/** Show an explicitly saved thinking level without inventing a provider default. */
+export function modelNameWithThinking(name: string, effort?: string): string {
+  if (!effort || effort === "default") return name;
+  const label = effort === "xhigh" ? "Extra high" : effort.charAt(0).toUpperCase() + effort.slice(1);
+  const suffix = ` - ${label}`;
+  return name.toLowerCase().endsWith(suffix.toLowerCase()) ? name : `${name}${suffix}`;
+}

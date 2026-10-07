@@ -272,3 +272,14 @@ it('uses the personal default only in Ask Agent and preserves explicit agent def
     expect(document.querySelector('[data-slot="select-trigger"]')?.textContent).toBe(expected);
   }
 });
+
+it('includes the saved thinking level in the selected model and its option', async () => {
+  const profile = { ...profiles[0], name: 'GPT 6 Astra', primary: { ...profiles[0].primary, model: { ...profiles[0].primary.model, controls: { reasoning_effort: 'low' } } } };
+  vi.mocked(aiProfileService.list).mockResolvedValue({ data: [profile], error: null });
+  await act(async () => root.render(<QueryClientProvider client={client}><TooltipProvider>
+    <AIProfilePicker workspaceId="ws" value={profile.id} compact onChange={() => {}} />
+  </TooltipProvider></QueryClientProvider>));
+  await openPicker();
+  expect(document.querySelector('button[aria-haspopup="dialog"]')?.textContent).toContain('GPT 6 Astra - Low');
+  expect(document.querySelector('[cmdk-item][data-value="personal"]')?.textContent).toContain('GPT 6 Astra - Low');
+});
