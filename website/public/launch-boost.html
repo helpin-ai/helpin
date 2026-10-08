@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Helpin Launch Squad</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=Instrument+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one calm column (720px max), three cards in the order people should act. */
+:root {
+  --bg: #F2F5F1; --card: #FFFFFF; --ink: #1E211D; --muted: #5C625B; --line: #D8DED5;
+  --accent: #1F7A55; --accent-ink: #FFFFFF; --soft: #E4F1E9; --field: #FAFBF9; --warning: #8A5A12;
+  --font-head: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121512; --card: #1A1E1A; --ink: #ECEEE8; --muted: #A3AAA1; --line: #2D332D;
+    --accent: #5FCB98; --accent-ink: #0E1A13; --soft: #1C2E24; --field: #151915; --warning: #E0B25F;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121512; --card: #1A1E1A; --ink: #ECEEE8; --muted: #A3AAA1; --line: #2D332D;
+  --accent: #5FCB98; --accent-ink: #0E1A13; --soft: #1C2E24; --field: #151915; --warning: #E0B25F;
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 400 16px/1.5 var(--font-body);
+  padding-inline: 16px; padding-block: 32px 56px;
+  -webkit-text-size-adjust: 100%;
+}
+.wrap { max-width: 720px; margin-inline: auto; display: grid; gap: 14px; }
+h1, h2 { font-family: var(--font-head); margin: 0; text-wrap: balance; letter-spacing: -0.015em; }
+h1 { font-weight: 700; font-size: clamp(28px, 6.4vw, 38px); line-height: 1.1; }
+h2 { font-weight: 600; font-size: 22px; line-height: 1.2; }
+p { margin: 0; }
+strong { font-weight: 600; }
+header { display: grid; gap: 10px; padding-block: 4px 10px; }
+header p { color: var(--muted); font-size: 17px; max-width: 62ch; }
+
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: grid; gap: 14px; min-width: 0; }
+.sub { margin: 0; font: 600 12px/1.2 var(--font-body); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.note { padding: 2px 0 2px 12px; border-left: 3px solid var(--accent); color: var(--muted); }
+
+.steps { list-style: none; margin: 0; padding: 0; counter-reset: step; display: grid; gap: 12px; }
+.steps > li { counter-increment: step; position: relative; padding-left: 38px; min-width: 0; }
+.steps > li::before {
+  content: counter(step); position: absolute; left: 0; top: -1px;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--soft); color: var(--accent);
+  font: 600 14px/26px var(--font-body); text-align: center; font-variant-numeric: tabular-nums;
+}
+
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.col { display: grid; gap: 10px; align-content: start; min-width: 0; }
+
+/* Generators */
+.gen { margin-top: 10px; background: var(--field); border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: grid; gap: 10px; min-width: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  min-height: 34px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--card); color: var(--ink);
+  font: 500 14px/1 var(--font-body);
+}
+.chip:hover { border-color: var(--accent); }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.gen label { display: block; font-weight: 600; font-size: 14px; }
+.gen textarea {
+  display: block; width: 100%; margin-top: 6px; resize: vertical;
+  font: 400 16px/1.45 var(--font-body); color: var(--ink);
+  background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
+}
+.gen textarea.fresh { animation: fresh 0.22s ease-out; }
+@keyframes fresh { from { opacity: 0.35; } to { opacity: 1; } }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.btn {
+  min-height: 40px; padding: 0 14px; border-radius: 8px; cursor: pointer;
+  border: 1.5px solid var(--accent); font: 600 15px/1 var(--font-body);
+  transition: background-color 0.15s ease, opacity 0.15s ease;
+}
+.btn.primary { background: var(--accent); color: var(--accent-ink); }
+.btn.primary:hover { opacity: 0.9; }
+.btn.secondary { background: transparent; color: var(--accent); }
+.btn.secondary:hover { background: var(--soft); }
+.count { margin-left: auto; color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.count.over { color: var(--warning); font-weight: 700; }
+.status { min-height: 1.45em; font-size: 14px; color: var(--muted); }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.gen textarea:focus-visible { outline-offset: 1px; }
+
+@media (max-width: 560px) {
+  .cols { grid-template-columns: 1fr; }
+  .steps > li > .gen { margin-left: -38px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gen textarea.fresh { animation: none; }
+  .btn { transition: none; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Help boost the launch post</h1>
+    <p>Need a hand on the launch post. Three things help, in this order. A like does almost nothing. Do every step in each one.</p>
+  </header>
+
+  <section class="card" aria-labelledby="s1">
+    <h2 id="s1">1. Quote it</h2>
+    <h3 class="sub">On your phone</h3>
+    <ol class="steps">
+      <li>Open the post.</li>
+      <li>Tap the repost icon (two arrows).</li>
+      <li>Tap <strong>Quote</strong>, not Repost.</li>
+      <li>
+        <p>Write one real line. Who it is for, or why you would use it. Not “great launch.”</p>
+        <div class="gen" id="quote-gen" data-kind="q">
+          <div class="chips" role="group" aria-label="Angle">
+            <button type="button" class="chip" data-tag="all" aria-pressed="true">Any angle</button>
+            <button type="button" class="chip" data-tag="support" aria-pressed="false">Support teams</button>
+            <button type="button" class="chip" data-tag="docs" aria-pressed="false">Docs</button>
+            <button type="button" class="chip" data-tag="dev" aria-pressed="false">Developers</button>
+            <button type="button" class="chip" data-tag="oss" aria-pressed="false">Open source</button>
+          </div>
+          <label for="quote-text">Your quote. Edit it until it sounds like you.<textarea id="quote-text" rows="4" spellcheck="true"></textarea></label>
+          <div class="row">
+            <button type="button" class="btn primary" data-act="next">Generate a line</button>
+            <button type="button" class="btn secondary" data-act="next">Regenerate</button>
+            <button type="button" class="btn secondary" data-act="copy">Copy</button>
+            <span class="count">0 / 280</span>
+          </div>
+          <p class="status" role="status" aria-live="polite"></p>
+        </div>
+      </li>
+      <li>Paste your line, then post.</li>
+    </ol>
+    <h3 class="sub">On desktop</h3>
+    <p>Same icon, then Quote.</p>
+    <p class="note">A quote puts the post in front of your followers with your name on it. A blank repost barely counts.</p>
+  </section>
+
+  <section class="card" aria-labelledby="s2">
+    <h2 id="s2">2. Reply</h2>
+    <ol class="steps">
+      <li>Open the post.</li>
+      <li>Tap the reply icon.</li>
+      <li>
+        <p>Write one specific line. A question, a use case, or who you would send it to.</p>
+        <div class="gen" id="reply-gen" data-kind="r">
+          <div class="chips" role="group" aria-label="Type">
+            <button type="button" class="chip" data-tag="all" aria-pressed="true">Any type</button>
+            <button type="button" class="chip" data-tag="question" aria-pressed="false">A question</button>
+            <button type="button" class="chip" data-tag="usecase" aria-pressed="false">A use case</button>
+            <button type="button" class="chip" data-tag="send" aria-pressed="false">Who I'd send it to</button>
+          </div>
+          <label for="reply-text">Your reply. Edit it until it sounds like you.<textarea id="reply-text" rows="3" spellcheck="true"></textarea></label>
+          <div class="row">
+            <button type="button" class="btn primary" data-act="next">Generate a line</button>
+            <button type="button" class="btn secondary" data-act="next">Regenerate</button>
+            <button type="button" class="btn secondary" data-act="copy">Copy</button>
+            <span class="count">0 / 280</span>
+          </div>
+          <p class="status" role="status" aria-live="polite"></p>
+        </div>
+      </li>
+      <li>Paste your line, then reply.</li>
+    </ol>
+    <p class="note">I will reply to every one. That back-and-forth is what keeps it moving. If we follow each other, your reply counts for more.</p>
+  </section>
+
+  <section class="card" aria-labelledby="s3">
+    <h2 id="s3">3. Copy the link the right way</h2>
+    <p>This only counts if you use the button. Copying from the address bar does not.</p>
+    <div class="cols">
+      <div class="col">
+        <h3 class="sub">On your phone</h3>
+        <ol class="steps">
+          <li>Open the post.</li>
+          <li>Tap the share icon.</li>
+          <li>Tap <strong>Copy link</strong>. Not the iPhone or Android share sheet.</li>
+          <li>Paste that link into WhatsApp, iMessage, Slack, or Telegram.</li>
+        </ol>
+      </div>
+      <div class="col">
+        <h3 class="sub">On desktop</h3>
+        <ol class="steps">
+          <li>Click the share icon on the post.</li>
+          <li>Click <strong>Copy link</strong>.</li>
+          <li>Paste it.</li>
+        </ol>
+      </div>
+    </div>
+    <p class="note">X never sees the chat. It only sees that Copy link tap, and a later open of that link.</p>
+  </section>
+</div>
+
+<script>
+var QUOTES = [
+  { t: "docs", s: "every help center i've seen is out of date by the next release.\n\nHelpin's docs update with every release and bug fix, and the screenshots refresh on their own. that looks interesting. gonna tell my manager about it." },
+  { t: "docs", s: "i've seen support threads that start with a screenshot of the new UI because the docs still show the old one.\n\nHelpin keeps help docs and their screenshots up to date. bookmarking this." },
+  { t: "docs", s: "stale docs are the quiet reason AI bots give wrong answers.\n\nHelpin updates docs with every release, bug fix and unresolved ticket, screenshots included. sending this to a few founder friends." },
+  { t: "docs", s: "the help center is always the last thing a team updates. everyone knows it.\n\ndocs that update themselves is a good idea. gonna try this one." },
+  { t: "docs", s: "a bot is only as right as the docs behind it, and most docs are 6 months old.\n\nHelpin keeps them fresh after every release. i want to see this in action." },
+  { t: "support", s: "i've watched a support agent open 5 tabs to answer one billing question.\n\nHelpin puts the logs, billing and conversation history in one place, so the answer is right the first time. looks interesting. showing my team." },
+  { t: "support", s: "the scariest part of AI support is handing it the keys on day one.\n\nHelpin lets AI draft the reply first. you approve it. once you trust it, you switch on auto-reply. i like that. gonna try it." },
+  { t: "support", s: "tag the person on your team who answers the same customer question every week.\n\nHelpin's AI drafts the reply from your docs and the full customer history, and you approve it. open source, self-host it." },
+  { t: "support", s: "wrong answers from AI support usually aren't an AI problem. they're a context problem and a stale docs problem.\n\nHelpin pulls in logs, billing, CRM, code and past conversations, and keeps docs fresh. saving this." },
+  { t: "support", s: "start with AI drafts. graduate to auto-reply.\n\nthat's the safest way to roll out AI support and it's how Helpin works. i'm sending this to a friend who runs support." },
+  { t: "dev", s: "a customer reports a bug on Monday. by Friday it's buried in 3 tools and nobody knows who owns it.\n\nin Helpin it becomes a task, an agent plans the fix, another opens the PR. gonna tell my eng friends." },
+  { t: "dev", s: "most SaaS teams pay for a helpdesk, a project tracker, a CRM and a docs tool. none of them talk to each other.\n\nHelpin is all four in one open source workspace. you can even ditch Linear. this looks interesting." },
+  { t: "dev", s: "imagine your coding agent reading your support inbox and creating tasks from what customers report.\n\nHelpin's MCP server lets Claude Code, Cursor and Codex do exactly that. i want to try this." },
+  { t: "dev", s: "you shouldn't need a new tool every time your team adds an AI agent.\n\nHelpin gives humans and agents one workspace and one customer history, so nobody starts from zero. sending it to my CTO friend." },
+  { t: "oss", s: "i don't love customer data living in software i can't read.\n\nHelpin is open source. read the code, self-host it, keep your data. no per-seat or per-resolution pricing when you self-host. gonna check the repo." },
+  { t: "oss", s: "Intercom, Linear, Mintlify, HubSpot. four tools, four invoices, four places your customer's story lives.\n\nHelpin wants to be all four in one open source workspace. looks interesting. bookmarking." },
+  { t: "oss", s: "i believe the future of SaaS is open source.\n\nHelpin is open source, self-hostable, and built so your team and your AI agents share the same context. gonna tell my manager about it." },
+  { t: "oss", s: "somebody finally built the open source Intercom alternative with AI agents in the box.\n\nself-host it free or use their cloud. the code is on GitHub. gonna give it a star and try it." },
+  { t: "docs", s: "the hardest part of a help center isn't writing it. it's keeping it true after every release.\n\nHelpin updates the docs when you ship, screenshots included. that's the part i'd want." },
+  { t: "docs", s: "every outdated screenshot in a help article is a support ticket waiting to happen.\n\nHelpin refreshes them on its own after each release. sending this to our docs person." },
+  { t: "docs", s: "docs rot quietly. nobody notices until a customer follows step 3 and the button isn't there.\n\nHelpin keeps the steps and screenshots current after every release. bookmarking." },
+  { t: "docs", s: "if your AI bot answers from last quarter's docs, it's going to be confidently wrong.\n\nHelpin keeps the docs fresh so the bot isn't. simple idea, big deal." },
+  { t: "docs", s: "an unresolved ticket usually means a doc is missing.\n\nHelpin turns those gaps into doc updates, along with releases and bug fixes. that loop makes a lot of sense to me." },
+  { t: "docs", s: "the Mintlify and Help Scout part of Helpin is underrated.\n\na help center that updates itself after releases and bug fixes, screenshots and all. worth a look." },
+  { t: "docs", s: "nobody budgets time to update docs after a release. so they never get updated.\n\nHelpin does it for you. i'd use it for that alone." },
+  { t: "docs", s: "release notes go out. the help center stays the same. customers get confused.\n\nHelpin closes that gap by updating docs with every release. sharing with a few PMs i know." },
+  { t: "docs", s: "writing docs is a one-time job. keeping them right is forever.\n\nHelpin takes the forever part off your plate. curious to see it on a real product." },
+  { t: "docs", s: "a stale doc is worse than no doc. it tells the customer the wrong thing with confidence.\n\nHelpin keeps help articles in sync with what you shipped. saving this." },
+  { t: "docs", s: "screenshots that update themselves. i didn't know i needed that until i saw it.\n\nHelpin refreshes help center screenshots after every release. sending this to our support lead." },
+  { t: "docs", s: "every UI redesign breaks half the help center.\n\nHelpin redraws the screenshots and updates the steps so you don't have to. that's a real time saver." },
+  { t: "docs", s: "your bot is only as good as the docs it reads.\n\nHelpin fixes the docs side: updates on every release, bug fix and unresolved ticket. this is how AI support should work." },
+  { t: "docs", s: "i've lost count of the help articles i've read that describe a button that no longer exists.\n\nHelpin keeps docs current after each release. more teams need this." },
+  { t: "docs", s: "fixing a bug should also fix the doc that explained the workaround.\n\nin Helpin it does. docs update on bug fixes too, not just releases. nice touch." },
+  { t: "docs", s: "docs, support and the product in one place means the help center finally knows what shipped.\n\nthat's the idea behind Helpin and i buy it. bookmarking." },
+  { t: "docs", s: "the docs team shouldn't find out about a release from a support ticket.\n\nHelpin updates help docs when you ship. forwarding this to a docs writer friend." },
+  { t: "docs", s: "a help center that keeps up with a team that ships fast. that's rare.\n\nHelpin updates articles and screenshots after every release. worth checking out." },
+  { t: "docs", s: "outdated docs cost you twice: once in confused customers, again in support tickets.\n\nHelpin keeps them fresh automatically. looks like a smart fix." },
+  { t: "docs", s: "if you ship weekly, your docs are probably wrong right now.\n\nHelpin keeps them in step with every release, screenshots included. have a look." },
+  { t: "support", s: "most support time goes to finding the context, not writing the reply.\n\nHelpin's AI pulls logs, billing, CRM and past conversations before it answers. that's the right order." },
+  { t: "support", s: "the best support reps already check billing, logs and history before they reply.\n\nHelpin's AI does the same, which is why the answers can be right. sending this to our support team." },
+  { t: "support", s: "AI support that can't see the customer's account is just guessing politely.\n\nHelpin gives it logs, billing, CRM, code and past conversations. big difference." },
+  { t: "support", s: "draft first, approve, then auto-reply once you trust it. that's how i'd want to roll out AI support.\n\nHelpin works exactly like that. bookmarking." },
+  { t: "support", s: "the AI doesn't just answer in Helpin. it follows up and creates tickets for the dev team.\n\nthat's the part most bots skip. worth a look." },
+  { t: "support", s: "customers hate repeating themselves. so do support teams.\n\nHelpin's AI reads the past conversations before it replies. small thing, huge difference." },
+  { t: "support", s: "verified customers via HMAC, so the AI knows exactly whose account it's looking at.\n\nthat's the kind of detail that makes AI support safe. Helpin has it built in." },
+  { t: "support", s: "if your support bot can't tell whether the customer has paid, it can't really help them.\n\nHelpin's AI can see billing, logs and the CRM. sharing with a few founders." },
+  { t: "support", s: "every support lead i know wants AI help but doesn't want to lose control.\n\nHelpin starts with drafts you approve, and you decide when it goes on auto. that's the right default." },
+  { t: "support", s: "an open source Intercom alternative where the AI checks the account before it answers.\n\nthat's Helpin. sending this to anyone paying per resolution today." },
+  { t: "support", s: "most AI support tools are a chatbot on top of a help center.\n\nHelpin connects the inbox to logs, billing, CRM and code. that's a different product." },
+  { t: "support", s: "a wrong answer from a bot costs more than a slow answer from a human.\n\nHelpin's approach: give the AI full context and keep the docs fresh. makes sense to me." },
+  { t: "support", s: "support shouldn't end at 'we've passed this to the team'.\n\nin Helpin the AI creates the ticket for the dev team and follows up with the customer. nice." },
+  { t: "support", s: "the inbox, the customer's history and the bug tracker in one place.\n\nsupport has needed that for years. Helpin is going for it. bookmarking." },
+  { t: "support", s: "you can tell a good support reply because it mentions the customer's actual situation.\n\nHelpin's AI gets there by reading billing, logs and history first. worth a look." },
+  { t: "support", s: "if you run support for a SaaS product, this one's for you.\n\nHelpin drafts replies from the full customer context and you approve them. open source too." },
+  { t: "support", s: "AI that answers 'did my export work?' by actually checking the logs. that's what i want.\n\nHelpin connects the AI to logs, billing and more. sending this to my support friends." },
+  { t: "support", s: "auto-reply for the easy stuff, drafts for the tricky ones, tickets for the bugs.\n\nthat's the Helpin setup and it's how i'd want my support inbox to run." },
+  { t: "support", s: "the goal isn't more AI in support. it's fewer wrong answers.\n\nHelpin goes after the two causes: missing context and stale docs. good framing." },
+  { t: "support", s: "per-resolution pricing makes AI support more expensive the better it works.\n\nHelpin skips that when you self-host. the inbox, the AI and your data stay yours." },
+  { t: "dev", s: "the bug report lives in support, the fix lives in GitHub, and nobody connects the two.\n\nHelpin turns the report into a task and an agent opens the PR. i want to see this on a real repo." },
+  { t: "dev", s: "bug reports that turn into pull requests. that's the sentence that got me.\n\nHelpin connects the support inbox to the code. sending this to my eng lead." },
+  { t: "dev", s: "Linear for the dev team, Intercom for support, and copy-paste in between.\n\nHelpin puts both in one workspace, so a bug goes from customer to PR without the copy-paste. worth a look." },
+  { t: "dev", s: "devs hate vague bug reports. customers hate being asked for details twice.\n\nin Helpin the report arrives with the customer's context attached. nice." },
+  { t: "dev", s: "one agent plans the fix and another opens the PR, starting from a customer's message.\n\nthat's Helpin's dev flow. curious how it handles a messy codebase." },
+  { t: "dev", s: "Helpin has an MCP server, so Claude Code or Cursor can read tasks and customer reports straight from the workspace.\n\nthat's a nice setup for small teams. bookmarking." },
+  { t: "dev", s: "the agent runtime behind Helpin is open source too.\n\nif you build agents, the repo is worth a read. starring it." },
+  { t: "dev", s: "custom agents and flows in the same workspace as support and projects.\n\nHelpin lets you build your own instead of waiting for a feature. that's the right call." },
+  { t: "dev", s: "every tool switch is a context switch.\n\nHelpin keeps support, tasks, CRM and docs in one place for humans and agents. sending this to my CTO friend." },
+  { t: "dev", s: "the best bug fix also updates the docs and tells the customer.\n\nHelpin can do all three from one report. that's the dream workflow." },
+  { t: "dev", s: "you can ditch Linear for Helpin's projects module and keep everything next to support.\n\ncurious how many teams actually switch. i'd try it." },
+  { t: "dev", s: "engineers shouldn't have to open a helpdesk to understand a bug.\n\nin Helpin the task carries the customer conversation with it. saving this." },
+  { t: "dev", s: "AI coding agents are only as good as the task they're given.\n\nHelpin builds the task from the real customer report, then an agent opens the PR. smart." },
+  { t: "dev", s: "if your team uses Claude Code, Cursor or Codex, Helpin's MCP server is the interesting part.\n\nyour agent works from the same tasks and customer history as your team." },
+  { t: "dev", s: "i like that Helpin treats agents as teammates with the same context, not as a bolt-on.\n\none workspace, one history, humans and agents. worth a look." },
+  { t: "dev", s: "from 'the export is broken' to a pull request without anyone copying text between tools.\n\nthat's what Helpin is going for. sending this to a few eng managers." },
+  { t: "dev", s: "self-hosted, open source, and it opens PRs from bug reports.\n\nHelpin is the kind of tool devs actually want to run themselves. checking out the repo." },
+  { t: "dev", s: "build your own agents and flows on top of your support, tasks and docs.\n\nHelpin has custom agents built in. that's the part i'd play with first." },
+  { t: "dev", s: "most project trackers have no idea what customers are saying.\n\nHelpin's projects live next to the support inbox, so they do. nice idea." },
+  { t: "dev", s: "a task board that sits right next to the conversations the bugs came from.\n\nthat's what you get when projects and support share a workspace. Helpin gets this." },
+  { t: "dev", s: "small teams don't need five tools and five integrations. they need one place that works.\n\nHelpin is support, projects, CRM and docs in one open source workspace." },
+  { t: "oss", s: "the open source Intercom alternative i've been waiting for.\n\nself-host it, read the code, keep your customer data. or use Helpin Cloud if you don't want to run it." },
+  { t: "oss", s: "per-seat pricing punishes you for growing your support team.\n\nHelpin is open source. self-host it and that pricing goes away. bookmarking." },
+  { t: "oss", s: "SaaS tools that hold your customer data should be readable.\n\nHelpin is open source, so you can see exactly what it does with that data. respect." },
+  { t: "oss", s: "open source support, projects, CRM and docs in one product. that's ambitious.\n\nHelpin is going for it. giving the repo a star." },
+  { t: "oss", s: "you don't have to choose between self-hosting and convenience.\n\nHelpin is open source, and Helpin Cloud runs it for you if you want. that's the right setup." },
+  { t: "oss", s: "the future of SaaS is open source, and support tools are a good place to start.\n\nHelpin is open source and self-hostable. sending this to my founder group chat." },
+  { t: "oss", s: "if your support tool shuts down tomorrow, what happens to your customer history?\n\nwith Helpin you can self-host it, so the answer is nothing. that matters." },
+  { t: "oss", s: "four SaaS bills replaced by one open source workspace.\n\nthat's the Helpin pitch: support, projects, CRM and docs. curious how far they take it." },
+  { t: "oss", s: "open source is how you earn trust with the data that matters most: your customers'.\n\nHelpin gets that. self-host it or use their cloud." },
+  { t: "oss", s: "Helpin is open source and the team wants contributors.\n\nif you've ever wanted to fix your helpdesk yourself, here's your chance. starring the repo." },
+  { t: "oss", s: "AI pricing per resolution means you pay more when the AI does its job.\n\nself-host Helpin and skip that. open source, your servers, your data." },
+  { t: "oss", s: "the Intercom, Linear, HubSpot and Mintlify stack, as one open source tool.\n\nHelpin is ambitious and i'm here for it. bookmarking." },
+  { t: "oss", s: "i'd rather build on open source than rent a black box.\n\nHelpin is open source, AI agents included. checking out the repo." },
+  { t: "oss", s: "open source, plus a 14-day free trial of the cloud version with no card.\n\ntry Helpin hosted, then self-host it if you want. low risk to look." },
+  { t: "oss", s: "a support tool your team can actually extend: custom agents, custom flows, open code.\n\nthat's Helpin. sharing with a few devs who'll like this." },
+  { t: "oss", s: "every SaaS category gets an open source challenger eventually. support's is here.\n\nHelpin is open source, self-hostable, with AI agents built in. worth a look." },
+  { t: "oss", s: "your customer conversations are some of your most sensitive data.\n\nHelpin lets you self-host them. open source, no black box. sending this to our security person." },
+  { t: "oss", s: "open source, and the team is asking what's missing.\n\nthat's how i like products to launch. Helpin is worth a look. starring it." },
+  { t: "oss", s: "a startup can run Helpin on its own servers and skip per-seat pricing as the team grows.\n\nthat's a big deal for small teams. sending this to a founder friend." },
+  { t: "oss", s: "Helpin's agent runtime is open source as well, not just the app.\n\nthat's a nice signal if you care about where your AI runs. bookmarking the repo." },
+  { t: "oss", s: "an open source alternative to Intercom with support, projects, CRM and docs in one place.\n\nthe code is on GitHub and there's a Discord. joining both." }
+];
+
+var REPLIES = [
+  { t: "question", s: "can i start with drafts only and flip on auto-reply once i trust it? that's the part i need." },
+  { t: "question", s: "how do the docs stay fresh after a release?" },
+  { t: "question", s: "what does the self-host setup look like for a 5 person team?" },
+  { t: "question", s: "which AI providers can i plug in when i self-host?" },
+  { t: "question", s: "how can i contribute? i want in on the open source side." },
+  { t: "usecase", s: "support, tasks and CRM in separate tools is the problem. one workspace is the fix. i'm in." },
+  { t: "usecase", s: "trying the Claude Code MCP setup first. will report back." },
+  { t: "usecase", s: "'ask the agent anything' might be the killer feature." },
+  { t: "send", s: "sending this to every founder i know who's tired of per-seat support pricing." },
+  { t: "send", s: "forwarding this to my support lead right now." },
+  { t: "send", s: "cofounder, you need to see this. open source Intercom alternative." },
+  { t: "question", s: "does the AI pull billing straight from Stripe, or through MCP?" },
+  { t: "question", s: "how does the AI decide when to create a ticket for the dev team?" },
+  { t: "question", s: "can i set auto-reply for some topics and keep drafts for the rest?" },
+  { t: "question", s: "does the CRM update itself from support conversations and emails?" },
+  { t: "question", s: "how does the HMAC identity check work with the chat widget?" },
+  { t: "question", s: "can i write my own agents, or only use the built-in ones?" },
+  { t: "question", s: "does a docs update need a human to approve it, or does it publish on its own?" },
+  { t: "question", s: "how does Helpin Cloud pricing compare to self-hosting?" },
+  { t: "question", s: "how do the screenshots refresh? does it open the app and take new ones?" },
+  { t: "question", s: "can the AI read our repo to answer technical questions?" },
+  { t: "question", s: "what's on the roadmap after launch?" },
+  { t: "question", s: "is there a way to try it on a small slice of tickets first?" },
+  { t: "question", s: "how do follow-ups work? does the AI check back with the customer?" },
+  { t: "question", s: "can i connect my own logs tool through MCP?" },
+  { t: "question", s: "how long does it take to set up the help center?" },
+  { t: "question", s: "does it work for B2C support volume, or is it mostly for B2B SaaS?" },
+  { t: "question", s: "which parts are open source? everything, or just the core?" },
+  { t: "question", s: "can i use just the support part and add projects later?" },
+  { t: "question", s: "how does it decide which docs need an update after a release?" },
+  { t: "question", s: "what's the best way to report a bug? Discord or GitHub issues?" },
+  { t: "question", s: "can i see which sources the AI used for an answer?" },
+  { t: "question", s: "does Ask Agent work across every module or just support?" },
+  { t: "question", s: "how big is the team behind this?" },
+  { t: "question", s: "how do flows work? can i start an agent whenever a new ticket comes in?" },
+  { t: "question", s: "what does approving look like? one click per reply?" },
+  { t: "question", s: "what's the fastest way to see it working on my own help center?" },
+  { t: "question", s: "can the AI hand a conversation to a human halfway through?" },
+  { t: "question", s: "what made you go open source instead of closed SaaS?" },
+  { t: "question", s: "is Discord the best place to give feedback?" },
+  { t: "usecase", s: "our support team answers the same billing questions every day. drafts built from real billing data would save hours." },
+  { t: "usecase", s: "i'd start with drafts on the support inbox and let the team approve for a couple of weeks." },
+  { t: "usecase", s: "the docs refresh alone would fix half our 'the button isn't there' tickets." },
+  { t: "usecase", s: "bug reports keep getting stuck in Slack threads. turning them into tasks automatically is the use case for us." },
+  { t: "usecase", s: "i'd use Ask Agent every Monday to see which accounts need attention." },
+  { t: "usecase", s: "a CRM that fills itself from support conversations is exactly what our sales side needs." },
+  { t: "usecase", s: "self-hosting is the only way our security team would approve an AI support tool. this fits." },
+  { t: "usecase", s: "we pay for four tools that do what this does. consolidating is the use case." },
+  { t: "usecase", s: "auto-reply for password resets and plan questions, drafts for everything else. that's my setup." },
+  { t: "usecase", s: "the Cursor MCP angle is interesting. my agent could pick up bugs straight from support." },
+  { t: "usecase", s: "we ship every week and our docs never keep up. this is the fix i've been looking for." },
+  { t: "usecase", s: "for a small team, one support inbox with the bug board right next to it is plenty." },
+  { t: "usecase", s: "HMAC-verified identity is what makes me comfortable letting AI see billing." },
+  { t: "usecase", s: "i'd point it at our help center first and see how many articles it flags as stale." },
+  { t: "usecase", s: "custom flows for onboarding emails and follow-ups. that's where i'd start." },
+  { t: "usecase", s: "we lose context every time a ticket moves from support to engineering. this keeps it in one place." },
+  { t: "usecase", s: "would use this for an open source project's support too. self-hosted makes sense there." },
+  { t: "usecase", s: "trying it on a side project first, then pitching it to the team." },
+  { t: "usecase", s: "the follow-up part is what i want. customers who hear back stick around." },
+  { t: "usecase", s: "Ask Agent replacing my morning tab tour is reason enough." },
+  { t: "usecase", s: "letting an agent draft the PR from a bug report is the part i want to test." },
+  { t: "usecase", s: "our help center screenshots are two redesigns behind. this would be a nice cleanup." },
+  { t: "usecase", s: "would love one place for customer history that support and sales both actually use." },
+  { t: "usecase", s: "per-resolution pricing is why a lot of teams switch AI support off. self-hosting this fixes that." },
+  { t: "usecase", s: "i'd connect our logs through MCP and see how good the answers get." },
+  { t: "usecase", s: "starting a new SaaS. i'd rather start on one workspace than glue four tools together later." },
+  { t: "usecase", s: "the approve-then-auto-reply path is exactly how i'd get my team to trust AI." },
+  { t: "usecase", s: "agencies that run support for clients could use this too." },
+  { t: "usecase", s: "sales calls surface bugs all the time. CRM and projects in one place would help there." },
+  { t: "usecase", s: "i'd use the docs agent on our API docs first. they go stale fastest." },
+  { t: "send", s: "sending this to our head of support, who's been asking for AI that doesn't make things up." },
+  { t: "send", s: "forwarding to every founder in my batch." },
+  { t: "send", s: "my CTO is going to like the self-host part. sending it over." },
+  { t: "send", s: "sharing this with our docs writer. the screenshot refresh will make their week." },
+  { t: "send", s: "dropping this in our team Slack right now." },
+  { t: "send", s: "sending to a friend who just got quoted an Intercom renewal." },
+  { t: "send", s: "my eng manager needs to see the bug report to PR flow." },
+  { t: "send", s: "cofounder, this is the support setup we keep talking about." },
+  { t: "send", s: "sending this to the support lead at my last company. they'd love the draft-first approach." },
+  { t: "send", s: "sharing with our ops team. one workspace instead of four would make their life easier." },
+  { t: "send", s: "forwarding to a friend who runs support at a fintech. HMAC verification will matter to them." },
+  { t: "send", s: "posting this in my founder group chat." },
+  { t: "send", s: "sending to every indie hacker i know who pays for Intercom." },
+  { t: "send", s: "my PM friends need to see the docs part." },
+  { t: "send", s: "sharing with our security team. self-hosted AI support is the only kind they'd approve." },
+  { t: "send", s: "forwarding to the dev who keeps telling me to self-host everything." },
+  { t: "send", s: "sending to a friend building their first SaaS. start with one tool, not four." },
+  { t: "send", s: "my support team is getting this link in standup tomorrow." },
+  { t: "send", s: "sharing with the open source maintainers i know. good one to contribute to." },
+  { t: "send", s: "sending to our sales lead for the CRM side." },
+  { t: "send", s: "forwarding to a friend who's been shopping for a new helpdesk." },
+  { t: "send", s: "tagging my team. this is the tool review we keep pushing back." },
+  { t: "send", s: "sending to my agency friends who run support for clients." },
+  { t: "send", s: "every customer success person i know should see the Ask Agent part." },
+  { t: "send", s: "putting this in our tools channel. curious what support thinks." },
+  { t: "send", s: "sending this to a friend whose AI bot keeps giving wrong answers." },
+  { t: "send", s: "forwarding to my old boss, who complained about per-seat pricing every month." },
+  { t: "send", s: "sending to the dev team. bug reports that turn into PRs are their kind of thing." },
+  { t: "send", s: "sending to a friend who keeps saying the future of SaaS is open source." },
+  { t: "send", s: "sending this to our head of product for the docs part alone." }
+];
+
+(function () {
+  "use strict";
+
+  // Lines teammates have already copied ("q12" = quote 12). Only filled where the page has a shared record: the team
+  // server link (a squad-store meta tag naming its endpoint) or the claude.ai link (its db). As a plain static file
+  // it stays empty, nothing is sent anywhere, and picks are purely random.
+  var taken = {};
+  var store = null, canWrite = true, firstSnapshot = true;
+
+  function shuffle(a) {
+    for (var i = a.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1)), x = a[i];
+      a[i] = a[j]; a[j] = x;
+    }
+    return a;
+  }
+
+  function makeGen(root, lines) {
+    var g = {
+      kind: root.getAttribute("data-kind"), lines: lines, tag: "all", queues: {}, last: -1, mine: {}, touched: false,
+      ta: root.querySelector("textarea"), count: root.querySelector(".count"), status: root.querySelector(".status"),
+      chips: root.querySelectorAll(".chip")
+    };
+    Array.prototype.forEach.call(g.chips, function (chip) {
+      chip.addEventListener("click", function () {
+        Array.prototype.forEach.call(g.chips, function (c) { c.setAttribute("aria-pressed", c === chip ? "true" : "false"); });
+        g.tag = chip.getAttribute("data-tag");
+        show(g);
+      });
+    });
+    Array.prototype.forEach.call(root.querySelectorAll("[data-act]"), function (btn) {
+      btn.addEventListener("click", function () {
+        if (btn.getAttribute("data-act") === "copy") copy(g); else show(g);
+      });
+    });
+    g.ta.addEventListener("input", function () { g.touched = true; count(g); });
+    return g;
+  }
+
+  function idOf(g, i) { return g.kind + i; }
+  function group(g) {
+    var out = [];
+    for (var i = 0; i < g.lines.length; i++) if (g.tag === "all" || g.lines[i].t === g.tag) out.push(i);
+    return out;
+  }
+
+  // Next line for the selected chip: a shuffled queue per chip, so nothing repeats until the whole group has been
+  // shown, never the line already on screen, and lines already copied are skipped while unused ones remain.
+  function draw(g) {
+    var all = group(g);
+    var free = all.filter(function (i) { return !taken[idOf(g, i)]; });
+    var src = free.length ? free : all;
+    var q = g.queues[g.tag] || (g.queues[g.tag] = []);
+    for (var pass = 0; pass < 2; pass++) {
+      for (var k = 0; k < q.length; k++) {
+        var i = q[k];
+        if (src.indexOf(i) < 0 || (i === g.last && src.length > 1)) continue;
+        q.splice(k, 1);
+        return i;
+      }
+      q.length = 0;
+      Array.prototype.push.apply(q, shuffle(src.slice()));
+    }
+    return src[0];
+  }
+
+  function show(g) {
+    var i = draw(g);
+    g.last = i;
+    g.ta.value = g.lines[i].s;
+    g.touched = false;
+    g.status.textContent = "";
+    count(g);
+    g.ta.classList.remove("fresh");
+    void g.ta.offsetWidth;
+    g.ta.classList.add("fresh");
+  }
+
+  function count(g) {
+    var n = Array.from(g.ta.value).length;
+    g.count.textContent = n + " / 280";
+    g.count.classList.toggle("over", n > 280);
+  }
+
+  function copy(g) {
+    var text = g.ta.value;
+    if (!text.trim()) { g.status.textContent = "Generate a line first."; return; }
+    function done() {
+      var id = g.last >= 0 ? idOf(g, g.last) : null;
+      var dup = id && taken[id] && !g.mine[id] && text === g.lines[g.last].s;
+      claim(g, id);
+      g.status.textContent = dup ? "Copied, but a teammate already used this line. Change a few words before you post." : "Copied. Paste it into X.";
+    }
+    function fallback() {
+      g.ta.focus();
+      g.ta.select();
+      var ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+      if (ok) done(); else g.status.textContent = "Select the text and copy it by hand.";
+    }
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      navigator.clipboard.writeText(text).then(done, fallback);
+    } else {
+      fallback();
+    }
+  }
+
+  function claim(g, id) {
+    g.touched = true;
+    if (!id) return;
+    g.mine[id] = true;
+    if (!store || !canWrite || taken[id]) return;
+    taken[id] = true;
+    store.save(id);
+  }
+
+  // A fresh list of copied lines. The first one swaps out a line on screen that a teammate already used.
+  function setTaken(ids) {
+    var next = {};
+    ids.forEach(function (id) { next[id] = true; });
+    taken = next;
+    if (firstSnapshot) {
+      firstSnapshot = false;
+      gens.forEach(function (g) {
+        var id = idOf(g, g.last);
+        if (!g.touched && taken[id] && !g.mine[id]) show(g);
+      });
+    }
+  }
+
+  var gens = [makeGen(document.getElementById("quote-gen"), QUOTES), makeGen(document.getElementById("reply-gen"), REPLIES)];
+  gens.forEach(show);
+
+  var endpoint = document.querySelector('meta[name="squad-store"]');
+  if (endpoint && window.fetch) {
+    // Team server link: read the list now and every 20 s while the page is visible; a copy records its line.
+    var url = endpoint.getAttribute("content");
+    var take = function (r) { return r.ok ? r.json() : null; };
+    var apply = function (d) { if (d && Array.isArray(d.used)) setTaken(d.used); };
+    var poll = function () { if (!document.hidden) fetch(url, { cache: "no-store" }).then(take).then(apply).catch(function () {}); };
+    store = {
+      save: function (id) {
+        fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: id }) })
+          .then(take).then(apply).catch(function () {});
+      }
+    };
+    poll();
+    setInterval(poll, 20000);
+    document.addEventListener("visibilitychange", poll);
+  } else if (window.claude && typeof window.claude.use === "function") {
+    // claude.ai link: the same list in the artifact's db, live.
+    window.claude.use("db").then(function (db) {
+      if (!db) return;
+      store = {
+        save: function (id) {
+          db.doc("used/" + id).set({ used: true }).catch(function (e) {
+            if (e && (e.code === "invalid_argument" || e.code === "not_granted" || e.code === "revoked")) canWrite = false;
+          });
+        }
+      };
+      db.collection("used").onSnapshot(function (snap) {
+        setTaken(snap.docs.map(function (d) { return d.id; }));
+      }, function () { store = null; });
+    }, function () {});
+  }
+})();
+</script>
+</body>
+</html>
