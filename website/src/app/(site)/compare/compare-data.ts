@@ -88,7 +88,7 @@ export function competitorSeo(competitor: Competitor): PageSeo {
     title: `${competitor.seo.title} (${competitor.checked.slice(0, 4)})`,
     description: competitor.seo.description,
     canonicalPath: `/compare/${competitor.slug}`,
-    imagePath: `/og/helpin-compare-${competitor.slug}-green-v5.png`,
+    imagePath: `/og/helpin-compare-${competitor.slug}-green-v6.png`,
     imageAlt: `Helpin vs ${competitor.name}`,
   };
 }
