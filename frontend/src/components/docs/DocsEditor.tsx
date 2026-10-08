@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { useEditor, EditorContent, type JSONContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
@@ -54,6 +54,7 @@ import { SavedViewEmbedExtension } from './SavedViewEmbedExtension'
 import { CommentAnchorExtension, type DocsCommentDecorationAnchor } from './CommentAnchorExtension'
 import { ProposalAnchorExtension } from './ProposalAnchorExtension'
 import { DocsTaskItemExtension } from './DocsTaskItemExtension'
+import { docsToolbarPosition } from './docsToolbarPosition'
 import { TaskItemMetadataToolbar } from './TaskItemMetadataToolbar'
 import { ToggleSectionExtension } from './ToggleSectionExtension'
 import { FileAttachmentExtension } from './FileAttachmentExtension'
@@ -328,14 +329,17 @@ function parseCSVRows(text: string): string[][] {
   return rows
 }
 
-function FloatingToolbar({ editor, onCreateCommentAnchor }: {
+function FloatingToolbar({ editor, containerRef, onCreateCommentAnchor }: {
+  containerRef: RefObject<HTMLDivElement | null>
   editor: ReturnType<typeof useEditor>
   uploadConfig?: EditorUploadConfig
   onInsertImage: () => void
   onCreateCommentAnchor?: (anchor: DocsCommentAnchor) => void
 }) {
   const toolbarRef = useRef<HTMLDivElement>(null)
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  const [pos, setPos] = useState<ReturnType<typeof docsToolbarPosition> | null>(null)
+  const anchorRef = useRef<{ rect: () => { left: number; right: number; top: number; bottom: number }; below: boolean } | null>(null)
+  const repositionRef = useRef<() => void>(() => {})
   const [showLinkPopover, setShowLinkPopover] = useState(false)
   const [linkUrl, setLinkUrl] = useState('')
   const [linkNewTab, setLinkNewTab] = useState(true)
@@ -348,6 +352,19 @@ function FloatingToolbar({ editor, onCreateCommentAnchor }: {
   useEffect(() => {
     if (!editor) return
 
+    const reposition = () => {
+      const anchor = anchorRef.current
+      const container = containerRef.current
+      if (!anchor || !container) return
+      const toolbar = toolbarRef.current
+      const next = docsToolbarPosition(anchor.rect(), container.getBoundingClientRect(), {
+        width: toolbar?.offsetWidth || 440,
+        height: toolbar?.offsetHeight || 42,
+      }, { width: window.innerWidth, height: window.innerHeight }, anchor.below)
+      setPos(current => current && current.left === next.left && current.top === next.top && current.maxWidth === next.maxWidth && current.maxHeight === next.maxHeight ? current : next)
+    }
+    repositionRef.current = reposition
+
     const updatePosition = () => {
       const { from, to, empty } = editor.state.selection
 
@@ -355,6 +372,7 @@ function FloatingToolbar({ editor, onCreateCommentAnchor }: {
       // Also hide when cursor is inside a non-text block
       const nodeAtSel = editor.state.doc.nodeAt(from)
       if (nodeAtSel?.type.spec.atom || editor.isActive('htmlBlock') || editor.isActive('videoEmbed')) {
+        anchorRef.current = null
         setPos(null)
         return
       }
@@ -367,13 +385,8 @@ function FloatingToolbar({ editor, onCreateCommentAnchor }: {
       const isInsideLink = !!(linkMarkAtCursor && charBeforeHasLink)
 
       if (empty && isInsideLink) {
-        const coords = editor.view.coordsAtPos(from)
-        const toolbar = toolbarRef.current
-        const toolbarWidth = toolbar?.offsetWidth ?? 384
-        setPos({
-          top: coords.bottom + window.scrollY + 4,
-          left: coords.left + window.scrollX - toolbarWidth / 2,
-        })
+        anchorRef.current = { rect: () => editor.view.coordsAtPos(from), below: true }
+        reposition()
 
         if (!linkOnlyRef.current) {
           const href = editor.getAttributes('link').href ?? ''
@@ -410,6 +423,7 @@ function FloatingToolbar({ editor, onCreateCommentAnchor }: {
       }
 
       if (empty || from === to) {
+        anchorRef.current = null
         setPos(null)
         if (!linkOnlyRef.current) {
           lastPosRef.current = null
@@ -420,6 +434,7 @@ function FloatingToolbar({ editor, onCreateCommentAnchor }: {
 
       const domSelection = window.getSelection()
       if (!domSelection || domSelection.rangeCount === 0) {
+        anchorRef.current = null
         setPos(null)
         return
       }
@@ -427,17 +442,14 @@ function FloatingToolbar({ editor, onCreateCommentAnchor }: {
       const range = domSelection.getRangeAt(0)
       const rect = range.getBoundingClientRect()
       if (rect.width === 0) {
+        anchorRef.current = null
         setPos(null)
         return
       }
 
-      const toolbar = toolbarRef.current
-      const toolbarWidth = toolbar?.offsetWidth ?? 300
-
-      setPos({
-        top: rect.top + window.scrollY - 45,
-        left: rect.left + window.scrollX + rect.width / 2 - toolbarWidth / 2,
-      })
+      const selectedRange = range.cloneRange()
+      anchorRef.current = { rect: () => selectedRange.getBoundingClientRect(), below: false }
+      reposition()
     }
 
     editor.on('selectionUpdate', updatePosition)
@@ -446,6 +458,7 @@ function FloatingToolbar({ editor, onCreateCommentAnchor }: {
       setTimeout(() => {
         // Don't hide if focus moved to our toolbar (e.g. link input)
         if (toolbarRef.current?.contains(document.activeElement)) return
+        anchorRef.current = null
         setPos(null)
         // Clear stale position only if no popover is open
         if (!linkOnlyRef.current) {
@@ -454,12 +467,17 @@ function FloatingToolbar({ editor, onCreateCommentAnchor }: {
       }, 150)
     }
     editor.on('blur', handleBlur)
+    window.addEventListener('resize', reposition)
+    window.addEventListener('scroll', reposition, true)
 
     return () => {
       editor.off('selectionUpdate', updatePosition)
       editor.off('blur', handleBlur)
+      window.removeEventListener('resize', reposition)
+      window.removeEventListener('scroll', reposition, true)
+      repositionRef.current = () => {}
     }
-  }, [editor])
+  }, [editor, containerRef])
 
   // Close popovers on click outside toolbar
   useEffect(() => {
@@ -478,6 +496,17 @@ function FloatingToolbar({ editor, onCreateCommentAnchor }: {
   const lastPosRef = useRef(pos)
   if (pos) lastPosRef.current = pos
   const activePos = pos ?? lastPosRef.current
+  const toolbarVisible = Boolean(activePos || showLinkPopover || showFormatMenu)
+
+  useLayoutEffect(() => {
+    if (!toolbarVisible) return
+    repositionRef.current()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => repositionRef.current())
+    if (toolbarRef.current) observer.observe(toolbarRef.current)
+    if (containerRef.current) observer.observe(containerRef.current)
+    return () => observer.disconnect()
+  }, [toolbarVisible, showLinkPopover, showFormatMenu, containerRef])
 
   if (!editor) return null
   if (!activePos && !showLinkPopover && !showFormatMenu) return null
@@ -573,10 +602,10 @@ function FloatingToolbar({ editor, onCreateCommentAnchor }: {
   return (
     <div
       ref={toolbarRef}
-      className="fixed z-50 flex flex-col items-center gap-0 animate-in fade-in zoom-in-95 duration-150"
-      style={{ top: activePos?.top ?? 0, left: activePos?.left ?? 0 }}
+      className="absolute z-50 flex w-max flex-col items-center gap-0 overflow-y-auto animate-in fade-in zoom-in-95 duration-150"
+      style={activePos ?? { top: 0, left: 0 }}
     >
-      {!linkOnlyMode && <div className="flex items-center gap-0.5 rounded-xl border border-border/70 bg-background/95 px-1.5 py-1 text-foreground shadow-xl backdrop-blur-md">
+      {!linkOnlyMode && <div className="flex max-w-full shrink-0 flex-wrap items-center gap-0.5 rounded-xl border border-border/70 bg-background/95 px-1.5 py-1 text-foreground shadow-xl backdrop-blur-md">
         {/* Bold, Italic, Underline */}
         <ToolbarButton title="Bold" onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive('bold')}>
           <TextBoldIcon className="h-4 w-4" />
@@ -633,7 +662,7 @@ function FloatingToolbar({ editor, onCreateCommentAnchor }: {
 
       {/* Link popover */}
       {showLinkPopover && (
-        <div className="mt-1 w-96 rounded-lg border bg-popover p-3 shadow-lg space-y-2.5" onMouseDown={(e) => { if ((e.target as HTMLElement).tagName !== 'INPUT') e.preventDefault(); }}>
+        <div className="mt-1 w-96 max-w-full shrink-0 rounded-lg border bg-popover p-3 shadow-lg space-y-2.5" onMouseDown={(e) => { if ((e.target as HTMLElement).tagName !== 'INPUT') e.preventDefault(); }}>
           <div className="flex items-center gap-1.5">
             <input
               ref={linkInputRef}
@@ -642,7 +671,7 @@ function FloatingToolbar({ editor, onCreateCommentAnchor }: {
               onChange={(e) => setLinkUrl(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && urlValid) applyLink(); if (e.key === 'Escape') setShowLinkPopover(false); }}
               placeholder="Paste or type a URL (e.g. google.com)"
-              className={`flex-1 rounded-md border bg-background px-2.5 py-1.5 text-sm outline-none focus:ring-2 ${linkUrl && !urlValid ? 'border-destructive focus:ring-destructive/30' : 'focus:ring-primary/30'}`}
+              className={`min-w-0 flex-1 rounded-md border bg-background px-2.5 py-1.5 text-sm outline-none focus:ring-2 ${linkUrl && !urlValid ? 'border-destructive focus:ring-destructive/30' : 'focus:ring-primary/30'}`}
             />
             {linkUrl && urlValid && (
               <QuickTooltip label="Preview link">
@@ -894,6 +923,7 @@ export function DocsEditor({
   useEffect(() => {
     onSaveStatusChange?.(saveStatus, lastSavedAt)
   }, [saveStatus, lastSavedAt, onSaveStatusChange])
+  const toolbarContainerRef = useRef<HTMLDivElement>(null)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const savedFadeTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const savingRef = useRef(false)
@@ -1934,11 +1964,12 @@ export function DocsEditor({
   if (!editor) return null
 
   return (
-    <div className={`flex min-h-0 flex-col ${pageScrollOnMobile ? 'flex-none overflow-visible lg:flex-1 lg:overflow-hidden' : 'flex-1 overflow-hidden'}`}>
+    <div ref={toolbarContainerRef} className={`relative flex min-h-0 flex-col ${pageScrollOnMobile ? 'flex-none overflow-visible lg:flex-1 lg:overflow-hidden' : 'flex-1 overflow-hidden'}`}>
       {/* Floating toolbar — appears on text selection */}
       {!readOnly && !sourceView && (
         <FloatingToolbar
           editor={editor}
+          containerRef={toolbarContainerRef}
           uploadConfig={uploadConfig}
           onInsertImage={insertImage}
           onCreateCommentAnchor={onCreateCommentAnchor}
