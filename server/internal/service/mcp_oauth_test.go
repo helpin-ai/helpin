@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -12,7 +13,59 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
+
+func TestMCPAuthorizationRequestedWritesAndWorkspaceRestrictions(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, statement := range []string{
+		`CREATE TABLE workspaces (id TEXT PRIMARY KEY, name TEXT, slug TEXT, owner_id TEXT, organization_id TEXT, description TEXT, website_url TEXT, logo_url TEXT, timezone TEXT, created_at DATETIME, updated_at DATETIME)`,
+		`CREATE TABLE workspace_members (workspace_id TEXT, user_id TEXT, role TEXT, status TEXT)`,
+		`CREATE TABLE workspace_billing (workspace_id TEXT)`,
+		`CREATE TABLE mcp_client_registrations (id TEXT PRIMARY KEY, client_id TEXT, redirect_uris TEXT)`,
+		`CREATE TABLE mcp_workspace_policies (workspace_id TEXT PRIMARY KEY, enabled BOOLEAN, enforce_read_only BOOLEAN, allowed_toolsets TEXT, allowed_scopes TEXT)`,
+		`INSERT INTO workspaces (id,name,slug) VALUES ('ws-1','Acme','acme')`,
+		`INSERT INTO workspace_members VALUES ('ws-1','user-1','owner','active')`,
+		`INSERT INTO mcp_client_registrations VALUES ('client-1','client-1',CAST('["https://client.example/callback"]' AS BLOB))`,
+		`INSERT INTO mcp_workspace_policies VALUES ('ws-1',true,false,CAST('["context","docs"]' AS BLOB),CAST('["helpin.context.read","helpin.docs.read","helpin.docs.write"]' AS BLOB))`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := &MCPService{repo: repository.NewMCPRepository(db), workspaceRepo: repository.NewWorkspaceRepository(db), config: MCPServiceConfig{ServerEnabled: true, OAuthEnabled: true}}
+	query := MCPAuthorizationQuery{ClientID: "client-1", RedirectURI: "https://client.example/callback", ResponseType: "code", State: "state", CodeChallenge: "challenge", CodeChallengeMethod: "S256", Scope: "helpin.context.read helpin.docs.read helpin.docs.write"}
+	request, err := s.GetAuthorizationRequest(context.Background(), "user-1", query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.ReadOnlyRecommended || len(request.Workspaces) != 1 || request.Workspaces[0].ReadOnlyRequired {
+		t.Fatalf("requested, permitted writes defaulted to read-only: %#v", request)
+	}
+	if err := db.Exec(`UPDATE mcp_workspace_policies SET enforce_read_only=true`).Error; err != nil {
+		t.Fatal(err)
+	}
+	request, err = s.GetAuthorizationRequest(context.Background(), "user-1", query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !request.Workspaces[0].ReadOnlyRequired {
+		t.Fatal("workspace read-only restriction was lost")
+	}
+	query.Scope = "helpin.context.read helpin.docs.read"
+	request, err = s.GetAuthorizationRequest(context.Background(), "user-1", query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !request.ReadOnlyRecommended {
+		t.Fatal("read-only client was offered writes")
+	}
+}
 
 func TestValidateMCPRedirectURI(t *testing.T) {
 	tests := []struct {

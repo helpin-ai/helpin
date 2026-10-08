@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { buildWorkspaceSetupPrompt, workspaceSetupConnectionIssue, workspaceSetupPath, workspaceSetupAccessLabels } from '../workspaceSetup';
+import { buildWorkspaceSetupPrompt, workspaceSetupConnectionIssue, workspaceSetupPath, workspaceSetupAccessLabels, workspaceSetupAccess, workspaceSetupPolicy, workspaceSetupNeedsAccess } from '../workspaceSetup';
 import { resolveSetupAction } from '../setupActions';
 import type { WorkspaceSetupGuide } from '../setupTypes';
 import type { MCPDashboard } from '../mcpTypes';
@@ -21,7 +21,37 @@ describe('workspace setup handoff', () => {
   expect(workspaceSetupConnectionIssue(dashboard)).toBeNull();
   expect(workspaceSetupConnectionIssue({...dashboard,workspace_setup_available:undefined})).toContain('unavailable');
   expect(workspaceSetupConnectionIssue({...dashboard,policy:{...dashboard.policy,allowed_scopes:[]}})).toContain('Context read');
-  expect(workspaceSetupAccessLabels(guide.goals)).toEqual(['Context','Support','Docs']);
+  expect(workspaceSetupAccessLabels(guide.goals)).toEqual(['Context','Support','Docs','Agents']);
+ });
+ it('includes dependencies and limits setup writes to the selected goals', () => {
+  const internal = workspaceSetupAccess(['internal_docs']);
+  expect(internal.scopes).toContain('helpin.docs.write');
+  expect(internal.scopes).toContain('helpin.agents.run');
+  expect(internal.scopes).not.toContain('helpin.docs.publish');
+  expect(internal.scopes).not.toContain('helpin.crm.write');
+  const support = workspaceSetupAccess(['customer_support']);
+  expect(support.scopes).toEqual(expect.arrayContaining(['helpin.support.read', 'helpin.support.write', 'helpin.docs.write', 'helpin.docs.publish']));
+  expect(workspaceSetupAccess(['help_center_docs']).scopes).toContain('helpin.support.read');
+  expect(workspaceSetupAccess(['sales_crm']).scopes).toContain('helpin.crm.write');
+  expect(new Set(support.scopes).size).toBe(support.scopes.length);
+ });
+ it('adds setup permissions without removing other grants or changing automation account policy', () => {
+  const required = workspaceSetupAccess(['internal_docs']);
+  const dashboard = {platform_enabled:true,workspace_setup_available:true,can_manage:true,policy:{enabled:true,enforce_read_only:true,service_accounts_enabled:false,allowed_toolsets:['context','crm'],allowed_scopes:['helpin.context.read','helpin.crm.read']},available_toolsets:[...required.toolsets,'crm'],available_scopes:[...required.scopes,'helpin.crm.read']} as MCPDashboard;
+  expect(workspaceSetupNeedsAccess(dashboard,['internal_docs'])).toBe(true);
+  const policy = workspaceSetupPolicy(dashboard,['internal_docs']);
+  expect(policy.enforce_read_only).toBe(false);
+  expect(policy.service_accounts_enabled).toBe(false);
+  expect(policy.allowed_scopes).toContain('helpin.crm.read');
+  expect(policy.allowed_scopes).not.toContain('helpin.crm.write');
+  expect(dashboard.policy.enforce_read_only).toBe(true);
+  expect(workspaceSetupNeedsAccess({...dashboard,policy:{...dashboard.policy,...policy}},['internal_docs'])).toBe(false);
+  expect(() => workspaceSetupPolicy({...dashboard,can_manage:false},['internal_docs'])).toThrow();
+  expect(() => workspaceSetupPolicy({...dashboard,available_scopes:['helpin.context.read']},['internal_docs'])).toThrow();
+ });
+ it('puts the same requested permissions into the setup prompt', () => {
+  const prompt = buildWorkspaceSetupPrompt(guide,'acme','https://app.example.test');
+  for (const scope of workspaceSetupAccess(guide.goals).scopes) expect(prompt).toContain(scope);
  });
  it('keeps backend handoff paths aligned with the actual Setup guide routes',()=>{
   const source=readFileSync(new URL('../../../../server/internal/service/workspace_setup.go',import.meta.url),'utf8');

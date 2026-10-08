@@ -175,7 +175,7 @@ sequenceDiagram
 - Helpin derives proposed toolsets from those scopes.
 - The user selects exactly one eligible workspace.
 - The user may remove scopes or toolsets, but cannot add authority that the client did not request.
-- Read-only mode is recommended and enabled by default.
+- Consent retains requested writes when workspace policy allows them. Users can choose read-only or remove individual permissions before approving.
 - Workspace policy may narrow the grant further or force read-only mode.
 - Expanding an existing connection requires a new authorization flow.
 
@@ -203,15 +203,19 @@ Toolsets control which product-area tools are visible. Scopes control the author
 | `support` | `helpin.support.read` | `helpin.support.write` organizes conversations; replies are never sent through MCP |
 | `agents` | `helpin.agents.read` | `helpin.agents.run` |
 
-The recommended default grant includes:
+The default workspace policy allows clients to request:
 
-- toolsets: `context`, `pm`, `docs`, and `agents`
-- scopes: context read, PM read, Docs read, and agent read
+- toolsets: `context`, `pm`, `docs`, `crm`, `support`, and `agents`
+- read scopes for all six areas, subject to module availability and the user's role
 - read-only mode
 
-CRM and Support must be explicitly allowed by workspace policy and requested during consent.
+Existing saved policies and connection grants are preserved. Clients must request
+the relevant scopes and users must approve them during consent.
 
-`helpin.docs.publish` is a separate, explicit write scope. Enabling Docs writes never adds it automatically, read-only connections never receive it, and a publish tool also requires the member's `docs.publish` permission.
+`helpin.docs.publish` is a separate write scope. The generic Docs-write switch does
+not add it. The full-setup preset includes it for customer-support and help-center
+goals; read-only connections never receive it, and publishing also requires the
+member's `docs.publish` permission.
 
 ## 7. Complete v1 tool catalog
 
@@ -331,6 +335,20 @@ no workspace override. The `setup_workspace` MCP prompt is discoverable only
 when its tool is available. The copied UI prompt binds the workspace and includes
 selected goals, the current snapshot, exact links and verification limits.
 Instructions require a fresh inspection before acting and after saved changes.
+
+An admin can choose **Enable setup access** in this handoff to allow the read and
+write scopes needed by the selected goals, including their knowledge and agent
+dependencies. The preset and copied prompt use the same scope definition. It
+adds permissions to workspace policy, preserves other grants and automation-account
+settings, and does not upgrade existing connections. Connect or reconnect the
+assistant to approve access. When the client requests writes and the workspace
+allows them, consent starts with those writes selected; the user can narrow the
+grant or choose read-only. Workspace restrictions still apply.
+
+The instructions prioritize a useful working result, one approved setup plan,
+execution without repeated confirmations, and practical verification of chosen
+workflows. They distinguish supported MCP writes from settings that need the
+client's browser, and continue independent work while waiting for user input.
 
 The compact handoff keeps manual links when MCP is unavailable. Team creation and
 invitations use existing settings controls, preserving team defaults and role

@@ -8,9 +8,10 @@ import { ArrowRight01Icon, CheckmarkCircle02Icon, LockIcon } from '@/lib/icons';
 import { queryKeys } from '@/lib/queryKeys';
 import { unwrap } from '@/lib/queryUtils';
 import type { WorkspaceSetupGuide } from '@/lib/setupTypes';
+import { useUpdateMCPPolicy } from '@/hooks/queries/useMCP';
 import { mcpService } from '@/lib/services/mcpService';
 import { setupService } from '@/lib/services/setupService';
-import { buildWorkspaceSetupPrompt, workspaceSetupAccessLabels, workspaceSetupConnectionIssue, workspaceSetupPath } from '@/lib/workspaceSetup';
+import { buildWorkspaceSetupPrompt, workspaceSetupConnectionIssue, workspaceSetupNeedsAccess, workspaceSetupPolicy, workspaceSetupPath } from '@/lib/workspaceSetup';
 
 type Props = { workspaceId: string; slug: string };
 
@@ -36,6 +37,8 @@ export function WorkspaceSetupAssistant({ workspaceId, slug }: Props) {
 
 export function WorkspaceSetupAssistantContent({ workspaceId, slug }: Props) {
   const queryClient = useQueryClient();
+  const updatePolicy = useUpdateMCPPolicy(workspaceId);
+  const [enablingAccess, setEnablingAccess] = useState(false);
   const setup = useQuery({
     queryKey: queryKeys.workspaces.workspaceSetup(workspaceId),
     queryFn: async () => {
@@ -59,6 +62,24 @@ export function WorkspaceSetupAssistantContent({ workspaceId, slug }: Props) {
     try { await navigator.clipboard.writeText(value); toast.success(message); }
     catch { toast.error('Couldn’t copy. Select and copy the text below.'); }
   };
+  const enableSetupAccess = async () => {
+    setEnablingAccess(true);
+    try {
+      // Merge with fresh policy/goals so another admin's recent edits are retained.
+      const [dashboard, guide] = await Promise.all([
+        mcpService.getDashboard(workspaceId).then(unwrap),
+        setupService.workspaceSetup(workspaceId).then(unwrap),
+      ]);
+      if (guide.workspace_id !== workspaceId) throw new Error('Workspace mismatch');
+      await updatePolicy.mutateAsync(workspaceSetupPolicy(dashboard, guide.goals));
+      refresh();
+      toast.success('Setup access enabled. Connect or reconnect your assistant to approve it.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Couldn’t enable setup access');
+    } finally {
+      setEnablingAccess(false);
+    }
+  };
   if (setup.isPending) return <p role="status" className="py-6 text-sm text-muted-foreground">Checking workspace setup…</p>;
   if (setup.isError || !setup.data) return <div role="alert" className="space-y-3">
     <p className="text-sm">Couldn’t load setup for this workspace. Try again or continue in Helpin.</p>
@@ -69,25 +90,30 @@ export function WorkspaceSetupAssistantContent({ workspaceId, slug }: Props) {
   const issue = mcp.isError ? 'Couldn’t check MCP access. Refresh to try again.' : mcp.data ? workspaceSetupConnectionIssue(mcp.data) : 'Checking MCP access…';
   const prompt = buildWorkspaceSetupPrompt(guide, slug, window.location.origin);
   const busy = setup.isFetching || mcp.isFetching;
+  const needsAccess = mcp.data && workspaceSetupNeedsAccess(mcp.data, guide.goals);
 
   return <div className="space-y-6">
     <section className="space-y-2" aria-label="Connect your assistant">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-medium">1. Connect to Helpin</h2>
-        <a href={`/w/${encodeURIComponent(slug)}/settings/mcp`} target="_blank" rel="noreferrer" className="text-xs text-muted-foreground underline underline-offset-4">MCP access</a>
-      </div>
+      <h2 className="text-sm font-medium">1. Connect to Helpin</h2>
       {issue ? <p role="status" className="text-sm text-muted-foreground">{issue}</p> : <>
         <div className="flex items-center gap-2">
           <input aria-label="MCP server URL" readOnly value={mcp.data!.mcp_url} className="h-10 min-w-0 flex-1 rounded-md border bg-muted/30 px-3 text-xs" onFocus={(event) => event.target.select()} />
           <Button size="sm" variant="outline" onClick={() => void copy(mcp.data!.mcp_url, 'MCP URL copied')}>Copy URL</Button>
         </div>
-        <p className="text-xs leading-relaxed text-muted-foreground">
-          Connect this server in your assistant’s MCP settings, then select this workspace during sign-in. Setup checks need read access to{' '}
-          <QuickTooltip label="A workspace admin must allow these product areas and read permissions in MCP access. Existing connections need to reconnect to approve additional access.">
-            <span tabIndex={0} className="rounded-sm underline decoration-dotted underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring">{new Intl.ListFormat('en').format(workspaceSetupAccessLabels(guide.goals))}</span>
-          </QuickTooltip>.
-        </p>
       </>}
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        {!issue && 'Add this URL in your assistant, then sign in to this workspace. '}
+        Manage access in{' '}
+        <a href={`/w/${encodeURIComponent(slug)}/settings/mcp`} target="_blank" rel="noreferrer" className="underline underline-offset-4">MCP settings</a>.
+      </p>
+      {needsAccess && mcp.data?.platform_enabled && mcp.data.workspace_setup_available && (
+        mcp.data.can_manage ? <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <QuickTooltip label="Allows workspace connections to request reads and supported writes for your selected goals, including publishing and agent runs where relevant. Each assistant still needs your consent when connecting. Existing grants are preserved.">
+            <Button size="sm" variant="outline" disabled={enablingAccess || busy} onClick={() => void enableSetupAccess()}>{enablingAccess ? 'Enabling…' : 'Enable setup access'}</Button>
+          </QuickTooltip>
+          <span className="text-xs text-muted-foreground">Allow setup changes for these goals in this workspace.</span>
+        </div> : <p className="text-xs text-muted-foreground">A workspace admin needs to enable setup access for your selected goals.</p>
+      )}
     </section>
     <section className="space-y-2" aria-label="Start workspace setup">
       <div className="flex items-center gap-2">

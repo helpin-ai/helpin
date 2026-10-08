@@ -191,7 +191,7 @@ func (h *Handler) addWorkflowPrompts(server *mcp.Server, tools []service.MCPTool
 		{
 			name: "setup_workspace", title: "Set up your workspace",
 			description:  "Configure workspace essentials and selected goals with MCP inspection and browser handoffs.",
-			text:         "Call get_current_context and get_workspace_setup. Confirm the intended workspace and identity, then follow the returned instructions, current checks and links. Help with company context, teams, invitations and only selected goals. Ask only for missing decisions, reuse existing configuration, and use your client's browser or hand links to the user. Respect permissions and connection grants; read-only inspection is not authorization for UI changes. Confirm recipients, roles and team assignments before invitations; let the user handle credentials and OAuth. Ask before publishing, live activation or paid runs. Re-read get_workspace_setup after saved changes; never equate configured settings with delivery, joined members or successful tests.",
+			text:         "Call get_current_context and get_workspace_setup and confirm the intended workspace and identity. Follow the returned setup instructions, current checks and links to deliver a useful working result for the selected goals. Agree on one short plan and execute authorized work without repeated approvals. Use supported MCP writes and the client's browser for UI-only settings; identify missing grants and continue independent steps. A read grant alone does not authorize browser changes. Include recipients, roles, publishing, live activation and paid runs in the approved plan; let the user handle credentials and OAuth. Re-read get_workspace_setup after saved changes and verify the agreed real-world outcome. Report what works and the exact remaining handoffs; do not equate configuration with delivery or successful tests.",
 			requiredTool: "get_workspace_setup",
 		},
 		{
@@ -209,7 +209,7 @@ func (h *Handler) addWorkflowPrompts(server *mcp.Server, tools []service.MCPTool
 		{
 			name: "setup_customer_support", title: "Set up customer support",
 			description:  "Inspect support setup and continue through authorized browser handoffs.",
-			text:         "Call get_support_setup first and confirm the connected workspace matches the user's intended workspace. Follow its current instructions and reuse existing configuration. Use available MCP operations or the returned browser links; without browser access, hand the next step to the user. Browser writes need the user's authorization and the correct signed-in identity. Let the user handle credentials and OAuth. Recheck setup after each saved change. Obtain approval before publishing, test sends, or live AI activation, and distinguish configuration checks from observed conversation tests.",
+			text:         "Call get_support_setup and confirm the intended workspace. Follow its returned instructions to get the chosen channels working. Agree on a short plan including publishing, test messages and live activation, then execute approved work without asking again for each step. Reuse existing configuration, use authorized MCP tools or the browser handoffs, and continue independent steps while waiting for input. Let the user handle credentials and OAuth. Recheck setup after saved changes and verify actual receipt, reply delivery, routing and human handoff; configuration alone is not a successful test.",
 			requiredTool: "get_support_setup",
 		},
 		{

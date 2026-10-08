@@ -61,6 +61,25 @@ func TestWorkspaceSetupMCPDiscoveryAndGrants(t *testing.T) {
 	}
 }
 
+func TestDefaultMCPReadAccessCoversSetupModules(t *testing.T) {
+	s := &MCPService{config: MCPServiceConfig{SupportEnabled: true, CRMEnabled: true}}
+	p := &model.MCPPrincipal{Toolsets: DefaultMCPToolsets(), Scopes: DefaultMCPScopes(), ReadOnly: true}
+	modules := map[string]bool{"pm": true, "docs": true, "support": true, "crm": true, "automation": true}
+	access := s.workspaceSetupMCPAccess(p, SetupAccess{Modules: modules})
+	for module := range modules {
+		if !access.Modules[module] {
+			t.Errorf("default read access blocks %s setup", module)
+		}
+	}
+	if hasMCPWriteScope(p.Scopes) {
+		t.Fatal("default read access unexpectedly grants writes")
+	}
+	s.config.SupportEnabled = false
+	if s.workspaceSetupMCPAccess(p, SetupAccess{Modules: modules}).Modules["support"] {
+		t.Fatal("default scopes bypassed disabled support module")
+	}
+}
+
 type fakeWorkspaceSetupReader struct{}
 
 func (*fakeWorkspaceSetupReader) WorkspaceSetup(_ context.Context, id string, access SetupAccess) (model.WorkspaceSetupGuide, error) {

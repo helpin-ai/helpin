@@ -182,7 +182,7 @@ function ConsentForm({ request }: { request: MCPAuthorizationRequest }) {
                     ? 'Required because this client did not request any write permissions.'
                     : selectedWorkspace?.read_only_required
                       ? `Required by ${selectedWorkspace.name}'s workspace policy.`
-                      : 'Recommended. Turn this off to approve the write permissions listed below.'}
+                      : 'Turn this on to limit access to reading. Leave it off to approve the selected write permissions.'}
                 </p>
               </div>
               <Switch

@@ -22,8 +22,8 @@ type MCPWorkspacePolicy struct {
 	Enabled                bool            `json:"enabled" gorm:"not null;default:true"`
 	EnforceReadOnly        bool            `json:"enforce_read_only" gorm:"not null;default:true"`
 	ServiceAccountsEnabled bool            `json:"service_accounts_enabled" gorm:"not null;default:false"`
-	AllowedToolsets        json.RawMessage `json:"allowed_toolsets" gorm:"type:jsonb;not null;default:'[\"context\",\"pm\",\"docs\",\"agents\"]'"`
-	AllowedScopes          json.RawMessage `json:"allowed_scopes" gorm:"type:jsonb;not null;default:'[\"helpin.context.read\",\"helpin.pm.read\",\"helpin.docs.read\",\"helpin.agents.read\"]'"`
+	AllowedToolsets        json.RawMessage `json:"allowed_toolsets" gorm:"type:jsonb;not null;default:'[\"context\",\"pm\",\"docs\",\"crm\",\"support\",\"agents\"]'"`
+	AllowedScopes          json.RawMessage `json:"allowed_scopes" gorm:"type:jsonb;not null;default:'[\"helpin.context.read\",\"helpin.pm.read\",\"helpin.docs.read\",\"helpin.crm.read\",\"helpin.support.read\",\"helpin.agents.read\"]'"`
 	UpdatedBy              *string         `json:"updated_by,omitempty" gorm:"type:uuid"`
 	CreatedAt              time.Time       `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt              time.Time       `json:"updated_at" gorm:"autoUpdateTime"`

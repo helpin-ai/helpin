@@ -34,8 +34,8 @@ const (
 )
 
 var (
-	_defaultMCPToolsets = []string{MCPToolsetContext, MCPToolsetPM, MCPToolsetDocs, MCPToolsetAgents}
-	_defaultMCPScopes   = []string{MCPScopeContextRead, MCPScopePMRead, MCPScopeDocsRead, MCPScopeAgentsRead}
+	_defaultMCPToolsets = []string{MCPToolsetContext, MCPToolsetPM, MCPToolsetDocs, MCPToolsetCRM, MCPToolsetSupport, MCPToolsetAgents}
+	_defaultMCPScopes   = []string{MCPScopeContextRead, MCPScopePMRead, MCPScopeDocsRead, MCPScopeCRMRead, MCPScopeSupportRead, MCPScopeAgentsRead}
 	_allMCPToolsets     = []string{MCPToolsetContext, MCPToolsetPM, MCPToolsetDocs, MCPToolsetCRM, MCPToolsetSupport, MCPToolsetAgents}
 	_allMCPScopes       = []string{
 		MCPScopeContextRead,
