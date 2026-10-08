@@ -25,9 +25,7 @@ export function PublicPageShell({ children, headerAction, contentWidth = 'narrow
           )}
         </header>
         <main className={cn('public-page-content', contentWidth === 'wide' && 'public-page-content--wide')}>{children}</main>
-        <footer className="public-page-footer">
-          <span>Made for working together.</span>
-        </footer>
+        <div className="public-page-footer" aria-hidden="true" />
       </div>
       {brandPanel && (
         <aside className="public-page-brand" aria-label="Helpin: good work happens together">
