@@ -5971,6 +5971,62 @@
         "x-helpin-toolset": "support"
       }
     },
+    "/support/setup": {
+      "get": {
+        "description": "Start or resume customer support onboarding. Read current configuration checks, permission-aware browser handoff links, and instructions for email, website chat, knowledge, inboxes, routing, AI, and end-to-end testing. No settings are changed. Requires support administration permission. Use the returned links with your own browser tools or hand them to the user, then call again to verify progress.\n\n**Required scope:** `helpin.support.read`.",
+        "operationId": "getSupportSetup",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "description": "The result. Its shape depends on the resource; fields match what the Helpin app shows."
+                    },
+                    "links": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Deep links into the Helpin app.",
+                      "type": "object"
+                    },
+                    "summary": {
+                      "description": "A short human-readable description of the outcome.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Inspect support setup and browser handoffs",
+        "tags": [
+          "Support"
+        ],
+        "x-helpin-mcp-tool": "get_support_setup",
+        "x-helpin-scope": "helpin.support.read",
+        "x-helpin-toolset": "support"
+      }
+    },
     "/support/tags": {
       "get": {
         "description": "List a bounded set of support tags in the current workspace.\n\n**Required scope:** `helpin.support.read`.",

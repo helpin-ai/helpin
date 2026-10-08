@@ -3,14 +3,18 @@
   "version": "1.0.0",
   "mcp_url": "https://mcp.helpin.ai/mcp",
   "transport": "streamable_http",
-  "authentication": ["oauth_2_1_pkce", "restricted_service_token"],
+  "authentication": [
+    "oauth_2_1_pkce",
+    "restricted_service_token"
+  ],
   "prompts": [
     "plan_feature",
     "prepare_release",
     "delegate_to_helpin_agent",
     "triage_customer_issue",
     "docs_maintenance",
-    "review_pipeline"
+    "review_pipeline",
+    "setup_customer_support"
   ],
   "skills": [
     "helpin-feature-to-delivery",
@@ -18,7 +22,8 @@
     "helpin-delegate-agent",
     "helpin-support-to-product",
     "helpin-docs-maintenance",
-    "helpin-crm-pipeline-review"
+    "helpin-crm-pipeline-review",
+    "helpin-support-onboarding"
   ],
   "excluded_actions": [
     "record_deletion",

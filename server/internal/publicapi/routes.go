@@ -116,6 +116,7 @@ var Routes = []Route{
 	{"PUT", "/support/conversations/{conversation_id}/inbox", "move_support_conversation", "Support", "Move a conversation to another inbox", 0},
 	{"POST", "/support/conversations/{conversation_id}/tags", "add_support_conversation_tag", "Support", "Tag a conversation", 0},
 	{"DELETE", "/support/conversations/{conversation_id}/tags/{tag_id}", "remove_support_conversation_tag", "Support", "Remove a tag from a conversation", 0},
+	{"GET", "/support/setup", "get_support_setup", "Support", "Inspect support setup and browser handoffs", 0},
 	{"GET", "/support/inboxes", "list_support_inboxes", "Support", "List inboxes", 0},
 	{"GET", "/support/tags", "list_support_tags", "Support", "List tags", 0},
 

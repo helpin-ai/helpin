@@ -36,3 +36,16 @@ Safe defaults:
 - use a stable `idempotency_key` on every mutation
 - poll `get_agent_run`; v1 does not send completion webhooks
 - stop before customer-visible sends, Docs publishing, deletion, member/security changes, or integration management
+
+## Support onboarding
+
+Use the [support onboarding skill](skills/helpin-support-onboarding/SKILL.md) to
+inspect existing support setup and continue through browser handoffs. Connect as
+a support administrator with Support read access; add Docs scopes only when
+needed. `get_support_setup` returns current checks and instructions. The external
+client must supply browser tools, or the user follows the returned links manually.
+This workflow does not grant browser permissions or automatically enable live AI.
+
+The manifest's excluded actions describe direct MCP operations. Support onboarding
+can guide separately authorized browser actions through the existing Helpin UI;
+it does not expand a token's scopes or bypass workspace policy.

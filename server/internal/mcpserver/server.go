@@ -201,6 +201,12 @@ func (h *Handler) addWorkflowPrompts(server *mcp.Server, tools []service.MCPTool
 			requiredTool: "search_workspace",
 		},
 		{
+			name: "setup_customer_support", title: "Set up customer support",
+			description:  "Inspect support setup and continue through authorized browser handoffs.",
+			text:         "Call get_support_setup first and confirm the connected workspace matches the user's intended workspace. Follow its current instructions and reuse existing configuration. Use available MCP operations or the returned browser links; without browser access, hand the next step to the user. Browser writes need the user's authorization and the correct signed-in identity. Let the user handle credentials and OAuth. Recheck setup after each saved change. Obtain approval before publishing, test sends, or live AI activation, and distinguish configuration checks from observed conversation tests.",
+			requiredTool: "get_support_setup",
+		},
+		{
 			name: "triage_customer_issue", title: "Triage a customer issue",
 			description:  "Investigate a support conversation and create bounded follow-up work without sending a customer reply.",
 			text:         "Load the support conversation and public messages, search Helpin for related work and documentation, then summarize root cause and recommended follow-up. Do not send or publish customer-visible content. Create a task only after the user asks for it.",

@@ -1,7 +1,8 @@
 import { api } from '../api';
-import type { MemberSetupPreference, SetupGoalKey, SetupView } from '../setupTypes';
+import type { MemberSetupPreference, SetupGoalKey, SetupView, SupportSetupGuide } from '../setupTypes';
 
 export const setupService = {
+  supportSetup: (workspaceId: string) => api.get<SupportSetupGuide>(`/workspaces/${workspaceId}/setup/support`),
   get: (workspaceId: string) => api.get<SetupView>(`/workspaces/${workspaceId}/setup`),
   updateGoals: (workspaceId: string, goals: SetupGoalKey[]) =>
     api.put<SetupView>(`/workspaces/${workspaceId}/setup/goals`, { goals }),

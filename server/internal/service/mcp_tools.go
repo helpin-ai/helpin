@@ -263,6 +263,8 @@ func (s *MCPService) executeSpecialMCPTool(
 	arguments json.RawMessage,
 ) (*MCPToolResult, error) {
 	switch name {
+	case "get_support_setup":
+		return s.getMCPSupportSetup(ctx, principal, actor)
 	case "get_current_context":
 		workspace, err := s.workspaceRepo.GetByID(ctx, principal.WorkspaceID)
 		if err != nil || workspace == nil {

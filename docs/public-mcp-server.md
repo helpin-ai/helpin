@@ -302,9 +302,46 @@ A proposal made through MCP is recorded with the connected user as its author, t
 
 | Tool | Mode | What it does | Helpin check |
 | --- | --- | --- | --- |
+| `get_support_setup` | Read | Inspects current support setup, browser handoffs, and verification instructions without changing settings | `PermSupportAdmin` + Support module + `helpin.support.read` |
 | `list_support_conversations` | Read | Lists conversations with optional status and text filters | `PermSupportRead` + Support module |
 | `get_support_conversation` | Read | Loads one conversation inside the connected workspace | `PermSupportRead` + Support module |
 | `list_conversation_messages` | Read | Lists public conversation messages; internal notes are excluded | `PermSupportRead` + Support module |
+
+#### Support onboarding with browser handoffs
+
+Support administrators can choose **Set up with AI** from the Setup guide when
+customer support is an active journey. The dialog provides the deployment's MCP
+URL and a workspace-specific prompt. It shows current configuration checks,
+refreshes them while open and on window focus, and retains links for manual setup
+when MCP is disabled or unavailable. Existing UI setup actions are unchanged.
+
+`get_support_setup` is read-only and works even before the support goal is selected.
+It returns `workspace_id`, `instructions`, and `steps` with `key`, `title`, `status`,
+`path`, `verification`, and optional `blocked_reason`. MCP paths are absolute app
+URLs; the authenticated UI endpoint returns paths relative to the workspace.
+The same operation is available to scripts through `GET /public/v1/support/setup`
+with the normal public API bearer token. It accepts no workspace override.
+Inspection uses current product evidence, not a second completion checklist.
+
+The operation does not configure channels itself. An external assistant uses its
+own browser tools and the existing UI for configuration, or hands the links to the
+user. Browser identity and permission are separate from MCP grants; a read-only
+connection is not authorization for browser writes. Users complete credentials,
+OAuth consent, and external approvals themselves. Publishing, test sends, and
+live AI activation need explicit user authorization. Existing UI validation,
+permissions, and usage checks remain in force.
+
+Configured channels do not prove delivery, routing, answer quality, or human
+handoff. The final conversation test remains `unable_to_verify` in the snapshot;
+the assistant must report actual observations separately. Choose email, chat, or
+both; AI is optional. Docs readiness is hidden if the actor cannot configure Docs,
+and MCP additionally requires the Docs toolset and read scope for that evidence.
+No browser runtime or new CLI binary is included in this workflow.
+
+The portable [support onboarding skill](../integrations/helpin-mcp/skills/helpin-support-onboarding/SKILL.md)
+starts with the server-maintained instructions rather than assuming a page layout.
+Clients supporting MCP prompts can select `setup_customer_support`; it is listed
+only when the connected principal can use `get_support_setup`.
 
 ### 7.6 Agents and durable work
 
@@ -820,7 +857,7 @@ The implementation includes automated checks for:
 - strict tool schemas and rejection of workspace-override properties
 - workspace-policy scope/toolset narrowing and forced read-only behavior
 - platform domain flags
-- the 110-tool catalog
+- the 111-tool catalog
 - the `/mcp/readonly` endpoint forcing read-only mode, including parity tools for epics, sprints, objectives, labels, workflows, members, CRM, and support organization
 - document image uploads: presigned upload with storage verification, and SSRF-safe copy from a public URL
 - document lifecycle tools: publish, unpublish, archive, restore, and rename, including typed error codes

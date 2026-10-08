@@ -312,3 +312,36 @@ var setupTestSchema = []string{
 	`CREATE TABLE crm_autonomy_settings (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, enabled BOOLEAN NOT NULL DEFAULT 1, auto_create_deals BOOLEAN NOT NULL DEFAULT 1, auto_progress_deals BOOLEAN NOT NULL DEFAULT 1)`,
 	`CREATE TABLE crm_suggestions (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, suggestion_type TEXT NOT NULL, status TEXT NOT NULL, execution_status TEXT, executed_at DATETIME, object_id TEXT)`,
 }
+
+func TestSupportSetupEvidenceIsReadOnlyAndIndependentOfOtherModules(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:support_setup_%d?mode=memory&cache=shared", time.Now().UnixNano())), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, statement := range setupTestSchema {
+		if strings.Contains(statement, "CREATE TABLE support_") || strings.Contains(statement, "CREATE TABLE docs_") || strings.Contains(statement, "CREATE TABLE sample_data_items") {
+			if err := db.Exec(statement).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	for _, statement := range []string{
+		`INSERT INTO support_email_routes (id,workspace_id,active) VALUES ('email-1','workspace-1',1),('email-2','workspace-2',1)`,
+		`INSERT INTO support_widget_installations (id,workspace_id) VALUES ('widget-1','workspace-1')`,
+		`INSERT INTO support_content_sources (id,workspace_id,sync_status,indexed_pages) VALUES ('knowledge-1','workspace-1','ready',3)`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Exec("PRAGMA query_only = ON").Error; err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := NewSetupRepository(db).GetSupportSetupEvidence(context.Background(), "workspace-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if evidence.SupportEmailInboxCount != 1 || evidence.LiveChatInstallationCount != 0 || evidence.BrandKnowledgeSourceCount != 1 {
+		t.Fatalf("evidence = %#v", evidence)
+	}
+}

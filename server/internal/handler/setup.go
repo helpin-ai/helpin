@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -88,4 +89,21 @@ func (h *SetupHandler) StartRecommendation(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// SupportSetup exposes the same read-only evidence as the public MCP operation.
+func (h *SetupHandler) SupportSetup(w http.ResponseWriter, r *http.Request) {
+	access, err := h.setupAccess(r)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "inspect support setup failed", "workspace_id", chi.URLParam(r, "id"), "error", err)
+		writeError(w, http.StatusInternalServerError, "Unable to inspect support setup")
+		return
+	}
+	guide, err := h.service.SupportSetup(r.Context(), chi.URLParam(r, "id"), access)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "inspect support setup failed", "workspace_id", chi.URLParam(r, "id"), "error", err)
+		writeError(w, http.StatusInternalServerError, "Unable to inspect support setup")
+		return
+	}
+	writeJSON(w, http.StatusOK, guide)
 }

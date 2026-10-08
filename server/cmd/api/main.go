@@ -1762,6 +1762,7 @@ func main() {
 			SupportEnabled:       cfg.MCPSupportEnabled,
 		},
 	)
+	mcpService.SetSupportSetup(setupService)
 	mcpService.SetDocsLifecycle(docsDocumentService, docsHelpcenterService, docsEmbeddingService)
 	mcpService.SetDocsChangeProposals(docsChangeProposalService)
 	mcpService.SetAttachments(pmAttachmentService)

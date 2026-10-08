@@ -293,3 +293,21 @@ func TestSpecShape(t *testing.T) {
 		t.Fatalf("operations = %d, routes = %d", operations, len(Routes))
 	}
 }
+
+func TestSupportSetupRouteUsesAuthorizedToolAndRejectsWorkspaceOverride(t *testing.T) {
+	backend := &fakeBackend{}
+	handler := newTestHandler(t, backend, nil)
+	response := do(handler, http.MethodGet, "/support/setup", "", nil)
+	if response.Code != http.StatusOK || backend.tool != "get_support_setup" {
+		t.Fatalf("status = %d, tool = %s", response.Code, backend.tool)
+	}
+	response = do(handler, http.MethodGet, "/support/setup?workspace_id=other", "", nil)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("workspace override status = %d", response.Code)
+	}
+	backend.execErr = service.ErrMCPForbidden
+	response = do(handler, http.MethodGet, "/support/setup", "", nil)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("denied status = %d", response.Code)
+	}
+}
