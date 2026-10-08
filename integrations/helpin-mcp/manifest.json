@@ -14,7 +14,8 @@
     "triage_customer_issue",
     "docs_maintenance",
     "review_pipeline",
-    "setup_customer_support"
+    "setup_customer_support",
+    "setup_workspace"
   ],
   "skills": [
     "helpin-feature-to-delivery",

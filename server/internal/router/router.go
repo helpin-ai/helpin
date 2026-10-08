@@ -755,6 +755,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Get("/key-history", h.Workspace.GetKeyHistory)
 				if h.Setup != nil {
 					r.Get("/setup", h.Setup.Get)
+					r.With(requirePerm(authorization.PermWorkspaceRead)).Get("/setup/workspace", h.Setup.WorkspaceSetup)
 					r.With(requireModule(model.ModuleSupport), requirePerm(authorization.PermSupportAdmin)).Get("/setup/support", h.Setup.SupportSetup)
 					r.With(requirePerm(authorization.PermWorkspaceUpdate)).Put("/setup/goals", h.Setup.UpdateGoals)
 					r.Patch("/setup/me", h.Setup.UpdatePreference)

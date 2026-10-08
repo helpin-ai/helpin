@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Cancel01Icon, Loading01Icon, PlusSignIcon } from '@/lib/icons';
 import { settingsService } from '@/lib/services/settingsService';
+import { useWorkspaceSettings } from '@/hooks/queries/useSettings';
 import {
   buildPresetFieldVisibility,
   slugifyTeamHandle,
@@ -46,6 +47,7 @@ type TeamsStepProps = {
 export function TeamsStep({ workspaceId, createdHandles, onDone }: TeamsStepProps) {
   const id = useId();
   const queryClient = useQueryClient();
+  const settings = useWorkspaceSettings(workspaceId);
   const [drafts, setDrafts] = useState<TeamDraft[]>(createInitialTeamDrafts);
   const [creating, setCreating] = useState(false);
 
@@ -65,14 +67,23 @@ export function TeamsStep({ workspaceId, createdHandles, onDone }: TeamsStepProp
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    const pending = selected
-      .map((team) => ({ name: team.name.trim(), handle: slugifyTeamHandle(team.name), teamType: team.teamType }))
-      .filter((team) => !createdHandles.includes(team.handle));
-    if (pending.length === 0) {
-      onDone([]);
+    setCreating(true);
+    const latest = await settings.refetch();
+    if (latest.isError || !latest.data) {
+      setCreating(false);
+      toast.error('Couldn’t check existing teams. Try again before creating more.');
       return;
     }
-    setCreating(true);
+    const existingTeams = latest.data.teams.map(team => ({ id: team.id, handle: team.handle || slugifyTeamHandle(team.name) }));
+    const reused = existingTeams.filter(team => selected.some(draft => slugifyTeamHandle(draft.name) === team.handle)).map(({ id, handle }) => ({ id, handle }));
+    const pending = selected
+      .map((team) => ({ name: team.name.trim(), handle: slugifyTeamHandle(team.name), teamType: team.teamType }))
+      .filter((team) => !createdHandles.includes(team.handle) && !existingTeams.some(existing => existing.handle === team.handle));
+    if (pending.length === 0) {
+      setCreating(false);
+      onDone(reused);
+      return;
+    }
     const results = await Promise.allSettled(
       pending.map(async (team) => {
         const teamRes = await settingsService.createTeam({
@@ -104,7 +115,7 @@ export function TeamsStep({ workspaceId, createdHandles, onDone }: TeamsStepProp
     if (failed > 0) {
       toast.warning(`Added ${created.length} team${created.length === 1 ? '' : 's'}, but ${failed} failed. You can add teams later in Settings → Teams.`);
     }
-    onDone(created);
+    onDone([...reused, ...created]);
   };
 
   return (
@@ -112,13 +123,13 @@ export function TeamsStep({ workspaceId, createdHandles, onDone }: TeamsStepProp
       <ul className="divide-y divide-border border-y border-border">
         {drafts.map((team) => {
           const checkboxId = `${id}-${team.id}`;
-          const alreadyCreated = !team.isCustom && createdHandles.includes(slugifyTeamHandle(team.name));
+          const alreadyCreated = createdHandles.includes(slugifyTeamHandle(team.name)) || Boolean(settings.data?.teams.some(existing => (existing.handle || slugifyTeamHandle(existing.name)) === slugifyTeamHandle(team.name)));
           return (
             <li key={team.id} className="flex min-h-12 items-center gap-3 px-1 py-2">
               <Checkbox
                 id={checkboxId}
-                checked={team.selected || alreadyCreated}
-                disabled={alreadyCreated}
+                checked={team.selected}
+                disabled={creating}
                 aria-label={team.isCustom ? 'Include this team' : undefined}
                 onCheckedChange={(checked) => update(team.id, { selected: checked === true })}
               />
@@ -181,7 +192,7 @@ export function TeamsStep({ workspaceId, createdHandles, onDone }: TeamsStepProp
       </button>
       <OnboardingActions>
         <OnboardingTextButton onClick={() => onDone([])} disabled={creating}>Skip</OnboardingTextButton>
-        <Button type="submit" className="w-full sm:w-auto sm:min-w-32" disabled={creating || hasUnnamedSelection}>
+        <Button type="submit" className="w-full sm:w-auto sm:min-w-32" disabled={creating || settings.isPending || hasUnnamedSelection}>
           {creating && <Loading01Icon className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />}
           {creating
             ? 'Creating teams…'

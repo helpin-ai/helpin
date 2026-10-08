@@ -66,3 +66,10 @@ export interface SupportSetupGuide {
     verification: string;
   }>;
 }
+
+export interface WorkspaceSetupGuide {
+  workspace_id: string;
+  goals: SetupGoalKey[];
+  instructions: string;
+  sections: Array<{ key: string; title: string; steps: SupportSetupGuide['steps'] }>;
+}

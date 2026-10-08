@@ -189,6 +189,12 @@ func (h *Handler) addWorkflowPrompts(server *mcp.Server, tools []service.MCPTool
 		requiredTool string
 	}{
 		{
+			name: "setup_workspace", title: "Set up your workspace",
+			description:  "Configure workspace essentials and selected goals with MCP inspection and browser handoffs.",
+			text:         "Call get_current_context and get_workspace_setup. Confirm the intended workspace and identity, then follow the returned instructions, current checks and links. Help with company context, teams, invitations and only selected goals. Ask only for missing decisions, reuse existing configuration, and use your client's browser or hand links to the user. Respect permissions and connection grants; read-only inspection is not authorization for UI changes. Confirm recipients, roles and team assignments before invitations; let the user handle credentials and OAuth. Ask before publishing, live activation or paid runs. Re-read get_workspace_setup after saved changes; never equate configured settings with delivery, joined members or successful tests.",
+			requiredTool: "get_workspace_setup",
+		},
+		{
 			name: "plan_feature", title: "Plan a feature",
 			description:  "Research workspace context, draft a PRD in Docs, and create linked implementation tasks.",
 			text:         "Confirm the current Helpin context. Search for related tasks and documents. Draft a concise PRD, create it as a Helpin document, then create implementation tasks with explicit dependencies. Use one stable idempotency key per mutation and summarize links at the end.",

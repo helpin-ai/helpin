@@ -108,30 +108,31 @@ type mcpTaskBatchCreator interface {
 
 // MCPService is the public MCP authorization and product execution boundary.
 type MCPService struct {
-	repo          *repository.MCPRepository
-	workspaceRepo *repository.WorkspaceRepository
-	userRepo      *repository.UserRepository
-	authz         *authorization.AuthzService
-	jwt           *auth.JWTManager
-	commands      *InternalCommandService
-	agents        *AgentService
-	taskBatches   mcpTaskBatchCreator
-	search        *SearchService
-	tasks         mcpPMTaskService
-	documents     mcpDocsDocumentService
-	spaces        mcpDocsSpaceService
-	collections   mcpDocsCollectionService
-	docsLinks     mcpDocsLinkService
-	docsRefs      mcpDocsReferenceResolver
-	checklists    mcpPMChecklistService
-	crmContacts   *CRMContactService
-	crmDeals      *CRMDealService
-	supportSetup  mcpSupportSetupReader
-	support       *SupportInboxService
-	docsLifecycle mcpDocsLifecycleService
-	helpcenter    mcpHelpcenterPublisher
-	docsEmbedding mcpDocsEmbeddingQueue
-	docsProposals mcpDocsChangeProposalService
+	repo           *repository.MCPRepository
+	workspaceRepo  *repository.WorkspaceRepository
+	userRepo       *repository.UserRepository
+	authz          *authorization.AuthzService
+	jwt            *auth.JWTManager
+	commands       *InternalCommandService
+	agents         *AgentService
+	taskBatches    mcpTaskBatchCreator
+	search         *SearchService
+	tasks          mcpPMTaskService
+	documents      mcpDocsDocumentService
+	spaces         mcpDocsSpaceService
+	collections    mcpDocsCollectionService
+	docsLinks      mcpDocsLinkService
+	docsRefs       mcpDocsReferenceResolver
+	checklists     mcpPMChecklistService
+	crmContacts    *CRMContactService
+	crmDeals       *CRMDealService
+	supportSetup   mcpSupportSetupReader
+	workspaceSetup mcpWorkspaceSetupReader
+	support        *SupportInboxService
+	docsLifecycle  mcpDocsLifecycleService
+	helpcenter     mcpHelpcenterPublisher
+	docsEmbedding  mcpDocsEmbeddingQueue
+	docsProposals  mcpDocsChangeProposalService
 	// proposalCommands overrides commands for propose_document_change in tests.
 	proposalCommands mcpCommandExecutor
 	attachments      mcpAttachmentService
@@ -264,17 +265,18 @@ func (s *MCPService) EffectiveTools(ctx context.Context, principal *model.MCPPri
 
 // MCPDashboard is the settings-page view of policy, connections, and capabilities.
 type MCPDashboard struct {
-	Policy                model.MCPWorkspacePolicy    `json:"policy"`
-	Connections           []model.MCPConnection       `json:"connections"`
-	ServicePrincipals     []model.MCPServicePrincipal `json:"service_principals"`
-	AvailableToolsets     []string                    `json:"available_toolsets"`
-	AvailableScopes       []string                    `json:"available_scopes"`
-	MCPURL                string                      `json:"mcp_url"`
-	CanManage             bool                        `json:"can_manage"`
-	CanViewActivity       bool                        `json:"can_view_activity"`
-	CanUseMCP             bool                        `json:"can_use_mcp"`
-	PlatformEnabled       bool                        `json:"platform_enabled"`
-	SupportSetupAvailable bool                        `json:"support_setup_available"`
+	Policy                  model.MCPWorkspacePolicy    `json:"policy"`
+	Connections             []model.MCPConnection       `json:"connections"`
+	ServicePrincipals       []model.MCPServicePrincipal `json:"service_principals"`
+	AvailableToolsets       []string                    `json:"available_toolsets"`
+	AvailableScopes         []string                    `json:"available_scopes"`
+	MCPURL                  string                      `json:"mcp_url"`
+	CanManage               bool                        `json:"can_manage"`
+	CanViewActivity         bool                        `json:"can_view_activity"`
+	CanUseMCP               bool                        `json:"can_use_mcp"`
+	PlatformEnabled         bool                        `json:"platform_enabled"`
+	SupportSetupAvailable   bool                        `json:"support_setup_available"`
+	WorkspaceSetupAvailable bool                        `json:"workspace_setup_available"`
 }
 
 // GetDashboard returns MCP setup and management state for a workspace member.
@@ -331,17 +333,18 @@ func (s *MCPService) GetDashboard(ctx context.Context, workspaceID, userID strin
 		}
 	}
 	return &MCPDashboard{
-		Policy:                *policy,
-		Connections:           connections,
-		ServicePrincipals:     servicePrincipals,
-		AvailableToolsets:     AllMCPToolsets(),
-		AvailableScopes:       AllMCPScopes(),
-		MCPURL:                s.config.ResourceURL,
-		CanManage:             canManage,
-		CanViewActivity:       canViewActivity,
-		CanUseMCP:             s.config.ServerEnabled && policy.Enabled,
-		PlatformEnabled:       s.config.ServerEnabled,
-		SupportSetupAvailable: s.config.ServerEnabled && s.config.SupportEnabled && s.supportSetup != nil,
+		Policy:                  *policy,
+		Connections:             connections,
+		ServicePrincipals:       servicePrincipals,
+		AvailableToolsets:       AllMCPToolsets(),
+		AvailableScopes:         AllMCPScopes(),
+		MCPURL:                  s.config.ResourceURL,
+		CanManage:               canManage,
+		CanViewActivity:         canViewActivity,
+		CanUseMCP:               s.config.ServerEnabled && policy.Enabled,
+		PlatformEnabled:         s.config.ServerEnabled,
+		SupportSetupAvailable:   s.config.ServerEnabled && s.config.SupportEnabled && s.supportSetup != nil,
+		WorkspaceSetupAvailable: s.config.ServerEnabled && s.workspaceSetup != nil,
 	}, nil
 }
 
@@ -645,6 +648,9 @@ func (s *MCPService) canUseTool(ctx context.Context, principal *model.MCPPrincip
 }
 
 func (s *MCPService) platformToolEnabled(tool MCPToolDefinition) bool {
+	if tool.Name == "get_workspace_setup" && s.workspaceSetup == nil {
+		return false
+	}
 	if tool.Name == "get_support_setup" && s.supportSetup == nil {
 		return false
 	}

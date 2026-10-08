@@ -58,6 +58,7 @@ vi.mock('../ConnectAIStep', () => ({
     </div>
   ),
 }));
+vi.mock('@/components/setup/WorkspaceSetupAssistant', () => ({ WorkspaceSetupAssistantContent: () => <div data-testid="workspace-assistant">Workspace handoff</div> }));
 vi.mock('../ConnectGitHubStep', () => ({
   ConnectGitHubStep: ({ onContinue }: { onContinue: () => void }) => (
     <div data-testid="setup-github">
@@ -79,6 +80,7 @@ vi.mock('@/lib/services/workspacesService', () => ({
 }));
 vi.mock('@/lib/services/inviteService', () => ({ inviteService: { send: vi.fn() } }));
 vi.mock('@/lib/services/settingsService', () => ({ settingsService: {} }));
+vi.mock('@/hooks/queries/useSettings', () => ({ useWorkspaceSettings: () => ({ data: { teams: [] }, isPending: false, refetch: vi.fn() }) }));
 vi.mock('@/stores/authStore', () => ({
   useAuthStore: (selector: (value: unknown) => unknown) =>
     selector({ user: { email: 'ana@acme.com', full_name: 'Ana Lee' }, signOut: vi.fn() }),
@@ -157,6 +159,36 @@ afterEach(() => {
 });
 
 describe('OnboardingFlow', () => {
+  it('offers both setup methods after creation for a non-support goal', () => {
+    state.workspaceBySlug = acme;
+    state.setupGoals = ['internal_docs'];
+    state.capabilities = caps('community', 'needs_setup');
+    render({ step: 'method', workspaceSlug: 'acme' });
+    expect(container?.textContent).toContain('How would you like to set up your workspace?');
+    const assistant = Array.from(container!.querySelectorAll('button')).find(b => b.textContent?.includes('Use my AI assistant'));
+    act(() => assistant?.click());
+    expect(state.navigate).toHaveBeenCalledWith({ to: '/onboarding', search: { step: 'assistant', workspace: 'acme' } });
+    render({ step: 'assistant', workspaceSlug: 'acme' });
+    expect(container?.querySelector('[data-testid="workspace-assistant"]')).not.toBeNull();
+    expect(container?.querySelector('[data-testid="setup-ai"]')).toBeNull();
+  });
+
+  it('resumes the conditional wizard when continuing in Helpin', async () => {
+    state.workspaceBySlug = acme;
+    state.capabilities = caps('community', 'needs_setup');
+    render({ step: 'assistant', workspaceSlug: 'acme' });
+    await act(async () => button('Continue in Helpin')?.click());
+    expect(state.navigate).toHaveBeenCalledWith({ to: '/onboarding', search: { step: 'ai', workspace: 'acme' } });
+  });
+
+  it('does not offer administrative onboarding to a member without setup permissions', () => {
+    state.permissions.clear();
+    state.workspaceBySlug = acme;
+    state.capabilities = caps('enterprise', 'ready');
+    render({ step: 'assistant', workspaceSlug: 'acme' });
+    expect(container?.querySelector('[data-testid="workspace-assistant"]')).toBeNull();
+    expect(state.navigate).toHaveBeenCalledWith({ to: '/onboarding', search: { step: 'context', workspace: 'acme' }, replace: true });
+  });
   it('creates the workspace with every selected goal, in selection order, and no website', async () => {
     state.create.mockResolvedValue({ data: { ...acme }, error: null });
     render({ step: 'workspace' });
@@ -179,7 +211,7 @@ describe('OnboardingFlow', () => {
       setup_goals: ['sales_crm', 'customer_support', 'internal_docs', 'help_center_docs', 'product_delivery'],
     }));
     expect(state.create.mock.calls[0][0]).not.toHaveProperty('website_url');
-    expect(state.navigate).toHaveBeenCalledWith({ to: '/onboarding', search: { step: 'ai', workspace: 'acme' }, replace: true });
+    expect(state.navigate).toHaveBeenCalledWith({ to: '/onboarding', search: { step: 'method', workspace: 'acme' }, replace: true });
   });
 
   it('requires at least one goal before creating the workspace', async () => {

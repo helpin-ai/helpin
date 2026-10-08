@@ -127,6 +127,7 @@ func (s *MCPService) buildToolCatalog() []MCPToolDefinition {
 	}
 	defs = append(defs, specialMCPToolDefinitions()...)
 	defs = append(defs, supportSetupMCPToolDefinition())
+	defs = append(defs, workspaceSetupMCPToolDefinition())
 	defs = append(defs, docsLifecycleMCPToolDefinitions()...)
 	defs = append(defs, uploadMCPToolDefinitions()...)
 	defs = append(defs, docsBatchMCPToolDefinitions()...)

@@ -311,3 +311,21 @@ func TestSupportSetupRouteUsesAuthorizedToolAndRejectsWorkspaceOverride(t *testi
 		t.Fatalf("denied status = %d", response.Code)
 	}
 }
+
+func TestWorkspaceSetupRouteUsesAuthorizedToolAndRejectsWorkspaceOverride(t *testing.T) {
+	backend := &fakeBackend{}
+	handler := newTestHandler(t, backend, nil)
+	response := do(handler, http.MethodGet, "/setup", "", nil)
+	if response.Code != http.StatusOK || backend.tool != "get_workspace_setup" {
+		t.Fatalf("status = %d, tool = %s", response.Code, backend.tool)
+	}
+	response = do(handler, http.MethodGet, "/setup?workspace_id=other", "", nil)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("workspace override status = %d", response.Code)
+	}
+	backend.execErr = service.ErrMCPForbidden
+	response = do(handler, http.MethodGet, "/setup", "", nil)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("denied status = %d", response.Code)
+	}
+}

@@ -35,6 +35,7 @@ var Tags = []Tag{
 var Routes = []Route{
 	// Context
 	{"GET", "/me", "get_current_context", "Context", "Get the authenticated identity and workspace", 0},
+	{"GET", "/setup", "get_workspace_setup", "Context", "Inspect workspace onboarding and browser handoffs", 0},
 	{"GET", "/search", "search_workspace", "Context", "Search the workspace", 0},
 	{"GET", "/teams", "list_workspace_teams", "Context", "List teams", 0},
 	{"GET", "/members", "list_workspace_members", "Context", "List workspace members", 0},

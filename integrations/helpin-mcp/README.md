@@ -37,15 +37,28 @@ Safe defaults:
 - poll `get_agent_run`; v1 does not send completion webhooks
 - stop before customer-visible sends, Docs publishing, deletion, member/security changes, or integration management
 
-## Support onboarding
+## Workspace onboarding
 
-Use the [support onboarding skill](skills/helpin-support-onboarding/SKILL.md) to
+For the full workspace, use the [workspace setup prompt](prompts/setup_workspace.md)
+or select `setup_workspace` in a client that supports MCP prompts. The
+`get_workspace_setup` tool returns workspace essentials and selected goals with
+current checks and links to Helpin's UI. Start with Context read access; grant
+module read access only for areas the user wants inspected. Scripts can read the
+same snapshot through `GET /public/v1/setup` with an authorized workspace token.
+The signup flow offers UI or assistant setup after workspace creation; existing
+workspaces can use **Set up with AI** in the Setup guide.
+
+Teams and invitations use the existing settings UI, preserving its validation,
+role choices and defaults. This workflow adds no direct administrative mutation
+tools. An invitation check does not imply delivery or acceptance.
+
+For support-only onboarding, use the [support onboarding skill](skills/helpin-support-onboarding/SKILL.md) to
 inspect existing support setup and continue through browser handoffs. Connect as
 a support administrator with Support read access; add Docs scopes only when
 needed. `get_support_setup` returns current checks and instructions. The external
 client must supply browser tools, or the user follows the returned links manually.
 This workflow does not grant browser permissions or automatically enable live AI.
 
-The manifest's excluded actions describe direct MCP operations. Support onboarding
+The manifest's excluded actions describe direct MCP operations. Workspace onboarding
 can guide separately authorized browser actions through the existing Helpin UI;
 it does not expand a token's scopes or bypass workspace policy.

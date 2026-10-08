@@ -5,6 +5,8 @@
  */
 export const workspaceOnboardingSteps = [
   'workspace',
+  'method',
+  'assistant',
   'ai',
   'github',
   'context',

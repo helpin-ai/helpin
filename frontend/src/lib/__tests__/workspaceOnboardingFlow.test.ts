@@ -27,6 +27,13 @@ function capabilities(edition: CapabilitiesResponse['edition'], ai: string, emai
 }
 
 describe('workspaceOnboardingFlow', () => {
+  it('offers the method choice before provider setup without inserting the assistant branch into progress', () => {
+    expect(onboardingStepsFor({ includeAI: true, includeMethod: true })).toEqual(['workspace', 'method', 'ai', 'context', 'teams', 'invite', 'finish']);
+    expect(nextOnboardingStep('method', { includeAI: true, includeMethod: true })).toBe('ai');
+    expect(resolveOnboardingStep({ requested: 'assistant', hasWorkspace: true, includeMethod: true, includeAI: undefined, includeGitHub: undefined })).toBe('assistant');
+    expect(resolveOnboardingStep({ requested: 'method', hasWorkspace: true, includeMethod: false, includeAI: false, includeGitHub: false })).toBe('context');
+    expect(resolveOnboardingStep({ requested: 'assistant', hasWorkspace: true, includeMethod: undefined, includeAI: false, includeGitHub: false })).toBeUndefined();
+  });
   it('reads edition, AI and email status from the capabilities response', () => {
     expect(onboardingConditionsFromCapabilities(capabilities('community', 'needs_setup', 'ready'))).toEqual({
       edition: 'community',

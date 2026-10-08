@@ -33,9 +33,12 @@ import { ConnectAIStep } from './ConnectAIStep';
 import { ConnectGitHubStep } from './ConnectGitHubStep';
 import { FinishStep } from './FinishStep';
 import { InviteStep } from './InviteStep';
-import { OnboardingShell } from './OnboardingShell';
+import { OnboardingActions, OnboardingShell, OnboardingTextButton } from './OnboardingShell';
 import { TeamsStep } from './TeamsStep';
 import { WorkspaceStep } from './WorkspaceStep';
+import { SetupMethodStep } from './SetupMethodStep';
+import { WorkspaceSetupAssistantContent } from '@/components/setup/WorkspaceSetupAssistant';
+import { Button } from '@/components/ui/button';
 
 export type OnboardingFlowProps = {
   /** `step` from the URL. */
@@ -48,7 +51,7 @@ const headerLinkClassName = 'public-page-back rounded-sm underline-offset-4 hove
 
 /**
  * Workspace onboarding for every edition, in the signup page shell:
- * workspace → Connect AI (Community without AI) → Connect GitHub (optional, for
+ * workspace → setup method (UI or external assistant) → Connect AI (Community without AI) → Connect GitHub (optional, for
  * Community owners who plan and ship projects) → company context → teams →
  * invite → finish. The URL holds the step and, after creation, the workspace
  * slug, so reloads resume and Back never creates a second workspace.
@@ -67,12 +70,16 @@ export function OnboardingFlow({ step, workspaceSlug }: OnboardingFlowProps) {
   const accessQuery = useWorkspaceAccess(workspace?.id ?? '');
   const access = accessQuery.data;
   const { has } = usePermissions(access);
+  const includeMethod = !setupGuideEnabled ? false : access
+    ? has('workspace.update') || has('team.manage') || has('workspace.invites.manage') || has('support.admin')
+    : accessQuery.isError ? false : undefined;
   // Once shown for a workspace, Connect AI and Connect GitHub stay in the flow even after they succeed.
   const [aiStepWorkspaceId, setAiStepWorkspaceId] = useState<string | null>(null);
   const [gitHubStepWorkspaceId, setGitHubStepWorkspaceId] = useState<string | null>(null);
   // Goals chosen on the workspace step of this visit; the Setup guide stores them for later visits.
   const [createdGoals, setCreatedGoals] = useState<{ workspaceId: string; goals: SetupGoalKey[] } | null>(null);
-  const [createdTeams, setCreatedTeams] = useState<{ id: string; handle: string }[]>([]);
+  const [createdTeamsState, setCreatedTeamsState] = useState<{ workspaceId: string; teams: { id: string; handle: string }[] } | null>(null);
+  const createdTeams = createdTeamsState?.workspaceId === workspace?.id ? createdTeamsState?.teams ?? [] : [];
   const setup = useSetup(setupGuideEnabled ? workspace?.id : undefined);
 
   const conditions = onboardingConditionsFromCapabilities(capabilities.data);
@@ -102,7 +109,7 @@ export function OnboardingFlow({ step, workspaceSlug }: OnboardingFlowProps) {
   const missingWorkspace = Boolean(workspaceSlug) && workspaceQuery.isError;
   const current = loadingWorkspace
     ? undefined
-    : resolveOnboardingStep({ requested: step, hasWorkspace: Boolean(workspace), includeAI, includeGitHub });
+    : resolveOnboardingStep({ requested: step, hasWorkspace: Boolean(workspace), includeAI, includeGitHub, includeMethod });
 
   useEffect(() => {
     if (loadingWorkspace || !current) return;
@@ -121,7 +128,7 @@ export function OnboardingFlow({ step, workspaceSlug }: OnboardingFlowProps) {
     setGitHubStepWorkspaceId(workspace.id);
   }
 
-  const inclusions = { includeAI: Boolean(includeAI), includeGitHub: Boolean(includeGitHub) };
+  const inclusions = { includeAI: Boolean(includeAI), includeGitHub: Boolean(includeGitHub), includeMethod: Boolean(includeMethod) };
   const goTo = (next: WorkspaceOnboardingStep) => {
     if (!workspace) return;
     void navigate({ to: '/onboarding', search: { step: next, workspace: workspace.slug } });
@@ -132,7 +139,7 @@ export function OnboardingFlow({ step, workspaceSlug }: OnboardingFlowProps) {
     setCreatedGoals({ workspaceId: created.id, goals });
     queryClient.setQueryData(queryKeys.workspaces.bySlug(created.slug), created);
     // Replace the form entry so browser Back can't return to it and create another workspace.
-    void navigate({ to: '/onboarding', search: { step: 'ai', workspace: created.slug }, replace: true });
+    void navigate({ to: '/onboarding', search: { step: setupGuideEnabled ? 'method' : 'ai', workspace: created.slug }, replace: true });
   };
 
   const goToWorkspace = () => {
@@ -183,6 +190,27 @@ export function OnboardingFlow({ step, workspaceSlug }: OnboardingFlowProps) {
         <WorkspaceStep useEmailDefaults={firstWorkspace} onCreated={handleCreated} />
       </OnboardingShell>
     );
+  }
+
+  if (current === 'method') {
+    return <OnboardingShell steps={steps} current="method" title="How would you like to set up your workspace?" description={`${workspace.name} is created. Choose how to continue.`} headerAction={headerAction}>
+      <SetupMethodStep onUI={() => goTo('ai')} onAssistant={() => goTo('assistant')} onLater={goToWorkspace} />
+    </OnboardingShell>;
+  }
+
+  if (current === 'assistant') {
+    const continueInHelpin = async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.bySlug(workspace.slug), exact: true });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.settings(workspace.id), exact: true });
+      goTo('ai');
+    };
+    return <OnboardingShell steps={steps} current="assistant" title="Set up your workspace with your AI assistant" description="Connect your assistant, then give it your workspace setup prompt." headerAction={headerAction}>
+      <WorkspaceSetupAssistantContent key={workspace.id} workspaceId={workspace.id} slug={workspace.slug} />
+      <OnboardingActions className="sm:justify-between">
+        <OnboardingTextButton onClick={() => goTo('method')}>Back</OnboardingTextButton>
+        <Button variant="outline" onClick={() => void continueInHelpin()}>Continue in Helpin</Button>
+      </OnboardingActions>
+    </OnboardingShell>;
   }
 
   if (current === 'ai' && aiCapability) {
@@ -248,7 +276,10 @@ export function OnboardingFlow({ step, workspaceSlug }: OnboardingFlowProps) {
           workspaceId={workspace.id}
           createdHandles={createdTeams.map((team) => team.handle)}
           onDone={(created) => {
-            setCreatedTeams((existing) => [...existing, ...created]);
+            setCreatedTeamsState({
+              workspaceId: workspace.id,
+              teams: [...new Map(created.map(team => [team.id, team])).values()],
+            });
             advance('teams');
           }}
         />

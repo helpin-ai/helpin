@@ -215,13 +215,14 @@ CRM and Support must be explicitly allowed by workspace policy and requested dur
 
 ## 7. Complete v1 tool catalog
 
-The fully enabled catalog contains 49 tools; the catalog regression test asserts that count. The tables below list the primary tools by toolset. `tools/list` returns only the subset currently allowed for the principal.
+The [catalog](../server/internal/service/mcp_catalog.go) defines the available tools; the [catalog regression tests](../server/internal/service/mcp_oauth_test.go) verify required operations and their access classifications. The tables below list the primary tools by toolset. `tools/list` returns only the subset currently allowed for the principal.
 
 ### 7.1 Workspace context and search
 
 | Tool | Mode | What it does | Helpin check |
 | --- | --- | --- | --- |
 | `get_current_context` | Read | Returns the connected principal, workspace, role, scopes, toolsets, accessible modules, read-only state, and canonical Helpin URL | `PermWorkspaceRead` |
+| `get_workspace_setup` | Read | Inspects workspace essentials and selected goals with current checks and UI handoffs | `PermWorkspaceRead` + Context read; module evidence also needs module read access |
 | `search_workspace` | Read | Searches tasks and documents using a bounded query | `PermSearchRead` |
 | `list_workspace_teams` | Read | Lists teams available in the connected workspace | `PermWorkspaceRead` |
 | `list_repositories` | Read | Lists connected repository metadata without credentials | `PermIntegrationsEnumerate` |
@@ -307,13 +308,37 @@ A proposal made through MCP is recorded with the connected user as its author, t
 | `get_support_conversation` | Read | Loads one conversation inside the connected workspace | `PermSupportRead` + Support module |
 | `list_conversation_messages` | Read | Lists public conversation messages; internal notes are excluded | `PermSupportRead` + Support module |
 
-#### Support onboarding with browser handoffs
+#### Workspace onboarding with browser handoffs
 
-Support administrators can choose **Set up with AI** from the Setup guide when
-customer support is an active journey. The dialog provides the deployment's MCP
-URL and a workspace-specific prompt. It shows current configuration checks,
-refreshes them while open and on window focus, and retains links for manual setup
-when MCP is disabled or unavailable. Existing UI setup actions are unchanged.
+After creating a workspace, people with setup permissions can choose **Set up in
+Helpin** or **Use my AI assistant**. The choice precedes the conditional Connect
+AI/GitHub steps. The assistant path does not need a Helpin model connection; users
+can resume the existing wizard, including company context, teams, invitations
+and sample data. Existing workspaces use **Set up with AI** in the Setup guide.
+
+`get_workspace_setup` requires Context read access and workspace read permission.
+It returns `workspace_id`, ordered `goals`, server-maintained `instructions`, and
+`sections` containing current checks and permission-aware UI links. Workspace
+essentials distinguish company context, teams, invitation creation and joined
+members. Selected goals cover support, help centers, internal docs, projects,
+CRM and automation. Module evidence additionally requires the relevant module's
+MCP toolset/read scope and platform availability. Blocked checks expose no result
+or action link. Inspection does not create goals or record achievements.
+
+The authenticated UI reads `/workspaces/{id}/setup/workspace`; scripts use
+`GET /public/v1/setup` through the same authorized tool. Public requests accept
+no workspace override. The `setup_workspace` MCP prompt is discoverable only
+when its tool is available. The copied UI prompt binds the workspace and includes
+selected goals, the current snapshot, exact links and verification limits.
+Instructions require a fresh inspection before acting and after saved changes.
+
+The compact handoff keeps manual links when MCP is unavailable. Team creation and
+invitations use existing settings controls, preserving team defaults and role
+validation. Confirm recipients, roles and team/module access before invitations;
+exclude expired/revoked invitations from readiness. Invitation creation, delivery
+and membership are separate states. The wizard reloads existing teams on return.
+
+#### Support-specific compatibility
 
 `get_support_setup` is read-only and works even before the support goal is selected.
 It returns `workspace_id`, `instructions`, and `steps` with `key`, `title`, `status`,

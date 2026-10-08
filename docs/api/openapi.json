@@ -4349,6 +4349,62 @@
         "x-helpin-toolset": "context"
       }
     },
+    "/setup": {
+      "get": {
+        "description": "Start or resume Helpin onboarding. Inspect company context, teams, invitations and membership, plus the workspace's selected goals (support/help desk, help center, internal docs, projects, CRM or automation). Returns current checks, permission-aware browser links and detailed setup instructions. Does not change settings. Requires Context read access; module checks also require that module's read grant. Use your client's browser tools or give the links to the user, then inspect again after saved changes.\n\n**Required scope:** `helpin.context.read`.",
+        "operationId": "getWorkspaceSetup",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "description": "The result. Its shape depends on the resource; fields match what the Helpin app shows."
+                    },
+                    "links": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Deep links into the Helpin app.",
+                      "type": "object"
+                    },
+                    "summary": {
+                      "description": "A short human-readable description of the outcome.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Inspect workspace onboarding and browser handoffs",
+        "tags": [
+          "Context"
+        ],
+        "x-helpin-mcp-tool": "get_workspace_setup",
+        "x-helpin-scope": "helpin.context.read",
+        "x-helpin-toolset": "context"
+      }
+    },
     "/spaces": {
       "get": {
         "description": "List Docs spaces visible to the connected actor, including IDs needed for collection and document creation.\n\n**Required scope:** `helpin.docs.read`.",

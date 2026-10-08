@@ -115,12 +115,12 @@ export function resolveGitHubStepInclusion({
 }
 
 /** Optional steps included in this flow. */
-export type OnboardingInclusions = { includeAI: boolean; includeGitHub?: boolean };
+export type OnboardingInclusions = { includeAI: boolean; includeGitHub?: boolean; includeMethod?: boolean };
 
 /** The steps shown in the progress indicator, in order. */
-export function onboardingStepsFor({ includeAI, includeGitHub = false }: OnboardingInclusions): WorkspaceOnboardingStep[] {
+export function onboardingStepsFor({ includeAI, includeGitHub = false, includeMethod = false }: OnboardingInclusions): WorkspaceOnboardingStep[] {
   return workspaceOnboardingSteps.filter((step) =>
-    (step !== 'ai' || includeAI) && (step !== 'github' || includeGitHub));
+    step !== 'assistant' && (step !== 'method' || includeMethod) && (step !== 'ai' || includeAI) && (step !== 'github' || includeGitHub));
 }
 
 export function nextOnboardingStep(
@@ -148,11 +148,13 @@ export function resolveOnboardingStep({
   hasWorkspace,
   includeAI,
   includeGitHub,
+  includeMethod,
 }: {
   requested: WorkspaceOnboardingStep | undefined;
   hasWorkspace: boolean;
   includeAI: boolean | undefined;
   includeGitHub: boolean | undefined;
+  includeMethod?: boolean;
 }): WorkspaceOnboardingStep | undefined {
   if (!hasWorkspace) return 'workspace';
   const fromGitHub = () => {
@@ -163,6 +165,10 @@ export function resolveOnboardingStep({
     if (includeAI === undefined) return undefined;
     return includeAI ? 'ai' : fromGitHub();
   };
+  if (requested === 'method' || requested === 'assistant') {
+    if (includeMethod === undefined) return undefined;
+    return includeMethod ? requested : fromAI();
+  }
   if (!requested || requested === 'workspace' || requested === 'ai') return fromAI();
   if (requested === 'github') return fromGitHub();
   return requested;

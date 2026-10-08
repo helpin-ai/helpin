@@ -1763,6 +1763,7 @@ func main() {
 		},
 	)
 	mcpService.SetSupportSetup(setupService)
+	mcpService.SetWorkspaceSetup(setupService)
 	mcpService.SetDocsLifecycle(docsDocumentService, docsHelpcenterService, docsEmbeddingService)
 	mcpService.SetDocsChangeProposals(docsChangeProposalService)
 	mcpService.SetAttachments(pmAttachmentService)

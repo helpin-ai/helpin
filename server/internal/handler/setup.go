@@ -107,3 +107,17 @@ func (h *SetupHandler) SupportSetup(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, guide)
 }
+
+func (h *SetupHandler) WorkspaceSetup(w http.ResponseWriter, r *http.Request) {
+	access, err := h.setupAccess(r)
+	if err == nil {
+		var guide model.WorkspaceSetupGuide
+		guide, err = h.service.WorkspaceSetup(r.Context(), chi.URLParam(r, "id"), access)
+		if err == nil {
+			writeJSON(w, http.StatusOK, guide)
+			return
+		}
+	}
+	slog.ErrorContext(r.Context(), "inspect workspace setup failed", "workspace_id", chi.URLParam(r, "id"), "error", err)
+	writeError(w, http.StatusInternalServerError, "Unable to inspect workspace setup")
+}

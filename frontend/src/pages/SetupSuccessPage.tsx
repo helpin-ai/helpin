@@ -11,7 +11,7 @@ import { systemStatusEnabled } from '@edition/config';
 import { workspaceSidebarSafeInsetClassName } from '@/components/design-system/quiet';
 import { SampleDataCard } from '@/components/setup/SampleDataButton';
 import { SetupSettingsLink } from '@/components/setup/CapabilityActions';
-import { SupportSetupAssistant } from '@/components/setup/SupportSetupAssistant';
+import { WorkspaceSetupAssistant } from '@/components/setup/WorkspaceSetupAssistant';
 import { GitHubReturnNotice } from '@/components/setup/GitHubReturnNotice';
 import { useGitHubReturnResult } from '@/hooks/useGitHubReturnResult';
 import { blockingServices } from '@/components/setup/capabilityPresentation';
@@ -190,8 +190,8 @@ export function SetupSuccessPage() {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            {has('support.admin') && view.journeys.some((journey) => journey.key === 'customer_support') && (
-              <SupportSetupAssistant workspaceId={workspaceId} slug={slug} />
+            {(has('workspace.update') || has('team.manage') || has('workspace.invites.manage') || has('support.admin')) && (
+              <WorkspaceSetupAssistant workspaceId={workspaceId} slug={slug} />
             )}
             {has('workspace.update') && (
               <button type="button" className={quietTextAction} onClick={openGoalEditor}>Edit goals</button>
