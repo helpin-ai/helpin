@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 import { sharedAIModelsPricing } from '@/components/agents/AIModelsPricingContext'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { aiUsagePricingText } from '../ai'
+
+// Keep the shared component on Community pricing even when this file runs in the EE suite.
+vi.mock('@edition/ai', () => vi.importActual('../ai'))
 
 it('tells community users that Helpin adds no fee', () => {
   const text = aiUsagePricingText({ mode: 'community', funding_mode: 'customer_unbilled' })
