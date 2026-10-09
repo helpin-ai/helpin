@@ -125,6 +125,39 @@ describe('ConversationRow', () => {
     document.body.innerHTML = ''
   })
 
+  it('selects with the checkbox without opening or marking the conversation read', () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const onOpen = vi.fn()
+    const onToggle = vi.fn()
+    act(() => root.render(<TooltipProvider><ConversationRow
+      workspaceId="ws-1" conversation={conversation({ unread_count: 2 })} moveOptions={[]}
+      onSelectConversation={onOpen} onToggleSelection={onToggle} isBulkSelected={false} selectionActive={false}
+    /></TooltipProvider>))
+    const checkbox = container.querySelector<HTMLButtonElement>('[role="checkbox"]')
+    expect(checkbox).not.toBeNull()
+    act(() => checkbox!.click())
+    expect(onToggle).toHaveBeenCalledWith('conv-1')
+    expect(onOpen).not.toHaveBeenCalled()
+    act(() => container.querySelector<HTMLElement>('[data-conversation-id]')!.click())
+    expect(onOpen).toHaveBeenCalledWith('conv-1', 2)
+    act(() => root.unmount())
+  })
+
+  it('keeps selection accessible and hides individual actions during bulk selection', () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    act(() => root.render(<TooltipProvider><ConversationRow
+      workspaceId="ws-1" conversation={conversation({})} moveOptions={[]}
+      onSelectConversation={vi.fn()} onToggleSelection={vi.fn()} isBulkSelected selectionActive
+    /></TooltipProvider>))
+    expect(container.querySelector('[role="checkbox"]')?.getAttribute('aria-checked')).toBe('true')
+    expect(container.querySelector('[aria-label^="Open actions"]')).toBeNull()
+    act(() => root.unmount())
+  })
+
   it.each(['queued', 'running'] as const)('shows %s Ask Agent activity alongside unread messages and clears on completion', (status) => {
     const chat: DockChat = {
       id: 'chat-1', workspace_id: 'ws-1', user_id: 'user-1', title: 'Help',

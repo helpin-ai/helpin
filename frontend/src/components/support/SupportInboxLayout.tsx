@@ -440,6 +440,7 @@ export function SupportInboxLayout() {
               });
             }}
             canCreateSharedViews={isAdmin}
+            canEditConversations={access?.permissions?.includes('support.edit') ?? false}
           />
         </div>
 

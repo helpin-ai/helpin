@@ -35,11 +35,13 @@ import {
   type ConversationSortOrder,
   type ConversationStateFilter,
 } from '@/lib/supportInboxFilters';
-import type { SupportInboxScope, SupportInboxView, SupportTag } from '@/lib/pmTypes';
+import type { SupportConversation, SupportInboxScope, SupportInboxView, SupportTag } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
 import { SupportTagBadge } from './SupportTagPicker';
 import { SupportInboxPanelHeader } from './SupportInboxPanelHeader';
 import { workspaceSidebarSafeInsetClassName } from '@/components/design-system/quiet';
+import { ConversationBulkToolbar } from './ConversationBulkToolbar';
+import { useConversationSelection } from './useConversationSelection';
 
 const SkeletonRow = memo(function SkeletonRow() {
   return (
@@ -235,6 +237,7 @@ interface ConversationListProps {
   onSearchClick?: () => void;
   onViewCreated?: (view: SupportInboxView) => void;
   canCreateSharedViews?: boolean;
+  canEditConversations?: boolean;
 }
 
 export function ConversationList({
@@ -248,6 +251,7 @@ export function ConversationList({
   onSearchClick,
   onViewCreated,
   canCreateSharedViews = false,
+  canEditConversations = false,
 }: ConversationListProps) {
   const searchQuery = useSupportInboxStore((s) => s.searchQuery);
   const navFilter = useSupportInboxStore((s) => s.navFilter);
@@ -294,6 +298,12 @@ export function ConversationList({
     searchQuery,
     listFilters: conversationListFilters,
   }), [conversationListFilters, navFilter, searchQuery, selectedMailboxId]);
+  const selectionScope = JSON.stringify([workspaceId, userId, activeCustomViewId, navFilter, selectedMailboxId, conversationListFilters, filters]);
+  const selection = useConversationSelection(selectionScope);
+  const [actionScope, setActionScope] = useState<string | null>(null);
+  if (actionScope !== null && actionScope !== selectionScope) setActionScope(null);
+  const bulkActionPending = actionScope === selectionScope;
+  const selectionActive = selection.items.size > 0 || selection.loading;
   const {
     data: response,
     isLoading,
@@ -308,11 +318,11 @@ export function ConversationList({
     [response],
   );
 
-  const filteredConversations = useMemo(() => {
+  const filterConversations = useCallback((items: SupportConversation[]) => {
     const hasExplicitStateFilters = !statesEqual(conversationListFilters.states, defaultStatesForNav(navFilter));
     const hasExplicitAIStateFilters = !stringArraysEqual(conversationListFilters.aiStates, defaultAIStatesForNav(navFilter));
     const shouldSkipSidebarViewFilter = navFilter === 'mine' || hasExplicitStateFilters || ((navFilter === 'ai_active' || navFilter === 'resolved_by_ai') && hasExplicitAIStateFilters);
-    return filterSupportConversations(conversations, {
+    return filterSupportConversations(items, {
       navFilter,
       mailboxScope: selectedMailboxId === 'all' && conversationListFilters.mailboxIds.length === 0 && navFilter === 'inbox' ? 'shared' : selectedMailboxId,
       mailboxScopes: conversationListFilters.mailboxIds,
@@ -322,7 +332,15 @@ export function ConversationList({
       skipViewFilter: shouldSkipSidebarViewFilter,
       aiStates: conversationListFilters.aiStates,
     });
-  }, [conversationListFilters.aiStates, conversationListFilters.mailboxIds, conversationListFilters.sort, conversationListFilters.states, conversations, navFilter, selectedMailboxId, userId]);
+  }, [conversationListFilters.aiStates, conversationListFilters.mailboxIds, conversationListFilters.sort, conversationListFilters.states, navFilter, selectedMailboxId, userId]);
+  const filteredConversations = useMemo(() => filterConversations(conversations), [conversations, filterConversations]);
+  const allLoadedSelected = filteredConversations.length > 0 && filteredConversations.every((conversation) => selection.items.has(conversation.id));
+  const totalMatches = response?.pages[0]?.total;
+  const handleToggleSelection = useCallback((id: string) => {
+    if (bulkActionPending || selection.loading) return;
+    const conversation = filteredConversations.find((item) => item.id === id);
+    if (conversation) selection.toggle(conversation);
+  }, [bulkActionPending, filteredConversations, selection.loading, selection.toggle]);
   const mailboxMoveOptions = useMemo(
     () => [inboxScopes?.shared_inbox, ...(inboxScopes?.mailboxes ?? [])].filter(Boolean) as SupportInboxScope[],
     [inboxScopes]
@@ -405,10 +423,10 @@ export function ConversationList({
   }, [onInboxEmptyStateChange, inboxEmptyState]);
 
   useEffect(() => {
-    if (!autoSelectFirst || selectedConversationId || shouldShowListSkeleton || error || filteredConversations.length === 0) return;
+    if (!autoSelectFirst || selectionActive || selectedConversationId || shouldShowListSkeleton || error || filteredConversations.length === 0) return;
     const firstConversation = filteredConversations[0];
     selectConversation(firstConversation.id);
-  }, [autoSelectFirst, error, filteredConversations, selectConversation, selectedConversationId, shouldShowListSkeleton]);
+  }, [autoSelectFirst, error, filteredConversations, selectConversation, selectedConversationId, selectionActive, shouldShowListSkeleton]);
 
   useEffect(() => {
     if (!wsSend || !wsConnected || filteredConversations.length === 0) return;
@@ -585,7 +603,17 @@ export function ConversationList({
   ]);
 
   return (
-    <div className="flex h-full w-full flex-col bg-muted/30 md:w-[300px] md:border-r dark:border-sidebar-border">
+    <div className="flex h-full w-full flex-col bg-muted/30 md:w-[300px] md:border-r dark:border-sidebar-border"
+      onKeyDownCapture={(event) => {
+        // Menus and dialogs handle their own Escape; a tooltip on a toolbar
+        // button must not swallow the shortcut for clearing row selection.
+        if (event.key !== 'Escape' || !selectionActive || bulkActionPending) return;
+        if ((event.target as HTMLElement).closest('[role="menu"], [role="dialog"], [role="alertdialog"], [data-slot="popover-content"]')) return;
+        event.preventDefault();
+        event.stopPropagation();
+        selection.clear();
+      }}
+    >
       {/* Filter toolbar */}
       <SupportInboxPanelHeader
         className={cn(
@@ -594,6 +622,21 @@ export function ConversationList({
         )}
       >
         <TooltipProvider>
+          {selectionActive ? <ConversationBulkToolbar
+            key={selectionScope}
+            workspaceId={workspaceId}
+            conversations={[...selection.items.values()]}
+            loadedCount={filteredConversations.length}
+            allLoadedSelected={allLoadedSelected}
+            hasMore={!!hasNextPage}
+            loadingSelection={selection.loading}
+            canEdit={canEditConversations}
+            moveOptions={mailboxMoveOptions}
+            onSelectLoaded={() => selection.selectLoaded(filteredConversations)}
+            onClear={selection.clear}
+            onBusyChange={(busy) => setActionScope((previous) => busy ? selectionScope : previous === selectionScope ? null : previous)}
+            onCompleted={selection.removeCompleted}
+          /> : <>
           <div className="min-w-0 flex-1 px-1.5 text-sm font-medium">
             <div className="truncate">{listTitle}</div>
           </div>
@@ -816,8 +859,23 @@ export function ConversationList({
               <span className="text-xs">Search conversations</span>
             </TooltipContent>
           </Tooltip>
+          </>}
         </TooltipProvider>
       </SupportInboxPanelHeader>
+      {selectionActive && hasNextPage && !selection.allMatches && (
+        <div className="border-b border-border/60 px-3 py-1.5 text-xs">
+          {selection.loading ? <span role="status" className="text-muted-foreground">Selecting conversations… {selection.loadedCount}</span> : (
+            <button
+              type="button"
+              className="text-foreground underline underline-offset-2 disabled:opacity-50"
+              disabled={bulkActionPending}
+              onClick={() => void selection.selectAllMatches(workspaceId, filters, filterConversations)}
+            >
+              Select all{totalMatches ? ` ${totalMatches.toLocaleString()}` : ''} matching conversations
+            </button>
+          )}
+        </div>
+      )}
       <Dialog open={saveViewOpen} onOpenChange={setSaveViewOpen}>
         <DialogContent aria-describedby={undefined}>
           <DialogHeader>
@@ -912,6 +970,10 @@ export function ConversationList({
             moveOptions={mailboxMoveOptions}
             onSelectConversation={handleSelect}
             isTransitioningOut={handoffConversationId === conversation.id}
+            onToggleSelection={handleToggleSelection}
+            isBulkSelected={selection.items.has(conversation.id)}
+            selectionActive={selectionActive}
+            selectionDisabled={bulkActionPending || selection.loading}
           />
         ))}
         {hasNextPage && (
