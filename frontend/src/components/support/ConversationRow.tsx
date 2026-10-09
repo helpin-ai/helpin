@@ -436,7 +436,7 @@ export const ConversationRow = memo(function ConversationRow({
       <div className="flex items-center gap-3">
         {/* Avatar */}
         <div className="relative h-9 w-9 shrink-0">
-          <div className={cn(onToggleSelection && (selectionActive ? 'invisible' : 'group-hover:invisible group-focus-visible:invisible group-has-[:focus-visible]:invisible [@media(hover:none)]:invisible'))}>
+          <div>
             <Avatar className="h-9 w-9">
               <ContactAvatarImage email={conversation.customer_email} alt={displayName} />
               <AvatarFallback className={`text-xs font-semibold ${getAvatarColor(conversation.customer_email || conversation.customer_name || conversation.id)}`}>
@@ -444,15 +444,16 @@ export const ConversationRow = memo(function ConversationRow({
               </AvatarFallback>
             </Avatar>
             {isVisitorOnline && (
-              <span className="absolute -left-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-green-400 ring-2 ring-background shadow-sm" />
+              <span className="pointer-events-none absolute -left-0.5 -top-0.5 z-10 h-2.5 w-2.5 rounded-full bg-green-400 ring-2 ring-background shadow-sm" />
             )}
           </div>
           {onToggleSelection && (
             <div className={cn(
-              'absolute inset-0 flex items-center justify-center',
+              'absolute inset-0 flex items-center justify-center rounded-full bg-black/25',
               !selectionActive && 'opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 group-has-[:focus-visible]:opacity-100 [@media(hover:none)]:opacity-100',
             )}>
               <Checkbox
+                className="border-white/80 bg-background data-[state=checked]:border-white/80"
                 aria-label={`Select conversation from ${displayName}: ${conversation.subject}`}
                 checked={isBulkSelected}
                 disabled={selectionDisabled}
