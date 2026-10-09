@@ -82,7 +82,7 @@ function SortableMailboxItem({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <p className="truncate font-medium">{mailbox.name}</p>
-            <Badge variant="secondary">{mailbox.assignment_mode === 'round_robin' ? 'Round robin' : 'Manual'}</Badge>
+            <Badge variant="secondary">{mailbox.assignment_mode === 'round_robin' ? 'Round robin' : mailbox.assignment_mode === 'specific_member' ? 'Specific member' : 'Manual'}</Badge>
             {!mailbox.active && <Badge variant="outline">Archived</Badge>}
           </div>
           <p className="text-xs text-muted-foreground">

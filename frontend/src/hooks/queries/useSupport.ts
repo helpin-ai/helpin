@@ -8,7 +8,6 @@ import { uploadToS3 } from '@/lib/api';
 import { supportService } from '@/lib/services/supportService';
 import { supportAttachmentService } from '@/lib/services/supportAttachmentService';
 import { agentService } from '@/lib/services/agentService';
-import { workspacesService } from '@/lib/services/workspacesService';
 import { nextCursor, unwrap, unwrapRequired } from '@/lib/queryUtils';
 import { isUpgradeRequiredError } from '@edition/errors';
 import {
@@ -906,25 +905,7 @@ export function useConversation(workspaceId: string, conversationId: string | nu
 export function useConversationAssignees(workspaceId: string, conversationId: string | null) {
   return useQuery({
     queryKey: queryKeys.support.conversationAssignees(workspaceId, conversationId ?? ''),
-    queryFn: async () => {
-      const response = await supportService.listConversationAssignees(workspaceId, conversationId!);
-      if (!response.error && Array.isArray(response.data) && response.data.length > 0) {
-        return response.data;
-      }
-
-      const fallback = await workspacesService.listAssignableMembers(workspaceId);
-      const members = unwrap(fallback);
-      const currentUserID = useAuthStore.getState().user?.id;
-      return members.filter((member) =>
-        member.status === 'active' &&
-        !!member.user_id &&
-        (
-          member.role === 'owner' ||
-          member.role === 'admin' ||
-          member.user_id === currentUserID
-        ),
-      );
-    },
+    queryFn: async () => unwrap(await supportService.listConversationAssignees(workspaceId, conversationId!)),
     enabled: !!workspaceId && !!conversationId,
     staleTime: 30_000,
   });

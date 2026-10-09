@@ -258,6 +258,7 @@ func setupAgentScopeTestDB(t *testing.T) *gorm.DB {
 			linked_team_id text,
 			visibility_mode text NOT NULL DEFAULT 'members_only',
 			assignment_mode text NOT NULL DEFAULT 'manual',
+			assignment_member_ids text,
 			reply_time_preset text,
 			reply_time_custom_minutes integer,
 			position integer NOT NULL DEFAULT 0,

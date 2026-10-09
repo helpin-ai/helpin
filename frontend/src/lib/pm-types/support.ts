@@ -222,7 +222,8 @@ export interface SupportMailbox {
   linked_team_id?: string | null;
   linked_team_name?: string | null;
   visibility_mode: 'members_only';
-  assignment_mode: 'manual' | 'round_robin';
+  assignment_mode: 'manual' | 'specific_member' | 'round_robin';
+  assignment_member_ids?: string[] | null;
   reply_time_preset?: string | null;
   reply_time_custom_minutes?: number | null;
   position: number;
@@ -376,7 +377,8 @@ export interface CreateSupportMailboxRequest {
   triage_eligible?: boolean;
   linked_team_id?: string | null;
   workspace_member_ids: string[];
-  assignment_mode: 'manual' | 'round_robin';
+  assignment_mode: 'manual' | 'specific_member' | 'round_robin';
+  assignment_member_ids?: string[];
   import_linked_team?: boolean;
 }
 
@@ -389,7 +391,8 @@ export interface UpdateSupportMailboxRequest {
   triage_eligible?: boolean;
   linked_team_id?: string | null;
   workspace_member_ids?: string[];
-  assignment_mode?: 'manual' | 'round_robin';
+  assignment_mode?: 'manual' | 'specific_member' | 'round_robin';
+  assignment_member_ids?: string[];
   active?: boolean;
   import_linked_team?: boolean;
   reply_time_preset?: string;

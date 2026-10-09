@@ -131,6 +131,17 @@ func (s *SupportInboxService) determineMailboxOwner(ctx context.Context, workspa
 		return nil, model.SupportConversationFlowStateWaitingForHuman, nil
 	}
 
+	if mailbox.AssignmentMode != "manual" && mailbox.AssignmentMemberIDs != nil && s.mailboxRepo != nil {
+		candidates, err := s.mailboxRepo.ListAssignmentCandidateUserIDs(ctx, workspaceID, mailbox)
+		if err != nil {
+			return nil, "", err
+		}
+		if len(candidates) > 0 {
+			return &candidates[0], model.SupportConversationFlowStateAssignedToHuman, nil
+		}
+		return nil, model.SupportConversationFlowStateWaitingForHuman, nil
+	}
+
 	if mailbox.AssignmentMode == "round_robin" && s.mailboxRepo != nil {
 		ownerID, err := s.mailboxRepo.SelectRoundRobinOwnerUserID(ctx, workspaceID, mailbox.ID)
 		if err != nil {
@@ -306,8 +317,8 @@ func (s *SupportInboxService) CreateMailbox(ctx context.Context, workspaceID str
 	if req.AssignmentMode == "" {
 		req.AssignmentMode = "manual"
 	}
-	if req.AssignmentMode != "manual" && req.AssignmentMode != "round_robin" {
-		return nil, fmt.Errorf("assignment_mode must be manual or round_robin")
+	if !validMailboxAssignmentMode(req.AssignmentMode) {
+		return nil, fmt.Errorf("assignment_mode must be manual, specific_member, or round_robin")
 	}
 	if req.AssignmentMode == "round_robin" && s.entitlementSvc != nil {
 		if err := s.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureRoundRobinAssignment); err != nil {
@@ -321,18 +332,19 @@ func (s *SupportInboxService) CreateMailbox(ctx context.Context, workspaceID str
 	}
 
 	mailbox := &model.SupportMailbox{
-		WorkspaceID:    workspaceID,
-		Name:           name,
-		Handle:         handle,
-		Icon:           icon,
-		Description:    req.Description,
-		RoutingPrompt:  req.RoutingPrompt,
-		TriageEligible: true,
-		LinkedTeamID:   req.LinkedTeamID,
-		VisibilityMode: "members_only",
-		AssignmentMode: req.AssignmentMode,
-		Active:         true,
-		CreatedByID:    actorID,
+		WorkspaceID:         workspaceID,
+		Name:                name,
+		Handle:              handle,
+		Icon:                icon,
+		Description:         req.Description,
+		RoutingPrompt:       req.RoutingPrompt,
+		TriageEligible:      true,
+		LinkedTeamID:        req.LinkedTeamID,
+		VisibilityMode:      "members_only",
+		AssignmentMode:      req.AssignmentMode,
+		AssignmentMemberIDs: req.AssignmentMemberIDs,
+		Active:              true,
+		CreatedByID:         actorID,
 	}
 	if req.TriageEligible != nil {
 		mailbox.TriageEligible = *req.TriageEligible
@@ -342,6 +354,10 @@ func (s *SupportInboxService) CreateMailbox(ctx context.Context, workspaceID str
 	}
 	if req.RoutingPrompt != nil && strings.TrimSpace(*req.RoutingPrompt) == "" {
 		mailbox.RoutingPrompt = nil
+	}
+
+	if err := s.validateMailboxAssignment(ctx, mailbox, req.WorkspaceMemberIDs); err != nil {
+		return nil, err
 	}
 
 	if err := s.mailboxRepo.Create(ctx, mailbox); err != nil {
@@ -367,6 +383,7 @@ func (s *SupportInboxService) UpdateMailbox(ctx context.Context, workspaceID, ma
 		return nil, fmt.Errorf("mailbox not found")
 	}
 
+	previousAssignmentMode := mailbox.AssignmentMode
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
@@ -424,8 +441,8 @@ func (s *SupportInboxService) UpdateMailbox(ctx context.Context, workspaceID, ma
 	}
 	if req.AssignmentMode != nil {
 		mode := strings.TrimSpace(*req.AssignmentMode)
-		if mode != "manual" && mode != "round_robin" {
-			return nil, fmt.Errorf("assignment_mode must be manual or round_robin")
+		if !validMailboxAssignmentMode(mode) {
+			return nil, fmt.Errorf("assignment_mode must be manual, specific_member, or round_robin")
 		}
 		if mode == "round_robin" && s.entitlementSvc != nil {
 			if err := s.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureRoundRobinAssignment); err != nil {
@@ -433,6 +450,26 @@ func (s *SupportInboxService) UpdateMailbox(ctx context.Context, workspaceID, ma
 			}
 		}
 		mailbox.AssignmentMode = mode
+	}
+	if req.AssignmentMemberIDs != nil {
+		mailbox.AssignmentMemberIDs = req.AssignmentMemberIDs
+	}
+	assignmentChanged := req.AssignmentMemberIDs != nil || mailbox.AssignmentMode != previousAssignmentMode
+	accessChanged := req.LinkedTeamID.Set || req.WorkspaceMemberIDs != nil
+	if assignmentChanged || (accessChanged && mailbox.AssignmentMemberIDs != nil) {
+		memberIDs := req.WorkspaceMemberIDs
+		if memberIDs == nil {
+			members, err := s.mailboxRepo.ListMembers(ctx, mailbox.ID)
+			if err != nil {
+				return nil, err
+			}
+			for _, member := range members {
+				memberIDs = append(memberIDs, member.WorkspaceMemberID)
+			}
+		}
+		if err := s.validateMailboxAssignment(ctx, mailbox, memberIDs); err != nil {
+			return nil, err
+		}
 	}
 	if req.Active != nil {
 		mailbox.Active = *req.Active

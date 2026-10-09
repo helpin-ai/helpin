@@ -44,6 +44,8 @@ import {
   filterSupportAccessibleMembers,
   splitMailboxMembersBySelection,
 } from './teamInboxDialogMembers';
+import { TeamInboxAssignmentFields } from './TeamInboxAssignmentFields';
+import { filterInboxAssignmentMembers, resolveInboxAssignmentSelection, type InboxAssignmentMode } from './teamInboxAssignment';
 import { getTeamInboxDialogSteps } from './teamInboxDialogFlow';
 
 type MailboxFormState = {
@@ -54,7 +56,8 @@ type MailboxFormState = {
   routingPrompt: string;
   triageEligible: boolean;
   linkedTeamId: string;
-  assignmentMode: 'manual' | 'round_robin';
+  assignmentMode: InboxAssignmentMode;
+  assignmentMemberIds: string[] | null;
   workspaceMemberIds: string[];
   replyTimeOverride: boolean;
   replyTimePreset: string;
@@ -85,6 +88,7 @@ const DEFAULT_FORM: MailboxFormState = {
   triageEligible: false,
   linkedTeamId: 'none',
   assignmentMode: 'manual',
+  assignmentMemberIds: [],
   workspaceMemberIds: [],
   replyTimeOverride: false,
   replyTimePreset: 'few_minutes',
@@ -162,6 +166,7 @@ function buildFormState(mailbox?: SupportMailbox | null): MailboxFormState {
     triageEligible: mailbox.triage_eligible,
     linkedTeamId: mailbox.linked_team_id ?? 'none',
     assignmentMode: mailbox.assignment_mode,
+    assignmentMemberIds: mailbox.assignment_member_ids ?? (mailbox.assignment_mode === 'round_robin' ? null : []),
     workspaceMemberIds: [],
     replyTimeOverride: hasOverride,
     replyTimePreset: mailbox.reply_time_preset ?? 'few_minutes',
@@ -222,17 +227,18 @@ export function TeamInboxDialog({
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [form, setForm] = useState<MailboxFormState>(DEFAULT_FORM);
   const [memberPickerOpen, setMemberPickerOpen] = useState(false);
+  const [assignmentEdited, setAssignmentEdited] = useState(false);
   const [manualRuleDraft, setManualRuleDraft] = useState<ManualRoutingRuleDraft | null>(null);
   const [deletedManualRuleIds, setDeletedManualRuleIds] = useState<string[]>([]);
 
   const currentUserId = useAuthStore((state) => state.user?.id);
   const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug);
-  const { data: members = [] } = useAssignableMembers(workspaceId);
-  const { teams, userMemberships } = useWorkspaceTeams(workspaceId);
-  const { data: moduleAccess } = useWorkspaceModuleAccess(workspaceId);
+  const { data: members = [], isPending: membersLoading } = useAssignableMembers(workspaceId);
+  const { teams, userMemberships, loading: teamsLoading } = useWorkspaceTeams(workspaceId);
+  const { data: moduleAccess, isPending: moduleAccessLoading } = useWorkspaceModuleAccess(workspaceId);
   const { data: chatSettings } = useChatSettings(workspaceId);
   const { data: triageRules = [] } = useSupportTriageRules(workspaceId);
-  const { data: mailboxMembersData = EMPTY_MEMBERS } = useMailboxMembers(workspaceId, mailbox?.id);
+  const { data: mailboxMembersData = EMPTY_MEMBERS, isPending: mailboxMembersLoading } = useMailboxMembers(workspaceId, mailbox?.id);
   const mailboxMembers = Array.isArray(mailboxMembersData) ? mailboxMembersData : EMPTY_MEMBERS;
   const createMailbox = useCreateMailbox(workspaceId);
   const updateMailbox = useUpdateMailbox(workspaceId);
@@ -245,6 +251,7 @@ export function TeamInboxDialog({
   const isRoutingOff = chatSettings ? !chatSettings.settings.triage_enabled : false;
 
   useEffect(() => {
+    setAssignmentEdited(false);
     if (!open) {
       setForm(DEFAULT_FORM);
       setStep(1);
@@ -394,9 +401,32 @@ export function TeamInboxDialog({
     [additionalMemberOptions, selectedAdditionalWorkspaceMemberIds],
   );
 
+  const assignmentMembersLoading = membersLoading || teamsLoading || moduleAccessLoading || (Boolean(mailbox) && mailboxMembersLoading);
+  const assignmentMembers = useMemo(
+    () => filterInboxAssignmentMembers(
+      supportAccessibleMembers,
+      selectedLinkedTeamHasSupportAccess ? form.linkedTeamId : 'none',
+      supportedAdditionalWorkspaceMemberIds,
+      userMemberships,
+    ),
+    [supportAccessibleMembers, selectedLinkedTeamHasSupportAccess, form.linkedTeamId, supportedAdditionalWorkspaceMemberIds, userMemberships],
+  );
+  // Legacy pools contain the saved inbox members, never admins or newly added observers by default.
+  const legacyAssignmentMemberIds = useMemo(() => {
+    const savedMembers = new Set(mailboxMembers.map(member => member.workspace_member_id));
+    const savedTeamUsers = new Set(userMemberships.filter(m => m.team_id === mailbox?.linked_team_id).map(m => m.user_id));
+    return assignmentMembers.filter(member => savedMembers.has(member.id) || (member.user_id && savedTeamUsers.has(member.user_id))).map(member => member.id);
+  }, [assignmentMembers, mailboxMembers, mailbox?.linked_team_id, userMemberships]);
+  const assignmentMemberIds = resolveInboxAssignmentSelection(form.assignmentMemberIds, assignmentMembers, legacyAssignmentMemberIds);
+  const preserveLegacyAssignment = Boolean(mailbox) && mailbox?.assignment_member_ids == null && !assignmentEdited;
+  const assignmentValid = !assignmentMembersLoading && (preserveLegacyAssignment || form.assignmentMode === 'manual' || (
+    form.assignmentMode === 'specific_member' ? assignmentMemberIds.length === 1 : assignmentMemberIds.length > 0
+  ));
+
   const canProceedToStep2 = form.name.trim().length > 0 && form.handle.trim().length > 0;
 
   const toggleMember = (memberId: string, checked: boolean) => {
+    setAssignmentEdited(true);
     setForm((current) => ({
       ...current,
       workspaceMemberIds: checked
@@ -527,6 +557,10 @@ export function TeamInboxDialog({
   };
 
   const submit = async () => {
+    if (!assignmentValid) {
+      setStep(2);
+      return;
+    }
     if (!form.name.trim()) {
       toast.error('Inbox name is required');
       return;
@@ -547,6 +581,7 @@ export function TeamInboxDialog({
         triage_eligible: form.triageEligible,
         linked_team_id: form.linkedTeamId === 'none' || !selectedLinkedTeamHasSupportAccess ? null : form.linkedTeamId,
         assignment_mode: form.assignmentMode,
+        ...(!preserveLegacyAssignment ? { assignment_member_ids: form.assignmentMode === 'manual' ? [] : assignmentMemberIds } : {}),
         workspace_member_ids: supportedAdditionalWorkspaceMemberIds,
       };
       if (form.replyTimeOverride) {
@@ -570,6 +605,7 @@ export function TeamInboxDialog({
         triage_eligible: form.triageEligible,
         linked_team_id: form.linkedTeamId === 'none' || !selectedLinkedTeamHasSupportAccess ? null : form.linkedTeamId,
         assignment_mode: form.assignmentMode,
+        assignment_member_ids: form.assignmentMode === 'manual' ? [] : assignmentMemberIds,
         workspace_member_ids: supportedAdditionalWorkspaceMemberIds,
       };
       const createdMailbox = await createMailbox.mutateAsync(payload);
@@ -613,7 +649,7 @@ export function TeamInboxDialog({
           <button
             type="button"
             onClick={() => {
-              if (canProceedToStep2) setStep(3);
+              if (canProceedToStep2 && assignmentValid) setStep(3);
             }}
             className="flex items-center gap-2 text-sm font-medium"
           >
@@ -781,7 +817,10 @@ export function TeamInboxDialog({
                 <FieldLabel tip="Choose which team gets access to this inbox. Team members are included automatically, and you can add extra people below.">
                   Team Access
                 </FieldLabel>
-                <Select value={form.linkedTeamId} onValueChange={(value) => setForm((current) => ({ ...current, linkedTeamId: value }))}>
+                <Select value={form.linkedTeamId} onValueChange={(value) => {
+                  setAssignmentEdited(true);
+                  setForm((current) => ({ ...current, linkedTeamId: value }));
+                }}>
                   <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
@@ -939,20 +978,24 @@ export function TeamInboxDialog({
               </div>
             </div>
 
-            <div className="mt-4 space-y-1.5">
-              <FieldLabel tip="Choose whether conversations stay unassigned for agents to pick up, or are automatically distributed across inbox members.">
-                Assignment
-              </FieldLabel>
-              <Select value={form.assignmentMode} onValueChange={(value: 'manual' | 'round_robin') => setForm((current) => ({ ...current, assignmentMode: value }))}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="manual">Manual</SelectItem>
-                  <SelectItem value="round_robin">Round robin</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <TeamInboxAssignmentFields
+              mode={form.assignmentMode}
+              members={assignmentMembers}
+              selectedIDs={assignmentMemberIds}
+              loading={assignmentMembersLoading}
+              onModeChange={(assignmentMode) => {
+                setAssignmentEdited(true);
+                setForm(current => ({
+                  ...current,
+                  assignmentMode,
+                  assignmentMemberIds: assignmentMode === 'manual' || (assignmentMode === 'specific_member' && assignmentMemberIds.length > 1) ? [] : assignmentMemberIds,
+                }));
+              }}
+              onMembersChange={(assignmentMemberIds) => {
+                setAssignmentEdited(true);
+                setForm(current => ({ ...current, assignmentMemberIds }));
+              }}
+            />
           </div>
         )}
 
@@ -1156,7 +1199,7 @@ export function TeamInboxDialog({
                 <ArrowLeft01Icon className="h-4 w-4" />
                 Back
               </Button>
-              <Button onClick={() => setStep(3)} className="gap-2">
+              <Button onClick={() => setStep(3)} disabled={!assignmentValid} className="gap-2">
                 Continue
                 <ArrowRight02Icon className="h-4 w-4" />
               </Button>
@@ -1171,6 +1214,7 @@ export function TeamInboxDialog({
               <Button
                 onClick={submit}
                 disabled={
+                  !assignmentValid ||
                   createMailbox.isPending ||
                   updateMailbox.isPending ||
                   createTriageRule.isPending ||

@@ -275,6 +275,7 @@ export interface MemberWithUser {
 }
 
 export interface AssignableMember {
+  assignment_disabled_reason?: string;
   id: string;
   user_id?: string;
   role: string;

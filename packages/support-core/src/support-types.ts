@@ -363,7 +363,8 @@ export interface SupportMailbox {
   linked_team_id?: string | null
   linked_team_name?: string | null
   visibility_mode: 'members_only'
-  assignment_mode: 'manual' | 'round_robin'
+  assignment_mode: 'manual' | 'specific_member' | 'round_robin'
+  assignment_member_ids?: string[] | null
   position: number
   active: boolean
   member_count?: number

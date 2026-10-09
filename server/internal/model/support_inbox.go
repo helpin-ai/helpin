@@ -581,6 +581,9 @@ type SupportMailbox struct {
 	LinkedTeamID   *string `json:"linked_team_id" gorm:"type:uuid"`
 	VisibilityMode string  `json:"visibility_mode" gorm:"not null;default:'members_only'"`
 	AssignmentMode string  `json:"assignment_mode" gorm:"not null;default:'manual'"`
+	// AssignmentMemberIDs stores workspace member IDs eligible for automatic assignment.
+	// Nil preserves legacy membership-based assignment; an empty list never means everyone.
+	AssignmentMemberIDs []string `json:"assignment_member_ids" gorm:"type:jsonb;serializer:json"`
 	// ReplyTimePreset / ReplyTimeCustomMinutes override the workspace-wide
 	// reply-time expectation for conversations routed into this mailbox.
 	// Nil preset means "inherit workspace default".
@@ -867,16 +870,17 @@ type UpdateSupportEmailSenderRequest struct {
 }
 
 type CreateSupportMailboxRequest struct {
-	Name               string   `json:"name"`
-	Handle             string   `json:"handle"`
-	Icon               string   `json:"icon"`
-	Description        *string  `json:"description"`
-	RoutingPrompt      *string  `json:"routing_prompt"`
-	TriageEligible     *bool    `json:"triage_eligible"`
-	LinkedTeamID       *string  `json:"linked_team_id"`
-	WorkspaceMemberIDs []string `json:"workspace_member_ids"`
-	AssignmentMode     string   `json:"assignment_mode"`
-	ImportLinkedTeam   bool     `json:"import_linked_team"`
+	Name                string   `json:"name"`
+	Handle              string   `json:"handle"`
+	Icon                string   `json:"icon"`
+	Description         *string  `json:"description"`
+	RoutingPrompt       *string  `json:"routing_prompt"`
+	TriageEligible      *bool    `json:"triage_eligible"`
+	LinkedTeamID        *string  `json:"linked_team_id"`
+	WorkspaceMemberIDs  []string `json:"workspace_member_ids"`
+	AssignmentMode      string   `json:"assignment_mode"`
+	AssignmentMemberIDs []string `json:"assignment_member_ids"`
+	ImportLinkedTeam    bool     `json:"import_linked_team"`
 }
 
 type OptionalNullableString struct {
@@ -899,17 +903,18 @@ func (s *OptionalNullableString) UnmarshalJSON(data []byte) error {
 }
 
 type UpdateSupportMailboxRequest struct {
-	Name               *string                `json:"name,omitempty"`
-	Handle             *string                `json:"handle,omitempty"`
-	Icon               *string                `json:"icon,omitempty"`
-	Description        *string                `json:"description,omitempty"`
-	RoutingPrompt      *string                `json:"routing_prompt,omitempty"`
-	TriageEligible     *bool                  `json:"triage_eligible,omitempty"`
-	LinkedTeamID       OptionalNullableString `json:"linked_team_id,omitempty"`
-	WorkspaceMemberIDs []string               `json:"workspace_member_ids,omitempty"`
-	AssignmentMode     *string                `json:"assignment_mode,omitempty"`
-	Active             *bool                  `json:"active,omitempty"`
-	ImportLinkedTeam   bool                   `json:"import_linked_team,omitempty"`
+	Name                *string                `json:"name,omitempty"`
+	Handle              *string                `json:"handle,omitempty"`
+	Icon                *string                `json:"icon,omitempty"`
+	Description         *string                `json:"description,omitempty"`
+	RoutingPrompt       *string                `json:"routing_prompt,omitempty"`
+	TriageEligible      *bool                  `json:"triage_eligible,omitempty"`
+	LinkedTeamID        OptionalNullableString `json:"linked_team_id,omitempty"`
+	WorkspaceMemberIDs  []string               `json:"workspace_member_ids,omitempty"`
+	AssignmentMode      *string                `json:"assignment_mode,omitempty"`
+	AssignmentMemberIDs []string               `json:"assignment_member_ids,omitempty"`
+	Active              *bool                  `json:"active,omitempty"`
+	ImportLinkedTeam    bool                   `json:"import_linked_team,omitempty"`
 
 	// ReplyTimePreset overrides the workspace default for conversations in
 	// this mailbox. Pass an explicit value to set; set ClearReplyTimePreset

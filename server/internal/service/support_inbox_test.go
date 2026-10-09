@@ -1810,7 +1810,7 @@ func TestCreateConversationMessage_PublicMentionsNotifyWorkspaceMembers(t *testi
 	}
 }
 
-func TestAssignConversationUserAcceptsSupportAccessibleUserOutsideMailboxMembership(t *testing.T) {
+func TestAssignConversationUserDisablesMembersWithoutInboxAccess(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
 	now := time.Now().UTC()
@@ -1926,27 +1926,32 @@ func TestAssignConversationUserAcceptsSupportAccessibleUserOutsideMailboxMembers
 	if err != nil {
 		t.Fatalf("list conversation assignable users: %v", err)
 	}
-	assignableByUserID := make(map[string]struct{}, len(assignable))
+	assignableByUserID := make(map[string]model.AssignableMember, len(assignable))
 	for _, member := range assignable {
 		if member.UserID != nil {
-			assignableByUserID[*member.UserID] = struct{}{}
+			assignableByUserID[*member.UserID] = member
 		}
 	}
-	for _, userID := range []string{ownerID, eligibleID, blockedID} {
+	for _, userID := range []string{ownerID, eligibleID, blockedID, noSupportID} {
 		if _, ok := assignableByUserID[userID]; !ok {
 			t.Fatalf("expected %s in assignable users, got %#v", userID, assignableByUserID)
 		}
 	}
-	if _, ok := assignableByUserID[noSupportID]; ok {
-		t.Fatalf("did not expect %s in assignable users, got %#v", noSupportID, assignableByUserID)
+	for _, userID := range []string{blockedID, noSupportID} {
+		if assignableByUserID[userID].AssignmentDisabledReason == nil {
+			t.Fatalf("expected %s to be disabled", userID)
+		}
+	}
+	if assignableByUserID[eligibleID].AssignmentDisabledReason != nil {
+		t.Fatal("inbox member should be selectable")
 	}
 
 	if err := svc.AssignConversationUser(ctx, workspaceID, conv.ID, &noSupportID, ownerID); err == nil {
 		t.Fatal("expected user without support access to be rejected")
 	}
 
-	if err := svc.AssignConversationUser(ctx, workspaceID, conv.ID, &blockedID, ownerID); err != nil {
-		t.Fatalf("assign support-accessible user outside mailbox membership: %v", err)
+	if err := svc.AssignConversationUser(ctx, workspaceID, conv.ID, &blockedID, ownerID); err == nil {
+		t.Fatal("assignment allowed a member who cannot access the inbox")
 	}
 
 	if err := svc.AssignConversationUser(ctx, workspaceID, conv.ID, &eligibleID, ownerID); err != nil {

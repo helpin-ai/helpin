@@ -129,13 +129,14 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 			s.presence,
 			s.statusOverrideRepo,
 			supportRecipientSelectorInput{
-				WorkspaceID:         workspaceID,
-				MailboxID:           handoffMailboxID,
-				OwnerUserID:         conv.AssignedUserID,
-				HandoffBehavior:     settings.HandoffBehavior,
-				HandoffTeamID:       settings.HandoffTeamID,
-				RequireAvailability: true,
-				Now:                 now,
+				WorkspaceID:          workspaceID,
+				MailboxID:            handoffMailboxID,
+				OwnerUserID:          conv.AssignedUserID,
+				HandoffBehavior:      settings.HandoffBehavior,
+				HandoffTeamID:        settings.HandoffTeamID,
+				RequireAvailability:  true,
+				UseMailboxAssignment: true,
+				Now:                  now,
 			},
 		)
 		if selectErr != nil {

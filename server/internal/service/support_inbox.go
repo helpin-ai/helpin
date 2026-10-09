@@ -574,26 +574,43 @@ func (s *SupportInboxService) ListConversationAssignableUsers(ctx context.Contex
 		return nil, fmt.Errorf("conversation not found")
 	}
 
-	if s.authzService == nil {
-		return s.workspaceRepo.ListSupportAssignableMembers(ctx, workspaceID, nil)
-	}
-
 	members, err := s.workspaceRepo.ListAssignableMembers(ctx, workspaceID)
 	if err != nil {
 		return nil, err
 	}
+	supportMembers, err := s.workspaceRepo.ListSupportAssignableMembers(ctx, workspaceID, nil)
+	if err != nil {
+		return nil, err
+	}
+	supportIDs := make(map[string]bool, len(supportMembers))
+	for _, member := range supportMembers {
+		supportIDs[member.ID] = true
+	}
+	inboxUsers := make(map[string]bool)
+	if conversation.MailboxID != nil && s.mailboxRepo != nil {
+		userIDs, err := s.mailboxRepo.ListActiveMemberUserIDs(ctx, workspaceID, *conversation.MailboxID)
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range userIDs {
+			inboxUsers[id] = true
+		}
+	}
 
 	assignable := make([]model.AssignableMember, 0, len(members))
 	for _, member := range members {
-		if member.UserID == nil || strings.TrimSpace(*member.UserID) == "" {
+		if member.UserID == nil || strings.TrimSpace(*member.UserID) == "" || member.Status != model.WorkspaceMemberStatusActive {
 			continue
 		}
-		if member.Status != model.WorkspaceMemberStatusActive {
-			continue
+		switch {
+		case member.Role != model.RoleMember && member.Role != model.RoleAdmin && member.Role != model.RoleOwner:
+			member.AssignmentDisabledReason = strPtr("This member has read-only access.")
+		case !supportIDs[member.ID]:
+			member.AssignmentDisabledReason = strPtr("This member does not have Support access.")
+		case conversation.MailboxID != nil && member.Role != model.RoleAdmin && member.Role != model.RoleOwner && !inboxUsers[*member.UserID]:
+			member.AssignmentDisabledReason = strPtr("This member does not have access to this inbox.")
 		}
-		if s.userHasSupportModuleAccess(ctx, workspaceID, strings.TrimSpace(*member.UserID)) {
-			assignable = append(assignable, member)
-		}
+		assignable = append(assignable, member)
 	}
 
 	return assignable, nil
@@ -630,7 +647,14 @@ func (s *SupportInboxService) userHasSupportModuleAccess(ctx context.Context, wo
 }
 
 func (s *SupportInboxService) isConversationAssignableUser(ctx context.Context, workspaceID string, mailboxID *string, userID string) bool {
-	return s.userHasSupportModuleAccess(ctx, workspaceID, userID)
+	if s.workspaceRepo == nil {
+		return false
+	}
+	member, err := s.workspaceRepo.GetMembership(ctx, workspaceID, userID)
+	if err != nil || member == nil || (member.Role != model.RoleMember && member.Role != model.RoleAdmin && member.Role != model.RoleOwner) {
+		return false
+	}
+	return s.userHasSupportModuleAccess(ctx, workspaceID, userID) && s.userCanAccessMailbox(ctx, workspaceID, mailboxID, userID)
 }
 
 func supportTranscriptSenderName(workspaceName string, msg model.SupportMessage) string {

@@ -44,6 +44,7 @@ interface BaseMemberPickerProps {
 }
 
 interface MemberPickerPopoverProps extends BaseMemberPickerProps {
+  getDisabledReason?: (member: AssignableMember) => string | null | undefined;
   value: string;
   onChange: (memberId: string) => void;
   noneLabel?: string;
@@ -94,6 +95,7 @@ function MemberList({
   noneLabel,
   multiple,
   getMemberValue,
+  getDisabledReason,
 }: {
   members: AssignableMember[];
   selectedValues: string[];
@@ -102,6 +104,7 @@ function MemberList({
   noneLabel?: string;
   multiple: boolean;
   getMemberValue: MemberValueGetter;
+  getDisabledReason?: (member: AssignableMember) => string | null | undefined;
 }) {
   return (
     <QuietDropdownOptions searchPlaceholder="Search members...">
@@ -133,13 +136,17 @@ function MemberList({
           );
 
           const isPartial = !!partialValues?.includes(memberId);
-          return (
+          const disabledReason = getDisabledReason?.(member);
+          const item = (
             <QuietDropdownItem
               data-checked={isSelected}
               key={memberId}
               value={memberId}
               keywords={[optionValue]}
-              onSelect={() => onToggle(memberId)}
+              disabled={Boolean(disabledReason)}
+              onSelect={() => {
+                if (!disabledReason) onToggle(memberId);
+              }}
               className={cn(
                 'flex min-w-0 items-center gap-2 text-ui',
                 isPartial && 'italic text-muted-foreground',
@@ -160,6 +167,15 @@ function MemberList({
               </span>
             </QuietDropdownItem>
           );
+          if (!disabledReason) return item;
+          return (
+            <Tooltip key={memberId}>
+              <TooltipTrigger asChild>
+                <div tabIndex={0} aria-label={`${member.display_name || member.email}: ${disabledReason}`}>{item}</div>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="z-[70] max-w-64">{disabledReason}</TooltipContent>
+            </Tooltip>
+          );
         })}
       </QuietDropdownGroup>
     </QuietDropdownOptions>
@@ -179,6 +195,7 @@ export function MemberPickerPopover({
   open,
   onOpenChange,
   getMemberValue = defaultGetMemberValue,
+  getDisabledReason,
   disabled = false,
   lazyMount = false,
 }: MemberPickerPopoverProps) {
@@ -249,6 +266,7 @@ export function MemberPickerPopover({
             noneLabel={noneLabel}
             multiple={false}
             getMemberValue={getMemberValue}
+            getDisabledReason={getDisabledReason}
           />
         </PMDropdownContent>
       ) : null}

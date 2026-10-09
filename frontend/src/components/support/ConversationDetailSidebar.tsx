@@ -574,10 +574,11 @@ export function ConversationDetailSidebar({
             )}
           </div>
 
-          <CollapsibleSection title="Conversation Routing" icon={UserIcon} count={0} defaultOpen>
+          <CollapsibleSection title="Assignee" icon={UserIcon} count={0} defaultOpen>
             <MemberPickerPopover
               value={conversation.assigned_user_id ?? ''}
               members={assignableUsers}
+              getDisabledReason={(member) => member.assignment_disabled_reason}
               getMemberValue={(member) => member.user_id ?? member.id}
               noneLabel="Unassigned"
               disabled={assignConversationUser.isPending || assigneesLoading}
