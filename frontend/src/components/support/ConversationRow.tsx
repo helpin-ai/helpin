@@ -436,7 +436,7 @@ export const ConversationRow = memo(function ConversationRow({
       <div className="flex items-center gap-3">
         {/* Avatar */}
         <div className="relative h-9 w-9 shrink-0">
-          <div className={cn(onToggleSelection && (selectionActive ? 'invisible' : 'group-hover:invisible group-focus-within:invisible [@media(hover:none)]:invisible'))}>
+          <div className={cn(onToggleSelection && (selectionActive ? 'invisible' : 'group-hover:invisible group-focus-visible:invisible group-has-[:focus-visible]:invisible [@media(hover:none)]:invisible'))}>
             <Avatar className="h-9 w-9">
               <ContactAvatarImage email={conversation.customer_email} alt={displayName} />
               <AvatarFallback className={`text-xs font-semibold ${getAvatarColor(conversation.customer_email || conversation.customer_name || conversation.id)}`}>
@@ -450,7 +450,7 @@ export const ConversationRow = memo(function ConversationRow({
           {onToggleSelection && (
             <div className={cn(
               'absolute inset-0 flex items-center justify-center',
-              !selectionActive && 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100',
+              !selectionActive && 'opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 group-has-[:focus-visible]:opacity-100 [@media(hover:none)]:opacity-100',
             )}>
               <Checkbox
                 aria-label={`Select conversation from ${displayName}: ${conversation.subject}`}
