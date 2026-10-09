@@ -87,6 +87,33 @@ func TestMailboxAssignmentUsesSelectedPoolForArrivalsAndMoves(t *testing.T) {
 	}
 }
 
+func TestMailboxAssignmentUpdateToSpecificMember(t *testing.T) {
+	for _, mode := range []string{"manual", "round_robin"} {
+		t.Run(mode, func(t *testing.T) {
+			f := assignmentFixture(t)
+			box, err := f.supportSvc.CreateMailbox(f.ctx, f.workspaceID, assignmentRequest(t, mode, `["wm-a","wm-b"]`), f.actorID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var req model.UpdateSupportMailboxRequest
+			if err := json.Unmarshal([]byte(`{"assignment_mode":"specific_member","assignment_member_ids":["wm-b"]}`), &req); err != nil {
+				t.Fatal(err)
+			}
+			updated, err := f.supportSvc.UpdateMailbox(f.ctx, f.workspaceID, box.ID, req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if updated.AssignmentMode != "specific_member" || len(updated.AssignmentMemberIDs) != 1 || updated.AssignmentMemberIDs[0] != "wm-b" {
+				t.Fatalf("single-member assignment was not saved: mode=%s members=%v", updated.AssignmentMode, updated.AssignmentMemberIDs)
+			}
+			owner, state, err := f.supportSvc.determineMailboxOwner(f.ctx, f.workspaceID, updated, nil)
+			if err != nil || owner == nil || *owner != "user-b" || state != model.SupportConversationFlowStateAssignedToHuman {
+				t.Fatalf("owner=%v state=%s err=%v", owner, state, err)
+			}
+		})
+	}
+}
+
 func TestMailboxAssignmentUpdateValidatesProspectiveAccess(t *testing.T) {
 	f := assignmentFixture(t)
 	box, err := f.supportSvc.CreateMailbox(f.ctx, f.workspaceID, assignmentRequest(t, "round_robin", `["wm-b"]`), f.actorID)
