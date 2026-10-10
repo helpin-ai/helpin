@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeft01Icon, ArrowRight01Icon, AttachmentIcon, Cancel01Icon, Download04Icon } from '@/lib/icons';
 import { SupportPendingAttachment } from './SupportPendingAttachment';
+import { SupportImageDownload } from './SupportImageDownload';
 import type { SupportAttachmentPayload } from '@/lib/pmTypes';
 
 type SupportAttachmentGalleryTone = 'default' | 'note';
@@ -120,16 +121,12 @@ export function SupportAttachmentGallery({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <a
-            href={lightboxAttachment.url}
-            target="_blank"
-            rel="noopener noreferrer"
+          <SupportImageDownload
+            key={lightboxAttachment.id}
+            attachment={lightboxAttachment}
             className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 transition-colors hover:bg-white/25"
-            onClick={(event) => event.stopPropagation()}
-            aria-label="Download image attachment"
-          >
-            <Download04Icon className="h-4 w-4" />
-          </a>
+            iconClassName="h-4 w-4"
+          />
           <button
             type="button"
             onClick={(event) => {
@@ -255,16 +252,12 @@ export function SupportAttachmentGallery({
                     <span className="shrink-0 text-muted-foreground">
                       {(hoverIndex ?? 0) + 1} / {imageAttachments.length}
                     </span>
-                    <a
-                      href={hoverAttachment.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <SupportImageDownload
+                      key={hoverAttachment.id}
+                      attachment={hoverAttachment}
                       className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
-                      aria-label="Download image attachment"
-                      onClick={(event) => event.stopPropagation()}
-                    >
-                      <Download04Icon className="h-3.5 w-3.5" />
-                    </a>
+                      iconClassName="h-3.5 w-3.5"
+                    />
                   </div>
                 </div>
               </div>
