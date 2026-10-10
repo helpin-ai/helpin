@@ -453,7 +453,7 @@ export const ConversationRow = memo(function ConversationRow({
               !selectionActive && 'opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 group-has-[:focus-visible]:opacity-100 [@media(hover:none)]:opacity-100',
             )}>
               <Checkbox
-                className="border-white/80 bg-background data-[state=checked]:border-white/80"
+                className="border-white/80 bg-white data-[state=checked]:border-white/80 data-[state=checked]:bg-white data-[state=checked]:text-neutral-900 dark:data-[state=checked]:bg-white"
                 aria-label={`Select conversation from ${displayName}: ${conversation.subject}`}
                 checked={isBulkSelected}
                 disabled={selectionDisabled}
