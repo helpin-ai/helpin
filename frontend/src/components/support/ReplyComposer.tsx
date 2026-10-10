@@ -1,10 +1,9 @@
+import { createSupportComposerExtensions, normalizeSupportLinkInput } from './supportComposerExtensions';
 import { SupportTranslationSendError } from '@/lib/supportTranslationError';
 import { useOutgoingSupportTranslation } from '@/hooks/queries/useOutgoingSupportTranslation';
 import { useRef, useEffect, useState, useCallback, useMemo, type KeyboardEvent, type ReactNode } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
-import { Markdown } from 'tiptap-markdown';
 import {
   SentIcon, AttachmentIcon, Cancel01Icon, Loading01Icon,
   Mail01Icon, SparklesIcon, ArrowUp01Icon, ArrowUpDownIcon, ArrowReloadHorizontalIcon,
@@ -101,11 +100,6 @@ const URL_TOKEN_REGEX =
   /^((?:https?|ftp):\/\/\S+|www\.\S+\.[a-z]{2,}\S*|[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+\.[a-z]{2,}(?:[/?#]\S*)?)$/i;
 const TRAILING_PUNCT_REGEX = /[.,;:!?)\]}>'"]+$/;
 
-function normalizeUrl(raw: string): string {
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) return raw;
-  return `https://${raw}`;
-}
-
 function findBareUrlBeforeCaret(
   editorInstance: ReturnType<typeof useEditor> | null | undefined,
 ): { from: number; to: number; href: string } | null {
@@ -134,7 +128,7 @@ function findBareUrlBeforeCaret(
   const linkMark = state.schema.marks.link;
   if (linkMark && state.doc.rangeHasMark(tokenStart, tokenEnd, linkMark)) return null;
 
-  return { from: tokenStart, to: tokenEnd, href: normalizeUrl(trimmed) };
+  return { from: tokenStart, to: tokenEnd, href: normalizeSupportLinkInput(trimmed) };
 }
 
 function FormatButton({
@@ -1097,26 +1091,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
   const handleSendRef = useRef<() => void>(() => {});
 
   const extensions = useMemo(() => [
-    StarterKit.configure({
-      heading: false,
-      codeBlock: false,
-      horizontalRule: false,
-      link: {
-        openOnClick: false,
-        autolink: true,
-        linkOnPaste: true,
-        HTMLAttributes: {
-          target: '_blank',
-          rel: 'noopener noreferrer nofollow',
-        },
-      },
-    }),
-    Markdown.configure({
-      html: false,
-      linkify: true,
-      transformPastedText: true,
-      transformCopiedText: true,
-    }),
+    ...createSupportComposerExtensions(),
     Placeholder.configure({
       placeholder: () => isNoteRef.current ? 'Add an internal note... (@ to mention)' : 'Write a reply... (@ to mention)',
     }),

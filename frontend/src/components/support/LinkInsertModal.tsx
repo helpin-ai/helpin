@@ -19,6 +19,7 @@ import { docsService } from '@/lib/services/docsService';
 import { queryKeys } from '@/lib/queryKeys';
 import type { DocsDocument, DocsHelpcenterConfig } from '@/lib/docsTypes';
 import { cn } from '@/lib/utils';
+import { normalizeSupportLinkInput } from './supportComposerExtensions';
 
 interface LinkInsertModalProps {
   open: boolean;
@@ -104,7 +105,7 @@ export function LinkInsertModal({
     const trimmedLabel = label.trim();
     const trimmedUrl = url.trim();
     if (!trimmedLabel || !trimmedUrl) return;
-    onInsert(trimmedLabel, trimmedUrl);
+    onInsert(trimmedLabel, normalizeSupportLinkInput(trimmedUrl));
     onOpenChange(false);
   }
 

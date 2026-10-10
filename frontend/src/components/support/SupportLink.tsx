@@ -46,8 +46,8 @@ export function SupportLink({ href, security, children, className = '', showInli
 
   const indicator = showInlineIndicator && (isMalicious || isHTTP) ? (
     <span
-      aria-label={isMalicious ? 'Potentially harmful' : 'Not secure'}
-      title={isMalicious ? 'Potentially harmful link' : 'Not secure — this link does not use HTTPS.'}
+      aria-label={isMalicious ? 'Potentially harmful' : 'HTTP link'}
+      title={isMalicious ? 'Potentially harmful link' : 'This link starts with HTTP. The site may redirect to HTTPS.'}
       className={`ml-0.5 inline-flex align-text-bottom ${isMalicious ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`}
     >
       <AlertCircleIcon className="h-3.5 w-3.5" aria-hidden="true" />

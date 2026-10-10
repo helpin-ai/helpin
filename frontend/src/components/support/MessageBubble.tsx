@@ -274,7 +274,7 @@ function LinkPreviewCard({ preview, security }: { preview: SupportLinkPreview; s
         <div className="min-w-0 flex-1 space-y-0.5">
           <div className="flex min-w-0 items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
             <span className="truncate">{preview.site_name || previewHostLabel(preview)}</span>
-            {security?.status === 'malicious' ? <span className="shrink-0 text-red-600 dark:text-red-400">Potentially harmful</span> : preview.url.toLowerCase().startsWith('http://') ? <span className="shrink-0 text-amber-600 dark:text-amber-400">Not secure</span> : null}
+            {security?.status === 'malicious' ? <span className="shrink-0 text-red-600 dark:text-red-400">Potentially harmful</span> : preview.url.toLowerCase().startsWith('http://') ? <span className="shrink-0 text-amber-600 dark:text-amber-400" title="This link starts with HTTP. The site may redirect to HTTPS.">HTTP link</span> : null}
           </div>
           <div className="truncate text-sm font-semibold leading-snug">{preview.title}</div>
         </div>

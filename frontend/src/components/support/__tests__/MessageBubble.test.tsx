@@ -646,7 +646,7 @@ describe('MessageBubble', () => {
     queryClient.clear()
   })
 
-  it('marks HTTP links and previews as not secure without blocking navigation', () => {
+  it('identifies HTTP links and previews without blocking navigation', () => {
     const message: SupportMessage = {
       id: 'msg-http', workspace_id: 'ws-1', conversation_id: 'conv-1', sender_type: 'customer',
       content: 'Open [the page](http://example.com/path)', message_type: 'reply', is_internal: false,
@@ -655,8 +655,8 @@ describe('MessageBubble', () => {
     }
     const rendered = renderBubble(message)
 
-    expect(rendered.container.querySelector('[aria-label="Not secure"]')).toBeTruthy()
-    expect(rendered.container.textContent).toContain('Not secure')
+    expect(rendered.container.querySelector('[aria-label="HTTP link"]')).toBeTruthy()
+    expect(rendered.container.textContent).toContain('HTTP link')
     expect(rendered.container.querySelector('a[href="http://example.com/path"]')?.getAttribute('rel')).toBe('noopener noreferrer')
     rendered.cleanup()
   })
