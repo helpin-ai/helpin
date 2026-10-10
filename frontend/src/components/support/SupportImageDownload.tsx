@@ -7,9 +7,10 @@ interface SupportImageDownloadProps {
   attachment: SupportAttachmentPayload;
   className: string;
   iconClassName: string;
+  loadImageContent?: (id: string) => Promise<string>;
 }
 
-export function SupportImageDownload({ attachment, className, iconClassName }: SupportImageDownloadProps) {
+export function SupportImageDownload({ attachment, className, iconClassName, loadImageContent }: SupportImageDownloadProps) {
   const inFlight = useRef(false);
   const [downloading, setDownloading] = useState(false);
 
@@ -24,7 +25,8 @@ export function SupportImageDownload({ attachment, className, iconClassName }: S
     try {
       // Preview URLs return inline content. A local blob download saves the file
       // without opening storage in another tab or relying on cross-origin `download`.
-      const response = await fetch(attachment.url, { credentials: 'omit', signal: controller.signal });
+      const source = loadImageContent ? await loadImageContent(attachment.id) : attachment.url;
+      const response = await fetch(source, { credentials: 'omit', signal: controller.signal });
       if (!response.ok) {
         if (response.status === 403) {
           errorMessage = 'Could not download the attachment. Refresh the conversation and try again.';

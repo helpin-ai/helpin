@@ -540,13 +540,13 @@ export const MessageBubble = memo(function MessageBubble({
   const renderFileAttachments = (tone: 'default' | 'note' = 'default', className = '') => {
     if (fileAttachments.length === 0) return null;
 
-    return <SupportAttachmentGallery attachments={fileAttachments} onRetry={retryAttachment} tone={tone} className={className} />;
+    return <SupportAttachmentGallery workspaceId={message.workspace_id} conversationId={message.conversation_id} attachments={fileAttachments} onRetry={retryAttachment} tone={tone} className={className} />;
   };
 
   const renderImageAttachments = (className = '') => {
     if (imageAttachments.length === 0) return null;
 
-    return <SupportAttachmentGallery attachments={imageAttachments} onRetry={retryAttachment} className={className} />;
+    return <SupportAttachmentGallery workspaceId={message.workspace_id} conversationId={message.conversation_id} attachments={imageAttachments} onRetry={retryAttachment} className={className} />;
   };
 
   const resolvedAvatarUrl = message.sender_avatar_url

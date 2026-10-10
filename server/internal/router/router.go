@@ -1175,6 +1175,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				// File attachments
 				if h.SupportAttachment != nil {
+					r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{convId}/attachments/{attachmentId}/content", h.SupportAttachment.Content)
 					r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{convId}/attachments", h.SupportAttachment.Create)
 					r.With(requirePerm(authorization.PermSupportEdit)).Patch("/inbox/attachments/{attachmentId}/confirm", h.SupportAttachment.ConfirmUpload)
 					r.With(requirePerm(authorization.PermSupportEdit)).Delete("/inbox/attachments/{attachmentId}", h.SupportAttachment.Delete)

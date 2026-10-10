@@ -194,7 +194,7 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
                   <div className="mb-2.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                     {attachments.length} attachment{attachments.length === 1 ? '' : 's'}
                   </div>
-                  <SupportAttachmentGallery attachments={attachments} thumbnailSize="md" />
+                  <SupportAttachmentGallery workspaceId={workspaceId} conversationId={message.conversation_id} attachments={attachments} thumbnailSize="md" />
                 </div>
               )}
             </div>
