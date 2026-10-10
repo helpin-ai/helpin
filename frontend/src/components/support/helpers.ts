@@ -3,6 +3,10 @@ import { getReplyDeliveryMode } from './replyDelivery';
 export { AVATAR_COLORS, getAvatarColor } from '@/lib/avatarColor';
 export { getInitials as getInitial } from '@/lib/initials';
 
+export function getCustomerAvatarSeed(email: string | null | undefined, name: string | null | undefined, conversationId: string): string {
+  return email?.trim().toLowerCase() || name?.trim() || conversationId;
+}
+
 export const HELPIN_AI_DISPLAY_NAME = 'Helpin AI';
 
 export function timeAgo(dateStr: string): string {

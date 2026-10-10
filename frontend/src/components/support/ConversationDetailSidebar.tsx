@@ -26,7 +26,7 @@ import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { SupportConversation, SupportMessage } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
-import { getInitial, getAvatarColor } from './helpers';
+import { getInitial, getAvatarColor, getCustomerAvatarSeed } from './helpers';
 import { SupportInboxPanelHeader } from './SupportInboxPanelHeader';
 
 type LastActiveSource = 'anonymous_id' | 'crm_contact' | string | null | undefined;
@@ -461,7 +461,7 @@ export function ConversationDetailSidebar({
             <div className="relative">
               <Avatar className="h-12 w-12">
                 <ContactAvatarImage email={conversation.customer_email} alt={conversation.customer_name || conversation.customer_email || 'Customer'} />
-                <AvatarFallback className={`text-base font-semibold ${getAvatarColor(conversation.customer_email || conversation.customer_name || conversation.id)}`}>
+                <AvatarFallback className={`text-base font-semibold ${getAvatarColor(getCustomerAvatarSeed(conversation.customer_email, conversation.customer_name, conversation.id))}`}>
                   {getInitial(conversation.customer_name || conversation.customer_email)}
                 </AvatarFallback>
               </Avatar>

@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils';
 import { ContactAvatarImage } from '@/components/ui/contact-avatar-image';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { SupportConversation } from '@/lib/pmTypes';
-import { timeAgo, getInitial, getAvatarColor } from './helpers';
+import { timeAgo, getInitial, getAvatarColor, getCustomerAvatarSeed } from './helpers';
 import {
   getConversationRowVisualState,
   getSupportTagPillStyle,
@@ -439,7 +439,7 @@ export const ConversationRow = memo(function ConversationRow({
           <div>
             <Avatar className="h-9 w-9">
               <ContactAvatarImage email={conversation.customer_email} alt={displayName} />
-              <AvatarFallback className={`text-xs font-semibold ${getAvatarColor(conversation.customer_email || conversation.customer_name || conversation.id)}`}>
+              <AvatarFallback className={`text-xs font-semibold ${getAvatarColor(getCustomerAvatarSeed(conversation.customer_email, conversation.customer_name, conversation.id))}`}>
                 {getInitial(displayName)}
               </AvatarFallback>
             </Avatar>

@@ -22,7 +22,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import type { AIMessageMetadata, SupportForwardedAttribution, SupportLinkPreview, SupportLinkSecurity, SupportMessage, TicketSource } from '@/lib/pmTypes';
 import { EmailBodyRenderer } from './EmailBodyRenderer';
-import { findSupportLinkSecurity, formatMessageTime, formatTimestamp, getInitial, getAvatarColor, getEffectiveSenderType, getExplicitEmailDeliveryState, HELPIN_AI_DISPLAY_NAME, isExternalSupportEmailReply, parseAIMessageMetadata, parseSupportLinkPreviews, parseSupportLinkSecurity, type SupportReceiptStatus } from './helpers';
+import { findSupportLinkSecurity, formatMessageTime, formatTimestamp, getInitial, getAvatarColor, getCustomerAvatarSeed, getEffectiveSenderType, getExplicitEmailDeliveryState, HELPIN_AI_DISPLAY_NAME, isExternalSupportEmailReply, parseAIMessageMetadata, parseSupportLinkPreviews, parseSupportLinkSecurity, type SupportReceiptStatus } from './helpers';
 import { getReplyEmailSubject, getReplyDeliveryMode, REPLY_DELIVERY_LABELS } from './replyDelivery';
 import { cleanForwardedDisplayContent, hasForwardedHeaderMarker } from './forwardedEmailDisplay';
 import { timeAgo } from '@/lib/utils';
@@ -565,7 +565,11 @@ export const MessageBubble = memo(function MessageBubble({
           fallbackSeed: currentUser.full_name ?? currentUser.email,
         })
       : undefined);
-  const avatarSeed = message.sender_user_id || message.sender_agent_id || inboundIdentity.email_sender || resolvedSenderName;
+  const customerSenderEmail = inboundIdentity.email_sender || emailAddressFromHeader(message.email_from)
+    || (inboundIdentity.email_participant_sender ? undefined : customerEmail);
+  const avatarSeed = isCustomer
+    ? getCustomerAvatarSeed(customerSenderEmail, inboundIdentity.email_participant_sender ? resolvedSenderName : customerDisplayName, message.conversation_id)
+    : message.sender_user_id || message.sender_agent_id || inboundIdentity.email_sender || resolvedSenderName;
   const fallbackAvatar = (
     <div
       className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10.5px] font-semibold leading-none shadow-sm ${getAvatarColor(avatarSeed)}`}
@@ -745,7 +749,7 @@ export const MessageBubble = memo(function MessageBubble({
       <TooltipTrigger asChild>
         <Avatar className="h-7 w-7 shadow-sm">
           <ContactAvatarImage
-            email={inboundIdentity.email_sender || emailAddressFromHeader(message.email_from) || (inboundIdentity.email_participant_sender ? undefined : customerEmail)}
+            email={customerSenderEmail}
             src={resolvedAvatarUrl}
             alt={resolvedSenderName}
           />
