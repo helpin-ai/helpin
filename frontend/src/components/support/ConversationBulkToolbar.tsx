@@ -93,6 +93,7 @@ export function ConversationBulkToolbar({ workspaceId, conversations, loadedCoun
     <>
       <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 pl-1.5">
         <Checkbox
+          className="border-white/80 bg-white data-[state=checked]:border-white/80 data-[state=checked]:bg-white data-[state=checked]:text-neutral-900 dark:data-[state=checked]:bg-white data-[state=indeterminate]:border-white/80 data-[state=indeterminate]:bg-white data-[state=indeterminate]:text-neutral-900"
           aria-label={allLoadedSelected ? 'Clear selection' : `Select all ${loadedCount} loaded conversations`}
           checked={allLoadedSelected ? true : 'indeterminate'}
           disabled={disabled}
