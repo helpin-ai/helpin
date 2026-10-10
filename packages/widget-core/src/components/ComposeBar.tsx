@@ -8,6 +8,7 @@ import type { PendingAttachment } from '../types';
 
 interface ComposeBarProps {
   notice?: ComponentChildren;
+  draftScope?: string;
   onSend: (content: string, attachmentIds?: string[]) => void;
   onTyping?: (content: string) => void;
   onFilesSelected?: (files: File[]) => void;
@@ -35,6 +36,7 @@ function formatFileSize(bytes: number): string {
 
 export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
   notice,
+  draftScope,
   onSend,
   onTyping,
   onFilesSelected,
@@ -50,6 +52,14 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
   workspaceName,
 }) => {
   const [message, setMessage] = useState('');
+  const previousDraftScope = useRef(draftScope);
+  useEffect(() => {
+    // Match attachment scoping: assigning a new draft its server ID preserves it.
+    if (previousDraftScope.current !== draftScope && previousDraftScope.current !== '__new__') {
+      setMessage('');
+    }
+    previousDraftScope.current = draftScope;
+  }, [draftScope]);
   const [isDragOver, setIsDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);

@@ -668,6 +668,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
         </div>
       )}
       <ComposeBar
+        draftScope={conversationKey}
         notice={showPrivacyNotice && policyUrl ? (
           <PrivacyNotice
             key={`${config.workspaceId}:${conversationKey}`}

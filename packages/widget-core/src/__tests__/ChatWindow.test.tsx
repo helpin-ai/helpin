@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render } from '@testing-library/preact';
 import { ChatWindow } from '../components/ChatWindow';
+import { mountWidget, unmountWidget } from '../index';
+import type { UploadAttachment } from '../hooks/useAttachmentUploads';
 
 const baseConfig = {
   workspaceId: 'ws_123',
@@ -152,7 +154,7 @@ describe('ChatWindow', () => {
     expect(container.querySelector('.helpin-bottom-nav-item--active')?.getAttribute('aria-current')).toBe('page');
   });
 
-  it('keeps the window mounted briefly while closing for the exit transition', () => {
+  it('hides the mounted window after its closing transition', () => {
     vi.useFakeTimers();
 
     const { container, rerender } = render(
@@ -188,7 +190,10 @@ describe('ChatWindow', () => {
     act(() => {
       vi.advanceTimersByTime(220);
     });
-    expect(container.querySelector('.helpin-chat-window')).toBeFalsy();
+    expect(container.querySelector('.helpin-chat-window')).toBe(windowEl);
+    expect(windowEl.style.display).toBe('none');
+    expect(windowEl.getAttribute('aria-hidden')).toBe('true');
+    expect(windowEl.hasAttribute('inert')).toBe(true);
 
     vi.useRealTimers();
   });
@@ -964,5 +969,160 @@ describe('ChatWindow', () => {
     );
 
     expect(queryByText('Talk to a person')).toBeNull();
+  });
+});
+
+
+describe('widget draft lifecycle', () => {
+  let container: HTMLDivElement;
+  let options: Parameters<typeof mountWidget>[1];
+
+  function createWidget(upload?: UploadAttachment) {
+    vi.useFakeTimers();
+    container = document.createElement('div');
+    document.body.append(container);
+    options = {
+      config: { ...baseConfig, features: { ...baseConfig.features, fileUploads: true } },
+      messages: [], isOpen: false, initialView: 'conversation', connectionStatus: 'connected',
+      onSendMessage: vi.fn(), onUploadAttachment: upload,
+      onLauncherClick: () => { options.isOpen = !options.isOpen; mountWidget(container, options); },
+      onClose: () => { options.isOpen = false; mountWidget(container, options); },
+    };
+    act(() => mountWidget(container, options));
+    toggle();
+  }
+
+  function toggle() {
+    fireEvent.click(container.querySelector('.helpin-launcher')!);
+    act(() => vi.advanceTimersByTime(300));
+  }
+
+  async function attach() {
+    await act(async () => {
+      fireEvent.change(container.querySelector('input[type="file"]')!, {
+        target: { files: [new File(['A screenshot'], 'screenshot.txt', { type: 'text/plain' })] },
+      });
+    });
+  }
+
+  afterEach(() => {
+    if (container) { act(() => unmountWidget(container)); container.remove(); }
+    vi.useRealTimers();
+  });
+
+  it('preserves an unfinished message when the launcher closes and reopens the widget', () => {
+    createWidget();
+    const input = container.querySelector('textarea')!;
+    fireEvent.input(input, { target: { value: 'Please help with my account' } });
+    toggle();
+    toggle();
+    expect(container.querySelector('textarea')?.value).toBe('Please help with my account');
+    const windowEl = container.querySelector<HTMLElement>('.helpin-chat-window')!;
+    expect(windowEl.style.display).not.toBe('none');
+    expect(windowEl.hasAttribute('inert')).toBe(false);
+    expect(windowEl.getAttribute('aria-hidden')).toBe('false');
+  });
+
+  it('preserves uploaded attachments and clears the draft after sending', async () => {
+    createWidget(vi.fn().mockResolvedValue({ attachmentId: 'upload', url: '/file' }));
+    await attach();
+    fireEvent.input(container.querySelector('textarea')!, { target: { value: 'Here is the file' } });
+    toggle();
+    toggle();
+    expect(container.textContent).toContain('screenshot.txt');
+    expect(container.textContent).toContain('Ready to send');
+    fireEvent.submit(container.querySelector('form.helpin-compose-bar')!);
+    expect(options.onSendMessage).toHaveBeenCalledWith('Here is the file', ['upload']);
+    toggle();
+    toggle();
+    expect(container.querySelector('textarea')?.value).toBe('');
+    expect(container.textContent).not.toContain('screenshot.txt');
+  });
+
+  it('lets an in-flight upload finish while the widget is closed', async () => {
+    let finish!: (value: { attachmentId: string; url: string }) => void;
+    let signal: AbortSignal | undefined;
+    createWidget((_file, _id, uploadOptions) => {
+      signal = uploadOptions?.signal;
+      return new Promise(resolve => { finish = resolve; });
+    });
+    await attach();
+    toggle();
+    expect(signal?.aborted).toBe(false);
+    await act(async () => finish({ attachmentId: 'upload', url: '/file' }));
+    toggle();
+    expect(container.textContent).toContain('screenshot.txt');
+    expect(container.textContent).toContain('Ready to send');
+  });
+
+  it('preserves failed attachments so they can be retried after reopening', async () => {
+    const upload = vi.fn().mockRejectedValueOnce(new Error('Connection lost'))
+      .mockResolvedValueOnce({ attachmentId: 'upload', url: '/file' });
+    createWidget(upload);
+    await attach();
+    toggle();
+    toggle();
+    expect(container.textContent).toContain('Connection lost');
+    const retry = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Retry');
+    expect(retry).toBeTruthy();
+    await act(async () => { fireEvent.click(retry!); });
+    expect(container.textContent).toContain('Ready to send');
+    expect(upload).toHaveBeenCalledTimes(2);
+  });
+
+  it('pauses media when minimizing the chat', () => {
+    createWidget();
+    options.messages = [{
+      id: 'video', conversationId: 'conversation', role: 'customer', content: '',
+      isInternal: false, createdAt: '2026-10-01T10:00:00Z',
+      attachments: [{ id: 'file', fileName: 'recording.mp4', fileType: 'video/mp4', fileSize: 100, url: 'https://example.com/recording.mp4' }],
+    }];
+    act(() => mountWidget(container, options));
+    const video = container.querySelector('video')!;
+    Object.defineProperty(video, 'paused', { value: false });
+    const pause = vi.spyOn(video, 'pause').mockImplementation(() => {});
+    toggle();
+    expect(pause).toHaveBeenCalledOnce();
+  });
+
+  it('does not carry the draft into a different conversation opened while minimized', () => {
+    createWidget();
+    options.activeConversation = { id: 'first', subject: 'First conversation', status: 'open' };
+    act(() => mountWidget(container, options));
+    fireEvent.input(container.querySelector('textarea')!, { target: { value: 'For the first conversation' } });
+    toggle();
+    options.activeConversation = { id: 'second', subject: 'Second conversation', status: 'open' };
+    act(() => mountWidget(container, options));
+    toggle();
+    expect(container.querySelector('textarea')?.value).toBe('');
+  });
+
+  it('keeps the next draft when a new conversation receives its server ID while minimized', async () => {
+    createWidget(vi.fn().mockResolvedValue({ attachmentId: 'upload', url: '/file' }));
+    await attach();
+    fireEvent.input(container.querySelector('textarea')!, { target: { value: 'One more detail' } });
+    toggle();
+    options.activeConversation = { id: 'created', subject: 'New conversation', status: 'open' };
+    act(() => mountWidget(container, options));
+    toggle();
+    expect(container.querySelector('textarea')?.value).toBe('One more detail');
+    expect(container.textContent).toContain('screenshot.txt');
+  });
+
+  it('still cancels uploads and clears drafts when the widget is destroyed', async () => {
+    let signal: AbortSignal | undefined;
+    createWidget((_file, _id, uploadOptions) => {
+      signal = uploadOptions?.signal;
+      return new Promise(() => {});
+    });
+    await attach();
+    fireEvent.input(container.querySelector('textarea')!, { target: { value: 'Private draft' } });
+    toggle();
+    act(() => unmountWidget(container));
+    expect(signal?.aborted).toBe(true);
+    options.isOpen = true;
+    act(() => mountWidget(container, options));
+    expect(container.querySelector('textarea')?.value).toBe('');
+    expect(container.textContent).not.toContain('screenshot.txt');
   });
 });

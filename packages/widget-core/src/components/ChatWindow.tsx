@@ -143,6 +143,8 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   // viewing a top-level collection or has navigated directly via the
   // help-space list.
   const [helpCollectionStack, setHelpCollectionStack] = useState<string[]>([]);
+  const windowRef = useRef<HTMLDivElement>(null);
+  const [hasOpened, setHasOpened] = useState(isOpen);
   const [shouldRender, setShouldRender] = useState(isOpen);
   const [isVisible, setIsVisible] = useState(isOpen);
   const [humanSupportRequested, setHumanSupportRequested] = useState(false);
@@ -213,6 +215,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
     let timeoutId: ReturnType<typeof globalThis.setTimeout> | undefined;
 
     if (isOpen) {
+      setHasOpened(true);
       setShouldRender(true);
       if (typeof window !== 'undefined') {
         frameId = window.requestAnimationFrame(() => setIsVisible(true));
@@ -221,6 +224,9 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
       }
     } else if (shouldRender) {
       setIsVisible(false);
+      windowRef.current?.querySelectorAll<HTMLMediaElement>('video, audio').forEach(media => {
+        if (!media.paused) media.pause();
+      });
       timeoutId = globalThis.setTimeout(() => setShouldRender(false), 220);
     }
 
@@ -234,7 +240,9 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
     };
   }, [isOpen, shouldRender]);
 
-  if (!shouldRender) return null;
+  // Closing minimizes the widget; keep the draft and upload lifecycle mounted.
+  // Defer the initial mount until opening, and still clean up on SDK shutdown.
+  if (!hasOpened) return null;
 
   const position = config.branding?.widgetPosition || 'bottom-right';
   const brandColor = config.branding?.primaryColor || '#6366f1';
@@ -359,6 +367,10 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
 
   return (
     <div
+      ref={windowRef}
+      style={shouldRender ? undefined : { display: 'none' }}
+      aria-hidden={!isOpen}
+      inert={!isOpen}
       className={`helpin-chat-window ${positionClass} ${expandedClass} ${isVisible ? 'helpin-chat-window--visible' : 'helpin-chat-window--hidden'} helpin-theme-${colorScheme}`}
     >
       {activeView === 'home' && (
