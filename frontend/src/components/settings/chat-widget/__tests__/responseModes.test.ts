@@ -5,6 +5,7 @@ import {
   DEFAULT_CHAT_WIDGET_AI_RESPONSE_MODE,
   getChatWidgetAIResponseModeForUI,
   isChatWidgetAIResponseModeActive,
+  isChatWidgetAIFirst,
 } from '../responseModes';
 
 describe('CHAT_WIDGET_AI_RESPONSE_MODES', () => {
@@ -30,5 +31,18 @@ describe('CHAT_WIDGET_AI_RESPONSE_MODES', () => {
     expect(isChatWidgetAIResponseModeActive('')).toBe(false);
     expect(isChatWidgetAIResponseModeActive('internal_note')).toBe(true);
     expect(isChatWidgetAIResponseModeActive('ai_first')).toBe(true);
+  });
+});
+
+describe('isChatWidgetAIFirst', () => {
+  it.each([
+    [true, 'ai_first', 'chat', true],
+    [true, 'ai_first', 'both', true],
+    [true, 'ai_first', 'email', false],
+    [false, 'ai_first', 'chat', false],
+    [true, 'internal_note', 'chat', false],
+    [true, 'off', 'chat', false],
+  ])('matches visitor-facing AI for enabled=%s, mode=%s, channels=%s', (enabled, mode, channels, expected) => {
+    expect(isChatWidgetAIFirst(enabled, mode, channels)).toBe(expected);
   });
 });

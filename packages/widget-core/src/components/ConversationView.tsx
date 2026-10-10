@@ -14,6 +14,7 @@ import { SpecialNoticeBanner } from './SpecialNoticeBanner';
 import { AIThinkingMark } from './AIThinkingMark';
 import { CsatRating } from './CsatRating';
 import { ChevronLeftIcon, MoreVerticalIcon, XIcon } from './icons';
+import { resolveWelcomeMessage } from '../welcomeMessage';
 
 
 interface ConversationViewProps {
@@ -113,9 +114,9 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   const workspaceName = config.workspaceName || 'Support';
   const logoUrl = config.branding?.logoUrl;
   const brandColor = config.branding?.primaryColor || '#6366f1';
-  const welcomeMessage = config.branding?.welcomeMessage || 'Hi there. How can we help?';
   const availability = config.availability;
   const aiFirst = Boolean(config.features?.aiFirst);
+  const welcomeMessage = resolveWelcomeMessage(config.branding?.welcomeMessage, aiFirst);
   const hasTeamReply = messages.some((message) => message.role !== 'customer');
   const hasAssistantReply = messages.some((message) => message.role === 'ai' || message.role === 'agent');
   const hasHumanReply = messages.some((message) => message.role === 'agent');

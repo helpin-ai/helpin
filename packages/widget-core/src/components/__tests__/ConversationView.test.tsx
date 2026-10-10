@@ -98,6 +98,54 @@ describe('ConversationView branding', () => {
   });
 });
 
+describe('ConversationView welcome message', () => {
+  const teamGreeting = 'Hi there! How can we help you today?';
+  const aiGreeting = 'Hi! I’m your AI assistant. I can help with most questions, and you can ask to speak with our team anytime.';
+
+  function greetingConfig(welcomeMessage: string, aiFirst = true): WidgetConfig {
+    return {
+      ...baseConfig,
+      branding: { ...baseConfig.branding, welcomeMessage },
+      features: { ...baseConfig.features, aiEnabled: true, aiFirst },
+    };
+  }
+
+  it.each([teamGreeting, '', '   '])('uses the AI default for an original or empty greeting (%j)', (savedGreeting) => {
+    const { getByText } = renderConversationView({ config: greetingConfig(savedGreeting) });
+    expect(getByText(aiGreeting)).toBeTruthy();
+  });
+
+  it('keeps the team greeting when AI only writes internal notes', () => {
+    const { getByText, queryByText } = renderConversationView({ config: greetingConfig('', false) });
+    expect(getByText(teamGreeting)).toBeTruthy();
+    expect(queryByText(aiGreeting)).toBeNull();
+  });
+
+  it('keeps custom wording when switching between AI and team replies', () => {
+    const custom = 'Welcome to Acme. What would you like to know?';
+    const { getByText, rerender } = renderConversationView({ config: greetingConfig(custom) });
+    expect(getByText(custom)).toBeTruthy();
+    rerender(<ConversationView config={greetingConfig(custom, false)} messages={[]} onSendMessage={() => {}} onBack={() => {}} />);
+    expect(getByText(custom)).toBeTruthy();
+  });
+
+  it('keeps AI available outside team hours even when the handoff button is hidden', () => {
+    const config = greetingConfig(teamGreeting);
+    config.availability = { isOnline: false, statusText: 'Offline now', replyTimeText: 'Back tomorrow' };
+    const { getByText } = renderConversationView({ config });
+    expect(getByText(aiGreeting)).toBeTruthy();
+  });
+
+  it('does not insert the new default into an existing reply history', () => {
+    const { queryByText, getByText } = renderConversationView({
+      config: greetingConfig(teamGreeting),
+      messages: [{ id: 'reply', conversationId: 'conversation', role: 'ai', content: 'Here are the instructions.', isInternal: false, createdAt: new Date().toISOString() }],
+    });
+    expect(queryByText(aiGreeting)).toBeNull();
+    expect(getByText('Here are the instructions.')).toBeTruthy();
+  });
+});
+
 describe('ConversationView escalation email capture', () => {
   it('shows email-capture card for anonymous visitor when busy', () => {
     const { getByText, getByPlaceholderText } = renderConversationView({
