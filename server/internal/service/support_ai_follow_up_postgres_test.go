@@ -77,6 +77,15 @@ func setupFollowUpPostgres(t *testing.T) (*SupportFollowUpService, *gorm.DB, *mo
 	if err := db.Exec(string(sequenceMigration)).Error; err != nil {
 		t.Fatal(err)
 	}
+	stopMigration, err := os.ReadFile("../dbmigrate/sql/202610100001_support_follow_up_stop_actor.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := db.Exec(string(stopMigration)).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
 	// Public-message projection participates in the same parent lock as the
 	// production projection. Other projections are tested in inbox integration tests.
 	mustExec(t, db, `CREATE FUNCTION test_project_public_message() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
@@ -238,7 +247,7 @@ func TestSupportFollowUpPostgresQueueSurvivesRestart(t *testing.T) {
 		t.Fatalf("preview=%+v", preview)
 	}
 	for range 2 {
-		if err := svc.repo.Seed(context.Background(), e.WorkspaceID, settings, svc.now()); err != nil {
+		if _, err := svc.repo.Seed(context.Background(), e.WorkspaceID, settings, svc.now()); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -313,11 +322,11 @@ func TestSupportFollowUpPostgresDailyLimit(t *testing.T) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		firstErr = svc.repo.Seed(context.Background(), e.WorkspaceID, settings, svc.now())
+		_, firstErr = svc.repo.Seed(context.Background(), e.WorkspaceID, settings, svc.now())
 	}()
 	go func() {
 		defer wg.Done()
-		secondErr = svc.repo.Seed(context.Background(), e.WorkspaceID, settings, svc.now())
+		_, secondErr = svc.repo.Seed(context.Background(), e.WorkspaceID, settings, svc.now())
 	}()
 	wg.Wait()
 	if firstErr != nil || secondErr != nil {
@@ -445,5 +454,43 @@ func TestSupportFollowUpPostgresTechnicalFailurePreservesPublicState(t *testing.
 	}
 	if notes != 1 {
 		t.Fatalf("private failure notes=%d", notes)
+	}
+}
+
+func TestSupportFollowUpPostgresSchedulesBeforeDue(t *testing.T) {
+	svc, db, _, e, _ := setupFollowUpPostgres(t)
+	mustExec(t, db, `DELETE FROM support_ai_follow_ups`)
+	sentAt := svc.now().Add(-time.Minute).Truncate(time.Microsecond)
+	mustExec(t, db, `UPDATE support_conversations SET last_public_message_at=? WHERE id=?`, sentAt, e.ConversationID)
+	settings := model.DefaultSupportInboxSettings()
+	if _, err := svc.repo.Seed(context.Background(), e.WorkspaceID, settings, svc.now()); err != nil {
+		t.Fatal(err)
+	}
+	latest, err := svc.repo.Latest(context.Background(), e.WorkspaceID, e.ConversationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if latest == nil {
+		t.Fatal("follow-up must be recorded before its due time")
+	}
+	if want := sentAt.Add(24 * time.Hour); !latest.DueAt.Equal(want) {
+		t.Fatalf("due=%v want=%v", latest.DueAt, want)
+	}
+	claimed, err := svc.repo.Claim(context.Background(), svc.now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claimed) != 0 {
+		t.Fatal("future follow-up claimed early")
+	}
+	if err := svc.repo.CancelConversation(context.Background(), e.WorkspaceID, e.ConversationID); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err = svc.repo.Claim(context.Background(), latest.DueAt.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claimed) != 0 {
+		t.Fatal("stopped follow-up claimed when due")
 	}
 }

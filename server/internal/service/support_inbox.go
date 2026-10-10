@@ -1603,6 +1603,7 @@ func (s *SupportInboxService) GetConversation(ctx context.Context, workspaceID, 
 		if err != nil {
 			return nil, err
 		}
+		ticket.AIFollowUp = currentSupportFollowUp(ticket, ticket.AIFollowUp)
 	}
 	return ticket, nil
 }

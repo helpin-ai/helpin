@@ -69,6 +69,7 @@ export interface SupportConversation {
   ai_follow_up?: {
     id: string; run_id: string; status: 'scheduled' | 'assessing' | 'waiting' | 'resolved' | 'skipped' | 'cancelled' | 'failed' | 'handoff';
     sequence_version?: number; second_sent_at?: string; second_message_id?: string;
+    source_message_id?: string; cancelled_by_user_id?: string;
     reason?: string; due_at: string; sent_at?: string; sent_message_id?: string; close_at?: string; created_at: string; updated_at: string;
   };
   ai_resolution_type?: 'confirmed' | 'assumed' | null;

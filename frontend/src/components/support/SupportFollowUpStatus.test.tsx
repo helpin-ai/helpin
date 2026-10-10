@@ -3,74 +3,137 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import type { SupportConversation } from '@/lib/pmTypes';
+import { queryKeys } from '@/lib/queryKeys';
 import { SupportFollowUpStatus } from './SupportFollowUpStatus';
-
-vi.mock('@/hooks/queries/useSession', () => ({ useWorkspaceAccess: () => ({ data: {} }), usePermissions: () => ({ has: () => false }) }));
-let container: HTMLDivElement;
-let root: Root;
-let client: QueryClient;
+const mocks = vi.hoisted(() => ({ cancel: vi.fn(), error: vi.fn(), success: vi.fn() }));
+vi.mock('@/lib/services/supportService', () => ({
+  supportService: { cancelConversationFollowUp: mocks.cancel },
+}));
+vi.mock('sonner', () => ({ toast: { error: mocks.error, success: mocks.success } }));
+let container: HTMLDivElement, root: Root, client: QueryClient;
+const base = {
+  id: 'c',
+  workspace_id: 'ws',
+  status: 'open',
+  flow_state: 'ai_handling',
+  ai_state: 'pending',
+  last_public_message_id: 'source',
+  last_public_sender_type: 'ai',
+  last_public_message_at: '2026-10-10T10:00:00Z',
+  ai_follow_up: {
+    id: 'episode',
+    source_message_id: 'source',
+    status: 'scheduled',
+    sequence_version: 2,
+    due_at: '2026-10-11T10:00:00Z',
+    created_at: '2026-10-10T10:01:00Z',
+    updated_at: '2026-10-10T10:01:00Z',
+  },
+} as SupportConversation;
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
-  client = new QueryClient();
+  client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+  vi.clearAllMocks();
 });
-afterEach(() => { act(() => root.unmount()); client.clear(); container.remove(); vi.unstubAllGlobals(); });
-async function renderEpisode(episode: Partial<NonNullable<SupportConversation['ai_follow_up']>>) {
-  const conversation = { id: 'c', workspace_id: 'ws', ai_follow_up: { status: 'waiting', sequence_version: 2, due_at: '2026-09-10T12:00:00Z', close_at: '2026-09-11T12:00:00Z', ...episode } } as SupportConversation;
-  await act(async () => root.render(<QueryClientProvider client={client}><SupportFollowUpStatus conversation={conversation} /></QueryClientProvider>));
+afterEach(() => {
+  act(() => root.unmount());
+  client.clear();
+  container.remove();
+  vi.unstubAllGlobals();
+});
+async function render(conversation = base, canEdit = true) {
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <TooltipProvider>
+          <SupportFollowUpStatus conversation={conversation} canEdit={canEdit} />
+        </TooltipProvider>
+      </QueryClientProvider>,
+    ),
+  );
 }
-describe('Support follow-up status', () => {
-  it('shows the second follow-up deadline before the final message is sent', async () => {
-    await renderEpisode({});
-    expect(container.textContent).toContain('Second follow-up scheduled for');
-    expect(container.querySelector('time')?.dateTime).toBe('2026-09-10T12:00:00Z');
-    expect(container.textContent).not.toContain('Closes if no reply by');
+function stop() {
+  return [...container.querySelectorAll('button')].find((button) =>
+    button.textContent?.startsWith('Stop'),
+  );
+}
+describe('current follow-up row', () => {
+  it('shows one schedule with a scoped stop action', async () => {
+    await render();
+    expect(container.querySelectorAll('[data-support-follow-up]')).toHaveLength(1);
+    expect(container.textContent).toContain('AI follow-up scheduled');
+    expect(container.querySelector('time')?.dateTime).toBe(base.ai_follow_up!.due_at);
+    expect(stop()?.textContent).toBe('Stop follow-ups');
   });
-  it('shows closure only after the second message is sent', async () => {
-    await renderEpisode({ second_sent_at: '2026-09-10T12:00:00Z' });
-    expect(container.textContent).toContain('Closes if no reply by');
-    expect(container.querySelector('time')?.dateTime).toBe('2026-09-11T12:00:00Z');
+  it('viewers can see the schedule without a stop action', async () => {
+    await render(base, false);
+    expect(container.textContent).toContain('AI follow-up scheduled');
+    expect(stop()).toBeUndefined();
   });
-  it.each([1, undefined])('preserves closure for legacy version %s', async sequence_version => {
-    await renderEpisode({ sequence_version });
-    expect(container.textContent).toContain('Closes if no reply by');
-    expect(container.querySelector('time')?.dateTime).toBe('2026-09-11T12:00:00Z');
+  it('replaces the first schedule with automatic closure', async () => {
+    await render();
+    await render({
+      ...base,
+      ai_follow_up: {
+        ...base.ai_follow_up!,
+        status: 'waiting',
+        sequence_version: 1,
+        close_at: '2026-10-12T10:00:00Z',
+      },
+    });
+    expect(container.querySelectorAll('[data-support-follow-up]')).toHaveLength(1);
+    expect(container.textContent).toContain('Conversation will close if there’s no reply');
+    expect(container.textContent).not.toContain('AI follow-up scheduled');
+    expect(stop()?.textContent).toBe('Stop auto-close');
   });
-  it('keeps a genuine handoff distinct from technical failure', async () => {
-    await renderEpisode({ status: 'handoff', reason: 'Unfinished work requires review' });
-    expect(container.textContent).toContain('Follow-up requires a teammate');
-    expect(container.textContent).toContain('Unfinished work requires review');
-    expect(container.textContent).toContain('A teammate should review this conversation');
-    expect(container.textContent).toContain('It will not close automatically');
-    expect(container.textContent).not.toContain('technical issue');
-    expect(container.querySelector('time')).toBeNull();
+  it('stops the displayed episode and updates the correct conversation cache', async () => {
+    const stopped = {
+      ...base,
+      ai_follow_up: {
+        ...base.ai_follow_up!,
+        status: 'cancelled' as const,
+        reason: 'cancelled_by_teammate',
+      },
+    };
+    mocks.cancel.mockResolvedValue({ data: stopped, error: null });
+    await render();
+    await act(async () => stop()!.click());
+    expect(mocks.cancel).toHaveBeenCalledWith('ws', 'c', 'episode');
+    expect(client.getQueryData(queryKeys.support.conversation('ws', 'c'))).toEqual(stopped);
+    await render(stopped);
+    expect(container.textContent).toContain('AI follow-ups stopped');
+    expect(stop()).toBeUndefined();
   });
-  it.each([
-    ['assessment_launch_timeout', 'The conversation review could not start in time.'],
-    ['assessment_did_not_complete', 'The conversation review could not be completed.'],
-    ['assessment_timeout', 'The conversation review took too long to complete.'],
-    ['assessment_expired', 'The conversation review expired before it could finish.'],
-    ['closing_notice_missing', 'The final reminder could not be prepared.'],
-    ['follow_up_delivery_failed', 'The follow-up email could not be delivered.'],
-    ['follow_up_delivery_unconfirmed', 'Delivery of the follow-up email could not be confirmed.'],
-  ])('explains %s without implying customer escalation', async (reason, explanation) => {
-    await renderEpisode({ status: 'failed', reason });
-    expect(container.textContent).toContain('Follow-up stopped');
-    expect(container.textContent).toContain(explanation);
-    expect(container.textContent).toContain('Automatic follow-ups have stopped');
-    expect(container.textContent).toContain('will not close automatically');
-    expect(container.textContent).toContain('The customer was not notified about this failure');
-    expect(container.textContent).not.toContain(reason);
-    expect(container.textContent).not.toContain('teammate');
-    expect(container.querySelector('time')).toBeNull();
+  it('keeps the schedule on a failed stop', async () => {
+    mocks.cancel.mockResolvedValue({ data: null, error: 'network failure' });
+    await render();
+    await act(async () => stop()!.click());
+    expect(mocks.error).toHaveBeenCalled();
+    expect(container.textContent).toContain('AI follow-up scheduled');
   });
-  it.each(['unknown_internal_error_code', undefined])('uses a readable fallback for an unrecognized reason %s', async reason => {
-    await renderEpisode({ status: 'failed', reason });
-    expect(container.textContent).toContain('A technical issue prevented this follow-up from continuing.');
-    expect(container.textContent).not.toContain('unknown_internal_error_code');
-    expect(container.textContent).not.toContain('teammate');
+  it('removes all notices when the customer replies or the conversation resolves', async () => {
+    await render();
+    await render({
+      ...base,
+      last_public_message_id: 'customer-reply',
+      last_public_sender_type: 'customer',
+    });
+    expect(container.textContent).toBe('');
+    await render({ ...base, status: 'resolved' });
+    expect(container.textContent).toBe('');
+  });
+  it('shows only a concise failure, with technical detail kept out of the row', async () => {
+    await render({
+      ...base,
+      ai_follow_up: { ...base.ai_follow_up!, status: 'failed', reason: 'assessment_timeout' },
+    });
+    expect(container.textContent).toContain('AI follow-up couldn’t be completed');
+    expect(container.textContent).not.toContain('assessment_timeout');
+    expect(stop()).toBeUndefined();
   });
 });

@@ -10,7 +10,7 @@ import (
 )
 
 // CancelConversationFollowUp checks mailbox access before cancelling pending AI work.
-func (s *SupportInboxService) CancelConversationFollowUp(ctx context.Context, workspaceID, id string) (*model.SupportConversation, error) {
+func (s *SupportInboxService) CancelConversationFollowUp(ctx context.Context, workspaceID, id string, req model.CancelSupportFollowUpRequest, actorID string) (*model.SupportConversation, error) {
 	conv, err := s.loadConversationAccessible(ctx, workspaceID, id)
 	if err != nil {
 		return nil, err
@@ -21,7 +21,7 @@ func (s *SupportInboxService) CancelConversationFollowUp(ctx context.Context, wo
 	if s.followUpRepo == nil {
 		return nil, fmt.Errorf("follow-up service unavailable")
 	}
-	if err := s.followUpRepo.CancelConversation(ctx, workspaceID, id); err != nil {
+	if err := s.followUpRepo.CancelEpisode(ctx, workspaceID, id, req.FollowUpID, actorID); err != nil {
 		return nil, err
 	}
 	if s.wsPublisher != nil {

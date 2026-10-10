@@ -36,7 +36,7 @@ for (const theme of ['light', 'dark']) {
     await page.mouse.move(1400, 850);
     await expect(avatar).toBeVisible();
     await row.hover();
-    await expect(avatar).toBeHidden();
+    await expect(avatar).toBeVisible();
     await row.getByRole('checkbox').click();
     await expect(page).toHaveURL(new RegExp(`/support/${CONVERSATION_ID}$`));
     await expect(page.getByText('1 selected', { exact: true })).toBeVisible();

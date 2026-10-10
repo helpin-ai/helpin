@@ -42,6 +42,8 @@ import { getDayLabel, getEffectiveSenderType, getSupportReceiptStatus, isSameDay
 import { TranslatedMessageBubble } from './TranslatedMessageBubble';
 import { useJoinedMessagePosition } from './useJoinedMessagePosition';
 import { EmptyState } from './EmptyState';
+import { SupportFollowUpStatus } from './SupportFollowUpStatus';
+import { getSupportFollowUpStage, isFollowUpStatusNote } from './supportFollowUpState';
 import { AgentRunsCard } from './AgentRunsCard';
 import { AIRunApprovalCard } from './AIRunApprovalCard';
 import { ConversationActionsMenu } from './ConversationActionsMenu';
@@ -338,11 +340,12 @@ export function MessageThread({
   } = useConversationMessages(workspaceId, conversationId);
   const loadedMessages = useMemo(
     () => flattenSupportMessagePages(messagePages).filter(
-      message => !(message.message_type === 'system' && message.system_event_type === 'teammate_joined'),
+      message => !(message.message_type === 'system' && message.system_event_type === 'teammate_joined') && !isFollowUpStatusNote(message),
     ),
     [messagePages],
   );
   const messages=usePendingSupportSends(workspaceId,conversationId||'',loadedMessages);
+  const latestPublicMessage = useMemo(() => messages.findLast(message => !message.is_internal && message.message_type === 'reply' && !message.pending_send), [messages]);
   const translationIds=useMemo(()=>messages.filter(m=>m.message_type==='reply'&&!m.is_internal&&!m.pending_send).map(m=>m.id),[messages]);
   const cachedTranslations=useCachedSupportTranslations(workspaceId,conversationId||'',translationIds, Math.max(0, ...messages.filter(m=>!m.is_internal).map(m=>Date.parse(m.created_at)))).data;
   const translationMap=useMemo(()=>new Map((cachedTranslations||[]).map(t=>[t.purpose === 'outgoing_reply' ? t.sent_message_id : t.source_message_id,t])),[cachedTranslations]);
@@ -702,6 +705,8 @@ export function MessageThread({
 
   const visibleGroupedMessages = groupedMessages;
 
+  const followUpStage = conversation ? getSupportFollowUpStage(conversation, latestPublicMessage) : null;
+  const followUpStageKey = followUpStage ? `${conversation?.ai_follow_up?.id}:${followUpStage.kind}:${followUpStage.deadline ?? ''}` : null;
   const lastMessageId = messages[messages.length - 1]?.id ?? null;
   const lastRenderedCustomerMessageId = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -807,6 +812,14 @@ export function MessageThread({
       timeouts.forEach((timeout) => window.clearTimeout(timeout));
     };
   }, [conversationId, initialScrollTargetMessageId, lastMessageId, messages.length, visibleGroupedMessages.length]);
+
+  useLayoutEffect(() => {
+    // A new schedule can arrive without a new message. Keep it visible only
+    // when the viewer is already at the bottom; do not interrupt history reading.
+    if (!followUpStageKey || !isNearBottomRef.current || pendingInitialScrollRef.current) return;
+    const viewport = scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLDivElement | null;
+    if (viewport) viewport.scrollTop = viewport.scrollHeight;
+  }, [conversationId, followUpStageKey]);
 
   useJoinedMessagePosition(scrollAreaRef, conversationId, messages, olderPageScrollRef);
 
@@ -1271,6 +1284,15 @@ export function MessageThread({
               </div>
             );
           })}
+          {!isThreadLoading && conversation?.id === conversationId && (
+            <SupportFollowUpStatus
+              key={conversation.id}
+              conversation={conversation}
+              canEdit={!!access?.permissions?.includes('support.edit')}
+              latestPublicMessage={latestPublicMessage}
+              stoppedByName={conversation.ai_follow_up?.cancelled_by_user_id ? memberNameByUserId.get(conversation.ai_follow_up.cancelled_by_user_id) : undefined}
+            />
+          )}
           <TypingIndicatorBar conversationId={conversationId} />
           <AgentTypingBubble conversationId={conversationId} workspaceId={workspaceId} />
           <div ref={messagesEndRef} />

@@ -16,8 +16,10 @@ export function timeAgo(dateStr: string): string {
   return `${days}d`;
 }
 
-export function formatTimestamp(dateStr: string): string {
-  return new Date(dateStr).toLocaleString(undefined, {
+export function formatTimestamp(dateStr: string, now = new Date()): string {
+  const date = new Date(dateStr);
+  return date.toLocaleString(undefined, {
+    year: date.getFullYear() === now.getFullYear() ? undefined : 'numeric',
     month: 'short',
     day: 'numeric',
     hour: 'numeric',
