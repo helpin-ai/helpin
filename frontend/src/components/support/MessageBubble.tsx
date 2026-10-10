@@ -4,10 +4,12 @@ import { ContactAvatarImage } from '@/components/ui/contact-avatar-image';
 import { SupportAIActivity } from './SupportAIActivity';
 import { getSupportAIActivity } from './supportAIActivity';
 import { PendingSendStatus } from './PendingSendStatus';
+import { MessageDeliveryStatus } from './MessageDeliveryStatus';
+import { getMessageDelivery } from './messageDelivery';
 import { memo, useCallback, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, LinkSquare01Icon, File01Icon, RotateLeft01Icon, StickyNote01Icon, CancelCircleIcon, Mail01Icon, AlertCircleIcon, UserIcon, ZapIcon, BubbleChatIcon } from '@/lib/icons';
+import { CheckmarkCircle02Icon, ArrowDown01Icon, LinkSquare01Icon, File01Icon, RotateLeft01Icon, StickyNote01Icon, CancelCircleIcon, Mail01Icon, UserIcon, ZapIcon } from '@/lib/icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { EmailDetailModal } from './EmailDetailModal';
@@ -22,7 +24,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import type { AIMessageMetadata, SupportForwardedAttribution, SupportLinkPreview, SupportLinkSecurity, SupportMessage, TicketSource } from '@/lib/pmTypes';
 import { EmailBodyRenderer } from './EmailBodyRenderer';
-import { findSupportLinkSecurity, formatMessageTime, formatTimestamp, getInitial, getAvatarColor, getCustomerAvatarSeed, getEffectiveSenderType, getExplicitEmailDeliveryState, HELPIN_AI_DISPLAY_NAME, isExternalSupportEmailReply, parseAIMessageMetadata, parseSupportLinkPreviews, parseSupportLinkSecurity, type SupportReceiptStatus } from './helpers';
+import { findSupportLinkSecurity, formatMessageTime, formatTimestamp, getInitial, getAvatarColor, getCustomerAvatarSeed, getEffectiveSenderType, HELPIN_AI_DISPLAY_NAME, parseAIMessageMetadata, parseSupportLinkPreviews, parseSupportLinkSecurity, type SupportReceiptStatus } from './helpers';
 import { getReplyEmailSubject, getReplyDeliveryMode, REPLY_DELIVERY_LABELS } from './replyDelivery';
 import { cleanForwardedDisplayContent, hasForwardedHeaderMarker } from './forwardedEmailDisplay';
 import { timeAgo } from '@/lib/utils';
@@ -369,9 +371,6 @@ export const MessageBubble = memo(function MessageBubble({
     && aiMeta.ai_confidence >= 0 && aiMeta.ai_confidence <= 1 ? aiMeta.ai_confidence : null;
   const linkPreviews = useMemo<SupportLinkPreview[]>(() => parseSupportLinkPreviews(message.metadata), [message.metadata]);
   const linkSecurity = useMemo<SupportLinkSecurity[]>(() => parseSupportLinkSecurity(message.metadata), [message.metadata]);
-  const displayedReceiptStatus: SupportReceiptStatus = isExternalSupportEmailReply(message.metadata)
-    ? 'sent_outside_helpin'
-    : receiptStatus ?? null;
   const markdownComponents = useMemo(() => ({
     ...markdownBaseComponents,
     a: ({ href, children }: ComponentPropsWithoutRef<'a'>) => (
@@ -400,9 +399,7 @@ export const MessageBubble = memo(function MessageBubble({
   }, [isAI, isInternal, message.metadata]);
   const feedbackLabel = visitorFeedback ? 'Visitor marked helpful' : 'Visitor marked unhelpful';
   const deliveryMode = !isCustomer && !isInternal ? getReplyDeliveryMode(message.metadata) : undefined;
-  const explicitEmailState = deliveryMode && deliveryMode !== 'chat_only' ? getExplicitEmailDeliveryState(message) : undefined;
-  const chatSeen = receiptStatus === 'read' || (source === 'widget' && !!contactLastSeenAt && Date.parse(contactLastSeenAt) >= Date.parse(message.created_at));
-  const chatDeliveryLabel = message.id.startsWith('optimistic-') ? 'Sending' : chatSeen ? 'Seen' : 'Sent';
+  const delivery = getMessageDelivery(message, { source, contactLastSeenAt, receiptStatus });
   const isOwnMessage = !!message.sender_user_id && message.sender_user_id === currentUser?.id;
   const senderName = message.sender_display_name
     ?? (isCustomer ? (customerDisplayName || 'Customer') : isAI ? HELPIN_AI_DISPLAY_NAME : isAgent ? 'Agent' : isOwnMessage ? currentUser?.full_name ?? 'You' : 'Teammate');
@@ -498,7 +495,6 @@ export const MessageBubble = memo(function MessageBubble({
     && message.message_type !== 'system'
     && !message.is_internal;
   const cancellableActive = canMutateOwnReply && Number.isFinite(cancellableUntilMs) && cancellableUntilMs > Date.now();
-  const hasCancellableFooter = cancellableActive;
 
   const restoreComposerDraft = useCallback((markdown: string) => {
     window.dispatchEvent(new CustomEvent(RESTORE_SUPPORT_DRAFT_EVENT, {
@@ -839,9 +835,8 @@ export const MessageBubble = memo(function MessageBubble({
       ? 'Received by email'
       : `Received by email from ${inboundFromEmail}`
     : 'Received via email';
-  const hasEmailReceiptStatus = displayedReceiptStatus === 'sending_email' || displayedReceiptStatus === 'sent_email' || displayedReceiptStatus === 'delivered_email' || displayedReceiptStatus === 'read_email' || displayedReceiptStatus === 'sent_outside_helpin';
-  const showStandaloneEmailBadge = !deliveryMode && hasEmailBadge && !(hasEmailReceiptStatus && !isCustomer);
-  const hasStatusBelow = !!deliveryMode || !!displayedReceiptStatus || aiConfidence !== null || !!aiMeta?.ai_sources?.length || hasEmailBadge;
+  const showStandaloneEmailBadge = isCustomer && hasEmailBadge;
+  const hasStatusBelow = !!delivery || aiConfidence !== null || !!aiMeta?.ai_sources?.length || showStandaloneEmailBadge;
   const messageActionsMenu = (
     <MessageActionsMenu
       alignSide={isCustomer ? 'right' : 'left'}
@@ -987,7 +982,7 @@ export const MessageBubble = memo(function MessageBubble({
       {/* Status below the bubble row — outside the avatar alignment */}
       {translationStatus && <div data-slot="support-message-translation-status" className={`mt-1 flex text-xs text-muted-foreground ${isCustomer ? 'justify-start pl-9' : 'justify-end pr-9'}`}>{translationStatus}</div>}
       {message.pending_send && <PendingSendStatus message={message}/>}
-      {!message.pending_send && (hasStatusBelow || hasCancellableFooter) && (
+      {!message.pending_send && (hasStatusBelow || cancellableActive) && (
         <div className={`mt-0.5 ${isCustomer ? 'pl-9' : 'pr-9'}`}>
           {showStandaloneEmailBadge && (
             <div className={`mb-0.5 space-y-0.5 ${isCustomer ? '' : 'text-right'}`}>
@@ -1000,217 +995,68 @@ export const MessageBubble = memo(function MessageBubble({
                   <Mail01Icon className="h-3 w-3" />
                   {forwardedAttribution && isCustomer
                     ? `Forwarded by ${forwardedAttribution.forwarded_by_name || forwardedAttribution.forwarded_by_email}`
-                    : isCustomer ? inboundEmailBadgeLabel : 'Sent via email'}
+                    : inboundEmailBadgeLabel}
                 </button>
               </div>
             </div>
           )}
 
-          {/* Delivery failure indicator — supersedes the read receipt when the outbound email bounced or was marked spam. */}
-          {deliveryMode ? (
-            <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-              {deliveryMode !== 'email_only' && (
-                <span className="inline-flex items-center gap-1">
-                  <BubbleChatIcon className="h-3.5 w-3.5" aria-hidden="true" />
-                  {deliveryMode === 'chat_only' ? 'Chat only' : 'Chat'} · {chatDeliveryLabel}
-                </span>
-              )}
-              {explicitEmailState && (
-                <button
-                  type="button"
-                  onClick={() => setInfoOpen(true)}
-                  className={`inline-flex items-center gap-1 text-left transition-colors hover:underline ${explicitEmailState.failed ? 'text-quiet-accent' : 'hover:text-foreground'}`}
-                >
-                  <Mail01Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                  <span>
-                    {deliveryMode === 'email_only' ? 'Email only' : 'Email'} · {explicitEmailState.label}
-                    {explicitEmailState.error ? ` · ${explicitEmailState.error}` : ''}
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {(aiConfidence !== null || !!aiMeta?.ai_sources?.length) && (
+              <div className="inline-flex items-center gap-1.5 text-[11px]">
+                {aiConfidence !== null && (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 font-medium text-primary">
+                    <CheckmarkCircle02Icon className="h-3 w-3" />
+                    {(aiConfidence * 100).toFixed(0)}% confident
                   </span>
-                </button>
-              )}
-              {cancellableActive && (
-                <button
-                  type="button"
-                  className="font-medium text-foreground transition-colors hover:text-primary hover:underline"
-                  onClick={handleUndoOrEdit}
-                  disabled={deleteMutation.isPending}
-                >
-                  Undo
-                </button>
-              )}
-            </div>
-          ) : (message.email_delivery_status === 'bounced' || message.email_delivery_status === 'spam_complaint') ? (
-            <div className={`flex items-center gap-1 ${isCustomer ? '' : 'justify-end'}`}>
-              <AlertCircleIcon className="h-3.5 w-3.5 text-red-500" />
-              <span className="text-[11px] text-red-600 dark:text-red-400">
-                {message.email_delivery_status === 'spam_complaint' ? 'Marked as spam' : 'Delivery failed'}
-                {message.email_delivery_error ? ` · ${message.email_delivery_error}` : ''}
-              </span>
-            </div>
-          ) : hasCancellableFooter ? (
-            <div className={`flex items-center gap-1 text-[11px] text-muted-foreground ${isCustomer ? '' : 'justify-end'}`}>
-              <TickDouble01Icon className="h-3.5 w-3.5" />
-              {cancellableActive ? (
-                <>
-                  <span>Queued for email</span>
-                  <span>·</span>
+                )}
+                {!!aiMeta?.ai_sources?.length && (
                   <button
                     type="button"
-                    className="font-medium text-foreground transition-colors hover:text-primary hover:underline"
-                    onClick={handleUndoOrEdit}
-                    disabled={deleteMutation.isPending}
+                    onClick={() => setSourcesOpen(!sourcesOpen)}
+                    aria-expanded={sourcesOpen}
+                    className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground ${sourcesOpen ? 'border-border bg-background text-foreground' : 'border-border/60 bg-muted/40'}`}
                   >
-                    Undo
-                  </button>
-                </>
-              ) : (
-                <span>Delivered to email</span>
-              )}
-            </div>
-          ) : aiMeta && (aiConfidence !== null || !!aiMeta.ai_sources?.length || !!displayedReceiptStatus) ? (
-            // AI message: combined footer — confidence + sources cluster + receipt.
-            // For agent messages the parent wrapper isn't bubble-width, so
-            // justify-between would scatter the chips across the whole row.
-            // Cluster everything to the right under the bubble instead.
-            <>
-              <div
-                className={`mt-1.5 flex items-center gap-2 ${
-                  isCustomer ? 'justify-between' : 'justify-end'
-                }`}
-              >
-                <div className="inline-flex items-center gap-1.5 text-[11px]">
-                  {aiConfidence !== null && (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 font-medium text-primary">
-                      <CheckmarkCircle02Icon className="h-3 w-3" />
-                      {(aiConfidence * 100).toFixed(0)}% confident
-                    </span>
-                  )}
-                  {aiMeta.ai_sources?.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setSourcesOpen(!sourcesOpen)}
-                      aria-expanded={sourcesOpen}
-                      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground ${sourcesOpen ? 'border-border bg-background text-foreground' : 'border-border/60 bg-muted/40'}`}
-                    >
-                      <File01Icon className="h-3 w-3" />
-                      {aiMeta.ai_sources.length} source{aiMeta.ai_sources.length > 1 ? 's' : ''}
-                      <ArrowDown01Icon className={`h-3 w-3 transition-transform ${sourcesOpen ? 'rotate-180' : ''}`} />
-                    </button>
-                  )}
-                </div>
-                {displayedReceiptStatus && (
-                  <button
-                    type="button"
-                    onClick={() => setInfoOpen(true)}
-                    className="inline-flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground hover:underline"
-                  >
-                    {displayedReceiptStatus === 'sent_outside_helpin' ? (
-                      <>
-                        <Mail01Icon className="h-3.5 w-3.5" />
-                        Sent outside Helpin
-                      </>
-                    ) : displayedReceiptStatus === 'read' ? (
-                      <>
-                        <TickDouble01Icon className="h-3.5 w-3.5 text-blue-500" />
-                        Read in chat
-                      </>
-                    ) : displayedReceiptStatus === 'read_email' ? (
-                      <>
-                        <TickDouble01Icon className="h-3.5 w-3.5 text-blue-500" />
-                        Read via email
-                      </>
-                    ) : displayedReceiptStatus === 'delivered_email' ? (
-                      <>
-                        <TickDouble01Icon className="h-3.5 w-3.5" />
-                        Delivered via email
-                      </>
-                    ) : displayedReceiptStatus === 'sending_email' ? (
-                      <>
-                        <TickDouble01Icon className="h-3.5 w-3.5" />
-                        Sending email
-                      </>
-                    ) : displayedReceiptStatus === 'sent_email' ? (
-                      <>
-                        <TickDouble01Icon className="h-3.5 w-3.5" />
-                        Sent via email
-                      </>
-                    ) : (
-                      <>
-                        <TickDouble01Icon className="h-3.5 w-3.5" />
-                        Delivered
-                      </>
-                    )}
+                    <File01Icon className="h-3 w-3" />
+                    {aiMeta.ai_sources.length} source{aiMeta.ai_sources.length > 1 ? 's' : ''}
+                    <ArrowDown01Icon className={`h-3 w-3 transition-transform ${sourcesOpen ? 'rotate-180' : ''}`} />
                   </button>
                 )}
               </div>
-              {sourcesOpen && aiMeta.ai_sources?.length > 0 && (
-                <div className="mt-1.5 overflow-hidden rounded-xl border bg-muted/40 p-1 shadow-sm">
-                  {aiMeta.ai_sources.map((src, idx) => {
-                    const Tag: 'a' | 'div' = src.url ? 'a' : 'div';
-                    const linkProps = src.url
-                      ? { href: src.url, target: '_blank' as const, rel: 'noopener noreferrer' }
-                      : {};
-                    return (
-                      <Tag
-                        key={src.docId}
-                        {...linkProps}
-                        className={`group flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs ${idx > 0 ? 'border-t border-border/60' : ''} ${src.url ? 'cursor-pointer text-foreground hover:bg-background hover:text-primary' : 'text-foreground'}`}
-                      >
-                        <File01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        <span className={`min-w-0 truncate font-medium ${src.url ? 'group-hover:underline' : ''}`}>{src.title}</span>
-                        {src.url && (
-                          <LinkSquare01Icon className="h-3 w-3 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
-                        )}
-                      </Tag>
-                    );
-                  })}
-                </div>
-              )}
-            </>
-          ) : displayedReceiptStatus && (
-            <div className={`flex items-center gap-1 ${isCustomer ? '' : 'justify-end'}`}>
+            )}
+            {delivery && <MessageDeliveryStatus delivery={delivery} onClick={() => setInfoOpen(true)} />}
+            {cancellableActive && (
               <button
                 type="button"
-                onClick={() => setInfoOpen(true)}
-                className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground hover:underline"
+                className="text-[11px] font-medium text-foreground transition-colors hover:text-primary hover:underline"
+                onClick={handleUndoOrEdit}
+                disabled={deleteMutation.isPending}
               >
-                {displayedReceiptStatus === 'sent_outside_helpin' ? (
-                  <>
-                    <Mail01Icon className="h-3.5 w-3.5" />
-                    Sent outside Helpin
-                  </>
-                ) : displayedReceiptStatus === 'read' ? (
-                  <>
-                    <TickDouble01Icon className="h-3.5 w-3.5 text-blue-500" />
-                    Read in chat
-                  </>
-                ) : displayedReceiptStatus === 'read_email' ? (
-                  <>
-                    <TickDouble01Icon className="h-3.5 w-3.5 text-blue-500" />
-                    Read via email
-                  </>
-                ) : displayedReceiptStatus === 'delivered_email' ? (
-                  <>
-                    <TickDouble01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                    Delivered via email
-                  </>
-                ) : displayedReceiptStatus === 'sending_email' ? (
-                  <>
-                    <TickDouble01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                    Sending email
-                  </>
-                ) : displayedReceiptStatus === 'sent_email' ? (
-                  <>
-                    <TickDouble01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                    Sent via email
-                  </>
-                ) : (
-                  <>
-                    <TickDouble01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                    Delivered
-                  </>
-                )}
+                Undo
               </button>
+            )}
+          </div>
+          {sourcesOpen && !!aiMeta?.ai_sources?.length && (
+            <div className="mt-1.5 overflow-hidden rounded-xl border bg-muted/40 p-1 shadow-sm">
+              {aiMeta.ai_sources.map((src, idx) => {
+                const Tag: 'a' | 'div' = src.url ? 'a' : 'div';
+                const linkProps = src.url
+                  ? { href: src.url, target: '_blank' as const, rel: 'noopener noreferrer' }
+                  : {};
+                return (
+                  <Tag
+                    key={src.docId}
+                    {...linkProps}
+                    className={`group flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs ${idx > 0 ? 'border-t border-border/60' : ''} ${src.url ? 'cursor-pointer text-foreground hover:bg-background hover:text-primary' : 'text-foreground'}`}
+                  >
+                    <File01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className={`min-w-0 truncate font-medium ${src.url ? 'group-hover:underline' : ''}`}>{src.title}</span>
+                    {src.url && (
+                      <LinkSquare01Icon className="h-3 w-3 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
+                    )}
+                  </Tag>
+                );
+              })}
             </div>
           )}
         </div>

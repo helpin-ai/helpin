@@ -5,6 +5,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAuthStore } from '@/stores/authStore'
+import { api } from '@/lib/api'
+import { supportService } from '@/lib/services/supportService'
 import type { SupportMessage } from '@/lib/pmTypes'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { MessageBubble, sanitizeSupportShortcutSeed } from '../MessageBubble'
@@ -17,9 +19,17 @@ function findButtonByText(container: HTMLElement, text: string) {
   return Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes(text)) ?? null
 }
 
+function deliveryButton(container: HTMLElement) {
+  return container.querySelector<HTMLButtonElement>('button[data-slot="message-delivery-status"]')
+}
+
+function deliveryLabel(container: HTMLElement) {
+  return deliveryButton(container)?.getAttribute('aria-label')
+}
+
 function renderBubble(
   message: SupportMessage,
-  receiptStatus?: 'sending_email' | 'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email' | 'sent_outside_helpin' | null,
+  receiptStatus?: 'sent' | 'sending_email' | 'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email' | 'sent_outside_helpin' | null,
   extraProps: Partial<ComponentProps<typeof MessageBubble>> = {},
 ) {
   const container = document.createElement('div')
@@ -146,8 +156,8 @@ describe('MessageBubble', () => {
   it.each(['queued', 'preparing', 'sending', 'translating'] as const)('keeps %s delivery status below the bubble', (pending) => {
     const rendered = renderBubble({ id: 'sending', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'user', message_type: 'reply', is_internal: false, content: 'Hello', pending_send: pending, created_at: '2026-09-24T10:00:00Z', updated_at: '2026-09-24T10:00:00Z' });
     try {
-      const expected = pending === 'translating' ? 'Translating…' : 'Sending…';
-      expect(rendered.container.textContent).toContain(expected);
+      const expected = pending === 'translating' ? 'Translating…' : pending === 'queued' ? 'Queued' : 'Sending…';
+      expect(rendered.container.querySelector('[role="status"]')?.getAttribute('aria-label')).toBe(expected);
       expect(rendered.container.querySelector('[data-slot="support-message-bubble-frame"]')?.textContent).not.toContain(expected);
       expect(rendered.container.textContent).not.toContain('Preparing…');
     } finally { rendered.cleanup(); }
@@ -957,23 +967,24 @@ Can I export my data?`,
     }
 
     const sent = renderBubble(message, 'sent_email')
-    expect(sent.container.textContent).toContain('Sent via email')
+    expect(deliveryLabel(sent.container)).toContain('Email sent')
     expect(sent.container.textContent).not.toContain('View details')
-    expect(sent.container.textContent?.match(/Sent via email/g)).toHaveLength(1)
-    expect(findButtonByText(sent.container, 'Sent via email')).toBeTruthy()
+    expect(sent.container.querySelectorAll('[data-slot="message-delivery-status"]')).toHaveLength(1)
+    expect(sent.container.textContent).not.toContain('Sent via email')
+    expect(deliveryButton(sent.container)?.getAttribute('data-delivery-state')).toBe('sent')
     sent.cleanup()
 
     const sending = renderBubble({ ...message, id: 'msg-email-status-sending', email_notified_at: undefined }, 'sending_email')
-    expect(sending.container.textContent).toContain('Sending email')
+    expect(deliveryLabel(sending.container)).toContain('Email sending')
     expect(sending.container.textContent).not.toContain('Delivered')
     sending.cleanup()
 
     const delivered = renderBubble({ ...message, id: 'msg-email-status-delivered', email_delivery_status: 'delivered' }, 'delivered_email')
-    expect(delivered.container.textContent).toContain('Delivered via email')
+    expect(deliveryLabel(delivered.container)).toContain('Email delivered')
     delivered.cleanup()
 
     const read = renderBubble({ ...message, id: 'msg-email-status-2', email_read_at: '2026-04-24T12:22:00.000Z' }, 'read_email')
-    expect(read.container.textContent).toContain('Read via email')
+    expect(deliveryLabel(read.container)).toContain('Email opened')
     read.cleanup()
   })
 
@@ -1005,7 +1016,7 @@ Can I export my data?`,
       from_email: 'support@example.com', to_email: 'customer@example.com', stripped_text: message.content,
       created_at: message.created_at,
     })
-    const marker = findButtonByText(rendered.container, 'Delivered via email')
+    const marker = deliveryButton(rendered.container)
     expect(marker).toBeTruthy()
 
     act(() => {
@@ -1040,7 +1051,8 @@ Can I export my data?`,
     }
 
     const rendered = renderBubble(message)
-    expect(findButtonByText(rendered.container, 'Sent outside Helpin')).toBeTruthy()
+    expect(deliveryLabel(rendered.container)).toContain('Email sent outside Helpin')
+    expect(deliveryButton(rendered.container)?.getAttribute('data-delivery-state')).toBe('external')
     expect(rendered.container.textContent).not.toContain('Sent via email')
     expect(rendered.container.textContent).not.toContain('Delivered')
     expect(rendered.container.textContent).not.toContain('Read via email')
@@ -1070,7 +1082,7 @@ Can I export my data?`,
     expired.cleanup()
 
     const active = renderBubble({ ...message, id: 'msg-active-cancellable-1', cancellable_until: '2099-04-24T12:20:00.000Z' })
-    expect(active.container.textContent).toContain('Queued for email')
+    expect(deliveryLabel(active.container)).toContain('Email queued')
     expect(active.container.textContent).toContain('Undo')
     expect(active.container.textContent).not.toContain('Delivered to email')
     active.cleanup()
@@ -1084,23 +1096,23 @@ Can I export my data?`,
     created_at: '2026-09-03T07:35:00.000Z', updated_at: '2026-09-03T07:35:00.000Z',
   }
 
-  it('keeps email-only intent and queued status visible to another teammate on older replies', () => {
+  it('keeps email-only queued status available to another teammate on older replies', () => {
     const rendered = renderBubble({ ...explicitReply, email_delivery_status: 'queued', cancellable_until: '2099-04-24T12:20:00.000Z' })
-    expect(rendered.container.textContent).toContain('Email only · Queued')
+    expect(deliveryLabel(rendered.container)).toContain('Email queued')
     expect(rendered.container.textContent).not.toContain('Sent via email')
     expect(rendered.container.textContent).not.toContain('Undo')
     rendered.cleanup()
   })
 
   it.each([
-    [{}, 'Pending'],
+    [{}, 'Status unavailable'],
     [{ email_notified_at: '2026-09-03T07:36:00.000Z' }, 'Sent'],
     [{ email_delivery_status: 'delivered' }, 'Delivered'],
     [{ email_delivery_status: 'opened' }, 'Opened'],
     [{ email_delivery_status: 'failed', email_delivery_error: 'Provider unavailable' }, 'Failed'],
   ])('shows truthful email-only delivery state and ignores chat receipts (%j)', (fields, label) => {
     const rendered = renderBubble({ ...explicitReply, ...fields }, 'read', { source: 'widget' })
-    expect(rendered.container.textContent).toContain(`Email only · ${label}`)
+    expect(deliveryLabel(rendered.container)).toContain(`Email ${label.toLowerCase()}`)
     expect(rendered.container.textContent).not.toContain('Read in chat')
     expect(rendered.container.textContent).not.toContain('Sent via email')
     rendered.cleanup()
@@ -1111,26 +1123,30 @@ Can I export my data?`,
       ...explicitReply, metadata: JSON.stringify({ delivery_mode: 'chat_and_email' }),
       email_delivery_status: 'bounced', email_delivery_error: 'Mailbox unavailable',
     }, 'read', { source: 'widget' })
-    expect(rendered.container.textContent).toContain('Chat · Seen')
-    expect(rendered.container.textContent).toContain('Email · Failed')
-    expect(rendered.container.textContent).toContain('Mailbox unavailable')
+    expect(deliveryLabel(rendered.container)).toContain('Chat seen')
+    expect(deliveryLabel(rendered.container)).toContain('Email failed')
+    expect(deliveryButton(rendered.container)?.getAttribute('data-delivery-state')).toBe('read')
+    expect(rendered.container.querySelector('[data-channel="email"][data-failed="true"]')).not.toBeNull()
+    expect(deliveryLabel(rendered.container)).toContain('Mailbox unavailable')
+    expect(rendered.container.textContent).not.toContain('Mailbox unavailable')
     rendered.cleanup()
   })
 
-  it('keeps chat-only labels on replies without a latest-message receipt', () => {
+  it('keeps chat-only status on replies without a latest-message receipt', () => {
     const rendered = renderBubble({ ...explicitReply, via_channel: 'widget', metadata: JSON.stringify({ delivery_mode: 'chat_only' }) })
-    expect(rendered.container.textContent).toContain('Chat only · Sent')
+    expect(deliveryLabel(rendered.container)).toContain('Chat sent')
     expect(rendered.container.textContent).not.toContain('Email only')
     rendered.cleanup()
   })
 
-  it('keeps chat seen status separate from email tracking on older replies', () => {
+  it('retains per-channel details with one seen indicator on older replies', () => {
     const rendered = renderBubble({
       ...explicitReply, metadata: JSON.stringify({ delivery_mode: 'chat_and_email' }),
       email_delivery_status: 'sent',
     }, undefined, { source: 'widget', contactLastSeenAt: '2026-09-03T07:36:00.000Z' })
-    expect(rendered.container.textContent).toContain('Chat · Seen')
-    expect(rendered.container.textContent).toContain('Email · Sent')
+    expect(deliveryLabel(rendered.container)).toContain('Chat seen')
+    expect(deliveryLabel(rendered.container)).toContain('Email sent')
+    expect(deliveryButton(rendered.container)?.getAttribute('data-delivery-state')).toBe('read')
     rendered.cleanup()
   })
 
@@ -1142,8 +1158,8 @@ Can I export my data?`,
       cancellable_until: '2026-04-24T12:20:00.000Z',
       metadata: JSON.stringify({ delivery_mode: 'email_only', email_delivery_status: status, email_delivery_error: status === 'blocked' ? 'Customer unsubscribed' : undefined }),
     })
-    expect(rendered.container.textContent).toContain(`Email only · ${label}`)
-    if (status === 'blocked') expect(rendered.container.textContent).toContain('Customer unsubscribed')
+    expect(deliveryLabel(rendered.container)).toContain(`Email ${label.toLowerCase()}`)
+    if (status === 'blocked') expect(deliveryLabel(rendered.container)).toContain('Customer unsubscribed')
     expect(rendered.container.textContent).not.toContain('Undo')
     rendered.cleanup()
   })
@@ -1153,9 +1169,102 @@ Can I export my data?`,
       ...explicitReply, email_delivery_status: 'delivered',
       metadata: JSON.stringify({ delivery_mode: 'email_only', email_delivery_status: 'queued' }),
     })
-    expect(rendered.container.textContent).toContain('Email only · Delivered')
+    expect(deliveryLabel(rendered.container)).toContain('Email delivered')
     expect(rendered.container.textContent).not.toContain('Queued')
     rendered.cleanup()
+  })
+
+  it.each([
+    ['sent', undefined, 'sent'],
+    ['delivered', undefined, 'delivered'],
+    ['opened', undefined, 'read'],
+    ['queued', '2026-09-03T07:36:00Z', 'read'],
+    ['delivered', '2026-09-03T07:36:00Z', 'read'],
+  ] as const)('uses one shared receipt for chat plus email (%s, %s)', (emailStatus, seen, expected) => {
+    const rendered = renderBubble({
+      ...explicitReply, metadata: JSON.stringify({ delivery_mode: 'chat_and_email' }),
+      email_delivery_status: emailStatus,
+    }, undefined, { source: 'widget', contactLastSeenAt: seen })
+    try {
+      const button = deliveryButton(rendered.container)
+      expect(button?.getAttribute('data-delivery-state')).toBe(expected)
+      expect(button?.querySelectorAll('[data-channel]')).toHaveLength(2)
+      expect(button?.textContent).toBe('')
+      expect(button?.querySelectorAll('[data-slot="delivery-receipt"]')).toHaveLength(1)
+    } finally { rendered.cleanup() }
+  })
+
+  it('does not claim chat delivery without confirmation', () => {
+    const rendered = renderBubble({ ...explicitReply, via_channel: 'widget', metadata: undefined }, 'sent', { source: 'widget' })
+    try {
+      expect(deliveryButton(rendered.container)?.getAttribute('data-delivery-state')).toBe('sent')
+      expect(deliveryLabel(rendered.container)).not.toContain('delivered')
+    } finally { rendered.cleanup() }
+  })
+
+  it('does not add an email channel to an unconfirmed chat send', () => {
+    const rendered = renderBubble({ ...explicitReply, id: 'optimistic-chat', via_channel: 'widget', metadata: undefined }, undefined, { source: 'widget' })
+    try {
+      expect(deliveryButton(rendered.container)?.getAttribute('data-delivery-state')).toBe('sending')
+      expect(deliveryButton(rendered.container)?.querySelector('[data-channel="email"]')).toBeNull()
+    } finally { rendered.cleanup() }
+  })
+
+  it('does not mark an optimistic reply as seen', () => {
+    const rendered = renderBubble({ ...explicitReply, id: 'optimistic-reply', metadata: JSON.stringify({ delivery_mode: 'chat_and_email' }) }, 'read', { source: 'widget', contactLastSeenAt: '2099-01-01T00:00:00Z' })
+    try { expect(deliveryButton(rendered.container)?.getAttribute('data-delivery-state')).toBe('sending') }
+    finally { rendered.cleanup() }
+  })
+
+  it.each(['customer', 'note'] as const)('does not show outgoing receipts for %s messages', (kind) => {
+    const rendered = renderBubble({ ...explicitReply, sender_type: kind === 'customer' ? 'customer' : 'user', is_internal: kind === 'note', message_type: kind === 'note' ? 'note' : 'reply', email_delivery_status: 'opened' }, 'read_email')
+    try { expect(deliveryButton(rendered.container)).toBeNull() }
+    finally { rendered.cleanup() }
+  })
+
+  it('keeps AI confidence and sources alongside explicit delivery status', () => {
+    const rendered = renderBubble({ ...explicitReply, sender_type: 'ai', email_delivery_status: 'sent', metadata: JSON.stringify({ delivery_mode: 'email_only', ai_auto_reply: true, ai_confidence: 0.87, ai_sources: [{ docId: 'doc', title: 'Help article' }] }) })
+    try {
+      expect(deliveryLabel(rendered.container)).toContain('Email sent')
+      expect(rendered.container.textContent).toContain('87% confident')
+      act(() => findButtonByText(rendered.container, '1 source')?.click())
+      expect(rendered.container.textContent).toContain('Help article')
+    } finally { rendered.cleanup() }
+  })
+
+  it('exposes per-channel details on keyboard focus', () => {
+    const rendered = renderBubble({ ...explicitReply, email_delivery_status: 'failed', email_delivery_error: 'Mailbox unavailable' })
+    try {
+      act(() => deliveryButton(rendered.container)?.focus())
+      expect(document.querySelector('[role="tooltip"]')?.textContent).toContain('Email failed · Mailbox unavailable')
+    } finally { rendered.cleanup() }
+  })
+
+  it('keeps Retry and Send original actionable after translation failure', async () => {
+    const post = vi.spyOn(api, 'post').mockResolvedValue({ data: {}, error: null })
+    const rendered = renderBubble({ ...explicitReply, pending_send: 'failed', pending_send_id: 'send', pending_failure: 'translation' })
+    try {
+      expect(deliveryButton(rendered.container)).toBeNull()
+      expect(rendered.container.textContent).toContain('Not sent')
+      await act(async () => findButtonByText(rendered.container, 'Retry')?.click())
+      expect(post).toHaveBeenCalledWith(expect.stringContaining('/translation/sends/send'), { action: 'retry' })
+      await act(async () => findButtonByText(rendered.container, 'Send original')?.click())
+      expect(post).toHaveBeenCalledWith(expect.stringContaining('/translation/sends/send'), { action: 'original' })
+    } finally { rendered.cleanup(); post.mockRestore() }
+  })
+
+  it('keeps Undo restoring the draft with delivery mode and subject', async () => {
+    const remove = vi.spyOn(supportService, 'deleteConversationMessage').mockResolvedValue({ data: { markdown: 'Restored reply' }, error: null } as Awaited<ReturnType<typeof supportService.deleteConversationMessage>>)
+    const restored = vi.fn()
+    window.addEventListener('support:restore-draft', restored)
+    const rendered = renderBubble({ ...explicitReply, sender_user_id: 'viewer-1', cancellable_until: '2099-01-01T00:00:00Z', metadata: JSON.stringify({ delivery_mode: 'email_only', email_subject: 'A follow-up' }) })
+    try {
+      await act(async () => findButtonByText(rendered.container, 'Undo')?.click())
+      expect(remove).toHaveBeenCalledWith('ws-1', 'conv-1', 'explicit-reply', true)
+      expect(restored.mock.calls[0][0].detail).toMatchObject({ markdown: 'Restored reply', deliveryMode: 'email_only', emailSubject: 'A follow-up' })
+    } finally {
+      rendered.cleanup(); remove.mockRestore(); window.removeEventListener('support:restore-draft', restored)
+    }
   })
 
   it('keeps text and image attachments together in the bubble with message actions', () => {
@@ -1395,7 +1504,8 @@ Can I export my data?`,
       email_delivery_status: 'bounced',
       email_delivery_error: 'Mailbox unavailable',
     }, 'read_email')
-    expect(bounced.container.textContent).toContain('Delivery failed · Mailbox unavailable')
+    expect(deliveryLabel(bounced.container)).toContain('Email failed · Mailbox unavailable')
+    expect(deliveryButton(bounced.container)?.getAttribute('data-delivery-state')).not.toBe('read')
     expect(bounced.container.textContent).not.toContain('Read via email')
     bounced.cleanup()
 
@@ -1405,7 +1515,7 @@ Can I export my data?`,
       email_delivery_status: 'spam_complaint',
       email_delivery_error: 'Marked by recipient',
     }, 'delivered_email')
-    expect(spam.container.textContent).toContain('Marked as spam · Marked by recipient')
+    expect(deliveryLabel(spam.container)).toContain('Email marked as spam · Marked by recipient')
     expect(spam.container.textContent).not.toContain('Delivered via email')
     spam.cleanup()
   })

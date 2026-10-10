@@ -76,7 +76,7 @@ export function isAIMessage(message: Pick<SupportMessage, 'sender_type' | 'metad
   return parseAIMessageMetadata(message.metadata) !== null;
 }
 
-export type SupportReceiptStatus = 'sending_email' | 'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email' | 'sent_outside_helpin' | null;
+export type SupportReceiptStatus = 'sent' | 'sending_email' | 'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email' | 'sent_outside_helpin' | null;
 
 export function isExternalSupportEmailReply(metadata?: string): boolean {
   if (!metadata) return false;
@@ -103,29 +103,8 @@ export function getSupportReceiptStatus(
   const seen = conversation.contact_last_seen_at;
   if (conversation.source === 'widget' && seen && new Date(seen) >= new Date(message.created_at)) return 'read';
   if (message.email_notified_at) return 'sent_email';
-  if (conversation.source === 'widget') return 'delivered';
+  if (conversation.source === 'widget') return 'sent';
   return null;
-}
-
-/** Explicit replies keep channel intent separate from actual email delivery. */
-export function getExplicitEmailDeliveryState(message: SupportMessage): { label: string; failed: boolean; error?: string } {
-  let metadata: { email_delivery_status?: string; email_delivery_error?: string } = {};
-  try {
-    metadata = JSON.parse(message.metadata ?? '{}') ?? {};
-  } catch { /* Legacy or malformed metadata carries no delivery outcome. */ }
-  const status = message.email_delivery_status || metadata.email_delivery_status;
-  const error = message.email_delivery_error || metadata.email_delivery_error;
-  if (status === 'spam_complaint') return { label: 'Marked as spam', failed: true, error };
-  if (status === 'failed' || status === 'bounced') return { label: 'Failed', failed: true, error };
-  if (status === 'blocked') return { label: 'Not sent', failed: true, error };
-  if (message.email_read_at || status === 'opened') return { label: 'Opened', failed: false };
-  if (status === 'delivered') return { label: 'Delivered', failed: false };
-  if (message.email_notified_at || status === 'sent') return { label: 'Sent', failed: false };
-  if (message.id.startsWith('optimistic-') || status === 'sending') return { label: 'Sending', failed: false };
-  if (status === 'queued' || (message.cancellable_until && Date.parse(message.cancellable_until) > Date.now())) {
-    return { label: 'Queued', failed: false };
-  }
-  return { label: 'Pending', failed: false };
 }
 
 export function getEffectiveSenderType(message: Pick<SupportMessage, 'sender_type' | 'metadata'>): SupportMessage['sender_type'] {

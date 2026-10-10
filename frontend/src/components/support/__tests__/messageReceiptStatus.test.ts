@@ -22,6 +22,10 @@ const externalMessage: SupportMessage = {
 }
 
 describe('getSupportReceiptStatus', () => {
+  it('uses sent for widget replies without a visitor read confirmation', () => {
+    expect(getSupportReceiptStatus({ ...externalMessage, metadata: undefined, email_delivery_status: undefined, email_read_at: undefined, via_channel: 'widget' }, { source: 'widget' })).toBe('sent')
+  })
+
   it('never infers chat delivery or a widget read for an email-only reply', () => {
     expect(getSupportReceiptStatus({
       ...externalMessage,
