@@ -863,7 +863,7 @@ export function TeamInboxDialog({
                     <Command>
                       <CommandInput placeholder="Search members..." />
                       <CommandList>
-                        <CommandEmpty>No eligible members found.</CommandEmpty>
+                        <CommandEmpty>No matching members.</CommandEmpty>
                         <CommandGroup>
                           {availableAdditionalMembers.map(({ member, disabledReason }) => {
                             const displayName = member.display_name || member.email || 'Unknown';

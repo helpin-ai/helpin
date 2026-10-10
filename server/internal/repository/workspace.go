@@ -966,9 +966,11 @@ func (r *WorkspaceRepository) ListSupportAssignableMembers(ctx context.Context, 
 		`, []string{model.RoleOwner, model.RoleAdmin}, trimmedMailboxID, trimmedMailboxID)
 	}
 
-	if err := query.
-		Distinct().
-		Order("LOWER(COALESCE(NULLIF(wm.display_name, ''), u.full_name, wm.email)) ASC, LOWER(wm.email) ASC").
+	// Deduplicate team/grant joins before sorting. PostgreSQL cannot order a
+	// DISTINCT selection by expressions that are not in that selection.
+	if err := r.db.WithContext(ctx).
+		Table("(?) AS support_members", query.Distinct()).
+		Order("LOWER(display_name) ASC, LOWER(email) ASC").
 		Scan(&members).Error; err != nil {
 		return nil, fmt.Errorf("list support assignable members: %w", err)
 	}

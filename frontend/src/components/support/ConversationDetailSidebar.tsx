@@ -312,7 +312,13 @@ export function ConversationDetailSidebar({
   const [ccError, setCcError] = useState('');
   const { data: conversation, isLoading: conversationLoading } = useConversation(workspaceId, conversationId);
   const { data: visitorContext } = useVisitorContext(workspaceId, conversationId);
-  const { data: assignableMembers = [], isLoading: assigneesLoading } = useConversationAssignees(workspaceId, conversationId);
+  const {
+    data: assignableMembers = [],
+    isLoading: assigneesLoading,
+    isError: assigneesError,
+    isFetching: assigneesFetching,
+    refetch: refetchAssignees,
+  } = useConversationAssignees(workspaceId, conversationId);
   const assignConversationUser = useAssignConversationUser(workspaceId);
   const updateCustomerName = useUpdateConversationCustomerName(workspaceId);
   const updateEmailRecipients = useUpdateConversationEmailRecipients(workspaceId);
@@ -581,7 +587,7 @@ export function ConversationDetailSidebar({
               getDisabledReason={(member) => member.assignment_disabled_reason}
               getMemberValue={(member) => member.user_id ?? member.id}
               noneLabel="Unassigned"
-              disabled={assignConversationUser.isPending || assigneesLoading}
+              disabled={assignConversationUser.isPending || assigneesLoading || assigneesError}
               onChange={(value) => {
                 assignConversationUser.mutate({
                   conversationId: conversation.id,
@@ -615,9 +621,23 @@ export function ConversationDetailSidebar({
                 </>
               )}
             />
-            {!assigneesLoading && assignableUsers.length === 0 ? (
+            {assigneesError ? (
+              <div role="alert" className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                <span>Unable to load teammates.</span>
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="h-auto p-0 text-[11px]"
+                  aria-label="Retry teammates"
+                  disabled={assigneesFetching}
+                  onClick={() => { void refetchAssignees(); }}
+                >
+                  {assigneesFetching ? 'Retrying…' : 'Retry'}
+                </Button>
+              </div>
+            ) : !assigneesLoading && assignableUsers.length === 0 ? (
               <p className="text-[11px] text-muted-foreground">
-                No eligible teammates can be assigned to this conversation yet.
+                No active workspace members to assign.
               </p>
             ) : null}
           </CollapsibleSection>

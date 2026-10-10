@@ -79,7 +79,7 @@ export function TeamInboxAssignmentFields({ mode, members, selectedIDs, loading,
                   </div>
                 )}
                 <CommandList>
-                  <CommandEmpty>No eligible members found.</CommandEmpty>
+                  <CommandEmpty>No matching members.</CommandEmpty>
                   <CommandGroup>
                     {members.map(member => (
                       <CommandItem key={member.id} value={`${member.display_name} ${member.email} ${member.id}`} onSelect={() => {
