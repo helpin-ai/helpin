@@ -411,11 +411,11 @@ export const ConversationRow = memo(function ConversationRow({
       data-transitioning-out={isTransitioningOut ? 'true' : undefined}
       data-conversation-id={conversation.id}
       data-bulk-selected={isBulkSelected ? 'true' : undefined}
-      className={`group relative w-full cursor-pointer px-3 py-2.5 text-left transition-all duration-200 hover:bg-muted/75 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 dark:hover:bg-muted/40 ${
+      className={`group relative w-full cursor-pointer px-3 py-2.5 text-left transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${isBulkSelected ? 'hover:bg-primary/8 dark:hover:bg-primary/10' : 'hover:bg-muted/75 dark:hover:bg-muted/40'} ${
         isTransitioningOut
           ? 'pointer-events-none bg-emerald-50/70 opacity-60 dark:bg-emerald-950/20'
           : isBulkSelected
-          ? 'bg-primary/10 dark:bg-primary/15'
+          ? 'bg-primary/5 dark:bg-primary/8'
           : isSelected
           ? 'bg-muted/80 dark:bg-muted/45'
           : ''
@@ -453,7 +453,7 @@ export const ConversationRow = memo(function ConversationRow({
               !selectionActive && 'opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 group-has-[:focus-visible]:opacity-100 [@media(hover:none)]:opacity-100',
             )}>
               <Checkbox
-                className="border-neutral-400 bg-white data-[state=checked]:border-neutral-400 data-[state=checked]:bg-white data-[state=checked]:text-neutral-900 dark:data-[state=checked]:bg-white"
+                className="border-neutral-300 bg-white data-[state=checked]:border-neutral-300 data-[state=checked]:bg-white data-[state=checked]:text-neutral-900 dark:data-[state=checked]:bg-white"
                 aria-label={`Select conversation from ${displayName}: ${conversation.subject}`}
                 checked={isBulkSelected}
                 disabled={selectionDisabled}
