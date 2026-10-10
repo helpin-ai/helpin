@@ -147,6 +147,7 @@ const SETTINGS_GROUP_ICONS: Record<string, IconComponent> = {
   CRM: Autonomy,
 };
 export const SETTINGS_HOME_LABEL = 'Settings home';
+export const SettingsHomeIcon = General;
 export const SETTINGS_SIDEBAR_GROUP_LABELS: Record<string, string> = {
   'Integrations & data': 'Integration',
 };
