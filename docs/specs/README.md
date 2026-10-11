@@ -58,3 +58,4 @@ Feature and interaction designs retained for context. Designs may be superseded 
 - [Agent Run Turn Chronology Design](2026-08-22-agent-run-turn-chronology-design.md)
 - [First-Class Support Inbox State Design](2026-09-02-first-class-support-inbox-state-design.md)
 - [Signals workflow and information contract](2026-09-05-signals-workflow-information-contract.md)
+- [Conversation merging and unmerging — proposed](2026-10-11-conversation-merging.md)
