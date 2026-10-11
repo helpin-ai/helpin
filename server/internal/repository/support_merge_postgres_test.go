@@ -4,12 +4,68 @@ package repository
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
+
+func TestMergePostgresSummaryAndBlockedDelivery(t *testing.T) {
+	db := contactPrivacyDB(t)
+	ctx := context.Background()
+	ws, actor := uuid.NewString(), uuid.NewString()
+	seedContactPrivacyWorkspace(t, db, ws)
+	privacyExec(t, db, `INSERT INTO users(id,email,full_name,password_hash) VALUES (?,?,'Test teammate','test')`, actor, actor+"@example.invalid")
+	email, visitor := "sam@example.invalid", "merge-review-visitor"
+	a := model.SupportConversation{ID: uuid.NewString(), WorkspaceID: ws, Subject: "Widget", Status: "open", Source: "widget", CustomerEmail: &email, AnonymousID: &visitor}
+	b := model.SupportConversation{ID: uuid.NewString(), WorkspaceID: ws, Subject: "Email", Status: "open", Source: "email", CustomerEmail: &email}
+	conversations := NewSupportConversationRepository(db)
+	for _, c := range []*model.SupportConversation{&a, &b} {
+		if err := conversations.Create(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	merges := NewSupportMergeRepository(db)
+	edges, err := merges.Merge(ctx, ws, b.ID, []string{a.ID}, actor, uuid.NewString(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages := NewSupportMessageRepository(db)
+	channel := "email"
+	inbound := model.SupportMessage{ID: uuid.NewString(), WorkspaceID: ws, ConversationID: b.ID, SenderType: "customer", MessageType: "reply", Content: "PRIVATE quoted history", ViaChannel: &channel, EmailProjectionConfidence: "high", Metadata: "{}"}
+	if err := messages.Create(ctx, &inbound); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := conversations.ListByAnonymousID(ctx, ws, visitor)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("widget summary: %d rows, %v", len(rows), err)
+	}
+	if rows[0].LastMessage != nil && strings.Contains(*rows[0].LastMessage, "PRIVATE") {
+		t.Fatalf("widget exposed quoted text: %s", *rows[0].LastMessage)
+	}
+	outbound := model.SupportMessage{ID: uuid.NewString(), WorkspaceID: ws, ConversationID: b.ID, SenderType: "agent", MessageType: "reply", Content: "Shared reply", Metadata: "{}"}
+	if err := messages.Create(ctx, &outbound); err != nil {
+		t.Fatal(err)
+	}
+	if err := messages.SetCancellableUntil(ctx, outbound.ID, time.Now().Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	// Reading the primary chat does not cancel emails to the shared audience.
+	privacyExec(t, db, `UPDATE support_conversations SET contact_last_seen_at=now(), customer_email=NULL WHERE id=?`, b.ID)
+	if err := merges.EnsureNoPendingSends(ctx, ws, []string{b.ID}); !errors.Is(err, ErrSupportMergeSending) {
+		t.Fatalf("queued reply did not block unmerge: %v", err)
+	}
+	if err := messages.UpdateExplicitEmailStatus(ctx, []string{outbound.ID}, "blocked", "Recipients changed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := merges.Unmerge(ctx, ws, edges[0].ID, actor, uuid.NewString()); err != nil {
+		t.Fatalf("blocked email prevented unmerge: %v", err)
+	}
+}
 
 func TestMergePostgresConcurrentRouting(t *testing.T) {
 	db := contactPrivacyDB(t)

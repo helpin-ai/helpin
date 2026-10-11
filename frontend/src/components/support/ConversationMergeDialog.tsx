@@ -139,9 +139,10 @@ function MergeDialogBody({
     setTarget(c);
   };
   const swap = () => {
-    if (!source || !target) return;
+    const activeSource = selected.find((c) => c.id !== target?.id);
+    if (!activeSource || !target) return;
     setSelected([target]);
-    setTarget(source);
+    setTarget(activeSource);
     merge.reset();
   };
   async function commit() {

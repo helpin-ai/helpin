@@ -17,26 +17,24 @@ func (r *SupportConversationRepository) MergeCandidates(ctx context.Context, wor
 	if page > 1000 {
 		return nil, false, fmt.Errorf("invalid page")
 	}
-	q := r.db.WithContext(ctx).Model(&model.SupportConversation{}).Where("support_conversations.workspace_id = ? AND support_conversations.id <> ? AND support_conversations.merged_into_id IS NULL AND support_conversations.anonymized_at IS NULL", workspaceID, source.ID)
+	q := r.db.WithContext(ctx).Model(&model.SupportConversation{}).Where("support_conversations.workspace_id = ? AND support_conversations.id <> ? AND support_conversations.merged_into_id IS NULL AND support_conversations.anonymized_at IS NULL AND support_conversations.status <> 'spam'", workspaceID, source.ID)
 	q = r.applyMailboxAccess(q, "support_conversations", memberID, role)
 	if !allCustomers {
 		parts := []string{}
 		args := []any{}
 		if source.CRMContactID != nil {
+			// Distinct known contacts never match through a shared browser or email.
+			q = q.Where("crm_contact_id IS NULL OR crm_contact_id = ?", *source.CRMContactID)
 			parts = append(parts, "crm_contact_id = ?")
 			args = append(args, *source.CRMContactID)
 		}
-		if source.AnonymousID != nil {
+		if source.AnonymousID != nil && strings.TrimSpace(*source.AnonymousID) != "" {
 			parts = append(parts, "anonymous_id = ?")
 			args = append(args, *source.AnonymousID)
 		}
-		if source.CustomerEmail != nil && source.PrimaryRecipientState != model.SupportPrimaryRecipientStateUnconfirmed {
-			part := "LOWER(TRIM(customer_email)) = ? AND primary_recipient_state <> 'unconfirmed'"
+		if source.CustomerEmail != nil && strings.TrimSpace(*source.CustomerEmail) != "" && source.PrimaryRecipientState != model.SupportPrimaryRecipientStateUnconfirmed {
+			part := "LOWER(TRIM(customer_email)) = ? AND COALESCE(primary_recipient_state, '') <> 'unconfirmed'"
 			args = append(args, strings.ToLower(strings.TrimSpace(*source.CustomerEmail)))
-			if source.CRMContactID != nil {
-				part += " AND (crm_contact_id IS NULL OR crm_contact_id = ?)"
-				args = append(args, *source.CRMContactID)
-			}
 			parts = append(parts, "("+part+")")
 		}
 		if len(parts) == 0 {

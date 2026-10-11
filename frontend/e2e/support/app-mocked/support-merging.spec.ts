@@ -8,7 +8,7 @@ import {
 
 test.setTimeout(90_000);
 
-async function setup(page: Page) {
+async function setup(page: Page, nestedSource = false) {
   await installSupportAppMocks(page);
   const source = {
     ...buildConversation(),
@@ -117,7 +117,13 @@ async function setup(page: Page) {
         return route.fulfill({
           json: {
             target: primary,
-            sources: [id === target.id ? source : target],
+            sources: [
+              ...(nestedSource
+                ? [{ ...source, id: "conv-child", display_id: 7,
+                    subject: "Earlier conversation", merged_into_id: source.id }]
+                : []),
+              id === target.id ? source : target,
+            ],
             preview_token: "review-1",
             participants: ["visitor@example.com"],
             cross_customer: false,
@@ -189,6 +195,18 @@ async function review(page: Page) {
     page.getByRole("button", { name: "Merge into #58" }),
   ).toBeEnabled();
 }
+
+test("swapping a merged group keeps its active conversation as the destination", async ({
+  page,
+}) => {
+  await setup(page, true);
+  await review(page);
+  await expect(page.getByRole("dialog")).toContainText("Earlier conversation");
+  await page.getByRole("button", { name: "Swap merge direction" }).click();
+  await expect(
+    page.getByRole("button", { name: "Merge into #42" }),
+  ).toBeEnabled();
+});
 
 test("reviews real messages, swaps direction, merges and restores the original", async ({
   page,

@@ -34,6 +34,65 @@ func setupSupportMergeTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func TestMergeCandidatesMatchCustomerRulesAndExcludeSpam(t *testing.T) {
+	db := setupSupportMergeTestDB(t)
+	ctx := context.Background()
+	if err := db.Exec(`UPDATE support_conversations SET crm_contact_id='contact-a', anonymous_id='visitor', primary_recipient_state='confirmed' WHERE id='a'`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`UPDATE support_conversations SET crm_contact_id='contact-b', anonymous_id='visitor', primary_recipient_state='confirmed' WHERE id='b'`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`UPDATE support_conversations SET status='spam', primary_recipient_state='confirmed' WHERE id='c'`).Error; err != nil {
+		t.Fatal(err)
+	}
+	var source model.SupportConversation
+	if err := db.First(&source, "id = ?", "a").Error; err != nil {
+		t.Fatal(err)
+	}
+	repo := NewSupportConversationRepository(db)
+	rows, _, err := repo.MergeCandidates(ctx, "ws", "actor", model.RoleOwner, source, "", false, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 0 {
+		t.Errorf("same-customer picker offered ineligible conversations: %+v", rows)
+	}
+	rows, _, err = repo.MergeCandidates(ctx, "ws", "actor", model.RoleOwner, source, "", true, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].ID != "b" {
+		t.Errorf("all-customers picker should offer only b, got %+v", rows)
+	}
+}
+
+func TestMergeWidgetSummaryDoesNotFallBackToPrivateQuotedText(t *testing.T) {
+	db := setupSupportMergeTestDB(t)
+	ctx := context.Background()
+	if err := db.Exec(`UPDATE support_conversations SET anonymous_id='visitor' WHERE id='a'`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewSupportMergeRepository(db).Merge(ctx, "ws", "b", []string{"a"}, "actor", "op", false); err != nil {
+		t.Fatal(err)
+	}
+	channel := "email"
+	message := model.SupportMessage{ID: "attachment-only", WorkspaceID: "ws", ConversationID: "b", SenderType: "customer", MessageType: "reply", Content: "PRIVATE quoted email history", ViaChannel: &channel, EmailProjectionConfidence: "high", EmailVisibleText: "", Metadata: "{}"}
+	if err := NewSupportMessageRepository(db).Create(ctx, &message); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := NewSupportConversationRepository(db).ListByAnonymousID(ctx, "ws", "visitor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("widget conversations=%d, want 1", len(rows))
+	}
+	if rows[0].LastMessage != nil && strings.Contains(*rows[0].LastMessage, "PRIVATE") {
+		t.Fatalf("widget summary exposed original email: %s", *rows[0].LastMessage)
+	}
+}
+
 func TestMergePreservesOriginalsAndUnmergeHistory(t *testing.T) {
 	ctx := context.Background()
 	db := setupSupportMergeTestDB(t)

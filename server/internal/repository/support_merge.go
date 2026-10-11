@@ -264,7 +264,7 @@ func (r *SupportMergeRepository) EnsureNoPendingSends(ctx context.Context, works
 		Where("support_messages.workspace_id = ? AND conversation_id IN ? AND sender_type <> 'customer' AND is_internal = false AND message_type = 'reply' AND email_notified_at IS NULL AND cancellable_until IS NOT NULL", workspaceID, ids).
 		Where(supportDeliveryModeSQL(r.db, "support_messages")+" <> ?", model.SupportDeliveryChatOnly).
 		Where(supportMetadataStringSQL(r.db, "support_messages", "email_delivery_status")+" <> ?", "blocked").
-		Where("(" + supportDeliveryModeSQL(r.db, "support_messages") + " IN ('email_only','chat_and_email') OR (sc.email_unsubscribed = false AND sc.customer_email IS NOT NULL AND (sc.contact_last_seen_at IS NULL OR support_messages.created_at > sc.contact_last_seen_at)))").Count(&count).Error; err != nil {
+		Where("(" + supportDeliveryModeSQL(r.db, "support_messages") + " IN ('email_only','chat_and_email') OR " + supportMetadataStringSQL(r.db, "support_messages", "merge_email_recipients") + " NOT IN ('', '[]', 'null') OR (sc.email_unsubscribed = false AND sc.customer_email IS NOT NULL AND (sc.contact_last_seen_at IS NULL OR support_messages.created_at > sc.contact_last_seen_at)))").Count(&count).Error; err != nil {
 		return err
 	}
 	if count > 0 {

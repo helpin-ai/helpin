@@ -16,7 +16,7 @@ import (
 
 func TestMergeDeliveryUsesReviewedAudienceAndOldEmailRoutes(t *testing.T) {
 	for _, sourceKind := range []string{"email", "widget"} {
-		for _, targetKind := range []string{"email", "widget"} {
+		for _, targetKind := range []string{"email", "widget", "anonymous_widget"} {
 			t.Run(sourceKind+"_into_"+targetKind, func(t *testing.T) {
 				ctx := context.Background()
 				settings := model.DefaultSupportInboxSettings()
@@ -31,6 +31,10 @@ func TestMergeDeliveryUsesReviewedAudienceAndOldEmailRoutes(t *testing.T) {
 				sourceEmail, targetEmail := "source@example.test", "target@example.test"
 				a := model.SupportConversation{ID: uuid.NewString(), WorkspaceID: ws, Subject: "Original A", Status: "open", Source: sourceKind, CustomerEmail: &sourceEmail}
 				b := model.SupportConversation{ID: uuid.NewString(), WorkspaceID: ws, Subject: "Original B", Status: "open", Source: targetKind, CustomerEmail: &targetEmail}
+				if targetKind == "anonymous_widget" {
+					b.Source = "widget"
+					b.CustomerEmail = nil
+				}
 				for _, c := range []*model.SupportConversation{&a, &b} {
 					if err := env.convRepo.Create(ctx, c); err != nil {
 						t.Fatal(err)
@@ -61,7 +65,11 @@ func TestMergeDeliveryUsesReviewedAudienceAndOldEmailRoutes(t *testing.T) {
 				if err := env.service.fireEmail(ctx, b.ID, []string{reply.ID}); err != nil {
 					t.Fatal(err)
 				}
-				if calls != 1 || captured.To != targetEmail || captured.Cc != sourceEmail || captured.Bcc != "" {
+				wantTo, wantCC := targetEmail, sourceEmail
+				if targetKind == "anonymous_widget" {
+					wantTo, wantCC = sourceEmail, ""
+				}
+				if calls != 1 || captured.To != wantTo || captured.Cc != wantCC || captured.Bcc != "" {
 					t.Fatalf("audience: calls=%d, %+v", calls, captured)
 				}
 				if !strings.Contains(captured.TextBody, reply.Content) {
