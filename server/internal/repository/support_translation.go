@@ -175,6 +175,9 @@ func (r *SupportTranslationRepository) Finish(ctx context.Context, t *model.Supp
 // queue preparation. The artifact row lock prevents two sends consuming a translation.
 func (r *SupportMessageRepository) createTranslatedMessage(ctx context.Context, msg *model.SupportMessage) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := LockSupportRouting(tx, msg.WorkspaceID); err != nil {
+			return err
+		}
 		var conv model.SupportConversation
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("workspace_id = ? AND id = ? AND anonymized_at IS NULL", msg.WorkspaceID, msg.ConversationID).First(&conv).Error; err != nil {
 			return ErrTranslationUnavailable

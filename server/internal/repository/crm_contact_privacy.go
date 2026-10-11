@@ -24,6 +24,9 @@ func (r *CRMContactRepository) DeleteAnonymizingSupport(ctx context.Context, wor
 		if err := LockContactAnonymization(tx, workspaceID); err != nil {
 			return err
 		}
+		if err := LockSupportRouting(tx, workspaceID); err != nil {
+			return err
+		}
 		var contact model.CRMContact
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("workspace_id = ? AND id = ?", workspaceID, contactID).First(&contact).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -67,6 +70,21 @@ func (r *CRMContactRepository) DeleteAnonymizingSupport(ctx context.Context, wor
 			conversationIDs = append(conversationIDs, conv.ID)
 			if conv.AnonymousID != nil && *conv.AnonymousID != "" {
 				anonymousIDs = append(anonymousIDs, *conv.AnonymousID)
+			}
+		}
+		if err := NewSupportMergeRepository(tx).DetachErasedConversations(ctx, workspaceID, conversationIDs); err != nil {
+			return err
+		}
+		if len(conversationIDs) > 0 {
+			shared := tx.Model(&model.SupportMergeMessage{}).Select("message_id").Where("workspace_id = ? AND conversation_id IN ?", workspaceID, conversationIDs)
+			if err := redactContactMetadata(tx.Unscoped().Where("workspace_id = ? AND (origin_conversation_id IN ? OR id IN (?))", workspaceID, conversationIDs, shared), "support_messages", "metadata"); err != nil {
+				return err
+			}
+			if err := tx.Unscoped().Model(&model.SupportMessage{}).Where("workspace_id = ? AND origin_conversation_id IN ? AND sender_type = 'customer'", workspaceID, conversationIDs).Updates(map[string]any{"sender_display_name": nil, "sender_avatar_url": nil}).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&model.SupportEmailLog{}).Where("workspace_id = ? AND EXISTS (SELECT 1 FROM unnest(message_ids) mid(value) WHERE mid.value::uuid IN (?))", workspaceID, shared).Updates(map[string]any{"from_email": "", "from_display_name": "", "to_email": "", "reply_to": "", "recipient_address": "", "cc_emails": nil, "bcc_emails": nil}).Error; err != nil {
+				return err
 			}
 		}
 		anonymousIDs, err = exclusiveContactAnonymousIDs(tx, workspaceID, contactID, anonymousIDs)

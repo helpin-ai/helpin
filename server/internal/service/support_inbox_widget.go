@@ -121,6 +121,34 @@ func (s *SupportInboxService) GetVisitorConversations(ctx context.Context, works
 	if err != nil {
 		return nil, err
 	}
+	for i := range conversations {
+		c := &conversations[i]
+		if c.MergedIntoID == nil {
+			continue
+		}
+		root, err := s.mergeRepository().Root(ctx, workspaceID, c.ID)
+		if err != nil {
+			return nil, err
+		}
+		active, err := s.loadConversationUnscoped(ctx, workspaceID, root)
+		if err != nil {
+			return nil, err
+		}
+		if active == nil || active.AnonymizedAt != nil {
+			continue
+		}
+		c.Status = active.Status
+		c.FlowState = active.FlowState
+		c.AIState = active.AIState
+		c.HandoffState = active.HandoffState
+		c.AIEscalatedAt = active.AIEscalatedAt
+		c.AssignedUserID = active.AssignedUserID
+		c.OpenedByUserID = active.OpenedByUserID
+		c.OpenedByDisplayName = active.OpenedByDisplayName
+		c.OpenedByAvatarURL = active.OpenedByAvatarURL
+		c.OpenedByStatus = active.OpenedByStatus
+		c.UpdatedAt = active.UpdatedAt
+	}
 	s.enrichWidgetConversationOwners(ctx, workspaceID, conversations)
 	return conversations, nil
 }
@@ -509,12 +537,21 @@ func (s *SupportInboxService) SendSupportConversationTranscript(ctx context.Cont
 	if strings.TrimSpace(conversationID) == "" {
 		return nil, fmt.Errorf("conversation_id is required")
 	}
-	conversation, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
+	conversation, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)
 	if err != nil {
 		return nil, err
 	}
 	if conversation == nil {
 		return nil, fmt.Errorf("conversation not found")
+	}
+	if conversation.MergeRevision > 0 {
+		group, err := s.mergeRepository().Group(ctx, workspaceID, conversation.ID)
+		if err != nil {
+			return nil, err
+		}
+		if len(group) > 1 || conversation.MergedIntoID != nil {
+			return nil, fmt.Errorf("open the customer's original conversation to send their transcript")
+		}
 	}
 	recipientEmail := strings.TrimSpace(email)
 	if recipientEmail == "" {
@@ -677,7 +714,7 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 		}
 		if conv == nil {
 			session.ConversationID = nil
-		} else if conv.Subject == "New conversation" {
+		} else if conv.Subject == "New conversation" && conv.MergedIntoID == nil {
 			if err := s.conversationRepo.UpdateSubject(ctx, conv.ID, conversationSubject); err != nil {
 				return nil, err
 			}
@@ -708,7 +745,7 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 	// Link pre-uploaded attachments to this message.
 	if s.attachmentService != nil && len(attachmentIDs) > 0 {
 		if err := s.attachmentService.LinkWidgetAttachments(
-			ctx, attachmentIDs, session.WorkspaceID, session.ID, *session.ConversationID, msg.ID, initialConversationID,
+			ctx, attachmentIDs, session.WorkspaceID, session.ID, msg.ConversationID, msg.ID, initialConversationID,
 		); err != nil {
 			slog.ErrorContext(ctx, "link widget attachments to message", "error", err, "message_id", msg.ID)
 		}
@@ -722,11 +759,11 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 	s.enrichSupportMessageLinksAsync(msg, "widget:"+session.ID)
 	s.recordSupportEvent(SupportEventInput{
 		WorkspaceID: session.WorkspaceID, EventType: model.SupportEventCustomerMessageCreated,
-		ConversationID: session.ConversationID, MessageID: &msg.ID,
+		ConversationID: &msg.ConversationID, MessageID: &msg.ID,
 		ActorType: model.SupportEventActorCustomer, Channel: "widget",
 	})
 
-	if conv, err := s.conversationRepo.GetByID(ctx, session.WorkspaceID, *session.ConversationID, "", model.RoleOwner); err == nil {
+	if conv, err := s.conversationRepo.GetByID(ctx, session.WorkspaceID, msg.ConversationID, "", model.RoleOwner); err == nil {
 		if conv != nil && (conv.Status == model.SupportConversationStatusWaitingOnCustomer || conv.Status == model.SupportConversationStatusResolved) {
 			conv.Status = model.SupportConversationStatusOpen
 			conv.FlowState = strPtr(supportEmailReopenFlowState(conv))
@@ -734,7 +771,7 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 			conv.ClosedAt = nil
 			conv.AIResolvedAt = nil
 			conv.AIResolutionType = nil
-			if err := s.conversationRepo.UpdateFields(ctx, session.WorkspaceID, *session.ConversationID, map[string]any{
+			if err := s.conversationRepo.UpdateFields(ctx, session.WorkspaceID, msg.ConversationID, map[string]any{
 				"status":             conv.Status,
 				"flow_state":         derefString(conv.FlowState),
 				"resolved_at":        nil,
@@ -743,12 +780,12 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 				"ai_resolution_type": nil,
 				"updated_at":         time.Now(),
 			}); err != nil {
-				slog.ErrorContext(ctx, "failed to reopen widget support conversation after customer reply", "error", err, "conversation_id", *session.ConversationID)
+				slog.ErrorContext(ctx, "failed to reopen widget support conversation after customer reply", "error", err, "conversation_id", msg.ConversationID)
 			} else {
 				s.wsPublisher.Publish(websocket.Event{
 					Action:      "updated",
 					Entity:      "support_conversation",
-					EntityID:    *session.ConversationID,
+					EntityID:    msg.ConversationID,
 					WorkspaceID: session.WorkspaceID,
 				})
 			}
@@ -756,9 +793,13 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, s.pushSenderService, conv, msg.Content, displayName, msg.ID)
 	}
 
-	go s.runWidgetPostMessageAutomation(context.WithoutCancel(ctx), session.WorkspaceID, *session.ConversationID, msg.ID, msg.Content)
+	go s.runWidgetPostMessageAutomation(context.WithoutCancel(ctx), session.WorkspaceID, msg.ConversationID, msg.ID, msg.Content)
 
-	return msg, nil
+	response := *msg
+	if session.ConversationID != nil {
+		response.ConversationID = *session.ConversationID
+	}
+	return &response, nil
 }
 
 func (s *SupportInboxService) runWidgetPostMessageAutomation(ctx context.Context, workspaceID, conversationID, messageID, content string) {
@@ -830,7 +871,11 @@ func (s *SupportInboxService) PublishWidgetTypingIndicator(ctx context.Context, 
 		return nil
 	}
 
-	s.PublishTypingIndicator(ctx, session.WorkspaceID, *session.ConversationID, "widget:"+session.ID, isTyping, "")
+	root, err := s.mergeRepository().Root(ctx, session.WorkspaceID, *session.ConversationID)
+	if err != nil {
+		return err
+	}
+	s.PublishTypingIndicator(ctx, session.WorkspaceID, root, "widget:"+session.ID, isTyping, "")
 	return nil
 }
 

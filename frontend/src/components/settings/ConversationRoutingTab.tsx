@@ -1,3 +1,4 @@
+import { ConversationMergeSetting } from './ConversationMergeSetting';
 import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { SettingsSaveBar } from './SettingsSaveBar';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -1123,6 +1124,7 @@ export function ConversationRoutingTab({
 
       {showRouting && (
         <>
+          <ConversationMergeSetting workspaceId={workspaceId} />
           <RoutingSection
             id="automated-routing"
               title="Automated routing"

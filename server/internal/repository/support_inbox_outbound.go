@@ -15,6 +15,9 @@ import (
 func (r *SupportConversationRepository) DeleteIfEmpty(ctx context.Context, workspaceID, conversationID string) (bool, error) {
 	deleted := false
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := LockSupportRouting(tx, workspaceID); err != nil {
+			return err
+		}
 		var conversation model.SupportConversation
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("workspace_id = ? AND id = ?", workspaceID, conversationID).

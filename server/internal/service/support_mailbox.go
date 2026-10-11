@@ -81,7 +81,23 @@ func (s *SupportInboxService) loadConversationAccessible(ctx context.Context, wo
 		return s.loadConversationUnscoped(ctx, workspaceID, conversationID)
 	}
 	workspaceMemberID, role := actor.WorkspaceMemberID, actor.Role
-	return s.conversationRepo.GetByIDForUser(ctx, workspaceID, conversationID, actor.UserID, workspaceMemberID, role)
+	conversation, err := s.conversationRepo.GetByIDForUser(ctx, workspaceID, conversationID, actor.UserID, workspaceMemberID, role)
+	if err != nil || conversation != nil {
+		return conversation, err
+	}
+	original, err := s.loadConversationUnscoped(ctx, workspaceID, conversationID)
+	if err != nil || original == nil || original.MergedIntoID == nil {
+		return nil, err
+	}
+	root, err := s.mergeRepository().Root(ctx, workspaceID, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	primary, err := s.conversationRepo.GetByIDForUser(ctx, workspaceID, root, actor.UserID, workspaceMemberID, role)
+	if err != nil || primary == nil {
+		return nil, err
+	}
+	return original, nil
 }
 
 func (s *SupportInboxService) loadConversationUnscoped(ctx context.Context, workspaceID, conversationID string) (*model.SupportConversation, error) {

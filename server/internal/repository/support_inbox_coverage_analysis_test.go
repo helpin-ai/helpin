@@ -19,6 +19,7 @@ func setupSupportInboxCoverageAnalysisTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("open sqlite db: %v", err)
 	}
 	if err := db.Exec(`CREATE TABLE support_conversations (
+            merged_into_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,
 		id TEXT PRIMARY KEY,
 		workspace_id TEXT NOT NULL,
 		mailbox_id TEXT,

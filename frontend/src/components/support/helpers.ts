@@ -93,6 +93,7 @@ export function getSupportReceiptStatus(
   conversation: Pick<SupportConversation, 'source' | 'contact_last_seen_at'>,
 ): SupportReceiptStatus {
   if (isExternalSupportEmailReply(message.metadata)) return 'sent_outside_helpin';
+  if (message.widget_read_at) return 'read';
   if (message.email_read_at) return 'read_email';
   if (message.email_delivery_status === 'opened') return 'read_email';
   if (message.email_delivery_status === 'delivered') return 'delivered_email';

@@ -45,6 +45,19 @@ func (s *InternalCommandService) executeSupportListConversations(ctx context.Con
 	if err := s.requireSupportOperationalServices(false); err != nil {
 		return nil, err
 	}
+	if id := commandConversationTargetID(meta); id != "" {
+		current, err := s.supportInboxService.GetConversation(s.supportOperationalContext(ctx, meta), meta.WorkspaceID, id)
+		if err != nil {
+			return nil, err
+		}
+		if current.MergeRevision > 0 {
+			safe, err := s.supportInboxService.conversationRepo.AIContextConversation(ctx, current)
+			if err != nil {
+				return nil, err
+			}
+			return mustJSON(map[string]any{"conversations": []map[string]any{compactSupportConversation(safe)}, "total": 1}), nil
+		}
+	}
 	var req struct {
 		Status   string  `json:"status"`
 		Priority string  `json:"priority"`
@@ -86,6 +99,10 @@ func (s *InternalCommandService) executeSupportGetConversation(ctx context.Conte
 		return nil, err
 	}
 	conversation, err := s.supportInboxService.GetConversation(s.supportOperationalContext(ctx, meta), meta.WorkspaceID, id)
+	if err != nil {
+		return nil, err
+	}
+	conversation, err = s.supportInboxService.conversationRepo.AIContextConversation(ctx, conversation)
 	if err != nil {
 		return nil, err
 	}

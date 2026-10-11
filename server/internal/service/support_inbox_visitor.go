@@ -13,7 +13,7 @@ import (
 
 // GetVisitorContext assembles visitor intelligence for a support conversation.
 func (s *SupportInboxService) GetVisitorContext(ctx context.Context, workspaceID, conversationID string) (*model.VisitorContextResponse, error) {
-	conversation, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
+	conversation, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)
 	if err != nil {
 		return nil, fmt.Errorf("get conversation: %w", err)
 	}
@@ -166,46 +166,26 @@ func (s *SupportInboxService) GetVisitorContext(ctx context.Context, workspaceID
 		}
 	}
 
-	// Other conversations
-	const otherConvsLimit = 25
-
-	var (
-		otherConvs []model.SupportConversation
-		totalCount int
-	)
-	if conversation.CRMContactID != nil && *conversation.CRMContactID != "" {
-		convs, total, err := s.conversationRepo.ListByContact(ctx, workspaceID, *conversation.CRMContactID, "", "", model.PMPagination{Page: 1, PerPage: otherConvsLimit})
-		if err != nil {
-			slog.ErrorContext(ctx, "visitor context: list contact conversations failed", "error", err)
-		}
-		otherConvs = convs
-		totalCount = int(total)
-	} else if conversation.AnonymousID != nil {
-		convs, err := s.conversationRepo.ListByAnonymousID(ctx, workspaceID, *conversation.AnonymousID)
-		if err != nil {
-			slog.ErrorContext(ctx, "visitor context: list anonymous conversations failed", "error", err)
-		}
-		totalCount = len(convs)
-		if len(convs) > otherConvsLimit {
-			convs = convs[:otherConvsLimit]
-		}
-		otherConvs = convs
+	memberID, role := "", model.RoleOwner
+	if actor := supportActorFromContext(ctx, workspaceID); actor != nil {
+		memberID, role = actor.WorkspaceMemberID, actor.Role
 	}
-
+	otherConvs, totalCount, err := s.conversationRepo.VisitorHistory(ctx, workspaceID, memberID, role, *conversation)
+	if err != nil {
+		return nil, err
+	}
 	for _, c := range otherConvs {
-		if c.ID == conversationID {
-			continue
-		}
 		resp.OtherConversations = append(resp.OtherConversations, model.VisitorOtherConversation{
-			ID:        c.ID,
-			DisplayID: c.DisplayID,
-			Subject:   c.Subject,
-			Status:    c.Status,
-			CreatedAt: c.CreatedAt.Format(time.RFC3339),
+			ID:           c.ID,
+			MergedIntoID: c.MergedIntoID,
+			DisplayID:    c.DisplayID,
+			Subject:      c.Subject,
+			Status:       c.Status,
+			CreatedAt:    c.CreatedAt.Format(time.RFC3339),
 		})
 	}
 
-	resp.TotalConversations = totalCount
+	resp.TotalConversations = int(totalCount)
 
 	return resp, nil
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -15,18 +16,19 @@ import (
 
 // Event is the lightweight notification sent to clients.
 type Event struct {
-	EventID      string          `json:"event_id,omitempty"`
-	SentAt       time.Time       `json:"sent_at,omitempty"`
-	Action       string          `json:"action"`
-	Entity       string          `json:"entity"`
-	EntityID     string          `json:"entity_id"`
-	WorkspaceID  string          `json:"workspace_id"`
-	ActorID      string          `json:"actor_id"`
-	TargetUserID string          `json:"target_user_id,omitempty"`
-	ParentType   string          `json:"parent_type,omitempty"`
-	ParentID     string          `json:"parent_id,omitempty"`
-	TaskKey      string          `json:"task_key,omitempty"` // included for task create/update/delete events
-	Data         json.RawMessage `json:"data,omitempty"`     // hydrated payload for widget clients
+	WidgetConversationIDs []string        `json:"widget_conversation_ids,omitempty"`
+	EventID               string          `json:"event_id,omitempty"`
+	SentAt                time.Time       `json:"sent_at,omitempty"`
+	Action                string          `json:"action"`
+	Entity                string          `json:"entity"`
+	EntityID              string          `json:"entity_id"`
+	WorkspaceID           string          `json:"workspace_id"`
+	ActorID               string          `json:"actor_id"`
+	TargetUserID          string          `json:"target_user_id,omitempty"`
+	ParentType            string          `json:"parent_type,omitempty"`
+	ParentID              string          `json:"parent_id,omitempty"`
+	TaskKey               string          `json:"task_key,omitempty"` // included for task create/update/delete events
+	Data                  json.RawMessage `json:"data,omitempty"`     // hydrated payload for widget clients
 }
 
 // Client represents a single WebSocket connection.
@@ -361,6 +363,13 @@ func (h *Hub) Broadcast(event Event) {
 				payload = widgetData
 			}
 		}
+		if c.IsWidget && c.ConversationID != nil && event.Entity == "support_conversation_message" && *c.ConversationID != event.ParentID && widgetData != nil {
+			kind := "message:received"
+			if event.Action == "updated" {
+				kind = "message:updated"
+			}
+			payload, _ = json.Marshal(widgetMessage{Type: kind, Data: widgetMergeMessageData(widgetEventData, *c.ConversationID)})
+		}
 		if isTyping {
 			slog.Debug("[ws] delivering typing event to client",
 				"client_user", c.UserID, "is_widget", c.IsWidget)
@@ -445,7 +454,7 @@ func (h *Hub) shouldReceive(client *Client, event Event) bool {
 
 	switch event.Entity {
 	case "support_conversation_message":
-		return len(event.Data) > 0 && client.ConversationID != nil && *client.ConversationID == event.ParentID
+		return len(event.Data) > 0 && client.ConversationID != nil && (*client.ConversationID == event.ParentID || slices.Contains(event.WidgetConversationIDs, *client.ConversationID))
 	case "support_conversation":
 		return client.ConversationID != nil && *client.ConversationID == event.EntityID
 	default:

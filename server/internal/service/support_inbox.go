@@ -1293,6 +1293,13 @@ func (s *SupportInboxService) MarkConversationReadByVisitor(ctx context.Context,
 		}
 	}
 
+	if conv.MergedIntoID != nil && s.wsPublisher != nil {
+		root, err := s.mergeRepository().Root(ctx, workspaceID, conversationID)
+		if err != nil {
+			return err
+		}
+		s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "support_conversation", EntityID: root, WorkspaceID: workspaceID})
+	}
 	// Push authoritative conversations:listed refresh to all visitor widget sessions
 	s.pushVisitorConversationsRefresh(ctx, workspaceID, anonymousID)
 
@@ -1312,12 +1319,16 @@ func (s *SupportInboxService) EscalateConversation(ctx context.Context, workspac
 	if s.supportAIService == nil {
 		return fmt.Errorf("ai service not configured")
 	}
-	return s.supportAIService.EscalateToHuman(ctx, workspaceID, conversationID, reason)
+	root, err := s.mergeRepository().Root(ctx, workspaceID, conversationID)
+	if err != nil {
+		return err
+	}
+	return s.supportAIService.EscalateToHuman(ctx, workspaceID, root, reason)
 }
 
 // pushVisitorConversationsRefresh sends an updated conversation list to all widget sessions for a visitor.
 func (s *SupportInboxService) pushVisitorConversationsRefresh(ctx context.Context, workspaceID, anonymousID string) {
-	conversations, err := s.conversationRepo.ListByAnonymousID(ctx, workspaceID, anonymousID)
+	conversations, err := s.GetVisitorConversations(ctx, workspaceID, anonymousID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to fetch visitor conversations for refresh", "error", err)
 		return
@@ -1594,6 +1605,43 @@ func (s *SupportInboxService) GetConversation(ctx context.Context, workspaceID, 
 			slog.ErrorContext(ctx, "hydrate support conversation triage", "error", err, "workspace_id", workspaceID, "conversation_id", id)
 		}
 	}
+	if ticket.MergeRevision > 0 && ticket.MergedIntoID == nil {
+		group, err := s.mergeRepository().Group(ctx, workspaceID, id)
+		if err != nil {
+			return nil, err
+		}
+		if len(group) > 1 {
+			ticket.MergeEmailRecipients = model.SupportMergeEmailAudience(group)
+			for _, c := range group {
+				if c.AnonymousID != nil || c.Source == "widget" {
+					ticket.MergeHasWidget = true
+				}
+				label := strings.TrimSpace(derefString(c.CustomerEmail))
+				if label == "" {
+					label = strings.TrimSpace(derefString(c.CustomerName))
+				}
+				if label == "" {
+					label = fmt.Sprintf("Visitor #%d", c.DisplayID)
+				}
+				if !slices.Contains(ticket.MergeParticipants, label) {
+					ticket.MergeParticipants = append(ticket.MergeParticipants, label)
+				}
+			}
+		}
+	}
+	if ticket.MergedIntoID != nil {
+		root, err := s.mergeRepository().Root(ctx, workspaceID, id)
+		if err != nil {
+			return nil, err
+		}
+		active, err := s.loadConversationAccessible(ctx, workspaceID, root)
+		if err != nil {
+			return nil, err
+		}
+		if active != nil {
+			ticket.MergeContinuationID = &root
+		}
+	}
 	hydrated := []model.SupportConversation{*ticket}
 	s.hydrateConversationTags(ctx, workspaceID, hydrated)
 	ticket.Tags = hydrated[0].Tags
@@ -1818,6 +1866,7 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 	}
 
 	s.wsPublisher.Publish(buildSupportConversationStatusEvent(ticket, oldStatus, actorID))
+	s.refreshMergedVisitors(ctx, ticket)
 
 	if oldStatus != status && status == model.SupportConversationStatusResolved {
 		s.trackProductEvent(ctx, ProductAnalyticsEvent{
@@ -1888,6 +1937,17 @@ func (s *SupportInboxService) listConversationMessages(ctx context.Context, work
 		return nil, err
 	}
 
+	if widgetOnly && conv.MergeRevision > 0 {
+		shared, _, err := s.mergeRepository().SharedMessages(ctx, workspaceID, ticketID, "", true, nil, 0)
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, shared...)
+		slices.SortFunc(messages, func(a, b model.SupportMessage) int { return a.CreatedAt.Compare(b.CreatedAt) })
+		for i := range messages {
+			messages[i].ConversationID = ticketID
+		}
+	}
 	if widgetOnly {
 		messages = widgetVisibleSupportMessages(messages)
 		if err := s.projectWidgetAIProgress(ctx, conv, messages); err != nil {
@@ -1906,7 +1966,19 @@ func (s *SupportInboxService) listConversationMessages(ctx context.Context, work
 	// render rich HTML without a per-message round-trip. Only email messages
 	// need this — widget/in-app chat messages have no email log.
 	if s.emailLogRepo != nil {
-		hydrateEmailBodies(ctx, s.emailLogRepo, workspaceID, ticketID, messages)
+		if conv.MergeRevision > 0 {
+			ids := make([]string, 0, len(messages))
+			for _, m := range messages {
+				ids = append(ids, m.ID)
+			}
+			logs, err := s.emailLogRepo.ListByMessageIDs(ctx, workspaceID, ids)
+			if err != nil {
+				return nil, err
+			}
+			hydrateEmailBodiesFromLogs(messages, logs)
+		} else {
+			hydrateEmailBodies(ctx, s.emailLogRepo, workspaceID, ticketID, messages)
+		}
 	}
 
 	return messages, nil
@@ -2063,8 +2135,12 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		return nil, fmt.Errorf("confirm the primary recipient before sending an email reply")
 	}
 
+	deliveryConversation, err := mergedDeliveryConversation(ctx, s.conversationRepo, conv)
+	if err != nil {
+		return nil, err
+	}
 	if (req.DeliveryMode == model.SupportDeliveryChatOnly || req.DeliveryMode == model.SupportDeliveryChatAndEmail) &&
-		strings.TrimSpace(derefString(conv.AnonymousID)) == "" && conv.Source != "widget" {
+		strings.TrimSpace(derefString(conv.AnonymousID)) == "" && conv.Source != "widget" && !deliveryConversation.MergeHasWidget {
 		return nil, fmt.Errorf("this conversation has no chat session; choose email only")
 	}
 
@@ -2083,7 +2159,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	explicitEmail := req.DeliveryMode == model.SupportDeliveryEmailOnly || req.DeliveryMode == model.SupportDeliveryChatAndEmail
 	explicitDelay := 0
 	if explicitEmail {
-		explicitDelay, err = s.emailFallbackService.validateExplicitEmail(ctx, workspaceID, conv)
+		explicitDelay, err = s.emailFallbackService.validateExplicitEmail(ctx, workspaceID, deliveryConversation)
 		if err != nil {
 			return nil, err
 		}
@@ -2167,18 +2243,19 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	}
 
 	msg := &model.SupportMessage{
-		ID:                replyID,
-		WorkspaceID:       workspaceID,
-		ConversationID:    ticketID,
-		SenderType:        senderType,
-		SenderUserID:      senderUserID,
-		SenderAgentID:     senderAgentID,
-		SenderDisplayName: senderDisplayName,
-		SenderAvatarURL:   senderAvatarURL,
-		Content:           strings.TrimSpace(req.Content),
-		IsInternal:        req.IsInternal,
-		MessageType:       messageType,
-		ClientMessageID:   clientMessageID,
+		ExpectedMergeRevision: req.ExpectedMergeRevision,
+		ID:                    replyID,
+		WorkspaceID:           workspaceID,
+		ConversationID:        ticketID,
+		SenderType:            senderType,
+		SenderUserID:          senderUserID,
+		SenderAgentID:         senderAgentID,
+		SenderDisplayName:     senderDisplayName,
+		SenderAvatarURL:       senderAvatarURL,
+		Content:               strings.TrimSpace(req.Content),
+		IsInternal:            req.IsInternal,
+		MessageType:           messageType,
+		ClientMessageID:       clientMessageID,
 	}
 
 	if translation != nil {

@@ -9,7 +9,10 @@ import (
 )
 
 func TestMetadataEnrichmentPreservesVisitorFeedback(t *testing.T) {
-	db := setupSupportMessageTestDB(t)
+	db := setupSupportConversationMessageTestDB(t)
+	if err := db.Exec("INSERT INTO support_conversations(id,workspace_id) VALUES ('c','w')").Error; err != nil {
+		t.Fatal(err)
+	}
 	repo := NewSupportMessageRepository(db)
 	msg := &model.SupportMessage{ID: "feedback-message", WorkspaceID: "w", ConversationID: "c", SenderType: "ai", MessageType: "reply", Content: "Answer", Metadata: `{"visitor_feedback":{"helpful":false,"submitted_at":"2026-09-13T12:00:00Z"}}`}
 	if err := repo.Create(context.Background(), msg); err != nil {

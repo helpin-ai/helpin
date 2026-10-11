@@ -33,13 +33,14 @@ func supportMessageEvent(workspaceID string, msg *model.SupportMessage, actorID,
 	}
 
 	event := Event{
-		Action:      action,
-		Entity:      "support_conversation_message",
-		EntityID:    msg.ID,
-		WorkspaceID: workspaceID,
-		ActorID:     actorID,
-		ParentType:  "support_conversation",
-		ParentID:    msg.ConversationID,
+		WidgetConversationIDs: msg.WidgetConversationIDs,
+		Action:                action,
+		Entity:                "support_conversation_message",
+		EntityID:              msg.ID,
+		WorkspaceID:           workspaceID,
+		ActorID:               actorID,
+		ParentType:            "support_conversation",
+		ParentID:              msg.ConversationID,
 	}
 	if !msg.WidgetVisible() {
 		return event
@@ -251,4 +252,16 @@ func nilIfEmpty(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+// widgetMergeMessageData keeps an authorized source client in its own history scope.
+func widgetMergeMessageData(data json.RawMessage, conversationID string) json.RawMessage {
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil
+	}
+	id, _ := json.Marshal(conversationID)
+	payload["conversation_id"] = id
+	result, _ := json.Marshal(payload)
+	return result
 }

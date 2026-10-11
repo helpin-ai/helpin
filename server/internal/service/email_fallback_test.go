@@ -235,6 +235,9 @@ func TestEmailFallbackOnAgentReplySetsCancellableUntil(t *testing.T) {
 		MessageType:    "reply",
 		Content:        "Hello",
 	}
+	if err := env.messageRepo.DB().Exec("INSERT INTO support_conversations(id,workspace_id,display_id,subject,status) VALUES (?,?,1,'Test','open') ON CONFLICT(id) DO NOTHING", msg.ConversationID, msg.WorkspaceID).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := env.messageRepo.Create(ctx, msg); err != nil {
 		t.Fatalf("create message: %v", err)
 	}
@@ -281,6 +284,9 @@ func TestEmailFallbackOnAgentReplySkipsQueueWhenVisitorOnline(t *testing.T) {
 		SenderType:     "user",
 		MessageType:    "reply",
 		Content:        "Hello while you are here",
+	}
+	if err := env.messageRepo.DB().Exec("INSERT INTO support_conversations(id,workspace_id,display_id,subject,status) VALUES (?,?,1,'Test','open') ON CONFLICT(id) DO NOTHING", msg.ConversationID, msg.WorkspaceID).Error; err != nil {
+		t.Fatal(err)
 	}
 	if err := env.messageRepo.Create(ctx, msg); err != nil {
 		t.Fatalf("create message: %v", err)
@@ -635,6 +641,9 @@ func TestReplyByEmailWhenVisitorOffline(t *testing.T) {
 		MessageType:       "reply",
 		CreatedAt:         fixedNow.Add(-120 * time.Second),
 	}
+	if err := env.messageRepo.DB().Exec("INSERT INTO support_conversations(id,workspace_id,display_id,subject,status) VALUES (?,?,1,'Test','open') ON CONFLICT(id) DO NOTHING", msg.ConversationID, msg.WorkspaceID).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := env.messageRepo.Create(ctx, msg); err != nil {
 		t.Fatalf("create message: %v", err)
 	}
@@ -797,6 +806,9 @@ func TestEmailFallbackFireEmailRetriesVerifiedSenderWhenBrandedSenderRejected(t 
 		Content:           "We can help with billing.",
 		MessageType:       "reply",
 	}
+	if err := env.messageRepo.DB().Exec("INSERT INTO support_conversations(id,workspace_id,display_id,subject,status) VALUES (?,?,1,'Test','open') ON CONFLICT(id) DO NOTHING", msg.ConversationID, msg.WorkspaceID).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := env.messageRepo.Create(ctx, msg); err != nil {
 		t.Fatalf("create message: %v", err)
 	}
@@ -951,6 +963,9 @@ func TestEmailFallbackFireEmailUsesMailboxDefaultSenderAndLogsReplyContract(t *t
 		SenderDisplayName: strPtr("Arooj"),
 		Content:           "I checked your invoice.",
 		MessageType:       "reply",
+	}
+	if err := env.messageRepo.DB().Exec("INSERT INTO support_conversations(id,workspace_id,display_id,subject,status) VALUES (?,?,1,'Test','open') ON CONFLICT(id) DO NOTHING", msg.ConversationID, msg.WorkspaceID).Error; err != nil {
+		t.Fatal(err)
 	}
 	if err := env.messageRepo.Create(ctx, msg); err != nil {
 		t.Fatalf("create message: %v", err)
@@ -1279,6 +1294,9 @@ func TestEmailFallbackReconcileMissedOutboundReplySendsOnce(t *testing.T) {
 		MessageType:       "reply",
 		CreatedAt:         fixedNow.Add(-3 * time.Minute),
 	}
+	if err := env.messageRepo.DB().Exec("INSERT INTO support_conversations(id,workspace_id,display_id,subject,status) VALUES (?,?,1,'Test','open') ON CONFLICT(id) DO NOTHING", msg.ConversationID, msg.WorkspaceID).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := env.messageRepo.Create(ctx, msg); err != nil {
 		t.Fatalf("create message: %v", err)
 	}
@@ -1372,6 +1390,9 @@ func TestEmailFallbackReconcileSkipsOnlineVisitor(t *testing.T) {
 		MessageType:       "reply",
 		CreatedAt:         fixedNow.Add(-3 * time.Minute),
 	}
+	if err := env.messageRepo.DB().Exec("INSERT INTO support_conversations(id,workspace_id,display_id,subject,status) VALUES (?,?,1,'Test','open') ON CONFLICT(id) DO NOTHING", msg.ConversationID, msg.WorkspaceID).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := env.messageRepo.Create(ctx, msg); err != nil {
 		t.Fatalf("create message: %v", err)
 	}
@@ -1435,6 +1456,9 @@ func TestEmailFallbackReconcileSkipsStaleMissedOutboundReply(t *testing.T) {
 		MessageType:    "reply",
 		CreatedAt:      fixedNow.Add(-20 * time.Minute),
 	}
+	if err := env.messageRepo.DB().Exec("INSERT INTO support_conversations(id,workspace_id,display_id,subject,status) VALUES (?,?,1,'Test','open') ON CONFLICT(id) DO NOTHING", msg.ConversationID, msg.WorkspaceID).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := env.messageRepo.Create(ctx, msg); err != nil {
 		t.Fatalf("create message: %v", err)
 	}
@@ -1495,6 +1519,9 @@ func TestEmailFallbackBackfillSendsStaleMissedOutboundReplyInWindow(t *testing.T
 		Content:        "This stale reply should be recovered by explicit backfill.",
 		MessageType:    "reply",
 		CreatedAt:      fixedNow.Add(-20 * time.Minute),
+	}
+	if err := env.messageRepo.DB().Exec("INSERT INTO support_conversations(id,workspace_id,display_id,subject,status) VALUES (?,?,1,'Test','open') ON CONFLICT(id) DO NOTHING", msg.ConversationID, msg.WorkspaceID).Error; err != nil {
+		t.Fatal(err)
 	}
 	if err := env.messageRepo.Create(ctx, msg); err != nil {
 		t.Fatalf("create message: %v", err)
@@ -1634,6 +1661,9 @@ func TestEmailFallbackFireEmailSendsOnlyUnreadEligibleMessages(t *testing.T) {
 	}
 	messageIDs := make([]string, 0, len(messages))
 	for _, msg := range messages {
+		if err := env.messageRepo.DB().Exec("INSERT INTO support_conversations(id,workspace_id,display_id,subject,status) VALUES (?,?,1,'Test','open') ON CONFLICT(id) DO NOTHING", msg.ConversationID, msg.WorkspaceID).Error; err != nil {
+			t.Fatal(err)
+		}
 		if err := env.messageRepo.Create(ctx, msg); err != nil {
 			t.Fatalf("create message %s: %v", msg.ID, err)
 		}
@@ -1797,6 +1827,9 @@ func TestEmailFallbackFireEmailVisitorOnlineUnreadPostponesWithinGraceWindow(t *
 		MessageType:    "reply",
 		CreatedAt:      fixedNow.Add(-120 * time.Second),
 	}
+	if err := env.messageRepo.DB().Exec("INSERT INTO support_conversations(id,workspace_id,display_id,subject,status) VALUES (?,?,1,'Test','open') ON CONFLICT(id) DO NOTHING", msg.ConversationID, msg.WorkspaceID).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := env.messageRepo.Create(ctx, msg); err != nil {
 		t.Fatalf("create message: %v", err)
 	}
@@ -1865,6 +1898,9 @@ func TestEmailFallbackFireEmailVisitorOnlineUnreadKeepsPostponingAfterGraceWindo
 		Content:        "Unread after online grace",
 		MessageType:    "reply",
 		CreatedAt:      fixedNow.Add(-151 * time.Second),
+	}
+	if err := env.messageRepo.DB().Exec("INSERT INTO support_conversations(id,workspace_id,display_id,subject,status) VALUES (?,?,1,'Test','open') ON CONFLICT(id) DO NOTHING", msg.ConversationID, msg.WorkspaceID).Error; err != nil {
+		t.Fatal(err)
 	}
 	if err := env.messageRepo.Create(ctx, msg); err != nil {
 		t.Fatalf("create message: %v", err)
@@ -1941,6 +1977,9 @@ func TestEmailFallbackFireEmailReadMessagesCleanUp(t *testing.T) {
 		MessageType:    "reply",
 		CreatedAt:      fixedNow.Add(-time.Minute),
 	}
+	if err := env.messageRepo.DB().Exec("INSERT INTO support_conversations(id,workspace_id,display_id,subject,status) VALUES (?,?,1,'Test','open') ON CONFLICT(id) DO NOTHING", msg.ConversationID, msg.WorkspaceID).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := env.messageRepo.Create(ctx, msg); err != nil {
 		t.Fatalf("create message: %v", err)
 	}
@@ -1992,6 +2031,9 @@ func TestEmailFallbackFireEmailStaleUnreadCleanUp(t *testing.T) {
 		Content:        "Too old to email",
 		MessageType:    "reply",
 		CreatedAt:      fixedNow.Add(-11 * time.Minute),
+	}
+	if err := env.messageRepo.DB().Exec("INSERT INTO support_conversations(id,workspace_id,display_id,subject,status) VALUES (?,?,1,'Test','open') ON CONFLICT(id) DO NOTHING", msg.ConversationID, msg.WorkspaceID).Error; err != nil {
+		t.Fatal(err)
 	}
 	if err := env.messageRepo.Create(ctx, msg); err != nil {
 		t.Fatalf("create message: %v", err)
@@ -2060,6 +2102,9 @@ func TestEmailFallbackFireEmailDropsStaleMessagesFromMixedBatch(t *testing.T) {
 		CreatedAt:      fixedNow.Add(-2 * time.Minute),
 	}
 	for _, msg := range []*model.SupportMessage{staleMsg, freshMsg} {
+		if err := env.messageRepo.DB().Exec("INSERT INTO support_conversations(id,workspace_id,display_id,subject,status) VALUES (?,?,1,'Test','open') ON CONFLICT(id) DO NOTHING", msg.ConversationID, msg.WorkspaceID).Error; err != nil {
+			t.Fatal(err)
+		}
 		if err := env.messageRepo.Create(ctx, msg); err != nil {
 			t.Fatalf("create message %s: %v", msg.ID, err)
 		}
@@ -2151,6 +2196,9 @@ func TestEmailFallbackFireEmailSendsAtFreshnessBoundary(t *testing.T) {
 		MessageType:    "reply",
 		CreatedAt:      fixedNow.Add(-10 * time.Minute),
 	}
+	if err := env.messageRepo.DB().Exec("INSERT INTO support_conversations(id,workspace_id,display_id,subject,status) VALUES (?,?,1,'Test','open') ON CONFLICT(id) DO NOTHING", msg.ConversationID, msg.WorkspaceID).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := env.messageRepo.Create(ctx, msg); err != nil {
 		t.Fatalf("create message: %v", err)
 	}
@@ -2198,6 +2246,9 @@ func TestEmailFallbackProcessOpenEventMarksMessagesRead(t *testing.T) {
 		SenderType:     "user",
 		Content:        "Following up via email.",
 		MessageType:    "reply",
+	}
+	if err := env.messageRepo.DB().Exec("INSERT INTO support_conversations(id,workspace_id,display_id,subject,status) VALUES (?,?,1,'Test','open') ON CONFLICT(id) DO NOTHING", msg.ConversationID, msg.WorkspaceID).Error; err != nil {
+		t.Fatal(err)
 	}
 	if err := env.messageRepo.Create(ctx, msg); err != nil {
 		t.Fatalf("create msg: %v", err)
@@ -2268,6 +2319,9 @@ func TestEmailFallbackProcessDeliveryEventMarksDelivered(t *testing.T) {
 		SenderType:     "user",
 		Content:        "Following up via email.",
 		MessageType:    "reply",
+	}
+	if err := env.messageRepo.DB().Exec("INSERT INTO support_conversations(id,workspace_id,display_id,subject,status) VALUES (?,?,1,'Test','open') ON CONFLICT(id) DO NOTHING", msg.ConversationID, msg.WorkspaceID).Error; err != nil {
+		t.Fatal(err)
 	}
 	if err := env.messageRepo.Create(ctx, msg); err != nil {
 		t.Fatalf("create msg: %v", err)
@@ -2340,6 +2394,9 @@ func TestEmailFallbackProcessBounceEventMarksBounced(t *testing.T) {
 		SenderType:     "user",
 		Content:        "Following up via email.",
 		MessageType:    "reply",
+	}
+	if err := env.messageRepo.DB().Exec("INSERT INTO support_conversations(id,workspace_id,display_id,subject,status) VALUES (?,?,1,'Test','open') ON CONFLICT(id) DO NOTHING", msg.ConversationID, msg.WorkspaceID).Error; err != nil {
+		t.Fatal(err)
 	}
 	if err := env.messageRepo.Create(ctx, msg); err != nil {
 		t.Fatalf("create msg: %v", err)
@@ -2417,6 +2474,9 @@ func TestEmailFallbackProcessSpamComplaintEventMarksSpamComplaint(t *testing.T) 
 		SenderType:     "user",
 		Content:        "Following up via email.",
 		MessageType:    "reply",
+	}
+	if err := env.messageRepo.DB().Exec("INSERT INTO support_conversations(id,workspace_id,display_id,subject,status) VALUES (?,?,1,'Test','open') ON CONFLICT(id) DO NOTHING", msg.ConversationID, msg.WorkspaceID).Error; err != nil {
+		t.Fatal(err)
 	}
 	if err := env.messageRepo.Create(ctx, msg); err != nil {
 		t.Fatalf("create msg: %v", err)

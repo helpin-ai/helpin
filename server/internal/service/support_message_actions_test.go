@@ -74,6 +74,9 @@ func createActionMessage(t *testing.T, repo *repository.SupportMessageRepository
 	if msg.UpdatedAt.IsZero() {
 		msg.UpdatedAt = now
 	}
+	if err := repo.DB().Exec("INSERT INTO support_conversations(id,workspace_id,display_id,subject,status) VALUES (?, ?, 1, 'Test', 'open') ON CONFLICT(id) DO NOTHING", msg.ConversationID, msg.WorkspaceID).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := repo.Create(context.Background(), &msg); err != nil {
 		t.Fatalf("create message: %v", err)
 	}

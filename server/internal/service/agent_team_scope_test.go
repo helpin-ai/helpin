@@ -268,6 +268,7 @@ func setupAgentScopeTestDB(t *testing.T) *gorm.DB {
 			updated_at datetime
 		)`,
 		`CREATE TABLE support_conversations (
+            merged_into_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,
 			id text PRIMARY KEY,
 			workspace_id text NOT NULL,
 			mailbox_id text,

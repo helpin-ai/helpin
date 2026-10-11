@@ -20,7 +20,7 @@ func (s *SupportFollowUpService) assessJevFollowUp(ctx context.Context, row mode
 	if !jev.enabled(row.WorkspaceID) || jev.config.FollowUpMode == "off" {
 		return false, "", nil
 	}
-	history, err := s.chat.messageRepo.ListByConversation(ctx, row.WorkspaceID, row.ConversationID, false)
+	history, err := s.chat.messageRepo.ListForSupportAI(ctx, row.WorkspaceID, row.ConversationID, false)
 	if err != nil {
 		return false, "", err
 	}
@@ -56,7 +56,7 @@ func (s *SupportFollowUpService) assessJevFollowUp(ctx context.Context, row mode
 		if busy {
 			return finishFollowUpRow(tx, e, "cancelled", "conversation_busy", now)
 		}
-		latest, err := s.chat.messageRepo.WithTx(tx).ListByConversation(ctx, conv.WorkspaceID, conv.ID, false)
+		latest, err := s.chat.messageRepo.WithTx(tx).ListForSupportAI(ctx, conv.WorkspaceID, conv.ID, false)
 		if err != nil {
 			return err
 		}

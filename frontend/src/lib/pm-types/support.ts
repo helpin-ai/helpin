@@ -37,6 +37,13 @@ export interface SupportConversationTriage {
 }
 
 export interface SupportConversation {
+  merged_into_id?: string | null;
+  merge_revision?: number;
+  merge_email_recipients?: string[];
+  merge_has_widget?: boolean;
+  merge_continuation_id?: string;
+  merge_participants?: string[];
+  list_last_message_preview?: string;
   anonymized_at?: string | null;
   id: string;
   workspace_id: string;
@@ -624,6 +631,7 @@ export interface SupportMessage {
   metadata?: string;
   via_channel?: 'email' | 'widget' | null;
   email_notified_at?: string;
+  widget_read_at?: string | null;
   email_read_at?: string;
   cancellable_until?: string;
   attachments?: SupportAttachmentPayload[];
@@ -1035,6 +1043,7 @@ export interface CreateConversationRequest {
 export type SupportReplyDeliveryMode = 'chat_only' | 'chat_and_email' | 'email_only';
 
 export interface CreateMessageRequest {
+  expected_merge_revision?: number;
   send_original?: boolean;
  auto_translate?: boolean;
  translation_target_language?: string;
@@ -1150,6 +1159,7 @@ export interface BusinessHoursDay {
 }
 
 export interface SupportInboxSettings {
+  allow_cross_customer_merge?: boolean;
  translation_enabled?: boolean;
  translation_incoming_enabled?: boolean;
  translation_outgoing_enabled?: boolean;
@@ -1291,4 +1301,36 @@ export interface SupportTranslation {
  error_code?: string;
  created_at: string;
  expires_at?: string;
+}
+
+export interface SupportConversationMerge {
+  id: string;
+  operation_id: string;
+  source_id: string;
+  target_id: string;
+  actor_id: string;
+  actor_name?: string;
+  cross_customer: boolean;
+  created_at: string;
+  ended_at?: string;
+  source?: SupportConversation;
+  target?: SupportConversation;
+}
+
+export interface SupportMergePreview {
+  restore_inbox_required?: boolean;
+  target: SupportConversation;
+  sources: SupportConversation[];
+  preview_token: string;
+  cross_customer: boolean;
+  participants: string[];
+  stops_ai: boolean;
+  reopens: boolean;
+  transfers_access: boolean;
+}
+
+export interface SupportMergeResult {
+  conversation_id: string;
+  affected_ids: string[];
+  merges: SupportConversationMerge[];
 }

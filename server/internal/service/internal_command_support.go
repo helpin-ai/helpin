@@ -112,6 +112,15 @@ func (s *InternalCommandService) executeListConversationMessages(ctx context.Con
 	if conversationID == "" {
 		return nil, fmt.Errorf("no support conversation associated with this run")
 	}
+	if target := commandConversationTargetID(meta); target != "" && target != conversationID {
+		current, err := s.supportConversationRepo.GetByID(ctx, meta.WorkspaceID, target, "", model.RoleOwner)
+		if err != nil {
+			return nil, err
+		}
+		if current != nil && current.MergeRevision > 0 {
+			return nil, errCommandInput("use the active conversation history for this reply")
+		}
+	}
 	if req.Limit == 0 {
 		req.Limit = 20
 	}
@@ -121,7 +130,11 @@ func (s *InternalCommandService) executeListConversationMessages(ctx context.Con
 	if req.Offset < 0 {
 		return nil, errCommandInput("offset must be zero or greater")
 	}
-	messages, total, err := s.supportMessageRepo.ListConversationPageFromNewest(ctx, meta.WorkspaceID, conversationID, true, req.Limit, req.Offset)
+	history, err := s.supportMessageRepo.ListForSupportAI(ctx, meta.WorkspaceID, conversationID, true)
+	total := int64(len(history))
+	end := max(0, len(history)-req.Offset)
+	start := max(0, end-req.Limit)
+	messages := history[start:end]
 	if err != nil {
 		return nil, fmt.Errorf("list ticket messages: %w", err)
 	}
@@ -140,7 +153,7 @@ func (s *InternalCommandService) executeListConversationMessages(ctx context.Con
 				continue
 			}
 			byMessage[*attachment.MessageID] = append(byMessage[*attachment.MessageID], model.SupportAttachmentPayload{
-				ID: attachment.ID, FileName: attachment.FileName, FileType: attachment.ContentType,
+				ID: attachment.ID, ContentID: attachment.ContentID, FileName: attachment.FileName, FileType: attachment.ContentType,
 				FileSize: attachment.FileSize, URL: attachment.PublicURL,
 			})
 		}
@@ -166,6 +179,9 @@ func (s *InternalCommandService) executeListConversationMessages(ctx context.Con
 	for _, message := range messages {
 		attachments := make([]safeAttachment, 0, len(message.Attachments))
 		for _, attachment := range message.Attachments {
+			if !model.SharedSupportAttachmentVisible(&message, attachment) {
+				continue
+			}
 			attachments = append(attachments, safeAttachment{
 				ID: attachment.ID, FileName: attachment.FileName, FileType: attachment.FileType,
 				FileSize: attachment.FileSize, URL: attachment.URL,

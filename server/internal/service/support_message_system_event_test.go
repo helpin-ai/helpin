@@ -16,6 +16,9 @@ func TestSupportMessageSystemEventInvariant(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
 	repo := repository.NewSupportMessageRepository(db)
+	if err := db.Create(&model.SupportConversation{ID: "conv-1", WorkspaceID: "ws-1", DisplayID: 1, Subject: "Test", Status: "open"}).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	tests := []struct {
 		name      string

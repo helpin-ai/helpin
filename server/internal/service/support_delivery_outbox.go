@@ -30,7 +30,11 @@ func (s *EmailFallbackService) fireEmailWithOptions(ctx context.Context, convers
 		if msg.CancellableUntil != nil && s.now().Before(*msg.CancellableUntil) {
 			continue
 		}
-		if !msg.ExplicitEmailDelivery() {
+		var merged struct {
+			Shared bool `json:"merge_shared"`
+		}
+		_ = json.Unmarshal([]byte(msg.Metadata), &merged)
+		if !msg.ExplicitEmailDelivery() && !merged.Shared {
 			legacy = append(legacy, msg.ID)
 			continue
 		}
@@ -40,7 +44,7 @@ func (s *EmailFallbackService) fireEmailWithOptions(ctx context.Context, convers
 			}
 		}
 		explicitOpts := opts
-		explicitOpts.explicitEmail = true
+		explicitOpts.explicitEmail = msg.ExplicitEmailDelivery() || merged.Shared
 		if err := s.fireEmailBatch(ctx, conversationID, []string{msg.ID}, explicitOpts); err != nil && firstErr == nil {
 			firstErr = err
 		}
@@ -107,7 +111,7 @@ func explicitDeliveryMetadata(msg model.SupportMessage) supportExplicitDeliveryM
 }
 
 func explicitEmailBlocked(msg model.SupportMessage) bool {
-	return msg.ExplicitEmailDelivery() && explicitDeliveryMetadata(msg).Status == "blocked"
+	return explicitDeliveryMetadata(msg).Status == "blocked"
 }
 
 func explicitRecipientChanged(msg model.SupportMessage, conv *model.SupportConversation) string {

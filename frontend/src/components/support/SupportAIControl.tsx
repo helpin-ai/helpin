@@ -29,6 +29,7 @@ export function useSupportAIControl(conversation: SupportConversation) {
   const { data: installation } = useChatSettings(conversation.workspace_id);
   const { data: members } = useWorkspaceMembers(conversation.workspace_id);
   const paused = Boolean(
+    conversation.ai_paused_at ||
     conversation.human_takeover ||
     conversation.assigned_user_id ||
     conversation.opened_by_user_id ||
@@ -49,6 +50,7 @@ export function useSupportAIControl(conversation: SupportConversation) {
       : 'chat';
   const channels = installation?.settings.ai_reply_channels ?? 'chat';
   const eligible =
+    !conversation.merged_into_id &&
     !conversation.anonymized_at &&
     !['resolved', 'spam'].includes(conversation.status) &&
     ['widget', 'email'].includes(conversation.channel ?? conversation.source) &&

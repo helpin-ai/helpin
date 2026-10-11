@@ -1,3 +1,6 @@
+import { ConversationMergeDialog } from './ConversationMergeDialog';
+import { canMergeSelection } from '@/lib/supportMerging';
+import { useWorkspaceAccess } from '@/hooks/queries/useSession';
 import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -31,6 +34,8 @@ interface Props {
 
 export function ConversationBulkToolbar({ workspaceId, conversations, loadedCount, allLoadedSelected, hasMore, loadingSelection, canEdit, moveOptions, onSelectLoaded, onClear, onBusyChange, onCompleted }: Props) {
   const queryClient = useQueryClient();
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const { data: access } = useWorkspaceAccess(workspaceId);
   const confirm = useConfirm();
   const running = useRef(false);
   const mounted = useRef(true);
@@ -91,6 +96,7 @@ export function ConversationBulkToolbar({ workspaceId, conversations, loadedCoun
 
   return (
     <>
+      {mergeOpen && <ConversationMergeDialog workspaceId={workspaceId} conversations={conversations} open={mergeOpen} onOpenChange={setMergeOpen} onMerged={onCompleted} />}
       <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 pl-1.5">
         <Checkbox
           className="border-neutral-400 bg-white data-[state=checked]:border-neutral-400 data-[state=checked]:bg-white data-[state=checked]:text-neutral-900 dark:data-[state=checked]:bg-white"
@@ -138,6 +144,7 @@ export function ConversationBulkToolbar({ workspaceId, conversations, loadedCoun
           <TooltipContent side="bottom">More actions</TooltipContent>
         </Tooltip>
         <DropdownMenuContent align="end">
+          {access?.permissions.includes('support.merge') && <DropdownMenuItem disabled={!canMergeSelection(conversations)} onSelect={() => setMergeOpen(true)}>Merge…</DropdownMenuItem>}
           <DropdownMenuItem onSelect={() => void apply({ type: 'read' }, 'Marked as read:')}><MailOpenIcon className="h-3.5 w-3.5" />Mark as read</DropdownMenuItem>
           <DropdownMenuItem onSelect={() => void apply({ type: 'unread' }, 'Marked as unread:')}><Mail01Icon className="h-3.5 w-3.5" />Mark as unread</DropdownMenuItem>
           {canEdit && <>

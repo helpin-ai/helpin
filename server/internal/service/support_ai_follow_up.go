@@ -40,7 +40,7 @@ func supportFollowUpEligible(conv *model.SupportConversation, episode *model.Sup
 	if conv.AIResumedAt != nil && !episode.CreatedAt.After(*conv.AIResumedAt) {
 		return false
 	}
-	if !supportFollowUpEnabled(settings) || conv.FlowState == nil || *conv.FlowState != model.SupportConversationFlowStateAIHandling || derefString(conv.AIState) != "pending" || supportConversationHumanOwned(conv) || conv.CustomerRequestedHumanAt != nil || conv.LinkedTaskID != nil || conv.CustomerAwaitingResponse {
+	if conv.MergedIntoID != nil || conv.AIPausedAt != nil || !supportFollowUpEnabled(settings) || conv.FlowState == nil || *conv.FlowState != model.SupportConversationFlowStateAIHandling || derefString(conv.AIState) != "pending" || supportConversationHumanOwned(conv) || conv.CustomerRequestedHumanAt != nil || conv.LinkedTaskID != nil || conv.CustomerAwaitingResponse {
 		return false
 	}
 	if conv.Status != model.SupportConversationStatusOpen && conv.Status != model.SupportConversationStatusWaitingOnCustomer {

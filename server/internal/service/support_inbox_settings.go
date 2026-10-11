@@ -128,6 +128,9 @@ func parseSettings(raw string) model.SupportInboxSettings {
 
 // mergeSettingsUpdate applies non-nil patch fields onto current settings.
 func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateInstallationSettingsRequest) model.SupportInboxSettings {
+	if patch.AllowCrossCustomerMerge != nil {
+		current.AllowCrossCustomerMerge = *patch.AllowCrossCustomerMerge
+	}
 	if patch.TranslationIncomingEnabled != nil {
 		current.TranslationIncomingEnabled = *patch.TranslationIncomingEnabled
 	}

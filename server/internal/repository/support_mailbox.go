@@ -309,7 +309,7 @@ func (r *SupportMailboxRepository) CountScopes(ctx context.Context, workspaceID,
 
 	humanCondition := conversationHumanInboxCondition("sc")
 	query := r.db.WithContext(ctx).
-		Table("support_conversations sc").
+		Table("support_conversations sc").Where("sc.merged_into_id IS NULL").
 		Joins(`LEFT JOIN support_conversation_user_states personal_state
 			ON personal_state.conversation_id = sc.id
 		   AND personal_state.workspace_id = sc.workspace_id
@@ -352,7 +352,7 @@ func (r *SupportMailboxRepository) countLegacyScopes(ctx context.Context, worksp
 			)) AS unread_count,
 			COUNT(*) FILTER (WHERE conversation.needs_human_reply) AS needs_human_reply_count
 		FROM support_conversations conversation
-		WHERE conversation.workspace_id = ?
+		WHERE conversation.workspace_id = ? AND conversation.merged_into_id IS NULL
 		  AND (conversation.mailbox_id IS NULL OR conversation.mailbox_id IN ?)
 		GROUP BY COALESCE(conversation.mailbox_id::TEXT, 'shared')`, humanCondition, humanCondition)
 	var rows []SupportInboxScopeCounts
@@ -446,7 +446,7 @@ func (r *SupportMailboxRepository) CountUnreadByWorkspacesForUser(ctx context.Co
 			 AND member.user_id = ? AND member.status = 'active'
 			LEFT JOIN support_inbox_state_rollouts rollout
 			  ON rollout.workspace_id = conversation.workspace_id
-			WHERE COALESCE(rollout.mode, 'legacy') <> 'v2'
+			WHERE COALESCE(rollout.mode, 'legacy') <> 'v2' AND conversation.merged_into_id IS NULL
 			  AND conversation.status NOT IN ('resolved', 'spam')
 			  AND NOT (`+conversationResolvedByAICondition("conversation")+`)
 			  AND EXISTS (
@@ -485,7 +485,7 @@ func (r *SupportMailboxRepository) CountUnreadByWorkspacesForUser(ctx context.Co
 			AND wm.status = 'active'`, userID).
 		Where("personal_state.user_id = ?", userID).
 		Where("(personal_state.unread_customer_message_count > 0 OR personal_state.manually_unread = ?)", true).
-		Where("sc.status NOT IN ?", []string{model.SupportConversationStatusResolved, model.SupportConversationStatusSpam}).
+		Where("sc.merged_into_id IS NULL").Where("sc.status NOT IN ?", []string{model.SupportConversationStatusResolved, model.SupportConversationStatusSpam}).
 		Where("NOT (" + conversationResolvedByAICondition("sc") + ")").
 		Where(`sc.mailbox_id IS NULL OR EXISTS (
 			SELECT 1
@@ -515,7 +515,7 @@ func (r *SupportMailboxRepository) CountUnreadByWorkspacesForUser(ctx context.Co
 }
 
 func (r *SupportMailboxRepository) CountUnread(ctx context.Context, workspaceID string, mailboxID *string) (int, error) {
-	query := r.db.WithContext(ctx).Table("support_conversations sc").Where("sc.workspace_id = ? AND sc.status NOT IN ?", workspaceID, []string{model.SupportConversationStatusResolved, model.SupportConversationStatusSpam})
+	query := r.db.WithContext(ctx).Table("support_conversations sc").Where("sc.merged_into_id IS NULL").Where("sc.workspace_id = ? AND sc.status NOT IN ?", workspaceID, []string{model.SupportConversationStatusResolved, model.SupportConversationStatusSpam})
 	if mailboxID == nil {
 		query = query.Where("sc.mailbox_id IS NULL")
 	} else {
@@ -542,7 +542,7 @@ func (r *SupportMailboxRepository) CountUnread(ctx context.Context, workspaceID 
 
 func (r *SupportMailboxRepository) CountWorkload(ctx context.Context, workspaceID string, mailboxID *string) (int, error) {
 	query := r.db.WithContext(ctx).
-		Table("support_conversations sc").
+		Table("support_conversations sc").Where("sc.merged_into_id IS NULL").
 		Where("sc.workspace_id = ?", workspaceID).
 		Where(conversationHumanInboxCondition("sc"))
 	if mailboxID == nil {
@@ -562,9 +562,9 @@ func (r *SupportMailboxRepository) CountWorkload(ctx context.Context, workspaceI
 // authorization-safe mailbox scope from the conversation projection.
 func (r *SupportMailboxRepository) CountNeedsHumanReply(ctx context.Context, workspaceID string, mailboxID *string) (int, error) {
 	query := r.db.WithContext(ctx).
-		Table("support_conversations sc").
+		Table("support_conversations sc").Where("sc.merged_into_id IS NULL").
 		Where("sc.workspace_id = ? AND sc.needs_human_reply = ?", workspaceID, true).
-		Where("sc.status NOT IN ?", []string{model.SupportConversationStatusResolved, model.SupportConversationStatusSpam})
+		Where("sc.merged_into_id IS NULL").Where("sc.status NOT IN ?", []string{model.SupportConversationStatusResolved, model.SupportConversationStatusSpam})
 	if mailboxID == nil {
 		query = query.Where("sc.mailbox_id IS NULL")
 	} else {

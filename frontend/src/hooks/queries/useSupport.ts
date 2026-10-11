@@ -101,6 +101,7 @@ export type SupportConversationFilters = {
 export type SupportConversationGlobalSearchFilters = SupportConversationSearchParams;
 
 type SendMessagePayload = {
+  expected_merge_revision?: number;
   send_original?: boolean;
   auto_translate?: boolean;
   translation_target_language?: string;

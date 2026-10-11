@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"github.com/helpin-ai/helpin/server/internal/model"
 	"testing"
 	"time"
 
@@ -21,6 +22,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 	}
 
 	tables := []string{
+		`CREATE TABLE support_events (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, event_type TEXT, actor_type TEXT, channel TEXT, metadata TEXT, occurred_at DATETIME, created_at DATETIME)`,
 		serviceSampleDataItemsSchema,
 		`CREATE TABLE users (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
@@ -740,6 +742,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			updated_at DATETIME
 		)`,
 		`CREATE TABLE support_conversations (
+            merged_into_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,
             anonymized_at DATETIME,
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
@@ -914,6 +917,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			updated_at DATETIME
 		)`,
 		`CREATE TABLE support_messages (
+            origin_conversation_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
 			conversation_id TEXT NOT NULL,
@@ -1225,6 +1229,10 @@ func newTestDB(t *testing.T) *gorm.DB {
 		if err := db.Exec(stmt).Error; err != nil {
 			t.Fatalf("create table: %v\nSQL: %s", err, stmt[:80])
 		}
+	}
+
+	if err := db.AutoMigrate(&model.SupportConversationMerge{}, &model.SupportMergeMessage{}, &model.SupportMergeJob{}); err != nil {
+		t.Fatal(err)
 	}
 
 	return db

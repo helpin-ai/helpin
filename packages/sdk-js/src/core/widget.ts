@@ -968,6 +968,7 @@ export class WidgetManager {
   private mapConversation(raw: any): WidgetConversation {
     return {
       id: raw.id,
+      merged: raw.merged === true,
       subject: raw.subject || 'Untitled',
       status: raw.status || 'open',
       flowState: raw.flow_state || undefined,

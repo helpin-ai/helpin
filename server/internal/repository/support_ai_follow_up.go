@@ -33,6 +33,9 @@ func (r *SupportFollowUpRepository) EnabledInstallations(ctx context.Context) ([
 func (r *SupportFollowUpRepository) Seed(ctx context.Context, workspaceID string, settings model.SupportInboxSettings, now time.Time) ([]model.SupportAIFollowUp, error) {
 	var seeded []model.SupportAIFollowUp
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := LockSupportRouting(tx, workspaceID); err != nil {
+			return err
+		}
 		var installation model.SupportWidgetInstallation
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("workspace_id = ?", workspaceID).First(&installation).Error; err != nil {
 			return err
@@ -109,6 +112,9 @@ func (r *SupportFollowUpRepository) WithEpisode(ctx context.Context, workspaceID
 		return err
 	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := LockSupportRouting(tx, workspaceID); err != nil {
+			return err
+		}
 		var inst model.SupportWidgetInstallation
 		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("workspace_id = ?", workspaceID).First(&inst).Error; err != nil {
 			return err
@@ -147,6 +153,9 @@ func (r *SupportFollowUpRepository) CancelConversation(ctx context.Context, work
 // lock used by delivery. It never changes the assignee or unsends a message.
 func (r *SupportFollowUpRepository) CancelEpisode(ctx context.Context, workspaceID, conversationID, episodeID, actorID string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := LockSupportRouting(tx, workspaceID); err != nil {
+			return err
+		}
 		var conv model.SupportConversation
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("workspace_id = ? AND id = ?", workspaceID, conversationID).First(&conv).Error; err != nil {
 			return err
@@ -202,7 +211,7 @@ func supportFollowUpCandidates(tx *gorm.DB, workspaceID string, settings model.S
 	return tx.Model(&model.SupportConversation{}).Where(`(CASE WHEN source = 'email' OR channel = 'email' OR EXISTS
  (SELECT 1 FROM support_messages m WHERE m.id = support_conversations.last_public_message_id AND m.workspace_id = support_conversations.workspace_id AND m.via_channel = 'email')
  THEN 'email' ELSE channel END) IN ?`, channels).Where(`workspace_id = ? AND flow_state = 'ai_handling' AND ai_state = 'pending'
-   AND status IN ('open','waiting_on_customer')
+   AND status IN ('open','waiting_on_customer') AND merged_into_id IS NULL AND ai_paused_at IS NULL
    AND NOT coalesce(human_takeover,false) AND assigned_user_id IS NULL AND opened_by_user_id IS NULL
    AND customer_requested_human_at IS NULL AND linked_task_id IS NULL
    AND last_public_message_id IS NOT NULL AND NOT email_unsubscribed

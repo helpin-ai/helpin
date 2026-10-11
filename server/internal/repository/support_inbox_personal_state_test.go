@@ -46,6 +46,7 @@ func setupSupportPersonalStateTestDB(t *testing.T) *gorm.DB {
 	}
 	for _, statement := range []string{
 		`CREATE TABLE support_conversations (
+            merged_into_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,
 			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, mailbox_id TEXT,
 			status TEXT NOT NULL DEFAULT 'open', flow_state TEXT, ai_state TEXT,
 			human_takeover BOOLEAN NOT NULL DEFAULT 0,
@@ -56,6 +57,7 @@ func setupSupportPersonalStateTestDB(t *testing.T) *gorm.DB {
 			support_state_version INTEGER NOT NULL DEFAULT 0
 		)`,
 		`CREATE TABLE support_messages (
+            origin_conversation_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,
 			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, conversation_id TEXT NOT NULL,
 			sender_type TEXT NOT NULL, message_type TEXT NOT NULL, system_event_type TEXT,
 			is_internal BOOLEAN NOT NULL DEFAULT 0, created_at DATETIME NOT NULL, deleted_at DATETIME

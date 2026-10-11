@@ -54,6 +54,7 @@ export interface VisitorCompanyOption {
 }
 
 export interface VisitorOtherConversation {
+  merged_into_id?: string;
   id: string;
   display_id: number;
   subject: string;

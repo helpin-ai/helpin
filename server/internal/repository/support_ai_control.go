@@ -21,9 +21,15 @@ func (r *SupportConversationRepository) ChangeAIControl(ctx context.Context, wor
 	var previousRun string
 	changed := false
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := LockSupportRouting(tx, workspaceID); err != nil {
+			return err
+		}
 		var conv model.SupportConversation
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("workspace_id = ? AND id = ?", workspaceID, id).First(&conv).Error; err != nil {
 			return err
+		}
+		if conv.MergedIntoID != nil {
+			return ErrSupportMerged
 		}
 		fields, note, err := change(&conv)
 		if err != nil || len(fields) == 0 {
@@ -67,7 +73,7 @@ func (r *SupportConversationRepository) ChangeAIControl(ctx context.Context, wor
 func (r *SupportConversationRepository) BindAIRun(ctx context.Context, conv *model.SupportConversation, runID string) (bool, error) {
 	result := r.db.WithContext(ctx).Model(&model.SupportConversation{}).
 		Where("workspace_id = ? AND id = ? AND ai_control_version = ?", conv.WorkspaceID, conv.ID, conv.AIControlVersion).
-		Where("NOT coalesce(human_takeover, false) AND assigned_user_id IS NULL AND opened_by_user_id IS NULL AND customer_requested_human_at IS NULL AND anonymized_at IS NULL AND status <> 'spam' AND coalesce(ai_state, '') <> 'escalated'").
+		Where("NOT coalesce(human_takeover, false) AND assigned_user_id IS NULL AND opened_by_user_id IS NULL AND customer_requested_human_at IS NULL AND anonymized_at IS NULL AND merged_into_id IS NULL AND ai_paused_at IS NULL AND status <> 'spam' AND coalesce(ai_state, '') <> 'escalated'").
 		Update("ai_active_run_id", runID)
 	return result.RowsAffected == 1, result.Error
 }

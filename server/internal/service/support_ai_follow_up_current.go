@@ -5,7 +5,7 @@ import "github.com/helpin-ai/helpin/server/internal/model"
 // currentSupportFollowUp projects only the episode that still describes the
 // conversation. Persisted outcomes remain available for audit, not the thread.
 func currentSupportFollowUp(conv *model.SupportConversation, episode *model.SupportAIFollowUp) *model.SupportAIFollowUp {
-	if conv == nil || episode == nil || conv.AnonymizedAt != nil || supportConversationHumanOwned(conv) ||
+	if conv == nil || episode == nil || conv.AnonymizedAt != nil || conv.MergedIntoID != nil || conv.AIPausedAt != nil || supportConversationHumanOwned(conv) ||
 		(conv.Status != model.SupportConversationStatusOpen && conv.Status != model.SupportConversationStatusWaitingOnCustomer) ||
 		derefString(conv.FlowState) != model.SupportConversationFlowStateAIHandling || derefString(conv.AIState) != "pending" ||
 		derefString(conv.LastPublicSenderType) != "ai" || conv.CustomerAwaitingResponse || conv.CustomerRequestedHumanAt != nil || conv.LinkedTaskID != nil {

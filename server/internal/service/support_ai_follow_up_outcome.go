@@ -265,7 +265,7 @@ func (s *SupportFollowUpService) finishHandoff(ctx context.Context, tx *gorm.DB,
 	if err := s.handoff(ctx, tx, conv, settings, now); err != nil {
 		return nil, err
 	}
-	history, err := s.chat.messageRepo.WithTx(tx).ListByConversation(ctx, conv.WorkspaceID, conv.ID, false)
+	history, err := s.chat.messageRepo.WithTx(tx).ListForSupportAI(ctx, conv.WorkspaceID, conv.ID, false)
 	if err != nil {
 		return nil, err
 	}

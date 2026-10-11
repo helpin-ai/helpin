@@ -12,6 +12,12 @@ import (
 
 // SupportConversation represents a support conversation (renamed from SupportTicket).
 type SupportConversation struct {
+	MergeEmailRecipients           []string        `json:"merge_email_recipients,omitempty" gorm:"-"`
+	MergeHasWidget                 bool            `json:"merge_has_widget,omitempty" gorm:"-"`
+	MergeContinuationID            *string         `json:"merge_continuation_id,omitempty" gorm:"-"`
+	MergeParticipants              []string        `json:"merge_participants,omitempty" gorm:"-"`
+	MergedIntoID                   *string         `json:"merged_into_id,omitempty" gorm:"type:uuid;index"`
+	MergeRevision                  int64           `json:"merge_revision" gorm:"not null;default:0"`
 	AnonymizedAt                   *time.Time      `json:"anonymized_at,omitempty" gorm:"type:timestamptz"`
 	ID                             string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID                    string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
@@ -326,6 +332,12 @@ type SupportConversationSearchParams struct {
 
 // SupportMessage represents a message within a support conversation.
 type SupportMessage struct {
+	ExpectedMergeRevision *int64   `json:"-" gorm:"-"`
+	WidgetConversationIDs []string `json:"-" gorm:"-"`
+	MergeParticipantEmail *string  `json:"-" gorm:"-"`
+	TrustedInbound        bool     `json:"-" gorm:"-"`
+	OriginConversationID  *string  `json:"origin_conversation_id,omitempty" gorm:"type:uuid;index"`
+	MergeRevision         int64    `json:"-" gorm:"not null;default:0"`
 	// Private execution guard, used only while committing a durable staff send.
 	PendingGuard         *SupportPendingSend `json:"-" gorm:"-"`
 	PendingAttachmentIDs []string            `json:"-" gorm:"-"`
@@ -350,6 +362,7 @@ type SupportMessage struct {
 	Metadata          string                `json:"metadata" gorm:"type:jsonb;default:'{}'"` // JSONB for CSAT ratings, AI sources, etc.
 	ViaChannel        *string               `json:"via_channel,omitempty" gorm:"size:20"`
 	EmailNotifiedAt   *time.Time            `json:"email_notified_at,omitempty"`
+	WidgetReadAt      *time.Time            `json:"widget_read_at,omitempty" gorm:"-"`
 	EmailReadAt       *time.Time            `json:"email_read_at,omitempty"`
 	CreatedAt         time.Time             `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt         time.Time             `json:"updated_at" gorm:"autoUpdateTime"`
@@ -986,6 +999,7 @@ type CreateConversationWithMessageResponse struct {
 
 // CreateMessageRequest is the payload for creating a support message.
 type CreateMessageRequest struct {
+	ExpectedMergeRevision     *int64   `json:"expected_merge_revision,omitempty"`
 	SendOriginal              bool     `json:"send_original,omitempty"`
 	AutoTranslate             bool     `json:"auto_translate,omitempty"`
 	TranslationTargetLanguage string   `json:"translation_target_language,omitempty"`
@@ -1298,6 +1312,7 @@ const (
 
 // SupportInboxSettings holds all widget configuration stored as JSONB.
 type SupportInboxSettings struct {
+	AllowCrossCustomerMerge     bool   `json:"allow_cross_customer_merge"`
 	TranslationIncomingEnabled  bool   `json:"translation_incoming_enabled"`
 	TranslationOutgoingEnabled  bool   `json:"translation_outgoing_enabled"`
 	TranslationCustomerLanguage string `json:"translation_customer_language"`
@@ -1513,6 +1528,7 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 
 // UpdateInstallationSettingsRequest is a PATCH payload with pointer fields.
 type UpdateInstallationSettingsRequest struct {
+	AllowCrossCustomerMerge         *bool                       `json:"allow_cross_customer_merge"`
 	PrivacyNoticeEnabled            *bool                       `json:"privacy_notice_enabled,omitempty"`
 	PrivacyPolicyURL                *string                     `json:"privacy_policy_url,omitempty"`
 	PrivacyNoticeText               *string                     `json:"privacy_notice_text,omitempty"`
@@ -1929,11 +1945,12 @@ type VisitorCompanyOption struct {
 
 // VisitorOtherConversation is a compact summary for other conversations in visitor context.
 type VisitorOtherConversation struct {
-	ID        string `json:"id"`
-	DisplayID int    `json:"display_id"`
-	Subject   string `json:"subject"`
-	Status    string `json:"status"`
-	CreatedAt string `json:"created_at"`
+	MergedIntoID *string `json:"merged_into_id,omitempty"`
+	ID           string  `json:"id"`
+	DisplayID    int     `json:"display_id"`
+	Subject      string  `json:"subject"`
+	Status       string  `json:"status"`
+	CreatedAt    string  `json:"created_at"`
 }
 
 // VisitorContextResponse assembles all visitor intelligence for a conversation.

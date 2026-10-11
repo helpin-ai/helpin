@@ -563,6 +563,7 @@ func setupCoverageFindingUpsertTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE support_messages (
+            origin_conversation_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			conversation_id TEXT NOT NULL,

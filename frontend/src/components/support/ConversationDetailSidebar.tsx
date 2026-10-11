@@ -534,6 +534,7 @@ export function ConversationDetailSidebar({
                       variant="ghost"
                       size="sm"
                       className={customerNameEditButtonClassName}
+                      disabled={!!conversation.merged_into_id}
                       onClick={beginCustomerNameEdit}
                       aria-label="Edit customer name"
                     >
@@ -587,7 +588,7 @@ export function ConversationDetailSidebar({
               getDisabledReason={(member) => member.assignment_disabled_reason}
               getMemberValue={(member) => member.user_id ?? member.id}
               noneLabel="Unassigned"
-              disabled={assignConversationUser.isPending || assigneesLoading || assigneesError}
+              disabled={!!conversation.merged_into_id || assignConversationUser.isPending || assigneesLoading || assigneesError}
               onChange={(value) => {
                 assignConversationUser.mutate({
                   conversationId: conversation.id,
@@ -647,6 +648,7 @@ export function ConversationDetailSidebar({
               workspaceId={workspaceId}
               conversationId={conversation.id}
               selectedTags={conversation.tags ?? []}
+              readOnly={!!conversation.merged_into_id}
             />
           </CollapsibleSection>
 
@@ -695,7 +697,7 @@ export function ConversationDetailSidebar({
                               size="sm"
                               className="h-7 w-7 shrink-0 p-0"
                               onClick={saveCCRecipient}
-                              disabled={updateEmailRecipients.isPending}
+                              disabled={!!conversation.merged_into_id || updateEmailRecipients.isPending}
                               aria-label="Add Cc recipient"
                             >
                               <CheckmarkCircle02Icon className="h-3.5 w-3.5" />
@@ -712,7 +714,7 @@ export function ConversationDetailSidebar({
                               size="sm"
                               className="h-7 w-7 shrink-0 p-0"
                               onClick={cancelAddCCRecipient}
-                              disabled={updateEmailRecipients.isPending}
+                              disabled={!!conversation.merged_into_id || updateEmailRecipients.isPending}
                               aria-label="Cancel adding Cc recipient"
                             >
                               <Cancel01Icon className="h-3.5 w-3.5" />
@@ -731,7 +733,7 @@ export function ConversationDetailSidebar({
                       size="sm"
                       className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground"
                       onClick={beginAddCCRecipient}
-                      disabled={updateEmailRecipients.isPending}
+                      disabled={!!conversation.merged_into_id || updateEmailRecipients.isPending}
                     >
                       <PlusSignIcon className="h-3 w-3" />
                       Add

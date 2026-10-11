@@ -1,3 +1,4 @@
+import { useDraftMergeRevision } from './useDraftMergeRevision';
 import { createSupportComposerExtensions, normalizeSupportLinkInput } from './supportComposerExtensions';
 import { SupportTranslationSendError } from '@/lib/supportTranslationError';
 import { useOutgoingSupportTranslation } from '@/hooks/queries/useOutgoingSupportTranslation';
@@ -782,7 +783,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
   const selectDeliveryMode = useCallback((mode: SupportReplyDeliveryMode) => {
     saveReplyDelivery(workspaceId, conversationId, mode);
   }, [workspaceId, conversationId]);
-  const primaryRecipientEmail = conversation?.customer_email?.trim() || '';
+  const primaryRecipientEmail = conversation?.customer_email?.trim() || conversation?.merge_email_recipients?.[0] || '';
   const emailUnavailableReason = !primaryRecipientEmail ? 'No email address'
     : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(primaryRecipientEmail) ? 'Invalid email address'
     : conversation?.primary_recipient_state === 'unconfirmed' ? 'Confirm the primary recipient first'
@@ -801,7 +802,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
     hasDraft: !!useSupportInboxStore.getState().drafts[conversationId]?.trim(),
   });
   const primaryRecipientUnconfirmed = conversation?.primary_recipient_state === 'unconfirmed' && deliveryMode !== 'chat_only';
-  const chatUnavailableReason = conversation && !conversation.anonymous_id && conversation.source !== 'widget'
+  const chatUnavailableReason = conversation && !conversation.anonymous_id && conversation.source !== 'widget' && !conversation.merge_has_widget
     ? 'No chat session available' : undefined;
   const deliveryUnavailableReason = deliveryMode === 'chat_only' ? chatUnavailableReason
     : deliveryMode === 'email_only' ? emailUnavailableReason : emailUnavailableReason || chatUnavailableReason;
@@ -849,6 +850,8 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
     useSupportInboxStore.getState().setDraftAttachmentCount(conversationId, pendingAttachments.length);
     return () => useSupportInboxStore.getState().setDraftAttachmentCount(conversationId, 0);
   }, [conversationId, pendingAttachments.length]);
+  const [draftHasContent, setDraftHasContent] = useState(() => !!useSupportInboxStore.getState().drafts[conversationId]?.trim());
+  const draftAudience = useDraftMergeRevision(workspaceId, conversationId, conversation?.merge_revision, draftHasContent || pendingAttachments.length > 0);
   const attachmentsPending = pendingAttachments.some((attachment) => attachment.status !== 'done' || !attachment.attachmentId);
 
   const uploadFiles = useCallback(async (files: File[]) => {
@@ -1265,6 +1268,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
     },
     onUpdate: ({ editor: ed }) => {
       const text = ed.getText();
+      setDraftHasContent(!!text.trim());
       const markdown = getEditorMarkdown(ed);
 
       // Debounce draft save (markdown so formatting persists across reloads)
@@ -1402,6 +1406,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
   useEffect(() => {
     if (!editor) return;
     const saved = useSupportInboxStore.getState().drafts[conversationId] ?? '';
+    setDraftHasContent(!!saved.trim());
     if (saved) {
       // Markdown extension parses markdown when content is a string
       editor.commands.setContent(saved, { emitUpdate: false });
@@ -1442,6 +1447,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
       setReplyMode('reply');
       restoreReplyDelivery(workspaceId, conversationId, isReplyDeliveryMode(detail.deliveryMode) ? detail.deliveryMode : undefined);
       setDraft(conversationId, markdown);
+      setDraftHasContent(!!markdown.trim());
       setPendingAttachments((current) => {
         current.forEach((attachment) => {
           if (attachment.previewUrl && attachment.previewObjectUrl) URL.revokeObjectURL(attachment.previewUrl);
@@ -1469,7 +1475,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
   const translatedSendRef = useRef<{ fingerprint: string; id: string } | null>(null);
 
   const sendReply = useCallback(async (sendOriginal = false) => {
-    if (!editor || !editor.isEditable || attachmentsPending) return;
+    if (!editor || !editor.isEditable || attachmentsPending || draftAudience.changed) return;
     const markdown = getEditorMarkdown(editor).trim();
     const doneAttachments = pendingAttachments.filter((a) => a.status === 'done' && a.attachmentId);
     if ((!markdown && doneAttachments.length === 0) || sendMutation.isPending) return;
@@ -1496,6 +1502,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
     try {
       await sendMutation.mutateAsync({
         content: markdown || ' ',
+        expected_merge_revision: draftAudience.revision,
         ...(!sendOriginal && !isInternal && outgoingTranslation.enabled && markdown ? {
           auto_translate: true,
           translation_target_language: outgoingTranslation.language,
@@ -1527,7 +1534,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
       clearReplyDeliveryDraft(workspaceId, conversationId);
     }
     editor.commands.focus();
-  }, [outgoingTranslation, attachmentsPending, clearDraft, conversation?.customer_email, conversation?.email_cc, conversationId, editor, deliveryMode, pendingAttachments, workspaceId, sendMutation, sendTyping]);
+  }, [draftAudience.changed, draftAudience.revision, outgoingTranslation, attachmentsPending, clearDraft, conversation?.customer_email, conversation?.email_cc, conversationId, editor, deliveryMode, pendingAttachments, workspaceId, sendMutation, sendTyping]);
 
   const handleSend = useCallback(async (sendOriginal = false) => {
     if (!editor || !editor.isEditable || attachmentsPending) return;
@@ -1675,6 +1682,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
         </div>
       )}
       <div inert={isRewriting}>
+      {draftAudience.changed && <div role="alert" className="flex items-center justify-between gap-3 border-b px-3 py-2 text-xs"><span>The conversation changed. Review who will receive this draft.</span><Button variant="outline" size="sm" onClick={draftAudience.acknowledge}>Use current recipients</Button></div>}
       {primaryRecipientUnconfirmed && !isNote && (
         <div className="flex flex-col gap-2 rounded-t-xl border-b border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
           <div className="flex items-start gap-2">

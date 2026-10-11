@@ -2229,6 +2229,7 @@ func main() {
 	go supportInboxService.RunLiveTranslate(inboundCtx)
 	go supportInboxService.RunLiveTranslate(inboundCtx)
 	go supportInboxService.RunTranslationReview(inboundCtx)
+	go supportInboxService.RunMergeReconciliation(inboundCtx)
 	go supportInboxService.RunPendingSupportSends(inboundCtx)
 	go supportInboxService.RunPendingSupportSends(inboundCtx)
 	go emailFallbackService.StartInboundWorker(inboundCtx, "email")

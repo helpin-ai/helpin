@@ -29,7 +29,7 @@ export interface MessageActions {
   canDelete: boolean;
   onEdit: () => void;
   onCopy: () => void;
-  onReply: () => void;
+  onReply?: () => void;
   onDelete: () => void;
   onInfo: () => void;
   /** Optional — when provided, a "Save as shortcut" entry is shown. */
@@ -72,10 +72,10 @@ function MessageActionItems({
         <Copy01Icon className="h-4 w-4" />
         Copy
       </Item>
-      <Item onSelect={onReply}>
+      {onReply && <Item onSelect={onReply}>
         <Comment01Icon className="h-4 w-4" />
         Reply
-      </Item>
+      </Item>}
       {onSaveAsShortcut && (
         <Item onSelect={onSaveAsShortcut}>
           <StickyNote01Icon className="h-4 w-4" />

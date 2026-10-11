@@ -38,12 +38,15 @@ func TestAnonymizedConversationDropsQueuedEmail(t *testing.T) {
 	env := setupEmailFallbackTestEnv(t, model.DefaultSupportInboxSettings())
 	ctx := context.Background()
 	now := time.Now()
-	conv := &model.SupportConversation{WorkspaceID: "11111111-1111-1111-1111-111111111111", Subject: "Kept", AnonymizedAt: &now}
+	conv := &model.SupportConversation{WorkspaceID: "11111111-1111-1111-1111-111111111111", Subject: "Kept"}
 	if err := env.convRepo.Create(ctx, conv); err != nil {
 		t.Fatal(err)
 	}
 	msg := &model.SupportMessage{WorkspaceID: conv.WorkspaceID, ConversationID: conv.ID, SenderType: "user", Content: "Retain pending reply"}
 	if err := env.messageRepo.Create(ctx, msg); err != nil {
+		t.Fatal(err)
+	}
+	if err := env.convRepo.DB().Model(conv).Update("anonymized_at", now).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := env.redis.RPush(ctx, env.service.msgListKey(conv.ID), msg.ID).Err(); err != nil {

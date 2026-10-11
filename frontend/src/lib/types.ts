@@ -203,6 +203,7 @@ export type Permission =
   | 'crm.admin'
   | 'support.read'
   | 'support.edit'
+  | 'support.merge'
   | 'support.admin'
   | 'notifications.read'
   | 'notifications.manage'

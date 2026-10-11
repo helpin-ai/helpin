@@ -1,6 +1,6 @@
 # Conversation merging and unmerging
 
-Status: proposed design, not implemented. Researched against Intercom's public documentation and Helpin commit `e1f68a638` on 2026-10-11. This document is the single design and implementation checklist for this task. The proposed feature is shared Community and cloud behavior.
+Status: implemented and locally verified; not deployed. Researched against Intercom's public documentation and Helpin commit `e1f68a638` on 2026-10-11. This document is the single design and implementation checklist for this task. The proposed feature is shared Community and cloud behavior.
 
 Help a teammate bring duplicate conversations about one issue into one place, continue answering the customer, and separate the conversations again without losing their history. Merging conversations must not merge CRM contacts or companies.
 
@@ -10,7 +10,7 @@ Help a teammate bring duplicate conversations about one issue into one place, co
 - Unmerge retains the discussion from the merged period as labelled history. It does not guess which new replies should move to which original conversation.
 - Use Helpin's existing support interface and Quiet components. Keep the common flow short; disclose history and secondary details on demand.
 
-The remaining behavior below is the recommended design for review. No production changes or customer-data mutations were made during this research.
+The owner approved end-to-end implementation on 2026-10-11, with an explicit requirement to reuse the real conversation thread components for previews and history. Work remains in `waqar-fixes`; no separate worktree or planning document. All new functionality, schema, tests, and documentation are shared Community/cloud product behavior. Fixtures use fictional data only.
 
 ## What the Intercom research establishes
 
@@ -18,7 +18,7 @@ The [merge article](https://www.intercom.com/help/en/articles/8862676-merging-co
 
 Its channel restrictions include same-user/same-channel social merges, same-channel Slack, and asymmetric phone merges; open WhatsApp favors the newer conversation. Customer tickets qualify; Back-office/Tracker tickets do not. The widget offers continuation only when the primary is accessible; older mobile SDKs have a broken-button case. Ticket resolution follows configured state ordering. Merge notices cannot be deleted through the UI.
 
-All six article screenshots were inspected: source event, destination summary, security setting, widget continuation, widget without continuation, and reporting filter. They illustrate outcomes; they do not establish the exact current picker layout. The Helpin wireframes below are original proposals.
+All six article screenshots were inspected and revisited after feedback: source event, destination summary, security setting, widget continuation, widget without continuation, and reporting filter. They illustrate outcomes; they do not establish the exact current picker layout. The Helpin picker and comparison layout below are original proposals, not a claim to reproduce an undocumented Intercom screen. Its destination summary screenshot informs the compact source entry in the second mockup. The [conversation events guide](https://www.intercom.com/help/en/articles/13334840-conversation-events-in-the-inbox) also informs left-aligned activity and secondary details on demand.
 
 Additional references inform separate aspects of the design:
 
@@ -68,47 +68,54 @@ Same customer
                                                       Cancel
 ```
 
-Use the existing search backend, with server-side customer and access filtering. Default results show recent eligible conversations from the same customer; relevance controls ordering for an entered query. Selecting a result advances to review. A separate preview affordance opens a read-only history pane without leaving the merge flow.
+Use the existing search backend, with server-side customer and access filtering. Default results show recent eligible conversations from the same customer; relevance controls ordering for an entered query. Selecting a result opens the conversation comparison directly. Do not make the teammate open another preview just to read the messages they are about to merge.
 
 When cross-customer merging is enabled, show **Search all customers** as a quiet scope control. Keep same-customer results first. Search accepts display number, UUID, subject, message content, name, and email only where the backend actually implements those fields. Match the placeholder to the implemented fields.
 
 ### Review before merging
 
 ```text
-Merge conversations                                          ×
+Merge conversations                                                       ×
 
-Continue in
-  #1032  Cannot sign in                                Change
-  Sam Taylor · Email · Support · Assigned to Alex
+Merge from                    Swap  →  Merge into                    Change
+Sam Taylor                             Sam Taylor
+Cannot sign in              #1048      Unable to reset password       #1032
+Chat · Open                            Email · Open · Support · Alex
+─────────────────────────────────      ────────────────────────────────────
+[Original conversation messages]       [Destination conversation messages]
+[Internal notes, clearly marked]       [Customer and teammate replies]
 
-Merge into this conversation
-  #1048  Cannot sign in · Chat                  Preview history
-
-New replies will arrive in #1032.
-Earlier conversations stay available in History.
-
-                                      Cancel   Merge conversations
+Kept as conversation history           Stays active for new replies
+───────────────────────────────────────────────────────────────────────────
+1 AI follow-up will stop                         Back      Merge into #1032
 ```
 
-The primary's inbox, assignee, and channel are shown once. Status changes, added participants, new team access, or stopped scheduled work appear only when applicable. Essential changes remain visible, not in tooltips. Do not add a field-by-field settings form.
+The desktop comparison shows both actual transcripts in bounded, independently scrollable columns. The source and destination roles remain labelled, with a directional arrow and the destination number in the confirm button. **Swap** reverses a single merge; **Change** returns to the destination picker. On narrow screens a labelled source/destination switcher shows one readable transcript at a time, with confirmation controls kept visible. Bulk merging reuses this comparison, with source switching in the left column. Do not preselect a bulk primary.
 
-For a cross-customer merge, add a **Participants after merge** section with names and email addresses, plus: **These customers will share new replies. Earlier conversations stay private.** Confirmation explicitly acknowledges the participant change. BCC recipients and unrecognized email senders are not promoted to participants.
+The primary's inbox, assignee, and channel are shown once beside its transcript. Status changes, added participants, new team access, or stopped scheduled work appear only when applicable. Essential changes remain visible, not in tooltips. Do not add a field-by-field settings form.
+
+For a cross-customer merge, the comparison already shows both identities and email addresses. Add a visible consent row: **Share future replies with Sam and Maya**, with **Earlier conversations stay private** underneath. Do not repeat the same two identities in another tall section. For larger groups, disclose all added participants beside this consent before enabling confirmation. BCC recipients and unrecognized email senders are not promoted to participants.
 
 For different inboxes, show the resulting inbox and the history-sharing consequence: **History will be available to teammates with access to Support.** Treat this as an explicit transfer of access. Reuse the authority required to move conversations; do not infer transfer authority solely from the ability to read them.
 
-The button is **Merge conversations**, not Delete or Resolve. Merge itself does not send an email. Success navigates to the primary and shows **Conversations merged** with an **Undo** action. Undo uses the normal unmerge operation and its current checks; it is not a client-only rollback or a time-limited recovery mechanism.
+The confirm button is **Merge into #1032**. Merge itself does not send an email. Success navigates to the primary and shows **Merged into #1032** with an **Unmerge** action. It opens the normal unmerge operation and its current checks; it is not a client-only rollback or a time-limited recovery mechanism.
 
 ### Thread and history
 
-The primary thread gets one compact event per operation, not a stack of full summaries:
+The primary thread gets one left-aligned merge entry per operation:
 
 ```text
-Alex merged 2 conversations · 10:42 AM         View history
+Alex merged a conversation                                    10:42 AM
+┌─────────────────────────────────────────────────────────────────────┐
+│ #1048 · Cannot sign in                                           ··· │
+│ “I tried again, but the new link has expired too.”                   │
+│ Sam Taylor · Latest message                       View conversation │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-**View history** opens a bounded side pane on desktop and a sheet on narrow screens. It lists source number, subject, channel, original customer, and merge time. Expanding a source loads its messages with original timestamps, author, notes, and attachments. Search hits deep-link to the matching source message. Do not fetch every source transcript when the primary opens.
+Use the actual latest-message excerpt with its author and provenance; do not introduce an automatic AI-summary dependency. Group bulk sources under one event and progressively disclose a long source list. **View conversation** opens a readable original-thread preview over the inbox, without replacing the existing Details rail or creating a second narrow transcript column. Source history loads on demand with original timestamps, authors, notes and attachments. Search hits deep-link to the matching original message.
 
-The pane offers **Open original** and **Unmerge…** for each eligible source. A **Merged conversations (2)** item in the existing details rail makes history discoverable after the timeline event scrolls away. It opens the same pane, with no duplicated summary on the page.
+The source entry's menu and original-thread preview offer **Unmerge…**. Existing **Other conversations** rows mark sources as **Merged** and open the same preview; the conversation menu also provides access to merged originals. Do not add a duplicate details-rail section just for this action. The original preview offers **Continue conversation** to return to the active primary.
 
 The source remains accessible by its original URL and shows:
 
@@ -132,22 +139,20 @@ Keep outbound **To**, **CC**, and **Chat / Email** choices visible in the existi
 
 ### Unmerge
 
-Action label: **Unmerge…**. Dialog title: **Unmerge #1048?**.
+Action label: **Unmerge…**. Dialog title: **Unmerge conversation?**.
 
 ```text
-Unmerge #1048?                                               ×
+Unmerge conversation?                                       ×
 
-“Cannot sign in” will become a separate conversation.
-Replies to its original chat or email will return here.
+Cannot sign in
+#1048 · Sam Taylor
 
-Inbox              Support
-Assignment         Alex
-Status             Open
+Restore to                         Support · Alex · Open
 
-The shared discussion stays available as labelled history.
-AI stays paused until you turn it on.
+Replies sent while merged stay in both histories.
+AI stays paused.
 
-                                      Cancel   Unmerge conversation
+                                           Cancel     Unmerge
 ```
 
 Default to the original inbox, valid assignment, and pre-merge status. If the inbox no longer exists or the assignee no longer has access, show an inline correction before submitting. Unassigned is a valid fallback and must be shown. Restoring a resolved source does not invent a new resolution event. Do not re-run round robin merely because the merge was undone.
@@ -295,12 +300,12 @@ These are implementation steps in this same document, not separate plans. Each s
 - [x] Read the merge article, all six screenshots, API reference, participant, permission, threading, and history documentation.
 - [x] Inspect Helpin entry points, identity/access, routing, AI, attachments, queues, and event models.
 - [x] Confirm customer scope and unmerge history policy with the product owner.
-- [ ] Review and approve the proposed design.
-- [ ] Add models, migration, permission, transaction service, ledger, preview and commit contracts, and graph/concurrency tests.
-- [ ] Implement recipient grants, history intervals, routed inbound messages, outbound fencing, source write guards, attachments, and erasure behavior.
-- [ ] Integrate AI admission/publication, follow-up stops, primary context refresh, unread projections, reports/events, and every maintained widget transport.
-- [ ] Build the shared picker, review, bulk action, history pane, source continuation, unmerge, and administrator setting using Helpin's existing components.
-- [ ] Verify end to end in Community and cloud builds, then document actual delivered behavior here and in the existing maintained guides.
+- [x] Review and approve the proposed design; reuse real conversation message components.
+- [x] Add models, migration, permission, transaction service, ledger, preview and commit contracts, and graph/concurrency tests.
+- [x] Implement recipient grants, history intervals, routed inbound messages, outbound fencing, source write guards, attachments, and erasure behavior.
+- [x] Integrate AI admission/publication, follow-up stops, primary context refresh, unread projections, reports/events, and every maintained widget transport.
+- [x] Build the shared picker, transcript comparison, bulk action, contextual merge entry and original-thread preview, source continuation, unmerge, and administrator setting using Helpin's existing components.
+- [x] Verify end to end in Community and cloud builds, then document actual delivered behavior here and in the existing maintained guides.
 
 Required behavioral verification:
 
@@ -333,3 +338,73 @@ Record operation IDs, affected conversation IDs, actor IDs, conflicts, idempoten
 Public Intercom documentation and its screenshots were reviewed; no authenticated Intercom workspace was inspected. The screenshots do not verify undocumented picker behavior. Helpin was audited from the current worktree, not by changing live conversations. SLA configuration and native phone/social/Slack support were not established in the inspected support paths and are not promised by this design.
 
 Unmerge can restore independent handling and end future sharing. It cannot make a customer forget a message, recall delivered email, resurrect erased records, or undo third-party actions already taken during the merged period. Those limits should be stated where relevant, without burdening ordinary same-customer merges with unrelated warnings.
+
+## Implementation sequence
+
+Execute in this worktree with the executing-plans and test-driven-development workflows. Review each stage directly; no subagents.
+
+1. **Durable merge contract** — add `model/support_merge.go`, `repository/support_merge.go`, and idempotent SQL migration; register models in `internal/dbschema`. Start with graph, customer identity, stale preview, atomic rollback, and unmerge/remerge tests. Store immutable original IDs and explicit per-message shared-history references, avoiding timestamp boundaries.
+2. **Service and API** — add `service/support_merge.go` and `handler/support_merge.go`, `support.merge` RBAC, router endpoints, scoped candidates, signed-in actor validation, administrator setting, preview fingerprint and idempotency. Verify missing/access-denied equivalence and cross-customer opt-in.
+3. **Routing and history** — integrate the existing message repository, widget and email services, pending sends, delivery outbox, AI publication and follow-ups, attachment authorization, source write/deletion guards, queues and visitor context. Exercise old routes, shared-history bounds, pause behavior, and cross-customer privacy.
+4. **Native UI** — build `ConversationMergeDialog`, reusable readonly transcript from existing `TranslatedMessageBubble`, source history and unmerge dialogs; wire header/row/other-conversation/bulk entry points, continuation state and settings. Keep supplementary details in tooltips, essential audience changes visible, native responsive styles.
+5. **Verification** — focused Go repository/service/handler tests, frontend interaction/type/build checks and real rendered review in light/dark/mobile; review all writes, maintained widget paths, and Community/cloud compatibility. Update this document with delivered behavior and remaining limits before committing.
+
+Primary checks: `go test ./internal/repository ./internal/service ./internal/handler ./internal/authorization`, relevant PostgreSQL migration/integration tests where configured, `pnpm --dir frontend build`, and edition checks as appropriate. Passing SQLite tests alone does not prove PostgreSQL locking behavior.
+
+## Implemented behavior and review evidence
+
+The implementation stays in the existing `waqar-fixes` worktree. It has not
+been deployed. The merge review uses the same `TranslatedMessageBubble`,
+attachment renderer, avatars, receipts, and message grouping as the live thread.
+A read-only transcript adds pagination without mounting a composer or changing
+read state. The selected destination is explicit; a single-source review can
+swap direction. Bulk merging supports up to 50 conversations including existing
+merged descendants.
+
+Entry points are conversation actions, selected-conversation bulk actions, and
+Other Conversations. The timeline groups merge operations and provides original
+history and unmerge actions. A merged original remains reachable by its URL,
+with an authorized link to the active conversation. Missing or inaccessible
+restoration inboxes require choosing an accessible replacement. Cross-customer
+merges are off by default and have a support-administrator setting.
+
+The persistence contract uses direct merge edges, immutable original message
+IDs, explicit per-message shared-history grants, and an idempotency key. Shared
+history remains labelled after unmerge. Metadata, customer ownership, original
+inboxes, and human assignment are not copied into the destination. AI and
+follow-ups pause; queued sends prevent a merge; stale drafts require a fresh
+recipient review. The original draft text and attachments remain saved.
+
+Email routing is tested in all four source/destination channel combinations
+with a fake provider: actual To/CC/BCC, old aliases, new aliases, unmerge, and
+former-participant rejection. There are no live customer sends in verification.
+PostgreSQL tests use a disposable local database to exercise concurrent opposing
+merges, inbound writes versus unmerge, audit events, inbox contributions, and
+the existing contact-erasure flow. Browser verification uses the actual app
+with synthetic API data, including native notes/messages, direction swapping,
+merge/unmerge, dark mode, and a 390px viewport.
+
+Operational details: inbox lists and materialized/legacy scope counts exclude
+active sources; personal unread reminders carry into the destination while
+original cursors remain intact. Merge/unmerge write their own support audit
+event types and do not invoke resolution or CSAT actions. Runtime cancellation
+and visitor refreshes have a persisted retry queue. Already delivered email
+cannot be recalled; unmerge ends future sharing only.
+
+The backend serializes routing commits per workspace; long provider requests
+can briefly delay a routing change. Retained-history permission checks use
+current inbox access, and deleted content is filtered at read time. This local
+verification does not replace post-deployment smoke checks with test customers.
+
+### Verification results (2026-10-11)
+
+- Community and cloud frontend production builds passed; widget-core and SDK-JS builds passed.
+- Support-focused Go regression tests passed in Community and `ee` editions (service, repository, model, handler, websocket, authorization packages).
+- API, Temporal worker, and migrator built in both editions.
+- PostgreSQL merge concurrency/counter/audit tests and existing contact-anonymization integration tests passed against a disposable local database.
+- Four frontend helper/draft tests passed.
+- Three compiled-app Playwright checks passed: merge/swap/unmerge using real message components, dark mode, and mobile. Earlier development-server attempts timed out during cold loading; the compiled app completed all three in 17.9 seconds.
+- Documentation naming/link checks and diff whitespace checks passed.
+
+These results cover the specified synthetic scenarios; they do not claim a live
+Postmark, live widget embed, load benchmark, or production deployment test.

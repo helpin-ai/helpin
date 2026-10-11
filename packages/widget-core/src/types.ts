@@ -54,6 +54,7 @@ export interface ActiveTeammate {
 }
 
 export interface Conversation {
+  merged?: boolean;
   id: string;
   subject: string;
   status: string;

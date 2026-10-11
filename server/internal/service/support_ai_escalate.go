@@ -184,7 +184,7 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 	// Load with includeInternal=true so dedupe can see the new internal
 	// handoff system events (and the legacy ai_escalated rows that were
 	// public but are still recognized).
-	history, historyErr := s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, true)
+	history, historyErr := s.messageRepo.ListForSupportAI(ctx, workspaceID, conversationID, true)
 	if historyErr != nil {
 		slog.WarnContext(ctx, "load conversation history for escalation dedupe failed",
 			"workspace_id", workspaceID,
@@ -292,7 +292,7 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 	if !availability.IsWithinOfficeHours && selection == nil {
 		fields["flow_state"] = model.SupportConversationFlowStateAfterHoursQueue
 	}
-	history, historyErr = s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
+	history, historyErr = s.messageRepo.ListForSupportAI(ctx, workspaceID, conversationID, false)
 	if historyErr != nil {
 		slog.WarnContext(ctx, "load handoff transcript", "error", historyErr)
 	}

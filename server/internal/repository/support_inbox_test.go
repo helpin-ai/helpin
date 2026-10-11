@@ -25,6 +25,7 @@ func setupSupportMessageTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("open sqlite db: %v", err)
 	}
 	if err := db.Exec(`CREATE TABLE support_messages (
+            origin_conversation_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,
 		id TEXT PRIMARY KEY,
 		workspace_id TEXT NOT NULL,
 		conversation_id TEXT,
@@ -55,6 +56,7 @@ func setupSupportConversationMessageTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db := setupSupportMessageTestDB(t)
 	if err := db.Exec(`CREATE TABLE support_conversations (
+            merged_into_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,
             anonymized_at DATETIME,
 		id TEXT PRIMARY KEY,
 		workspace_id TEXT NOT NULL,
@@ -149,6 +151,10 @@ func setupSupportConversationMessageTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create support_widget_sessions: %v", err)
 	}
+	if err := db.AutoMigrate(&model.SupportConversationMerge{}, &model.SupportMergeMessage{}, &model.SupportMergeJob{}); err != nil {
+		t.Fatal(err)
+	}
+
 	return db
 }
 

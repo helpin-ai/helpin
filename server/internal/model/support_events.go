@@ -11,6 +11,8 @@ import (
 // Values are stable lowercase snake_case — do not rename without migration.
 
 const (
+	SupportEventConversationMerged        = "conversation_merged"
+	SupportEventConversationUnmerged      = "conversation_unmerged"
 	SupportEventConversationCreated       = "conversation_created"
 	SupportEventCustomerMessageCreated    = "customer_message_created"
 	SupportEventHumanReplySent            = "human_reply_sent"

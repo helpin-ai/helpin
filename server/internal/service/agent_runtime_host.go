@@ -598,6 +598,10 @@ func (s *AgentRuntimeHostService) ResolveTargetContext(ctx context.Context, req 
 				return nil, err
 			}
 		}
+		conversation, err = s.supportRepo.AIContextConversation(ctx, conversation)
+		if err != nil {
+			return nil, err
+		}
 		resp.Summary = runtimeSupportConversationSummary(conversation, workspace)
 		resp.Target.Type = "support_conversation"
 		resp.Target.Display = &agentruntime.TargetDisplay{Title: conversation.Subject}

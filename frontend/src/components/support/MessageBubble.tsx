@@ -322,6 +322,7 @@ function findTrailingAIContractStart(content: string): number {
 }
 
 export interface MessageBubbleProps {
+ readOnly?: boolean;
  translatedContent?: string;
  translationFooter?: ReactNode;
  translationStatus?: ReactNode;
@@ -340,6 +341,7 @@ export interface MessageBubbleProps {
 }
 
 export const MessageBubble = memo(function MessageBubble({
+  readOnly = false,
   translatedContent,
   translationFooter,
   translationStatus,
@@ -490,7 +492,7 @@ export const MessageBubble = memo(function MessageBubble({
   );
 
   const cancellableUntilMs = message.cancellable_until ? Date.parse(message.cancellable_until) : 0;
-  const canMutateOwnReply = message.sender_type === 'user'
+  const canMutateOwnReply = !readOnly && message.sender_type === 'user'
     && message.sender_user_id === currentUser?.id
     && message.message_type !== 'system'
     && !message.is_internal;
@@ -844,7 +846,7 @@ export const MessageBubble = memo(function MessageBubble({
       canDelete={!message.pending_send && canMutateOwnReply}
       onEdit={handleUndoOrEdit}
       onCopy={handleCopy}
-      onReply={handleQuoteReply}
+      onReply={readOnly ? undefined : handleQuoteReply}
       onDelete={() => setDeleteDialogOpen(true)}
       onInfo={() => setInfoOpen(true)}
       onSaveAsShortcut={canSaveAsShortcut ? handleSaveAsShortcut : undefined}
@@ -867,7 +869,7 @@ export const MessageBubble = memo(function MessageBubble({
           canDelete={!message.pending_send && canMutateOwnReply}
           onEdit={handleUndoOrEdit}
           onCopy={handleCopy}
-          onReply={handleQuoteReply}
+          onReply={readOnly ? undefined : handleQuoteReply}
           onDelete={() => setDeleteDialogOpen(true)}
           onInfo={() => setInfoOpen(true)}
           onSaveAsShortcut={canSaveAsShortcut ? handleSaveAsShortcut : undefined}

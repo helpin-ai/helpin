@@ -585,6 +585,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
       )}
 
       <div className="helpin-conversation-thread" ref={threadRef}>
+        {conversation?.merged && <p className="helpin-conversation-merge-notice" role="status">This chat was merged with another conversation. You can keep replying here.</p>}
         <SpecialNoticeBanner text={availability?.specialNoticeText} workspaceId={config.workspaceId} />
         <MessageList
           messages={displayMessages}

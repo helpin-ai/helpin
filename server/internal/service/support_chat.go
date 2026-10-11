@@ -157,9 +157,18 @@ func (s *SupportChatService) HandleVisitorMessage(ctx context.Context, workspace
 	}
 
 	// Turn caps.
-	history, err := s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
+	history, err := s.messageRepo.ListForSupportAI(ctx, workspaceID, conversationID, false)
 	if err != nil {
-		history = nil
+		return err
+	}
+	// Use the same quote-safe content for the triggering turn as for retained context.
+	for _, visible := range history {
+		if visible.ID == msg.ID {
+			copy := *msg
+			copy.Content = visible.Content
+			msg = &copy
+			break
+		}
 	}
 	sanitized := sanitizeConversationHistory(history, msg.ID)
 	if countAgentAITurns(sanitized, agentID) >= supportChatMaxAITurns ||
@@ -337,7 +346,7 @@ func (s *SupportChatService) startSupportChatRun(ctx context.Context, conv *mode
 // conversation thread (support_messages is the canonical transcript — it
 // includes teammate/system messages the run transcript wouldn't).
 func (s *SupportChatService) buildCarryForward(ctx context.Context, workspaceID, conversationID string, previousRun *model.AgentRun) string {
-	messages, err := s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
+	messages, err := s.messageRepo.ListForSupportAI(ctx, workspaceID, conversationID, false)
 	if err != nil {
 		messages = nil
 	}

@@ -93,5 +93,5 @@ func SupportAIConversationBlocked(c *SupportConversation) bool {
 		return true
 	}
 	nonempty := func(s *string) bool { return s != nil && strings.TrimSpace(*s) != "" }
-	return c.AnonymizedAt != nil || (c.HumanTakeover != nil && *c.HumanTakeover) || c.CustomerRequestedHumanAt != nil || nonempty(c.AssignedUserID) || nonempty(c.OpenedByUserID) || (c.AIState != nil && *c.AIState == "escalated") || (c.Status == "resolved" && (c.AIState == nil || *c.AIState != "resolved")) || c.Status == "spam"
+	return c.AnonymizedAt != nil || c.MergedIntoID != nil || c.AIPausedAt != nil || (c.HumanTakeover != nil && *c.HumanTakeover) || c.CustomerRequestedHumanAt != nil || nonempty(c.AssignedUserID) || nonempty(c.OpenedByUserID) || (c.AIState != nil && *c.AIState == "escalated") || (c.Status == "resolved" && (c.AIState == nil || *c.AIState != "resolved")) || c.Status == "spam"
 }

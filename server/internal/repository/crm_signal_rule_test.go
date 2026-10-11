@@ -28,7 +28,8 @@ func setupSignalRuleRepositoryTest(t *testing.T) (*gorm.DB, *CRMSignalRepository
 		`CREATE TABLE crm_pipeline_stages (id TEXT PRIMARY KEY, stage_type TEXT)`,
 		`CREATE TABLE crm_deals (id TEXT PRIMARY KEY, workspace_id TEXT, stage_id TEXT, updated_at DATETIME)`,
 		`CREATE TABLE crm_associations (id TEXT PRIMARY KEY, workspace_id TEXT, from_object_type TEXT, from_object_id TEXT, to_object_type TEXT, to_object_id TEXT)`,
-		`CREATE TABLE support_conversations (id TEXT PRIMARY KEY, workspace_id TEXT, crm_company_id TEXT, crm_contact_id TEXT, subject TEXT, ai_escalated_at DATETIME)`,
+		`CREATE TABLE support_conversations (
+            merged_into_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,id TEXT PRIMARY KEY, workspace_id TEXT, crm_company_id TEXT, crm_contact_id TEXT, subject TEXT, ai_escalated_at DATETIME)`,
 		`CREATE TABLE pm_tasks (id TEXT PRIMARY KEY, workspace_id TEXT, name TEXT, task_type TEXT, completed BOOLEAN, completed_at DATETIME)`,
 	}
 	for _, statement := range statements {

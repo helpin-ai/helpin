@@ -1,3 +1,6 @@
+import { ConversationMergeHistoryEvent, MergedConversationContinuation } from './ConversationMergeHistory';
+import { groupSupportTimeline } from './groupSupportTimeline';
+import { useConversationMerges } from '@/hooks/queries/useSupportMerge';
 import { usePendingSupportSends } from '@/hooks/queries/usePendingSupportSends';
 import { LiveTranslateBar } from './LiveTranslateBar';
 import { useCachedSupportTranslations } from '@/hooks/queries/useSupportTranslation';
@@ -33,12 +36,12 @@ import { agentService } from '@/lib/services/agentService';
 import { type AgentTypingState, useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
-import type { AgentRun, SupportMessage, ConversationStatus } from '@/lib/pmTypes';
+import type { AgentRun, ConversationStatus } from '@/lib/pmTypes';
 import { flattenSupportMessagePages, supportMessageRenderKey } from '@/lib/supportMessagePages';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
-import { getDayLabel, getEffectiveSenderType, getSupportReceiptStatus, isSameDay, getInitial, isAIActiveConversation, type SupportReceiptStatus } from './helpers';
+import { getSupportReceiptStatus, getInitial, isAIActiveConversation, type SupportReceiptStatus } from './helpers';
 import { TranslatedMessageBubble } from './TranslatedMessageBubble';
 import { useJoinedMessagePosition } from './useJoinedMessagePosition';
 import { EmptyState } from './EmptyState';
@@ -661,47 +664,8 @@ export function MessageThread({
     return getSupportReceiptStatus(msg, conversation);
   }, [receiptMessageId, conversation, messages]);
 
-  const groupedMessages = useMemo(() => {
-    const items: Array<{ type: 'separator'; label: string } | { type: 'message'; message: SupportMessage; isConsecutive: boolean; isLastInGroup: boolean }> = [];
-    let lastDate: string | null = null;
-
-    messages.forEach((msg, idx) => {
-      // Insert day separator if new day
-      if (!lastDate || !isSameDay(lastDate, msg.created_at)) {
-        items.push({ type: 'separator', label: getDayLabel(msg.created_at) });
-        lastDate = msg.created_at;
-      }
-
-      // Check if consecutive (same sender within 2 minutes, same type)
-      const prev = idx > 0 ? messages[idx - 1] : null;
-      const currentSenderType = getEffectiveSenderType(msg);
-      const prevSenderType = prev ? getEffectiveSenderType(prev) : null;
-      const isConsecutive = prev !== null
-        && prev.message_type !== 'system'
-        && msg.message_type !== 'system'
-        && prevSenderType === currentSenderType
-        && (currentSenderType !== 'user' || (!!msg.sender_user_id && prev.sender_user_id === msg.sender_user_id))
-        && prev.is_internal === msg.is_internal
-        && isSameDay(prev.created_at, msg.created_at)
-        && (new Date(msg.created_at).getTime() - new Date(prev.created_at).getTime()) < 120000;
-
-      // Check if this is the last message in a consecutive group
-      const next = idx < messages.length - 1 ? messages[idx + 1] : null;
-      const nextSenderType = next ? getEffectiveSenderType(next) : null;
-      const isLastInGroup = next === null
-        || next.message_type === 'system'
-        || msg.message_type === 'system'
-        || nextSenderType !== currentSenderType
-        || (currentSenderType === 'user' && (!msg.sender_user_id || next.sender_user_id !== msg.sender_user_id))
-        || next.is_internal !== msg.is_internal
-        || !isSameDay(msg.created_at, next.created_at)
-        || (new Date(next.created_at).getTime() - new Date(msg.created_at).getTime()) >= 120000;
-
-      items.push({ type: 'message', message: msg, isConsecutive, isLastInGroup });
-    });
-
-    return items;
-  }, [messages]);
+  const { data: mergeHistory = [] } = useConversationMerges(workspaceId, conversationId);
+  const groupedMessages = useMemo(() => groupSupportTimeline(messages, mergeHistory), [messages, mergeHistory]);
 
   const visibleGroupedMessages = groupedMessages;
 
@@ -1004,7 +968,7 @@ export function MessageThread({
             variant="ghost"
             size="icon"
             className="h-11 w-11 shrink-0"
-            disabled={createTaskFromConversation.isPending || analyzingTask || !access?.permissions?.includes('pm.edit')}
+            disabled={!!conversation.merged_into_id || createTaskFromConversation.isPending || analyzingTask || !access?.permissions?.includes('pm.edit')}
             onClick={handleCreateTask}
             aria-label="Create task"
             title="Create task"
@@ -1022,6 +986,7 @@ export function MessageThread({
               conversationId: conversation.id,
               status: (conversation.status === 'resolved' ? 'open' : 'resolved') as ConversationStatus,
             })}
+            disabled={!!conversation.merged_into_id}
             aria-label={conversation.status === 'resolved' ? 'Reopen conversation' : 'Resolve conversation'}
             title={conversation.status === 'resolved' ? 'Reopen conversation' : 'Resolve conversation'}
           >
@@ -1063,7 +1028,7 @@ export function MessageThread({
               size="sm"
               variant="outline"
               className="h-7 gap-1 text-xs"
-              disabled={createTaskFromConversation.isPending || analyzingTask || !access?.permissions?.includes('pm.edit')}
+              disabled={!!conversation.merged_into_id || createTaskFromConversation.isPending || analyzingTask || !access?.permissions?.includes('pm.edit')}
               onClick={handleCreateTask}
             >
               {createTaskFromConversation.isPending || analyzingTask ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <CheckmarkCircle02Icon className="h-3.5 w-3.5" />}
@@ -1072,7 +1037,7 @@ export function MessageThread({
 
 
             {/* Resolve / Unresolve */}
-            {conversation.status === 'resolved' ? (
+            {!conversation.merged_into_id && (conversation.status === 'resolved' ? (
               <Button
                 size="sm"
                 variant="outline"
@@ -1092,7 +1057,7 @@ export function MessageThread({
                 <CheckmarkCircle02Icon className="h-3.5 w-3.5" />
                 Resolve
               </Button>
-            )}
+            ))}
 
             {/* More actions */}
             <ConversationActionsMenu
@@ -1241,6 +1206,7 @@ export function MessageThread({
             />
           )}
           {visibleGroupedMessages.map((item, idx) => {
+            if (item.type === 'merge') return conversation ? <ConversationMergeHistoryEvent key={item.id} workspaceId={workspaceId} conversation={conversation} merges={item.merges} restored={item.restored} canUnmerge={!!access?.permissions.includes('support.merge')} /> : null;
             if (item.type === 'separator') {
               return (
                 <DaySeparator
@@ -1265,6 +1231,7 @@ export function MessageThread({
               >
                 <TranslatedMessageBubble
                   workspaceId={workspaceId}
+                  readOnly={!!conversation?.merged_into_id}
                   message={item.message}
                   cachedTranslation={translationMap.get(item.message.id)}
                   isConsecutive={item.isConsecutive}
@@ -1288,7 +1255,7 @@ export function MessageThread({
             <SupportFollowUpStatus
               key={conversation.id}
               conversation={conversation}
-              canEdit={!!access?.permissions?.includes('support.edit')}
+              canEdit={!conversation.merged_into_id && !!access?.permissions?.includes('support.edit')}
               latestPublicMessage={latestPublicMessage}
               stoppedByName={conversation.ai_follow_up?.cancelled_by_user_id ? memberNameByUserId.get(conversation.ai_follow_up.cancelled_by_user_id) : undefined}
             />
@@ -1310,9 +1277,11 @@ export function MessageThread({
       {/* Soft gradient fade between thread and composer */}
       <div className="pointer-events-none h-3 -mt-3 relative z-10 bg-gradient-to-t from-background to-transparent" />
 
+      {!!conversation?.merge_participants?.length && !conversation.merged_into_id && <p className="truncate border-t px-4 py-2 text-xs text-muted-foreground" title={conversation.merge_participants.join(', ')}>Replies shared with {conversation.merge_participants.join(', ')}</p>}
+
       {/* Reserve the editor's space immediately. Its key isolates drafts and
           attachments when switching between already cached conversations. */}
-      {conversationId && (conversation?.id === conversationId && !isThreadLoading ? (conversation.anonymized_at ? (
+      {conversationId && (conversation?.id === conversationId && !isThreadLoading ? (conversation.merged_into_id ? <MergedConversationContinuation conversation={conversation} /> : conversation.anonymized_at ? (
         <div className="px-4 py-3 text-sm text-muted-foreground" role="status">
           This customer was deleted. Messages and comments are retained; this conversation is read-only.
         </div>

@@ -53,6 +53,7 @@ const (
 
 // Support permissions.
 const (
+	PermSupportMerge Permission = "support.merge"
 	PermSupportRead  Permission = "support.read"
 	PermSupportEdit  Permission = "support.edit"
 	PermSupportAdmin Permission = "support.admin"
@@ -66,12 +67,12 @@ const (
 
 // Other workspace-scoped permissions.
 const (
-	PermSearchRead              Permission = "search.read"
-	PermWSConnect               Permission = "ws.connect"
-	PermIntegrationsConnect     Permission = "integrations.connect"
-	PermIntegrationsEnumerate   Permission = "integrations.enumerate_repos"
-	PermIntegrationsLinkRepo    Permission = "integrations.link_repo"
-	PermIntegrationsUninstall   Permission = "integrations.uninstall"
+	PermSearchRead            Permission = "search.read"
+	PermWSConnect             Permission = "ws.connect"
+	PermIntegrationsConnect   Permission = "integrations.connect"
+	PermIntegrationsEnumerate Permission = "integrations.enumerate_repos"
+	PermIntegrationsLinkRepo  Permission = "integrations.link_repo"
+	PermIntegrationsUninstall Permission = "integrations.uninstall"
 )
 
 // AllPermissions returns every defined permission for test and introspection use.
@@ -86,7 +87,7 @@ func AllPermissions() []Permission {
 		PermPMAdminWorkflows, PermPMAdminLabels, PermPMAdminAutomations, PermPMImport,
 		PermDocsRead, PermDocsEdit, PermDocsPublish, PermDocsAdmin, PermDocsImport,
 		PermCRMRead, PermCRMEdit, PermCRMAdmin,
-		PermSupportRead, PermSupportEdit, PermSupportAdmin,
+		PermSupportRead, PermSupportEdit, PermSupportMerge, PermSupportAdmin,
 		PermNotificationsRead, PermNotificationsManage,
 		PermSearchRead, PermWSConnect,
 		PermIntegrationsConnect, PermIntegrationsEnumerate, PermIntegrationsLinkRepo, PermIntegrationsUninstall,

@@ -1,3 +1,11 @@
+import { useState } from 'react';
+import { useWorkspaceAccess } from '@/hooks/queries/useSession';
+import { ConversationMergeDialog } from './ConversationMergeDialog';
+import { ConversationHistoryDialog } from './ConversationMergeHistory';
+import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { MoreHorizontalIcon } from '@/lib/icons';
+import type { VisitorOtherConversation } from '@/lib/pmTypes';
 import { Link } from '@tanstack/react-router';
 import {
   ArrowLeftRightIcon,
@@ -16,7 +24,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { STATUS_COLORS, STATUS_LABELS } from './constants';
+import { STATUS_LABELS } from './constants';
 import { useConversation, useVisitorContext } from '@/hooks/queries/useSupport';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { isSystemCRMCustomProperty } from '@/lib/crmCustomProperties';
@@ -279,21 +287,24 @@ export function SidebarOtherConversations({ workspaceId, conversationId }: Sideb
   return (
     <CollapsibleSection key={`${workspaceId}:${conversationId}`} autoOpenWhenPopulated title="Other Conversations" icon={Message01Icon} count={Math.max(data.total_conversations - 1, data.other_conversations.length)}>
       <div className="max-h-[240px] space-y-1.5 overflow-y-auto pr-1">
-        {data.other_conversations.map((conv) => (
-          <Link
-            key={conv.id}
-            to="/w/$slug/support/$conversationId"
-            params={{ slug: workspace?.slug ?? '', conversationId: conv.id }}
-            className="flex items-center gap-2 rounded-md border px-2 py-1.5 text-[12px] transition-colors hover:bg-accent"
-          >
-            <span className="shrink-0 text-muted-foreground">#{conv.display_id}</span>
-            <span className="flex-1 truncate font-medium">{conv.subject}</span>
-            <Badge variant="secondary" className={`h-4 shrink-0 px-1 text-[9px] ${STATUS_COLORS[conv.status as ConversationStatus] ?? 'bg-gray-100 text-gray-600'}`}>
-              {STATUS_LABELS[conv.status as ConversationStatus] ?? conv.status}
-            </Badge>
-          </Link>
-        ))}
+        {data.other_conversations.map((conv) => <RelatedConversationRow key={conv.id} workspaceId={workspaceId} currentId={conversationId} conversation={conv} slug={workspace?.slug ?? ''} />)}
       </div>
     </CollapsibleSection>
   );
+}
+
+function RelatedConversationRow({ workspaceId, currentId, conversation: c, slug }: { workspaceId: string; currentId: string; conversation: VisitorOtherConversation; slug: string }) {
+  const [action, setAction] = useState<'merge' | 'history' | null>(null);
+  const { data: access } = useWorkspaceAccess(workspaceId);
+  const { data: source, error: sourceError } = useConversation(workspaceId, action ? c.id : null);
+  const { data: target, error: targetError } = useConversation(workspaceId, action === 'merge' ? currentId : null);
+  const title = <><span className="shrink-0 text-muted-foreground">#{c.display_id}</span><span className="min-w-0 flex-1 truncate font-medium">{c.subject}</span><span className="shrink-0 text-[10px] text-muted-foreground">{c.merged_into_id ? 'Merged' : STATUS_LABELS[c.status as ConversationStatus] ?? c.status}</span></>;
+  return <div className="flex items-center rounded-md border text-xs hover:bg-accent">
+    {c.merged_into_id ? <button type="button" className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-left" onClick={() => setAction('history')}>{title}</button> : <Link to="/w/$slug/support/$conversationId" params={{ slug, conversationId: c.id }} className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2">{title}</Link>}
+    {!c.merged_into_id && access?.permissions.includes('support.merge') && <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={`Actions for conversation #${c.display_id}`}><MoreHorizontalIcon className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => setAction('merge')}>Merge into current conversation…</DropdownMenuItem></DropdownMenuContent></DropdownMenu>}
+    {action && (sourceError || targetError) && <span role="alert" className="text-xs text-destructive">Could not open. <button onClick={() => setAction(null)}>Dismiss</button></span>}
+    {action && !sourceError && !targetError && (!source || (action === 'merge' && !target)) && <span role="status" className="pr-2 text-muted-foreground">Loading…</span>}
+    {source && target && action === 'merge' && <ConversationMergeDialog workspaceId={workspaceId} conversations={[source]} initialTarget={target} open onOpenChange={open => { if (!open) setAction(null); }} />}
+    {source && action === 'history' && <ConversationHistoryDialog workspaceId={workspaceId} conversation={source} open onOpenChange={open => { if (!open) setAction(null); }} />}
+  </div>;
 }

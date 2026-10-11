@@ -126,6 +126,7 @@ const WORKSPACE_ACCESS = {
     'workspace.read',
     'support.read',
     'support.edit',
+    'support.merge',
     'support.admin',
     'workspace.members.read',
     'settings.read',
@@ -341,6 +342,7 @@ export async function installSupportAppMocks(page: Page, options: MockOptions = 
     const path = url.pathname
     const method = route.request().method()
 
+    if (method === 'GET' && path === '/api/auth/config') return fulfillJSON(route, { email_verification_required: false, signup_enabled: true })
     if (method === 'GET' && path === '/api/auth/me') {
       return fulfillJSON(route, USER_BOB)
     }
@@ -430,6 +432,7 @@ export async function installSupportAppMocks(page: Page, options: MockOptions = 
     if (method === 'GET' && path === `/api/support/inbox/conversations/${CONVERSATION_ID}` && url.searchParams.get('workspace_id') === WORKSPACE_ID) {
       return fulfillJSON(route, buildConversation(unreadCount))
     }
+    if (method === 'GET' && path.endsWith('/merges')) return fulfillJSON(route, [])
     if (method === 'GET' && path === `/api/support/inbox/conversations/${CONVERSATION_ID}/translation`) {
       return fulfillJSON(route, { available: false, unavailable_reason: 'Translation is not configured.', languages: { en: 'English', de: 'German' }, preference: { reading_language: 'en', auto_translate_incoming: true, auto_translate_outgoing: true }, conversation: { customer_language: '', translation_mode: 'inherit' } })
     }

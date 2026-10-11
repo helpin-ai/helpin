@@ -84,6 +84,9 @@ func (r *SupportTranslationRepository) FinishLiveMessage(ctx context.Context, jo
 func (r *SupportMessageRepository) createPendingMessage(ctx context.Context, msg *model.SupportMessage) error {
 	guard := msg.PendingGuard
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := LockSupportRouting(tx, msg.WorkspaceID); err != nil {
+			return err
+		}
 		var conv model.SupportConversation
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND workspace_id = ? AND anonymized_at IS NULL", msg.ConversationID, msg.WorkspaceID).First(&conv).Error; err != nil {
 			return ErrTranslationUnavailable

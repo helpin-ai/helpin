@@ -416,6 +416,7 @@ export function SupportTagPicker({
   workspaceId,
   conversationId,
   selectedTags,
+  readOnly = false,
   selectedTagIds,
   onSelectedTagIdsChange,
   className,
@@ -423,6 +424,7 @@ export function SupportTagPicker({
   workspaceId: string;
   conversationId?: string;
   selectedTags: SupportTag[];
+  readOnly?: boolean;
   selectedTagIds?: string[];
   onSelectedTagIdsChange?: (tagIds: string[]) => void;
   className?: string;
@@ -485,7 +487,7 @@ export function SupportTagPicker({
           key={tag.id}
           name={tag.name}
           color={tag.color}
-          onRemove={() => {
+          onRemove={readOnly ? undefined : () => {
             if (controlled) {
               onSelectedTagIdsChange((selectedTagIds ?? []).filter((id) => id !== tag.id));
               return;
@@ -497,10 +499,11 @@ export function SupportTagPicker({
         />
       ))}
 
-      <Popover open={open} onOpenChange={(value) => { setOpen(value); if (!value) setSearch(''); }}>
+      <Popover open={open} onOpenChange={(value) => { if (!readOnly) setOpen(value); if (!value) setSearch(''); }}>
         <PopoverTrigger asChild>
           <button
             type="button"
+            disabled={readOnly}
             className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent"
           >
             <Tag01Icon className="h-3 w-3" />
