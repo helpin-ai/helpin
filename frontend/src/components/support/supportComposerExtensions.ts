@@ -1,6 +1,23 @@
 import { Extension } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
-import { Markdown } from 'tiptap-markdown';
+import Text from '@tiptap/extension-text';
+import { Markdown, type MarkdownNodeSpec } from 'tiptap-markdown';
+
+const SupportMarkdownText = Text.extend({
+  addStorage() {
+    return {
+      markdown: {
+        serialize(state, node) {
+          // tiptap-markdown escapes text inside <autolinks>, where backslashes
+          // become literal URL characters. Honor the link serializer's mode.
+          const { inAutolink } = state as typeof state & { inAutolink?: boolean };
+          const text = (node.text ?? '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          state.text(text, !inAutolink);
+        },
+      } satisfies MarkdownNodeSpec,
+    };
+  },
+});
 
 export function normalizeSupportLinkInput(raw: string): string {
   const value = raw.trim();
@@ -38,6 +55,7 @@ const HttpsMarkdownLinks = Extension.create({
 export function createSupportComposerExtensions() {
   return [
     StarterKit.configure({
+      text: false,
       heading: false,
       codeBlock: false,
       horizontalRule: false,
@@ -49,6 +67,7 @@ export function createSupportComposerExtensions() {
         HTMLAttributes: { target: '_blank', rel: 'noopener noreferrer nofollow' },
       },
     }),
+    SupportMarkdownText,
     HttpsMarkdownLinks,
     Markdown.configure({
       html: false,

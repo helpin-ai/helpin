@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/hooks/queries/useSupport', () => ({
   useRewriteSupportDraft: () => ({ isPending: false, mutateAsync: mocks.rewrite }),
   useSendMessage: () => ({ isPending: false, mutateAsync: mocks.send }),
+  useUpdateSupportNote: () => mocks.mutation,
   useConversation: () => ({ data: mocks.conversation }),
   useCannedResponses: () => ({ data: mocks.empty }),
   useCreateCannedResponse: () => mocks.mutation,

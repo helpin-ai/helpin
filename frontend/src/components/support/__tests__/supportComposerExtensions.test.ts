@@ -1,12 +1,16 @@
 // @vitest-environment jsdom
-import { Editor } from '@tiptap/core';
+import { Editor, type Content } from '@tiptap/core';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createSupportComposerExtensions, normalizeSupportLinkInput } from '../supportComposerExtensions';
 
 let editor: Editor | undefined;
 afterEach(() => editor?.destroy());
 
-function createEditor(content = '') {
+function createEditor(content: Content = '') {
   editor = new Editor({ extensions: createSupportComposerExtensions(), content });
   return editor;
 }
@@ -53,6 +57,43 @@ describe('support composer links', () => {
     expect(markdown).toContain('(https://help.example.com)');
     instance.commands.setContent(markdown);
     expect(hrefs(instance)).toEqual(['https://help.example.com']);
+  });
+
+  it.each([
+    'https://contentstudio.io/?_ptxn=txn_01m4tvpfyjv4rq2v9qky346agq',
+    'https://example.com/_files/a*b?first=one&second=two#_section',
+  ])('preserves pasted URL %s in replies, notes, and restored drafts', (url) => {
+    const instance = createEditor();
+    const paste = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(paste, 'clipboardData', { value: {
+      getData: (type: string) => type === 'text/plain' ? url : '',
+    } });
+    instance.view.dom.dispatchEvent(paste);
+    expect(hrefs(instance)).toEqual([url]);
+
+    const markdown = (instance.storage as unknown as { markdown: { getMarkdown(): string } }).markdown.getMarkdown();
+    const rendered = document.createElement('div');
+    rendered.innerHTML = renderToStaticMarkup(createElement(Markdown, { remarkPlugins: [remarkGfm] }, markdown));
+    expect(rendered.querySelector('a')?.getAttribute('href')).toBe(url);
+    expect(rendered.textContent).toBe(url);
+    instance.commands.setContent(markdown);
+    expect(hrefs(instance)).toEqual([url]);
+    expect(instance.getText()).toBe(url);
+  });
+
+  it('preserves literal Markdown characters in ordinary text and named links', () => {
+    const instance = createEditor({
+      type: 'doc', content: [{ type: 'paragraph', content: [
+        { type: 'text', text: '*literal* _text_ <tag> ' },
+        { type: 'text', text: '_billing_', marks: [{ type: 'link', attrs: { href: 'https://example.com/?_ref=one' } }] },
+      ] }],
+    });
+    const text = instance.getText();
+    const markdown = (instance.storage as unknown as { markdown: { getMarkdown(): string } }).markdown.getMarkdown();
+    instance.commands.setContent(markdown);
+    expect(instance.getText()).toBe(text);
+    expect(hrefs(instance)).toEqual(['https://example.com/?_ref=one']);
+    expect(instance.getHTML()).not.toMatch(/<(em|strong|tag)>/);
   });
 
   it.each([

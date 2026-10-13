@@ -74,6 +74,15 @@ function applyInlineTransforms(raw: string, inlineCodeMap: PlaceholderMap): stri
     return ph;
   });
 
+  // Composer Markdown uses <URL> autolinks. Protect their contents from
+  // Markdown formatting and escape both the destination and visible text.
+  result = result.replace(/<((?:https?:\/\/|mailto:)[^\s<>]+)>/gi, (_match, url: string) => {
+    const safeUrl = escapeHtml(sanitizeUrl(url));
+    const ph = makePlaceholder('IC');
+    inlineCodeMap.set(ph, `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>${insecureLinkIndicator(safeUrl)}`);
+    return ph;
+  });
+
   // 2. Escape HTML in remaining text (between placeholders and <br> markers)
   const parts = result.split(/(\x00(?:IC_\d+|BR)\x00)/);
   result = parts.map(part => {
