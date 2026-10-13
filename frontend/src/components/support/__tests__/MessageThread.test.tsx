@@ -38,7 +38,7 @@ vi.mock('@/hooks/queries/useSupport', () => ({
   useConversation: (...args: unknown[]) => supportHooks.useConversation(...args),
   useConversationMessages: (...args: unknown[]) => supportHooks.useConversationMessages(...args),
   useChatSettings: () => ({ data: null }),
-  useInboxScopes: () => ({ data: null }),
+  useInboxScopes: () => ({ data: { shared_inbox: { id: 'shared', name: 'Shared Inbox' }, mailboxes: [] } }),
   useSupportTeammatePresence: () => undefined,
   useUpdateConversationStatus: () => ({ mutate: vi.fn(), isPending: false }),
   useCreateTaskFromConversation: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -249,6 +249,31 @@ describe('MessageThread', () => {
       expect(container.querySelector('[data-testid="ai-run-approvals"]')?.getAttribute('data-enabled')).toBe(String(enabled))
       expect(container.querySelector('[data-testid="ai-control"]')).toBeNull()
       expect(container.querySelector('[aria-label="Open conversation actions"]')).toBeTruthy()
+    } finally {
+      act(() => root.unmount())
+      client.clear()
+    }
+  })
+
+  it('offers Shared Inbox from the thread actions while AI handles the current shared inbox', async () => {
+    supportHooks.useConversation.mockReturnValue({
+      isFetched: true,
+      data: { id: 'conv-1', workspace_id: 'ws-1', status: 'open', source: 'widget', mailbox_id: null, flow_state: 'ai_handling', ai_state: 'pending' },
+    })
+    supportHooks.useConversationMessages.mockReturnValue({ isLoading: false, data: seedSupportMessagePages([]) })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const client = createTestQueryClient()
+    try {
+      await act(async () => root.render(<QueryClientProvider client={client}><MessageThread workspaceId="ws-1" conversationId="conv-1" /></QueryClientProvider>))
+      const actions = container.querySelector<HTMLElement>('[aria-label="Open conversation actions"]')!
+      await act(async () => actions.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+      const move = Array.from(document.body.querySelectorAll('[role="menuitem"]'))
+        .find((item) => item.textContent?.includes('Move to inbox')) as HTMLElement
+      expect(move).toBeTruthy()
+      await act(async () => move.click())
+      expect(Array.from(document.body.querySelectorAll('[role="menuitem"]')).some((item) => item.textContent === 'Shared Inbox')).toBe(true)
     } finally {
       act(() => root.unmount())
       client.clear()

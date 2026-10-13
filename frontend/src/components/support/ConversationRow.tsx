@@ -1,4 +1,4 @@
-import { memo, useMemo, useState, type KeyboardEvent } from 'react';
+import { memo, useState, type KeyboardEvent } from 'react';
 import { ArrowTurnBackwardIcon, BotIcon, CheckmarkCircle02Icon, Mail01Icon, Message01Icon, MoreHorizontalIcon, StickyNote01Icon } from '@/lib/icons';
 import type { TicketSource } from '@/lib/pm-types/support';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -340,10 +340,6 @@ export const ConversationRow = memo(function ConversationRow({
   const hasDraft = !!draftContent && !isSelected;
   const remoteViewingIds = useSupportPresenceStore((s) => s.viewingAgents[conversation.id] || EMPTY_ARRAY);
   const viewingAgentIds = remoteViewingIds;
-  const availableMoveOptions = useMemo(
-    () => moveOptions.filter((option) => option.id !== (conversation.mailbox_id ?? 'shared')),
-    [conversation.mailbox_id, moveOptions]
-  );
   const hasAIHandoff = (conversation.system_tags ?? []).includes('ai_handoff');
   const hasAIResolved = (conversation.system_tags ?? []).includes('ai_resolved') || conversation.flow_state === 'resolved_by_ai' || conversation.ai_state === 'resolved';
   const isWaitingForHuman = !!conversation.flow_state && HUMAN_QUEUE_FLOW_STATES.has(conversation.flow_state);
@@ -501,7 +497,7 @@ export const ConversationRow = memo(function ConversationRow({
                   <ConversationActionsMenu
                     workspaceId={workspaceId}
                     conversation={conversation}
-                    moveOptions={availableMoveOptions}
+                    moveOptions={moveOptions}
                     open={actionsOpen}
                     onOpenChange={handleActionsOpenChange}
                     onSubjectDialogOpenChange={setActionsDialogOpen}

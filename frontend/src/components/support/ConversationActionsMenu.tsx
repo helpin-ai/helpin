@@ -6,6 +6,7 @@ function TranslationDialogControls({workspaceId, conversationId}: {workspaceId: 
  return <LiveTranslateBar workspaceId={workspaceId} conversationId={conversationId} editable={!!access?.permissions?.includes('support.edit')} forceVisible />;
 }
 import { useSupportAIControl } from './SupportAIControl';
+import { isAIActiveConversation } from './helpers';
 import { type ReactNode, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -104,6 +105,10 @@ export function ConversationActionsMenu({
   const updateStatus = useUpdateConversationStatus(workspaceId);
   const deleteConversation = useDeleteConversation(workspaceId);
   const moveConversation = useMoveConversation(workspaceId);
+  const aiHandling = !['resolved', 'spam'].includes(conversation.status) && isAIActiveConversation(conversation);
+  const availableMoveOptions = moveOptions.filter((option) =>
+    option.id !== (conversation.mailbox_id ?? 'shared') || (option.id === 'shared' && aiHandling),
+  );
   const workspaceSlug = useWorkspaceStore((s) => s.currentWorkspace?.slug);
   const selectedConversationId = useSupportInboxStore((s) => s.selectedConversationId);
   const selectConversation = useSupportInboxStore((s) => s.selectConversation);
@@ -235,17 +240,19 @@ export function ConversationActionsMenu({
               <PencilEdit01Icon className={iconClassName} />
               Set subject
             </DropdownMenuItem>
-            {!conversation.merged_into_id && moveOptions.length > 0 && (
+            {!conversation.merged_into_id && availableMoveOptions.length > 0 && (
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger className={itemClassName}>
                   <FolderInputIcon className={iconClassName} />
                   Move to inbox
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent className="w-48">
-                  {moveOptions.map((option) => (
+                  {availableMoveOptions.map((option) => (
                     <DropdownMenuItem
                       key={option.id}
                       className={itemClassName}
+                      disabled={moveConversation.isPending}
+                      title={option.id === 'shared' && aiHandling ? 'Move here and pause AI replies and follow-ups.' : undefined}
                       onClick={() => {
                         moveConversation.mutate({
                           conversationId: conversation.id,
@@ -253,7 +260,7 @@ export function ConversationActionsMenu({
                         }, {
                           onSuccess: () => {
                             onConversationMoved?.(option);
-                            toast.success(`Moved to ${option.name}`);
+                            toast.success(`Moved to ${option.name}${option.id === 'shared' && aiHandling ? '. AI paused.' : ''}`);
                           },
                         });
                       }}

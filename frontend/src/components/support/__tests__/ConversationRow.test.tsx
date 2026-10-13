@@ -34,6 +34,10 @@ vi.mock('@/hooks/queries/useWorkspaces', () => ({
   useWorkspaceMembers: () => ({ data: mockWorkspaceMembers.data }),
 }))
 
+vi.mock('@/hooks/queries/useSession', () => ({
+  useWorkspaceAccess: () => ({ data: { permissions: ['support.edit'] } }),
+}))
+
 vi.mock('@/hooks/queries/useSupport', () => ({
   useDeleteConversation: () => ({ mutate: vi.fn(), isPending: false }),
   useMarkConversationRead: () => ({ mutate: vi.fn(), isPending: false }),
@@ -79,7 +83,7 @@ function conversation(overrides: Partial<SupportConversation> = {}): SupportConv
   }
 }
 
-function renderRow(conversationValue: SupportConversation) {
+function renderRow(conversationValue: SupportConversation, moveOptions: Array<{ id: string; name: string }> = []) {
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)
@@ -90,7 +94,7 @@ function renderRow(conversationValue: SupportConversation) {
         <ConversationRow
           workspaceId="ws-1"
           conversation={conversationValue}
-          moveOptions={[]}
+          moveOptions={moveOptions}
           onSelectConversation={vi.fn()}
         />
       </TooltipProvider>,
@@ -353,6 +357,23 @@ describe('ConversationRow', () => {
     expect(row?.className).not.toContain('dark:bg-blue-950/20')
 
     cleanup()
+  })
+
+  it('offers Shared Inbox from row actions while AI handles the current shared inbox', async () => {
+    const { container, cleanup } = renderRow(conversation({ mailbox_id: null, flow_state: 'ai_handling' }), [
+      { id: 'shared', name: 'Shared Inbox' },
+    ])
+    try {
+      const actions = container.querySelector<HTMLElement>('[aria-label="Open actions for Alex Customer"]')!
+      await act(async () => actions.click())
+      const move = Array.from(document.body.querySelectorAll('[role="menuitem"]'))
+        .find((item) => item.textContent?.includes('Move to inbox')) as HTMLElement
+      expect(move).toBeTruthy()
+      await act(async () => move.click())
+      expect(Array.from(document.body.querySelectorAll('[role="menuitem"]')).some((item) => item.textContent === 'Shared Inbox')).toBe(true)
+    } finally {
+      cleanup()
+    }
   })
 
   it('keeps the subject dialog mounted after opening it from row actions', () => {

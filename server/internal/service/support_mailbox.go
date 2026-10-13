@@ -15,6 +15,7 @@ type supportConversationMoveOptions struct {
 	EnforceMailboxAccess bool
 	UseAccessibleLoad    bool
 	RecordTriageFeedback bool
+	PauseAI              bool
 }
 
 func normalizeSupportMailboxHandle(handle string) string {
@@ -572,6 +573,7 @@ func (s *SupportInboxService) MoveConversation(ctx context.Context, workspaceID,
 		EnforceMailboxAccess: true,
 		UseAccessibleLoad:    true,
 		RecordTriageFeedback: true,
+		PauseAI:              mailboxID == nil || strings.TrimSpace(*mailboxID) == "",
 	})
 }
 
@@ -609,7 +611,16 @@ func (s *SupportInboxService) moveConversationInternal(ctx context.Context, work
 		"assigned_user_id": ownerID,
 		"flow_state":       flowState,
 	}
-	if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, fields); err != nil {
+	if options.PauseAI && conv.Status != model.SupportConversationStatusResolved && conv.Status != model.SupportConversationStatusSpam {
+		// A manual move to Shared Inbox hands responsibility to humans, even
+		// when the conversation is already there. Commit routing and AI control
+		// together so stale replies cannot publish between the two changes.
+		// Shared Inbox preserves the latest assignee read inside that transaction.
+		delete(fields, "assigned_user_id")
+		if err := s.pauseForTeammate(ctx, conv, actorID, "moved_to_shared_inbox", fields); err != nil {
+			return nil, err
+		}
+	} else if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, fields); err != nil {
 		return nil, err
 	}
 

@@ -399,9 +399,8 @@ export function MessageThread({
   }, [members]);
 
   const moveOptions = useMemo(() => {
-    const options = [inboxScopes?.shared_inbox, ...(inboxScopes?.mailboxes ?? [])].filter(Boolean);
-    return options.filter((option) => option!.id !== (conversation?.mailbox_id ?? 'shared'));
-  }, [conversation?.mailbox_id, inboxScopes]);
+    return [inboxScopes?.shared_inbox, ...(inboxScopes?.mailboxes ?? [])].filter(Boolean);
+  }, [inboxScopes]);
 
   const triageBanner = useMemo(() => {
     const triage = conversation?.triage;
