@@ -212,6 +212,39 @@ func TestEnsureSupportRuntimeDeliveryContractProtectsWorkspacePromptCopies(t *te
 	}
 }
 
+func TestSupportHandoverPolicyReachesExistingPresets(t *testing.T) {
+	defaultPrompt := BuiltInPresetPrompt(model.AgentPresetSupportAgent)
+	if defaultPrompt == nil || !strings.Contains(*defaultPrompt, supportHandoverPolicy) {
+		t.Fatal("new support presets must include the handover policy")
+	}
+	for _, tc := range []struct {
+		name   string
+		prompt string
+	}{
+		{"default preset", *defaultPrompt},
+		{"workspace instructions", "Keep replies brief and use the customer's language."},
+		{"saved delivery contract", "Workspace instructions\n\n" + supportRuntimeDeliveryContract},
+		{"older action guidance", "Workspace instructions\n\n## Required support handover and action honesty\nAcknowledge feedback by promising team follow-up."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, tc.prompt)
+			if !strings.HasPrefix(got, tc.prompt) {
+				t.Fatal("applying the policy must preserve workspace instructions")
+			}
+			if strings.Count(got, supportHandoverPolicy) != 1 {
+				t.Fatal("the current handover policy must be included exactly once")
+			}
+			if twice := EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, got); twice != got {
+				t.Fatal("repeated launches must not duplicate the handover policy")
+			}
+		})
+	}
+	const otherPrompt = "You are the workspace marketer."
+	if got := EnsureSupportRuntimeDeliveryContract(model.AgentPresetMarketer, otherPrompt); got != otherPrompt {
+		t.Fatal("the support handover policy must not change unrelated presets")
+	}
+}
+
 func TestEchoKnowledgeBoundaryOverridesSavedWebFallback(t *testing.T) {
 	stale := "You are Echo.\n\n## Required live-support delivery contract\nIf knowledge is insufficient, launch web_search against the official website."
 	for name, prompt := range map[string]string{
