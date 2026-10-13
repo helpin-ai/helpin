@@ -112,9 +112,9 @@ func supportMCPVerifiedCustomerEmail(conv *model.SupportConversation, session *m
 	if email == "" {
 		return "", errCommandInput("a verified customer email is required for private account findings")
 	}
-	// Email replies stay on the existing confirmed mailbox recipient. Widget
-	// claims need the identity provenance established by HMAC verification.
-	if conv.Channel == "email" && conv.MailboxID != nil && conv.PrimaryRecipientState == "confirmed" {
+	// Email replies use the existing confirmed recipient regardless of inbox
+	// assignment. Widget claims require identity established by HMAC verification.
+	if conv.Channel == "email" && conv.PrimaryRecipientState == "confirmed" {
 		return email, nil
 	}
 	if session == nil || session.WorkspaceID != conv.WorkspaceID || derefString(session.ConversationID) != conv.ID || session.RevokedAt != nil || session.IdentityTrust != model.IdentityTrustVerified || session.IdentityMethod != model.IdentityMethodSignedWidget || !strings.EqualFold(strings.TrimSpace(derefString(session.CustomerEmail)), email) {

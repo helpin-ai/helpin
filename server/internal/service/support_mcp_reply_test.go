@@ -74,6 +74,43 @@ func TestSupportMCPReadUsesLatestCurrentTurnResult(t *testing.T) {
 	}
 }
 
+func TestSupportMCPCustomerEmailDoesNotDependOnInboxAssignment(t *testing.T) {
+	for _, inbox := range []struct {
+		name string
+		id   *string
+	}{
+		{"shared inbox", nil},
+		{"team inbox", strPtr("inbox")},
+	} {
+		t.Run(inbox.name, func(t *testing.T) {
+			for _, tc := range []struct {
+				name      string
+				email     *string
+				state     string
+				wantEmail string
+				wantErr   bool
+			}{
+				{"confirmed", strPtr(" Customer@Example.com "), "confirmed", "customer@example.com", false},
+				{"unconfirmed", strPtr("customer@example.com"), "unconfirmed", "", true},
+				{"missing recipient state", strPtr("customer@example.com"), "", "", true},
+				{"missing email", nil, "confirmed", "", true},
+				{"blank email", strPtr(" "), "confirmed", "", true},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					conv := &model.SupportConversation{
+						ID: "conv", WorkspaceID: "ws", Channel: "email",
+						MailboxID: inbox.id, CustomerEmail: tc.email, PrimaryRecipientState: tc.state,
+					}
+					email, err := supportMCPVerifiedCustomerEmail(conv, nil)
+					if (err != nil) != tc.wantErr || email != tc.wantEmail {
+						t.Fatalf("email = %q, err = %v; want email %q, error %t", email, err, tc.wantEmail, tc.wantErr)
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestSupportMCPCustomerRequiresVerifiedWidgetEmail(t *testing.T) {
 	conv := &model.SupportConversation{ID: "conv", WorkspaceID: "ws", Channel: "widget", CustomerEmail: strPtr("customer@example.com")}
 	session := &model.SupportWidgetSession{WorkspaceID: "ws", ConversationID: strPtr("conv"), CustomerEmail: conv.CustomerEmail, IdentityTrust: model.IdentityTrustVerified, IdentityMethod: model.IdentityMethodSignedWidget}
