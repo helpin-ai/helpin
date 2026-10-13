@@ -70,6 +70,7 @@ type SupportMessageInfo struct {
 	Read                     bool                        `json:"read"`
 	ReadAt                   *time.Time                  `json:"read_at"`
 	ReadStatusLabel          string                      `json:"read_status_label,omitempty"`
+	EditedAt                 *time.Time                  `json:"edited_at,omitempty"`
 	Edited                   bool                        `json:"edited"`
 	Translated               bool                        `json:"translated"`
 	Automated                bool                        `json:"automated"`
@@ -171,7 +172,8 @@ func (s *SupportMessageActionsService) Info(ctx context.Context, workspaceID, co
 		Type:       supportMessageInfoType(msg),
 		Read:       !externalEmail && msg.EmailReadAt != nil,
 		ReadAt:     msg.EmailReadAt,
-		Edited:     false,
+		Edited:     msg.NoteEditedAt() != nil,
+		EditedAt:   msg.NoteEditedAt(),
 		Translated: false,
 		Automated:  msg.SenderType == "agent" || msg.SenderType == "ai",
 	}

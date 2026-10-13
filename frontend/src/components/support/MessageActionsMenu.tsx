@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import {
   Comment01Icon,
   Copy01Icon,
@@ -26,6 +27,7 @@ import { cn } from '@/lib/utils';
 
 export interface MessageActions {
   canEdit: boolean;
+  editLabel?: string;
   canDelete: boolean;
   onEdit: () => void;
   onCopy: () => void;
@@ -49,6 +51,7 @@ function MessageActionItems({
   Item,
   Separator,
   canEdit,
+  editLabel = 'Edit',
   canDelete,
   onEdit,
   onCopy,
@@ -63,7 +66,7 @@ function MessageActionItems({
         <>
           <Item onSelect={onEdit}>
             <PencilEdit02Icon className="h-4 w-4" />
-            Edit
+            {editLabel}
           </Item>
           <Separator />
         </>
@@ -102,6 +105,7 @@ interface MessageActionsMenuProps extends MessageActions {
 }
 
 export function MessageActionsMenu({ alignSide, ...actions }: MessageActionsMenuProps) {
+  const editing = useRef(false);
   return (
     <div
       className={cn(
@@ -125,11 +129,16 @@ export function MessageActionsMenu({ alignSide, ...actions }: MessageActionsMenu
           align={alignSide === 'left' ? 'end' : 'start'}
           side="bottom"
           className="min-w-44"
+          onCloseAutoFocus={(event) => {
+            if (editing.current) event.preventDefault();
+            editing.current = false;
+          }}
         >
           <MessageActionItems
             Item={DropdownMenuItem}
             Separator={DropdownMenuSeparator}
             {...actions}
+            onEdit={() => { editing.current = true; actions.onEdit(); }}
           />
         </DropdownMenuContent>
       </DropdownMenu>
@@ -205,6 +214,7 @@ function shouldDeferToNative(e: React.MouseEvent): boolean {
  * selections, where the browser's native menu is more useful.
  */
 export function MessageActionsContextMenu({ children, ...actions }: MessageActionsContextMenuProps) {
+  const editing = useRef(false);
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
@@ -227,11 +237,15 @@ export function MessageActionsContextMenu({ children, ...actions }: MessageActio
           </div>
         </div>
       </ContextMenuTrigger>
-      <ContextMenuContent className="min-w-44">
+      <ContextMenuContent className="min-w-44" onCloseAutoFocus={(event) => {
+        if (editing.current) event.preventDefault();
+        editing.current = false;
+      }}>
         <MessageActionItems
           Item={ContextMenuItem}
           Separator={ContextMenuSeparator}
           {...actions}
+          onEdit={() => { editing.current = true; actions.onEdit(); }}
         />
       </ContextMenuContent>
     </ContextMenu>

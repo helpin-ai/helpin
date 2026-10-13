@@ -59,6 +59,7 @@ import type {
   CreateCannedResponseRequest,
   UpdateCannedResponseRequest,
   SupportMessageInfo,
+  UpdateSupportNoteRequest,
   SupportTag,
   SupportConversationSearchParams,
   SupportConversationSearchResponse,
@@ -242,6 +243,8 @@ export const supportService = {
     if (undo) path += '&undo=1';
     return api.del<SupportMessageActionResponse>(path);
   },
+  updateConversationNote: (workspaceId: string, conversationId: string, messageId: string, payload: UpdateSupportNoteRequest) =>
+    api.patch<SupportMessage>(`/support/inbox/conversations/${conversationId}/messages/${messageId}${qs(workspaceId)}`, payload),
   getConversationMessageInfo: (workspaceId: string, conversationId: string, messageId: string) =>
     api.get<SupportMessageInfo>(`/support/inbox/conversations/${conversationId}/messages/${messageId}${qs(workspaceId)}`),
   rewriteNewDraft: (workspaceId: string, payload: SupportAIRewriteDraftRequest) =>

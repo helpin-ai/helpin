@@ -82,7 +82,7 @@ export function buildMessageInfoRows(info: SupportMessageInfo) {
     rows.push(['Read', info.read_status_label || (info.read_at ? formatTimestamp(info.read_at) : info.read)]);
   }
   if (info.edited) {
-    rows.push(['Edited', info.edited]);
+    rows.push(['Edited', info.edited_at ? formatTimestamp(info.edited_at) : info.edited]);
   }
   if (info.translated) {
     rows.push(['Translated', info.translation_language || info.translated]);

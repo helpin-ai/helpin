@@ -7,7 +7,7 @@ import { useCachedSupportTranslations } from '@/hooks/queries/useSupportTranslat
 import { pmTriageService, type TriageView, type SupportTaskDraft } from '@/lib/services/pmTriageService';
 import { unwrapRequired } from '@/lib/queryUtils';
 import { getReplyDeliveryMode, getReplyEmailSubject } from './replyDelivery';
-import { lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react';
+import { useCallback, lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { ArrowLeft02Icon, ClipboardIcon, Message01Icon, Loading01Icon, CheckmarkCircle02Icon, CancelCircleIcon, MoreHorizontalIcon } from '@/lib/icons';
@@ -36,7 +36,7 @@ import { agentService } from '@/lib/services/agentService';
 import { type AgentTypingState, useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
-import type { AgentRun, ConversationStatus } from '@/lib/pmTypes';
+import type { AgentRun, ConversationStatus, SupportMessage } from '@/lib/pmTypes';
 import { flattenSupportMessagePages, supportMessageRenderKey } from '@/lib/supportMessagePages';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
@@ -367,6 +367,13 @@ export function MessageThread({
   const updatePreferences = useUpdateSupportTaskPreferences(workspaceId);
   const currentUser = useAuthStore((s) => s.user);
   const isThreadLoading = !!conversationId && (!conversationFetched || isLoading);
+
+  const [editingNote, setEditingNote] = useState<SupportMessage | null>(null);
+  useEffect(() => { setEditingNote(null); }, [workspaceId, conversationId]);
+  const startEditingNote = useCallback((message: SupportMessage) => {
+    if (editingNote) { toast.info('Finish editing the current note first'); return; }
+    setEditingNote(message);
+  }, [editingNote]);
 
   const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
   const [taskReview, setTaskReview] = useState<{ conversationId: string; view: TriageView | null; error?: string } | null>(null);
@@ -1230,7 +1237,8 @@ export function MessageThread({
               >
                 <TranslatedMessageBubble
                   workspaceId={workspaceId}
-                  readOnly={!!conversation?.merged_into_id}
+                  readOnly={!!conversation?.merged_into_id || !!conversation?.anonymized_at || !!editingNote}
+                  onEditNote={access?.permissions?.includes('support.edit') ? startEditingNote : undefined}
                   message={item.message}
                   cachedTranslation={translationMap.get(item.message.id)}
                   isConsecutive={item.isConsecutive}
@@ -1290,6 +1298,8 @@ export function MessageThread({
             key={`${workspaceId}:${conversationId}`}
             workspaceId={workspaceId}
             conversationId={conversationId}
+            editingNote={editingNote?.conversation_id === conversationId ? editingNote : null}
+            onFinishEdit={(messageId) => setEditingNote(current => current?.id === messageId ? null : current)}
             emailDeliveryEnabled={installation?.settings.email_fallback_enabled}
             onUpgradeRequired={setUpgradeDialogReason}
           />

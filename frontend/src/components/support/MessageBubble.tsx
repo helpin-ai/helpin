@@ -323,6 +323,7 @@ function findTrailingAIContractStart(content: string): number {
 
 export interface MessageBubbleProps {
  readOnly?: boolean;
+ onEditNote?: (message: SupportMessage) => void;
  translatedContent?: string;
  translationFooter?: ReactNode;
  translationStatus?: ReactNode;
@@ -342,6 +343,7 @@ export interface MessageBubbleProps {
 
 export const MessageBubble = memo(function MessageBubble({
   readOnly = false,
+  onEditNote,
   translatedContent,
   translationFooter,
   translationStatus,
@@ -782,17 +784,34 @@ export const MessageBubble = memo(function MessageBubble({
   );
 
   const bubbleWidthClass = hasEmailBody && !renderEmailBodyAsForwardedText
-    ? 'min-w-0 w-[min(92%,64rem)] max-w-[calc(100%-2.25rem)]'
+    ? 'min-w-0 w-[min(92%,64rem)] max-w-[calc(100%-4.5rem)]'
     : hasTableContent
-      ? 'min-w-0 max-w-[min(85%,46rem)] lg:max-w-[min(85%,48rem)]'
-      : 'min-w-0 max-w-[min(85%,42rem)]';
+      ? 'min-w-0 max-w-[min(85%,46rem,calc(100%-4.5rem))] lg:max-w-[min(85%,48rem,calc(100%-4.5rem))]'
+      : 'min-w-0 max-w-[min(85%,42rem,calc(100%-4.5rem))]';
+
+  const canEditNote = !readOnly && !!onEditNote && message.is_internal && message.sender_type === 'user'
+    && message.sender_user_id === currentUser?.id && message.message_type === 'reply' && !message.pending_send;
+  let noteEditedAt: string | undefined;
+  if (message.is_internal && message.metadata) {
+    try {
+      const value = JSON.parse(message.metadata).edited_at;
+      if (typeof value === 'string' && Number.isFinite(Date.parse(value))) noteEditedAt = value;
+    } catch { /* Legacy notes may have no metadata. */ }
+  }
+  const noteActions = {
+    canEdit: canEditNote, editLabel: 'Edit note', canDelete: false,
+    onEdit: () => onEditNote?.(message), onCopy: handleCopy,
+    onDelete: () => {}, onInfo: () => setInfoOpen(true),
+  };
 
   // ── Internal note: team bubble with the same author avatar as replies ──
   if (isInternal) {
     return (
       <>
         <div className={`flex min-w-0 max-w-full justify-end ${isConsecutive ? 'mt-1' : 'mt-5'}`}>
-          <div className={bubbleWidthClass}>
+          <MessageActionsContextMenu {...noteActions}>
+          <div className={`${bubbleWidthClass} relative group/message`}>
+            <MessageActionsMenu alignSide="left" {...noteActions} />
             <Tooltip>
               <TooltipTrigger asChild>
                 <div data-support-internal-note className={`flow-root rounded-2xl border border-border/40 bg-amber-50 px-3.5 py-2 [overflow-wrap:anywhere] dark:bg-amber-950/20 ${isLastInGroup ? 'rounded-br-sm' : ''}`}>
@@ -809,16 +828,21 @@ export const MessageBubble = memo(function MessageBubble({
                   )}
                   {renderFileAttachments('note', hasDisplayContent ? 'mt-2' : 'mt-1.5')}
                   {renderImageAttachments(hasDisplayContent || fileAttachments.length > 0 ? 'mt-2' : 'mt-1.5')}
-                  {renderBubbleTime('float-right ml-2 mt-1 text-amber-700/70 dark:text-amber-300/70')}
+                  <span className="float-right ml-2 mt-1 inline-flex items-center gap-1 text-[10px] text-amber-700/70 dark:text-amber-300/70">
+                    {noteEditedAt && <><Tooltip><TooltipTrigger asChild><span tabIndex={0}>Edited</span></TooltipTrigger><TooltipContent>Edited {formatTimestamp(noteEditedAt)}</TooltipContent></Tooltip><span>·</span></>}
+                    {renderBubbleTime()}
+                  </span>
                 </div>
               </TooltipTrigger>
               <TooltipContent side="top">{inboundIdentity.email_unknown_sender ? "This sender is not a participant. Only your team can see this message; no automatic reply is sent." : tooltipContent}</TooltipContent>
             </Tooltip>
           </div>
+          </MessageActionsContextMenu>
           <div className="ml-2 flex w-7 shrink-0 flex-col justify-end">
             {showAvatar && avatarEl}
           </div>
         </div>
+        <MessageInfoDialog workspaceId={message.workspace_id} conversationId={message.conversation_id} messageId={message.id} open={infoOpen} onOpenChange={setInfoOpen} />
       </>
     );
   }

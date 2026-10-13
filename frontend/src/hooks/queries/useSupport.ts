@@ -1,5 +1,5 @@
 import { SupportTranslationSendError } from '@/lib/supportTranslationError';
-import type { CreateTaskFromConversationRequest } from '@/lib/pmTypes';
+import type { CreateTaskFromConversationRequest, UpdateSupportNoteRequest } from '@/lib/pmTypes';
 import type { WidgetOriginSettings } from '@/lib/pmTypes';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -1020,6 +1020,22 @@ export function useSendMessage(workspaceId: string, conversationId: string | nul
       }
       if (!(error instanceof SupportTranslationSendError)) toast.error('Failed to send message', { description: error.message });
     },
+  });
+}
+
+export function useUpdateSupportNote(workspaceId: string, conversationId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ messageId, payload }: { messageId: string; payload: UpdateSupportNoteRequest }) =>
+      supportService.updateConversationNote(workspaceId, conversationId, messageId, payload).then(unwrap),
+    onSuccess: async (_message, { messageId }) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.messages(workspaceId, conversationId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.messageInfo(workspaceId, conversationId, messageId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) }),
+      ]);
+    },
+    onError: (error: Error) => toast.error('Could not update note', { description: error.message }),
   });
 }
 

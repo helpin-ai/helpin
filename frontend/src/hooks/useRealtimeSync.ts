@@ -655,7 +655,9 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.messages(workspaceId,event.parent_id!) })
     } else if (event.entity === 'support_conversation_message') {
       if (event.action === 'updated' && event.parent_id) {
-        // Metadata updates (including visitor votes) are quiet refetches, not new replies.
+        // Note edits and metadata updates are quiet refetches, not new replies.
+        if (!event.data) queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.messageInfo(workspaceId, event.parent_id, event.entity_id) })
         queryClient.invalidateQueries({ queryKey: queryKeys.support.messages(workspaceId, event.parent_id) })
         return
       }

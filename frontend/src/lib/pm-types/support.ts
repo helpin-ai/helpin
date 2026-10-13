@@ -671,6 +671,12 @@ export interface SupportMessagePage {
   next_cursor?: string;
 }
 
+export interface UpdateSupportNoteRequest {
+  content: string;
+  attachment_ids: string[];
+  expected_updated_at: string;
+}
+
 export interface SupportMessageActionResponse {
   id: string;
   markdown?: string;
@@ -709,6 +715,7 @@ export interface SupportMessageInfo {
   read_at?: string | null;
   read_status_label?: string;
   edited: boolean;
+  edited_at?: string;
   translated: boolean;
   automated: boolean;
 }

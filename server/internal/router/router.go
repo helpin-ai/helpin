@@ -1119,6 +1119,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				}
 				r.With(requirePerm(authorization.PermSupportEdit), h.SupportInbox.RequireWritableConversation).Post("/inbox/conversations/{id}/messages", h.SupportInbox.CreateConversationMessage)
 				r.With(requirePerm(authorization.PermSupportEdit), h.SupportInbox.RequireWritableConversation).Delete("/inbox/conversations/{id}/messages/{msg_id}", h.SupportInbox.DeleteMessage)
+				r.With(requirePerm(authorization.PermSupportEdit), h.SupportInbox.RequireWritableConversation).Patch("/inbox/conversations/{id}/messages/{msg_id}", h.SupportInbox.UpdateNote)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/messages/{msg_id}", h.SupportInbox.GetMessageInfo)
 				if h.SupportAI != nil {
 					r.With(requirePerm(authorization.PermSupportEdit), h.SupportInbox.RequireWritableConversation).Post("/inbox/conversations/{id}/rewrite-draft", h.SupportAI.RewriteSupportDraft)

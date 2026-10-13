@@ -11,7 +11,7 @@ import {
   TickDouble01Icon, SmileIcon, Briefcase01Icon, PlusSignIcon,
   TextBoldIcon, TextItalicIcon, TextUnderlineIcon, TextStrikethroughIcon,
   CodeIcon, QuoteDownIcon, LeftToRightListBulletIcon, LeftToRightListNumberIcon, Link01Icon,
-  StickyNote01Icon, PencilEdit01Icon, Delete01Icon, ArrowLeft02Icon,
+  InformationCircleIcon, StickyNote01Icon, PencilEdit01Icon, Delete01Icon, ArrowLeft02Icon,
 } from '@/lib/icons';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -40,7 +40,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { MentionHighlight } from '@/components/pm/mention-highlight';
 import { MentionSuggestionsList } from '@/components/pm/MentionSuggestionsList';
 import { getMemberMentionHandle, getMentionSuggestions, type MentionSuggestionItem } from '@/components/pm/mentionSuggestions';
-import { useCannedResponses, useConversation, useCreateCannedResponse, useDeleteCannedResponse, useRewriteSupportDraft, useSendMessage, useUpdateCannedResponse, useUpdateConversationEmailRecipients, useUploadSupportAttachment } from '@/hooks/queries/useSupport';
+import { useCannedResponses, useConversation, useCreateCannedResponse, useDeleteCannedResponse, useRewriteSupportDraft, useSendMessage, useUpdateCannedResponse, useUpdateConversationEmailRecipients, useUploadSupportAttachment, useUpdateSupportNote } from '@/hooks/queries/useSupport';
 import { useComposerRewrite } from '@/hooks/useComposerRewrite';
 import { queryKeys } from '@/lib/queryKeys';
 import { workspacesService } from '@/lib/services/workspacesService';
@@ -54,7 +54,7 @@ import { cn } from '@/lib/utils';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@edition/errors';
 import { toast } from 'sonner';
 import type { AssignableMember } from '@/lib/types';
-import type { SupportAIRewriteOperation, SupportAttachmentPayload, SupportCannedResponse, SupportReplyDeliveryMode } from '@/lib/pmTypes';
+import type { SupportMessage, SupportAIRewriteOperation, SupportAttachmentPayload, SupportCannedResponse, SupportReplyDeliveryMode } from '@/lib/pmTypes';
 import { EmojiPicker } from './EmojiPicker';
 import { LinkInsertModal } from './LinkInsertModal';
 import { useShortcutComposerStore } from './shortcutDialogStore';
@@ -74,6 +74,8 @@ interface ReplyComposerProps {
   workspaceId: string;
   conversationId: string;
   emailDeliveryEnabled?: boolean;
+  editingNote?: SupportMessage | null;
+  onFinishEdit?: (messageId: string) => void;
   onUpgradeRequired?: (reason: UpgradeRequiredReason) => void;
 }
 
@@ -770,11 +772,23 @@ function ShortcutFormPanel({
   );
 }
 
-export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnabled, onUpgradeRequired }: ReplyComposerProps) {
+// Keep the normal composer mounted so draft text, files, and in-flight uploads
+// survive an edit. The edit instance never writes to the ordinary draft store.
+export function ReplyComposer(props: ReplyComposerProps) {
+  return <>
+    <div className={props.editingNote ? 'hidden' : 'contents'}>
+      <MessageComposer {...props} editingNote={null} inactive={!!props.editingNote} />
+    </div>
+    {props.editingNote && <MessageComposer key={props.editingNote.id} {...props} />}
+  </>;
+}
+
+function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, onUpgradeRequired, editingNote, onFinishEdit, inactive = false }: ReplyComposerProps & { inactive?: boolean }) {
   const { replyMode, setReplyMode, setDraft, clearDraft, detailSidebarMode, setDetailSidebarMode } = useSupportInboxStore();
   const askChat = useDockStore((state) => state.chats.find((chat) => chat.support_conversation_id === conversationId) ?? null);
   const [translationFailureConversation, setTranslationFailureConversation] = useState<string | null>(null);
   const sendMutation = useSendMessage(workspaceId, conversationId);
+  const updateNoteMutation = useUpdateSupportNote(workspaceId, conversationId);
   const rewriteMutation = useRewriteSupportDraft(workspaceId, conversationId);
   const updateEmailRecipients = useUpdateConversationEmailRecipients(workspaceId);
   const user = useAuthStore((s) => s.user);
@@ -798,7 +812,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
     source: conversation?.source,
     presence,
     emailEligible: !emailUnavailableReason,
-    active: replyMode !== 'note',
+    active: !editingNote && !inactive && replyMode !== 'note',
     hasDraft: !!useSupportInboxStore.getState().drafts[conversationId]?.trim(),
   });
   const primaryRecipientUnconfirmed = conversation?.primary_recipient_state === 'unconfirmed' && deliveryMode !== 'chat_only';
@@ -825,7 +839,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const aiAssistedRef = useRef(false);
   const isTypingRef = useRef(false);
-  const isNote = replyMode === 'note';
+  const isNote = !!editingNote || replyMode === 'note';
   const isNoteRef = useRef(isNote);
   isNoteRef.current = isNote;
 
@@ -845,13 +859,14 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
   // File attachments
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadMutation = useUploadSupportAttachment(workspaceId, conversationId);
-  const [pendingAttachments, setPendingAttachments] = useState<PendingSupportAttachment[]>([]);
+  const [pendingAttachments, setPendingAttachments] = useState<PendingSupportAttachment[]>(() => editingNote ? restoreAttachmentsFromMessage(editingNote.attachments) : []);
   useEffect(() => {
+    if (editingNote) return;
     useSupportInboxStore.getState().setDraftAttachmentCount(conversationId, pendingAttachments.length);
     return () => useSupportInboxStore.getState().setDraftAttachmentCount(conversationId, 0);
-  }, [conversationId, pendingAttachments.length]);
+  }, [conversationId, pendingAttachments.length, editingNote]);
   const [draftHasContent, setDraftHasContent] = useState(() => !!useSupportInboxStore.getState().drafts[conversationId]?.trim());
-  const draftAudience = useDraftMergeRevision(workspaceId, conversationId, conversation?.merge_revision, draftHasContent || pendingAttachments.length > 0);
+  const draftAudience = useDraftMergeRevision(workspaceId, conversationId, editingNote ? undefined : conversation?.merge_revision, draftHasContent || pendingAttachments.length > 0);
   const attachmentsPending = pendingAttachments.some((attachment) => attachment.status !== 'done' || !attachment.attachmentId);
 
   const uploadFiles = useCallback(async (files: File[]) => {
@@ -1011,7 +1026,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
   }, [shortcutPanelMode, shortcutState, shortcutsPanelOpen]);
 
   useEffect(() => {
-    if (shortcutOpenRequest === 0) return;
+    if (editingNote || inactive || shortcutOpenRequest === 0) return;
     if (shortcutOpenRequest <= handledShortcutOpenRequestRef.current) return;
     handledShortcutOpenRequestRef.current = shortcutOpenRequest;
     openShortcutCreate({
@@ -1019,7 +1034,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
       seedContent: shortcutSeedContent,
     });
     clearShortcutComposerRequest();
-  }, [clearShortcutComposerRequest, openShortcutCreate, shortcutOpenRequest, shortcutSeedContent, shortcutSeedShortCode]);
+  }, [clearShortcutComposerRequest, openShortcutCreate, shortcutOpenRequest, shortcutSeedContent, shortcutSeedShortCode, editingNote, inactive]);
 
   const submitShortcutForm = useCallback(async () => {
     const payload = {
@@ -1049,7 +1064,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
 
   // Typing indicator
   const sendTyping = useCallback((typing: boolean, typingContent?: string) => {
-    if (isNoteRef.current || (typing && deliveryMode === 'email_only') || !wsSend || !wsConnected) return;
+    if (!wsSend || !wsConnected || (typing && (isNoteRef.current || inactive || deliveryMode === 'email_only'))) return;
     if (!typing && typingTimerRef.current) {
       clearTimeout(typingTimerRef.current);
       typingTimerRef.current = null;
@@ -1068,11 +1083,11 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
       conversation_id: conversationId,
       content: typingContent ?? '',
     });
-  }, [conversationId, deliveryMode, wsSend, wsConnected]);
+  }, [conversationId, deliveryMode, wsSend, wsConnected, inactive]);
 
   useEffect(() => {
-    if (deliveryMode === 'email_only') sendTyping(false);
-  }, [deliveryMode, sendTyping]);
+    if (inactive || isNote || deliveryMode === 'email_only') sendTyping(false);
+  }, [deliveryMode, inactive, isNote, sendTyping]);
 
   const handleTyping = useCallback((typingContent: string) => {
     sendTyping(true, typingContent);
@@ -1111,7 +1126,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
   ], []);
 
   const editor = useEditor({
-    content: useSupportInboxStore.getState().drafts[conversationId] ?? '',
+    content: editingNote?.content ?? useSupportInboxStore.getState().drafts[conversationId] ?? '',
     extensions,
     editorProps: {
       attributes: {
@@ -1273,13 +1288,13 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
 
       // Debounce draft save (markdown so formatting persists across reloads)
       if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-      draftTimerRef.current = setTimeout(() => {
+      if (!editingNote) draftTimerRef.current = setTimeout(() => {
         draftTimerRef.current = null;
         setDraft(conversationId, markdown);
       }, 500);
 
       // Typing indicator (plain text preview is enough)
-      text.trim() ? handleTyping(text) : sendTyping(false);
+      if (!editingNote) text.trim() ? handleTyping(text) : sendTyping(false);
 
       // Mention detection
       const mention = detectMentions(ed, membersRef.current);
@@ -1289,7 +1304,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
       setShortcutsPanelOpen(!!shortcut);
 
       // Auto-switch to note mode when mention detected in reply mode
-      if (mention && useSupportInboxStore.getState().replyMode === 'reply') {
+      if (!editingNote && mention && useSupportInboxStore.getState().replyMode === 'reply') {
         setReplyMode('note');
       }
     },
@@ -1305,6 +1320,20 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
       }, 0);
     },
   });
+
+  const initialNoteMarkdown = useRef<string | null>(null);
+  if (editingNote && editor && initialNoteMarkdown.current === null) initialNoteMarkdown.current = getEditorMarkdown(editor).trim();
+  const editAttachmentsRef = useRef(pendingAttachments);
+  editAttachmentsRef.current = pendingAttachments;
+  useEffect(() => () => {
+    if (!editingNote) return;
+    editAttachmentsRef.current.forEach(attachment => {
+      if (attachment.previewObjectUrl && attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
+    });
+  }, [editingNote]);
+  useEffect(() => {
+    if (editingNote && editor) editor.setEditable(!updateNoteMutation.isPending);
+  }, [editor, editingNote, updateNoteMutation.isPending]);
 
   const editorRef = useRef(editor);
   editorRef.current = editor;
@@ -1355,17 +1384,17 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
       const text = editor.getText();
       const markdown = getEditorMarkdown(editor);
       if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-      draftTimerRef.current = setTimeout(() => {
+      if (!editingNote) draftTimerRef.current = setTimeout(() => {
         draftTimerRef.current = null;
         setDraft(conversationId, markdown);
       }, 500);
-      text.trim() ? handleTyping(text) : sendTyping(false);
+      if (!editingNote) text.trim() ? handleTyping(text) : sendTyping(false);
       const mention = detectMentions(editor, membersRef.current);
       setMentionState(mention);
       const shortcut = detectShortcuts(editor, shortcutsRef.current);
       setShortcutState(shortcut);
       setShortcutsPanelOpen(!!shortcut);
-      if (mention && useSupportInboxStore.getState().replyMode === 'reply') {
+      if (!editingNote && mention && useSupportInboxStore.getState().replyMode === 'reply') {
         setReplyMode('note');
       }
     };
@@ -1400,11 +1429,12 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
       editor.off('blur', handleBlur);
       editor.off('focus', handleFocus);
     };
-  }, [closeShortcutsPanel, editor, conversationId, handleTyping, sendTyping, setDraft, setReplyMode]);
+  }, [closeShortcutsPanel, editor, conversationId, handleTyping, sendTyping, setDraft, setReplyMode, editingNote]);
 
   // Load draft when switching conversations
   useEffect(() => {
     if (!editor) return;
+    if (editingNote) { editor.commands.focus('end'); return; }
     const saved = useSupportInboxStore.getState().drafts[conversationId] ?? '';
     setDraftHasContent(!!saved.trim());
     if (saved) {
@@ -1422,10 +1452,11 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
         setDraft(conversationId, getEditorMarkdown(editor));
       }
     };
-  }, [conversationId, editor, setDraft]);
+  }, [conversationId, editor, setDraft, editingNote]);
 
   useEffect(() => {
     if (!editor) return;
+    if (editingNote || inactive) return;
     const handleRestoreDraft = (event: Event) => {
       const detail = (event as CustomEvent<{
         conversationId?: string;
@@ -1461,7 +1492,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
     };
     window.addEventListener(RESTORE_SUPPORT_DRAFT_EVENT, handleRestoreDraft);
     return () => window.removeEventListener(RESTORE_SUPPORT_DRAFT_EVENT, handleRestoreDraft);
-  }, [workspaceId, conversationId, editor, sendTyping, setDraft, setReplyMode, pendingAttachments.length]);
+  }, [workspaceId, conversationId, editor, sendTyping, setDraft, setReplyMode, pendingAttachments.length, editingNote, inactive]);
 
   // Force placeholder redecoration when mode changes
   useEffect(() => {
@@ -1475,7 +1506,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
   const translatedSendRef = useRef<{ fingerprint: string; id: string } | null>(null);
 
   const sendReply = useCallback(async (sendOriginal = false) => {
-    if (!editor || !editor.isEditable || attachmentsPending || draftAudience.changed) return;
+    if (editingNote || inactive || !editor || !editor.isEditable || attachmentsPending || draftAudience.changed) return;
     const markdown = getEditorMarkdown(editor).trim();
     const doneAttachments = pendingAttachments.filter((a) => a.status === 'done' && a.attachmentId);
     if ((!markdown && doneAttachments.length === 0) || sendMutation.isPending) return;
@@ -1534,10 +1565,23 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
       clearReplyDeliveryDraft(workspaceId, conversationId);
     }
     editor.commands.focus();
-  }, [draftAudience.changed, draftAudience.revision, outgoingTranslation, attachmentsPending, clearDraft, conversation?.customer_email, conversation?.email_cc, conversationId, editor, deliveryMode, pendingAttachments, workspaceId, sendMutation, sendTyping]);
+  }, [editingNote, inactive, draftAudience.changed, draftAudience.revision, outgoingTranslation, attachmentsPending, clearDraft, conversation?.customer_email, conversation?.email_cc, conversationId, editor, deliveryMode, pendingAttachments, workspaceId, sendMutation, sendTyping]);
 
   const handleSend = useCallback(async (sendOriginal = false) => {
-    if (!editor || !editor.isEditable || attachmentsPending) return;
+    if (inactive || !editor || !editor.isEditable || attachmentsPending || updateNoteMutation.isPending) return;
+    if (editingNote) {
+      const markdown = getEditorMarkdown(editor).trim();
+      const attachmentIDs = pendingAttachments.filter(a => a.status === 'done' && a.attachmentId).map(a => a.attachmentId!);
+      if (!markdown && !attachmentIDs.length) return;
+      if (markdown === initialNoteMarkdown.current && JSON.stringify([...attachmentIDs].sort()) === JSON.stringify((editingNote.attachments ?? []).map(a => a.id).sort())) return;
+      try {
+        await updateNoteMutation.mutateAsync({ messageId: editingNote.id, payload: {
+          content: markdown, attachment_ids: attachmentIDs, expected_updated_at: editingNote.updated_at,
+        } });
+        onFinishEdit?.(editingNote.id);
+      } catch { /* The mutation displays the error; keep the edit available. */ }
+      return;
+    }
     const markdown = getEditorMarkdown(editor).trim();
     const hasUploadedAttachments = pendingAttachments.some((a) => a.status === 'done' && a.attachmentId);
     if ((!markdown && !hasUploadedAttachments) || sendMutation.isPending) return;
@@ -1553,7 +1597,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
     }
 
     await sendReply(sendOriginal);
-  }, [attachmentsPending, deliveryUnavailableReason, editor, isNote, pendingAttachments, primaryRecipientUnconfirmed, sendMutation.isPending, sendReply]);
+  }, [attachmentsPending, deliveryUnavailableReason, editor, isNote, pendingAttachments, primaryRecipientUnconfirmed, sendMutation.isPending, sendReply, editingNote, inactive, updateNoteMutation, onFinishEdit]);
 
   const handleRewrite = useCallback(async (operation: SupportAIRewriteOperation) => {
     if (!editor || sendMutation.isPending) return;
@@ -1647,6 +1691,8 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
 
   if (!editor) return <ReplyComposerLoading />;
 
+  const noteChanged = !editingNote || getEditorMarkdown(editor).trim() !== initialNoteMarkdown.current
+    || JSON.stringify(pendingAttachments.map(a => a.attachmentId).sort()) !== JSON.stringify((editingNote.attachments ?? []).map(a => a.id).sort());
   const content = editor.getText();
   const hasContent = content.trim().length > 0;
   const suggestedPrimaryEmail = conversation?.suggested_primary_recipient_email?.trim() || '';
@@ -1662,7 +1708,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
   return (
     <div
       data-support-reply-composer
-      aria-busy={isRewriting}
+      aria-busy={isRewriting || updateNoteMutation.isPending}
       className={cn(
         'relative mx-3 mb-4 min-h-[146px] shrink-0 rounded-xl border border-border/40 bg-card transition-colors',
         editorFocused && (
@@ -1681,8 +1727,8 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
           </div>
         </div>
       )}
-      <div inert={isRewriting}>
-      {draftAudience.changed && <div role="alert" className="flex items-center justify-between gap-3 border-b px-3 py-2 text-xs"><span>The conversation changed. Review who will receive this draft.</span><Button variant="outline" size="sm" onClick={draftAudience.acknowledge}>Use current recipients</Button></div>}
+      <div inert={isRewriting || updateNoteMutation.isPending}>
+      {!editingNote && draftAudience.changed && <div role="alert" className="flex items-center justify-between gap-3 border-b px-3 py-2 text-xs"><span>The conversation changed. Review who will receive this draft.</span><Button variant="outline" size="sm" onClick={draftAudience.acknowledge}>Use current recipients</Button></div>}
       {primaryRecipientUnconfirmed && !isNote && (
         <div className="flex flex-col gap-2 rounded-t-xl border-b border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
           <div className="flex items-start gap-2">
@@ -1928,7 +1974,10 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
 
       {/* Mode toggle */}
       <div className="flex min-h-[40px] items-center justify-between gap-3 px-4 pt-3">
-        <div className="flex min-w-0 items-center gap-1">
+        {editingNote ? <div className="flex items-center gap-2 text-xs font-medium text-amber-700 dark:text-amber-400">
+          <PencilEdit01Icon className="h-3.5 w-3.5" />Editing note
+          <Tooltip><TooltipTrigger asChild><span tabIndex={0}><InformationCircleIcon className="h-3.5 w-3.5 text-muted-foreground" /></span></TooltipTrigger><TooltipContent className="max-w-64">Updates the original note. Your draft is kept while you edit.</TooltipContent></Tooltip>
+        </div> : <div className="flex min-w-0 items-center gap-1">
         <button
           type="button"
           onClick={() => {
@@ -2034,13 +2083,13 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
             })}
           </DropdownMenuContent>
         </DropdownMenu>
-        </div>
-        <SupportAskAgentsButton
+        </div>}
+        {editingNote ? <span className="text-[11px] text-muted-foreground">Only your team</span> : <SupportAskAgentsButton
           open={detailSidebarMode === 'agents'}
           onOpen={() => setDetailSidebarMode('agents')}
           chatExists={!!askChat}
           runStatus={askChat?.active_run_status ?? null}
-        />
+        />}
       </div>
 
       {/* TipTap Editor */}
@@ -2211,6 +2260,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
             <span>{navigator.platform?.includes('Mac') ? '\u2318' : 'Ctrl'}</span>
             <span>{'\u21B5'}</span>
           </kbd>
+          {editingNote && <Button size="sm" variant="ghost" className="h-7 px-3 text-xs" disabled={updateNoteMutation.isPending} onClick={() => onFinishEdit?.(editingNote.id)}>Cancel</Button>}
           <div className="inline-flex shrink-0 items-center">
             {!isNote && <ReplyDeliverySelector
               mode={deliveryMode}
@@ -2222,15 +2272,15 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
             />}
             <Button
               size="sm"
-              disabled={isRewriting || attachmentsPending || sendMutation.isPending || (!isNote && (primaryRecipientUnconfirmed || !!deliveryUnavailableReason)) || (!content.trim() && !pendingAttachments.some((a) => a.status === 'done'))}
+              disabled={isRewriting || attachmentsPending || updateNoteMutation.isPending || !noteChanged || sendMutation.isPending || (!isNote && (primaryRecipientUnconfirmed || !!deliveryUnavailableReason)) || (!content.trim() && !pendingAttachments.some((a) => a.status === 'done'))}
               onClick={() => void handleSend()}
               className={cn(
                 'h-7 gap-1.5 rounded-full px-3 text-xs',
                 isNote ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'rounded-l-none'
               )}
             >
-              {isNote && <SentIcon className="h-3 w-3" />}
-              {isNote ? 'Add Note' : primaryRecipientUnconfirmed ? 'Confirm recipient' : sendMutation.isPending ? 'Sending…' : 'Send'}
+              {isNote && !editingNote && <SentIcon className="h-3 w-3" />}
+              {editingNote ? (updateNoteMutation.isPending ? 'Saving…' : 'Save changes') : isNote ? 'Add Note' : primaryRecipientUnconfirmed ? 'Confirm recipient' : sendMutation.isPending ? 'Sending…' : 'Send'}
             </Button>
           </div>
         </div>
