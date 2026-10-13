@@ -670,8 +670,8 @@ export function MessageThread({
     return getSupportReceiptStatus(msg, conversation);
   }, [receiptMessageId, conversation, messages]);
 
-  const { data: mergeHistory = [] } = useConversationMerges(workspaceId, conversationId);
-  const groupedMessages = useMemo(() => groupSupportTimeline(messages, mergeHistory), [messages, mergeHistory]);
+  const { data: mergeHistory } = useConversationMerges(workspaceId, conversationId);
+  const groupedMessages = useMemo(() => groupSupportTimeline(messages, mergeHistory ?? []), [messages, mergeHistory]);
 
   const visibleGroupedMessages = groupedMessages;
 
