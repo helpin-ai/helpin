@@ -29,7 +29,12 @@ export function LiveTranslateBar({ workspaceId, conversationId, editable, forceV
   if ((!language || language === reading) && !forceVisible) return null;
   const actionLabel = enabled ? 'Pause live translation' : 'Resume live translation';
   return <div className="flex shrink-0 flex-wrap items-center justify-center gap-x-2 gap-y-1 text-center border-b border-border/50 bg-muted/30 px-4 py-2 text-xs">
-    <span className="font-medium" title="Automatically translates new messages and replies in this conversation.">Live translate from</span>
+    <span className="font-medium" title={language
+      ? `Customer messages are translated into ${data.languages[reading]}. Your replies are translated into ${data.languages[language]}.`
+      : 'Choose the customer’s language to translate incoming messages and your replies.'}>Live translation</span>
+    <span aria-hidden="true">·</span>
+    <span>{languageFlag(reading)} {data.languages[reading]}</span>
+    <span aria-label="both ways">↔</span>
     <select
       aria-label="Customer language"
       className="max-w-full shrink-0 rounded bg-transparent font-medium"
@@ -40,9 +45,7 @@ export function LiveTranslateBar({ workspaceId, conversationId, editable, forceV
       <option value="">{detectedLanguage ? `${languageFlag(detectedLanguage)} ${data.languages[detectedLanguage]} (detected)` : 'Select customer language'}</option>
       {Object.entries(data.languages).map(([code, name]) => <option key={code} value={code}>{languageFlag(code)} {name}</option>)}
     </select>
-    <span>to</span>
     <span className="inline-flex items-center gap-1.5">
-      <span>{languageFlag(reading)} {data.languages[reading]}</span>
       {!data.available ? <span className="text-muted-foreground">Unavailable</span> : !enabled ? <span className="text-muted-foreground">Paused</span> : null}
       <Tooltip>
         <TooltipTrigger asChild>

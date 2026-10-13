@@ -36,3 +36,21 @@ it('renders translation preparation below the bubble instead of in its footer',a
  expect(div.querySelector('[data-status]')?.textContent).toContain('Preparing');
  await act(async()=>root.unmount());client.clear();
 });
+
+it('translates an AI reply on demand and toggles its original customer-visible text', async () => {
+ request.mockReset();
+ request.mockResolvedValue({ purpose: 'manual_display', source_message_id: 'ai-reply', source_text: 'Hola', translated_text: 'Hello', source_language: 'es', target_language: 'en', status: 'ready', updated_at: new Date().toISOString() });
+ const div = document.createElement('div'); const root = createRoot(div); const client = new QueryClient();
+ await act(async () => root.render(<QueryClientProvider client={client}><TranslatedMessageBubble workspaceId="w" message={{ id: 'ai-reply', workspace_id: 'w', conversation_id: 'c', sender_type: 'ai', message_type: 'reply', content: 'Hola', is_internal: false } as never}/></QueryClientProvider>));
+ expect(request).not.toHaveBeenCalled();
+ expect(div.querySelector('button')?.textContent).toBe('Translate');
+ await act(async () => { div.querySelector('button')!.click(); await new Promise(resolve => setTimeout(resolve, 10)); });
+ expect(request).toHaveBeenCalledWith('w', 'c', { message_id: 'ai-reply', target_language: 'en' });
+ expect(div.textContent).toContain('Translated from Spanish');
+ expect(div.querySelector('p')?.textContent).toBe('Hello');
+ await act(async () => div.querySelector('button')!.click());
+ expect(div.querySelector('p')?.textContent).toBe('Hola');
+ expect(div.textContent).toContain('Show translation');
+ expect(request).toHaveBeenCalledTimes(1);
+ await act(async () => root.unmount()); client.clear();
+});

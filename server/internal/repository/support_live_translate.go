@@ -48,15 +48,6 @@ func (r *SupportTranslationRepository) CachedMessages(ctx context.Context, works
 	}
 	return result, err
 }
-func (r *SupportTranslationRepository) BrowserLanguage(ctx context.Context, workspaceID, conversationID string) string {
-	var result struct{ Locale string }
-	// A conversation is joined to the visitor session; never infer locale from IP.
-	err := r.db.WithContext(ctx).Table("support_widget_sessions s").Select("s.locale").Joins("JOIN support_conversations c ON c.workspace_id=s.workspace_id AND c.anonymous_id=s.anonymous_id").Where("c.workspace_id = ? AND c.id = ?", workspaceID, conversationID).Order("s.created_at DESC").Limit(1).Scan(&result).Error
-	if err != nil {
-		return ""
-	}
-	return result.Locale
-}
 func (r *SupportTranslationRepository) ClaimLiveMessage(ctx context.Context) (*model.SupportLiveMessage, error) {
 	var job model.SupportLiveMessage
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

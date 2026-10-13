@@ -23,10 +23,12 @@ type translationTestProvider struct {
 	onCall           func()
 	responseLanguage string
 	responseText     string
+	lastRequest      llm.ChatRequest
 }
 
 func (p *translationTestProvider) ChatCompletion(_ context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
 	p.calls++
+	p.lastRequest = req
 	if p.onCall != nil {
 		p.onCall()
 	}
@@ -189,6 +191,17 @@ func TestTranslationRejectsPrivateForeignAndUnavailableInputs(t *testing.T) {
 			case "no_provider":
 				s.translations.available = false
 			}
+			if scenario == "foreign_workspace" || scenario == "foreign_conversation" {
+				foreign := *c
+				foreign.ID, foreign.WorkspaceID = msg.ConversationID, msg.WorkspaceID
+				if scenario == "foreign_workspace" {
+					foreign.ID = uuid.NewString()
+					msg.ConversationID = foreign.ID
+				}
+				if err := env.messageRepo.DB().Create(&foreign).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
 			if err := env.messageRepo.Create(ctx, msg); err != nil {
 				t.Fatal(err)
 			}
@@ -254,7 +267,7 @@ func TestTranslationDetectsCustomerLanguageOnSend(t *testing.T) {
 	})
 	s := env.service.supportInboxService
 	ctx := context.Background()
-	msg := &model.SupportMessage{ID: uuid.NewString(), WorkspaceID: c.WorkspaceID, ConversationID: c.ID, SenderType: "customer", MessageType: "reply", Content: "Hallo"}
+	msg := &model.SupportMessage{ID: uuid.NewString(), WorkspaceID: c.WorkspaceID, ConversationID: c.ID, SenderType: "customer", MessageType: "reply", Content: "Hallo, ich brauche Hilfe mit meinem Konto."}
 	if err := env.messageRepo.Create(ctx, msg); err != nil {
 		t.Fatal(err)
 	}
@@ -663,7 +676,7 @@ func TestTranslationDetectionRecoversAfterRepeatedProviderFailures(t *testing.T)
 			s := env.service.supportInboxService
 			ctx := context.Background()
 			db := env.messageRepo.DB()
-			msg := &model.SupportMessage{ID: uuid.NewString(), WorkspaceID: c.WorkspaceID, ConversationID: c.ID, SenderType: "customer", MessageType: "reply", Content: "Hallo"}
+			msg := &model.SupportMessage{ID: uuid.NewString(), WorkspaceID: c.WorkspaceID, ConversationID: c.ID, SenderType: "customer", MessageType: "reply", Content: "Hallo, ich brauche Hilfe mit meinem Konto."}
 			if err := env.messageRepo.Create(ctx, msg); err != nil {
 				t.Fatal(err)
 			}
@@ -876,9 +889,9 @@ func TestTranslationLanguageHintIgnoresOlderAndDeletedMessages(t *testing.T) {
 	if err := db.Model(newer).Update("deleted_at", time.Now()).Error; err != nil {
 		t.Fatal(err)
 	}
-	latest, err := repo.LatestCustomerMessageID(ctx, c.WorkspaceID, c.ID)
-	if err != nil || latest != old.ID {
-		t.Fatalf("deleted message used for detection: %s %v", latest, err)
+	messages, err := repo.RecentLanguageMessages(ctx, c.WorkspaceID, c.ID)
+	if err != nil || len(messages) != 1 || messages[0].ID != old.ID {
+		t.Fatalf("deleted message used for detection: %+v %v", messages, err)
 	}
 }
 

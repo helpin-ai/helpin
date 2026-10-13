@@ -25,7 +25,7 @@ export function TranslatedMessageBubble({ workspaceId, cachedTranslation, ...pro
     cachedTranslation.status === 'ready' && cachedTranslation.translated_text === message.content ? cachedTranslation : undefined;
   const result = outgoing ?? (candidate?.source_text === message.content && candidate.target_language === language ? candidate : undefined);
   const eligible = (!!options?.available || result?.status === 'ready') && !message.pending_send &&
-    (message.sender_type === 'customer' || !!outgoing) && !message.is_internal && message.message_type === 'reply' && !!message.content.trim();
+    (message.sender_type === 'customer' || message.sender_type === 'ai' || !!outgoing) && !message.is_internal && message.message_type === 'reply' && !!message.content.trim();
   const translated = result?.status === 'ready' && result.translated_text !== result.source_text;
   const same = result?.status === 'ready' && result.translated_text === result.source_text;
   const pending = request.isPending || result?.status === 'pending';

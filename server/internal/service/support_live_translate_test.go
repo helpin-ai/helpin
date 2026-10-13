@@ -171,8 +171,12 @@ func TestLiveTranslateEvidenceUsesChronologyAndPrimarySender(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if options.DetectedCustomerLanguage != "es" {
-		t.Fatalf("reply language %q", options.DetectedCustomerLanguage)
+	if options.DetectedCustomerLanguage != "" {
+		t.Fatalf("per-message labels changed reply language %q", options.DetectedCustomerLanguage)
+	}
+	messages, err := s.translations.repo.RecentLanguageMessages(ctx, c.WorkspaceID, c.ID)
+	if err != nil || len(messages) != 3 || messages[0].ID != "manual" || messages[1].ID != "newer" || messages[2].ID != "older" {
+		t.Fatalf("wrong primary-customer evidence: %+v %v", messages, err)
 	}
 }
 

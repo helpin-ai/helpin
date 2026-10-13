@@ -204,7 +204,7 @@ func (r *SupportMessageRepository) createTranslatedMessage(ctx context.Context, 
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("workspace_id = ? AND conversation_id = ?", msg.WorkspaceID, msg.ConversationID).First(&live).Error; err != nil {
 			return err
 		}
-		if (artifact.PolicyRevision != 0 && artifact.PolicyRevision != live.Revision) || live.TranslationMode != "on" || (live.CustomerLanguage != "" && live.CustomerLanguage != artifact.TargetLanguage) {
+		if (artifact.PolicyRevision != 0 && artifact.PolicyRevision != live.Revision) || live.TranslationMode != "on" || (live.CustomerLanguage != "" && live.CustomerLanguage != artifact.TargetLanguage) || (live.CustomerLanguage == "" && live.DetectedLanguage != "" && live.DetectedLanguage != artifact.TargetLanguage) {
 			return ErrTranslationUnavailable
 		}
 		if err := r.WithTx(tx).create(ctx, msg); err != nil {
@@ -218,31 +218,12 @@ func (r *SupportMessageRepository) createTranslatedMessage(ctx context.Context, 
 	})
 }
 
-// DetectedLanguage is a hint from the latest translated customer message, never
-// a replacement for an explicit conversation language override.
+// DetectedLanguage is the saved conversation language. Display translations
+// classify individual messages and must never change the outgoing reply target.
 func (r *SupportTranslationRepository) DetectedLanguage(ctx context.Context, workspaceID, conversationID string) (string, error) {
-
-	type evidence struct{ SourceLanguage, SourceText, Metadata string }
-	var rows []evidence
-	err := r.db.WithContext(ctx).Table("support_translations t").Select("t.source_language,t.source_text,m.metadata").Joins("JOIN support_messages m ON m.id=t.source_message_id AND m.workspace_id=t.workspace_id AND m.conversation_id=t.conversation_id").Where("t.workspace_id = ? AND t.conversation_id = ? AND t.purpose IN ('message_display','language_detection') AND t.status='ready' AND t.source_language NOT IN ('','und','mul') AND m.deleted_at IS NULL AND m.content=t.source_text", workspaceID, conversationID).Order("m.created_at DESC,m.id DESC").Limit(100).Scan(&rows).Error
-	if err != nil {
-		return "", err
-	}
-	var conv model.SupportConversation
-	if err := r.db.WithContext(ctx).Where("workspace_id=? AND id=?", workspaceID, conversationID).First(&conv).Error; err != nil {
-		return "", err
-	}
-	for _, row := range rows {
-		if !model.MeaningfulSupportLanguageText(row.SourceText) {
-			continue
-		}
-
-		if !primaryLanguageSender(row.Metadata, conv.CustomerEmail) {
-			continue
-		}
-		return row.SourceLanguage, nil
-	}
-	return "", nil
+	var policy model.SupportTranslationConversation
+	err := r.db.WithContext(ctx).Select("detected_language").Where("workspace_id = ? AND conversation_id = ?", workspaceID, conversationID).Find(&policy).Error
+	return policy.DetectedLanguage, err
 }
 
 // ForSentMessage is staff-only provenance; widget projections never call it.
@@ -255,35 +236,29 @@ func (r *SupportTranslationRepository) ForSentMessage(ctx context.Context, works
 	return &result, err
 }
 
-// LatestCustomerMessageID supplies language-detection evidence when a teammate
-// sends before an incoming display translation has populated the language hint.
-func (r *SupportTranslationRepository) LatestCustomerMessageID(ctx context.Context, workspaceID, conversationID string) (string, error) {
-	return r.latestCustomerMessageID(ctx, workspaceID, conversationID, false)
-}
-
-// LatestMeaningfulCustomerMessageID skips short acknowledgments when detecting
-// a missing language for display, without changing outgoing reply detection.
-func (r *SupportTranslationRepository) LatestMeaningfulCustomerMessageID(ctx context.Context, workspaceID, conversationID string) (string, error) {
-	return r.latestCustomerMessageID(ctx, workspaceID, conversationID, true)
-}
-
-func (r *SupportTranslationRepository) latestCustomerMessageID(ctx context.Context, workspaceID, conversationID string, meaningfulOnly bool) (string, error) {
+// RecentLanguageMessages returns only public replies from the primary customer.
+// The service filters authored text before choosing its bounded detection sample.
+func (r *SupportTranslationRepository) RecentLanguageMessages(ctx context.Context, workspaceID, conversationID string) ([]model.SupportMessage, error) {
 	var conv model.SupportConversation
 	if err := r.db.WithContext(ctx).Where("workspace_id=? AND id=?", workspaceID, conversationID).First(&conv).Error; err != nil {
-		return "", err
+		return nil, err
 	}
 	var messages []model.SupportMessage
-	err := r.db.WithContext(ctx).Select("id,metadata,content").Where("workspace_id=? AND conversation_id=? AND sender_type='customer' AND message_type='reply' AND is_internal=false AND deleted_at IS NULL AND content<>''", workspaceID, conversationID).Order("created_at DESC,id DESC").Limit(100).Find(&messages).Error
+	err := r.db.WithContext(ctx).Where("workspace_id=? AND conversation_id=? AND sender_type='customer' AND message_type='reply' AND is_internal=false AND content<>''", workspaceID, conversationID).
+		Where("origin_conversation_id IS NULL OR origin_conversation_id = ?", conversationID).
+		Order("created_at DESC,id DESC").Limit(100).Find(&messages).Error
 	if err != nil {
-		return "", err
+		return nil, err
 	}
+	result := make([]model.SupportMessage, 0, len(messages))
 	for _, msg := range messages {
-		if primaryLanguageSender(msg.Metadata, conv.CustomerEmail) && (!meaningfulOnly || model.MeaningfulSupportLanguageText(msg.Content)) {
-			return msg.ID, nil
+		if primaryLanguageSender(msg.Metadata, conv.CustomerEmail) {
+			result = append(result, msg)
 		}
 	}
-	return "", nil
+	return result, nil
 }
+
 func primaryLanguageSender(metadata string, customerEmail *string) bool {
 	var meta struct {
 		Sender      string `json:"email_sender"`

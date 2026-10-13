@@ -121,15 +121,8 @@ func (s *SupportInboxService) translationOptions(ctx context.Context, workspaceI
 	if forSend && !enabled {
 		return result, nil
 	}
-	detected, err := s.translations.repo.DetectedLanguage(ctx, workspaceID, conversationID)
-	if err != nil {
-		return nil, err
-	}
-	result.DetectedCustomerLanguage = detected
+	result.DetectedCustomerLanguage = policy.DetectedLanguage
 	result.JevReview = false
-	if result.DetectedCustomerLanguage == "" {
-		result.DetectedCustomerLanguage = normalizeLiveLanguage(s.translations.repo.BrowserLanguage(ctx, workspaceID, conversationID))
-	}
 	return result, nil
 }
 func (s *SupportInboxService) TranslateSupport(ctx context.Context, workspaceID, conversationID, userID string, req model.SupportTranslateRequest) (*model.SupportTranslation, error) {
@@ -156,7 +149,8 @@ func (s *SupportInboxService) TranslateSupport(ctx context.Context, workspaceID,
 		if err != nil {
 			return nil, err
 		}
-		if msg == nil || msg.WorkspaceID != workspaceID || msg.ConversationID != conversationID || msg.IsInternal || msg.SenderType != "customer" || msg.MessageType != "reply" || msg.DeletedAt.Valid {
+		if msg == nil || msg.WorkspaceID != workspaceID || msg.ConversationID != conversationID || msg.IsInternal ||
+			(msg.SenderType != "customer" && (msg.SenderType != "ai" || req.Live)) || msg.MessageType != "reply" || msg.DeletedAt.Valid {
 			return nil, ErrSupportTranslation
 		}
 		artifact.Purpose = "manual_display"
@@ -279,18 +273,7 @@ func (s *SupportInboxService) prepareTranslatedReply(ctx context.Context, worksp
 		return nil, ErrSupportTranslation
 	}
 	if target == "" {
-		messageID, lookupErr := s.translations.repo.LatestCustomerMessageID(ctx, workspaceID, conversationID)
-		if lookupErr != nil {
-			return nil, ErrSupportTranslation
-		}
-		if messageID == "" {
-			return nil, nil
-		}
-		msg, loadErr := s.messageRepo.GetByID(ctx, messageID)
-		if loadErr != nil || msg == nil {
-			return nil, ErrSupportTranslation
-		}
-		target, err = s.detectCustomerLanguage(ctx, workspaceID, conversationID, msg)
+		target, err = s.detectCustomerLanguage(ctx, workspaceID, conversationID)
 		if errors.Is(err, errCustomerLanguageUnknown) {
 			return nil, nil
 		}

@@ -54,6 +54,7 @@ type SupportTranslationConversation struct {
 	WorkspaceID      string    `json:"-" gorm:"primaryKey;type:uuid"`
 	ConversationID   string    `json:"-" gorm:"primaryKey;type:uuid"`
 	CustomerLanguage string    `json:"customer_language" gorm:"not null;default:''"`
+	DetectedLanguage string    `json:"-" gorm:"not null;default:''"`
 	TranslationMode  string    `json:"translation_mode" gorm:"not null;default:'inherit'"`
 	UpdatedAt        time.Time `json:"-" gorm:"not null;default:CURRENT_TIMESTAMP"`
 }
