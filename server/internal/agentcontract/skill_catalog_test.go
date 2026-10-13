@@ -245,6 +245,41 @@ func TestSupportHandoverPolicyReachesExistingPresets(t *testing.T) {
 	}
 }
 
+func TestSupportContactContextPolicyReachesExistingPresets(t *testing.T) {
+	const header = "## Required support conversation context"
+	defaultPrompt := BuiltInPresetPrompt(model.AgentPresetSupportAgent)
+	if defaultPrompt == nil || !strings.Contains(*defaultPrompt, header) {
+		t.Fatal("new support presets must include the contact context policy")
+	}
+	for _, saved := range []string{
+		*defaultPrompt,
+		"Workspace instructions\n\nYou are chatting live with a visitor on the website.",
+		"Workspace instructions\n\n" + supportRuntimeDeliveryContract,
+	} {
+		got := EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, saved)
+		if !strings.HasPrefix(got, saved) || strings.Count(got, header) != 1 {
+			t.Fatal("saved instructions must be preserved with exactly one current contact context policy")
+		}
+		for _, required := range []string{
+			"actual conversation channel",
+			"Do not ask again for a known email",
+			"missing and necessary",
+			"Contact availability is not identity verification",
+		} {
+			if !strings.Contains(got, required) {
+				t.Errorf("effective support instructions lack %q", required)
+			}
+		}
+		if twice := EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, got); twice != got {
+			t.Fatal("repeated launches must not duplicate contact guidance")
+		}
+	}
+	const other = "Workspace marketer instructions"
+	if got := EnsureSupportRuntimeDeliveryContract(model.AgentPresetMarketer, other); got != other {
+		t.Fatal("contact policy must not change unrelated agents")
+	}
+}
+
 func TestEchoKnowledgeBoundaryOverridesSavedWebFallback(t *testing.T) {
 	stale := "You are Echo.\n\n## Required live-support delivery contract\nIf knowledge is insufficient, launch web_search against the official website."
 	for name, prompt := range map[string]string{
@@ -634,7 +669,7 @@ func TestEchoPromptDefaultsGenericProductReferencesToWorkspace(t *testing.T) {
 		t.Fatal("expected Echo system prompt")
 	}
 	for _, expected := range []string{
-		"product whose website the visitor is currently using",
+		"workspace/product the customer is contacting",
 		`"your plans" to the current workspace`,
 		"Do not ask which product they mean unless they explicitly named or compared another product.",
 	} {
