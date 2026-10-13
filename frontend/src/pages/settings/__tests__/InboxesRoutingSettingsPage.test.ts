@@ -6,6 +6,7 @@ describe('InboxesRoutingSettingsPage tabs', () => {
     expect(INBOXES_ROUTING_TABS.map((tab) => tab.label)).toEqual([
       'Inboxes',
       'Routing & Assignment',
+      'Merging',
       'Email Forwarding',
       'Sender Addresses',
     ]);
@@ -15,6 +16,7 @@ describe('InboxesRoutingSettingsPage tabs', () => {
     expect(normalizeInboxesRoutingTab('inboxes')).toBe('inboxes');
     expect(normalizeInboxesRoutingTab('routing')).toBe('routing');
     expect(normalizeInboxesRoutingTab('routing-assignment')).toBe('routing');
+    expect(normalizeInboxesRoutingTab('merging')).toBe('merging');
     expect(normalizeInboxesRoutingTab('email')).toBe('email');
     expect(normalizeInboxesRoutingTab('senders')).toBe('senders');
     expect(normalizeInboxesRoutingTab('unknown')).toBe('inboxes');

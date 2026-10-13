@@ -18,7 +18,7 @@ export function ConversationMergeSetting({
       <div className="flex items-center justify-between gap-6">
         <div>
           <label htmlFor="cross-customer-merge" className="text-sm font-medium">
-            Merge conversations from different customers
+            Allow merging conversations from different customers
           </label>
           <p className="mt-1 text-xs text-muted-foreground">
             Customers will share new replies. Earlier histories stay private.
