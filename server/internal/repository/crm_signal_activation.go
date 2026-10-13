@@ -125,8 +125,8 @@ func (r *CRMSignalRepository) ListSignalOutcomeCalibration(ctx context.Context, 
 				AND outcome.state_updated_at > signal.detected_at
 				AND outcome.state_updated_at <= signal.detected_at + (? * interval '1 day')
 				AND (outcome.state_snapshot->>'subscription_status' IN ('past_due','cancel_scheduled','canceled')
-					OR (outcome.state_snapshot ? 'mrr_minor'
-						AND signal.interpretation_snapshot->'commercial_state' ? 'mrr_minor'
+					OR (jsonb_exists(outcome.state_snapshot, 'mrr_minor')
+						AND jsonb_exists(signal.interpretation_snapshot->'commercial_state', 'mrr_minor')
 						AND (outcome.state_snapshot->>'mrr_minor')::numeric <
 							(signal.interpretation_snapshot->'commercial_state'->>'mrr_minor')::numeric))
 			)) AS matched,
