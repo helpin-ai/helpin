@@ -1943,7 +1943,12 @@ func (s *SupportInboxService) listConversationMessages(ctx context.Context, work
 			return nil, err
 		}
 		messages = append(messages, shared...)
-		slices.SortFunc(messages, func(a, b model.SupportMessage) int { return a.CreatedAt.Compare(b.CreatedAt) })
+		slices.SortFunc(messages, func(a, b model.SupportMessage) int {
+			if order := a.CreatedAt.Compare(b.CreatedAt); order != 0 {
+				return order
+			}
+			return strings.Compare(a.ID, b.ID)
+		})
 		for i := range messages {
 			messages[i].ConversationID = ticketID
 		}
@@ -2270,7 +2275,6 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		if _, err := s.loadConversationAccessible(authorization.WithActor(ctx, actor), workspaceID, ticketID); err != nil {
 			return nil, err
 		}
-		msg.CreatedAt = guard.CreatedAt
 		msg.PendingGuard = guard
 		msg.PendingAttachmentIDs = req.AttachmentIDs
 	}
@@ -2304,11 +2308,8 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 			return nil, err
 		}
 	}
-	// Before persisting a teammate's first public reply, emit a widget-visible
-	// "{name} joined the conversation" system message so the customer sees a
-	// centered pill immediately ahead of the reply — Intercom's pattern.
-	if senderType == "user" && msg.WidgetVisible() && !explicitEmail && messageType == "reply" && senderUserID != nil {
-		s.emitTeammateJoinedIfFirstReply(ctx, workspaceID, ticketID, strings.TrimSpace(*senderUserID), derefString(senderDisplayName), senderAvatarURL, clientMessageID)
+	if senderType == "user" && msg.WidgetVisible() && messageType == "reply" && senderUserID != nil {
+		msg.TeammateJoined = s.prepareTeammateJoined(ctx, workspaceID, ticketID, strings.TrimSpace(*senderUserID), derefString(senderDisplayName), senderAvatarURL, clientMessageID)
 	}
 
 	if explicitEmail {
@@ -2321,8 +2322,8 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	if translation != nil {
 		s.translations.metrics.TranslationEvent("outgoing_reply", "sent")
 	}
-	if explicitEmail && msg.WidgetVisible() && senderType == "user" && senderUserID != nil {
-		s.emitTeammateJoinedIfFirstReply(ctx, workspaceID, ticketID, strings.TrimSpace(*senderUserID), derefString(senderDisplayName), senderAvatarURL, clientMessageID, msg)
+	if msg.TeammateJoined != nil {
+		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, msg.TeammateJoined, derefString(senderUserID)))
 	}
 
 	// Link pre-uploaded attachments to this message.
@@ -4894,35 +4895,12 @@ func formatAssignmentSystemMessage(target assignmentTargetKind, actorName, targe
 	return ""
 }
 
-// emitTeammateJoinedIfFirstReply emits a public "{name} joined the conversation"
-// system message on the widget-visible side the first time a given teammate
-// sends a non-internal reply on the conversation. The "joined" pill appears
-// on first engagement rather than on assignment.
-func (s *SupportInboxService) emitTeammateJoinedIfFirstReply(ctx context.Context, workspaceID, conversationID, senderUserID, displayName string, senderAvatar *string, replyClientMessageID string, savedReply ...*model.SupportMessage) {
-	if s.messageRepo == nil || senderUserID == "" {
-		return
+// prepareTeammateJoined prepares first-engagement copy. The repository decides
+// whether it is the first reply and saves both rows in the reply's transaction.
+func (s *SupportInboxService) prepareTeammateJoined(ctx context.Context, workspaceID, conversationID, senderUserID, displayName string, senderAvatar *string, replyClientMessageID string) *model.SupportMessage {
+	if senderUserID == "" {
+		return nil
 	}
-
-	priorMessages, err := s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
-	if err != nil {
-		slog.ErrorContext(ctx, "list messages for first-reply check", "error", err, "conversation_id", conversationID)
-		return
-	}
-	for _, prior := range priorMessages {
-		if len(savedReply) > 0 && prior.ID == savedReply[0].ID {
-			continue
-		}
-		if prior.SenderType != "user" || !prior.WidgetVisible() {
-			continue
-		}
-		if prior.MessageType == "system" {
-			continue
-		}
-		if prior.SenderUserID != nil && strings.TrimSpace(*prior.SenderUserID) == senderUserID {
-			return
-		}
-	}
-
 	name := strings.TrimSpace(displayName)
 	if name == "" {
 		name = s.lookupUserName(ctx, senderUserID)
@@ -4949,9 +4927,6 @@ func (s *SupportInboxService) emitTeammateJoinedIfFirstReply(ctx context.Context
 		MessageType:       "system",
 		SystemEventType:   model.SupportSystemEventTypeStrPtr(model.SystemEventTeammateJoined),
 	}
-	if len(savedReply) > 0 {
-		msg.CreatedAt = savedReply[0].CreatedAt.Add(-time.Microsecond)
-	}
 	// Correlate the status with its reply without sharing the reply's own
 	// deduplication ID. The inbox can place this ahead of an immediate preview.
 	if replyClientMessageID = strings.TrimSpace(replyClientMessageID); replyClientMessageID != "" {
@@ -4959,11 +4934,5 @@ func (s *SupportInboxService) emitTeammateJoinedIfFirstReply(ctx context.Context
 		msg.Metadata = string(metadata)
 	}
 
-	if err := s.messageRepo.Create(ctx, msg); err != nil {
-		slog.ErrorContext(ctx, "create teammate-joined system message", "error", err, "conversation_id", conversationID)
-		return
-	}
-	if s.wsPublisher != nil {
-		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, msg, userID))
-	}
+	return msg
 }

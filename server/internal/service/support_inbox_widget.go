@@ -734,9 +734,11 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 			})
 		}
 	}
+	var reopened *model.SupportMessage
 	if msg == nil {
 		msg = widgetCustomerMessage(session, content)
-		if err := s.messageRepo.Create(ctx, msg); err != nil {
+		reopened, err = s.createWidgetReply(ctx, msg)
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -756,6 +758,9 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 	}
 
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(session.WorkspaceID, msg, "widget:"+session.ID))
+	if reopened != nil {
+		s.wsPublisher.Publish(websocket.SupportMessageEvent(session.WorkspaceID, reopened, "widget:"+session.ID))
+	}
 	s.enrichSupportMessageLinksAsync(msg, "widget:"+session.ID)
 	s.recordSupportEvent(SupportEventInput{
 		WorkspaceID: session.WorkspaceID, EventType: model.SupportEventCustomerMessageCreated,
@@ -764,32 +769,6 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 	})
 
 	if conv, err := s.conversationRepo.GetByID(ctx, session.WorkspaceID, msg.ConversationID, "", model.RoleOwner); err == nil {
-		if conv != nil && (conv.Status == model.SupportConversationStatusWaitingOnCustomer || conv.Status == model.SupportConversationStatusResolved) {
-			conv.Status = model.SupportConversationStatusOpen
-			conv.FlowState = strPtr(supportEmailReopenFlowState(conv))
-			conv.ResolvedAt = nil
-			conv.ClosedAt = nil
-			conv.AIResolvedAt = nil
-			conv.AIResolutionType = nil
-			if err := s.conversationRepo.UpdateFields(ctx, session.WorkspaceID, msg.ConversationID, map[string]any{
-				"status":             conv.Status,
-				"flow_state":         derefString(conv.FlowState),
-				"resolved_at":        nil,
-				"closed_at":          nil,
-				"ai_resolved_at":     nil,
-				"ai_resolution_type": nil,
-				"updated_at":         time.Now(),
-			}); err != nil {
-				slog.ErrorContext(ctx, "failed to reopen widget support conversation after customer reply", "error", err, "conversation_id", msg.ConversationID)
-			} else {
-				s.wsPublisher.Publish(websocket.Event{
-					Action:      "updated",
-					Entity:      "support_conversation",
-					EntityID:    msg.ConversationID,
-					WorkspaceID: session.WorkspaceID,
-				})
-			}
-		}
 		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, s.pushSenderService, conv, msg.Content, displayName, msg.ID)
 	}
 

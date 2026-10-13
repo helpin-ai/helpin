@@ -1449,6 +1449,16 @@ func TestWidgetCreateMessageReopensResolvedConversation(t *testing.T) {
 	if updated.FlowState == nil || *updated.FlowState != model.SupportConversationFlowStateWaitingForHuman {
 		t.Fatalf("flow_state = %#v, want %q", updated.FlowState, model.SupportConversationFlowStateWaitingForHuman)
 	}
+	if _, err := svc.WidgetCreateMessage(ctx, session.SessionToken, "One more detail.", nil); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := messageRepo.ListByConversation(ctx, workspaceID, conversation.ID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 3 || rows[0].SenderType != "customer" || rows[1].SystemEventType == nil || *rows[1].SystemEventType != model.SystemEventReopened || !rows[1].IsInternal || rows[2].SenderType != "customer" {
+		t.Fatalf("expected one internal reopen event after the first customer reply: %+v", rows)
+	}
 }
 
 func TestWidgetCreateMessageClaimsStagedAttachmentWithFirstConversation(t *testing.T) {

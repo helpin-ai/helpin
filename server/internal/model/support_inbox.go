@@ -341,6 +341,8 @@ type SupportMessage struct {
 	// Private execution guard, used only while committing a durable staff send.
 	PendingGuard         *SupportPendingSend `json:"-" gorm:"-"`
 	PendingAttachmentIDs []string            `json:"-" gorm:"-"`
+	// Candidate first-reply activity; retained only if committed with this reply.
+	TeammateJoined *SupportMessage `json:"-" gorm:"-"`
 
 	PendingSend       string                `json:"pending_send,omitempty" gorm:"-"`
 	PendingFailure    string                `json:"pending_failure,omitempty" gorm:"-"`

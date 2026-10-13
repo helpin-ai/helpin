@@ -2,6 +2,7 @@ import { FunctionComponent } from 'preact';
 import { useRef, useLayoutEffect, useState } from 'preact/hooks';
 import type { Message, WidgetConfig } from '../types';
 import { MessageBubble } from './MessageBubble';
+import { compareMessageOrder } from '@helpin-ai/shared';
 
 interface MessageListProps {
   messages: Message[];
@@ -26,7 +27,8 @@ export const MessageList: FunctionComponent<MessageListProps> = ({
   onAnswerFeedback,
 }) => {
   const messages = allMessages.filter(message => !message.isInternal
-    && (!message.systemEventType || ['teammate_joined', 'delayed_team_reply'].includes(message.systemEventType)));
+    && (!message.systemEventType || ['teammate_joined', 'delayed_team_reply'].includes(message.systemEventType)))
+    .sort((a, b) => compareMessageOrder(a.createdAt, a.id, b.createdAt, b.id));
   const listRef = useRef<HTMLDivElement>(null);
   const isInitialMount = useRef(true);
   const isNearBottomRef = useRef(true);

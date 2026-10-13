@@ -12,6 +12,17 @@ import { filterSupportConversations } from '@/lib/supportInboxFilters';
 import type { ConversationListResponse, SupportConversation } from '@/lib/pmTypes';
 
 describe('supportQueryCache', () => {
+  it('keeps joined activity quiet and does not replace a newer reply with a late one', () => {
+    const current = { data: [{ id: 'thread', status: 'open', last_message: 'Latest reply', list_last_message_id: 'a', list_last_message_at: '2026-10-13T12:00:00.123457Z', list_last_activity_at: '2026-10-13T12:00:00.123457Z' }], total: 1 } as ConversationListResponse;
+    expect(moveConversationToTopForMessageActivity(current, {
+      conversationId: 'thread', messageId: 'join', timestamp: '2026-10-13T12:00:01Z',
+      message: { sender_type: 'user', message_type: 'system', system_event_type: 'teammate_joined', content: 'Teammate joined the conversation.' },
+    })).toBe(current);
+    expect(moveConversationToTopForMessageActivity(current, {
+      conversationId: 'thread', messageId: 'z', timestamp: '2026-10-13T12:00:00.123456Z',
+      message: { sender_type: 'user', message_type: 'reply', content: 'Earlier reply' },
+    })).toBe(current);
+  });
   it.each([
     '<img src="https://img.example.com/pixel"><p>Newsletter</p>',
     '[![Logo](https://img.example.com/logo.png)](https://track.example.com/click)',

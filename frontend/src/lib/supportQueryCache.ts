@@ -1,4 +1,5 @@
 import type { InfiniteData } from '@tanstack/react-query';
+import { compareMessageOrder } from '@helpin-ai/shared';
 import type { ConversationListResponse, ConversationStatus, MessageSenderType, SupportConversation } from './pmTypes';
 
 export type SupportConversationListCache =
@@ -213,6 +214,7 @@ function patchConversationForMessageActivity(
   conversation: SupportConversation,
   patch: SupportMessageActivityPatch,
 ): SupportConversation {
+  if (patch.message?.system_event_type === 'teammate_joined') return conversation;
   const activityAt = conversation.list_last_activity_at ?? conversation.list_last_message_at ?? conversation.created_at;
   const advancesActivity = Date.parse(patch.timestamp) > Date.parse(activityAt);
   const isListReply = patch.message && !patch.message.system_event_type &&
@@ -274,7 +276,7 @@ function isMessagePatchNewer(currentAt: string | null | undefined, currentId: st
   const currentTime = Date.parse(currentAt);
   const patchTime = Date.parse(patch.timestamp);
   if (Number.isFinite(currentTime) && Number.isFinite(patchTime)) {
-    if (patchTime !== currentTime) return patchTime > currentTime;
+    return compareMessageOrder(patch.timestamp, patch.messageId ?? '', currentAt, currentId ?? '') > 0;
   } else if (patch.timestamp !== currentAt) {
     return patch.timestamp > currentAt;
   }

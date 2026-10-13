@@ -185,27 +185,27 @@ describe('MessageList', () => {
     const messages: Message[] = [
       {
         id: 'customer-1', conversationId: 'conv-1', role: 'customer', content: 'How do I export my data?',
-        isInternal: false, createdAt: new Date().toISOString(),
+        isInternal: false, createdAt: '2026-10-13T12:00:00Z',
       },
       {
         id: 'greeting-1', conversationId: 'conv-1', role: 'ai',
         content: 'Hi there! 👋 Thanks for reaching out. How can I help you today?',
         aiReplyKind: 'conversational',
-        isInternal: false, createdAt: new Date().toISOString(),
+        isInternal: false, createdAt: '2026-10-13T12:00:01Z',
       },
       {
         id: 'answer-1', conversationId: 'conv-1', role: 'ai', content: 'Open Settings, then choose Export data.',
         aiReplyKind: 'answer',
-        isInternal: false, createdAt: new Date().toISOString(),
+        isInternal: false, createdAt: '2026-10-13T12:00:02Z',
       },
       {
         id: 'customer-2', conversationId: 'conv-1', role: 'customer', content: 'Can I export CSV?',
-        isInternal: false, createdAt: new Date().toISOString(),
+        isInternal: false, createdAt: '2026-10-13T12:00:03Z',
       },
       {
         id: 'answer-2', conversationId: 'conv-1', role: 'ai', content: 'Yes. Select CSV before starting the export.',
         aiReplyKind: 'answer',
-        isInternal: false, createdAt: new Date().toISOString(),
+        isInternal: false, createdAt: '2026-10-13T12:00:04Z',
       },
     ];
 

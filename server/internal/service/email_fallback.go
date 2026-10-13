@@ -4310,16 +4310,7 @@ func createEmailReopenedSystemMessage(ctx context.Context, msgRepo *repository.S
 	if msgRepo == nil || conv == nil {
 		return nil
 	}
-	sysMsg := &model.SupportMessage{
-		WorkspaceID:     conv.WorkspaceID,
-		ConversationID:  conv.ID,
-		SenderType:      "user",
-		Content:         "Customer reply reopened this conversation.",
-		MessageType:     "system",
-		SystemEventType: model.SupportSystemEventTypeStrPtr(model.SystemEventReopened),
-		IsInternal:      true,
-	}
-	return msgRepo.Create(ctx, sysMsg)
+	return msgRepo.Create(ctx, customerReopenedMessage(conv))
 }
 
 func isLikelyUniqueConstraintError(err error) bool {

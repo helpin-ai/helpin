@@ -169,6 +169,8 @@ describe('useRealtimeSync task ordering events', () => {
     focus.mockReturnValue(false)
     act(() => captured.onEvent?.(event))
     expect(play).toHaveBeenCalledTimes(2)
+    act(() => captured.onEvent?.({ ...event, actor_id: 'user-2', data: { ...event.data, sender_type: 'user', message_type: 'system', system_event_type: 'teammate_joined' } }))
+    expect(play).toHaveBeenCalledTimes(2)
     unregister()
     focus.mockRestore()
     visibility.mockRestore()

@@ -675,7 +675,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         // accompanying an escalation) are refetch signals only — backend
         // strips event.data for IsInternal rows, so skipping when data is
         // absent prevents double pings on a single conversational event.
-        if (event.data && event.actor_id !== selfIdRef.current
+        if (event.data && event.data.system_event_type !== 'teammate_joined' && event.actor_id !== selfIdRef.current
           && !isViewingNotificationTarget(workspaceId, 'support_conversation', event.parent_id)) {
           playNotificationSound()
         }

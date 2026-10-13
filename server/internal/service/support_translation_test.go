@@ -477,6 +477,7 @@ func TestTranslationUnconfiguredServerDeliversQueuedReply(t *testing.T) {
 		t.Fatalf("queued reply revision = %d, want the stored policy revision 1", job.Revision)
 	}
 	// Deliver it as the send worker does, through the revision fence.
+	job.CreatedAt = time.Now().Add(-time.Minute)
 	job.Status, job.Attempts = "sending", 1
 	if err := db.Model(&job).Updates(map[string]any{"status": job.Status, "attempts": job.Attempts}).Error; err != nil {
 		t.Fatal(err)
@@ -487,12 +488,23 @@ func TestTranslationUnconfiguredServerDeliversQueuedReply(t *testing.T) {
 	}
 	work := context.WithValue(ctx, supportSendPolicyKey{}, supportSendPolicySnapshot{job.WorkspaceID, job.ConversationID, job.UserID, options})
 	work = context.WithValue(work, supportSendGuardKey{}, &job)
+	sendStarted := time.Now().Truncate(time.Microsecond)
 	sent, err := s.CreateConversationMessage(work, c.WorkspaceID, c.ID, req, "user", &job.UserID, nil, nil)
 	if err != nil {
 		t.Fatalf("queued reply blocked on a server without translation: %v", err)
 	}
 	if sent.Content != req.Content || p.calls != 0 {
 		t.Fatalf("content=%q calls=%d", sent.Content, p.calls)
+	}
+	if sent.CreatedAt.Before(sendStarted) {
+		t.Fatal("confirmed reply was backdated to queue time")
+	}
+	rows, err := env.messageRepo.ListByConversation(ctx, c.WorkspaceID, c.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 || rows[0].SystemEventType == nil || *rows[0].SystemEventType != model.SystemEventTeammateJoined || rows[1].ID != sent.ID {
+		t.Fatalf("queued first reply must follow its joined event: %+v", rows)
 	}
 }
 

@@ -619,7 +619,7 @@ describe('MessageThread', () => {
       id: `customer-${index}`, workspace_id: 'ws-1', conversation_id: 'conv-1', sender_type: 'customer' as const,
       content: 'Customer question', is_internal: false, message_type: 'reply', created_at: '2026-09-07T10:00:00Z', updated_at: '2026-09-07T10:00:00Z',
     }))
-    const pending = { ...history[0], id: 'client-reply', client_message_id: 'client-reply', sender_type: 'user' as const, content: 'Immediate reply' }
+    const pending = { ...history[0], id: 'client-reply', client_message_id: 'client-reply', sender_type: 'user' as const, content: 'Immediate reply', created_at: '2026-09-07T10:00:01Z' }
     const joined = { ...history[0], id: 'joined', message_type: 'system', system_event_type: 'teammate_joined',
       metadata: JSON.stringify({ reply_client_message_id: pending.client_message_id }), content: 'Waqar joined the conversation.' }
     supportHooks.useConversation.mockReturnValue({ isFetched: true, data: {
@@ -659,7 +659,7 @@ describe('MessageThread', () => {
       const top = reply.getBoundingClientRect().top
       animate.mockClear()
       pages = appendMessageToNewestPage(pages, joined)
-      if (batchReply) pages = appendMessageToNewestPage(pages, { ...history[0], id: 'new-customer-reply', content: 'New customer reply' })
+      if (batchReply) pages = appendMessageToNewestPage(pages, { ...history[0], id: 'new-customer-reply', content: 'New customer reply', created_at: '2026-09-07T10:00:02Z' })
       render(false)
       expect(rows().indexOf(reply)).toBe(historyCount)
       if (historyCount > 1) expect(reply.getBoundingClientRect().top).toBe(top - (batchReply ? 100 : 0))

@@ -35,7 +35,7 @@ func (r *SupportMessageRepository) ListByConversation(ctx context.Context, works
 		query = query.Where("is_internal = false")
 	}
 	var messages []model.SupportMessage
-	if err := query.Order("created_at ASC").Find(&messages).Error; err != nil {
+	if err := query.Order("created_at ASC, id ASC").Find(&messages).Error; err != nil {
 		return nil, fmt.Errorf("list messages: %w", err)
 	}
 	return messages, nil
@@ -117,11 +117,14 @@ func (r *SupportMessageRepository) Create(ctx context.Context, message *model.Su
 }
 
 func (r *SupportMessageRepository) create(ctx context.Context, message *model.SupportMessage) error {
-	if message != nil && message.PendingGuard != nil {
+	if message == nil {
+		return gorm.ErrInvalidData
+	}
+	if message.PendingGuard != nil {
 		return r.createPendingMessage(ctx, message)
 	}
 
-	if message != nil && message.MessageType == "system" {
+	if message.MessageType == "system" {
 		if message.SystemEventType == nil || !model.IsValidSupportSystemEventType(*message.SystemEventType) {
 			return fmt.Errorf("create message: system message requires a valid system_event_type")
 		}
@@ -129,6 +132,12 @@ func (r *SupportMessageRepository) create(ctx context.Context, message *model.Su
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		grants, err := routeSupportMessage(ctx, tx, message)
 		if err != nil {
+			return err
+		}
+		if message.CreatedAt.IsZero() {
+			message.CreatedAt = time.Now().UTC().Truncate(time.Microsecond)
+		}
+		if err := r.WithTx(tx).createTeammateJoined(ctx, message); err != nil {
 			return err
 		}
 		if err := tx.Create(message).Error; err != nil {
@@ -168,7 +177,7 @@ func (r *SupportMessageRepository) GetByIDs(ctx context.Context, ids []string) (
 	var messages []model.SupportMessage
 	if err := r.db.WithContext(ctx).
 		Where("id IN ?", ids).
-		Order("created_at ASC").
+		Order("created_at ASC, id ASC").
 		Find(&messages).Error; err != nil {
 		return nil, fmt.Errorf("get messages by ids: %w", err)
 	}

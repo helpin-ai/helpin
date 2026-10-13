@@ -81,7 +81,9 @@ func TestLiveTranslatePostgresSendRejectsChangedPolicyAndLease(t *testing.T) {
 	}
 	messages := NewSupportMessageRepository(db)
 	makeMessage := func() *model.SupportMessage {
-		return &model.SupportMessage{ID: uuid.NewString(), WorkspaceID: ws, ConversationID: conv.ID, SenderType: "user", SenderUserID: &user, MessageType: "reply", Content: "Hello", PendingGuard: job}
+		return &model.SupportMessage{ID: uuid.NewString(), WorkspaceID: ws, ConversationID: conv.ID, SenderType: "user", SenderUserID: &user, MessageType: "reply", Content: "Hello", PendingGuard: job,
+			TeammateJoined: &model.SupportMessage{SenderType: "user", SenderUserID: &user, MessageType: "system", SystemEventType: model.SupportSystemEventTypeStrPtr(model.SystemEventTeammateJoined), Content: "Agent joined the conversation."},
+		}
 	}
 	privacyExec(t, db, "UPDATE support_pending_sends SET attempts=2 WHERE id=?", job.ID)
 	if err := messages.Create(context.Background(), makeMessage()); err == nil {
@@ -99,7 +101,7 @@ func TestLiveTranslatePostgresSendRejectsChangedPolicyAndLease(t *testing.T) {
 	if err := messages.Create(context.Background(), makeMessage()); err != nil {
 		t.Fatal(err)
 	}
-	privacyCheck(t, db, "SELECT count(*)=1 FROM support_messages WHERE conversation_id=?", conv.ID)
+	privacyCheck(t, db, "SELECT count(*)=2 FROM support_messages WHERE conversation_id=?", conv.ID)
 	privacyExec(t, db, "UPDATE support_conversations SET anonymized_at=now() WHERE id=?", conv.ID)
 	privacyCheck(t, db, "SELECT count(*)=0 FROM support_pending_sends WHERE conversation_id=?", conv.ID)
 }

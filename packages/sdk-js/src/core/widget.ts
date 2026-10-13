@@ -1,4 +1,5 @@
 import { createWidgetTelemetry } from '../transport/widget-telemetry';
+import { compareMessageOrder } from '@helpin-ai/shared';
 import { widgetOrigin, widgetURL, widgetSocketURL } from './urls';
 import { mountWidget, unmountWidget, SYSTEM_EVENT_TYPES } from '@helpin-ai/widget-core';
 import type { WidgetConfig, Message, Conversation, WidgetView } from '@helpin-ai/widget-core';
@@ -1097,6 +1098,8 @@ export class WidgetManager {
     if (!this.isPublicMessage(msg)) return;
     const newMsg = this.mapSupportMessage(msg);
     const existingIdx = this.messages.findIndex((message) => message.id === newMsg.id);
+    const isNewReply = newMsg.systemEventType !== 'teammate_joined'
+      && (existingIdx < 0 || this.messages[existingIdx].isStreaming);
 
     // Replace optimistic customer messages and transient AI stream placeholders.
     if (msg.sender_type === 'customer') {
@@ -1123,7 +1126,9 @@ export class WidgetManager {
       this.messages = [...this.messages, newMsg];
     }
 
-    if (msg.sender_type !== 'customer') {
+    this.messages.sort((a, b) => compareMessageOrder(a.createdAt, a.id, b.createdAt, b.id));
+
+    if (msg.sender_type !== 'customer' && isNewReply) {
       this.isTyping = false;
       this.isAIThinking = newMsg.aiProgressState === 'checking' && this.canShowAIProgress();
       this.aiProgressLabel = this.isAIThinking ? AI_PROGRESS_COPY.checking : undefined;
@@ -1131,7 +1136,7 @@ export class WidgetManager {
     }
 
     // Update conversation in the list (lastMessage preview + unread count + move to top).
-    if (newMsg.conversationId) {
+    if (newMsg.conversationId && isNewReply) {
       const convIdx = this.conversations.findIndex((conversation) => conversation.id === newMsg.conversationId);
       const isActiveAndOpen = this.isConversationVisibleToUser(newMsg.conversationId);
       const nextUnreadCount = msg.sender_type !== 'customer' && !isActiveAndOpen ? 1 : 0;
@@ -1140,15 +1145,18 @@ export class WidgetManager {
       }
       if (convIdx >= 0) {
         const prev = this.conversations[convIdx];
+        const isLatest = !prev.lastMessageAt || compareMessageOrder(newMsg.createdAt, '', prev.lastMessageAt, '') >= 0;
         const updated = {
           ...prev,
-          lastMessage: newMsg.content,
-          lastMessageAt: newMsg.createdAt,
+          lastMessage: isLatest ? newMsg.content : prev.lastMessage,
+          lastMessageAt: isLatest ? newMsg.createdAt : prev.lastMessageAt,
           unreadCount: (msg.sender_type !== 'customer' && !isActiveAndOpen)
             ? (prev.unreadCount ?? 0) + 1
             : (prev.unreadCount ?? 0),
         };
-        this.conversations = [updated, ...this.conversations.filter((_, index) => index !== convIdx)];
+        this.conversations = isLatest
+          ? [updated, ...this.conversations.filter((_, index) => index !== convIdx)]
+          : this.conversations.map((item, index) => index === convIdx ? updated : item);
       } else {
         this.conversations = [{
           id: newMsg.conversationId,
