@@ -80,6 +80,10 @@ export function measureVisibleEmailContentHeight(doc: Document, collapsed: boole
   if (!body) return 40;
 
   const win = doc.defaultView;
+  // Classic scrollbars occupy height inside the frame; overlay scrollbars
+  // occupy none. Include that space so the final line remains visible.
+  const viewportHeight = doc.documentElement.clientHeight;
+  const scrollbarHeight = win && viewportHeight > 0 ? Math.max(0, win.innerHeight - viewportHeight) : 0;
   const bodyStyle = win ? win.getComputedStyle(body) : null;
   const paddingBottom = bodyStyle ? Number.parseFloat(bodyStyle.paddingBottom || '0') || 0 : 0;
   const walker = doc.createTreeWalker(body, SHOW_ELEMENT | SHOW_TEXT);
@@ -113,8 +117,8 @@ export function measureVisibleEmailContentHeight(doc: Document, collapsed: boole
   // visible email content and the following attachment section stays below it.
   const measuredVisibleHeight = visibleBottom + paddingBottom;
   if (!collapsed) {
-    return Math.ceil(Math.max(body.scrollHeight, doc.documentElement?.scrollHeight ?? 0, measuredVisibleHeight, 40));
+    return Math.ceil(Math.max(body.scrollHeight, doc.documentElement?.scrollHeight ?? 0, measuredVisibleHeight, 40) + scrollbarHeight);
   }
 
-  return Math.ceil(Math.max(measuredVisibleHeight, 40));
+  return Math.ceil(Math.max(measuredVisibleHeight, 40) + scrollbarHeight);
 }

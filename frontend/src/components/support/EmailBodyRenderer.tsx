@@ -57,9 +57,10 @@ export const EMAIL_BODY_IFRAME_STYLES = `
     line-height: 1.5;
     word-wrap: break-word !important;
     overflow-wrap: anywhere !important;
-    overflow-x: hidden;
-    overflow-y: hidden;
   }
+  /* Keep fixed-width email layouts reachable without widening the thread.
+     Only the document scrolls; a second scroller on body would clip content. */
+  html { overflow-x: auto; overflow-y: hidden; }
   /* Padding lives on body only so body.scrollHeight reflects the full
      visible content height — measure() relies on this to size the iframe. */
   body { padding: 8px 12px; }

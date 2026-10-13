@@ -54,7 +54,7 @@ describe('EmailBodyRenderer collapsed quote layout', () => {
     expect(wrapper?.hasAttribute('data-helpin-collapse-host')).toBe(false);
   });
 
-  it('includes visible descendant content when expanded body scroll height underreports it', () => {
+  it.each([0, 15])('keeps visible content above a %ipx horizontal scrollbar', (scrollbarHeight) => {
     document.body.innerHTML = `
       <div id="email-wrapper">
         <p>Reply content that extends below the reported body height.</p>
@@ -63,6 +63,7 @@ describe('EmailBodyRenderer collapsed quote layout', () => {
 
     vi.spyOn(document.body, 'scrollHeight', 'get').mockReturnValue(96);
     vi.spyOn(document.documentElement, 'scrollHeight', 'get').mockReturnValue(96);
+    vi.spyOn(document.documentElement, 'clientHeight', 'get').mockReturnValue(window.innerHeight - scrollbarHeight);
     vi.spyOn(window, 'getComputedStyle').mockImplementation((el: Element) => ({
       display: 'block',
       visibility: 'visible',
@@ -81,7 +82,8 @@ describe('EmailBodyRenderer collapsed quote layout', () => {
       detach: vi.fn(),
     } as unknown as Range));
 
-    expect(measureVisibleEmailContentHeight(document, false)).toBe(196);
+    expect(measureVisibleEmailContentHeight(document, false)).toBe(196 + scrollbarHeight);
+    expect(measureVisibleEmailContentHeight(document, true)).toBe(196 + scrollbarHeight);
   });
 
   it('marks Outlook quoted body siblings after the reply header as collapsible', () => {
