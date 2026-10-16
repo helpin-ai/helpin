@@ -127,6 +127,43 @@ describe('EmailBodyRenderer collapsed quote layout', () => {
     expect(document.getElementById('word-quote-header')?.getAttribute('data-helpin-quote')).toBe('true');
     expect(document.getElementById('word-old-thread')?.getAttribute('data-helpin-quote')).toBe('true');
   });
+
+  it('keeps new Outlook content after appendonsend visible until the actual reply header', () => {
+    document.body.innerHTML = `
+      <div id="appendonsend" data-helpin-quote="true"></div>
+      <p id="new-reply">New reply.</p>
+      <hr id="quote-rule" />
+      <div id="actual-header"><b>From:</b> Support<br /><b>Sent:</b> Tuesday<br />
+        <b>To:</b> Customer<br /><b>Subject:</b> Original question</div>
+      <p id="old-reply">Old reply.</p>
+    `;
+
+    prepareCollapsedEmailLayout(document, true);
+
+    expect(document.getElementById('new-reply')?.hasAttribute('data-helpin-quote')).toBe(false);
+    expect(document.getElementById('quote-rule')?.getAttribute('data-helpin-quote')).toBe('true');
+    expect(document.getElementById('actual-header')?.getAttribute('data-helpin-quote')).toBe('true');
+    expect(document.getElementById('old-reply')?.getAttribute('data-helpin-quote')).toBe('true');
+  });
+
+  it('does not hide new content after an Outlook placeholder without a quote header', () => {
+    document.body.innerHTML = `<div id="appendonsend" data-helpin-quote="true"></div><p id="new-reply">New reply.</p>`;
+
+    prepareCollapsedEmailLayout(document, true);
+
+    expect(document.getElementById('new-reply')?.hasAttribute('data-helpin-quote')).toBe(false);
+  });
+
+  it('does not mistake the whole email wrapper for its nested quote header', () => {
+    document.body.innerHTML = `<hr /><div id="email-wrapper"><p>New reply.</p><hr />
+      <div><b>From:</b> Support<br /><b>Sent:</b> Tuesday<br /><b>Subject:</b> Old question</div>
+      <p id="old-reply">Old reply.</p></div>`;
+
+    prepareCollapsedEmailLayout(document, true);
+
+    expect(document.getElementById('email-wrapper')?.hasAttribute('data-helpin-quote')).toBe(false);
+    expect(document.getElementById('old-reply')?.getAttribute('data-helpin-quote')).toBe('true');
+  });
 });
 
 describe('EmailBodyRenderer email-client compatibility', () => {

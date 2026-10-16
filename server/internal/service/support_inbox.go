@@ -2058,11 +2058,17 @@ func hydrateEmailBodiesFromLogs(messages []model.SupportMessage, logs []model.Su
 				ProjectionVersion:    log.EmailProjectionVersion,
 			}
 			if log.EmailProjectionVersion != inboundhtml.CurrentProjectionVersion {
-				projection = inboundhtml.Project(inboundhtml.ProjectionInput{
-					HTML:              log.HTMLBody,
-					TextBody:          log.StrippedText,
-					StrippedTextReply: log.StrippedText,
-				})
+				// HTML quote rules may change between versions. Rebuild from the
+				// stored body, but preserve an existing plain-text-only split: its
+				// quoted history cannot be reconstructed from StrippedText alone.
+				if log.HTMLBody != "" || log.EmailProjectionVersion == 0 {
+					projection = inboundhtml.Project(inboundhtml.ProjectionInput{
+						HTML:              log.HTMLBody,
+						TextBody:          log.StrippedText,
+						StrippedTextReply: log.StrippedText,
+					})
+				}
+				projection.ProjectionVersion = inboundhtml.CurrentProjectionVersion
 				var metadata map[string]any
 				if json.Unmarshal([]byte(messages[i].Metadata), &metadata) == nil && forwardedAttributionFromMetadata(metadata) != nil {
 					projection.Markdown = messages[i].Content

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/email/inboundhtml"
@@ -176,5 +177,45 @@ func TestHydrateOutgoingEmailKeepsAuthoredReply(t *testing.T) {
 				t.Fatal("original email must remain available in email details")
 			}
 		})
+	}
+}
+
+func TestHydrateEmailBodiesRepairsSavedOutlookQuotes(t *testing.T) {
+	messages := []model.SupportMessage{{ID: "outlook", ViaChannel: strPtr("email")}}
+	logs := []model.SupportEmailLog{{
+		Direction: "inbound", MessageIDs: model.DocsStringArray{"outlook"},
+		HTMLBody:         `<div id="appendonsend" data-helpin-quote="true"></div><p data-helpin-quote="true">New reply</p><hr data-helpin-quote="true"/><div data-helpin-quote="true"><b>From:</b> Support<br/><b>Sent:</b> Tuesday<br/><b>To:</b> Customer<br/><b>Subject:</b> Previous reply</div><p data-helpin-quote="true">Old answer</p>`,
+		EmailVisibleText: "New reply", EmailQuotedText: "Old answer", EmailHasQuotedContent: true,
+		EmailProjectionVersion: 1,
+	}}
+
+	hydrateEmailBodiesFromLogs(messages, logs)
+
+	if !strings.Contains(messages[0].HTMLBody, "<p>New reply</p>") {
+		t.Errorf("saved reply still hidden: %s", messages[0].HTMLBody)
+	}
+	if messages[0].EmailVisibleText != "New reply" || !strings.Contains(messages[0].EmailQuotedText, "Old answer") {
+		t.Errorf("incorrect repaired projection: %#v", messages[0])
+	}
+	if messages[0].EmailProjectionVersion != inboundhtml.CurrentProjectionVersion {
+		t.Errorf("projection version = %d, want current", messages[0].EmailProjectionVersion)
+	}
+	if !strings.Contains(logs[0].HTMLBody, `<p data-helpin-quote="true">New reply</p>`) {
+		t.Fatal("loading email must not rewrite stored source")
+	}
+}
+
+func TestHydrateEmailBodiesKeepsSavedPlainTextQuoteSplit(t *testing.T) {
+	messages := []model.SupportMessage{{ID: "plain", ViaChannel: strPtr("email")}}
+	logs := []model.SupportEmailLog{{
+		Direction: "inbound", MessageIDs: model.DocsStringArray{"plain"},
+		StrippedText: "New reply", EmailVisibleText: "New reply", EmailQuotedText: "Old answer",
+		EmailHasQuotedContent: true, EmailProjectionVersion: 1,
+	}}
+
+	hydrateEmailBodiesFromLogs(messages, logs)
+
+	if messages[0].EmailVisibleText != "New reply" || messages[0].EmailQuotedText != "Old answer" || messages[0].EmailHasQuotedContent == nil || !*messages[0].EmailHasQuotedContent {
+		t.Fatalf("saved plain-text history lost: %#v", messages[0])
 	}
 }
