@@ -290,6 +290,30 @@ func (s *InviteService) AcceptInvitation(ctx context.Context, token, userID stri
 	return nil
 }
 
+// HasPendingInvitation reports whether an unexpired pending invitation exists
+// for the email address.
+func (s *InviteService) HasPendingInvitation(ctx context.Context, email string) (bool, error) {
+	pending, err := s.invitationRepo.ListPendingByEmail(ctx, email, time.Now())
+	return len(pending) > 0, err
+}
+
+// AcceptPendingInvitations accepts every unexpired pending invitation for the
+// user's email address, as AcceptInvitation does for one token. Invitations
+// that fail stay pending and the first error is returned.
+func (s *InviteService) AcceptPendingInvitations(ctx context.Context, userID, email string) error {
+	pending, err := s.invitationRepo.ListPendingByEmail(ctx, email, time.Now())
+	if err != nil {
+		return err
+	}
+	var firstErr error
+	for _, inv := range pending {
+		if err := s.AcceptInvitation(ctx, inv.Token, userID); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
 // AcceptInvitationWithSignup creates a new user account and accepts the invitation in one step.
 func (s *InviteService) AcceptInvitationWithSignup(ctx context.Context, req model.AcceptInvitationWithSignupRequest) (*model.AcceptInvitationWithSignupResponse, error) {
 	if req.Token == "" {

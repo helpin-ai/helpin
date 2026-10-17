@@ -212,6 +212,10 @@ func (h *AuthHandler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, h.googleAuthFailureRedirect(client, "signup_restricted"), http.StatusFound)
 		return
 	}
+	if errors.Is(err, service.ErrOIDCEmailInUse) {
+		http.Redirect(w, r, h.googleAuthFailureRedirect(client, "email_in_use"), http.StatusFound)
+		return
+	}
 	if err != nil {
 		slog.ErrorContext(r.Context(), "google auth signin failed", "error", err)
 		http.Redirect(w, r, h.googleAuthFailureRedirect(client, "signin_failed"), http.StatusFound)

@@ -237,6 +237,8 @@ func TestLocalLoginDisabledRejectsLocalEndpoints(t *testing.T) {
 	h.SetLocalLoginDisabled(true)
 	passkey := NewPasskeyHandler(nil)
 	passkey.SetLocalLoginDisabled(true)
+	invite := NewInviteHandler(nil)
+	invite.SetLocalLoginDisabled(true)
 
 	endpoints := map[string]http.HandlerFunc{
 		"signin":                 h.Signin,
@@ -246,6 +248,7 @@ func TestLocalLoginDisabledRejectsLocalEndpoints(t *testing.T) {
 		"2fa verify-signin":      h.Verify2FASignin,
 		"passkey authentication": passkey.AuthenticationOptions,
 		"passkey authenticate":   passkey.Authenticate,
+		"invitation signup":      invite.AcceptWithSignup,
 	}
 	for name, handle := range endpoints {
 		rec := httptest.NewRecorder()

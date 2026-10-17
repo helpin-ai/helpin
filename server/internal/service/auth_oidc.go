@@ -28,6 +28,18 @@ type OIDCIdentity struct {
 	FullName      string
 }
 
+// oidcInvitations is the slice of the invite service OIDC sign-in needs, so an
+// invited person is admitted under any signup policy.
+type oidcInvitations interface {
+	HasPendingInvitation(ctx context.Context, email string) (bool, error)
+	AcceptPendingInvitations(ctx context.Context, userID, email string) error
+}
+
+// SetOIDCInvitations lets OIDC sign-in admit people who hold a pending invitation.
+func (s *AuthService) SetOIDCInvitations(invitations oidcInvitations) {
+	s.oidcInvitations = invitations
+}
+
 // SetOIDCIdentityRepository enables OpenID Connect sign-in.
 func (s *AuthService) SetOIDCIdentityRepository(repo *repository.UserOIDCIdentityRepository) {
 	s.oidcIdentityRepo = repo
@@ -105,6 +117,10 @@ func (s *AuthService) createOIDCUser(ctx context.Context, issuer, subject string
 		return nil, fmt.Errorf("get user by email: %w", err)
 	}
 	if existing != nil {
+		// A concurrent first sign-in for this identity may have just created it.
+		if winner, err := s.oidcUserByIdentity(ctx, issuer, subject); err == nil && winner != nil {
+			return winner, nil
+		}
 		s.logger.WarnContext(ctx, "oidc sign-in refused: email belongs to an unlinked account",
 			"issuer", issuer, "subject", subject, "user_id", existing.ID)
 		return nil, ErrOIDCEmailInUse
@@ -119,7 +135,7 @@ func (s *AuthService) createOIDCUser(ctx context.Context, issuer, subject string
 		return nil, fmt.Errorf("hash oauth password placeholder: %w", err)
 	}
 	now := time.Now().UTC()
-	user := &model.User{
+	newUser := &model.User{
 		Email:           email,
 		PasswordHash:    passwordHash,
 		FullName:        fullName,
@@ -128,8 +144,8 @@ func (s *AuthService) createOIDCUser(ctx context.Context, issuer, subject string
 	// The user and its identity row commit together, so a failure never
 	// leaves an account that the provider cannot sign in to.
 	create := func(tx *gorm.DB, admission SignupAdmission) (*model.User, error) {
-		user.SignupVerificationPending = admission.VerificationRequired
-		created, err := repository.NewUserRepository(tx).CreateUser(ctx, user)
+		newUser.SignupVerificationPending = admission.VerificationRequired
+		created, err := repository.NewUserRepository(tx).CreateUser(ctx, newUser)
 		if err != nil {
 			return nil, err
 		}
@@ -139,25 +155,69 @@ func (s *AuthService) createOIDCUser(ctx context.Context, issuer, subject string
 		}
 		return created, nil
 	}
-	if s.signupGate != nil {
-		user, _, err = s.signupGate.CreateAccount(ctx, SignupCandidate{Email: email, EmailVerified: true}, create)
-	} else {
-		err = s.oidcIdentityRepo.Transaction(ctx, func(tx *gorm.DB) error {
+	inTx := func(admission SignupAdmission) (*model.User, error) {
+		var created *model.User
+		err := s.oidcIdentityRepo.Transaction(ctx, func(tx *gorm.DB) error {
 			var createErr error
-			user, createErr = create(tx, SignupAdmission{})
+			created, createErr = create(tx, admission)
 			return createErr
 		})
+		return created, err
 	}
-	if err != nil {
-		if isSignupPolicyError(err) {
-			return nil, err
+	var user *model.User
+	var createErr error
+	invited := false
+	if s.signupGate != nil {
+		user, _, createErr = s.signupGate.CreateAccount(ctx, SignupCandidate{Email: email, EmailVerified: true}, create)
+		if (errors.Is(createErr, ErrSignupInviteOnly) || errors.Is(createErr, ErrSignupDomainNotAllowed)) && s.hasPendingInvitation(ctx, email) {
+			// An invitation works under every signup policy; the provider has
+			// verified that this person owns the invited address.
+			user, createErr = inTx(SignupAdmission{})
+			invited = createErr == nil
 		}
-		return nil, fmt.Errorf("create oidc user: %w", err)
+	} else {
+		user, createErr = inTx(SignupAdmission{})
+	}
+	if createErr != nil {
+		if isSignupPolicyError(createErr) {
+			return nil, createErr
+		}
+		// A concurrent first sign-in for this identity may have won the unique
+		// index on the user email or on (issuer, subject).
+		if winner, err := s.oidcUserByIdentity(ctx, issuer, subject); err == nil && winner != nil {
+			return winner, nil
+		}
+		return nil, fmt.Errorf("create oidc user: %w", createErr)
 	}
 	s.autoCreateOrganization(ctx, user)
+	if invited {
+		if err := s.oidcInvitations.AcceptPendingInvitations(ctx, user.ID, email); err != nil {
+			// The invitation stays pending; the person can still accept it by its link.
+			s.logger.WarnContext(ctx, "could not accept invitation for oidc user", "user_id", user.ID, "error", err)
+		}
+	}
 	if s.customerIOIdentity != nil {
 		s.customerIOIdentity.SyncUser(ctx, user)
 		s.customerIOIdentity.TrackUserSignedUp(ctx, user, "oidc")
 	}
 	return user, nil
+}
+
+func (s *AuthService) userHasOIDCIdentity(ctx context.Context, userID string) (bool, error) {
+	if s.oidcIdentityRepo == nil {
+		return false, nil
+	}
+	return s.oidcIdentityRepo.HasIdentity(ctx, userID)
+}
+
+func (s *AuthService) hasPendingInvitation(ctx context.Context, email string) bool {
+	if s.oidcInvitations == nil {
+		return false
+	}
+	pending, err := s.oidcInvitations.HasPendingInvitation(ctx, email)
+	if err != nil {
+		s.logger.WarnContext(ctx, "could not check pending invitations for oidc user", "error", err)
+		return false
+	}
+	return pending
 }

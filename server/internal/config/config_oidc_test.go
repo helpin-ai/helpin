@@ -53,6 +53,22 @@ func TestLoadOIDCCustomNameAndScopes(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsOIDCRedirectURLThatIsNotTheCallbackRoute(t *testing.T) {
+	for _, redirect := range []string{
+		"https://helpin.example.com/login",
+		"https://helpin.example.com/api/auth/google/callback",
+		"https://helpin.example.com/api/auth/oidc/callback/",
+		"/api/auth/oidc/callback",
+		"ftp://helpin.example.com/api/auth/oidc/callback",
+	} {
+		setOIDCEnv(t)
+		t.Setenv("OIDC_REDIRECT_URL", redirect)
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "OIDC_REDIRECT_URL must be") {
+			t.Fatalf("Load() with redirect %q error = %v, want an OIDC_REDIRECT_URL error", redirect, err)
+		}
+	}
+}
+
 func TestLoadLocalLoginDisabledRequiresFullOIDCConfig(t *testing.T) {
 	setRequiredConfigEnv(t)
 	t.Setenv("AUTH_LOCAL_LOGIN_DISABLED", "true")
