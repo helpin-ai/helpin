@@ -15,6 +15,12 @@ export type AuthConfig = {
   email_verification_required: boolean;
   app_email_configured: boolean;
   google_login_enabled: boolean;
+  /** OpenID Connect single sign-on is configured; absent on older APIs. */
+  oidc_login_enabled?: boolean;
+  /** Button label for the OIDC provider, e.g. "Authelia". */
+  oidc_provider_name?: string;
+  /** False when password, passkey and signup are disabled; absent on older APIs, which allow them. */
+  local_login_enabled?: boolean;
   demo_enabled?: boolean;
   demo_requires_email?: boolean;
   /** Whether the API serves the workspace Setup guide; absent on older APIs. */
