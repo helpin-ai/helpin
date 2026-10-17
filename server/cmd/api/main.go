@@ -658,6 +658,7 @@ func main() {
 		LeadWebhookURL: cfg.DemoLeadWebhookURL,
 	})
 	authService.SetOAuthMobileHandoffRepository(oauthMobileHandoffRepo)
+	authService.SetOIDCIdentityRepository(repository.NewUserOIDCIdentityRepository(db))
 	authService.SetCustomerIOIdentityService(customerIOIdentityService)
 	authService.SetProductAnalyticsService(productAnalytics)
 	passkeyService := service.NewPasskeyService(userRepo, passkeyRepo, jwtManager, passkeyWebAuthnClient, resolveTOTPEncryptionKey(cfg))
@@ -2013,6 +2014,16 @@ func main() {
 	handlers.Docs.SetPublicWidgetURLs(cfg.PublicWidgetURL, cfg.PublicSDKURL)
 	handlers.Auth.SetPublicWidgetURLs(cfg.PublicWidgetURL, cfg.PublicSDKURL)
 	handlers.Auth.SetSetupGuideEnabled(setupSuccessEnabled)
+	handlers.Auth.SetOIDC(handler.OIDCConfig{
+		IssuerURL:    cfg.OIDCIssuerURL,
+		ClientID:     cfg.OIDCClientID,
+		ClientSecret: cfg.OIDCClientSecret,
+		RedirectURL:  cfg.OIDCRedirectURL,
+		ProviderName: cfg.OIDCProviderName,
+		Scopes:       cfg.OIDCScopes,
+	})
+	handlers.Auth.SetLocalLoginDisabled(cfg.AuthLocalLoginDisabled)
+	handlers.Passkey.SetLocalLoginDisabled(cfg.AuthLocalLoginDisabled)
 	if instanceService != nil && appEmailConfig != nil {
 		handlers.Capability.SetAppEmailState(appEmailConfig.AppEmailState)
 		handlers.Instance = handler.NewInstanceHandler(instanceService, appEmailConfig)

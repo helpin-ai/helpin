@@ -329,6 +329,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Get("/auth/google/start", h.Auth.GoogleStart)
 		r.Get("/auth/google/callback", h.Auth.GoogleCallback)
 		r.Post("/auth/google/mobile-exchange", h.Auth.GoogleMobileExchange)
+		r.Get("/auth/oidc/start", h.Auth.OIDCStart)
+		r.Get("/auth/oidc/callback", h.Auth.OIDCCallback)
 		r.Post("/auth/signin", h.Auth.Signin)
 		if h.WidgetRateLimit != nil {
 			r.With(h.WidgetRateLimit).Post("/auth/demo", h.Auth.DemoSignin)
