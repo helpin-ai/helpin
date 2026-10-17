@@ -1,10 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
-import { useAuthStore } from '@/stores/authStore';
+import { ensureAuthConfiguration, useAuthStore } from '@/stores/authStore';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { passkeyService } from '@/lib/services/passkeyService';
 import { selfSignupAllowed } from '@/lib/services/authService';
+import { buildOidcAuthStartUrl, loginErrorMessage } from '@/lib/authOidc';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -30,7 +31,21 @@ export default function Login() {
   const passkeySupported = passkeyService.isSupported();
   const redirect = loginRedirectFromSearch();
   const registerHref = redirect ? `/register?redirect=${encodeURIComponent(redirect)}` : '/register';
-  const signupAllowed = selfSignupAllowed(useAuthStore((state) => state.configuration));
+  const configuration = useAuthStore((state) => state.configuration);
+  const signupAllowed = selfSignupAllowed(configuration);
+  const localLoginEnabled = configuration?.local_login_enabled !== false;
+  const oidcEnabled = Boolean(configuration?.oidc_login_enabled);
+  const oidcProviderName = configuration?.oidc_provider_name || 'Single sign-on';
+  const errorMessage = loginErrorMessage(new URLSearchParams(window.location.search).get('error'));
+
+  useEffect(() => {
+    void ensureAuthConfiguration();
+  }, []);
+
+  const handleOidcLogin = () => {
+    const target = loginRedirectFromSearch() ?? consumeRedirectAfterLogin();
+    window.location.assign(buildOidcAuthStartUrl(target));
+  };
 
   const completeLoginRedirect = async (isCancelled?: () => boolean) => {
     const redirect = loginRedirectFromSearch() ?? consumeRedirectAfterLogin();
@@ -53,7 +68,7 @@ export default function Login() {
   };
 
   useEffect(() => {
-    if (twoFaToken || !passkeySupported) {
+    if (twoFaToken || !passkeySupported || !localLoginEnabled) {
       return;
     }
 
@@ -95,7 +110,7 @@ export default function Login() {
       cancelled = true;
       passkeyService.cancelPendingAuthentication();
     };
-  }, [navigate, passkeySupported, rememberMe, signInWithPasskey, twoFaToken]);
+  }, [localLoginEnabled, navigate, passkeySupported, rememberMe, signInWithPasskey, twoFaToken]);
 
   const handlePasswordSubmit = async () => {
     const { error, requires2FA, twoFAToken } = await signIn(email, password, rememberMe);
@@ -230,6 +245,12 @@ export default function Login() {
               </>
             ) : (
               <>
+                {errorMessage && (
+                  <p role="alert" className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                    {errorMessage}
+                  </p>
+                )}
+                {localLoginEnabled && (<>
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
                   <Input
@@ -263,14 +284,22 @@ export default function Login() {
                   <Checkbox id="remember-me" checked={rememberMe} onCheckedChange={(checked) => setRememberMe(checked === true)} />
                   <Label htmlFor="remember-me" className="text-sm font-normal cursor-pointer">Remember me</Label>
                 </div>
+                </>)}
               </>
             )}
           </CardContent>
           <CardFooter className="flex flex-col gap-4 mt-4">
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? (twoFaToken ? 'Verifying...' : 'Signing in...') : (twoFaToken ? 'Verify and continue' : 'Sign in')}
-            </Button>
-            {!twoFaToken && (
+            {(localLoginEnabled || twoFaToken) && (
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading ? (twoFaToken ? 'Verifying...' : 'Signing in...') : (twoFaToken ? 'Verify and continue' : 'Sign in')}
+              </Button>
+            )}
+            {!twoFaToken && oidcEnabled && (
+              <Button type="button" variant={localLoginEnabled ? 'outline' : 'default'} className="w-full" disabled={loading} onClick={handleOidcLogin}>
+                Sign in with {oidcProviderName}
+              </Button>
+            )}
+            {!twoFaToken && localLoginEnabled && (
               <>
                 {passkeySupported ? passkeyButton : (
                   <Tooltip>
@@ -284,7 +313,7 @@ export default function Login() {
                 )}
               </>
             )}
-            {!twoFaToken && (signupAllowed ? (
+            {!twoFaToken && localLoginEnabled && (signupAllowed ? (
               <p className="text-sm text-muted-foreground">
                 Don't have an account? <Link to={registerHref as '/register'} className="text-primary hover:underline">Sign up</Link>
               </p>

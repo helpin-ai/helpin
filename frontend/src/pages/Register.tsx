@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { PublicPageShell } from '@/components/layout/PublicPageShell';
 import { toast } from 'sonner';
 import { loginRedirectFromSearch } from '@/lib/authRedirect';
+import { buildOidcAuthStartUrl } from '@/lib/authOidc';
 import { signupSuccessRedirect } from '@/lib/signupRedirect';
 import { formatDomainList, INVITE_ONLY_MESSAGE } from '@/lib/signupPolicy';
 
@@ -67,6 +68,26 @@ export default function Register() {
           </CardHeader>
           <CardFooter className="justify-center">
             <p className="text-sm text-muted-foreground">Confirmed already? {signInLink}</p>
+          </CardFooter>
+        </Card>
+      </PublicPageShell>
+    );
+  }
+
+  if (configuration?.local_login_enabled === false) {
+    const providerName = configuration.oidc_provider_name || 'Single sign-on';
+    return (
+      <PublicPageShell>
+        <Card className="w-full">
+          <CardHeader className="text-center">
+            <CardTitle role="heading" aria-level={1} className="text-2xl">Create your account</CardTitle>
+            <CardDescription>This server uses {providerName} for accounts. Signing in creates your account if the server allows it.</CardDescription>
+          </CardHeader>
+          <CardFooter className="flex flex-col gap-4">
+            <Button type="button" className="w-full" onClick={() => window.location.assign(buildOidcAuthStartUrl(redirect))}>
+              Sign in with {providerName}
+            </Button>
+            <p className="text-sm text-muted-foreground">Already have an account? {signInLink}</p>
           </CardFooter>
         </Card>
       </PublicPageShell>
