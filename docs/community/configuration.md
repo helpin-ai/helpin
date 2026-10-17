@@ -123,7 +123,9 @@ providers let users choose it.
   admitted under any signup policy, and every sign-in accepts their pending
   invitations (so one that failed earlier is retried). They join the invited
   workspace with the invited role instead of getting a default organization, and
-  an address in `HELPIN_ADMIN_EMAILS` still becomes a server admin.
+  an address in `HELPIN_ADMIN_EMAILS` still becomes a server admin. Invitations
+  are accepted on sign-in only for the address the provider currently verifies,
+  and joining happens automatically.
 - A new identity whose email already belongs to an account is refused with
   "email in use". Helpin logs a warning with the issuer, the subject, and the
   existing user's ID so an operator can link them.

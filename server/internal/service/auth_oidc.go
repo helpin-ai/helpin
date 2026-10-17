@@ -74,7 +74,14 @@ func (s *AuthService) SignInWithOIDC(ctx context.Context, identity OIDCIdentity)
 	// Every sign-in accepts pending invitations, so one that failed or raced on
 	// an earlier sign-in is retried. A new account joins the invited workspace
 	// instead of getting a default organization, as with invitation signup.
-	accepted := s.acceptOIDCInvitations(ctx, user)
+	// Only for the address the provider currently verifies: a stale or
+	// unverified claim must not claim an invitation sent to the stored address.
+	accepted := 0
+	if identity.EmailVerified && normalizeAuthEmail(identity.Email) == normalizeAuthEmail(user.Email) {
+		accepted = s.acceptOIDCInvitations(ctx, user)
+	} else {
+		s.logger.InfoContext(ctx, "skipped invitations for oidc sign-in: provider email is unverified or differs from the account email", "user_id", user.ID)
+	}
 	if created && accepted == 0 {
 		s.autoCreateOrganization(ctx, user)
 	}
