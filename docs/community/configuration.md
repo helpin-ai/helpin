@@ -100,7 +100,7 @@ profile`. Either `client_secret_basic` or `client_secret_post` works.
 | `OIDC_ISSUER_URL` | The provider's issuer URL. Helpin reads `<issuer>/.well-known/openid-configuration`. |
 | `OIDC_CLIENT_ID` | The client ID registered for Helpin. |
 | `OIDC_CLIENT_SECRET` | The client secret. |
-| `OIDC_REDIRECT_URL` | The callback URL registered with the provider, `<APP_BASE_URL>/api/auth/oidc/callback`. The path must be exactly `/api/auth/oidc/callback`; the API refuses to start otherwise. |
+| `OIDC_REDIRECT_URL` | The callback URL registered with the provider, `<APP_BASE_URL>/api/auth/oidc/callback`. The path must be exactly `/api/auth/oidc/callback`; the API refuses to start otherwise. Its origin must be the origin where the browser starts sign-in, because the sign-in cookies are tied to that host; the API logs a warning when a sign-in starts on a different host. |
 | `OIDC_PROVIDER_NAME` | Button label. Defaults to `Single sign-on`. |
 | `OIDC_SCOPES` | Space- or comma-separated scopes. Defaults to `openid email profile`. |
 | `AUTH_LOCAL_LOGIN_DISABLED` | `true` turns off password, passkey, and password-reset sign-in. Default `false`. |
@@ -120,8 +120,10 @@ providers let users choose it.
   and only when the provider reports a verified email. Accounts created this way
   count as email-verified. The first account on a new server still becomes the
   server admin. A person with a pending invitation for their verified address is
-  admitted under any signup policy, and the invitation is accepted on that first
-  sign-in.
+  admitted under any signup policy, and every sign-in accepts their pending
+  invitations (so one that failed earlier is retried). They join the invited
+  workspace with the invited role instead of getting a default organization, and
+  an address in `HELPIN_ADMIN_EMAILS` still becomes a server admin.
 - A new identity whose email already belongs to an account is refused with
   "email in use". Helpin logs a warning with the issuer, the subject, and the
   existing user's ID so an operator can link them.
