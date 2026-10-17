@@ -1,7 +1,8 @@
 import { API_BASE } from '@/lib/api';
 
 export function buildOidcAuthStartUrl(redirect?: string | null): string {
-  const url = new URL(`${API_BASE}/auth/oidc/start`);
+  // API_BASE is relative ("/api") in the Community image, so resolve it against the page origin.
+  const url = new URL(`${API_BASE}/auth/oidc/start`, window.location.origin);
   if (redirect) {
     url.searchParams.set('redirect', redirect);
   }
