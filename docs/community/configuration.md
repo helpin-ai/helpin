@@ -100,7 +100,7 @@ profile`. Either `client_secret_basic` or `client_secret_post` works.
 | `OIDC_ISSUER_URL` | The provider's issuer URL. Helpin reads `<issuer>/.well-known/openid-configuration`. |
 | `OIDC_CLIENT_ID` | The client ID registered for Helpin. |
 | `OIDC_CLIENT_SECRET` | The client secret. |
-| `OIDC_REDIRECT_URL` | The callback URL registered with the provider, `<APP_BASE_URL>/api/auth/oidc/callback`. |
+| `OIDC_REDIRECT_URL` | The callback URL registered with the provider, `<APP_BASE_URL>/api/auth/oidc/callback`. The path must be exactly `/api/auth/oidc/callback`; the API refuses to start otherwise. |
 | `OIDC_PROVIDER_NAME` | Button label. Defaults to `Single sign-on`. |
 | `OIDC_SCOPES` | Space- or comma-separated scopes. Defaults to `openid email profile`. |
 | `AUTH_LOCAL_LOGIN_DISABLED` | `true` turns off password, passkey, and password-reset sign-in. Default `false`. |
@@ -119,10 +119,20 @@ providers let users choose it.
 - A new identity creates an account, under the [signup policy](#signup-policy),
   and only when the provider reports a verified email. Accounts created this way
   count as email-verified. The first account on a new server still becomes the
-  server admin.
+  server admin. A person with a pending invitation for their verified address is
+  admitted under any signup policy, and the invitation is accepted on that first
+  sign-in.
 - A new identity whose email already belongs to an account is refused with
   "email in use". Helpin logs a warning with the issuer, the subject, and the
   existing user's ID so an operator can link them.
+- Google sign-in follows the same rule for accounts that have an OIDC identity:
+  it will not link by email to them and shows "email in use" instead.
+
+**Trusting the provider's email claim.** Helpin believes the provider's
+`email_verified` claim. It decides whether a new account counts as verified, and
+so whether `HELPIN_ADMIN_EMAILS` and the approved-domains policy apply to it.
+Use a provider that only reports an address as verified after the user proved
+they own it, and do not let users set a verified email themselves.
 
 **Linking an existing account.** Read the warning from the API log, then link the
 two by hand once. Check the user ID first:
@@ -138,11 +148,17 @@ The next single sign-on attempt signs in to that account.
 
 **Turning off local sign-in.** With `AUTH_LOCAL_LOGIN_DISABLED=true`, password
 sign-in, password signup, password reset, two-factor sign-in, and passkey
-sign-in return `403 local sign-in is disabled`. The login page shows only the
-provider button, and the signup page offers only the provider button. Google
-sign-in and the demo login are not affected. The API refuses to start with this
-flag unless all four OIDC settings are set, so a typo cannot lock everyone out.
-Signed-in people can still manage their passkeys and two-factor settings.
+sign-in, and accepting an invitation by creating a password account return
+`403 local sign-in is disabled`. The login page shows only the provider button,
+and the signup page offers only the provider button. Google sign-in and the demo
+login are not otherwise affected. The API refuses to start with this flag unless
+all four OIDC settings are set, so a typo cannot lock everyone out.
+
+Accounts created through single sign-on have no password the person knows, so
+they cannot turn on Helpin's two-factor authentication (setting it up, disabling
+it, and regenerating recovery codes all ask for the current password). Enforce
+multi-factor authentication at the provider instead. Signed-in people can still
+register and remove passkeys.
 
 `GET /api/auth/config` reports `oidc_login_enabled`, `oidc_provider_name`, and
 `local_login_enabled` for the sign-in pages.
