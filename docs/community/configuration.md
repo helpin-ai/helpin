@@ -82,6 +82,71 @@ sign-in and registration pages read the policy from `GET /api/auth/config`
 servers. The API enforces the policy for password and Google signups and
 rejects others with `403` and the code `signup_restricted`.
 
+### Single sign-on (OpenID Connect)
+
+Helpin can sign people in through any OpenID Connect (OIDC) provider, such as
+Authelia, Keycloak, Authentik, or Zitadel. The login page then shows a **Sign in
+with *provider*** button. Helpin uses the authorization code flow with PKCE
+(`S256`) and verifies the ID token's signature, issuer, audience, expiry, and
+nonce. The provider is contacted on the first sign-in attempt, not at startup,
+so Helpin still boots while the provider is down.
+
+Register Helpin with your provider as a confidential client, with the redirect
+URL `<APP_BASE_URL>/api/auth/oidc/callback` and the scopes `openid email
+profile`. Either `client_secret_basic` or `client_secret_post` works.
+
+| Variable | Meaning |
+| --- | --- |
+| `OIDC_ISSUER_URL` | The provider's issuer URL. Helpin reads `<issuer>/.well-known/openid-configuration`. |
+| `OIDC_CLIENT_ID` | The client ID registered for Helpin. |
+| `OIDC_CLIENT_SECRET` | The client secret. |
+| `OIDC_REDIRECT_URL` | The callback URL registered with the provider, `<APP_BASE_URL>/api/auth/oidc/callback`. |
+| `OIDC_PROVIDER_NAME` | Button label. Defaults to `Single sign-on`. |
+| `OIDC_SCOPES` | Space- or comma-separated scopes. Defaults to `openid email profile`. |
+| `AUTH_LOCAL_LOGIN_DISABLED` | `true` turns off password, passkey, and password-reset sign-in. Default `false`. |
+
+Single sign-on is on when the issuer, client ID, client secret, and redirect URL
+are all set. The email and name come from the ID token, or from the provider's
+userinfo endpoint when the ID token omits them (Authelia returns the email only
+there).
+
+**How people are matched.** An account is identified by the provider's issuer
+plus the user's `sub` claim, stored in `user_oidc_identities`. The email address
+is never used to match or link accounts, because it can change and some
+providers let users choose it.
+
+- A returning identity signs in to the account it is linked to.
+- A new identity creates an account, under the [signup policy](#signup-policy),
+  and only when the provider reports a verified email. Accounts created this way
+  count as email-verified. The first account on a new server still becomes the
+  server admin.
+- A new identity whose email already belongs to an account is refused with
+  "email in use". Helpin logs a warning with the issuer, the subject, and the
+  existing user's ID so an operator can link them.
+
+**Linking an existing account.** Read the warning from the API log, then link the
+two by hand once. Check the user ID first:
+
+```sql
+SELECT id, email FROM users WHERE email = 'you@example.com';
+
+INSERT INTO user_oidc_identities (user_id, issuer, subject, created_at)
+VALUES ('<users.id from above>', '<issuer from the log>', '<subject from the log>', now());
+```
+
+The next single sign-on attempt signs in to that account.
+
+**Turning off local sign-in.** With `AUTH_LOCAL_LOGIN_DISABLED=true`, password
+sign-in, password signup, password reset, two-factor sign-in, and passkey
+sign-in return `403 local sign-in is disabled`. The login page shows only the
+provider button, and the signup page offers only the provider button. Google
+sign-in and the demo login are not affected. The API refuses to start with this
+flag unless all four OIDC settings are set, so a typo cannot lock everyone out.
+Signed-in people can still manage their passkeys and two-factor settings.
+
+`GET /api/auth/config` reports `oidc_login_enabled`, `oidc_provider_name`, and
+`local_login_enabled` for the sign-in pages.
+
 ### Application email in the app
 
 Server admins can enter SMTP settings (server, port, username, password,
