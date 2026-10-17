@@ -112,6 +112,31 @@ func TestSignInWithOIDCReturningUserAcceptsLaterInvitation(t *testing.T) {
 	}
 }
 
+func TestSignInWithOIDCSkipsInvitationsWithoutAVerifiedMatchingEmail(t *testing.T) {
+	cases := map[string]OIDCIdentity{
+		"provider email differs from the stored one": oidcIdentity("sub-1", "other@example.com"),
+		"provider email is unverified":               {Issuer: testOIDCIssuer, Subject: "sub-1", Email: "late@example.com", EmailVerified: false},
+	}
+	for name, returning := range cases {
+		t.Run(name, func(t *testing.T) {
+			env, invite := newOIDCInviteEnv(t, model.SignupModeOpen)
+			first, err := env.auth.SignInWithOIDC(context.Background(), oidcIdentity("sub-1", "late@example.com"))
+			if err != nil {
+				t.Fatalf("first sign-in: %v", err)
+			}
+			invite("late@example.com", "admin")
+
+			if _, err := env.auth.SignInWithOIDC(context.Background(), returning); err != nil {
+				t.Fatalf("returning sign-in: %v", err)
+			}
+
+			if role := workspaceRole(t, env, first.User.ID); role != "" {
+				t.Fatalf("workspace role = %q, want none: the invitation needs a verified matching provider email", role)
+			}
+		})
+	}
+}
+
 func TestSignInWithOIDCInvitedEnvAdminBecomesServerAdmin(t *testing.T) {
 	env, invite := newOIDCInviteEnv(t, model.SignupModeInviteOnly, "boss@example.com")
 	invite("boss@example.com", "member")
