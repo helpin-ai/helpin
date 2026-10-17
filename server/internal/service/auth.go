@@ -75,6 +75,7 @@ type AuthService struct {
 	passwordResetRepo        *repository.PasswordResetTokenRepository
 	emailVerificationRepo    *repository.EmailVerificationTokenRepository
 	oauthMobileHandoffRepo   *repository.OAuthMobileHandoffRepository
+	oidcIdentityRepo         *repository.UserOIDCIdentityRepository
 	organizationRepo         *repository.OrganizationRepository
 	workspaceRepo            *repository.WorkspaceRepository
 	jwtManager               *auth.JWTManager
