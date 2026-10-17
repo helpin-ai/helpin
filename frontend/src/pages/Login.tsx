@@ -33,13 +33,22 @@ export default function Login() {
   const registerHref = redirect ? `/register?redirect=${encodeURIComponent(redirect)}` : '/register';
   const configuration = useAuthStore((state) => state.configuration);
   const signupAllowed = selfSignupAllowed(configuration);
-  const localLoginEnabled = configuration?.local_login_enabled !== false;
+  // Until the config has loaded (or failed to), show neither the password form nor
+  // the passkey prompt: local sign-in may be switched off.
+  const [configReady, setConfigReady] = useState(Boolean(configuration));
+  const localLoginEnabled = configReady && configuration?.local_login_enabled !== false;
   const oidcEnabled = Boolean(configuration?.oidc_login_enabled);
   const oidcProviderName = configuration?.oidc_provider_name || 'Single sign-on';
   const errorMessage = loginErrorMessage(new URLSearchParams(window.location.search).get('error'));
 
   useEffect(() => {
-    void ensureAuthConfiguration();
+    let cancelled = false;
+    void ensureAuthConfiguration().finally(() => {
+      if (!cancelled) setConfigReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleOidcLogin = () => {
