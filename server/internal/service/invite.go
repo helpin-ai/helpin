@@ -298,20 +298,26 @@ func (s *InviteService) HasPendingInvitation(ctx context.Context, email string) 
 }
 
 // AcceptPendingInvitations accepts every unexpired pending invitation for the
-// user's email address, as AcceptInvitation does for one token. Invitations
-// that fail stay pending and the first error is returned.
-func (s *InviteService) AcceptPendingInvitations(ctx context.Context, userID, email string) error {
+// user's email address, as AcceptInvitation does for one token, and returns how
+// many were accepted. Invitations that fail stay pending and the first error is
+// returned.
+func (s *InviteService) AcceptPendingInvitations(ctx context.Context, userID, email string) (int, error) {
 	pending, err := s.invitationRepo.ListPendingByEmail(ctx, email, time.Now())
 	if err != nil {
-		return err
+		return 0, err
 	}
+	accepted := 0
 	var firstErr error
 	for _, inv := range pending {
-		if err := s.AcceptInvitation(ctx, inv.Token, userID); err != nil && firstErr == nil {
-			firstErr = err
+		if err := s.AcceptInvitation(ctx, inv.Token, userID); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
 		}
+		accepted++
 	}
-	return firstErr
+	return accepted, firstErr
 }
 
 // AcceptInvitationWithSignup creates a new user account and accepts the invitation in one step.
