@@ -30,6 +30,7 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 import Login from '../Login';
 import { useAuthStore } from '@/stores/authStore';
 import { API_BASE } from '@/lib/api';
+import { authService } from '@/lib/services/authService';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 // The remember-me checkbox measures itself with ResizeObserver, which jsdom lacks.
@@ -104,6 +105,35 @@ describe('Login', () => {
   it('explains a sign-in error returned in the query string', () => {
     const page = render({ ...baseConfig, oidc_login_enabled: true }, '?error=email_in_use');
     expect(page.querySelector('[role="alert"]')?.textContent).toContain('not linked to this sign-in provider');
+  });
+
+  it('shows neither the password form nor the passkey button until the config has loaded', async () => {
+    let resolveConfig: (value: AuthConfig) => void = () => {};
+    vi.spyOn(authService, 'config').mockReturnValue(new Promise((resolve) => {
+      resolveConfig = (data) => resolve({ data, error: null } as Awaited<ReturnType<typeof authService.config>>);
+    }));
+    useAuthStore.setState({ configuration: null });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => root?.render(<Login />));
+    expect(container.querySelector('#password')).toBeNull();
+    expect(buttonLabels(container)).toEqual([]);
+
+    await act(async () => resolveConfig({ ...baseConfig, oidc_login_enabled: true, local_login_enabled: false }));
+
+    expect(container.querySelector('#password')).toBeNull();
+    expect(buttonLabels(container)).toEqual(['Sign in with Single sign-on']);
+  });
+
+  it('falls back to the password form when the config cannot be loaded', async () => {
+    vi.spyOn(authService, 'config').mockRejectedValue(new Error('offline'));
+    useAuthStore.setState({ configuration: null });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => root?.render(<Login />));
+    expect(container.querySelector('#password')).not.toBeNull();
   });
 
   it('shows no alert without an error', () => {
