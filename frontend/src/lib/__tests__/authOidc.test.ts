@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+// @vitest-environment jsdom
+import { describe, expect, it, vi } from 'vitest';
 
 import { API_BASE } from '@/lib/api';
 import { buildOidcAuthStartUrl, loginErrorMessage } from '@/lib/authOidc';
@@ -12,6 +13,14 @@ describe('buildOidcAuthStartUrl', () => {
     expect(buildOidcAuthStartUrl('/w/acme/pm/my-work')).toBe(
       `${API_BASE}/auth/oidc/start?redirect=%2Fw%2Facme%2Fpm%2Fmy-work`,
     );
+  });
+
+  it('resolves a relative API base against the page origin', async () => {
+    vi.resetModules();
+    vi.doMock('@/lib/api', () => ({ API_BASE: '/api' }));
+    const { buildOidcAuthStartUrl: build } = await import('@/lib/authOidc');
+    expect(build()).toBe(`${window.location.origin}/api/auth/oidc/start`);
+    vi.doUnmock('@/lib/api');
   });
 });
 
