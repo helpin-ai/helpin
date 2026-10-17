@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -177,6 +178,16 @@ func (h *AuthHandler) OIDCStart(w http.ResponseWriter, r *http.Request) {
 	if redirectPath := sanitizeRedirectPath(r.URL.Query().Get("redirect")); redirectPath != "" {
 		setOIDCCookie(w, r, oidcRedirectCookie, base64.RawURLEncoding.EncodeToString([]byte(redirectPath)))
 	}
+	requestHost := r.Host
+	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-Host")); forwarded != "" {
+		requestHost = forwarded
+	}
+	if redirectHost := redirectURLHost(h.oidc.cfg.RedirectURL); redirectHost != "" && !strings.EqualFold(redirectHost, requestHost) {
+		// The state cookies are scoped to this host, so the callback must come
+		// back to it; a different redirect host breaks sign-in.
+		slog.WarnContext(r.Context(), "oidc sign-in started on a different host than OIDC_REDIRECT_URL",
+			"request_host", requestHost, "redirect_url_host", redirectHost)
+	}
 	authURL := h.oidc.oauthConfig(provider).AuthCodeURL(state, oauth2.S256ChallengeOption(verifier), oidc.Nonce(nonce))
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
@@ -329,6 +340,14 @@ func (b *oidcBool) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("invalid boolean %s", data)
 	}
 	return nil
+}
+
+func redirectURLHost(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return parsed.Host
 }
 
 type oidcCookieValues struct {
