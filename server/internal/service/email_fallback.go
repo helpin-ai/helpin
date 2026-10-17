@@ -971,6 +971,10 @@ func (s *EmailFallbackService) ProcessInboundEmail(ctx context.Context, payload 
 }
 
 func (s *EmailFallbackService) processInboundConversationReply(ctx context.Context, conv *model.SupportConversation, route *model.SupportEmailRoute, payload model.PostmarkInboundPayload, rawPayload string) error {
+	return s.processInboundConversationReplyWithRecovery(ctx, conv, route, payload, rawPayload, nil)
+}
+
+func (s *EmailFallbackService) processInboundConversationReplyWithRecovery(ctx context.Context, conv *model.SupportConversation, route *model.SupportEmailRoute, payload model.PostmarkInboundPayload, rawPayload string, recovery *model.SupportInboundJob) error {
 	if conv == nil || conv.AnonymizedAt != nil {
 		return nil
 	}
@@ -1165,6 +1169,10 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 			msg.UpdatedAt = *sentAt
 		}
 	}
+	if receivedAt := inboundRecoveryReceivedAt(ctx); !receivedAt.IsZero() {
+		msg.CreatedAt = receivedAt
+		msg.UpdatedAt = receivedAt
+	}
 
 	if isNotice {
 		msg.MessageType = model.SupportMessageTypeEmailNotice
@@ -1180,6 +1188,15 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		msgRepoTx := s.messageRepo.WithTx(tx)
 		emailLogRepoTx := s.emailLogRepo.WithTx(tx)
 		convRepoTx := s.convRepo.WithTx(tx)
+		if recovery != nil {
+			var current model.SupportConversation
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND workspace_id = ?", conv.ID, conv.WorkspaceID).First(&current).Error; err != nil {
+				return err
+			}
+			if !validInboundRecoveryDestination(recovery, &current, payload) {
+				return ErrInboundRecoveryDestination
+			}
+		}
 
 		if err := msgRepoTx.Create(ctx, msg); err != nil {
 			return err
@@ -1231,6 +1248,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 			Direction:                 emailDirection,
 			MessageIDs:                model.DocsStringArray{msg.ID},
 			FromEmail:                 fromEmail,
+			FromDisplayName:           senderName,
 			ToEmail:                   strings.TrimSpace(payload.To),
 			ReplyTo:                   replyToRaw,
 			RecipientAddress:          recipientAddress,
@@ -3761,6 +3779,10 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		MessageType:       "reply",
 		Metadata:          messageMetadata,
 		ViaChannel:        &viaEmail,
+	}
+	if receivedAt := inboundRecoveryReceivedAt(ctx); !receivedAt.IsZero() {
+		message.CreatedAt = receivedAt
+		message.UpdatedAt = receivedAt
 	}
 
 	if isNotice {

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -15,6 +16,14 @@ import (
 
 func inboundStableID(value string) string {
 	return uuid.NewSHA1(uuid.NameSpaceOID, []byte("helpin:inbound:"+value)).String()
+}
+
+// Recovery keeps the server's original receipt time through both routing paths.
+type inboundRecoveryReceivedAtKey struct{}
+
+func inboundRecoveryReceivedAt(ctx context.Context) time.Time {
+	receivedAt, _ := ctx.Value(inboundRecoveryReceivedAtKey{}).(time.Time)
+	return receivedAt
 }
 
 // AcceptInboundEmail never acknowledges a receipt that has not been committed.
@@ -107,11 +116,18 @@ func (s *EmailFallbackService) processNextInboundJob(ctx context.Context, kind s
 		return err
 	}
 	workCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	if job.RecoveryRequestedAt != nil {
+		workCtx = context.WithValue(workCtx, inboundRecoveryReceivedAtKey{}, job.CreatedAt)
+	}
 	if kind == "email" {
 		var p model.PostmarkInboundPayload
 		err = json.Unmarshal([]byte(job.Payload), &p)
 		if err == nil {
-			err = s.ProcessInboundEmail(workCtx, p, job.Payload)
+			if job.RecoveryConversationID != nil {
+				err = s.processRecoveredInboundEmail(workCtx, job, p)
+			} else {
+				err = s.ProcessInboundEmail(workCtx, p, job.Payload)
+			}
 		}
 	} else {
 		err = s.processInboundAttachmentJob(workCtx, job)
@@ -120,15 +136,24 @@ func (s *EmailFallbackService) processNextInboundJob(ctx context.Context, kind s
 	if kind == "email" {
 		var p model.PostmarkInboundPayload
 		if json.Unmarshal([]byte(job.Payload), &p) == nil {
-			if log, lookupErr := s.emailLogRepo.GetByPostmarkMessageID(ctx, p.MessageID); lookupErr == nil && log != nil {
-				if updateErr := s.convRepo.DB().WithContext(ctx).Model(&model.SupportInboundJob{}).Where("id = ? AND lease_token = ?", job.ID, job.LeaseToken).Updates(map[string]any{"workspace_id": log.WorkspaceID, "conversation_id": log.ConversationID}).Error; updateErr != nil {
+			log, lookupErr := s.emailLogRepo.GetByPostmarkMessageID(ctx, p.MessageID)
+			if lookupErr != nil {
+				err = errors.Join(err, lookupErr)
+			} else if log != nil {
+				updates := map[string]any{"workspace_id": log.WorkspaceID, "conversation_id": log.ConversationID, "email_log_id": log.ID}
+				if len(log.MessageIDs) > 0 {
+					updates["message_id"] = log.MessageIDs[0]
+				}
+				if updateErr := s.convRepo.DB().WithContext(ctx).Model(&model.SupportInboundJob{}).Where("id = ? AND lease_token = ?", job.ID, job.LeaseToken).Updates(updates).Error; updateErr != nil {
 					return updateErr
 				}
+			} else if job.RecoveryRequestedAt != nil && err == nil {
+				err = fmt.Errorf("recovery did not produce an email receipt")
 			}
 		}
 	}
 	if err != nil {
-		s.logger.ErrorContext(ctx, "inbound processing failed", "job_id", job.ID, "kind", kind, "attempt", job.Attempts, "exhausted", job.Attempts >= 10, "error", err)
+		s.logger.ErrorContext(ctx, "inbound processing failed", "job_id", job.ID, "kind", kind, "attempt", job.Attempts, "exhausted", job.Attempts >= 10 || job.RecoveryRequestedAt != nil, "error", err)
 	}
 	// Shutdown/cancellation leaves a recoverable lease, never a false completion.
 	if ctx.Err() != nil {

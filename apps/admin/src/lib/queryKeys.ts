@@ -1,4 +1,10 @@
 export const queryKeys = {
+  inboundEmails: {
+    all: () => ['inbound-emails'] as const,
+    list: (status: string, query: string, page: number) => ['inbound-emails', 'list', status, query, page] as const,
+    detail: (id: string) => ['inbound-emails', 'detail', id] as const,
+    conversations: (id: string, query: string) => ['inbound-emails', 'conversations', id, query] as const,
+  },
   workspaces: {
     all: () => ['workspaces'] as const,
   },

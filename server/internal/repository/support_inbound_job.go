@@ -46,7 +46,9 @@ func (r *SupportInboundJobRepository) Finish(ctx context.Context, job *model.Sup
 	values := map[string]any{"status": "completed", "payload": "", "last_error": "", "lease_token": ""}
 	if processingErr != nil {
 		status := "pending"
-		if job.Attempts >= 10 {
+		if job.Attempts >= 10 || job.RecoveryRequestedAt != nil {
+			// A manual retry exposes its outcome immediately; accepted bytes stay
+			// available for another attempt instead of waiting through backoff.
 			status = "failed"
 		}
 		delay := time.Minute * time.Duration(1<<min(job.Attempts-1, 8))
