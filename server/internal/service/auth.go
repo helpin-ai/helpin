@@ -76,6 +76,7 @@ type AuthService struct {
 	emailVerificationRepo    *repository.EmailVerificationTokenRepository
 	oauthMobileHandoffRepo   *repository.OAuthMobileHandoffRepository
 	oidcIdentityRepo         *repository.UserOIDCIdentityRepository
+	oidcInvitations          oidcInvitations
 	organizationRepo         *repository.OrganizationRepository
 	workspaceRepo            *repository.WorkspaceRepository
 	jwtManager               *auth.JWTManager
@@ -302,6 +303,14 @@ func (s *AuthService) SignInWithGoogle(ctx context.Context, identity GoogleIdent
 		}
 	} else {
 		if user.GoogleSubject == nil || *user.GoogleSubject == "" {
+			// Never link by email to an account that single sign-on already owns.
+			if linked, err := s.userHasOIDCIdentity(ctx, user.ID); err != nil {
+				return nil, err
+			} else if linked {
+				s.logger.WarnContext(ctx, "google sign-in refused: email belongs to an account linked to an oidc identity",
+					"google_subject", subject, "user_id", user.ID)
+				return nil, ErrOIDCEmailInUse
+			}
 			user, err = s.userRepo.LinkGoogleSubject(ctx, user.ID, subject)
 			if err != nil {
 				return nil, err

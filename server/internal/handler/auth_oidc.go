@@ -14,6 +14,7 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
@@ -47,9 +48,10 @@ type OIDCConfig struct {
 // oidcClient discovers the provider on first use, so the server starts while
 // the identity provider is down, and caches it once discovery succeeds.
 type oidcClient struct {
-	cfg      OIDCConfig
-	mu       sync.Mutex
-	provider *oidc.Provider
+	cfg       OIDCConfig
+	mu        sync.Mutex // guards provider only; never held across network I/O
+	provider  *oidc.Provider
+	discovery singleflight.Group
 }
 
 func (c *oidcClient) clientContext(ctx context.Context) context.Context {
@@ -59,20 +61,39 @@ func (c *oidcClient) clientContext(ctx context.Context) context.Context {
 	return ctx
 }
 
+// discover returns the cached provider, or discovers it once however many
+// requests arrive meanwhile. A waiter gives up when its own request ends, so a
+// hung provider never pins requests behind a lock. Failures are not cached.
 func (c *oidcClient) discover(ctx context.Context) (*oidc.Provider, error) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.provider != nil {
-		return c.provider, nil
+	provider := c.provider
+	c.mu.Unlock()
+	if provider != nil {
+		return provider, nil
 	}
-	ctx, cancel := context.WithTimeout(ctx, oidcDiscoveryTimeout)
-	defer cancel()
-	provider, err := oidc.NewProvider(c.clientContext(ctx), c.cfg.IssuerURL)
-	if err != nil {
-		return nil, err
+	result := c.discovery.DoChan("discover", func() (any, error) {
+		// Detached from the first caller's request, so cancelling that request
+		// does not fail the callers sharing this discovery.
+		dctx, cancel := context.WithTimeout(context.Background(), oidcDiscoveryTimeout)
+		defer cancel()
+		found, err := oidc.NewProvider(c.clientContext(dctx), c.cfg.IssuerURL)
+		if err != nil {
+			return nil, err
+		}
+		c.mu.Lock()
+		c.provider = found
+		c.mu.Unlock()
+		return found, nil
+	})
+	select {
+	case res := <-result:
+		if res.Err != nil {
+			return nil, res.Err
+		}
+		return res.Val.(*oidc.Provider), nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
-	c.provider = provider
-	return provider, nil
 }
 
 func (c *oidcClient) oauthConfig(provider *oidc.Provider) *oauth2.Config {
@@ -112,7 +133,7 @@ func (h *AuthHandler) oidcProviderName() string {
 	return h.oidc.cfg.ProviderName
 }
 
-// SetLocalLoginDisabled turns off password and password-reset sign-in.
+// SetLocalLoginDisabled turns off password signin and signup, password reset and two-factor signin.
 func (h *AuthHandler) SetLocalLoginDisabled(disabled bool) {
 	h.localLoginDisabled = disabled
 }
@@ -280,9 +301,12 @@ func (h *AuthHandler) oidcIdentity(ctx context.Context, provider *oidc.Provider,
 		}
 		if identity.Email == "" {
 			identity.Email = info.Email
-		}
-		if claims.EmailVerified == nil {
 			identity.EmailVerified = info.EmailVerified
+		} else if claims.EmailVerified == nil {
+			// Userinfo can vouch only for the address it returns, so its
+			// verified flag counts only when that is the ID token address.
+			sameAddress := strings.EqualFold(strings.TrimSpace(info.Email), strings.TrimSpace(identity.Email))
+			identity.EmailVerified = sameAddress && info.EmailVerified
 		}
 		if identity.FullName == "" {
 			identity.FullName = infoClaims.Name

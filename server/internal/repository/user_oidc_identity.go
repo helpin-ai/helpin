@@ -32,6 +32,15 @@ func (r *UserOIDCIdentityRepository) GetByIssuerSubject(ctx context.Context, iss
 	return identity, nil
 }
 
+// HasIdentity reports whether the user is linked to any OIDC identity.
+func (r *UserOIDCIdentityRepository) HasIdentity(ctx context.Context, userID string) (bool, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&model.UserOIDCIdentity{}).Where("user_id = ?", userID).Count(&count).Error; err != nil {
+		return false, fmt.Errorf("count oidc identities: %w", err)
+	}
+	return count > 0, nil
+}
+
 // Transaction runs fn in a database transaction.
 func (r *UserOIDCIdentityRepository) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
 	return r.db.WithContext(ctx).Transaction(fn)

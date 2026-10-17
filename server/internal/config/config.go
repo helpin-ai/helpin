@@ -630,10 +630,29 @@ func Load() (*Config, error) {
 		DocsOrderingUseSortKey:                 parseBoolEnv(os.Getenv("DOCS_ORDERING_USE_SORT_KEY")),
 		TLSAskExtraAllowedDomains:              parseCSV(os.Getenv("TLS_ASK_EXTRA_ALLOWED_DOMAINS")),
 	}
+	if err := validateOIDCRedirectURL(cfg.OIDCRedirectURL); err != nil {
+		return nil, err
+	}
 	if cfg.AuthLocalLoginDisabled && !cfg.OIDCConfigured() {
 		return nil, fmt.Errorf("AUTH_LOCAL_LOGIN_DISABLED requires OIDC_ISSUER_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET and OIDC_REDIRECT_URL to be set")
 	}
 	return cfg, nil
+}
+
+// oidcCallbackPath is the API route that completes OpenID Connect sign-in.
+const oidcCallbackPath = "/api/auth/oidc/callback"
+
+// validateOIDCRedirectURL rejects a redirect URL that does not point at the API
+// callback route, which would send people to a page that cannot finish sign-in.
+func validateOIDCRedirectURL(raw string) error {
+	if raw == "" {
+		return nil
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.Path != oidcCallbackPath {
+		return fmt.Errorf("OIDC_REDIRECT_URL must be an absolute http(s) URL whose path is %s, for example <APP_BASE_URL>%s", oidcCallbackPath, oidcCallbackPath)
+	}
+	return nil
 }
 
 func validateOptionalLLMRouteEnv(providerName, provider, modelName, model string) error {

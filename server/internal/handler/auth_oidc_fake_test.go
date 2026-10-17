@@ -43,10 +43,17 @@ type fakeOIDCProvider struct {
 	emailInIDToken bool // otherwise the email is only served by userinfo (Authelia 4.39)
 	// verifiedAsString sends email_verified in the ID token as "true", as Cognito does.
 	verifiedAsString bool
+	// omitVerified leaves email_verified out of the ID token.
+	omitVerified bool
+	// userinfoEmail, when set, replaces the email userinfo returns.
+	userinfoEmail string
+	// discoveryGate, when set, makes discovery wait until it is closed.
+	discoveryGate chan struct{}
 	// Observations.
-	challenge   string // code_challenge from the authorize redirect, set by the flow helper
-	tokenCalls  int
-	userinfoHit int
+	discoveryHits int
+	challenge     string // code_challenge from the authorize redirect, set by the flow helper
+	tokenCalls    int
+	userinfoHit   int
 }
 
 func newFakeOIDCProvider(t *testing.T) *fakeOIDCProvider {
@@ -78,8 +85,12 @@ func (p *fakeOIDCProvider) set(change func(p *fakeOIDCProvider)) {
 
 func (p *fakeOIDCProvider) discovery(w http.ResponseWriter, _ *http.Request) {
 	p.mu.Lock()
-	down := p.down
+	down, gate := p.down, p.discoveryGate
+	p.discoveryHits++
 	p.mu.Unlock()
+	if gate != nil {
+		<-gate
+	}
 	if down {
 		http.Error(w, "down", http.StatusServiceUnavailable)
 		return
@@ -135,6 +146,9 @@ func (p *fakeOIDCProvider) token(w http.ResponseWriter, r *http.Request) {
 	}
 	if p.emailInIDToken {
 		claims["email"], claims["email_verified"], claims["name"] = p.email, p.emailVerified, p.name
+		if p.omitVerified {
+			delete(claims, "email_verified")
+		}
 		if p.verifiedAsString {
 			claims["email_verified"] = fmt.Sprint(p.emailVerified)
 		}
@@ -166,7 +180,11 @@ func (p *fakeOIDCProvider) userinfo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad token", http.StatusUnauthorized)
 		return
 	}
+	email := p.email
+	if p.userinfoEmail != "" {
+		email = p.userinfoEmail
+	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"sub": p.subject, "email": p.email, "email_verified": p.emailVerified, "name": p.name,
+		"sub": p.subject, "email": email, "email_verified": p.emailVerified, "name": p.name,
 	})
 }
