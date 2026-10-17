@@ -198,6 +198,18 @@ type Config struct {
 	GoogleAuthClientSecret string
 	GoogleAuthRedirectURL  string
 
+	// Generic OpenID Connect sign-in (optional — SSO button disabled unless
+	// issuer, client ID, client secret and redirect URL are all set).
+	OIDCIssuerURL    string
+	OIDCClientID     string
+	OIDCClientSecret string
+	OIDCRedirectURL  string
+	OIDCProviderName string
+	OIDCScopes       []string
+	// AuthLocalLoginDisabled turns off password, passkey and password-reset
+	// sign-in. Requires a fully configured OIDC provider.
+	AuthLocalLoginDisabled bool
+
 	// CRM encryption & Gmail OAuth (optional — Gmail sync disabled if not set)
 	TOTPEncryptionKey     string
 	CRMEncryptionKey      string
@@ -411,7 +423,11 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Config{
+	oidcScopes := strings.Fields(strings.ReplaceAll(os.Getenv("OIDC_SCOPES"), ",", " "))
+	if len(oidcScopes) == 0 {
+		oidcScopes = []string{"openid", "email", "profile"}
+	}
+	cfg := &Config{
 		AuthenticatedRateLimit:                 authenticatedRateLimit,
 		ExpensiveRateLimit:                     expensiveRateLimit,
 		DatabaseURL:                            dbURL,
@@ -551,6 +567,13 @@ func Load() (*Config, error) {
 		GoogleAuthClientID:                     strings.TrimSpace(os.Getenv("GOOGLE_AUTH_CLIENT_ID")),
 		GoogleAuthClientSecret:                 strings.TrimSpace(os.Getenv("GOOGLE_AUTH_CLIENT_SECRET")),
 		GoogleAuthRedirectURL:                  strings.TrimSpace(os.Getenv("GOOGLE_AUTH_REDIRECT_URL")),
+		OIDCIssuerURL:                          strings.TrimSpace(os.Getenv("OIDC_ISSUER_URL")),
+		OIDCClientID:                           strings.TrimSpace(os.Getenv("OIDC_CLIENT_ID")),
+		OIDCClientSecret:                       strings.TrimSpace(os.Getenv("OIDC_CLIENT_SECRET")),
+		OIDCRedirectURL:                        strings.TrimSpace(os.Getenv("OIDC_REDIRECT_URL")),
+		OIDCProviderName:                       firstNonEmpty(strings.TrimSpace(os.Getenv("OIDC_PROVIDER_NAME")), "Single sign-on"),
+		OIDCScopes:                             oidcScopes,
+		AuthLocalLoginDisabled:                 parseBoolEnv(os.Getenv("AUTH_LOCAL_LOGIN_DISABLED")),
 		TOTPEncryptionKey:                      strings.TrimSpace(os.Getenv("TOTP_ENCRYPTION_KEY")),
 		CRMEncryptionKey:                       os.Getenv("CRM_ENCRYPTION_KEY"),
 		PMImportEncryptionKey:                  strings.TrimSpace(os.Getenv("PM_IMPORT_ENCRYPTION_KEY")),
@@ -606,7 +629,11 @@ func Load() (*Config, error) {
 		AgentPreviewDebug:                      parseBoolEnv(os.Getenv("AGENT_PREVIEW_DEBUG")),
 		DocsOrderingUseSortKey:                 parseBoolEnv(os.Getenv("DOCS_ORDERING_USE_SORT_KEY")),
 		TLSAskExtraAllowedDomains:              parseCSV(os.Getenv("TLS_ASK_EXTRA_ALLOWED_DOMAINS")),
-	}, nil
+	}
+	if cfg.AuthLocalLoginDisabled && !cfg.OIDCConfigured() {
+		return nil, fmt.Errorf("AUTH_LOCAL_LOGIN_DISABLED requires OIDC_ISSUER_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET and OIDC_REDIRECT_URL to be set")
+	}
+	return cfg, nil
 }
 
 func validateOptionalLLMRouteEnv(providerName, provider, modelName, model string) error {
@@ -638,6 +665,12 @@ func validateOpenRouterProviderEnv(name, openRouterProvider, routeProvider, defa
 func gmailOAuthRedirectURL(appBaseURL string) string {
 	return firstNonEmpty(os.Getenv("GMAIL_OAUTH_REDIRECT_URL"),
 		strings.TrimRight(strings.TrimSpace(appBaseURL), "/")+"/api/crm/email/oauth/callback")
+}
+
+// OIDCConfigured reports whether every setting needed for OpenID Connect
+// sign-in is present.
+func (c *Config) OIDCConfigured() bool {
+	return c.OIDCIssuerURL != "" && c.OIDCClientID != "" && c.OIDCClientSecret != "" && c.OIDCRedirectURL != ""
 }
 
 func firstNonEmpty(values ...string) string {
