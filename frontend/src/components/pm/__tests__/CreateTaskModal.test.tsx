@@ -3,6 +3,8 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { prepareAppRefresh } from '@/lib/appLoadRecovery'
+
 import type { WorkflowWithStates } from '@/lib/pmTypes'
 import { uploadToS3 } from '@/lib/api'
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService'
@@ -34,6 +36,7 @@ vi.mock('sonner', () => ({
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => navigate,
+  useRouter: () => null,
 }))
 
 vi.mock('@/stores/workspaceStore', () => ({
@@ -717,6 +720,8 @@ describe('CreateTaskModal', () => {
       saveAsTemplateToggle!.click()
       await Promise.resolve()
     })
+
+    expect(prepareAppRefresh()).toContain('task')
 
     await settleDraftCheck()
 

@@ -1,3 +1,4 @@
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { addDays, format } from 'date-fns';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { UserAvatar } from '@/components/pm/UserAvatar';
@@ -62,6 +63,22 @@ function CreateDealForm({ onOpenChange, companyContext, contactContext, initialP
   const [pendingPerson, setPendingPerson] = useState<{ person: DealEntity; company: DealEntity } | null>(null);
   const [resolving, setResolving] = useState(!!contactContext);
   const [entityDraft, setEntityDraft] = useState(false);
+  const initialDefaults = useRef({ closeDate, currency, companyId: companyContext?.id });
+  useUnsavedChangesGuard(
+    createDeal.isPending ||
+      editedName !== null ||
+      Boolean(amount) ||
+      owner !== null ||
+      entityDraft ||
+      revenueType !== 'annual' ||
+      closeDate !== initialDefaults.current.closeDate ||
+      currency !== initialDefaults.current.currency ||
+      pipelineId !== initialPipelineId ||
+      stageId !== initialStageId ||
+      company?.id !== initialDefaults.current.companyId ||
+      people.map(person => person.id).join(',') !== (contactContext?.id ?? ''),
+    'Save or discard your new deal before refreshing.',
+  );
   const selectionVersion = useRef(0);
   const companyRef = useRef(company);
   const name = editedName ?? generatedDealName(company?.name, people[0]?.name);
@@ -71,7 +88,7 @@ function CreateDealForm({ onOpenChange, companyContext, contactContext, initialP
   const selectedOwner = members.find(m => m.id === ownerId);
   const selectCompany = (next: DealEntity | null) => { companyRef.current = next; setCompany(next); };
   const addPerson = (person: DealEntity) => setPeople(current => current.some(p => p.id === person.id) ? current : [...current, person]);
-  const selectPerson = async (person: DealEntity) => {
+  const selectPerson = async (person: DealEntity, isInitialContext = false) => {
     const version = ++selectionVersion.current;
     setResolving(true);
     try {
@@ -85,7 +102,10 @@ function CreateDealForm({ onOpenChange, companyContext, contactContext, initialP
         (a.from_object_type === 'company' && a.from_object_id === selectedCompanyId) ||
         (a.to_object_type === 'company' && a.to_object_id === selectedCompanyId));
       if (linkedCompany && selectedCompanyId && !linkedToSelectedCompany) { setPendingPerson({ person, company: linkedCompany }); return; }
-      if (linkedCompany && !companyRef.current) selectCompany(linkedCompany);
+      if (linkedCompany && !companyRef.current) {
+        if (isInitialContext) initialDefaults.current.companyId = linkedCompany.id;
+        selectCompany(linkedCompany);
+      }
       addPerson(person);
     } catch (error) { toast.error(error instanceof Error ? error.message : 'Could not load contact company'); }
     finally { if (version === selectionVersion.current) setResolving(false); }
@@ -93,7 +113,7 @@ function CreateDealForm({ onOpenChange, companyContext, contactContext, initialP
   useEffect(() => {
     let active = true;
     const sequence = selectionVersion;
-    queueMicrotask(() => { if (active && contactContext) void selectPerson(contactContext); });
+    queueMicrotask(() => { if (active && contactContext) void selectPerson(contactContext, true); });
     return () => { active = false; sequence.current++; };
     // Context is fixed for this mounted form. Async selection has a stale-response guard.
     // eslint-disable-next-line react-hooks/exhaustive-deps

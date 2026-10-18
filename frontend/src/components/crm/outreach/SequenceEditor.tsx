@@ -1,3 +1,4 @@
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { QuickTooltip } from "@/components/ui/quick-tooltip";
 import { ChevronRightIcon } from "@/lib/pmIcons";
 import { useWorkspaceAccess, usePermissions } from "@/hooks/queries/useSession";
@@ -61,6 +62,7 @@ export function SequenceEditor({
   const [active, setActive] = useState(0);
   const [dirty, setDirty] = useState(Boolean(initial.name && !initial.id));
   const [saving, setSaving] = useState(false);
+  useUnsavedChangesGuard(dirty || saving, 'Save or discard your sequence changes before refreshing.');
   const [discard, setDiscard] = useState(false);
   const [enroll, setEnroll] = useState(false);
   const [tab, setTab] = useState<"steps" | "activity">("steps");

@@ -1,3 +1,4 @@
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
@@ -110,6 +111,7 @@ export function CompanyDetailPage({ companyId, activeTab = 'overview', onTabChan
   const [pendingPatch, setPendingPatch] = useState<UpdateCRMCompanyRequest>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  useUnsavedChangesGuard(saving || Object.keys(pendingPatch).length > 0, 'Wait for your company changes to save before refreshing.');
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [createDealOpen, setCreateDealOpen] = useState(false);
   const [editingDescription, setEditingDescription] = useState(false);

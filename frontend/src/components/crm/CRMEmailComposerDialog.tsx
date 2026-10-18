@@ -1,3 +1,4 @@
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { EmailTemplatePicker } from "./outreach/EmailTemplatePicker";
 import { EmailTemplateEditor } from "./outreach/EmailTemplateEditor";
 import { crmOutreachService } from "@/lib/services/crmOutreachService";
@@ -183,15 +184,7 @@ export function CRMEmailComposerDialog({
     cc.join(",") !== (draft?.cc ?? []).join(",") ||
     Boolean(toInput || ccInput) ||
     emailAttachments.attachments.length > 0;
-  useEffect(() => {
-    if (!dirty && !sending) return;
-    const protect = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", protect);
-    return () => window.removeEventListener("beforeunload", protect);
-  }, [dirty, sending]);
+  useUnsavedChangesGuard(open && (dirty || sending || rewriting || emailAttachments.uploading), 'Send or discard your email before refreshing.');
   const openLinkModal = () => {
     if (!editor) return;
     const attrs = editor.getAttributes("link") as { href?: string };

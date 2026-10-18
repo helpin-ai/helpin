@@ -1,3 +1,4 @@
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { TeamColorMark } from '@/components/workspace/TeamLabel';
 import { DetailMetadataRow as MetadataRow } from '@/components/pm/DetailMetadataRow';
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type SetStateAction } from 'react';
@@ -265,6 +266,7 @@ export function EpicDetailPage() {
   } | null>(null);
   const [movingTasks, setMovingTasks] = useState(false);
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
+  useUnsavedChangesGuard(saving || descriptionPendingUploads > 0 || Object.keys(pendingPatch).length > 0, 'Wait for your epic changes and uploads to save before refreshing.');
   const [editingDescription, setEditingDescription] = useState(false);
   const [descriptionDragging, setDescriptionDragging] = useState(false);
   const [comments, setComments] = useState<CommentWithAuthor[]>([]);

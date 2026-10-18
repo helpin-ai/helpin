@@ -1,3 +1,4 @@
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { useState } from "react";
 import { toast } from "sonner";
 import {
@@ -35,6 +36,7 @@ export function EmailTemplateEditor({
     Boolean(initial?.name && !initial?.id),
   );
   const refresh = useOutreachRefresh(workspaceId);
+  useUnsavedChangesGuard(changed || saving, 'Save or discard your email template before refreshing.');
   const patch = (changes: Partial<typeof form>) => {
     setForm((current) => ({ ...current, ...changes }));
     setChanged(true);

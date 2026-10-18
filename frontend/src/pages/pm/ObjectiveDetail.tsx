@@ -1,3 +1,4 @@
+import { useAppRefreshGuard } from '@/hooks/useAppRefreshGuard';
 import { TeamColorMark, TeamLabel } from '@/components/workspace/TeamLabel';
 import { EPIC_PICKER_WIDTH } from '@/components/pm/epicPickerGroups';
 import { DetailMetadataRow as MetadataRow } from '@/components/pm/DetailMetadataRow';
@@ -305,6 +306,8 @@ export function ObjectiveDetailPage() {
   useEffect(() => {
     if (data && !dirty) savedDescriptionRef.current = data.objective.description ?? '';
   }, [data, dirty]);
+
+  useAppRefreshGuard(() => dirty ? 'Wait for your objective changes and uploads to save before refreshing.' : null);
 
   const flushAll = async () => {
     await flush();

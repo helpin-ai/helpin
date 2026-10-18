@@ -1,3 +1,4 @@
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
@@ -67,6 +68,18 @@ export function CreateContactDialog({
   const [lifecycleStage, setLifecycleStage] = useState<LifecycleStage>(initialValues?.lifecycle_stage ?? 'subscriber');
   const [leadStatus, setLeadStatus] = useState<LeadStatus>(initialValues?.lead_status ?? 'new');
   const [source, setSource] = useState(initialValues?.source ?? '');
+  useUnsavedChangesGuard(
+    open && (createContact.isPending ||
+      firstName !== (initialValues?.first_name ?? '') ||
+      lastName !== (initialValues?.last_name ?? '') ||
+      email !== (initialValues?.email ?? '') ||
+      phone !== (initialValues?.phone ?? '') ||
+      jobTitle !== (initialValues?.job_title ?? '') ||
+      lifecycleStage !== (initialValues?.lifecycle_stage ?? 'subscriber') ||
+      leadStatus !== (initialValues?.lead_status ?? 'new') ||
+      source !== (initialValues?.source ?? '')),
+    'Save or discard your new contact before refreshing.',
+  );
 
   const resetForm = () => {
     setFirstName(initialValues?.first_name ?? '');

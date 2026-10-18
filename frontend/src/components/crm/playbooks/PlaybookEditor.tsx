@@ -1,3 +1,4 @@
+import { useAppRefreshGuard } from '@/hooks/useAppRefreshGuard';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
@@ -49,6 +50,7 @@ export function PlaybookEditor({ ws, item, canAdmin, onDirty, onReload, onPrevie
   const fields = useMemo(() => buildCRMPlaybookQueryFields(members.data ?? [], pipelines.data ?? []), [members.data, pipelines.data]);
   const dirty = definitionFingerprint(definition) !== definitionFingerprint(baseline.draft);
   const stale = baseline.revision !== item.playbook.revision;
+  useAppRefreshGuard(() => dirty || write.isPending ? 'Save or discard your playbook changes before refreshing.' : null);
   const blocker = useBlocker({ shouldBlockFn: () => dirty, enableBeforeUnload: dirty, withResolver: true });
   useEffect(() => { onDirty(dirty); }, [dirty, onDirty]);
   // Refresh a clean form with remote changes; never replace an unsaved draft.

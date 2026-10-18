@@ -1,3 +1,4 @@
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { SequenceEnrollmentDialog } from '@/components/crm/outreach/SequenceEnrollmentDialog';
 import { memo, useEffect, useMemo, useState, type JSX, type SVGProps } from 'react';
 import { Link, useLocation, useNavigate } from '@tanstack/react-router';
@@ -604,6 +605,7 @@ export function ContactDetailPage({
   const [pendingPatch, setPendingPatch] = useState<UpdateCRMContactRequest>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  useUnsavedChangesGuard(saving || Object.keys(pendingPatch).length > 0, 'Wait for your contact changes to save before refreshing.');
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [sequenceOpen, setSequenceOpen] = useState(false);
   const [createDealOpen, setCreateDealOpen] = useState(false);

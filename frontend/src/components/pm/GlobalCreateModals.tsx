@@ -1,3 +1,4 @@
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { QuietDropdown } from '@/components/design-system/quiet-dropdown';
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
@@ -234,6 +235,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
     startDate: '',
     targetDate: '',
   });
+  const initialMeta = useRef(meta);
   const [repositories, setRepositories] = useState<GitRepository[]>([]);
   const [assignedAgentId, setAssignedAgentId] = useState<string | undefined>();
   const [submitting, setSubmitting] = useState(false);
@@ -414,7 +416,8 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
     }
   };
 
-  const hasUnsavedChanges = name.trim() !== '' || description.trim() !== '' || color !== initialColor || pendingFiles.length > 0 || epicExternalLinks.some(l => l.url.trim());
+  const hasUnsavedChanges = name.trim() !== '' || description.trim() !== '' || color !== initialColor || JSON.stringify(meta) !== JSON.stringify(initialMeta.current) || Boolean(assignedAgentId) || pendingFiles.length > 0 || epicExternalLinks.some(l => l.url.trim());
+  useUnsavedChangesGuard(hasUnsavedChanges || submitting || descriptionPendingUploads > 0, 'Save or discard your new epic before refreshing.');
 
   const handleClose = async () => {
     if (hasUnsavedChanges) {
@@ -808,6 +811,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
     endDate: '',
     teamId: storeTeamId ?? teams.find((t) => t.sprints_enabled !== false)?.id ?? '',
   });
+  const initialForm = useRef(form);
   const [submitting, setSubmitting] = useState(false);
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -946,6 +950,13 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
 
   const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
+  useUnsavedChangesGuard(
+    !automationPrompt && (JSON.stringify(form) !== JSON.stringify(initialForm.current) ||
+      submitting ||
+      descriptionPendingUploads > 0),
+    'Save or discard your new sprint before refreshing.',
+  );
+
   if (automationPrompt) {
     return (
       <Dialog
@@ -1045,7 +1056,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
     );
   }
 
-  const hasUnsavedChanges = form.name.trim() !== '' || form.description.trim() !== '';
+  const hasUnsavedChanges = JSON.stringify(form) !== JSON.stringify(initialForm.current);
 
   const handleClose = async () => {
     if (hasUnsavedChanges) {
@@ -1233,6 +1244,7 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
     startDate: initialDates?.startDate ?? '',
     targetDate: initialDates?.endDate ?? '',
   });
+  const initialForm = useRef(form);
   const [submitting, setSubmitting] = useState(false);
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -1272,7 +1284,8 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
     onClose();
   };
 
-  const hasUnsavedChanges = form.name.trim() !== '' || form.description.trim() !== '';
+  const hasUnsavedChanges = JSON.stringify(form) !== JSON.stringify(initialForm.current);
+  useUnsavedChangesGuard(hasUnsavedChanges || submitting || descriptionPendingUploads > 0, 'Save or discard your new objective before refreshing.');
 
   const handleClose = async () => {
     if (hasUnsavedChanges) {

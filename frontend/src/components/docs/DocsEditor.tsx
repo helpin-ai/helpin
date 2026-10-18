@@ -1,3 +1,4 @@
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { useEditor, EditorContent, type JSONContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
@@ -928,8 +929,10 @@ export function DocsEditor({
   const savedFadeTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const savingRef = useRef(false)
   const pendingContentRef = useRef<JSONContent | null>(null)
+  const hasLocalEditsRef = useRef(false)
   const skipNextSaveRef = useRef(false)
   const pendingImportedImageUploadsRef = useRef(new Set<string>())
+  const pendingFileUploadsRef = useRef(0)
   const importedImagePersistTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const lastSavedSnapshotRef = useRef<string | null>(
     initialContent ? stableJSONSnapshot(initialContent) : null,
@@ -985,6 +988,13 @@ export function DocsEditor({
   const [showSearch, setShowSearch] = useState(false)
   const [showSearchReplace, setShowSearchReplace] = useState(false)
 
+  useUnsavedChangesGuard(() => (
+    saveStatus === 'unsaved' || savingRef.current || saveTimerRef.current !== undefined || pendingContentRef.current !== null ||
+    pendingFileUploadsRef.current > 0 || pendingImportedImageUploadsRef.current.size > 0 ||
+    (hasLocalEditsRef.current && Boolean(editorRef.current) && stableJSONSnapshot(editorRef.current!.getJSON()) !== lastSavedSnapshotRef.current) ||
+    (sourceView && sourceMarkdown !== (editorRef.current?.storage as Record<string, any>)?.markdown?.getMarkdown())
+  ), 'Save your document and finish any uploads before refreshing.')
+
   const doSave = useCallback(
     async (json: JSONContent) => {
       if (contentErrorRef.current) return
@@ -1010,6 +1020,7 @@ export function DocsEditor({
         savedFadeTimerRef.current = setTimeout(() => setSaveStatus('idle'), 5000)
       } catch {
         submittedSaveSnapshotsRef.current.delete(snapshot)
+        if (savedFadeTimerRef.current) clearTimeout(savedFadeTimerRef.current)
         setSaveStatus('unsaved')
       } finally {
         savingRef.current = false
@@ -1026,9 +1037,14 @@ export function DocsEditor({
   const scheduleSave = useCallback(
     (json: JSONContent) => {
       if (contentErrorRef.current) return
+      hasLocalEditsRef.current = true
       setSaveStatus('unsaved')
+      if (savedFadeTimerRef.current) clearTimeout(savedFadeTimerRef.current)
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-      saveTimerRef.current = setTimeout(() => doSave(json), autoSaveMs)
+      saveTimerRef.current = setTimeout(() => {
+        saveTimerRef.current = undefined
+        void doSave(json)
+      }, autoSaveMs)
     },
     [doSave, autoSaveMs],
   )
@@ -1036,6 +1052,7 @@ export function DocsEditor({
   // Cleanup timers on unmount
   useEffect(() => () => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = undefined
     if (savedFadeTimerRef.current) clearTimeout(savedFadeTimerRef.current)
     if (importedImagePersistTimerRef.current) clearTimeout(importedImagePersistTimerRef.current)
     if (mentionSearchTimerRef.current) clearTimeout(mentionSearchTimerRef.current)
@@ -1237,6 +1254,7 @@ export function DocsEditor({
 
       const uploadId = `img-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 
+      pendingFileUploadsRef.current += 1
       // Insert a placeholder with data-uri
       const reader = new FileReader()
       reader.onload = async () => {
@@ -1275,7 +1293,13 @@ export function DocsEditor({
           }
         } catch (err) {
           toast.error(err instanceof Error ? err.message : 'Failed to upload image')
+        } finally {
+          pendingFileUploadsRef.current -= 1
         }
+      }
+      reader.onerror = () => {
+        pendingFileUploadsRef.current -= 1
+        toast.error('Failed to read image')
       }
       reader.readAsDataURL(file)
     },
@@ -1681,6 +1705,7 @@ export function DocsEditor({
       // land would overwrite the content that just arrived (for example an
       // applied change proposal) a couple of seconds later.
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+      saveTimerRef.current = undefined
       pendingContentRef.current = null
       skipNextSaveRef.current = true
       const { from, to } = editor.state.selection
@@ -1756,6 +1781,7 @@ export function DocsEditor({
     input.onchange = async () => {
       const file = input.files?.[0]
       if (!file || !uploadConfigRef.current) return
+      pendingFileUploadsRef.current += 1
       try {
         const upload = await uploadEditorFile(file, uploadConfigRef.current)
         editor.chain().focus().setFileAttachment({
@@ -1768,6 +1794,8 @@ export function DocsEditor({
         scheduleSave(editor.getJSON())
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Failed to upload file')
+      } finally {
+        pendingFileUploadsRef.current -= 1
       }
     }
     input.click()
