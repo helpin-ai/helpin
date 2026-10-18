@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { registerAppRefreshGuard } from '@/lib/appLoadRecovery';
 import type { DockChat, DockChatDetail } from '@/lib/dockTypes';
 import type { AgentRunMessage } from '@/lib/pmTypes';
 
@@ -12,6 +13,24 @@ function readTranscriptView(): DockTranscriptView {
 
 const COLLAPSED_KEY = 'helpin:ask-agents-dock-collapsed';
 const SELECTION_KEY_PREFIX = 'helpin:agent-dock-selection:';
+const DRAFTS_KEY_PREFIX = 'helpin:agent-dock-drafts:';
+
+function readDrafts(workspaceId: string): Record<string, string> {
+  try {
+    const value = JSON.parse(sessionStorage.getItem(`${DRAFTS_KEY_PREFIX}${workspaceId}`) ?? '{}');
+    return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
+  } catch { return {}; }
+}
+
+function writeDrafts(workspaceId: string | null, drafts: Record<string, string>): boolean {
+  if (!workspaceId) return true;
+  try {
+    const saved = Object.fromEntries(Object.entries(drafts).filter(([, text]) => text.length > 0));
+    if (Object.keys(saved).length) sessionStorage.setItem(`${DRAFTS_KEY_PREFIX}${workspaceId}`, JSON.stringify(saved));
+    else sessionStorage.removeItem(`${DRAFTS_KEY_PREFIX}${workspaceId}`);
+    return true;
+  } catch { return !Object.values(drafts).some(value => value.length > 0); }
+}
 
 export type DockView = 'chat' | 'chats';
 export type DockTab = 'agents' | 'chats';
@@ -112,7 +131,7 @@ export const useDockStore = create<DockState>((set, get) => ({
       activeRunId: selection.runId ?? null,
       chats: [],
       transcripts: {},
-      drafts: {},
+      drafts: readDrafts(workspaceId),
       lastAttentionIds: [],
     });
   },
@@ -154,10 +173,15 @@ export const useDockStore = create<DockState>((set, get) => ({
     next[index] = chat;
     return { chats: next };
   }),
-  setDraft: (key, value) => set((state) => ({ drafts: { ...state.drafts, [key]: value } })),
+  setDraft: (key, value) => set((state) => {
+    const drafts = { ...state.drafts, [key]: value };
+    writeDrafts(state.workspaceId, drafts);
+    return { drafts };
+  }),
   clearDraft: (key) => set((state) => {
     const drafts = { ...state.drafts };
     delete drafts[key];
+    writeDrafts(state.workspaceId, drafts);
     return { drafts };
   }),
   setLastAttentionIds: (lastAttentionIds) => set((state) => {
@@ -168,3 +192,8 @@ export const useDockStore = create<DockState>((set, get) => ({
     return { lastAttentionIds };
   }),
 }));
+
+registerAppRefreshGuard(() => {
+  const { workspaceId, drafts } = useDockStore.getState();
+  return writeDrafts(workspaceId, drafts) ? null : 'Your Ask agent draft could not be saved. Copy it before refreshing.';
+});

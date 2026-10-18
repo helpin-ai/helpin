@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { useSupportInboxStore } from '../supportInboxStore';
+import { flushSupportDrafts, useSupportInboxStore } from '../supportInboxStore';
 
 // Mock localStorage
 const localStorageMock = (() => {
@@ -67,6 +67,17 @@ describe('supportInboxStore', () => {
   // ── setDraft / clearDraft ──────────────────────────────────
 
   describe('setDraft / clearDraft', () => {
+    it('flushes the latest draft before refresh without resurrecting a cleared draft', () => {
+      const { setDraft, clearDraft } = useSupportInboxStore.getState();
+      setDraft('conv-1', 'Sent text');
+      clearDraft('conv-1');
+      setDraft('conv-2', 'Just typed');
+      expect(flushSupportDrafts()).toBe(true);
+      expect(JSON.parse(localStorageMock.getItem('support_inbox_drafts')!)).toEqual({ 'conv-2': 'Just typed' });
+      vi.advanceTimersByTime(1000);
+      expect(JSON.parse(localStorageMock.getItem('support_inbox_drafts')!)).toEqual({ 'conv-2': 'Just typed' });
+    });
+
     it('stores a draft for a conversation', () => {
       const { setDraft } = useSupportInboxStore.getState();
       setDraft('conv-1', 'Hello there');

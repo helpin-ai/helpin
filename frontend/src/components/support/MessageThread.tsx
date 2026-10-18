@@ -1,3 +1,4 @@
+import { AppLoadBoundary } from '@/components/layout/AppLoadError';
 import { ConversationMergeHistoryEvent, MergedConversationContinuation } from './ConversationMergeHistory';
 import { groupSupportTimeline } from './groupSupportTimeline';
 import { useConversationMerges } from '@/hooks/queries/useSupportMerge';
@@ -1293,7 +1294,7 @@ export function MessageThread({
           This customer was deleted. Messages and comments are retained; this conversation is read-only.
         </div>
       ) : (
-        <Suspense fallback={<ReplyComposerLoading />}>
+        <AppLoadBoundary><Suspense fallback={<ReplyComposerLoading />}>
           <LazyReplyComposer
             key={`${workspaceId}:${conversationId}`}
             workspaceId={workspaceId}
@@ -1303,11 +1304,11 @@ export function MessageThread({
             emailDeliveryEnabled={installation?.settings.email_fallback_enabled}
             onUpgradeRequired={setUpgradeDialogReason}
           />
-        </Suspense>
+        </Suspense></AppLoadBoundary>
       )) : <ReplyComposerLoading />)}
 
       {taskReview && taskReview.conversationId === conversationId ? (
-        <Suspense fallback={null}><LazySupportTaskTriageDialog
+        <AppLoadBoundary><Suspense fallback={null}><LazySupportTaskTriageDialog
           key={`${workspaceId}:${conversationId}`}
           workspaceId={workspaceId}
           workspaceSlug={workspaceSlug}
@@ -1320,10 +1321,10 @@ export function MessageThread({
           onOpenChange={(open) => { if (!open) setTaskReview(null); }}
           onCreate={handleReviewedTaskCreate}
           onLinked={() => { setTaskReview(null); toast.success('Conversation linked to existing task'); }}
-        /></Suspense>
+        /></Suspense></AppLoadBoundary>
       ) : null}
       {showCreateTaskDialog ? (
-        <Suspense fallback={null}>
+        <AppLoadBoundary><Suspense fallback={null}>
           <LazyCreateTaskDialog
             open={showCreateTaskDialog}
             onOpenChange={setShowCreateTaskDialog}
@@ -1332,7 +1333,7 @@ export function MessageThread({
             isPending={createTaskFromConversation.isPending}
             onConfirm={handleCreateTaskConfirm}
           />
-        </Suspense>
+        </Suspense></AppLoadBoundary>
       ) : null}
       <UpgradeRequiredDialog
         open={upgradeDialogReason !== null}

@@ -8,6 +8,7 @@ import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { Editor } from '@tiptap/core';
 import { clearReplyDeliveryDraft, loadReplyDelivery, saveReplyDelivery, saveReplySubject } from '../replyDelivery';
+import { prepareAppRefresh } from '@/lib/appLoadRecovery';
 
 const mocks = vi.hoisted(() => ({
   translation: false,
@@ -73,6 +74,18 @@ describe('ReplyComposer AI loading state', () => {
     mocks.translation = false;
     saveReplySubject('ws-1', 'conv-1');
     clearReplyDeliveryDraft('ws-1', 'conv-1');
+    sessionStorage.clear();
+  });
+
+  it('flushes freshly typed formatted content before a user refreshes', () => {
+    setup();
+    const editor = (container.querySelector('.tiptap') as HTMLElement & { editor: Editor }).editor;
+    act(() => { editor.commands.setContent({ type: 'doc', content: [{ type: 'paragraph', content: [
+      { type: 'text', text: 'Just typed', marks: [{ type: 'bold' }] },
+      { type: 'text', text: ' reply' },
+    ] }] }); });
+    act(() => { expect(prepareAppRefresh()).toBeNull(); });
+    expect(JSON.parse(localStorage.getItem('support_inbox_drafts')!)['conv-1']).toBe('**Just typed** reply');
   });
 
   it('offers an explicit original send after translation fails and preserves delivery and retry identity', async () => {

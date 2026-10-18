@@ -1,3 +1,4 @@
+import { AppLoadBoundary } from '@/components/layout/AppLoadError';
 import { useNotificationView } from '@/hooks/useNotificationView';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from '@tanstack/react-router';
@@ -469,9 +470,9 @@ export function SupportInboxLayout() {
             }`}
           >
             {detailSidebarMode !== 'agents' ? (
-              <Suspense fallback={null}>
+              <AppLoadBoundary><Suspense fallback={null}>
                 <LazyConversationDetailSidebar workspaceId={workspaceId} conversationId={selectedConversationId} />
-              </Suspense>
+              </Suspense></AppLoadBoundary>
             ) : null}
           </div>
           {supportAgentContext && detailSidebarMode === 'agents' ? (
@@ -482,13 +483,13 @@ export function SupportInboxLayout() {
                 detailSidebarMode === 'agents' ? 'translate-x-0 opacity-100' : 'pointer-events-none translate-x-2 opacity-0'
               }`}
             >
-              <Suspense fallback={null}>
+              <AppLoadBoundary><Suspense fallback={null}>
                 <LazySupportAgentSidebar
                   context={supportAgentContext}
                   active={detailSidebarMode === 'agents'}
                   onBack={handleCloseAgentSidebar}
                 />
-              </Suspense>
+              </Suspense></AppLoadBoundary>
             </div>
           ) : null}
         </div> : null}
@@ -532,14 +533,14 @@ export function SupportInboxLayout() {
           <SheetDescription className="sr-only">
             Customer identity, assignment, tags, and conversation context.
           </SheetDescription>
-          <Suspense fallback={null}>
+          <AppLoadBoundary><Suspense fallback={null}>
             <LazyConversationDetailSidebar
               workspaceId={workspaceId}
               conversationId={routeConversationId}
               presentation="mobile-sheet"
               onClose={() => setMobileDetailsOpen(false)}
             />
-          </Suspense>
+          </Suspense></AppLoadBoundary>
         </SheetContent>
       </Sheet>
 

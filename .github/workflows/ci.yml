@@ -259,6 +259,12 @@ jobs:
       - name: Build frontend
         run: |
           pnpm --dir frontend run build:ee
+      - name: Install browser for release recovery checks
+        run: pnpm --dir frontend exec playwright install --with-deps chromium
+      - name: Check open-tab release recovery
+        env:
+          SUPPORT_E2E_PREVIEW: '1'
+        run: pnpm --dir frontend exec playwright test --config=playwright.support.config.ts --project=chromium support-release-recovery
 
   frontend-tests:
     name: Frontend Vitest (${{ matrix.shard }}/3)

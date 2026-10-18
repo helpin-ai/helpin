@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { registerAppRefreshGuard } from '@/lib/appLoadRecovery';
 import type { ConversationListFilters } from '@/lib/supportInboxFilters';
 import { defaultConversationListFiltersForNav, parseSupportInboxViewFilters } from '@/lib/supportInboxFilters';
 
@@ -94,22 +95,28 @@ function loadDrafts(): Record<string, string> {
 
 let _draftSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
-function saveDraftsDebounced(drafts: Record<string, string>) {
+export function flushSupportDrafts(): boolean {
   if (_draftSaveTimer) clearTimeout(_draftSaveTimer);
-  _draftSaveTimer = setTimeout(() => {
-    try {
-      const filtered = Object.fromEntries(
-        Object.entries(drafts).filter(([, v]) => v.length > 0)
-      );
-      if (Object.keys(filtered).length === 0) {
-        localStorage.removeItem(DRAFTS_STORAGE_KEY);
-      } else {
-        localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(filtered));
-      }
-    } catch {
-      // Ignore local storage write failures.
+  _draftSaveTimer = null;
+  const drafts = useSupportInboxStore.getState().drafts;
+  try {
+    const filtered = Object.fromEntries(
+      Object.entries(drafts).filter(([, v]) => v.length > 0)
+    );
+    if (Object.keys(filtered).length === 0) {
+      localStorage.removeItem(DRAFTS_STORAGE_KEY);
+    } else {
+      localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(filtered));
     }
-  }, 500);
+    return true;
+  } catch {
+    return !Object.values(drafts).some(value => value.length > 0);
+  }
+}
+
+function saveDraftsDebounced() {
+  if (_draftSaveTimer) clearTimeout(_draftSaveTimer);
+  _draftSaveTimer = setTimeout(flushSupportDrafts, 500);
 }
 
 function removeDraftFromStorage(conversationId: string) {
@@ -453,11 +460,11 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
         if (!content) {
           const rest = { ...state.drafts };
           delete rest[conversationId];
-          saveDraftsDebounced(rest);
+          saveDraftsDebounced();
           return { drafts: rest };
         }
         const next = { ...state.drafts, [conversationId]: content };
-        saveDraftsDebounced(next);
+        saveDraftsDebounced();
         return { drafts: next };
       }),
     clearDraft: (conversationId) =>
@@ -470,3 +477,5 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
       }),
   };
 });
+
+registerAppRefreshGuard(() => flushSupportDrafts() ? null : 'Your reply draft could not be saved. Copy it before refreshing.');

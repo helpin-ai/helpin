@@ -1,8 +1,11 @@
 import { useDraftMergeRevision } from './useDraftMergeRevision';
+import { useAppRefreshGuard } from '@/hooks/useAppRefreshGuard';
+import { flushSupportDrafts } from '@/stores/supportInboxStore';
+import { clearSupportRecoveryDraft, loadSupportRecoveryDraft, saveSupportRecoveryDraft } from './supportDraftRecovery';
 import { createSupportComposerExtensions, normalizeSupportLinkInput } from './supportComposerExtensions';
 import { SupportTranslationSendError } from '@/lib/supportTranslationError';
 import { useOutgoingSupportTranslation } from '@/hooks/queries/useOutgoingSupportTranslation';
-import { useRef, useEffect, useState, useCallback, useMemo, type KeyboardEvent, type ReactNode } from 'react';
+import { useRef, useEffect, useLayoutEffect, useState, useCallback, useMemo, type KeyboardEvent, type ReactNode } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import Placeholder from '@tiptap/extension-placeholder';
 import {
@@ -785,6 +788,12 @@ export function ReplyComposer(props: ReplyComposerProps) {
 
 function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, onUpgradeRequired, editingNote, onFinishEdit, inactive = false }: ReplyComposerProps & { inactive?: boolean }) {
   const { replyMode, setReplyMode, setDraft, clearDraft, detailSidebarMode, setDetailSidebarMode } = useSupportInboxStore();
+  const [recoveryDraft] = useState(() => editingNote ? null : loadSupportRecoveryDraft(workspaceId, conversationId));
+  useLayoutEffect(() => {
+    if (!recoveryDraft) return;
+    setReplyMode(recoveryDraft.mode);
+    clearSupportRecoveryDraft(workspaceId, conversationId);
+  }, [recoveryDraft, workspaceId, conversationId, setReplyMode]);
   const askChat = useDockStore((state) => state.chats.find((chat) => chat.support_conversation_id === conversationId) ?? null);
   const [translationFailureConversation, setTranslationFailureConversation] = useState<string | null>(null);
   const sendMutation = useSendMessage(workspaceId, conversationId);
@@ -859,7 +868,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
   // File attachments
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadMutation = useUploadSupportAttachment(workspaceId, conversationId);
-  const [pendingAttachments, setPendingAttachments] = useState<PendingSupportAttachment[]>(() => editingNote ? restoreAttachmentsFromMessage(editingNote.attachments) : []);
+  const [pendingAttachments, setPendingAttachments] = useState<PendingSupportAttachment[]>(() => editingNote ? restoreAttachmentsFromMessage(editingNote.attachments) : recoveryDraft?.attachments ?? []);
   useEffect(() => {
     if (editingNote) return;
     useSupportInboxStore.getState().setDraftAttachmentCount(conversationId, pendingAttachments.length);
@@ -1339,6 +1348,22 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
   editorRef.current = editor;
   const { isRewriting, runRewrite } = useComposerRewrite(editor, `${workspaceId}:${conversationId}`);
 
+  useAppRefreshGuard(() => {
+    if (!editor) return null;
+    if (sendMutation.isPending || updateNoteMutation.isPending) return 'Wait for your message to finish saving before refreshing.';
+    if (isRewriting) return 'Wait for the rewrite to finish before refreshing.';
+    if (editingNote) return 'Save or cancel your note edit before refreshing.';
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = null;
+    const markdown = getEditorMarkdown(editor);
+    setDraft(conversationId, markdown);
+    if (!flushSupportDrafts()) return 'Your reply draft could not be saved. Copy it before refreshing.';
+    if (attachmentsPending) return 'Finish uploading or remove unfinished attachments before refreshing.';
+    if (markdown.trim() || pendingAttachments.length) saveSupportRecoveryDraft(workspaceId, conversationId, { mode: replyMode, attachments: pendingAttachments });
+    else clearSupportRecoveryDraft(workspaceId, conversationId);
+    return null;
+  });
+
   const insertShortcut = useCallback((shortcut: SupportCannedResponse, range?: { from: number; to: number }) => {
     const ed = editorRef.current;
     if (!ed) return;
@@ -1561,6 +1586,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
     editor.commands.clearContent();
     translatedSendRef.current = null;
     clearDraft(conversationId);
+    clearSupportRecoveryDraft(workspaceId, conversationId);
     if (!isInternal) {
       clearReplyDeliveryDraft(workspaceId, conversationId);
     }
