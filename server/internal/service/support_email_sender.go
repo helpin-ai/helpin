@@ -343,6 +343,17 @@ func (s *SupportInboxService) postmarkDomainForSender(ctx context.Context, works
 	return postmarkDomain, nil
 }
 
+func (s *SupportInboxService) emailSenderVerificationDomain() string {
+	// The reply domain accepts individual aliases. The inbox route domain may
+	// only receive mail through wildcard workspace subdomains.
+	if s.emailFallbackService != nil {
+		if domain := s.emailFallbackService.InboundDomain(); domain != "" {
+			return domain
+		}
+	}
+	return s.inboundEmailDomain()
+}
+
 func (s *SupportInboxService) generateEmailSenderForwardingVerification(ctx context.Context) (string, string, error) {
 	if s == nil {
 		return "", "", fmt.Errorf("support inbox service is unavailable")
@@ -361,7 +372,7 @@ func (s *SupportInboxService) generateEmailSenderForwardingVerification(ctx cont
 				continue
 			}
 		}
-		return token, "verify-" + token + "@" + s.inboundEmailDomain(), nil
+		return token, "verify-" + token + "@" + s.emailSenderVerificationDomain(), nil
 	}
 	return "", "", fmt.Errorf("failed to allocate forwarding verification address")
 }
@@ -370,12 +381,37 @@ func (s *SupportInboxService) ensureEmailSenderForwardingVerification(ctx contex
 	if sender == nil {
 		return nil
 	}
-	if strings.TrimSpace(sender.ForwardingVerificationToken) != "" && strings.TrimSpace(sender.ForwardingAddress) != "" {
-		return nil
-	}
-	token, address, err := s.generateEmailSenderForwardingVerification(ctx)
-	if err != nil {
-		return err
+	token := strings.TrimSpace(sender.ForwardingVerificationToken)
+	address := strings.TrimSpace(sender.ForwardingAddress)
+	if token != "" && address != "" {
+		legacyAddress := "verify-" + token + "@" + s.inboundEmailDomain()
+		replyAddress := "verify-" + token + "@" + s.emailSenderVerificationDomain()
+		if sender.ForwardingStatus == supportEmailSenderForwardingVerified || sender.ForwardingVerifiedAt != nil ||
+			!strings.EqualFold(address, legacyAddress) || strings.EqualFold(address, replyAddress) {
+			return nil
+		}
+		// Repair unfinished setups without rotating the token. Mail arriving at
+		// either address can still complete verification through the same token.
+		if s.emailSenderRepo != nil && strings.TrimSpace(sender.ID) != "" {
+			updated, err := s.emailSenderRepo.RepairPendingForwardingAddress(ctx, sender, replyAddress)
+			if err != nil {
+				return err
+			}
+			if updated == nil {
+				return fmt.Errorf("email sender not found")
+			}
+			*sender = *updated
+			return nil
+		}
+		address = replyAddress
+		sender.ForwardingStatus = supportEmailSenderForwardingPending
+		sender.ForwardingLastError = nil
+	} else {
+		var err error
+		token, address, err = s.generateEmailSenderForwardingVerification(ctx)
+		if err != nil {
+			return err
+		}
 	}
 	sender.ForwardingVerificationToken = token
 	sender.ForwardingAddress = address

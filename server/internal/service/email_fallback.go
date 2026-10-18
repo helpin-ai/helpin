@@ -3379,10 +3379,9 @@ func (s *EmailFallbackService) sendFallbackEmailWithSenderFallback(
 	return postmarkMessageID, fallbackFromAddress, "postmark_sender_signature_rejected", nil
 }
 
-// resolveOutboundFromAddress returns the preferred branded sender address for a
-// conversation's outbound email. Postmark may still reject this address until
-// the workspace/domain is verified for outbound sending; the send path retries
-// with the configured verified sender while keeping the conversation Reply-To.
+// resolveOutboundFromAddress uses a verified custom sender when available.
+// Generated inbox addresses are for receiving; their wildcard MX does not verify
+// them for sending. Use the configured sender while keeping the inbox Reply-To.
 func (s *EmailFallbackService) resolveOutboundFromAddress(ctx context.Context, conv *model.SupportConversation) SupportOutboundFromAddressResult {
 	fallback := SupportOutboundFromAddressResult{Email: s.emailClient.FromEmail(), Source: "verified_fallback_sender"}
 	if s.supportInboxService == nil || conv == nil {
@@ -3397,7 +3396,7 @@ func (s *EmailFallbackService) resolveOutboundFromAddress(ctx context.Context, c
 		)
 		return fallback
 	}
-	if strings.TrimSpace(result.Email) == "" {
+	if strings.TrimSpace(result.Email) == "" || result.Source == supportOutboundSenderSourceGeneratedRoute {
 		return fallback
 	}
 	return result

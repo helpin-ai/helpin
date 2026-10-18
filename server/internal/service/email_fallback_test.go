@@ -532,7 +532,7 @@ func TestEmailFallbackFireEmailMarksMessagesAndLogs(t *testing.T) {
 	if captured.Subject != "Re: Pricing question (#1)" {
 		t.Fatalf("unexpected subject: %q", captured.Subject)
 	}
-	if !strings.Contains(captured.From, "Alex Agent - Acme Support <inbox@acme.on.helpin.email>") {
+	if !strings.Contains(captured.From, "Alex Agent - Acme Support <noreply@example.com>") {
 		t.Fatalf("unexpected from: %q", captured.From)
 	}
 	if !strings.Contains(captured.HtmlBody, "#helpin-conv="+conversationID) {
@@ -785,6 +785,11 @@ func TestEmailFallbackFireEmailRetriesVerifiedSenderWhenBrandedSenderRejected(t 
 	env.service.now = func() time.Time { return fixedNow }
 
 	workspaceID := "11111111-1111-1111-1111-111111111111"
+	// A previously verified custom sender can lose verification at the provider.
+	// Keep the retry path for that case, without attempting generated inbox senders.
+	if err := env.senderRepo.Create(ctx, verifiedSender(workspaceID, nil, "support@acme.example", "workspace", "22222222-2222-2222-2222-222222222222")); err != nil {
+		t.Fatal(err)
+	}
 	conversationID := "66666666-6666-6666-6666-666666666667"
 	customerEmail := "customer@example.com"
 	conv := &model.SupportConversation{
@@ -831,7 +836,7 @@ func TestEmailFallbackFireEmailRetriesVerifiedSenderWhenBrandedSenderRejected(t 
 					Header:     make(http.Header),
 					Body: io.NopCloser(strings.NewReader(`{
 						"ErrorCode": 300,
-						"Message": "The 'From' address you supplied (inbox@acme.on.helpin.email) is not a Sender Signature on your account."
+						"Message": "The 'From' address you supplied (support@acme.example) is not a Sender Signature on your account."
 					}`)),
 				}, nil
 			}
@@ -856,7 +861,7 @@ func TestEmailFallbackFireEmailRetriesVerifiedSenderWhenBrandedSenderRejected(t 
 	if len(attempts) != 2 {
 		t.Fatalf("expected branded sender attempt and verified fallback attempt, got %d", len(attempts))
 	}
-	if !strings.Contains(attempts[0].From, "Alex Agent - Acme Support <inbox@acme.on.helpin.email>") {
+	if !strings.Contains(attempts[0].From, "Alex Agent - Acme Support <support@acme.example>") {
 		t.Fatalf("unexpected first from: %q", attempts[0].From)
 	}
 	if !strings.Contains(attempts[1].From, "Alex Agent - Acme Support <noreply@example.com>") {
