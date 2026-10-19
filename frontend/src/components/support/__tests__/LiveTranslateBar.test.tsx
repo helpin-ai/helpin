@@ -32,7 +32,7 @@ it.each(['on', 'off'])('uses an accessible %s action that preserves automatic la
   mocks.mode = mode;
   mocks.save.mockResolvedValue({});
   const container = render();
-  const label = mode === 'on' ? 'Pause live translation' : 'Resume live translation';
+  const label = mode === 'on' ? 'Pause live translation' : 'Enable live translation';
   const action = container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
   expect(action).not.toBeNull();
   expect(container.querySelector('[role="switch"]')).toBeNull();
