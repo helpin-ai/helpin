@@ -96,6 +96,23 @@ describe('Login', () => {
     expect(buttonLabels(page)).toEqual(['Sign in with Authelia']);
   });
 
+  it('goes straight to the provider when local sign-in is off, unless a sign-in error is shown', () => {
+    const config = { ...baseConfig, oidc_login_enabled: true, local_login_enabled: false };
+    render(config, '?redirect=%2Fboard');
+    expect(assign).toHaveBeenCalledWith(`${API_BASE}/auth/oidc/start?redirect=%2Fboard`);
+
+    act(() => root?.unmount());
+    container?.remove();
+    assign.mockReset();
+    render(config, '?error=exchange_failed');
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it('does not redirect automatically while local sign-in is on', () => {
+    render({ ...baseConfig, oidc_login_enabled: true });
+    expect(assign).not.toHaveBeenCalled();
+  });
+
   it('keeps the signup link and passkey button while local sign-in is on', () => {
     const page = render({ ...baseConfig, signup_mode: 'open' });
     expect(page.querySelector('a[href^="/register"]')).not.toBeNull();
