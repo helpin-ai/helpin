@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, type ReactNode } from 'react';
+import { act, StrictMode, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthConfig } from '@/lib/services/authService';
@@ -56,13 +56,13 @@ afterEach(() => {
 
 const baseConfig: AuthConfig = { email_verification_required: false, app_email_configured: true, google_login_enabled: false };
 
-function render(configuration: AuthConfig, search = '') {
+function render(configuration: AuthConfig, search = '', strict = false) {
   window.location.search = search;
   useAuthStore.setState({ configuration });
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
-  act(() => root?.render(<Login />));
+  act(() => root?.render(strict ? <StrictMode><Login /></StrictMode> : <Login />));
   return container;
 }
 
@@ -94,6 +94,31 @@ describe('Login', () => {
     expect(page.querySelector('a[href="/forgot-password"]')).toBeNull();
     expect(page.querySelector('a[href^="/register"]')).toBeNull();
     expect(buttonLabels(page)).toEqual(['Sign in with Authelia']);
+  });
+
+  const ssoOnly = { ...baseConfig, oidc_login_enabled: true, local_login_enabled: false };
+
+  it('goes straight to the provider once when local sign-in is off, even under StrictMode', () => {
+    render(ssoOnly, '?redirect=%2Fboard', true);
+    expect(assign).toHaveBeenCalledTimes(1);
+    expect(assign).toHaveBeenCalledWith(`${API_BASE}/auth/oidc/start?redirect=%2Fboard`);
+  });
+
+  it('keeps the provider button instead of redirecting after a sign-in error', () => {
+    const page = render(ssoOnly, '?error=exchange_failed');
+    expect(assign).not.toHaveBeenCalled();
+    expect(buttonLabels(page)).toEqual(['Sign in with Single sign-on']);
+  });
+
+  it('keeps the provider button instead of redirecting after sign-out', () => {
+    const page = render(ssoOnly, '?signed_out=1');
+    expect(assign).not.toHaveBeenCalled();
+    expect(buttonLabels(page)).toEqual(['Sign in with Single sign-on']);
+  });
+
+  it('does not redirect automatically while local sign-in is on', () => {
+    render({ ...baseConfig, oidc_login_enabled: true });
+    expect(assign).not.toHaveBeenCalled();
   });
 
   it('keeps the signup link and passkey button while local sign-in is on', () => {
