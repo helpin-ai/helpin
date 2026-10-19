@@ -1,6 +1,7 @@
 import { useEffect, useState, type ComponentProps } from 'react';
 import { AvatarImage } from './avatar';
 import { getGravatarUrl } from '@/lib/gravatar';
+import { cn } from '@/lib/utils';
 
 type ContactAvatarImageProps = ComponentProps<typeof AvatarImage> & {
   email?: string | null;
@@ -16,6 +17,7 @@ export function ContactAvatarImage({ email, src, ...props }: ContactAvatarImageP
 function ContactAvatarImageSource({ email, src, onLoadingStatusChange, ...props }: ContactAvatarImageProps) {
   const [primaryFailed, setPrimaryFailed] = useState(false);
   const [gravatarUrl, setGravatarUrl] = useState<string>();
+  const [gravatarFailed, setGravatarFailed] = useState(false);
   const useGravatar = !src || primaryFailed;
 
   useEffect(() => {
@@ -27,10 +29,35 @@ function ContactAvatarImageSource({ email, src, onLoadingStatusChange, ...props 
     return () => { active = false; };
   }, [email, useGravatar]);
 
+  if (useGravatar) {
+    if (!gravatarUrl || gravatarFailed) return null;
+
+    // Keep Radix's initials fallback mounted beneath the image. Gravatar returns
+    // a transparent PNG for missing photos, so no error request is necessary.
+    return (
+      <img
+        {...props}
+        data-slot="avatar-image"
+        className={cn('absolute inset-0 aspect-square size-full rounded-full object-cover', props.className)}
+        src={gravatarUrl}
+        referrerPolicy="no-referrer"
+        onLoad={(event) => {
+          onLoadingStatusChange?.('loaded');
+          props.onLoad?.(event);
+        }}
+        onError={(event) => {
+          setGravatarFailed(true);
+          onLoadingStatusChange?.('error');
+          props.onError?.(event);
+        }}
+      />
+    );
+  }
+
   return (
     <AvatarImage
       {...props}
-      src={useGravatar ? gravatarUrl : src}
+      src={src}
       referrerPolicy="no-referrer"
       onLoadingStatusChange={(status) => {
         if (status === 'error' && !useGravatar) setPrimaryFailed(true);
