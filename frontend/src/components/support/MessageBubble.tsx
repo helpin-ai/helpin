@@ -958,25 +958,12 @@ export const MessageBubble = memo(function MessageBubble({
           ) : (
             messageActionsMenu
           )}
-          {visitorFeedback !== undefined && (
-            <div data-slot="support-answer-feedback" className="mt-1 flex h-5 justify-start">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span role="img" tabIndex={0} aria-label={feedbackLabel}
-                    className="inline-flex h-5 min-w-6 items-center justify-center rounded-full border border-border/60 bg-background px-1 text-sm leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                    {visitorFeedback ? '👍' : '👎'}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">{feedbackLabel}</TooltipContent>
-              </Tooltip>
-            </div>
-          )}
         </div>
         </MessageActionsContextMenu>
 
         {/* Right side: avatar or spacer (agent/user messages) */}
         {!isCustomer && (
-          <div className={`ml-2 flex w-7 shrink-0 flex-col justify-end ${visitorFeedback !== undefined ? 'pb-6' : ''}`}>
+          <div className="ml-2 flex w-7 shrink-0 flex-col justify-end">
             {showAvatar && avatarEl}
           </div>
         )}
@@ -1008,7 +995,7 @@ export const MessageBubble = memo(function MessageBubble({
       {/* Status below the bubble row — outside the avatar alignment */}
       {translationStatus && <div data-slot="support-message-translation-status" className={`mt-1 flex text-xs text-muted-foreground ${isCustomer ? 'justify-start pl-9' : 'justify-end pr-9'}`}>{translationStatus}</div>}
       {message.pending_send && <PendingSendStatus message={message}/>}
-      {!message.pending_send && (hasStatusBelow || cancellableActive) && (
+      {!message.pending_send && (hasStatusBelow || cancellableActive || visitorFeedback !== undefined) && (
         <div className={`mt-0.5 ${isCustomer ? 'pl-9' : 'pr-9'}`}>
           {showStandaloneEmailBadge && (
             <div className={`mb-0.5 space-y-0.5 ${isCustomer ? '' : 'text-right'}`}>
@@ -1028,6 +1015,19 @@ export const MessageBubble = memo(function MessageBubble({
           )}
 
           <div className="flex flex-wrap items-center justify-end gap-2">
+            {visitorFeedback !== undefined && (
+              <div data-slot="support-answer-feedback" className="mr-auto flex h-5 shrink-0 justify-start">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span role="img" tabIndex={0} aria-label={feedbackLabel}
+                      className="inline-flex h-5 min-w-6 items-center justify-center rounded-full border border-border/60 bg-background px-1 text-sm leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                      {visitorFeedback ? '👍' : '👎'}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">{feedbackLabel}</TooltipContent>
+                </Tooltip>
+              </div>
+            )}
             {(aiConfidence !== null || !!aiMeta?.ai_sources?.length) && (
               <div className="inline-flex items-center gap-1.5 text-[11px]">
                 {aiConfidence !== null && (
