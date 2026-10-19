@@ -1098,6 +1098,10 @@ func (s *EmailFallbackService) processInboundConversationReplyWithRecovery(ctx c
 	inReplyTo := normalizeRFCHeaderValue(inboundHeaderValue(payload.Headers, "In-Reply-To"))
 	referencesHeader := strings.TrimSpace(inboundHeaderValue(payload.Headers, "References"))
 	recipientAddress := inboundRecipientAddress(payload)
+	supportAddresses, err := s.inboundSupportAddresses(ctx, conv.WorkspaceID, route, payload)
+	if err != nil {
+		return err
+	}
 	ccEmails := inboundCCEmails(payload)
 	bccEmails := inboundBCCEmails(payload)
 
@@ -1212,21 +1216,26 @@ func (s *EmailFallbackService) processInboundConversationReplyWithRecovery(ctx c
 			shouldReopenCustomerReply = !isTeammateReply && !isNotice && (wasResolved || normalizedStatus == model.SupportConversationStatusWaitingOnCustomer)
 			shouldMoveTeammateReplyToWaiting = isTeammateReply && !isNotice && wasResolved
 		}
-		// Learn visible participants only from an accepted sender, without changing
-		// the primary customer or the team's selected outbound CC recipients.
+		// Add newly introduced visible recipients, but do not restore recipients
+		// already seen on the thread and explicitly removed by a teammate.
 		if !unknownSender && !isNotice && conv.MergeRevision == 0 {
 			var current model.SupportConversation
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND workspace_id = ?", conv.ID, conv.WorkspaceID).First(&current).Error; err != nil {
 				return err
 			}
-			routeAddress := recipientAddress
-			if route != nil {
-				routeAddress = route.InboundAddress
-			}
-			participants := normalizedEmailAddressList(append([]string(current.EmailThreadParticipants), inboundVisibleThreadParticipants(payload, routeAddress, customerEmail)...))
-			if err := convRepoTx.UpdateFields(ctx, conv.WorkspaceID, conv.ID, map[string]any{"email_thread_participants": model.DocsStringArray(participants)}); err != nil {
+			primary := strings.TrimSpace(derefString(current.CustomerEmail))
+			visible := normalizeSupportEmailListExcluding(inboundVisibleThreadParticipants(payload, "", primary), supportAddresses...)
+			newRecipients := normalizeSupportEmailListExcluding(visible, current.EmailThreadParticipants...)
+			participants := normalizedEmailAddressList(append([]string(current.EmailThreadParticipants), visible...))
+			cc := normalizeSupportEmailListExcluding(append([]string(current.EmailCC), newRecipients...), append(supportAddresses, primary)...)
+			if err := convRepoTx.UpdateFields(ctx, conv.WorkspaceID, conv.ID, map[string]any{
+				"email_thread_participants": model.DocsStringArray(participants),
+				"email_cc":                  model.DocsStringArray(cc),
+			}); err != nil {
 				return err
 			}
+			conv.EmailThreadParticipants = participants
+			conv.EmailCC = cc
 		}
 		if err := s.enqueueInboundAttachments(ctx, tx, msg, payload); err != nil {
 			return err
@@ -3686,19 +3695,24 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 	primaryRecipientState := model.SupportPrimaryRecipientStateConfirmed
 	var suggestedPrimaryRecipientEmail *string
 	var suggestedPrimaryRecipientName *string
-	threadParticipants := inboundVisibleThreadParticipants(payload, route.InboundAddress, customerEmail)
-	routeAddressInCC := inboundRouteAddressInCC(payload, route.InboundAddress)
-	emailCC := model.DocsStringArray{}
+	supportAddresses, err := s.inboundSupportAddresses(ctx, route.WorkspaceID, route, payload)
+	if err != nil {
+		return err
+	}
+	threadParticipants := normalizeSupportEmailListExcluding(inboundVisibleThreadParticipants(payload, route.InboundAddress, customerEmail), supportAddresses...)
+	routeAddressInCC := false
+	for _, address := range supportAddresses {
+		routeAddressInCC = routeAddressInCC || inboundRouteAddressInCC(payload, address)
+	}
+	emailCC := model.DocsStringArray(threadParticipants)
 	if routeAddressInCC {
-		if email, name := inboundSuggestedPrimaryRecipient(payload, route.InboundAddress, customerEmail); email != "" {
+		if email, name := inboundSuggestedPrimaryRecipient(payload, route.InboundAddress, customerEmail, supportAddresses...); email != "" {
 			primaryRecipientState = model.SupportPrimaryRecipientStateUnconfirmed
 			suggestedPrimaryRecipientEmail = strPtr(email)
 			if strings.TrimSpace(name) != "" {
 				suggestedPrimaryRecipientName = strPtr(strings.TrimSpace(name))
 			}
 		}
-	} else if inboundRouteAddressInTo(payload, route.InboundAddress) {
-		emailCC = model.DocsStringArray(normalizeSupportEmailListExcluding(inboundCCEmails(payload), route.InboundAddress, customerEmail))
 	}
 	viaEmail := "email"
 	now := s.now()
@@ -4088,6 +4102,43 @@ func mergeExternalEmailReplyMetadata(existing string) string {
 	return string(encoded)
 }
 
+// inboundSupportAddresses identifies our own addresses without treating other
+// recipients at the customer's domain as internal addresses.
+func (s *EmailFallbackService) inboundSupportAddresses(ctx context.Context, workspaceID string, route *model.SupportEmailRoute, payload model.PostmarkInboundPayload) ([]string, error) {
+	var addresses []string
+	if route != nil {
+		addresses = append(addresses, route.InboundAddress, derefString(route.SourceAddress))
+	}
+	// Conversation-specific reply addresses are not stored as routes.
+	for _, address := range inboundRecipientAddresses(payload) {
+		_, domain, hasDomain := strings.Cut(address, "@")
+		if hasDomain && strings.HasPrefix(mailboxHashFromRecipient(address), "conv-") && strings.EqualFold(domain, s.InboundDomain()) {
+			addresses = append(addresses, address)
+		}
+	}
+	if s.supportInboxService != nil {
+		if repo := s.supportInboxService.emailRouteRepo; repo != nil {
+			routes, err := repo.ListByWorkspace(ctx, workspaceID)
+			if err != nil {
+				return nil, err
+			}
+			for _, r := range routes {
+				addresses = append(addresses, r.InboundAddress, derefString(r.SourceAddress))
+			}
+		}
+		if repo := s.supportInboxService.emailSenderRepo; repo != nil {
+			senders, err := repo.ListByWorkspace(ctx, workspaceID)
+			if err != nil {
+				return nil, err
+			}
+			for _, sender := range senders {
+				addresses = append(addresses, sender.Email, sender.ForwardingAddress)
+			}
+		}
+	}
+	return normalizedEmailAddressList(addresses), nil
+}
+
 func inboundCCEmails(payload model.PostmarkInboundPayload) []string {
 	values := []string{payload.Cc}
 	for _, addr := range payload.CcFull {
@@ -4117,35 +4168,18 @@ func inboundRouteAddressInCC(payload model.PostmarkInboundPayload, routeAddress 
 	return false
 }
 
-func inboundRouteAddressInTo(payload model.PostmarkInboundPayload, routeAddress string) bool {
-	routeAddress = strings.ToLower(strings.TrimSpace(routeAddress))
-	if routeAddress == "" {
-		return false
-	}
-	values := []string{payload.To}
-	for _, addr := range payload.ToFull {
-		values = append(values, addr.Email)
-	}
-	for _, email := range normalizedEmailAddressList(values) {
-		if strings.EqualFold(email, routeAddress) {
-			return true
-		}
-	}
-	return false
-}
-
-func inboundSuggestedPrimaryRecipient(payload model.PostmarkInboundPayload, routeAddress, currentPrimary string) (string, string) {
+func inboundSuggestedPrimaryRecipient(payload model.PostmarkInboundPayload, routeAddress, currentPrimary string, excluded ...string) (string, string) {
 	routeAddress = strings.ToLower(strings.TrimSpace(routeAddress))
 	currentPrimary = strings.ToLower(strings.TrimSpace(currentPrimary))
 	for _, addr := range payload.ToFull {
 		email := strings.ToLower(strings.TrimSpace(addr.Email))
-		if email == "" || email == routeAddress || email == currentPrimary {
+		if len(normalizeSupportEmailListExcluding([]string{email}, append(excluded, routeAddress, currentPrimary)...)) == 0 {
 			continue
 		}
 		return email, strings.TrimSpace(addr.Name)
 	}
 	for _, email := range normalizedEmailAddressList([]string{payload.To}) {
-		if email == "" || email == routeAddress || email == currentPrimary {
+		if len(normalizeSupportEmailListExcluding([]string{email}, append(excluded, routeAddress, currentPrimary)...)) == 0 {
 			continue
 		}
 		return email, ""

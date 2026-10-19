@@ -3018,6 +3018,97 @@ func TestEmailFallbackProcessInboundEmailRouteFromToPersistsCustomerCCForReplies
 	}
 }
 
+func TestEmailFallbackForwardedEmailPreservesVisibleReplyRecipients(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	route := &model.SupportEmailRoute{
+		ID:             "a2111111-1111-1111-1111-111111111116",
+		WorkspaceID:    workspaceID,
+		RouteKey:       "route-direct-cc",
+		InboundAddress: "support@acme.on.helpin.email",
+		SourceAddress:  strPtr("support@acme.com"),
+		ProviderType:   "forwarding",
+		Active:         true,
+		CreatedByID:    "22222222-2222-2222-2222-222222222222",
+	}
+	if err := env.routeRepo.Create(ctx, route); err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	if err := env.senderRepo.Create(ctx, &model.SupportEmailSender{
+		ID: "55555555-5555-5555-5555-555555555555", WorkspaceID: workspaceID,
+		Email: "billing@acme.com", LocalPart: "billing", Domain: "acme.com",
+		CreatedByID: "22222222-2222-2222-2222-222222222222",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	payload := model.PostmarkInboundPayload{
+		FromFull:          model.PostmarkAddress{Email: "customer@company.com", Name: "Casey Customer"},
+		To:                "support@acme.com, teammate1@company.com, to-only@company.com, billing@acme.com",
+		ToFull:            []model.PostmarkAddress{{Email: "support@acme.com"}, {Email: "teammate1@company.com"}},
+		Cc:                "TEAMMATE1@company.com, Teammate Two <teammate2@company.com>, customer@company.com",
+		Bcc:               "hidden@company.com",
+		CcFull:            []model.PostmarkAddress{{Email: "teammate1@company.com", Name: "Teammate One"}, {Email: "teammate2@company.com", Name: "Teammate Two"}},
+		OriginalRecipient: route.InboundAddress,
+		Subject:           "Need help with billing",
+		MessageID:         "pm-route-direct-cc-1",
+		StrippedTextReply: "Can you help us?",
+		Headers: []model.PostmarkHeader{
+			{Name: "Message-ID", Value: "<direct-cc-thread-1@example.com>"},
+		},
+	}
+
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-route-direct-cc-1"}`); err != nil {
+		t.Fatalf("process direct inbound email with cc: %v", err)
+	}
+
+	conversations, total, err := env.convRepo.List(ctx, supportConversationListParams(workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil, "", ""))
+	if err != nil {
+		t.Fatalf("list conversations: %v", err)
+	}
+	if total != 1 || len(conversations) != 1 {
+		t.Fatalf("expected 1 conversation, got total=%d len=%d", total, len(conversations))
+	}
+	conv := conversations[0]
+	if conv.CustomerEmail == nil || *conv.CustomerEmail != "customer@company.com" {
+		t.Fatalf("customer_email = %#v, want customer sender", conv.CustomerEmail)
+	}
+	if conv.PrimaryRecipientState != model.SupportPrimaryRecipientStateConfirmed {
+		t.Fatalf("primary_recipient_state = %q", conv.PrimaryRecipientState)
+	}
+	if strings.Join(conv.EmailCC, ",") != "teammate1@company.com,to-only@company.com,teammate2@company.com" {
+		t.Fatalf("email_cc = %#v, want customer cc teammates", conv.EmailCC)
+	}
+	if strings.Join(conv.EmailThreadParticipants, ",") != strings.Join(conv.EmailCC, ",") {
+		t.Fatalf("email_thread_participants = %#v", conv.EmailThreadParticipants)
+	}
+
+	// Explicitly removing a previously seen participant must survive later replies.
+	if err := env.convRepo.UpdateFields(ctx, workspaceID, conv.ID, map[string]any{
+		"email_cc": model.DocsStringArray{"to-only@company.com", "teammate2@company.com"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// A later customer reply adds another visible recipient to the reply audience.
+	payload.MessageID = "pm-reply-added-cc"
+	payload.Headers = []model.PostmarkHeader{{Name: "In-Reply-To", Value: "<direct-cc-thread-1@example.com>"}, {Name: "Message-ID", Value: "<reply-added-cc@example.com>"}}
+	payload.To = "support@acme.com, added@company.com"
+	payload.ToFull = nil
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{}`); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := env.convRepo.GetByID(ctx, workspaceID, conv.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(updated.EmailCC, ",") != "to-only@company.com,teammate2@company.com,added@company.com" {
+		t.Fatalf("later reply cc = %#v", updated.EmailCC)
+	}
+}
+
 func TestEmailFallbackProcessInboundEmailRouteDerivesCustomerNameFromEmail(t *testing.T) {
 	ctx := context.Background()
 	settings := model.DefaultSupportInboxSettings()
