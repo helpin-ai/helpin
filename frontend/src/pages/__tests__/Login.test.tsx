@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, type ReactNode } from 'react';
+import { act, StrictMode, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthConfig } from '@/lib/services/authService';
@@ -56,13 +56,13 @@ afterEach(() => {
 
 const baseConfig: AuthConfig = { email_verification_required: false, app_email_configured: true, google_login_enabled: false };
 
-function render(configuration: AuthConfig, search = '') {
+function render(configuration: AuthConfig, search = '', strict = false) {
   window.location.search = search;
   useAuthStore.setState({ configuration });
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
-  act(() => root?.render(<Login />));
+  act(() => root?.render(strict ? <StrictMode><Login /></StrictMode> : <Login />));
   return container;
 }
 
@@ -96,16 +96,24 @@ describe('Login', () => {
     expect(buttonLabels(page)).toEqual(['Sign in with Authelia']);
   });
 
-  it('goes straight to the provider when local sign-in is off, unless a sign-in error is shown', () => {
-    const config = { ...baseConfig, oidc_login_enabled: true, local_login_enabled: false };
-    render(config, '?redirect=%2Fboard');
-    expect(assign).toHaveBeenCalledWith(`${API_BASE}/auth/oidc/start?redirect=%2Fboard`);
+  const ssoOnly = { ...baseConfig, oidc_login_enabled: true, local_login_enabled: false };
 
-    act(() => root?.unmount());
-    container?.remove();
-    assign.mockReset();
-    render(config, '?error=exchange_failed');
+  it('goes straight to the provider once when local sign-in is off, even under StrictMode', () => {
+    render(ssoOnly, '?redirect=%2Fboard', true);
+    expect(assign).toHaveBeenCalledTimes(1);
+    expect(assign).toHaveBeenCalledWith(`${API_BASE}/auth/oidc/start?redirect=%2Fboard`);
+  });
+
+  it('keeps the provider button instead of redirecting after a sign-in error', () => {
+    const page = render(ssoOnly, '?error=exchange_failed');
     expect(assign).not.toHaveBeenCalled();
+    expect(buttonLabels(page)).toEqual(['Sign in with Single sign-on']);
+  });
+
+  it('keeps the provider button instead of redirecting after sign-out', () => {
+    const page = render(ssoOnly, '?signed_out=1');
+    expect(assign).not.toHaveBeenCalled();
+    expect(buttonLabels(page)).toEqual(['Sign in with Single sign-on']);
   });
 
   it('does not redirect automatically while local sign-in is on', () => {
