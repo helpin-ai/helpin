@@ -1031,7 +1031,7 @@ export const MessageBubble = memo(function MessageBubble({
             {(aiConfidence !== null || !!aiMeta?.ai_sources?.length) && (
               <div className="inline-flex items-center gap-1.5 text-[11px]">
                 {aiConfidence !== null && (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 font-medium text-primary">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 font-medium text-muted-foreground">
                     <CheckmarkCircle02Icon className="h-3 w-3" />
                     {(aiConfidence * 100).toFixed(0)}% confident
                   </span>
