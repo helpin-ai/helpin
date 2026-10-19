@@ -32,7 +32,7 @@ export function LiveTranslateBar({ workspaceId, conversationId, editable, forceV
   return <div className={cn(
     'flex shrink-0 flex-wrap items-center justify-center gap-x-2 gap-y-1 border-b px-4 py-2 text-center text-xs',
     active
-      ? 'border-teal-300 bg-teal-100 text-teal-800 dark:border-[#28746d] dark:bg-[#123b39] dark:text-teal-200'
+      ? 'border-[#c4ded9] bg-[#edf6f5] text-[#366761] dark:border-[#3b504b] dark:bg-[#22322f] dark:text-[#b5d4cc]'
       : 'border-border/50 bg-muted/30 text-muted-foreground',
   )}>
     <span className="font-medium" title={language
@@ -45,7 +45,7 @@ export function LiveTranslateBar({ workspaceId, conversationId, editable, forceV
         className={cn(
           'max-w-full appearance-none rounded-full border py-1 pl-2.5 pr-7 font-medium leading-4 outline-none focus-visible:ring-2 focus-visible:ring-current disabled:cursor-not-allowed disabled:opacity-50 [&>option]:bg-background [&>option]:text-foreground',
           active
-            ? 'border-teal-400/70 bg-white/30 dark:border-[#28746d] dark:bg-white/5'
+            ? 'border-[#a9cec7] bg-white/30 dark:border-[#506a63] dark:bg-white/5'
             : 'border-border bg-transparent',
         )}
         disabled={!editable || save.isPending}
