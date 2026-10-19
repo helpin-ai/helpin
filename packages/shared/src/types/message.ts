@@ -62,6 +62,7 @@ export interface Message {
 }
 
 export interface AiSource {
+  url?: string;
   docId: string;
   title: string;
   snippet: string;

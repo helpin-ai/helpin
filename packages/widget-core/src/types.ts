@@ -30,6 +30,7 @@ export interface WidgetConfig extends Omit<SharedWidgetConfig, 'availableTeammat
 
 // Shared nested types used directly in widget-core
 export interface AiSource {
+  url?: string;
   docId: string;
   title: string;
   snippet: string;

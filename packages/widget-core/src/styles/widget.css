@@ -2453,13 +2453,14 @@
   border: 1px solid rgba(15, 23, 42, 0.08);
 }
 
-.helpin-sources-popover-title {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  opacity: 0.65;
-  margin-bottom: 8px;
+/* Keep the trigger and card connected for pointer travel across the gap. */
+.helpin-sources-popover-card::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 9px;
 }
 
 .helpin-sources-popover-list {
@@ -2472,6 +2473,16 @@
   color: var(--helpin-fg);
   font-size: 12px;
   line-height: 1.4;
+}
+
+a.helpin-source-item {
+  text-decoration: none;
+}
+
+a.helpin-source-item:hover,
+a.helpin-source-item:focus-visible {
+  color: var(--helpin-primary);
+  text-decoration: underline;
 }
 
 .helpin-answer-feedback {

@@ -1,7 +1,7 @@
 import { FunctionComponent } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Message, Attachment, WidgetConfig } from '../types';
-import { renderMarkdown } from '../utils/markdownRenderer';
+import { renderMarkdown, sanitizeUrl } from '../utils/markdownRenderer';
 import { AskAgentAvatar } from './AskAgentAvatar';
 import { FileTextIcon, ThumbsDownIcon, ThumbsUpIcon } from './icons';
 
@@ -208,27 +208,38 @@ function SourcePopover({ sources }: { sources: NonNullable<Message['sources']> }
       ref={popoverRef}
       className={`helpin-sources-popover ${open ? 'is-open' : ''}`}
       onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
+      onMouseLeave={() => {
+        if (!popoverRef.current?.contains(document.activeElement)) setOpen(false);
+      }}
+      onFocusIn={() => setOpen(true)}
+      onFocusOut={event => {
+        if (!popoverRef.current?.contains(event.relatedTarget as Node | null)) setOpen(false);
+      }}
     >
       <button
         type="button"
         className="helpin-message-sources-trigger"
         aria-haspopup="dialog"
         aria-expanded={open}
-        onClick={() => setOpen(prev => !prev)}
+        onClick={() => setOpen(true)}
       >
         Based on {formatSourceCount(sources.length)}
       </button>
 
       {open && (
         <div className="helpin-sources-popover-card" role="dialog" aria-label="Sources">
-          <div className="helpin-sources-popover-title">Sources</div>
           <div className="helpin-sources-popover-list">
-            {sources.map((source, idx) => (
-              <div key={idx} className="helpin-source-item">
-                {source.title}
-              </div>
-            ))}
+            {sources.map((source, idx) => {
+              const url = source.url?.trim() || '';
+              const href = /^https?:\/\//i.test(url) ? sanitizeUrl(url) : '';
+              return href ? (
+                <a key={idx} className="helpin-source-item" href={href} target="_blank" rel="noopener noreferrer">
+                  {source.title}
+                </a>
+              ) : (
+                <div key={idx} className="helpin-source-item">{source.title}</div>
+              );
+            })}
           </div>
         </div>
       )}
