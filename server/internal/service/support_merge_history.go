@@ -101,6 +101,7 @@ func (s *SupportInboxService) ConversationSharedHistory(ctx context.Context, wor
 		}
 		hydrateEmailBodiesFromLogs(filtered, logs)
 	}
+	s.hydrateSourceLinks(ctx, workspaceID, filtered)
 	result := &model.SupportMessagePage{Data: filtered, HasMore: more}
 	if more && len(messages) > 0 {
 		next := encodeSupportMessageCursor(messages[0].CreatedAt, messages[0].ID)

@@ -98,6 +98,7 @@ func (s *SupportAIService) publishAIReply(
 		MessageType:       "reply",
 		Metadata:          string(metadataJSON),
 	}
+	s.hydrateSourceLinks(ctx, aiMsg)
 	if s.linkPreviewService != nil {
 		s.linkPreviewService.EnrichMessage(ctx, aiMsg)
 	}
@@ -159,6 +160,7 @@ func (s *SupportAIService) publishAIInternalNote(
 		MessageType:       "reply",
 		Metadata:          string(metadataJSON),
 	}
+	s.hydrateSourceLinks(ctx, note)
 	if err := s.createSupportAIReply(ctx, note, processingID); err != nil {
 		return nil, fmt.Errorf("create AI internal note: %w", err)
 	}

@@ -1960,6 +1960,8 @@ func (s *SupportInboxService) listConversationMessages(ctx context.Context, work
 		}
 	}
 
+	s.hydrateSourceLinks(ctx, workspaceID, messages)
+
 	// Hydrate file attachments onto messages.
 	if s.attachmentService != nil && len(messages) > 0 {
 		if err := s.attachmentService.HydrateMessages(ctx, messages); err != nil {
