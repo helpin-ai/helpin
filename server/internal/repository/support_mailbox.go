@@ -7,6 +7,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
@@ -131,7 +132,9 @@ func (r *SupportMailboxRepository) ListAccessible(ctx context.Context, workspace
 	}
 
 	isElevated := role == model.RoleOwner || role == model.RoleAdmin
-	if !isElevated {
+	if scope := authorization.GetSupportAgentScope(ctx); scope != nil {
+		query = applySupportAgentMailboxAccess(query, "sm", scope)
+	} else if !isElevated {
 		query = query.Where(supportMailboxAccessCondition("sm"), workspaceMemberID, workspaceMemberID)
 	}
 
@@ -313,7 +316,7 @@ func (r *SupportMailboxRepository) CountScopes(ctx context.Context, workspaceID,
 		Joins(`LEFT JOIN support_conversation_user_states personal_state
 			ON personal_state.conversation_id = sc.id
 		   AND personal_state.workspace_id = sc.workspace_id
-		   AND personal_state.user_id = ?`, userID).
+		   AND personal_state.user_id = ?`, nullableSupportUserID(userID)).
 		Where("sc.workspace_id = ?", workspaceID).
 		Where("sc.mailbox_id IS NULL OR sc.mailbox_id IN ?", mailboxIDs).
 		Group("COALESCE(CAST(sc.mailbox_id AS TEXT), 'shared')").

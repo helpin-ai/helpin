@@ -15,6 +15,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
@@ -1786,12 +1787,16 @@ func (r *SupportConversationRepository) List(ctx context.Context, params Convers
 	if err := fetch.
 		Joins("LEFT JOIN support_mailboxes sm ON sm.id = support_conversations.mailbox_id").
 		Joins(conversationActivityJoin).
-		Joins("LEFT JOIN support_conversation_user_states scus ON scus.conversation_id = support_conversations.id AND scus.user_id = ?", strings.TrimSpace(params.UserID)).
+		Joins("LEFT JOIN support_conversation_user_states scus ON scus.conversation_id = support_conversations.id AND scus.user_id = ?", nullableSupportUserID(params.UserID)).
 		Select(r.conversationListProjectionSelect()).
 		Order(conversationListOrder(params.Sort)).Offset(offset).Limit(perPage).Find(&conversations).Error; err != nil {
 		return nil, 0, fmt.Errorf("list conversations: %w", err)
 	}
 	for i := range conversations {
+		if strings.TrimSpace(params.UserID) == "" {
+			conversations[i].UnreadCount = 0
+			conversations[i].PersonalStateVersion = 0
+		}
 		if conversations[i].LastMessage == nil {
 			continue
 		}
@@ -1856,7 +1861,7 @@ func (r *SupportConversationRepository) CountByParamsWithAttention(ctx context.C
 		COUNT(*) AS total_count,
 		COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0) AS unread_count,
 		COALESCE(SUM(CASE WHEN sc.needs_human_reply THEN 1 ELSE 0 END), 0) AS needs_human_reply_count
-	`, unreadCondition), strings.TrimSpace(params.UserID)).Scan(&counts).Error; err != nil {
+	`, unreadCondition), nullableSupportUserID(params.UserID)).Scan(&counts).Error; err != nil {
 		return 0, 0, 0, fmt.Errorf("count conversations: %w", err)
 	}
 
@@ -2035,7 +2040,7 @@ func (r *SupportConversationRepository) GetByIDForUser(ctx context.Context, work
 		Table("support_conversations").
 		Joins("LEFT JOIN support_mailboxes sm ON sm.id = support_conversations.mailbox_id").
 		Joins(conversationActivityJoin).
-		Joins("LEFT JOIN support_conversation_user_states scus ON scus.conversation_id = support_conversations.id AND scus.user_id = ?", strings.TrimSpace(userID)).
+		Joins("LEFT JOIN support_conversation_user_states scus ON scus.conversation_id = support_conversations.id AND scus.user_id = ?", nullableSupportUserID(userID)).
 		Where("support_conversations.workspace_id = ? AND support_conversations.id = ?", workspaceID, id)
 	query = r.applyMailboxAccess(query, "support_conversations", workspaceMemberID, role)
 	if err := query.Select(r.conversationListProjectionSelect()).First(&conversation).Error; err != nil {
@@ -2043,6 +2048,10 @@ func (r *SupportConversationRepository) GetByIDForUser(ctx context.Context, work
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get conversation for user: %w", err)
+	}
+	if strings.TrimSpace(userID) == "" {
+		conversation.UnreadCount = 0
+		conversation.PersonalStateVersion = 0
 	}
 	return &conversation, nil
 }
@@ -2705,6 +2714,9 @@ func (r *SupportConversationRepository) applyMailboxScope(query *gorm.DB, alias 
 }
 
 func (r *SupportConversationRepository) applyMailboxAccess(query *gorm.DB, alias, workspaceMemberID, role string) *gorm.DB {
+	if scope := authorization.GetSupportAgentScope(query.Statement.Context); scope != nil {
+		return applySupportAgentConversationAccess(query, alias, scope)
+	}
 	if isElevatedSupportRole(role) {
 		return query
 	}

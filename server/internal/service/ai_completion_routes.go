@@ -153,6 +153,9 @@ func NewAICompletionRouteRegistry(crmConfig CRMCompletionRouteConfig) AICompleti
 	for _, policy := range policies {
 		registry.policies[aiCompletionPolicyKey(policy.FeatureKey, policy.OperationKey)] = policy
 	}
+	media := registry.policies[aiCompletionPolicyKey(BillingFeatureAskChat, AIUsageOperationMediaEnrichment)]
+	media.FeatureKey = BillingFeatureSupportAIReply
+	registry.policies[aiCompletionPolicyKey(media.FeatureKey, media.OperationKey)] = media
 	return registry
 }
 

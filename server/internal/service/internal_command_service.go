@@ -80,6 +80,7 @@ type InternalCommandService struct {
 
 	supportMessageRepo        *repository.SupportMessageRepository
 	supportAttachmentRepo     *repository.SupportAttachmentRepository
+	supportMediaProvider      dockChatMediaLLM
 	supportConversationRepo   *repository.SupportConversationRepository
 	supportEventPublisher     websocket.EventPublisher
 	supportInboxService       *SupportInboxService
@@ -106,6 +107,11 @@ type InternalCommandService struct {
 	authz                     *authorization.AuthzService
 
 	definitions map[string]InternalCommandDefinition
+}
+
+// SetSupportMediaAnalyzer shares the metered media reader with Ask.
+func (s *InternalCommandService) SetSupportMediaAnalyzer(provider dockChatMediaLLM) {
+	s.supportMediaProvider = provider
 }
 
 func (s *InternalCommandService) SetSupportAttachmentRepository(repo *repository.SupportAttachmentRepository) {

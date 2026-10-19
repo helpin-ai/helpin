@@ -38,6 +38,21 @@ func (s *SupportInboxService) isMailboxAccessible(ctx context.Context, workspace
 		return true
 	}
 	actor := supportActorFromContext(ctx, workspaceID)
+	if scope := authorization.GetSupportAgentScope(ctx); scope != nil {
+		if scope.WorkspaceID != workspaceID || s.mailboxRepo == nil {
+			return false
+		}
+		mailboxes, err := s.mailboxRepo.ListAccessible(ctx, workspaceID, "", "", false)
+		if err != nil {
+			return false
+		}
+		for _, mailbox := range mailboxes {
+			if mailbox.ID == strings.TrimSpace(*mailboxID) {
+				return true
+			}
+		}
+		return false
+	}
 	if actor == nil {
 		return false
 	}
@@ -179,7 +194,11 @@ func (s *SupportInboxService) determineMailboxOwner(ctx context.Context, workspa
 func (s *SupportInboxService) ListInboxScopes(ctx context.Context, workspaceID string) (*model.SupportInboxScopeListResponse, error) {
 	actor := supportActorFromContext(ctx, workspaceID)
 	if actor == nil {
-		return nil, fmt.Errorf("authorization context missing")
+		scope := authorization.GetSupportAgentScope(ctx)
+		if scope == nil || scope.WorkspaceID != workspaceID {
+			return nil, fmt.Errorf("authorization context missing")
+		}
+		actor = &authorization.Actor{WorkspaceID: workspaceID}
 	}
 	if s.mailboxRepo == nil {
 		return nil, fmt.Errorf("support mailbox repository is unavailable")

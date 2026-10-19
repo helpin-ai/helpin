@@ -223,7 +223,7 @@ var baseRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "support.list_conversation_messages",
 		Alias:       "list_conversation_messages",
 		Category:    "Support",
-		Description: "List support conversation messages newest-first by page, returned in chronological reading order with attachment metadata.",
+		Description: "List support conversation messages newest-first by page, returned in chronological reading order with attachment URLs. Support runs also receive attachment_analysis with image/video observations, or attachment_analysis_error if media could not be read.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

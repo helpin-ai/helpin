@@ -42,6 +42,9 @@ func (s *InternalCommandService) requireSupportOperationalServices(requireTags b
 }
 
 func (s *InternalCommandService) executeSupportListConversations(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+	if _, err := commandAgentTeamFilter(meta); err != nil {
+		return nil, err
+	}
 	if err := s.requireSupportOperationalServices(false); err != nil {
 		return nil, err
 	}
@@ -85,6 +88,9 @@ func (s *InternalCommandService) executeSupportListConversations(ctx context.Con
 }
 
 func (s *InternalCommandService) executeSupportGetConversation(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+	if _, err := commandAgentTeamFilter(meta); err != nil {
+		return nil, err
+	}
 	var req struct {
 		ConversationID string `json:"conversation_id"`
 	}
@@ -134,6 +140,9 @@ func (s *InternalCommandService) executeSupportListTags(ctx context.Context, met
 }
 
 func (s *InternalCommandService) executeSupportListInboxes(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+	if _, err := commandAgentTeamFilter(meta); err != nil {
+		return nil, err
+	}
 	if err := s.requireSupportOperationalServices(false); err != nil {
 		return nil, err
 	}
@@ -395,6 +404,9 @@ func resolveSupportConversationCommandID(meta model.InternalCommandContext, expl
 func (s *InternalCommandService) supportOperationalContext(ctx context.Context, meta model.InternalCommandContext) context.Context {
 	if authorization.GetActor(ctx) != nil {
 		return ctx
+	}
+	if meta.ActorID == "" && meta.AgentID != "" && meta.AgentScopeResolved {
+		return authorization.WithSupportAgentScope(ctx, authorization.SupportAgentScope{WorkspaceID: meta.WorkspaceID, AgentID: meta.AgentID, TeamIDs: meta.AgentTeamIDs})
 	}
 	if strings.TrimSpace(meta.ActorRole) == "" {
 		return ctx
