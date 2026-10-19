@@ -1063,7 +1063,7 @@ export const MessageBubble = memo(function MessageBubble({
             )}
           </div>
           {sourcesOpen && !!aiMeta?.ai_sources?.length && (
-            <div className="mt-1.5 overflow-hidden rounded-xl border bg-muted/40 p-1 shadow-sm">
+            <div className="ml-auto mt-1.5 w-fit max-w-full overflow-hidden rounded-xl border bg-muted/40 p-1 shadow-sm">
               {aiMeta.ai_sources.map((src, idx) => {
                 const Tag: 'a' | 'div' = src.url ? 'a' : 'div';
                 const linkProps = src.url
@@ -1076,7 +1076,7 @@ export const MessageBubble = memo(function MessageBubble({
                     className={`group flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs ${idx > 0 ? 'border-t border-border/60' : ''} ${src.url ? 'cursor-pointer text-foreground hover:bg-background hover:text-primary' : 'text-foreground'}`}
                   >
                     <File01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className={`min-w-0 truncate font-medium ${src.url ? 'group-hover:underline' : ''}`}>{src.title}</span>
+                    <span className={`min-w-0 break-words font-medium ${src.url ? 'group-hover:underline' : ''}`}>{src.title}</span>
                     {src.url && (
                       <LinkSquare01Icon className="h-3 w-3 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
                     )}
