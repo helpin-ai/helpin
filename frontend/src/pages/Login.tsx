@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
 import { ensureAuthConfiguration, useAuthStore } from '@/stores/authStore';
@@ -57,11 +57,17 @@ export default function Login() {
   };
 
   // With password and passkey sign-in off, the provider is the only way in: go
-  // straight to it. A sign-in error keeps the page (and its button) so a failed
-  // attempt cannot loop between here and the provider.
-  const autoOidc = configReady && !localLoginEnabled && oidcEnabled && !errorMessage;
+  // straight to it. A sign-in error or a fresh sign-out keeps the page (and its
+  // button), so a failed attempt cannot loop and sign-out does not sign straight
+  // back in through the provider's session.
+  const signedOut = new URLSearchParams(window.location.search).has('signed_out');
+  const autoOidc = configReady && !localLoginEnabled && oidcEnabled && !errorMessage && !signedOut;
+  // handleOidcLogin consumes the stored redirect, so it must run only once (StrictMode runs effects twice).
+  const autoOidcStarted = useRef(false);
   useEffect(() => {
-    if (autoOidc) handleOidcLogin();
+    if (!autoOidc || autoOidcStarted.current) return;
+    autoOidcStarted.current = true;
+    handleOidcLogin();
   }, [autoOidc]);
 
   const completeLoginRedirect = async (isCancelled?: () => boolean) => {

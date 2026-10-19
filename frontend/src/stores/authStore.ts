@@ -185,7 +185,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     await authService.signout();
     await clearClientSession();
     set({ user: null });
-    window.location.replace('/login');
+    window.location.replace('/login?signed_out=1');
   },
 
   updateUser: async (data: { full_name?: string; avatar_style?: string; avatar_seed?: string; avatar_background_mode?: string; avatar_background_color?: string }) => {
