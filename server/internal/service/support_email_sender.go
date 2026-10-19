@@ -238,6 +238,15 @@ func (s *SupportInboxService) SetDefaultEmailSender(ctx context.Context, workspa
 		mailboxIDs = nil
 	}
 
+	if req.SingleMailbox {
+		if scope != supportEmailSenderDefaultScopeMailbox || len(mailboxIDs) != 1 {
+			return nil, fmt.Errorf("single inbox assignment requires exactly one inbox")
+		}
+		if err := s.emailSenderRepo.SetMailboxSender(ctx, workspaceID, mailboxIDs[0], senderID); err != nil {
+			return nil, err
+		}
+		return s.emailSenderRepo.GetByID(ctx, workspaceID, senderID)
+	}
 	if err := s.emailSenderRepo.SetDefault(ctx, workspaceID, senderID, scope, mailboxIDs); err != nil {
 		return nil, err
 	}

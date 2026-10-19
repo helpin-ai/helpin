@@ -16,6 +16,7 @@ interface Props {
   workspaceName?: string;
   workspaceWebsiteUrl?: string;
   canManage?: boolean;
+  createSender?: boolean;
 }
 
 export function SupportEmailSendersTab({ canManage = false, ...props }: Props) {
@@ -23,12 +24,12 @@ export function SupportEmailSendersTab({ canManage = false, ...props }: Props) {
   return <SenderAddresses key={props.workspaceId} {...props} />;
 }
 
-function SenderAddresses({ workspaceId, workspaceName, workspaceWebsiteUrl }: Omit<Props, 'canManage'>) {
+function SenderAddresses({ workspaceId, workspaceName, workspaceWebsiteUrl, createSender = false }: Omit<Props, 'canManage'>) {
   const domainsQuery = useSupportEmailSenderDomains(workspaceId);
   const sendersQuery = useSupportEmailSenders(workspaceId);
   const mailboxesQuery = useSupportMailboxes(workspaceId);
   const updateSender = useUpdateSupportEmailSender(workspaceId);
-  const [dialog, setDialog] = useState<{ sender?: SupportEmailSender; manageDNS?: boolean } | null>(null);
+  const [dialog, setDialog] = useState<{ sender?: SupportEmailSender; manageDNS?: boolean } | null>(() => createSender ? {} : null);
   const [savingDefault, setSavingDefault] = useState(false);
   const domains = domainsQuery.data ?? [];
   const senders = sendersQuery.data ?? [];
@@ -105,7 +106,7 @@ function SenderAddresses({ workspaceId, workspaceName, workspaceWebsiteUrl }: Om
           )}
         </CardContent>
       </Card>
-      {dialog && <SupportEmailSenderDialog
+      {dialog && !loading && !failed && <SupportEmailSenderDialog
         workspaceId={workspaceId} workspaceName={workspaceName} workspaceWebsiteUrl={workspaceWebsiteUrl}
         sender={dialog.sender} manageDNS={dialog.manageDNS} domains={domains} senders={senders}
         mailboxes={mailboxes.filter(inbox => inbox.active)} onClose={() => setDialog(null)}

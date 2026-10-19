@@ -2029,6 +2029,9 @@ func (r *SupportConversationRepository) GetByID(ctx context.Context, workspaceID
 		}
 		return nil, fmt.Errorf("get conversation: %w", err)
 	}
+	if err := LoadSupportMailboxAIPolicy(r.db.WithContext(ctx), &conversation); err != nil {
+		return nil, err
+	}
 	return &conversation, nil
 }
 

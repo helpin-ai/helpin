@@ -524,7 +524,7 @@ func setupAgentRuntimeSupportRunTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db := newInteractiveApprovalTestDB(t)
 	for _, stmt := range []string{
-		`CREATE TABLE support_mailboxes (
+		`CREATE TABLE support_mailboxes (ai_replies_disabled BOOLEAN NOT NULL DEFAULT false,
 			id text PRIMARY KEY,
 			workspace_id text NOT NULL,
 			name text NOT NULL,

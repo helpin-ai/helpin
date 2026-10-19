@@ -55,6 +55,7 @@ type MailboxFormState = {
   description: string;
   routingPrompt: string;
   triageEligible: boolean;
+  aiRepliesDisabled: boolean;
   linkedTeamId: string;
   assignmentMode: InboxAssignmentMode;
   assignmentMemberIds: string[] | null;
@@ -86,6 +87,7 @@ const DEFAULT_FORM: MailboxFormState = {
   description: '',
   routingPrompt: '',
   triageEligible: false,
+  aiRepliesDisabled: false,
   linkedTeamId: 'none',
   assignmentMode: 'manual',
   assignmentMemberIds: [],
@@ -164,6 +166,7 @@ function buildFormState(mailbox?: SupportMailbox | null): MailboxFormState {
     description: mailbox.description ?? '',
     routingPrompt: mailbox.routing_prompt ?? '',
     triageEligible: mailbox.triage_eligible,
+    aiRepliesDisabled: mailbox.ai_replies_disabled ?? false,
     linkedTeamId: mailbox.linked_team_id ?? 'none',
     assignmentMode: mailbox.assignment_mode,
     assignmentMemberIds: mailbox.assignment_member_ids ?? (mailbox.assignment_mode === 'round_robin' ? null : []),
@@ -248,6 +251,7 @@ export function TeamInboxDialog({
   const supportAccessHref = workspaceSlug ? `/w/${workspaceSlug}/settings/access` : '/workspaces';
   const supportRoutingHref = workspaceSlug ? `/w/${workspaceSlug}/settings/inboxes-routing?tab=routing` : '/workspaces';
   const supportEmailSettingsHref = workspaceSlug ? `/w/${workspaceSlug}/settings/inboxes-routing?tab=email` : '/workspaces';
+  const supportSenderSettingsHref = workspaceSlug ? `/w/${workspaceSlug}/settings/inboxes-routing?tab=senders&create_sender=true` : '/workspaces';
   const isRoutingOff = chatSettings ? !chatSettings.settings.triage_enabled : false;
 
   useEffect(() => {
@@ -579,6 +583,7 @@ export function TeamInboxDialog({
         description: form.description.trim() || null,
         routing_prompt: form.routingPrompt.trim() || null,
         triage_eligible: form.triageEligible,
+        ai_replies_disabled: form.aiRepliesDisabled,
         linked_team_id: form.linkedTeamId === 'none' || !selectedLinkedTeamHasSupportAccess ? null : form.linkedTeamId,
         assignment_mode: form.assignmentMode,
         ...(!preserveLegacyAssignment ? { assignment_member_ids: form.assignmentMode === 'manual' ? [] : assignmentMemberIds } : {}),
@@ -603,6 +608,7 @@ export function TeamInboxDialog({
         description: form.description.trim() || null,
         routing_prompt: form.routingPrompt.trim() || null,
         triage_eligible: form.triageEligible,
+        ai_replies_disabled: form.aiRepliesDisabled,
         linked_team_id: form.linkedTeamId === 'none' || !selectedLinkedTeamHasSupportAccess ? null : form.linkedTeamId,
         assignment_mode: form.assignmentMode,
         assignment_member_ids: form.assignmentMode === 'manual' ? [] : assignmentMemberIds,
@@ -1128,6 +1134,12 @@ export function TeamInboxDialog({
                   />
                 </div>
 
+                <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
+                  <div><Label htmlFor="inbox-ai-replies-disabled">Turn off AI replies</Label>
+                    <p className="mt-1 text-xs text-muted-foreground">Stops automatic replies and follow-ups in this inbox. Ask AI stays available.</p>
+                  </div>
+                  <Switch id="inbox-ai-replies-disabled" checked={form.aiRepliesDisabled} onCheckedChange={(checked) => setForm(current => ({ ...current, aiRepliesDisabled: checked }))} />
+                </div>
                 {form.triageEligible && (
                   <div className="space-y-3">
                     <Textarea
@@ -1172,7 +1184,7 @@ export function TeamInboxDialog({
                   Choose and verify the email address customers see when your team replies.
                 </p>
                 <Button asChild variant="link" size="sm" className="mt-2 h-auto px-0">
-                  <a href={supportEmailSettingsHref} target="_blank" rel="noreferrer">
+                  <a href={supportSenderSettingsHref} target="_blank" rel="noreferrer">
                     Add sender address
                   </a>
                 </Button>

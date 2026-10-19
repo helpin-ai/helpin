@@ -28,6 +28,9 @@ func (r *SupportConversationRepository) ChangeAIControl(ctx context.Context, wor
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("workspace_id = ? AND id = ?", workspaceID, id).First(&conv).Error; err != nil {
 			return err
 		}
+		if err := LoadSupportMailboxAIPolicy(tx, &conv); err != nil {
+			return err
+		}
 		if conv.MergedIntoID != nil {
 			return ErrSupportMerged
 		}

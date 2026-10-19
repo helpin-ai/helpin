@@ -229,6 +229,9 @@ func (r *SupportEmailSenderRepository) SetDefault(ctx context.Context, workspace
 	now := time.Now().UTC()
 
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := LockSupportRouting(tx, workspaceID); err != nil {
+			return err
+		}
 		switch scope {
 		case "workspace":
 			if err := tx.Model(&model.SupportEmailSender{}).

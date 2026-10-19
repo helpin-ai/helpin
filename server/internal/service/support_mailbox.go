@@ -375,6 +375,7 @@ func (s *SupportInboxService) CreateMailbox(ctx context.Context, workspaceID str
 		Description:         req.Description,
 		RoutingPrompt:       req.RoutingPrompt,
 		TriageEligible:      true,
+		AIRepliesDisabled:   req.AIRepliesDisabled,
 		LinkedTeamID:        req.LinkedTeamID,
 		VisibilityMode:      "members_only",
 		AssignmentMode:      req.AssignmentMode,
@@ -419,6 +420,9 @@ func (s *SupportInboxService) UpdateMailbox(ctx context.Context, workspaceID, ma
 		return nil, fmt.Errorf("mailbox not found")
 	}
 
+	if req.AIRepliesDisabled != nil {
+		mailbox.AIRepliesDisabled = *req.AIRepliesDisabled
+	}
 	previousAssignmentMode := mailbox.AssignmentMode
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)

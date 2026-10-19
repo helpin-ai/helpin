@@ -131,7 +131,7 @@ func setupSupportConversationMessageTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create support_conversation_user_states: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE support_mailboxes (
+	if err := db.Exec(`CREATE TABLE support_mailboxes (ai_replies_disabled BOOLEAN NOT NULL DEFAULT false,
 		id TEXT PRIMARY KEY,
 		workspace_id TEXT NOT NULL,
 		name TEXT,

@@ -227,6 +227,7 @@ export interface SupportMailbox {
   description?: string | null;
   routing_prompt?: string | null;
   triage_eligible: boolean;
+  ai_replies_disabled?: boolean;
   linked_team_id?: string | null;
   linked_team_name?: string | null;
   visibility_mode: 'members_only';
@@ -335,6 +336,7 @@ export interface CreateSupportEmailSenderRequest {
 }
 
 export interface SetSupportEmailSenderDefaultRequest {
+  single_mailbox?: boolean;
   default_scope: 'none' | 'workspace' | 'mailbox';
   mailbox_id?: string | null;
   mailbox_ids?: string[];
@@ -383,6 +385,7 @@ export interface CreateSupportMailboxRequest {
   description?: string | null;
   routing_prompt?: string | null;
   triage_eligible?: boolean;
+  ai_replies_disabled?: boolean;
   linked_team_id?: string | null;
   workspace_member_ids: string[];
   assignment_mode: 'manual' | 'specific_member' | 'round_robin';
@@ -397,6 +400,7 @@ export interface UpdateSupportMailboxRequest {
   description?: string | null;
   routing_prompt?: string | null;
   triage_eligible?: boolean;
+  ai_replies_disabled?: boolean;
   linked_team_id?: string | null;
   workspace_member_ids?: string[];
   assignment_mode?: 'manual' | 'specific_member' | 'round_robin';

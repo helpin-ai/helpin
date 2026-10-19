@@ -206,6 +206,9 @@ func (r *AIMessageProcessingRepository) createReply(ctx context.Context, process
 		if len(runID) > 0 && runID[0] != "" && (conversation.AIControlVersion > 0 || conversation.AIActiveRunID != nil) && (conversation.AIActiveRunID == nil || *conversation.AIActiveRunID != runID[0]) {
 			return nil
 		}
+		if err := LoadSupportMailboxAIPolicy(tx, &conversation); err != nil {
+			return err
+		}
 		if model.SupportAIConversationBlocked(&conversation) {
 			return nil
 		}

@@ -246,7 +246,7 @@ func setupAgentScopeTestDB(t *testing.T) *gorm.DB {
 			created_at datetime,
 			updated_at datetime
 		)`,
-		`CREATE TABLE support_mailboxes (
+		`CREATE TABLE support_mailboxes (ai_replies_disabled BOOLEAN NOT NULL DEFAULT false,
 			id text PRIMARY KEY,
 			workspace_id text NOT NULL,
 			name text NOT NULL,

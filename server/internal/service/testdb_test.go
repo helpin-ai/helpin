@@ -820,7 +820,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			updated_at DATETIME,
 			PRIMARY KEY (conversation_id, user_id)
 		)`,
-		`CREATE TABLE support_mailboxes (
+		`CREATE TABLE support_mailboxes (ai_replies_disabled BOOLEAN NOT NULL DEFAULT false,
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
 			name TEXT NOT NULL,

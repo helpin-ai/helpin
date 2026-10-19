@@ -57,7 +57,7 @@ func setupFollowUpPostgres(t *testing.T) (*SupportFollowUpService, *gorm.DB, *mo
 		}
 	})
 	mustExec(t, db, `CREATE TABLE workspaces(id uuid PRIMARY KEY)`)
-	if err := db.AutoMigrate(&model.SupportConversation{}, &model.SupportMessage{}, &model.SupportWidgetInstallation{}, &model.SupportEmailLog{}); err != nil {
+	if err := db.AutoMigrate(&model.SupportMailbox{}, &model.SupportConversation{}, &model.SupportMessage{}, &model.SupportWidgetInstallation{}, &model.SupportEmailLog{}); err != nil {
 		t.Fatal(err)
 	}
 	mustExec(t, db, `CREATE TABLE agent_runs(id uuid PRIMARY KEY, workspace_id uuid, target_type text, target_id text, status text, pause_reason text, created_at timestamptz)`)

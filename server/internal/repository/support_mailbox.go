@@ -81,7 +81,12 @@ func (r *SupportMailboxRepository) Create(ctx context.Context, mailbox *model.Su
 }
 
 func (r *SupportMailboxRepository) Update(ctx context.Context, mailbox *model.SupportMailbox) error {
-	if err := r.db.WithContext(ctx).Save(mailbox).Error; err != nil {
+	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := LockSupportRouting(tx, mailbox.WorkspaceID); err != nil {
+			return err
+		}
+		return tx.Save(mailbox).Error
+	}); err != nil {
 		return fmt.Errorf("update support mailbox: %w", err)
 	}
 	return nil

@@ -12,6 +12,7 @@ import (
 
 // SupportConversation represents a support conversation (renamed from SupportTicket).
 type SupportConversation struct {
+	MailboxAIRepliesDisabled       bool            `json:"-" gorm:"-"`
 	MergeEmailRecipients           []string        `json:"merge_email_recipients,omitempty" gorm:"-"`
 	MergeHasWidget                 bool            `json:"merge_has_widget,omitempty" gorm:"-"`
 	MergeContinuationID            *string         `json:"merge_continuation_id,omitempty" gorm:"-"`
@@ -585,17 +586,18 @@ type SupportWidgetSession struct {
 func (SupportWidgetSession) TableName() string { return "support_widget_sessions" }
 
 type SupportMailbox struct {
-	ID             string  `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID    string  `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	Name           string  `json:"name" gorm:"not null"`
-	Handle         string  `json:"handle" gorm:"not null"`
-	Icon           string  `json:"icon" gorm:"not null;default:'inbox'"`
-	Description    *string `json:"description"`
-	RoutingPrompt  *string `json:"routing_prompt"`
-	TriageEligible bool    `json:"triage_eligible" gorm:"not null;default:true"`
-	LinkedTeamID   *string `json:"linked_team_id" gorm:"type:uuid"`
-	VisibilityMode string  `json:"visibility_mode" gorm:"not null;default:'members_only'"`
-	AssignmentMode string  `json:"assignment_mode" gorm:"not null;default:'manual'"`
+	AIRepliesDisabled bool    `json:"ai_replies_disabled" gorm:"not null;default:false"`
+	ID                string  `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID       string  `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	Name              string  `json:"name" gorm:"not null"`
+	Handle            string  `json:"handle" gorm:"not null"`
+	Icon              string  `json:"icon" gorm:"not null;default:'inbox'"`
+	Description       *string `json:"description"`
+	RoutingPrompt     *string `json:"routing_prompt"`
+	TriageEligible    bool    `json:"triage_eligible" gorm:"not null;default:true"`
+	LinkedTeamID      *string `json:"linked_team_id" gorm:"type:uuid"`
+	VisibilityMode    string  `json:"visibility_mode" gorm:"not null;default:'members_only'"`
+	AssignmentMode    string  `json:"assignment_mode" gorm:"not null;default:'manual'"`
 	// AssignmentMemberIDs stores workspace member IDs eligible for automatic assignment.
 	// Nil preserves legacy membership-based assignment; an empty list never means everyone.
 	AssignmentMemberIDs []string `json:"assignment_member_ids" gorm:"type:jsonb;serializer:json"`
@@ -872,9 +874,10 @@ type CreateSupportEmailSenderRequest struct {
 }
 
 type SetSupportEmailSenderDefaultRequest struct {
-	DefaultScope string   `json:"default_scope"`
-	MailboxID    *string  `json:"mailbox_id"`
-	MailboxIDs   []string `json:"mailbox_ids,omitempty"`
+	SingleMailbox bool     `json:"single_mailbox,omitempty"`
+	DefaultScope  string   `json:"default_scope"`
+	MailboxID     *string  `json:"mailbox_id"`
+	MailboxIDs    []string `json:"mailbox_ids,omitempty"`
 }
 
 type UpdateSupportEmailSenderRequest struct {
@@ -885,6 +888,7 @@ type UpdateSupportEmailSenderRequest struct {
 }
 
 type CreateSupportMailboxRequest struct {
+	AIRepliesDisabled   bool     `json:"ai_replies_disabled"`
 	Name                string   `json:"name"`
 	Handle              string   `json:"handle"`
 	Icon                string   `json:"icon"`
@@ -918,6 +922,7 @@ func (s *OptionalNullableString) UnmarshalJSON(data []byte) error {
 }
 
 type UpdateSupportMailboxRequest struct {
+	AIRepliesDisabled   *bool                  `json:"ai_replies_disabled,omitempty"`
 	Name                *string                `json:"name,omitempty"`
 	Handle              *string                `json:"handle,omitempty"`
 	Icon                *string                `json:"icon,omitempty"`

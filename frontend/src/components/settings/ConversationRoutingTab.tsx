@@ -1,3 +1,4 @@
+import { InboxAIRepliesCell, InboxSenderCell } from './InboxTableControls';
 import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { SettingsSaveBar } from './SettingsSaveBar';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -538,29 +539,6 @@ function InboxEmailForwardingStatus({ mailbox, route }: { mailbox: Pick<SupportM
   );
 }
 
-function InboxSenderStatus({ mailbox, sender }: { mailbox: Pick<SupportMailbox, 'active'>; sender?: SupportEmailSender | null }) {
-  if (!mailbox.active) return <span className="text-xs text-muted-foreground">Disabled</span>;
-  if (sender?.active) {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="inline-flex max-w-full cursor-default">
-            <Badge variant="secondary" className="h-5 max-w-full px-2 text-[11px]">
-              <span className="truncate">{sender.email}</span>
-            </Badge>
-          </span>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">{sender.email}</TooltipContent>
-      </Tooltip>
-    );
-  }
-  return (
-    <a href="./inboxes-routing?tab=senders" className={CONFIGURE_ROUTING_LINK_CLASS}>
-      Configure
-    </a>
-  );
-}
-
 function NotApplicableCell() {
   return <span className="text-xs text-muted-foreground">N/A</span>;
 }
@@ -644,7 +622,15 @@ function InboxMemberAvatar({ member, className }: { member: SupportMailboxMember
   );
 }
 
+function InboxTableCell({ label, children }: { label: string; children: ReactNode }) {
+  return <div className="flex min-w-0 items-center justify-between gap-3 @min-[1050px]:block">
+    <span className="shrink-0 text-xs text-muted-foreground @min-[1050px]:hidden">{label}</span>
+    <div className="min-w-0">{children}</div>
+  </div>;
+}
+
 function SharedInboxRoutingRow({
+  workspaceId,
   emailRoute,
   emailSender,
   supportMembers,
@@ -652,9 +638,10 @@ function SharedInboxRoutingRow({
   emailRoute?: SupportEmailRoute | null;
   emailSender?: SupportEmailSender | null;
   supportMembers: SupportMailboxMember[];
+  workspaceId: string;
 }) {
   return (
-    <div className="grid items-center gap-3 border-b px-6 py-3 last:border-b-0 lg:grid-cols-[minmax(240px,1.15fr)_108px_120px_minmax(110px,0.72fr)_120px_108px_80px]">
+    <div className="grid items-center gap-3 border-b px-6 py-3 last:border-b-0 @min-[1050px]:grid-cols-[minmax(180px,1.15fr)_88px_110px_minmax(110px,0.72fr)_160px_110px_72px]">
       <div className="flex min-w-0 items-center gap-3">
         <span className="h-5 w-5 shrink-0" />
         <div className="min-w-0">
@@ -663,21 +650,11 @@ function SharedInboxRoutingRow({
           </div>
         </div>
       </div>
-      <div>
-        <InboxMembersPreview members={supportMembers} />
-      </div>
-      <div>
-        <InboxEmailForwardingStatus mailbox={ACTIVE_INBOX_STATUS} route={emailRoute} />
-      </div>
-      <div>
-        <InboxSenderStatus mailbox={ACTIVE_INBOX_STATUS} sender={emailSender} />
-      </div>
-      <div>
-        <NotApplicableCell />
-      </div>
-      <div>
-        <NotApplicableCell />
-      </div>
+      <InboxTableCell label="Members"><InboxMembersPreview members={supportMembers} /></InboxTableCell>
+      <InboxTableCell label="Email forwarding"><InboxEmailForwardingStatus mailbox={ACTIVE_INBOX_STATUS} route={emailRoute} /></InboxTableCell>
+      <InboxTableCell label="Sender address"><InboxSenderCell workspaceId={workspaceId} sender={emailSender} /></InboxTableCell>
+      <InboxTableCell label="Routing"><NotApplicableCell /></InboxTableCell>
+      <InboxTableCell label="AI replies"><InboxAIRepliesCell workspaceId={workspaceId} /></InboxTableCell>
       <div className="flex items-center justify-center">
         <NotApplicableCell />
       </div>
@@ -718,7 +695,7 @@ function SortableInboxRoutingRow({
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cn(
-        'grid items-center gap-3 border-b px-6 py-3 last:border-b-0 lg:grid-cols-[minmax(240px,1.15fr)_108px_120px_minmax(110px,0.72fr)_120px_108px_80px]',
+        'grid items-center gap-3 border-b px-6 py-3 last:border-b-0 @min-[1050px]:grid-cols-[minmax(180px,1.15fr)_88px_110px_minmax(110px,0.72fr)_160px_110px_72px]',
         !mailbox.active && 'bg-muted/20 opacity-60',
         isDragging && 'opacity-50',
       )}
@@ -744,21 +721,18 @@ function SortableInboxRoutingRow({
           </div>
         </div>
       </div>
-      <div>
+      <InboxTableCell label="Members">
         {mailbox.active ? <InboxMembersCell mailbox={mailbox} /> : <span className="text-xs text-muted-foreground">Disabled</span>}
-      </div>
-      <div>
-        <InboxEmailForwardingStatus mailbox={mailbox} route={emailRoute} />
-      </div>
-      <div>
-        <InboxSenderStatus mailbox={mailbox} sender={emailSender} />
-      </div>
-      <div>
-        {mailbox.active ? <ManualRuleBadge mailboxRules={mailboxRules} automatedRoutingEnabled={automatedRoutingEnabled} /> : <span className="text-xs text-muted-foreground">Disabled</span>}
-      </div>
-      <div>
-        {mailbox.active ? <AIFallbackBadge mailbox={mailbox} automatedRoutingEnabled={automatedRoutingEnabled} /> : <span className="text-xs text-muted-foreground">Disabled</span>}
-      </div>
+      </InboxTableCell>
+      <InboxTableCell label="Email forwarding"><InboxEmailForwardingStatus mailbox={mailbox} route={emailRoute} /></InboxTableCell>
+      <InboxTableCell label="Sender address"><InboxSenderCell workspaceId={mailbox.workspace_id} mailbox={mailbox} sender={emailSender} /></InboxTableCell>
+      <InboxTableCell label="Routing"><div className="space-y-1 text-xs">
+        {mailbox.active ? <>
+          <div className="flex items-center gap-2"><ColumnHeaderTooltip label="Rules" className="w-12 shrink-0 text-muted-foreground" tooltip="Manual rules checked before AI routing." /><ManualRuleBadge mailboxRules={mailboxRules} automatedRoutingEnabled={automatedRoutingEnabled} /></div>
+          <div className="flex items-center gap-2"><ColumnHeaderTooltip label="AI" className="w-12 shrink-0 text-muted-foreground" tooltip="AI can route here when no manual rule matches." /><AIFallbackBadge mailbox={mailbox} automatedRoutingEnabled={automatedRoutingEnabled} /></div>
+        </> : <span className="text-muted-foreground">Disabled</span>}
+      </div></InboxTableCell>
+      <InboxTableCell label="AI replies"><InboxAIRepliesCell workspaceId={mailbox.workspace_id} mailbox={mailbox} /></InboxTableCell>
       <div className="flex items-center justify-start gap-1 lg:justify-end">
         <IconButtonTooltip label="Edit">
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(mailbox)} aria-label={`Edit ${mailbox.name}`}>
@@ -812,7 +786,7 @@ function ColumnHeaderTooltip({ label, tooltip, className }: { label: string; too
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className={cn('inline-flex min-w-0 cursor-help items-center gap-1', className)}>
+        <span tabIndex={0} className={cn('inline-flex min-w-0 cursor-help items-center gap-1', className)}>
           <span className="truncate">{label}</span>
           <InformationCircleIcon className="h-3 w-3 shrink-0 text-muted-foreground/70" />
         </span>
@@ -1044,7 +1018,7 @@ export function ConversationRoutingTab({
       ) : null}
 
       {showInboxes && (
-        <section className="overflow-hidden rounded-lg border border-border/70 bg-card">
+        <section className="@container overflow-hidden rounded-lg border border-border/70 bg-card">
           <RoutingCardHeader
             title="Inboxes"
             description="Route conversations to the main inbox or dedicated team queues."
@@ -1057,19 +1031,19 @@ export function ConversationRoutingTab({
             )}
           />
 
-          <div className="hidden grid-cols-[minmax(240px,1.15fr)_108px_120px_minmax(110px,0.72fr)_120px_108px_80px] gap-3 border-b bg-muted/25 px-6 py-2 text-xs font-medium text-muted-foreground lg:grid">
+          <div className="hidden grid-cols-[minmax(180px,1.15fr)_88px_110px_minmax(110px,0.72fr)_160px_110px_72px] gap-3 border-b bg-muted/25 px-6 py-2 text-xs font-medium text-muted-foreground @min-[1050px]:grid">
             <ColumnHeaderTooltip label="Inbox" className="pl-8" tooltip="Inbox shown in the support queue." />
             <ColumnHeaderTooltip label="Members" tooltip="People who can access this inbox." />
             <ColumnHeaderTooltip label="Email forwarding" tooltip="Shows whether email forwarding is set up to receive emails in this inbox." />
             <ColumnHeaderTooltip label="Sender address" tooltip="Email address used when this inbox sends replies." />
-            <ColumnHeaderTooltip label="Rule-based routing" tooltip="Manual rules checked before AI routing." />
-            <ColumnHeaderTooltip label="AI routing" tooltip="AI can route here when no manual rule matches." />
+            <ColumnHeaderTooltip label="Routing" tooltip="Rules are checked first; AI routing runs when no rule matches." />
+            <ColumnHeaderTooltip label="AI replies" tooltip="Effective automatic reply mode for this inbox, separate from routing." />
             <span className="text-center">Actions</span>
           </div>
 
           {mailboxes.length === 0 ? (
             <div>
-              <SharedInboxRoutingRow emailRoute={sharedEmailRoute} emailSender={workspaceDefaultSender} supportMembers={sharedInboxMembers} />
+              <SharedInboxRoutingRow workspaceId={workspaceId} emailRoute={sharedEmailRoute} emailSender={workspaceDefaultSender} supportMembers={sharedInboxMembers} />
               <div className="px-6 py-8 text-center">
                 <p className="text-sm font-medium text-foreground">No team inboxes yet</p>
                 <p className="mt-1 text-sm text-muted-foreground">Create an inbox for teams like Billing, Support, or VIP customers.</p>
@@ -1081,7 +1055,7 @@ export function ConversationRoutingTab({
             </div>
           ) : (
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              <SharedInboxRoutingRow emailRoute={sharedEmailRoute} emailSender={workspaceDefaultSender} supportMembers={sharedInboxMembers} />
+              <SharedInboxRoutingRow workspaceId={workspaceId} emailRoute={sharedEmailRoute} emailSender={workspaceDefaultSender} supportMembers={sharedInboxMembers} />
               <SortableContext items={activeMailboxes.map((mailbox) => mailbox.id)} strategy={verticalListSortingStrategy}>
                 <div>
                   {activeMailboxes.map((mailbox) => (

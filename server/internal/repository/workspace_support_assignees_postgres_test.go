@@ -61,7 +61,7 @@ func TestSupportAssignableMembersPostgres(t *testing.T) {
 		`CREATE TABLE workspace_members(id uuid PRIMARY KEY, workspace_id uuid, user_id uuid, role text, email text, display_name text, status text, invited_by uuid, invited_at timestamptz, accepted_at timestamptz)`,
 		`CREATE TABLE team_workspace_memberships(workspace_member_id uuid, team_id uuid)`,
 		`CREATE TABLE workspace_module_grants(id uuid PRIMARY KEY, workspace_id uuid, module text, subject_type text, subject_id uuid)`,
-		`CREATE TABLE support_mailboxes(id uuid PRIMARY KEY, linked_team_id uuid)`,
+		`CREATE TABLE support_mailboxes(ai_replies_disabled BOOLEAN NOT NULL DEFAULT false, id uuid PRIMARY KEY, linked_team_id uuid)`,
 		`CREATE TABLE support_mailbox_memberships(mailbox_id uuid, workspace_member_id uuid)`,
 	} {
 		exec(statement)

@@ -37,6 +37,9 @@ func supportFollowUpEnabled(settings model.SupportInboxSettings) bool {
 }
 
 func supportFollowUpEligible(conv *model.SupportConversation, episode *model.SupportAIFollowUp, settings model.SupportInboxSettings, replyChannels ...string) bool {
+	if conv.MailboxAIRepliesDisabled {
+		return false
+	}
 	if conv.AIResumedAt != nil && !episode.CreatedAt.After(*conv.AIResumedAt) {
 		return false
 	}

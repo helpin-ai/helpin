@@ -1289,6 +1289,9 @@ func (s *EmailFallbackService) processInboundConversationReplyWithRecovery(ctx c
 			conv.AssignedAgentID = nil
 			conv.AIState = strPtr("escalated")
 		}
+		if err := repository.LoadSupportMailboxAIPolicy(tx, conv); err != nil {
+			return err
+		}
 		// Email replies belong to the human inbox. Cancel AI ownership silently:
 		// sending a handoff email here can itself feed an autoresponder loop.
 		if !isTeammateReply && !isNotice && (!model.SupportAIReplyAllowed(settings, conv, msg) || !shouldAutomaticallyProcessSupportAI(settings)) && (derefString(conv.AssignedAgentID) != "" || derefString(conv.AIState) == "pending" || derefString(conv.AIActiveRunID) != "") {
@@ -1460,7 +1463,7 @@ func (s *EmailFallbackService) publishInboundCustomerAIRequest(ctx context.Conte
 	if err != nil {
 		return fmt.Errorf("%w: load inbound email AI ownership: %w", ErrInboundEmailAIDispatchRetry, err)
 	}
-	if conv == nil || conv.AnonymizedAt != nil || supportConversationHumanOwned(conv) || conv.CustomerRequestedHumanAt != nil || derefString(conv.AIState) == "escalated" || derefString(conv.FlowState) == model.SupportConversationFlowStateAssignedToHuman || conv.PrimaryRecipientState == model.SupportPrimaryRecipientStateUnconfirmed || isEmailFallbackInboundTerminalStatus(conv.Status) {
+	if conv == nil || !model.SupportAIReplyAllowed(parseSettings(inst.Settings), conv, msg) || conv.AnonymizedAt != nil || supportConversationHumanOwned(conv) || conv.CustomerRequestedHumanAt != nil || derefString(conv.AIState) == "escalated" || derefString(conv.FlowState) == model.SupportConversationFlowStateAssignedToHuman || conv.PrimaryRecipientState == model.SupportPrimaryRecipientStateUnconfirmed || isEmailFallbackInboundTerminalStatus(conv.Status) {
 		return nil
 	}
 	if err := s.supportInboxService.supportAIService.PublishAIRequest(ctx, workspaceID, conversationID, msg.ID, msg.Content); err != nil {

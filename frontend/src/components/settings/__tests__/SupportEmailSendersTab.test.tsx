@@ -69,6 +69,12 @@ beforeEach(() => {
 afterEach(() => { act(() => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
 
 describe('sender address settings', () => {
+  it('opens new sender setup when arriving from an inbox sender field', () => {
+    act(() => root.render(<TooltipProvider><SupportEmailSendersTab workspaceId="workspace" workspaceName="Example" canManage createSender /></TooltipProvider>));
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(document.querySelector('form')).not.toBeNull();
+    expect(api.create).not.toHaveBeenCalled();
+  });
   it('shows existing addresses directly, preserving assigned and unused senders without writing', () => {
     data.senders = [sender({ active: true, default_scope: 'workspace' }), sender({ id: 'unused', email: 'unused@example.com' })];
     render();

@@ -23,10 +23,12 @@ export function normalizeInboxesRoutingTab(value: unknown): InboxesRoutingTab {
 export function InboxesRoutingSettingsPage({
   tab,
   createInbox = false,
+  createSender = false,
   onTabChange,
 }: {
   tab: InboxesRoutingTab;
   createInbox?: boolean;
+  createSender?: boolean;
   onTabChange: (tab: string) => void;
 }) {
   return (
@@ -56,7 +58,7 @@ export function InboxesRoutingSettingsPage({
             <SupportEmailForwardingTab workspaceId={workspaceId} />
           </TabsContent>
           <TabsContent value="senders" className="mt-4">
-            <SupportEmailSendersTab workspaceId={workspaceId} workspaceName={currentWorkspaceName} workspaceWebsiteUrl={currentWorkspaceWebsiteUrl} canManage={permissions.has('support.admin')} />
+            <SupportEmailSendersTab createSender={createSender} workspaceId={workspaceId} workspaceName={currentWorkspaceName} workspaceWebsiteUrl={currentWorkspaceWebsiteUrl} canManage={permissions.has('support.admin')} />
           </TabsContent>
         </Tabs>
       )}
