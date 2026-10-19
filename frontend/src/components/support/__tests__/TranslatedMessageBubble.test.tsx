@@ -5,9 +5,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { expect, it, vi } from 'vitest';
 import { TranslatedMessageBubble } from '../TranslatedMessageBubble';
 const request = vi.hoisted(() => vi.fn());
+const settings = vi.hoisted(() => ({ reading: 'en' }));
 vi.mock('@/hooks/queries/useSupportTranslation', () => ({
  requestSupportTranslation: request,
- useSupportTranslationOptions: () => ({data:{available:true,preference:{auto_translate_incoming:true,reading_language:'en'},languages:{en:'English',es:'Spanish'}}}),
+ useSupportTranslationOptions: () => ({data:{available:true,preference:{auto_translate_incoming:true,reading_language:settings.reading},languages:{en:'English',es:'Spanish'}}}),
 }));
 vi.mock('../MessageBubble',()=>({MessageBubble:({translationFooter,translationStatus,translatedContent,message}:{translationFooter:React.ReactNode;translationStatus?:React.ReactNode;translatedContent?:string;message:{content:string}})=><div><p>{translatedContent ?? message.content}</p><div data-footer>{translationFooter}</div><div data-status>{translationStatus}</div></div>}));
 (globalThis as unknown as {IS_REACT_ACT_ENVIRONMENT:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
@@ -53,4 +54,37 @@ it('translates an AI reply on demand and toggles its original customer-visible t
  expect(div.textContent).toContain('Show translation');
  expect(request).toHaveBeenCalledTimes(1);
  await act(async () => root.unmount()); client.clear();
+});
+
+
+it.each([
+ ['ai', 'en', 'Hello! I can help you update your email address. Please open your account settings and select your profile.'],
+ ['customer', 'en', 'Hello, I need help updating my email address. I cannot find the option in my account settings.'],
+ ['ai', 'es', 'Hola, puedo ayudarte a cambiar la dirección de correo electrónico. Abre la configuración de tu cuenta para continuar.'],
+])('hides Translate for a %s message already in %s', async (sender, reading, content) => {
+ request.mockReset(); settings.reading = reading;
+ const div = document.createElement('div'); const root = createRoot(div); const client = new QueryClient();
+ try {
+  await act(async () => root.render(<QueryClientProvider client={client}><TranslatedMessageBubble workspaceId="w" message={{id:'same',workspace_id:'w',conversation_id:'c',sender_type:sender,message_type:'reply',content,is_internal:false} as never}/></QueryClientProvider>));
+  expect(div.querySelector('button')).toBeNull();
+  expect(div.querySelector('p')?.textContent).toBe(content);
+  expect(request).not.toHaveBeenCalled();
+ } finally { await act(async () => root.unmount()); client.clear(); settings.reading = 'en'; }
+});
+
+
+it.each([
+ { name: 'known same-language text', content: 'Hello', source: 'Hello', sourceLanguage: 'en', translated: 'Hi', status: 'ready', expected: null },
+ { name: 'a real display translation', content: 'Hola', source: 'Hola', sourceLanguage: 'es', translated: 'Hello', status: 'ready', expected: 'Show original' },
+ { name: 'stale cached evidence', content: 'Hola', source: 'Hello', sourceLanguage: 'en', translated: 'Hello', status: 'ready', expected: 'Translate' },
+ { name: 'a failed translation', content: 'Hola', source: 'Hola', sourceLanguage: '', translated: '', status: 'failed', expected: 'Retry' },
+])('preserves correct controls for $name', async ({content, source, sourceLanguage, translated, status, expected}) => {
+ request.mockReset();
+ const div = document.createElement('div'); const root = createRoot(div); const client = new QueryClient();
+ try {
+  await act(async () => root.render(<QueryClientProvider client={client}><TranslatedMessageBubble workspaceId="w" message={{id:'evidence',workspace_id:'w',conversation_id:'c',sender_type:'ai',message_type:'reply',content,is_internal:false} as never} cachedTranslation={{source_message_id:'evidence',source_text:source,source_language:sourceLanguage,target_language:'en',translated_text:translated,status} as never}/></QueryClientProvider>));
+  expect(div.querySelector('button')?.textContent ?? null).toBe(expected);
+  if (sourceLanguage === 'en' && source === content) expect(div.querySelector('p')?.textContent).toBe(content);
+  expect(request).not.toHaveBeenCalled();
+ } finally { await act(async () => root.unmount()); client.clear(); }
 });

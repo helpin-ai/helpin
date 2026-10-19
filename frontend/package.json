@@ -83,6 +83,7 @@
     "dayjs": "^1.11.20",
     "dompurify": "^3.4.0",
     "emoji-mart": "^5.6.0",
+    "franc-min": "6.2.0",
     "konva": "^10.3.0",
     "lowlight": "^3.3.0",
     "lucide-react": "^0.575.0",
