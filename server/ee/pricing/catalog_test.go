@@ -194,8 +194,8 @@ func TestPublicPricingUsesPercentageAllowanceDenominators(t *testing.T) {
 	}
 
 	pricing := catalog.PublicSnapshot()
-	if pricing.PricingVersion != "2026-09-26" {
-		t.Errorf("pricing version = %q, want 2026-09-26", pricing.PricingVersion)
+	if pricing.PricingVersion != "2026-10-19" {
+		t.Errorf("pricing version = %q, want 2026-10-19", pricing.PricingVersion)
 	}
 
 	wantAllowances := map[string]int64{
@@ -243,4 +243,26 @@ func hasValidationCode(issues []ValidationIssue, code string) bool {
 		}
 	}
 	return false
+}
+
+func TestCatalogResolvesDeepSeek1017Routes(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, route := range []string{"deepseek/deepseek-v4.1-flash-1017", "deepseek/deepseek-v4.1-flash-1017:nitro"} {
+		resolved, err := catalog.ResolveDefault("openrouter", route, "standard")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resolved.CanonicalModel != "deepseek-v4.1-flash-1017" || resolved.Route != route || resolved.Tier != TierSmall {
+			t.Fatalf("unexpected routing or metering identity: %+v", resolved)
+		}
+		if resolved.Rates.InputMicrousdPerMillion != 330_000 || resolved.Rates.CacheReadMicrousdPerMillion != 33_000 || resolved.Rates.OutputMicrousdPerMillion != 1_320_000 {
+			t.Fatalf("unexpected Small tariff: %+v", resolved.Rates)
+		}
+		if resolved.ContextWindow != 1_048_576 || resolved.MaximumOutput != 131_072 {
+			t.Fatalf("unexpected model limits: %+v", resolved)
+		}
+	}
 }

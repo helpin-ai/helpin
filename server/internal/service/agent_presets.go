@@ -13,7 +13,7 @@ const (
 	defaultAnthropicAgentModel      = "claude-opus-4-8"
 	defaultOpenAIAgentModel         = "gpt-5.6-terra"
 	defaultOpenRouterAgentModel     = "openai/gpt-5.6-terra"
-	defaultFastOpenRouterAgentModel = "deepseek/deepseek-v4.1-flash:nitro"
+	defaultFastOpenRouterAgentModel = "deepseek/deepseek-v4.1-flash-1017:nitro"
 	// defaultAtlasAgentModel keeps interactive epic planning on the product's
 	// preferred fast OpenRouter model.
 	defaultAtlasAgentModel = defaultFastOpenRouterAgentModel
@@ -59,7 +59,7 @@ func defaultManagedAssistantExecutionConfig() model.JSONBlob {
 
 func isLegacyDeepSeekFlashModel(modelName string) bool {
 	switch strings.TrimSpace(modelName) {
-	case "deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-flash-0731", "deepseek/deepseek-v4-flash-0731:nitro":
+	case "deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4.1-flash:nitro", "deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-flash-0731", "deepseek/deepseek-v4-flash-0731:nitro":
 		return true
 	default:
 		return false

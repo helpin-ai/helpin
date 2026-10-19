@@ -23,8 +23,8 @@ func TestRewriteSupportDraftFallsBackOnInvalidOutput(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			provider := &scriptedAICompletionProvider{responses: map[string]*llm.ChatResponse{
-				"deepseek/deepseek-v4-flash-0731": &tt.response,
-				openRouterLunaRoute.Model:         {Content: `{"content":"Hello."}`, Provider: "openrouter", Model: openRouterLunaRoute.Model, FinishReason: "stop"},
+				"deepseek/deepseek-v4.1-flash-1017:nitro": &tt.response,
+				openRouterLunaRoute.Model:                 {Content: `{"content":"Hello."}`, Provider: "openrouter", Model: openRouterLunaRoute.Model, FinishReason: "stop"},
 			}}
 			svc := &SupportAIService{llmProvider: newTestAICompletionService(t, provider, &fakeAIUsageStore{})}
 			response, err := svc.RewriteDraftForSurface(context.Background(), "ws-1", "support reply", BillingFeatureSupportReplyRewrite, model.SupportAIRewriteDraftRequest{
@@ -45,8 +45,8 @@ func TestRewriteSupportDraftFallsBackOnInvalidOutput(t *testing.T) {
 
 func TestRewriteSupportDraftRejectsInvalidOutputFromBothRoutes(t *testing.T) {
 	provider := &scriptedAICompletionProvider{responses: map[string]*llm.ChatResponse{
-		"deepseek/deepseek-v4-flash-0731": {Content: `{}`, FinishReason: "stop"},
-		openRouterLunaRoute.Model:         {Content: `{"content":`, FinishReason: "stop"},
+		"deepseek/deepseek-v4.1-flash-1017:nitro": {Content: `{}`, FinishReason: "stop"},
+		openRouterLunaRoute.Model:                 {Content: `{"content":`, FinishReason: "stop"},
 	}}
 	svc := &SupportAIService{llmProvider: newTestAICompletionService(t, provider, &fakeAIUsageStore{})}
 	response, err := svc.RewriteDraftForSurface(context.Background(), "ws-1", "support reply", BillingFeatureSupportReplyRewrite, model.SupportAIRewriteDraftRequest{
@@ -72,10 +72,10 @@ func TestRewriteSupportDraftUsesPolicyAndMetersSmallTierUsage(t *testing.T) {
 	if len(audit.started) != 1 || len(audit.finished) != 1 {
 		t.Fatalf("audit start/finish = %d/%d, want 1/1", len(audit.started), len(audit.finished))
 	}
-	if audit.started[0].ActionKey != "feature.support_reply_rewrite.v1" || audit.started[0].Model != "deepseek/deepseek-v4-flash-0731" {
+	if audit.started[0].ActionKey != "feature.support_reply_rewrite.v1" || audit.started[0].Model != "deepseek/deepseek-v4.1-flash-1017:nitro" {
 		t.Errorf("unexpected action audit: %+v", audit.started[0])
 	}
-	if store.reserveCalls != 1 || store.reconcile.Entry.ModelTier != "small" || store.reconcile.Entry.FeatureKey != BillingFeatureSupportReplyRewrite || store.reconcile.Entry.CanonicalModel != "deepseek-v4-flash-0731" {
+	if store.reserveCalls != 1 || store.reconcile.Entry.ModelTier != "small" || store.reconcile.Entry.FeatureKey != BillingFeatureSupportReplyRewrite || store.reconcile.Entry.CanonicalModel != "deepseek-v4.1-flash-1017" {
 		t.Errorf("unexpected metering: reserves=%d, ledger=%+v", store.reserveCalls, store.reconcile.Entry)
 	}
 }

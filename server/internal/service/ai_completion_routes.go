@@ -88,18 +88,15 @@ func NewAICompletionRouteRegistry(crmConfig CRMCompletionRouteConfig) AICompleti
 		}
 	}
 	policies := []AICompletionRoutePolicy{
-		{FeatureKey: BillingFeatureSupportTranslation, OperationKey: "quality_review", Primary: AICompletionRoute{Provider: "openrouter", Model: "deepseek/deepseek-v4.1-flash", OpenRouterProvider: "coreweave/fp8", ServiceTier: defaultAICompletionServiceTier}, PreferRequestRoute: true, MaximumOutputTokens: 128},
-		{FeatureKey: BillingFeatureSupportTranslation, Primary: AICompletionRoute{Provider: "openrouter", Model: "openai/gpt-oss-120b", OpenRouterProvider: "cerebras/fp16", ServiceTier: defaultAICompletionServiceTier}, Fallbacks: []AICompletionRoute{{Provider: "openrouter", Model: "deepseek/deepseek-v4.1-flash", OpenRouterProvider: "coreweave/fp8", ServiceTier: defaultAICompletionServiceTier}}, MaximumOutputTokens: 4000},
+		{FeatureKey: BillingFeatureSupportTranslation, OperationKey: "quality_review", Primary: openRouterDeepSeekTranslationRoute, PreferRequestRoute: true, MaximumOutputTokens: 128},
+		{FeatureKey: BillingFeatureSupportTranslation, Primary: AICompletionRoute{Provider: "openrouter", Model: "openai/gpt-oss-120b", OpenRouterProvider: "cerebras/fp16", ServiceTier: defaultAICompletionServiceTier}, Fallbacks: []AICompletionRoute{openRouterDeepSeekTranslationRoute}, MaximumOutputTokens: 4000},
 		common(BillingFeatureAIRouting, 400),
 		common(BillingFeatureCoverageGapAnalysis, 1800),
 		crm(BillingFeatureCRMSignalDetection, 4096),
 		{
 			FeatureKey: BillingFeatureSupportReplyRewrite,
-			Primary: AICompletionRoute{
-				Provider: "openrouter", Model: "deepseek/deepseek-v4-flash-0731",
-				ServiceTier: defaultAICompletionServiceTier,
-			},
-			Fallbacks: []AICompletionRoute{openRouterLunaRoute}, MaximumOutputTokens: 900,
+			Primary:    openRouterDeepSeekFlashRoute,
+			Fallbacks:  []AICompletionRoute{openRouterLunaRoute}, MaximumOutputTokens: 900,
 		},
 		common(BillingFeaturePMCommentRewrite, 900),
 		crm(BillingFeatureCRMEmailRewrite, 900),
@@ -282,3 +279,17 @@ func (r AICompletionRouteRegistry) ValidateAvailability(validate func(AICompleti
 	}
 	return issues
 }
+
+// Use compatible high-precision endpoints within the Small tier cost ceiling.
+var openRouterDeepSeekFlashRoute = AICompletionRoute{
+	Provider:        "openrouter",
+	Model:           defaultFastOpenRouterAgentModel,
+	ServiceTier:     defaultAICompletionServiceTier,
+	ProviderOptions: `{"quantizations":["fp8","fp16","bf16","fp32"],"require_parameters":true,"max_price":{"prompt":0.3,"completion":1.2}}`,
+}
+
+var openRouterDeepSeekTranslationRoute = func() AICompletionRoute {
+	route := openRouterDeepSeekFlashRoute
+	route.DisableReasoning = true
+	return route
+}()

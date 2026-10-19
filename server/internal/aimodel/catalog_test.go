@@ -88,3 +88,16 @@ func TestDisabledModelCannotResolve(t *testing.T) {
 		t.Fatalf("disabled model error = %v", err)
 	}
 }
+
+func TestCatalogResolvesDeepSeek1017AndPreservesPriorRoutes(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"deepseek/deepseek-v4.1-flash-1017", "deepseek/deepseek-v4.1-flash-1017:nitro", "deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4.1-flash:nitro"} {
+		route, err := catalog.ResolveDefault("openrouter", name, "standard")
+		if err != nil || route.Route != name || route.Tier != TierSmall {
+			t.Fatalf("route %s: %+v, %v", name, route, err)
+		}
+	}
+}
