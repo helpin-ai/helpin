@@ -294,6 +294,7 @@ describe('MessageBubble', () => {
       const badge = row?.querySelector('[role="img"]')
       expect(badge?.getAttribute('aria-label')).toBe(label)
       expect(frame?.contains(row)).toBe(false)
+      expect(rendered.container.querySelector('[data-slot="support-message-bubble"]')?.contains(row)).toBe(true)
       expect(row?.className).toContain('justify-start')
       await act(async () => { badge!.dispatchEvent(new FocusEvent('focusin', { bubbles: true })) })
       expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(label)

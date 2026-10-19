@@ -879,13 +879,11 @@ export const MessageBubble = memo(function MessageBubble({
 
   return (
     <div className={`${isConsecutive ? 'mt-1' : 'mt-5'} ${!isConsecutive ? (isCustomer ? 'animate-in fade-in slide-in-from-left-2 duration-200' : 'animate-in fade-in slide-in-from-right-2 duration-200') : ''}`}>
-      {/* Bubble row: avatar + bubble aligned together */}
+      {/* Message column with the avatar anchored to the bubble, above its footer. */}
       <div className={`flex min-w-0 max-w-full ${isCustomer ? 'justify-start' : 'justify-end'}`}>
-        {/* Left side: avatar or spacer (customer messages) */}
+        {/* Reserve space for the customer avatar. */}
         {isCustomer && (
-          <div className="mr-2 flex w-7 shrink-0 flex-col justify-end">
-            {showAvatar && avatarEl}
-          </div>
+          <div className="mr-2 w-7 shrink-0" />
         )}
 
         <MessageActionsContextMenu
@@ -902,70 +900,170 @@ export const MessageBubble = memo(function MessageBubble({
           data-slot="support-message-bubble"
           className={`${message.pending_send && message.pending_send !== 'failed' ? 'opacity-70' : ''} ${bubbleWidthClass} group/message ${showBubble ? '' : 'relative'}`}
         >
-          {showBubble ? (
-            <div data-slot="support-message-bubble-frame" className="relative">
-              {!message.pending_send && messageActionsMenu}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div
-                    className={`flow-root rounded-2xl border border-border/40 px-3.5 py-2 text-sm leading-relaxed [overflow-wrap:anywhere] ${
-                      isCustomer
-                        ? `bg-muted text-foreground/85 dark:text-foreground ${isLastInGroup ? 'rounded-bl-sm' : ''}`
-                        : `bg-blue-50 text-foreground/85 dark:bg-blue-950/40 dark:text-foreground ${isLastInGroup ? 'rounded-br-sm' : ''}`
-                    } ${hasTableContent || (hasEmailBody && !renderEmailBodyAsForwardedText) ? 'overflow-hidden' : ''}`}
-                  >
-                    {hasEmailBody && !renderEmailBodyAsForwardedText ? (
-                      <div className="-mx-1" data-chat-tone={isCustomer ? 'customer' : 'agent'}>
-                        <EmailBodyRenderer html={message.html_body ?? ''} collapsedByDefault />
-                      </div>
-                    ) : (
-                      visibleContent && (
-                        <div
-                          className="prose-chat inline [&>p:last-child]:inline"
-                          data-chat-tone={isCustomer ? 'customer' : 'agent'}
-                          data-has-table={hasTableContent ? 'true' : 'false'}
-                        >
-                          <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{visibleContent}</Markdown>
+          <div className="relative">
+            {showBubble ? (
+              <div data-slot="support-message-bubble-frame" className="relative">
+                {!message.pending_send && messageActionsMenu}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div
+                      className={`flow-root rounded-2xl border border-border/40 px-3.5 py-2 text-sm leading-relaxed [overflow-wrap:anywhere] ${
+                        isCustomer
+                          ? `bg-muted text-foreground/85 dark:text-foreground ${isLastInGroup ? 'rounded-bl-sm' : ''}`
+                          : `bg-blue-50 text-foreground/85 dark:bg-blue-950/40 dark:text-foreground ${isLastInGroup ? 'rounded-br-sm' : ''}`
+                      } ${hasTableContent || (hasEmailBody && !renderEmailBodyAsForwardedText) ? 'overflow-hidden' : ''}`}
+                    >
+                      {hasEmailBody && !renderEmailBodyAsForwardedText ? (
+                        <div className="-mx-1" data-chat-tone={isCustomer ? 'customer' : 'agent'}>
+                          <EmailBodyRenderer html={message.html_body ?? ''} collapsedByDefault />
                         </div>
-                      )
-                    )}
-                    {fileAttachments.length > 0 && (
-                      renderFileAttachments('default', visibleContent ? 'mt-2' : '')
-                    )}
-                    {linkPreviews.length > 0 && (
-                      <div className={`${visibleContent || fileAttachments.length > 0 ? 'mt-2' : ''} space-y-2`}>
-                        {linkPreviews.map((preview) => (
-                          <LinkPreviewCard
-                            key={`${message.id}:${preview.url}`}
-                            preview={preview}
-                            security={findSupportLinkSecurity(linkSecurity, preview.url)}
-                          />
-                        ))}
-                      </div>
-                    )}
-                    {renderImageAttachments(hasDisplayContent || fileAttachments.length > 0 || linkPreviews.length > 0 ? 'mt-2' : '')}
-                    {translationFooter ? <div data-slot="support-message-footer" className="mt-1 flex items-end justify-between gap-3">
-                      {translationFooter}
-                      {renderBubbleTime('ml-auto shrink-0 text-muted-foreground')}
-                    </div> : renderBubbleTime('float-right ml-2 mt-1 text-muted-foreground')}
+                      ) : (
+                        visibleContent && (
+                          <div
+                            className="prose-chat inline [&>p:last-child]:inline"
+                            data-chat-tone={isCustomer ? 'customer' : 'agent'}
+                            data-has-table={hasTableContent ? 'true' : 'false'}
+                          >
+                            <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{visibleContent}</Markdown>
+                          </div>
+                        )
+                      )}
+                      {fileAttachments.length > 0 && (
+                        renderFileAttachments('default', visibleContent ? 'mt-2' : '')
+                      )}
+                      {linkPreviews.length > 0 && (
+                        <div className={`${visibleContent || fileAttachments.length > 0 ? 'mt-2' : ''} space-y-2`}>
+                          {linkPreviews.map((preview) => (
+                            <LinkPreviewCard
+                              key={`${message.id}:${preview.url}`}
+                              preview={preview}
+                              security={findSupportLinkSecurity(linkSecurity, preview.url)}
+                            />
+                          ))}
+                        </div>
+                      )}
+                      {renderImageAttachments(hasDisplayContent || fileAttachments.length > 0 || linkPreviews.length > 0 ? 'mt-2' : '')}
+                      {translationFooter ? <div data-slot="support-message-footer" className="mt-1 flex items-end justify-between gap-3">
+                        {translationFooter}
+                        {renderBubbleTime('ml-auto shrink-0 text-muted-foreground')}
+                      </div> : renderBubbleTime('float-right ml-2 mt-1 text-muted-foreground')}
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    {tooltipContent}
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            ) : (
+              messageActionsMenu
+            )}
+            {showAvatar && (
+              <div className={`absolute bottom-0 w-7 ${isCustomer ? '-left-9' : '-right-9'}`}>
+                {avatarEl}
+              </div>
+            )}
+          </div>
+          {/* Footer shares the bubble column, so feedback stays attached to the message. */}
+          {translationStatus && <div data-slot="support-message-translation-status" className={`mt-1 flex text-xs text-muted-foreground ${isCustomer ? 'justify-start' : 'justify-end'}`}>{translationStatus}</div>}
+          {message.pending_send && <PendingSendStatus message={message}/>}
+          {!message.pending_send && (hasStatusBelow || cancellableActive || visitorFeedback !== undefined) && (
+            <div className="mt-0.5">
+              {showStandaloneEmailBadge && (
+                <div className={`mb-0.5 space-y-0.5 ${isCustomer ? '' : 'text-right'}`}>
+                  <div className={`flex ${isCustomer ? '' : 'justify-end'}`}>
+                    <button
+                      type="button"
+                      onClick={() => setEmailDetailOpen(true)}
+                      className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground hover:underline"
+                    >
+                      <Mail01Icon className="h-3 w-3" />
+                      {forwardedAttribution && isCustomer
+                        ? `Forwarded by ${forwardedAttribution.forwarded_by_name || forwardedAttribution.forwarded_by_email}`
+                        : inboundEmailBadgeLabel}
+                    </button>
                   </div>
-                </TooltipTrigger>
-                <TooltipContent side="top">
-                  {tooltipContent}
-                </TooltipContent>
-              </Tooltip>
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {visitorFeedback !== undefined && (
+                  <div data-slot="support-answer-feedback" className="mr-auto flex h-5 shrink-0 justify-start">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span role="img" tabIndex={0} aria-label={feedbackLabel}
+                          className="inline-flex h-5 min-w-6 items-center justify-center rounded-full border border-border/60 bg-background px-1 text-sm leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                          {visitorFeedback ? '👍' : '👎'}
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">{feedbackLabel}</TooltipContent>
+                    </Tooltip>
+                  </div>
+                )}
+                {(aiConfidence !== null || !!aiMeta?.ai_sources?.length) && (
+                  <div className="inline-flex items-center gap-1.5 text-[11px]">
+                    {aiConfidence !== null && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 font-medium text-muted-foreground">
+                        <CheckmarkCircle02Icon className="h-3 w-3" />
+                        {(aiConfidence * 100).toFixed(0)}% confident
+                      </span>
+                    )}
+                    {!!aiMeta?.ai_sources?.length && (
+                      <button
+                        type="button"
+                        onClick={() => setSourcesOpen(!sourcesOpen)}
+                        aria-expanded={sourcesOpen}
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground ${sourcesOpen ? 'border-border bg-background text-foreground' : 'border-border/60 bg-muted/40'}`}
+                      >
+                        <File01Icon className="h-3 w-3" />
+                        {aiMeta.ai_sources.length} source{aiMeta.ai_sources.length > 1 ? 's' : ''}
+                        <ArrowDown01Icon className={`h-3 w-3 transition-transform ${sourcesOpen ? 'rotate-180' : ''}`} />
+                      </button>
+                    )}
+                  </div>
+                )}
+                {delivery && <MessageDeliveryStatus delivery={delivery} onClick={() => setInfoOpen(true)} />}
+                {cancellableActive && (
+                  <button
+                    type="button"
+                    className="text-[11px] font-medium text-foreground transition-colors hover:text-primary hover:underline"
+                    onClick={handleUndoOrEdit}
+                    disabled={deleteMutation.isPending}
+                  >
+                    Undo
+                  </button>
+                )}
+              </div>
+              {sourcesOpen && !!aiMeta?.ai_sources?.length && (
+                <div className="ml-auto mt-1.5 w-fit max-w-full overflow-hidden rounded-xl border bg-muted/40 p-1 shadow-sm">
+                  {aiMeta.ai_sources.map((src, idx) => {
+                    const Tag: 'a' | 'div' = src.url ? 'a' : 'div';
+                    const linkProps = src.url
+                      ? { href: src.url, target: '_blank' as const, rel: 'noopener noreferrer' }
+                      : {};
+                    return (
+                      <Tag
+                        key={src.docId}
+                        {...linkProps}
+                        className={`group flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs ${idx > 0 ? 'border-t border-border/60' : ''} ${src.url ? 'cursor-pointer text-foreground hover:bg-background hover:text-primary' : 'text-foreground'}`}
+                      >
+                        <File01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className={`min-w-0 break-words font-medium ${src.url ? 'group-hover:underline' : ''}`}>{src.title}</span>
+                        {src.url && (
+                          <LinkSquare01Icon className="h-3 w-3 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
+                        )}
+                      </Tag>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          ) : (
-            messageActionsMenu
           )}
         </div>
         </MessageActionsContextMenu>
 
-        {/* Right side: avatar or spacer (agent/user messages) */}
+        {/* Reserve space for the teammate/AI avatar. */}
         {!isCustomer && (
-          <div className="ml-2 flex w-7 shrink-0 flex-col justify-end">
-            {showAvatar && avatarEl}
-          </div>
+          <div className="ml-2 w-7 shrink-0" />
         )}
       </div>
 
@@ -992,101 +1090,6 @@ export const MessageBubble = memo(function MessageBubble({
         onConfirm={handleDelete}
         isPending={deleteMutation.isPending}
       />
-      {/* Status below the bubble row — outside the avatar alignment */}
-      {translationStatus && <div data-slot="support-message-translation-status" className={`mt-1 flex text-xs text-muted-foreground ${isCustomer ? 'justify-start pl-9' : 'justify-end pr-9'}`}>{translationStatus}</div>}
-      {message.pending_send && <PendingSendStatus message={message}/>}
-      {!message.pending_send && (hasStatusBelow || cancellableActive || visitorFeedback !== undefined) && (
-        <div className={`mt-0.5 ${isCustomer ? 'pl-9' : 'pr-9'}`}>
-          {showStandaloneEmailBadge && (
-            <div className={`mb-0.5 space-y-0.5 ${isCustomer ? '' : 'text-right'}`}>
-              <div className={`flex ${isCustomer ? '' : 'justify-end'}`}>
-                <button
-                  type="button"
-                  onClick={() => setEmailDetailOpen(true)}
-                  className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground hover:underline"
-                >
-                  <Mail01Icon className="h-3 w-3" />
-                  {forwardedAttribution && isCustomer
-                    ? `Forwarded by ${forwardedAttribution.forwarded_by_name || forwardedAttribution.forwarded_by_email}`
-                    : inboundEmailBadgeLabel}
-                </button>
-              </div>
-            </div>
-          )}
-
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            {visitorFeedback !== undefined && (
-              <div data-slot="support-answer-feedback" className="mr-auto flex h-5 shrink-0 justify-start">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span role="img" tabIndex={0} aria-label={feedbackLabel}
-                      className="inline-flex h-5 min-w-6 items-center justify-center rounded-full border border-border/60 bg-background px-1 text-sm leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                      {visitorFeedback ? '👍' : '👎'}
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">{feedbackLabel}</TooltipContent>
-                </Tooltip>
-              </div>
-            )}
-            {(aiConfidence !== null || !!aiMeta?.ai_sources?.length) && (
-              <div className="inline-flex items-center gap-1.5 text-[11px]">
-                {aiConfidence !== null && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 font-medium text-muted-foreground">
-                    <CheckmarkCircle02Icon className="h-3 w-3" />
-                    {(aiConfidence * 100).toFixed(0)}% confident
-                  </span>
-                )}
-                {!!aiMeta?.ai_sources?.length && (
-                  <button
-                    type="button"
-                    onClick={() => setSourcesOpen(!sourcesOpen)}
-                    aria-expanded={sourcesOpen}
-                    className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground ${sourcesOpen ? 'border-border bg-background text-foreground' : 'border-border/60 bg-muted/40'}`}
-                  >
-                    <File01Icon className="h-3 w-3" />
-                    {aiMeta.ai_sources.length} source{aiMeta.ai_sources.length > 1 ? 's' : ''}
-                    <ArrowDown01Icon className={`h-3 w-3 transition-transform ${sourcesOpen ? 'rotate-180' : ''}`} />
-                  </button>
-                )}
-              </div>
-            )}
-            {delivery && <MessageDeliveryStatus delivery={delivery} onClick={() => setInfoOpen(true)} />}
-            {cancellableActive && (
-              <button
-                type="button"
-                className="text-[11px] font-medium text-foreground transition-colors hover:text-primary hover:underline"
-                onClick={handleUndoOrEdit}
-                disabled={deleteMutation.isPending}
-              >
-                Undo
-              </button>
-            )}
-          </div>
-          {sourcesOpen && !!aiMeta?.ai_sources?.length && (
-            <div className="ml-auto mt-1.5 w-fit max-w-full overflow-hidden rounded-xl border bg-muted/40 p-1 shadow-sm">
-              {aiMeta.ai_sources.map((src, idx) => {
-                const Tag: 'a' | 'div' = src.url ? 'a' : 'div';
-                const linkProps = src.url
-                  ? { href: src.url, target: '_blank' as const, rel: 'noopener noreferrer' }
-                  : {};
-                return (
-                  <Tag
-                    key={src.docId}
-                    {...linkProps}
-                    className={`group flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs ${idx > 0 ? 'border-t border-border/60' : ''} ${src.url ? 'cursor-pointer text-foreground hover:bg-background hover:text-primary' : 'text-foreground'}`}
-                  >
-                    <File01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className={`min-w-0 break-words font-medium ${src.url ? 'group-hover:underline' : ''}`}>{src.title}</span>
-                    {src.url && (
-                      <LinkSquare01Icon className="h-3 w-3 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
-                    )}
-                  </Tag>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 });
