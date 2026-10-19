@@ -830,7 +830,8 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
   const deliveryUnavailableReason = deliveryMode === 'chat_only' ? chatUnavailableReason
     : deliveryMode === 'email_only' ? emailUnavailableReason : emailUnavailableReason || chatUnavailableReason;
   const sendsEmail = deliveryMode !== 'chat_only';
-  const ccRecipients = normalizeRecipientEmails(conversation?.email_cc ?? [], [primaryRecipientEmail]);
+  const deliveryRecipientEmails = normalizeRecipientEmails([primaryRecipientEmail, ...(conversation?.merge_email_recipients ?? [])]);
+  const ccRecipients = normalizeRecipientEmails(conversation?.email_cc ?? [], deliveryRecipientEmails);
 
 
   const { data: members = [] } = useQuery({
@@ -1793,7 +1794,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
         <div className="space-y-2 border-b border-border/20 px-4 py-2.5 text-xs text-muted-foreground">
           <p className="break-words" aria-live="polite">
             Reply will {deliveryMode === 'email_only' ? 'only' : 'also'} be emailed to{' '}
-            <span className="font-medium text-foreground">{primaryRecipientEmail || 'the customer'}</span>.
+            <span className="font-medium text-foreground">{deliveryRecipientEmails.join(', ') || 'the customer'}</span>.
             {ccRecipients.length > 0 && <> Cc: <span className="font-medium text-foreground">{ccRecipients.join(', ')}</span>.</>}
           </p>
           {deliveryUnavailableReason && <p role="status" className="text-quiet-accent">{deliveryUnavailableReason}</p>}

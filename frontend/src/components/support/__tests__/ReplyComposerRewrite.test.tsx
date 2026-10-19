@@ -148,6 +148,23 @@ describe('ReplyComposer AI loading state', () => {
     expect(mocks.send.mock.calls[0][0].auto_translate).toBeUndefined();
   });
 
+  it('shows merged email recipients once in the original delivery notice', () => {
+    setup(true);
+    mocks.conversation = { ...mocks.conversation, merge_email_recipients: [' CUSTOMER@example.com ', 'other@example.com', 'OTHER@example.com'], email_cc: ['other@example.com', 'copy@example.com'] };
+    act(() => { root.render(<TooltipProvider><ReplyComposer workspaceId="ws-1" conversationId="conv-1" emailDeliveryEnabled /></TooltipProvider>); });
+    const notices = [...container.querySelectorAll('p')].filter(p => p.textContent?.startsWith('Reply will '));
+    expect(notices).toHaveLength(1);
+    expect(notices[0].textContent).toBe('Reply will only be emailed to customer@example.com, other@example.com. Cc: copy@example.com.');
+  });
+
+  it('lists a shared address only once after merging conversations from the same customer', () => {
+    setup(true);
+    mocks.conversation = { ...mocks.conversation, merge_email_recipients: ['customer@example.com', ' CUSTOMER@example.com '] };
+    act(() => { root.render(<TooltipProvider><ReplyComposer workspaceId="ws-1" conversationId="conv-1" emailDeliveryEnabled /></TooltipProvider>); });
+    const notice = [...container.querySelectorAll('p')].find(p => p.textContent?.startsWith('Reply will '));
+    expect(notice?.textContent).toBe('Reply will only be emailed to customer@example.com.');
+  });
+
   it('sends email without a subject editor or a stale draft subject override', async () => {
     saveReplySubject('ws-1', 'conv-1', 'Old edited subject');
     setup(true);

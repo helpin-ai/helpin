@@ -1285,8 +1285,6 @@ export function MessageThread({
       {/* Soft gradient fade between thread and composer */}
       <div className="pointer-events-none h-3 -mt-3 relative z-10 bg-gradient-to-t from-background to-transparent" />
 
-      {!!conversation?.merge_participants?.length && !conversation.merged_into_id && <p className="truncate border-t px-4 py-2 text-xs text-muted-foreground" title={conversation.merge_participants.join(', ')}>Replies shared with {conversation.merge_participants.join(', ')}</p>}
-
       {/* Reserve the editor's space immediately. Its key isolates drafts and
           attachments when switching between already cached conversations. */}
       {conversationId && (conversation?.id === conversationId && !isThreadLoading ? (conversation.merged_into_id ? <MergedConversationContinuation conversation={conversation} /> : conversation.anonymized_at ? (
