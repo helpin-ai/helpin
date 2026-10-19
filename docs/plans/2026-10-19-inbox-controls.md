@@ -12,4 +12,4 @@ Implemented in waqar-fixes. Both original routing-label explanations and badge t
 
 Validation: 41 focused frontend tests passed; support model/repository/service regression checks passed; TypeScript checking, Go vet/build and the frontend production build passed. New control files pass ESLint. The two existing inbox components retain the same 16 lint errors and one warning present in HEAD (React refresh/effect rules).
 
-No live inbox settings were changed. Deployment remains pending. Existing inboxes continue their current AI behavior until explicitly disabled; the new boolean column is added by AutoMigrate with a false default.
+No live inbox settings were changed. Deployment remains pending. Existing inboxes continue their current AI behavior until explicitly disabled; the new boolean column is added by AutoMigrate and versioned migration 202610190001 with a false default.
