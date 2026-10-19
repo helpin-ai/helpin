@@ -56,6 +56,14 @@ export default function Login() {
     window.location.assign(buildOidcAuthStartUrl(target));
   };
 
+  // With password and passkey sign-in off, the provider is the only way in: go
+  // straight to it. A sign-in error keeps the page (and its button) so a failed
+  // attempt cannot loop between here and the provider.
+  const autoOidc = configReady && !localLoginEnabled && oidcEnabled && !errorMessage;
+  useEffect(() => {
+    if (autoOidc) handleOidcLogin();
+  }, [autoOidc]);
+
   const completeLoginRedirect = async (isCancelled?: () => boolean) => {
     const redirect = loginRedirectFromSearch() ?? consumeRedirectAfterLogin();
     if (redirect) {
