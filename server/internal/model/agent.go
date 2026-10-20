@@ -770,7 +770,7 @@ func (p *AgentRunInputPayload) SetTarget(targetType, targetID string) {
 		return
 	}
 	switch targetType {
-	case "workspace", "document", "task", "epic", "sprint", "objective", "crm_deal", "crm_contact", "crm_company", "support_conversation", "repository":
+	case "workspace", "document", "task", "epic", "sprint", "objective", "crm_deal", "crm_contact", "crm_company", "support_conversation", "support_investigation", "repository":
 	default:
 		return
 	}

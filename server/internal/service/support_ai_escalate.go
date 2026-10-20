@@ -315,7 +315,7 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 			message.CreatedAt = now.Truncate(time.Millisecond).Add(time.Duration(index) * time.Millisecond)
 		}
 	}
-	oldRun, changed, err := s.conversationRepo.ChangeAIControl(ctx, workspaceID, conversationID, func(current *model.SupportConversation) (map[string]any, *model.SupportMessage, error) {
+	oldRun, changed, err := s.conversationRepo.ChangeAIControlWithInvestigation(ctx, workspaceID, conversationID, func(current *model.SupportConversation) (map[string]any, *model.SupportMessage, error) {
 		if brief.ExpectedControlVersion != nil && (current.AIControlVersion != *brief.ExpectedControlVersion || derefString(current.LastPublicMessageID) != brief.ExpectedMessageID || model.SupportAIConversationBlocked(current) || supportConversationHumanOwned(current)) {
 			return nil, nil, nil
 		}
@@ -326,7 +326,7 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 			return nil, nil, nil
 		}
 		return fields, nil, nil
-	}, messages...)
+	}, newSupportInvestigation(conv, issueKey, brief, now), messages...)
 	if err != nil {
 		return fmt.Errorf("update conversation for escalation: %w", err)
 	}

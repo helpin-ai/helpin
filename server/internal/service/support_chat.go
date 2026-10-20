@@ -29,17 +29,18 @@ const (
 
 // SupportChatService owns the conversation↔chat-run lifecycle.
 type SupportChatService struct {
-	conversationRepo *repository.SupportConversationRepository
-	messageRepo      *repository.SupportMessageRepository
-	processingRepo   *repository.AIMessageProcessingRepository
-	runRepo          *repository.AgentRunRepository
-	planRepo         *repository.CommandBarPlanRepository
-	agentService     *AgentService
-	runCloser        supportChatRunCloser
-	supportAIService *SupportAIService
-	evidenceRepo     *repository.SupportRunEvidenceRepository
-	followUpService  *SupportFollowUpService
-	jev              *SupportJevService
+	investigationRepo *repository.SupportInvestigationRepository
+	conversationRepo  *repository.SupportConversationRepository
+	messageRepo       *repository.SupportMessageRepository
+	processingRepo    *repository.AIMessageProcessingRepository
+	runRepo           *repository.AgentRunRepository
+	planRepo          *repository.CommandBarPlanRepository
+	agentService      *AgentService
+	runCloser         supportChatRunCloser
+	supportAIService  *SupportAIService
+	evidenceRepo      *repository.SupportRunEvidenceRepository
+	followUpService   *SupportFollowUpService
+	jev               *SupportJevService
 }
 
 // SetResearchEvidenceDependencies wires the store used to turn completed
@@ -68,7 +69,7 @@ func NewSupportChatService(
 	if supportAIService != nil {
 		supportAIService.runCloser = agentService
 	}
-	return &SupportChatService{
+	svc := &SupportChatService{
 		conversationRepo: conversationRepo,
 		messageRepo:      messageRepo,
 		processingRepo:   processingRepo,
@@ -78,6 +79,10 @@ func NewSupportChatService(
 		runCloser:        agentService,
 		supportAIService: supportAIService,
 	}
+	if supportAIService != nil && supportAIService.db != nil {
+		svc.investigationRepo = repository.NewSupportInvestigationRepository(supportAIService.db)
+	}
+	return svc
 }
 
 // HandleVisitorMessage is the consumer entry point for one visitor message:

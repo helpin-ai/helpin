@@ -14,6 +14,8 @@ import (
 // SupportHandoffBrief carries a bounded, optional agent-authored briefing.
 // Missing context falls back to attributed transcript excerpts, never guesses.
 type SupportHandoffBrief struct {
+	InvestigationKind      string   `json:"investigation_kind,omitempty"`
+	InvestigationQuestion  string   `json:"investigation_question,omitempty"`
 	ExpectedMessageID      string   `json:"-"`
 	ExpectedControlVersion *int64   `json:"-"`
 	ExpectedRunID          string   `json:"-"`

@@ -1541,7 +1541,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "git.list_repositories",
 		Module:               "git",
 		Mutating:             false,
-		SupportedTargetTypes: []string{"workspace", "repository", "epic", "task", "document", "crm_deal", "crm_contact", "support_coverage_gap"},
+		SupportedTargetTypes: []string{"workspace", "repository", "epic", "task", "document", "crm_deal", "crm_contact", "support_coverage_gap", supportInvestigationTarget},
 		Tool:                 mustCommandToolMetadata("git.list_repositories"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.gitService == nil {

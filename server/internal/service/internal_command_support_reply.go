@@ -189,11 +189,13 @@ func (s *InternalCommandService) registerSupportReplyCommands() {
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"reason":               map[string]any{"type": "string", "description": "Short machine reason, e.g. customer_requested, out_of_scope, risky_request, cannot_answer."},
-					"issue_key":            map[string]any{"type": "string", "description": "Optional stable key for the visitor's issue."},
-					"issue_summary":        map[string]any{"type": "string", "description": "Optional one-line summary for the teammate."},
-					"attempted_steps":      map[string]any{"type": "array", "maxItems": 5, "items": map[string]any{"type": "string", "maxLength": 700}, "description": "Brief factual steps and results. Distinguish AI suggestions from customer-confirmed actions. Do not invent completed actions."},
-					"unresolved_questions": map[string]any{"type": "array", "maxItems": 5, "items": map[string]any{"type": "string", "maxLength": 700}, "description": "What remains unanswered or requires a human. Internal only; do not repeat sensitive credentials."},
+					"reason":                 map[string]any{"type": "string", "description": "Short machine reason, e.g. customer_requested, out_of_scope, risky_request, cannot_answer."},
+					"issue_key":              map[string]any{"type": "string", "description": "Optional stable key for the visitor's issue."},
+					"investigation_kind":     map[string]any{"type": "string", "enum": []string{"suspected_product_bug"}, "description": "Optional background repository investigation after handover, only for suspected product bugs supported by current evidence and workspace skills. Omit for billing, account and how-to requests."},
+					"investigation_question": map[string]any{"type": "string", "maxLength": 700, "description": "Focused code question with observed behavior and repository hints from workspace skills. Requires investigation_kind and a stable issue_key. Internal only; do not include credentials. Never wait for this investigation."},
+					"issue_summary":          map[string]any{"type": "string", "description": "Optional one-line summary for the teammate."},
+					"attempted_steps":        map[string]any{"type": "array", "maxItems": 5, "items": map[string]any{"type": "string", "maxLength": 700}, "description": "Brief factual steps and results. Distinguish AI suggestions from customer-confirmed actions. Do not invent completed actions."},
+					"unresolved_questions":   map[string]any{"type": "array", "maxItems": 5, "items": map[string]any{"type": "string", "maxLength": 700}, "description": "What remains unanswered or requires a human. Internal only; do not repeat sensitive credentials."},
 				},
 				"required":             []string{"reason"},
 				"additionalProperties": false,
@@ -498,11 +500,13 @@ func (s *InternalCommandService) executeSupportEscalate(ctx context.Context, met
 		return nil, fmt.Errorf("escalate_to_human requires a support conversation target")
 	}
 	var req struct {
-		Reason              string   `json:"reason"`
-		IssueKey            string   `json:"issue_key"`
-		IssueSummary        string   `json:"issue_summary"`
-		AttemptedSteps      []string `json:"attempted_steps"`
-		UnresolvedQuestions []string `json:"unresolved_questions"`
+		Reason                string   `json:"reason"`
+		IssueKey              string   `json:"issue_key"`
+		IssueSummary          string   `json:"issue_summary"`
+		InvestigationKind     string   `json:"investigation_kind"`
+		InvestigationQuestion string   `json:"investigation_question"`
+		AttemptedSteps        []string `json:"attempted_steps"`
+		UnresolvedQuestions   []string `json:"unresolved_questions"`
 	}
 	if err := json.Unmarshal(input, &req); err != nil {
 		return nil, fmt.Errorf("parse escalate input: %w", err)
@@ -528,8 +532,12 @@ func (s *InternalCommandService) executeSupportEscalate(ctx context.Context, met
 			return mustJSON(map[string]any{"status": "suppressed", "next_action": "Ownership changed. End your turn."}), nil
 		}
 	}
+	if meta.TargetType == supportPreviewTarget {
+		req.InvestigationKind = ""
+		req.InvestigationQuestion = ""
+	}
 	sourceMessageID := s.supportTurnSourceMessageID(ctx, meta.WorkspaceID, conversationID, nil)
-	if err := supportAI.EscalateToHumanForMessageWithIssue(ctx, meta.WorkspaceID, conversationID, sourceMessageID, reason, strings.TrimSpace(req.IssueKey), strings.TrimSpace(req.IssueSummary), SupportHandoffBrief{ExpectedRunID: escalationRunID, Issue: req.IssueSummary, AttemptedSteps: req.AttemptedSteps, UnresolvedQuestions: req.UnresolvedQuestions}); err != nil {
+	if err := supportAI.EscalateToHumanForMessageWithIssue(ctx, meta.WorkspaceID, conversationID, sourceMessageID, reason, strings.TrimSpace(req.IssueKey), strings.TrimSpace(req.IssueSummary), SupportHandoffBrief{InvestigationKind: req.InvestigationKind, InvestigationQuestion: req.InvestigationQuestion, ExpectedRunID: escalationRunID, Issue: req.IssueSummary, AttemptedSteps: req.AttemptedSteps, UnresolvedQuestions: req.UnresolvedQuestions}); err != nil {
 		return nil, fmt.Errorf("escalate: %w", err)
 	}
 	s.settleSupportSource(ctx, meta.WorkspaceID, conversationID, sourceMessageID)

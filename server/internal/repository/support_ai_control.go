@@ -18,6 +18,12 @@ var ErrSupportAIControlConflict = errors.New("conversation AI control changed; r
 // No-op transitions return nil fields. The prior run is returned for cancellation
 // after commit; cancellation failure cannot undo the durable ownership change.
 func (r *SupportConversationRepository) ChangeAIControl(ctx context.Context, workspaceID, id string, change func(*model.SupportConversation) (map[string]any, *model.SupportMessage, error), messages ...*model.SupportMessage) (string, bool, error) {
+	return r.ChangeAIControlWithInvestigation(ctx, workspaceID, id, change, nil, messages...)
+}
+
+// ChangeAIControlWithInvestigation atomically queues optional work only when the
+// ownership transition succeeds. It performs no external calls.
+func (r *SupportConversationRepository) ChangeAIControlWithInvestigation(ctx context.Context, workspaceID, id string, change func(*model.SupportConversation) (map[string]any, *model.SupportMessage, error), investigation *model.SupportInvestigation, messages ...*model.SupportMessage) (string, bool, error) {
 	var previousRun string
 	changed := false
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -64,6 +70,9 @@ func (r *SupportConversationRepository) ChangeAIControl(ctx context.Context, wor
 			if err := NewSupportMessageRepository(tx).Create(ctx, message); err != nil {
 				return err
 			}
+		}
+		if err := queueSupportInvestigation(tx, investigation, workspaceID, id); err != nil {
+			return err
 		}
 		changed = true
 		return nil
