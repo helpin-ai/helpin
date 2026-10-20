@@ -95,6 +95,9 @@ func TestSkillCommandAuthorizationAndEdit(t *testing.T) {
 	if err := json.Unmarshal(updated, &result); err != nil {
 		t.Fatal(err)
 	}
+	if result.ID == "" {
+		t.Fatal("save receipt is missing the skill ID")
+	}
 	readByID, err := json.Marshal(map[string]string{"skill_id": result.ID})
 	if err != nil {
 		t.Fatal(err)
@@ -109,7 +112,7 @@ func TestSkillCommandAuthorizationAndEdit(t *testing.T) {
 	if _, err := svc.Execute(context.Background(), meta, "skills.update", request); err == nil {
 		t.Fatal("unattributed actor edited skill")
 	}
-	if !containsString(askAgentPresetTools(), "update_skill") || !containsString(askAgentPresetTools(), "list_workspace_skills") {
+	if !containsString(askAgentPresetTools(), "validate_skill_update") || !containsString(askAgentPresetTools(), "update_skill") || !containsString(askAgentPresetTools(), "list_workspace_skills") {
 		t.Fatal("Ask lacks skill tools")
 	}
 }

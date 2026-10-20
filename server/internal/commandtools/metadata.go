@@ -66,7 +66,7 @@ func runtimeToolRiskLevel(alias string) string {
 }
 
 var runtimeToolRiskLevels = map[string]string{
-	"update_skill": RiskLevelSensitive, "list_workspace_skills": RiskLevelRead,
+	"update_skill": RiskLevelSensitive, "list_workspace_skills": RiskLevelRead, "validate_skill_update": RiskLevelRead,
 	"archive_document": RiskLevelDestructive, "restore_document": RiskLevelRoutine,
 	"create_space": RiskLevelRoutine, "create_collection": RiskLevelRoutine,
 	"create_document": RiskLevelRoutine, "update_space": RiskLevelRoutine,

@@ -30,7 +30,9 @@ type InternalCommandDefinition struct {
 	SupportedTargetTypes   []string
 	RequiredPermissionsAll []authorization.Permission
 	Tool                   *commandtools.RuntimeToolMetadata
-	Execute                func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error)
+	// Validate performs read-only checks before the host approval guard.
+	Validate func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) error
+	Execute  func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error)
 }
 
 func (d InternalCommandDefinition) RiskLevel() string {
@@ -428,6 +430,11 @@ func (s *InternalCommandService) Execute(ctx context.Context, meta model.Interna
 		return nil, fmt.Errorf("preview requires a persisted run")
 	}
 
+	if def.Validate != nil {
+		if err := def.Validate(ctx, meta, input); err != nil {
+			return nil, err
+		}
+	}
 	if def.Mutating {
 		if err := s.authorizeDockMutation(ctx, meta, def, input); err != nil {
 			return nil, err
