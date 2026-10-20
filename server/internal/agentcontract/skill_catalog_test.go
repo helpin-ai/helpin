@@ -153,14 +153,12 @@ func TestEchoSystemPromptPrefersCanonicalWebsiteSourcesOverBlogs(t *testing.T) {
 	}
 }
 
-func TestEchoSystemPromptUsesCustomerSafeRepositoryChecks(t *testing.T) {
+func TestEchoSystemPromptUsesScopedSupportResearch(t *testing.T) {
 	for _, guidance := range []string{
 		"never mention a knowledge base",
 		"configured knowledge sources",
 		"Do not launch web research",
-		"implementation-specific behavior",
-		"list_symbols, read_symbol, and read_files",
-		"Prefer read_symbol when a declaration is known",
+		"Do not launch repository research",
 		"Call start_agent_run first",
 		"Do not send the interim reply before launching",
 		"required_confidence",
@@ -197,7 +195,7 @@ func TestEnsureSupportRuntimeDeliveryContractProtectsWorkspacePromptCopies(t *te
 		"status sent, escalated, or suppressed is terminal",
 		"Never mention a knowledge base",
 		"official website",
-		"implementation-specific questions",
+		"Required support investigation policy",
 		"required_confidence",
 	} {
 		if !strings.Contains(prompt, required) {
@@ -839,5 +837,40 @@ func TestSupportTrustBoundaryAddedToOldDeliverySnapshots(t *testing.T) {
 	}
 	if next := EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, got); next != got {
 		t.Fatal("trust boundary duplicated")
+	}
+}
+
+func TestSupportInvestigationPolicyReachesSavedAgents(t *testing.T) {
+	legacy := "You are Echo. Inspect the repository for suspected bugs.\n\n## Required live-support delivery contract\nLegacy delivery rules."
+	saved := EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, legacy)
+	if !strings.HasPrefix(saved, legacy) {
+		t.Fatal("must preserve editable workspace instructions")
+	}
+	skill, ok := GetBuiltInSkill("support_triage_response")
+	if !ok {
+		t.Fatal("missing support skill")
+	}
+	for name, prompt := range map[string]string{"default": echoSystemPrompt, "saved": saved, "skill": skill.Instructions} {
+		for _, required := range []string{"Do not launch repository research", "documented coverage", "Missing logs", "existing conversation context"} {
+			if !strings.Contains(prompt, required) {
+				t.Errorf("%s missing %q", name, required)
+			}
+		}
+	}
+	for name, prompt := range map[string]string{"default": echoSystemPrompt, "delivery": supportRuntimeDeliveryContract, "skill": skill.Instructions} {
+		for _, obsolete := range []string{"inspect the product repository", "launch one narrow read-only repository sub-agent", "repository-inspection sub-agent may verify", "Read-only repository checks for implementation-specific behavior"} {
+			if strings.Contains(prompt, obsolete) {
+				t.Errorf("%s retains automatic repository routing: %q", name, obsolete)
+			}
+		}
+	}
+	if !strings.Contains(saved, "override earlier repository-research instructions") {
+		t.Fatal("saved prompts need explicit precedence")
+	}
+	if EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, saved) != saved {
+		t.Fatal("policy duplicated")
+	}
+	if EnsureSupportRuntimeDeliveryContract(model.AgentPresetMarketer, legacy) != legacy {
+		t.Fatal("changed non-support agent")
 	}
 }
