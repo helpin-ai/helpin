@@ -43,6 +43,11 @@ func (s *AgentService) SetWorkspaceSkillStore(repo *repository.WorkspaceSkillRep
 
 func (s *AgentService) ListSkillCatalog(ctx context.Context, workspaceID string) (model.SkillCatalogResponse, error) {
 	catalog := agentcontract.ListSkillCatalog()
+	for i := range catalog.Skills {
+		entry := &catalog.Skills[i]
+		entry.VersionKey = skillEditableVersion(entry.Title, entry.Description, entry.Instructions)
+		entry.DefaultContent = &model.SkillEditableContent{Title: entry.Title, Description: entry.Description, Instructions: entry.Instructions}
+	}
 	if s.workspaceSkillRepo == nil || strings.TrimSpace(workspaceID) == "" {
 		return catalog, nil
 	}
@@ -51,9 +56,27 @@ func (s *AgentService) ListSkillCatalog(ctx context.Context, workspaceID string)
 		return model.SkillCatalogResponse{}, err
 	}
 	for _, skill := range workspaceSkills {
+		if skill.SourceKind == model.WorkspaceSkillSourceBuiltIn {
+			for i := range catalog.Skills {
+				if catalog.Skills[i].Key == skill.Key {
+					skillID := skill.ID
+					catalog.Skills[i].ID = &skillID
+				}
+				if catalog.Skills[i].Key == skill.Key && skill.IsCustomized {
+					catalog.Skills[i].Title = skill.Title
+					catalog.Skills[i].Description = stringOrDefault(skill.Description, "")
+					catalog.Skills[i].Instructions = skill.Instructions
+					catalog.Skills[i].VersionKey = skill.VersionKey
+					catalog.Skills[i].IsCustomized = true
+				}
+			}
+			continue
+		}
 		skillID := skill.ID
 		catalog.Skills = append(catalog.Skills, model.SkillCatalogEntry{
 			ID:                &skillID,
+			IsCustomized:      skill.IsCustomized,
+			DefaultContent:    workspaceSkillDefaultContent(&skill),
 			Key:               skill.Key,
 			VersionKey:        skill.VersionKey,
 			Title:             skill.Title,
@@ -132,99 +155,6 @@ func (s *AgentService) ImportWorkspaceSkill(ctx context.Context, workspaceID, ac
 	return s.storeWorkspaceSkillArchive(ctx, workspaceID, actorID, model.WorkspaceSkillSourceImported, trimPtr(sourceRuntime), strings.TrimSpace(def.Title), strings.TrimSpace(def.Description), strings.TrimSpace(def.Instructions), def, data, agentcontract.SkillVersionForBytes(data), path.Base(archiveName))
 }
 
-func (s *AgentService) UpdateWorkspaceSkill(ctx context.Context, workspaceID, skillID string, req model.UpdateWorkspaceSkillRequest) (*model.WorkspaceSkillResponse, error) {
-	if s.workspaceSkillRepo == nil || s.skillPackageStore == nil {
-		return nil, ErrWorkspaceSkillStorageUnavailable
-	}
-	skill, err := s.workspaceSkillRepo.GetByID(ctx, workspaceID, skillID)
-	if err != nil {
-		return nil, err
-	}
-	if skill == nil || skill.IsArchived {
-		return nil, ErrWorkspaceSkillNotFound
-	}
-	if skill.SourceKind != model.WorkspaceSkillSourceWorkspace {
-		return nil, fmt.Errorf("imported skills are read-only; re-import a new package to change them")
-	}
-	key := skill.Key
-	if req.Key != nil {
-		key, err = normalizeWorkspaceSkillKey(*req.Key)
-		if err != nil {
-			return nil, err
-		}
-		if key != skill.Key {
-			if existing, err := s.workspaceSkillRepo.GetActiveByKey(ctx, workspaceID, key); err != nil {
-				return nil, err
-			} else if existing != nil && existing.ID != skill.ID {
-				return nil, fmt.Errorf("a workspace skill with key %q already exists", key)
-			}
-		}
-	}
-	title := skill.Title
-	if req.Title != nil && strings.TrimSpace(*req.Title) != "" {
-		title = strings.TrimSpace(*req.Title)
-	}
-	description := strings.TrimSpace(stringOrDefault(skill.Description, ""))
-	if req.Description != nil {
-		description = strings.TrimSpace(*req.Description)
-	}
-	instructions := strings.TrimSpace(skill.Instructions)
-	if req.Instructions != nil {
-		instructions = strings.TrimSpace(*req.Instructions)
-	}
-	requiredTools := parseJSONStringSlice(json.RawMessage(skill.RequiredTools))
-	if req.RequiredTools != nil {
-		requiredTools = agentcontract.SortedUniqueStrings(req.RequiredTools)
-	}
-	supportedRuntimes := parseJSONStringSlice(json.RawMessage(skill.SupportedRuntimes))
-	if req.SupportedRuntimes != nil {
-		supportedRuntimes = agentcontract.SortedUniqueStrings(req.SupportedRuntimes)
-	}
-	if strings.TrimSpace(description) == "" {
-		return nil, fmt.Errorf("description is required")
-	}
-	if strings.TrimSpace(instructions) == "" {
-		return nil, fmt.Errorf("instructions are required")
-	}
-	def := agentcontract.SkillDefinition{Key: key, Title: title, Description: description, Instructions: instructions, RequiredTools: requiredTools, SupportedRuntimes: supportedRuntimes, SourceKind: model.WorkspaceSkillSourceWorkspace}
-	archive, checksum, filename, err := agentcontract.BuildSkillArchive(def)
-	if err != nil {
-		return nil, err
-	}
-	objectKey := fmt.Sprintf("workspaces/%s/skills/%s/%s", workspaceID, skill.ID, filename)
-	if err := s.skillPackageStore.PutObject(ctx, objectKey, "application/zip", int64(len(archive)), bytes.NewReader(archive), false); err != nil {
-		return nil, fmt.Errorf("store skill archive: %w", err)
-	}
-	if skill.PackageObjectKey != "" && skill.PackageObjectKey != objectKey {
-		if err := s.skillPackageStore.DeleteObject(ctx, skill.PackageObjectKey); err != nil {
-			slog.WarnContext(ctx, "failed to delete superseded workspace skill archive",
-				"error", err,
-				"workspace_id", workspaceID,
-				"skill_id", skill.ID,
-				"object_key", skill.PackageObjectKey)
-		}
-	}
-	skill.Key = key
-	skill.Title = title
-	skill.Description = trimPtr(&description)
-	skill.Instructions = instructions
-	skill.RequiredTools = marshalJSONBlob(agentcontract.SortedUniqueStrings(requiredTools), []byte("[]"))
-	skill.SupportedRuntimes = marshalJSONBlob(agentcontract.SortedUniqueStrings(supportedRuntimes), []byte("[]"))
-	if req.SourceRuntime != nil {
-		skill.SourceRuntime = trimPtr(req.SourceRuntime)
-	}
-	skill.VersionKey = agentcontract.SkillVersionForBytes(archive)
-	skill.PackageObjectKey = objectKey
-	skill.PackageFileName = filename
-	skill.PackageSize = int64(len(archive))
-	skill.PackageChecksum = checksum
-	if err := s.workspaceSkillRepo.Update(ctx, skill); err != nil {
-		return nil, err
-	}
-	resp := workspaceSkillResponse(skill)
-	return &resp, nil
-}
-
 func (s *AgentService) DeleteWorkspaceSkill(ctx context.Context, workspaceID, skillID string) error {
 	if s.workspaceSkillRepo == nil {
 		return ErrWorkspaceSkillStorageUnavailable
@@ -248,24 +178,26 @@ func (s *AgentService) storeWorkspaceSkillArchive(ctx context.Context, workspace
 		return nil, fmt.Errorf("store skill archive: %w", err)
 	}
 	skill := &model.WorkspaceSkill{
-		ID:                skillID,
-		WorkspaceID:       workspaceID,
-		SourceKind:        sourceKind,
-		SourceRuntime:     sourceRuntime,
-		Key:               def.Key,
-		VersionKey:        agentcontract.SkillVersionForBytes(archive),
-		Title:             title,
-		Description:       trimPtr(&description),
-		Instructions:      instructions,
-		RequiredTools:     marshalJSONBlob(agentcontract.SortedUniqueStrings(def.RequiredTools), []byte("[]")),
-		SupportedRuntimes: marshalJSONBlob(agentcontract.SortedUniqueStrings(def.SupportedRuntimes), []byte("[]")),
-		InterfaceConfig:   marshalJSONBlob(def.Interface, []byte("{}")),
-		PolicyConfig:      marshalJSONBlob(def.Policy, []byte("{}")),
-		PackageObjectKey:  objectKey,
-		PackageFileName:   path.Base(filename),
-		PackageSize:       int64(len(archive)),
-		PackageChecksum:   checksum,
-		CreatedBy:         trimPtr(&actorID),
+		ID:                      skillID,
+		WorkspaceID:             workspaceID,
+		SourceKind:              sourceKind,
+		SourceRuntime:           sourceRuntime,
+		Key:                     def.Key,
+		VersionKey:              agentcontract.SkillVersionForBytes(archive),
+		Title:                   title,
+		Description:             trimPtr(&description),
+		Instructions:            instructions,
+		RequiredTools:           marshalJSONBlob(agentcontract.SortedUniqueStrings(def.RequiredTools), []byte("[]")),
+		SupportedRuntimes:       marshalJSONBlob(agentcontract.SortedUniqueStrings(def.SupportedRuntimes), []byte("[]")),
+		InterfaceConfig:         marshalJSONBlob(def.Interface, []byte("{}")),
+		PolicyConfig:            marshalJSONBlob(def.Policy, []byte("{}")),
+		DefaultPackageObjectKey: objectKey,
+		DefaultContent:          marshalJSONBlob(model.SkillEditableContent{Title: title, Description: description, Instructions: instructions}, nil),
+		PackageObjectKey:        objectKey,
+		PackageFileName:         path.Base(filename),
+		PackageSize:             int64(len(archive)),
+		PackageChecksum:         checksum,
+		CreatedBy:               trimPtr(&actorID),
 	}
 	if err := s.workspaceSkillRepo.Create(ctx, skill); err != nil {
 		if cleanupErr := s.skillPackageStore.DeleteObject(ctx, objectKey); cleanupErr != nil {

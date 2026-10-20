@@ -628,6 +628,17 @@ describe('useRealtimeSync task ordering events', () => {
     act(() => root.unmount())
   })
 
+  it('refreshes skills after an agent edits a workspace skill', () => {
+    const client = new QueryClient()
+    const invalidations = vi.spyOn(client, 'invalidateQueries')
+    const root = createRoot(document.createElement('div'))
+    act(() => root.render(<QueryClientProvider client={client}><Harness workspaceId="ws-1" /></QueryClientProvider>))
+    invalidations.mockClear()
+    act(() => captured.onEvent?.({ entity: 'workspace_skill', action: 'updated', entity_id: 'skill-1', workspace_id: 'ws-1' }))
+    expect(invalidations).toHaveBeenCalledWith({ queryKey: queryKeys.automation.skillCatalog('ws-1') })
+    act(() => root.unmount())
+  })
+
   it.each([false, true])('recovers queries on websocket reconnect with hidden=%s', (hidden) => {
     const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue(hidden ? 'hidden' : 'visible')
     const client = new QueryClient()

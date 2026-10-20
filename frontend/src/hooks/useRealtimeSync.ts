@@ -329,6 +329,8 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.templates(workspaceId) })
     } else if (event.entity === 'recurring_template') {
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.recurringTemplates(workspaceId) })
+    } else if (event.entity === 'workspace_skill') {
+      queryClient.invalidateQueries({ queryKey: queryKeys.automation.skillCatalog(workspaceId) })
     } else if (event.entity === 'automation_rule') {
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.automationRules(workspaceId) })
       const workflowId = typeof event.data?.workflow_id === 'string' ? event.data.workflow_id : event.parent_id

@@ -8,28 +8,37 @@ const (
 	WorkspaceSkillSourceWorkspace = "workspace"
 )
 
+type SkillEditableContent struct {
+	Title        string `json:"title"`
+	Description  string `json:"description"`
+	Instructions string `json:"instructions"`
+}
+
 type WorkspaceSkill struct {
-	ID                string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID       string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	SourceKind        string    `json:"source_kind" gorm:"not null"`
-	SourceRuntime     *string   `json:"source_runtime,omitempty"`
-	Key               string    `json:"key" gorm:"not null"`
-	VersionKey        string    `json:"version_key" gorm:"not null"`
-	Title             string    `json:"title" gorm:"not null"`
-	Description       *string   `json:"description,omitempty"`
-	Instructions      string    `json:"instructions" gorm:"type:text;not null"`
-	RequiredTools     JSONBlob  `json:"required_tools" gorm:"type:jsonb;not null;default:'[]'"`
-	SupportedRuntimes JSONBlob  `json:"supported_runtimes" gorm:"type:jsonb;not null;default:'[]'"`
-	InterfaceConfig   JSONBlob  `json:"interface_config" gorm:"type:jsonb;not null;default:'{}'"`
-	PolicyConfig      JSONBlob  `json:"policy_config" gorm:"type:jsonb;not null;default:'{}'"`
-	PackageObjectKey  string    `json:"package_object_key" gorm:"not null"`
-	PackageFileName   string    `json:"package_file_name" gorm:"not null"`
-	PackageSize       int64     `json:"package_size" gorm:"not null;default:0"`
-	PackageChecksum   string    `json:"package_checksum" gorm:"not null"`
-	IsArchived        bool      `json:"is_archived" gorm:"not null;default:false"`
-	CreatedBy         *string   `json:"created_by,omitempty" gorm:"type:uuid"`
-	CreatedAt         time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt         time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	IsCustomized            bool      `json:"is_customized" gorm:"not null;default:false"`
+	DefaultContent          JSONBlob  `json:"-" gorm:"type:jsonb"`
+	DefaultPackageObjectKey string    `json:"-" gorm:"not null;default:''"`
+	ID                      string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID             string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	SourceKind              string    `json:"source_kind" gorm:"not null"`
+	SourceRuntime           *string   `json:"source_runtime,omitempty"`
+	Key                     string    `json:"key" gorm:"not null"`
+	VersionKey              string    `json:"version_key" gorm:"not null"`
+	Title                   string    `json:"title" gorm:"not null"`
+	Description             *string   `json:"description,omitempty"`
+	Instructions            string    `json:"instructions" gorm:"type:text;not null"`
+	RequiredTools           JSONBlob  `json:"required_tools" gorm:"type:jsonb;not null;default:'[]'"`
+	SupportedRuntimes       JSONBlob  `json:"supported_runtimes" gorm:"type:jsonb;not null;default:'[]'"`
+	InterfaceConfig         JSONBlob  `json:"interface_config" gorm:"type:jsonb;not null;default:'{}'"`
+	PolicyConfig            JSONBlob  `json:"policy_config" gorm:"type:jsonb;not null;default:'{}'"`
+	PackageObjectKey        string    `json:"package_object_key" gorm:"not null"`
+	PackageFileName         string    `json:"package_file_name" gorm:"not null"`
+	PackageSize             int64     `json:"package_size" gorm:"not null;default:0"`
+	PackageChecksum         string    `json:"package_checksum" gorm:"not null"`
+	IsArchived              bool      `json:"is_archived" gorm:"not null;default:false"`
+	CreatedBy               *string   `json:"created_by,omitempty" gorm:"type:uuid"`
+	CreatedAt               time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt               time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (WorkspaceSkill) TableName() string { return "workspace_skills" }
@@ -45,6 +54,8 @@ type CreateWorkspaceSkillRequest struct {
 }
 
 type UpdateWorkspaceSkillRequest struct {
+	ExpectedVersion   *string  `json:"expected_version,omitempty"`
+	RestoreDefault    bool     `json:"restore_default,omitempty"`
 	Key               *string  `json:"key,omitempty"`
 	Title             *string  `json:"title,omitempty"`
 	Description       *string  `json:"description,omitempty"`

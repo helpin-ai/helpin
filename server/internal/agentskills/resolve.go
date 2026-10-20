@@ -35,6 +35,11 @@ func Resolve(ctx context.Context, workspaceID string, refs model.AgentSkillRefs,
 			return Resolution{}, err
 		}
 		if _, exists := seen[identity]; exists {
+			// A preset's required key and its saved workspace override ID can
+			// resolve to the same built-in. Keep one effective definition.
+			if strings.HasPrefix(identity, "builtin:") {
+				continue
+			}
 			return Resolution{}, fmt.Errorf("duplicate skill reference %q", identity)
 		}
 		seen[identity] = struct{}{}
@@ -128,8 +133,11 @@ func resolveOne(ctx context.Context, workspaceID string, ref model.AgentSkillRef
 		if skill == nil || skill.IsArchived {
 			return model.AgentSkillRef{}, agentcontract.SkillDefinition{}, "", fmt.Errorf("workspace skill not found")
 		}
-		if ref.VersionKey != nil && strings.TrimSpace(*ref.VersionKey) != "" && strings.TrimSpace(*ref.VersionKey) != strings.TrimSpace(skill.VersionKey) {
-			return model.AgentSkillRef{}, agentcontract.SkillDefinition{}, "", fmt.Errorf("workspace skill %q version mismatch", skill.Key)
+		if skill.SourceKind == model.WorkspaceSkillSourceBuiltIn {
+			ref.SkillID = nil
+			ref.Key = skill.Key
+			ref.VersionKey = nil
+			return resolveOne(ctx, workspaceID, ref, lookup)
 		}
 		definition, err := workspaceSkillDefinition(skill)
 		if err != nil {
@@ -146,11 +154,23 @@ func resolveOne(ctx context.Context, workspaceID string, ref model.AgentSkillRef
 	if key == "" {
 		return model.AgentSkillRef{}, agentcontract.SkillDefinition{}, "", fmt.Errorf("skill key is required")
 	}
-	// Built-in skills take precedence for key-only refs. Workspace skills that reuse a
-	// built-in key must be referenced by skill_id to avoid ambiguous resolution.
+	// Only explicit built-in overrides replace shipped instructions. Legacy rows
+	// and custom skills sharing a key must not shadow the product contract.
 	if definition, ok := agentcontract.GetBuiltInSkill(key); ok {
 		canonical := ref.Normalize()
 		canonical.Key = definition.Key
+		canonical.VersionKey = nil
+		if lookup != nil {
+			skill, err := lookup.GetActiveByKey(ctx, workspaceID, definition.Key)
+			if err != nil {
+				return model.AgentSkillRef{}, agentcontract.SkillDefinition{}, "", err
+			}
+			if skill != nil && !skill.IsArchived && skill.SourceKind == model.WorkspaceSkillSourceBuiltIn && skill.IsCustomized {
+				definition.Title, definition.Description, definition.Instructions = skill.Title, stringOrDefault(skill.Description), skill.Instructions
+				canonical.SkillID = stringPtr(skill.ID)
+				canonical.VersionKey = stringPtr(skill.VersionKey)
+			}
+		}
 		return canonical, definition, "builtin:" + definition.Key, nil
 	}
 	if lookup == nil {
@@ -162,9 +182,6 @@ func resolveOne(ctx context.Context, workspaceID string, ref model.AgentSkillRef
 	}
 	if workspaceSkill == nil || workspaceSkill.IsArchived {
 		return model.AgentSkillRef{}, agentcontract.SkillDefinition{}, "", fmt.Errorf("unknown skill %q", key)
-	}
-	if ref.VersionKey != nil && strings.TrimSpace(*ref.VersionKey) != "" && strings.TrimSpace(*ref.VersionKey) != strings.TrimSpace(workspaceSkill.VersionKey) {
-		return model.AgentSkillRef{}, agentcontract.SkillDefinition{}, "", fmt.Errorf("workspace skill %q version mismatch", workspaceSkill.Key)
 	}
 	definition, err := workspaceSkillDefinition(workspaceSkill)
 	if err != nil {

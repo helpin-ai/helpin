@@ -1005,11 +1005,8 @@ func (s *AgentRuntimeHostService) ResolveSkillByID(ctx context.Context, req Agen
 	}
 	if strings.HasPrefix(skillID, agentRuntimeHelpinBuiltInSkillIDPrefix) {
 		key := strings.TrimPrefix(skillID, agentRuntimeHelpinBuiltInSkillIDPrefix)
-		definition, ok := agentcontract.GetBuiltInSkill(key)
-		if !ok {
-			return nil, fmt.Errorf("%w: workspace skill not found", ErrAgentRuntimeHostNotFound)
-		}
-		return s.runtimeBuiltInWorkspaceSkill(definition)
+		req.Key = key
+		return s.ResolveActiveSkillByKey(ctx, req)
 	}
 	return s.resolveWorkspaceSkill(ctx, req, func(workspaceID string) (*model.WorkspaceSkill, error) {
 		return s.skillRepo.GetByID(ctx, workspaceID, skillID)
@@ -1033,27 +1030,28 @@ func (s *AgentRuntimeHostService) ResolveActiveSkillByKey(ctx context.Context, r
 	if err := s.rejectUnclaimedCRMPlaybookCallback(ctx, req.RunID, req.Metadata, req.Target.Metadata); err != nil {
 		return nil, err
 	}
-	// Product-owned built-in skill keys are immutable runtime contracts. Resolve
-	// them from the currently deployed package before consulting persisted
-	// workspace rows. Older releases materialized built-ins in workspace_skills;
-	// allowing one of those rows to win here can silently retain stale required
-	// tools or completion-interaction policy across process restarts. Workspace
-	// skills remain addressable through their explicit skill IDs.
-	if definition, ok := agentcontract.GetBuiltInSkill(key); ok {
-		return s.runtimeBuiltInWorkspaceSkill(definition)
-	}
 	workspaceID, err := s.workspaceIDForSkillLookup(ctx, req)
 	if err != nil {
 		return nil, err
 	}
+	definition, builtIn := agentcontract.GetBuiltInSkill(key)
 	if workspaceID != "" && s.skillRepo != nil {
 		skill, err := s.skillRepo.GetActiveByKey(ctx, workspaceID, key)
 		if err != nil {
 			return nil, err
 		}
-		if skill != nil && !skill.IsArchived {
-			return runtimeWorkspaceSkill(skill), nil
+		if skill != nil && !skill.IsArchived && (!builtIn || (skill.SourceKind == model.WorkspaceSkillSourceBuiltIn && skill.IsCustomized)) {
+			resolved := runtimeWorkspaceSkill(skill)
+			if builtIn {
+				resolved.RequiredTools = definition.RequiredTools
+				resolved.SupportedRuntimes = definition.SupportedRuntimes
+				resolved.Policy = json.RawMessage(marshalJSONBlob(definition.Policy, []byte("{}")))
+			}
+			return resolved, nil
 		}
+	}
+	if builtIn {
+		return s.runtimeBuiltInWorkspaceSkill(definition)
 	}
 	if workspaceID == "" {
 		return nil, fmt.Errorf("%w: workspace_id metadata or run mapping is required", ErrAgentRuntimeHostBadRequest)
@@ -1081,6 +1079,10 @@ func (s *AgentRuntimeHostService) resolveWorkspaceSkill(ctx context.Context, req
 	}
 	if skill == nil || skill.IsArchived {
 		return nil, fmt.Errorf("%w: workspace skill not found", ErrAgentRuntimeHostNotFound)
+	}
+	if skill.SourceKind == model.WorkspaceSkillSourceBuiltIn {
+		req.Key = skill.Key
+		return s.ResolveActiveSkillByKey(ctx, req)
 	}
 	return runtimeWorkspaceSkill(skill), nil
 }

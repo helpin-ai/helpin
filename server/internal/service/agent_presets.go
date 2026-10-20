@@ -814,7 +814,7 @@ func askAgentPresetTools() []string {
 		"get_flow_builder_context", "preview_flow", "save_flow",
 		// Skills, interaction, and progress.
 		"read_chat_history",
-		"find_skills", "read_skill",
+		"find_skills", "read_skill", "list_workspace_skills", "update_skill",
 		"request_user_input", "request_approval", "update_plan",
 		// Web research.
 		"web_search", "fetch_url", "crawl_url",

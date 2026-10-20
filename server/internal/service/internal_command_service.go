@@ -482,6 +482,7 @@ func taskDependencyGraphHasCycle(graph map[string][]string) bool {
 }
 
 func (s *InternalCommandService) registerDefaults() {
+	s.registerSkillCommands()
 	s.registerDirectGitCommands()
 	s.registerImageToolCommands()
 	s.register(InternalCommandDefinition{
@@ -2160,6 +2161,11 @@ func commandPermissionsForDefinition(def InternalCommandDefinition) []authorizat
 			return []authorization.Permission{authorization.PermWorkspaceUpdate}
 		}
 		return []authorization.Permission{authorization.PermWorkspaceRead}
+	case "skills":
+		if mutating {
+			return []authorization.Permission{authorization.PermPMEdit, authorization.PermDocsEdit, authorization.PermCRMEdit, authorization.PermSupportEdit}
+		}
+		return []authorization.Permission{authorization.PermPMRead, authorization.PermDocsRead, authorization.PermCRMRead, authorization.PermSupportRead}
 	case "agents":
 		// Agent orchestration mirrors the dock gates: any module read grants
 		// discovery, any module edit grants launching.
