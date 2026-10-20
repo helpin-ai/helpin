@@ -70,10 +70,12 @@ func TestSkillEditRuntimeAndRestore(t *testing.T) {
 
 func TestSkillCommandAuthorizationAndEdit(t *testing.T) {
 	agentSvc, _, _ := newWorkspaceSkillTestService(t)
-	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	svc, _, meta := setupDockExecutionGuardTest(t)
+	svc.agentRunRepo = nil
+	svc.registerSkillCommands()
 	svc.agentService = agentSvc
 	svc.authz = authorization.NewAuthzService(nil, nil, nil)
-	meta := model.InternalCommandContext{WorkspaceID: "ws-1", ActorID: "user-1", ActorRole: "viewer"}
+	meta.ActorRole = "viewer"
 	if _, err := svc.Execute(context.Background(), meta, "skills.update", json.RawMessage(`{"skill_id":"support_triage_response","instructions":"Bad edit","expected_version":"old"}`)); err == nil {
 		t.Fatal("viewer edited skill")
 	}
@@ -87,7 +89,17 @@ func TestSkillCommandAuthorizationAndEdit(t *testing.T) {
 		t.Fatal(err)
 	}
 	request, _ := json.Marshal(map[string]any{"skill_id": skill.Key, "instructions": "Updated via Ask", "expected_version": skill.VersionKey})
-	updated, err := svc.Execute(context.Background(), meta, "skills.update", request)
+	prepared, err := svc.Execute(context.Background(), meta, "skills.validate_update", request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var save struct {
+		Input json.RawMessage `json:"save_input"`
+	}
+	if err := json.Unmarshal(prepared, &save); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := svc.Execute(context.Background(), meta, "skills.update", save.Input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,11 +117,11 @@ func TestSkillCommandAuthorizationAndEdit(t *testing.T) {
 	if _, err := svc.Execute(context.Background(), meta, "skills.list_workspace", readByID); err != nil {
 		t.Fatal("cannot read edited built-in by returned ID:", err)
 	}
-	if _, err := svc.Execute(context.Background(), meta, "skills.update", request); err == nil {
+	if _, err := svc.Execute(context.Background(), meta, "skills.update", save.Input); err == nil {
 		t.Fatal("stale edit overwrote skill")
 	}
 	meta.ActorRole = ""
-	if _, err := svc.Execute(context.Background(), meta, "skills.update", request); err == nil {
+	if _, err := svc.Execute(context.Background(), meta, "skills.update", save.Input); err == nil {
 		t.Fatal("unattributed actor edited skill")
 	}
 	if !containsString(askAgentPresetTools(), "validate_skill_update") || !containsString(askAgentPresetTools(), "update_skill") || !containsString(askAgentPresetTools(), "list_workspace_skills") {

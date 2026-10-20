@@ -130,3 +130,39 @@ func TestBuiltInPresetHelpinToolsResolveAgainstProviderCatalog(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentRuntimeProviderSkillEditingContract(t *testing.T) {
+	host := NewAgentRuntimeHostService("helpin", nil, nil, nil, nil, nil, nil, nil, nil, nil, NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil), nil)
+	catalog, err := host.ListProviderTools()
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string]agentruntime.Tool{}
+	for _, tool := range catalog.Tools {
+		byName[tool.Name] = tool
+	}
+	for _, name := range []string{"list_workspace_skills", "validate_skill_update", "update_skill"} {
+		if _, ok := byName[name]; !ok {
+			t.Fatalf("missing live provider tool %s", name)
+		}
+	}
+	var schema struct {
+		Properties map[string]any `json:"properties"`
+		Required   []string       `json:"required"`
+	}
+	if err := json.Unmarshal(byName["update_skill"].InputSchema, &schema); err != nil {
+		t.Fatal(err)
+	}
+	if schema.Properties["proposal_id"] == nil || schema.Properties["instructions"] != nil {
+		t.Fatal("runtime still advertises unprepared edits")
+	}
+	if !byName["update_skill"].Mutating || byName["validate_skill_update"].Mutating {
+		t.Fatal("approval classification changed")
+	}
+	if err := json.Unmarshal(byName["list_workspace_skills"].InputSchema, &schema); err != nil {
+		t.Fatal(err)
+	}
+	if schema.Properties["section_heading"] == nil {
+		t.Fatal("runtime missing section read schema")
+	}
+}
