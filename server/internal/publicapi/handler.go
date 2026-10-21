@@ -380,7 +380,15 @@ func coerceQuery(pt propType, values []string) (any, error) {
 		}
 		return out, nil
 	case "object":
-		return nil, errors.New("objects are not supported in the query string")
+		// Objects such as list filters travel as one JSON-encoded value.
+		if len(values) != 1 {
+			return nil, errors.New("provide a single JSON object")
+		}
+		var object map[string]any
+		if err := json.Unmarshal([]byte(values[0]), &object); err != nil {
+			return nil, errors.New("must be a JSON object")
+		}
+		return object, nil
 	default:
 		if len(values) != 1 {
 			return nil, errors.New("provide a single value")

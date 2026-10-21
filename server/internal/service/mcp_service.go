@@ -126,6 +126,9 @@ type MCPService struct {
 	checklists     mcpPMChecklistService
 	crmContacts    *CRMContactService
 	crmDeals       *CRMDealService
+	crmCompanies   *CRMCompanyService
+	crmActivities  *CRMActivityService
+	crmUpserter    *CRMRecordUpsertService
 	supportSetup   mcpSupportSetupReader
 	workspaceSetup mcpWorkspaceSetupReader
 	support        *SupportInboxService

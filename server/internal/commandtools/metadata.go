@@ -200,8 +200,10 @@ var baseRuntimeTools = append(skillManagementTools, []RuntimeToolMetadata{
 		CommandName: "crm.list_contacts",
 		Alias:       "list_contacts",
 		Category:    "CRM",
-		Description: "List CRM contacts in the workspace, optionally filtered by a case-insensitive name, email, or job-title query. Returns name, email, and job title.",
-		InputSchema: paginatedQuerySchema(50, 20, "Maximum number of contacts to return. Defaults to 20, max 50."),
+		Description: "List CRM contacts in the workspace, optionally filtered by a case-insensitive name, email, or job-title query, or by a structured filter on native fields or custom_properties.<key>. Returns name, email, job title, and custom properties.",
+		InputSchema: withCRMQueryFilter(paginatedQuerySchema(50, 20, "Maximum number of contacts to return. Defaults to 20, max 50."),
+			"name, email, phone, job_title, source (text); lifecycle_stage, lead_status, portal_access (enum); "+
+				"owner_member_id (id); created_at, updated_at (date)"),
 	},
 	{
 		CommandName: "crm.list_crm_signals",
@@ -648,10 +650,13 @@ var baseRuntimeTools = append(skillManagementTools, []RuntimeToolMetadata{
 		CommandName: "crm.list_companies",
 		Alias:       "list_crm_companies",
 		Category:    "CRM / Discovery",
-		Description: "List a bounded set of CRM companies in the current workspace.",
+		Description: "List a bounded set of CRM companies in the current workspace, with their custom properties. Use filter to segment on native fields or custom_properties.<key>.",
 		InputSchema: operationalListSchema(map[string]any{
 			"query":           map[string]any{"type": "string", "maxLength": 500},
 			"owner_member_id": optionalIDSchema("Optional owner member ID filter."),
+			"offset":          map[string]any{"type": "integer", "minimum": 0, "description": "Zero-based result offset for paging."},
+			"filter": crmQueryFilterSchema("name, domain, external_id, industry, headquarters, description (text); " +
+				"employee_count, annual_revenue (number); owner_member_id (id); created_at, updated_at (date)"),
 		}),
 	},
 	{
@@ -2244,4 +2249,33 @@ func updateKeyResultSchema() map[string]any {
 		"required":             []string{"key_result_id"},
 		"additionalProperties": false,
 	}
+}
+
+// crmQueryFilterSchema describes the shared query-builder filter group for a
+// CRM list. fields documents the native fields; custom_properties.<key> is
+// always accepted as a case-insensitive text field.
+func crmQueryFilterSchema(fields string) map[string]any {
+	operators := []string{
+		"is", "is_not", "contains", "not_contains", "starts_with", "ends_with", "is_empty", "is_not_empty",
+		"gt", "gte", "lt", "lte", "on", "before", "after", "on_or_before", "on_or_after", "between",
+	}
+	rule := closedObjectSchema(map[string]any{
+		"field":    map[string]any{"type": "string", "minLength": 1, "maxLength": 100},
+		"operator": map[string]any{"type": "string", "enum": operators},
+		"value":    map[string]any{"type": "string", "maxLength": 500},
+		"values":   map[string]any{"type": "array", "items": map[string]any{"type": "string", "maxLength": 500}, "maxItems": 2},
+	}, []string{"field", "operator"})
+	schema := closedObjectSchema(map[string]any{
+		"logic": map[string]any{"type": "string", "enum": []string{"and", "or"}, "default": "and"},
+		"rules": map[string]any{"type": "array", "items": rule, "minItems": 1, "maxItems": 20},
+	}, []string{"rules"})
+	schema["description"] = "Structured filter. Fields: " + fields +
+		"; custom_properties.<key> (text). Text matching is case-insensitive; is_empty and is_not_empty take no value; between takes two values."
+	return schema
+}
+
+func withCRMQueryFilter(schema map[string]any, fields string) map[string]any {
+	properties, _ := schema["properties"].(map[string]any)
+	properties["filter"] = crmQueryFilterSchema(fields)
+	return schema
 }

@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/querybuilder"
 )
 
 // CRMCompanyRepository handles DB operations for CRM companies.
@@ -72,8 +73,18 @@ func (r *CRMCompanyRepository) List(ctx context.Context, workspaceID string, fil
 		query = query.Where("owner_member_id = ?", *filters.OwnerMemberID)
 	}
 	if filters.Search != nil && *filters.Search != "" {
-		search := "%" + *filters.Search + "%"
-		query = query.Where("(name ILIKE ? OR domain ILIKE ?)", search, search)
+		search := "%" + strings.ToLower(strings.TrimSpace(*filters.Search)) + "%"
+		query = query.Where("(LOWER(name) LIKE ? OR LOWER(COALESCE(domain, '')) LIKE ?)", search, search)
+	}
+	if filters.Query != nil {
+		definitions, err := withCRMCustomPropertyFields(crmCompanyFilterDefinitions, "crm_companies.custom_properties", filters.Query)
+		if err != nil {
+			return nil, 0, err
+		}
+		query, err = querybuilder.ApplyGORM(query, filters.Query, definitions)
+		if err != nil {
+			return nil, 0, err
+		}
 	}
 
 	var total int64
@@ -83,6 +94,9 @@ func (r *CRMCompanyRepository) List(ctx context.Context, workspaceID string, fil
 
 	var companies []model.CRMCompany
 	offset := (pagination.Page - 1) * pagination.PerPage
+	if pagination.Offset != nil {
+		offset = *pagination.Offset
+	}
 	if err := query.Order("created_at DESC").Offset(offset).Limit(pagination.PerPage).Find(&companies).Error; err != nil {
 		return nil, 0, fmt.Errorf("list companies: %w", err)
 	}

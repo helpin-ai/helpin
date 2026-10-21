@@ -69,4 +69,5 @@ type CRMCompanyListFilters struct {
 	Industry      *string
 	OwnerMemberID *string
 	Search        *string
+	Query         *QueryFilterGroup
 }
