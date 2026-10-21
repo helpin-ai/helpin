@@ -137,6 +137,7 @@ func normalizeSupportReplyKind(kind string) string {
 
 func (s *InternalCommandService) registerSupportReplyCommands() {
 	s.registerSupportSkipReplyCommand()
+	s.registerSupportProgressCommand()
 	s.register(InternalCommandDefinition{
 		Name:                 "support.send_reply",
 		Module:               "support",
@@ -206,6 +207,11 @@ func (s *InternalCommandService) registerSupportReplyCommands() {
 }
 
 func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+	return s.executeSupportReply(ctx, meta, input, false)
+}
+
+// progressOnly shares publication and ownership fences without settling the turn.
+func (s *InternalCommandService) executeSupportReply(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage, progressOnly bool) (json.RawMessage, error) {
 	supportAI := s.supportAIService
 	if supportAI == nil {
 		return nil, fmt.Errorf("support reply service is not configured")
@@ -234,7 +240,7 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 			"status":      "rewrite_required",
 			"reason":      "internal_process_disclosure",
 			"violations":  disclosures,
-			"next_action": "Rewrite once as a direct customer-facing answer without mentioning searches, evidence, tools, agents, repositories, confidence machinery, or other internal process; then call send_support_reply again.",
+			"next_action": "Rewrite once in customer-facing language without internal process details, then retry the same tool. A progress acknowledgment is not a final answer.",
 		}), nil
 	}
 
@@ -389,7 +395,12 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 
 	kind := normalizeSupportReplyKind(req.ReplyKind)
 	progressState := ""
-	if kind == supportReplyKindConversational && replyRunID != "" && s.commandBarService != nil && s.commandBarService.planRepo != nil {
+	progressStatus, progressNextAction := "awaiting_result", supportProgressNextAction
+	if progressOnly {
+		progressState = supportAIProgressChecking
+		progressStatus, progressNextAction = "continuing", supportContinueNextAction
+	}
+	if !progressOnly && kind == supportReplyKindConversational && replyRunID != "" && s.commandBarService != nil && s.commandBarService.planRepo != nil {
 		pending, pendingErr := s.commandBarService.planRepo.HasPendingSupportResult(ctx, meta.WorkspaceID, conversationID, replyRunID)
 		if pendingErr != nil {
 			return nil, fmt.Errorf("load pending support work: %w", pendingErr)
@@ -399,7 +410,7 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 		}
 	}
 	if progressState != "" && turn.Status == "waiting_for_result" {
-		return mustJSON(map[string]any{"status": "awaiting_result", "next_action": supportProgressNextAction}), nil
+		return mustJSON(map[string]any{"status": progressStatus, "next_action": progressNextAction}), nil
 	}
 	// Claims cite chunk ids; AISources are keyed by reference ids — translate.
 	referenceByID := make(map[string]string, len(evidence))
@@ -434,7 +445,7 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 
 	if progressState != "" {
 		supportAI.publishProgress(meta.WorkspaceID, conversationID, progressState)
-		return mustJSON(map[string]any{"status": "awaiting_result", "message_id": message.ID, "next_action": supportProgressNextAction}), nil
+		return mustJSON(map[string]any{"status": progressStatus, "message_id": message.ID, "next_action": progressNextAction}), nil
 	}
 
 	triggerMessageID := turn.SourceMessageID

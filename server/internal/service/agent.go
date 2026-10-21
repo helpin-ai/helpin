@@ -278,7 +278,7 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 	}
 	// Managed support capabilities must also reach existing preset copies.
 	if normalizePresetKey(agent.EffectivePresetKey()) == model.AgentPresetSupportAgent {
-		out.AllowedTools = appendPresetTools(out.AllowedTools, []string{"skip_support_reply", "add_support_conversation_note"})
+		out.AllowedTools = appendPresetTools(out.AllowedTools, []string{"skip_support_reply", "send_support_progress", "add_support_conversation_note"})
 	}
 	if normalizePresetKey(agent.EffectivePresetKey()) == model.AgentPresetCommandAgent && !slices.Contains(out.AllowedTargets, supportInvestigationTarget) {
 		out.AllowedTargets = append(out.AllowedTargets, supportInvestigationTarget)
