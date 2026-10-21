@@ -7,7 +7,7 @@ export default {
   workspaces: {
     '.': { entry: ['scripts/**/*.{js,mjs,cjs,ts}'], project: ['scripts/**/*.{js,mjs,cjs,ts}'] },
     frontend: {
-      entry: ['src/main.tsx', 'src/routes/**/*.{ts,tsx}'],
+      entry: ['src/main.tsx', 'src/portal/main.tsx', 'src/routes/**/*.{ts,tsx}'],
       project: ['src/**/*.{ts,tsx}', ...(!enterprise ? ['!src/ee/**'] : [])],
       paths: {
         '@/*': ['./src/*'],
