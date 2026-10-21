@@ -31,6 +31,7 @@ import { ActivityTimeline } from '@/components/crm/ActivityTimeline';
 import { LinkedTasksPanel } from '@/components/crm/LinkedTasksPanel';
 import { AssociationsList } from '@/components/crm/AssociationsList';
 import { EnrichmentRailCard } from '@/components/crm/contact-detail/EnrichmentRailCard';
+import { CustomPropertyMetadataRows } from '@/components/crm/CustomPropertyMetadataRows';
 import { CreateDealDialog } from '@/components/crm/CreateDealDialog';
 import { DetailDescriptionEditorActions } from '@/components/pm/DetailDescriptionEditorActions';
 import { DetailDescriptionEditButton } from '@/components/pm/DetailDescriptionEditButton';
@@ -346,6 +347,7 @@ export function CompanyDetailPage({ companyId, activeTab = 'overview', onTabChan
 				}}
 			/>
 		</MetadataRow>
+        <CustomPropertyMetadataRows properties={company.custom_properties} />
       </div>
 		{company.commercial_state_health ? (
 			<div className="mt-5 rounded-md border border-border/70 bg-muted/20 p-3">
