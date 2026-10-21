@@ -30,7 +30,7 @@ import {
 import {
   buildSearchCommandValue,
   buildTaskCommandValue,
-} from '@/components/search/searchCommandPalette';
+} from '@/components/search/searchCommandPaletteModel';
 
 const EMPTY: SearchResponse = {
   tasks: [],

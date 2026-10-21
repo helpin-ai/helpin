@@ -2,7 +2,7 @@ import { AskAgentAvatar } from '@/components/agents/AskAgentAvatar';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ContactAvatarImage } from '@/components/ui/contact-avatar-image';
 import { SupportAIActivity } from './SupportAIActivity';
-import { getSupportAIActivity } from './supportAIActivity';
+import { getSupportAIActivity } from './supportAIActivityModel';
 import { PendingSendStatus } from './PendingSendStatus';
 import { MessageDeliveryStatus } from './MessageDeliveryStatus';
 import { getMessageDelivery } from './messageDelivery';

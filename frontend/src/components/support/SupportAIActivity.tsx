@@ -1,6 +1,6 @@
 import { AskAgentAvatar } from '@/components/agents/AskAgentAvatar';
 import { useState, type ReactNode } from 'react';
-import type { AIActivity } from './supportAIActivity';
+import type { AIActivity } from './supportAIActivityModel';
 import type { SupportMessage } from '@/lib/pmTypes';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { formatMessageTime, formatTimestamp, getAvatarColor, getInitial } from './helpers';

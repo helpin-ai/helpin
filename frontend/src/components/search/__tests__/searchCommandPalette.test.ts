@@ -4,7 +4,7 @@ import {
   buildSearchCommandValue,
   buildTaskCommandValue,
   normalizeCommandSearchText,
-} from '@/components/search/searchCommandPalette';
+} from '@/components/search/searchCommandPaletteModel';
 
 describe('normalizeCommandSearchText', () => {
   it('treats punctuation as word separators for cmdk matching', () => {
