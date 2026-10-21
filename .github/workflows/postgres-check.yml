@@ -30,7 +30,15 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: .go-version
-          cache-dependency-path: server/go.sum
+          cache: false
+      # Restores the newest build cache that warm-go-cache.yml saves from develop.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-build-${{ runner.os }}-${{ hashFiles('.go-version', 'server/go.sum') }}-${{ github.sha }}
+          restore-keys: go-build-${{ runner.os }}-${{ hashFiles('.go-version', 'server/go.sum') }}-
       - name: Run migration regressions or fresh-schema and privacy checks
         working-directory: server
         env:
