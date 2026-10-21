@@ -100,7 +100,7 @@ func TestCoverageReanalysisIgnoresIncrementalCursor(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 	old := now.Add(-20 * 24 * time.Hour)
-	if err := db.Exec(`INSERT INTO support_conversations VALUES ('c','ws-1','Billing help','open',?,NULL)`, old).Error; err != nil {
+	if err := db.Exec(`INSERT INTO support_conversations (id,workspace_id,subject,status,updated_at,resolved_at) VALUES ('c','ws-1','Billing help','open',?,NULL)`, old).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`INSERT INTO support_messages (id,workspace_id,conversation_id,sender_type,message_type,content,created_at) VALUES ('m','ws-1','c','customer','reply','How do I update billing details?',?)`, old).Error; err != nil {

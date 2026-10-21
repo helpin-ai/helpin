@@ -97,7 +97,8 @@ func (r *DocsHelpcenterRepository) GetConfigBySubdomain(ctx context.Context, sub
 // GetConfigByCustomDomain returns the help center config by custom domain.
 func (r *DocsHelpcenterRepository) GetConfigByCustomDomain(ctx context.Context, domain string) (*model.DocsHelpcenterConfig, error) {
 	var cfg model.DocsHelpcenterConfig
-	if err := r.db.WithContext(ctx).Where("custom_domain = ?", domain).First(&cfg).Error; err != nil {
+	// Only a verified domain serves a help center.
+	if err := r.db.WithContext(ctx).Where("custom_domain = ? AND custom_domain_status IN ?", domain, liveHelpcenterDomainStatuses).First(&cfg).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -107,13 +108,13 @@ func (r *DocsHelpcenterRepository) GetConfigByCustomDomain(ctx context.Context, 
 	return &cfg, nil
 }
 
-// CustomDomainRegistered reports whether any help center config claims the
+// CustomDomainRegistered reports whether a help center serves the verified
 // domain. It selects nothing but existence so the deny path stays a single
 // hit on the partial unique index idx_docs_hc_config_custom_domain.
 func (r *DocsHelpcenterRepository) CustomDomainRegistered(ctx context.Context, domain string) (bool, error) {
 	var exists bool
 	err := r.db.WithContext(ctx).
-		Raw("SELECT EXISTS(SELECT 1 FROM docs_helpcenter_configs WHERE custom_domain = ?)", domain).
+		Raw("SELECT EXISTS(SELECT 1 FROM docs_helpcenter_configs WHERE custom_domain = ? AND custom_domain_status IN ?)", domain, liveHelpcenterDomainStatuses).
 		Scan(&exists).Error
 	if err != nil {
 		return false, fmt.Errorf("check helpcenter custom domain: %w", err)
@@ -149,6 +150,15 @@ func (r *DocsHelpcenterRepository) UpsertConfig(ctx context.Context, workspaceID
 	}
 	if v, ok := updates["public_url_mode"].(string); ok {
 		cfg.PublicURLMode = v
+	}
+	if v, ok := updates["custom_domain_status"].(string); ok {
+		cfg.CustomDomainStatus = &v
+	}
+	if v, ok := updates["custom_domain_token"].(string); ok {
+		cfg.CustomDomainToken = &v
+	}
+	if v, ok := updates["custom_domain_verified_at"].(time.Time); ok {
+		cfg.CustomDomainVerifiedAt = &v
 	}
 	if v, ok := updates["reverse_proxy_host"].(*string); ok {
 		cfg.ReverseProxyHost = v

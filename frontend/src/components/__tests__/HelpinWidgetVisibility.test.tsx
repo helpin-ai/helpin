@@ -40,7 +40,10 @@ describe('HelpinWidgetVisibility', () => {
     expect(isSupportModulePath('/w/acme/support')).toBe(true);
     expect(isSupportModulePath('/w/acme/support/inbox/conversation-1')).toBe(true);
     expect(isSupportModulePath('/w/acme/support/search')).toBe(true);
+    expect(isSupportModulePath('/portal/acme')).toBe(true);
+    expect(isSupportModulePath('/portal/acme/sign-in')).toBe(true);
     expect(isSupportModulePath('/w/acme/support-settings')).toBe(false);
+    expect(isSupportModulePath('/portals/acme')).toBe(false);
     expect(isSupportModulePath('/w/acme/docs')).toBe(false);
   });
 

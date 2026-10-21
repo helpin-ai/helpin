@@ -14,6 +14,95 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
+func TestLegacyPortalVersionUpgradePostgres(t *testing.T) {
+	dsn := os.Getenv("AI_PROFILES_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("AI_PROFILES_TEST_DATABASE_URL is required")
+	}
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	ctx := context.Background()
+	schema := fmt.Sprintf("portal_merge_versions_%d", time.Now().UnixNano())
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema+"; SET search_path TO "+schema); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if _, err := db.ExecContext(ctx, "DROP SCHEMA "+schema+" CASCADE"); err != nil {
+			t.Error(err)
+		}
+	}()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = ensureSchemaMigrationsTable(ctx, conn)
+	if closeErr := conn.Close(); closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `
+CREATE TABLE command_bar_plans(id uuid);
+CREATE TABLE agent_runs(parent_run_id text, input jsonb, status text);
+CREATE TABLE pm_key_results(result_type text, progress numeric, initial_value numeric, target_value numeric, current_value numeric);
+INSERT INTO pm_key_results VALUES ('percent', 0, 0, 100, 50);
+`); err != nil {
+		t.Fatal(err)
+	}
+	core, err := loadMigrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldVersions := make(map[string]bool)
+	for _, old := range legacyPortalVersions {
+		oldVersions[old] = true
+	}
+	stamp := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
+	for _, migration := range core {
+		if oldVersions[migration.Version] {
+			continue // Develop's colliding migrations have not run yet.
+		}
+		version := migration.Version
+		if old, ok := legacyPortalVersions[version]; ok {
+			version = old
+		}
+		if _, err := db.ExecContext(ctx, "INSERT INTO schema_migrations(version,name,checksum,applied_at) VALUES ($1,$2,$3,$4)", version, migration.Name, migration.Checksum, stamp); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range 2 {
+		if err := Up(ctx, db); err != nil {
+			t.Fatal(err)
+		}
+	}
+	issues, err := Validate(ctx, db)
+	if err != nil || len(issues) != 0 {
+		t.Fatalf("post-upgrade validation: %v %v", issues, err)
+	}
+	for _, migration := range core {
+		if _, ok := legacyPortalVersions[migration.Version]; !ok {
+			continue
+		}
+		var checksum string
+		var appliedAt time.Time
+		if err := db.QueryRowContext(ctx, "SELECT checksum,applied_at FROM schema_migrations WHERE version=$1", migration.Version).Scan(&checksum, &appliedAt); err != nil {
+			t.Fatal(err)
+		}
+		if checksum != migration.Checksum || !appliedAt.Equal(stamp) {
+			t.Fatalf("portal migration %s was replayed or changed", migration.Version)
+		}
+	}
+	var progress float64
+	if err := db.QueryRowContext(ctx, "SELECT progress FROM pm_key_results").Scan(&progress); err != nil || progress != 50 {
+		t.Fatalf("Develop's key result migration did not run: progress=%v err=%v", progress, err)
+	}
+}
+
 func TestLegacyNativeVersionUpgradePostgres(t *testing.T) {
 	dsn := os.Getenv("AI_PROFILES_TEST_DATABASE_URL")
 	if dsn == "" {

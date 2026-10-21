@@ -43,7 +43,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { MentionHighlight } from '@/components/pm/mention-highlight';
 import { MentionSuggestionsList } from '@/components/pm/MentionSuggestionsList';
 import { getMemberMentionHandle, getMentionSuggestions, type MentionSuggestionItem } from '@/components/pm/mentionSuggestions';
-import { useCannedResponses, useConversation, useCreateCannedResponse, useDeleteCannedResponse, useRewriteSupportDraft, useSendMessage, useUpdateCannedResponse, useUpdateConversationEmailRecipients, useUploadSupportAttachment, useUpdateSupportNote } from '@/hooks/queries/useSupport';
+import { useCannedResponses, useConversation, useCreateCannedResponse, useDeleteCannedResponse, useRewriteSupportDraft, useSendMessage, useUpdateCannedResponse, useUpdateConversationEmailRecipients, useUploadSupportAttachment, useSupportAttachmentPolicy, useUpdateSupportNote } from '@/hooks/queries/useSupport';
+import { acceptAttributeFor, fileRejection, isPreviewableImageType, withInferredFileType } from '@/lib/supportAttachmentFiles';
 import { useComposerRewrite } from '@/hooks/useComposerRewrite';
 import { queryKeys } from '@/lib/queryKeys';
 import { workspacesService } from '@/lib/services/workspacesService';
@@ -797,6 +798,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
   const askChat = useDockStore((state) => state.chats.find((chat) => chat.support_conversation_id === conversationId) ?? null);
   const [translationFailureConversation, setTranslationFailureConversation] = useState<string | null>(null);
   const sendMutation = useSendMessage(workspaceId, conversationId);
+  const { data: attachmentPolicy } = useSupportAttachmentPolicy(workspaceId);
   const updateNoteMutation = useUpdateSupportNote(workspaceId, conversationId);
   const rewriteMutation = useRewriteSupportDraft(workspaceId, conversationId);
   const updateEmailRecipients = useUpdateConversationEmailRecipients(workspaceId);
@@ -817,16 +819,24 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
     : undefined;
   const presence = useSupportPresenceStore((state) => !state.wsConnected || !state.hasOnlineVisitorsSnapshot || !conversation?.anonymous_id
     ? 'unknown' : state.onlineVisitors[conversation.anonymous_id] ? 'online' : 'offline');
-  const deliveryMode = useComposerDelivery(workspaceId, conversationId, {
+	// Any request the customer sees in the portal can receive replies there,
+	// including email threads claimed after the customer signed in.
+	const portalReplySurface = Boolean(conversation?.portal_visible) && conversation?.status !== 'spam'
+		&& conversation?.channel !== 'internal' && conversation?.source !== 'internal';
+	const hasChatSession = Boolean(conversation?.anonymous_id) || conversation?.source === 'widget' || Boolean(conversation?.merge_has_widget);
+	const hiddenPortalIntake = conversation?.source === 'portal' && conversation?.channel === 'portal' && !conversation.portal_visible;
+  const selectedDeliveryMode = useComposerDelivery(workspaceId, conversationId, {
     source: conversation?.source,
+    portal: portalReplySurface,
     presence,
     emailEligible: !emailUnavailableReason,
     active: !editingNote && !inactive && replyMode !== 'note',
     hasDraft: !!useSupportInboxStore.getState().drafts[conversationId]?.trim(),
   });
+  const deliveryMode = hiddenPortalIntake ? 'email_only' : selectedDeliveryMode;
   const primaryRecipientUnconfirmed = conversation?.primary_recipient_state === 'unconfirmed' && deliveryMode !== 'chat_only';
-  const chatUnavailableReason = conversation && !conversation.anonymous_id && conversation.source !== 'widget' && !conversation.merge_has_widget
-    ? 'No chat session available' : undefined;
+  const chatUnavailableReason = conversation && !conversation.anonymous_id && conversation.source !== 'widget' && !conversation.merge_has_widget && !portalReplySurface
+    ? hiddenPortalIntake ? 'This request is hidden from the portal; reply by email' : 'No chat session available' : undefined;
   const deliveryUnavailableReason = deliveryMode === 'chat_only' ? chatUnavailableReason
     : deliveryMode === 'email_only' ? emailUnavailableReason : emailUnavailableReason || chatUnavailableReason;
   const sendsEmail = deliveryMode !== 'chat_only';
@@ -882,13 +892,16 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
   const uploadFiles = useCallback(async (files: File[]) => {
     if (files.length === 0) return;
     const batch: { file: File; attachment: PendingSupportAttachment }[] = [];
-    for (const file of files) {
-      if (file.size > 100 * 1024 * 1024) {
-        toast.error(`${file.name} exceeds 100 MB limit`);
+    for (const original of files) {
+      // Server attachment rules; the server enforces them too.
+      const file = withInferredFileType(original);
+      const rejection = attachmentPolicy ? fileRejection(file, attachmentPolicy) : null;
+      if (rejection) {
+        toast.error(rejection);
         continue;
       }
       const localId = `att-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-      const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined;
+      const previewUrl = isPreviewableImageType(file.type) ? URL.createObjectURL(file) : undefined;
       batch.push({ file, attachment: { localId, fileName: file.name, fileType: file.type, status: 'uploading', previewUrl, previewObjectUrl: !!previewUrl } });
     }
     // Register the entire selection before awaiting the first upload so Send
@@ -902,7 +915,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
         setPendingAttachments((prev) => prev.map((a) => a.localId === localId ? { ...a, status: 'error' } : a));
       }
     }
-  }, [uploadMutation]);
+  }, [attachmentPolicy, uploadMutation]);
   const uploadFilesRef = useRef(uploadFiles);
   uploadFilesRef.current = uploadFiles;
 
@@ -2211,7 +2224,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
             type="file"
             className="hidden"
             multiple
-            accept="image/*,video/*,.pdf,.doc,.docx,.txt,.csv,.xls,.xlsx,.zip,.gz,.tar,.md"
+            accept={attachmentPolicy ? acceptAttributeFor(attachmentPolicy.content_types) : undefined}
             onChange={(e) => handleFileSelect(e.target.files)}
           />
           <div className="mx-0.5 h-4 w-px bg-border/40" />
@@ -2296,6 +2309,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
               email={primaryRecipientEmail}
               emailUnavailableReason={emailUnavailableReason}
               chatUnavailableReason={chatUnavailableReason}
+              portal={portalReplySurface && !hasChatSession}
             />}
             <Button
               size="sm"

@@ -153,6 +153,14 @@ type Config struct {
 	PostmarkRouteInboundWebhookSecret string
 	SupportEmailRouteDomain           string
 	AppBaseURL                        string
+	// HelpcenterHostedDomain is the hosted help center root, such as
+	// helpin.center. When set, customer portals are served on each workspace's
+	// help center at /requests. Empty keeps them at {AppBaseURL}/portal/{slug}.
+	HelpcenterHostedDomain string
+	// HelpcenterCustomDomainTarget is where help center custom domains CNAME
+	// to (the custom domain ingress). It defaults to HelpcenterHostedDomain;
+	// empty turns custom domain verification off.
+	HelpcenterCustomDomainTarget      string
 	MobileAppBaseURL                  string
 	CLIEnabled                        bool
 	CLIModelGatewayEnabled            bool
@@ -516,6 +524,8 @@ func Load() (*Config, error) {
 		PostmarkRouteInboundWebhookSecret:      strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_ROUTE_INBOUND_WEBHOOK_SECRET"), os.Getenv("POSTMARK_INBOUND_WEBHOOK_SECRET"))),
 		SupportEmailRouteDomain:                strings.TrimSpace(firstNonEmpty(os.Getenv("SUPPORT_EMAIL_ROUTE_DOMAIN"), os.Getenv("SUPPORT_EMAIL_REPLY_DOMAIN"), deployment.DefaultRouteDomain)),
 		AppBaseURL:                             appBaseURL,
+		HelpcenterHostedDomain:                 normalizeHostedDomain(os.Getenv("HELPCENTER_HOSTED_DOMAIN")),
+		HelpcenterCustomDomainTarget:           normalizeHostedDomain(firstNonEmpty(os.Getenv("HELPCENTER_CUSTOM_DOMAIN_TARGET"), os.Getenv("HELPCENTER_HOSTED_DOMAIN"))),
 		MobileAppBaseURL:                       strings.TrimRight(strings.TrimSpace(os.Getenv("MOBILE_APP_BASE_URL")), "/"),
 		CLIEnabled:                             parseBoolEnv(os.Getenv("CLI_ENABLED")),
 		CLIModelGatewayEnabled:                 parseBoolEnv(os.Getenv("CLI_MODEL_GATEWAY_ENABLED")),
@@ -704,6 +714,17 @@ func parseOptionalOrigins(value string) []string {
 		}
 	}
 	return origins
+}
+
+// normalizeHostedDomain reduces a URL or hostname such as
+// "https://helpin.center/" to a bare lowercase hostname.
+func normalizeHostedDomain(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	value = strings.TrimPrefix(strings.TrimPrefix(value, "https://"), "http://")
+	if i := strings.IndexAny(value, "/:"); i >= 0 {
+		value = value[:i]
+	}
+	return strings.Trim(value, ".")
 }
 
 func parseCSV(value string) []string {

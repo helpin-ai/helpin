@@ -2,8 +2,9 @@ import { useEffect } from 'react';
 import { useHelpin } from '@helpin-ai/react';
 import { useLocation } from '@tanstack/react-router';
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function isSupportModulePath(pathname: string) {
-  return /^\/w\/[^/]+\/support(?:\/|$)/.test(pathname);
+  return /^\/w\/[^/]+\/support(?:\/|$)/.test(pathname) || /^\/portal(?:\/|$)/.test(pathname);
 }
 
 export function HelpinWidgetVisibility() {

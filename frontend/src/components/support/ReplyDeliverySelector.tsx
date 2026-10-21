@@ -18,13 +18,13 @@ function DeliveryIcons({ mode }: { mode: SupportReplyDeliveryMode }) {
   );
 }
 
-function DeliveryOptionLabel({ mode }: { mode: SupportReplyDeliveryMode }) {
+function DeliveryOptionLabel({ mode, portal }: { mode: SupportReplyDeliveryMode; portal: boolean }) {
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
       {mode !== "email_only" && (
         <span className="inline-flex items-center gap-1.5">
           <BubbleChatIcon aria-hidden="true" className="size-3.5" />
-          {mode === "chat_only" ? "Chat only" : "Chat"}
+          {portal ? (mode === "chat_only" ? "Portal only" : "Portal") : (mode === "chat_only" ? "Chat only" : "Chat")}
         </span>
       )}
       {mode === "chat_and_email" && <span>+</span>}
@@ -45,6 +45,7 @@ export function ReplyDeliverySelector({
   email,
   emailUnavailableReason,
   chatUnavailableReason,
+  portal = false,
 }: {
   mode: SupportReplyDeliveryMode;
   onChange: (mode: SupportReplyDeliveryMode) => void;
@@ -52,7 +53,11 @@ export function ReplyDeliverySelector({
   email: string;
   emailUnavailableReason?: string;
   chatUnavailableReason?: string;
+  portal?: boolean;
 }) {
+  const labels: Record<SupportReplyDeliveryMode, string> = portal ? {
+    chat_only: "Portal only", chat_and_email: "Portal + email", email_only: "Email only",
+  } : REPLY_DELIVERY_LABELS;
   const unavailableReason =
     mode === "chat_only"
       ? chatUnavailableReason
@@ -62,8 +67,8 @@ export function ReplyDeliverySelector({
   const description =
     unavailableReason ||
     (mode === "chat_only"
-      ? "Only visible in the customer’s chat widget."
-      : `${REPLY_DELIVERY_LABELS[mode]} to ${email}.`);
+      ? portal ? "Visible in the customer portal without an email notification." : "Only visible in the customer’s chat widget."
+      : `${labels[mode]} to ${email}.`);
   const options: SupportReplyDeliveryMode[] = [
     "chat_only",
     "chat_and_email",
@@ -86,7 +91,7 @@ export function ReplyDeliverySelector({
           type="button"
           size="sm"
           disabled={disabled}
-          aria-label={`Sending options: ${REPLY_DELIVERY_LABELS[mode]}`}
+          aria-label={`Sending options: ${labels[mode]}`}
           className="h-7 gap-1 rounded-l-full rounded-r-none border-r border-primary-foreground/25 px-2 text-xs"
         >
           <DeliveryIcons mode={mode} />
@@ -107,10 +112,10 @@ export function ReplyDeliverySelector({
 
             return {
               value,
-              label: REPLY_DELIVERY_LABELS[value],
+              label: labels[value],
               disabled: !!reason,
               tooltip: reason,
-              content: <DeliveryOptionLabel mode={value} />,
+              content: <DeliveryOptionLabel mode={value} portal={portal} />,
             };
           }),
         },

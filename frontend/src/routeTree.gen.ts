@@ -20,15 +20,21 @@ import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SharedShareTokenRouteImport } from './routes/shared/$shareToken'
 import { Route as ShareShareTokenRouteImport } from './routes/share/$shareToken'
+import { Route as PortalSlugRouteImport } from './routes/portal/$slug'
 import { Route as JoinTokenRouteImport } from './routes/join/$token'
 import { Route as EmailPreferencesTokenRouteImport } from './routes/email-preferences/$token'
 import { Route as AuthenticatedWorkspacesRouteImport } from './routes/_authenticated/workspaces'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
+import { Route as PortalSlugIndexRouteImport } from './routes/portal/$slug/index'
+import { Route as PortalSlugSignInRouteImport } from './routes/portal/$slug/sign-in'
+import { Route as PortalSlugNewRouteImport } from './routes/portal/$slug/new'
+import { Route as PortalSlugCallbackRouteImport } from './routes/portal/$slug/callback'
 import { Route as AuthenticatedWSlugRouteImport } from './routes/_authenticated/w/$slug'
 import { Route as AuthenticatedOauthAuthorizeRouteImport } from './routes/_authenticated/oauth/authorize'
 import { Route as AuthenticatedGithubInstalledRouteImport } from './routes/_authenticated/github/installed'
 import { Route as AuthenticatedWSlugIndexRouteImport } from './routes/_authenticated/w/$slug/index'
+import { Route as PortalSlugRequestsReferenceRouteImport } from './routes/portal/$slug/requests/$reference'
 import { Route as AuthenticatedWSlugTeamGoalsRouteImport } from './routes/_authenticated/w/$slug/team-goals'
 import { Route as AuthenticatedWSlugTasksRouteImport } from './routes/_authenticated/w/$slug/tasks'
 import { Route as AuthenticatedWSlugSupportRouteImport } from './routes/_authenticated/w/$slug/support'
@@ -71,6 +77,7 @@ import { Route as AuthenticatedWSlugSettingsGeneralRouteImport } from './routes/
 import { Route as AuthenticatedWSlugSettingsExternalMcpRouteImport } from './routes/_authenticated/w/$slug/settings/external-mcp'
 import { Route as AuthenticatedWSlugSettingsExternalAgentsRouteImport } from './routes/_authenticated/w/$slug/settings/external-agents'
 import { Route as AuthenticatedWSlugSettingsDeliveryRouteImport } from './routes/_authenticated/w/$slug/settings/delivery'
+import { Route as AuthenticatedWSlugSettingsCustomerPortalRouteImport } from './routes/_authenticated/w/$slug/settings/customer-portal'
 import { Route as AuthenticatedWSlugSettingsCrmPipelinesRouteImport } from './routes/_authenticated/w/$slug/settings/crm-pipelines'
 import { Route as AuthenticatedWSlugSettingsCrmMeetingsRouteImport } from './routes/_authenticated/w/$slug/settings/crm-meetings'
 import { Route as AuthenticatedWSlugSettingsCrmEmailRouteImport } from './routes/_authenticated/w/$slug/settings/crm-email'
@@ -189,6 +196,11 @@ const ShareShareTokenRoute = ShareShareTokenRouteImport.update({
   path: '/share/$shareToken',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PortalSlugRoute = PortalSlugRouteImport.update({
+  id: '/portal/$slug',
+  path: '/portal/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const JoinTokenRoute = JoinTokenRouteImport.update({
   id: '/join/$token',
   path: '/join/$token',
@@ -214,6 +226,26 @@ const AuthenticatedOnboardingRoute = AuthenticatedOnboardingRouteImport.update({
   path: '/onboarding',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const PortalSlugIndexRoute = PortalSlugIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => PortalSlugRoute,
+} as any)
+const PortalSlugSignInRoute = PortalSlugSignInRouteImport.update({
+  id: '/sign-in',
+  path: '/sign-in',
+  getParentRoute: () => PortalSlugRoute,
+} as any)
+const PortalSlugNewRoute = PortalSlugNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => PortalSlugRoute,
+} as any)
+const PortalSlugCallbackRoute = PortalSlugCallbackRouteImport.update({
+  id: '/callback',
+  path: '/callback',
+  getParentRoute: () => PortalSlugRoute,
+} as any)
 const AuthenticatedWSlugRoute = AuthenticatedWSlugRouteImport.update({
   id: '/w/$slug',
   path: '/w/$slug',
@@ -236,6 +268,12 @@ const AuthenticatedWSlugIndexRoute = AuthenticatedWSlugIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedWSlugRoute,
 } as any)
+const PortalSlugRequestsReferenceRoute =
+  PortalSlugRequestsReferenceRouteImport.update({
+    id: '/requests/$reference',
+    path: '/requests/$reference',
+    getParentRoute: () => PortalSlugRoute,
+  } as any)
 const AuthenticatedWSlugTeamGoalsRoute =
   AuthenticatedWSlugTeamGoalsRouteImport.update({
     id: '/team-goals',
@@ -481,6 +519,12 @@ const AuthenticatedWSlugSettingsDeliveryRoute =
   AuthenticatedWSlugSettingsDeliveryRouteImport.update({
     id: '/settings/delivery',
     path: '/settings/delivery',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedWSlugSettingsCustomerPortalRoute =
+  AuthenticatedWSlugSettingsCustomerPortalRouteImport.update({
+    id: '/settings/customer-portal',
+    path: '/settings/customer-portal',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugSettingsCrmPipelinesRoute =
@@ -876,11 +920,16 @@ export interface FileRoutesByFullPath {
   '/workspaces': typeof AuthenticatedWorkspacesRoute
   '/email-preferences/$token': typeof EmailPreferencesTokenRoute
   '/join/$token': typeof JoinTokenRoute
+  '/portal/$slug': typeof PortalSlugRouteWithChildren
   '/share/$shareToken': typeof ShareShareTokenRoute
   '/shared/$shareToken': typeof SharedShareTokenRoute
   '/github/installed': typeof AuthenticatedGithubInstalledRoute
   '/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
+  '/portal/$slug/callback': typeof PortalSlugCallbackRoute
+  '/portal/$slug/new': typeof PortalSlugNewRoute
+  '/portal/$slug/sign-in': typeof PortalSlugSignInRoute
+  '/portal/$slug/': typeof PortalSlugIndexRoute
   '/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
   '/oauth/external-mcp/callback': typeof AuthenticatedOauthExternalMcpCallbackRoute
   '/w/$slug/automation': typeof AuthenticatedWSlugAutomationRouteWithChildren
@@ -892,6 +941,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/support': typeof AuthenticatedWSlugSupportInboxRouteWithChildren
   '/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
   '/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
+  '/portal/$slug/requests/$reference': typeof PortalSlugRequestsReferenceRoute
   '/w/$slug/': typeof AuthenticatedWSlugIndexRoute
   '/w/$slug/automation/activity': typeof AuthenticatedWSlugAutomationActivityRoute
   '/w/$slug/automation/agents': typeof AuthenticatedWSlugAutomationAgentsRoute
@@ -930,6 +980,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/settings/crm-email': typeof AuthenticatedWSlugSettingsCrmEmailRoute
   '/w/$slug/settings/crm-meetings': typeof AuthenticatedWSlugSettingsCrmMeetingsRoute
   '/w/$slug/settings/crm-pipelines': typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
+  '/w/$slug/settings/customer-portal': typeof AuthenticatedWSlugSettingsCustomerPortalRoute
   '/w/$slug/settings/delivery': typeof AuthenticatedWSlugSettingsDeliveryRoute
   '/w/$slug/settings/external-agents': typeof AuthenticatedWSlugSettingsExternalAgentsRoute
   '/w/$slug/settings/external-mcp': typeof AuthenticatedWSlugSettingsExternalMcpRoute
@@ -1005,6 +1056,10 @@ export interface FileRoutesByTo {
   '/shared/$shareToken': typeof SharedShareTokenRoute
   '/github/installed': typeof AuthenticatedGithubInstalledRoute
   '/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
+  '/portal/$slug/callback': typeof PortalSlugCallbackRoute
+  '/portal/$slug/new': typeof PortalSlugNewRoute
+  '/portal/$slug/sign-in': typeof PortalSlugSignInRoute
+  '/portal/$slug': typeof PortalSlugIndexRoute
   '/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
   '/oauth/external-mcp/callback': typeof AuthenticatedOauthExternalMcpCallbackRoute
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
@@ -1013,6 +1068,7 @@ export interface FileRoutesByTo {
   '/w/$slug/support': typeof AuthenticatedWSlugSupportInboxIndexRoute
   '/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
   '/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
+  '/portal/$slug/requests/$reference': typeof PortalSlugRequestsReferenceRoute
   '/w/$slug': typeof AuthenticatedWSlugIndexRoute
   '/w/$slug/automation/activity': typeof AuthenticatedWSlugAutomationActivityRoute
   '/w/$slug/automation/agents': typeof AuthenticatedWSlugAutomationAgentsRoute
@@ -1050,6 +1106,7 @@ export interface FileRoutesByTo {
   '/w/$slug/settings/crm-email': typeof AuthenticatedWSlugSettingsCrmEmailRoute
   '/w/$slug/settings/crm-meetings': typeof AuthenticatedWSlugSettingsCrmMeetingsRoute
   '/w/$slug/settings/crm-pipelines': typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
+  '/w/$slug/settings/customer-portal': typeof AuthenticatedWSlugSettingsCustomerPortalRoute
   '/w/$slug/settings/delivery': typeof AuthenticatedWSlugSettingsDeliveryRoute
   '/w/$slug/settings/external-agents': typeof AuthenticatedWSlugSettingsExternalAgentsRoute
   '/w/$slug/settings/external-mcp': typeof AuthenticatedWSlugSettingsExternalMcpRoute
@@ -1122,11 +1179,16 @@ export interface FileRoutesById {
   '/_authenticated/workspaces': typeof AuthenticatedWorkspacesRoute
   '/email-preferences/$token': typeof EmailPreferencesTokenRoute
   '/join/$token': typeof JoinTokenRoute
+  '/portal/$slug': typeof PortalSlugRouteWithChildren
   '/share/$shareToken': typeof ShareShareTokenRoute
   '/shared/$shareToken': typeof SharedShareTokenRoute
   '/_authenticated/github/installed': typeof AuthenticatedGithubInstalledRoute
   '/_authenticated/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/_authenticated/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
+  '/portal/$slug/callback': typeof PortalSlugCallbackRoute
+  '/portal/$slug/new': typeof PortalSlugNewRoute
+  '/portal/$slug/sign-in': typeof PortalSlugSignInRoute
+  '/portal/$slug/': typeof PortalSlugIndexRoute
   '/_authenticated/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
   '/_authenticated/oauth/external-mcp/callback': typeof AuthenticatedOauthExternalMcpCallbackRoute
   '/_authenticated/w/$slug/automation': typeof AuthenticatedWSlugAutomationRouteWithChildren
@@ -1138,6 +1200,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/support': typeof AuthenticatedWSlugSupportRouteWithChildren
   '/_authenticated/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
   '/_authenticated/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
+  '/portal/$slug/requests/$reference': typeof PortalSlugRequestsReferenceRoute
   '/_authenticated/w/$slug/': typeof AuthenticatedWSlugIndexRoute
   '/_authenticated/w/$slug/automation/activity': typeof AuthenticatedWSlugAutomationActivityRoute
   '/_authenticated/w/$slug/automation/agents': typeof AuthenticatedWSlugAutomationAgentsRoute
@@ -1176,6 +1239,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/settings/crm-email': typeof AuthenticatedWSlugSettingsCrmEmailRoute
   '/_authenticated/w/$slug/settings/crm-meetings': typeof AuthenticatedWSlugSettingsCrmMeetingsRoute
   '/_authenticated/w/$slug/settings/crm-pipelines': typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
+  '/_authenticated/w/$slug/settings/customer-portal': typeof AuthenticatedWSlugSettingsCustomerPortalRoute
   '/_authenticated/w/$slug/settings/delivery': typeof AuthenticatedWSlugSettingsDeliveryRoute
   '/_authenticated/w/$slug/settings/external-agents': typeof AuthenticatedWSlugSettingsExternalAgentsRoute
   '/_authenticated/w/$slug/settings/external-mcp': typeof AuthenticatedWSlugSettingsExternalMcpRoute
@@ -1250,11 +1314,16 @@ export interface FileRouteTypes {
     | '/workspaces'
     | '/email-preferences/$token'
     | '/join/$token'
+    | '/portal/$slug'
     | '/share/$shareToken'
     | '/shared/$shareToken'
     | '/github/installed'
     | '/oauth/authorize'
     | '/w/$slug'
+    | '/portal/$slug/callback'
+    | '/portal/$slug/new'
+    | '/portal/$slug/sign-in'
+    | '/portal/$slug/'
     | '/oauth/cli/authorize'
     | '/oauth/external-mcp/callback'
     | '/w/$slug/automation'
@@ -1266,6 +1335,7 @@ export interface FileRouteTypes {
     | '/w/$slug/support'
     | '/w/$slug/tasks'
     | '/w/$slug/team-goals'
+    | '/portal/$slug/requests/$reference'
     | '/w/$slug/'
     | '/w/$slug/automation/activity'
     | '/w/$slug/automation/agents'
@@ -1304,6 +1374,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/crm-email'
     | '/w/$slug/settings/crm-meetings'
     | '/w/$slug/settings/crm-pipelines'
+    | '/w/$slug/settings/customer-portal'
     | '/w/$slug/settings/delivery'
     | '/w/$slug/settings/external-agents'
     | '/w/$slug/settings/external-mcp'
@@ -1379,6 +1450,10 @@ export interface FileRouteTypes {
     | '/shared/$shareToken'
     | '/github/installed'
     | '/oauth/authorize'
+    | '/portal/$slug/callback'
+    | '/portal/$slug/new'
+    | '/portal/$slug/sign-in'
+    | '/portal/$slug'
     | '/oauth/cli/authorize'
     | '/oauth/external-mcp/callback'
     | '/w/$slug/dashboard'
@@ -1387,6 +1462,7 @@ export interface FileRouteTypes {
     | '/w/$slug/support'
     | '/w/$slug/tasks'
     | '/w/$slug/team-goals'
+    | '/portal/$slug/requests/$reference'
     | '/w/$slug'
     | '/w/$slug/automation/activity'
     | '/w/$slug/automation/agents'
@@ -1424,6 +1500,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/crm-email'
     | '/w/$slug/settings/crm-meetings'
     | '/w/$slug/settings/crm-pipelines'
+    | '/w/$slug/settings/customer-portal'
     | '/w/$slug/settings/delivery'
     | '/w/$slug/settings/external-agents'
     | '/w/$slug/settings/external-mcp'
@@ -1495,11 +1572,16 @@ export interface FileRouteTypes {
     | '/_authenticated/workspaces'
     | '/email-preferences/$token'
     | '/join/$token'
+    | '/portal/$slug'
     | '/share/$shareToken'
     | '/shared/$shareToken'
     | '/_authenticated/github/installed'
     | '/_authenticated/oauth/authorize'
     | '/_authenticated/w/$slug'
+    | '/portal/$slug/callback'
+    | '/portal/$slug/new'
+    | '/portal/$slug/sign-in'
+    | '/portal/$slug/'
     | '/_authenticated/oauth/cli/authorize'
     | '/_authenticated/oauth/external-mcp/callback'
     | '/_authenticated/w/$slug/automation'
@@ -1511,6 +1593,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/support'
     | '/_authenticated/w/$slug/tasks'
     | '/_authenticated/w/$slug/team-goals'
+    | '/portal/$slug/requests/$reference'
     | '/_authenticated/w/$slug/'
     | '/_authenticated/w/$slug/automation/activity'
     | '/_authenticated/w/$slug/automation/agents'
@@ -1549,6 +1632,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/settings/crm-email'
     | '/_authenticated/w/$slug/settings/crm-meetings'
     | '/_authenticated/w/$slug/settings/crm-pipelines'
+    | '/_authenticated/w/$slug/settings/customer-portal'
     | '/_authenticated/w/$slug/settings/delivery'
     | '/_authenticated/w/$slug/settings/external-agents'
     | '/_authenticated/w/$slug/settings/external-mcp'
@@ -1620,6 +1704,7 @@ export interface RootRouteChildren {
   VerifyEmailRoute: typeof VerifyEmailRoute
   EmailPreferencesTokenRoute: typeof EmailPreferencesTokenRoute
   JoinTokenRoute: typeof JoinTokenRoute
+  PortalSlugRoute: typeof PortalSlugRouteWithChildren
   ShareShareTokenRoute: typeof ShareShareTokenRoute
   SharedShareTokenRoute: typeof SharedShareTokenRoute
 }
@@ -1703,6 +1788,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShareShareTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/portal/$slug': {
+      id: '/portal/$slug'
+      path: '/portal/$slug'
+      fullPath: '/portal/$slug'
+      preLoaderRoute: typeof PortalSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/join/$token': {
       id: '/join/$token'
       path: '/join/$token'
@@ -1738,6 +1830,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOnboardingRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/portal/$slug/': {
+      id: '/portal/$slug/'
+      path: '/'
+      fullPath: '/portal/$slug/'
+      preLoaderRoute: typeof PortalSlugIndexRouteImport
+      parentRoute: typeof PortalSlugRoute
+    }
+    '/portal/$slug/sign-in': {
+      id: '/portal/$slug/sign-in'
+      path: '/sign-in'
+      fullPath: '/portal/$slug/sign-in'
+      preLoaderRoute: typeof PortalSlugSignInRouteImport
+      parentRoute: typeof PortalSlugRoute
+    }
+    '/portal/$slug/new': {
+      id: '/portal/$slug/new'
+      path: '/new'
+      fullPath: '/portal/$slug/new'
+      preLoaderRoute: typeof PortalSlugNewRouteImport
+      parentRoute: typeof PortalSlugRoute
+    }
+    '/portal/$slug/callback': {
+      id: '/portal/$slug/callback'
+      path: '/callback'
+      fullPath: '/portal/$slug/callback'
+      preLoaderRoute: typeof PortalSlugCallbackRouteImport
+      parentRoute: typeof PortalSlugRoute
+    }
     '/_authenticated/w/$slug': {
       id: '/_authenticated/w/$slug'
       path: '/w/$slug'
@@ -1765,6 +1885,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/w/$slug/'
       preLoaderRoute: typeof AuthenticatedWSlugIndexRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/portal/$slug/requests/$reference': {
+      id: '/portal/$slug/requests/$reference'
+      path: '/requests/$reference'
+      fullPath: '/portal/$slug/requests/$reference'
+      preLoaderRoute: typeof PortalSlugRequestsReferenceRouteImport
+      parentRoute: typeof PortalSlugRoute
     }
     '/_authenticated/w/$slug/team-goals': {
       id: '/_authenticated/w/$slug/team-goals'
@@ -2058,6 +2185,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/delivery'
       fullPath: '/w/$slug/settings/delivery'
       preLoaderRoute: typeof AuthenticatedWSlugSettingsDeliveryRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/settings/customer-portal': {
+      id: '/_authenticated/w/$slug/settings/customer-portal'
+      path: '/settings/customer-portal'
+      fullPath: '/w/$slug/settings/customer-portal'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsCustomerPortalRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/settings/crm-pipelines': {
@@ -2708,6 +2842,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugSettingsCrmEmailRoute: typeof AuthenticatedWSlugSettingsCrmEmailRoute
   AuthenticatedWSlugSettingsCrmMeetingsRoute: typeof AuthenticatedWSlugSettingsCrmMeetingsRoute
   AuthenticatedWSlugSettingsCrmPipelinesRoute: typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
+  AuthenticatedWSlugSettingsCustomerPortalRoute: typeof AuthenticatedWSlugSettingsCustomerPortalRoute
   AuthenticatedWSlugSettingsDeliveryRoute: typeof AuthenticatedWSlugSettingsDeliveryRoute
   AuthenticatedWSlugSettingsExternalAgentsRoute: typeof AuthenticatedWSlugSettingsExternalAgentsRoute
   AuthenticatedWSlugSettingsExternalMcpRoute: typeof AuthenticatedWSlugSettingsExternalMcpRoute
@@ -2789,6 +2924,8 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
     AuthenticatedWSlugSettingsCrmMeetingsRoute,
   AuthenticatedWSlugSettingsCrmPipelinesRoute:
     AuthenticatedWSlugSettingsCrmPipelinesRoute,
+  AuthenticatedWSlugSettingsCustomerPortalRoute:
+    AuthenticatedWSlugSettingsCustomerPortalRoute,
   AuthenticatedWSlugSettingsDeliveryRoute:
     AuthenticatedWSlugSettingsDeliveryRoute,
   AuthenticatedWSlugSettingsExternalAgentsRoute:
@@ -2876,6 +3013,26 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
   AuthenticatedRouteChildren,
 )
 
+interface PortalSlugRouteChildren {
+  PortalSlugCallbackRoute: typeof PortalSlugCallbackRoute
+  PortalSlugNewRoute: typeof PortalSlugNewRoute
+  PortalSlugSignInRoute: typeof PortalSlugSignInRoute
+  PortalSlugIndexRoute: typeof PortalSlugIndexRoute
+  PortalSlugRequestsReferenceRoute: typeof PortalSlugRequestsReferenceRoute
+}
+
+const PortalSlugRouteChildren: PortalSlugRouteChildren = {
+  PortalSlugCallbackRoute: PortalSlugCallbackRoute,
+  PortalSlugNewRoute: PortalSlugNewRoute,
+  PortalSlugSignInRoute: PortalSlugSignInRoute,
+  PortalSlugIndexRoute: PortalSlugIndexRoute,
+  PortalSlugRequestsReferenceRoute: PortalSlugRequestsReferenceRoute,
+}
+
+const PortalSlugRouteWithChildren = PortalSlugRoute._addFileChildren(
+  PortalSlugRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
@@ -2888,6 +3045,7 @@ const rootRouteChildren: RootRouteChildren = {
   VerifyEmailRoute: VerifyEmailRoute,
   EmailPreferencesTokenRoute: EmailPreferencesTokenRoute,
   JoinTokenRoute: JoinTokenRoute,
+  PortalSlugRoute: PortalSlugRouteWithChildren,
   ShareShareTokenRoute: ShareShareTokenRoute,
   SharedShareTokenRoute: SharedShareTokenRoute,
 }

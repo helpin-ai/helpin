@@ -17,6 +17,7 @@ import { ContactAvatarImage } from '@/components/ui/contact-avatar-image';
 import { findAssignableMember, formatAssignableMemberName } from '@/lib/assignableMembers';
 import { SidebarAssociations } from './SidebarAssociations';
 import { SidebarOtherConversations, SidebarVisitorContext } from './SidebarVisitorContext';
+import { SidebarPortalConfirmation } from './SidebarPortalConfirmation';
 import { SidebarCompanyDetails } from './SidebarCompanyDetails';
 import { SupportTagPicker } from './SupportTagPicker';
 import { CustomerProfileDrawer } from './CustomerProfileDrawer';
@@ -743,6 +744,8 @@ export function ConversationDetailSidebar({
               </div>
             </CollapsibleSection>
           )}
+
+          <SidebarPortalConfirmation workspaceId={workspaceId} conversation={conversation} />
 
           {/* ── Visitor Intelligence ─────────────────────── */}
           <SidebarVisitorContext

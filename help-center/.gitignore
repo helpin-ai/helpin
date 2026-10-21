@@ -2,3 +2,6 @@ node_modules
 dist
 *.local
 .env
+
+# Customer portal build copied in by the Docker image (see portalMount.mjs).
+/portal

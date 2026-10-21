@@ -16,6 +16,9 @@ func SupportAIChannelEnabled(settings SupportInboxSettings, channel string) bool
 	if channel == "" || channel == "widget" {
 		channel = "chat"
 	}
+	if channel == "portal" {
+		return settings.PortalEnabled && (settings.PortalAIMode == "ai_first" || settings.PortalAIMode == "internal_note")
+	}
 	if channel != "chat" && channel != "email" {
 		return false
 	}
@@ -29,6 +32,9 @@ func SupportAIReplyAllowed(settings SupportInboxSettings, conversation *SupportC
 		return false
 	}
 	channel := SupportAIReplyChannel(conversation, message)
+	if channel == "portal" && (conversation == nil || !conversation.PortalVisible) {
+		return false
+	}
 	if message != nil {
 		if conversation != nil && conversation.AIResumedAt != nil && !message.CreatedAt.After(*conversation.AIResumedAt) {
 			return false

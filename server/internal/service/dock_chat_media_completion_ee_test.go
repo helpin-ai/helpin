@@ -90,7 +90,8 @@ func TestDockChatMediaFallsBackToQwenOnRateLimit(t *testing.T) {
 	if req.Reasoning == nil || req.Reasoning.Enabled == nil || *req.Reasoning.Enabled {
 		t.Fatal("fallback reasoning must be disabled")
 	}
-	if req.Messages[0].ContentParts[1].Type != "video_url" {
+	// Each attachment is preceded by a label part, so look for the video by type.
+	if !slices.ContainsFunc(req.Messages[0].ContentParts, func(part llm.ContentPart) bool { return part.Type == "video_url" }) {
 		t.Fatal("fallback lost video")
 	}
 	if store.reconcile.Entry.CanonicalModel != "qwen3.8-omni-flash" {

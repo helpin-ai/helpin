@@ -72,6 +72,10 @@ jobs:
           if echo "$CHANGED" | grep -qE '^help-center/|^packages/shared/src/docs-blocks\.css$'; then
             HELPCENTER=true
           fi
+          # The help center image also serves the customer portal built from frontend/.
+          if echo "$CHANGED" | grep -qE '^frontend/(src/|portal\.html$|vite\.portal\.config\.ts$|package\.json$)|^packages/(shared|support-core)/'; then
+            HELPCENTER=true
+          fi
           if echo "$CHANGED" | grep -qE '^(frontend/|packages/)'; then
             FRONTEND=true
           fi

@@ -26,8 +26,10 @@ func (h *SupportInboxHandler) ChangeConversationAIControl(w http.ResponseWriter,
 	if err != nil {
 		slog.WarnContext(r.Context(), "change support AI control", "error", err)
 		switch err.Error() {
-		case "a teammate is required", "conversation not found", "action must be pause or return", "support AI is not enabled", "support AI agent is unavailable", "this conversation is read-only because its customer was deleted", "this conversation is not eligible for AI; reopen it and check the enabled reply channels", "confirm returning to AI: the customer requested a human", "reopen the conversation before changing AI control":
+		case "a teammate is required", "conversation not found", "action must be pause, return, or run_now", "only a visible portal request can be sent to AI now", "automatic portal replies must be enabled to ask AI to handle a request", "support AI is not enabled", "support AI agent is unavailable", "this conversation is read-only because its customer was deleted", "this conversation is not eligible for AI; reopen it and check the enabled reply channels", "confirm returning to AI: the customer requested a human", "reopen the conversation before changing AI control":
 			writeError(w, http.StatusBadRequest, err.Error())
+		case repository.ErrPortalAINoPendingCustomerMessage.Error():
+			writeError(w, http.StatusConflict, err.Error())
 		default:
 			writeError(w, http.StatusInternalServerError, "Could not change AI control. Refresh and try again.")
 		}

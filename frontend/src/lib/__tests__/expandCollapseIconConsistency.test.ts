@@ -14,8 +14,8 @@ describe('maximize and expand icon consistency', () => {
 
     expect(icons).toContain('ExpandIcon as _ExpandIcon');
     expect(icons).toContain('CollapseIcon as _CollapseIcon');
-    expect(icons).toContain('export const ExpandIcon = hi(_ExpandIcon);');
-    expect(icons).toContain('export const CollapseIcon = hi(_CollapseIcon);');
+    expect(icons).toContain('export const ExpandIcon = /* @__PURE__ */ hi(_ExpandIcon);');
+    expect(icons).toContain('export const CollapseIcon = /* @__PURE__ */ hi(_CollapseIcon);');
   });
 
   it.each([

@@ -50,6 +50,8 @@ export interface CRMContact {
   owner_member_id?: string;
   avatar_url?: string;
   source?: string;
+  /** Customer portal decision; only support admins can change it. */
+  portal_access?: 'allowed' | 'blocked' | null;
   custom_properties: Record<string, unknown>;
   created_at: string;
   updated_at: string;

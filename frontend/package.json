@@ -27,6 +27,7 @@
     "test:e2e:agent-runtime:coding": "node e2e/agent-runtime-live/coding.mjs",
     "dev:ee": "VITE_EDITION=ee vite --host 0.0.0.0",
     "build:ee": "node scripts/build.mjs ee",
+    "build:portal": "vite build --config vite.portal.config.ts",
     "prebuild:ee": "pnpm generate:icons && pnpm --dir .. --filter @helpin-ai/widget-core build",
     "test:ee": "NODE_OPTIONS=--max-old-space-size=4096 VITE_EDITION=ee vitest run",
     "predev:ee": "pnpm generate:icons"

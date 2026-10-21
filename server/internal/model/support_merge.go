@@ -18,7 +18,7 @@ type SupportConversationMerge struct {
 	TargetID           string               `json:"target_id" gorm:"type:uuid;not null;index"`
 	ActorID            string               `json:"actor_id" gorm:"type:uuid;not null"`
 	CrossCustomer      bool                 `json:"cross_customer" gorm:"not null;default:false"`
-	CreatedAt          time.Time            `json:"created_at"`
+	CreatedAt          time.Time            `json:"created_at" gorm:"not null"`
 	EndedAt            *time.Time           `json:"ended_at,omitempty"`
 	EndedBy            *string              `json:"ended_by,omitempty" gorm:"type:uuid"`
 	UnmergeOperationID *string              `json:"-" gorm:"type:uuid;index"`
@@ -127,7 +127,7 @@ type SupportMergeJob struct {
 	AvailableAt    time.Time `gorm:"not null;index"`
 	LeaseUntil     *time.Time
 	CompletedAt    *time.Time
-	CreatedAt      time.Time
+	CreatedAt      time.Time `gorm:"not null"`
 }
 
 // TableName returns the merge reconciliation outbox.

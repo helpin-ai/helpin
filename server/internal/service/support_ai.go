@@ -191,6 +191,12 @@ type SupportAIService struct {
 	db                             *gorm.DB
 	supportEventRecorder           SupportEventRecorder
 	traceRecorder                  SupportAIRetrievalTraceRecorder
+	portalReplyNotifier            *EmailFallbackService
+}
+
+// SetPortalReplyNotifier uses the same delivery policy as teammate replies.
+func (s *SupportAIService) SetPortalReplyNotifier(notifier *EmailFallbackService) {
+	s.portalReplyNotifier = notifier
 }
 
 // NewSupportAIService creates a new SupportAIService with all dependencies.

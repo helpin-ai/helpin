@@ -43,10 +43,11 @@ export type ReplyPresence = 'unknown' | 'online' | 'offline';
 
 export function nextAutomaticReplyDelivery(
   current: SupportReplyDeliveryMode | undefined,
-  { source, presence, emailEligible }: { source?: string; presence: ReplyPresence; emailEligible: boolean },
+  { source, portal, presence, emailEligible }: { source?: string; portal?: boolean; presence: ReplyPresence; emailEligible: boolean },
 ): SupportReplyDeliveryMode {
   if (current && current !== 'chat_only') return current;
-  if (source === 'email') return 'email_only';
+  // An email thread the customer also sees in the portal is answered in both.
+  if (source === 'email') return portal && emailEligible ? 'chat_and_email' : 'email_only';
   return emailEligible && presence === 'offline' ? 'chat_and_email' : 'chat_only';
 }
 
@@ -104,7 +105,7 @@ function automaticDraftKey(workspaceId: string, conversationId: string) {
 export function useComposerDelivery(
   workspaceId: string,
   conversationId: string,
-  context: { source?: string; presence: ReplyPresence; emailEligible: boolean; active: boolean; hasDraft?: boolean },
+  context: { source?: string; portal?: boolean; presence: ReplyPresence; emailEligible: boolean; active: boolean; hasDraft?: boolean },
 ) {
   const choice = useReplyDelivery(workspaceId, conversationId);
   const legacyKey = draftKey(workspaceId, conversationId);

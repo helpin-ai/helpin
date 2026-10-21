@@ -39,6 +39,8 @@ type DocsHelpcenterService struct {
 	translationSvc  *DocsHelpcenterTranslationService
 	wsPublisher     *websocket.Publisher
 	hcCache         cache.Cache
+	// domainVerification, when set, verifies custom domains before they serve.
+	domainVerification *helpcenterDomainVerification
 }
 
 // NewDocsHelpcenterService creates a new DocsHelpcenterService.
@@ -124,6 +126,7 @@ func (s *DocsHelpcenterService) UpsertConfig(ctx context.Context, workspaceID st
 	}
 
 	updates := map[string]interface{}{}
+	customDomainChanged := false
 	if req.Subdomain != nil {
 		updates["subdomain"] = *req.Subdomain
 	}
@@ -141,6 +144,16 @@ func (s *DocsHelpcenterService) UpsertConfig(ctx context.Context, workspaceID st
 		}
 		customDomain = normalized
 		updates["custom_domain"] = normalized
+		previous := ""
+		if existing != nil && existing.CustomDomain != nil {
+			previous = *existing.CustomDomain
+		}
+		if derefString(normalized) != previous {
+			customDomainChanged = true
+			if err := s.customDomainUpdates(ctx, workspaceID, existing, normalized, updates); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if req.PublicURLMode != nil {
 		mode = strings.TrimSpace(*req.PublicURLMode)
@@ -262,6 +275,14 @@ func (s *DocsHelpcenterService) UpsertConfig(ctx context.Context, workspaceID st
 	if err == nil && config != nil {
 		publishWorkspaceEvent(s.wsPublisher, "updated", "docs_helpcenter_config", workspaceID, workspaceID, "")
 		s.InvalidateHelpcenterCacheForWorkspace(ctx, workspaceID)
+		// A new domain is checked right away, so it can go live on save.
+		if customDomainChanged && config.CustomDomain != nil && s.CustomDomainTarget() != "" {
+			if checked, checkErr := s.VerifyCustomDomain(ctx, workspaceID); checkErr == nil {
+				config = checked
+			} else {
+				slog.WarnContext(ctx, "help center domain check failed", "workspace_id", workspaceID, "error", checkErr)
+			}
+		}
 	}
 	return config, err
 }

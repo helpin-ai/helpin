@@ -35,8 +35,15 @@ it('keeps edits made during transcription and requires an explicit send afterwar
     const textarea = container.querySelector('textarea')!;
     act(() => textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
     expect(onSubmit).not.toHaveBeenCalled();
-    await act(async () => Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Stop')!.click());
-    expect(container.textContent).toContain('Transcribing…');
+    // Recording starts asynchronously; under load the Stop button can lag a tick.
+    const stopButton = await vi.waitFor(() => {
+      const button = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Stop');
+      if (!button) throw new Error('recording has not started');
+      return button;
+    });
+    await act(async () => stopButton.click());
+    await vi.waitFor(() => expect(container.textContent).toContain('Transcribing…'));
+    await vi.waitFor(() => expect(resolve).toBeTypeOf('function'));
     act(() => { setDraft('Edited while waiting.'); textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); });
     expect(onSubmit).not.toHaveBeenCalled();
     await act(async () => resolve('New speech.'));

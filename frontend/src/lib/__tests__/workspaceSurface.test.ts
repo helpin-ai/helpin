@@ -4,6 +4,7 @@ import { filterWorkspaceNav, workspaceHome, workspaceSurface } from '../workspac
 describe('deployment product surfaces', () => {
   it('places workspace translation settings in the support module', () => {
     expect(workspaceSurface('/w/acme/settings/support-translation')).toBe('support');
+    expect(workspaceSurface('/w/acme/settings/customer-portal')).toBe('support');
   });
   it('opens support on a Community workspace and handles no access without redirect loops', () => {
     expect(workspaceHome('acme', ['support', 'docs', 'agents'])).toBe('/w/acme/support');
