@@ -18,12 +18,21 @@ import { useCompanyFilterOptions } from '@/hooks/useCompanyFilterOptions';
 import { useTitle } from '@/hooks/useTitle';
 import {
   buildCompanyFilterDefinitions,
-  companyFilterGroupToValues,
-  companyFilterValuesToGroup,
+  EMPTY_COMPANY_FILTERS,
+  companyFilterGroupToState,
+  companyFiltersToGroup,
   removeCompanyFilter,
   toggleCompanyFilterValue,
-  type CompanyFilterValues,
+  type CompanyFilterConditions,
+  type CompanyFilterModes,
+  type CompanyFilterState,
 } from '@/lib/crmCompanyFilters';
+import {
+  isPMFilterConditionComplete,
+  optionModeUsesValues,
+  type PMFilterCondition,
+  type PMFilterOptionMode,
+} from '@/lib/pmFilterConditions';
 import { parseQueryFilterGroup, serializeQueryFilterGroup } from '@/lib/queryBuilder';
 
 const COMPANY_GROUP_BY_OPTIONS: { value: CompanyGroupByOption; label: string }[] = [
@@ -45,32 +54,56 @@ export function CompaniesPage() {
 
   // Applied filters live in the URL as a query-builder group, as on Deals and Contacts.
   const routeSearch = useSearch({ strict: false }) as { filters?: string };
-  const filterValues = useMemo(
-    () => companyFilterGroupToValues(parseQueryFilterGroup(routeSearch.filters)),
-    [routeSearch.filters],
+  const { data: filterOptions } = useCompanyFilterOptions(wsId);
+  const { members: assignableMembers } = useAssignableWorkspaceMembers(wsId);
+  const filterDefinitions = useMemo(
+    () => buildCompanyFilterDefinitions(filterOptions, assignableMembers),
+    [filterOptions, assignableMembers],
   );
-  const serializedFilters = serializeQueryFilterGroup(companyFilterValuesToGroup(filterValues));
-  // Fields added from the trigger but still awaiting a value keep their pill visible.
+  const numberFilterKeys = useMemo(
+    () => new Set(filterDefinitions.filter((definition) => definition.kind === 'number').map((definition) => definition.key)),
+    [filterDefinitions],
+  );
+  const appliedFilters = useMemo(
+    () => companyFilterGroupToState(parseQueryFilterGroup(routeSearch.filters), numberFilterKeys),
+    [routeSearch.filters, numberFilterKeys],
+  );
+  const appliedFilterGroup = companyFiltersToGroup(appliedFilters);
+  const serializedFilters = serializeQueryFilterGroup(appliedFilterGroup);
+  const appliedFilterCount = appliedFilterGroup?.rules.length ?? 0;
+  // Fields added from the trigger but still awaiting a value keep their pill
+  // visible; incomplete number conditions stay here until they can be applied.
   const [pendingFilterKeys, setPendingFilterKeys] = useState<Set<string>>(() => new Set());
-  const setFilterValues = useCallback((next: CompanyFilterValues) => {
+  const [draftConditions, setDraftConditions] = useState<CompanyFilterConditions>({});
+  // Operators chosen for option filters that do not have values yet.
+  const [draftModes, setDraftModes] = useState<CompanyFilterModes>({});
+  const filterValues = appliedFilters.values;
+  const filterConditions = useMemo(
+    () => ({ ...appliedFilters.conditions, ...draftConditions }),
+    [appliedFilters.conditions, draftConditions],
+  );
+  const filterModes = useMemo(
+    () => ({ ...appliedFilters.modes, ...draftModes }),
+    [appliedFilters.modes, draftModes],
+  );
+  const setAppliedFilters = useCallback((next: CompanyFilterState) => {
     void navigate({
       search: (previous: Record<string, unknown>) => ({
         ...previous,
-        filters: serializeQueryFilterGroup(companyFilterValuesToGroup(next)),
+        filters: serializeQueryFilterGroup(companyFiltersToGroup(next)),
       }),
       replace: true,
     } as never);
   }, [navigate]);
   const visibleFilterKeys = useMemo(() => {
-    const keys = new Set(pendingFilterKeys);
+    const keys = new Set([...pendingFilterKeys, ...Object.keys(filterConditions), ...Object.keys(appliedFilters.modes)]);
     for (const [key, selected] of Object.entries(filterValues)) {
       if (selected.length > 0) keys.add(key);
     }
     return keys;
-  }, [filterValues, pendingFilterKeys]);
+  }, [filterValues, filterConditions, appliedFilters.modes, pendingFilterKeys]);
   const hasActiveFilters = Boolean(serializedFilters);
 
-  const { data: filterOptions } = useCompanyFilterOptions(wsId);
   const customPropertyKeys = useMemo(
     () => (filterOptions?.custom_properties ?? []).map((summary) => summary.key),
     [filterOptions],
@@ -95,29 +128,71 @@ export function CompaniesPage() {
   const showCompaniesEmptyState = !isLoading && deferredCompanies.length === 0 && totalCount === 0 && !isNarrowed;
   const showNoResultsState = !isLoading && deferredCompanies.length === 0 && isNarrowed;
 
-  const { members: assignableMembers } = useAssignableWorkspaceMembers(wsId);
   const ownerNameMap = useMemo(
     () => buildAssignableMemberNameMap(assignableMembers),
     [assignableMembers],
   );
-  const filterDefinitions = useMemo(
-    () => buildCompanyFilterDefinitions(filterOptions, assignableMembers),
-    [filterOptions, assignableMembers],
-  );
 
-  const addFilter = (key: string) => setPendingFilterKeys((current) => new Set(current).add(key));
-  const toggleFilter = (key: string, value: string) => setFilterValues(toggleCompanyFilterValue(filterValues, key, value));
+  const withoutKey = <T,>(record: Record<string, T>, key: string) => {
+    const next = { ...record };
+    delete next[key];
+    return next;
+  };
+  const addFilter = (key: string) => {
+    setPendingFilterKeys((current) => new Set(current).add(key));
+    if (filterDefinitions.find((definition) => definition.key === key)?.kind === 'number') {
+      setDraftConditions((current) => ({ ...current, [key]: { operator: 'gt' } }));
+    }
+  };
+  const toggleFilter = (key: string, value: string) => {
+    const mode = filterModes[key];
+    setDraftModes((current) => withoutKey(current, key));
+    setAppliedFilters({
+      ...appliedFilters,
+      values: toggleCompanyFilterValue(filterValues, key, value),
+      modes: mode ? { ...appliedFilters.modes, [key]: mode } : appliedFilters.modes,
+    });
+  };
+  const changeOptionMode = (key: string, mode: PMFilterOptionMode) => {
+    const hasValues = (filterValues[key] ?? []).length > 0;
+    if (!optionModeUsesValues(mode) || hasValues) {
+      setDraftModes((current) => withoutKey(current, key));
+      setAppliedFilters({ ...appliedFilters, modes: { ...appliedFilters.modes, [key]: mode } });
+      return;
+    }
+    // Waiting for values: keep the operator locally and stop applying the old one.
+    setDraftModes((current) => ({ ...current, [key]: mode }));
+    if (appliedFilters.modes[key]) {
+      setAppliedFilters({ ...appliedFilters, modes: withoutKey(appliedFilters.modes, key) });
+    }
+  };
+  const changeCondition = (key: string, condition: PMFilterCondition) => {
+    if (isPMFilterConditionComplete(condition)) {
+      setDraftConditions((current) => withoutKey(current, key));
+      setAppliedFilters({ ...appliedFilters, conditions: { ...appliedFilters.conditions, [key]: condition } });
+      return;
+    }
+    // Keep the pill while its number is missing, and stop applying the old condition.
+    setDraftConditions((current) => ({ ...current, [key]: condition }));
+    if (appliedFilters.conditions[key]) {
+      setAppliedFilters({ ...appliedFilters, conditions: withoutKey(appliedFilters.conditions, key) });
+    }
+  };
   const removeFilter = (key: string) => {
     setPendingFilterKeys((current) => {
       const next = new Set(current);
       next.delete(key);
       return next;
     });
-    setFilterValues(removeCompanyFilter(filterValues, key));
+    setDraftConditions((current) => withoutKey(current, key));
+    setDraftModes((current) => withoutKey(current, key));
+    setAppliedFilters(removeCompanyFilter(appliedFilters, key));
   };
   const clearFilters = () => {
     setPendingFilterKeys(new Set());
-    setFilterValues({});
+    setDraftConditions({});
+    setDraftModes({});
+    setAppliedFilters(EMPTY_COMPANY_FILTERS);
   };
   const clearSearchAndFilters = () => {
     setSearch('');
@@ -149,6 +224,7 @@ export function CompaniesPage() {
         <CompaniesFilterTrigger
           definitions={filterDefinitions}
           values={filterValues}
+          activeCount={appliedFilterCount}
           visibleKeys={visibleFilterKeys}
           onAdd={addFilter}
           onToggle={toggleFilter}
@@ -173,6 +249,10 @@ export function CompaniesPage() {
       <CompaniesAppliedFilters
         definitions={filterDefinitions}
         values={filterValues}
+        conditions={filterConditions}
+        onConditionChange={changeCondition}
+        optionModes={filterModes}
+        onOptionModeChange={changeOptionMode}
         visibleKeys={visibleFilterKeys}
         onToggle={toggleFilter}
         onRemove={removeFilter}

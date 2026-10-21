@@ -87,6 +87,11 @@ type CRMCustomPropertySummary struct {
 	ValueType     string                `json:"value_type"`
 	Values        []CRMFilterValueCount `json:"values"`
 	HasMoreValues bool                  `json:"has_more_values"`
+	// NumericCount is how many records hold a value that numeric filters can
+	// compare: a JSON number or a string holding only a decimal number.
+	NumericCount int      `json:"numeric_count"`
+	NumericMin   *float64 `json:"numeric_min,omitempty"`
+	NumericMax   *float64 `json:"numeric_max,omitempty"`
 }
 
 // CRMCompanyFilterOptions lists the filterable values in use on companies.

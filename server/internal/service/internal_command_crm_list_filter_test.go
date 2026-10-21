@@ -188,3 +188,85 @@ func TestCRMListCompaniesAnyOfRequiresBoundedValues(t *testing.T) {
 		}
 	}
 }
+
+func TestCRMListCompaniesNumericComparisonsSkipNonNumericValues(t *testing.T) {
+	env := newCRMOperationalCommandTestEnv(t, setupCRMOperationalCommandTestDB(t))
+	ctx := context.Background()
+	for _, seed := range []struct {
+		name      string
+		employees any
+	}{
+		{name: "Number", employees: float64(120)},
+		{name: "Numeric string", employees: " 75 "},
+		{name: "Decimal", employees: 50.5},
+		{name: "Range text", employees: "11-50"},
+		{name: "Unknown", employees: "unknown"},
+		{name: "List", employees: []any{"200"}},
+		{name: "Small", employees: float64(8)},
+		{name: "Missing"},
+	} {
+		properties := map[string]any{"batch": "b1"}
+		if seed.employees != nil {
+			properties["employees_est"] = seed.employees
+		}
+		if _, err := env.company.Create(ctx, model.CreateCRMCompanyRequest{WorkspaceID: "ws-crm-1", Name: seed.name, CustomProperties: properties}); err != nil {
+			t.Fatalf("seed %s: %v", seed.name, err)
+		}
+	}
+	names := func(rule string) map[string]bool {
+		t.Helper()
+		result := listFilteredCompanies(t, env, `{"filter":{"rules":[`+rule+`]}}`)
+		found := map[string]bool{}
+		companies, _ := result["companies"].([]any)
+		for _, item := range companies {
+			found[item.(map[string]any)["name"].(string)] = true
+		}
+		return found
+	}
+
+	greater := names(`{"field":"custom_properties.employees_est","operator":"gt","value":"50"}`)
+	if len(greater) != 3 || !greater["Number"] || !greater["Numeric string"] || !greater["Decimal"] {
+		t.Fatalf("employees_est > 50 = %v, want numbers and numeric strings only", greater)
+	}
+	between := names(`{"field":"custom_properties.employees_est","operator":"between","values":["8","75"]}`)
+	if len(between) != 3 || !between["Small"] || !between["Decimal"] || !between["Numeric string"] {
+		t.Fatalf("employees_est between 8 and 75 = %v", between)
+	}
+	empty := names(`{"field":"custom_properties.employees_est","operator":"is_empty"}`)
+	if !empty["Missing"] || empty["Unknown"] || empty["Range text"] || empty["List"] {
+		t.Fatalf("is_empty must mean missing or blank, not non-numeric; got %v", empty)
+	}
+}
+
+func TestCRMListCompaniesNoneOfIncludesMissingAndChecksListElements(t *testing.T) {
+	env := newCRMOperationalCommandTestEnv(t, setupCRMOperationalCommandTestDB(t))
+	ctx := context.Background()
+	for _, seed := range []struct {
+		name  string
+		tools any
+	}{
+		{name: "Zendesk list", tools: []any{"Intercom", "Zendesk"}},
+		{name: "Zendesk plain", tools: "zendesk"},
+		{name: "Crisp list", tools: []any{"Crisp"}},
+		{name: "No tools"},
+	} {
+		properties := map[string]any{"batch": "b1"}
+		if seed.tools != nil {
+			properties["support_tools"] = seed.tools
+		}
+		if _, err := env.company.Create(ctx, model.CreateCRMCompanyRequest{WorkspaceID: "ws-crm-1", Name: seed.name, CustomProperties: properties}); err != nil {
+			t.Fatalf("seed %s: %v", seed.name, err)
+		}
+	}
+	result := listFilteredCompanies(t, env, `{"filter":{"rules":[
+		{"field":"custom_properties.batch","operator":"is","value":"b1"},
+		{"field":"custom_properties.support_tools","operator":"is_none_of","values":["ZENDESK"]}
+	]}}`)
+	found := map[string]bool{}
+	for _, item := range result["companies"].([]any) {
+		found[item.(map[string]any)["name"].(string)] = true
+	}
+	if len(found) != 2 || !found["Crisp list"] || !found["No tools"] {
+		t.Fatalf("support_tools is none of zendesk = %v, want Crisp list and No tools", found)
+	}
+}

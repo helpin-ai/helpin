@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -82,9 +83,22 @@ func (c *crmFilterValueCounter) top() ([]model.CRMFilterValueCount, bool) {
 }
 
 type crmCustomPropertyStats struct {
-	count  int
-	types  map[string]bool
-	values *crmFilterValueCounter
+	count        int
+	types        map[string]bool
+	values       *crmFilterValueCounter
+	numericCount int
+	numericMin   *float64
+	numericMax   *float64
+}
+
+func (s *crmCustomPropertyStats) addNumber(number float64) {
+	s.numericCount++
+	if s.numericMin == nil || number < *s.numericMin {
+		s.numericMin = &number
+	}
+	if s.numericMax == nil || number > *s.numericMax {
+		s.numericMax = &number
+	}
 }
 
 // buildCRMCompanyFilterOptions aggregates filter options from company rows.
@@ -113,6 +127,9 @@ func buildCRMCompanyFilterOptions(sources []model.CRMCompanyFilterSource) *model
 			for _, value := range values {
 				stats.values.add(value)
 			}
+			if number, ok := crmCustomPropertyNumber(raw); ok {
+				stats.addNumber(number)
+			}
 		}
 	}
 
@@ -129,6 +146,7 @@ func buildCRMCompanyFilterOptions(sources []model.CRMCompanyFilterSource) *model
 		}
 		options.CustomProperties = append(options.CustomProperties, model.CRMCustomPropertySummary{
 			Key: key, Count: stats.count, ValueType: valueType, Values: values, HasMoreValues: more,
+			NumericCount: stats.numericCount, NumericMin: stats.numericMin, NumericMax: stats.numericMax,
 		})
 	}
 	sort.Slice(options.CustomProperties, func(i, j int) bool {
@@ -171,5 +189,26 @@ func crmCustomPropertyFilterValues(raw any) (string, []string) {
 		return "list", items
 	default:
 		return "", nil
+	}
+}
+
+// _crmNumericText matches the strings the list filter compares as numbers.
+var _crmNumericText = regexp.MustCompile(`^-?[0-9]+(\.[0-9]+)?$`)
+
+// crmCustomPropertyNumber reports a value numeric filters can compare, using
+// the same rule as the list filter's numeric expression.
+func crmCustomPropertyNumber(raw any) (float64, bool) {
+	switch value := raw.(type) {
+	case float64:
+		return value, true
+	case string:
+		text := strings.TrimSpace(value)
+		if !_crmNumericText.MatchString(text) {
+			return 0, false
+		}
+		number, err := strconv.ParseFloat(text, 64)
+		return number, err == nil
+	default:
+		return 0, false
 	}
 }

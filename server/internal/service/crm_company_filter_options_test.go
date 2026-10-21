@@ -53,3 +53,20 @@ func TestBuildCRMCompanyFilterOptionsCapsValues(t *testing.T) {
 		t.Fatalf("batch = %d values, more=%v, count=%d", len(batch.Values), batch.HasMoreValues, batch.Count)
 	}
 }
+
+func TestBuildCRMCompanyFilterOptionsCountsNumericValues(t *testing.T) {
+	options := buildCRMCompanyFilterOptions([]model.CRMCompanyFilterSource{
+		{CustomProperties: model.JSONB{"employees_est": float64(45)}},
+		{CustomProperties: model.JSONB{"employees_est": " 120 "}},
+		{CustomProperties: model.JSONB{"employees_est": "11-50"}},
+		{CustomProperties: model.JSONB{"employees_est": "unknown"}},
+		{CustomProperties: model.JSONB{"employees_est": float64(-3.5)}},
+	})
+	summary := options.CustomProperties[0]
+	if summary.Count != 5 || summary.NumericCount != 3 {
+		t.Fatalf("count = %d numeric = %d, want 5 and 3", summary.Count, summary.NumericCount)
+	}
+	if summary.NumericMin == nil || *summary.NumericMin != -3.5 || summary.NumericMax == nil || *summary.NumericMax != 120 {
+		t.Fatalf("range = %v..%v", summary.NumericMin, summary.NumericMax)
+	}
+}

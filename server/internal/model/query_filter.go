@@ -35,6 +35,9 @@ const (
 	// QueryFilterOpIsAnyOf matches any of the rule's values. For fields with
 	// an element source, such as JSON lists, it also matches list elements.
 	QueryFilterOpIsAnyOf QueryFilterOperator = "is_any_of"
+	// QueryFilterOpIsNoneOf matches records whose value is none of the rule's
+	// values, including records without a value.
+	QueryFilterOpIsNoneOf QueryFilterOperator = "is_none_of"
 )
 
 // QueryFilterRule represents one field/operator/value rule in a query builder.

@@ -1,9 +1,17 @@
 import type { VisibilityState } from '@tanstack/react-table';
 import type { PMFilterDefinition } from '@/components/pm/PMFilterControls';
+import {
+  isPMFilterConditionComplete,
+  optionModeUsesValues,
+  type PMFilterCondition,
+  type PMFilterConditions,
+  type PMFilterOptionMode,
+  type PMFilterOptionModes,
+} from '@/lib/pmFilterConditions';
 import { buildAssignableMemberOptions } from '@/lib/assignableMembers';
 import { customPropertyLabel } from '@/lib/crmCustomProperties';
 import type { CRMCompanyFilterOptions, CRMCustomPropertySummary } from '@/lib/crmTypes';
-import type { QueryFilterGroup } from '@/lib/queryBuilder';
+import type { QueryFilterGroup, QueryFilterRule } from '@/lib/queryBuilder';
 import type { AssignableMember } from '@/lib/types';
 
 /** Filter keys for native company fields. */
@@ -15,6 +23,22 @@ const CUSTOM_PROPERTY_COLUMN_PREFIX = 'cp:';
 
 /** Selected values per filter key, as the shared filter pills hold them. */
 export type CompanyFilterValues = Record<string, string[]>;
+
+/** Number conditions per filter key, for numeric custom properties. */
+export type CompanyFilterConditions = PMFilterConditions<string>;
+
+/** Chosen operator per options filter; a missing entry means is any of. */
+export type CompanyFilterModes = PMFilterOptionModes<string>;
+
+/** All applied company filters. */
+export interface CompanyFilterState {
+  values: CompanyFilterValues;
+  conditions: CompanyFilterConditions;
+  modes: CompanyFilterModes;
+}
+
+/** A state with no filters. */
+export const EMPTY_COMPANY_FILTERS: CompanyFilterState = { values: {}, conditions: {}, modes: {} };
 
 /** Query-builder field for a custom property key. */
 export function customPropertyFilterField(key: string): string {
@@ -30,24 +54,89 @@ export function isCustomPropertyColumnId(id: string): boolean {
   return id.startsWith(CUSTOM_PROPERTY_COLUMN_PREFIX);
 }
 
+function conditionToRule(field: string, condition: PMFilterCondition): QueryFilterRule {
+  switch (condition.operator) {
+    // Equality compares numerically, so 40 matches "40" and 40.0.
+    case 'equals':
+      return { field, operator: 'between', values: [condition.value!.trim(), condition.value!.trim()] };
+    case 'between':
+      return { field, operator: 'between', values: [condition.values![0].trim(), condition.values![1].trim()] };
+    case 'is_empty':
+    case 'is_not_empty':
+      return { field, operator: condition.operator };
+    default:
+      return { field, operator: condition.operator, value: condition.value!.trim() };
+  }
+}
+
+function ruleToCondition(rule: QueryFilterRule): PMFilterCondition | undefined {
+  switch (rule.operator) {
+    case 'between': {
+      const [start = '', end = ''] = rule.values ?? [];
+      return start === end ? { operator: 'equals', value: start } : { operator: 'between', values: [start, end] };
+    }
+    case 'gt':
+    case 'gte':
+    case 'lt':
+    case 'lte':
+      return { operator: rule.operator, value: rule.value ?? '' };
+    case 'is_empty':
+    case 'is_not_empty':
+      return { operator: rule.operator };
+    default:
+      return undefined;
+  }
+}
+
 /**
  * Builds the list API filter group: one is_any_of rule per key with selected
- * values. Values of one key are alternatives; different keys must all match.
+ * values, and one rule per complete number condition. Values of one key are
+ * alternatives; different keys must all match. Incomplete conditions, such as
+ * a pill still waiting for its number, are left out.
  */
-export function companyFilterValuesToGroup(values: CompanyFilterValues): QueryFilterGroup | undefined {
-  const rules = Object.entries(values)
-    .filter(([, selected]) => selected.length > 0)
-    .map(([field, selected]) => ({ field, operator: 'is_any_of' as const, values: selected }));
+export function companyFiltersToGroup(state: CompanyFilterState): QueryFilterGroup | undefined {
+  const rules: QueryFilterRule[] = [];
+  const optionFields = new Set([...Object.keys(state.values), ...Object.keys(state.modes)]);
+  for (const field of optionFields) {
+    const mode: PMFilterOptionMode = state.modes[field] ?? 'is_any_of';
+    if (!optionModeUsesValues(mode)) {
+      rules.push({ field, operator: mode });
+      continue;
+    }
+    const selected = state.values[field] ?? [];
+    if (selected.length > 0) rules.push({ field, operator: mode, values: selected });
+  }
+  for (const [field, condition] of Object.entries(state.conditions)) {
+    if (condition && isPMFilterConditionComplete(condition)) rules.push(conditionToRule(field, condition));
+  }
   return rules.length > 0 ? { logic: 'and', rules } : undefined;
 }
 
-/** Reads selected values back from a filter group; other rules are ignored. */
-export function companyFilterGroupToValues(group: QueryFilterGroup | undefined): CompanyFilterValues {
-  const values: CompanyFilterValues = {};
+/**
+ * Reads applied filters back from a filter group; unsupported rules are
+ * ignored. numberFields disambiguates empty checks, which both option and
+ * number filters use.
+ */
+export function companyFilterGroupToState(
+  group: QueryFilterGroup | undefined,
+  numberFields: ReadonlySet<string> = new Set(),
+): CompanyFilterState {
+  const state: CompanyFilterState = { values: {}, conditions: {}, modes: {} };
   for (const rule of group?.rules ?? []) {
-    if (rule.operator === 'is_any_of' && rule.values?.length) values[rule.field] = rule.values;
+    if (rule.operator === 'is_any_of' || rule.operator === 'is_none_of') {
+      if (!rule.values?.length) continue;
+      state.values[rule.field] = rule.values;
+      if (rule.operator === 'is_none_of') state.modes[rule.field] = 'is_none_of';
+      continue;
+    }
+    if ((rule.operator === 'is_empty' || rule.operator === 'is_not_empty') && !numberFields.has(rule.field)) {
+      state.modes[rule.field] = rule.operator;
+      continue;
+    }
+    const condition = ruleToCondition(rule);
+    if (condition) state.conditions[rule.field] = condition;
   }
-  return values;
+  return state;
 }
 
 /** Returns values with one option toggled for a key. */
@@ -57,11 +146,15 @@ export function toggleCompanyFilterValue(values: CompanyFilterValues, key: strin
   return { ...values, [key]: next };
 }
 
-/** Returns values without a key. */
-export function removeCompanyFilter(values: CompanyFilterValues, key: string): CompanyFilterValues {
-  const next = { ...values };
-  delete next[key];
-  return next;
+/** Returns the state without any filter for a key. */
+export function removeCompanyFilter(state: CompanyFilterState, key: string): CompanyFilterState {
+  const values = { ...state.values };
+  const conditions = { ...state.conditions };
+  const modes = { ...state.modes };
+  delete values[key];
+  delete conditions[key];
+  delete modes[key];
+  return { values, conditions, modes };
 }
 
 const COLUMN_STORAGE_PREFIX = 'helpin.crm.companies.columns.v1:';
@@ -125,21 +218,43 @@ export function buildCompanyFilterDefinitions(
       label: 'Owner',
       options: buildAssignableMemberOptions(assignableMembers).map((member) => ({ value: member.id, label: member.name })),
       searchableValues: true,
+      optionModes: true,
     },
     {
       key: COMPANY_INDUSTRY_FILTER,
       label: 'Industry',
       options: (options?.industries ?? []).map((industry) => ({ value: industry.value, label: industry.value })),
       searchableValues: (options?.industries.length ?? 0) > SEARCHABLE_OPTION_COUNT,
+      optionModes: true,
     },
   ];
   for (const summary of options?.custom_properties ?? []) {
+    if (isNumericCustomProperty(summary)) {
+      const skipped = summary.count - summary.numeric_count;
+      definitions.push({
+        key: customPropertyFilterField(summary.key),
+        label: customPropertyLabel(summary.key),
+        options: [],
+        kind: 'number',
+        note: skipped > 0 ? `${skipped} not numeric` : undefined,
+      });
+      continue;
+    }
     definitions.push({
       key: customPropertyFilterField(summary.key),
       label: customPropertyLabel(summary.key),
       options: summary.values.map((entry) => ({ value: entry.value, label: customPropertyOptionLabel(summary, entry.value) })),
       searchableValues: summary.values.length > SEARCHABLE_OPTION_COUNT,
+      optionModes: true,
     });
   }
   return definitions;
+}
+
+/**
+ * A key filters as a number when at least half its values are numeric.
+ * Records whose value is not numeric never match number comparisons.
+ */
+export function isNumericCustomProperty(summary: CRMCustomPropertySummary): boolean {
+  return summary.numeric_count > 0 && summary.numeric_count * 2 >= summary.count;
 }

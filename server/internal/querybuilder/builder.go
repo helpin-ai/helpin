@@ -41,6 +41,25 @@ type FieldDefinition struct {
 	// column named value, such as the elements of a JSON list. is_any_of then
 	// also matches when any element equals one of the rule's values.
 	ElementSource string
+	// NumericExpression optionally reads a text field as a number, yielding
+	// NULL when the value does not parse. It enables the numeric comparison
+	// operators; records without a numeric value never match them.
+	NumericExpression string
+}
+
+// _numericComparisonOperators are served by NumericExpression when a field has one.
+var _numericComparisonOperators = []model.QueryFilterOperator{
+	model.QueryFilterOpGT, model.QueryFilterOpGTE, model.QueryFilterOpLT,
+	model.QueryFilterOpLTE, model.QueryFilterOpBetween,
+}
+
+func isNumericComparison(operator model.QueryFilterOperator) bool {
+	for _, candidate := range _numericComparisonOperators {
+		if candidate == operator {
+			return true
+		}
+	}
+	return false
 }
 
 // ExpressionSQL returns the SQL expression for this field.
@@ -109,6 +128,9 @@ func normalizedLogic(logic model.QueryFilterLogic) string {
 }
 
 func isOperatorAllowed(definition FieldDefinition, operator model.QueryFilterOperator) bool {
+	if definition.NumericExpression != "" && isNumericComparison(operator) {
+		return true
+	}
 	allowed := definition.Operators
 	if len(allowed) == 0 {
 		allowed = defaultOperators(definition.Type)
@@ -136,6 +158,7 @@ func defaultOperators(fieldType FieldType) []model.QueryFilterOperator {
 			model.QueryFilterOpIsEmpty,
 			model.QueryFilterOpIsNotEmpty,
 			model.QueryFilterOpIsAnyOf,
+			model.QueryFilterOpIsNoneOf,
 		}
 	case FieldTypeDate:
 		return []model.QueryFilterOperator{
@@ -155,6 +178,7 @@ func defaultOperators(fieldType FieldType) []model.QueryFilterOperator {
 			model.QueryFilterOpIsEmpty,
 			model.QueryFilterOpIsNotEmpty,
 			model.QueryFilterOpIsAnyOf,
+			model.QueryFilterOpIsNoneOf,
 		}
 	}
 }
@@ -163,6 +187,26 @@ func buildClause(definition FieldDefinition, rule model.QueryFilterRule) (string
 	expression := definition.ExpressionSQL()
 	if rule.Operator == model.QueryFilterOpIsAnyOf {
 		return buildAnyOfClause(definition, expression, rule)
+	}
+	if rule.Operator == model.QueryFilterOpIsNoneOf {
+		clause, args, err := buildAnyOfClause(definition, expression, rule)
+		if err != nil {
+			return "", nil, err
+		}
+		// A missing value is none of the values; COALESCE keeps NULL from excluding it.
+		return "NOT COALESCE((" + clause + "), FALSE)", args, nil
+	}
+	if definition.NumericExpression != "" && isNumericComparison(rule.Operator) {
+		return buildNumberClause(definition.NumericExpression, rule)
+	}
+	// ID columns are typically UUIDs, which PostgreSQL cannot compare with ''.
+	if definition.Type == FieldTypeID {
+		switch rule.Operator {
+		case model.QueryFilterOpIsEmpty:
+			return expression + " IS NULL", nil, nil
+		case model.QueryFilterOpIsNotEmpty:
+			return expression + " IS NOT NULL", nil, nil
+		}
 	}
 	switch definition.Type {
 	case FieldTypeNumber:

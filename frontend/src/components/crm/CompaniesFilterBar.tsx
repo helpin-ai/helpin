@@ -1,6 +1,11 @@
-import { useMemo } from 'react';
-import { PMFilterBar, PMFilterTrigger, type PMFilterDefinition } from '@/components/pm/PMFilterControls';
-import type { CompanyFilterValues } from '@/lib/crmCompanyFilters';
+import {
+  PMFilterBar,
+  PMFilterTrigger,
+  type PMFilterCondition,
+  type PMFilterDefinition,
+  type PMFilterOptionMode,
+} from '@/components/pm/PMFilterControls';
+import type { CompanyFilterConditions, CompanyFilterModes, CompanyFilterValues } from '@/lib/crmCompanyFilters';
 
 interface CompaniesFilterControlsProps {
   definitions: PMFilterDefinition<string>[];
@@ -11,11 +16,14 @@ interface CompaniesFilterControlsProps {
 }
 
 /** Toolbar trigger that adds a filter field, then chooses its values. */
-export function CompaniesFilterTrigger({ definitions, values, visibleKeys, onAdd, onToggle }: CompaniesFilterControlsProps) {
-  const activeCount = useMemo(
-    () => Object.values(values).filter((selected) => selected.length > 0).length,
-    [values],
-  );
+export function CompaniesFilterTrigger({
+  definitions,
+  values,
+  activeCount,
+  visibleKeys,
+  onAdd,
+  onToggle,
+}: CompaniesFilterControlsProps & { activeCount: number }) {
   return (
     <PMFilterTrigger
       definitions={definitions}
@@ -32,15 +40,30 @@ export function CompaniesFilterTrigger({ definitions, values, visibleKeys, onAdd
 export function CompaniesAppliedFilters({
   definitions,
   values,
+  conditions,
+  onConditionChange,
+  optionModes,
+  onOptionModeChange,
   visibleKeys,
   onToggle,
   onRemove,
   onClearAll,
-}: Omit<CompaniesFilterControlsProps, 'onAdd'> & { onRemove: (key: string) => void; onClearAll: () => void }) {
+}: Omit<CompaniesFilterControlsProps, 'onAdd'> & {
+  conditions: CompanyFilterConditions;
+  onConditionChange: (key: string, condition: PMFilterCondition) => void;
+  optionModes: CompanyFilterModes;
+  onOptionModeChange: (key: string, mode: PMFilterOptionMode) => void;
+  onRemove: (key: string) => void;
+  onClearAll: () => void;
+}) {
   return (
     <PMFilterBar
       definitions={definitions}
       values={values}
+      conditions={conditions}
+      onConditionChange={onConditionChange}
+      optionModes={optionModes}
+      onOptionModeChange={onOptionModeChange}
       visibleKeys={visibleKeys}
       onToggle={onToggle}
       onRemove={onRemove}

@@ -2257,7 +2257,7 @@ func updateKeyResultSchema() map[string]any {
 func crmQueryFilterSchema(fields string) map[string]any {
 	operators := []string{
 		"is", "is_not", "contains", "not_contains", "starts_with", "ends_with", "is_empty", "is_not_empty",
-		"gt", "gte", "lt", "lte", "on", "before", "after", "on_or_before", "on_or_after", "between", "is_any_of",
+		"gt", "gte", "lt", "lte", "on", "before", "after", "on_or_before", "on_or_after", "between", "is_any_of", "is_none_of",
 	}
 	rule := closedObjectSchema(map[string]any{
 		"field":    map[string]any{"type": "string", "minLength": 1, "maxLength": 100},
@@ -2270,7 +2270,7 @@ func crmQueryFilterSchema(fields string) map[string]any {
 		"rules": map[string]any{"type": "array", "items": rule, "minItems": 1, "maxItems": 20},
 	}, []string{"rules"})
 	schema["description"] = "Structured filter. Fields: " + fields +
-		"; custom_properties.<key> (text). Text matching is case-insensitive; is_empty and is_not_empty take no value; between takes two values; is_any_of takes values and also matches elements of list-valued custom properties."
+		"; custom_properties.<key> (text). Text matching is case-insensitive; is_empty and is_not_empty take no value; between takes two values; is_any_of and is_none_of take values and also match elements of list-valued custom properties (is_none_of includes records without a value); gt, gte, lt, lte, and between compare custom properties as numbers, skipping values that are not numeric."
 	return schema
 }
 

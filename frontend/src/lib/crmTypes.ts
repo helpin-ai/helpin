@@ -1294,6 +1294,10 @@ export interface CRMCustomPropertySummary {
   value_type: 'text' | 'number' | 'boolean' | 'list' | 'mixed';
   values: CRMFilterValueCount[];
   has_more_values: boolean;
+  /** Records whose value numeric filters can compare (a number or numeric text). */
+  numeric_count: number;
+  numeric_min?: number;
+  numeric_max?: number;
 }
 
 /** Filterable values in use on a workspace's companies. */

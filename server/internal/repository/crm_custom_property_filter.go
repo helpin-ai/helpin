@@ -53,9 +53,10 @@ func withCRMCustomPropertyFields(
 			}
 		}
 		definitions[rule.Field] = querybuilder.FieldDefinition{
-			Expression:    crmCustomPropertyTextExpression(column, dialect, key),
-			Type:          querybuilder.FieldTypeText,
-			ElementSource: crmCustomPropertyElementSource(column, dialect, key),
+			Expression:        crmCustomPropertyTextExpression(column, dialect, key),
+			Type:              querybuilder.FieldTypeText,
+			ElementSource:     crmCustomPropertyElementSource(column, dialect, key),
+			NumericExpression: crmCustomPropertyNumericExpression(column, dialect, key),
 		}
 	}
 	if definitions == nil {
@@ -85,4 +86,25 @@ func crmCustomPropertyTextExpression(column, dialect, key string) string {
 	}
 	path := "'$." + key + "'"
 	return "(CASE json_type(" + column + ", " + path + ") WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' ELSE " + column + " ->> '" + key + "' END)"
+}
+
+// crmCustomPropertyNumericExpression reads a custom property as a number:
+// JSON numbers, and strings holding only a decimal number such as "40". Any
+// other value yields NULL. The CASE guard matters: a bare cast would fail the
+// whole query on one non-numeric record. Expressions must not contain a
+// literal "?", which GORM would treat as a bind placeholder.
+func crmCustomPropertyNumericExpression(column, dialect, key string) string {
+	if dialect == "postgres" {
+		value := column + " -> '" + key + "'"
+		text := "TRIM(" + column + " ->> '" + key + "')"
+		return "(CASE WHEN jsonb_typeof(" + value + ") = 'number' THEN (" + column + " ->> '" + key + "')::numeric" +
+			" WHEN jsonb_typeof(" + value + ") = 'string' AND " + text + " ~ '^-{0,1}[0-9]+(\\.[0-9]+){0,1}$' THEN " + text + "::numeric END)"
+	}
+	path := "'$." + key + "'"
+	text := "TRIM(json_extract(" + column + ", " + path + "))"
+	// A minus sign is only allowed in front, so ranges like "11-50" stay NULL.
+	unsigned := "LTRIM(" + text + ", '-')"
+	return "(CASE WHEN json_type(" + column + ", " + path + ") IN ('integer', 'real') THEN json_extract(" + column + ", " + path + ")" +
+		" WHEN json_type(" + column + ", " + path + ") = 'text' AND " + unsigned + " <> '' AND " + unsigned + " NOT GLOB '*[^0-9.]*'" +
+		" THEN CAST(" + text + " AS REAL) END)"
 }
