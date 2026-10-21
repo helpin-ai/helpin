@@ -3,17 +3,23 @@ package service
 // Read-only child-launch policy for support chat runs. A visitor cannot
 // approve anything, so support runs may auto-launch child agents only when
 // every step is confined to this server-owned read-only tool set; anything
-// broader pauses for a teammate approval from the inbox.
+// broader must be corrected or deferred to background investigation.
 
 import "strings"
 
-// supportChildReadOnlyTools is the server-owned allowlist of tools a
-// support-launched child run may carry without human approval. Never derived
-// from model input.
+// supportChildReadOnlyTools records server-approved reads across support
+// research and background investigations. Customer launches also require the
+// narrower supportCustomerResearchTools boundary. Never derived from model input.
 var supportChildReadOnlyTools = map[string]bool{
 	// Focused third-party context research; Echo's prompt governs its purpose.
-	"web_search": true,
-	"fetch_url":  true,
+	"web_search":            true,
+	"fetch_url":             true,
+	"crawl_url":             true,
+	"find_skills":           true,
+	"read_skill":            true,
+	"get_release_context":   true,
+	"get_pull_request_diff": true,
+	"list_task_checklist":   true,
 	// Repository inspection (bug checks).
 	"checkout_repositories": true,
 	"list_repositories":     true,
@@ -46,9 +52,8 @@ const (
 	supportChildMaxPerConversation = 5
 )
 
-// supportStepsAreReadOnly reports whether every step is safely auto-
-// approvable: an explicit non-empty allowed_tools list that is a subset of
-// the read-only allowlist.
+// supportStepsAreReadOnly requires explicit non-empty tool lists drawn from
+// the server-owned read-only catalog. Customer research adds a separate scope check.
 func supportStepsAreReadOnly(steps []dockLaunchStep) bool {
 	if len(steps) == 0 {
 		return false
@@ -73,4 +78,29 @@ func isSupportWebResearchTool(tool string) bool {
 	default:
 		return false
 	}
+}
+
+// Customer research excludes implementation investigation, which has its own
+// independent post-handover run and private-note delivery contract.
+var supportCustomerResearchTools = map[string]bool{
+	"web_search": true, "fetch_url": true, "crawl_url": true,
+	"find_skills": true, "read_skill": true,
+	"search_knowledge": true, "list_documents": true, "read_document": true,
+	"get_document_blocks": true, "search_documents": true,
+	"list_collections": true, "list_spaces": true,
+	"list_conversation_messages": true,
+}
+
+func supportStepsAreCustomerResearch(steps []dockLaunchStep) bool {
+	if !supportStepsAreReadOnly(steps) {
+		return false
+	}
+	for _, step := range steps {
+		for _, tool := range step.AllowedTools {
+			if !supportCustomerResearchTools[strings.TrimSpace(tool)] {
+				return false
+			}
+		}
+	}
+	return true
 }

@@ -42,6 +42,17 @@ func TestSupportInvestigationRequestEligibility(t *testing.T) {
 
 func TestSupportInvestigationRunContract(t *testing.T) {
 	tools := supportInvestigationTools()
+	for _, required := range []string{"get_release_context", "get_pull_request_diff", "list_tasks", "get_task_context", "list_task_checklist"} {
+		found := false
+		for _, tool := range tools {
+			if tool == required {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("missing background tool %s", required)
+		}
+	}
 	for _, tool := range tools {
 		if !supportChildReadOnlyTools[tool] && tool != "read_skill" && tool != "find_skills" {
 			t.Fatalf("unexpected tool %s", tool)

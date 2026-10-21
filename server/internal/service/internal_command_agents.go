@@ -24,10 +24,9 @@ import (
 // legacy dedicated actions retain canonical-hash validation.
 const dockApprovalPayloadKind = "dock_plan_confirm"
 
-// supportApprovalPayloadKind is the request_approval payload kind a support
-// chat run must use for child launches that are not strictly read-only; the
-// approval is resolved by a teammate from the inbox. Read-only launches
-// (allowed_tools ⊆ supportChildReadOnlyTools) auto-approve.
+// supportApprovalPayloadKind is retained for existing support approval interactions.
+// New customer research launches either auto-admit the scoped read tools or
+// return correction guidance without creating an approval interaction.
 const supportApprovalPayloadKind = "support_plan_confirm"
 
 // orchestratorRunKind identifies which orchestration surface a calling run
@@ -520,10 +519,12 @@ func (s *InternalCommandService) executeDockLaunch(ctx context.Context, meta mod
 		if err := s.checkSupportChildCaps(ctx, meta.WorkspaceID, conversationID); err != nil {
 			return nil, err
 		}
-		if !supportStepsAreReadOnly(steps) {
-			interaction, err = s.verifyDockApproval(ctx, meta, chatRun, approvalInteractionID, "launch", actionHash, supportApprovalPayloadKind)
-			if err != nil {
-				return nil, fmt.Errorf("%w (this launch is not strictly read-only: either narrow every step's allowed_tools to read-only tools for auto-approval, or call request_approval with phase %q and the exact action — a teammate resolves it from the inbox)", err, supportApprovalPayloadKind)
+		if !supportStepsAreCustomerResearch(steps) {
+			return nil, errCommandInput("support customer research requires an explicit allowed_tools list containing only web_search, fetch_url, crawl_url, find_skills, read_skill, knowledge/document reads or conversation history. Do not request approval. Narrow the tools and retry; repository, release and task investigation belongs in the background investigation requested during handover. Use assigned read-only customer MCP lookups directly, not through a child agent")
+		}
+		for _, step := range steps {
+			if !step.UseCommandAgent && step.AgentID != "" {
+				return nil, errCommandInput("support research must use use_command_agent=true with explicit allowed_tools, not a saved agent. Do not request approval; correct the launch and retry")
 			}
 		}
 	default:
