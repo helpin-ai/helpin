@@ -347,12 +347,15 @@ moment can still create two records.
 `list_crm_companies` and `list_contacts` accept a `filter` object with `logic`
 (`and` or `or`) and up to 20 `rules`, each with a `field`, an `operator`, and a
 `value` or `values`. Native fields are listed in each tool's schema, and
-`custom_properties.<key>` filters any custom property as case-insensitive text:
+`custom_properties.<key>` filters any custom property as case-insensitive text.
+`is_any_of` takes a `values` list and matches any of them; on a custom property
+holding a list, such as `support_tools`, it also matches list elements:
 
 ```json
 {"filter": {"rules": [
   {"field": "custom_properties.fit", "operator": "is", "value": "yes"},
-  {"field": "custom_properties.country", "operator": "is", "value": "DE"}
+  {"field": "custom_properties.country", "operator": "is", "value": "DE"},
+  {"field": "custom_properties.support_tools", "operator": "is_any_of", "values": ["zendesk", "intercom"]}
 ]}}
 ```
 

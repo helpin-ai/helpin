@@ -15,6 +15,7 @@ import {
   type RowSelectionState,
   type SortingState,
   type ColumnSizingState,
+  type OnChangeFn,
   type VisibilityState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -56,6 +57,13 @@ import type { CRMCompany } from '@/lib/crmTypes';
 import { shouldFetchNextContactPage } from '@/lib/contactInfiniteScroll';
 import type { AssignableMember } from '@/lib/types';
 import { ColumnVisibilityPopover } from '@/components/crm/ColumnVisibilityPopover';
+import { customPropertyLabel, formatCustomPropertyValue } from '@/lib/crmCustomProperties';
+import {
+  customPropertyColumnId,
+  effectiveCompanyColumnVisibility,
+  readCompanyColumnVisibility,
+  writeCompanyColumnVisibility,
+} from '@/lib/crmCompanyFilters';
 
 export type CompanyGroupByOption = 'none' | 'industry' | 'owner';
 
@@ -82,7 +90,11 @@ interface CompaniesTableProps {
   onCompanyUpdated?: () => void;
   onCompanyDeleted?: () => void;
   toolbarContainer?: HTMLElement | null;
+  /** Custom property keys in use; each becomes a column, hidden until shown. */
+  customPropertyKeys?: string[];
 }
+
+const NO_CUSTOM_PROPERTY_KEYS: string[] = [];
 
 export function CompaniesTable({
   companies,
@@ -99,13 +111,34 @@ export function CompaniesTable({
   onCompanyUpdated,
   onCompanyDeleted,
   toolbarContainer,
+  customPropertyKeys = NO_CUSTOM_PROPERTY_KEYS,
 }: CompaniesTableProps) {
   const [localCompanies, setLocalCompanies] = useState<CRMCompany[]>(companies);
   const [expanded, setExpanded] = useState<ExpandedState>(true);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
+  // Saved per workspace; the page keys this table by workspace so it re-reads on switch.
+  const [savedColumnVisibility, setSavedColumnVisibility] = useState<VisibilityState>(
+    () => readCompanyColumnVisibility(workspaceId),
+  );
+  const customColumnIds = useMemo(
+    () => customPropertyKeys.map(customPropertyColumnId),
+    [customPropertyKeys],
+  );
+  const columnVisibility = useMemo(
+    () => effectiveCompanyColumnVisibility(savedColumnVisibility, customColumnIds),
+    [savedColumnVisibility, customColumnIds],
+  );
+  const setColumnVisibility: OnChangeFn<VisibilityState> = useCallback((updater) => {
+    setSavedColumnVisibility((current) => {
+      const base = effectiveCompanyColumnVisibility(current, customColumnIds);
+      return typeof updater === 'function' ? updater(base) : updater;
+    });
+  }, [customColumnIds]);
+  useEffect(() => {
+    writeCompanyColumnVisibility(workspaceId, savedColumnVisibility);
+  }, [workspaceId, savedColumnVisibility]);
   const columnSizingVersion = useMemo(() => JSON.stringify(columnSizing), [columnSizing]);
   const columnVisibilityVersion = useMemo(
     () => JSON.stringify(columnVisibility),
@@ -239,6 +272,25 @@ export function CompaniesTable({
           ),
         }
       ),
+      ...customPropertyKeys.map((key) =>
+        columnHelper.accessor(
+          (row) => formatCustomPropertyValue(row.custom_properties?.[key]) ?? '',
+          {
+            id: customPropertyColumnId(key),
+            header: customPropertyLabel(key),
+            size: 160,
+            enableGrouping: false,
+            cell: (info) => {
+              const value = info.getValue();
+              return value ? (
+                <span className="truncate text-xs text-muted-foreground" title={value}>{value}</span>
+              ) : (
+                <span className="text-xs text-muted-foreground">-</span>
+              );
+            },
+          },
+        ),
+      ),
       columnHelper.accessor('created_at', {
         id: 'createdAt',
         header: 'Created',
@@ -270,7 +322,7 @@ export function CompaniesTable({
         ),
       }),
     ],
-    [ownerNameMap, assignableMembers, onRowClick, updateCompanyField, handleDelete],
+    [ownerNameMap, assignableMembers, onRowClick, updateCompanyField, handleDelete, customPropertyKeys],
   );
 
   const grouping: GroupingState = useMemo(() => {

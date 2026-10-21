@@ -1,5 +1,5 @@
-import { useDeferredValue, useMemo, useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { useCallback, useDeferredValue, useMemo, useState } from 'react';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { PlusSignIcon } from '@/lib/icons';
 import { QuietPageHeader, QuietPrimaryAction, QuietSearchInput } from '@/components/design-system/quiet';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -13,7 +13,18 @@ import {
 } from '@/components/crm/CompaniesTable';
 import { CreateCompanyDialog } from '@/components/crm/CreateCompanyDialog';
 import { CRMDataEmptyState, CRMNoResultsState } from '@/components/crm/CRMDataEmptyState';
+import { CompaniesAppliedFilters, CompaniesFilterTrigger } from '@/components/crm/CompaniesFilterBar';
+import { useCompanyFilterOptions } from '@/hooks/useCompanyFilterOptions';
 import { useTitle } from '@/hooks/useTitle';
+import {
+  buildCompanyFilterDefinitions,
+  companyFilterGroupToValues,
+  companyFilterValuesToGroup,
+  removeCompanyFilter,
+  toggleCompanyFilterValue,
+  type CompanyFilterValues,
+} from '@/lib/crmCompanyFilters';
+import { parseQueryFilterGroup, serializeQueryFilterGroup } from '@/lib/queryBuilder';
 
 const COMPANY_GROUP_BY_OPTIONS: { value: CompanyGroupByOption; label: string }[] = [
   { value: 'none', label: 'None' },
@@ -32,6 +43,39 @@ export function CompaniesPage() {
   const [groupBy, setGroupBy] = useState<CompanyGroupByOption>('none');
   const [showCreate, setShowCreate] = useState(false);
 
+  // Applied filters live in the URL as a query-builder group, as on Deals and Contacts.
+  const routeSearch = useSearch({ strict: false }) as { filters?: string };
+  const filterValues = useMemo(
+    () => companyFilterGroupToValues(parseQueryFilterGroup(routeSearch.filters)),
+    [routeSearch.filters],
+  );
+  const serializedFilters = serializeQueryFilterGroup(companyFilterValuesToGroup(filterValues));
+  // Fields added from the trigger but still awaiting a value keep their pill visible.
+  const [pendingFilterKeys, setPendingFilterKeys] = useState<Set<string>>(() => new Set());
+  const setFilterValues = useCallback((next: CompanyFilterValues) => {
+    void navigate({
+      search: (previous: Record<string, unknown>) => ({
+        ...previous,
+        filters: serializeQueryFilterGroup(companyFilterValuesToGroup(next)),
+      }),
+      replace: true,
+    } as never);
+  }, [navigate]);
+  const visibleFilterKeys = useMemo(() => {
+    const keys = new Set(pendingFilterKeys);
+    for (const [key, selected] of Object.entries(filterValues)) {
+      if (selected.length > 0) keys.add(key);
+    }
+    return keys;
+  }, [filterValues, pendingFilterKeys]);
+  const hasActiveFilters = Boolean(serializedFilters);
+
+  const { data: filterOptions } = useCompanyFilterOptions(wsId);
+  const customPropertyKeys = useMemo(
+    () => (filterOptions?.custom_properties ?? []).map((summary) => summary.key),
+    [filterOptions],
+  );
+
   const {
     data,
     isLoading,
@@ -39,7 +83,7 @@ export function CompaniesPage() {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
-  } = useInfiniteCompanies(wsId, { search: search || undefined });
+  } = useInfiniteCompanies(wsId, { search: search || undefined, filters: serializedFilters });
   const companies = useMemo(
     () => data?.pages.flatMap((page) => page.data) ?? [],
     [data],
@@ -47,14 +91,38 @@ export function CompaniesPage() {
   const deferredCompanies = useDeferredValue(companies);
   const totalCount = data?.pages[0]?.total ?? 0;
   const normalizedSearch = search.trim();
-  const showCompaniesEmptyState = !isLoading && deferredCompanies.length === 0 && totalCount === 0 && !normalizedSearch;
-  const showNoResultsState = !isLoading && deferredCompanies.length === 0 && !!normalizedSearch;
+  const isNarrowed = !!normalizedSearch || hasActiveFilters;
+  const showCompaniesEmptyState = !isLoading && deferredCompanies.length === 0 && totalCount === 0 && !isNarrowed;
+  const showNoResultsState = !isLoading && deferredCompanies.length === 0 && isNarrowed;
 
   const { members: assignableMembers } = useAssignableWorkspaceMembers(wsId);
   const ownerNameMap = useMemo(
     () => buildAssignableMemberNameMap(assignableMembers),
     [assignableMembers],
   );
+  const filterDefinitions = useMemo(
+    () => buildCompanyFilterDefinitions(filterOptions, assignableMembers),
+    [filterOptions, assignableMembers],
+  );
+
+  const addFilter = (key: string) => setPendingFilterKeys((current) => new Set(current).add(key));
+  const toggleFilter = (key: string, value: string) => setFilterValues(toggleCompanyFilterValue(filterValues, key, value));
+  const removeFilter = (key: string) => {
+    setPendingFilterKeys((current) => {
+      const next = new Set(current);
+      next.delete(key);
+      return next;
+    });
+    setFilterValues(removeCompanyFilter(filterValues, key));
+  };
+  const clearFilters = () => {
+    setPendingFilterKeys(new Set());
+    setFilterValues({});
+  };
+  const clearSearchAndFilters = () => {
+    setSearch('');
+    clearFilters();
+  };
 
 
   return (
@@ -78,6 +146,13 @@ export function CompaniesPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+        <CompaniesFilterTrigger
+          definitions={filterDefinitions}
+          values={filterValues}
+          visibleKeys={visibleFilterKeys}
+          onAdd={addFilter}
+          onToggle={toggleFilter}
+        />
         <div className="ml-auto flex items-center">
           <Select value={groupBy} onValueChange={(value) => setGroupBy(value as CompanyGroupByOption)}>
             <SelectTrigger className="h-7 w-auto min-w-[130px] max-w-[160px] gap-1 border-0 bg-transparent px-1.5 text-xs shadow-none hover:bg-accent focus-visible:ring-0 focus-visible:border-transparent">
@@ -95,6 +170,14 @@ export function CompaniesPage() {
           <span ref={setTableToolbarContainer} className="contents" />
         </div>
       </header>
+      <CompaniesAppliedFilters
+        definitions={filterDefinitions}
+        values={filterValues}
+        visibleKeys={visibleFilterKeys}
+        onToggle={toggleFilter}
+        onRemove={removeFilter}
+        onClearAll={clearFilters}
+      />
 
       {/* Content */}
       <div className="min-h-0 flex-1 overflow-hidden p-3">
@@ -107,11 +190,14 @@ export function CompaniesPage() {
           <CRMNoResultsState
             kind="companies"
             query={normalizedSearch}
-            onClear={() => setSearch('')}
+            hasFilters={hasActiveFilters}
+            onClear={clearSearchAndFilters}
           />
         ) : (
           <CompaniesTable
+            key={wsId}
             companies={deferredCompanies}
+            customPropertyKeys={customPropertyKeys}
             workspaceId={wsId}
             assignableMembers={assignableMembers}
             ownerNameMap={ownerNameMap}

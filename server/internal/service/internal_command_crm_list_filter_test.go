@@ -121,3 +121,70 @@ func TestCRMListContactsFiltersOnCustomProperties(t *testing.T) {
 		t.Fatalf("contacts = %#v", result.Contacts)
 	}
 }
+
+func TestCRMListCompaniesAnyOfMatchesScalarsAndListElements(t *testing.T) {
+	env := newCRMOperationalCommandTestEnv(t, setupCRMOperationalCommandTestDB(t))
+	ctx := context.Background()
+	for _, seed := range []struct {
+		name  string
+		tools any
+		fit   any
+	}{
+		{name: "Zendesk shop", tools: []any{"Zendesk", "Intercom"}, fit: "yes"},
+		{name: "Freshdesk shop", tools: []any{"freshdesk"}, fit: "maybe"},
+		{name: "Plain value", tools: "zendesk", fit: true},
+		{name: "No tools", fit: "no"},
+	} {
+		properties := map[string]any{"fit": seed.fit}
+		if seed.tools != nil {
+			properties["support_tools"] = seed.tools
+		}
+		if _, err := env.company.Create(ctx, model.CreateCRMCompanyRequest{WorkspaceID: "ws-crm-1", Name: seed.name, CustomProperties: properties}); err != nil {
+			t.Fatalf("seed %s: %v", seed.name, err)
+		}
+	}
+	names := func(input string) map[string]bool {
+		t.Helper()
+		result := listFilteredCompanies(t, env, input)
+		found := map[string]bool{}
+		companies, _ := result["companies"].([]any)
+		for _, item := range companies {
+			found[item.(map[string]any)["name"].(string)] = true
+		}
+		return found
+	}
+
+	tools := names(`{"filter":{"rules":[{"field":"custom_properties.support_tools","operator":"is_any_of","values":["ZENDESK"]}]}}`)
+	if len(tools) != 2 || !tools["Zendesk shop"] || !tools["Plain value"] {
+		t.Fatalf("support_tools is any of zendesk = %v, want list and scalar matches", tools)
+	}
+	fit := names(`{"filter":{"rules":[{"field":"custom_properties.fit","operator":"is_any_of","values":["yes","true"]}]}}`)
+	if len(fit) != 2 || !fit["Zendesk shop"] || !fit["Plain value"] {
+		t.Fatalf("fit is any of yes/true = %v", fit)
+	}
+	both := names(`{"filter":{"logic":"and","rules":[
+		{"field":"custom_properties.support_tools","operator":"is_any_of","values":["zendesk","freshdesk"]},
+		{"field":"custom_properties.fit","operator":"is_any_of","values":["maybe"]}
+	]}}`)
+	if len(both) != 1 || !both["Freshdesk shop"] {
+		t.Fatalf("combined filter = %v", both)
+	}
+}
+
+func TestCRMListCompaniesAnyOfRequiresBoundedValues(t *testing.T) {
+	env := newCRMOperationalCommandTestEnv(t, setupCRMOperationalCommandTestDB(t))
+	tooMany := make([]string, 51)
+	for index := range tooMany {
+		tooMany[index] = "v"
+	}
+	for _, values := range [][]string{{}, {"  "}, tooMany} {
+		input := mustJSON(map[string]any{"filter": map[string]any{"rules": []any{
+			map[string]any{"field": "industry", "operator": "is_any_of", "values": values},
+		}}})
+		_, err := env.commands.Execute(context.Background(), env.meta("workspace", ""), "crm.list_companies", input)
+		var commandErr *CommandError
+		if !errors.As(err, &commandErr) || commandErr.Kind != CommandErrorInvalidInput {
+			t.Errorf("values %d error = %v, want invalid input", len(values), err)
+		}
+	}
+}

@@ -2257,20 +2257,20 @@ func updateKeyResultSchema() map[string]any {
 func crmQueryFilterSchema(fields string) map[string]any {
 	operators := []string{
 		"is", "is_not", "contains", "not_contains", "starts_with", "ends_with", "is_empty", "is_not_empty",
-		"gt", "gte", "lt", "lte", "on", "before", "after", "on_or_before", "on_or_after", "between",
+		"gt", "gte", "lt", "lte", "on", "before", "after", "on_or_before", "on_or_after", "between", "is_any_of",
 	}
 	rule := closedObjectSchema(map[string]any{
 		"field":    map[string]any{"type": "string", "minLength": 1, "maxLength": 100},
 		"operator": map[string]any{"type": "string", "enum": operators},
 		"value":    map[string]any{"type": "string", "maxLength": 500},
-		"values":   map[string]any{"type": "array", "items": map[string]any{"type": "string", "maxLength": 500}, "maxItems": 2},
+		"values":   map[string]any{"type": "array", "items": map[string]any{"type": "string", "maxLength": 500}, "maxItems": 50},
 	}, []string{"field", "operator"})
 	schema := closedObjectSchema(map[string]any{
 		"logic": map[string]any{"type": "string", "enum": []string{"and", "or"}, "default": "and"},
 		"rules": map[string]any{"type": "array", "items": rule, "minItems": 1, "maxItems": 20},
 	}, []string{"rules"})
 	schema["description"] = "Structured filter. Fields: " + fields +
-		"; custom_properties.<key> (text). Text matching is case-insensitive; is_empty and is_not_empty take no value; between takes two values."
+		"; custom_properties.<key> (text). Text matching is case-insensitive; is_empty and is_not_empty take no value; between takes two values; is_any_of takes values and also matches elements of list-valued custom properties."
 	return schema
 }
 

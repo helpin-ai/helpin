@@ -913,7 +913,8 @@
                               "after",
                               "on_or_before",
                               "on_or_after",
-                              "between"
+                              "between",
+                              "is_any_of"
                             ],
                             "type": "string"
                           },
@@ -926,7 +927,7 @@
                               "maxLength": 500,
                               "type": "string"
                             },
-                            "maxItems": 2,
+                            "maxItems": 50,
                             "type": "array"
                           }
                         },
@@ -948,7 +949,7 @@
                 }
               }
             },
-            "description": "Structured filter. Fields: name, domain, external_id, industry, headquarters, description (text); employee_count, annual_revenue (number); owner_member_id (id); created_at, updated_at (date); custom_properties.\u003ckey\u003e (text). Text matching is case-insensitive; is_empty and is_not_empty take no value; between takes two values.",
+            "description": "Structured filter. Fields: name, domain, external_id, industry, headquarters, description (text); employee_count, annual_revenue (number); owner_member_id (id); created_at, updated_at (date); custom_properties.\u003ckey\u003e (text). Text matching is case-insensitive; is_empty and is_not_empty take no value; between takes two values; is_any_of takes values and also matches elements of list-valued custom properties.",
             "in": "query",
             "name": "filter",
             "required": false
@@ -1282,7 +1283,8 @@
                               "after",
                               "on_or_before",
                               "on_or_after",
-                              "between"
+                              "between",
+                              "is_any_of"
                             ],
                             "type": "string"
                           },
@@ -1295,7 +1297,7 @@
                               "maxLength": 500,
                               "type": "string"
                             },
-                            "maxItems": 2,
+                            "maxItems": 50,
                             "type": "array"
                           }
                         },
@@ -1317,7 +1319,7 @@
                 }
               }
             },
-            "description": "Structured filter. Fields: name, email, phone, job_title, source (text); lifecycle_stage, lead_status, portal_access (enum); owner_member_id (id); created_at, updated_at (date); custom_properties.\u003ckey\u003e (text). Text matching is case-insensitive; is_empty and is_not_empty take no value; between takes two values.",
+            "description": "Structured filter. Fields: name, email, phone, job_title, source (text); lifecycle_stage, lead_status, portal_access (enum); owner_member_id (id); created_at, updated_at (date); custom_properties.\u003ckey\u003e (text). Text matching is case-insensitive; is_empty and is_not_empty take no value; between takes two values; is_any_of takes values and also matches elements of list-valued custom properties.",
             "in": "query",
             "name": "filter",
             "required": false

@@ -1280,3 +1280,26 @@ export interface CRMSearchResult {
   detail: string;
   object: CRMContact | CRMCompany | CRMDeal;
 }
+
+/** A value in use for a filterable CRM field, with how many records use it. */
+export interface CRMFilterValueCount {
+  value: string;
+  count: number;
+}
+
+/** A custom property key in use on companies, discovered from the data. */
+export interface CRMCustomPropertySummary {
+  key: string;
+  count: number;
+  value_type: 'text' | 'number' | 'boolean' | 'list' | 'mixed';
+  values: CRMFilterValueCount[];
+  has_more_values: boolean;
+}
+
+/** Filterable values in use on a workspace's companies. */
+export interface CRMCompanyFilterOptions {
+  industries: CRMFilterValueCount[];
+  custom_properties: CRMCustomPropertySummary[];
+  scanned_companies: number;
+  truncated: boolean;
+}

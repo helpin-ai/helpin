@@ -612,10 +612,11 @@ export const workspacesService = {
 - Frontend field metadata belongs in a separate entity-specific config file and must feed a reusable builder component.
 - Backend filtering must go through a reusable ORM wrapper/query-builder package. Do not add custom operator parsing directly inside handlers.
 - Canonical operators:
-  `is`, `is_not`, `contains`, `not_contains`, `starts_with`, `ends_with`, `is_empty`, `is_not_empty`, `on`, `before`, `after`, `on_or_before`, `on_or_after`, `between`
+  `is`, `is_not`, `contains`, `not_contains`, `starts_with`, `ends_with`, `is_empty`, `is_not_empty`, `on`, `before`, `after`, `on_or_before`, `on_or_after`, `between`, `is_any_of`
 - Operator semantics:
   text filters are case-insensitive
-  enum/member/id filters allow only exact-match and empty checks
+  enum/member/id filters allow only exact-match and empty checks, plus `is_any_of`
+  `is_any_of` takes a `values` list (1–50) and matches any of them; option-style filters such as the Companies list use it, one rule per field
   date filters allow date comparisons and empty checks
   `is_empty` and `is_not_empty` do not accept a value input
   `between` requires two values

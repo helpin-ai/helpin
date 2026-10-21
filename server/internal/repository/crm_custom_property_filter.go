@@ -24,10 +24,12 @@ func ValidCRMCustomPropertyKey(key string) bool {
 
 // withCRMCustomPropertyFields returns base plus text field definitions for
 // every custom_properties.<key> field referenced by group. Unknown or unsafe
-// keys are rejected as client validation errors.
+// keys are rejected as client validation errors. dialect selects the JSON
+// list functions that let is_any_of match elements of list values.
 func withCRMCustomPropertyFields(
 	base querybuilder.Definitions,
 	column string,
+	dialect string,
 	group *model.QueryFilterGroup,
 ) (querybuilder.Definitions, error) {
 	if group == nil {
@@ -51,12 +53,36 @@ func withCRMCustomPropertyFields(
 			}
 		}
 		definitions[rule.Field] = querybuilder.FieldDefinition{
-			Expression: "(" + column + " ->> '" + key + "')",
-			Type:       querybuilder.FieldTypeText,
+			Expression:    crmCustomPropertyTextExpression(column, dialect, key),
+			Type:          querybuilder.FieldTypeText,
+			ElementSource: crmCustomPropertyElementSource(column, dialect, key),
 		}
 	}
 	if definitions == nil {
 		return base, nil
 	}
 	return definitions, nil
+}
+
+// crmCustomPropertyElementSource returns a set-returning source whose value
+// column holds the elements of a list-valued custom property, or no rows when
+// the property is not a list.
+func crmCustomPropertyElementSource(column, dialect, key string) string {
+	if dialect == "postgres" {
+		value := column + " -> '" + key + "'"
+		return "jsonb_array_elements_text(CASE WHEN jsonb_typeof(" + value + ") = 'array' THEN " + value + " ELSE '[]'::jsonb END)"
+	}
+	path := "'$." + key + "'"
+	return "json_each(CASE WHEN json_type(" + column + ", " + path + ") = 'array' THEN json_extract(" + column + ", " + path + ") ELSE '[]' END)"
+}
+
+// crmCustomPropertyTextExpression reads a custom property as text. SQLite
+// returns JSON booleans from ->> as 1 and 0, so they are spelled out to match
+// PostgreSQL's 'true' and 'false'.
+func crmCustomPropertyTextExpression(column, dialect, key string) string {
+	if dialect == "postgres" {
+		return "(" + column + " ->> '" + key + "')"
+	}
+	path := "'$." + key + "'"
+	return "(CASE json_type(" + column + ", " + path + ") WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' ELSE " + column + " ->> '" + key + "' END)"
 }
