@@ -3,11 +3,13 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/querybuilder"
 )
 
 func (s *InternalCommandService) registerCRMOperationalCommands() {
@@ -88,9 +90,11 @@ func (s *InternalCommandService) executeCRMListCompanies(ctx context.Context, me
 		return nil, fmt.Errorf("CRM company service is not configured")
 	}
 	var req struct {
-		Query         string  `json:"query"`
-		OwnerMemberID *string `json:"owner_member_id"`
-		Limit         int     `json:"limit"`
+		Query         string                  `json:"query"`
+		OwnerMemberID *string                 `json:"owner_member_id"`
+		Limit         int                     `json:"limit"`
+		Offset        int                     `json:"offset"`
+		Filter        *model.QueryFilterGroup `json:"filter"`
 	}
 	if err := json.Unmarshal(input, &req); err != nil {
 		return nil, fmt.Errorf("parse company list input: %w", err)
@@ -99,15 +103,24 @@ func (s *InternalCommandService) executeCRMListCompanies(ctx context.Context, me
 	if err != nil {
 		return nil, err
 	}
-	items, total, err := s.crmCompanyService.List(ctx, meta.WorkspaceID, model.CRMCompanyListFilters{Search: stringPtrOrNil(req.Query), OwnerMemberID: normalizeOptionalCommandString(req.OwnerMemberID)}, model.PMPagination{Page: 1, PerPage: limit})
+	if req.Offset < 0 {
+		return nil, errCommandInput("offset must be zero or greater")
+	}
+	items, total, err := s.crmCompanyService.List(ctx, meta.WorkspaceID, model.CRMCompanyListFilters{Search: stringPtrOrNil(req.Query), OwnerMemberID: normalizeOptionalCommandString(req.OwnerMemberID), Query: req.Filter}, model.PMPagination{Page: 1, PerPage: limit, Offset: &req.Offset})
 	if err != nil {
-		return nil, err
+		return nil, crmListFilterError(err)
 	}
 	result := make([]map[string]any, 0, len(items))
 	for i := range items {
-		result = append(result, compactCRMCompany(&items[i]))
+		item := compactCRMCompany(&items[i])
+		if len(items[i].CustomProperties) > 0 {
+			item["custom_properties"] = items[i].CustomProperties
+		}
+		result = append(result, item)
 	}
-	return mustJSON(map[string]any{"companies": result, "total": total}), nil
+	response := commandPaginationOutput(total, req.Offset, limit, len(result))
+	response["companies"] = result
+	return mustJSON(response), nil
 }
 
 func (s *InternalCommandService) executeCRMListPipelines(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
@@ -623,4 +636,13 @@ func compactCRMCompany(item *model.CRMCompany) map[string]any {
 }
 func compactCRMDeal(item *model.CRMDeal) map[string]any {
 	return map[string]any{"deal_id": item.ID, "display_id": item.DisplayID, "name": item.Name, "pipeline_id": item.PipelineID, "stage_id": item.StageID, "amount": item.Amount, "currency": item.Currency, "close_date": item.CloseDate, "owner_member_id": item.OwnerMemberID, "probability": item.Probability, "updated_at": item.UpdatedAt}
+}
+
+// crmListFilterError turns query-builder validation failures into input errors.
+func crmListFilterError(err error) error {
+	var validation *querybuilder.ValidationError
+	if errors.As(err, &validation) {
+		return errCommandInput("%s", validation.Message)
+	}
+	return err
 }

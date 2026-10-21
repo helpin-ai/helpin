@@ -745,38 +745,6 @@ func (s *MCPService) executeSpecialMCPTool(
 		}
 		return &MCPToolResult{Summary: "Document linked.", Data: link}, nil
 
-	case "get_crm_contact":
-		var input struct {
-			ContactID string `json:"contact_id"`
-		}
-		if err := decodeMCPArguments(arguments, &input); err != nil {
-			return nil, err
-		}
-		contact, err := s.crmContacts.GetByID(ctx, input.ContactID)
-		if err != nil {
-			return nil, err
-		}
-		if contact.WorkspaceID != principal.WorkspaceID {
-			return nil, ErrMCPNotFound
-		}
-		return &MCPToolResult{Summary: "CRM contact loaded.", Data: contact}, nil
-
-	case "get_crm_deal":
-		var input struct {
-			DealID string `json:"deal_id"`
-		}
-		if err := decodeMCPArguments(arguments, &input); err != nil {
-			return nil, err
-		}
-		deal, err := s.crmDeals.GetByID(ctx, input.DealID)
-		if err != nil {
-			return nil, err
-		}
-		if deal.WorkspaceID != principal.WorkspaceID {
-			return nil, ErrMCPNotFound
-		}
-		return &MCPToolResult{Summary: "CRM deal " + deal.Name + " loaded.", Data: deal}, nil
-
 	case "list_support_conversations":
 		var input struct {
 			Status string `json:"status"`
@@ -913,6 +881,9 @@ func (s *MCPService) executeSpecialMCPTool(
 			return result, err
 		}
 		if result, handled, err := s.executePMParityMCPTool(ctx, principal, name, arguments); handled {
+			return result, err
+		}
+		if result, handled, err := s.executeCRMMCPTool(ctx, principal, name, arguments); handled {
 			return result, err
 		}
 		return nil, ErrMCPNotFound

@@ -41,7 +41,6 @@ func parityMCPCommandRequirements() map[string]MCPToolDefinition {
 		"list_workspace_members": contextRead,
 
 		// CRM.
-		"get_crm_company":             crmRead,
 		"list_crm_companies":          crmRead,
 		"list_crm_pipelines":          crmRead,
 		"list_crm_associations":       crmRead,

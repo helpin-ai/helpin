@@ -868,9 +868,91 @@
     },
     "/crm/companies": {
       "get": {
-        "description": "List a bounded set of CRM companies in the current workspace.\n\n**Required scope:** `helpin.crm.read`.",
+        "description": "List a bounded set of CRM companies in the current workspace, with their custom properties. Use filter to segment on native fields or custom_properties.\u003ckey\u003e.\n\n**Required scope:** `helpin.crm.read`.",
         "operationId": "listCrmCompanies",
         "parameters": [
+          {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "logic": {
+                      "default": "and",
+                      "enum": [
+                        "and",
+                        "or"
+                      ],
+                      "type": "string"
+                    },
+                    "rules": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "field": {
+                            "maxLength": 100,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "operator": {
+                            "enum": [
+                              "is",
+                              "is_not",
+                              "contains",
+                              "not_contains",
+                              "starts_with",
+                              "ends_with",
+                              "is_empty",
+                              "is_not_empty",
+                              "gt",
+                              "gte",
+                              "lt",
+                              "lte",
+                              "on",
+                              "before",
+                              "after",
+                              "on_or_before",
+                              "on_or_after",
+                              "between"
+                            ],
+                            "type": "string"
+                          },
+                          "value": {
+                            "maxLength": 500,
+                            "type": "string"
+                          },
+                          "values": {
+                            "items": {
+                              "maxLength": 500,
+                              "type": "string"
+                            },
+                            "maxItems": 2,
+                            "type": "array"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "operator"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 20,
+                      "minItems": 1,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "rules"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Structured filter. Fields: name, domain, external_id, industry, headquarters, description (text); employee_count, annual_revenue (number); owner_member_id (id); created_at, updated_at (date); custom_properties.\u003ckey\u003e (text). Text matching is case-insensitive; is_empty and is_not_empty take no value; between takes two values.",
+            "in": "query",
+            "name": "filter",
+            "required": false
+          },
           {
             "description": "Maximum number of results. Defaults to 50, max 100.",
             "in": "query",
@@ -879,6 +961,16 @@
             "schema": {
               "maximum": 100,
               "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Zero-based result offset for paging.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "minimum": 0,
               "type": "integer"
             }
           },
@@ -956,11 +1048,10 @@
     },
     "/crm/companies/{company_id}": {
       "get": {
-        "description": "Get one CRM company in the current workspace.\n\n**Required scope:** `helpin.crm.read`.",
+        "description": "Get one CRM company with its custom properties. Optionally include its logged activities (notes, calls, meetings, emails), contacts, and deals.\n\n**Required scope:** `helpin.crm.read`.",
         "operationId": "getCrmCompany",
         "parameters": [
           {
-            "description": "Existing object ID.",
             "in": "path",
             "name": "company_id",
             "required": true,
@@ -968,6 +1059,26 @@
               "minLength": 1,
               "type": "string"
             }
+          },
+          {
+            "description": "Related records to return, newest first, up to 25 of each.",
+            "explode": false,
+            "in": "query",
+            "name": "include",
+            "required": false,
+            "schema": {
+              "items": {
+                "enum": [
+                  "activities",
+                  "contacts",
+                  "deals"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
           }
         ],
         "responses": {
@@ -1126,9 +1237,91 @@
     },
     "/crm/contacts": {
       "get": {
-        "description": "List CRM contacts in the workspace, optionally filtered by a case-insensitive name, email, or job-title query. Returns name, email, and job title.\n\n**Required scope:** `helpin.crm.read`.",
+        "description": "List CRM contacts in the workspace, optionally filtered by a case-insensitive name, email, or job-title query, or by a structured filter on native fields or custom_properties.\u003ckey\u003e. Returns name, email, job title, and custom properties.\n\n**Required scope:** `helpin.crm.read`.",
         "operationId": "listContacts",
         "parameters": [
+          {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "logic": {
+                      "default": "and",
+                      "enum": [
+                        "and",
+                        "or"
+                      ],
+                      "type": "string"
+                    },
+                    "rules": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "field": {
+                            "maxLength": 100,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "operator": {
+                            "enum": [
+                              "is",
+                              "is_not",
+                              "contains",
+                              "not_contains",
+                              "starts_with",
+                              "ends_with",
+                              "is_empty",
+                              "is_not_empty",
+                              "gt",
+                              "gte",
+                              "lt",
+                              "lte",
+                              "on",
+                              "before",
+                              "after",
+                              "on_or_before",
+                              "on_or_after",
+                              "between"
+                            ],
+                            "type": "string"
+                          },
+                          "value": {
+                            "maxLength": 500,
+                            "type": "string"
+                          },
+                          "values": {
+                            "items": {
+                              "maxLength": 500,
+                              "type": "string"
+                            },
+                            "maxItems": 2,
+                            "type": "array"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "operator"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 20,
+                      "minItems": 1,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "rules"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Structured filter. Fields: name, email, phone, job_title, source (text); lifecycle_stage, lead_status, portal_access (enum); owner_member_id (id); created_at, updated_at (date); custom_properties.\u003ckey\u003e (text). Text matching is case-insensitive; is_empty and is_not_empty take no value; between takes two values.",
+            "in": "query",
+            "name": "filter",
+            "required": false
+          },
           {
             "description": "Maximum number of contacts to return. Defaults to 20, max 50.",
             "in": "query",
@@ -1215,7 +1408,7 @@
     },
     "/crm/contacts/{contact_id}": {
       "get": {
-        "description": "Get one CRM contact by ID.\n\n**Required scope:** `helpin.crm.read`.",
+        "description": "Get one CRM contact with its custom properties. Optionally include its logged activities.\n\n**Required scope:** `helpin.crm.read`.",
         "operationId": "getCrmContact",
         "parameters": [
           {
@@ -1223,8 +1416,27 @@
             "name": "contact_id",
             "required": true,
             "schema": {
+              "minLength": 1,
               "type": "string"
             }
+          },
+          {
+            "description": "Related records to return, newest first, up to 25 of each.",
+            "explode": false,
+            "in": "query",
+            "name": "include",
+            "required": false,
+            "schema": {
+              "items": {
+                "enum": [
+                  "activities"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
           }
         ],
         "responses": {
@@ -1632,7 +1844,7 @@
     },
     "/crm/deals/{deal_id}": {
       "get": {
-        "description": "Get one CRM deal by ID.\n\n**Required scope:** `helpin.crm.read`.",
+        "description": "Get one CRM deal. Optionally include its logged activities.\n\n**Required scope:** `helpin.crm.read`.",
         "operationId": "getCrmDeal",
         "parameters": [
           {
@@ -1640,8 +1852,27 @@
             "name": "deal_id",
             "required": true,
             "schema": {
+              "minLength": 1,
               "type": "string"
             }
+          },
+          {
+            "description": "Related records to return, newest first, up to 25 of each.",
+            "explode": false,
+            "in": "query",
+            "name": "include",
+            "required": false,
+            "schema": {
+              "items": {
+                "enum": [
+                  "activities"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
           }
         ],
         "responses": {

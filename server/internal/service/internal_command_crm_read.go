@@ -75,17 +75,26 @@ func (s *InternalCommandService) executeListContacts(ctx context.Context, meta m
 	if err != nil {
 		return nil, err
 	}
-	contacts, total, err := s.crmContactService.List(ctx, meta.WorkspaceID, model.CRMContactListFilters{Search: stringPtrOrNil(query)}, model.PMPagination{Page: 1, PerPage: limit, Offset: &offset})
+	var filterInput struct {
+		Filter *model.QueryFilterGroup `json:"filter"`
+	}
+	if len(input) > 0 {
+		if err := json.Unmarshal(input, &filterInput); err != nil {
+			return nil, fmt.Errorf("parse contact filter: %w", err)
+		}
+	}
+	contacts, total, err := s.crmContactService.List(ctx, meta.WorkspaceID, model.CRMContactListFilters{Search: stringPtrOrNil(query), Query: filterInput.Filter}, model.PMPagination{Page: 1, PerPage: limit, Offset: &offset})
 	if err != nil {
-		return nil, fmt.Errorf("list contacts: %w", err)
+		return nil, crmListFilterError(err)
 	}
 	type contactSummary struct {
-		ID           string  `json:"id"`
-		MarkdownLink string  `json:"markdown_link"`
-		FirstName    string  `json:"first_name"`
-		LastName     *string `json:"last_name,omitempty"`
-		Email        *string `json:"email,omitempty"`
-		JobTitle     *string `json:"job_title,omitempty"`
+		ID               string      `json:"id"`
+		MarkdownLink     string      `json:"markdown_link"`
+		FirstName        string      `json:"first_name"`
+		LastName         *string     `json:"last_name,omitempty"`
+		Email            *string     `json:"email,omitempty"`
+		JobTitle         *string     `json:"job_title,omitempty"`
+		CustomProperties model.JSONB `json:"custom_properties,omitempty"`
 	}
 	summaries := make([]contactSummary, 0, len(contacts))
 	for _, c := range contacts {
@@ -93,7 +102,7 @@ func (s *InternalCommandService) executeListContacts(ctx context.Context, meta m
 		if label == "" {
 			label = commandDerefString(c.Email)
 		}
-		summaries = append(summaries, contactSummary{ID: c.ID, MarkdownLink: helpinMarkdownLink(label, "contacts", c.ID), FirstName: c.FirstName, LastName: c.LastName, Email: c.Email, JobTitle: c.JobTitle})
+		summaries = append(summaries, contactSummary{ID: c.ID, MarkdownLink: helpinMarkdownLink(label, "contacts", c.ID), FirstName: c.FirstName, LastName: c.LastName, Email: c.Email, JobTitle: c.JobTitle, CustomProperties: c.CustomProperties})
 	}
 	response := commandPaginationOutput(total, offset, limit, len(summaries))
 	response["contacts"] = summaries

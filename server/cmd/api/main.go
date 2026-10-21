@@ -1780,6 +1780,9 @@ func main() {
 	mcpService.SetAttachments(pmAttachmentService)
 	mcpService.SetDocsContentReader(docsContentRepo)
 	mcpService.SetPMComments(pmCommentService)
+	mcpService.SetCRMRecords(crmCompanyService, crmActivityService, service.NewCRMRecordUpsertService(
+		crmCompanyRepo, crmContactRepo, crmCompanyService, crmContactService, crmActivityService,
+	))
 	supportInboxService.SetAuthzService(authzService)
 
 	// Inject authorization into WebSocket handler for workspace access checks.
