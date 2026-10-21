@@ -321,7 +321,7 @@ var sampleEntitySpecs = map[string]sampleEntitySpec{
 			{"pm_task_links", "target_task_id"},
 		},
 		nullify:          []sampleColumnRef{{"support_conversations", "linked_task_id"}},
-		polymorphicTypes: []string{"task", "story"},
+		polymorphicTypes: []string{"task"},
 	},
 	model.SampleEntityPMEpic: {
 		table: "pm_epics",

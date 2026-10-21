@@ -558,44 +558,73 @@ type HelpcenterSpaceNavConfig struct {
 
 // DocsHelpcenterConfig stores workspace-level help center configuration.
 type DocsHelpcenterConfig struct {
-	ID                      string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID             string          `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex"`
-	Subdomain               string          `json:"subdomain" gorm:"not null"`
-	CustomDomain            *string         `json:"custom_domain"`
-	PublicURLMode           string          `json:"public_url_mode" gorm:"not null;default:'hosted_subdomain'"`
-	ReverseProxyHost        *string         `json:"reverse_proxy_host"`
-	ReverseProxyBasePath    *string         `json:"reverse_proxy_base_path"`
-	BrandName               string          `json:"brand_name" gorm:"not null"`
-	BrandLogoURL            *string         `json:"brand_logo_url"`
-	BrandLogoDarkURL        *string         `json:"brand_logo_dark_url"`
-	BrandColor              string          `json:"brand_color" gorm:"not null;default:'#000000'"`
-	FaviconURL              *string         `json:"favicon_url"`
-	ThemeMode               string          `json:"theme_mode" gorm:"not null;default:'system'"`
-	HeaderLinks             json.RawMessage `json:"header_links" gorm:"type:jsonb;default:'[]'"`
-	FooterConfig            json.RawMessage `json:"footer_config" gorm:"type:jsonb;default:'{}'"`
-	HomepageConfig          json.RawMessage `json:"homepage_config" gorm:"type:jsonb;default:'{}'"`
-	SpaceNavConfig          json.RawMessage `json:"space_nav_config" gorm:"type:jsonb;default:'{}'"`
-	SearchPlaceholder       *string         `json:"search_placeholder"`
-	DefaultLocale           string          `json:"default_locale" gorm:"not null;default:'en'"`
-	EnabledLocales          DocsStringArray `json:"enabled_locales" gorm:"type:text[]"`
-	ProtectedTerms          DocsStringArray `json:"protected_terms" gorm:"type:text[]"`
-	ShowLanguageSwitcher    bool            `json:"show_language_switcher" gorm:"not null;default:false"`
-	FallbackToDefaultLocale bool            `json:"fallback_to_default_locale" gorm:"not null;default:true"`
-	IsPublished             bool            `json:"is_published" gorm:"not null;default:false"`
-	ChatWidgetEnabled       bool            `json:"chat_widget_enabled" gorm:"not null;default:true"`
-	AIAnswersEnabled        bool            `json:"ai_answers_enabled" gorm:"not null;default:true"`
-	SEOTitle                *string         `json:"seo_title"`
-	SEODescription          *string         `json:"seo_description"`
-	OGTitle                 *string         `json:"og_title"`
-	OGDescription           *string         `json:"og_description"`
-	OGImageURL              *string         `json:"og_image_url"`
-	OGImageAlt              *string         `json:"og_image_alt"`
-	SupportEmail            *string         `json:"support_email"`
-	CreatedAt               time.Time       `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt               time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+	ID           string  `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID  string  `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex"`
+	Subdomain    string  `json:"subdomain" gorm:"not null"`
+	CustomDomain *string `json:"custom_domain"`
+	// Custom domain verification. The domain serves the help center only while
+	// CustomDomainLive; admins see the rest in settings, never the public.
+	CustomDomainStatus        *string         `json:"custom_domain_status,omitempty"`
+	CustomDomainToken         *string         `json:"custom_domain_token,omitempty"`
+	CustomDomainVerifiedAt    *time.Time      `json:"custom_domain_verified_at,omitempty"`
+	CustomDomainCheckedAt     *time.Time      `json:"custom_domain_checked_at,omitempty"`
+	CustomDomainLastError     *string         `json:"custom_domain_last_error,omitempty"`
+	CustomDomainFailingSince  *time.Time      `json:"custom_domain_failing_since,omitempty"`
+	CustomDomainAlertedStatus *string         `json:"-"`
+	PublicURLMode             string          `json:"public_url_mode" gorm:"not null;default:'hosted_subdomain'"`
+	ReverseProxyHost          *string         `json:"reverse_proxy_host"`
+	ReverseProxyBasePath      *string         `json:"reverse_proxy_base_path"`
+	BrandName                 string          `json:"brand_name" gorm:"not null"`
+	BrandLogoURL              *string         `json:"brand_logo_url"`
+	BrandLogoDarkURL          *string         `json:"brand_logo_dark_url"`
+	BrandColor                string          `json:"brand_color" gorm:"not null;default:'#000000'"`
+	FaviconURL                *string         `json:"favicon_url"`
+	ThemeMode                 string          `json:"theme_mode" gorm:"not null;default:'system'"`
+	HeaderLinks               json.RawMessage `json:"header_links" gorm:"type:jsonb;default:'[]'"`
+	FooterConfig              json.RawMessage `json:"footer_config" gorm:"type:jsonb;default:'{}'"`
+	HomepageConfig            json.RawMessage `json:"homepage_config" gorm:"type:jsonb;default:'{}'"`
+	SpaceNavConfig            json.RawMessage `json:"space_nav_config" gorm:"type:jsonb;default:'{}'"`
+	SearchPlaceholder         *string         `json:"search_placeholder"`
+	DefaultLocale             string          `json:"default_locale" gorm:"not null;default:'en'"`
+	EnabledLocales            DocsStringArray `json:"enabled_locales" gorm:"type:text[]"`
+	ProtectedTerms            DocsStringArray `json:"protected_terms" gorm:"type:text[]"`
+	ShowLanguageSwitcher      bool            `json:"show_language_switcher" gorm:"not null;default:false"`
+	FallbackToDefaultLocale   bool            `json:"fallback_to_default_locale" gorm:"not null;default:true"`
+	IsPublished               bool            `json:"is_published" gorm:"not null;default:false"`
+	ChatWidgetEnabled         bool            `json:"chat_widget_enabled" gorm:"not null;default:true"`
+	AIAnswersEnabled          bool            `json:"ai_answers_enabled" gorm:"not null;default:true"`
+	SEOTitle                  *string         `json:"seo_title"`
+	SEODescription            *string         `json:"seo_description"`
+	OGTitle                   *string         `json:"og_title"`
+	OGDescription             *string         `json:"og_description"`
+	OGImageURL                *string         `json:"og_image_url"`
+	OGImageAlt                *string         `json:"og_image_alt"`
+	SupportEmail              *string         `json:"support_email"`
+	CreatedAt                 time.Time       `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt                 time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (DocsHelpcenterConfig) TableName() string { return "docs_helpcenter_configs" }
+
+// Help center custom domain states.
+const (
+	// HelpcenterDomainPending waits for the ownership record and DNS.
+	HelpcenterDomainPending = "pending"
+	// HelpcenterDomainVerified is proven and points at Helpin.
+	HelpcenterDomainVerified = "verified"
+	// HelpcenterDomainFailing was verified but no longer points at Helpin. It
+	// keeps serving so a DNS blip doesn't take the help center offline.
+	HelpcenterDomainFailing = "failing"
+)
+
+// CustomDomainLive reports whether the custom domain may serve the help
+// center: it is set and has been verified.
+func (c *DocsHelpcenterConfig) CustomDomainLive() bool {
+	if c == nil || c.CustomDomain == nil || strings.TrimSpace(*c.CustomDomain) == "" || c.CustomDomainStatus == nil {
+		return false
+	}
+	return *c.CustomDomainStatus == HelpcenterDomainVerified || *c.CustomDomainStatus == HelpcenterDomainFailing
+}
 
 // DocsHelpcenterArticle is a 1:1 extension table for help center articles.
 type DocsHelpcenterArticle struct {

@@ -38,10 +38,13 @@ export function getNotificationTaskRunTarget(notification: Notification): { task
   }
 }
 
-export function getExternalMCPNotificationTarget(notification: Notification, workspaceSlug: string): string | null {
-  if (!workspaceSlug || notification.entity_type !== 'external_mcp_server') {
-    return null
-  }
-
-  return buildSettingsRoutePath(workspaceSlug, 'external-mcp')
+/**
+ * getSettingsNotificationTarget opens the settings page a notification is
+ * about: external MCP servers, or the help center's custom domain.
+ */
+export function getSettingsNotificationTarget(notification: Notification, workspaceSlug: string): string | null {
+  if (!workspaceSlug) return null
+  if (notification.entity_type === 'external_mcp_server') return buildSettingsRoutePath(workspaceSlug, 'external-mcp')
+  if (notification.entity_type === 'helpcenter_config') return buildSettingsRoutePath(workspaceSlug, 'helpcenter')
+  return null
 }

@@ -35,6 +35,8 @@ type Handlers struct {
 	Assets              *handler.AssetHandler
 	Health              *handler.HealthHandler
 	Auth                *handler.AuthHandler
+	CustomerPortal      *handler.CustomerPortalHandler
+	CustomerPortalAdmin *handler.CustomerPortalAdminHandler
 	Passkey             *handler.PasskeyHandler
 	Organization        *handler.OrganizationHandler
 	Workspace           *handler.WorkspaceHandler
@@ -323,6 +325,30 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		}
 
 		// ---- Public routes ----
+		if h.CustomerPortal != nil {
+			r.Route("/public/portal/{slug}", func(r chi.Router) {
+				if h.WidgetRateLimit != nil {
+					r.Use(h.WidgetRateLimit)
+				}
+				r.Get("/", h.CustomerPortal.Config)
+				r.Post("/auth/magic-link", h.CustomerPortal.RequestLink)
+				r.Post("/auth/exchange", h.CustomerPortal.Exchange)
+				r.Post("/intake/session", h.CustomerPortal.StartAnonymousIntake)
+				r.Post("/intake/attachments", h.CustomerPortal.UploadAnonymousAttachment)
+				r.Patch("/intake/attachments/{attachmentId}/confirm", h.CustomerPortal.ConfirmAnonymousAttachment)
+				r.Post("/intake/requests", h.CustomerPortal.CreateAnonymousRequest)
+				r.Get("/session", h.CustomerPortal.Session)
+				r.Delete("/session", h.CustomerPortal.Logout)
+				r.Get("/requests", h.CustomerPortal.Requests)
+				r.Post("/attachments", h.CustomerPortal.UploadAttachment)
+				r.Post("/requests/{reference}/attachments", h.CustomerPortal.UploadAttachment)
+				r.Patch("/attachments/{attachmentId}/confirm", h.CustomerPortal.ConfirmAttachment)
+				r.Patch("/requests/{reference}/attachments/{attachmentId}/confirm", h.CustomerPortal.ConfirmAttachment)
+				r.Get("/requests/{reference}", h.CustomerPortal.RequestDetail)
+				r.Post("/requests/{reference}/replies", h.CustomerPortal.Reply)
+				r.Post("/requests", h.CustomerPortal.CreateRequest)
+			})
+		}
 		r.Get("/auth/config", h.Auth.GetConfig)
 		r.Post("/auth/signup", h.Auth.Signup)
 		r.Post("/auth/verify-email", h.Auth.VerifyEmail)
@@ -414,6 +440,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Route("/hc/{subdomain}", func(r chi.Router) {
 			r.Get("/config", h.Docs.PublicGetConfig)
 			r.Get("/bootstrap", h.Docs.PublicGetBootstrap)
+			if h.CustomerPortal != nil {
+				r.Get("/portal", h.CustomerPortal.HelpcenterPortal)
+			}
 			r.Get("/{locale}/spaces", h.Docs.PublicGetSpaces)
 			r.Get("/{locale}/spaces/{spaceSlug}/navigation", h.Docs.PublicGetSpaceNavigation)
 			r.Get("/{locale}/spaces/{spaceSlug}/api-references", h.Docs.PublicListAPIReferences)
@@ -1173,6 +1202,14 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/installations/reveal-secret", h.SupportInbox.RevealWidgetSecret)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/installations/rotate-secret", h.SupportInbox.RotateWidgetSecret)
 
+				// Customer portal access
+				if h.CustomerPortalAdmin != nil {
+					r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/portal/access", h.CustomerPortalAdmin.AccessSummary)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/portal/contacts/{contactId}/access", h.CustomerPortalAdmin.ContactAccess)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Put("/inbox/portal/contacts/{contactId}/access", h.CustomerPortalAdmin.UpdateContactAccess)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/conversations/{id}/portal-confirmation", h.CustomerPortalAdmin.ResendIntakeConfirmation)
+				}
+
 				// Canned responses
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/canned-responses", h.SupportInbox.ListCannedResponses)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/canned-responses/search", h.SupportInbox.SearchCannedResponses)
@@ -1188,6 +1225,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				// File attachments
 				if h.SupportAttachment != nil {
+					r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/attachments/policy", h.SupportAttachment.Policy)
 					r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{convId}/attachments/{attachmentId}/content", h.SupportAttachment.Content)
 					r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{convId}/attachments", h.SupportAttachment.Create)
 					r.With(requirePerm(authorization.PermSupportEdit)).Patch("/inbox/attachments/{attachmentId}/confirm", h.SupportAttachment.ConfirmUpload)
@@ -1671,6 +1709,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// Help Center Config — docs.admin
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/helpcenter/config", h.Docs.GetHelpcenterConfig)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Put("/helpcenter/config", h.Docs.UpdateHelpcenterConfig)
+				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/helpcenter/config/verify-domain", h.Docs.VerifyHelpcenterCustomDomain)
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/helpcenter/locales", h.Docs.GetHelpcenterLocales)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Put("/helpcenter/locales", h.Docs.UpdateHelpcenterLocales)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/helpcenter/upload", h.Docs.UploadHelpcenterAsset)

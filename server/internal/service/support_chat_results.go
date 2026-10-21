@@ -92,6 +92,7 @@ func (s *SupportChatService) closeSupportChatRunIfTerminal(ctx context.Context, 
 	if err != nil {
 		return true
 	}
+	*settings = effectiveSupportAISettings(*settings, conversation)
 	closeRun, reason := supportChatRunClosureDecision(run, conversation, now, *settings)
 	if conversation != nil && conversation.AIControlVersion > 0 && derefString(conversation.AIActiveRunID) != run.ID {
 		closeRun, reason = true, "ownership_changed"
@@ -326,6 +327,7 @@ func (s *SupportChatService) reviveDeferredConversation(ctx context.Context, con
 	if err != nil {
 		return
 	}
+	*settings = effectiveSupportAISettings(*settings, conv)
 	agentID := strings.TrimSpace(derefString(settings.AIAgentID))
 	if agentID == "" {
 		return
@@ -398,6 +400,7 @@ func (s *SupportChatService) filterChatDeferredMessages(ctx context.Context, row
 		if err != nil {
 			continue
 		}
+		*settings = effectiveSupportAISettings(*settings, conv)
 		if message == nil || model.SupportAIConversationBlocked(conv) || !model.SupportAIReplyAllowed(*settings, conv, message) {
 			_ = s.processingRepo.MarkCompleted(ctx, row.ID, nil, 0)
 			continue

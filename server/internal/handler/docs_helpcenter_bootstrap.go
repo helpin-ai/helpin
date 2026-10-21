@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
 // PublicGetBootstrap returns the configuration and locale-specific spaces needed
@@ -45,7 +46,8 @@ func (h *DocsHandler) publicHelpcenterConfigResponse(
 	r *http.Request,
 	cfg *model.DocsHelpcenterConfig,
 ) publicHelpcenterConfigResponse {
-	resp := publicHelpcenterConfigResponse{DocsHelpcenterConfig: cfg, PublicWidgetURL: h.publicWidgetURL, PublicSDKURL: h.publicSDKURL}
+	// The public never sees an unverified custom domain or verification detail.
+	resp := publicHelpcenterConfigResponse{DocsHelpcenterConfig: service.PublicHelpcenterConfig(cfg), PublicWidgetURL: h.publicWidgetURL, PublicSDKURL: h.publicSDKURL}
 	if !cfg.ChatWidgetEnabled || h.supportWidgetConfig == nil {
 		return resp
 	}

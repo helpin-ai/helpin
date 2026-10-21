@@ -28,6 +28,7 @@
       "@helpin-ai/widget-core/emoji-catalog": ["../../packages/widget-core/src/components/emoji-catalog.ts"],
       "@helpin/plugin-push": ["./src-tauri/tauri-plugin-helpin-push/guest-js/index.ts"],
       "@/lib/supportInboxFilters": ["../../frontend/src/lib/supportInboxFilters.ts"],
+      "@/lib/appLoadRecovery": ["../../frontend/src/lib/appLoadRecovery.ts"],
       "@/lib/supportInboxRouting": ["../../frontend/src/lib/supportInboxRouting.ts"],
       "@/lib/favicon": ["../../frontend/src/lib/favicon.ts"],
       "@/lib/teamMemberAvatar": ["../../frontend/src/lib/teamMemberAvatar.ts"],

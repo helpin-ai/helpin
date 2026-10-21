@@ -51,6 +51,12 @@ func (p *NotificationAccessPolicy) CanReceive(ctx context.Context, userID string
 		module = model.ModuleCRM
 	case "doc", "document":
 		module = model.ModuleDocs
+	case "helpcenter_config":
+		// Custom domain alerts go to people who manage the help center.
+		module = model.ModuleDocs
+		if !p.authz.Can(actor, authorization.PermDocsAdmin) {
+			return false, nil
+		}
 	case "external_mcp_server":
 		// External tools live in settings; using an agent does not require Automation access.
 		if !p.authz.Can(actor, authorization.PermSettingsRead) {

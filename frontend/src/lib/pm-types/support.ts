@@ -2,7 +2,7 @@
 
 export type ConversationStatus = 'open' | 'waiting_on_customer' | 'resolved' | 'spam';
 export type ConversationPriority = 'low' | 'medium' | 'high' | 'urgent';
-export type TicketSource = 'widget' | 'internal' | 'email' | 'api';
+export type TicketSource = 'widget' | 'internal' | 'email' | 'api' | 'portal';
 export type MessageSenderType = 'customer' | 'user' | 'agent' | 'ai';
 export type SupportConversationTriageStatus = 'not_run' | 'suggested' | 'auto_moved' | 'dismissed' | 'overridden';
 export type SupportConversationTriageSource = 'rule' | 'ai';
@@ -45,6 +45,9 @@ export interface SupportConversation {
   merge_participants?: string[];
   list_last_message_preview?: string;
   anonymized_at?: string | null;
+  /** Whether the request appears in the customer portal. */
+  portal_visible?: boolean;
+  portal_visibility_changed_at?: string | null;
   id: string;
   workspace_id: string;
   mailbox_id?: string | null;
@@ -633,7 +636,7 @@ export interface SupportMessage {
   system_event_type?: SupportSystemEventType;
   is_internal: boolean;
   metadata?: string;
-  via_channel?: 'email' | 'widget' | null;
+  via_channel?: 'email' | 'widget' | 'portal' | null;
   email_notified_at?: string;
   widget_read_at?: string | null;
   email_read_at?: string;
@@ -1241,6 +1244,13 @@ export interface SupportInboxSettings {
   widget_name: string;
   widget_avatar_url: string;
   widget_help_space_ids: string[];
+  portal_enabled: boolean;
+  portal_requests_only: boolean;
+  portal_anonymous_intake_enabled: boolean;
+  portal_intake_enabled: boolean;
+  portal_access_mode?: CustomerPortalAccessMode;
+  portal_ai_mode?: 'off' | 'internal_note' | 'ai_first';
+  portal_ai_agent_id?: string | null;
   csat_enabled: boolean;
   file_uploads_enabled: boolean;
   force_visitor_identity: boolean;
@@ -1312,6 +1322,24 @@ export interface SupportTranslation {
  error_code?: string;
  created_at: string;
  expires_at?: string;
+}
+
+export type CustomerPortalAccessMode = 'approved_contacts' | 'any_verified_email';
+export type CustomerPortalContactAccessValue = 'allowed' | 'blocked';
+
+export interface CustomerPortalAccessSummary {
+  access_mode: CustomerPortalAccessMode;
+  allowed_contacts: number;
+  conflicts: number;
+  conflict_emails: string[];
+  anonymous_intake_delivery_available: boolean;
+  /** Where customers reach the portal: the help center at /requests, or the app. */
+  public_url?: string;
+}
+
+export interface CustomerPortalContactAccess {
+  portal_access: CustomerPortalContactAccessValue | null;
+  shared_email_contacts: number;
 }
 
 export interface SupportConversationMerge {

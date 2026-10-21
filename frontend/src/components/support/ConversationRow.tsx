@@ -1,5 +1,5 @@
 import { memo, useState, type KeyboardEvent } from 'react';
-import { ArrowTurnBackwardIcon, BotIcon, CheckmarkCircle02Icon, Mail01Icon, Message01Icon, MoreHorizontalIcon, StickyNote01Icon } from '@/lib/icons';
+import { ArrowTurnBackwardIcon, BotIcon, CheckmarkCircle02Icon, GlobeIcon, Mail01Icon, Message01Icon, MoreHorizontalIcon, StickyNote01Icon } from '@/lib/icons';
 import type { TicketSource } from '@/lib/pm-types/support';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
@@ -38,6 +38,7 @@ type ChannelMeta = { icon: typeof Message01Icon; label: string };
 const CHANNEL_META: Record<TicketSource, ChannelMeta | null> = {
   widget: { icon: Message01Icon, label: 'Live chat' },
   email: { icon: Mail01Icon, label: 'Email' },
+  portal: { icon: GlobeIcon, label: 'Customer portal' },
   api: null,
   internal: null,
 };

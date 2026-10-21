@@ -30,6 +30,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner';
 import { useDocsHelpcenterLocales, useUpdateDocsHelpcenterLocales } from '@/hooks/queries';
 import { HelpcenterLocalesCard } from '@/components/settings/helpcenter/HelpcenterLocalesCard';
+import { HelpcenterCustomDomainStatus, type HelpcenterDomainVerification } from '@/components/settings/helpcenter/HelpcenterCustomDomainStatus';
 import { HelpcenterTranslationsTable } from '@/components/settings/helpcenter/HelpcenterTranslationsTable';
 import { StickyFormFooter } from '@/components/settings/StickyFormFooter';
 import { SortableFooterLinkRow, SortableHeaderLinkRow, SortableSocialLinkRow } from '@/components/settings/helpcenter/HelpcenterSortableRows';
@@ -593,6 +594,8 @@ export function HelpcenterTab({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [config, setConfig] = useState<ConfigState>(DEFAULT_CONFIG);
+  // The saved custom domain's verification, as the server last reported it.
+  const [domainVerification, setDomainVerification] = useState<HelpcenterDomainVerification | null>(null);
   // Snapshot of config at the time of last load or save. Used to
   // detect unsaved changes via JSON comparison.
   const [savedSnapshot, setSavedSnapshot] = useState('');
@@ -630,6 +633,7 @@ export function HelpcenterTab({
       const res = await docsService.getHelpcenterConfig(workspaceId);
       if (res.data) {
         const d = res.data;
+        setDomainVerification(d);
         const loaded: ConfigState = {
           subdomain: d.subdomain ?? '',
           custom_domain: d.custom_domain ?? '',
@@ -770,6 +774,7 @@ export function HelpcenterTab({
     if (res.error) {
       toast.error(res.error);
     } else {
+      if (res.data) setDomainVerification(res.data);
       toast.success('Help center settings saved');
       setSavedSnapshot(JSON.stringify(config));
     }
@@ -1448,17 +1453,21 @@ export function HelpcenterTab({
                 autoComplete="off"
                 spellCheck={false}
               />
-              <div className="rounded-md border border-border/60 bg-muted/40 p-3 text-[11px] leading-relaxed text-muted-foreground">
-                <p className="mb-1.5 font-medium text-foreground">DNS setup</p>
-                <p>
-                  Create a <span className="font-mono text-foreground">CNAME</span> record on your domain pointing to{' '}
-                  <span className="font-mono text-foreground">helpin.center</span>. SSL certificates are issued automatically once DNS resolves.
-                </p>
-                <p className="mt-1.5">
-                  Example: <span className="font-mono text-foreground">help.yourcompany.com</span> →{' '}
-                  <span className="font-mono text-foreground">helpin.center</span>
-                </p>
-              </div>
+              <HelpcenterCustomDomainStatus
+                verification={domainVerification}
+                editedDomain={config.custom_domain}
+                editable
+                onCheck={async () => {
+                  const { docsService } = await import('@/lib/services/docsService');
+                  const checked = await docsService.verifyHelpcenterCustomDomain(workspaceId);
+                  if (checked.error || !checked.data) {
+                    toast.error(checked.error || 'Could not check DNS. Try again.');
+                    return null;
+                  }
+                  setDomainVerification(checked.data);
+                  return checked.data;
+                }}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="hc-support-email">Support Email</Label>

@@ -57,6 +57,11 @@ export default defineConfig(({ mode }) => {
           replacement: path.resolve(__dirname, '../../frontend/src/lib/supportInboxFilters.ts'),
         },
         {
+          // The shared inbox store guards app refreshes during release recovery.
+          find: '@/lib/appLoadRecovery',
+          replacement: path.resolve(__dirname, '../../frontend/src/lib/appLoadRecovery.ts'),
+        },
+        {
           find: '@/lib/supportInboxRouting',
           replacement: path.resolve(__dirname, '../../frontend/src/lib/supportInboxRouting.ts'),
         },

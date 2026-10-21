@@ -146,6 +146,56 @@ func (r *SupportAttachmentRepository) widgetAttachmentScope(
 	return query.Where("conversation_id IS NULL OR conversation_id = ?", strings.TrimSpace(*conversationID))
 }
 
+// Portal uploads are bound to intake or exactly one request conversation.
+func (r *SupportAttachmentRepository) PortalAttachmentOwned(ctx context.Context, id, workspaceID, sessionID, conversationID string) bool {
+	query := r.db.WithContext(ctx).Model(&model.SupportAttachment{}).
+		Where("id = ? AND workspace_id = ? AND session_id = ? AND uploaded_by_type = ? AND message_id IS NULL", id, workspaceID, sessionID, "customer")
+	if conversationID == "" {
+		query = query.Where("conversation_id IS NULL")
+	} else {
+		query = query.Where("conversation_id = ?", conversationID)
+	}
+	var count int64
+	return query.Count(&count).Error == nil && count == 1
+}
+
+func (r *SupportAttachmentRepository) portalScope(ctx context.Context, ids []string, workspaceID, sessionID, conversationID string) *gorm.DB {
+	query := r.db.WithContext(ctx).Model(&model.SupportAttachment{}).
+		Where("id IN ? AND workspace_id = ? AND session_id = ? AND uploaded_by_type = ? AND is_uploaded = ? AND message_id IS NULL", ids, workspaceID, sessionID, "customer", true)
+	if conversationID == "" {
+		return query.Where("conversation_id IS NULL")
+	}
+	return query.Where("conversation_id = ?", conversationID)
+}
+
+func (r *SupportAttachmentRepository) ValidatePortalAttachments(ctx context.Context, ids []string, workspaceID, sessionID, conversationID string) error {
+	if len(ids) == 0 || len(uniqueNonEmptyStrings(ids)) != len(ids) {
+		return fmt.Errorf("attachment_ids are invalid")
+	}
+	var count int64
+	if err := r.portalScope(ctx, ids, workspaceID, sessionID, conversationID).Count(&count).Error; err != nil {
+		return err
+	}
+	if count != int64(len(ids)) {
+		return fmt.Errorf("one or more attachments are unavailable")
+	}
+	return nil
+}
+
+func (r *SupportAttachmentRepository) LinkPortalAttachments(ctx context.Context, ids []string, workspaceID, sessionID, expectedConversationID, conversationID, messageID string) error {
+	if len(ids) == 0 || len(uniqueNonEmptyStrings(ids)) != len(ids) {
+		return fmt.Errorf("attachment_ids are invalid")
+	}
+	result := r.portalScope(ctx, ids, workspaceID, sessionID, expectedConversationID).Updates(map[string]any{"conversation_id": conversationID, "message_id": messageID})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != int64(len(ids)) {
+		return fmt.Errorf("one or more attachments are unavailable")
+	}
+	return nil
+}
+
 func uniqueNonEmptyStrings(values []string) []string {
 	seen := make(map[string]struct{}, len(values))
 	result := make([]string, 0, len(values))
