@@ -78,7 +78,9 @@ jobs:
           node --test community/tests/installer.test.mjs
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
           "$(go env GOPATH)/bin/actionlint" -shellcheck= .github/workflows/*.yml
-          shellcheck -S error community/*.sh community/postgres/*.sh community/tests/*.sh scripts/check-community-*.sh scripts/ci/*.sh
+          shellcheck -S error community/*.sh community/postgres/*.sh community/tests/*.sh scripts/check-community-*.sh scripts/ci/*.sh .github/scripts/*.sh
+          bash .github/scripts/release-version.test.sh
+          bash .github/scripts/build-or-promote-image.test.sh
 
   schema:
     name: fresh-ledger-matches-api
