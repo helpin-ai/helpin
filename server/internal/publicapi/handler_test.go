@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -132,6 +133,24 @@ func TestQueryParametersAreTyped(t *testing.T) {
 	var payload envelope
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil || payload.Summary != "ok" || payload.Links["app"] == "" {
 		t.Fatalf("envelope = %#v err %v", payload, err)
+	}
+}
+
+func TestObjectQueryParametersAreJSON(t *testing.T) {
+	backend := &fakeBackend{}
+	handler := newTestHandler(t, backend, nil)
+	filter := url.QueryEscape(`{"rules":[{"field":"custom_properties.fit","operator":"is","value":"yes"}]}`)
+	rec := do(handler, http.MethodGet, "/crm/companies?filter="+filter, "", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body)
+	}
+	got, _ := backend.args["filter"].(map[string]any)
+	rules, _ := got["rules"].([]any)
+	if backend.tool != "list_crm_companies" || len(rules) != 1 {
+		t.Fatalf("args = %#v", backend.args)
+	}
+	if rec := do(handler, http.MethodGet, "/crm/companies?filter=not-json", "", nil); rec.Code != http.StatusBadRequest {
+		t.Fatalf("malformed filter status %d", rec.Code)
 	}
 }
 

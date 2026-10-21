@@ -70,8 +70,11 @@ func (r *CRMContactRepository) List(ctx context.Context, workspaceID string, fil
 		)
 	}
 	if filters.Query != nil {
-		var err error
-		query, err = querybuilder.ApplyGORM(query, filters.Query, crmContactFilterDefinitions)
+		definitions, err := withCRMCustomPropertyFields(crmContactFilterDefinitions, "crm_contacts.custom_properties", filters.Query)
+		if err != nil {
+			return nil, 0, err
+		}
+		query, err = querybuilder.ApplyGORM(query, filters.Query, definitions)
 		if err != nil {
 			return nil, 0, err
 		}

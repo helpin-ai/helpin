@@ -188,9 +188,14 @@ func buildOperation(route Route, tool service.MCPToolDefinition) (map[string]any
 			if description := description(properties[name]); description != "" {
 				parameter["description"] = description
 			}
-			if prop, _ := properties[name].(map[string]any); prop["type"] == "array" {
+			prop, _ := properties[name].(map[string]any)
+			switch prop["type"] {
+			case "array":
 				parameter["style"] = "form"
 				parameter["explode"] = false
+			case "object":
+				delete(parameter, "schema")
+				parameter["content"] = map[string]any{"application/json": map[string]any{"schema": paramSchema(prop)}}
 			}
 			parameters = append(parameters, parameter)
 			continue
