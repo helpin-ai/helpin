@@ -1,0 +1,85 @@
+name: Warm Go build cache
+
+# Pull request CI can restore caches saved on its base branch but not those
+# saved by other pull requests. setup-go keys its cache on go.sum alone, so once
+# that key exists it is never saved again and the build cache goes stale until
+# go.sum changes; Go jobs then recompile most of the server on every run.
+# Compile what CI compiles on each develop push, save the cache under a
+# commit-specific key, and keep only the newest one to respect the 10 GB
+# repository cache budget.
+on:
+  push:
+    branches: [develop]
+    paths:
+      - server/**
+      - .go-version
+      - .github/workflows/warm-go-cache.yml
+  schedule:
+    - cron: '41 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: warm-go-cache-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go build cache
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: .go-version
+          cache: false
+      - name: Compute cache key prefix
+        env:
+          PREFIX: go-build-${{ runner.os }}-${{ hashFiles('.go-version', 'server/go.sum') }}-
+        run: echo "CACHE_PREFIX=$PREFIX" >> "$GITHUB_ENV"
+      - name: Restore previous build cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ env.CACHE_PREFIX }}${{ github.sha }}
+          restore-keys: ${{ env.CACHE_PREFIX }}
+      - name: Compile what server CI compiles
+        working-directory: server
+        env:
+          CGO_ENABLED: '1'
+        run: |
+          go mod download
+          go vet ./...
+          go vet -tags ee ./...
+          go build ./cmd/clickhouse-migrate
+          go build -tags ee ./cmd/api ./cmd/temporal-worker ./cmd/migrate
+          go test -tags ee -run '^$' ./...
+      - name: Save build cache
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ env.CACHE_PREFIX }}${{ github.sha }}
+      - name: Delete superseded build caches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
+          KEEP: ${{ env.CACHE_PREFIX }}${{ github.sha }}
+        run: |
+          gh api --paginate "repos/$REPO/actions/caches?ref=$REF&key=go-build-" \
+            --jq ".actions_caches[] | select(.key != \"$KEEP\") | .id" |
+            while read -r id; do
+              gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null && echo "Deleted cache $id"
+            done
