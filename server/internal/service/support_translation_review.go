@@ -77,7 +77,7 @@ func (s *SupportInboxService) RunTranslationReview(ctx context.Context) {
 func (s *SupportInboxService) reviewTranslatedSample(ctx context.Context, item *model.SupportTranslation) {
 	bounded, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	route := AICompletionRoute{Provider: "openrouter", Model: "deepseek/deepseek-v4.1-flash", OpenRouterProvider: "coreweave/fp8", ServiceTier: defaultAICompletionServiceTier}
+	route := openRouterDeepSeekTranslationRoute
 	if strings.Contains(item.Model, "deepseek") {
 		route = AICompletionRoute{Provider: "openrouter", Model: "openai/gpt-oss-120b", OpenRouterProvider: "cerebras/fp16", ServiceTier: defaultAICompletionServiceTier}
 	}

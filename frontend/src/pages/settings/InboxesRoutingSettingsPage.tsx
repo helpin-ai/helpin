@@ -1,10 +1,12 @@
 import { SupportEmailForwardingTab, SupportEmailSendersTab, ConversationRoutingTab } from '@/components/settings';
+import { ConversationMergeSetting } from '@/components/settings/ConversationMergeSetting';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SettingsPageFrame } from './SettingsPageFrame';
 
 export const INBOXES_ROUTING_TABS = [
   { value: 'inboxes', label: 'Inboxes' },
   { value: 'routing', label: 'Routing & Assignment' },
+  { value: 'merging', label: 'Merging' },
   { value: 'email', label: 'Email Forwarding' },
   { value: 'senders', label: 'Sender Addresses' },
 ] as const;
@@ -21,15 +23,17 @@ export function normalizeInboxesRoutingTab(value: unknown): InboxesRoutingTab {
 export function InboxesRoutingSettingsPage({
   tab,
   createInbox = false,
+  createSender = false,
   onTabChange,
 }: {
   tab: InboxesRoutingTab;
   createInbox?: boolean;
+  createSender?: boolean;
   onTabChange: (tab: string) => void;
 }) {
   return (
     <SettingsPageFrame section="inboxes-routing">
-      {({ workspaceId, currentWorkspaceName, currentWorkspaceWebsiteUrl }) => (
+      {({ workspaceId, currentWorkspaceName, currentWorkspaceWebsiteUrl, permissions }) => (
         <Tabs value={tab} onValueChange={onTabChange}>
           <TabsList variant="line">
             {INBOXES_ROUTING_TABS.map(({ value, label }) => (
@@ -44,11 +48,17 @@ export function InboxesRoutingSettingsPage({
           <TabsContent value="routing" className="mt-4">
             <ConversationRoutingTab workspaceId={workspaceId} section="routing" />
           </TabsContent>
+          <TabsContent value="merging" className="mt-4 space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Conversations from the same customer can be merged by default.
+            </p>
+            <ConversationMergeSetting workspaceId={workspaceId} />
+          </TabsContent>
           <TabsContent value="email" className="mt-4">
             <SupportEmailForwardingTab workspaceId={workspaceId} />
           </TabsContent>
           <TabsContent value="senders" className="mt-4">
-            <SupportEmailSendersTab workspaceId={workspaceId} workspaceName={currentWorkspaceName} workspaceWebsiteUrl={currentWorkspaceWebsiteUrl} />
+            <SupportEmailSendersTab createSender={createSender} workspaceId={workspaceId} workspaceName={currentWorkspaceName} workspaceWebsiteUrl={currentWorkspaceWebsiteUrl} canManage={permissions.has('support.admin')} />
           </TabsContent>
         </Tabs>
       )}

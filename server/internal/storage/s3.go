@@ -209,6 +209,22 @@ func (s *S3Client) GeneratePresignedInlineGetURL(key string) (string, error) {
 	return result.URL, nil
 }
 
+// OpenObject opens a stored object for streaming. The caller must close the body.
+func (s *S3Client) OpenObject(ctx context.Context, key string) (io.ReadCloser, int64, error) {
+	result, err := s.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("open S3 object: %w", err)
+	}
+	size := int64(-1)
+	if result.ContentLength != nil {
+		size = *result.ContentLength
+	}
+	return result.Body, size, nil
+}
+
 // GetObject downloads an object from S3 and returns its contents.
 func (s *S3Client) GetObject(ctx context.Context, key string) ([]byte, error) {
 	result, err := s.client.GetObject(ctx, &s3.GetObjectInput{

@@ -32,12 +32,12 @@ it.each(['on', 'off'])('uses an accessible %s action that preserves automatic la
   mocks.mode = mode;
   mocks.save.mockResolvedValue({});
   const container = render();
-  const label = mode === 'on' ? 'Pause live translation' : 'Resume live translation';
+  const label = mode === 'on' ? 'Pause live translation' : 'Enable live translation';
   const action = container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
   expect(action).not.toBeNull();
   expect(container.querySelector('[role="switch"]')).toBeNull();
-  expect(container.textContent).toContain('Live translate from');
-  expect(container.textContent).not.toContain('↔');
+  expect(container.textContent).toContain('Live translation');
+  expect(container.textContent).toContain('↔');
   expect(container.querySelector('select')?.selectedOptions[0].textContent).toContain('Chinese (Simplified) (detected)');
   await act(async () => { action!.click(); });
   expect(mocks.save).toHaveBeenCalledWith('ws', 'conv', mode !== 'on', '');

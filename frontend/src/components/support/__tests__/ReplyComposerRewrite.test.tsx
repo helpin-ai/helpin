@@ -8,6 +8,7 @@ import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { Editor } from '@tiptap/core';
 import { clearReplyDeliveryDraft, loadReplyDelivery, saveReplyDelivery, saveReplySubject } from '../replyDelivery';
+import { prepareAppRefresh } from '@/lib/appLoadRecovery';
 
 const mocks = vi.hoisted(() => ({
   translation: false,
@@ -17,6 +18,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/hooks/queries/useSupport', () => ({
   useRewriteSupportDraft: () => ({ isPending: false, mutateAsync: mocks.rewrite }),
   useSendMessage: () => ({ isPending: false, mutateAsync: mocks.send }),
+  useUpdateSupportNote: () => mocks.mutation,
   useConversation: () => ({ data: mocks.conversation }),
   useCannedResponses: () => ({ data: mocks.empty }),
   useCreateCannedResponse: () => mocks.mutation,
@@ -74,6 +76,18 @@ describe('ReplyComposer AI loading state', () => {
     mocks.translation = false;
     saveReplySubject('ws-1', 'conv-1');
     clearReplyDeliveryDraft('ws-1', 'conv-1');
+    sessionStorage.clear();
+  });
+
+  it('flushes freshly typed formatted content before a user refreshes', () => {
+    setup();
+    const editor = (container.querySelector('.tiptap') as HTMLElement & { editor: Editor }).editor;
+    act(() => { editor.commands.setContent({ type: 'doc', content: [{ type: 'paragraph', content: [
+      { type: 'text', text: 'Just typed', marks: [{ type: 'bold' }] },
+      { type: 'text', text: ' reply' },
+    ] }] }); });
+    act(() => { expect(prepareAppRefresh()).toBeNull(); });
+    expect(JSON.parse(localStorage.getItem('support_inbox_drafts')!)['conv-1']).toBe('**Just typed** reply');
   });
 
   it('sends a visible portal reply without a widget session or email delivery', async () => {
@@ -150,6 +164,23 @@ describe('ReplyComposer AI loading state', () => {
     act(() => useSupportInboxStore.setState({ replyMode: 'note' }));
     await act(async () => { button('Add Note').click(); });
     expect(mocks.send.mock.calls[0][0].auto_translate).toBeUndefined();
+  });
+
+  it('shows merged email recipients once in the original delivery notice', () => {
+    setup(true);
+    mocks.conversation = { ...mocks.conversation, merge_email_recipients: [' CUSTOMER@example.com ', 'other@example.com', 'OTHER@example.com'], email_cc: ['other@example.com', 'copy@example.com'] };
+    act(() => { root.render(<TooltipProvider><ReplyComposer workspaceId="ws-1" conversationId="conv-1" emailDeliveryEnabled /></TooltipProvider>); });
+    const notices = [...container.querySelectorAll('p')].filter(p => p.textContent?.startsWith('Reply will '));
+    expect(notices).toHaveLength(1);
+    expect(notices[0].textContent).toBe('Reply will only be emailed to customer@example.com, other@example.com. Cc: copy@example.com.');
+  });
+
+  it('lists a shared address only once after merging conversations from the same customer', () => {
+    setup(true);
+    mocks.conversation = { ...mocks.conversation, merge_email_recipients: ['customer@example.com', ' CUSTOMER@example.com '] };
+    act(() => { root.render(<TooltipProvider><ReplyComposer workspaceId="ws-1" conversationId="conv-1" emailDeliveryEnabled /></TooltipProvider>); });
+    const notice = [...container.querySelectorAll('p')].find(p => p.textContent?.startsWith('Reply will '));
+    expect(notice?.textContent).toBe('Reply will only be emailed to customer@example.com.');
   });
 
   it('sends email without a subject editor or a stale draft subject override', async () => {

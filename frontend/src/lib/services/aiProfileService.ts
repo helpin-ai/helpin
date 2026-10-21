@@ -21,6 +21,8 @@ export interface AIProfileRoute {
 }
 
 export interface AIProfile {
+  // Legacy API field name: controls visibility in all model pickers, not execution.
+  hidden_from_ask_agent?: boolean;
   primary_policy?: AIConnectionPolicyView;
   fallback_policy?: AIConnectionPolicyView;
   id: string;
@@ -41,7 +43,17 @@ export type SaveAIProfile = Pick<
 const path = (workspace: string, suffix = "") =>
   `/ai-profiles${suffix}?workspace_id=${encodeURIComponent(workspace)}`;
 
+export interface AISettings {
+  default_profile_id: string | null;
+  personal_default_profile_id?: string | null;
+}
+
 export const aiProfileService = {
+  setPersonalDefault: (workspace: string, default_profile_id: string | null) =>
+    api.put(`/ai-settings/personal?workspace_id=${encodeURIComponent(workspace)}`, { default_profile_id }),
+  enableModel: (workspace: string, value: {connection_id: string; model: string; name: string}) => api.post<AIProfile>(path(workspace, '/models'), value),
+  setVisibility: (workspace: string, profile: AIProfile, hidden: boolean) =>
+    api.put<AIProfile>(path(workspace, `/${encodeURIComponent(profile.id)}/visibility`), {revision: profile.revision, hidden_from_ask_agent: hidden}),
   list: (workspace: string) => api.get<AIProfile[]>(path(workspace, "/")),
   save: (workspace: string, value: SaveAIProfile, id?: string) =>
     id
@@ -52,7 +64,7 @@ export const aiProfileService = {
       `${path(workspace, `/${encodeURIComponent(profile.id)}`)}&revision=${profile.revision}`,
     ),
   settings: (workspace: string) =>
-    api.get<{ default_profile_id: string | null }>(
+    api.get<AISettings>(
       `/ai-settings?workspace_id=${encodeURIComponent(workspace)}`,
     ),
   setDefault: (workspace: string, default_profile_id: string | null) =>

@@ -1,0 +1,11 @@
+interface:
+  display_name: "Support onboarding"
+  short_description: "Set up Helpin support with MCP and browser handoffs"
+  default_prompt: "Use $helpin-support-onboarding to configure customer support in my Helpin workspace."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "helpin"
+      description: "Workspace-bound Helpin setup inspection and product tools"
+      transport: "streamable_http"
+      url: "https://mcp.helpin.ai/mcp"

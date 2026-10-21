@@ -33,6 +33,8 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import {
+  useWorkspaceAccess,
+  usePermissions,
   useAutomationSkillCatalog,
   useCreateWorkspaceSkill,
   useImportWorkspaceSkill,
@@ -129,7 +131,7 @@ function SkillCard({
   onDelete?: () => void;
   onPreview?: () => void;
 }) {
-  const isEditable = skill.source_kind === 'workspace';
+  const isEditable = !!onEdit;
   const isDeletable = skill.source_kind === 'workspace' || skill.source_kind === 'imported';
   const hasInstructions = !!skill.instructions?.trim();
   const meta = skillMetaLine(skill);
@@ -200,8 +202,8 @@ function SourceSection({
 }: {
   sourceKind: string;
   skills: SkillCatalogEntry[];
-  onEdit: (skill: SkillCatalogEntry) => void;
-  onDelete: (skill: SkillCatalogEntry) => void;
+  onEdit?: (skill: SkillCatalogEntry) => void;
+  onDelete?: (skill: SkillCatalogEntry) => void;
   onPreview: (skill: SkillCatalogEntry) => void;
 }) {
   const label = SOURCE_GROUP_LABELS[sourceKind] ?? sourceKind;
@@ -213,13 +215,13 @@ function SourceSection({
         <span aria-hidden className="text-muted-foreground/40">·</span>
         <span className="tabular-nums text-muted-foreground/60">{skills.length}</span>
       </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {skills.map((skill) => (
           <SkillCard
             key={skill.id ?? skill.key}
             skill={skill}
-            onEdit={() => onEdit(skill)}
-            onDelete={() => onDelete(skill)}
+            onEdit={onEdit ? () => onEdit(skill) : undefined}
+            onDelete={onDelete ? () => onDelete(skill) : undefined}
             onPreview={() => onPreview(skill)}
           />
         ))}
@@ -420,7 +422,7 @@ function CreateSkillDialog({
 // Edit Skill Dialog
 // ---------------------------------------------------------------------------
 
-function EditSkillDialog({
+export function EditSkillDialog({
   workspaceId,
   skill,
   open,
@@ -435,13 +437,19 @@ function EditSkillDialog({
   const [form, setForm] = useState<UpdateWorkspaceSkillRequest>({
     title: skill.title,
     description: skill.description,
-    instructions: '',
+    instructions: skill.instructions ?? '',
   });
 
+  const defaults = skill.default_content;
+  const canRestore = !!defaults && (form.title !== defaults.title || form.description !== defaults.description || form.instructions !== defaults.instructions);
+  const valid = !!form.title?.trim() && !!form.description?.trim() && !!form.instructions?.trim();
+  const handleRestore = () => {
+    if (defaults) setForm({ ...defaults, restore_default: true });
+  };
+
   const handleUpdate = async () => {
-    if (!skill.id) return;
     try {
-      await updateMutation.mutateAsync({ skillId: skill.id, data: form });
+      await updateMutation.mutateAsync({ skillId: skill.id ?? skill.key, data: { ...form, expected_version: skill.version_key } });
       toast.success(`Skill "${displaySkillTitle(skill)}" updated`);
       onOpenChange(false);
     } catch (e) {
@@ -482,24 +490,30 @@ function EditSkillDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <RequiredFieldLabel htmlFor="edit-skill-instructions" tooltip="The full behavior guidance an agent reads when it chooses this skill during a run. Leave empty only if you want to keep the current instructions unchanged.">
+              <RequiredFieldLabel htmlFor="edit-skill-instructions" tooltip="The guidance agents read when this skill is loaded. Changes apply to future skill loads in this workspace.">
                 Instructions
               </RequiredFieldLabel>
               <Textarea
                 id="edit-skill-instructions"
                 rows={18}
                 className="min-h-[22rem] resize-y font-mono text-xs leading-relaxed"
-                placeholder="Leave empty to keep existing instructions"
+                placeholder="Describe how agents should use this skill"
                 value={form.instructions ?? ''}
                 onChange={(e) => setForm({ ...form, instructions: e.target.value })}
               />
             </div>
           </div>
           <DialogFooter className="border-t border-border/60 px-6 py-3">
+            {defaults && (
+              <Button variant="ghost" size="sm" className="sm:mr-auto" onClick={handleRestore} disabled={!canRestore || updateMutation.isPending}
+                title={skill.source_kind === 'built_in' ? 'Load the latest built-in instructions. Save to apply.' : 'Load the original skill. Save to apply.'}>
+                Restore to default
+              </Button>
+            )}
             <DialogClose asChild>
               <Button variant="outline" size="sm">Cancel</Button>
             </DialogClose>
-            <Button size="sm" onClick={handleUpdate} disabled={updateMutation.isPending}>
+            <Button size="sm" onClick={handleUpdate} disabled={!valid || updateMutation.isPending}>
               {updateMutation.isPending ? 'Saving...' : 'Save'}
             </Button>
           </DialogFooter>
@@ -670,6 +684,9 @@ export function SkillCatalogContent({
   const [editSkill, setEditSkill] = useState<SkillCatalogEntry | null>(null);
   const [deleteSkill, setDeleteSkill] = useState<SkillCatalogEntry | null>(null);
   const [previewSkill, setPreviewSkill] = useState<SkillCatalogEntry | null>(null);
+  const { data: access } = useWorkspaceAccess(workspaceId);
+  const permissions = usePermissions(access);
+  const canEdit = permissions.hasAny('pm.edit', 'docs.edit', 'crm.edit', 'support.edit');
   const { data: catalog, isLoading: loading } = useAutomationSkillCatalog(workspaceId);
 
   const filtered = useMemo(() => {
@@ -702,7 +719,7 @@ export function SkillCatalogContent({
     <AutomationShell
       title="Skill Catalog"
       description="Reusable prompt fragments agents compose at runtime."
-      actions={(
+      actions={canEdit && (
         <>
           <QuietTextAction className="gap-1.5" onClick={() => setImportOpen(true)}>
             <Upload01Icon className="h-3.5 w-3.5" />
@@ -751,8 +768,8 @@ export function SkillCatalogContent({
               key={sourceKind}
               sourceKind={sourceKind}
               skills={skills}
-              onEdit={(skill) => setEditSkill(skill)}
-              onDelete={(skill) => setDeleteSkill(skill)}
+              onEdit={canEdit ? (skill) => setEditSkill(skill) : undefined}
+              onDelete={canEdit ? (skill) => setDeleteSkill(skill) : undefined}
               onPreview={(skill) => setPreviewSkill(skill)}
             />
           ))}

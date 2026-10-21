@@ -177,12 +177,14 @@ func (s *MCPService) GetAuthorizationRequest(ctx context.Context, userID string,
 		})
 	}
 	return &MCPAuthorizationRequest{
-		Client:              *client,
-		Query:               query,
-		RequestedScopes:     requestedScopes,
-		ProposedToolsets:    proposedToolsets,
-		Workspaces:          options,
-		ReadOnlyRecommended: true,
+		Client:           *client,
+		Query:            query,
+		RequestedScopes:  requestedScopes,
+		ProposedToolsets: proposedToolsets,
+		Workspaces:       options,
+		// Honor the client's requested mode; workspace policy still constrains
+		// every grant, and the user can choose read-only before approving.
+		ReadOnlyRecommended: !hasMCPWriteScope(requestedScopes),
 	}, nil
 }
 

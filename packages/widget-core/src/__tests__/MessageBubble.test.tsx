@@ -84,6 +84,39 @@ describe('MessageBubble', () => {
     expect(queryByText('Test Doc')).toBeTruthy();
   });
 
+  it('keeps hovered sources open on click and exposes public links without a heading', () => {
+    const { container, getByRole, queryByText } = render(<MessageBubble message={createMessage({
+      role: 'ai',
+      sources: [{ docId: 'doc-link', title: 'Public guide', snippet: '', confidence: 0.9, language: 'en', url: 'https://help.example.com/articles/guide' }],
+    })} />);
+    fireEvent.mouseEnter(container.querySelector('.helpin-sources-popover')!);
+    const trigger = getByRole('button', { name: 'Based on 1 source' });
+    fireEvent.click(trigger);
+    const link = getByRole('link', { name: 'Public guide' });
+    expect(link.getAttribute('href')).toBe('https://help.example.com/articles/guide');
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(queryByText('Sources')).toBeNull();
+    fireEvent.mouseDown(link);
+    expect(getByRole('dialog', { name: 'Sources' })).toBeTruthy();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(container.querySelector('.helpin-sources-popover-card')).toBeNull();
+  });
+
+  it('leaves sources without safe web URLs as plain text', () => {
+    const { getByRole, queryAllByRole, getByText } = render(<MessageBubble message={createMessage({
+      role: 'ai',
+      sources: [
+        { docId: 'missing', title: 'No URL', snippet: '', confidence: 0.9, language: 'en' },
+        { docId: 'unsafe', title: 'Unsafe URL', snippet: '', confidence: 0.9, language: 'en', url: 'javascript:alert(1)' },
+      ],
+    })} />);
+    fireEvent.click(getByRole('button', { name: 'Based on 2 sources' }));
+    expect(queryAllByRole('link')).toHaveLength(0);
+    expect(getByText('No URL')).toBeTruthy();
+    expect(getByText('Unsafe URL')).toBeTruthy();
+  });
+
   it('uses source attribution instead of exposing an exact confidence score', () => {
     const message = createMessage({
       role: 'ai',

@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { unwrap } from '@/lib/queryUtils';
 import { queryKeys } from '@/lib/queryKeys';
-import { supportMessageClientID } from '@/lib/supportMessagePages';
+import { compareSupportMessages, supportMessageClientID } from '@/lib/supportMessagePages';
 import { useAuthStore } from '@/stores/authStore';
 import type { SupportMessage } from '@/lib/pmTypes';
 
@@ -17,7 +17,7 @@ export function mergePendingSupportMessages(messages: SupportMessage[], remote?:
   const optimistic = messages.filter(m => m.pending_send && !m.pending_send_id && !pendingClients.has(supportMessageClientID(m)));
   return [...confirmed.values(), ...pending, ...optimistic]
     .filter(m => !m.pending_send || !confirmedClients.has(supportMessageClientID(m)))
-    .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+    .sort(compareSupportMessages);
 }
 
 export function usePendingSupportSends(workspaceId: string, conversationId: string, messages: SupportMessage[]) {

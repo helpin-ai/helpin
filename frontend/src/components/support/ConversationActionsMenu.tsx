@@ -1,3 +1,4 @@
+import { ConversationMergeDialog } from './ConversationMergeDialog';
 import { LiveTranslateBar } from './LiveTranslateBar';
 import { useWorkspaceAccess } from '@/hooks/queries/useSession';
 function TranslationDialogControls({workspaceId, conversationId}: {workspaceId: string; conversationId: string}) {
@@ -5,6 +6,7 @@ function TranslationDialogControls({workspaceId, conversationId}: {workspaceId: 
  return <LiveTranslateBar workspaceId={workspaceId} conversationId={conversationId} editable={!!access?.permissions?.includes('support.edit')} forceVisible />;
 }
 import { useSupportAIControl } from './SupportAIControl';
+import { isAIActiveConversation } from './helpers';
 import { type ReactNode, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -12,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuSub,
@@ -92,6 +95,8 @@ export function ConversationActionsMenu({
   onSubjectDialogOpenChange,
 }: ConversationActionsMenuProps) {
   const confirm = useConfirm();
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const { data: mergeAccess } = useWorkspaceAccess(workspaceId);
   const [translationOpen, setTranslationOpen] = useState(false);
   const aiControl = useSupportAIControl(conversation);
   const markConversationRead = useMarkConversationRead(workspaceId);
@@ -100,6 +105,10 @@ export function ConversationActionsMenu({
   const updateStatus = useUpdateConversationStatus(workspaceId);
   const deleteConversation = useDeleteConversation(workspaceId);
   const moveConversation = useMoveConversation(workspaceId);
+  const aiHandling = !['resolved', 'spam'].includes(conversation.status) && isAIActiveConversation(conversation);
+  const availableMoveOptions = moveOptions.filter((option) =>
+    option.id !== (conversation.mailbox_id ?? 'shared') || (option.id === 'shared' && aiHandling),
+  );
   const workspaceSlug = useWorkspaceStore((s) => s.currentWorkspace?.slug);
   const selectedConversationId = useSupportInboxStore((s) => s.selectedConversationId);
   const selectConversation = useSupportInboxStore((s) => s.selectConversation);
@@ -205,45 +214,45 @@ export function ConversationActionsMenu({
 
   return (
     <>
+      {mergeOpen && <ConversationMergeDialog workspaceId={workspaceId} conversations={[conversation]} open={mergeOpen} onOpenChange={setMergeOpen} />}
       <DropdownMenu open={open} onOpenChange={onOpenChange}>
         <DropdownMenuTrigger asChild>
           {trigger}
         </DropdownMenuTrigger>
         <DropdownMenuContent align={align} className="w-64">
-          <DropdownMenuItem onClick={() => setTranslationOpen(true)} className={itemClassName}>
-            <LanguageCircleIcon className={iconClassName} />
-            Live Translate
-          </DropdownMenuItem>
-          {aiControl.item && <>{aiControl.item}<DropdownMenuSeparator /></>}
-          <DropdownMenuItem onClick={handleToggleReadState} className={itemClassName}>
-            <MailOpenIcon className={iconClassName} />
-            {isUnread ? 'Mark as read' : 'Mark as unread'}
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={handleCopyLink} className={itemClassName}>
-            <Link01Icon className={iconClassName} />
-            Copy link
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setTranscriptDialogOpen(true)} className={itemClassName}>
-            <Mail01Icon className={iconClassName} />
-            Email transcript
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={handleUpdateSubject} className={itemClassName}>
-            <PencilEdit01Icon className={iconClassName} />
-            Set subject
-          </DropdownMenuItem>
-          {moveOptions.length > 0 && (
-            <>
-              <DropdownMenuSeparator />
+          <DropdownMenuGroup aria-label="Sharing">
+            <DropdownMenuItem onClick={handleCopyLink} className={itemClassName}>
+              <Link01Icon className={iconClassName} />
+              Copy link
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={!!conversation.merged_into_id || !!conversation.merge_participants?.length} onClick={() => setTranscriptDialogOpen(true)} className={itemClassName}>
+              <Mail01Icon className={iconClassName} />
+              Email transcript
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup aria-label="Conversation management">
+            <DropdownMenuItem onClick={handleToggleReadState} className={itemClassName}>
+              <MailOpenIcon className={iconClassName} />
+              {isUnread ? 'Mark as read' : 'Mark as unread'}
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={!!conversation.merged_into_id} onClick={handleUpdateSubject} className={itemClassName}>
+              <PencilEdit01Icon className={iconClassName} />
+              Set subject
+            </DropdownMenuItem>
+            {!conversation.merged_into_id && availableMoveOptions.length > 0 && (
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger className={itemClassName}>
                   <FolderInputIcon className={iconClassName} />
                   Move to inbox
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent className="w-48">
-                  {moveOptions.map((option) => (
+                  {availableMoveOptions.map((option) => (
                     <DropdownMenuItem
                       key={option.id}
                       className={itemClassName}
+                      disabled={moveConversation.isPending}
+                      title={option.id === 'shared' && aiHandling ? 'Move here and pause AI replies and follow-ups.' : undefined}
                       onClick={() => {
                         moveConversation.mutate({
                           conversationId: conversation.id,
@@ -251,7 +260,7 @@ export function ConversationActionsMenu({
                         }, {
                           onSuccess: () => {
                             onConversationMoved?.(option);
-                            toast.success(`Moved to ${option.name}`);
+                            toast.success(`Moved to ${option.name}${option.id === 'shared' && aiHandling ? '. AI paused.' : ''}`);
                           },
                         });
                       }}
@@ -262,37 +271,54 @@ export function ConversationActionsMenu({
                   ))}
                 </DropdownMenuSubContent>
               </DropdownMenuSub>
-            </>
-          )}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            className={
-              conversation.status === 'spam'
-                ? itemClassName
-                : `${itemClassName} text-destructive focus:text-destructive`
-            }
-            onClick={handleToggleSpam}
-          >
-            {conversation.status === 'spam' ? (
-              <>
-                <InboxIcon className={iconClassName} />
-                Restore to inbox
-              </>
-            ) : (
-              <>
-                <OctagonXIcon className={iconClassName} />
-                Mark as spam
-              </>
             )}
-          </DropdownMenuItem>
+            {mergeAccess?.permissions.includes('support.merge') && !conversation.merged_into_id && !conversation.anonymized_at && (
+              <DropdownMenuItem onSelect={() => setMergeOpen(true)} className={itemClassName}>
+                <Link01Icon className={iconClassName} />
+                Merge into…
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuGroup>
           <DropdownMenuSeparator />
-          <DropdownMenuItem
-            className={`${itemClassName} text-destructive focus:text-destructive`}
-            onClick={() => { void handleDelete(); }}
-          >
-            <Delete01Icon className={iconClassName} />
-            Delete conversation
-          </DropdownMenuItem>
+          <DropdownMenuGroup aria-label="Assistance">
+            <DropdownMenuItem disabled={!!conversation.merged_into_id} onClick={() => setTranslationOpen(true)} className={itemClassName}>
+              <LanguageCircleIcon className={iconClassName} />
+              Live Translate
+            </DropdownMenuItem>
+            {!conversation.merged_into_id && aiControl.item}
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup aria-label="Spam and deletion">
+            <DropdownMenuItem
+              className={
+                conversation.status === 'spam'
+                  ? itemClassName
+                  : `${itemClassName} text-destructive focus:text-destructive`
+              }
+              disabled={!!conversation.merged_into_id}
+              onClick={handleToggleSpam}
+            >
+              {conversation.status === 'spam' ? (
+                <>
+                  <InboxIcon className={iconClassName} />
+                  Restore to inbox
+                </>
+              ) : (
+                <>
+                  <OctagonXIcon className={iconClassName} />
+                  Mark as spam
+                </>
+              )}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className={`${itemClassName} text-destructive focus:text-destructive`}
+              disabled={!!conversation.merged_into_id}
+              onClick={() => { void handleDelete(); }}
+            >
+              <Delete01Icon className={iconClassName} />
+              Delete conversation
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
       {aiControl.confirmation}

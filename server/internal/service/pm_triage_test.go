@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/decision"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/observability"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
@@ -22,6 +24,47 @@ type pmTriageTestProvider struct {
 	calls  int
 	states []string
 	during func()
+}
+
+func TestPMTriageDecisionMetrics(t *testing.T) {
+	svc, _, _, _ := setupPMTriageService(t)
+	metrics := observability.NewMetrics()
+	svc.SetMetrics(metrics)
+	for range 2 {
+		if _, err := svc.Analyze(pmTriageMemberContext(), "workspace", "task", "source"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	response := httptest.NewRecorder()
+	metrics.Handler().ServeHTTP(response, httptest.NewRequest("GET", "/metrics", nil))
+	for _, outcome := range []string{"ready", "cached"} {
+		want := `helpin_ai_decisions_total{operation="pm_triage",outcome="` + outcome + `"} 1`
+		if !strings.Contains(response.Body.String(), want) {
+			t.Fatalf("missing metric %s", want)
+		}
+	}
+}
+
+func TestPMTriageMetricsReportFailedShadowCooldown(t *testing.T) {
+	svc, provider, _, _ := setupPMTriageService(t)
+	svc.config.Mode = "shadow"
+	provider.err = errors.New("provider unavailable")
+	metrics := observability.NewMetrics()
+	svc.SetMetrics(metrics)
+	if _, err := svc.Analyze(pmTriageMemberContext(), "workspace", "task", "source"); err == nil {
+		t.Fatal("expected provider error")
+	}
+	if _, err := svc.Analyze(pmTriageMemberContext(), "workspace", "task", "source"); err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	metrics.Handler().ServeHTTP(response, httptest.NewRequest("GET", "/metrics", nil))
+	for _, outcome := range []string{"error", "failed"} {
+		want := `helpin_ai_decisions_total{operation="pm_triage",outcome="` + outcome + `"} 1`
+		if !strings.Contains(response.Body.String(), want) {
+			t.Fatalf("missing metric %s", want)
+		}
+	}
 }
 
 func (p *pmTriageTestProvider) DecideMany(_ context.Context, state string, questions map[string]decision.Question) (*decision.Result, error) {

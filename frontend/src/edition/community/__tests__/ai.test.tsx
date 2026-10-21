@@ -1,6 +1,10 @@
 // @vitest-environment jsdom
-import { expect, it } from 'vitest'
+import { sharedAIModelsPricing } from '@/components/agents/AIModelsPricingContext'
+import { expect, it, vi } from 'vitest'
 import { aiUsagePricingText } from '../ai'
+
+// Keep the shared component on Community pricing even when this file runs in the EE suite.
+vi.mock('@edition/ai', () => vi.importActual('../ai'))
 
 it('tells community users that Helpin adds no fee', () => {
   const text = aiUsagePricingText({ mode: 'community', funding_mode: 'customer_unbilled' })
@@ -11,4 +15,12 @@ it('tells community users that Helpin adds no fee', () => {
 it('stays silent for a commercial snapshot the community build cannot price', () => {
   expect(aiUsagePricingText({ mode: 'ee', funding_mode: 'helpin_hosted' })).toBeNull()
   expect(aiUsagePricingText(undefined)).toBeNull()
+})
+
+it('only summarizes pricing when every listed connection has a known allowed policy', () => {
+  const policy = { allowed: true, pricing: { mode: 'community' as const, funding_mode: 'customer_unbilled' } }
+  expect(sharedAIModelsPricing([policy, policy])).toBe(aiUsagePricingText(policy.pricing))
+  expect(sharedAIModelsPricing([policy, undefined])).toBeNull()
+  expect(sharedAIModelsPricing([policy, { allowed: false }])).toBeNull()
+  expect(sharedAIModelsPricing([])).toBeNull()
 })

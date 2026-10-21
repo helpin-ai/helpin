@@ -863,6 +863,7 @@ func main() {
 		supportInboxTriageService.SetJevService(jevService)
 		supportJevService = jevService
 	}
+	supportTagJobs := service.NewSupportTagJobService(repository.NewSupportTagJobRepository(db), supportMessageRepo, supportConversationRepo, supportJevService, editionServices.Entitlements)
 
 	jevProductDecisions, jevProductErr := service.NewJevDecisionService(pmJevProvider, repository.NewJevDecisionRepository(db), repository.NewAIExecutionUsageRepository(db), cfg.JevProductPolicies, strings.Split(cfg.JevWorkspaceIDs, ","))
 	if jevProductErr != nil {
@@ -870,7 +871,7 @@ func main() {
 	}
 	jevProductDecisions.SetMetrics(metrics)
 	translationRoute := service.AICompletionRoute{Provider: "openrouter", Model: "openai/gpt-oss-120b", OpenRouterProvider: "cerebras/fp16"}
-	supportInboxService.SetTranslations(repository.NewSupportTranslationRepository(db), supportLLMProvider, jevProductDecisions, translationRoute, supportLLMRouter.HasChatProvider("openrouter")).
+	supportInboxService.SetTranslations(repository.NewSupportTranslationRepository(db), supportLLMProvider, translationRoute, supportLLMRouter.HasChatProvider("openrouter")).
 		SetTranslationProviderConfigured(supportLLMRouter.HasChatProvider("openrouter"))
 	supportInboxService.SetTranslationMetrics(metrics)
 	pmTriageService, pmTriageErr := service.NewPMTriageService(service.PMTriageConfig{
@@ -880,6 +881,7 @@ func main() {
 	if pmTriageErr != nil {
 		fatalWithSentry("configure PM Jev", pmTriageErr)
 	}
+	pmTriageService.SetMetrics(metrics)
 
 	pmTaskService.SetTriageService(pmTriageService)
 	supportInboxService.SetTriageService(supportInboxTriageService)
@@ -1371,6 +1373,7 @@ func main() {
 	commandService.SetDocsBlockService(docsBlockService)
 	commandService.SetSupportDependencies(supportMessageRepo, supportConversationRepo, wsPublisher)
 	commandService.SetSupportAttachmentRepository(supportAttachmentRepo)
+	commandService.SetSupportMediaAnalyzer(supportLLMProvider)
 	commandService.SetSupportOperationalServices(supportInboxService, supportTagService)
 	commandService.SetCRMReadServices(crmContactService, crmSignalService)
 	commandService.SetCRMOperationalServices(crmCompanyService, crmAssociationService)
@@ -1770,6 +1773,8 @@ func main() {
 			SupportEnabled:       cfg.MCPSupportEnabled,
 		},
 	)
+	mcpService.SetSupportSetup(setupService)
+	mcpService.SetWorkspaceSetup(setupService)
 	mcpService.SetDocsLifecycle(docsDocumentService, docsHelpcenterService, docsEmbeddingService)
 	mcpService.SetDocsChangeProposals(docsChangeProposalService)
 	mcpService.SetAttachments(pmAttachmentService)
@@ -1998,7 +2003,7 @@ func main() {
 			supportEventService,
 			service.NewSupportCoverageDraftService(supportCoverageRepo, docsDocumentService, docsContentService, docsVersionService, llmProvider),
 			supportCoverageClusterRebuildService,
-		).SetCoverageV2Service(service.NewSupportCoverageV2Service(supportCoverageV2Repo).SetRolloutPolicy(supportCoverageRolloutPolicy)),
+		).SetCoverageV2Service(service.NewSupportCoverageV2Service(supportCoverageV2Repo).SetRolloutPolicy(supportCoverageRolloutPolicy).SetTemporalClient(temporalClient)),
 		TLSAsk: handler.NewTLSAskHandler(tlsAskService),
 	}
 
@@ -2232,9 +2237,21 @@ func main() {
 	// Durable inbound processing does not depend on outbound Postmark/Redis configuration.
 	inboundCtx, inboundCancel := context.WithCancel(context.Background())
 	defer inboundCancel()
+	supportTagJobsDone := make(chan struct{})
+	go func() {
+		defer close(supportTagJobsDone)
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				observability.CaptureRecovered(recovered)
+				slog.Error("support tagging worker stopped unexpectedly")
+			}
+		}()
+		supportTagJobs.Run(inboundCtx)
+	}()
 	go supportInboxService.RunLiveTranslate(inboundCtx)
 	go supportInboxService.RunLiveTranslate(inboundCtx)
 	go supportInboxService.RunTranslationReview(inboundCtx)
+	go supportInboxService.RunMergeReconciliation(inboundCtx)
 	go supportInboxService.RunPendingSupportSends(inboundCtx)
 	go supportInboxService.RunPendingSupportSends(inboundCtx)
 	go emailFallbackService.StartInboundWorker(inboundCtx, "email")
@@ -2397,6 +2414,11 @@ func main() {
 		slog.Warn("help center domain checks did not stop before shutdown timeout")
 	}
 	inboundCancel()
+	select {
+	case <-supportTagJobsDone:
+	case <-time.After(6 * time.Second):
+		slog.Warn("support tagging worker did not stop before shutdown timeout")
+	}
 	if emailFallbackCancel != nil {
 		emailFallbackCancel()
 	}

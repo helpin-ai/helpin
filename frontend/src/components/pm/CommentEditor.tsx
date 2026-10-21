@@ -1,3 +1,4 @@
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
@@ -151,6 +152,7 @@ export function CommentEditor({
     }
     skipNextCleanupRef.current = true
     editorRef.current.commands.clearContent()
+    initialHtmlRef.current = editorRef.current.getHTML()
   }, [onSubmit, loading, getContent, uploadedFiles.length])
 
   const handleSubmitRef = useRef(handleSubmit)
@@ -300,6 +302,15 @@ export function CommentEditor({
 
   const editorRef = useRef(editor)
   editorRef.current = editor
+  const initialHtmlRef = useRef<string | null>(null)
+  if (editor && initialHtmlRef.current === null) initialHtmlRef.current = editor.getHTML()
+  useUnsavedChangesGuard(
+    () => loading ||
+      rewriting ||
+      uploadedFiles.length > 0 ||
+      Boolean(editorRef.current && (initialContent ? editorRef.current.getHTML() !== initialHtmlRef.current : !editorRef.current.isEmpty)),
+    'Post or discard your comment before refreshing.',
+  )
 
   useEffect(() => {
     if (!editor) return

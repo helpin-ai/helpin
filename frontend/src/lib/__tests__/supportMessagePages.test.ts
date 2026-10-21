@@ -31,6 +31,17 @@ function page(ids: string[], nextCursor?: string): SupportMessagePage {
 }
 
 describe('support message page cache', () => {
+  it('orders late realtime rows like history, preserving submillisecond precision and ID ties', () => {
+    const rows = [
+      { ...message('reply-03'), created_at: '2026-10-13T12:00:00.123457Z' },
+      { ...message('pause-02'), created_at: '2026-10-13T12:00:00.123456Z' },
+      { ...message('customer-01'), created_at: '2026-10-13T12:00:00.12Z' },
+      { ...message('reply-04'), created_at: '2026-10-13T14:00:00.123457+02:00' },
+    ]
+    const live = rows.reduce((data, row) => appendMessageToNewestPage(data, row), seedSupportMessagePages([]))
+    expect(flattenSupportMessagePages(live).map(m => m.id)).toEqual(['customer-01', 'pause-02', 'reply-03', 'reply-04'])
+    expect(flattenSupportMessagePages(seedSupportMessagePages([...rows].reverse()))).toEqual(flattenSupportMessagePages(live))
+  })
   it('flattens fetched pages into chronological order', () => {
     const data = {
       pages: [page(['msg-03', 'msg-04'], 'older'), page(['msg-01', 'msg-02'])],
@@ -102,7 +113,7 @@ describe('support message page cache', () => {
 describe('joined status delivery', () => {
   it('keeps the joined event before its exact reply before and after confirmation', () => {
     const pending = { ...message('client-01'), sender_type: 'user' as const, client_message_id: 'client-01' }
-    const other = { ...message('other-02'), sender_type: 'user' as const, content: pending.content, client_message_id: 'client-other' }
+    const other = { ...message('other-02'), created_at: '2026-08-18T10:00:00Z', sender_type: 'user' as const, content: pending.content, client_message_id: 'client-other' }
     const joined = { ...message('join-03'), message_type: 'system', system_event_type: 'teammate_joined',
       metadata: JSON.stringify({ reply_client_message_id: pending.client_message_id }) }
     const confirmed = { ...pending, id: 'saved-04', client_message_id: undefined, metadata: JSON.stringify({ client_message_id: pending.client_message_id }) }

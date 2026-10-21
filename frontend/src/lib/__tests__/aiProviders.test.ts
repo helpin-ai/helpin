@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest'
 import {
   catalogLabel,
+  modelNameWithThinking,
   connectionStatusInfo,
   connectionStatusMeta,
   modelCatalogFor,
@@ -74,4 +75,12 @@ it.each([
   const all = groups.flatMap(group => group.models)
   expect(new Set(all.map(model => model.selectionModel)).size).toBe(all.length)
   for (const id of ids) expect(catalogLabel(provider, id)).toBeTruthy()
+})
+
+it('appends saved thinking levels without guessing defaults or repeating an existing suffix', () => {
+  expect(modelNameWithThinking('GPT 6 Astra', 'low')).toBe('GPT 6 Astra - Low')
+  expect(modelNameWithThinking('Review model', 'xhigh')).toBe('Review model - Extra high')
+  expect(modelNameWithThinking('GPT 6 Astra')).toBe('GPT 6 Astra')
+  expect(modelNameWithThinking('GPT 6 Astra', 'default')).toBe('GPT 6 Astra')
+  expect(modelNameWithThinking('GPT 6 Astra - Low', 'low')).toBe('GPT 6 Astra - Low')
 })

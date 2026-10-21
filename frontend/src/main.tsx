@@ -11,12 +11,16 @@ import { clearClientSession, useAuthStore } from '@/stores/authStore'
 import { startTokenRefreshTimer, stopTokenRefreshTimer, setupVisibilityRefresh } from '@/lib/api'
 import { HelpinIdentitySync } from '@/components/HelpinIdentitySync'
 import { RoutePendingState } from '@/components/layout/RoutePendingState'
+import { AppLoadError } from '@/components/layout/AppLoadError'
+import { installAppLoadRecovery } from '@/lib/appLoadRecovery'
 import { identifyAnalyticsUser, initializeAppAnalytics } from '@/lib/analytics'
 import { routeTree } from './routeTree.gen'
 import 'streamdown/styles.css'
 import './index.css'
 
 configureSessionStorage(createCookieSessionStorage())
+const removeAppLoadRecovery = installAppLoadRecovery()
+if (import.meta.hot) import.meta.hot.dispose(removeAppLoadRecovery)
 initializeAppAnalytics()
 
 function normalizePathname(pathname: string) {
@@ -49,6 +53,7 @@ const router = createRouter({
     },
   },
   defaultPendingComponent: RoutePendingState,
+  defaultErrorComponent: AppLoadError,
   defaultPendingMs: 120,
   defaultPendingMinMs: 300,
   defaultNotFoundComponent: () => {

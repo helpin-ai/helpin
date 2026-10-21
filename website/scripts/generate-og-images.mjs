@@ -12,14 +12,12 @@ const markSrc = `data:image/png;base64,${mark.toString('base64')}`;
 const markWhite = await readFile(resolve(websiteRoot, 'public/brand/helpin-icon-white-128.png'));
 const markWhiteSrc = `data:image/png;base64,${markWhite.toString('base64')}`;
 
-// Website cards use a quiet, monochrome dark theme (near-black, white type, green only as a small accent).
+// Website cards follow the marketing site: near-black, white type, and restrained mint accents.
 // App cards in frontend/public/og keep the light theme.
 const DARK = {
   canvas: '#090909',
-  ink: '#F1F4F2',
-  muted: '#9AA39E',
-  eyebrow: '#8A938E',
-  accent: '#A9D8B8',
+  ink: '#EDF3EF',
+  accent: '#9CDBB3',
 };
 
 // A static trace of the site's HeroVortex "flow" lines (same formula and gradient as
@@ -49,38 +47,43 @@ const COLORS = {
 
 // Bump when card content changes so social platforms fetch the new image instead of a cached one.
 // Update the matching paths in src/lib/metadata.ts and src/app/(site)/compare/compare-data.ts.
-const VERSION = 'v5';
+const VERSION = 'v6';
 
-const variants = [
-  {
-    output: resolve(websiteRoot, `public/og/helpin-new-home-green-${VERSION}.png`),
-    eyebrow: 'ONE CUSTOMER HISTORY',
-    headline: ['AI agents that do', 'more than answer.'],
-    support: 'Support, projects, CRM and docs on one customer history.',
-    visual: 'connected',
-    art: 'home',
-  },
-  {
-    output: resolve(websiteRoot, `public/og/helpin-pricing-green-${VERSION}.png`),
-    eyebrow: 'HELPIN PRICING',
-    headline: ['Your team.', 'Your AI agents.', 'One workspace.'],
-    support: 'Self-host free, or let us run it with AI included.',
-    visual: 'pricing',
-  },
-  {
-    output: resolve(websiteRoot, `public/og/helpin-privacy-green-${VERSION}.png`),
-    eyebrow: 'TRUST & PRIVACY',
-    headline: ['Privacy at Helpin'],
-    support: 'How we protect and process your information.',
-    visual: 'privacy',
-  },
-  {
-    output: resolve(websiteRoot, `public/og/helpin-terms-green-${VERSION}.png`),
-    eyebrow: 'LEGAL',
-    headline: ['Helpin Terms', 'of Service'],
-    support: 'Clear terms for a connected workspace.',
-    visual: 'terms',
-  },
+// One short headline per website card. Explicit lines keep type large at feed size.
+const websiteCards = [
+  ['new-home', ['AI agents for', 'support, docs, sales,', 'and coding.']],
+  ['product', ['Your team. Your agents.', 'Working together.']],
+  ['customer-support', ['AI agents for', 'customer support.']],
+  ['projects', ['Plan the work.', 'Ship with AI agents.']],
+  ['crm', ['AI agents for', 'sales follow-ups.']],
+  ['meetings', ['AI meeting notes.', 'Clear next steps.']],
+  ['knowledge', ['Docs that keep up', 'with your product.']],
+  ['ai-agents', ['AI agents that', 'get work done.']],
+  ['developers', ['Connect your tools.', 'Put agents to work.']],
+  ['self-hosting', ['Your team. Your agents.', 'Your servers.']],
+  ['branding', ['The Helpin brand.']],
+  ['pricing', ['Your team. Your agents.', 'One workspace.']],
+  ['privacy', ['Privacy at Helpin.']],
+  ['terms', ['Terms of service.']],
+  ['compare', ['Find your fit.', 'Compare Helpin.']],
+  ['compare-intercom', ['Helpin vs', 'Intercom']],
+  ['compare-zendesk', ['Helpin vs', 'Zendesk']],
+  ['compare-help-scout', ['Helpin vs', 'Help Scout']],
+  ['compare-chatwoot', ['Helpin vs', 'Chatwoot']],
+  ['compare-chatbase', ['Helpin vs', 'Chatbase']],
+  ['compare-crisp', ['Helpin vs', 'Crisp']],
+  ['compare-linear', ['Helpin vs', 'Linear']],
+  ['compare-plane', ['Helpin vs', 'Plane']],
+  ['compare-jira', ['Helpin vs', 'Jira']],
+];
+const variants = websiteCards.map(([slug, headline]) => ({
+  output: resolve(websiteRoot, `public/og/helpin-${slug}-green-${VERSION}.png`),
+  headline,
+  dark: true,
+}));
+
+// App and shared-document cards keep their existing light presentation.
+variants.push(
   {
     output: resolve(repositoryRoot, 'frontend/public/og/helpin-app.png'),
     eyebrow: 'HELPIN WORKSPACE',
@@ -95,47 +98,8 @@ const variants = [
     support: 'Securely shared from a connected workspace.',
     visual: 'document',
   },
-];
+);
 
-const productCards = [
-  ['product', 'THE HELPIN PRODUCT', ['Your teams.', 'Your AI agents.', 'Working together.'], 'Support, projects, CRM, meetings, docs and AI agents.'],
-  ['customer-support', 'CUSTOMER SUPPORT', ['Let the Echo agent', 'help your customers.'], 'Answer, follow up, and hand over with the history attached.'],
-  ['projects', 'PROJECTS', ['Plan the work.', 'Build with AI agents', 'that know why.'], 'Roadmaps, sprints and objectives in one workspace.'],
-  ['crm', 'CRM', ['Know who needs', 'a follow-up.'], 'Let the Beacon agent help with your next step.'],
-  ['meetings', 'MEETINGS', ['AI takes the notes.', 'Your agents help', 'with the next step.'], 'Meet, Zoom, Teams and Webex calls, linked to the customer.'],
-  ['knowledge', 'KNOWLEDGE', ['Help docs that', 'keep up.'], 'Let the Quill agent help with the upkeep.'],
-  ['ai-agents', 'AI AGENTS', ['AI agents that take', 'work off your', 'team’s list.'], 'Your team sets the tools, permissions and approvals.'],
-  ['developers', 'FOR DEVELOPERS', ['Give your agents', 'the facts.'], 'Give AI agents the tools to act, with SDKs, MCP and events.'],
-  ['self-hosting', 'OPEN SOURCE', ['Your team.', 'Your agents.', 'Your servers.'], 'Free under AGPL-3.0, no plan limits. Community 0.2 beta.'],
-  ['branding', 'THE HELPIN BRAND', ['One customer history.'], 'A shared workspace for your team and AI agents.'],
-  ['compare', 'COMPARE HELPIN', ['How Helpin', 'compares.'], 'Compare AI agents, customer context and workspace pricing.'],
-  ['compare-intercom', 'HELPIN VS INTERCOM', ['Helpin vs', 'Intercom'], 'Features, pricing and switching, side by side.'],
-  ['compare-zendesk', 'HELPIN VS ZENDESK', ['Helpin vs', 'Zendesk'], 'Features, pricing and switching, side by side.'],
-  ['compare-help-scout', 'HELPIN VS HELP SCOUT', ['Helpin vs', 'Help Scout'], 'Features, pricing and switching, side by side.'],
-  ['compare-chatwoot', 'HELPIN VS CHATWOOT', ['Helpin vs', 'Chatwoot'], 'Two open-source options, side by side.'],
-  ['compare-chatbase', 'HELPIN VS CHATBASE', ['Helpin vs', 'Chatbase'], 'AI agents, customer context and the work after the reply.'],
-  ['compare-crisp', 'HELPIN VS CRISP', ['Helpin vs', 'Crisp'], 'AI support, product work and unlimited teammates.'],
-  ['compare-linear', 'HELPIN VS LINEAR', ['Helpin vs', 'Linear'], 'Project tracking and customer context, side by side.'],
-  ['compare-plane', 'HELPIN VS PLANE', ['Helpin vs', 'Plane'], 'Two open-source options, side by side.'],
-  ['compare-jira', 'HELPIN VS JIRA', ['Helpin vs', 'Jira'], 'Project tracking and customer context, side by side.'],
-];
-for (const [slug, eyebrow, headline, support] of productCards) {
-  variants.push({ output: resolve(websiteRoot, `public/og/helpin-${slug}-green-${VERSION}.png`), eyebrow, headline, support, visual: 'connected', art: slug });
-}
-
-// Page artwork: text-free panels generated once with gpt-image-2.5-sunburst and committed,
-// so builds stay offline and deterministic. Prompts and steps: scripts/assets/og-art/README.md.
-// A variant without an art file falls back to its drawn visual.
-const ART_WIDTH = 480;
-for (const variant of variants) variant.dark = variant.output.startsWith(websiteRoot);
-for (const variant of variants.filter((item) => item.art)) {
-  try {
-    const art = await readFile(resolve(websiteRoot, `scripts/assets/og-art/${variant.art}.jpg`));
-    variant.artSrc = `data:image/jpeg;base64,${art.toString('base64')}`;
-  } catch {
-    variant.artSrc = null;
-  }
-}
 // Instrument Sans: Google Fonts static TTFs, bundled for deterministic offline builds.
 // Source: https://fonts.google.com/specimen/Instrument+Sans (SIL OFL in assets/instrument-sans).
 const fonts = await Promise.all([400, 600, 700].map(async weight => ({
@@ -153,64 +117,41 @@ function brand(dark) {
   }, 'Helpin'));
 }
 
-const PRODUCT_STEPS = {
-  'customer-support': ['CUSTOMER SUPPORT', [['Customer history', 'Earlier messages and linked work'], ['An informed answer', 'Your team and agents investigate'], ['A useful follow-up', 'Keep the customer informed']]],
-  projects: ['PLAN TO DELIVERY', [['Plan the work', 'Roadmaps, sprints and objectives'], ['Build with context', 'Requirements and customer history'], ['Review and deliver', 'Keep the next step in view']]],
-  crm: ['THE CUSTOMER RELATIONSHIP', [['Know the account', 'Conversations and linked work'], ['Review the deal', 'Owners, stages and next steps'], ['Follow through', 'An update grounded in history']]],
-  meetings: ['AFTER THE CONVERSATION', [['Capture the call', 'Return to what was said'], ['Review decisions', 'Commitments and open questions'], ['Prepare next steps', 'Tasks and follow-ups to review']]],
-  knowledge: ['KNOWLEDGE THAT HELPS', [['Publish useful guides', 'Help articles and product docs'], ['Find the answer', 'Search and source-linked answers'], ['Review an update', 'Keep guidance close to the product']]],
-  'ai-agents': ['SPECIALISTS, CONNECTED', [['Ask Agent', 'Start with a question or a task'], ['Specialist agents', 'Investigate, plan and prepare'], ['Your controls', 'Selected tools and approvals']]],
-  developers: ['CONNECT YOUR PRODUCT', [['SDKs', 'Put support inside your product'], ['MCP connections', 'Give agents selected tools'], ['Events and workflows', 'Start the work you configure']]],
-  'self-hosting': ['ON YOUR INFRASTRUCTURE', [['The whole product', 'Support, projects, CRM and more'], ['Your deployment', 'Install and inspect with the CLI'], ['Your connections', 'Choose supported providers']]],
-};
-
-function connectedVisual(variant) {
-  const slug = variant.output.split('helpin-').at(-1).replace(`-green-${VERSION}.png`, '');
-  const [label, steps] = PRODUCT_STEPS[slug] ?? ['ONE CUSTOMER HISTORY', [['Customer question', 'Docs, history and connected tools'], ['A task. A fix.', 'Your team and agents at work'], ['Customer follow-up', 'The conversation stays attached']]];
-  // Neutral charcoal panel; green only on the step numbers.
-  return h('div', { style: { display: 'flex', flexDirection: 'column', width: 360, flexShrink: 0, padding: '28px', borderRadius: 16, background: '#131615', border: '1px solid #2A2E2C' } },
-    h('div', { style: { display: 'flex', color: DARK.eyebrow, fontSize: 14, letterSpacing: '2px', marginBottom: 22 } }, label),
-    ...steps.map(([title, detail], index) => h('div', { key: title, style: { display: 'flex', flexDirection: 'column', padding: '19px 18px', marginTop: index ? 12 : 0, borderRadius: 10, background: '#1A1D1C', border: '1px solid #2A2E2C' } },
-      h('div', { style: { display: 'flex', gap: 12, alignItems: 'center', color: DARK.ink, fontSize: 21, fontWeight: 600 } }, h('span', {style: {color: '#3FA27A', fontSize: 13}}, String(index + 1).padStart(2, '0')), title),
-      h('div', { style: { display: 'flex', color: DARK.muted, fontSize: 14, marginTop: 8 } }, detail))))
-}
-
-function pricingVisual(dark = false) {
-  const [headline, label, detail] = dark ? [DARK.ink, DARK.muted, DARK.eyebrow] : [COLORS.accent, COLORS.ink, COLORS.muted];
+function websiteImage(variant) {
   return h('div', {
-    style: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: 360, flexShrink: 0 },
-  },
-  h('div', { style: { display: 'flex', fontSize: 72, lineHeight: 0.95, color: headline, fontWeight: 700, letterSpacing: '-2px' } }, 'NO SEAT'),
-  h('div', { style: { display: 'flex', fontSize: 72, lineHeight: 0.95, color: headline, fontWeight: 700, letterSpacing: '-2px' } }, 'LIMITS'),
-  h('div', { style: { display: 'flex', marginTop: 28, fontSize: 22, fontWeight: 700, letterSpacing: '2px', color: label } }, 'UNLIMITED TEAMMATES'),
-  h('div', { style: { display: 'flex', marginTop: 12, fontSize: 20, color: detail } }, 'On every plan, and free to self-host'));
-}
-
-function legalVisual(kind, dark = false) {
-  const [paper, border, line, badge, badgeText] = dark
-    ? ['#131615', '#2A2E2C', '#3A403D', '#1A1D1C', '#3FA27A']
-    : [COLORS.white, COLORS.line, COLORS.line, COLORS.accentSoft, COLORS.accent];
-  return h('div', {
-    style: { display: 'flex', alignItems: 'center', justifyContent: 'center', width: 390, height: 360 },
+    style: {
+      display: 'flex', position: 'relative', width: '100%', height: '100%',
+      overflow: 'hidden', backgroundColor: DARK.canvas, color: DARK.ink,
+      fontFamily: 'Instrument Sans',
+    },
   },
   h('div', {
     style: {
-      display: 'flex', flexDirection: 'column', width: 230, height: 292, padding: '42px 34px', gap: 24,
-      background: paper, border: `${dark ? 1 : 2}px solid ${border}`, borderRadius: 8,
-      boxShadow: dark ? 'none' : '0 20px 60px rgba(32,29,25,0.08)',
+      display: 'flex', position: 'absolute', left: 0, top: 0, width: 1200, height: 630,
+      backgroundImage: 'radial-gradient(ellipse 900px 680px at 100% 100%, rgba(15,122,80,0.22), rgba(15,122,80,0))',
     },
-  },
-  h('div', { style: { display: 'flex', width: 60, height: 8, background: COLORS.accent, borderRadius: 4 } }),
-  h('div', { style: { display: 'flex', width: 158, height: 5, background: line, borderRadius: 3 } }),
-  h('div', { style: { display: 'flex', width: 132, height: 5, background: line, borderRadius: 3 } }),
-  h('div', { style: { display: 'flex', width: 150, height: 5, background: line, borderRadius: 3 } }),
+  }),
+  h('img', {
+    src: vortexSrc, width: 1260, height: 630, alt: '',
+    style: { position: 'absolute', left: -30, top: 0, width: 1260, height: 630, opacity: 0.22 },
+  }),
+  h('div', { style: { display: 'flex', position: 'absolute', left: 72, top: 58, alignItems: 'center', gap: 12 } },
+    h('img', { src: markWhiteSrc, width: 64, height: 64, alt: '' }),
+    h('div', { style: { display: 'flex', fontSize: 48, fontWeight: 700, letterSpacing: '-2px' } }, 'Helpin'),
+  ),
   h('div', {
     style: {
-      display: 'flex', alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-end', marginTop: 18,
-      width: 58, height: 58, borderRadius: 29, background: badge, color: badgeText,
-      border: dark ? `1px solid ${border}` : 'none', fontSize: kind === 'privacy' ? 26 : 20, fontWeight: 700,
+      display: 'flex', position: 'absolute', left: 72, right: 72, top: 186, bottom: 70,
+      flexDirection: 'column', justifyContent: 'center',
+      fontSize: 88, lineHeight: 1.08, fontWeight: 600, letterSpacing: '-2.5px',
     },
-  }, kind === 'privacy' ? 'OK' : 'TOS')));
+  }, ...variant.headline.map((line, index) => h('div', {
+    key: line,
+    style: {
+      display: 'flex', whiteSpace: 'nowrap',
+      color: index > 0 ? DARK.accent : DARK.ink,
+    },
+  }, line))));
 }
 
 function appVisual() {
@@ -258,56 +199,28 @@ function documentVisual() {
   h('div', { style: { display: 'flex', width: 112, height: 6, borderRadius: 3, background: COLORS.line } })));
 }
 
-function visual(type, variant) {
-  if (type === 'connected') return connectedVisual(variant);
-  if (type === 'pricing') return pricingVisual(variant.dark);
-  if (type === 'privacy' || type === 'terms') return legalVisual(type, variant.dark);
-  if (type === 'app') return appVisual();
-  return documentVisual();
-}
-
 function image(variant) {
-  const dark = variant.dark;
-  const background = dark
-    ? { backgroundColor: DARK.canvas }
-    : {
-      backgroundColor: COLORS.canvas,
-      backgroundImage: 'linear-gradient(rgba(15,122,80,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(15,122,80,0.04) 1px, transparent 1px)',
-      backgroundSize: '32px 32px',
-    };
+  if (variant.dark) return websiteImage(variant);
   return h('div', {
     style: {
       display: 'flex', position: 'relative', width: '100%', height: '100%', padding: '66px 72px',
-      overflow: 'hidden', color: dark ? DARK.ink : COLORS.ink, fontFamily: 'Instrument Sans', ...background,
+      overflow: 'hidden', color: COLORS.ink, fontFamily: 'Instrument Sans',
+      backgroundColor: COLORS.canvas,
+      backgroundImage: 'linear-gradient(rgba(15,122,80,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(15,122,80,0.04) 1px, transparent 1px)',
+      backgroundSize: '32px 32px',
     },
   },
-  // The website's vortex, as a quiet static trace behind everything else.
-  ...(dark ? [h('img', { src: vortexSrc, width: 1260, height: 630, alt: '', style: { position: 'absolute', left: -30, top: -40, width: 1260, height: 630, opacity: 0.5 } })] : []),
-  ...(variant.artSrc ? [
-    h('img', {
-      src: variant.artSrc, width: ART_WIDTH, height: 630, alt: '',
-      style: { position: 'absolute', right: 0, top: 0, width: ART_WIDTH, height: 630, objectFit: 'cover' },
-    }),
-    // Blend the artwork into the canvas so the vortex lines flow into it instead of hitting a panel edge.
-    h('div', { style: { display: 'flex', position: 'absolute', right: ART_WIDTH - 140, top: 0, width: 140, height: 630, backgroundImage: `linear-gradient(90deg, ${DARK.canvas}, rgba(9,9,9,0))` } }),
-  ] : []),
-  // The site's hero light: a faint green glow plus soft light from above, across the whole card.
-  ...(dark ? [h('div', { style: { display: 'flex', position: 'absolute', left: 0, top: 0, width: 1200, height: 630, backgroundImage: 'radial-gradient(ellipse 760px 520px at 82% 42%, rgba(55,122,86,0.20), rgba(55,122,86,0)), radial-gradient(ellipse 900px 420px at 30% -10%, rgba(255,255,255,0.05), rgba(255,255,255,0))' } })] : []),
+  h('div', { style: { display: 'flex', position: 'absolute', left: 72, top: 58 } }, brand(false)),
   h('div', {
-    style: { display: 'flex', position: 'absolute', left: 72, top: 58 },
-  }, brand(dark)),
-  h('div', {
-    style: { display: 'flex', position: 'absolute', left: 72, right: variant.artSrc ? ART_WIDTH + 24 : 72, top: 148, bottom: 58, alignItems: 'center', justifyContent: 'space-between' },
+    style: { display: 'flex', position: 'absolute', left: 72, right: 72, top: 148, bottom: 58, alignItems: 'center', justifyContent: 'space-between' },
   },
-  h('div', { style: { display: 'flex', flexDirection: 'column', width: variant.artSrc ? 600 : 620, flexShrink: 0 } },
-    h('div', { style: { display: 'flex', marginBottom: 22, fontSize: 17, fontWeight: 700, letterSpacing: '2.4px', color: dark ? DARK.eyebrow : COLORS.accent } }, variant.eyebrow),
+  h('div', { style: { display: 'flex', flexDirection: 'column', width: 620, flexShrink: 0 } },
+    h('div', { style: { display: 'flex', marginBottom: 22, fontSize: 17, fontWeight: 700, letterSpacing: '2.4px', color: COLORS.accent } }, variant.eyebrow),
     h('div', { style: { display: 'flex', flexDirection: 'column', fontSize: 56, lineHeight: 1.08, fontWeight: 600, letterSpacing: '-1.8px' } },
-      // As on the site's dark heroes, the closing part of a multi-line headline is set in mint.
-      ...variant.headline.map((line, index) => h('div', { key: line, style: { display: 'flex', color: dark && variant.headline.length > 1 && index === variant.headline.length - 1 ? DARK.accent : undefined } }, line)),
+      ...variant.headline.map((line) => h('div', { key: line, style: { display: 'flex' } }, line)),
     ),
-    h('div', { style: { display: 'flex', marginTop: 26, fontSize: 21, lineHeight: 1.5, color: dark ? DARK.muted : COLORS.muted } }, variant.support),
-  ),
-  ...(variant.artSrc ? [] : [visual(variant.visual, variant)])),
+    h('div', { style: { display: 'flex', marginTop: 26, fontSize: 21, lineHeight: 1.5, color: COLORS.muted } }, variant.support),
+  ), variant.visual === 'app' ? appVisual() : documentVisual()),
   h('div', { style: { display: 'flex', position: 'absolute', left: 72, bottom: 34, width: 70, height: 5, borderRadius: 3, background: COLORS.accent } }));
 }
 

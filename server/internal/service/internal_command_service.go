@@ -30,7 +30,9 @@ type InternalCommandDefinition struct {
 	SupportedTargetTypes   []string
 	RequiredPermissionsAll []authorization.Permission
 	Tool                   *commandtools.RuntimeToolMetadata
-	Execute                func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error)
+	// Validate performs read-only checks before the host approval guard.
+	Validate func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) error
+	Execute  func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error)
 }
 
 func (d InternalCommandDefinition) RiskLevel() string {
@@ -80,6 +82,7 @@ type InternalCommandService struct {
 
 	supportMessageRepo        *repository.SupportMessageRepository
 	supportAttachmentRepo     *repository.SupportAttachmentRepository
+	supportMediaProvider      dockChatMediaLLM
 	supportConversationRepo   *repository.SupportConversationRepository
 	supportEventPublisher     websocket.EventPublisher
 	supportInboxService       *SupportInboxService
@@ -106,6 +109,11 @@ type InternalCommandService struct {
 	authz                     *authorization.AuthzService
 
 	definitions map[string]InternalCommandDefinition
+}
+
+// SetSupportMediaAnalyzer shares the metered media reader with Ask.
+func (s *InternalCommandService) SetSupportMediaAnalyzer(provider dockChatMediaLLM) {
+	s.supportMediaProvider = provider
 }
 
 func (s *InternalCommandService) SetSupportAttachmentRepository(repo *repository.SupportAttachmentRepository) {
@@ -422,6 +430,11 @@ func (s *InternalCommandService) Execute(ctx context.Context, meta model.Interna
 		return nil, fmt.Errorf("preview requires a persisted run")
 	}
 
+	if def.Validate != nil {
+		if err := def.Validate(ctx, meta, input); err != nil {
+			return nil, err
+		}
+	}
 	if def.Mutating {
 		if err := s.authorizeDockMutation(ctx, meta, def, input); err != nil {
 			return nil, err
@@ -476,6 +489,7 @@ func taskDependencyGraphHasCycle(graph map[string][]string) bool {
 }
 
 func (s *InternalCommandService) registerDefaults() {
+	s.registerSkillCommands()
 	s.registerDirectGitCommands()
 	s.registerImageToolCommands()
 	s.register(InternalCommandDefinition{
@@ -2154,6 +2168,11 @@ func commandPermissionsForDefinition(def InternalCommandDefinition) []authorizat
 			return []authorization.Permission{authorization.PermWorkspaceUpdate}
 		}
 		return []authorization.Permission{authorization.PermWorkspaceRead}
+	case "skills":
+		if mutating {
+			return []authorization.Permission{authorization.PermPMEdit, authorization.PermDocsEdit, authorization.PermCRMEdit, authorization.PermSupportEdit}
+		}
+		return []authorization.Permission{authorization.PermPMRead, authorization.PermDocsRead, authorization.PermCRMRead, authorization.PermSupportRead}
 	case "agents":
 		// Agent orchestration mirrors the dock gates: any module read grants
 		// discovery, any module edit grants launching.

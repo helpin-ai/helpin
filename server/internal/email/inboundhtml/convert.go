@@ -61,7 +61,7 @@ const (
 	// CurrentProjectionVersion identifies the parser behavior used to derive
 	// visible and quoted email text. Persisted projections with an older
 	// version can be recomputed from their canonical stored bodies.
-	CurrentProjectionVersion = 1
+	CurrentProjectionVersion = 2
 
 	ProjectionConfidenceNone   = "none"
 	ProjectionConfidenceMedium = "medium"
@@ -79,7 +79,6 @@ var (
 	quotedReplySelectors = []string{
 		"div.gmail_quote",
 		"div.gmail_extra",
-		"div#appendonsend",
 		"div#divRplyFwdMsg",
 		"blockquote[type='cite']",
 		"div.yahoo_quoted",
@@ -92,7 +91,6 @@ var (
 	// places the actual old message body in following sibling nodes. Treat the
 	// marker and all following siblings as quote history.
 	outlookQuoteBoundarySelectors = []string{
-		"div#appendonsend",
 		"div#divRplyFwdMsg",
 	}
 
@@ -400,10 +398,19 @@ func sanitizeCSS(css string) string {
 // markQuotedHistory annotates structurally identified quote boundaries and
 // returns the strongest confidence used. Known client wrappers are high
 // confidence. Word/Outlook reply headers are medium confidence because they
-// are inferred from a bordered header containing several localized roles.
+// are inferred from a header with a border/separator and several localized roles.
 func markQuotedHistory(doc *goquery.Document) string {
 	confidence := ProjectionConfidenceNone
 	quotedSelector := "[" + QuotedAttr + "='true']"
+
+	// Outlook's appendonsend placeholder may precede the NEW reply. Version 1
+	// incorrectly marked it and every following sibling as history. Clear only
+	// those legacy marks before rediscovering actual quote boundaries; this also
+	// repairs stored sanitized HTML when the original provider body is absent.
+	doc.Find("div#appendonsend[" + QuotedAttr + "]").Each(func(_ int, marker *goquery.Selection) {
+		marker.RemoveAttr(QuotedAttr)
+		marker.NextAll().RemoveAttr(QuotedAttr)
+	})
 
 	if doc.Find(quotedSelector).Length() > 0 {
 		confidence = ProjectionConfidenceHigh
@@ -418,9 +425,9 @@ func markQuotedHistory(doc *goquery.Document) string {
 		confidence = ProjectionConfidenceHigh
 	}
 
-	doc.Find("[style]").Each(func(_ int, candidate *goquery.Selection) {
+	doc.Find("[style], hr + div").Each(func(_ int, candidate *goquery.Selection) {
 		style := strings.ToLower(candidate.AttrOr("style", ""))
-		if !strings.Contains(style, "border-top") || candidate.Is(quotedSelector) || candidate.ParentsFiltered(quotedSelector).Length() > 0 {
+		if (!strings.Contains(style, "border-top") && !candidate.Prev().Is("hr")) || candidate.Is(quotedSelector) || candidate.ParentsFiltered(quotedSelector).Length() > 0 {
 			return
 		}
 		if !hasWordHeaderRoles(candidate) {
@@ -428,6 +435,7 @@ func markQuotedHistory(doc *goquery.Document) string {
 		}
 
 		candidate.SetAttr(QuotedAttr, "true")
+		candidate.PrevFiltered("hr").SetAttr(QuotedAttr, "true")
 		candidate.NextAll().SetAttr(QuotedAttr, "true")
 		if confidence == ProjectionConfidenceNone {
 			confidence = ProjectionConfidenceMedium
@@ -438,6 +446,12 @@ func markQuotedHistory(doc *goquery.Document) string {
 }
 
 func hasWordHeaderRoles(candidate *goquery.Selection) bool {
+	// Inspect the header itself, not an enclosing email layout that contains
+	// both a new reply and a nested header further down.
+	firstLabel := strings.TrimSpace(candidate.Find("b, strong").First().Text())
+	if wordHeaderRoles[normalizeHeaderLabel(firstLabel)] == "" || !strings.HasPrefix(strings.TrimSpace(candidate.Text()), firstLabel) {
+		return false
+	}
 	roles := make(map[string]bool, 4)
 	candidate.Find("b, strong").Each(func(_ int, label *goquery.Selection) {
 		normalized := normalizeHeaderLabel(label.Text())
@@ -540,6 +554,7 @@ func markOutlookQuotedSiblings(doc *goquery.Document) bool {
 		doc.Find(sel).Each(func(_ int, marker *goquery.Selection) {
 			marked = true
 			marker.SetAttr(QuotedAttr, "true")
+			marker.PrevFiltered("hr").SetAttr(QuotedAttr, "true")
 			marker.NextAll().SetAttr(QuotedAttr, "true")
 		})
 	}

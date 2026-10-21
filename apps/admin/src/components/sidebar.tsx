@@ -3,6 +3,7 @@ import { Activity, Clock, FlaskConical, LogOut, Mail, ShieldCheck } from 'lucide
 import { useAuthStore } from '@/stores/authStore'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { useInboundEmails } from '@/hooks/queries/useInboundEmails'
 
 const NAV_ITEMS = [
   { to: '/chat-playground' as const, label: 'Chat Playground', icon: FlaskConical },
@@ -12,6 +13,7 @@ const NAV_ITEMS = [
 ]
 
 export function Sidebar() {
+  const { data: inboundEmails } = useInboundEmails()
   const user = useAuthStore((s) => s.user)
   const signOut = useAuthStore((s) => s.signOut)
   const { pathname } = useLocation()
@@ -37,6 +39,7 @@ export function Sidebar() {
           >
             <item.icon className="h-4 w-4" />
             {item.label}
+            {item.to === '/email-queue' && !!inboundEmails?.attention_count && <span className="ml-auto rounded bg-primary/10 px-1.5 text-xs text-primary" aria-label={`${inboundEmails.attention_count} incoming emails need attention`}>{inboundEmails.attention_count}</span>}
           </Link>
         ))}
       </nav>

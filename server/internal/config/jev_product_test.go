@@ -3,7 +3,7 @@ package config
 import "testing"
 
 func TestJevProductPoliciesDefaultToPrimaryWithIndependentOverrides(t *testing.T) {
-	for _, prefix := range []string{"JEV_MEETING_ROUTING", "JEV_COVERAGE_CLASSIFICATION", "JEV_COVERAGE_TOPIC_MATCHING", "JEV_AUTOMATION_CONDITION", "JEV_ANSWER_EVIDENCE", "JEV_TRANSLATION_REVIEW", "JEV_LANGUAGE_DETECTION"} {
+	for _, prefix := range []string{"JEV_MEETING_ROUTING", "JEV_COVERAGE_CLASSIFICATION", "JEV_COVERAGE_TOPIC_MATCHING", "JEV_AUTOMATION_CONDITION", "JEV_ANSWER_EVIDENCE"} {
 		t.Setenv(prefix+"_MODE", "")
 		t.Setenv(prefix+"_THRESHOLD", "")
 		t.Setenv(prefix+"_DAILY_LIMIT", "")
@@ -13,7 +13,7 @@ func TestJevProductPoliciesDefaultToPrimaryWithIndependentOverrides(t *testing.T
 	t.Setenv("JEV_MEETING_ROUTING_THRESHOLD", "0.98")
 	t.Setenv("JEV_MEETING_ROUTING_DAILY_LIMIT", "75")
 	policies := jevProductPolicies()
-	if len(policies) != 7 {
+	if len(policies) != 5 {
 		t.Fatal("missing feature policy")
 	}
 	for name, policy := range policies {
@@ -30,6 +30,17 @@ func TestJevProductPoliciesDefaultToPrimaryWithIndependentOverrides(t *testing.T
 			}
 		} else if policy.Mode != "primary" || policy.Threshold != .95 || policy.DailyLimit != 1000 {
 			t.Fatalf("independent default changed: %+v", policy)
+		}
+	}
+}
+
+func TestJevProductPoliciesIgnoreRetiredTranslationSettings(t *testing.T) {
+	t.Setenv("JEV_TRANSLATION_REVIEW_MODE", "legacy")
+	t.Setenv("JEV_LANGUAGE_DETECTION_MODE", "legacy")
+	policies := jevProductPolicies()
+	for _, retired := range []string{"translation_review", "language_detection"} {
+		if _, exists := policies[retired]; exists {
+			t.Fatalf("retired feature %s still configured", retired)
 		}
 	}
 }

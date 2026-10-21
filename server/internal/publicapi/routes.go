@@ -35,6 +35,7 @@ var Tags = []Tag{
 var Routes = []Route{
 	// Context
 	{"GET", "/me", "get_current_context", "Context", "Get the authenticated identity and workspace", 0},
+	{"GET", "/setup", "get_workspace_setup", "Context", "Inspect workspace onboarding and browser handoffs", 0},
 	{"GET", "/search", "search_workspace", "Context", "Search the workspace", 0},
 	{"GET", "/teams", "list_workspace_teams", "Context", "List teams", 0},
 	{"GET", "/members", "list_workspace_members", "Context", "List workspace members", 0},
@@ -116,6 +117,7 @@ var Routes = []Route{
 	{"PUT", "/support/conversations/{conversation_id}/inbox", "move_support_conversation", "Support", "Move a conversation to another inbox", 0},
 	{"POST", "/support/conversations/{conversation_id}/tags", "add_support_conversation_tag", "Support", "Tag a conversation", 0},
 	{"DELETE", "/support/conversations/{conversation_id}/tags/{tag_id}", "remove_support_conversation_tag", "Support", "Remove a tag from a conversation", 0},
+	{"GET", "/support/setup", "get_support_setup", "Support", "Inspect support setup and browser handoffs", 0},
 	{"GET", "/support/inboxes", "list_support_inboxes", "Support", "List inboxes", 0},
 	{"GET", "/support/tags", "list_support_tags", "Support", "List tags", 0},
 

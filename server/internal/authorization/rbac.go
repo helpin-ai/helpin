@@ -16,7 +16,7 @@ func NewRBACEngine() *RBACEngine {
 	)
 
 	memberPerms := copyPerms(viewerPerms)
-	addPerms(memberPerms, PermPMEdit, PermDocsEdit, PermCRMEdit, PermSupportEdit, PermDocsPublish)
+	addPerms(memberPerms, PermPMEdit, PermDocsEdit, PermCRMEdit, PermSupportEdit, PermSupportMerge, PermDocsPublish)
 
 	adminPerms := copyPerms(memberPerms)
 	addPerms(adminPerms,

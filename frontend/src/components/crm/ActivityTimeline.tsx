@@ -1,3 +1,4 @@
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { useId, useLayoutEffect, useRef, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { Briefcase01Icon, Calendar01Icon, CheckListIcon, Delete01Icon, DollarCircleIcon, PencilEdit01Icon, Loading01Icon, Mail01Icon, Message01Icon, SparklesIcon, TelephoneIcon } from '@/lib/icons';
@@ -246,10 +247,17 @@ export function ActivityTimeline({
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [editingSourceId, setEditingSourceId] = useState<string | null>(null);
   const [emailComposerOpen, setEmailComposerOpen] = useState(false);
+  const activityBaseline = useRef({ subject: '', body: '', type: 'note' as CRMActivityType });
 
   const createActivity = useCreateCRMActivity(workspaceId ?? '');
   const updateActivity = useUpdateCRMActivity(workspaceId ?? '');
   const deleteActivity = useDeleteCRMActivity(workspaceId ?? '');
+  useUnsavedChangesGuard(
+    createActivity.isPending || updateActivity.isPending || (editingSourceId
+      ? newSubject !== activityBaseline.current.subject || newBody !== activityBaseline.current.body || draftType !== activityBaseline.current.type
+      : Boolean(newSubject || newBody)),
+    'Save or discard your activity note before refreshing.',
+  );
   const emailEnabled = Boolean(timelineItems && (contactId || companyId || dealId));
   const emailAccounts = useEmailAccounts(emailEnabled ? (workspaceId ?? '') : '');
   const visibleActivityTypes = activityTypes.filter(({ type }) => !actionTypes || actionTypes.includes(type));
@@ -285,6 +293,7 @@ export function ActivityTimeline({
       }
       setActivityDialogOpen(false);
       setEditingSourceId(null);
+      activityBaseline.current = { subject: '', body: '', type: 'note' };
       setNewSubject('');
       setNewBody('');
       onActivityCreated?.();
@@ -294,6 +303,7 @@ export function ActivityTimeline({
   };
 
   const clearDraft = () => {
+    activityBaseline.current = { subject: '', body: '', type: draftType };
     setNewSubject('');
     setNewBody('');
   };
@@ -313,6 +323,7 @@ export function ActivityTimeline({
   const beginTimelineEdit = (item: CRMTimelineItem) => {
     setEditingSourceId(item.source_id);
     setDraftType(item.kind as CRMActivityType);
+    activityBaseline.current = { subject: item.title, body: item.description ?? '', type: item.kind as CRMActivityType };
     setNewSubject(item.title);
     setNewBody(item.description ?? '');
     setActivityDialogOpen(true);

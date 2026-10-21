@@ -31,7 +31,7 @@ async function setup(page: Page, email = "visitor@example.com", overrides: Recor
   );
   const writes: Record<string, unknown>[] = [];
   await page.route(
-    `**/api/support/inbox/conversations/${CONVERSATION_ID}/messages?**`,
+    `**/api/support/inbox/conversations/${CONVERSATION_ID}/{messages,translation/sends}?**`,
     (route) => {
       if (route.request().method() !== "POST") return route.fallback();
       const data = route.request().postDataJSON();
@@ -274,7 +274,7 @@ test("failed send retains the email-only draft and delivery choice", async ({
   test.setTimeout(90000);
   const { composer, writes } = await setup(page);
   await page.route(
-    `**/api/support/inbox/conversations/${CONVERSATION_ID}/messages?**`,
+    `**/api/support/inbox/conversations/${CONVERSATION_ID}/{messages,translation/sends}?**`,
     (route) => {
       if (route.request().method() !== "POST") return route.fallback();
       return route.fulfill({
@@ -313,7 +313,7 @@ test("failed in-flight send retains its original chat-only intent after the visi
   let finish!: () => void;
   const pending = new Promise<void>((resolve) => { finish = resolve; });
   let started = false;
-  await page.route(`**/api/support/inbox/conversations/${CONVERSATION_ID}/messages?**`, async (route) => {
+  await page.route(`**/api/support/inbox/conversations/${CONVERSATION_ID}/{messages,translation/sends}?**`, async (route) => {
     if (route.request().method() !== 'POST') return route.fallback();
     started = true;
     await pending;

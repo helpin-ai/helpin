@@ -1,3 +1,4 @@
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { TeamColorMark } from '@/components/workspace/TeamLabel';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getRouteApi, useLocation, useNavigate } from '@tanstack/react-router';
@@ -141,6 +142,7 @@ export function SprintDetailPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
+  useUnsavedChangesGuard(saving || descriptionPendingUploads > 0 || Object.keys(pendingPatch).length > 0, 'Wait for your sprint changes and uploads to save before refreshing.');
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const [editingDescription, setEditingDescription] = useState(false);
   const savedDescriptionRef = useRef('');

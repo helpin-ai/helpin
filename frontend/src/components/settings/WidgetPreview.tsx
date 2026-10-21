@@ -72,7 +72,7 @@ export function WidgetPreview({
         branding: {
           primaryColor: brandColor,
           logoUrl: resolvedLogoUrl,
-          welcomeMessage: welcomeMessage || 'How can we help?',
+          welcomeMessage,
           widgetPosition: (launcherPosition === 'bottom_left' ? 'bottom-left' : 'bottom-right') as 'bottom-left' | 'bottom-right',
           showBranding,
           launcherIcon: launcherIcon as 'chat_bubble' | 'question_mark' | 'help',
@@ -82,6 +82,7 @@ export function WidgetPreview({
         },
         features: {
           aiEnabled: aiFirst,
+          aiFirst,
           showTalkToHuman,
           escalationMessage,
           fileUploads: false,
@@ -89,7 +90,7 @@ export function WidgetPreview({
           requirePhone: false,
           csatRating: false,
           forceIdentify: false,
-        } as any,
+        },
         availability: availability ?? {
           isOnline: true,
           statusText: 'Online now',

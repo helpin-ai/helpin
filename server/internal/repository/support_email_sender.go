@@ -33,6 +33,25 @@ func (r *SupportEmailSenderRepository) Update(ctx context.Context, sender *model
 	return nil
 }
 
+// RepairPendingForwardingAddress must not undo verification completed by an
+// inbound webhook after the settings request loaded the sender.
+func (r *SupportEmailSenderRepository) RepairPendingForwardingAddress(ctx context.Context, sender *model.SupportEmailSender, address string) (*model.SupportEmailSender, error) {
+	if err := r.db.WithContext(ctx).
+		Model(&model.SupportEmailSender{}).
+		Where("workspace_id = ? AND id = ?", sender.WorkspaceID, sender.ID).
+		Where("forwarding_verification_token = ? AND forwarding_address = ?", sender.ForwardingVerificationToken, sender.ForwardingAddress).
+		Where("forwarding_status <> ? AND forwarding_verified_at IS NULL", "verified").
+		Updates(map[string]any{
+			"forwarding_address":    address,
+			"forwarding_status":     "pending",
+			"forwarding_last_error": nil,
+			"updated_at":            time.Now().UTC(),
+		}).Error; err != nil {
+		return nil, fmt.Errorf("repair pending sender forwarding address: %w", err)
+	}
+	return r.GetByID(ctx, sender.WorkspaceID, sender.ID)
+}
+
 func (r *SupportEmailSenderRepository) UpdateDisplayName(ctx context.Context, workspaceID, senderID, displayName string) error {
 	if err := r.db.WithContext(ctx).
 		Model(&model.SupportEmailSender{}).
@@ -210,6 +229,9 @@ func (r *SupportEmailSenderRepository) SetDefault(ctx context.Context, workspace
 	now := time.Now().UTC()
 
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := LockSupportRouting(tx, workspaceID); err != nil {
+			return err
+		}
 		switch scope {
 		case "workspace":
 			if err := tx.Model(&model.SupportEmailSender{}).

@@ -20,16 +20,18 @@ type supportRecipientSelection struct {
 }
 
 type supportRecipientSelectorInput struct {
-	WorkspaceID         string
-	MailboxID           *string
-	OwnerUserID         *string
-	HandoffBehavior     string
-	HandoffTeamID       *string
-	EventType           string
-	Channel             string
-	RequirePreferences  bool
-	RequireAvailability bool
-	Now                 time.Time
+	WorkspaceID            string
+	MailboxID              *string
+	OwnerUserID            *string
+	HandoffBehavior        string
+	HandoffTeamID          *string
+	EventType              string
+	Channel                string
+	RequirePreferences     bool
+	RequireAvailability    bool
+	UseMailboxAssignment   bool
+	PreserveCandidateOrder bool
+	Now                    time.Time
 }
 
 func selectSupportConversationRecipient(
@@ -80,6 +82,23 @@ func selectSupportConversationRecipient(
 	ownerID := strings.TrimSpace(derefString(input.OwnerUserID))
 	mailboxID := strings.TrimSpace(derefString(input.MailboxID))
 	if mailboxID != "" && mailboxRepo != nil {
+		if input.UseMailboxAssignment {
+			mailbox, err := mailboxRepo.GetByID(ctx, input.WorkspaceID, mailboxID)
+			if err != nil {
+				return nil, err
+			}
+			if mailbox == nil || !mailbox.Active {
+				return nil, nil
+			}
+			if mailbox.AssignmentMemberIDs != nil {
+				candidates, err := mailboxRepo.ListAssignmentCandidateUserIDs(ctx, input.WorkspaceID, mailbox)
+				if err != nil {
+					return nil, err
+				}
+				input.PreserveCandidateOrder = true
+				return buildSupportRecipientSelection(ctx, prefRepo, availability, input, statusByUserID, candidates, "", "mailbox_assignment")
+			}
+		}
 		mailboxUserIDs, err := mailboxRepo.ListActiveMemberUserIDs(ctx, input.WorkspaceID, mailboxID)
 		if err != nil {
 			return nil, err
@@ -154,16 +173,18 @@ func buildSupportRecipientSelection(
 		return nil, nil
 	}
 
-	sort.Slice(uniqueIDs, func(i, j int) bool {
-		left := statusByUserID[uniqueIDs[i]]
-		right := statusByUserID[uniqueIDs[j]]
-		leftRank := supportRecipientStatusRank(left.Status)
-		rightRank := supportRecipientStatusRank(right.Status)
-		if leftRank != rightRank {
-			return leftRank < rightRank
-		}
-		return uniqueIDs[i] < uniqueIDs[j]
-	})
+	if !input.PreserveCandidateOrder {
+		sort.Slice(uniqueIDs, func(i, j int) bool {
+			left := statusByUserID[uniqueIDs[i]]
+			right := statusByUserID[uniqueIDs[j]]
+			leftRank := supportRecipientStatusRank(left.Status)
+			rightRank := supportRecipientStatusRank(right.Status)
+			if leftRank != rightRank {
+				return leftRank < rightRank
+			}
+			return uniqueIDs[i] < uniqueIDs[j]
+		})
+	}
 
 	for _, userID := range uniqueIDs {
 		status := statusByUserID[userID]

@@ -33,13 +33,14 @@ func supportMessageEvent(workspaceID string, msg *model.SupportMessage, actorID,
 	}
 
 	event := Event{
-		Action:      action,
-		Entity:      "support_conversation_message",
-		EntityID:    msg.ID,
-		WorkspaceID: workspaceID,
-		ActorID:     actorID,
-		ParentType:  "support_conversation",
-		ParentID:    msg.ConversationID,
+		WidgetConversationIDs: msg.WidgetConversationIDs,
+		Action:                action,
+		Entity:                "support_conversation_message",
+		EntityID:              msg.ID,
+		WorkspaceID:           workspaceID,
+		ActorID:               actorID,
+		ParentType:            "support_conversation",
+		ParentID:              msg.ConversationID,
 	}
 	if !msg.WidgetVisible() {
 		return event
@@ -56,7 +57,7 @@ func supportMessageEvent(workspaceID string, msg *model.SupportMessage, actorID,
 		SenderName:                msg.SenderDisplayName,
 		SenderAvatar:              msg.SenderAvatarURL,
 		Metadata:                  nilIfEmpty(msg.Metadata),
-		CreatedAt:                 msg.CreatedAt.Format(time.RFC3339),
+		CreatedAt:                 msg.CreatedAt.Format(time.RFC3339Nano),
 		ViaChannel:                derefStr(msg.ViaChannel),
 		Attachments:               msg.Attachments,
 		EmailVisibleText:          msg.EmailVisibleText,
@@ -152,7 +153,7 @@ func SupportAIResponseStartEvents(workspaceID string, msg *model.SupportMessage,
 		"sender_type":     msg.SenderType,
 		"sender_name":     msg.SenderDisplayName,
 		"sender_avatar":   msg.SenderAvatarURL,
-		"created_at":      msg.CreatedAt.Format(time.RFC3339),
+		"created_at":      msg.CreatedAt.Format(time.RFC3339Nano),
 	})
 	events := []Event{{
 		Action:      "response_started",
@@ -251,4 +252,16 @@ func nilIfEmpty(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+// widgetMergeMessageData keeps an authorized source client in its own history scope.
+func widgetMergeMessageData(data json.RawMessage, conversationID string) json.RawMessage {
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil
+	}
+	id, _ := json.Marshal(conversationID)
+	payload["conversation_id"] = id
+	result, _ := json.Marshal(payload)
+	return result
 }

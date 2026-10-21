@@ -26,7 +26,7 @@ import {
   SidebarHeader,
 } from '@/components/ui/sidebar';
 import { WorkspaceSwitcher } from '@/components/layout/WorkspaceSwitcher';
-import { SidebarHeaderToggle } from '@/components/layout/WorkspaceSidebarToggle';
+import { SidebarSearchButton } from './sidebar/SidebarSearchButton';
 import { TrialBanner } from '@edition';
 import { NotificationCenter } from '@/components/notifications/NotificationCenter';
 import { useSupportTeammatePresence, useUpdateMySupportTeammatePresence } from '@/hooks/queries/useSupport';
@@ -52,7 +52,6 @@ import { SettingsRailNav } from './sidebar/SettingsRailNav';
 import { StandardRailNav } from './sidebar/StandardRailNav';
 import { CrmRailNav } from './sidebar/CrmRailNav';
 import { SupportRailNav } from './sidebar/SupportRailNav';
-import { SidebarSearchFooter } from './sidebar/SidebarSearchFooter';
 import { useSetupGuideEnabled } from '@/hooks/useSetupGuideEnabled';
 import type { SupportInboxView } from '@/lib/pmTypes';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -342,7 +341,7 @@ export function Sidebar() {
             <WorkspaceSwitcher onCreateWorkspace={() => navigate({ to: '/onboarding', search: { step: 'workspace' } })} />
           </div>
           <NotificationCenter />
-          <SidebarHeaderToggle />
+          <SidebarSearchButton />
         </div>
       </SidebarHeader>
 
@@ -538,7 +537,6 @@ export function Sidebar() {
               />
             )}
             </div>
-            <SidebarSearchFooter workspaceName={currentWorkspace?.name} />
           </div>
         </div>
         <TrialBanner />

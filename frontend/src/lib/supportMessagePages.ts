@@ -1,8 +1,13 @@
 import type { InfiniteData } from '@tanstack/react-query'
+import { compareMessageOrder } from '@helpin-ai/shared'
 
 import type { SupportMessage, SupportMessagePage } from '@/lib/pmTypes'
 
 export type SupportMessagePages = InfiniteData<SupportMessagePage, string | undefined>
+
+export function compareSupportMessages(a: SupportMessage, b: SupportMessage): number {
+  return compareMessageOrder(a.created_at, a.id, b.created_at, b.id)
+}
 
 function messageMetadataString(message: SupportMessage, key: string): string | null {
   if (!message.metadata) return null
@@ -47,6 +52,7 @@ export function flattenSupportMessagePages(data?: SupportMessagePages): SupportM
       messages.push(message)
     }
   }
+  messages.sort(compareSupportMessages)
   // Realtime rows arrive independently while the reply may already be visible
   // optimistically. Apply the same join/reply order as the saved history, using
   // explicit correlation rather than names, text, or the client's clock.

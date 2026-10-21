@@ -13,7 +13,6 @@ interface CoverageEmptyStateProps {
   wsSlug: string
   onClearFilters: () => void
   onShowOpen: () => void
-  onViewAnalysis?: () => void
 }
 
 const coverageNeeds = [
@@ -40,7 +39,6 @@ export function CoverageEmptyState({
   wsSlug,
   onClearFilters,
   onShowOpen,
-  onViewAnalysis,
 }: CoverageEmptyStateProps) {
   if (mergeReview || filtered) {
     return (
@@ -99,14 +97,6 @@ export function CoverageEmptyState({
               Go to support inbox
             </Link>
           </QuietTextAction>
-          {onViewAnalysis && (
-            <QuietTextAction
-              className="underline underline-offset-4"
-              onClick={onViewAnalysis}
-            >
-              View analysis status
-            </QuietTextAction>
-          )}
         </div>
       }
     >

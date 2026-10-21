@@ -5,6 +5,8 @@
 Implementation plans, progress notes, and audits. Dated documents record the state of a particular change; consult current engineering guides for present behavior.
 
 - [Customer portal AI replies implementation plan](2026-09-28-customer-portal-ai-replies.md)
+- [Incoming email recovery](2026-10-17-incoming-email-recovery.md)
+- [Sender address settings UI](2026-10-16-sender-addresses-setup.md)
 - [Support Live Translate revision](2026-09-22-support-live-translate.md)
 - [PM Team Mentions Implementation Plan](2026-03-17-pm-team-mentions-implementation.md)
 - [Sprint Automation Prompt Dismissal Implementation Plan](2026-03-17-sprint-automation-prompt-dismissal.md)

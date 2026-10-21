@@ -78,6 +78,9 @@ func (s *SupportInboxService) ListConversationMessagePage(
 	if err != nil {
 		return nil, err
 	}
+	if err := s.messageRepo.HydrateMergeMessageGrants(ctx, messages); err != nil {
+		return nil, err
+	}
 	if messages == nil {
 		messages = []model.SupportMessage{}
 	}

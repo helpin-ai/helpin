@@ -15,19 +15,20 @@ type AIProfileRoute struct {
 
 // AIProfile is a workspace-scoped personal or shared model selection.
 type AIProfile struct {
-	PrimaryPolicy  *AIConnectionPolicyView `json:"primary_policy,omitempty" gorm:"-"`
-	FallbackPolicy *AIConnectionPolicyView `json:"fallback_policy,omitempty" gorm:"-"`
-	ID             string                  `json:"id" gorm:"type:uuid;primaryKey"`
-	WorkspaceID    string                  `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	UserID         *string                 `json:"user_id" gorm:"type:uuid;index"`
-	Scope          string                  `json:"scope" gorm:"not null"`
-	Name           string                  `json:"name" gorm:"not null"`
-	Revision       int64                   `json:"revision" gorm:"not null"`
-	Primary        AIProfileRoute          `json:"primary" gorm:"serializer:json;type:jsonb;not null"`
-	Fallback       *AIProfileRoute         `json:"fallback" gorm:"serializer:json;type:jsonb"`
-	DeletedAt      *time.Time              `json:"-"`
-	CreatedAt      time.Time               `json:"created_at"`
-	UpdatedAt      time.Time               `json:"updated_at"`
+	HiddenFromAskAgent bool                    `json:"hidden_from_ask_agent" gorm:"not null;default:false"`
+	PrimaryPolicy      *AIConnectionPolicyView `json:"primary_policy,omitempty" gorm:"-"`
+	FallbackPolicy     *AIConnectionPolicyView `json:"fallback_policy,omitempty" gorm:"-"`
+	ID                 string                  `json:"id" gorm:"type:uuid;primaryKey"`
+	WorkspaceID        string                  `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	UserID             *string                 `json:"user_id" gorm:"type:uuid;index"`
+	Scope              string                  `json:"scope" gorm:"not null"`
+	Name               string                  `json:"name" gorm:"not null"`
+	Revision           int64                   `json:"revision" gorm:"not null"`
+	Primary            AIProfileRoute          `json:"primary" gorm:"serializer:json;type:jsonb;not null"`
+	Fallback           *AIProfileRoute         `json:"fallback" gorm:"serializer:json;type:jsonb"`
+	DeletedAt          *time.Time              `json:"-"`
+	CreatedAt          time.Time               `json:"created_at"`
+	UpdatedAt          time.Time               `json:"updated_at"`
 }
 
 func (AIProfile) TableName() string { return "ai_profiles" }
@@ -44,9 +45,10 @@ type SaveAIProfileRequest struct {
 
 // AIWorkspaceSettings holds the shared default independently of commercial policy.
 type AIWorkspaceSettings struct {
-	WorkspaceID      string    `json:"workspace_id" gorm:"type:uuid;primaryKey"`
-	DefaultProfileID *string   `json:"default_profile_id" gorm:"type:uuid"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	PersonalDefaultProfileID *string   `json:"personal_default_profile_id" gorm:"-"`
+	WorkspaceID              string    `json:"workspace_id" gorm:"type:uuid;primaryKey"`
+	DefaultProfileID         *string   `json:"default_profile_id" gorm:"type:uuid"`
+	UpdatedAt                time.Time `json:"updated_at"`
 }
 
 func (AIWorkspaceSettings) TableName() string { return "ai_workspace_settings" }
@@ -89,3 +91,20 @@ type AIExecutionPolicySnapshot struct {
 	FundingMode aiusage.FundingMode      `json:"funding_mode"`
 	FlatTariff  *aiusage.FlatTokenTariff `json:"flat_tariff,omitempty"`
 }
+
+// EnableAIModelRequest creates a default route without a user-authored profile.
+type EnableAIModelRequest struct {
+	ConnectionID string `json:"connection_id"`
+	Model        string `json:"model"`
+	Name         string `json:"name"`
+}
+
+// AIPersonalSettings is a user's default for new Ask Agent chats in one workspace.
+type AIPersonalSettings struct {
+	WorkspaceID      string    `json:"-" gorm:"type:uuid;primaryKey"`
+	UserID           string    `json:"-" gorm:"type:uuid;primaryKey"`
+	DefaultProfileID *string   `json:"personal_default_profile_id" gorm:"type:uuid"`
+	UpdatedAt        time.Time `json:"-"`
+}
+
+func (AIPersonalSettings) TableName() string { return "ai_personal_settings" }

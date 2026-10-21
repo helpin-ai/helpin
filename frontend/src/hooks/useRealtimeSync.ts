@@ -329,6 +329,8 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.templates(workspaceId) })
     } else if (event.entity === 'recurring_template') {
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.recurringTemplates(workspaceId) })
+    } else if (event.entity === 'workspace_skill') {
+      queryClient.invalidateQueries({ queryKey: queryKeys.automation.skillCatalog(workspaceId) })
     } else if (event.entity === 'automation_rule') {
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.automationRules(workspaceId) })
       const workflowId = typeof event.data?.workflow_id === 'string' ? event.data.workflow_id : event.parent_id
@@ -655,7 +657,9 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.messages(workspaceId,event.parent_id!) })
     } else if (event.entity === 'support_conversation_message') {
       if (event.action === 'updated' && event.parent_id) {
-        // Metadata updates (including visitor votes) are quiet refetches, not new replies.
+        // Note edits and metadata updates are quiet refetches, not new replies.
+        if (!event.data) queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.messageInfo(workspaceId, event.parent_id, event.entity_id) })
         queryClient.invalidateQueries({ queryKey: queryKeys.support.messages(workspaceId, event.parent_id) })
         return
       }
@@ -673,7 +677,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         // accompanying an escalation) are refetch signals only — backend
         // strips event.data for IsInternal rows, so skipping when data is
         // absent prevents double pings on a single conversational event.
-        if (event.data && event.actor_id !== selfIdRef.current
+        if (event.data && event.data.system_event_type !== 'teammate_joined' && event.actor_id !== selfIdRef.current
           && !isViewingNotificationTarget(workspaceId, 'support_conversation', event.parent_id)) {
           playNotificationSound()
         }

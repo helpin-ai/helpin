@@ -111,7 +111,7 @@ export function DocsImageEditDialog({ open, onOpenChange, workspaceId, documentI
             <LoadingImage ref={imageRef} crossOrigin="anonymous" src={candidate.url} alt="AI image edit preview" containerClassName="max-h-[52vh] max-w-full" className="max-h-[52vh] max-w-full object-contain" />
             {(annotating || hasAnnotation) && <canvas ref={canvasRef} className={`absolute inset-0 h-full w-full touch-none ${annotating ? 'cursor-crosshair' : 'pointer-events-none'}`} onPointerDown={startStroke} onPointerMove={draw} onPointerUp={() => setDrawing(false)} onPointerLeave={() => setDrawing(false)} />}
             {annotating && <div className="absolute left-3 top-3 rounded-md bg-red-500 px-2.5 py-1 text-xs font-medium text-white shadow-sm">Draw in red</div>}
-            {!annotating && hasAnnotation && <div className="absolute left-3 top-3 rounded-md border border-red-200 bg-background/95 px-2.5 py-1 text-xs font-medium text-red-600 shadow-sm backdrop-blur">Target area selected</div>}
+            {!annotating && hasAnnotation && <div className="absolute left-3 top-3 rounded-md border border-red-200 dark:border-red-800 bg-background/95 px-2.5 py-1 text-xs font-medium text-red-600 dark:text-red-400 shadow-sm backdrop-blur">Target area selected</div>}
           </div>
         </div>
       </div>

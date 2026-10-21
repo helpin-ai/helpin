@@ -1185,14 +1185,7 @@ func (s *DockChatService) buildCarryForward(ctx context.Context, previousRun *mo
 	return b.String()
 }
 
-type dockChatMediaAttachment struct {
-	ID       string `json:"id"`
-	FileName string `json:"file_name"`
-	FileType string `json:"file_type"`
-	FileSize int64  `json:"file_size"`
-	Source   string `json:"source,omitempty"`
-	URL      string `json:"-"`
-}
+type dockChatMediaAttachment = mediaAttachment
 
 func composeDockChatTurn(content string, pageContext map[string]interface{}, references []model.DockEntityReference, attachments, sourceAttachments []dockChatMediaAttachment, analysis string) string {
 	blocks := []string{content}

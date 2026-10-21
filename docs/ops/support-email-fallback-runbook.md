@@ -22,6 +22,29 @@ replies should thread back into the support conversation.
 5. Postmark delivery/open/bounce webhooks update `support_email_logs` and
    message receipt fields.
 
+## Merged conversations
+
+Existing conversation email addresses remain valid. While merged, inbound
+replies follow the active conversation and retain their original email-log
+route. After unmerge, the original address handles its own conversation again.
+A customer added by a merge does not become a permanent recipient of the
+primary thread after separation.
+
+New outbound messages store their reviewed audience. Confirmed customer
+addresses and explicitly selected CC recipients receive the new reply;
+observed senders and BCC addresses do not become merge participants. Prior
+message history is not appended to shared replies. Delivery and open events
+remain attached to their original message IDs.
+
+If merge or unmerge says **A reply is sending**, wait for queued replies and
+translations to finish (or cancel the reply from its existing undo control).
+If a saved reply says its conversation or recipients changed, review the
+current participants and send a new reply. Do not retry that old message to a
+new audience by modifying its metadata.
+
+Apply `202610110001_support_conversation_merging.sql` and deploy the matching
+API, workers, frontend, and widget SDK before using the new merge actions.
+
 ## Sender Verification Behavior
 
 Postmark requires the actual `From` address/domain to be verified as a Sender

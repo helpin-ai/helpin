@@ -152,7 +152,7 @@ func TestImportWorkspaceSkillPreservesArchiveAndAppearsInCatalog(t *testing.T) {
 	}
 }
 
-func TestUpdateWorkspaceSkillRejectsImportedSkill(t *testing.T) {
+func TestUpdateWorkspaceSkillEditsImportedSkill(t *testing.T) {
 	svc, repo, _ := newWorkspaceSkillTestService(t)
 	ctx := context.Background()
 
@@ -171,8 +171,8 @@ func TestUpdateWorkspaceSkillRejectsImportedSkill(t *testing.T) {
 	}
 
 	_, err = svc.UpdateWorkspaceSkill(ctx, "ws-1", resp.ID, model.UpdateWorkspaceSkillRequest{Instructions: stringPtr("Updated")})
-	if err == nil || !strings.Contains(err.Error(), "read-only") {
-		t.Fatalf("expected read-only error, got %v", err)
+	if err != nil {
+		t.Fatalf("edit imported skill: %v", err)
 	}
 
 	row, err := repo.GetByID(ctx, "ws-1", resp.ID)
@@ -211,7 +211,11 @@ func TestUpdateWorkspaceSkillRebuildsArchive(t *testing.T) {
 		t.Fatalf("expected updated key repo_planner_v2, got %q", updated.Key)
 	}
 
-	stored := mustOnlyStoredArchive(t, store)
+	savedRow, err := repo.GetByID(ctx, "ws-1", created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := store.objects[savedRow.PackageObjectKey]
 	loaded, err := agentcontract.LoadSkillArchive(stored, model.WorkspaceSkillSourceWorkspace)
 	if err != nil {
 		t.Fatalf("LoadSkillArchive returned error: %v", err)
@@ -323,6 +327,9 @@ func newWorkspaceSkillTestDB(t *testing.T) *gorm.DB {
 	}
 
 	statement := `CREATE TABLE workspace_skills (
+ is_customized BOOLEAN NOT NULL DEFAULT 0,
+ default_content BLOB,
+ default_package_object_key TEXT NOT NULL DEFAULT '',
 		id TEXT PRIMARY KEY,
 		workspace_id TEXT NOT NULL,
 		source_kind TEXT NOT NULL,
@@ -371,4 +378,78 @@ func catalogHasSkill(catalog model.SkillCatalogResponse, key, sourceKind string)
 		}
 	}
 	return false
+}
+
+func TestBuiltInSkillWorkspaceEditAndRestore(t *testing.T) {
+	svc, repo, _ := newWorkspaceSkillTestService(t)
+	ctx := context.Background()
+	key := "support_triage_response"
+	edited, err := svc.UpdateWorkspaceSkill(ctx, "ws-1", key, model.UpdateWorkspaceSkillRequest{Instructions: stringPtr("Use scoped publishing logs.")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if edited.SourceKind != model.WorkspaceSkillSourceBuiltIn {
+		t.Fatal("lost built-in identity")
+	}
+	catalog, err := svc.ListSkillCatalog(ctx, "ws-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, skill := range catalog.Skills {
+		if skill.Key == key {
+			count++
+			if skill.Instructions != edited.Instructions {
+				t.Fatal("catalog ignored override")
+			}
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected one skill, got %d", count)
+	}
+	other, err := svc.ListSkillCatalog(ctx, "ws-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, skill := range other.Skills {
+		if skill.Key == key && skill.Instructions == edited.Instructions {
+			t.Fatal("override leaked across workspace")
+		}
+	}
+	if _, err := svc.UpdateWorkspaceSkill(ctx, "ws-2", edited.ID, model.UpdateWorkspaceSkillRequest{Instructions: stringPtr("bad")}); err == nil {
+		t.Fatal("cross-workspace edit allowed")
+	}
+	restored, err := svc.UpdateWorkspaceSkill(ctx, "ws-1", edited.ID, model.UpdateWorkspaceSkillRequest{RestoreDefault: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	def, _ := agentcontract.GetBuiltInSkill(key)
+	if restored.Instructions != def.Instructions {
+		t.Fatal("did not restore deployed default")
+	}
+	row, err := repo.GetByID(ctx, "ws-1", edited.ID)
+	if err != nil || row.IsCustomized {
+		t.Fatalf("restore did not clear customization: %v", err)
+	}
+}
+
+func TestWorkspaceSkillRestoreOriginal(t *testing.T) {
+	svc, _, _ := newWorkspaceSkillTestService(t)
+	ctx := context.Background()
+	created, err := svc.CreateWorkspaceSkill(ctx, "ws-1", "actor", model.CreateWorkspaceSkillRequest{Key: "custom", Description: "Original description", Instructions: "Original instructions"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range []string{"first edit", "second edit"} {
+		if _, err := svc.UpdateWorkspaceSkill(ctx, "ws-1", created.ID, model.UpdateWorkspaceSkillRequest{Instructions: &text}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	restored, err := svc.UpdateWorkspaceSkill(ctx, "ws-1", created.ID, model.UpdateWorkspaceSkillRequest{RestoreDefault: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.Instructions != created.Instructions {
+		t.Fatal("default was overwritten by edits")
+	}
 }

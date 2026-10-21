@@ -52,12 +52,14 @@ import {
   DEFAULT_CHAT_WIDGET_AI_RESPONSE_MODE,
   getChatWidgetAIResponseModeForUI,
   isChatWidgetAIResponseModeActive,
+  isChatWidgetAIFirst,
 } from './chat-widget/responseModes';
 import { getChatWidgetAIAssistantEnableBlocker } from './chat-widget/aiAssistantReadiness';
 import { DEFAULT_AI_HANDOFF_FOLLOWUPS, formatAIHandoffFollowupOption } from './chat-widget/handoffFollowups';
 import { buildWidgetInstallPrompt, type WidgetInstallFramework } from './chat-widget/installPrompts';
 import { WidgetInstallAIPrompt } from './chat-widget/WidgetInstallAIPrompt';
 import { CuratedGuidanceField } from './CuratedGuidanceField';
+import { WelcomeMessageSettings } from './chat-widget/WelcomeMessageSettings';
 
 /* ── Main component ──────────────────────────────────────────────────── */
 
@@ -88,6 +90,7 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
   const { data: supportMailboxes = [] } = useSupportMailboxes(workspaceId);
 
   const [snippetTab, setSnippetTab] = useState<WidgetInstallFramework>('html');
+  const [previewInitialView, setPreviewInitialView] = useState<'home' | 'conversation'>('home');
 
   // Identity state
   const [requireEmail, setRequireEmail] = useState(true);
@@ -661,6 +664,7 @@ function Dashboard() {
   const routingAssignmentHref = workspace?.slug
     ? `/w/${workspace.slug}/settings/inboxes-routing?tab=routing`
     : null;
+  const aiFirst = isChatWidgetAIFirst(settingsDraft.ai_enabled === true, aiResponseMode, aiReplyChannels);
 
   // Shared preview element used by both views
   const previewElement = (
@@ -671,7 +675,7 @@ function Dashboard() {
       launcherIcon={launcherIcon}
       welcomeMessage={welcomeMessage}
       privacyNotice={{ enabled: privacyNoticeEnabled, policyUrl: privacyPolicyUrl, text: privacyNoticeText }}
-      initialView={isExpanded('privacy') ? 'conversation' : 'home'}
+      initialView={isExpanded('privacy') ? 'conversation' : previewInitialView}
       workspaceName={widgetName || workspace?.name}
       workspaceLogoUrl={widgetAvatarUrl || workspace?.logo_url}
       colorScheme={colorScheme}
@@ -680,7 +684,7 @@ function Dashboard() {
       logoUrl={logoUrl}
       helpSpaces={previewHelpSpaces}
       availability={previewAvailability}
-      aiFirst={aiEnabled && aiResponseMode === 'ai_first'}
+      aiFirst={aiFirst}
       showTalkToHuman={showTalkToHuman}
       escalationMessage={escalationMessage}
       widgetKey={widgetKey}
@@ -1135,15 +1139,12 @@ function Dashboard() {
                 <Switch checked={forceVisitorIdentity} onCheckedChange={setForceVisitorIdentity} disabled={!requireEmail} />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="welcome-msg" className="text-sm">Welcome Message</Label>
-                <Input
-                  id="welcome-msg"
-                  value={welcomeMessage}
-                  onChange={(e) => setWelcomeMessage(e.target.value)}
-                  placeholder="Hi there! How can we help you today?"
-                />
-              </div>
+              <WelcomeMessageSettings
+                value={welcomeMessage}
+                aiFirst={aiFirst}
+                onChange={setWelcomeMessage}
+                onFocus={() => setPreviewInitialView('conversation')}
+              />
             </div>
             </div>
           </div>

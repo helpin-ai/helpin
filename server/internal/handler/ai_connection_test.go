@@ -44,7 +44,7 @@ func setupAIConnectionHandlerTest(t *testing.T, provider llm.Provider) (*AIConne
 	}
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { sqlDB.Close() })
-	if err := db.AutoMigrate(&model.AIConnection{}, &model.AIProfile{}, &model.AIWorkspaceSettings{}); err != nil {
+	if err := db.AutoMigrate(&model.AIConnection{}, &model.AIProfile{}, &model.AIWorkspaceSettings{}, &model.AIPersonalSettings{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`CREATE TABLE workspace_members (workspace_id TEXT,user_id TEXT,status TEXT);

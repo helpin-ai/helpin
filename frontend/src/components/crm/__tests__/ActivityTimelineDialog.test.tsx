@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ActivityTimeline } from '../ActivityTimeline';
+import { prepareAppRefresh } from '@/lib/appLoadRecovery';
 
 const { createActivity } = vi.hoisted(() => ({
   createActivity: vi.fn(),
@@ -315,6 +316,7 @@ describe('CRM ActivityTimeline activity dialog', () => {
 
     setControlValue(subject!, 'Discussed renewal');
     setControlValue(details!, 'Send pricing on Monday');
+    expect(prepareAppRefresh()).toContain('activity');
     clickButton('Call');
 
     expect(subject?.value).toBe('Discussed renewal');
@@ -333,7 +335,9 @@ describe('CRM ActivityTimeline activity dialog', () => {
     expect(container.querySelector<HTMLTextAreaElement>('textarea[placeholder^="Add context"]')?.value)
       .toBe('Send pricing on Monday');
 
+    expect(prepareAppRefresh()).toContain('activity');
     clickButton('Clear draft');
+    expect(prepareAppRefresh()).toBeNull();
     expect(container.querySelector<HTMLInputElement>('input[placeholder="What happened?"]')?.value).toBe('');
     expect(container.querySelector<HTMLTextAreaElement>('textarea[placeholder^="Add context"]')?.value).toBe('');
   });
@@ -347,6 +351,7 @@ describe('CRM ActivityTimeline activity dialog', () => {
       .find((button) => button.textContent?.trim() === 'Save meeting');
     await act(async () => save?.click());
 
+    expect(prepareAppRefresh()).toBeNull();
     expect(createActivity).toHaveBeenCalledWith(expect.objectContaining({
       activity_type: 'meeting',
       subject: 'Quarterly planning',

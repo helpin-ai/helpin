@@ -53,3 +53,23 @@ export interface SetupView {
   total_count: number;
 	placeholder_goals: Array<{ key: SetupGoalKey; title: string; description: string }>;
 }
+
+export interface SupportSetupGuide {
+  workspace_id: string;
+  instructions: string;
+  steps: Array<{
+    key: string;
+    title: string;
+    status: SetupTaskStatus;
+    path?: string;
+    blocked_reason?: string;
+    verification: string;
+  }>;
+}
+
+export interface WorkspaceSetupGuide {
+  workspace_id: string;
+  goals: SetupGoalKey[];
+  instructions: string;
+  sections: Array<{ key: string; title: string; steps: SupportSetupGuide['steps'] }>;
+}

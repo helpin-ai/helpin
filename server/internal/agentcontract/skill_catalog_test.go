@@ -153,14 +153,12 @@ func TestEchoSystemPromptPrefersCanonicalWebsiteSourcesOverBlogs(t *testing.T) {
 	}
 }
 
-func TestEchoSystemPromptUsesCustomerSafeRepositoryChecks(t *testing.T) {
+func TestEchoSystemPromptUsesScopedSupportResearch(t *testing.T) {
 	for _, guidance := range []string{
 		"never mention a knowledge base",
 		"configured knowledge sources",
 		"Do not launch web research",
-		"implementation-specific behavior",
-		"list_symbols, read_symbol, and read_files",
-		"Prefer read_symbol when a declaration is known",
+		"Do not launch repository research",
 		"Call start_agent_run first",
 		"Do not send the interim reply before launching",
 		"required_confidence",
@@ -197,7 +195,7 @@ func TestEnsureSupportRuntimeDeliveryContractProtectsWorkspacePromptCopies(t *te
 		"status sent, escalated, or suppressed is terminal",
 		"Never mention a knowledge base",
 		"official website",
-		"implementation-specific questions",
+		"Required support investigation policy",
 		"required_confidence",
 	} {
 		if !strings.Contains(prompt, required) {
@@ -209,6 +207,74 @@ func TestEnsureSupportRuntimeDeliveryContractProtectsWorkspacePromptCopies(t *te
 	}
 	if got := EnsureSupportRuntimeDeliveryContract(model.AgentPresetMarketer, staleSnapshot); got != staleSnapshot {
 		t.Fatalf("non-support prompt changed: %q", got)
+	}
+}
+
+func TestSupportHandoverPolicyReachesExistingPresets(t *testing.T) {
+	defaultPrompt := BuiltInPresetPrompt(model.AgentPresetSupportAgent)
+	if defaultPrompt == nil || !strings.Contains(*defaultPrompt, supportHandoverPolicy) {
+		t.Fatal("new support presets must include the handover policy")
+	}
+	for _, tc := range []struct {
+		name   string
+		prompt string
+	}{
+		{"default preset", *defaultPrompt},
+		{"workspace instructions", "Keep replies brief and use the customer's language."},
+		{"saved delivery contract", "Workspace instructions\n\n" + supportRuntimeDeliveryContract},
+		{"older action guidance", "Workspace instructions\n\n## Required support handover and action honesty\nAcknowledge feedback by promising team follow-up."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, tc.prompt)
+			if !strings.HasPrefix(got, tc.prompt) {
+				t.Fatal("applying the policy must preserve workspace instructions")
+			}
+			if strings.Count(got, supportHandoverPolicy) != 1 {
+				t.Fatal("the current handover policy must be included exactly once")
+			}
+			if twice := EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, got); twice != got {
+				t.Fatal("repeated launches must not duplicate the handover policy")
+			}
+		})
+	}
+	const otherPrompt = "You are the workspace marketer."
+	if got := EnsureSupportRuntimeDeliveryContract(model.AgentPresetMarketer, otherPrompt); got != otherPrompt {
+		t.Fatal("the support handover policy must not change unrelated presets")
+	}
+}
+
+func TestSupportContactContextPolicyReachesExistingPresets(t *testing.T) {
+	const header = "## Required support conversation context"
+	defaultPrompt := BuiltInPresetPrompt(model.AgentPresetSupportAgent)
+	if defaultPrompt == nil || !strings.Contains(*defaultPrompt, header) {
+		t.Fatal("new support presets must include the contact context policy")
+	}
+	for _, saved := range []string{
+		*defaultPrompt,
+		"Workspace instructions\n\nYou are chatting live with a visitor on the website.",
+		"Workspace instructions\n\n" + supportRuntimeDeliveryContract,
+	} {
+		got := EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, saved)
+		if !strings.HasPrefix(got, saved) || strings.Count(got, header) != 1 {
+			t.Fatal("saved instructions must be preserved with exactly one current contact context policy")
+		}
+		for _, required := range []string{
+			"actual conversation channel",
+			"Do not ask again for a known email",
+			"missing and necessary",
+			"Contact availability is not identity verification",
+		} {
+			if !strings.Contains(got, required) {
+				t.Errorf("effective support instructions lack %q", required)
+			}
+		}
+		if twice := EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, got); twice != got {
+			t.Fatal("repeated launches must not duplicate contact guidance")
+		}
+	}
+	const other = "Workspace marketer instructions"
+	if got := EnsureSupportRuntimeDeliveryContract(model.AgentPresetMarketer, other); got != other {
+		t.Fatal("contact policy must not change unrelated agents")
 	}
 }
 
@@ -601,7 +667,7 @@ func TestEchoPromptDefaultsGenericProductReferencesToWorkspace(t *testing.T) {
 		t.Fatal("expected Echo system prompt")
 	}
 	for _, expected := range []string{
-		"product whose website the visitor is currently using",
+		"workspace/product the customer is contacting",
 		`"your plans" to the current workspace`,
 		"Do not ask which product they mean unless they explicitly named or compared another product.",
 	} {
@@ -771,5 +837,40 @@ func TestSupportTrustBoundaryAddedToOldDeliverySnapshots(t *testing.T) {
 	}
 	if next := EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, got); next != got {
 		t.Fatal("trust boundary duplicated")
+	}
+}
+
+func TestSupportInvestigationPolicyReachesSavedAgents(t *testing.T) {
+	legacy := "You are Echo. Inspect the repository for suspected bugs.\n\n## Required live-support delivery contract\nLegacy delivery rules."
+	saved := EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, legacy)
+	if !strings.HasPrefix(saved, legacy) {
+		t.Fatal("must preserve editable workspace instructions")
+	}
+	skill, ok := GetBuiltInSkill("support_triage_response")
+	if !ok {
+		t.Fatal("missing support skill")
+	}
+	for name, prompt := range map[string]string{"default": echoSystemPrompt, "saved": saved, "skill": skill.Instructions} {
+		for _, required := range []string{"Do not launch repository research", "documented coverage", "Missing logs", "existing conversation context"} {
+			if !strings.Contains(prompt, required) {
+				t.Errorf("%s missing %q", name, required)
+			}
+		}
+	}
+	for name, prompt := range map[string]string{"default": echoSystemPrompt, "delivery": supportRuntimeDeliveryContract, "skill": skill.Instructions} {
+		for _, obsolete := range []string{"inspect the product repository", "launch one narrow read-only repository sub-agent", "repository-inspection sub-agent may verify", "Read-only repository checks for implementation-specific behavior"} {
+			if strings.Contains(prompt, obsolete) {
+				t.Errorf("%s retains automatic repository routing: %q", name, obsolete)
+			}
+		}
+	}
+	if !strings.Contains(saved, "override earlier repository-research instructions") {
+		t.Fatal("saved prompts need explicit precedence")
+	}
+	if EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, saved) != saved {
+		t.Fatal("policy duplicated")
+	}
+	if EnsureSupportRuntimeDeliveryContract(model.AgentPresetMarketer, legacy) != legacy {
+		t.Fatal("changed non-support agent")
 	}
 }

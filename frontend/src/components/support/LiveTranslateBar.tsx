@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { QuietIconAction } from '@/components/design-system/quiet';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { PauseIcon, PlayIcon } from '@/lib/icons';
+import { ArrowDown01Icon } from '@/lib/icons';
+import { cn } from '@/lib/utils';
 import { setLiveTranslate, translationOptionsKey, useSupportTranslationOptions } from '@/hooks/queries/useSupportTranslation';
 import { languageFlag } from './liveTranslateLanguages';
 
@@ -27,33 +27,53 @@ export function LiveTranslateBar({ workspaceId, conversationId, editable, forceV
   const reading = data.preference.reading_language;
   const enabled = data.conversation.translation_mode === 'on';
   if ((!language || language === reading) && !forceVisible) return null;
-  const actionLabel = enabled ? 'Pause live translation' : 'Resume live translation';
-  return <div className="flex shrink-0 flex-wrap items-center justify-center gap-x-2 gap-y-1 text-center border-b border-border/50 bg-muted/30 px-4 py-2 text-xs">
-    <span className="font-medium" title="Automatically translates new messages and replies in this conversation.">Live translate from</span>
-    <select
-      aria-label="Customer language"
-      className="max-w-full shrink-0 rounded bg-transparent font-medium"
-      disabled={!editable || save.isPending}
-      value={data.conversation.customer_language}
-      onChange={event => save.mutate({ enabled, language: event.target.value })}
-    >
-      <option value="">{detectedLanguage ? `${languageFlag(detectedLanguage)} ${data.languages[detectedLanguage]} (detected)` : 'Select customer language'}</option>
-      {Object.entries(data.languages).map(([code, name]) => <option key={code} value={code}>{languageFlag(code)} {name}</option>)}
-    </select>
-    <span>to</span>
+  const actionLabel = enabled ? 'Pause live translation' : 'Enable live translation';
+  const active = enabled && data.available;
+  return <div className={cn(
+    'flex shrink-0 flex-wrap items-center justify-center gap-x-2 gap-y-1 border-b px-4 py-2 text-center text-xs',
+    active
+      ? 'border-[#c4ded9] bg-[#edf6f5] text-[#366761] dark:border-[#3b504b] dark:bg-[#22322f] dark:text-[#b5d4cc]'
+      : 'border-border/50 bg-muted/30 text-muted-foreground',
+  )}>
+    <span className="font-medium" title={language
+      ? `Customer messages are translated into ${data.languages[reading]}. Your replies are translated into ${data.languages[language]}.`
+      : 'Choose the customer’s language to translate incoming messages and your replies.'}>Live translation</span>
+    <span aria-hidden="true">·</span>
+    <span className="relative inline-flex max-w-full min-w-0 items-center">
+      <select
+        aria-label="Customer language"
+        className={cn(
+          'max-w-full appearance-none rounded-full border py-1 pl-2.5 pr-7 font-medium leading-4 outline-none focus-visible:ring-2 focus-visible:ring-current disabled:cursor-not-allowed disabled:opacity-50 [&>option]:bg-background [&>option]:text-foreground',
+          active
+            ? 'border-[#a9cec7] bg-white/30 dark:border-[#506a63] dark:bg-white/5'
+            : 'border-border bg-transparent',
+        )}
+        disabled={!editable || save.isPending}
+        value={data.conversation.customer_language}
+        onChange={event => save.mutate({ enabled, language: event.target.value })}
+      >
+        <option value="">{detectedLanguage ? `${languageFlag(detectedLanguage)} ${data.languages[detectedLanguage]} (detected)` : 'Select customer language'}</option>
+        {Object.entries(data.languages).map(([code, name]) => <option key={code} value={code}>{languageFlag(code)} {name}</option>)}
+      </select>
+      <span aria-hidden="true" className="pointer-events-none absolute right-2 inline-flex items-center">
+        <ArrowDown01Icon className="h-3 w-3" />
+      </span>
+    </span>
+    <span aria-label="both ways">↔</span>
+    <span>{languageFlag(reading)} {data.languages[reading]}</span>
     <span className="inline-flex items-center gap-1.5">
-      <span>{languageFlag(reading)} {data.languages[reading]}</span>
       {!data.available ? <span className="text-muted-foreground">Unavailable</span> : !enabled ? <span className="text-muted-foreground">Paused</span> : null}
       <Tooltip>
         <TooltipTrigger asChild>
-          <QuietIconAction
+          <button
+            type="button"
             aria-label={actionLabel}
             disabled={!editable || save.isPending}
             onClick={() => save.mutate({ enabled: !enabled, language: data.conversation.customer_language })}
-            className="shrink-0"
+            className="shrink-0 rounded-sm px-1 py-1 font-medium underline decoration-dotted underline-offset-4 hover:decoration-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {enabled ? <PauseIcon className="h-3.5 w-3.5" /> : <PlayIcon className="h-3.5 w-3.5" />}
-          </QuietIconAction>
+            {enabled ? 'Pause' : 'Enable'}
+          </button>
         </TooltipTrigger>
         <TooltipContent>{actionLabel}</TooltipContent>
       </Tooltip>

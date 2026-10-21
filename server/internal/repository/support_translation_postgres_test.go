@@ -106,6 +106,64 @@ func TestTranslationPostgresMigrationPrivacyAndConcurrentSend(t *testing.T) {
 	privacyCheck(t, db, "SELECT count(*) = 0 FROM support_translations WHERE conversation_id=?", conv.ID)
 }
 
+func TestTranslationPostgresStableConversationLanguage(t *testing.T) {
+	db := contactPrivacyDB(t)
+	migration, err := os.ReadFile("../dbmigrate/sql/202610130001_support_conversation_language.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		privacyExec(t, db, string(migration))
+	}
+	ctx := context.Background()
+	workspace := uuid.NewString()
+	seedContactPrivacyWorkspace(t, db, workspace)
+	conv := &model.SupportConversation{ID: uuid.NewString(), WorkspaceID: workspace, Subject: "Language", Status: "open", Source: "widget"}
+	if err := db.Create(conv).Error; err != nil {
+		t.Fatal(err)
+	}
+	repo := NewSupportTranslationRepository(db)
+	policy, err := repo.LiveConversation(ctx, workspace, conv.ID, true, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := model.SupportMessage{WorkspaceID: workspace, ConversationID: conv.ID, SenderType: "customer", MessageType: "reply", Content: "Please help with my report."}
+	if err := NewSupportMessageRepository(db).Create(ctx, &msg); err != nil {
+		t.Fatal(err)
+	}
+	type result struct {
+		language string
+		err      error
+	}
+	results := make(chan result, 2)
+	for _, language := range []string{"en", "de"} {
+		go func() {
+			got, err := repo.SaveDetectedLanguage(ctx, *policy, language, []model.SupportMessage{msg})
+			results <- result{got, err}
+		}()
+	}
+	first, second := <-results, <-results
+	if first.err != nil || second.err != nil || first.language == "" || first.language != second.language {
+		t.Fatalf("detectors disagreed: %+v %+v", first, second)
+	}
+	if err := repo.SetLiveConversation(ctx, workspace, conv.ID, false, "fr"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := repo.SaveDetectedLanguage(ctx, *policy, "es", []model.SupportMessage{msg})
+	if err != nil || got != "fr" {
+		t.Fatalf("overwrote manual selection: %q %v", got, err)
+	}
+	saved, err := repo.DetectedLanguage(ctx, workspace, conv.ID)
+	if err != nil || saved != first.language {
+		t.Fatalf("lost initial language: %q %v", saved, err)
+	}
+	privacyExec(t, db, "UPDATE support_conversations SET anonymized_at=now() WHERE id=?", conv.ID)
+	if _, err := repo.SaveDetectedLanguage(ctx, *policy, "es", []model.SupportMessage{msg}); err == nil {
+		t.Fatal("saved language after erasure")
+	}
+	privacyCheck(t, db, "SELECT count(*) = 0 FROM support_translation_conversations WHERE conversation_id=?", conv.ID)
+}
+
 func TestTranslationPostgresConversationPolicyGuard(t *testing.T) {
 	db := contactPrivacyDB(t)
 	workspace := uuid.NewString()

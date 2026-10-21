@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
 
 import * as MemberPickerModule from '../MemberPickerPopover'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import type { AssignableMember } from '@/lib/types'
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -203,6 +204,38 @@ describe('MemberPickerPopover', () => {
     act(() => {
       root.unmount()
     })
+    container.remove()
+  })
+})
+
+
+describe('disabled conversation assignees', () => {
+  it('keeps inaccessible members visible, blocks selection, and explains why', async () => {
+    const handleChange = vi.fn()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    act(() => root.render(
+      <TooltipProvider delayDuration={0}>
+        <MemberPickerModule.MemberPickerPopover
+          value="__none__" members={members} open onChange={handleChange}
+          getDisabledReason={member => member.id === 'member-3' ? 'This member does not have access to this inbox.' : undefined}
+          renderTrigger={() => <span>Assignee</span>}
+        />
+      </TooltipProvider>,
+    ))
+    const option = Array.from(document.querySelectorAll('[cmdk-item]')).find(item => item.textContent?.includes('Marco Rivera'))
+    expect(option).toBeTruthy()
+    expect(option?.getAttribute('aria-disabled')).toBe('true')
+    act(() => option?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(handleChange).not.toHaveBeenCalled()
+    const tooltipTrigger = option?.closest('[data-slot="tooltip-trigger"]') ?? option?.parentElement
+    await act(async () => {
+      tooltipTrigger?.dispatchEvent(new MouseEvent('pointermove', { bubbles: true }))
+      await new Promise(resolve => setTimeout(resolve, 20))
+    })
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toContain('This member does not have access to this inbox.')
+    act(() => root.unmount())
     container.remove()
   })
 })

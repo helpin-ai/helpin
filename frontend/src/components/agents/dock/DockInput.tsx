@@ -1,5 +1,5 @@
 import { useVoiceComposer } from '@/hooks/useVoiceComposer';
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowDown01Icon,
   ArrowUp01Icon,
@@ -36,6 +36,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { PageContextScopeOption } from '@/components/command-bar/pageContext';
 import { DockReferencePicker, type DockReferencePickerHandle } from './DockReferencePicker';
+import { dockReferenceMention, type DockReferenceMention } from './dockReferenceMention';
 
 const TYPE_LABEL: Record<CommandBarPageContext['entity_type'], string> = {
   task: 'Task',
@@ -211,6 +212,41 @@ export function DockInput({
     value, onChange, onReady: () => ref.current?.focus(),
   });
   const referencePickerRef = useRef<DockReferencePickerHandle | null>(null);
+  const referenceListId = useId();
+  const [activeReferenceId, setActiveReferenceId] = useState<string>();
+  const [pendingMention, setPendingMention] = useState<(DockReferenceMention & { value: string }) | null>(null);
+  const dismissedMentionStart = useRef<number | null>(null);
+  const composing = useRef(false);
+  const pendingCaret = useRef<number | null>(null);
+  const mentionEnabled = mode === 'conversation' && !!workspaceId && !!onAddReference && !disabled && active && !voice.busy;
+  const mention = mentionEnabled && pendingMention?.value === value ? pendingMention : null;
+
+  const updateMention = (input: HTMLTextAreaElement) => {
+    const next = mentionEnabled && !composing.current
+      ? dockReferenceMention(input.value, input.selectionStart, input.selectionEnd)
+      : null;
+    if (!next || next.start !== dismissedMentionStart.current) dismissedMentionStart.current = null;
+    setPendingMention(next && next.start !== dismissedMentionStart.current ? { ...next, value: input.value } : null);
+  };
+  const dismissMention = () => {
+    dismissedMentionStart.current = mention?.start ?? null;
+    setPendingMention(null);
+    setActiveReferenceId(undefined);
+  };
+  const selectMention = (reference: DockEntityReference) => {
+    if (!mention) return;
+    onAddReference?.(reference);
+    pendingCaret.current = mention.start;
+    onChange(value.slice(0, mention.start) + value.slice(mention.end));
+    dismissMention();
+  };
+  useLayoutEffect(() => {
+    if (pendingCaret.current === null) return;
+    ref.current?.focus();
+    ref.current?.setSelectionRange(pendingCaret.current, pendingCaret.current);
+    pendingCaret.current = null;
+  }, [value, ref]);
+
   const mediaInputRef = useRef<HTMLInputElement | null>(null);
   const documentInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -404,6 +440,14 @@ export function DockInput({
                 workspaceId={workspaceId!}
                 selected={references}
                 onSelect={onAddReference!}
+                autocomplete={mention ? {
+                  query: mention.query,
+                  listId: referenceListId,
+                  inputRef: ref,
+                  onSelect: selectMention,
+                  onDismiss: dismissMention,
+                  onActiveOptionChange: setActiveReferenceId,
+                } : undefined}
               />
             ) : null}
             {onAddContext ? (
@@ -454,7 +498,16 @@ export function DockInput({
         <textarea
           ref={ref}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          aria-autocomplete={mentionEnabled ? 'list' : undefined}
+          aria-controls={mention ? referenceListId : undefined}
+          aria-activedescendant={mention ? activeReferenceId : undefined}
+          onChange={(e) => {
+            onChange(e.target.value);
+            updateMention(e.currentTarget);
+          }}
+          onSelect={(e) => updateMention(e.currentTarget)}
+          onCompositionStart={() => { composing.current = true; dismissMention(); }}
+          onCompositionEnd={(e) => { composing.current = false; updateMention(e.currentTarget); }}
           onPaste={(event) => {
             if (!onAddMedia || busy || disabled) return;
             const imageFiles = getClipboardImageFiles(event.clipboardData);
@@ -470,12 +523,22 @@ export function DockInput({
             }
           }}
           onFocus={() => onFocusChange?.(true)}
-          onBlur={() => onFocusChange?.(false)}
+          onBlur={() => { onFocusChange?.(false); dismissMention(); }}
           onKeyDown={(e) => {
-            if (e.key === '@' && canAddReferences) {
-              e.preventDefault();
-              referencePickerRef.current?.open();
-              return;
+            if (e.nativeEvent.isComposing || composing.current) return;
+            if (mention) {
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                dismissMention();
+                return;
+              }
+              if (!e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && referencePickerRef.current?.onKeyDown(e.key)) {
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+              }
+              if (e.key === 'Tab' || e.key === 'Enter') dismissMention();
             }
             if (e.key === 'Escape' && voice.busy) { e.preventDefault(); voice.cancel(); return; }
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {

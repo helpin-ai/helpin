@@ -266,6 +266,7 @@ func newAssociationsTestDB(t *testing.T) *gorm.DB {
 			commercial_motion TEXT
 		)`,
 		`CREATE TABLE support_conversations (
+            merged_into_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			display_id INTEGER NOT NULL,

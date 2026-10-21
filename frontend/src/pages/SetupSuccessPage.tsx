@@ -11,6 +11,7 @@ import { systemStatusEnabled } from '@edition/config';
 import { workspaceSidebarSafeInsetClassName } from '@/components/design-system/quiet';
 import { SampleDataCard } from '@/components/setup/SampleDataButton';
 import { SetupSettingsLink } from '@/components/setup/CapabilityActions';
+import { WorkspaceSetupAssistant } from '@/components/setup/WorkspaceSetupAssistant';
 import { GitHubReturnNotice } from '@/components/setup/GitHubReturnNotice';
 import { useGitHubReturnResult } from '@/hooks/useGitHubReturnResult';
 import { blockingServices } from '@/components/setup/capabilityPresentation';
@@ -188,9 +189,14 @@ export function SetupSuccessPage() {
               <span className="text-[12px] tabular-nums text-quiet-text-tertiary">{view.completed_count} of {view.total_count} core steps verified</span>
             </div>
           </div>
-          {has('workspace.update') && (
-            <button type="button" className={quietTextAction} onClick={openGoalEditor}>Edit goals</button>
-          )}
+          <div className="flex items-center gap-4">
+            {(has('workspace.update') || has('team.manage') || has('workspace.invites.manage') || has('support.admin')) && (
+              <WorkspaceSetupAssistant workspaceId={workspaceId} slug={slug} />
+            )}
+            {has('workspace.update') && (
+              <button type="button" className={quietTextAction} onClick={openGoalEditor}>Edit goals</button>
+            )}
+          </div>
         </header>
 
         <section className="border-b border-quiet-divider-light py-4" aria-label={view.recommended ? 'Recommended next step' : 'Setup complete'}>

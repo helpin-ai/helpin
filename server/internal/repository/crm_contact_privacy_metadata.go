@@ -36,7 +36,7 @@ func redactContactIdentityJSON(raw json.RawMessage) (json.RawMessage, error) {
 					"searchvector", "viewsearchdocument", "lastpublicsenderdisplayname", "lastmessagesenderdisplayname",
 					"suggestedprimaryrecipientemail", "suggestedprimaryrecipientname", "emailthreadparticipants", "visitorcountrycode", "visitorcountryname",
 					"sessiontoken", "identitysignature", "signature", "lastpageurl", "countrycode", "countryname", "regionname", "cityname",
-					"from", "to", "cc", "bcc", "replyto", "originalrecipient", "recipientaddress", "recipientemail", "deliverytoemail", "toemail", "fromemail", "emailcc", "emailbcc", "ccemails", "bccemails", "recipientname", "fromfull", "tofull", "ccfull", "bccfull", "headers", "rfcmessageid":
+					"from", "to", "cc", "bcc", "replyto", "originalrecipient", "recipientaddress", "mergeemailrecipients", "recipientemail", "deliverytoemail", "toemail", "fromemail", "emailcc", "emailbcc", "ccemails", "bccemails", "recipientname", "fromfull", "tofull", "ccfull", "bccfull", "headers", "rfcmessageid":
 					delete(node, key)
 				default:
 					redact(child)

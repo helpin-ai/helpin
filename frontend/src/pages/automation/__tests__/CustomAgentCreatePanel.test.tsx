@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { automationService } from '@/lib/services/automationService';
 import { queryKeys } from '@/lib/queryKeys'
 import React, { act } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -116,6 +117,31 @@ function click(text: string) {
 }
 
 describe('CustomAgentCreatePanel', () => {
+  it('ignores an AI draft that arrives after switching to a blank agent', async () => {
+    let finish!: (value: Awaited<ReturnType<typeof automationService.draftCustomAgent>>) => void;
+    vi.mocked(automationService.draftCustomAgent).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const onChange = vi.fn();
+    renderPanel({ onChange });
+    const description = container!.querySelector('textarea')!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(description, 'Help maintain our documentation');
+      description.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    click('Generate agent setup');
+    click('Start blank');
+    expect(onChange).toHaveBeenCalledOnce();
+    await act(async () => finish({
+      error: null, status: 200,
+      data: { draft: {
+        name: 'Generated agent', role: 'Docs helper', system_prompt: 'Generated instructions',
+        allowed_targets: ['document'], allowed_tools: ['read_document'], skills: [],
+        approval_mode: 'risk_based', model_tier: 'large', default_invocation_mode: 'interactive', max_concurrent_runs: 1,
+      }, reasons: [], warnings: [] },
+    }));
+    expect(onChange).toHaveBeenCalledOnce();
+    expect(container?.textContent).toContain('Agent settings');
+  });
+
   it('renders and selects CRM working areas without silently adding others', () => {
     const form = { ...createDefaultCustomAgentForm(), allowed_targets: ['crm_deal' as const] };
     const onChange = vi.fn();

@@ -317,7 +317,7 @@ func TestJevLifecycleConfiguration(t *testing.T) {
 }
 
 func TestJevLifecycleAdmissionAndPersistenceFallback(t *testing.T) {
-	for _, scenario := range []string{"workspace excluded", "daily cap", "duplicate", "usage failure", "no provider"} {
+	for _, scenario := range []string{"workspace excluded", "daily cap", "pending", "usage failure", "no provider"} {
 		t.Run(scenario, func(t *testing.T) {
 			svc, db, _, row, _ := setupFollowUpTest(t)
 			p := &lifecycleJev{choice: "team_owes_work", probability: .99}
@@ -334,8 +334,11 @@ func TestJevLifecycleAdmissionAndPersistenceFallback(t *testing.T) {
 				if _, err := jev.evaluate(context.Background(), "ws", "conv", "test", "other", map[string]decision.Question{"lifecycle": supportJevFollowUpQuestion()}); err != nil {
 					t.Fatal(err)
 				}
-			case "duplicate":
+			case "pending":
 				if _, err := jev.classifyFollowUp(context.Background(), row, history); err != nil {
+					t.Fatal(err)
+				}
+				if err := db.Model(&model.SupportConversationTriageEvent{}).Where("event_type = ?", "jev_decision").Update("payload", model.JSONB{"status": "pending"}).Error; err != nil {
 					t.Fatal(err)
 				}
 			case "usage failure":
@@ -348,6 +351,26 @@ func TestJevLifecycleAdmissionAndPersistenceFallback(t *testing.T) {
 				t.Fatalf("fallback=%v/%s/%v", handled, classification, err)
 			}
 		})
+	}
+}
+
+func TestSupportJevFollowUpReusesDecision(t *testing.T) {
+	svc, db, _, row, _ := setupFollowUpTest(t)
+	p := &lifecycleJev{choice: "team_owes_work", probability: .99}
+	jev := attachLifecycleJev(t, db, svc.chat, p)
+	history, err := svc.chat.messageRepo.ListByConversation(context.Background(), "ws", "conv", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := jev.classifyFollowUp(context.Background(), row, history); err != nil {
+		t.Fatal(err)
+	}
+	handled, classification, err := svc.assessJevFollowUp(context.Background(), row, readControlConversation(t, db), svc.now())
+	if err != nil || !handled || classification != "team_owes_work" || p.calls != 1 {
+		t.Fatalf("cached assessment=%v/%s/%v calls=%d", handled, classification, err, p.calls)
+	}
+	if !supportConversationHumanOwned(readControlConversation(t, db)) {
+		t.Fatal("cached decision did not hand off")
 	}
 }
 

@@ -37,6 +37,13 @@ export interface SupportConversationTriage {
 }
 
 export interface SupportConversation {
+  merged_into_id?: string | null;
+  merge_revision?: number;
+  merge_email_recipients?: string[];
+  merge_has_widget?: boolean;
+  merge_continuation_id?: string;
+  merge_participants?: string[];
+  list_last_message_preview?: string;
   anonymized_at?: string | null;
   /** Whether the request appears in the customer portal. */
   portal_visible?: boolean;
@@ -72,6 +79,7 @@ export interface SupportConversation {
   ai_follow_up?: {
     id: string; run_id: string; status: 'scheduled' | 'assessing' | 'waiting' | 'resolved' | 'skipped' | 'cancelled' | 'failed' | 'handoff';
     sequence_version?: number; second_sent_at?: string; second_message_id?: string;
+    source_message_id?: string; cancelled_by_user_id?: string;
     reason?: string; due_at: string; sent_at?: string; sent_message_id?: string; close_at?: string; created_at: string; updated_at: string;
   };
   ai_resolution_type?: 'confirmed' | 'assumed' | null;
@@ -222,10 +230,12 @@ export interface SupportMailbox {
   description?: string | null;
   routing_prompt?: string | null;
   triage_eligible: boolean;
+  ai_replies_disabled?: boolean;
   linked_team_id?: string | null;
   linked_team_name?: string | null;
   visibility_mode: 'members_only';
-  assignment_mode: 'manual' | 'round_robin';
+  assignment_mode: 'manual' | 'specific_member' | 'round_robin';
+  assignment_member_ids?: string[] | null;
   reply_time_preset?: string | null;
   reply_time_custom_minutes?: number | null;
   position: number;
@@ -329,6 +339,7 @@ export interface CreateSupportEmailSenderRequest {
 }
 
 export interface SetSupportEmailSenderDefaultRequest {
+  single_mailbox?: boolean;
   default_scope: 'none' | 'workspace' | 'mailbox';
   mailbox_id?: string | null;
   mailbox_ids?: string[];
@@ -377,9 +388,11 @@ export interface CreateSupportMailboxRequest {
   description?: string | null;
   routing_prompt?: string | null;
   triage_eligible?: boolean;
+  ai_replies_disabled?: boolean;
   linked_team_id?: string | null;
   workspace_member_ids: string[];
-  assignment_mode: 'manual' | 'round_robin';
+  assignment_mode: 'manual' | 'specific_member' | 'round_robin';
+  assignment_member_ids?: string[];
   import_linked_team?: boolean;
 }
 
@@ -390,9 +403,11 @@ export interface UpdateSupportMailboxRequest {
   description?: string | null;
   routing_prompt?: string | null;
   triage_eligible?: boolean;
+  ai_replies_disabled?: boolean;
   linked_team_id?: string | null;
   workspace_member_ids?: string[];
-  assignment_mode?: 'manual' | 'round_robin';
+  assignment_mode?: 'manual' | 'specific_member' | 'round_robin';
+  assignment_member_ids?: string[];
   active?: boolean;
   import_linked_team?: boolean;
   reply_time_preset?: string;
@@ -623,6 +638,7 @@ export interface SupportMessage {
   metadata?: string;
   via_channel?: 'email' | 'widget' | 'portal' | null;
   email_notified_at?: string;
+  widget_read_at?: string | null;
   email_read_at?: string;
   cancellable_until?: string;
   attachments?: SupportAttachmentPayload[];
@@ -660,6 +676,12 @@ export interface SupportMessagePage {
   data: SupportMessage[];
   has_more: boolean;
   next_cursor?: string;
+}
+
+export interface UpdateSupportNoteRequest {
+  content: string;
+  attachment_ids: string[];
+  expected_updated_at: string;
 }
 
 export interface SupportMessageActionResponse {
@@ -700,6 +722,7 @@ export interface SupportMessageInfo {
   read_at?: string | null;
   read_status_label?: string;
   edited: boolean;
+  edited_at?: string;
   translated: boolean;
   automated: boolean;
 }
@@ -1034,6 +1057,7 @@ export interface CreateConversationRequest {
 export type SupportReplyDeliveryMode = 'chat_only' | 'chat_and_email' | 'email_only';
 
 export interface CreateMessageRequest {
+  expected_merge_revision?: number;
   send_original?: boolean;
  auto_translate?: boolean;
  translation_target_language?: string;
@@ -1149,6 +1173,7 @@ export interface BusinessHoursDay {
 }
 
 export interface SupportInboxSettings {
+  allow_cross_customer_merge?: boolean;
  translation_enabled?: boolean;
  translation_incoming_enabled?: boolean;
  translation_outgoing_enabled?: boolean;
@@ -1315,4 +1340,36 @@ export interface CustomerPortalAccessSummary {
 export interface CustomerPortalContactAccess {
   portal_access: CustomerPortalContactAccessValue | null;
   shared_email_contacts: number;
+}
+
+export interface SupportConversationMerge {
+  id: string;
+  operation_id: string;
+  source_id: string;
+  target_id: string;
+  actor_id: string;
+  actor_name?: string;
+  cross_customer: boolean;
+  created_at: string;
+  ended_at?: string;
+  source?: SupportConversation;
+  target?: SupportConversation;
+}
+
+export interface SupportMergePreview {
+  restore_inbox_required?: boolean;
+  target: SupportConversation;
+  sources: SupportConversation[];
+  preview_token: string;
+  cross_customer: boolean;
+  participants: string[];
+  stops_ai: boolean;
+  reopens: boolean;
+  transfers_access: boolean;
+}
+
+export interface SupportMergeResult {
+  conversation_id: string;
+  affected_ids: string[];
+  merges: SupportConversationMerge[];
 }

@@ -1,3 +1,4 @@
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { TeamColorMark } from '@/components/workspace/TeamLabel';
 import { TaskTriageSection } from './TaskTriageSection';
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
@@ -434,6 +435,13 @@ function TaskDetailPanelBody({
   const pendingPatchRef = useRef<UpdateTaskRequest>({});
   const descriptionPendingUploadsRef = useRef(0);
   const blockedAutosavePatchSignatureRef = useRef<string | null>(null);
+  useUnsavedChangesGuard(
+    () => saving ||
+      labelSaving ||
+      descriptionPendingUploadsRef.current > 0 ||
+      Object.keys(pendingPatchRef.current).length > 0,
+    'Wait for your task changes and uploads to save before refreshing.',
+  );
   const { copied: linkCopied, copy: copyText } = useCopyToClipboard();
   const { copied: duplicateKeyCopied, copy: copyDuplicateKey } = useCopyToClipboard();
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);

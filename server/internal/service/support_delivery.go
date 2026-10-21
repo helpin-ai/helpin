@@ -103,13 +103,18 @@ func (s *EmailFallbackService) validateExplicitEmail(ctx context.Context, worksp
 	if !settings.EmailFallbackEnabled {
 		return 0, fmt.Errorf("email delivery is disabled for this workspace")
 	}
-	if s.contactRepo != nil {
-		contact, err := s.contactRepo.GetByEmail(ctx, workspaceID, strings.TrimSpace(*conv.CustomerEmail))
-		if err != nil {
-			return 0, fmt.Errorf("unable to verify the recipient email address; try again")
+	for _, address := range append([]string{strings.TrimSpace(*conv.CustomerEmail)}, conv.MergeEmailRecipients...) {
+		if _, err := mail.ParseAddress(address); err != nil {
+			return 0, fmt.Errorf("a recipient email address is invalid; update it before sending")
 		}
-		if contact != nil && contact.EmailStatus == model.CRMContactEmailStatusInvalid {
-			return 0, fmt.Errorf("the recipient email address is marked invalid; update it before sending")
+		if s.contactRepo != nil {
+			contact, err := s.contactRepo.GetByEmail(ctx, workspaceID, address)
+			if err != nil {
+				return 0, fmt.Errorf("unable to verify the recipient email address; try again")
+			}
+			if contact != nil && contact.EmailStatus == model.CRMContactEmailStatusInvalid {
+				return 0, fmt.Errorf("the recipient email address is marked invalid; update it before sending")
+			}
 		}
 	}
 	if err := s.redis.Ping(ctx).Err(); err != nil {
@@ -136,6 +141,10 @@ func (s *EmailFallbackService) queueExplicitEmail(ctx context.Context, msg *mode
 }
 
 func (s *SupportInboxService) createExplicitEmailMessage(ctx context.Context, msg *model.SupportMessage, conv *model.SupportConversation, delaySecs int, emailSubject *string) error {
+	conv, err := mergedDeliveryConversation(ctx, s.conversationRepo, conv)
+	if err != nil {
+		return err
+	}
 	values := map[string]any{}
 	if err := json.Unmarshal([]byte(msg.Metadata), &values); err != nil {
 		return fmt.Errorf("unable to prepare email delivery; try again")

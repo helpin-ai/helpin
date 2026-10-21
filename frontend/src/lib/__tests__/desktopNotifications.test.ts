@@ -7,10 +7,19 @@ import type { WSEvent } from '@/hooks/useWebSocket'
 const preferences = { mute_workspace: false, do_not_disturb: false, channel_preferences: {} } as NotificationPreferences
 const event: WSEvent = { event_id: 'e1', sent_at: new Date().toISOString(), entity: 'notification', action: 'created', entity_id: 'n1', workspace_id: 'w1', actor_id: 'other', data: { recipient_id: 'u1', category: 'mentions', title: 'Sam mentioned you', entity_type: 'task', entity_id: 't1', status: 'unread' } }
 const show = vi.fn()
+const notifications: MockNotification[] = []
+class MockNotification {
+  static permission = 'granted'
+  onclick = null
+  onerror: (() => void) | null = null
+  close = vi.fn()
+  constructor(title: string, options: unknown) { show(title, options); notifications.push(this) }
+}
 beforeEach(() => {
   localStorage.clear()
-  show.mockClear()
-  vi.stubGlobal('Notification', class { static permission = 'granted'; onclick = null; close = vi.fn(); constructor(title: string, options: unknown) { show(title, options) } })
+  show.mockReset()
+  notifications.length = 0
+  vi.stubGlobal('Notification', MockNotification)
   vi.stubGlobal('isSecureContext', true)
   vi.spyOn(document, 'hasFocus').mockReturnValue(false)
   setDesktopEnabled('u1', true)
@@ -44,6 +53,35 @@ describe('desktop notification policy', () => {
 })
 
 describe('browser delivery', () => {
+  it('requests an alert when a later event replaces an existing notification', async () => {
+    const options = { userId: 'u1', workspaceId: 'w1', preferences, isCurrent: () => true, onClick: vi.fn() }
+    await deliverDesktopNotification(event, options)
+    await deliverDesktopNotification({ ...event, event_id: 'later-event', action: 'updated' }, options)
+    expect(show).toHaveBeenCalledTimes(2)
+    expect(show.mock.calls[1][1]).toMatchObject({ tag: show.mock.calls[0][1].tag, renotify: true })
+  })
+
+  it('does not permanently consume an event when constructing the notification fails', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    show.mockImplementationOnce(() => { throw new Error('Browser notification failed') })
+    const options = { userId: 'u1', workspaceId: 'w1', preferences, isCurrent: () => true, onClick: vi.fn() }
+    await deliverDesktopNotification(event, options)
+    await deliverDesktopNotification(event, options)
+    expect(show).toHaveBeenCalledTimes(2)
+  })
+
+  it('releases failed asynchronous delivery for a replay without removing other claims', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const options = { userId: 'u1', workspaceId: 'w1', preferences, isCurrent: () => true, onClick: vi.fn() }
+    await deliverDesktopNotification(event, options)
+    const laterEvent = { ...event, event_id: 'later-event' }
+    await deliverDesktopNotification(laterEvent, options)
+    notifications[0].onerror?.()
+    await deliverDesktopNotification(event, options)
+    await deliverDesktopNotification(laterEvent, options)
+    expect(show).toHaveBeenCalledTimes(3)
+  })
+
   it('truncates long titles and descriptions without splitting Unicode characters', async () => {
     const longEvent = { ...event, data: { ...event.data, title: 'A'.repeat(118) + '😀XYZ', body: 'B'.repeat(238) + '😀XYZ' } }
     await deliverDesktopNotification(longEvent, { userId: 'u1', workspaceId: 'w1', preferences, isCurrent: () => true, onClick: vi.fn() })

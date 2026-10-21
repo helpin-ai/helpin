@@ -189,6 +189,12 @@ func (h *Handler) addWorkflowPrompts(server *mcp.Server, tools []service.MCPTool
 		requiredTool string
 	}{
 		{
+			name: "setup_workspace", title: "Set up your workspace",
+			description:  "Configure workspace essentials and selected goals with MCP inspection and browser handoffs.",
+			text:         "Call get_current_context and get_workspace_setup and confirm the intended workspace and identity. Follow the returned setup instructions, current checks and links to deliver a useful working result for the selected goals. Agree on one short plan and execute authorized work without repeated approvals. Use supported MCP writes and the client's browser for UI-only settings; identify missing grants and continue independent steps. A read grant alone does not authorize browser changes. Include recipients, roles, publishing, live activation and paid runs in the approved plan; let the user handle credentials and OAuth. Re-read get_workspace_setup after saved changes and verify the agreed real-world outcome. Report what works and the exact remaining handoffs; do not equate configuration with delivery or successful tests.",
+			requiredTool: "get_workspace_setup",
+		},
+		{
 			name: "plan_feature", title: "Plan a feature",
 			description:  "Research workspace context, draft a PRD in Docs, and create linked implementation tasks.",
 			text:         "Confirm the current Helpin context. Search for related tasks and documents. Draft a concise PRD, create it as a Helpin document, then create implementation tasks with explicit dependencies. Use one stable idempotency key per mutation and summarize links at the end.",
@@ -199,6 +205,12 @@ func (h *Handler) addWorkflowPrompts(server *mcp.Server, tools []service.MCPTool
 			description:  "Review Helpin release evidence, blockers, documentation, and durable agent work.",
 			text:         "Confirm context, discover repositories, and search for the release, related tasks, and documents. Separate shipped evidence, blockers, rollout risk, and documentation gaps. Start a Helpin agent only after confirming the agent and target. Do not deploy or publish; return a readiness verdict and receipt.",
 			requiredTool: "search_workspace",
+		},
+		{
+			name: "setup_customer_support", title: "Set up customer support",
+			description:  "Inspect support setup and continue through authorized browser handoffs.",
+			text:         "Call get_support_setup and confirm the intended workspace. Follow its returned instructions to get the chosen channels working. Agree on a short plan including publishing, test messages and live activation, then execute approved work without asking again for each step. Reuse existing configuration, use authorized MCP tools or the browser handoffs, and continue independent steps while waiting for input. Let the user handle credentials and OAuth. Recheck setup after saved changes and verify actual receipt, reply delivery, routing and human handoff; configuration alone is not a successful test.",
+			requiredTool: "get_support_setup",
 		},
 		{
 			name: "triage_customer_issue", title: "Triage a customer issue",

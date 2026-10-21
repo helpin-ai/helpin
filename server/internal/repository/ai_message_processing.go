@@ -196,12 +196,18 @@ func (r *AIMessageProcessingRepository) CreateProgressReply(ctx context.Context,
 func (r *AIMessageProcessingRepository) createReply(ctx context.Context, processingID string, message *model.SupportMessage, greetingSource *model.SupportMessage, progress bool, runID ...string) (bool, error) {
 	created := false
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := LockSupportRouting(tx, message.WorkspaceID); err != nil {
+			return err
+		}
 		var conversation model.SupportConversation
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND workspace_id = ?", message.ConversationID, message.WorkspaceID).First(&conversation).Error; err != nil {
 			return err
 		}
 		if len(runID) > 0 && runID[0] != "" && (conversation.AIControlVersion > 0 || conversation.AIActiveRunID != nil) && (conversation.AIActiveRunID == nil || *conversation.AIActiveRunID != runID[0]) {
 			return nil
+		}
+		if err := LoadSupportMailboxAIPolicy(tx, &conversation); err != nil {
+			return err
 		}
 		if model.SupportAIConversationBlocked(&conversation) {
 			return nil

@@ -28,10 +28,14 @@ func (r *SupportFollowUpRepository) EnabledInstallations(ctx context.Context) ([
 	return rows, err
 }
 
-// Seed reserves at most 25 assessments per workspace per UTC day. Existing
+// Seed reserves at most 25 follow-up episodes per workspace per UTC day. Existing
 // backlog is limited to 30 days; a follow-up itself can never seed another.
-func (r *SupportFollowUpRepository) Seed(ctx context.Context, workspaceID string, settings model.SupportInboxSettings, now time.Time) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+func (r *SupportFollowUpRepository) Seed(ctx context.Context, workspaceID string, settings model.SupportInboxSettings, now time.Time) ([]model.SupportAIFollowUp, error) {
+	var seeded []model.SupportAIFollowUp
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := LockSupportRouting(tx, workspaceID); err != nil {
+			return err
+		}
 		var installation model.SupportWidgetInstallation
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("workspace_id = ?", workspaceID).First(&installation).Error; err != nil {
 			return err
@@ -51,19 +55,35 @@ func (r *SupportFollowUpRepository) Seed(ctx context.Context, workspaceID string
 			return nil
 		}
 		var rows []model.SupportConversation
-		err := supportFollowUpCandidates(tx, workspaceID, settings, now).
+		err := supportFollowUpCandidates(tx, workspaceID, settings, now, true).
+			Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
 			Order("last_public_message_at, id").Limit(25 - int(count)).Find(&rows).Error
 		if err != nil {
 			return err
 		}
 		for _, conv := range rows {
-			episode := model.SupportAIFollowUp{ID: uuid.NewString(), WorkspaceID: workspaceID, ConversationID: conv.ID, SourceMessageID: *conv.LastPublicMessageID, RunID: uuid.NewString(), Status: "scheduled", DueAt: now, SequenceVersion: 2, AssessmentAttempts: 1, SecondDelayHours: settings.AIFollowUpSecondDelayHours, CloseHours: settings.AIFollowUpCloseHours, CreatedAt: now, UpdatedAt: now}
-			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&episode).Error; err != nil {
-				return err
+			episode := model.SupportAIFollowUp{
+				ID: uuid.NewString(), WorkspaceID: workspaceID, ConversationID: conv.ID,
+				SourceMessageID: *conv.LastPublicMessageID, RunID: uuid.NewString(),
+				Status: "scheduled", SequenceVersion: 2, AssessmentAttempts: 1,
+				DueAt:            conv.LastPublicMessageAt.Add(time.Duration(settings.AIFollowUpDelayHours) * time.Hour),
+				SecondDelayHours: settings.AIFollowUpSecondDelayHours,
+				CloseHours:       settings.AIFollowUpCloseHours, CreatedAt: now, UpdatedAt: now,
+			}
+			result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&episode)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected > 0 {
+				seeded = append(seeded, episode)
 			}
 		}
 		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	return seeded, nil
 }
 
 // Claim leases a bounded batch. The episode state and source fences still
@@ -92,12 +112,18 @@ func (r *SupportFollowUpRepository) WithEpisode(ctx context.Context, workspaceID
 		return err
 	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := LockSupportRouting(tx, workspaceID); err != nil {
+			return err
+		}
 		var inst model.SupportWidgetInstallation
 		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("workspace_id = ?", workspaceID).First(&inst).Error; err != nil {
 			return err
 		}
 		var conv model.SupportConversation
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("workspace_id = ? AND id = ?", workspaceID, ref.ConversationID).First(&conv).Error; err != nil {
+			return err
+		}
+		if err := LoadSupportMailboxAIPolicy(tx, &conv); err != nil {
 			return err
 		}
 		var episode model.SupportAIFollowUp
@@ -118,18 +144,66 @@ func (r *SupportFollowUpRepository) Latest(ctx context.Context, workspaceID, con
 	return &row, err
 }
 
-// CancelConversation cancels current work without changing conversation ownership.
+// ErrSupportFollowUpChanged means a stop action refers to an episode that is no longer current.
+var ErrSupportFollowUpChanged = errors.New("the follow-up has changed")
+
+// CancelConversation preserves the legacy API for callers stopping all pending work.
 func (r *SupportFollowUpRepository) CancelConversation(ctx context.Context, workspaceID, conversationID string) error {
+	return r.CancelEpisode(ctx, workspaceID, conversationID, "", "")
+}
+
+// CancelEpisode stops only the displayed sequence under the same conversation
+// lock used by delivery. It never changes the assignee or unsends a message.
+func (r *SupportFollowUpRepository) CancelEpisode(ctx context.Context, workspaceID, conversationID, episodeID, actorID string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := LockSupportRouting(tx, workspaceID); err != nil {
+			return err
+		}
 		var conv model.SupportConversation
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("workspace_id = ? AND id = ?", workspaceID, conversationID).First(&conv).Error; err != nil {
 			return err
 		}
-		return tx.Model(&model.SupportAIFollowUp{}).Where("workspace_id = ? AND conversation_id = ? AND status IN ?", workspaceID, conversationID, []string{"scheduled", "assessing", "waiting"}).Updates(map[string]any{"status": "cancelled", "reason": "cancelled_by_teammate", "updated_at": time.Now().UTC()}).Error
+		query := tx.Model(&model.SupportAIFollowUp{}).Where("workspace_id = ? AND conversation_id = ?", workspaceID, conversationID)
+		if episodeID != "" {
+			var episode model.SupportAIFollowUp
+			err := tx.Where("workspace_id = ? AND conversation_id = ? AND id = ?", workspaceID, conversationID, episodeID).First(&episode).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrSupportFollowUpChanged
+			}
+			if err != nil {
+				return err
+			}
+			source := episode.SourceMessageID
+			if episode.SentMessageID != nil {
+				source = *episode.SentMessageID
+			}
+			if episode.SecondMessageID != nil {
+				source = *episode.SecondMessageID
+			}
+			if conv.LastPublicMessageID == nil || *conv.LastPublicMessageID != source {
+				return ErrSupportFollowUpChanged
+			}
+			if episode.Status == "cancelled" && episode.Reason == "cancelled_by_teammate" {
+				return nil
+			}
+			if episode.Status != "scheduled" && episode.Status != "assessing" && episode.Status != "waiting" {
+				return ErrSupportFollowUpChanged
+			}
+			query = query.Where("id = ?", episodeID)
+		}
+		fields := map[string]any{"status": "cancelled", "reason": "cancelled_by_teammate", "updated_at": time.Now().UTC()}
+		if actorID != "" {
+			fields["cancelled_by_user_id"] = actorID
+		}
+		return query.Where("status IN ?", []string{"scheduled", "assessing", "waiting"}).Updates(fields).Error
 	})
 }
 
-func supportFollowUpCandidates(tx *gorm.DB, workspaceID string, settings model.SupportInboxSettings, now time.Time) *gorm.DB {
+func supportFollowUpCandidates(tx *gorm.DB, workspaceID string, settings model.SupportInboxSettings, now time.Time, includeFuture bool) *gorm.DB {
+	cutoff := now.Add(-time.Duration(settings.AIFollowUpDelayHours) * time.Hour)
+	if includeFuture {
+		cutoff = now
+	}
 	channels := []string{}
 	if model.SupportAIChannelEnabled(settings, "chat") {
 		channels = append(channels, "widget")
@@ -140,20 +214,21 @@ func supportFollowUpCandidates(tx *gorm.DB, workspaceID string, settings model.S
 	return tx.Model(&model.SupportConversation{}).Where(`(CASE WHEN source = 'email' OR channel = 'email' OR EXISTS
  (SELECT 1 FROM support_messages m WHERE m.id = support_conversations.last_public_message_id AND m.workspace_id = support_conversations.workspace_id AND m.via_channel = 'email')
  THEN 'email' ELSE channel END) IN ?`, channels).Where(`workspace_id = ? AND flow_state = 'ai_handling' AND ai_state = 'pending'
-   AND status IN ('open','waiting_on_customer')
+   AND status IN ('open','waiting_on_customer') AND merged_into_id IS NULL AND ai_paused_at IS NULL
    AND NOT coalesce(human_takeover,false) AND assigned_user_id IS NULL AND opened_by_user_id IS NULL
    AND customer_requested_human_at IS NULL AND linked_task_id IS NULL
    AND last_public_message_id IS NOT NULL AND NOT email_unsubscribed
    AND (ai_resumed_at IS NULL OR last_public_message_at > ai_resumed_at)
    AND assigned_agent_id = ? AND last_public_sender_type = 'ai' AND last_public_message_at <= ? AND last_public_message_at >= ?
    AND NOT customer_awaiting_response
-   AND NOT EXISTS (SELECT 1 FROM support_ai_follow_ups f WHERE f.workspace_id = support_conversations.workspace_id AND f.conversation_id = support_conversations.id AND (f.source_message_id = support_conversations.last_public_message_id OR f.sent_message_id = support_conversations.last_public_message_id OR f.second_message_id = support_conversations.last_public_message_id OR f.status IN ('scheduled','assessing','waiting')))`, workspaceID, settings.AIAgentID, now.Add(-time.Duration(settings.AIFollowUpDelayHours)*time.Hour), now.Add(-30*24*time.Hour))
+   AND NOT EXISTS (SELECT 1 FROM support_mailboxes mb WHERE mb.id = support_conversations.mailbox_id AND mb.workspace_id = support_conversations.workspace_id AND mb.ai_replies_disabled = true)
+   AND NOT EXISTS (SELECT 1 FROM support_ai_follow_ups f WHERE f.workspace_id = support_conversations.workspace_id AND f.conversation_id = support_conversations.id AND (f.source_message_id = support_conversations.last_public_message_id OR f.sent_message_id = support_conversations.last_public_message_id OR f.second_message_id = support_conversations.last_public_message_id OR f.status IN ('scheduled','assessing','waiting')))`, workspaceID, settings.AIAgentID, cutoff, now.Add(-30*24*time.Hour))
 }
 
 // Preview returns counts and a bounded sample without creating work or agent runs.
 func (r *SupportFollowUpRepository) Preview(ctx context.Context, workspaceID string, settings model.SupportInboxSettings, now time.Time) (*model.SupportFollowUpPreview, error) {
 	result := &model.SupportFollowUpPreview{DailyLimit: 25, LookbackDays: 30}
-	query := supportFollowUpCandidates(r.db.WithContext(ctx), workspaceID, settings, now)
+	query := supportFollowUpCandidates(r.db.WithContext(ctx), workspaceID, settings, now, false)
 	if err := query.Count(&result.Candidates).Error; err != nil {
 		return nil, err
 	}

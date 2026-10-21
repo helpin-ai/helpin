@@ -55,6 +55,22 @@ describe('WidgetManager', () => {
     });
   };
 
+  it('orders late joins before their reply without changing preview, unread count or sound', () => {
+    const manager = widget as any;
+    manager.render = vi.fn();
+    manager.playReceivedMessageSound = vi.fn();
+    manager.activeConversationId = 'conv-1';
+    manager.conversations = [{ id: 'conv-1', subject: 'Question', status: 'open', unreadCount: 0 }];
+    const reply = { id: 'reply', conversation_id: 'conv-1', sender_type: 'user', message_type: 'reply', content: 'Hello', created_at: '2026-10-13T12:00:00.123457Z' };
+    manager.commitReceivedMessage(reply);
+    const afterReply = { ...manager.conversations[0] };
+    manager.commitReceivedMessage({ id: 'join', conversation_id: 'conv-1', sender_type: 'user', message_type: 'system', system_event_type: 'teammate_joined', content: 'Teammate joined the conversation.', created_at: '2026-10-13T12:00:00.123456Z' });
+    manager.commitReceivedMessage(reply);
+    expect(manager.messages.map((m: any) => m.id)).toEqual(['join', 'reply']);
+    expect(manager.conversations[0]).toEqual(afterReply);
+    expect(manager.playReceivedMessageSound).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     [1000, true, true, 'closed'],
     [1000, false, true, 'error'],

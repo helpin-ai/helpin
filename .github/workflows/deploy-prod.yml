@@ -290,6 +290,14 @@ jobs:
             build
           pnpm --dir frontend run build:ee
 
+      - name: Check open-tab release recovery
+        working-directory: build-prod-netlify/frontend
+        env:
+          SUPPORT_E2E_PREVIEW: '1'
+        run: |
+          pnpm exec playwright install --with-deps chromium
+          pnpm exec playwright test --config=playwright.support.config.ts --project=chromium support-release-recovery
+
       - name: Deploy to Netlify
         working-directory: build-prod-netlify
         env:

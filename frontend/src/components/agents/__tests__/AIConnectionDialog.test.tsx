@@ -165,3 +165,22 @@ it('offers Helpin support when Cloud has no compatible endpoints', async () => {
   expect(helpinClient.open).toHaveBeenCalledOnce();
   expect(aiConnectionService.create).not.toHaveBeenCalled();
 });
+
+it('preselects the chosen provider and lets admins choose access when connecting', async () => {
+  await render(<AIConnectionDialog workspaceId="ws" scope="personal" canChooseScope open mode={{kind:'add',provider:'anthropic'}} models={[{provider:'anthropic',selection_model:'claude',label:'Claude',tier:'large'}]} onOpenChange={() => {}} />);
+  expect(document.querySelector('[aria-label="Provider"]')).toBeNull();
+  expect(document.querySelector<HTMLInputElement>('input[id$="-name"]')?.value).toBe('Anthropic');
+  await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Access"]')!.click());
+  await act(async () => document.querySelector<HTMLElement>('[cmdk-item][data-value="workspace"]')!.click());
+  const key=document.querySelector<HTMLInputElement>('input[type="password"]')!;
+  await act(async () => {Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(key,'test-key'); key.dispatchEvent(new Event('input',{bubbles:true}));});
+  await act(async () => document.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+  expect(aiConnectionService.create).toHaveBeenCalledWith('ws', expect.objectContaining({provider:'anthropic',scope:'workspace'}));
+});
+
+it('never offers a workspace scope to members or for ChatGPT', async () => {
+  for (const [canChooseScope,provider] of [[false,'openai'],[true,'openai_chatgpt']] as const) {
+    await render(<AIConnectionDialog workspaceId="ws" scope="personal" canChooseScope={canChooseScope} open mode={{kind:'add',provider}} models={[]} onOpenChange={() => {}} />);
+    expect(document.querySelector('[aria-label="Access"]')).toBeNull();
+  }
+});

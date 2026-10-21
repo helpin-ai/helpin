@@ -40,6 +40,17 @@
     },
     {
       "provider": "openrouter",
+      "canonical_model": "deepseek-v4.1-flash-1017",
+      "label": "DeepSeek V4.1 Flash 1017",
+      "aliases": [
+        "deepseek/deepseek-v4.1-flash-1017",
+        "deepseek/deepseek-v4.1-flash-1017:nitro"
+      ],
+      "tier": "small",
+      "enabled": true
+    },
+    {
+      "provider": "openrouter",
       "canonical_model": "deepseek-v4.1-flash",
       "label": "DeepSeek V4.1 Flash",
       "aliases": [
@@ -275,6 +286,18 @@
     },
     {
       "provider": "openrouter",
+      "canonical_model": "deepseek-v4.1-flash-1017",
+      "route": "deepseek/deepseek-v4.1-flash-1017",
+      "service_tier": "standard",
+      "tier": "small",
+      "cache_read_support": true,
+      "cache_write_support": false,
+      "context_window": 1048576,
+      "maximum_output": 131072,
+      "enabled": true
+    },
+    {
+      "provider": "openrouter",
       "canonical_model": "deepseek-v4.1-flash",
       "route": "deepseek/deepseek-v4.1-flash",
       "service_tier": "standard",
@@ -283,6 +306,18 @@
       "cache_write_support": false,
       "context_window": 1048576,
       "maximum_output": 384000,
+      "enabled": true
+    },
+    {
+      "provider": "openrouter",
+      "canonical_model": "deepseek-v4.1-flash-1017",
+      "route": "deepseek/deepseek-v4.1-flash-1017:nitro",
+      "service_tier": "standard",
+      "tier": "small",
+      "cache_read_support": true,
+      "cache_write_support": false,
+      "context_window": 1048576,
+      "maximum_output": 131072,
       "enabled": true
     },
     {

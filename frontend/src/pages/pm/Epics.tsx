@@ -87,9 +87,9 @@ import {
 
 const healthConfig: Record<EpicHealth, { label: string; color: string }> = {
   no_health: { label: 'No health', color: 'text-muted-foreground' },
-  on_track: { label: 'On track', color: 'text-green-600' },
-  at_risk: { label: 'At risk', color: 'text-yellow-600' },
-  off_track: { label: 'Off track', color: 'text-red-600' },
+  on_track: { label: 'On track', color: 'text-green-600 dark:text-green-400' },
+  at_risk: { label: 'At risk', color: 'text-yellow-600 dark:text-yellow-400' },
+  off_track: { label: 'Off track', color: 'text-red-600 dark:text-red-400' },
 };
 
 const ARCHIVED_STATE_VALUE = '__archived__';

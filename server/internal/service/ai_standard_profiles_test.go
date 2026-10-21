@@ -14,7 +14,7 @@ import (
 func standardProfilesFixture(t *testing.T) (*AIStandardProfiles, *AIConnectionService, *gorm.DB) {
 	t.Helper()
 	connections, db := setupAIConnectionTest(t)
-	if err := db.AutoMigrate(&model.AIProfile{}, &model.AIWorkspaceSettings{}); err != nil {
+	if err := db.AutoMigrate(&model.AIProfile{}, &model.AIWorkspaceSettings{}, &model.AIPersonalSettings{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`CREATE TABLE workspaces(id TEXT PRIMARY KEY); INSERT INTO workspaces VALUES ('workspace'),('other')`).Error; err != nil {
@@ -237,7 +237,7 @@ func TestStandardProfilesFollowConfiguredProviders(t *testing.T) {
 			"large": fixedLarge, "flagship": {"openai", "gpt-5.5"},
 		}},
 		{name: "only openrouter", credentials: map[string]string{"openrouter": "openrouter-key"}, want: map[string]standardRouteWant{
-			"small": {"openrouter", "deepseek/deepseek-v4.1-flash:nitro"}, "medium": {"openrouter", "google/gemini-3.8-flash"},
+			"small": {"openrouter", "deepseek/deepseek-v4.1-flash-1017:nitro"}, "medium": {"openrouter", "google/gemini-3.8-flash"},
 			"large": {"openrouter", "openai/gpt-5.6-terra"}, "flagship": {"openrouter", "anthropic/claude-sonnet-5"},
 		}},
 		{name: "openai and anthropic", credentials: map[string]string{"openai": "openai-key", "anthropic": "anthropic-key"}, want: map[string]standardRouteWant{
@@ -274,7 +274,7 @@ func TestStandardProfilesRemapWhenSharedConnectionsChange(t *testing.T) {
 	if err := s.EnsureWorkspace(ctx, "workspace"); err != nil {
 		t.Fatal(err)
 	}
-	fixedSmall := standardRouteWant{"openrouter", "deepseek/deepseek-v4.1-flash:nitro"}
+	fixedSmall := standardRouteWant{"openrouter", "deepseek/deepseek-v4.1-flash-1017:nitro"}
 	assertStandardProfile(t, db, "small", fixedSmall, model.StandardAIConnectionID("workspace", "openrouter"))
 
 	login, err := connections.Create(ctx, "workspace", "owner", model.CreateAIConnectionRequest{Name: "Team OpenAI", Scope: "workspace", Provider: "openai", APIKey: "team-key"})
@@ -420,7 +420,7 @@ func TestStandardProfilesRotateOnlyEnvironmentCredentials(t *testing.T) {
 
 func TestAgentCreationUsesConnectedProviderRoute(t *testing.T) {
 	db := newAgentServiceTestDB(t)
-	if err := db.AutoMigrate(&model.AIConnection{}, &model.AIProfile{}, &model.AIWorkspaceSettings{}); err != nil {
+	if err := db.AutoMigrate(&model.AIConnection{}, &model.AIProfile{}, &model.AIWorkspaceSettings{}, &model.AIPersonalSettings{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`CREATE TABLE workspaces(id TEXT PRIMARY KEY); INSERT INTO workspaces VALUES ('ws-test')`).Error; err != nil {
@@ -454,7 +454,7 @@ func TestAgentCreationUsesConnectedProviderRoute(t *testing.T) {
 
 func TestAgentCreationAssignsStandardProfiles(t *testing.T) {
 	db := newAgentServiceTestDB(t)
-	if err := db.AutoMigrate(&model.AIConnection{}, &model.AIProfile{}, &model.AIWorkspaceSettings{}); err != nil {
+	if err := db.AutoMigrate(&model.AIConnection{}, &model.AIProfile{}, &model.AIWorkspaceSettings{}, &model.AIPersonalSettings{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`CREATE TABLE workspaces(id TEXT PRIMARY KEY); INSERT INTO workspaces VALUES ('ws-test')`).Error; err != nil {

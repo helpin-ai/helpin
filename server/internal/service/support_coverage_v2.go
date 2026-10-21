@@ -7,6 +7,9 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	enums "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/serviceerror"
+	tclient "go.temporal.io/sdk/client"
 )
 
 type CoverageTopicDetailV2 struct {
@@ -15,18 +18,68 @@ type CoverageTopicDetailV2 struct {
 }
 
 type CoveragePipelineHealth struct {
-	LatestBatch *model.CoverageBatch            `json:"latest_batch"`
-	Failures    []model.CoverageAnalysisAttempt `json:"failures"`
-	Healthy     bool                            `json:"healthy"`
-	Rollout     CoverageRolloutDecision         `json:"rollout"`
+	ReanalysisStatus string                          `json:"reanalysis_status,omitempty"`
+	LatestBatch      *model.CoverageBatch            `json:"latest_batch"`
+	Failures         []model.CoverageAnalysisAttempt `json:"failures"`
+	Healthy          bool                            `json:"healthy"`
+	Rollout          CoverageRolloutDecision         `json:"rollout"`
 }
 
 var ErrCoverageV2ReadDisabled = errors.New("coverage v2 reads are not enabled for this workspace")
 
 type SupportCoverageV2Service struct {
 	repo          *repository.CoverageV2Repository
+	temporal      tclient.Client
 	rolloutPolicy *CoverageRolloutPolicy
 }
+
+func (s *SupportCoverageV2Service) SetTemporalClient(client tclient.Client) *SupportCoverageV2Service {
+	s.temporal = client
+	return s
+}
+
+func (s *SupportCoverageV2Service) reanalysisStatus(ctx context.Context, workspaceID string) (string, error) {
+	if s.temporal == nil {
+		return "unavailable", nil
+	}
+	description, err := s.temporal.DescribeWorkflowExecution(ctx, "coverage-reanalysis-"+workspaceID, "")
+	var notFound *serviceerror.NotFound
+	if errors.As(err, &notFound) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if description == nil || description.WorkflowExecutionInfo == nil {
+		return "unavailable", nil
+	}
+	switch description.WorkflowExecutionInfo.Status {
+	case enums.WORKFLOW_EXECUTION_STATUS_RUNNING:
+		for _, pending := range description.PendingActivities {
+			if pending.State == enums.PENDING_ACTIVITY_STATE_STARTED {
+				return "running", nil
+			}
+		}
+		return "queued", nil
+	case enums.WORKFLOW_EXECUTION_STATUS_FAILED, enums.WORKFLOW_EXECUTION_STATUS_TIMED_OUT, enums.WORKFLOW_EXECUTION_STATUS_TERMINATED, enums.WORKFLOW_EXECUTION_STATUS_CANCELED:
+		return "failed", nil
+	default:
+		return "", nil
+	}
+}
+
+func (s *SupportCoverageV2Service) EnsureReanalysisEnabled(ctx context.Context, workspaceID string) error {
+	decision, err := s.rolloutDecision(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+	if !decision.CaptureEnabled || len(decision.PauseReasons) > 0 {
+		return ErrCoverageReanalysisPaused
+	}
+	return nil
+}
+
+var ErrCoverageReanalysisPaused = errors.New("coverage analysis is paused or not enabled")
 
 func (s *SupportCoverageV2Service) SetRolloutPolicy(policy *CoverageRolloutPolicy) *SupportCoverageV2Service {
 	if s != nil {
@@ -71,6 +124,13 @@ func (s *SupportCoverageV2Service) ListTopics(ctx context.Context, workspaceID s
 	return s.repo.ListTopics(ctx, workspaceID, limit, offset)
 }
 
+func (s *SupportCoverageV2Service) CountTopics(ctx context.Context, workspaceID string) (int64, error) {
+	if err := s.requireRead(ctx, workspaceID); err != nil {
+		return 0, err
+	}
+	return s.repo.CountTopics(ctx, workspaceID)
+}
+
 func (s *SupportCoverageV2Service) GetTopic(ctx context.Context, workspaceID, topicID string) (*CoverageTopicDetailV2, error) {
 	if err := s.requireRead(ctx, workspaceID); err != nil {
 		return nil, err
@@ -87,6 +147,13 @@ func (s *SupportCoverageV2Service) ListSignals(ctx context.Context, workspaceID 
 		return nil, err
 	}
 	return s.repo.ListUnreviewedSignals(ctx, workspaceID, limit, offset)
+}
+
+func (s *SupportCoverageV2Service) CountSignals(ctx context.Context, workspaceID string) (int64, error) {
+	if err := s.requireRead(ctx, workspaceID); err != nil {
+		return 0, err
+	}
+	return s.repo.CountUnreviewedSignals(ctx, workspaceID)
 }
 
 func (s *SupportCoverageV2Service) ReviewSignal(ctx context.Context, workspaceID, signalID, topicID, actorID string) error {
@@ -114,7 +181,11 @@ func (s *SupportCoverageV2Service) PipelineHealth(ctx context.Context, workspace
 	if len(rollout.PauseReasons) > 0 {
 		healthy = false
 	}
-	return &CoveragePipelineHealth{LatestBatch: batch, Failures: failures, Healthy: healthy, Rollout: rollout}, nil
+	status, err := s.reanalysisStatus(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	return &CoveragePipelineHealth{ReanalysisStatus: status, LatestBatch: batch, Failures: failures, Healthy: healthy, Rollout: rollout}, nil
 }
 
 func (s *SupportCoverageV2Service) ReplayAttempt(ctx context.Context, workspaceID, attemptID string) error {

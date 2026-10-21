@@ -37,6 +37,7 @@ class DockRosterOwner {
   private activities = new Map<symbol, Activity>();
   private requests = new Map<string, Promise<void>>();
   private controllers = new Map<string, AbortController>();
+  private archivedChatIds = new Set<string>();
   private pendingRunUpdates = new Map<string, AgentRunEventDetail>();
   private revisions = { chats: 0, runs: 0 };
   private loadedPages = { chats: false, runs: false };
@@ -247,7 +248,7 @@ class DockRosterOwner {
           }
           const current = useDockStore.getState().chats;
           const byId = new Map(current.map((chat) => [chat.id, chat]));
-          const incoming = result.data.chats.map((chat) => {
+          const incoming = result.data.chats.filter((chat) => !this.archivedChatIds.has(chat.id)).map((chat) => {
             const previous = byId.get(chat.id);
             return !chat.active_run_status && previous && previous.active_run_id === chat.active_run_id && previous.active_run_status
               ? { ...chat, active_run_status: previous.active_run_status } : chat;
@@ -270,7 +271,7 @@ class DockRosterOwner {
             return;
           }
           const current = this.state.runs;
-          const incoming = result.data.runs ?? [];
+          const incoming = (result.data.runs ?? []).filter((summary) => !this.archivedChatIds.has(summary.run.dock_chat_id ?? ''));
           const known = new Set(current.map((summary) => summary.run.id));
           const incomingIds = new Set(incoming.map((summary) => summary.run.id));
           this.publish({
@@ -325,6 +326,37 @@ class DockRosterOwner {
     this.followups[kind] = batch;
     return next;
   }
+  archiveChat = async (chatId: string): Promise<boolean> => {
+    if (!this.current() || this.archivedChatIds.has(chatId)) return false;
+    const chats = useDockStore.getState().chats;
+    const index = chats.findIndex((chat) => chat.id === chatId);
+    const archivedChat = chats[index];
+    const archivedRuns = this.state.runs.filter((summary) => summary.run.dock_chat_id === chatId);
+    // Keep a tombstone for this roster's lifetime so stale reads cannot restore
+    // a chat or its collapsed-bar links, including across multiple dock surfaces.
+    this.archivedChatIds.add(chatId);
+    useDockStore.getState().setChats(chats.filter((chat) => chat.id !== chatId));
+    this.publish({ runs: this.state.runs.filter((summary) => summary.run.dock_chat_id !== chatId) });
+    try {
+      const result = await dockChatService.updateChat(this.workspaceId, chatId, { archived: true });
+      if (result.error || !result.data) throw new Error(result.error ?? 'Failed to archive conversation');
+      return true;
+    } catch (error) {
+      this.archivedChatIds.delete(chatId);
+      if (this.current()) {
+        const currentChats = [...useDockStore.getState().chats];
+        if (archivedChat && !currentChats.some((chat) => chat.id === chatId)) {
+          currentChats.splice(Math.min(index, currentChats.length), 0, archivedChat);
+          useDockStore.getState().setChats(currentChats);
+        }
+        const currentRunIds = new Set(this.state.runs.map((summary) => summary.run.id));
+        this.publish({ runs: [...this.state.runs, ...archivedRuns.filter((summary) => !currentRunIds.has(summary.run.id))] });
+        toast.error(error instanceof Error ? error.message : 'Failed to archive conversation');
+      }
+      return false;
+    }
+  };
+
   invalidateChats = () => { this.revisions.chats += 1; };
   refreshChats = (preserveLoaded = false) => this.refreshFresh('chats', preserveLoaded);
   refreshRuns = async () => {
@@ -357,6 +389,7 @@ export function useDockRoster(workspaceId: string | undefined, userId: string | 
   }, [owner]);
   return {
     ...state,
+    archiveChat: owner?.archiveChat ?? (async () => false),
     invalidateChats: owner?.invalidateChats ?? (() => {}),
     refreshChats: owner?.refreshChats ?? (async () => {}),
     refreshRuns: owner?.refreshRuns ?? (async () => []),

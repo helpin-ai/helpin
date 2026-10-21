@@ -69,6 +69,7 @@ func main() {
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: parseLogLevel(cfg.LogLevel)}))
 	slog.SetDefault(logger)
+	metrics := observability.NewMetrics()
 
 	s3Client := storage.NewS3Client(
 		cfg.AWSAccessKeyID,
@@ -678,6 +679,7 @@ func main() {
 	if err != nil {
 		fatalWithSentry("configure product decisions", err)
 	}
+	jevDecisions.SetMetrics(metrics)
 	supportCoverageDailyAnalyzer.SetJevDecisions(jevDecisions)
 	commandService.SetJevDecisions(jevDecisions)
 	ruleEngine.SetJevDecisions(jevDecisions)
@@ -756,6 +758,18 @@ func main() {
 	}
 	routingScheduleCancel()
 
+	var metricsServer *http.Server
+	if addr := os.Getenv("METRICS_ADDR"); addr != "" {
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", metrics.Handler())
+		metricsServer = &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second, WriteTimeout: 10 * time.Second}
+		go func() {
+			if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				slog.Error("worker metrics server stopped", "error", err)
+			}
+		}()
+	}
+
 	stopCh := make(chan os.Signal, 1)
 	signal.Notify(stopCh, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	<-stopCh
@@ -764,6 +778,13 @@ func main() {
 	gitGraceCleanupCancel()
 	for _, sharedWorker := range workers {
 		sharedWorker.Stop()
+	}
+	if metricsServer != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := metricsServer.Shutdown(ctx); err != nil {
+			slog.Error("shut down worker metrics server", "error", err)
+		}
 	}
 
 	if err := sqlDB.Close(); err != nil {

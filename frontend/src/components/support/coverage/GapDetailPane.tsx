@@ -63,6 +63,7 @@ export interface GapDetailPaneProps {
   onApplyMergeSuggestion: (id: string) => void;
   onDismissMergeSuggestion: (id: string) => void;
   onStatusUpdate: (id: string, status: string) => void;
+  onReclassify?: (id: string, gapType: string) => void;
   onRegenerate: (id: string) => void;
   onRefresh: () => void;
 }
@@ -79,6 +80,7 @@ export function GapDetailPane(props: GapDetailPaneProps) {
   } = props;
   const [quickDraftOpen, setQuickDraftOpen] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [reviewType, setReviewType] = useState('');
   const draft = gap.suggestions.find(
     (suggestion) =>
       suggestion.status === "draft" &&
@@ -204,6 +206,24 @@ export function GapDetailPane(props: GapDetailPaneProps) {
           </Button>
         </div>
       </header>
+
+      {canEdit && contentGap && gap.status === 'open' && gap.v1_gap_type === 'needs_review' && props.onReclassify && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-border/50 px-5 py-3 sm:px-7">
+          <Select value={reviewType} onValueChange={setReviewType} disabled={statusUpdating}>
+            <SelectTrigger className="w-full sm:w-56" aria-label="Classify detection">
+              <SelectValue placeholder="Choose the improvement needed" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="missing_article">Missing knowledge</SelectItem>
+              <SelectItem value="weak_article">Incomplete knowledge</SelectItem>
+              <SelectItem value="outdated_or_conflicting_article">Outdated or conflicting knowledge</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button size="sm" variant="outline" disabled={!reviewType || statusUpdating} onClick={() => props.onReclassify?.(gap.id, reviewType)}>
+            {statusUpdating ? 'Saving…' : 'Confirm gap'}
+          </Button>
+        </div>
+      )}
 
       {(gap.split_review_needed || gap.recurrence_reopened || props.generateError || generating || (savedDraft && !draft) || (gap.status !== "open" && gap.status_changed_at)) && <div className="space-y-4 px-5 py-4 sm:px-7">
         {gap.split_review_needed && (

@@ -10,6 +10,8 @@ export interface AgentSkillRef {
 
 /** A skill entry in the merged catalog (built-in + workspace). */
 export interface SkillCatalogEntry {
+  is_customized?: boolean;
+  default_content?: { title: string; description: string; instructions: string };
   id?: string;
   key: string;
   version_key?: string;
@@ -62,6 +64,8 @@ export interface CreateWorkspaceSkillRequest {
 
 /** Payload for updating a workspace skill. */
 export interface UpdateWorkspaceSkillRequest {
+  restore_default?: boolean;
+  expected_version?: string;
   key?: string;
   title?: string;
   description?: string;

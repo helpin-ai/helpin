@@ -243,9 +243,9 @@ func (s *SupportFollowUpService) handoff(ctx context.Context, tx *gorm.DB, conv 
 	if mailboxID == nil {
 		mailboxID = ai.resolveConfiguredHandoffMailbox(ctx, conv.WorkspaceID, settings)
 	}
-	fields := map[string]any{"human_takeover": true, "status": model.SupportConversationStatusOpen, "resolved_at": nil, "closed_at": nil, "customer_awaiting_response": true, "ai_state": "escalated", "ai_escalated_at": now, "flow_state": escalatedConversationFlowState(settings, now), "assigned_agent_id": nil, "mailbox_id": mailboxID}
+	fields := map[string]any{"human_takeover": true, "status": model.SupportConversationStatusOpen, "resolved_at": nil, "closed_at": nil, "customer_awaiting_response": true, "ai_state": "escalated", "ai_escalated_at": now, "flow_state": escalatedConversationFlowState(settings, now), "assigned_agent_id": nil, "assigned_user_id": nil, "mailbox_id": mailboxID}
 	if settings.HandoffBehavior != "unassigned" && ai.workspaceRepo != nil {
-		selection, err := selectSupportConversationRecipient(ctx, ai.workspaceRepo, ai.mailboxRepo, ai.installationRepo, nil, ai.presence, ai.statusOverrideRepo, supportRecipientSelectorInput{WorkspaceID: conv.WorkspaceID, MailboxID: mailboxID, HandoffBehavior: settings.HandoffBehavior, HandoffTeamID: settings.HandoffTeamID, RequireAvailability: true, Now: now})
+		selection, err := selectSupportConversationRecipient(ctx, ai.workspaceRepo, ai.mailboxRepo, ai.installationRepo, nil, ai.presence, ai.statusOverrideRepo, supportRecipientSelectorInput{WorkspaceID: conv.WorkspaceID, MailboxID: mailboxID, HandoffBehavior: settings.HandoffBehavior, HandoffTeamID: settings.HandoffTeamID, RequireAvailability: true, UseMailboxAssignment: true, Now: now})
 		if err != nil {
 			return err
 		}
@@ -265,7 +265,7 @@ func (s *SupportFollowUpService) finishHandoff(ctx context.Context, tx *gorm.DB,
 	if err := s.handoff(ctx, tx, conv, settings, now); err != nil {
 		return nil, err
 	}
-	history, err := s.chat.messageRepo.WithTx(tx).ListByConversation(ctx, conv.WorkspaceID, conv.ID, false)
+	history, err := s.chat.messageRepo.WithTx(tx).ListForSupportAI(ctx, conv.WorkspaceID, conv.ID, false)
 	if err != nil {
 		return nil, err
 	}

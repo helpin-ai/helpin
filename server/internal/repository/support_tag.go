@@ -20,6 +20,17 @@ func NewSupportTagRepository(db *gorm.DB) *SupportTagRepository {
 	return &SupportTagRepository{db: db}
 }
 
+// WithConversation serializes automatic and manual tag changes for one conversation.
+func (r *SupportTagRepository) WithConversation(ctx context.Context, workspaceID, conversationID string, apply func(*gorm.DB) error) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var conversation model.SupportConversation
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("workspace_id = ? AND id = ? AND anonymized_at IS NULL", workspaceID, conversationID).Take(&conversation).Error; err != nil {
+			return err
+		}
+		return apply(tx)
+	})
+}
+
 func (r *SupportTagRepository) ListByWorkspace(ctx context.Context, workspaceID string) ([]model.SupportTag, error) {
 	var tags []model.SupportTag
 	if err := r.db.WithContext(ctx).

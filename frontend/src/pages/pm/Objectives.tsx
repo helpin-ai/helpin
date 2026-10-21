@@ -59,9 +59,9 @@ const typeFilterOptions: { value: string; label: string }[] = [
 ];
 
 const healthFilterOptions: PMFilterOption[] = [
-  { value: 'on_track', label: 'On Track', labelClassName: 'text-green-600' },
-  { value: 'at_risk', label: 'At Risk', labelClassName: 'text-yellow-600' },
-  { value: 'off_track', label: 'Off Track', labelClassName: 'text-red-600' },
+  { value: 'on_track', label: 'On Track', labelClassName: 'text-green-600 dark:text-green-400' },
+  { value: 'at_risk', label: 'At Risk', labelClassName: 'text-yellow-600 dark:text-yellow-400' },
+  { value: 'off_track', label: 'Off Track', labelClassName: 'text-red-600 dark:text-red-400' },
 ];
 
 const OBJECTIVE_CREATE_TOOLTIP = 'Only team managers can create objectives. Ask your team manager for access.';

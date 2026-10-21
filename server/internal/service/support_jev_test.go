@@ -3,12 +3,14 @@ package service
 import (
 	"context"
 	"errors"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/decision"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/observability"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
@@ -17,11 +19,15 @@ type fakeJev struct {
 	probability float64
 	err         error
 	states      []string
+	during      func()
 }
 
 func (f *fakeJev) DecideMany(_ context.Context, state string, questions map[string]decision.Question) (*decision.Result, error) {
 	f.calls++
 	f.states = append(f.states, state)
+	if f.during != nil {
+		f.during()
+	}
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -84,6 +90,25 @@ func TestJevRoutingFallback(t *testing.T) {
 		})
 	}
 }
+
+func TestSupportTaggingDoesNotRunOnRoutingPath(t *testing.T) {
+	f := newSupportTriageTestFixture(t, nil, func(settings *model.SupportInboxSettings) {
+		settings.TriageEnabled = false
+	})
+	p := &fakeJev{err: errors.New("tagging provider must not run on the reply path")}
+	tags := attachJev(t, f, p, "off", "primary")
+	if _, err := tags.Create(f.ctx, f.workspaceID, model.CreateSupportTagRequest{Name: "Pricing"}); err != nil {
+		t.Fatal(err)
+	}
+	conv := f.createConversation(t, "pricing", "test@example.com", nil)
+	msg := f.createCustomerReply(t, conv.ID, "Please explain enterprise pricing")
+	if _, err := f.triageSvc.EvaluateAndRoute(f.ctx, f.workspaceID, conv.ID, msg.ID); err != nil {
+		t.Fatal(err)
+	}
+	if p.calls != 0 {
+		t.Fatal("routing still waits for the tagging provider")
+	}
+}
 func TestJevTagsPreserveHumanRemoval(t *testing.T) {
 	f := newSupportTriageTestFixture(t, nil, nil)
 	p := &fakeJev{probability: .99}
@@ -97,6 +122,7 @@ func TestJevTagsPreserveHumanRemoval(t *testing.T) {
 	if _, err := f.triageSvc.EvaluateAndRoute(f.ctx, f.workspaceID, conv.ID, msg.ID); err != nil {
 		t.Fatal(err)
 	}
+	runSupportTagJob(t, f, msg)
 	linked, err := tags.conversationHasTag(f.ctx, f.workspaceID, conv.ID, tag.ID)
 	if err != nil || !linked {
 		t.Fatalf("tag missing: %v", err)
@@ -108,6 +134,7 @@ func TestJevTagsPreserveHumanRemoval(t *testing.T) {
 	if _, err := f.triageSvc.EvaluateAndRoute(f.ctx, f.workspaceID, conv.ID, msg.ID); err != nil {
 		t.Fatal(err)
 	}
+	runSupportTagJob(t, f, msg)
 	linked, err = tags.conversationHasTag(f.ctx, f.workspaceID, conv.ID, tag.ID)
 	if err != nil || linked || p.calls != 1 {
 		t.Fatalf("manual removal overridden, calls %d err %v", p.calls, err)
@@ -168,6 +195,7 @@ func TestJevTagModesAndHumanOwnership(t *testing.T) {
 			if err != nil || r != nil {
 				t.Fatalf("human routing changed: %v", err)
 			}
+			runSupportTagJob(t, f, msg)
 			linked, err := tags.conversationHasTag(f.ctx, f.workspaceID, conv.ID, tag.ID)
 			if err != nil || linked != tc.want || p.calls != tc.calls {
 				t.Fatalf("linked %v calls %d err %v", linked, p.calls, err)
@@ -211,10 +239,152 @@ func TestJevTagInputExcludesInternalAndFutureMessages(t *testing.T) {
 	conv := f.createConversation(t, "pricing", "test@example.com", nil)
 	msg := f.createCustomerReply(t, conv.ID, "Pricing question")
 	history := []model.SupportMessage{*msg, {Content: "INTERNAL_SECRET", IsInternal: true, MessageType: "reply", CreatedAt: msg.CreatedAt}, {Content: "FUTURE_TEXT", MessageType: "reply", CreatedAt: msg.CreatedAt.Add(time.Hour)}}
-	if err := f.triageSvc.jev.TagConversation(f.ctx, f.workspaceID, conv.ID, msg, history); err != nil {
+	if _, err := f.triageSvc.jev.selectConversationTags(f.ctx, f.workspaceID, conv.ID, msg, history); err != nil {
 		t.Fatal(err)
 	}
 	if len(p.states) != 1 || strings.Contains(p.states[0], "INTERNAL_SECRET") || strings.Contains(p.states[0], "FUTURE_TEXT") {
 		t.Fatalf("invalid context selection")
+	}
+}
+
+func TestSupportJevReusesSuccessfulDecisionWithoutUsageOrBudget(t *testing.T) {
+	f := newSupportTriageTestFixture(t, nil, nil)
+	p := &fakeJev{probability: .99}
+	attachJev(t, f, p, "primary", "off")
+	s := f.triageSvc.jev
+	s.config.DailyLimit = 1
+	conv := f.createConversation(t, "pricing", "test@example.com", nil)
+	questions := map[string]decision.Question{"mailbox": {Instructions: "route", Choices: map[string]string{"sales": "Sales", "shared": "Other"}}}
+	for range 2 {
+		result, err := s.evaluate(f.ctx, f.workspaceID, conv.ID, "Pricing question", "routing", questions)
+		if err != nil || result == nil || result.Answers["mailbox"].Choice != "sales" {
+			t.Fatalf("cached decision unavailable: result=%+v error=%v", result, err)
+		}
+	}
+	var count int64
+	if err := f.db.Model(&model.AIExecutionUsage{}).Count(&count).Error; err != nil || count != 1 || p.calls != 1 {
+		t.Fatalf("cache duplicated usage: rows=%d calls=%d error=%v", count, p.calls, err)
+	}
+}
+
+func TestSupportJevRetriesAfterCooldownAndStillCountsFailedAttempts(t *testing.T) {
+	for _, limit := range []int{1, 2} {
+		f := newSupportTriageTestFixture(t, nil, nil)
+		p := &fakeJev{probability: .99, err: errors.New("temporary outage")}
+		attachJev(t, f, p, "primary", "off")
+		s := f.triageSvc.jev
+		s.config.DailyLimit = limit
+		conv := f.createConversation(t, "pricing", "test@example.com", nil)
+		questions := map[string]decision.Question{"mailbox": {Instructions: "route", Choices: map[string]string{"sales": "Sales", "shared": "Other"}}}
+		evaluate := func() (*decision.Result, error) {
+			return s.evaluate(f.ctx, f.workspaceID, conv.ID, "Pricing question", "routing", questions)
+		}
+		if result, err := evaluate(); err == nil || result != nil {
+			t.Fatalf("provider failure accepted: %+v %v", result, err)
+		}
+		p.err = nil
+		if result, err := evaluate(); err != nil || result != nil || p.calls != 1 {
+			t.Fatalf("cooldown bypassed: %+v %v calls=%d", result, err, p.calls)
+		}
+		if err := f.db.Model(&model.SupportConversationTriageEvent{}).Where("conversation_id = ? AND event_type = ?", conv.ID, "jev_decision").Update("created_at", time.Now().UTC().Add(-2*time.Minute)).Error; err != nil {
+			t.Fatal(err)
+		}
+		result, err := evaluate()
+		if err != nil || (result != nil) != (limit == 2) || p.calls != limit {
+			t.Fatalf("retry/cap mismatch: limit=%d result=%+v error=%v calls=%d", limit, result, err, p.calls)
+		}
+	}
+}
+
+func TestSupportJevPolicyChangesInvalidateCachedDecision(t *testing.T) {
+	for _, change := range []string{"mode", "threshold"} {
+		t.Run(change, func(t *testing.T) {
+			f := newSupportTriageTestFixture(t, nil, nil)
+			p := &fakeJev{probability: .99}
+			attachJev(t, f, p, "shadow", "off")
+			s := f.triageSvc.jev
+			conv := f.createConversation(t, "pricing", "test@example.com", nil)
+			questions := map[string]decision.Question{"mailbox": {Instructions: "route", Choices: map[string]string{"sales": "Sales", "shared": "Other"}}}
+			if _, err := s.evaluate(f.ctx, f.workspaceID, conv.ID, "Pricing question", "routing", questions); err != nil {
+				t.Fatal(err)
+			}
+			if change == "mode" {
+				s.config.RoutingMode = "primary"
+			} else {
+				s.config.RoutingThreshold = .98
+			}
+			if result, err := s.evaluate(f.ctx, f.workspaceID, conv.ID, "Pricing question", "routing", questions); err != nil || result == nil || p.calls != 2 {
+				t.Fatalf("policy change reused/suppressed old assessment: %+v %v calls=%d", result, err, p.calls)
+			}
+		})
+	}
+}
+
+func TestSupportJevMetricsSeparateOperationsAndCacheHits(t *testing.T) {
+	f := newSupportTriageTestFixture(t, nil, nil)
+	p := &fakeJev{probability: .99}
+	attachJev(t, f, p, "primary", "primary")
+	s := f.triageSvc.jev
+	m := observability.NewMetrics()
+	s.SetMetrics(m)
+	conv := f.createConversation(t, "pricing", "test@example.com", nil)
+	questions := map[string]decision.Question{"mailbox": {Instructions: "route", Choices: map[string]string{"sales": "Sales", "shared": "Other"}}}
+	for operation, identity := range map[string]string{"routing": "routing", "tagging": "tags:private-message", "handoff": "handoff:v1:private-message", "follow_up": "follow_up:v1:private-episode"} {
+		for range 2 {
+			if _, err := s.evaluate(f.ctx, f.workspaceID, conv.ID, "Private evidence", identity, questions); err != nil {
+				t.Fatal(err)
+			}
+		}
+		w := httptest.NewRecorder()
+		m.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/metrics", nil))
+		for _, outcome := range []string{"success", "cached"} {
+			if !strings.Contains(w.Body.String(), `helpin_ai_decisions_total{operation="`+operation+`",outcome="`+outcome+`"} 1`) {
+				t.Fatalf("missing %s/%s metric", operation, outcome)
+			}
+		}
+		if strings.Contains(w.Body.String(), "private-") || strings.Contains(w.Body.String(), "Private evidence") {
+			t.Fatal("unbounded decision labels expose evidence")
+		}
+	}
+}
+
+func TestSupportJevRejectsInvalidProviderResult(t *testing.T) {
+	f := newSupportTriageTestFixture(t, nil, nil)
+	p := &fakeJev{probability: 1.2}
+	attachJev(t, f, p, "primary", "off")
+	conv := f.createConversation(t, "pricing", "test@example.com", nil)
+	questions := map[string]decision.Question{"mailbox": {Instructions: "route", Choices: map[string]string{"sales": "Sales", "shared": "Other"}}}
+	result, err := f.triageSvc.jev.evaluate(f.ctx, f.workspaceID, conv.ID, "Pricing", "routing", questions)
+	if err == nil || result != nil {
+		t.Fatalf("invalid probability was actionable: %+v %v", result, err)
+	}
+	var event model.SupportConversationTriageEvent
+	if err := f.db.Where("event_type = ?", "jev_decision").First(&event).Error; err != nil {
+		t.Fatal(err)
+	}
+	if event.Payload["status"] != "provider_error" {
+		t.Fatalf("invalid provider output cached as successful: %+v", event.Payload)
+	}
+}
+
+func TestSupportJevRejectsInvalidCachedResult(t *testing.T) {
+	for _, invalid := range []any{nil, "invalid", &decision.Result{Model: decision.Model}} {
+		f := newSupportTriageTestFixture(t, nil, nil)
+		p := &fakeJev{probability: .99}
+		attachJev(t, f, p, "primary", "off")
+		conv := f.createConversation(t, "pricing", "test@example.com", nil)
+		questions := map[string]decision.Question{"mailbox": {Instructions: "route", Choices: map[string]string{"sales": "Sales", "shared": "Other"}}}
+		evaluate := func() (*decision.Result, error) {
+			return f.triageSvc.jev.evaluate(f.ctx, f.workspaceID, conv.ID, "Pricing", "routing", questions)
+		}
+		if _, err := evaluate(); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.db.Model(&model.SupportConversationTriageEvent{}).Where("event_type = ?", "jev_decision").Update("payload", model.JSONB{"status": "ok", "result": invalid}).Error; err != nil {
+			t.Fatal(err)
+		}
+		if result, err := evaluate(); err == nil || result != nil || p.calls != 1 {
+			t.Fatalf("invalid cached result was actionable or recalled provider: %+v %v calls=%d", result, err, p.calls)
+		}
 	}
 }

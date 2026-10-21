@@ -892,6 +892,8 @@ func TestEnsureBuiltInAgent_UpgradesManagedFlashDefaultsToCurrentRoutes(t *testi
 		"deepseek/deepseek-v4-flash",
 		"deepseek/deepseek-v4-flash-0731",
 		"deepseek/deepseek-v4-flash-0731:nitro",
+		"deepseek/deepseek-v4.1-flash",
+		"deepseek/deepseek-v4.1-flash:nitro",
 		"z-ai/glm-5.3-flash:exacto",
 	}
 
@@ -949,7 +951,7 @@ func TestEnsureBuiltInAgent_UpgradesManagedFlashDefaultsToCurrentRoutes(t *testi
 					}
 					runtimeAgent := runtimeAgentFromHelpinAgent(reconciled, "helpin")
 					runtimeConfig, err := model.ParseAgentExecutionConfig(runtimeAgent.ExecutionConfig)
-					if err != nil || runtimeAgent.Model != "deepseek/deepseek-v4.1-flash:nitro" || runtimeConfig.OpenRouter == nil || runtimeConfig.OpenRouter.Provider == nil ||
+					if err != nil || runtimeAgent.Model != defaultFastOpenRouterAgentModel || runtimeConfig.OpenRouter == nil || runtimeConfig.OpenRouter.Provider == nil ||
 						!slices.Equal(runtimeConfig.OpenRouter.Provider.Quantizations, defaultFastOpenRouterQuantizations) {
 						t.Fatalf("runtime lost managed routing: model=%s config=%s error=%v", runtimeAgent.Model, runtimeAgent.ExecutionConfig, err)
 					}

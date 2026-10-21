@@ -70,7 +70,7 @@ export const SEVERITY_CONFIG: Record<
   { color: string; label: string; icon: ConfigIcon }
 > = {
   critical: {
-    color: 'text-red-600',
+    color: 'text-red-600 dark:text-red-400',
     label: 'Critical',
     icon: (props) => <PMSeverityIcon severity="critical" {...props} />,
   },

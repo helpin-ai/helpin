@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -88,6 +89,9 @@ func (s *InternalCommandService) registerSupportCommands() {
 }
 
 func (s *InternalCommandService) executeListConversationMessages(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+	if _, err := commandAgentTeamFilter(meta); err != nil {
+		return nil, err
+	}
 	if s.supportMessageRepo == nil {
 		return nil, fmt.Errorf("support message repository is not configured")
 	}
@@ -112,6 +116,15 @@ func (s *InternalCommandService) executeListConversationMessages(ctx context.Con
 	if conversationID == "" {
 		return nil, fmt.Errorf("no support conversation associated with this run")
 	}
+	if target := commandConversationTargetID(meta); target != "" && target != conversationID {
+		current, err := s.supportConversationRepo.GetByID(ctx, meta.WorkspaceID, target, "", model.RoleOwner)
+		if err != nil {
+			return nil, err
+		}
+		if current != nil && current.MergeRevision > 0 {
+			return nil, errCommandInput("use the active conversation history for this reply")
+		}
+	}
 	if req.Limit == 0 {
 		req.Limit = 20
 	}
@@ -121,33 +134,35 @@ func (s *InternalCommandService) executeListConversationMessages(ctx context.Con
 	if req.Offset < 0 {
 		return nil, errCommandInput("offset must be zero or greater")
 	}
-	messages, total, err := s.supportMessageRepo.ListConversationPageFromNewest(ctx, meta.WorkspaceID, conversationID, true, req.Limit, req.Offset)
+	ctx = s.supportOperationalContext(ctx, meta)
+	if s.supportInboxService != nil && s.supportInboxService.conversationRepo != nil {
+		if _, err := s.supportInboxService.GetConversation(ctx, meta.WorkspaceID, conversationID); err != nil {
+			return nil, err
+		}
+	}
+	history, err := s.supportMessageRepo.ListForSupportAI(ctx, meta.WorkspaceID, conversationID, true)
+	total := int64(len(history))
+	end := max(0, len(history)-req.Offset)
+	start := max(0, end-req.Limit)
+	messages := history[start:end]
 	if err != nil {
 		return nil, fmt.Errorf("list ticket messages: %w", err)
 	}
-	if s.supportAttachmentRepo != nil && len(messages) > 0 {
-		messageIDs := make([]string, len(messages))
-		for i := range messages {
-			messageIDs[i] = messages[i].ID
+	if len(messages) > 0 {
+		var attachments *SupportAttachmentService
+		if s.supportInboxService != nil {
+			attachments = s.supportInboxService.attachmentService
 		}
-		attachments, attachmentErr := s.supportAttachmentRepo.ListByMessageIDs(ctx, messageIDs)
-		if attachmentErr != nil {
-			return nil, fmt.Errorf("list ticket message attachments: %w", attachmentErr)
+		if attachments == nil && s.supportAttachmentRepo != nil {
+			attachments = NewSupportAttachmentService(s.supportAttachmentRepo, nil)
 		}
-		byMessage := make(map[string][]model.SupportAttachmentPayload)
-		for _, attachment := range attachments {
-			if attachment.MessageID == nil {
-				continue
+		if attachments != nil {
+			if err := attachments.HydrateMessages(ctx, messages); err != nil {
+				return nil, fmt.Errorf("load ticket attachments: %w", err)
 			}
-			byMessage[*attachment.MessageID] = append(byMessage[*attachment.MessageID], model.SupportAttachmentPayload{
-				ID: attachment.ID, FileName: attachment.FileName, FileType: attachment.ContentType,
-				FileSize: attachment.FileSize, URL: attachment.PublicURL,
-			})
-		}
-		for i := range messages {
-			messages[i].Attachments = byMessage[messages[i].ID]
 		}
 	}
+
 	type safeAttachment struct {
 		ID       string `json:"id"`
 		FileName string `json:"file_name"`
@@ -166,6 +181,9 @@ func (s *InternalCommandService) executeListConversationMessages(ctx context.Con
 	for _, message := range messages {
 		attachments := make([]safeAttachment, 0, len(message.Attachments))
 		for _, attachment := range message.Attachments {
+			if !model.SharedSupportAttachmentVisible(&message, attachment) {
+				continue
+			}
 			attachments = append(attachments, safeAttachment{
 				ID: attachment.ID, FileName: attachment.FileName, FileType: attachment.FileType,
 				FileSize: attachment.FileSize, URL: attachment.URL,
@@ -178,6 +196,15 @@ func (s *InternalCommandService) executeListConversationMessages(ctx context.Con
 	}
 	response := commandPaginationOutput(total, req.Offset, req.Limit, len(resultWithAttachments))
 	response["messages"] = resultWithAttachments
+	analysis, err := s.analyzeSupportMessageMedia(ctx, meta, messages)
+	if err != nil {
+		slog.WarnContext(ctx, "support attachment analysis unavailable", "workspace_id", meta.WorkspaceID, "conversation_id", conversationID, "error", err)
+		response["attachment_analysis_error"] = "Attachment analysis is unavailable. The conversation text is available below; do not claim the attachments were read or that earlier messages were never received."
+	}
+	if analysis != "" {
+		response["attachment_analysis"] = analysis
+	}
+
 	return mustJSON(response), nil
 }
 

@@ -13,6 +13,7 @@ const (
 	ActionHelpcenterSearchEmbed      = "support.helpcenter.search_embed.v1"
 	ActionCuratedGuidanceEmbed       = "support.curated_guidance.embed.v1"
 	ActionPlatformRerank             = "platform.rerank.v1"
+	ActionSupportMediaEnrichment     = "support.media_enrichment.v1"
 	ActionAskMediaEnrichment         = "agents.ask.media_enrichment.v1"
 	ActionAgentImageGenerate         = "agents.image.generate.v1"
 	ActionAgentImageEdit             = "agents.image.edit.v1"
@@ -46,6 +47,15 @@ func defaultActions() []Action {
 			MaxInputTokens: 200000, MaxOutputTokens: 700, MaxReasoningTokens: 32000,
 			RetryClass: RetryTransient, Autonomy: AutonomyAnalyze,
 			DataClass: DataClassWorkspaceData, Chargeable: true,
+		},
+		{
+			Key: ActionSupportMediaEnrichment, PolicyVersion: "v2", FeatureKey: "support_ai_reply",
+			Label: "Support media enrichment", Category: CategorySupportAI, Origin: "support",
+			Modality: ModalityChat, DefaultProvider: "openrouter", DefaultModel: "google/gemini-3.8-flash",
+			AllowedModels: map[string][]string{"openrouter": {"google/gemini-3.8-flash", "qwen/qwen3.8-omni-flash"}}, Timeout: 4 * time.Minute,
+			MaxInputTokens: 200000, MaxOutputTokens: 700, MaxReasoningTokens: 32000,
+			RetryClass: RetryTransient, Autonomy: AutonomyAnalyze,
+			DataClass: DataClassCustomerContent, Chargeable: true,
 		},
 		imageAction(ActionAgentImageGenerate, "Agent image generation"),
 		imageAction(ActionAgentImageEdit, "Agent image editing"),
@@ -158,7 +168,7 @@ func defaultChatModels() map[string][]string {
 	return map[string][]string{
 		"anthropic":  {"claude-haiku-4-5", "claude-sonnet-4-6", "claude-sonnet-5", "claude-opus-4-8"},
 		"openai":     {"gpt-5-mini", "gpt-5.5", "gpt-5.6-luna", "gpt-5.6-terra"},
-		"openrouter": {"openai/gpt-oss-120b", "deepseek/deepseek-v4.1-flash", "z-ai/glm-5.3-flash:exacto", "deepseek/deepseek-v4-flash-0731", "openai/gpt-5.6-luna", "openai/gpt-6-luna", "openai/gpt-5.6-terra", "anthropic/claude-sonnet-5", "google/gemini-3.7-flash"},
+		"openrouter": {"openai/gpt-oss-120b", "deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4.1-flash-1017", "deepseek/deepseek-v4.1-flash-1017:nitro", "z-ai/glm-5.3-flash:exacto", "deepseek/deepseek-v4-flash-0731", "openai/gpt-5.6-luna", "openai/gpt-6-luna", "openai/gpt-5.6-terra", "anthropic/claude-sonnet-5", "google/gemini-3.7-flash"},
 	}
 }
 

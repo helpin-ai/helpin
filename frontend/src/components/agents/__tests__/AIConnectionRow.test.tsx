@@ -78,7 +78,7 @@ it('labels the status in words and names the provider', async () => {
   await render({ ...base, status: 'reauthorization_required' });
   expect(document.body.textContent).toContain('Reconnect required');
   expect(document.body.textContent).not.toContain('reauthorization_required');
-  expect(document.body.textContent).toContain('OpenAI API key');
+  expect(action('Connection details for Team key')).not.toBeNull();
 });
 
 it('shows the provider mark for the connection', async () => {
@@ -97,7 +97,8 @@ it('offers continue login while a device code is outstanding', async () => {
 
 it('hides actions for a managed connection and says who owns it', async () => {
   await render({ ...base, funding: 'managed' });
-  expect(document.body.textContent).toContain('Managed by your administrator');
+  expect(document.body.textContent).toContain('Managed');
+  expect(action('Connection details for Team key')).not.toBeNull();
   expect(action('Disconnect Team key')).toBeNull();
   expect(action('Reconnect Team key')).toBeNull();
 });

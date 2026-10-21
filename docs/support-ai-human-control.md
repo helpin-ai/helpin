@@ -44,6 +44,22 @@ The current Runtime run ID is checked again when an AI reply commits. A run
 that started before takeover cannot bind to a later ownership version. Pause
 and return are recorded as internal system events; they do not change resolution metrics.
 
+## Merged conversations
+
+Merging or unmerging pauses AI across the affected conversations and cancels
+scheduled follow-ups. The active conversation keeps its human assignee. Use
+**Return to AI** there when the shared discussion is ready for automation;
+restoring an original conversation never restarts an old AI run automatically.
+
+The next AI turn reads the current conversation group. For different customers,
+it receives only public discussion shared during the merge, with quoted email
+history removed. Old runs lose publication rights at the routing commit, even
+if runtime cancellation needs a retry. The durable `support_merge_jobs` queue
+retries cancellation and visitor refreshes after a process restart.
+
+See the [conversation merging contract](specs/2026-10-11-conversation-merging.md)
+for preserved histories, access checks, and deployment requirements.
+
 ## Deployment
 
 Apply migration `202609160005_support_ai_control.sql` with the normal edition

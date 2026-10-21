@@ -27,7 +27,7 @@ import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { SupportConversation, SupportMessage } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
-import { getInitial, getAvatarColor } from './helpers';
+import { getInitial, getAvatarColor, getCustomerAvatarSeed } from './helpers';
 import { SupportInboxPanelHeader } from './SupportInboxPanelHeader';
 
 type LastActiveSource = 'anonymous_id' | 'crm_contact' | string | null | undefined;
@@ -313,7 +313,13 @@ export function ConversationDetailSidebar({
   const [ccError, setCcError] = useState('');
   const { data: conversation, isLoading: conversationLoading } = useConversation(workspaceId, conversationId);
   const { data: visitorContext } = useVisitorContext(workspaceId, conversationId);
-  const { data: assignableMembers = [], isLoading: assigneesLoading } = useConversationAssignees(workspaceId, conversationId);
+  const {
+    data: assignableMembers = [],
+    isLoading: assigneesLoading,
+    isError: assigneesError,
+    isFetching: assigneesFetching,
+    refetch: refetchAssignees,
+  } = useConversationAssignees(workspaceId, conversationId);
   const assignConversationUser = useAssignConversationUser(workspaceId);
   const updateCustomerName = useUpdateConversationCustomerName(workspaceId);
   const updateEmailRecipients = useUpdateConversationEmailRecipients(workspaceId);
@@ -456,7 +462,7 @@ export function ConversationDetailSidebar({
             <div className="relative">
               <Avatar className="h-12 w-12">
                 <ContactAvatarImage email={conversation.customer_email} alt={conversation.customer_name || conversation.customer_email || 'Customer'} />
-                <AvatarFallback className={`text-base font-semibold ${getAvatarColor(conversation.customer_email || conversation.customer_name || conversation.id)}`}>
+                <AvatarFallback className={`text-base font-semibold ${getAvatarColor(getCustomerAvatarSeed(conversation.customer_email, conversation.customer_name, conversation.id))}`}>
                   {getInitial(conversation.customer_name || conversation.customer_email)}
                 </AvatarFallback>
               </Avatar>
@@ -529,6 +535,7 @@ export function ConversationDetailSidebar({
                       variant="ghost"
                       size="sm"
                       className={customerNameEditButtonClassName}
+                      disabled={!!conversation.merged_into_id}
                       onClick={beginCustomerNameEdit}
                       aria-label="Edit customer name"
                     >
@@ -575,13 +582,14 @@ export function ConversationDetailSidebar({
             )}
           </div>
 
-          <CollapsibleSection title="Conversation Routing" icon={UserIcon} count={0} defaultOpen>
+          <CollapsibleSection title="Assignee" icon={UserIcon} count={0} defaultOpen>
             <MemberPickerPopover
               value={conversation.assigned_user_id ?? ''}
               members={assignableUsers}
+              getDisabledReason={(member) => member.assignment_disabled_reason}
               getMemberValue={(member) => member.user_id ?? member.id}
               noneLabel="Unassigned"
-              disabled={assignConversationUser.isPending || assigneesLoading}
+              disabled={!!conversation.merged_into_id || assignConversationUser.isPending || assigneesLoading || assigneesError}
               onChange={(value) => {
                 assignConversationUser.mutate({
                   conversationId: conversation.id,
@@ -615,9 +623,23 @@ export function ConversationDetailSidebar({
                 </>
               )}
             />
-            {!assigneesLoading && assignableUsers.length === 0 ? (
+            {assigneesError ? (
+              <div role="alert" className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                <span>Unable to load teammates.</span>
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="h-auto p-0 text-[11px]"
+                  aria-label="Retry teammates"
+                  disabled={assigneesFetching}
+                  onClick={() => { void refetchAssignees(); }}
+                >
+                  {assigneesFetching ? 'Retrying…' : 'Retry'}
+                </Button>
+              </div>
+            ) : !assigneesLoading && assignableUsers.length === 0 ? (
               <p className="text-[11px] text-muted-foreground">
-                No eligible teammates can be assigned to this conversation yet.
+                No active workspace members to assign.
               </p>
             ) : null}
           </CollapsibleSection>
@@ -627,6 +649,7 @@ export function ConversationDetailSidebar({
               workspaceId={workspaceId}
               conversationId={conversation.id}
               selectedTags={conversation.tags ?? []}
+              readOnly={!!conversation.merged_into_id}
             />
           </CollapsibleSection>
 
@@ -675,7 +698,7 @@ export function ConversationDetailSidebar({
                               size="sm"
                               className="h-7 w-7 shrink-0 p-0"
                               onClick={saveCCRecipient}
-                              disabled={updateEmailRecipients.isPending}
+                              disabled={!!conversation.merged_into_id || updateEmailRecipients.isPending}
                               aria-label="Add Cc recipient"
                             >
                               <CheckmarkCircle02Icon className="h-3.5 w-3.5" />
@@ -692,7 +715,7 @@ export function ConversationDetailSidebar({
                               size="sm"
                               className="h-7 w-7 shrink-0 p-0"
                               onClick={cancelAddCCRecipient}
-                              disabled={updateEmailRecipients.isPending}
+                              disabled={!!conversation.merged_into_id || updateEmailRecipients.isPending}
                               aria-label="Cancel adding Cc recipient"
                             >
                               <Cancel01Icon className="h-3.5 w-3.5" />
@@ -711,7 +734,7 @@ export function ConversationDetailSidebar({
                       size="sm"
                       className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground"
                       onClick={beginAddCCRecipient}
-                      disabled={updateEmailRecipients.isPending}
+                      disabled={!!conversation.merged_into_id || updateEmailRecipients.isPending}
                     >
                       <PlusSignIcon className="h-3 w-3" />
                       Add

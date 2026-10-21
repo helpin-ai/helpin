@@ -37,10 +37,13 @@ func supportFollowUpEnabled(settings model.SupportInboxSettings) bool {
 }
 
 func supportFollowUpEligible(conv *model.SupportConversation, episode *model.SupportAIFollowUp, settings model.SupportInboxSettings, replyChannels ...string) bool {
+	if conv.MailboxAIRepliesDisabled {
+		return false
+	}
 	if conv.AIResumedAt != nil && !episode.CreatedAt.After(*conv.AIResumedAt) {
 		return false
 	}
-	if !supportFollowUpEnabled(settings) || conv.FlowState == nil || *conv.FlowState != model.SupportConversationFlowStateAIHandling || derefString(conv.AIState) != "pending" || supportConversationHumanOwned(conv) || conv.CustomerRequestedHumanAt != nil || conv.LinkedTaskID != nil || conv.CustomerAwaitingResponse {
+	if conv.MergedIntoID != nil || conv.AIPausedAt != nil || !supportFollowUpEnabled(settings) || conv.FlowState == nil || *conv.FlowState != model.SupportConversationFlowStateAIHandling || derefString(conv.AIState) != "pending" || supportConversationHumanOwned(conv) || conv.CustomerRequestedHumanAt != nil || conv.LinkedTaskID != nil || conv.CustomerAwaitingResponse {
 		return false
 	}
 	if conv.Status != model.SupportConversationStatusOpen && conv.Status != model.SupportConversationStatusWaitingOnCustomer {
@@ -83,8 +86,12 @@ func (s *SupportFollowUpService) Tick(ctx context.Context) error {
 	for _, inst := range installations {
 		settings := parseSettings(inst.Settings)
 		if supportFollowUpEnabled(settings) {
-			if err := s.repo.Seed(ctx, inst.WorkspaceID, settings, now); err != nil {
+			seeded, err := s.repo.Seed(ctx, inst.WorkspaceID, settings, now)
+			if err != nil {
 				return err
+			}
+			for _, episode := range seeded {
+				s.publishFollowUpUpdate(episode.WorkspaceID, episode.ConversationID)
 			}
 		}
 	}
@@ -103,11 +110,9 @@ func (s *SupportFollowUpService) Tick(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if latest != nil && latest.ID == row.ID && latest.Status != row.Status {
+		if latest != nil && latest.ID == row.ID && (latest.Status != row.Status || !latest.DueAt.Equal(row.DueAt) || derefString(latest.SecondMessageID) != derefString(row.SecondMessageID)) {
 			slog.InfoContext(ctx, "support follow-up state changed", "workspace_id", row.WorkspaceID, "follow_up_id", row.ID, "status", latest.Status)
-			if s.chat.supportAIService.wsPublisher != nil {
-				s.chat.supportAIService.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "support_conversation", EntityID: row.ConversationID, WorkspaceID: row.WorkspaceID})
-			}
+			s.publishFollowUpUpdate(row.WorkspaceID, row.ConversationID)
 		}
 	}
 	return nil
@@ -120,6 +125,10 @@ func (s *SupportFollowUpService) process(ctx context.Context, row model.SupportA
 	var settings model.SupportInboxSettings
 	err := s.repo.WithEpisode(ctx, row.WorkspaceID, row.ID, func(tx *gorm.DB, inst *model.SupportWidgetInstallation, c *model.SupportConversation, e *model.SupportAIFollowUp) error {
 		if e.Status != "scheduled" && e.Status != "assessing" && e.Status != "waiting" {
+			return nil
+		}
+		// Another worker may have postponed this episode after it was claimed.
+		if now.Before(e.DueAt) {
 			return nil
 		}
 		settings = parseSettings(inst.Settings)
@@ -273,4 +282,10 @@ func setSupportFollowUpEmailDelivery(message *model.SupportMessage, channel stri
 	encoded, _ := json.Marshal(metadata)
 	message.Metadata = string(encoded)
 	message.ViaChannel = strPtr("email")
+}
+
+func (s *SupportFollowUpService) publishFollowUpUpdate(workspaceID, conversationID string) {
+	if s.chat != nil && s.chat.supportAIService != nil && s.chat.supportAIService.wsPublisher != nil {
+		s.chat.supportAIService.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "support_conversation", EntityID: conversationID, WorkspaceID: workspaceID})
+	}
 }

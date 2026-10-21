@@ -1,3 +1,4 @@
+import { useAppRefreshGuard } from '@/hooks/useAppRefreshGuard';
 import { TeamColorMark, TeamLabel } from '@/components/workspace/TeamLabel';
 import { EPIC_PICKER_WIDTH } from '@/components/pm/epicPickerGroups';
 import { DetailMetadataRow as MetadataRow } from '@/components/pm/DetailMetadataRow';
@@ -77,9 +78,9 @@ const stateOptions: { value: ObjectiveState; label: string; className: string }[
 ).map(([value, cfg]) => ({ value, label: cfg.label, className: cfg.color }));
 
 const healthOptions: { value: ObjectiveHealth; label: string; color: string }[] = [
-  { value: 'on_track', label: 'On track', color: 'text-green-600' },
-  { value: 'at_risk', label: 'At risk', color: 'text-yellow-600' },
-  { value: 'off_track', label: 'Off track', color: 'text-red-600' },
+  { value: 'on_track', label: 'On track', color: 'text-green-600 dark:text-green-400' },
+  { value: 'at_risk', label: 'At risk', color: 'text-yellow-600 dark:text-yellow-400' },
+  { value: 'off_track', label: 'Off track', color: 'text-red-600 dark:text-red-400' },
 ];
 
 const OBJECTIVE_MANAGER_TOOLTIP = 'Only team managers can edit objectives. Ask your team manager for access.';
@@ -305,6 +306,8 @@ export function ObjectiveDetailPage() {
   useEffect(() => {
     if (data && !dirty) savedDescriptionRef.current = data.objective.description ?? '';
   }, [data, dirty]);
+
+  useAppRefreshGuard(() => dirty ? 'Wait for your objective changes and uploads to save before refreshing.' : null);
 
   const flushAll = async () => {
     await flush();

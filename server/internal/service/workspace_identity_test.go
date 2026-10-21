@@ -182,7 +182,7 @@ func TestWorkspaceRepositoryListSupportAssignableMembers(t *testing.T) {
 		created_at DATETIME,
 		updated_at DATETIME
 	)`)
-	mustExecWorkspaceIdentity(t, db, `CREATE TABLE IF NOT EXISTS support_mailboxes (
+	mustExecWorkspaceIdentity(t, db, `CREATE TABLE IF NOT EXISTS support_mailboxes (ai_replies_disabled BOOLEAN NOT NULL DEFAULT false,
 		id TEXT PRIMARY KEY,
 		workspace_id TEXT NOT NULL,
 		name TEXT NOT NULL,
@@ -194,6 +194,7 @@ func TestWorkspaceRepositoryListSupportAssignableMembers(t *testing.T) {
 		linked_team_id TEXT,
 		visibility_mode TEXT NOT NULL DEFAULT 'members_only',
 		assignment_mode TEXT NOT NULL DEFAULT 'manual',
+			assignment_member_ids TEXT,
 		reply_time_preset TEXT,
 		reply_time_custom_minutes INTEGER,
 		position INTEGER NOT NULL DEFAULT 0,

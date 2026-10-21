@@ -19,7 +19,7 @@ func TestTranslationCompletionRecordsUsageEvenWhenOutputInvalid(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			model := "openai/gpt-oss-120b"
 			provider := &scriptedAICompletionProvider{responses: map[string]*llm.ChatResponse{model: {Content: "bad output", FinishReason: tc.finish, TokensUsed: llm.TokenUsage{InputTokensTotal: 100, OutputTokens: 10}}}}
-			provider.responses["deepseek/deepseek-v4.1-flash"] = provider.responses[model]
+			provider.responses[defaultFastOpenRouterAgentModel] = provider.responses[model]
 			store := &recordingCommunityUsage{}
 			metrics := observability.NewMetrics()
 			svc := NewAICompletionService(provider, NewCommunityAIUsage(store), DefaultAICompletionRouteRegistry()).SetMetrics(metrics)

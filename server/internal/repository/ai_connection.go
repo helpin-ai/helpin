@@ -20,7 +20,7 @@ func (r *AIConnectionRepository) Create(ctx context.Context, c *model.AIConnecti
 }
 func (r *AIConnectionRepository) List(ctx context.Context, workspace, user string) ([]model.AIConnection, error) {
 	out := []model.AIConnection{}
-	err := r.db.WithContext(ctx).Omit("encrypted_secret").Where("workspace_id = ? AND (user_id = ? OR scope = ?) AND superseded_by IS NULL", workspace, user, "workspace").Order("created_at DESC").Find(&out).Error
+	err := r.db.WithContext(ctx).Omit("encrypted_secret", "discovered_models").Where("workspace_id = ? AND (user_id = ? OR scope = ?) AND superseded_by IS NULL", workspace, user, "workspace").Order("created_at DESC").Find(&out).Error
 	return out, err
 }
 func (r *AIConnectionRepository) Get(ctx context.Context, id string) (*model.AIConnection, error) {
@@ -113,4 +113,9 @@ func (r *AIConnectionRepository) WorkspaceExists(ctx context.Context, workspace 
 	var n int64
 	err := r.db.WithContext(ctx).Model(&model.Workspace{}).Where("id = ?", workspace).Count(&n).Error
 	return n > 0, err
+}
+
+func (r *AIConnectionRepository) SaveDiscoveredModels(ctx context.Context, id string, models []model.DiscoveredAIModel, at time.Time) error {
+	c := model.AIConnection{ID: id, DiscoveredModels: models, ModelsFetchedAt: &at}
+	return r.db.WithContext(ctx).Model(&c).Select("discovered_models", "models_fetched_at").Updates(&c).Error
 }

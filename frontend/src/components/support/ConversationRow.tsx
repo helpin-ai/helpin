@@ -1,4 +1,4 @@
-import { memo, useMemo, useState, type KeyboardEvent } from 'react';
+import { memo, useState, type KeyboardEvent } from 'react';
 import { ArrowTurnBackwardIcon, BotIcon, CheckmarkCircle02Icon, GlobeIcon, Mail01Icon, Message01Icon, MoreHorizontalIcon, StickyNote01Icon } from '@/lib/icons';
 import type { TicketSource } from '@/lib/pm-types/support';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -7,10 +7,12 @@ import { type AgentTypingState, useSupportPresenceStore } from '@/stores/support
 import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Checkbox } from '@/components/ui/checkbox';
+import { cn } from '@/lib/utils';
 import { ContactAvatarImage } from '@/components/ui/contact-avatar-image';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { SupportConversation } from '@/lib/pmTypes';
-import { timeAgo, getInitial, getAvatarColor } from './helpers';
+import { timeAgo, getInitial, getAvatarColor, getCustomerAvatarSeed } from './helpers';
 import {
   getConversationRowVisualState,
   getSupportTagPillStyle,
@@ -182,6 +184,10 @@ interface ConversationRowProps {
   moveOptions: ConversationActionMoveOption[];
   onSelectConversation: (id: string, unreadCount?: number) => void;
   isTransitioningOut?: boolean;
+  onToggleSelection?: (id: string) => void;
+  isBulkSelected?: boolean;
+  selectionActive?: boolean;
+  selectionDisabled?: boolean;
 }
 
 const AIHandoffIndicator = memo(function AIHandoffIndicator() {
@@ -307,6 +313,10 @@ export const ConversationRow = memo(function ConversationRow({
   moveOptions,
   onSelectConversation,
   isTransitioningOut = false,
+  onToggleSelection,
+  isBulkSelected = false,
+  selectionActive = false,
+  selectionDisabled = false,
 }: ConversationRowProps) {
   const isSelected = useSupportInboxStore((s) => s.selectedConversationId === conversation.id);
   const visitorLabel = conversation.anonymous_id ? `Visitor #${conversation.anonymous_id.slice(0, 6)}` : 'Anonymous';
@@ -331,10 +341,6 @@ export const ConversationRow = memo(function ConversationRow({
   const hasDraft = !!draftContent && !isSelected;
   const remoteViewingIds = useSupportPresenceStore((s) => s.viewingAgents[conversation.id] || EMPTY_ARRAY);
   const viewingAgentIds = remoteViewingIds;
-  const availableMoveOptions = useMemo(
-    () => moveOptions.filter((option) => option.id !== (conversation.mailbox_id ?? 'shared')),
-    [conversation.mailbox_id, moveOptions]
-  );
   const hasAIHandoff = (conversation.system_tags ?? []).includes('ai_handoff');
   const hasAIResolved = (conversation.system_tags ?? []).includes('ai_resolved') || conversation.flow_state === 'resolved_by_ai' || conversation.ai_state === 'resolved';
   const isWaitingForHuman = !!conversation.flow_state && HUMAN_QUEUE_FLOW_STATES.has(conversation.flow_state);
@@ -401,9 +407,12 @@ export const ConversationRow = memo(function ConversationRow({
       }}
       data-transitioning-out={isTransitioningOut ? 'true' : undefined}
       data-conversation-id={conversation.id}
-      className={`group relative w-full cursor-pointer px-3 py-2.5 text-left transition-all duration-200 hover:bg-muted/75 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 dark:hover:bg-muted/40 ${
+      data-bulk-selected={isBulkSelected ? 'true' : undefined}
+      className={`group relative w-full cursor-pointer px-3 py-2.5 text-left transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${isBulkSelected ? 'hover:bg-primary/8 dark:hover:bg-primary/10' : 'hover:bg-muted/75 dark:hover:bg-muted/40'} ${
         isTransitioningOut
           ? 'pointer-events-none bg-emerald-50/70 opacity-60 dark:bg-emerald-950/20'
+          : isBulkSelected
+          ? 'bg-primary/5 dark:bg-primary/8'
           : isSelected
           ? 'bg-muted/80 dark:bg-muted/45'
           : ''
@@ -423,15 +432,33 @@ export const ConversationRow = memo(function ConversationRow({
 
       <div className="flex items-center gap-3">
         {/* Avatar */}
-        <div className="relative shrink-0">
-          <Avatar className="h-9 w-9">
-            <ContactAvatarImage email={conversation.customer_email} alt={displayName} />
-            <AvatarFallback className={`text-xs font-semibold ${getAvatarColor(conversation.customer_email || conversation.customer_name || conversation.id)}`}>
-              {getInitial(displayName)}
-            </AvatarFallback>
-          </Avatar>
-          {isVisitorOnline && (
-            <span className="absolute -left-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-green-400 ring-2 ring-background shadow-sm" />
+        <div className="relative h-9 w-9 shrink-0">
+          <div>
+            <Avatar className="h-9 w-9">
+              <ContactAvatarImage email={conversation.customer_email} alt={displayName} />
+              <AvatarFallback className={`text-xs font-semibold ${getAvatarColor(getCustomerAvatarSeed(conversation.customer_email, conversation.customer_name, conversation.id))}`}>
+                {getInitial(displayName)}
+              </AvatarFallback>
+            </Avatar>
+            {isVisitorOnline && (
+              <span className="pointer-events-none absolute -left-0.5 -top-0.5 z-10 h-2.5 w-2.5 rounded-full bg-green-400 ring-2 ring-background shadow-sm" />
+            )}
+          </div>
+          {onToggleSelection && (
+            <div className={cn(
+              'absolute inset-0 flex items-center justify-center rounded-full',
+              !selectionActive && 'opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 group-has-[:focus-visible]:opacity-100 [@media(hover:none)]:opacity-100',
+            )}>
+              <Checkbox
+                className="border-neutral-300 bg-white data-[state=checked]:border-neutral-300 data-[state=checked]:bg-white data-[state=checked]:text-neutral-900 dark:data-[state=checked]:bg-white"
+                aria-label={`Select conversation from ${displayName}: ${conversation.subject}`}
+                checked={isBulkSelected}
+                disabled={selectionDisabled}
+                onClick={(event) => event.stopPropagation()}
+                onKeyDown={(event) => event.stopPropagation()}
+                onCheckedChange={() => onToggleSelection(conversation.id)}
+              />
+            </div>
           )}
         </div>
 
@@ -451,7 +478,7 @@ export const ConversationRow = memo(function ConversationRow({
             <div className="relative flex h-6 min-w-6 items-center justify-end">
               <div
                 className={`flex shrink-0 items-center transition-opacity duration-150 ${
-                  actionsOpen
+                  selectionActive ? '' : actionsOpen
                     ? 'opacity-0'
                     : 'group-hover:opacity-0 group-focus-within:opacity-0'
                 }`}
@@ -460,7 +487,7 @@ export const ConversationRow = memo(function ConversationRow({
                   {timeAgo(conversation.list_last_activity_at ?? conversation.list_last_message_at ?? conversation.created_at)}
                 </span>
               </div>
-              <div
+              {!selectionActive && <div
                 className={`absolute inset-0 flex items-center justify-end transition-opacity duration-150 ${
                   actionsOpen
                     ? 'opacity-100'
@@ -471,7 +498,7 @@ export const ConversationRow = memo(function ConversationRow({
                   <ConversationActionsMenu
                     workspaceId={workspaceId}
                     conversation={conversation}
-                    moveOptions={availableMoveOptions}
+                    moveOptions={moveOptions}
                     open={actionsOpen}
                     onOpenChange={handleActionsOpenChange}
                     onSubjectDialogOpenChange={setActionsDialogOpen}
@@ -479,7 +506,7 @@ export const ConversationRow = memo(function ConversationRow({
                     trigger={actionButton}
                   />
                 ) : actionButton}
-              </div>
+              </div>}
             </div>
           </div>
 

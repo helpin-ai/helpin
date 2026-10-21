@@ -149,6 +149,7 @@ const SETTINGS_GROUP_ICONS: Record<string, IconComponent> = {
   CRM: Autonomy,
 };
 export const SETTINGS_HOME_LABEL = 'Settings home';
+export const SettingsHomeIcon = General;
 export const SETTINGS_SIDEBAR_GROUP_LABELS: Record<string, string> = {
   'Integrations & data': 'Integration',
 };
@@ -255,16 +256,16 @@ const allSettingsSections: SettingsSectionMeta[] = [
   {
     id: 'ai-connections',
     sidebar: false,
-    label: 'Personal AI setup',
-    description: 'Your API keys and ChatGPT login, plus the profiles that use them.',
+    label: 'AI models',
+    description: 'Connect models for Ask Agent and agents, with personal or workspace-wide access.',
     icon: AIConnections,
     group: 'AI & knowledge',
     requiredPermission: 'workspace.read',
   },
   {
     id: 'ai',
-    label: 'AI setup',
-    description: 'Workspace and personal AI connections, profiles, and the workspace default.',
+    label: 'AI models',
+    description: 'Connect models for Ask Agent and agents, with personal or workspace-wide access.',
     keywords: ['personal AI', 'workspace AI', 'API keys', 'ChatGPT', 'models', 'profiles'],
     icon: WorkspaceAI,
     group: 'AI & knowledge',

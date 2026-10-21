@@ -1,3 +1,4 @@
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { SequenceEnrollmentDialog } from '@/components/crm/outreach/SequenceEnrollmentDialog';
 import { CRMEmailComposerDialog } from '@/components/crm/CRMEmailComposerDialog';
 import { useEmailAccounts, useContact } from '@/hooks/queries/useCRM';
@@ -112,6 +113,7 @@ export function DealDetailPage({ dealId, onRequestClose, registerBeforeClose }: 
   const [timelineFilter, setTimelineFilter] = useState<CRMTimelineFilter>('all');
   const [emailThreadId, setEmailThreadId] = useState<string | undefined>();
   const pendingPatchRef = useRef<UpdateCRMDealRequest>({});
+  useUnsavedChangesGuard(() => saving || Object.keys(pendingPatchRef.current).length > 0, 'Wait for your deal changes to save before refreshing.');
   const saveTimerRef = useRef<number | null>(null);
 
   const timeline = useDealTimeline(wsId, dealId, timelineFilter);

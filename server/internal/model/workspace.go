@@ -102,20 +102,22 @@ type WorkspaceMemberPresenceStatus struct {
 
 // AssignableMember is the workspace-level person identity used by PM pickers.
 type AssignableMember struct {
-	ID                    string     `json:"id"`
-	UserID                *string    `json:"user_id,omitempty"`
-	Role                  string     `json:"role"`
-	Email                 string     `json:"email"`
-	DisplayName           string     `json:"display_name"`
-	AvatarURL             *string    `json:"avatar_url,omitempty"`
-	AvatarStyle           *string    `json:"avatar_style,omitempty"`
-	AvatarSeed            *string    `json:"avatar_seed,omitempty"`
-	AvatarBackgroundMode  *string    `json:"avatar_background_mode,omitempty"`
-	AvatarBackgroundColor *string    `json:"avatar_background_color,omitempty"`
-	Status                string     `json:"status"`
-	InvitedBy             *string    `json:"invited_by,omitempty"`
-	InvitedAt             *time.Time `json:"invited_at,omitempty"`
-	AcceptedAt            *time.Time `json:"accepted_at,omitempty"`
+	// Populated for support conversation pickers; does not grant access.
+	AssignmentDisabledReason *string    `json:"assignment_disabled_reason,omitempty" gorm:"-"`
+	ID                       string     `json:"id"`
+	UserID                   *string    `json:"user_id,omitempty"`
+	Role                     string     `json:"role"`
+	Email                    string     `json:"email"`
+	DisplayName              string     `json:"display_name"`
+	AvatarURL                *string    `json:"avatar_url,omitempty"`
+	AvatarStyle              *string    `json:"avatar_style,omitempty"`
+	AvatarSeed               *string    `json:"avatar_seed,omitempty"`
+	AvatarBackgroundMode     *string    `json:"avatar_background_mode,omitempty"`
+	AvatarBackgroundColor    *string    `json:"avatar_background_color,omitempty"`
+	Status                   string     `json:"status"`
+	InvitedBy                *string    `json:"invited_by,omitempty"`
+	InvitedAt                *time.Time `json:"invited_at,omitempty"`
+	AcceptedAt               *time.Time `json:"accepted_at,omitempty"`
 }
 
 // WorkspaceMFAPolicy captures the workspace MFA policy and the current user's

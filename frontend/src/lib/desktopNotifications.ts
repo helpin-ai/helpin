@@ -103,6 +103,15 @@ interface DeliveryOptions {
   onClick: () => void
 }
 
+export function createDesktopNotification(title: string, options: NotificationOptions): Notification {
+  // A new event may replace an existing banner for the same conversation.
+  // Without renotify, browsers can replace it silently. Unsupported browsers ignore it.
+  const alertOptions: NotificationOptions & { renotify: boolean } = {
+    ...options, renotify: !!options.tag && options.silent !== true,
+  }
+  return new Notification(title, alertOptions)
+}
+
 export async function deliverDesktopNotification(event: WSEvent, options: DeliveryOptions): Promise<void> {
   const { userId, workspaceId, preferences } = options
   if (!desktopEventAllowed(event, userId, workspaceId, preferences)) return
@@ -120,10 +129,30 @@ export async function deliverDesktopNotification(event: WSEvent, options: Delive
     // Consume foreground events too, so a second tab cannot show them later.
     localStorage.setItem(key, JSON.stringify([...recent, [eventKey, now]]))
     if (anyTabFocused(userId)) return
-    const notification = new Notification(desktopPreview(event.data!.title as string, 120), {
-      body: typeof event.data?.body === 'string' ? desktopPreview(event.data.body, 240) : undefined,
-      tag: `${PREFIX}${userId}:${workspaceId}:${event.entity_id}`,
-    })
+    const releaseFailedClaim = () => {
+      try {
+        const current: [string, number][] = JSON.parse(localStorage.getItem(key) || '[]')
+        localStorage.setItem(key, JSON.stringify(current.filter(([id, at]) => id !== eventKey || at !== now)))
+      } catch (error) { console.warn('Failed desktop notification claim could not be cleared', error) }
+    }
+    let notification: Notification
+    try {
+      notification = createDesktopNotification(desktopPreview(event.data!.title as string, 120), {
+        body: typeof event.data?.body === 'string' ? desktopPreview(event.data.body, 240) : undefined,
+        tag: `${PREFIX}${userId}:${workspaceId}:${event.entity_id}`,
+      })
+    } catch (error) {
+      releaseFailedClaim()
+      throw error
+    }
+    notification.onerror = () => {
+      // Browser errors are asynchronous and are not caught by the constructor's try/catch.
+      const release = navigator.locks
+        ? navigator.locks.request(`${PREFIX}${userId}:delivery`, releaseFailedClaim)
+        : Promise.resolve(releaseFailedClaim())
+      void release.catch(error => console.warn('Failed desktop notification claim could not be cleared', error))
+      console.warn('Desktop notification could not be displayed')
+    }
     notification.onclick = () => {
       notification.close()
       if (!options.isCurrent()) return

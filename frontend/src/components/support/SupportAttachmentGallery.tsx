@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeft01Icon, ArrowRight01Icon, AttachmentIcon, Cancel01Icon, Download04Icon } from '@/lib/icons';
 import { SupportPendingAttachment } from './SupportPendingAttachment';
+import { SupportImageDownload } from './SupportImageDownload';
+import { SupportAttachmentImage } from './SupportAttachmentImage';
+import { useSupportImageContent } from './useSupportImageContent';
 import type { SupportAttachmentPayload } from '@/lib/pmTypes';
 import { isPreviewableImageType } from '@/lib/supportAttachmentFiles';
 
@@ -9,6 +12,8 @@ type SupportAttachmentGalleryTone = 'default' | 'note';
 type SupportAttachmentThumbnailSize = 'sm' | 'md';
 
 interface SupportAttachmentGalleryProps {
+  workspaceId?: string;
+  conversationId?: string;
   onRetry?: (id: string) => Promise<void>;
   attachments: SupportAttachmentPayload[];
   tone?: SupportAttachmentGalleryTone;
@@ -32,44 +37,16 @@ function normalizeIndex(index: number, length: number): number {
   return ((index % length) + length) % length;
 }
 
-function DeferredSupportImage({ src, alt, className }: { src: string; alt: string; className: string }) {
-  const imageRef = useRef<HTMLImageElement | null>(null);
-  const [isNearViewport, setIsNearViewport] = useState(() => typeof IntersectionObserver === 'undefined');
-
-  useEffect(() => {
-    if (isNearViewport) return undefined;
-    const image = imageRef.current;
-    if (!image) return undefined;
-
-    const observer = new IntersectionObserver((entries) => {
-      if (!entries.some((entry) => entry.isIntersecting)) return;
-      setIsNearViewport(true);
-      observer.disconnect();
-    }, { rootMargin: '240px' });
-    observer.observe(image);
-    return () => observer.disconnect();
-  }, [isNearViewport]);
-
-  return (
-    <img
-      ref={imageRef}
-      src={isNearViewport ? src : undefined}
-      alt={alt}
-      className={className}
-      loading="lazy"
-      decoding="async"
-      fetchPriority="low"
-    />
-  );
-}
-
 export function SupportAttachmentGallery({
+  workspaceId,
+  conversationId,
   attachments,
   tone = 'default',
   thumbnailSize = 'sm',
   className = '',
   onRetry,
 }: SupportAttachmentGalleryProps) {
+  const loadImageContent = useSupportImageContent(workspaceId, conversationId);
   const imageAttachments = useMemo(() => attachments.filter(isImageAttachment), [attachments]);
   const fileAttachments = useMemo(() => attachments.filter((attachment) => !isImageAttachment(attachment) && !(attachment.file_type.startsWith('video/') && attachment.url)), [attachments]);
   const [failedVideoURLs, setFailedVideoURLs] = useState<Set<string>>(() => new Set());
@@ -122,16 +99,13 @@ export function SupportAttachmentGallery({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <a
-            href={lightboxAttachment.url}
-            target="_blank"
-            rel="noopener noreferrer"
+          <SupportImageDownload
+            key={lightboxAttachment.id}
+            attachment={lightboxAttachment}
+            loadImageContent={loadImageContent}
             className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 transition-colors hover:bg-white/25"
-            onClick={(event) => event.stopPropagation()}
-            aria-label="Download image attachment"
-          >
-            <Download04Icon className="h-4 w-4" />
-          </a>
+            iconClassName="h-4 w-4"
+          />
           <button
             type="button"
             onClick={(event) => {
@@ -160,12 +134,10 @@ export function SupportAttachmentGallery({
         </button>
       )}
 
-      <img
-        src={lightboxAttachment.url}
-        alt={lightboxAttachment.file_name}
-        className="max-h-[82vh] max-w-[88vw] rounded-lg object-contain shadow-2xl"
-        decoding="async"
-        onClick={(event) => event.stopPropagation()}
+      <SupportAttachmentImage
+        attachment={lightboxAttachment}
+        loadFallback={loadImageContent}
+        className="h-[82vh] w-[88vw] text-white"
       />
 
       {hasMultipleImages && (
@@ -202,10 +174,11 @@ export function SupportAttachmentGallery({
                   className={`${thumbnailClassName} group relative shrink-0 cursor-zoom-in overflow-hidden rounded-lg border border-border/70 bg-muted/40 transition-colors hover:border-border focus:outline-none focus:ring-2 focus:ring-ring/40`}
                   aria-label={`Preview ${attachment.file_name}`}
                 >
-                  <DeferredSupportImage
-                    src={attachment.url}
-                    alt={attachment.file_name}
-                    className="h-full w-full object-cover"
+                  <SupportAttachmentImage
+                    attachment={attachment}
+                    loadFallback={loadImageContent}
+                    compact
+                    className="h-full w-full text-muted-foreground"
                   />
                   <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-black/55 px-1.5 py-1 text-left text-[10px] font-medium text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus:opacity-100">
                     {attachment.file_name}
@@ -224,7 +197,7 @@ export function SupportAttachmentGallery({
               >
                 <div className="overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl animate-in fade-in zoom-in-95 duration-100">
                   <div className="relative bg-muted">
-                    <img src={hoverAttachment.url} alt={hoverAttachment.file_name} className="h-44 w-full object-contain" decoding="async" />
+                    <SupportAttachmentImage attachment={hoverAttachment} loadFallback={loadImageContent} className="h-44 w-full text-muted-foreground" />
                     {hasMultipleImages && (
                       <>
                         <button
@@ -257,16 +230,13 @@ export function SupportAttachmentGallery({
                     <span className="shrink-0 text-muted-foreground">
                       {(hoverIndex ?? 0) + 1} / {imageAttachments.length}
                     </span>
-                    <a
-                      href={hoverAttachment.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <SupportImageDownload
+                      key={hoverAttachment.id}
+                      attachment={hoverAttachment}
+                      loadImageContent={loadImageContent}
                       className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
-                      aria-label="Download image attachment"
-                      onClick={(event) => event.stopPropagation()}
-                    >
-                      <Download04Icon className="h-3.5 w-3.5" />
-                    </a>
+                      iconClassName="h-3.5 w-3.5"
+                    />
                   </div>
                 </div>
               </div>

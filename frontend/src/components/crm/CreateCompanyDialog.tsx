@@ -1,3 +1,4 @@
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
@@ -41,6 +42,7 @@ export function CreateCompanyDialog({ open, onOpenChange }: CreateCompanyDialogP
   const [employeeCount, setEmployeeCount] = useState('');
   const [annualRevenue, setAnnualRevenue] = useState('');
   const [description, setDescription] = useState('');
+  useUnsavedChangesGuard(open && (createCompany.isPending || Boolean(name || domain || industry || employeeCount || annualRevenue || description)), 'Save or discard your new company before refreshing.');
 
   const resetForm = () => {
     setName('');

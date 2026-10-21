@@ -9,7 +9,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import type { DockChat, DockRunSummary } from '@/lib/dockTypes';
 
-const mocks = vi.hoisted(() => ({ listChats: vi.fn(), listRuns: vi.fn() }));
+const mocks = vi.hoisted(() => ({ listChats: vi.fn(), listRuns: vi.fn(), updateChat: vi.fn() }));
 vi.mock('@/lib/services/dockChatService', () => ({ dockChatService: mocks }));
 vi.mock('@/lib/helpin', () => ({ resetHelpinIdentity: vi.fn() }));
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
@@ -37,6 +37,7 @@ beforeEach(() => {
   useAuthStore.setState({ user: { id: 'user-1' } as never });
   useWorkspaceStore.setState({ currentWorkspace: { id: 'ws-1' } as never });
   useSupportPresenceStore.setState({ wsConnected: false });
+  mocks.updateChat.mockReset();
   mocks.listChats.mockReset().mockResolvedValue(response('first'));
   mocks.listRuns.mockReset().mockResolvedValue({ data: { runs: [] }, error: null });
   container = document.createElement('div');
@@ -51,6 +52,34 @@ afterEach(() => {
 });
 
 describe('shared roster request ordering and recovery', () => {
+  it.each([true, false])('removes archived chat links immediately, resists stale reads, and rolls back failures (success=%s)', async (success) => {
+    const linked = { ...runSummary('ask-run', 'paused', 'human_input', 'input'), run: {
+      ...runSummary('ask-run', 'paused', 'human_input').run, dock_chat_id: 'first',
+    } };
+    const standalone = runSummary('other-run', 'running', 'none');
+    mocks.listRuns.mockResolvedValue({ data: { runs: [linked, standalone] }, error: null });
+    const mutation = deferred<{ data: DockChat | null; error: string | null }>();
+    mocks.updateChat.mockReturnValue(mutation.promise);
+    await act(async () => root.render(<><Harness /><Harness id="second" /></>));
+    let archived!: Promise<boolean>;
+    await act(async () => { archived = rosters.first.archiveChat('first'); });
+    expect(useDockStore.getState().chats).toEqual([]);
+    expect(rosters.second.runs.map((item) => item.run.id)).toEqual(['other-run']);
+    // A refresh can finish while the archive request is still pending.
+    await act(async () => { await Promise.all([rosters.second.refreshChats(), rosters.second.refreshRuns()]); });
+    expect(useDockStore.getState().chats).toEqual([]);
+    expect(rosters.second.runs.map((item) => item.run.id)).toEqual(['other-run']);
+    await act(async () => {
+      mutation.resolve(success ? { data: chat('first'), error: null } : { data: null, error: 'Archive failed' });
+      expect(await archived).toBe(success);
+    });
+    expect(useDockStore.getState().chats.map((item) => item.id)).toEqual(success ? [] : ['first']);
+    expect(rosters.second.runs.map((item) => item.run.id).sort()).toEqual(success ? ['other-run'] : ['ask-run', 'other-run']);
+    await act(async () => { await Promise.all([rosters.second.refreshChats(), rosters.second.refreshRuns()]); });
+    expect(useDockStore.getState().chats.map((item) => item.id)).toEqual(success ? [] : ['first']);
+    expect(rosters.second.runs.map((item) => item.run.id).sort()).toEqual(success ? ['other-run'] : ['ask-run', 'other-run']);
+  });
+
   it('removes answered chat attention when the active run leaves the roster', async () => {
     const awaiting = runSummary('ask-run', 'paused', 'human_input', 'input');
     mocks.listRuns.mockResolvedValueOnce({ data: { runs: [awaiting] }, error: null })

@@ -17,7 +17,7 @@ func TestAgentModelTierResolverResolvesSelectableTiers(t *testing.T) {
 		return provider == "openrouter" || provider == "openai" || provider == "anthropic"
 	})
 	want := map[aimodel.Tier]struct{ provider, model string }{
-		aimodel.TierSmall:    {"openrouter", "deepseek/deepseek-v4.1-flash:nitro"},
+		aimodel.TierSmall:    {"openrouter", "deepseek/deepseek-v4.1-flash-1017:nitro"},
 		aimodel.TierMedium:   {"openrouter", "google/gemini-3.8-flash"},
 		aimodel.TierLarge:    {"openai", "gpt-5.6-terra"},
 		aimodel.TierFlagship: {"anthropic", "claude-sonnet-5"},
@@ -174,7 +174,7 @@ func TestTierChangePreservesIndependentExecutionSettings(t *testing.T) {
 func TestStandardRouteForTierFollowsConnectedProviders(t *testing.T) {
 	type route struct{ provider, model string }
 	fixed := map[string]route{
-		"small":    {"openrouter", "deepseek/deepseek-v4.1-flash:nitro"},
+		"small":    {"openrouter", "deepseek/deepseek-v4.1-flash-1017:nitro"},
 		"medium":   {"openrouter", "google/gemini-3.8-flash"},
 		"large":    {"openai", "gpt-5.6-terra"},
 		"flagship": {"anthropic", "claude-sonnet-5"},

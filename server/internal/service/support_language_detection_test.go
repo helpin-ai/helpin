@@ -50,20 +50,21 @@ func TestTranslationUnknownCustomerSendsOriginal(t *testing.T) {
 
 func TestCustomerLanguageUncertainResultCanRecover(t *testing.T) {
 	env, c, provider := translationFixture(t)
+	setTranslationWorkspaceSettings(t, env, c.WorkspaceID, func(settings *model.SupportInboxSettings) { settings.TranslationCustomerLanguage = "" })
 	provider.responseLanguage = "mul"
 	msg := &model.SupportMessage{ID: uuid.NewString(), WorkspaceID: c.WorkspaceID, ConversationID: c.ID, SenderType: "customer", MessageType: "reply", Content: "Please help with the report."}
 	if err := env.messageRepo.Create(context.Background(), msg); err != nil {
 		t.Fatal(err)
 	}
 	s := env.service.supportInboxService
-	if _, err := s.detectCustomerLanguage(context.Background(), c.WorkspaceID, c.ID, msg); err != errCustomerLanguageUnknown {
+	if _, err := s.detectCustomerLanguage(context.Background(), c.WorkspaceID, c.ID); err != errCustomerLanguageUnknown {
 		t.Fatalf("expected unknown: %v", err)
 	}
 	if err := env.messageRepo.DB().Model(&model.SupportTranslation{}).Where("source_message_id = ?", msg.ID).Update("updated_at", time.Now().Add(-2*time.Minute)).Error; err != nil {
 		t.Fatal(err)
 	}
 	provider.responseLanguage = "en"
-	language, err := s.detectCustomerLanguage(context.Background(), c.WorkspaceID, c.ID, msg)
+	language, err := s.detectCustomerLanguage(context.Background(), c.WorkspaceID, c.ID)
 	if err != nil || language != "en" {
 		t.Fatalf("uncertain result poisoned cache: %q %v", language, err)
 	}

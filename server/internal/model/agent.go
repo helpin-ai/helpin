@@ -1195,17 +1195,19 @@ type ToolCatalogResponse struct {
 	Categories []string           `json:"categories"`
 }
 type SkillCatalogEntry struct {
-	ID                *string  `json:"id,omitempty"`
-	Key               string   `json:"key"`
-	VersionKey        string   `json:"version_key,omitempty"`
-	Title             string   `json:"title"`
-	Description       string   `json:"description"`
-	Instructions      string   `json:"instructions,omitempty"`
-	SourceKind        string   `json:"source_kind"`
-	SourceRuntime     *string  `json:"source_runtime,omitempty"`
-	RequiredTools     []string `json:"required_tools,omitempty"`
-	SupportedRuntimes []string `json:"supported_runtimes,omitempty"`
-	Presets           []string `json:"presets,omitempty"`
+	IsCustomized      bool                  `json:"is_customized"`
+	DefaultContent    *SkillEditableContent `json:"default_content,omitempty"`
+	ID                *string               `json:"id,omitempty"`
+	Key               string                `json:"key"`
+	VersionKey        string                `json:"version_key,omitempty"`
+	Title             string                `json:"title"`
+	Description       string                `json:"description"`
+	Instructions      string                `json:"instructions,omitempty"`
+	SourceKind        string                `json:"source_kind"`
+	SourceRuntime     *string               `json:"source_runtime,omitempty"`
+	RequiredTools     []string              `json:"required_tools,omitempty"`
+	SupportedRuntimes []string              `json:"supported_runtimes,omitempty"`
+	Presets           []string              `json:"presets,omitempty"`
 }
 
 // SkillCatalogResponse is the response for GET /automation/library/skills.

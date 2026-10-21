@@ -4427,7 +4427,7 @@ export function AgentsPage({ requestedAgentId }: { requestedAgentId?: string } =
                   </div>
                   <dl className="grid grid-cols-2 divide-x divide-y divide-border/40 border-t border-border/40 bg-muted/20 sm:grid-cols-5">
                     <div className="space-y-1 p-3">
-                      <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">AI profile</dt>
+                      <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">AI model</dt>
                       <dd className="truncate text-sm font-medium"><AIProfileLabel workspaceId={workspaceId} profileId={form.ai_profile_id} /></dd>
                     </div>
                     <div className="space-y-1 p-3">
@@ -4803,12 +4803,12 @@ export function AgentsPage({ requestedAgentId }: { requestedAgentId?: string } =
                       if (editingSystemAgent && editingAgent && workspaceId) {
                         setSaving(true);
                         void automationService.updateAgent(workspaceId, editingAgent.id, { ai_profile_id: id || '' }).then(res => {
-                          if (res.error) toast.error('Unable to update AI profile', { description: res.error });
+                          if (res.error) toast.error('Unable to update AI model', { description: res.error });
                           else { setForm(current => ({ ...current, ai_profile_id: id || '' })); if (res.data) setEditingAgent(res.data); void loadAgents(); }
-                        }).catch(() => toast.error('Unable to update AI profile')).finally(() => setSaving(false));
+                        }).catch(() => toast.error('Unable to update AI model')).finally(() => setSaving(false));
                       } else setForm(current => ({ ...current, ai_profile_id: id || '' }));
                     }} />
-                    <p className="mt-2 text-xs text-quiet-text-secondary">{editingSystemAgent ? 'Changes save immediately for new runs of this agent.' : 'Save this version to apply its AI profile to new runs.'} Accepted runs keep their original selection.</p>
+                    <p className="mt-2 text-xs text-quiet-text-secondary">{editingSystemAgent ? 'Changes save immediately for new runs of this agent.' : 'Save this version to apply its AI model to new runs.'} Accepted runs keep their original selection.</p>
                   </div>
 
                   </div>
@@ -5682,7 +5682,7 @@ export function AgentsPage({ requestedAgentId }: { requestedAgentId?: string } =
                 </div>
                 <dl className="grid grid-cols-2 divide-x divide-y divide-border/40 border-t border-border/40 bg-muted/20 sm:grid-cols-4 lg:grid-cols-8">
                   <div className="space-y-1 p-3">
-                    <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">AI profile</dt>
+                    <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">AI model</dt>
                     <dd className="truncate text-sm font-medium"><AIProfileLabel workspaceId={workspaceId} profileId={form.ai_profile_id} /></dd>
                   </div>
                   <div className="space-y-1 p-3">

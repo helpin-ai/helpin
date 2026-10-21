@@ -203,6 +203,7 @@ export type Permission =
   | 'crm.admin'
   | 'support.read'
   | 'support.edit'
+  | 'support.merge'
   | 'support.admin'
   | 'notifications.read'
   | 'notifications.manage'
@@ -275,6 +276,7 @@ export interface MemberWithUser {
 }
 
 export interface AssignableMember {
+  assignment_disabled_reason?: string;
   id: string;
   user_id?: string;
   role: string;

@@ -175,7 +175,7 @@ sequenceDiagram
 - Helpin derives proposed toolsets from those scopes.
 - The user selects exactly one eligible workspace.
 - The user may remove scopes or toolsets, but cannot add authority that the client did not request.
-- Read-only mode is recommended and enabled by default.
+- Consent retains requested writes when workspace policy allows them. Users can choose read-only or remove individual permissions before approving.
 - Workspace policy may narrow the grant further or force read-only mode.
 - Expanding an existing connection requires a new authorization flow.
 
@@ -203,25 +203,30 @@ Toolsets control which product-area tools are visible. Scopes control the author
 | `support` | `helpin.support.read` | `helpin.support.write` organizes conversations; replies are never sent through MCP |
 | `agents` | `helpin.agents.read` | `helpin.agents.run` |
 
-The recommended default grant includes:
+The default workspace policy allows clients to request:
 
-- toolsets: `context`, `pm`, `docs`, and `agents`
-- scopes: context read, PM read, Docs read, and agent read
+- toolsets: `context`, `pm`, `docs`, `crm`, `support`, and `agents`
+- read scopes for all six areas, subject to module availability and the user's role
 - read-only mode
 
-CRM and Support must be explicitly allowed by workspace policy and requested during consent.
+Existing saved policies and connection grants are preserved. Clients must request
+the relevant scopes and users must approve them during consent.
 
-`helpin.docs.publish` is a separate, explicit write scope. Enabling Docs writes never adds it automatically, read-only connections never receive it, and a publish tool also requires the member's `docs.publish` permission.
+`helpin.docs.publish` is a separate write scope. The generic Docs-write switch does
+not add it. The full-setup preset includes it for customer-support and help-center
+goals; read-only connections never receive it, and publishing also requires the
+member's `docs.publish` permission.
 
 ## 7. Complete v1 tool catalog
 
-The fully enabled catalog contains 49 tools; the catalog regression test asserts that count. The tables below list the primary tools by toolset. `tools/list` returns only the subset currently allowed for the principal.
+The [catalog](../server/internal/service/mcp_catalog.go) defines the available tools; the [catalog regression tests](../server/internal/service/mcp_oauth_test.go) verify required operations and their access classifications. The tables below list the primary tools by toolset. `tools/list` returns only the subset currently allowed for the principal.
 
 ### 7.1 Workspace context and search
 
 | Tool | Mode | What it does | Helpin check |
 | --- | --- | --- | --- |
 | `get_current_context` | Read | Returns the connected principal, workspace, role, scopes, toolsets, accessible modules, read-only state, and canonical Helpin URL | `PermWorkspaceRead` |
+| `get_workspace_setup` | Read | Inspects workspace essentials and selected goals with current checks and UI handoffs | `PermWorkspaceRead` + Context read; module evidence also needs module read access |
 | `search_workspace` | Read | Searches tasks and documents using a bounded query | `PermSearchRead` |
 | `list_workspace_teams` | Read | Lists teams available in the connected workspace | `PermWorkspaceRead` |
 | `list_repositories` | Read | Lists connected repository metadata without credentials | `PermIntegrationsEnumerate` |
@@ -302,9 +307,84 @@ A proposal made through MCP is recorded with the connected user as its author, t
 
 | Tool | Mode | What it does | Helpin check |
 | --- | --- | --- | --- |
+| `get_support_setup` | Read | Inspects current support setup, browser handoffs, and verification instructions without changing settings | `PermSupportAdmin` + Support module + `helpin.support.read` |
 | `list_support_conversations` | Read | Lists conversations with optional status and text filters | `PermSupportRead` + Support module |
 | `get_support_conversation` | Read | Loads one conversation inside the connected workspace | `PermSupportRead` + Support module |
 | `list_conversation_messages` | Read | Lists public conversation messages; internal notes are excluded | `PermSupportRead` + Support module |
+
+#### Workspace onboarding with browser handoffs
+
+After creating a workspace, people with setup permissions can choose **Set up in
+Helpin** or **Use my AI assistant**. The choice precedes the conditional Connect
+AI/GitHub steps. The assistant path does not need a Helpin model connection; users
+can resume the existing wizard, including company context, teams, invitations
+and sample data. Existing workspaces use **Set up with AI** in the Setup guide.
+
+`get_workspace_setup` requires Context read access and workspace read permission.
+It returns `workspace_id`, ordered `goals`, server-maintained `instructions`, and
+`sections` containing current checks and permission-aware UI links. Workspace
+essentials distinguish company context, teams, invitation creation and joined
+members. Selected goals cover support, help centers, internal docs, projects,
+CRM and automation. Module evidence additionally requires the relevant module's
+MCP toolset/read scope and platform availability. Blocked checks expose no result
+or action link. Inspection does not create goals or record achievements.
+
+The authenticated UI reads `/workspaces/{id}/setup/workspace`; scripts use
+`GET /public/v1/setup` through the same authorized tool. Public requests accept
+no workspace override. The `setup_workspace` MCP prompt is discoverable only
+when its tool is available. The copied UI prompt binds the workspace and includes
+selected goals, the current snapshot, exact links and verification limits.
+Instructions require a fresh inspection before acting and after saved changes.
+
+An admin can choose **Enable setup access** in this handoff to allow the read and
+write scopes needed by the selected goals, including their knowledge and agent
+dependencies. The preset and copied prompt use the same scope definition. It
+adds permissions to workspace policy, preserves other grants and automation-account
+settings, and does not upgrade existing connections. Connect or reconnect the
+assistant to approve access. When the client requests writes and the workspace
+allows them, consent starts with those writes selected; the user can narrow the
+grant or choose read-only. Workspace restrictions still apply.
+
+The instructions prioritize a useful working result, one approved setup plan,
+execution without repeated confirmations, and practical verification of chosen
+workflows. They distinguish supported MCP writes from settings that need the
+client's browser, and continue independent work while waiting for user input.
+
+The compact handoff keeps manual links when MCP is unavailable. Team creation and
+invitations use existing settings controls, preserving team defaults and role
+validation. Confirm recipients, roles and team/module access before invitations;
+exclude expired/revoked invitations from readiness. Invitation creation, delivery
+and membership are separate states. The wizard reloads existing teams on return.
+
+#### Support-specific compatibility
+
+`get_support_setup` is read-only and works even before the support goal is selected.
+It returns `workspace_id`, `instructions`, and `steps` with `key`, `title`, `status`,
+`path`, `verification`, and optional `blocked_reason`. MCP paths are absolute app
+URLs; the authenticated UI endpoint returns paths relative to the workspace.
+The same operation is available to scripts through `GET /public/v1/support/setup`
+with the normal public API bearer token. It accepts no workspace override.
+Inspection uses current product evidence, not a second completion checklist.
+
+The operation does not configure channels itself. An external assistant uses its
+own browser tools and the existing UI for configuration, or hands the links to the
+user. Browser identity and permission are separate from MCP grants; a read-only
+connection is not authorization for browser writes. Users complete credentials,
+OAuth consent, and external approvals themselves. Publishing, test sends, and
+live AI activation need explicit user authorization. Existing UI validation,
+permissions, and usage checks remain in force.
+
+Configured channels do not prove delivery, routing, answer quality, or human
+handoff. The final conversation test remains `unable_to_verify` in the snapshot;
+the assistant must report actual observations separately. Choose email, chat, or
+both; AI is optional. Docs readiness is hidden if the actor cannot configure Docs,
+and MCP additionally requires the Docs toolset and read scope for that evidence.
+No browser runtime or new CLI binary is included in this workflow.
+
+The portable [support onboarding skill](../integrations/helpin-mcp/skills/helpin-support-onboarding/SKILL.md)
+starts with the server-maintained instructions rather than assuming a page layout.
+Clients supporting MCP prompts can select `setup_customer_support`; it is listed
+only when the connected principal can use `get_support_setup`.
 
 ### 7.6 Agents and durable work
 
@@ -820,7 +900,7 @@ The implementation includes automated checks for:
 - strict tool schemas and rejection of workspace-override properties
 - workspace-policy scope/toolset narrowing and forced read-only behavior
 - platform domain flags
-- the 110-tool catalog
+- the 111-tool catalog
 - the `/mcp/readonly` endpoint forcing read-only mode, including parity tools for epics, sprints, objectives, labels, workflows, members, CRM, and support organization
 - document image uploads: presigned upload with storage verification, and SSRF-safe copy from a public URL
 - document lifecycle tools: publish, unpublish, archive, restore, and rename, including typed error codes

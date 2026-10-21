@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"strings"
 
+	"gorm.io/gorm"
+
 	"github.com/helpin-ai/helpin/server/internal/decision"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -132,51 +134,68 @@ func (s *SupportTagService) Delete(ctx context.Context, workspaceID, id string) 
 }
 
 func (s *SupportTagService) AddConversationTag(ctx context.Context, workspaceID, conversationID, tagID, actorID string) error {
-	if strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(conversationID) == "" || strings.TrimSpace(tagID) == "" {
-		return fmt.Errorf("workspace_id, conversation_id, and tag_id are required")
-	}
-	wasLinked, err := s.conversationHasTag(ctx, workspaceID, conversationID, tagID)
-	if err != nil {
-		return err
-	}
-	if err := s.tagRepo.AddConversationTag(ctx, workspaceID, conversationID, tagID); err != nil {
-		return err
-	}
-	if !wasLinked {
-		if tag, err := s.tagRepo.GetByID(ctx, workspaceID, tagID); err == nil && tag != nil {
-			s.emitTagSystemMessage(ctx, workspaceID, conversationID, actorID, tagID, tag.Name, model.SystemEventTagAdded)
-		} else if err != nil {
-			s.logger.WarnContext(ctx, "failed to load added support tag for system message", "error", err, "workspace_id", workspaceID, "tag_id", tagID)
-		}
-	}
-	publishWorkspaceEvent(s.wsPublisher, "updated", "support_conversation", conversationID, workspaceID, "")
-	return nil
+	return s.changeConversationTag(ctx, workspaceID, conversationID, tagID, actorID, true)
 }
 
 func (s *SupportTagService) RemoveConversationTag(ctx context.Context, workspaceID, conversationID, tagID, actorID string) error {
+	return s.changeConversationTag(ctx, workspaceID, conversationID, tagID, actorID, false)
+}
+
+func (s *SupportTagService) changeConversationTag(ctx context.Context, workspaceID, conversationID, tagID, actorID string, add bool) error {
 	if strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(conversationID) == "" || strings.TrimSpace(tagID) == "" {
 		return fmt.Errorf("workspace_id, conversation_id, and tag_id are required")
 	}
-	wasLinked, err := s.conversationHasTag(ctx, workspaceID, conversationID, tagID)
-	if err != nil {
-		return err
-	}
-	var tagName string
-	if wasLinked {
-		if tag, err := s.tagRepo.GetByID(ctx, workspaceID, tagID); err == nil && tag != nil {
-			tagName = tag.Name
-		} else if err != nil {
-			s.logger.WarnContext(ctx, "failed to load removed support tag for system message", "error", err, "workspace_id", workspaceID, "tag_id", tagID)
+	var note *model.SupportMessage
+	err := s.tagRepo.WithConversation(ctx, workspaceID, conversationID, func(tx *gorm.DB) error {
+		bound := s.withTx(tx)
+		linked, err := bound.conversationHasTag(ctx, workspaceID, conversationID, tagID)
+		if err != nil || linked == add {
+			return err
 		}
-	}
-	if err := s.tagRepo.RemoveConversationTag(ctx, workspaceID, conversationID, tagID); err != nil {
+		tag, err := bound.tagRepo.GetByID(ctx, workspaceID, tagID)
+		if err != nil {
+			return err
+		}
+		if tag == nil {
+			return gorm.ErrRecordNotFound
+		}
+		event := model.SystemEventTagAdded
+		if add {
+			err = bound.tagRepo.AddConversationTag(ctx, workspaceID, conversationID, tagID)
+		} else {
+			event = model.SystemEventTagRemoved
+			err = bound.tagRepo.RemoveConversationTag(ctx, workspaceID, conversationID, tagID)
+		}
+		if err != nil {
+			return err
+		}
+		note, err = bound.createTagSystemMessage(ctx, workspaceID, conversationID, actorID, tagID, tag.Name, event)
 		return err
+	})
+	if err == nil {
+		s.publishTagChange(workspaceID, conversationID, note)
 	}
-	if wasLinked && strings.TrimSpace(tagName) != "" {
-		s.emitTagSystemMessage(ctx, workspaceID, conversationID, actorID, tagID, tagName, model.SystemEventTagRemoved)
+	return err
+}
+
+func (s *SupportTagService) withTx(tx *gorm.DB) *SupportTagService {
+	bound := *s
+	bound.tagRepo = repository.NewSupportTagRepository(tx)
+	if s.messageRepo != nil {
+		bound.messageRepo = s.messageRepo.WithTx(tx)
+	}
+	if s.userRepo != nil {
+		bound.userRepo = repository.NewUserRepository(tx)
+	}
+	bound.wsPublisher = nil
+	return &bound
+}
+
+func (s *SupportTagService) publishTagChange(workspaceID, conversationID string, note *model.SupportMessage) {
+	if note != nil && s.wsPublisher != nil {
+		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, note, derefString(note.SenderUserID)))
 	}
 	publishWorkspaceEvent(s.wsPublisher, "updated", "support_conversation", conversationID, workspaceID, "")
-	return nil
 }
 
 func (s *SupportTagService) conversationHasTag(ctx context.Context, workspaceID, conversationID, tagID string) (bool, error) {
@@ -192,9 +211,9 @@ func (s *SupportTagService) conversationHasTag(ctx context.Context, workspaceID,
 	return false, nil
 }
 
-func (s *SupportTagService) emitTagSystemMessage(ctx context.Context, workspaceID, conversationID, actorUserID, tagID, tagName string, eventType model.SupportSystemEventType) {
+func (s *SupportTagService) createTagSystemMessage(ctx context.Context, workspaceID, conversationID, actorUserID, tagID, tagName string, eventType model.SupportSystemEventType) (*model.SupportMessage, error) {
 	if s.messageRepo == nil {
-		return
+		return nil, nil
 	}
 	displayName := "A teammate"
 	if strings.TrimSpace(actorUserID) != "" && s.userRepo != nil {
@@ -220,8 +239,7 @@ func (s *SupportTagService) emitTagSystemMessage(ctx context.Context, workspaceI
 	}
 	metadata, err := json.Marshal(map[string]string{"tag_id": tagID})
 	if err != nil {
-		s.logger.ErrorContext(ctx, "encode tag metadata", "error", err)
-		return
+		return nil, err
 	}
 	msg := &model.SupportMessage{
 		Metadata:          string(metadata),
@@ -236,55 +254,49 @@ func (s *SupportTagService) emitTagSystemMessage(ctx context.Context, workspaceI
 		SystemEventType:   model.SupportSystemEventTypeStrPtr(eventType),
 	}
 	if err := s.messageRepo.Create(ctx, msg); err != nil {
-		s.logger.ErrorContext(ctx, "failed to create support tag system message", "error", err, "workspace_id", workspaceID, "conversation_id", conversationID)
-		return
+		return nil, err
 	}
-	if s.wsPublisher != nil {
-		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, msg, derefString(senderUserID)))
-	}
+	return msg, nil
 }
 
-// AddAutomaticConversationTag adds a tag with explicit AI provenance and normal UI updates.
-func (s *SupportTagService) AddAutomaticConversationTag(ctx context.Context, workspaceID, conversationID, tagID string) error {
+// addAutomaticTag is called only inside the fenced tagging transaction.
+func (s *SupportTagService) addAutomaticTag(ctx context.Context, workspaceID, conversationID, tagID string) (*model.SupportMessage, error) {
 	linked, err := s.conversationHasTag(ctx, workspaceID, conversationID, tagID)
 	if err != nil || linked {
-		return err
+		return nil, err
 	}
 	tag, err := s.tagRepo.GetByID(ctx, workspaceID, tagID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if tag == nil {
-		return fmt.Errorf("tag not found")
+		return nil, fmt.Errorf("tag not found")
 	}
 	if s.messageRepo != nil {
 		history, err := s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, true)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if supportTagManuallyRemoved(history, *tag) {
-			return nil
+			return nil, nil
 		}
 	}
 	if err := s.tagRepo.AddConversationTag(ctx, workspaceID, conversationID, tagID); err != nil {
-		return err
+		return nil, err
 	}
 	if s.messageRepo != nil {
 		display := "Helpin AI"
 		metadata, err := json.Marshal(map[string]string{"tag_id": tagID, "provider": "typesafe", "model": decision.Model})
 		if err != nil {
-			return err
+			return nil, err
 		}
 		msg := &model.SupportMessage{WorkspaceID: workspaceID, ConversationID: conversationID, SenderType: "ai", SenderDisplayName: &display, Content: "Helpin AI added tag " + tag.Name + ".", IsInternal: true, MessageType: "system", SystemEventType: model.SupportSystemEventTypeStrPtr(model.SystemEventTagAdded), Metadata: string(metadata)}
 		if err := s.messageRepo.Create(ctx, msg); err != nil {
-			return err
+			return nil, err
 		}
-		if s.wsPublisher != nil {
-			s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, msg, ""))
-		}
+		return msg, nil
 	}
-	publishWorkspaceEvent(s.wsPublisher, "updated", "support_conversation", conversationID, workspaceID, "")
-	return nil
+	return nil, nil
 }
 
 // supportTagManuallyRemoved supports stable IDs and legacy name-only audit messages.

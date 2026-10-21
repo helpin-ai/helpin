@@ -91,16 +91,13 @@ func (s *SupportJevService) enabled(workspace string) bool {
 }
 func (s *SupportJevService) evaluate(ctx context.Context, workspace, conversation, state, identity string, questions map[string]decision.Question) (resultOut *decision.Result, errOut error) {
 	start := time.Now()
+	operation, mode, threshold := s.decisionPolicy(identity)
+	outcome := "success"
 	defer func() {
-		outcome := "success"
 		if errOut != nil {
 			outcome = "error"
-		} else if resultOut == nil {
+		} else if resultOut == nil && outcome == "success" {
 			outcome = "skipped"
-		}
-		operation := "tagging"
-		if identity == "routing" {
-			operation = "routing"
 		}
 		if s != nil {
 			s.metrics.Decision(operation, outcome, time.Since(start))
@@ -111,17 +108,49 @@ func (s *SupportJevService) evaluate(ctx context.Context, workspace, conversatio
 	}
 	encoded, err := json.Marshal(struct {
 		State, Identity, Version string
+		Mode                     string
+		Threshold                float64
 		Questions                map[string]decision.Question
-	}{State: state, Identity: identity, Version: decision.Model + ":support-v1", Questions: questions})
+	}{State: state, Identity: identity, Version: decision.Model + ":support-v2", Mode: mode, Threshold: threshold, Questions: questions})
 	if err != nil {
 		return nil, err
 	}
 	hash := sha256.Sum256(encoded)
-	requestID, err := s.events.Reserve(ctx, workspace, conversation, hex.EncodeToString(hash[:]), s.config.DailyLimit)
-	if err != nil || requestID == "" {
+	admission, err := s.events.Reserve(ctx, workspace, conversation, hex.EncodeToString(hash[:]), s.config.DailyLimit)
+	if err != nil {
 		return nil, err
 	}
+	if admission.Limited {
+		outcome = "daily_limit"
+		return nil, nil
+	}
+	if admission.Event == nil {
+		return nil, errors.New("missing support decision admission")
+	}
+	requestID := admission.Event.ID
+	if !admission.CallProvider {
+		if admission.Event.Payload["status"] != "ok" {
+			outcome = "cooldown"
+			return nil, nil
+		}
+		encoded, err := json.Marshal(admission.Event.Payload["result"])
+		if err != nil {
+			return nil, fmt.Errorf("encode cached support decision: %w", err)
+		}
+		var cached *decision.Result
+		if err := json.Unmarshal(encoded, &cached); err != nil {
+			return nil, fmt.Errorf("decode cached support decision: %w", err)
+		}
+		if err := decision.ValidateResult(cached, questions); err != nil {
+			return nil, err
+		}
+		outcome = "cached"
+		return cached, nil
+	}
 	result, callErr := s.provider.DecideMany(ctx, state, questions)
+	if callErr == nil {
+		callErr = decision.ValidateResult(result, questions)
+	}
 	settle, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	defer cancel()
 	status := "ok"
@@ -147,6 +176,25 @@ func (s *SupportJevService) evaluate(ctx context.Context, workspace, conversatio
 		return nil, callErr
 	}
 	return result, nil
+}
+
+// decisionPolicy returns only bounded operation labels, never source identifiers.
+func (s *SupportJevService) decisionPolicy(identity string) (string, string, float64) {
+	if s == nil {
+		return "support_other", "off", 0
+	}
+	switch {
+	case identity == "routing":
+		return "routing", s.config.RoutingMode, s.config.RoutingThreshold
+	case strings.HasPrefix(identity, "tags:"):
+		return "tagging", s.config.TagsMode, s.config.TagThreshold
+	case strings.HasPrefix(identity, "handoff:"):
+		return "handoff", s.config.HandoffMode, s.config.HandoffThreshold
+	case strings.HasPrefix(identity, "follow_up:"):
+		return "follow_up", s.config.FollowUpMode, s.config.FollowUpThreshold
+	default:
+		return "support_other", "", 0
+	}
 }
 func (s *SupportJevService) route(ctx context.Context, workspace, conversation, input string, options []supportTriageMailboxOption) (resultOut *supportInboxTriageResult, accepted bool, errOut error) {
 	start := time.Now()
@@ -187,18 +235,18 @@ func (s *SupportJevService) route(ctx context.Context, workspace, conversation, 
 	return &supportInboxTriageResult{Intent: &intent, Confidence: &confidence, Reason: &reason, ClassifierSource: model.SupportConversationTriageSourceAI, SuggestedHandle: a.Choice}, true, nil
 }
 
-// TagConversation adds applicable existing tags, preserving human assignments and removals.
-func (s *SupportJevService) TagConversation(ctx context.Context, workspace, conversation string, message *model.SupportMessage, history []model.SupportMessage) error {
+// selectConversationTags classifies evidence without applying conversation changes.
+func (s *SupportJevService) selectConversationTags(ctx context.Context, workspace, conversation string, message *model.SupportMessage, history []model.SupportMessage) ([]model.SupportTag, error) {
 	if !s.enabled(workspace) || s.config.TagsMode == "off" || message == nil || message.WorkspaceID != workspace || message.ConversationID != conversation || message.IsInternal || message.SenderType != "customer" || message.MessageType != "reply" {
-		return nil
+		return nil, nil
 	}
 	tags, err := s.tags.List(ctx, workspace)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	linked, err := s.tags.tagRepo.ListByConversationIDs(ctx, workspace, []string{conversation})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	skip := map[string]bool{}
 	for _, tag := range linked[conversation] {
@@ -210,34 +258,9 @@ func (s *SupportJevService) TagConversation(ctx context.Context, workspace, conv
 		}
 	}
 
-	// Latest public turns only; never internal notes, sender names or reference labels.
-	sort.SliceStable(history, func(i, j int) bool { return history[i].CreatedAt.Before(history[j].CreatedAt) })
-	parts := []string{}
-	size := 0
-	for i := len(history) - 1; i >= 0 && len(parts) < 12; i-- {
-		m := history[i]
-		if m.CreatedAt.After(message.CreatedAt) || m.IsInternal || m.MessageType != "reply" {
-			continue
-		}
-		text := strings.TrimSpace(m.Content)
-		if text == "" {
-			continue
-		}
-		if size+len(text) > 15000 {
-			if len(parts) == 0 {
-				return nil
-			}
-			break
-		}
-		parts = append(parts, m.SenderType+": "+text)
-		size += len(text) + 20
-	}
-	for i, j := 0, len(parts)-1; i < j; i, j = i+1, j-1 {
-		parts[i], parts[j] = parts[j], parts[i]
-	}
-	state := strings.Join(parts, "\n")
+	state := supportJevTagState(message, history)
 	if state == "" {
-		return nil
+		return nil, nil
 	}
 	candidates := []model.SupportTag{}
 	for _, tag := range tags {
@@ -245,6 +268,7 @@ func (s *SupportJevService) TagConversation(ctx context.Context, workspace, conv
 			candidates = append(candidates, tag)
 		}
 	}
+	var selected []model.SupportTag
 	for offset := 0; offset < len(candidates); offset += 50 {
 		end := offset + 50
 		if end > len(candidates) {
@@ -256,19 +280,55 @@ func (s *SupportJevService) TagConversation(ctx context.Context, workspace, conv
 		}
 		result, err := s.evaluate(ctx, workspace, conversation, state, "tags:"+message.ID, questions)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if result == nil || s.config.TagsMode == "shadow" {
+		if result == nil {
+			return nil, errors.New("support tagging decision unavailable")
+		}
+		if s.config.TagsMode == "shadow" {
 			continue
 		}
 		for _, tag := range candidates[offset:end] {
 			a := result.Answers[tag.ID]
 			if a.Choice == "yes" && a.Probabilities["yes"] >= s.config.TagThreshold {
-				if err := s.tags.AddAutomaticConversationTag(ctx, workspace, conversation, tag.ID); err != nil {
-					return err
-				}
+				selected = append(selected, tag)
 			}
 		}
 	}
-	return nil
+	return selected, nil
+}
+
+// supportJevTagState excludes internal notes, names and reference labels.
+func supportJevTagState(message *model.SupportMessage, history []model.SupportMessage) string {
+	history = append([]model.SupportMessage(nil), history...)
+	sort.SliceStable(history, func(i, j int) bool {
+		if history[i].CreatedAt.Equal(history[j].CreatedAt) {
+			return history[i].ID < history[j].ID
+		}
+		return history[i].CreatedAt.Before(history[j].CreatedAt)
+	})
+	parts := []string{}
+	size := 0
+	for i := len(history) - 1; i >= 0 && len(parts) < 12; i-- {
+		m := history[i]
+		if m.CreatedAt.After(message.CreatedAt) || (m.CreatedAt.Equal(message.CreatedAt) && m.ID > message.ID) || m.DeletedAt.Valid || m.IsInternal || m.MessageType != "reply" {
+			continue
+		}
+		text := strings.TrimSpace(m.Content)
+		if text == "" {
+			continue
+		}
+		if size+len(text) > 15000 {
+			if len(parts) == 0 {
+				return ""
+			}
+			break
+		}
+		parts = append(parts, m.SenderType+": "+text)
+		size += len(text) + 20
+	}
+	for i, j := 0, len(parts)-1; i < j; i, j = i+1, j-1 {
+		parts[i], parts[j] = parts[j], parts[i]
+	}
+	return strings.Join(parts, "\n")
 }

@@ -7,6 +7,7 @@ import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EmailTimeline } from '../EmailTimeline';
+import { prepareAppRefresh } from '@/lib/appLoadRecovery';
 
 const emailState = vi.hoisted(() => ({
   threads: [] as Array<Record<string, unknown>>,
@@ -15,6 +16,7 @@ const emailState = vi.hoisted(() => ({
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => vi.fn(),
+  useRouter: () => null,
 }));
 
 vi.mock('@/stores/workspaceStore', () => ({
@@ -191,7 +193,9 @@ describe('EmailTimeline', () => {
     emailState.detail = { thread, participants: [], messages: [] };
     const renderThread = (id: string) => act(() => root.render(<EmailTimeline workspaceId="workspace-1" selectedThreadId={id} />));
     renderThread('thread-1');
+    expect(prepareAppRefresh()).toBeNull();
     act(() => [...container.querySelectorAll('button')].find(button => button.textContent === 'Write reply')?.click());
+    expect(prepareAppRefresh()).toContain('email');
     act(() => [...container.querySelectorAll('button')].find(button => button.textContent === 'Attach proposal')?.click());
     renderThread('thread-2');
     expect(container.querySelector('[data-testid="reply-draft"]')?.textContent).toBe('');

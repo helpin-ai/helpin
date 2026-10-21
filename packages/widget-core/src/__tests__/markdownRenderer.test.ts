@@ -53,6 +53,29 @@ describe('renderMarkdown', () => {
     expect(result).toContain('<a href="https://example.com/docs" target="_blank" rel="noopener noreferrer">https://example.com/docs</a>');
   });
 
+  it.each([
+    'https://contentstudio.io/?_ptxn=txn_01m4tvpfyjv4rq2v9qky346agq',
+    'https://example.com/_files/a*b?first=one&second=two#_section',
+  ])('preserves composer autolink %s', (url) => {
+    const escaped = url.replace(/&/g, '&amp;');
+    expect(renderMarkdown(`<${url}>`)).toBe(`<p><a href="${escaped}" target="_blank" rel="noopener noreferrer">${escaped}</a></p>`);
+  });
+
+  it('keeps autolinks inside inline code literal', () => {
+    expect(renderMarkdown('`<https://example.com/?_ref=one>`')).toBe('<p><code>&lt;https://example.com/?_ref=one&gt;</code></p>');
+  });
+
+  it('escapes autolink attributes and rejects unsafe schemes', () => {
+    const element = document.createElement('div');
+    const url = 'https://example.com/?q="onclick="alert(1)';
+    element.innerHTML = renderMarkdown(`<${url}> <javascript:alert(1)>`);
+    const links = element.querySelectorAll('a');
+    expect(links).toHaveLength(1);
+    expect(links[0].getAttribute('href')).toBe(url);
+    expect(links[0].hasAttribute('onclick')).toBe(false);
+    expect(links[0].textContent).toBe(url);
+  });
+
   it('blocks javascript: URLs', () => {
     const input = '[click me](javascript:alert(1))';
     const result = renderMarkdown(input);

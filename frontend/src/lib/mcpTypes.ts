@@ -87,6 +87,8 @@ export type MCPDashboard = {
   can_view_activity: boolean;
   can_use_mcp: boolean;
   platform_enabled: boolean;
+  support_setup_available?: boolean;
+  workspace_setup_available?: boolean;
 };
 
 export type UpdateMCPPolicyRequest = Pick<

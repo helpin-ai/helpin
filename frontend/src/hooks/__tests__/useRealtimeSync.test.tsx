@@ -169,6 +169,8 @@ describe('useRealtimeSync task ordering events', () => {
     focus.mockReturnValue(false)
     act(() => captured.onEvent?.(event))
     expect(play).toHaveBeenCalledTimes(2)
+    act(() => captured.onEvent?.({ ...event, actor_id: 'user-2', data: { ...event.data, sender_type: 'user', message_type: 'system', system_event_type: 'teammate_joined' } }))
+    expect(play).toHaveBeenCalledTimes(2)
     unregister()
     focus.mockRestore()
     visibility.mockRestore()
@@ -623,6 +625,17 @@ describe('useRealtimeSync task ordering events', () => {
     await act(async () => { emit('ws-2'); vi.advanceTimersByTime(500) })
     expect(invalidations).toHaveBeenCalledWith(expect.objectContaining({ queryKey: queryKeys.automation.runAttentionCount('ws-2') }))
     expect(invalidations).not.toHaveBeenCalledWith(expect.objectContaining({ queryKey: queryKeys.automation.runAttentionCount('ws-1') }))
+    act(() => root.unmount())
+  })
+
+  it('refreshes skills after an agent edits a workspace skill', () => {
+    const client = new QueryClient()
+    const invalidations = vi.spyOn(client, 'invalidateQueries')
+    const root = createRoot(document.createElement('div'))
+    act(() => root.render(<QueryClientProvider client={client}><Harness workspaceId="ws-1" /></QueryClientProvider>))
+    invalidations.mockClear()
+    act(() => captured.onEvent?.({ entity: 'workspace_skill', action: 'updated', entity_id: 'skill-1', workspace_id: 'ws-1' }))
+    expect(invalidations).toHaveBeenCalledWith({ queryKey: queryKeys.automation.skillCatalog('ws-1') })
     act(() => root.unmount())
   })
 

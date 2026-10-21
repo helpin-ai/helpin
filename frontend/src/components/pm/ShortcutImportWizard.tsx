@@ -1614,7 +1614,7 @@ function WorkflowStep({
                     <ArrowRight01Icon className="h-4 w-4" />
                   )}
                   <CardTitle className="text-sm">{wf.shortcutWorkflowName}</CardTitle>
-                  {isValid && <Badge variant="outline" className="text-green-600 border-green-300 text-xs">Ready</Badge>}
+                  {isValid && <Badge variant="outline" className="text-green-600 dark:text-green-400 border-green-300 dark:border-green-800 text-xs">Ready</Badge>}
                 </div>
                 <span className="text-xs text-muted-foreground">
                   {totalTasks.toLocaleString()} tasks

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/aimodel"
+	"github.com/helpin-ai/helpin/server/internal/llm"
 )
 
 func TestAICompletionRouteRegistryCoversDirectFeatures(t *testing.T) {
@@ -164,7 +165,7 @@ func TestSupportRewriteRoutesUseOnlySmallTierModels(t *testing.T) {
 	if !ok {
 		t.Fatal("support rewrite route policy missing")
 	}
-	if policy.Primary.Provider != "openrouter" || policy.Primary.Model != "deepseek/deepseek-v4-flash-0731" {
+	if policy.Primary.Provider != "openrouter" || policy.Primary.Model != defaultFastOpenRouterAgentModel {
 		t.Errorf("primary = %+v, want DeepSeek V4 Flash through OpenRouter", policy.Primary)
 	}
 	catalog, err := aimodel.LoadCatalog()
@@ -187,7 +188,29 @@ func TestLiveTranslatePinsPrimaryAndIndependentFallback(t *testing.T) {
 	if !ok || p.Primary.Model != "openai/gpt-oss-120b" || p.Primary.OpenRouterProvider != "cerebras/fp16" || p.PreferRequestRoute {
 		t.Fatalf("unsafe translation primary: %+v", p)
 	}
-	if len(p.Fallbacks) != 1 || p.Fallbacks[0].Model != "deepseek/deepseek-v4.1-flash" || p.Fallbacks[0].OpenRouterProvider != "coreweave/fp8" {
+	if len(p.Fallbacks) != 1 || p.Fallbacks[0].Model != "deepseek/deepseek-v4.1-flash-1017:nitro" || p.Fallbacks[0].OpenRouterProvider != "" || !p.Fallbacks[0].DisableReasoning {
 		t.Fatalf("fallback: %+v", p.Fallbacks)
+	}
+}
+
+func TestDeepSeek1017CompletionRoutes(t *testing.T) {
+	registry := DefaultAICompletionRouteRegistry()
+	rewrite, _ := registry.Policy(BillingFeatureSupportReplyRewrite, "")
+	if rewrite.Primary.Model != "deepseek/deepseek-v4.1-flash-1017:nitro" {
+		t.Fatalf("rewrite route: %+v", rewrite.Primary)
+	}
+	translation, _ := registry.Policy(BillingFeatureSupportTranslation, "")
+	review, _ := registry.Policy(BillingFeatureSupportTranslation, "quality_review")
+	for _, route := range []AICompletionRoute{translation.Fallbacks[0], review.Primary} {
+		req, err := completionChatRequest(llm.ChatRequest{}, route)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if req.Model != "deepseek/deepseek-v4.1-flash-1017:nitro" || req.Reasoning == nil || req.Reasoning.Enabled == nil || *req.Reasoning.Enabled {
+			t.Fatalf("translation request: %+v", req)
+		}
+		if strings.Contains(string(req.ProviderOptions), "coreweave") || !strings.Contains(string(req.ProviderOptions), "require_parameters") {
+			t.Fatalf("translation provider compatibility: %s", req.ProviderOptions)
+		}
 	}
 }

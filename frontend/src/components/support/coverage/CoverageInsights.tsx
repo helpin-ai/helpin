@@ -14,34 +14,59 @@ import {
   SelectValue,
 } from '@/components/design-system/quiet-dropdown-select'
 import type {
-  CoveragePipelineHealthV2,
   CoverageSignalV2,
   CoverageTopicDetailV2,
   CoverageTopicV2,
 } from '@/lib/supportCoverageTypes'
 import { timeAgo } from '@/lib/utils'
 
+interface InsightPagination {
+  total?: number
+  hasMore: boolean
+  loadingMore: boolean
+  loadMoreError: string | null
+  loadMore: () => unknown
+}
+
 interface CoverageInsightsProps {
   topics: CoverageTopicV2[]
   signals: CoverageSignalV2[]
-  health: CoveragePipelineHealthV2 | null
   selectedTopic: CoverageTopicDetailV2 | null
   topicLoading: boolean
-  loading: boolean
+  topicsLoading: boolean
+  signalsLoading: boolean
+  topicPagination: InsightPagination
+  signalPagination: InsightPagination
   errors: Record<string, string>
   wsSlug: string
   signalTopicSelections: Record<string, string>
   pendingSignalId: string | null
-  pendingAttemptId: string | null
   canEdit: boolean
-  canManage: boolean
   onSelectSignalTopic: (signalId: string, topicId: string) => void
   onOpenTopic: (topicId: string) => void
   onCloseTopic: () => void
   onAttachSignal: (signalId: string) => void
   onDismissSignal: (signalId: string) => void
-  onRetryAttempt: (attemptId: string) => void
   onRefresh: () => void
+  onOpenConversationGaps: (conversationId: string) => void
+}
+
+function InsightListFooter({ count, label, pagination }: { count: number; label: string; pagination: InsightPagination }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 pt-3">
+      <span className="text-xs text-quiet-text-tertiary">
+        Showing {count}{typeof pagination.total === 'number' ? ` of ${pagination.total}` : ''} {label}
+      </span>
+      <div className="flex items-center gap-3">
+        {pagination.loadMoreError && <span role="alert" className="text-xs text-destructive">Could not load more. Try again.</span>}
+        {pagination.hasMore && (
+          <Button variant="outline" size="sm" disabled={pagination.loadingMore} onClick={() => { void pagination.loadMore() }}>
+            {pagination.loadingMore ? 'Loading…' : pagination.loadMoreError ? 'Try again' : 'Load more'}
+          </Button>
+        )}
+      </div>
+    </div>
+  )
 }
 
 function EmptyState({
@@ -65,17 +90,14 @@ export function CoverageInsights(props: CoverageInsightsProps) {
   const {
     topics,
     signals,
-    health,
     selectedTopic,
     topicLoading,
-    loading,
     errors,
     wsSlug,
     canEdit,
-    canManage,
   } = props
   const state = (surface: string) =>
-    loading ? (
+    (surface === 'topics' ? props.topicsLoading : props.signalsLoading) ? (
       <p role="status" className="py-8 text-quiet-text-tertiary">
         Loading coverage…
       </p>
@@ -130,12 +152,20 @@ export function CoverageInsights(props: CoverageInsightsProps) {
               ))}
             </div>
           ))}
+        {!props.topicsLoading && !errors.topics && topics.length > 0 && (
+          <InsightListFooter count={topics.length} label="topics" pagination={props.topicPagination} />
+        )}
       </TabsContent>
       <TabsContent value="signals">
         <p className="mb-4 text-sm text-quiet-text-tertiary">
           These signals need human review. Attach relevant evidence to a
           customer topic, or dismiss it.
         </p>
+        {canEdit && signals.length > 0 && props.topicPagination.hasMore && (
+          <Button className="mb-3" size="sm" variant="ghost" disabled={props.topicPagination.loadingMore} onClick={() => { void props.topicPagination.loadMore() }}>
+            {props.topicPagination.loadingMore ? 'Loading topics…' : 'Load more topics to choose from'}
+          </Button>
+        )}
         {state('signals') ??
           (signals.length === 0 ? (
             <EmptyState
@@ -216,76 +246,9 @@ export function CoverageInsights(props: CoverageInsightsProps) {
               ))}
             </div>
           ))}
-      </TabsContent>
-      <TabsContent value="health">
-        {state('health') ??
-          (!health ? (
-            <EmptyState
-              title="Analysis status unavailable"
-              description="Refresh to check the latest analysis status."
-            />
-          ) : (
-            <>
-              <p className="text-sm font-semibold">
-                {!health.rollout.capture_enabled
-                  ? 'Coverage analysis is paused'
-                  : !health.latest_batch
-                    ? 'Waiting for the first analysis'
-                    : health.healthy
-                      ? 'No analysis failures'
-                      : 'Some conversations need another attempt'}
-              </p>
-              {health.latest_batch && (
-                <p className="mt-2 text-sm text-quiet-text-tertiary">
-                  {health.latest_batch.succeeded_count} of{' '}
-                  {health.latest_batch.candidate_count} conversations analyzed ·{' '}
-                  {health.latest_batch.status.replaceAll('_', ' ')}
-                  {health.latest_batch.completed_at
-                    ? ` · ${timeAgo(health.latest_batch.completed_at)}`
-                    : ''}
-                </p>
-              )}
-              <div className="mt-4 divide-y divide-quiet-divider-light">
-                {health.failures.map((failure) => (
-                  <div
-                    key={failure.id}
-                    className="flex items-start justify-between gap-4 py-4"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium">
-                        Conversation analysis needs attention
-                      </p>
-                      <p className="mt-1 text-xs text-quiet-text-tertiary">
-                        {timeAgo(failure.created_at)} ·{' '}
-                        {failure.retry_budget_used} retries
-                      </p>
-                      <details className="mt-2 text-xs text-quiet-text-tertiary">
-                        <summary className="cursor-pointer">
-                          Technical details
-                        </summary>
-                        <p className="mt-2 break-words">
-                          {failure.failure_class || failure.stage}:{' '}
-                          {failure.failure_message || 'Waiting for retry'}
-                        </p>
-                      </details>
-                    </div>
-                    {canManage && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={Boolean(props.pendingAttemptId)}
-                        onClick={() => props.onRetryAttempt(failure.id)}
-                      >
-                        {props.pendingAttemptId === failure.id
-                          ? 'Queuing…'
-                          : 'Retry'}
-                      </Button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </>
-          ))}
+        {!props.signalsLoading && !errors.signals && signals.length > 0 && (
+          <InsightListFooter count={signals.length} label="signals" pagination={props.signalPagination} />
+        )}
       </TabsContent>
       <Sheet
         open={Boolean(selectedTopic) || topicLoading}
@@ -361,6 +324,10 @@ export function CoverageInsights(props: CoverageInsightsProps) {
                 </div>
               </dl>
               {finding.conversation_id ? (
+                <div className="flex flex-wrap items-center gap-4">
+                  <Button size="sm" variant="outline" onClick={() => props.onOpenConversationGaps(finding.conversation_id!)}>
+                    View open gaps
+                  </Button>
                 <a
                   href={`/w/${encodeURIComponent(wsSlug)}/support/${encodeURIComponent(finding.conversation_id)}`}
                   target="_blank"
@@ -370,6 +337,7 @@ export function CoverageInsights(props: CoverageInsightsProps) {
                   View source conversation
                   <span className="sr-only"> (opens in a new tab)</span>
                 </a>
+                </div>
               ) : (
                 <p className="text-xs text-quiet-text-tertiary">
                   Source conversation unavailable.

@@ -69,6 +69,9 @@ func (r *AIProfileRepository) Delete(ctx context.Context, workspace, id string, 
 		if count != 0 {
 			return ErrAIProfileInUse
 		}
+		if err := tx.Model(&model.AIPersonalSettings{}).Where("workspace_id = ? AND default_profile_id = ?", workspace, id).Update("default_profile_id", nil).Error; err != nil {
+			return err
+		}
 		return tx.Model(&model.AIWorkspaceSettings{}).Where("workspace_id = ? AND default_profile_id = ?", workspace, id).Update("default_profile_id", nil).Error
 	})
 }
@@ -96,5 +99,84 @@ func (r *AIProfileRepository) SetDefault(ctx context.Context, workspace string, 
 			settings.DefaultProfileID = &p.ID
 		}
 		return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "workspace_id"}}, DoUpdates: clause.AssignmentColumns([]string{"default_profile_id", "updated_at"})}).Create(&settings).Error
+	})
+}
+
+// SetVisibility leaves routes and all referencing agents/defaults intact.
+func (r *AIProfileRepository) SetVisibility(ctx context.Context, workspace, id string, revision int64, hidden bool) error {
+	result := r.db.WithContext(ctx).Model(&model.AIProfile{}).Where("workspace_id = ? AND id = ? AND revision = ? AND deleted_at IS NULL", workspace, id, revision).
+		Updates(map[string]any{"hidden_from_ask_agent": hidden, "revision": revision + 1, "updated_at": time.Now().UTC()})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrAIProfileChanged
+	}
+	return nil
+}
+
+// EnableModel serializes one-click additions on the connection across replicas.
+// Existing variants are retained, including their names, controls and fallbacks.
+func (r *AIProfileRepository) EnableModel(ctx context.Context, p *model.AIProfile) (*model.AIProfile, error) {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var connection model.AIConnection
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND workspace_id = ?", p.Primary.ConnectionID, p.WorkspaceID).First(&connection).Error; err != nil {
+			return err
+		}
+		var existing []model.AIProfile
+		query := tx.Where("workspace_id = ? AND scope = ? AND deleted_at IS NULL", p.WorkspaceID, p.Scope)
+		if p.UserID == nil {
+			query = query.Where("user_id IS NULL")
+		} else {
+			query = query.Where("user_id = ?", *p.UserID)
+		}
+		if err := query.Order("hidden_from_ask_agent,created_at,id").Find(&existing).Error; err != nil {
+			return err
+		}
+		for i := range existing {
+			candidate := &existing[i]
+			if candidate.Primary.ConnectionID != p.Primary.ConnectionID || candidate.Primary.Model.Model != p.Primary.Model.Model {
+				continue
+			}
+			if candidate.HiddenFromAskAgent {
+				result := tx.Model(candidate).Where("revision = ?", candidate.Revision).Updates(map[string]any{"hidden_from_ask_agent": false, "revision": candidate.Revision + 1, "updated_at": time.Now().UTC()})
+				if result.Error != nil {
+					return result.Error
+				}
+				if result.RowsAffected != 1 {
+					return ErrAIProfileChanged
+				}
+			}
+			p = candidate
+			return nil
+		}
+		return tx.Create(p).Error
+	})
+	return p, err
+}
+
+func (r *AIProfileRepository) PersonalSettings(ctx context.Context, workspace, user string) (*model.AIPersonalSettings, error) {
+	s := model.AIPersonalSettings{WorkspaceID: workspace, UserID: user}
+	err := r.db.WithContext(ctx).Where("workspace_id = ? AND user_id = ?", workspace, user).First(&s).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		err = nil
+	}
+	return &s, err
+}
+
+func (r *AIProfileRepository) SetPersonalDefault(ctx context.Context, workspace, user string, profile *model.AIProfile) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		settings := model.AIPersonalSettings{WorkspaceID: workspace, UserID: user, UpdatedAt: time.Now().UTC()}
+		if profile != nil {
+			var p model.AIProfile
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("workspace_id = ? AND id = ? AND (scope = ? OR user_id = ?) AND deleted_at IS NULL", workspace, profile.ID, "workspace", user).First(&p).Error; err != nil {
+				return err
+			}
+			if p.Revision != profile.Revision {
+				return ErrAIProfileChanged
+			}
+			settings.DefaultProfileID = &p.ID
+		}
+		return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "workspace_id"}, {Name: "user_id"}}, DoUpdates: clause.AssignmentColumns([]string{"default_profile_id", "updated_at"})}).Create(&settings).Error
 	})
 }

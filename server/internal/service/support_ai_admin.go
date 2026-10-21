@@ -298,7 +298,7 @@ func (s *SupportAIService) resolvePreviewHistory(
 		if s.messageRepo == nil {
 			return nil, "", fmt.Errorf("support message repository is not configured")
 		}
-		history, err := s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
+		history, err := s.messageRepo.ListForSupportAI(ctx, workspaceID, conversationID, false)
 		if err != nil {
 			return nil, "", fmt.Errorf("list conversation history: %w", err)
 		}
@@ -514,7 +514,7 @@ func (s *SupportAIService) loadRewriteHistory(ctx context.Context, workspaceID, 
 	if s.messageRepo == nil {
 		return nil, nil
 	}
-	history, err := s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
+	history, err := s.messageRepo.ListForSupportAI(ctx, workspaceID, conversationID, false)
 	if err != nil {
 		return nil, fmt.Errorf("list conversation history: %w", err)
 	}

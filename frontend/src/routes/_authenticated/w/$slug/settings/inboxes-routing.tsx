@@ -5,18 +5,20 @@ import { SettingsRouteViewport } from '@/pages/settings/SettingsRouteViewport';
 type InboxesRoutingSearch = {
   tab: InboxesRoutingTab;
   create_inbox: boolean;
+  create_sender?: boolean;
 };
 
 export const Route = createFileRoute('/_authenticated/w/$slug/settings/inboxes-routing')({
   component: InboxesRoutingRoute,
   validateSearch: (search: Record<string, unknown>): InboxesRoutingSearch => ({
     tab: normalizeInboxesRoutingTab(search.tab),
+    create_sender: search.create_sender === true || search.create_sender === "true",
     create_inbox: search.create_inbox === true || search.create_inbox === 'true',
   }),
 });
 
 function InboxesRoutingRoute() {
-  const { tab, create_inbox: createInbox } = Route.useSearch();
+  const { tab, create_inbox: createInbox, create_sender: createSender } = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
 
   const handleTabChange = (value: string) => {
@@ -29,7 +31,7 @@ function InboxesRoutingRoute() {
 
   return (
     <SettingsRouteViewport>
-      <InboxesRoutingSettingsPage tab={tab} createInbox={createInbox} onTabChange={handleTabChange} />
+      <InboxesRoutingSettingsPage tab={tab} createInbox={createInbox} createSender={createSender} onTabChange={handleTabChange} />
     </SettingsRouteViewport>
   );
 }

@@ -1,3 +1,4 @@
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { useEffect, useMemo, useState } from 'react';
 import { format, isThisMonth } from 'date-fns';
 import { toast } from 'sonner';
@@ -190,12 +191,10 @@ export function EmailTimeline({
   const draftKey = `${workspaceId}:${selectedThreadId}`;
   const replyHTML = replyDrafts[draftKey] ?? '';
   const setReplyHTML = (html: string) => setReplyDrafts((drafts) => ({ ...drafts, [draftKey]: html }));
-  useEffect(() => {
-    if (!replyBusy && !Object.values(attachmentDrafts).some((draft) => draft.attachments.length > 0) && !Object.values(replyDrafts).some((html) => html.replace(/<[^>]+>/g, '').trim())) return;
-    const protect = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
-    window.addEventListener('beforeunload', protect);
-    return () => window.removeEventListener('beforeunload', protect);
-  }, [replyDrafts, attachmentDrafts, replyBusy]);
+  useUnsavedChangesGuard(
+    replyBusy || Object.values(attachmentDrafts).some(draft => draft.attachments.length > 0) || Object.values(replyDrafts).some(html => Boolean(html.replace(/<[^>]+>/g, '').trim())),
+    'Send or discard your email drafts before refreshing.',
+  );
 
   useEffect(() => {
     if (!dealOpen || dealQuery.trim().length < 2) return;

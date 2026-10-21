@@ -1,10 +1,14 @@
+import { AppLoadBoundary } from '@/components/layout/AppLoadError';
+import { ConversationMergeHistoryEvent, MergedConversationContinuation } from './ConversationMergeHistory';
+import { groupSupportTimeline } from './groupSupportTimeline';
+import { useConversationMerges } from '@/hooks/queries/useSupportMerge';
 import { usePendingSupportSends } from '@/hooks/queries/usePendingSupportSends';
 import { LiveTranslateBar } from './LiveTranslateBar';
 import { useCachedSupportTranslations } from '@/hooks/queries/useSupportTranslation';
 import { pmTriageService, type TriageView, type SupportTaskDraft } from '@/lib/services/pmTriageService';
 import { unwrapRequired } from '@/lib/queryUtils';
 import { getReplyDeliveryMode, getReplyEmailSubject } from './replyDelivery';
-import { lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react';
+import { useCallback, lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { ArrowLeft02Icon, ClipboardIcon, Message01Icon, Loading01Icon, CheckmarkCircle02Icon, CancelCircleIcon, MoreHorizontalIcon } from '@/lib/icons';
@@ -33,15 +37,17 @@ import { agentService } from '@/lib/services/agentService';
 import { type AgentTypingState, useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
-import type { AgentRun, SupportMessage, ConversationStatus } from '@/lib/pmTypes';
+import type { AgentRun, ConversationStatus, SupportMessage } from '@/lib/pmTypes';
 import { flattenSupportMessagePages, supportMessageRenderKey } from '@/lib/supportMessagePages';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
-import { getDayLabel, getEffectiveSenderType, getSupportReceiptStatus, isSameDay, getInitial, isAIActiveConversation, type SupportReceiptStatus } from './helpers';
+import { getSupportReceiptStatus, getInitial, isAIActiveConversation, type SupportReceiptStatus } from './helpers';
 import { TranslatedMessageBubble } from './TranslatedMessageBubble';
 import { useJoinedMessagePosition } from './useJoinedMessagePosition';
 import { EmptyState } from './EmptyState';
+import { SupportFollowUpStatus } from './SupportFollowUpStatus';
+import { getSupportFollowUpStage, isFollowUpStatusNote } from './supportFollowUpState';
 import { AgentRunsCard } from './AgentRunsCard';
 import { AIRunApprovalCard } from './AIRunApprovalCard';
 import { ConversationActionsMenu } from './ConversationActionsMenu';
@@ -338,11 +344,12 @@ export function MessageThread({
   } = useConversationMessages(workspaceId, conversationId);
   const loadedMessages = useMemo(
     () => flattenSupportMessagePages(messagePages).filter(
-      message => !(message.message_type === 'system' && message.system_event_type === 'teammate_joined'),
+      message => !(message.message_type === 'system' && message.system_event_type === 'teammate_joined') && !isFollowUpStatusNote(message),
     ),
     [messagePages],
   );
   const messages=usePendingSupportSends(workspaceId,conversationId||'',loadedMessages);
+  const latestPublicMessage = useMemo(() => messages.findLast(message => !message.is_internal && message.message_type === 'reply' && !message.pending_send), [messages]);
   const translationIds=useMemo(()=>messages.filter(m=>m.message_type==='reply'&&!m.is_internal&&!m.pending_send).map(m=>m.id),[messages]);
   const cachedTranslations=useCachedSupportTranslations(workspaceId,conversationId||'',translationIds, Math.max(0, ...messages.filter(m=>!m.is_internal).map(m=>Date.parse(m.created_at)))).data;
   const translationMap=useMemo(()=>new Map((cachedTranslations||[]).map(t=>[t.purpose === 'outgoing_reply' ? t.sent_message_id : t.source_message_id,t])),[cachedTranslations]);
@@ -361,6 +368,13 @@ export function MessageThread({
   const updatePreferences = useUpdateSupportTaskPreferences(workspaceId);
   const currentUser = useAuthStore((s) => s.user);
   const isThreadLoading = !!conversationId && (!conversationFetched || isLoading);
+
+  const [editingNote, setEditingNote] = useState<SupportMessage | null>(null);
+  useEffect(() => { setEditingNote(null); }, [workspaceId, conversationId]);
+  const startEditingNote = useCallback((message: SupportMessage) => {
+    if (editingNote) { toast.info('Finish editing the current note first'); return; }
+    setEditingNote(message);
+  }, [editingNote]);
 
   const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
   const [taskReview, setTaskReview] = useState<{ conversationId: string; view: TriageView | null; error?: string } | null>(null);
@@ -393,9 +407,8 @@ export function MessageThread({
   }, [members]);
 
   const moveOptions = useMemo(() => {
-    const options = [inboxScopes?.shared_inbox, ...(inboxScopes?.mailboxes ?? [])].filter(Boolean);
-    return options.filter((option) => option!.id !== (conversation?.mailbox_id ?? 'shared'));
-  }, [conversation?.mailbox_id, inboxScopes]);
+    return [inboxScopes?.shared_inbox, ...(inboxScopes?.mailboxes ?? [])].filter(Boolean);
+  }, [inboxScopes]);
 
   const triageBanner = useMemo(() => {
     const triage = conversation?.triage;
@@ -658,50 +671,13 @@ export function MessageThread({
     return getSupportReceiptStatus(msg, conversation);
   }, [receiptMessageId, conversation, messages]);
 
-  const groupedMessages = useMemo(() => {
-    const items: Array<{ type: 'separator'; label: string } | { type: 'message'; message: SupportMessage; isConsecutive: boolean; isLastInGroup: boolean }> = [];
-    let lastDate: string | null = null;
-
-    messages.forEach((msg, idx) => {
-      // Insert day separator if new day
-      if (!lastDate || !isSameDay(lastDate, msg.created_at)) {
-        items.push({ type: 'separator', label: getDayLabel(msg.created_at) });
-        lastDate = msg.created_at;
-      }
-
-      // Check if consecutive (same sender within 2 minutes, same type)
-      const prev = idx > 0 ? messages[idx - 1] : null;
-      const currentSenderType = getEffectiveSenderType(msg);
-      const prevSenderType = prev ? getEffectiveSenderType(prev) : null;
-      const isConsecutive = prev !== null
-        && prev.message_type !== 'system'
-        && msg.message_type !== 'system'
-        && prevSenderType === currentSenderType
-        && (currentSenderType !== 'user' || (!!msg.sender_user_id && prev.sender_user_id === msg.sender_user_id))
-        && prev.is_internal === msg.is_internal
-        && isSameDay(prev.created_at, msg.created_at)
-        && (new Date(msg.created_at).getTime() - new Date(prev.created_at).getTime()) < 120000;
-
-      // Check if this is the last message in a consecutive group
-      const next = idx < messages.length - 1 ? messages[idx + 1] : null;
-      const nextSenderType = next ? getEffectiveSenderType(next) : null;
-      const isLastInGroup = next === null
-        || next.message_type === 'system'
-        || msg.message_type === 'system'
-        || nextSenderType !== currentSenderType
-        || (currentSenderType === 'user' && (!msg.sender_user_id || next.sender_user_id !== msg.sender_user_id))
-        || next.is_internal !== msg.is_internal
-        || !isSameDay(msg.created_at, next.created_at)
-        || (new Date(next.created_at).getTime() - new Date(msg.created_at).getTime()) >= 120000;
-
-      items.push({ type: 'message', message: msg, isConsecutive, isLastInGroup });
-    });
-
-    return items;
-  }, [messages]);
+  const { data: mergeHistory } = useConversationMerges(workspaceId, conversationId);
+  const groupedMessages = useMemo(() => groupSupportTimeline(messages, mergeHistory ?? []), [messages, mergeHistory]);
 
   const visibleGroupedMessages = groupedMessages;
 
+  const followUpStage = conversation ? getSupportFollowUpStage(conversation, latestPublicMessage) : null;
+  const followUpStageKey = followUpStage ? `${conversation?.ai_follow_up?.id}:${followUpStage.kind}:${followUpStage.deadline ?? ''}` : null;
   const lastMessageId = messages[messages.length - 1]?.id ?? null;
   const lastRenderedCustomerMessageId = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -807,6 +783,14 @@ export function MessageThread({
       timeouts.forEach((timeout) => window.clearTimeout(timeout));
     };
   }, [conversationId, initialScrollTargetMessageId, lastMessageId, messages.length, visibleGroupedMessages.length]);
+
+  useLayoutEffect(() => {
+    // A new schedule can arrive without a new message. Keep it visible only
+    // when the viewer is already at the bottom; do not interrupt history reading.
+    if (!followUpStageKey || !isNearBottomRef.current || pendingInitialScrollRef.current) return;
+    const viewport = scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLDivElement | null;
+    if (viewport) viewport.scrollTop = viewport.scrollHeight;
+  }, [conversationId, followUpStageKey]);
 
   useJoinedMessagePosition(scrollAreaRef, conversationId, messages, olderPageScrollRef);
 
@@ -991,7 +975,7 @@ export function MessageThread({
             variant="ghost"
             size="icon"
             className="h-11 w-11 shrink-0"
-            disabled={createTaskFromConversation.isPending || analyzingTask || !access?.permissions?.includes('pm.edit')}
+            disabled={!!conversation.merged_into_id || createTaskFromConversation.isPending || analyzingTask || !access?.permissions?.includes('pm.edit')}
             onClick={handleCreateTask}
             aria-label="Create task"
             title="Create task"
@@ -1009,6 +993,7 @@ export function MessageThread({
               conversationId: conversation.id,
               status: (conversation.status === 'resolved' ? 'open' : 'resolved') as ConversationStatus,
             })}
+            disabled={!!conversation.merged_into_id}
             aria-label={conversation.status === 'resolved' ? 'Reopen conversation' : 'Resolve conversation'}
             title={conversation.status === 'resolved' ? 'Reopen conversation' : 'Resolve conversation'}
           >
@@ -1050,7 +1035,7 @@ export function MessageThread({
               size="sm"
               variant="outline"
               className="h-7 gap-1 text-xs"
-              disabled={createTaskFromConversation.isPending || analyzingTask || !access?.permissions?.includes('pm.edit')}
+              disabled={!!conversation.merged_into_id || createTaskFromConversation.isPending || analyzingTask || !access?.permissions?.includes('pm.edit')}
               onClick={handleCreateTask}
             >
               {createTaskFromConversation.isPending || analyzingTask ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <CheckmarkCircle02Icon className="h-3.5 w-3.5" />}
@@ -1059,7 +1044,7 @@ export function MessageThread({
 
 
             {/* Resolve / Unresolve */}
-            {conversation.status === 'resolved' ? (
+            {!conversation.merged_into_id && (conversation.status === 'resolved' ? (
               <Button
                 size="sm"
                 variant="outline"
@@ -1079,7 +1064,7 @@ export function MessageThread({
                 <CheckmarkCircle02Icon className="h-3.5 w-3.5" />
                 Resolve
               </Button>
-            )}
+            ))}
 
             {/* More actions */}
             <ConversationActionsMenu
@@ -1228,6 +1213,7 @@ export function MessageThread({
             />
           )}
           {visibleGroupedMessages.map((item, idx) => {
+            if (item.type === 'merge') return conversation ? <ConversationMergeHistoryEvent key={item.id} workspaceId={workspaceId} conversation={conversation} merges={item.merges} restored={item.restored} canUnmerge={!!access?.permissions.includes('support.merge')} /> : null;
             if (item.type === 'separator') {
               return (
                 <DaySeparator
@@ -1252,6 +1238,8 @@ export function MessageThread({
               >
                 <TranslatedMessageBubble
                   workspaceId={workspaceId}
+                  readOnly={!!conversation?.merged_into_id || !!conversation?.anonymized_at || !!editingNote}
+                  onEditNote={access?.permissions?.includes('support.edit') ? startEditingNote : undefined}
                   message={item.message}
                   cachedTranslation={translationMap.get(item.message.id)}
                   isConsecutive={item.isConsecutive}
@@ -1271,6 +1259,15 @@ export function MessageThread({
               </div>
             );
           })}
+          {!isThreadLoading && conversation?.id === conversationId && (
+            <SupportFollowUpStatus
+              key={conversation.id}
+              conversation={conversation}
+              canEdit={!conversation.merged_into_id && !!access?.permissions?.includes('support.edit')}
+              latestPublicMessage={latestPublicMessage}
+              stoppedByName={conversation.ai_follow_up?.cancelled_by_user_id ? memberNameByUserId.get(conversation.ai_follow_up.cancelled_by_user_id) : undefined}
+            />
+          )}
           <TypingIndicatorBar conversationId={conversationId} />
           <AgentTypingBubble conversationId={conversationId} workspaceId={workspaceId} />
           <div ref={messagesEndRef} />
@@ -1290,24 +1287,26 @@ export function MessageThread({
 
       {/* Reserve the editor's space immediately. Its key isolates drafts and
           attachments when switching between already cached conversations. */}
-      {conversationId && (conversation?.id === conversationId && !isThreadLoading ? (conversation.anonymized_at ? (
+      {conversationId && (conversation?.id === conversationId && !isThreadLoading ? (conversation.merged_into_id ? <MergedConversationContinuation conversation={conversation} /> : conversation.anonymized_at ? (
         <div className="px-4 py-3 text-sm text-muted-foreground" role="status">
           This customer was deleted. Messages and comments are retained; this conversation is read-only.
         </div>
       ) : (
-        <Suspense fallback={<ReplyComposerLoading />}>
+        <AppLoadBoundary><Suspense fallback={<ReplyComposerLoading />}>
           <LazyReplyComposer
             key={`${workspaceId}:${conversationId}`}
             workspaceId={workspaceId}
             conversationId={conversationId}
+            editingNote={editingNote?.conversation_id === conversationId ? editingNote : null}
+            onFinishEdit={(messageId) => setEditingNote(current => current?.id === messageId ? null : current)}
             emailDeliveryEnabled={installation?.settings.email_fallback_enabled}
             onUpgradeRequired={setUpgradeDialogReason}
           />
-        </Suspense>
+        </Suspense></AppLoadBoundary>
       )) : <ReplyComposerLoading />)}
 
       {taskReview && taskReview.conversationId === conversationId ? (
-        <Suspense fallback={null}><LazySupportTaskTriageDialog
+        <AppLoadBoundary><Suspense fallback={null}><LazySupportTaskTriageDialog
           key={`${workspaceId}:${conversationId}`}
           workspaceId={workspaceId}
           workspaceSlug={workspaceSlug}
@@ -1320,10 +1319,10 @@ export function MessageThread({
           onOpenChange={(open) => { if (!open) setTaskReview(null); }}
           onCreate={handleReviewedTaskCreate}
           onLinked={() => { setTaskReview(null); toast.success('Conversation linked to existing task'); }}
-        /></Suspense>
+        /></Suspense></AppLoadBoundary>
       ) : null}
       {showCreateTaskDialog ? (
-        <Suspense fallback={null}>
+        <AppLoadBoundary><Suspense fallback={null}>
           <LazyCreateTaskDialog
             open={showCreateTaskDialog}
             onOpenChange={setShowCreateTaskDialog}
@@ -1332,7 +1331,7 @@ export function MessageThread({
             isPending={createTaskFromConversation.isPending}
             onConfirm={handleCreateTaskConfirm}
           />
-        </Suspense>
+        </Suspense></AppLoadBoundary>
       ) : null}
       <UpgradeRequiredDialog
         open={upgradeDialogReason !== null}

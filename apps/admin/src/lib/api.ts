@@ -7,7 +7,7 @@ interface ApiResponse<T> {
   isNetworkError?: boolean
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
+async function request<T>(path: string, options: RequestInit = {}, responseType: 'json' | 'blob' = 'json'): Promise<ApiResponse<T>> {
   try {
     const response = await fetch(`${API_BASE}${path}`, {
       ...options,
@@ -38,7 +38,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<ApiR
           return { data: null as T, error: null, status: 204 }
         }
 
-        return { data: await retryResponse.json(), error: null, status: retryResponse.status }
+        return { data: await retryResponse[responseType](), error: null, status: retryResponse.status }
       }
 
       if (path === '/auth/me') {
@@ -64,7 +64,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<ApiR
       return { data: null as T, error: null, status: 204 }
     }
 
-    return { data: await response.json(), error: null, status: response.status }
+    return { data: await response[responseType](), error: null, status: response.status }
   } catch (error) {
     return {
       data: null,
@@ -166,6 +166,7 @@ export function setupVisibilityRefresh(): void {
 }
 
 export const api = {
+  getBlob: (path: string) => request<Blob>(path, {}, 'blob'),
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined }),

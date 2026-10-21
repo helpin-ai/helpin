@@ -1,3 +1,4 @@
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { TeamColorMark } from '@/components/workspace/TeamLabel';
 import { DetailMetadataRow as MetadataRow } from '@/components/pm/DetailMetadataRow';
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type SetStateAction } from 'react';
@@ -119,9 +120,9 @@ const routeApi = getRouteApi('/_authenticated/w/$slug/pm/epics/$epicId');
 const healthOptions: EpicHealth[] = ['no_health', 'on_track', 'at_risk', 'off_track'];
 const healthConfig: Record<EpicHealth, { label: string; color: string }> = {
   no_health: { label: 'No health', color: 'text-muted-foreground' },
-  on_track: { label: 'On track', color: 'text-green-600' },
-  at_risk: { label: 'At risk', color: 'text-yellow-600' },
-  off_track: { label: 'Off track', color: 'text-red-600' },
+  on_track: { label: 'On track', color: 'text-green-600 dark:text-green-400' },
+  at_risk: { label: 'At risk', color: 'text-yellow-600 dark:text-yellow-400' },
+  off_track: { label: 'Off track', color: 'text-red-600 dark:text-red-400' },
 };
 const NO_HEALTH_DATES_TOOLTIP = 'No suggestion yet: set a start date and deadline.';
 const CODE_REPO_TOOLTIP = 'Gives agents code context for planning and execution.';
@@ -265,6 +266,7 @@ export function EpicDetailPage() {
   } | null>(null);
   const [movingTasks, setMovingTasks] = useState(false);
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
+  useUnsavedChangesGuard(saving || descriptionPendingUploads > 0 || Object.keys(pendingPatch).length > 0, 'Wait for your epic changes and uploads to save before refreshing.');
   const [editingDescription, setEditingDescription] = useState(false);
   const [descriptionDragging, setDescriptionDragging] = useState(false);
   const [comments, setComments] = useState<CommentWithAuthor[]>([]);

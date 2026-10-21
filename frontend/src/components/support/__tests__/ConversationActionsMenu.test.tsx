@@ -10,12 +10,17 @@ import { ConversationActionsMenu } from '../ConversationActionsMenu'
 vi.mock('../SupportAIControl', () => ({ useSupportAIControl: () => ({ item: null, confirmation: null }) }))
 
 const mockUpdateStatusMutate = vi.fn()
+const mockMoveMutate = vi.fn()
+
+vi.mock('@/hooks/queries/useSession', () => ({
+  useWorkspaceAccess: () => ({ data: { permissions: ['support.edit'] } }),
+}))
 
 vi.mock('@/hooks/queries/useSupport', () => ({
   useDeleteConversation: () => ({ mutate: vi.fn(), isPending: false }),
   useMarkConversationRead: () => ({ mutate: vi.fn(), isPending: false }),
   useMarkConversationUnread: () => ({ mutate: vi.fn(), isPending: false }),
-  useMoveConversation: () => ({ mutate: vi.fn(), isPending: false }),
+  useMoveConversation: () => ({ mutate: mockMoveMutate, isPending: false }),
   useUpdateConversationSubject: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateConversationStatus: () => ({ mutate: mockUpdateStatusMutate, isPending: false }),
   useSendConversationTranscript: () => ({ mutate: vi.fn(), isPending: false }),
@@ -139,5 +144,44 @@ describe('ConversationActionsMenu', () => {
     expect(document.body.textContent).not.toContain('Move to Sales')
 
     rendered.cleanup()
+  })
+
+  it.each([
+    { name: 'AI handling', flow_state: 'ai_handling', ai_state: null },
+    { name: 'legacy AI handling', flow_state: null, ai_state: 'pending' },
+  ])('allows moving $name to its current shared inbox', async ({ flow_state, ai_state }) => {
+    const rendered = renderMenu(conversation({ mailbox_id: null, flow_state, ai_state }), [
+      { id: 'shared', name: 'Shared Inbox' },
+    ])
+    try {
+      const trigger = Array.from(document.body.querySelectorAll('[role="menuitem"]'))
+        .find((item) => item.textContent?.includes('Move to inbox')) as HTMLElement
+      expect(trigger).toBeTruthy()
+      await act(async () => trigger.click())
+      const shared = Array.from(document.body.querySelectorAll('[role="menuitem"]'))
+        .find((item) => item.textContent === 'Shared Inbox') as HTMLElement
+      expect(shared).toBeTruthy()
+      await act(async () => shared.click())
+      expect(mockMoveMutate).toHaveBeenCalledWith(
+        { conversationId: 'conv-1', mailboxId: null }, expect.any(Object),
+      )
+    } finally {
+      rendered.cleanup()
+    }
+  })
+
+  it.each([
+    { name: 'human handling', status: 'open', flow_state: 'waiting_for_human', human_takeover: true },
+    { name: 'paused AI', status: 'open', flow_state: 'ai_handling', human_takeover: true },
+    { name: 'resolved', status: 'resolved', flow_state: 'ai_handling', human_takeover: false },
+  ])('hides the current shared inbox during $name', ({ status, flow_state, human_takeover }) => {
+    const rendered = renderMenu(conversation({ status: status as SupportConversation['status'], mailbox_id: null, flow_state, human_takeover }), [
+      { id: 'shared', name: 'Shared Inbox' },
+    ])
+    try {
+      expect(document.body.textContent).not.toContain('Move to inbox')
+    } finally {
+      rendered.cleanup()
+    }
   })
 })

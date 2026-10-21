@@ -65,7 +65,7 @@ describe('ConnectAIStep', () => {
       expect(row(container, provider)).not.toBeNull();
       expect(button(row(container, provider), 'Add key')).toBeDefined();
     }
-    expect(container.textContent).toContain('You can add, replace or remove them later in Settings → AI & knowledge → AI setup.');
+    expect(container.textContent).toContain('You can add, replace or remove them later in Settings → AI & knowledge → AI models.');
     expect(button(container, 'Skip for now')).toBeDefined();
   });
 

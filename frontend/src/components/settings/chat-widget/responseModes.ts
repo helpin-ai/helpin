@@ -18,3 +18,7 @@ export type AIReplyChannels = 'chat' | 'email' | 'both';
 export function getAIReplyChannels(value?: string): AIReplyChannels {
   return value === 'email' || value === 'both' ? value : 'chat';
 }
+
+export function isChatWidgetAIFirst(enabled: boolean, mode: string, channels?: string): boolean {
+  return enabled && mode === 'ai_first' && getAIReplyChannels(channels) !== 'email';
+}

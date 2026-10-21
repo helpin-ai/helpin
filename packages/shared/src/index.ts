@@ -1,4 +1,5 @@
 export type { Conversation } from './types/conversation';
+export { compareMessageOrder } from './message-order';
 export type { Message, AiSource, Attachment, LinkPreview, PendingAttachment, SystemEventType, AIReplyKind } from './types/message';
 export { SYSTEM_EVENT_TYPES } from './types/message';
 export type { Organization } from './types/organization';

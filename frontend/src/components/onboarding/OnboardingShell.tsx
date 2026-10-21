@@ -5,6 +5,8 @@ import { cn } from '@/lib/utils';
 
 const stepLabels: Record<WorkspaceOnboardingStep, string> = {
   workspace: 'Workspace',
+  method: 'Setup method',
+  assistant: 'AI assistant',
   ai: 'AI',
   github: 'GitHub',
   context: 'Company',
@@ -31,7 +33,7 @@ type OnboardingShellProps = {
 export function OnboardingShell({ steps, current, title, description, headerAction, children }: OnboardingShellProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const previousStep = useRef<WorkspaceOnboardingStep | undefined>(undefined);
-  const currentIndex = current ? steps.indexOf(current) : -1;
+  const currentIndex = current ? steps.indexOf(current === 'assistant' ? 'method' : current) : -1;
 
   useEffect(() => {
     if (!current) return;

@@ -15,6 +15,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
@@ -35,7 +36,7 @@ func (r *SupportMessageRepository) ListByConversation(ctx context.Context, works
 		query = query.Where("is_internal = false")
 	}
 	var messages []model.SupportMessage
-	if err := query.Order("created_at ASC").Find(&messages).Error; err != nil {
+	if err := query.Order("created_at ASC, id ASC").Find(&messages).Error; err != nil {
 		return nil, fmt.Errorf("list messages: %w", err)
 	}
 	return messages, nil
@@ -117,26 +118,40 @@ func (r *SupportMessageRepository) Create(ctx context.Context, message *model.Su
 }
 
 func (r *SupportMessageRepository) create(ctx context.Context, message *model.SupportMessage) error {
-	if message != nil && message.PendingGuard != nil {
+	if message == nil {
+		return gorm.ErrInvalidData
+	}
+	if message.PendingGuard != nil {
 		return r.createPendingMessage(ctx, message)
 	}
 
-	if message != nil && message.MessageType == "system" {
+	if message.MessageType == "system" {
 		if message.SystemEventType == nil || !model.IsValidSupportSystemEventType(*message.SystemEventType) {
 			return fmt.Errorf("create message: system message requires a valid system_event_type")
 		}
 	}
-	if err := r.db.WithContext(ctx).Create(message).Error; err != nil {
-		return fmt.Errorf("create message: %w", err)
-	}
-	// Bump parent conversation's updated_at so it moves to top of inbox list
-	if message.ConversationID != "" && !model.IsSupportEmailNotice(message) {
-		r.db.WithContext(ctx).
-			Model(&model.SupportConversation{}).
-			Where("id = ?", message.ConversationID).
-			Update("updated_at", time.Now())
-	}
-	return nil
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		grants, err := routeSupportMessage(ctx, tx, message)
+		if err != nil {
+			return err
+		}
+		if message.CreatedAt.IsZero() {
+			message.CreatedAt = time.Now().UTC().Truncate(time.Microsecond)
+		}
+		if err := r.WithTx(tx).createTeammateJoined(ctx, message); err != nil {
+			return err
+		}
+		if err := tx.Create(message).Error; err != nil {
+			return fmt.Errorf("create message: %w", err)
+		}
+		if err := recordSupportMergeMessage(tx, grants); err != nil {
+			return err
+		}
+		if message.ConversationID != "" && !model.IsSupportEmailNotice(message) {
+			return tx.Model(&model.SupportConversation{}).Where("id = ? AND workspace_id = ?", message.ConversationID, message.WorkspaceID).Update("updated_at", time.Now()).Error
+		}
+		return nil
+	})
 }
 
 // GetByID returns a support message by ID.
@@ -148,7 +163,11 @@ func (r *SupportMessageRepository) GetByID(ctx context.Context, id string) (*mod
 		}
 		return nil, fmt.Errorf("get message: %w", err)
 	}
-	return &message, nil
+	rows := []model.SupportMessage{message}
+	if err := r.HydrateMergeMessageGrants(ctx, rows); err != nil {
+		return nil, err
+	}
+	return &rows[0], nil
 }
 
 // GetByIDs returns support messages by ID ordered by created_at.
@@ -159,9 +178,12 @@ func (r *SupportMessageRepository) GetByIDs(ctx context.Context, ids []string) (
 	var messages []model.SupportMessage
 	if err := r.db.WithContext(ctx).
 		Where("id IN ?", ids).
-		Order("created_at ASC").
+		Order("created_at ASC, id ASC").
 		Find(&messages).Error; err != nil {
 		return nil, fmt.Errorf("get messages by ids: %w", err)
+	}
+	if err := r.HydrateMergeMessageGrants(ctx, messages); err != nil {
+		return nil, err
 	}
 	return messages, nil
 }
@@ -188,7 +210,7 @@ func (r *SupportMessageRepository) ListEmailFallbackReconciliationCandidates(ctx
 		Joins("JOIN support_conversations sc ON sc.id = support_messages.conversation_id AND sc.workspace_id = support_messages.workspace_id").
 		Where("support_messages.email_notified_at IS NULL").
 		Where(supportDeliveryModeSQL(r.db, "support_messages")+" <> ?", model.SupportDeliveryChatOnly).
-		Where("(NOT ("+explicitEmail+") OR "+supportMetadataStringSQL(r.db, "support_messages", "email_delivery_status")+" <> ?)", "blocked").
+		Where(supportMetadataStringSQL(r.db, "support_messages", "email_delivery_status")+" <> ?", "blocked").
 		Where("support_messages.is_internal = ?", false).
 		Where("COALESCE(NULLIF(support_messages.message_type, ''), 'reply') = ?", "reply").
 		Where("support_messages.sender_type <> ?", "customer").
@@ -1301,6 +1323,7 @@ func (r *SupportConversationRepository) applyMailboxScopes(query *gorm.DB, alias
 }
 
 func (r *SupportConversationRepository) applyConversationListParams(query *gorm.DB, alias string, params ConversationRepositoryListParams) *gorm.DB {
+	query = query.Where(alias + ".merged_into_id IS NULL")
 	query = r.applyMailboxAccess(query, alias, params.WorkspaceMemberID, params.Role)
 	query = r.applyMailboxScopes(query, alias, params.MailboxID, params.MailboxIDs)
 	query = applyConversationFlowState(query, alias, params.FlowState)
@@ -1764,12 +1787,16 @@ func (r *SupportConversationRepository) List(ctx context.Context, params Convers
 	if err := fetch.
 		Joins("LEFT JOIN support_mailboxes sm ON sm.id = support_conversations.mailbox_id").
 		Joins(conversationActivityJoin).
-		Joins("LEFT JOIN support_conversation_user_states scus ON scus.conversation_id = support_conversations.id AND scus.user_id = ?", strings.TrimSpace(params.UserID)).
+		Joins("LEFT JOIN support_conversation_user_states scus ON scus.conversation_id = support_conversations.id AND scus.user_id = ?", nullableSupportUserID(params.UserID)).
 		Select(r.conversationListProjectionSelect()).
 		Order(conversationListOrder(params.Sort)).Offset(offset).Limit(perPage).Find(&conversations).Error; err != nil {
 		return nil, 0, fmt.Errorf("list conversations: %w", err)
 	}
 	for i := range conversations {
+		if strings.TrimSpace(params.UserID) == "" {
+			conversations[i].UnreadCount = 0
+			conversations[i].PersonalStateVersion = 0
+		}
 		if conversations[i].LastMessage == nil {
 			continue
 		}
@@ -1834,7 +1861,7 @@ func (r *SupportConversationRepository) CountByParamsWithAttention(ctx context.C
 		COUNT(*) AS total_count,
 		COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0) AS unread_count,
 		COALESCE(SUM(CASE WHEN sc.needs_human_reply THEN 1 ELSE 0 END), 0) AS needs_human_reply_count
-	`, unreadCondition), strings.TrimSpace(params.UserID)).Scan(&counts).Error; err != nil {
+	`, unreadCondition), nullableSupportUserID(params.UserID)).Scan(&counts).Error; err != nil {
 		return 0, 0, 0, fmt.Errorf("count conversations: %w", err)
 	}
 
@@ -2002,6 +2029,9 @@ func (r *SupportConversationRepository) GetByID(ctx context.Context, workspaceID
 		}
 		return nil, fmt.Errorf("get conversation: %w", err)
 	}
+	if err := LoadSupportMailboxAIPolicy(r.db.WithContext(ctx), &conversation); err != nil {
+		return nil, err
+	}
 	return &conversation, nil
 }
 
@@ -2013,7 +2043,7 @@ func (r *SupportConversationRepository) GetByIDForUser(ctx context.Context, work
 		Table("support_conversations").
 		Joins("LEFT JOIN support_mailboxes sm ON sm.id = support_conversations.mailbox_id").
 		Joins(conversationActivityJoin).
-		Joins("LEFT JOIN support_conversation_user_states scus ON scus.conversation_id = support_conversations.id AND scus.user_id = ?", strings.TrimSpace(userID)).
+		Joins("LEFT JOIN support_conversation_user_states scus ON scus.conversation_id = support_conversations.id AND scus.user_id = ?", nullableSupportUserID(userID)).
 		Where("support_conversations.workspace_id = ? AND support_conversations.id = ?", workspaceID, id)
 	query = r.applyMailboxAccess(query, "support_conversations", workspaceMemberID, role)
 	if err := query.Select(r.conversationListProjectionSelect()).First(&conversation).Error; err != nil {
@@ -2021,6 +2051,10 @@ func (r *SupportConversationRepository) GetByIDForUser(ctx context.Context, work
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get conversation for user: %w", err)
+	}
+	if strings.TrimSpace(userID) == "" {
+		conversation.UnreadCount = 0
+		conversation.PersonalStateVersion = 0
 	}
 	return &conversation, nil
 }
@@ -2049,7 +2083,7 @@ func (r *SupportConversationRepository) Update(ctx context.Context, conversation
 		conversation.DelayedTeamReplySentFor = conversation.AIEscalatedAt
 	}
 	// A pre-takeover snapshot must never restore old ownership/control fields.
-	result := r.db.WithContext(ctx).Model(conversation).Where("workspace_id = ? AND ai_control_version = ?", conversation.WorkspaceID, conversation.AIControlVersion).Select("*").Updates(conversation)
+	result := r.db.WithContext(ctx).Model(conversation).Where("workspace_id = ? AND ai_control_version = ? AND merged_into_id IS NULL", conversation.WorkspaceID, conversation.AIControlVersion).Select("*").Updates(conversation)
 	if result.Error != nil {
 		return fmt.Errorf("update conversation: %w", result.Error)
 	}
@@ -2061,6 +2095,9 @@ func (r *SupportConversationRepository) Update(ctx context.Context, conversation
 
 // UpdateFields updates specific fields on a conversation by ID and workspace.
 func (r *SupportConversationRepository) UpdateFields(ctx context.Context, workspaceID, conversationID string, fields map[string]any) error {
+	if len(fields) == 0 {
+		return nil
+	}
 	// Legacy channel-policy and email takeover paths also revoke prior runs.
 	if _, changesOwnership := fields["human_takeover"]; changesOwnership {
 		fields = maps.Clone(fields)
@@ -2073,19 +2110,33 @@ func (r *SupportConversationRepository) UpdateFields(ctx context.Context, worksp
 		fields["delayed_team_reply_sent_for"] = gorm.Expr("ai_escalated_at")
 	}
 
-	if err := r.db.WithContext(ctx).
-		Model(&model.SupportConversation{}).
-		Where("id = ? AND workspace_id = ?", conversationID, workspaceID).
-		Updates(fields).Error; err != nil {
-		return fmt.Errorf("update conversation fields: %w", err)
+	result := r.db.WithContext(ctx).Model(&model.SupportConversation{}).
+		Where("id = ? AND workspace_id = ? AND merged_into_id IS NULL", conversationID, workspaceID).Updates(fields)
+	if result.Error != nil {
+		return fmt.Errorf("update conversation fields: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		// A caller may add an optimistic AI-control predicate. A stale snapshot
+		// remains an intentional no-op; only an actual source is read-only.
+		var count int64
+		if err := r.db.Session(&gorm.Session{NewDB: true}).WithContext(ctx).Model(&model.SupportConversation{}).Where("id = ? AND workspace_id = ? AND merged_into_id IS NOT NULL", conversationID, workspaceID).Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return ErrSupportMerged
+		}
 	}
 	return nil
 }
 
 // UpdateSubject updates only the subject of a conversation.
 func (r *SupportConversationRepository) UpdateSubject(ctx context.Context, id, subject string) error {
-	if err := r.db.WithContext(ctx).Model(&model.SupportConversation{}).Where("id = ?", id).Update("subject", subject).Error; err != nil {
+	result := r.db.WithContext(ctx).Model(&model.SupportConversation{}).Where("id = ? AND merged_into_id IS NULL", id).Update("subject", subject)
+	if err := result.Error; err != nil {
 		return fmt.Errorf("update conversation subject: %w", err)
+	}
+	if result.RowsAffected == 0 {
+		return ErrSupportMerged
 	}
 	return nil
 }
@@ -2243,10 +2294,10 @@ func (r *SupportConversationRepository) ListByAnonymousID(ctx context.Context, w
 	var conversations []model.SupportConversation
 	if err := r.db.WithContext(ctx).
 		Select(fmt.Sprintf(`support_conversations.*,
-		(SELECT content FROM support_messages WHERE support_messages.conversation_id = support_conversations.id AND support_messages.deleted_at IS NULL AND support_messages.is_internal = false AND support_messages.message_type = 'reply' AND support_messages.system_event_type IS NULL AND `+supportDeliveryModeSQL(r.db, "support_messages")+` <> 'email_only' ORDER BY created_at DESC LIMIT 1) AS last_message,
+		(SELECT COALESCE(`+supportMetadataValueSQL(r.db, "support_messages", "merge_public_text")+`, content) FROM support_messages WHERE (support_messages.conversation_id = support_conversations.id OR EXISTS (SELECT 1 FROM support_merge_messages g WHERE g.workspace_id = support_messages.workspace_id AND g.conversation_id = support_conversations.id AND g.message_id = support_messages.id)) AND support_messages.deleted_at IS NULL AND support_messages.is_internal = false AND support_messages.message_type = 'reply' AND support_messages.system_event_type IS NULL AND `+supportDeliveryModeSQL(r.db, "support_messages")+` <> 'email_only' ORDER BY created_at DESC LIMIT 1) AS last_message,
 		(SELECT COUNT(*)
 			FROM support_messages sm
-			WHERE sm.conversation_id = support_conversations.id
+			WHERE (sm.conversation_id = support_conversations.id OR EXISTS (SELECT 1 FROM support_merge_messages g WHERE g.workspace_id = sm.workspace_id AND g.conversation_id = support_conversations.id AND g.message_id = sm.id))
 			  AND sm.deleted_at IS NULL
 			  AND sm.is_internal = false AND `+supportDeliveryModeSQL(r.db, "sm")+` <> 'email_only'
 			  AND sm.sender_type IN ('user', 'agent', 'ai')
@@ -2329,6 +2380,20 @@ func (r *SupportConversationRepository) MarkUnread(ctx context.Context, conversa
 // Delete permanently removes a conversation and its messages.
 func (r *SupportConversationRepository) Delete(ctx context.Context, workspaceID, conversationID string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := LockSupportRouting(tx, workspaceID); err != nil {
+			return err
+		}
+		var active int64
+		if err := tx.Model(&model.SupportConversationMerge{}).Where("workspace_id = ? AND (source_id = ? OR target_id = ?) AND ended_at IS NULL", workspaceID, conversationID, conversationID).Count(&active).Error; err != nil {
+			return err
+		}
+		if active > 0 {
+			return fmt.Errorf("unmerge this conversation before deleting it")
+		}
+		if err := tx.Where("workspace_id = ? AND (conversation_id = ? OR message_id IN (SELECT id FROM support_messages WHERE workspace_id = ? AND conversation_id = ?))", workspaceID, conversationID, workspaceID, conversationID).Delete(&model.SupportMergeMessage{}).Error; err != nil {
+			return err
+		}
+
 		// Explicit conversation deletion remains available after anonymization.
 		// Remove the parent first so message cleanup cannot resurrect projections
 		// on a read-only conversation. Everything still commits atomically.
@@ -2361,7 +2426,7 @@ func (r *SupportConversationRepository) MarkContactRead(ctx context.Context, con
 		WHERE id = ?
 		  AND EXISTS (
 			SELECT 1 FROM support_messages sm
-			WHERE sm.conversation_id = support_conversations.id
+			WHERE (sm.conversation_id = support_conversations.id OR EXISTS (SELECT 1 FROM support_merge_messages g WHERE g.workspace_id = sm.workspace_id AND g.conversation_id = support_conversations.id AND g.message_id = sm.id))
 			  AND sm.deleted_at IS NULL
 			  AND sm.is_internal = false AND `+supportDeliveryModeSQL(r.db, "sm")+` <> 'email_only'
 			  AND sm.sender_type IN ('user', 'agent', 'ai')
@@ -2652,6 +2717,9 @@ func (r *SupportConversationRepository) applyMailboxScope(query *gorm.DB, alias 
 }
 
 func (r *SupportConversationRepository) applyMailboxAccess(query *gorm.DB, alias, workspaceMemberID, role string) *gorm.DB {
+	if scope := authorization.GetSupportAgentScope(query.Statement.Context); scope != nil {
+		return applySupportAgentConversationAccess(query, alias, scope)
+	}
 	if isElevatedSupportRole(role) {
 		return query
 	}

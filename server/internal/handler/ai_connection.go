@@ -223,3 +223,12 @@ func (h *AIConnectionHandler) Endpoints(w http.ResponseWriter, r *http.Request) 
 	}
 	writeJSON(w, 200, endpoints)
 }
+
+func (h *AIConnectionHandler) Models(w http.ResponseWriter, r *http.Request) {
+	result, err := h.service.ConnectionModels(r.Context(), middleware.GetWorkspaceID(r.Context()), middleware.GetUserID(r.Context()), chi.URLParam(r, "connectionID"), r.Method == http.MethodPost)
+	if err != nil {
+		h.failure(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}

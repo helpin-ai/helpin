@@ -1,3 +1,4 @@
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { TeamColorMark } from '@/components/workspace/TeamLabel';
 import { TaskDraftSuggestions } from './TaskDraftSuggestions';
 import { EPIC_PICKER_WIDTH } from '@/components/pm/epicPickerGroups';
@@ -1064,6 +1065,8 @@ export function CreateTaskModal({
     stateId,
     baselineStateId: initialStateIdRef.current,
   });
+
+  useUnsavedChangesGuard(open && (hasUnsavedChanges || submitting || descriptionPendingUploads > 0 || pendingFiles.length > 0), 'Save or discard your new task before refreshing.');
 
   const handleOpenChange = async (nextOpen: boolean) => {
     if (!nextOpen && hasUnsavedChanges) {

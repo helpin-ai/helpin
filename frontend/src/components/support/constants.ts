@@ -4,7 +4,7 @@ export const STATUS_COLORS: Record<ConversationStatus, string> = {
   open: 'bg-blue-100 text-blue-700',
   waiting_on_customer: 'bg-purple-100 text-purple-700',
   resolved: 'bg-green-100 text-green-700',
-  spam: 'bg-red-100 text-red-600',
+  spam: 'bg-red-100 text-red-600 dark:bg-red-950/50 dark:text-red-400',
 };
 
 export const STATUS_LABELS: Record<ConversationStatus, string> = {

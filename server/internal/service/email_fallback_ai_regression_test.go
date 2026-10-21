@@ -134,16 +134,13 @@ func TestFollowUpEmailUsesActualWorkspaceDisplayName(t *testing.T) {
 					t.Fatal("AI email missing Auto-Submitted header")
 				}
 				attempts++
-				if attempts == 1 {
-					if captured.From != tt.want+" <inbox@acme.on.helpin.email>" {
-						t.Fatalf("branded From = %q", captured.From)
-					}
-					return &http.Response{StatusCode: 422, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"ErrorCode":300,"Message":"The From address is not a Sender Signature on your account."}`))}, nil
-				}
 				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"ErrorCode":0,"MessageID":"sent"}`))}, nil
 			})})
 			if err := env.service.fireEmailWithOptions(context.Background(), conv.ID, []string{msg.ID}, emailFallbackFireOptions{}); err != nil {
 				t.Fatal(err)
+			}
+			if attempts != 1 {
+				t.Fatalf("expected one send with the verified sender, got %d", attempts)
 			}
 			if captured.From != tt.want+" <noreply@example.com>" {
 				t.Fatalf("From = %q", captured.From)

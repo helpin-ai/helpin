@@ -1,3 +1,4 @@
+import { useAppRefreshGuard } from '@/hooks/useAppRefreshGuard';
 import { useNotificationView } from '@/hooks/useNotificationView';
 import { DockContextMessage } from './DockContextMessage';
 import type { DockContextMessage as ContextMessage } from '@/lib/dockTypes';
@@ -185,6 +186,12 @@ export function ChatView({
   const [mediaAttachments, setMediaAttachments] = useState<DockChatMediaAttachment[]>([]);
   const [analyzingMedia, setAnalyzingMedia] = useState(false);
   const [analyzingMediaLabel, setAnalyzingMediaLabel] = useState('');
+  useAppRefreshGuard(() => {
+    if (sending || analyzingMedia) return 'Wait for Ask agent to finish sending or uploading before refreshing.';
+    if (mediaAttachments.length || references.length) return 'Send or remove attachments and references in Ask agent before refreshing.';
+    if (!onDraftChange && value.trim()) return 'Copy or send your Ask agent draft before refreshing.';
+    return null;
+  });
   const [sendError, setSendError] = useState<{
     message: string;
     content: string;
@@ -1191,7 +1198,7 @@ export function ChatView({
                 ) : !aiConnection.ai_profile_id && agentDefaults.isPending ? (
                   <span role="status" className="text-xs text-quiet-text-secondary">Loading…</span>
                 ) : !aiConnection.ai_profile_id && agentDefaults.isError ? (
-                  <button type="button" className="text-xs text-quiet-text-secondary hover:text-foreground" title="Retry loading the agent’s default profile" onClick={() => void agentDefaults.refetch()}>Retry default</button>
+                  <button type="button" className="text-xs text-quiet-text-secondary hover:text-foreground" title="Retry loading the agent’s default model" onClick={() => void agentDefaults.refetch()}>Retry default</button>
                 ) : <AIConnectionPicker workspaceId={workspaceId} inDock compact defaultProfileId={askAgentDefault} value={aiConnection} onChange={setAIConnection} disabled={sending} />}
                 value={value}
                 onChange={setValue}

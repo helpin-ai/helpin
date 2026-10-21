@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 	"log/slog"
@@ -114,11 +115,15 @@ func (s *SupportInboxService) processLiveMessage(ctx context.Context, job *model
 	if msg == nil || msg.DeletedAt.Valid || (job.SourceHash != "" && translationHash(msg.Content) != job.SourceHash) {
 		return nil
 	}
-	if !job.Enabled || !options.Preference.AutoTranslateIncoming || options.Conversation.Revision != job.Revision || options.Preference.ReadingLanguage != job.TargetLanguage {
-		if meaningfulLanguageText(msg.Content) {
-			_, err = s.detectCustomerLanguage(ctx, job.WorkspaceID, job.ConversationID, msg)
+	if supportReplyTarget(options) == "" && meaningfulLanguageText(msg.Content) {
+		// Establish once from customer-authored context, independently of each
+		// message's display translation and whether live translation is paused.
+		if _, err := s.detectCustomerLanguage(ctx, job.WorkspaceID, job.ConversationID); err != nil && !errors.Is(err, errCustomerLanguageUnknown) {
+			return err
 		}
-		return err
+	}
+	if !job.Enabled || !options.Preference.AutoTranslateIncoming || options.Conversation.Revision != job.Revision || options.Preference.ReadingLanguage != job.TargetLanguage {
+		return nil
 	}
 	result, err := s.TranslateSupport(ctx, job.WorkspaceID, job.ConversationID, "live-worker", model.SupportTranslateRequest{MessageID: job.MessageID, TargetLanguage: job.TargetLanguage, Live: true})
 	if err == nil && (result == nil || result.Status != "ready") {

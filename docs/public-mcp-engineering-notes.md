@@ -128,7 +128,7 @@ Examples:
 - the original beta omitted batch/dependency operations; the current catalog includes a bounded, idempotency-keyed `create_task_batch` with dependency references.
 - public support reads exclude internal notes even though an internal command can read them.
 
-The current [catalog regression test](../server/internal/service/mcp_oauth_test.go) expects 49 tools. The catalog has grown since the original 30-tool handoff; inspect [the catalog](../server/internal/service/mcp_catalog.go) when changing exposure. Bounded task batches and additional Docs/PM mutations are now included.
+The [catalog regression tests](../server/internal/service/mcp_oauth_test.go) verify required operations and their access classifications. Inspect [the catalog](../server/internal/service/mcp_catalog.go) when changing exposure; the available subset depends on the deployment, connected services and principal's grants. Bounded task batches, workspace setup inspection and additional Docs/PM mutations are included.
 
 For every future tool, answer all of these before adding it:
 

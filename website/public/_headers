@@ -1,0 +1,6 @@
+# Cloudflare Pages response headers.
+# Launch Squad page for the team: keep it out of search results.
+/launch-boost
+  X-Robots-Tag: noindex, nofollow
+/launch-boost.html
+  X-Robots-Tag: noindex, nofollow

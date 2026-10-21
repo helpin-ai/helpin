@@ -32,7 +32,7 @@ func (s *SupportChatService) assessJevHandoff(ctx context.Context, conv *model.S
 	if current == nil || current.AIControlVersion != conv.AIControlVersion || derefString(current.LastPublicMessageID) != msg.ID || model.SupportAIConversationBlocked(current) || supportConversationHumanOwned(current) {
 		return true, nil
 	}
-	latest, err := s.messageRepo.ListByConversation(ctx, conv.WorkspaceID, conv.ID, false)
+	latest, err := s.messageRepo.ListForSupportAI(ctx, conv.WorkspaceID, conv.ID, false)
 	if err != nil {
 		return false, err
 	}

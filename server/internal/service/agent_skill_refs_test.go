@@ -76,6 +76,9 @@ func TestCreateAgentResolvesWorkspaceSkillRefs(t *testing.T) {
 func addWorkspaceSkillTable(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	statement := `CREATE TABLE workspace_skills (
+ is_customized BOOLEAN NOT NULL DEFAULT 0,
+ default_content BLOB,
+ default_package_object_key TEXT NOT NULL DEFAULT '',
 		id TEXT PRIMARY KEY,
 		workspace_id TEXT NOT NULL,
 		source_kind TEXT NOT NULL,

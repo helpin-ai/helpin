@@ -39,6 +39,7 @@ type WidgetAttachment struct {
 
 // WidgetConversation is the visitor's conversation summary, not the staff record.
 type WidgetConversation struct {
+	Merged              bool       `json:"merged,omitempty"`
 	ID                  string     `json:"id"`
 	Subject             string     `json:"subject"`
 	Status              string     `json:"status"`
@@ -70,6 +71,15 @@ func PublicWidgetMessage(m *SupportMessage) *WidgetMessage {
 		EmailProjectionConfidence: m.EmailProjectionConfidence, EmailProjectionVersion: m.EmailProjectionVersion,
 		CreatedAt: m.CreatedAt.Format(time.RFC3339Nano),
 	}
+	var mergeProjection struct {
+		Text *string `json:"merge_public_text"`
+	}
+	if json.Unmarshal([]byte(m.Metadata), &mergeProjection) == nil && mergeProjection.Text != nil {
+		result.Content = *mergeProjection.Text
+		result.EmailVisibleText = *mergeProjection.Text
+		result.EmailQuotedText = ""
+		result.EmailHasQuotedContent = nil
+	}
 	if m.ViaChannel != nil {
 		result.ViaChannel = *m.ViaChannel
 	}
@@ -81,6 +91,9 @@ func PublicWidgetMessage(m *SupportMessage) *WidgetMessage {
 		result.SenderType = "ai"
 	}
 	for _, a := range m.Attachments {
+		if !SharedSupportAttachmentVisible(m, a) {
+			continue
+		}
 		result.Attachments = append(result.Attachments, WidgetAttachment{ID: a.ID, FileName: a.FileName, FileType: a.FileType, FileSize: a.FileSize, URL: a.URL})
 	}
 	return result
@@ -102,7 +115,7 @@ func PublicWidgetConversations(conversations []SupportConversation) []WidgetConv
 	result := make([]WidgetConversation, 0, len(conversations))
 	for _, c := range conversations {
 		result = append(result, WidgetConversation{
-			ID: c.ID, Subject: c.Subject, Status: c.Status, FlowState: c.FlowState, AIState: c.AIState, HandoffState: c.HandoffState, HandoffStartedAt: c.AIEscalatedAt,
+			Merged: c.MergedIntoID != nil, ID: c.ID, Subject: c.Subject, Status: c.Status, FlowState: c.FlowState, AIState: c.AIState, HandoffState: c.HandoffState, HandoffStartedAt: c.AIEscalatedAt,
 			LastMessage: c.LastMessage, UnreadCount: c.UnreadCount, OpenedByUserID: c.OpenedByUserID,
 			OpenedByDisplayName: c.OpenedByDisplayName, OpenedByAvatarURL: c.OpenedByAvatarURL, OpenedByStatus: c.OpenedByStatus,
 			CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,

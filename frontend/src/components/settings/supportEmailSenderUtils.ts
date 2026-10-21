@@ -1,5 +1,13 @@
 import type { SupportEmailSender, SupportEmailSenderDomain } from '@/lib/pmTypes';
 
+export function senderHasVerifiedDNS(sender?: Pick<SupportEmailSender, 'dkim_verified' | 'return_path_domain_verified'> | null) {
+  return Boolean(sender?.dkim_verified && sender.return_path_domain_verified);
+}
+
+export function senderMailboxIDs(sender: SupportEmailSender) {
+  return Array.from(new Set([...(sender.mailbox_ids ?? []), ...(sender.mailbox_id ? [sender.mailbox_id] : [])]));
+}
+
 export function buildSupportSenderEmailPreview({
   senderEmail,
   workspaceName,

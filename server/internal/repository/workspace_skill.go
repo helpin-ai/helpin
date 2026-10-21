@@ -82,3 +82,15 @@ func (r *WorkspaceSkillRepository) Archive(ctx context.Context, workspaceID, id 
 	}
 	return nil
 }
+
+// UpdateIfVersion rejects edits based on an older read instead of losing another edit.
+func (r *WorkspaceSkillRepository) UpdateIfVersion(ctx context.Context, skill *model.WorkspaceSkill, version string) error {
+	result := r.db.WithContext(ctx).Model(&model.WorkspaceSkill{}).Where("workspace_id = ? AND id = ? AND version_key = ? AND is_archived = ?", skill.WorkspaceID, skill.ID, version, false).Select("*").Updates(skill)
+	if result.Error != nil {
+		return fmt.Errorf("update workspace skill: %w", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("skill changed while saving; reload and try again")
+	}
+	return nil
+}

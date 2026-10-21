@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -115,6 +116,40 @@ func (r *SupportCoverageAnalysisRepository) FailRun(ctx context.Context, runID s
 		return fmt.Errorf("fail analysis run: %w", err)
 	}
 	return nil
+}
+
+// RefreshConversationAnalysis replaces a transcript's current result while retaining
+// its ID, which is also the evidence deduplication identity. Gap lifecycle remains
+// a separate human decision; reanalysis never automatically closes existing gaps.
+func (r *SupportCoverageAnalysisRepository) RefreshConversationAnalysis(ctx context.Context, analysis *model.SupportCoverageConversationAnalysis) error {
+	if analysis.WorkspaceID == "" || analysis.ConversationID == "" || analysis.RunID == "" || analysis.TranscriptHash == "" {
+		return fmt.Errorf("valid conversation analysis is required")
+	}
+	if analysis.AnalyzerVersion == "" {
+		analysis.AnalyzerVersion = "v1"
+	}
+	var existing model.SupportCoverageConversationAnalysis
+	err := r.db.WithContext(ctx).Where("workspace_id = ? AND conversation_id = ? AND transcript_hash = ? AND analyzer_version = ?", analysis.WorkspaceID, analysis.ConversationID, analysis.TranscriptHash, analysis.AnalyzerVersion).First(&existing).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return r.RecordConversationAnalysis(ctx, analysis)
+	}
+	if err != nil {
+		return err
+	}
+	analysis.ID = existing.ID
+	if analysis.RawOutput == nil {
+		analysis.RawOutput = []byte("{}")
+	}
+	if analysis.MaterializationMetadata == nil {
+		analysis.MaterializationMetadata = []byte("{}")
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.SupportCoverageConversationAnalysis{}).Where("workspace_id = ? AND id = ?", analysis.WorkspaceID, existing.ID).
+			Select("*").Omit("id", "workspace_id", "conversation_id", "transcript_hash", "analyzer_version", "created_at", "embedding").Updates(analysis).Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.SupportCoverageConversationAnalysis{}).Where("workspace_id = ? AND id = ?", analysis.WorkspaceID, existing.ID).UpdateColumn("embedding", nil).Error
+	})
 }
 
 func (r *SupportCoverageAnalysisRepository) RecordConversationAnalysis(ctx context.Context, analysis *model.SupportCoverageConversationAnalysis) error {

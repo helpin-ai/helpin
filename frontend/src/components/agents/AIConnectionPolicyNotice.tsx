@@ -1,5 +1,8 @@
-import { AIUsagePricing } from "@edition/ai";
+import { useContext } from "react";
+import { AIModelsPricingContext } from "./AIModelsPricingContext";
+import { aiUsagePricingText } from "@edition/ai";
 import type { AIConnectionPolicyView } from "@/lib/services/aiConnectionService";
+import { AISetupHelp } from "./AISetupHelp";
 
 export function AIConnectionPolicyNotice({
   policy,
@@ -8,6 +11,7 @@ export function AIConnectionPolicyNotice({
   policy?: AIConnectionPolicyView;
   label?: string;
 }) {
+  const sharedPricing = useContext(AIModelsPricingContext);
   if (!policy) return null;
   if (!policy.allowed)
     return (
@@ -16,5 +20,6 @@ export function AIConnectionPolicyNotice({
         {policy.message || "Unavailable for new runs."}
       </span>
     );
-  return <AIUsagePricing policy={policy.pricing} label={label} />;
+  const pricing = aiUsagePricingText(policy.pricing);
+  return pricing && pricing !== sharedPricing ? <AISetupHelp label={label ? `${label} usage details` : "Usage details"} description={pricing} /> : null;
 }

@@ -1,5 +1,5 @@
 import { SupportTranslationSendError } from '@/lib/supportTranslationError';
-import type { CreateTaskFromConversationRequest } from '@/lib/pmTypes';
+import type { CreateTaskFromConversationRequest, UpdateSupportNoteRequest } from '@/lib/pmTypes';
 import type { CustomerPortalContactAccessValue, WidgetOriginSettings } from '@/lib/pmTypes';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -8,7 +8,6 @@ import { uploadToS3 } from '@/lib/api';
 import { supportService } from '@/lib/services/supportService';
 import { supportAttachmentService } from '@/lib/services/supportAttachmentService';
 import { agentService } from '@/lib/services/agentService';
-import { workspacesService } from '@/lib/services/workspacesService';
 import { nextCursor, unwrap, unwrapRequired } from '@/lib/queryUtils';
 import { isUpgradeRequiredError } from '@edition/errors';
 import {
@@ -102,6 +101,7 @@ export type SupportConversationFilters = {
 export type SupportConversationGlobalSearchFilters = SupportConversationSearchParams;
 
 type SendMessagePayload = {
+  expected_merge_revision?: number;
   send_original?: boolean;
   auto_translate?: boolean;
   translation_target_language?: string;
@@ -971,25 +971,7 @@ export function useConversation(workspaceId: string, conversationId: string | nu
 export function useConversationAssignees(workspaceId: string, conversationId: string | null) {
   return useQuery({
     queryKey: queryKeys.support.conversationAssignees(workspaceId, conversationId ?? ''),
-    queryFn: async () => {
-      const response = await supportService.listConversationAssignees(workspaceId, conversationId!);
-      if (!response.error && Array.isArray(response.data) && response.data.length > 0) {
-        return response.data;
-      }
-
-      const fallback = await workspacesService.listAssignableMembers(workspaceId);
-      const members = unwrap(fallback);
-      const currentUserID = useAuthStore.getState().user?.id;
-      return members.filter((member) =>
-        member.status === 'active' &&
-        !!member.user_id &&
-        (
-          member.role === 'owner' ||
-          member.role === 'admin' ||
-          member.user_id === currentUserID
-        ),
-      );
-    },
+    queryFn: async () => unwrap(await supportService.listConversationAssignees(workspaceId, conversationId!)),
     enabled: !!workspaceId && !!conversationId,
     staleTime: 30_000,
   });
@@ -1103,6 +1085,22 @@ export function useSendMessage(workspaceId: string, conversationId: string | nul
       }
       if (!(error instanceof SupportTranslationSendError)) toast.error('Failed to send message', { description: error.message });
     },
+  });
+}
+
+export function useUpdateSupportNote(workspaceId: string, conversationId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ messageId, payload }: { messageId: string; payload: UpdateSupportNoteRequest }) =>
+      supportService.updateConversationNote(workspaceId, conversationId, messageId, payload).then(unwrap),
+    onSuccess: async (_message, { messageId }) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.messages(workspaceId, conversationId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.messageInfo(workspaceId, conversationId, messageId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) }),
+      ]);
+    },
+    onError: (error: Error) => toast.error('Could not update note', { description: error.message }),
   });
 }
 

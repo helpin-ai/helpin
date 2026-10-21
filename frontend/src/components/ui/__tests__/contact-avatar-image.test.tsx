@@ -57,6 +57,15 @@ describe('ContactAvatarImage', () => {
     expect(imageSrc()).not.toContain('alice@example.com');
   });
 
+  it('keeps initials beneath a successfully loaded transparent missing-avatar fallback', async () => {
+    await render('missing@example.com');
+    await waitForGravatar();
+    expect(imageSrc()).toContain('d=blank');
+    await act(async () => { container.querySelector('img')!.dispatchEvent(new Event('load')); });
+    expect(container.querySelector('[data-slot="avatar-fallback"]')?.textContent).toBe('AJ');
+    expect(container.querySelector('img')?.className).toContain('absolute');
+  });
+
   it('prefers a stored photo and falls back to Gravatar when that photo fails', async () => {
     await render('alice@example.com', '/uploaded.png');
     expect(imageSrc()).toBe('/uploaded.png');
@@ -64,7 +73,7 @@ describe('ContactAvatarImage', () => {
     await act(async () => { images.at(-1)!.dispatchEvent(new Event('error')); });
     await waitForGravatar();
     expect(imageSrc()).toContain('gravatar.com/avatar/');
-    await act(async () => { images.at(-1)!.dispatchEvent(new Event('error')); });
+    await act(async () => { container.querySelector('img')!.dispatchEvent(new Event('error')); });
     expect(container.querySelector('img')).toBeNull();
     expect(container.textContent).toBe('AJ');
   });
@@ -90,7 +99,7 @@ describe('ContactAvatarImage', () => {
   it('accepts a newly uploaded photo after a Gravatar failure', async () => {
     await render('alice@example.com');
     await waitForGravatar();
-    await act(async () => { images.at(-1)!.dispatchEvent(new Event('error')); });
+    await act(async () => { container.querySelector('img')!.dispatchEvent(new Event('error')); });
     expect(container.textContent).toBe('AJ');
     await render('alice@example.com', '/new-photo.png');
     expect(imageSrc()).toBe('/new-photo.png');

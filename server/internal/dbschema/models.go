@@ -92,6 +92,9 @@ func AutoMigrationModels() []any {
 		&model.CodingSessionStateSnapshot{},
 		&model.PMTaskLink{},
 		&model.SupportConversation{},
+		&model.SupportConversationMerge{},
+		&model.SupportMergeMessage{},
+		&model.SupportMergeJob{},
 		&model.SupportConversationTriage{},
 		&model.SupportConversationTriageEvent{},
 		// Portal identity, auth, intake, reference, and audit tables are owned

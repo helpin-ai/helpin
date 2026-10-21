@@ -12,6 +12,13 @@ import (
 
 // SupportConversation represents a support conversation (renamed from SupportTicket).
 type SupportConversation struct {
+	MailboxAIRepliesDisabled       bool            `json:"-" gorm:"-"`
+	MergeEmailRecipients           []string        `json:"merge_email_recipients,omitempty" gorm:"-"`
+	MergeHasWidget                 bool            `json:"merge_has_widget,omitempty" gorm:"-"`
+	MergeContinuationID            *string         `json:"merge_continuation_id,omitempty" gorm:"-"`
+	MergeParticipants              []string        `json:"merge_participants,omitempty" gorm:"-"`
+	MergedIntoID                   *string         `json:"merged_into_id,omitempty" gorm:"type:uuid;index"`
+	MergeRevision                  int64           `json:"merge_revision" gorm:"not null;default:0"`
 	AnonymizedAt                   *time.Time      `json:"anonymized_at,omitempty" gorm:"type:timestamptz"`
 	ID                             string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID                    string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
@@ -331,9 +338,17 @@ type SupportConversationSearchParams struct {
 
 // SupportMessage represents a message within a support conversation.
 type SupportMessage struct {
+	ExpectedMergeRevision *int64   `json:"-" gorm:"-"`
+	WidgetConversationIDs []string `json:"-" gorm:"-"`
+	MergeParticipantEmail *string  `json:"-" gorm:"-"`
+	TrustedInbound        bool     `json:"-" gorm:"-"`
+	OriginConversationID  *string  `json:"origin_conversation_id,omitempty" gorm:"type:uuid;index"`
+	MergeRevision         int64    `json:"-" gorm:"not null;default:0"`
 	// Private execution guard, used only while committing a durable staff send.
 	PendingGuard         *SupportPendingSend `json:"-" gorm:"-"`
 	PendingAttachmentIDs []string            `json:"-" gorm:"-"`
+	// Candidate first-reply activity; retained only if committed with this reply.
+	TeammateJoined *SupportMessage `json:"-" gorm:"-"`
 
 	PendingSend       string                `json:"pending_send,omitempty" gorm:"-"`
 	PendingFailure    string                `json:"pending_failure,omitempty" gorm:"-"`
@@ -355,6 +370,7 @@ type SupportMessage struct {
 	Metadata          string                `json:"metadata" gorm:"type:jsonb;default:'{}'"` // JSONB for CSAT ratings, AI sources, etc.
 	ViaChannel        *string               `json:"via_channel,omitempty" gorm:"size:20"`
 	EmailNotifiedAt   *time.Time            `json:"email_notified_at,omitempty"`
+	WidgetReadAt      *time.Time            `json:"widget_read_at,omitempty" gorm:"-"`
 	EmailReadAt       *time.Time            `json:"email_read_at,omitempty"`
 	CreatedAt         time.Time             `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt         time.Time             `json:"updated_at" gorm:"autoUpdateTime"`
@@ -575,17 +591,21 @@ type SupportWidgetSession struct {
 func (SupportWidgetSession) TableName() string { return "support_widget_sessions" }
 
 type SupportMailbox struct {
-	ID             string  `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID    string  `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	Name           string  `json:"name" gorm:"not null"`
-	Handle         string  `json:"handle" gorm:"not null"`
-	Icon           string  `json:"icon" gorm:"not null;default:'inbox'"`
-	Description    *string `json:"description"`
-	RoutingPrompt  *string `json:"routing_prompt"`
-	TriageEligible bool    `json:"triage_eligible" gorm:"not null;default:true"`
-	LinkedTeamID   *string `json:"linked_team_id" gorm:"type:uuid"`
-	VisibilityMode string  `json:"visibility_mode" gorm:"not null;default:'members_only'"`
-	AssignmentMode string  `json:"assignment_mode" gorm:"not null;default:'manual'"`
+	AIRepliesDisabled bool    `json:"ai_replies_disabled" gorm:"not null;default:false"`
+	ID                string  `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID       string  `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	Name              string  `json:"name" gorm:"not null"`
+	Handle            string  `json:"handle" gorm:"not null"`
+	Icon              string  `json:"icon" gorm:"not null;default:'inbox'"`
+	Description       *string `json:"description"`
+	RoutingPrompt     *string `json:"routing_prompt"`
+	TriageEligible    bool    `json:"triage_eligible" gorm:"not null;default:true"`
+	LinkedTeamID      *string `json:"linked_team_id" gorm:"type:uuid"`
+	VisibilityMode    string  `json:"visibility_mode" gorm:"not null;default:'members_only'"`
+	AssignmentMode    string  `json:"assignment_mode" gorm:"not null;default:'manual'"`
+	// AssignmentMemberIDs stores workspace member IDs eligible for automatic assignment.
+	// Nil preserves legacy membership-based assignment; an empty list never means everyone.
+	AssignmentMemberIDs []string `json:"assignment_member_ids" gorm:"type:jsonb;serializer:json"`
 	// ReplyTimePreset / ReplyTimeCustomMinutes override the workspace-wide
 	// reply-time expectation for conversations routed into this mailbox.
 	// Nil preset means "inherit workspace default".
@@ -859,9 +879,10 @@ type CreateSupportEmailSenderRequest struct {
 }
 
 type SetSupportEmailSenderDefaultRequest struct {
-	DefaultScope string   `json:"default_scope"`
-	MailboxID    *string  `json:"mailbox_id"`
-	MailboxIDs   []string `json:"mailbox_ids,omitempty"`
+	SingleMailbox bool     `json:"single_mailbox,omitempty"`
+	DefaultScope  string   `json:"default_scope"`
+	MailboxID     *string  `json:"mailbox_id"`
+	MailboxIDs    []string `json:"mailbox_ids,omitempty"`
 }
 
 type UpdateSupportEmailSenderRequest struct {
@@ -872,16 +893,18 @@ type UpdateSupportEmailSenderRequest struct {
 }
 
 type CreateSupportMailboxRequest struct {
-	Name               string   `json:"name"`
-	Handle             string   `json:"handle"`
-	Icon               string   `json:"icon"`
-	Description        *string  `json:"description"`
-	RoutingPrompt      *string  `json:"routing_prompt"`
-	TriageEligible     *bool    `json:"triage_eligible"`
-	LinkedTeamID       *string  `json:"linked_team_id"`
-	WorkspaceMemberIDs []string `json:"workspace_member_ids"`
-	AssignmentMode     string   `json:"assignment_mode"`
-	ImportLinkedTeam   bool     `json:"import_linked_team"`
+	AIRepliesDisabled   bool     `json:"ai_replies_disabled"`
+	Name                string   `json:"name"`
+	Handle              string   `json:"handle"`
+	Icon                string   `json:"icon"`
+	Description         *string  `json:"description"`
+	RoutingPrompt       *string  `json:"routing_prompt"`
+	TriageEligible      *bool    `json:"triage_eligible"`
+	LinkedTeamID        *string  `json:"linked_team_id"`
+	WorkspaceMemberIDs  []string `json:"workspace_member_ids"`
+	AssignmentMode      string   `json:"assignment_mode"`
+	AssignmentMemberIDs []string `json:"assignment_member_ids"`
+	ImportLinkedTeam    bool     `json:"import_linked_team"`
 }
 
 type OptionalNullableString struct {
@@ -904,17 +927,19 @@ func (s *OptionalNullableString) UnmarshalJSON(data []byte) error {
 }
 
 type UpdateSupportMailboxRequest struct {
-	Name               *string                `json:"name,omitempty"`
-	Handle             *string                `json:"handle,omitempty"`
-	Icon               *string                `json:"icon,omitempty"`
-	Description        *string                `json:"description,omitempty"`
-	RoutingPrompt      *string                `json:"routing_prompt,omitempty"`
-	TriageEligible     *bool                  `json:"triage_eligible,omitempty"`
-	LinkedTeamID       OptionalNullableString `json:"linked_team_id,omitempty"`
-	WorkspaceMemberIDs []string               `json:"workspace_member_ids,omitempty"`
-	AssignmentMode     *string                `json:"assignment_mode,omitempty"`
-	Active             *bool                  `json:"active,omitempty"`
-	ImportLinkedTeam   bool                   `json:"import_linked_team,omitempty"`
+	AIRepliesDisabled   *bool                  `json:"ai_replies_disabled,omitempty"`
+	Name                *string                `json:"name,omitempty"`
+	Handle              *string                `json:"handle,omitempty"`
+	Icon                *string                `json:"icon,omitempty"`
+	Description         *string                `json:"description,omitempty"`
+	RoutingPrompt       *string                `json:"routing_prompt,omitempty"`
+	TriageEligible      *bool                  `json:"triage_eligible,omitempty"`
+	LinkedTeamID        OptionalNullableString `json:"linked_team_id,omitempty"`
+	WorkspaceMemberIDs  []string               `json:"workspace_member_ids,omitempty"`
+	AssignmentMode      *string                `json:"assignment_mode,omitempty"`
+	AssignmentMemberIDs []string               `json:"assignment_member_ids,omitempty"`
+	Active              *bool                  `json:"active,omitempty"`
+	ImportLinkedTeam    bool                   `json:"import_linked_team,omitempty"`
 
 	// ReplyTimePreset overrides the workspace default for conversations in
 	// this mailbox. Pass an explicit value to set; set ClearReplyTimePreset
@@ -986,6 +1011,7 @@ type CreateConversationWithMessageResponse struct {
 
 // CreateMessageRequest is the payload for creating a support message.
 type CreateMessageRequest struct {
+	ExpectedMergeRevision     *int64   `json:"expected_merge_revision,omitempty"`
 	SendOriginal              bool     `json:"send_original,omitempty"`
 	AutoTranslate             bool     `json:"auto_translate,omitempty"`
 	TranslationTargetLanguage string   `json:"translation_target_language,omitempty"`
@@ -1298,6 +1324,7 @@ const (
 
 // SupportInboxSettings holds all widget configuration stored as JSONB.
 type SupportInboxSettings struct {
+	AllowCrossCustomerMerge     bool   `json:"allow_cross_customer_merge"`
 	TranslationIncomingEnabled  bool   `json:"translation_incoming_enabled"`
 	TranslationOutgoingEnabled  bool   `json:"translation_outgoing_enabled"`
 	TranslationCustomerLanguage string `json:"translation_customer_language"`
@@ -1529,6 +1556,7 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 
 // UpdateInstallationSettingsRequest is a PATCH payload with pointer fields.
 type UpdateInstallationSettingsRequest struct {
+	AllowCrossCustomerMerge         *bool                       `json:"allow_cross_customer_merge"`
 	PrivacyNoticeEnabled            *bool                       `json:"privacy_notice_enabled,omitempty"`
 	PrivacyPolicyURL                *string                     `json:"privacy_policy_url,omitempty"`
 	PrivacyNoticeText               *string                     `json:"privacy_notice_text,omitempty"`
@@ -1951,11 +1979,12 @@ type VisitorCompanyOption struct {
 
 // VisitorOtherConversation is a compact summary for other conversations in visitor context.
 type VisitorOtherConversation struct {
-	ID        string `json:"id"`
-	DisplayID int    `json:"display_id"`
-	Subject   string `json:"subject"`
-	Status    string `json:"status"`
-	CreatedAt string `json:"created_at"`
+	MergedIntoID *string `json:"merged_into_id,omitempty"`
+	ID           string  `json:"id"`
+	DisplayID    int     `json:"display_id"`
+	Subject      string  `json:"subject"`
+	Status       string  `json:"status"`
+	CreatedAt    string  `json:"created_at"`
 }
 
 // VisitorContextResponse assembles all visitor intelligence for a conversation.

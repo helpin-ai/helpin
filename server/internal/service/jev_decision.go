@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/decision"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/observability"
@@ -24,8 +23,6 @@ const (
 	JevCoverageTopicMatching  = "coverage_topic_matching"
 	JevAutomationCondition    = "automation_condition"
 	JevAnswerEvidence         = "answer_evidence"
-	JevTranslationReview      = "translation_review"
-	JevLanguageDetection      = "language_detection"
 )
 
 // JevDecisionStore provides admission and content-free settlement for decisions.
@@ -45,6 +42,7 @@ type JevDecisionService struct {
 	workspaces map[string]bool
 }
 
+// SetMetrics attaches content-free operational monitoring.
 func (s *JevDecisionService) SetMetrics(metrics *observability.Metrics) {
 	if s != nil {
 		s.metrics = metrics
@@ -62,7 +60,7 @@ func NewJevDecisionService(provider decision.Provider, store JevDecisionStore, u
 	copied := make(map[string]decision.Policy, len(policies))
 	for feature, policy := range policies {
 		switch feature {
-		case JevMeetingRouting, JevCoverageClassification, JevCoverageTopicMatching, JevAutomationCondition, JevAnswerEvidence, JevTranslationReview, JevLanguageDetection:
+		case JevMeetingRouting, JevCoverageClassification, JevCoverageTopicMatching, JevAutomationCondition, JevAnswerEvidence:
 		default:
 			return nil, errors.New("unsupported decision feature")
 		}
@@ -140,11 +138,25 @@ func (s *JevDecisionService) SemanticConditionAvailability(workspaceID string) m
 
 // Decide evaluates bounded evidence, deduplicates attempts and accounts for usage.
 // Rejected/failed/limited decisions never return an actionable selection.
-func (s *JevDecisionService) Decide(ctx context.Context, req JevDecisionRequest) (*JevDecisionResult, error) {
+func (s *JevDecisionService) Decide(ctx context.Context, req JevDecisionRequest) (resultOut *JevDecisionResult, errOut error) {
 	output := &JevDecisionResult{Status: "disabled"}
 	if !s.Enabled(req.WorkspaceID, req.Feature) {
 		return output, nil
 	}
+	started := time.Now()
+	cached := false
+	defer func() {
+		outcome := "error"
+		if errOut == nil && resultOut != nil {
+			outcome = resultOut.Status
+			if cached {
+				outcome = "cached"
+			} else if resultOut.Status == "ready" && resultOut.Mode == "shadow" {
+				outcome = "shadow"
+			}
+		}
+		s.metrics.Decision(req.Feature, outcome, time.Since(started))
+	}()
 	policy := s.policies[req.Feature]
 	output.Mode, output.Threshold = policy.Mode, policy.Threshold
 	if req.WorkspaceID == "" || req.SourceID == "" || len(req.SourceID) > 255 || req.Version == "" {
@@ -189,26 +201,14 @@ func (s *JevDecisionService) Decide(ctx context.Context, req JevDecisionRequest)
 		if err := decision.ValidateResult(output.Result, req.Questions); err != nil {
 			return nil, err
 		}
+		cached = true
 		return output, nil
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	started := time.Now()
 	result, callErr := s.provider.DecideMany(callCtx, req.State, req.Questions)
 	cancel()
-	elapsed := time.Since(started)
 	if callErr == nil {
 		callErr = decision.ValidateResult(result, req.Questions)
-	}
-	if req.Feature == JevTranslationReview {
-		outcome := "success"
-		if callErr != nil {
-			outcome = "error"
-		}
-		var telemetry *aiusage.TokenTelemetry
-		if result != nil {
-			telemetry = &aiusage.TokenTelemetry{InputTokensTotal: result.InputTokens, OutputTokens: result.OutputTokens}
-		}
-		s.metrics.TranslationAttempt("jev_review", "typesafe", decision.Model, outcome, elapsed, telemetry, aiusage.TokenRates{})
 	}
 	settle, done := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	defer done()

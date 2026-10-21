@@ -108,7 +108,7 @@ func (s *AgentService) prepareAIProfileRun(ctx context.Context, params *createRu
 		if params.modelName != "" {
 			return nil, nil, nil, errors.New("select an AI connection before selecting a model")
 		}
-		selection, credential, err = s.aiProfiles.Resolve(ctx, params.workspaceID, user, AIProfileSelectionRequest{ProfileID: params.aiProfileID, AgentProfileID: derefString(params.agent.AIProfileID), Unattended: unattended})
+		selection, credential, err = s.aiProfiles.Resolve(ctx, params.workspaceID, user, AIProfileSelectionRequest{ProfileID: params.aiProfileID, AgentProfileID: derefString(params.agent.AIProfileID), Unattended: unattended, UsePersonalDefault: params.parentRunID == nil && params.dockChatID != nil && params.agent.EffectivePresetKey() == model.AgentPresetAskAgent})
 	}
 	if err != nil {
 		return nil, nil, nil, err

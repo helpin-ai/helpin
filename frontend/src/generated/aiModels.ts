@@ -41,6 +41,14 @@ export const AI_MODELS = {
     },
     {
       "provider": "openrouter",
+      "canonical_model": "deepseek-v4.1-flash-1017",
+      "selection_model": "deepseek/deepseek-v4.1-flash-1017",
+      "label": "DeepSeek V4.1 Flash 1017",
+      "tier": "small",
+      "enabled": true
+    },
+    {
+      "provider": "openrouter",
       "canonical_model": "deepseek-v4.1-flash",
       "selection_model": "deepseek/deepseek-v4.1-flash",
       "label": "DeepSeek V4.1 Flash",

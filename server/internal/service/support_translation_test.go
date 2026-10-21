@@ -11,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
-	"github.com/helpin-ai/helpin/server/internal/decision"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -24,10 +23,12 @@ type translationTestProvider struct {
 	onCall           func()
 	responseLanguage string
 	responseText     string
+	lastRequest      llm.ChatRequest
 }
 
 func (p *translationTestProvider) ChatCompletion(_ context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
 	p.calls++
+	p.lastRequest = req
 	if p.onCall != nil {
 		p.onCall()
 	}
@@ -65,7 +66,7 @@ func translationFixture(t *testing.T) (*emailFallbackTestEnv, *model.SupportConv
 		t.Fatal(err)
 	}
 	p := &translationTestProvider{}
-	env.service.supportInboxService.SetTranslations(repository.NewSupportTranslationRepository(db), p, nil, AICompletionRoute{Provider: "openrouter", Model: "deepseek/deepseek-v4-flash-0731"}, true)
+	env.service.supportInboxService.SetTranslations(repository.NewSupportTranslationRepository(db), p, AICompletionRoute{Provider: "openrouter", Model: "deepseek/deepseek-v4-flash-0731"}, true)
 	setTranslationWorkspaceSettings(t, env, conv.WorkspaceID, func(settings *model.SupportInboxSettings) { settings.TranslationCustomerLanguage = "de" })
 	return env, conv, p
 }
@@ -211,6 +212,17 @@ func TestTranslationRejectsPrivateForeignAndUnavailableInputs(t *testing.T) {
 			case "no_provider":
 				s.translations.available = false
 			}
+			if scenario == "foreign_workspace" || scenario == "foreign_conversation" {
+				foreign := *c
+				foreign.ID, foreign.WorkspaceID = msg.ConversationID, msg.WorkspaceID
+				if scenario == "foreign_workspace" {
+					foreign.ID = uuid.NewString()
+					msg.ConversationID = foreign.ID
+				}
+				if err := env.messageRepo.DB().Create(&foreign).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
 			if err := env.messageRepo.Create(ctx, msg); err != nil {
 				t.Fatal(err)
 			}
@@ -249,34 +261,22 @@ func TestTranslationProtectedTextRoundTrip(t *testing.T) {
 	}
 }
 
-func TestTranslationNeverUsesJevAsSendGate(t *testing.T) {
-	for _, tc := range []struct {
-		name, mode, choice string
-		wantError          bool
-	}{
-		{"accepted", "primary", "yes", false}, {"rejected", "primary", "no", false}, {"uncertain", "primary", "uncertain", false}, {"shadow", "shadow", "no", false}, {"off", "off", "no", false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			env, c, _ := translationFixture(t)
-			s := env.service.supportInboxService
-			jev, p, _, jevDB := setupJevDecisionTest(t, tc.mode)
-			if err := jevDB.Exec("INSERT INTO workspaces(id) VALUES (?)", c.WorkspaceID).Error; err != nil {
-				t.Fatal(err)
-			}
-			jev.policies[JevTranslationReview] = decision.Policy{Mode: tc.mode, Threshold: .95, DailyLimit: 10}
-			jev.workspaces = map[string]bool{c.WorkspaceID: true}
-			p.choices = map[string]string{"meaning": tc.choice}
-			s.translations.jev = jev
-			req := explicitDeliveryRequest(t, "chat_only")
-			req.Content = "Hello"
-			req.AutoTranslate = true
-			req.TranslationTargetLanguage = "de"
-			req.ClientMessageID = uuid.NewString()
-			_, err := s.CreateConversationMessage(context.Background(), c.WorkspaceID, c.ID, req, "user", strPtr("22222222-2222-2222-2222-222222222222"), nil, nil)
-			if (err != nil) != tc.wantError {
-				t.Fatalf("send err=%v wantError=%v", err, tc.wantError)
-			}
-		})
+func TestTranslationSendDoesNotRequireDecisionProvider(t *testing.T) {
+	env, c, _ := translationFixture(t)
+	s := env.service.supportInboxService
+	req := explicitDeliveryRequest(t, "chat_only")
+	req.Content = "Hello"
+	req.AutoTranslate = true
+	req.TranslationTargetLanguage = "de"
+	req.ClientMessageID = uuid.NewString()
+	actor := "22222222-2222-2222-2222-222222222222"
+	sent, err := s.CreateConversationMessage(context.Background(), c.WorkspaceID, c.ID, req, "user", &actor, nil, nil)
+	if err != nil || sent.Content != "Hallo" {
+		t.Fatalf("translated send=%+v err=%v", sent, err)
+	}
+	options, err := s.TranslationOptions(context.Background(), c.WorkspaceID, c.ID, actor)
+	if err != nil || options.JevReview {
+		t.Fatalf("unexpected decision review dependency: %+v %v", options, err)
 	}
 }
 
@@ -288,7 +288,7 @@ func TestTranslationDetectsCustomerLanguageOnSend(t *testing.T) {
 	})
 	s := env.service.supportInboxService
 	ctx := context.Background()
-	msg := &model.SupportMessage{ID: uuid.NewString(), WorkspaceID: c.WorkspaceID, ConversationID: c.ID, SenderType: "customer", MessageType: "reply", Content: "Hallo"}
+	msg := &model.SupportMessage{ID: uuid.NewString(), WorkspaceID: c.WorkspaceID, ConversationID: c.ID, SenderType: "customer", MessageType: "reply", Content: "Hallo, ich brauche Hilfe mit meinem Konto."}
 	if err := env.messageRepo.Create(ctx, msg); err != nil {
 		t.Fatal(err)
 	}
@@ -305,37 +305,29 @@ func TestTranslationDetectsCustomerLanguageOnSend(t *testing.T) {
 	}
 }
 
-func TestTranslationUnavailableJevDoesNotBlockOrDuplicateSend(t *testing.T) {
+func TestTranslationRetryDoesNotDuplicateSend(t *testing.T) {
 	env, c, p := translationFixture(t)
 	s := env.service.supportInboxService
 	ctx := context.Background()
-	jev, reviewer, _, db := setupJevDecisionTest(t, "primary")
-	if err := db.Exec("INSERT INTO workspaces(id) VALUES (?)", c.WorkspaceID).Error; err != nil {
-		t.Fatal(err)
-	}
-	jev.policies[JevTranslationReview] = decision.Policy{Mode: "primary", Threshold: .95, DailyLimit: 10}
-	jev.workspaces = map[string]bool{c.WorkspaceID: true}
-	s.translations.jev = jev
-	reviewer.err = errors.New("temporary failure")
 	req := explicitDeliveryRequest(t, "chat_only")
 	req.Content = "Hello"
 	req.AutoTranslate = true
 	req.TranslationTargetLanguage = "de"
 	req.ClientMessageID = uuid.NewString()
 	actor := strPtr("22222222-2222-2222-2222-222222222222")
-	if _, err := s.CreateConversationMessage(ctx, c.WorkspaceID, c.ID, req, "user", actor, nil, nil); err != nil {
+	first, err := s.CreateConversationMessage(ctx, c.WorkspaceID, c.ID, req, "user", actor, nil, nil)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if err := env.messageRepo.DB().Model(&model.SupportTranslation{}).Where("conversation_id = ?", c.ID).Update("updated_at", time.Now().Add(-2*time.Minute)).Error; err != nil {
 		t.Fatal(err)
 	}
-	reviewer.err = nil
 	sent, err := s.CreateConversationMessage(ctx, c.WorkspaceID, c.ID, req, "user", actor, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sent.Content != "Hallo" || reviewer.calls != 0 || p.calls != 1 {
-		t.Fatalf("retry result=%q reviewCalls=%d calls=%d", sent.Content, reviewer.calls, p.calls)
+	if sent.ID != first.ID || sent.Content != "Hallo" || p.calls != 1 {
+		t.Fatalf("retry result=%q ids=%s/%s calls=%d", sent.Content, first.ID, sent.ID, p.calls)
 	}
 }
 
@@ -506,6 +498,7 @@ func TestTranslationUnconfiguredServerDeliversQueuedReply(t *testing.T) {
 		t.Fatalf("queued reply revision = %d, want the stored policy revision 1", job.Revision)
 	}
 	// Deliver it as the send worker does, through the revision fence.
+	job.CreatedAt = time.Now().Add(-time.Minute)
 	job.Status, job.Attempts = "sending", 1
 	if err := db.Model(&job).Updates(map[string]any{"status": job.Status, "attempts": job.Attempts}).Error; err != nil {
 		t.Fatal(err)
@@ -516,12 +509,23 @@ func TestTranslationUnconfiguredServerDeliversQueuedReply(t *testing.T) {
 	}
 	work := context.WithValue(ctx, supportSendPolicyKey{}, supportSendPolicySnapshot{job.WorkspaceID, job.ConversationID, job.UserID, options})
 	work = context.WithValue(work, supportSendGuardKey{}, &job)
+	sendStarted := time.Now().Truncate(time.Microsecond)
 	sent, err := s.CreateConversationMessage(work, c.WorkspaceID, c.ID, req, "user", &job.UserID, nil, nil)
 	if err != nil {
 		t.Fatalf("queued reply blocked on a server without translation: %v", err)
 	}
 	if sent.Content != req.Content || p.calls != 0 {
 		t.Fatalf("content=%q calls=%d", sent.Content, p.calls)
+	}
+	if sent.CreatedAt.Before(sendStarted) {
+		t.Fatal("confirmed reply was backdated to queue time")
+	}
+	rows, err := env.messageRepo.ListByConversation(ctx, c.WorkspaceID, c.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 || rows[0].SystemEventType == nil || *rows[0].SystemEventType != model.SystemEventTeammateJoined || rows[1].ID != sent.ID {
+		t.Fatalf("queued first reply must follow its joined event: %+v", rows)
 	}
 }
 
@@ -576,7 +580,7 @@ func TestTranslationWorkspacePolicyRevalidatedAfterGeneration(t *testing.T) {
 	}
 }
 
-func TestTranslationSameLanguagePreservesOriginalWithoutJev(t *testing.T) {
+func TestTranslationSameLanguagePreservesOriginal(t *testing.T) {
 	for _, responseText := range []string{"", "A model rewrite must never replace the original."} {
 		t.Run(responseText, func(t *testing.T) {
 			env, c, p := translationFixture(t)
@@ -584,15 +588,6 @@ func TestTranslationSameLanguagePreservesOriginalWithoutJev(t *testing.T) {
 			p.responseLanguage = "en"
 			p.responseText = responseText
 			setTranslationWorkspaceSettings(t, env, c.WorkspaceID, func(settings *model.SupportInboxSettings) { settings.TranslationCustomerLanguage = "en" })
-			jev, reviewer, _, jevDB := setupJevDecisionTest(t, "primary")
-			if err := jevDB.Exec("INSERT INTO workspaces(id) VALUES (?)", c.WorkspaceID).Error; err != nil {
-				t.Fatal(err)
-			}
-			jev.policies[JevTranslationReview] = decision.Policy{Mode: "primary", Threshold: .95, DailyLimit: 10}
-			jev.workspaces = map[string]bool{c.WorkspaceID: true}
-			reviewer.choices = map[string]string{"meaning": "no"}
-			reviewer.err = errors.New("review provider unavailable")
-			s.translations.jev = jev
 			req := explicitDeliveryRequest(t, "chat_only")
 			req.Content = "Hello, please check https://example.com/reset for ORDER-123."
 			req.ClientMessageID = uuid.NewString()
@@ -601,8 +596,8 @@ func TestTranslationSameLanguagePreservesOriginalWithoutJev(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if sent.Content != req.Content || reviewer.calls != 0 {
-				t.Fatalf("unchanged reply=%q review calls=%d", sent.Content, reviewer.calls)
+			if sent.Content != req.Content {
+				t.Fatalf("unchanged reply=%q", sent.Content)
 			}
 			retry, err := s.CreateConversationMessage(context.Background(), c.WorkspaceID, c.ID, req, "user", actor, nil, nil)
 			if err != nil {
@@ -714,7 +709,7 @@ func TestTranslationDetectionRecoversAfterRepeatedProviderFailures(t *testing.T)
 			s := env.service.supportInboxService
 			ctx := context.Background()
 			db := env.messageRepo.DB()
-			msg := &model.SupportMessage{ID: uuid.NewString(), WorkspaceID: c.WorkspaceID, ConversationID: c.ID, SenderType: "customer", MessageType: "reply", Content: "Hallo"}
+			msg := &model.SupportMessage{ID: uuid.NewString(), WorkspaceID: c.WorkspaceID, ConversationID: c.ID, SenderType: "customer", MessageType: "reply", Content: "Hallo, ich brauche Hilfe mit meinem Konto."}
 			if err := env.messageRepo.Create(ctx, msg); err != nil {
 				t.Fatal(err)
 			}
@@ -849,15 +844,7 @@ func TestTranslationSendOriginalBypassesProviderAndDeduplicates(t *testing.T) {
 func TestTranslationLongEnglishEmailUsesLLMAndPreservesOriginal(t *testing.T) {
 	env, c, provider := translationFixture(t)
 	setTranslationWorkspaceSettings(t, env, c.WorkspaceID, func(settings *model.SupportInboxSettings) { settings.TranslationCustomerLanguage = "" })
-	jev, classifier, _, db := setupJevDecisionTest(t, "primary")
-	if err := db.Exec("INSERT INTO workspaces(id) VALUES (?)", c.WorkspaceID).Error; err != nil {
-		t.Fatal(err)
-	}
-	jev.workspaces = map[string]bool{c.WorkspaceID: true}
-	jev.policies[JevLanguageDetection] = decision.Policy{Mode: "primary", Threshold: .95, DailyLimit: 100}
-	classifier.choices["language"] = "en"
 	s := env.service.supportInboxService
-	s.translations.jev = jev
 	provider.responseLanguage = "en"
 	msg := &model.SupportMessage{ID: uuid.NewString(), WorkspaceID: c.WorkspaceID, ConversationID: c.ID, SenderType: "customer", MessageType: "reply", Content: strings.Repeat("Our Instagram posts are failing. Please help.\n", 220)}
 	if err := env.messageRepo.Create(context.Background(), msg); err != nil {
@@ -871,7 +858,7 @@ func TestTranslationLongEnglishEmailUsesLLMAndPreservesOriginal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sent.Content != req.Content || sent.TranslationID != "" || provider.calls == 0 || classifier.calls != 0 {
+	if sent.Content != req.Content || sent.TranslationID != "" || provider.calls == 0 {
 		t.Fatalf("same-language send translated: %q calls=%d", sent.Content, provider.calls)
 	}
 	options, err := s.TranslationOptions(context.Background(), c.WorkspaceID, c.ID, actor)
@@ -896,16 +883,9 @@ func TestTranslationLongMessagePreservesAllContent(t *testing.T) {
 	}
 }
 
-func TestTranslationLongReplyDoesNotCallJev(t *testing.T) {
+func TestTranslationLongReplyPreservesAllContent(t *testing.T) {
 	env, c, _ := translationFixture(t)
-	jev, reviewer, _, db := setupJevDecisionTest(t, "primary")
-	if err := db.Exec("INSERT INTO workspaces(id) VALUES (?)", c.WorkspaceID).Error; err != nil {
-		t.Fatal(err)
-	}
-	jev.workspaces = map[string]bool{c.WorkspaceID: true}
-	jev.policies[JevTranslationReview] = decision.Policy{Mode: "primary", Threshold: .95, DailyLimit: 100}
 	s := env.service.supportInboxService
-	s.translations.jev = jev
 	req := explicitDeliveryRequest(t, "email_only")
 	req.Content = strings.Repeat("Hello, please check the account details.\n", 300)
 	req.ClientMessageID = uuid.NewString()
@@ -913,13 +893,8 @@ func TestTranslationLongReplyDoesNotCallJev(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sent.Content != strings.TrimSpace(strings.ReplaceAll(req.Content, "Hello", "Hallo")) || reviewer.calls != 0 {
-		t.Fatalf("long reply/review incomplete: calls=%d", reviewer.calls)
-	}
-	for _, state := range reviewer.states {
-		if len(state) > 16000 {
-			t.Fatal("review exceeded Jev input limit")
-		}
+	if sent.Content != strings.TrimSpace(strings.ReplaceAll(req.Content, "Hello", "Hallo")) {
+		t.Fatalf("long reply incomplete: bytes=%d", len(sent.Content))
 	}
 }
 
@@ -947,9 +922,9 @@ func TestTranslationLanguageHintIgnoresOlderAndDeletedMessages(t *testing.T) {
 	if err := db.Model(newer).Update("deleted_at", time.Now()).Error; err != nil {
 		t.Fatal(err)
 	}
-	latest, err := repo.LatestCustomerMessageID(ctx, c.WorkspaceID, c.ID)
-	if err != nil || latest != old.ID {
-		t.Fatalf("deleted message used for detection: %s %v", latest, err)
+	messages, err := repo.RecentLanguageMessages(ctx, c.WorkspaceID, c.ID)
+	if err != nil || len(messages) != 1 || messages[0].ID != old.ID {
+		t.Fatalf("deleted message used for detection: %+v %v", messages, err)
 	}
 }
 

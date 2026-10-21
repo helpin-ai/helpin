@@ -206,6 +206,9 @@ export function CustomAgentCreatePanel({
   };
 
   const startBlank = () => {
+    // A late AI response must not replace the manual setup the user chose.
+    draftRequestRef.current += 1;
+    setDrafting(false);
     onChange({
       ...createDefaultCustomAgentForm(),
       ...form,
@@ -769,7 +772,7 @@ export function CustomAgentCreatePanel({
             >
               <span>
                 <span className="block text-sm font-semibold">Advanced settings</span>
-                <span className="mt-1 block text-xs text-muted-foreground">AI profile and task limits.</span>
+                <span className="mt-1 block text-xs text-muted-foreground">AI model and task limits.</span>
               </span>
               <span className="text-xs text-muted-foreground">{advancedOpen ? 'Hide' : 'Show'}</span>
             </button>

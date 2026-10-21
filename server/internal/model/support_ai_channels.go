@@ -28,6 +28,9 @@ func SupportAIChannelEnabled(settings SupportInboxSettings, channel string) bool
 // SupportAIReplyAllowed checks the incoming medium, falling back to the
 // conversation channel for scheduled work. Email continuations count as email.
 func SupportAIReplyAllowed(settings SupportInboxSettings, conversation *SupportConversation, message *SupportMessage) bool {
+	if conversation != nil && conversation.MailboxAIRepliesDisabled {
+		return false
+	}
 	channel := SupportAIReplyChannel(conversation, message)
 	if channel == "portal" && (conversation == nil || !conversation.PortalVisible) {
 		return false
@@ -99,5 +102,5 @@ func SupportAIConversationBlocked(c *SupportConversation) bool {
 		return true
 	}
 	nonempty := func(s *string) bool { return s != nil && strings.TrimSpace(*s) != "" }
-	return c.AnonymizedAt != nil || (c.HumanTakeover != nil && *c.HumanTakeover) || c.CustomerRequestedHumanAt != nil || nonempty(c.AssignedUserID) || nonempty(c.OpenedByUserID) || (c.AIState != nil && *c.AIState == "escalated") || (c.Status == "resolved" && (c.AIState == nil || *c.AIState != "resolved")) || c.Status == "spam"
+	return c.MailboxAIRepliesDisabled || c.AnonymizedAt != nil || c.MergedIntoID != nil || c.AIPausedAt != nil || (c.HumanTakeover != nil && *c.HumanTakeover) || c.CustomerRequestedHumanAt != nil || nonempty(c.AssignedUserID) || nonempty(c.OpenedByUserID) || (c.AIState != nil && *c.AIState == "escalated") || (c.Status == "resolved" && (c.AIState == nil || *c.AIState != "resolved")) || c.Status == "spam"
 }

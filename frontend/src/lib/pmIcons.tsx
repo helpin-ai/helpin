@@ -299,7 +299,7 @@ export function SeverityIcon({
   switch (severity) {
     case 'critical':
       return (
-        <svg className={cn('text-red-600', className)} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
+        <svg className={cn('text-red-600 dark:text-red-400', className)} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
           <path d="M9 3.5H15L20.5 9V15L15 20.5H9L3.5 15V9L9 3.5Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
         </svg>
       );

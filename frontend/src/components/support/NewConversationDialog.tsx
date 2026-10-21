@@ -1,10 +1,9 @@
+import { createSupportComposerExtensions } from './supportComposerExtensions';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { EditorContent, useEditor } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import UnderlineExtension from '@tiptap/extension-underline';
-import { Markdown } from 'tiptap-markdown';
 import {
   ArrowReloadHorizontalIcon,
   ArrowUp01Icon,
@@ -236,27 +235,8 @@ function NewConversationMessageEditor({
 
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({
-        heading: false,
-        codeBlock: false,
-        horizontalRule: false,
-        link: {
-          openOnClick: false,
-          autolink: true,
-          linkOnPaste: true,
-          HTMLAttributes: {
-            target: '_blank',
-            rel: 'noopener noreferrer nofollow',
-          },
-        },
-      }),
+      ...createSupportComposerExtensions(),
       UnderlineExtension,
-      Markdown.configure({
-        html: false,
-        linkify: true,
-        transformPastedText: true,
-        transformCopiedText: true,
-      }),
       Placeholder.configure({ placeholder: 'Write your message...' }),
     ],
     editorProps: {

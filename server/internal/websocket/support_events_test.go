@@ -64,6 +64,19 @@ func TestSupportMessageEventIncludesClientMessageID(t *testing.T) {
 	}
 }
 
+func TestSupportMessageEventPreservesTimelinePrecision(t *testing.T) {
+	created := time.Date(2026, 10, 13, 12, 0, 0, 123456000, time.UTC)
+	event := SupportMessageEvent("ws-1", &model.SupportMessage{ID: "reply", ConversationID: "conv-1", SenderType: "user", MessageType: "reply", CreatedAt: created}, "user-1")
+	var payload model.WidgetMessageReceivedPayload
+	if err := json.Unmarshal(event.Data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	got, err := time.Parse(time.RFC3339Nano, payload.CreatedAt)
+	if err != nil || !got.Equal(created) {
+		t.Fatalf("live timestamp = %s, want %s", payload.CreatedAt, created)
+	}
+}
+
 func TestWidgetSafeSupportMessageEventDataRemovesLinkSecurity(t *testing.T) {
 	data := json.RawMessage(`{"id":"msg-1","metadata":"{\"link_previews\":[{\"url\":\"http://example.com\"}],\"link_security\":[{\"status\":\"malicious\"}]}"}`)
 

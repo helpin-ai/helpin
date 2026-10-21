@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
@@ -389,6 +391,37 @@ func (h *SupportInboxHandler) CreateConversationMessage(w http.ResponseWriter, r
 		return
 	}
 	writeJSON(w, http.StatusCreated, msg)
+}
+
+// UpdateNote handles PATCH on an existing internal conversation message.
+func (h *SupportInboxHandler) UpdateNote(w http.ResponseWriter, r *http.Request) {
+	if h.messageActionsService == nil {
+		writeError(w, 500, "message actions are not configured")
+		return
+	}
+	var req model.UpdateSupportNoteRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+	msg, err := h.messageActionsService.UpdateNote(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"), middleware.GetUserID(r.Context()), chi.URLParam(r, "msg_id"), req)
+	if err != nil {
+		switch {
+		case errors.Is(err, repository.ErrSupportNoteConflict), errors.Is(err, repository.ErrSupportMerged):
+			writeError(w, 409, err.Error())
+		case errors.Is(err, repository.ErrSupportNoteInvalid):
+			writeError(w, 400, err.Error())
+		case errors.Is(err, service.ErrSupportMessageActionForbidden):
+			writeError(w, 403, "You can only edit your own notes")
+		case errors.Is(err, service.ErrSupportMessageActionNotFound), errors.Is(err, repository.ErrSupportMergeNotFound):
+			writeError(w, 404, "Note not found")
+		default:
+			slog.ErrorContext(r.Context(), "update support note", "error", err, "workspace_id", getWorkspaceID(r), "message_id", chi.URLParam(r, "msg_id"))
+			writeError(w, 500, "Could not update this note")
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, msg)
 }
 
 // DeleteMessage handles DELETE /api/support/inbox/conversations/{id}/messages/{msg_id}.

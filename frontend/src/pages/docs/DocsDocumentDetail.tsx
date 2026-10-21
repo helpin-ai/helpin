@@ -1,3 +1,4 @@
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useRouter, useSearch } from '@tanstack/react-router'
@@ -1027,6 +1028,18 @@ export function DocsDocumentDetail({
   const activeTranslationDraft = isSourceLocaleActive
     ? emptyTranslationDraft(activeLocale)
     : translationDrafts[translationDraftKey(docId, activeLocale)] ?? translationDraftFromTranslation(activeLocale, activeTranslation)
+  useUnsavedChangesGuard(Boolean(doc) && (
+    updateDoc.isPending || upsertArticleTranslation.isPending || savingSourceSocial || uploadingSourceOGImage ||
+    (titleDraftState?.docId === docId && titleDraftState.value.trim() !== doc?.title) ||
+    sourceSocialDraft.og_title !== (doc?.hc_og_title ?? '') || sourceSocialDraft.og_description !== (doc?.hc_og_description ?? '') ||
+    sourceSocialDraft.og_image_url !== (doc?.hc_og_image_url ?? '') || sourceSocialDraft.og_image_alt !== (doc?.hc_og_image_alt ?? '') ||
+    Object.entries(translationDrafts).some(([key, draft]) => {
+      if (!key.startsWith(`${docId}:`)) return false
+      const saved = articleTranslationsByLocale.get(draft.locale)
+      return draft.title.trim() !== (saved?.title ?? '') || (Boolean(draft.slug.trim()) && draft.slug.trim() !== (saved?.slug ?? '')) || draft.excerpt.trim() !== (saved?.excerpt ?? '')
+    })
+  ), 'Save your document changes before refreshing.')
+
   const displayedTitle = isSourceLocaleActive ? titleDraft : activeTranslationDraft.title
   const outlineContent = previewVersion
     ? previewVersion.content as JSONContent | null

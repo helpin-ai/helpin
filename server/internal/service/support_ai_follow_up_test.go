@@ -300,3 +300,54 @@ func TestSupportFollowUpRejectsEmailThreads(t *testing.T) {
 		t.Fatalf("email followup sent %d messages", count)
 	}
 }
+
+func TestSupportFollowUpStopIsScopedToDisplayedEpisode(t *testing.T) {
+	svc, db, _, e, _ := setupFollowUpTest(t)
+	if err := svc.repo.CancelEpisode(context.Background(), "ws", "conv", "old-episode", "teammate"); err == nil {
+		t.Fatal("stale episode stop must be rejected")
+	}
+	got, err := svc.repo.Latest(context.Background(), "ws", "conv")
+	if err != nil || got.Status != "assessing" {
+		t.Fatalf("stale stop changed current work: %v", err)
+	}
+	if err := svc.repo.CancelEpisode(context.Background(), "ws", "conv", e.ID, "teammate"); err != nil {
+		t.Fatal(err)
+	}
+	got, err = svc.repo.Latest(context.Background(), "ws", "conv")
+	if err != nil || got.Status != "cancelled" || derefString(got.CancelledByUserID) != "teammate" {
+		t.Fatalf("stop not recorded: episode=%+v err=%v", got, err)
+	}
+	if err := svc.repo.CancelEpisode(context.Background(), "ws", "conv", e.ID, "another-teammate"); err != nil {
+		t.Fatal(err)
+	}
+	got, err = svc.repo.Latest(context.Background(), "ws", "conv")
+	if err != nil || derefString(got.CancelledByUserID) != "teammate" {
+		t.Fatal("duplicate stop replaced original actor")
+	}
+	mustExec(t, db, `UPDATE support_conversations SET last_public_message_id='new-source'`)
+	if err := svc.repo.CancelEpisode(context.Background(), "ws", "conv", e.ID, "teammate"); err == nil {
+		t.Fatal("superseded episode must not report successful stop")
+	}
+	var conv model.SupportConversation
+	if err := db.First(&conv, "id = ?", "conv").Error; err != nil {
+		t.Fatal(err)
+	}
+	if conv.AssignedUserID != nil || derefString(conv.AssignedAgentID) != "agent" {
+		t.Fatal("stopping changed ownership")
+	}
+}
+
+func TestSupportFollowUpDoesNotProcessAnEpisodeRescheduledIntoFuture(t *testing.T) {
+	svc, db, _, e, _ := setupFollowUpTest(t)
+	mustExec(t, db, `UPDATE support_ai_follow_ups SET status='scheduled',due_at=? WHERE id=?`, svc.now().Add(time.Hour), e.ID)
+	if err := svc.process(context.Background(), e, svc.now()); err != nil {
+		t.Fatal(err)
+	}
+	current, err := svc.repo.Latest(context.Background(), e.WorkspaceID, e.ConversationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Status != "scheduled" || current.StartedAt != nil {
+		t.Fatal("a stale claim started work before the updated due time")
+	}
+}

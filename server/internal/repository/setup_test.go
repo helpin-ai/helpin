@@ -289,8 +289,10 @@ var setupTestSchema = []string{
 	`CREATE TABLE support_widget_installations (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT 1, settings TEXT NOT NULL DEFAULT '{}')`,
 	`CREATE TABLE support_widget_sessions (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
 	`CREATE TABLE support_email_routes (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT 1)`,
-	`CREATE TABLE support_conversations (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, status TEXT NOT NULL, subject TEXT NOT NULL DEFAULT '', channel TEXT NOT NULL DEFAULT 'internal', source TEXT NOT NULL DEFAULT 'internal', ai_state TEXT, flow_state TEXT, linked_task_id TEXT, resolved_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
-	`CREATE TABLE support_messages (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, conversation_id TEXT NOT NULL, sender_type TEXT NOT NULL, message_type TEXT NOT NULL DEFAULT 'reply', sender_user_id TEXT, is_internal BOOLEAN NOT NULL DEFAULT 0, metadata TEXT NOT NULL DEFAULT '{}', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, deleted_at DATETIME)`,
+	`CREATE TABLE support_conversations (
+            merged_into_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, status TEXT NOT NULL, subject TEXT NOT NULL DEFAULT '', channel TEXT NOT NULL DEFAULT 'internal', source TEXT NOT NULL DEFAULT 'internal', ai_state TEXT, flow_state TEXT, linked_task_id TEXT, resolved_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+	`CREATE TABLE support_messages (
+            origin_conversation_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, conversation_id TEXT NOT NULL, sender_type TEXT NOT NULL, message_type TEXT NOT NULL DEFAULT 'reply', sender_user_id TEXT, is_internal BOOLEAN NOT NULL DEFAULT 0, metadata TEXT NOT NULL DEFAULT '{}', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, deleted_at DATETIME)`,
 	`CREATE TABLE support_coverage_recommendations (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, status TEXT NOT NULL, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
 	`CREATE TABLE agent_knowledge_sources (id TEXT PRIMARY KEY, agent_id TEXT, space_id TEXT, workspace_id TEXT NOT NULL, sync_status TEXT NOT NULL DEFAULT 'queued', indexed_documents INTEGER NOT NULL DEFAULT 0, indexed_chunks INTEGER NOT NULL DEFAULT 0)`,
 	`CREATE TABLE support_content_sources (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, sync_status TEXT NOT NULL DEFAULT 'queued', indexed_pages INTEGER NOT NULL DEFAULT 0, indexed_chunks INTEGER NOT NULL DEFAULT 0)`,
@@ -299,7 +301,7 @@ var setupTestSchema = []string{
 	`CREATE TABLE docs_contents (document_id TEXT PRIMARY KEY, content_text TEXT, word_count INTEGER NOT NULL DEFAULT 0)`,
 	`CREATE TABLE docs_helpcenter_articles (id TEXT PRIMARY KEY, document_id TEXT NOT NULL, public_published_at DATETIME)`,
 	`CREATE TABLE docs_helpcenter_configs (workspace_id TEXT PRIMARY KEY, is_published BOOLEAN NOT NULL DEFAULT 0)`,
-	`CREATE TABLE support_mailboxes (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT 1, triage_eligible BOOLEAN NOT NULL DEFAULT 1, routing_prompt TEXT, description TEXT)`,
+	`CREATE TABLE support_mailboxes (ai_replies_disabled BOOLEAN NOT NULL DEFAULT false, id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT 1, triage_eligible BOOLEAN NOT NULL DEFAULT 1, routing_prompt TEXT, description TEXT)`,
 	`CREATE TABLE support_triage_rules (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT 1, target_mailbox_id TEXT NOT NULL)`,
 	`CREATE TABLE crm_contacts (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 	`CREATE TABLE crm_companies (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
@@ -311,4 +313,37 @@ var setupTestSchema = []string{
 			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, is_active BOOLEAN NOT NULL DEFAULT 1, status TEXT NOT NULL)`,
 	`CREATE TABLE crm_autonomy_settings (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, enabled BOOLEAN NOT NULL DEFAULT 1, auto_create_deals BOOLEAN NOT NULL DEFAULT 1, auto_progress_deals BOOLEAN NOT NULL DEFAULT 1)`,
 	`CREATE TABLE crm_suggestions (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, suggestion_type TEXT NOT NULL, status TEXT NOT NULL, execution_status TEXT, executed_at DATETIME, object_id TEXT)`,
+}
+
+func TestSupportSetupEvidenceIsReadOnlyAndIndependentOfOtherModules(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:support_setup_%d?mode=memory&cache=shared", time.Now().UnixNano())), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, statement := range setupTestSchema {
+		if strings.Contains(statement, "CREATE TABLE support_") || strings.Contains(statement, "CREATE TABLE docs_") || strings.Contains(statement, "CREATE TABLE sample_data_items") {
+			if err := db.Exec(statement).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	for _, statement := range []string{
+		`INSERT INTO support_email_routes (id,workspace_id,active) VALUES ('email-1','workspace-1',1),('email-2','workspace-2',1)`,
+		`INSERT INTO support_widget_installations (id,workspace_id) VALUES ('widget-1','workspace-1')`,
+		`INSERT INTO support_content_sources (id,workspace_id,sync_status,indexed_pages) VALUES ('knowledge-1','workspace-1','ready',3)`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Exec("PRAGMA query_only = ON").Error; err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := NewSetupRepository(db).GetSupportSetupEvidence(context.Background(), "workspace-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if evidence.SupportEmailInboxCount != 1 || evidence.LiveChatInstallationCount != 0 || evidence.BrandKnowledgeSourceCount != 1 {
+		t.Fatalf("evidence = %#v", evidence)
+	}
 }
