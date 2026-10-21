@@ -19,6 +19,12 @@ describe('automatic reply delivery', () => {
   it('starts email-origin conversations with email even when sending needs recipient confirmation', () => {
     expect(nextAutomaticReplyDelivery(undefined, { source: 'email', presence: 'unknown', emailEligible: false })).toBe('email_only');
   });
+  it('answers portal-visible email threads by email and in the portal', () => {
+    expect(nextAutomaticReplyDelivery(undefined, { source: 'email', portal: true, presence: 'unknown', emailEligible: true })).toBe('chat_and_email');
+    expect(nextAutomaticReplyDelivery(undefined, { source: 'email', portal: false, presence: 'unknown', emailEligible: true })).toBe('email_only');
+    // Without email, the reply waits for the recipient confirmation rather than going portal-only.
+    expect(nextAutomaticReplyDelivery(undefined, { source: 'email', portal: true, presence: 'unknown', emailEligible: false })).toBe('email_only');
+  });
   it('restarts an automatic reply from current presence after clearing its draft choice', () => {
     expect(nextAutomaticReplyDelivery(undefined, { source: 'widget', presence: 'online', emailEligible: true })).toBe('chat_only');
   });

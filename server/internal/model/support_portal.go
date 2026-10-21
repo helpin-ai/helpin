@@ -101,8 +101,12 @@ type SupportPortalRequest struct {
 
 	LastPublicSenderType     *string    `json:"-"`
 	CustomerAwaitingResponse bool       `json:"-"`
-	LastMessageContent       *string    `json:"-"`
 	CustomerLastReadAt       *time.Time `json:"-"`
+	// The latest message the portal shows (see the detail view's visibility
+	// rule): its customer-safe text, sender type, and time.
+	LastMessageContent    *string    `json:"-"`
+	LastVisibleSenderType *string    `json:"-"`
+	LastVisibleMessageAt  *time.Time `json:"-"`
 }
 
 // PortalRequestStatus exposes the customer-facing lifecycle. Open requests

@@ -819,10 +819,15 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
     : undefined;
   const presence = useSupportPresenceStore((state) => !state.wsConnected || !state.hasOnlineVisitorsSnapshot || !conversation?.anonymous_id
     ? 'unknown' : state.onlineVisitors[conversation.anonymous_id] ? 'online' : 'offline');
-	const portalReplySurface = conversation?.source === 'portal' && conversation?.channel === 'portal' && conversation.portal_visible;
+	// Any request the customer sees in the portal can receive replies there,
+	// including email threads claimed after the customer signed in.
+	const portalReplySurface = Boolean(conversation?.portal_visible) && conversation?.status !== 'spam'
+		&& conversation?.channel !== 'internal' && conversation?.source !== 'internal';
+	const hasChatSession = Boolean(conversation?.anonymous_id) || conversation?.source === 'widget' || Boolean(conversation?.merge_has_widget);
 	const hiddenPortalIntake = conversation?.source === 'portal' && conversation?.channel === 'portal' && !conversation.portal_visible;
   const selectedDeliveryMode = useComposerDelivery(workspaceId, conversationId, {
     source: conversation?.source,
+    portal: portalReplySurface,
     presence,
     emailEligible: !emailUnavailableReason,
     active: !editingNote && !inactive && replyMode !== 'note',
@@ -2304,7 +2309,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
               email={primaryRecipientEmail}
               emailUnavailableReason={emailUnavailableReason}
               chatUnavailableReason={chatUnavailableReason}
-              portal={Boolean(portalReplySurface)}
+              portal={portalReplySurface && !hasChatSession}
             />}
             <Button
               size="sm"

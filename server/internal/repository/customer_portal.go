@@ -369,9 +369,11 @@ func (r *CustomerPortalRepository) ownedRequests(ctx context.Context, workspaceI
 func (r *CustomerPortalRepository) ListRequests(ctx context.Context, workspaceID, identityID, status string) ([]model.SupportPortalRequest, error) {
 	var requests []model.SupportPortalRequest
 	query := r.ownedRequests(ctx, workspaceID, identityID).
+		Joins("LEFT JOIN support_messages AS lm ON lm.id = " + r.lastPortalVisibleMessageSQL()).
 		Select(`refs.reference, conv.subject, conv.status, conv.created_at, conv.last_public_message_at, conv.resolved_at,
 			conv.display_id, conv.last_public_sender_type, conv.customer_awaiting_response, refs.customer_last_read_at,
-			(SELECT msg.content FROM support_messages AS msg WHERE msg.id = conv.last_public_message_id) AS last_message_content`)
+			COALESCE(` + supportMetadataValueSQL(r.db, "lm", "merge_public_text") + `, lm.content) AS last_message_content,
+			lm.sender_type AS last_visible_sender_type, lm.created_at AS last_visible_message_at`)
 	waitingCondition := "(" + conversationWaitingOnCustomerCondition("conv") + " OR conv.status = 'waiting')"
 	switch status {
 	case "active":
@@ -396,19 +398,35 @@ func (r *CustomerPortalRepository) ListRequests(ctx context.Context, workspaceID
 	return requests, nil
 }
 
+// lastPortalVisibleMessageSQL selects the id of the latest message the portal
+// shows for conv: its own and merge-shared public replies, never notes,
+// system events, or email-only replies, matching the request detail view.
+func (r *CustomerPortalRepository) lastPortalVisibleMessageSQL() string {
+	return `(SELECT msg.id FROM support_messages AS msg
+		WHERE (msg.conversation_id = conv.id OR EXISTS (SELECT 1 FROM support_merge_messages AS grant_row
+			WHERE grant_row.workspace_id = msg.workspace_id AND grant_row.conversation_id = conv.id AND grant_row.message_id = msg.id))
+		AND msg.workspace_id = conv.workspace_id AND msg.deleted_at IS NULL AND msg.is_internal = false
+		AND msg.message_type = 'reply' AND msg.sender_type IN ('customer', 'user', 'agent', 'ai')
+		AND ` + supportDeliveryModeSQL(r.db, "msg") + ` <> '` + model.SupportDeliveryEmailOnly + `'
+		AND NOT EXISTS (SELECT 1 FROM support_conversations AS origin
+			WHERE origin.id = COALESCE(msg.origin_conversation_id, msg.conversation_id) AND origin.anonymized_at IS NOT NULL)
+		ORDER BY msg.created_at DESC, msg.id DESC LIMIT 1)`
+}
+
 // projectPortalRequestActivity derives the list's latest-message preview, who
-// sent it, and whether support replied since the customer last looked.
+// sent it, and whether support replied since the customer last looked, all
+// from the latest message the portal shows.
 func projectPortalRequestActivity(request *model.SupportPortalRequest) {
 	request.LastMessagePreview = model.PortalMessagePreview(crmContactStringValue(request.LastMessageContent))
-	switch crmContactStringValue(request.LastPublicSenderType) {
+	switch crmContactStringValue(request.LastVisibleSenderType) {
 	case "":
 		return
 	case "customer":
 		request.LastMessageFrom = "customer"
 	default:
 		request.LastMessageFrom = "support"
-		request.Unread = request.LastPublicMessageAt != nil &&
-			(request.CustomerLastReadAt == nil || request.LastPublicMessageAt.After(*request.CustomerLastReadAt))
+		request.Unread = request.LastVisibleMessageAt != nil &&
+			(request.CustomerLastReadAt == nil || request.LastVisibleMessageAt.After(*request.CustomerLastReadAt))
 	}
 }
 

@@ -1925,7 +1925,20 @@ func (s *SupportInboxService) ListWidgetConversationMessages(ctx context.Context
 	return s.listConversationMessages(ctx, workspaceID, ticketID, false, true)
 }
 
+// ListPortalConversationMessages returns the public history the customer sees
+// in the portal, including replies shared into the request by a merge.
+func (s *SupportInboxService) ListPortalConversationMessages(ctx context.Context, workspaceID, ticketID string) ([]model.SupportMessage, error) {
+	return s.listConversationMessagesWith(ctx, workspaceID, ticketID, false, false, true)
+}
+
 func (s *SupportInboxService) listConversationMessages(ctx context.Context, workspaceID, ticketID string, includeInternal, widgetOnly bool) ([]model.SupportMessage, error) {
+	return s.listConversationMessagesWith(ctx, workspaceID, ticketID, includeInternal, widgetOnly, widgetOnly)
+}
+
+// listConversationMessagesWith lists a conversation's messages. Customer
+// surfaces (widget and portal) also include public messages shared into a
+// merged conversation, which the staff view shows through the merge ledger.
+func (s *SupportInboxService) listConversationMessagesWith(ctx context.Context, workspaceID, ticketID string, includeInternal, widgetOnly, includeShared bool) ([]model.SupportMessage, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
@@ -1941,7 +1954,7 @@ func (s *SupportInboxService) listConversationMessages(ctx context.Context, work
 		return nil, err
 	}
 
-	if widgetOnly && conv.MergeRevision > 0 {
+	if includeShared && conv.MergeRevision > 0 {
 		shared, _, err := s.mergeRepository().SharedMessages(ctx, workspaceID, ticketID, "", true, nil, 0)
 		if err != nil {
 			return nil, err
@@ -2137,6 +2150,13 @@ func (s *SupportInboxService) reopenForCustomerReply(ctx context.Context, worksp
 	return nil
 }
 
+// supportConversationPortalReplySurface reports whether the customer sees the
+// conversation in the portal, so a chat delivery mode reaches them there.
+func supportConversationPortalReplySurface(conv *model.SupportConversation) bool {
+	return conv != nil && conv.PortalVisible && conv.Status != model.SupportConversationStatusSpam &&
+		conv.Channel != "internal" && conv.Source != "internal"
+}
+
 // CreateConversationMessage creates a message on a conversation.
 func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, workspaceID, ticketID string, req model.CreateMessageRequest, senderType string, senderUserID, senderAgentID *string, senderDisplayName *string) (*model.SupportMessage, error) {
 	if strings.TrimSpace(req.Content) == "" && len(req.AttachmentIDs) == 0 {
@@ -2174,7 +2194,9 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	if err != nil {
 		return nil, err
 	}
-	portalReplySurface := conv.Channel == "portal" && conv.Source == "portal" && conv.PortalVisible
+	// Any request the customer sees in the portal (portal intake, or an email
+	// thread claimed after sign-in) can receive replies there.
+	portalReplySurface := supportConversationPortalReplySurface(conv)
 	if (req.DeliveryMode == model.SupportDeliveryChatOnly || req.DeliveryMode == model.SupportDeliveryChatAndEmail) &&
 		strings.TrimSpace(derefString(conv.AnonymousID)) == "" && conv.Source != "widget" && !deliveryConversation.MergeHasWidget && !portalReplySurface {
 		return nil, fmt.Errorf("this conversation has no chat session; choose email only")

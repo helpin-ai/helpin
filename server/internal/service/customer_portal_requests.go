@@ -229,7 +229,8 @@ func (s *CustomerPortalService) RequestDetail(ctx context.Context, access *Porta
 	if conv == nil {
 		return nil, ErrPortalRequestNotFound
 	}
-	messages, err := s.inbox.ListConversationMessages(ctx, access.Workspace.ID, conv.ID, false)
+	// Merged requests also show replies shared into them, as the chat widget does.
+	messages, err := s.inbox.ListPortalConversationMessages(ctx, access.Workspace.ID, conv.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -265,6 +266,14 @@ func (s *CustomerPortalService) RequestDetail(ctx context.Context, access *Porta
 // reply carries the one assistant name; people keep their name and avatar.
 func projectPortalMessage(msg *model.SupportMessage, assistant string) PortalMessage {
 	public := PortalMessage{ID: msg.ID, Content: msg.Content, SenderType: msg.SenderType, SenderName: msg.SenderDisplayName, SenderAvatar: msg.SenderAvatarURL, CreatedAt: msg.CreatedAt}
+	// A merged inbound email shows only its customer-safe text, never the
+	// quoted history another participant's email carried.
+	var mergeProjection struct {
+		Text *string `json:"merge_public_text"`
+	}
+	if json.Unmarshal([]byte(msg.Metadata), &mergeProjection) == nil && mergeProjection.Text != nil {
+		public.Content = *mergeProjection.Text
+	}
 	if portalMessageFromAssistant(msg) {
 		public.SenderType = "ai"
 		public.SenderName = &assistant
@@ -274,7 +283,7 @@ func projectPortalMessage(msg *model.SupportMessage, assistant string) PortalMes
 		public.ViaChannel = *msg.ViaChannel
 	}
 	for _, attachment := range msg.Attachments {
-		if attachment.URL == "" || attachment.ProcessingStatus != "" {
+		if attachment.URL == "" || attachment.ProcessingStatus != "" || !model.SharedSupportAttachmentVisible(msg, attachment) {
 			continue
 		}
 		public.Attachments = append(public.Attachments, model.WidgetAttachment{ID: attachment.ID, FileName: attachment.FileName, FileType: attachment.FileType, FileSize: attachment.FileSize, URL: attachment.URL})

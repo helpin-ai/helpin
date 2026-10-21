@@ -33,7 +33,8 @@ func TestPortalHTTPAuthorizationAndVisibility(t *testing.T) {
 		`CREATE TABLE support_conversations (id TEXT PRIMARY KEY, workspace_id TEXT, display_id INTEGER, last_public_message_id TEXT, last_public_sender_type TEXT, customer_awaiting_response BOOLEAN, customer_email TEXT, subject TEXT, status TEXT, channel TEXT, source TEXT, portal_visible BOOLEAN, portal_visibility_changed_at DATETIME, primary_recipient_state TEXT, created_at DATETIME, last_public_message_at DATETIME, resolved_at DATETIME, anonymized_at DATETIME)`,
 		`CREATE TABLE support_portal_request_references (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, portal_identity_id TEXT, reference TEXT, customer_last_read_at DATETIME)`,
 		`CREATE TABLE support_widget_sessions (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, customer_email TEXT, identity_trust TEXT, identity_verified_at DATETIME)`,
-		`CREATE TABLE support_messages (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, content TEXT, message_type TEXT, sender_type TEXT, is_internal BOOLEAN, created_at DATETIME)`,
+		`CREATE TABLE support_messages (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, origin_conversation_id TEXT, content TEXT, message_type TEXT, sender_type TEXT, is_internal BOOLEAN, metadata TEXT, deleted_at DATETIME, created_at DATETIME)`,
+		`CREATE TABLE support_merge_messages (workspace_id TEXT, conversation_id TEXT, message_id TEXT, merge_id TEXT)`,
 	} {
 		if err := db.Exec(ddl).Error; err != nil {
 			t.Fatal(err)
