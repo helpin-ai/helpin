@@ -100,10 +100,7 @@ func (h *Handler) serverForRequest(r *http.Request) *mcp.Server {
 				message := publicToolError(err)
 				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: message}}}, nil
 			}
-			return &mcp.CallToolResult{
-				Content:           []mcp.Content{&mcp.TextContent{Text: result.Summary}},
-				StructuredContent: result,
-			}, nil
+			return toolCallResult(result), nil
 		})
 	}
 	h.addResources(server, principal, tools)
@@ -361,4 +358,24 @@ func (l *requestLimiter) AllowTool(ctx context.Context, principal *model.MCPPrin
 		return true
 	}
 	return l.shared.Allow(ctx, "mcp", principalRateKey(principal), true)
+}
+
+// toolCallResult returns the result as structured content and, as the MCP
+// specification recommends for compatibility, repeats it as JSON text. Many
+// clients pass only text content to the model.
+func toolCallResult(result *service.MCPToolResult) *mcp.CallToolResult {
+	text := result.Summary
+	if result.Data != nil || len(result.Links) > 0 {
+		payload := map[string]any{"data": result.Data}
+		if len(result.Links) > 0 {
+			payload["links"] = result.Links
+		}
+		if encoded, err := json.Marshal(payload); err == nil {
+			text += "\n\n" + string(encoded)
+		}
+	}
+	return &mcp.CallToolResult{
+		Content:           []mcp.Content{&mcp.TextContent{Text: text}},
+		StructuredContent: result,
+	}
 }
