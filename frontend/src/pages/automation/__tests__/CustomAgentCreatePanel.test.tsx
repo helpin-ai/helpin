@@ -268,7 +268,7 @@ describe('CustomAgentCreatePanel', () => {
     expect(container?.textContent).toContain('Can ask follow-up questions or request approval.');
   });
 
-  it('offers workspace profiles while preserving run mode', () => {
+  it('offers workspace models while preserving run mode', () => {
     renderPanel({
       form: { ...createDefaultCustomAgentForm(), name: 'Planner' },
       advancedOpen: true,
@@ -277,7 +277,7 @@ describe('CustomAgentCreatePanel', () => {
     click('Start blank');
     click('Advanced settings');
 
-    expect(container?.textContent).toContain('AI profile');
+    expect(container?.textContent).toContain('AI model');
     expect(container?.textContent).toContain('Workspace default');
     expect(container?.textContent).toContain('Interactive');
     expect(container?.textContent).not.toContain('OpenCode');
