@@ -18,6 +18,7 @@ type SupportHandoffBrief struct {
 	InvestigationQuestion  string   `json:"investigation_question,omitempty"`
 	ExpectedMessageID      string   `json:"-"`
 	ExpectedControlVersion *int64   `json:"-"`
+	ExpectedNoRun          bool     `json:"-"`
 	ExpectedRunID          string   `json:"-"`
 	Issue                  string   `json:"issue_summary"`
 	AttemptedSteps         []string `json:"attempted_steps"`

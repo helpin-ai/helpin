@@ -317,6 +317,9 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		}
 	}
 	oldRun, changed, err := s.conversationRepo.ChangeAIControlWithInvestigation(ctx, workspaceID, conversationID, func(current *model.SupportConversation) (map[string]any, *model.SupportMessage, error) {
+		if brief.ExpectedNoRun && current.AIActiveRunID != nil {
+			return nil, nil, nil
+		}
 		if brief.ExpectedControlVersion != nil && (current.AIControlVersion != *brief.ExpectedControlVersion || derefString(current.LastPublicMessageID) != brief.ExpectedMessageID || model.SupportAIConversationBlocked(current) || supportConversationHumanOwned(current)) {
 			return nil, nil, nil
 		}

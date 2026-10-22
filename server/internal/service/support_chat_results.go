@@ -262,6 +262,9 @@ func (s *SupportChatService) SweepSupportChat(ctx context.Context, staleAfter ti
 			s.reviveDeferredConversation(ctx, conv, run)
 		}
 	}
+	if err := s.sweepUnstartedSupportTurns(ctx, limit); err != nil {
+		return err
+	}
 	if err := s.sweepAcknowledgedSupportTurns(ctx, staleAfter, limit); err != nil {
 		return err
 	}
