@@ -1,5 +1,23 @@
-import { useState, type ReactNode } from 'react';
+import { useState, type KeyboardEvent, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
+import {
+  PM_FILTER_NUMBER_OPERATORS,
+  PM_FILTER_OPTION_MODES,
+  optionModeUsesValues,
+  type PMFilterCondition,
+  type PMFilterConditions,
+  type PMFilterNumberOperator,
+  type PMFilterOptionMode,
+  type PMFilterOptionModes,
+} from '@/lib/pmFilterConditions';
+
+export type {
+  PMFilterCondition,
+  PMFilterConditions,
+  PMFilterNumberOperator,
+  PMFilterOptionMode,
+  PMFilterOptionModes,
+} from '@/lib/pmFilterConditions';
 
 import {
   ArrowLeft02Icon,
@@ -35,9 +53,50 @@ export interface PMFilterDefinition<K extends string> {
   singleSelect?: boolean;
   searchableValues?: boolean;
   contentClassName?: string;
+  /**
+   * options (default) picks values from a list; number compares against a
+   * typed number with the operators in PM_FILTER_NUMBER_OPERATORS.
+   */
+  kind?: 'options' | 'number';
+  /** Short muted note shown on the applied pill, such as skipped records. */
+  note?: string;
+  /**
+   * Lets an options filter choose is any of, is none of, has a value, or is
+   * empty instead of the fixed "is".
+   */
+  optionModes?: boolean;
 }
 
+const OPTION_MODE_LABELS: Record<PMFilterOptionMode, string> = {
+  is_any_of: 'is',
+  is_none_of: 'is not',
+  is_not_empty: 'has a value',
+  is_empty: 'is empty',
+};
+
 export type PMFilterValues<K extends string> = Partial<Record<K, string[]>>;
+
+const NUMBER_OPERATOR_LABELS: Record<PMFilterNumberOperator, string> = {
+  equals: '=',
+  gt: '>',
+  gte: '≥',
+  lt: '<',
+  lte: '≤',
+  between: 'between',
+  is_not_empty: 'has a value',
+  is_empty: 'is empty',
+};
+
+const NUMBER_OPERATOR_NAMES: Record<PMFilterNumberOperator, string> = {
+  equals: 'equals',
+  gt: 'greater than',
+  gte: 'at least',
+  lt: 'less than',
+  lte: 'at most',
+  between: 'between',
+  is_not_empty: 'has a value',
+  is_empty: 'is empty',
+};
 
 function PMFilterValueSelect<K extends string>({
   definition,
@@ -113,23 +172,38 @@ export function PMFilterPill<K extends string>({
   selected,
   onToggle,
   onRemove,
+  mode = 'is_any_of',
+  onModeChange,
 }: {
   definition: PMFilterDefinition<K>;
   selected: string[];
   onToggle: (value: string) => void;
   onRemove: () => void;
+  mode?: PMFilterOptionMode;
+  onModeChange?: (mode: PMFilterOptionMode) => void;
 }) {
   return (
     <div className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs">
       <span className="font-medium text-muted-foreground">
         {definition.label}
       </span>
-      <span className="text-muted-foreground/60">is</span>
-      <PMFilterValueSelect
-        definition={definition}
-        selected={selected}
-        onToggle={onToggle}
-      />
+      {definition.optionModes && onModeChange ? (
+        <PMOperatorSelect
+          label={definition.label}
+          options={PM_FILTER_OPTION_MODES.map((option) => ({ value: option, label: OPTION_MODE_LABELS[option], name: OPTION_MODE_LABELS[option] }))}
+          value={mode}
+          onChange={onModeChange}
+        />
+      ) : (
+        <span className="text-muted-foreground/60">is</span>
+      )}
+      {optionModeUsesValues(mode) ? (
+        <PMFilterValueSelect
+          definition={definition}
+          selected={selected}
+          onToggle={onToggle}
+        />
+      ) : null}
       <button
         type="button"
         onClick={onRemove}
@@ -161,7 +235,7 @@ export function PMFilterTrigger<K extends string>({
   const [selectedKey, setSelectedKey] = useState<K | null>(null);
   const available = definitions.filter(
     (definition) =>
-      !visibleKeys.has(definition.key) && definition.options.length > 0,
+      !visibleKeys.has(definition.key) && (definition.kind === 'number' || definition.options.length > 0),
   );
   const selectedDefinition = selectedKey
     ? definitions.find((definition) => definition.key === selectedKey)
@@ -287,6 +361,11 @@ export function PMFilterTrigger<K extends string>({
                   keywords={[definition.label]}
                   onSelect={() => {
                     onAdd(definition.key);
+                    // Number filters are completed in their pill, not a value list.
+                    if (definition.kind === 'number') {
+                      setOpen(false);
+                      return;
+                    }
                     setSelectedKey(definition.key);
                   }}
                 >
@@ -309,6 +388,10 @@ export function PMFilterBar<K extends string>({
   onRemove,
   onClearAll,
   trailing,
+  conditions,
+  onConditionChange,
+  optionModes,
+  onOptionModeChange,
 }: {
   definitions: PMFilterDefinition<K>[];
   values: PMFilterValues<K>;
@@ -317,6 +400,12 @@ export function PMFilterBar<K extends string>({
   onRemove: (key: K) => void;
   onClearAll: () => void;
   trailing?: ReactNode;
+  /** Number filter state, for definitions with kind "number". */
+  conditions?: PMFilterConditions<K>;
+  onConditionChange?: (key: K, condition: PMFilterCondition) => void;
+  /** Chosen operator per options filter, for definitions with optionModes. */
+  optionModes?: PMFilterOptionModes<K>;
+  onOptionModeChange?: (key: K, mode: PMFilterOptionMode) => void;
 }) {
   if (visibleKeys.size === 0) return null;
 
@@ -324,13 +413,23 @@ export function PMFilterBar<K extends string>({
     <div className="ui-divider-bottom-fade flex flex-wrap items-center gap-1.5 px-3 py-1.5">
       {definitions
         .filter((definition) => visibleKeys.has(definition.key))
-        .map((definition) => (
+        .map((definition) => definition.kind === 'number' ? (
+          <PMConditionPill
+            key={definition.key}
+            definition={definition}
+            condition={conditions?.[definition.key] ?? { operator: 'gt' }}
+            onChange={(condition) => onConditionChange?.(definition.key, condition)}
+            onRemove={() => onRemove(definition.key)}
+          />
+        ) : (
           <PMFilterPill
             key={definition.key}
             definition={definition}
             selected={values[definition.key] ?? []}
             onToggle={(value) => onToggle(definition.key, value)}
             onRemove={() => onRemove(definition.key)}
+            mode={optionModes?.[definition.key]}
+            onModeChange={onOptionModeChange ? (mode) => onOptionModeChange(definition.key, mode) : undefined}
           />
         ))}
       <Button
@@ -342,6 +441,159 @@ export function PMFilterBar<K extends string>({
         Clear all
       </Button>
       {trailing}
+    </div>
+  );
+}
+
+function PMOperatorSelect<V extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: { value: V; label: string; name: string }[];
+  value: V;
+  onChange: (value: V) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((option) => option.value === value) ?? options[0];
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={`${label} comparison: ${selected.name}`}
+          className="rounded px-1 py-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          {selected.label}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-44 p-0" align="start">
+        <QuietDropdownOptions searchMode="off">
+          <QuietDropdownGroup>
+            {options.map((option) => (
+              <QuietDropdownItem
+                key={option.value}
+                value={option.value}
+                onSelect={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+              >
+                {option.label !== option.name ? (
+                  <span className="w-14 shrink-0 text-muted-foreground">{option.label}</span>
+                ) : null}
+                <span className="min-w-0 flex-1 truncate">{option.name}</span>
+                {option.value === value ? <Tick01Icon className="h-3 w-3" /> : null}
+              </QuietDropdownItem>
+            ))}
+          </QuietDropdownGroup>
+        </QuietDropdownOptions>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** Number input that commits on blur or Enter, so typing does not refetch per keystroke. */
+function PMConditionNumberInput({
+  label,
+  value,
+  onCommit,
+}: {
+  label: string;
+  value: string;
+  onCommit: (value: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const [committed, setCommitted] = useState(value);
+  if (value !== committed) {
+    setCommitted(value);
+    setDraft(value);
+  }
+  const commit = () => {
+    if (draft.trim() !== value) onCommit(draft.trim());
+  };
+  return (
+    <input
+      type="number"
+      inputMode="decimal"
+      aria-label={label}
+      placeholder="Number"
+      value={draft}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event: KeyboardEvent<HTMLInputElement>) => {
+        if (event.key === 'Enter') commit();
+      }}
+      className="w-20 rounded border border-border bg-background px-1.5 py-0.5 text-xs outline-none transition-colors [appearance:textfield] focus:border-foreground/40 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+    />
+  );
+}
+
+/** Applied number filter: field, comparison, number(s), remove. */
+export function PMConditionPill<K extends string>({
+  definition,
+  condition,
+  onChange,
+  onRemove,
+}: {
+  definition: PMFilterDefinition<K>;
+  condition: PMFilterCondition;
+  onChange: (condition: PMFilterCondition) => void;
+  onRemove: () => void;
+}) {
+  const { operator } = condition;
+  const usesNoValue = operator === 'is_empty' || operator === 'is_not_empty';
+  const changeOperator = (next: PMFilterNumberOperator) => {
+    if (next === 'between') {
+      const start = condition.value ?? condition.values?.[0] ?? '';
+      onChange({ operator: next, values: [start, condition.values?.[1] ?? ''] });
+    } else if (next === 'is_empty' || next === 'is_not_empty') {
+      onChange({ operator: next });
+    } else {
+      onChange({ operator: next, value: condition.value ?? condition.values?.[0] ?? '' });
+    }
+  };
+  return (
+    <div className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs">
+      <span className="font-medium text-muted-foreground">{definition.label}</span>
+      <PMOperatorSelect
+        label={definition.label}
+        options={PM_FILTER_NUMBER_OPERATORS.map((option) => ({ value: option, label: NUMBER_OPERATOR_LABELS[option], name: NUMBER_OPERATOR_NAMES[option] }))}
+        value={operator}
+        onChange={changeOperator}
+      />
+      {operator === 'between' ? (
+        <>
+          <PMConditionNumberInput
+            label={`${definition.label} minimum`}
+            value={condition.values?.[0] ?? ''}
+            onCommit={(start) => onChange({ operator, values: [start, condition.values?.[1] ?? ''] })}
+          />
+          <span className="text-muted-foreground/60">and</span>
+          <PMConditionNumberInput
+            label={`${definition.label} maximum`}
+            value={condition.values?.[1] ?? ''}
+            onCommit={(end) => onChange({ operator, values: [condition.values?.[0] ?? '', end] })}
+          />
+        </>
+      ) : usesNoValue ? null : (
+        <PMConditionNumberInput
+          label={`${definition.label} value`}
+          value={condition.value ?? ''}
+          onCommit={(value) => onChange({ operator, value })}
+        />
+      )}
+      {definition.note ? <span className="text-muted-foreground/60">· {definition.note}</span> : null}
+      <button
+        type="button"
+        onClick={onRemove}
+        className="ml-0.5 rounded p-0.5 text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
+        aria-label={`Remove ${definition.label} filter`}
+      >
+        <Cancel01Icon className="h-3 w-3" />
+      </button>
     </div>
   );
 }

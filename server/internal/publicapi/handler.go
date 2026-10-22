@@ -36,7 +36,8 @@ type Backend interface {
 
 // Limiter admits authenticated requests; expensive covers writes and search.
 type Limiter interface {
-	Allow(ctx context.Context, scope, subject string, expensive bool) bool
+	// AllowN admits a request costing cost units; bulk writes cost more than one.
+	AllowN(ctx context.Context, scope, subject string, expensive bool, cost int64) bool
 }
 
 // Handler serves the public REST API.
@@ -138,15 +139,18 @@ func (h *Handler) operation(route Route) http.Handler {
 			writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication is required.")
 			return
 		}
+		args, err := buildArguments(r, route, schema, tool.Mutating)
+		// Admission runs once the arguments are known, so bulk writes are
+		// charged by size, and always before the tool executes.
 		if h.limiter != nil {
 			expensive := tool.Mutating || tool.Name == "search_workspace"
-			if !h.limiter.Allow(r.Context(), "publicapi", rateSubject(principal), expensive) {
+			cost := service.MCPToolRateCost(tool.Name, args)
+			if !h.limiter.AllowN(r.Context(), "publicapi", rateSubject(principal), expensive, cost) {
 				w.Header().Set("Retry-After", "60")
 				writeError(w, http.StatusTooManyRequests, "rate_limited", "Rate limit exceeded. Retry after 60 seconds.")
 				return
 			}
 		}
-		args, err := buildArguments(r, route, schema, tool.Mutating)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_arguments", err.Error())
 			return

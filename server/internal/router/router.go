@@ -1780,6 +1780,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				// Companies — crm.read / crm.edit
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/companies", h.CRMCompany.List)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/companies/filter-options", h.CRMCompany.FilterOptions)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/companies", h.CRMCompany.Create)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/companies/{id}", h.CRMCompany.Get)
 				r.With(requirePerm(authorization.PermCRMEdit)).Put("/companies/{id}", h.CRMCompany.Update)

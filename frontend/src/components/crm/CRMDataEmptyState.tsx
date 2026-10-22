@@ -22,6 +22,8 @@ interface CRMDataEmptyStateProps {
 interface CRMNoResultsStateProps {
   kind: CRMDataEmptyKind;
   query: string;
+  /** Applied filters also narrow the list; clearing resets them with the search. */
+  hasFilters?: boolean;
   onClear: () => void;
 }
 
@@ -200,7 +202,12 @@ export function CRMDataEmptyState({ kind, onCreateClick }: CRMDataEmptyStateProp
   );
 }
 
-export function CRMNoResultsState({ kind, query, onClear }: CRMNoResultsStateProps) {
+export function CRMNoResultsState({ kind, query, hasFilters = false, onClear }: CRMNoResultsStateProps) {
+  const description = hasFilters
+    ? query
+      ? `No ${kind} match "${query}" with the applied filters.`
+      : `No ${kind} match the applied filters.`
+    : `No ${kind} match "${query}". Clear the search to return to the full list.`;
   return (
     <div className="flex h-full items-center justify-center p-6">
       <div className="max-w-md text-center">
@@ -208,11 +215,9 @@ export function CRMNoResultsState({ kind, query, onClear }: CRMNoResultsStatePro
           <Search01Icon className="h-5 w-5 text-muted-foreground" />
         </div>
         <h2 className="mt-4 text-base font-semibold">No matching {kind}</h2>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          No {kind} match &quot;{query}&quot;. Clear the search to return to the full list.
-        </p>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
         <Button size="sm" variant="outline" className="mt-4" onClick={onClear}>
-          Clear search
+          {hasFilters ? (query ? 'Clear search and filters' : 'Clear filters') : 'Clear search'}
         </Button>
       </div>
     </div>

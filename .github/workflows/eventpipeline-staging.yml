@@ -100,8 +100,9 @@ jobs:
           tags: |
             ${{ env.RUST_IMAGE }}:stage-latest
             ${{ env.RUST_IMAGE }}:${{ needs.version.outputs.tag }}
-          cache-from: type=gha,scope=ep-stage-rust
-          cache-to: type=gha,mode=max,scope=ep-stage-rust
+          # Registry cache keeps these layers out of the 10 GB Actions cache.
+          cache-from: type=registry,ref=${{ env.RUST_IMAGE }}-buildcache:stage
+          cache-to: type=registry,ref=${{ env.RUST_IMAGE }}-buildcache:stage,mode=max
 
   release:
     permissions:

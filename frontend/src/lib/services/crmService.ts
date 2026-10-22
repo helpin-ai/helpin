@@ -4,6 +4,7 @@ import type { SupportConversation } from '../pmTypes';
 import type {
   CRMContact,
   CRMCompany,
+  CRMCompanyFilterOptions,
   CRMDeal,
   CRMPipeline,
   CRMAssociation,
@@ -118,10 +119,14 @@ export const crmCompanyService = {
       industry?: string;
       owner_member_id?: string;
       search?: string;
+      /** Serialized query-builder filter group. */
+      filters?: string;
       page?: number;
       per_page?: number;
     },
   ) => api.get<CRMPaginatedResponse<CRMCompany[]>>(`/crm/companies${qs(workspaceId)}${filterQuery(filters ?? {})}`),
+  filterOptions: (workspaceId: string) =>
+    api.get<CRMCompanyFilterOptions>(`/crm/companies/filter-options${qs(workspaceId)}`),
   get: (workspaceId: string, id: string) => api.get<CRMCompany>(`/crm/companies/${id}${qs(workspaceId)}`),
   create: (payload: CreateCRMCompanyRequest) => api.post<CRMCompany>(`/crm/companies${qs(payload.workspace_id)}`, payload),
   update: (workspaceId: string, id: string, payload: UpdateCRMCompanyRequest) => api.put<CRMCompany>(`/crm/companies/${id}${qs(workspaceId)}`, payload),

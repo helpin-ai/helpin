@@ -347,12 +347,22 @@ moment can still create two records.
 `list_crm_companies` and `list_contacts` accept a `filter` object with `logic`
 (`and` or `or`) and up to 20 `rules`, each with a `field`, an `operator`, and a
 `value` or `values`. Native fields are listed in each tool's schema, and
-`custom_properties.<key>` filters any custom property as case-insensitive text:
+`custom_properties.<key>` filters any custom property as case-insensitive text.
+
+- `is_any_of` and `is_none_of` take a `values` list. On a custom property holding
+  a list, such as `support_tools`, they also match list elements. `is_none_of`
+  includes records without a value.
+- `gt`, `gte`, `lt`, `lte`, and `between` compare a custom property as a number.
+  JSON numbers and strings holding only a number (such as `"40"`) are compared;
+  other values (such as `"11-50"` or `"unknown"`) never match, and do not count
+  as empty.
 
 ```json
 {"filter": {"rules": [
   {"field": "custom_properties.fit", "operator": "is", "value": "yes"},
-  {"field": "custom_properties.country", "operator": "is", "value": "DE"}
+  {"field": "custom_properties.country", "operator": "is", "value": "DE"},
+  {"field": "custom_properties.support_tools", "operator": "is_any_of", "values": ["zendesk", "intercom"]},
+  {"field": "custom_properties.employees_est", "operator": "gt", "value": "50"}
 ]}}
 ```
 

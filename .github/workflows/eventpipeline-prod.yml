@@ -80,8 +80,12 @@ jobs:
           tags: |
             ${{ env.RUST_IMAGE }}:prod-latest
             ${{ env.RUST_IMAGE }}:${{ needs.version.outputs.tag }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Registry cache keeps these layers out of the 10 GB Actions cache.
+          # Staging builds the same Dockerfile, so its cache seeds production.
+          cache-from: |
+            type=registry,ref=${{ env.RUST_IMAGE }}-buildcache:prod
+            type=registry,ref=${{ env.RUST_IMAGE }}-buildcache:stage
+          cache-to: type=registry,ref=${{ env.RUST_IMAGE }}-buildcache:prod,mode=max
 
   release:
     permissions:

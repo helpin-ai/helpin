@@ -7,6 +7,8 @@ interface InfiniteCompanyFilters {
   industry?: string;
   owner_member_id?: string;
   search?: string;
+  /** Serialized query-builder filter group. */
+  filters?: string;
 }
 
 const PER_PAGE = 50;

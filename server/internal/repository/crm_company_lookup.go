@@ -49,3 +49,19 @@ func (r *CRMCompanyRepository) GetByDomainVariants(ctx context.Context, workspac
 	}
 	return &company, nil
 }
+
+// ListFilterSources returns the industry and custom properties of up to limit
+// of the workspace's most recently updated companies.
+func (r *CRMCompanyRepository) ListFilterSources(ctx context.Context, workspaceID string, limit int) ([]model.CRMCompanyFilterSource, error) {
+	var sources []model.CRMCompanyFilterSource
+	if err := r.db.WithContext(ctx).
+		Model(&model.CRMCompany{}).
+		Select("industry", "custom_properties").
+		Where("workspace_id = ?", workspaceID).
+		Order("updated_at DESC").
+		Limit(limit).
+		Find(&sources).Error; err != nil {
+		return nil, fmt.Errorf("list company filter sources: %w", err)
+	}
+	return sources, nil
+}

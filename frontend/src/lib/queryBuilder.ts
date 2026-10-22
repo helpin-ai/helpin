@@ -15,7 +15,9 @@ export type QueryFilterOperator =
   | 'after'
   | 'on_or_before'
   | 'on_or_after'
-  | 'between';
+  | 'between'
+  | 'is_any_of'
+  | 'is_none_of';
 
 export type QueryFilterFieldType = 'text' | 'enum' | 'member' | 'date' | 'number';
 
@@ -61,6 +63,8 @@ export const QUERY_FILTER_OPERATOR_LABELS: Record<QueryFilterOperator, string> =
   on_or_before: 'is on or before',
   on_or_after: 'is on or after',
   between: 'is between',
+  is_any_of: 'is any of',
+  is_none_of: 'is none of',
 };
 
 const TEXT_OPERATORS: QueryFilterOperator[] = [
@@ -119,6 +123,14 @@ export function operatorUsesRange(operator: QueryFilterOperator): boolean {
   return operator === 'between';
 }
 
+/**
+ * is_any_of and is_none_of carry a value list. They come from option filters such as
+ * the company list's, not offered in the operator builder's default menus.
+ */
+export function operatorUsesValueList(operator: QueryFilterOperator): boolean {
+  return operator === 'is_any_of' || operator === 'is_none_of';
+}
+
 export function getDefaultOperator(field: QueryBuilderFieldDefinition): QueryFilterOperator {
   return getOperatorsForField(field)[0];
 }
@@ -132,6 +144,9 @@ export function isQueryFilterRuleComplete(rule: QueryFilterRule): boolean {
   }
   if (operatorUsesRange(rule.operator)) {
     return !!rule.values?.[0] && !!rule.values?.[1];
+  }
+  if (operatorUsesValueList(rule.operator)) {
+    return (rule.values?.length ?? 0) > 0;
   }
   return !!rule.value;
 }
@@ -148,7 +163,7 @@ export function normalizeQueryFilterGroup(group?: QueryFilterGroup | null): Quer
         operator: rule.operator,
       };
 
-      if (operatorUsesRange(rule.operator)) {
+      if (operatorUsesRange(rule.operator) || operatorUsesValueList(rule.operator)) {
         normalized.values = (rule.values ?? []).map((value) => value.trim()).filter(Boolean);
       } else if (rule.value != null) {
         const value = rule.value.trim();

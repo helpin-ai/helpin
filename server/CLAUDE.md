@@ -229,10 +229,12 @@ db.Order(userInput + " ASC").Find(&users)
 - For rule-builder style filtering, use a shared query-builder package around GORM instead of screen-specific condition code scattered across handlers and repositories
 - Keep entity field mappings in separate files from the generic query-builder implementation so future lists can reuse the same operator engine
 - Canonical operators:
-  `is`, `is_not`, `contains`, `not_contains`, `starts_with`, `ends_with`, `is_empty`, `is_not_empty`, `on`, `before`, `after`, `on_or_before`, `on_or_after`, `between`
+  `is`, `is_not`, `contains`, `not_contains`, `starts_with`, `ends_with`, `is_empty`, `is_not_empty`, `on`, `before`, `after`, `on_or_before`, `on_or_after`, `between`, `is_any_of`, `is_none_of`
 - Operator conventions:
   text comparisons are case-insensitive
-  enum/id/member fields allow only exact-match and empty operators
+  enum/id/member fields allow only exact-match and empty operators, plus `is_any_of` and `is_none_of`; empty checks on id fields compile to `IS NULL`, since UUID columns cannot compare with `''`
+  `is_any_of` / `is_none_of` take `values` (1–50); `is_none_of` also matches records without a value; a field with an `ElementSource` (such as a JSON list custom property) also matches list elements
+  a field with a `NumericExpression` accepts `gt`, `gte`, `lt`, `lte`, and `between`; the expression must yield NULL for values that do not parse (never fail the query) and must not contain a literal `?`, which GORM binds as a parameter
   date fields allow date comparisons and empty operators
   `between` requires exactly two values
   `is_empty` and `is_not_empty` carry no value payload

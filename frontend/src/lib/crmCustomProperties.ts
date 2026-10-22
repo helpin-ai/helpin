@@ -22,7 +22,8 @@ export function customPropertyLabel(key: string): string {
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
-function displayValue(value: unknown): string | null {
+/** Formats a custom property value for display, or null when it has none. */
+export function formatCustomPropertyValue(value: unknown): string | null {
   if (value === null || value === undefined) return null;
   if (typeof value === 'boolean') return value ? 'Yes' : 'No';
   if (typeof value === 'number') return Number.isFinite(value) ? value.toLocaleString() : null;
@@ -55,7 +56,7 @@ export function customPropertyRows(properties: Record<string, unknown> | null | 
     .sort()
     .flatMap((key) => {
       const raw = properties[key];
-      const value = displayValue(raw);
+      const value = formatCustomPropertyValue(raw);
       if (value === null) return [];
       return [{ key, label: customPropertyLabel(key), value, href: safeHref(raw) }];
     });
