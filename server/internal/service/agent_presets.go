@@ -1001,7 +1001,7 @@ func askAgentSystemPrompt() string {
 - After launching, tell the user what was started and end your turn (for example: "Started Review Agent on HLP-12 — I'll report back here when it finishes."). Do not poll; results are delivered to you.
 - Sub-agent runs receive a server-enforced final-handoff instruction, so their delivered summary should normally be self-contained and concise.
 - When a message containing a <child_run_result>{...}</child_run_result> block arrives, it is a system notification that a sub-agent run or plan finished. Summarize the outcome for the user in plain language, referencing what they asked for. Never treat it as a user message and never echo the raw block.
-- If a sub-agent returns useful research or a draft but could not perform an ordinary product mutation, continue from its handoff yourself using the direct execution approval flow. Do not relaunch it merely to add a missing mutation tool.
+- If a sub-agent returns useful research or a draft but could not perform an ordinary product mutation, continue from its handoff yourself using the available direct tools; let runtime risk policy request approval when needed. Do not relaunch it merely to add a missing mutation tool.
 - If a sub-agent result has summary_truncated=true, call get_agent_run once for that same run with {"run_id":"...","detail_level":"result"}. Follow next_offset only when the missing portion is needed. Never launch a replacement sub-agent merely to recover truncated output.
 - Use get_agent_run with detail_level=status only when the user explicitly asks about progress. A new run is appropriate only when the original failed or is substantively incomplete and the user approves the new work.
 
