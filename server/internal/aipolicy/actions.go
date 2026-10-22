@@ -120,7 +120,7 @@ func coverageChatAction(key, label string) Action {
 		DefaultProvider: "anthropic", DefaultModel: "claude-sonnet-4-6",
 		AllowedModels: defaultChatModels(),
 		Fallbacks:     []Route{{Provider: "openrouter", Model: "openai/gpt-5.6-luna"}},
-		Timeout:       45 * time.Second, MaxInputTokens: 32000, MaxOutputTokens: 1800,
+		Timeout:       45 * time.Second, MaxInputTokens: 32000, MaxOutputTokens: 4000,
 		MaxReasoningTokens: 0, RetryClass: RetryTransient, Autonomy: AutonomyAnalyze,
 		DataClass: DataClassCustomerContent, Chargeable: true,
 	}

@@ -212,3 +212,36 @@ func TestCoverageWorkspaceAnalysisWorkflow_ExplicitReanalysisReachesAnalyzer(t *
 		t.Fatalf("missing reassessment flag: %+v", analyzer.reanalysisRequests)
 	}
 }
+
+type timeoutCapturingAnalyzer struct {
+	fakeCoverageDailyAnalyzer
+	heartbeatTimeout time.Duration
+	deadline         time.Time
+	startedAt        time.Time
+}
+
+func (a *timeoutCapturingAnalyzer) RunWorkspaceDailyAnalysis(ctx context.Context, workspaceID string, windowStart, windowEnd time.Time) error {
+	info := activity.GetInfo(ctx)
+	a.heartbeatTimeout, a.deadline, a.startedAt = info.HeartbeatTimeout, info.Deadline, info.StartedTime
+	return nil
+}
+
+func TestCoverageWorkspaceAnalysisWorkflow_LongRunWithHeartbeat(t *testing.T) {
+	suite := &testsuite.WorkflowTestSuite{}
+	env := suite.NewTestWorkflowEnvironment()
+	analyzer := &timeoutCapturingAnalyzer{}
+	activities := NewCoverageAnalysisActivities(analyzer)
+	env.RegisterActivityWithOptions(activities.RunWorkspaceAnalysisActivity, activity.RegisterOptions{Name: CoverageRunWorkspaceAnalysisActivityName})
+
+	env.ExecuteWorkflow(CoverageWorkspaceAnalysisWorkflow, CoverageWorkspaceAnalysisInput{WorkspaceID: "ws-1"})
+
+	if err := env.GetWorkflowError(); err != nil {
+		t.Fatal(err)
+	}
+	if analyzer.heartbeatTimeout != CoverageAnalysisHeartbeatTimeout {
+		t.Fatalf("heartbeat timeout = %s, want %s", analyzer.heartbeatTimeout, CoverageAnalysisHeartbeatTimeout)
+	}
+	if budget := analyzer.deadline.Sub(analyzer.startedAt); budget < time.Hour {
+		t.Fatalf("workspace analysis budget = %s, want at least an hour", budget)
+	}
+}

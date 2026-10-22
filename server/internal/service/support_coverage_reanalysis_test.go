@@ -64,22 +64,26 @@ func (c *reanalysisStatusClient) DescribeWorkflowExecution(ctx context.Context, 
 func TestCoverageReanalysisStatusSurvivesReloadAndIsWorkspaceScoped(t *testing.T) {
 	client := &reanalysisStatusClient{status: enums.WORKFLOW_EXECUTION_STATUS_RUNNING}
 	svc := NewSupportCoverageV2Service(nil).SetTemporalClient(client)
-	status, err := svc.reanalysisStatus(context.Background(), "ws-1")
+	state, err := svc.reanalysisState(context.Background(), "ws-1")
+	status := state.Status
 	if err != nil || status != "queued" || client.describedWorkspace != "coverage-reanalysis-ws-1" {
 		t.Fatalf("status %q, err %v", status, err)
 	}
 	client.activityState = enums.PENDING_ACTIVITY_STATE_STARTED
-	status, err = svc.reanalysisStatus(context.Background(), "ws-1")
+	state, err = svc.reanalysisState(context.Background(), "ws-1")
+	status = state.Status
 	if err != nil || status != "running" {
 		t.Fatalf("running status %q, err %v", status, err)
 	}
 	client.status = enums.WORKFLOW_EXECUTION_STATUS_COMPLETED
-	status, err = svc.reanalysisStatus(context.Background(), "ws-1")
+	state, err = svc.reanalysisState(context.Background(), "ws-1")
+	status = state.Status
 	if err != nil || status != "" {
 		t.Fatalf("completed status %q, err %v", status, err)
 	}
 	client.err = &serviceerror.NotFound{}
-	status, err = svc.reanalysisStatus(context.Background(), "ws-2")
+	state, err = svc.reanalysisState(context.Background(), "ws-2")
+	status = state.Status
 	if err != nil || status != "" {
 		t.Fatalf("first run %q, err %v", status, err)
 	}

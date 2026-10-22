@@ -1607,6 +1607,34 @@ func (r *SupportCoverageRepository) ListMergeSuggestionsForGap(ctx context.Conte
 	return suggestions, nil
 }
 
+// ListPendingMergeSuggestions lists a workspace's pending merge suggestions,
+// most similar first.
+func (r *SupportCoverageRepository) ListPendingMergeSuggestions(ctx context.Context, workspaceID string, limit int) ([]model.SupportCoverageGapMergeSuggestion, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 300
+	}
+	var suggestions []model.SupportCoverageGapMergeSuggestion
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND status = ?", workspaceID, model.SupportCoverageMergeSuggestionStatusPending).
+		Order("similarity_score DESC, created_at ASC").
+		Limit(limit).
+		Find(&suggestions).Error; err != nil {
+		return nil, fmt.Errorf("list pending merge suggestions: %w", err)
+	}
+	return suggestions, nil
+}
+
+// CountPendingMergeSuggestions counts suggestions still waiting for a person.
+func (r *SupportCoverageRepository) CountPendingMergeSuggestions(ctx context.Context, workspaceID string) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&model.SupportCoverageGapMergeSuggestion{}).
+		Where("workspace_id = ? AND status = ?", workspaceID, model.SupportCoverageMergeSuggestionStatusPending).
+		Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count pending merge suggestions: %w", err)
+	}
+	return count, nil
+}
+
 func (r *SupportCoverageRepository) GetMergeSuggestion(ctx context.Context, workspaceID, suggestionID string) (*model.SupportCoverageGapMergeSuggestion, error) {
 	var suggestion model.SupportCoverageGapMergeSuggestion
 	if err := r.db.WithContext(ctx).

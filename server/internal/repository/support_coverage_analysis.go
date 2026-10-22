@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -136,7 +137,13 @@ func (r *SupportCoverageAnalysisRepository) RefreshConversationAnalysis(ctx cont
 	if err != nil {
 		return err
 	}
-	analysis.ID = existing.ID
+	return r.replaceConversationAnalysis(ctx, existing.ID, analysis)
+}
+
+// replaceConversationAnalysis overwrites a stored analysis in place, keeping
+// its identity, and clears the embedding so the materializer recomputes it.
+func (r *SupportCoverageAnalysisRepository) replaceConversationAnalysis(ctx context.Context, existingID string, analysis *model.SupportCoverageConversationAnalysis) error {
+	analysis.ID = existingID
 	if analysis.RawOutput == nil {
 		analysis.RawOutput = []byte("{}")
 	}
@@ -144,11 +151,11 @@ func (r *SupportCoverageAnalysisRepository) RefreshConversationAnalysis(ctx cont
 		analysis.MaterializationMetadata = []byte("{}")
 	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&model.SupportCoverageConversationAnalysis{}).Where("workspace_id = ? AND id = ?", analysis.WorkspaceID, existing.ID).
+		if err := tx.Model(&model.SupportCoverageConversationAnalysis{}).Where("workspace_id = ? AND id = ?", analysis.WorkspaceID, existingID).
 			Select("*").Omit("id", "workspace_id", "conversation_id", "transcript_hash", "analyzer_version", "created_at", "embedding").Updates(analysis).Error; err != nil {
 			return err
 		}
-		return tx.Model(&model.SupportCoverageConversationAnalysis{}).Where("workspace_id = ? AND id = ?", analysis.WorkspaceID, existing.ID).UpdateColumn("embedding", nil).Error
+		return tx.Model(&model.SupportCoverageConversationAnalysis{}).Where("workspace_id = ? AND id = ?", analysis.WorkspaceID, existingID).UpdateColumn("embedding", nil).Error
 	})
 }
 
@@ -169,6 +176,12 @@ func (r *SupportCoverageAnalysisRepository) RecordConversationAnalysis(ctx conte
 			analysis.WorkspaceID, analysis.ConversationID, analysis.TranscriptHash, analysis.AnalyzerVersion).
 		First(&existing).Error
 	if err == nil {
+		// A retried conversation that now succeeds replaces its earlier failure;
+		// otherwise the first stored result stands.
+		if existing.Status == model.SupportCoverageConversationAnalysisStatusFailed &&
+			analysis.Status != model.SupportCoverageConversationAnalysisStatusFailed {
+			return r.replaceConversationAnalysis(ctx, existing.ID, analysis)
+		}
 		return nil
 	}
 	if err != gorm.ErrRecordNotFound {
@@ -188,7 +201,13 @@ func (r *SupportCoverageAnalysisRepository) RecordConversationAnalysis(ctx conte
 		analysis.MaterializationMetadata = []byte("{}")
 	}
 
-	if err := r.db.WithContext(ctx).Create(analysis).Error; err != nil {
+	// The embedding is computed later by the materializer. Go's zero value ""
+	// is not a valid pgvector literal, so leave the column NULL until then.
+	insert := r.db.WithContext(ctx)
+	if strings.TrimSpace(analysis.Embedding) == "" {
+		insert = insert.Omit("Embedding")
+	}
+	if err := insert.Create(analysis).Error; err != nil {
 		var raceExisting model.SupportCoverageConversationAnalysis
 		if findErr := r.db.WithContext(ctx).
 			Where("workspace_id = ? AND conversation_id = ? AND transcript_hash = ? AND analyzer_version = ?",
@@ -221,17 +240,20 @@ func (r *SupportCoverageAnalysisRepository) SetConversationAnalysisGap(ctx conte
 	return nil
 }
 
-func (r *SupportCoverageAnalysisRepository) ListUnmaterializedGapAnalysesForRun(ctx context.Context, workspaceID, runID string, limit int) ([]model.SupportCoverageConversationAnalysis, error) {
-	if workspaceID == "" || runID == "" {
-		return nil, fmt.Errorf("workspace_id and run_id are required")
+// ListUnmaterializedGapAnalyses lists analysed gaps not yet attached to a gap,
+// across runs. Findings from retried or interrupted runs would otherwise
+// never become gaps.
+func (r *SupportCoverageAnalysisRepository) ListUnmaterializedGapAnalyses(ctx context.Context, workspaceID string, limit int) ([]model.SupportCoverageConversationAnalysis, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
 	}
 	if limit <= 0 || limit > 1000 {
 		limit = 1000
 	}
 	var analyses []model.SupportCoverageConversationAnalysis
 	if err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND run_id = ? AND has_gap = ? AND gap_id IS NULL AND status = ?",
-			workspaceID, runID, true, model.SupportCoverageConversationAnalysisStatusAnalyzed).
+		Where("workspace_id = ? AND has_gap = ? AND gap_id IS NULL AND status = ?",
+			workspaceID, true, model.SupportCoverageConversationAnalysisStatusAnalyzed).
 		Order("created_at ASC, id ASC").
 		Limit(limit).
 		Find(&analyses).Error; err != nil {
@@ -272,13 +294,20 @@ func (r *SupportCoverageAnalysisRepository) ListGapAnalysisEmbeddings(ctx contex
 	}
 	var analyses []model.SupportCoverageConversationAnalysis
 	if err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND gap_id = ? AND embedding <> ''", workspaceID, gapID).
+		// Comparing a pgvector column with '' is a type error in PostgreSQL.
+		Where("workspace_id = ? AND gap_id = ? AND embedding IS NOT NULL", workspaceID, gapID).
 		Order("created_at DESC, id DESC").
 		Limit(limit).
 		Find(&analyses).Error; err != nil {
 		return nil, fmt.Errorf("list gap analysis embeddings: %w", err)
 	}
-	return analyses, nil
+	embedded := analyses[:0]
+	for _, analysis := range analyses {
+		if strings.TrimSpace(analysis.Embedding) != "" {
+			embedded = append(embedded, analysis)
+		}
+	}
+	return embedded, nil
 }
 
 func (r *SupportCoverageAnalysisRepository) AlreadyAnalyzedConversation(ctx context.Context, workspaceID, conversationID, transcriptHash, analyzerVersion string) (bool, error) {

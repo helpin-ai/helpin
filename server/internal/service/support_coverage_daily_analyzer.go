@@ -37,6 +37,10 @@ const (
 	coverageAnalysisWorkspaceLimit          = 1000
 	coverageAnalysisConversationConcurrency = 4
 	coverageAnalysisCandidatePageSize       = 25
+	// Leave room for models that reason before answering; a reply cut short
+	// by the limit is unreadable JSON.
+	coverageAnalyzeMaxTokens = 4000
+	coverageRefineMaxTokens  = 3000
 	// Coverage knowledge matching uses reciprocal-rank fusion scores, not
 	// cosine scores. A top lexical-only hit is ~0.016 and a top lexical+vector
 	// hit is ~0.033, so keep this floor on that scale.
@@ -166,6 +170,7 @@ type SupportCoverageDailyAnalyzer struct {
 	contentSourceRepo *repository.SupportContentSourceRepository
 	temporalClient    tclient.Client
 	rolloutPolicy     *CoverageRolloutPolicy
+	duplicateChecker  coverageDuplicateChecker
 }
 
 func NewSupportCoverageDailyAnalyzer(llmProvider llm.Provider, providerName, modelName string) *SupportCoverageDailyAnalyzer {
@@ -511,7 +516,9 @@ func (s *SupportCoverageDailyAnalyzer) RunWorkspaceDailyAnalysis(ctx context.Con
 		}
 		candidateCursor = nextCursor
 	}
-	materialized, err := s.materializeRunFindings(ctx, workspaceID, run.ID)
+	// Materialize every pending finding, including those recorded by retried
+	// attempts in earlier runs.
+	materialized, err := s.materializePendingFindings(ctx, workspaceID)
 	if err != nil {
 		s.markCoverageAnalysisRunFailed(ctx, run.ID, err)
 		return err
@@ -519,21 +526,22 @@ func (s *SupportCoverageDailyAnalyzer) RunWorkspaceDailyAnalysis(ctx context.Con
 	if materialized != nil && gapCount == 0 {
 		gapCount = materialized.FindingsScanned
 	}
-	if len(itemErrors) > 0 {
-		joined := errors.Join(itemErrors...)
-		s.markCoverageAnalysisRunFailed(ctx, run.ID, joined)
-		if s.coverageV2Repo != nil && v2BatchID != "" {
-			_ = s.coverageV2Repo.CompleteBatch(ctx, v2BatchID, model.CoverageBatchPartialFailed, conversationCount, conversationCount-len(itemErrors), len(itemErrors), 0, model.CoverageFailurePersistence, sanitizeAIActionFailure(joined))
-		}
-		return joined
-	}
+	// The run completes even when some conversations failed: each failure is a
+	// recorded attempt that the next run retries. Failing the run would retry
+	// every conversation and hold the cursor back.
 	if err := s.analysisRepo.CompleteRun(ctx, run.ID, conversationCount, gapCount); err != nil {
 		return err
 	}
-	if s.coverageV2Repo != nil && v2BatchID != "" {
-		return s.coverageV2Repo.CompleteBatch(ctx, v2BatchID, model.CoverageBatchSucceeded, conversationCount, conversationCount, 0, 0, "", "")
+	s.checkDuplicatesAfterRun(ctx, workspaceID, materialized)
+	if s.coverageV2Repo == nil || v2BatchID == "" {
+		return nil
 	}
-	return nil
+	if len(itemErrors) > 0 {
+		joined := errors.Join(itemErrors...)
+		slog.WarnContext(ctx, "coverage analysis finished with failed conversations", "workspace_id", workspaceID, "run_id", run.ID, "failed", len(itemErrors), "conversations", conversationCount)
+		return s.coverageV2Repo.CompleteBatch(ctx, v2BatchID, model.CoverageBatchPartialFailed, conversationCount, conversationCount-len(itemErrors), len(itemErrors), 0, coverageAnalysisFailureClass(itemErrors[0]), sanitizeAIActionFailure(joined))
+	}
+	return s.coverageV2Repo.CompleteBatch(ctx, v2BatchID, model.CoverageBatchSucceeded, conversationCount, conversationCount, 0, 0, "", "")
 }
 
 func (s *SupportCoverageDailyAnalyzer) markCoverageAnalysisRunFailed(ctx context.Context, runID string, runErr error) {
@@ -1080,6 +1088,11 @@ func (s *SupportCoverageDailyAnalyzer) AnalyzeConversation(ctx context.Context, 
 			"conversation_id": input.ConversationID,
 			"action":          "analyze",
 		},
+		// An empty, truncated or unparseable reply moves on to the fallback
+		// model instead of failing the conversation.
+		RequireComplete:    true,
+		RetryInvalidOutput: true,
+		ValidateResponse:   validateCoverageJSONResponse[CoverageConversationAnalysisResult],
 		Chat: llm.ChatRequest{
 			SystemPrompt: prompt,
 			Messages: []llm.Message{{
@@ -1087,7 +1100,7 @@ func (s *SupportCoverageDailyAnalyzer) AnalyzeConversation(ctx context.Context, 
 				Content: string(inputJSON),
 			}},
 			Temperature: 0.1,
-			MaxTokens:   1800,
+			MaxTokens:   coverageAnalyzeMaxTokens,
 			JSONMode:    true,
 			JSONSchema:  schema,
 		},
@@ -1112,6 +1125,16 @@ func (s *SupportCoverageDailyAnalyzer) AnalyzeConversation(ctx context.Context, 
 		return nil, nil, fmt.Errorf("marshal normalized analyzer result: %w", err)
 	}
 	return &result, raw, nil
+}
+
+// validateCoverageJSONResponse rejects a reply that does not decode into T,
+// so the completion service can try the fallback model.
+func validateCoverageJSONResponse[T any](response *llm.ChatResponse) error {
+	var decoded T
+	if err := llm.UnmarshalResponse(response.Content, &decoded); err != nil {
+		return fmt.Errorf("unreadable model output: %w", err)
+	}
+	return nil
 }
 
 func validateActionableCoverageResult(result CoverageConversationAnalysisResult) error {
@@ -1241,6 +1264,9 @@ func (s *SupportCoverageDailyAnalyzer) RefineFixBundleWithKnowledge(ctx context.
 		WorkspaceID: metering.WorkspaceID, ActionKey: aipolicy.ActionSupportCoverageRefine,
 		FeatureKey:     BillingFeatureCoverageGapAnalysis,
 		IdempotencyKey: metering.IdempotencyKey, Metadata: metering.Metadata,
+		RequireComplete:    true,
+		RetryInvalidOutput: true,
+		ValidateResponse:   validateCoverageJSONResponse[CoverageFixBundleDecision],
 		Chat: llm.ChatRequest{
 			SystemPrompt: coverageFixBundleRefinementSystemPrompt(),
 			Messages: []llm.Message{{
@@ -1248,7 +1274,7 @@ func (s *SupportCoverageDailyAnalyzer) RefineFixBundleWithKnowledge(ctx context.
 				Content: string(payloadJSON),
 			}},
 			Temperature: 0.1,
-			MaxTokens:   1400,
+			MaxTokens:   coverageRefineMaxTokens,
 			JSONMode:    true,
 			JSONSchema:  coverageFixBundleDecisionJSONSchema(),
 		},

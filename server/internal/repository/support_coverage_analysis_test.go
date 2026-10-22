@@ -235,7 +235,7 @@ func TestSupportCoverageAnalysisRepository_RecordConversationAnalysisIdempotentB
 	}
 }
 
-func TestSupportCoverageAnalysisRepository_ListUnmaterializedGapAnalysesForRun(t *testing.T) {
+func TestSupportCoverageAnalysisRepository_ListUnmaterializedGapAnalyses(t *testing.T) {
 	db := setupSupportCoverageAnalysisTestDB(t)
 	repo := NewSupportCoverageAnalysisRepository(db)
 	ctx := context.Background()
@@ -285,9 +285,9 @@ func TestSupportCoverageAnalysisRepository_ListUnmaterializedGapAnalysesForRun(t
 		}
 	}
 
-	items, err := repo.ListUnmaterializedGapAnalysesForRun(ctx, "ws-1", "run-1", 50)
+	items, err := repo.ListUnmaterializedGapAnalyses(ctx, "ws-1", 50)
 	if err != nil {
-		t.Fatalf("ListUnmaterializedGapAnalysesForRun: %v", err)
+		t.Fatalf("ListUnmaterializedGapAnalyses: %v", err)
 	}
 	if len(items) != 1 || items[0].ID != "analysis-open" {
 		t.Fatalf("unexpected unmaterialized analyses: %+v", items)

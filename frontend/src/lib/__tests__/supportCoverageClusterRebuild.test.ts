@@ -19,6 +19,7 @@ describe('support coverage cluster rebuild response handling', () => {
         gaps_scanned: 12,
         clusters_found: 3,
         auto_merged: 1,
+        kept_separate: 3,
         suggestions_created: 2,
         skipped: 0,
         embedding_status: 'complete',
@@ -26,7 +27,7 @@ describe('support coverage cluster rebuild response handling', () => {
         started_at: '2026-06-17T14:00:00Z',
         completed_at: '2026-06-17T14:00:02Z',
       }),
-    ).toBe('Cluster rebuild complete: scanned 12 gaps, 4 embeddings backfilled, 1 merged, 2 for review, 0 skipped.')
+    ).toBe('Duplicate check complete: 1 merged, 3 kept separate, 2 unclear pairs left as merge suggestions.')
   })
 
   it('formats embedding failure as a failed rebuild', () => {
@@ -43,6 +44,6 @@ describe('support coverage cluster rebuild response handling', () => {
         embedding_error: 'provider down',
         started_at: '2026-06-17T14:00:00Z',
       }),
-    ).toBe('Cluster rebuild failed: provider down')
+    ).toBe('Duplicate check failed: provider down')
   })
 })

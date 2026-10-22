@@ -681,6 +681,10 @@ func main() {
 	}
 	jevDecisions.SetMetrics(metrics)
 	supportCoverageDailyAnalyzer.SetJevDecisions(jevDecisions)
+	supportCoverageDailyAnalyzer.SetDuplicateChecker(
+		service.NewSupportCoverageClusterRebuildService(supportCoverageRepo, coverageEmbeddingProvider, cfg.OpenAIEmbeddingModel).
+			SetNeedJudge(llmProvider, jevDecisions),
+	)
 	commandService.SetJevDecisions(jevDecisions)
 	ruleEngine.SetJevDecisions(jevDecisions)
 	var meetingProcessor *service.CRMMeetingProcessingService
