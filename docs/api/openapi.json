@@ -866,6 +866,301 @@
         "x-helpin-toolset": "crm"
       }
     },
+    "/crm/associations": {
+      "get": {
+        "description": "List a bounded set of associations for one existing workspace object.\n\n**Required scope:** `helpin.crm.read`.",
+        "operationId": "listCrmAssociations",
+        "parameters": [
+          {
+            "description": "Maximum number of results. Defaults to 50, max 100.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Object ID whose associations should be listed.",
+            "in": "query",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "object_type",
+            "required": true,
+            "schema": {
+              "enum": [
+                "contact",
+                "company",
+                "deal",
+                "epic",
+                "task",
+                "support_conversation"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "description": "The result. Its shape depends on the resource; fields match what the Helpin app shows."
+                    },
+                    "links": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Deep links into the Helpin app.",
+                      "type": "object"
+                    },
+                    "summary": {
+                      "description": "A short human-readable description of the outcome.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "List associations for an object",
+        "tags": [
+          "CRM"
+        ],
+        "x-helpin-mcp-tool": "list_crm_associations",
+        "x-helpin-scope": "helpin.crm.read",
+        "x-helpin-toolset": "crm"
+      },
+      "post": {
+        "description": "Create a safe association between two existing objects in the current workspace.\n\n**Required scope:** `helpin.crm.write`. Write operations are unavailable to read-only tokens.",
+        "operationId": "linkCrmObjects",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "association_label": {
+                    "maxLength": 100,
+                    "type": "string"
+                  },
+                  "from_object_id": {
+                    "description": "Existing source object ID.",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "from_object_type": {
+                    "enum": [
+                      "contact",
+                      "company",
+                      "deal",
+                      "epic",
+                      "task",
+                      "support_conversation"
+                    ],
+                    "type": "string"
+                  },
+                  "to_object_id": {
+                    "description": "Existing destination object ID.",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "to_object_type": {
+                    "enum": [
+                      "contact",
+                      "company",
+                      "deal",
+                      "epic",
+                      "task",
+                      "support_conversation"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "from_object_id",
+                  "from_object_type",
+                  "to_object_id",
+                  "to_object_type"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "description": "The result. Its shape depends on the resource; fields match what the Helpin app shows."
+                    },
+                    "links": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Deep links into the Helpin app.",
+                      "type": "object"
+                    },
+                    "summary": {
+                      "description": "A short human-readable description of the outcome.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Link two objects",
+        "tags": [
+          "CRM"
+        ],
+        "x-helpin-mcp-tool": "link_crm_objects",
+        "x-helpin-scope": "helpin.crm.write",
+        "x-helpin-toolset": "crm"
+      }
+    },
+    "/crm/associations/{association_id}": {
+      "delete": {
+        "description": "Remove one existing CRM association by ID without deleting either linked object.\n\n**Required scope:** `helpin.crm.write`. Write operations are unavailable to read-only tokens.",
+        "operationId": "unlinkCrmAssociation",
+        "parameters": [
+          {
+            "description": "Existing object ID.",
+            "in": "path",
+            "name": "association_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "description": "The result. Its shape depends on the resource; fields match what the Helpin app shows."
+                    },
+                    "links": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Deep links into the Helpin app.",
+                      "type": "object"
+                    },
+                    "summary": {
+                      "description": "A short human-readable description of the outcome.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Remove an association",
+        "tags": [
+          "CRM"
+        ],
+        "x-helpin-mcp-tool": "unlink_crm_association",
+        "x-helpin-scope": "helpin.crm.write",
+        "x-helpin-toolset": "crm"
+      }
+    },
     "/crm/companies": {
       "get": {
         "description": "List a bounded set of CRM companies in the current workspace, with their custom properties. Use filter to segment on native fields or custom_properties.\u003ckey\u003e.\n\n**Required scope:** `helpin.crm.read`.",
@@ -1627,6 +1922,107 @@
         "x-helpin-toolset": "crm"
       }
     },
+    "/crm/contacts/{contact_id}/primary-company": {
+      "put": {
+        "description": "Set an existing company as the primary company for an existing contact in the current workspace.\n\n**Required scope:** `helpin.crm.write`. Write operations are unavailable to read-only tokens.",
+        "operationId": "setPrimaryContactCompany",
+        "parameters": [
+          {
+            "description": "Existing CRM contact ID.",
+            "in": "path",
+            "name": "contact_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "company_id": {
+                    "description": "Existing CRM company ID.",
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "company_id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "description": "The result. Its shape depends on the resource; fields match what the Helpin app shows."
+                    },
+                    "links": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Deep links into the Helpin app.",
+                      "type": "object"
+                    },
+                    "summary": {
+                      "description": "A short human-readable description of the outcome.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Set a contact's primary company",
+        "tags": [
+          "CRM"
+        ],
+        "x-helpin-mcp-tool": "set_primary_contact_company",
+        "x-helpin-scope": "helpin.crm.write",
+        "x-helpin-toolset": "crm"
+      }
+    },
     "/crm/deals": {
       "get": {
         "description": "List CRM deals in the workspace, optionally filtered by a case-insensitive name query. Returns deal name, stage, and amount.\n\n**Required scope:** `helpin.crm.read`.",
@@ -2339,6 +2735,174 @@
         ],
         "x-helpin-mcp-tool": "list_crm_pipelines",
         "x-helpin-scope": "helpin.crm.read",
+        "x-helpin-toolset": "crm"
+      }
+    },
+    "/crm/records/upsert": {
+      "post": {
+        "description": "Create or update up to 100 CRM companies or contacts in one call, matched on a stable key so reruns never duplicate. Companies match on domain (normalized), external_id, or id; contacts on email or id. Use fill_only to fill empty values without overwriting existing ones. Each record may carry a note, logged once as a note activity. Returns a result per record; one bad record does not stop the batch. Company fields: annual_revenue, description, domain, employee_count, external_id, headquarters, industry, linkedin_url, logo_url, name. Contact fields: country_code, country_name, description, email, first_name, job_title, last_name, lead_status, lifecycle_stage, linkedin_url, phone, primary_location, source.\n\n**Required scope:** `helpin.crm.write`. Write operations are unavailable to read-only tokens.",
+        "operationId": "upsertCrmRecords",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "fill_only": {
+                    "default": false,
+                    "description": "Only fill empty fields and missing custom properties; never overwrite.",
+                    "type": "boolean"
+                  },
+                  "match_on": {
+                    "description": "Key used to find existing records. Defaults to domain for companies and email for contacts.",
+                    "enum": [
+                      "domain",
+                      "external_id",
+                      "email",
+                      "id"
+                    ],
+                    "type": "string"
+                  },
+                  "mode": {
+                    "default": "upsert",
+                    "enum": [
+                      "upsert",
+                      "create_only",
+                      "update_only"
+                    ],
+                    "type": "string"
+                  },
+                  "object_type": {
+                    "enum": [
+                      "company",
+                      "contact"
+                    ],
+                    "type": "string"
+                  },
+                  "records": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "custom_properties": {
+                          "description": "snake_case keys with string, number, boolean, or string-list values, merged into existing properties. null removes a key. Filter on them with custom_properties.\u003ckey\u003e in list tools.",
+                          "type": "object"
+                        },
+                        "fields": {
+                          "additionalProperties": {
+                            "type": [
+                              "string",
+                              "number"
+                            ]
+                          },
+                          "description": "Native fields by name. Omit a field to leave it unchanged.",
+                          "type": "object"
+                        },
+                        "id": {
+                          "description": "Existing record ID. Required when match_on is id.",
+                          "type": "string"
+                        },
+                        "note": {
+                          "additionalProperties": false,
+                          "description": "Evidence to log as a note activity. An identical note already logged by this tool is not repeated.",
+                          "properties": {
+                            "body": {
+                              "maxLength": 20000,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "subject": {
+                              "maxLength": 500,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "body"
+                          ],
+                          "type": "object"
+                        },
+                        "ref": {
+                          "description": "Your identifier for this record, echoed in its result.",
+                          "maxLength": 200,
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "maxItems": 100,
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "object_type",
+                  "records"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "description": "The result. Its shape depends on the resource; fields match what the Helpin app shows."
+                    },
+                    "links": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Deep links into the Helpin app.",
+                      "type": "object"
+                    },
+                    "summary": {
+                      "description": "A short human-readable description of the outcome.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Create or update companies or contacts in bulk",
+        "tags": [
+          "CRM"
+        ],
+        "x-helpin-mcp-tool": "upsert_crm_records",
+        "x-helpin-scope": "helpin.crm.write",
         "x-helpin-toolset": "crm"
       }
     },

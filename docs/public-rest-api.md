@@ -18,7 +18,7 @@ same security model as [Helpin MCP](public-mcp-server.md).
 | Authorization | Workspace role (RBAC), product-module access, and rollout flags are re-checked on every call. |
 | Idempotency | `Idempotency-Key` header on writes; same key and body replays the stored result for 24 hours. |
 | Audit | Calls appear in **Settings → MCP access → Activity** with hashed request and result, never raw payloads. |
-| Rate limits | Shared per-principal limits (`AUTHENTICATED_RATE_LIMIT_PER_MINUTE`, `EXPENSIVE_RATE_LIMIT_PER_MINUTE`); writes and search count as expensive. `429` carries `Retry-After`. |
+| Rate limits | Shared per-principal limits (`AUTHENTICATED_RATE_LIMIT_PER_MINUTE`, `EXPENSIVE_RATE_LIMIT_PER_MINUTE`); writes and search count as expensive. Bulk writes are charged by size: `POST /crm/records/upsert` costs one unit per 10 records (a 100-record batch costs 10), counted even when the request is rejected. MCP calls share the same budget. `429` carries `Retry-After`. |
 
 ## Getting a token
 
@@ -39,7 +39,9 @@ curl -X POST https://api.helpin.ai/public/v1/tasks \
 ## Conventions
 
 - **Envelope.** Success: `{ "data": …, "summary": "…", "links": { … } }`. Error: `{ "error": { "code": "…", "message": "…" } }`.
-- **Reads** take filters as query parameters; arrays are comma separated (`owner_member_ids=a,b`). Unknown parameters are rejected.
+- **Reads** take filters as query parameters; arrays are comma separated (`owner_member_ids=a,b`). Unknown parameters are rejected. Structured filters, such as `filter` on `GET /crm/companies` and `GET /crm/contacts`, are one URL-encoded JSON object; see [Filtering CRM lists](public-mcp-server.md#filtering-crm-lists) for operators.
+- **Bulk CRM writes.** `POST /crm/records/upsert` creates or updates up to 100 companies or contacts matched on a stable key and returns a result per record; see [Importing and updating records](public-mcp-server.md#importing-and-updating-records-with-upsert_crm_records). Send an `Idempotency-Key` so a retried batch replays its result instead of writing twice.
+- **Associations.** `GET /crm/associations` lists an object's links, `POST /crm/associations` links two objects, `DELETE /crm/associations/{association_id}` removes a link without deleting either object, and `PUT /crm/contacts/{contact_id}/primary-company` sets a contact's primary company.
 - **Writes** take a JSON object body. IDs that appear in the URL must not be repeated in the body.
 - **Statuses.** `201` for creates, `202` for starting an agent run, `400` invalid input, `401` bad token, `403` not allowed, `404` not found, `409` conflicts (including idempotency reuse and locked or published documents), `422` valid but not applicable, `429` rate limited, `504` 30 second deadline.
 - Agent runs are asynchronous: `POST /agent-runs`, then poll `GET /agent-runs/{run_id}`.

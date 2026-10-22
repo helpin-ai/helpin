@@ -107,6 +107,11 @@ var Routes = []Route{
 	{"GET", "/crm/pipelines", "list_crm_pipelines", "CRM", "List pipelines", 0},
 	{"GET", "/crm/signals", "list_crm_signals", "CRM", "List signals", 0},
 	{"POST", "/crm/activities", "add_crm_activity", "CRM", "Log an activity", 0},
+	{"POST", "/crm/records/upsert", "upsert_crm_records", "CRM", "Create or update companies or contacts in bulk", 0},
+	{"GET", "/crm/associations", "list_crm_associations", "CRM", "List associations for an object", 0},
+	{"POST", "/crm/associations", "link_crm_objects", "CRM", "Link two objects", 0},
+	{"DELETE", "/crm/associations/{association_id}", "unlink_crm_association", "CRM", "Remove an association", 0},
+	{"PUT", "/crm/contacts/{contact_id}/primary-company", "set_primary_contact_company", "CRM", "Set a contact's primary company", 0},
 
 	// Support
 	{"GET", "/support/conversations", "list_support_conversations", "Support", "List conversations", 0},

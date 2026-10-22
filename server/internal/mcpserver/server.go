@@ -89,7 +89,7 @@ func (h *Handler) serverForRequest(r *http.Request) *mcp.Server {
 	for _, definition := range tools {
 		definition := definition
 		server.AddTool(protocolTool(definition), func(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			if !h.limiter.AllowTool(ctx, principal, definition) {
+			if !h.limiter.AllowTool(ctx, principal, definition, request.Params.Arguments) {
 				h.service.RecordProtocolEvent(ctx, principal, "rate_limit", "denied", "tool_class_limit")
 				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: "This Helpin tool is temporarily rate limited. Retry after 60 seconds."}}}, nil
 			}
@@ -353,11 +353,11 @@ func (l *requestLimiter) Allow(ctx context.Context, principal *model.MCPPrincipa
 	return l.shared.Allow(ctx, "mcp", principalRateKey(principal), false)
 }
 
-func (l *requestLimiter) AllowTool(ctx context.Context, principal *model.MCPPrincipal, tool service.MCPToolDefinition) bool {
+func (l *requestLimiter) AllowTool(ctx context.Context, principal *model.MCPPrincipal, tool service.MCPToolDefinition, arguments json.RawMessage) bool {
 	if !tool.Mutating && tool.Name != "search_workspace" {
 		return true
 	}
-	return l.shared.Allow(ctx, "mcp", principalRateKey(principal), true)
+	return l.shared.AllowN(ctx, "mcp", principalRateKey(principal), true, service.MCPToolRateCost(tool.Name, arguments))
 }
 
 // toolCallResult returns the result as structured content and, as the MCP

@@ -27,7 +27,7 @@ type Limiter struct {
 }
 
 var increment = redis.NewScript(`
-local count = redis.call('INCR', KEYS[1])
+local count = redis.call('INCRBY', KEYS[1], ARGV[1])
 redis.call('EXPIRE', KEYS[1], 120)
 return count
 `)
@@ -43,8 +43,17 @@ func New(client *redis.Client, config Config) *Limiter {
 // Allow checks one minute bucket; unavailable Redis fails open, with bounded logging.
 // Scope and subject must come from authentication, never a submitted token or workspace header.
 func (l *Limiter) Allow(ctx context.Context, scope, subject string, expensive bool) bool {
+	return l.AllowN(ctx, scope, subject, expensive, 1)
+}
+
+// AllowN is Allow for a request that counts as cost units, such as a bulk
+// write; costs below one count as one.
+func (l *Limiter) AllowN(ctx context.Context, scope, subject string, expensive bool, cost int64) bool {
 	if l == nil || l.client == nil || subject == "" {
 		return true
+	}
+	if cost < 1 {
+		cost = 1
 	}
 	limit, class := l.config.RequestsPerMinute, "requests"
 	if expensive {
@@ -57,7 +66,7 @@ func (l *Limiter) Allow(ctx context.Context, scope, subject string, expensive bo
 	key := fmt.Sprintf("auth:rl:%s:%s:%x:%d", scope, class, sha256.Sum256([]byte(subject)), now/60)
 	ctx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
 	defer cancel()
-	count, err := increment.Run(ctx, l.client, []string{key}).Int64()
+	count, err := increment.Run(ctx, l.client, []string{key}, cost).Int64()
 	if err != nil {
 		last := l.lastWarning.Load()
 		if now-last >= 60 && l.lastWarning.CompareAndSwap(last, now) {

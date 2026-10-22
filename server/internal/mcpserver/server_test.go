@@ -2,10 +2,12 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/helpin-ai/helpin/server/internal/ratelimit"
 	"github.com/redis/go-redis/v9"
+	"strings"
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -44,24 +46,24 @@ func TestRequestLimiterSharesActorBudgetAcrossTokens(t *testing.T) {
 		t.Fatal("token rotation bypassed budget")
 	}
 	search := service.MCPToolDefinition{Name: "search_workspace"}
-	if !limiter.AllowTool(ctx, principal, search) || limiter.AllowTool(ctx, principal, search) {
+	if !limiter.AllowTool(ctx, principal, search, nil) || limiter.AllowTool(ctx, principal, search, nil) {
 		t.Fatal("expensive ceiling not applied")
 	}
-	if !limiter.AllowTool(ctx, principal, service.MCPToolDefinition{Name: "get_task"}) {
+	if !limiter.AllowTool(ctx, principal, service.MCPToolDefinition{Name: "get_task"}, nil) {
 		t.Fatal("read used expensive ceiling")
 	}
 	principal.WorkspaceID = "ws2"
-	if !limiter.Allow(ctx, principal) || !limiter.AllowTool(ctx, principal, search) {
+	if !limiter.Allow(ctx, principal) || !limiter.AllowTool(ctx, principal, search, nil) {
 		t.Fatal("another workspace blocked")
 	}
 	principal.WorkspaceID = "ws1"
 	principal.UserID = ""
 	principal.ServicePrincipalID = "service1"
-	if !limiter.Allow(ctx, principal) || !limiter.AllowTool(ctx, principal, search) {
+	if !limiter.Allow(ctx, principal) || !limiter.AllowTool(ctx, principal, search, nil) {
 		t.Fatal("service principal blocked")
 	}
 	principal.ServicePrincipalID = "service2"
-	if !limiter.AllowTool(ctx, principal, search) {
+	if !limiter.AllowTool(ctx, principal, search, nil) {
 		t.Fatal("service principals share budget")
 	}
 }
@@ -105,5 +107,22 @@ func TestPrincipalForPathForcesReadOnlyEndpoint(t *testing.T) {
 	}
 	if got := principalForPath(principal, "/mcp"); got != principal || got.ReadOnly {
 		t.Fatalf("principalForPath(/mcp) = %#v, want the original writable principal", got)
+	}
+}
+
+func TestRequestLimiterWeighsBulkUpsertsBySize(t *testing.T) {
+	mini := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mini.Addr(), MaxRetries: -1})
+	t.Cleanup(func() { _ = client.Close() })
+	limiter := &requestLimiter{shared: ratelimit.New(client, ratelimit.Config{RequestsPerMinute: 100, ExpensivePerMinute: 10})}
+	principal := &model.MCPPrincipal{UserID: "u1", WorkspaceID: "ws1"}
+	upsert := service.MCPToolDefinition{Name: "upsert_crm_records", Mutating: true}
+	batch := json.RawMessage(`{"object_type":"company","records":[` + strings.TrimSuffix(strings.Repeat(`{"fields":{"name":"x"}},`, 100), ",") + `]}`)
+	ctx := context.Background()
+	if !limiter.AllowTool(ctx, principal, upsert, batch) {
+		t.Fatal("a 100-record batch should fit a 10-unit budget")
+	}
+	if limiter.AllowTool(ctx, principal, service.MCPToolDefinition{Name: "update_crm_company", Mutating: true}, nil) {
+		t.Fatal("a 100-record batch should spend the whole write budget")
 	}
 }
