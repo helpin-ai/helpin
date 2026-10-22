@@ -34,7 +34,6 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { GapDetailPane } from '@/components/support/coverage/GapDetailPane'
-import { PMFilterBar } from '@/components/pm/PMFilterControls'
 import { GapList } from '@/components/support/coverage/GapList'
 import { CoverageEmptyState } from '@/components/support/coverage/CoverageEmptyState'
 import { useCoverageInsightPages } from '@/hooks/queries/useCoverageInsightPages'
@@ -769,232 +768,191 @@ export function SupportCoveragePage() {
           </TabsList>
         </div>
         <TabsContent value="gaps" className="space-y-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <Select
-              size="sm"
-              value={kindFilter}
-              onValueChange={(value) => setKindFilter(value as KindFilterValue)}
-            >
-              <SelectTrigger
-                size="sm"
-                className="w-[150px]"
-                aria-label="Gap type"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent align="start">
-                {KIND_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    <span className="flex items-center gap-2">
-                      <span
-                        className={cn('h-2 w-2 rounded-full', option.dot)}
-                      />
-                      <span>{option.label}</span>
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {mergeSuggestionCount > 0 && !showMergeSuggestionsOnly && (
-              <button
-                type="button"
-                onClick={() => {
-                  setShowMergeSuggestionsOnly(true)
-                  setReviewEarlierDetections(false)
-                  setConversationFilter(null)
-                  setStatusFilter('open')
-                }}
-                className="ml-auto text-xs font-medium text-amber-700 underline-offset-4 transition-colors hover:text-amber-800 hover:underline dark:text-amber-300 dark:hover:text-amber-200"
-              >
-                Show {mergeSuggestionCount} merge{' '}
-                {mergeSuggestionCount === 1 ? 'suggestion' : 'suggestions'}
-              </button>
-            )}
-            <div
-              className={cn(
-                'flex items-center gap-1',
-                mergeSuggestionCount === 0 || showMergeSuggestionsOnly
-                  ? 'ml-auto'
-                  : '',
-              )}
-            >
-              {STATUS_FILTERS.map((status) => (
+          <Tabs value={kindFilter} onValueChange={(value) => setKindFilter(value as KindFilterValue)} className="gap-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="min-w-0 max-w-full overflow-x-auto">
+                <TabsList variant="quiet" aria-label="Gap type">
+                  {KIND_OPTIONS.map((option) => (
+                    <TabsTrigger key={option.value} value={option.value}>
+                      <span aria-hidden="true" className={cn('h-2 w-2 rounded-full', option.dot)} />
+                      {option.label}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </div>
+              {mergeSuggestionCount > 0 && !showMergeSuggestionsOnly && (
                 <button
-                  key={status}
-                  aria-pressed={statusFilter === status}
                   type="button"
-                  disabled={(showMergeSuggestionsOnly || reviewEarlierDetections) && status !== 'open'}
                   onClick={() => {
-                    setStatusFilter(status)
-                    if (status !== 'open') setShowMergeSuggestionsOnly(false)
+                    setShowMergeSuggestionsOnly(true)
+                    setReviewEarlierDetections(false)
+                    setConversationFilter(null)
+                    setStatusFilter('open')
                   }}
-                  className={cn(
-                    'border-b-2 border-transparent px-3 py-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-40',
-                    statusFilter === status
-                      ? 'border-quiet-text-primary font-semibold text-quiet-text-primary'
-                      : 'text-muted-foreground hover:bg-muted',
-                  )}
+                  className="ml-auto text-xs font-medium text-amber-700 underline-offset-4 transition-colors hover:text-amber-800 hover:underline dark:text-amber-300 dark:hover:text-amber-200"
                 >
-                  {GAP_STATUS_LABELS[status]}
+                  Show {mergeSuggestionCount} merge{' '}
+                  {mergeSuggestionCount === 1 ? 'suggestion' : 'suggestions'}
                 </button>
-              ))}
-            </div>
-          </div>
-
-          <PMFilterBar
-            definitions={[
-              {
-                key: 'kind',
-                label: 'Gap type',
-                singleSelect: true,
-                options: KIND_OPTIONS.filter(
-                  (option) => option.value !== 'all',
-                ).map((option) => ({
-                  value: option.value,
-                  label: option.label,
-                })),
-              },
-            ]}
-            values={{ kind: kindFilter === 'all' ? [] : [kindFilter] }}
-            visibleKeys={new Set(kindFilter === 'all' ? [] : ['kind'])}
-            onToggle={(_, value) =>
-              setKindFilter((current) =>
-                current === value ? 'all' : (value as KindFilterValue),
-              )
-            }
-            onRemove={() => setKindFilter('all')}
-            onClearAll={() => setKindFilter('all')}
-          />
-          {summary && ((canRebuildClusters && summary.total_open_gaps > 0) || (canReviewMergeSuggestions && (summary.unreviewed_detection_count ?? 0) > 0)) && (
-            <div className="flex flex-wrap items-center justify-end gap-3">
-              {canReviewMergeSuggestions && (summary.unreviewed_detection_count ?? 0) > 0 && !reviewEarlierDetections && (
-                <Button variant="ghost" size="sm" onClick={() => {
-                  setConversationFilter(null)
-                  setShowMergeSuggestionsOnly(false)
-                  setStatusFilter('open')
-                  setKindFilter('all')
-                  setReviewEarlierDetections(true)
-                }}>
-                  Review earlier detections ({summary.unreviewed_detection_count})
-                </Button>
               )}
-              {canRebuildClusters && latestClusterRun?.completed_at && (
-                <span className="text-xs text-quiet-text-tertiary">
-                  Last checked {timeAgo(latestClusterRun.completed_at)} ·{' '}
-                  {latestClusterRun.auto_merged} merged ·{' '}
-                  {latestClusterRun.suggestions_created} for review
-                </span>
-              )}
-              {canRebuildClusters && summary.total_open_gaps > 0 && <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={rebuildingClusters}
-                    onClick={handleRebuildClusters}
-                  >
-                    {rebuildingClusters
-                      ? 'Checking duplicates…'
-                      : 'Check for duplicate gaps'}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  Merge high-confidence duplicates and suggest uncertain matches
-                  for review.
-                </TooltipContent>
-              </Tooltip>}
-            </div>
-          )}
-          <div className="space-y-1">
-            {(reviewEarlierDetections || conversationId) && (
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted px-3 py-2 text-xs">
-                <span>{reviewEarlierDetections ? 'Review earlier detections. Classify relevant gaps or dismiss irrelevant ones.' : 'Open gaps from the selected conversation.'}</span>
-                <button type="button" className="font-medium underline-offset-4 hover:underline" onClick={() => {
-                  setReviewEarlierDetections(false)
-                  setConversationFilter(null)
-                }}>Back to all gaps</button>
-              </div>
-            )}
-            {showMergeSuggestionsOnly && (
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
-                <span>
-                  Viewing merge suggestions for open gaps. Review similar gaps
-                  and merge or keep separate.
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setShowMergeSuggestionsOnly(false)}
-                  className="font-medium underline-offset-4 hover:underline"
-                >
-                  Back to all gaps
-                </button>
-              </div>
-            )}
-            <div>
-              {loading ? (
-                <p
-                  role="status"
-                  className="py-10 text-sm text-quiet-text-tertiary"
-                >
-                  Loading coverage…
-                </p>
-              ) : loadError ? (
-                <div role="alert" className="py-8 space-y-3">
-                  <p>{loadError}</p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setReloadKey((key) => key + 1)}
-                  >
-                    Try again
-                  </Button>
-                </div>
-              ) : gaps.length === 0 && (reviewEarlierDetections || conversationId) ? (
-                <p className="py-10 text-sm text-quiet-text-tertiary">
-                  {reviewEarlierDetections ? 'No earlier detections waiting for review.' : 'No open gaps linked to this conversation.'}
-                </p>
-              ) : gaps.length === 0 ? (
-                <CoverageEmptyState
-                  status={statusFilter}
-                  filtered={kindFilter !== 'all'}
-                  mergeReview={showMergeSuggestionsOnly}
-                  hasHistory={Boolean(
-                    summary?.last_analyzed_at || summary?.total_evidence_count,
-                  )}
-                  wsSlug={wsSlug}
-                  onClearFilters={() => {
-                    setKindFilter('all')
-                    setShowMergeSuggestionsOnly(false)
-                  }}
-                  onShowOpen={() => setStatusFilter('open')}
-                />
-              ) : (
-                <GapList
-                  gaps={gaps}
-                  selectedGapId={selectedGapId ?? undefined}
-                  onSelect={openDetail}
-                />
-              )}
-              {!loading && !loadError && gaps.length > 0 && (
-                <div className="flex items-center justify-between px-1 pt-3">
-                  <span className="text-xs text-muted-foreground">
-                    Showing {gaps.length} of {total} gaps
-                  </span>
-                  {gaps.length < total && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={loadingMore}
-                      onClick={handleLoadMore}
+              <Select
+                size="sm"
+                value={statusFilter}
+                onValueChange={(value) => {
+                  const status = value as (typeof STATUS_FILTERS)[number]
+                  setStatusFilter(status)
+                  if (status !== 'open') setShowMergeSuggestionsOnly(false)
+                }}
+              >
+                <SelectTrigger size="sm" className="ml-auto w-[130px]" aria-label="Gap status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="end">
+                  {STATUS_FILTERS.map((status) => (
+                    <SelectItem
+                      key={status}
+                      value={status}
+                      disabled={(showMergeSuggestionsOnly || reviewEarlierDetections) && status !== 'open'}
                     >
-                      {loadingMore ? 'Loading…' : 'Load more'}
+                      {GAP_STATUS_LABELS[status]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <TabsContent value={kindFilter} className="space-y-4">
+              {summary && ((canRebuildClusters && summary.total_open_gaps > 0) || (canReviewMergeSuggestions && (summary.unreviewed_detection_count ?? 0) > 0)) && (
+                <div className="flex flex-wrap items-center justify-end gap-3">
+                  {canReviewMergeSuggestions && (summary.unreviewed_detection_count ?? 0) > 0 && !reviewEarlierDetections && (
+                    <Button variant="ghost" size="sm" onClick={() => {
+                      setConversationFilter(null)
+                      setShowMergeSuggestionsOnly(false)
+                      setStatusFilter('open')
+                      setKindFilter('all')
+                      setReviewEarlierDetections(true)
+                    }}>
+                      Review earlier detections ({summary.unreviewed_detection_count})
                     </Button>
                   )}
+                  {canRebuildClusters && latestClusterRun?.completed_at && (
+                    <span className="text-xs text-quiet-text-tertiary">
+                      Last checked {timeAgo(latestClusterRun.completed_at)} ·{' '}
+                      {latestClusterRun.auto_merged} merged ·{' '}
+                      {latestClusterRun.suggestions_created} for review
+                    </span>
+                  )}
+                  {canRebuildClusters && summary.total_open_gaps > 0 && <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={rebuildingClusters}
+                        onClick={handleRebuildClusters}
+                      >
+                        {rebuildingClusters
+                          ? 'Checking duplicates…'
+                          : 'Check for duplicate gaps'}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      Merge high-confidence duplicates and suggest uncertain matches
+                      for review.
+                    </TooltipContent>
+                  </Tooltip>}
                 </div>
               )}
-            </div>
-          </div>
+              <div className="space-y-1">
+                {(reviewEarlierDetections || conversationId) && (
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted px-3 py-2 text-xs">
+                    <span>{reviewEarlierDetections ? 'Review earlier detections. Classify relevant gaps or dismiss irrelevant ones.' : 'Open gaps from the selected conversation.'}</span>
+                    <button type="button" className="font-medium underline-offset-4 hover:underline" onClick={() => {
+                      setReviewEarlierDetections(false)
+                      setConversationFilter(null)
+                    }}>Back to all gaps</button>
+                  </div>
+                )}
+                {showMergeSuggestionsOnly && (
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                    <span>
+                      Viewing merge suggestions for open gaps. Review similar gaps
+                      and merge or keep separate.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowMergeSuggestionsOnly(false)}
+                      className="font-medium underline-offset-4 hover:underline"
+                    >
+                      Back to all gaps
+                    </button>
+                  </div>
+                )}
+                <div>
+                  {loading ? (
+                    <p
+                      role="status"
+                      className="py-10 text-sm text-quiet-text-tertiary"
+                    >
+                      Loading coverage…
+                    </p>
+                  ) : loadError ? (
+                    <div role="alert" className="py-8 space-y-3">
+                      <p>{loadError}</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setReloadKey((key) => key + 1)}
+                      >
+                        Try again
+                      </Button>
+                    </div>
+                  ) : gaps.length === 0 && (reviewEarlierDetections || conversationId) ? (
+                    <p className="py-10 text-sm text-quiet-text-tertiary">
+                      {reviewEarlierDetections ? 'No earlier detections waiting for review.' : 'No open gaps linked to this conversation.'}
+                    </p>
+                  ) : gaps.length === 0 ? (
+                    <CoverageEmptyState
+                      status={statusFilter}
+                      filtered={kindFilter !== 'all'}
+                      mergeReview={showMergeSuggestionsOnly}
+                      hasHistory={Boolean(
+                        summary?.last_analyzed_at || summary?.total_evidence_count,
+                      )}
+                      wsSlug={wsSlug}
+                      onClearFilters={() => {
+                        setKindFilter('all')
+                        setShowMergeSuggestionsOnly(false)
+                      }}
+                      onShowOpen={() => setStatusFilter('open')}
+                    />
+                  ) : (
+                    <GapList
+                      gaps={gaps}
+                      selectedGapId={selectedGapId ?? undefined}
+                      onSelect={openDetail}
+                    />
+                  )}
+                  {!loading && !loadError && gaps.length > 0 && (
+                    <div className="flex items-center justify-between px-1 pt-3">
+                      <span className="text-xs text-muted-foreground">
+                        Showing {gaps.length} of {total} gaps
+                      </span>
+                      {gaps.length < total && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={loadingMore}
+                          onClick={handleLoadMore}
+                        >
+                          {loadingMore ? 'Loading…' : 'Load more'}
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </TabsContent>
+          </Tabs>
         </TabsContent>
         <CoverageInsights
           topics={topicsV2}
