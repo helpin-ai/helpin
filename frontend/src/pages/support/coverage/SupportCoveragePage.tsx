@@ -689,6 +689,10 @@ export function SupportCoveragePage() {
     }
   }
 
+  const lastUpdatedAt = [summary?.last_analyzed_at, latestClusterRun?.completed_at]
+    .filter((timestamp): timestamp is string => !!timestamp && Number.isFinite(Date.parse(timestamp)))
+    .sort((a, b) => Date.parse(b) - Date.parse(a))[0]
+
   return (
     <QuietPageViewport contentClassName="space-y-5">
       <QuietPageHeader
@@ -710,7 +714,7 @@ export function SupportCoveragePage() {
           summary.new_gaps_this_week > 0 ||
           summary.gaps_fixed_this_week > 0 ||
           summary.total_evidence_count > 0 ||
-          summary.last_analyzed_at) && (
+          lastUpdatedAt) && (
           <div
             className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-quiet-text-tertiary"
             aria-label="Coverage summary"
@@ -739,8 +743,15 @@ export function SupportCoveragePage() {
               </strong>{' '}
               evidence records
             </span>
-            {summary.last_analyzed_at && (
-              <span>Last analyzed {timeAgo(summary.last_analyzed_at)}</span>
+            {lastUpdatedAt && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span tabIndex={0}>Last updated {timeAgo(lastUpdatedAt)}</span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Latest completed coverage analysis or duplicate-gap check.
+                </TooltipContent>
+              </Tooltip>
             )}
           </div>
         )}
@@ -836,7 +847,6 @@ export function SupportCoveragePage() {
                   )}
                   {canRebuildClusters && latestClusterRun?.completed_at && (
                     <span className="text-xs text-quiet-text-tertiary">
-                      Last checked {timeAgo(latestClusterRun.completed_at)} ·{' '}
                       {latestClusterRun.auto_merged} merged ·{' '}
                       {latestClusterRun.suggestions_created} for review
                     </span>
