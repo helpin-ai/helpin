@@ -706,7 +706,7 @@ func TestSupportSkillGuidesMixedConversations(t *testing.T) {
 	if !ok {
 		t.Fatal("expected support skill")
 	}
-	for _, expected := range []string{"Sales or evaluation", "Feedback or feature request", "simple language", "Do not use em dashes"} {
+	for _, expected := range []string{"workspace-specific support guidance", "documented coverage", "Background investigation context", "Internal follow-up recommendations"} {
 		if !strings.Contains(skill.Instructions, expected) {
 			t.Errorf("support skill missing %q", expected)
 		}
@@ -850,7 +850,7 @@ func TestSupportInvestigationPolicyReachesSavedAgents(t *testing.T) {
 	if !ok {
 		t.Fatal("missing support skill")
 	}
-	for name, prompt := range map[string]string{"default": echoSystemPrompt, "saved": saved, "skill": skill.Instructions} {
+	for name, prompt := range map[string]string{"default": echoSystemPrompt, "saved": saved} {
 		for _, required := range []string{"Do not launch repository research", "documented coverage", "Missing logs", "existing conversation context"} {
 			if !strings.Contains(prompt, required) {
 				t.Errorf("%s missing %q", name, required)
@@ -886,5 +886,22 @@ func TestSupportProgressPolicyReachesSavedAgents(t *testing.T) {
 	}
 	if !strings.Contains(echoSystemPrompt, supportProgressPolicy) {
 		t.Fatal("base Echo prompt missing progress policy")
+	}
+}
+
+func TestSupportWorkspaceResponsibilitiesReachEveryEcho(t *testing.T) {
+	for _, prompt := range []string{echoSystemPrompt, EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, "Saved instructions")} {
+		if !strings.Contains(prompt, supportWorkspacePolicy) {
+			t.Fatal("workspace boundary missing")
+		}
+	}
+	skill, _ := GetBuiltInSkill("support_triage_response")
+	for _, business := range []string{"ContentStudio", "mcp__cs_logs__", "Usermaven", "ContentPen"} {
+		if strings.Contains(echoSystemPrompt, business) || strings.Contains(skill.Instructions, business) {
+			t.Fatalf("global guidance contains %s", business)
+		}
+	}
+	if strings.Contains(skill.Instructions, "Every visitor turn") || strings.Contains(skill.Instructions, "## Turn contract") {
+		t.Fatal("workspace skill duplicates system mechanics")
 	}
 }

@@ -1,6 +1,8 @@
 package service
 
 import (
+	"crypto/md5"
+	"fmt"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/agentcontract"
@@ -100,6 +102,11 @@ func legacyPromptIsManaged(presetKey string, prompt *string) bool {
 	case model.AgentPresetCRMOperator:
 		return strings.Contains(normalized, "You are CRM Operator for Helpin.")
 	case model.AgentPresetSupportAgent:
+		// Exact fingerprints of shipped Echo snapshots; preserve genuinely custom prompts.
+		switch fmt.Sprintf("%x", md5.Sum([]byte(normalized))) {
+		case "ada05706bea90acef1adf58f002db0bc", "9ad52a24bf9bdfb3abccf94f7815c1d1", "1120b81959816c1e7fca0357134a6cbb", "e04eac8c4e60361a71070c2f816c6329", "97046fd449b2bfbc8c15b29f06fc85f0", "0ebc5ba8c65ad1925a62c908024820f8":
+			return true
+		}
 		if strings.Contains(normalized, "You are Support Agent for Helpin.") {
 			return true
 		}

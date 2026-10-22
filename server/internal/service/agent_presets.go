@@ -291,6 +291,16 @@ func applyBuiltInPresetInstructionMetadata(presets []model.AgentPresetDefinition
 }
 
 func workspacePresetDefinition(base model.AgentPresetDefinition, version model.WorkspaceAgentPresetVersion) model.AgentPresetDefinition {
+	// Old workspace preset copies can pin shipped Echo instructions even when
+	// the agent row is refreshed. Keep tools/model choices but follow the generic
+	// prompt for recognized product-owned snapshots; preserve custom wording.
+	if normalizePresetKey(version.FamilyKey) == model.AgentPresetSupportAgent && legacyPromptIsManaged(model.AgentPresetSupportAgent, version.SystemPrompt) {
+		version.SystemPrompt = nil
+		version.InstructionTemplateVersion = ""
+		version.InstructionPreamble = nil
+		version.InstructionSkills = nil
+	}
+
 	definition := base
 	definition.ID = &version.ID
 	definition.Key = normalizePresetKey(version.FamilyKey)
