@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"gorm.io/gorm"
@@ -22,8 +23,9 @@ func NewAIMessageProcessingRepository(db *gorm.DB) *AIMessageProcessingRepositor
 }
 
 // BeginAttempt tries to claim processing ownership for a source message.
-// Returns the record and true if the caller should proceed, false if already handled.
-func (r *AIMessageProcessingRepository) BeginAttempt(ctx context.Context, workspaceID, sourceMessageID, conversationID string) (*model.AIMessageProcessing, bool) {
+// Returns true for the claim owner, false for an existing owner or settled turn.
+// Database errors must reach the consumer so delivery is retried.
+func (r *AIMessageProcessingRepository) BeginAttempt(ctx context.Context, workspaceID, sourceMessageID, conversationID string) (*model.AIMessageProcessing, bool, error) {
 	var existing model.AIMessageProcessing
 	err := r.db.WithContext(ctx).Where("source_message_id = ?", sourceMessageID).First(&existing).Error
 
@@ -31,26 +33,32 @@ func (r *AIMessageProcessingRepository) BeginAttempt(ctx context.Context, worksp
 		// Record exists — check status.
 		switch existing.Status {
 		case "completed":
-			return &existing, false // already handled
+			return &existing, false, nil // already handled
 		case "processing":
 			// If updated_at is within 60s, another consumer owns it.
 			if time.Since(existing.UpdatedAt) < 60*time.Second {
-				return &existing, false
+				return &existing, false, nil
 			}
 			// Stale lock — reclaim.
+			previousUpdatedAt := existing.UpdatedAt
 			existing.Attempts++
 			existing.UpdatedAt = time.Now()
-			result := r.db.WithContext(ctx).Model(&model.AIMessageProcessing{}).Where("id = ? AND status = ? AND reply_message_id IS NULL", existing.ID, "processing").Updates(map[string]any{"attempts": existing.Attempts, "updated_at": existing.UpdatedAt})
-			return &existing, result.Error == nil && result.RowsAffected == 1
+			result := r.db.WithContext(ctx).Model(&model.AIMessageProcessing{}).Where("id = ? AND status = ? AND reply_message_id IS NULL", existing.ID, "processing").Where("updated_at = ?", previousUpdatedAt).Updates(map[string]any{"attempts": existing.Attempts, "updated_at": existing.UpdatedAt})
+			return &existing, result.Error == nil && result.RowsAffected == 1, result.Error
 		case "failed":
 			// Retry.
 			existing.Status = "processing"
+			previousUpdatedAt := existing.UpdatedAt
 			existing.Attempts++
 			existing.UpdatedAt = time.Now()
-			result := r.db.WithContext(ctx).Model(&model.AIMessageProcessing{}).Where("id = ? AND status = ? AND reply_message_id IS NULL", existing.ID, "failed").Updates(map[string]any{"status": "processing", "attempts": existing.Attempts, "updated_at": time.Now()})
-			return &existing, result.Error == nil && result.RowsAffected == 1
+			result := r.db.WithContext(ctx).Model(&model.AIMessageProcessing{}).Where("id = ? AND status = ? AND reply_message_id IS NULL", existing.ID, "failed").Where("updated_at = ?", previousUpdatedAt).Updates(map[string]any{"status": "processing", "attempts": existing.Attempts, "updated_at": existing.UpdatedAt})
+			return &existing, result.Error == nil && result.RowsAffected == 1, result.Error
 		}
-		return &existing, false
+		return &existing, false, nil
+	}
+
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, false, err
 	}
 
 	// No record — create one.
@@ -62,9 +70,9 @@ func (r *AIMessageProcessingRepository) BeginAttempt(ctx context.Context, worksp
 		Attempts:        1,
 	}
 	if err := r.db.WithContext(ctx).Create(&record).Error; err != nil {
-		return nil, false
+		return nil, false, err
 	}
-	return &record, true
+	return &record, true, nil
 }
 
 // MarkCompleted marks a processing record as completed with optional reply message ID and tokens.
@@ -342,5 +350,32 @@ func (r *AIMessageProcessingRepository) ListAcknowledgedOlderThan(ctx context.Co
 	}
 	var rows []model.AIMessageProcessing
 	err := r.db.WithContext(ctx).Where("status = ? AND updated_at < ? AND reply_message_id IS NULL", "waiting_for_result", cutoff).Order("updated_at ASC").Limit(limit).Find(&rows).Error
+	return rows, err
+}
+
+// FailAttempt releases only the claim that failed, never a newer owner or a
+// turn that already published a reply/progress or deferred to a running agent.
+func (r *AIMessageProcessingRepository) FailAttempt(ctx context.Context, row *model.AIMessageProcessing) error {
+	return r.db.WithContext(ctx).Model(&model.AIMessageProcessing{}).
+		Where("id = ? AND status = 'processing' AND reply_message_id IS NULL AND attempts = ?", row.ID, row.Attempts).
+		Updates(map[string]any{"status": "failed", "updated_at": time.Now()}).Error
+}
+
+// ListUnstartedOlderThan returns source references for pending conversations
+// without a run, including events never claimed by a consumer.
+func (r *AIMessageProcessingRepository) ListUnstartedOlderThan(ctx context.Context, cutoff time.Time, limit int) ([]model.AIMessageProcessing, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	var rows []model.AIMessageProcessing
+	err := r.db.WithContext(ctx).Table("support_conversations AS c").
+		Select("c.workspace_id, c.id AS conversation_id, m.id AS source_message_id").
+		Joins("JOIN support_messages m ON m.id = c.last_public_message_id AND m.workspace_id = c.workspace_id AND m.conversation_id = c.id").
+		Joins("LEFT JOIN ai_message_processing p ON p.source_message_id = m.id AND p.workspace_id = c.workspace_id AND p.conversation_id = c.id").
+		Where("m.sender_type = 'customer' AND m.deleted_at IS NULL AND m.created_at < ?", cutoff).
+		Where("p.id IS NULL OR (p.status IN ? AND p.updated_at < ? AND p.reply_message_id IS NULL)", []string{"processing", "failed", "deferred"}, cutoff).
+		Where("c.ai_active_run_id IS NULL AND c.ai_state = 'pending'").
+		Where("c.status = 'open' AND c.merged_into_id IS NULL AND c.anonymized_at IS NULL AND c.ai_paused_at IS NULL AND (c.human_takeover IS NULL OR c.human_takeover = false)").
+		Order("m.created_at ASC").Limit(limit).Find(&rows).Error
 	return rows, err
 }

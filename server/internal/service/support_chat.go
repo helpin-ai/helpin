@@ -89,7 +89,7 @@ func NewSupportChatService(
 // deterministic pre-gates, then start / resume / defer the conversation's
 // chat run. Errors bubble to the NATS consumer for retry; exhausted retries
 // escalate to a human (the caller's responsibility).
-func (s *SupportChatService) HandleVisitorMessage(ctx context.Context, workspaceID, conversationID string, msg *model.SupportMessage) error {
+func (s *SupportChatService) HandleVisitorMessage(ctx context.Context, workspaceID, conversationID string, msg *model.SupportMessage) (retErr error) {
 	if !supportAIMessageEligible(msg) {
 		return nil
 	}
@@ -161,10 +161,24 @@ func (s *SupportChatService) HandleVisitorMessage(ctx context.Context, workspace
 	}
 
 	// Idempotency: one turn per source message, ever.
-	processing, ok := s.processingRepo.BeginAttempt(ctx, workspaceID, msg.ID, conversationID)
+	processing, ok, err := s.processingRepo.BeginAttempt(ctx, workspaceID, msg.ID, conversationID)
+	if err != nil {
+		return fmt.Errorf("claim support message: %w", err)
+	}
 	if !ok {
 		return nil
 	}
+
+	defer func() {
+		if retErr == nil {
+			return
+		}
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if err := s.processingRepo.FailAttempt(cleanupCtx, processing); err != nil {
+			slog.ErrorContext(cleanupCtx, "support chat: release failed attempt", "workspace_id", workspaceID, "conversation_id", conversationID, "message_id", msg.ID, "error", err)
+		}
+	}()
 
 	// Per-conversation serialization.
 	lockKey := "support:ai:lock:" + conversationID

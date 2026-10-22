@@ -113,7 +113,7 @@ func TestSupportResearchAcknowledgmentKeepsTurnOpenForFinalAnswer(t *testing.T) 
 	if err != nil || row == nil || row.Status != "waiting_for_result" || row.ReplyMessageID != nil {
 		t.Fatalf("pending turn: %+v, %v", row, err)
 	}
-	if _, claimed := chat.processingRepo.BeginAttempt(ctx, "ws", "source", "conv"); claimed {
+	if _, claimed, _ := chat.processingRepo.BeginAttempt(ctx, "ws", "source", "conv"); claimed {
 		t.Fatal("redelivery reclaimed a waiting turn")
 	}
 	chat.OnSupportChatRunPaused(ctx, run)

@@ -281,7 +281,7 @@ func TestSupportSendReplyAfterGreetingDoesNotInferDissatisfaction(t *testing.T) 
 			if err := chat.conversationRepo.UpdateFields(ctx, conv.WorkspaceID, conv.ID, map[string]any{"last_public_message_id": message.ID}); err != nil {
 				t.Fatal(err)
 			}
-			claim, ok := chat.processingRepo.BeginAttempt(ctx, conv.WorkspaceID, message.ID, conv.ID)
+			claim, ok, _ := chat.processingRepo.BeginAttempt(ctx, conv.WorkspaceID, message.ID, conv.ID)
 			if !ok {
 				t.Fatal("could not claim customer turn")
 			}

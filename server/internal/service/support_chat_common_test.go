@@ -133,7 +133,7 @@ func setupSupportGreetingTest(t *testing.T) (*SupportChatService, *gorm.DB, *mod
 		t.Fatal(err)
 	}
 	processingRepo := repository.NewAIMessageProcessingRepository(db)
-	processing, ok := processingRepo.BeginAttempt(context.Background(), "ws", "source", "conv")
+	processing, ok, _ := processingRepo.BeginAttempt(context.Background(), "ws", "source", "conv")
 	if !ok {
 		t.Fatal("cannot claim greeting")
 	}
@@ -179,7 +179,7 @@ func TestSupportGreetingUsesLunaWithoutStartingAgent(t *testing.T) {
 	if row.Status != "completed" || derefString(row.ReplyMessageID) != reply.ID {
 		t.Fatalf("unsettled turn: %+v", row)
 	}
-	if _, again := svc.processingRepo.BeginAttempt(context.Background(), "ws", "source", "conv"); again {
+	if _, again, _ := svc.processingRepo.BeginAttempt(context.Background(), "ws", "source", "conv"); again {
 		t.Fatal("duplicate delivery reclaimed settled greeting")
 	}
 	current := readControlConversation(t, db)
