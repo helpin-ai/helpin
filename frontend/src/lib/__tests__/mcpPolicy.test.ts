@@ -5,6 +5,8 @@ import {
   hasMCPWriteGrant,
   hasMCPWriteScope,
   isMCPWriteScope,
+  serviceAccountScopes,
+  serviceAccountWriteScopes,
 } from '@/lib/mcpPolicy';
 
 const AVAILABLE_SCOPES = [
@@ -97,5 +99,35 @@ describe('MCP policy scope helpers', () => {
       readOnly: true,
       canRequestWrites: false,
     });
+  });
+});
+
+describe('service account scopes', () => {
+  const policy = {
+    enforce_read_only: false,
+    allowed_scopes: ['helpin.context.read', 'helpin.crm.read', 'helpin.crm.write', 'helpin.docs.read', 'helpin.docs.write', 'helpin.docs.publish', 'helpin.agents.read', 'helpin.agents.run'],
+  };
+
+  it('requests only read scopes by default', () => {
+    expect(serviceAccountScopes(policy, ['context', 'crm'], false)).toEqual(['helpin.context.read', 'helpin.crm.read', 'helpin.docs.read', 'helpin.agents.read']);
+  });
+
+  it('adds the allowed write scope for each selected toolset when updates are allowed', () => {
+    expect(serviceAccountScopes(policy, ['context', 'crm'], true)).toEqual([
+      'helpin.context.read', 'helpin.crm.read', 'helpin.docs.read', 'helpin.agents.read', 'helpin.crm.write',
+    ]);
+  });
+
+  it('never adds Help Center publishing or agent runs automatically', () => {
+    const scopes = serviceAccountScopes(policy, ['docs', 'agents'], true);
+    expect(scopes).toContain('helpin.docs.write');
+    expect(scopes).not.toContain('helpin.docs.publish');
+    expect(scopes).not.toContain('helpin.agents.run');
+  });
+
+  it('offers no write scopes when the policy enforces read-only or does not allow them', () => {
+    expect(serviceAccountWriteScopes({ ...policy, enforce_read_only: true }, ['crm'])).toEqual([]);
+    expect(serviceAccountWriteScopes({ enforce_read_only: false, allowed_scopes: ['helpin.crm.read'] }, ['crm'])).toEqual([]);
+    expect(serviceAccountWriteScopes(policy, ['context'])).toEqual([]);
   });
 });

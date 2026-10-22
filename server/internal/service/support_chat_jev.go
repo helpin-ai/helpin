@@ -45,6 +45,7 @@ func (s *SupportChatService) assessJevHandoff(ctx context.Context, conv *model.S
 	if err != nil {
 		return false, err
 	}
+	*settings = effectiveSupportAISettings(*settings, current)
 	if !shouldAutomaticallyProcessSupportAI(*settings) || !model.SupportAIReplyAllowed(*settings, current, msg) {
 		return true, nil
 	}

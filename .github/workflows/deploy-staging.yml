@@ -67,6 +67,10 @@ jobs:
           if echo "$CHANGED" | grep -qE '^help-center/|^packages/shared/src/docs-blocks\.css$'; then
             HELPCENTER=true
           fi
+          # The help center image also serves the customer portal built from frontend/.
+          if echo "$CHANGED" | grep -qE '^frontend/(src/|portal\.html$|vite\.portal\.config\.ts$|package\.json$)|^packages/(shared|support-core)/'; then
+            HELPCENTER=true
+          fi
           if echo "$CHANGED" | grep -qE '^(frontend/|packages/)'; then
             FRONTEND=true
           fi
@@ -178,41 +182,13 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      - name: Build and push server images
-        run: |
-          docker buildx build \
-            -f build-stg-server/server/Dockerfile \
-            --build-arg GO_BUILD_TAGS=ee \
-            --target api \
-            -t ${{ env.IMAGE_PREFIX }}/server:${{ needs.version.outputs.server_tag }} \
-            -t ${{ env.IMAGE_PREFIX }}/server:sha-${{ github.sha }} \
-            -t ${{ env.IMAGE_PREFIX }}/server:stage-latest \
-            --cache-from type=registry,ref=${{ env.IMAGE_PREFIX }}/server-buildcache:stage-api \
-            --cache-to type=registry,ref=${{ env.IMAGE_PREFIX }}/server-buildcache:stage-api,mode=max \
-            --push \
-            build-stg-server/server/
-          docker buildx build \
-            -f build-stg-server/server/Dockerfile \
-            --build-arg GO_BUILD_TAGS=ee \
-            --target temporal-worker \
-            -t ${{ env.IMAGE_PREFIX }}/temporal-worker:${{ needs.version.outputs.server_tag }} \
-            -t ${{ env.IMAGE_PREFIX }}/temporal-worker:sha-${{ github.sha }} \
-            -t ${{ env.IMAGE_PREFIX }}/temporal-worker:stage-latest \
-            --cache-from type=registry,ref=${{ env.IMAGE_PREFIX }}/server-buildcache:stage-temporal-worker \
-            --cache-to type=registry,ref=${{ env.IMAGE_PREFIX }}/server-buildcache:stage-temporal-worker,mode=max \
-            --push \
-            build-stg-server/server/
-          docker buildx build \
-            -f build-stg-server/server/Dockerfile \
-            --build-arg GO_BUILD_TAGS=ee \
-            --target migrate \
-            -t ${{ env.IMAGE_PREFIX }}/server-migrate:${{ needs.version.outputs.server_tag }} \
-            -t ${{ env.IMAGE_PREFIX }}/server-migrate:sha-${{ github.sha }} \
-            -t ${{ env.IMAGE_PREFIX }}/server-migrate:stage-latest \
-            --cache-from type=registry,ref=${{ env.IMAGE_PREFIX }}/server-buildcache:stage-migrate \
-            --cache-to type=registry,ref=${{ env.IMAGE_PREFIX }}/server-buildcache:stage-migrate,mode=max \
-            --push \
-            build-stg-server/server/
+      - name: Build or promote server images
+        env:
+          RELEASE_TAG: ${{ needs.version.outputs.server_tag }}
+        # Reuses images already built from identical server/ content (for
+        # example by the staging release of the same commits) instead of
+        # rebuilding them.
+        run: bash build-stg-server/.github/scripts/build-or-promote-image.sh build-stg-server stage server "$RELEASE_TAG"
 
   build-helpcenter:
     permissions:
@@ -241,15 +217,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
-      - name: Build and push helpcenter image
-        run: |
-          docker buildx build \
-            -f build-stg-helpcenter/help-center/Dockerfile \
-            -t ${{ env.IMAGE_PREFIX }}/helpcenter:${{ needs.version.outputs.helpcenter_tag }} \
-            -t ${{ env.IMAGE_PREFIX }}/helpcenter:sha-${{ github.sha }} \
-            -t ${{ env.IMAGE_PREFIX }}/helpcenter:stage-latest \
-            --push \
-            build-stg-helpcenter/
+      # The registry build cache needs the buildx container driver.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build or promote helpcenter image
+        env:
+          RELEASE_TAG: ${{ needs.version.outputs.helpcenter_tag }}
+        run: bash build-stg-helpcenter/.github/scripts/build-or-promote-image.sh build-stg-helpcenter stage helpcenter "$RELEASE_TAG"
 
   deploy-netlify:
     name: Build & Deploy Frontend to Netlify
@@ -296,6 +271,8 @@ jobs:
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 10
+          cache: true
+          cache_dependency_path: build-stg-netlify/pnpm-lock.yaml
 
       - name: Install and build frontend
         run: |

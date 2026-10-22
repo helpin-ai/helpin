@@ -718,6 +718,8 @@ func main() {
 		SetMessageRepo(supportMessageRepo).
 		SetUserRepo(userRepo)
 	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMailboxRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo, userRepo, docsSpaceRepo, docsCollectionRepo, docsHelpcenterRepo)
+	customerPortalService := service.NewCustomerPortalService(repository.NewCustomerPortalRepository(db), supportInboxService, appEmailClient, cfg.AppBaseURL)
+	customerPortalService.SetHelpcenterHostedDomain(cfg.HelpcenterHostedDomain)
 	supportInboxService.SetProductAnalyticsService(productAnalytics)
 	supportInboxService.SetDocsSearchRepository(docsSearchRepo)
 	supportInboxService.SetCRMCompanyRepository(crmCompanyRepo)
@@ -741,6 +743,7 @@ func main() {
 		podID,
 	)
 	emailFallbackService.SetCRMContactRepository(crmContactRepo)
+	emailFallbackService.SetPortalLinks(customerPortalService)
 	supportMessageActionsService := service.NewSupportMessageActionsService(supportMessageRepo, emailFallbackService, supportEmailLogRepo, wsPublisher)
 	supportAttachmentService := service.NewSupportAttachmentService(supportAttachmentRepo, s3Client)
 	emailFallbackService.SetAttachmentService(supportAttachmentService)
@@ -1101,6 +1104,10 @@ func main() {
 	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, docsRedirectRepo, s3Client, wsPublisher)
 	docsHelpcenterService.SetSearchRepository(docsHelpcenterSearchRepo)
 	docsHelpcenterService.SetPublicationArtifactDependencies(agentRunArtifactRepo, s3Client)
+	// Custom domains serve only after ownership (TXT) and DNS (CNAME) checks.
+	if cfg.HelpcenterCustomDomainTarget != "" {
+		docsHelpcenterService.SetCustomDomainVerification(cfg.HelpcenterCustomDomainTarget, nil, notificationService, settingsRepo)
+	}
 	docsHelpcenterService.SetPublicationAttachmentRepository(pmAttachmentRepo)
 	tlsAskService := service.NewTLSAskService(docsHelpcenterRepo, cfg.TLSAskExtraAllowedDomains)
 
@@ -1532,6 +1539,7 @@ func main() {
 	supportAIService.SetMailboxRepository(supportMailboxRepo)
 	supportAIService.SetTriageService(supportInboxTriageService)
 	supportAIService.SetLinkPreviewService(supportLinkPreviewService)
+	supportAIService.SetPortalReplyNotifier(emailFallbackService)
 	supportAIService.SetCuratedGuidanceRepository(curatedGuidanceRepo)
 	if reranker := service.NewHTTPSupportKnowledgeReranker(cfg.SupportRerankerURL, cfg.SupportRerankerModel, cfg.SupportRerankerAPIKey); reranker != nil {
 		supportAIService.SetKnowledgeReranker(service.NewGovernedSupportKnowledgeReranker(reranker, aiActionRegistry, aiActionExecutionRepo))
@@ -1610,6 +1618,8 @@ func main() {
 		agentRuntimeProjectionService.SetSupportChatPauseHook(supportChatService.OnSupportChatRunPaused)
 	}
 	if projectionCtx != nil {
+		portalAIDispatchService := service.NewPortalAIDispatchService(repository.NewPortalAIDispatchRepository(db), supportAIService)
+		go portalAIDispatchService.Start(projectionCtx)
 		go func() {
 			if err := supportChatService.StartSupportChatSweep(projectionCtx, 30*time.Second, 30*time.Second, 50); err != nil {
 				slog.Error("support chat sweep stopped", "error", err)
@@ -1770,6 +1780,9 @@ func main() {
 	mcpService.SetAttachments(pmAttachmentService)
 	mcpService.SetDocsContentReader(docsContentRepo)
 	mcpService.SetPMComments(pmCommentService)
+	mcpService.SetCRMRecords(crmCompanyService, crmActivityService, service.NewCRMRecordUpsertService(
+		crmCompanyRepo, crmContactRepo, crmCompanyService, crmContactService, crmActivityService,
+	))
 	supportInboxService.SetAuthzService(authzService)
 
 	// Inject authorization into WebSocket handler for workspace access checks.
@@ -1791,6 +1804,7 @@ func main() {
 
 	// Widget WebSocket handler — authenticates via session_token, not JWT.
 	widgetWsHandler := ws.NewWidgetHandler(wsHub, supportInboxService)
+	portalWsHandler := ws.NewPortalHandler(wsHub, customerPortalService, cfg.AppBaseURL)
 
 	// Initialize handlers.
 	emailDiagnosticsConfig := model.EmailDiagnosticsConfig{
@@ -1922,6 +1936,8 @@ func main() {
 		ExternalMCP:         handler.NewExternalMCPHandler(externalMCPService, agentService, authzService, cfg.AppBaseURL),
 		ExternalA2A:         handler.NewExternalA2AHandler(externalA2AService),
 		SupportInbox:        handler.NewSupportInboxHandler(supportInboxService, agentService, supportMessageActionsService),
+		CustomerPortal:      handler.NewCustomerPortalHandler(customerPortalService),
+		CustomerPortalAdmin: handler.NewCustomerPortalAdminHandler(customerPortalService),
 		SupportInboxView:    handler.NewSupportInboxViewHandler(supportInboxViewService),
 		SupportTag:          handler.NewSupportTagHandler(supportTagService),
 		SupportInboxWidget:  handler.NewSupportInboxWidgetHandler(supportInboxService),
@@ -1936,7 +1952,7 @@ func main() {
 		Notification:        handler.NewNotificationHandler(notificationService, followerService),
 		UserNotifSettings:   handler.NewUserNotificationSettingsHandler(userNotifSettingsService),
 		PushDevice:          handler.NewPushDeviceHandler(pushDeviceService),
-		CRMContact:          handler.NewCRMContactHandler(crmContactService),
+		CRMContact:          handler.NewCRMContactHandler(crmContactService).SetAuthorization(authzService),
 		CRMCompany:          handler.NewCRMCompanyHandler(crmCompanyService),
 		CRMDeal:             handler.NewCRMDealHandler(crmDealService),
 		CRMAssociation:      handler.NewCRMAssociationHandler(crmAssociationService),
@@ -2095,6 +2111,14 @@ func main() {
 	go func() {
 		defer close(usageBaselineDone)
 		usageBaselineSync.Run(usageBaselineCtx)
+	}()
+
+	// Re-check help center custom domains: pending ones hourly, live ones daily.
+	domainCheckCtx, domainCheckCancel := context.WithCancel(context.Background())
+	domainCheckDone := make(chan struct{})
+	go func() {
+		defer close(domainCheckDone)
+		docsHelpcenterService.RunCustomDomainChecks(domainCheckCtx)
 	}()
 
 	// Route only policy-eligible, versioned signals. Delivery rows make every
@@ -2292,6 +2316,7 @@ func main() {
 		if widgetWsHandler != nil {
 			sentryWidgetWSHandler = middleware.SentryHTTP(middleware.SentryRequestContext(widgetWsHandler))
 		}
+		sentryPortalWSHandler := middleware.SentryHTTP(middleware.SentryRequestContext(portalWsHandler))
 		topHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			if req.URL.Path == "/api/ws" && sentryWSHandler != nil {
 				sentryWSHandler.ServeHTTP(w, req)
@@ -2299,6 +2324,11 @@ func main() {
 			}
 			if req.URL.Path == "/widget/ws" && sentryWidgetWSHandler != nil {
 				sentryWidgetWSHandler.ServeHTTP(w, req)
+				return
+			}
+			// Customer portal live updates also bypass Chi for the upgrade.
+			if _, ok := ws.PortalSocketSlug(req.URL.Path); ok {
+				sentryPortalWSHandler.ServeHTTP(w, req)
 				return
 			}
 			r.ServeHTTP(w, req)
@@ -2349,6 +2379,7 @@ func main() {
 	signalRuleCancel()
 	commercialStateCancel()
 	usageBaselineCancel()
+	domainCheckCancel()
 	editionCancel()
 	select {
 	case <-customerIOOutboxDone:
@@ -2379,6 +2410,11 @@ func main() {
 	case <-usageBaselineDone:
 	case <-time.After(6 * time.Second):
 		slog.Warn("CRM usage-baseline synchronizer did not stop before shutdown timeout")
+	}
+	select {
+	case <-domainCheckDone:
+	case <-time.After(6 * time.Second):
+		slog.Warn("help center domain checks did not stop before shutdown timeout")
 	}
 	inboundCancel()
 	select {

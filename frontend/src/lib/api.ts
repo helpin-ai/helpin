@@ -34,15 +34,27 @@ export function setupVisibilityRefresh(): () => void {
   return setupSharedVisibilityRefresh(API_BASE)
 }
 
-/** Upload a file directly to S3 using a presigned PUT URL. */
+/**
+ * Upload a file directly to S3 using a presigned PUT URL. Aborting `signal`
+ * cancels the transfer and resolves with an "Upload cancelled" error.
+ */
 export async function uploadToS3(
   presignedUrl: string,
   file: File,
   onProgress?: (pct: number) => void,
   extraHeaders?: Record<string, string>,
+  signal?: AbortSignal,
 ): Promise<{ ok: boolean; error: string | null }> {
   return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve({ ok: false, error: 'Upload cancelled' })
+      return
+    }
     const xhr = new XMLHttpRequest()
+    signal?.addEventListener('abort', () => {
+      xhr.abort()
+      resolve({ ok: false, error: 'Upload cancelled' })
+    }, { once: true })
     xhr.open('PUT', presignedUrl, true)
     xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
     if (extraHeaders) {

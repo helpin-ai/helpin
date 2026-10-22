@@ -75,6 +75,7 @@ const EmailAccounts = hi(Mail01Icon);
 const Meetings = hi(Calendar03Icon);
 const Autonomy = hi(SlidersHorizontalIcon);
 const ChatWidget = hi(BubbleChatIcon);
+const CustomerPortal = hi(Globe02Icon);
 const InboxesRouting = hi(Route01Icon);
 const Access = hi(Shield01Icon);
 const MCP = hi(PlugSocketIcon);
@@ -115,6 +116,7 @@ export type SettingsSection =
   | 'support-ai-assistant'
   | 'support-translation'
   | 'chat-general'
+  | 'customer-portal'
   | 'inboxes-routing';
 
 export type SettingsRouteSection = SettingsSection | 'ai-connections' | 'profile' | 'security' | 'notifications' | 'account' | 'git-connections';
@@ -372,6 +374,14 @@ const allSettingsSections: SettingsSectionMeta[] = [
     label: 'Chat widget',
     description: 'Widget installation, availability, identity capture, and appearance.',
     icon: ChatWidget,
+    group: 'Support',
+  },
+  {
+    id: 'customer-portal',
+    label: 'Customer portal',
+    description: 'Control customer access and request intake through the portal.',
+    keywords: ['portal', 'requests', 'customer access', 'anonymous intake'],
+    icon: CustomerPortal,
     group: 'Support',
   },
   {

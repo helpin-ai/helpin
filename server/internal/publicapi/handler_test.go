@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,7 +49,7 @@ func (f *fakeBackend) ExecuteTool(_ context.Context, _ *model.MCPPrincipal, name
 
 type denyLimiter struct{}
 
-func (denyLimiter) Allow(context.Context, string, string, bool) bool { return false }
+func (denyLimiter) AllowN(context.Context, string, string, bool, int64) bool { return false }
 
 func newTestHandler(t *testing.T, backend *fakeBackend, limiter Limiter) *Handler {
 	t.Helper()
@@ -132,6 +133,73 @@ func TestQueryParametersAreTyped(t *testing.T) {
 	var payload envelope
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil || payload.Summary != "ok" || payload.Links["app"] == "" {
 		t.Fatalf("envelope = %#v err %v", payload, err)
+	}
+}
+
+func TestObjectQueryParametersAreJSON(t *testing.T) {
+	backend := &fakeBackend{}
+	handler := newTestHandler(t, backend, nil)
+	filter := url.QueryEscape(`{"rules":[{"field":"custom_properties.fit","operator":"is","value":"yes"}]}`)
+	rec := do(handler, http.MethodGet, "/crm/companies?filter="+filter, "", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body)
+	}
+	got, _ := backend.args["filter"].(map[string]any)
+	rules, _ := got["rules"].([]any)
+	if backend.tool != "list_crm_companies" || len(rules) != 1 {
+		t.Fatalf("args = %#v", backend.args)
+	}
+	if rec := do(handler, http.MethodGet, "/crm/companies?filter=not-json", "", nil); rec.Code != http.StatusBadRequest {
+		t.Fatalf("malformed filter status %d", rec.Code)
+	}
+}
+
+func TestCRMRoutesMapPathsBodiesAndMethods(t *testing.T) {
+	backend := &fakeBackend{}
+	handler := newTestHandler(t, backend, nil)
+
+	rec := do(handler, http.MethodPost, "/crm/records/upsert", `{"object_type":"company","records":[{"fields":{"name":"Acme","domain":"acme.com"}}]}`, map[string]string{"Idempotency-Key": "batch-0001"})
+	records, _ := backend.args["records"].([]any)
+	if rec.Code != http.StatusOK || backend.tool != "upsert_crm_records" || len(records) != 1 || backend.args["idempotency_key"] != "batch-0001" {
+		t.Fatalf("upsert status %d tool %q args %#v", rec.Code, backend.tool, backend.args)
+	}
+
+	rec = do(handler, http.MethodDelete, "/crm/associations/assoc-1", "", nil)
+	if rec.Code != http.StatusOK || backend.tool != "unlink_crm_association" || backend.args["association_id"] != "assoc-1" {
+		t.Fatalf("unlink status %d tool %q args %#v", rec.Code, backend.tool, backend.args)
+	}
+
+	rec = do(handler, http.MethodPut, "/crm/contacts/contact-1/primary-company", `{"company_id":"company-1"}`, nil)
+	if rec.Code != http.StatusOK || backend.tool != "set_primary_contact_company" || backend.args["contact_id"] != "contact-1" || backend.args["company_id"] != "company-1" {
+		t.Fatalf("primary company status %d tool %q args %#v", rec.Code, backend.tool, backend.args)
+	}
+
+	rec = do(handler, http.MethodGet, "/crm/associations?object_type=crm_company&object_id=company-1", "", nil)
+	if rec.Code != http.StatusOK || backend.tool != "list_crm_associations" || backend.args["object_id"] != "company-1" {
+		t.Fatalf("list associations status %d tool %q args %#v", rec.Code, backend.tool, backend.args)
+	}
+
+	rec = do(handler, http.MethodPost, "/crm/associations", `{"from_object_type":"contact","from_object_id":"contact-1","to_object_type":"company","to_object_id":"company-1"}`, nil)
+	if rec.Code != http.StatusOK || backend.tool != "link_crm_objects" || backend.args["to_object_id"] != "company-1" {
+		t.Fatalf("link status %d tool %q args %#v body %s", rec.Code, backend.tool, backend.args, rec.Body)
+	}
+}
+
+type countingLimiter struct{ costs []int64 }
+
+func (l *countingLimiter) AllowN(_ context.Context, _, _ string, _ bool, cost int64) bool {
+	l.costs = append(l.costs, cost)
+	return true
+}
+
+func TestBulkUpsertIsChargedBySize(t *testing.T) {
+	limiter := &countingLimiter{}
+	handler := newTestHandler(t, &fakeBackend{}, limiter)
+	body := `{"object_type":"company","records":[` + strings.TrimSuffix(strings.Repeat(`{"fields":{"name":"x"}},`, 25), ",") + `]}`
+	do(handler, http.MethodPost, "/crm/records/upsert", body, nil)
+	do(handler, http.MethodPatch, "/crm/companies/company-1", `{"owner_member_id":"m1"}`, nil)
+	if len(limiter.costs) != 2 || limiter.costs[0] != 3 || limiter.costs[1] != 1 {
+		t.Fatalf("costs = %v, want [3 1]", limiter.costs)
 	}
 }
 

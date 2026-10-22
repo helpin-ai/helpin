@@ -89,7 +89,7 @@ func (h *Handler) serverForRequest(r *http.Request) *mcp.Server {
 	for _, definition := range tools {
 		definition := definition
 		server.AddTool(protocolTool(definition), func(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			if !h.limiter.AllowTool(ctx, principal, definition) {
+			if !h.limiter.AllowTool(ctx, principal, definition, request.Params.Arguments) {
 				h.service.RecordProtocolEvent(ctx, principal, "rate_limit", "denied", "tool_class_limit")
 				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: "This Helpin tool is temporarily rate limited. Retry after 60 seconds."}}}, nil
 			}
@@ -100,10 +100,7 @@ func (h *Handler) serverForRequest(r *http.Request) *mcp.Server {
 				message := publicToolError(err)
 				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: message}}}, nil
 			}
-			return &mcp.CallToolResult{
-				Content:           []mcp.Content{&mcp.TextContent{Text: result.Summary}},
-				StructuredContent: result,
-			}, nil
+			return toolCallResult(result), nil
 		})
 	}
 	h.addResources(server, principal, tools)
@@ -356,9 +353,29 @@ func (l *requestLimiter) Allow(ctx context.Context, principal *model.MCPPrincipa
 	return l.shared.Allow(ctx, "mcp", principalRateKey(principal), false)
 }
 
-func (l *requestLimiter) AllowTool(ctx context.Context, principal *model.MCPPrincipal, tool service.MCPToolDefinition) bool {
+func (l *requestLimiter) AllowTool(ctx context.Context, principal *model.MCPPrincipal, tool service.MCPToolDefinition, arguments json.RawMessage) bool {
 	if !tool.Mutating && tool.Name != "search_workspace" {
 		return true
 	}
-	return l.shared.Allow(ctx, "mcp", principalRateKey(principal), true)
+	return l.shared.AllowN(ctx, "mcp", principalRateKey(principal), true, service.MCPToolRateCost(tool.Name, arguments))
+}
+
+// toolCallResult returns the result as structured content and, as the MCP
+// specification recommends for compatibility, repeats it as JSON text. Many
+// clients pass only text content to the model.
+func toolCallResult(result *service.MCPToolResult) *mcp.CallToolResult {
+	text := result.Summary
+	if result.Data != nil || len(result.Links) > 0 {
+		payload := map[string]any{"data": result.Data}
+		if len(result.Links) > 0 {
+			payload["links"] = result.Links
+		}
+		if encoded, err := json.Marshal(payload); err == nil {
+			text += "\n\n" + string(encoded)
+		}
+	}
+	return &mcp.CallToolResult{
+		Content:           []mcp.Content{&mcp.TextContent{Text: text}},
+		StructuredContent: result,
+	}
 }

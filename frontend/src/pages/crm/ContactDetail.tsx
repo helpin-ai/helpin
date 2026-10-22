@@ -23,6 +23,7 @@ import {
   MapPinIcon,
   PlusSignIcon,
   Tag01Icon,
+  Shield01Icon,
   TelephoneIcon,
   UserIcon,
   ZapIcon,
@@ -62,6 +63,7 @@ import {
 import { EntitySignals } from '@/components/crm/EntitySignals';
 import { EntitySummaryCard } from '@/components/crm/EntitySummaryCard';
 import { EnrichmentRailCard } from '@/components/crm/contact-detail/EnrichmentRailCard';
+import { CustomPropertyMetadataRows } from '@/components/crm/CustomPropertyMetadataRows';
 import { ActivityTimeline } from '@/components/crm/ActivityTimeline';
 import { CreateDealDialog } from '@/components/crm/CreateDealDialog';
 import { LinkedTasksPanel } from '@/components/crm/LinkedTasksPanel';
@@ -78,6 +80,8 @@ import { supportService } from '@/lib/services/supportService';
 import { ContactLimitNotice, isContactLimitError } from '@edition';
 import { useTitle } from '@/hooks/useTitle';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
+import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
+import { ContactPortalAccessControl } from '@/components/crm/ContactPortalAccessControl';
 import { cn } from '@/lib/utils';
 import type {
   HelpcenterSocialPlatform,
@@ -578,6 +582,8 @@ export function ContactDetailPage({
 
   // ── Data hooks ──
   const { data: contact, isLoading, error: contactError } = useContact(wsId, contactId);
+  const { data: workspaceAccess } = useWorkspaceAccess(wsId);
+  const permissions = usePermissions(workspaceAccess);
   useRegisterPageContext(contact ? {
     entity_type: 'crm_contact',
     entity_id: contact.id,
@@ -1402,6 +1408,15 @@ export function ContactDetailPage({
                     />
                   </MetadataRow>
 
+                  <MetadataRow icon={Shield01Icon} label="Portal">
+                    <ContactPortalAccessControl
+                      workspaceId={wsId}
+                      contactId={contact.id}
+                      currentAccess={contact.portal_access}
+                      canManage={permissions.has('support.admin')}
+                    />
+                  </MetadataRow>
+
                   {detailsExpanded && (
                     <>
                       <MetadataRow icon={GlobeIcon} label="Source">
@@ -1547,6 +1562,8 @@ export function ContactDetailPage({
                       ))}
                     </>
                   )}
+
+                  <CustomPropertyMetadataRows properties={contact.custom_properties} />
 
                   <div className="col-span-3 pt-1">
                     <button

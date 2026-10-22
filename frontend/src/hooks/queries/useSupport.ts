@@ -1,6 +1,6 @@
 import { SupportTranslationSendError } from '@/lib/supportTranslationError';
 import type { CreateTaskFromConversationRequest, UpdateSupportNoteRequest } from '@/lib/pmTypes';
-import type { WidgetOriginSettings } from '@/lib/pmTypes';
+import type { CustomerPortalContactAccessValue, WidgetOriginSettings } from '@/lib/pmTypes';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { queryKeys } from '@/lib/queryKeys';
@@ -235,7 +235,7 @@ export function useSupportRoutingUsage(workspaceId: string) {
   });
 }
 
-export function useUpdateChatSettings(workspaceId: string) {
+function useUpdateInstallationSettings(workspaceId: string, label: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (settings: Partial<SupportInboxSettings & WidgetOriginSettings>) =>
@@ -250,7 +250,72 @@ export function useUpdateChatSettings(workspaceId: string) {
       ]);
     },
     onError: (error: Error) => {
-      toast.error('Failed to update chat settings', { description: error.message });
+      toast.error(`Failed to update ${label}`, { description: error.message });
+    },
+  });
+}
+
+export function useUpdateChatSettings(workspaceId: string) {
+  return useUpdateInstallationSettings(workspaceId, 'chat settings');
+}
+
+export function useUpdateCustomerPortalSettings(workspaceId: string) {
+  return useUpdateInstallationSettings(workspaceId, 'customer portal settings');
+}
+
+/** The server's attachment size and type rules; they change only on deploy. */
+export function useSupportAttachmentPolicy(workspaceId: string) {
+  return useQuery({
+    queryKey: queryKeys.support.attachmentPolicy(workspaceId),
+    queryFn: async () => unwrap(await supportService.getAttachmentPolicy(workspaceId)),
+    enabled: !!workspaceId,
+    staleTime: Infinity,
+  });
+}
+
+export function useCustomerPortalAccessSummary(workspaceId: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.support.portalAccess(workspaceId),
+    queryFn: async () => unwrap(await supportService.getPortalAccessSummary(workspaceId)),
+    enabled: !!workspaceId && enabled,
+    staleTime: 30_000,
+  });
+}
+
+export function useContactPortalAccess(workspaceId: string, contactId: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.support.portalContactAccess(workspaceId, contactId),
+    queryFn: async () => unwrap(await supportService.getContactPortalAccess(workspaceId, contactId)),
+    enabled: !!workspaceId && !!contactId && enabled,
+  });
+}
+
+export function useSetContactPortalAccess(workspaceId: string, contactId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (portalAccess: CustomerPortalContactAccessValue | null) =>
+      unwrap(await supportService.setContactPortalAccess(workspaceId, contactId, portalAccess)),
+    onSuccess: (access) => {
+      queryClient.setQueryData(queryKeys.support.portalContactAccess(workspaceId, contactId), access);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.support.portalAccess(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update portal access', { description: error.message });
+    },
+  });
+}
+
+export function useResendPortalConfirmation(workspaceId: string) {
+  return useMutation({
+    mutationFn: async (conversationId: string) => {
+      const { error } = await supportService.resendPortalConfirmation(workspaceId, conversationId);
+      if (error) throw new Error(error);
+    },
+    onSuccess: () => {
+      toast.success('Confirmation email sent');
+    },
+    onError: (error: Error) => {
+      toast.error('Could not send confirmation', { description: error.message });
     },
   });
 }

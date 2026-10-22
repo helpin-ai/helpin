@@ -33,4 +33,20 @@ describe('support video attachments', () => {
       await act(async () => root.unmount());
     }
   });
+
+  it('lists HEIC photos as downloads instead of broken inline images', async () => {
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(<SupportAttachmentGallery attachments={[
+        { id: 'heic', file_key: 'IMG_0001.HEIC', file_name: 'IMG_0001.HEIC', file_type: 'image/heic', file_size: 2048, url: 'https://cdn.example.com/IMG_0001.HEIC' },
+        { id: 'png', file_key: 'screen.png', file_name: 'screen.png', file_type: 'image/png', file_size: 1024, url: 'https://cdn.example.com/screen.png' },
+      ]} />));
+      expect(container.querySelector('button[aria-label="Preview screen.png"]')).not.toBeNull();
+      expect(container.querySelector('button[aria-label="Preview IMG_0001.HEIC"]')).toBeNull();
+      expect(container.querySelector('a[href="https://cdn.example.com/IMG_0001.HEIC"]')?.textContent).toContain('IMG_0001.HEIC');
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
 });

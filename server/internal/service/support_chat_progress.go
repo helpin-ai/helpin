@@ -56,6 +56,7 @@ func (s *SupportChatService) sweepAcknowledgedSupportTurns(ctx context.Context, 
 		if err != nil {
 			return err
 		}
+		*settings = effectiveSupportAISettings(*settings, conv)
 		source, err := s.messageRepo.GetByID(ctx, row.SourceMessageID)
 		if err != nil {
 			return err

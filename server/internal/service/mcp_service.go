@@ -126,6 +126,9 @@ type MCPService struct {
 	checklists     mcpPMChecklistService
 	crmContacts    *CRMContactService
 	crmDeals       *CRMDealService
+	crmCompanies   *CRMCompanyService
+	crmActivities  *CRMActivityService
+	crmUpserter    *CRMRecordUpsertService
 	supportSetup   mcpSupportSetupReader
 	workspaceSetup mcpWorkspaceSetupReader
 	support        *SupportInboxService
@@ -460,6 +463,9 @@ func (s *MCPService) CreateServicePrincipal(ctx context.Context, workspaceID, us
 	}
 	toolsets, scopes, readOnly, err := s.constrainGrant(policy, req.Toolsets, req.Scopes, req.ReadOnly)
 	if err != nil {
+		return nil, nil, err
+	}
+	if err := serviceAccountWriteGrantError(req.ReadOnly, readOnly, policy); err != nil {
 		return nil, nil, err
 	}
 	principal := &model.MCPServicePrincipal{
@@ -920,4 +926,17 @@ func resolveMCPToolSchema(input map[string]any) (*jsonschema.Resolved, error) {
 		return nil, fmt.Errorf("resolve MCP tool schema: %w", err)
 	}
 	return resolved, nil
+}
+
+// serviceAccountWriteGrantError refuses an explicit request for write access
+// that the policy reduced to read-only, so a service account never silently
+// loses the access its creator asked for and only fails later on writes.
+func serviceAccountWriteGrantError(requestedReadOnly, grantedReadOnly bool, policy *model.MCPWorkspacePolicy) error {
+	if requestedReadOnly || !grantedReadOnly {
+		return nil
+	}
+	if policy.EnforceReadOnly {
+		return fmt.Errorf("write access is not allowed: turn on bounded writes in the workspace MCP policy, or create a read-only account")
+	}
+	return fmt.Errorf("write access needs a write scope that the workspace MCP policy allows for one of the selected toolsets")
 }

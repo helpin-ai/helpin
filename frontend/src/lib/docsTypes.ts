@@ -338,6 +338,7 @@ export interface DocsLink {
 
 export type HelpcenterThemeMode = 'light' | 'dark' | 'system';
 export type HelpcenterPublicUrlMode = 'hosted_subdomain' | 'custom_domain' | 'reverse_proxy';
+export type HelpcenterCustomDomainStatus = 'pending' | 'verified' | 'failing';
 
 export type HelpcenterHeaderLinkStyle = 'text' | 'button';
 
@@ -407,6 +408,17 @@ export interface DocsHelpcenterConfig {
   workspace_id: string;
   subdomain: string;
   custom_domain?: string;
+  /** Verification of the custom domain; it serves only when verified or failing. */
+  custom_domain_status?: HelpcenterCustomDomainStatus;
+  custom_domain_verified_at?: string;
+  custom_domain_checked_at?: string;
+  custom_domain_last_error?: string;
+  custom_domain_failing_since?: string;
+  /** Where the custom domain must CNAME to; empty when domains aren't verified. */
+  custom_domain_target?: string;
+  /** The TXT record that proves the workspace owns the domain. */
+  custom_domain_challenge_name?: string;
+  custom_domain_challenge_value?: string;
   public_url_mode: HelpcenterPublicUrlMode;
   reverse_proxy_host?: string;
   reverse_proxy_base_path?: string;

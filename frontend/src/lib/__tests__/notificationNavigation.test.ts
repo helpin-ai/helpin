@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Notification } from '../notificationTypes';
-import { getExternalMCPNotificationTarget, getNotificationDockTarget } from '../notificationNavigation';
+import { getSettingsNotificationTarget, getNotificationDockTarget } from '../notificationNavigation';
 
 function notification(entityType: string): Notification {
   return {
@@ -24,14 +24,18 @@ function notification(entityType: string): Notification {
   };
 }
 
-describe('external MCP notification navigation', () => {
+describe('settings notification navigation', () => {
   it('opens External MCP workspace settings', () => {
-    expect(getExternalMCPNotificationTarget(notification('external_mcp_server'), 'acme'))
+    expect(getSettingsNotificationTarget(notification('external_mcp_server'), 'acme'))
       .toBe('/w/acme/settings/external-mcp');
   });
 
   it('ignores unrelated notification entities', () => {
-    expect(getExternalMCPNotificationTarget(notification('task'), 'acme')).toBeNull();
+    expect(getSettingsNotificationTarget(notification('task'), 'acme')).toBeNull();
+  });
+
+  it('opens Help center settings for custom domain alerts', () => {
+    expect(getSettingsNotificationTarget(notification('helpcenter_config'), 'acme')).toBe('/w/acme/settings/helpcenter');
   });
 });
 

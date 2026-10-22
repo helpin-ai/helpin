@@ -114,6 +114,7 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		settings = model.DefaultSupportInboxSettings()
 		availability = resolveSupportAvailability(settings, now)
 	}
+	settings = effectiveSupportAISettings(settings, conv)
 
 	handoffMailboxID, mailboxSelectionSource := s.resolveEscalationMailbox(ctx, workspaceID, conversationID, messageID, conv, settings)
 

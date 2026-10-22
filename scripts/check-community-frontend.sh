@@ -17,7 +17,7 @@ import sys
 
 root = Path.cwd()
 destination = Path(sys.argv[1])
-paths = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z', 'frontend', 'server/internal/ordering/testdata']).split(b'\0')
+paths = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z', 'frontend', 'server/internal/ordering/testdata', 'server/internal/service/workspace_setup.go']).split(b'\0')
 for item in set(paths):
     if not item:
         continue

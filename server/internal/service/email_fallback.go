@@ -478,6 +478,7 @@ type EmailFallbackService struct {
 	pushSenderService      *PushSenderService
 	replyDomain            string
 	appBaseURL             string
+	portalLinks            portalRequestLinker
 	logger                 *slog.Logger
 	podID                  string
 	pollInterval           time.Duration
@@ -505,6 +506,17 @@ type EmailFallbackBackfillResult struct {
 }
 
 // SetNotificationService injects the notification service used for support reply alerts.
+// portalRequestLinker links to a request in a workspace's customer portal.
+type portalRequestLinker interface {
+	PortalRequestURL(ctx context.Context, workspaceID, slug, reference string) string
+}
+
+// SetPortalLinks links reply emails to each workspace's portal address.
+func (s *EmailFallbackService) SetPortalLinks(links portalRequestLinker) *EmailFallbackService {
+	s.portalLinks = links
+	return s
+}
+
 func (s *EmailFallbackService) SetNotificationService(notificationService *NotificationService) *EmailFallbackService {
 	if s == nil {
 		return nil
@@ -693,6 +705,12 @@ func (s *EmailFallbackService) StartReconciler(ctx context.Context) {
 			run()
 		}
 	}
+}
+
+// ReplyDeliveryAvailable reports whether agent replies can be emailed to
+// customers: the outbox needs Redis and the Postmark reply client.
+func (s *EmailFallbackService) ReplyDeliveryAvailable() bool {
+	return s != nil && s.redis != nil && s.emailClient != nil
 }
 
 // OnAgentReply enqueues an outbound email candidate when the feature is enabled.
@@ -2185,6 +2203,37 @@ func (s *EmailFallbackService) fireEmailBatch(ctx context.Context, conversationI
 	}
 	preparedPending, emailAttachments := s.prepareEmailAttachments(ctx, pending)
 	htmlBody, textBody := s.renderBodies(preparedPending, agentName, workspaceName, chatLink, unsubscribeEmail)
+	// The portal link is advisory: signing in claims eligible email conversations
+	// (see CustomerPortalRepository.AssociateVerifiedEmail), so sending never
+	// changes visibility or creates identities for an unverified address.
+	portalEmailEligible := conv.Channel == "email" && conv.Source == "email" &&
+		conv.Status != model.SupportConversationStatusSpam &&
+		strings.TrimSpace(conv.PrimaryRecipientState) != model.SupportPrimaryRecipientStateUnconfirmed &&
+		strings.TrimSpace(derefString(conv.CustomerEmail)) != ""
+	if settings.PortalEnabled && workspace != nil && strings.TrimSpace(s.appBaseURL) != "" && (conv.PortalVisible || portalEmailEligible && conv.PortalVisibilityChangedAt == nil) {
+		portalURL := strings.TrimRight(s.appBaseURL, "/") + "/portal/" + url.PathEscape(workspace.Slug)
+		portalRepo := repository.NewCustomerPortalRepository(s.convRepo.DB())
+		// Only customers who may sign in get the link; others would hit a dead end.
+		contacts, err := portalRepo.ContactsForEmail(ctx, conv.WorkspaceID, derefString(conv.CustomerEmail))
+		portalEligible := err == nil && evaluatePortalEligibility(settings.EffectivePortalAccessMode(), contacts).Eligible
+		if err != nil {
+			s.logger.WarnContext(ctx, "portal email eligibility lookup failed", "workspace_id", conv.WorkspaceID, "conversation_id", conv.ID, "error", err)
+		}
+		reference, err := portalRepo.ReferenceForCustomer(ctx, conv.WorkspaceID, conv.ID, derefString(conv.CustomerEmail))
+		if err != nil {
+			s.logger.WarnContext(ctx, "portal email link lookup failed", "workspace_id", conv.WorkspaceID, "conversation_id", conv.ID, "error", err)
+			reference = ""
+		}
+		if s.portalLinks != nil {
+			portalURL = s.portalLinks.PortalRequestURL(ctx, conv.WorkspaceID, workspace.Slug, reference)
+		} else if reference != "" {
+			portalURL += "/requests/" + url.PathEscape(reference)
+		}
+		if portalEligible {
+			htmlBody += `<p><a href="` + html.EscapeString(portalURL) + `">View your request in the support portal</a> (sign-in required)</p>`
+			textBody += "\n\nView your request in the support portal (sign-in required):\n" + portalURL
+		}
+	}
 
 	var postmarkMessageID, sentFromAddress, fromFallbackReason, fromSource string
 	var sendErr error
