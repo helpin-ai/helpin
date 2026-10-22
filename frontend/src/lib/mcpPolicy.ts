@@ -73,3 +73,35 @@ export function ensureMCPWriteScopes(
 
   return result;
 }
+
+// Write scopes a new automation account can be given. Agent runs and Help
+// Center publishing are left out: they start work or change public content.
+const SERVICE_ACCOUNT_WRITE_SCOPE_BY_TOOLSET: Readonly<Record<string, string>> = {
+  pm: 'helpin.pm.write',
+  docs: 'helpin.docs.write',
+  crm: 'helpin.crm.write',
+  support: 'helpin.support.write',
+};
+
+export type MCPServiceAccountPolicy = {
+  enforce_read_only: boolean;
+  allowed_scopes: string[];
+};
+
+/** Write scopes the workspace policy allows for the selected toolsets. */
+export function serviceAccountWriteScopes(policy: MCPServiceAccountPolicy, toolsets: string[]): string[] {
+  if (policy.enforce_read_only) return [];
+  return toolsets
+    .map((toolset) => SERVICE_ACCOUNT_WRITE_SCOPE_BY_TOOLSET[toolset])
+    .filter((scope): scope is string => Boolean(scope) && policy.allowed_scopes.includes(scope));
+}
+
+/**
+ * Scopes to request for a new automation account: every read scope the policy
+ * allows, plus the allowed write scopes for the selected toolsets when the
+ * account may update records.
+ */
+export function serviceAccountScopes(policy: MCPServiceAccountPolicy, toolsets: string[], allowWrites: boolean): string[] {
+  const readScopes = policy.allowed_scopes.filter((scope) => !isMCPWriteScope(scope));
+  return allowWrites ? [...readScopes, ...serviceAccountWriteScopes(policy, toolsets)] : readScopes;
+}
