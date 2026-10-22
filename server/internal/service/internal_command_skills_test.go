@@ -82,7 +82,7 @@ func TestSkillManagementValidateEdit(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			input, _ := json.Marshal(tc.fields)
-			err := s.validateSkillUpdate(context.Background(), meta, input)
+			_, err := s.resolveSkillUpdate(context.Background(), meta, input)
 			if (err == nil) != tc.valid {
 				t.Fatalf("validation: %v", err)
 			}

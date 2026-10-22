@@ -57,11 +57,6 @@ type preparedSkillSaveInput struct {
 	Summary    string `json:"summary"`
 }
 
-func (s *InternalCommandService) validateSkillUpdate(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) error {
-	_, err := s.resolveSkillUpdate(ctx, meta, input)
-	return err
-}
-
 func (s *InternalCommandService) validateSkillUpdateCommand(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 	req, err := s.resolveSkillUpdate(ctx, meta, input)
 	if err != nil {
