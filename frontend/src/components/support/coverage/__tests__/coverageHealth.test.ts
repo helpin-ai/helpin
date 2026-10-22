@@ -19,7 +19,6 @@ describe('coverage analysis status', () => {
     ['running', 'Analyzing conversations'],
     ['succeeded', 'Analysis completed'],
     ['failed', 'Analysis needs attention'],
-    ['partial_failed', 'Analysis needs attention'],
   ])('presents %s accurately', (status, title) => {
     expect(coverageHealthPresentation(health(status)).title).toBe(title)
   })
@@ -39,10 +38,24 @@ describe('coverage analysis status', () => {
     expect(state.description).toContain('duplicate processing')
     expect(state.description).not.toContain('terminal_failure_rate')
   })
-  it('does not report success while unresolved attempts exist', () => {
-    const value = health('succeeded')
-    value.failures = [{ id: 'attempt' } as CoveragePipelineHealthV2['failures'][number]]
-    expect(coverageHealthPresentation(value).title).toBe('Analysis needs attention')
+  it('does not report success while attempts need a person', () => {
+    const value = health('partial_failed')
+    value.healthy = false
+    value.failures = [{ id: 'attempt', status: 'dead_letter' } as CoveragePipelineHealthV2['failures'][number]]
+    const state = coverageHealthPresentation(value)
+    expect(state.title).toBe('Analysis needs attention')
+    expect(state.description).toContain('1 conversation could not be analyzed after 3 tries')
+  })
+  it('treats conversations that retry automatically as a completed run', () => {
+    const value = health('partial_failed')
+    value.failures = [
+      { id: 'a', status: 'retryable' },
+      { id: 'b', status: 'retryable' },
+    ] as CoveragePipelineHealthV2['failures']
+    const state = coverageHealthPresentation(value)
+    expect(state.title).toBe('Analysis completed')
+    expect(state.description).toBe('2 conversations will be retried in the next run.')
+    expect(coverageAnalysisControl(value).pill).toBeNull()
   })
 })
 
@@ -67,4 +80,30 @@ describe('compact analysis control', () => {
   const value=health(); value.rollout.capture_enabled=false
   expect(coverageAnalysisControl(value)).toMatchObject({pill:'Not enabled',disabled:true})
  })
+})
+
+describe('analysis problems a person can act on', () => {
+  it('shows why a reassessment stopped', () => {
+    const value = { ...health('succeeded'), healthy: false, reanalysis_status: 'failed' as const, reanalysis_error: 'The analysis worker stopped responding.' }
+    expect(coverageAnalysisControl(value)).toMatchObject({
+      pill: 'Needs attention', disabled: false, inline: true,
+      description: 'Analysis stopped: The analysis worker stopped responding.',
+    })
+  })
+  it('shows an automatic retry with its reason and blocks duplicates', () => {
+    const value = { ...health('succeeded'), reanalysis_status: 'retrying' as const, reanalysis_attempt: 2, reanalysis_error: 'provider unavailable' }
+    expect(coverageAnalysisControl(value)).toMatchObject({
+      pill: 'Retrying', disabled: true, inline: true,
+      description: 'Attempt 1 of 3 failed: provider unavailable. Retrying automatically.',
+    })
+    expect(coverageHealthPresentation(value).title).toBe('Retrying analysis')
+  })
+  it('warns when automatic analysis is not scheduled', () => {
+    const value = { ...health('succeeded'), schedule_status: 'missing' as const }
+    expect(coverageAnalysisControl(value)).toMatchObject({ pill: 'Not scheduled', disabled: false, inline: true })
+  })
+  it('keeps routine states in the tooltip only', () => {
+    const value = { ...health('succeeded'), reanalysis_status: 'queued' as const }
+    expect(coverageAnalysisControl(value).inline).toBeUndefined()
+  })
 })

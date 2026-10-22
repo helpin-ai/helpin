@@ -46,9 +46,9 @@ func TestCoverageMaterializerClustersSameRunFindingsIntoOneGap(t *testing.T) {
 	seedMaterializerAnalysis(t, analysisRepo, "analysis-1", "run-1", "conversation-1", "Customers need reset emails that arrive.", "Password reset email delivery", now)
 	seedMaterializerAnalysis(t, analysisRepo, "analysis-2", "run-1", "conversation-2", "Customers need reset emails that arrive.", "Reset emails are not delivered", now.Add(time.Minute))
 
-	result, err := analyzer.materializeRunFindings(ctx, "ws-1", "run-1")
+	result, err := analyzer.materializePendingFindings(ctx, "ws-1")
 	if err != nil {
-		t.Fatalf("materializeRunFindings: %v", err)
+		t.Fatalf("materializePendingFindings: %v", err)
 	}
 	if result.NewGapsCreated != 1 {
 		t.Fatalf("NewGapsCreated=%d, want 1", result.NewGapsCreated)
@@ -89,11 +89,11 @@ func TestCoverageMaterializerRetryDoesNotDuplicateEvidenceOrCount(t *testing.T) 
 	now := time.Now()
 
 	seedMaterializerAnalysis(t, analysisRepo, "analysis-1", "run-1", "conversation-1", "Customers need refund exception rules.", "Refund exception criteria", now)
-	if _, err := analyzer.materializeRunFindings(ctx, "ws-1", "run-1"); err != nil {
-		t.Fatalf("first materializeRunFindings: %v", err)
+	if _, err := analyzer.materializePendingFindings(ctx, "ws-1"); err != nil {
+		t.Fatalf("first materializePendingFindings: %v", err)
 	}
-	if _, err := analyzer.materializeRunFindings(ctx, "ws-1", "run-1"); err != nil {
-		t.Fatalf("second materializeRunFindings: %v", err)
+	if _, err := analyzer.materializePendingFindings(ctx, "ws-1"); err != nil {
+		t.Fatalf("second materializePendingFindings: %v", err)
 	}
 
 	var gap model.SupportCoverageGap
@@ -145,9 +145,9 @@ func TestCoverageMaterializerAttachesHighConfidenceFindingToExistingGap(t *testi
 	}
 	seedMaterializerAnalysis(t, analysisRepo, "analysis-1", "run-1", "conversation-1", "Customers need refund exception criteria.", "Refund exception criteria", now)
 
-	result, err := analyzer.materializeRunFindings(ctx, "ws-1", "run-1")
+	result, err := analyzer.materializePendingFindings(ctx, "ws-1")
 	if err != nil {
-		t.Fatalf("materializeRunFindings: %v", err)
+		t.Fatalf("materializePendingFindings: %v", err)
 	}
 	if result.ExistingGapAttached != 1 {
 		t.Fatalf("ExistingGapAttached=%d, want 1", result.ExistingGapAttached)
@@ -228,9 +228,9 @@ func TestCoverageMaterializerSkipsIncompatibleNearestGap(t *testing.T) {
 	}
 	seedMaterializerAnalysis(t, analysisRepo, "analysis-1", "run-1", "conversation-1", "Customers need documented refund exception criteria.", "Refund exception criteria", now)
 
-	result, err := analyzer.materializeRunFindings(ctx, "ws-1", "run-1")
+	result, err := analyzer.materializePendingFindings(ctx, "ws-1")
 	if err != nil {
-		t.Fatalf("materializeRunFindings: %v", err)
+		t.Fatalf("materializePendingFindings: %v", err)
 	}
 	if result.ExistingGapAttached != 1 || result.NewGapsCreated != 0 {
 		t.Fatalf("result=%+v, want attachment to compatible existing gap", result)
@@ -305,9 +305,9 @@ func TestCoverageMaterializerDoesNotAttachAcrossConflictingTargetDocuments(t *te
 		t.Fatalf("update analysis raw output: %v", err)
 	}
 
-	result, err := analyzer.materializeRunFindings(ctx, "ws-1", "run-1")
+	result, err := analyzer.materializePendingFindings(ctx, "ws-1")
 	if err != nil {
-		t.Fatalf("materializeRunFindings: %v", err)
+		t.Fatalf("materializePendingFindings: %v", err)
 	}
 	if result.ExistingGapAttached != 0 || result.NewGapsCreated != 1 {
 		t.Fatalf("result=%+v, want a new gap for conflicting target documents", result)
@@ -339,9 +339,9 @@ func TestCoverageMaterializerCompleteLinkPreventsTransitiveCluster(t *testing.T)
 	seedMaterializerAnalysis(t, analysisRepo, "analysis-b", "run-1", "conversation-b", "Password login recovery instructions are missing.", "Password login recovery", now.Add(time.Minute))
 	seedMaterializerAnalysis(t, analysisRepo, "analysis-c", "run-1", "conversation-c", "Login access documentation is missing.", "Login access documentation", now.Add(2*time.Minute))
 
-	result, err := analyzer.materializeRunFindings(ctx, "ws-1", "run-1")
+	result, err := analyzer.materializePendingFindings(ctx, "ws-1")
 	if err != nil {
-		t.Fatalf("materializeRunFindings: %v", err)
+		t.Fatalf("materializePendingFindings: %v", err)
 	}
 	if result.NewGapsCreated != 2 || result.SameRunFindingsMerged != 1 {
 		t.Fatalf("result=%+v, want two complete-link clusters", result)
@@ -398,9 +398,9 @@ func TestCoverageMaterializerReclassifiesStrongKBMatchAsRetrievalFailure(t *test
 
 	seedMaterializerAnalysis(t, analysisRepo, "analysis-1", "run-1", "conversation-1", "Customers need password reset emails that arrive.", "Password reset email troubleshooting", now)
 
-	result, err := analyzer.materializeRunFindings(ctx, "ws-1", "run-1")
+	result, err := analyzer.materializePendingFindings(ctx, "ws-1")
 	if err != nil {
-		t.Fatalf("materializeRunFindings: %v", err)
+		t.Fatalf("materializePendingFindings: %v", err)
 	}
 	if result.NewGapsCreated != 1 {
 		t.Fatalf("NewGapsCreated=%d, want 1", result.NewGapsCreated)
@@ -435,8 +435,8 @@ func TestCoverageMaterializerMarksMissingContentWhenKBHasNoMatch(t *testing.T) {
 
 	seedMaterializerAnalysis(t, analysisRepo, "analysis-1", "run-1", "conversation-1", "Customers need tax exemption certificate upload steps.", "Tax exemption certificate uploads", now)
 
-	if _, err := analyzer.materializeRunFindings(ctx, "ws-1", "run-1"); err != nil {
-		t.Fatalf("materializeRunFindings: %v", err)
+	if _, err := analyzer.materializePendingFindings(ctx, "ws-1"); err != nil {
+		t.Fatalf("materializePendingFindings: %v", err)
 	}
 	var gap model.SupportCoverageGap
 	if err := db.First(&gap).Error; err != nil {
@@ -485,9 +485,9 @@ func TestCoverageMaterializerFlagsRecurrenceAfterDoneGap(t *testing.T) {
 	})
 	seedMaterializerAnalysis(t, analysisRepo, "analysis-1", "run-1", "conversation-1", "Customers need password reset emails that arrive.", "Password reset email troubleshooting", now)
 
-	result, err := analyzer.materializeRunFindings(ctx, "ws-1", "run-1")
+	result, err := analyzer.materializePendingFindings(ctx, "ws-1")
 	if err != nil {
-		t.Fatalf("materializeRunFindings: %v", err)
+		t.Fatalf("materializePendingFindings: %v", err)
 	}
 	if result.NewGapsCreated != 0 || result.ExistingGapAttached != 1 {
 		t.Fatalf("result=%+v, want recurrence evidence attached without new gap", result)
@@ -578,8 +578,8 @@ func TestCoverageMaterializerFlagsPotentialOverAttachment(t *testing.T) {
 	}
 	seedMaterializerAnalysis(t, analysisRepo, "analysis-new", "run-1", "conversation-new", "Customers need account access help.", "Account access problems", now)
 
-	if _, err := analyzer.materializeRunFindings(ctx, "ws-1", "run-1"); err != nil {
-		t.Fatalf("materializeRunFindings: %v", err)
+	if _, err := analyzer.materializePendingFindings(ctx, "ws-1"); err != nil {
+		t.Fatalf("materializePendingFindings: %v", err)
 	}
 	var gap model.SupportCoverageGap
 	if err := db.First(&gap, "id = ?", existing.ID).Error; err != nil {
@@ -714,7 +714,7 @@ func TestCoverageManualReanalysisDoesNotCreateAnotherGapForExistingEvidence(t *t
 	analyzer := NewSupportCoverageDailyAnalyzer(nil, "", "").SetCoverageRepositories(repository.NewSupportCoverageRepository(db), repo).SetEmbeddingProvider(&fakeCoverageEmbeddingProvider{}, "")
 	ctx := context.Background()
 	seedMaterializerAnalysis(t, repo, "analysis", "run-1", "c", "Reset password instructions", "Password reset", time.Now())
-	if _, err := analyzer.materializeRunFindings(ctx, "ws-1", "run-1"); err != nil {
+	if _, err := analyzer.materializePendingFindings(ctx, "ws-1"); err != nil {
 		t.Fatal(err)
 	}
 	var analysis model.SupportCoverageConversationAnalysis
@@ -731,7 +731,7 @@ func TestCoverageManualReanalysisDoesNotCreateAnotherGapForExistingEvidence(t *t
 	if err := repo.RefreshConversationAnalysis(ctx, &analysis); err != nil {
 		t.Fatal(err)
 	}
-	result, err := analyzer.materializeRunFindings(withCoverageReanalysis(ctx, "request"), "ws-1", "manual-run")
+	result, err := analyzer.materializePendingFindings(withCoverageReanalysis(ctx, "request"), "ws-1")
 	if err != nil {
 		t.Fatal(err)
 	}

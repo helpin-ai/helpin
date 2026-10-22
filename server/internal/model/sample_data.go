@@ -42,6 +42,8 @@ var SampleEntityRemovalOrder = []string{
 // ErrSampleDataAlreadyLoaded is returned when a workspace already holds sample data.
 var ErrSampleDataAlreadyLoaded = errors.New("sample data is already loaded")
 
+var ErrSampleDataWorkspaceNotEmpty = errors.New("sample data is only available in empty workspaces")
+
 // ErrSampleDataNoModules is returned when none of the seedable modules is enabled.
 var ErrSampleDataNoModules = errors.New("no module that supports sample data is enabled")
 
@@ -60,9 +62,10 @@ func (SampleDataItem) TableName() string { return "sample_data_items" }
 
 // SampleDataStatus describes the sample data currently loaded in a workspace.
 type SampleDataStatus struct {
-	Loaded   bool             `json:"loaded"`
-	LoadedAt *time.Time       `json:"loaded_at,omitempty"`
-	Counts   map[string]int64 `json:"counts"`
+	HasRealContent bool             `json:"has_real_content"`
+	Loaded         bool             `json:"loaded"`
+	LoadedAt       *time.Time       `json:"loaded_at,omitempty"`
+	Counts         map[string]int64 `json:"counts"`
 	// Modules lists the modules sample data can be loaded for, given the
 	// caller's access and the modules enabled on this deployment.
 	Modules []ModuleID `json:"modules"`

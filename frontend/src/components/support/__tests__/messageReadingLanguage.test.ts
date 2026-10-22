@@ -22,8 +22,9 @@ describe('message reading language', () => {
   it('keeps mixed-language sentences translatable within one paragraph', () => {
     expect(isMessageInReadingLanguage(`${english.repeat(5)} ${spanish}`, 'en')).toBe(false);
   });
-  it('does not infer regional language variants', () => {
-    expect(isMessageInReadingLanguage(english, 'en-GB')).toBe(false);
+  it('recognizes regional English reading preferences', () => {
+    expect(isMessageInReadingLanguage(english, 'en-GB')).toBe(true);
+    expect(isMessageInReadingLanguage(english, ' EN_us ')).toBe(true);
   });
   it('ignores quoted history and code while classifying the authored text', () => {
     expect(isMessageInReadingLanguage(`${english}\n> ${spanish}\n\n\`\`\`\n${spanish}\n\`\`\``, 'en')).toBe(true);

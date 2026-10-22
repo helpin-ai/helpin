@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ import (
 
 const (
 	coverageClusterRebuildLimit           = 1000
+	coverageMergeSettleLimit              = 300
 	coverageClusterEmbeddingSuggest       = 0.72
 	coverageClusterEmbeddingAutoMerge     = 0.88
 	coverageClusterCreationDedupeLimit    = 200
@@ -27,6 +29,7 @@ type SupportCoverageClusterRebuildService struct {
 	coverageRepo   *repository.SupportCoverageRepository
 	embedder       llm.EmbeddingProvider
 	embeddingModel string
+	judge          *coverageNeedJudge
 }
 
 type SupportCoverageClusterRebuildResult struct {
@@ -35,6 +38,7 @@ type SupportCoverageClusterRebuildResult struct {
 	GapsScanned        int        `json:"gaps_scanned"`
 	ClustersFound      int        `json:"clusters_found"`
 	AutoMerged         int        `json:"auto_merged"`
+	KeptSeparate       int        `json:"kept_separate"`
 	SuggestionsCreated int        `json:"suggestions_created"`
 	Skipped            int        `json:"skipped"`
 	EmbeddingStatus    string     `json:"embedding_status"`
@@ -105,6 +109,16 @@ func NewSupportCoverageClusterRebuildService(coverageRepo *repository.SupportCov
 		embedder:       embedder,
 		embeddingModel: strings.TrimSpace(embeddingModel),
 	}
+}
+
+// SetNeedJudge lets the duplicate check settle merge suggestions itself: a pair
+// judged the same need is merged and a pair judged different is kept separate.
+// Only pairs the judge is unsure about stay for a person.
+func (s *SupportCoverageClusterRebuildService) SetNeedJudge(llmProvider llm.Provider, jev *JevDecisionService) *SupportCoverageClusterRebuildService {
+	if s != nil && (llmProvider != nil || jev != nil) {
+		s.judge = &coverageNeedJudge{llmProvider: llmProvider, jev: jev}
+	}
+	return s
 }
 
 func (s *SupportCoverageClusterRebuildService) RebuildWorkspace(ctx context.Context, workspaceID string) (*SupportCoverageClusterRebuildResult, error) {
@@ -285,6 +299,13 @@ func (s *SupportCoverageClusterRebuildService) RebuildWorkspace(ctx context.Cont
 			result.SuggestionsCreated++
 		}
 	}
+	s.settleMergeSuggestions(ctx, workspaceID, candidates, merged, result)
+	// Report what is still waiting for a person, not what this run proposed.
+	if pending, err := s.coverageRepo.CountPendingMergeSuggestions(ctx, workspaceID); err == nil {
+		result.SuggestionsCreated = int(pending)
+	} else {
+		slog.WarnContext(ctx, "coverage pending merge suggestions not counted", "workspace_id", workspaceID, "error", err)
+	}
 	completedAt := time.Now().UTC()
 	result.CompletedAt = &completedAt
 	result.Status = model.SupportCoverageClusterRebuildStatusCompleted
@@ -293,6 +314,53 @@ func (s *SupportCoverageClusterRebuildService) RebuildWorkspace(ctx context.Cont
 		return nil, err
 	}
 	return result, nil
+}
+
+// settleMergeSuggestions asks the need judge about every pending suggestion
+// between open gaps. Judge failures leave the suggestion pending.
+func (s *SupportCoverageClusterRebuildService) settleMergeSuggestions(ctx context.Context, workspaceID string, candidates []coverageClusterCandidate, merged map[string]bool, result *SupportCoverageClusterRebuildResult) {
+	if !s.judge.available() {
+		return
+	}
+	needs := make(map[string]string, len(candidates))
+	for _, candidate := range candidates {
+		needs[candidate.Gap.ID] = coverageGapNeedText(candidate.Gap)
+	}
+	suggestions, err := s.coverageRepo.ListPendingMergeSuggestions(ctx, workspaceID, coverageMergeSettleLimit)
+	if err != nil {
+		slog.WarnContext(ctx, "coverage merge suggestions not settled", "workspace_id", workspaceID, "error", err)
+		return
+	}
+	for _, suggestion := range suggestions {
+		sourceNeed, sourceOpen := needs[suggestion.SourceGapID]
+		targetNeed, targetOpen := needs[suggestion.TargetGapID]
+		if !sourceOpen || !targetOpen || merged[suggestion.SourceGapID] || merged[suggestion.TargetGapID] {
+			continue
+		}
+		verdict, err := s.judge.Match(ctx, workspaceID, suggestion.ID, sourceNeed, []coverageNeedCandidate{{ID: suggestion.TargetGapID, Need: targetNeed}})
+		if err != nil {
+			slog.WarnContext(ctx, "coverage merge suggestion left for review", "workspace_id", workspaceID, "suggestion_id", suggestion.ID, "error", err)
+			continue
+		}
+		switch {
+		case verdict.MatchID == suggestion.TargetGapID:
+			if err := s.coverageRepo.MergeGaps(ctx, workspaceID, suggestion.SourceGapID, suggestion.TargetGapID); err != nil {
+				slog.WarnContext(ctx, "coverage automatic merge failed", "workspace_id", workspaceID, "suggestion_id", suggestion.ID, "error", err)
+				continue
+			}
+			if err := s.coverageRepo.MarkMergeSuggestionReviewed(ctx, workspaceID, suggestion.ID, model.SupportCoverageMergeSuggestionStatusApplied, ""); err != nil {
+				slog.WarnContext(ctx, "coverage merge suggestion not marked applied", "workspace_id", workspaceID, "suggestion_id", suggestion.ID, "error", err)
+			}
+			merged[suggestion.SourceGapID] = true
+			result.AutoMerged++
+		case verdict.Decided:
+			if err := s.coverageRepo.KeepSeparateMergeSuggestion(ctx, workspaceID, suggestion.ID, ""); err != nil {
+				slog.WarnContext(ctx, "coverage merge suggestion not dismissed", "workspace_id", workspaceID, "suggestion_id", suggestion.ID, "error", err)
+				continue
+			}
+			result.KeptSeparate++
+		}
+	}
 }
 
 func (s *SupportCoverageClusterRebuildService) LatestRun(ctx context.Context, workspaceID string) (*model.SupportCoverageClusterRebuildRun, error) {

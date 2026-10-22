@@ -74,6 +74,9 @@ it.each([
 
 
 it.each([
+ ...['pending', 'failed', 'expired', 'ready'].map(status => ({ name: `English with ${status} cache and unknown source`, content: 'I can help you update your email address. Please open your account settings and select your profile.', source: 'I can help you update your email address. Please open your account settings and select your profile.', sourceLanguage: 'und', translated: '', status, expected: null })),
+ { name: 'regional English evidence', content: 'Hello', source: 'Hello', sourceLanguage: 'en-US', translated: 'Hi', status: 'ready', expected: null },
+ { name: 'mixed language evidence overrides local guess', content: 'I can help you update your email address. Please open your account settings and select your profile.', source: 'I can help you update your email address. Please open your account settings and select your profile.', sourceLanguage: 'mul', translated: 'Translation', status: 'ready', expected: 'Show original' },
  { name: 'known same-language text', content: 'Hello', source: 'Hello', sourceLanguage: 'en', translated: 'Hi', status: 'ready', expected: null },
  { name: 'a real display translation', content: 'Hola', source: 'Hola', sourceLanguage: 'es', translated: 'Hello', status: 'ready', expected: 'Show original' },
  { name: 'stale cached evidence', content: 'Hola', source: 'Hello', sourceLanguage: 'en', translated: 'Hello', status: 'ready', expected: 'Translate' },
@@ -84,6 +87,7 @@ it.each([
  try {
   await act(async () => root.render(<QueryClientProvider client={client}><TranslatedMessageBubble workspaceId="w" message={{id:'evidence',workspace_id:'w',conversation_id:'c',sender_type:'ai',message_type:'reply',content,is_internal:false} as never} cachedTranslation={{source_message_id:'evidence',source_text:source,source_language:sourceLanguage,target_language:'en',translated_text:translated,status} as never}/></QueryClientProvider>));
   expect(div.querySelector('button')?.textContent ?? null).toBe(expected);
+  if (expected === null) { expect(div.querySelector('[data-status]')?.textContent).toBe(''); expect(div.querySelector('p')?.textContent).toBe(content); }
   if (sourceLanguage === 'en' && source === content) expect(div.querySelector('p')?.textContent).toBe(content);
   expect(request).not.toHaveBeenCalled();
  } finally { await act(async () => root.unmount()); client.clear(); }

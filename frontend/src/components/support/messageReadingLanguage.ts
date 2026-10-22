@@ -1,6 +1,6 @@
 import { francAll } from 'franc-min';
 
-// Only unambiguous language codes; regional/script variants keep manual Translate.
+// Only unambiguous language codes; script variants keep manual Translate.
 const readingLanguageCodes: Record<string, string> = {
   en: 'eng', de: 'deu', fr: 'fra', es: 'spa', it: 'ita', pt: 'por', nl: 'nld',
   pl: 'pol', uk: 'ukr', ru: 'rus', tr: 'tur', he: 'heb', hi: 'hin', bn: 'ben',
@@ -8,10 +8,17 @@ const readingLanguageCodes: Record<string, string> = {
   da: 'dan', fi: 'fin', cs: 'ces', ro: 'ron', el: 'ell',
 };
 
+// English regional tags still represent English for display translation. Do not
+// collapse arbitrary script variants (for example zh-Hant versus zh-Hans).
+export function normalizeReadingLanguage(language: string): string {
+  const normalized = language.trim().toLowerCase().replaceAll('_', '-');
+  return /^en(?:-[a-z]{2}|-[0-9]{3})?$/.test(normalized) ? 'en' : normalized;
+}
+
 // This is a display hint only: never choose a send language or trigger a model
 // request from it. Unknown, short and mixed text keeps manual Translate available.
 export function isMessageInReadingLanguage(content: string, readingLanguage: string): boolean {
-  const reading = readingLanguage.trim().toLowerCase().replaceAll('_', '-');
+  const reading = normalizeReadingLanguage(readingLanguage);
   // The local detector cannot distinguish regional/script variants.
   const expected = readingLanguageCodes[reading];
   if (!expected) return false;

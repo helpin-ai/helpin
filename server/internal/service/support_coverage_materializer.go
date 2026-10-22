@@ -32,18 +32,21 @@ type coverageMaterializedFinding struct {
 	Vector   []float32
 }
 
-func (s *SupportCoverageDailyAnalyzer) materializeRunFindings(ctx context.Context, workspaceID, runID string) (*CoverageMaterializationResult, error) {
+// materializePendingFindings turns every analysed gap of the workspace that
+// has no gap yet into gap evidence, whichever run produced it.
+func (s *SupportCoverageDailyAnalyzer) materializePendingFindings(ctx context.Context, workspaceID string) (*CoverageMaterializationResult, error) {
 	if s == nil || s.coverageRepo == nil || s.analysisRepo == nil {
 		return nil, fmt.Errorf("coverage materializer dependencies are not configured")
 	}
-	if workspaceID == "" || runID == "" {
-		return nil, fmt.Errorf("workspace_id and run_id are required")
-	}
-	result := &CoverageMaterializationResult{}
-	analyses, err := s.analysisRepo.ListUnmaterializedGapAnalysesForRun(ctx, workspaceID, runID, 1000)
+	analyses, err := s.analysisRepo.ListUnmaterializedGapAnalyses(ctx, workspaceID, 1000)
 	if err != nil {
 		return nil, err
 	}
+	return s.materializeAnalyses(ctx, workspaceID, analyses)
+}
+
+func (s *SupportCoverageDailyAnalyzer) materializeAnalyses(ctx context.Context, workspaceID string, analyses []model.SupportCoverageConversationAnalysis) (*CoverageMaterializationResult, error) {
+	result := &CoverageMaterializationResult{}
 	result.FindingsScanned = len(analyses)
 	if len(analyses) == 0 {
 		return result, nil
@@ -175,31 +178,7 @@ func (s *SupportCoverageDailyAnalyzer) matchExistingMaterializedGap(ctx context.
 		}
 		candidates = items
 	}
-	var best *model.SupportCoverageGapListItem
-	bestScore := 0.0
-	incoming := coverageMaterializedFindingCandidate(finding)
-	for _, candidate := range candidates {
-		if candidate.Embedding == "" ||
-			candidate.EmbeddingProvider != coverageEmbeddingProviderName ||
-			candidate.EmbeddingModel != modelName ||
-			candidate.EmbeddingVersion != coverageGapEmbeddingVersion ||
-			candidate.EmbeddingDimensions != len(finding.Vector) {
-			continue
-		}
-		if !coverageClusterCompatible(incoming, candidate) {
-			continue
-		}
-		score := coverageCosineSimilarity(finding.Vector, coverageParseVectorLiteral(candidate.Embedding))
-		if score > bestScore {
-			candidateCopy := candidate
-			best = &candidateCopy
-			bestScore = score
-		}
-	}
-	if best == nil || bestScore < coverageSemanticAttachThreshold {
-		return nil, nil
-	}
-	return best, nil
+	return s.pickMaterializedGapMatch(ctx, workspaceID, finding, candidates), nil
 }
 
 func (s *SupportCoverageDailyAnalyzer) matchRecentClosedMaterializedGap(ctx context.Context, workspaceID string, finding coverageMaterializedFinding) (*model.SupportCoverageGapListItem, error) {
@@ -217,9 +196,20 @@ func (s *SupportCoverageDailyAnalyzer) matchRecentClosedMaterializedGap(ctx cont
 		}
 		candidates = items
 	}
-	var best *model.SupportCoverageGapListItem
-	bestScore := 0.0
+	return s.pickMaterializedGapMatch(ctx, workspaceID, finding, candidates), nil
+}
+
+// pickMaterializedGapMatch takes the nearest compatible gap when it is clearly
+// the same need and asks the need judge when it is only close. Anything else,
+// including a judge failure, keeps the finding as its own gap.
+func (s *SupportCoverageDailyAnalyzer) pickMaterializedGapMatch(ctx context.Context, workspaceID string, finding coverageMaterializedFinding, candidates []model.SupportCoverageGapListItem) *model.SupportCoverageGapListItem {
+	type scoredGap struct {
+		gap   model.SupportCoverageGapListItem
+		score float64
+	}
+	modelName := coverageEmbeddingModel(s.embeddingModel)
 	incoming := coverageMaterializedFindingCandidate(finding)
+	var near []scoredGap
 	for _, candidate := range candidates {
 		if candidate.Embedding == "" ||
 			candidate.EmbeddingProvider != coverageEmbeddingProviderName ||
@@ -232,16 +222,52 @@ func (s *SupportCoverageDailyAnalyzer) matchRecentClosedMaterializedGap(ctx cont
 			continue
 		}
 		score := coverageCosineSimilarity(finding.Vector, coverageParseVectorLiteral(candidate.Embedding))
-		if score > bestScore {
-			candidateCopy := candidate
-			best = &candidateCopy
-			bestScore = score
+		if score >= coverageJudgeFloor {
+			near = append(near, scoredGap{gap: candidate, score: score})
 		}
 	}
-	if best == nil || bestScore < coverageSemanticAttachThreshold {
-		return nil, nil
+	if len(near) == 0 {
+		return nil
 	}
-	return best, nil
+	sort.SliceStable(near, func(i, j int) bool { return near[i].score > near[j].score })
+	if near[0].score >= coverageSemanticAttachThreshold {
+		return &near[0].gap
+	}
+	judge := s.needJudge()
+	if !judge.available() {
+		return nil
+	}
+	options := make([]coverageNeedCandidate, 0, coverageJudgeMaxCandidates)
+	for _, candidate := range near {
+		options = append(options, coverageNeedCandidate{ID: candidate.gap.ID, Need: coverageGapNeedText(candidate.gap)})
+	}
+	verdict, err := judge.Match(ctx, workspaceID, finding.Analysis.ID, coverageFindingNeedText(finding), options)
+	if err != nil {
+		slog.WarnContext(ctx, "coverage gap match deferred to a new gap", "workspace_id", workspaceID, "analysis_id", finding.Analysis.ID, "error", err)
+		return nil
+	}
+	for _, candidate := range near {
+		if verdict.MatchID != "" && candidate.gap.ID == verdict.MatchID {
+			matched := candidate.gap
+			return &matched
+		}
+	}
+	return nil
+}
+
+func (s *SupportCoverageDailyAnalyzer) needJudge() *coverageNeedJudge {
+	if s == nil || (s.llmProvider == nil && s.jevDecisions == nil) {
+		return nil
+	}
+	return &coverageNeedJudge{llmProvider: s.llmProvider, jev: s.jevDecisions}
+}
+
+func coverageFindingNeedText(finding coverageMaterializedFinding) string {
+	return firstNonEmptyCoverageString(finding.Analysis.CustomerNeed, finding.Analysis.CanonicalTitle)
+}
+
+func coverageGapNeedText(gap model.SupportCoverageGapListItem) string {
+	return firstNonEmptyCoverageString(gap.CustomerNeedText, gap.CanonicalTitle, gap.Title)
 }
 
 func coverageMaterializedFindingCandidate(finding coverageMaterializedFinding) model.SupportCoverageGapListItem {

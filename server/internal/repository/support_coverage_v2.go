@@ -433,6 +433,10 @@ func (r *CoverageV2Repository) ReplaceCurrentFinding(ctx context.Context, findin
 			Updates(map[string]interface{}{"is_current": false, "superseded_at": now}).Error; err != nil {
 			return err
 		}
+		// The embedding is added later; "" is not a valid pgvector literal.
+		if strings.TrimSpace(finding.Embedding) == "" {
+			tx = tx.Omit("Embedding")
+		}
 		return tx.Create(finding).Error
 	})
 }
@@ -802,6 +806,19 @@ func (r *CoverageV2Repository) ListFailedAttempts(ctx context.Context, workspace
 	}
 	var attempts []model.CoverageAnalysisAttempt
 	err := r.db.WithContext(ctx).Where("workspace_id = ? AND status IN ?", workspaceID, []string{model.CoverageAttemptRetryable, model.CoverageAttemptDeadLetter, model.CoverageAttemptPausedConfiguration}).Order("created_at DESC").Limit(limit).Find(&attempts).Error
+	return attempts, err
+}
+
+// ListFailedAttemptsForBatch lists the failed attempts of one batch, newest
+// first. Older batches' failures are history, not current health.
+func (r *CoverageV2Repository) ListFailedAttemptsForBatch(ctx context.Context, workspaceID, batchID string, limit int) ([]model.CoverageAnalysisAttempt, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 25
+	}
+	var attempts []model.CoverageAnalysisAttempt
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND batch_id = ? AND status IN ?", workspaceID, batchID, []string{model.CoverageAttemptRetryable, model.CoverageAttemptDeadLetter, model.CoverageAttemptPausedConfiguration}).
+		Order("created_at DESC").Limit(limit).Find(&attempts).Error
 	return attempts, err
 }
 

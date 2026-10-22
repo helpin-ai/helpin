@@ -72,6 +72,25 @@ func (r *SampleDataRepository) ListItems(ctx context.Context, workspaceID string
 	return items, nil
 }
 
+// HasRealContent checks workspace-wide content, independent of the viewer's
+// enabled modules. Configuration, teams, and system defaults do not count.
+func (r *SampleDataRepository) HasRealContent(ctx context.Context, workspaceID string) (bool, error) {
+	for _, table := range []string{"support_conversations", "pm_tasks", "pm_epics", "docs_documents", "crm_contacts", "crm_companies", "crm_deals", "automation_rules"} {
+		if !r.hasTable(table) {
+			continue
+		}
+		var found bool
+		err := r.db.WithContext(ctx).Raw("SELECT EXISTS (SELECT 1 FROM "+table+" WHERE workspace_id = ? AND "+NotSampleDataSQL(table+".id")+")", workspaceID).Scan(&found).Error
+		if err != nil {
+			return false, fmt.Errorf("check workspace content in %s: %w", table, err)
+		}
+		if found {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // DeleteItems removes tracking rows.
 func (r *SampleDataRepository) DeleteItems(ctx context.Context, workspaceID string, ids []string) error {
 	if len(ids) == 0 {

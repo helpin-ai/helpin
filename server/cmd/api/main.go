@@ -1579,6 +1579,7 @@ func main() {
 		SetKnowledgeMatcher(supportCoverageKnowledgeMatcher, docsSpaceRepo, supportContentSourceRepo).
 		SetTemporalClient(temporalClient)
 	supportCoverageDailyAnalyzer.SetJevDecisions(jevProductDecisions)
+	supportCoverageClusterRebuildService.SetNeedJudge(llmProvider, jevProductDecisions)
 	commandService.SetJevDecisions(jevProductDecisions)
 	supportCoverageTraceService := service.NewSupportCoverageRetrievalTraceService(supportCoverageAnalysisRepo)
 	supportEventService := service.NewSupportEventService(supportEventRepo, supportCoverageService).

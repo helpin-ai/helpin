@@ -17,7 +17,11 @@ export function CoverageAnalysisActions({ health, canReanalyze, submitting, load
   const tooltip = 'Recheck eligible conversations from the last 30 days against current knowledge to identify new or changed coverage gaps.'
   return (
     <div className="flex flex-wrap items-center justify-end gap-3">
-      {!loading && state.pill && (
+      {!loading && state.pill && (state.inline ? (
+        <span role="status" aria-live="polite" className="rounded-full bg-quiet-hover px-2.5 py-1 text-xs font-medium text-quiet-text-secondary">
+          {state.pill}
+        </span>
+      ) : (
         <Tooltip>
           <TooltipTrigger asChild>
             <span tabIndex={0} role="status" aria-live="polite" className="rounded-full bg-quiet-hover px-2.5 py-1 text-xs font-medium text-quiet-text-secondary">
@@ -26,7 +30,7 @@ export function CoverageAnalysisActions({ health, canReanalyze, submitting, load
           </TooltipTrigger>
           <TooltipContent>{state.description}</TooltipContent>
         </Tooltip>
-      )}
+      ))}
       {canReanalyze && (
         <Tooltip>
           <TooltipTrigger asChild>

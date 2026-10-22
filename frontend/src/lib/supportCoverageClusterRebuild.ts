@@ -14,9 +14,8 @@ export function isClusterRebuildResult(value: unknown): value is SupportCoverage
 
 export function formatClusterRebuildSuccess(result: SupportCoverageClusterRebuildResult): string {
   if (result.status === 'failed' || result.embedding_status === 'failed') {
-    return `Cluster rebuild failed: ${result.embedding_error || 'embedding backfill failed'}`
+    return `Duplicate check failed: ${result.embedding_error || 'gap comparison failed'}`
   }
-  const embeddings = result.embeddings_created ?? 0
-  const skipped = result.missing_embeddings ?? result.skipped ?? 0
-  return `Cluster rebuild complete: scanned ${result.gaps_scanned} gaps, ${embeddings} embeddings backfilled, ${result.auto_merged} merged, ${result.suggestions_created} for review, ${skipped} skipped.`
+  const unclear = result.suggestions_created
+  return `Duplicate check complete: ${result.auto_merged} merged, ${result.kept_separate ?? 0} kept separate, ${unclear} unclear ${unclear === 1 ? 'pair' : 'pairs'} left as merge suggestions.`
 }

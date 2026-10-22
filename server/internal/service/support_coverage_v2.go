@@ -7,8 +7,6 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
-	enums "go.temporal.io/api/enums/v1"
-	"go.temporal.io/api/serviceerror"
 	tclient "go.temporal.io/sdk/client"
 )
 
@@ -17,12 +15,18 @@ type CoverageTopicDetailV2 struct {
 	Findings []model.CoverageFinding `json:"findings"`
 }
 
+// CoveragePipelineHealth explains whether coverage analysis is working. Healthy
+// means nothing needs a person: failures that will retry on their own do not
+// count, and only the latest batch is considered.
 type CoveragePipelineHealth struct {
-	ReanalysisStatus string                          `json:"reanalysis_status,omitempty"`
-	LatestBatch      *model.CoverageBatch            `json:"latest_batch"`
-	Failures         []model.CoverageAnalysisAttempt `json:"failures"`
-	Healthy          bool                            `json:"healthy"`
-	Rollout          CoverageRolloutDecision         `json:"rollout"`
+	ReanalysisStatus  string                          `json:"reanalysis_status,omitempty"`
+	ReanalysisAttempt int32                           `json:"reanalysis_attempt,omitempty"`
+	ReanalysisError   string                          `json:"reanalysis_error,omitempty"`
+	ScheduleStatus    string                          `json:"schedule_status,omitempty"`
+	LatestBatch       *model.CoverageBatch            `json:"latest_batch"`
+	Failures          []model.CoverageAnalysisAttempt `json:"failures"`
+	Healthy           bool                            `json:"healthy"`
+	Rollout           CoverageRolloutDecision         `json:"rollout"`
 }
 
 var ErrCoverageV2ReadDisabled = errors.New("coverage v2 reads are not enabled for this workspace")
@@ -36,36 +40,6 @@ type SupportCoverageV2Service struct {
 func (s *SupportCoverageV2Service) SetTemporalClient(client tclient.Client) *SupportCoverageV2Service {
 	s.temporal = client
 	return s
-}
-
-func (s *SupportCoverageV2Service) reanalysisStatus(ctx context.Context, workspaceID string) (string, error) {
-	if s.temporal == nil {
-		return "unavailable", nil
-	}
-	description, err := s.temporal.DescribeWorkflowExecution(ctx, "coverage-reanalysis-"+workspaceID, "")
-	var notFound *serviceerror.NotFound
-	if errors.As(err, &notFound) {
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	if description == nil || description.WorkflowExecutionInfo == nil {
-		return "unavailable", nil
-	}
-	switch description.WorkflowExecutionInfo.Status {
-	case enums.WORKFLOW_EXECUTION_STATUS_RUNNING:
-		for _, pending := range description.PendingActivities {
-			if pending.State == enums.PENDING_ACTIVITY_STATE_STARTED {
-				return "running", nil
-			}
-		}
-		return "queued", nil
-	case enums.WORKFLOW_EXECUTION_STATUS_FAILED, enums.WORKFLOW_EXECUTION_STATUS_TIMED_OUT, enums.WORKFLOW_EXECUTION_STATUS_TERMINATED, enums.WORKFLOW_EXECUTION_STATUS_CANCELED:
-		return "failed", nil
-	default:
-		return "", nil
-	}
 }
 
 func (s *SupportCoverageV2Service) EnsureReanalysisEnabled(ctx context.Context, workspaceID string) error {
@@ -169,23 +143,38 @@ func (s *SupportCoverageV2Service) PipelineHealth(ctx context.Context, workspace
 	if err != nil {
 		return nil, err
 	}
-	failures, err := s.repo.ListFailedAttempts(ctx, workspaceID, 25)
-	if err != nil {
-		return nil, err
+	var failures []model.CoverageAnalysisAttempt
+	if batch != nil {
+		failures, err = s.repo.ListFailedAttemptsForBatch(ctx, workspaceID, batch.ID, 25)
+		if err != nil {
+			return nil, err
+		}
 	}
 	rollout, err := s.rolloutDecision(ctx, workspaceID)
 	if err != nil {
 		return nil, err
 	}
-	healthy := len(failures) == 0 && (batch == nil || batch.Status == model.CoverageBatchSucceeded)
-	if len(rollout.PauseReasons) > 0 {
-		healthy = false
-	}
-	status, err := s.reanalysisStatus(ctx, workspaceID)
+	run, err := s.reanalysisState(ctx, workspaceID)
 	if err != nil {
 		return nil, err
 	}
-	return &CoveragePipelineHealth{ReanalysisStatus: status, LatestBatch: batch, Failures: failures, Healthy: healthy, Rollout: rollout}, nil
+	healthy := len(rollout.PauseReasons) == 0 && run.Status != "failed" &&
+		(batch == nil || batch.Status != model.CoverageBatchFailed) && !coverageFailuresNeedPerson(failures)
+	return &CoveragePipelineHealth{
+		ReanalysisStatus: run.Status, ReanalysisAttempt: run.Attempt, ReanalysisError: run.Error,
+		ScheduleStatus: s.scheduleStatus(ctx), LatestBatch: batch, Failures: failures, Healthy: healthy, Rollout: rollout,
+	}, nil
+}
+
+// coverageFailuresNeedPerson is true when a failure exhausted its automatic
+// retries or is waiting on configuration.
+func coverageFailuresNeedPerson(failures []model.CoverageAnalysisAttempt) bool {
+	for _, failure := range failures {
+		if failure.Status != model.CoverageAttemptRetryable {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *SupportCoverageV2Service) ReplayAttempt(ctx context.Context, workspaceID, attemptID string) error {

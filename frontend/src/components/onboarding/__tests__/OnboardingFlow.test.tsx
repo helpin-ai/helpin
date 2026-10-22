@@ -13,7 +13,7 @@ const state = vi.hoisted(() => ({
   permissions: new Set<string>(['workspace.update']),
   role: undefined as string | undefined,
   setupGoals: [] as string[],
-  sampleStatus: { loaded: false, counts: {}, modules: ['pm'] } as { loaded: boolean; counts: object; modules: string[] },
+  sampleStatus: { loaded: false, counts: {}, modules: ['pm'] } as { loaded: boolean; has_real_content?: boolean; counts: object; modules: string[] },
   loadSample: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
@@ -398,6 +398,15 @@ describe('OnboardingFlow', () => {
     await act(async () => button('Explore with sample data')?.click());
     expect(state.loadSample).toHaveBeenCalled();
     expect(state.navigate).toHaveBeenCalledWith({ to: '/w/acme/setup' });
+  });
+
+  it('does not offer sample data in a populated workspace', () => {
+    state.workspaceBySlug = acme;
+    state.capabilities = caps('community', 'ready');
+    state.sampleStatus = { ...state.sampleStatus, has_real_content: true };
+    render({ step: 'finish', workspaceSlug: 'acme' });
+    expect(button('Explore with sample data')).toBeUndefined();
+    expect(button('Go to your workspace')).toBeDefined();
   });
 
   it('offers sample data only to people who can update the workspace', () => {

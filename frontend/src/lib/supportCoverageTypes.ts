@@ -184,6 +184,9 @@ export interface SupportCoverageClusterRebuildResult {
   gaps_scanned: number
   clusters_found: number
   auto_merged: number
+  /** Pairs the AI judged to be different needs. */
+  kept_separate?: number
+  /** Merge suggestions still waiting for a person after the check. */
   suggestions_created: number
   skipped: number
   embedding_status?: string
@@ -239,52 +242,6 @@ export interface SupportCoverageGapListResponse {
   total: number
 }
 
-export interface CoverageFindingV2 {
-  id: string
-  customer_need: string
-  ai_answer: string
-  ai_failure: string
-  human_answer: string
-  fix_type: string
-  fix_target: string
-  rationale: string
-  suggested_change: string
-  confidence: number
-  conversation_id?: string | null
-  embedding_status: string
-  assignment_status: string
-}
-
-export interface CoverageTopicV2 {
-  id: string
-  title: string
-  customer_need: string
-  status: string
-  finding_count: number
-  conversation_count: number
-  customer_count: number
-  updated_at: string
-}
-
-export interface CoverageInsightPage<T> {
-  items: T[] | null
-  total?: number
-}
-
-export interface CoverageTopicDetailV2 {
-  topic: CoverageTopicV2
-  findings: CoverageFindingV2[]
-}
-
-export interface CoverageSignalV2 {
-  id: string
-  source_kind: string
-  normalized_query: string
-  meaningful_tokens: number
-  confidence: number
-  observed_at: string
-}
-
 export interface CoverageAnalysisAttemptV2 {
   id: string
   source_kind: string
@@ -310,9 +267,16 @@ export interface CoverageBatchV2 {
 }
 
 export interface CoveragePipelineHealthV2 {
-  reanalysis_status?: 'queued' | 'running' | 'failed' | 'unavailable'
+  reanalysis_status?: 'queued' | 'running' | 'retrying' | 'failed' | 'unavailable'
+  /** Attempt number of the reassessment in progress; 1 is the first try. */
+  reanalysis_attempt?: number
+  /** Why the latest reassessment failed, or why its last attempt failed. */
+  reanalysis_error?: string
+  schedule_status?: 'scheduled' | 'missing'
   latest_batch: CoverageBatchV2 | null
+  /** Failed attempts of the latest batch only. */
   failures: CoverageAnalysisAttemptV2[]
+  /** False only when a person needs to act; automatic retries do not count. */
   healthy: boolean
   rollout: {
     requested_mode: 'disabled' | 'shadow' | 'v2_read' | 'v2_write'
