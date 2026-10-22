@@ -64,9 +64,9 @@ func TestSupportStepsAreReadOnly(t *testing.T) {
 			want:  true,
 		},
 		{
-			name:  "web fetch mixed with repository tools",
+			name:  "web fetch mixed with repository tools is read only but not customer research",
 			steps: []dockLaunchStep{{AllowedTools: []string{"read_files", "crawl_url"}}},
-			want:  false,
+			want:  true,
 		},
 	}
 
@@ -80,7 +80,7 @@ func TestSupportStepsAreReadOnly(t *testing.T) {
 }
 
 func TestSupportExternalResearchLaunchUsesReadOnlyPath(t *testing.T) {
-	for _, tool := range []string{"web_search", "fetch_url"} {
+	for _, tool := range []string{"web_search", "fetch_url", "crawl_url", "find_skills", "read_skill"} {
 		t.Run(tool, func(t *testing.T) {
 			_, commands, db, _, _, meta := setupSupportProgressTest(t)
 			mustExec(t, db, `UPDATE agent_runs SET input=? WHERE id='run'`, []byte(`{"trigger":{"trigger_type":"support_chat"}}`))
@@ -94,14 +94,14 @@ func TestSupportExternalResearchLaunchUsesReadOnlyPath(t *testing.T) {
 	}
 }
 
-func TestSupportRepositoryLaunchStillUsesReadOnlyPath(t *testing.T) {
+func TestSupportRepositoryLaunchRequiresBackgroundInvestigation(t *testing.T) {
 	_, commands, db, _, _, meta := setupSupportProgressTest(t)
 	mustExec(t, db, `UPDATE agent_runs SET input=? WHERE id='run'`, []byte(`{"trigger":{"trigger_type":"support_chat"}}`))
 	commands.agentService = &AgentService{}
 	steps := []dockLaunchStep{{Instructions: "Check the implementation", AllowedTools: []string{"read_files"}}}
 	_, err := commands.executeDockLaunch(context.Background(), meta, steps, "", "Check implementation")
-	if err == nil || !strings.Contains(err.Error(), "requires agent_id") {
-		t.Fatalf("repository launch error = %v, want agent selection after read-only admission", err)
+	if err == nil || !strings.Contains(err.Error(), "background investigation") {
+		t.Fatalf("repository launch error = %v, want background investigation guidance", err)
 	}
 }
 
@@ -261,5 +261,40 @@ func TestSupportPlanDeliveryBlocked(t *testing.T) {
 				t.Errorf("supportPlanDeliveryBlocked() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestSupportResearchRejectsUnsupportedToolsWithoutApproval(t *testing.T) {
+	for _, tools := range [][]string{nil, {"create_task"}, {"web_search", "read_files"}, {"get_release_context"}, {"mcp__unknown__read_logs"}} {
+		_, commands, db, _, _, meta := setupSupportProgressTest(t)
+		mustExec(t, db, `UPDATE agent_runs SET input=? WHERE id='run'`, []byte(`{"trigger":{"trigger_type":"support_chat"}}`))
+		commands.agentService = &AgentService{}
+		_, err := commands.executeDockLaunch(context.Background(), meta, []dockLaunchStep{{Instructions: "Research", AllowedTools: tools}}, "", "Research")
+		if err == nil || !strings.Contains(err.Error(), "Do not request approval") {
+			t.Fatalf("tools %v: expected correction without approval, got %v", tools, err)
+		}
+	}
+}
+
+func TestSupportCustomerResearchToolBoundary(t *testing.T) {
+	for _, tool := range []string{"web_search", "fetch_url", "crawl_url", "find_skills", "read_skill", "search_knowledge", "list_conversation_messages"} {
+		if !supportStepsAreCustomerResearch([]dockLaunchStep{{AllowedTools: []string{tool}}}) {
+			t.Errorf("customer research rejected %s", tool)
+		}
+	}
+	for _, tool := range []string{"repository_search", "get_release_context", "get_pull_request_diff", "list_tasks", "list_task_checklist", "create_task", "browser_act", "request_approval"} {
+		if supportStepsAreCustomerResearch([]dockLaunchStep{{AllowedTools: []string{"web_search", tool}}}) {
+			t.Errorf("customer research admitted %s", tool)
+		}
+	}
+}
+
+func TestSupportResearchRejectsSavedAgentWithoutApproval(t *testing.T) {
+	_, commands, db, _, _, meta := setupSupportProgressTest(t)
+	mustExec(t, db, `UPDATE agent_runs SET input=? WHERE id='run'`, []byte(`{"trigger":{"trigger_type":"support_chat"}}`))
+	commands.agentService = &AgentService{}
+	_, err := commands.executeDockLaunch(context.Background(), meta, []dockLaunchStep{{AgentID: "saved-agent", Instructions: "Research", AllowedTools: []string{"web_search"}}}, "", "Research")
+	if err == nil || !strings.Contains(err.Error(), "use_command_agent=true") {
+		t.Fatalf("expected scoped command agent correction, got %v", err)
 	}
 }

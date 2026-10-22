@@ -137,6 +137,7 @@ func normalizeSupportReplyKind(kind string) string {
 
 func (s *InternalCommandService) registerSupportReplyCommands() {
 	s.registerSupportSkipReplyCommand()
+	s.registerSupportProgressCommand()
 	s.register(InternalCommandDefinition{
 		Name:                 "support.send_reply",
 		Module:               "support",
@@ -189,11 +190,13 @@ func (s *InternalCommandService) registerSupportReplyCommands() {
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"reason":               map[string]any{"type": "string", "description": "Short machine reason, e.g. customer_requested, out_of_scope, risky_request, cannot_answer."},
-					"issue_key":            map[string]any{"type": "string", "description": "Optional stable key for the visitor's issue."},
-					"issue_summary":        map[string]any{"type": "string", "description": "Optional one-line summary for the teammate."},
-					"attempted_steps":      map[string]any{"type": "array", "maxItems": 5, "items": map[string]any{"type": "string", "maxLength": 700}, "description": "Brief factual steps and results. Distinguish AI suggestions from customer-confirmed actions. Do not invent completed actions."},
-					"unresolved_questions": map[string]any{"type": "array", "maxItems": 5, "items": map[string]any{"type": "string", "maxLength": 700}, "description": "What remains unanswered or requires a human. Internal only; do not repeat sensitive credentials."},
+					"reason":                 map[string]any{"type": "string", "description": "Short machine reason, e.g. customer_requested, out_of_scope, risky_request, cannot_answer."},
+					"issue_key":              map[string]any{"type": "string", "description": "Optional stable key for the visitor's issue."},
+					"investigation_kind":     map[string]any{"type": "string", "enum": []string{"suspected_product_bug"}, "description": "Optional background repository investigation after handover, only for suspected product bugs supported by current evidence and workspace skills. Omit for billing, account and how-to requests."},
+					"investigation_question": map[string]any{"type": "string", "maxLength": 700, "description": "Focused code question with observed behavior and repository hints from workspace skills. Requires investigation_kind and a stable issue_key. Internal only; do not include credentials. Never wait for this investigation."},
+					"issue_summary":          map[string]any{"type": "string", "description": "Optional one-line summary for the teammate."},
+					"attempted_steps":        map[string]any{"type": "array", "maxItems": 5, "items": map[string]any{"type": "string", "maxLength": 700}, "description": "Brief factual steps and results. Distinguish AI suggestions from customer-confirmed actions. Do not invent completed actions."},
+					"unresolved_questions":   map[string]any{"type": "array", "maxItems": 5, "items": map[string]any{"type": "string", "maxLength": 700}, "description": "What remains unanswered or requires a human. Internal only; do not repeat sensitive credentials."},
 				},
 				"required":             []string{"reason"},
 				"additionalProperties": false,
@@ -204,6 +207,11 @@ func (s *InternalCommandService) registerSupportReplyCommands() {
 }
 
 func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+	return s.executeSupportReply(ctx, meta, input, false)
+}
+
+// progressOnly shares publication and ownership fences without settling the turn.
+func (s *InternalCommandService) executeSupportReply(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage, progressOnly bool) (json.RawMessage, error) {
 	supportAI := s.supportAIService
 	if supportAI == nil {
 		return nil, fmt.Errorf("support reply service is not configured")
@@ -232,7 +240,7 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 			"status":      "rewrite_required",
 			"reason":      "internal_process_disclosure",
 			"violations":  disclosures,
-			"next_action": "Rewrite once as a direct customer-facing answer without mentioning searches, evidence, tools, agents, repositories, confidence machinery, or other internal process; then call send_support_reply again.",
+			"next_action": "Rewrite once in customer-facing language without internal process details, then retry the same tool. A progress acknowledgment is not a final answer.",
 		}), nil
 	}
 
@@ -388,7 +396,12 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 
 	kind := normalizeSupportReplyKind(req.ReplyKind)
 	progressState := ""
-	if kind == supportReplyKindConversational && replyRunID != "" && s.commandBarService != nil && s.commandBarService.planRepo != nil {
+	progressStatus, progressNextAction := "awaiting_result", supportProgressNextAction
+	if progressOnly {
+		progressState = supportAIProgressChecking
+		progressStatus, progressNextAction = "continuing", supportContinueNextAction
+	}
+	if !progressOnly && kind == supportReplyKindConversational && replyRunID != "" && s.commandBarService != nil && s.commandBarService.planRepo != nil {
 		pending, pendingErr := s.commandBarService.planRepo.HasPendingSupportResult(ctx, meta.WorkspaceID, conversationID, replyRunID)
 		if pendingErr != nil {
 			return nil, fmt.Errorf("load pending support work: %w", pendingErr)
@@ -398,7 +411,7 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 		}
 	}
 	if progressState != "" && turn.Status == "waiting_for_result" {
-		return mustJSON(map[string]any{"status": "awaiting_result", "next_action": supportProgressNextAction}), nil
+		return mustJSON(map[string]any{"status": progressStatus, "next_action": progressNextAction}), nil
 	}
 	// Claims cite chunk ids; AISources are keyed by reference ids — translate.
 	referenceByID := make(map[string]string, len(evidence))
@@ -452,7 +465,7 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 
 	if progressState != "" {
 		supportAI.publishProgress(meta.WorkspaceID, conversationID, progressState)
-		return mustJSON(map[string]any{"status": "awaiting_result", "message_id": message.ID, "next_action": supportProgressNextAction}), nil
+		return mustJSON(map[string]any{"status": progressStatus, "message_id": message.ID, "next_action": progressNextAction}), nil
 	}
 
 	triggerMessageID := turn.SourceMessageID
@@ -518,11 +531,13 @@ func (s *InternalCommandService) executeSupportEscalate(ctx context.Context, met
 		return nil, fmt.Errorf("escalate_to_human requires a support conversation target")
 	}
 	var req struct {
-		Reason              string   `json:"reason"`
-		IssueKey            string   `json:"issue_key"`
-		IssueSummary        string   `json:"issue_summary"`
-		AttemptedSteps      []string `json:"attempted_steps"`
-		UnresolvedQuestions []string `json:"unresolved_questions"`
+		Reason                string   `json:"reason"`
+		IssueKey              string   `json:"issue_key"`
+		IssueSummary          string   `json:"issue_summary"`
+		InvestigationKind     string   `json:"investigation_kind"`
+		InvestigationQuestion string   `json:"investigation_question"`
+		AttemptedSteps        []string `json:"attempted_steps"`
+		UnresolvedQuestions   []string `json:"unresolved_questions"`
 	}
 	if err := json.Unmarshal(input, &req); err != nil {
 		return nil, fmt.Errorf("parse escalate input: %w", err)
@@ -548,8 +563,12 @@ func (s *InternalCommandService) executeSupportEscalate(ctx context.Context, met
 			return mustJSON(map[string]any{"status": "suppressed", "next_action": "Ownership changed. End your turn."}), nil
 		}
 	}
+	if meta.TargetType == supportPreviewTarget {
+		req.InvestigationKind = ""
+		req.InvestigationQuestion = ""
+	}
 	sourceMessageID := s.supportTurnSourceMessageID(ctx, meta.WorkspaceID, conversationID, nil)
-	if err := supportAI.EscalateToHumanForMessageWithIssue(ctx, meta.WorkspaceID, conversationID, sourceMessageID, reason, strings.TrimSpace(req.IssueKey), strings.TrimSpace(req.IssueSummary), SupportHandoffBrief{ExpectedRunID: escalationRunID, Issue: req.IssueSummary, AttemptedSteps: req.AttemptedSteps, UnresolvedQuestions: req.UnresolvedQuestions}); err != nil {
+	if err := supportAI.EscalateToHumanForMessageWithIssue(ctx, meta.WorkspaceID, conversationID, sourceMessageID, reason, strings.TrimSpace(req.IssueKey), strings.TrimSpace(req.IssueSummary), SupportHandoffBrief{InvestigationKind: req.InvestigationKind, InvestigationQuestion: req.InvestigationQuestion, ExpectedRunID: escalationRunID, Issue: req.IssueSummary, AttemptedSteps: req.AttemptedSteps, UnresolvedQuestions: req.UnresolvedQuestions}); err != nil {
 		return nil, fmt.Errorf("escalate: %w", err)
 	}
 	s.settleSupportSource(ctx, meta.WorkspaceID, conversationID, sourceMessageID)

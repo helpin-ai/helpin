@@ -141,6 +141,11 @@ func (r *CRMContactRepository) DeleteAnonymizingSupport(ctx context.Context, wor
 			if err := tx.Where("workspace_id = ? AND conversation_id IN ?", workspaceID, conversationIDs).Delete(&model.SupportAIFollowUp{}).Error; err != nil {
 				return err
 			}
+			// Keep pending job IDs so the sweep can cancel their independent runs,
+			// but discard the copied issue evidence immediately.
+			if err := tx.Model(&model.SupportInvestigation{}).Where("workspace_id = ? AND conversation_id IN ?", workspaceID, conversationIDs).Updates(map[string]any{"brief": "", "question": ""}).Error; err != nil {
+				return err
+			}
 		}
 		if err := tx.Model(&model.SupportEvent{}).Where("workspace_id = ? AND (conversation_id IN ? OR widget_session_id IN ? OR (conversation_id IS NULL AND anonymous_id IN ?))", workspaceID, conversationIDs, sessionIDs, anonymousIDs).Updates(map[string]any{"anonymous_id": nil}).Error; err != nil {
 			return err

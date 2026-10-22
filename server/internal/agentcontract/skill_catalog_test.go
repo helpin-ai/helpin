@@ -159,8 +159,8 @@ func TestEchoSystemPromptUsesScopedSupportResearch(t *testing.T) {
 		"configured knowledge sources",
 		"Do not launch web research",
 		"Do not launch repository research",
-		"Call start_agent_run first",
-		"Do not send the interim reply before launching",
+		"send_support_progress acknowledgment, then call start_agent_run",
+		"After the child starts, end the runtime turn without another reply",
 		"required_confidence",
 		"best_possible_grounded_confidence",
 	} {
@@ -872,5 +872,19 @@ func TestSupportInvestigationPolicyReachesSavedAgents(t *testing.T) {
 	}
 	if EnsureSupportRuntimeDeliveryContract(model.AgentPresetMarketer, legacy) != legacy {
 		t.Fatal("changed non-support agent")
+	}
+}
+
+func TestSupportProgressPolicyReachesSavedAgents(t *testing.T) {
+	legacy := "Workspace-specific investigation instructions.\n## Required live-support delivery contract\nEnd after sending a reply."
+	prompt := EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, legacy)
+	if !strings.HasPrefix(prompt, legacy) || !strings.Contains(prompt, supportProgressPolicy) {
+		t.Fatal("progress policy must reach saved copies without replacing workspace skills")
+	}
+	if EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, prompt) != prompt {
+		t.Fatal("progress policy duplicated")
+	}
+	if !strings.Contains(echoSystemPrompt, supportProgressPolicy) {
+		t.Fatal("base Echo prompt missing progress policy")
 	}
 }

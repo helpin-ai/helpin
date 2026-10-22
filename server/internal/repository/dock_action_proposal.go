@@ -129,3 +129,18 @@ func (r *DockActionProposalRepository) ResetActivation(ctx context.Context, work
 	}
 	return nil
 }
+
+// ClaimPreparedSkillEdit allows one execution of an already validated skill edit.
+// This is a concurrency claim, not an approval grant; the caller enforces approval.
+func (r *DockActionProposalRepository) ClaimPreparedSkillEdit(ctx context.Context, workspaceID, id, runID, actorID string, now time.Time) (bool, error) {
+	result := r.db.WithContext(ctx).Model(&model.DockActionProposal{}).
+		Where("workspace_id = ? AND id = ? AND dock_chat_run_id = ? AND actor_id = ? AND kind = ? AND status = ? AND expires_at > ?", workspaceID, id, runID, actorID, "skill_edit", model.DockActionProposalStatusPrepared, now).
+		Updates(map[string]interface{}{"status": model.DockActionProposalStatusActive, "activated_at": now})
+	return result.RowsAffected == 1, result.Error
+}
+
+func (r *DockActionProposalRepository) ResetSkillEditClaim(ctx context.Context, workspaceID, id string) error {
+	return r.db.WithContext(ctx).Model(&model.DockActionProposal{}).
+		Where("workspace_id = ? AND id = ? AND kind = ? AND status = ?", workspaceID, id, "skill_edit", model.DockActionProposalStatusActive).
+		Updates(map[string]interface{}{"status": model.DockActionProposalStatusPrepared, "activated_at": nil}).Error
+}

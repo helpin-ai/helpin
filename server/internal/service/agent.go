@@ -278,7 +278,10 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 	}
 	// Managed support capabilities must also reach existing preset copies.
 	if normalizePresetKey(agent.EffectivePresetKey()) == model.AgentPresetSupportAgent {
-		out.AllowedTools = appendPresetTools(out.AllowedTools, []string{"skip_support_reply", "add_support_conversation_note"})
+		out.AllowedTools = appendPresetTools(out.AllowedTools, []string{"skip_support_reply", "send_support_progress", "add_support_conversation_note"})
+	}
+	if normalizePresetKey(agent.EffectivePresetKey()) == model.AgentPresetCommandAgent && !slices.Contains(out.AllowedTargets, supportInvestigationTarget) {
+		out.AllowedTargets = append(out.AllowedTargets, supportInvestigationTarget)
 	}
 	// Preview uses an isolated host target, while retaining the saved agent prompt.
 	if slices.Contains(out.AllowedTargets, "support_conversation") && !slices.Contains(out.AllowedTargets, supportPreviewTarget) {
@@ -562,6 +565,17 @@ func buildRuntimeStartRunRequest(run *model.AgentRun, agent *model.Agent, runtim
 		return AgentRuntimeStartRunRequest{}, err
 	}
 
+	if isSupportInvestigationRun(run) {
+		ceiling := supportInvestigationTools()
+		if len(allowedTools) == 0 {
+			return AgentRuntimeStartRunRequest{}, fmt.Errorf("background investigation requires explicit read-only tools")
+		}
+		for _, name := range allowedTools {
+			if !slices.Contains(ceiling, name) {
+				return AgentRuntimeStartRunRequest{}, fmt.Errorf("unsafe background investigation tool %s", name)
+			}
+		}
+	}
 	instructions := strings.TrimSpace(input.AdditionalContext)
 	if agentRunIsPreview(run) {
 		metadata["delivery_mode"] = "preview"
@@ -6673,7 +6687,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	}
 
 	runtimeAgent = runtimeAgentForDockExecution(run, runtimeAgent)
-	if params.targetType != supportPreviewTarget {
+	if params.targetType != supportPreviewTarget && !isSupportInvestigationRun(run) {
 		runtimeAgent, err = s.projectEnabledExternalMCPTools(ctx, params.workspaceID, runtimeAgent)
 		if err != nil {
 			s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
@@ -6720,7 +6734,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 			selectedExternalTools = append(selectedExternalTools, tool)
 		}
 	}
-	if params.targetType == supportPreviewTarget {
+	if params.targetType == supportPreviewTarget || isSupportInvestigationRun(run) {
 		selectedExternalTools = nil
 	}
 	if len(selectedExternalTools) > 0 {

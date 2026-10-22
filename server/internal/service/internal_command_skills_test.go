@@ -82,7 +82,7 @@ func TestSkillManagementValidateEdit(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			input, _ := json.Marshal(tc.fields)
-			_, err := s.Execute(context.Background(), meta, "skills.validate_update", input)
+			_, err := s.resolveSkillUpdate(context.Background(), meta, input)
 			if (err == nil) != tc.valid {
 				t.Fatalf("validation: %v", err)
 			}
@@ -90,43 +90,13 @@ func TestSkillManagementValidateEdit(t *testing.T) {
 	}
 }
 
-func TestSkillManagementValidationBeforeHostApproval(t *testing.T) {
-	s, db, meta := setupDockExecutionGuardTest(t)
-	s.agentService = &AgentService{}
-	s.registerSkillCommands()
-	meta.ActorRole = "admin"
-	catalog, _ := s.agentService.ListSkillCatalog(context.Background(), meta.WorkspaceID)
-	skill := catalog.Skills[0]
-	input, _ := json.Marshal(map[string]any{"skill_id": skill.Key, "expected_version": "probe", "instructions": "probe"})
-	if _, err := s.Execute(context.Background(), meta, "skills.update", input); err == nil || !strings.Contains(err.Error(), "expected_version is invalid") {
-		t.Fatalf("invalid edit should fail before approval: %v", err)
-	}
-	var count int64
-	if err := db.Model(&model.DockActionProposal{}).Count(&count).Error; err != nil {
-		t.Fatal(err)
-	}
-	if count != 0 {
-		t.Fatal("invalid edit created an approval proposal")
-	}
-	input, _ = json.Marshal(map[string]any{"skill_id": skill.Key, "expected_version": skill.VersionKey, "title": "An actual new title"})
-	if _, err := s.Execute(context.Background(), meta, "skills.validate_update", input); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Model(&model.DockActionProposal{}).Count(&count).Error; err != nil {
-		t.Fatal(err)
-	}
-	if count != 0 {
-		t.Fatal("read-only validation created an approval proposal")
-	}
-	if _, err := s.Execute(context.Background(), meta, "skills.update", input); err == nil || !strings.Contains(err.Error(), "dock_execution_approval_required") {
-		t.Fatalf("valid edit bypassed approval: %v", err)
-	}
-}
-
 func TestSkillManagementEditRoundTrip(t *testing.T) {
 	agent, _, _ := newWorkspaceSkillTestService(t)
-	s := NewInternalCommandService(agent, nil, nil, nil, nil, nil, nil, nil)
-	meta := model.InternalCommandContext{WorkspaceID: "ws-1", ActorID: "user-1", ActorRole: "admin"}
+	s, _, meta := setupDockExecutionGuardTest(t)
+	s.agentService = agent
+	s.registerSkillCommands()
+	s.agentRunRepo = nil
+	meta.ActorRole = "admin"
 	created, err := agent.CreateWorkspaceSkill(context.Background(), meta.WorkspaceID, meta.ActorID, model.CreateWorkspaceSkillRequest{Key: "unicode_test", Title: stringPtr("Unicode test"), Description: "Test paginated editing.", Instructions: strings.Repeat("こんにちは 🌍\n", 800)})
 	if err != nil {
 		t.Fatal(err)
@@ -164,10 +134,17 @@ func TestSkillManagementEditRoundTrip(t *testing.T) {
 	}
 	updated := full + "\nCheck publishing logs only for publishing issues."
 	input, _ := json.Marshal(map[string]any{"skill_id": created.ID, "expected_version": version, "instructions": updated})
-	if _, err := s.Execute(context.Background(), meta, "skills.validate_update", input); err != nil {
+	prepared, err := s.Execute(context.Background(), meta, "skills.validate_update", input)
+	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := s.Execute(context.Background(), meta, "skills.update", input)
+	var save struct {
+		Input json.RawMessage `json:"save_input"`
+	}
+	if err := json.Unmarshal(prepared, &save); err != nil {
+		t.Fatal(err)
+	}
+	out, err := s.Execute(context.Background(), meta, "skills.update", save.Input)
 	if err != nil {
 		t.Fatal(err)
 	}

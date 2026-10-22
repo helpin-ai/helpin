@@ -495,6 +495,21 @@ func (s *AgentRuntimeHostService) ResolveTargetContext(ctx context.Context, req 
 		return resp, nil
 	}
 
+	if target.Type == supportInvestigationTarget {
+		investigationRun := previewRun
+		if investigationRun == nil && s.runRepo != nil {
+			investigationRun, err = s.runRepo.GetByID(ctx, workspaceID, target.ID)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if !isSupportInvestigationRun(investigationRun) || investigationRun.ID != target.ID || investigationRun.TargetID != target.ID || investigationRun.AgentID != callbackAgentID || investigationRun.WorkspaceID != workspaceID {
+			return nil, ErrAgentRuntimeHostForbidden
+		}
+		resp.Summary = "Internal repository investigation"
+		resp.Data = map[string]interface{}{"workspace_id": workspaceID, "run_id": investigationRun.ID, "internal_only": true}
+		return resp, nil
+	}
 	switch target.Type {
 	case "workspace":
 		workspace, err := s.workspaceRepo.GetByID(ctx, target.ID)
@@ -809,6 +824,9 @@ func (s *AgentRuntimeHostService) ResolveRepositorySpec(ctx context.Context, req
 	}
 	var runInput model.AgentRunInputPayload
 	if spec != nil && run != nil && run.DockChatID != nil && json.Unmarshal(run.Input, &runInput) == nil && runInput.ExecutionEnabled {
+		spec.FinalizePolicy = agentruntime.RepositoryFinalizeNone
+	}
+	if spec != nil && (isSupportInvestigationRun(run) || req.Target.Type == supportInvestigationTarget) {
 		spec.FinalizePolicy = agentruntime.RepositoryFinalizeNone
 	}
 	if spec != nil && agentRunIsPreview(run) {

@@ -47,7 +47,7 @@ func TestDockChildHandoffInstructionIsAppendedOnce(t *testing.T) {
 
 func TestSupportChildHandoffInstructionRequiresConfiguredKnowledge(t *testing.T) {
 	got := withSupportChildHandoffInstruction("Check the current product pricing.")
-	for _, want := range []string{"at most 2,500 characters", "search_knowledge", "third-party", "include_domains", "Stop when", "file paths and symbols", "unconfirmed availability"} {
+	for _, want := range []string{"at most 2,500 characters", "search_knowledge", "third-party", "include_domains", "Stop when", "independent post-handover background investigation", "max_pages=3", "max_depth=1", "Never request approval", "unconfirmed availability"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("support handoff instruction missing %q: %q", want, got)
 		}

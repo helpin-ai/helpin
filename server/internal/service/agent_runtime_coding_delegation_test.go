@@ -266,6 +266,9 @@ func TestRuntimeAgentFromHelpinAgentAlwaysIncludesSupportDeliveryContract(t *tes
 			t.Fatalf("runtime support prompt missing %q:\n%s", required, out.SystemPrompt)
 		}
 	}
+	if !slices.Contains(out.AllowedTools, "send_support_progress") {
+		t.Fatal("existing Echo copies must receive non-terminal progress")
+	}
 	if !slices.Contains(out.AllowedTools, "skip_support_reply") {
 		t.Fatal("existing Echo copies must receive the no-reply tool")
 	}

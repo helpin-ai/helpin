@@ -14,7 +14,7 @@ import (
 func (s *InternalCommandService) registerSkillCommands() {
 	s.register(InternalCommandDefinition{Name: "skills.list_workspace", Module: "skills", Tool: mustCommandToolMetadata("skills.list_workspace"), Execute: s.listWorkspaceSkillsCommand})
 	s.register(InternalCommandDefinition{Name: "skills.validate_update", Module: "skills", Tool: mustCommandToolMetadata("skills.validate_update"), Execute: s.validateSkillUpdateCommand})
-	s.register(InternalCommandDefinition{Name: "skills.update", Module: "skills", Mutating: true, Tool: mustCommandToolMetadata("skills.update"), Validate: s.validateSkillUpdate, Execute: s.updateSkillCommand})
+	s.register(InternalCommandDefinition{Name: "skills.update", Module: "skills", Mutating: true, Tool: mustCommandToolMetadata("skills.update"), Validate: s.validatePreparedSkillUpdate, Execute: s.updateSkillCommand})
 }
 
 func decodeSkillCommand(input json.RawMessage, target any) error {
@@ -41,6 +41,7 @@ func marshalSkillToolResult(value any) (json.RawMessage, error) {
 }
 
 type skillToolMetadata struct {
+	ContractVersion   string   `json:"contract_version"`
 	SkillID           string   `json:"skill_id"`
 	Key               string   `json:"key"`
 	VersionKey        string   `json:"version_key"`
@@ -60,19 +61,13 @@ func skillMetadata(skill model.SkillCatalogEntry) skillToolMetadata {
 	if skill.ID != nil {
 		id = *skill.ID
 	}
-	return skillToolMetadata{SkillID: id, Key: skill.Key, VersionKey: skill.VersionKey, Title: skill.Title, Description: skill.Description, SourceKind: skill.SourceKind, IsCustomized: skill.IsCustomized, ID: skill.ID, SourceRuntime: skill.SourceRuntime, RequiredTools: skill.RequiredTools, SupportedRuntimes: skill.SupportedRuntimes, Presets: skill.Presets}
+	return skillToolMetadata{ContractVersion: "2", SkillID: id, Key: skill.Key, VersionKey: skill.VersionKey, Title: skill.Title, Description: skill.Description, SourceKind: skill.SourceKind, IsCustomized: skill.IsCustomized, ID: skill.ID, SourceRuntime: skill.SourceRuntime, RequiredTools: skill.RequiredTools, SupportedRuntimes: skill.SupportedRuntimes, Presets: skill.Presets}
 }
 func (s *InternalCommandService) listWorkspaceSkillsCommand(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 	if s.agentService == nil || meta.WorkspaceID == "" {
 		return nil, fmt.Errorf("workspace skill management is unavailable")
 	}
-	var req struct {
-		Key             string `json:"key"`
-		SkillID         string `json:"skill_id"`
-		Offset          int    `json:"offset"`
-		Limit           int    `json:"limit"`
-		ExpectedVersion string `json:"expected_version"`
-	}
+	var req skillReadInput
 	if err := decodeSkillCommand(input, &req); err != nil {
 		return nil, err
 	}
@@ -97,7 +92,11 @@ func (s *InternalCommandService) listWorkspaceSkillsCommand(ctx context.Context,
 			if req.ExpectedVersion != "" && req.ExpectedVersion != skill.VersionKey {
 				return nil, fmt.Errorf("skill changed; restart the read")
 			}
-			text := []rune(skill.Instructions)
+			section, sections, err := skillInstructionSection(skill.Instructions, req.SectionHeading)
+			if err != nil {
+				return nil, err
+			}
+			text := []rune(section)
 			if req.Offset > len(text) {
 				return nil, fmt.Errorf("offset exceeds instruction length")
 			}
@@ -111,16 +110,26 @@ func (s *InternalCommandService) listWorkspaceSkillsCommand(ctx context.Context,
 			if end < len(text) {
 				next = &end
 			}
+			var nextRead *skillReadInput
+			if next != nil {
+				nextRead = &skillReadInput{SkillID: skillMetadata(skill).SkillID, Offset: *next, Limit: limit, ExpectedVersion: skill.VersionKey, SectionHeading: req.SectionHeading}
+			}
 			return marshalSkillToolResult(struct {
 				skillToolMetadata
-				Offset       int    `json:"offset"`
-				Total        int    `json:"total_characters"`
-				Complete     bool   `json:"complete"`
-				Next         *int   `json:"next_offset"`
-				Instructions string `json:"instructions"`
-			}{skillMetadata(skill), req.Offset, len(text), next == nil, next, string(text[req.Offset:end])})
+				Offset         int             `json:"offset"`
+				Total          int             `json:"total_characters"`
+				Complete       bool            `json:"complete"`
+				Next           *int            `json:"next_offset"`
+				NextRead       *skillReadInput `json:"next_read"`
+				Sections       []string        `json:"sections,omitempty"`
+				SectionHeading string          `json:"section_heading,omitempty"`
+				Instructions   string          `json:"instructions"`
+			}{skillMetadata(skill), req.Offset, len(text), next == nil, next, nextRead, sections, req.SectionHeading, string(text[req.Offset:end])})
 		}
 		return nil, ErrWorkspaceSkillNotFound
+	}
+	if req.SectionHeading != "" {
+		return nil, fmt.Errorf("section_heading requires key or skill_id")
 	}
 	if req.Offset > len(catalog.Skills) {
 		return nil, fmt.Errorf("offset exceeds catalog length")
@@ -141,59 +150,81 @@ func (s *InternalCommandService) listWorkspaceSkillsCommand(ctx context.Context,
 		entry.Description = truncateCommandBarText(entry.Description, 500)
 		entries = append(entries, entry)
 	}
+	var nextRead *skillReadInput
+	if next != nil {
+		nextRead = &skillReadInput{Offset: *next, Limit: limit}
+	}
 	return marshalSkillToolResult(struct {
-		Skills   []skillToolMetadata `json:"skills"`
-		Total    int                 `json:"total"`
-		Complete bool                `json:"complete"`
-		Next     *int                `json:"next_offset"`
-	}{entries, len(catalog.Skills), next == nil, next})
+		ContractVersion string              `json:"contract_version"`
+		Skills          []skillToolMetadata `json:"skills"`
+		Total           int                 `json:"total"`
+		Complete        bool                `json:"complete"`
+		Next            *int                `json:"next_offset"`
+		NextRead        *skillReadInput     `json:"next_read"`
+	}{"2", entries, len(catalog.Skills), next == nil, next, nextRead})
 }
 
 type skillUpdateInput struct {
-	SkillID         string  `json:"skill_id"`
-	ExpectedVersion *string `json:"expected_version"`
-	Title           *string `json:"title,omitempty"`
-	Description     *string `json:"description,omitempty"`
-	Instructions    *string `json:"instructions,omitempty"`
-	RestoreDefault  bool    `json:"restore_default,omitempty"`
+	SkillID         string                 `json:"skill_id"`
+	ExpectedVersion *string                `json:"expected_version"`
+	Title           *string                `json:"title,omitempty"`
+	Description     *string                `json:"description,omitempty"`
+	Instructions    *string                `json:"instructions,omitempty"`
+	RestoreDefault  bool                   `json:"restore_default,omitempty"`
+	Replacements    []skillTextReplacement `json:"replacements,omitempty"`
+	reviewTitle     string
 }
 
-func (s *InternalCommandService) validateSkillUpdate(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) error {
+func (s *InternalCommandService) resolveSkillUpdate(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (*skillUpdateInput, error) {
 	if s.agentService == nil || meta.WorkspaceID == "" {
-		return fmt.Errorf("workspace skill management is unavailable")
+		return nil, fmt.Errorf("workspace skill management is unavailable")
 	}
 	if strings.TrimSpace(meta.ActorID) == "" || strings.TrimSpace(meta.ActorRole) == "" {
-		return fmt.Errorf("skill editing requires an authorized workspace member")
+		return nil, fmt.Errorf("skill editing requires an authorized workspace member")
 	}
 	// Validation is read-only but checks the same permissions as saving.
 	if err := s.authorizeCommandActor(meta, InternalCommandDefinition{Name: "skills.update", Module: "skills", Mutating: true}); err != nil {
-		return err
+		return nil, err
 	}
 	var req skillUpdateInput
 	if err := decodeSkillCommand(input, &req); err != nil {
-		return err
+		return nil, err
 	}
 	if req.SkillID == "" || req.ExpectedVersion == nil || strings.TrimSpace(*req.ExpectedVersion) == "" {
-		return fmt.Errorf("read list_workspace_skills and supply its skill_id and expected_version; never guess a version")
+		return nil, fmt.Errorf("read list_workspace_skills and supply its skill_id and expected_version; never guess a version")
 	}
-	if req.RestoreDefault && (req.Title != nil || req.Description != nil || req.Instructions != nil) {
-		return fmt.Errorf("restore_default cannot be combined with edited fields")
+	if req.RestoreDefault && (req.Title != nil || req.Description != nil || req.Instructions != nil || len(req.Replacements) > 0) {
+		return nil, fmt.Errorf("restore_default cannot be combined with edited fields")
 	}
 	for _, value := range []*string{req.Title, req.Description, req.Instructions} {
 		if value != nil && strings.TrimSpace(*value) == "" {
-			return fmt.Errorf("edited fields must not be empty")
+			return nil, fmt.Errorf("edited fields must not be empty")
 		}
 	}
 	catalog, err := s.agentService.ListSkillCatalog(ctx, meta.WorkspaceID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for _, skill := range catalog.Skills {
 		if skillMetadata(skill).SkillID != req.SkillID && !(skill.SourceKind == model.WorkspaceSkillSourceBuiltIn && strings.TrimPrefix(req.SkillID, agentRuntimeHelpinBuiltInSkillIDPrefix) == skill.Key) {
 			continue
 		}
 		if *req.ExpectedVersion != skill.VersionKey {
-			return fmt.Errorf("skill changed or expected_version is invalid; read list_workspace_skills again, never guess a version")
+			return nil, fmt.Errorf("skill changed or expected_version is invalid; read list_workspace_skills again, never guess a version")
+		}
+
+		if len(req.Replacements) > 0 {
+			if req.Instructions != nil {
+				return nil, fmt.Errorf("use replacements or full instructions, not both")
+			}
+			updated, err := applySkillReplacements(skill.Instructions, req.Replacements)
+			if err != nil {
+				return nil, err
+			}
+			if strings.TrimSpace(updated) == "" {
+				return nil, fmt.Errorf("instructions must not be empty")
+			}
+			req.Instructions = &updated
 		}
 		changed := req.RestoreDefault && skill.IsCustomized
 		for _, field := range []struct {
@@ -205,29 +236,10 @@ func (s *InternalCommandService) validateSkillUpdate(ctx context.Context, meta m
 			}
 		}
 		if !changed {
-			return fmt.Errorf("no skill changes supplied; prepare the actual edit before requesting approval")
+			return nil, fmt.Errorf("no skill changes supplied; prepare the actual edit before requesting approval")
 		}
-		return nil
+		req.reviewTitle = skill.Title
+		return &req, nil
 	}
-	return ErrWorkspaceSkillNotFound
-}
-func (s *InternalCommandService) validateSkillUpdateCommand(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
-	if err := s.validateSkillUpdate(ctx, meta, input); err != nil {
-		return nil, err
-	}
-	return json.RawMessage(`{"valid":true,"saved":false,"next_step":"Call update_skill with these exact arguments. Validation does not authorize or save the edit."}`), nil
-}
-func (s *InternalCommandService) updateSkillCommand(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
-	if err := s.validateSkillUpdate(ctx, meta, input); err != nil {
-		return nil, err
-	}
-	var req skillUpdateInput
-	if err := decodeSkillCommand(input, &req); err != nil {
-		return nil, err
-	}
-	result, err := s.agentService.UpdateWorkspaceSkill(ctx, meta.WorkspaceID, req.SkillID, model.UpdateWorkspaceSkillRequest{ExpectedVersion: req.ExpectedVersion, Title: req.Title, Description: req.Description, Instructions: req.Instructions, RestoreDefault: req.RestoreDefault})
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(map[string]any{"saved": true, "id": result.ID, "skill_id": result.ID, "key": result.Key, "version_key": result.VersionKey})
+	return nil, ErrWorkspaceSkillNotFound
 }

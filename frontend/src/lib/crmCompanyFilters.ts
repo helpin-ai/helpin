@@ -15,8 +15,8 @@ import type { QueryFilterGroup, QueryFilterRule } from '@/lib/queryBuilder';
 import type { AssignableMember } from '@/lib/types';
 
 /** Filter keys for native company fields. */
-export const COMPANY_OWNER_FILTER = 'owner_member_id';
-export const COMPANY_INDUSTRY_FILTER = 'industry';
+const COMPANY_OWNER_FILTER = 'owner_member_id';
+const COMPANY_INDUSTRY_FILTER = 'industry';
 
 const CUSTOM_PROPERTY_FIELD_PREFIX = 'custom_properties.';
 const CUSTOM_PROPERTY_COLUMN_PREFIX = 'cp:';
@@ -48,10 +48,6 @@ export function customPropertyFilterField(key: string): string {
 /** Table column id for a custom property key. */
 export function customPropertyColumnId(key: string): string {
   return `${CUSTOM_PROPERTY_COLUMN_PREFIX}${key}`;
-}
-
-export function isCustomPropertyColumnId(id: string): boolean {
-  return id.startsWith(CUSTOM_PROPERTY_COLUMN_PREFIX);
 }
 
 function conditionToRule(field: string, condition: PMFilterCondition): QueryFilterRule {
@@ -255,6 +251,6 @@ export function buildCompanyFilterDefinitions(
  * A key filters as a number when at least half its values are numeric.
  * Records whose value is not numeric never match number comparisons.
  */
-export function isNumericCustomProperty(summary: CRMCustomPropertySummary): boolean {
+function isNumericCustomProperty(summary: CRMCustomPropertySummary): boolean {
   return summary.numeric_count > 0 && summary.numeric_count * 2 >= summary.count;
 }

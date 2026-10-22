@@ -21,6 +21,14 @@ func (r *SupportConversationRepository) ChangeAIControl(ctx context.Context, wor
 	return r.ChangeAIControlWithHook(ctx, workspaceID, id, change, nil, messages...)
 }
 
+// ChangeAIControlWithInvestigation queues optional research in the same
+// transaction as the ownership transition and handoff messages.
+func (r *SupportConversationRepository) ChangeAIControlWithInvestigation(ctx context.Context, workspaceID, id string, change func(*model.SupportConversation) (map[string]any, *model.SupportMessage, error), investigation *model.SupportInvestigation, messages ...*model.SupportMessage) (string, bool, error) {
+	return r.ChangeAIControlWithHook(ctx, workspaceID, id, change, func(tx *gorm.DB) error {
+		return queueSupportInvestigation(tx, investigation, workspaceID, id)
+	}, messages...)
+}
+
 // ChangeAIControlWithHook commits channel-specific work with the ownership
 // transition. A hook error rolls back the entire change.
 func (r *SupportConversationRepository) ChangeAIControlWithHook(ctx context.Context, workspaceID, id string, change func(*model.SupportConversation) (map[string]any, *model.SupportMessage, error), hook func(*gorm.DB) error, messages ...*model.SupportMessage) (string, bool, error) {
@@ -75,6 +83,7 @@ func (r *SupportConversationRepository) ChangeAIControlWithHook(ctx context.Cont
 			if err := hook(tx); err != nil {
 				return err
 			}
+
 		}
 		changed = true
 		return nil

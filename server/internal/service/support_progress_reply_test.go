@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -209,6 +210,147 @@ func TestSupportProgressReplyPreservesPublicationFences(t *testing.T) {
 			}
 			if created, err := chat.processingRepo.CreateReply(ctx, turn.ID, reply, "run"); err != nil || created {
 				t.Fatalf("final bypassed fence: created=%v err=%v", created, err)
+			}
+		})
+	}
+}
+
+func TestSupportProgressWithoutChildContinuesAndSettles(t *testing.T) {
+	ctx := context.Background()
+	chat, commands, db, _, _, meta := setupSupportProgressTest(t)
+	mustExec(t, db, `DELETE FROM command_bar_plans`)
+	commands.definitions = map[string]InternalCommandDefinition{}
+	mustExec(t, db, `UPDATE agent_runs SET input=? WHERE id='run'`, []byte(`{"trigger":{"source":"system","trigger_type":"support_chat"}}`))
+	commands.registerSupportReplyCommands()
+	def, ok := commands.Definition("support.send_progress")
+	if !ok {
+		t.Fatal("missing non-terminal progress tool")
+	}
+	input := json.RawMessage(`{"content":"I'm checking the details for this issue."}`)
+	for range 2 {
+		out, err := def.Execute(ctx, meta, input)
+		if err != nil || !strings.Contains(string(out), `"status":"continuing"`) {
+			t.Fatalf("progress: %s %v", out, err)
+		}
+	}
+	currentConv, err := chat.conversationRepo.GetByID(ctx, "ws", "conv", "", model.RoleOwner)
+	if err != nil || currentConv.AITurnCount != 0 {
+		t.Fatalf("acknowledgment consumed an answer turn: %+v %v", currentConv, err)
+	}
+	row, err := chat.processingRepo.LatestProcessingForConversation(ctx, "ws", "conv")
+	if err != nil || row == nil || row.ReplyMessageID != nil {
+		t.Fatalf("acknowledgment settled turn: %+v %v", row, err)
+	}
+	messages, err := chat.messageRepo.ListByConversation(ctx, "ws", "conv", false)
+	if err != nil || len(messages) != 2 {
+		t.Fatalf("expected one acknowledgment: %d %v", len(messages), err)
+	}
+	out, err := commands.executeSupportSendReply(ctx, meta, json.RawMessage(`{"content":"Which account is affected?","reply_kind":"clarify","confidence":1}`))
+	if err != nil || !strings.Contains(string(out), `"status":"sent"`) {
+		t.Fatalf("final reply: %s %v", out, err)
+	}
+	out, err = def.Execute(ctx, meta, input)
+	if err != nil || !strings.Contains(string(out), `"status":"suppressed"`) {
+		t.Fatalf("progress after outcome: %s %v", out, err)
+	}
+}
+
+func TestSupportProgressToolPreservesOwnership(t *testing.T) {
+	for _, change := range []string{
+		`UPDATE support_conversations SET human_takeover=true WHERE id='conv'`,
+		`UPDATE support_conversations SET ai_active_run_id='another-run' WHERE id='conv'`,
+		`UPDATE support_widget_installations SET settings='{"ai_enabled":false}' WHERE workspace_id='ws'`,
+	} {
+		chat, commands, db, _, _, meta := setupSupportProgressTest(t)
+		commands.definitions = map[string]InternalCommandDefinition{}
+		mustExec(t, db, `UPDATE agent_runs SET input=? WHERE id='run'`, []byte(`{"trigger":{"source":"system","trigger_type":"support_chat"}}`))
+		commands.registerSupportReplyCommands()
+		def, ok := commands.Definition("support.send_progress")
+		if !ok {
+			t.Fatal("missing progress tool")
+		}
+		mustExec(t, db, change)
+		out, err := def.Execute(context.Background(), meta, json.RawMessage(`{"content":"I'm checking the details."}`))
+		if err != nil || !strings.Contains(string(out), `"status":"suppressed"`) {
+			t.Fatalf("progress: %s %v", out, err)
+		}
+		messages, err := chat.messageRepo.ListByConversation(context.Background(), "ws", "conv", false)
+		if err != nil || len(messages) != 1 {
+			t.Fatalf("progress bypassed ownership: %d %v", len(messages), err)
+		}
+	}
+}
+
+func TestSupportProgressSweepRecoversUnfinishedAcknowledgment(t *testing.T) {
+	for _, tc := range []struct {
+		name, status   string
+		child, blocked bool
+		wantHandoff    bool
+	}{
+		{name: "failed investigation", status: "failed", wantHandoff: true},
+		{name: "paused after retry", status: "paused", wantHandoff: true},
+		{name: "pending child", status: "paused", child: true},
+		{name: "human takeover", status: "failed", blocked: true},
+		{name: "still working", status: "running"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			chat, commands, db, _, _, _ := setupSupportProgressTest(t)
+			chat.runRepo = commands.agentRunRepo
+			chat.supportAIService.handoffRepo = repository.NewAgentHandoffRepository(db)
+			mustExec(t, db, `ALTER TABLE agent_runs ADD COLUMN updated_at DATETIME`)
+			mustExec(t, db, `ALTER TABLE agent_runs ADD COLUMN created_at DATETIME`)
+			mustExec(t, db, `ALTER TABLE agent_runs ADD COLUMN pause_reason TEXT`)
+			mustExec(t, db, `UPDATE agent_runs SET status=?, pause_reason=?, input=?, updated_at=? WHERE id='run'`, tc.status, model.AgentRunPauseReasonUserMessage, []byte(`{"trigger":{"source":"system","trigger_type":"support_chat"}}`), time.Now().Add(-time.Minute))
+			mustExec(t, db, `UPDATE ai_message_processing SET status='waiting_for_result',attempts=2,updated_at=?`, time.Now().Add(-time.Minute))
+			if !tc.child {
+				mustExec(t, db, `DELETE FROM command_bar_plans`)
+			}
+			if tc.blocked {
+				mustExec(t, db, `UPDATE support_conversations SET human_takeover=true WHERE id='conv'`)
+			}
+			if err := chat.SweepSupportChat(ctx, time.Second, 10); err != nil {
+				t.Fatal(err)
+			}
+			conv, err := chat.conversationRepo.GetByID(ctx, "ws", "conv", "", model.RoleOwner)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := conv.AIState != nil && *conv.AIState == "escalated"
+			if got != tc.wantHandoff {
+				t.Fatalf("handoff=%v want %v", got, tc.wantHandoff)
+			}
+		})
+	}
+}
+
+func TestSupportProgressRejectsNonLiveRunsAndInvalidContent(t *testing.T) {
+	for _, tc := range []struct {
+		name, trigger, content string
+		rewrite                bool
+	}{
+		{name: "follow-up", trigger: "support_inactivity_follow_up", content: "Checking this."},
+		{name: "background", trigger: supportInvestigationTriggerType, content: "Checking this."},
+		{name: "empty", trigger: supportChatTriggerType},
+		{name: "long", trigger: supportChatTriggerType, content: strings.Repeat("x", 301)},
+		{name: "internal process", trigger: supportChatTriggerType, content: "Let me search the knowledge base.", rewrite: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			chat, commands, db, _, _, meta := setupSupportProgressTest(t)
+			raw, _ := json.Marshal(map[string]any{"trigger": map[string]string{"source": "system", "trigger_type": tc.trigger}})
+			mustExec(t, db, `UPDATE agent_runs SET input=? WHERE id='run'`, raw)
+			input, _ := json.Marshal(map[string]string{"content": tc.content})
+			out, err := commands.executeSupportProgress(context.Background(), meta, input)
+			if tc.rewrite {
+				if err != nil || !strings.Contains(string(out), "rewrite_required") {
+					t.Fatalf("expected rewrite: %s %v", out, err)
+				}
+			} else if err == nil {
+				t.Fatalf("expected rejection: %s", out)
+			}
+			messages, err := chat.messageRepo.ListByConversation(context.Background(), "ws", "conv", false)
+			if err != nil || len(messages) != 1 {
+				t.Fatalf("invalid progress published: %d %v", len(messages), err)
 			}
 		})
 	}

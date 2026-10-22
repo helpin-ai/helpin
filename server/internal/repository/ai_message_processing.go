@@ -333,3 +333,14 @@ func (r *AIMessageProcessingRepository) CompleteSource(ctx context.Context, work
 		Where("workspace_id = ? AND conversation_id = ? AND source_message_id = ? AND status <> 'completed'", workspaceID, conversationID, sourceMessageID).
 		Updates(map[string]any{"status": "completed", "updated_at": time.Now()}).Error
 }
+
+// ListAcknowledgedOlderThan finds unfinished turns with a published progress
+// message. Their runtime may need a nudge or handover after a missed pause event.
+func (r *AIMessageProcessingRepository) ListAcknowledgedOlderThan(ctx context.Context, cutoff time.Time, limit int) ([]model.AIMessageProcessing, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	var rows []model.AIMessageProcessing
+	err := r.db.WithContext(ctx).Where("status = ? AND updated_at < ? AND reply_message_id IS NULL", "waiting_for_result", cutoff).Order("updated_at ASC").Limit(limit).Find(&rows).Error
+	return rows, err
+}

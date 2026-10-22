@@ -219,6 +219,15 @@ func (s *AgentRunFinalizerService) FinalizeTerminalRun(ctx context.Context, run 
 			Attributes: map[string]any{"entity_id": run.ID, "agent_id": run.AgentID, "target_type": run.TargetType, "target_id": run.TargetID, "runtime_kind": run.RuntimeKind, "invocation_mode": run.InvocationMode, "tokens_used": run.TokensUsed, "input_tokens": run.InputTokens, "output_tokens": run.OutputTokens, "started_at": run.StartedAt, "completed_at": run.CompletedAt, "module": "automation"},
 		})
 	}
+	// Optional support diagnostics have exactly one product output, persisted
+	// by their durable sweep. They must not trigger ordinary run automations,
+	// repository delivery, or a customer-facing finalizer.
+	if isSupportInvestigationRun(run) {
+		if err := s.finalizeAgentStatus(ctx, run); err != nil {
+			slog.ErrorContext(ctx, "support investigation agent status finalizer failed", "run_id", run.ID, "error", err)
+		}
+		return
+	}
 	finalizers := []struct {
 		name          string
 		completedOnly bool

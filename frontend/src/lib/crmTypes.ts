@@ -1282,7 +1282,7 @@ export interface CRMSearchResult {
 }
 
 /** A value in use for a filterable CRM field, with how many records use it. */
-export interface CRMFilterValueCount {
+interface CRMFilterValueCount {
   value: string;
   count: number;
 }
