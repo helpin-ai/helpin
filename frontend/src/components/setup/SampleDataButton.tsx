@@ -66,6 +66,10 @@ export function SampleDataCard({ workspaceId, canManage, className }: SampleData
   const summary = status?.loaded ? summarizeSampleCounts(status) : '';
   const headingId = `sample-data-${workspaceId}`;
 
+  if (status?.has_real_content && !status.loaded) {
+    return result ? <p role="status" aria-live="polite" className="text-[12.5px] text-quiet-text-secondary">{result.message}</p> : null;
+  }
+
   return (
     <section aria-labelledby={headingId} className={className}>
       <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-6">

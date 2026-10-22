@@ -19,7 +19,7 @@ export function FinishStep({ workspaceId, canLoadSampleData, onGoToWorkspace }: 
   const status = useSampleDataStatus(canLoadSampleData ? workspaceId : undefined);
   const load = useLoadSampleData(workspaceId);
   const [error, setError] = useState<string | null>(null);
-  const offerSampleData = canLoadSampleData && Boolean(status.data) && !status.data?.loaded && (status.data?.modules.length ?? 0) > 0;
+  const offerSampleData = canLoadSampleData && Boolean(status.data) && !status.data?.loaded && !status.data?.has_real_content && (status.data?.modules.length ?? 0) > 0;
 
   const exploreWithSampleData = async () => {
     setError(null);

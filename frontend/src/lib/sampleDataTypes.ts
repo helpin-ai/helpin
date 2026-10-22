@@ -18,6 +18,8 @@ export type SampleDataEntity =
 /** Response of GET/POST/DELETE /workspaces/{id}/sample-data. */
 export interface SampleDataStatus {
   loaded: boolean;
+  /** Real workspace content exists, excluding tracked samples and configuration. */
+  has_real_content?: boolean;
   loaded_at?: string;
   counts: Partial<Record<SampleDataEntity, number>>;
   /** Modules sample data can be loaded for on this server, for this user. */

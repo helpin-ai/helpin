@@ -236,3 +236,28 @@ func TestEmailFallbackCandidatesExcludeSampleConversations(t *testing.T) {
 		t.Fatalf("candidates = %+v, want only the real conversation's reply", messages)
 	}
 }
+
+func TestSampleDataHasRealContent(t *testing.T) {
+	for _, table := range []string{"support_conversations", "pm_tasks", "pm_epics", "docs_documents", "crm_contacts", "crm_companies", "crm_deals", "automation_rules"} {
+		t.Run(table, func(t *testing.T) {
+			db := setupSampleDataTestDB(t, sampleDataItemsTestSchema,
+				"CREATE TABLE "+table+" (id TEXT PRIMARY KEY, workspace_id TEXT)",
+				"CREATE TABLE workspace_teams (id TEXT PRIMARY KEY, workspace_id TEXT)",
+				"INSERT INTO workspace_teams VALUES ('team', 'ws')",
+				"INSERT INTO "+table+" VALUES ('foreign', 'other'), ('sample', 'ws')",
+				"INSERT INTO sample_data_items (workspace_id, entity_type, entity_id) VALUES ('ws', 'sample', 'sample')")
+			repo := NewSampleDataRepository(db)
+			found, err := repo.HasRealContent(context.Background(), "ws")
+			if err != nil || found {
+				t.Fatalf("samples, teams, and other workspaces must not count: %v, %v", found, err)
+			}
+			if err := db.Exec("INSERT INTO " + table + " VALUES ('real', 'ws')").Error; err != nil {
+				t.Fatal(err)
+			}
+			found, err = repo.HasRealContent(context.Background(), "ws")
+			if err != nil || !found {
+				t.Fatalf("real content must count: %v, %v", found, err)
+			}
+		})
+	}
+}

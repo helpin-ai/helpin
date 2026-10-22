@@ -86,7 +86,9 @@ func (s *SampleDataService) Status(ctx context.Context, workspaceID string, enab
 	if err != nil {
 		return nil, err
 	}
-	return s.status(items, enabled), nil
+	status := s.status(items, enabled)
+	status.HasRealContent, err = s.repo.HasRealContent(ctx, workspaceID)
+	return status, err
 }
 
 // Load seeds sample data for every enabled module in one transaction. It
@@ -110,6 +112,13 @@ func (s *SampleDataService) Load(ctx context.Context, workspaceID, actorID strin
 		if len(existing) > 0 {
 			return model.ErrSampleDataAlreadyLoaded
 		}
+		hasContent, err := repo.HasRealContent(ctx, workspaceID)
+		if err != nil {
+			return err
+		}
+		if hasContent {
+			return model.ErrSampleDataWorkspaceNotEmpty
+		}
 		env, err := s.newEnv(ctx, tx, repo, workspaceID, actorID)
 		if err != nil {
 			return err
@@ -126,7 +135,7 @@ func (s *SampleDataService) Load(ctx context.Context, workspaceID, actorID strin
 		return err
 	})
 	if err != nil {
-		if !errors.Is(err, model.ErrSampleDataAlreadyLoaded) {
+		if !errors.Is(err, model.ErrSampleDataAlreadyLoaded) && !errors.Is(err, model.ErrSampleDataWorkspaceNotEmpty) {
 			s.logger.ErrorContext(ctx, "sample data load failed", "error", err, "workspace_id", workspaceID, "user_id", actorID)
 		}
 		return nil, err
@@ -140,6 +149,7 @@ func (s *SampleDataService) Load(ctx context.Context, workspaceID, actorID strin
 // and reported in Retained.
 func (s *SampleDataService) Remove(ctx context.Context, workspaceID, actorID string, enabled map[model.ModuleID]bool) (*model.SampleDataStatus, error) {
 	retained := map[string]int64{}
+	hasRealContent := false
 	removed := 0
 	err := s.repo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		repo := s.repo.WithTx(tx)
@@ -175,7 +185,11 @@ func (s *SampleDataService) Remove(ctx context.Context, workspaceID, actorID str
 		for _, item := range items {
 			ids = append(ids, item.ID)
 		}
-		return repo.DeleteItems(ctx, workspaceID, ids)
+		if err := repo.DeleteItems(ctx, workspaceID, ids); err != nil {
+			return err
+		}
+		hasRealContent, err = repo.HasRealContent(ctx, workspaceID)
+		return err
 	})
 	if err != nil {
 		s.logger.ErrorContext(ctx, "sample data removal failed", "error", err, "workspace_id", workspaceID, "user_id", actorID)
@@ -183,6 +197,7 @@ func (s *SampleDataService) Remove(ctx context.Context, workspaceID, actorID str
 	}
 	s.logger.InfoContext(ctx, "sample data removed", "workspace_id", workspaceID, "user_id", actorID, "records", removed)
 	status := s.status(nil, enabled)
+	status.HasRealContent = hasRealContent
 	if len(retained) > 0 {
 		status.Retained = retained
 	}

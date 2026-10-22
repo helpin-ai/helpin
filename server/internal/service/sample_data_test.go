@@ -152,15 +152,15 @@ func TestSampleDataLoadRequiresMembership(t *testing.T) {
 func TestSampleDataRemoveDeletesTrackedRecordsOnly(t *testing.T) {
 	svc, db := setupSampleDataService(t, &fakeSampleSeeder{module: model.ModulePM}, &fakeSampleSeeder{module: model.ModuleCRM})
 	ctx := context.Background()
-	mustExec(t, db, `INSERT INTO pm_tasks (id, workspace_id, display_id, name, workflow_id, workflow_state_id) VALUES ('real-task', 'ws-1', 2, 'Real task', 'wf', 'state')`)
 	if _, err := svc.Load(ctx, "ws-1", "user-1", allSampleModules); err != nil {
 		t.Fatalf("load: %v", err)
 	}
+	mustExec(t, db, `INSERT INTO pm_tasks (id, workspace_id, display_id, name, workflow_id, workflow_state_id) VALUES ('real-task', 'ws-1', 2, 'Real task', 'wf', 'state')`)
 	status, err := svc.Remove(ctx, "ws-1", "user-1", allSampleModules)
 	if err != nil {
 		t.Fatalf("remove: %v", err)
 	}
-	if status.Loaded || len(status.Counts) != 0 {
+	if status.Loaded || !status.HasRealContent || len(status.Counts) != 0 {
 		t.Fatalf("status after remove = %+v", status)
 	}
 	if got := countRows(t, db, "crm_contacts"); got != 0 {
@@ -176,6 +176,10 @@ func TestSampleDataRemoveDeletesTrackedRecordsOnly(t *testing.T) {
 	if len(remaining) != 1 || remaining[0] != "real-task" {
 		t.Fatalf("remaining tasks = %v, want only the real task", remaining)
 	}
+	if _, err := svc.Load(ctx, "ws-1", "user-1", allSampleModules); !errors.Is(err, model.ErrSampleDataWorkspaceNotEmpty) {
+		t.Fatalf("reload should remain blocked by real content: %v", err)
+	}
+	mustExec(t, db, "DELETE FROM pm_tasks WHERE id = 'real-task'")
 	reloaded, err := svc.Load(ctx, "ws-1", "user-1", allSampleModules)
 	if err != nil || !reloaded.Loaded {
 		t.Fatalf("reload after removal: status=%+v err=%v", reloaded, err)
@@ -344,4 +348,21 @@ func hasExampleDomain(email string) bool {
 		}
 	}
 	return false
+}
+
+func TestSampleDataRejectsPopulatedWorkspace(t *testing.T) {
+	seeder := &fakeSampleSeeder{module: model.ModuleCRM}
+	svc, db := setupSampleDataService(t, seeder)
+	if err := db.Exec(`INSERT INTO crm_contacts (id, workspace_id, display_id, first_name) VALUES ('real', 'ws-1', 1, 'Real')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	enabled := map[model.ModuleID]bool{model.ModuleCRM: true}
+	status, err := svc.Status(context.Background(), "ws-1", enabled)
+	if err != nil || !status.HasRealContent {
+		t.Fatalf("expected populated status: %+v, %v", status, err)
+	}
+	_, err = svc.Load(context.Background(), "ws-1", "user-1", enabled)
+	if !errors.Is(err, model.ErrSampleDataWorkspaceNotEmpty) || seeder.calls != 0 {
+		t.Fatalf("load should reject before seeding: %v, calls %d", err, seeder.calls)
+	}
 }

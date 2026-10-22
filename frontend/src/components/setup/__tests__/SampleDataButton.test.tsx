@@ -150,3 +150,13 @@ describe('sampleRemovalMessage', () => {
     );
   });
 });
+
+it('hides the offer for real content but preserves removal of loaded samples', async () => {
+  mockStatus({ ...empty, has_real_content: true });
+  rendered = await renderWithQuery(<SampleDataCard workspaceId="ws-1" canManage />);
+  expect(rendered.container.textContent).not.toContain('Sample data');
+  await rendered.unmount();
+  mockStatus({ ...loaded, has_real_content: true });
+  rendered = await renderWithQuery(<SampleDataCard workspaceId="ws-1" canManage />);
+  expect(button(rendered.container, 'Remove sample data')).toBeDefined();
+});

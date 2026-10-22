@@ -69,7 +69,7 @@ func (h *SampleDataHandler) Load(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case err == nil:
 		writeJSON(w, http.StatusCreated, status)
-	case errors.Is(err, model.ErrSampleDataAlreadyLoaded):
+	case errors.Is(err, model.ErrSampleDataAlreadyLoaded), errors.Is(err, model.ErrSampleDataWorkspaceNotEmpty):
 		writeError(w, http.StatusConflict, err.Error())
 	case errors.Is(err, model.ErrSampleDataNoModules):
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
