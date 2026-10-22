@@ -40,7 +40,7 @@ import type {
   MCPServiceTokenSecret,
   UpdateMCPPolicyRequest,
 } from '@/lib/mcpTypes';
-import { ensureMCPWriteScopes, hasMCPWriteScope } from '@/lib/mcpPolicy';
+import { ensureMCPWriteScopes, hasMCPWriteScope, serviceAccountScopes, serviceAccountWriteScopes } from '@/lib/mcpPolicy';
 import { cn } from '@/lib/utils';
 import { LINEAR_CARD_CLASS } from '@/components/settings/settingsConstants';
 
@@ -66,7 +66,7 @@ const SCOPE_LABELS: Record<string, string> = {
   'helpin.docs.write': 'Create and update documents',
   'helpin.docs.publish': 'Publish and unpublish Help Center articles',
   'helpin.crm.read': 'Read CRM records',
-  'helpin.crm.write': 'Add notes and update CRM records',
+  'helpin.crm.write': 'Create and update CRM records, including bulk import and notes',
   'helpin.support.read': 'Read support conversations',
   'helpin.support.write': 'Assign, move, tag, and link support conversations (never sends replies)',
   'helpin.agents.read': 'Read agents and runs',
@@ -552,20 +552,24 @@ function MCPPolicyEditor({ workspaceId, dashboard }: { workspaceId: string; dash
   );
 }
 
-function CreateServiceAccountDialog({ open, onOpenChange, workspaceId, dashboard, onSecret }: { open: boolean; onOpenChange: (open: boolean) => void; workspaceId: string; dashboard: MCPDashboard; onSecret: (secret: MCPServiceTokenSecret) => void }) {
-  const readScopes = useMemo(() => dashboard.policy.allowed_scopes.filter((scope) => !scope.endsWith('.write') && scope !== 'helpin.agents.run'), [dashboard.policy.allowed_scopes]);
+export function CreateServiceAccountDialog({ open, onOpenChange, workspaceId, dashboard, onSecret }: { open: boolean; onOpenChange: (open: boolean) => void; workspaceId: string; dashboard: MCPDashboard; onSecret: (secret: MCPServiceTokenSecret) => void }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [toolsets, setToolsets] = useState(dashboard.policy.allowed_toolsets);
-  const [scopes] = useState(readScopes);
+  const [allowWrites, setAllowWrites] = useState(false);
+  const writeScopes = useMemo(() => serviceAccountWriteScopes(dashboard.policy, toolsets), [dashboard.policy, toolsets]);
+  const canWrite = writeScopes.length > 0;
+  const grantsWrites = allowWrites && canWrite;
+  const scopes = useMemo(() => serviceAccountScopes(dashboard.policy, toolsets, grantsWrites), [dashboard.policy, toolsets, grantsWrites]);
+  const writeAreas = writeScopes.map((scope) => TOOLSET_LABELS[scope.split('.')[1]] ?? scope).join(', ');
   const create = useCreateMCPServicePrincipal(workspaceId);
   const submit = async () => {
-    const request: CreateMCPServicePrincipalRequest = { name: name.trim(), description: description.trim() || undefined, toolsets, scopes, read_only: true };
+    const request: CreateMCPServicePrincipalRequest = { name: name.trim(), description: description.trim() || undefined, toolsets, scopes, read_only: !grantsWrites };
     try {
       const result = await create.mutateAsync(request);
       onOpenChange(false);
       onSecret(result.secret);
-      setName(''); setDescription('');
+      setName(''); setDescription(''); setAllowWrites(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not create automation account');
     }
@@ -573,11 +577,24 @@ function CreateServiceAccountDialog({ open, onOpenChange, workspaceId, dashboard
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogHeader><DialogTitle>Create automation account</DialogTitle><DialogDescription>Create a read-only credential first. You can create a different account later if a workflow needs to update work.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>Create automation account</DialogTitle><DialogDescription>Accounts are read-only unless you allow updates for a workflow that needs to create or change records.</DialogDescription></DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2"><Label htmlFor="service-name">Name</Label><Input id="service-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Release notes workflow" maxLength={100} /></div>
           <div className="space-y-2"><Label htmlFor="service-description">Description</Label><Textarea id="service-description" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Where this credential is used" /></div>
           <div className="space-y-2"><Label>Toolsets</Label><div className="grid gap-2 sm:grid-cols-2">{dashboard.policy.allowed_toolsets.map((value) => <CheckRow key={value} label={TOOLSET_LABELS[value] ?? value} checked={toolsets.includes(value)} onCheckedChange={(checked) => setToolsets((items) => checked ? [...items, value] : items.filter((item) => item !== value))} />)}</div></div>
+          <div className="flex items-start justify-between gap-5">
+            <div>
+              <Label htmlFor="service-allow-writes">Allow updates</Label>
+              <p id="service-allow-writes-description" className="mt-1 text-sm text-muted-foreground">
+                {canWrite
+                  ? `Create and update records in ${writeAreas}. It cannot delete records, publish Help Center content, or start agent runs.`
+                  : dashboard.policy.enforce_read_only
+                    ? 'Turn on bounded writes under Permissions to allow updates.'
+                    : 'None of the selected toolsets has a write permission allowed under Permissions.'}
+              </p>
+            </div>
+            <Switch id="service-allow-writes" aria-describedby="service-allow-writes-description" checked={grantsWrites} disabled={!canWrite} onCheckedChange={setAllowWrites} />
+          </div>
           <p className="text-xs text-muted-foreground">The token inherits your current Helpin membership and can be revoked immediately.</p>
         </div>
         <DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={() => void submit()} disabled={!name.trim() || toolsets.length === 0 || scopes.length === 0 || create.isPending}>{create.isPending ? <Loading01Icon className="mr-2 h-4 w-4 animate-spin" /> : null}Create</Button></DialogFooter>

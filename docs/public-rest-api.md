@@ -23,7 +23,7 @@ same security model as [Helpin MCP](public-mcp-server.md).
 ## Getting a token
 
 1. A workspace manager opens **Settings → MCP access → Permissions**, enables AI tool access and **Allow automation accounts**, and picks the allowed product areas and scopes.
-2. Under **Service accounts**, choose **Create automation account**, pick scopes, product areas, and read-only or read-write, then create a token. It is shown once.
+2. Under **Service accounts**, choose **Create automation account**, pick product areas, and turn on **Allow updates** if the workflow writes, then create a token. It is shown once. Updates are available only when **Permissions** allows bounded writes for a selected area; they never include deleting records, Help Center publishing, or agent runs. The API refuses a write request the policy cannot grant instead of creating a read-only account.
 3. Send it as `Authorization: Bearer hmp_…`.
 
 ```bash
