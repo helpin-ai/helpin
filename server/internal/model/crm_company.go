@@ -71,3 +71,40 @@ type CRMCompanyListFilters struct {
 	Search        *string
 	Query         *QueryFilterGroup
 }
+
+// CRMFilterValueCount is one value in use for a filterable field.
+type CRMFilterValueCount struct {
+	Value string `json:"value"`
+	Count int    `json:"count"`
+}
+
+// CRMCustomPropertySummary describes one custom property key in use.
+type CRMCustomPropertySummary struct {
+	Key string `json:"key"`
+	// Count is the number of records with a non-empty value for the key.
+	Count int `json:"count"`
+	// ValueType is text, number, boolean, list, or mixed.
+	ValueType     string                `json:"value_type"`
+	Values        []CRMFilterValueCount `json:"values"`
+	HasMoreValues bool                  `json:"has_more_values"`
+	// NumericCount is how many records hold a value that numeric filters can
+	// compare: a JSON number or a string holding only a decimal number.
+	NumericCount int      `json:"numeric_count"`
+	NumericMin   *float64 `json:"numeric_min,omitempty"`
+	NumericMax   *float64 `json:"numeric_max,omitempty"`
+}
+
+// CRMCompanyFilterOptions lists the filterable values in use on companies.
+type CRMCompanyFilterOptions struct {
+	Industries       []CRMFilterValueCount      `json:"industries"`
+	CustomProperties []CRMCustomPropertySummary `json:"custom_properties"`
+	ScannedCompanies int                        `json:"scanned_companies"`
+	// Truncated reports that only the most recently updated companies were scanned.
+	Truncated bool `json:"truncated"`
+}
+
+// CRMCompanyFilterSource holds the company fields filter options are built from.
+type CRMCompanyFilterSource struct {
+	Industry         *string
+	CustomProperties JSONB
+}

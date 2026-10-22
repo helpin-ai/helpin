@@ -28,12 +28,38 @@ const (
 	FieldTypeDate FieldType = "date"
 )
 
+// _maxAnyOfValues bounds the IN list built for one is_any_of rule.
+const _maxAnyOfValues = 50
+
 // FieldDefinition describes how one query-builder field maps to SQL.
 type FieldDefinition struct {
 	Column     string
 	Expression string
 	Type       FieldType
 	Operators  []model.QueryFilterOperator
+	// ElementSource optionally names a set-returning SQL source with a text
+	// column named value, such as the elements of a JSON list. is_any_of then
+	// also matches when any element equals one of the rule's values.
+	ElementSource string
+	// NumericExpression optionally reads a text field as a number, yielding
+	// NULL when the value does not parse. It enables the numeric comparison
+	// operators; records without a numeric value never match them.
+	NumericExpression string
+}
+
+// _numericComparisonOperators are served by NumericExpression when a field has one.
+var _numericComparisonOperators = []model.QueryFilterOperator{
+	model.QueryFilterOpGT, model.QueryFilterOpGTE, model.QueryFilterOpLT,
+	model.QueryFilterOpLTE, model.QueryFilterOpBetween,
+}
+
+func isNumericComparison(operator model.QueryFilterOperator) bool {
+	for _, candidate := range _numericComparisonOperators {
+		if candidate == operator {
+			return true
+		}
+	}
+	return false
 }
 
 // ExpressionSQL returns the SQL expression for this field.
@@ -102,6 +128,9 @@ func normalizedLogic(logic model.QueryFilterLogic) string {
 }
 
 func isOperatorAllowed(definition FieldDefinition, operator model.QueryFilterOperator) bool {
+	if definition.NumericExpression != "" && isNumericComparison(operator) {
+		return true
+	}
 	allowed := definition.Operators
 	if len(allowed) == 0 {
 		allowed = defaultOperators(definition.Type)
@@ -128,6 +157,8 @@ func defaultOperators(fieldType FieldType) []model.QueryFilterOperator {
 			model.QueryFilterOpEndsWith,
 			model.QueryFilterOpIsEmpty,
 			model.QueryFilterOpIsNotEmpty,
+			model.QueryFilterOpIsAnyOf,
+			model.QueryFilterOpIsNoneOf,
 		}
 	case FieldTypeDate:
 		return []model.QueryFilterOperator{
@@ -146,12 +177,37 @@ func defaultOperators(fieldType FieldType) []model.QueryFilterOperator {
 			model.QueryFilterOpIsNot,
 			model.QueryFilterOpIsEmpty,
 			model.QueryFilterOpIsNotEmpty,
+			model.QueryFilterOpIsAnyOf,
+			model.QueryFilterOpIsNoneOf,
 		}
 	}
 }
 
 func buildClause(definition FieldDefinition, rule model.QueryFilterRule) (string, []any, error) {
 	expression := definition.ExpressionSQL()
+	if rule.Operator == model.QueryFilterOpIsAnyOf {
+		return buildAnyOfClause(definition, expression, rule)
+	}
+	if rule.Operator == model.QueryFilterOpIsNoneOf {
+		clause, args, err := buildAnyOfClause(definition, expression, rule)
+		if err != nil {
+			return "", nil, err
+		}
+		// A missing value is none of the values; COALESCE keeps NULL from excluding it.
+		return "NOT COALESCE((" + clause + "), FALSE)", args, nil
+	}
+	if definition.NumericExpression != "" && isNumericComparison(rule.Operator) {
+		return buildNumberClause(definition.NumericExpression, rule)
+	}
+	// ID columns are typically UUIDs, which PostgreSQL cannot compare with ''.
+	if definition.Type == FieldTypeID {
+		switch rule.Operator {
+		case model.QueryFilterOpIsEmpty:
+			return expression + " IS NULL", nil, nil
+		case model.QueryFilterOpIsNotEmpty:
+			return expression + " IS NOT NULL", nil, nil
+		}
+	}
 	switch definition.Type {
 	case FieldTypeNumber:
 		return buildNumberClause(expression, rule)
@@ -291,6 +347,38 @@ func buildDateClause(expression string, rule model.QueryFilterRule) (string, []a
 	default:
 		return "", nil, &ValidationError{Message: fmt.Sprintf("unsupported date operator %q", rule.Operator)}
 	}
+}
+
+// buildAnyOfClause matches any listed value. Text comparisons are
+// case-insensitive, like the other text operators.
+func buildAnyOfClause(definition FieldDefinition, expression string, rule model.QueryFilterRule) (string, []any, error) {
+	values := make([]string, 0, len(rule.Values))
+	for _, value := range rule.Values {
+		if value = strings.TrimSpace(value); value != "" {
+			values = append(values, value)
+		}
+	}
+	if len(values) == 0 || len(values) > _maxAnyOfValues {
+		return "", nil, &ValidationError{Message: fmt.Sprintf("field %q requires between 1 and %d values", rule.Field, _maxAnyOfValues)}
+	}
+	text := definition.Type == FieldTypeText
+	if text {
+		for index := range values {
+			values[index] = strings.ToLower(values[index])
+		}
+		expression = "LOWER(" + expression + ")"
+	}
+	clause := expression + " IN ?"
+	args := []any{values}
+	if definition.ElementSource != "" {
+		element := "value"
+		if text {
+			element = "LOWER(value)"
+		}
+		clause = "(" + clause + " OR EXISTS (SELECT 1 FROM " + definition.ElementSource + " WHERE " + element + " IN ?))"
+		args = append(args, values)
+	}
+	return clause, args, nil
 }
 
 func singleRuleValue(rule model.QueryFilterRule, suffix string) (string, error) {

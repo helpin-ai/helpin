@@ -84,3 +84,28 @@ func TestDisabledAndMissingRedis(t *testing.T) {
 		}
 	}
 }
+
+func TestAllowNChargesCostUnits(t *testing.T) {
+	mini := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mini.Addr(), MaxRetries: -1})
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	limiter := New(client, Config{RequestsPerMinute: 100, ExpensivePerMinute: 10})
+	limiter.now = func() time.Time { return time.Unix(600, 0) }
+	ctx := context.Background()
+	if !limiter.AllowN(ctx, "api", "alice", true, 10) {
+		t.Fatal("a request costing the whole budget should be admitted")
+	}
+	if limiter.AllowN(ctx, "api", "alice", true, 1) {
+		t.Fatal("the budget should be spent after a 10-unit request")
+	}
+	if !limiter.AllowN(ctx, "api", "bob", true, 0) || !limiter.AllowN(ctx, "api", "bob", true, -3) {
+		t.Fatal("costs below one should count as one")
+	}
+	if limiter.AllowN(ctx, "api", "carol", true, 11) {
+		t.Fatal("a request costing more than the budget should be refused")
+	}
+}

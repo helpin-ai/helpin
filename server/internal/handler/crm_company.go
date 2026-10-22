@@ -1,12 +1,14 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/querybuilder"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
@@ -27,15 +29,26 @@ func (h *CRMCompanyHandler) List(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "workspace_id is required")
 		return
 	}
+	queryFilters, err := queryFilterGroup(r, "filters")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid filters query")
+		return
+	}
 	filters := model.CRMCompanyListFilters{
 		Industry:      queryStringPtr(r, "industry"),
 		OwnerMemberID: queryStringPtr(r, "owner_member_id"),
 		Search:        queryStringPtr(r, "search"),
+		Query:         queryFilters,
 	}
 	pagination := queryPagination(r)
 
 	companies, total, err := h.companyService.List(r.Context(), workspaceID, filters, pagination)
 	if err != nil {
+		var validationErr *querybuilder.ValidationError
+		if errors.As(err, &validationErr) {
+			writeError(w, http.StatusBadRequest, validationErr.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -47,6 +60,22 @@ func (h *CRMCompanyHandler) List(w http.ResponseWriter, r *http.Request) {
 		"total": total,
 		"page":  pagination.Page,
 	})
+}
+
+// FilterOptions handles GET /api/crm/companies/filter-options. It returns the
+// industries and custom property keys in use, with their common values.
+func (h *CRMCompanyHandler) FilterOptions(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	options, err := h.companyService.FilterOptions(r.Context(), workspaceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load company filter options")
+		return
+	}
+	writeJSON(w, http.StatusOK, options)
 }
 
 // Create handles POST /api/crm/companies.
