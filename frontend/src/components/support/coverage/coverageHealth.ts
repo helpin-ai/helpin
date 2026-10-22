@@ -71,6 +71,8 @@ export interface CoverageAnalysisControlState {
   description: string
   /** The description is shown on the page because the user may need to act. */
   inline?: boolean
+  /** How urgent an inline description is: retries and missing schedules warn, failures are errors. */
+  tone?: 'warning' | 'error'
 }
 
 export function coverageAnalysisControl(health: CoveragePipelineHealthV2 | null, submitting = false): CoverageAnalysisControlState {
@@ -84,7 +86,7 @@ export function coverageAnalysisControl(health: CoveragePipelineHealthV2 | null,
     return { pill: 'Paused', disabled: true, description: coverageHealthPresentation(health).description }
   }
   if (health.reanalysis_status === 'retrying') {
-    return { pill: 'Retrying', disabled: true, description: retryingDescription(health), inline: true }
+    return { pill: 'Retrying', disabled: true, description: retryingDescription(health), inline: true, tone: 'warning' }
   }
   if (health.reanalysis_status === 'running' || health.latest_batch?.status === 'running') {
     return { pill: 'Analyzing', disabled: true, description: 'Conversations are being checked. Results appear when analysis finishes.' }
@@ -93,10 +95,10 @@ export function coverageAnalysisControl(health: CoveragePipelineHealthV2 | null,
     return { pill: 'Queued', disabled: true, description: 'Analysis is queued and will start when a worker is available.' }
   }
   if (needsAttention(health)) {
-    return { pill: 'Needs attention', disabled: false, description: attentionDescription(health), inline: true }
+    return { pill: 'Needs attention', disabled: false, description: attentionDescription(health), inline: true, tone: 'error' }
   }
   if (health.schedule_status === 'missing') {
-    return { pill: 'Not scheduled', disabled: false, description: 'Automatic analysis is not scheduled, so new conversations are not being checked. An administrator needs to restart the API to restore it. Re-analyze still works.', inline: true }
+    return { pill: 'Not scheduled', disabled: false, description: 'Automatic analysis is not scheduled, so new conversations are not being checked. An administrator needs to restart the API to restore it. Re-analyze still works.', inline: true, tone: 'warning' }
   }
   return { pill: null, disabled: false, description: '' }
 }

@@ -58,6 +58,12 @@ import { useWorkspaceStore } from '@/stores/workspaceStore'
 
 const STATUS_FILTERS = ['open', 'done', 'rejected'] as const
 const GAP_PAGE_SIZE = 50
+const COVERAGE_STATUS_TOAST_ID = 'coverage-analysis-status'
+// The attribute selector outranks the Toaster's neutral background.
+const COVERAGE_STATUS_TOAST_CLASS = {
+  warning: 'data-[type=warning]:!bg-amber-50 dark:data-[type=warning]:!bg-amber-950',
+  error: 'data-[type=error]:!bg-red-50 dark:data-[type=error]:!bg-red-950',
+} as const
 const KIND_OPTIONS = [
   { value: 'all', label: 'All gaps', dot: 'bg-muted-foreground/50' },
   { value: 'content', label: 'Content gaps', dot: GAP_KIND_COLORS.content.dot },
@@ -110,6 +116,7 @@ export function SupportCoveragePage() {
   const analysisSubmission = useRef(false)
   const analysisRequest = useRef(0)
   const healthSnapshot = useRef<CoveragePipelineHealthV2 | null>(null)
+  const notifiedAnalysisStatus = useRef('')
   const analysisWorkspace = useRef(wsId)
   useEffect(() => {
     analysisRequest.current += 1
@@ -586,6 +593,24 @@ export function SupportCoveragePage() {
 
 
   const analysisControl = coverageAnalysisControl(insightErrors.health ? null : healthV2, submittingAnalysis)
+  const noticeTone = !loading && analysisControl.inline ? analysisControl.tone : undefined
+  const noticeMessage = noticeTone ? analysisControl.description : ''
+
+  // Announce a retry, failure or missing schedule once per message, tinted by
+  // urgency; the same text stays on the page while it applies.
+  useEffect(() => {
+    if (noticeMessage === notifiedAnalysisStatus.current) return
+    notifiedAnalysisStatus.current = noticeMessage
+    if (!noticeTone) {
+      toast.dismiss(COVERAGE_STATUS_TOAST_ID)
+      return
+    }
+    const notify = noticeTone === 'error' ? toast.error : toast.warning
+    notify(noticeMessage, {
+      id: COVERAGE_STATUS_TOAST_ID,
+      classNames: { toast: COVERAGE_STATUS_TOAST_CLASS[noticeTone] },
+    })
+  }, [noticeTone, noticeMessage])
 
   const lastUpdatedAt = [summary?.last_analyzed_at, latestClusterRun?.completed_at]
     .filter((timestamp): timestamp is string => !!timestamp && Number.isFinite(Date.parse(timestamp)))

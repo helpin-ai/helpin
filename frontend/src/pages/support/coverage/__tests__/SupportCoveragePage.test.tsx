@@ -7,6 +7,9 @@ import type { CoveragePipelineHealthV2, SupportCoverageGapListItem } from '@/lib
 
 let health: CoveragePipelineHealthV2
 const listGaps = vi.fn()
+const toasts = vi.hoisted(() => ({ error: vi.fn(), warning: vi.fn(), success: vi.fn(), dismiss: vi.fn() }))
+
+vi.mock('sonner', () => ({ toast: toasts }))
 
 vi.mock('@/stores/workspaceStore', () => ({
   useWorkspaceStore: (select: (state: unknown) => unknown) => select({ currentWorkspace: { id: 'ws-1', slug: 'acme' } }),
@@ -60,6 +63,7 @@ afterEach(() => {
   container = null
   root = null
   listGaps.mockReset()
+  Object.values(toasts).forEach((mock) => mock.mockReset())
 })
 
 async function renderPage() {
@@ -92,10 +96,35 @@ describe('SupportCoveragePage', () => {
     expect(page.textContent).toContain('Analysis stopped: The analysis worker stopped responding.')
   })
 
+  it('raises an error notification when analysis stops', async () => {
+    health = { ...health, healthy: false, reanalysis_status: 'failed', reanalysis_error: 'The analysis worker stopped responding.' }
+
+    await renderPage()
+
+    expect(toasts.error).toHaveBeenCalledTimes(1)
+    expect(toasts.error).toHaveBeenCalledWith(
+      'Analysis stopped: The analysis worker stopped responding.',
+      expect.objectContaining({ classNames: { toast: expect.stringContaining('bg-red-50') } }),
+    )
+    expect(toasts.warning).not.toHaveBeenCalled()
+  })
+
+  it('raises a warning notification while a failed attempt is retried', async () => {
+    health = { ...health, reanalysis_status: 'retrying', reanalysis_attempt: 2, reanalysis_error: 'A database rule rejected the run.' }
+
+    await renderPage()
+
+    expect(toasts.warning).toHaveBeenCalledTimes(1)
+    expect(toasts.warning.mock.calls[0][1]).toMatchObject({ classNames: { toast: expect.stringContaining('bg-amber-50') } })
+    expect(toasts.error).not.toHaveBeenCalled()
+  })
+
   it('keeps routine status out of the page body', async () => {
     const page = await renderPage()
 
     expect(page.textContent).not.toContain('Analysis stopped')
     expect(page.querySelector('p[role="status"]')).toBeNull()
+    expect(toasts.error).not.toHaveBeenCalled()
+    expect(toasts.warning).not.toHaveBeenCalled()
   })
 })
