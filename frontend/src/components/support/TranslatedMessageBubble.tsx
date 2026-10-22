@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { QuietTextAction } from '@/components/design-system/quiet';
 import { requestSupportTranslation, useSupportTranslationOptions } from '@/hooks/queries/useSupportTranslation';
-import { isMessageInReadingLanguage } from './messageReadingLanguage';
+import { isMessageInReadingLanguage, normalizeReadingLanguage } from './messageReadingLanguage';
 import type { SupportTranslation } from '@/lib/pmTypes';
 import { MessageBubble, type MessageBubbleProps } from './MessageBubble';
 
@@ -27,12 +27,16 @@ export function TranslatedMessageBubble({ workspaceId, cachedTranslation, ...pro
   const result = outgoing ?? (candidate?.source_text === message.content && candidate.target_language === language ? candidate : undefined);
   const eligible = (!!options?.available || result?.status === 'ready') && !message.pending_send &&
     (message.sender_type === 'customer' || message.sender_type === 'ai' || !!outgoing) && !message.is_internal && message.message_type === 'reply' && !!message.content.trim();
+  // Only completed language evidence overrides the local hint. Failed/pending
+  // artifacts must not reintroduce Translate for text already in the reading language.
+  const sourceLanguage = result?.status === 'ready' ? normalizeReadingLanguage(result.source_language || '') : '';
+  const hasSourceLanguage = !!sourceLanguage && sourceLanguage !== 'und';
   const locallySame = useMemo(
-    () => eligible && !result && isMessageInReadingLanguage(message.content, language),
-    [eligible, result, message.content, language],
+    () => eligible && !outgoing && !hasSourceLanguage && isMessageInReadingLanguage(message.content, language),
+    [eligible, outgoing, hasSourceLanguage, message.content, language],
   );
   const same = (result?.status === 'ready' && result.translated_text === result.source_text) ||
-    (!outgoing && (locallySame || (result?.status === 'ready' && result.source_language === language)));
+    (!outgoing && (locallySame || (hasSourceLanguage && sourceLanguage === normalizeReadingLanguage(language))));
   const translated = !same && result?.status === 'ready' && result.translated_text !== result.source_text;
   const pending = request.isPending || result?.status === 'pending';
   const failed = request.isError || result?.status === 'failed' || result?.status === 'expired';
