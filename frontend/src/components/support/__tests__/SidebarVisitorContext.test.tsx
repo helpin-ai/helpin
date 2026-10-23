@@ -8,6 +8,7 @@ import { SidebarVisitorContext } from '../SidebarVisitorContext'
 
 const mockSupportData = vi.hoisted(() => ({
   visitorContext: {
+    channels: undefined as string[] | undefined,
     device: {
       browser: 'Chrome',
       browser_version: '125',
@@ -87,6 +88,16 @@ function renderSidebarContext() {
 describe('SidebarVisitorContext', () => {
   afterEach(() => {
     document.body.innerHTML = ''
+    mockSupportData.visitorContext.channels = undefined
+  })
+
+  it('shows all historical channels independently of the original source', () => {
+    mockSupportData.visitorContext.channels = ['widget', 'email']
+    const { container, cleanup } = renderSidebarContext()
+    const row = container.querySelector('[aria-label="Channels"]')?.parentElement
+    expect(row?.textContent).toBe('Chat·Email')
+    expect(row?.querySelector('.lucide-messages-square')).not.toBeNull()
+    cleanup()
   })
 
   it('merges CRM contact and current visit signals into Contact Details', () => {

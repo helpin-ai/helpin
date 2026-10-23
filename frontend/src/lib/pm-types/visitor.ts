@@ -63,6 +63,7 @@ export interface VisitorOtherConversation {
 }
 
 export interface VisitorContextResponse {
+  channels?: string[];
   device: VisitorDeviceInfo | null;
   location: VisitorLocation | null;
   contact: VisitorContactData | null;

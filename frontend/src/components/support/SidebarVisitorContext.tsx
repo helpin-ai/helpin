@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { MessagesSquare, MessageCircle, Mail } from 'lucide-react';
 import { useWorkspaceAccess } from '@/hooks/queries/useSession';
 import { ConversationMergeDialog } from './ConversationMergeDialog';
 import { ConversationHistoryDialog } from './ConversationMergeHistory';
@@ -8,7 +9,6 @@ import { MoreHorizontalIcon } from '@/lib/icons';
 import type { VisitorOtherConversation } from '@/lib/pmTypes';
 import { Link } from '@tanstack/react-router';
 import {
-  ArrowLeftRightIcon,
   GlobeIcon,
   Message01Icon,
   UserIcon,
@@ -84,6 +84,7 @@ const LIFECYCLE_COLORS: Record<string, string> = {
 const CHANNEL_LABELS: Record<string, string> = {
   widget: 'Chat',
   email: 'Email',
+  portal: 'Portal',
   api: 'API',
   internal: 'Internal',
 };
@@ -200,8 +201,7 @@ export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVi
   const locationText = [location?.city_name, location?.region_name, location?.country_name].filter(Boolean).join(', ');
   const localTime = formatLocalTime(location?.timezone);
   const language = formatLocale(location?.locale);
-  const channel = conversation?.source;
-  const channelLabel = channel ? CHANNEL_LABELS[channel] ?? channel : null;
+  const channels = data.channels ?? (conversation?.source ? [conversation.source] : []);
   const currentPage = location?.last_page_url;
   const deviceType = device?.device_type ? `${device.device_type.slice(0, 1).toUpperCase()}${device.device_type.slice(1)}` : null;
   const browserAndOS = device
@@ -211,9 +211,9 @@ export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVi
       ].filter(Boolean).join(' · ')
     : null;
 
-  const hasMainInfo = !!(locationText || localTime || language || channelLabel || currentPage || hasDevice);
+  const hasMainInfo = !!(locationText || localTime || language || currentPage || hasDevice);
   const hasContact = !!contact;
-  if (!hasDevice && !hasMainInfo && !hasContact) return null;
+  if (!hasDevice && !hasMainInfo && !hasContact && channels.length === 0) return null;
 
   return (
     <CollapsibleSection title="Contact Details" icon={UserIcon} count={0} defaultOpen>
@@ -237,12 +237,24 @@ export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVi
             <InfoRow key={key} label={key.replaceAll('_', ' ')} value={formatUnknownValue(value)} />
           ))}
 
+        {channels.length > 0 && (
+          <div className="flex items-center gap-2.5 text-[12px]">
+            <DetailIcon label="Channels"><MessagesSquare className="h-3.5 w-3.5" /></DetailIcon>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-foreground/90">
+              {channels.map((channel, index) => (
+                <span key={channel} className="inline-flex items-center gap-1">
+                  {index > 0 && <span aria-hidden="true" className="mr-1 text-muted-foreground">·</span>}
+                  {channel === 'widget' && <MessageCircle aria-hidden="true" className="h-3 w-3" />}
+                  {channel === 'email' && <Mail aria-hidden="true" className="h-3 w-3" />}
+                  {CHANNEL_LABELS[channel] ?? channel}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
         {hasMainInfo && (
           <>
             <div className="pt-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Current visit</div>
-            {channelLabel && (
-              <MainInfoRow label="Channel" icon={<ArrowLeftRightIcon className="h-3.5 w-3.5" />} value={channelLabel} />
-            )}
             {currentPage && (
               <MainInfoRow
                 label="Current page"
