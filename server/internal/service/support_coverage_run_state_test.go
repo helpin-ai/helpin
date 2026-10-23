@@ -16,6 +16,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
 type coverageRunStateClient struct {
@@ -140,5 +141,27 @@ func TestCoverageFailuresNeedPersonOnlyAfterRetriesRunOut(t *testing.T) {
 	stuck := append(retrying, model.CoverageAnalysisAttempt{Status: model.CoverageAttemptDeadLetter})
 	if !coverageFailuresNeedPerson(stuck) {
 		t.Fatal("a failure that used all its retries needs a person")
+	}
+}
+
+func TestCoveragePipelineHealthIncludesUnresolvedEarlierFailures(t *testing.T) {
+	db := setupCoverageFindingUpsertTestDB(t)
+	for _, query := range []string{
+		`CREATE TABLE coverage_batches (id TEXT PRIMARY KEY, workspace_id TEXT, status TEXT, created_at DATETIME)`,
+		`CREATE TABLE coverage_analysis_attempts (id TEXT PRIMARY KEY, workspace_id TEXT, batch_id TEXT, logical_work_key TEXT, source_kind TEXT, source_id TEXT, segment_id TEXT, content_hash TEXT, attempt INTEGER, status TEXT, created_at DATETIME)`,
+		`INSERT INTO coverage_batches VALUES ('latest', 'ws-1', 'succeeded', CURRENT_TIMESTAMP)`,
+		`INSERT INTO coverage_analysis_attempts VALUES ('failure', 'ws-1', 'older', 'work', 'conversation', 'c-1', 'segment', 'hash', 1, 'dead_letter', CURRENT_TIMESTAMP)`,
+	} {
+		if err := db.Exec(query).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc := NewSupportCoverageV2Service(repository.NewCoverageV2Repository(db))
+	health, err := svc.PipelineHealth(context.Background(), "ws-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if health.Healthy || len(health.Failures) != 1 {
+		t.Fatalf("unresolved earlier failure hidden: %+v", health)
 	}
 }

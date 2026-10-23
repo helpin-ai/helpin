@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 func TestListFailedAttemptsForBatchIgnoresOlderBatches(t *testing.T) {
@@ -27,5 +29,67 @@ func TestListFailedAttemptsForBatchIgnoresOlderBatches(t *testing.T) {
 	}
 	if len(failures) != 1 || failures[0].ID != "new-retry" {
 		t.Fatalf("failures = %+v, want only new-retry", failures)
+	}
+}
+
+func TestListFailedAttemptsKeepsUnresolvedHistoryButHidesRecoveredWork(t *testing.T) {
+	db := setupCoverageV2TestDB(t, "unresolved_failures")
+	repo := NewCoverageV2Repository(db)
+	now := time.Now().UTC()
+	for _, row := range []struct {
+		id, ws, source, status string
+		at                     time.Time
+	}{
+		{"old-unresolved", "ws-1", "c-1", "dead_letter", now.Add(-time.Hour)},
+		{"old-recovered", "ws-1", "c-2", "dead_letter", now.Add(-time.Hour)},
+		{"reassessed", "ws-1", "c-2", "succeeded", now},
+		{"old-retry", "ws-1", "c-3", "retryable", now.Add(-time.Hour)},
+		{"new-retry", "ws-1", "c-3", "retryable", now},
+		{"other-workspace", "ws-2", "c-1", "succeeded", now},
+	} {
+		attempt := &model.CoverageAnalysisAttempt{ID: row.id, WorkspaceID: row.ws, BatchID: row.id,
+			LogicalWorkKey: row.id, SourceKind: "conversation", SourceID: row.source, SegmentID: "segment", ContentHash: "hash",
+			AnalyzerVersion: "v4", PolicyVersion: "v1", Attempt: 1, Status: row.status, CreatedAt: row.at}
+		if err := repo.EnqueueAttempt(context.Background(), attempt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	failures, err := repo.ListFailedAttempts(context.Background(), "ws-1", 25)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(failures) != 2 || failures[0].ID != "old-unresolved" || failures[1].ID != "new-retry" {
+		t.Fatalf("want unresolved terminal failure first then current retry, got %+v", failures)
+	}
+}
+
+func TestCoverageSchedulesPendingAssignmentsWithoutNewConversations(t *testing.T) {
+	db := setupCoverageV2TestDB(t, "pending_assignments")
+	repo := NewCoverageV2Repository(db)
+	for _, row := range []struct {
+		ws, status string
+		current    bool
+	}{
+		{"ws-pending", "pending", true}, {"ws-retry", "retryable", true},
+		{"ws-done", "assigned", true}, {"ws-old", "pending", false},
+	} {
+		finding := &model.CoverageFinding{ID: row.ws, WorkspaceID: row.ws, AnalysisAttemptID: row.ws,
+			SourceKind: "conversation", SourceID: row.ws, LogicalWorkKey: row.ws, IsCurrent: true,
+			AssignmentStatus: row.status, Metadata: []byte(`{}`)}
+		if err := db.Create(finding).Error; err != nil {
+			t.Fatal(err)
+		}
+		if !row.current {
+			if err := db.Model(finding).Update("is_current", false).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	workspaces, err := repo.ListQueuedWorkspaces(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(workspaces) != 2 || workspaces[0] != "ws-pending" || workspaces[1] != "ws-retry" {
+		t.Fatalf("assignment backlog not scheduled: %v", workspaces)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,6 +24,13 @@ func TestAnalyzeConversationFallsBackWhenPrimaryReplyIsUnusable(t *testing.T) {
 		{name: "empty reply", primary: llm.ChatResponse{Content: ""}},
 		{name: "reply cut off by the token limit", primary: llm.ChatResponse{Content: `{"is_support_query":true,"has_gap":`, FinishReason: "length"}},
 		{name: "unreadable reply", primary: llm.ChatResponse{Content: "not json"}},
+		{name: "empty JSON object is not a no-gap decision", primary: llm.ChatResponse{Content: `{}`}},
+		{name: "missing gap decision", primary: llm.ChatResponse{Content: strings.Replace(coverageTestGapJSON, `"has_gap":true,`, "", 1)}},
+		{name: "null gap decision", primary: llm.ChatResponse{Content: strings.Replace(coverageTestGapJSON, `"has_gap":true`, `"has_gap":null`, 1)}},
+		{name: "unknown classification", primary: llm.ChatResponse{Content: strings.Replace(coverageTestGapJSON, `"conversation_type":"support_query"`, `"conversation_type":"unknown"`, 1)}},
+		{name: "missing recommended change", primary: llm.ChatResponse{Content: strings.Replace(coverageTestGapJSON, `"suggested_change":"Create a billing update article."`, `"suggested_change":""`, 1)}},
+		{name: "whitespace rationale", primary: llm.ChatResponse{Content: strings.Replace(coverageTestGapJSON, `"rationale":"Customers need documented billing steps."`, `"rationale":"  "`, 1)}},
+		{name: "missing customer need", primary: llm.ChatResponse{Content: strings.Replace(coverageTestGapJSON, `"customer_need":"Customer needed billing update steps."`, `"customer_need":""`, 1)}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -256,5 +264,28 @@ func TestCoverageDuplicateCheckLeavesUnsureSuggestionsForReview(t *testing.T) {
 	}
 	if result.SuggestionsCreated != 1 || result.AutoMerged != 0 || result.KeptSeparate != 0 {
 		t.Fatalf("result = %+v, want one suggestion left for review", result)
+	}
+}
+
+func TestCoverageRefinementFallsBackBeforeReplacingValidRecommendations(t *testing.T) {
+	var original CoverageConversationAnalysisResult
+	if err := json.Unmarshal([]byte(coverageTestGapJSON), &original); err != nil {
+		t.Fatal(err)
+	}
+	good, err := json.Marshal(CoverageFixBundleDecision{RecommendedFixes: original.RecommendedFixes, Confidence: 0.85})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &scriptedSupportPlannerLLM{responses: []llm.ChatResponse{
+		{Content: `{"recommended_fixes":[{"type":"update_article","target_type":"docs"}],"confidence":0.9}`},
+		{Content: string(good)},
+	}}
+	analyzer := NewSupportCoverageDailyAnalyzer(provider, "openai", "gpt-5.5")
+	got, err := analyzer.RefineFixBundleWithKnowledge(context.Background(), original, []CoverageKnowledgeCandidate{{TargetType: "docs", DocumentID: "doc-1", Title: "Billing"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.requests) != 2 || len(got.RecommendedFixes) != 1 || got.RecommendedFixes[0].SuggestedChange == "" {
+		t.Fatalf("invalid refinement accepted: calls=%d result=%+v", len(provider.requests), got)
 	}
 }

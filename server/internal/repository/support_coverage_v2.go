@@ -328,8 +328,13 @@ func (r *CoverageV2Repository) ListQueuedWorkspaces(ctx context.Context, limit i
 		limit = 1000
 	}
 	var workspaceIDs []string
-	err := r.db.WithContext(ctx).Model(&model.CoverageAnalysisAttempt{}).Distinct("workspace_id").
-		Where("status IN ? AND (retry_at IS NULL OR retry_at <= ?)", []string{model.CoverageAttemptQueued, model.CoverageAttemptRetryable}, time.Now().UTC()).
+	// Pending assignments must keep a workspace scheduled even after its
+	// conversation cursor advances and no new conversations arrive.
+	attempts := r.db.WithContext(ctx).Model(&model.CoverageAnalysisAttempt{}).Select("workspace_id").
+		Where("status IN ? AND (retry_at IS NULL OR retry_at <= ?)", []string{model.CoverageAttemptQueued, model.CoverageAttemptRetryable}, time.Now().UTC())
+	findings := r.db.WithContext(ctx).Model(&model.CoverageFinding{}).Select("workspace_id").
+		Where("is_current = ? AND assignment_status IN ?", true, []string{"pending", "retryable"})
+	err := r.db.WithContext(ctx).Table("(? UNION ?) AS queued_workspaces", attempts, findings).
 		Order("workspace_id").Limit(limit).Pluck("workspace_id", &workspaceIDs).Error
 	return workspaceIDs, err
 }
@@ -829,12 +834,25 @@ func (r *CoverageV2Repository) CoverageRolloutStats(ctx context.Context, workspa
 	return stats, nil
 }
 
+// ListFailedAttempts returns unresolved work across batches, prioritizing work
+// that needs intervention. A newer attempt for the same source segment and
+// content supersedes its previous failure, including explicit reassessments.
 func (r *CoverageV2Repository) ListFailedAttempts(ctx context.Context, workspaceID string, limit int) ([]model.CoverageAnalysisAttempt, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 25
 	}
 	var attempts []model.CoverageAnalysisAttempt
-	err := r.db.WithContext(ctx).Where("workspace_id = ? AND status IN ?", workspaceID, []string{model.CoverageAttemptRetryable, model.CoverageAttemptDeadLetter, model.CoverageAttemptPausedConfiguration}).Order("created_at DESC").Limit(limit).Find(&attempts).Error
+	err := r.db.WithContext(ctx).Model(&model.CoverageAnalysisAttempt{}).
+		Where("workspace_id = ? AND status IN ?", workspaceID, []string{model.CoverageAttemptRetryable, model.CoverageAttemptDeadLetter, model.CoverageAttemptPausedConfiguration}).
+		Where(`NOT EXISTS (SELECT 1 FROM coverage_analysis_attempts newer
+            WHERE newer.workspace_id = coverage_analysis_attempts.workspace_id
+              AND newer.source_kind = coverage_analysis_attempts.source_kind
+              AND newer.source_id = coverage_analysis_attempts.source_id
+              AND newer.segment_id = coverage_analysis_attempts.segment_id
+              AND newer.content_hash = coverage_analysis_attempts.content_hash
+              AND (newer.created_at > coverage_analysis_attempts.created_at
+                OR (newer.created_at = coverage_analysis_attempts.created_at AND newer.attempt > coverage_analysis_attempts.attempt)))`).
+		Order("CASE WHEN status = 'retryable' THEN 1 ELSE 0 END, created_at DESC, id").Limit(limit).Find(&attempts).Error
 	return attempts, err
 }
 
