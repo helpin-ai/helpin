@@ -240,10 +240,11 @@ func (r *SupportCoverageAnalysisRepository) SetConversationAnalysisGap(ctx conte
 	return nil
 }
 
-// ListUnmaterializedGapAnalyses lists analysed gaps not yet attached to a gap,
-// across runs. Findings from retried or interrupted runs would otherwise
-// never become gaps.
-func (r *SupportCoverageAnalysisRepository) ListUnmaterializedGapAnalyses(ctx context.Context, workspaceID string, limit int) ([]model.SupportCoverageConversationAnalysis, error) {
+// ListUnmaterializedGapAnalyses lists analysed gaps with at least
+// minConfidence that are not yet attached to a gap, across runs. Findings from
+// retried or interrupted runs would otherwise never become gaps; filtering by
+// confidence here keeps low-confidence findings from crowding the limit.
+func (r *SupportCoverageAnalysisRepository) ListUnmaterializedGapAnalyses(ctx context.Context, workspaceID string, minConfidence float64, limit int) ([]model.SupportCoverageConversationAnalysis, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
@@ -252,8 +253,8 @@ func (r *SupportCoverageAnalysisRepository) ListUnmaterializedGapAnalyses(ctx co
 	}
 	var analyses []model.SupportCoverageConversationAnalysis
 	if err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND has_gap = ? AND gap_id IS NULL AND status = ?",
-			workspaceID, true, model.SupportCoverageConversationAnalysisStatusAnalyzed).
+		Where("workspace_id = ? AND has_gap = ? AND gap_id IS NULL AND status = ? AND confidence >= ?",
+			workspaceID, true, model.SupportCoverageConversationAnalysisStatusAnalyzed, minConfidence).
 		Order("created_at ASC, id ASC").
 		Limit(limit).
 		Find(&analyses).Error; err != nil {

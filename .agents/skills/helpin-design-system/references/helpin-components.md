@@ -69,7 +69,7 @@ Use the shared option-selection implementation across list and board views, tabl
 | Data-driven single or multi-select, grouped options, custom trigger | `QuietDropdown` from `@/components/design-system/quiet` |
 | Custom picker composition, headers, or footers | `QuietDropdownRoot`, `QuietDropdownTrigger`, `QuietDropdownContent`, `QuietDropdownOptions`, and item/group/empty/separator exports from `@/components/design-system/quiet-dropdown` |
 | Existing declarative Select markup | `Select`, `SelectTrigger`, `SelectContent`, `SelectItem`, and related exports from `@/components/design-system/quiet-dropdown-select` |
-| Compact toolbar filter or Group by control | `QuietFilterDropdown` from `@/components/design-system/quiet` |
+| Compact toolbar filter or Group by control | `QuietFilterDropdown` from `@/components/design-system/quiet`; add `bordered` for a single filter that sits beside content instead of in a filter toolbar, such as the Coverage gap status |
 | Domain-specific selection | Existing adapters such as `SidebarPopoverSelect`, `MemberPickerPopover`, and `InlineEpicCell` under `@/components/pm` |
 
 - Dropdown content uses the centralized **12.2px** typography token. Keep the shared content wrapper and its `data-dropdown-content` marker; do not add page-specific font sizes or rebuild its search spacing.

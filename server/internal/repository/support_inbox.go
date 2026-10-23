@@ -1875,12 +1875,18 @@ type CoverageAnalysisCandidateCursor struct {
 	ID        string    `json:"id"`
 }
 
-func (r *SupportConversationRepository) ListCoverageAnalysisCandidates(ctx context.Context, workspaceID string, windowStart, windowEnd time.Time, limit int) ([]model.SupportConversation, error) {
-	conversations, _, err := r.ListCoverageAnalysisCandidatesPage(ctx, workspaceID, windowStart, windowEnd, nil, limit)
+func (r *SupportConversationRepository) ListCoverageAnalysisCandidates(ctx context.Context, workspaceID string, windowStart, windowEnd time.Time, openQuietPeriod time.Duration, limit int) ([]model.SupportConversation, error) {
+	conversations, _, err := r.ListCoverageAnalysisCandidatesPage(ctx, workspaceID, windowStart, windowEnd, openQuietPeriod, nil, limit)
 	return conversations, err
 }
 
-func (r *SupportConversationRepository) ListCoverageAnalysisCandidatesPage(ctx context.Context, workspaceID string, windowStart, windowEnd time.Time, cursor *CoverageAnalysisCandidateCursor, limit int) ([]model.SupportConversation, *CoverageAnalysisCandidateCursor, error) {
+// ListCoverageAnalysisCandidatesPage lists conversations that settled inside
+// the window. A resolved conversation qualifies when it changed or was
+// resolved in the window. Any other conversation qualifies when its last
+// change falls in the window shifted back by openQuietPeriod, so one still in
+// progress is read only after it has been quiet that long, and consecutive
+// windows still cover every moment.
+func (r *SupportConversationRepository) ListCoverageAnalysisCandidatesPage(ctx context.Context, workspaceID string, windowStart, windowEnd time.Time, openQuietPeriod time.Duration, cursor *CoverageAnalysisCandidateCursor, limit int) ([]model.SupportConversation, *CoverageAnalysisCandidateCursor, error) {
 	if workspaceID == "" {
 		return nil, nil, fmt.Errorf("workspace_id is required")
 	}
@@ -1899,9 +1905,14 @@ func (r *SupportConversationRepository) ListCoverageAnalysisCandidatesPage(ctx c
 		// AI coverage analysis.
 		Where(NotSampleDataSQL("support_conversations.id")).
 		Where(`(
-			(updated_at >= ? AND updated_at < ?)
-			OR (resolved_at IS NOT NULL AND resolved_at >= ? AND resolved_at < ?)
-		)`, windowStart, windowEnd, windowStart, windowEnd)
+			(status = ? AND (
+				(updated_at >= ? AND updated_at < ?)
+				OR (resolved_at IS NOT NULL AND resolved_at >= ? AND resolved_at < ?)
+			))
+			OR (status <> ? AND updated_at >= ? AND updated_at < ?)
+		)`,
+			model.SupportConversationStatusResolved, windowStart, windowEnd, windowStart, windowEnd,
+			model.SupportConversationStatusResolved, windowStart.Add(-openQuietPeriod), windowEnd.Add(-openQuietPeriod))
 	if cursor != nil {
 		query = query.Where("(updated_at > ?) OR (updated_at = ? AND id > ?)", cursor.UpdatedAt, cursor.UpdatedAt, cursor.ID)
 	}

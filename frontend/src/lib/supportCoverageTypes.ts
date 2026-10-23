@@ -276,6 +276,8 @@ export interface CoveragePipelineHealthV2 {
   /** Why the latest reassessment failed, or why its last attempt failed. */
   reanalysis_error?: string
   schedule_status?: 'scheduled' | 'missing'
+  /** When the next automatic analysis starts; absent while one is running. */
+  next_run_at?: string | null
   latest_batch: CoverageBatchV2 | null
   /** Failed attempts of the latest batch only. */
   failures: CoverageAnalysisAttemptV2[]

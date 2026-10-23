@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { CoveragePipelineHealthV2 } from '@/lib/supportCoverageTypes'
-import { coverageAnalysisControl } from './coverageHealth'
+import { coverageAnalysisControl, coverageNextRun } from './coverageHealth'
 
 interface Props {
   health: CoveragePipelineHealthV2 | null
@@ -13,6 +13,7 @@ interface Props {
 
 export function CoverageAnalysisActions({ health, canReanalyze, submitting, loading, onReanalyze }: Props) {
   const state = coverageAnalysisControl(health, submitting)
+  const nextRun = state.pill ? null : coverageNextRun(health)
   const disabled = loading || submitting || state.disabled
   const tooltip = 'Recheck eligible conversations from the last 30 days against current knowledge to identify new or changed coverage gaps.'
   return (
@@ -31,6 +32,16 @@ export function CoverageAnalysisActions({ health, canReanalyze, submitting, load
           <TooltipContent>{state.description}</TooltipContent>
         </Tooltip>
       ))}
+      {!loading && nextRun && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <time tabIndex={0} dateTime={nextRun.at} className="text-xs text-quiet-text-tertiary">
+              {nextRun.label}
+            </time>
+          </TooltipTrigger>
+          <TooltipContent>Automatic analysis runs every 12 hours. Next run: {nextRun.detail}.</TooltipContent>
+        </Tooltip>
+      )}
       {canReanalyze && (
         <Tooltip>
           <TooltipTrigger asChild>

@@ -637,7 +637,11 @@ func (s *PMTaskService) create(ctx context.Context, req model.CreateTaskRequest,
 
 // CreateWithAgentRun creates a task and optionally starts the assigned agent.
 func (s *PMTaskService) CreateWithAgentRun(ctx context.Context, req model.CreateTaskRequest, actorID string) (*model.CreateTaskResponse, error) {
-	detail, err := s.Create(ctx, req, actorID)
+	return s.createWithAgentRun(ctx, req, actorID, nil)
+}
+
+func (s *PMTaskService) createWithAgentRun(ctx context.Context, req model.CreateTaskRequest, actorID string, supportReview *supportTaskCreateReview) (*model.CreateTaskResponse, error) {
+	detail, err := s.create(ctx, req, actorID, supportReview)
 	if err != nil {
 		return nil, err
 	}

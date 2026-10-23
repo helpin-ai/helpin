@@ -2707,7 +2707,12 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 		return nil, fmt.Errorf("conversation not found")
 	}
 
-	messages, err := s.ListConversationMessages(ctx, workspaceID, conversationID, !req.ReviewedDraft)
+	var messages []model.SupportMessage
+	if req.ReviewedDraft {
+		messages, err = s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
+	} else {
+		messages, err = s.ListConversationMessages(ctx, workspaceID, conversationID, true)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -2758,7 +2763,9 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 		EpicID:            trimOptionalPtr(req.EpicID),
 		SprintID:          trimOptionalPtr(req.SprintID),
 		TeamID:            teamID,
-		OwnerMemberIDs:    optionalTrimmedStringSlice(req.OwnerMemberID),
+		OwnerMemberIDs:    req.OwnerMemberIDs,
+		AssignedAgentID:   req.AssignedAgentID,
+		RunOnCreate:       req.RunOnCreate,
 		RequesterID:       nil,
 		RequesterMemberID: requesterMemberID,
 		Estimate:          req.Estimate,
@@ -2776,6 +2783,9 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 		ChecklistItems:    req.ChecklistItems,
 		ExternalLinks:     req.ExternalLinks,
 	}
+	if len(createReq.OwnerMemberIDs) == 0 {
+		createReq.OwnerMemberIDs = optionalTrimmedStringSlice(req.OwnerMemberID)
+	}
 	if requesterMemberID == nil {
 		createReq.RequesterID = strPtr(actorID)
 	}
@@ -2787,11 +2797,12 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 	if req.ReviewedDraft {
 		review = &supportTaskCreateReview{conversationID: conversationID, sourceHash: req.SourceHash}
 	}
-	detail, err := s.taskService.create(ctx, createReq, actorID, review)
+	created, err := s.taskService.createWithAgentRun(ctx, createReq, actorID, review)
 	if err != nil {
 		return nil, err
 	}
 
+	detail := &created.Task
 	taskID := detail.Task.ID
 	if req.ReviewedDraft {
 		s.publishReviewedTaskLink(ctx, workspaceID, conversationID, taskID, actorID)
@@ -2816,6 +2827,7 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 	)
 
 	return &model.CreateTaskFromConversationResponse{
+		AgentRunError:             created.AgentRunError,
 		TaskID:                    taskID,
 		DisplayID:                 detail.Task.DisplayID,
 		TaskKey:                   detail.Task.TaskKey,
@@ -2832,9 +2844,10 @@ func (s *SupportInboxService) generateTaskDraftFromConversation(
 	workspaceID string,
 	conversation *model.SupportConversation,
 	messages []model.SupportMessage,
+	teamContext ...string,
 ) (*supportConversationTaskDraft, error) {
 	if s.supportAIService != nil {
-		draft, err := s.supportAIService.GenerateTaskDraftFromConversation(ctx, workspaceID, conversation, messages)
+		draft, err := s.supportAIService.GenerateTaskDraftFromConversation(ctx, workspaceID, conversation, messages, teamContext...)
 		if err == nil && draft != nil {
 			titleEmpty := strings.TrimSpace(draft.Title) == ""
 			descriptionEmpty := strings.TrimSpace(draft.Description) == ""

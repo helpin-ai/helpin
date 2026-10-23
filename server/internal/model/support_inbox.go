@@ -1035,6 +1035,9 @@ type LinkTaskRequest struct {
 
 // CreateTaskFromConversationRequest creates a PM task from the current support conversation.
 type CreateTaskFromConversationRequest struct {
+	OwnerMemberIDs    []string                     `json:"owner_member_ids,omitempty"`
+	AssignedAgentID   *string                      `json:"assigned_agent_id,omitempty"`
+	RunOnCreate       bool                         `json:"run_on_create,omitempty"`
 	ReviewedDraft     bool                         `json:"reviewed_draft,omitempty"`
 	SourceHash        string                       `json:"source_hash,omitempty"`
 	Name              *string                      `json:"name,omitempty"`
@@ -1066,14 +1069,15 @@ type CreateTaskFromConversationRequest struct {
 
 // CreateTaskFromConversationResponse summarizes the created PM task and copied associations.
 type CreateTaskFromConversationResponse struct {
-	TaskID                    string `json:"task_id"`
-	DisplayID                 int    `json:"display_id,omitempty"`
-	TaskKey                   string `json:"task_key,omitempty"`
-	TaskName                  string `json:"task_name"`
-	Summary                   string `json:"summary,omitempty"`
-	CopiedContactAssociations int    `json:"copied_contact_associations"`
-	CopiedCompanyAssociations int    `json:"copied_company_associations"`
-	CopiedDealAssociations    int    `json:"copied_deal_associations"`
+	AgentRunError             *string `json:"agent_run_error,omitempty"`
+	TaskID                    string  `json:"task_id"`
+	DisplayID                 int     `json:"display_id,omitempty"`
+	TaskKey                   string  `json:"task_key,omitempty"`
+	TaskName                  string  `json:"task_name"`
+	Summary                   string  `json:"summary,omitempty"`
+	CopiedContactAssociations int     `json:"copied_contact_associations"`
+	CopiedCompanyAssociations int     `json:"copied_company_associations"`
+	CopiedDealAssociations    int     `json:"copied_deal_associations"`
 }
 
 // AssignConversationAgentRequest assigns an agent to a conversation.

@@ -73,7 +73,7 @@ func TestSupportConversationRepository_CoverageCandidatesExcludeSampleData(t *te
 	if err := db.Exec(`INSERT INTO sample_data_items (id, workspace_id, entity_type, entity_id) VALUES ('item', 'ws-1', 'support_conversation', 'sample')`).Error; err != nil {
 		t.Fatal(err)
 	}
-	got, err := repo.ListCoverageAnalysisCandidates(context.Background(), "ws-1", now.Add(-time.Hour), now.Add(time.Hour), 10)
+	got, err := repo.ListCoverageAnalysisCandidates(context.Background(), "ws-1", now.Add(-time.Hour), now.Add(time.Hour), 0, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestSupportConversationRepository_ListCoverageAnalysisCandidates(t *testing
 	insertCoverageCandidateConversation(t, db, "other-workspace", "ws-2", model.SupportConversationStatusOpen, windowStart.Add(15*time.Minute), nil, nil)
 	insertCoverageCandidateConversation(t, db, "updated-inside-second", "ws-1", model.SupportConversationStatusOpen, windowStart.Add(90*time.Minute), nil, &aiState)
 
-	conversations, err := repo.ListCoverageAnalysisCandidates(ctx, "ws-1", windowStart, windowEnd, 100)
+	conversations, err := repo.ListCoverageAnalysisCandidates(ctx, "ws-1", windowStart, windowEnd, 0, 100)
 	if err != nil {
 		t.Fatalf("ListCoverageAnalysisCandidates: %v", err)
 	}
@@ -126,6 +126,34 @@ func TestSupportConversationRepository_ListCoverageAnalysisCandidates(t *testing
 	}
 }
 
+func TestSupportConversationRepository_CoverageCandidatesWaitForOpenConversationsToGoQuiet(t *testing.T) {
+	db := setupSupportInboxCoverageAnalysisTestDB(t)
+	repo := NewSupportConversationRepository(db)
+	windowStart := time.Date(2026, 10, 23, 0, 0, 0, 0, time.UTC)
+	windowEnd := windowStart.Add(12 * time.Hour)
+	quiet := 24 * time.Hour
+	resolvedAt := windowStart.Add(3 * time.Hour)
+
+	insertCoverageCandidateConversation(t, db, "resolved-in-window", "ws-1", model.SupportConversationStatusResolved, resolvedAt, &resolvedAt, nil)
+	insertCoverageCandidateConversation(t, db, "open-still-active", "ws-1", model.SupportConversationStatusOpen, windowStart.Add(2*time.Hour), nil, nil)
+	insertCoverageCandidateConversation(t, db, "waiting-still-active", "ws-1", model.SupportConversationStatusWaitingOnCustomer, windowStart.Add(4*time.Hour), nil, nil)
+	insertCoverageCandidateConversation(t, db, "open-quiet-for-a-day", "ws-1", model.SupportConversationStatusOpen, windowStart.Add(-20*time.Hour), nil, nil)
+	insertCoverageCandidateConversation(t, db, "open-before-shifted-window", "ws-1", model.SupportConversationStatusOpen, windowStart.Add(-25*time.Hour), nil, nil)
+
+	got, err := repo.ListCoverageAnalysisCandidates(context.Background(), "ws-1", windowStart, windowEnd, quiet, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := make([]string, 0, len(got))
+	for _, conversation := range got {
+		ids = append(ids, conversation.ID)
+	}
+	want := []string{"open-quiet-for-a-day", "resolved-in-window"}
+	if fmt.Sprint(ids) != fmt.Sprint(want) {
+		t.Fatalf("candidates = %v, want %v", ids, want)
+	}
+}
+
 func TestSupportConversationRepository_ListCoverageAnalysisCandidatesDefaultLimit(t *testing.T) {
 	db := setupSupportInboxCoverageAnalysisTestDB(t)
 	repo := NewSupportConversationRepository(db)
@@ -137,7 +165,7 @@ func TestSupportConversationRepository_ListCoverageAnalysisCandidatesDefaultLimi
 		insertCoverageCandidateConversation(t, db, fmt.Sprintf("conversation-%d", i), "ws-1", model.SupportConversationStatusOpen, windowStart.Add(time.Duration(i)*time.Minute), nil, nil)
 	}
 
-	conversations, err := repo.ListCoverageAnalysisCandidates(ctx, "ws-1", windowStart, windowEnd, 0)
+	conversations, err := repo.ListCoverageAnalysisCandidates(ctx, "ws-1", windowStart, windowEnd, 0, 0)
 	if err != nil {
 		t.Fatalf("ListCoverageAnalysisCandidates default limit: %v", err)
 	}
@@ -158,7 +186,7 @@ func TestSupportConversationRepository_CoverageCandidateCursorPaginationHasNoGap
 	var cursor *CoverageAnalysisCandidateCursor
 	var got []string
 	for {
-		page, next, err := repo.ListCoverageAnalysisCandidatesPage(ctx, "ws-1", windowStart, windowEnd, cursor, 3)
+		page, next, err := repo.ListCoverageAnalysisCandidatesPage(ctx, "ws-1", windowStart, windowEnd, 0, cursor, 3)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -184,7 +212,7 @@ func TestSupportConversationRepository_CoverageCandidateCursorPaginationHasNoGap
 
 func TestSupportConversationRepository_CoverageCandidateLimitIsExplicit(t *testing.T) {
 	repo := NewSupportConversationRepository(setupSupportInboxCoverageAnalysisTestDB(t))
-	_, _, err := repo.ListCoverageAnalysisCandidatesPage(context.Background(), "ws-1", time.Now().Add(-time.Hour), time.Now(), nil, CoverageAnalysisCandidatePageMax+1)
+	_, _, err := repo.ListCoverageAnalysisCandidatesPage(context.Background(), "ws-1", time.Now().Add(-time.Hour), time.Now(), 0, nil, CoverageAnalysisCandidatePageMax+1)
 	if err == nil {
 		t.Fatal("expected oversized candidate page to be rejected")
 	}

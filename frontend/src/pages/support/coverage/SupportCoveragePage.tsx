@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
+  QuietFilterDropdown,
   QuietPageHeader,
   QuietPageViewport,
 } from '@/components/design-system/quiet'
@@ -20,13 +21,6 @@ import {
   SheetDescription,
   SheetTitle,
 } from '@/components/ui/sheet'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/design-system/quiet-dropdown-select'
 import {
   Tooltip,
   TooltipContent,
@@ -709,30 +703,23 @@ export function SupportCoveragePage() {
                   {mergeSuggestionCount === 1 ? 'suggestion' : 'suggestions'}
                 </button>
               )}
-              <Select
-                size="sm"
-                value={statusFilter}
-                onValueChange={(value) => {
-                  const status = value as (typeof STATUS_FILTERS)[number]
-                  setStatusFilter(status)
-                  if (status !== 'open') setShowMergeSuggestionsOnly(false)
-                }}
-              >
-                <SelectTrigger size="sm" className="ml-auto w-[130px]" aria-label="Gap status">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent align="end">
-                  {STATUS_FILTERS.map((status) => (
-                    <SelectItem
-                      key={status}
-                      value={status}
-                      disabled={showMergeSuggestionsOnly && status !== 'open'}
-                    >
-                      {GAP_STATUS_LABELS[status]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="ml-auto">
+                <QuietFilterDropdown
+                  label="Gap status"
+                  bordered
+                  value={statusFilter}
+                  options={STATUS_FILTERS.map((status) => ({
+                    value: status,
+                    label: GAP_STATUS_LABELS[status],
+                    disabled: showMergeSuggestionsOnly && status !== 'open',
+                  }))}
+                  onChange={(value) => {
+                    const status = value as (typeof STATUS_FILTERS)[number]
+                    setStatusFilter(status)
+                    if (status !== 'open') setShowMergeSuggestionsOnly(false)
+                  }}
+                />
+              </div>
             </div>
             <TabsContent value={kindFilter} className="space-y-4">
               {summary && canRebuildClusters && summary.total_open_gaps > 0 && (

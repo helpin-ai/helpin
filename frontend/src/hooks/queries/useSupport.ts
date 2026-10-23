@@ -1368,9 +1368,7 @@ export function useCreateTaskFromConversation(workspaceId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.tasks(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.board(workspaceId) });
     },
-    onError: (error: Error) => {
-      toast.error('Failed to create task', { description: error.message });
-    },
+    // The shared creation modal handles errors, including upgrade requirements.
   });
 }
 

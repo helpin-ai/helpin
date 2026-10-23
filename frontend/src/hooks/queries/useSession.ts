@@ -128,6 +128,7 @@ export function useUpdateSupportTaskPreferences(workspaceId: string) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (data: {
+      support_task_inbox_id?: string
       support_default_team_id?: string
       support_task_dialog_dismissed?: boolean
     }) => workspacesService.updateSupportTaskPreferences(workspaceId, data).then(unwrap),

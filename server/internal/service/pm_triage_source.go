@@ -53,7 +53,7 @@ func (s *PMTriageService) loadSource(ctx context.Context, workspaceID, kind, id 
 		if conversation == nil || conversation.AnonymizedAt != nil {
 			return nil, ErrPMTriageSourceUnavailable
 		}
-		messages, err := s.support.ListConversationMessages(ctx, workspaceID, id, false)
+		messages, err := s.support.messageRepo.ListByConversation(ctx, workspaceID, id, false)
 		if err != nil {
 			return nil, err
 		}

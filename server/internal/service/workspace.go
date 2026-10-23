@@ -557,6 +557,14 @@ func (s *WorkspaceService) UpdateMember(ctx context.Context, workspaceID, actorI
 
 // UpdateSupportTaskPreferences updates support task preferences for the calling member.
 func (s *WorkspaceService) UpdateSupportTaskPreferences(ctx context.Context, workspaceID, memberID string, req model.UpdateSupportTaskPreferencesRequest) error {
+	if req.SupportTaskInboxID != nil {
+		id := *req.SupportTaskInboxID
+		if id != "shared" {
+			if _, err := uuid.Parse(id); err != nil {
+				return fmt.Errorf("invalid inbox ID")
+			}
+		}
+	}
 	if req.SupportDefaultTeamID != nil && *req.SupportDefaultTeamID != "" {
 		team, err := s.workspaceRepo.GetTeamByID(ctx, workspaceID, *req.SupportDefaultTeamID)
 		if err != nil {
@@ -566,7 +574,7 @@ func (s *WorkspaceService) UpdateSupportTaskPreferences(ctx context.Context, wor
 			return fmt.Errorf("team not found in this workspace")
 		}
 	}
-	return s.workspaceRepo.UpdateSupportTaskPreferences(ctx, memberID, req.SupportDefaultTeamID, req.SupportTaskDialogDismissed)
+	return s.workspaceRepo.UpdateSupportTaskPreferences(ctx, memberID, req.SupportDefaultTeamID, req.SupportTaskDialogDismissed, req.SupportTaskInboxID)
 }
 
 // RemoveMember revokes a workspace member with owner/admin safeguards.

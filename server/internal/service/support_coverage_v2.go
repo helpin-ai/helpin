@@ -23,6 +23,7 @@ type CoveragePipelineHealth struct {
 	ReanalysisAttempt int32                           `json:"reanalysis_attempt,omitempty"`
 	ReanalysisError   string                          `json:"reanalysis_error,omitempty"`
 	ScheduleStatus    string                          `json:"schedule_status,omitempty"`
+	NextRunAt         *time.Time                      `json:"next_run_at,omitempty"`
 	LatestBatch       *model.CoverageBatch            `json:"latest_batch"`
 	Failures          []model.CoverageAnalysisAttempt `json:"failures"`
 	Healthy           bool                            `json:"healthy"`
@@ -158,11 +159,15 @@ func (s *SupportCoverageV2Service) PipelineHealth(ctx context.Context, workspace
 	if err != nil {
 		return nil, err
 	}
-	healthy := len(rollout.PauseReasons) == 0 && run.Status != "failed" &&
+	// Rollout pauses only hold back v2 topic assignment; they stay visible in
+	// Rollout but do not make the gap analysis unhealthy.
+	healthy := run.Status != "failed" &&
 		(batch == nil || batch.Status != model.CoverageBatchFailed) && !coverageFailuresNeedPerson(failures)
+	schedule := s.scheduleState(ctx)
 	return &CoveragePipelineHealth{
 		ReanalysisStatus: run.Status, ReanalysisAttempt: run.Attempt, ReanalysisError: run.Error,
-		ScheduleStatus: s.scheduleStatus(ctx), LatestBatch: batch, Failures: failures, Healthy: healthy, Rollout: rollout,
+		ScheduleStatus: schedule.Status, NextRunAt: schedule.NextRunAt, LatestBatch: batch, Failures: failures,
+		Healthy: healthy, Rollout: rollout,
 	}, nil
 }
 

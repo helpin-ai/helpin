@@ -29,7 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
+import { SupportCreateTaskModal } from './SupportCreateTaskModal';
 import {
   useConversationAssociations,
   useCreatePMAssociation,
@@ -46,7 +46,7 @@ import { queryKeys } from '@/lib/queryKeys';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import type { CRMObjectType, CRMSearchResult } from '@/lib/crmTypes';
-import type { CreateTaskRequest, GroupedAssociations } from '@/lib/pmTypes';
+import type { GroupedAssociations } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
 
 interface SidebarAssociationsProps {
@@ -109,7 +109,6 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
   const [tasksExpanded, setTasksExpanded] = useState(false);
 
   const { data: workflows = [] } = useWorkflows(pmEnabled ? workspaceId : '');
-  const workflow = workflows[0] ?? null;
   const workflowStateColorById = new Map(
     workflows.flatMap((entry) =>
       entry.states
@@ -219,30 +218,6 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
     }
   };
 
-  const handleCreateAndLinkTask = async (payload: CreateTaskRequest) => {
-    const response = await supportService.createTaskFromConversation(workspaceId, conversationId, payload);
-    if (response.error) throw new Error(response.error);
-
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversationAssociations(workspaceId, conversationId) }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.pm.tasks(workspaceId) }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.pm.board(workspaceId) }),
-    ]);
-
-    return response.data
-      ? {
-          id: response.data.task_id,
-          task: {
-            id: response.data.task_id,
-            name: response.data.task_name,
-            display_id: response.data.display_id,
-            task_key: response.data.task_key,
-          },
-        }
-      : undefined;
-  };
 
   if (associationsQuery.isLoading) {
     return (
@@ -561,16 +536,7 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
       />
 
       {/* Create Task modal — creates and auto-links to this conversation */}
-      {pmEnabled && workflow && (
-        <CreateTaskModal
-          open={createTaskOpen}
-          onOpenChange={setCreateTaskOpen}
-          workspaceId={workspaceId}
-          workflow={workflow}
-          initialStateId={workflow.states?.[0]?.id ?? ''}
-          onCreate={handleCreateAndLinkTask}
-        />
-      )}
+      {pmEnabled && createTaskOpen && <SupportCreateTaskModal key={`${workspaceId}:${conversationId}`} workspaceId={workspaceId} workspaceSlug={slug} conversationId={conversationId} onOpenChange={setCreateTaskOpen} />}
     </div>
   );
 }
