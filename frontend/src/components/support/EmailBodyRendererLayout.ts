@@ -1,7 +1,10 @@
 export const QUOTE_ATTR = 'data-helpin-quote';
 export const COLLAPSE_HOST_ATTR = 'data-helpin-collapse-host';
 export const COLLAPSED_BODY_ATTR = 'data-helpin-collapsed';
-export const COLLAPSIBLE_SELECTOR = `[${QUOTE_ATTR}], .gmail_signature, .gmail_signature_prefix`;
+// Outlook for iOS/Android wraps quoted history here. Emails stored before the
+// backend marked this wrapper rely on matching it directly.
+const OUTLOOK_MOBILE_QUOTE_SELECTOR = '#mail-editor-reference-message-container';
+export const COLLAPSIBLE_SELECTOR = `[${QUOTE_ATTR}], ${OUTLOOK_MOBILE_QUOTE_SELECTOR}, .gmail_signature, .gmail_signature_prefix`;
 const OUTLOOK_QUOTE_BOUNDARY_SELECTOR = `#divRplyFwdMsg[${QUOTE_ATTR}]`;
 
 const ELEMENT_NODE = 1;

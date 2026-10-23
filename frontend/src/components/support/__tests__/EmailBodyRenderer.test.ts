@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EMAIL_BODY_IFRAME_STYLES } from '../EmailBodyRenderer';
-import { measureVisibleEmailContentHeight, prepareCollapsedEmailLayout } from '../EmailBodyRendererLayout';
+import { COLLAPSIBLE_SELECTOR, measureVisibleEmailContentHeight, prepareCollapsedEmailLayout } from '../EmailBodyRendererLayout';
 
 function mockStyleForCollapsedEmail() {
   return vi.spyOn(window, 'getComputedStyle').mockImplementation((el: Element) => ({
@@ -152,6 +152,43 @@ describe('EmailBodyRenderer collapsed quote layout', () => {
     prepareCollapsedEmailLayout(document, true);
 
     expect(document.getElementById('new-reply')?.hasAttribute('data-helpin-quote')).toBe(false);
+  });
+
+  it('collapses the Outlook mobile quoted thread in emails stored without quote markers', () => {
+    document.body.innerHTML = `
+      <div id="new-reply">Can you charge this via card?</div>
+      <div id="mail-editor-reference-message-container">
+        <div style="padding: 3pt 0in 0in; border-width: 1pt medium medium; border-style: solid none none">
+          <b>From: </b>Support &lt;support@example.com&gt;<br />
+          <b>Date: </b>Friday, 23 October 2026 at 16:29<br />
+          <b>To: </b>customer@example.com<br />
+          <b>Subject: </b>Earlier question<br />
+        </div>
+        <div id="mail-editor-reference-message-body"><p>Older reply content.</p></div>
+      </div>
+    `;
+
+    mockStyleForCollapsedEmail();
+    // Pin the viewport so no scrollbar space is added to the measured height.
+    vi.spyOn(document.documentElement, 'clientHeight', 'get').mockReturnValue(window.innerHeight);
+
+    let selectedText: Text | null = null;
+    vi.spyOn(document, 'createRange').mockImplementation(() => ({
+      selectNodeContents: (node: Node) => {
+        selectedText = node as Text;
+      },
+      getClientRects: () => {
+        const bottom = selectedText?.textContent?.includes('charge this via card') ? 32 : 260;
+        return [{ bottom }] as unknown as DOMRectList;
+      },
+      detach: vi.fn(),
+    } as unknown as Range));
+
+    prepareCollapsedEmailLayout(document, true);
+
+    expect(document.querySelector(COLLAPSIBLE_SELECTOR)?.id).toBe('mail-editor-reference-message-container');
+    expect(document.getElementById('new-reply')?.closest(COLLAPSIBLE_SELECTOR)).toBeNull();
+    expect(measureVisibleEmailContentHeight(document, true)).toBe(40);
   });
 
   it('does not mistake the whole email wrapper for its nested quote header', () => {
