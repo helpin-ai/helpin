@@ -258,6 +258,28 @@ func seedCoverageDoc(t *testing.T, db *gorm.DB, id, workspaceID, title string) {
 	}
 }
 
+func TestSupportCoverageEnrichment_SkipsRawEventGaps(t *testing.T) {
+	db := setupCoverageEnrichmentTestDB(t)
+	seedCoverageTopicGapEvidence(t, db, "topic-1", "gap-1", "ws-1", "Hi there")
+	if err := db.Model(&model.SupportCoverageGap{}).Where("id = ?", "gap-1").
+		Update("metadata", []byte(`{"source":"event_detection"}`)).Error; err != nil {
+		t.Fatalf("mark raw gap: %v", err)
+	}
+	fake := &fakeCoverageEnrichmentLLM{resp: `{}`}
+	svc := NewSupportCoverageEnrichmentService(db, fake)
+
+	if err := svc.EnrichTopic(context.Background(), "topic-1"); err != nil {
+		t.Fatalf("EnrichTopic: %v", err)
+	}
+	var suggestions int64
+	if err := db.Model(&model.SupportGapSuggestion{}).Where("gap_id = ?", "gap-1").Count(&suggestions).Error; err != nil {
+		t.Fatalf("count suggestions: %v", err)
+	}
+	if fake.calls != 0 || suggestions != 0 {
+		t.Fatalf("llm calls=%d suggestions=%d, want no enrichment of a raw event gap", fake.calls, suggestions)
+	}
+}
+
 func seedCoverageTopicGapEvidence(t *testing.T, db *gorm.DB, topicID, gapID, workspaceID, summary string) {
 	t.Helper()
 	now := time.Date(2026, 4, 27, 10, 0, 0, 0, time.UTC)

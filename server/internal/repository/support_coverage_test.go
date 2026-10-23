@@ -240,6 +240,7 @@ func setupSupportCoverageTestDB(t *testing.T) *gorm.DB {
             merged_into_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
+			customer_name TEXT,
 			customer_email TEXT NOT NULL DEFAULT '',
 			crm_contact_id TEXT,
 			anonymous_id TEXT,
@@ -787,7 +788,7 @@ func TestSupportCoverageRepositoryListGapsRanksByExplainableImpact(t *testing.T)
 	}
 }
 
-func TestSupportCoverageRepository_ListGapsHidesRawLowConfidenceEventGapsByDefault(t *testing.T) {
+func TestSupportCoverageRepository_ListGapsHidesRawEventGapsByDefault(t *testing.T) {
 	db := setupSupportCoverageTestDB(t)
 	repo := NewSupportCoverageRepository(db)
 	ctx := context.Background()
@@ -809,8 +810,8 @@ func TestSupportCoverageRepository_ListGapsHidesRawLowConfidenceEventGapsByDefau
 			ID:          "raw-high",
 			WorkspaceID: "ws-1",
 			DedupeKey:   "raw-high",
-			Title:       "Raw high confidence event gap",
-			V1GapType:   model.SupportCoverageV1GapNeedsReview,
+			Title:       "Human resolved after AI failure",
+			V1GapType:   "pricing_and_plans", // rewritten by background enrichment
 			Confidence:  0.8,
 			Metadata:    []byte(`{"source":"event_detection"}`),
 			FirstSeenAt: now,
@@ -838,13 +839,8 @@ func TestSupportCoverageRepository_ListGapsHidesRawLowConfidenceEventGapsByDefau
 	if err != nil {
 		t.Fatalf("ListGaps: %v", err)
 	}
-	if total != 2 || len(items) != 2 {
-		t.Fatalf("got total=%d len=%d, want 2 visible gaps", total, len(items))
-	}
-	for _, item := range items {
-		if item.ID == "raw-low" {
-			t.Fatal("raw low-confidence event gap should be hidden by default")
-		}
+	if total != 1 || len(items) != 1 || items[0].ID != "daily-low" {
+		t.Fatalf("got total=%d items=%+v, want only the analysed gap", total, items)
 	}
 
 	items, total, err = repo.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})

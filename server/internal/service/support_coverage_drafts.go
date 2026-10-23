@@ -440,3 +440,49 @@ func parseDraftResponse(content, fallbackTitle string, evidenceCount int) (*Cove
 		EvidenceSummary: fmt.Sprintf("Generated from %d evidence items", evidenceCount),
 	}, nil
 }
+
+// coverageSuggestionDocument returns stored proposal content as a TipTap
+// document. Background enrichment saved the model's own JSON shape (such as
+// {"summary": …, "sections": [{"heading": …, "body": …}]}) or Markdown, which
+// the editor cannot open; those are converted, anything else unreadable
+// becomes an empty document.
+func coverageSuggestionDocument(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 || string(raw) == "null" || tiptap.ValidateDocument(raw) == nil {
+		return raw
+	}
+	var markdown string
+	if json.Unmarshal(raw, &markdown) == nil {
+		return tiptap.MarkdownToJSON(markdown)
+	}
+	var loose struct {
+		Summary  string          `json:"summary"`
+		Body     string          `json:"body"`
+		Content  json.RawMessage `json:"content"`
+		Sections []struct {
+			Heading string `json:"heading"`
+			Title   string `json:"title"`
+			Body    string `json:"body"`
+			Content string `json:"content"`
+		} `json:"sections"`
+	}
+	if json.Unmarshal(raw, &loose) != nil {
+		return tiptap.MarkdownToJSON("")
+	}
+	var content string
+	if len(loose.Content) > 0 && json.Unmarshal(loose.Content, &content) != nil {
+		content = "" // only a Markdown string is usable, not a node array
+	}
+	parts := []string{}
+	if text := firstNonEmptyCoverageString(loose.Summary, loose.Body, content); text != "" {
+		parts = append(parts, text)
+	}
+	for _, section := range loose.Sections {
+		if heading := firstNonEmptyCoverageString(section.Heading, section.Title); heading != "" {
+			parts = append(parts, "## "+heading)
+		}
+		if body := firstNonEmptyCoverageString(section.Body, section.Content); body != "" {
+			parts = append(parts, body)
+		}
+	}
+	return tiptap.MarkdownToJSON(strings.Join(parts, "\n\n"))
+}

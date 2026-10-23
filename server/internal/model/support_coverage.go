@@ -205,14 +205,16 @@ type SupportGapEvidence struct {
 func (SupportGapEvidence) TableName() string { return "support_gap_evidence" }
 
 // SupportGapEvidenceView is a read-only projection of SupportGapEvidence
-// joined with the originating support_messages.sender_type. Used for the
-// gap detail response so the UI can render messages with role-aware layout
-// (customer vs agent/ai/user). Excluded from AutoMigrate by virtue of
-// having no TableName() — only scanned via explicit .Table()/.Select() in
-// repository queries.
+// joined with the originating support_messages.sender_type and the
+// conversation's customer. Used for the gap detail response so the UI can
+// summarize each source conversation with who asked. Excluded from
+// AutoMigrate by virtue of having no TableName() — only scanned via explicit
+// .Table()/.Select() in repository queries.
 type SupportGapEvidenceView struct {
 	SupportGapEvidence
-	SenderRole string `json:"sender_role" gorm:"column:sender_role"`
+	SenderRole    string `json:"sender_role" gorm:"column:sender_role"`
+	CustomerName  string `json:"customer_name" gorm:"column:customer_name"`
+	CustomerEmail string `json:"customer_email" gorm:"column:customer_email"`
 }
 
 // SupportGapSuggestion is a proposed fix linked to a gap.

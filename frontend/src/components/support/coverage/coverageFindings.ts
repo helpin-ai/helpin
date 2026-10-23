@@ -1,10 +1,11 @@
 import type { DockContextMessage, DockContextSource, DockEntityReference } from "@/lib/dockTypes";
-import type { SupportCoverageGapDetail } from "@/lib/supportCoverageTypes";
+import type { SupportCoverageGapDetail, SupportGapEvidence } from "@/lib/supportCoverageTypes";
 import {
   starterSuggestionsForContext,
   type StarterSuggestion,
 } from "@/components/agents/dock/starterSuggestions";
 import { coverageConfidenceLabel, coverageDiagnosis, evidenceTypeLabel, formatCoverageImpact } from "./coverageUi";
+import { groupEvidenceByConversation } from "./evidenceGrouping";
 
 function preparedFixState(gap: SupportCoverageGapDetail) {
   if (
@@ -70,31 +71,73 @@ export function coverageNextStep(gap: SupportCoverageGapDetail): string {
   return "Review the sources and prepare the right fix for review.";
 }
 
+function truncate(text: string, limit: number): string {
+  return text.length > limit ? `${text.slice(0, limit - 3).trimEnd()}…` : text;
+}
+
 function sourceTitle(excerpt: string, fallback: string): string {
   const text = excerpt.replace(/[#*_`>]/g, "").replace(/\s+/g, " ").trim();
-  return text ? (text.length > 90 ? `${text.slice(0, 87).trimEnd()}…` : text) : fallback;
+  return text ? truncate(text, 90) : fallback;
+}
+
+/**
+ * Summarizes one source conversation — who asked, what they needed and why
+ * the AI could not resolve it — instead of replaying its messages. Evidence
+ * arrives newest first. Mirrors the server's coverageDockConversationSource.
+ */
+function conversationSource(conversationId: string, items: SupportGapEvidence[]): DockContextSource {
+  let need = "", failure = "", customerMessage = "", earliestExcerpt = "", name = "", email = "", latest = "";
+  for (const evidence of items) {
+    if (!latest || evidence.created_at > latest) latest = evidence.created_at;
+    name ||= evidence.customer_name?.trim() ?? "";
+    email ||= evidence.customer_email?.trim() ?? "";
+    if (!need && !failure) {
+      need = evidence.metadata?.customer_need?.trim() ?? "";
+      failure = evidence.metadata?.ai_failure?.trim() ?? "";
+    }
+    const excerpt = evidence.excerpt.replace(/\s+/g, " ").trim();
+    if (!excerpt) continue;
+    earliestExcerpt = excerpt;
+    if (evidence.message_id && ["customer", "visitor"].includes(evidence.sender_role)) customerMessage = excerpt;
+  }
+  const asked = customerMessage || earliestExcerpt;
+  const content = [
+    need ? `**Summary:** ${need}` : asked ? `**Customer asked:** ${truncate(asked, 280)}` : null,
+    failure ? `**Why the AI couldn't solve it:** ${failure}` : null,
+  ].filter(Boolean).join("\n\n");
+  return {
+    id: `conversation:${conversationId}`,
+    label: name && email && name.toLowerCase() !== email.toLowerCase() ? `${name} · ${email}` : name || email || "Customer",
+    content,
+    captured_at: latest || undefined,
+    reference: {
+      entity_type: "support_conversation",
+      entity_id: conversationId,
+      display_title: sourceTitle(need || asked, "Conversation"),
+    },
+  };
 }
 
 /** Fast local preview; after first send the server's complete snapshot is authoritative. */
 export function coverageFindings(gap: SupportCoverageGapDetail): DockContextMessage {
   const articles = new Map(gap.related_articles.map(article => [article.document_id, article.article_title]));
-  const sources: DockContextSource[] = gap.evidence.map((evidence, index) => ({
-    id: evidence.id,
-    label: evidence.message_id
-      ? ({ ai: "AI reply", user: "Team reply", agent: "Team reply", customer: "Customer message", visitor: "Customer message" }[evidence.sender_role] || "Message")
-      : evidenceTypeLabel(evidence.evidence_type),
-    content: evidence.excerpt,
-    captured_at: evidence.created_at,
-    reference: evidence.conversation_id ? {
-      entity_type: "support_conversation",
-      entity_id: evidence.conversation_id,
-      display_title: sourceTitle(evidence.excerpt, `Conversation ${index + 1}`),
-    } : evidence.document_id ? {
-      entity_type: "document",
-      entity_id: evidence.document_id,
-      display_title: articles.get(evidence.document_id) || "Source article",
-    } : undefined,
-  }));
+  const groups = groupEvidenceByConversation(gap.evidence);
+  const sources: DockContextSource[] = groups.map((group) => {
+    if (group.kind === "conversation") return conversationSource(group.conversationId, group.items);
+    const evidence = group.item;
+    return {
+      id: evidence.id,
+      label: evidenceTypeLabel(evidence.evidence_type),
+      content: evidence.excerpt,
+      captured_at: evidence.created_at,
+      reference: evidence.document_id ? {
+        entity_type: "document",
+        entity_id: evidence.document_id,
+        display_title: articles.get(evidence.document_id) || "Source article",
+      } : undefined,
+    };
+  });
+  const conversationCount = groups.filter(group => group.kind === "conversation").length;
   const seenDocuments = new Set(sources.filter(source => source.reference?.entity_type === "document").map(source => source.reference!.entity_id));
   for (const article of gap.related_articles) {
     if (seenDocuments.has(article.document_id)) continue;
@@ -130,7 +173,7 @@ export function coverageFindings(gap: SupportCoverageGapDetail): DockContextMess
       rec.target_url ? `[Open target](${rec.target_url})` : null,
     ].filter(Boolean).join("\n\n")),
   ].filter(Boolean).join("\n\n");
-  const total = gap.evidence_all ?? gap.evidence_count;
+  const totalConversations = gap.conversations_all ?? 0;
   return {
     content: [
       `**Customer need:** ${explanation?.customer_need?.trim() || "Review the sources to confirm what customers need."}`,
@@ -143,7 +186,9 @@ export function coverageFindings(gap: SupportCoverageGapDetail): DockContextMess
     captured_at: gap.last_seen_at,
     references,
     sources,
-    source_summary: gap.evidence.length < total ? `Showing the latest ${gap.evidence.length} of ${total} evidence records.` : gap.evidence.length === 0 ? "No source excerpts are available for this gap." : undefined,
+    source_summary: conversationCount > 0 && conversationCount < totalConversations
+      ? `Showing the latest ${conversationCount} of ${totalConversations} conversations.`
+      : gap.evidence.length === 0 ? "No source conversations are available for this gap." : undefined,
     details: [{ label: "Analysis details", content: analysis }],
   };
 }

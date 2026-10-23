@@ -109,7 +109,7 @@ func TestCoverageDockFindingsSaveSourceAndAnalysisDetails(t *testing.T) {
 	detail.AnalysisExplanation.DecisionReason = "Several conversations needed a human answer."
 	id := "conv-1"
 	detail.Evidence = []model.SupportGapEvidenceView{{SupportGapEvidence: model.SupportGapEvidence{ID: "ev-1", ConversationID: &id, Excerpt: "How can I correct my invoice?"}}}
-	detail.EvidenceAll = 9
+	detail.ConversationsAll = 9
 	chat, err := s.CreateChat(context.Background(), "ws-1", "user-1", model.CreateDockChatRequest{CoverageGapID: &detail.ID})
 	if err != nil {
 		t.Fatal(err)
@@ -125,7 +125,7 @@ func TestCoverageDockFindingsSaveSourceAndAnalysisDetails(t *testing.T) {
 	if !strings.Contains(chat.InitialContext.Content, "**What worked:** Billing reviews requests.") {
 		t.Fatal("confirmed resolution missing from brief")
 	}
-	if snapshot["source_summary"] != "Showing the latest 1 of 9 evidence records." || snapshot["sources"] == nil || snapshot["details"] == nil {
+	if snapshot["source_summary"] != "Showing the latest 1 of 9 conversations." || snapshot["sources"] == nil || snapshot["details"] == nil {
 		t.Fatalf("incomplete snapshot: %s", encoded)
 	}
 	original := string(encoded)
@@ -141,13 +141,48 @@ func TestCoverageDockFindingsSaveSourceAndAnalysisDetails(t *testing.T) {
 	}
 }
 
-func TestCoverageDockSourceMessageRoles(t *testing.T) {
+func TestCoverageDockSourcesSummarizeEachConversation(t *testing.T) {
 	_, detail := coverageDockService(t)
-	messageID, conversationID := "message-1", "conversation-1"
-	detail.Evidence = []model.SupportGapEvidenceView{{SupportGapEvidence: model.SupportGapEvidence{ID: "ev-1", MessageID: &messageID, ConversationID: &conversationID, EvidenceType: "human_reply_after_ai", Excerpt: "Billing reviews corrections."}, SenderRole: "ai"}}
-	findings := coverageDockFindings(detail)
-	if !strings.Contains(findings.Sources[0].Label, "AI reply") {
-		t.Fatal("source lost the message author role")
+	conversationID, customerMessage, aiReply := "conversation-1", "message-1", "message-2"
+	customer := func(evidence model.SupportGapEvidence, role string) model.SupportGapEvidenceView {
+		return model.SupportGapEvidenceView{SupportGapEvidence: evidence, SenderRole: role, CustomerName: "Tracey Smith", CustomerEmail: "tracey@example.com"}
+	}
+	detail.Evidence = []model.SupportGapEvidenceView{
+		customer(model.SupportGapEvidence{ID: "ev-3", ConversationID: &conversationID, EvidenceType: "daily_conversation_analysis",
+			Excerpt: "Wants a discount", Metadata: []byte(`{"customer_need":"Wants a recurring discount on a monthly plan","ai_failure":"No pricing policy for monthly discounts"}`)}, ""),
+		customer(model.SupportGapEvidence{ID: "ev-2", ConversationID: &conversationID, MessageID: &aiReply, EvidenceType: "human_reply_after_ai", Excerpt: "We can offer 30% off."}, "user"),
+		customer(model.SupportGapEvidence{ID: "ev-1", ConversationID: &conversationID, MessageID: &customerMessage, EvidenceType: "human_reply_after_ai", Excerpt: "Can I get a discount?"}, "customer"),
+	}
+	sources := coverageDockFindings(detail).Sources
+	if len(sources) != 1 {
+		t.Fatalf("got %d sources, want one per conversation: %+v", len(sources), sources)
+	}
+	source := sources[0]
+	if source.Label != "Tracey Smith · tracey@example.com" {
+		t.Fatalf("label = %q, want the customer", source.Label)
+	}
+	if !strings.Contains(source.Content, "**Summary:** Wants a recurring discount on a monthly plan") ||
+		!strings.Contains(source.Content, "**Why the AI couldn't solve it:** No pricing policy for monthly discounts") {
+		t.Fatalf("content lacks the summary and AI failure: %q", source.Content)
+	}
+	if strings.Contains(source.Content, "30% off") {
+		t.Fatalf("content replays the conversation: %q", source.Content)
+	}
+	if source.Reference == nil || source.Reference.EntityType != "support_conversation" || source.Reference.EntityID != conversationID {
+		t.Fatalf("reference = %+v, want the conversation", source.Reference)
+	}
+}
+
+func TestCoverageDockSourceWithoutAnalysisShowsCustomerQuestion(t *testing.T) {
+	_, detail := coverageDockService(t)
+	conversationID, customerMessage, aiReply := "conversation-1", "message-1", "message-2"
+	detail.Evidence = []model.SupportGapEvidenceView{
+		{SupportGapEvidence: model.SupportGapEvidence{ID: "ev-2", ConversationID: &conversationID, MessageID: &aiReply, Excerpt: "Here is how billing works."}, SenderRole: "ai"},
+		{SupportGapEvidence: model.SupportGapEvidence{ID: "ev-1", ConversationID: &conversationID, MessageID: &customerMessage, Excerpt: "Why was I charged twice?"}, SenderRole: "customer", CustomerEmail: "sam@example.com"},
+	}
+	source := coverageDockFindings(detail).Sources[0]
+	if source.Label != "sam@example.com" || source.Content != "**Customer asked:** Why was I charged twice?" {
+		t.Fatalf("source = %+v, want the customer email and question", source)
 	}
 }
 

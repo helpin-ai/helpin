@@ -57,12 +57,13 @@ func TestCoverageEarlierDetectionsCanBeReviewed(t *testing.T) {
 	if counts["unreviewed_detection_count"] != float64(1) {
 		t.Fatalf("review count: %s", data)
 	}
+	// A rewritten type must not promote a raw detection into the gap list.
 	if err := repo.ReclassifyGap(context.Background(), "ws-1", "hidden", "missing_article"); err != nil {
 		t.Fatal(err)
 	}
-	_, total, err = repo.ListGaps(context.Background(), "ws-1", filter)
-	if err != nil || total != 0 {
-		t.Fatalf("classified detection remains in review: total %d, err %v", total, err)
+	items, total, err = repo.ListGaps(context.Background(), "ws-1", coverageFilterFromJSON(t, `{"status":"open"}`))
+	if err != nil || total != 1 || len(items) != 1 || items[0].ID != "visible" {
+		t.Fatalf("raw detection surfaced after reclassification: total %d, items %+v, err %v", total, items, err)
 	}
 }
 
@@ -76,12 +77,12 @@ func TestCoverageSummaryMatchesVisibleGaps(t *testing.T) {
 		id, workspace, status, source, kind string
 		confidence                          float64
 	}{
-		{"visible", "ws-1", "open", "event_detection", "missing_article", 0.4},
-		{"hidden", "ws-1", "open", "event_detection", "needs_review", 0.4},
+		{"raw-classified", "ws-1", "open", "event_detection", "missing_article", 0.4},
+		{"raw", "ws-1", "open", "event_detection", "needs_review", 0.4},
 		{"daily", "ws-1", "open", "daily_conversation_analysis", "needs_review", 0.4},
-		{"threshold", "ws-1", "open", "event_detection", "needs_review", 0.7},
-		{"done", "ws-1", "done", "event_detection", "missing_article", 0.8},
-		{"hidden-done", "ws-1", "done", "event_detection", "needs_review", 0.4},
+		{"raw-confident", "ws-1", "open", "event_detection", "needs_review", 0.7},
+		{"raw-done", "ws-1", "done", "event_detection", "missing_article", 0.8},
+		{"daily-done", "ws-1", "done", "daily_conversation_analysis", "missing_article", 0.8},
 		{"merged", "ws-1", "merged", "daily_conversation_analysis", "missing_article", 0.8},
 		{"other", "ws-2", "open", "daily_conversation_analysis", "missing_article", 0.8},
 	} {
@@ -100,7 +101,7 @@ func TestCoverageSummaryMatchesVisibleGaps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if summary.TotalOpenGaps != 3 || summary.NewGapsThisWeek != 4 || summary.GapsFixedThisWeek != 1 || summary.TotalEvidenceCount != 4 {
+	if summary.TotalOpenGaps != 1 || summary.NewGapsThisWeek != 2 || summary.GapsFixedThisWeek != 1 || summary.TotalEvidenceCount != 2 {
 		t.Fatalf("summary includes hidden, merged, or other-workspace records: %+v", summary)
 	}
 }

@@ -82,8 +82,8 @@ export function DockContextMessage({
                     <li key={source.id} className="py-3 first:pt-0 last:pb-0">
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
                         {reference && <Icon className="h-3.5 w-3.5 shrink-0 text-quiet-text-tertiary" aria-hidden="true" />}
-                        {reference && sourceLink(reference, true, reference.entity_type === "support_conversation" ? "Conversation" : reference.display_title)}
-                        <span className="text-quiet-text-tertiary">{source.label}</span>
+                        <span className="font-medium text-quiet-text-primary">{source.label}</span>
+                        {reference && sourceLink(reference, true, reference.entity_type === "support_conversation" ? "Open conversation" : reference.display_title)}
                         {source.captured_at && (
                           <time className="ml-auto whitespace-nowrap text-quiet-text-tertiary" dateTime={source.captured_at} title={new Date(source.captured_at).toLocaleString()}>
                             {timeAgo(source.captured_at)}

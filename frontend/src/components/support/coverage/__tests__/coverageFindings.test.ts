@@ -52,23 +52,46 @@ describe("coverage next action", () => {
 });
 
 describe("saved coverage findings", () => {
-  it("keeps evidence roles and all source records while limiting the visible citations", () => {
+  it("lists one source per conversation and every related article while limiting the visible citations", () => {
     const detail = {
       ...gap,
       confidence: 0.8,
       first_seen_at: "2026-09-20T10:00:00Z",
       last_seen_at: "2026-09-30T10:00:00Z",
       evidence_count: 50,
-      evidence: [1, 2, 3].map(index => ({ id: `ev-${index}`, evidence_type: "human_reply_after_ai", conversation_id: `conv-${index}`, message_id: `msg-${index}`, sender_role: index === 1 ? "ai" : "user", excerpt: "Billing reviews corrections." })),
+      conversations_all: 20,
+      evidence: [1, 2, 3].flatMap(index => [
+        { id: `ev-${index}-reply`, evidence_type: "human_reply_after_ai", conversation_id: `conv-${index}`, message_id: `reply-${index}`, sender_role: "user", excerpt: "Billing reviews corrections.", created_at: "2026-09-30T10:00:00Z" },
+        { id: `ev-${index}-ask`, evidence_type: "human_reply_after_ai", conversation_id: `conv-${index}`, message_id: `ask-${index}`, sender_role: "customer", excerpt: `Question ${index}`, created_at: "2026-09-30T09:00:00Z" },
+      ]),
       related_articles: [1, 2, 3].map(index => ({ document_id: `doc-${index}`, article_title: `Guidance ${index}` })),
     } as SupportCoverageGapDetail;
     const findings = coverageFindings(detail);
     expect(findings.references).toHaveLength(4);
     expect(findings.sources).toHaveLength(6);
-    expect(findings.sources?.[0].label).toContain("AI reply");
-    expect(findings.sources?.[1].label).toContain("Team reply");
-    expect(findings.source_summary).toContain("latest 3 of 50 evidence records");
+    expect(findings.sources?.[0]).toMatchObject({ id: "conversation:conv-1", label: "Customer", content: "**Customer asked:** Question 1" });
+    expect(JSON.stringify(findings.sources)).not.toContain("Billing reviews corrections.");
+    expect(findings.source_summary).toBe("Showing the latest 3 of 20 conversations.");
     expect(findings.content).not.toContain("**What worked:**");
+  });
+  it("summarizes a conversation with the customer, their need and why the AI could not solve it", () => {
+    const detail = {
+      ...gap,
+      confidence: 0.8,
+      first_seen_at: "2026-09-20T10:00:00Z",
+      last_seen_at: "2026-09-30T10:00:00Z",
+      evidence: [{
+        id: "ev-1", evidence_type: "daily_conversation_analysis", conversation_id: "conv-1", message_id: null, sender_role: "",
+        excerpt: "Wants a discount", created_at: "2026-09-30T10:00:00Z",
+        customer_name: "Tracey Smith", customer_email: "tracey@example.com",
+        metadata: { customer_need: "Wants a recurring discount on a monthly plan", ai_failure: "No pricing policy for monthly discounts" },
+      }],
+      related_articles: [],
+    } as unknown as SupportCoverageGapDetail;
+    const source = coverageFindings(detail).sources?.[0];
+    expect(source?.label).toBe("Tracey Smith · tracey@example.com");
+    expect(source?.content).toBe("**Summary:** Wants a recurring discount on a monthly plan\n\n**Why the AI couldn't solve it:** No pricing policy for monthly discounts");
+    expect(source?.reference).toMatchObject({ entity_type: "support_conversation", entity_id: "conv-1" });
   });
   it("explains the need, cause, confirmed answer and next step with descriptive sources", () => {
     const detail = {
@@ -95,8 +118,8 @@ describe("saved coverage findings", () => {
     expect(findings.content).toContain("**Next step:** Prepare guidance.");
     expect(findings.references?.[0].display_title).toContain("How can I correct my invoice?");
     const bundle = findings as unknown as Record<string, unknown>;
-    expect(bundle.sources).toEqual(expect.arrayContaining([expect.objectContaining({ content: "How can I correct my invoice?", reference: expect.objectContaining({ entity_id: "conv-1" }) })]));
-    expect(bundle.source_summary).toBe("Showing the latest 1 of 9 evidence records.");
+    expect(bundle.sources).toEqual(expect.arrayContaining([expect.objectContaining({ content: "**Customer asked:** How can I correct my invoice?", reference: expect.objectContaining({ entity_id: "conv-1" }) })]));
+    expect(bundle.source_summary).toBeUndefined();
     expect(JSON.stringify(bundle.details)).toContain("Several conversations needed a human answer.");
   });
 });
