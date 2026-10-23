@@ -249,9 +249,23 @@ func TestSupportCoverageAnalysisRepository_ListUnmaterializedGapAnalyses(t *test
 			ConversationID:  "conversation-1",
 			Status:          model.SupportCoverageConversationAnalysisStatusAnalyzed,
 			HasGap:          true,
+			Confidence:      0.8,
 			TranscriptHash:  "hash-1",
 			AnalyzerVersion: "v1",
 			CustomerNeed:    "Customers need password reset emails.",
+			RawOutput:       json.RawMessage(`{}`),
+		},
+		{
+			ID:              "analysis-low-confidence",
+			WorkspaceID:     "ws-1",
+			RunID:           "run-1",
+			ConversationID:  "conversation-4",
+			Status:          model.SupportCoverageConversationAnalysisStatusAnalyzed,
+			HasGap:          true,
+			Confidence:      0.4,
+			TranscriptHash:  "hash-4",
+			AnalyzerVersion: "v1",
+			CustomerNeed:    "Customers may need export scheduling.",
 			RawOutput:       json.RawMessage(`{}`),
 		},
 		{
@@ -285,7 +299,7 @@ func TestSupportCoverageAnalysisRepository_ListUnmaterializedGapAnalyses(t *test
 		}
 	}
 
-	items, err := repo.ListUnmaterializedGapAnalyses(ctx, "ws-1", 50)
+	items, err := repo.ListUnmaterializedGapAnalyses(ctx, "ws-1", 0.6, 50)
 	if err != nil {
 		t.Fatalf("ListUnmaterializedGapAnalyses: %v", err)
 	}

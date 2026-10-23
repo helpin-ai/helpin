@@ -34,6 +34,12 @@ const (
 	coverageAnalysisOverlap                 = 2 * time.Hour
 	coverageAnalysisSettleDelay             = 10 * time.Minute
 	coverageAnalysisBootstrapWindow         = 30 * 24 * time.Hour
+	// A conversation that is not resolved is analyzed only after it has been
+	// quiet this long, so the analyzer does not judge it halfway through.
+	coverageAnalysisOpenQuietPeriod = 24 * time.Hour
+	// Findings below this confidence stay recorded but do not become gaps, so
+	// people are not handed causes the analyzer itself is unsure of.
+	coverageGapMinConfidence = 0.6
 	coverageAnalysisWorkspaceLimit          = 1000
 	coverageAnalysisConversationConcurrency = 4
 	coverageAnalysisCandidatePageSize       = 25
@@ -481,7 +487,7 @@ func (s *SupportCoverageDailyAnalyzer) RunWorkspaceDailyAnalysis(ctx context.Con
 	var itemErrorsMu sync.Mutex
 	var candidateCursor *repository.CoverageAnalysisCandidateCursor
 	for {
-		conversations, nextCursor, pageErr := s.conversationRepo.ListCoverageAnalysisCandidatesPage(ctx, workspaceID, cursorStart, cursorEnd, candidateCursor, coverageAnalysisCandidatePageSize)
+		conversations, nextCursor, pageErr := s.conversationRepo.ListCoverageAnalysisCandidatesPage(ctx, workspaceID, cursorStart, cursorEnd, coverageAnalysisOpenQuietPeriod, candidateCursor, coverageAnalysisCandidatePageSize)
 		if pageErr != nil {
 			s.markCoverageAnalysisRunFailed(ctx, run.ID, pageErr)
 			return pageErr

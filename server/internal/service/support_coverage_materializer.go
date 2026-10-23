@@ -38,7 +38,7 @@ func (s *SupportCoverageDailyAnalyzer) materializePendingFindings(ctx context.Co
 	if s == nil || s.coverageRepo == nil || s.analysisRepo == nil {
 		return nil, fmt.Errorf("coverage materializer dependencies are not configured")
 	}
-	analyses, err := s.analysisRepo.ListUnmaterializedGapAnalyses(ctx, workspaceID, 1000)
+	analyses, err := s.analysisRepo.ListUnmaterializedGapAnalyses(ctx, workspaceID, coverageGapMinConfidence, 1000)
 	if err != nil {
 		return nil, err
 	}
