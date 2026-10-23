@@ -278,6 +278,61 @@ func TestSupportCoverageDailyAnalyzer_AnalyzeConversationRejectsPartialRecommend
 	}
 }
 
+func TestSupportCoverageDailyAnalyzer_AnalyzeConversationConfidence(t *testing.T) {
+	gapResponse := func(confidence string) string {
+		return `{"is_support_query":true,"conversation_type":"support_query","classification_reason":"customer asks a billing question","has_gap":true,"gap_kind":"content","gap_category":"knowledge","canonical_title":"Billing update steps","customer_need":"Customer needed billing update steps.","ai_failure":"AI did not know the billing update flow.","human_resolution":"No human response observed","decision_reason":"The missing answer should be documented.","search_query":"","should_run_retrieval":false,"recommended_fixes":[{"type":"create_article","target_type":"docs","target_id":"","target_title":"Billing update steps","target_url":"","priority":"primary","rationale":"Customers need documented billing steps.","suggested_change":"Create a billing update article.","implementation_notes":""}],"confidence":` + confidence + `}`
+	}
+	cases := []struct {
+		name       string
+		confidence string
+		want       float64
+		wantErr    bool
+	}{
+		{name: "fraction is kept", confidence: "0.82", want: 0.82},
+		{name: "percentage is rescaled", confidence: "85", want: 0.85},
+		{name: "missing confidence keeps the gap as unsure", confidence: "0", want: 0},
+		{name: "out of range fails the contract", confidence: "150", wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			provider := &scriptedSupportPlannerLLM{responses: []llm.ChatResponse{{Content: gapResponse(tc.confidence)}}}
+			analyzer := NewSupportCoverageDailyAnalyzer(provider, "openai", "gpt-5.5")
+			result, _, err := analyzer.AnalyzeConversation(context.Background(), CoverageConversationAnalysisInput{WorkspaceID: "ws-1", ConversationID: "conversation-1", TranscriptHash: "hash-1"})
+			if tc.wantErr {
+				if !errors.Is(err, errCoverageLLMContract) {
+					t.Fatalf("AnalyzeConversation error = %v, want llm contract failure", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("AnalyzeConversation: %v", err)
+			}
+			if !result.HasGap || result.Confidence != tc.want {
+				t.Fatalf("has_gap = %v, confidence = %v, want gap with %v", result.HasGap, result.Confidence, tc.want)
+			}
+		})
+	}
+}
+
+func TestCoverageAnalyzerPromptsDefineConfidence(t *testing.T) {
+	for name, prompt := range map[string]string{
+		"analysis":   coverageConversationAnalysisSystemPrompt(),
+		"refinement": coverageFixBundleRefinementSystemPrompt(),
+	} {
+		if !strings.Contains(prompt, coverageConfidenceInstruction) {
+			t.Errorf("%s prompt does not define the confidence scale", name)
+		}
+	}
+}
+
+func TestNormalizeCoverageFixBundleDecisionRescalesPercentConfidence(t *testing.T) {
+	decision := CoverageFixBundleDecision{Confidence: 80}
+	normalizeCoverageFixBundleDecision(&decision)
+	if decision.Confidence != 0.8 {
+		t.Fatalf("confidence = %v, want 0.8", decision.Confidence)
+	}
+}
+
 func TestSupportCoverageDailyAnalyzer_RefineFixBundleWithKnowledge(t *testing.T) {
 	cases := []struct {
 		name        string

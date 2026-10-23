@@ -39,7 +39,7 @@ export function CoverageAnalysisActions({ health, canReanalyze, submitting, load
               {nextRun.label}
             </time>
           </TooltipTrigger>
-          <TooltipContent>Automatic analysis runs every 12 hours. Next run: {nextRun.detail}.</TooltipContent>
+          <TooltipContent>Next automatic analysis: {nextRun.detail}.</TooltipContent>
         </Tooltip>
       )}
       {canReanalyze && (
