@@ -34,9 +34,10 @@ const (
 	coverageAnalysisOverlap                 = 2 * time.Hour
 	coverageAnalysisSettleDelay             = 10 * time.Minute
 	coverageAnalysisBootstrapWindow         = 30 * 24 * time.Hour
-	// A conversation that is not resolved is analyzed only after it has been
-	// quiet this long, so the analyzer does not judge it halfway through.
-	coverageAnalysisOpenQuietPeriod = 24 * time.Hour
+	// Resolved conversations are analyzed at the next run. One that is never
+	// resolved is analyzed only after it has been quiet this long, a safety net
+	// for abandoned conversations rather than a judgment of a live one.
+	coverageAnalysisOpenQuietPeriod = 7 * 24 * time.Hour
 	// Findings below this confidence stay recorded but do not become gaps, so
 	// people are not handed causes the analyzer itself is unsure of.
 	coverageGapMinConfidence = 0.6
