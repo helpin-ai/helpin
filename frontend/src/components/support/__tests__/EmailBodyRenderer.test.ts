@@ -61,9 +61,10 @@ describe('EmailBodyRenderer collapsed quote layout', () => {
       </div>
     `;
 
-    vi.spyOn(document.body, 'scrollHeight', 'get').mockReturnValue(96);
-    vi.spyOn(document.documentElement, 'scrollHeight', 'get').mockReturnValue(96);
-    vi.spyOn(document.documentElement, 'clientHeight', 'get').mockReturnValue(window.innerHeight - scrollbarHeight);
+    // Spy on the prototype: restoring a spy on an element's inherited getter
+    // leaves a self-recursive getter that breaks later tests.
+    vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockReturnValue(96);
+    vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(window.innerHeight - scrollbarHeight);
     vi.spyOn(window, 'getComputedStyle').mockImplementation((el: Element) => ({
       display: 'block',
       visibility: 'visible',
@@ -169,8 +170,6 @@ describe('EmailBodyRenderer collapsed quote layout', () => {
     `;
 
     mockStyleForCollapsedEmail();
-    // Pin the viewport so no scrollbar space is added to the measured height.
-    vi.spyOn(document.documentElement, 'clientHeight', 'get').mockReturnValue(window.innerHeight);
 
     let selectedText: Text | null = null;
     vi.spyOn(document, 'createRange').mockImplementation(() => ({
