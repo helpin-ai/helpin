@@ -34,7 +34,7 @@ export function inboxClearNames(scope: InboxClearScope, inboxName: string | null
   return { inbox: 'The inbox', inboxInSentence: 'the inbox' };
 }
 
-export const OWN_REMOVAL_WINDOW_MS = 30_000;
+const OWN_REMOVAL_WINDOW_MS = 30_000;
 
 /**
  * True when the list just went from some conversations to none and every one

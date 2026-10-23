@@ -227,7 +227,7 @@ function pickFresh<T>(items: T[], seen: (item: T) => boolean, random: () => numb
 }
 
 /** A clear this size earns confetti on its own. */
-export const CONFETTI_MIN_CLEARED = 5;
+const CONFETTI_MIN_CLEARED = 5;
 
 /**
  * Confetti is kept for clears that mean something: the first clear of the day
