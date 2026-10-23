@@ -494,6 +494,24 @@ export interface ConversationListMeta {
   unread: UnreadStats;
 }
 
+/** Records that the viewer's own action left an inbox with nothing to reply to. */
+export interface RecordSupportInboxClearRequest {
+  conversation_id: string;
+  scope: 'mailbox' | 'all' | 'mine';
+  mailbox_id: string | null;
+  /** Viewer's local date, YYYY-MM-DD. */
+  local_date: string;
+  /** Viewer's local midnight as an instant. */
+  day_start: string;
+}
+
+export interface SupportInboxClearStats {
+  streak_days: number;
+  clears_today: number;
+  resolved_today: number;
+  cleared_count: number;
+}
+
 export interface ConversationListResponse {
   data: SupportConversation[];
   total: number;

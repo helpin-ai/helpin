@@ -29,6 +29,7 @@ import {
 } from '@/lib/supportMessagePages';
 import { useAuthStore } from '@/stores/authStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
+import { useSupportInboxCelebrationStore } from '@/stores/supportInboxCelebrationStore';
 import { useRealtimeFallbackPolling } from '@/hooks/useRealtimeFallbackPolling';
 import type {
   AgentKnowledgeSource,
@@ -1182,12 +1183,33 @@ export function useUploadSupportAttachment(workspaceId: string, conversationId: 
   });
 }
 
+type ConversationStatusHandoff = { shouldAdvanceSelection: boolean; nextConversationId: string | null };
+
 export function useUpdateConversationStatus(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ conversationId, status }: { conversationId: string; status: ConversationStatus }) =>
       supportService.updateConversationStatus(workspaceId, conversationId, status).then(unwrap),
-    onSuccess: (data, variables) => {
+    // Start the hand-off on click, so the thread is already leaving when the
+    // server's "resolved" notice arrives over the websocket.
+    onMutate: ({ conversationId, status }): ConversationStatusHandoff | undefined => {
+      if (status !== 'resolved' && status !== 'spam') return undefined;
+      useSupportInboxCelebrationStore.getState().noteOwnRemovals([conversationId]);
+      const { selectedConversationId, startConversationHandoff } = useSupportInboxStore.getState();
+      const shouldAdvanceSelection = selectedConversationId === conversationId;
+      const cached = queryClient.getQueriesData<SupportConversationListCache>({
+        queryKey: queryKeys.support.conversations(workspaceId),
+      });
+      const conversations: SupportConversation[] = cached.flatMap(([queryKey, data]) =>
+        isSupportConversationListQueryKey(queryKey, workspaceId) ? extractConversationListConversations(data) : []
+      );
+      const nextConversationId = shouldAdvanceSelection
+        ? getNextConversationIdAfterRemoval(conversations, conversationId)
+        : null;
+      startConversationHandoff(conversationId, nextConversationId);
+      return { shouldAdvanceSelection, nextConversationId };
+    },
+    onSuccess: (data, variables, handoff) => {
       const { conversationId, status } = variables;
       const currentState = useSupportInboxStore.getState();
 
@@ -1222,20 +1244,8 @@ export function useUpdateConversationStatus(workspaceId: string) {
       };
 
       // Auto-advance: when resolving/spamming, select the next conversation in the list
-      if (status === 'resolved' || status === 'spam') {
-        const { selectedConversationId, startConversationHandoff } = currentState;
-        const shouldAdvanceSelection = selectedConversationId === conversationId;
-        const cached = queryClient.getQueriesData<SupportConversationListCache>({
-          queryKey: queryKeys.support.conversations(workspaceId),
-        });
-        const conversations: SupportConversation[] = cached.flatMap(([queryKey, data]) =>
-          isSupportConversationListQueryKey(queryKey, workspaceId) ? extractConversationListConversations(data) : []
-        );
-        const nextConversationId = shouldAdvanceSelection
-          ? getNextConversationIdAfterRemoval(conversations, conversationId)
-          : null;
-
-        startConversationHandoff(conversationId, nextConversationId);
+      if ((status === 'resolved' || status === 'spam') && handoff) {
+        const { shouldAdvanceSelection, nextConversationId } = handoff;
         window.setTimeout(() => {
           applyStatusPatch();
           const latestState = useSupportInboxStore.getState();
@@ -1256,7 +1266,12 @@ export function useUpdateConversationStatus(workspaceId: string) {
       applyStatusPatch();
       invalidateAfterStatusChange();
     },
-    onError: (error: Error) => {
+    onError: (error: Error, { conversationId }, handoff) => {
+      if (handoff) {
+        useSupportInboxCelebrationStore.getState().forgetOwnRemovals([conversationId]);
+        const inbox = useSupportInboxStore.getState();
+        if (inbox.conversationHandoff?.fromConversationId === conversationId) inbox.cancelConversationHandoff();
+      }
       toast.error('Failed to update conversation status', { description: error.message });
     },
   });

@@ -1,5 +1,6 @@
 import { useMemo, useCallback, useState, memo, useEffect, type ReactNode, type UIEvent } from 'react';
 import {
+  CheckmarkCircle02Icon,
   FilterHorizontalIcon,
   Message01Icon,
   PlusSignIcon,
@@ -17,6 +18,9 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { useCreateSupportInboxView, useHasAnySupportConversation, useInfiniteConversations, useInboxScopes, useSupportInboxViews, useSupportTags, useUpdateSupportBuiltinInboxView, useUpdateSupportInboxView } from '@/hooks/queries/useSupport';
 import { supportInboxBuiltinViewKey, useSupportInboxStore, type NavFilter } from '@/stores/supportInboxStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
+import { useSupportInboxCelebrationStore } from '@/stores/supportInboxCelebrationStore';
+import { inboxClearNames, inboxClearScopeFor } from './inboxCleared/inboxClearedScope';
+import { useInboxClearedDetection } from './inboxCleared/useInboxClearedDetection';
 import { ConversationRow } from './ConversationRow';
 import { EmptyState } from './EmptyState';
 import {
@@ -421,6 +425,33 @@ export function ConversationList({
   useEffect(() => {
     onInboxEmptyStateChange?.(inboxEmptyState);
   }, [onInboxEmptyStateChange, inboxEmptyState]);
+
+  // Only a built-in inbox with its default filters counts as cleared; an
+  // emptied search or filtered subset does not.
+  const isFilteredView = !!activeCustomViewId || builtinFilterChangeCount > 0 || !!searchQuery.trim();
+  const clearScope = useMemo(
+    () => (isFilteredView ? null : inboxClearScopeFor(navFilter, selectedMailboxId)),
+    [isFilteredView, navFilter, selectedMailboxId],
+  );
+  const clearNames = useMemo(
+    () => (clearScope ? inboxClearNames(clearScope, selectedMailboxName) : { inbox: 'Your inbox', inboxInSentence: 'your inbox' }),
+    [clearScope, selectedMailboxName],
+  );
+  const visibleConversationIds = useMemo(
+    () => (filteredConversations.length === 0 && hasNextPage ? ['more-on-server'] : filteredConversations.map((conversation) => conversation.id)),
+    [filteredConversations, hasNextPage],
+  );
+  useInboxClearedDetection({
+    workspaceId,
+    userId,
+    scope: clearScope,
+    names: clearNames,
+    conversationIds: visibleConversationIds,
+    settled: !shouldShowListSkeleton && !error,
+  });
+  const isCelebratingClear = useSupportInboxCelebrationStore(
+    (s) => !!clearScope && s.celebration?.scopeKey === clearScope.scopeKey,
+  );
 
   useEffect(() => {
     if (!autoSelectFirst || selectionActive || selectedConversationId || shouldShowListSkeleton || error || filteredConversations.length === 0) return;
@@ -940,7 +971,14 @@ export function ConversationList({
         {error && (
           <p className="p-4 text-sm text-destructive">{String(error)}</p>
         )}
-        {shouldShowEmptyState && (
+        {shouldShowEmptyState && isCelebratingClear && (
+          <EmptyState
+            icon={CheckmarkCircle02Icon}
+            title={`${clearNames.inbox} is clear`}
+            subtitle="New conversations will land here."
+          />
+        )}
+        {shouldShowEmptyState && !isCelebratingClear && (
           <EmptyState
             icon={Message01Icon}
             title={emptyCopyForNavFilter(navFilter, searchQuery).title}

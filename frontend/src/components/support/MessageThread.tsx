@@ -49,6 +49,11 @@ import { AIRunApprovalCard } from './AIRunApprovalCard';
 import { ConversationActionsMenu } from './ConversationActionsMenu';
 import { SupportInboxOnboarding } from './SupportInboxOnboarding';
 import type { SupportInboxEmptyState } from './ConversationList';
+import { InboxClearedCelebration } from './inboxCleared/InboxClearedCelebration';
+import { inboxClearScopeFor } from './inboxCleared/inboxClearedScope';
+import { hiddenDuringHandoff } from './threadHandoff';
+import { useSupportInboxStore } from '@/stores/supportInboxStore';
+import { useSupportInboxCelebrationStore } from '@/stores/supportInboxCelebrationStore';
 import { SupportInboxPanelHeader } from './SupportInboxPanelHeader';
 import { ReplyComposerLoading } from './ReplyComposerLoading';
 import { getInitialThreadScrollTarget, getPrependRestoredScrollTop, isNearThreadBottom, isNearThreadTop, shouldAutoScrollThread, shouldMarkOpenThreadRead } from './threadAutoScroll';
@@ -335,11 +340,15 @@ export function MessageThread({
     isFetchingNextPage,
     isFetchNextPageError,
   } = useConversationMessages(workspaceId, conversationId);
+  const isHandingOff = useSupportInboxStore((s) => !!conversationId && s.conversationHandoff?.fromConversationId === conversationId);
+  const celebration = useSupportInboxCelebrationStore((s) => s.celebration);
+  const clearScopeKey = useSupportInboxStore((s) => inboxClearScopeFor(s.navFilter, s.selectedMailboxId)?.scopeKey ?? null);
   const loadedMessages = useMemo(
     () => flattenSupportMessagePages(messagePages).filter(
-      message => !(message.message_type === 'system' && message.system_event_type === 'teammate_joined') && !isFollowUpStatusNote(message),
+      message => !(message.message_type === 'system' && message.system_event_type === 'teammate_joined') && !isFollowUpStatusNote(message)
+        && !hiddenDuringHandoff(message, isHandingOff),
     ),
-    [messagePages],
+    [isHandingOff, messagePages],
   );
   const messages=usePendingSupportSends(workspaceId,conversationId||'',loadedMessages);
   const latestPublicMessage = useMemo(() => messages.findLast(message => !message.is_internal && message.message_type === 'reply' && !message.pending_send), [messages]);
@@ -361,6 +370,10 @@ export function MessageThread({
 
   const [editingNote, setEditingNote] = useState<SupportMessage | null>(null);
   useEffect(() => { setEditingNote(null); }, [workspaceId, conversationId]);
+  // Opening a conversation puts the celebration away.
+  useEffect(() => {
+    if (conversationId) useSupportInboxCelebrationStore.getState().dismissCelebration();
+  }, [conversationId]);
   const startEditingNote = useCallback((message: SupportMessage) => {
     if (editingNote) { toast.info('Finish editing the current note first'); return; }
     setEditingNote(message);
@@ -803,6 +816,10 @@ export function MessageThread({
   // selection. Wait until the fetch settled so we don't flash during load.
   const noSelection = !conversationId || (conversationFetched && !conversation);
   if (noSelection) {
+    if (celebration && celebration.scopeKey === clearScopeKey && !isMobileSheet) {
+      return <InboxClearedCelebration celebration={celebration} />;
+    }
+
     if (inboxEmptyState === 'onboarding' && onWidgetSettingsClick && onCreateConversationClick) {
       return (
         <SupportInboxOnboarding
@@ -865,7 +882,7 @@ export function MessageThread({
     <div
       data-support-message-thread
       data-transitioning={isThreadTransitioning ? 'true' : undefined}
-      className={`flex min-h-0 min-w-0 flex-1 flex-col bg-background transition-opacity duration-150 ease-out dark:bg-sidebar ${isThreadTransitioning ? 'opacity-85' : 'opacity-100'}`}
+      className={`flex min-h-0 min-w-0 flex-1 flex-col bg-background transition-opacity duration-150 ease-out dark:bg-sidebar ${isHandingOff ? 'opacity-60' : isThreadTransitioning ? 'opacity-85' : 'opacity-100'}`}
     >
       {/* Topbar with subtle bottom shadow (Crisp-style) */}
       {conversation && (isMobileSheet ? (

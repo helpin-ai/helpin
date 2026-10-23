@@ -116,6 +116,7 @@ type Handlers struct {
 	SupportAI           *handler.SupportAIHandler
 	SupportAttachment   *handler.SupportAttachmentHandler
 	SupportCoverage     *handler.SupportCoverageHandler
+	SupportInboxClear   *handler.SupportInboxClearHandler
 	PostmarkInbound     *handler.PostmarkInboundHandler
 	EmailImageProxy     *handler.EmailImageProxyHandler
 	AdminWebhookEvent   *handler.AdminWebhookEventHandler
@@ -1230,6 +1231,11 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{convId}/attachments", h.SupportAttachment.Create)
 					r.With(requirePerm(authorization.PermSupportEdit)).Patch("/inbox/attachments/{attachmentId}/confirm", h.SupportAttachment.ConfirmUpload)
 					r.With(requirePerm(authorization.PermSupportEdit)).Delete("/inbox/attachments/{attachmentId}", h.SupportAttachment.Delete)
+				}
+
+				// Inbox-zero celebration
+				if h.SupportInboxClear != nil {
+					r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox-clears", h.SupportInboxClear.RecordClear)
 				}
 
 				// Docs coverage

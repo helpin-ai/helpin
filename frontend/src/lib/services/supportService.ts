@@ -68,6 +68,8 @@ import type {
   SupportConversationSearchParams,
   SupportConversationSearchResponse,
   SendSupportConversationTranscriptResponse,
+  RecordSupportInboxClearRequest,
+  SupportInboxClearStats,
 } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -263,6 +265,8 @@ export const supportService = {
 
   updateConversationStatus: (workspaceId: string, conversationId: string, status: ConversationStatus) =>
     api.put<SupportConversation>(`/support/inbox/conversations/${conversationId}/status${qs(workspaceId)}`, { status }),
+  recordInboxClear: (workspaceId: string, payload: RecordSupportInboxClearRequest) =>
+    api.post<SupportInboxClearStats>(`/support/inbox-clears${qs(workspaceId)}`, payload),
   linkConversationTask: (workspaceId: string, conversationId: string, payload: LinkTaskRequest) =>
     api.post(`/support/inbox/conversations/${conversationId}/link-task${qs(workspaceId)}`, payload),
   createTaskFromConversation: (
