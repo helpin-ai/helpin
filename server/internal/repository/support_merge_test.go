@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -180,6 +181,54 @@ func TestMergeGraphIdempotencyAndSubtreeRestoration(t *testing.T) {
 	root, err := repo.Root(ctx, "ws", "a")
 	if err != nil || root != "b" {
 		t.Fatalf("restored subtree root %q %v", root, err)
+	}
+}
+
+func TestFormerMergeAudienceIncludesSplitSubtree(t *testing.T) {
+	ctx := context.Background()
+	db := setupSupportMergeTestDB(t)
+	for id, sql := range map[string]string{
+		"a": `UPDATE support_conversations SET customer_email='ann@example.test' WHERE id='a'`,
+		"b": `UPDATE support_conversations SET customer_email='Bob@Example.test', email_cc='{colleague@example.test}' WHERE id='b'`,
+		"c": `UPDATE support_conversations SET customer_email='cara@example.test' WHERE id='c'`,
+	} {
+		if err := db.Exec(sql).Error; err != nil {
+			t.Fatalf("seed %s: %v", id, err)
+		}
+	}
+	repo := NewSupportMergeRepository(db)
+	if _, err := repo.Merge(ctx, "ws", "b", []string{"a"}, "actor", "op1", true); err != nil {
+		t.Fatal(err)
+	}
+	split, err := repo.Merge(ctx, "ws", "c", []string{"b"}, "actor", "op2", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	group, err := repo.Group(ctx, "ws", "c")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if former, err := repo.FormerMergeAudience(ctx, "ws", group); err != nil || len(former) != 0 {
+		t.Fatalf("active merge reported former participants: %v %v", former, err)
+	}
+	if err := repo.Unmerge(ctx, "ws", split[0].ID, "actor", "undo"); err != nil {
+		t.Fatal(err)
+	}
+	group, err = repo.Group(ctx, "ws", "c")
+	if err != nil {
+		t.Fatal(err)
+	}
+	former, err := repo.FormerMergeAudience(ctx, "ws", group)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"ann@example.test", "bob@example.test", "colleague@example.test"} {
+		if !slices.Contains(former, want) {
+			t.Errorf("FormerMergeAudience() = %v, missing %q", former, want)
+		}
+	}
+	if slices.Contains(former, "cara@example.test") {
+		t.Errorf("FormerMergeAudience() = %v, includes the remaining customer", former)
 	}
 }
 

@@ -1067,14 +1067,26 @@ func (s *EmailFallbackService) processInboundConversationReplyWithRecovery(ctx c
 	}
 	originalConversationID := conv.ID
 	mergeParticipant := false
+	formerMergeParticipant := false
 	if !knownParticipant && conv.MergeRevision > 0 && conv.MergedIntoID == nil && !strings.EqualFold(customerEmail, fromEmail) {
-		group, err := repository.NewSupportMergeRepository(s.convRepo.DB()).Group(ctx, conv.WorkspaceID, conv.ID)
+		mergeRepo := repository.NewSupportMergeRepository(s.convRepo.DB())
+		group, err := mergeRepo.Group(ctx, conv.WorkspaceID, conv.ID)
 		if err != nil {
 			return err
 		}
-		mergeParticipant = slices.Contains(model.SupportMergeEmailAudience(group), strings.ToLower(strings.TrimSpace(fromEmail)))
+		sender := strings.ToLower(strings.TrimSpace(fromEmail))
+		mergeParticipant = slices.Contains(model.SupportMergeEmailAudience(group), sender)
 		knownParticipant = mergeParticipant
+		if !mergeParticipant {
+			former, err := mergeRepo.FormerMergeAudience(ctx, conv.WorkspaceID, group)
+			if err != nil {
+				return err
+			}
+			formerMergeParticipant = slices.Contains(former, sender)
+		}
 	}
+	// Set when someone split out of this conversation writes to it again.
+	formerMergeSender := false
 	var teammate *model.WorkspaceMember
 	if !strings.EqualFold(customerEmail, fromEmail) {
 		replyToMatchesCustomer := replyToEmail != "" && strings.EqualFold(customerEmail, replyToEmail)
@@ -1086,7 +1098,11 @@ func (s *EmailFallbackService) processInboundConversationReplyWithRecovery(ctx c
 					return err
 				}
 			}
-			if teammate == nil || teammate.UserID == nil {
+			if (teammate == nil || teammate.UserID == nil) && formerMergeParticipant {
+				// Their conversation was split from this one. Keep the email
+				// team-only so the remaining customer never sees it.
+				formerMergeSender = true
+			} else if teammate == nil || teammate.UserID == nil {
 				// Routing already matched this email to the conversation. Preserve
 				// new external participants as customer replies, not internal notes.
 				knownParticipant = true
@@ -1132,7 +1148,7 @@ func (s *EmailFallbackService) processInboundConversationReplyWithRecovery(ctx c
 	if forwardedAttribution.Applied {
 		messageMetadata = mergeForwardedAttributionMetadata(messageMetadata, forwardedAttribution)
 	}
-	if knownParticipant && !isTeammateReply {
+	if (knownParticipant && !isTeammateReply) || formerMergeSender {
 		senderName = strings.TrimSpace(payload.FromFull.Name)
 		if senderName == "" {
 			senderName = fromEmail
@@ -1144,7 +1160,11 @@ func (s *EmailFallbackService) processInboundConversationReplyWithRecovery(ctx c
 		inboundMeta = map[string]any{}
 	}
 	inboundMeta["email_sender"] = fromEmail
-	inboundMeta["email_participant_sender"] = knownParticipant
+	inboundMeta["email_participant_sender"] = knownParticipant || formerMergeSender
+	if formerMergeSender {
+		inboundMeta["email_unknown_sender"] = true
+		inboundMeta["email_ai_request"] = false
+	}
 	encodedMeta, _ := json.Marshal(inboundMeta)
 	messageMetadata = string(encodedMeta)
 	isNotice := inboundEmailHasAbsenceNotice(messageMetadata)
@@ -1171,7 +1191,7 @@ func (s *EmailFallbackService) processInboundConversationReplyWithRecovery(ctx c
 		SenderUserID:              senderUserID,
 		SenderDisplayName:         &senderName,
 		Content:                   content,
-		IsInternal:                internalTeammateReply,
+		IsInternal:                internalTeammateReply || formerMergeSender,
 		MessageType:               "reply",
 		Metadata:                  messageMetadata,
 		ViaChannel:                &viaEmail,
@@ -1236,7 +1256,7 @@ func (s *EmailFallbackService) processInboundConversationReplyWithRecovery(ctx c
 		}
 		// Add newly introduced visible recipients, but do not restore recipients
 		// already seen on the thread and explicitly removed by a teammate.
-		if !isNotice && !internalTeammateReply && conv.MergeRevision == 0 {
+		if !isNotice && !internalTeammateReply && !formerMergeSender && conv.MergeRevision == 0 {
 			var current model.SupportConversation
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND workspace_id = ?", conv.ID, conv.WorkspaceID).First(&current).Error; err != nil {
 				return err
@@ -1316,6 +1336,16 @@ func (s *EmailFallbackService) processInboundConversationReplyWithRecovery(ctx c
 			return err
 		}
 
+		if formerMergeSender {
+			if err := convRepoTx.UpdateFields(ctx, conv.WorkspaceID, conv.ID, map[string]any{
+				"human_takeover": true, "assigned_agent_id": nil, "ai_state": "escalated", "flow_state": supportEmailReopenFlowState(conv),
+			}); err != nil {
+				return err
+			}
+			conv.HumanTakeover = boolPtr(true)
+			conv.AssignedAgentID = nil
+			conv.AIState = strPtr("escalated")
+		}
 		if err := repository.LoadSupportMailboxAIPolicy(tx, conv); err != nil {
 			return err
 		}
@@ -1409,7 +1439,7 @@ func (s *EmailFallbackService) processInboundConversationReplyWithRecovery(ctx c
 	if !isTeammateReply && !isNotice {
 		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, s.pushSenderService, conv, supportEmailNotificationPreview(payload, projection), senderName, createdMsg.ID)
 	}
-	if !isTeammateReply && !isNotice && s.supportInboxService != nil {
+	if !isTeammateReply && !isNotice && !formerMergeSender && s.supportInboxService != nil {
 		s.supportInboxService.recordSupportEvent(SupportEventInput{
 			WorkspaceID: conv.WorkspaceID, EventType: model.SupportEventCustomerMessageCreated,
 			ConversationID: &conv.ID, MessageID: &createdMsg.ID,
@@ -1433,7 +1463,7 @@ func (s *EmailFallbackService) processInboundConversationReplyWithRecovery(ctx c
 	if recipientsUpdated != nil {
 		s.wsPublisher.Publish(websocket.SupportMessageEvent(conv.WorkspaceID, recipientsUpdated, ""))
 	}
-	if shouldReopenCustomerReply || recipientsUpdated != nil || (isTeammateReply && !internalTeammateReply && !isNotice) {
+	if shouldReopenCustomerReply || recipientsUpdated != nil || formerMergeSender || (isTeammateReply && !internalTeammateReply && !isNotice) {
 		s.wsPublisher.Publish(websocket.Event{
 			Action:      "updated",
 			Entity:      "support_conversation",
@@ -1441,7 +1471,7 @@ func (s *EmailFallbackService) processInboundConversationReplyWithRecovery(ctx c
 			WorkspaceID: conv.WorkspaceID,
 		})
 	}
-	if !isTeammateReply {
+	if !isTeammateReply && !formerMergeSender {
 		return s.publishInboundCustomerAIRequest(ctx, conv.WorkspaceID, conv.ID, createdMsg)
 	}
 	return nil
