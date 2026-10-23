@@ -759,6 +759,7 @@ func newWorkspaceIdentityTestDB(t *testing.T) *gorm.DB {
 			invited_at DATETIME,
 			accepted_at DATETIME,
 			support_default_team_id TEXT,
+			support_task_team_by_inbox TEXT NOT NULL DEFAULT '{}',
 			support_task_dialog_dismissed BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
