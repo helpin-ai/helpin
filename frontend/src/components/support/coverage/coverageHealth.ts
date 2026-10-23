@@ -77,7 +77,7 @@ export function coverageHealthPresentation(health: CoveragePipelineHealthV2) {
     return { title: 'Analysis needs attention', description: attentionDescription(health) }
   }
   if (!health.latest_batch) {
-    return { title: 'Waiting for the first analysis', description: 'Eligible conversations are checked every 12 hours.' }
+    return { title: 'Waiting for the first analysis', description: 'Eligible conversations are checked automatically.' }
   }
   return { title: 'Analysis completed', description: retryLaterDescription(health) }
 }

@@ -703,7 +703,7 @@ func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx conte
 			} else if refined != nil {
 				result.RecommendedFixes = refined.RecommendedFixes
 				result.DecisionReason = firstNonEmptyCoverageString(refined.DecisionReason, result.DecisionReason)
-				if refined.Confidence > 0 {
+				if refined.Confidence > 0 && refined.Confidence <= 1 {
 					result.Confidence = refined.Confidence
 				}
 				recommendationDecisionReason = refined.DecisionReason
@@ -1153,7 +1153,9 @@ func validateActionableCoverageResult(result CoverageConversationAnalysisResult)
 	if result.AIFailure == "" {
 		return fmt.Errorf("ai_failure is required")
 	}
-	if result.Confidence <= 0 || result.Confidence > 1 {
+	// A gap reported without a confidence is kept as unsure: it is recorded
+	// below the gap threshold instead of failing the conversation on every retry.
+	if result.Confidence < 0 || result.Confidence > 1 {
 		return fmt.Errorf("confidence must be between zero and one")
 	}
 	if len(result.RecommendedFixes) == 0 {
@@ -1422,11 +1424,7 @@ func normalizeCoverageConversationAnalysisResult(result *CoverageConversationAna
 	result.HumanResolution = strings.TrimSpace(result.HumanResolution)
 	result.DecisionReason = strings.TrimSpace(result.DecisionReason)
 	result.SearchQuery = strings.TrimSpace(result.SearchQuery)
-	// Models sometimes answer on a 0–100 scale; a percentage is still a clear
-	// answer, so rescale it instead of failing the conversation.
-	if result.Confidence > 1 && result.Confidence <= 100 {
-		result.Confidence /= 100
-	}
+	result.Confidence = normalizeCoverageConfidence(result.Confidence)
 	if len(result.RecommendedFixes) > 3 {
 		result.RecommendedFixes = result.RecommendedFixes[:3]
 	}
@@ -1452,6 +1450,7 @@ func normalizeCoverageFixBundleDecision(decision *CoverageFixBundleDecision) {
 		return
 	}
 	decision.DecisionReason = strings.TrimSpace(decision.DecisionReason)
+	decision.Confidence = normalizeCoverageConfidence(decision.Confidence)
 	if len(decision.RecommendedFixes) > 3 {
 		decision.RecommendedFixes = decision.RecommendedFixes[:3]
 	}
@@ -1498,6 +1497,8 @@ Prefer knowledge/content gaps only when customer-facing knowledge could reasonab
 Recommend multiple fixes when one surface alone will not reduce repeated human intervention. Limit to 3 fixes. Mark exactly one fix as primary unless two fixes are equally necessary.
 
 Recommend website/content changes for prospect, sales, pricing, migration, integration, security, comparison, or pre-purchase questions. Recommend docs changes for setup, usage, troubleshooting, and post-signup workflows.
+
+` + coverageConfidenceInstruction + ` Set confidence=0 when has_gap=false.
 
 Be concise in all text fields. Each field should be one sentence, two at most:
 - customer_need: what the customer needed, not a retelling of the conversation.
@@ -1574,7 +1575,23 @@ Use update_article only when a candidate help article is clearly about the same 
 
 Preserve data, action, policy, workflow, and agent-instruction recommendations from the first-pass analysis if they remain relevant. Mixed cases may produce multiple fixes, capped at 3. Mark exactly one primary fix unless two fixes are equally necessary.
 
+` + coverageConfidenceInstruction + `
+
 Be concise: decision_reason should be one sentence for a UI card. Each fix field (rationale, suggested_change, implementation_notes) should be one actionable sentence. Do not repeat information across fields.`
+}
+
+// coverageConfidenceInstruction defines the confidence scale for both
+// analyzer prompts. Without it models answered 0 for real gaps, which failed
+// every conversation that had one.
+const coverageConfidenceInstruction = `Set confidence to a number from 0 to 1: how sure you are that the conversation shows a real coverage gap and that ai_failure names its cause. Use about 0.9 when a human reply shows exactly what the AI lacked, about 0.7 when the evidence is indirect, and below 0.5 when you are guessing.`
+
+// normalizeCoverageConfidence rescales an answer given on a 0–100 scale. A
+// percentage is still a clear answer, so it is kept instead of failing.
+func normalizeCoverageConfidence(confidence float64) float64 {
+	if confidence > 1 && confidence <= 100 {
+		return confidence / 100
+	}
+	return confidence
 }
 
 func coverageFixBundleDecisionJSONSchema() map[string]any {
