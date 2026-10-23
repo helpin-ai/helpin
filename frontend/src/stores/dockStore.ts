@@ -11,6 +11,7 @@ function readTranscriptView(): DockTranscriptView {
   catch { return 'timeline'; }
 }
 
+// Visibility belongs to this tab; a linked page must not inherit an open dock.
 const COLLAPSED_KEY = 'helpin:ask-agents-dock-collapsed';
 const SELECTION_KEY_PREFIX = 'helpin:agent-dock-selection:';
 const DRAFTS_KEY_PREFIX = 'helpin:agent-dock-drafts:';
@@ -76,7 +77,7 @@ interface DockState {
 
 function readCollapsed(): boolean {
   try {
-    return localStorage.getItem(COLLAPSED_KEY) !== '0';
+    return sessionStorage.getItem(COLLAPSED_KEY) !== '0';
   } catch {
     return true;
   }
@@ -137,7 +138,7 @@ export const useDockStore = create<DockState>((set, get) => ({
   },
   setCollapsed: (collapsed) => {
     try {
-      localStorage.setItem(COLLAPSED_KEY, collapsed ? '1' : '0');
+      sessionStorage.setItem(COLLAPSED_KEY, collapsed ? '1' : '0');
     } catch {
       // best effort
     }
