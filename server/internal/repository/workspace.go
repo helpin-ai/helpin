@@ -746,10 +746,18 @@ func (r *WorkspaceRepository) UpdateMemberRole(ctx context.Context, workspaceID,
 }
 
 // UpdateSupportTaskPreferences updates the support task creation preferences for a workspace member.
-func (r *WorkspaceRepository) UpdateSupportTaskPreferences(ctx context.Context, memberID string, teamID *string, dialogDismissed *bool) error {
+func (r *WorkspaceRepository) UpdateSupportTaskPreferences(ctx context.Context, memberID string, teamID *string, dialogDismissed *bool, inboxID ...*string) error {
 	updates := map[string]interface{}{}
 	if teamID != nil {
 		updates["support_default_team_id"] = teamID
+	}
+	if len(inboxID) > 0 && inboxID[0] != nil && teamID != nil {
+		key := *inboxID[0]
+		if r.db.Dialector.Name() == "postgres" {
+			updates["support_task_team_by_inbox"] = gorm.Expr("jsonb_set(COALESCE(support_task_team_by_inbox, '{}'::jsonb), ARRAY[?]::text[], to_jsonb(CAST(? AS text)), true)", key, *teamID)
+		} else {
+			updates["support_task_team_by_inbox"] = gorm.Expr("json_set(COALESCE(support_task_team_by_inbox, '{}'), ?, ?)", "$."+key, *teamID)
+		}
 	}
 	if dialogDismissed != nil {
 		updates["support_task_dialog_dismissed"] = *dialogDismissed

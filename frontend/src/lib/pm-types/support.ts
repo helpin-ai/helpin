@@ -1097,6 +1097,9 @@ export interface LinkTaskRequest {
 }
 
 export interface CreateTaskFromConversationRequest {
+  owner_member_ids?: string[];
+  assigned_agent_id?: string;
+  run_on_create?: boolean;
   reviewed_draft?: boolean;
   source_hash?: string;
   team_id: string;
@@ -1127,6 +1130,7 @@ export interface CreateTaskFromConversationRequest {
 }
 
 export interface CreateTaskFromConversationResponse {
+  agent_run_error?: string;
   task_id: string;
   display_id: number;
   task_key: string;

@@ -5,11 +5,10 @@ import { useConversationMerges } from '@/hooks/queries/useSupportMerge';
 import { usePendingSupportSends } from '@/hooks/queries/usePendingSupportSends';
 import { LiveTranslateBar } from './LiveTranslateBar';
 import { useCachedSupportTranslations } from '@/hooks/queries/useSupportTranslation';
-import { pmTriageService, type TriageView, type SupportTaskDraft } from '@/lib/services/pmTriageService';
-import { unwrapRequired } from '@/lib/queryUtils';
+import { SupportCreateTaskModal } from './SupportCreateTaskModal';
 import { getReplyDeliveryMode, getReplyEmailSubject } from './replyDelivery';
 import { useCallback, lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react';
-import { useLocation, useNavigate } from '@tanstack/react-router';
+import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { ArrowLeft02Icon, ClipboardIcon, Message01Icon, Loading01Icon, CheckmarkCircle02Icon, CancelCircleIcon, MoreHorizontalIcon } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
@@ -23,14 +22,12 @@ import {
   useInboxScopes,
   useSupportTeammatePresence,
   useUpdateConversationStatus,
-  useCreateTaskFromConversation,
   useMoveConversation,
   useDismissConversationTriage,
   useDeleteSupportMessage,
   useMarkConversationRead,
 } from '@/hooks/queries/useSupport';
-import { useWorkspaceAccess, useUpdateSupportTaskPreferences } from '@/hooks/queries/useSession';
-import { useWorkspaceSettings } from '@/hooks/queries/useSettings';
+import { useWorkspaceAccess } from '@/hooks/queries/useSession';
 import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces';
 import { agentService } from '@/lib/services/agentService';
 // supportService import kept for non-presence HTTP calls
@@ -40,7 +37,6 @@ import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import type { AgentRun, ConversationStatus, SupportMessage } from '@/lib/pmTypes';
 import { flattenSupportMessagePages, supportMessageRenderKey } from '@/lib/supportMessagePages';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
 import { getSupportReceiptStatus, getInitial, isAIActiveConversation, type SupportReceiptStatus } from './helpers';
 import { TranslatedMessageBubble } from './TranslatedMessageBubble';
@@ -71,8 +67,6 @@ interface MessageThreadProps {
   onCreateConversationClick?: () => void;
 }
 
-const LazyCreateTaskDialog = lazy(() => import('./CreateTaskDialog').then((module) => ({ default: module.CreateTaskDialog })));
-const LazySupportTaskTriageDialog = lazy(() => import('./SupportTaskTriageDialog').then((module) => ({ default: module.SupportTaskTriageDialog })));
 const loadReplyComposer = () => import('./ReplyComposer').then((module) => ({ default: module.ReplyComposer }));
 const LazyReplyComposer = lazy(loadReplyComposer);
 
@@ -317,7 +311,6 @@ export function MessageThread({
 }: MessageThreadProps) {
   const isMobileSheet = presentation === 'mobile-sheet';
   const navigate = useNavigate();
-  const location = useLocation();
   const workspaceSlug = useWorkspaceStore((s) => s.currentWorkspace?.slug ?? '');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -358,14 +351,11 @@ export function MessageThread({
   useSupportTeammatePresence(workspaceId);
   const { data: members = [] } = useWorkspaceMembers(workspaceId);
   const updateStatus = useUpdateConversationStatus(workspaceId);
-  const createTaskFromConversation = useCreateTaskFromConversation(workspaceId);
   const moveConversation = useMoveConversation(workspaceId);
   const dismissTriage = useDismissConversationTriage(workspaceId);
   const deleteMessage = useDeleteSupportMessage(workspaceId, conversationId);
   const markConversationRead = useMarkConversationRead(workspaceId);
   const { data: access } = useWorkspaceAccess(workspaceId);
-  const { data: wsSettings } = useWorkspaceSettings(workspaceId);
-  const updatePreferences = useUpdateSupportTaskPreferences(workspaceId);
   const currentUser = useAuthStore((s) => s.user);
   const isThreadLoading = !!conversationId && (!conversationFetched || isLoading);
 
@@ -377,10 +367,6 @@ export function MessageThread({
   }, [editingNote]);
 
   const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
-  const [taskReview, setTaskReview] = useState<{ conversationId: string; view: TriageView | null; error?: string } | null>(null);
-  const [analyzingTask, setAnalyzingTask] = useState(false);
-  const taskReviewSourceRef = useRef(`${workspaceId}:${conversationId}`);
-  taskReviewSourceRef.current = `${workspaceId}:${conversationId}`;
 
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
   const [floatingDate, setFloatingDate] = useState<{ conversationId: string | null; label: string; phase: 'visible' | 'handoff' | 'hidden' }>({ conversationId: null, label: '', phase: 'hidden' });
@@ -585,71 +571,7 @@ export function MessageThread({
     );
   };
 
-  const handleCreateTask = async () => {
-    if (!conversationId || !workspaceSlug || analyzingTask) return;
-    const sourceKey = `${workspaceId}:${conversationId}`;
-    setAnalyzingTask(true);
-    try {
-      const view = unwrapRequired(await pmTriageService.analyze(workspaceId, 'support_conversation', conversationId), 'Task matching');
-      if (taskReviewSourceRef.current !== sourceKey) return;
-      if (view.status !== 'disabled' && view.status !== 'shadow') {
-        setTaskReview({ conversationId, view });
-        return;
-      }
-    } catch (error) {
-      if (taskReviewSourceRef.current === sourceKey) setTaskReview({ conversationId, view: null, error: error instanceof Error ? error.message : 'Task matching is unavailable.' });
-      return;
-    } finally { setAnalyzingTask(false); }
-
-    const dismissed = access?.membership?.support_task_dialog_dismissed;
-    const savedTeamId = access?.membership?.support_default_team_id;
-
-    if (!dismissed || !savedTeamId) {
-      setShowCreateTaskDialog(true);
-      return;
-    }
-
-    const created = await createTaskFromConversation.mutateAsync({
-      conversationId,
-      teamId: savedTeamId,
-    });
-    toast.success(`Created ${created.task_key ?? 'task'}`, {
-      description: created.summary || created.task_name,
-    });
-    openTaskRoute(navigate as never, location as never, workspaceSlug, created.task_id);
-  };
-
-  const handleCreateTaskConfirm = async (teamId: string, dismissDialog: boolean) => {
-    if (!conversationId || !workspaceSlug) return;
-
-    // Create task first — only persist preferences after success
-    const created = await createTaskFromConversation.mutateAsync({
-      conversationId,
-      teamId,
-    });
-
-    // Task succeeded — now save team preference and dismissal
-    await updatePreferences.mutateAsync({
-      support_default_team_id: teamId,
-      support_task_dialog_dismissed: dismissDialog,
-    });
-
-    setShowCreateTaskDialog(false);
-    toast.success(`Created ${created.task_key ?? 'task'}`, {
-      description: created.summary || created.task_name,
-    });
-    openTaskRoute(navigate as never, location as never, workspaceSlug, created.task_id);
-  };
-
-  const handleReviewedTaskCreate = async (teamId: string, draft: SupportTaskDraft) => {
-    if (!conversationId || !workspaceSlug) return;
-    const created = await createTaskFromConversation.mutateAsync({ conversationId, teamId, draft: { ...draft, reviewed_draft: true } });
-    setTaskReview(null);
-    try { await updatePreferences.mutateAsync({ support_default_team_id: teamId }); }
-    catch { toast.error('Task created, but the default team preference could not be saved.'); }
-    toast.success(`Created ${created.task_key ?? 'task'}`, { description: created.summary || created.task_name });
-    openTaskRoute(navigate as never, location as never, workspaceSlug, created.task_id);
-  };
+  const handleCreateTask = () => { if (conversationId) setShowCreateTaskDialog(true); };
 
   // Group messages with day separators and consecutive sender detection
   // Find the last outbound reply message (for read receipt display)
@@ -975,12 +897,12 @@ export function MessageThread({
             variant="ghost"
             size="icon"
             className="h-11 w-11 shrink-0"
-            disabled={!!conversation.merged_into_id || createTaskFromConversation.isPending || analyzingTask || !access?.permissions?.includes('pm.edit')}
+            disabled={!!conversation.merged_into_id || !access?.permissions?.includes('pm.edit')}
             onClick={handleCreateTask}
             aria-label="Create task"
             title="Create task"
           >
-            {createTaskFromConversation.isPending || analyzingTask ? <Loading01Icon className="h-4 w-4 animate-spin" /> : <ClipboardIcon className="h-4 w-4" />}
+            <ClipboardIcon className="h-4 w-4" />
           </Button>
 
 
@@ -1035,10 +957,10 @@ export function MessageThread({
               size="sm"
               variant="outline"
               className="h-7 gap-1 text-xs"
-              disabled={!!conversation.merged_into_id || createTaskFromConversation.isPending || analyzingTask || !access?.permissions?.includes('pm.edit')}
+              disabled={!!conversation.merged_into_id || !access?.permissions?.includes('pm.edit')}
               onClick={handleCreateTask}
             >
-              {createTaskFromConversation.isPending || analyzingTask ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <CheckmarkCircle02Icon className="h-3.5 w-3.5" />}
+              <CheckmarkCircle02Icon className="h-3.5 w-3.5" />
               Create Task
             </Button>
 
@@ -1305,34 +1227,7 @@ export function MessageThread({
         </Suspense></AppLoadBoundary>
       )) : <ReplyComposerLoading />)}
 
-      {taskReview && taskReview.conversationId === conversationId ? (
-        <AppLoadBoundary><Suspense fallback={null}><LazySupportTaskTriageDialog
-          key={`${workspaceId}:${conversationId}`}
-          workspaceId={workspaceId}
-          workspaceSlug={workspaceSlug}
-          conversationId={taskReview.conversationId}
-          initialView={taskReview.view}
-          initialError={taskReview.error}
-          teams={wsSettings?.teams ?? []}
-          defaultTeamId={access?.membership?.support_default_team_id ?? access?.team_memberships?.[0]?.team_id}
-          isCreating={createTaskFromConversation.isPending}
-          onOpenChange={(open) => { if (!open) setTaskReview(null); }}
-          onCreate={handleReviewedTaskCreate}
-          onLinked={() => { setTaskReview(null); toast.success('Conversation linked to existing task'); }}
-        /></Suspense></AppLoadBoundary>
-      ) : null}
-      {showCreateTaskDialog ? (
-        <AppLoadBoundary><Suspense fallback={null}>
-          <LazyCreateTaskDialog
-            open={showCreateTaskDialog}
-            onOpenChange={setShowCreateTaskDialog}
-            teams={wsSettings?.teams ?? []}
-            defaultTeamId={access?.membership?.support_default_team_id ?? access?.team_memberships?.[0]?.team_id}
-            isPending={createTaskFromConversation.isPending}
-            onConfirm={handleCreateTaskConfirm}
-          />
-        </Suspense></AppLoadBoundary>
-      ) : null}
+      {showCreateTaskDialog && conversationId && <SupportCreateTaskModal key={`${workspaceId}:${conversationId}`} workspaceId={workspaceId} workspaceSlug={workspaceSlug} conversationId={conversationId} onOpenChange={setShowCreateTaskDialog} />}
       <UpgradeRequiredDialog
         open={upgradeDialogReason !== null}
         onOpenChange={(open) => {

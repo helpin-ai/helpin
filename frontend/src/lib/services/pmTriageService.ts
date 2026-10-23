@@ -42,7 +42,7 @@ export interface SupportTaskDraft {
 }
 export const pmTriageService = {
   analyzeDraft: (workspaceId: string, draft: { draft_id: string; name: string; description: string; team_id?: string }) => api.post<TriageView>(`/pm/task-drafts/triage${query(workspaceId)}`, draft),
-  draft: (workspaceId: string, id: string) => api.post<SupportTaskDraft>(`/support/inbox/conversations/${encodeURIComponent(id)}/task-draft${query(workspaceId)}`, {}),
+  draft: (workspaceId: string, id: string, teamId?: string) => api.post<SupportTaskDraft>(`/support/inbox/conversations/${encodeURIComponent(id)}/task-draft${query(workspaceId)}${teamId ? `&team_id=${encodeURIComponent(teamId)}` : ''}`, {}),
   analyze: (workspaceId: string, kind: TriageSource, id: string) =>
     api.post<TriageView>(`${path(kind, id)}${query(workspaceId)}`, {}),
   review: (workspaceId: string, kind: TriageSource, id: string, request: TriageReview) =>

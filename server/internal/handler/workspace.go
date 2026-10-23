@@ -414,6 +414,7 @@ func (h *WorkspaceHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 	}
 	if memberErr == nil && member != nil {
 		membership["support_default_team_id"] = member.SupportDefaultTeamID
+		membership["support_task_team_by_inbox"] = member.SupportTaskTeamByInbox
 		membership["support_task_dialog_dismissed"] = member.SupportTaskDialogDismissed
 	}
 

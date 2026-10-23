@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -10,7 +12,7 @@ import (
 
 // PreviewTaskFromConversation prepares an editable draft without creating work.
 // It uses the existing metered draft generator and public conversation evidence.
-func (s *SupportInboxService) PreviewTaskFromConversation(ctx context.Context, workspaceID, conversationID string) (*model.SupportTaskDraftPreview, error) {
+func (s *SupportInboxService) PreviewTaskFromConversation(ctx context.Context, workspaceID, conversationID string, teamIDs ...string) (*model.SupportTaskDraftPreview, error) {
 	conversation, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)
 	if err != nil {
 		return nil, err
@@ -18,11 +20,37 @@ func (s *SupportInboxService) PreviewTaskFromConversation(ctx context.Context, w
 	if conversation == nil || conversation.AnonymizedAt != nil {
 		return nil, ErrPMTriageSourceUnavailable
 	}
+	// Draft generation includes attachment context; matching and reviewed saves only need public text.
 	messages, err := s.ListConversationMessages(ctx, workspaceID, conversationID, false)
 	if err != nil {
 		return nil, err
 	}
-	draft, err := s.generateTaskDraftFromConversation(ctx, workspaceID, conversation, messages)
+	teamContext := ""
+	teamID := ""
+	if len(teamIDs) > 0 {
+		teamID = strings.TrimSpace(teamIDs[0])
+	}
+	if teamID != "" {
+		if err := requireTeamAccess(ctx, &teamID); err != nil {
+			return nil, err
+		}
+		if s.workspaceRepo == nil {
+			return nil, fmt.Errorf("team settings unavailable")
+		}
+		team, err := s.workspaceRepo.GetTeamByID(ctx, workspaceID, teamID)
+		if err != nil {
+			return nil, err
+		}
+		if team == nil {
+			return nil, fmt.Errorf("team not found in workspace")
+		}
+		raw, err := json.Marshal(map[string]string{"name": team.Name, "type": team.TeamType, "description": derefString(team.Description), "default_task_type": team.DefaultTaskType})
+		if err != nil {
+			return nil, err
+		}
+		teamContext = string(raw)
+	}
+	draft, err := s.generateTaskDraftFromConversation(ctx, workspaceID, conversation, messages, teamContext)
 	if err != nil {
 		return nil, err
 	}
