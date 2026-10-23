@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   composeInboxClearedMessage,
+  shouldThrowConfetti,
   INBOX_CLEARED_RECENT_LIMIT,
   type InboxClearedContext,
   type InboxClearedMemory,
@@ -77,6 +78,15 @@ describe('composeInboxClearedMessage', () => {
   it('celebrates with the time of day alone when the server numbers are missing', () => {
     const { message } = composeInboxClearedMessage(context({ hour: 23, stats: null }), empty(), options);
     expect(message.achievementId).toBe('night-owl');
+  });
+
+  it('keeps confetti for clears that mean something', () => {
+    const everyday = { rarity: 'common' as const };
+    expect(shouldThrowConfetti(everyday, { ...quietStats, clears_today: 1 }, 1)).toBe(true);
+    expect(shouldThrowConfetti({ rarity: 'rare' }, { ...quietStats, clears_today: 4 }, 1)).toBe(true);
+    expect(shouldThrowConfetti(everyday, { ...quietStats, clears_today: 4 }, 5)).toBe(true);
+    expect(shouldThrowConfetti(everyday, { ...quietStats, clears_today: 4 }, 2)).toBe(false);
+    expect(shouldThrowConfetti(everyday, null, 2)).toBe(false);
   });
 
   it('forgets unlocks from other days', () => {

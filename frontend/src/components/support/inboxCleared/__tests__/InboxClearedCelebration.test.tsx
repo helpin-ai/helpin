@@ -12,9 +12,10 @@ import type { InboxCelebration } from '@/stores/supportInboxCelebrationStore';
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const celebration: InboxCelebration = {
-  id: 'all:1',
-  scopeKey: 'all',
+  id: 'shared:1',
+  scopeKey: 'shared',
   clearedCount: 7,
+  confetti: true,
   message: { achievementId: 'early-bird', rarity: 'rare', name: 'Early bird', title: 'Clear before 9.', body: 'The rest of the morning is yours.' },
 };
 
@@ -50,6 +51,14 @@ describe('InboxClearedCelebration', () => {
     expect(status?.textContent).toContain('The rest of the morning is yours.');
     expect(launchInboxClearedConfetti).toHaveBeenCalledTimes(1);
     expect(vi.mocked(launchInboxClearedConfetti).mock.calls[0][0]).toMatchObject({ size: 7 });
+  });
+
+  it('shows an everyday clear without confetti', () => {
+    mockReducedMotion(false);
+    act(() => root.render(<InboxClearedCelebration celebration={{ ...celebration, confetti: false }} />));
+
+    expect(container.querySelector('h2')?.textContent).toBe('Clear before 9.');
+    expect(launchInboxClearedConfetti).not.toHaveBeenCalled();
   });
 
   it('skips confetti for reduced motion', () => {

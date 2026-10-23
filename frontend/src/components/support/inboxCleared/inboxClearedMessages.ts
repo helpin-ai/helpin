@@ -226,6 +226,24 @@ function pickFresh<T>(items: T[], seen: (item: T) => boolean, random: () => numb
   return pool[Math.min(pool.length - 1, Math.floor(random() * pool.length))];
 }
 
+/** A clear this size earns confetti on its own. */
+export const CONFETTI_MIN_CLEARED = 5;
+
+/**
+ * Confetti is kept for clears that mean something: the first clear of the day
+ * in this inbox, an achievement above Common, or a big clear. Every other
+ * clear shows the card quietly, so a trickling inbox does not sparkle all day.
+ */
+export function shouldThrowConfetti(
+  message: Pick<InboxClearedMessage, 'rarity'>,
+  stats: InboxClearedStats | null,
+  clearedCount: number,
+): boolean {
+  return message.rarity !== 'common'
+    || stats?.clears_today === 1
+    || clearedCount >= CONFETTI_MIN_CLEARED;
+}
+
 export interface ComposeOptions {
   /** Inbox the clear belongs to; rare achievements unlock once a day per inbox. */
   scopeKey: string;

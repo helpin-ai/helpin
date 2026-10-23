@@ -14,7 +14,7 @@ import { useInboxClearedDetection } from '../useInboxClearedDetection';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-const scope = { scope: 'all' as const, mailboxId: null, scopeKey: 'all' };
+const scope = { scope: 'shared' as const, mailboxId: null, scopeKey: 'shared' };
 const names = { inbox: 'Your inbox', inboxInSentence: 'your inbox' };
 
 function Harness({ ids }: { ids: string[] }) {
@@ -58,7 +58,7 @@ describe('useInboxClearedDetection', () => {
     await renderIds([]);
 
     expect(supportService.recordInboxClear).toHaveBeenCalledTimes(1);
-    expect(useSupportInboxCelebrationStore.getState().celebration?.scopeKey).toBe('all');
+    expect(useSupportInboxCelebrationStore.getState().celebration?.scopeKey).toBe('shared');
   });
 
   it('stays quiet when someone else empties the list', async () => {

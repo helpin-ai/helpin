@@ -28,7 +28,7 @@ export function InboxClearedCelebration({ celebration }: { celebration: InboxCel
   useEffect(() => {
     const root = rootRef.current;
     const seal = sealRef.current;
-    if (!root || !seal || prefersReducedMotion()) return;
+    if (!root || !seal || !celebration.confetti || prefersReducedMotion()) return;
     const sealBox = seal.getBoundingClientRect();
     return launchInboxClearedConfetti({
       origin: { x: sealBox.left + sealBox.width / 2, y: sealBox.top + sealBox.height / 2 },

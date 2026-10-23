@@ -10,12 +10,12 @@ import { useSupportInboxCelebrationStore } from '@/stores/supportInboxCelebratio
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { celebrateInboxClear } from '../useInboxClearedDetection';
 
-const scope = { scope: 'all' as const, mailboxId: null, scopeKey: 'all' };
+const scope = { scope: 'shared' as const, mailboxId: null, scopeKey: 'shared' };
 const input = {
   workspaceId: 'ws-1',
   userId: 'user-1',
   scope,
-  names: { inbox: 'Your inbox', inboxInSentence: 'your inbox' },
+  names: { inbox: 'Shared Inbox', inboxInSentence: 'Shared Inbox' },
   conversationId: 'conv-9',
   fallbackCount: 3,
   now: new Date(2026, 9, 21, 15, 0, 0), // a Wednesday afternoon
@@ -42,13 +42,13 @@ describe('celebrateInboxClear', () => {
 
     expect(supportService.recordInboxClear).toHaveBeenCalledWith('ws-1', {
       conversation_id: 'conv-9',
-      scope: 'all',
+      scope: 'shared',
       mailbox_id: null,
       local_date: '2026-10-21',
       day_start: new Date(2026, 9, 21).toISOString(),
     });
     const celebration = useSupportInboxCelebrationStore.getState().celebration;
-    expect(celebration).toMatchObject({ scopeKey: 'all', clearedCount: 6 });
+    expect(celebration).toMatchObject({ scopeKey: 'shared', clearedCount: 6, confetti: true });
     expect(celebration?.message.achievementId).toBe('hot-streak');
   });
 
@@ -58,7 +58,8 @@ describe('celebrateInboxClear', () => {
     await celebrateInboxClear(input);
 
     const celebration = useSupportInboxCelebrationStore.getState().celebration;
-    expect(celebration).toMatchObject({ clearedCount: 3 });
+    // An everyday clear without the server's numbers stays quiet.
+    expect(celebration).toMatchObject({ clearedCount: 3, confetti: false });
     expect(celebration?.message.rarity).toBe('common');
   });
 

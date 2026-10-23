@@ -497,7 +497,8 @@ export interface ConversationListMeta {
 /** Records that the viewer's own action left an inbox with nothing to reply to. */
 export interface RecordSupportInboxClearRequest {
   conversation_id: string;
-  scope: 'mailbox' | 'all' | 'mine';
+  /** A team inbox, the main shared inbox, or the viewer's own queue. */
+  scope: 'mailbox' | 'shared' | 'mine';
   mailbox_id: string | null;
   /** Viewer's local date, YYYY-MM-DD. */
   local_date: string;

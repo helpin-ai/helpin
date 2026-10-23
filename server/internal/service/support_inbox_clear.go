@@ -35,7 +35,7 @@ type supportInboxClearStore interface {
 	PreviousClearAt(ctx context.Context, workspaceID, userID, scopeKey string, before time.Time, excludeConversationID string) (*time.Time, error)
 	CountClearsOnDate(ctx context.Context, workspaceID, userID, scopeKey, localDate string) (int, error)
 	ListClearDates(ctx context.Context, workspaceID, userID string, limit int) ([]string, error)
-	CountResolvedBy(ctx context.Context, workspaceID, userID string, since time.Time, mailboxID *string) (int, error)
+	CountResolvedBy(ctx context.Context, workspaceID, userID string, since time.Time, count model.SupportInboxClearCount) (int, error)
 }
 
 // SupportInboxClearService records inbox clears and reports the facts the
@@ -54,6 +54,7 @@ type supportInboxClearInput struct {
 	conversationID string
 	scopeKey       string
 	mailboxID      *string
+	count          model.SupportInboxClearCount
 	localDate      string
 	dayStart       time.Time
 }
@@ -120,11 +121,15 @@ func (s *SupportInboxClearService) validate(req model.RecordSupportInboxClearReq
 		}
 		mailboxID := *req.MailboxID
 		input.mailboxID = &mailboxID
+		input.count = model.SupportInboxClearCount{MailboxID: &mailboxID}
 		input.scopeKey = model.SupportInboxClearScopeMailbox + ":" + mailboxID
-	case model.SupportInboxClearScopeAll, model.SupportInboxClearScopeMine:
+	case model.SupportInboxClearScopeShared:
+		input.count = model.SupportInboxClearCount{SharedOnly: true}
+		input.scopeKey = req.Scope
+	case model.SupportInboxClearScopeMine:
 		input.scopeKey = req.Scope
 	default:
-		return input, fmt.Errorf("%w: scope must be mailbox, all or mine", ErrSupportInboxClearInvalid)
+		return input, fmt.Errorf("%w: scope must be mailbox, shared or mine", ErrSupportInboxClearInvalid)
 	}
 
 	if _, err := time.Parse(supportInboxClearDateLayout, req.LocalDate); err != nil {
@@ -152,7 +157,7 @@ func (s *SupportInboxClearService) stats(ctx context.Context, workspaceID, userI
 	if err != nil {
 		return nil, err
 	}
-	resolvedToday, err := s.store.CountResolvedBy(ctx, workspaceID, userID, input.dayStart, nil)
+	resolvedToday, err := s.store.CountResolvedBy(ctx, workspaceID, userID, input.dayStart, model.SupportInboxClearCount{})
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +170,7 @@ func (s *SupportInboxClearService) stats(ctx context.Context, workspaceID, userI
 	if previous != nil && previous.After(since) {
 		since = *previous
 	}
-	clearedCount, err := s.store.CountResolvedBy(ctx, workspaceID, userID, since, input.mailboxID)
+	clearedCount, err := s.store.CountResolvedBy(ctx, workspaceID, userID, since, input.count)
 	if err != nil {
 		return nil, err
 	}

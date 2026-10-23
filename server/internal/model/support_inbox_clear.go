@@ -4,10 +4,23 @@ import "time"
 
 // Support inbox clear scopes name the inbox view a person emptied.
 const (
+	// SupportInboxClearScopeMailbox is one team inbox.
 	SupportInboxClearScopeMailbox = "mailbox"
-	SupportInboxClearScopeAll     = "all"
-	SupportInboxClearScopeMine    = "mine"
+	// SupportInboxClearScopeShared is the main shared inbox: conversations
+	// that are not in a team inbox.
+	SupportInboxClearScopeShared = "shared"
+	// SupportInboxClearScopeMine is the conversations assigned to the person.
+	SupportInboxClearScopeMine = "mine"
 )
+
+// SupportInboxClearCount limits which resolved conversations a clear counts.
+// The zero value counts every inbox.
+type SupportInboxClearCount struct {
+	// MailboxID counts only conversations in this team inbox.
+	MailboxID *string
+	// SharedOnly counts only conversations that are in no team inbox.
+	SharedOnly bool
+}
 
 // SupportInboxClear records one person emptying a support inbox view by
 // resolving or marking spam its last conversation.

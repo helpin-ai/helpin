@@ -6,7 +6,7 @@ import { useSupportInboxCelebrationStore } from '@/stores/supportInboxCelebratio
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import type { SupportInboxClearStats } from '@/lib/pmTypes';
 import { loadInboxClearedMemory, saveInboxClearedMemory } from './inboxClearedMemory';
-import { composeInboxClearedMessage } from './inboxClearedMessages';
+import { composeInboxClearedMessage, shouldThrowConfetti } from './inboxClearedMessages';
 import { inboxClearScopeFor, isOwnInboxClear, type InboxClearScope } from './inboxClearedScope';
 
 const STATS_TIMEOUT_MS = 2000;
@@ -70,11 +70,13 @@ export async function celebrateInboxClear({
     { scopeKey: scope.scopeKey, localDate },
   );
   saveInboxClearedMemory(userId, memory);
+  const clearedCount = stats?.cleared_count ?? fallbackCount;
   useSupportInboxCelebrationStore.getState().showCelebration({
     id: `${scope.scopeKey}:${now.getTime()}`,
     scopeKey: scope.scopeKey,
     message,
-    clearedCount: stats?.cleared_count ?? fallbackCount,
+    clearedCount,
+    confetti: shouldThrowConfetti(message, stats, clearedCount),
   });
 }
 

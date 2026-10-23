@@ -7,10 +7,10 @@ const mailboxId = '8f0e1c2a-3b4d-4e5f-8a9b-0c1d2e3f4a5b';
 
 describe('inboxClearScopeFor', () => {
   it('maps inbox views to the scope the server records', () => {
-    expect(inboxClearScopeFor('inbox', 'all')).toEqual({ scope: 'all', mailboxId: null, scopeKey: 'all' });
+    expect(inboxClearScopeFor('inbox', 'all')).toEqual({ scope: 'shared', mailboxId: null, scopeKey: 'shared' });
     expect(inboxClearScopeFor('inbox', mailboxId)).toEqual({ scope: 'mailbox', mailboxId, scopeKey: `mailbox:${mailboxId}` });
     expect(inboxClearScopeFor('mine', 'all')).toEqual({ scope: 'mine', mailboxId: null, scopeKey: 'mine' });
-    expect(inboxClearScopeFor('inbox', 'shared')).toEqual({ scope: 'all', mailboxId: null, scopeKey: 'mailbox:shared' });
+    expect(inboxClearScopeFor('inbox', 'shared')).toEqual({ scope: 'shared', mailboxId: null, scopeKey: 'shared' });
   });
 
   it('ignores views that are not an inbox to clear', () => {
@@ -21,9 +21,10 @@ describe('inboxClearScopeFor', () => {
 });
 
 describe('inboxClearNames', () => {
-  it('names team inboxes, the whole inbox and the personal queue', () => {
+  it('names team inboxes, the shared inbox and the personal queue', () => {
     expect(inboxClearNames({ scope: 'mailbox', mailboxId, scopeKey: 'x' }, 'Billing')).toEqual({ inbox: 'Billing', inboxInSentence: 'Billing' });
-    expect(inboxClearNames({ scope: 'all', mailboxId: null, scopeKey: 'all' }, null)).toEqual({ inbox: 'Your inbox', inboxInSentence: 'your inbox' });
+    expect(inboxClearNames({ scope: 'shared', mailboxId: null, scopeKey: 'shared' }, 'Shared Inbox')).toEqual({ inbox: 'Shared Inbox', inboxInSentence: 'Shared Inbox' });
+    expect(inboxClearNames({ scope: 'shared', mailboxId: null, scopeKey: 'shared' }, null)).toEqual({ inbox: 'The inbox', inboxInSentence: 'the inbox' });
     expect(inboxClearNames({ scope: 'mine', mailboxId: null, scopeKey: 'mine' }, null)).toEqual({ inbox: 'Your queue', inboxInSentence: 'your queue' });
   });
 });

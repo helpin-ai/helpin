@@ -2,7 +2,8 @@ import type { NavFilter } from '@/stores/supportInboxStore';
 
 /** The inbox a clear belongs to, as the server records it. */
 export interface InboxClearScope {
-  scope: 'mailbox' | 'all' | 'mine';
+  /** A team inbox, the main shared inbox (no team inbox), or the viewer's own queue. */
+  scope: 'mailbox' | 'shared' | 'mine';
   mailboxId: string | null;
   /** Stable key for matching a celebration to the view on screen. */
   scopeKey: string;
@@ -17,18 +18,20 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function inboxClearScopeFor(navFilter: NavFilter, selectedMailboxId: string): InboxClearScope | null {
   if (navFilter === 'mine') return { scope: 'mine', mailboxId: null, scopeKey: 'mine' };
   if (navFilter !== 'inbox') return null;
-  if (selectedMailboxId === 'all') return { scope: 'all', mailboxId: null, scopeKey: 'all' };
-  // Pseudo ids such as "shared" have no mailbox row to count against.
-  if (!UUID.test(selectedMailboxId)) return { scope: 'all', mailboxId: null, scopeKey: `mailbox:${selectedMailboxId}` };
+  // The main Inbox lists the shared inbox: conversations in no team inbox.
+  // Older saved state used the pseudo id "shared" for the same view.
+  if (selectedMailboxId === 'all' || !UUID.test(selectedMailboxId)) return { scope: 'shared', mailboxId: null, scopeKey: 'shared' };
   return { scope: 'mailbox', mailboxId: selectedMailboxId, scopeKey: `mailbox:${selectedMailboxId}` };
 }
 
-/** Names the inbox for the celebration copy. */
-export function inboxClearNames(scope: InboxClearScope, mailboxName: string | null): { inbox: string; inboxInSentence: string } {
+/**
+ * Names the inbox for the celebration copy: the team inbox or shared inbox
+ * by its name, otherwise "the inbox".
+ */
+export function inboxClearNames(scope: InboxClearScope, inboxName: string | null): { inbox: string; inboxInSentence: string } {
   if (scope.scope === 'mine') return { inbox: 'Your queue', inboxInSentence: 'your queue' };
-  if (scope.scope === 'mailbox' && mailboxName) return { inbox: mailboxName, inboxInSentence: mailboxName };
-  if (scope.scopeKey !== 'all' && mailboxName) return { inbox: mailboxName, inboxInSentence: mailboxName };
-  return { inbox: 'Your inbox', inboxInSentence: 'your inbox' };
+  if (inboxName) return { inbox: inboxName, inboxInSentence: inboxName };
+  return { inbox: 'The inbox', inboxInSentence: 'the inbox' };
 }
 
 export const OWN_REMOVAL_WINDOW_MS = 30_000;

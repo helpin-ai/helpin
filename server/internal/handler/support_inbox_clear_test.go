@@ -33,7 +33,7 @@ func TestSupportInboxClearHandler_RecordClear(t *testing.T) {
 		wantStatus int
 		wantBody   string
 	}{
-		{name: "returns stats", body: `{"conversation_id":"c","scope":"all","local_date":"2026-10-23","day_start":"2026-10-23T00:00:00Z"}`, wantStatus: http.StatusOK, wantBody: `"streak_days":3`},
+		{name: "returns stats", body: `{"conversation_id":"c","scope":"shared","local_date":"2026-10-23","day_start":"2026-10-23T00:00:00Z"}`, wantStatus: http.StatusOK, wantBody: `"streak_days":3`},
 		{name: "malformed body", body: `{`, wantStatus: http.StatusBadRequest, wantBody: "invalid request body"},
 		{name: "validation error names the field", body: `{}`, err: fmt.Errorf("%w: scope must be mailbox, all or mine", service.ErrSupportInboxClearInvalid), wantStatus: http.StatusBadRequest, wantBody: "scope must be mailbox, all or mine"},
 		{name: "unknown conversation", body: `{}`, err: service.ErrSupportInboxClearNotFound, wantStatus: http.StatusNotFound, wantBody: "conversation not found"},

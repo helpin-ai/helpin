@@ -119,20 +119,23 @@ func (r *SupportInboxClearRepository) ListClearDates(ctx context.Context, worksp
 }
 
 // CountResolvedBy counts the conversations this person resolved after since,
-// from the internal resolved notices. A mailbox limits the count to
-// conversations in that mailbox.
-func (r *SupportInboxClearRepository) CountResolvedBy(ctx context.Context, workspaceID, userID string, since time.Time, mailboxID *string) (int, error) {
+// from the internal resolved notices, limited to one inbox when count says so.
+func (r *SupportInboxClearRepository) CountResolvedBy(ctx context.Context, workspaceID, userID string, since time.Time, count model.SupportInboxClearCount) (int, error) {
 	q := r.db.WithContext(ctx).
 		Table("support_messages m").
 		Where("m.workspace_id = ? AND m.sender_user_id = ? AND m.message_type = ? AND m.system_event_type = ? AND m.created_at > ?",
 			workspaceID, userID, "system", string(model.SystemEventResolved), since.UTC())
-	if mailboxID != nil {
+	switch {
+	case count.MailboxID != nil:
 		q = q.Joins("JOIN support_conversations c ON c.id = m.conversation_id").
-			Where("c.mailbox_id = ?", *mailboxID)
+			Where("c.mailbox_id = ?", *count.MailboxID)
+	case count.SharedOnly:
+		q = q.Joins("JOIN support_conversations c ON c.id = m.conversation_id").
+			Where("c.mailbox_id IS NULL")
 	}
-	var count int64
-	if err := q.Distinct("m.conversation_id").Count(&count).Error; err != nil {
+	var total int64
+	if err := q.Distinct("m.conversation_id").Count(&total).Error; err != nil {
 		return 0, fmt.Errorf("count conversations resolved by user: %w", err)
 	}
-	return int(count), nil
+	return int(total), nil
 }

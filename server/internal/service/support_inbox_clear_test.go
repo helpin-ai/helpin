@@ -135,9 +135,9 @@ func TestSupportInboxClearService_ReportsStats(t *testing.T) {
 	// Earlier clears: today at 10:00 in Billing, the two days before, and a
 	// gap before that, so the streak is 3 including today's new clear.
 	seedClear(t, db, "prev-today", billingScope, clearTestConvA, "2026-10-23", dayStart.Add(10*time.Hour))
-	seedClear(t, db, "prev-22", "all", clearTestConvC, "2026-10-22", dayStart.Add(-14*time.Hour))
+	seedClear(t, db, "prev-22", "shared", clearTestConvC, "2026-10-22", dayStart.Add(-14*time.Hour))
 	seedClear(t, db, "prev-21", "mine", clearTestConvD, "2026-10-21", dayStart.Add(-38*time.Hour))
-	seedClear(t, db, "prev-19", "all", clearTestConvA, "2026-10-19", dayStart.Add(-86*time.Hour))
+	seedClear(t, db, "prev-19", "shared", clearTestConvA, "2026-10-19", dayStart.Add(-86*time.Hour))
 	seedResolvedNotice(t, db, "n1", clearTestConvA, dayStart.Add(9*time.Hour))
 	seedResolvedNotice(t, db, "n2", clearTestConvC, dayStart.Add(11*time.Hour))
 	seedResolvedNotice(t, db, "n3", clearTestConvB, dayStart.Add(11*time.Hour+30*time.Minute))
@@ -173,7 +173,7 @@ func TestSupportInboxClearService_CountsFromDayStartWithoutAnEarlierClear(t *tes
 	seedResolvedNotice(t, db, "n0", clearTestConvA, dayStart.Add(-time.Hour))
 	seedResolvedNotice(t, db, "n1", clearTestConvA, dayStart.Add(3*time.Hour))
 
-	req := model.RecordSupportInboxClearRequest{ConversationID: clearTestConvB, Scope: model.SupportInboxClearScopeAll, LocalDate: "2026-10-23", DayStart: "2026-10-23T00:00:00Z"}
+	req := model.RecordSupportInboxClearRequest{ConversationID: clearTestConvB, Scope: model.SupportInboxClearScopeShared, LocalDate: "2026-10-23", DayStart: "2026-10-23T00:00:00Z"}
 	stats, err := svc.Record(context.Background(), clearTestWorkspace, clearTestUser, req)
 	if err != nil {
 		t.Fatalf("Record: %v", err)

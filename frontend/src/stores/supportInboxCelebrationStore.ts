@@ -9,6 +9,8 @@ export interface InboxCelebration {
   message: InboxClearedMessage;
   /** Conversations closed in this clear; scales the confetti. */
   clearedCount: number;
+  /** False for everyday clears that show the card without confetti. */
+  confetti: boolean;
 }
 
 interface SupportInboxCelebrationState {

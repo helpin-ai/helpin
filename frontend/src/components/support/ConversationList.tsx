@@ -433,9 +433,10 @@ export function ConversationList({
     () => (isFilteredView ? null : inboxClearScopeFor(navFilter, selectedMailboxId)),
     [isFilteredView, navFilter, selectedMailboxId],
   );
+  const clearInboxName = clearScope?.scope === 'shared' ? inboxScopes?.shared_inbox?.name ?? null : selectedMailboxName;
   const clearNames = useMemo(
-    () => (clearScope ? inboxClearNames(clearScope, selectedMailboxName) : { inbox: 'Your inbox', inboxInSentence: 'your inbox' }),
-    [clearScope, selectedMailboxName],
+    () => (clearScope ? inboxClearNames(clearScope, clearInboxName) : { inbox: 'The inbox', inboxInSentence: 'the inbox' }),
+    [clearInboxName, clearScope],
   );
   const visibleConversationIds = useMemo(
     () => (filteredConversations.length === 0 && hasNextPage ? ['more-on-server'] : filteredConversations.map((conversation) => conversation.id)),
