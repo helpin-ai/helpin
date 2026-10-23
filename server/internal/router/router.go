@@ -1138,6 +1138,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportEdit), h.SupportInbox.RequireWritableConversation).Put("/inbox/conversations/{id}/status", h.SupportInbox.UpdateConversationStatus)
 				r.With(requirePerm(authorization.PermSupportEdit), h.SupportInbox.RequireWritableConversation).Post("/inbox/conversations/{id}/follow-up/cancel", h.SupportInbox.CancelConversationFollowUp)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/messages", h.SupportInbox.ListConversationMessages)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/shared-items", h.SupportInbox.ListConversationSharedItems)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/translation", h.SupportInbox.TranslationOptions)
 				r.With(requirePerm(authorization.PermSupportEdit), h.SupportInbox.RequireWritableConversation).Put("/inbox/conversations/{id}/translation", h.SupportInbox.SetLiveTranslate)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/translation/messages", h.SupportInbox.CachedLiveTranslations)

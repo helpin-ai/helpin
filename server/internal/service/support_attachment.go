@@ -283,15 +283,29 @@ func (s *SupportAttachmentService) HydrateMessages(ctx context.Context, messages
 		messageIDs[i] = m.ID
 	}
 
-	attachments, err := s.attachmentRepo.ListByMessageIDs(ctx, messageIDs)
+	byMsg, err := s.PayloadsByMessage(ctx, messageIDs)
 	if err != nil {
 		return err
 	}
-	if len(attachments) == 0 {
-		return nil
+
+	for i := range messages {
+		if payloads, ok := byMsg[messages[i].ID]; ok {
+			messages[i].Attachments = payloads
+		}
+	}
+	return nil
+}
+
+// PayloadsByMessage returns signed attachment payloads grouped by message ID.
+func (s *SupportAttachmentService) PayloadsByMessage(ctx context.Context, messageIDs []string) (map[string][]model.SupportAttachmentPayload, error) {
+	if len(messageIDs) == 0 {
+		return nil, nil
+	}
+	attachments, err := s.attachmentRepo.ListByMessageIDs(ctx, messageIDs)
+	if err != nil {
+		return nil, err
 	}
 
-	// Group by message_id.
 	byMsg := make(map[string][]model.SupportAttachmentPayload, len(attachments))
 	for _, a := range attachments {
 		if a.MessageID == nil {
@@ -299,10 +313,9 @@ func (s *SupportAttachmentService) HydrateMessages(ctx context.Context, messages
 		}
 		attachmentURL := a.PublicURL
 		if s.s3Client != nil && a.IsUploaded && a.StorageKey != "" {
-			var err error
 			attachmentURL, err = s.s3Client.GeneratePresignedInlineGetURL(a.StorageKey)
 			if err != nil {
-				return fmt.Errorf("sign support attachment: %w", err)
+				return nil, fmt.Errorf("sign support attachment: %w", err)
 			}
 		}
 		byMsg[*a.MessageID] = append(byMsg[*a.MessageID], model.SupportAttachmentPayload{
@@ -315,13 +328,7 @@ func (s *SupportAttachmentService) HydrateMessages(ctx context.Context, messages
 			URL:      attachmentURL,
 		})
 	}
-
-	for i := range messages {
-		if payloads, ok := byMsg[messages[i].ID]; ok {
-			messages[i].Attachments = payloads
-		}
-	}
-	return nil
+	return byMsg, nil
 }
 
 // Delete deletes a support attachment (S3 object + DB record).

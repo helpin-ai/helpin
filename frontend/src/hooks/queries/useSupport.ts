@@ -47,6 +47,7 @@ import type {
   ConversationListResponse,
   SupportConversation,
   SupportMessagePage,
+  SupportSharedItem,
   SupportReplyDeliveryMode,
   VisitorContextResponse,
   SupportAIRewriteDraftRequest,
@@ -1021,6 +1022,16 @@ export function useMessageInfo(workspaceId: string, conversationId: string, mess
     queryKey: queryKeys.support.messageInfo(workspaceId, conversationId, messageId ?? ''),
     queryFn: async () => unwrap(await supportService.getConversationMessageInfo(workspaceId, conversationId, messageId!)),
     enabled: enabled && !!workspaceId && !!conversationId && !!messageId,
+    staleTime: 60_000,
+  });
+}
+
+/** Help-center articles and files the team sent to the customer, newest first. */
+export function useConversationSharedItems(workspaceId: string, conversationId: string | null) {
+  return useQuery<SupportSharedItem[]>({
+    queryKey: queryKeys.support.conversationSharedItems(workspaceId, conversationId ?? ''),
+    queryFn: async () => unwrap(await supportService.listConversationSharedItems(workspaceId, conversationId!)),
+    enabled: !!workspaceId && !!conversationId,
     staleTime: 60_000,
   });
 }

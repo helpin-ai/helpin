@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { ArrowRight01Icon, PlusSignIcon } from '@/lib/icons';
-import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
 interface CollapsibleSectionProps {
@@ -10,8 +9,29 @@ interface CollapsibleSectionProps {
   defaultOpen?: boolean;
   /** Follow item availability until the user explicitly toggles this section. */
   autoOpenWhenPopulated?: boolean;
+  /** Remembers this person's open/closed choice for the section across conversations. */
+  persistKey?: string;
   onAdd?: () => void;
   children: React.ReactNode;
+}
+
+const SECTION_PREFERENCE_PREFIX = 'helpin.collapsibleSection.';
+
+function readSectionPreference(key: string): boolean | undefined {
+  try {
+    const value = window.localStorage.getItem(SECTION_PREFERENCE_PREFIX + key);
+    return value === 'open' ? true : value === 'closed' ? false : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeSectionPreference(key: string, open: boolean) {
+  try {
+    window.localStorage.setItem(SECTION_PREFERENCE_PREFIX + key, open ? 'open' : 'closed');
+  } catch {
+    // Storage can be unavailable (private mode, quota); the choice then lasts for this view only.
+  }
 }
 
 export function CollapsibleSection({
@@ -19,11 +39,20 @@ export function CollapsibleSection({
   count = 0,
   defaultOpen = false,
   autoOpenWhenPopulated = false,
+  persistKey,
   onAdd,
   children,
 }: CollapsibleSectionProps) {
-  const [userOpen, setOpen] = useState<boolean | undefined>(autoOpenWhenPopulated ? undefined : defaultOpen);
+  const [userOpen, setUserOpen] = useState<boolean | undefined>(() => {
+    const remembered = persistKey ? readSectionPreference(persistKey) : undefined;
+    if (remembered !== undefined) return remembered;
+    return autoOpenWhenPopulated ? undefined : defaultOpen;
+  });
   const open = userOpen ?? (count > 0);
+  const toggle = () => {
+    setUserOpen(!open);
+    if (persistKey) writeSectionPreference(persistKey, !open);
+  };
 
   return (
     <div
@@ -36,31 +65,25 @@ export function CollapsibleSection({
         role="button"
         tabIndex={0}
         aria-expanded={open}
-        onClick={() => setOpen(!open)}
+        onClick={toggle}
         onKeyDown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
-            setOpen(!open);
+            toggle();
           }
         }}
         className={cn(
-          'group flex cursor-pointer items-center gap-2 px-4 py-2.5 transition-colors hover:bg-muted/30',
+          'group flex cursor-pointer items-center gap-1.5 px-4 py-2.5 transition-colors hover:bg-muted/30',
           open && 'hover:bg-muted/50 dark:hover:bg-muted/35',
         )}
       >
-        <span
-          className={cn(
-            'flex-1 text-[11px] font-medium uppercase tracking-tight transition-colors',
-            open ? 'text-foreground' : 'text-foreground/75',
-          )}
-        >
-          {title}
-        </span>
+        <span className="min-w-0 truncate text-sm font-semibold text-foreground">{title}</span>
         {count > 0 && (
-          <Badge variant="secondary" className="h-4 rounded-full px-1.5 text-[10px] font-medium">
+          <span className="inline-flex h-[18px] min-w-5 shrink-0 items-center justify-center rounded-full bg-foreground/[0.08] px-1.5 text-[11px] font-semibold tabular-nums text-foreground/80">
             {count}
-          </Badge>
+          </span>
         )}
+        <span className="flex-1" />
         {onAdd && (
           <button
             type="button"

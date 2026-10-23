@@ -697,6 +697,18 @@ export interface SupportMessagePage {
   next_cursor?: string;
 }
 
+/** A help-center article or file the team sent to the customer in a reply. */
+export interface SupportSharedItem {
+  kind: 'doc' | 'file';
+  id: string;
+  title: string;
+  url: string;
+  file_type?: string;
+  file_size?: number;
+  message_id: string;
+  shared_at: string;
+}
+
 export interface UpdateSupportNoteRequest {
   content: string;
   attachment_ids: string[];
