@@ -62,6 +62,12 @@ func inboundEmailAIMetadata(raw string, payload model.PostmarkInboundPayload, co
 		}
 	}
 	local := strings.ToLower(strings.SplitN(sender, "@", 2)[0])
+	// A quoted question inside a notification is not a request to support.
+	// Preserve contact-form mail that provides a real customer Reply-To.
+	_, replyTo, _ := inboundReplyToAddress(payload)
+	if reason == "" && isNoReplyEmailAddress(sender) && (replyTo == "" || isNoReplyEmailAddress(replyTo)) {
+		reason = "automated_message"
+	}
 	if local == "mailer-daemon" || local == "postmaster" {
 		reason = "delivery_report"
 	}
@@ -80,4 +86,19 @@ func inboundEmailAIMetadata(raw string, payload model.PostmarkInboundPayload, co
 	metadata["email_ai_request"] = reason == ""
 	encoded, _ := json.Marshal(metadata)
 	return string(encoded)
+}
+
+func isNoReplyEmailAddress(address string) bool {
+	parsed, err := mail.ParseAddress(strings.TrimSpace(address))
+	if err != nil {
+		return false
+	}
+	local := strings.ToLower(strings.SplitN(parsed.Address, "@", 2)[0])
+	local = strings.SplitN(local, "+", 2)[0]
+	switch local {
+	case "noreply", "no-reply", "no_reply", "donotreply", "do-not-reply", "do_not_reply":
+		return true
+	default:
+		return false
+	}
 }

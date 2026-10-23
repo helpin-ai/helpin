@@ -177,6 +177,14 @@ func TestInboundEmailMachineSignalsSuppressAI(t *testing.T) {
 		blocked                   bool
 	}{
 		{"human", "", "", "person@example.com", false},
+		{"notification with quoted question", "", "", "noreply@example.com", true},
+		{"display name", "", "", "Notifications <No-Reply@example.com>", true},
+		{"underscore", "", "", "no_reply@example.com", true},
+		{"do not reply", "", "", "do-not-reply@example.com", true},
+		{"tagged sender", "", "", "noreply+comments@example.com", true},
+		{"contact form", "Reply-To", "Customer <person@example.com>", "noreply@example.com", false},
+		{"no-reply reply-to", "Reply-To", "no-reply@example.com", "noreply@example.com", true},
+		{"human lookalike", "", "", "noreply-support@example.com", false},
 		{"explicit human", "Auto-Submitted", "no; owner-email=person@example.com", "person@example.com", false},
 		{"autoresponder", "Auto-Submitted", "auto-replied", "person@example.com", true},
 		{"delivery receipt", "Content-Type", "multipart/report; report-type=delivery-status", "person@example.com", true},
@@ -206,5 +214,53 @@ func TestInboundEmailMachineSignalsSuppressAI(t *testing.T) {
 				t.Fatalf("delayed work allowed=%v blocked=%v", got, tt.blocked)
 			}
 		})
+	}
+}
+
+func TestNotificationEmailRoutesToHumanWithoutReply(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	settings.AIEnabled = true
+	settings.AIAgentID = strPtr("agent")
+	settings.AIResponseMode = "ai_first"
+	settings.AIReplyChannels = "both"
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+	recorder := &emailAIRequestRecorder{}
+	env.service.supportInboxService.supportAIService = &SupportAIService{js: recorder}
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	route := &model.SupportEmailRoute{
+		ID: "a1111111-1111-1111-1111-111111111111", WorkspaceID: workspaceID,
+		RouteKey: "notification-test", InboundAddress: "inbox@acme.on.helpin.email",
+		ProviderType: "forwarding", Active: true, CreatedByID: "22222222-2222-2222-2222-222222222222",
+	}
+	if err := env.routeRepo.Create(ctx, route); err != nil {
+		t.Fatal(err)
+	}
+	payload := model.PostmarkInboundPayload{
+		FromFull: model.PostmarkAddress{Email: "noreply@example.com", Name: "Community notifications"},
+		To:       route.InboundAddress, OriginalRecipient: route.InboundAddress,
+		Subject: "Someone replied to your comment", MessageID: "notification-test",
+		StrippedTextReply: "Someone replied: How many posts do you compare? View reply. Unsubscribe.",
+	}
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{}`); err != nil {
+		t.Fatal(err)
+	}
+	if len(recorder.events) != 0 {
+		t.Fatal("notification dispatched an AI run")
+	}
+	conv, err := env.convRepo.GetByID(ctx, workspaceID, inboundStableID("conversation:"+payload.MessageID), "", model.RoleOwner)
+	if err != nil || conv == nil {
+		t.Fatalf("load notification: %v", err)
+	}
+	if conv.Status != "open" || derefString(conv.FlowState) != model.SupportConversationFlowStateWaitingForHuman || conv.AssignedAgentID != nil || conv.AIActiveRunID != nil {
+		t.Fatalf("notification not in human inbox: %+v", conv)
+	}
+	messages, err := env.messageRepo.ListByConversation(ctx, workspaceID, conv.ID, false)
+	if err != nil || len(messages) != 1 || !model.SupportEmailSuppressesAI(&messages[0]) {
+		t.Fatalf("expected only suppressed inbound message: count=%d err=%v", len(messages), err)
+	}
+	logs, err := env.emailLogRepo.ListByConversation(ctx, workspaceID, conv.ID)
+	if err != nil || len(logs) != 1 {
+		t.Fatalf("unexpected outbound email: count=%d err=%v", len(logs), err)
 	}
 }

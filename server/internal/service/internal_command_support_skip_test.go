@@ -54,8 +54,11 @@ func TestSkipSupportReplySettlesWithoutPublicMessage(t *testing.T) {
 			if (current.Status == "spam") != (reason == "spam") {
 				t.Fatalf("incorrect status: %s", current.Status)
 			}
-			if (current.HumanTakeover != nil && *current.HumanTakeover) != (reason == "needs_review") {
+			if (current.HumanTakeover != nil && *current.HumanTakeover) != (reason != "spam") {
 				t.Fatalf("incorrect takeover: %+v", current.HumanTakeover)
+			}
+			if reason == "automated_message" && (derefString(current.FlowState) != model.SupportConversationFlowStateWaitingForHuman || current.AssignedAgentID != nil || current.AIActiveRunID != nil) {
+				t.Fatalf("notification was not handed to the human inbox: %+v", current)
 			}
 			if derefString(current.AIState) == "escalated" {
 				t.Fatal("silent decision became escalation")

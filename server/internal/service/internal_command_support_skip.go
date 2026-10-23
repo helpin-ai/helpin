@@ -43,7 +43,7 @@ func (s *InternalCommandService) registerSupportSkipReplyCommand() {
 		Name: "support.skip_reply", Module: "support", Mutating: true, SupportedTargetTypes: supportCommandTargetTypes,
 		Tool: &commandtools.RuntimeToolMetadata{
 			CommandName: "support.skip_reply", Alias: "skip_support_reply", Category: "Support",
-			Description: "Finish without contacting the sender. Use spam only for clearly unsolicited spam/phishing with no genuine customer request; automated_message for notifications with no request; needs_review for suspicious mail that a teammate should review silently. Never use this for a genuine inquiry or a customer's report of phishing. Records a short internal reason, marks only clear spam as Spam, and sends no handoff reply. End your turn after success.",
+			Description: "Finish without contacting the sender. Use spam only for clearly unsolicited spam/phishing with no genuine customer request; automated_message for notifications with no request; needs_review for suspicious mail that a teammate should review silently. Never use this for a genuine inquiry or a customer's report of phishing. Records a short internal reason, marks only clear spam as Spam, hands other mail to the human inbox, and sends no handoff reply. End your turn after success.",
 			InputSchema: map[string]any{"type": "object", "properties": map[string]any{
 				"reason":  map[string]any{"type": "string", "enum": []string{"spam", "automated_message", "needs_review"}},
 				"summary": map[string]any{"type": "string", "maxLength": 700, "description": "One brief internal sentence explaining why no reply should be sent."},
@@ -121,20 +121,18 @@ func (s *InternalCommandService) executeSupportSkipReply(ctx context.Context, me
 			return err
 		}
 		fields := map[string]any{"updated_at": time.Now().UTC()}
-		if req.Reason == "spam" || req.Reason == "needs_review" {
-			fields["ai_active_run_id"] = nil
-			fields["ai_control_version"] = conv.AIControlVersion + 1
-			fields["assigned_agent_id"] = nil
-			fields["ai_state"] = nil
-			if req.Reason == "spam" {
-				fields["status"] = "spam"
-				fields["flow_state"] = nil
-				fields["handoff_state"] = nil
-			} else {
-				fields["human_takeover"] = true
-				fields["ai_paused_at"] = time.Now().UTC()
-				fields["flow_state"] = model.SupportConversationFlowStateWaitingForHuman
-			}
+		fields["ai_active_run_id"] = nil
+		fields["ai_control_version"] = conv.AIControlVersion + 1
+		fields["assigned_agent_id"] = nil
+		fields["ai_state"] = nil
+		if req.Reason == "spam" {
+			fields["status"] = "spam"
+			fields["flow_state"] = nil
+			fields["handoff_state"] = nil
+		} else {
+			fields["human_takeover"] = true
+			fields["ai_paused_at"] = time.Now().UTC()
+			fields["flow_state"] = model.SupportConversationFlowStateWaitingForHuman
 		}
 		if err := tx.Model(&conv).Updates(fields).Error; err != nil {
 			return err
@@ -142,7 +140,7 @@ func (s *InternalCommandService) executeSupportSkipReply(ctx context.Context, me
 		title := "AI skipped reply"
 		if req.Reason == "spam" {
 			title = "AI marked as spam"
-		} else if req.Reason == "needs_review" {
+		} else {
 			title = "AI left for review without replying"
 		}
 		noteMetadata, _ := json.Marshal(map[string]any{"ai_no_reply": true, "reason": req.Reason, "source_message_ids": []string{source.ID}})
@@ -165,9 +163,7 @@ func (s *InternalCommandService) executeSupportSkipReply(ctx context.Context, me
 			ai.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "support_conversation", EntityID: conversationID, WorkspaceID: meta.WorkspaceID})
 		}
 		ai.publishTypingIndicator(ctx, meta.WorkspaceID, conversationID, false)
-		if req.Reason != "automated_message" {
-			s.closeEscalatedSupportCommandRun(ctx, meta)
-		}
+		s.closeEscalatedSupportCommandRun(ctx, meta)
 	}
 	return outcome, nil
 }
