@@ -68,6 +68,9 @@ export interface SupportGapEvidence {
   source_signal: string
   excerpt: string
   sender_role: string
+  customer_name?: string
+  customer_email?: string
+  metadata?: { customer_need?: string; ai_failure?: string } | null
   created_at: string
 }
 

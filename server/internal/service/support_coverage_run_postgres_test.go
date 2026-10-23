@@ -201,6 +201,54 @@ func TestCoverageWorkspaceRunPostgresFinishesDespiteFailedConversation(t *testin
 	}
 }
 
+// A raw event-detection gap must never absorb an analysed finding, even when
+// its embedding is identical: the finding becomes its own gap titled by the
+// customer need.
+func TestCoverageWorkspaceRunPostgresSkipsRawEventGaps(t *testing.T) {
+	db := openCoverageRunPostgres(t)
+	ctx := context.Background()
+	workspaceID, conversationID := uuid.NewString(), uuid.NewString()
+	now := time.Now().UTC()
+	seedCoverageRunWorkspace(t, db, workspaceID)
+	seedCoverageRunConversation(t, db, workspaceID, conversationID, 1, now.Add(-time.Hour))
+	vector := make([]float32, 1536)
+	vector[0] = 1
+	raw, _, err := repository.NewSupportCoverageRepository(db).UpsertOpenGapByDedupeKeyNoBump(ctx, &model.SupportCoverageGap{
+		ID: uuid.NewString(), WorkspaceID: workspaceID, DedupeKey: "raw-" + conversationID,
+		GapKind: "content", GapCategory: model.SupportCoverageGapCategoryUnknown, V1GapType: model.SupportCoverageV1GapNeedsReview,
+		Title: "Human resolved after AI failure", Status: model.SupportCoverageGapStatusOpen,
+		Metadata: []byte(`{"source":"event_detection"}`), FirstSeenAt: now, LastSeenAt: now,
+		Embedding: coverageVectorLiteral(vector), EmbeddingProvider: coverageEmbeddingProviderName,
+		EmbeddingModel: coverageEmbeddingModel(""), EmbeddingVersion: coverageGapEmbeddingVersion, EmbeddingDimensions: len(vector),
+	})
+	if err != nil {
+		t.Fatalf("seed raw gap: %v", err)
+	}
+	analyzer := NewSupportCoverageDailyAnalyzer(&conversationScriptedLLM{}, "", "").
+		SetCoverageRepositories(repository.NewSupportCoverageRepository(db), repository.NewSupportCoverageAnalysisRepository(db)).
+		SetCoverageV2Repository(repository.NewCoverageV2Repository(db)).
+		SetEmbeddingProvider(fixedCoverageEmbeddings{}, "").
+		SetConversationRepositories(repository.NewSupportConversationRepository(db), repository.NewSupportMessageRepository(db))
+
+	if err := analyzer.RunWorkspaceDailyAnalysis(ctx, workspaceID, now.Add(-24*time.Hour), now); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	var analysis model.SupportCoverageConversationAnalysis
+	if err := db.Where("workspace_id = ? AND conversation_id = ?", workspaceID, conversationID).First(&analysis).Error; err != nil {
+		t.Fatal(err)
+	}
+	if analysis.GapID == nil || *analysis.GapID == raw.ID {
+		t.Fatalf("finding attached to %v, want a new gap instead of the raw gap %s", analysis.GapID, raw.ID)
+	}
+	var gap model.SupportCoverageGap
+	if err := db.Where("id = ?", *analysis.GapID).First(&gap).Error; err != nil {
+		t.Fatal(err)
+	}
+	if gap.Title != "Billing update steps" || gap.SourceSignal != model.SupportCoverageGapSourceDailyConversationAnalysis {
+		t.Fatalf("gap title=%q source=%q, want the analysed customer need", gap.Title, gap.SourceSignal)
+	}
+}
+
 // titleCoverageEmbeddings gives "Password reset instructions" a vector at
 // cosine 0.8 from every other text: close enough to ask the judge.
 type titleCoverageEmbeddings struct{}

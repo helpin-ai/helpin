@@ -284,6 +284,9 @@ func (s *SupportCoverageService) GetGapDetail(ctx context.Context, workspaceID, 
 	detail, err := s.coverageRepo.GetGapDetail(ctx, workspaceID, gapID)
 	if detail != nil {
 		detail.ImpactTier = ImpactTier(detail.Evidence30d)
+		for i := range detail.Suggestions {
+			detail.Suggestions[i].Content = coverageSuggestionDocument(detail.Suggestions[i].Content)
+		}
 	}
 	return detail, err
 }

@@ -114,7 +114,9 @@ func (s *SupportCoverageEnrichmentService) EnrichTopic(ctx context.Context, topi
 	if err != nil {
 		return err
 	}
-	if gap == nil {
+	// Raw event-detection gaps are hidden signals; enriching them only produced
+	// untitled, empty or malformed drafts and rewrote their type every cooldown.
+	if gap == nil || coverageGapSource(gap.Metadata) == model.SupportCoverageGapSourceEventDetection {
 		return nil
 	}
 
@@ -305,6 +307,17 @@ func overlapScore(a, b map[string]struct{}) int {
 		}
 	}
 	return score
+}
+
+// coverageGapSource returns the metadata "source" a gap was created by.
+func coverageGapSource(raw json.RawMessage) string {
+	var metadata struct {
+		Source string `json:"source"`
+	}
+	if len(raw) == 0 || json.Unmarshal(raw, &metadata) != nil {
+		return ""
+	}
+	return metadata.Source
 }
 
 func emptyToNil(value string) *string {

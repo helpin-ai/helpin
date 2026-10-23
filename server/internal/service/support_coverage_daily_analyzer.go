@@ -1416,6 +1416,11 @@ func normalizeCoverageConversationAnalysisResult(result *CoverageConversationAna
 	result.HumanResolution = strings.TrimSpace(result.HumanResolution)
 	result.DecisionReason = strings.TrimSpace(result.DecisionReason)
 	result.SearchQuery = strings.TrimSpace(result.SearchQuery)
+	// Models sometimes answer on a 0–100 scale; a percentage is still a clear
+	// answer, so rescale it instead of failing the conversation.
+	if result.Confidence > 1 && result.Confidence <= 100 {
+		result.Confidence /= 100
+	}
 	if len(result.RecommendedFixes) > 3 {
 		result.RecommendedFixes = result.RecommendedFixes[:3]
 	}

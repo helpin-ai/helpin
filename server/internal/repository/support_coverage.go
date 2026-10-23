@@ -67,7 +67,7 @@ func (r *SupportCoverageRepository) ListOpenGapsForClusterRebuild(ctx context.Co
 		customerNeedExpr = "COALESCE(json_extract(latest_evidence.metadata, '$.customer_need'), '')"
 	}
 	var items []model.SupportCoverageGapListItem
-	err := r.db.WithContext(ctx).
+	q := r.db.WithContext(ctx).
 		Table("support_coverage_gaps g").
 		Select(`g.*,
 			COALESCE(t.title, '') AS topic_title,
@@ -79,7 +79,8 @@ func (r *SupportCoverageRepository) ListOpenGapsForClusterRebuild(ctx context.Co
 			(SELECT COUNT(DISTINCT COALESCE(e.conversation_id, e.id)) FROM support_gap_evidence e WHERE e.gap_id = g.id AND e.created_at > ?) AS evidence_30d`, evidenceCutoff).
 		Joins("LEFT JOIN support_coverage_topics t ON t.id = g.topic_id").
 		Joins("LEFT JOIN support_gap_evidence latest_evidence ON latest_evidence.id = (SELECT e2.id FROM support_gap_evidence e2 WHERE e2.gap_id = g.id ORDER BY e2.created_at DESC LIMIT 1)").
-		Where("g.workspace_id = ? AND g.status = ?", workspaceID, model.SupportCoverageGapStatusOpen).
+		Where("g.workspace_id = ? AND g.status = ?", workspaceID, model.SupportCoverageGapStatusOpen)
+	err := applyHideRawEventDetectionGaps(q, "g").
 		Order("g.evidence_count DESC, g.last_seen_at DESC").
 		Limit(limit).
 		Find(&items).Error
@@ -126,13 +127,14 @@ func (r *SupportCoverageRepository) ListRecentDoneGapsForRecurrence(ctx context.
 		limit = 1000
 	}
 	var items []model.SupportCoverageGapListItem
-	err := r.db.WithContext(ctx).
+	q := r.db.WithContext(ctx).
 		Table("support_coverage_gaps g").
 		Select(`g.*,
 			COALESCE(t.title, '') AS topic_title,
 			COALESCE(t.canonical_title, t.title, '') AS canonical_title`).
 		Joins("LEFT JOIN support_coverage_topics t ON t.id = g.topic_id").
-		Where("g.workspace_id = ? AND g.status = ? AND g.closed_at >= ?", workspaceID, model.SupportCoverageGapStatusDone, since).
+		Where("g.workspace_id = ? AND g.status = ? AND g.closed_at >= ?", workspaceID, model.SupportCoverageGapStatusDone, since)
+	err := applyHideRawEventDetectionGaps(q, "g").
 		Order("g.closed_at DESC, g.last_seen_at DESC").
 		Limit(limit).
 		Find(&items).Error
@@ -161,13 +163,14 @@ func (r *SupportCoverageRepository) findNearestGapsByEmbedding(ctx context.Conte
 		)
 		WHERE g.workspace_id = ?
 		  AND g.status = ?
+		  AND COALESCE(g.metadata ->> 'source', '') <> ?
 		  AND g.embedding IS NOT NULL
 		  AND g.embedding_provider = ?
 		  AND g.embedding_model = ?
 		  AND g.embedding_version = ?
 		  AND g.embedding_dimensions = ?
 	`
-	args := []interface{}{evidenceCutoff, workspaceID, status, provider, modelName, version, dimensions}
+	args := []interface{}{evidenceCutoff, workspaceID, status, model.SupportCoverageGapSourceEventDetection, provider, modelName, version, dimensions}
 	if closedSince != nil {
 		baseSQL += " AND g.closed_at >= ?"
 		args = append(args, *closedSince)
@@ -884,21 +887,18 @@ func applyCoverageConversationFilter(q *gorm.DB, tableAlias, conversationID stri
 		WHERE ce.gap_id = %s.id AND ce.workspace_id = %s.workspace_id AND ce.conversation_id = ?)`, tableAlias, tableAlias), conversationID)
 }
 
+// applyRawEventDetectionGaps selects (or, with hide, excludes) gaps created
+// straight from support events. Their titles are rule placeholders such as
+// "Human resolved after AI failure" and their topics are reply text, so they
+// are signals for the conversation analysis, never gaps to show or match.
+// Background enrichment rewrites their type and confidence, so the source is
+// the only reliable marker.
 func applyRawEventDetectionGaps(q *gorm.DB, tableAlias string, hide bool) *gorm.DB {
 	prefix := ""
 	if hide {
 		prefix = "NOT "
 	}
-	return q.Where(
-		prefix+fmt.Sprintf(`(%s AND %s.v1_gap_type = ? AND %s.confidence < ?)`,
-			metadataSourceEqualsCondition(q, tableAlias),
-			tableAlias,
-			tableAlias,
-		),
-		model.SupportCoverageGapSourceEventDetection,
-		model.SupportCoverageV1GapNeedsReview,
-		0.7,
-	)
+	return q.Where(prefix+"("+metadataSourceEqualsCondition(q, tableAlias)+")", model.SupportCoverageGapSourceEventDetection)
 }
 
 func metadataSourceEqualsCondition(q *gorm.DB, tableAlias string) string {
@@ -969,8 +969,11 @@ func (r *SupportCoverageRepository) GetGapDetail(ctx context.Context, workspaceI
 	var evidence []model.SupportGapEvidenceView
 	if err := r.db.WithContext(ctx).
 		Table("support_gap_evidence AS e").
-		Select("e.*, COALESCE(sm.sender_type, '') AS sender_role").
+		Select(`e.*, COALESCE(sm.sender_type, '') AS sender_role,
+			COALESCE(sc.customer_name, '') AS customer_name,
+			COALESCE(sc.customer_email, '') AS customer_email`).
 		Joins("LEFT JOIN support_messages sm ON sm.id = e.message_id AND sm.workspace_id = e.workspace_id").
+		Joins("LEFT JOIN support_conversations sc ON sc.id = e.conversation_id AND sc.workspace_id = e.workspace_id").
 		Where("e.gap_id = ? AND e.workspace_id = ?", gapID, workspaceID).
 		Order("e.created_at DESC").
 		Limit(50).

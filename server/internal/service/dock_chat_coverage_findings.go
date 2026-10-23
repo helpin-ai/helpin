@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -55,15 +56,17 @@ func coverageDockFindings(detail *model.SupportCoverageGapDetail) *model.DockCon
 		analysis = append(analysis, joinCoverageFindingParts(fields))
 	}
 	sources, refs := coverageDockSources(detail)
-	total := detail.EvidenceAll
-	if total == 0 {
-		total = detail.EvidenceCount
+	shown := 0
+	for _, source := range sources {
+		if source.Reference != nil && source.Reference.EntityType == "support_conversation" {
+			shown++
+		}
 	}
 	sourceSummary := ""
-	if len(detail.Evidence) < total {
-		sourceSummary = fmt.Sprintf("Showing the latest %d of %d evidence records.", len(detail.Evidence), total)
+	if shown > 0 && shown < detail.ConversationsAll {
+		sourceSummary = fmt.Sprintf("Showing the latest %d of %d conversations.", shown, detail.ConversationsAll)
 	} else if len(detail.Evidence) == 0 {
-		sourceSummary = "No source excerpts are available for this gap."
+		sourceSummary = "No source conversations are available for this gap."
 	}
 	capturedAt := detail.LastSeenAt
 	if capturedAt.IsZero() {
@@ -83,23 +86,31 @@ func coverageDockSources(detail *model.SupportCoverageGapDetail) ([]model.DockCo
 	}
 	sources := make([]model.DockContextSource, 0, len(detail.Evidence)+len(detail.RelatedArticles))
 	seenDocuments := map[string]bool{}
-	for index, evidence := range detail.Evidence {
-		source := model.DockContextSource{ID: evidence.ID, Label: coverageDockEvidenceLabel(evidence.EvidenceType), Content: evidence.Excerpt}
-		if evidence.MessageID != nil {
-			roles := map[string]string{"ai": "AI reply", "user": "Team reply", "agent": "Team reply", "customer": "Customer message", "visitor": "Customer message"}
-			source.Label = firstNonEmptyCoverageContext(roles[evidence.SenderRole], "Message")
+	conversationSource := map[string]int{}
+	conversationEvidence := map[string][]model.SupportGapEvidenceView{}
+	for _, evidence := range detail.Evidence {
+		if evidence.ConversationID != nil {
+			id := *evidence.ConversationID
+			if _, seen := conversationSource[id]; !seen {
+				conversationSource[id] = len(sources)
+				sources = append(sources, model.DockContextSource{})
+			}
+			conversationEvidence[id] = append(conversationEvidence[id], evidence)
+			continue
 		}
+		source := model.DockContextSource{ID: evidence.ID, Label: coverageDockEvidenceLabel(evidence.EvidenceType), Content: evidence.Excerpt}
 		if !evidence.CreatedAt.IsZero() {
 			capturedAt := evidence.CreatedAt
 			source.CapturedAt = &capturedAt
 		}
-		if evidence.ConversationID != nil {
-			source.Reference = &model.DockEntityReference{EntityType: "support_conversation", EntityID: *evidence.ConversationID, DisplayTitle: coverageDockSourceTitle(evidence.Excerpt, fmt.Sprintf("Conversation %d", index+1))}
-		} else if evidence.DocumentID != nil {
+		if evidence.DocumentID != nil {
 			seenDocuments[*evidence.DocumentID] = true
 			source.Reference = &model.DockEntityReference{EntityType: "document", EntityID: *evidence.DocumentID, DisplayTitle: firstNonEmptyCoverageContext(articleTitles[*evidence.DocumentID], "Source article")}
 		}
 		sources = append(sources, source)
+	}
+	for id, index := range conversationSource {
+		sources[index] = coverageDockConversationSource(id, conversationEvidence[id])
 	}
 	for _, article := range detail.RelatedArticles {
 		if seenDocuments[article.DocumentID] {
@@ -128,13 +139,87 @@ func coverageDockSources(detail *model.SupportCoverageGapDetail) ([]model.DockCo
 	return sources, refs
 }
 
+// coverageDockConversationSource summarizes one source conversation — who
+// asked, what they needed and why the AI could not resolve it — instead of
+// replaying its messages. Items arrive newest first.
+func coverageDockConversationSource(conversationID string, items []model.SupportGapEvidenceView) model.DockContextSource {
+	var need, failure, customerMessage, earliestExcerpt, name, email string
+	var latest time.Time
+	for _, evidence := range items {
+		if evidence.CreatedAt.After(latest) {
+			latest = evidence.CreatedAt
+		}
+		name = firstNonEmptyCoverageContext(name, strings.TrimSpace(evidence.CustomerName))
+		email = firstNonEmptyCoverageContext(email, strings.TrimSpace(evidence.CustomerEmail))
+		if need == "" && failure == "" {
+			need, failure = coverageEvidenceExplanation(evidence.Metadata)
+		}
+		excerpt := strings.Join(strings.Fields(evidence.Excerpt), " ")
+		if excerpt == "" {
+			continue
+		}
+		earliestExcerpt = excerpt
+		if evidence.MessageID != nil && (evidence.SenderRole == "customer" || evidence.SenderRole == "visitor") {
+			customerMessage = excerpt
+		}
+	}
+	asked := firstNonEmptyCoverageContext(customerMessage, earliestExcerpt)
+	parts := []string{}
+	if need != "" {
+		parts = append(parts, "**Summary:** "+need)
+	} else if asked != "" {
+		parts = append(parts, "**Customer asked:** "+coverageDockTruncate(asked, 280))
+	}
+	if failure != "" {
+		parts = append(parts, "**Why the AI couldn't solve it:** "+failure)
+	}
+	label := "Customer"
+	switch {
+	case name != "" && email != "" && !strings.EqualFold(name, email):
+		label = name + " · " + email
+	case name != "" || email != "":
+		label = firstNonEmptyCoverageContext(name, email)
+	}
+	source := model.DockContextSource{
+		ID:      "conversation:" + conversationID,
+		Label:   label,
+		Content: strings.Join(parts, "\n\n"),
+		Reference: &model.DockEntityReference{
+			EntityType:   "support_conversation",
+			EntityID:     conversationID,
+			DisplayTitle: coverageDockSourceTitle(firstNonEmptyCoverageContext(need, asked), "Conversation"),
+		},
+	}
+	if !latest.IsZero() {
+		source.CapturedAt = &latest
+	}
+	return source
+}
+
+// coverageEvidenceExplanation reads the analysis summary stored on
+// daily-analysis evidence.
+func coverageEvidenceExplanation(raw json.RawMessage) (need, failure string) {
+	var metadata struct {
+		CustomerNeed string `json:"customer_need"`
+		AIFailure    string `json:"ai_failure"`
+	}
+	if len(raw) == 0 || json.Unmarshal(raw, &metadata) != nil {
+		return "", ""
+	}
+	return strings.TrimSpace(metadata.CustomerNeed), strings.TrimSpace(metadata.AIFailure)
+}
+
 func coverageDockSourceTitle(excerpt, fallback string) string {
 	text := strings.Join(strings.Fields(strings.NewReplacer("#", "", "*", "", "_", "", "`", "", ">", "").Replace(excerpt)), " ")
+	return firstNonEmptyCoverageContext(coverageDockTruncate(text, 90), fallback)
+}
+
+func coverageDockTruncate(text string, limit int) string {
 	runes := []rune(text)
-	if len(runes) > 90 {
-		return strings.TrimSpace(string(runes[:87])) + "…"
+	if len(runes) > limit {
+		return strings.TrimSpace(string(runes[:limit-3])) + "…"
 	}
-	return firstNonEmptyCoverageContext(text, fallback)
+	return text
 }
 
 func coverageDockEvidenceLabel(kind string) string {
