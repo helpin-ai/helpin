@@ -17,9 +17,7 @@ const (
 )
 
 const (
-	coverageRolloutFailureRateGate = 0.05
-	coverageRolloutPrecisionGate   = 0.95
-	coverageRolloutMinAttempts     = 20
+	coverageRolloutPrecisionGate = 0.95
 )
 
 type CoverageRolloutMetrics struct {
@@ -114,9 +112,9 @@ func (p *CoverageRolloutPolicy) Evaluate(workspaceID string, metrics CoverageRol
 	if !decision.CaptureEnabled {
 		return decision
 	}
-	if metrics.AttemptCount >= coverageRolloutMinAttempts && float64(metrics.TerminalFailureCount)/float64(metrics.AttemptCount) > coverageRolloutFailureRateGate {
-		decision.PauseReasons = append(decision.PauseReasons, "terminal_failure_rate")
-	}
+	// Model failures are isolated to individual conversations. They must not
+	// disable validated findings, existing topic reads, or manual recovery.
+	// Only assignment integrity/quality violations pause rollout.
 	if metrics.DuplicateIdempotencyViolations > 0 {
 		decision.PauseReasons = append(decision.PauseReasons, "duplicate_idempotency_violation")
 	}

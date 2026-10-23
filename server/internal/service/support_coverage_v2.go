@@ -16,8 +16,8 @@ type CoverageTopicDetailV2 struct {
 }
 
 // CoveragePipelineHealth explains whether coverage analysis is working. Healthy
-// means nothing needs a person: failures that will retry on their own do not
-// count, and only the latest batch is considered.
+// means nothing needs a person: retryable failures do not count, but unresolved
+// failures from earlier batches and assignment safety pauses do.
 type CoveragePipelineHealth struct {
 	ReanalysisStatus  string                          `json:"reanalysis_status,omitempty"`
 	ReanalysisAttempt int32                           `json:"reanalysis_attempt,omitempty"`
@@ -144,12 +144,9 @@ func (s *SupportCoverageV2Service) PipelineHealth(ctx context.Context, workspace
 	if err != nil {
 		return nil, err
 	}
-	var failures []model.CoverageAnalysisAttempt
-	if batch != nil {
-		failures, err = s.repo.ListFailedAttemptsForBatch(ctx, workspaceID, batch.ID, 25)
-		if err != nil {
-			return nil, err
-		}
+	failures, err := s.repo.ListFailedAttempts(ctx, workspaceID, 25)
+	if err != nil {
+		return nil, err
 	}
 	rollout, err := s.rolloutDecision(ctx, workspaceID)
 	if err != nil {
@@ -159,9 +156,7 @@ func (s *SupportCoverageV2Service) PipelineHealth(ctx context.Context, workspace
 	if err != nil {
 		return nil, err
 	}
-	// Rollout pauses only hold back v2 topic assignment; they stay visible in
-	// Rollout but do not make the gap analysis unhealthy.
-	healthy := run.Status != "failed" &&
+	healthy := len(rollout.PauseReasons) == 0 && run.Status != "failed" &&
 		(batch == nil || batch.Status != model.CoverageBatchFailed) && !coverageFailuresNeedPerson(failures)
 	schedule := s.scheduleState(ctx)
 	return &CoveragePipelineHealth{

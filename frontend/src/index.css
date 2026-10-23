@@ -1706,3 +1706,40 @@
     z-index: 55 !important;
   }
 }
+
+/* ── Inbox cleared celebration ─────────────────────────────────────────────
+   Shown in the thread pane when the viewer's own action empties an inbox.
+   The rarity tints the badge, the tone label and a faint glow; motion is
+   dropped entirely for reduced-motion users. */
+.inbox-cleared { --inbox-cleared-tint: var(--quiet-text-tertiary); }
+.inbox-cleared[data-rarity='rare'] { --inbox-cleared-tint: var(--quiet-positive); }
+.inbox-cleared[data-rarity='epic'] { --inbox-cleared-tint: var(--quiet-lifecycle); }
+.inbox-cleared[data-rarity='legendary'] { --inbox-cleared-tint: var(--quiet-accent); }
+.inbox-cleared::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(60% 50% at 50% 42%, color-mix(in oklab, var(--inbox-cleared-tint) 9%, transparent), transparent 70%);
+}
+.inbox-cleared-seal, .inbox-cleared-tone { color: var(--inbox-cleared-tint); }
+.inbox-cleared-orbit { fill: none; stroke: currentColor; stroke-width: 1; stroke-dasharray: 2 5; opacity: 0; transform-origin: 48px 48px; }
+.inbox-cleared[data-rarity='epic'] .inbox-cleared-orbit,
+.inbox-cleared[data-rarity='legendary'] .inbox-cleared-orbit { opacity: .55; animation: inbox-cleared-orbit 14s linear infinite; }
+.inbox-cleared-tick { stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; transform-origin: 48px 48px; animation: inbox-cleared-pop .5s calc(.42s + var(--i) * 26ms) cubic-bezier(.2, .9, .3, 1.5) both; }
+.inbox-cleared-ring { fill: none; stroke: currentColor; stroke-width: 1.25; opacity: .35; transform-origin: 48px 48px; animation: inbox-cleared-ring .9s .1s cubic-bezier(.2, .8, .2, 1) both; }
+.inbox-cleared-disc { fill: color-mix(in oklab, currentColor 10%, var(--quiet-surface)); stroke: currentColor; stroke-width: 1.5; transform-origin: 48px 48px; animation: inbox-cleared-seal .6s cubic-bezier(.2, .9, .3, 1.35) both; }
+.inbox-cleared-check { fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 44; animation: inbox-cleared-draw .42s .34s cubic-bezier(.65, 0, .35, 1) both; }
+.inbox-cleared-tone { animation: inbox-cleared-rise .4s .5s ease both; }
+.inbox-cleared-word { animation: inbox-cleared-word .5s calc(.58s + var(--i) * 45ms) cubic-bezier(.2, .8, .2, 1) both; }
+.inbox-cleared-body { animation: inbox-cleared-rise .5s .9s ease both; }
+@keyframes inbox-cleared-seal { from { opacity: 0; transform: scale(.2); } to { opacity: 1; transform: scale(1); } }
+@keyframes inbox-cleared-ring { from { opacity: 0; transform: scale(.6); } 60% { opacity: .5; } to { opacity: .35; transform: scale(1); } }
+@keyframes inbox-cleared-draw { from { stroke-dashoffset: 44; } to { stroke-dashoffset: 0; } }
+@keyframes inbox-cleared-pop { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: scale(1); } }
+@keyframes inbox-cleared-orbit { to { transform: rotate(360deg); } }
+@keyframes inbox-cleared-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes inbox-cleared-word { from { opacity: 0; transform: translateY(.45em); filter: blur(3px); } to { opacity: 1; transform: none; filter: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .inbox-cleared *, .inbox-cleared *::before { animation: none !important; }
+}

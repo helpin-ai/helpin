@@ -2,6 +2,7 @@ import { addDays, isSameDay } from 'date-fns'
 import type { CoveragePipelineHealthV2 } from '@/lib/supportCoverageTypes'
 
 const MAX_ANALYSIS_ATTEMPTS = 3
+const assignmentPausedDescription = 'A safety check has paused some coverage updates. An administrator needs to resolve the pause.'
 
 export interface CoverageNextRun {
   at: string
@@ -73,13 +74,19 @@ export function coverageHealthPresentation(health: CoveragePipelineHealthV2) {
   if (health.latest_batch?.status === 'queued' || health.reanalysis_status === 'queued') {
     return { title: 'Analysis queued', description: '' }
   }
+  if (health.rollout.pause_reasons?.length) {
+    return { title: 'Coverage needs attention', description: assignmentPausedDescription }
+  }
   if (needsAttention(health)) {
     return { title: 'Analysis needs attention', description: attentionDescription(health) }
   }
   if (!health.latest_batch) {
     return { title: 'Waiting for the first analysis', description: 'Eligible conversations are checked automatically.' }
   }
-  return { title: 'Analysis completed', description: retryLaterDescription(health) }
+  if (health.failures.length > 0 || health.latest_batch.status === 'partial_failed') {
+    return { title: 'Analysis partially completed', description: retryLaterDescription(health) }
+  }
+  return { title: 'Analysis completed', description: '' }
 }
 
 export interface CoverageAnalysisControlState {
@@ -108,13 +115,15 @@ export function coverageAnalysisControl(health: CoveragePipelineHealthV2 | null,
   if (submitting || health.reanalysis_status === 'queued' || health.latest_batch?.status === 'queued') {
     return { pill: 'Queued', disabled: true, description: 'Analysis is queued and will start when a worker is available.' }
   }
-  // The server refuses a manual run while a rollout check is paused, but the
-  // automatic analysis keeps running, so the page shows the next run instead.
+  // A safety pause must be visible even when conversation analysis continues.
   if (health.rollout.pause_reasons?.length) {
-    return { pill: null, disabled: true, description: 'Re-analyze is unavailable until recent analysis failures clear. Automatic analysis keeps running.' }
+    return { pill: 'Coverage needs attention', disabled: true, description: assignmentPausedDescription, inline: true, tone: 'warning' }
   }
   if (needsAttention(health)) {
     return { pill: 'Needs attention', disabled: false, description: attentionDescription(health), inline: true, tone: 'error' }
+  }
+  if (health.failures.some(failure => failure.status === 'retryable') && health.schedule_status !== 'missing') {
+    return { pill: 'Retry pending', disabled: false, description: retryLaterDescription(health), inline: true, tone: 'warning' }
   }
   if (health.schedule_status === 'missing') {
     return { pill: 'Not scheduled', disabled: false, description: 'Automatic analysis is not scheduled, so new conversations are not being checked. An administrator needs to restart the API to restore it. Re-analyze still works.', inline: true, tone: 'warning' }

@@ -1,16 +1,7 @@
 import { type QueryBuilderFieldDefinition } from '@/lib/queryBuilder';
-import type { LifecycleStage, LeadStatus } from '@/lib/crmTypes';
+import type { LeadStatus } from '@/lib/crmTypes';
 import type { AssignableMember } from '@/lib/types';
-
-const LIFECYCLE_STAGES: Array<{ value: LifecycleStage; label: string }> = [
-  { value: 'subscriber', label: 'Subscriber' },
-  { value: 'lead', label: 'Lead' },
-  { value: 'marketing_qualified', label: 'Marketing Qualified' },
-  { value: 'sales_qualified', label: 'Sales Qualified' },
-  { value: 'opportunity', label: 'Opportunity' },
-  { value: 'customer', label: 'Customer' },
-  { value: 'evangelist', label: 'Evangelist' },
-];
+import { LIFECYCLE_STAGE_OPTIONS } from '@/lib/crmLifecycle';
 
 const LEAD_STATUSES: Array<{ value: LeadStatus; label: string }> = [
   { value: 'new', label: 'New' },
@@ -56,7 +47,7 @@ export function buildCRMContactQueryFields(assignableMembers: AssignableMember[]
       label: 'Lifecycle stage',
       type: 'enum',
       placeholder: 'Select lifecycle stage',
-      options: LIFECYCLE_STAGES,
+      options: LIFECYCLE_STAGE_OPTIONS,
     },
     {
       field: 'lead_status',

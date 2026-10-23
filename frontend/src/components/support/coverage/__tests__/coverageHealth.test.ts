@@ -28,11 +28,11 @@ describe('coverage analysis status', () => {
     value.rollout.requested_mode = 'disabled'
     expect(coverageHealthPresentation(value).title).toBe('Analysis not enabled')
   })
-  it('does not report a topic rollout pause as paused analysis', () => {
+  it('shows a paused assignment pipeline even when analysis finished', () => {
     const value = health('succeeded')
     value.rollout.assignment_enabled = false
     value.rollout.pause_reasons = ['terminal_failure_rate']
-    expect(coverageHealthPresentation(value).title).toBe('Analysis completed')
+    expect(coverageHealthPresentation(value).title).toBe('Coverage needs attention')
   })
   it('does not report success while attempts need a person', () => {
     const value = health('partial_failed')
@@ -42,16 +42,16 @@ describe('coverage analysis status', () => {
     expect(state.title).toBe('Analysis needs attention')
     expect(state.description).toContain('1 conversation could not be analyzed after 3 tries')
   })
-  it('treats conversations that retry automatically as a completed run', () => {
+  it('shows a partial run while failed conversations await retry', () => {
     const value = health('partial_failed')
     value.failures = [
       { id: 'a', status: 'retryable' },
       { id: 'b', status: 'retryable' },
     ] as CoveragePipelineHealthV2['failures']
     const state = coverageHealthPresentation(value)
-    expect(state.title).toBe('Analysis completed')
+    expect(state.title).toBe('Analysis partially completed')
     expect(state.description).toBe('2 conversations will be retried in the next run.')
-    expect(coverageAnalysisControl(value).pill).toBeNull()
+    expect(coverageAnalysisControl(value)).toMatchObject({ pill: 'Retry pending', disabled: false, inline: true, tone: 'warning' })
   })
 })
 
@@ -65,10 +65,10 @@ describe('compact analysis control', () => {
   expect(coverageAnalysisControl(value)).toMatchObject({pill:'Queued',disabled:true})
   expect(coverageAnalysisControl({...value,reanalysis_status:'running'})).toMatchObject({pill:'Analyzing',disabled:true})
  })
- it('holds manual runs during a rollout pause without a paused pill', () => {
+ it('makes a rollout pause visible instead of silently disabling recovery', () => {
   const value=health('succeeded'); value.rollout.pause_reasons=['terminal_failure_rate']
-  expect(coverageAnalysisControl(value)).toMatchObject({pill:null,disabled:true})
-  expect(coverageAnalysisControl(value).description).toContain('Automatic analysis keeps running')
+  expect(coverageAnalysisControl(value)).toMatchObject({pill:'Coverage needs attention',disabled:true,inline:true,tone:'warning'})
+  expect(coverageAnalysisControl(value).description).toContain('A safety check has paused some coverage updates')
   expect(coverageAnalysisControl({...value,reanalysis_status:'running'}).pill).toBe('Analyzing')
  })
  it('allows retry after failure but blocks unknown/disabled states', () => {

@@ -2008,6 +2008,9 @@ func main() {
 			service.NewSupportCoverageDraftService(supportCoverageRepo, docsDocumentService, docsContentService, docsVersionService, llmProvider),
 			supportCoverageClusterRebuildService,
 		).SetCoverageV2Service(service.NewSupportCoverageV2Service(supportCoverageV2Repo).SetRolloutPolicy(supportCoverageRolloutPolicy).SetTemporalClient(temporalClient)),
+		SupportInboxClear: handler.NewSupportInboxClearHandler(
+			service.NewSupportInboxClearService(repository.NewSupportInboxClearRepository(db)),
+		),
 		TLSAsk: handler.NewTLSAskHandler(tlsAskService),
 	}
 

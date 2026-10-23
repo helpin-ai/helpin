@@ -7,6 +7,7 @@ import type {
   SupportConversationUserState,
   SupportMessage,
   SupportMessagePage,
+  SupportSharedItem,
   CreateConversationRequest,
   CreateConversationWithMessageRequest,
   CreateConversationWithMessageResponse,
@@ -68,6 +69,8 @@ import type {
   SupportConversationSearchParams,
   SupportConversationSearchResponse,
   SendSupportConversationTranscriptResponse,
+  RecordSupportInboxClearRequest,
+  SupportInboxClearStats,
 } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -231,6 +234,8 @@ export const supportService = {
       `/support/inbox/conversations/${conversationId}/message-pages${qs(workspaceId)}&limit=${limit}${cursorQuery}`,
     );
   },
+  listConversationSharedItems: (workspaceId: string, conversationId: string) =>
+    api.get<SupportSharedItem[]>(`/support/inbox/conversations/${conversationId}/shared-items${qs(workspaceId)}`),
   sendConversationTranscript: (workspaceId: string, conversationId: string, payload: { email?: string; update_customer_email?: boolean }) =>
     api.post<SendSupportConversationTranscriptResponse>(`/support/inbox/conversations/${conversationId}/transcript${qs(workspaceId)}`, payload),
   createConversationMessage: (workspaceId: string, conversationId: string, payload: CreateMessageRequest) =>
@@ -263,6 +268,8 @@ export const supportService = {
 
   updateConversationStatus: (workspaceId: string, conversationId: string, status: ConversationStatus) =>
     api.put<SupportConversation>(`/support/inbox/conversations/${conversationId}/status${qs(workspaceId)}`, { status }),
+  recordInboxClear: (workspaceId: string, payload: RecordSupportInboxClearRequest) =>
+    api.post<SupportInboxClearStats>(`/support/inbox-clears${qs(workspaceId)}`, payload),
   linkConversationTask: (workspaceId: string, conversationId: string, payload: LinkTaskRequest) =>
     api.post(`/support/inbox/conversations/${conversationId}/link-task${qs(workspaceId)}`, payload),
   createTaskFromConversation: (

@@ -4,14 +4,16 @@ import { ConversationMergeDialog } from './ConversationMergeDialog';
 import { ConversationHistoryDialog } from './ConversationMergeHistory';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { MoreHorizontalIcon } from '@/lib/icons';
 import type { VisitorOtherConversation } from '@/lib/pmTypes';
 import { Link } from '@tanstack/react-router';
 import {
-  ArrowLeftRightIcon,
+  CheckmarkCircle02Icon,
+  CircleIcon,
+  Clock03Icon,
+  GitMergeIcon,
   GlobeIcon,
-  Message01Icon,
-  UserIcon,
+  MoreHorizontalIcon,
+  OctagonXIcon,
   ChromeIcon,
   LaptopIcon,
   SmartPhone01Icon,
@@ -21,14 +23,16 @@ import {
   Link01Icon,
   LanguageCircleIcon,
 } from '@/lib/icons';
-import { Badge } from '@/components/ui/badge';
+import { quietRelatedItemTitleClassName } from '@/components/design-system/quiet';
 import { CollapsibleSection } from '@/components/ui/collapsible-section';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { STATUS_LABELS } from './constants';
 import { useConversation, useVisitorContext } from '@/hooks/queries/useSupport';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { isSystemCRMCustomProperty } from '@/lib/crmCustomProperties';
 import type { ConversationStatus } from '@/lib/pmTypes';
+import { cn } from '@/lib/utils';
 
 interface SidebarVisitorContextProps {
   workspaceId: string;
@@ -71,22 +75,6 @@ function BrowserIcon({ browser }: { browser: string }) {
     default: return <GlobeIcon className="h-3 w-3" />;
   }
 }
-
-const LIFECYCLE_COLORS: Record<string, string> = {
-  subscriber: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
-  lead: 'bg-blue-100 text-blue-700 dark:bg-blue-950/30 dark:text-blue-400',
-  opportunity: 'bg-amber-100 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400',
-  customer: 'bg-green-100 text-green-700 dark:bg-green-950/30 dark:text-green-400',
-  evangelist: 'bg-purple-100 text-purple-700 dark:bg-purple-950/30 dark:text-purple-400',
-  other: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
-};
-
-const CHANNEL_LABELS: Record<string, string> = {
-  widget: 'Chat',
-  email: 'Email',
-  api: 'API',
-  internal: 'Internal',
-};
 
 function formatLocalTime(timezone?: string | null): string | null {
   if (!timezone) return null;
@@ -188,20 +176,43 @@ function MainInfoRow({
   );
 }
 
+/** Contact details: the person's own CRM fields. Lifecycle lives in the identity card. */
 export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVisitorContextProps) {
   const { data, isLoading } = useVisitorContext(workspaceId, conversationId);
-  const { data: conversation } = useConversation(workspaceId, conversationId);
+
+  if (isLoading || !data?.contact) return null;
+
+  const { contact } = data;
+  const customProperties = Object.entries(contact.custom_properties ?? {})
+    .filter(([key]) => !isSystemCRMCustomProperty(key))
+    .map(([key, value]) => [key, formatUnknownValue(value)] as const)
+    .filter(([, value]) => value !== null);
+  if (!contact.job_title && !contact.phone && customProperties.length === 0) return null;
+
+  return (
+    <CollapsibleSection title="Contact details" count={0} persistKey="support-details.contact">
+      <div className="space-y-2">
+        {contact.job_title && <InfoRow label="Job title" value={contact.job_title} />}
+        {contact.phone && <InfoRow label="Phone" value={contact.phone} />}
+        {customProperties.map(([key, value]) => (
+          <InfoRow key={key} label={key.replaceAll('_', ' ')} value={value} />
+        ))}
+      </div>
+    </CollapsibleSection>
+  );
+}
+
+/** Session details: the visitor's latest browsing session for this conversation. */
+export function SidebarSessionDetails({ workspaceId, conversationId }: SidebarVisitorContextProps) {
+  const { data, isLoading } = useVisitorContext(workspaceId, conversationId);
 
   if (isLoading || !data) return null;
 
-  const { device, location, contact } = data;
-
+  const { device, location } = data;
   const hasDevice = device && device.browser !== 'Unknown';
   const locationText = [location?.city_name, location?.region_name, location?.country_name].filter(Boolean).join(', ');
   const localTime = formatLocalTime(location?.timezone);
   const language = formatLocale(location?.locale);
-  const channel = conversation?.source;
-  const channelLabel = channel ? CHANNEL_LABELS[channel] ?? channel : null;
   const currentPage = location?.last_page_url;
   const deviceType = device?.device_type ? `${device.device_type.slice(0, 1).toUpperCase()}${device.device_type.slice(1)}` : null;
   const browserAndOS = device
@@ -211,62 +222,33 @@ export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVi
       ].filter(Boolean).join(' · ')
     : null;
 
-  const hasMainInfo = !!(locationText || localTime || language || channelLabel || currentPage || hasDevice);
-  const hasContact = !!contact;
-  if (!hasDevice && !hasMainInfo && !hasContact) return null;
+  if (!locationText && !localTime && !language && !currentPage && !hasDevice) return null;
 
   return (
-    <CollapsibleSection title="Contact Details" icon={UserIcon} count={0} defaultOpen>
+    <CollapsibleSection title="Session details" count={0} persistKey="support-details.session">
       <div className="space-y-2">
-        {contact?.job_title && <InfoRow label="Job title" value={contact.job_title} />}
-        {contact?.lifecycle_stage && (
-          <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-[12px]">
-            <span className="text-muted-foreground">Lifecycle</span>
-            <span>
-              <Badge variant="secondary" className={`h-4 rounded-full px-1.5 text-[10px] font-medium ${LIFECYCLE_COLORS[contact.lifecycle_stage] ?? LIFECYCLE_COLORS.other}`}>
-                {contact.lifecycle_stage}
-              </Badge>
-            </span>
-          </div>
+        {currentPage && (
+          <MainInfoRow
+            label="Current page"
+            icon={<Link01Icon className="h-3.5 w-3.5" />}
+            value={currentPage.replace(/^https?:\/\//, '')}
+            href={currentPage}
+          />
         )}
-        {contact?.lead_status && <InfoRow label="Lead status" value={contact.lead_status.replaceAll('_', ' ')} />}
-        {contact?.phone && <InfoRow label="Phone" value={contact.phone} />}
-        {contact?.custom_properties && Object.entries(contact.custom_properties)
-          .filter(([key]) => !isSystemCRMCustomProperty(key))
-          .map(([key, value]) => (
-            <InfoRow key={key} label={key.replaceAll('_', ' ')} value={formatUnknownValue(value)} />
-          ))}
-
-        {hasMainInfo && (
-          <>
-            <div className="pt-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Current visit</div>
-            {channelLabel && (
-              <MainInfoRow label="Channel" icon={<ArrowLeftRightIcon className="h-3.5 w-3.5" />} value={channelLabel} />
-            )}
-            {currentPage && (
-              <MainInfoRow
-                label="Current page"
-                icon={<Link01Icon className="h-3.5 w-3.5" />}
-                value={currentPage.replace(/^https?:\/\//, '')}
-                href={currentPage}
-              />
-            )}
-            {locationText && (
-              <MainInfoRow label="Location" icon={<MapPinIcon className="h-3.5 w-3.5" />} value={locationText} />
-            )}
-            {localTime && (
-              <MainInfoRow label="Local time" icon={<Clock01Icon className="h-3.5 w-3.5" />} value={localTime} />
-            )}
-            {language && (
-              <MainInfoRow label="Language" icon={<LanguageCircleIcon className="h-3.5 w-3.5" />} value={language} />
-            )}
-            {hasDevice && deviceType && (
-              <MainInfoRow label="Device" icon={<DeviceIcon type={device.device_type} />} value={deviceType} />
-            )}
-            {hasDevice && browserAndOS && (
-              <MainInfoRow label="Browser and OS" icon={<BrowserIcon browser={device.browser} />} value={browserAndOS} />
-            )}
-          </>
+        {locationText && (
+          <MainInfoRow label="Location" icon={<MapPinIcon className="h-3.5 w-3.5" />} value={locationText} />
+        )}
+        {localTime && (
+          <MainInfoRow label="Local time" icon={<Clock01Icon className="h-3.5 w-3.5" />} value={localTime} />
+        )}
+        {language && (
+          <MainInfoRow label="Language" icon={<LanguageCircleIcon className="h-3.5 w-3.5" />} value={language} />
+        )}
+        {hasDevice && deviceType && (
+          <MainInfoRow label="Device" icon={<DeviceIcon type={device.device_type} />} value={deviceType} />
+        )}
+        {hasDevice && browserAndOS && (
+          <MainInfoRow label="Browser and OS" icon={<BrowserIcon browser={device.browser} />} value={browserAndOS} />
         )}
       </div>
     </CollapsibleSection>
@@ -285,23 +267,47 @@ export function SidebarOtherConversations({ workspaceId, conversationId }: Sideb
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   if (isLoading || !data || data.other_conversations.length === 0) return null;
   return (
-    <CollapsibleSection key={`${workspaceId}:${conversationId}`} autoOpenWhenPopulated title="Other Conversations" icon={Message01Icon} count={Math.max(data.total_conversations - 1, data.other_conversations.length)}>
-      <div className="max-h-[240px] space-y-1.5 overflow-y-auto pr-1">
+    <CollapsibleSection key={`${workspaceId}:${conversationId}`} autoOpenWhenPopulated persistKey="support-details.recent-conversations" title="Recent conversations" count={Math.max(data.total_conversations - 1, data.other_conversations.length)}>
+      <div className="max-h-[240px] space-y-0.5 overflow-y-auto">
         {data.other_conversations.map((conv) => <RelatedConversationRow key={conv.id} workspaceId={workspaceId} currentId={conversationId} conversation={conv} slug={workspace?.slug ?? ''} />)}
       </div>
     </CollapsibleSection>
   );
 }
 
+type RelatedConversationState = ConversationStatus | 'merged';
+
+const RELATED_CONVERSATION_STATUS: Record<RelatedConversationState, { icon: React.ElementType; className: string }> = {
+  open: { icon: CircleIcon, className: 'text-blue-500 dark:text-blue-400' },
+  waiting_on_customer: { icon: Clock03Icon, className: 'text-purple-500 dark:text-purple-400' },
+  resolved: { icon: CheckmarkCircle02Icon, className: 'text-emerald-600 dark:text-emerald-400' },
+  spam: { icon: OctagonXIcon, className: 'text-red-500 dark:text-red-400' },
+  merged: { icon: GitMergeIcon, className: 'text-muted-foreground' },
+};
+
 function RelatedConversationRow({ workspaceId, currentId, conversation: c, slug }: { workspaceId: string; currentId: string; conversation: VisitorOtherConversation; slug: string }) {
   const [action, setAction] = useState<'merge' | 'history' | null>(null);
   const { data: access } = useWorkspaceAccess(workspaceId);
   const { data: source, error: sourceError } = useConversation(workspaceId, action ? c.id : null);
   const { data: target, error: targetError } = useConversation(workspaceId, action === 'merge' ? currentId : null);
-  const title = <><span className="shrink-0 text-muted-foreground">#{c.display_id}</span><span className="min-w-0 flex-1 truncate font-medium">{c.subject}</span><span className="shrink-0 text-[10px] text-muted-foreground">{c.merged_into_id ? 'Merged' : STATUS_LABELS[c.status as ConversationStatus] ?? c.status}</span></>;
-  return <div className="flex items-center rounded-md border text-xs hover:bg-accent">
-    {c.merged_into_id ? <button type="button" className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-left" onClick={() => setAction('history')}>{title}</button> : <Link to="/w/$slug/support/$conversationId" params={{ slug, conversationId: c.id }} className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2">{title}</Link>}
-    {!c.merged_into_id && access?.permissions.includes('support.merge') && <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={`Actions for conversation #${c.display_id}`}><MoreHorizontalIcon className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => setAction('merge')}>Merge into current conversation…</DropdownMenuItem></DropdownMenuContent></DropdownMenu>}
+  const state: RelatedConversationState = c.merged_into_id ? 'merged' : c.status as ConversationStatus;
+  const status = RELATED_CONVERSATION_STATUS[state] ?? RELATED_CONVERSATION_STATUS.open;
+  const statusLabel = c.merged_into_id ? 'Merged' : STATUS_LABELS[c.status as ConversationStatus] ?? c.status;
+  const StatusIcon = status.icon;
+  const canMerge = !c.merged_into_id && access?.permissions.includes('support.merge');
+  const rowContentClassName = 'flex min-w-0 flex-1 items-center gap-2 px-1 py-1.5 text-left';
+  const content = <>
+    <QuickTooltip label={statusLabel}>
+      <span aria-label={statusLabel} className={cn('flex h-3.5 w-3.5 shrink-0 items-center justify-center', status.className)}>
+        <StatusIcon className="h-3.5 w-3.5" />
+      </span>
+    </QuickTooltip>
+    <span className={cn('min-w-0 flex-1 truncate', quietRelatedItemTitleClassName)}>{c.subject}</span>
+    <span className={cn('shrink-0 text-[10px] tabular-nums text-muted-foreground', canMerge && 'group-hover:invisible group-focus-within:invisible')}>#{c.display_id}</span>
+  </>;
+  return <div className="group relative flex items-center rounded-md text-xs transition-colors hover:bg-quiet-hover focus-within:bg-quiet-hover">
+    {c.merged_into_id ? <button type="button" className={rowContentClassName} onClick={() => setAction('history')}>{content}</button> : <Link to="/w/$slug/support/$conversationId" params={{ slug, conversationId: c.id }} className={rowContentClassName}>{content}</Link>}
+    {canMerge && <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" className="absolute right-0.5 top-1/2 h-6 w-6 -translate-y-1/2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100" aria-label={`Actions for conversation #${c.display_id}`}><MoreHorizontalIcon className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => setAction('merge')}>Merge into current conversation…</DropdownMenuItem></DropdownMenuContent></DropdownMenu>}
     {action && (sourceError || targetError) && <span role="alert" className="text-xs text-destructive">Could not open. <button onClick={() => setAction(null)}>Dismiss</button></span>}
     {action && !sourceError && !targetError && (!source || (action === 'merge' && !target)) && <span role="status" className="pr-2 text-muted-foreground">Loading…</span>}
     {source && target && action === 'merge' && <ConversationMergeDialog workspaceId={workspaceId} conversations={[source]} initialTarget={target} open onOpenChange={open => { if (!open) setAction(null); }} />}

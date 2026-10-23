@@ -3,7 +3,7 @@ import { formatDistance } from 'date-fns';
 import * as Flags from 'country-flag-icons/react/3x2';
 import { Link } from '@tanstack/react-router';
 import { toast } from 'sonner';
-import { ArrowDown01Icon, ArrowLeft01Icon, ArrowRight01Icon, Cancel01Icon, CheckmarkCircle02Icon, Copy01Icon, Mail01Icon, Message01Icon, PencilEdit01Icon, PlusSignIcon, Tag01Icon, UserIcon } from '@/lib/icons';
+import { ArrowDown01Icon, ArrowLeft01Icon, ArrowRight01Icon, ArrowUpRight01Icon, Cancel01Icon, CheckmarkCircle02Icon, Copy01Icon, Mail01Icon, Message01Icon, PencilEdit01Icon, PlusSignIcon, Tag01Icon, UserIcon } from '@/lib/icons';
 import { EmptyState } from './EmptyState';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,7 +16,8 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ContactAvatarImage } from '@/components/ui/contact-avatar-image';
 import { findAssignableMember, formatAssignableMemberName } from '@/lib/assignableMembers';
 import { SidebarAssociations } from './SidebarAssociations';
-import { SidebarOtherConversations, SidebarVisitorContext } from './SidebarVisitorContext';
+import { SidebarOtherConversations, SidebarSessionDetails, SidebarVisitorContext } from './SidebarVisitorContext';
+import { SidebarLifecyclePicker } from './SidebarLifecyclePicker';
 import { SidebarPortalConfirmation } from './SidebarPortalConfirmation';
 import { SidebarCompanyDetails } from './SidebarCompanyDetails';
 import { SupportTagPicker } from './SupportTagPicker';
@@ -570,19 +571,32 @@ export function ConversationDetailSidebar({
                 </Tooltip>
               </div>
             )}
+            {conversation.crm_contact_id && visitorContext?.contact?.lifecycle_stage && (
+              <div className="mt-0.5">
+                <SidebarLifecyclePicker
+                  workspaceId={workspaceId}
+                  contactId={conversation.crm_contact_id}
+                  stage={visitorContext.contact.lifecycle_stage}
+                />
+              </div>
+            )}
             {conversation.crm_contact_id && workspace?.slug && (
               <Link
                 to="/w/$slug/crm/contacts/$contactId"
                 params={{ slug: workspace.slug, contactId: conversation.crm_contact_id }}
-                className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700 transition-colors hover:bg-blue-100 dark:bg-blue-950/30 dark:text-blue-400 mt-0.5"
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Opens in a new tab"
+                className="inline-flex items-center gap-0.5 rounded-md bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700 transition-colors hover:bg-blue-100 dark:bg-blue-950/30 dark:text-blue-400 mt-0.5"
               >
-                <UserIcon className="h-3 w-3" />
                 View CRM Contact
+                <ArrowUpRight01Icon className="h-3 w-3" aria-hidden="true" />
               </Link>
             )}
           </div>
 
-          <CollapsibleSection title="Assignee" icon={UserIcon} count={0} defaultOpen>
+          <div className="flex min-h-11 items-center justify-between gap-3 border-b border-border/50 py-1.5 pl-4 pr-[11px]">
+            <span className="text-sm font-semibold text-foreground">Assignee</span>
             <MemberPickerPopover
               value={conversation.assigned_user_id ?? ''}
               members={assignableUsers}
@@ -596,7 +610,7 @@ export function ConversationDetailSidebar({
                   userId: value === '__none__' ? null : value,
                 });
               }}
-              triggerClassName="w-full rounded-md border bg-background px-2 py-1 hover:bg-accent/50 [&>span]:w-full"
+              triggerClassName="h-7 max-w-[180px] rounded-md px-1.5 hover:bg-quiet-hover"
               contentClassName="w-[260px]"
               renderTrigger={() => (
                 <>
@@ -616,13 +630,16 @@ export function ConversationDetailSidebar({
                       <UserIcon className="h-3 w-3" />
                     </span>
                   )}
-                  <span className="min-w-0 flex-1 truncate text-left text-xs font-medium text-foreground">
+                  <span className="min-w-0 truncate text-left text-xs font-medium text-foreground">
                     {assignedMember ? formatAssignableMemberName(assignedMember) : 'Unassigned'}
                   </span>
                   <ArrowDown01Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
                 </>
               )}
             />
+          </div>
+          {(assigneesError || (!assigneesLoading && assignableUsers.length === 0)) && (
+            <div className="border-b border-border/50 px-4 pb-2.5 pt-0.5">
             {assigneesError ? (
               <div role="alert" className="flex items-center gap-2 text-[11px] text-muted-foreground">
                 <span>Unable to load teammates.</span>
@@ -642,9 +659,10 @@ export function ConversationDetailSidebar({
                 No active workspace members to assign.
               </p>
             ) : null}
-          </CollapsibleSection>
+            </div>
+          )}
 
-          <CollapsibleSection title="Tags" icon={Tag01Icon} count={conversation.tags?.length ?? 0} defaultOpen>
+          <CollapsibleSection title="Tags" icon={Tag01Icon} count={0} defaultOpen persistKey="support-details.tags">
             <SupportTagPicker
               workspaceId={workspaceId}
               conversationId={conversation.id}
@@ -654,7 +672,7 @@ export function ConversationDetailSidebar({
           </CollapsibleSection>
 
           {emailRecipientCount > 0 && (
-            <CollapsibleSection title="Email recipients" icon={Mail01Icon} count={emailRecipientCount}>
+            <CollapsibleSection title="Email recipients" icon={Mail01Icon} count={emailRecipientCount} persistKey="support-details.email-recipients">
               <div className="space-y-2">
                 <EmailRecipientRow
                   label="To"
@@ -753,6 +771,11 @@ export function ConversationDetailSidebar({
             conversationId={conversation.id}
           />
 
+          <SidebarSessionDetails
+            workspaceId={workspaceId}
+            conversationId={conversation.id}
+          />
+
           <SidebarCompanyDetails
             workspaceId={workspaceId}
             conversationId={conversation.id}
@@ -767,7 +790,6 @@ export function ConversationDetailSidebar({
           <SidebarAssociations
             workspaceId={workspaceId}
             conversationId={conversation.id}
-            excludeCRMCompanyId={visitorContext?.company?.id}
           />
         </div>
         )}

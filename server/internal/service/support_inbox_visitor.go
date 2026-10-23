@@ -31,6 +31,11 @@ func (s *SupportInboxService) GetVisitorContext(ctx context.Context, workspaceID
 		return resp, nil
 	}
 
+	resp.Channels, err = s.conversationRepo.Channels(ctx, workspaceID, conversationID, conversation.Source)
+	if err != nil {
+		return nil, fmt.Errorf("get conversation channels: %w", err)
+	}
+
 	// Find the latest session for device/location info
 	var session *model.SupportWidgetSession
 	session, err = s.sessionRepo.GetLatestByConversation(ctx, workspaceID, conversationID)

@@ -26,21 +26,21 @@ var errCoverageNoPublicSegment = errors.New("coverage conversation has no public
 var errCoverageLLMContract = errors.New("coverage analyzer response violates the actionable finding contract")
 
 const (
-	coverageAnalysisMaxMessages             = 80
-	coverageAnalysisMaxMessageChars         = 2000
-	coverageAnalyzerVersion                 = "v4"
-	coverageAnalysisWorkflowID              = "coverage-analysis-v2"
-	coverageAnalysisCronSchedule            = "0 */12 * * *"
-	coverageAnalysisOverlap                 = 2 * time.Hour
-	coverageAnalysisSettleDelay             = 10 * time.Minute
-	coverageAnalysisBootstrapWindow         = 30 * 24 * time.Hour
+	coverageAnalysisMaxMessages     = 80
+	coverageAnalysisMaxMessageChars = 2000
+	coverageAnalyzerVersion         = "v4"
+	coverageAnalysisWorkflowID      = "coverage-analysis-v2"
+	coverageAnalysisCronSchedule    = "0 */12 * * *"
+	coverageAnalysisOverlap         = 2 * time.Hour
+	coverageAnalysisSettleDelay     = 10 * time.Minute
+	coverageAnalysisBootstrapWindow = 30 * 24 * time.Hour
 	// Resolved conversations are analyzed at the next run. One that is never
 	// resolved is analyzed only after it has been quiet this long, a safety net
 	// for abandoned conversations rather than a judgment of a live one.
 	coverageAnalysisOpenQuietPeriod = 7 * 24 * time.Hour
 	// Findings below this confidence stay recorded but do not become gaps, so
 	// people are not handed causes the analyzer itself is unsure of.
-	coverageGapMinConfidence = 0.6
+	coverageGapMinConfidence                = 0.6
 	coverageAnalysisWorkspaceLimit          = 1000
 	coverageAnalysisConversationConcurrency = 4
 	coverageAnalysisCandidatePageSize       = 25
@@ -1095,11 +1095,14 @@ func (s *SupportCoverageDailyAnalyzer) AnalyzeConversation(ctx context.Context, 
 			"conversation_id": input.ConversationID,
 			"action":          "analyze",
 		},
-		// An empty, truncated or unparseable reply moves on to the fallback
-		// model instead of failing the conversation.
+		// Validate the complete contract inside the completion boundary so an
+		// incomplete recommendation also tries the fallback model.
 		RequireComplete:    true,
 		RetryInvalidOutput: true,
-		ValidateResponse:   validateCoverageJSONResponse[CoverageConversationAnalysisResult],
+		ValidateResponse: func(response *llm.ChatResponse) error {
+			_, err := decodeCoverageAnalysisResponse(response, classification)
+			return err
+		},
 		Chat: llm.ChatRequest{
 			SystemPrompt: prompt,
 			Messages: []llm.Message{{
@@ -1116,32 +1119,51 @@ func (s *SupportCoverageDailyAnalyzer) AnalyzeConversation(ctx context.Context, 
 		return nil, nil, fmt.Errorf("coverage conversation analyzer llm: %w", err)
 	}
 
-	var result CoverageConversationAnalysisResult
-	if err := llm.UnmarshalResponse(resp.Content, &result); err != nil {
-		return nil, nil, fmt.Errorf("parse coverage conversation analyzer response: %w", err)
+	result, err := decodeCoverageAnalysisResponse(resp, classification)
+	if err != nil {
+		return nil, nil, err
 	}
-	normalizeCoverageConversationAnalysisResult(&result)
-	if err := classification.validate(result); err != nil {
-		return nil, nil, fmt.Errorf("%w: %v", errCoverageLLMContract, err)
-	}
-	if err := validateActionableCoverageResult(result); err != nil {
-		return nil, nil, fmt.Errorf("%w: %v", errCoverageLLMContract, err)
-	}
+
 	raw, err := json.Marshal(result)
 	if err != nil {
 		return nil, nil, fmt.Errorf("marshal normalized analyzer result: %w", err)
 	}
-	return &result, raw, nil
+	return result, raw, nil
 }
 
-// validateCoverageJSONResponse rejects a reply that does not decode into T,
-// so the completion service can try the fallback model.
+// validateCoverageJSONResponse validates decisions with no actionable-fix contract.
 func validateCoverageJSONResponse[T any](response *llm.ChatResponse) error {
 	var decoded T
 	if err := llm.UnmarshalResponse(response.Content, &decoded); err != nil {
 		return fmt.Errorf("unreadable model output: %w", err)
 	}
 	return nil
+}
+
+// Decode and normalize identically during provider validation and persistence.
+func decodeCoverageAnalysisResponse(response *llm.ChatResponse, classification *jevCoverageClassification) (*CoverageConversationAnalysisResult, error) {
+	// A missing/null decision must not silently decode as has_gap=false.
+	var decoded struct {
+		CoverageConversationAnalysisResult
+		HasGap *bool `json:"has_gap"`
+	}
+	if err := llm.UnmarshalResponse(response.Content, &decoded); err != nil {
+		return nil, fmt.Errorf("%w: unreadable model output: %v", errCoverageLLMContract, err)
+	}
+	result := decoded.CoverageConversationAnalysisResult
+	if decoded.HasGap == nil || !validConversationTypes[strings.TrimSpace(result.ConversationType)] {
+		return nil, fmt.Errorf("%w: has_gap and a recognized conversation_type are required", errCoverageLLMContract)
+	}
+	result.HasGap = *decoded.HasGap
+
+	normalizeCoverageConversationAnalysisResult(&result)
+	if err := classification.validate(result); err != nil {
+		return nil, fmt.Errorf("%w: %v", errCoverageLLMContract, err)
+	}
+	if err := validateActionableCoverageResult(result); err != nil {
+		return nil, fmt.Errorf("%w: %v", errCoverageLLMContract, err)
+	}
+	return &result, nil
 }
 
 func validateActionableCoverageResult(result CoverageConversationAnalysisResult) error {
@@ -1159,10 +1181,14 @@ func validateActionableCoverageResult(result CoverageConversationAnalysisResult)
 	if result.Confidence < 0 || result.Confidence > 1 {
 		return fmt.Errorf("confidence must be between zero and one")
 	}
-	if len(result.RecommendedFixes) == 0 {
+	return validateCoverageRecommendedFixes(result.RecommendedFixes)
+}
+
+func validateCoverageRecommendedFixes(fixes []CoverageRecommendedFix) error {
+	if len(fixes) == 0 {
 		return fmt.Errorf("at least one recommended fix is required")
 	}
-	for index, fix := range result.RecommendedFixes {
+	for index, fix := range fixes {
 		if fix.Type == "" || firstNonEmptyCoverageString(fix.TargetTitle, fix.TargetID, fix.TargetURL, fix.TargetType) == "" || fix.Rationale == "" || fix.SuggestedChange == "" {
 			return fmt.Errorf("recommended_fixes[%d] requires type, target, rationale, and suggested_change", index)
 		}
@@ -1275,7 +1301,10 @@ func (s *SupportCoverageDailyAnalyzer) RefineFixBundleWithKnowledge(ctx context.
 		IdempotencyKey: metering.IdempotencyKey, Metadata: metering.Metadata,
 		RequireComplete:    true,
 		RetryInvalidOutput: true,
-		ValidateResponse:   validateCoverageJSONResponse[CoverageFixBundleDecision],
+		ValidateResponse: func(response *llm.ChatResponse) error {
+			_, err := decodeCoverageFixBundleResponse(response)
+			return err
+		},
 		Chat: llm.ChatRequest{
 			SystemPrompt: coverageFixBundleRefinementSystemPrompt(),
 			Messages: []llm.Message{{
@@ -1292,11 +1321,18 @@ func (s *SupportCoverageDailyAnalyzer) RefineFixBundleWithKnowledge(ctx context.
 		return nil, fmt.Errorf("coverage fix bundle refinement llm: %w", err)
 	}
 
+	return decodeCoverageFixBundleResponse(resp)
+}
+
+func decodeCoverageFixBundleResponse(response *llm.ChatResponse) (*CoverageFixBundleDecision, error) {
 	var decision CoverageFixBundleDecision
-	if err := llm.UnmarshalResponse(resp.Content, &decision); err != nil {
-		return nil, fmt.Errorf("parse coverage fix bundle refinement response: %w", err)
+	if err := llm.UnmarshalResponse(response.Content, &decision); err != nil {
+		return nil, fmt.Errorf("%w: unreadable refinement: %v", errCoverageLLMContract, err)
 	}
 	normalizeCoverageFixBundleDecision(&decision)
+	if err := validateCoverageRecommendedFixes(decision.RecommendedFixes); err != nil {
+		return nil, fmt.Errorf("%w: %v", errCoverageLLMContract, err)
+	}
 	return &decision, nil
 }
 

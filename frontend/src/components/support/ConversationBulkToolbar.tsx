@@ -14,6 +14,7 @@ import type { SupportConversation } from '@/lib/pmTypes';
 import { queryKeys } from '@/lib/queryKeys';
 import { runConversationBulkAction, type ConversationBulkAction } from '@/lib/supportBulkActions';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
+import { useSupportInboxCelebrationStore } from '@/stores/supportInboxCelebrationStore';
 import { QuietDropdown } from '@/components/design-system/quiet';
 import type { ConversationActionMoveOption } from './ConversationActionsMenu';
 
@@ -63,9 +64,17 @@ export function ConversationBulkToolbar({ workspaceId, conversations, loadedCoun
         });
         if (!approved || !mounted.current) return;
       }
+      // Resolving or spamming the whole list is the viewer's own clear.
+      const removesFromInbox = action.type === 'status' && (action.status === 'resolved' || action.status === 'spam');
+      const celebrations = useSupportInboxCelebrationStore.getState();
+      if (removesFromInbox) celebrations.noteOwnRemovals(conversations.map((conversation) => conversation.id));
       const result = await runConversationBulkAction(workspaceId, conversations, action, (completed) => {
         if (mounted.current) setProgress(completed);
       });
+      if (removesFromInbox) {
+        celebrations.forgetOwnRemovals(result.failed.map((failure) => failure.id));
+        celebrations.noteOwnRemovals(result.succeeded);
+      }
       const inbox = useSupportInboxStore.getState();
       if (mounted.current && inbox.selectedConversationId && result.succeeded.includes(inbox.selectedConversationId)
         && (action.type === 'delete' || action.type === 'move' || (action.type === 'status' && action.status !== 'open'))) {

@@ -494,6 +494,25 @@ export interface ConversationListMeta {
   unread: UnreadStats;
 }
 
+/** Records that the viewer's own action left an inbox with nothing to reply to. */
+export interface RecordSupportInboxClearRequest {
+  conversation_id: string;
+  /** A team inbox, the main shared inbox, or the viewer's own queue. */
+  scope: 'mailbox' | 'shared' | 'mine';
+  mailbox_id: string | null;
+  /** Viewer's local date, YYYY-MM-DD. */
+  local_date: string;
+  /** Viewer's local midnight as an instant. */
+  day_start: string;
+}
+
+export interface SupportInboxClearStats {
+  streak_days: number;
+  clears_today: number;
+  resolved_today: number;
+  cleared_count: number;
+}
+
 export interface ConversationListResponse {
   data: SupportConversation[];
   total: number;
@@ -676,6 +695,18 @@ export interface SupportMessagePage {
   data: SupportMessage[];
   has_more: boolean;
   next_cursor?: string;
+}
+
+/** A help-center article or file the team sent to the customer in a reply. */
+export interface SupportSharedItem {
+  kind: 'doc' | 'file';
+  id: string;
+  title: string;
+  url: string;
+  file_type?: string;
+  file_size?: number;
+  message_id: string;
+  shared_at: string;
 }
 
 export interface UpdateSupportNoteRequest {

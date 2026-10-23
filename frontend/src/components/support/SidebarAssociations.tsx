@@ -1,16 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { openDealRoute } from '@/components/crm/deal-detail/dealRouteNavigation';
-import { useQueryClient } from '@tanstack/react-query';
 import {
-  Building03Icon,
-  Delete01Icon,
+  BookOpen01Icon,
   DollarCircleIcon,
   File01Icon,
   GitBranchIcon,
+  Image01Icon,
   Loading01Icon,
   PlusSignIcon,
-  UserGroupIcon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import {
@@ -23,7 +21,6 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
-import { DocumentPreviewDialog } from '@/components/docs/DocumentPreviewDialog';
 import {
   Dialog,
   DialogHeader,
@@ -33,78 +30,57 @@ import { SupportCreateTaskModal } from './SupportCreateTaskModal';
 import {
   useConversationAssociations,
   useCreatePMAssociation,
-  useDeletePMAssociation,
-  useCreateDocAssociation,
-  useDeleteDocAssociation,
   useWorkflows,
   useWorkspaceAccess,
 } from '@/hooks/queries';
+import { useConversationSharedItems } from '@/hooks/queries/useSupport';
 import { crmSearchService } from '@/lib/services/crmService';
 import { searchService, type SearchResult } from '@/lib/services/searchService';
-import { supportService } from '@/lib/services/supportService';
-import { queryKeys } from '@/lib/queryKeys';
+import { formatFileSize } from '@/lib/supportAttachmentFiles';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
-import type { CRMObjectType, CRMSearchResult } from '@/lib/crmTypes';
-import type { GroupedAssociations } from '@/lib/pmTypes';
+import type { CRMSearchResult } from '@/lib/crmTypes';
+import type { GroupedAssociations, SupportSharedItem } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
 
 interface SidebarAssociationsProps {
   workspaceId: string;
   conversationId: string;
-  excludeCRMCompanyId?: string;
 }
 
-type SectionKey = 'tasks' | 'crm' | 'docs';
+type SectionKey = 'tasks' | 'deals';
 const SIDEBAR_PREVIEW_LIMIT = 3;
 
-const crmIconMap = {
-  contact: UserGroupIcon,
-  company: Building03Icon,
-  deal: DollarCircleIcon,
-} as const;
+const sidebarRowClassName = 'group flex items-center gap-2 rounded-md px-1 py-1.5 text-xs transition-colors hover:bg-quiet-hover';
 
-export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCompanyId }: SidebarAssociationsProps) {
+function sharedItemIcon(item: SupportSharedItem) {
+  if (item.kind === 'doc') return BookOpen01Icon;
+  return item.file_type?.startsWith('image/') ? Image01Icon : File01Icon;
+}
+
+export function SidebarAssociations({ workspaceId, conversationId }: SidebarAssociationsProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const queryClient = useQueryClient();
   const slug = useWorkspaceStore((s) => s.currentWorkspace?.slug ?? '');
   const { data: access } = useWorkspaceAccess(workspaceId);
   const pmEnabled = access?.modules?.includes('pm') ?? false;
-  const [previewDocId, setPreviewDocId] = useState<string | null>(null);
 
   const associationsQuery = useConversationAssociations(workspaceId, conversationId);
   const associationsData = associationsQuery.data as GroupedAssociations | undefined;
+  const { data: sharedItems = [] } = useConversationSharedItems(workspaceId, conversationId);
 
   const createAssociation = useCreatePMAssociation(workspaceId);
-  const deleteAssociation = useDeletePMAssociation(workspaceId);
-  const createDocAssociation = useCreateDocAssociation(workspaceId, 'support_conversation', conversationId);
-  const deleteDocAssociation = useDeleteDocAssociation(workspaceId, 'support_conversation', conversationId);
 
   const handleNavigateTask = (taskId: string) => {
     if (!slug) return;
     openTaskRoute(navigate as never, location as never, slug, taskId);
   };
 
-  const handleNavigateDoc = (docId: string) => {
-    setPreviewDocId(docId);
-  };
-
-  const handleNavigateCRM = (objectType: CRMObjectType, objectId: string) => {
-    if (objectType === 'contact') {
-      navigate({ to: '/w/$slug/crm/contacts/$contactId', params: { slug, contactId: objectId } } as any);
-    } else if (objectType === 'company') {
-      navigate({ to: '/w/$slug/crm/companies/$companyId', params: { slug, companyId: objectId } } as any);
-    } else if (objectType === 'deal') {
-      openDealRoute(navigate as never, location, slug, objectId);
-    }
-  };
-
   const [pickerSection, setPickerSection] = useState<SectionKey | null>(null);
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [crmResults, setCRMResults] = useState<CRMSearchResult[]>([]);
+  const [dealResults, setDealResults] = useState<CRMSearchResult[]>([]);
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
   const [tasksExpanded, setTasksExpanded] = useState(false);
 
@@ -117,15 +93,6 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
     ),
   );
 
-  const invalidateSupportAssociationViews = async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['support', workspaceId] }),
-      queryClient.invalidateQueries({ queryKey: ['crm', workspaceId] }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversationAssociations(workspaceId, conversationId) }),
-    ]);
-  };
-
   useEffect(() => {
     setTasksExpanded(false);
   }, [conversationId]);
@@ -134,30 +101,26 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
     if (!pickerSection) {
       setQuery('');
       setResults([]);
-      setCRMResults([]);
+      setDealResults([]);
       setSearching(false);
       return;
     }
     if (query.trim().length < 2) {
       setResults([]);
-      setCRMResults([]);
+      setDealResults([]);
       return;
     }
 
     const handle = window.setTimeout(async () => {
       setSearching(true);
-      if (pickerSection === 'crm') {
+      if (pickerSection === 'deals') {
         const response = await crmSearchService.search(workspaceId, query.trim());
-        setCRMResults(response.data ?? []);
+        setDealResults((response.data ?? []).filter((result) => result.type === 'deal'));
         setResults([]);
       } else {
         const response = await searchService.search(workspaceId, query.trim());
-        setCRMResults([]);
-        if (pickerSection === 'tasks') {
-          setResults(response.data?.tasks ?? []);
-        } else if (pickerSection === 'docs') {
-          setResults(response.data?.documents ?? []);
-        }
+        setDealResults([]);
+        setResults(response.data?.tasks ?? []);
       }
       setSearching(false);
     }, 250);
@@ -165,35 +128,7 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
     return () => window.clearTimeout(handle);
   }, [pickerSection, query, workspaceId]);
 
-  const handleAdd = async (sectionKey: SectionKey, id: string) => {
-    if (sectionKey === 'docs') {
-      await createDocAssociation.mutateAsync({
-        documentId: id,
-        payload: { linked_object_type: 'support_conversation', linked_object_id: conversationId, link_context: 'attached' },
-      });
-    } else {
-      await createAssociation.mutateAsync({
-        workspace_id: workspaceId,
-        from_object_type: 'support_conversation',
-        from_object_id: conversationId,
-        to_object_type: 'task',
-        to_object_id: id,
-      });
-    }
-    setPickerSection(null);
-  };
-
-  const handleAddCRM = async (toObjectType: CRMObjectType, toObjectId: string) => {
-    if (toObjectType === 'contact') {
-      const response = await supportService.updateConversationCRMContact(workspaceId, conversationId, {
-        crm_contact_id: toObjectId,
-      });
-      if (response.error) throw new Error(response.error);
-      await invalidateSupportAssociationViews();
-      setPickerSection(null);
-      return;
-    }
-
+  const linkObject = async (toObjectType: 'task' | 'deal', toObjectId: string) => {
     await createAssociation.mutateAsync({
       workspace_id: workspaceId,
       from_object_type: 'support_conversation',
@@ -203,21 +138,6 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
     });
     setPickerSection(null);
   };
-
-  const handleRemoveCRM = async (item: GroupedAssociations['crm_records'][number]) => {
-    if (item.object_type === 'contact' && !item.inferred) {
-      const response = await supportService.updateConversationCRMContact(workspaceId, conversationId, {
-        crm_contact_id: null,
-      });
-      if (response.error) throw new Error(response.error);
-      await invalidateSupportAssociationViews();
-      return;
-    }
-    if (item.association_id) {
-      await deleteAssociation.mutateAsync(item.association_id);
-    }
-  };
-
 
   if (associationsQuery.isLoading) {
     return (
@@ -229,10 +149,8 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
   }
 
   const tasks = associationsData?.tasks ?? [];
-  const crmRecords = (associationsData?.crm_records ?? []).filter((record) => (
-    !(record.object_type === 'company' && record.object_id === excludeCRMCompanyId)
-  ));
-  const docs = associationsData?.docs ?? [];
+  // Contacts and companies already appear in the identity card and Company details.
+  const deals = (associationsData?.crm_records ?? []).filter((record) => record.object_type === 'deal');
   const visibleTasks = tasksExpanded ? tasks : tasks.slice(0, SIDEBAR_PREVIEW_LIMIT);
 
   return (
@@ -242,6 +160,7 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
         title="Tasks"
         count={tasks.length}
         autoOpenWhenPopulated
+        persistKey="support-details.tasks"
         onAdd={() => setPickerSection('tasks')}
       >
         {tasks.length === 0 ? (
@@ -256,10 +175,7 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
         ) : (
           <div className="space-y-0.5">
             {visibleTasks.map((item) => (
-              <div
-                key={`${item.object_type}-${item.object_id}`}
-                className="group flex items-center gap-2 rounded-md px-1 py-1.5 text-xs transition-colors hover:bg-muted/40"
-              >
+              <div key={`${item.object_type}-${item.object_id}`} className={sidebarRowClassName}>
                 <button
                   type="button"
                   className="flex min-w-0 flex-1 items-center gap-2 text-left"
@@ -295,16 +211,6 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
                     </span>
                   )}
                 </button>
-                {item.association_id ? (
-                  <button
-                    type="button"
-                    className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-destructive group-hover:opacity-100"
-                    onClick={() => deleteAssociation.mutate(item.association_id!)}
-                    aria-label="Remove task association"
-                  >
-                    <Delete01Icon className="h-3 w-3" />
-                  </button>
-                ) : null}
               </div>
             ))}
             {tasks.length > SIDEBAR_PREVIEW_LIMIT && (
@@ -321,125 +227,82 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
       </CollapsibleSection>}
 
       <CollapsibleSection
-        key={`${workspaceId}:${conversationId}:crm`}
-        title="CRM"
-        count={crmRecords.length}
+        key={`${workspaceId}:${conversationId}:deals`}
+        title="Deals"
+        count={deals.length}
         autoOpenWhenPopulated
-        onAdd={() => setPickerSection('crm')}
+        persistKey="support-details.deals"
+        onAdd={() => setPickerSection('deals')}
       >
-        {crmRecords.length === 0 ? (
+        {deals.length === 0 ? (
           <button
             type="button"
-            onClick={() => setPickerSection('crm')}
+            onClick={() => setPickerSection('deals')}
             className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-border/60 px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-muted/40 hover:text-foreground"
           >
             <PlusSignIcon className="h-3.5 w-3.5" />
-            Link a contact, company, or deal
+            Link a deal
           </button>
         ) : (
           <div className="space-y-0.5">
-            {crmRecords.map((item) => {
-              const CRMIcon = crmIconMap[item.object_type as keyof typeof crmIconMap] ?? Building03Icon;
-              return (
-                <div
-                  key={`${item.object_type}-${item.object_id}`}
-                  className="group flex items-center gap-2 rounded-md px-1 py-1.5 text-xs transition-colors hover:bg-muted/40"
-                >
-                  <button
-                    type="button"
-                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                    onClick={() => handleNavigateCRM(item.object_type as CRMObjectType, item.object_id)}
-                  >
-                    <CRMIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className={cn('truncate', quietRelatedItemTitleClassName)}>{item.title}</span>
-                    {(item.context_label || item.display_id) && (
-                      <span className="ml-auto flex shrink-0 items-center gap-2">
-                        {item.context_label && (
-                          <span className="text-[10px] text-muted-foreground">
-                            {item.context_label}
-                          </span>
-                        )}
-                        {item.display_id && (
-                          <span className="text-[10px] text-muted-foreground opacity-0 transition-opacity delay-0 group-hover:opacity-100 group-hover:delay-200">
-                            {item.display_id}
-                          </span>
-                        )}
-                      </span>
-                    )}
-                  </button>
-                  {(item.association_id || (item.object_type === 'contact' && !item.inferred)) ? (
-                    <button
-                      type="button"
-                      className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-destructive group-hover:opacity-100"
-                      onClick={() => void handleRemoveCRM(item)}
-                      aria-label="Remove CRM association"
-                    >
-                      <Delete01Icon className="h-3 w-3" />
-                    </button>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </CollapsibleSection>
-
-      <CollapsibleSection
-        key={`${workspaceId}:${conversationId}:docs`}
-        title="Docs"
-        count={docs.length}
-        autoOpenWhenPopulated
-        onAdd={() => setPickerSection('docs')}
-      >
-        {docs.length === 0 ? (
-          <button
-            type="button"
-            onClick={() => setPickerSection('docs')}
-            className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-border/60 px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-muted/40 hover:text-foreground"
-          >
-            <PlusSignIcon className="h-3.5 w-3.5" />
-            Link a doc
-          </button>
-        ) : (
-          <div className="space-y-0.5">
-            {docs.map((item) => (
-              <div
-                key={`${item.object_type}-${item.object_id}`}
-                className="group flex items-center gap-2 rounded-md px-1 py-1.5 text-xs transition-colors hover:bg-muted/40"
-              >
+            {deals.map((item) => (
+              <div key={`${item.object_type}-${item.object_id}`} className={sidebarRowClassName}>
                 <button
                   type="button"
                   className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                  onClick={() => handleNavigateDoc(item.object_id)}
+                  onClick={() => openDealRoute(navigate as never, location, slug, item.object_id)}
                 >
-                  <File01Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
+                  <DollarCircleIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   <span className={cn('truncate', quietRelatedItemTitleClassName)}>{item.title}</span>
-                  {item.display_id && (
-                    <span className="ml-auto shrink-0 text-muted-foreground">{item.display_id}</span>
+                  {item.context_label && (
+                    <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
+                      {item.context_label}
+                    </span>
                   )}
                 </button>
-                {item.association_id ? (
-                  <button
-                    type="button"
-                    className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-destructive group-hover:opacity-100"
-                    onClick={() => deleteDocAssociation.mutate(item.association_id!)}
-                    aria-label="Remove document association"
-                  >
-                    <Delete01Icon className="h-3 w-3" />
-                  </button>
-                ) : null}
               </div>
             ))}
           </div>
         )}
       </CollapsibleSection>
 
+      {sharedItems.length > 0 && (
+        <CollapsibleSection
+          key={`${workspaceId}:${conversationId}:shared`}
+          title="Docs & files"
+          count={sharedItems.length}
+          autoOpenWhenPopulated
+          persistKey="support-details.shared-items"
+        >
+          <div className="space-y-0.5">
+            {sharedItems.map((item) => {
+              const ItemIcon = sharedItemIcon(item);
+              return (
+                <a
+                  key={`${item.kind}-${item.id}-${item.message_id}`}
+                  href={item.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={sidebarRowClassName}
+                >
+                  <ItemIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className={cn('min-w-0 truncate', quietRelatedItemTitleClassName)}>{item.title}</span>
+                  <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
+                    {item.kind === 'doc' ? 'Article' : item.file_size ? formatFileSize(item.file_size) : 'File'}
+                  </span>
+                </a>
+              );
+            })}
+          </div>
+        </CollapsibleSection>
+      )}
+
       {/* Link existing modal */}
       <Dialog open={!!pickerSection} onOpenChange={(open) => { if (!open) setPickerSection(null); }}>
         <QuietRelationshipDialogContent>
           <DialogHeader>
             <DialogTitle className="text-sm">
-              Link {pickerSection === 'tasks' ? 'Task' : pickerSection === 'crm' ? 'CRM Record' : 'Document'}
+              Link {pickerSection === 'tasks' ? 'Task' : 'Deal'}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
@@ -460,13 +323,7 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
             <QuietSearchInput
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder={
-                pickerSection === 'tasks'
-                  ? 'Search existing tasks...'
-                  : pickerSection === 'crm'
-                    ? 'Search contacts, companies, or deals...'
-                    : 'Search documents...'
-              }
+              placeholder={pickerSection === 'tasks' ? 'Search existing tasks...' : 'Search deals...'}
               autoFocus
             />
             <QuietRelationshipResults className="max-h-64 space-y-1 overflow-y-auto">
@@ -475,15 +332,15 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
                   <Loading01Icon className="h-4 w-4 animate-spin" /> Searching...
                 </div>
               )}
-              {!searching && pickerSection === 'crm' && crmResults.map((result) => (
+              {!searching && pickerSection === 'deals' && dealResults.map((result) => (
                 <button
                   key={`${result.type}-${result.id}`}
                   type="button"
                   className={cn(quietRelationshipResultRowClassName, 'w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent')}
-                  onClick={() => handleAddCRM(result.type, result.id)}
+                  onClick={() => void linkObject('deal', result.id)}
                 >
                   <div className="flex min-w-0 items-center gap-2">
-                    <Building03Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    <DollarCircleIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                     <span className="min-w-0 flex-1 truncate font-medium">{result.name}</span>
                     {'display_id' in result.object && result.object.display_id && (
                       <Badge variant="outline" className="h-5 px-1.5 text-[10px] shrink-0">
@@ -493,15 +350,15 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
                   </div>
                 </button>
               ))}
-              {!searching && results.map((r) => (
+              {!searching && pickerSection === 'tasks' && results.map((r) => (
                 <button
                   key={r.id}
                   type="button"
                   className={cn(quietRelationshipResultRowClassName, 'w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent')}
-                  onClick={() => handleAdd(pickerSection!, r.id)}
+                  onClick={() => void linkObject('task', r.id)}
                 >
                   <div className="flex min-w-0 items-center gap-2">
-                    {pickerSection === 'tasks' ? <GitBranchIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <File01Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+                    <GitBranchIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                     <span className="min-w-0 flex-1 truncate font-medium">{r.name}</span>
                     {r.display_id && (
                       <Badge variant="outline" className="h-5 px-1.5 text-[10px] shrink-0">
@@ -511,10 +368,10 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
                   </div>
                 </button>
               ))}
-              {!searching && query.trim().length >= 2 && pickerSection !== 'crm' && results.length === 0 && (
+              {!searching && query.trim().length >= 2 && pickerSection === 'tasks' && results.length === 0 && (
                 <p className="py-4 text-sm text-muted-foreground text-center">No results found</p>
               )}
-              {!searching && query.trim().length >= 2 && pickerSection === 'crm' && crmResults.length === 0 && (
+              {!searching && query.trim().length >= 2 && pickerSection === 'deals' && dealResults.length === 0 && (
                 <p className="py-4 text-sm text-muted-foreground text-center">No results found</p>
               )}
               {!searching && query.trim().length < 2 && (
@@ -524,16 +381,6 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
           </div>
         </QuietRelationshipDialogContent>
       </Dialog>
-
-      <DocumentPreviewDialog
-        workspaceId={workspaceId}
-        slug={slug}
-        docId={previewDocId}
-        open={!!previewDocId}
-        onOpenChange={(open) => {
-          if (!open) setPreviewDocId(null);
-        }}
-      />
 
       {/* Create Task modal — creates and auto-links to this conversation */}
       {pmEnabled && createTaskOpen && <SupportCreateTaskModal key={`${workspaceId}:${conversationId}`} workspaceId={workspaceId} workspaceSlug={slug} conversationId={conversationId} onOpenChange={setCreateTaskOpen} />}

@@ -2,6 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,7 +36,7 @@ func TestInboundParticipantIdentity(t *testing.T) {
 			if len(msgs) != 1 {
 				t.Fatalf("want preserved message, got %d", len(msgs))
 			}
-			if derefString(msgs[0].SenderDisplayName) != "Colleague" || msgs[0].IsInternal == known {
+			if derefString(msgs[0].SenderDisplayName) != "Colleague" || msgs[0].IsInternal {
 				t.Fatalf("wrong attribution/privacy: %+v", msgs[0])
 			}
 			var updated model.SupportConversation
@@ -44,7 +47,61 @@ func TestInboundParticipantIdentity(t *testing.T) {
 			if updated.Status != "open" {
 				t.Fatal("reply did not bring conversation to attention")
 			}
+			if !slices.Contains(updated.EmailCC, "colleague@example.com") {
+				t.Fatal("reply sender missing from CC")
+			}
 		})
+	}
+}
+
+func TestInboundReplyAllAddsVisibleParticipantsOnce(t *testing.T) {
+	env := setupEmailFallbackInboundTestEnv(t, model.DefaultSupportInboxSettings())
+	ctx := context.Background()
+	conv := &model.SupportConversation{ID: uuid.NewString(), WorkspaceID: "11111111-1111-1111-1111-111111111111", Subject: "Help", Status: "open", CustomerEmail: strPtr("customer@example.com"), EmailThreadParticipants: model.DocsStringArray{"removed@example.com"}}
+	if err := env.convRepo.Create(ctx, conv); err != nil {
+		t.Fatal(err)
+	}
+	replyAddress := "conv-" + conv.ID + "@replies.helpin.ai"
+	p := model.PostmarkInboundPayload{MessageID: uuid.NewString(), FromFull: model.PostmarkAddress{Email: "sarah@example.com", Name: "Sarah"}, To: replyAddress + ", customer@example.com, Visible <visible@example.com>", Cc: "Sarah <SARAH@example.com>, removed@example.com", Bcc: "hidden@example.com", TextBody: "Adding my colleague"}
+	for range 2 {
+		if err := env.service.ProcessInboundEmail(ctx, p, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p.MessageID = uuid.NewString()
+	if err := env.service.ProcessInboundEmail(ctx, p, ""); err != nil {
+		t.Fatal(err)
+	}
+	var updated model.SupportConversation
+	if err := env.convRepo.DB().First(&updated, "id = ?", conv.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(updated.EmailCC) != 2 || !slices.Contains(updated.EmailCC, "sarah@example.com") || !slices.Contains(updated.EmailCC, "visible@example.com") {
+		t.Fatalf("unexpected CC: %v", updated.EmailCC)
+	}
+	var messages []model.SupportMessage
+	if err := env.convRepo.DB().Where("conversation_id = ?", conv.ID).Find(&messages).Error; err != nil {
+		t.Fatal(err)
+	}
+	events := 0
+	for _, msg := range messages {
+		if msg.MessageType == "system" && derefString(msg.SystemEventType) == model.SystemEventEmailRecipientsUpdated {
+			events++
+			if !msg.IsInternal || !strings.Contains(msg.Content, "Sarah (sarah@example.com) was added to CC.") || !strings.Contains(msg.Content, "Visible (visible@example.com) was added to CC.") {
+				t.Fatalf("wrong CC event: %+v", msg)
+			}
+		} else if msg.SenderType == "customer" {
+			var metadata map[string]any
+			if err := json.Unmarshal([]byte(msg.Metadata), &metadata); err != nil {
+				t.Fatal(err)
+			}
+			if msg.IsInternal || metadata["email_unknown_sender"] == true {
+				t.Fatalf("customer reply was hidden: %+v", msg)
+			}
+		}
+	}
+	if events != 1 {
+		t.Fatalf("CC events=%d, want one", events)
 	}
 }
 

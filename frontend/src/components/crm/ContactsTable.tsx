@@ -69,6 +69,7 @@ import { BulkActionsBar } from '@/components/crm/BulkActionsBar';
 import type { CRMContact, LifecycleStage, LeadStatus } from '@/lib/crmTypes';
 import { shouldFetchNextContactPage } from '@/lib/contactInfiniteScroll';
 import type { AssignableMember } from '@/lib/types';
+import { LIFECYCLE_BADGE_CLASSNAMES, LIFECYCLE_STAGE_OPTIONS } from '@/lib/crmLifecycle';
 
 type GroupByOption = 'none' | 'lifecycle_stage' | 'lead_status' | 'owner';
 
@@ -85,26 +86,6 @@ const GROUP_COLUMN_MAP: Record<GroupByOption, string | null> = {
   lead_status: 'leadStatusName',
   owner: 'ownerName',
 };
-
-const lifecycleColors: Record<string, string> = {
-  subscriber: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
-  lead: 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300',
-  marketing_qualified: 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300',
-  sales_qualified: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300',
-  opportunity: 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300',
-  customer: 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300',
-  evangelist: 'bg-pink-100 text-pink-700 dark:bg-pink-900 dark:text-pink-300',
-};
-
-const LIFECYCLE_STAGES: { value: LifecycleStage; label: string }[] = [
-  { value: 'subscriber', label: 'Subscriber' },
-  { value: 'lead', label: 'Lead' },
-  { value: 'marketing_qualified', label: 'Marketing Qualified' },
-  { value: 'sales_qualified', label: 'Sales Qualified' },
-  { value: 'opportunity', label: 'Opportunity' },
-  { value: 'customer', label: 'Customer' },
-  { value: 'evangelist', label: 'Evangelist' },
-];
 
 const LEAD_STATUSES: { value: LeadStatus; label: string }[] = [
   { value: 'new', label: 'New' },
@@ -1065,7 +1046,7 @@ const InlineLifecycleCell = memo(function InlineLifecycleCell({
           }
         }}
       >
-        {LIFECYCLE_STAGES.map((s) => (
+        {LIFECYCLE_STAGE_OPTIONS.map((s) => (
           <option key={s.value} value={s.value}>
             {s.label}
           </option>
@@ -1083,7 +1064,7 @@ const InlineLifecycleCell = memo(function InlineLifecycleCell({
         setIsEditing(true);
       }}
     >
-      <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${lifecycleColors[contact.lifecycle_stage] ?? ''}`}>
+      <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${LIFECYCLE_BADGE_CLASSNAMES[contact.lifecycle_stage] ?? ''}`}>
         {contact.lifecycle_stage.replace(/_/g, ' ')}
       </Badge>
     </button>

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -105,6 +106,68 @@ func (r *SupportMergeRepository) Conversations(ctx context.Context, workspaceID 
 	var rows []model.SupportConversation
 	err := r.db.WithContext(ctx).Where("workspace_id = ? AND id IN ?", workspaceID, ids).Order("id").Find(&rows).Error
 	return rows, err
+}
+
+// FormerMergeAudience returns customer and CC addresses of conversations that
+// were merged into group and later split out, including records still merged
+// under them. Their emails must not reach the remaining customer's thread.
+func (r *SupportMergeRepository) FormerMergeAudience(ctx context.Context, workspaceID string, group []model.SupportConversation) ([]string, error) {
+	ids := make([]string, 0, len(group))
+	for _, c := range group {
+		ids = append(ids, c.ID)
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var ended []model.SupportConversationMerge
+	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND ended_at IS NOT NULL AND (source_id IN ? OR target_id IN ?)", workspaceID, ids, ids).Find(&ended).Error; err != nil {
+		return nil, err
+	}
+	var former []string
+	for _, e := range ended {
+		for _, id := range []string{e.SourceID, e.TargetID} {
+			if !slices.Contains(ids, id) && !slices.Contains(former, id) {
+				former = append(former, id)
+			}
+		}
+	}
+	if len(former) == 0 {
+		return nil, nil
+	}
+	active, err := r.Active(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	parents := mergeParents(active)
+	splitRoots := slices.Clone(former)
+	for id := range parents {
+		// Bounded walk: a malformed cycle must not hang inbound processing.
+		for p, steps := parents[id], 0; p != "" && steps <= len(parents); p, steps = parents[p], steps+1 {
+			if slices.Contains(splitRoots, p) {
+				if !slices.Contains(ids, id) && !slices.Contains(former, id) {
+					former = append(former, id)
+				}
+				break
+			}
+		}
+	}
+	records, err := r.Conversations(ctx, workspaceID, former)
+	if err != nil {
+		return nil, err
+	}
+	var emails []string
+	for _, c := range records {
+		addresses := append([]string{}, c.EmailCC...)
+		if c.CustomerEmail != nil {
+			addresses = append(addresses, *c.CustomerEmail)
+		}
+		for _, raw := range addresses {
+			if email := strings.ToLower(strings.TrimSpace(raw)); email != "" && !slices.Contains(emails, email) {
+				emails = append(emails, email)
+			}
+		}
+	}
+	return emails, nil
 }
 
 // Get returns a single merge interval scoped to its workspace.

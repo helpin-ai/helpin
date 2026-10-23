@@ -42,7 +42,8 @@ func TestAdminInboundKnownRetryPreservesReceiptTime(t *testing.T) {
 	if err := json.Unmarshal([]byte(job.Payload), &payload); err != nil {
 		t.Fatal(err)
 	}
-	payload.To = "conv-" + conv.ID + "@replies.example.com"
+	// Reply addresses on another domain are real recipients and would be added to CC.
+	payload.To = "conv-" + conv.ID + "@" + env.service.InboundDomain()
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		t.Fatal(err)

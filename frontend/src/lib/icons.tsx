@@ -89,6 +89,7 @@ import {
   FolderOpenIcon as _FolderOpenIcon,
   Forward01Icon as _Forward01Icon,
   GitBranchIcon as _GitBranchIcon,
+  GitMergeIcon as _GitMergeIcon,
   GitCommitIcon as _GitCommitIcon,
   GitPullRequestIcon as _GitPullRequestIcon,
   Globe02Icon as _Globe02Icon,
@@ -373,6 +374,7 @@ export const Folder01Icon = /* @__PURE__ */ hi(_Folder01Icon);
 export const FolderOpenIcon = /* @__PURE__ */ hi(_FolderOpenIcon);
 export const Forward01Icon = /* @__PURE__ */ hi(_Forward01Icon);
 export const GitBranchIcon = /* @__PURE__ */ hi(_GitBranchIcon);
+export const GitMergeIcon = /* @__PURE__ */ hi(_GitMergeIcon);
 export const GitCommitIcon = /* @__PURE__ */ hi(_GitCommitIcon);
 export const GitPullRequestIcon = /* @__PURE__ */ hi(_GitPullRequestIcon);
 export const Globe02Icon = /* @__PURE__ */ hi(_Globe02Icon);

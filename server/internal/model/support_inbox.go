@@ -1993,6 +1993,7 @@ type VisitorOtherConversation struct {
 
 // VisitorContextResponse assembles all visitor intelligence for a conversation.
 type VisitorContextResponse struct {
+	Channels             []string                    `json:"channels"`
 	Device               *VisitorDeviceInfo          `json:"device,omitempty"`
 	Location             *VisitorLocation            `json:"location,omitempty"`
 	Contact              *VisitorContactData         `json:"contact,omitempty"`

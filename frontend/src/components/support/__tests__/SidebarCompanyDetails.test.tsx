@@ -52,6 +52,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 describe('SidebarCompanyDetails', () => {
   afterEach(() => {
     document.body.innerHTML = ''
+    window.localStorage.clear()
     mockState.canEdit = true
     mockState.isLoading = false
     mockState.context.company_context_status = 'ok'
@@ -84,7 +85,7 @@ describe('SidebarCompanyDetails', () => {
   it('shows live subscription details and hides technical SDK attributes', () => {
     const { container, root } = renderCompanyDetails()
 
-    expect(container.textContent).toContain('Company Details')
+    expect(container.textContent).toContain('Company details')
     expect(container.textContent).toContain('Acme')
     expect(container.textContent).toContain('Enterprise')
     expect(container.textContent).toContain('Active')
@@ -103,8 +104,22 @@ describe('SidebarCompanyDetails', () => {
     const { container, root } = renderCompanyDetails()
 
     expect(container.textContent).toContain('Acme')
+    expect(container.querySelector('[aria-label="Company options"]')).toBeNull()
     expect(container.textContent).not.toContain('Link another company')
     expect(container.textContent).not.toContain('Clear')
+
+    act(() => root.unmount())
+  })
+
+  it('opens the company in CRM in a new tab and keeps switching in the field itself', () => {
+    const { container, root } = renderCompanyDetails()
+    const link = container.querySelector('a[aria-label="Open Acme in CRM"]') as HTMLAnchorElement | null
+
+    expect(link?.getAttribute('href')).toBe('/w/acme-workspace/crm/companies/company-1')
+    expect(link?.getAttribute('target')).toBe('_blank')
+    expect(container.querySelector('[aria-label="Company options"]')).not.toBeNull()
+    expect(container.querySelector('select')).toBeNull()
+    expect(container.textContent).not.toContain('Link another company')
 
     act(() => root.unmount())
   })
@@ -118,9 +133,8 @@ describe('SidebarCompanyDetails', () => {
     ]
     const { container, root } = renderCompanyDetails()
 
-    expect(container.textContent).toContain('Select the company for this conversation.')
-    expect(container.querySelector('select[aria-label="Select conversation company"]')).not.toBeNull()
-    expect(container.textContent).toContain('Link a company')
+    expect(container.textContent).toContain('Select a company')
+    expect(container.querySelector('select')).toBeNull()
 
     act(() => root.unmount())
   })

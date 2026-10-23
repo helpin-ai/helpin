@@ -442,6 +442,7 @@ func TestProjectSeparatesKnownQuotedWrappers(t *testing.T) {
 	}{
 		{name: "gmail", html: `<p>Fresh reply</p><div class="gmail_quote"><p>Gmail history</p></div>`},
 		{name: "outlook", html: `<p>Fresh reply</p><div id="divRplyFwdMsg"><p>Outlook history</p></div>`},
+		{name: "outlook mobile", html: `<p>Fresh reply</p><div id="mail-editor-reference-message-container"><p>Outlook mobile history</p></div>`},
 		{name: "apple", html: `<p>Fresh reply</p><blockquote type="cite"><p>Apple history</p></blockquote>`},
 		{name: "yahoo", html: `<p>Fresh reply</p><div class="yahoo_quoted"><p>Yahoo history</p></div>`},
 		{name: "proton", html: `<p>Fresh reply</p><div class="protonmail_quote"><p>Proton history</p></div>`},
@@ -473,6 +474,43 @@ func TestProjectSeparatesKnownQuotedWrappers(t *testing.T) {
 				t.Fatalf("Project().HTML missing quote marker: %q", got.HTML)
 			}
 		})
+	}
+}
+
+func TestProjectOutlookMobileReply(t *testing.T) {
+	html := `<div style="font-family: Aptos, Arial, Helvetica, sans-serif" dir="ltr">Can you charge this via card?</div>
+<div style="font-family: Aptos, Arial, Helvetica, sans-serif" dir="ltr"><br/></div>
+<div id="mail-editor-reference-message-container">
+<div style="padding: 3pt 0in 0in; border-width: 1pt medium medium; border-style: solid none none">
+<div style="text-align: left; font-family: Aptos; font-size: 12pt; color: black">
+<b>From: </b>Support &lt;support@example.com&gt;<br/>
+<b>Date: </b>Friday, 23 October 2026 at 16:29<br/>
+<b>To: </b>customer@example.com &lt;customer@example.com&gt;<br/>
+<b>Subject: </b>Earlier question<br/>
+</div>
+</div>
+<div id="mail-editor-reference-message-body">
+<p class="ms-outlook-mobile-reference-message skipProofing">-- Please type your reply above this line --</p>
+<p class="ms-outlook-mobile-reference-message skipProofing">Please complete the payment through the invoice link.</p>
+</div>
+</div>`
+
+	got := Project(ProjectionInput{HTML: html})
+
+	if got.Markdown != "Can you charge this via card?" {
+		t.Errorf("Project().Markdown = %q, want only the new reply", got.Markdown)
+	}
+	if !got.HasQuotedContent || got.ProjectionConfidence != ProjectionConfidenceHigh {
+		t.Errorf("Project() quote = %v/%q, want true/%q", got.HasQuotedContent, got.ProjectionConfidence, ProjectionConfidenceHigh)
+	}
+	for _, want := range []string{"Date:", "invoice link"} {
+		if !strings.Contains(got.QuotedMarkdown, want) {
+			t.Errorf("Project().QuotedMarkdown missing %q: %q", want, got.QuotedMarkdown)
+		}
+	}
+	again := Project(ProjectionInput{HTML: got.HTML})
+	if again.Markdown != got.Markdown || again.QuotedMarkdown != got.QuotedMarkdown {
+		t.Error("reprocessing changed the visible/quoted split")
 	}
 }
 

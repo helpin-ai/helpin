@@ -80,6 +80,8 @@ var (
 		"div.gmail_quote",
 		"div.gmail_extra",
 		"div#divRplyFwdMsg",
+		// Outlook for iOS/Android wraps the reply header and older message here.
+		"div#mail-editor-reference-message-container",
 		"blockquote[type='cite']",
 		"div.yahoo_quoted",
 		"div[id='yahoo_quoted']",
