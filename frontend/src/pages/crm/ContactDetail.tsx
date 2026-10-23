@@ -96,6 +96,7 @@ import type {
   UpdateCRMContactRequest,
 } from '@/lib/crmTypes';
 import type { ContactDetailTab } from '@/lib/contactDetailTabs';
+import { LIFECYCLE_STAGE_OPTIONS } from '@/lib/crmLifecycle';
 
 // ── Types ──
 
@@ -163,16 +164,6 @@ type EnrichedDetailRow = {
 };
 
 // ── Constants ──
-
-const lifecycleOptions: { value: LifecycleStage; label: string }[] = [
-  { value: 'subscriber', label: 'Subscriber' },
-  { value: 'lead', label: 'Lead' },
-  { value: 'marketing_qualified', label: 'Marketing Qualified' },
-  { value: 'sales_qualified', label: 'Sales Qualified' },
-  { value: 'opportunity', label: 'Opportunity' },
-  { value: 'customer', label: 'Customer' },
-  { value: 'evangelist', label: 'Evangelist' },
-];
 
 const leadStatusOptions: { value: LeadStatus; label: string }[] = [
   { value: 'new', label: 'New' },
@@ -1022,7 +1013,7 @@ export function ContactDetailPage({
         }
         lifecycleStage={form.lifecycle_stage}
         lifecycleLabel={
-          lifecycleOptions.find((o) => o.value === form.lifecycle_stage)?.label ?? form.lifecycle_stage
+          LIFECYCLE_STAGE_OPTIONS.find((o) => o.value === form.lifecycle_stage)?.label ?? form.lifecycle_stage
         }
         displayId={contact.display_id}
         avatarColorSeed={form.email}
@@ -1395,7 +1386,7 @@ export function ContactDetailPage({
                   <MetadataRow icon={Tag01Icon} label="Stage">
                     <SidebarPopoverSelect
                       value={form.lifecycle_stage}
-                      options={lifecycleOptions}
+                      options={LIFECYCLE_STAGE_OPTIONS}
                       onChange={(value) => updateField('lifecycle_stage', value, { lifecycle_stage: value })}
                     />
                   </MetadataRow>

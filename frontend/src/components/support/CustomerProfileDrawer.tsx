@@ -28,6 +28,7 @@ import { queryKeys } from '@/lib/queryKeys';
 import { cn } from '@/lib/utils';
 import type { CRMContact, CRMAssociationEnriched, CRMSearchResult, CreateCRMContactRequest, LeadStatus, LifecycleStage, UpdateCRMContactRequest } from '@/lib/crmTypes';
 import type { SupportConversation } from '@/lib/pmTypes';
+import { LIFECYCLE_STAGE_OPTIONS } from '@/lib/crmLifecycle';
 
 interface CustomerProfileDrawerProps {
   workspaceId: string;
@@ -36,16 +37,6 @@ interface CustomerProfileDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
-
-const lifecycleOptions: Array<{ value: LifecycleStage; label: string }> = [
-  { value: 'subscriber', label: 'Subscriber' },
-  { value: 'lead', label: 'Lead' },
-  { value: 'marketing_qualified', label: 'Marketing Qualified' },
-  { value: 'sales_qualified', label: 'Sales Qualified' },
-  { value: 'opportunity', label: 'Opportunity' },
-  { value: 'customer', label: 'Customer' },
-  { value: 'evangelist', label: 'Evangelist' },
-];
 
 const leadStatusOptions: Array<{ value: LeadStatus; label: string }> = [
   { value: 'new', label: 'New' },
@@ -301,7 +292,7 @@ export function CustomerProfileDrawer({
                   <ProfileRow icon={Tag01Icon} label="Stage">
                     <ProfileSelect
                       value={contact.lifecycle_stage}
-                      options={lifecycleOptions}
+                      options={LIFECYCLE_STAGE_OPTIONS}
                       disabled={updateContact.isPending}
                       onChange={(value) => patchContact({ lifecycle_stage: value as LifecycleStage })}
                     />

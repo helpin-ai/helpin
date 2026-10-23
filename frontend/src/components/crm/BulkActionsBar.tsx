@@ -17,16 +17,7 @@ import { crmContactService } from '@/lib/services/crmService';
 import type { CRMContact, LifecycleStage, LeadStatus } from '@/lib/crmTypes';
 import type { DockEntityReference } from '@/lib/dockTypes';
 import type { AssignableMember } from '@/lib/types';
-
-const LIFECYCLE_STAGES: { value: LifecycleStage; label: string }[] = [
-  { value: 'subscriber', label: 'Subscriber' },
-  { value: 'lead', label: 'Lead' },
-  { value: 'marketing_qualified', label: 'MQL' },
-  { value: 'sales_qualified', label: 'SQL' },
-  { value: 'opportunity', label: 'Opportunity' },
-  { value: 'customer', label: 'Customer' },
-  { value: 'evangelist', label: 'Evangelist' },
-];
+import { LIFECYCLE_STAGE_OPTIONS } from '@/lib/crmLifecycle';
 
 const LEAD_STATUSES: { value: LeadStatus; label: string }[] = [
   { value: 'new', label: 'New' },
@@ -151,8 +142,8 @@ export function BulkActionsBar({
             <SelectValue placeholder="Stage" />
           </SelectTrigger>
           <SelectContent>
-            {LIFECYCLE_STAGES.map((stage) => (
-              <SelectItem key={stage.value} value={stage.value}>{stage.label}</SelectItem>
+            {LIFECYCLE_STAGE_OPTIONS.map((stage) => (
+              <SelectItem key={stage.value} value={stage.value}>{stage.shortLabel ?? stage.label}</SelectItem>
             ))}
           </SelectContent>
         </Select>
