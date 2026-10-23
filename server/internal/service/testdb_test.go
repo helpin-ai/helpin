@@ -88,6 +88,14 @@ func newTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE user_oidc_identities (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			user_id TEXT NOT NULL,
+			issuer TEXT NOT NULL,
+			subject TEXT NOT NULL,
+			created_at DATETIME,
+			UNIQUE(issuer, subject)
+		)`,
 		`CREATE TABLE organizations (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			name TEXT NOT NULL,

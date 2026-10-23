@@ -39,7 +39,7 @@ const isCustomerPortalPath =
 
 if (isLogoutPath) {
   void clearClientSession().finally(() => {
-    window.location.replace('/login')
+    window.location.replace('/login?signed_out=1')
   })
 }
 
