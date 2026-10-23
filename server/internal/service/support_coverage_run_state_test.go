@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
 	enums "go.temporal.io/api/enums/v1"
@@ -12,6 +13,7 @@ import (
 	workflowpb "go.temporal.io/api/workflow/v1"
 	workflowservice "go.temporal.io/api/workflowservice/v1"
 	tclient "go.temporal.io/sdk/client"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
@@ -100,14 +102,33 @@ func TestCoverageReanalysisStateShowsAutomaticRetry(t *testing.T) {
 
 func TestCoverageScheduleStatusReportsMissingCron(t *testing.T) {
 	missing := NewSupportCoverageV2Service(nil).SetTemporalClient(&coverageRunStateClient{})
-	if status := missing.scheduleStatus(context.Background()); status != "missing" {
-		t.Fatalf("schedule status = %q, want missing", status)
+	if state := missing.scheduleState(context.Background()); state.Status != "missing" || state.NextRunAt != nil {
+		t.Fatalf("schedule state = %+v, want missing", state)
 	}
 	scheduled := NewSupportCoverageV2Service(nil).SetTemporalClient(&coverageRunStateClient{executions: map[string]*workflowservice.DescribeWorkflowExecutionResponse{
 		coverageAnalysisWorkflowID: describedCoverageRun(enums.WORKFLOW_EXECUTION_STATUS_RUNNING),
 	}})
-	if status := scheduled.scheduleStatus(context.Background()); status != "scheduled" {
-		t.Fatalf("schedule status = %q, want scheduled", status)
+	if state := scheduled.scheduleState(context.Background()); state.Status != "scheduled" {
+		t.Fatalf("schedule state = %+v, want scheduled", state)
+	}
+}
+
+func TestCoverageScheduleStateReportsNextRun(t *testing.T) {
+	scheduleAt := func(executionTime time.Time) coverageScheduleState {
+		run := describedCoverageRun(enums.WORKFLOW_EXECUTION_STATUS_RUNNING)
+		run.WorkflowExecutionInfo.ExecutionTime = timestamppb.New(executionTime)
+		svc := NewSupportCoverageV2Service(nil).SetTemporalClient(&coverageRunStateClient{executions: map[string]*workflowservice.DescribeWorkflowExecutionResponse{
+			coverageAnalysisWorkflowID: run,
+		}})
+		return svc.scheduleState(context.Background())
+	}
+
+	next := time.Now().UTC().Add(5 * time.Hour).Truncate(time.Second)
+	if state := scheduleAt(next); state.NextRunAt == nil || !state.NextRunAt.Equal(next) {
+		t.Fatalf("waiting cron: next run = %v, want %v", state.NextRunAt, next)
+	}
+	if state := scheduleAt(time.Now().Add(-time.Minute)); state.Status != "scheduled" || state.NextRunAt != nil {
+		t.Fatalf("running cron: state = %+v, want scheduled without a next run", state)
 	}
 }
 

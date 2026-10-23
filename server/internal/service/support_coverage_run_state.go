@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"time"
 
 	enums "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
@@ -133,23 +134,39 @@ func truncateCoverageRunError(message string) string {
 	return strings.TrimSpace(string(runes[:coverageRunErrorMaxLen])) + "…"
 }
 
-// scheduleStatus reports whether the automatic analysis cron exists. A missing
-// cron otherwise looks identical to a quiet workspace.
-func (s *SupportCoverageV2Service) scheduleStatus(ctx context.Context) string {
+// coverageScheduleState describes the automatic analysis cron: whether it
+// exists and, while it waits, when its next run starts.
+type coverageScheduleState struct {
+	Status    string
+	NextRunAt *time.Time
+}
+
+// scheduleState reports whether the automatic analysis cron exists. A missing
+// cron otherwise looks identical to a quiet workspace. Between runs, Temporal
+// holds the next cron run with a start delay, so its execution time is when
+// the next analysis begins; it is in the past while a run is in progress.
+func (s *SupportCoverageV2Service) scheduleState(ctx context.Context) coverageScheduleState {
 	if s.temporal == nil {
-		return ""
+		return coverageScheduleState{}
 	}
 	description, err := s.temporal.DescribeWorkflowExecution(ctx, coverageAnalysisWorkflowID, "")
 	var notFound *serviceerror.NotFound
 	if errors.As(err, &notFound) {
-		return "missing"
+		return coverageScheduleState{Status: "missing"}
 	}
 	if err != nil {
 		slog.WarnContext(ctx, "coverage analysis schedule unavailable", "error", err)
-		return ""
+		return coverageScheduleState{}
 	}
-	if description.GetWorkflowExecutionInfo().GetStatus() == enums.WORKFLOW_EXECUTION_STATUS_RUNNING {
-		return "scheduled"
+	info := description.GetWorkflowExecutionInfo()
+	if info.GetStatus() != enums.WORKFLOW_EXECUTION_STATUS_RUNNING {
+		return coverageScheduleState{Status: "missing"}
 	}
-	return "missing"
+	state := coverageScheduleState{Status: "scheduled"}
+	if info.GetExecutionTime() != nil {
+		if next := info.GetExecutionTime().AsTime().UTC(); next.After(time.Now()) {
+			state.NextRunAt = &next
+		}
+	}
+	return state
 }

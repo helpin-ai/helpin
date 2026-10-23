@@ -58,6 +58,8 @@ interface QuietFilterDropdownBaseProps {
   /** Search matches option labels; enabled by default in both selection modes. */
   searchable?: boolean;
   popoverClassName?: string;
+  /** Hairline border for a filter that stands alone beside content rather than in a filter toolbar. */
+  bordered?: boolean;
 }
 
 export type QuietFilterDropdownProps = QuietFilterDropdownBaseProps & (
@@ -70,7 +72,7 @@ export type QuietFilterDropdownProps = QuietFilterDropdownBaseProps & (
  * Single selections close the menu; multiple selections toggle and keep it open.
  */
 export function QuietFilterDropdown(props: QuietFilterDropdownProps) {
-  const { label, options, icon, disabled = false, id, showLabel = false, emptyLabel = 'All', searchable = true, popoverClassName } = props;
+  const { label, options, icon, disabled = false, id, showLabel = false, emptyLabel = 'All', searchable = true, popoverClassName, bordered = false } = props;
   const generatedId = useId();
   const triggerId = id ?? generatedId;
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -106,7 +108,7 @@ export function QuietFilterDropdown(props: QuietFilterDropdownProps) {
               type="button"
               disabled={disabled}
               aria-label={`${label}: ${summary}`}
-              className={cn(quietSelectTriggerClassName, 'inline-flex h-8 items-center justify-between gap-1.5 px-2 text-ui')}
+              className={cn(quietSelectTriggerClassName, 'inline-flex h-8 items-center justify-between gap-1.5 px-2 text-ui', bordered && 'border border-quiet-divider-strong')}
             >
               {icon && <span className="shrink-0" aria-hidden="true">{icon}</span>}
               {selected.length === 1 && options.find(option => option.value === selected[0])?.leading}

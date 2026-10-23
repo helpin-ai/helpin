@@ -45,6 +45,19 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe('QuietFilterDropdown appearance', () => {
+  it('adds a hairline border only when bordered', async () => {
+    await render(<QuietFilterDropdown label="Status" value="all" onChange={() => {}} options={options} />);
+    expect(trigger().className).toContain('border-0');
+    expect(trigger().className).not.toContain('border-quiet-divider-strong');
+    act(() => root.unmount());
+    document.body.innerHTML = '';
+    await render(<QuietFilterDropdown label="Status" bordered value="all" onChange={() => {}} options={options} />);
+    expect(trigger().className).toContain('border-quiet-divider-strong');
+    expect(trigger().className).not.toContain('border-0');
+  });
+});
+
 describe('QuietFilterDropdown interactions', () => {
   it('searches labels without case sensitivity and selects one value with the keyboard', async () => {
     function Filter() {

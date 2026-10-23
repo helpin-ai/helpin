@@ -1,13 +1,34 @@
+import { addDays, isSameDay } from 'date-fns'
 import type { CoveragePipelineHealthV2 } from '@/lib/supportCoverageTypes'
 
-const pauseReasons: Record<string, string> = {
-  terminal_failure_rate: 'too many analysis failures',
-  duplicate_idempotency_violation: 'duplicate processing was detected',
-  cross_workspace_invariant: 'workspace isolation needs attention',
-  auto_attach_precision: 'topic matching needs review',
+const MAX_ANALYSIS_ATTEMPTS = 3
+
+export interface CoverageNextRun {
+  at: string
+  label: string
+  /** Full date and time zone, for the tooltip. */
+  detail: string
 }
 
-const MAX_ANALYSIS_ATTEMPTS = 3
+/** When the next automatic analysis starts, in the viewer's own time zone. */
+export function coverageNextRun(health: CoveragePipelineHealthV2 | null | undefined, now = new Date()): CoverageNextRun | null {
+  if (!health?.next_run_at) return null
+  const at = new Date(health.next_run_at)
+  if (!Number.isFinite(at.getTime()) || at <= now) return null
+  const time = at.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  const day = isSameDay(at, now)
+    ? 'today'
+    : isSameDay(at, addDays(now, 1))
+      ? 'tomorrow'
+      : at.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+  return {
+    at: at.toISOString(),
+    label: `Next analysis ${day} at ${time}`,
+    detail: at.toLocaleString(undefined, {
+      weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+    }),
+  }
+}
 
 export function coverageAnalysisActive(health: CoveragePipelineHealthV2 | null | undefined) {
   return health?.reanalysis_status === 'queued' || health?.reanalysis_status === 'running' ||
@@ -42,10 +63,6 @@ function retryLaterDescription(health: CoveragePipelineHealthV2) {
 export function coverageHealthPresentation(health: CoveragePipelineHealthV2) {
   if (!health.rollout.capture_enabled) {
     return { title: 'Analysis not enabled', description: 'An administrator needs to enable coverage analysis in the server configuration.' }
-  }
-  if (health.rollout.pause_reasons?.length) {
-    const reasons = health.rollout.pause_reasons.map(reason => pauseReasons[reason] ?? 'a processing check needs attention')
-    return { title: 'Processing paused', description: `New results are held because ${reasons.join('; ')}. An administrator needs to resolve these checks before processing resumes.` }
   }
   if (health.reanalysis_status === 'retrying') {
     return { title: 'Retrying analysis', description: retryingDescription(health) }
@@ -82,9 +99,6 @@ export function coverageAnalysisControl(health: CoveragePipelineHealthV2 | null,
   if (!health.rollout.capture_enabled) {
     return { pill: 'Not enabled', disabled: true, description: 'An administrator needs to enable coverage analysis.' }
   }
-  if (health.rollout.pause_reasons?.length) {
-    return { pill: 'Paused', disabled: true, description: coverageHealthPresentation(health).description }
-  }
   if (health.reanalysis_status === 'retrying') {
     return { pill: 'Retrying', disabled: true, description: retryingDescription(health), inline: true, tone: 'warning' }
   }
@@ -93,6 +107,11 @@ export function coverageAnalysisControl(health: CoveragePipelineHealthV2 | null,
   }
   if (submitting || health.reanalysis_status === 'queued' || health.latest_batch?.status === 'queued') {
     return { pill: 'Queued', disabled: true, description: 'Analysis is queued and will start when a worker is available.' }
+  }
+  // The server refuses a manual run while a rollout check is paused, but the
+  // automatic analysis keeps running, so the page shows the next run instead.
+  if (health.rollout.pause_reasons?.length) {
+    return { pill: null, disabled: true, description: 'Re-analyze is unavailable until recent analysis failures clear. Automatic analysis keeps running.' }
   }
   if (needsAttention(health)) {
     return { pill: 'Needs attention', disabled: false, description: attentionDescription(health), inline: true, tone: 'error' }
