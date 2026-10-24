@@ -11,7 +11,6 @@ import {
   Calendar03Icon,
   Tick01Icon,
   Clock01Icon,
-  Copy01Icon,
   ViewIcon,
   LinkSquare01Icon,
   FolderOpenIcon,
@@ -35,7 +34,6 @@ import {
 import { StoredIcon } from '@/components/ui/icon-picker'
 import { toast } from 'sonner'
 import { useTitle } from '@/hooks/useTitle'
-import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams'
 import { useAuthStore } from '@/stores/authStore'
 import { useDocsPresenceStore } from '@/stores/docsPresenceStore'
@@ -102,8 +100,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
 import { DocsEditor, SaveIndicator, type DocsCommentAnchor, type DocsCommentAnchorDecoration, type DocsEditingPresenceSignal, type SaveStatus } from '@/components/docs/DocsEditor'
+import { DocsSharePopover } from '@/components/docs/DocsSharePopover'
+import { DocsDocumentLayout } from '@/components/docs/DocsDocumentLayout'
 import { SlugDisplay } from '@/components/docs/SlugDisplay'
 import {
   buildCollectionTree,
@@ -674,7 +673,6 @@ export function DocsDocumentDetail({
   const [pendingSlug, setPendingSlug] = useState('')
   const [pendingPublishLocale, setPendingPublishLocale] = useState<string | null>(null)
   const [proposalStatusMessage, setProposalStatusMessage] = useState('')
-  const { copied: linkCopied, copy: copyLink } = useCopyToClipboard()
 
   // Version preview state — when set, the editor shows version content read-only
   const [previewVersion, setPreviewVersion] = useState<DocsVersion | null>(null)
@@ -1440,7 +1438,7 @@ export function DocsDocumentDetail({
   }
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto lg:overflow-hidden">
+    <DocsDocumentLayout content={<>
       <div className="sr-only" aria-live="polite" aria-atomic="true">
         {proposalStatusMessage}
       </div>
@@ -1538,6 +1536,18 @@ export function DocsDocumentDetail({
                   }}
                 />
               ) : null}
+              {isSourceLocaleActive && canEditDocs && <DocsSharePopover
+                shared={doc.is_publicly_shared}
+                shareToken={doc.share_token}
+                disabled={toggleShare.isPending || doc.is_locked}
+                onToggle={(checked) => toggleShare.mutate(
+                  { docId, isPubliclyShared: checked },
+                  {
+                    onSuccess: () => toast.success(checked ? 'Public link enabled' : 'Public link disabled'),
+                    onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to toggle share'),
+                  },
+                )}
+              />}
               {showContextualPublish && !(isPublished && !hasUnpublishedChanges) ? (
                 <QuietDetailAction
                   tone="primary"
@@ -1881,10 +1891,11 @@ export function DocsDocumentDetail({
             />
           )}
         </div>
+      </div>
+      )}
 
-        {/* Right rail: swap between Overview / Comments / History / Linked / References */}
-        {railOpen && (
-          <aside className="flex w-[300px] shrink-0 flex-col overflow-hidden border-l border-border/60">
+    </>} sidebar={railOpen && !proposalSearchId ? (
+      <>
             <DocsRailHeader
               title={
                 railView === 'comments' ? 'Comments'
@@ -2013,49 +2024,6 @@ export function DocsDocumentDetail({
                   <Button type="button" size="sm" className="h-8 w-full text-xs" disabled={savingSourceSocial || doc.is_locked} onClick={() => void handleSaveSourceSocial()}>
                     {savingSourceSocial ? 'Saving...' : 'Save social preview'}
                   </Button>
-                </div>
-                <Separator className="my-4" />
-              </>
-            )}
-
-            {/* ── Sharing (source locale only) ── */}
-            {isSourceLocaleActive && canEditDocs && (
-              <>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      <Link01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground">Public link</span>
-                    </div>
-                    <Switch
-                      checked={doc.is_publicly_shared}
-                      onCheckedChange={(checked) => {
-                        toggleShare.mutate(
-                          { docId, isPubliclyShared: checked },
-                          {
-                            onSuccess: () => toast.success(checked ? 'Public link enabled' : 'Public link disabled'),
-                            onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to toggle share'),
-                          },
-                        )
-                      }}
-                      disabled={toggleShare.isPending || doc.is_locked}
-                    />
-                  </div>
-                  {doc.is_publicly_shared && doc.share_token && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full h-7 gap-1.5 text-xs"
-                      onClick={() => {
-                        const url = `${window.location.origin}/share/${doc.share_token}`
-                        copyLink(url)
-                        toast.success('Link copied to clipboard')
-                      }}
-                    >
-                      {linkCopied ? <Tick01Icon className="h-3 w-3" /> : <Copy01Icon className="h-3 w-3" />}
-                      {linkCopied ? 'Copied!' : 'Copy link'}
-                    </Button>
-                  )}
                 </div>
                 <Separator className="my-4" />
               </>
@@ -2476,11 +2444,8 @@ export function DocsDocumentDetail({
               </div>
             )}
             </div>
-          </aside>
-        )}
-
-      </div>
-      )}
+      </>
+    ) : null}>
 
       {editingTranslationLocale && (
         <EditArticleTranslationDialog
@@ -2622,6 +2587,6 @@ export function DocsDocumentDetail({
         onConfirm={handleConfirmPublish}
         isPublishing={pendingPublishLocale && pendingPublishLocale !== defaultLocale ? publishArticleTranslation.isPending : publishDoc.isPending}
       />
-    </div>
+    </DocsDocumentLayout>
   )
 }
