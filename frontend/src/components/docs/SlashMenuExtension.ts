@@ -11,7 +11,7 @@ export interface SlashMenuState {
   executeSelected?: boolean;
 }
 
-const CLOSED: SlashMenuState = { open: false, from: 0, query: '', selectedIndex: 0, commandCount: 0 };
+const CLOSED: SlashMenuState = { open: false, from: 0, query: '', selectedIndex: 0, commandCount: 0, executeSelected: false };
 
 export const slashMenuPluginKey = new PluginKey('slashMenu');
 
@@ -58,6 +58,11 @@ export const SlashMenuExtension = Extension.create({
             if (event.key === 'Escape') {
               view.dispatch(view.state.tr.setMeta(slashMenuPluginKey, CLOSED));
               return true;
+            }
+            // A hidden, empty result list must not capture editor navigation.
+            if (state.commandCount === 0 && ['Enter', 'ArrowDown', 'ArrowUp'].includes(event.key)) {
+              view.dispatch(view.state.tr.setMeta(slashMenuPluginKey, CLOSED));
+              return false;
             }
             if (event.key === 'ArrowDown') {
               const next = (state.selectedIndex + 1) % Math.max(state.commandCount, 1);
