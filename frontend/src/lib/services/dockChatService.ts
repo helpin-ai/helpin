@@ -8,6 +8,7 @@ import type {
   DockChatWorkDetailResponse,
   GenerateDockChatTitleRequest,
   DockRunListResponse,
+  DockRunSummary,
   SendDockChatMessageRequest,
   UpdateDockChatRequest,
 	PublicShareLink,
@@ -26,6 +27,9 @@ import type {
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
 
 export const dockChatService = {
+  listPins: (workspaceId: string) => api.get<{ chats: DockChat[]; runs: DockRunSummary[] }>(`/dock/pins${qs(workspaceId)}`),
+  setPin: (workspaceId: string, kind: 'chat' | 'run', id: string, pinned: boolean) =>
+    api.put<{ pinned: boolean }>(`/dock/pins/${kind}/${encodeURIComponent(id)}${qs(workspaceId)}`, { pinned }),
   createFlowBuilder: (workspaceId: string, options: { templateKey?: string; flowId?: string }) =>
     api.post<DockChat>(`/dock/chats${qs(workspaceId)}`, { flow_builder: true, flow_template_key: options.templateKey, flow_id: options.flowId }),
   getAIDefaults: (workspaceId: string) =>

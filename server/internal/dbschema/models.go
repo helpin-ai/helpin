@@ -85,6 +85,7 @@ func AutoMigrationModels() []any {
 		&model.CommandBarPlanRecord{},
 		&model.CommandBarPlanDismissal{},
 		&model.DockChat{},
+		&model.DockPin{},
 		&model.DockChatHandoff{},
 		&model.PublicShare{},
 		&model.SupportRunEvidence{},

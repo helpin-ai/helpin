@@ -26,6 +26,7 @@ Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn
 
 const mocks = vi.hoisted(() => ({
   useAskAgentDefaults: vi.fn(),
+  useDockPins: vi.fn(),
   aiPicker: vi.fn(() => null),
 	toastError: vi.fn(),
 	toastSuccess: vi.fn(),
@@ -72,6 +73,8 @@ vi.mock('@/hooks/queries/useAIProfiles', () => ({ useAIProfiles: () => ({ data: 
 vi.mock('@/hooks/useVoiceComposer', () => ({
   useVoiceComposer: () => ({ busy: false, microphone: null, feedback: null, cancel: vi.fn() }),
 }));
+
+vi.mock('@/components/agents/dock/useDockPins', () => ({ useDockPins: mocks.useDockPins }));
 
 vi.mock('@/lib/helpin', () => ({ resetHelpinIdentity: vi.fn() }));
 
@@ -191,6 +194,7 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  mocks.useDockPins.mockReturnValue({ chats: [], runs: [], loading: false, pending: false, unavailable: false, togglePin: vi.fn(), removeArchivedChat: vi.fn() });
   mocks.useAskAgentDefaults.mockReturnValue({ data: { ai_profile_id: 'ask-default' }, isPending: false, isError: false, refetch: vi.fn() });
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -1877,7 +1881,7 @@ describe('AskAgentsDock', () => {
     expect(document.body.querySelector('textarea')).not.toBeNull();
     expect(document.body.textContent).not.toContain('Only its creator can continue it.');
     expect(document.body.querySelector('[aria-label*="Change who can see this chat"]')).toBeNull();
-    expect(document.body.querySelector('[aria-label="Actions for Sprint questions"]')).toBeNull();
+    expect(document.body.querySelector('[aria-label="Actions for Sprint questions"]')).not.toBeNull();
 
     const textarea = dockTextarea();
     await act(async () => {
@@ -2903,4 +2907,16 @@ it('shows an error for an inaccessible linked chat instead of opening the saved 
   } finally {
     window.history.replaceState({}, '', '/');
   }
+});
+
+it('preserves an older pinned chat selection while pins load separately from history', async () => {
+  const older = { ...CHAT, id: 'older-pin', title: 'Older pinned chat' };
+  localStorage.setItem('helpin:agent-dock-selection:ws-1', JSON.stringify({ tab: 'chats', chatId: older.id }));
+  const state = { chats: [], runs: [], loading: true, pending: false, unavailable: true, togglePin: vi.fn(), removeArchivedChat: vi.fn() };
+  mocks.useDockPins.mockReturnValue(state);
+  await renderDock();
+  expect(useDockStore.getState().activeChatId).toBe(older.id);
+  mocks.useDockPins.mockReturnValue({ ...state, chats: [older], loading: false, unavailable: false });
+  await renderDock();
+  expect(useDockStore.getState().activeChatId).toBe(older.id);
 });
