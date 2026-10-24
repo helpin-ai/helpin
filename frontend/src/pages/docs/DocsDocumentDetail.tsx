@@ -1646,15 +1646,19 @@ export function DocsDocumentDetail({
       {/* Lock banner */}
       {doc.is_locked && (() => {
         const locker = doc.locked_by ? members.find((m) => m.user_id === doc.locked_by) : null
-        const lockerName = locker ? formatAssignableMemberName(locker) : 'someone'
+        const lockerName = locker ? formatAssignableMemberName(locker) : 'Someone'
         const lockedByYou = Boolean(doc.locked_by && doc.locked_by === currentUserId)
         return (
           <div className="flex items-center gap-2 border-b border-blue-500/30 bg-blue-500/10 px-4 py-2">
             <LockIcon className="h-4 w-4 text-blue-600 dark:text-blue-400" />
             <span className="text-sm text-blue-700 dark:text-blue-300">
-              {lockedByYou
-                ? 'You locked this document. You, a workspace admin, or the workspace owner can unlock it.'
-                : `This document is locked by ${lockerName}. The person who locked it, a workspace admin, or the workspace owner can unlock it.`}
+              {lockedByYou ? (
+                'You locked this document for editing. You, a workspace admin, or the workspace owner can unlock it.'
+              ) : (
+                <>
+                  <strong>{lockerName}</strong> locked this document for editing. Only the person who locked it, a workspace admin, or the workspace owner can unlock it.
+                </>
+              )}
             </span>
             {canUnlock && (
               <Button
