@@ -1029,6 +1029,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requireCommandBarRead()).Get("/transcriptions", h.VoiceInput.Capabilities)
 					r.With(requireCommandBarRead()).Post("/transcriptions", h.VoiceInput.Transcribe)
 				}
+				r.With(requireCommandBarRead()).Get("/pins", h.DockChat.ListPins)
+				r.With(requireCommandBarRead()).Put("/pins/{kind}/{resourceID}", h.DockChat.SetPin)
 				r.With(requireCommandBarRead()).Get("/chats", h.DockChat.ListChats)
 				r.With(requireCommandBarRead()).Post("/chats", h.DockChat.CreateChat)
 				r.With(requireCommandBarRead()).Get("/chats/support-conversation", h.DockChat.FindSupportConversationChat)

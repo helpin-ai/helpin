@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { BotIcon, GlobeIcon, MoreHorizontalIcon, NotificationBubbleIcon, PlusSignIcon, UserGroupIcon } from '@/lib/icons';
+import { BotIcon, GlobeIcon, MoreHorizontalIcon, PinIcon, PinOffIcon, NotificationBubbleIcon, PlusSignIcon, UserGroupIcon } from '@/lib/icons';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import {
   DropdownMenu,
@@ -22,6 +23,10 @@ import { DOCK_DATE_GROUPS, dockDateGroup } from './dockDateGroups';
 
 interface DockRosterProps {
   workspaceId: string;
+  pinnedChatIds?: string[];
+  pinnedRunIds?: string[];
+  pinDisabled?: boolean;
+  onTogglePin?: (kind: 'chat' | 'run', id: string, pinned: boolean) => void;
   tab: 'agents' | 'chats';
   runs: DockRunSummary[];
   chats: DockChat[];
@@ -140,6 +145,7 @@ function AgentRows(props: DockRosterProps) {
     result.set('running', []);
     result.set('recent', []);
     for (const summary of props.runs) {
+      if (props.pinnedRunIds?.includes(summary.run.id)) continue;
       const presentation = presentDockRun(summary.run.status, summary.run.pause_reason, summary.attention_kind);
       result.get(presentation.group)?.push(summary);
     }
@@ -147,7 +153,7 @@ function AgentRows(props: DockRosterProps) {
       rows.sort((left, right) => Date.parse(right.last_activity_at) - Date.parse(left.last_activity_at));
     }
     return result;
-  }, [props.runs]);
+  }, [props.runs, props.pinnedRunIds]);
 
   if (props.loadingRuns && props.runs.length === 0) return <RosterMessage>Loading your agents…</RosterMessage>;
   if (props.runsError && props.runs.length === 0) {
@@ -157,8 +163,11 @@ function AgentRows(props: DockRosterProps) {
     return <RosterMessage>No agents running. Describe a task below.</RosterMessage>;
   }
 
+  const row = (summary: DockRunSummary) => <RunRow key={summary.run.id} summary={summary} selected={props.selectedRunId === summary.run.id} onSelect={() => props.onSelectRun(summary.run.id)} pinned={!!props.pinnedRunIds?.includes(summary.run.id)} pinDisabled={props.pinDisabled} onTogglePin={props.onTogglePin} />;
+  const pinned = props.runs.filter(summary => props.pinnedRunIds?.includes(summary.run.id));
   return (
     <>
+      {pinned.length > 0 && <section aria-labelledby="agent-dock-runs-pinned"><RosterGroupHeader id="agent-dock-runs-pinned" label="Pinned" count={pinned.length} />{pinned.map(row)}</section>}
       {ACTIVE_GROUPS.map((group) => {
         const rows = grouped.get(group.key) ?? [];
         if (rows.length === 0) return null;
@@ -169,7 +178,7 @@ function AgentRows(props: DockRosterProps) {
               <span id={`agent-dock-group-${group.key}`} className="agent-dock-roster-copy text-[10.5px] font-bold uppercase tracking-[.09em] text-[#8a8781] dark:text-[#96928a]">{group.label}</span>
               <span className="agent-dock-roster-copy text-[10.5px] font-semibold text-[#b3b0a9]">{rows.length}</span>
             </div>
-            {rows.map((summary) => <RunRow key={summary.run.id} summary={summary} selected={props.selectedRunId === summary.run.id} onSelect={() => props.onSelectRun(summary.run.id)} />)}
+            {rows.map(row)}
           </section>
         );
       })}
@@ -179,7 +188,7 @@ function AgentRows(props: DockRosterProps) {
         return (
           <section key={group.key} aria-labelledby={`agent-dock-run-date-${group.key}`}>
             <RosterGroupHeader id={`agent-dock-run-date-${group.key}`} label={group.label} count={rows.length} />
-            {rows.map((summary) => <RunRow key={summary.run.id} summary={summary} selected={props.selectedRunId === summary.run.id} onSelect={() => props.onSelectRun(summary.run.id)} />)}
+            {rows.map(row)}
           </section>
         );
       })}
@@ -187,9 +196,10 @@ function AgentRows(props: DockRosterProps) {
   );
 }
 
-function RunRow({ summary, selected, onSelect }: { summary: DockRunSummary; selected: boolean; onSelect: () => void }) {
+function RunRow({ summary, selected, onSelect, pinned, pinDisabled, onTogglePin }: { summary: DockRunSummary; selected: boolean; onSelect: () => void; pinned: boolean; pinDisabled?: boolean; onTogglePin?: DockRosterProps['onTogglePin'] }) {
   const presentation = presentDockRun(summary.run.status, summary.run.pause_reason, summary.attention_kind);
   return (
+    <div className="group relative">
     <button
       type="button"
       onClick={onSelect}
@@ -197,7 +207,7 @@ function RunRow({ summary, selected, onSelect }: { summary: DockRunSummary; sele
       aria-current={selected ? 'true' : undefined}
       title={`${dockRunTitle(summary)} — ${presentation.label}`}
       className={cn(
-        'agent-dock-roster-row flex w-full min-w-0 items-center gap-[9px] px-3 py-2 text-start transition-colors hover:bg-[#f4f2ee] dark:hover:bg-[#292824]',
+        'agent-dock-roster-row flex w-full min-w-0 items-center gap-[9px] px-3 py-2 pe-10 text-start transition-colors hover:bg-[#f4f2ee] dark:hover:bg-[#292824]',
         selected && 'bg-[#f4f2ee] shadow-[inset_2px_0_0_var(--dock-row-state)] dark:bg-[#292824]',
       )}
       style={{ '--dock-row-state': presentation.dot } as React.CSSProperties}
@@ -211,6 +221,13 @@ function RunRow({ summary, selected, onSelect }: { summary: DockRunSummary; sele
         {relativeDockTime(summary.last_activity_at)}
       </time>
     </button>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild><button type="button" aria-label={`Actions for ${dockRunTitle(summary)}`} className={rosterMenuClass}><MoreHorizontalIcon className="h-3.5 w-3.5" /></button></DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="z-[70]" data-helpin-dock-overlay="true">
+        <DropdownMenuItem disabled={pinDisabled} onSelect={() => onTogglePin?.('run', summary.run.id, !pinned)}>{pinned ? <PinOffIcon className="h-3.5 w-3.5" /> : <PinIcon className="h-3.5 w-3.5" />}{pinned ? 'Unpin' : 'Pin'}</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+    </div>
   );
 }
 
@@ -251,8 +268,10 @@ function ChatRows(props: DockRosterProps) {
   if (props.chatsError && props.chats.length === 0) return <RosterError message={props.chatsError} onRetry={props.onRetryChats} />;
   if (props.chats.length === 0) return <RosterMessage>No conversations yet. Start one above.</RosterMessage>;
 
-  return DOCK_DATE_GROUPS.map((group) => {
-    const chats = props.chats.filter((chat) => dockDateGroup(chat.last_message_at ?? chat.updated_at ?? chat.created_at) === group.key);
+  return [{ key: 'pinned', label: 'Pinned' }, ...DOCK_DATE_GROUPS].map((group) => {
+    const chats = props.chats.filter((chat) => props.pinnedChatIds?.includes(chat.id)
+      ? group.key === 'pinned'
+      : dockDateGroup(chat.last_message_at ?? chat.updated_at ?? chat.created_at) === group.key);
     if (chats.length === 0) return null;
     return <section key={group.key} aria-labelledby={`agent-dock-chat-date-${group.key}`}>
       <RosterGroupHeader id={`agent-dock-chat-date-${group.key}`} label={group.label} count={chats.length} />
@@ -263,7 +282,7 @@ function ChatRows(props: DockRosterProps) {
           <div
             key={chat.id}
             className={cn(
-              'agent-dock-roster-row group relative flex min-w-0 items-center px-3 py-2 hover:bg-[#f4f2ee] dark:hover:bg-[#292824]',
+              'agent-dock-roster-row group relative flex min-w-0 items-center px-3 py-2 pe-10 hover:bg-[#f4f2ee] dark:hover:bg-[#292824]',
               props.selectedChatId === chat.id && 'bg-[#f4f2ee] shadow-[inset_2px_0_0_var(--dock-chat-state)] dark:bg-[#292824]',
             )}
             style={{ '--dock-chat-state': presentation.color } as React.CSSProperties}
@@ -300,32 +319,44 @@ function ChatRows(props: DockRosterProps) {
                   <AnimatedDockChatTitle title={chat.title.trim() || 'Untitled chat'} />
                 </span>
               </span>
-              {chat.visibility === 'module' ? (
-                <UserGroupIcon className="h-3.5 w-3.5 shrink-0 text-[#8a8781]" aria-label="Visible to module teammates" />
-              ) : chat.visibility === 'workspace' ? (
-                <GlobeIcon className="h-3.5 w-3.5 shrink-0 text-[#8a8781]" aria-label="Visible to everyone in the workspace" />
-              ) : null}
               <time className="agent-dock-roster-copy ms-auto shrink-0 font-mono text-[10.5px] text-[#b3b0a9]" dateTime={chat.last_message_at ?? chat.updated_at} data-agent-dock-chat-time>
                 {relativeDockTime(chat.last_message_at ?? chat.updated_at)}
               </time>
             </button>
           )}
-          {chat.user_id === currentUserId ? <DropdownMenu>
+          <ChatVisibility chat={chat} />
+          <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button type="button" aria-label={`Actions for ${chat.title || 'Untitled chat'}`} className="agent-dock-chat-menu absolute end-2 top-1/2 z-[2] grid h-7 w-7 -translate-y-1/2 place-items-center rounded-md bg-[#f4f2ee] text-[#8a8781] opacity-0 transition-[opacity,color,background-color] hover:bg-[#eae7e0] hover:text-[#4b4945] group-hover:opacity-100 focus:opacity-100 dark:bg-[#292824] dark:text-[#a9a59d] dark:hover:bg-[#37352f] dark:hover:text-[#eeeae1]">
+              <button type="button" aria-label={`Actions for ${chat.title || 'Untitled chat'}`} className={rosterMenuClass}>
                 <MoreHorizontalIcon className="h-3.5 w-3.5" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="z-[70]">
+            <DropdownMenuContent align="end" className="z-[70]" data-helpin-dock-overlay="true">
+              <DropdownMenuItem disabled={props.pinDisabled} onSelect={() => props.onTogglePin?.('chat', chat.id, !props.pinnedChatIds?.includes(chat.id))}>
+                {props.pinnedChatIds?.includes(chat.id) ? <PinOffIcon className="h-3.5 w-3.5" /> : <PinIcon className="h-3.5 w-3.5" />}
+                {props.pinnedChatIds?.includes(chat.id) ? 'Unpin' : 'Pin'}
+              </DropdownMenuItem>
+              {chat.user_id === currentUserId && <>
               <DropdownMenuItem onSelect={() => { setRenamingId(chat.id); setRenameValue(chat.title); }}>Rename</DropdownMenuItem>
               <DropdownMenuItem className="text-destructive" onSelect={() => void archive(chat.id)}>Archive</DropdownMenuItem>
+              </>}
             </DropdownMenuContent>
-          </DropdownMenu> : null}
+          </DropdownMenu>
           </div>
         );
       })}
     </section>;
   });
+}
+
+const rosterMenuClass = 'agent-dock-chat-menu absolute end-2 top-1/2 z-[2] grid h-7 w-7 -translate-y-1/2 place-items-center rounded-md bg-[#f4f2ee] text-[#8a8781] opacity-0 transition-[opacity,color,background-color] hover:bg-[#eae7e0] hover:text-[#4b4945] group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 data-[state=open]:opacity-100 [@media(hover:none)]:opacity-100 dark:bg-[#292824] dark:text-[#a9a59d] dark:hover:bg-[#37352f] dark:hover:text-[#eeeae1]';
+
+function ChatVisibility({ chat }: { chat: DockChat }) {
+  if (chat.visibility !== 'workspace' && chat.visibility !== 'module') return null;
+  const moduleNames: Record<string, string> = { support: 'Support', crm: 'CRM', pm: 'Projects', docs: 'Knowledge' };
+  const label = chat.visibility === 'workspace' ? 'Shared with everyone in this workspace' : `Shared with teammates who have access to ${moduleNames[chat.module_id ?? ''] ?? 'this module'}`;
+  const Icon = chat.visibility === 'workspace' ? GlobeIcon : UserGroupIcon;
+  return <Tooltip><TooltipTrigger asChild><span tabIndex={0} role="img" aria-label={label} className="ms-2 shrink-0 text-[#8a8781] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><Icon className="h-3.5 w-3.5" aria-hidden /></span></TooltipTrigger><TooltipContent className="z-[80]">{label}</TooltipContent></Tooltip>;
 }
 
 function RosterGroupHeader({ id, label, count }: { id: string; label: string; count: number }) {

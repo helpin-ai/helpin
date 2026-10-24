@@ -4089,6 +4089,16 @@ func (s *AgentService) ListDockRunsForActor(
 		response.NextCursor = &next
 	}
 	runs = append(runs, settled...)
+	summaries, err := s.summarizeDockRuns(ctx, workspaceID, runs)
+	if err != nil {
+		return nil, err
+	}
+	summaries.NextCursor = response.NextCursor
+	return summaries, nil
+}
+
+func (s *AgentService) summarizeDockRuns(ctx context.Context, workspaceID string, runs []model.AgentRun) (*model.DockRunListResponse, error) {
+	response := &model.DockRunListResponse{}
 	normalized := s.normalizeDockRunCollection(s.reconcileStuckRuns(ctx, runs))
 	s.enrichRunTargets(ctx, workspaceID, normalized)
 
