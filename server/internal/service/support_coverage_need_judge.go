@@ -167,12 +167,14 @@ func (j *coverageNeedJudge) matchWithLLM(ctx context.Context, workspaceID, sourc
 		RetryInvalidOutput: true,
 		ValidateResponse:   validateCoverageJSONResponse[coverageNeedMatchDecision],
 		Chat: llm.ChatRequest{
-			SystemPrompt: coverageNeedMatchSystemPrompt,
-			Messages:     []llm.Message{{Role: "user", Content: string(payload)}},
-			Temperature:  0,
-			MaxTokens:    coverageJudgeMaxTokens,
-			JSONMode:     true,
-			JSONSchema:   coverageNeedMatchJSONSchema(),
+			SystemPrompt:     coverageNeedMatchSystemPrompt,
+			Messages:         []llm.Message{{Role: "user", Content: string(payload)}},
+			Temperature:      0,
+			MaxTokens:        coverageJudgeMaxTokens,
+			JSONMode:         true,
+			JSONSchema:       coverageNeedMatchJSONSchema(),
+			JSONSchemaStrict: true,
+			ProviderOptions:  json.RawMessage(coverageStrictSchemaProviderOptions),
 		},
 	})
 	if err != nil {

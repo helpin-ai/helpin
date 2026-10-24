@@ -48,6 +48,10 @@ const (
 	// by the limit is unreadable JSON.
 	coverageAnalyzeMaxTokens = 4000
 	coverageRefineMaxTokens  = 3000
+	// Coverage routes run on OpenRouter, where a schema is only sent in strict
+	// mode. Without it models guessed field names and every retry failed the
+	// contract; require_parameters keeps requests on providers that enforce it.
+	coverageStrictSchemaProviderOptions = `{"require_parameters":true}`
 	// Coverage knowledge matching uses reciprocal-rank fusion scores, not
 	// cosine scores. A top lexical-only hit is ~0.016 and a top lexical+vector
 	// hit is ~0.033, so keep this floor on that scale.
@@ -1109,10 +1113,12 @@ func (s *SupportCoverageDailyAnalyzer) AnalyzeConversation(ctx context.Context, 
 				Role:    "user",
 				Content: string(inputJSON),
 			}},
-			Temperature: 0.1,
-			MaxTokens:   coverageAnalyzeMaxTokens,
-			JSONMode:    true,
-			JSONSchema:  schema,
+			Temperature:      0.1,
+			MaxTokens:        coverageAnalyzeMaxTokens,
+			JSONMode:         true,
+			JSONSchema:       schema,
+			JSONSchemaStrict: true,
+			ProviderOptions:  json.RawMessage(coverageStrictSchemaProviderOptions),
 		},
 	})
 	if err != nil {
@@ -1311,10 +1317,12 @@ func (s *SupportCoverageDailyAnalyzer) RefineFixBundleWithKnowledge(ctx context.
 				Role:    "user",
 				Content: string(payloadJSON),
 			}},
-			Temperature: 0.1,
-			MaxTokens:   coverageRefineMaxTokens,
-			JSONMode:    true,
-			JSONSchema:  coverageFixBundleDecisionJSONSchema(),
+			Temperature:      0.1,
+			MaxTokens:        coverageRefineMaxTokens,
+			JSONMode:         true,
+			JSONSchema:       coverageFixBundleDecisionJSONSchema(),
+			JSONSchemaStrict: true,
+			ProviderOptions:  json.RawMessage(coverageStrictSchemaProviderOptions),
 		},
 	})
 	if err != nil {
@@ -1466,20 +1474,40 @@ func normalizeCoverageConversationAnalysisResult(result *CoverageConversationAna
 		result.RecommendedFixes = result.RecommendedFixes[:3]
 	}
 	for i := range result.RecommendedFixes {
-		fix := &result.RecommendedFixes[i]
-		fix.Type = strings.TrimSpace(fix.Type)
-		fix.TargetType = strings.TrimSpace(fix.TargetType)
-		fix.TargetID = strings.TrimSpace(fix.TargetID)
-		fix.TargetTitle = strings.TrimSpace(fix.TargetTitle)
-		fix.TargetURL = strings.TrimSpace(fix.TargetURL)
-		fix.Priority = strings.TrimSpace(fix.Priority)
-		if fix.Priority == "" {
-			fix.Priority = model.SupportCoverageRecommendationPrioritySecondary
-		}
-		fix.Rationale = strings.TrimSpace(fix.Rationale)
-		fix.SuggestedChange = strings.TrimSpace(fix.SuggestedChange)
-		fix.ImplementationNotes = strings.TrimSpace(fix.ImplementationNotes)
+		normalizeCoverageRecommendedFix(&result.RecommendedFixes[i])
 	}
+}
+
+// normalizeCoverageRecommendedFix trims a fix and fills a missing target
+// surface from its type, which names the surface unambiguously.
+func normalizeCoverageRecommendedFix(fix *CoverageRecommendedFix) {
+	fix.Type = strings.TrimSpace(fix.Type)
+	fix.TargetType = strings.TrimSpace(fix.TargetType)
+	if fix.TargetType == "" {
+		fix.TargetType = coverageFixTargetTypes[fix.Type]
+	}
+	fix.TargetID = strings.TrimSpace(fix.TargetID)
+	fix.TargetTitle = strings.TrimSpace(fix.TargetTitle)
+	fix.TargetURL = strings.TrimSpace(fix.TargetURL)
+	fix.Priority = strings.TrimSpace(fix.Priority)
+	if fix.Priority == "" {
+		fix.Priority = model.SupportCoverageRecommendationPrioritySecondary
+	}
+	fix.Rationale = strings.TrimSpace(fix.Rationale)
+	fix.SuggestedChange = strings.TrimSpace(fix.SuggestedChange)
+	fix.ImplementationNotes = strings.TrimSpace(fix.ImplementationNotes)
+}
+
+// coverageFixTargetTypes maps each fix type to the surface it changes.
+var coverageFixTargetTypes = map[string]string{
+	model.SupportCoverageFixCreateArticle:     "docs",
+	model.SupportCoverageFixUpdateArticle:     "docs",
+	model.SupportCoverageFixCreateWebsitePage: "website_page",
+	model.SupportCoverageFixUpdateWebsitePage: "website_page",
+	model.SupportCoverageFixAddData:           "data_source",
+	model.SupportCoverageFixAddAction:         "tool_action",
+	model.SupportCoverageFixDefinePolicy:      "policy",
+	model.SupportCoverageFixImproveWorkflow:   "workflow",
 }
 
 func normalizeCoverageFixBundleDecision(decision *CoverageFixBundleDecision) {
@@ -1492,19 +1520,7 @@ func normalizeCoverageFixBundleDecision(decision *CoverageFixBundleDecision) {
 		decision.RecommendedFixes = decision.RecommendedFixes[:3]
 	}
 	for i := range decision.RecommendedFixes {
-		fix := &decision.RecommendedFixes[i]
-		fix.Type = strings.TrimSpace(fix.Type)
-		fix.TargetType = strings.TrimSpace(fix.TargetType)
-		fix.TargetID = strings.TrimSpace(fix.TargetID)
-		fix.TargetTitle = strings.TrimSpace(fix.TargetTitle)
-		fix.TargetURL = strings.TrimSpace(fix.TargetURL)
-		fix.Priority = strings.TrimSpace(fix.Priority)
-		if fix.Priority == "" {
-			fix.Priority = model.SupportCoverageRecommendationPrioritySecondary
-		}
-		fix.Rationale = strings.TrimSpace(fix.Rationale)
-		fix.SuggestedChange = strings.TrimSpace(fix.SuggestedChange)
-		fix.ImplementationNotes = strings.TrimSpace(fix.ImplementationNotes)
+		normalizeCoverageRecommendedFix(&decision.RecommendedFixes[i])
 	}
 }
 

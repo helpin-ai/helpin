@@ -249,6 +249,11 @@ func TestSupportCoverageDailyAnalyzer_AnalyzeConversationParsesGapTypes(t *testi
 			if !req.JSONMode || req.JSONSchema == nil {
 				t.Fatalf("expected JSON mode with schema: %+v", req)
 			}
+			// OpenRouter routes drop a non-strict schema, so the model would
+			// guess field names and fail the contract on every retry.
+			if !req.JSONSchemaStrict || string(req.ProviderOptions) != coverageStrictSchemaProviderOptions {
+				t.Fatalf("expected a strict schema on schema-enforcing providers: strict=%v options=%s", req.JSONSchemaStrict, req.ProviderOptions)
+			}
 		})
 	}
 }
@@ -275,6 +280,18 @@ func TestSupportCoverageDailyAnalyzer_AnalyzeConversationRejectsPartialRecommend
 	_, _, err := analyzer.AnalyzeConversation(context.Background(), CoverageConversationAnalysisInput{WorkspaceID: "ws-1", ConversationID: "conversation-1", TranscriptHash: "hash-1"})
 	if !errors.Is(err, errCoverageLLMContract) {
 		t.Fatalf("AnalyzeConversation error = %v, want llm contract failure", err)
+	}
+}
+
+func TestSupportCoverageDailyAnalyzer_AnalyzeConversationFillsFixTargetFromType(t *testing.T) {
+	provider := &scriptedSupportPlannerLLM{responses: []llm.ChatResponse{{Content: `{"is_support_query":true,"conversation_type":"support_query","classification_reason":"customer asks about refunds","has_gap":true,"gap_kind":"policy","gap_category":"policy","canonical_title":"Refund exceptions","customer_need":"Customer wanted a refund outside the window.","ai_failure":"AI had no refund exception policy.","human_resolution":"Agent approved a partial refund.","decision_reason":"Agents decide this by hand each time.","search_query":"","should_run_retrieval":false,"recommended_fixes":[{"type":"define_policy","target_type":"","target_id":"","target_title":"","target_url":"","priority":"primary","rationale":"Agents apply an unwritten exception rule.","suggested_change":"Write the refund exception policy for the AI.","implementation_notes":""}],"confidence":0.8}`}}}
+	analyzer := NewSupportCoverageDailyAnalyzer(provider, "openai", "gpt-5.5")
+	result, _, err := analyzer.AnalyzeConversation(context.Background(), CoverageConversationAnalysisInput{WorkspaceID: "ws-1", ConversationID: "conversation-1", TranscriptHash: "hash-1"})
+	if err != nil {
+		t.Fatalf("AnalyzeConversation: %v", err)
+	}
+	if got := result.RecommendedFixes[0].TargetType; got != "policy" {
+		t.Fatalf("TargetType = %q, want policy", got)
 	}
 }
 
@@ -431,8 +448,8 @@ func TestSupportCoverageDailyAnalyzer_RefineFixBundleWithKnowledge(t *testing.T)
 			if tc.wantTarget != "" && decision.RecommendedFixes[0].TargetID != tc.wantTarget {
 				t.Fatalf("target = %q, want %q", decision.RecommendedFixes[0].TargetID, tc.wantTarget)
 			}
-			if len(provider.requests) != 1 || !provider.requests[0].JSONMode {
-				t.Fatalf("expected one JSON-mode request, got %+v", provider.requests)
+			if len(provider.requests) != 1 || !provider.requests[0].JSONMode || !provider.requests[0].JSONSchemaStrict {
+				t.Fatalf("expected one strict JSON-schema request, got %+v", provider.requests)
 			}
 		})
 	}
