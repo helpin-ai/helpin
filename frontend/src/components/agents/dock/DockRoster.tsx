@@ -217,7 +217,7 @@ function RunRow({ summary, selected, onSelect, pinned, pinDisabled, onTogglePin 
         <span className="block truncate text-[12.5px] font-medium text-[#1c1b19] dark:text-[#eeeae1]">{dockRunTitle(summary)}</span>
         <span className="mt-px block truncate text-[11px] text-[#8a8781] dark:text-[#96928a]">{dockRunSubtitle(summary)}</span>
       </span>
-      <time className="agent-dock-roster-copy shrink-0 font-mono text-[10.5px] text-[#b3b0a9]" dateTime={summary.last_activity_at}>
+      <time className={rosterTimeClass} dateTime={summary.last_activity_at}>
         {relativeDockTime(summary.last_activity_at)}
       </time>
     </button>
@@ -319,7 +319,7 @@ function ChatRows(props: DockRosterProps) {
                   <AnimatedDockChatTitle title={chat.title.trim() || 'Untitled chat'} />
                 </span>
               </span>
-              <time className="agent-dock-roster-copy ms-auto shrink-0 font-mono text-[10.5px] text-[#b3b0a9]" dateTime={chat.last_message_at ?? chat.updated_at} data-agent-dock-chat-time>
+              <time className={rosterTimeClass} dateTime={chat.last_message_at ?? chat.updated_at} data-agent-dock-chat-time>
                 {relativeDockTime(chat.last_message_at ?? chat.updated_at)}
               </time>
             </button>
@@ -348,6 +348,9 @@ function ChatRows(props: DockRosterProps) {
     </section>;
   });
 }
+
+// Time and actions share the same trailing slot without shifting the title.
+const rosterTimeClass = 'agent-dock-roster-copy pointer-events-none absolute end-2 top-1/2 w-7 -translate-y-1/2 text-center font-mono text-[10.5px] text-[#b3b0a9] transition-opacity group-hover:opacity-0 group-focus-within:opacity-0 group-has-[[data-state=open]]:opacity-0 [@media(hover:none)]:opacity-0';
 
 const rosterMenuClass = 'agent-dock-chat-menu absolute end-2 top-1/2 z-[2] grid h-7 w-7 -translate-y-1/2 place-items-center rounded-md bg-[#f4f2ee] text-[#8a8781] opacity-0 transition-[opacity,color,background-color] hover:bg-[#eae7e0] hover:text-[#4b4945] group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 data-[state=open]:opacity-100 [@media(hover:none)]:opacity-100 dark:bg-[#292824] dark:text-[#a9a59d] dark:hover:bg-[#37352f] dark:hover:text-[#eeeae1]';
 
