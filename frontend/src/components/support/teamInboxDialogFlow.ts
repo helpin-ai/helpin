@@ -17,9 +17,14 @@ export function getTeamInboxDialogSteps(): TeamInboxDialogStep[] {
       fields: ['linked_team', 'additional_members', 'assignment_mode'],
     },
     {
-      label: 'Routing',
-      description: 'Control how Automated routing sends conversations to this inbox.',
-      fields: ['automated_routing_notice', 'manual_routing_rules', 'ai_routing_prompt'],
+      label: 'AI & Routing',
+      description: 'Choose whether AI replies in this inbox and how Automated routing sends conversations to it.',
+      fields: ['ai_replies', 'automated_routing_notice', 'manual_routing_rules', 'ai_routing_prompt'],
+    },
+    {
+      label: 'Email',
+      description: 'Forward your support email here and choose the sender address customers see.',
+      fields: ['email_forwarding', 'sender_address'],
     },
   ];
 }

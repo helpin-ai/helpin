@@ -19,4 +19,12 @@ describe('TeamInboxDialog defaults', () => {
     expect(source).toContain('Set up forwarding');
     expect(source).toContain('Add sender address');
   });
+
+  it('labels the inbox AI replies toggle positively and links to AI assistant settings', () => {
+    const source = readFileSync(resolve(__dirname, '../TeamInboxDialog.tsx'), 'utf8');
+
+    expect(source).not.toContain('Turn off AI replies');
+    expect(source).toContain('checked={!form.aiRepliesDisabled}');
+    expect(source).toContain('/settings/support-ai-assistant');
+  });
 });

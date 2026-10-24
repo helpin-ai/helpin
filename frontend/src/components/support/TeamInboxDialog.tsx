@@ -1,5 +1,5 @@
 import { TeamLabel } from '@/components/workspace/TeamLabel';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ArrowRight02Icon, Tick01Icon, ArrowLeft01Icon, HelpCircleIcon, PlusSignIcon, Cancel01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { UserAvatar } from '@/components/pm/UserAvatar';
@@ -97,7 +97,11 @@ const DEFAULT_FORM: MailboxFormState = {
   replyTimeCustomMinutes: null,
 };
 
+type DialogStepNumber = 1 | 2 | 3 | 4;
+
 const EMPTY_MEMBERS: never[] = [];
+// Stable fallback: a fresh [] each render re-runs the routing-draft effect forever while rules are unavailable.
+const EMPTY_TRIAGE_RULES: SupportTriageRule[] = [];
 const DIALOG_STEPS = getTeamInboxDialogSteps();
 
 function createRoutingCondition(type: ManualRoutingConditionDraft['type'] = 'message_contains'): ManualRoutingConditionDraft {
@@ -227,7 +231,7 @@ export function TeamInboxDialog({
   onOpenChange: (open: boolean) => void;
   mailbox?: SupportMailbox | null;
 }) {
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const [step, setStep] = useState<DialogStepNumber>(1);
   const [form, setForm] = useState<MailboxFormState>(DEFAULT_FORM);
   const [memberPickerOpen, setMemberPickerOpen] = useState(false);
   const [assignmentEdited, setAssignmentEdited] = useState(false);
@@ -240,7 +244,7 @@ export function TeamInboxDialog({
   const { teams, userMemberships, loading: teamsLoading } = useWorkspaceTeams(workspaceId);
   const { data: moduleAccess, isPending: moduleAccessLoading } = useWorkspaceModuleAccess(workspaceId);
   const { data: chatSettings } = useChatSettings(workspaceId);
-  const { data: triageRules = [] } = useSupportTriageRules(workspaceId);
+  const { data: triageRules = EMPTY_TRIAGE_RULES } = useSupportTriageRules(workspaceId);
   const { data: mailboxMembersData = EMPTY_MEMBERS, isPending: mailboxMembersLoading } = useMailboxMembers(workspaceId, mailbox?.id);
   const mailboxMembers = Array.isArray(mailboxMembersData) ? mailboxMembersData : EMPTY_MEMBERS;
   const createMailbox = useCreateMailbox(workspaceId);
@@ -252,6 +256,7 @@ export function TeamInboxDialog({
   const supportRoutingHref = workspaceSlug ? `/w/${workspaceSlug}/settings/inboxes-routing?tab=routing` : '/workspaces';
   const supportEmailSettingsHref = workspaceSlug ? `/w/${workspaceSlug}/settings/inboxes-routing?tab=email` : '/workspaces';
   const supportSenderSettingsHref = workspaceSlug ? `/w/${workspaceSlug}/settings/inboxes-routing?tab=senders&create_sender=true` : '/workspaces';
+  const supportAIAssistantHref = workspaceSlug ? `/w/${workspaceSlug}/settings/support-ai-assistant` : '/workspaces';
   const isRoutingOff = chatSettings ? !chatSettings.settings.triage_enabled : false;
 
   useEffect(() => {
@@ -428,6 +433,22 @@ export function TeamInboxDialog({
   ));
 
   const canProceedToStep2 = form.name.trim().length > 0 && form.handle.trim().length > 0;
+  // A new inbox reaches Email only after it is created; going back would create it twice.
+  const createdNewInbox = !mailbox && step === 4;
+  const canOpenStep = (target: DialogStepNumber) => {
+    if (createdNewInbox) return target === 4;
+    if (target === 1) return true;
+    if (target === 2) return canProceedToStep2;
+    if (target === 3) return canProceedToStep2 && assignmentValid;
+    return Boolean(mailbox);
+  };
+  const saveDisabled =
+    !assignmentValid ||
+    createMailbox.isPending ||
+    updateMailbox.isPending ||
+    createTriageRule.isPending ||
+    updateTriageRule.isPending ||
+    deleteTriageRule.isPending;
 
   const toggleMember = (memberId: string, checked: boolean) => {
     setAssignmentEdited(true);
@@ -627,44 +648,27 @@ export function TeamInboxDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="overflow-hidden p-0 sm:max-w-2xl">
-        {step !== 4 && <div className="flex items-center gap-0 border-b px-6 pb-4 pt-6">
-          <button
-            type="button"
-            onClick={() => setStep(1)}
-            className="flex items-center gap-2 text-sm font-medium"
-          >
-            <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold transition-colors ${step === 1 ? 'bg-primary text-primary-foreground' : 'bg-primary/10 text-primary'}`}>
-              {step > 1 ? <Tick01Icon className="h-3.5 w-3.5" /> : '1'}
-            </span>
-            <span className={step === 1 ? 'text-foreground' : 'text-muted-foreground'}>{DIALOG_STEPS[0].label}</span>
-          </button>
-          <div className="mx-3 h-px w-8 bg-border" />
-          <button
-            type="button"
-            onClick={() => {
-              if (canProceedToStep2) setStep(2);
-            }}
-            className="flex items-center gap-2 text-sm font-medium"
-          >
-            <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold transition-colors ${step === 2 ? 'bg-primary text-primary-foreground' : step > 2 ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
-              {step > 2 ? <Tick01Icon className="h-3.5 w-3.5" /> : '2'}
-            </span>
-            <span className={step === 2 ? 'text-foreground' : 'text-muted-foreground'}>{DIALOG_STEPS[1].label}</span>
-          </button>
-          <div className="mx-3 h-px w-8 bg-border" />
-          <button
-            type="button"
-            onClick={() => {
-              if (canProceedToStep2 && assignmentValid) setStep(3);
-            }}
-            className="flex items-center gap-2 text-sm font-medium"
-          >
-            <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold transition-colors ${step === 3 ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
-              3
-            </span>
-            <span className={step === 3 ? 'text-foreground' : 'text-muted-foreground'}>{DIALOG_STEPS[2].label}</span>
-          </button>
-        </div>}
+        <div className="flex items-center gap-0 overflow-x-auto border-b pb-4 pl-6 pr-12 pt-6">
+          {DIALOG_STEPS.map((dialogStep, index) => {
+            const stepNumber = (index + 1) as DialogStepNumber;
+            return (
+              <Fragment key={dialogStep.label}>
+                {index > 0 && <div className="mx-2 h-px w-4 shrink-0 bg-border" />}
+                <button
+                  type="button"
+                  disabled={!canOpenStep(stepNumber)}
+                  onClick={() => setStep(stepNumber)}
+                  className="flex shrink-0 items-center gap-2 whitespace-nowrap text-sm font-medium disabled:cursor-default"
+                >
+                  <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold transition-colors ${step === stepNumber ? 'bg-primary text-primary-foreground' : step > stepNumber ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                    {step > stepNumber ? <Tick01Icon className="h-3.5 w-3.5" /> : stepNumber}
+                  </span>
+                  <span className={step === stepNumber ? 'text-foreground' : 'text-muted-foreground'}>{dialogStep.label}</span>
+                </button>
+              </Fragment>
+            );
+          })}
+        </div>
 
         {step === 1 && (
           <div className="px-6 pb-2">
@@ -1008,13 +1012,34 @@ export function TeamInboxDialog({
         {step === 3 && (
           <div className="max-h-[calc(90svh-8rem)] overflow-y-auto px-6 pb-2 pr-5">
             <DialogHeader className="mb-4">
-              <DialogTitle>Routing</DialogTitle>
+              <DialogTitle>{DIALOG_STEPS[2].label}</DialogTitle>
               <DialogDescription>
-                Set how conversations reach this inbox using manual rules and AI routing.
+                Choose whether AI replies in this inbox and how conversations reach it.
               </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4">
+              <div className="border-b pb-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="text-sm font-medium">AI replies</h3>
+                    <p className="text-xs text-muted-foreground">
+                      AI answers customers and sends follow-ups in this inbox. When off, Ask AI stays available to your team.
+                    </p>
+                  </div>
+                  <Switch
+                    aria-label="AI replies"
+                    checked={!form.aiRepliesDisabled}
+                    onCheckedChange={(checked) => setForm((current) => ({ ...current, aiRepliesDisabled: !checked }))}
+                  />
+                </div>
+                <Button asChild variant="link" size="sm" className="mt-1 h-auto px-0 text-xs">
+                  <a href={supportAIAssistantHref} target="_blank" rel="noreferrer">
+                    More settings in AI assistant
+                  </a>
+                </Button>
+              </div>
+
               {isRoutingOff && (
                 <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
                   <span>
@@ -1134,12 +1159,6 @@ export function TeamInboxDialog({
                   />
                 </div>
 
-                <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
-                  <div><Label htmlFor="inbox-ai-replies-disabled">Turn off AI replies</Label>
-                    <p className="mt-1 text-xs text-muted-foreground">Stops automatic replies and follow-ups in this inbox. Ask AI stays available.</p>
-                  </div>
-                  <Switch id="inbox-ai-replies-disabled" checked={form.aiRepliesDisabled} onCheckedChange={(checked) => setForm(current => ({ ...current, aiRepliesDisabled: checked }))} />
-                </div>
                 {form.triageEligible && (
                   <div className="space-y-3">
                     <Textarea
@@ -1157,11 +1176,11 @@ export function TeamInboxDialog({
         )}
 
         {step === 4 && (
-          <div className="space-y-5 px-6 py-6">
-            <DialogHeader>
-              <DialogTitle>Your team inbox is ready</DialogTitle>
+          <div className="px-6 pb-2">
+            <DialogHeader className="mb-4">
+              <DialogTitle>{createdNewInbox ? 'Your team inbox is ready' : DIALOG_STEPS[3].label}</DialogTitle>
               <DialogDescription>
-                You can start using it now. Set up email when you’re ready.
+                {createdNewInbox ? 'You can start using it now. Set up email when you’re ready.' : DIALOG_STEPS[3].description}
               </DialogDescription>
             </DialogHeader>
 
@@ -1223,25 +1242,26 @@ export function TeamInboxDialog({
                 <ArrowLeft01Icon className="h-4 w-4" />
                 Back
               </Button>
-              <Button
-                onClick={submit}
-                disabled={
-                  !assignmentValid ||
-                  createMailbox.isPending ||
-                  updateMailbox.isPending ||
-                  createTriageRule.isPending ||
-                  updateTriageRule.isPending ||
-                  deleteTriageRule.isPending
-                }
-              >
+              <Button onClick={submit} disabled={saveDisabled}>
                 {mailbox ? 'Save Changes' : 'Create Inbox'}
               </Button>
             </>
           )}
-          {step === 4 && (
+          {step === 4 && createdNewInbox && (
             <Button onClick={() => onOpenChange(false)}>
               Close
             </Button>
+          )}
+          {step === 4 && !createdNewInbox && (
+            <>
+              <Button variant="outline" onClick={() => setStep(3)} className="mr-auto gap-2">
+                <ArrowLeft01Icon className="h-4 w-4" />
+                Back
+              </Button>
+              <Button onClick={submit} disabled={saveDisabled}>
+                Save Changes
+              </Button>
+            </>
           )}
         </DialogFooter>
       </DialogContent>
