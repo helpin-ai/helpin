@@ -162,9 +162,6 @@ export function DocumentsTable({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
-            <span className="text-xs text-muted-foreground shrink-0">
-              {displayDocs.length === 1 ? '1 document' : `${displayDocs.length} documents`}
-            </span>
           </div>
           <div className="flex shrink-0 items-center justify-end gap-1">
           {showStatusFilter && <DropdownMenu>
