@@ -55,6 +55,7 @@ import { SavedViewEmbedExtension } from './SavedViewEmbedExtension'
 import { CommentAnchorExtension, type DocsCommentDecorationAnchor } from './CommentAnchorExtension'
 import { ProposalAnchorExtension } from './ProposalAnchorExtension'
 import { DocsTaskItemExtension } from './DocsTaskItemExtension'
+import { DocsAISelectionMenu } from './DocsAISelectionMenu'
 import { docsToolbarPosition } from './docsToolbarPosition'
 import { TaskItemMetadataToolbar } from './TaskItemMetadataToolbar'
 import { ToggleSectionExtension } from './ToggleSectionExtension'
@@ -331,7 +332,8 @@ function parseCSVRows(text: string): string[][] {
   return rows
 }
 
-function FloatingToolbar({ editor, containerRef, onCreateCommentAnchor }: {
+function FloatingToolbar({ editor, containerRef, onCreateCommentAnchor, workspaceId }: {
+  workspaceId?: string
   containerRef: RefObject<HTMLDivElement | null>
   editor: ReturnType<typeof useEditor>
   uploadConfig?: EditorUploadConfig
@@ -340,6 +342,10 @@ function FloatingToolbar({ editor, containerRef, onCreateCommentAnchor }: {
 }) {
   const toolbarRef = useRef<HTMLDivElement>(null)
   const formatMenuRef = useRef<HTMLDivElement>(null)
+  const aiMenuRef = useRef<HTMLDivElement>(null)
+  const [showAIMenu, setShowAIMenu] = useState(false)
+  const aiOpenRef = useRef(false)
+  aiOpenRef.current = showAIMenu
   const [pos, setPos] = useState<ReturnType<typeof docsToolbarPosition> | null>(null)
   const anchorRef = useRef<{ rect: () => { left: number; right: number; top: number; bottom: number }; below: boolean } | null>(null)
   const repositionRef = useRef<() => void>(() => {})
@@ -369,6 +375,7 @@ function FloatingToolbar({ editor, containerRef, onCreateCommentAnchor }: {
     repositionRef.current = reposition
 
     const updatePosition = () => {
+      if (aiOpenRef.current) return
       const { from, to, empty } = editor.state.selection
 
       // Don't show toolbar when an atom node is selected (htmlBlock, videoEmbed, image)
@@ -460,7 +467,7 @@ function FloatingToolbar({ editor, containerRef, onCreateCommentAnchor }: {
       // Delay blur so clicks on toolbar/popover are processed first
       setTimeout(() => {
         // Don't hide if focus moved to our toolbar (e.g. link input)
-        if (toolbarRef.current?.contains(document.activeElement) || formatMenuRef.current?.contains(document.activeElement)) return
+        if (aiOpenRef.current || toolbarRef.current?.contains(document.activeElement) || formatMenuRef.current?.contains(document.activeElement)) return
         anchorRef.current = null
         setPos(null)
         // Clear stale position only if no popover is open
@@ -486,7 +493,7 @@ function FloatingToolbar({ editor, containerRef, onCreateCommentAnchor }: {
   useEffect(() => {
     if (!showLinkPopover && !showFormatMenu) return
     const handleClick = (e: MouseEvent) => {
-      if (toolbarRef.current?.contains(e.target as Node) || formatMenuRef.current?.contains(e.target as Node)) return
+      if (toolbarRef.current?.contains(e.target as Node) || formatMenuRef.current?.contains(e.target as Node) || aiMenuRef.current?.contains(e.target as Node)) return
       setShowLinkPopover(false)
       setShowFormatMenu(false)
       savedSelectionRef.current = null
@@ -499,7 +506,7 @@ function FloatingToolbar({ editor, containerRef, onCreateCommentAnchor }: {
   const lastPosRef = useRef(pos)
   if (pos) lastPosRef.current = pos
   const activePos = pos ?? lastPosRef.current
-  const toolbarVisible = Boolean(activePos || showLinkPopover || showFormatMenu)
+  const toolbarVisible = Boolean(activePos || showLinkPopover || showFormatMenu || showAIMenu)
 
   useLayoutEffect(() => {
     if (!toolbarVisible) return
@@ -512,7 +519,7 @@ function FloatingToolbar({ editor, containerRef, onCreateCommentAnchor }: {
   }, [toolbarVisible, showLinkPopover, showFormatMenu, containerRef])
 
   if (!editor) return null
-  if (!activePos && !showLinkPopover && !showFormatMenu) return null
+  if (!activePos && !showLinkPopover && !showFormatMenu && !showAIMenu) return null
 
   const openLinkPopover = () => {
     // Save selection before input steals focus
@@ -523,6 +530,7 @@ function FloatingToolbar({ editor, containerRef, onCreateCommentAnchor }: {
     setLinkNewTab(true)
     setShowLinkPopover(true)
     setShowFormatMenu(false)
+    setShowAIMenu(false)
     setTimeout(() => linkInputRef.current?.focus(), 50)
   }
 
@@ -658,7 +666,7 @@ function FloatingToolbar({ editor, containerRef, onCreateCommentAnchor }: {
         <div className="mx-0.5 h-4 w-px bg-border" />
 
         {/* Portal keeps the dropdown out of the toolbar's measured size. */}
-        <Popover open={showFormatMenu} onOpenChange={(open) => { setShowFormatMenu(open); if (open) setShowLinkPopover(false); }}>
+        <Popover open={showFormatMenu} onOpenChange={(open) => { setShowFormatMenu(open); if (open) { setShowLinkPopover(false); setShowAIMenu(false); } }}>
           <PopoverTrigger asChild>
             <button
               type="button"
@@ -675,7 +683,7 @@ function FloatingToolbar({ editor, containerRef, onCreateCommentAnchor }: {
             side="bottom"
             sideOffset={6}
             collisionPadding={8}
-            className="w-44 max-h-[var(--radix-popover-content-available-height)] gap-0 overflow-y-auto rounded-lg p-1 shadow-lg"
+            className="z-[60] w-44 max-w-[min(calc(100vw-1rem),var(--radix-popover-content-available-width))] max-h-[var(--radix-popover-content-available-height)] gap-0 overflow-y-auto rounded-lg p-1 shadow-lg"
             onOpenAutoFocus={(e) => e.preventDefault()}
             onCloseAutoFocus={(e) => e.preventDefault()}
             onMouseDown={(e) => e.preventDefault()}
@@ -690,6 +698,16 @@ function FloatingToolbar({ editor, containerRef, onCreateCommentAnchor }: {
             <FormatMenuItem label="Superscript" active={editor.isActive('superscript')} onClick={() => { editor.chain().focus().toggleSuperscript().run(); setShowFormatMenu(false); }} />
           </PopoverContent>
         </Popover>
+        {workspaceId && <DocsAISelectionMenu
+          editor={editor}
+          workspaceId={workspaceId}
+          open={showAIMenu}
+          contentRef={aiMenuRef}
+          onOpenChange={(open) => {
+            setShowAIMenu(open)
+            if (open) { setShowFormatMenu(false); setShowLinkPopover(false) }
+          }}
+        />}
       </div>}
 
       {/* Link popover */}
@@ -2017,6 +2035,7 @@ export function DocsEditor({
         <FloatingToolbar
           editor={editor}
           containerRef={toolbarContainerRef}
+          workspaceId={workspaceId}
           uploadConfig={uploadConfig}
           onInsertImage={insertImage}
           onCreateCommentAnchor={onCreateCommentAnchor}

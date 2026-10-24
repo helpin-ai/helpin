@@ -1607,6 +1607,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermDocsRead)).Get("/images/content", h.Assets.DocsImage)
 				}
 
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/rewrite-selection", h.Docs.RewriteSelection)
+
 				// Spaces — docs.read / docs.edit / docs.admin
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/spaces", h.Docs.ListSpaces)
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/spaces", h.Docs.CreateSpace)

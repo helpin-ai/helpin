@@ -166,6 +166,7 @@ vi.mock('../EntityEmbedDialog', () => ({ EntityEmbedDialog: () => null }))
 vi.mock('../TableControls', () => ({ TableControls: () => null }))
 vi.mock('../BlockGapInserter', () => ({ BlockGapInserter: () => null }))
 vi.mock('../SlashMenu', () => ({ SlashMenu: () => null }))
+vi.mock('../DocsAISelectionMenu', () => ({ DocsAISelectionMenu: () => null }))
 
 vi.mock('@/hooks/useEditorImageUpload', () => ({
   uploadEditorImage: (...args: unknown[]) => testState.uploadEditorImage(...args),

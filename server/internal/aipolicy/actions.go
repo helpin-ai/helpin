@@ -83,6 +83,7 @@ func defaultActions() []Action {
 		{"support_task_draft", "Support task draft", CategorySupportAI, "support", true, ModalityChat},
 		{"docs_generation", "Document generation", CategoryDocsAI, "docs", true, ModalityChat},
 		{"docs_article_translation", "Help article translation", CategoryDocsAI, "docs", true, ModalityChat},
+		{"docs_selection_rewrite", "Document selection rewrite", CategoryDocsAI, "docs", true, ModalityChat},
 		{"docs_article_generation", "Help article generation", CategoryDocsAI, "docs", true, ModalityChat},
 		{"docs_import_conversion", "Help article import formatting", CategoryDocsAI, "docs", true, ModalityChat},
 		{"helpcenter_answer_generation", "Help-center answer generation", CategoryDocsAI, "docs", true, ModalityChat},

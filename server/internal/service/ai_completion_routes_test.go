@@ -23,6 +23,7 @@ func TestAICompletionRouteRegistryCoversDirectFeatures(t *testing.T) {
 		BillingFeatureSupportTaskDraft,
 		BillingFeatureDocsArticleTranslation,
 		BillingFeatureDocsArticleGeneration,
+		BillingFeatureDocsSelectionRewrite,
 		BillingFeatureDocsImportConversion,
 		BillingFeatureHelpcenterAnswer,
 		BillingFeatureCustomAgentDraft,
