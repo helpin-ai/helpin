@@ -45,6 +45,7 @@ import {
   splitMailboxMembersBySelection,
 } from './teamInboxDialogMembers';
 import { TeamInboxAssignmentFields } from './TeamInboxAssignmentFields';
+import { TeamInboxEmailSetup } from './TeamInboxEmailSetup';
 import { filterInboxAssignmentMembers, resolveInboxAssignmentSelection, type InboxAssignmentMode } from './teamInboxAssignment';
 import { getTeamInboxDialogSteps } from './teamInboxDialogFlow';
 
@@ -156,6 +157,16 @@ function buildRoutingRuleDraft(rules: SupportTriageRule[]): ManualRoutingRuleDra
   };
 }
 
+// Compares rules by content; generated condition ids differ between otherwise identical drafts.
+function routingRuleSnapshot(rule: ManualRoutingRuleDraft | null) {
+  if (!rule) return null;
+  return {
+    active: rule.active,
+    conditionLogic: rule.conditionLogic,
+    conditions: rule.conditions.map(({ type, values, inputValue }) => ({ type, values, inputValue })),
+  };
+}
+
 function normalizeHandle(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, '-');
 }
@@ -237,6 +248,7 @@ export function TeamInboxDialog({
   const [assignmentEdited, setAssignmentEdited] = useState(false);
   const [manualRuleDraft, setManualRuleDraft] = useState<ManualRoutingRuleDraft | null>(null);
   const [deletedManualRuleIds, setDeletedManualRuleIds] = useState<string[]>([]);
+  const [createdMailboxId, setCreatedMailboxId] = useState<string | null>(null);
 
   const currentUserId = useAuthStore((state) => state.user?.id);
   const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug);
@@ -254,8 +266,6 @@ export function TeamInboxDialog({
   const deleteTriageRule = useDeleteSupportTriageRule(workspaceId);
   const supportAccessHref = workspaceSlug ? `/w/${workspaceSlug}/settings/access` : '/workspaces';
   const supportRoutingHref = workspaceSlug ? `/w/${workspaceSlug}/settings/inboxes-routing?tab=routing` : '/workspaces';
-  const supportEmailSettingsHref = workspaceSlug ? `/w/${workspaceSlug}/settings/inboxes-routing?tab=email` : '/workspaces';
-  const supportSenderSettingsHref = workspaceSlug ? `/w/${workspaceSlug}/settings/inboxes-routing?tab=senders&create_sender=true` : '/workspaces';
   const supportAIAssistantHref = workspaceSlug ? `/w/${workspaceSlug}/settings/support-ai-assistant` : '/workspaces';
   const isRoutingOff = chatSettings ? !chatSettings.settings.triage_enabled : false;
 
@@ -267,6 +277,7 @@ export function TeamInboxDialog({
       setMemberPickerOpen(false);
       setManualRuleDraft(null);
       setDeletedManualRuleIds([]);
+      setCreatedMailboxId(null);
       return;
     }
     setForm(buildFormState(mailbox));
@@ -442,6 +453,18 @@ export function TeamInboxDialog({
     if (target === 3) return canProceedToStep2 && assignmentValid;
     return Boolean(mailbox);
   };
+  const hasUnsavedChanges = useMemo(() => {
+    if (!mailbox) return false;
+    const savedForm = {
+      ...buildFormState(mailbox),
+      workspaceMemberIds: mailboxMembers.map((member) => member.workspace_member_id),
+    };
+    return (
+      JSON.stringify(form) !== JSON.stringify(savedForm) ||
+      JSON.stringify(routingRuleSnapshot(manualRuleDraft)) !==
+        JSON.stringify(routingRuleSnapshot(buildRoutingRuleDraft(mailboxRoutingRules)))
+    );
+  }, [form, mailbox, mailboxMembers, mailboxRoutingRules, manualRuleDraft]);
   const saveDisabled =
     !assignmentValid ||
     createMailbox.isPending ||
@@ -638,6 +661,7 @@ export function TeamInboxDialog({
       const createdMailbox = await createMailbox.mutateAsync(payload);
       await syncManualRules(createdMailbox.id);
       toast.success('Team inbox created');
+      setCreatedMailboxId(createdMailbox.id);
       setStep(4);
       return;
     }
@@ -1184,31 +1208,7 @@ export function TeamInboxDialog({
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-3">
-              <div className="rounded-lg border p-4">
-                <h3 className="text-sm font-medium">Email forwarding</h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Send messages received at your existing email address to this Helpin inbox.
-                </p>
-                <Button asChild variant="link" size="sm" className="mt-2 h-auto px-0">
-                  <a href={supportEmailSettingsHref} target="_blank" rel="noreferrer">
-                    Set up forwarding
-                  </a>
-                </Button>
-              </div>
-
-              <div className="rounded-lg border p-4">
-                <h3 className="text-sm font-medium">Sender address</h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Choose and verify the email address customers see when your team replies.
-                </p>
-                <Button asChild variant="link" size="sm" className="mt-2 h-auto px-0">
-                  <a href={supportSenderSettingsHref} target="_blank" rel="noreferrer">
-                    Add sender address
-                  </a>
-                </Button>
-              </div>
-            </div>
+            <TeamInboxEmailSetup workspaceId={workspaceId} mailboxId={mailbox?.id ?? createdMailboxId} />
           </div>
         )}
 
@@ -1249,7 +1249,7 @@ export function TeamInboxDialog({
           )}
           {step === 4 && createdNewInbox && (
             <Button onClick={() => onOpenChange(false)}>
-              Close
+              Done
             </Button>
           )}
           {step === 4 && !createdNewInbox && (
@@ -1258,9 +1258,16 @@ export function TeamInboxDialog({
                 <ArrowLeft01Icon className="h-4 w-4" />
                 Back
               </Button>
-              <Button onClick={submit} disabled={saveDisabled}>
-                Save Changes
-              </Button>
+              {/* Nothing on this tab is saved here; only offer Save when other tabs have edits. */}
+              {hasUnsavedChanges ? (
+                <Button onClick={submit} disabled={saveDisabled}>
+                  Save Changes
+                </Button>
+              ) : (
+                <Button onClick={() => onOpenChange(false)}>
+                  Done
+                </Button>
+              )}
             </>
           )}
         </DialogFooter>

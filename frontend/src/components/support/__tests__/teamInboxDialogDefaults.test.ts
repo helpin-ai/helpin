@@ -12,12 +12,15 @@ describe('TeamInboxDialog defaults', () => {
   it('shows optional email setup after a new inbox is created', () => {
     const source = readFileSync(resolve(__dirname, '../TeamInboxDialog.tsx'), 'utf8');
 
+    const emailSetupSource = readFileSync(resolve(__dirname, '../TeamInboxEmailSetup.tsx'), 'utf8');
+
     expect(source).toContain('setStep(4);');
     expect(source).toContain('Your team inbox is ready');
-    expect(source).toContain('Send messages received at your existing email address to this Helpin inbox.');
-    expect(source).toContain('Choose and verify the email address customers see when your team replies.');
-    expect(source).toContain('Set up forwarding');
-    expect(source).toContain('Add sender address');
+    expect(source).toContain('<TeamInboxEmailSetup');
+    expect(emailSetupSource).toContain('Send messages received at your existing email address to this Helpin inbox.');
+    expect(emailSetupSource).toContain('Choose and verify the email address customers see when your team replies.');
+    expect(emailSetupSource).toContain('Set up forwarding');
+    expect(emailSetupSource).toContain('Add sender address');
   });
 
   it('labels the inbox AI replies toggle positively and links to AI assistant settings', () => {
