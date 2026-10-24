@@ -1469,10 +1469,12 @@ export function DocsEditor({
       }),
       CodeBlockExtension,
       Placeholder.configure({
+        showOnlyCurrent: true,
+        showOnlyWhenEditable: true,
         placeholder: ({ node }) => {
           if (node.type.name === 'heading') return 'Heading';
           if (node.type.name === 'codeBlock') return '';
-          return "Type '/' for commands, or start writing...";
+          return "Type here or press '/' for options";
         },
       }),
       Markdown.configure({

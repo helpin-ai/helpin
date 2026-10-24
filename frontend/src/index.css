@@ -796,7 +796,9 @@
 .pm-rich-text :where(p, ol, ul, li, blockquote, dl) {
   line-height: inherit;
 }
-/* Show placeholder only on the first empty paragraph of an empty editor. */
+/* Docs also shows a hint on the current empty paragraph. Other editors keep
+   their placeholder limited to the first block of an empty document. */
+.docs-editor-prose p.is-empty::before,
 .tiptap.is-editor-empty > p.is-empty:first-child::before,
 .ProseMirror.is-editor-empty > p.is-empty:first-child::before,
 .tiptap > p.is-editor-empty:first-child::before,
