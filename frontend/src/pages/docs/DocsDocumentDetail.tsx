@@ -1539,7 +1539,7 @@ export function DocsDocumentDetail({
               {isSourceLocaleActive && canEditDocs && <DocsSharePopover
                 shared={doc.is_publicly_shared}
                 shareToken={doc.share_token}
-                disabled={toggleShare.isPending || doc.is_locked}
+                disabled={toggleShare.isPending}
                 onToggle={(checked) => toggleShare.mutate(
                   { docId, isPubliclyShared: checked },
                   {

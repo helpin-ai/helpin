@@ -33,7 +33,7 @@ it('copies the public URL when sharing is enabled', async () => {
  expect(copy).toHaveBeenCalledWith(`${window.location.origin}/share/token-1`)
  expect(document.body.textContent).toContain('Copied')
 })
-it('keeps the toggle disabled for locked documents or pending changes', async () => {
+it('keeps the toggle disabled while a sharing change is pending', async () => {
  await render(true,true)
  const control=document.querySelector<HTMLButtonElement>('[role="switch"]')!
  expect(control.disabled).toBe(true)
