@@ -304,6 +304,8 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 			brief.Issue = issueSummary
 		}
 	}
+	investigation := newSupportInvestigation(conv, issueKey, brief, now)
+	brief.InvestigationRequested = investigation != nil
 	note := buildSupportHandoffNote(conv, history, reason, brief, now)
 	messages := []*model.SupportMessage{replyMsg, escalationSystemMsg, note}
 	if systemEventForEscalationReason(reason) == model.SystemEventCustomerRequestedHuman {
@@ -330,7 +332,7 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 			return nil, nil, nil
 		}
 		return fields, nil, nil
-	}, newSupportInvestigation(conv, issueKey, brief, now), messages...)
+	}, investigation, messages...)
 	if err != nil {
 		return fmt.Errorf("update conversation for escalation: %w", err)
 	}

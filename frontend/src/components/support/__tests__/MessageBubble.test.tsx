@@ -1254,6 +1254,42 @@ Can I export my data?`,
     } finally { rendered.cleanup(); post.mockRestore() }
   })
 
+  it('shows a code check note for support with engineering detail folded away', async () => {
+    const restored = vi.fn()
+    window.addEventListener('support:restore-draft', restored)
+    const rendered = renderBubble({
+      id: 'code-check', workspace_id: 'ws-1', conversation_id: 'conv-1', sender_type: 'agent',
+      sender_display_name: 'Code check', message_type: 'note', is_internal: true,
+      content: "## What's happening\n\nThe post was saved as a draft.\n\n## Suggested reply\n\nOpen the post and click Schedule.\n\n## For engineering\n\nApprovalBuilder skips drafts.",
+      metadata: JSON.stringify({ investigation_id: 'job', report_format: 'support_v1', suggested_reply: 'Open the post and click Schedule.' }),
+      created_at: '2026-10-23T22:43:30Z', updated_at: '2026-10-23T22:43:30Z',
+    })
+    try {
+      const details = rendered.container.querySelector('[data-support-code-check-actions] details')
+      expect(details?.open).toBe(false)
+      expect(details?.querySelector('summary')?.textContent).toBe('Engineering details')
+      expect(details?.textContent).toContain('ApprovalBuilder skips drafts.')
+      expect(rendered.container.textContent?.match(/ApprovalBuilder skips drafts/g)).toHaveLength(1)
+      expect(rendered.container.textContent).toContain('The post was saved as a draft.')
+      await act(async () => findButtonByText(rendered.container, 'Use suggested reply')?.click())
+      expect(restored.mock.calls[0][0].detail).toMatchObject({ conversationId: 'conv-1', markdown: 'Open the post and click Schedule.' })
+    } finally {
+      rendered.cleanup(); window.removeEventListener('support:restore-draft', restored)
+    }
+  })
+
+  it('hides the suggested reply action in read-only views', () => {
+    const rendered = renderBubble({
+      id: 'code-check', workspace_id: 'ws-1', conversation_id: 'conv-1', sender_type: 'agent',
+      sender_display_name: 'Code check', message_type: 'note', is_internal: true, content: "## What's happening\n\nSummary.",
+      metadata: JSON.stringify({ report_format: 'support_v1', suggested_reply: 'Reply' }),
+      created_at: '2026-10-23T22:43:30Z', updated_at: '2026-10-23T22:43:30Z',
+    }, undefined, { readOnly: true })
+    try {
+      expect(findButtonByText(rendered.container, 'Use suggested reply')).toBeNull()
+    } finally { rendered.cleanup() }
+  })
+
   it('keeps Undo restoring the draft with delivery mode and subject', async () => {
     const remove = vi.spyOn(supportService, 'deleteConversationMessage').mockResolvedValue({ data: { markdown: 'Restored reply' }, error: null } as Awaited<ReturnType<typeof supportService.deleteConversationMessage>>)
     const restored = vi.fn()

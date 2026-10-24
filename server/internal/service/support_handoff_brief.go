@@ -20,6 +20,7 @@ type SupportHandoffBrief struct {
 	ExpectedControlVersion *int64   `json:"-"`
 	ExpectedNoRun          bool     `json:"-"`
 	ExpectedRunID          string   `json:"-"`
+	InvestigationRequested bool     `json:"-"`
 	Issue                  string   `json:"issue_summary"`
 	AttemptedSteps         []string `json:"attempted_steps"`
 	UnresolvedQuestions    []string `json:"unresolved_questions"`
@@ -110,10 +111,40 @@ func buildSupportHandoffNote(conv *model.SupportConversation, history []model.Su
 	if unresolved == "" {
 		unresolved = "A teammate needs to review the customer's latest request; the remaining steps have not been established."
 	}
-	content := fmt.Sprintf("AI handoff\n\nIssue\n%s\n\nAlready tried / suggested\n%s\n\nStill unresolved\n%s\n\nReason for handoff\n%s", issue, attempted, unresolved, briefText(strings.ReplaceAll(reason, "_", " ")))
+	reasonText := supportHandoffReasonText(reason)
+	if brief.InvestigationRequested {
+		reasonText += " A code check was requested; its findings will appear here as a separate note."
+	}
+	content := fmt.Sprintf("AI handoff\n\nIssue\n%s\n\nAlready tried / suggested\n%s\n\nStill unresolved\n%s\n\nReason for handoff\n%s", issue, attempted, unresolved, reasonText)
 
 	note := supportControlNote(conv, "", content, now)
 	meta, _ := json.Marshal(map[string]any{"ai_handoff_brief": true, "reason": reason, "source_message_ids": refs, "agent_authored": brief.Issue != "" || len(brief.AttemptedSteps) > 0 || len(brief.UnresolvedQuestions) > 0})
 	note.Metadata = string(meta)
 	return note
+}
+
+// supportHandoffReasonText turns a machine handoff reason into a sentence a
+// teammate can act on. Unknown reasons keep their readable code.
+func supportHandoffReasonText(reason string) string {
+	switch {
+	case reason == "customer_requested" || reason == "customer_requested_human":
+		return "The customer asked to talk to a person."
+	case reason == "cannot_answer":
+		return "AI couldn't find a confirmed answer."
+	case reason == "out_of_scope":
+		return "This request is outside what AI is set up to handle."
+	case reason == "risky_request":
+		return "This needs a teammate's judgement, for example billing, account or legal matters."
+	case reason == "agent_requested":
+		return "AI decided a teammate should take over."
+	case reason == "low_confidence":
+		return "AI wasn't confident enough to send its answer."
+	case reason == "mcp_reply_not_supported":
+		return "AI's answer about the account wasn't backed by what it found, so it wasn't sent."
+	case strings.HasPrefix(reason, "answer_validation_"):
+		return "AI's answer didn't pass its source check, so it wasn't sent."
+	case reason == "provider_unavailable":
+		return "The AI service was unavailable."
+	}
+	return briefText(strings.ReplaceAll(reason, "_", " "))
 }

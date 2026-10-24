@@ -3,6 +3,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ContactAvatarImage } from '@/components/ui/contact-avatar-image';
 import { SupportAIActivity } from './SupportAIActivity';
 import { getSupportAIActivity } from './supportAIActivityModel';
+import { getSupportInvestigationReport } from './supportInvestigationReport';
 import { PendingSendStatus } from './PendingSendStatus';
 import { MessageDeliveryStatus } from './MessageDeliveryStatus';
 import { getMessageDelivery } from './messageDelivery';
@@ -806,6 +807,8 @@ export const MessageBubble = memo(function MessageBubble({
 
   // ── Internal note: team bubble with the same author avatar as replies ──
   if (isInternal) {
+    const investigationReport = getSupportInvestigationReport(message, visibleContent);
+    const suggestedReply = readOnly ? '' : investigationReport?.suggestedReply ?? '';
     return (
       <>
         <div className={`flex min-w-0 max-w-full justify-end ${isConsecutive ? 'mt-1' : 'mt-5'}`}>
@@ -823,7 +826,24 @@ export const MessageBubble = memo(function MessageBubble({
                   </div>
                   {hasDisplayContent && (
                     <div className="prose-chat inline text-sm leading-relaxed text-amber-900 [&>p:last-child]:inline dark:text-amber-200">
-                      <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={NOTE_REHYPE_PLUGINS} components={markdownComponents}>{visibleContent}</Markdown>
+                      <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={NOTE_REHYPE_PLUGINS} components={markdownComponents}>{investigationReport?.summary ?? visibleContent}</Markdown>
+                    </div>
+                  )}
+                  {(suggestedReply || investigationReport?.engineering) && (
+                    <div data-support-code-check-actions className="mt-2 space-y-1.5 text-xs text-amber-700 dark:text-amber-300">
+                      {suggestedReply && (
+                        <button type="button" onClick={() => restoreComposerDraft(suggestedReply)} className="block w-fit rounded-sm font-medium hover:text-amber-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:text-amber-100">
+                          Use suggested reply
+                        </button>
+                      )}
+                      {investigationReport?.engineering && (
+                        <details>
+                          <summary className="w-fit cursor-pointer rounded-sm font-medium hover:text-amber-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:text-amber-100">Engineering details</summary>
+                          <div className="prose-chat mt-2 text-sm leading-relaxed text-amber-900 dark:text-amber-200">
+                            <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={NOTE_REHYPE_PLUGINS} components={markdownComponents}>{investigationReport.engineering}</Markdown>
+                          </div>
+                        </details>
+                      )}
                     </div>
                   )}
                   {renderFileAttachments('note', hasDisplayContent ? 'mt-2' : 'mt-1.5')}
