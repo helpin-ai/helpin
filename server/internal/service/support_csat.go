@@ -50,6 +50,17 @@ func (s *SupportInboxService) SubmitConversationCSAT(ctx context.Context, submis
 	if conversation == nil || conversation.AnonymizedAt != nil || conversation.Status != model.SupportConversationStatusResolved {
 		return nil, ErrSupportCSATUnavailable
 	}
+	if rootID != submission.ConversationID {
+		// A conversation merged into another customer's must not rate, or
+		// read, that customer's conversation.
+		source, err := s.loadConversationUnscoped(ctx, submission.WorkspaceID, submission.ConversationID)
+		if err != nil {
+			return nil, err
+		}
+		if !model.SameSupportCustomer(source, conversation) {
+			return nil, ErrSupportCSATUnavailable
+		}
+	}
 
 	comment := normalizeSupportCSATComment(submission.Comment)
 	resolvedBy := model.SupportCSATResolvedByHuman
@@ -77,6 +88,31 @@ func (s *SupportInboxService) SubmitConversationCSAT(ctx context.Context, submis
 		})
 	}
 	return summary, nil
+}
+
+// conversationAcceptsCSAT reports whether a rating of conversation would be
+// accepted now: the conversation that handles it (itself, or the one it was
+// merged into for the same customer) is resolved.
+func (s *SupportInboxService) conversationAcceptsCSAT(ctx context.Context, workspaceID string, conversation *model.SupportConversation) (bool, error) {
+	if conversation == nil || conversation.AnonymizedAt != nil {
+		return false, nil
+	}
+	handler := conversation
+	if conversation.MergedIntoID != nil {
+		rootID, err := s.mergeRepository().Root(ctx, workspaceID, conversation.ID)
+		if err != nil {
+			return false, err
+		}
+		root, err := s.loadConversationUnscoped(ctx, workspaceID, rootID)
+		if err != nil {
+			return false, err
+		}
+		if root == nil || root.AnonymizedAt != nil || !model.SameSupportCustomer(conversation, root) {
+			return false, nil
+		}
+		handler = root
+	}
+	return handler.Status == model.SupportConversationStatusResolved, nil
 }
 
 func normalizeSupportCSATComment(raw string) *string {
@@ -196,6 +232,7 @@ func (s *SupportInboxService) hydrateConversationCSAT(ctx context.Context, works
 	}
 	targets := make(map[string]string, len(conversations))
 	ids := make([]string, 0, len(conversations))
+	rootIDs := []string{}
 	for _, conversation := range conversations {
 		target := conversation.ID
 		if conversation.MergedIntoID != nil {
@@ -204,16 +241,38 @@ func (s *SupportInboxService) hydrateConversationCSAT(ctx context.Context, works
 				return err
 			}
 			target = root
+			rootIDs = append(rootIDs, root)
 		}
 		targets[conversation.ID] = target
 		ids = append(ids, target)
+	}
+	if len(rootIDs) > 0 {
+		// Only the same customer sees the rating of the conversation theirs
+		// was merged into.
+		roots, err := s.conversationRepo.ListByIDs(ctx, workspaceID, rootIDs, "", model.RoleOwner)
+		if err != nil {
+			return err
+		}
+		byID := make(map[string]*model.SupportConversation, len(roots))
+		for i := range roots {
+			byID[roots[i].ID] = &roots[i]
+		}
+		for i := range conversations {
+			if target := targets[conversations[i].ID]; target != conversations[i].ID && !model.SameSupportCustomer(&conversations[i], byID[target]) {
+				delete(targets, conversations[i].ID)
+			}
+		}
 	}
 	summaries, err := s.csatRepository().SummariesByConversation(ctx, workspaceID, ids)
 	if err != nil {
 		return err
 	}
 	for i := range conversations {
-		if summary, ok := summaries[targets[conversations[i].ID]]; ok {
+		target, ok := targets[conversations[i].ID]
+		if !ok {
+			continue
+		}
+		if summary, ok := summaries[target]; ok {
 			value := summary
 			conversations[i].CSAT = &value
 		}

@@ -46,6 +46,22 @@ type SupportReportSummary struct {
 	CSATPositiveRate   *float64              `json:"csat_positive_rate"`
 }
 
+// SupportReportSLATarget counts met and missed targets of one SLA metric.
+type SupportReportSLATarget struct {
+	Met     int      `json:"met"`
+	Missed  int      `json:"missed"`
+	HitRate *float64 `json:"hit_rate"`
+}
+
+// SupportReportSLA summarizes SLA outcomes of conversations created in the
+// period. Targets still running are not counted yet.
+type SupportReportSLA struct {
+	Conversations int                    `json:"conversations"`
+	FirstResponse SupportReportSLATarget `json:"first_response"`
+	NextResponse  SupportReportSLATarget `json:"next_response"`
+	Resolution    SupportReportSLATarget `json:"resolution"`
+}
+
 // SupportReportBacklog is the number of conversations open right now.
 type SupportReportBacklog struct {
 	Open       int `json:"open"`
@@ -124,4 +140,5 @@ type SupportReportOverview struct {
 	Channels  []SupportReportChannel  `json:"channels"`
 	Teammates []SupportReportTeammate `json:"teammates"`
 	CSAT      SupportReportCSAT       `json:"csat"`
+	SLA       SupportReportSLA        `json:"sla"`
 }

@@ -469,6 +469,10 @@ func (s *InternalCommandService) executeSupportReply(ctx context.Context, meta m
 	if req.ResolvesConversation && kind == supportReplyKindConfirm {
 		if updateErr := resolveSupportAIConversation(ctx, supportAI.conversationRepo.DB(), conv, "confirmed", time.Now().UTC()); updateErr != nil {
 			slog.WarnContext(ctx, "mark confirmed resolution failed", "error", updateErr, "conversation_id", conversationID)
+		} else if conv.AnonymousID != nil && strings.TrimSpace(*conv.AnonymousID) != "" {
+			// The visitor is usually still in the widget: show the new status
+			// (and the satisfaction prompt) without a reconnect.
+			supportAI.publishVisitorConversationsRefresh(ctx, meta.WorkspaceID, *conv.AnonymousID)
 		}
 	}
 

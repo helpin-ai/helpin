@@ -62,6 +62,7 @@ import { Route as AuthenticatedWSlugSettingsTeamsRouteImport } from './routes/_a
 import { Route as AuthenticatedWSlugSettingsTaskTemplatesRouteImport } from './routes/_authenticated/w/$slug/settings/task-templates'
 import { Route as AuthenticatedWSlugSettingsSystemStatusRouteImport } from './routes/_authenticated/w/$slug/settings/system-status'
 import { Route as AuthenticatedWSlugSettingsSupportTranslationRouteImport } from './routes/_authenticated/w/$slug/settings/support-translation'
+import { Route as AuthenticatedWSlugSettingsSupportSlaRouteImport } from './routes/_authenticated/w/$slug/settings/support-sla'
 import { Route as AuthenticatedWSlugSettingsSupportAiAssistantRouteImport } from './routes/_authenticated/w/$slug/settings/support-ai-assistant'
 import { Route as AuthenticatedWSlugSettingsServerRouteImport } from './routes/_authenticated/w/$slug/settings/server'
 import { Route as AuthenticatedWSlugSettingsRepositoriesRouteImport } from './routes/_authenticated/w/$slug/settings/repositories'
@@ -430,6 +431,12 @@ const AuthenticatedWSlugSettingsSupportTranslationRoute =
   AuthenticatedWSlugSettingsSupportTranslationRouteImport.update({
     id: '/settings/support-translation',
     path: '/settings/support-translation',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedWSlugSettingsSupportSlaRoute =
+  AuthenticatedWSlugSettingsSupportSlaRouteImport.update({
+    id: '/settings/support-sla',
+    path: '/settings/support-sla',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugSettingsSupportAiAssistantRoute =
@@ -1004,6 +1011,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/settings/repositories': typeof AuthenticatedWSlugSettingsRepositoriesRoute
   '/w/$slug/settings/server': typeof AuthenticatedWSlugSettingsServerRoute
   '/w/$slug/settings/support-ai-assistant': typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
+  '/w/$slug/settings/support-sla': typeof AuthenticatedWSlugSettingsSupportSlaRoute
   '/w/$slug/settings/support-translation': typeof AuthenticatedWSlugSettingsSupportTranslationRoute
   '/w/$slug/settings/system-status': typeof AuthenticatedWSlugSettingsSystemStatusRoute
   '/w/$slug/settings/task-templates': typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
@@ -1131,6 +1139,7 @@ export interface FileRoutesByTo {
   '/w/$slug/settings/repositories': typeof AuthenticatedWSlugSettingsRepositoriesRoute
   '/w/$slug/settings/server': typeof AuthenticatedWSlugSettingsServerRoute
   '/w/$slug/settings/support-ai-assistant': typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
+  '/w/$slug/settings/support-sla': typeof AuthenticatedWSlugSettingsSupportSlaRoute
   '/w/$slug/settings/support-translation': typeof AuthenticatedWSlugSettingsSupportTranslationRoute
   '/w/$slug/settings/system-status': typeof AuthenticatedWSlugSettingsSystemStatusRoute
   '/w/$slug/settings/task-templates': typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
@@ -1265,6 +1274,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/settings/repositories': typeof AuthenticatedWSlugSettingsRepositoriesRoute
   '/_authenticated/w/$slug/settings/server': typeof AuthenticatedWSlugSettingsServerRoute
   '/_authenticated/w/$slug/settings/support-ai-assistant': typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
+  '/_authenticated/w/$slug/settings/support-sla': typeof AuthenticatedWSlugSettingsSupportSlaRoute
   '/_authenticated/w/$slug/settings/support-translation': typeof AuthenticatedWSlugSettingsSupportTranslationRoute
   '/_authenticated/w/$slug/settings/system-status': typeof AuthenticatedWSlugSettingsSystemStatusRoute
   '/_authenticated/w/$slug/settings/task-templates': typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
@@ -1401,6 +1411,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/repositories'
     | '/w/$slug/settings/server'
     | '/w/$slug/settings/support-ai-assistant'
+    | '/w/$slug/settings/support-sla'
     | '/w/$slug/settings/support-translation'
     | '/w/$slug/settings/system-status'
     | '/w/$slug/settings/task-templates'
@@ -1528,6 +1539,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/repositories'
     | '/w/$slug/settings/server'
     | '/w/$slug/settings/support-ai-assistant'
+    | '/w/$slug/settings/support-sla'
     | '/w/$slug/settings/support-translation'
     | '/w/$slug/settings/system-status'
     | '/w/$slug/settings/task-templates'
@@ -1661,6 +1673,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/settings/repositories'
     | '/_authenticated/w/$slug/settings/server'
     | '/_authenticated/w/$slug/settings/support-ai-assistant'
+    | '/_authenticated/w/$slug/settings/support-sla'
     | '/_authenticated/w/$slug/settings/support-translation'
     | '/_authenticated/w/$slug/settings/system-status'
     | '/_authenticated/w/$slug/settings/task-templates'
@@ -2093,6 +2106,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/support-translation'
       fullPath: '/w/$slug/settings/support-translation'
       preLoaderRoute: typeof AuthenticatedWSlugSettingsSupportTranslationRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/settings/support-sla': {
+      id: '/_authenticated/w/$slug/settings/support-sla'
+      path: '/settings/support-sla'
+      fullPath: '/w/$slug/settings/support-sla'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsSupportSlaRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/settings/support-ai-assistant': {
@@ -2882,6 +2902,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugSettingsRepositoriesRoute: typeof AuthenticatedWSlugSettingsRepositoriesRoute
   AuthenticatedWSlugSettingsServerRoute: typeof AuthenticatedWSlugSettingsServerRoute
   AuthenticatedWSlugSettingsSupportAiAssistantRoute: typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
+  AuthenticatedWSlugSettingsSupportSlaRoute: typeof AuthenticatedWSlugSettingsSupportSlaRoute
   AuthenticatedWSlugSettingsSupportTranslationRoute: typeof AuthenticatedWSlugSettingsSupportTranslationRoute
   AuthenticatedWSlugSettingsSystemStatusRoute: typeof AuthenticatedWSlugSettingsSystemStatusRoute
   AuthenticatedWSlugSettingsTaskTemplatesRoute: typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
@@ -2977,6 +2998,8 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
   AuthenticatedWSlugSettingsServerRoute: AuthenticatedWSlugSettingsServerRoute,
   AuthenticatedWSlugSettingsSupportAiAssistantRoute:
     AuthenticatedWSlugSettingsSupportAiAssistantRoute,
+  AuthenticatedWSlugSettingsSupportSlaRoute:
+    AuthenticatedWSlugSettingsSupportSlaRoute,
   AuthenticatedWSlugSettingsSupportTranslationRoute:
     AuthenticatedWSlugSettingsSupportTranslationRoute,
   AuthenticatedWSlugSettingsSystemStatusRoute:

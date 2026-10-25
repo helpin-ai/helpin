@@ -117,6 +117,7 @@ type Handlers struct {
 	SupportAttachment   *handler.SupportAttachmentHandler
 	SupportCoverage     *handler.SupportCoverageHandler
 	SupportReports      *handler.SupportReportsHandler
+	SupportSLA          *handler.SupportSLAHandler
 	SupportInboxClear   *handler.SupportInboxClearHandler
 	PostmarkInbound     *handler.PostmarkInboundHandler
 	EmailImageProxy     *handler.EmailImageProxyHandler
@@ -1190,6 +1191,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportRead)).Post("/inbox/conversations/{id}/read", h.SupportInbox.MarkConversationRead)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/unread", h.SupportInbox.MarkConversationUnread)
 				r.With(requirePerm(authorization.PermSupportEdit), h.SupportInbox.RequireWritableConversation).Put("/inbox/conversations/{id}/subject", h.SupportInbox.UpdateConversationSubject)
+				r.With(requirePerm(authorization.PermSupportEdit), h.SupportInbox.RequireWritableConversation).Put("/inbox/conversations/{id}/priority", h.SupportInbox.UpdateConversationPriority)
+				r.With(requirePerm(authorization.PermSupportEdit), h.SupportInbox.RequireWritableConversation).Post("/inbox/conversations/{id}/snooze", h.SupportInbox.SnoozeConversation)
+				r.With(requirePerm(authorization.PermSupportEdit), h.SupportInbox.RequireWritableConversation).Delete("/inbox/conversations/{id}/snooze", h.SupportInbox.UnsnoozeConversation)
 				r.With(requirePerm(authorization.PermSupportEdit), h.SupportInbox.RequireWritableConversation).Delete("/inbox/conversations/{id}", h.SupportInbox.DeleteConversation)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/visitor-context", h.SupportInbox.GetVisitorContext)
 				r.With(requirePerm(authorization.PermSupportMerge)).Get("/inbox/conversations/{id}/merge-candidates", h.SupportInbox.ConversationMergeCandidates)
@@ -1244,6 +1248,13 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox-clears", h.SupportInboxClear.RecordClear)
 				}
 
+				if h.SupportSLA != nil {
+					r.With(requirePerm(authorization.PermSupportRead)).Get("/sla-policies", h.SupportSLA.List)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/sla-policies", h.SupportSLA.Create)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/sla-policies/reorder", h.SupportSLA.Reorder)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Put("/sla-policies/{policyId}", h.SupportSLA.Update)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Delete("/sla-policies/{policyId}", h.SupportSLA.Delete)
+				}
 				if h.SupportReports != nil {
 					r.With(requirePerm(authorization.PermSupportRead)).Get("/reports/overview", h.SupportReports.Overview)
 					r.With(requirePerm(authorization.PermSupportRead)).Get("/reports/conversations.csv", h.SupportReports.ExportConversations)

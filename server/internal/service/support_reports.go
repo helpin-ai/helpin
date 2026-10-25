@@ -113,7 +113,39 @@ func (s *SupportReportService) Overview(ctx context.Context, req model.SupportRe
 		return nil, err
 	}
 	overview.Teammates = teammates
+	slaRows, err := s.conversations.ListReportSLA(ctx, scope, current.from, current.to)
+	if err != nil {
+		return nil, err
+	}
+	overview.SLA = summarizeSupportReportSLA(slaRows)
 	return overview, nil
+}
+
+// summarizeSupportReportSLA counts finished targets. A next-response
+// conversation counts as met when it finished cycles without a miss.
+func summarizeSupportReportSLA(rows []repository.SupportReportSLARow) model.SupportReportSLA {
+	summary := model.SupportReportSLA{Conversations: len(rows)}
+	count := func(target *model.SupportReportSLATarget, state string) {
+		switch state {
+		case model.SupportSLAStateAchieved:
+			target.Met++
+		case model.SupportSLAStateBreached:
+			target.Missed++
+		}
+	}
+	for _, row := range rows {
+		count(&summary.FirstResponse, row.FirstResponseState)
+		count(&summary.Resolution, row.ResolutionState)
+		if row.NextResponseBreaches > 0 {
+			summary.NextResponse.Missed++
+		} else if row.NextResponseState == model.SupportSLAStateAchieved {
+			summary.NextResponse.Met++
+		}
+	}
+	for _, target := range []*model.SupportReportSLATarget{&summary.FirstResponse, &summary.NextResponse, &summary.Resolution} {
+		target.HitRate = supportReportRate(target.Met, target.Met+target.Missed)
+	}
+	return summary
 }
 
 func splitSupportReportRatings(rows []repository.SupportReportCSATRow, current supportReportPeriod) (cur, prev []repository.SupportReportCSATRow) {
@@ -402,8 +434,12 @@ func (s *SupportReportService) teammates(
 				acc.durations = append(acc.durations, d)
 			}
 		}
-		if supportReportResolvedIn(fact, period) && !supportReportResolvedByAI(fact) && fact.AssignedUserID != nil {
-			get(*fact.AssignedUserID).entry.Resolved++
+		if supportReportResolvedIn(fact, period) && !supportReportResolvedByAI(fact) {
+			// Credit whoever resolved it; older conversations without a
+			// resolve event fall back to the assignee.
+			if resolver := firstNonEmptyPointer(fact.ResolvedByUserID, fact.AssignedUserID); resolver != "" {
+				get(resolver).entry.Resolved++
+			}
 		}
 	}
 	for _, reply := range replies {
@@ -570,4 +606,13 @@ func supportReportCSVCell(value string) string {
 		return "'" + value
 	}
 	return value
+}
+
+func firstNonEmptyPointer(values ...*string) string {
+	for _, value := range values {
+		if value != nil && strings.TrimSpace(*value) != "" {
+			return strings.TrimSpace(*value)
+		}
+	}
+	return ""
 }

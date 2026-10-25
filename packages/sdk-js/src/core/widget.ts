@@ -1593,11 +1593,16 @@ export class WidgetManager {
     if (!this.sessionToken) throw new Error('Please reconnect to send feedback.');
 
     const comment = feedback?.trim() || '';
-    const response = await fetch(widgetURL(this.host, `/widget/conversations/${encodeURIComponent(conversationId)}/csat`), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_token: this.sessionToken, rating, comment }),
-    });
+    let response: Response;
+    try {
+      response = await fetch(widgetURL(this.host, `/widget/conversations/${encodeURIComponent(conversationId)}/csat`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_token: this.sessionToken, rating, comment }),
+      });
+    } catch {
+      throw new Error('Could not send your feedback. Check your connection and try again.');
+    }
     if (!response.ok) {
       throw new Error(response.status === 409 ? 'This conversation can no longer be rated.' : 'Could not send your feedback. Please try again.');
     }
@@ -2222,8 +2227,15 @@ export class WidgetManager {
       case 'conversations:listed': {
         const convs = data.data?.conversations;
         if (Array.isArray(convs)) {
+          // Some server pushes omit ratings; keep one already known here.
+          const knownRatings = new Map(this.conversations
+            .filter((conversation) => conversation.csatRating !== undefined)
+            .map((conversation) => [conversation.id, conversation.csatRating]));
           this.conversations = convs.map((c: any) => {
-            const conversation = this.mapConversation(c);
+            const mapped = this.mapConversation(c);
+            const conversation = mapped.csatRating === undefined && knownRatings.has(mapped.id)
+              ? { ...mapped, csatRating: knownRatings.get(mapped.id) }
+              : mapped;
             if (conversation.aiState === 'escalated') {
               this.escalationRequestsInFlight.delete(conversation.id);
             }

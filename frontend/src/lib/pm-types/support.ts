@@ -119,8 +119,65 @@ export interface SupportConversation {
   system_tags?: SupportSystemTag[];
   /** The customer's satisfaction rating once the conversation was rated. */
   csat?: SupportConversationCSAT | null;
+  /** Hidden from team queues until this time, a customer reply, or a wake-up. */
+  snoozed_until?: string | null;
+  snoozed_by_user_id?: string | null;
+  sla?: SupportConversationSLA | null;
   created_at: string;
   updated_at: string;
+}
+
+export type SupportSLAMetric = 'first_response' | 'next_response' | 'resolution';
+export type SupportSLAState = 'pending' | 'paused' | 'achieved' | 'breached' | 'cancelled';
+
+export interface SupportConversationSLAItem {
+  metric: SupportSLAMetric;
+  state: SupportSLAState;
+  due_at?: string | null;
+  achieved_at?: string | null;
+  breached_at?: string | null;
+}
+
+export interface SupportConversationSLA {
+  policy_id?: string | null;
+  policy_name: string;
+  metrics: SupportConversationSLAItem[];
+  /** Earliest due time of a target still open, including overdue ones. */
+  next_due_at?: string | null;
+  /** An open target is overdue right now. */
+  breached: boolean;
+}
+
+export interface SupportSLAPolicy {
+  id: string;
+  workspace_id: string;
+  name: string;
+  enabled: boolean;
+  position: number;
+  priorities: ConversationPriority[];
+  mailbox_ids: string[];
+  channels: string[];
+  first_response_minutes?: number | null;
+  next_response_minutes?: number | null;
+  resolution_minutes?: number | null;
+  business_hours: boolean;
+  pause_while_waiting: boolean;
+  active_since: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SupportSLAPolicyInput {
+  name: string;
+  enabled?: boolean;
+  priorities: string[];
+  mailbox_ids: string[];
+  channels: string[];
+  first_response_minutes?: number | null;
+  next_response_minutes?: number | null;
+  resolution_minutes?: number | null;
+  business_hours: boolean;
+  pause_while_waiting: boolean;
 }
 
 export interface SupportConversationCSAT {
@@ -641,6 +698,10 @@ export const SUPPORT_SYSTEM_EVENT_TYPES = [
   'tag_removed',
   'task_created',
   'csat_rated',
+  'priority_changed',
+  'snoozed',
+  'unsnoozed',
+  'sla_breached',
 ] as const;
 
 export type SupportSystemEventType = (typeof SUPPORT_SYSTEM_EVENT_TYPES)[number];

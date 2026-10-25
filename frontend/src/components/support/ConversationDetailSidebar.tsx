@@ -1,4 +1,8 @@
 import { memo, useEffect, useState, type JSX, type ReactNode, type SVGProps } from 'react';
+import { ConversationPriorityPicker } from './ConversationPriorityPicker';
+import { SupportSLABadge } from './SupportSLABadge';
+import { useUpdateConversationPriority } from '@/hooks/queries/useSupportOperations';
+import { describeSLAItem } from '@/lib/supportSLA';
 import { SupportCSATStars } from './SupportCSATEvent';
 import { supportCSATRatingLabel } from './supportCSAT';
 import { formatDistance } from 'date-fns';
@@ -324,6 +328,7 @@ export function ConversationDetailSidebar({
     refetch: refetchAssignees,
   } = useConversationAssignees(workspaceId, conversationId);
   const assignConversationUser = useAssignConversationUser(workspaceId);
+  const updatePriority = useUpdateConversationPriority(workspaceId);
   const updateCustomerName = useUpdateConversationCustomerName(workspaceId);
   const updateEmailRecipients = useUpdateConversationEmailRecipients(workspaceId);
   const isVisitorOnline = useSupportPresenceStore((s) =>
@@ -663,6 +668,32 @@ export function ConversationDetailSidebar({
             ) : null}
             </div>
           )}
+
+          <div className="flex min-h-11 items-center justify-between gap-3 border-b border-border/50 py-1.5 pl-4 pr-[11px]">
+            <span className="text-sm font-semibold text-foreground">Priority</span>
+            <ConversationPriorityPicker
+              value={conversation.priority ?? 'medium'}
+              disabled={!!conversation.merged_into_id || updatePriority.isPending}
+              onChange={(priority) => updatePriority.mutate({ conversationId: conversation.id, priority })}
+            />
+          </div>
+
+          {conversation.sla ? (
+            <div className="border-b border-border/50 py-2.5 pl-4 pr-[11px]" data-testid="conversation-sla">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-semibold text-foreground">SLA</span>
+                <SupportSLABadge sla={conversation.sla} size="xs" />
+              </div>
+              <div className="mt-1 text-[11px] text-muted-foreground">{conversation.sla.policy_name}</div>
+              <ul className="mt-1 space-y-0.5">
+                {conversation.sla.metrics.map((item) => (
+                  <li key={item.metric} className={item.state === 'breached' ? 'text-[11px] text-red-600 dark:text-red-400' : 'text-[11px] text-muted-foreground'}>
+                    {describeSLAItem(item)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
 
           {conversation.csat ? (
             <div className="flex min-h-11 items-start justify-between gap-3 border-b border-border/50 py-2.5 pl-4 pr-[11px]" data-testid="conversation-csat">

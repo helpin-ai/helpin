@@ -242,13 +242,19 @@ func (s *CustomerPortalService) RequestDetail(ctx context.Context, access *Porta
 	detail.AIProcessing = conv.FlowState != nil && *conv.FlowState == model.SupportConversationFlowStateAIHandling &&
 		!supportConversationHumanOwned(conv) && conv.LastCustomerMessageID != nil &&
 		conv.LastPublicMessageID != nil && *conv.LastPublicMessageID == *conv.LastCustomerMessageID
-	if access.Workspace.Settings.CSATEnabled && detail.Status == model.SupportConversationStatusResolved && conv.AnonymizedAt == nil {
-		detail.CanRate = true
-		rated := []model.SupportConversation{*conv}
-		if err := s.inbox.hydrateConversationCSAT(ctx, access.Workspace.ID, rated); err != nil {
+	if access.Workspace.Settings.CSATEnabled && conv.AnonymizedAt == nil {
+		canRate, err := s.inbox.conversationAcceptsCSAT(ctx, access.Workspace.ID, conv)
+		if err != nil {
 			return nil, err
 		}
-		detail.CSAT = rated[0].CSAT
+		if canRate {
+			detail.CanRate = true
+			rated := []model.SupportConversation{*conv}
+			if err := s.inbox.hydrateConversationCSAT(ctx, access.Workspace.ID, rated); err != nil {
+				return nil, err
+			}
+			detail.CSAT = rated[0].CSAT
+		}
 	}
 	avatars := s.portalSenderAvatars(ctx, access.Workspace.ID, messages)
 	for i := range messages {

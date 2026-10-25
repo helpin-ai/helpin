@@ -238,3 +238,39 @@ func TestCustomerPortalRateRequest(t *testing.T) {
 		t.Fatalf("unknown reference: %v", err)
 	}
 }
+
+func TestSubmitConversationCSATRejectsCrossCustomerMerge(t *testing.T) {
+	svc, db, workspaceID := newCSATTestService(t, true)
+	ctx := context.Background()
+	target := seedCSATConversation(t, db, workspaceID, "anon-other", model.SupportConversationStatusResolved)
+	source := seedCSATConversation(t, db, workspaceID, "anon-1", model.SupportConversationStatusResolved)
+	mustExec(t, db, `UPDATE support_conversations SET merged_into_id = ?, customer_name = 'Someone else' WHERE id = ?`, target.ID, source.ID)
+	if err := db.Create(&model.SupportConversationMerge{
+		ID: uuid.NewString(), WorkspaceID: workspaceID, OperationID: uuid.NewString(),
+		SourceID: source.ID, TargetID: target.ID, ActorID: uuid.NewString(), CreatedAt: time.Now(), CrossCustomer: true,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	// The other customer rated the merged conversation.
+	if _, err := svc.SubmitConversationCSAT(ctx, model.SupportCSATSubmission{
+		WorkspaceID: workspaceID, ConversationID: target.ID, Channel: model.SupportCSATChannelPortal, Rating: 1, Comment: "private",
+	}, model.SupportInboxSettings{CSATEnabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	token := seedCSATSession(t, db, workspaceID, "anon-1")
+	if _, err := svc.SubmitWidgetCSAT(ctx, token, source.ID, 5, ""); !errors.Is(err, ErrSupportCSATUnavailable) {
+		t.Fatalf("cross-customer rating: %v", err)
+	}
+	conversations := []model.SupportConversation{*source}
+	conversations[0].MergedIntoID = &target.ID
+	if err := svc.hydrateConversationCSAT(ctx, workspaceID, conversations); err != nil {
+		t.Fatal(err)
+	}
+	if conversations[0].CSAT != nil {
+		t.Fatalf("another customer's rating leaked: %+v", conversations[0].CSAT)
+	}
+	accepts, err := svc.conversationAcceptsCSAT(ctx, workspaceID, &conversations[0])
+	if err != nil || accepts {
+		t.Fatalf("cross-customer source accepts rating: %v %v", accepts, err)
+	}
+}

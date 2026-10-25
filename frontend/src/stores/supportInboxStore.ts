@@ -3,7 +3,7 @@ import { registerAppRefreshGuard } from '@/lib/appLoadRecovery';
 import type { ConversationListFilters } from '@/lib/supportInboxFilters';
 import { defaultConversationListFiltersForNav, parseSupportInboxViewFilters } from '@/lib/supportInboxFilters';
 
-export type NavFilter = 'inbox' | 'mine' | 'waiting' | 'resolved' | 'spam' | 'ai_active' | 'resolved_by_ai';
+export type NavFilter = 'inbox' | 'mine' | 'waiting' | 'snoozed' | 'resolved' | 'spam' | 'ai_active' | 'resolved_by_ai';
 export type ReplyMode = 'reply' | 'note';
 export type DetailSidebarMode = 'details' | 'agents';
 export type ActivePanel = 'nav' | 'list' | 'thread' | 'detail';

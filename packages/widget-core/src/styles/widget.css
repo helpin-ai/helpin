@@ -3720,7 +3720,9 @@ a.helpin-source-item:focus-visible {
 
 .helpin-csat-error {
   color: var(--helpin-danger, #b42318);
-  font: 500 12px/1.4 inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
 }
 
 .helpin-csat-dismiss {

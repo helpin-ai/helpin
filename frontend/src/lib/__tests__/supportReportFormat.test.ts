@@ -12,9 +12,9 @@ import {
 describe('supportReportRange', () => {
   const now = new Date(2026, 9, 25, 15, 30)
 
-  it('ends at the next local midnight and spans the preset', () => {
+  it('ends now and starts at local midnight so it spans the preset days', () => {
     const { from, to } = supportReportRange('7d', now)
-    expect(to).toEqual(new Date(2026, 9, 26))
+    expect(to).toEqual(new Date(2026, 9, 25, 15, 30))
     expect(from).toEqual(new Date(2026, 9, 19))
   })
 
@@ -25,7 +25,8 @@ describe('supportReportRange', () => {
   it('builds API params with the inbox filter', () => {
     const params = supportReportParams('30d', ['mailbox-1'], now)
     expect(params.mailboxIds).toEqual(['mailbox-1'])
-    expect(new Date(params.to).getTime() - new Date(params.from).getTime()).toBeGreaterThanOrEqual(29 * 86_400_000)
+    expect(new Date(params.from)).toEqual(new Date(2026, 8, 26))
+    expect(new Date(params.to)).toEqual(now)
     expect(params.tz).toBeTruthy()
   })
 })

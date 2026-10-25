@@ -48,15 +48,20 @@ export function ReportDailyChart({ days, className }: ReportDailyChartProps) {
       <div
         className="grid items-end gap-[2px]"
         style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))`, height: CHART_HEIGHT }}
-        role="img"
+        role="group"
         aria-label="Conversations created and resolved per day"
         onMouseLeave={() => setHovered(null)}
       >
         {days.map((day, index) => (
           <div
             key={day.date}
-            className={cn('flex h-full items-end justify-center gap-[1px] rounded-sm px-[1px]', hovered === index && 'bg-quiet-row-hover')}
+            className={cn('flex h-full items-end justify-center gap-[1px] rounded-sm px-[1px] focus-visible:outline-2 focus-visible:outline-quiet-text-primary', hovered === index && 'bg-quiet-row-hover')}
             onMouseEnter={() => setHovered(index)}
+            onFocus={() => setHovered(index)}
+            onBlur={() => setHovered(null)}
+            tabIndex={0}
+            role="img"
+            aria-label={`${shortDate(day.date)}: ${day.conversations_created} created, ${day.conversations_resolved} resolved`}
             data-testid="report-day"
           >
             <div

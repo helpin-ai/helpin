@@ -1,4 +1,4 @@
-import type { WidgetOriginSettings, WidgetSigningSecretResponse } from '@/lib/pmTypes';
+import type { ConversationPriority, SupportSLAPolicy, SupportSLAPolicyInput, WidgetOriginSettings, WidgetSigningSecretResponse } from '@/lib/pmTypes';
 import type { SupportAttachmentPolicy } from '@/lib/supportAttachmentFiles';
 import { api } from '../api';
 import type { AssignableMember } from '../types';
@@ -103,6 +103,7 @@ export const supportService = {
       sort?: string;
       tag_ids?: string;
       system_tags?: string;
+      sla?: string;
       page?: number;
       per_page?: number;
     },
@@ -122,6 +123,7 @@ export const supportService = {
     if (filters?.sort) path += `&sort=${encodeURIComponent(filters.sort)}`;
     if (filters?.tag_ids) path += `&tag_ids=${encodeURIComponent(filters.tag_ids)}`;
     if (filters?.system_tags) path += `&system_tags=${encodeURIComponent(filters.system_tags)}`;
+    if (filters?.sla) path += `&sla=${encodeURIComponent(filters.sla)}`;
     if (filters?.page) path += `&page=${encodeURIComponent(String(filters.page))}`;
     if (filters?.per_page) path += `&per_page=${encodeURIComponent(String(filters.per_page))}`;
     return api.get<ConversationListResponse>(path);
@@ -268,6 +270,22 @@ export const supportService = {
 
   updateConversationStatus: (workspaceId: string, conversationId: string, status: ConversationStatus) =>
     api.put<SupportConversation>(`/support/inbox/conversations/${conversationId}/status${qs(workspaceId)}`, { status }),
+  updateConversationPriority: (workspaceId: string, conversationId: string, priority: ConversationPriority) =>
+    api.put<SupportConversation>(`/support/inbox/conversations/${conversationId}/priority${qs(workspaceId)}`, { priority }),
+  snoozeConversation: (workspaceId: string, conversationId: string, until: string) =>
+    api.post<SupportConversation>(`/support/inbox/conversations/${conversationId}/snooze${qs(workspaceId)}`, { until }),
+  unsnoozeConversation: (workspaceId: string, conversationId: string) =>
+    api.del<SupportConversation>(`/support/inbox/conversations/${conversationId}/snooze${qs(workspaceId)}`),
+  listSLAPolicies: (workspaceId: string) =>
+    api.get<SupportSLAPolicy[]>(`/support/sla-policies${qs(workspaceId)}`),
+  createSLAPolicy: (workspaceId: string, input: SupportSLAPolicyInput) =>
+    api.post<SupportSLAPolicy>(`/support/sla-policies${qs(workspaceId)}`, input),
+  updateSLAPolicy: (workspaceId: string, policyId: string, input: SupportSLAPolicyInput) =>
+    api.put<SupportSLAPolicy>(`/support/sla-policies/${policyId}${qs(workspaceId)}`, input),
+  deleteSLAPolicy: (workspaceId: string, policyId: string) =>
+    api.del<void>(`/support/sla-policies/${policyId}${qs(workspaceId)}`),
+  reorderSLAPolicies: (workspaceId: string, policyIds: string[]) =>
+    api.post<SupportSLAPolicy[]>(`/support/sla-policies/reorder${qs(workspaceId)}`, { policy_ids: policyIds }),
   recordInboxClear: (workspaceId: string, payload: RecordSupportInboxClearRequest) =>
     api.post<SupportInboxClearStats>(`/support/inbox-clears${qs(workspaceId)}`, payload),
   linkConversationTask: (workspaceId: string, conversationId: string, payload: LinkTaskRequest) =>

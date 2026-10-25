@@ -80,6 +80,11 @@ function emptyCopyForNavFilter(navFilter: string, searchQuery: string): { title:
         title: 'No waiting conversations',
         subtitle: 'Conversations waiting on a customer will appear here.',
       };
+    case 'snoozed':
+      return {
+        title: 'Nothing snoozed',
+        subtitle: 'Snoozed conversations wait here until their time comes or the customer replies.',
+      };
     case 'resolved':
       return {
         title: 'No resolved conversations',
@@ -117,6 +122,8 @@ function titleForView(navFilter: NavFilter): string {
       return 'Mine';
     case 'waiting':
       return 'Waiting';
+    case 'snoozed':
+      return 'Snoozed';
     case 'resolved':
       return 'Resolved';
     case 'spam':
@@ -335,8 +342,9 @@ export function ConversationList({
       sortOrder: conversationListFilters.sort,
       skipViewFilter: shouldSkipSidebarViewFilter,
       aiStates: conversationListFilters.aiStates,
+      slaBreached: conversationListFilters.slaBreached,
     });
-  }, [conversationListFilters.aiStates, conversationListFilters.mailboxIds, conversationListFilters.sort, conversationListFilters.states, navFilter, selectedMailboxId, userId]);
+  }, [conversationListFilters.aiStates, conversationListFilters.mailboxIds, conversationListFilters.slaBreached, conversationListFilters.sort, conversationListFilters.states, navFilter, selectedMailboxId, userId]);
   const filteredConversations = useMemo(() => filterConversations(conversations), [conversations, filterConversations]);
   const allLoadedSelected = filteredConversations.length > 0 && filteredConversations.every((conversation) => selection.items.has(conversation.id));
   const totalMatches = response?.pages[0]?.total;
@@ -821,10 +829,19 @@ export function ConversationList({
                       </FilterPill>
                     ))}
                   </FilterSection>
+                  <FilterSection title="SLA">
+                    <FilterPill
+                      selected={Boolean(conversationListFilters.slaBreached)}
+                      onClick={() => setConversationListFilter('slaBreached', !conversationListFilters.slaBreached)}
+                    >
+                      Breached only
+                    </FilterPill>
+                  </FilterSection>
                   <FilterSection title="Sort">
                     {[
                       ['Newest', 'newest'],
                       ['Oldest', 'oldest'],
+                      ['Next SLA due', 'sla'],
                     ].map(([label, value]) => (
                       <FilterPill
                         key={value}

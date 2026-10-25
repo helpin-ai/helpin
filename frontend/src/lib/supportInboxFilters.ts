@@ -8,7 +8,7 @@ import {
 } from '@/components/support/helpers';
 
 export type ConversationAssignmentFilter = 'me' | 'mentioned_me' | 'opened_by_me' | 'unassigned' | 'others';
-export type ConversationSortOrder = 'newest' | 'oldest';
+export type ConversationSortOrder = 'newest' | 'oldest' | 'sla';
 export type ConversationStateFilter = 'open' | 'waiting_on_customer' | 'resolved' | 'spam';
 export type ConversationAIStateFilter = 'handling' | 'handoff' | 'resolved';
 
@@ -19,6 +19,8 @@ export interface ConversationListFilters {
   tagIds: string[];
   aiStates: ConversationAIStateFilter[];
   sort: ConversationSortOrder;
+  /** Only conversations with an overdue SLA target. */
+  slaBreached?: boolean;
 }
 
 export const DEFAULT_CONVERSATION_LIST_FILTERS: ConversationListFilters = {
@@ -42,6 +44,7 @@ export type ConversationListRequestFilters = {
   statuses?: string;
   tag_ids?: string;
   ai?: string;
+  sla?: string;
 };
 
 export function defaultStatesForNav(navFilter: NavFilter): ConversationStateFilter[] {
@@ -52,6 +55,8 @@ export function defaultStatesForNav(navFilter: NavFilter): ConversationStateFilt
       return ['open', 'waiting_on_customer'];
     case 'waiting':
       return ['waiting_on_customer'];
+    case 'snoozed':
+      return ['open', 'waiting_on_customer'];
     case 'resolved':
     case 'resolved_by_ai':
       return ['resolved'];
@@ -98,6 +103,10 @@ export function defaultConversationListFiltersForNav(navFilter: NavFilter): Conv
   };
 }
 
+export function parseConversationSortOrder(value: unknown): ConversationSortOrder {
+  return value === 'oldest' || value === 'sla' ? value : 'newest';
+}
+
 export function supportInboxCountMailboxScope(selectedMailboxId: string): string {
   return selectedMailboxId === 'all' ? 'shared' : selectedMailboxId;
 }
@@ -119,7 +128,8 @@ export function conversationListFiltersEqual(a: ConversationListFilters, b: Conv
     stringArraysEqual(a.mailboxIds, b.mailboxIds) &&
     stringArraysEqual(a.tagIds, b.tagIds) &&
     stringArraysEqual(a.aiStates, b.aiStates) &&
-    a.sort === b.sort
+    a.sort === b.sort &&
+    Boolean(a.slaBreached) === Boolean(b.slaBreached)
   );
 }
 
@@ -181,6 +191,7 @@ export function normalizeConversationListFilters(
     tagIds: filters?.tagIds ?? defaults.tagIds,
     aiStates: filters && 'aiStates' in filters ? normalizeAIStateFilters(filters.aiStates) : defaults.aiStates,
     sort: filters?.sort ?? defaults.sort,
+    ...(filters?.slaBreached ? { slaBreached: true } : {}),
   };
 }
 
@@ -201,7 +212,8 @@ export function hasConversationListChanges({
     normalized.mailboxIds.length > 0 ||
     normalized.tagIds.length > 0 ||
     !stringArraysEqual(normalized.aiStates, defaultAIStatesForNav(navFilter)) ||
-    normalized.sort !== 'newest'
+    normalized.sort !== 'newest' ||
+    Boolean(normalized.slaBreached)
   );
 }
 
@@ -224,12 +236,14 @@ export function filterChangeCountFromBaseline({
   if (!stringArraysEqual(listFilters.tagIds, baselineFilters.tagIds)) count += 1;
   if (!stringArraysEqual(listFilters.aiStates, baselineFilters.aiStates)) count += 1;
   if (listFilters.sort !== baselineFilters.sort) count += 1;
+  if (Boolean(listFilters.slaBreached) !== Boolean(baselineFilters.slaBreached)) count += 1;
   return count;
 }
 
 function parseNavFilterValue(value: unknown): NavFilter {
   return value === 'mine' ||
     value === 'waiting' ||
+    value === 'snoozed' ||
     value === 'resolved' ||
     value === 'spam' ||
     value === 'ai_active' ||
@@ -259,9 +273,6 @@ function parseViewStates(value: unknown, navFilter: NavFilter): ConversationStat
   return states.length > 0 ? states : defaultStatesForNav(navFilter);
 }
 
-function parseViewSortOrder(value: unknown): ConversationSortOrder {
-  return value === 'oldest' ? 'oldest' : 'newest';
-}
 
 export function parseSupportInboxViewFilters(
   filters: Record<string, string> | undefined,
@@ -290,7 +301,8 @@ export function parseSupportInboxViewFilters(
       mailboxIds: parseViewStringList(rawFilters.mailbox_ids),
       tagIds: parseViewStringList(rawFilters.tag_ids),
       aiStates,
-      sort: parseViewSortOrder(rawFilters.sort),
+      sort: parseConversationSortOrder(rawFilters.sort),
+      ...(rawFilters.sla === 'breached' ? { slaBreached: true } : {}),
     },
   };
 }
@@ -324,6 +336,7 @@ export function buildSupportInboxViewFilters({
     filters.ai = normalizedFilters.aiStates.join(',');
   }
   if (normalizedFilters.sort !== 'newest') filters.sort = normalizedFilters.sort;
+  if (normalizedFilters.slaBreached) filters.sla = 'breached';
   return filters;
 }
 
@@ -370,6 +383,9 @@ export function buildConversationListRequestFilters({
         // Preserve the saved Waiting default while deriving membership from public replies.
         f.filter = 'waiting';
         break;
+      case 'snoozed':
+        f.filter = 'snoozed';
+        break;
       case 'resolved':
         f.filter = 'resolved';
         break;
@@ -384,6 +400,9 @@ export function buildConversationListRequestFilters({
     switch (navFilter) {
       case 'mine':
         f.filter = 'mine';
+        break;
+      case 'snoozed':
+        f.filter = 'snoozed';
         break;
       case 'ai_active':
       case 'resolved_by_ai':
@@ -408,6 +427,7 @@ export function buildConversationListRequestFilters({
     if (normalizedFilters.aiStates.length > 0) f.ai = normalizedFilters.aiStates.join(',');
   }
   if (normalizedFilters.sort !== 'newest') f.sort = normalizedFilters.sort;
+  if (normalizedFilters.slaBreached) f.sla = 'breached';
   return Object.keys(f).length > 0 ? f : undefined;
 }
 
@@ -466,12 +486,18 @@ export function filterSupportConversations(
     sortOrder?: ConversationSortOrder;
     skipViewFilter?: boolean;
     aiStates?: ConversationAIStateFilter[];
+    slaBreached?: boolean;
   }
 ): SupportConversation[] {
-  const { navFilter, mailboxScope, mailboxScopes = [], statusFilter = 'all', userId, searchQuery, sortOrder = 'newest', skipViewFilter = false, aiStates } = options;
+  const { navFilter, mailboxScope, mailboxScopes = [], statusFilter = 'all', userId, searchQuery, sortOrder = 'newest', skipViewFilter = false, aiStates, slaBreached = false } = options;
   let result = conversations.filter((conversation) =>
     mailboxScopes.length > 0 ? matchesMailboxScopes(conversation, mailboxScopes) : matchesMailboxScope(conversation, mailboxScope)
   );
+  // Snoozed conversations live only in the Snoozed view until they wake.
+  result = result.filter((conversation) => (navFilter === 'snoozed') === isSnoozedConversation(conversation));
+  if (slaBreached) {
+    result = result.filter((conversation) => Boolean(conversation.sla?.breached));
+  }
 
   if (statusFilter !== 'all') {
     result = result.filter((conversation) => conversation.status === statusFilter);
@@ -524,10 +550,20 @@ export function filterSupportConversations(
     const aResolved = resolvedStatuses.has(a.status) ? 1 : 0;
     const bResolved = resolvedStatuses.has(b.status) ? 1 : 0;
     if (aResolved !== bResolved) return aResolved - bResolved;
+    if (sortOrder === 'sla') {
+      const aDue = a.sla?.next_due_at ? new Date(a.sla.next_due_at).getTime() : Number.POSITIVE_INFINITY;
+      const bDue = b.sla?.next_due_at ? new Date(b.sla.next_due_at).getTime() : Number.POSITIVE_INFINITY;
+      if (aDue !== bDue) return aDue < bDue ? -1 : 1;
+    }
     const aTime = new Date(a.list_last_activity_at ?? a.list_last_message_at ?? a.created_at).getTime();
     const bTime = new Date(b.list_last_activity_at ?? b.list_last_message_at ?? b.created_at).getTime();
     return sortOrder === 'oldest' ? aTime - bTime : bTime - aTime;
   });
 
   return result;
+}
+
+/** A snoozed conversation is hidden from team queues until it wakes. */
+export function isSnoozedConversation(conversation: Pick<SupportConversation, 'snoozed_until' | 'status'>): boolean {
+  return Boolean(conversation.snoozed_until) && conversation.status !== 'resolved' && conversation.status !== 'spam';
 }

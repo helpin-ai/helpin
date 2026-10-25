@@ -1,4 +1,6 @@
 import { AppLoadBoundary } from '@/components/layout/AppLoadError';
+import { ConversationSnoozeControl } from './ConversationSnoozeControl';
+import { SupportSLABadge } from './SupportSLABadge';
 import { ConversationMergeHistoryEvent, MergedConversationContinuation } from './ConversationMergeHistory';
 import { groupSupportTimeline } from './groupSupportTimeline';
 import { useConversationMerges } from '@/hooks/queries/useSupportMerge';
@@ -981,6 +983,7 @@ export function MessageThread({
                 <span>{conversation.subject}</span>
               </h2>
             </div>
+            <SupportSLABadge sla={conversation.sla} />
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
@@ -995,6 +998,8 @@ export function MessageThread({
               Create Task
             </Button>
 
+
+            <ConversationSnoozeControl workspaceId={workspaceId} conversation={conversation} />
 
             {/* Resolve / Unresolve */}
             {!conversation.merged_into_id && (conversation.status === 'resolved' ? (

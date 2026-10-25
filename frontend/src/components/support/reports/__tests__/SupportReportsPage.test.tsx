@@ -60,6 +60,12 @@ const report: SupportReportOverview = {
     distribution: [0, 0, 1, 0, 2], ai_average: 5, ai_responses: 1, human_average: 3.5, human_responses: 2,
     recent_comments: [{ conversation_id: 'c1', display_id: 7, subject: 'Refund', rating: 5, comment: 'Great help', channel: 'widget', resolved_by: 'human', submitted_at: '2026-10-02T10:00:00Z' }],
   },
+  sla: {
+    conversations: 6,
+    first_response: { met: 4, missed: 1, hit_rate: 0.8 },
+    next_response: { met: 2, missed: 0, hit_rate: 1 },
+    resolution: { met: 1, missed: 3, hit_rate: 0.25 },
+  },
 }
 
 describe('SupportReportsPage', () => {
@@ -93,18 +99,23 @@ describe('SupportReportsPage', () => {
     expect(text).toContain('Great help')
     expect(text).toContain('Uma One')
     expect(text).toContain('Open now 5')
+    expect(text).toContain('First response80%4 met · 1 missed')
+    expect(text).toContain('Resolution25%1 met · 3 missed')
     expect(container.querySelectorAll('[data-testid="report-day"]')).toHaveLength(2)
     expect(container.querySelector('a[href="/w/acme/support/c1"]')).not.toBeNull()
 
     const [, params] = mockOverview.mock.calls.at(-1) as [string, { from: string; to: string; mailboxIds: string[] }]
     expect(params.mailboxIds).toEqual([])
     expect(new Date(params.to).getTime() - new Date(params.from).getTime()).toBeGreaterThanOrEqual(29 * 86_400_000)
+    expect(new Date(params.to).getTime()).toBeLessThanOrEqual(Date.now())
   })
 
   it('explains an empty CSAT period', () => {
-    mockOverview.mockReturnValue({ data: { ...report, summary: summary(), teammates: [], channels: [] }, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
+    const emptySLA = { met: 0, missed: 0, hit_rate: null }
+    mockOverview.mockReturnValue({ data: { ...report, summary: summary(), teammates: [], channels: [], sla: { conversations: 0, first_response: emptySLA, next_response: emptySLA, resolution: emptySLA } }, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
     act(() => root.render(<SupportReportsPage />))
     expect(container.textContent).toContain('No ratings in this period')
+    expect(container.querySelector('a[href="/w/acme/settings/support-sla"]')).not.toBeNull()
     expect(container.textContent).toContain('No teammate replies or resolutions in this period.')
   })
 

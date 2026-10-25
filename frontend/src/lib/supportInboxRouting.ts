@@ -13,6 +13,7 @@ export type SupportInboxRouteSearch = {
   assigned_to?: string;
   ai?: string;
   sort?: string;
+  sla?: 'breached';
   states?: string;
   mailbox_ids?: string;
   tag_ids?: string;
@@ -23,6 +24,7 @@ const VIEW_BY_FILTER: Record<NavFilter, string> = {
   inbox: 'inbox',
   mine: 'mine',
   waiting: 'waiting',
+  snoozed: 'snoozed',
   resolved: 'resolved',
   spam: 'spam',
   ai_active: 'ai-handling',
@@ -41,6 +43,7 @@ const FILTER_BY_VIEW: Record<string, NavFilter> = {
   custom: 'inbox',
   mentions: 'mine',
   waiting: 'waiting',
+  snoozed: 'snoozed',
   resolved: 'resolved',
   spam: 'spam',
   ai: 'ai_active',
@@ -63,6 +66,7 @@ export function normalizeSupportInboxRouteSearch(search: Record<string, unknown>
     assigned_to: typeof search.assigned_to === 'string' ? search.assigned_to : undefined,
     ai: typeof search.ai === 'string' ? search.ai : undefined,
     sort: typeof search.sort === 'string' ? search.sort : undefined,
+  sla: search.sla === 'breached' ? 'breached' : undefined,
     states: typeof search.states === 'string' ? search.states : undefined,
     mailbox_ids: typeof search.mailbox_ids === 'string' ? search.mailbox_ids : undefined,
     tag_ids: typeof search.tag_ids === 'string' ? search.tag_ids : undefined,
@@ -120,6 +124,9 @@ export function buildSupportInboxSearch({
   }
   if (listFilters?.sort && listFilters.sort !== 'newest') {
     search.sort = listFilters.sort;
+  }
+  if (listFilters?.slaBreached) {
+    search.sla = 'breached';
   }
   if (listFilters?.states && !statesEqual(listFilters.states, defaultStatesForNav(navFilter))) {
     search.states = listFilters.states.join(',');

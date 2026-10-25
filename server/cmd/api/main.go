@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -1654,6 +1655,9 @@ func main() {
 	setupService.SetEntitlementService(entitlementService)
 	pmImportService.SetEntitlementService(entitlementService)
 	supportInboxService.SetEntitlementService(entitlementService)
+	supportSLAService := service.NewSupportSLAService(repository.NewSupportSLARepository(db), supportInboxService).
+		SetNotificationService(notificationService).SetEntitlementService(entitlementService)
+	supportInboxService.SetSLAService(supportSLAService)
 	supportInboxTriageService.SetEntitlementService(entitlementService)
 	agentService.SetEntitlementService(entitlementService)
 	ruleEngine.SetEntitlementService(entitlementService)
@@ -2008,6 +2012,7 @@ func main() {
 			jwtManager,
 		),
 		SupportReports: handler.NewSupportReportsHandler(service.NewSupportReportService(supportConversationRepo)),
+		SupportSLA:     handler.NewSupportSLAHandler(supportSLAService),
 		SupportCoverage: handler.NewSupportCoverageHandler(
 			supportCoverageService,
 			supportEventService,
@@ -2137,6 +2142,33 @@ func main() {
 			}
 		}()
 		behaviorProfileSync.Run(behaviorProfileCtx)
+	}()
+
+	// Wake snoozed conversations and keep SLA targets current. Both jobs are
+	// safe on several replicas: wake-ups are conditional updates and SLA work
+	// is claimed with SKIP LOCKED under a per-conversation lock.
+	supportOpsCtx, supportOpsCancel := context.WithCancel(context.Background())
+	supportOpsDone := make(chan struct{})
+	go func() {
+		defer close(supportOpsDone)
+		var jobs sync.WaitGroup
+		for name, run := range map[string]func(context.Context){
+			"support snooze waker": func(ctx context.Context) { supportInboxService.RunSnoozeWaker(ctx, 30*time.Second) },
+			"support SLA worker":   func(ctx context.Context) { supportSLAService.Run(ctx, 5*time.Second) },
+		} {
+			jobs.Add(1)
+			go func(name string, run func(context.Context)) {
+				defer jobs.Done()
+				defer func() {
+					if recovered := recover(); recovered != nil {
+						observability.CaptureRecovered(recovered)
+						slog.Error("support background job stopped unexpectedly", "job", name)
+					}
+				}()
+				run(supportOpsCtx)
+			}(name, run)
+		}
+		jobs.Wait()
 	}()
 
 	// Re-check help center custom domains: pending ones hourly, live ones daily.
@@ -2406,6 +2438,7 @@ func main() {
 	commercialStateCancel()
 	usageBaselineCancel()
 	behaviorProfileCancel()
+	supportOpsCancel()
 	domainCheckCancel()
 	editionCancel()
 	select {
@@ -2442,6 +2475,11 @@ func main() {
 	case <-behaviorProfileDone:
 	case <-time.After(6 * time.Second):
 		slog.Warn("CRM behavior-profile synchronizer did not stop before shutdown timeout")
+	}
+	select {
+	case <-supportOpsDone:
+	case <-time.After(6 * time.Second):
+		slog.Warn("support snooze and SLA workers did not stop before shutdown timeout")
 	}
 	select {
 	case <-domainCheckDone:

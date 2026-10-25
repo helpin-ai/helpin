@@ -62,6 +62,12 @@ export interface SupportReportCSATComment {
   submitted_at: string
 }
 
+export interface SupportReportSLATarget {
+  met: number
+  missed: number
+  hit_rate: number | null
+}
+
 export interface SupportReportOverview {
   range: { from: string; to: string; previous_from: string; previous_to: string; timezone: string }
   summary: SupportReportSummary
@@ -77,6 +83,12 @@ export interface SupportReportOverview {
     human_average: number | null
     human_responses: number
     recent_comments: SupportReportCSATComment[]
+  }
+  sla: {
+    conversations: number
+    first_response: SupportReportSLATarget
+    next_response: SupportReportSLATarget
+    resolution: SupportReportSLATarget
   }
 }
 

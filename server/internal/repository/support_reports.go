@@ -57,7 +57,9 @@ type SupportReportConversationFact struct {
 	// teammate reply.
 	FirstHumanReplyAt     *time.Time
 	FirstHumanReplyUserID *string
-	AIReplyCount          int
+	// ResolvedByUserID is the teammate behind the latest resolve event.
+	ResolvedByUserID *string
+	AIReplyCount     int
 }
 
 // SupportReportReplyCount is the number of public replies one teammate sent.
@@ -136,6 +138,13 @@ func (r *SupportConversationRepository) ListReportFacts(ctx context.Context, sco
 	firstHuman := r.db.Table("(?) AS ranked", rankedHuman).
 		Select("conversation_id, created_at AS first_human_reply_at, sender_user_id AS first_human_reply_user_id").
 		Where("reply_rank = 1")
+	rankedResolve := r.db.Table("support_messages").
+		Select("conversation_id, sender_user_id, ROW_NUMBER() OVER (PARTITION BY conversation_id ORDER BY created_at DESC, id DESC) AS resolve_rank").
+		Where("deleted_at IS NULL AND message_type = 'system' AND system_event_type = ? AND sender_user_id IS NOT NULL AND workspace_id = ? AND conversation_id IN (?)",
+			model.SystemEventResolved, scope.WorkspaceID, r.reportCandidates(ctx, scope))
+	lastResolve := r.db.Table("(?) AS ranked_resolve", rankedResolve).
+		Select("conversation_id, sender_user_id AS resolved_by_user_id").
+		Where("resolve_rank = 1")
 
 	type row struct {
 		ID                       string
@@ -161,6 +170,7 @@ func (r *SupportConversationRepository) ListReportFacts(ctx context.Context, sco
 		FirstResponseAt          reportTime
 		FirstHumanReplyAt        reportTime
 		FirstHumanReplyUserID    *string
+		ResolvedByUserID         *string
 		AIReplyCount             int
 	}
 	var rows []row
@@ -171,11 +181,13 @@ func (r *SupportConversationRepository) ListReportFacts(ctx context.Context, sco
 			conv.customer_requested_human_at, conv.human_takeover,
 			first_customer.first_customer_at, first_response.first_response_at,
 			COALESCE(first_response.ai_reply_count, 0) AS ai_reply_count,
-			first_human.first_human_reply_at, first_human.first_human_reply_user_id`).
+			first_human.first_human_reply_at, first_human.first_human_reply_user_id,
+			last_resolve.resolved_by_user_id`).
 		Joins("LEFT JOIN support_mailboxes AS mailbox ON mailbox.id = conv.mailbox_id").
 		Joins("LEFT JOIN (?) AS first_customer ON first_customer.conversation_id = conv.id", firstCustomer).
 		Joins("LEFT JOIN (?) AS first_response ON first_response.conversation_id = conv.id", firstResponse).
 		Joins("LEFT JOIN (?) AS first_human ON first_human.conversation_id = conv.id", firstHuman).
+		Joins("LEFT JOIN (?) AS last_resolve ON last_resolve.conversation_id = conv.id", lastResolve).
 		Where("conv.id IN (?)", r.reportCandidates(ctx, scope)).
 		Order("conv.created_at, conv.id").
 		Scan(&rows).Error
@@ -197,7 +209,7 @@ func (r *SupportConversationRepository) ListReportFacts(ctx context.Context, sco
 			CustomerRequestedHumanAt: row.CustomerRequestedHumanAt.value, HumanTakeover: row.HumanTakeover,
 			FirstCustomerAt: row.FirstCustomerAt.value, FirstResponseAt: row.FirstResponseAt.value,
 			FirstHumanReplyAt: row.FirstHumanReplyAt.value, FirstHumanReplyUserID: row.FirstHumanReplyUserID,
-			AIReplyCount: row.AIReplyCount,
+			ResolvedByUserID: row.ResolvedByUserID, AIReplyCount: row.AIReplyCount,
 		})
 	}
 	return facts, nil
@@ -332,4 +344,33 @@ func (r *SupportConversationRepository) ListReportUsers(ctx context.Context, ids
 		return nil, fmt.Errorf("list support report users: %w", err)
 	}
 	return users, nil
+}
+
+// SupportReportSLARow is the SLA outcome of one conversation.
+type SupportReportSLARow struct {
+	ConversationID       string
+	FirstResponseState   string
+	NextResponseBreaches int
+	NextResponseState    string
+	ResolutionState      string
+}
+
+// ListReportSLA returns SLA outcomes of conversations created in [from, to)
+// that the actor can open.
+func (r *SupportConversationRepository) ListReportSLA(ctx context.Context, scope SupportReportScope, from, to time.Time) ([]SupportReportSLARow, error) {
+	query := r.db.WithContext(ctx).Table("support_conversation_slas AS sla").
+		Joins("JOIN support_conversations AS c ON c.id = sla.conversation_id AND c.workspace_id = sla.workspace_id").
+		Where("sla.workspace_id = ? AND c.merged_into_id IS NULL AND c.status <> ? AND c.created_at >= ? AND c.created_at < ?",
+			scope.WorkspaceID, model.SupportConversationStatusSpam, from, to)
+	query = r.applyMailboxAccess(query, "c", scope.WorkspaceMemberID, scope.Role)
+	query = r.applyMailboxScopes(query, "c", nil, scope.MailboxIDs)
+	if channels := compactStrings(scope.Channels); len(channels) > 0 {
+		query = query.Where("c.channel IN ?", channels)
+	}
+	var rows []SupportReportSLARow
+	if err := query.Select(`sla.conversation_id, sla.first_response_state, sla.next_response_breaches,
+		sla.next_response_state, sla.resolution_state`).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list support report SLA outcomes: %w", err)
+	}
+	return rows, nil
 }

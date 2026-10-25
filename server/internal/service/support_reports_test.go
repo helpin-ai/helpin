@@ -131,6 +131,14 @@ func seedSupportReportFixture(t *testing.T, db *gorm.DB) *supportReportFixture {
 		CreatedAt: at(-6, 9, 0), ResolvedAt: ptrTime(at(1, 9, 0))})
 	f.message(t, c5, "customer", nil, at(-6, 9, 0))
 	f.message(t, c5, "user", &f.userTwo, at(-6, 10, 0))
+	// userOne resolved c5 although userTwo is the assignee.
+	if err := f.db.Create(&model.SupportMessage{
+		ID: uuid.NewString(), WorkspaceID: f.workspaceID, ConversationID: c5, SenderType: "user", SenderUserID: &f.userOne,
+		MessageType: "system", SystemEventType: model.SupportSystemEventTypeStrPtr(model.SystemEventResolved),
+		Content: "Uma resolved this conversation.", IsInternal: true, CreatedAt: at(1, 9, 0), UpdatedAt: at(1, 9, 0),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
 	// c6: spam is never reported.
 	c6 := f.conversation(t, "c6", model.SupportConversation{Status: spam, CreatedAt: at(1, 12, 0)})
 	f.message(t, c6, "customer", nil, at(1, 12, 0))
@@ -139,6 +147,18 @@ func seedSupportReportFixture(t *testing.T, db *gorm.DB) *supportReportFixture {
 	f.message(t, c7, "customer", nil, at(4, 9, 0))
 	// c8: entirely in the previous period.
 	c8 := f.conversation(t, "c8", model.SupportConversation{Status: resolved, FlowState: &byHuman, CreatedAt: at(-5, 9, 0), ResolvedAt: ptrTime(at(-5, 10, 0))})
+
+	for _, row := range []model.SupportConversationSLARecord{
+		{ConversationID: c1, FirstResponseState: model.SupportSLAStateAchieved, ResolutionState: model.SupportSLAStateBreached, NextResponseState: model.SupportSLAStateAchieved},
+		{ConversationID: c3, FirstResponseState: model.SupportSLAStateBreached, NextResponseBreaches: 2, NextResponseState: model.SupportSLAStateBreached, ResolutionState: model.SupportSLAStatePending},
+		{ConversationID: c7, FirstResponseState: model.SupportSLAStatePending},
+		{ConversationID: c8, FirstResponseState: model.SupportSLAStateBreached}, // previous period
+	} {
+		row.WorkspaceID = f.workspaceID
+		if err := f.db.Create(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	f.rating(t, c1, 5, strPtr("Great help"), model.SupportCSATResolvedByHuman, &f.userOne, at(0, 13, 0))
 	f.rating(t, c2, 3, nil, model.SupportCSATResolvedByAI, nil, at(1, 10, 0))
@@ -231,20 +251,25 @@ func checkSupportReportOverviewMetrics(t *testing.T, f *supportReportFixture) {
 		len(csat.RecentComments) != 2 || csat.RecentComments[0].Comment != "Took a week" {
 		t.Fatalf("csat %+v", csat)
 	}
+	if sla := overview.SLA; sla.Conversations != 3 || sla.FirstResponse.Met != 1 || sla.FirstResponse.Missed != 1 ||
+		sla.NextResponse.Met != 1 || sla.NextResponse.Missed != 1 || sla.Resolution.Missed != 1 || sla.Resolution.Met != 0 {
+		t.Fatalf("sla %+v", overview.SLA)
+	}
+	assertRate(t, "first response hit rate", overview.SLA.FirstResponse.HitRate, 0.5)
 	if len(overview.Teammates) != 2 {
 		t.Fatalf("teammates %+v", overview.Teammates)
 	}
 	for _, mate := range overview.Teammates {
 		switch mate.UserID {
 		case f.userOne:
-			if mate.Name != "Uma One" || mate.Resolved != 1 || mate.RepliesSent != 2 || mate.CSATResponses != 1 {
+			if mate.Name != "Uma One" || mate.Resolved != 2 || mate.RepliesSent != 2 || mate.CSATResponses != 1 {
 				t.Fatalf("user one %+v", mate)
 			}
 			assertSeconds(t, "user one frt", mate.FirstHumanResponse.MedianSeconds, 600)
 			assertRate(t, "user one csat", mate.CSATAverage, 5)
 		case f.userTwo:
-			// c5's reply was sent in the previous period.
-			if mate.Resolved != 1 || mate.RepliesSent != 1 || mate.CSATResponses != 1 {
+			// c5's reply was sent in the previous period, and userOne resolved it.
+			if mate.Resolved != 0 || mate.RepliesSent != 1 || mate.CSATResponses != 1 {
 				t.Fatalf("user two %+v", mate)
 			}
 			assertSeconds(t, "user two frt", mate.FirstHumanResponse.MedianSeconds, 7200)

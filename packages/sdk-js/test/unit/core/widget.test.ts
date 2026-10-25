@@ -1283,6 +1283,20 @@ describe('WidgetManager', () => {
       expect(localStorage.setItem).not.toHaveBeenCalledWith('helpin_csat_test-key_conv-1', '1');
     });
 
+    it('keeps a known rating when a later conversation list omits it', () => {
+      (widget as any).render = vi.fn();
+      (widget as any).conversations = [(widget as any).mapConversation({ id: 'conv-2', status: 'resolved', csat_rating: 4 })];
+      (widget as any).handleWSMessage({ type: 'conversations:listed', data: { conversations: [{ id: 'conv-2', status: 'resolved' }] } });
+      expect((widget as any).conversations[0].csatRating).toBe(4);
+    });
+
+    it('reports a network failure in plain words', async () => {
+      (widget as any).sessionToken = 'session-token';
+      (widget as any).activeConversationId = 'conv-1';
+      fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+      await expect((widget as any).handleCsatSubmit(3)).rejects.toThrow('Check your connection');
+    });
+
     it('treats a rating saved on another device as submitted', () => {
       (widget as any).widgetKey = 'test-key';
       (widget as any).conversations = [(widget as any).mapConversation({ id: 'conv-2', status: 'resolved', csat_rating: 5 })];

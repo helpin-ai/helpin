@@ -95,6 +95,7 @@ func (h *SupportInboxHandler) ListConversations(w http.ResponseWriter, r *http.R
 	tagIDs := splitQueryCSV(r.URL.Query().Get("tag_ids"))
 	systemTags := splitQueryCSV(r.URL.Query().Get("system_tags"))
 	aiFilters := splitQueryCSV(r.URL.Query().Get("ai"))
+	slaFilter := strings.TrimSpace(r.URL.Query().Get("sla"))
 	mailboxIDs := splitQueryCSV(r.URL.Query().Get("mailbox_ids"))
 	var mailboxID *string
 	if values, ok := r.URL.Query()["mailbox_id"]; ok {
@@ -126,6 +127,7 @@ func (h *SupportInboxHandler) ListConversations(w http.ResponseWriter, r *http.R
 		TagIDs:      tagIDs,
 		SystemTags:  systemTags,
 		AIFilters:   aiFilters,
+		SLA:         slaFilter,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

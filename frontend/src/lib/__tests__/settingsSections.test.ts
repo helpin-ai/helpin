@@ -95,13 +95,14 @@ describe('getSettingsSidebarGroups', () => {
     });
   });
 
-  it('puts inbox, widget, and portal settings before AI assistant', () => {
+  it('puts inbox, widget, portal and SLA settings before AI assistant', () => {
     const supportGroup = getSettingsSidebarGroups(true).find((group) => group.label === 'Support');
 
-    expect(supportGroup?.sections.map((section) => section.id).slice(0, 4)).toEqual([
+    expect(supportGroup?.sections.map((section) => section.id).slice(0, 5)).toEqual([
       'inboxes-routing',
       'chat-general',
       'customer-portal',
+      'support-sla',
       'support-ai-assistant',
     ]);
   });

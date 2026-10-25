@@ -13,7 +13,7 @@ import { getMessageDelivery } from './messageDelivery';
 import { memo, useCallback, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { CheckmarkCircle02Icon, ArrowDown01Icon, LinkSquare01Icon, File01Icon, RotateLeft01Icon, StickyNote01Icon, CancelCircleIcon, Mail01Icon, UserIcon, ZapIcon } from '@/lib/icons';
+import { CheckmarkCircle02Icon, ArrowDown01Icon, LinkSquare01Icon, File01Icon, RotateLeft01Icon, StickyNote01Icon, CancelCircleIcon, Mail01Icon, UserIcon, ZapIcon, Timer01Icon } from '@/lib/icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { EmailDetailModal } from './EmailDetailModal';
@@ -151,6 +151,20 @@ function renderBoldedSupportMatches(content: string, pattern: RegExp): ReactNode
     parts.push(content.slice(lastIndex));
   }
   return parts.length > 1 ? <>{parts}</> : content;
+}
+
+function supportSnoozedEventText(metadata: string | undefined, senderName: string): string | null {
+  if (!metadata?.trim()) return null;
+  try {
+    const parsed = JSON.parse(metadata) as { snoozed_until?: unknown };
+    if (typeof parsed.snoozed_until !== 'string') return null;
+    const until = new Date(parsed.snoozed_until);
+    if (Number.isNaN(until.getTime())) return null;
+    const actor = senderName.trim().split(/\s+/)[0] || 'A teammate';
+    return `${actor} snoozed this conversation until ${until.toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}.`;
+  } catch {
+    return null;
+  }
 }
 
 function supportTaskIDFromMetadata(metadata?: string): string | null {
@@ -639,6 +653,10 @@ export const MessageBubble = memo(function MessageBubble({
       'tag_added',
       'tag_removed',
       'task_created',
+      'priority_changed',
+      'snoozed',
+      'unsnoozed',
+      'sla_breached',
     ];
 
     const stateEventTypes: ReadonlyArray<string> = ['resolved', 'closed'];
@@ -655,7 +673,9 @@ export const MessageBubble = memo(function MessageBubble({
     const showAIAvatar = eventType !== 'customer_requested_human' && !isRuleRoutingEvent
       && (isAI || isAgent || isAIRoutingEvent || eventType === 'ai_escalated');
     const aiStatusAvatar = <AskAgentAvatar plateStyle="solid" radius={50} className="h-5 w-5 shrink-0" decorative={false} label={isAIRoutingEvent ? 'AI routing' : HELPIN_AI_DISPLAY_NAME} />;
-    const systemDisplayContent = escalationLabel ?? supportSystemEventDisplayContent(eventType, message.content, resolvedSenderName);
+    const snoozedDisplay = eventType === 'snoozed' ? supportSnoozedEventText(message.metadata, resolvedSenderName) : null;
+    const isSLABreachEvent = eventType === 'sla_breached';
+    const systemDisplayContent = escalationLabel ?? snoozedDisplay ?? supportSystemEventDisplayContent(eventType, message.content, resolvedSenderName);
     const taskID = eventType === 'task_created'
       ? supportTaskIDFromMetadata(message.metadata) ?? linkedTaskId
       : null;
@@ -719,12 +739,17 @@ export const MessageBubble = memo(function MessageBubble({
     if (isRoutingEvent) {
       const escalationPillClass = 'rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200';
       const defaultPillClass = 'rounded-full px-3 py-1 text-xs text-muted-foreground';
+      const slaBreachPillClass = 'rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-medium text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200';
       return (
         <div className="my-5 flex items-center justify-center gap-2 animate-in fade-in duration-300">
           <Tooltip>
             <TooltipTrigger asChild>
-              <div data-support-system-callout className={`flex min-w-0 items-center gap-2 ${eventType === 'task_created' ? 'max-w-[70%]' : 'max-w-full'} ${isEscalationEvent ? escalationPillClass : defaultPillClass}`}>
-                {showAIAvatar ? aiStatusAvatar : isEscalationEvent ? (
+              <div data-support-system-callout className={`flex min-w-0 items-center gap-2 ${eventType === 'task_created' ? 'max-w-[70%]' : 'max-w-full'} ${isSLABreachEvent ? slaBreachPillClass : isEscalationEvent ? escalationPillClass : defaultPillClass}`}>
+                {isSLABreachEvent ? (
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
+                    <Timer01Icon className="h-3 w-3" />
+                  </span>
+                ) : showAIAvatar ? aiStatusAvatar : isEscalationEvent ? (
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
                     <UserIcon className="h-3 w-3" />
                   </span>

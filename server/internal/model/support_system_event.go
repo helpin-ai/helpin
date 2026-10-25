@@ -84,6 +84,18 @@ const (
 	// SystemEventCSATRated — the customer rated the resolved conversation.
 	// Admin-only; metadata carries the rating and optional comment.
 	SystemEventCSATRated SupportSystemEventType = "csat_rated"
+
+	// SystemEventPriorityChanged — a teammate changed the priority.
+	// Admin-only.
+	SystemEventPriorityChanged SupportSystemEventType = "priority_changed"
+
+	// SystemEventSnoozed / SystemEventUnsnoozed — a teammate snoozed the
+	// conversation, or the snooze ended. Admin-only.
+	SystemEventSnoozed   SupportSystemEventType = "snoozed"
+	SystemEventUnsnoozed SupportSystemEventType = "unsnoozed"
+
+	// SystemEventSLABreached — an SLA target was missed. Admin-only.
+	SystemEventSLABreached SupportSystemEventType = "sla_breached"
 )
 
 // allSupportSystemEventTypes is the authoritative set of valid event types.
@@ -110,6 +122,10 @@ var allSupportSystemEventTypes = map[SupportSystemEventType]struct{}{
 	SystemEventTagRemoved:             {},
 	SystemEventTaskCreated:            {},
 	SystemEventCSATRated:              {},
+	SystemEventPriorityChanged:        {},
+	SystemEventSnoozed:                {},
+	SystemEventUnsnoozed:              {},
+	SystemEventSLABreached:            {},
 }
 
 // IsValidSupportSystemEventType reports whether s is a recognized event type.

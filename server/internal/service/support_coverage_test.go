@@ -82,7 +82,7 @@ func setupCoverageTestEnv(t *testing.T) (*SupportEventService, *SupportCoverageS
 			content TEXT NOT NULL DEFAULT '', is_internal BOOLEAN NOT NULL DEFAULT 0,
 			deleted_at DATETIME, created_at DATETIME, updated_at DATETIME
 		)`,
-		`CREATE TABLE support_conversations (
+		`CREATE TABLE support_conversations (snoozed_until DATETIME, snoozed_by_user_id TEXT, 
             merged_into_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,
 			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, customer_name TEXT,
 			customer_email TEXT NOT NULL DEFAULT '', crm_contact_id TEXT, anonymous_id TEXT,

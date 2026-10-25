@@ -13,16 +13,20 @@ function startOfLocalDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate())
 }
 
-/** Local-midnight boundaries for a preset; `to` is exclusive (tomorrow). */
+/**
+ * The preset's period, from a local midnight to now. Ending at now (not the
+ * end of today) keeps the comparison with the previous, equally long period
+ * fair while today is still in progress.
+ */
 export function supportReportRange(preset: SupportReportRangePreset, now = new Date()): { from: Date; to: Date } {
-  const to = startOfLocalDay(now)
-  to.setDate(to.getDate() + 1)
+  const to = new Date(now)
+  to.setSeconds(0, 0)
   if (preset === 'month') {
     return { from: new Date(now.getFullYear(), now.getMonth(), 1), to }
   }
   const days = preset === '7d' ? 7 : preset === '30d' ? 30 : 90
-  const from = new Date(to)
-  from.setDate(from.getDate() - days)
+  const from = startOfLocalDay(now)
+  from.setDate(from.getDate() - (days - 1))
   return { from, to }
 }
 

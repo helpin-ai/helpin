@@ -32,7 +32,7 @@ func setupSupportInboxClearTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME
 		)`,
 		`CREATE UNIQUE INDEX idx_support_inbox_clears_once ON support_inbox_clears(workspace_id, user_id, scope_key, conversation_id)`,
-		`CREATE TABLE support_conversations (
+		`CREATE TABLE support_conversations (snoozed_until DATETIME, snoozed_by_user_id TEXT, 
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			mailbox_id TEXT,

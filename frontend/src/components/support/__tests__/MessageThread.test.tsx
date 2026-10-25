@@ -34,6 +34,15 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => vi.fn(),
 }))
 
+vi.mock('@/hooks/queries/useSupportOperations', () => {
+  const mutation = () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false });
+  return {
+    useUpdateConversationPriority: mutation,
+    useSnoozeConversation: mutation,
+    useUnsnoozeConversation: mutation,
+  };
+});
+
 vi.mock('@/hooks/queries/useSupport', () => ({
   useConversation: (...args: unknown[]) => supportHooks.useConversation(...args),
   useConversationMessages: (...args: unknown[]) => supportHooks.useConversationMessages(...args),

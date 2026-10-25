@@ -18,7 +18,7 @@ import { shouldClearConversationForMailbox } from './supportInboxSelection';
 import { NewConversationDialog } from './NewConversationDialog';
 import { TeamInboxDialog } from './TeamInboxDialog';
 import { buildSupportInboxSearch, navFilterFromView, normalizeSupportInboxRouteSearch } from '@/lib/supportInboxRouting';
-import { conversationListFiltersEqual, defaultAIStatesForNav, defaultAssignmentForNav, defaultConversationListFiltersForNav, defaultStatesForNav, parseSupportInboxViewFilters, statesEqual, stringArraysEqual, type ConversationAIStateFilter, type ConversationAssignmentFilter, type ConversationListFilters, type ConversationStateFilter } from '@/lib/supportInboxFilters';
+import { conversationListFiltersEqual, defaultAIStatesForNav, defaultAssignmentForNav, defaultConversationListFiltersForNav, defaultStatesForNav, parseConversationSortOrder, parseSupportInboxViewFilters, statesEqual, stringArraysEqual, type ConversationAIStateFilter, type ConversationAssignmentFilter, type ConversationListFilters, type ConversationStateFilter } from '@/lib/supportInboxFilters';
 
 const LazySupportAgentSidebar = lazy(() => import('./SupportAgentSidebar').then((module) => ({ default: module.SupportAgentSidebar })));
 const LazyConversationDetailSidebar = lazy(() => import('./ConversationDetailSidebar').then((module) => ({ default: module.ConversationDetailSidebar })));
@@ -228,7 +228,8 @@ export function SupportInboxLayout() {
       mailboxIds: parseRouteStringList(routeSearch.mailbox_ids),
       tagIds: parseRouteStringList(routeSearch.tag_ids),
       aiStates: parseRouteAIStates(routeSearch.ai, routeSearch.system_tags, effectiveNavFilter),
-      sort: routeSearch.sort === 'oldest' ? 'oldest' : 'newest',
+      sort: parseConversationSortOrder(routeSearch.sort),
+      ...(routeSearch.sla === 'breached' ? { slaBreached: true } : {}),
     };
     const hasExplicitRouteFilters = !!(
       routeSearch.status ||
@@ -238,6 +239,7 @@ export function SupportInboxLayout() {
       routeSearch.mailbox_ids ||
       routeSearch.tag_ids ||
       routeSearch.ai ||
+      routeSearch.sla ||
       routeSearch.system_tags ||
       routeSearch.sort
     );

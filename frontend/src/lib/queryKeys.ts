@@ -251,6 +251,7 @@ export const queryKeys = {
     search: (wsId: string, filters: unknown) => ['support', wsId, 'search', filters] as const,
     tags: (wsId: string) => ['support', wsId, 'tags'] as const,
     reportOverview: (wsId: string, params: unknown) => ['support', wsId, 'reports', 'overview', params] as const,
+    slaPolicies: (wsId: string) => ['support', wsId, 'sla-policies'] as const,
   },
 
   docs: {

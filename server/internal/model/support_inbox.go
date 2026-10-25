@@ -73,6 +73,11 @@ type SupportConversation struct {
 	// or a second thread.
 	PortalVisible             bool       `json:"portal_visible" gorm:"not null;default:false;index"`
 	PortalVisibilityChangedAt *time.Time `json:"portal_visibility_changed_at,omitempty" gorm:"type:timestamptz"`
+	// SnoozedUntil hides the conversation from the team's queues until this
+	// time, a customer reply, or a teammate wakes it. Customers still see
+	// an open conversation.
+	SnoozedUntil    *time.Time `json:"snoozed_until,omitempty" gorm:"type:timestamptz;index"`
+	SnoozedByUserID *string    `json:"snoozed_by_user_id,omitempty" gorm:"type:uuid"`
 
 	// AI State — separate from human Status. Null when AI is not involved.
 	AIState                  *string    `json:"ai_state" gorm:"index"` // null, "pending", "resolved", "escalated"
@@ -115,6 +120,7 @@ type SupportConversation struct {
 	Tags                         []SupportTag               `json:"tags,omitempty" gorm:"-"`
 	SystemTags                   []string                   `json:"system_tags,omitempty" gorm:"-"`
 	CSAT                         *SupportCSATSummary        `json:"csat,omitempty" gorm:"-"`
+	SLA                          *SupportConversationSLA    `json:"sla,omitempty" gorm:"-"`
 
 	// ListLastActivityAt is derived from timeline entries, including notes and system events.
 	// It must not replace message timestamps used for previews, unread state, or reply tracking.
@@ -156,6 +162,7 @@ const (
 	SupportConversationListFilterMine     = "mine"
 	SupportConversationListFilterMentions = "mentions"
 	SupportConversationListFilterResolved = "resolved"
+	SupportConversationListFilterSnoozed  = "snoozed"
 )
 
 func NormalizeSupportConversationStatus(status string) string {

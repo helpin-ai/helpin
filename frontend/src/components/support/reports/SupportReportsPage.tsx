@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import {
   QuietEmptyState,
@@ -34,6 +34,7 @@ import { ReportDailyChart } from './ReportDailyChart'
 
 const ALL_INBOXES = 'all'
 const COLLAPSED_COMMENTS = 6
+const REPORT_REFRESH_MS = 5 * 60_000
 
 function TrendText({ trend }: { trend: ReportTrend }) {
   if (!trend) return <span>No previous data</span>
@@ -86,10 +87,15 @@ export function SupportReportsPage() {
   const [showAllComments, setShowAllComments] = useState(false)
   const { data: scopes } = useInboxScopes(workspaceId)
 
+  // The period ends "now"; advance it every few minutes so the report stays current.
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), REPORT_REFRESH_MS)
+    return () => window.clearInterval(timer)
+  }, [])
   const params = useMemo(
-    () => supportReportParams(preset, inbox === ALL_INBOXES ? [] : [inbox]),
-    // The period is recomputed when the preset or inbox changes, not on every render.
-    [preset, inbox],
+    () => supportReportParams(preset, inbox === ALL_INBOXES ? [] : [inbox], now),
+    [preset, inbox, now],
   )
   const { data: report, isLoading, isFetching, error, refetch } = useSupportReportOverview(workspaceId, params)
 
@@ -296,6 +302,31 @@ export function SupportReportsPage() {
                   ) : null}
                 </div>
               </div>
+            )}
+          </QuietSection>
+
+          <QuietSection title="SLA targets" count={report.sla.conversations ? `${report.sla.conversations} conversations` : undefined}>
+            {report.sla.conversations === 0 ? (
+              <p className="py-2 text-sm text-quiet-text-tertiary">
+                No conversations in this period had SLA targets. Set them up in <a className="underline hover:text-quiet-text-primary" href={`/w/${workspaceSlug}/settings/support-sla`}>SLA policies</a>.
+              </p>
+            ) : (
+              <QuietMetricGrid className="xl:grid-cols-3">
+                {([
+                  ['First response', report.sla.first_response],
+                  ['Next response', report.sla.next_response],
+                  ['Resolution', report.sla.resolution],
+                ] as const).map(([label, target]) => (
+                  <QuietMetricBlock
+                    key={label}
+                    className="items-start"
+                    label={label}
+                    value={formatReportPercent(target.hit_rate)}
+                    tone={target.hit_rate !== null && target.hit_rate < 0.8 ? 'warning' : 'neutral'}
+                    description={`${target.met} met · ${target.missed} missed`}
+                  />
+                ))}
+              </QuietMetricGrid>
             )}
           </QuietSection>
 

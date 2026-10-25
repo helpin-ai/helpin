@@ -742,7 +742,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
-		`CREATE TABLE support_conversations (
+		`CREATE TABLE support_conversations (snoozed_until DATETIME, snoozed_by_user_id TEXT, 
             merged_into_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,
             anonymized_at DATETIME,
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
@@ -956,6 +956,23 @@ func newTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE support_sla_policies (
+			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, name TEXT NOT NULL, enabled BOOLEAN NOT NULL DEFAULT 1,
+			position INTEGER NOT NULL DEFAULT 0, priorities TEXT NOT NULL DEFAULT '{}', mailbox_ids TEXT NOT NULL DEFAULT '{}',
+			channels TEXT NOT NULL DEFAULT '{}', first_response_minutes INTEGER, next_response_minutes INTEGER,
+			resolution_minutes INTEGER, business_hours BOOLEAN NOT NULL DEFAULT 0, pause_while_waiting BOOLEAN NOT NULL DEFAULT 1,
+			active_since DATETIME NOT NULL, created_by_id TEXT, created_at DATETIME, updated_at DATETIME
+		)`,
+		`CREATE TABLE support_conversation_slas (
+			conversation_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, policy_id TEXT, policy_name TEXT NOT NULL DEFAULT '',
+			first_response_state TEXT NOT NULL DEFAULT '', first_response_due_at DATETIME, first_response_achieved_at DATETIME,
+			first_response_breached_at DATETIME, next_response_state TEXT NOT NULL DEFAULT '', next_response_due_at DATETIME,
+			next_response_breached_at DATETIME, next_response_breaches INTEGER NOT NULL DEFAULT 0,
+			resolution_state TEXT NOT NULL DEFAULT '', resolution_due_at DATETIME, resolution_achieved_at DATETIME,
+			resolution_breached_at DATETIME, paused_since DATETIME, paused_seconds INTEGER NOT NULL DEFAULT 0,
+			next_due_at DATETIME, wake_at DATETIME, breached BOOLEAN NOT NULL DEFAULT 0, updated_at DATETIME
+		)`,
+		`CREATE TABLE support_sla_work (conversation_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, enqueued_at DATETIME NOT NULL)`,
 		`CREATE TABLE agent_handoffs (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,

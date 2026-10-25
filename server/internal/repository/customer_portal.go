@@ -374,7 +374,8 @@ func (r *CustomerPortalRepository) ListRequests(ctx context.Context, workspaceID
 			conv.display_id, conv.last_public_sender_type, conv.customer_awaiting_response, refs.customer_last_read_at,
 			COALESCE(` + supportMetadataValueSQL(r.db, "lm", "merge_public_text") + `, lm.content) AS last_message_content,
 			lm.sender_type AS last_visible_sender_type, lm.created_at AS last_visible_message_at`)
-	waitingCondition := "(" + conversationWaitingOnCustomerCondition("conv") + " OR conv.status = 'waiting')"
+	// Customers never see snooze, so this mirrors the waiting rule without it.
+	waitingCondition := "(conv.status IN ('waiting_on_customer', 'waiting') OR (conv.status = 'open' AND conv.last_public_sender_type = 'user' AND NOT COALESCE(conv.customer_awaiting_response, false)))"
 	switch status {
 	case "active":
 		query = query.Where("NOT "+waitingCondition).Where("conv.status NOT IN ?", []string{model.SupportConversationStatusResolved, "closed"})
