@@ -297,11 +297,12 @@ func TestSupportHandoffBriefAttributionAndPrivacy(t *testing.T) {
 		{ID: "private", SenderType: "user", MessageType: "reply", IsInternal: true, Content: "PRIVATE teammate note"},
 	}
 	note := buildSupportHandoffNote(conv, history, "provider_unavailable", SupportHandoffBrief{}, time.Now())
-	if !note.IsInternal || strings.Contains(note.Content, "PRIVATE") || !strings.Contains(note.Content, "AI said: Try reconnecting") || !strings.Contains(note.Content, "Customer said: The connection still fails") {
+	// Without an AI brief the card repeats nothing from the chat, which sits right above it.
+	if !note.IsInternal || strings.Contains(note.Content+note.Metadata, "PRIVATE") || strings.Contains(note.Content, "Try reconnecting") || strings.Contains(note.Content, "The connection still fails") {
 		t.Fatalf("bad fallback: %s", note.Content)
 	}
-	if strings.Count(note.Content, "The connection still fails") != 1 {
-		t.Fatal("fallback repeats the customer issue")
+	if !strings.Contains(note.Metadata, `"source_message_ids":["ai","customer"]`) {
+		t.Fatalf("lost message references: %s", note.Metadata)
 	}
 	rich := buildSupportHandoffNote(conv, history, "cannot_answer", SupportHandoffBrief{Issue: "Connection fails", AttemptedSteps: []string{"AI suggested reconnecting; customer has not confirmed trying it."}, UnresolvedQuestions: []string{"Which error appears?"}}, time.Now())
 	if !strings.Contains(rich.Content, "not confirmed") || !strings.Contains(rich.Content, "Which error appears?") {
@@ -329,6 +330,25 @@ func TestSupportHandoffRetryCreatesOneBrief(t *testing.T) {
 	}
 	if len(notes) != 1 || !strings.Contains(notes[0].Content, "Customer still needs an answer") {
 		t.Fatalf("notes = %+v", notes)
+	}
+}
+
+func TestSupportHandoffCustomerUpdatePrecedesHandoffMessage(t *testing.T) {
+	svc, db, conv, settings := setupAIControlTest(t)
+	raw, _ := json.Marshal(settings)
+	mustExec(t, db, `INSERT INTO support_widget_installations(id,workspace_id,widget_key,secret_key,settings,active) VALUES ('install','ws','key','secret',?,true)`, string(raw))
+	ai := &SupportAIService{conversationRepo: svc.conversationRepo, messageRepo: svc.messageRepo, installationRepo: repository.NewSupportInboxInstallationRepository(db), handoffRepo: repository.NewAgentHandoffRepository(db)}
+	update := "I can see your import started but did not finish."
+	if err := ai.EscalateToHumanForMessageWithIssue(context.Background(), "ws", conv.ID, "", "cannot_answer", "", "Import stops", SupportHandoffBrief{CustomerUpdate: update}); err != nil {
+		t.Fatal(err)
+	}
+	var reply model.SupportMessage
+	if err := db.Where("sender_type = 'ai' AND message_type = 'reply'").First(&reply).Error; err != nil {
+		t.Fatal(err)
+	}
+	handoff, ok := strings.CutPrefix(reply.Content, update+"\n\n")
+	if !ok || strings.TrimSpace(handoff) == "" {
+		t.Fatalf("reply = %q", reply.Content)
 	}
 }
 

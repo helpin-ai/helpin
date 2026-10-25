@@ -223,8 +223,11 @@ func TestSupportFollowUpIntentionalHandoffRecordsVisibleEventOnce(t *testing.T) 
 	if err := db.Where("message_type='note'").Find(&notes).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(notes) != 1 || !notes[0].IsInternal || notes[0].WidgetVisible() || !strings.Contains(notes[0].Content, "Still unresolved") {
+	if len(notes) != 1 || !notes[0].IsInternal || notes[0].WidgetVisible() || !strings.Contains(notes[0].Content, "Reason\nFollow-up assessment: "+decision.Reason) {
 		t.Fatalf("missing private handoff brief: %+v", notes)
+	}
+	if card := handoffCardOf(t, &notes[0]); card.Reason == "" || !strings.Contains(notes[0].Metadata, `"support_follow_up_id"`) {
+		t.Fatalf("follow-up handoff lost its card: %s", notes[0].Metadata)
 	}
 	if notes[0].CreatedAt.UnixMilli() <= events[0].CreatedAt.UnixMilli() {
 		t.Fatal("handoff brief must sort after the escalation event")

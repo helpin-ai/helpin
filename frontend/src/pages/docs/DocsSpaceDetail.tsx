@@ -58,8 +58,8 @@ export function DocsSpaceDetail() {
   const { canEditDocs } = usePermissions(access)
 
   const [filterStatus, setFilterStatus] = useState<DocStatus | null>(null)
-  const [sortField, setSortField] = useState<DocumentsTableSortField>('position')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [sortField, setSortField] = useState<DocumentsTableSortField>('updated_at')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
 
   const { data: space, isLoading: spaceLoading } = useDocsSpace(wsId, spaceId)
   const { data: collections } = useDocsCollections(wsId, spaceId)

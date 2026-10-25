@@ -19,11 +19,11 @@ export interface DocsLibrarySortValue {
 }
 
 const SORT_OPTIONS: Array<DocsLibrarySortValue & { label: string }> = [
-  { field: 'position', direction: 'asc', label: 'Manual order' },
   { field: 'updated_at', direction: 'desc', label: 'Recently updated' },
   { field: 'updated_at', direction: 'asc', label: 'Oldest updated' },
   { field: 'title', direction: 'asc', label: 'Title A–Z' },
   { field: 'title', direction: 'desc', label: 'Title Z–A' },
+  { field: 'position', direction: 'asc', label: 'Manual order' },
 ]
 
 function sortOptionKey(value: DocsLibrarySortValue) {

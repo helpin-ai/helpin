@@ -123,6 +123,7 @@ func NewAICompletionRouteRegistry(crmConfig CRMCompletionRouteConfig) AICompleti
 		},
 		common(BillingFeatureDocsArticleTranslation, 4096),
 		common(BillingFeatureDocsArticleGeneration, 2000),
+		common(BillingFeatureDocsSelectionRewrite, 4096),
 		{
 			FeatureKey: BillingFeatureDocsImportConversion, Primary: openRouterLunaRoute,
 			Fallbacks: []AICompletionRoute{openRouterGeminiFlashRoute}, MaximumOutputTokens: 24_000,

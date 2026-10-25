@@ -32,6 +32,7 @@ const (
 	BillingFeatureTaskStandingBrief       = "task_standing_brief"
 	BillingFeatureSupportTaskDraft        = "support_task_draft"
 	BillingFeatureDocsArticleTranslation  = "docs_article_translation"
+	BillingFeatureDocsSelectionRewrite    = "docs_selection_rewrite"
 	BillingFeatureDocsArticleGeneration   = "docs_article_generation"
 	BillingFeatureDocsImportConversion    = "docs_import_conversion"
 	BillingFeatureHelpcenterAnswer        = "helpcenter_answer_generation"

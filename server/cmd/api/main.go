@@ -2016,6 +2016,7 @@ func main() {
 
 	// Set support event recorder on DocsHandler after handler creation.
 	handlers.Docs.SetSupportEventRecorder(supportEventRecorder)
+	handlers.Docs.SetAIRewriteService(service.NewDocsAIRewriteService(supportLLMProvider))
 	handlers.Docs.SetImageEditService(docsImageEditService)
 	handlers.Docs.SetSupportWidgetConfigProvider(supportInboxService)
 	handlers.SupportInboxWidget.SetPublicOrigin(cfg.PublicWidgetURL)

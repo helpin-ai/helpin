@@ -578,6 +578,7 @@ func (s *DocsHelpcenterService) EnrichDocumentPublishState(ctx context.Context, 
 		doc.HCSlug = art.Slug
 	}
 	if art != nil {
+		doc.HCPublicID = art.PublicID
 		doc.HCOGTitle = art.OGTitle
 		doc.HCOGDescription = art.OGDescription
 		doc.HCOGImageURL = art.OGImageURL

@@ -268,9 +268,9 @@ func TestSupportInvestigationLeaseRecoveryAndPrivateNotes(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			inserted, err := repo.Finish(ctx, chosen, note)
-			if (err != nil) != wantError || inserted {
-				t.Fatalf("Finish inserted=%v err=%v", inserted, err)
+			outcome, err := repo.Finish(ctx, chosen, note)
+			if (err != nil) != wantError || outcome != "" {
+				t.Fatalf("Finish outcome=%q err=%v", outcome, err)
 			}
 			var count int64
 			if err := db.Model(&model.SupportMessage{}).Where("id = ?", job.ID).Count(&count).Error; err != nil {

@@ -2,7 +2,9 @@ import { AskAgentAvatar } from '@/components/agents/AskAgentAvatar';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ContactAvatarImage } from '@/components/ui/contact-avatar-image';
 import { SupportAIActivity } from './SupportAIActivity';
-import { getSupportAIActivity } from './supportAIActivityModel';
+import { getSupportAIActivity, getSupportCodeCheck } from './supportAIActivityModel';
+import { SupportCodeCheckCard } from './SupportCodeCheckCard';
+import { getSupportInvestigationReport } from './supportInvestigationReport';
 import { PendingSendStatus } from './PendingSendStatus';
 import { MessageDeliveryStatus } from './MessageDeliveryStatus';
 import { getMessageDelivery } from './messageDelivery';
@@ -339,6 +341,8 @@ export interface MessageBubbleProps {
   customerEmail?: string | null;
   workspaceSlug?: string;
   linkedTaskId?: string | null;
+  /** Older AI cards fold to one line once a newer handoff exists. */
+  folded?: boolean;
 }
 
 export const MessageBubble = memo(function MessageBubble({
@@ -359,6 +363,7 @@ export const MessageBubble = memo(function MessageBubble({
   customerEmail,
   workspaceSlug,
   linkedTaskId,
+  folded = false,
 }: MessageBubbleProps) {
   const queryClient = useQueryClient();
   const inboundIdentity = useMemo(() => {
@@ -586,6 +591,19 @@ export const MessageBubble = memo(function MessageBubble({
       teammateName={teammateDisplayName}
       avatarUrl={resolvedAvatarUrl}
       detailsContent={<Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{message.content}</Markdown>}
+      readOnly={readOnly}
+      folded={folded}
+    />;
+  }
+  const codeCheck = getSupportCodeCheck(message);
+  if (codeCheck) {
+    return <SupportCodeCheckCard
+      message={message}
+      check={codeCheck}
+      linkedTaskId={linkedTaskId}
+      readOnly={readOnly}
+      folded={folded}
+      renderMarkdown={(markdown) => <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{markdown}</Markdown>}
     />;
   }
 
@@ -806,6 +824,8 @@ export const MessageBubble = memo(function MessageBubble({
 
   // ── Internal note: team bubble with the same author avatar as replies ──
   if (isInternal) {
+    const investigationReport = getSupportInvestigationReport(message, visibleContent);
+    const suggestedReply = readOnly ? '' : investigationReport?.suggestedReply ?? '';
     return (
       <>
         <div className={`flex min-w-0 max-w-full justify-end ${isConsecutive ? 'mt-1' : 'mt-5'}`}>
@@ -823,7 +843,24 @@ export const MessageBubble = memo(function MessageBubble({
                   </div>
                   {hasDisplayContent && (
                     <div className="prose-chat inline text-sm leading-relaxed text-amber-900 [&>p:last-child]:inline dark:text-amber-200">
-                      <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={NOTE_REHYPE_PLUGINS} components={markdownComponents}>{visibleContent}</Markdown>
+                      <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={NOTE_REHYPE_PLUGINS} components={markdownComponents}>{investigationReport?.summary ?? visibleContent}</Markdown>
+                    </div>
+                  )}
+                  {(suggestedReply || investigationReport?.engineering) && (
+                    <div data-support-code-check-actions className="mt-2 space-y-1.5 text-xs text-amber-700 dark:text-amber-300">
+                      {suggestedReply && (
+                        <button type="button" onClick={() => restoreComposerDraft(suggestedReply)} className="block w-fit rounded-sm font-medium hover:text-amber-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:text-amber-100">
+                          Use suggested reply
+                        </button>
+                      )}
+                      {investigationReport?.engineering && (
+                        <details>
+                          <summary className="w-fit cursor-pointer rounded-sm font-medium hover:text-amber-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:text-amber-100">Engineering details</summary>
+                          <div className="prose-chat mt-2 text-sm leading-relaxed text-amber-900 dark:text-amber-200">
+                            <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={NOTE_REHYPE_PLUGINS} components={markdownComponents}>{investigationReport.engineering}</Markdown>
+                          </div>
+                        </details>
+                      )}
                     </div>
                   )}
                   {renderFileAttachments('note', hasDisplayContent ? 'mt-2' : 'mt-1.5')}

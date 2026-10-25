@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import type { Editor } from '@tiptap/core';
-import { ArrowLeft02Icon } from '@/lib/icons';
+import { ArrowLeft02Icon, Cancel01Icon } from '@/lib/icons';
 import { slashMenuPluginKey, type SlashMenuState } from './SlashMenuExtension';
 import { slashCommands, type SlashCommand } from './slash-commands';
 import type { DocsEntityEmbedType } from './EntityEmbedExtension';
@@ -15,7 +15,7 @@ interface SlashMenuProps {
   onEmbedInsert?: () => void;
 }
 
-const CLOSED: SlashMenuState = { open: false, from: 0, query: '', selectedIndex: 0, commandCount: 0 };
+const CLOSED: SlashMenuState = { open: false, from: 0, query: '', selectedIndex: 0, commandCount: 0, executeSelected: false };
 
 export function SlashMenu({ editor, onImageInsert, onVideoInsert, onEmojiInsert, onEntityInsert, onFileInsert, onEmbedInsert }: SlashMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -29,23 +29,21 @@ export function SlashMenu({ editor, onImageInsert, onVideoInsert, onEmojiInsert,
   stateRef.current = pluginState;
 
   const wasOpenRef = useRef(false);
-  const commandExecutedRef = useRef(false);
-
-  // When menu closes, clean up — delete slash text if no command was executed
+  // Dismissal preserves the user's text; only executing a command removes it.
   useEffect(() => {
     if (pluginState.open) {
       wasOpenRef.current = true;
-      commandExecutedRef.current = false;
     } else if (wasOpenRef.current) {
       wasOpenRef.current = false;
-      if (!commandExecutedRef.current) {
-        deleteSlashText();
-      }
       setSubmenu(null);
       setSubmenuTitle('');
       setSubmenuIndex(0);
     }
   }, [pluginState.open]);
+
+  const dismissMenu = useCallback(() => {
+    editor.view.dispatch(editor.state.tr.setMeta(slashMenuPluginKey, CLOSED));
+  }, [editor]);
 
   // Active commands: either submenu children or filtered top-level
   const activeCommands = submenu
@@ -90,9 +88,6 @@ export function SlashMenu({ editor, onImageInsert, onVideoInsert, onEmojiInsert,
         setSubmenuIndex(0);
         return;
       }
-
-      // Mark that a command was executed — prevents double-delete on close
-      commandExecutedRef.current = true;
 
       // Calculate delete range from plugin state
       const { from: menuFrom } = stateRef.current;
@@ -189,12 +184,12 @@ export function SlashMenu({ editor, onImageInsert, onVideoInsert, onEmojiInsert,
       } else if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
-        goBack();
+        dismissMenu();
       }
     };
     document.addEventListener('keydown', handler, true);
     return () => document.removeEventListener('keydown', handler, true);
-  }, [submenu, submenuIndex, executeCommand, goBack]);
+  }, [submenu, submenuIndex, executeCommand, dismissMenu]);
 
   // Scroll selected item into view — only on index change, not on initial open
   const selectedIdx = submenu ? submenuIndex : pluginState.selectedIndex;
@@ -229,34 +224,15 @@ export function SlashMenu({ editor, onImageInsert, onVideoInsert, onEmojiInsert,
     menuRef.current.style.left = `${coords.left - editorRect.left}px`;
   }, [pluginState, editor]);
 
-  // Delete the "/" + query text from the document
-  const deleteSlashText = useCallback(() => {
-    const { from: menuFrom } = stateRef.current;
-    if (!menuFrom) return;
-    const deleteFrom = menuFrom - 1;
-    const docSize = editor.state.doc.content.size;
-    const maxScan = Math.min(deleteFrom + 30, docSize);
-    try {
-      const text = editor.state.doc.textBetween(deleteFrom, maxScan, '\0', '\0');
-      const match = text.match(/^\/\w*/);
-      if (match) {
-        editor.chain().focus().deleteRange({ from: deleteFrom, to: deleteFrom + match[0].length }).run();
-      }
-    } catch { /* ignore */ }
-  }, [editor]);
-
-  // Close on click outside — also delete slash text
+  // Dismiss even when filtering leaves no rendered menu.
   useEffect(() => {
     if (!pluginState.open) return;
     const handleClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        deleteSlashText();
-        editor.view.dispatch(editor.state.tr.setMeta(slashMenuPluginKey, CLOSED));
-      }
+      if (!menuRef.current?.contains(e.target as Node)) dismissMenu();
     };
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
-  }, [pluginState.open, editor, deleteSlashText]);
+  }, [pluginState.open, dismissMenu]);
 
   if (!pluginState.open || activeCommands.length === 0) return null;
 
@@ -265,6 +241,19 @@ export function SlashMenu({ editor, onImageInsert, onVideoInsert, onEmojiInsert,
       ref={menuRef}
       className="absolute z-50 w-64 max-h-80 overflow-y-auto rounded-lg border bg-popover p-1 shadow-md"
     >
+      <div className="flex items-center justify-between px-2 py-1 text-xs text-muted-foreground">
+        <span>Blocks</span>
+        <button
+          type="button"
+          aria-label="Close block menu"
+          title="Close (Esc)"
+          className="rounded p-1 hover:bg-accent hover:text-foreground"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={dismissMenu}
+        >
+          <Cancel01Icon className="h-3.5 w-3.5" />
+        </button>
+      </div>
       {submenu && (
         <button
           className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-accent/50 mb-0.5"

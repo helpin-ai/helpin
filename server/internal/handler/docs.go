@@ -79,6 +79,7 @@ type DocsHandler struct {
 	translationSvc       *service.DocsHelpcenterTranslationService
 	searchSvc            *service.DocsSearchService
 	importService        *service.DocsImportService
+	aiRewriteSvc         *service.DocsAIRewriteService
 	imageEditSvc         *service.DocsImageEditService
 	embeddingSvc         *service.DocsEmbeddingService
 	embedResolverSvc     *service.DocsEmbedResolverService

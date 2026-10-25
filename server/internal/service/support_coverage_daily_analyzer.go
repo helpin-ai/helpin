@@ -89,6 +89,10 @@ type CoverageConversationAnalysisInput struct {
 	HasHumanReply         bool                          `json:"has_human_reply"`
 	Messages              []CoverageConversationMessage `json:"messages"`
 	RetrievalTraces       []CoverageRetrievalTraceInput `json:"retrieval_traces"`
+	// AIReportedMissingData is what the support AI said it needed but no tool provides.
+	AIReportedMissingData []string `json:"ai_reported_missing_data,omitempty"`
+	// ConnectedTools lets the analyzer check that claim against what is connected.
+	ConnectedTools []CoverageConnectedTool `json:"connected_tools,omitempty"`
 }
 
 type CoverageRetrievalTraceInput struct {
@@ -594,6 +598,9 @@ func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx conte
 		s.markCoverageV2AttemptRetryable(ctx, v2Attempt, attemptOwner, model.CoverageFailureCandidateQuery, err)
 		return false, err
 	}
+	if len(input.AIReportedMissingData) > 0 {
+		input.ConnectedTools = s.coverageConnectedTools(ctx, workspaceID)
+	}
 	if v2Attempt == nil && s.coverageV2Repo != nil && v2BatchID != "" {
 		logicalWorkKey := aiUsageIdempotencyKey(workspaceID, "coverage_work", conversation.ID, input.SegmentID, input.TranscriptHash, coverageAttemptAnalyzerVersion(ctx), "v1")
 		v2Attempt, err = s.coverageV2Repo.StartAnalysisAttempt(ctx, v2BatchID, workspaceID, logicalWorkKey, "conversation", conversation.ID, input.SegmentID, input.TranscriptHash, coverageAttemptAnalyzerVersion(ctx), "v1", runID, 15*time.Minute)
@@ -790,7 +797,12 @@ func BuildCoverageConversationAnalysisInput(conversation model.SupportConversati
 	if segment == nil {
 		return CoverageConversationAnalysisInput{}, errCoverageNoPublicSegment
 	}
-	return BuildCoverageConversationAnalysisInputForSegment(conversation, *segment, traces)
+	input, err := BuildCoverageConversationAnalysisInputForSegment(conversation, *segment, traces)
+	if err != nil {
+		return input, err
+	}
+	input.AIReportedMissingData = coverageAIReportedMissingData(messages, *segment)
+	return input, nil
 }
 
 // BuildCoverageConversationAnalysisInputForSegment builds analyzer input from
@@ -1546,6 +1558,8 @@ Decide from the full conversation outcome, not one message. Treat human replies 
 Do not create a gap if the AI correctly resolved the issue. Set should_run_retrieval=true only when current docs, website, or customer-facing content search can materially improve the recommendation.
 
 Prefer knowledge/content gaps only when customer-facing knowledge could reasonably fix the issue. Use data/context when the human used customer, account, order, subscription, or similar data. Use action when the human performed an operation the AI could not perform. Use policy when the human applied judgment, approval, exception, or escalation policy.
+
+` + coverageMissingDataInstruction + `
 
 Recommend multiple fixes when one surface alone will not reduce repeated human intervention. Limit to 3 fixes. Mark exactly one fix as primary unless two fixes are equally necessary.
 

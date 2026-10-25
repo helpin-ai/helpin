@@ -32,6 +32,7 @@ import { GapAskAgentDock } from "./GapAskAgentDock";
 import { GapProposalReview } from "./GapProposalReview";
 import { buildCoverageCollectionOptions } from "./coverageCollectionOptions";
 import { QuietStatusBadge } from "@/components/design-system/quiet";
+import { GapDataSourceNotice } from "./GapDataSourceNotice";
 
 export interface GapDetailPaneProps {
   gap: SupportCoverageGapDetail;
@@ -224,6 +225,8 @@ export function GapDetailPane(props: GapDetailPaneProps) {
           </Button>
         </div>
       )}
+
+      {canEdit && <GapDataSourceNotice gap={gap} wsSlug={wsSlug} />}
 
       {(gap.split_review_needed || gap.recurrence_reopened || props.generateError || generating || (savedDraft && !draft) || (gap.status !== "open" && gap.status_changed_at)) && <div className="space-y-4 px-5 py-4 sm:px-7">
         {gap.split_review_needed && (

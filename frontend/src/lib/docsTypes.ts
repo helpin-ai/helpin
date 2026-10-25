@@ -137,6 +137,7 @@ export interface DocsDocument {
   updated_at: string;
   deleted_at?: string;
   hc_slug?: string;
+  hc_public_id?: string;
   hc_og_title?: string;
   hc_og_description?: string;
   hc_og_image_url?: string;

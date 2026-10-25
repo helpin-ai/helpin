@@ -279,6 +279,172 @@ describe('MessageBubble', () => {
     } finally { rendered.cleanup() }
   })
 
+  function handoffCardMessage(card: Record<string, unknown>): SupportMessage {
+    return {
+      id: 'handoff-card', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'agent',
+      sender_display_name: 'AI control', message_type: 'note', is_internal: true,
+      content: 'AI handoff\n\nReason\nplain-text copy',
+      metadata: JSON.stringify({ ai_handoff_brief: true, agent_authored: true, handoff: card }),
+      created_at: '2026-10-25T10:32:14Z', updated_at: '2026-10-25T10:32:14Z',
+    }
+  }
+
+  it('shows the structured AI handoff open, each fact once', () => {
+    const rendered = renderBubble(handoffCardMessage({
+      issue: 'Wants a refund after paying yearly.',
+      reason: "Refunds need a teammate's decision.",
+      checked: [{ source: 'Help articles', finding: 'Full refund within 14 days.' }, { source: 'Billing' }],
+      unavailable_data: ['Payment history'],
+    }))
+    try {
+      const card = rendered.container.querySelector('[data-support-ai-handoff]')
+      expect(card?.querySelector('details')).toBeNull()
+      expect(card?.textContent).toContain('Wants a refund after paying yearly.')
+      expect(card?.textContent).toContain("Refunds need a teammate's decision.")
+      expect(card?.textContent).toContain('Help articles: Full refund within 14 days.')
+      expect(card?.textContent).toContain("Couldn't checkPayment history")
+      expect(card?.textContent).not.toContain('plain-text copy')
+      expect(card?.textContent).not.toContain('Next steps')
+    } finally { rendered.cleanup() }
+  })
+
+  it('says AI checked nothing only when the server confirmed it', () => {
+    const confirmed = renderBubble(handoffCardMessage({ reason: 'The customer asked to talk to a person.', nothing_checked: true }))
+    const unknown = renderBubble(handoffCardMessage({ reason: 'The AI service was unavailable, so AI didn\'t reply.' }))
+    try {
+      expect(confirmed.container.textContent).toContain('AI checkedNothing.')
+      expect(unknown.container.textContent).not.toContain('AI checked')
+    } finally {
+      confirmed.cleanup()
+      unknown.cleanup()
+    }
+  })
+
+  it('puts the held reply in the composer and asks Ask Agent to update docs', async () => {
+    const { useSupportInboxStore } = await import('@/stores/supportInboxStore')
+    const restored = vi.fn()
+    const listener = (event: Event) => restored((event as CustomEvent).detail)
+    window.addEventListener('support:restore-draft', listener)
+    const rendered = renderBubble(handoffCardMessage({
+      reason: "AI's answer didn't pass its source check, so it wasn't sent.",
+      held_reply: 'Hi Sam,\n\nStarter does not include API access.',
+      help_article_gap: 'Whether Starter includes API access',
+    }))
+    try {
+      act(() => { findButtonByText(rendered.container, 'Use this reply')?.click() })
+      expect(restored).toHaveBeenCalledWith({ conversationId: 'conv', markdown: 'Hi Sam,\n\nStarter does not include API access.' })
+      act(() => { findButtonByText(rendered.container, 'Ask Agent to update docs')?.click() })
+      const state = useSupportInboxStore.getState()
+      expect(state.detailSidebarMode).toBe('agents')
+      expect(state.agentDraft?.conversationId).toBe('conv')
+      expect(state.agentDraft?.text).toContain('Whether Starter includes API access')
+    } finally {
+      window.removeEventListener('support:restore-draft', listener)
+      useSupportInboxStore.setState({ detailSidebarMode: 'details', agentDraft: null })
+      rendered.cleanup()
+    }
+  })
+
+  function codeCheckMessage(check: Record<string, unknown>): SupportMessage {
+    return {
+      id: 'code-check', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'agent',
+      sender_display_name: 'Code check', message_type: 'note', is_internal: true,
+      content: 'Code check\n\nplain-text copy',
+      metadata: JSON.stringify({ investigation_id: 'code-check', code_check: check }),
+      created_at: '2026-10-25T10:33:00Z', updated_at: '2026-10-25T10:43:00Z',
+    }
+  }
+
+  it('shows a running code check card with what it is checking', () => {
+    const rendered = renderBubble(codeCheckMessage({ status: 'running', focus: 'How approving a post sets its publishing time' }))
+    try {
+      const card = rendered.container.querySelector('[data-support-code-check]')
+      expect(card?.textContent).toContain('Checking the code: How approving a post sets its publishing time')
+      expect(card?.textContent).toContain('Details will appear here when done.')
+      expect(card?.querySelector('button')).toBeNull()
+      expect(card?.textContent).not.toContain('plain-text copy')
+    } finally { rendered.cleanup() }
+  })
+
+  it('shows only the reason when a code check fails', () => {
+    const rendered = renderBubble(codeCheckMessage({ status: 'failed', message: "The code check didn't finish, so it has no findings." }))
+    try {
+      const card = rendered.container.querySelector('[data-support-code-check]')
+      expect(card?.textContent).toContain("The code check didn't finish, so it has no findings.")
+      expect(card?.textContent).not.toContain('Next steps')
+    } finally { rendered.cleanup() }
+  })
+
+  it('turns code check findings into next steps', async () => {
+    const { useSupportInboxStore } = await import('@/stores/supportInboxStore')
+    const link = vi.spyOn(supportService, 'linkConversationTask').mockResolvedValue({ data: {}, error: null, status: 200 } as never)
+    const created = vi.fn()
+    const restored = vi.fn()
+    const onCreate = (event: Event) => created((event as CustomEvent).detail)
+    const onRestore = (event: Event) => restored((event as CustomEvent).detail)
+    window.addEventListener('support:create-task', onCreate)
+    window.addEventListener('support:restore-draft', onRestore)
+    const existing = renderBubble(codeCheckMessage({
+      status: 'done',
+      found: 'Most likely: drafts are not scheduled on approval.',
+      reply: 'Hi Jonas,\n\nOpen the post and click Schedule.',
+      task: { kind: 'existing', key: 'APP-4240', id: 'task-4240', text: 'keep the chosen time' },
+      investigate: "Whether last week's release changed approvals.",
+      unavailable_data: ['Server error logs'],
+      engineering: '`ApprovalBuilder.php:233` skips drafts.',
+    }))
+    const proposed = renderBubble(codeCheckMessage({ status: 'done', found: 'No cause found.', task: { kind: 'new', text: 'CSV import stops after 1,000 rows' } }))
+    try {
+      const card = existing.container.querySelector('[data-support-code-check]')
+      expect(card?.textContent).toContain('What AI found')
+      expect(card?.textContent).toContain("Couldn't checkServer error logs")
+      expect(card?.textContent).toContain('Already covered by APP-4240: keep the chosen time')
+      expect(card?.querySelector('details summary')?.textContent).toBe('Engineering details')
+      act(() => { findButtonByText(existing.container, 'Use this reply')?.click() })
+      expect(restored).toHaveBeenCalledWith({ conversationId: 'conv', markdown: 'Hi Jonas,\n\nOpen the post and click Schedule.' })
+      await act(async () => { findButtonByText(existing.container, 'Link APP-4240')?.click() })
+      expect(link).toHaveBeenCalledWith('ws', 'conv', { task_id: 'task-4240' })
+      act(() => { findButtonByText(existing.container, 'Ask Agent')?.click() })
+      expect(useSupportInboxStore.getState().agentDraft?.text).toContain("Whether last week's release changed approvals.")
+      act(() => { findButtonByText(proposed.container, 'Create task')?.click() })
+      expect(created).toHaveBeenCalledWith({ conversationId: 'conv' })
+    } finally {
+      link.mockRestore()
+      window.removeEventListener('support:create-task', onCreate)
+      window.removeEventListener('support:restore-draft', onRestore)
+      useSupportInboxStore.setState({ detailSidebarMode: 'details', agentDraft: null })
+      existing.cleanup()
+      proposed.cleanup()
+    }
+  })
+
+  it('shows a linked task instead of the link action', () => {
+    const rendered = renderBubble(codeCheckMessage({ status: 'done', found: 'x', task: { kind: 'existing', key: 'APP-4240', id: 'task-4240', text: 'y' } }), undefined, { linkedTaskId: 'task-4240' })
+    try {
+      expect(rendered.container.textContent).toContain('Linked to this conversation')
+      expect(findButtonByText(rendered.container, 'Link APP-4240')).toBeNull()
+    } finally { rendered.cleanup() }
+  })
+
+  it('folds an older AI card to one line', () => {
+    const rendered = renderBubble(handoffCardMessage({ issue: 'Wants a refund.', reason: 'Refunds need a teammate.' }), undefined, { folded: true })
+    try {
+      const details = rendered.container.querySelector('[data-support-ai-handoff] details')
+      expect(details).not.toBeNull()
+      expect(details?.open).toBe(false)
+      expect(details?.querySelector('summary')?.textContent).toContain('Wants a refund.')
+    } finally { rendered.cleanup() }
+  })
+
+  it('hides handoff actions in read-only views', () => {
+    const rendered = renderBubble(handoffCardMessage({ reason: 'x', held_reply: 'Hi', help_article_gap: 'Exports' }), undefined, { readOnly: true })
+    try {
+      expect(rendered.container.textContent).toContain('Next steps')
+      expect(findButtonByText(rendered.container, 'Use this reply')).toBeNull()
+      expect(findButtonByText(rendered.container, 'Ask Agent to update docs')).toBeNull()
+    } finally { rendered.cleanup() }
+  })
+
   it.each([true, false])('shows saved visitor feedback below the AI bubble (%s)', async (helpful) => {
     const message: SupportMessage = {
       id: 'feedback-answer', workspace_id: 'ws-1', conversation_id: 'conv-1',
@@ -1252,6 +1418,42 @@ Can I export my data?`,
       await act(async () => findButtonByText(rendered.container, 'Send original')?.click())
       expect(post).toHaveBeenCalledWith(expect.stringContaining('/translation/sends/send'), { action: 'original' })
     } finally { rendered.cleanup(); post.mockRestore() }
+  })
+
+  it('shows a code check note for support with engineering detail folded away', async () => {
+    const restored = vi.fn()
+    window.addEventListener('support:restore-draft', restored)
+    const rendered = renderBubble({
+      id: 'code-check', workspace_id: 'ws-1', conversation_id: 'conv-1', sender_type: 'agent',
+      sender_display_name: 'Code check', message_type: 'note', is_internal: true,
+      content: "## What's happening\n\nThe post was saved as a draft.\n\n## Suggested reply\n\nOpen the post and click Schedule.\n\n## For engineering\n\nApprovalBuilder skips drafts.",
+      metadata: JSON.stringify({ investigation_id: 'job', report_format: 'support_v1', suggested_reply: 'Open the post and click Schedule.' }),
+      created_at: '2026-10-23T22:43:30Z', updated_at: '2026-10-23T22:43:30Z',
+    })
+    try {
+      const details = rendered.container.querySelector('[data-support-code-check-actions] details')
+      expect(details?.open).toBe(false)
+      expect(details?.querySelector('summary')?.textContent).toBe('Engineering details')
+      expect(details?.textContent).toContain('ApprovalBuilder skips drafts.')
+      expect(rendered.container.textContent?.match(/ApprovalBuilder skips drafts/g)).toHaveLength(1)
+      expect(rendered.container.textContent).toContain('The post was saved as a draft.')
+      await act(async () => findButtonByText(rendered.container, 'Use suggested reply')?.click())
+      expect(restored.mock.calls[0][0].detail).toMatchObject({ conversationId: 'conv-1', markdown: 'Open the post and click Schedule.' })
+    } finally {
+      rendered.cleanup(); window.removeEventListener('support:restore-draft', restored)
+    }
+  })
+
+  it('hides the suggested reply action in read-only views', () => {
+    const rendered = renderBubble({
+      id: 'code-check', workspace_id: 'ws-1', conversation_id: 'conv-1', sender_type: 'agent',
+      sender_display_name: 'Code check', message_type: 'note', is_internal: true, content: "## What's happening\n\nSummary.",
+      metadata: JSON.stringify({ report_format: 'support_v1', suggested_reply: 'Reply' }),
+      created_at: '2026-10-23T22:43:30Z', updated_at: '2026-10-23T22:43:30Z',
+    }, undefined, { readOnly: true })
+    try {
+      expect(findButtonByText(rendered.container, 'Use suggested reply')).toBeNull()
+    } finally { rendered.cleanup() }
   })
 
   it('keeps Undo restoring the draft with delivery mode and subject', async () => {

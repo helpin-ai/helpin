@@ -168,6 +168,8 @@ interface SupportInboxState {
   // Detail sidebar
   detailSidebarCollapsed: boolean;
   detailSidebarMode: DetailSidebarMode;
+  /** A request waiting to prefill the conversation's Ask Agent chat. */
+  agentDraft: { conversationId: string; text: string } | null;
   // Create dialog
   createDialogOpen: boolean;
   createCustomViewOpen: boolean;
@@ -209,6 +211,8 @@ interface SupportInboxState {
   setReplyMode: (mode: ReplyMode) => void;
   toggleDetailSidebar: () => void;
   setDetailSidebarMode: (mode: DetailSidebarMode) => void;
+  askAgentWithDraft: (conversationId: string, text: string) => void;
+  clearAgentDraft: () => void;
   setCreateDialogOpen: (open: boolean) => void;
   setCreateCustomViewOpen: (open: boolean) => void;
   setTeamInboxDialogOpen: (open: boolean) => void;
@@ -238,6 +242,7 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     replyMode: 'reply',
     detailSidebarCollapsed: persisted.detailSidebarCollapsed,
     detailSidebarMode: 'details',
+    agentDraft: null,
     createDialogOpen: false,
     createCustomViewOpen: false,
     teamInboxDialogOpen: false,
@@ -426,6 +431,8 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
       });
     },
     setDetailSidebarMode: (mode) => set({ detailSidebarMode: mode }),
+    askAgentWithDraft: (conversationId, text) => set({ detailSidebarMode: 'agents', agentDraft: { conversationId, text } }),
+    clearAgentDraft: () => set({ agentDraft: null }),
     setCreateDialogOpen: (open) => set({ createDialogOpen: open }),
     setCreateCustomViewOpen: (open) => set({ createCustomViewOpen: open }),
     setTeamInboxDialogOpen: (open) => set({ teamInboxDialogOpen: open, ...(!open && { editMailboxId: null }) }),
