@@ -372,19 +372,23 @@ func TestSyncManagedSystemPromptForPresetMergesLegacyPlanningNotes(t *testing.T)
 }
 
 func TestPersistedEchoFallbackSnapshotUpgradesWithoutLosingCustomText(t *testing.T) {
-	raw, err := os.ReadFile("testdata/legacy_echo_prompt.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacy := string(raw)
-	prompt, version := syncManagedSystemPromptForPreset(model.AgentPresetSupportAgent, &legacy, nil, "")
-	if prompt != nil || version == "" {
-		t.Fatal("shipped Echo snapshot did not become managed")
-	}
-	custom := legacy + "\nWorkspace-specific billing instruction."
-	prompt, _ = syncManagedSystemPromptForPreset(model.AgentPresetSupportAgent, &custom, nil, "")
-	if prompt == nil || *prompt != custom {
-		t.Fatal("custom instructions lost")
+	for _, snapshot := range []string{"testdata/legacy_echo_prompt.txt", "testdata/echo_prompt_2026_10.txt"} {
+		t.Run(snapshot, func(t *testing.T) {
+			raw, err := os.ReadFile(snapshot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			legacy := string(raw)
+			prompt, version := syncManagedSystemPromptForPreset(model.AgentPresetSupportAgent, &legacy, nil, "")
+			if prompt != nil || version == "" {
+				t.Fatal("shipped Echo snapshot did not become managed")
+			}
+			custom := legacy + "\nWorkspace-specific billing instruction."
+			prompt, _ = syncManagedSystemPromptForPreset(model.AgentPresetSupportAgent, &custom, nil, "")
+			if prompt == nil || *prompt != custom {
+				t.Fatal("custom instructions lost")
+			}
+		})
 	}
 }
 
