@@ -40,7 +40,7 @@ describe('SlugDisplay', () => {
       editButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.querySelector('[data-tooltip="Save slug"]')).toBeTruthy()
+    expect(container.querySelector('[data-tooltip="Save slug"] button')?.hasAttribute('disabled')).toBe(true)
     expect(container.querySelector('[data-tooltip="Cancel"]')).toBeTruthy()
 
     act(() => {
@@ -85,6 +85,7 @@ describe('SlugDisplay', () => {
     })
 
     const saveButton = container.querySelector('[data-tooltip="Save slug"] button')
+    expect(saveButton?.hasAttribute('disabled')).toBe(false)
     await act(async () => {
       saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -97,4 +98,25 @@ describe('SlugDisplay', () => {
     })
     container.remove()
   })
+  it('only enables saving a meaningful slug change', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const onSlugChange = vi.fn()
+    act(() => root.render(<SlugDisplay slug="article-slug" onSlugChange={onSlugChange} />))
+    act(() => container.querySelector('button')!.click())
+    const input = container.querySelector('input')!
+    for (const [value, disabled] of [[' ARTICLE-SLUG ', true], ['', true], ['---', true], ['new-slug', false], ['article-slug', true]] as const) {
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+        input.dispatchEvent(new InputEvent('input', { bubbles: true }))
+      })
+      expect(container.querySelector<HTMLButtonElement>('[aria-label="Save slug"]')!.disabled).toBe(disabled)
+    }
+    act(() => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    expect(onSlugChange).not.toHaveBeenCalled()
+    act(() => root.unmount())
+    container.remove()
+  })
+
 })

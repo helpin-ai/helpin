@@ -18,6 +18,9 @@ export function SlugDisplay({ slug, onSlugChange, readOnly, helperText, presenta
   const [showHelperText, setShowHelperText] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
+  const cleaned = draft.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-+|-+$/g, '').replace(/-+/g, '-')
+  const canSave = !!cleaned && cleaned !== slug && !saving
+
   const canEdit = !!onSlugChange && !readOnly
 
   const handleStartEdit = () => {
@@ -28,11 +31,7 @@ export function SlugDisplay({ slug, onSlugChange, readOnly, helperText, presenta
   }
 
   const handleSave = async () => {
-    const cleaned = draft.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-|-$/g, '').replace(/-+/g, '-')
-    if (!cleaned || cleaned === slug) {
-      setEditing(false)
-      return
-    }
+    if (!canSave) return
     setSaving(true)
     try {
       await onSlugChange!(cleaned)
@@ -64,7 +63,8 @@ export function SlugDisplay({ slug, onSlugChange, readOnly, helperText, presenta
         <QuickTooltip label="Save slug">
           <button
             type="button"
-            disabled={saving}
+            disabled={!canSave}
+            aria-label="Save slug"
             onClick={() => void handleSave()}
             className="rounded-[6px] p-1 text-quiet-positive transition-colors hover:bg-quiet-hover disabled:opacity-50"
           >
@@ -86,18 +86,22 @@ export function SlugDisplay({ slug, onSlugChange, readOnly, helperText, presenta
 
   return (
     <div className={cn('flex max-w-full flex-col gap-1', presentation === 'editor' && 'mb-3')}>
-      <button
-        type="button"
-        onClick={canEdit ? handleStartEdit : undefined}
-        className={cn(
-          'flex max-w-full items-center gap-1.5 border-b border-transparent text-[11.5px] font-mono text-quiet-muted transition-colors focus-visible:border-b-2 focus-visible:border-quiet-text-primary focus-visible:outline-none',
-          presentation === 'editor' && 'opacity-0 group-hover/title:opacity-100',
-          canEdit && 'cursor-pointer hover:border-quiet-field hover:text-quiet-text-secondary',
-        )}
-      >
-        <Link01Icon className="h-3.5 w-3.5" />
-        <span className="truncate">/{slug}</span>
-      </button>
+      <div className="flex min-w-0 items-center gap-1">
+        <button
+          type="button"
+          aria-label={canEdit ? `Edit slug: ${slug}` : `Slug: ${slug}`}
+          title={canEdit ? 'Click to edit slug' : undefined}
+          onClick={canEdit ? handleStartEdit : undefined}
+          className={cn(
+            'flex min-w-0 max-w-full items-center gap-1.5 border-b border-transparent text-[11.5px] font-mono text-quiet-muted transition-colors focus-visible:border-b-2 focus-visible:border-quiet-text-primary focus-visible:outline-none',
+            presentation === 'editor' && 'opacity-0 group-hover/title:opacity-100',
+            canEdit && 'cursor-text hover:border-quiet-field hover:text-quiet-text-secondary',
+          )}
+        >
+          <Link01Icon className="h-3.5 w-3.5" />
+          <span className="truncate">/{slug}</span>
+        </button>
+      </div>
       {helperText && showHelperText ? (
         <span className="text-[11px] text-quiet-muted">{helperText}</span>
       ) : null}

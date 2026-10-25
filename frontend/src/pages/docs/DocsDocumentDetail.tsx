@@ -130,6 +130,7 @@ import { CommentThread } from '@/components/pm/CommentThread'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { getHelpcenterLocaleLabel } from '@/lib/docsTypes'
 import { suggestDocsSlug } from '@/lib/docsSlugs'
+import { buildHelpcenterArticleUrl } from '@/lib/helpcenterArticleUrl'
 import { buildHelpcenterPreviewUrlFromEnv } from '@/lib/helpcenterPreview'
 import { docsService } from '@/lib/services/docsService'
 import { docsCommentService } from '@/lib/services/docsCommentService'
@@ -1343,6 +1344,16 @@ export function DocsDocumentDetail({
   const publishDisabled = isSourceLocaleActive
     ? publishDoc.isPending || doc?.is_locked || (isPublished && !hasUnpublishedChanges)
     : !activeTranslation || publishArticleTranslation.isPending || doc?.is_locked || (isPublished && !hasUnpublishedChanges)
+  const canPreviewArticle = isExternalHelpCenter && isSourceLocaleActive && (!isPublished || hasUnpublishedChanges)
+  const getPreviewUrl = async () => {
+    const res = await docsService.getPreviewToken(wsId, docId)
+    if (res.error || !res.data) throw new Error(res.error || 'Failed to generate preview')
+    const { token, subdomain, custom_domain } = res.data
+    return buildHelpcenterPreviewUrlFromEnv({ subdomain, customDomain: custom_domain }, docId, token)
+  }
+  const liveArticleUrl = isExternalHelpCenter && isPublished
+    ? buildHelpcenterArticleUrl(helpcenterConfig, isSourceLocaleActive ? doc?.live_slug : activeTranslation?.live_slug, doc?.hc_public_id, activeLocale)
+    : null
   const activeSlug = isSourceLocaleActive ? doc?.hc_slug : activeTranslationDraft.slug
   const handleActiveSlugChange = effectiveReadOnly || !activeSlug
     ? undefined
@@ -1486,7 +1497,7 @@ export function DocsDocumentDetail({
           </span>
         ) : (
           <span className="shrink-0 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-            Published{showLocalePills ? ` · ${activeLocaleShortLabel}` : isExternalHelpCenter ? ' · help center' : ' · internal'}
+            Published{showLocalePills ? ` · ${activeLocaleShortLabel}` : isExternalHelpCenter ? '' : ' · internal'}
             {hasUnpublishedChanges ? <span className="ml-1 text-amber-600 dark:text-amber-400"> · Unpublished changes</span> : null}
           </span>
         )}
@@ -1517,26 +1528,21 @@ export function DocsDocumentDetail({
               </div>
             ) : null}
             <div className="order-first flex items-center gap-1.5 sm:order-none sm:gap-3">
-              {isExternalHelpCenter ? (
+              {canPreviewArticle ? (
                 <QuietDetailAction
                   icon={<ViewIcon className="h-3.5 w-3.5" />}
                   label="Preview"
                   onClick={async () => {
                     try {
-                      const res = await docsService.getPreviewToken(wsId, docId)
-                      if (res.error || !res.data) {
-                        toast.error(res.error || 'Failed to generate preview')
-                        return
-                      }
-                      const { token, subdomain, custom_domain } = res.data
-                      window.open(buildHelpcenterPreviewUrlFromEnv({ subdomain, customDomain: custom_domain }, docId, token), '_blank', 'noopener')
+                      window.open(await getPreviewUrl(), '_blank', 'noopener')
                     } catch {
                       toast.error('Failed to generate preview')
                     }
                   }}
                 />
               ) : null}
-              {isSourceLocaleActive && canEditDocs && <DocsSharePopover
+              {(isExternalHelpCenter || isSourceLocaleActive) && canEditDocs && <DocsSharePopover
+                helpCenter={isExternalHelpCenter ? { published: isPublished, liveUrl: liveArticleUrl, canPreview: canPreviewArticle, previewDisabledReason: !isSourceLocaleActive ? 'Original language only' : undefined, getPreviewUrl } : undefined}
                 shared={doc.is_publicly_shared}
                 shareToken={doc.share_token}
                 disabled={toggleShare.isPending}

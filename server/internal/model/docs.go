@@ -220,6 +220,7 @@ type DocsDocument struct {
 	HCOGImageAlt               *string    `json:"hc_og_image_alt,omitempty" gorm:"-"`
 	HasUnpublishedChanges      bool       `json:"has_unpublished_changes" gorm:"-"`
 	LivePublishedAt            *time.Time `json:"live_published_at,omitempty" gorm:"-"`
+	HCPublicID                 string     `json:"hc_public_id,omitempty" gorm:"-"`
 	LiveSlug                   *string    `json:"live_slug,omitempty" gorm:"-"`
 	PendingChangeProposalCount int        `json:"pending_change_proposal_count" gorm:"->;-:migration"`
 }
