@@ -74,4 +74,7 @@ type CRMRecordUpsertResponse struct {
 	ObjectType string                  `json:"object_type"`
 	Counts     map[string]int          `json:"counts"`
 	Results    []CRMRecordUpsertResult `json:"results"`
+	// NewCustomPropertyKeys lists custom property keys this batch introduced
+	// to the workspace, so callers can spot near-duplicates of existing keys.
+	NewCustomPropertyKeys []string `json:"new_custom_property_keys,omitempty"`
 }

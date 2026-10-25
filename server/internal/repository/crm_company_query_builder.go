@@ -1,6 +1,9 @@
 package repository
 
-import "github.com/helpin-ai/helpin/server/internal/querybuilder"
+import (
+	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/querybuilder"
+)
 
 var crmCompanyFilterDefinitions = querybuilder.Definitions{
 	"name":            {Column: "crm_companies.name", Type: querybuilder.FieldTypeText},
@@ -14,4 +17,16 @@ var crmCompanyFilterDefinitions = querybuilder.Definitions{
 	"owner_member_id": {Column: "crm_companies.owner_member_id", Type: querybuilder.FieldTypeID},
 	"created_at":      {Column: "crm_companies.created_at", Type: querybuilder.FieldTypeDate},
 	"updated_at":      {Column: "crm_companies.updated_at", Type: querybuilder.FieldTypeDate},
+	"first_seen_at": {
+		Expression: crmBehaviorProfileExpression(model.CRMFieldObjectCompany, "crm_companies", "first_seen_at"),
+		Type:       querybuilder.FieldTypeDate,
+	},
+	"last_seen_at": {
+		Expression: crmBehaviorProfileExpression(model.CRMFieldObjectCompany, "crm_companies", "last_seen_at"),
+		Type:       querybuilder.FieldTypeDate,
+	},
+	"sessions_30d": {
+		Expression: crmBehaviorProfileExpression(model.CRMFieldObjectCompany, "crm_companies", "sessions_30d"),
+		Type:       querybuilder.FieldTypeNumber,
+	},
 }

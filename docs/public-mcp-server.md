@@ -296,6 +296,7 @@ A proposal made through MCP is recorded with the connected user as its author, t
 | Tool | Mode | What it does | Helpin check |
 | --- | --- | --- | --- |
 | `list_contacts` | Read | Lists a bounded, minimized set of CRM contacts, optionally with a structured `filter` | `PermCRMRead` + CRM module |
+| `describe_crm_fields` | Read | Describes the fields contact or company filters accept, and the custom property keys and values in use | `PermCRMRead` + CRM module |
 | `get_crm_company` | Read | Loads one CRM company with its custom properties; `include` adds its activities, contacts, and deals | `PermCRMRead` + CRM module |
 | `get_crm_contact` | Read | Loads one CRM contact and verifies workspace ownership; `include` adds its activities | `PermCRMRead` + CRM module |
 | `list_deals` | Read | Lists a bounded set of deals with core pipeline context | `PermCRMRead` + CRM module |
@@ -329,6 +330,8 @@ One call handles one object type and one match key:
   rejected. `custom_properties` keys must be snake_case and values must be a
   string, number, boolean, or list of strings. They are merged into existing
   properties, and `null` removes a key. `agent_enrichment` is reserved.
+  Reuse keys `describe_crm_fields` reports; the response lists keys the batch
+  introduced to the workspace in `new_custom_property_keys`.
 - `note` logs evidence as a note activity. A note with the same subject and
   body that this tool already logged on the record is not repeated, so rerunning
   a batch does not duplicate notes.
@@ -348,6 +351,20 @@ moment can still create two records.
 (`and` or `or`) and up to 20 `rules`, each with a `field`, an `operator`, and a
 `value` or `values`. Native fields are listed in each tool's schema, and
 `custom_properties.<key>` filters any custom property as case-insensitive text.
+
+Call `describe_crm_fields` with `object_type` `contact` or `company` before
+filtering. It lists each native field's type, operators, and allowed values,
+and each custom property key in use with its value type, record count, most
+common values, numeric range, and the operators that can match it. Pass `key`
+(and optionally `value_query`) to list one property's values. The scan covers
+the 20,000 most recently updated records; `truncated` says when more exist. An
+unknown key matches nothing rather than failing, so check it first.
+
+`first_seen_at`, `last_seen_at`, and `sessions_30d` come from tracked product
+events, synced hourly onto contacts and companies (see
+[behavior profiles](crm-overview.md#behavior-profiles)). Records with no
+matching events are empty for these fields. `describe_crm_fields` reports how
+many records have behavior data in `behavior`.
 
 - `is_any_of` and `is_none_of` take a `values` list. On a custom property holding
   a list, such as `support_tools`, they also match list elements. `is_none_of`
@@ -496,7 +513,7 @@ These tools expose existing Helpin commands that in-app agents already use, with
 | Objectives | `list_objectives`, `get_objective` | `create_objective`, `update_objective`, `update_key_result` |
 | Labels and workflows | `list_pm_labels`, `list_team_workflows_with_stages` | `ensure_task_label` |
 | Members | `list_workspace_members` (`workspace.members.read`) | — |
-| CRM | `list_crm_companies`, `list_crm_pipelines`, `list_crm_associations` | `add_crm_activity`, `update_crm_contact`, `update_crm_company`, `update_crm_deal`, `link_crm_objects`, `unlink_crm_association`, `set_primary_contact_company` |
+| CRM | `list_crm_companies`, `describe_crm_fields`, `list_crm_pipelines`, `list_crm_associations` | `add_crm_activity`, `update_crm_contact`, `update_crm_company`, `update_crm_deal`, `link_crm_objects`, `unlink_crm_association`, `set_primary_contact_company` |
 | Support | `list_support_inboxes`, `list_support_tags`, `list_support_assignees` | `assign_support_conversation`, `move_support_conversation`, `add_support_conversation_tag`, `remove_support_conversation_tag`, `link_support_conversation_task`, `link_support_conversation_contact`, `update_support_conversation_subject` (`helpin.support.write` + `support.edit`) |
 
 Not exposed: sending support replies, CRM enrichment, and deleting records.

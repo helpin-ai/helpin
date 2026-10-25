@@ -18,6 +18,7 @@ func (s *InternalCommandService) registerCRMOperationalCommands() {
 		{Name: "crm.get_company", Module: "crm", SupportedTargetTypes: []string{"workspace", "crm_company"}, Tool: mustCommandToolMetadata("crm.get_company"), Execute: s.executeCRMGetCompany},
 		{Name: "crm.get_deal", Module: "crm", SupportedTargetTypes: []string{"workspace", "crm_deal"}, Tool: mustCommandToolMetadata("crm.get_deal"), Execute: s.executeCRMGetDeal},
 		{Name: "crm.list_companies", Module: "crm", SupportedTargetTypes: []string{"workspace", "crm_company", "crm_contact", "crm_deal"}, Tool: mustCommandToolMetadata("crm.list_companies"), Execute: s.executeCRMListCompanies},
+		{Name: "crm.describe_fields", Module: "crm", SupportedTargetTypes: []string{"workspace", "crm_company", "crm_contact", "crm_deal"}, Tool: mustCommandToolMetadata("crm.describe_fields"), Execute: s.executeCRMDescribeFields},
 		{Name: "crm.list_pipelines", Module: "crm", SupportedTargetTypes: []string{"workspace", "crm_deal"}, Tool: mustCommandToolMetadata("crm.list_pipelines"), Execute: s.executeCRMListPipelines},
 		{Name: "crm.create_deal", Module: "crm", Mutating: true, SupportedTargetTypes: []string{"workspace", "crm_contact", "crm_company"}, Tool: mustCommandToolMetadata("crm.create_deal"), Execute: s.executeCRMCreateDeal},
 		{Name: "crm.update_contact", Module: "crm", Mutating: true, SupportedTargetTypes: []string{"workspace", "crm_contact"}, Tool: mustCommandToolMetadata("crm.update_contact"), Execute: s.executeCRMUpdateContact},
@@ -629,10 +630,18 @@ func validCRMLeadStatus(value string) bool {
 }
 
 func compactCRMContact(item *model.CRMContact) map[string]any {
-	return map[string]any{"contact_id": item.ID, "display_id": item.DisplayID, "first_name": item.FirstName, "last_name": item.LastName, "email": item.Email, "lifecycle_stage": item.LifecycleStage, "lead_status": item.LeadStatus, "owner_member_id": item.OwnerMemberID, "labels": item.Labels, "updated_at": item.UpdatedAt}
+	result := map[string]any{"contact_id": item.ID, "display_id": item.DisplayID, "first_name": item.FirstName, "last_name": item.LastName, "email": item.Email, "lifecycle_stage": item.LifecycleStage, "lead_status": item.LeadStatus, "owner_member_id": item.OwnerMemberID, "labels": item.Labels, "updated_at": item.UpdatedAt}
+	if item.Behavior != nil {
+		result["behavior"] = item.Behavior
+	}
+	return result
 }
 func compactCRMCompany(item *model.CRMCompany) map[string]any {
-	return map[string]any{"company_id": item.ID, "display_id": item.DisplayID, "name": item.Name, "domain": item.Domain, "owner_member_id": item.OwnerMemberID, "updated_at": item.UpdatedAt}
+	result := map[string]any{"company_id": item.ID, "display_id": item.DisplayID, "name": item.Name, "domain": item.Domain, "owner_member_id": item.OwnerMemberID, "updated_at": item.UpdatedAt}
+	if item.Behavior != nil {
+		result["behavior"] = item.Behavior
+	}
+	return result
 }
 func compactCRMDeal(item *model.CRMDeal) map[string]any {
 	return map[string]any{"deal_id": item.ID, "display_id": item.DisplayID, "name": item.Name, "pipeline_id": item.PipelineID, "stage_id": item.StageID, "amount": item.Amount, "currency": item.Currency, "close_date": item.CloseDate, "owner_member_id": item.OwnerMemberID, "probability": item.Probability, "updated_at": item.UpdatedAt}

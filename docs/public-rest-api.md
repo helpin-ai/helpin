@@ -39,7 +39,7 @@ curl -X POST https://api.helpin.ai/public/v1/tasks \
 ## Conventions
 
 - **Envelope.** Success: `{ "data": …, "summary": "…", "links": { … } }`. Error: `{ "error": { "code": "…", "message": "…" } }`.
-- **Reads** take filters as query parameters; arrays are comma separated (`owner_member_ids=a,b`). Unknown parameters are rejected. Structured filters, such as `filter` on `GET /crm/companies` and `GET /crm/contacts`, are one URL-encoded JSON object; see [Filtering CRM lists](public-mcp-server.md#filtering-crm-lists) for operators.
+- **Reads** take filters as query parameters; arrays are comma separated (`owner_member_ids=a,b`). Unknown parameters are rejected. Structured filters, such as `filter` on `GET /crm/companies` and `GET /crm/contacts`, are one URL-encoded JSON object; see [Filtering CRM lists](public-mcp-server.md#filtering-crm-lists) for operators. `GET /crm/fields?object_type=contact` lists the fields and custom property keys those filters accept.
 - **Bulk CRM writes.** `POST /crm/records/upsert` creates or updates up to 100 companies or contacts matched on a stable key and returns a result per record; see [Importing and updating records](public-mcp-server.md#importing-and-updating-records-with-upsert_crm_records). Send an `Idempotency-Key` so a retried batch replays its result instead of writing twice.
 - **Associations.** `GET /crm/associations` lists an object's links, `POST /crm/associations` links two objects, `DELETE /crm/associations/{association_id}` removes a link without deleting either object, and `PUT /crm/contacts/{contact_id}/primary-company` sets a contact's primary company.
 - **Writes** take a JSON object body. IDs that appear in the URL must not be repeated in the body.

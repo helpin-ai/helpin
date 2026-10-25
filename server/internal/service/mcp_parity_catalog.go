@@ -42,6 +42,7 @@ func parityMCPCommandRequirements() map[string]MCPToolDefinition {
 
 		// CRM.
 		"list_crm_companies":          crmRead,
+		"describe_crm_fields":         crmRead,
 		"list_crm_pipelines":          crmRead,
 		"list_crm_associations":       crmRead,
 		"add_crm_activity":            crmWrite,

@@ -1,5 +1,11 @@
 import { type QueryBuilderFieldDefinition } from '@/lib/queryBuilder';
-import type { LeadStatus } from '@/lib/crmTypes';
+import {
+  customPropertyLabel,
+  customPropertyOptionLabel,
+  isNumericCustomProperty,
+  isSystemCRMCustomProperty,
+} from '@/lib/crmCustomProperties';
+import type { CRMContactFilterOptions, LeadStatus } from '@/lib/crmTypes';
 import type { AssignableMember } from '@/lib/types';
 import { LIFECYCLE_STAGE_OPTIONS } from '@/lib/crmLifecycle';
 
@@ -16,7 +22,34 @@ const PORTAL_ACCESS_OPTIONS: Array<{ value: 'allowed' | 'blocked'; label: string
   { value: 'blocked', label: 'Blocked' },
 ];
 
-export function buildCRMContactQueryFields(assignableMembers: AssignableMember[]): QueryBuilderFieldDefinition[] {
+/**
+ * Query fields for the custom property keys in use. Option-style keys offer
+ * the values found in the data; is_any_of also matches list elements.
+ */
+function buildContactCustomPropertyFields(options: CRMContactFilterOptions | undefined): QueryBuilderFieldDefinition[] {
+  return (options?.custom_properties ?? [])
+    .filter((summary) => !isSystemCRMCustomProperty(summary.key))
+    .map((summary): QueryBuilderFieldDefinition => {
+      const field = `custom_properties.${summary.key}`;
+      const label = customPropertyLabel(summary.key);
+      if (isNumericCustomProperty(summary)) {
+        return { field, label, type: 'number', placeholder: 'Number' };
+      }
+      return {
+        field,
+        label,
+        type: 'enum',
+        placeholder: 'Select value',
+        operators: ['is_any_of', 'is_none_of', 'is_empty', 'is_not_empty'],
+        options: summary.values.map((entry) => ({ value: entry.value, label: customPropertyOptionLabel(summary, entry.value) })),
+      };
+    });
+}
+
+export function buildCRMContactQueryFields(
+  assignableMembers: AssignableMember[],
+  filterOptions?: CRMContactFilterOptions,
+): QueryBuilderFieldDefinition[] {
   return [
     {
       field: 'name',
@@ -89,5 +122,23 @@ export function buildCRMContactQueryFields(assignableMembers: AssignableMember[]
       label: 'Updated at',
       type: 'date',
     },
+    // Synced from product events; contacts without events are empty.
+    {
+      field: 'last_seen_at',
+      label: 'Last seen',
+      type: 'date',
+    },
+    {
+      field: 'first_seen_at',
+      label: 'First seen',
+      type: 'date',
+    },
+    {
+      field: 'sessions_30d',
+      label: 'Sessions (30 days)',
+      type: 'number',
+      placeholder: 'Sessions',
+    },
+    ...buildContactCustomPropertyFields(filterOptions),
   ];
 }

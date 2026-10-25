@@ -247,6 +247,7 @@ func AutoMigrationModels() []any {
 		&model.CRMCompanyCommercialStateHealth{},
 		&model.CRMSignalConditionState{},
 		&model.CRMUsageWeekdayBaseline{},
+		&model.CRMBehaviorProfile{},
 		&model.CRMSignalBatchSuppression{},
 		&model.CRMSignalDelivery{},
 		&model.CRMSignalExternalEvidence{},

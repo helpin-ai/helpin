@@ -618,6 +618,7 @@ func main() {
 	crmCalendarRepo := repository.NewCRMCalendarRepository(db)
 	crmEnrichmentRepo := repository.NewCRMEnrichmentRepository(db)
 	crmSignalRepo := repository.NewCRMSignalRepository(db)
+	crmBehaviorProfileRepo := repository.NewCRMBehaviorProfileRepository(db)
 	eventProjectRepo := repository.NewEventProjectRepository(db)
 	crmSummaryRepo := repository.NewCRMSummaryRepository(db)
 	crmMeetingRepo := repository.NewCRMMeetingRepository(db)
@@ -1256,6 +1257,9 @@ func main() {
 		SetTimelineRepository(crmCompanyTimelineRepo)
 	crmContactService.SetProductAnalyticsService(productAnalytics)
 	crmCompanyService.SetProductAnalyticsService(productAnalytics)
+	crmContactService.SetBehaviorProfiles(crmBehaviorProfileRepo)
+	crmCompanyService.SetBehaviorProfiles(crmBehaviorProfileRepo)
+	crmFieldCatalogService := service.NewCRMFieldCatalogService(crmCompanyRepo, crmContactService, crmBehaviorProfileRepo)
 	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo).
 		SetActivityService(pmActivityService).
 		SetTimelineRepository(crmCompanyTimelineRepo)
@@ -1377,6 +1381,7 @@ func main() {
 	commandService.SetSupportOperationalServices(supportInboxService, supportTagService)
 	commandService.SetCRMReadServices(crmContactService, crmSignalService)
 	commandService.SetCRMOperationalServices(crmCompanyService, crmAssociationService)
+	commandService.SetCRMFieldCatalog(crmFieldCatalogService)
 	commandService.SetWorkspaceSearchServices(searchService, crmSearchService, supportInboxService)
 	commandService.SetDocsSearchRepository(docsSearchRepo)
 	commandService.SetDocsChangeProposalService(docsChangeProposalService)
@@ -2118,6 +2123,21 @@ func main() {
 		usageBaselineSync.Run(usageBaselineCtx)
 	}()
 
+	// Rebuild CRM behavior profiles from product events hourly under a replica lease.
+	behaviorProfileCtx, behaviorProfileCancel := context.WithCancel(context.Background())
+	behaviorProfileDone := make(chan struct{})
+	behaviorProfileSync := service.NewCRMBehaviorProfileSynchronizer(crmBehaviorProfileRepo, crmSignalRepo, eventProjectRepo, clickHouseDB)
+	go func() {
+		defer close(behaviorProfileDone)
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				observability.CaptureRecovered(recovered)
+				slog.Error("CRM behavior-profile synchronizer stopped unexpectedly")
+			}
+		}()
+		behaviorProfileSync.Run(behaviorProfileCtx)
+	}()
+
 	// Re-check help center custom domains: pending ones hourly, live ones daily.
 	domainCheckCtx, domainCheckCancel := context.WithCancel(context.Background())
 	domainCheckDone := make(chan struct{})
@@ -2384,6 +2404,7 @@ func main() {
 	signalRuleCancel()
 	commercialStateCancel()
 	usageBaselineCancel()
+	behaviorProfileCancel()
 	domainCheckCancel()
 	editionCancel()
 	select {
@@ -2415,6 +2436,11 @@ func main() {
 	case <-usageBaselineDone:
 	case <-time.After(6 * time.Second):
 		slog.Warn("CRM usage-baseline synchronizer did not stop before shutdown timeout")
+	}
+	select {
+	case <-behaviorProfileDone:
+	case <-time.After(6 * time.Second):
+		slog.Warn("CRM behavior-profile synchronizer did not stop before shutdown timeout")
 	}
 	select {
 	case <-domainCheckDone:

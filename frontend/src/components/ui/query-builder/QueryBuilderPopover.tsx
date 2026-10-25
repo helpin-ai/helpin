@@ -22,6 +22,7 @@ import {
   normalizeQueryFilterGroup,
   operatorUsesRange,
   operatorUsesValue,
+  operatorUsesValueList,
   QUERY_FILTER_OPERATOR_LABELS,
   type QueryBuilderFieldDefinition,
   type QueryFilterGroup,
@@ -140,7 +141,10 @@ const QueryBuilderRuleRow = memo(function QueryBuilderRuleRow({
             className="h-8 text-[11px]"
           />
         ) : field?.options?.length ? (
-          <Select value={rule.value ?? '__empty__'} onValueChange={(value) => onValueChange(value === '__empty__' ? '' : value)}>
+          <Select
+            value={(operatorUsesValueList(rule.operator) ? rule.values?.[0] : rule.value) || '__empty__'}
+            onValueChange={(value) => onValueChange(value === '__empty__' ? '' : value)}
+          >
             <SelectTrigger className="h-8 w-full text-[11px]">
               <SelectValue placeholder={field.placeholder ?? 'Select value'} />
             </SelectTrigger>
@@ -158,7 +162,7 @@ const QueryBuilderRuleRow = memo(function QueryBuilderRuleRow({
             type={field?.type === 'number' ? 'number' : 'text'}
             step={field?.type === 'number' ? 'any' : undefined}
             aria-label={`${field?.label ?? 'Filter'} value`}
-            value={rule.value ?? ''}
+            value={(operatorUsesValueList(rule.operator) ? rule.values?.[0] : rule.value) ?? ''}
             onChange={(event) => onValueChange(event.target.value)}
             placeholder={field?.placeholder ?? 'Enter value'}
             className="h-8 text-[11px]"
@@ -324,9 +328,12 @@ export function QueryBuilderPopover({
                     }));
                   }}
                   onValueChange={(value) => {
-                    setDraftRules((current) => current.map((entry) => (
-                      entry.id === rule.id ? { ...entry, value } : entry
-                    )));
+                    setDraftRules((current) => current.map((entry) => {
+                      if (entry.id !== rule.id) return entry;
+                      // Option pickers choose one value; value-list operators carry it as a list.
+                      if (operatorUsesValueList(entry.operator)) return { ...entry, value: undefined, values: value ? [value] : [] };
+                      return { ...entry, value };
+                    }));
                   }}
                   onRangeValueChange={(position, value) => {
                     setDraftRules((current) => current.map((entry) => {

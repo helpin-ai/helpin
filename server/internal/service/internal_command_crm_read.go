@@ -88,13 +88,14 @@ func (s *InternalCommandService) executeListContacts(ctx context.Context, meta m
 		return nil, crmListFilterError(err)
 	}
 	type contactSummary struct {
-		ID               string      `json:"id"`
-		MarkdownLink     string      `json:"markdown_link"`
-		FirstName        string      `json:"first_name"`
-		LastName         *string     `json:"last_name,omitempty"`
-		Email            *string     `json:"email,omitempty"`
-		JobTitle         *string     `json:"job_title,omitempty"`
-		CustomProperties model.JSONB `json:"custom_properties,omitempty"`
+		ID               string                    `json:"id"`
+		MarkdownLink     string                    `json:"markdown_link"`
+		FirstName        string                    `json:"first_name"`
+		LastName         *string                   `json:"last_name,omitempty"`
+		Email            *string                   `json:"email,omitempty"`
+		JobTitle         *string                   `json:"job_title,omitempty"`
+		CustomProperties model.JSONB               `json:"custom_properties,omitempty"`
+		Behavior         *model.CRMBehaviorSummary `json:"behavior,omitempty"`
 	}
 	summaries := make([]contactSummary, 0, len(contacts))
 	for _, c := range contacts {
@@ -102,7 +103,7 @@ func (s *InternalCommandService) executeListContacts(ctx context.Context, meta m
 		if label == "" {
 			label = commandDerefString(c.Email)
 		}
-		summaries = append(summaries, contactSummary{ID: c.ID, MarkdownLink: helpinMarkdownLink(label, "contacts", c.ID), FirstName: c.FirstName, LastName: c.LastName, Email: c.Email, JobTitle: c.JobTitle, CustomProperties: c.CustomProperties})
+		summaries = append(summaries, contactSummary{ID: c.ID, MarkdownLink: helpinMarkdownLink(label, "contacts", c.ID), FirstName: c.FirstName, LastName: c.LastName, Email: c.Email, JobTitle: c.JobTitle, CustomProperties: c.CustomProperties, Behavior: c.Behavior})
 	}
 	response := commandPaginationOutput(total, offset, limit, len(summaries))
 	response["contacts"] = summaries

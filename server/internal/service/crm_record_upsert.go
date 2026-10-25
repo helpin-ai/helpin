@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -61,6 +62,14 @@ func (s *CRMRecordUpsertService) Upsert(ctx context.Context, req model.CRMRecord
 		Counts:     map[string]int{},
 		Results:    make([]model.CRMRecordUpsertResult, 0, len(req.Records)),
 	}
+	// New-key reporting is advisory: a failed lookup skips it rather than
+	// blocking the batch or failing it after records were written.
+	candidates := crmUpsertCandidateKeys(req.Records)
+	existing, err := s.existingCustomPropertyKeys(ctx, req, candidates)
+	if err != nil {
+		slog.WarnContext(ctx, "check existing CRM custom property keys failed", "error", err, "workspace_id", req.WorkspaceID)
+		candidates = nil
+	}
 	seen := make(map[string]string, len(req.Records))
 	for index, record := range req.Records {
 		ref := strings.TrimSpace(record.Ref)
@@ -74,7 +83,60 @@ func (s *CRMRecordUpsertService) Upsert(ctx context.Context, req model.CRMRecord
 		response.Counts[result.Action]++
 		response.Results = append(response.Results, result)
 	}
+	response.NewCustomPropertyKeys = crmUpsertIntroducedKeys(candidates, existing, response.Results)
 	return response, nil
+}
+
+// crmUpsertIntroducedKeys returns the candidate keys absent from the
+// workspace before the batch that a written record set, read from the
+// per-record changes so no second lookup runs after the writes.
+func crmUpsertIntroducedKeys(candidates []string, existing map[string]bool, results []model.CRMRecordUpsertResult) []string {
+	written := map[string]bool{}
+	for _, result := range results {
+		if result.Action != model.CRMUpsertActionCreated && result.Action != model.CRMUpsertActionUpdated {
+			continue
+		}
+		for _, field := range result.Changed {
+			if key, ok := strings.CutPrefix(field, "custom_properties."); ok {
+				written[key] = true
+			}
+		}
+	}
+	var introduced []string
+	for _, key := range candidates {
+		if !existing[key] && written[key] {
+			introduced = append(introduced, key)
+		}
+	}
+	return introduced
+}
+
+// crmUpsertCandidateKeys returns, sorted, the custom property keys the batch
+// sets to a value; null removes a key and never introduces one.
+func crmUpsertCandidateKeys(records []model.CRMRecordUpsertInput) []string {
+	seen := map[string]bool{}
+	var keys []string
+	for _, record := range records {
+		for key, value := range record.CustomProperties {
+			if value == nil || seen[key] || !repository.ValidCRMCustomPropertyKey(key) {
+				continue
+			}
+			seen[key] = true
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func (s *CRMRecordUpsertService) existingCustomPropertyKeys(ctx context.Context, req model.CRMRecordUpsertRequest, keys []string) (map[string]bool, error) {
+	if len(keys) == 0 {
+		return map[string]bool{}, nil
+	}
+	if req.ObjectType == model.CRMUpsertObjectContact {
+		return s.contactRepo.ExistingCustomPropertyKeys(ctx, req.WorkspaceID, keys)
+	}
+	return s.companyRepo.ExistingCustomPropertyKeys(ctx, req.WorkspaceID, keys)
 }
 
 func normalizeCRMUpsertRequest(req *model.CRMRecordUpsertRequest) error {

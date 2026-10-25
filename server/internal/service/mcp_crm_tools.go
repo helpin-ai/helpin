@@ -67,6 +67,7 @@ func crmMCPToolDefinitions() []MCPToolDefinition {
 				"Companies match on domain (normalized), external_id, or id; contacts on email or id. " +
 				"Use fill_only to fill empty values without overwriting existing ones. " +
 				"Each record may carry a note, logged once as a note activity. Returns a result per record; one bad record does not stop the batch. " +
+				"Before writing custom_properties, call describe_crm_fields to reuse existing keys; the response lists new_custom_property_keys this batch introduced. " +
 				"Company fields: " + strings.Join(CRMUpsertFieldNames(model.CRMUpsertObjectCompany), ", ") + ". " +
 				"Contact fields: " + strings.Join(CRMUpsertFieldNames(model.CRMUpsertObjectContact), ", ") + ".",
 			InputSchema: withMCPIdempotencyKey(crmUpsertMCPSchema()),
@@ -89,7 +90,7 @@ func crmUpsertMCPSchema() map[string]any {
 			},
 			"custom_properties": map[string]any{
 				"type":        "object",
-				"description": "snake_case keys with string, number, boolean, or string-list values, merged into existing properties. null removes a key. Filter on them with custom_properties.<key> in list tools.",
+				"description": "snake_case keys with string, number, boolean, or string-list values, merged into existing properties. null removes a key. Reuse keys describe_crm_fields reports before adding new ones. Filter on them with custom_properties.<key> in list tools.",
 			},
 			"note": map[string]any{
 				"type": "object",

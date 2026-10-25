@@ -16,6 +16,7 @@ import (
 // CRMCompanyService contains CRM company business logic.
 type CRMCompanyService struct {
 	companyRepo    *repository.CRMCompanyRepository
+	behavior       *repository.CRMBehaviorProfileRepository
 	timelineRepo   *repository.CRMCompanyTimelineRepository
 	summaryRefresh CompanySummaryRefreshRequester
 	motionSignals  interface {
@@ -155,7 +156,14 @@ func (s *CRMCompanyService) List(ctx context.Context, workspaceID string, filter
 	if workspaceID == "" {
 		return nil, 0, fmt.Errorf("workspace_id is required")
 	}
-	return s.companyRepo.List(ctx, workspaceID, filters, pagination)
+	companies, total, err := s.companyRepo.List(ctx, workspaceID, filters, pagination)
+	if err != nil {
+		return nil, 0, err
+	}
+	if err := s.attachCompanyBehavior(ctx, workspaceID, companies); err != nil {
+		return nil, 0, err
+	}
+	return companies, total, nil
 }
 
 func (s *CRMCompanyService) ListContacts(ctx context.Context, workspaceID, companyID, search string, pagination model.PMPagination) ([]model.CRMContact, int64, error) {
@@ -195,6 +203,11 @@ func (s *CRMCompanyService) GetByID(ctx context.Context, id string) (*model.CRMC
 	if company == nil {
 		return nil, fmt.Errorf("company not found")
 	}
+	single := []model.CRMCompany{*company}
+	if err := s.attachCompanyBehavior(ctx, company.WorkspaceID, single); err != nil {
+		return nil, err
+	}
+	company.Behavior = single[0].Behavior
 	return company, nil
 }
 
