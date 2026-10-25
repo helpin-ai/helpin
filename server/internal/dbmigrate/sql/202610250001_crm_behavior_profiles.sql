@@ -16,5 +16,5 @@ CREATE TABLE IF NOT EXISTS crm_behavior_profiles (
     PRIMARY KEY (entity_type, entity_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_crm_behavior_profiles_workspace
-    ON crm_behavior_profiles (workspace_id, entity_type);
+CREATE INDEX IF NOT EXISTS idx_crm_behavior_profiles_workspace_id
+    ON crm_behavior_profiles (workspace_id);
