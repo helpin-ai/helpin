@@ -334,6 +334,7 @@ func TestSupportProgressRejectsNonLiveRunsAndInvalidContent(t *testing.T) {
 		{name: "empty", trigger: supportChatTriggerType},
 		{name: "long", trigger: supportChatTriggerType, content: strings.Repeat("x", 301)},
 		{name: "internal process", trigger: supportChatTriggerType, content: "Let me search the knowledge base.", rewrite: true},
+		{name: "placeholder", trigger: supportChatTriggerType, content: "placeholder", rewrite: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			chat, commands, db, _, _, meta := setupSupportProgressTest(t)
@@ -353,5 +354,19 @@ func TestSupportProgressRejectsNonLiveRunsAndInvalidContent(t *testing.T) {
 				t.Fatalf("invalid progress published: %d %v", len(messages), err)
 			}
 		})
+	}
+}
+
+func TestSupportSendReplyRejectsPlaceholderText(t *testing.T) {
+	ctx := context.Background()
+	chat, commands, _, _, _, meta := setupSupportProgressTest(t)
+	input := json.RawMessage(`{"content":"placeholder","reply_kind":"conversational","confidence":0.415}`)
+	out, err := commands.executeSupportSendReply(ctx, meta, input)
+	if err != nil || !strings.Contains(string(out), `"reason":"placeholder_text"`) {
+		t.Fatalf("expected placeholder rewrite: %s %v", out, err)
+	}
+	messages, err := chat.messageRepo.ListByConversation(ctx, "ws", "conv", false)
+	if err != nil || len(messages) != 1 {
+		t.Fatalf("placeholder reply published: %d %v", len(messages), err)
 	}
 }

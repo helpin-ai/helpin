@@ -218,7 +218,7 @@ func (s *InternalCommandService) checkedSupportHandoffUpdate(ctx context.Context
 	update = strings.TrimSpace(update)
 	// escalate_to_human asks for no self-rating, so the reviewer's confidence decides.
 	contract := &AIResponseContract{Content: update, CanAnswer: true, Confidence: 1, Claims: claims}
-	if update == "" || conv == nil || sourceMessageID == "" || len(supportMCPCitedTools(contract)) == 0 || len(supportReplyInternalProcessDisclosures(update)) > 0 {
+	if update == "" || conv == nil || sourceMessageID == "" || len(supportMCPCitedTools(contract)) == 0 || len(supportReplyInternalProcessDisclosures(update)) > 0 || supportReplyIsPlaceholder(update) {
 		return ""
 	}
 	drop := func(reason string, err error) string {

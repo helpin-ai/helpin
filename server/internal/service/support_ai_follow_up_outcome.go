@@ -39,7 +39,7 @@ func validateSupportFollowUpDecision(d supportFollowUpDecision) error {
 	if !d.ObligationsClear || strings.TrimSpace(d.Question) == "" || strings.TrimSpace(d.ClosureNotice) == "" || len(d.Question) > 1000 || len(d.ClosureNotice) > 600 || len(d.SourceMessageIDs) == 0 || len(d.SourceMessageIDs) > 30 {
 		return fmt.Errorf("follow-up requires grounded question, closure notice and no outstanding obligations")
 	}
-	if len(supportReplyInternalProcessDisclosures(d.Question+" "+d.ClosureNotice)) > 0 {
+	if len(supportReplyInternalProcessDisclosures(d.Question+" "+d.ClosureNotice)) > 0 || supportReplyIsPlaceholder(d.Question) || supportReplyIsPlaceholder(d.ClosureNotice) {
 		return fmt.Errorf("rewrite follow-up in customer-facing language")
 	}
 	return nil
