@@ -4,16 +4,38 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"path"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
+
+// _inlineURLWindow is how long an inline URL stays the same between calls.
+const _inlineURLWindow = time.Hour
+
+// windowedPresigner signs at the start of the current window instead of now,
+// so repeated presigns of one object yield the same URL until the window ends.
+type windowedPresigner struct {
+	next   s3.HTTPPresignerV4
+	window time.Duration
+}
+
+// PresignHTTP implements s3.HTTPPresignerV4.
+func (p windowedPresigner) PresignHTTP(
+	ctx context.Context, credentials aws.Credentials, r *http.Request,
+	payloadHash string, service string, region string, signingTime time.Time,
+	optFns ...func(*v4.SignerOptions),
+) (string, http.Header, error) {
+	signingTime = signingTime.UTC().Truncate(p.window)
+	return p.next.PresignHTTP(ctx, credentials, r, payloadHash, service, region, signingTime, optFns...)
+}
 
 // S3Client wraps the AWS S3 presign client for generating presigned URLs and deleting objects.
 type S3Client struct {
@@ -193,15 +215,19 @@ func (s *S3Client) GeneratePresignedGetURL(key, filename string) (string, error)
 }
 
 // GeneratePresignedInlineGetURL generates a presigned GET URL suitable for inline rendering.
+// Every call within the same hour returns the same URL, valid for at least an hour,
+// so a page that refetches its data reuses the browser's cached file.
 func (s *S3Client) GeneratePresignedInlineGetURL(key string) (string, error) {
 	input := &s3.GetObjectInput{
 		Bucket:                     aws.String(s.bucket),
 		Key:                        aws.String(key),
+		ResponseCacheControl:       aws.String("private, max-age=3600"),
 		ResponseContentDisposition: aws.String("inline"),
 	}
 
 	result, err := s.presignClient.PresignGetObject(context.Background(), input, func(o *s3.PresignOptions) {
-		o.Expires = 1 * time.Hour
+		o.Presigner = windowedPresigner{next: o.Presigner, window: _inlineURLWindow}
+		o.Expires = 2 * _inlineURLWindow
 	})
 	if err != nil {
 		return "", fmt.Errorf("generate presigned inline GET URL: %w", err)
