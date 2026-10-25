@@ -1648,7 +1648,7 @@ Can I export my data?`,
     expect(preview?.getAttribute('src')).toBe('https://cdn.example.com/screenshot.png')
     expect(document.body.textContent).toContain('screenshot.png')
 
-    const lightboxNext = document.body.querySelector('[data-testid="support-attachment-lightbox"] button[aria-label="Next image attachment"]')
+    const lightboxNext = document.body.querySelector('[data-testid="support-attachment-lightbox"] button[aria-label="Next attachment"]')
     act(() => {
       lightboxNext?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
