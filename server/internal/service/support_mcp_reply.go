@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math"
 	"strings"
 	"time"
@@ -208,4 +209,66 @@ func supportMCPReplyConfidence(assessment *supportMCPReplyAssessment, proposed f
 		return 0, false
 	}
 	return math.Min(assessment.Confidence, clamp01(proposed)), true
+}
+
+// checkedSupportHandoffUpdate returns the handoff's customer update only when
+// it passes the same account-fact check as send_support_reply. Any failure
+// drops the update; the handoff itself always proceeds.
+func (s *InternalCommandService) checkedSupportHandoffUpdate(ctx context.Context, meta model.InternalCommandContext, conv *model.SupportConversation, sourceMessageID, update string, claims []AIResponseClaim) string {
+	update = strings.TrimSpace(update)
+	// escalate_to_human asks for no self-rating, so the reviewer's confidence decides.
+	contract := &AIResponseContract{Content: update, CanAnswer: true, Confidence: 1, Claims: claims}
+	if update == "" || conv == nil || sourceMessageID == "" || len(supportMCPCitedTools(contract)) == 0 || len(supportReplyInternalProcessDisclosures(update)) > 0 {
+		return ""
+	}
+	drop := func(reason string, err error) string {
+		slog.InfoContext(ctx, "handoff customer update dropped", "workspace_id", conv.WorkspaceID, "conversation_id", conv.ID, "reason", reason, "error", err)
+		return ""
+	}
+	supportAI := s.supportAIService
+	source, err := supportAI.messageRepo.GetByID(ctx, sourceMessageID)
+	if err != nil || source == nil {
+		return drop("source_unavailable", err)
+	}
+	settings, err := supportAI.loadSettings(ctx, conv.WorkspaceID)
+	if err != nil {
+		return drop("settings_unavailable", err)
+	}
+	evidence, email, err := s.supportMCPReplyEvidence(ctx, meta, conv, source, contract)
+	if err != nil {
+		return drop("evidence_unavailable", err)
+	}
+	assessment, err := supportAI.reviewSupportMCPReply(ctx, conv.WorkspaceID, conv.ID, email, source.Content, contract, evidence)
+	if err != nil {
+		return drop("review_unavailable", err)
+	}
+	gate := evaluateSupportReplyGate(supportReplyGateInput{
+		Kind:          supportReplyKindAnswer,
+		Contract:      contract,
+		Evidence:      evidence,
+		Threshold:     effectiveSupportAISettings(*settings, conv).AIConfidenceThreshold,
+		MCPAssessment: assessment,
+	})
+	if !gate.OK {
+		return drop(gate.EscalationReason, nil)
+	}
+	return update
+}
+
+// supportClaimsSchema is the claim-to-evidence list shared by the reply and
+// handoff tools.
+func supportClaimsSchema(description string) map[string]any {
+	return map[string]any{
+		"type":        "array",
+		"description": description,
+		"items": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"text":         map[string]any{"type": "string"},
+				"evidence_ids": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+			},
+			"required":             []string{"text", "evidence_ids"},
+			"additionalProperties": false,
+		},
+	}
 }

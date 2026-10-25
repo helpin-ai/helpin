@@ -332,6 +332,25 @@ func TestSupportHandoffRetryCreatesOneBrief(t *testing.T) {
 	}
 }
 
+func TestSupportHandoffCustomerUpdatePrecedesHandoffMessage(t *testing.T) {
+	svc, db, conv, settings := setupAIControlTest(t)
+	raw, _ := json.Marshal(settings)
+	mustExec(t, db, `INSERT INTO support_widget_installations(id,workspace_id,widget_key,secret_key,settings,active) VALUES ('install','ws','key','secret',?,true)`, string(raw))
+	ai := &SupportAIService{conversationRepo: svc.conversationRepo, messageRepo: svc.messageRepo, installationRepo: repository.NewSupportInboxInstallationRepository(db), handoffRepo: repository.NewAgentHandoffRepository(db)}
+	update := "I can see your import started but did not finish."
+	if err := ai.EscalateToHumanForMessageWithIssue(context.Background(), "ws", conv.ID, "", "cannot_answer", "", "Import stops", SupportHandoffBrief{CustomerUpdate: update}); err != nil {
+		t.Fatal(err)
+	}
+	var reply model.SupportMessage
+	if err := db.Where("sender_type = 'ai' AND message_type = 'reply'").First(&reply).Error; err != nil {
+		t.Fatal(err)
+	}
+	handoff, ok := strings.CutPrefix(reply.Content, update+"\n\n")
+	if !ok || strings.TrimSpace(handoff) == "" {
+		t.Fatalf("reply = %q", reply.Content)
+	}
+}
+
 func TestSupportAIControlAssignsConfiguredAIOnUnownedConversation(t *testing.T) {
 	svc, db, conv, settings := setupAIControlTest(t)
 	mustExec(t, db, `UPDATE support_conversations SET assigned_agent_id=NULL,ai_state=NULL,ai_active_run_id=NULL`)

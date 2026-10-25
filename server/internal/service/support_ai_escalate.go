@@ -178,6 +178,12 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 	if reply := strings.TrimSpace(transitionReply); reply != "" {
 		escalationContent = stripConversationPII(reply, conv.CustomerEmail, conv.CustomerPhone)
 	}
+	// A fact-checked account update goes first; the template keeps the
+	// reply-time and after-hours wording.
+	if len(briefs) > 0 && strings.TrimSpace(briefs[0].CustomerUpdate) != "" {
+		update := stripConversationPII(strings.TrimSpace(briefs[0].CustomerUpdate), conv.CustomerEmail, conv.CustomerPhone)
+		escalationContent = update + "\n\n" + escalationContent
+	}
 
 	var replyMsg *model.SupportMessage
 	var escalationSystemMsg *model.SupportMessage

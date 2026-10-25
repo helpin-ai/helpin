@@ -151,23 +151,11 @@ func (s *InternalCommandService) registerSupportReplyCommands() {
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"content":        map[string]any{"type": "string", "description": "The reply text shown to the visitor."},
-					"reply_kind":     map[string]any{"type": "string", "enum": []string{"answer", "clarify", "conversational", "confirmation"}, "description": "answer = factual answer needing evidence; clarify = asking the visitor a question; conversational = greeting/small talk or a brief acknowledgment while child work is pending; confirmation = confirming the visitor's issue is resolved."},
-					"confidence":     map[string]any{"type": "number", "description": "Your 0-1 confidence that the reply is correct and grounded."},
-					"source_doc_ids": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Knowledge evidence_id values or exact MCP tool names backing the reply. MCP citations use the latest lookup this customer turn."},
-					"claims": map[string]any{
-						"type":        "array",
-						"description": "Each material factual claim in the reply mapped to the evidence ids that support it. Required for reply_kind=answer.",
-						"items": map[string]any{
-							"type": "object",
-							"properties": map[string]any{
-								"text":         map[string]any{"type": "string"},
-								"evidence_ids": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-							},
-							"required":             []string{"text", "evidence_ids"},
-							"additionalProperties": false,
-						},
-					},
+					"content":               map[string]any{"type": "string", "description": "The reply text shown to the visitor."},
+					"reply_kind":            map[string]any{"type": "string", "enum": []string{"answer", "clarify", "conversational", "confirmation"}, "description": "answer = factual answer needing evidence; clarify = asking the visitor a question; conversational = greeting/small talk or a brief acknowledgment while child work is pending; confirmation = confirming the visitor's issue is resolved."},
+					"confidence":            map[string]any{"type": "number", "description": "Your 0-1 confidence that the reply is correct and grounded."},
+					"source_doc_ids":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Knowledge evidence_id values or exact MCP tool names backing the reply. MCP citations use the latest lookup this customer turn."},
+					"claims":                supportClaimsSchema("Each material factual claim in the reply mapped to the evidence ids that support it. Required for reply_kind=answer."),
 					"resolves_conversation": map[string]any{"type": "boolean", "description": "True only when the visitor confirmed their issue is resolved."},
 				},
 				"required":             []string{"content", "reply_kind", "confidence"},
@@ -197,6 +185,8 @@ func (s *InternalCommandService) registerSupportReplyCommands() {
 					"issue_summary":          map[string]any{"type": "string", "description": "Optional one-line summary for a support teammate, in plain words: what the customer needs and what is going wrong. No record IDs, field names or raw values."},
 					"attempted_steps":        map[string]any{"type": "array", "maxItems": 5, "items": map[string]any{"type": "string", "maxLength": 700}, "description": "What you checked or suggested and what you found, in plain words a support teammate understands, e.g. \"Billing history shows the refund was issued on 3 May, but the invoice still shows unpaid\". Distinguish AI suggestions from customer-confirmed actions. Do not invent completed actions. Keep names and dates; leave out record IDs, field names and raw values."},
 					"unresolved_questions":   map[string]any{"type": "array", "maxItems": 5, "items": map[string]any{"type": "string", "maxLength": 700}, "description": "What a teammate still needs to answer or do, in plain words. Internal only; do not repeat sensitive credentials."},
+					"customer_update":        map[string]any{"type": "string", "maxLength": 600, "description": "Optional one or two sentences for the customer, in their language, saying what you confirmed in their account this turn, e.g. \"I can see your import started on 3 May but did not finish.\" Only facts from read-only MCP lookups, each cited in claims; no causes, guesses, fixes or promises. The server fact-checks it like send_support_reply and sends it before the handoff message, or drops it if the check fails."},
+					"claims":                 supportClaimsSchema("Each fact in customer_update mapped to the exact MCP tool names that support it. Required with customer_update."),
 				},
 				"required":             []string{"reason"},
 				"additionalProperties": false,
@@ -531,13 +521,15 @@ func (s *InternalCommandService) executeSupportEscalate(ctx context.Context, met
 		return nil, fmt.Errorf("escalate_to_human requires a support conversation target")
 	}
 	var req struct {
-		Reason                string   `json:"reason"`
-		IssueKey              string   `json:"issue_key"`
-		IssueSummary          string   `json:"issue_summary"`
-		InvestigationKind     string   `json:"investigation_kind"`
-		InvestigationQuestion string   `json:"investigation_question"`
-		AttemptedSteps        []string `json:"attempted_steps"`
-		UnresolvedQuestions   []string `json:"unresolved_questions"`
+		Reason                string            `json:"reason"`
+		IssueKey              string            `json:"issue_key"`
+		IssueSummary          string            `json:"issue_summary"`
+		InvestigationKind     string            `json:"investigation_kind"`
+		InvestigationQuestion string            `json:"investigation_question"`
+		AttemptedSteps        []string          `json:"attempted_steps"`
+		UnresolvedQuestions   []string          `json:"unresolved_questions"`
+		CustomerUpdate        string            `json:"customer_update"`
+		Claims                []AIResponseClaim `json:"claims"`
 	}
 	if err := json.Unmarshal(input, &req); err != nil {
 		return nil, fmt.Errorf("parse escalate input: %w", err)
@@ -546,7 +538,8 @@ func (s *InternalCommandService) executeSupportEscalate(ctx context.Context, met
 	if reason == "" {
 		reason = "agent_requested"
 	}
-	var escalationRunID string
+	sourceMessageID := s.supportTurnSourceMessageID(ctx, meta.WorkspaceID, conversationID, nil)
+	var escalationRunID, customerUpdate string
 	if meta.TargetType != supportPreviewTarget && meta.RunID != "" {
 		conv, err := supportAI.conversationRepo.GetByID(ctx, meta.WorkspaceID, conversationID, "", model.RoleOwner)
 		if err != nil {
@@ -562,13 +555,13 @@ func (s *InternalCommandService) executeSupportEscalate(ctx context.Context, met
 		if conv == nil || model.SupportAIConversationBlocked(conv) || (conv.AIControlVersion > 0 && (run == nil || derefString(conv.AIActiveRunID) != run.ID)) {
 			return mustJSON(map[string]any{"status": "suppressed", "next_action": "Ownership changed. End your turn."}), nil
 		}
+		customerUpdate = s.checkedSupportHandoffUpdate(ctx, meta, conv, sourceMessageID, req.CustomerUpdate, req.Claims)
 	}
 	if meta.TargetType == supportPreviewTarget {
 		req.InvestigationKind = ""
 		req.InvestigationQuestion = ""
 	}
-	sourceMessageID := s.supportTurnSourceMessageID(ctx, meta.WorkspaceID, conversationID, nil)
-	if err := supportAI.EscalateToHumanForMessageWithIssue(ctx, meta.WorkspaceID, conversationID, sourceMessageID, reason, strings.TrimSpace(req.IssueKey), strings.TrimSpace(req.IssueSummary), SupportHandoffBrief{InvestigationKind: req.InvestigationKind, InvestigationQuestion: req.InvestigationQuestion, ExpectedRunID: escalationRunID, Issue: req.IssueSummary, AttemptedSteps: req.AttemptedSteps, UnresolvedQuestions: req.UnresolvedQuestions}); err != nil {
+	if err := supportAI.EscalateToHumanForMessageWithIssue(ctx, meta.WorkspaceID, conversationID, sourceMessageID, reason, strings.TrimSpace(req.IssueKey), strings.TrimSpace(req.IssueSummary), SupportHandoffBrief{InvestigationKind: req.InvestigationKind, InvestigationQuestion: req.InvestigationQuestion, ExpectedRunID: escalationRunID, CustomerUpdate: customerUpdate, Issue: req.IssueSummary, AttemptedSteps: req.AttemptedSteps, UnresolvedQuestions: req.UnresolvedQuestions}); err != nil {
 		return nil, fmt.Errorf("escalate: %w", err)
 	}
 	s.settleSupportSource(ctx, meta.WorkspaceID, conversationID, sourceMessageID)

@@ -21,6 +21,7 @@ type SupportHandoffBrief struct {
 	ExpectedNoRun          bool     `json:"-"`
 	ExpectedRunID          string   `json:"-"`
 	InvestigationRequested bool     `json:"-"`
+	CustomerUpdate         string   `json:"-"`
 	Issue                  string   `json:"issue_summary"`
 	AttemptedSteps         []string `json:"attempted_steps"`
 	UnresolvedQuestions    []string `json:"unresolved_questions"`
