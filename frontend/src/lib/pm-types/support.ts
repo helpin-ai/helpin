@@ -632,6 +632,8 @@ export const SUPPORT_SYSTEM_EVENT_TYPES = [
   'tag_added',
   'tag_removed',
   'task_created',
+  'task_linked',
+  'task_unlinked',
 ] as const;
 
 export type SupportSystemEventType = (typeof SUPPORT_SYSTEM_EVENT_TYPES)[number];

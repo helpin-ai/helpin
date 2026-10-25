@@ -80,6 +80,14 @@ const (
 	// SystemEventTaskCreated — PM task created from the conversation.
 	// Admin-only.
 	SystemEventTaskCreated SupportSystemEventType = "task_created"
+
+	// SystemEventTaskLinked — existing PM task linked to the conversation.
+	// Admin-only.
+	SystemEventTaskLinked SupportSystemEventType = "task_linked"
+
+	// SystemEventTaskUnlinked — PM task unlinked from the conversation.
+	// Admin-only.
+	SystemEventTaskUnlinked SupportSystemEventType = "task_unlinked"
 )
 
 // allSupportSystemEventTypes is the authoritative set of valid event types.
@@ -105,6 +113,8 @@ var allSupportSystemEventTypes = map[SupportSystemEventType]struct{}{
 	SystemEventTagAdded:               {},
 	SystemEventTagRemoved:             {},
 	SystemEventTaskCreated:            {},
+	SystemEventTaskLinked:             {},
+	SystemEventTaskUnlinked:           {},
 }
 
 // IsValidSupportSystemEventType reports whether s is a recognized event type.

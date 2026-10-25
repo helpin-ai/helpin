@@ -151,11 +151,13 @@ function renderBoldedSupportMatches(content: string, pattern: RegExp): ReactNode
   return parts.length > 1 ? <>{parts}</> : content;
 }
 
-function supportTaskIDFromMetadata(metadata?: string): string | null {
+const SUPPORT_TASK_EVENT_TYPES: ReadonlySet<string> = new Set(['task_created', 'task_linked', 'task_unlinked']);
+
+function supportMetadataString(metadata: string | undefined, key: string): string | null {
   if (!metadata?.trim()) return null;
   try {
-    const parsed = JSON.parse(metadata) as { task_id?: unknown };
-    return typeof parsed.task_id === 'string' && parsed.task_id.trim() ? parsed.task_id.trim() : null;
+    const value = (JSON.parse(metadata) as Record<string, unknown>)[key];
+    return typeof value === 'string' && value.trim() ? value.trim() : null;
   } catch {
     return null;
   }
@@ -185,8 +187,8 @@ function renderSupportAuditSystemEventContent(
     return renderBoldedSupportMatches(content, /(\b(?:added|removed) tag\s+)([^.]+)(\.)/g);
   }
 
-  if (eventType === 'task_created') {
-    const taskMatch = content.match(/^(.*\bcreated task\s+)(#[^:\s]+)(?::\s+(.+))?(\.)$/);
+  if (eventType && SUPPORT_TASK_EVENT_TYPES.has(eventType)) {
+    const taskMatch = content.match(/^(.*\b(?:created|linked|unlinked) task\s+)(#[^:\s]+)(?::\s+(.+))?(\.)$/);
     if (taskMatch) {
       const [, prefix, taskKey, taskName, suffix] = taskMatch;
       return (
@@ -629,7 +631,7 @@ export const MessageBubble = memo(function MessageBubble({
       'email_recipients_updated',
       'tag_added',
       'tag_removed',
-      'task_created',
+      ...SUPPORT_TASK_EVENT_TYPES,
     ];
 
     const stateEventTypes: ReadonlyArray<string> = ['resolved', 'closed'];
@@ -647,9 +649,11 @@ export const MessageBubble = memo(function MessageBubble({
       && (isAI || isAgent || isAIRoutingEvent || eventType === 'ai_escalated');
     const aiStatusAvatar = <AskAgentAvatar plateStyle="solid" radius={50} className="h-5 w-5 shrink-0" decorative={false} label={isAIRoutingEvent ? 'AI routing' : HELPIN_AI_DISPLAY_NAME} />;
     const systemDisplayContent = escalationLabel ?? supportSystemEventDisplayContent(eventType, message.content, resolvedSenderName);
-    const taskID = eventType === 'task_created'
-      ? supportTaskIDFromMetadata(message.metadata) ?? linkedTaskId
+    const isTaskEvent = !!eventType && SUPPORT_TASK_EVENT_TYPES.has(eventType);
+    const taskID = isTaskEvent
+      ? supportMetadataString(message.metadata, 'task_id') ?? (eventType === 'task_created' ? linkedTaskId : null)
       : null;
+    const viaAgent = isTaskEvent ? supportMetadataString(message.metadata, 'via_agent') : null;
     const taskHref = taskID && workspaceSlug ? buildTaskPath(workspaceSlug, taskID) : null;
     const systemDisplayNode = renderSupportAuditSystemEventContent(eventType, systemDisplayContent, taskHref);
 
@@ -714,7 +718,7 @@ export const MessageBubble = memo(function MessageBubble({
         <div className="my-5 flex items-center justify-center gap-2 animate-in fade-in duration-300">
           <Tooltip>
             <TooltipTrigger asChild>
-              <div data-support-system-callout className={`flex min-w-0 items-center gap-2 ${eventType === 'task_created' ? 'max-w-[70%]' : 'max-w-full'} ${isEscalationEvent ? escalationPillClass : defaultPillClass}`}>
+              <div data-support-system-callout className={`flex min-w-0 items-center gap-2 ${isTaskEvent ? 'max-w-[70%]' : 'max-w-full'} ${isEscalationEvent ? escalationPillClass : defaultPillClass}`}>
                 {showAIAvatar ? aiStatusAvatar : isEscalationEvent ? (
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
                     <UserIcon className="h-3 w-3" />
@@ -731,6 +735,7 @@ export const MessageBubble = memo(function MessageBubble({
                   </div>
                 )}
                 <span className="min-w-0 max-w-full">{systemDisplayNode}</span>
+                {viaAgent ? <span data-task-via-agent className="shrink-0 whitespace-nowrap">via {viaAgent}</span> : null}
               </div>
             </TooltipTrigger>
             <TooltipContent side="top">

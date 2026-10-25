@@ -2104,6 +2104,18 @@ func (r *SupportConversationRepository) Update(ctx context.Context, conversation
 	return nil
 }
 
+// ClearLinkedTask clears the conversation's main task when it is taskID, and
+// reports whether it did.
+func (r *SupportConversationRepository) ClearLinkedTask(ctx context.Context, workspaceID, conversationID, taskID string) (bool, error) {
+	result := r.db.WithContext(ctx).Model(&model.SupportConversation{}).
+		Where("id = ? AND workspace_id = ? AND linked_task_id = ?", conversationID, workspaceID, taskID).
+		Update("linked_task_id", nil)
+	if result.Error != nil {
+		return false, fmt.Errorf("clear linked task: %w", result.Error)
+	}
+	return result.RowsAffected > 0, nil
+}
+
 // UpdateFields updates specific fields on a conversation by ID and workspace.
 func (r *SupportConversationRepository) UpdateFields(ctx context.Context, workspaceID, conversationID string, fields map[string]any) error {
 	if len(fields) == 0 {

@@ -1294,6 +1294,7 @@ func main() {
 	crmCompanyService.SetCompanySummaryRefresh(crmSummaryService)
 	crmDealService.SetCompanySummaryRefresh(crmSummaryService)
 	crmAssociationService.SetCompanySummaryRefresh(crmSummaryService)
+	crmAssociationService.SetConversationTaskLinkRecorder(supportInboxService)
 	crmActivityService.SetCompanySummaryRefresh(crmSummaryService)
 	pmActivityService.SetCompanySummaryRefresh(crmSummaryService)
 	pmTaskInsightsService := service.NewPMTaskInsightsService(pmTaskInsightsRepo, pmTaskRepo, pmCommentRepo, pmActivityRepo, agentRunRepo, agentRepo, taskGitLinkRepo, pmChecklistItemRepo, llmProvider)
