@@ -38,7 +38,8 @@ export function SupportAICard({ kind, title, timestamp, folded = false, summary,
       : <span className="text-[11px] text-muted-foreground">Team only</span>}
     <time dateTime={timestamp} title={formatTimestamp(timestamp)} className="ml-auto shrink-0 text-[11px] text-muted-foreground">{formatMessageTime(timestamp)}</time>
   </>;
-  return <div className="my-4 flex justify-end" {...dataAttributes}>
+  // Centered like other system events: the system posts these cards, nobody sends them.
+  return <div className="my-4 flex justify-center" {...dataAttributes}>
     {folded ? (
       <details aria-label={label} className={`${cardFrame} group py-2`}>
         <summary className="flex cursor-pointer list-none items-center gap-2 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">{header}</summary>
