@@ -9,8 +9,8 @@ import {
   type PMFilterOptionModes,
 } from '@/lib/pmFilterConditions';
 import { buildAssignableMemberOptions } from '@/lib/assignableMembers';
-import { customPropertyLabel } from '@/lib/crmCustomProperties';
-import type { CRMCompanyFilterOptions, CRMCustomPropertySummary } from '@/lib/crmTypes';
+import { customPropertyLabel, customPropertyOptionLabel, isNumericCustomProperty } from '@/lib/crmCustomProperties';
+import type { CRMCompanyFilterOptions } from '@/lib/crmTypes';
 import type { QueryFilterGroup, QueryFilterRule } from '@/lib/queryBuilder';
 import type { AssignableMember } from '@/lib/types';
 
@@ -192,14 +192,6 @@ export function effectiveCompanyColumnVisibility(saved: VisibilityState, customC
 // Above this many options, value pickers get a search field and wider menu.
 const SEARCHABLE_OPTION_COUNT = 8;
 
-function customPropertyOptionLabel(summary: CRMCustomPropertySummary, value: string): string {
-  if (summary.value_type === 'boolean' || summary.value_type === 'mixed') {
-    if (value === 'true') return 'Yes';
-    if (value === 'false') return 'No';
-  }
-  return value;
-}
-
 /**
  * Filter definitions for the company list: Owner first, then Industry, then
  * every custom property key in use, each offering the values found in the data.
@@ -245,12 +237,4 @@ export function buildCompanyFilterDefinitions(
     });
   }
   return definitions;
-}
-
-/**
- * A key filters as a number when at least half its values are numeric.
- * Records whose value is not numeric never match number comparisons.
- */
-function isNumericCustomProperty(summary: CRMCustomPropertySummary): boolean {
-  return summary.numeric_count > 0 && summary.numeric_count * 2 >= summary.count;
 }

@@ -41,6 +41,39 @@ func (s *CRMCompanyService) FilterOptions(ctx context.Context, workspaceID strin
 	return options, nil
 }
 
+// FilterOptions returns the custom property keys in use on the workspace's
+// contacts, with their most common values, for list columns and filters.
+func (s *CRMContactService) FilterOptions(ctx context.Context, workspaceID string) (*model.CRMContactFilterOptions, error) {
+	if strings.TrimSpace(workspaceID) == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	sources, truncated, err := s.customPropertySources(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	return &model.CRMContactFilterOptions{
+		CustomProperties: buildCRMCustomPropertySummaries(sources),
+		ScannedContacts:  len(sources), Truncated: truncated,
+	}, nil
+}
+
+// customPropertySources reads the custom properties of the most recently
+// updated contacts, subject to the same entitlement as listing contacts.
+func (s *CRMContactService) customPropertySources(ctx context.Context, workspaceID string) ([]model.JSONB, bool, error) {
+	if err := s.requireContactViewEntitlement(ctx, workspaceID); err != nil {
+		return nil, false, err
+	}
+	sources, err := s.contactRepo.ListFilterSources(ctx, workspaceID, _crmFilterOptionsScanLimit+1)
+	if err != nil {
+		return nil, false, err
+	}
+	truncated := len(sources) > _crmFilterOptionsScanLimit
+	if truncated {
+		sources = sources[:_crmFilterOptionsScanLimit]
+	}
+	return sources, truncated, nil
+}
+
 type crmFilterValueCounter struct {
 	counts map[string]int
 	// display keeps the first spelling seen for case-insensitively equal values.
@@ -66,6 +99,11 @@ func (c *crmFilterValueCounter) add(value string) {
 // top returns the most common values, most frequent first, and whether more
 // values exist.
 func (c *crmFilterValueCounter) top() ([]model.CRMFilterValueCount, bool) {
+	return c.topN(_crmFilterOptionsMaxValues)
+}
+
+// topN returns up to limit of the most common values and whether more exist.
+func (c *crmFilterValueCounter) topN(limit int) ([]model.CRMFilterValueCount, bool) {
 	values := make([]model.CRMFilterValueCount, 0, len(c.counts))
 	for normalized, count := range c.counts {
 		values = append(values, model.CRMFilterValueCount{Value: c.display[normalized], Count: count})
@@ -76,8 +114,8 @@ func (c *crmFilterValueCounter) top() ([]model.CRMFilterValueCount, bool) {
 		}
 		return strings.ToLower(values[i].Value) < strings.ToLower(values[j].Value)
 	})
-	if len(values) > _crmFilterOptionsMaxValues {
-		return values[:_crmFilterOptionsMaxValues], true
+	if len(values) > limit {
+		return values[:limit], true
 	}
 	return values, false
 }
@@ -104,12 +142,25 @@ func (s *crmCustomPropertyStats) addNumber(number float64) {
 // buildCRMCompanyFilterOptions aggregates filter options from company rows.
 func buildCRMCompanyFilterOptions(sources []model.CRMCompanyFilterSource) *model.CRMCompanyFilterOptions {
 	industries := newCRMFilterValueCounter()
-	properties := map[string]*crmCustomPropertyStats{}
+	properties := make([]model.JSONB, 0, len(sources))
 	for _, source := range sources {
 		if source.Industry != nil {
 			industries.add(*source.Industry)
 		}
-		for key, raw := range source.CustomProperties {
+		properties = append(properties, source.CustomProperties)
+	}
+	options := &model.CRMCompanyFilterOptions{ScannedCompanies: len(sources)}
+	options.Industries, _ = industries.top()
+	options.CustomProperties = buildCRMCustomPropertySummaries(properties)
+	return options
+}
+
+// buildCRMCustomPropertySummaries aggregates the custom property keys in use
+// across records, most used first.
+func buildCRMCustomPropertySummaries(records []model.JSONB) []model.CRMCustomPropertySummary {
+	properties := map[string]*crmCustomPropertyStats{}
+	for _, record := range records {
+		for key, raw := range record {
 			if key == _crmUpsertReservedPropertyNS {
 				continue
 			}
@@ -132,31 +183,31 @@ func buildCRMCompanyFilterOptions(sources []model.CRMCompanyFilterSource) *model
 			}
 		}
 	}
-
-	options := &model.CRMCompanyFilterOptions{ScannedCompanies: len(sources)}
-	options.Industries, _ = industries.top()
-	options.CustomProperties = make([]model.CRMCustomPropertySummary, 0, len(properties))
+	summaries := make([]model.CRMCustomPropertySummary, 0, len(properties))
 	for key, stats := range properties {
 		values, more := stats.values.top()
-		valueType := "mixed"
-		if len(stats.types) == 1 {
-			for only := range stats.types {
-				valueType = only
-			}
-		}
-		options.CustomProperties = append(options.CustomProperties, model.CRMCustomPropertySummary{
-			Key: key, Count: stats.count, ValueType: valueType, Values: values, HasMoreValues: more,
+		summaries = append(summaries, model.CRMCustomPropertySummary{
+			Key: key, Count: stats.count, ValueType: stats.valueType(), Values: values, HasMoreValues: more,
 			NumericCount: stats.numericCount, NumericMin: stats.numericMin, NumericMax: stats.numericMax,
 		})
 	}
-	sort.Slice(options.CustomProperties, func(i, j int) bool {
-		left, right := options.CustomProperties[i], options.CustomProperties[j]
-		if left.Count != right.Count {
-			return left.Count > right.Count
+	sort.Slice(summaries, func(i, j int) bool {
+		if summaries[i].Count != summaries[j].Count {
+			return summaries[i].Count > summaries[j].Count
 		}
-		return left.Key < right.Key
+		return summaries[i].Key < summaries[j].Key
 	})
-	return options
+	return summaries
+}
+
+func (s *crmCustomPropertyStats) valueType() string {
+	if len(s.types) != 1 {
+		return "mixed"
+	}
+	for only := range s.types {
+		return only
+	}
+	return "mixed"
 }
 
 // crmCustomPropertyFilterValues returns a value's type and its filterable text

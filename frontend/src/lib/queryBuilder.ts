@@ -127,7 +127,7 @@ export function operatorUsesRange(operator: QueryFilterOperator): boolean {
  * is_any_of and is_none_of carry a value list. They come from option filters such as
  * the company list's, not offered in the operator builder's default menus.
  */
-function operatorUsesValueList(operator: QueryFilterOperator): boolean {
+export function operatorUsesValueList(operator: QueryFilterOperator): boolean {
   return operator === 'is_any_of' || operator === 'is_none_of';
 }
 

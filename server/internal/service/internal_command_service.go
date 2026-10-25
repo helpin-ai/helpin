@@ -56,6 +56,7 @@ type InternalCommandService struct {
 	crmDealService        *CRMDealService
 	crmActivityService    *CRMActivityService
 	crmCompanyService     *CRMCompanyService
+	crmFieldCatalog       *CRMFieldCatalogService
 	crmAssociationService *CRMAssociationService
 	crmEnrichmentService  *CRMEnrichmentService
 	docsDocumentService   *DocsDocumentService

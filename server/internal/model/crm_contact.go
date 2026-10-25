@@ -78,6 +78,8 @@ type CRMContact struct {
 	EmailStatusUpdatedAt *time.Time `json:"email_status_updated_at,omitempty"`
 	CreatedAt            time.Time  `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt            time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	// Behavior is synced product-usage data, attached on reads when present.
+	Behavior *CRMBehaviorSummary `json:"behavior,omitempty" gorm:"-"`
 }
 
 func (CRMContact) TableName() string { return "crm_contacts" }

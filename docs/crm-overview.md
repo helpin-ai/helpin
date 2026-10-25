@@ -161,6 +161,7 @@ mailbox, or action-specific checks.
 | Method | Path | Permission | Description |
 |--------|------|-----------|-------------|
 | GET | `/crm/contacts` | crm.read | List contacts (filters: search, lifecycle_stage, lead_status, owner_member_id, company_id, source) |
+| GET | `/crm/contacts/filter-options` | crm.read | Custom property keys in use, with common values and numeric ranges |
 | POST | `/crm/contacts` | crm.edit | Create contact |
 | GET | `/crm/contacts/{id}` | crm.read | Get contact |
 | PUT | `/crm/contacts/{id}` | crm.edit | Update contact |
@@ -360,6 +361,37 @@ inventory:
   calculates health scores; [API startup](../server/cmd/api/main.go) wires the sweep.
 - [Role matrix](../server/internal/authorization/rbac.go) and
   [router](../server/internal/router/router.go) define base permissions and endpoints.
+
+## Behavior profiles
+
+`CRMBehaviorProfileSynchronizer` ([sync](../server/internal/service/crm_behavior_profile_sync.go))
+rebuilds `crm_behavior_profiles` hourly, under a per-workspace lease, from
+non-bot events in `helpin.events` over the last 366 days. Each contact or
+company gets `first_seen_at`, `last_seen_at`, and `sessions_30d` (distinct
+sessions in the last 30 days, capped at 500). Lists filter on these fields, and
+list and get responses include them as `behavior`. A workspace's rows are
+replaced on every sync, so a record whose events age out loses its profile.
+
+Events are tied to records in these ways, and `match_methods` records which
+applied:
+
+| Method | Match |
+| --- | --- |
+| `identity_link` | `crm_identity_links` by event `user_id` (external user id) or linked anonymous id |
+| `record_id` | Event `user_id` equals the contact id |
+| `external_id` | Event `company_id` equals the company `external_id` |
+| `record_id` (company) | Event `company_id` equals the company id |
+| `email` | Event `user_email` equals the contact email, case-insensitively; skipped when several contacts share the address |
+
+Email matches are weaker than identity links, because an unverified identify
+call can claim any address. Without ClickHouse the sync does not run and the
+fields stay empty.
+
+To measure coverage without writing anything, run
+`go run ./cmd/crm-behavior-coverage [workspace-id ...]` from `server/` with
+`DATABASE_URL` and `CLICKHOUSE_DSN` set. It runs the same matching and prints,
+per workspace, how many contacts and companies have events, how many matched
+only by email, and how many identified event users matched no record.
 
 ## Design boundaries
 
