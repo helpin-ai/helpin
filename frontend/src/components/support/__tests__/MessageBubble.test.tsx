@@ -279,6 +279,81 @@ describe('MessageBubble', () => {
     } finally { rendered.cleanup() }
   })
 
+  function handoffCardMessage(card: Record<string, unknown>): SupportMessage {
+    return {
+      id: 'handoff-card', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'agent',
+      sender_display_name: 'AI control', message_type: 'note', is_internal: true,
+      content: 'AI handoff\n\nReason\nplain-text copy',
+      metadata: JSON.stringify({ ai_handoff_brief: true, agent_authored: true, handoff: card }),
+      created_at: '2026-10-25T10:32:14Z', updated_at: '2026-10-25T10:32:14Z',
+    }
+  }
+
+  it('shows the structured AI handoff open, each fact once', () => {
+    const rendered = renderBubble(handoffCardMessage({
+      issue: 'Wants a refund after paying yearly.',
+      reason: "Refunds need a teammate's decision.",
+      checked: [{ source: 'Help articles', finding: 'Full refund within 14 days.' }, { source: 'Billing' }],
+      unavailable_data: ['Payment history'],
+    }))
+    try {
+      const card = rendered.container.querySelector('[data-support-ai-handoff]')
+      expect(card?.querySelector('details')).toBeNull()
+      expect(card?.textContent).toContain('Wants a refund after paying yearly.')
+      expect(card?.textContent).toContain("Refunds need a teammate's decision.")
+      expect(card?.textContent).toContain('Help articles: Full refund within 14 days.')
+      expect(card?.textContent).toContain("Couldn't checkPayment history")
+      expect(card?.textContent).not.toContain('plain-text copy')
+      expect(card?.textContent).not.toContain('Next steps')
+    } finally { rendered.cleanup() }
+  })
+
+  it('says AI checked nothing only when the server confirmed it', () => {
+    const confirmed = renderBubble(handoffCardMessage({ reason: 'The customer asked to talk to a person.', nothing_checked: true }))
+    const unknown = renderBubble(handoffCardMessage({ reason: 'The AI service was unavailable, so AI didn\'t reply.' }))
+    try {
+      expect(confirmed.container.textContent).toContain('AI checkedNothing.')
+      expect(unknown.container.textContent).not.toContain('AI checked')
+    } finally {
+      confirmed.cleanup()
+      unknown.cleanup()
+    }
+  })
+
+  it('puts the held reply in the composer and asks Ask Agent to update docs', async () => {
+    const { useSupportInboxStore } = await import('@/stores/supportInboxStore')
+    const restored = vi.fn()
+    const listener = (event: Event) => restored((event as CustomEvent).detail)
+    window.addEventListener('support:restore-draft', listener)
+    const rendered = renderBubble(handoffCardMessage({
+      reason: "AI's answer didn't pass its source check, so it wasn't sent.",
+      held_reply: 'Hi Sam,\n\nStarter does not include API access.',
+      help_article_gap: 'Whether Starter includes API access',
+    }))
+    try {
+      act(() => { findButtonByText(rendered.container, 'Use this reply')?.click() })
+      expect(restored).toHaveBeenCalledWith({ conversationId: 'conv', markdown: 'Hi Sam,\n\nStarter does not include API access.' })
+      act(() => { findButtonByText(rendered.container, 'Ask Agent to update docs')?.click() })
+      const state = useSupportInboxStore.getState()
+      expect(state.detailSidebarMode).toBe('agents')
+      expect(state.agentDraft?.conversationId).toBe('conv')
+      expect(state.agentDraft?.text).toContain('Whether Starter includes API access')
+    } finally {
+      window.removeEventListener('support:restore-draft', listener)
+      useSupportInboxStore.setState({ detailSidebarMode: 'details', agentDraft: null })
+      rendered.cleanup()
+    }
+  })
+
+  it('hides handoff actions in read-only views', () => {
+    const rendered = renderBubble(handoffCardMessage({ reason: 'x', held_reply: 'Hi', help_article_gap: 'Exports' }), undefined, { readOnly: true })
+    try {
+      expect(rendered.container.textContent).toContain('Next steps')
+      expect(findButtonByText(rendered.container, 'Use this reply')).toBeNull()
+      expect(findButtonByText(rendered.container, 'Ask Agent to update docs')).toBeNull()
+    } finally { rendered.cleanup() }
+  })
+
   it.each([true, false])('shows saved visitor feedback below the AI bubble (%s)', async (helpful) => {
     const message: SupportMessage = {
       id: 'feedback-answer', workspace_id: 'ws-1', conversation_id: 'conv-1',

@@ -30,9 +30,23 @@ func newSupportInvestigation(conv *model.SupportConversation, issueKey string, b
 		ID: id.String(), WorkspaceID: conv.WorkspaceID, ConversationID: conv.ID,
 		RunID:    uuid.NewSHA1(id, []byte("run")).String(),
 		Question: briefText(brief.InvestigationQuestion),
-		Brief:    briefText(brief.Issue) + "\nObserved steps:\n" + briefList(brief.AttemptedSteps) + "\nUnresolved:\n" + briefList(brief.UnresolvedQuestions),
+		Brief:    briefText(brief.Issue) + "\nObserved steps:\n" + supportInvestigationObserved(brief) + "\nUnresolved:\n" + briefList(brief.UnresolvedQuestions),
 		Status:   "pending", DueAt: now, CreatedAt: now, UpdatedAt: now,
 	}
+}
+
+func supportInvestigationObserved(brief SupportHandoffBrief) string {
+	lines := []string{supportHandoffCheckLines(brief.Checked), briefList(brief.AttemptedSteps)}
+	if gap := briefText(brief.HelpArticleGap); gap != "" {
+		lines = append(lines, "- Help articles don't cover: "+gap)
+	}
+	var out []string
+	for _, line := range lines {
+		if line != "" {
+			out = append(out, line)
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 func supportInvestigationTools() []string {

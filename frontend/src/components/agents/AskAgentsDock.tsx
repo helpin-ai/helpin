@@ -75,6 +75,9 @@ interface AskAgentsDockProps {
   active?: boolean;
   hideCollapsedTrigger?: boolean;
   onClose?: () => void;
+  /** Embedded only: text to place in the chat box once, e.g. a request from a support card. */
+  initialDraft?: string;
+  onInitialDraftConsumed?: () => void;
 }
 
 export function AskAgentsDock({
@@ -91,6 +94,8 @@ export function AskAgentsDock({
   active = true,
   hideCollapsedTrigger = false,
   onClose,
+  initialDraft,
+  onInitialDraftConsumed,
 }: AskAgentsDockProps = {}) {
   const embedded = presentation === 'embedded';
   const associationId = associatedCoverageGapId ?? associatedSupportConversationId;
@@ -613,6 +618,8 @@ export function AskAgentsDock({
             active={active}
             onCreateChat={createDraftChat}
             textareaRef={textareaRef}
+            initialDraft={initialDraft}
+            onDraftConsumed={onInitialDraftConsumed}
             draftValue={drafts[draftStoreKey] ?? ''}
             onDraftChange={(value) => setDraft(draftStoreKey, value)}
             onChatChanged={() => {
