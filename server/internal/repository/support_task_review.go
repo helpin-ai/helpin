@@ -44,10 +44,7 @@ func linkSupportTask(ctx context.Context, tx *gorm.DB, workspaceID, conversation
 	if err := tx.Model(&model.SupportConversation{}).Where("id = ? AND workspace_id = ?", conversationID, workspaceID).Update("linked_task_id", taskID).Error; err != nil {
 		return err
 	}
-	// Remove task associations in either orientation while preserving CRM links.
-	if err := tx.Where("workspace_id = ? AND ((from_object_type = ? AND from_object_id = ? AND to_object_type = ?) OR (to_object_type = ? AND to_object_id = ? AND from_object_type = ?))", workspaceID, model.CRMObjectSupportConversation, conversationID, model.CRMObjectTask, model.CRMObjectSupportConversation, conversationID, model.CRMObjectTask).Delete(&model.CRMAssociation{}).Error; err != nil {
-		return err
-	}
+	// A conversation can link many tasks; the main task joins the others.
 	return NewCRMAssociationRepository(tx).Create(ctx, &model.CRMAssociation{ID: uuid.NewString(), WorkspaceID: workspaceID, FromObjectType: model.CRMObjectSupportConversation, FromObjectID: conversationID, ToObjectType: model.CRMObjectTask, ToObjectID: taskID})
 }
 

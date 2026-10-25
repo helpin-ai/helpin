@@ -1294,6 +1294,7 @@ func main() {
 	crmCompanyService.SetCompanySummaryRefresh(crmSummaryService)
 	crmDealService.SetCompanySummaryRefresh(crmSummaryService)
 	crmAssociationService.SetCompanySummaryRefresh(crmSummaryService)
+	crmAssociationService.SetConversationTaskLinkRecorder(supportInboxService)
 	crmActivityService.SetCompanySummaryRefresh(crmSummaryService)
 	pmActivityService.SetCompanySummaryRefresh(crmSummaryService)
 	pmTaskInsightsService := service.NewPMTaskInsightsService(pmTaskInsightsRepo, pmTaskRepo, pmCommentRepo, pmActivityRepo, agentRunRepo, agentRepo, taskGitLinkRepo, pmChecklistItemRepo, llmProvider)
@@ -1644,6 +1645,7 @@ func main() {
 	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService, agentService)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
 	workspaceService.SetProductAnalyticsService(productAnalytics)
+	workspaceService.SetWebsiteDefaultsApplier(supportInboxService)
 	setupService := service.NewSetupService(setupRepo)
 	setupSuccessEnabled := cfg.SetupGuideEnabled
 	if setupSuccessEnabled {
@@ -1941,6 +1943,7 @@ func main() {
 		PublicAPI:           publicAPIHandler,
 		ExternalMCP:         handler.NewExternalMCPHandler(externalMCPService, agentService, authzService, cfg.AppBaseURL),
 		ExternalA2A:         handler.NewExternalA2AHandler(externalA2AService),
+		IconSuggestion:      handler.NewIconSuggestionHandler(service.NewIconSuggestionService(jevProductDecisions)),
 		SupportInbox:        handler.NewSupportInboxHandler(supportInboxService, agentService, supportMessageActionsService),
 		CustomerPortal:      handler.NewCustomerPortalHandler(customerPortalService),
 		CustomerPortalAdmin: handler.NewCustomerPortalAdminHandler(customerPortalService),

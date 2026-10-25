@@ -131,7 +131,7 @@ func TestNormalizeAllowedOrigins(t *testing.T) {
 	if got := strings.Join(origins, ","); got != "http://localhost:3000,https://app.example.com,tauri://localhost" {
 		t.Fatalf("origins = %q", got)
 	}
-	for _, invalid := range []string{"https://*.example.com", "https://example.com/path"} {
+	for _, invalid := range []string{"http://*.example.com", "https://*.com", "https://example.com/path"} {
 		if _, err := normalizeAllowedOrigins([]string{invalid}); err == nil {
 			t.Errorf("expected %q to be rejected", invalid)
 		}

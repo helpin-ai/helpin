@@ -22,6 +22,13 @@ func NewCRMAssociationRepository(db *gorm.DB) *CRMAssociationRepository {
 
 // Create inserts an association.
 func (r *CRMAssociationRepository) Create(ctx context.Context, assoc *model.CRMAssociation) error {
+	_, err := r.CreateIfMissing(ctx, assoc)
+	return err
+}
+
+// CreateIfMissing inserts an association unless the same link already exists,
+// and reports whether it inserted one.
+func (r *CRMAssociationRepository) CreateIfMissing(ctx context.Context, assoc *model.CRMAssociation) (bool, error) {
 	var existing model.CRMAssociation
 	err := r.db.WithContext(ctx).
 		Where("workspace_id = ? AND from_object_type = ? AND from_object_id = ? AND to_object_type = ? AND to_object_id = ?",
@@ -31,15 +38,15 @@ func (r *CRMAssociationRepository) Create(ctx context.Context, assoc *model.CRMA
 	case err == nil:
 		assoc.ID = existing.ID
 		assoc.CreatedAt = existing.CreatedAt
-		return nil
+		return false, nil
 	case !errors.Is(err, gorm.ErrRecordNotFound):
-		return fmt.Errorf("check association: %w", err)
+		return false, fmt.Errorf("check association: %w", err)
 	}
 
 	if err := r.db.WithContext(ctx).Create(assoc).Error; err != nil {
-		return fmt.Errorf("create association: %w", err)
+		return false, fmt.Errorf("create association: %w", err)
 	}
-	return nil
+	return true, nil
 }
 
 // Delete removes an association by ID.

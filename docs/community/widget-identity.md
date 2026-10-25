@@ -4,12 +4,24 @@ This guide is for operators and website developers. It explains how website
 origins are allowlisted and how visitor identity is verified; apply it before
 embedding the widget on a site.
 
-In Settings → Chat widget, first add your website origin, for example
-`https://www.example.com`. Use one origin per line, with no path, trailing slash,
-or wildcard. Add preview and local development origins explicitly, including
-non-default ports. Copy the installation snippet after saving. An empty list
-denies all widget access, including existing session tokens. Origin enforcement
-applies to HTTP and both WebSocket handshakes independently of identity mode.
+In Settings → Chat widget → **Allowed websites**, first add your website, one
+per row, for example `example.com`. A missing scheme becomes `https://` (or
+`http://` for `localhost` and loopback addresses) and any path is dropped.
+`https://*.example.com` admits every subdomain of `example.com` over HTTPS on the
+default port, but not `example.com` itself, so list both. Patterns must sit below
+a domain you own; `*.com`, `*.co.uk`, and `*.github.io` are rejected. Add preview
+and local development origins explicitly, including non-default ports. Copy the
+installation snippet after saving.
+
+When the workspace has a website, Helpin fills an empty list with that site
+(without `www.`) and a pattern for its subdomains: when the installation is
+created, and when the workspace website is saved. A saved list, including
+**Allow any website or app**, is never changed. Otherwise the settings page shows
+the same entries as a suggestion that an administrator saves.
+
+An empty list denies all widget access, including existing session tokens.
+Origin enforcement applies to HTTP and both WebSocket handshakes independently
+of identity mode.
 Static SDK assets and published help-center articles remain public.
 
 New Community installations accept unsigned identities as **unverified visitor
@@ -31,14 +43,14 @@ your application's server. Anonymous chat remains available. Identity requests
 with missing, expired, or mismatched signatures are rejected in this mode.
 
 A workspace administrator (a role with the `support.admin` permission) can view
-the signing secret in **Settings → Chat widget**, under **Identity signing
-secret**. The secret is masked by default: select the eye icon to reveal it or
-the copy icon to copy it. Each reveal is recorded in the workspace's credential
+the signing secret in **Settings → Chat widget → Allowed websites**, under
+**Signing secret**. The secret is masked by default: select the eye icon to
+reveal it, the copy icon to copy it, or the regenerate icon to replace it. Each reveal is recorded in the workspace's credential
 audit. Store the secret in your backend's secret configuration; never in the
 browser or an install snippet. The public widget key and server signing secret
 are different values.
 
-**Regenerate secret** issues a new secret after confirmation. The previous
+Regenerating issues a new secret after confirmation. The previous
 secret stops working immediately, so update your server configuration right
 away. Until you do, signed identities are rejected when signatures are
 required, or treated as unverified otherwise. Regenerating the public widget

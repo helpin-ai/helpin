@@ -256,10 +256,10 @@ func TestRuntimeAgentFromHelpinAgentAlwaysIncludesSupportDeliveryContract(t *tes
 	}, "helpin")
 	for _, required := range []string{
 		staleWorkspacePrompt,
-		"Required live-support delivery contract",
+		"## Required support rules",
 		"send_support_reply",
 		"skip_support_reply",
-		"Required no-reply handling",
+		"No-reply mail (skip_support_reply)",
 		"Plain assistant text is never delivered",
 	} {
 		if !strings.Contains(out.SystemPrompt, required) {

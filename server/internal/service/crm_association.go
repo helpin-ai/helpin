@@ -19,15 +19,28 @@ var (
 	ErrDealCustomerAssociationProtected = errors.New("choose another customer before removing this relationship")
 )
 
+// ConversationTaskLinkRecorder notes tasks linked to or unlinked from support
+// conversations, so the conversation thread shows the change.
+type ConversationTaskLinkRecorder interface {
+	RecordConversationTaskLink(ctx context.Context, workspaceID, conversationID, taskID string, linked bool)
+}
+
 // CRMAssociationService contains CRM association business logic.
 type CRMAssociationService struct {
 	assocRepo      *repository.CRMAssociationRepository
 	summaryRefresh CompanySummaryRefreshRequester
+	taskLinks      ConversationTaskLinkRecorder
 }
 
 // SetCompanySummaryRefresh enables account-summary invalidation after link changes.
 func (s *CRMAssociationService) SetCompanySummaryRefresh(refresh CompanySummaryRefreshRequester) *CRMAssociationService {
 	s.summaryRefresh = refresh
+	return s
+}
+
+// SetConversationTaskLinkRecorder notes task links on support conversations.
+func (s *CRMAssociationService) SetConversationTaskLinkRecorder(recorder ConversationTaskLinkRecorder) *CRMAssociationService {
+	s.taskLinks = recorder
 	return s
 }
 
@@ -61,13 +74,17 @@ func (s *CRMAssociationService) Create(ctx context.Context, req model.CreateCRMA
 		AssociationLabel: req.AssociationLabel,
 	}
 
-	if err := s.assocRepo.Create(ctx, assoc); err != nil {
+	created, err := s.assocRepo.CreateIfMissing(ctx, assoc)
+	if err != nil {
 		return nil, err
 	}
 	if err := s.applyAssociationSemantics(ctx, assoc, req); err != nil {
 		return nil, err
 	}
 	s.requestCompanySummaryRefresh(ctx, assoc)
+	if created {
+		s.recordConversationTaskLink(ctx, assoc, true)
+	}
 	return assoc, nil
 }
 
@@ -218,6 +235,7 @@ func (s *CRMAssociationService) Delete(ctx context.Context, id string) error {
 		return err
 	}
 	s.requestCompanySummaryRefresh(ctx, assoc)
+	s.recordConversationTaskLink(ctx, assoc, false)
 	return nil
 }
 
@@ -246,11 +264,24 @@ func (s *CRMAssociationService) DeleteScoped(ctx context.Context, workspaceID, i
 		return err
 	}
 	s.requestCompanySummaryRefresh(ctx, assoc)
+	s.recordConversationTaskLink(ctx, assoc, false)
 	return nil
 }
 
 func isProtectedDealCustomerAssociation(assoc *model.CRMAssociation) bool {
 	return assoc != nil && assoc.AssociationLabel != nil && strings.TrimSpace(*assoc.AssociationLabel) == model.CRMAssociationLabelDealCustomer
+}
+
+func (s *CRMAssociationService) recordConversationTaskLink(ctx context.Context, assoc *model.CRMAssociation, linked bool) {
+	if s.taskLinks == nil || assoc == nil {
+		return
+	}
+	switch {
+	case assoc.FromObjectType == model.CRMObjectSupportConversation && assoc.ToObjectType == model.CRMObjectTask:
+		s.taskLinks.RecordConversationTaskLink(ctx, assoc.WorkspaceID, assoc.FromObjectID, assoc.ToObjectID, linked)
+	case assoc.FromObjectType == model.CRMObjectTask && assoc.ToObjectType == model.CRMObjectSupportConversation:
+		s.taskLinks.RecordConversationTaskLink(ctx, assoc.WorkspaceID, assoc.ToObjectID, assoc.FromObjectID, linked)
+	}
 }
 
 func (s *CRMAssociationService) requestCompanySummaryRefresh(ctx context.Context, assoc *model.CRMAssociation) {

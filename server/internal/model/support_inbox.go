@@ -2009,10 +2009,13 @@ type VisitorContextResponse struct {
 
 // InstallationSettingsResponse wraps installation + parsed settings for the admin API.
 type InstallationSettingsResponse struct {
-	ID                       string   `json:"id"`
-	WorkspaceID              string   `json:"workspace_id"`
-	WidgetKey                string   `json:"widget_key"`
-	AllowedOrigins           []string `json:"allowed_origins"`
+	ID             string   `json:"id"`
+	WorkspaceID    string   `json:"workspace_id"`
+	WidgetKey      string   `json:"widget_key"`
+	AllowedOrigins []string `json:"allowed_origins"`
+	// SuggestedAllowedOrigins comes from the workspace website and is only set
+	// while AllowedOrigins is empty. It is never saved without an admin.
+	SuggestedAllowedOrigins  []string `json:"suggested_allowed_origins,omitempty"`
 	IdentityVerificationMode string   `json:"identity_verification_mode"`
 	// SigningSecretConfigured reports whether an identity signing secret exists.
 	// The secret itself is only returned by the audited reveal/rotate endpoints.

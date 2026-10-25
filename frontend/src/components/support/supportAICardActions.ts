@@ -1,5 +1,5 @@
 /** Event the composer listens for to restore a draft. */
-export const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
+const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
 /** Event the thread listens for to open the create-task window. */
 export const CREATE_SUPPORT_TASK_EVENT = 'support:create-task';
 

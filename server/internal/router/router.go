@@ -18,6 +18,7 @@ import (
 
 // Handlers aggregates all HTTP handlers.
 type Handlers struct {
+	IconSuggestion         *handler.IconSuggestionHandler
 	Metrics                *observability.Metrics
 	AuthenticatedRateLimit func(http.Handler) http.Handler
 	// WidgetRateLimit guards the unauthenticated /widget write endpoints
@@ -1101,6 +1102,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportEdit)).Delete("/inbox/tags/{tagId}", h.SupportTag.Delete)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/mailboxes/scopes", h.SupportInbox.ListInboxScopes)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/mailboxes", h.SupportInbox.ListMailboxes)
+				if h.IconSuggestion != nil {
+					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/icon-suggestion", h.IconSuggestion.Inbox)
+				}
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/mailboxes", h.SupportInbox.CreateMailbox)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Put("/inbox/mailboxes/{mailboxId}", h.SupportInbox.UpdateMailbox)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/mailboxes/{mailboxId}/archive", h.SupportInbox.ArchiveMailbox)
@@ -1607,6 +1611,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermDocsRead)).Get("/images/content", h.Assets.DocsImage)
 				}
 
+				if h.IconSuggestion != nil {
+					r.With(requirePerm(authorization.PermDocsEdit)).Post("/icon-suggestion", h.IconSuggestion.Collection)
+				}
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/rewrite-selection", h.Docs.RewriteSelection)
 
 				// Spaces — docs.read / docs.edit / docs.admin
