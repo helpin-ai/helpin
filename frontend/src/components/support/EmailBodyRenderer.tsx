@@ -143,6 +143,7 @@ function EmailBodyFrame({ srcDoc, collapsedByDefault, constrainHeight }: EmailBo
   const [collapsed, setCollapsed] = useState(collapsedByDefault);
   const [hasCollapsible, setHasCollapsible] = useState(false);
   const collapseSheetRef = useRef<HTMLStyleElement | null>(null);
+  const initializedDocumentRef = useRef<Document | null>(null);
   const measureTimerRef = useRef<number | null>(null);
 
   const measure = useCallback(() => {
@@ -179,7 +180,14 @@ function EmailBodyFrame({ srcDoc, collapsedByDefault, constrainHeight }: EmailBo
 
   const handleLoad = useCallback(() => {
     const doc = iframeRef.current?.contentDocument;
-    if (!doc) return;
+    if (!doc || doc.URL === 'about:blank' || doc.readyState === 'loading') return;
+    // The final load event still remeasures after images settle, but must
+    // not inject a second collapse stylesheet or reset the user's toggle.
+    if (initializedDocumentRef.current === doc) {
+      scheduleMeasure();
+      return;
+    }
+    initializedDocumentRef.current = doc;
     doc.querySelectorAll('a').forEach((a) => {
       a.setAttribute('target', '_blank');
       a.setAttribute('rel', 'noopener noreferrer nofollow');
@@ -198,6 +206,15 @@ function EmailBodyFrame({ srcDoc, collapsedByDefault, constrainHeight }: EmailBo
     setReady(true);
     scheduleMeasure();
   }, [collapsed, scheduleMeasure]);
+
+  useEffect(() => {
+    if (ready) return;
+    // srcDoc replaces the initial about:blank document. Check for its parsed
+    // DOM rather than waiting for iframe load, which can stall on remote images.
+    handleLoad();
+    const timer = window.setInterval(handleLoad, 50);
+    return () => window.clearInterval(timer);
+  }, [ready, handleLoad]);
 
   // Toggle collapse stylesheet on/off.
   useEffect(() => {
