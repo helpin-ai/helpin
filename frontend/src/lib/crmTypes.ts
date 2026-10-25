@@ -60,7 +60,7 @@ export interface CRMContact {
 }
 
 /** Product-usage data synced from tracked events onto a contact or company. */
-export interface CRMBehaviorSummary {
+interface CRMBehaviorSummary {
   first_seen_at: string;
   last_seen_at: string;
   sessions_30d: number;
