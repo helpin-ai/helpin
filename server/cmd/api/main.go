@@ -1943,6 +1943,7 @@ func main() {
 		PublicAPI:           publicAPIHandler,
 		ExternalMCP:         handler.NewExternalMCPHandler(externalMCPService, agentService, authzService, cfg.AppBaseURL),
 		ExternalA2A:         handler.NewExternalA2AHandler(externalA2AService),
+		IconSuggestion:      handler.NewIconSuggestionHandler(service.NewIconSuggestionService(jevProductDecisions)),
 		SupportInbox:        handler.NewSupportInboxHandler(supportInboxService, agentService, supportMessageActionsService),
 		CustomerPortal:      handler.NewCustomerPortalHandler(customerPortalService),
 		CustomerPortalAdmin: handler.NewCustomerPortalAdminHandler(customerPortalService),

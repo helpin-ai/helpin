@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useAutomaticIcon } from '@/hooks/useAutomaticIcon'
 import { Cancel01Icon } from '@/lib/icons'
 import {
   Dialog,
@@ -109,6 +110,11 @@ export function CreateCollectionDialog({
     (c) => !collection || c.id !== collection.id,
   )
 
+  const { chooseIcon, stop: stopIconSuggestion } = useAutomaticIcon({
+    workspaceId: wsId, kind: 'collection', name, open, enabled: !isEdit,
+    defaultIcon: 'folder', onChange: setIcon,
+  })
+
   const reset = () => {
     setName('')
     setDescription('')
@@ -120,6 +126,7 @@ export function CreateCollectionDialog({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!name.trim() || !effectiveSpaceId) return
+    stopIconSuggestion()
 
     try {
       if (isEdit && collection) {
@@ -178,7 +185,7 @@ export function CreateCollectionDialog({
             <div className="flex items-end gap-2">
               <div className="grid gap-2">
                 <Label>Icon</Label>
-                <IconPicker value={icon} onChange={setIcon} />
+                <IconPicker value={icon} onChange={chooseIcon} />
               </div>
               <div className="grid flex-1 gap-2">
                 <Label htmlFor="collection-name">Name</Label>
@@ -193,7 +200,7 @@ export function CreateCollectionDialog({
               {icon && (
                 <button
                   type="button"
-                  onClick={() => setIcon('')}
+                  onClick={() => chooseIcon('')}
                   className="mb-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   title="Remove icon"
                 >

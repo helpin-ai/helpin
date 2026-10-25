@@ -1,3 +1,4 @@
+import { useAutomaticIcon } from '@/hooks/useAutomaticIcon';
 import { TeamLabel } from '@/components/workspace/TeamLabel';
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ArrowRight02Icon, Tick01Icon, ArrowLeft01Icon, HelpCircleIcon, PlusSignIcon, Cancel01Icon } from '@/lib/icons';
@@ -473,6 +474,12 @@ export function TeamInboxDialog({
     updateTriageRule.isPending ||
     deleteTriageRule.isPending;
 
+  const { chooseIcon, stop: stopIconSuggestion } = useAutomaticIcon({
+    workspaceId, kind: 'inbox', name: form.name, open,
+    enabled: !mailbox && !createdMailboxId, defaultIcon: 'inbox',
+    onChange: (icon) => setForm((current) => ({ ...current, icon })),
+  });
+
   const toggleMember = (memberId: string, checked: boolean) => {
     setAssignmentEdited(true);
     setForm((current) => ({
@@ -618,6 +625,7 @@ export function TeamInboxDialog({
       return;
     }
     if (!validateManualRules()) return;
+    stopIconSuggestion();
 
     if (mailbox) {
       const payload: UpdateSupportMailboxRequest = {
@@ -705,7 +713,7 @@ export function TeamInboxDialog({
               <div className="flex items-end gap-3">
                 <div className="space-y-1.5">
                   <Label>Icon</Label>
-                  <IconPicker value={form.icon} onChange={(icon) => setForm((current) => ({ ...current, icon }))} />
+                  <IconPicker value={form.icon} onChange={chooseIcon} />
                 </div>
                 <div className="flex-1 space-y-1.5">
                   <Label htmlFor="team-inbox-name">Name</Label>

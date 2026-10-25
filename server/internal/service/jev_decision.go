@@ -18,6 +18,7 @@ import (
 
 // Independently controlled Jev features; CRM signal classification is excluded.
 const (
+	JevIconSelection          = "icon_selection"
 	JevMeetingRouting         = "meeting_routing"
 	JevCoverageClassification = "coverage_classification"
 	JevCoverageTopicMatching  = "coverage_topic_matching"
@@ -60,7 +61,7 @@ func NewJevDecisionService(provider decision.Provider, store JevDecisionStore, u
 	copied := make(map[string]decision.Policy, len(policies))
 	for feature, policy := range policies {
 		switch feature {
-		case JevMeetingRouting, JevCoverageClassification, JevCoverageTopicMatching, JevAutomationCondition, JevAnswerEvidence:
+		case JevIconSelection, JevMeetingRouting, JevCoverageClassification, JevCoverageTopicMatching, JevAutomationCondition, JevAnswerEvidence:
 		default:
 			return nil, errors.New("unsupported decision feature")
 		}
