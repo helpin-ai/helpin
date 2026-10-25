@@ -2013,6 +2013,7 @@ func main() {
 		),
 		SupportReports: handler.NewSupportReportsHandler(service.NewSupportReportService(supportConversationRepo)),
 		SupportSLA:     handler.NewSupportSLAHandler(supportSLAService),
+		SupportActions: handler.NewSupportConversationActionsHandler(service.NewSupportConversationActionService(supportInboxService, supportTagService)),
 		SupportCoverage: handler.NewSupportCoverageHandler(
 			supportCoverageService,
 			supportEventService,

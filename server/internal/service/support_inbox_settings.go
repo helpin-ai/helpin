@@ -1043,7 +1043,15 @@ func normalizeCannedResponseRequest(req model.CannedResponseRequest) (model.Cann
 		tag := strings.TrimSpace(*req.Tag)
 		req.Tag = &tag
 	}
-	if req.ShortCode == "" || req.Content == "" {
+	if req.Actions != nil {
+		actions, err := NormalizeSupportConversationActions(*req.Actions)
+		if err != nil {
+			return req, fmt.Errorf("%w: %s", ErrCannedResponseInvalid, strings.TrimPrefix(err.Error(), ErrSupportActionsInvalid.Error()+": "))
+		}
+		req.Actions = &actions
+	}
+	// A macro with actions may insert no text.
+	if req.ShortCode == "" || (req.Content == "" && (req.Actions == nil || req.Actions.Empty())) {
 		return req, fmt.Errorf("%w: shortcut and content are required", ErrCannedResponseInvalid)
 	}
 	if !strings.HasPrefix(req.ShortCode, "!") || strings.ContainsAny(req.ShortCode, " \t\r\n") {
@@ -1094,6 +1102,9 @@ func (s *SupportInboxService) CreateCannedResponse(ctx context.Context, workspac
 		Tag:         *req.Tag,
 		CreatedByID: createdByID,
 	}
+	if req.Actions != nil {
+		response.Actions = *req.Actions
+	}
 	if err := s.cannedResponseRepo.Create(ctx, response); err != nil {
 		if isDuplicateCannedResponseError(err) {
 			return nil, ErrCannedResponseDuplicate
@@ -1127,6 +1138,12 @@ func (s *SupportInboxService) UpdateCannedResponse(ctx context.Context, workspac
 	response.ShortCode = req.ShortCode
 	response.Content = req.Content
 	response.Tag = *req.Tag
+	if req.Actions != nil {
+		response.Actions = *req.Actions
+	}
+	if response.Content == "" && response.Actions.Empty() {
+		return nil, fmt.Errorf("%w: shortcut and content are required", ErrCannedResponseInvalid)
+	}
 
 	if err := s.cannedResponseRepo.Update(ctx, response); err != nil {
 		if isDuplicateCannedResponseError(err) {

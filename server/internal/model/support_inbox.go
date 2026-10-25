@@ -450,14 +450,16 @@ type SupportLinkSecurity struct {
 
 // SupportCannedResponse represents a canned response for quick replies.
 type SupportCannedResponse struct {
-	ID          string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	ShortCode   string    `json:"short_code" gorm:"not null"` // e.g., "!greeting", "!thanks"
-	Content     string    `json:"content" gorm:"not null"`
-	Tag         string    `json:"tag" gorm:"not null;default:'General'"`
-	CreatedByID string    `json:"created_by_id" gorm:"type:uuid"`
-	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ID          string `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID string `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	ShortCode   string `json:"short_code" gorm:"not null"` // e.g., "!greeting", "!thanks"
+	Content     string `json:"content" gorm:"not null"`
+	Tag         string `json:"tag" gorm:"not null;default:'General'"`
+	// Actions run when the shortcut is used, turning it into a macro.
+	Actions     SupportConversationActions `json:"actions" gorm:"type:jsonb;not null;default:'{}'"`
+	CreatedByID string                     `json:"created_by_id" gorm:"type:uuid"`
+	CreatedAt   time.Time                  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt   time.Time                  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (SupportCannedResponse) TableName() string { return "support_canned_responses" }
@@ -1296,9 +1298,10 @@ type WidgetMessageReceivedPayload struct {
 
 // CannedResponseRequest is the payload for CRUD operations on canned responses.
 type CannedResponseRequest struct {
-	ShortCode string  `json:"short_code"`
-	Content   string  `json:"content"`
-	Tag       *string `json:"tag,omitempty"`
+	ShortCode string                      `json:"short_code"`
+	Content   string                      `json:"content"`
+	Tag       *string                     `json:"tag,omitempty"`
+	Actions   *SupportConversationActions `json:"actions,omitempty"`
 }
 
 // TypingIndicatorRequest represents a typing indicator event.

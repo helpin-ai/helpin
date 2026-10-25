@@ -21,12 +21,19 @@ vi.mock('@/hooks/queries/useSupport', () => ({
   useUpdateSupportNote: () => mocks.mutation,
   useConversation: () => ({ data: mocks.conversation }),
   useCannedResponses: () => ({ data: mocks.empty }),
+  useSupportTags: () => ({ data: mocks.empty }),
   useCreateCannedResponse: () => mocks.mutation,
   useUpdateCannedResponse: () => mocks.mutation,
   useDeleteCannedResponse: () => mocks.mutation,
   useUpdateConversationEmailRecipients: () => mocks.mutation,
   useUploadSupportAttachment: () => mocks.mutation,
   useSupportAttachmentPolicy: () => ({ data: { max_bytes: 100 * 1024 * 1024, content_types: ['image/png', 'image/jpeg', 'application/pdf', 'text/plain', 'video/mp4'] } }),
+}));
+vi.mock('@/hooks/queries/useSupportOperations', () => ({
+  useApplyMacro: () => mocks.mutation,
+}));
+vi.mock('@/hooks/queries/useWorkspaces', () => ({
+  useWorkspaceMembers: () => ({ data: mocks.empty }),
 }));
 vi.mock('@/hooks/queries/useSupportTranslation', () => ({
  useSupportTranslationOptions: () => ({ data: { available: mocks.translation, languages: { en: 'English', de: 'German' }, conversation: { customer_language: 'de' }, preference: { reading_language: 'en', auto_translate_incoming: true, auto_translate_outgoing: true } } }),

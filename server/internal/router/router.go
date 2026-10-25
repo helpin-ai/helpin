@@ -118,6 +118,7 @@ type Handlers struct {
 	SupportCoverage     *handler.SupportCoverageHandler
 	SupportReports      *handler.SupportReportsHandler
 	SupportSLA          *handler.SupportSLAHandler
+	SupportActions      *handler.SupportConversationActionsHandler
 	SupportInboxClear   *handler.SupportInboxClearHandler
 	PostmarkInbound     *handler.PostmarkInboundHandler
 	EmailImageProxy     *handler.EmailImageProxyHandler
@@ -1135,6 +1136,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations", h.SupportInbox.ListConversations)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations", h.SupportInbox.CreateConversation)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/create-and-send", h.SupportInbox.CreateConversationWithMessage)
+				if h.SupportActions != nil {
+					r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/bulk", h.SupportActions.Bulk)
+					r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/macros/{macroId}/apply", h.SupportActions.ApplyMacro)
+				}
 				if h.SupportAI != nil {
 					r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/rewrite-draft", h.SupportAI.RewriteNewSupportDraft)
 				}

@@ -675,6 +675,7 @@ export function ConversationDetailSidebar({
               value={conversation.priority ?? 'medium'}
               disabled={!!conversation.merged_into_id || updatePriority.isPending}
               onChange={(priority) => updatePriority.mutate({ conversationId: conversation.id, priority })}
+              shortcutConversationId={conversation.id}
             />
           </div>
 
@@ -688,7 +689,7 @@ export function ConversationDetailSidebar({
               <ul className="mt-1 space-y-0.5">
                 {conversation.sla.metrics.map((item) => (
                   <li key={item.metric} className={item.state === 'breached' ? 'text-[11px] text-red-600 dark:text-red-400' : 'text-[11px] text-muted-foreground'}>
-                    {describeSLAItem(item)}
+                    {describeSLAItem(item, undefined, conversation.sla)}
                   </li>
                 ))}
               </ul>
@@ -716,6 +717,7 @@ export function ConversationDetailSidebar({
               conversationId={conversation.id}
               selectedTags={conversation.tags ?? []}
               readOnly={!!conversation.merged_into_id}
+              openOnShortcut
             />
           </CollapsibleSection>
 

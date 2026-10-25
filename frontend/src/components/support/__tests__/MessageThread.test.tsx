@@ -50,6 +50,7 @@ vi.mock('@/hooks/queries/useSupport', () => ({
   useInboxScopes: () => ({ data: { shared_inbox: { id: 'shared', name: 'Shared Inbox' }, mailboxes: [] } }),
   useSupportTeammatePresence: () => undefined,
   useUpdateConversationStatus: () => ({ mutate: vi.fn(), isPending: false }),
+  useAssignConversationUser: () => ({ mutate: vi.fn(), isPending: false }),
   useCreateTaskFromConversation: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useMoveConversation: () => ({ mutate: vi.fn(), isPending: false }),
   useSendConversationTranscript: () => ({ mutateAsync: vi.fn(), isPending: false }),

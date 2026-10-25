@@ -1,4 +1,4 @@
-import type { ConversationPriority, SupportSLAPolicy, SupportSLAPolicyInput, WidgetOriginSettings, WidgetSigningSecretResponse } from '@/lib/pmTypes';
+import type { ConversationPriority, SupportActionResult, SupportBulkActionResponse, SupportConversationActions, SupportSLAPolicy, SupportSLAPolicyInput, WidgetOriginSettings, WidgetSigningSecretResponse } from '@/lib/pmTypes';
 import type { SupportAttachmentPolicy } from '@/lib/supportAttachmentFiles';
 import { api } from '../api';
 import type { AssignableMember } from '../types';
@@ -276,6 +276,12 @@ export const supportService = {
     api.post<SupportConversation>(`/support/inbox/conversations/${conversationId}/snooze${qs(workspaceId)}`, { until }),
   unsnoozeConversation: (workspaceId: string, conversationId: string) =>
     api.del<SupportConversation>(`/support/inbox/conversations/${conversationId}/snooze${qs(workspaceId)}`),
+  applyMacro: (workspaceId: string, conversationId: string, macroId: string) =>
+    api.post<{ conversation: SupportConversation; result: SupportActionResult }>(
+      `/support/inbox/conversations/${conversationId}/macros/${macroId}/apply${qs(workspaceId)}`,
+    ),
+  bulkConversationActions: (workspaceId: string, conversationIds: string[], actions: SupportConversationActions) =>
+    api.post<SupportBulkActionResponse>(`/support/inbox/conversations/bulk${qs(workspaceId)}`, { conversation_ids: conversationIds, actions }),
   listSLAPolicies: (workspaceId: string) =>
     api.get<SupportSLAPolicy[]>(`/support/sla-policies${qs(workspaceId)}`),
   createSLAPolicy: (workspaceId: string, input: SupportSLAPolicyInput) =>

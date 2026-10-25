@@ -1,9 +1,12 @@
+import { useEffect, useState } from 'react'
 import { format } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { useSnoozeConversation, useUnsnoozeConversation } from '@/hooks/queries/useSupportOperations'
 import { Clock01Icon } from '@/lib/icons'
 import type { SupportConversation } from '@/lib/pmTypes'
 import { isSnoozedConversation } from '@/lib/supportInboxFilters'
+import { formatSnoozeUntil } from '@/lib/supportSnooze'
+import { onSupportShortcut } from '@/lib/supportShortcuts'
 import { SnoozeMenu } from './SnoozeMenu'
 
 /** Snooze button, or the snooze time with a wake button when snoozed. */
@@ -18,9 +21,20 @@ export function ConversationSnoozeControl({
 }) {
   const snooze = useSnoozeConversation(workspaceId)
   const unsnooze = useUnsnoozeConversation(workspaceId)
-  if (conversation.merged_into_id || conversation.status === 'resolved' || conversation.status === 'spam') return null
+  const [menuOpen, setMenuOpen] = useState(false)
+  const closed = !!conversation.merged_into_id || conversation.status === 'resolved' || conversation.status === 'spam'
+  const snoozed = isSnoozedConversation(conversation)
 
-  if (isSnoozedConversation(conversation) && conversation.snoozed_until) {
+  // Z opens the snooze menu.
+  useEffect(() => onSupportShortcut((detail) => {
+    if (detail.action !== 'snooze' || detail.conversationId !== conversation.id || closed || snoozed || disabled) return
+    detail.handled = true
+    setMenuOpen(true)
+  }), [closed, conversation.id, disabled, snoozed])
+
+  if (closed) return null
+
+  if (snoozed && conversation.snoozed_until) {
     const until = new Date(conversation.snoozed_until)
     return (
       <div
@@ -29,7 +43,7 @@ export function ConversationSnoozeControl({
         title={`Snoozed until ${format(until, 'EEEE, MMMM d, HH:mm')}`}
       >
         <Clock01Icon className="h-3.5 w-3.5" aria-hidden="true" />
-        <span className="whitespace-nowrap"><span className="sr-only">Snoozed until </span>{format(until, 'EEE HH:mm')}</span>
+        <span className="whitespace-nowrap"><span className="sr-only">Snoozed until </span>{formatSnoozeUntil(until)}</span>
         <Button
           size="sm"
           variant="ghost"
@@ -45,6 +59,8 @@ export function ConversationSnoozeControl({
 
   return (
     <SnoozeMenu
+      open={menuOpen}
+      onOpenChange={setMenuOpen}
       disabled={disabled || snooze.isPending}
       onSnooze={(until) => snooze.mutate({ conversationId: conversation.id, until })}
       trigger={(

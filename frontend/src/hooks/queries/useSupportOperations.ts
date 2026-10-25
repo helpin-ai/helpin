@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import { queryKeys } from '@/lib/queryKeys'
 import { unwrap } from '@/lib/queryUtils'
 import { supportService } from '@/lib/services/supportService'
-import type { ConversationPriority, SupportSLAPolicy, SupportSLAPolicyInput } from '@/lib/pmTypes'
+import type { ConversationPriority, SupportConversationActions, SupportSLAPolicy, SupportSLAPolicyInput } from '@/lib/pmTypes'
 
 function refreshConversation(queryClient: QueryClient, workspaceId: string, conversationId: string) {
   void queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) })
@@ -113,6 +113,29 @@ export function useReorderSLAPolicies(workspaceId: string) {
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.support.slaPolicies(workspaceId) })
+    },
+  })
+}
+
+/** Runs a macro's actions on a conversation. Callers report the outcome. */
+export function useApplyMacro(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ conversationId, macroId }: { conversationId: string; macroId: string }) =>
+      supportService.applyMacro(workspaceId, conversationId, macroId).then(unwrap),
+    onSettled: (_data, _error, variables) => refreshConversation(queryClient, workspaceId, variables.conversationId),
+  })
+}
+
+/** Applies one change to many conversations on the server. */
+export function useBulkConversationActions(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ conversationIds, actions }: { conversationIds: string[]; actions: SupportConversationActions }) =>
+      supportService.bulkConversationActions(workspaceId, conversationIds, actions).then(unwrap),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ['support', workspaceId] })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.support.workspaceUnread() })
     },
   })
 }

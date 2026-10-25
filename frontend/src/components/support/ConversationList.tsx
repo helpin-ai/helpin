@@ -45,6 +45,7 @@ import { SupportTagBadge } from './SupportTagPicker';
 import { SupportInboxPanelHeader } from './SupportInboxPanelHeader';
 import { workspaceSidebarSafeInsetClassName } from '@/components/design-system/quiet';
 import { ConversationBulkToolbar } from './ConversationBulkToolbar';
+import { adjacentConversationId, onSupportShortcut } from '@/lib/supportShortcuts';
 import { useConversationSelection } from './useConversationSelection';
 
 const SkeletonRow = memo(function SkeletonRow() {
@@ -346,6 +347,18 @@ export function ConversationList({
     });
   }, [conversationListFilters.aiStates, conversationListFilters.mailboxIds, conversationListFilters.slaBreached, conversationListFilters.sort, conversationListFilters.states, navFilter, selectedMailboxId, userId]);
   const filteredConversations = useMemo(() => filterConversations(conversations), [conversations, filterConversations]);
+
+  // J and K move through the list in its current order.
+  useEffect(() => onSupportShortcut((detail) => {
+    if (detail.action !== 'next' && detail.action !== 'previous') return;
+    detail.handled = true;
+    const id = adjacentConversationId(filteredConversations.map((conversation) => conversation.id), detail.conversationId, detail.action);
+    if (!id) return;
+    handleSelect(id);
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-conversation-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'nearest' });
+    });
+  }), [filteredConversations, handleSelect]);
   const allLoadedSelected = filteredConversations.length > 0 && filteredConversations.every((conversation) => selection.items.has(conversation.id));
   const totalMatches = response?.pages[0]?.total;
   const handleToggleSelection = useCallback((id: string) => {
@@ -665,6 +678,7 @@ export function ConversationList({
           {selectionActive ? <ConversationBulkToolbar
             key={selectionScope}
             workspaceId={workspaceId}
+            userId={userId}
             conversations={[...selection.items.values()]}
             loadedCount={filteredConversations.length}
             allLoadedSelected={allLoadedSelected}

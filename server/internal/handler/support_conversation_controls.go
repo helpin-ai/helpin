@@ -152,3 +152,50 @@ func (h *SupportSLAHandler) Reorder(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, policies)
 }
+
+// SupportConversationActionsHandler applies macros and bulk actions.
+type SupportConversationActionsHandler struct {
+	actions *service.SupportConversationActionService
+}
+
+func NewSupportConversationActionsHandler(actions *service.SupportConversationActionService) *SupportConversationActionsHandler {
+	return &SupportConversationActionsHandler{actions: actions}
+}
+
+func writeConversationActionsError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, service.ErrSupportActionsInvalid):
+		writeError(w, http.StatusBadRequest, strings.TrimPrefix(err.Error(), service.ErrSupportActionsInvalid.Error()+": "))
+	case errors.Is(err, service.ErrSupportMacroWithoutActions):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case err != nil && strings.Contains(err.Error(), "not found"):
+		writeError(w, http.StatusNotFound, err.Error())
+	default:
+		writeError(w, http.StatusInternalServerError, "unable to apply the changes")
+	}
+}
+
+// ApplyMacro handles POST /api/support/inbox/conversations/{id}/macros/{macroId}/apply.
+func (h *SupportConversationActionsHandler) ApplyMacro(w http.ResponseWriter, r *http.Request) {
+	response, err := h.actions.ApplyMacro(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"), chi.URLParam(r, "macroId"), middleware.GetUserID(r.Context()))
+	if err != nil {
+		writeConversationActionsError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+// Bulk handles POST /api/support/inbox/conversations/bulk.
+func (h *SupportConversationActionsHandler) Bulk(w http.ResponseWriter, r *http.Request) {
+	var req model.SupportBulkActionRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	response, err := h.actions.ApplyBulk(r.Context(), getWorkspaceID(r), req, middleware.GetUserID(r.Context()))
+	if err != nil {
+		writeConversationActionsError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
