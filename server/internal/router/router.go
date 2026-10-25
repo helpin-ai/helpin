@@ -116,6 +116,7 @@ type Handlers struct {
 	SupportAI           *handler.SupportAIHandler
 	SupportAttachment   *handler.SupportAttachmentHandler
 	SupportCoverage     *handler.SupportCoverageHandler
+	SupportReports      *handler.SupportReportsHandler
 	SupportInboxClear   *handler.SupportInboxClearHandler
 	PostmarkInbound     *handler.PostmarkInboundHandler
 	EmailImageProxy     *handler.EmailImageProxyHandler
@@ -241,6 +242,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.With(h.SupportInboxWidget.RequireOrigin).Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
 		r.With(h.SupportInboxWidget.RequireOrigin).Post("/messages", h.SupportInboxWidget.SendMessage)
 		r.With(h.SupportInboxWidget.RequireOrigin).Post("/messages/{messageId}/feedback", h.SupportInboxWidget.SubmitAnswerFeedback)
+		r.With(h.SupportInboxWidget.RequireOrigin).Post("/conversations/{conversationId}/csat", h.SupportInboxWidget.SubmitCSAT)
 		r.With(h.SupportInboxWidget.RequireOrigin).Post("/conversations/{conversationId}/transcript", h.SupportInboxWidget.SendTranscript)
 		r.With(h.SupportInboxWidget.RequireOrigin).Post("/support/conversations/{conversationId}/transcript", h.SupportInboxWidget.SendTranscript)
 		r.With(h.SupportInboxWidget.RequireOrigin).Post("/typing", h.SupportInboxWidget.TypingIndicator) // Deprecated: use WebSocket typing:start/typing:stop instead. Kept as HTTP fallback.
@@ -347,6 +349,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Patch("/requests/{reference}/attachments/{attachmentId}/confirm", h.CustomerPortal.ConfirmAttachment)
 				r.Get("/requests/{reference}", h.CustomerPortal.RequestDetail)
 				r.Post("/requests/{reference}/replies", h.CustomerPortal.Reply)
+				r.Post("/requests/{reference}/csat", h.CustomerPortal.Rate)
 				r.Post("/requests", h.CustomerPortal.CreateRequest)
 			})
 		}
@@ -1239,6 +1242,11 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// Inbox-zero celebration
 				if h.SupportInboxClear != nil {
 					r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox-clears", h.SupportInboxClear.RecordClear)
+				}
+
+				if h.SupportReports != nil {
+					r.With(requirePerm(authorization.PermSupportRead)).Get("/reports/overview", h.SupportReports.Overview)
+					r.With(requirePerm(authorization.PermSupportRead)).Get("/reports/conversations.csv", h.SupportReports.ExportConversations)
 				}
 
 				// Docs coverage

@@ -1,4 +1,6 @@
 import { AskAgentAvatar } from '@/components/agents/AskAgentAvatar';
+import { SupportCSATEvent } from './SupportCSATEvent';
+import { parseSupportCSATEvent } from './supportCSAT';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ContactAvatarImage } from '@/components/ui/contact-avatar-image';
 import { SupportAIActivity } from './SupportAIActivity';
@@ -605,6 +607,13 @@ export const MessageBubble = memo(function MessageBubble({
       folded={folded}
       renderMarkdown={(markdown) => <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{markdown}</Markdown>}
     />;
+  }
+
+  if (message.message_type === 'system' && message.system_event_type === 'csat_rated') {
+    const csat = parseSupportCSATEvent(message.metadata);
+    if (csat) {
+      return <SupportCSATEvent details={csat} customerName={resolvedSenderName} timestamp={fullTimestamp} />;
+    }
   }
 
   // ── System message: centered pill with avatar ──

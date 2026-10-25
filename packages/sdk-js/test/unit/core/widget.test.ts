@@ -1246,16 +1246,24 @@ describe('WidgetManager', () => {
   });
 
   describe('conversation CSAT', () => {
-    it('tracks and persists a valid conversation rating', () => {
+    it('saves a rating on the server, then tracks and remembers it', async () => {
       const track = vi.fn();
       (globalThis as any).helpin = { track };
+      (widget as any).host = 'api.example.test';
       (widget as any).widgetKey = 'test-key';
+      (widget as any).sessionToken = 'session-token';
       (widget as any).activeConversationId = 'conv-1';
+      (widget as any).conversations = [{ id: 'conv-1', subject: 'Help', status: 'resolved' }];
       (widget as any).messages = [{ role: 'agent' }];
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ csat: { rating: 4 } }), { status: 200 }));
 
-      (widget as any).handleCsatSubmit(4, ' Helpful and quick ');
+      await (widget as any).handleCsatSubmit(4, ' Helpful and quick ');
 
+      expect(fetchMock).toHaveBeenCalledWith('https://api.example.test/widget/conversations/conv-1/csat', expect.objectContaining({
+        method: 'POST', body: JSON.stringify({ session_token: 'session-token', rating: 4, comment: 'Helpful and quick' }),
+      }));
       expect(localStorage.setItem).toHaveBeenCalledWith('helpin_csat_test-key_conv-1', '1');
+      expect((widget as any).conversations[0].csatRating).toBe(4);
       expect(track).toHaveBeenCalledWith('support_conversation_csat', {
         conversation_id: 'conv-1',
         rating: 4,
@@ -1263,6 +1271,23 @@ describe('WidgetManager', () => {
         handled_by: 'human',
       });
       delete (globalThis as any).helpin;
+    });
+
+    it('rejects a failed rating without marking it submitted', async () => {
+      (widget as any).widgetKey = 'test-key';
+      (widget as any).sessionToken = 'session-token';
+      (widget as any).activeConversationId = 'conv-1';
+      fetchMock.mockResolvedValueOnce(new Response('{}', { status: 409 }));
+
+      await expect((widget as any).handleCsatSubmit(2)).rejects.toThrow('can no longer be rated');
+      expect(localStorage.setItem).not.toHaveBeenCalledWith('helpin_csat_test-key_conv-1', '1');
+    });
+
+    it('treats a rating saved on another device as submitted', () => {
+      (widget as any).widgetKey = 'test-key';
+      (widget as any).conversations = [(widget as any).mapConversation({ id: 'conv-2', status: 'resolved', csat_rating: 5 })];
+      expect((widget as any).hasSubmittedCsat('conv-2')).toBe(true);
+      expect((widget as any).hasSubmittedCsat('conv-3')).toBe(false);
     });
 
     it('exposes persisted CSAT state to the mounted widget', () => {

@@ -2007,6 +2007,7 @@ func main() {
 			pmCommentService,
 			jwtManager,
 		),
+		SupportReports: handler.NewSupportReportsHandler(service.NewSupportReportService(supportConversationRepo)),
 		SupportCoverage: handler.NewSupportCoverageHandler(
 			supportCoverageService,
 			supportEventService,

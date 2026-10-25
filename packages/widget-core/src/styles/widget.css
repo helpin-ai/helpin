@@ -3713,6 +3713,16 @@ a.helpin-source-item:focus-visible {
   background: var(--helpin-primary-hover);
 }
 
+.helpin-csat-submit:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.helpin-csat-error {
+  color: var(--helpin-danger, #b42318);
+  font: 500 12px/1.4 inherit;
+}
+
 .helpin-csat-dismiss {
   margin-top: 10px;
   padding: 2px 6px;

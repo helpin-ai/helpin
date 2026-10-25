@@ -943,6 +943,19 @@ func newTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE support_csat_responses (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			conversation_id TEXT NOT NULL UNIQUE,
+			rating INTEGER NOT NULL,
+			comment TEXT,
+			channel TEXT NOT NULL,
+			resolved_by TEXT NOT NULL,
+			assigned_user_id TEXT,
+			submitted_at DATETIME NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
 		`CREATE TABLE agent_handoffs (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,

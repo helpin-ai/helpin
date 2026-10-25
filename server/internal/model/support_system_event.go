@@ -80,6 +80,10 @@ const (
 	// SystemEventTaskCreated — PM task created from the conversation.
 	// Admin-only.
 	SystemEventTaskCreated SupportSystemEventType = "task_created"
+
+	// SystemEventCSATRated — the customer rated the resolved conversation.
+	// Admin-only; metadata carries the rating and optional comment.
+	SystemEventCSATRated SupportSystemEventType = "csat_rated"
 )
 
 // allSupportSystemEventTypes is the authoritative set of valid event types.
@@ -105,6 +109,7 @@ var allSupportSystemEventTypes = map[SupportSystemEventType]struct{}{
 	SystemEventTagAdded:               {},
 	SystemEventTagRemoved:             {},
 	SystemEventTaskCreated:            {},
+	SystemEventCSATRated:              {},
 }
 
 // IsValidSupportSystemEventType reports whether s is a recognized event type.

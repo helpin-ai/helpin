@@ -109,6 +109,7 @@ func AutoMigrationModels() []any {
 		&model.SupportEmailSenderMailbox{},
 		&model.SupportEmailSenderDomain{},
 		&model.SupportMessage{},
+		&model.SupportCSATResponse{},
 		&model.SupportTranslation{},
 		&model.SupportTranslationPreference{},
 		&model.SupportTranslationConversation{},

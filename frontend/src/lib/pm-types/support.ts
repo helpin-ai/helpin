@@ -117,8 +117,16 @@ export interface SupportConversation {
   triage?: SupportConversationTriage | null;
   tags?: SupportTag[];
   system_tags?: SupportSystemTag[];
+  /** The customer's satisfaction rating once the conversation was rated. */
+  csat?: SupportConversationCSAT | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface SupportConversationCSAT {
+  rating: number;
+  comment?: string | null;
+  submitted_at: string;
 }
 
 export interface SupportConversationUserState {
@@ -632,6 +640,7 @@ export const SUPPORT_SYSTEM_EVENT_TYPES = [
   'tag_added',
   'tag_removed',
   'task_created',
+  'csat_rated',
 ] as const;
 
 export type SupportSystemEventType = (typeof SUPPORT_SYSTEM_EVENT_TYPES)[number];

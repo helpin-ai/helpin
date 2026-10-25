@@ -1690,17 +1690,12 @@ function Dashboard() {
                   <Switch checked={fileUploadsEnabled} onCheckedChange={setFileUploadsEnabled} />
                 </div>
 
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-4">
                   <div>
-                    <div className="flex items-center gap-2">
-                      <Label className="text-sm">CSAT surveys</Label>
-                      <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                        Coming soon
-                      </span>
-                    </div>
-                    <p className="text-xs text-muted-foreground">Satisfaction surveys after conversation resolution will be available soon.</p>
+                    <Label htmlFor="chat-csat-enabled" className="text-sm">CSAT surveys</Label>
+                    <p className="text-xs text-muted-foreground">Ask customers to rate resolved conversations in the chat widget and customer portal. Ratings appear in the conversation and in Reports.</p>
                   </div>
-                  <Switch checked={csatEnabled} onCheckedChange={setCsatEnabled} disabled />
+                  <Switch id="chat-csat-enabled" checked={csatEnabled} onCheckedChange={setCsatEnabled} />
                 </div>
 
                 <div className="border-t border-border pt-4 space-y-4">

@@ -1650,6 +1650,10 @@ func (s *SupportInboxService) GetConversation(ctx context.Context, workspaceID, 
 	s.hydrateConversationTags(ctx, workspaceID, hydrated)
 	ticket.Tags = hydrated[0].Tags
 	ticket.SystemTags = hydrated[0].SystemTags
+	if err := s.hydrateConversationCSAT(ctx, workspaceID, hydrated); err != nil {
+		slog.ErrorContext(ctx, "hydrate support conversation csat", "error", err, "workspace_id", workspaceID, "conversation_id", id)
+	}
+	ticket.CSAT = hydrated[0].CSAT
 	if s.followUpRepo != nil {
 		ticket.AIFollowUp, err = s.followUpRepo.Latest(ctx, workspaceID, id)
 		if err != nil {
@@ -1871,6 +1875,12 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 
 	s.wsPublisher.Publish(buildSupportConversationStatusEvent(ticket, oldStatus, actorID))
 	s.refreshMergedVisitors(ctx, ticket)
+	// An open widget learns of the new status (and offers CSAT on resolve)
+	// without waiting for the visitor to reconnect. Merged groups were
+	// refreshed above.
+	if oldStatus != status && ticket.MergeRevision == 0 && ticket.AnonymousID != nil && strings.TrimSpace(*ticket.AnonymousID) != "" {
+		s.pushVisitorConversationsRefresh(ctx, workspaceID, *ticket.AnonymousID)
+	}
 
 	if oldStatus != status && status == model.SupportConversationStatusResolved {
 		s.trackProductEvent(ctx, ProductAnalyticsEvent{

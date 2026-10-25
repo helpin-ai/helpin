@@ -38,7 +38,10 @@ type PortalRequestDetail struct {
 	LastActivityAt time.Time       `json:"last_activity_at"`
 	CanReply       bool            `json:"can_reply"`
 	AIProcessing   bool            `json:"ai_processing"`
-	Messages       []PortalMessage `json:"messages"`
+	// CanRate is true when the customer may rate the resolved request.
+	CanRate  bool                      `json:"can_rate"`
+	CSAT     *model.SupportCSATSummary `json:"csat,omitempty"`
+	Messages []PortalMessage           `json:"messages"`
 }
 
 type portalReplySourceKey struct{}
@@ -239,6 +242,14 @@ func (s *CustomerPortalService) RequestDetail(ctx context.Context, access *Porta
 	detail.AIProcessing = conv.FlowState != nil && *conv.FlowState == model.SupportConversationFlowStateAIHandling &&
 		!supportConversationHumanOwned(conv) && conv.LastCustomerMessageID != nil &&
 		conv.LastPublicMessageID != nil && *conv.LastPublicMessageID == *conv.LastCustomerMessageID
+	if access.Workspace.Settings.CSATEnabled && detail.Status == model.SupportConversationStatusResolved && conv.AnonymizedAt == nil {
+		detail.CanRate = true
+		rated := []model.SupportConversation{*conv}
+		if err := s.inbox.hydrateConversationCSAT(ctx, access.Workspace.ID, rated); err != nil {
+			return nil, err
+		}
+		detail.CSAT = rated[0].CSAT
+	}
 	avatars := s.portalSenderAvatars(ctx, access.Workspace.ID, messages)
 	for i := range messages {
 		msg := &messages[i]
@@ -372,6 +383,25 @@ func (s *CustomerPortalService) Reply(ctx context.Context, access *PortalAccess,
 	if _, err := s.inbox.CreateConversationMessage(replyCtx, access.Workspace.ID, conv.ID, model.CreateMessageRequest{
 		Content: content, MessageType: "reply", AttachmentIDs: attachmentIDs,
 	}, "customer", nil, nil, access.Identity.DisplayName); err != nil {
+		return nil, err
+	}
+	return s.RequestDetail(ctx, access, reference)
+}
+
+// RateRequest records the customer's rating of a resolved request and
+// returns the refreshed request.
+func (s *CustomerPortalService) RateRequest(ctx context.Context, access *PortalAccess, reference string, rating int, comment string) (*PortalRequestDetail, error) {
+	conv, err := s.repo.FindRequest(ctx, access.Workspace.ID, access.Identity.ID, reference)
+	if err != nil {
+		return nil, err
+	}
+	if conv == nil {
+		return nil, ErrPortalRequestNotFound
+	}
+	if _, err := s.inbox.SubmitConversationCSAT(ctx, model.SupportCSATSubmission{
+		WorkspaceID: access.Workspace.ID, ConversationID: conv.ID,
+		Channel: model.SupportCSATChannelPortal, Rating: rating, Comment: comment,
+	}, access.Workspace.Settings); err != nil {
 		return nil, err
 	}
 	return s.RequestDetail(ctx, access, reference)

@@ -1,4 +1,6 @@
 import { memo, useEffect, useState, type JSX, type ReactNode, type SVGProps } from 'react';
+import { SupportCSATStars } from './SupportCSATEvent';
+import { supportCSATRatingLabel } from './supportCSAT';
 import { formatDistance } from 'date-fns';
 import * as Flags from 'country-flag-icons/react/3x2';
 import { Link } from '@tanstack/react-router';
@@ -661,6 +663,21 @@ export function ConversationDetailSidebar({
             ) : null}
             </div>
           )}
+
+          {conversation.csat ? (
+            <div className="flex min-h-11 items-start justify-between gap-3 border-b border-border/50 py-2.5 pl-4 pr-[11px]" data-testid="conversation-csat">
+              <span className="text-sm font-semibold text-foreground">Satisfaction</span>
+              <div className="min-w-0 text-right">
+                <div className="flex items-center justify-end gap-1.5 text-xs">
+                  <SupportCSATStars rating={conversation.csat.rating} />
+                  <span className="font-medium text-foreground">{supportCSATRatingLabel(conversation.csat.rating)}</span>
+                </div>
+                {conversation.csat.comment ? (
+                  <p className="mt-1 line-clamp-3 text-[11px] leading-snug text-muted-foreground [overflow-wrap:anywhere]">“{conversation.csat.comment}”</p>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
 
           <CollapsibleSection title="Tags" icon={Tag01Icon} count={0} defaultOpen persistKey="support-details.tags">
             <SupportTagPicker

@@ -64,6 +64,8 @@ type WidgetConversation = Conversation & {
   activeTeammate?: WidgetActiveTeammate;
   flowState?: string;
   aiState?: string;
+  /** The visitor's saved rating, so another device does not ask again. */
+  csatRating?: number;
 };
 
 type AIResponseStreamState = {
@@ -979,6 +981,7 @@ export class WidgetManager {
       lastMessage: raw.last_message,
       lastMessageAt: raw.updated_at || raw.created_at,
       unreadCount: raw.unread_count ?? 0,
+      csatRating: typeof raw.csat_rating === 'number' ? raw.csat_rating : undefined,
       activeTeammate: this.mapActiveTeammate({
         user_id: raw.opened_by_user_id,
         name: raw.opened_by_display_name,
@@ -1572,6 +1575,9 @@ export class WidgetManager {
   }
 
   private hasSubmittedCsat(conversationId: string): boolean {
+    if (this.conversations.some((conversation) => conversation.id === conversationId && conversation.csatRating !== undefined)) {
+      return true;
+    }
     const key = this.csatStorageKey(conversationId);
     if (!key) return false;
     try {
@@ -1581,21 +1587,34 @@ export class WidgetManager {
     }
   }
 
-  private handleCsatSubmit(rating: number, feedback?: string): void {
+  private async handleCsatSubmit(rating: number, feedback?: string): Promise<void> {
     const conversationId = this.activeConversationId;
     if (!conversationId || rating < 1 || rating > 5) return;
+    if (!this.sessionToken) throw new Error('Please reconnect to send feedback.');
+
+    const comment = feedback?.trim() || '';
+    const response = await fetch(widgetURL(this.host, `/widget/conversations/${encodeURIComponent(conversationId)}/csat`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_token: this.sessionToken, rating, comment }),
+    });
+    if (!response.ok) {
+      throw new Error(response.status === 409 ? 'This conversation can no longer be rated.' : 'Could not send your feedback. Please try again.');
+    }
 
     const key = this.csatStorageKey(conversationId);
     if (key) {
       try { localStorage.setItem(key, '1'); } catch { /* storage may be unavailable */ }
     }
+    this.conversations = this.conversations.map((conversation) =>
+      conversation.id === conversationId ? { ...conversation, csatRating: rating } : conversation);
 
     const track = (globalThis as any).helpin?.track;
     if (typeof track === 'function') {
       track('support_conversation_csat', {
         conversation_id: conversationId,
         rating,
-        feedback: feedback?.trim() || undefined,
+        feedback: comment || undefined,
         handled_by: this.messages.some((message) => message.role === 'agent') ? 'human' : 'ai',
       });
     }

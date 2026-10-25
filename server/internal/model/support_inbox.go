@@ -114,6 +114,7 @@ type SupportConversation struct {
 	Triage                       *SupportConversationTriage `json:"triage,omitempty" gorm:"-"`
 	Tags                         []SupportTag               `json:"tags,omitempty" gorm:"-"`
 	SystemTags                   []string                   `json:"system_tags,omitempty" gorm:"-"`
+	CSAT                         *SupportCSATSummary        `json:"csat,omitempty" gorm:"-"`
 
 	// ListLastActivityAt is derived from timeline entries, including notes and system events.
 	// It must not replace message timestamps used for previews, unread state, or reply tracking.

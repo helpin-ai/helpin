@@ -53,6 +53,7 @@ import { Route as AuthenticatedWSlugDocsIndexRouteImport } from './routes/_authe
 import { Route as AuthenticatedWSlugCrmIndexRouteImport } from './routes/_authenticated/w/$slug/crm/index'
 import { Route as AuthenticatedWSlugAutomationIndexRouteImport } from './routes/_authenticated/w/$slug/automation/index'
 import { Route as AuthenticatedWSlugSupportSearchRouteImport } from './routes/_authenticated/w/$slug/support/search'
+import { Route as AuthenticatedWSlugSupportReportsRouteImport } from './routes/_authenticated/w/$slug/support/reports'
 import { Route as AuthenticatedWSlugSupportCoverageRouteImport } from './routes/_authenticated/w/$slug/support/coverage'
 import { Route as AuthenticatedWSlugSupportInboxRouteImport } from './routes/_authenticated/w/$slug/support/_inbox'
 import { Route as AuthenticatedWSlugSprintsSprintIdRouteImport } from './routes/_authenticated/w/$slug/sprints/$sprintId'
@@ -376,6 +377,12 @@ const AuthenticatedWSlugSupportSearchRoute =
   AuthenticatedWSlugSupportSearchRouteImport.update({
     id: '/search',
     path: '/search',
+    getParentRoute: () => AuthenticatedWSlugSupportRoute,
+  } as any)
+const AuthenticatedWSlugSupportReportsRoute =
+  AuthenticatedWSlugSupportReportsRouteImport.update({
+    id: '/reports',
+    path: '/reports',
     getParentRoute: () => AuthenticatedWSlugSupportRoute,
   } as any)
 const AuthenticatedWSlugSupportCoverageRoute =
@@ -1004,6 +1011,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/settings/workflows': typeof AuthenticatedWSlugSettingsWorkflowsRoute
   '/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
   '/w/$slug/support/coverage': typeof AuthenticatedWSlugSupportCoverageRoute
+  '/w/$slug/support/reports': typeof AuthenticatedWSlugSupportReportsRoute
   '/w/$slug/support/search': typeof AuthenticatedWSlugSupportSearchRoute
   '/w/$slug/automation/': typeof AuthenticatedWSlugAutomationIndexRoute
   '/w/$slug/crm/': typeof AuthenticatedWSlugCrmIndexRoute
@@ -1130,6 +1138,7 @@ export interface FileRoutesByTo {
   '/w/$slug/settings/workflows': typeof AuthenticatedWSlugSettingsWorkflowsRoute
   '/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
   '/w/$slug/support/coverage': typeof AuthenticatedWSlugSupportCoverageRoute
+  '/w/$slug/support/reports': typeof AuthenticatedWSlugSupportReportsRoute
   '/w/$slug/support/search': typeof AuthenticatedWSlugSupportSearchRoute
   '/w/$slug/automation': typeof AuthenticatedWSlugAutomationIndexRoute
   '/w/$slug/crm': typeof AuthenticatedWSlugCrmIndexRoute
@@ -1264,6 +1273,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
   '/_authenticated/w/$slug/support/_inbox': typeof AuthenticatedWSlugSupportInboxRouteWithChildren
   '/_authenticated/w/$slug/support/coverage': typeof AuthenticatedWSlugSupportCoverageRoute
+  '/_authenticated/w/$slug/support/reports': typeof AuthenticatedWSlugSupportReportsRoute
   '/_authenticated/w/$slug/support/search': typeof AuthenticatedWSlugSupportSearchRoute
   '/_authenticated/w/$slug/automation/': typeof AuthenticatedWSlugAutomationIndexRoute
   '/_authenticated/w/$slug/crm/': typeof AuthenticatedWSlugCrmIndexRoute
@@ -1398,6 +1408,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/workflows'
     | '/w/$slug/sprints/$sprintId'
     | '/w/$slug/support/coverage'
+    | '/w/$slug/support/reports'
     | '/w/$slug/support/search'
     | '/w/$slug/automation/'
     | '/w/$slug/crm/'
@@ -1524,6 +1535,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/workflows'
     | '/w/$slug/sprints/$sprintId'
     | '/w/$slug/support/coverage'
+    | '/w/$slug/support/reports'
     | '/w/$slug/support/search'
     | '/w/$slug/automation'
     | '/w/$slug/crm'
@@ -1657,6 +1669,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/sprints/$sprintId'
     | '/_authenticated/w/$slug/support/_inbox'
     | '/_authenticated/w/$slug/support/coverage'
+    | '/_authenticated/w/$slug/support/reports'
     | '/_authenticated/w/$slug/support/search'
     | '/_authenticated/w/$slug/automation/'
     | '/_authenticated/w/$slug/crm/'
@@ -2017,6 +2030,13 @@ declare module '@tanstack/react-router' {
       path: '/search'
       fullPath: '/w/$slug/support/search'
       preLoaderRoute: typeof AuthenticatedWSlugSupportSearchRouteImport
+      parentRoute: typeof AuthenticatedWSlugSupportRoute
+    }
+    '/_authenticated/w/$slug/support/reports': {
+      id: '/_authenticated/w/$slug/support/reports'
+      path: '/reports'
+      fullPath: '/w/$slug/support/reports'
+      preLoaderRoute: typeof AuthenticatedWSlugSupportReportsRouteImport
       parentRoute: typeof AuthenticatedWSlugSupportRoute
     }
     '/_authenticated/w/$slug/support/coverage': {
@@ -2791,6 +2811,7 @@ const AuthenticatedWSlugSupportInboxRouteWithChildren =
 interface AuthenticatedWSlugSupportRouteChildren {
   AuthenticatedWSlugSupportInboxRoute: typeof AuthenticatedWSlugSupportInboxRouteWithChildren
   AuthenticatedWSlugSupportCoverageRoute: typeof AuthenticatedWSlugSupportCoverageRoute
+  AuthenticatedWSlugSupportReportsRoute: typeof AuthenticatedWSlugSupportReportsRoute
   AuthenticatedWSlugSupportSearchRoute: typeof AuthenticatedWSlugSupportSearchRoute
 }
 
@@ -2800,6 +2821,8 @@ const AuthenticatedWSlugSupportRouteChildren: AuthenticatedWSlugSupportRouteChil
       AuthenticatedWSlugSupportInboxRouteWithChildren,
     AuthenticatedWSlugSupportCoverageRoute:
       AuthenticatedWSlugSupportCoverageRoute,
+    AuthenticatedWSlugSupportReportsRoute:
+      AuthenticatedWSlugSupportReportsRoute,
     AuthenticatedWSlugSupportSearchRoute: AuthenticatedWSlugSupportSearchRoute,
   }
 

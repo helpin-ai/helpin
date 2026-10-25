@@ -5,9 +5,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -427,6 +429,32 @@ func writeWidgetError(w http.ResponseWriter, r *http.Request, status int, err er
 		message = "Please reconnect to continue this conversation."
 	}
 	writeError(w, status, message)
+}
+
+// SubmitCSAT handles a visitor's rating of their resolved conversation.
+func (h *SupportInboxWidgetHandler) SubmitCSAT(w http.ResponseWriter, r *http.Request) {
+	var req model.WidgetCSATRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if strings.TrimSpace(req.SessionToken) == "" {
+		writeError(w, http.StatusBadRequest, "session_token is required")
+		return
+	}
+	csat, err := h.supportService.SubmitWidgetCSAT(widgetRequestContext(r), req.SessionToken, chi.URLParam(r, "conversationId"), req.Rating, req.Comment)
+	switch {
+	case errors.Is(err, service.ErrSupportWidgetSessionInvalid):
+		writeWidgetError(w, r, http.StatusUnauthorized, err)
+	case errors.Is(err, service.ErrSupportCSATInvalid):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, service.ErrSupportCSATUnavailable):
+		writeError(w, http.StatusConflict, err.Error())
+	case err != nil:
+		writeWidgetError(w, r, http.StatusInternalServerError, err)
+	default:
+		writeJSON(w, http.StatusOK, map[string]any{"csat": csat})
+	}
 }
 
 // SubmitAnswerFeedback handles session-authenticated feedback on one public AI reply.
