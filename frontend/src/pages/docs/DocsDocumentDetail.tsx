@@ -1337,7 +1337,7 @@ export function DocsDocumentDetail({
   const activePublishLabel = !isPublished
     ? `Publish${localeSuffix}`
     : hasUnpublishedChanges
-      ? `Publish update${localeSuffix}`
+      ? `Update${localeSuffix}`
       : `Published${localeSuffix}`
   const showContextualPublish = canPublishDocs && doc?.status !== 'archived'
   const parentTranslationsMissing = !isSourceLocaleActive && Boolean(activeLocaleRow?.publishBlockedReason)
