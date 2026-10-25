@@ -385,6 +385,22 @@ func (r *SupportInboxInstallationRepository) Update(ctx context.Context, inst *m
 	return nil
 }
 
+// SetAllowedOriginsIfEmpty saves origins only while the installation still has
+// an empty allowlist, so it never replaces a policy saved concurrently. It
+// reports whether the origins were saved.
+func (r *SupportInboxInstallationRepository) SetAllowedOriginsIfEmpty(ctx context.Context, id string, origins []string) (bool, error) {
+	result := r.db.WithContext(ctx).Model(&model.SupportWidgetInstallation{}).
+		Where("id = ? AND allowed_origins = '{}'", id).
+		Updates(map[string]interface{}{
+			"allowed_origins": model.DocsStringArray(origins),
+			"updated_at":      time.Now(),
+		})
+	if result.Error != nil {
+		return false, fmt.Errorf("set widget allowed origins: %w", result.Error)
+	}
+	return result.RowsAffected > 0, nil
+}
+
 // ListAllActive returns all active widget installations across all workspaces.
 func (r *SupportInboxInstallationRepository) ListAllActive(ctx context.Context) ([]model.SupportWidgetInstallation, error) {
 	var installations []model.SupportWidgetInstallation

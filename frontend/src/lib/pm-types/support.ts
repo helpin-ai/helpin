@@ -1311,6 +1311,8 @@ export interface SupportInstallationResponse extends WidgetOriginSettings {
   id: string;
   workspace_id: string;
   widget_key: string;
+  /** Origins from the workspace website, offered only while `allowed_origins` is empty. Not saved. */
+  suggested_allowed_origins?: string[];
   /** Whether an identity signing secret exists. The secret is only returned by reveal/rotate. */
   signing_secret_configured?: boolean;
   settings: SupportInboxSettings;

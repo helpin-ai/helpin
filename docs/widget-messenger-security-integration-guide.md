@@ -11,13 +11,15 @@ JWT format is not accepted by the current widget identity verifier.
 
 ## 1. Configure the installation
 
-Add each website origin in Settings → Chat widget and copy the generated
-installation snippet. Origins include the scheme and any non-default port, with
-no path or wildcard. An empty allowlist denies widget access. Use the SDK/API
-URLs belonging to your Helpin deployment; the current loader filename is `lib.js`.
+Add each website in Settings → Chat widget → Allowed websites and copy the
+generated installation snippet. Each entry is an exact origin (scheme, host, and
+any non-default port) or an HTTPS subdomain pattern such as
+`https://*.example.com`; paths are dropped. An empty allowlist denies widget
+access. Use the SDK/API URLs belonging to your Helpin deployment; the current
+loader filename is `lib.js`.
 
-Copy the installation's signing secret from Settings → Chat widget → Identity
-signing secret (requires the `support.admin` permission), as described in
+Copy the installation's signing secret from Settings → Chat widget → Allowed
+websites → Signing secret (requires the `support.admin` permission), as described in
 [website origins and visitor identity](community/widget-identity.md). Keep it only
 in your application's backend secret configuration. The public widget key is a
 different value. Regenerating the secret invalidates proofs signed with the

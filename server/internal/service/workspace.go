@@ -29,6 +29,7 @@ type WorkspaceService struct {
 	attachmentRepo      *repository.PMAttachmentRepository
 	s3Client            *storage.S3Client
 	defaultsInitializer WorkspaceDefaultsInitializer
+	websiteDefaults     WorkspaceWebsiteDefaultsApplier
 	presence            websocket.PresenceProvider
 	statusOverrideRepo  *repository.SupportTeammateStatusOverrideRepository
 	billingService      WorkspaceLifecyclePolicy
@@ -47,6 +48,12 @@ type WorkspaceDefaultsInitializer interface {
 
 type WorkspaceSetupInitializer interface {
 	InitializeSetupGoals(ctx context.Context, workspaceID, actorID string, goals []string) error
+}
+
+// WorkspaceWebsiteDefaultsApplier fills website-derived defaults after a
+// workspace saves a website.
+type WorkspaceWebsiteDefaultsApplier interface {
+	ApplyWebsiteOriginDefaults(ctx context.Context, workspaceID string) error
 }
 
 // NewWorkspaceService creates a new WorkspaceService.
@@ -82,6 +89,11 @@ func (s *WorkspaceService) SetCustomerIOIdentityService(identity *CustomerIOIden
 
 func (s *WorkspaceService) SetSetupInitializer(initializer WorkspaceSetupInitializer) {
 	s.setupInitializer = initializer
+}
+
+// SetWebsiteDefaultsApplier injects the hook run after a website is saved.
+func (s *WorkspaceService) SetWebsiteDefaultsApplier(applier WorkspaceWebsiteDefaultsApplier) {
+	s.websiteDefaults = applier
 }
 
 func (s *WorkspaceService) SetContextGeneratorDependencies(llm workspaceContextLLM, fetcher WorkspaceContextFetcher) *WorkspaceService {
@@ -313,6 +325,13 @@ func (s *WorkspaceService) Update(ctx context.Context, id string, req model.Upda
 		return nil, err
 	}
 	s.logger.InfoContext(ctx, "workspace updated", "workspace_id", id)
+	if s.websiteDefaults != nil && websiteURL != nil && *websiteURL != "" {
+		if err := s.websiteDefaults.ApplyWebsiteOriginDefaults(ctx, id); err != nil {
+			// The workspace update has committed; the widget settings page still
+			// offers the same origins as a suggestion.
+			s.logger.WarnContext(ctx, "apply website origin defaults", "error", err, "workspace_id", id)
+		}
+	}
 	if s.customerIOIdentity != nil {
 		s.customerIOIdentity.SyncWorkspace(ctx, id, actorID)
 	}

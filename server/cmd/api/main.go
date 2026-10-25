@@ -1645,6 +1645,7 @@ func main() {
 	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService, agentService)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
 	workspaceService.SetProductAnalyticsService(productAnalytics)
+	workspaceService.SetWebsiteDefaultsApplier(supportInboxService)
 	setupService := service.NewSetupService(setupRepo)
 	setupSuccessEnabled := cfg.SetupGuideEnabled
 	if setupSuccessEnabled {

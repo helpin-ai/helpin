@@ -4,11 +4,21 @@
 package widgetorigin
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
 	"strings"
+
+	"golang.org/x/net/publicsuffix"
 )
+
+// subdomainPatternPrefix starts an allowlist entry that admits every subdomain
+// of one domain over HTTPS, such as https://*.example.com.
+const subdomainPatternPrefix = "https://*."
+
+var errSubdomainPattern = errors.New(
+	"subdomain patterns must look like https://*.example.com and use a domain you own")
 
 // Reference identifies the installation and/or session used by a request.
 // When multiple identifiers are supplied, they must identify the same installation.
@@ -45,9 +55,78 @@ func Normalize(raw string) (string, error) {
 	return u.Scheme + "://" + host, nil
 }
 
-// Allowed requires an exact match unless the installation explicitly opts into
-// all origins with "*". That policy also admits missing and opaque origins.
-// Empty lists still deny access.
+// NormalizeEntry accepts one stored allowlist entry: "*", an exact origin that
+// Normalize accepts, or an HTTPS subdomain pattern such as https://*.example.com.
+// A pattern must sit below a registrable domain, so *.com or *.github.io is
+// rejected rather than admitting unrelated sites.
+func NormalizeEntry(raw string) (string, error) {
+	if raw == "*" {
+		return "*", nil
+	}
+	if !strings.Contains(raw, "*") {
+		return Normalize(raw)
+	}
+	if len(raw) <= len(subdomainPatternPrefix) ||
+		!strings.EqualFold(raw[:len(subdomainPatternPrefix)], subdomainPatternPrefix) {
+		return "", errSubdomainPattern
+	}
+	base, err := Normalize("https://" + raw[len(subdomainPatternPrefix):])
+	if err != nil {
+		return "", errSubdomainPattern
+	}
+	host := strings.TrimPrefix(base, "https://")
+	hostname := host
+	if name, _, err := net.SplitHostPort(host); err == nil {
+		hostname = name
+	}
+	if net.ParseIP(strings.Trim(hostname, "[]")) != nil || !strings.Contains(hostname, ".") {
+		return "", errSubdomainPattern
+	}
+	if _, err := publicsuffix.EffectiveTLDPlusOne(hostname); err != nil {
+		return "", errSubdomainPattern
+	}
+	return subdomainPatternPrefix + host, nil
+}
+
+// WebsiteDefaults returns the allowlist suggested by a workspace website: the
+// site without a leading "www." and, when the site is on a registrable domain,
+// an HTTPS pattern for its subdomains. The pattern never reaches above the
+// website's own host, so a site on a shared platform covers only its own
+// subdomains. It returns nil when the website is not an HTTP(S) host.
+func WebsiteDefaults(website string) []string {
+	raw := strings.TrimSpace(website)
+	if raw == "" {
+		return nil
+	}
+	if !strings.Contains(raw, "://") {
+		raw = "https://" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") {
+		return nil
+	}
+	hostname := strings.TrimPrefix(strings.ToLower(u.Hostname()), "www.")
+	host := hostname
+	if port := u.Port(); port != "" {
+		host = net.JoinHostPort(hostname, port)
+	}
+	site, err := Normalize(u.Scheme + "://" + host)
+	if err != nil {
+		return nil
+	}
+	defaults := []string{site}
+	if u.Port() != "" {
+		return defaults
+	}
+	if pattern, err := NormalizeEntry(subdomainPatternPrefix + hostname); err == nil {
+		defaults = append(defaults, pattern)
+	}
+	return defaults
+}
+
+// Allowed requires an exact match or a subdomain pattern match unless the
+// installation explicitly opts into all origins with "*". That policy also
+// admits missing and opaque origins. Empty lists still deny access.
 func Allowed(origin string, allowlist []string) bool {
 	for _, entry := range allowlist {
 		if entry == "*" {
@@ -59,10 +138,25 @@ func Allowed(origin string, allowlist []string) bool {
 		return false
 	}
 	for _, entry := range allowlist {
+		if matchesSubdomainPattern(normalized, entry) {
+			return true
+		}
 		candidate, err := Normalize(entry)
 		if err == nil && normalized == candidate {
 			return true
 		}
 	}
 	return false
+}
+
+// matchesSubdomainPattern reports whether a normalized origin is a subdomain of
+// a stored https://*.example.com entry on the same port. The domain itself is
+// not a match; it needs its own entry.
+func matchesSubdomainPattern(origin, entry string) bool {
+	suffix, ok := strings.CutPrefix(entry, subdomainPatternPrefix)
+	if !ok || suffix == "" {
+		return false
+	}
+	host, ok := strings.CutPrefix(origin, "https://")
+	return ok && len(host) > len(suffix)+1 && strings.HasSuffix(host, "."+suffix)
 }

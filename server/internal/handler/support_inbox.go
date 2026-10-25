@@ -1378,7 +1378,7 @@ func (h *SupportInboxHandler) GetInstallation(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	writeJSON(w, http.StatusOK, installationSettingsResponse(inst, settings))
+	writeJSON(w, http.StatusOK, installationSettingsResponse(inst, settings, h.supportService.SuggestedAllowedOrigins(r.Context(), inst)))
 }
 
 // UpdateInstallationSettings handles PATCH /api/support/inbox/installations.
@@ -1401,7 +1401,7 @@ func (h *SupportInboxHandler) UpdateInstallationSettings(w http.ResponseWriter, 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, installationSettingsResponse(inst, settings))
+	writeJSON(w, http.StatusOK, installationSettingsResponse(inst, settings, h.supportService.SuggestedAllowedOrigins(r.Context(), inst)))
 }
 
 // RegenerateWidgetKey handles POST /api/support/inbox/installations/regenerate-key.
@@ -1418,15 +1418,16 @@ func (h *SupportInboxHandler) RegenerateWidgetKey(w http.ResponseWriter, r *http
 		return
 	}
 
-	writeJSON(w, http.StatusOK, installationSettingsResponse(inst, settings))
+	writeJSON(w, http.StatusOK, installationSettingsResponse(inst, settings, h.supportService.SuggestedAllowedOrigins(r.Context(), inst)))
 }
 
-func installationSettingsResponse(inst *model.SupportWidgetInstallation, settings *model.SupportInboxSettings) model.InstallationSettingsResponse {
+func installationSettingsResponse(inst *model.SupportWidgetInstallation, settings *model.SupportInboxSettings, suggestedOrigins []string) model.InstallationSettingsResponse {
 	return model.InstallationSettingsResponse{
 		ID:                       inst.ID,
 		WorkspaceID:              inst.WorkspaceID,
 		WidgetKey:                inst.WidgetKey,
 		AllowedOrigins:           []string(inst.AllowedOrigins),
+		SuggestedAllowedOrigins:  suggestedOrigins,
 		IdentityVerificationMode: inst.IdentityVerificationMode,
 		SigningSecretConfigured:  strings.TrimSpace(inst.SecretKey) != "",
 		Settings:                 *settings,

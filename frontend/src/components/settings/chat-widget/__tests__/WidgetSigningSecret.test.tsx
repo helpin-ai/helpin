@@ -77,7 +77,8 @@ describe('widget signing secret', () => {
   it('requires confirmation before regenerating and then shows the new secret', async () => {
     mocks.rotate.mockResolvedValue({ secret_key: 'sk_live_rotated' });
     await render();
-    await act(async () => button('Regenerate secret')!.click());
+    expect(button('Regenerate signing secret')!.textContent).toBe('');
+    await act(async () => button('Regenerate signing secret')!.click());
     expect(mocks.rotate).not.toHaveBeenCalled();
     const dialog = document.body.querySelector('[role="alertdialog"]')!;
     expect(dialog.textContent).toContain('The current secret stops working immediately');
@@ -91,7 +92,7 @@ describe('widget signing secret', () => {
 
   it('keeps the current secret when regeneration is cancelled', async () => {
     await render({ enforced: false });
-    await act(async () => button('Regenerate secret')!.click());
+    await act(async () => button('Regenerate signing secret')!.click());
     const dialog = document.body.querySelector('[role="alertdialog"]')!;
     expect(dialog.textContent).toContain('treated as unverified');
     const cancel = Array.from(dialog.querySelectorAll('button')).find(candidate => candidate.textContent === 'Cancel')!;

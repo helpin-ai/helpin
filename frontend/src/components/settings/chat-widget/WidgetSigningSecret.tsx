@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { QuietIconAction, QuietTextAction } from '@/components/design-system/quiet';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Copy01Icon, ViewIcon, ViewOffIcon } from '@/lib/icons';
+import { ArrowReloadHorizontalIcon, Copy01Icon, ViewIcon, ViewOffIcon } from '@/lib/icons';
 import { useRevealWidgetSigningSecret, useRotateWidgetSigningSecret } from '@/hooks/queries/useSupport';
 
 const MASKED_SECRET = '•'.repeat(32);
@@ -78,9 +78,9 @@ export function WidgetSigningSecret({ workspaceId, configured, canManage, enforc
 
   return (
     <div className="space-y-2 border-t border-quiet-divider-light pt-4" aria-labelledby="widget-signing-secret-label">
-      <Label id="widget-signing-secret-label" htmlFor="widget-signing-secret">Identity signing secret</Label>
+      <Label id="widget-signing-secret-label" htmlFor="widget-signing-secret">Signing secret</Label>
       <p className="text-xs text-muted-foreground">
-        Your server uses this secret to sign visitor identities with HMAC-SHA256. Keep it in your backend configuration only.
+        Your server signs visitor identities with this (HMAC-SHA256). Never put it in your widget snippet.
       </p>
       {!canManage ? (
         <p className="text-sm text-quiet-text-secondary">Only workspace admins can view or regenerate the signing secret.</p>
@@ -119,10 +119,15 @@ export function WidgetSigningSecret({ workspaceId, configured, canManage, enforc
               </TooltipTrigger>
               <TooltipContent>Copy</TooltipContent>
             </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <QuietIconAction type="button" disabled={busy} aria-label="Regenerate signing secret" onClick={() => setConfirmOpen(true)}>
+                  <ArrowReloadHorizontalIcon className={rotate.isPending ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
+                </QuietIconAction>
+              </TooltipTrigger>
+              <TooltipContent>Regenerate</TooltipContent>
+            </Tooltip>
           </div>
-          <QuietTextAction type="button" disabled={busy} onClick={() => setConfirmOpen(true)}>
-            {rotate.isPending ? 'Regenerating…' : 'Regenerate secret'}
-          </QuietTextAction>
         </>
       )}
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
