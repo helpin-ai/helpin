@@ -183,6 +183,7 @@ func (s *InternalCommandService) registerSupportReplyCommands() {
 					"issue_key":              map[string]any{"type": "string", "description": "Optional stable key for the visitor's issue."},
 					"investigation_kind":     map[string]any{"type": "string", "enum": []string{"suspected_product_bug"}, "description": "Optional background repository investigation after handover, only for suspected product bugs supported by current evidence and workspace skills. Omit for billing, account and how-to requests."},
 					"investigation_question": map[string]any{"type": "string", "maxLength": 700, "description": "Focused code question with observed behavior and repository hints from workspace skills. Requires investigation_kind and a stable issue_key. Technical detail and record IDs belong here, not in the teammate fields. Internal only; do not include credentials. Never wait for this investigation."},
+					"investigation_focus":    map[string]any{"type": "string", "description": "With investigation_kind: what the code check will look at, in plain words the support team understands, e.g. \"How approving a post sets its publishing time\". No code, file names or IDs."},
 					"issue_summary":          map[string]any{"type": "string", "description": "Optional one-line summary for a support teammate, in plain words: what the customer needs and what is going wrong. No record IDs, field names or raw values. The other fields must not repeat it."},
 					"checked": map[string]any{"type": "array", "maxItems": 5, "description": "What you looked up and what it showed, one point per item, in plain words a support teammate understands. Keep names and dates; leave out record IDs, field names and raw values. Distinguish AI suggestions from customer-confirmed actions and never invent completed actions.", "items": map[string]any{
 						"type": "object",
@@ -545,6 +546,7 @@ func (s *InternalCommandService) executeSupportEscalate(ctx context.Context, met
 		IssueSummary          string                  `json:"issue_summary"`
 		InvestigationKind     string                  `json:"investigation_kind"`
 		InvestigationQuestion string                  `json:"investigation_question"`
+		InvestigationFocus    string                  `json:"investigation_focus"`
 		Checked               []supportHandoffFinding `json:"checked"`
 		AttemptedSteps        []string                `json:"attempted_steps"`
 		UnresolvedQuestions   []string                `json:"unresolved_questions"`
@@ -562,7 +564,7 @@ func (s *InternalCommandService) executeSupportEscalate(ctx context.Context, met
 	}
 	sourceMessageID := s.supportTurnSourceMessageID(ctx, meta.WorkspaceID, conversationID, nil)
 	var escalationRunID, customerUpdate string
-	brief := SupportHandoffBrief{InvestigationKind: req.InvestigationKind, InvestigationQuestion: req.InvestigationQuestion, Issue: req.IssueSummary, AttemptedSteps: req.AttemptedSteps, UnresolvedQuestions: req.UnresolvedQuestions, ReasonNote: req.ReasonNote, UnavailableData: req.UnavailableData}
+	brief := SupportHandoffBrief{InvestigationKind: req.InvestigationKind, InvestigationQuestion: req.InvestigationQuestion, InvestigationFocus: req.InvestigationFocus, Issue: req.IssueSummary, AttemptedSteps: req.AttemptedSteps, UnresolvedQuestions: req.UnresolvedQuestions, ReasonNote: req.ReasonNote, UnavailableData: req.UnavailableData}
 	for _, item := range req.Checked {
 		brief.Checked = append(brief.Checked, SupportHandoffCheck{Finding: item.Finding})
 	}

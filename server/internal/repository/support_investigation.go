@@ -52,9 +52,13 @@ func (r *SupportInvestigationRepository) Release(ctx context.Context, job *model
 
 // Finish commits the private note and job outcome together. Retrying a crash
 // cannot create a second note. No public message or conversation control writes.
-func (r *SupportInvestigationRepository) Finish(ctx context.Context, job *model.SupportInvestigation, note *model.SupportMessage) (bool, error) {
-	changed := false
+// A note fills the running card posted at handoff, keeping its place in the
+// thread; without one the card is removed. The result names the committed note
+// change: "created", "updated", "removed" or "". An updated note is reloaded.
+func (r *SupportInvestigationRepository) Finish(ctx context.Context, job *model.SupportInvestigation, note *model.SupportMessage) (string, error) {
+	outcome := ""
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		outcome = ""
 		// Match routing/ownership lock order so merges and erasure cannot race note
 		// insertion. Completed work never resurrects or follows a merged thread.
 		if err := LockSupportRouting(tx, job.WorkspaceID); err != nil {
@@ -76,25 +80,61 @@ func (r *SupportInvestigationRepository) Finish(ctx context.Context, job *model.
 		if result.RowsAffected != 1 {
 			return nil
 		}
-		if note != nil {
-			if !note.IsInternal || note.WorkspaceID != job.WorkspaceID || note.ConversationID != job.ConversationID {
-				return errors.New("invalid investigation note scope")
+		if note == nil {
+			removed := tx.Where("id = ? AND workspace_id = ? AND message_type = ?", job.ID, job.WorkspaceID, "note").Delete(&model.SupportMessage{})
+			if removed.Error != nil {
+				return removed.Error
 			}
-			if err := NewSupportMessageRepository(tx).Create(ctx, note); err != nil {
-				return err
+			if removed.RowsAffected == 1 {
+				outcome = "removed"
 			}
+			return nil
 		}
-		changed = note != nil
+		if !note.IsInternal || note.ID != job.ID || note.WorkspaceID != job.WorkspaceID || note.ConversationID != job.ConversationID {
+			return errors.New("invalid investigation note scope")
+		}
+		filled := tx.Model(&model.SupportMessage{}).Where("id = ? AND workspace_id = ? AND conversation_id = ? AND message_type = ?", note.ID, job.WorkspaceID, job.ConversationID, "note").
+			Updates(map[string]any{"content": note.Content, "metadata": note.Metadata})
+		if filled.Error != nil {
+			return filled.Error
+		}
+		if filled.RowsAffected == 1 {
+			outcome = "updated"
+			return tx.Where("id = ?", note.ID).First(note).Error
+		}
+		var existing int64
+		if err := tx.Unscoped().Model(&model.SupportMessage{}).Where("id = ?", note.ID).Count(&existing).Error; err != nil {
+			return err
+		}
+		// A removed running card stays removed.
+		if existing > 0 {
+			return nil
+		}
+		if err := NewSupportMessageRepository(tx).Create(ctx, note); err != nil {
+			return err
+		}
+		outcome = "created"
 		return nil
 	})
-	return changed && err == nil, err
+	if err != nil {
+		return "", err
+	}
+	return outcome, nil
 }
 func queueSupportInvestigation(tx *gorm.DB, job *model.SupportInvestigation, workspaceID, conversationID string) error {
+	_, err := queueSupportInvestigationJob(tx, job, workspaceID, conversationID)
+	return err
+}
+
+// queueSupportInvestigationJob reports whether the job is new; a repeat
+// handoff for the same issue reuses the existing job.
+func queueSupportInvestigationJob(tx *gorm.DB, job *model.SupportInvestigation, workspaceID, conversationID string) (bool, error) {
 	if job == nil {
-		return nil
+		return false, nil
 	}
 	if job.WorkspaceID != workspaceID || job.ConversationID != conversationID {
-		return errors.New("invalid investigation scope")
+		return false, errors.New("invalid investigation scope")
 	}
-	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(job).Error
+	result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(job)
+	return result.RowsAffected == 1, result.Error
 }

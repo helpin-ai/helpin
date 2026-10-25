@@ -2,7 +2,8 @@ import { AskAgentAvatar } from '@/components/agents/AskAgentAvatar';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ContactAvatarImage } from '@/components/ui/contact-avatar-image';
 import { SupportAIActivity } from './SupportAIActivity';
-import { getSupportAIActivity } from './supportAIActivityModel';
+import { getSupportAIActivity, getSupportCodeCheck } from './supportAIActivityModel';
+import { SupportCodeCheckCard } from './SupportCodeCheckCard';
 import { getSupportInvestigationReport } from './supportInvestigationReport';
 import { PendingSendStatus } from './PendingSendStatus';
 import { MessageDeliveryStatus } from './MessageDeliveryStatus';
@@ -340,6 +341,8 @@ export interface MessageBubbleProps {
   customerEmail?: string | null;
   workspaceSlug?: string;
   linkedTaskId?: string | null;
+  /** Older AI cards fold to one line once a newer handoff exists. */
+  folded?: boolean;
 }
 
 export const MessageBubble = memo(function MessageBubble({
@@ -360,6 +363,7 @@ export const MessageBubble = memo(function MessageBubble({
   customerEmail,
   workspaceSlug,
   linkedTaskId,
+  folded = false,
 }: MessageBubbleProps) {
   const queryClient = useQueryClient();
   const inboundIdentity = useMemo(() => {
@@ -588,6 +592,18 @@ export const MessageBubble = memo(function MessageBubble({
       avatarUrl={resolvedAvatarUrl}
       detailsContent={<Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{message.content}</Markdown>}
       readOnly={readOnly}
+      folded={folded}
+    />;
+  }
+  const codeCheck = getSupportCodeCheck(message);
+  if (codeCheck) {
+    return <SupportCodeCheckCard
+      message={message}
+      check={codeCheck}
+      linkedTaskId={linkedTaskId}
+      readOnly={readOnly}
+      folded={folded}
+      renderMarkdown={(markdown) => <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{markdown}</Markdown>}
     />;
   }
 

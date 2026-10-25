@@ -49,3 +49,49 @@ export function getSupportHandoffCard(message: Pick<SupportMessage, 'metadata'>)
     return null;
   }
 }
+
+export interface SupportCodeCheckTask {
+  kind: 'existing' | 'new';
+  key?: string;
+  /** Set only when the key resolved to a task in this workspace. */
+  id?: string;
+  text: string;
+}
+
+/** Code-check card saved in the note metadata; filled in place when done. */
+export interface SupportCodeCheck {
+  status: 'running' | 'done' | 'failed';
+  focus?: string;
+  message?: string;
+  found?: string;
+  reply?: string;
+  docs?: string;
+  task?: SupportCodeCheckTask;
+  investigate?: string;
+  unavailable_data?: string[];
+  engineering?: string;
+}
+
+export function getSupportCodeCheck(message: Pick<SupportMessage, 'is_internal' | 'message_type' | 'metadata'>): SupportCodeCheck | null {
+  if (!message.is_internal || message.message_type !== 'note') return null;
+  try {
+    const check = JSON.parse(message.metadata || '{}')?.code_check;
+    return check && typeof check.status === 'string' ? check as SupportCodeCheck : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * AI cards from before the latest handoff fold to one line, so the current
+ * handoff and its code check stay in focus.
+ */
+export function foldedSupportAICardIds(messages: SupportMessage[]): Set<string> {
+  const latest = messages.findLast((message) => getSupportAIActivity(message) === 'handoff');
+  if (!latest) return new Set();
+  const cutoff = Date.parse(latest.created_at);
+  return new Set(messages
+    .filter((message) => message.id !== latest.id && Date.parse(message.created_at) < cutoff
+      && (getSupportAIActivity(message) === 'handoff' || getSupportCodeCheck(message)))
+    .map((message) => message.id));
+}

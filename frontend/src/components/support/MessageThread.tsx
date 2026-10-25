@@ -40,6 +40,8 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
 import { getSupportReceiptStatus, getInitial, isAIActiveConversation, type SupportReceiptStatus } from './helpers';
 import { TranslatedMessageBubble } from './TranslatedMessageBubble';
+import { foldedSupportAICardIds } from './supportAIActivityModel';
+import { CREATE_SUPPORT_TASK_EVENT } from './supportAICardActions';
 import { useJoinedMessagePosition } from './useJoinedMessagePosition';
 import { EmptyState } from './EmptyState';
 import { SupportFollowUpStatus } from './SupportFollowUpStatus';
@@ -585,6 +587,17 @@ export function MessageThread({
   };
 
   const handleCreateTask = () => { if (conversationId) setShowCreateTaskDialog(true); };
+  const canCreateTasks = !!access?.permissions?.includes('pm.edit');
+  // A code-check card asks for the same create-task window as the header button.
+  useEffect(() => {
+    const openCreateTask = (event: Event) => {
+      if ((event as CustomEvent<{ conversationId?: string }>).detail?.conversationId !== conversationId) return;
+      if (canCreateTasks) setShowCreateTaskDialog(true);
+      else toast.error('You need project access to create tasks.');
+    };
+    window.addEventListener(CREATE_SUPPORT_TASK_EVENT, openCreateTask);
+    return () => window.removeEventListener(CREATE_SUPPORT_TASK_EVENT, openCreateTask);
+  }, [conversationId, canCreateTasks]);
 
   // Group messages with day separators and consecutive sender detection
   // Find the last outbound reply message (for read receipt display)
@@ -608,6 +621,7 @@ export function MessageThread({
 
   const { data: mergeHistory } = useConversationMerges(workspaceId, conversationId);
   const groupedMessages = useMemo(() => groupSupportTimeline(messages, mergeHistory ?? []), [messages, mergeHistory]);
+  const foldedAICardIds = useMemo(() => foldedSupportAICardIds(messages), [messages]);
 
   const visibleGroupedMessages = groupedMessages;
 
@@ -1191,6 +1205,7 @@ export function MessageThread({
                   customerEmail={conversation?.customer_email}
                   workspaceSlug={workspaceSlug}
                   linkedTaskId={conversation?.linked_task_id}
+                  folded={foldedAICardIds.has(item.message.id)}
                   fallbackAvatarUrl={
                     item.message.sender_user_id ? memberAvatarByUserId.get(item.message.sender_user_id) : undefined
                   }

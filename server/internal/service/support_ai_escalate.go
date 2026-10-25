@@ -324,7 +324,13 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 			message.CreatedAt = now.Truncate(time.Millisecond).Add(time.Duration(index) * time.Millisecond)
 		}
 	}
-	oldRun, changed, err := s.conversationRepo.ChangeAIControlWithInvestigation(ctx, workspaceID, conversationID, func(current *model.SupportConversation) (map[string]any, *model.SupportMessage, error) {
+	// The code check shows a running card right after the handoff; its findings
+	// fill the same card later.
+	var codeCheckCard *model.SupportMessage
+	if investigation != nil {
+		codeCheckCard = newSupportCodeCheckNote(investigation, supportCodeCheck{Status: supportCodeCheckRunning, Focus: briefText(brief.InvestigationFocus)}, now.Truncate(time.Millisecond).Add(time.Duration(len(messages))*time.Millisecond))
+	}
+	oldRun, changed, codeCheckPosted, err := s.conversationRepo.ChangeAIControlWithCodeCheck(ctx, workspaceID, conversationID, func(current *model.SupportConversation) (map[string]any, *model.SupportMessage, error) {
 		if brief.ExpectedNoRun && current.AIActiveRunID != nil {
 			return nil, nil, nil
 		}
@@ -338,7 +344,7 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 			return nil, nil, nil
 		}
 		return fields, nil, nil
-	}, investigation, messages...)
+	}, investigation, codeCheckCard, messages...)
 	if err != nil {
 		return fmt.Errorf("update conversation for escalation: %w", err)
 	}
@@ -357,6 +363,9 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 			actor = "ai:handoff"
 		}
 		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, message, actor))
+	}
+	if codeCheckPosted {
+		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, codeCheckCard, "ai:investigation"))
 	}
 	if selection != nil && strings.TrimSpace(selection.UserID) != "" && s.assignmentSystemMessageEmitter != nil {
 		s.assignmentSystemMessageEmitter(ctx, workspaceID, conversationID, selection.UserID)

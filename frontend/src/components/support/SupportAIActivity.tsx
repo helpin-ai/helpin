@@ -5,26 +5,13 @@ import type { SupportMessage } from '@/lib/pmTypes';
 import { ArrowTurnBackwardIcon } from '@/lib/icons';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { formatMessageTime, formatTimestamp, getAvatarColor, getInitial } from './helpers';
+import { formatTimestamp, getAvatarColor, getInitial } from './helpers';
+import { CardList, CardRow, SupportAICard } from './SupportAICardParts';
+import { cardAction, restoreReplyDraft } from './supportAICardActions';
 
 function handoffSections(content: string) {
   const match = content.match(/^AI handoff\n\nIssue\n([\s\S]*?)\n\nAlready tried \/ suggested\n([\s\S]*?)\n\nStill unresolved\n([\s\S]*?)\n\nReason for handoff\n([\s\S]*)$/);
   return match ? { issue: match[1], checked: match[2], next: match[3], reason: match[4] } : null;
-}
-
-const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
-const cardRow = 'grid grid-cols-[5.5rem_minmax(0,1fr)] items-baseline gap-x-2.5 border-t border-amber-200/60 py-2 first:border-t-0 first:pt-0 dark:border-amber-900/40';
-const cardAction = 'mt-1 inline-flex w-fit items-center gap-1.5 rounded-sm text-xs font-medium text-amber-700 hover:text-amber-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-amber-300 dark:hover:text-amber-100';
-
-function CardRow({ label, children }: { label: string; children: ReactNode }) {
-  return <div className={cardRow}>
-    <dt className="text-xs text-muted-foreground">{label}</dt>
-    <dd className="min-w-0">{children}</dd>
-  </div>;
-}
-
-function CardList({ items }: { items: string[] }) {
-  return items.length === 1 ? <>{items[0]}</> : <ul className="space-y-1">{items.map((item, index) => <li key={index}>{item}</li>)}</ul>;
 }
 
 /** Structured AI handoff: each fact once, rows only when they have content. */
@@ -35,7 +22,7 @@ function SupportHandoffCardBody({ card, conversationId, readOnly }: { card: Supp
   const unavailable = card.unavailable_data ?? [];
   const heldReply = card.held_reply?.trim() ?? '';
   const docsGap = card.help_article_gap?.trim() ?? '';
-  const useReply = () => window.dispatchEvent(new CustomEvent(RESTORE_SUPPORT_DRAFT_EVENT, { detail: { conversationId, markdown: heldReply } }));
+  const applyReply = () => restoreReplyDraft(conversationId, heldReply);
   const askToUpdateDocs = () => askAgentWithDraft(conversationId, `Update our help articles so they cover this: ${docsGap}. Use this conversation, including our reply to the customer, as the source.`);
   return <div className="text-sm [overflow-wrap:anywhere]">
     {card.issue && <p className="mb-2 whitespace-pre-wrap">{card.issue}</p>}
@@ -54,7 +41,7 @@ function SupportHandoffCardBody({ card, conversationId, readOnly }: { card: Supp
       <dl>
         {heldReply && <CardRow label="Reply">
           <p className="line-clamp-2">{heldReply.replace(/\s+/g, ' ')}</p>
-          {!readOnly && <button type="button" onClick={useReply} className={cardAction}><ArrowTurnBackwardIcon className="h-3.5 w-3.5" />Use this reply</button>}
+          {!readOnly && <button type="button" onClick={applyReply} className={cardAction}><ArrowTurnBackwardIcon className="h-3.5 w-3.5" />Use this reply</button>}
         </CardRow>}
         {docsGap && <CardRow label="Docs">
           <p>{docsGap}</p>
@@ -65,19 +52,20 @@ function SupportHandoffCardBody({ card, conversationId, readOnly }: { card: Supp
   </div>;
 }
 
-export function SupportAIActivity({ message, activity, teammateName, avatarUrl, detailsContent, readOnly = false }: {
+export function SupportAIActivity({ message, activity, teammateName, avatarUrl, detailsContent, readOnly = false, folded = false }: {
   message: SupportMessage;
   activity: AIActivity;
   teammateName?: string;
   avatarUrl?: string;
   detailsContent?: ReactNode;
   readOnly?: boolean;
+  /** Older handoffs fold to one line once a newer one exists. */
+  folded?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const storedName = message.sender_display_name === 'AI control' ? undefined : message.sender_display_name;
   const name = (storedName || teammateName)?.trim();
   const actor = !name || name === 'A teammate' ? 'A teammate' : name.split(/\s+/)[0];
-  const time = <time dateTime={message.created_at} title={formatTimestamp(message.created_at)} className="shrink-0 text-[11px] text-muted-foreground">{formatMessageTime(message.created_at)}</time>;
   const details = (label: string) => (
     <details className="mt-2 text-xs text-muted-foreground">
       <summary className="w-fit cursor-pointer rounded-sm font-medium hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{label}</summary>
@@ -112,26 +100,17 @@ export function SupportAIActivity({ message, activity, teammateName, avatarUrl, 
 
   const card = getSupportHandoffCard(message);
   const sections = card ? null : handoffSections(message.content);
-  return <div className="my-4 flex justify-end" data-support-ai-handoff>
-    <section aria-label="AI handoff summary" className="w-full max-w-xl rounded-lg border border-amber-200/70 bg-amber-50/60 p-3 dark:border-amber-900/50 dark:bg-amber-950/20">
-      <div className="mb-2 flex items-center gap-2">
-        <AskAgentAvatar plateStyle="solid" radius={50} className="h-5 w-5 shrink-0" />
-        <span className="text-xs font-semibold">AI handoff</span>
-        <span className="text-[11px] text-muted-foreground">Team only</span>
-        <span className="ml-auto">{time}</span>
-      </div>
-      {card ? <SupportHandoffCardBody card={card} conversationId={message.conversation_id} readOnly={readOnly} /> : sections ? <div className="text-sm [overflow-wrap:anywhere]">
-        <p className={`whitespace-pre-wrap ${expanded ? '' : 'line-clamp-2'}`}>{sections.issue}</p>
-        <details className="mt-2 text-xs text-muted-foreground" onToggle={event => setExpanded(event.currentTarget.open)}>
-          <summary className="w-fit cursor-pointer rounded-sm font-medium hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">View details</summary>
-          <dl className="mt-2 space-y-2 text-sm text-foreground">
-            {sections.checked !== 'No attempted steps recorded.' && <div><dt className="text-xs font-medium text-muted-foreground">What AI checked / suggested</dt><dd className="whitespace-pre-wrap">{sections.checked}</dd></div>}
-            <div><dt className="text-xs font-medium text-muted-foreground">Still unresolved</dt><dd className="whitespace-pre-wrap">{sections.next}</dd></div>
-            <div><dt className="text-xs font-medium text-muted-foreground">Reason for handoff</dt><dd className="whitespace-pre-wrap">{sections.reason}</dd></div>
-          </dl>
-        </details>
-      </div> : <div className="prose-chat text-sm [overflow-wrap:anywhere]">{detailsContent ?? <p className="whitespace-pre-wrap">{message.content}</p>}</div>}
-
-    </section>
-  </div>;
+  return <SupportAICard kind="handoff" title="AI handoff" timestamp={message.created_at} folded={folded} summary={card ? card.issue || card.reason : sections?.issue}>
+    {card ? <SupportHandoffCardBody card={card} conversationId={message.conversation_id} readOnly={readOnly} /> : sections ? <div className="text-sm [overflow-wrap:anywhere]">
+      <p className={`whitespace-pre-wrap ${expanded ? '' : 'line-clamp-2'}`}>{sections.issue}</p>
+      <details className="mt-2 text-xs text-muted-foreground" onToggle={event => setExpanded(event.currentTarget.open)}>
+        <summary className="w-fit cursor-pointer rounded-sm font-medium hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">View details</summary>
+        <dl className="mt-2 space-y-2 text-sm text-foreground">
+          {sections.checked !== 'No attempted steps recorded.' && <div><dt className="text-xs font-medium text-muted-foreground">What AI checked / suggested</dt><dd className="whitespace-pre-wrap">{sections.checked}</dd></div>}
+          <div><dt className="text-xs font-medium text-muted-foreground">Still unresolved</dt><dd className="whitespace-pre-wrap">{sections.next}</dd></div>
+          <div><dt className="text-xs font-medium text-muted-foreground">Reason for handoff</dt><dd className="whitespace-pre-wrap">{sections.reason}</dd></div>
+        </dl>
+      </details>
+    </div> : <div className="prose-chat text-sm [overflow-wrap:anywhere]">{detailsContent ?? <p className="whitespace-pre-wrap">{message.content}</p>}</div>}
+  </SupportAICard>;
 }

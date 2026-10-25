@@ -99,6 +99,40 @@ func TestSupportEscalateKeepsDocsGapOnlyAfterSearch(t *testing.T) {
 	}
 }
 
+func TestSupportEscalatePostsRunningCodeCheckCard(t *testing.T) {
+	commands, db, meta := setupSupportHandoffCheckTest(t)
+	if err := db.AutoMigrate(&model.SupportInvestigation{}); err != nil {
+		t.Fatal(err)
+	}
+	input := json.RawMessage(`{"reason":"cannot_answer","issue_key":"draft-approval","issue_summary":"Approved posts stay in Draft.","investigation_kind":"suspected_product_bug","investigation_question":"Why does approval skip scheduling for drafts?","investigation_focus":"How approving a post sets its publishing time"}`)
+	if _, err := commands.executeSupportEscalate(context.Background(), meta, input); err != nil {
+		t.Fatal(err)
+	}
+	if card := savedHandoffCard(t, db); !card.InvestigationRequested {
+		t.Fatalf("handoff card = %+v", card)
+	}
+	var notes []model.SupportMessage
+	if err := db.Where("sender_display_name = 'Code check'").Find(&notes).Error; err != nil {
+		t.Fatal(err)
+	}
+	var metadata struct {
+		Check supportCodeCheck `json:"code_check"`
+	}
+	if len(notes) != 1 || json.Unmarshal([]byte(notes[0].Metadata), &metadata) != nil {
+		t.Fatalf("code check cards = %+v", notes)
+	}
+	if metadata.Check.Status != supportCodeCheckRunning || metadata.Check.Focus != "How approving a post sets its publishing time" {
+		t.Fatalf("running card = %+v", metadata.Check)
+	}
+	var handoff model.SupportMessage
+	if err := db.Where("sender_display_name = 'AI control'").First(&handoff).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !notes[0].CreatedAt.After(handoff.CreatedAt) {
+		t.Fatal("running card must sort after the handoff card")
+	}
+}
+
 func TestSupportReplyCheckFailureHoldsOnlySafeReplies(t *testing.T) {
 	tests := []struct {
 		name     string

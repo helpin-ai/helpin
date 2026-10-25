@@ -345,6 +345,97 @@ describe('MessageBubble', () => {
     }
   })
 
+  function codeCheckMessage(check: Record<string, unknown>): SupportMessage {
+    return {
+      id: 'code-check', workspace_id: 'ws', conversation_id: 'conv', sender_type: 'agent',
+      sender_display_name: 'Code check', message_type: 'note', is_internal: true,
+      content: 'Code check\n\nplain-text copy',
+      metadata: JSON.stringify({ investigation_id: 'code-check', code_check: check }),
+      created_at: '2026-10-25T10:33:00Z', updated_at: '2026-10-25T10:43:00Z',
+    }
+  }
+
+  it('shows a running code check card with what it is checking', () => {
+    const rendered = renderBubble(codeCheckMessage({ status: 'running', focus: 'How approving a post sets its publishing time' }))
+    try {
+      const card = rendered.container.querySelector('[data-support-code-check]')
+      expect(card?.textContent).toContain('Checking the code: How approving a post sets its publishing time')
+      expect(card?.textContent).toContain('Details will appear here when done.')
+      expect(card?.querySelector('button')).toBeNull()
+      expect(card?.textContent).not.toContain('plain-text copy')
+    } finally { rendered.cleanup() }
+  })
+
+  it('shows only the reason when a code check fails', () => {
+    const rendered = renderBubble(codeCheckMessage({ status: 'failed', message: "The code check didn't finish, so it has no findings." }))
+    try {
+      const card = rendered.container.querySelector('[data-support-code-check]')
+      expect(card?.textContent).toContain("The code check didn't finish, so it has no findings.")
+      expect(card?.textContent).not.toContain('Next steps')
+    } finally { rendered.cleanup() }
+  })
+
+  it('turns code check findings into next steps', async () => {
+    const { useSupportInboxStore } = await import('@/stores/supportInboxStore')
+    const link = vi.spyOn(supportService, 'linkConversationTask').mockResolvedValue({ data: {}, error: null, status: 200 } as never)
+    const created = vi.fn()
+    const restored = vi.fn()
+    const onCreate = (event: Event) => created((event as CustomEvent).detail)
+    const onRestore = (event: Event) => restored((event as CustomEvent).detail)
+    window.addEventListener('support:create-task', onCreate)
+    window.addEventListener('support:restore-draft', onRestore)
+    const existing = renderBubble(codeCheckMessage({
+      status: 'done',
+      found: 'Most likely: drafts are not scheduled on approval.',
+      reply: 'Hi Jonas,\n\nOpen the post and click Schedule.',
+      task: { kind: 'existing', key: 'APP-4240', id: 'task-4240', text: 'keep the chosen time' },
+      investigate: "Whether last week's release changed approvals.",
+      unavailable_data: ['Server error logs'],
+      engineering: '`ApprovalBuilder.php:233` skips drafts.',
+    }))
+    const proposed = renderBubble(codeCheckMessage({ status: 'done', found: 'No cause found.', task: { kind: 'new', text: 'CSV import stops after 1,000 rows' } }))
+    try {
+      const card = existing.container.querySelector('[data-support-code-check]')
+      expect(card?.textContent).toContain('What AI found')
+      expect(card?.textContent).toContain("Couldn't checkServer error logs")
+      expect(card?.textContent).toContain('Already covered by APP-4240: keep the chosen time')
+      expect(card?.querySelector('details summary')?.textContent).toBe('Engineering details')
+      act(() => { findButtonByText(existing.container, 'Use this reply')?.click() })
+      expect(restored).toHaveBeenCalledWith({ conversationId: 'conv', markdown: 'Hi Jonas,\n\nOpen the post and click Schedule.' })
+      await act(async () => { findButtonByText(existing.container, 'Link APP-4240')?.click() })
+      expect(link).toHaveBeenCalledWith('ws', 'conv', { task_id: 'task-4240' })
+      act(() => { findButtonByText(existing.container, 'Ask Agent')?.click() })
+      expect(useSupportInboxStore.getState().agentDraft?.text).toContain("Whether last week's release changed approvals.")
+      act(() => { findButtonByText(proposed.container, 'Create task')?.click() })
+      expect(created).toHaveBeenCalledWith({ conversationId: 'conv' })
+    } finally {
+      link.mockRestore()
+      window.removeEventListener('support:create-task', onCreate)
+      window.removeEventListener('support:restore-draft', onRestore)
+      useSupportInboxStore.setState({ detailSidebarMode: 'details', agentDraft: null })
+      existing.cleanup()
+      proposed.cleanup()
+    }
+  })
+
+  it('shows a linked task instead of the link action', () => {
+    const rendered = renderBubble(codeCheckMessage({ status: 'done', found: 'x', task: { kind: 'existing', key: 'APP-4240', id: 'task-4240', text: 'y' } }), undefined, { linkedTaskId: 'task-4240' })
+    try {
+      expect(rendered.container.textContent).toContain('Linked to this conversation')
+      expect(findButtonByText(rendered.container, 'Link APP-4240')).toBeNull()
+    } finally { rendered.cleanup() }
+  })
+
+  it('folds an older AI card to one line', () => {
+    const rendered = renderBubble(handoffCardMessage({ issue: 'Wants a refund.', reason: 'Refunds need a teammate.' }), undefined, { folded: true })
+    try {
+      const details = rendered.container.querySelector('[data-support-ai-handoff] details')
+      expect(details).not.toBeNull()
+      expect(details?.open).toBe(false)
+      expect(details?.querySelector('summary')?.textContent).toContain('Wants a refund.')
+    } finally { rendered.cleanup() }
+  })
+
   it('hides handoff actions in read-only views', () => {
     const rendered = renderBubble(handoffCardMessage({ reason: 'x', held_reply: 'Hi', help_article_gap: 'Exports' }), undefined, { readOnly: true })
     try {

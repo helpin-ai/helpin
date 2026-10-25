@@ -29,6 +29,28 @@ func (r *SupportConversationRepository) ChangeAIControlWithInvestigation(ctx con
 	}, messages...)
 }
 
+// ChangeAIControlWithCodeCheck queues the investigation like
+// ChangeAIControlWithInvestigation and, only when the job is new, posts its
+// running card in the same transaction. posted reports whether the card was added.
+func (r *SupportConversationRepository) ChangeAIControlWithCodeCheck(ctx context.Context, workspaceID, id string, change func(*model.SupportConversation) (map[string]any, *model.SupportMessage, error), investigation *model.SupportInvestigation, card *model.SupportMessage, messages ...*model.SupportMessage) (previousRun string, changed, posted bool, err error) {
+	previousRun, changed, err = r.ChangeAIControlWithHook(ctx, workspaceID, id, change, func(tx *gorm.DB) error {
+		posted = false
+		queued, err := queueSupportInvestigationJob(tx, investigation, workspaceID, id)
+		if err != nil || !queued || card == nil {
+			return err
+		}
+		if card.ID != investigation.ID || !card.IsInternal || card.WorkspaceID != workspaceID || card.ConversationID != id {
+			return errors.New("invalid code check card")
+		}
+		if err := NewSupportMessageRepository(tx).Create(ctx, card); err != nil {
+			return err
+		}
+		posted = true
+		return nil
+	}, messages...)
+	return previousRun, changed, posted && changed && err == nil, err
+}
+
 // ChangeAIControlWithHook commits channel-specific work with the ownership
 // transition. A hook error rolls back the entire change.
 func (r *SupportConversationRepository) ChangeAIControlWithHook(ctx context.Context, workspaceID, id string, change func(*model.SupportConversation) (map[string]any, *model.SupportMessage, error), hook func(*gorm.DB) error, messages ...*model.SupportMessage) (string, bool, error) {
