@@ -146,26 +146,23 @@ func (r *SupportSLARepository) ReorderPolicies(ctx context.Context, workspaceID 
 	})
 }
 
-// EnqueueWorkspace queues every conversation that may need a new SLA
-// evaluation after the workspace's policies changed: open ones, and any that
-// already carry SLA state.
-func (r *SupportSLARepository) EnqueueWorkspace(ctx context.Context, workspaceID string) error {
-	now := time.Now().UTC()
-	db := r.db.WithContext(ctx)
-	candidates := db.Model(&model.SupportConversation{}).Select("id").
-		Where("workspace_id = ? AND merged_into_id IS NULL AND status IN ?", workspaceID,
-			[]string{model.SupportConversationStatusOpen, model.SupportConversationStatusWaitingOnCustomer})
-	var ids []string
-	if err := candidates.Pluck("id", &ids).Error; err != nil {
-		return fmt.Errorf("list conversations for SLA evaluation: %w", err)
+// EnqueueOpenRecords queues the open conversations that carry SLA state,
+// after the workspace's policies changed in a way that may re-select or
+// stop their policy.
+func (r *SupportSLARepository) EnqueueOpenRecords(ctx context.Context, workspaceID string, at time.Time) error {
+	err := r.db.WithContext(ctx).Exec(`
+		INSERT INTO support_sla_work (conversation_id, workspace_id, enqueued_at)
+		SELECT sla.conversation_id, sla.workspace_id, ?
+		FROM support_conversation_slas AS sla
+		JOIN support_conversations AS c ON c.id = sla.conversation_id
+		WHERE sla.workspace_id = ? AND sla.detached_at IS NULL AND c.status IN ?
+		ON CONFLICT (conversation_id) DO UPDATE SET enqueued_at = excluded.enqueued_at`,
+		at, workspaceID,
+		[]string{model.SupportConversationStatusOpen, model.SupportConversationStatusWaitingOnCustomer}).Error
+	if err != nil {
+		return fmt.Errorf("enqueue open SLA records: %w", err)
 	}
-	var withState []string
-	if err := db.Model(&model.SupportConversationSLARecord{}).Where("workspace_id = ?", workspaceID).
-		Pluck("conversation_id", &withState).Error; err != nil {
-		return fmt.Errorf("list SLA records for evaluation: %w", err)
-	}
-	ids = append(ids, withState...)
-	return r.Enqueue(ctx, workspaceID, ids, now)
+	return nil
 }
 
 // Enqueue queues conversations for evaluation.
@@ -192,45 +189,61 @@ func (r *SupportSLARepository) Enqueue(ctx context.Context, workspaceID string, 
 	return nil
 }
 
-// ClaimWork removes up to limit queued conversations and returns them. On
-// PostgreSQL concurrent workers claim disjoint rows.
-func (r *SupportSLARepository) ClaimWork(ctx context.Context, limit int) ([]model.SupportSLAWork, error) {
+// ClaimWork leases up to limit queued conversations that are due by now,
+// hiding them from other workers until leaseUntil. The caller completes each
+// one after evaluating it; a lease that runs out returns the row to the
+// queue, so a crash or shutdown loses nothing.
+func (r *SupportSLARepository) ClaimWork(ctx context.Context, now, leaseUntil time.Time, limit int) ([]model.SupportSLAWork, error) {
 	if limit <= 0 {
 		limit = 100
 	}
+	// Postgres keeps microseconds; the lease must compare equal on completion.
+	leaseUntil = leaseUntil.UTC().Truncate(time.Microsecond)
 	var claimed []model.SupportSLAWork
 	if r.postgres() {
 		err := r.db.WithContext(ctx).Raw(`
-			DELETE FROM support_sla_work
+			UPDATE support_sla_work SET enqueued_at = ?
 			WHERE conversation_id IN (
 				SELECT conversation_id FROM support_sla_work
+				WHERE enqueued_at <= ?
 				ORDER BY enqueued_at
 				LIMIT ?
 				FOR UPDATE SKIP LOCKED
 			)
-			RETURNING conversation_id, workspace_id, enqueued_at`, limit).Scan(&claimed).Error
+			RETURNING conversation_id, workspace_id, enqueued_at`, leaseUntil, now, limit).Scan(&claimed).Error
 		if err != nil {
 			return nil, fmt.Errorf("claim SLA work: %w", err)
 		}
 		return claimed, nil
 	}
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Order("enqueued_at").Limit(limit).Find(&claimed).Error; err != nil {
+		if err := tx.Where("enqueued_at <= ?", now).Order("enqueued_at").Limit(limit).Find(&claimed).Error; err != nil {
 			return err
 		}
 		ids := make([]string, 0, len(claimed))
-		for _, row := range claimed {
-			ids = append(ids, row.ConversationID)
+		for i := range claimed {
+			ids = append(ids, claimed[i].ConversationID)
+			claimed[i].EnqueuedAt = leaseUntil
 		}
 		if len(ids) == 0 {
 			return nil
 		}
-		return tx.Where("conversation_id IN ?", ids).Delete(&model.SupportSLAWork{}).Error
+		return tx.Model(&model.SupportSLAWork{}).Where("conversation_id IN ?", ids).Update("enqueued_at", leaseUntil).Error
 	})
 	if err != nil {
 		return nil, fmt.Errorf("claim SLA work: %w", err)
 	}
 	return claimed, nil
+}
+
+// CompleteWork removes a claimed row unless it was queued again while the
+// evaluation ran.
+func (r *SupportSLARepository) CompleteWork(ctx context.Context, lease model.SupportSLAWork) error {
+	if err := r.db.WithContext(ctx).Where("conversation_id = ? AND enqueued_at = ?", lease.ConversationID, lease.EnqueuedAt).
+		Delete(&model.SupportSLAWork{}).Error; err != nil {
+		return fmt.Errorf("complete SLA work: %w", err)
+	}
+	return nil
 }
 
 // ListDueWakes returns conversations with a target due at or before now.

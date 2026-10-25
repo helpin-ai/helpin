@@ -31,13 +31,13 @@ type PortalMessage struct {
 
 // PortalRequestDetail is a customer-safe request with its public messages.
 type PortalRequestDetail struct {
-	Reference      string          `json:"reference"`
-	Number         int             `json:"number"`
-	Subject        string          `json:"subject"`
-	Status         string          `json:"status"`
-	LastActivityAt time.Time       `json:"last_activity_at"`
-	CanReply       bool            `json:"can_reply"`
-	AIProcessing   bool            `json:"ai_processing"`
+	Reference      string    `json:"reference"`
+	Number         int       `json:"number"`
+	Subject        string    `json:"subject"`
+	Status         string    `json:"status"`
+	LastActivityAt time.Time `json:"last_activity_at"`
+	CanReply       bool      `json:"can_reply"`
+	AIProcessing   bool      `json:"ai_processing"`
 	// CanRate is true when the customer may rate the resolved request.
 	CanRate  bool                      `json:"can_rate"`
 	CSAT     *model.SupportCSATSummary `json:"csat,omitempty"`

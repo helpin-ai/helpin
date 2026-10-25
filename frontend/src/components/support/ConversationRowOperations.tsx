@@ -1,4 +1,4 @@
-import { format } from 'date-fns'
+import { formatSnoozeUntil } from '@/lib/supportSnooze'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Clock01Icon } from '@/lib/icons'
 import { PriorityIcon } from '@/lib/pmConstants'
@@ -32,7 +32,7 @@ export function ConversationRowOperations({
       {snoozed ? (
         <span className="inline-flex shrink-0 items-center gap-1 text-[10.5px] font-medium text-violet-700 dark:text-violet-300">
           <Clock01Icon className="h-3 w-3" aria-hidden="true" />
-          {format(new Date(conversation.snoozed_until!), 'EEE HH:mm')}
+          {formatSnoozeUntil(new Date(conversation.snoozed_until!))}
         </span>
       ) : null}
     </div>

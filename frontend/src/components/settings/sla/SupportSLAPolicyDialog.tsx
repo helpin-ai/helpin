@@ -115,6 +115,7 @@ export function SupportSLAPolicyDialog({ open, onOpenChange, policy, inboxes, bu
           <DialogTitle>{policy ? 'Edit SLA policy' : 'New SLA policy'}</DialogTitle>
           <DialogDescription>
             Targets apply to conversations created after the policy is turned on. The first enabled policy that matches a conversation applies.
+            {policy ? ' Changed targets apply to conversations that start this policy from now on; results already recorded never change.' : null}
           </DialogDescription>
         </DialogHeader>
         {open ? (

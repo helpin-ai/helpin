@@ -25,7 +25,7 @@ func NewSupportCSATRepository(db *gorm.DB) *SupportCSATRepository {
 // Upsert saves the conversation's rating. It returns the stored row, the
 // previous row when one existed, and whether anything changed. Concurrent
 // submissions for one conversation never fail on the unique index: the
-// insert skips conflicts and updates are optimistic on the previous values.
+// insert skips conflicts, and an update locks the existing row first.
 func (r *SupportCSATRepository) Upsert(ctx context.Context, response model.SupportCSATResponse) (*model.SupportCSATResponse, *model.SupportCSATResponse, bool, error) {
 	if response.ID == "" {
 		response.ID = uuid.NewString()
@@ -38,39 +38,42 @@ func (r *SupportCSATRepository) Upsert(ctx context.Context, response model.Suppo
 	if inserted.RowsAffected == 1 {
 		return &response, nil, true, nil
 	}
-	for attempt := 0; attempt < 5; attempt++ {
-		var existing model.SupportCSATResponse
-		if err := db.Where("workspace_id = ? AND conversation_id = ?", response.WorkspaceID, response.ConversationID).
+	var saved, existing model.SupportCSATResponse
+	changed := false
+	err := db.Transaction(func(tx *gorm.DB) error {
+		query := tx
+		if tx.Dialector.Name() == "postgres" {
+			query = tx.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+		if err := query.Where("workspace_id = ? AND conversation_id = ?", response.WorkspaceID, response.ConversationID).
 			Take(&existing).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, nil, false, fmt.Errorf("csat response for conversation %s belongs to another workspace", response.ConversationID)
+				return fmt.Errorf("csat response for conversation %s belongs to another workspace", response.ConversationID)
 			}
-			return nil, nil, false, fmt.Errorf("load csat response: %w", err)
+			return fmt.Errorf("load csat response: %w", err)
 		}
+		saved = existing
 		if existing.Rating == response.Rating && equalOptionalString(existing.Comment, response.Comment) {
-			return &existing, &existing, false, nil
+			return nil
 		}
 		updates := map[string]any{
 			"rating": response.Rating, "comment": response.Comment, "channel": response.Channel,
 			"resolved_by": response.ResolvedBy, "assigned_user_id": response.AssignedUserID,
 			"submitted_at": response.SubmittedAt, "updated_at": time.Now().UTC(),
 		}
-		updated := db.Model(&model.SupportCSATResponse{}).
-			Where("id = ? AND rating = ? AND comment IS NOT DISTINCT FROM ?", existing.ID, existing.Rating, existing.Comment).
-			Updates(updates)
-		if updated.Error != nil {
-			return nil, nil, false, fmt.Errorf("update csat response: %w", updated.Error)
+		if err := tx.Model(&model.SupportCSATResponse{}).Where("id = ?", existing.ID).Updates(updates).Error; err != nil {
+			return fmt.Errorf("update csat response: %w", err)
 		}
-		if updated.RowsAffected == 0 {
-			continue // Another submission changed the rating first; compare again.
+		if err := tx.Where("id = ?", existing.ID).Take(&saved).Error; err != nil {
+			return fmt.Errorf("reload csat response: %w", err)
 		}
-		var saved model.SupportCSATResponse
-		if err := db.Where("id = ?", existing.ID).Take(&saved).Error; err != nil {
-			return nil, nil, false, fmt.Errorf("reload csat response: %w", err)
-		}
-		return &saved, &existing, true, nil
+		changed = true
+		return nil
+	})
+	if err != nil {
+		return nil, nil, false, err
 	}
-	return nil, nil, false, fmt.Errorf("csat response for conversation %s kept changing", response.ConversationID)
+	return &saved, &existing, changed, nil
 }
 
 // SummariesByConversation returns the ratings for the given conversations.

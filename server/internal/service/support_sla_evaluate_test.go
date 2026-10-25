@@ -105,7 +105,7 @@ func TestEvaluateSupportSLAFirstResponse(t *testing.T) {
 	clock := newSupportSLAClock(model.SupportInboxSettings{}, false)
 	open := slaConversation(model.SupportConversationStatusOpen)
 
-	pending := evaluateSupportSLA(policy, open, []supportSLAReply{reply(0, "customer")}, clock, slaStart.Add(10*time.Minute), nil)
+	pending := evalSLAPolicy(policy, open, []supportSLAReply{reply(0, "customer")}, clock, slaStart.Add(10*time.Minute), nil)
 	r := pending.Record
 	if r.FirstResponseState != model.SupportSLAStatePending || !r.FirstResponseDueAt.Equal(slaStart.Add(30*time.Minute)) ||
 		!r.WakeAt.Equal(*r.FirstResponseDueAt) || r.Breached || len(pending.NewBreaches) != 0 {
@@ -113,31 +113,31 @@ func TestEvaluateSupportSLAFirstResponse(t *testing.T) {
 	}
 
 	// AI replies do not meet the target.
-	overdue := evaluateSupportSLA(policy, open, []supportSLAReply{reply(0, "customer"), reply(1, "ai")}, clock, slaStart.Add(31*time.Minute), &r)
+	overdue := evalSLAPolicy(policy, open, []supportSLAReply{reply(0, "customer"), reply(1, "ai")}, clock, slaStart.Add(31*time.Minute), &r)
 	if overdue.Record.FirstResponseState != model.SupportSLAStateBreached || !overdue.Record.Breached || overdue.Record.WakeAt != nil ||
 		!overdue.Record.NextDueAt.Equal(slaStart.Add(30*time.Minute)) || len(overdue.NewBreaches) != 1 {
 		t.Fatalf("overdue: %+v %v", overdue.Record, overdue.NewBreaches)
 	}
 	// Already recorded: no second breach event; a late reply keeps the breach.
-	late := evaluateSupportSLA(policy, open, []supportSLAReply{reply(0, "customer"), reply(45, "user")}, clock, slaStart.Add(46*time.Minute), &overdue.Record)
+	late := evalSLAPolicy(policy, open, []supportSLAReply{reply(0, "customer"), reply(45, "user")}, clock, slaStart.Add(46*time.Minute), &overdue.Record)
 	if late.Record.FirstResponseState != model.SupportSLAStateBreached || late.Record.Breached || len(late.NewBreaches) != 0 ||
 		!late.Record.FirstResponseAchievedAt.Equal(slaStart.Add(45*time.Minute)) {
 		t.Fatalf("late reply: %+v %v", late.Record, late.NewBreaches)
 	}
 
-	met := evaluateSupportSLA(policy, open, []supportSLAReply{reply(0, "customer"), reply(20, "user")}, clock, slaStart.Add(2*time.Hour), nil)
+	met := evalSLAPolicy(policy, open, []supportSLAReply{reply(0, "customer"), reply(20, "user")}, clock, slaStart.Add(2*time.Hour), nil)
 	if met.Record.FirstResponseState != model.SupportSLAStateAchieved || met.Record.NextDueAt != nil {
 		t.Fatalf("met: %+v", met.Record)
 	}
 
-	outbound := evaluateSupportSLA(policy, open, []supportSLAReply{reply(0, "user"), reply(5, "customer")}, clock, slaStart.Add(2*time.Hour), nil)
+	outbound := evalSLAPolicy(policy, open, []supportSLAReply{reply(0, "user"), reply(5, "customer")}, clock, slaStart.Add(2*time.Hour), nil)
 	if outbound.Record.FirstResponseState != "" {
 		t.Fatalf("teammate-started conversation got a first response target: %+v", outbound.Record)
 	}
 
 	resolved := slaConversation(model.SupportConversationStatusResolved)
 	resolved.ResolvedAt = timePtr(slaStart.Add(10 * time.Minute))
-	cancelled := evaluateSupportSLA(policy, resolved, []supportSLAReply{reply(0, "customer"), reply(1, "ai")}, clock, slaStart.Add(2*time.Hour), nil)
+	cancelled := evalSLAPolicy(policy, resolved, []supportSLAReply{reply(0, "customer"), reply(1, "ai")}, clock, slaStart.Add(2*time.Hour), nil)
 	if cancelled.Record.FirstResponseState != model.SupportSLAStateCancelled || len(cancelled.NewBreaches) != 0 {
 		t.Fatalf("resolved by AI before the target: %+v", cancelled.Record)
 	}
@@ -153,23 +153,23 @@ func TestEvaluateSupportSLANextResponseCycles(t *testing.T) {
 		reply(100, "customer"), reply(120, "user"), // 20m: met
 		reply(130, "customer"), // open cycle due at 190m
 	}
-	pending := evaluateSupportSLA(policy, open, replies, clock, slaStart.Add(150*time.Minute), nil)
+	pending := evalSLAPolicy(policy, open, replies, clock, slaStart.Add(150*time.Minute), nil)
 	r := pending.Record
 	if r.NextResponseState != model.SupportSLAStatePending || r.NextResponseBreaches != 1 ||
 		!r.NextResponseDueAt.Equal(slaStart.Add(190*time.Minute)) || !r.NextResponseBreachedAt.Equal(slaStart.Add(70*time.Minute)) ||
 		len(pending.NewBreaches) != 1 {
 		t.Fatalf("pending cycle: %+v %v", r, pending.NewBreaches)
 	}
-	overdue := evaluateSupportSLA(policy, open, replies, clock, slaStart.Add(200*time.Minute), &r)
+	overdue := evalSLAPolicy(policy, open, replies, clock, slaStart.Add(200*time.Minute), &r)
 	if overdue.Record.NextResponseState != model.SupportSLAStateBreached || overdue.Record.NextResponseBreaches != 2 ||
 		!overdue.Record.Breached || len(overdue.NewBreaches) != 1 {
 		t.Fatalf("overdue cycle: %+v %v", overdue.Record, overdue.NewBreaches)
 	}
-	again := evaluateSupportSLA(policy, open, replies, clock, slaStart.Add(210*time.Minute), &overdue.Record)
+	again := evalSLAPolicy(policy, open, replies, clock, slaStart.Add(210*time.Minute), &overdue.Record)
 	if len(again.NewBreaches) != 0 {
 		t.Fatalf("re-evaluation repeated the breach: %v", again.NewBreaches)
 	}
-	noTeammate := evaluateSupportSLA(policy, open, []supportSLAReply{reply(0, "customer"), reply(5, "customer")}, clock, slaStart.Add(5*time.Hour), nil)
+	noTeammate := evalSLAPolicy(policy, open, []supportSLAReply{reply(0, "customer"), reply(5, "customer")}, clock, slaStart.Add(5*time.Hour), nil)
 	if noTeammate.Record.NextResponseState != "" {
 		t.Fatalf("next response started before any teammate reply: %+v", noTeammate.Record)
 	}
@@ -180,24 +180,24 @@ func TestEvaluateSupportSLAResolutionPauses(t *testing.T) {
 	clock := newSupportSLAClock(model.SupportInboxSettings{}, false)
 	open := slaConversation(model.SupportConversationStatusOpen)
 
-	first := evaluateSupportSLA(policy, open, nil, clock, slaStart.Add(30*time.Minute), nil)
+	first := evalSLAPolicy(policy, open, nil, clock, slaStart.Add(30*time.Minute), nil)
 	if first.Record.ResolutionState != model.SupportSLAStatePending || !first.Record.ResolutionDueAt.Equal(slaStart.Add(2*time.Hour)) {
 		t.Fatalf("pending: %+v", first.Record)
 	}
 	waiting := slaConversation(model.SupportConversationStatusWaitingOnCustomer)
-	paused := evaluateSupportSLA(policy, waiting, nil, clock, slaStart.Add(time.Hour), &first.Record)
+	paused := evalSLAPolicy(policy, waiting, nil, clock, slaStart.Add(time.Hour), &first.Record)
 	if paused.Record.ResolutionState != model.SupportSLAStatePaused || paused.Record.PausedSince == nil || paused.Record.ResolutionDueAt != nil || paused.Record.WakeAt != nil {
 		t.Fatalf("paused: %+v", paused.Record)
 	}
 	// Three hours waiting on the customer push the due time back three hours.
-	resumed := evaluateSupportSLA(policy, open, nil, clock, slaStart.Add(4*time.Hour), &paused.Record)
+	resumed := evalSLAPolicy(policy, open, nil, clock, slaStart.Add(4*time.Hour), &paused.Record)
 	if resumed.Record.ResolutionState != model.SupportSLAStatePending || resumed.Record.PausedSeconds != 3*3600 ||
 		!resumed.Record.ResolutionDueAt.Equal(slaStart.Add(5*time.Hour)) {
 		t.Fatalf("resumed: %+v", resumed.Record)
 	}
 	resolved := slaConversation(model.SupportConversationStatusResolved)
 	resolved.ResolvedAt = timePtr(slaStart.Add(4*time.Hour + 30*time.Minute))
-	done := evaluateSupportSLA(policy, resolved, nil, clock, slaStart.Add(6*time.Hour), &resumed.Record)
+	done := evalSLAPolicy(policy, resolved, nil, clock, slaStart.Add(6*time.Hour), &resumed.Record)
 	if done.Record.ResolutionState != model.SupportSLAStateAchieved || done.Record.NextDueAt != nil {
 		t.Fatalf("resolved in time: %+v", done.Record)
 	}
@@ -205,14 +205,14 @@ func TestEvaluateSupportSLAResolutionPauses(t *testing.T) {
 	// Without pausing, the same history misses the target.
 	strict := policy
 	strict.PauseWhileWaiting = false
-	missed := evaluateSupportSLA(strict, resolved, nil, clock, slaStart.Add(6*time.Hour), nil)
+	missed := evalSLAPolicy(strict, resolved, nil, clock, slaStart.Add(6*time.Hour), nil)
 	if missed.Record.ResolutionState != model.SupportSLAStateBreached || len(missed.NewBreaches) != 1 {
 		t.Fatalf("strict: %+v", missed.Record)
 	}
 
 	snoozed := slaConversation(model.SupportConversationStatusOpen)
 	snoozed.SnoozedUntil = timePtr(slaStart.Add(24 * time.Hour))
-	if got := evaluateSupportSLA(policy, snoozed, nil, clock, slaStart.Add(time.Hour), nil); got.Record.ResolutionState != model.SupportSLAStatePaused {
+	if got := evalSLAPolicy(policy, snoozed, nil, clock, slaStart.Add(time.Hour), nil); got.Record.ResolutionState != model.SupportSLAStatePaused {
 		t.Fatalf("snoozed conversation should pause resolution: %+v", got.Record)
 	}
 }
@@ -224,7 +224,7 @@ func TestEvaluateSupportSLABusinessHours(t *testing.T) {
 	conversation := slaConversation(model.SupportConversationStatusOpen)
 	friday := time.Date(2026, 10, 23, 16, 30, 0, 0, time.UTC)
 	conversation.CreatedAt = friday
-	got := evaluateSupportSLA(policy, conversation, []supportSLAReply{{At: friday, SenderType: "customer"}}, clock, friday.Add(time.Hour), nil)
+	got := evalSLAPolicy(policy, conversation, []supportSLAReply{{At: friday, SenderType: "customer"}}, clock, friday.Add(time.Hour), nil)
 	if want := time.Date(2026, 10, 26, 9, 30, 0, 0, time.UTC); !got.Record.FirstResponseDueAt.Equal(want) || got.Record.FirstResponseState != model.SupportSLAStatePending {
 		t.Fatalf("business-hours due = %v (%s)", got.Record.FirstResponseDueAt, got.Record.FirstResponseState)
 	}
@@ -264,5 +264,41 @@ func TestSupportSLAPolicyMatches(t *testing.T) {
 	policy.Enabled = false
 	if supportSLAPolicyMatches(policy, conversation) {
 		t.Fatal("disabled policy matched")
+	}
+}
+
+// evalSLAPolicy evaluates a conversation that has no AI involvement against
+// a policy, continuing previous when given.
+func evalSLAPolicy(policy model.SupportSLAPolicy, conversation model.SupportConversation, replies []supportSLAReply, clock supportSLAClock, now time.Time, previous *model.SupportConversationSLARecord) supportSLAEvaluation {
+	in := supportSLAInput{Targets: supportSLATargetsFromPolicy(policy), Conversation: conversation, Replies: replies, Clock: clock, Now: now, Previous: previous}
+	if previous != nil {
+		in.AppliedAt = previous.PolicyAppliedAt
+	}
+	return evaluateSupportSLA(in)
+}
+
+func TestSupportSLAClockLongTargets(t *testing.T) {
+	// One open hour a week: a 90-day target needs 2,160 open hours.
+	clock := newSupportSLAClock(model.SupportInboxSettings{
+		BusinessHoursEnabled: true, BusinessHoursTimezone: "Europe/Berlin",
+		BusinessHoursSchedule: map[string]model.BusinessHoursDay{"mon": {Start: "09:00", End: "10:00", Enabled: true}},
+	}, true)
+	start := time.Date(2026, 10, 26, 9, 0, 0, 0, clock.location)
+	due := clock.Add(start, 2160*time.Hour)
+	if got := clock.Between(start, due); got != 2160*time.Hour {
+		t.Fatalf("counted %v between start and due %v", got, due)
+	}
+	local := due.In(clock.location)
+	if local.Weekday() != time.Monday || local.Hour() != 10 {
+		t.Fatalf("due %v should end a Monday window", local)
+	}
+	// Weekly skipping agrees with walking day by day across DST.
+	business := businessClock(t, "Europe/Berlin")
+	from := time.Date(2026, 3, 20, 15, 0, 0, 0, business.location)
+	for _, hours := range []int{1, 8, 41, 200, 1000} {
+		due := business.Add(from, time.Duration(hours)*time.Hour)
+		if got := business.Between(from, due); got != time.Duration(hours)*time.Hour {
+			t.Fatalf("%dh: between = %v (due %v)", hours, got, due)
+		}
 	}
 }

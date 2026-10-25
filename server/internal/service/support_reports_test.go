@@ -167,7 +167,6 @@ func seedSupportReportFixture(t *testing.T, db *gorm.DB) *supportReportFixture {
 	return f
 }
 
-
 func (f *supportReportFixture) request() model.SupportReportRequest {
 	return model.SupportReportRequest{WorkspaceID: f.workspaceID, From: reportBase, To: reportBase.AddDate(0, 0, 7), Timezone: "UTC"}
 }
@@ -192,7 +191,9 @@ func assertRate(t *testing.T, name string, got *float64, want float64) {
 	}
 }
 
-func TestSupportReportOverviewMetrics(t *testing.T) { checkSupportReportOverviewMetrics(t, newSupportReportFixture(t)) }
+func TestSupportReportOverviewMetrics(t *testing.T) {
+	checkSupportReportOverviewMetrics(t, newSupportReportFixture(t))
+}
 
 func checkSupportReportOverviewMetrics(t *testing.T, f *supportReportFixture) {
 	t.Helper()
@@ -279,7 +280,9 @@ func checkSupportReportOverviewMetrics(t *testing.T, f *supportReportFixture) {
 	}
 }
 
-func TestSupportReportRespectsInboxAccess(t *testing.T) { checkSupportReportRespectsInboxAccess(t, newSupportReportFixture(t)) }
+func TestSupportReportRespectsInboxAccess(t *testing.T) {
+	checkSupportReportRespectsInboxAccess(t, newSupportReportFixture(t))
+}
 
 func checkSupportReportRespectsInboxAccess(t *testing.T, f *supportReportFixture) {
 	t.Helper()
@@ -328,7 +331,9 @@ func TestSupportReportRejectsInvalidRanges(t *testing.T) {
 	}
 }
 
-func TestSupportReportDailyUsesTimezone(t *testing.T) { checkSupportReportDailyUsesTimezone(t, newSupportReportFixture(t)) }
+func TestSupportReportDailyUsesTimezone(t *testing.T) {
+	checkSupportReportDailyUsesTimezone(t, newSupportReportFixture(t))
+}
 
 func checkSupportReportDailyUsesTimezone(t *testing.T, f *supportReportFixture) {
 	t.Helper()
@@ -344,7 +349,9 @@ func checkSupportReportDailyUsesTimezone(t *testing.T, f *supportReportFixture) 
 	}
 }
 
-func TestSupportReportCSVExport(t *testing.T) { checkSupportReportCSVExport(t, newSupportReportFixture(t)) }
+func TestSupportReportCSVExport(t *testing.T) {
+	checkSupportReportCSVExport(t, newSupportReportFixture(t))
+}
 
 func checkSupportReportCSVExport(t *testing.T, f *supportReportFixture) {
 	t.Helper()

@@ -72,209 +72,443 @@ func earliestTime(values ...*time.Time) *time.Time {
 	return earliest
 }
 
+// supportSLATargets is the set of targets a conversation is measured
+// against: a policy's settings at the moment it applied.
+type supportSLATargets struct {
+	PolicyID             string
+	PolicyName           string
+	FirstResponseMinutes *int
+	NextResponseMinutes  *int
+	ResolutionMinutes    *int
+	BusinessHours        bool
+	PauseWhileWaiting    bool
+}
 
-// evaluateSupportSLA recomputes a conversation's SLA state from its policy,
-// public replies and status. Only teammate replies meet response targets.
-// Breach times already recorded are kept.
-func evaluateSupportSLA(
-	policy model.SupportSLAPolicy,
-	conversation model.SupportConversation,
-	replies []supportSLAReply,
-	clock supportSLAClock,
-	now time.Time,
-	previous *model.SupportConversationSLARecord,
-) supportSLAEvaluation {
+func supportSLATargetsFromPolicy(policy model.SupportSLAPolicy) supportSLATargets {
+	return supportSLATargets{
+		PolicyID: policy.ID, PolicyName: policy.Name,
+		FirstResponseMinutes: policy.FirstResponseMinutes, NextResponseMinutes: policy.NextResponseMinutes,
+		ResolutionMinutes: policy.ResolutionMinutes, BusinessHours: policy.BusinessHours,
+		PauseWhileWaiting: policy.PauseWhileWaiting,
+	}
+}
+
+// supportSLATargetsFromRecord returns the snapshot stored on a record, or
+// false when the record has none.
+func supportSLATargetsFromRecord(record model.SupportConversationSLARecord) (supportSLATargets, bool) {
+	if record.PolicyID == nil || (record.TargetFirstResponseMinutes == nil && record.TargetNextResponseMinutes == nil && record.TargetResolutionMinutes == nil) {
+		return supportSLATargets{}, false
+	}
+	return supportSLATargets{
+		PolicyID: *record.PolicyID, PolicyName: record.PolicyName,
+		FirstResponseMinutes: record.TargetFirstResponseMinutes, NextResponseMinutes: record.TargetNextResponseMinutes,
+		ResolutionMinutes: record.TargetResolutionMinutes, BusinessHours: record.TargetBusinessHours,
+		PauseWhileWaiting: record.TargetPauseWhileWaiting,
+	}, true
+}
+
+// supportSLAInput is everything one evaluation reads.
+type supportSLAInput struct {
+	Targets      supportSLATargets
+	Conversation model.SupportConversation
+	Replies      []supportSLAReply
+	Clock        supportSLAClock
+	Now          time.Time
+	// Previous is the stored record, nil for the first evaluation.
+	Previous *model.SupportConversationSLARecord
+	// Switched means Targets replace those of Previous: results Previous
+	// already recorded are kept, and next-response cycles that ended
+	// before AppliedAt stay judged by the earlier targets.
+	Switched  bool
+	AppliedAt *time.Time
+	// AIInvolved marks a conversation the AI handled first; HumanSince is
+	// its handoff to the team, nil while the AI still owns it or when the
+	// AI resolved it alone. AIOwnsNow pauses response clocks while the AI
+	// answers.
+	AIInvolved bool
+	HumanSince *time.Time
+	AIOwnsNow  bool
+}
+
+// evaluateSupportSLA recomputes a conversation's SLA state. Only teammate
+// replies meet response targets. Achieved results and recorded breaches are
+// final; a target that applies later never re-judges them.
+func evaluateSupportSLA(in supportSLAInput) supportSLAEvaluation {
+	previous := in.Previous
 	if previous == nil {
 		previous = &model.SupportConversationSLARecord{}
 	}
+	targets, conversation, clock, now := in.Targets, in.Conversation, in.Clock, in.Now
 	record := model.SupportConversationSLARecord{
 		ConversationID: conversation.ID, WorkspaceID: conversation.WorkspaceID,
-		PolicyID: &policy.ID, PolicyName: policy.Name,
+		PolicyID: &targets.PolicyID, PolicyName: targets.PolicyName, PolicyAppliedAt: in.AppliedAt,
+		TargetFirstResponseMinutes: targets.FirstResponseMinutes, TargetNextResponseMinutes: targets.NextResponseMinutes,
+		TargetResolutionMinutes: targets.ResolutionMinutes, TargetBusinessHours: targets.BusinessHours,
+		TargetPauseWhileWaiting: targets.PauseWhileWaiting,
+		AIInvolved:              in.AIInvolved, HumanSince: in.HumanSince,
 	}
-	sorted := slices.Clone(replies)
+	sorted := slices.Clone(in.Replies)
 	slices.SortStableFunc(sorted, func(a, b supportSLAReply) int { return a.At.Compare(b.At) })
 
-	resolved := conversation.Status == model.SupportConversationStatusResolved
-	closed := resolved || conversation.Status == model.SupportConversationStatusSpam
-	closeTime := now
-	if resolved && conversation.ResolvedAt != nil {
-		closeTime = *conversation.ResolvedAt
-	} else if !resolved && closed && conversation.ClosedAt != nil {
-		closeTime = *conversation.ClosedAt
+	state := supportSLAEvalState{now: now, clock: clock}
+	state.resolved = conversation.Status == model.SupportConversationStatusResolved
+	state.closed = state.resolved || conversation.Status == model.SupportConversationStatusSpam
+	state.closeTime = now
+	if state.resolved && conversation.ResolvedAt != nil {
+		state.closeTime = *conversation.ResolvedAt
+	} else if !state.resolved && state.closed && conversation.ClosedAt != nil {
+		state.closeTime = *conversation.ClosedAt
 	}
-	var newBreaches []string
-	var openDue, wakeDue []*time.Time
-	breachedNow := false
+	// The AI owns conversations it handled until the handoff; the team's
+	// targets do not run before then.
+	state.aiOnly = in.AIInvolved && in.HumanSince == nil
+	state.aiHolding = in.AIOwnsNow && !state.closed
+	state.humanSince = in.HumanSince
 
-	// First response: from the customer's first message to the first
-	// teammate reply. Conversations a teammate started have no target.
-	if policy.FirstResponseMinutes != nil {
-		var firstCustomer, firstTeammate *time.Time
-		for _, reply := range sorted {
-			if reply.SenderType == "customer" && firstCustomer == nil {
-				firstCustomer = timePtr(reply.At)
-			}
-			if reply.SenderType == "user" && firstTeammate == nil {
-				firstTeammate = timePtr(reply.At)
-			}
+	if targets.FirstResponseMinutes != nil {
+		state.firstResponse(&record, previous, sorted, minutesDuration(targets.FirstResponseMinutes))
+	} else {
+		keepSupportSLAFirstResponse(&record, previous)
+	}
+	if targets.NextResponseMinutes != nil {
+		state.nextResponse(&record, previous, in, sorted, minutesDuration(targets.NextResponseMinutes))
+	} else {
+		keepSupportSLANextResponse(&record, previous)
+	}
+	if targets.ResolutionMinutes != nil {
+		state.resolution(&record, previous, conversation, targets, minutesDuration(targets.ResolutionMinutes))
+	} else {
+		keepSupportSLAResolution(&record, previous)
+	}
+	record.NextDueAt = earliestTime(state.openDue...)
+	record.WakeAt = earliestTime(state.wakeDue...)
+	record.Breached = state.breachedNow
+	return supportSLAEvaluation{Record: record, NewBreaches: state.newBreaches}
+}
+
+// Results recorded under earlier targets stay when the current targets no
+// longer measure that metric; open ones end.
+func keepSupportSLAFirstResponse(record, previous *model.SupportConversationSLARecord) {
+	if previous.FirstResponseAchievedAt == nil && previous.FirstResponseBreachedAt == nil {
+		return
+	}
+	record.FirstResponseState = previous.FirstResponseState
+	if previous.FirstResponseAchievedAt == nil {
+		record.FirstResponseState = model.SupportSLAStateBreached
+	}
+	record.FirstResponseDueAt = previous.FirstResponseDueAt
+	record.FirstResponseAchievedAt = previous.FirstResponseAchievedAt
+	record.FirstResponseBreachedAt = previous.FirstResponseBreachedAt
+}
+
+func keepSupportSLANextResponse(record, previous *model.SupportConversationSLARecord) {
+	switch {
+	case previous.NextResponseBreaches > 0:
+		record.NextResponseState = model.SupportSLAStateBreached
+	case previous.NextResponseState == model.SupportSLAStateAchieved:
+		record.NextResponseState = model.SupportSLAStateAchieved
+	default:
+		return
+	}
+	record.NextResponseBreaches = previous.NextResponseBreaches
+	record.NextResponseCarriedBreaches = previous.NextResponseBreaches
+	record.NextResponseBreachedAt = previous.NextResponseBreachedAt
+}
+
+func keepSupportSLAResolution(record, previous *model.SupportConversationSLARecord) {
+	if previous.ResolutionAchievedAt == nil && previous.ResolutionBreachedAt == nil {
+		return
+	}
+	record.ResolutionState = previous.ResolutionState
+	if previous.ResolutionAchievedAt == nil {
+		record.ResolutionState = model.SupportSLAStateBreached
+	}
+	record.ResolutionDueAt = previous.ResolutionDueAt
+	record.ResolutionAchievedAt = previous.ResolutionAchievedAt
+	record.ResolutionBreachedAt = previous.ResolutionBreachedAt
+	record.PausedSeconds = previous.PausedSeconds
+}
+
+type supportSLAEvalState struct {
+	now, closeTime    time.Time
+	clock             supportSLAClock
+	resolved, closed  bool
+	aiOnly, aiHolding bool
+	humanSince        *time.Time
+	newBreaches       []string
+	openDue, wakeDue  []*time.Time
+	breachedNow       bool
+}
+
+// start moves a clock start to the handoff when the AI handled the
+// conversation first.
+func (st *supportSLAEvalState) start(at time.Time) time.Time {
+	if st.humanSince != nil && st.humanSince.After(at) {
+		return *st.humanSince
+	}
+	return at
+}
+
+// open tracks a running target due at due.
+func (st *supportSLAEvalState) open(due time.Time) {
+	st.openDue = append(st.openDue, &due)
+	if st.now.Before(due) {
+		st.wakeDue = append(st.wakeDue, &due)
+	} else {
+		st.breachedNow = true
+	}
+}
+
+// firstResponse: from the customer's first message (or the handoff) to the
+// first teammate reply. Conversations a teammate started have no target.
+func (st *supportSLAEvalState) firstResponse(record, previous *model.SupportConversationSLARecord, replies []supportSLAReply, target time.Duration) {
+	if previous.FirstResponseAchievedAt != nil {
+		record.FirstResponseState = previous.FirstResponseState
+		record.FirstResponseDueAt = previous.FirstResponseDueAt
+		record.FirstResponseAchievedAt = previous.FirstResponseAchievedAt
+		record.FirstResponseBreachedAt = previous.FirstResponseBreachedAt
+		return
+	}
+	var firstCustomer, firstTeammate *time.Time
+	for _, reply := range replies {
+		if reply.SenderType == "customer" && firstCustomer == nil {
+			firstCustomer = timePtr(reply.At)
 		}
-		if firstCustomer != nil && (firstTeammate == nil || !firstTeammate.Before(*firstCustomer)) {
-			due := clock.Add(*firstCustomer, minutesDuration(policy.FirstResponseMinutes))
-			record.FirstResponseDueAt = &due
-			switch {
-			case firstTeammate != nil:
-				record.FirstResponseAchievedAt = firstTeammate
-				record.FirstResponseState = model.SupportSLAStateAchieved
-				if firstTeammate.After(due) {
-					record.FirstResponseState = model.SupportSLAStateBreached
-				}
-			case closed:
-				record.FirstResponseState = model.SupportSLAStateCancelled
-				if closeTime.After(due) {
-					record.FirstResponseState = model.SupportSLAStateBreached
-				}
-			default:
-				record.FirstResponseState = model.SupportSLAStatePending
-				if !now.Before(due) {
-					record.FirstResponseState = model.SupportSLAStateBreached
-					breachedNow = true
-					openDue = append(openDue, &due)
-				} else {
-					openDue = append(openDue, &due)
-					wakeDue = append(wakeDue, &due)
-				}
+		if reply.SenderType == "user" && firstTeammate == nil {
+			firstTeammate = timePtr(reply.At)
+		}
+	}
+	if firstCustomer == nil || (firstTeammate != nil && firstTeammate.Before(*firstCustomer)) {
+		return
+	}
+	if st.aiOnly && firstTeammate == nil {
+		record.FirstResponseState = model.SupportSLAStatePaused
+		if st.closed {
+			record.FirstResponseState = model.SupportSLAStateCancelled
+		}
+		return
+	}
+	due := st.clock.Add(st.start(*firstCustomer), target)
+	record.FirstResponseDueAt = &due
+	missed := previous.FirstResponseBreachedAt != nil
+	switch {
+	case firstTeammate != nil:
+		record.FirstResponseAchievedAt = firstTeammate
+		record.FirstResponseState = model.SupportSLAStateAchieved
+		missed = missed || firstTeammate.After(due)
+	case st.closed:
+		record.FirstResponseState = model.SupportSLAStateCancelled
+		missed = missed || st.closeTime.After(due)
+	case st.aiHolding && !missed:
+		record.FirstResponseState = model.SupportSLAStatePaused
+		record.FirstResponseDueAt = nil
+	default:
+		record.FirstResponseState = model.SupportSLAStatePending
+		missed = missed || !st.now.Before(due)
+		st.open(due)
+	}
+	if missed {
+		record.FirstResponseState = model.SupportSLAStateBreached
+		record.FirstResponseBreachedAt = earliestTime(previous.FirstResponseBreachedAt, &due)
+		if previous.FirstResponseBreachedAt == nil {
+			st.newBreaches = append(st.newBreaches, model.SupportSLAMetricFirstResponse)
+		}
+	}
+}
+
+// nextResponse: each customer message after a teammate replied starts a
+// cycle that the next teammate reply ends. Cycles that started before the
+// current targets applied keep their earlier result, counted in
+// NextResponseCarriedBreaches; the open cycle at a switch is judged by the
+// new targets unless it was already missed.
+func (st *supportSLAEvalState) nextResponse(record, previous *model.SupportConversationSLARecord, in supportSLAInput, replies []supportSLAReply, target time.Duration) {
+	type cycle struct {
+		start time.Time
+		end   *time.Time
+	}
+	var cycles []cycle
+	var waitingSince *time.Time
+	seenTeammate := false
+	for _, reply := range replies {
+		switch reply.SenderType {
+		case "user":
+			if waitingSince != nil {
+				cycles = append(cycles, cycle{start: *waitingSince, end: timePtr(reply.At)})
+				waitingSince = nil
 			}
-			if record.FirstResponseState == model.SupportSLAStateBreached {
-				record.FirstResponseBreachedAt = earliestTime(previous.FirstResponseBreachedAt, &due)
-				if previous.FirstResponseBreachedAt == nil {
-					newBreaches = append(newBreaches, model.SupportSLAMetricFirstResponse)
-				}
+			seenTeammate = true
+		case "customer":
+			if seenTeammate && waitingSince == nil {
+				waitingSince = timePtr(reply.At)
 			}
 		}
 	}
+	if waitingSince != nil {
+		cycles = append(cycles, cycle{start: *waitingSince})
+	}
+	// The open cycle already carries a recorded breach when the last
+	// recorded breach falls inside it.
+	openMissed := waitingSince != nil && previous.NextResponseBreachedAt != nil && !previous.NextResponseBreachedAt.Before(*waitingSince)
 
-	// Next response: each customer message after a teammate replied starts
-	// a cycle that the next teammate reply ends.
-	if policy.NextResponseMinutes != nil {
-		target := minutesDuration(policy.NextResponseMinutes)
-		var waitingSince, lastBreachDue *time.Time
-		seenTeammate, cycles, breaches := false, 0, 0
-		for _, reply := range sorted {
-			switch reply.SenderType {
-			case "user":
-				if waitingSince != nil {
-					cycles++
-					if due := clock.Add(*waitingSince, target); reply.At.After(due) {
-						breaches++
-						lastBreachDue = timePtr(due)
-					}
-					waitingSince = nil
-				}
-				seenTeammate = true
-			case "customer":
-				if seenTeammate && waitingSince == nil {
-					waitingSince = timePtr(reply.At)
-				}
-			}
+	appliedAt, carried := in.AppliedAt, previous.NextResponseCarriedBreaches
+	if in.Switched {
+		carried = previous.NextResponseBreaches
+		appliedAt = timePtr(st.now)
+		if waitingSince != nil && !openMissed {
+			appliedAt = waitingSince
 		}
-		if waitingSince != nil {
-			due := clock.Add(*waitingSince, target)
-			end := now
-			if closed {
-				end = closeTime
+	}
+	record.PolicyAppliedAt = appliedAt
+
+	breaches := 0
+	lastBreachDue := previous.NextResponseBreachedAt
+	for _, c := range cycles {
+		judged := appliedAt == nil || !c.start.Before(*appliedAt)
+		if c.end != nil {
+			if !judged {
+				continue
 			}
-			if end.After(due) || end.Equal(due) {
+			if due := st.clock.Add(c.start, target); c.end.After(due) {
 				breaches++
 				lastBreachDue = timePtr(due)
 			}
-			if !closed {
-				cycles++
-				record.NextResponseDueAt = &due
-				openDue = append(openDue, &due)
-				if now.Before(due) {
-					wakeDue = append(wakeDue, &due)
-				} else {
-					breachedNow = true
+			continue
+		}
+		// The open cycle.
+		due := st.clock.Add(c.start, target)
+		missed := false
+		if judged {
+			end := st.now
+			if st.closed {
+				end = st.closeTime
+			}
+			missed = openMissed || !end.Before(due)
+			if missed {
+				breaches++
+				if !openMissed {
+					lastBreachDue = timePtr(due)
 				}
 			}
+		} else {
+			// Missed under earlier targets; it stays overdue.
+			missed = true
+			if previous.NextResponseBreachedAt != nil {
+				due = *previous.NextResponseBreachedAt
+			}
 		}
-		record.NextResponseBreaches = breaches
-		record.NextResponseBreachedAt = lastBreachDue
-		switch {
-		case record.NextResponseDueAt != nil && now.Before(*record.NextResponseDueAt):
-			record.NextResponseState = model.SupportSLAStatePending
-		case breaches > 0:
-			record.NextResponseState = model.SupportSLAStateBreached
-		case cycles > 0:
-			record.NextResponseState = model.SupportSLAStateAchieved
+		if st.closed || (st.aiHolding && !missed) {
+			continue
 		}
-		if lastBreachDue != nil && (previous.NextResponseBreachedAt == nil || lastBreachDue.After(*previous.NextResponseBreachedAt)) &&
-			breaches > previous.NextResponseBreaches {
-			newBreaches = append(newBreaches, model.SupportSLAMetricNextResponse)
+		record.NextResponseDueAt = timePtr(due)
+		st.open(due)
+		if missed {
+			st.breachedNow = true
 		}
 	}
+	record.NextResponseCarriedBreaches = carried
+	record.NextResponseBreaches = carried + breaches
+	record.NextResponseBreachedAt = lastBreachDue
+	switch {
+	case record.NextResponseDueAt != nil && !st.breachedNowFor(*record.NextResponseDueAt, openMissed):
+		record.NextResponseState = model.SupportSLAStatePending
+	case record.NextResponseBreaches > 0:
+		record.NextResponseState = model.SupportSLAStateBreached
+	case waitingSince != nil && st.aiHolding && !st.closed:
+		record.NextResponseState = model.SupportSLAStatePaused
+	case len(cycles) > 0:
+		record.NextResponseState = model.SupportSLAStateAchieved
+	}
+	if record.NextResponseBreaches > previous.NextResponseBreaches && lastBreachDue != nil &&
+		(previous.NextResponseBreachedAt == nil || lastBreachDue.After(*previous.NextResponseBreachedAt)) {
+		st.newBreaches = append(st.newBreaches, model.SupportSLAMetricNextResponse)
+	}
+}
 
-	// Resolution: from creation to resolution, optionally excluding time
-	// spent waiting on the customer or snoozed.
-	if policy.ResolutionMinutes != nil {
-		pausedSeconds, pausedSince := previous.PausedSeconds, previous.PausedSince
-		pausedNow := policy.PauseWhileWaiting && !closed && supportSLAWaitingOnCustomer(conversation)
-		if pausedSince != nil && !pausedNow {
-			end := now
-			if closed && closeTime.Before(now) {
-				end = closeTime
-			}
-			pausedSeconds += int64(clock.Between(*pausedSince, end) / time.Second)
-			pausedSince = nil
-		}
-		if pausedNow && pausedSince == nil {
-			pausedSince = timePtr(now)
-		}
-		record.PausedSeconds, record.PausedSince = pausedSeconds, pausedSince
-		due := clock.Add(conversation.CreatedAt, minutesDuration(policy.ResolutionMinutes)+time.Duration(pausedSeconds)*time.Second)
-		switch {
-		case resolved:
-			record.ResolutionDueAt = &due
-			record.ResolutionAchievedAt = timePtr(closeTime)
-			record.ResolutionState = model.SupportSLAStateAchieved
-			if closeTime.After(due) || previous.ResolutionBreachedAt != nil {
-				record.ResolutionState = model.SupportSLAStateBreached
-			}
-		case closed:
-			record.ResolutionDueAt = &due
+// breachedNowFor reports whether an open target due at due is overdue.
+func (st *supportSLAEvalState) breachedNowFor(due time.Time, alreadyMissed bool) bool {
+	return alreadyMissed || !st.now.Before(due)
+}
+
+// resolution: from creation (or the handoff) to the first resolution,
+// optionally excluding time spent waiting on the customer or snoozed. The
+// first resolution is final; reopening keeps its result.
+func (st *supportSLAEvalState) resolution(record, previous *model.SupportConversationSLARecord, conversation model.SupportConversation, targets supportSLATargets, target time.Duration) {
+	if previous.ResolutionAchievedAt != nil {
+		record.ResolutionState = previous.ResolutionState
+		record.ResolutionDueAt = previous.ResolutionDueAt
+		record.ResolutionAchievedAt = previous.ResolutionAchievedAt
+		record.ResolutionBreachedAt = previous.ResolutionBreachedAt
+		record.PausedSeconds = previous.PausedSeconds
+		return
+	}
+	if st.aiOnly {
+		record.ResolutionState = model.SupportSLAStatePaused
+		if st.closed {
 			record.ResolutionState = model.SupportSLAStateCancelled
-			if previous.ResolutionBreachedAt != nil {
-				record.ResolutionState = model.SupportSLAStateBreached
-			}
-		case previous.ResolutionBreachedAt != nil:
-			// A target missed before a pause stays missed.
-			record.ResolutionDueAt = &due
-			record.ResolutionState = model.SupportSLAStateBreached
-			breachedNow = true
-			openDue = append(openDue, &due)
-		case pausedNow:
-			record.ResolutionState = model.SupportSLAStatePaused
-		default:
-			record.ResolutionDueAt = &due
-			record.ResolutionState = model.SupportSLAStatePending
-			openDue = append(openDue, &due)
-			if !now.Before(due) {
-				record.ResolutionState = model.SupportSLAStateBreached
-				breachedNow = true
-			} else {
-				wakeDue = append(wakeDue, &due)
-			}
 		}
-		if record.ResolutionState == model.SupportSLAStateBreached {
-			record.ResolutionBreachedAt = earliestTime(previous.ResolutionBreachedAt, &due)
-			if previous.ResolutionBreachedAt == nil {
-				newBreaches = append(newBreaches, model.SupportSLAMetricResolution)
-			}
+		return
+	}
+	pausedSeconds, pausedSince := previous.PausedSeconds, previous.PausedSince
+	pausedNow := targets.PauseWhileWaiting && !st.closed && supportSLAWaitingOnCustomer(conversation)
+	if pausedSince != nil && !pausedNow {
+		end := st.now
+		if st.closed && st.closeTime.Before(st.now) {
+			end = st.closeTime
+		}
+		pausedSeconds += int64(st.clock.Between(*pausedSince, end) / time.Second)
+		pausedSince = nil
+	}
+	if pausedNow && pausedSince == nil {
+		pausedSince = timePtr(st.now)
+	}
+	record.PausedSeconds, record.PausedSince = pausedSeconds, pausedSince
+	due := st.clock.Add(st.start(conversation.CreatedAt), target+time.Duration(pausedSeconds)*time.Second)
+	missed := previous.ResolutionBreachedAt != nil
+	record.ResolutionDueAt = &due
+	switch {
+	case st.resolved:
+		record.ResolutionAchievedAt = timePtr(st.closeTime)
+		record.ResolutionState = model.SupportSLAStateAchieved
+		missed = missed || st.closeTime.After(due)
+	case st.closed:
+		record.ResolutionState = model.SupportSLAStateCancelled
+	case missed:
+		// A target missed before a pause stays missed and overdue.
+		st.openDue = append(st.openDue, &due)
+		st.breachedNow = true
+	case pausedNow:
+		record.ResolutionState = model.SupportSLAStatePaused
+		record.ResolutionDueAt = nil
+	default:
+		record.ResolutionState = model.SupportSLAStatePending
+		missed = !st.now.Before(due)
+		st.open(due)
+	}
+	if missed {
+		record.ResolutionState = model.SupportSLAStateBreached
+		record.ResolutionBreachedAt = earliestTime(previous.ResolutionBreachedAt, &due)
+		if previous.ResolutionBreachedAt == nil {
+			st.newBreaches = append(st.newBreaches, model.SupportSLAMetricResolution)
 		}
 	}
+}
 
-	record.NextDueAt = earliestTime(openDue...)
-	record.WakeAt = earliestTime(wakeDue...)
-	record.Breached = breachedNow
-	return supportSLAEvaluation{Record: record, NewBreaches: newBreaches}
+// detachSupportSLARecord ends SLA tracking for a conversation no policy
+// applies to any more: open targets are cancelled, recorded results kept.
+func detachSupportSLARecord(previous model.SupportConversationSLARecord, now time.Time) model.SupportConversationSLARecord {
+	record := previous
+	cancel := func(state *string, due **time.Time) {
+		if *state == model.SupportSLAStatePending || *state == model.SupportSLAStatePaused {
+			*state = model.SupportSLAStateCancelled
+			*due = nil
+		}
+	}
+	cancel(&record.FirstResponseState, &record.FirstResponseDueAt)
+	cancel(&record.NextResponseState, &record.NextResponseDueAt)
+	cancel(&record.ResolutionState, &record.ResolutionDueAt)
+	record.NextResponseDueAt = nil
+	record.PausedSince = nil
+	record.NextDueAt, record.WakeAt, record.Breached = nil, nil, false
+	record.DetachedAt = timePtr(now)
+	return record
 }

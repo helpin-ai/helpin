@@ -86,7 +86,8 @@ the existing `sla_policies` entitlement, which Community grants by default.
   counters, including the materialized counter functions) and appears in a new
   Snoozed view.
 - It wakes when the time passes (sweeper), when the customer replies, or when a
-  teammate wakes it. Resolving clears the snooze. Wake-ups add a timeline event.
+  teammate wakes it. Resolving clears the snooze. Timed and teammate wake-ups
+  add a timeline event; a customer reply is its own visible wake-up.
 
 ### SLA policies
 
@@ -102,10 +103,16 @@ the existing `sla_policies` entitlement, which Community grants by default.
   policy and the business-hours schedule. A Postgres trigger enqueues changed
   conversations into `support_sla_work`; a worker evaluates queued
   conversations every few seconds and sweeps due timers every minute.
-- First matching policy (by position) applies. A priority or inbox change
-  re-selects the policy; achieved metrics keep their result.
+- First matching policy (by position) applies. Records snapshot the targets
+  they started with, so policy edits never re-judge history. A priority or
+  inbox change re-selects the policy; recorded results keep their outcome and
+  running targets move to the new policy. When no policy applies any more,
+  running targets are cancelled and the record stays for reports.
+- Targets measure the team: while the AI owns a conversation they wait, and
+  they start at the handoff. Conversations the AI resolves alone are cancelled.
 - Breaches write an internal timeline event, publish a realtime update and
   notify the assignee (or inbox members when unassigned).
+- Semantics are documented in `docs/support-reports.md`.
 - Frontend: SLA settings page (policy list, editor, ordering); SLA chip in the
   conversation list and header with live countdowns; "Next SLA due" sort and an
   "SLA breached" filter; SLA hit rates in reports.

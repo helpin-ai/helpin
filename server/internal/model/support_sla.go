@@ -59,13 +59,31 @@ type SupportSLAPolicy struct {
 func (SupportSLAPolicy) TableName() string { return "support_sla_policies" }
 
 // SupportConversationSLARecord is the evaluated SLA state of one
-// conversation. The evaluator rewrites it from the conversation timeline;
-// breach times are kept once recorded.
+// conversation. It keeps a snapshot of the targets the conversation started
+// with, so later policy edits never re-judge it. Achieved results and
+// recorded breaches are final.
 type SupportConversationSLARecord struct {
 	ConversationID string  `json:"conversation_id" gorm:"type:uuid;primaryKey"`
 	WorkspaceID    string  `json:"workspace_id" gorm:"type:uuid;not null;index:idx_support_conversation_slas_due,priority:1"`
 	PolicyID       *string `json:"policy_id,omitempty" gorm:"type:uuid"`
 	PolicyName     string  `json:"policy_name" gorm:"not null;default:''"`
+	// PolicyAppliedAt is when the current policy replaced an earlier one;
+	// nil when it applied from the start.
+	PolicyAppliedAt *time.Time `json:"-" gorm:"type:timestamptz"`
+	// DetachedAt is set when no policy applies any more; open targets were
+	// cancelled and recorded results kept.
+	DetachedAt *time.Time `json:"-" gorm:"type:timestamptz"`
+	// Snapshot of the policy's targets when it was applied.
+	TargetFirstResponseMinutes *int `json:"-" gorm:"type:integer"`
+	TargetNextResponseMinutes  *int `json:"-" gorm:"type:integer"`
+	TargetResolutionMinutes    *int `json:"-" gorm:"type:integer"`
+	TargetBusinessHours        bool `json:"-" gorm:"not null;default:false"`
+	TargetPauseWhileWaiting    bool `json:"-" gorm:"not null;default:true"`
+	// AIInvolved marks conversations the AI handled first. Their clocks
+	// start at HumanSince, the handoff to the team; nil means the AI still
+	// owns the conversation or resolved it alone.
+	AIInvolved bool       `json:"-" gorm:"not null;default:false"`
+	HumanSince *time.Time `json:"-" gorm:"type:timestamptz"`
 
 	FirstResponseState      string     `json:"first_response_state" gorm:"not null;default:''"`
 	FirstResponseDueAt      *time.Time `json:"first_response_due_at,omitempty" gorm:"type:timestamptz"`
@@ -77,6 +95,9 @@ type SupportConversationSLARecord struct {
 	NextResponseBreachedAt *time.Time `json:"next_response_breached_at,omitempty" gorm:"type:timestamptz"`
 	// NextResponseBreaches counts every missed next-response target so far.
 	NextResponseBreaches int `json:"next_response_breaches" gorm:"type:integer;not null;default:0"`
+	// NextResponseCarriedBreaches counts breaches recorded under earlier
+	// policies, for cycles that ended before the current policy applied.
+	NextResponseCarriedBreaches int `json:"-" gorm:"type:integer;not null;default:0"`
 
 	ResolutionState      string     `json:"resolution_state" gorm:"not null;default:''"`
 	ResolutionDueAt      *time.Time `json:"resolution_due_at,omitempty" gorm:"type:timestamptz"`
@@ -107,6 +128,11 @@ type SupportConversationSLA struct {
 	Metrics    []SupportConversationSLAItem `json:"metrics"`
 	NextDueAt  *time.Time                   `json:"next_due_at,omitempty"`
 	Breached   bool                         `json:"breached"`
+	// AIHandling means the AI still owns the conversation; the team's
+	// targets start at the handoff.
+	AIHandling bool `json:"ai_handling,omitempty"`
+	// Ended means no policy applies any more; open targets were stopped.
+	Ended bool `json:"ended,omitempty"`
 }
 
 // SupportConversationSLAItem is one targeted metric on a conversation.
@@ -120,7 +146,8 @@ type SupportConversationSLAItem struct {
 
 // Summary converts the stored record to the API shape.
 func (r SupportConversationSLARecord) Summary() *SupportConversationSLA {
-	summary := &SupportConversationSLA{PolicyID: r.PolicyID, PolicyName: r.PolicyName, NextDueAt: r.NextDueAt, Breached: r.Breached}
+	summary := &SupportConversationSLA{PolicyID: r.PolicyID, PolicyName: r.PolicyName, NextDueAt: r.NextDueAt, Breached: r.Breached,
+		AIHandling: r.AIInvolved && r.HumanSince == nil && r.DetachedAt == nil, Ended: r.DetachedAt != nil}
 	add := func(metric, state string, due, achieved, breached *time.Time) {
 		if state == "" {
 			return

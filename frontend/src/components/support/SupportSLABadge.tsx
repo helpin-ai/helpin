@@ -50,7 +50,7 @@ function TickingSLABadge({ sla, size, className }: { sla: SupportConversationSLA
       <TooltipContent side="bottom" className="max-w-[260px]">
         <div className="space-y-0.5 text-xs">
           <div className="font-medium">{sla.policy_name}</div>
-          {sla.metrics.map((item) => <div key={item.metric}>{describeSLAItem(item, now)}</div>)}
+          {sla.metrics.map((item) => <div key={item.metric}>{describeSLAItem(item, now, sla)}</div>)}
         </div>
       </TooltipContent>
     </Tooltip>

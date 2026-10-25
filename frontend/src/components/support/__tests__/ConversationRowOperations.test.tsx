@@ -34,7 +34,7 @@ describe('ConversationRowOperations', () => {
     })
     expect(container.querySelector('[aria-label="urgent priority"]')).not.toBeNull()
     expect(container.querySelector('[data-sla-tone="breached"]')?.textContent).toContain('FRT')
-    expect(container.textContent).toMatch(/\w{3} \d{2}:\d{2}/)
+    expect(container.textContent).toMatch(/\d{2}:\d{2}/)
     unmount()
   })
 

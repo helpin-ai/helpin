@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -130,14 +131,173 @@ func TestSupportSLAServiceSQLite(t *testing.T) {
 	if _, err := sla.ProcessQueue(ctx, 10); err != nil {
 		t.Fatal(err)
 	}
+	// No policy applies any more: open targets end, the record stays.
 	listed[0].SLA = nil
-	if err := sla.HydrateConversations(ctx, workspaceID, listed); err != nil || listed[0].SLA != nil {
-		t.Fatalf("SLA kept after its policy was deleted: %+v %v", listed[0].SLA, err)
+	if err := sla.HydrateConversations(ctx, workspaceID, listed); err != nil || listed[0].SLA == nil ||
+		listed[0].SLA.NextDueAt != nil || listed[0].SLA.Breached || listed[0].SLA.Metrics[0].State != model.SupportSLAStateCancelled {
+		t.Fatalf("detached SLA: %+v %v", listed[0].SLA, err)
 	}
 
 	sla.SetEntitlementService(deniedSLAEntitlements{})
 	var entitlementErr *EntitlementError
 	if _, err := sla.CreatePolicy(ctx, workspaceID, userID, model.SupportSLAPolicyRequest{Name: "Paid", FirstResponseMinutes: intPtr(5)}); !errors.As(err, &entitlementErr) {
 		t.Fatalf("entitlement not enforced: %v", err)
+	}
+}
+
+func newSLATestService(t *testing.T) (*SupportSLAService, *gorm.DB, string, string, time.Time) {
+	t.Helper()
+	db := newTestDB(t)
+	workspaceID, userID := uuid.NewString(), uuid.NewString()
+	seedUser(t, db, userID, "agent@example.com", "Ada Agent", "hash")
+	seedWorkspace(t, db, workspaceID, "SLA", "sla-"+workspaceID[:8], userID)
+	inbox := NewSupportInboxService(repository.NewSupportConversationRepository(db), repository.NewSupportMailboxRepository(db),
+		repository.NewSupportMessageRepository(db), nil, nil, repository.NewSupportInboxInstallationRepository(db), nil, nil, nil, nil, nil,
+		repository.NewUserRepository(db), nil, nil, nil)
+	sla := NewSupportSLAService(repository.NewSupportSLARepository(db), inbox)
+	inbox.SetSLAService(sla)
+	start := time.Now().UTC().Truncate(time.Second).Add(-24 * time.Hour)
+	sla.now = func() time.Time { return start }
+	return sla, db, workspaceID, userID, start
+}
+
+func slaRecord(t *testing.T, db *gorm.DB, conversationID string) model.SupportConversationSLARecord {
+	t.Helper()
+	var record model.SupportConversationSLARecord
+	if err := db.Where("conversation_id = ?", conversationID).Take(&record).Error; err != nil {
+		t.Fatalf("load SLA record: %v", err)
+	}
+	return record
+}
+
+func processSLAAt(t *testing.T, sla *SupportSLAService, workspaceID, conversationID string, at time.Time) {
+	t.Helper()
+	sla.now = func() time.Time { return at }
+	if err := sla.repo.Enqueue(context.Background(), workspaceID, []string{conversationID}, at); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sla.ProcessQueue(context.Background(), 10); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSupportSLAPolicyEditsKeepHistory(t *testing.T) {
+	sla, db, workspaceID, userID, start := newSLATestService(t)
+	ctx := context.Background()
+	policy, err := sla.CreatePolicy(ctx, workspaceID, userID, model.SupportSLAPolicyRequest{Name: "Standard", FirstResponseMinutes: intPtr(240), ResolutionMinutes: intPtr(600)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages := repository.NewSupportMessageRepository(db)
+	newConversation := func(displayID int) string {
+		conversation := &model.SupportConversation{ID: uuid.NewString(), WorkspaceID: workspaceID, DisplayID: displayID, Subject: "Help",
+			Status: model.SupportConversationStatusOpen, Priority: "medium", Channel: "widget", CreatedAt: start.Add(time.Second)}
+		if err := db.Create(conversation).Error; err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range []struct {
+			sender string
+			at     time.Duration
+		}{{"customer", time.Second}, {"user", 2 * time.Hour}} {
+			if err := messages.Create(ctx, &model.SupportMessage{WorkspaceID: workspaceID, ConversationID: conversation.ID, SenderType: m.sender,
+				MessageType: "reply", Content: "Hi", CreatedAt: start.Add(m.at)}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return conversation.ID
+	}
+	openID, resolvedID := newConversation(1), newConversation(2)
+	processSLAAt(t, sla, workspaceID, openID, start.Add(3*time.Hour))
+	processSLAAt(t, sla, workspaceID, resolvedID, start.Add(3*time.Hour))
+	if err := db.Model(&model.SupportConversation{}).Where("id = ?", resolvedID).
+		Updates(map[string]any{"status": model.SupportConversationStatusResolved, "resolved_at": start.Add(3 * time.Hour)}).Error; err != nil {
+		t.Fatal(err)
+	}
+	processSLAAt(t, sla, workspaceID, resolvedID, start.Add(3*time.Hour))
+	if got := slaRecord(t, db, resolvedID); got.FirstResponseState != model.SupportSLAStateAchieved || got.ResolutionState != model.SupportSLAStateAchieved {
+		t.Fatalf("resolved in time: %+v", got)
+	}
+
+	// Tightening the targets judges neither conversation again.
+	if _, err := sla.UpdatePolicy(ctx, workspaceID, policy.ID, model.SupportSLAPolicyRequest{Name: "Standard", FirstResponseMinutes: intPtr(60), ResolutionMinutes: intPtr(90)}); err != nil {
+		t.Fatal(err)
+	}
+	processSLAAt(t, sla, workspaceID, openID, start.Add(4*time.Hour))
+	processSLAAt(t, sla, workspaceID, resolvedID, start.Add(4*time.Hour))
+	open, resolved := slaRecord(t, db, openID), slaRecord(t, db, resolvedID)
+	if open.FirstResponseState != model.SupportSLAStateAchieved || *open.TargetFirstResponseMinutes != 240 ||
+		open.ResolutionState != model.SupportSLAStatePending || !open.ResolutionDueAt.Equal(start.Add(time.Second+10*time.Hour)) {
+		t.Fatalf("policy edit re-judged an open conversation: %+v", open)
+	}
+	if resolved.FirstResponseState != model.SupportSLAStateAchieved || resolved.ResolutionState != model.SupportSLAStateAchieved {
+		t.Fatalf("policy edit re-judged a resolved conversation: %+v", resolved)
+	}
+
+	// Disabling stops the open timers and keeps every recorded result.
+	disabled := false
+	if _, err := sla.UpdatePolicy(ctx, workspaceID, policy.ID, model.SupportSLAPolicyRequest{Name: "Standard", Enabled: &disabled, FirstResponseMinutes: intPtr(60)}); err != nil {
+		t.Fatal(err)
+	}
+	sla.now = func() time.Time { return start.Add(5 * time.Hour) }
+	if _, err := sla.ProcessQueue(ctx, 10); err != nil {
+		t.Fatal(err)
+	}
+	processSLAAt(t, sla, workspaceID, resolvedID, start.Add(5*time.Hour))
+	open, resolved = slaRecord(t, db, openID), slaRecord(t, db, resolvedID)
+	if open.DetachedAt == nil || open.FirstResponseState != model.SupportSLAStateAchieved || open.ResolutionState != model.SupportSLAStateCancelled || open.NextDueAt != nil {
+		t.Fatalf("disabled policy on an open conversation: %+v", open)
+	}
+	if resolved.DetachedAt != nil || resolved.ResolutionState != model.SupportSLAStateAchieved {
+		t.Fatalf("disabled policy changed a resolved conversation: %+v", resolved)
+	}
+	var breaches int64
+	if err := db.Model(&model.SupportMessage{}).Where("workspace_id = ? AND system_event_type = ?", workspaceID, model.SystemEventSLABreached).
+		Count(&breaches).Error; err != nil || breaches != 0 {
+		t.Fatalf("policy changes announced breaches: %d %v", breaches, err)
+	}
+}
+
+func TestSupportSLAWorkLease(t *testing.T) {
+	sla, _, workspaceID, _, start := newSLATestService(t)
+	ctx := context.Background()
+	repo := sla.repo
+	a, b, later := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	if err := repo.Enqueue(ctx, workspaceID, []string{a, b}, start); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Enqueue(ctx, workspaceID, []string{later}, start.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := repo.ClaimWork(ctx, start, start.Add(supportSLAWorkLease), 10)
+	if err != nil || len(claimed) != 2 {
+		t.Fatalf("claim: %+v %v", claimed, err)
+	}
+	if again, err := repo.ClaimWork(ctx, start.Add(time.Second), start.Add(supportSLAWorkLease), 10); err != nil || len(again) != 0 {
+		t.Fatalf("leased or future rows claimed twice: %+v %v", again, err)
+	}
+	// One evaluation finishes; the other conversation changes meanwhile.
+	byID := map[string]model.SupportSLAWork{}
+	for _, item := range claimed {
+		byID[item.ConversationID] = item
+	}
+	if err := repo.Enqueue(ctx, workspaceID, []string{b}, start.Add(2*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{a, b} {
+		if err := repo.CompleteWork(ctx, byID[id]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rest, err := repo.ClaimWork(ctx, start.Add(time.Minute), start.Add(time.Minute+supportSLAWorkLease), 10)
+	if err != nil || len(rest) != 2 {
+		t.Fatalf("re-queued and due rows: %+v %v", rest, err)
+	}
+	ids := map[string]bool{rest[0].ConversationID: true, rest[1].ConversationID: true}
+	if !ids[b] || !ids[later] {
+		t.Fatalf("expected the changed and the now-due conversations, got %+v", rest)
+	}
+	// A lease that runs out returns the row.
+	if expired, err := repo.ClaimWork(ctx, start.Add(time.Minute+supportSLAWorkLease), start.Add(time.Hour), 10); err != nil || len(expired) != 2 {
+		t.Fatalf("expired leases: %+v %v", expired, err)
 	}
 }

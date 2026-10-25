@@ -65,19 +65,23 @@ export function supportSLAChip(sla: SupportConversationSLA | null | undefined, n
   return { metric: next.metric, tone, remaining: formatSLARemaining(remainingMs), dueAt: next.due_at }
 }
 
-export function describeSLAItem(item: SupportConversationSLAItem, now = Date.now()): string {
+export function describeSLAItem(
+  item: SupportConversationSLAItem,
+  now = Date.now(),
+  context?: Pick<SupportConversationSLA, 'ai_handling' | 'ended'> | null,
+): string {
   const label = SUPPORT_SLA_METRIC_LABELS[item.metric]
   switch (item.state) {
     case 'pending':
       return item.due_at ? `${label}: due in ${formatSLARemaining(new Date(item.due_at).getTime() - now)}` : `${label}: running`
     case 'paused':
-      return `${label}: paused while waiting on the customer`
+      return context?.ai_handling ? `${label}: starts when the AI hands over` : `${label}: paused while waiting on the customer`
     case 'achieved':
       return `${label}: met`
     case 'cancelled':
-      return `${label}: not needed`
+      return context?.ended ? `${label}: stopped, no policy applies` : `${label}: not needed`
     case 'breached':
-      if (item.achieved_at) return `${label}: missed`
+      if (item.achieved_at || context?.ended) return `${label}: missed`
       return item.due_at ? `${label}: overdue by ${formatSLARemaining(now - new Date(item.due_at).getTime())}` : `${label}: missed`
   }
 }

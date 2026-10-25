@@ -13,11 +13,10 @@ type supportSLAClock struct {
 	// windows holds each weekday's [start, end) in minutes after midnight;
 	// nil means calendar time.
 	windows map[time.Weekday][2]int
+	// week is the counted time in one full week, so long spans skip whole
+	// weeks instead of walking every day.
+	week time.Duration
 }
-
-// supportSLAClockLimit bounds the business-day walk; a 90-day target with
-// one open hour a week still fits.
-const supportSLAClockLimit = 5 * 366
 
 func newSupportSLAClock(settings model.SupportInboxSettings, businessHours bool) supportSLAClock {
 	if !businessHours || !settings.BusinessHoursEnabled {
@@ -47,7 +46,11 @@ func newSupportSLAClock(settings model.SupportInboxSettings, businessHours bool)
 		// calendar time instead.
 		return supportSLAClock{location: time.UTC}
 	}
-	return supportSLAClock{location: location, windows: windows}
+	var week time.Duration
+	for _, minutes := range windows {
+		week += time.Duration(minutes[1]-minutes[0]) * time.Minute
+	}
+	return supportSLAClock{location: location, windows: windows, week: week}
 }
 
 func (c supportSLAClock) calendar() bool { return c.windows == nil }
@@ -73,6 +76,12 @@ func (c supportSLAClock) nextDay(t time.Time) time.Time {
 	return time.Date(y, m, d+1, 0, 0, 0, 0, c.location)
 }
 
+// addWeek moves a local midnight one week later.
+func (c supportSLAClock) addWeek(t time.Time) time.Time {
+	y, m, d := t.In(c.location).Date()
+	return time.Date(y, m, d+7, 0, 0, 0, 0, c.location)
+}
+
 // Add returns the moment that lies duration of counted time after start.
 func (c supportSLAClock) Add(start time.Time, duration time.Duration) time.Time {
 	if duration <= 0 {
@@ -82,20 +91,25 @@ func (c supportSLAClock) Add(start time.Time, duration time.Duration) time.Time 
 		return start.Add(duration)
 	}
 	cursor, remaining := start, duration
-	for i := 0; i < supportSLAClockLimit; i++ {
+	for {
 		if open, close, ok := c.window(cursor); ok && cursor.Before(close) {
 			if cursor.Before(open) {
 				cursor = open
 			}
-			if available := close.Sub(cursor); remaining <= available {
+			available := close.Sub(cursor)
+			if remaining <= available {
 				return cursor.Add(remaining)
-			} else {
-				remaining -= available
 			}
+			remaining -= available
 		}
 		cursor = c.nextDay(cursor)
+		// From a midnight, each full week counts exactly c.week, so at most
+		// eight more days are walked.
+		for remaining > c.week {
+			cursor = c.addWeek(cursor)
+			remaining -= c.week
+		}
 	}
-	return cursor.Add(remaining)
 }
 
 // Between returns the counted time in [from, to).
@@ -108,7 +122,7 @@ func (c supportSLAClock) Between(from, to time.Time) time.Duration {
 	}
 	var total time.Duration
 	cursor := from
-	for i := 0; i < supportSLAClockLimit && cursor.Before(to); i++ {
+	for cursor.Before(to) {
 		if open, close, ok := c.window(cursor); ok {
 			if cursor.After(open) {
 				open = cursor
@@ -121,6 +135,10 @@ func (c supportSLAClock) Between(from, to time.Time) time.Duration {
 			}
 		}
 		cursor = c.nextDay(cursor)
+		for !c.addWeek(cursor).After(to) {
+			cursor = c.addWeek(cursor)
+			total += c.week
+		}
 	}
 	return total
 }

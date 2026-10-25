@@ -965,6 +965,10 @@ func newTestDB(t *testing.T) *gorm.DB {
 		)`,
 		`CREATE TABLE support_conversation_slas (
 			conversation_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, policy_id TEXT, policy_name TEXT NOT NULL DEFAULT '',
+			policy_applied_at DATETIME, detached_at DATETIME, target_first_response_minutes INTEGER,
+			target_next_response_minutes INTEGER, target_resolution_minutes INTEGER,
+			target_business_hours BOOLEAN NOT NULL DEFAULT 0, target_pause_while_waiting BOOLEAN NOT NULL DEFAULT 1,
+			ai_involved BOOLEAN NOT NULL DEFAULT 0, human_since DATETIME, next_response_carried_breaches INTEGER NOT NULL DEFAULT 0,
 			first_response_state TEXT NOT NULL DEFAULT '', first_response_due_at DATETIME, first_response_achieved_at DATETIME,
 			first_response_breached_at DATETIME, next_response_state TEXT NOT NULL DEFAULT '', next_response_due_at DATETIME,
 			next_response_breached_at DATETIME, next_response_breaches INTEGER NOT NULL DEFAULT 0,
@@ -995,6 +999,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 				short_code TEXT NOT NULL,
 				content TEXT NOT NULL,
 				tag TEXT NOT NULL DEFAULT 'General',
+				actions TEXT NOT NULL DEFAULT '{}',
 				created_by_id TEXT,
 			created_at DATETIME,
 			updated_at DATETIME

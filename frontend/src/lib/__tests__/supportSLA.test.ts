@@ -48,6 +48,12 @@ describe('describeSLAItem', () => {
     expect(describeSLAItem({ metric: 'first_response', state: 'breached', due_at: at(-90), achieved_at: at(-10) }, now)).toBe('First response: missed')
     expect(describeSLAItem({ metric: 'first_response', state: 'cancelled' }, now)).toBe('First response: not needed')
   })
+
+  it('explains AI handling and policies that no longer apply', () => {
+    expect(describeSLAItem({ metric: 'first_response', state: 'paused' }, now, { ai_handling: true })).toBe('First response: starts when the AI hands over')
+    expect(describeSLAItem({ metric: 'resolution', state: 'cancelled' }, now, { ended: true })).toBe('Resolution: stopped, no policy applies')
+    expect(describeSLAItem({ metric: 'first_response', state: 'breached', due_at: at(-90) }, now, { ended: true })).toBe('First response: missed')
+  })
 })
 
 describe('snoozePresets', () => {

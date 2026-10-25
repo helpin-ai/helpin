@@ -144,7 +144,7 @@ func (s *SupportSLAService) ListPolicies(ctx context.Context, workspaceID string
 }
 
 // CreatePolicy adds a policy after the existing ones. It applies to
-// conversations created from now on.
+// conversations created from now on, so nothing needs re-evaluating.
 func (s *SupportSLAService) CreatePolicy(ctx context.Context, workspaceID, actorID string, req model.SupportSLAPolicyRequest) (*model.SupportSLAPolicy, error) {
 	if err := s.requireFeature(ctx, workspaceID); err != nil {
 		return nil, err
@@ -164,11 +164,14 @@ func (s *SupportSLAService) CreatePolicy(ctx context.Context, workspaceID, actor
 	if err := s.repo.CreatePolicy(ctx, policy); err != nil {
 		return nil, err
 	}
-	return policy, s.repo.EnqueueWorkspace(ctx, workspaceID)
+	return policy, nil
 }
 
-// UpdatePolicy replaces a policy's settings. Re-enabling a policy restarts
-// the point from which it applies.
+// UpdatePolicy replaces a policy's settings. New targets apply to
+// conversations that start the policy afterwards; conversations already on
+// it keep the targets they started with. Condition changes and disabling
+// re-check open conversations. Re-enabling a policy restarts the point from
+// which it applies.
 func (s *SupportSLAService) UpdatePolicy(ctx context.Context, workspaceID, policyID string, req model.SupportSLAPolicyRequest) (*model.SupportSLAPolicy, error) {
 	if err := s.requireFeature(ctx, workspaceID); err != nil {
 		return nil, err
@@ -190,15 +193,16 @@ func (s *SupportSLAService) UpdatePolicy(ctx context.Context, workspaceID, polic
 	if err := s.repo.SavePolicy(ctx, policy); err != nil {
 		return nil, err
 	}
-	return policy, s.repo.EnqueueWorkspace(ctx, workspaceID)
+	return policy, s.repo.EnqueueOpenRecords(ctx, workspaceID, s.now())
 }
 
-// DeletePolicy removes a policy and re-evaluates the conversations it governed.
+// DeletePolicy removes a policy. Open conversations it governed move to the
+// next matching policy or stop SLA tracking; recorded results stay.
 func (s *SupportSLAService) DeletePolicy(ctx context.Context, workspaceID, policyID string) error {
 	if err := s.repo.DeletePolicy(ctx, workspaceID, policyID); err != nil {
 		return err
 	}
-	return s.repo.EnqueueWorkspace(ctx, workspaceID)
+	return s.repo.EnqueueOpenRecords(ctx, workspaceID, s.now())
 }
 
 // ReorderPolicies sets the order in which policies are matched.
@@ -209,21 +213,10 @@ func (s *SupportSLAService) ReorderPolicies(ctx context.Context, workspaceID str
 	if err := s.repo.ReorderPolicies(ctx, workspaceID, policyIDs); err != nil {
 		return nil, err
 	}
-	if err := s.repo.EnqueueWorkspace(ctx, workspaceID); err != nil {
+	if err := s.repo.EnqueueOpenRecords(ctx, workspaceID, s.now()); err != nil {
 		return nil, err
 	}
 	return s.ListPolicies(ctx, workspaceID)
-}
-
-func (s *SupportSLAService) clockFor(ctx context.Context, workspaceID string, policy model.SupportSLAPolicy) supportSLAClock {
-	if !policy.BusinessHours || s.inbox == nil || s.inbox.installationRepo == nil {
-		return newSupportSLAClock(model.SupportInboxSettings{}, false)
-	}
-	installation, err := s.inbox.installationRepo.GetByWorkspace(ctx, workspaceID)
-	if err != nil || installation == nil {
-		return newSupportSLAClock(model.SupportInboxSettings{}, false)
-	}
-	return newSupportSLAClock(parseSettings(installation.Settings), true)
 }
 
 type supportSLABreach struct {
@@ -232,53 +225,173 @@ type supportSLABreach struct {
 	metrics      []string
 }
 
+// supportSLABatch caches per-workspace inputs across one queue pass.
+type supportSLABatch struct {
+	policies map[string][]model.SupportSLAPolicy
+	clocks   map[string]supportSLAClock
+}
+
+func newSupportSLABatch() *supportSLABatch {
+	return &supportSLABatch{policies: map[string][]model.SupportSLAPolicy{}, clocks: map[string]supportSLAClock{}}
+}
+
+// workspacePolicies returns the enabled policies, or none when the
+// workspace no longer has the SLA feature.
+func (s *SupportSLAService) workspacePolicies(ctx context.Context, batch *supportSLABatch, workspaceID string) ([]model.SupportSLAPolicy, error) {
+	if policies, ok := batch.policies[workspaceID]; ok {
+		return policies, nil
+	}
+	var policies []model.SupportSLAPolicy
+	entitled := true
+	if s.entitlements != nil {
+		if err := s.entitlements.RequireFeature(ctx, workspaceID, EntitlementFeatureSLAPolicies); err != nil {
+			var denied *EntitlementError
+			if !errors.As(err, &denied) {
+				return nil, err
+			}
+			entitled = false
+		}
+	}
+	if entitled {
+		all, err := s.repo.ListPolicies(ctx, workspaceID)
+		if err != nil {
+			return nil, err
+		}
+		for _, policy := range all {
+			if policy.Enabled {
+				policies = append(policies, policy)
+			}
+		}
+	}
+	batch.policies[workspaceID] = policies
+	return policies, nil
+}
+
+func (s *SupportSLAService) clockFor(ctx context.Context, batch *supportSLABatch, workspaceID string, businessHours bool) supportSLAClock {
+	if !businessHours || s.inbox == nil || s.inbox.installationRepo == nil {
+		return newSupportSLAClock(model.SupportInboxSettings{}, false)
+	}
+	if clock, ok := batch.clocks[workspaceID]; ok {
+		return clock
+	}
+	clock := newSupportSLAClock(model.SupportInboxSettings{}, false)
+	installation, err := s.inbox.installationRepo.GetByWorkspace(ctx, workspaceID)
+	if err != nil {
+		slog.ErrorContext(ctx, "load business hours for SLA", "workspace_id", workspaceID, "error", err)
+	} else if installation != nil {
+		clock = newSupportSLAClock(parseSettings(installation.Settings), true)
+	}
+	batch.clocks[workspaceID] = clock
+	return clock
+}
+
+// supportSLAHandoff works out whether the AI handled a conversation first
+// and when the team took over. A handoff time, once recorded, is kept.
+func supportSLAHandoff(conversation model.SupportConversation, replies []repository.SupportSLAReplyRow, previous *model.SupportConversationSLARecord, now time.Time) (involved bool, humanSince *time.Time, aiOwnsNow bool) {
+	closed := conversation.Status == model.SupportConversationStatusResolved || conversation.Status == model.SupportConversationStatusSpam
+	aiOwnsNow = !closed && conversation.AIOwnsResponse()
+	involved = aiOwnsNow || conversation.AIState != nil || (previous != nil && previous.AIInvolved)
+	var firstTeammate *time.Time
+	for _, reply := range replies {
+		switch reply.SenderType {
+		case "ai", "agent":
+			involved = true
+		case "user":
+			if firstTeammate == nil {
+				firstTeammate = timePtr(reply.CreatedAt)
+			}
+		}
+	}
+	if !involved {
+		return false, nil, false
+	}
+	if previous != nil && previous.HumanSince != nil {
+		return true, previous.HumanSince, aiOwnsNow
+	}
+	if handoff := earliestTime(conversation.AIEscalatedAt, conversation.CustomerRequestedHumanAt, conversation.AIPausedAt, firstTeammate); handoff != nil {
+		return true, handoff, aiOwnsNow
+	}
+	if aiOwnsNow || closed {
+		// The AI still answers, or resolved the conversation on its own.
+		return true, nil, aiOwnsNow
+	}
+	// The team took over without a recorded time.
+	return true, timePtr(now), false
+}
+
 // EvaluateConversation recomputes one conversation's SLA state and records
 // any newly missed target.
 func (s *SupportSLAService) EvaluateConversation(ctx context.Context, workspaceID, conversationID string) error {
+	return s.evaluateConversation(ctx, newSupportSLABatch(), workspaceID, conversationID)
+}
+
+func (s *SupportSLAService) evaluateConversation(ctx context.Context, batch *supportSLABatch, workspaceID, conversationID string) error {
 	var breach *supportSLABreach
 	changed := false
+	now := s.now()
 	err := s.repo.WithConversationLock(ctx, conversationID, func(repo *repository.SupportSLARepository) error {
 		inputs, err := repo.LoadInputs(ctx, workspaceID, conversationID)
 		if err != nil {
 			return err
 		}
-		conversation := inputs.Conversation
+		conversation, previous := inputs.Conversation, inputs.Previous
 		if conversation == nil || conversation.MergedIntoID != nil || conversation.AnonymizedAt != nil {
-			if inputs.Previous != nil {
+			if previous != nil {
 				changed = true
 				return repo.DeleteRecord(ctx, conversationID)
 			}
 			return nil
 		}
-		policies, err := repo.ListPolicies(ctx, workspaceID)
-		if err != nil {
-			return err
+		closed := conversation.Status == model.SupportConversationStatusResolved || conversation.Status == model.SupportConversationStatusSpam
+		in := supportSLAInput{Conversation: *conversation, Now: now, Previous: previous}
+		var snapshot supportSLATargets
+		hasSnapshot := false
+		if previous != nil && previous.DetachedAt == nil {
+			snapshot, hasSnapshot = supportSLATargetsFromRecord(*previous)
 		}
-		var policy *model.SupportSLAPolicy
-		for i := range policies {
-			if supportSLAPolicyMatches(policies[i], *conversation) {
-				policy = &policies[i]
-				break
+		switch {
+		case closed && previous != nil:
+			// Closed conversations finish with the targets they had.
+			if !hasSnapshot {
+				return nil
+			}
+			in.Targets, in.AppliedAt = snapshot, previous.PolicyAppliedAt
+		default:
+			policies, err := s.workspacePolicies(ctx, batch, workspaceID)
+			if err != nil {
+				return err
+			}
+			var policy *model.SupportSLAPolicy
+			for i := range policies {
+				if supportSLAPolicyMatches(policies[i], *conversation) {
+					policy = &policies[i]
+					break
+				}
+			}
+			switch {
+			case policy == nil && (previous == nil || previous.DetachedAt != nil):
+				return nil
+			case policy == nil:
+				record := detachSupportSLARecord(*previous, now)
+				changed = supportSLAVisibleChange(*previous, record)
+				return repo.SaveRecord(ctx, &record)
+			case hasSnapshot && snapshot.PolicyID == policy.ID:
+				in.Targets, in.AppliedAt = snapshot, previous.PolicyAppliedAt
+			default:
+				in.Targets = supportSLATargetsFromPolicy(*policy)
+				if previous != nil {
+					in.Switched, in.AppliedAt = true, timePtr(now)
+				}
 			}
 		}
-		if policy == nil {
-			if inputs.Previous != nil {
-				changed = true
-				return repo.DeleteRecord(ctx, conversationID)
-			}
-			return nil
-		}
-		previous := inputs.Previous
-		if previous != nil && (previous.PolicyID == nil || *previous.PolicyID != policy.ID) {
-			// A different policy starts with fresh breach history.
-			previous = nil
-		}
-		replies := make([]supportSLAReply, 0, len(inputs.Replies))
+		in.Replies = make([]supportSLAReply, 0, len(inputs.Replies))
 		for _, row := range inputs.Replies {
-			replies = append(replies, supportSLAReply{At: row.CreatedAt, SenderType: row.SenderType})
+			in.Replies = append(in.Replies, supportSLAReply{At: row.CreatedAt, SenderType: row.SenderType})
 		}
-		evaluation := evaluateSupportSLA(*policy, *conversation, replies, s.clockFor(ctx, workspaceID, *policy), s.now(), previous)
-		changed = inputs.Previous == nil || supportSLAVisibleChange(*inputs.Previous, evaluation.Record)
+		in.AIInvolved, in.HumanSince, in.AIOwnsNow = supportSLAHandoff(*conversation, inputs.Replies, previous, now)
+		in.Clock = s.clockFor(ctx, batch, workspaceID, in.Targets.BusinessHours)
+		evaluation := evaluateSupportSLA(in)
+		changed = previous == nil || supportSLAVisibleChange(*previous, evaluation.Record)
 		if err := repo.SaveRecord(ctx, &evaluation.Record); err != nil {
 			return err
 		}
@@ -324,7 +437,11 @@ func (s *SupportSLAService) announceBreach(ctx context.Context, breach *supportS
 			return fmt.Sprintf("SLA missed: %s target (%s).", summary, breach.record.PolicyName)
 		}, map[string]any{"metrics": breach.metrics, "policy_id": derefString(breach.record.PolicyID), "policy_name": breach.record.PolicyName})
 	}
-	if s.notifications == nil || closed || conversation.AssignedUserID == nil || *conversation.AssignedUserID == "" {
+	if s.notifications == nil || closed {
+		return
+	}
+	recipients := s.breachRecipients(ctx, conversation)
+	if len(recipients) == 0 {
 		return
 	}
 	if err := s.notifications.Emit(ctx, model.NotificationEventInput{
@@ -334,37 +451,96 @@ func (s *SupportSLAService) announceBreach(ctx context.Context, breach *supportS
 		Body:     fmt.Sprintf("The %s target of %s was missed.", summary, breach.record.PolicyName),
 		Category: model.NotifCategorySupportReplies, Priority: "urgent",
 		EntitySnapshot:     buildSupportConversationEntitySnapshot(conversation),
-		ExplicitRecipients: []string{*conversation.AssignedUserID}, SkipFollowers: true,
+		ExplicitRecipients: recipients, SkipFollowers: true,
 	}); err != nil {
 		slog.ErrorContext(ctx, "emit SLA breach notification", "conversation_id", conversation.ID, "error", err)
 	}
 }
 
+// supportSLABreachRecipientLimit bounds notifications for one breach.
+const supportSLABreachRecipientLimit = 50
+
+// breachRecipients is the assignee, or the inbox's members when nobody is
+// assigned, or the workspace's support teammates for the shared inbox.
+func (s *SupportSLAService) breachRecipients(ctx context.Context, conversation *model.SupportConversation) []string {
+	if conversation.AssignedUserID != nil && *conversation.AssignedUserID != "" {
+		return []string{*conversation.AssignedUserID}
+	}
+	if s.inbox == nil {
+		return nil
+	}
+	var recipients []string
+	if conversation.MailboxID != nil && *conversation.MailboxID != "" && s.inbox.mailboxRepo != nil {
+		userIDs, err := s.inbox.mailboxRepo.ListActiveMemberUserIDs(ctx, conversation.WorkspaceID, *conversation.MailboxID)
+		if err != nil {
+			slog.ErrorContext(ctx, "list inbox members for SLA breach", "conversation_id", conversation.ID, "error", err)
+			return nil
+		}
+		recipients = userIDs
+	} else if s.inbox.workspaceRepo != nil {
+		members, err := s.inbox.workspaceRepo.ListSupportAssignableMembers(ctx, conversation.WorkspaceID, nil)
+		if err != nil {
+			slog.ErrorContext(ctx, "list support teammates for SLA breach", "conversation_id", conversation.ID, "error", err)
+			return nil
+		}
+		for _, member := range members {
+			if member.UserID != nil && *member.UserID != "" {
+				recipients = append(recipients, *member.UserID)
+			}
+		}
+	}
+	if len(recipients) > supportSLABreachRecipientLimit {
+		recipients = recipients[:supportSLABreachRecipientLimit]
+	}
+	return recipients
+}
+
+// supportSLAWorkLease is how long a claimed queue row stays hidden from
+// other workers; a crashed worker's rows return after it.
+const supportSLAWorkLease = 2 * time.Minute
+
 // ProcessQueue evaluates queued conversations and conversations whose next
 // target is due. It returns how many it evaluated.
 func (s *SupportSLAService) ProcessQueue(ctx context.Context, limit int) (int, error) {
-	work, err := s.repo.ClaimWork(ctx, limit)
+	now := s.now()
+	work, err := s.repo.ClaimWork(ctx, now, now.Add(supportSLAWorkLease), limit)
 	if err != nil {
 		return 0, err
 	}
-	due, err := s.repo.ListDueWakes(ctx, s.now(), limit)
+	due, err := s.repo.ListDueWakes(ctx, now, limit)
 	if err != nil {
 		return 0, err
 	}
+	claimed := make(map[string]model.SupportSLAWork, len(work))
+	for _, item := range work {
+		claimed[item.ConversationID] = item
+	}
+	batch := newSupportSLABatch()
 	seen := map[string]bool{}
 	processed := 0
 	for _, item := range append(work, due...) {
 		if seen[item.ConversationID] {
 			continue
 		}
+		if ctx.Err() != nil {
+			// Unprocessed claims return when their lease ends.
+			break
+		}
 		seen[item.ConversationID] = true
-		if err := s.EvaluateConversation(ctx, item.WorkspaceID, item.ConversationID); err != nil {
+		lease, wasClaimed := claimed[item.ConversationID]
+		if err := s.evaluateConversation(ctx, batch, item.WorkspaceID, item.ConversationID); err != nil {
 			slog.ErrorContext(ctx, "evaluate support SLA", "conversation_id", item.ConversationID, "error", err)
 			// Retry later rather than losing the evaluation.
-			if requeueErr := s.repo.Enqueue(ctx, item.WorkspaceID, []string{item.ConversationID}, s.now().Add(time.Minute)); requeueErr != nil {
+			retryCtx := context.WithoutCancel(ctx)
+			if requeueErr := s.repo.Enqueue(retryCtx, item.WorkspaceID, []string{item.ConversationID}, s.now().Add(time.Minute)); requeueErr != nil {
 				slog.ErrorContext(ctx, "requeue support SLA evaluation", "conversation_id", item.ConversationID, "error", requeueErr)
 			}
 			continue
+		}
+		if wasClaimed {
+			if err := s.repo.CompleteWork(context.WithoutCancel(ctx), lease); err != nil {
+				slog.ErrorContext(ctx, "complete support SLA evaluation", "conversation_id", item.ConversationID, "error", err)
+			}
 		}
 		processed++
 	}

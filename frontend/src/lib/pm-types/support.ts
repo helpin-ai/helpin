@@ -146,6 +146,10 @@ export interface SupportConversationSLA {
   next_due_at?: string | null;
   /** An open target is overdue right now. */
   breached: boolean;
+  /** The AI still owns the conversation; targets start at the handoff. */
+  ai_handling?: boolean;
+  /** No policy applies any more; open targets were stopped. */
+  ended?: boolean;
 }
 
 export interface SupportSLAPolicy {
@@ -513,12 +517,39 @@ export interface CreateSupportTriageRuleRequest {
   target_mailbox_id: string;
 }
 
+/** Changes a macro or bulk action applies to a conversation; unset fields are left alone. */
+export interface SupportConversationActions {
+  status?: 'open' | 'waiting_on_customer' | 'resolved';
+  priority?: ConversationPriority;
+  /** A teammate's user ID, or an empty string to unassign. */
+  assign_user_id?: string;
+  /** An inbox ID, or "shared" for the main inbox. */
+  mailbox_id?: string;
+  add_tag_ids?: string[];
+  remove_tag_ids?: string[];
+  snooze_minutes?: number;
+}
+
+export interface SupportActionResult {
+  conversation_id: string;
+  applied: string[];
+  error?: string;
+}
+
+export interface SupportBulkActionResponse {
+  results: SupportActionResult[];
+  succeeded: number;
+  failed: number;
+}
+
 export interface SupportCannedResponse {
   id: string;
   workspace_id: string;
   short_code: string;
   content: string;
   tag: string;
+  /** Actions that make this shortcut a macro. */
+  actions?: SupportConversationActions;
   created_by_id: string | null;
   created_at: string;
   updated_at: string;
@@ -529,6 +560,7 @@ export interface CreateCannedResponseRequest {
   content: string;
   tag?: string;
   title?: string;
+  actions?: SupportConversationActions;
 }
 
 export interface UpdateCannedResponseRequest {
@@ -536,6 +568,7 @@ export interface UpdateCannedResponseRequest {
   content: string;
   tag?: string;
   title?: string;
+  actions?: SupportConversationActions;
 }
 
 export interface UpdateSupportTriageRuleRequest {

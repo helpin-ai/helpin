@@ -222,16 +222,23 @@ func TestSupportSLAQueuePostgres(t *testing.T) {
 		t.Fatalf("after late reply: %+v", record)
 	}
 
-	// Lowering the priority moves the conversation out of the policy.
+	// Lowering the priority moves the conversation out of the policy: open
+	// targets end, the missed first response stays recorded.
 	mustExec(t, db, `UPDATE support_conversations SET priority = 'low' WHERE id = ?`, conversation.ID)
 	if _, err := sla.ProcessQueue(ctx, 50); err != nil {
 		t.Fatal(err)
 	}
-	var remaining int64
-	db.Model(&model.SupportConversationSLARecord{}).Where("conversation_id = ?", conversation.ID).Count(&remaining)
-	if remaining != 0 {
-		t.Fatal("SLA record kept after the policy stopped matching")
+	record = loadSLARecord(t, db, conversation.ID)
+	if record.DetachedAt == nil || record.FirstResponseState != model.SupportSLAStateBreached ||
+		record.ResolutionState != model.SupportSLAStateCancelled || record.NextDueAt != nil || record.WakeAt != nil {
+		t.Fatalf("record after the policy stopped matching: %+v", record)
 	}
+	var queuedAfter int64
+	db.Model(&model.SupportSLAWork{}).Where("conversation_id = ?", conversation.ID).Count(&queuedAfter)
+	if queuedAfter != 0 {
+		t.Fatalf("completed work left in the queue: %d", queuedAfter)
+	}
+	var remaining int64
 
 	// Conversations created before the policy are left alone.
 	old := &model.SupportConversation{ID: uuid.NewString(), WorkspaceID: workspaceID, DisplayID: 2, Subject: "Old", Status: model.SupportConversationStatusOpen, Priority: "urgent", Channel: "email", CreatedAt: start.Add(-time.Hour)}
@@ -254,4 +261,69 @@ func loadSLARecord(t *testing.T, db *gorm.DB, conversationID string) model.Suppo
 		t.Fatal(err)
 	}
 	return record
+}
+
+func TestSupportSLAAIHandoffPostgres(t *testing.T) {
+	db := openSupportOpsPostgres(t)
+	ctx := context.Background()
+	workspaceID, userID := seedSupportOpsWorkspace(t, db)
+	mustExec(t, db, `DELETE FROM support_sla_work`)
+	messages := repository.NewSupportMessageRepository(db)
+	inbox := NewSupportInboxService(repository.NewSupportConversationRepository(db), repository.NewSupportMailboxRepository(db), messages, nil, nil,
+		repository.NewSupportInboxInstallationRepository(db), nil, nil, nil, nil, nil, repository.NewUserRepository(db), nil, nil, nil)
+	sla := NewSupportSLAService(repository.NewSupportSLARepository(db), inbox)
+	inbox.SetSLAService(sla)
+	start := time.Now().UTC()
+	sla.now = func() time.Time { return start }
+	if _, err := sla.CreatePolicy(ctx, workspaceID, userID, model.SupportSLAPolicyRequest{Name: "All", FirstResponseMinutes: intPtr(5)}); err != nil {
+		t.Fatal(err)
+	}
+	flow, pending := model.SupportConversationFlowStateAIHandling, "pending"
+	conversation := &model.SupportConversation{ID: uuid.NewString(), WorkspaceID: workspaceID, DisplayID: 1, Subject: "Bot", Status: model.SupportConversationStatusOpen,
+		Priority: "medium", Channel: "widget", FlowState: &flow, AIState: &pending, CreatedAt: start.Add(time.Second)}
+	if err := db.Create(conversation).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range []struct {
+		sender string
+		at     time.Duration
+	}{{"customer", time.Second}, {"ai", time.Minute}} {
+		if err := messages.Create(ctx, &model.SupportMessage{WorkspaceID: workspaceID, ConversationID: conversation.ID, SenderType: m.sender, MessageType: "reply", Content: "x", CreatedAt: start.Add(m.at)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Long after the target, the AI still owns the conversation: no breach.
+	sla.now = func() time.Time { return start.Add(time.Hour) }
+	if _, err := sla.ProcessQueue(ctx, 50); err != nil {
+		t.Fatal(err)
+	}
+	record := loadSLARecord(t, db, conversation.ID)
+	if !record.AIInvolved || record.FirstResponseState != model.SupportSLAStatePaused || record.Breached {
+		t.Fatalf("SLA ran while the AI answered: %+v", record)
+	}
+	// The escalation is queued by the trigger and starts the clock.
+	escalatedAt := start.Add(time.Hour)
+	mustExec(t, db, `UPDATE support_conversations SET flow_state = 'waiting_for_human', ai_state = 'escalated', human_takeover = true, ai_escalated_at = ? WHERE id = ?`, escalatedAt, conversation.ID)
+	var queued int64
+	db.Model(&model.SupportSLAWork{}).Where("conversation_id = ?", conversation.ID).Count(&queued)
+	if queued != 1 {
+		t.Fatal("handoff did not queue an SLA evaluation")
+	}
+	sla.now = func() time.Time { return escalatedAt.Add(time.Minute) }
+	if _, err := sla.ProcessQueue(ctx, 50); err != nil {
+		t.Fatal(err)
+	}
+	record = loadSLARecord(t, db, conversation.ID)
+	if record.FirstResponseState != model.SupportSLAStatePending || record.HumanSince == nil ||
+		!record.FirstResponseDueAt.Equal(escalatedAt.Add(5*time.Minute).Truncate(time.Microsecond)) {
+		t.Fatalf("after handoff: %+v", record)
+	}
+
+	// Resolving outside the inbox service still ends a snooze.
+	mustExec(t, db, `UPDATE support_conversations SET snoozed_until = ? WHERE id = ?`, start.Add(48*time.Hour), conversation.ID)
+	mustExec(t, db, `UPDATE support_conversations SET status = 'resolved', resolved_at = now() WHERE id = ?`, conversation.ID)
+	var snoozed sql.NullTime
+	if err := db.Raw(`SELECT snoozed_until FROM support_conversations WHERE id = ?`, conversation.ID).Row().Scan(&snoozed); err != nil || snoozed.Valid {
+		t.Fatalf("resolved conversation kept its snooze: %v %v", snoozed, err)
+	}
 }
