@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { ArrowLeft01Icon, ArrowRight01Icon, AttachmentIcon, Cancel01Icon, Download04Icon } from '@/lib/icons';
+import { useCallback, useMemo, useState } from 'react';
+import { ArrowLeft01Icon, ArrowRight01Icon, AttachmentIcon, Download04Icon } from '@/lib/icons';
 import { SupportPendingAttachment } from './SupportPendingAttachment';
 import { SupportImageDownload } from './SupportImageDownload';
 import { SupportAttachmentImage } from './SupportAttachmentImage';
+import { SupportAttachmentLightbox } from './SupportAttachmentLightbox';
+import { normalizeIndex } from './attachmentLightbox';
 import { useSupportImageContent } from './useSupportImageContent';
 import type { SupportAttachmentPayload } from '@/lib/pmTypes';
 import { isPreviewableImageType } from '@/lib/supportAttachmentFiles';
@@ -32,11 +33,6 @@ function isImageAttachment(attachment: SupportAttachmentPayload): boolean {
   return isPreviewableImageType(attachment.file_type) && !!attachment.url;
 }
 
-function normalizeIndex(index: number, length: number): number {
-  if (length <= 0) return 0;
-  return ((index % length) + length) % length;
-}
-
 export function SupportAttachmentGallery({
   workspaceId,
   conversationId,
@@ -54,27 +50,11 @@ export function SupportAttachmentGallery({
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
   const hoverAttachment = hoverIndex === null ? null : imageAttachments[hoverIndex] ?? null;
-  const lightboxAttachment = lightboxIndex === null ? null : imageAttachments[lightboxIndex] ?? null;
   const hasMultipleImages = imageAttachments.length > 1;
 
   const setAdjacentHover = useCallback((direction: -1 | 1) => {
     setHoverIndex((current) => normalizeIndex((current ?? 0) + direction, imageAttachments.length));
   }, [imageAttachments.length]);
-
-  const setAdjacentLightbox = useCallback((direction: -1 | 1) => {
-    setLightboxIndex((current) => normalizeIndex((current ?? 0) + direction, imageAttachments.length));
-  }, [imageAttachments.length]);
-
-  useEffect(() => {
-    if (lightboxIndex === null) return undefined;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setLightboxIndex(null);
-      if (event.key === 'ArrowLeft') setAdjacentLightbox(-1);
-      if (event.key === 'ArrowRight') setAdjacentLightbox(1);
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [lightboxIndex, setAdjacentLightbox]);
 
   if (attachments.length === 0) return null;
 
@@ -84,78 +64,6 @@ export function SupportAttachmentGallery({
     : 'flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs text-foreground transition-colors hover:bg-muted/50';
 
   const navButtonClassName = 'flex h-7 w-7 items-center justify-center rounded-full bg-background/90 text-foreground shadow-sm ring-1 ring-border transition-colors hover:bg-background';
-
-  const lightboxPortal = lightboxAttachment ? createPortal(
-    <div
-      data-testid="support-attachment-lightbox"
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/85 p-5 backdrop-blur-sm animate-in fade-in duration-150"
-      onClick={() => setLightboxIndex(null)}
-    >
-      <div className="absolute inset-x-4 top-4 flex items-center justify-between gap-3 text-white">
-        <div className="min-w-0">
-          <div className="truncate text-sm font-medium">{lightboxAttachment.file_name}</div>
-          <div className="text-xs text-white/65">
-            {lightboxIndex! + 1} / {imageAttachments.length}
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <SupportImageDownload
-            key={lightboxAttachment.id}
-            attachment={lightboxAttachment}
-            loadImageContent={loadImageContent}
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 transition-colors hover:bg-white/25"
-            iconClassName="h-4 w-4"
-          />
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              setLightboxIndex(null);
-            }}
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 transition-colors hover:bg-white/25"
-            aria-label="Close preview"
-          >
-            <Cancel01Icon className="h-5 w-5" />
-          </button>
-        </div>
-      </div>
-
-      {hasMultipleImages && (
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            setAdjacentLightbox(-1);
-          }}
-          className="absolute left-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/15 text-white transition-colors hover:bg-white/25"
-          aria-label="Previous image attachment"
-        >
-          <ArrowLeft01Icon className="h-6 w-6" />
-        </button>
-      )}
-
-      <SupportAttachmentImage
-        attachment={lightboxAttachment}
-        loadFallback={loadImageContent}
-        className="h-[82vh] w-[88vw] text-white"
-      />
-
-      {hasMultipleImages && (
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            setAdjacentLightbox(1);
-          }}
-          className="absolute right-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/15 text-white transition-colors hover:bg-white/25"
-          aria-label="Next image attachment"
-        >
-          <ArrowRight01Icon className="h-6 w-6" />
-        </button>
-      )}
-    </div>,
-    document.body,
-  ) : null;
 
   return (
     <>
@@ -290,7 +198,15 @@ export function SupportAttachmentGallery({
           </div>
         )}
       </div>
-      {lightboxPortal}
+      {lightboxIndex !== null && (
+        <SupportAttachmentLightbox
+          attachments={imageAttachments}
+          index={lightboxIndex}
+          onIndexChange={setLightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+          loadImageContent={loadImageContent}
+        />
+      )}
     </>
   );
 }

@@ -27,6 +27,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { SupportCreateTaskModal } from './SupportCreateTaskModal';
+import { SupportAttachmentLightbox } from './SupportAttachmentLightbox';
+import { isLightboxAttachment } from './attachmentLightbox';
+import { useSupportImageContent } from './useSupportImageContent';
 import {
   useConversationAssociations,
   useCreatePMAssociation,
@@ -40,7 +43,7 @@ import { formatFileSize } from '@/lib/supportAttachmentFiles';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import type { CRMSearchResult } from '@/lib/crmTypes';
-import type { GroupedAssociations, SupportSharedItem } from '@/lib/pmTypes';
+import type { GroupedAssociations, SupportAttachmentPayload, SupportSharedItem } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
 
 interface SidebarAssociationsProps {
@@ -58,6 +61,17 @@ function sharedItemIcon(item: SupportSharedItem) {
   return item.file_type?.startsWith('image/') ? Image01Icon : File01Icon;
 }
 
+function sharedFileAttachment(item: SupportSharedItem): SupportAttachmentPayload {
+  return {
+    id: item.id,
+    file_key: '',
+    file_name: item.title,
+    file_type: item.file_type ?? '',
+    file_size: item.file_size ?? 0,
+    url: item.url,
+  };
+}
+
 export function SidebarAssociations({ workspaceId, conversationId }: SidebarAssociationsProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -68,6 +82,11 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
   const associationsQuery = useConversationAssociations(workspaceId, conversationId);
   const associationsData = associationsQuery.data as GroupedAssociations | undefined;
   const { data: sharedItems = [] } = useConversationSharedItems(workspaceId, conversationId);
+  const loadImageContent = useSupportImageContent(workspaceId, conversationId);
+  const previewFiles = sharedItems
+    .filter((item) => item.kind === 'file')
+    .map(sharedFileAttachment)
+    .filter(isLightboxAttachment);
 
   const createAssociation = useCreatePMAssociation(workspaceId);
 
@@ -83,6 +102,7 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
   const [dealResults, setDealResults] = useState<CRMSearchResult[]>([]);
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
   const [tasksExpanded, setTasksExpanded] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
   const { data: workflows = [] } = useWorkflows(pmEnabled ? workspaceId : '');
   const workflowStateColorById = new Map(
@@ -95,6 +115,7 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
 
   useEffect(() => {
     setTasksExpanded(false);
+    setLightboxIndex(null);
   }, [conversationId]);
 
   useEffect(() => {
@@ -277,24 +298,45 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
           <div className="space-y-0.5">
             {sharedItems.map((item) => {
               const ItemIcon = sharedItemIcon(item);
-              return (
-                <a
-                  key={`${item.kind}-${item.id}-${item.message_id}`}
-                  href={item.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={sidebarRowClassName}
-                >
+              const key = `${item.kind}-${item.id}-${item.message_id}`;
+              const content = (
+                <>
                   <ItemIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   <span className={cn('min-w-0 truncate', quietRelatedItemTitleClassName)}>{item.title}</span>
                   <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
                     {item.kind === 'doc' ? 'Article' : item.file_size ? formatFileSize(item.file_size) : 'File'}
                   </span>
+                </>
+              );
+              const previewIndex = item.kind === 'file' ? previewFiles.findIndex((file) => file.id === item.id) : -1;
+              // Images, videos and PDFs open in the lightbox; articles and other files open in a new tab.
+              return previewIndex >= 0 ? (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setLightboxIndex(previewIndex)}
+                  className={cn(sidebarRowClassName, 'w-full text-left')}
+                >
+                  {content}
+                </button>
+              ) : (
+                <a key={key} href={item.url} target="_blank" rel="noopener noreferrer" className={sidebarRowClassName}>
+                  {content}
                 </a>
               );
             })}
           </div>
         </CollapsibleSection>
+      )}
+
+      {lightboxIndex !== null && (
+        <SupportAttachmentLightbox
+          attachments={previewFiles}
+          index={lightboxIndex}
+          onIndexChange={setLightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+          loadImageContent={loadImageContent}
+        />
       )}
 
       {/* Link existing modal */}

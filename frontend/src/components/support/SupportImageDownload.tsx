@@ -61,7 +61,7 @@ export function SupportImageDownload({ attachment, className, iconClassName, loa
       className={`${className} disabled:cursor-wait disabled:opacity-60`}
       disabled={downloading}
       aria-busy={downloading}
-      aria-label="Download image attachment"
+      aria-label={attachment.file_type.startsWith('image/') ? 'Download image attachment' : 'Download attachment'}
       onClick={(event) => {
         event.stopPropagation();
         void download();
