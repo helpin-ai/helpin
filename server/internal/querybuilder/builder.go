@@ -127,6 +127,34 @@ func normalizedLogic(logic model.QueryFilterLogic) string {
 	}
 }
 
+// AllowedOperators returns the operators the field accepts, including the
+// numeric comparisons a NumericExpression enables.
+func (f FieldDefinition) AllowedOperators() []model.QueryFilterOperator {
+	allowed := f.Operators
+	if len(allowed) == 0 {
+		allowed = defaultOperators(f.Type)
+	}
+	result := append([]model.QueryFilterOperator{}, allowed...)
+	if f.NumericExpression == "" {
+		return result
+	}
+	for _, operator := range _numericComparisonOperators {
+		if !containsOperator(result, operator) {
+			result = append(result, operator)
+		}
+	}
+	return result
+}
+
+func containsOperator(operators []model.QueryFilterOperator, operator model.QueryFilterOperator) bool {
+	for _, candidate := range operators {
+		if candidate == operator {
+			return true
+		}
+	}
+	return false
+}
+
 func isOperatorAllowed(definition FieldDefinition, operator model.QueryFilterOperator) bool {
 	if definition.NumericExpression != "" && isNumericComparison(operator) {
 		return true

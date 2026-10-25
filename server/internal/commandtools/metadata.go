@@ -201,10 +201,12 @@ var baseRuntimeTools = append(skillManagementTools, []RuntimeToolMetadata{
 		CommandName: "crm.list_contacts",
 		Alias:       "list_contacts",
 		Category:    "CRM",
-		Description: "List CRM contacts in the workspace, optionally filtered by a case-insensitive name, email, or job-title query, or by a structured filter on native fields or custom_properties.<key>. Returns name, email, job title, and custom properties.",
+		Description: "List CRM contacts in the workspace, optionally filtered by a case-insensitive name, email, or job-title query, or by a structured filter on native fields or custom_properties.<key>. " +
+			"Returns name, email, job title, custom properties, and product-usage behavior when synced. " +
+			"Call describe_crm_fields first to learn which custom property keys and values exist; an unknown key matches nothing.",
 		InputSchema: withCRMQueryFilter(paginatedQuerySchema(50, 20, "Maximum number of contacts to return. Defaults to 20, max 50."),
 			"name, email, phone, job_title, source (text); lifecycle_stage, lead_status, portal_access (enum); "+
-				"owner_member_id (id); created_at, updated_at (date)"),
+				"owner_member_id (id); created_at, updated_at, first_seen_at, last_seen_at (date); sessions_30d (number)"),
 	},
 	{
 		CommandName: "crm.list_crm_signals",
@@ -651,14 +653,34 @@ var baseRuntimeTools = append(skillManagementTools, []RuntimeToolMetadata{
 		CommandName: "crm.list_companies",
 		Alias:       "list_crm_companies",
 		Category:    "CRM / Discovery",
-		Description: "List a bounded set of CRM companies in the current workspace, with their custom properties. Use filter to segment on native fields or custom_properties.<key>.",
+		Description: "List a bounded set of CRM companies in the current workspace, with their custom properties and product-usage behavior when synced. " +
+			"Use filter to segment on native fields or custom_properties.<key>; call describe_crm_fields first to learn which keys and values exist.",
 		InputSchema: operationalListSchema(map[string]any{
 			"query":           map[string]any{"type": "string", "maxLength": 500},
 			"owner_member_id": optionalIDSchema("Optional owner member ID filter."),
 			"offset":          map[string]any{"type": "integer", "minimum": 0, "description": "Zero-based result offset for paging."},
 			"filter": crmQueryFilterSchema("name, domain, external_id, industry, headquarters, description (text); " +
-				"employee_count, annual_revenue (number); owner_member_id (id); created_at, updated_at (date)"),
+				"employee_count, annual_revenue, sessions_30d (number); owner_member_id (id); " +
+				"created_at, updated_at, first_seen_at, last_seen_at (date)"),
 		}),
+	},
+	{
+		CommandName: "crm.describe_fields",
+		Alias:       "describe_crm_fields",
+		Category:    "CRM / Discovery",
+		Description: "Describe the fields list_contacts and list_crm_companies can filter on: native fields with their types, operators, and allowed values, " +
+			"and every custom property key in use with its value type, record count, most common values, and numeric range. " +
+			"Pass key to list one custom property's values, and value_query to search them. " +
+			"Call this before filtering on or writing custom properties, and reuse existing keys instead of inventing near-duplicates.",
+		InputSchema: closedObjectSchema(map[string]any{
+			"object_type": map[string]any{"type": "string", "enum": []string{"contact", "company"}, "description": "Which records to describe."},
+			"key": map[string]any{
+				"type": "string", "maxLength": 100,
+				"description": "Optional custom property key (with or without the custom_properties. prefix). Returns that key's values instead of the field catalog.",
+			},
+			"value_query": map[string]any{"type": "string", "maxLength": 120, "description": "With key: only values containing this case-insensitive text."},
+			"limit":       map[string]any{"type": "integer", "minimum": 1, "maximum": 100, "description": "With key: values to return. Defaults to 20, max 100."},
+		}, []string{"object_type"}),
 	},
 	{
 		CommandName: "crm.list_pipelines",
@@ -2271,7 +2293,8 @@ func crmQueryFilterSchema(fields string) map[string]any {
 		"rules": map[string]any{"type": "array", "items": rule, "minItems": 1, "maxItems": 20},
 	}, []string{"rules"})
 	schema["description"] = "Structured filter. Fields: " + fields +
-		"; custom_properties.<key> (text). Text matching is case-insensitive; is_empty and is_not_empty take no value; between takes two values; is_any_of and is_none_of take values and also match elements of list-valued custom properties (is_none_of includes records without a value); gt, gte, lt, lte, and between compare custom properties as numbers, skipping values that are not numeric."
+		"; custom_properties.<key> (text or number; describe_crm_fields lists the keys in use). Text matching is case-insensitive; is_empty and is_not_empty take no value; between takes two values; is_any_of and is_none_of take values and also match elements of list-valued custom properties (is_none_of includes records without a value); gt, gte, lt, lte, and between compare custom properties as numbers, skipping values that are not numeric. " +
+		"first_seen_at, last_seen_at, and sessions_30d come from synced product events; records without events are empty."
 	return schema
 }
 

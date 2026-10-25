@@ -113,7 +113,7 @@ export function ContactsPage() {
           value={searchParams.search ?? ''}
           onChange={(event) => setParam('search', event.target.value)}
         />
-        <ContactsFilterBar assignableMembers={assignableMembers} />
+        <ContactsFilterBar workspaceId={wsId} assignableMembers={assignableMembers} />
         <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-1">
           {showSeedButton && (
             <Button
@@ -135,7 +135,7 @@ export function ContactsPage() {
         </div>
       </header>
 
-      <ContactsActiveFilterBar assignableMembers={assignableMembers} />
+      <ContactsActiveFilterBar workspaceId={wsId} assignableMembers={assignableMembers} />
 
       {/* Content */}
       <div className="min-h-0 flex-1 overflow-hidden p-3">

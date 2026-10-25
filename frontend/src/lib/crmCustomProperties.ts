@@ -1,3 +1,5 @@
+import type { CRMCustomPropertySummary } from '@/lib/crmTypes';
+
 const SYSTEM_CRM_CUSTOM_PROPERTY_KEYS = new Set([
   'agent_enrichment',
 ]);
@@ -5,6 +7,23 @@ const SYSTEM_CRM_CUSTOM_PROPERTY_KEYS = new Set([
 /** Internal CRM metadata is retained for audit/provenance, but is not a customer attribute. */
 export function isSystemCRMCustomProperty(key: string): boolean {
   return SYSTEM_CRM_CUSTOM_PROPERTY_KEYS.has(key);
+}
+
+/**
+ * A key filters as a number when at least half its values are numeric.
+ * Records whose value is not numeric never match number comparisons.
+ */
+export function isNumericCustomProperty(summary: CRMCustomPropertySummary): boolean {
+  return summary.numeric_count > 0 && summary.numeric_count * 2 >= summary.count;
+}
+
+/** Labels boolean option values Yes and No; other values show as stored. */
+export function customPropertyOptionLabel(summary: CRMCustomPropertySummary, value: string): string {
+  if (summary.value_type === 'boolean' || summary.value_type === 'mixed') {
+    if (value === 'true') return 'Yes';
+    if (value === 'false') return 'No';
+  }
+  return value;
 }
 
 export interface CustomPropertyRow {

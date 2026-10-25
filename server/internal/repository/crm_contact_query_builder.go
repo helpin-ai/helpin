@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/querybuilder"
 )
 
@@ -48,5 +49,17 @@ var crmContactFilterDefinitions = querybuilder.Definitions{
 	"updated_at": {
 		Column: "updated_at",
 		Type:   querybuilder.FieldTypeDate,
+	},
+	"first_seen_at": {
+		Expression: crmBehaviorProfileExpression(model.CRMFieldObjectContact, "crm_contacts", "first_seen_at"),
+		Type:       querybuilder.FieldTypeDate,
+	},
+	"last_seen_at": {
+		Expression: crmBehaviorProfileExpression(model.CRMFieldObjectContact, "crm_contacts", "last_seen_at"),
+		Type:       querybuilder.FieldTypeDate,
+	},
+	"sessions_30d": {
+		Expression: crmBehaviorProfileExpression(model.CRMFieldObjectContact, "crm_contacts", "sessions_30d"),
+		Type:       querybuilder.FieldTypeNumber,
 	},
 }

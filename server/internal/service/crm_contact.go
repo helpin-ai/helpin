@@ -19,6 +19,7 @@ import (
 type CRMContactService struct {
 	productAnalyticsEmitter
 	contactRepo    *repository.CRMContactRepository
+	behavior       *repository.CRMBehaviorProfileRepository
 	activityRepo   *repository.CRMActivityRepository
 	timelineRepo   *repository.CRMCompanyTimelineRepository
 	entitlementSvc EntitlementPolicy
@@ -80,7 +81,14 @@ func (s *CRMContactService) List(ctx context.Context, workspaceID string, filter
 	if err := s.requireContactViewEntitlement(ctx, workspaceID); err != nil {
 		return nil, 0, err
 	}
-	return s.contactRepo.List(ctx, workspaceID, filters, pagination)
+	contacts, total, err := s.contactRepo.List(ctx, workspaceID, filters, pagination)
+	if err != nil {
+		return nil, 0, err
+	}
+	if err := s.attachContactBehavior(ctx, workspaceID, contacts); err != nil {
+		return nil, 0, err
+	}
+	return contacts, total, nil
 }
 
 // GetByID returns a contact by ID.
@@ -95,6 +103,11 @@ func (s *CRMContactService) GetByID(ctx context.Context, id string) (*model.CRMC
 	if err := s.requireContactViewEntitlement(ctx, contact.WorkspaceID); err != nil {
 		return nil, err
 	}
+	single := []model.CRMContact{*contact}
+	if err := s.attachContactBehavior(ctx, contact.WorkspaceID, single); err != nil {
+		return nil, err
+	}
+	contact.Behavior = single[0].Behavior
 	return contact, nil
 }
 

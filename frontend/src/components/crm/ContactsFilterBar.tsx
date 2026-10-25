@@ -1,22 +1,29 @@
 import { useMemo } from 'react';
 import { QueryBuilderPopover } from '@/components/ui/query-builder/QueryBuilderPopover';
 import { useContactsSearchParams } from '@/hooks/useContactsSearchParams';
+import { useContactFilterOptions } from '@/hooks/useContactFilterOptions';
 import { buildCRMContactQueryFields } from '@/lib/crmContactQueryBuilder';
-import { QUERY_FILTER_OPERATOR_LABELS, operatorUsesRange, operatorUsesValue, type QueryBuilderFieldDefinition, type QueryFilterRule } from '@/lib/queryBuilder';
+import { QUERY_FILTER_OPERATOR_LABELS, operatorUsesRange, operatorUsesValue, operatorUsesValueList, type QueryBuilderFieldDefinition, type QueryFilterRule } from '@/lib/queryBuilder';
 import { Button } from '@/components/ui/button';
 import { Cancel01Icon } from '@/lib/icons';
 import type { AssignableMember } from '@/lib/types';
 
 interface ContactsFilterBarProps {
+  workspaceId: string;
   assignableMembers: AssignableMember[];
 }
 
-export function ContactsFilterBar({ assignableMembers }: ContactsFilterBarProps) {
-  const { filterGroup, setFilterGroup } = useContactsSearchParams();
-  const fields = useMemo(
-    () => buildCRMContactQueryFields(assignableMembers),
-    [assignableMembers],
+function useContactQueryFields(workspaceId: string, assignableMembers: AssignableMember[]) {
+  const { data: filterOptions } = useContactFilterOptions(workspaceId);
+  return useMemo(
+    () => buildCRMContactQueryFields(assignableMembers, filterOptions),
+    [assignableMembers, filterOptions],
   );
+}
+
+export function ContactsFilterBar({ workspaceId, assignableMembers }: ContactsFilterBarProps) {
+  const { filterGroup, setFilterGroup } = useContactsSearchParams();
+  const fields = useContactQueryFields(workspaceId, assignableMembers);
 
   return (
     <QueryBuilderPopover
@@ -32,19 +39,16 @@ export function ContactsFilterBar({ assignableMembers }: ContactsFilterBarProps)
 
 function ruleValueLabel(rule: QueryFilterRule, field?: QueryBuilderFieldDefinition): string | null {
   if (!operatorUsesValue(rule.operator)) return null;
-  const values = operatorUsesRange(rule.operator) ? (rule.values ?? []) : [rule.value ?? ''];
+  const values = operatorUsesRange(rule.operator) || operatorUsesValueList(rule.operator) ? (rule.values ?? []) : [rule.value ?? ''];
   const labels = values.filter(Boolean).map((value) => (
     field?.options?.find((option) => option.value === value)?.label ?? value
   ));
-  return labels.length > 0 ? labels.join(' and ') : null;
+  return labels.length > 0 ? labels.join(operatorUsesValueList(rule.operator) ? ', ' : ' and ') : null;
 }
 
-export function ContactsActiveFilterBar({ assignableMembers }: ContactsFilterBarProps) {
+export function ContactsActiveFilterBar({ workspaceId, assignableMembers }: ContactsFilterBarProps) {
   const { search, filterGroup, setFilterGroup, setParam, setParams } = useContactsSearchParams();
-  const fields = useMemo(
-    () => buildCRMContactQueryFields(assignableMembers),
-    [assignableMembers],
-  );
+  const fields = useContactQueryFields(workspaceId, assignableMembers);
   const fieldMap = useMemo(
     () => new Map(fields.map((field) => [field.field, field])),
     [fields],

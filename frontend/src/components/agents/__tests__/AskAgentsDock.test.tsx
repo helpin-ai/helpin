@@ -1072,7 +1072,9 @@ describe('AskAgentsDock', () => {
     expect(trigger?.className).toContain('group-hover:opacity-100');
     const chatRow = trigger?.closest('.agent-dock-roster-row');
     const timestamp = chatRow?.querySelector('[data-agent-dock-chat-time]');
-    expect(timestamp?.className).toContain('ms-auto');
+    // The timestamp overlays the row's end and fades out when actions show.
+    expect(timestamp?.className).toContain('absolute');
+    expect(timestamp?.className).toContain('group-hover:opacity-0');
     await act(async () => {
       trigger?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
     });

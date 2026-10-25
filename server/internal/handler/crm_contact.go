@@ -214,3 +214,19 @@ func (h *CRMContactHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "contact deleted; linked support identity anonymized"})
 }
+
+// FilterOptions handles GET /api/crm/contacts/filter-options. It returns the
+// custom property keys in use on contacts, with their common values.
+func (h *CRMContactHandler) FilterOptions(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	options, err := h.contactService.FilterOptions(r.Context(), workspaceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load contact filter options")
+		return
+	}
+	writeJSON(w, http.StatusOK, options)
+}

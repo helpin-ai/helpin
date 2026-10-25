@@ -5,6 +5,7 @@ import type {
   CRMContact,
   CRMCompany,
   CRMCompanyFilterOptions,
+  CRMContactFilterOptions,
   CRMDeal,
   CRMPipeline,
   CRMAssociation,
@@ -98,6 +99,8 @@ export const crmContactService = {
       per_page?: number;
     },
   ) => api.get<CRMPaginatedResponse<CRMContact[]>>(`/crm/contacts${qs(workspaceId)}${filterQuery(filters ?? {})}`),
+  filterOptions: (workspaceId: string) =>
+    api.get<CRMContactFilterOptions>(`/crm/contacts/filter-options${qs(workspaceId)}`),
   get: (workspaceId: string, id: string) => api.get<CRMContact>(`/crm/contacts/${id}${qs(workspaceId)}`),
   create: (payload: CreateCRMContactRequest) => api.post<CRMContact>(`/crm/contacts${qs(payload.workspace_id)}`, payload),
   seed: (payload: SeedCRMContactsRequest) => api.post<SeedCRMContactsResponse>(`/crm/contacts/seed${qs(payload.workspace_id)}`, payload),

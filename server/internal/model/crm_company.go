@@ -23,6 +23,8 @@ type CRMCompany struct {
 	CreatedAt                    time.Time                        `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt                    time.Time                        `json:"updated_at" gorm:"autoUpdateTime"`
 	CommercialStateHealth        *CRMCompanyCommercialStateHealth `json:"commercial_state_health,omitempty" gorm:"-"`
+	// Behavior is synced product-usage data, attached on reads when present.
+	Behavior *CRMBehaviorSummary `json:"behavior,omitempty" gorm:"-"`
 }
 
 func (CRMCompany) TableName() string { return "crm_companies" }

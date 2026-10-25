@@ -97,6 +97,7 @@ var Routes = []Route{
 	{"PATCH", "/crm/contacts/{contact_id}", "update_crm_contact", "CRM", "Update a contact", 0},
 	{"GET", "/crm/companies", "list_crm_companies", "CRM", "List companies", 0},
 	{"GET", "/crm/companies/{company_id}", "get_crm_company", "CRM", "Get a company", 0},
+	{"GET", "/crm/fields", "describe_crm_fields", "CRM", "Describe filterable contact or company fields and custom properties", 0},
 	{"PATCH", "/crm/companies/{company_id}", "update_crm_company", "CRM", "Update a company", 0},
 	{"GET", "/crm/deals", "list_deals", "CRM", "List deals", 0},
 	{"POST", "/crm/deals", "create_crm_deal", "CRM", "Create a deal", 0},

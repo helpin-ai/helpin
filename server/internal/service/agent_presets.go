@@ -113,7 +113,7 @@ var taskPlannerPMReadToolAliases = []string{
 
 var safeCRMDiscoveryToolAliases = []string{
 	"get_crm_contact", "get_crm_company", "get_crm_deal",
-	"list_crm_companies", "list_crm_pipelines", "list_crm_associations",
+	"list_crm_companies", "list_crm_pipelines", "list_crm_associations", "describe_crm_fields",
 }
 
 var safeCRMWriteToolAliases = []string{
