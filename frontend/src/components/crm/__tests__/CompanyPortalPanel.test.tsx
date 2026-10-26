@@ -103,9 +103,9 @@ describe('allowableContacts', () => {
 
 describe('companyScopeSummary', () => {
   it('explains each company setting', () => {
-    expect(companyScopeSummary(companyAccess())).toContain('see and reply to all 4 requests');
-    expect(companyScopeSummary(companyAccess({ default_role: 'requester', request_count: 1 }))).toContain('share all 1 request from');
-    expect(companyScopeSummary(companyAccess({ default_role: null }))).toContain('would show members 4 requests');
+    expect(companyScopeSummary(companyAccess())).toContain('see and reply to every request from this company (4 requests so far)');
+    expect(companyScopeSummary(companyAccess({ default_role: 'requester', request_count: 1 }))).toContain('(1 request so far)');
+    expect(companyScopeSummary(companyAccess({ default_role: null }))).toContain('would show members every request from this company (4 requests so far)');
   });
 });
 
@@ -141,7 +141,7 @@ describe('CompanyPortalPanel', () => {
     expect(select('Portal role for Bob Lovelace').disabled).toBe(true);
     const aliceRole = select('Portal role for Alice Lovelace');
     expect(aliceRole.disabled).toBe(false);
-    expect(aliceRole.querySelector('option[value="default"]')?.textContent).toBe('Company default (Member)');
+    expect(aliceRole.querySelector('option[value="default"]')?.textContent).toBe('Default (Member)');
     await act(async () => change(aliceRole, 'requester'));
     expect(mocks.setRole).toHaveBeenLastCalledWith('alice', 'requester');
   });

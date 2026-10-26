@@ -178,6 +178,9 @@ func TestCompanyPortalMemberReadsColleagueRequest(t *testing.T) {
 	if len(detail.Messages) != 1 || detail.Messages[0].FromYou {
 		t.Fatalf("Bob's message shown as Alice's: %+v", detail.Messages)
 	}
+	if derefString(detail.Messages[0].SenderName) != "Bob Example" {
+		t.Fatalf("Bob's first message is named %q in Alice's view", derefString(detail.Messages[0].SenderName))
+	}
 	if detail.CanRate {
 		t.Fatal("a colleague may rate the request")
 	}
@@ -378,6 +381,29 @@ func TestCompanyPortalColleagueReply(t *testing.T) {
 
 	if _, err := p.svc.RateRequest(ctx, p.aliceIn, p.bobRequest.Reference, 5, ""); !errors.Is(err, ErrSupportCSATUnavailable) {
 		t.Fatalf("colleague rating err = %v, want unavailable", err)
+	}
+}
+
+func TestPortalCustomerAuthorName(t *testing.T) {
+	requester := func() *string { name := "Bob Example"; return &name }
+	authors := map[string]string{"alice-id": "Alice Example"}
+	tests := []struct {
+		name     string
+		metadata string
+		want     string
+	}{
+		{"portal author", `{"portal_identity_id":"alice-id"}`, "Alice Example"},
+		{"unknown portal author stays unnamed", `{"portal_identity_id":"gone"}`, ""},
+		{"email sender", `{"email_sender":" carol@acme.test "}`, "carol@acme.test"},
+		{"unattributed message is the requester's", "", "Bob Example"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := &model.SupportMessage{SenderType: "customer", Metadata: tt.metadata}
+			if got := derefString(portalCustomerAuthorName(msg, authors, requester)); got != tt.want {
+				t.Fatalf("author name = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 

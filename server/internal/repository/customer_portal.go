@@ -148,6 +148,14 @@ func (r *CustomerPortalRepository) CreateRequest(ctx context.Context, draft Port
 			SenderType: "customer", SenderDisplayName: draft.DisplayName,
 			MessageType: "reply", Content: draft.Description,
 		}
+		// Company colleagues read the request, so its first message names its author.
+		if draft.Identity != nil {
+			author, err := json.Marshal(map[string]string{"portal_identity_id": draft.Identity.ID})
+			if err != nil {
+				return err
+			}
+			message.Metadata = string(author)
+		}
 		portalChannel := "portal"
 		message.ViaChannel = &portalChannel
 		if err := tx.Create(message).Error; err != nil {

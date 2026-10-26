@@ -10,7 +10,7 @@ import {
 } from '@/hooks/queries/useSupport';
 import { Loading01Icon } from '@/lib/icons';
 import type { CustomerPortalCompanyContact, CustomerPortalContactAccessValue, CustomerPortalRole } from '@/lib/pmTypes';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNowStrict } from 'date-fns';
 import { allowableContacts, companyScopeSummary, portalRoleChoices, portalRoleLabels, type PortalRoleChoice } from './companyPortal';
 
 type CompanyAccessChoice = CustomerPortalRole | 'off';
@@ -148,7 +148,7 @@ function CompanyPortalContactRow({ workspaceId, contact, companyRole }: {
   const access: AccessChoice = contact.portal_access ?? 'unset';
   const role: PortalRoleChoice = contact.portal_role ?? 'default';
   const roleLabel = (choice: PortalRoleChoice) =>
-    choice === 'default' && companyRole ? `Company default (${portalRoleLabels[companyRole]})` : portalRoleChoices.find((item) => item.value === choice)?.label;
+    choice === 'default' && companyRole ? `Default (${portalRoleLabels[companyRole]})` : portalRoleChoices.find((item) => item.value === choice)?.label;
 
   return (
     <div role="row" className={`flex flex-col gap-2 border-b border-border/50 px-4 py-3 sm:px-6 lg:px-8 ${rowGrid}`}>
@@ -196,7 +196,7 @@ function CompanyPortalContactRow({ workspaceId, contact, companyRole }: {
         </Select>
       </span>
       <span role="cell" className="text-xs text-muted-foreground">
-        {contact.last_signed_in_at ? formatDistanceToNow(new Date(contact.last_signed_in_at), { addSuffix: true }) : 'Never'}
+        {contact.last_signed_in_at ? formatDistanceToNowStrict(new Date(contact.last_signed_in_at), { addSuffix: true }) : 'Never'}
       </span>
     </div>
   );

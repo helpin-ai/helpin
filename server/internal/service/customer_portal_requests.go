@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -271,6 +272,14 @@ func (s *CustomerPortalService) RequestDetail(ctx context.Context, access *Porta
 		}
 	}
 	avatars := s.portalSenderAvatars(ctx, access.Workspace.ID, messages)
+	authors := s.portalCustomerAuthors(ctx, access.Workspace.ID, messages)
+	// Only colleagues' unnamed messages need the requester's name.
+	requesterName := sync.OnceValue(func() *string {
+		if detail.RequesterName != nil {
+			return detail.RequesterName
+		}
+		return s.portalRequesterName(ctx, conv)
+	})
 	for i := range messages {
 		msg := &messages[i]
 		if !portalMessageVisible(msg) {
@@ -278,6 +287,9 @@ func (s *CustomerPortalService) RequestDetail(ctx context.Context, access *Porta
 		}
 		public := projectPortalMessage(msg, assistant)
 		public.FromYou = portalMessageFromViewer(msg, &access.Identity, request.Own)
+		if msg.SenderType == "customer" && !public.FromYou && strings.TrimSpace(derefString(public.SenderName)) == "" {
+			public.SenderName = portalCustomerAuthorName(msg, authors, requesterName)
+		}
 		if public.SenderType == "user" && msg.SenderUserID != nil {
 			if avatar, ok := avatars[*msg.SenderUserID]; ok {
 				applyPortalSenderAvatar(&public, avatar)
@@ -316,6 +328,62 @@ func (s *CustomerPortalService) portalRequesterName(ctx context.Context, conv *m
 	return nil
 }
 
+// portalCustomerAuthors names the portal identities that wrote customer
+// messages. A failed lookup leaves colleagues' messages unnamed.
+func (s *CustomerPortalService) portalCustomerAuthors(ctx context.Context, workspaceID string, messages []model.SupportMessage) map[string]string {
+	seen := map[string]bool{}
+	var ids []string
+	for i := range messages {
+		if id := portalMessageAuthor(&messages[i]).PortalIdentityID; id != "" && !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	names, err := s.repo.PortalIdentityNames(ctx, workspaceID, ids)
+	if err != nil {
+		slog.WarnContext(ctx, "portal author lookup failed", "workspace_id", workspaceID, "error", err)
+		return nil
+	}
+	return names
+}
+
+// portalCustomerAuthorName names a customer message that carries no sender
+// name: its portal author, its email sender, or else the requester.
+func portalCustomerAuthorName(msg *model.SupportMessage, authors map[string]string, requesterName func() *string) *string {
+	author := portalMessageAuthor(msg)
+	switch {
+	case author.PortalIdentityID != "":
+		if name := authors[author.PortalIdentityID]; name != "" {
+			return &name
+		}
+		return nil
+	case strings.TrimSpace(author.EmailSender) != "":
+		email := strings.TrimSpace(author.EmailSender)
+		return &email
+	default:
+		return requesterName()
+	}
+}
+
+// portalMessageAuthorship is who wrote a customer message, as recorded in its
+// metadata: portal replies record their identity, inbound email its sender.
+type portalMessageAuthorship struct {
+	PortalIdentityID string `json:"portal_identity_id"`
+	EmailSender      string `json:"email_sender"`
+	Unreadable       bool   `json:"-"`
+}
+
+func portalMessageAuthor(msg *model.SupportMessage) portalMessageAuthorship {
+	var author portalMessageAuthorship
+	if msg.SenderType != "customer" || strings.TrimSpace(msg.Metadata) == "" {
+		return author
+	}
+	if err := json.Unmarshal([]byte(msg.Metadata), &author); err != nil {
+		return portalMessageAuthorship{Unreadable: true}
+	}
+	return author
+}
+
 // portalMessageFromViewer reports whether a customer message was written by
 // the signed-in customer. Portal replies record their identity and inbound
 // email records its sender; other customer messages belong to the requester.
@@ -323,16 +391,10 @@ func portalMessageFromViewer(msg *model.SupportMessage, viewer *model.SupportPor
 	if msg.SenderType != "customer" {
 		return false
 	}
-	var author struct {
-		PortalIdentityID string `json:"portal_identity_id"`
-		EmailSender      string `json:"email_sender"`
-	}
-	if msg.Metadata != "" {
-		if err := json.Unmarshal([]byte(msg.Metadata), &author); err != nil {
-			return own
-		}
-	}
+	author := portalMessageAuthor(msg)
 	switch {
+	case author.Unreadable:
+		return own
 	case author.PortalIdentityID != "":
 		return author.PortalIdentityID == viewer.ID
 	case strings.TrimSpace(author.EmailSender) != "":

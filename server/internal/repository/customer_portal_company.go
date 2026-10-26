@@ -348,3 +348,29 @@ func (r *CustomerPortalRepository) ContactDisplayName(ctx context.Context, works
 	}
 	return names[0], nil
 }
+
+// PortalIdentityNames returns a display name for each portal identity: its
+// contact's full name, else its own display name, else its email.
+func (r *CustomerPortalRepository) PortalIdentityNames(ctx context.Context, workspaceID string, identityIDs []string) (map[string]string, error) {
+	names := map[string]string{}
+	if len(identityIDs) == 0 {
+		return names, nil
+	}
+	var rows []struct {
+		ID   string
+		Name string
+	}
+	err := r.db.WithContext(ctx).Table("support_portal_identities AS identity").
+		Joins("LEFT JOIN crm_contacts AS contact ON contact.workspace_id = identity.workspace_id AND contact.id = identity.crm_contact_id").
+		Where("identity.workspace_id = ? AND identity.id IN ?", workspaceID, identityIDs).
+		Select(`identity.id, COALESCE(NULLIF(trim(COALESCE(contact.first_name, '') || ' ' || COALESCE(contact.last_name, '')), ''),
+			NULLIF(trim(COALESCE(identity.display_name, '')), ''), identity.email) AS name`).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		names[row.ID] = row.Name
+	}
+	return names, nil
+}

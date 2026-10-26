@@ -21,13 +21,13 @@ export function allowableContacts(contacts: CustomerPortalCompanyContact[]) {
 
 /** companyScopeSummary states what the company setting does for its contacts. */
 export function companyScopeSummary(access: CustomerPortalCompanyAccess) {
-  const requests = access.request_count === 1 ? '1 request' : `${access.request_count} requests`;
+  const count = access.request_count === 1 ? '1 request so far' : `${access.request_count} requests so far`;
   switch (access.default_role) {
     case 'member':
-      return `Allowed contacts see and reply to all ${requests} from this company. Give a contact the Requester role to keep them to their own.`;
+      return `Allowed contacts see and reply to every request from this company (${count}). Give a contact the Requester role to keep them to their own.`;
     case 'requester':
-      return `Allowed contacts see only their own requests. Give a contact the Member role to share all ${requests} from this company with them.`;
+      return `Allowed contacts see only their own requests. Give a contact the Member role to share every request from this company (${count}) with them.`;
     default:
-      return `Contacts use a personal portal and see only their own requests. Sharing all company requests would show members ${requests} from this company.`;
+      return `Contacts use a personal portal and see only their own requests. Sharing all company requests would show members every request from this company (${count}).`;
   }
 }
