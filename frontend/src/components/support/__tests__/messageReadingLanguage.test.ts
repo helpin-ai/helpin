@@ -33,7 +33,7 @@ describe('message reading language', () => {
 
 describe('message in another language', () => {
   const steps = 'Thanks for reaching out!\n\nTo reconnect your Instagram account:\n\n1. Go to **Settings > Social Accounts**\n2. Click **Reconnect** next to Instagram\n\nLet me know if that fixes it.';
-  it.each(['Thanks, it is working now!', 'How do I cancel my subscription?', 'To reconnect your Instagram account:', steps, english, '👍', 'Hi, my name is 张伟'])('does not flag English for an English reader: %s', text => {
+  it.each(['Thanks, it is working now!', 'How do I cancel my subscription?', 'To reconnect your Instagram account:', steps, english, '👍', 'Hi, my name is 张伟', 'ok', 'export my data'])('does not flag English for an English reader: %s', text => {
     expect(isMessageInOtherLanguage(text, 'en')).toBe(false);
   });
   it.each([spanish, 'Ich kann mein Instagram Konto nicht verbinden', 'مرحبا، أحتاج مساعدة', '你好，我需要帮助', `${english.repeat(5)}\n\n${spanish}`])('flags clear evidence of another language: %s', text => {

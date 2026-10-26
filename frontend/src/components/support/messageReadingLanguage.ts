@@ -52,10 +52,12 @@ export function isMessageInOtherLanguage(content: string, readingLanguage: strin
   return [text, ...text.split(/\n+/)].some(part => {
     const letters = part.match(/\p{L}/gu)?.length ?? 0;
     if (!letters) return false;
-    // A language missing from the ranking is written in another script.
-    const score = francAll(part, { minLength: 1 }).find(([code]) => code === expected)?.[1] ?? 0;
+    // A language missing from the ranking is written in another script. A
+    // score of 0 is not: very short text ties many languages for last place.
+    const ranked = francAll(part, { minLength: 1 }).find(([code]) => code === expected);
+    if (!ranked) return true;
     // Short text only shows its script; longer text also shows its language.
-    return letters < 30 ? score === 0 : score < 0.8;
+    return letters >= 30 && ranked[1] < 0.8;
   });
 }
 
