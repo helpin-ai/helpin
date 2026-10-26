@@ -122,10 +122,12 @@ func (c *SupportConversation) RecomputeHumanAttention() {
 		c.UnansweredCustomerMessageCount = 0
 		return
 	}
-	c.NeedsHumanReply = c.CustomerAwaitingResponse && !c.aiOwnsResponse()
+	c.NeedsHumanReply = c.CustomerAwaitingResponse && !c.AIOwnsResponse()
 }
 
-func (c SupportConversation) aiOwnsResponse() bool {
+// AIOwnsResponse reports whether the AI, not the team, answers the
+// customer's next message.
+func (c SupportConversation) AIOwnsResponse() bool {
 	if c.HumanTakeover != nil && *c.HumanTakeover {
 		return false
 	}

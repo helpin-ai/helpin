@@ -278,3 +278,16 @@ func TestSupportTagManualMutationAndAuditAreAtomic(t *testing.T) {
 		})
 	}
 }
+
+func TestSupportTagJobSkipsImportedMessages(t *testing.T) {
+	job := model.SupportTagJob{WorkspaceID: "ws", ConversationID: "c", MessageID: "m"}
+	conversation := &model.SupportConversation{ID: "c", WorkspaceID: "ws"}
+	message := &model.SupportMessage{ID: "m", WorkspaceID: "ws", ConversationID: "c", SenderType: "customer", MessageType: "reply", Content: "Refund please"}
+	if !supportTagJobEligible(job, conversation, message, nil) {
+		t.Fatal("a live customer message is not eligible")
+	}
+	message.Metadata = `{"imported_from":"intercom"}`
+	if supportTagJobEligible(job, conversation, message, nil) {
+		t.Fatal("an imported message is eligible for tagging")
+	}
+}

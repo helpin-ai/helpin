@@ -250,6 +250,10 @@ export const queryKeys = {
       ['support', wsId, 'canned-responses', 'search', query] as const,
     search: (wsId: string, filters: unknown) => ['support', wsId, 'search', filters] as const,
     tags: (wsId: string) => ['support', wsId, 'tags'] as const,
+    reportOverview: (wsId: string, params: unknown) => ['support', wsId, 'reports', 'overview', params] as const,
+    slaPolicies: (wsId: string) => ['support', wsId, 'sla-policies'] as const,
+    webhooks: (wsId: string) => ['support', wsId, 'webhooks'] as const,
+    webhookDeliveries: (wsId: string, webhookId: string) => ['support', wsId, 'webhooks', webhookId, 'deliveries'] as const,
   },
 
   docs: {

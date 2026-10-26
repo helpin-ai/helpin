@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/helpin-ai/helpin/server/internal/helpscout"
 )
 
 type fakeImageUploader struct {
@@ -58,8 +60,8 @@ func (fn roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) 
 }
 
 func TestDocsImportService_ImportExternalImageWithUploader(t *testing.T) {
-	originalClient := http.DefaultClient
-	http.DefaultClient = &http.Client{
+	originalClient := helpscout.ImageHTTPClient
+	helpscout.ImageHTTPClient = &http.Client{
 		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			if req.URL.String() != "https://images.example.com/assets/diagram.png?cache=1" {
 				t.Fatalf("unexpected url: %s", req.URL.String())
@@ -72,7 +74,7 @@ func TestDocsImportService_ImportExternalImageWithUploader(t *testing.T) {
 		}),
 	}
 	defer func() {
-		http.DefaultClient = originalClient
+		helpscout.ImageHTTPClient = originalClient
 	}()
 
 	svc := &DocsImportService{}
@@ -97,8 +99,8 @@ func TestDocsImportService_ImportExternalImageWithUploader(t *testing.T) {
 }
 
 func TestDocsImportService_ImportExternalImageWithUploader_RejectsNonImages(t *testing.T) {
-	originalClient := http.DefaultClient
-	http.DefaultClient = &http.Client{
+	originalClient := helpscout.ImageHTTPClient
+	helpscout.ImageHTTPClient = &http.Client{
 		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			if req.URL.String() != "https://images.example.com/readme.txt" {
 				t.Fatalf("unexpected url: %s", req.URL.String())
@@ -111,7 +113,7 @@ func TestDocsImportService_ImportExternalImageWithUploader_RejectsNonImages(t *t
 		}),
 	}
 	defer func() {
-		http.DefaultClient = originalClient
+		helpscout.ImageHTTPClient = originalClient
 	}()
 
 	svc := &DocsImportService{}

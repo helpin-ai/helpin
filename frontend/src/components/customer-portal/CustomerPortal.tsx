@@ -1,3 +1,4 @@
+import { PortalRatingCard } from './PortalRatingCard'
 import {
   createContext,
   useCallback,
@@ -741,6 +742,8 @@ export function CustomerPortalRequestPage({ reference }: { reference: string }) 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
+  const [rating, setRating] = useState(false)
+  const [ratingError, setRatingError] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const [typing, setTyping] = useState(false)
   const typingTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -793,6 +796,21 @@ export function CustomerPortalRequestPage({ reference }: { reference: string }) 
     } finally { setSending(false) }
   }
 
+  async function rate(value: number, comment: string) {
+    setRating(true)
+    setRatingError(null)
+    try {
+      setRequest(await customerPortalService.rate(slug, reference, value, comment))
+      return true
+    } catch (reason) {
+      if (handleSessionError(reason)) return false
+      setRatingError(reason instanceof CustomerPortalApiError && reason.status === 409
+        ? 'This request can no longer be rated.'
+        : 'Your rating could not be saved. Please try again.')
+      return false
+    } finally { setRating(false) }
+  }
+
   if (status !== 'authenticated') return null
 
   const backToRequests = () => void navigate({ to: '/portal/$slug', params: { slug } })
@@ -829,6 +847,9 @@ export function CustomerPortalRequestPage({ reference }: { reference: string }) 
             ) : null}
           </ol>
           {error ? <PortalError className="mt-4">{error}</PortalError> : null}
+          {request.can_rate ? (
+            <PortalRatingCard key={request.csat?.submitted_at ?? 'unrated'} current={request.csat} saving={rating} error={ratingError} onSubmit={rate} />
+          ) : null}
           {request.can_reply ? (
             <ReplyComposer slug={slug} reference={reference} fileUploadsEnabled={Boolean(configuration?.file_uploads_enabled)} policy={configuration?.attachments} sending={sending} onSend={send} />
           ) : (

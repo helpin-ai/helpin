@@ -38,6 +38,8 @@ import {
   DashboardSpeed01Icon,
   ServerStack01Icon,
   UserSharingIcon,
+  Timer01Icon,
+  WebhookIcon,
 } from '@hugeicons/core-free-icons';
 
 export type IconComponent = FC<{ className?: string; style?: CSSProperties }>;
@@ -76,6 +78,8 @@ const Meetings = hi(Calendar03Icon);
 const Autonomy = hi(SlidersHorizontalIcon);
 const ChatWidget = hi(BubbleChatIcon);
 const CustomerPortal = hi(Globe02Icon);
+const SLAPolicies = hi(Timer01Icon);
+const Webhooks = hi(WebhookIcon);
 const InboxesRouting = hi(Route01Icon);
 const Access = hi(Shield01Icon);
 const MCP = hi(PlugSocketIcon);
@@ -117,6 +121,8 @@ export type SettingsSection =
   | 'support-translation'
   | 'chat-general'
   | 'customer-portal'
+  | 'support-sla'
+  | 'support-webhooks'
   | 'inboxes-routing';
 
 export type SettingsRouteSection = SettingsSection | 'ai-connections' | 'profile' | 'security' | 'notifications' | 'account' | 'git-connections';
@@ -312,9 +318,9 @@ const allSettingsSections: SettingsSectionMeta[] = [
   },
   {
     id: 'import',
-    keywords: ["csv", "export", "migrate"],
+    keywords: ["csv", "export", "migrate", "intercom", "helpscout", "shortcut"],
     label: 'Import & export',
-    description: 'Import data from Shortcut and other project management tools.',
+    description: 'Import projects, help centers and support conversations from other tools.',
     icon: ImportExport,
     group: 'Integrations & data',
   },
@@ -383,6 +389,23 @@ const allSettingsSections: SettingsSectionMeta[] = [
     keywords: ['portal', 'requests', 'customer access', 'anonymous intake'],
     icon: CustomerPortal,
     group: 'Support',
+  },
+  {
+    id: 'support-sla',
+    label: 'SLA policies',
+    description: 'Set first response, next response and resolution targets for conversations.',
+    keywords: ['sla', 'service level', 'response time', 'targets', 'breach'],
+    icon: SLAPolicies,
+    group: 'Support',
+  },
+  {
+    id: 'support-webhooks',
+    label: 'Webhooks',
+    description: 'Send signed support events to your own systems as they happen.',
+    keywords: ['webhook', 'integration', 'events', 'callback', 'zapier', 'api'],
+    icon: Webhooks,
+    group: 'Support',
+    requiredPermission: 'support.admin',
   },
   {
     id: 'support-ai-assistant',

@@ -6207,6 +6207,114 @@
         "x-helpin-mcp-tool": "list_support_conversations",
         "x-helpin-scope": "helpin.support.read",
         "x-helpin-toolset": "support"
+      },
+      "post": {
+        "description": "Start a support conversation with a customer and email them the first message as the authenticated teammate.\n\n**Required scope:** `helpin.support.reply`. Write operations are unavailable to read-only tokens.",
+        "operationId": "createSupportConversation",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "content": {
+                    "description": "First message in Markdown.",
+                    "maxLength": 20000,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "customer_email": {
+                    "format": "email",
+                    "maxLength": 320,
+                    "type": "string"
+                  },
+                  "customer_name": {
+                    "maxLength": 200,
+                    "type": "string"
+                  },
+                  "inbox_id": {
+                    "description": "Team inbox ID. Omit for the main inbox.",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "subject": {
+                    "maxLength": 500,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "content",
+                  "customer_email",
+                  "subject"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "description": "The result. Its shape depends on the resource; fields match what the Helpin app shows."
+                    },
+                    "links": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Deep links into the Helpin app.",
+                      "type": "object"
+                    },
+                    "summary": {
+                      "description": "A short human-readable description of the outcome.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Start a conversation with a customer",
+        "tags": [
+          "Support"
+        ],
+        "x-helpin-mcp-tool": "create_support_conversation",
+        "x-helpin-scope": "helpin.support.reply",
+        "x-helpin-toolset": "support"
       }
     },
     "/support/conversations/{conversation_id}": {
@@ -6665,6 +6773,608 @@
         ],
         "x-helpin-mcp-tool": "list_conversation_messages",
         "x-helpin-scope": "helpin.support.read",
+        "x-helpin-toolset": "support"
+      }
+    },
+    "/support/conversations/{conversation_id}/notes": {
+      "post": {
+        "description": "Post a team-only note immediately; no customer delivery or status/AI-control change. Check existing conversation notes and linked-task context first. Write only when requested or when new actionable information is missing from both. Creating or linking a task alone needs no note. Use 1-3 short sentences or bullets unless more detail is requested. Include only the new finding, blocker, or next step; link existing details instead of repeating the thread, task, progress, or an unsolicited draft reply. Label hypotheses clearly: code behavior alone does not verify this customer's root cause. Attribute observations to their actual source. Omit secrets. A note does not replace a customer reply.\n\n**Required scope:** `helpin.support.write`. Write operations are unavailable to read-only tokens.",
+        "operationId": "addSupportConversationNote",
+        "parameters": [
+          {
+            "description": "Support conversation ID. Omit only when the run targets that conversation.",
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "content": {
+                    "description": "Brief internal note in Markdown. Only new actionable information or explicitly requested content; no repeated summaries or unverified conclusions stated as facts.",
+                    "maxLength": 20000,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "content"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "description": "The result. Its shape depends on the resource; fields match what the Helpin app shows."
+                    },
+                    "links": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Deep links into the Helpin app.",
+                      "type": "object"
+                    },
+                    "summary": {
+                      "description": "A short human-readable description of the outcome.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Add an internal note",
+        "tags": [
+          "Support"
+        ],
+        "x-helpin-mcp-tool": "add_support_conversation_note",
+        "x-helpin-scope": "helpin.support.write",
+        "x-helpin-toolset": "support"
+      }
+    },
+    "/support/conversations/{conversation_id}/priority": {
+      "put": {
+        "description": "Change a support conversation's priority. SLA policies that match the new priority apply to its open targets.\n\n**Required scope:** `helpin.support.write`. Write operations are unavailable to read-only tokens.",
+        "operationId": "setSupportConversationPriority",
+        "parameters": [
+          {
+            "description": "Support conversation ID.",
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "priority": {
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high",
+                      "urgent"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "priority"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "description": "The result. Its shape depends on the resource; fields match what the Helpin app shows."
+                    },
+                    "links": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Deep links into the Helpin app.",
+                      "type": "object"
+                    },
+                    "summary": {
+                      "description": "A short human-readable description of the outcome.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Change the priority",
+        "tags": [
+          "Support"
+        ],
+        "x-helpin-mcp-tool": "set_support_conversation_priority",
+        "x-helpin-scope": "helpin.support.write",
+        "x-helpin-toolset": "support"
+      }
+    },
+    "/support/conversations/{conversation_id}/replies": {
+      "post": {
+        "description": "Send a public reply to the customer as the authenticated teammate. It is delivered like a reply from the inbox: in chat, by email, or both.\n\n**Required scope:** `helpin.support.reply`. Write operations are unavailable to read-only tokens.",
+        "operationId": "replyToSupportConversation",
+        "parameters": [
+          {
+            "description": "Support conversation ID.",
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "content": {
+                    "description": "Reply in Markdown.",
+                    "maxLength": 20000,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "delivery_mode": {
+                    "description": "Omit to deliver the way the inbox would by default.",
+                    "enum": [
+                      "chat_only",
+                      "chat_and_email",
+                      "email_only"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "content"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "description": "The result. Its shape depends on the resource; fields match what the Helpin app shows."
+                    },
+                    "links": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Deep links into the Helpin app.",
+                      "type": "object"
+                    },
+                    "summary": {
+                      "description": "A short human-readable description of the outcome.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Reply to the customer",
+        "tags": [
+          "Support"
+        ],
+        "x-helpin-mcp-tool": "reply_to_support_conversation",
+        "x-helpin-scope": "helpin.support.reply",
+        "x-helpin-toolset": "support"
+      }
+    },
+    "/support/conversations/{conversation_id}/snooze": {
+      "delete": {
+        "description": "Return a snoozed support conversation to the team's queues now.\n\n**Required scope:** `helpin.support.write`. Write operations are unavailable to read-only tokens.",
+        "operationId": "unsnoozeSupportConversation",
+        "parameters": [
+          {
+            "description": "Existing object ID.",
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "description": "The result. Its shape depends on the resource; fields match what the Helpin app shows."
+                    },
+                    "links": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Deep links into the Helpin app.",
+                      "type": "object"
+                    },
+                    "summary": {
+                      "description": "A short human-readable description of the outcome.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Wake a snoozed conversation",
+        "tags": [
+          "Support"
+        ],
+        "x-helpin-mcp-tool": "unsnooze_support_conversation",
+        "x-helpin-scope": "helpin.support.write",
+        "x-helpin-toolset": "support"
+      },
+      "put": {
+        "description": "Hide an open support conversation from the team's queues until a time. A customer reply wakes it earlier.\n\n**Required scope:** `helpin.support.write`. Write operations are unavailable to read-only tokens.",
+        "operationId": "snoozeSupportConversation",
+        "parameters": [
+          {
+            "description": "Support conversation ID.",
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "until": {
+                    "description": "RFC 3339 time between one minute and one year from now.",
+                    "format": "date-time",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "until"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "description": "The result. Its shape depends on the resource; fields match what the Helpin app shows."
+                    },
+                    "links": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Deep links into the Helpin app.",
+                      "type": "object"
+                    },
+                    "summary": {
+                      "description": "A short human-readable description of the outcome.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Snooze a conversation",
+        "tags": [
+          "Support"
+        ],
+        "x-helpin-mcp-tool": "snooze_support_conversation",
+        "x-helpin-scope": "helpin.support.write",
+        "x-helpin-toolset": "support"
+      }
+    },
+    "/support/conversations/{conversation_id}/status": {
+      "put": {
+        "description": "Change a support conversation's status: open, waiting_on_customer, resolved or spam. Resolving ends a snooze; customers may be asked to rate a resolved conversation.\n\n**Required scope:** `helpin.support.write`. Write operations are unavailable to read-only tokens.",
+        "operationId": "setSupportConversationStatus",
+        "parameters": [
+          {
+            "description": "Support conversation ID.",
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "status": {
+                    "enum": [
+                      "open",
+                      "waiting_on_customer",
+                      "resolved",
+                      "spam"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "status"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "description": "The result. Its shape depends on the resource; fields match what the Helpin app shows."
+                    },
+                    "links": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Deep links into the Helpin app.",
+                      "type": "object"
+                    },
+                    "summary": {
+                      "description": "A short human-readable description of the outcome.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "summary": "Change the status",
+        "tags": [
+          "Support"
+        ],
+        "x-helpin-mcp-tool": "set_support_conversation_status",
+        "x-helpin-scope": "helpin.support.write",
         "x-helpin-toolset": "support"
       }
     },

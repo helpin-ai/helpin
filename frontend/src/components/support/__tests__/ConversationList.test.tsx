@@ -16,6 +16,15 @@ const mockUseSupportInboxViews = vi.fn()
 const mockUseSupportTags = vi.fn()
 const mockUseHasAnySupportConversation = vi.fn()
 
+vi.mock('@/hooks/queries/useSupportOperations', () => {
+  const mutation = () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false });
+  return {
+    useUpdateConversationPriority: mutation,
+    useSnoozeConversation: mutation,
+    useUnsnoozeConversation: mutation,
+  };
+});
+
 vi.mock('@/hooks/queries/useSupport', () => ({
   useInfiniteConversations: (...args: unknown[]) => mockUseInfiniteConversations(...args),
   useMarkConversationRead: (...args: unknown[]) => mockUseMarkConversationRead(...args),

@@ -1,15 +1,22 @@
 package helpscout
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
+	"path"
 	"strings"
+	"time"
 
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
+
+	"github.com/helpin-ai/helpin/server/internal/netguard"
 )
 
 // ImageUploader abstracts S3 upload for testing.
@@ -166,6 +173,14 @@ func setAttr(n *html.Node, key, value string) {
 	n.Attr = append(n.Attr, html.Attribute{Key: key, Val: value})
 }
 
+// ImageHTTPClient downloads images named in imported content. It reaches only
+// public addresses, so imported HTML cannot make the server fetch internal
+// URLs.
+var ImageHTTPClient = &http.Client{
+	Timeout:   60 * time.Second,
+	Transport: &http.Transport{Proxy: nil, DialContext: netguard.DialContext(false), TLSHandshakeTimeout: 10 * time.Second},
+}
+
 // downloadAndUpload fetches an image from srcURL and uploads it via the uploader.
 func downloadAndUpload(ctx context.Context, srcURL string, uploader ImageUploader, workspaceID string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srcURL, nil)
@@ -173,7 +188,7 @@ func downloadAndUpload(ctx context.Context, srcURL string, uploader ImageUploade
 		return "", fmt.Errorf("create request for %q: %w", srcURL, err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := ImageHTTPClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("download image %q: %w", srcURL, err)
 	}
@@ -183,15 +198,14 @@ func downloadAndUpload(ctx context.Context, srcURL string, uploader ImageUploade
 		return "", fmt.Errorf("download image %q: status %d", srcURL, resp.StatusCode)
 	}
 
-	contentType := resp.Header.Get("Content-Type")
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
-
 	// Derive a filename from the URL path.
 	filename := filenameFromURL(srcURL)
+	body, contentType, err := ImageBody(resp, filename)
+	if err != nil {
+		return "", fmt.Errorf("download image %q: %w", srcURL, err)
+	}
 
-	newURL, err := uploader.UploadImage(ctx, workspaceID, filename, resp.Body, contentType)
+	newURL, err := uploader.UploadImage(ctx, workspaceID, filename, body, contentType)
 	if err != nil {
 		return "", fmt.Errorf("upload image %q: %w", srcURL, err)
 	}
@@ -214,4 +228,65 @@ func filenameFromURL(rawURL string) string {
 		}
 	}
 	return "image"
+}
+
+// MaxImageBytes is the largest image an import copies.
+const MaxImageBytes = 25 << 20
+
+// ErrNotImage means a download did not return an image.
+var ErrNotImage = errors.New("remote URL is not an image")
+
+// ErrImageTooLarge means an image exceeds MaxImageBytes.
+var ErrImageTooLarge = errors.New("the image is larger than 25 MB")
+
+// ImageBody checks that resp carries an image and returns its body, which
+// fails once it passes MaxImageBytes, with the image's content type. A
+// generic or missing type is resolved from the content, then from the file
+// name.
+func ImageBody(resp *http.Response, filename string) (io.Reader, string, error) {
+	if resp.ContentLength > MaxImageBytes {
+		return nil, "", ErrImageTooLarge
+	}
+	contentType := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Type")))
+	if idx := strings.Index(contentType, ";"); idx >= 0 {
+		contentType = strings.TrimSpace(contentType[:idx])
+	}
+	reader := bufio.NewReaderSize(resp.Body, 512)
+	if !strings.HasPrefix(contentType, "image/") {
+		if contentType != "" && contentType != "application/octet-stream" && contentType != "binary/octet-stream" {
+			return nil, "", ErrNotImage
+		}
+		head, _ := reader.Peek(512)
+		if sniffed := http.DetectContentType(head); strings.HasPrefix(sniffed, "image/") {
+			contentType = sniffed
+		} else if byName := mime.TypeByExtension(strings.ToLower(path.Ext(filename))); strings.HasPrefix(byName, "image/") {
+			contentType = byName
+		} else {
+			return nil, "", ErrNotImage
+		}
+	}
+	return &cappedReader{reader: reader, left: MaxImageBytes}, contentType, nil
+}
+
+// cappedReader fails instead of truncating once more than left bytes arrive.
+type cappedReader struct {
+	reader io.Reader
+	left   int64
+}
+
+func (c *cappedReader) Read(p []byte) (int, error) {
+	if c.left <= 0 {
+		var probe [1]byte
+		n, err := c.reader.Read(probe[:])
+		if n > 0 {
+			return 0, ErrImageTooLarge
+		}
+		return 0, err
+	}
+	if int64(len(p)) > c.left {
+		p = p[:c.left]
+	}
+	n, err := c.reader.Read(p)
+	c.left -= int64(n)
+	return n, err
 }

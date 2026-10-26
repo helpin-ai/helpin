@@ -279,8 +279,8 @@ func TestPublicMCPToolCatalogIsBoundedAndExcludesDeferredActions(t *testing.T) {
 	commands := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
 	service := &MCPService{commands: commands}
 	catalog := service.buildToolCatalog()
-	if len(catalog) != 114 {
-		t.Fatalf("buildToolCatalog() returned %d tools, want 114", len(catalog))
+	if len(catalog) != 121 {
+		t.Fatalf("buildToolCatalog() returned %d tools, want 121", len(catalog))
 	}
 	expectedTools := map[string]struct {
 		toolset  string

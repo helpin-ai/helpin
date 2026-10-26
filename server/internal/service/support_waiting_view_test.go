@@ -100,3 +100,17 @@ func TestSupportWaitingView(t *testing.T) {
 		}
 	}
 }
+
+func TestSupportInboxViewParamsSnoozedAndSLA(t *testing.T) {
+	snoozed := supportInboxViewConversationListParams("ws", "user", model.SupportInboxViewFilters{"nav_filter": "snoozed"})
+	if snoozed.Filter != model.SupportConversationListFilterSnoozed {
+		t.Fatalf("snoozed view counted as %q", snoozed.Filter)
+	}
+	breached := supportInboxViewConversationListParams("ws", "user", model.SupportInboxViewFilters{"nav_filter": "inbox", "sla": "breached"})
+	if breached.SLA != "breached" || breached.Filter != model.SupportConversationListFilterInbox {
+		t.Fatalf("breached view: %+v", breached)
+	}
+	if ignored := supportInboxViewConversationListParams("ws", "user", model.SupportInboxViewFilters{"sla": "drop table"}); ignored.SLA != "" {
+		t.Fatalf("unknown SLA filter kept: %q", ignored.SLA)
+	}
+}

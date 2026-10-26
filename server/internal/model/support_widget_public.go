@@ -53,8 +53,11 @@ type WidgetConversation struct {
 	OpenedByDisplayName *string    `json:"opened_by_display_name,omitempty"`
 	OpenedByAvatarURL   *string    `json:"opened_by_avatar_url,omitempty"`
 	OpenedByStatus      *string    `json:"opened_by_status,omitempty"`
-	CreatedAt           time.Time  `json:"created_at"`
-	UpdatedAt           time.Time  `json:"updated_at"`
+	// CSATRating is the visitor's saved rating, so a rated conversation does
+	// not ask again on another device.
+	CSATRating *int      `json:"csat_rating,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 // PublicWidgetMessage converts a public message; nil means it must not be delivered.
@@ -114,12 +117,17 @@ func PublicWidgetMessages(messages []SupportMessage) []WidgetMessage {
 func PublicWidgetConversations(conversations []SupportConversation) []WidgetConversation {
 	result := make([]WidgetConversation, 0, len(conversations))
 	for _, c := range conversations {
-		result = append(result, WidgetConversation{
+		conversation := WidgetConversation{
 			Merged: c.MergedIntoID != nil, ID: c.ID, Subject: c.Subject, Status: c.Status, FlowState: c.FlowState, AIState: c.AIState, HandoffState: c.HandoffState, HandoffStartedAt: c.AIEscalatedAt,
 			LastMessage: c.LastMessage, UnreadCount: c.UnreadCount, OpenedByUserID: c.OpenedByUserID,
 			OpenedByDisplayName: c.OpenedByDisplayName, OpenedByAvatarURL: c.OpenedByAvatarURL, OpenedByStatus: c.OpenedByStatus,
 			CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
-		})
+		}
+		if c.CSAT != nil {
+			rating := c.CSAT.Rating
+			conversation.CSATRating = &rating
+		}
+		result = append(result, conversation)
 	}
 	return result
 }

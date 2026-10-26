@@ -112,7 +112,7 @@ func (s *SupportInboxService) processLiveMessage(ctx context.Context, job *model
 	if err != nil {
 		return err
 	}
-	if msg == nil || msg.DeletedAt.Valid || (job.SourceHash != "" && translationHash(msg.Content) != job.SourceHash) {
+	if msg == nil || msg.DeletedAt.Valid || msg.IsImported() || (job.SourceHash != "" && translationHash(msg.Content) != job.SourceHash) {
 		return nil
 	}
 	if supportReplyTarget(options) == "" && meaningfulLanguageText(msg.Content) {

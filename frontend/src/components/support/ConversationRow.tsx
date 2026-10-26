@@ -1,4 +1,5 @@
 import { memo, useState, type KeyboardEvent } from 'react';
+import { ConversationRowOperations } from './ConversationRowOperations';
 import { ArrowTurnBackwardIcon, BotIcon, CheckmarkCircle02Icon, GlobeIcon, Mail01Icon, Message01Icon, MoreHorizontalIcon, StickyNote01Icon } from '@/lib/icons';
 import type { TicketSource } from '@/lib/pm-types/support';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -597,6 +598,7 @@ export const ConversationRow = memo(function ConversationRow({
               <HumanQueueBadge waitSince={humanQueueWaitSince} />
             </div>
           ) : null}
+          <ConversationRowOperations conversation={conversation} />
           <UserTagStrip tags={userTags} />
         </div>
       </div>

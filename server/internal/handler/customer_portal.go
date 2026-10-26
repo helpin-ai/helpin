@@ -330,6 +330,29 @@ func (h *CustomerPortalHandler) Reply(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, detail)
 }
 
+// Rate records the customer's satisfaction rating of a resolved request.
+func (h *CustomerPortalHandler) Rate(w http.ResponseWriter, r *http.Request) {
+	access := h.authorized(w, r)
+	if access == nil {
+		return
+	}
+	var body struct {
+		Rating  int    `json:"rating"`
+		Comment string `json:"comment"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, service.ErrSupportCSATInvalid.Error())
+		return
+	}
+	detail, err := h.portal.RateRequest(r.Context(), access, chi.URLParam(r, "reference"), body.Rating, body.Comment)
+	if err != nil {
+		writePortalError(w, r, access.Workspace.ID, err, "unable to save your rating")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, detail)
+}
+
 // UploadAttachment starts an upload for a new request or a reply.
 func (h *CustomerPortalHandler) UploadAttachment(w http.ResponseWriter, r *http.Request) {
 	access := h.authorized(w, r)
@@ -379,6 +402,10 @@ func writePortalError(w http.ResponseWriter, r *http.Request, workspaceID string
 		writeError(w, http.StatusNotFound, "request not found")
 	case errors.Is(err, service.ErrPortalReplyUnavailable):
 		writeError(w, http.StatusConflict, service.ErrPortalReplyUnavailable.Error())
+	case errors.Is(err, service.ErrSupportCSATUnavailable):
+		writeError(w, http.StatusConflict, err.Error())
+	case errors.Is(err, service.ErrSupportCSATInvalid):
+		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrPortalIntakeDisabled), errors.Is(err, service.ErrPortalAnonymousIntakeDisabled), errors.Is(err, service.ErrPortalAttachmentsUnavailable):
 		writeError(w, http.StatusForbidden, err.Error())
 	case errors.Is(err, service.ErrPortalRequestInvalid), errors.Is(err, service.ErrPortalReplyInvalid), errors.Is(err, service.ErrPortalAttachmentsInvalid), errors.Is(err, service.ErrPortalTooManyAttachments):

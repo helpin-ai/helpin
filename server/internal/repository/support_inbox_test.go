@@ -55,7 +55,7 @@ func setupSupportMessageTestDB(t *testing.T) *gorm.DB {
 func setupSupportConversationMessageTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db := setupSupportMessageTestDB(t)
-	if err := db.Exec(`CREATE TABLE support_conversations (
+	if err := db.Exec(`CREATE TABLE support_conversations (snoozed_until DATETIME, snoozed_by_user_id TEXT, 
             merged_into_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,
             anonymized_at DATETIME,
 		id TEXT PRIMARY KEY,

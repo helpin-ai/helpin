@@ -13,6 +13,7 @@ const BUILTIN: NavFilter[] = [
   'inbox',
   'mine',
   'waiting',
+  'snoozed',
   'resolved',
   'spam',
   'ai_active',

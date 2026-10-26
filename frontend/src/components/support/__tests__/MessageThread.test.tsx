@@ -34,6 +34,15 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => vi.fn(),
 }))
 
+vi.mock('@/hooks/queries/useSupportOperations', () => {
+  const mutation = () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false });
+  return {
+    useUpdateConversationPriority: mutation,
+    useSnoozeConversation: mutation,
+    useUnsnoozeConversation: mutation,
+  };
+});
+
 vi.mock('@/hooks/queries/useSupport', () => ({
   useConversation: (...args: unknown[]) => supportHooks.useConversation(...args),
   useConversationMessages: (...args: unknown[]) => supportHooks.useConversationMessages(...args),
@@ -41,6 +50,7 @@ vi.mock('@/hooks/queries/useSupport', () => ({
   useInboxScopes: () => ({ data: { shared_inbox: { id: 'shared', name: 'Shared Inbox' }, mailboxes: [] } }),
   useSupportTeammatePresence: () => undefined,
   useUpdateConversationStatus: () => ({ mutate: vi.fn(), isPending: false }),
+  useAssignConversationUser: () => ({ mutate: vi.fn(), isPending: false }),
   useCreateTaskFromConversation: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useMoveConversation: () => ({ mutate: vi.fn(), isPending: false }),
   useSendConversationTranscript: () => ({ mutateAsync: vi.fn(), isPending: false }),

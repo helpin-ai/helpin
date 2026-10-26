@@ -878,7 +878,7 @@ func hasMCPWriteGrant(scopes, toolsets []string) bool {
 }
 
 func isMCPWriteScope(scope string) bool {
-	return strings.HasSuffix(scope, ".write") || scope == MCPScopeAgentsRun || scope == MCPScopeDocsPublish
+	return strings.HasSuffix(scope, ".write") || scope == MCPScopeAgentsRun || scope == MCPScopeDocsPublish || scope == MCPScopeSupportReply
 }
 
 func decodeMCPStrings(raw json.RawMessage) []string {

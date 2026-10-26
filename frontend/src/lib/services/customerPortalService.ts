@@ -71,6 +71,9 @@ export interface CustomerPortalRequest {
 export interface CustomerPortalRequestDetail extends CustomerPortalRequest {
   can_reply: boolean
   ai_processing?: boolean
+  /** The customer may rate this resolved request. */
+  can_rate?: boolean
+  csat?: { rating: number; comment?: string | null; submitted_at: string } | null
   messages: Array<{
     id: string
     content: string
@@ -182,6 +185,10 @@ export const customerPortalService = {
   reply: (slug: string, reference: string, content: string, attachment_ids: string[] = []) =>
     portalRequest<CustomerPortalRequestDetail>(slug, `/requests/${encodeURIComponent(reference)}/replies`, {
       method: 'POST', body: JSON.stringify({ content, attachment_ids }),
+    }),
+  rate: (slug: string, reference: string, rating: number, comment: string) =>
+    portalRequest<CustomerPortalRequestDetail>(slug, `/requests/${encodeURIComponent(reference)}/csat`, {
+      method: 'POST', body: JSON.stringify({ rating, comment }),
     }),
   uploadAttachment: (slug: string, file: File, reference?: string, options: CustomerPortalUploadOptions = {}) => {
     const path = reference ? `/requests/${encodeURIComponent(reference)}/attachments` : '/attachments'

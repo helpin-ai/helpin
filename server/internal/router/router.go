@@ -117,6 +117,11 @@ type Handlers struct {
 	SupportAI           *handler.SupportAIHandler
 	SupportAttachment   *handler.SupportAttachmentHandler
 	SupportCoverage     *handler.SupportCoverageHandler
+	SupportReports      *handler.SupportReportsHandler
+	SupportSLA          *handler.SupportSLAHandler
+	SupportWebhooks     *handler.SupportWebhookHandler
+	SupportImports      *handler.SupportImportHandler
+	SupportActions      *handler.SupportConversationActionsHandler
 	SupportInboxClear   *handler.SupportInboxClearHandler
 	PostmarkInbound     *handler.PostmarkInboundHandler
 	EmailImageProxy     *handler.EmailImageProxyHandler
@@ -242,6 +247,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.With(h.SupportInboxWidget.RequireOrigin).Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
 		r.With(h.SupportInboxWidget.RequireOrigin).Post("/messages", h.SupportInboxWidget.SendMessage)
 		r.With(h.SupportInboxWidget.RequireOrigin).Post("/messages/{messageId}/feedback", h.SupportInboxWidget.SubmitAnswerFeedback)
+		r.With(h.SupportInboxWidget.RequireOrigin).Post("/conversations/{conversationId}/csat", h.SupportInboxWidget.SubmitCSAT)
 		r.With(h.SupportInboxWidget.RequireOrigin).Post("/conversations/{conversationId}/transcript", h.SupportInboxWidget.SendTranscript)
 		r.With(h.SupportInboxWidget.RequireOrigin).Post("/support/conversations/{conversationId}/transcript", h.SupportInboxWidget.SendTranscript)
 		r.With(h.SupportInboxWidget.RequireOrigin).Post("/typing", h.SupportInboxWidget.TypingIndicator) // Deprecated: use WebSocket typing:start/typing:stop instead. Kept as HTTP fallback.
@@ -348,6 +354,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Patch("/requests/{reference}/attachments/{attachmentId}/confirm", h.CustomerPortal.ConfirmAttachment)
 				r.Get("/requests/{reference}", h.CustomerPortal.RequestDetail)
 				r.Post("/requests/{reference}/replies", h.CustomerPortal.Reply)
+				r.Post("/requests/{reference}/csat", h.CustomerPortal.Rate)
 				r.Post("/requests", h.CustomerPortal.CreateRequest)
 			})
 		}
@@ -1135,6 +1142,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations", h.SupportInbox.ListConversations)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations", h.SupportInbox.CreateConversation)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/create-and-send", h.SupportInbox.CreateConversationWithMessage)
+				if h.SupportActions != nil {
+					r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/bulk", h.SupportActions.Bulk)
+					r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/macros/{macroId}/apply", h.SupportActions.ApplyMacro)
+				}
 				if h.SupportAI != nil {
 					r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/rewrite-draft", h.SupportAI.RewriteNewSupportDraft)
 				}
@@ -1191,6 +1202,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportRead)).Post("/inbox/conversations/{id}/read", h.SupportInbox.MarkConversationRead)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/unread", h.SupportInbox.MarkConversationUnread)
 				r.With(requirePerm(authorization.PermSupportEdit), h.SupportInbox.RequireWritableConversation).Put("/inbox/conversations/{id}/subject", h.SupportInbox.UpdateConversationSubject)
+				r.With(requirePerm(authorization.PermSupportEdit), h.SupportInbox.RequireWritableConversation).Put("/inbox/conversations/{id}/priority", h.SupportInbox.UpdateConversationPriority)
+				r.With(requirePerm(authorization.PermSupportEdit), h.SupportInbox.RequireWritableConversation).Post("/inbox/conversations/{id}/snooze", h.SupportInbox.SnoozeConversation)
+				r.With(requirePerm(authorization.PermSupportEdit), h.SupportInbox.RequireWritableConversation).Delete("/inbox/conversations/{id}/snooze", h.SupportInbox.UnsnoozeConversation)
 				r.With(requirePerm(authorization.PermSupportEdit), h.SupportInbox.RequireWritableConversation).Delete("/inbox/conversations/{id}", h.SupportInbox.DeleteConversation)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/visitor-context", h.SupportInbox.GetVisitorContext)
 				r.With(requirePerm(authorization.PermSupportMerge)).Get("/inbox/conversations/{id}/merge-candidates", h.SupportInbox.ConversationMergeCandidates)
@@ -1243,6 +1257,35 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// Inbox-zero celebration
 				if h.SupportInboxClear != nil {
 					r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox-clears", h.SupportInboxClear.RecordClear)
+				}
+
+				if h.SupportSLA != nil {
+					r.With(requirePerm(authorization.PermSupportRead)).Get("/sla-policies", h.SupportSLA.List)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/sla-policies", h.SupportSLA.Create)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/sla-policies/reorder", h.SupportSLA.Reorder)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Put("/sla-policies/{policyId}", h.SupportSLA.Update)
+					r.With(requirePerm(authorization.PermSupportAdmin)).Delete("/sla-policies/{policyId}", h.SupportSLA.Delete)
+					if h.SupportImports != nil {
+						r.With(requirePerm(authorization.PermSupportAdmin)).Get("/imports", h.SupportImports.List)
+						r.With(requirePerm(authorization.PermSupportAdmin)).Post("/imports/intercom/preview", h.SupportImports.PreviewIntercom)
+						r.With(requirePerm(authorization.PermSupportAdmin)).Post("/imports/intercom", h.SupportImports.StartIntercom)
+						r.With(requirePerm(authorization.PermSupportAdmin)).Post("/imports/{importId}/cancel", h.SupportImports.Cancel)
+					}
+					if h.SupportWebhooks != nil {
+						r.With(requirePerm(authorization.PermSupportAdmin)).Get("/webhooks", h.SupportWebhooks.List)
+						r.With(requirePerm(authorization.PermSupportAdmin)).Get("/webhooks/event-types", h.SupportWebhooks.EventTypes)
+						r.With(requirePerm(authorization.PermSupportAdmin)).Post("/webhooks", h.SupportWebhooks.Create)
+						r.With(requirePerm(authorization.PermSupportAdmin)).Put("/webhooks/{webhookId}", h.SupportWebhooks.Update)
+						r.With(requirePerm(authorization.PermSupportAdmin)).Delete("/webhooks/{webhookId}", h.SupportWebhooks.Delete)
+						r.With(requirePerm(authorization.PermSupportAdmin)).Post("/webhooks/{webhookId}/rotate-secret", h.SupportWebhooks.RotateSecret)
+						r.With(requirePerm(authorization.PermSupportAdmin)).Post("/webhooks/{webhookId}/test", h.SupportWebhooks.Test)
+						r.With(requirePerm(authorization.PermSupportAdmin)).Get("/webhooks/{webhookId}/deliveries", h.SupportWebhooks.Deliveries)
+						r.With(requirePerm(authorization.PermSupportAdmin)).Post("/webhooks/{webhookId}/deliveries/{deliveryId}/redeliver", h.SupportWebhooks.Redeliver)
+					}
+				}
+				if h.SupportReports != nil {
+					r.With(requirePerm(authorization.PermSupportRead)).Get("/reports/overview", h.SupportReports.Overview)
+					r.With(requirePerm(authorization.PermSupportRead)).Get("/reports/conversations.csv", h.SupportReports.ExportConversations)
 				}
 
 				// Docs coverage
@@ -1766,6 +1809,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsImport)).Get("/import/jobs", h.Docs.ImportListJobs)
 				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/helpscout/preview", h.Docs.ImportPreviewHelpscout)
 				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/helpscout/start", h.Docs.ImportStartHelpscout)
+				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/intercom/preview", h.Docs.ImportPreviewIntercom)
+				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/intercom/start", h.Docs.ImportStartIntercom)
 				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/nextra/preview", h.Docs.ImportPreviewNextra)
 				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/nextra/start", h.Docs.ImportStartNextra)
 				r.With(requirePerm(authorization.PermDocsImport)).Get("/import/{jobId}/status", h.Docs.ImportGetStatus)

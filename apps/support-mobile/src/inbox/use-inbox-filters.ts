@@ -21,6 +21,7 @@ export const BUILTIN_VIEW_LABELS: Record<NavFilter, string> = {
   inbox: 'Inbox',
   mine: 'Mine',
   waiting: 'Waiting',
+  snoozed: 'Snoozed',
   resolved: 'Resolved',
   spam: 'Spam',
   ai_active: 'AI Handling',

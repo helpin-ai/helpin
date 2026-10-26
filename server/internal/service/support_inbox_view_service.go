@@ -233,7 +233,7 @@ func splitSupportViewCSV(value string) []string {
 
 func supportViewDefaultStates(navFilter string) []string {
 	switch navFilter {
-	case "mine", "inbox":
+	case "mine", "inbox", "snoozed":
 		return []string{model.SupportConversationStatusOpen, model.SupportConversationStatusWaitingOnCustomer}
 	case "waiting":
 		return []string{model.SupportConversationStatusWaitingOnCustomer}
@@ -267,7 +267,7 @@ func supportViewStringSlicesEqual(a, b []string) bool {
 
 func normalizeSupportViewNavFilter(value string) string {
 	switch strings.TrimSpace(value) {
-	case "mine", "waiting", "resolved", "spam", "ai_active", "resolved_by_ai":
+	case "mine", "waiting", "resolved", "spam", "ai_active", "resolved_by_ai", "snoozed":
 		return strings.TrimSpace(value)
 	default:
 		return "inbox"
@@ -307,6 +307,9 @@ func supportInboxViewConversationListParams(workspaceID, userID string, filters 
 		AIFilters:   splitSupportViewCSV(filters["ai"]),
 		Sort:        strings.TrimSpace(filters["sort"]),
 	}
+	if sla := strings.TrimSpace(filters["sla"]); sla == "breached" || sla == "active" {
+		params.SLA = sla
+	}
 
 	if mailboxIDs := splitSupportViewCSV(filters["mailbox_ids"]); len(mailboxIDs) > 0 {
 		hasAll := false
@@ -341,6 +344,8 @@ func supportInboxViewConversationListParams(workspaceID, userID string, filters 
 			params.Filter = model.SupportConversationListFilterMine
 		case "waiting":
 			params.Filter = model.SupportConversationListFilterWaiting
+		case "snoozed":
+			params.Filter = model.SupportConversationListFilterSnoozed
 		case "resolved":
 			params.Filter = model.SupportConversationListFilterResolved
 		case "spam":
@@ -348,8 +353,11 @@ func supportInboxViewConversationListParams(workspaceID, userID string, filters 
 		}
 	} else {
 		params.Statuses = states
-		if navFilter == "mine" {
+		switch navFilter {
+		case "mine":
 			params.Filter = model.SupportConversationListFilterMine
+		case "snoozed":
+			params.Filter = model.SupportConversationListFilterSnoozed
 		}
 	}
 

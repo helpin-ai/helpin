@@ -64,3 +64,22 @@ func TestDefaultSupportInboxSettingsUsesTenSecondEmailFallbackUndoWindow(t *test
 		t.Fatalf("expected default email fallback delay to be 10 seconds, got %d", settings.EmailFallbackDelaySecs)
 	}
 }
+
+func TestSupportMessageIsImported(t *testing.T) {
+	tests := []struct {
+		metadata string
+		want     bool
+	}{
+		{metadata: `{"imported_from":"intercom"}`, want: true},
+		{metadata: `{}`},
+		{metadata: ``},
+		{metadata: `{"imported_from":""}`},
+		{metadata: `{"note":"imported_from"}`},
+		{metadata: `not json imported_from`},
+	}
+	for _, tt := range tests {
+		if got := (SupportMessage{Metadata: tt.metadata}).IsImported(); got != tt.want {
+			t.Errorf("IsImported(%q) = %v, want %v", tt.metadata, got, tt.want)
+		}
+	}
+}

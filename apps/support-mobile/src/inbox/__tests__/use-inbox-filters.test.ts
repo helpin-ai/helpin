@@ -11,7 +11,7 @@ import {
   type ViewSelection,
 } from '../use-inbox-filters'
 
-const BUILTIN: NavFilter[] = ['inbox', 'mine', 'waiting', 'resolved', 'spam', 'ai_active', 'resolved_by_ai']
+const BUILTIN: NavFilter[] = ['inbox', 'mine', 'waiting', 'snoozed', 'resolved', 'spam', 'ai_active', 'resolved_by_ai']
 
 describe('selectionToConversationFilters — parity with the web function', () => {
   test.each(BUILTIN)('builtin %s equals buildConversationListRequestFilters output', (navFilter) => {

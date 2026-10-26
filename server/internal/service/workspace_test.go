@@ -15,7 +15,7 @@ func createDeleteStubTables(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	stubs := []string{
 		`CREATE TABLE IF NOT EXISTS reward_profiles (id TEXT PRIMARY KEY, workspace_member_id TEXT NOT NULL)`,
-		`CREATE TABLE IF NOT EXISTS support_conversations (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS support_conversations (snoozed_until DATETIME, snoozed_by_user_id TEXT, id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS support_messages (id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS support_widget_sessions (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS support_widget_installations (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
