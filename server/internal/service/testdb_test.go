@@ -742,7 +742,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
-		`CREATE TABLE support_conversations (
+		`CREATE TABLE support_conversations (snoozed_until DATETIME, snoozed_by_user_id TEXT, 
             merged_into_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,
             anonymized_at DATETIME,
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
@@ -943,6 +943,58 @@ func newTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE support_csat_responses (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			conversation_id TEXT NOT NULL UNIQUE,
+			rating INTEGER NOT NULL,
+			comment TEXT,
+			channel TEXT NOT NULL,
+			resolved_by TEXT NOT NULL,
+			assigned_user_id TEXT,
+			submitted_at DATETIME NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE support_sla_policies (
+			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, name TEXT NOT NULL, enabled BOOLEAN NOT NULL DEFAULT 1,
+			position INTEGER NOT NULL DEFAULT 0, priorities TEXT NOT NULL DEFAULT '{}', mailbox_ids TEXT NOT NULL DEFAULT '{}',
+			channels TEXT NOT NULL DEFAULT '{}', first_response_minutes INTEGER, next_response_minutes INTEGER,
+			resolution_minutes INTEGER, business_hours BOOLEAN NOT NULL DEFAULT 0, pause_while_waiting BOOLEAN NOT NULL DEFAULT 1,
+			active_since DATETIME NOT NULL, conditions_changed_at DATETIME, created_by_id TEXT, created_at DATETIME, updated_at DATETIME
+		)`,
+		`CREATE TABLE support_conversation_slas (
+			conversation_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, policy_id TEXT, policy_name TEXT NOT NULL DEFAULT '',
+			policy_applied_at DATETIME, detached_at DATETIME, target_first_response_minutes INTEGER,
+			target_next_response_minutes INTEGER, target_resolution_minutes INTEGER,
+			target_business_hours BOOLEAN NOT NULL DEFAULT 0, target_pause_while_waiting BOOLEAN NOT NULL DEFAULT 1,
+			ai_involved BOOLEAN NOT NULL DEFAULT 0, human_since DATETIME, ai_holding_since DATETIME, targets_from DATETIME, next_response_carried_breaches INTEGER NOT NULL DEFAULT 0,
+			first_response_paused_seconds INTEGER NOT NULL DEFAULT 0,
+			first_response_state TEXT NOT NULL DEFAULT '', first_response_due_at DATETIME, first_response_achieved_at DATETIME,
+			first_response_breached_at DATETIME, next_response_state TEXT NOT NULL DEFAULT '', next_response_due_at DATETIME,
+			next_response_breached_at DATETIME, next_response_breaches INTEGER NOT NULL DEFAULT 0,
+			resolution_state TEXT NOT NULL DEFAULT '', resolution_due_at DATETIME, resolution_achieved_at DATETIME,
+			resolution_breached_at DATETIME, paused_since DATETIME, paused_seconds INTEGER NOT NULL DEFAULT 0,
+			next_due_at DATETIME, wake_at DATETIME, breached BOOLEAN NOT NULL DEFAULT 0, updated_at DATETIME
+		)`,
+		`CREATE TABLE support_sla_work (conversation_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, enqueued_at DATETIME NOT NULL)`,
+		`CREATE TABLE webhook_endpoints (
+			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, url TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+			events TEXT NOT NULL DEFAULT '{}', mailbox_ids TEXT NOT NULL DEFAULT '{}', encrypted_secret TEXT NOT NULL,
+			secret_hint TEXT NOT NULL DEFAULT '', enabled BOOLEAN NOT NULL DEFAULT 1, disabled_reason TEXT NOT NULL DEFAULT '',
+			failure_count INTEGER NOT NULL DEFAULT 0, failing_since DATETIME, last_success_at DATETIME, last_failure_at DATETIME, created_by_id TEXT,
+			created_at DATETIME, updated_at DATETIME
+		)`,
+		`CREATE TABLE webhook_events (
+			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, event_type TEXT NOT NULL, conversation_id TEXT, message_id TEXT,
+			data TEXT NOT NULL DEFAULT '{}', available_at DATETIME NOT NULL, created_at DATETIME NOT NULL
+		)`,
+		`CREATE TABLE webhook_deliveries (
+			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, endpoint_id TEXT NOT NULL, event_id TEXT NOT NULL, event_type TEXT NOT NULL, conversation_id TEXT,
+			payload TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
+			next_attempt_at DATETIME NOT NULL, last_status_code INTEGER, last_error TEXT NOT NULL DEFAULT '', last_attempt_at DATETIME,
+			duration_ms INTEGER, delivered_at DATETIME, created_at DATETIME NOT NULL
+		)`,
 		`CREATE TABLE agent_handoffs (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
@@ -965,6 +1017,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 				short_code TEXT NOT NULL,
 				content TEXT NOT NULL,
 				tag TEXT NOT NULL DEFAULT 'General',
+				actions TEXT NOT NULL DEFAULT '{}',
 				created_by_id TEXT,
 			created_at DATETIME,
 			updated_at DATETIME

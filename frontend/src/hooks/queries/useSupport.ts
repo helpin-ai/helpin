@@ -98,6 +98,7 @@ export type SupportConversationFilters = {
   sort?: string;
   tag_ids?: string;
   system_tags?: string;
+  sla?: string;
 };
 
 export type SupportConversationGlobalSearchFilters = SupportConversationSearchParams;

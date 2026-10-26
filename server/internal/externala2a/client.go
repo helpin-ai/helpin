@@ -13,6 +13,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/helpin-ai/helpin/server/internal/netguard"
 )
 
 // WellKnownCardPath is the A2A agent card discovery path.
@@ -308,15 +310,7 @@ func hostMatches(host string, patterns []string) bool {
 	return false
 }
 
-func isNonPublicIP(ip net.IP) bool {
-	if ip == nil || !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() ||
-		ip.IsLinkLocalMulticast() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast() {
-		return true
-	}
-	// Shared address space (RFC 6598) can reach provider infrastructure.
-	_, shared, _ := net.ParseCIDR("100.64.0.0/10")
-	return shared.Contains(ip)
-}
+func isNonPublicIP(ip net.IP) bool { return netguard.IsNonPublicIP(ip) }
 
 func isLocalHostname(host string) bool {
 	host = strings.ToLower(strings.TrimSpace(host))

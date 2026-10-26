@@ -200,7 +200,7 @@ func createAgentRunActivityTables(t *testing.T, db *gorm.DB) {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
-		`CREATE TABLE IF NOT EXISTS support_conversations (
+		`CREATE TABLE IF NOT EXISTS support_conversations (snoozed_until DATETIME, snoozed_by_user_id TEXT, 
             merged_into_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,

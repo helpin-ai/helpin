@@ -49,7 +49,7 @@ interface ConversationViewProps {
   connectionStatus?: 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
   queuedMessageCount?: number;
   csatSubmitted?: boolean;
-  onCsatSubmit?: (rating: number, feedback?: string) => void;
+  onCsatSubmit?: (rating: number, feedback?: string) => void | Promise<void>;
 }
 
 export const ConversationView: FunctionComponent<ConversationViewProps> = ({

@@ -73,6 +73,11 @@ type SupportConversation struct {
 	// or a second thread.
 	PortalVisible             bool       `json:"portal_visible" gorm:"not null;default:false;index"`
 	PortalVisibilityChangedAt *time.Time `json:"portal_visibility_changed_at,omitempty" gorm:"type:timestamptz"`
+	// SnoozedUntil hides the conversation from the team's queues until this
+	// time, a customer reply, or a teammate wakes it. Customers still see
+	// an open conversation.
+	SnoozedUntil    *time.Time `json:"snoozed_until,omitempty" gorm:"type:timestamptz;index"`
+	SnoozedByUserID *string    `json:"snoozed_by_user_id,omitempty" gorm:"type:uuid"`
 
 	// AI State — separate from human Status. Null when AI is not involved.
 	AIState                  *string    `json:"ai_state" gorm:"index"` // null, "pending", "resolved", "escalated"
@@ -114,6 +119,8 @@ type SupportConversation struct {
 	Triage                       *SupportConversationTriage `json:"triage,omitempty" gorm:"-"`
 	Tags                         []SupportTag               `json:"tags,omitempty" gorm:"-"`
 	SystemTags                   []string                   `json:"system_tags,omitempty" gorm:"-"`
+	CSAT                         *SupportCSATSummary        `json:"csat,omitempty" gorm:"-"`
+	SLA                          *SupportConversationSLA    `json:"sla,omitempty" gorm:"-"`
 
 	// ListLastActivityAt is derived from timeline entries, including notes and system events.
 	// It must not replace message timestamps used for previews, unread state, or reply tracking.
@@ -155,6 +162,7 @@ const (
 	SupportConversationListFilterMine     = "mine"
 	SupportConversationListFilterMentions = "mentions"
 	SupportConversationListFilterResolved = "resolved"
+	SupportConversationListFilterSnoozed  = "snoozed"
 )
 
 func NormalizeSupportConversationStatus(status string) string {
@@ -442,14 +450,16 @@ type SupportLinkSecurity struct {
 
 // SupportCannedResponse represents a canned response for quick replies.
 type SupportCannedResponse struct {
-	ID          string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	ShortCode   string    `json:"short_code" gorm:"not null"` // e.g., "!greeting", "!thanks"
-	Content     string    `json:"content" gorm:"not null"`
-	Tag         string    `json:"tag" gorm:"not null;default:'General'"`
-	CreatedByID string    `json:"created_by_id" gorm:"type:uuid"`
-	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ID          string `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID string `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	ShortCode   string `json:"short_code" gorm:"not null"` // e.g., "!greeting", "!thanks"
+	Content     string `json:"content" gorm:"not null"`
+	Tag         string `json:"tag" gorm:"not null;default:'General'"`
+	// Actions run when the shortcut is used, turning it into a macro.
+	Actions     SupportConversationActions `json:"actions" gorm:"type:jsonb;not null;default:'{}'"`
+	CreatedByID string                     `json:"created_by_id" gorm:"type:uuid"`
+	CreatedAt   time.Time                  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt   time.Time                  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (SupportCannedResponse) TableName() string { return "support_canned_responses" }
@@ -1288,9 +1298,10 @@ type WidgetMessageReceivedPayload struct {
 
 // CannedResponseRequest is the payload for CRUD operations on canned responses.
 type CannedResponseRequest struct {
-	ShortCode string  `json:"short_code"`
-	Content   string  `json:"content"`
-	Tag       *string `json:"tag,omitempty"`
+	ShortCode string                      `json:"short_code"`
+	Content   string                      `json:"content"`
+	Tag       *string                     `json:"tag,omitempty"`
+	Actions   *SupportConversationActions `json:"actions,omitempty"`
 }
 
 // TypingIndicatorRequest represents a typing indicator event.
@@ -2053,4 +2064,16 @@ func (s SupportInboxSettings) EffectivePortalAccessMode() string {
 		return SupportPortalAccessModeAnyVerifiedEmail
 	}
 	return SupportPortalAccessModeApprovedContacts
+}
+
+// IsImported reports whether the message was copied from another help desk.
+// Imported history stays out of live work such as tagging and translation.
+func (m SupportMessage) IsImported() bool {
+	if !strings.Contains(m.Metadata, "imported_from") {
+		return false
+	}
+	var meta struct {
+		ImportedFrom string `json:"imported_from"`
+	}
+	return json.Unmarshal([]byte(m.Metadata), &meta) == nil && meta.ImportedFrom != ""
 }

@@ -175,6 +175,7 @@ export const supportFilterItems = [
   { key: 'inbox' as const, label: 'Inbox', icon: InboxIcon },
   { key: 'mine' as const, label: 'Mine', icon: UserIcon },
   { key: 'waiting' as const, label: 'Waiting', icon: PauseIcon },
+  { key: 'snoozed' as const, label: 'Snoozed', icon: Clock01Icon },
   { key: 'resolved' as const, label: 'Resolved', icon: CheckmarkCircle02Icon },
   { key: 'spam' as const, label: 'Spam', icon: OctagonXIcon },
 ];

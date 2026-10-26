@@ -37,7 +37,7 @@ func setupSupportInboxClearService(t *testing.T) (*SupportInboxClearService, *go
 	for _, stmt := range []string{
 		`CREATE TABLE support_inbox_clears (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL, scope_key TEXT NOT NULL, mailbox_id TEXT, conversation_id TEXT NOT NULL, local_date TEXT NOT NULL, cleared_at DATETIME NOT NULL, created_at DATETIME)`,
 		`CREATE UNIQUE INDEX idx_support_inbox_clears_once ON support_inbox_clears(workspace_id, user_id, scope_key, conversation_id)`,
-		`CREATE TABLE support_conversations (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, mailbox_id TEXT, status TEXT NOT NULL)`,
+		`CREATE TABLE support_conversations (snoozed_until DATETIME, snoozed_by_user_id TEXT, id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, mailbox_id TEXT, status TEXT NOT NULL)`,
 		`CREATE TABLE support_messages (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, conversation_id TEXT NOT NULL, sender_user_id TEXT, message_type TEXT NOT NULL, system_event_type TEXT, created_at DATETIME NOT NULL)`,
 	} {
 		if err := db.Exec(stmt).Error; err != nil {

@@ -2,7 +2,7 @@ import { FunctionComponent } from 'preact';
 import { useState } from 'preact/hooks';
 
 interface CsatRatingProps {
-  onSubmit: (rating: number, feedback?: string) => void;
+  onSubmit: (rating: number, feedback?: string) => void | Promise<void>;
 }
 
 const EMOJI_RATINGS = [
@@ -18,11 +18,20 @@ export const CsatRating: FunctionComponent<CsatRatingProps> = ({ onSubmit }) => 
   const [feedback, setFeedback] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = () => {
-    if (rating !== null) {
-      onSubmit(rating, feedback);
+  const handleSubmit = async () => {
+    if (rating === null || sending) return;
+    setSending(true);
+    setError(null);
+    try {
+      await onSubmit(rating, feedback);
       setSubmitted(true);
+    } catch (submitError) {
+      setError(submitError instanceof Error && submitError.message ? submitError.message : 'Could not send your feedback. Please try again.');
+    } finally {
+      setSending(false);
     }
   };
 
@@ -65,8 +74,9 @@ export const CsatRating: FunctionComponent<CsatRatingProps> = ({ onSubmit }) => 
             aria-label="Additional feedback"
             maxLength={1000}
           />
-          <button type="button" onClick={handleSubmit} className="helpin-csat-submit">
-            Send feedback
+          {error && <div className="helpin-csat-error" role="alert">{error}</div>}
+          <button type="button" onClick={handleSubmit} className="helpin-csat-submit" disabled={sending}>
+            {sending ? 'Sending…' : 'Send feedback'}
           </button>
         </div>
       )}

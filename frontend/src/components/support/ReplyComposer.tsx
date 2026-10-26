@@ -4,6 +4,8 @@ import { flushSupportDrafts } from '@/stores/supportInboxStore';
 import { clearSupportRecoveryDraft, loadSupportRecoveryDraft, saveSupportRecoveryDraft } from './supportDraftRecovery';
 import { createSupportComposerExtensions, normalizeSupportLinkInput } from './supportComposerExtensions';
 import { SupportTranslationSendError } from '@/lib/supportTranslationError';
+import { onSupportShortcut } from '@/lib/supportShortcuts';
+import { usePendingMacroStore } from '@/stores/supportPendingMacroStore';
 import { useOutgoingSupportTranslation } from '@/hooks/queries/useOutgoingSupportTranslation';
 import { useRef, useEffect, useLayoutEffect, useState, useCallback, useMemo, type KeyboardEvent, type ReactNode } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
@@ -15,6 +17,7 @@ import {
   TextBoldIcon, TextItalicIcon, TextUnderlineIcon, TextStrikethroughIcon,
   CodeIcon, QuoteDownIcon, LeftToRightListBulletIcon, LeftToRightListNumberIcon, Link01Icon,
   InformationCircleIcon, StickyNote01Icon, PencilEdit01Icon, Delete01Icon, ArrowLeft02Icon,
+  ZapIcon,
 } from '@/lib/icons';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -43,7 +46,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { MentionHighlight } from '@/components/pm/mention-highlight';
 import { MentionSuggestionsList } from '@/components/pm/MentionSuggestionsList';
 import { getMemberMentionHandle, getMentionSuggestions, type MentionSuggestionItem } from '@/components/pm/mentionSuggestions';
-import { useCannedResponses, useConversation, useCreateCannedResponse, useDeleteCannedResponse, useRewriteSupportDraft, useSendMessage, useUpdateCannedResponse, useUpdateConversationEmailRecipients, useUploadSupportAttachment, useSupportAttachmentPolicy, useUpdateSupportNote } from '@/hooks/queries/useSupport';
+import { useSupportTags, useCannedResponses, useConversation, useCreateCannedResponse, useDeleteCannedResponse, useRewriteSupportDraft, useSendMessage, useUpdateCannedResponse, useUpdateConversationEmailRecipients, useUploadSupportAttachment, useSupportAttachmentPolicy, useUpdateSupportNote } from '@/hooks/queries/useSupport';
 import { acceptAttributeFor, fileRejection, isPreviewableImageType, withInferredFileType } from '@/lib/supportAttachmentFiles';
 import { useComposerRewrite } from '@/hooks/useComposerRewrite';
 import { queryKeys } from '@/lib/queryKeys';
@@ -58,7 +61,11 @@ import { cn } from '@/lib/utils';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@edition/errors';
 import { toast } from 'sonner';
 import type { AssignableMember } from '@/lib/types';
-import type { SupportMessage, SupportAIRewriteOperation, SupportAttachmentPayload, SupportCannedResponse, SupportReplyDeliveryMode } from '@/lib/pmTypes';
+import type { SupportMessage, SupportAIRewriteOperation, SupportAttachmentPayload, SupportCannedResponse, SupportConversationActions, SupportReplyDeliveryMode } from '@/lib/pmTypes';
+import { useApplyMacro } from '@/hooks/queries/useSupportOperations';
+import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces';
+import { compactMacroActions, describeMacroActions, hasMacroActions, macroTextMarker, macroTextPresent } from '@/lib/supportMacros';
+import { MacroActionsEditor } from './MacroActionsEditor';
 import { EmojiPicker } from './EmojiPicker';
 import { LinkInsertModal } from './LinkInsertModal';
 import { useShortcutComposerStore } from './shortcutDialogStore';
@@ -224,6 +231,7 @@ function emptyShortcutForm(seed?: { seedShortCode?: string; seedContent?: string
     shortCode: seedShortcutCode(seed?.seedShortCode),
     category: DEFAULT_SHORTCUT_CATEGORY,
     content: seed?.seedContent ?? '',
+    actions: {},
   };
 }
 
@@ -232,6 +240,7 @@ function shortcutFormFromShortcut(shortcut: SupportCannedResponse): ShortcutForm
     shortCode: shortcut.short_code,
     category: normalizeShortcutCategory(shortcut.tag),
     content: shortcut.content,
+    actions: shortcut.actions ?? {},
   };
 }
 
@@ -367,8 +376,11 @@ function ShortcutsList({
                     onClick={() => onSelect(shortcut)}
                     className="flex min-w-0 flex-1 items-start gap-3 px-2 py-2 text-left"
                   >
-                    <span className="mt-0.5 shrink-0 font-mono text-xs font-semibold text-primary">
+                    <span className="mt-0.5 flex shrink-0 items-center gap-1 font-mono text-xs font-semibold text-primary">
                       {highlightMatch(shortcut.short_code, query)}
+                      {hasMacroActions(shortcut.actions) ? (
+                        <ZapIcon className="h-3 w-3 text-violet-600 dark:text-violet-300" aria-label="Runs actions" />
+                      ) : null}
                     </span>
                     <span className="min-w-0 flex-1">
                       <span
@@ -377,7 +389,7 @@ function ShortcutsList({
                           compact && 'max-w-[640px]',
                         )}
                       >
-                        {stripShortcutContent(shortcut.content) || shortcut.short_code}
+                        {stripShortcutContent(shortcut.content) || (hasMacroActions(shortcut.actions) ? 'Runs actions only' : shortcut.short_code)}
                       </span>
                     </span>
                   </button>
@@ -417,9 +429,11 @@ type ShortcutFormState = {
   shortCode: string;
   category: string;
   content: string;
+  actions: SupportConversationActions;
 };
 
 function ShortcutFormPanel({
+  workspaceId,
   mode,
   form,
   shortcuts,
@@ -433,6 +447,7 @@ function ShortcutFormPanel({
   onDelete,
   onDeleteConfirmChange,
 }: {
+  workspaceId: string;
   mode: Exclude<ShortcutPanelMode, 'list'>;
   form: ShortcutFormState;
   shortcuts: SupportCannedResponse[];
@@ -454,7 +469,9 @@ function ShortcutFormPanel({
   const normalizedCode = form.shortCode.trim();
   const shortcutError = validateShortcutCode(form.shortCode);
   const duplicate = shortcuts.some((item) => item.id !== editingId && item.short_code === normalizedCode);
-  const contentMissing = stripShortcutContent(form.content).length === 0;
+  const isMacro = hasMacroActions(form.actions);
+  // A macro may only run actions without inserting any text.
+  const contentMissing = stripShortcutContent(form.content).length === 0 && !isMacro;
   const canSubmit = !shortcutError && !duplicate && !contentMissing && !pending;
   const showShortcutError = (touched.shortCode || submitAttempted) && !!shortcutError;
   const showDuplicateError = (touched.shortCode || submitAttempted) && !shortcutError && duplicate;
@@ -669,7 +686,7 @@ function ShortcutFormPanel({
 
         <div className="space-y-1.5">
           <div className="flex items-center justify-between gap-2">
-            <Label htmlFor="shortcut-content" className="text-xs">Message <span className="text-destructive">*</span></Label>
+            <Label htmlFor="shortcut-content" className="text-xs">Message {isMacro ? <span className="font-normal text-muted-foreground">(optional)</span> : <span className="text-destructive">*</span>}</Label>
             <div className="flex items-center gap-0.5">
               <button type="button" onClick={() => wrapSelection('**')} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Bold">
                 <TextBoldIcon className="h-3.5 w-3.5" />
@@ -731,7 +748,15 @@ function ShortcutFormPanel({
             placeholder="Write the saved reply..."
             className="min-h-32 resize-y text-sm"
           />
-          {showContentError ? <p className="text-xs text-destructive">Message is required.</p> : null}
+          {showContentError ? <p className="text-xs text-destructive">Add a message or an action.</p> : null}
+        </div>
+
+        <div className="space-y-2 border-t border-border/40 pt-3">
+          <div>
+            <div className="text-xs font-medium">Actions <span className="font-normal text-muted-foreground">(optional)</span></div>
+            <p className="text-[11px] text-muted-foreground">Run these when the shortcut is used: right away if it has no message, otherwise after the reply is sent.</p>
+          </div>
+          <MacroActionsEditor workspaceId={workspaceId} value={form.actions} onChange={(actions) => onChange({ ...form, actions })} />
         </div>
       </div>
 
@@ -852,6 +877,40 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
   });
   const { data: shortcuts = [] } = useCannedResponses(workspaceId);
   const createShortcutMutation = useCreateCannedResponse(workspaceId);
+  const { mutateAsync: applyMacroAsync } = useApplyMacro(workspaceId);
+  const { data: macroTags = [] } = useSupportTags(workspaceId);
+  const { data: macroMembers = [] } = useWorkspaceMembers(workspaceId);
+  // A macro inserted with text runs its actions once the reply is sent. It
+  // stays attached to the conversation's draft and ends when its text is
+  // deleted from the reply.
+  const pendingEntry = usePendingMacroStore((state) => state.pending[conversationId]);
+  const setPendingEntry = usePendingMacroStore((state) => state.setPending);
+  const activePendingMacro = pendingEntry ? shortcuts.find((shortcut) => shortcut.id === pendingEntry.macroId) ?? null : null;
+  const setPendingMacro = useCallback((shortcut: SupportCannedResponse | null, insertedText = '') => {
+    setPendingEntry(conversationId, shortcut ? { macroId: shortcut.id, marker: macroTextMarker(insertedText) } : null);
+  }, [conversationId, setPendingEntry]);
+  const pendingMacroRef = useRef<{ shortcut: SupportCannedResponse; marker: string } | null>(null);
+  useEffect(() => {
+    pendingMacroRef.current = activePendingMacro && pendingEntry ? { shortcut: activePendingMacro, marker: pendingEntry.marker } : null;
+  }, [activePendingMacro, pendingEntry]);
+  const runMacro = useCallback(async (shortcut: SupportCannedResponse) => {
+    try {
+      const response = await applyMacroAsync({ conversationId, macroId: shortcut.id });
+      if (response.result.error) {
+        toast.error(`${shortcut.short_code} stopped early`, { description: response.result.error });
+      } else {
+        toast.success(`${shortcut.short_code} applied`);
+      }
+    } catch (error) {
+      toast.error(`${shortcut.short_code} could not run`, { description: error instanceof Error ? error.message : undefined });
+    }
+  }, [applyMacroAsync, conversationId]);
+  const pendingMacroSummary = activePendingMacro
+    ? describeMacroActions(activePendingMacro.actions, {
+      tags: new Map(macroTags.map((tag) => [tag.id, tag.name])),
+      members: new Map(macroMembers.filter((member) => member.user_id).map((member) => [member.user_id!, member.full_name || member.email || 'a teammate'])),
+    })
+    : [];
   const updateShortcutMutation = useUpdateCannedResponse(workspaceId);
   const deleteShortcutMutation = useDeleteCannedResponse(workspaceId);
 
@@ -1064,6 +1123,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
       short_code: shortcutForm.shortCode.trim(),
       content: shortcutForm.content.trim(),
       tag: normalizeShortcutFormCategory(shortcutForm),
+      actions: compactMacroActions(shortcutForm.actions),
       // Deprecated compatibility for older API processes during rollout.
       // Current backend ignores this field; old backend required it.
       title: shortcutForm.shortCode.trim(),
@@ -1381,7 +1441,21 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
   const insertShortcut = useCallback((shortcut: SupportCannedResponse, range?: { from: number; to: number }) => {
     const ed = editorRef.current;
     if (!ed) return;
+    const macro = hasMacroActions(shortcut.actions);
+    if (macro && !shortcut.content.trim()) {
+      if (range) ed.chain().focus().deleteRange(range).run();
+      closeShortcutsPanel();
+      // Editing a note changes only its text.
+      if (editingNote) {
+        toast.info(`${shortcut.short_code} has only actions; use it from the reply box.`);
+        return;
+      }
+      // Action-only macros run straight away.
+      void runMacro(shortcut);
+      return;
+    }
     const content = resolveShortcutContent(shortcut.content);
+    if (macro && !editingNote) setPendingMacro(shortcut, content);
     const chain = ed.chain().focus();
     if (range) {
       chain.insertContentAt(range, content).run();
@@ -1389,7 +1463,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
       chain.insertContent(content).run();
     }
     closeShortcutsPanel();
-  }, [closeShortcutsPanel, resolveShortcutContent]);
+  }, [closeShortcutsPanel, editingNote, resolveShortcutContent, runMacro, setPendingMacro]);
 
   // Backup event handlers for TipTap v3 compatibility
   // Close the shortcuts panel when the user clicks anywhere outside both
@@ -1533,6 +1607,30 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
     return () => window.removeEventListener(RESTORE_SUPPORT_DRAFT_EVENT, handleRestoreDraft);
   }, [workspaceId, conversationId, editor, sendTyping, setDraft, setReplyMode, pendingAttachments.length, editingNote, inactive]);
 
+  // Deleting a macro's text from the reply drops its actions.
+  useEffect(() => {
+    if (!editor || inactive || editingNote) return;
+    const handleUpdate = () => {
+      const pending = pendingMacroRef.current;
+      if (pending && !macroTextPresent(editor.getText(), pending.marker)) setPendingMacro(null);
+    };
+    editor.on('update', handleUpdate);
+    return () => {
+      editor.off('update', handleUpdate);
+    };
+  }, [editingNote, editor, inactive, setPendingMacro]);
+
+  // R starts a reply and N an internal note.
+  useEffect(() => {
+    if (!editor || inactive || editingNote) return;
+    return onSupportShortcut((detail) => {
+      if ((detail.action !== 'reply' && detail.action !== 'note') || detail.conversationId !== conversationId || !editor.isEditable) return;
+      detail.handled = true;
+      setReplyMode(detail.action);
+      requestAnimationFrame(() => editor.commands.focus('end'));
+    });
+  }, [conversationId, editingNote, editor, inactive, setReplyMode]);
+
   // Force placeholder redecoration when mode changes
   useEffect(() => {
     if (editor && editor.isEmpty) {
@@ -1547,6 +1645,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
   const sendReply = useCallback(async (sendOriginal = false) => {
     if (editingNote || inactive || !editor || !editor.isEditable || attachmentsPending || draftAudience.changed) return;
     const markdown = getEditorMarkdown(editor).trim();
+    const sentText = editor.getText();
     const doneAttachments = pendingAttachments.filter((a) => a.status === 'done' && a.attachmentId);
     if ((!markdown && doneAttachments.length === 0) || sendMutation.isPending) return;
 
@@ -1605,7 +1704,13 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
       clearReplyDeliveryDraft(workspaceId, conversationId);
     }
     editor.commands.focus();
-  }, [editingNote, inactive, draftAudience.changed, draftAudience.revision, outgoingTranslation, attachmentsPending, clearDraft, conversation?.customer_email, conversation?.email_cc, conversationId, editor, deliveryMode, pendingAttachments, workspaceId, sendMutation, sendTyping]);
+    // The macro runs with the public reply that carries its text.
+    const macro = pendingMacroRef.current;
+    if (macro && !isInternal) {
+      setPendingMacro(null);
+      if (macroTextPresent(sentText, macro.marker)) void runMacro(macro.shortcut);
+    }
+  }, [runMacro, setPendingMacro, editingNote, inactive, draftAudience.changed, draftAudience.revision, outgoingTranslation, attachmentsPending, clearDraft, conversation?.customer_email, conversation?.email_cc, conversationId, editor, deliveryMode, pendingAttachments, workspaceId, sendMutation, sendTyping]);
 
   const handleSend = useCallback(async (sendOriginal = false) => {
     if (inactive || !editor || !editor.isEditable || attachmentsPending || updateNoteMutation.isPending) return;
@@ -1858,6 +1963,7 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
             )}>
               {isManaging ? (
                 <ShortcutFormPanel
+                  workspaceId={workspaceId}
                   mode={shortcutPanelMode}
                   form={shortcutForm}
                   shortcuts={shortcuts}
@@ -2147,6 +2253,22 @@ function MessageComposer({ workspaceId, conversationId, emailDeliveryEnabled, on
       >
         <EditorContent editor={editor} />
       </div>
+
+      {activePendingMacro ? (
+        <div className="mx-3 mb-1 flex items-start gap-2 rounded-md border border-violet-200 bg-violet-50 px-2.5 py-1.5 text-xs text-violet-900 dark:border-violet-900/60 dark:bg-violet-950/30 dark:text-violet-100" data-testid="pending-macro">
+          <ZapIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span className="min-w-0 flex-1">
+            <span className="font-mono font-medium">{activePendingMacro.short_code}</span> will {pendingMacroSummary.join(', ')} after you send the reply.
+          </span>
+          <button
+            type="button"
+            className="shrink-0 rounded px-1 font-medium underline-offset-2 hover:underline"
+            onClick={() => setPendingMacro(null)}
+          >
+            Skip actions
+          </button>
+        </div>
+      ) : null}
 
       <LinkInsertModal
         open={linkModalOpen}

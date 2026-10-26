@@ -16,9 +16,11 @@ import { buildSupportConversationPageContext } from './supportAgentContext';
 import { supportSidebarWidthClass } from './supportSidebarLayout';
 import { shouldClearConversationForMailbox } from './supportInboxSelection';
 import { NewConversationDialog } from './NewConversationDialog';
+import { SupportShortcutsDialog } from './SupportShortcutsDialog';
+import { useSupportInboxShortcuts } from '@/hooks/useSupportInboxShortcuts';
 import { TeamInboxDialog } from './TeamInboxDialog';
 import { buildSupportInboxSearch, navFilterFromView, normalizeSupportInboxRouteSearch } from '@/lib/supportInboxRouting';
-import { conversationListFiltersEqual, defaultAIStatesForNav, defaultAssignmentForNav, defaultConversationListFiltersForNav, defaultStatesForNav, parseSupportInboxViewFilters, statesEqual, stringArraysEqual, type ConversationAIStateFilter, type ConversationAssignmentFilter, type ConversationListFilters, type ConversationStateFilter } from '@/lib/supportInboxFilters';
+import { conversationListFiltersEqual, defaultAIStatesForNav, defaultAssignmentForNav, defaultConversationListFiltersForNav, defaultStatesForNav, parseConversationSortOrder, parseSupportInboxViewFilters, statesEqual, stringArraysEqual, type ConversationAIStateFilter, type ConversationAssignmentFilter, type ConversationListFilters, type ConversationStateFilter } from '@/lib/supportInboxFilters';
 
 const LazySupportAgentSidebar = lazy(() => import('./SupportAgentSidebar').then((module) => ({ default: module.SupportAgentSidebar })));
 const LazyConversationDetailSidebar = lazy(() => import('./ConversationDetailSidebar').then((module) => ({ default: module.ConversationDetailSidebar })));
@@ -119,6 +121,9 @@ export function SupportInboxLayout() {
   useNotificationView(workspaceId, 'support_conversation', isMultiPanel ? selectedConversationId : routeConversationId);
   const showDetailSidebar = useMinWidth(1280) && !!selectedConversationId;
   const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const openShortcuts = useCallback(() => setShortcutsOpen(true), []);
+  useSupportInboxShortcuts({ enabled: isMultiPanel, onCheatsheet: openShortcuts });
   const mobileOpenedFromInboxRef = useRef(false);
   const previousRouteConversationIdRef = useRef(routeConversationId);
   const routeSearch = useMemo(
@@ -228,7 +233,8 @@ export function SupportInboxLayout() {
       mailboxIds: parseRouteStringList(routeSearch.mailbox_ids),
       tagIds: parseRouteStringList(routeSearch.tag_ids),
       aiStates: parseRouteAIStates(routeSearch.ai, routeSearch.system_tags, effectiveNavFilter),
-      sort: routeSearch.sort === 'oldest' ? 'oldest' : 'newest',
+      sort: parseConversationSortOrder(routeSearch.sort),
+      ...(routeSearch.sla === 'breached' ? { slaBreached: true } : {}),
     };
     const hasExplicitRouteFilters = !!(
       routeSearch.status ||
@@ -238,6 +244,7 @@ export function SupportInboxLayout() {
       routeSearch.mailbox_ids ||
       routeSearch.tag_ids ||
       routeSearch.ai ||
+      routeSearch.sla ||
       routeSearch.system_tags ||
       routeSearch.sort
     );
@@ -543,6 +550,8 @@ export function SupportInboxLayout() {
           </Suspense></AppLoadBoundary>
         </SheetContent>
       </Sheet>
+
+      <SupportShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
 
       <NewConversationDialog
         workspaceId={workspaceId}

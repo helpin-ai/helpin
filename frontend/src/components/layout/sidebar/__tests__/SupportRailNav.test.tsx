@@ -30,12 +30,16 @@ function renderSupportRail({
   canManageSettings = false,
   showCustomViews = true,
   onCreateCustomView = vi.fn(),
+  pathname = '/w/test-docs/support',
+  onNavigate = vi.fn(),
 }: {
   customViews?: SupportInboxView[]
   customViewCounts?: Record<string, SupportInboxViewCount>
   canManageSettings?: boolean
   showCustomViews?: boolean
   onCreateCustomView?: () => void
+  pathname?: string
+  onNavigate?: (path: string) => void
 } = {}) {
   const container = document.createElement('div')
   document.body.appendChild(container)
@@ -106,7 +110,7 @@ function renderSupportRail({
             canManageSettings={canManageSettings}
             showCustomViews={showCustomViews}
             wsSlug="test-docs"
-            pathname="/w/test-docs/support"
+            pathname={pathname}
             onNavFilterChange={vi.fn()}
             onMailboxSelect={vi.fn()}
             onCustomViewSelect={vi.fn()}
@@ -116,7 +120,7 @@ function renderSupportRail({
             onCreateMailbox={vi.fn()}
             onEditMailbox={vi.fn()}
             onArchiveMailbox={vi.fn()}
-            onNavigate={vi.fn()}
+            onNavigate={onNavigate}
           />
         </SidebarProvider>
       </TooltipProvider>,
@@ -176,6 +180,17 @@ describe('SupportRailNav', () => {
     expect(buttonByText(rendered.container, 'Test')?.querySelector('[data-slot="support-unread-dot"]')).toBeTruthy()
 
     rendered.cleanup()
+  })
+
+  it('links to support reports and marks it active on the reports page', () => {
+    const onNavigate = vi.fn()
+    const { container, cleanup } = renderSupportRail({ onNavigate, pathname: '/w/test-docs/support/reports' })
+    const reports = buttonByText(container, 'Reports')
+    expect(reports?.getAttribute('data-active')).toBe('true')
+    expect(buttonByText(container, 'Inbox')?.getAttribute('data-active')).not.toBe('true')
+    act(() => reports?.click())
+    expect(onNavigate).toHaveBeenCalledWith('/w/test-docs/support/reports')
+    cleanup()
   })
 
   it('does not expose support global search as a sidebar list item', () => {

@@ -16,6 +16,15 @@ vi.mock('@/hooks/queries/useSession', () => ({
   useWorkspaceAccess: () => ({ data: { permissions: ['support.edit'] } }),
 }))
 
+vi.mock('@/hooks/queries/useSupportOperations', () => {
+  const mutation = () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false });
+  return {
+    useUpdateConversationPriority: mutation,
+    useSnoozeConversation: mutation,
+    useUnsnoozeConversation: mutation,
+  };
+});
+
 vi.mock('@/hooks/queries/useSupport', () => ({
   useDeleteConversation: () => ({ mutate: vi.fn(), isPending: false }),
   useMarkConversationRead: () => ({ mutate: vi.fn(), isPending: false }),

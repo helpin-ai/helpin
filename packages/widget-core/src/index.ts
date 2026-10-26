@@ -102,7 +102,7 @@ export interface MountWidgetOptions {
   onAnswerFeedback?: (messageId: string, helpful: boolean) => Promise<boolean>;
   queuedMessageCount?: number;
   csatSubmitted?: boolean;
-  onCsatSubmit?: (rating: number, feedback?: string) => void;
+  onCsatSubmit?: (rating: number, feedback?: string) => void | Promise<void>;
 }
 
 export function mountWidget(container: HTMLElement, options: MountWidgetOptions): void {

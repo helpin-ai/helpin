@@ -1,13 +1,17 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
 // ImportListJobs handles GET /api/docs/import/jobs.
@@ -64,6 +68,45 @@ func (h *DocsHandler) ImportStartHelpscout(w http.ResponseWriter, r *http.Reques
 	jobID, err := h.importService.Start(r.Context(), req, workspaceID, userID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID})
+}
+
+func writeIntercomImportError(w http.ResponseWriter, err error) {
+	if errors.Is(err, service.ErrIntercomImportInvalid) {
+		writeError(w, http.StatusBadRequest, strings.TrimPrefix(err.Error(), service.ErrIntercomImportInvalid.Error()+": "))
+		return
+	}
+	slog.Error("intercom docs import", "error", err)
+	writeError(w, http.StatusBadGateway, "Intercom could not be reached. Try again in a moment.")
+}
+
+// ImportPreviewIntercom handles POST /api/docs/import/intercom/preview.
+func (h *DocsHandler) ImportPreviewIntercom(w http.ResponseWriter, r *http.Request) {
+	var req model.IntercomDocsImportRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	preview, err := h.importService.PreviewIntercom(r.Context(), req)
+	if err != nil {
+		writeIntercomImportError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, preview)
+}
+
+// ImportStartIntercom handles POST /api/docs/import/intercom/start.
+func (h *DocsHandler) ImportStartIntercom(w http.ResponseWriter, r *http.Request) {
+	var req model.IntercomDocsImportRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	jobID, err := h.importService.StartIntercom(r.Context(), req, getWorkspaceID(r), middleware.GetUserID(r.Context()))
+	if err != nil {
+		writeIntercomImportError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID})

@@ -165,6 +165,8 @@
         ],
       });
       window.helpin('set', { test_run_id: runId, test_surface: 'event-lab' });
+      // init starts analytics only; the chat widget needs its own boot.
+      window.helpin('boot', { widgetKey: config.widgetKey, host: config.host });
       track('pageview', { route: window.location.pathname });
       if (page === 'security') {
         window.helpin('articleView', 'security-overview', { test_run_id: runId, section: 'trust-center' });
