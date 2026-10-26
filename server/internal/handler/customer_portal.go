@@ -139,8 +139,16 @@ func (h *CustomerPortalHandler) Exchange(w http.ResponseWriter, r *http.Request)
 	}
 	clearPortalCookie(w, r, portalCookieRoot)
 	setPortalCookie(w, r, token, int(service.PortalSessionTTL/time.Second))
+	response := portalCustomer(identity)
+	// Answer like Session, so company views appear without a second request.
+	if access, err := h.portal.Authenticate(r.Context(), ws, token); err == nil {
+		response = h.portalSession(r, access)
+	} else {
+		slog.WarnContext(r.Context(), "portal session lookup after exchange failed", "workspace_id", ws.ID, "error", err)
+		response["companies"] = []repository.PortalCompanyMembership{}
+	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, portalCustomer(identity))
+	writeJSON(w, http.StatusOK, response)
 }
 
 // Session returns the signed-in customer and the companies whose portal they
@@ -150,6 +158,12 @@ func (h *CustomerPortalHandler) Session(w http.ResponseWriter, r *http.Request) 
 	if access == nil {
 		return
 	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, h.portalSession(r, access))
+}
+
+// portalSession is the signed-in customer with their portal companies.
+func (h *CustomerPortalHandler) portalSession(r *http.Request, access *service.PortalAccess) map[string]any {
 	response := portalCustomer(&access.Identity)
 	companies, err := h.portal.Companies(r.Context(), access)
 	if err != nil {
@@ -157,8 +171,7 @@ func (h *CustomerPortalHandler) Session(w http.ResponseWriter, r *http.Request) 
 		companies = []repository.PortalCompanyMembership{}
 	}
 	response["companies"] = companies
-	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, response)
+	return response
 }
 
 // Logout revokes the session and clears its cookie.

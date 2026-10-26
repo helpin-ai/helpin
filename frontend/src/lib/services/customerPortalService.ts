@@ -51,9 +51,21 @@ export interface CustomerPortalCustomer {
   name?: string | null
 }
 
+/** A company whose portal the customer belongs to, with their role there. */
+export interface CustomerPortalCompany {
+  id: string
+  name: string
+  /** Requesters see their own requests; members see every company request. */
+  role: 'requester' | 'member'
+}
+
 export interface CustomerPortalSession {
   customer: CustomerPortalCustomer
+  companies?: CustomerPortalCompany[]
 }
+
+/** Which requests a list shows: the customer's own, or one company's. */
+export type CustomerPortalRequestScope = { kind: 'mine' } | { kind: 'company'; companyId: string }
 
 export interface CustomerPortalRequest {
   reference: string
@@ -66,6 +78,11 @@ export interface CustomerPortalRequest {
   last_message_from?: 'customer' | 'support'
   /** Support replied since the customer last opened the request. */
   unread?: boolean
+  /** Company lists only: whether the signed-in customer asked. */
+  own?: boolean
+  /** Company lists only: who asked. */
+  requested_by?: string
+  company?: { id: string; name: string }
 }
 
 export interface CustomerPortalRequestDetail extends CustomerPortalRequest {
@@ -74,6 +91,10 @@ export interface CustomerPortalRequestDetail extends CustomerPortalRequest {
   /** The customer may rate this resolved request. */
   can_rate?: boolean
   csat?: { rating: number; comment?: string | null; submitted_at: string } | null
+  /** False for a colleague's request opened through company access. */
+  own?: boolean
+  /** Who asked, for a colleague's request. */
+  requester_name?: string | null
   messages: Array<{
     id: string
     content: string
@@ -84,6 +105,8 @@ export interface CustomerPortalRequestDetail extends CustomerPortalRequest {
     sender_avatar_style?: { style?: string | null; seed?: string | null; background_mode?: string | null; background_color?: string | null } | null
     via_channel?: string
     created_at: string
+    /** False for a colleague's message; older servers omit it. */
+    from_you?: boolean
     attachments?: Array<{ id: string; file_name: string; file_type: string; file_size: number; url: string }>
   }>
 }
@@ -178,8 +201,16 @@ export const customerPortalService = {
     }),
   signOut: (slug: string) =>
     portalRequest<void>(slug, '/session', { method: 'DELETE' }),
-  requests: (slug: string, filter: CustomerPortalRequestFilter = 'all') =>
-    portalRequest<CustomerPortalRequest[]>(slug, `/requests${filter === 'all' ? '' : `?status=${filter}`}`),
+  requests: (slug: string, filter: CustomerPortalRequestFilter = 'all', scope: CustomerPortalRequestScope = { kind: 'mine' }) => {
+    const params = new URLSearchParams()
+    if (filter !== 'all') params.set('status', filter)
+    if (scope.kind === 'company') {
+      params.set('scope', 'company')
+      params.set('company_id', scope.companyId)
+    }
+    const query = params.toString()
+    return portalRequest<CustomerPortalRequest[]>(slug, `/requests${query ? `?${query}` : ''}`)
+  },
   requestDetail: (slug: string, reference: string) =>
     portalRequest<CustomerPortalRequestDetail>(slug, `/requests/${encodeURIComponent(reference)}`),
   reply: (slug: string, reference: string, content: string, attachment_ids: string[] = []) =>

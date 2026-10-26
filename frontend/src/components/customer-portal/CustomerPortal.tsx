@@ -24,11 +24,13 @@ import {
   QuietUnderlineTextarea,
 } from '@/components/design-system/quiet'
 import { Label } from '@/components/ui/label'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { PortalActivityRow, PortalMessage } from './PortalConversation'
 import { portalPublicRedirect } from './portalPaths'
 import { PortalRequestTable, RequestStatusText } from './PortalRequestTable'
+import { MINE_SCOPE, usePortalRequestScope } from './portalRequestScope'
 import { requestNumber } from './portalRequestFormat'
 import { formatPortalRelativeTime } from './portalTime'
 import { usePortalLiveUpdates } from './usePortalLiveUpdates'
@@ -581,13 +583,15 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
 }
 
 export function CustomerPortalHome() {
-  const { configuration, handleSessionError, slug, status } = usePortal()
+  const { configuration, handleSessionError, session, slug, status } = usePortal()
   const [reload, setReload] = useState(0)
-  // The skeleton shows only on the first load, so live refreshes keep the
-  // table, its filters and its open groups in place.
-  const [result, setResult] = useState<{ requests: CustomerPortalRequest[]; error: string | null } | null>(null)
+  const requestScope = usePortalRequestScope(slug, session?.companies ?? [])
+  // The skeleton shows only on the first load of a list, so live refreshes
+  // keep the table, its filters and its open groups in place.
+  const [result, setResult] = useState<{ scope: string; requests: CustomerPortalRequest[]; error: string | null } | null>(null)
   const supportName = configuration?.branding.name || 'Support'
   const refresh = useCallback(() => setReload((current) => current + 1), [])
+  const scopeKey = requestScope.key
 
   usePortalLiveUpdates(slug, status === 'authenticated', { onChange: refresh })
 
@@ -596,25 +600,27 @@ export function CustomerPortalHome() {
     let active = true
     // Every request is loaded once; the table filters and counts them locally.
     customerPortalService
-      .requests(slug, 'all')
+      .requests(slug, 'all', scopeKey === MINE_SCOPE ? { kind: 'mine' } : { kind: 'company', companyId: scopeKey })
       .then((nextRequests) => {
-        if (active) setResult({ requests: nextRequests, error: null })
+        if (active) setResult({ scope: scopeKey, requests: nextRequests, error: null })
       })
       .catch((requestError) => {
         if (!active || handleSessionError(requestError)) return
-        setResult((previous) => previous?.requests.length ? previous : { requests: [], error: 'Your requests could not be loaded.' })
+        setResult((previous) => previous?.scope === scopeKey && previous.requests.length ? previous : { scope: scopeKey, requests: [], error: 'Your requests could not be loaded.' })
       })
     return () => {
       active = false
     }
-  }, [handleSessionError, slug, status, reload])
+  }, [handleSessionError, slug, status, reload, scopeKey])
 
   if (status !== 'authenticated') return null
+  const current = result?.scope === scopeKey ? result : null
+  const companyName = requestScope.company?.name
 
   return (
     <PortalShell account={<PortalAccount />} width="wide">
       <QuietPageHeader
-        title="Your requests"
+        title={companyName ? `${companyName} requests` : 'Your requests'}
         actions={configuration?.intake_enabled ? (
           <QuietPrimaryAction asChild>
             <Link to="/portal/$slug/new" params={{ slug }}>New request</Link>
@@ -622,8 +628,19 @@ export function CustomerPortalHome() {
         ) : null}
       />
 
+      {requestScope.memberCompanies.length > 0 ? (
+        <Tabs value={scopeKey} onValueChange={requestScope.select} className="mt-4 gap-0">
+          <TabsList variant="quiet" aria-label="Which requests to show">
+            <TabsTrigger value={MINE_SCOPE}>My requests</TabsTrigger>
+            {requestScope.memberCompanies.map((company) => (
+              <TabsTrigger key={company.id} value={company.id}>{company.name}</TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      ) : null}
+
       <section className="mt-4" aria-label="Request history">
-        {!result ? (
+        {!current ? (
           <div className="border-t border-quiet-divider-strong" role="status" aria-label="Loading requests">
             {[0, 1, 2].map((item) => (
               <div key={item} className="space-y-2 border-b border-quiet-divider-light px-2 py-3 motion-safe:animate-pulse">
@@ -633,14 +650,14 @@ export function CustomerPortalHome() {
               </div>
             ))}
           </div>
-        ) : result.error ? (
+        ) : current.error ? (
           <QuietEmptyState
-            title={result.error}
+            title={current.error}
             description="Check your connection and try again."
             action={<QuietTextAction onClick={refresh}>Try again</QuietTextAction>}
           />
         ) : (
-          <PortalRequestTable requests={result.requests} slug={slug} supportName={supportName} onRefresh={refresh} />
+          <PortalRequestTable key={scopeKey} requests={current.requests} slug={slug} supportName={supportName} onRefresh={refresh} companyName={companyName} />
         )}
       </section>
     </PortalShell>
@@ -823,7 +840,11 @@ export function CustomerPortalRequestPage({ reference }: { reference: string }) 
         description={request ? (
           <QuietMetaLine
             className="text-[12px]"
-            items={[requestNumber(request), request.last_activity_at ? `Updated ${formatPortalRelativeTime(request.last_activity_at)}` : null]}
+            items={[
+              requestNumber(request),
+              request.own === false ? `Asked by ${request.requester_name || 'a colleague'}` : null,
+              request.last_activity_at ? `Updated ${formatPortalRelativeTime(request.last_activity_at)}` : null,
+            ]}
           />
         ) : null}
         actions={request ? <RequestStatusText status={request.status} /> : null}

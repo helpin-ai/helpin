@@ -1481,7 +1481,40 @@ export interface CustomerPortalAccessSummary {
 
 export interface CustomerPortalContactAccess {
   portal_access: CustomerPortalContactAccessValue | null;
+  /** Overrides the default role of the contact's companies; null follows them. */
+  portal_role?: CustomerPortalRole | null;
   shared_email_contacts: number;
+}
+
+/** Requesters see their own requests; members see every request from their company. */
+export type CustomerPortalRole = 'requester' | 'member';
+
+export interface CustomerPortalCompanyContact {
+  id: string;
+  first_name: string;
+  last_name?: string | null;
+  email?: string | null;
+  portal_access: CustomerPortalContactAccessValue | null;
+  portal_role: CustomerPortalRole | null;
+  shared_email_contacts: number;
+  last_signed_in_at?: string | null;
+}
+
+export interface CustomerPortalCompanyAccess {
+  /** Null keeps the portal personal for this company's contacts. */
+  default_role: CustomerPortalRole | null;
+  contacts: CustomerPortalCompanyContact[];
+  access_mode: CustomerPortalAccessMode;
+  portal_enabled: boolean;
+  /** How many of the company's requests members could see. */
+  request_count: number;
+}
+
+export interface CustomerPortalCompanyAudience {
+  company_id: string;
+  company_name: string;
+  /** Allowed company members besides the requester who can read the conversation. */
+  members: number;
 }
 
 export interface SupportConversationMerge {

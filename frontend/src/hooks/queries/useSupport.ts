@@ -1,6 +1,6 @@
 import { SupportTranslationSendError } from '@/lib/supportTranslationError';
 import type { CreateTaskFromConversationRequest, UpdateSupportNoteRequest } from '@/lib/pmTypes';
-import type { CustomerPortalContactAccessValue, WidgetOriginSettings } from '@/lib/pmTypes';
+import type { CustomerPortalContactAccessValue, CustomerPortalRole, WidgetOriginSettings } from '@/lib/pmTypes';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { queryKeys } from '@/lib/queryKeys';
@@ -305,6 +305,69 @@ export function useSetContactPortalAccess(workspaceId: string, contactId: string
     onError: (error: Error) => {
       toast.error('Failed to update portal access', { description: error.message });
     },
+  });
+}
+
+export function useSetContactPortalRole(workspaceId: string, contactId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (portalRole: CustomerPortalRole | null) =>
+      unwrap(await supportService.setContactPortalRole(workspaceId, contactId, portalRole)),
+    onSuccess: (access) => {
+      queryClient.setQueryData(queryKeys.support.portalContactAccess(workspaceId, contactId), access);
+      // Company tabs and conversation audiences show the contact's role.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.support.portalAccess(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update portal role', { description: error.message });
+    },
+  });
+}
+
+export function useCompanyPortalAccess(workspaceId: string, companyId: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.support.portalCompanyAccess(workspaceId, companyId),
+    queryFn: async () => unwrap(await supportService.getCompanyPortalAccess(workspaceId, companyId)),
+    enabled: !!workspaceId && !!companyId && enabled,
+  });
+}
+
+export function useSetCompanyPortalRole(workspaceId: string, companyId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (defaultRole: CustomerPortalRole | null) =>
+      unwrap(await supportService.setCompanyPortalRole(workspaceId, companyId, defaultRole)),
+    onSuccess: (access) => {
+      queryClient.setQueryData(queryKeys.support.portalCompanyAccess(workspaceId, companyId), access);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.support.portalAccess(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update company portal access', { description: error.message });
+    },
+  });
+}
+
+export function useAllowCompanyPortalContacts(workspaceId: string, companyId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => unwrap(await supportService.allowCompanyPortalContacts(workspaceId, companyId)),
+    onSuccess: ({ allowed, company }) => {
+      queryClient.setQueryData(queryKeys.support.portalCompanyAccess(workspaceId, companyId), company);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.support.portalAccess(workspaceId) });
+      toast.success(allowed === 1 ? '1 contact can now sign in' : `${allowed} contacts can now sign in`);
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to allow contacts', { description: error.message });
+    },
+  });
+}
+
+export function useConversationPortalAudience(workspaceId: string, conversationId: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.support.portalAudience(workspaceId, conversationId),
+    queryFn: async () => unwrap(await supportService.getConversationPortalAudience(workspaceId, conversationId)).company,
+    enabled: !!workspaceId && !!conversationId && enabled,
+    staleTime: 60_000,
   });
 }
 

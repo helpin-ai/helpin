@@ -84,6 +84,15 @@ describe('customerPortalService', () => {
     )
   })
 
+  it('asks for one company\'s requests by scope and company', async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    await customerPortalService.requests('acme', 'resolved', { kind: 'company', companyId: 'co 1' })
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/public\/portal\/acme\/requests\?status=resolved&scope=company&company_id=co\+1$/)
+    await customerPortalService.requests('acme')
+    expect(fetchMock.mock.calls[1][0]).toMatch(/\/public\/portal\/acme\/requests$/)
+  })
+
   it('exposes unauthorized responses without touching employee authentication', async () => {
     vi.stubGlobal(
       'fetch',

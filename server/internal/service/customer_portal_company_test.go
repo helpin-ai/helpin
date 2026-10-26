@@ -543,8 +543,8 @@ func TestCompanyPortalConversationAudience(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Alice and Bob are both allowed members of Acme.
-	if audience == nil || audience.CompanyID != p.acme || audience.CompanyName != "Acme" || audience.Members != 2 {
+	// Alice can read Bob's request; Bob, the requester, is not counted.
+	if audience == nil || audience.CompanyID != p.acme || audience.CompanyName != "Acme" || audience.Members != 1 {
 		t.Fatalf("audience = %+v", audience)
 	}
 

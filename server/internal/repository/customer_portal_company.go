@@ -292,20 +292,23 @@ func (r *CustomerPortalRepository) CompanyRequestCount(ctx context.Context, work
 type PortalCompanyAudience struct {
 	CompanyID   string `json:"company_id"`
 	CompanyName string `json:"company_name"`
-	Members     int64  `json:"members"`
+	// Members counts allowed company members other than the requester.
+	Members int64 `json:"members"`
 }
 
-// ConversationCompanyAudience returns the company members who can read the
-// conversation in the portal, or nil when it is not shared with a company.
+// ConversationCompanyAudience returns the company members other than the
+// requester who can read the conversation in the portal, or nil when it is
+// not shared with a company.
 func (r *CustomerPortalRepository) ConversationCompanyAudience(ctx context.Context, workspaceID, conversationID string) (*PortalCompanyAudience, error) {
-	var company struct {
-		ID   string
-		Name string
+	var shared struct {
+		ID          string
+		Name        string
+		RequesterID string
 	}
-	err := r.db.WithContext(ctx).Table("crm_companies AS company").
-		Where("company.workspace_id = ? AND company.portal_default_role IS NOT NULL", workspaceID).
-		Where("company.id IN (?)", r.companyCandidateRequests(ctx, workspaceID).Where("conv.id = ?", conversationID).Select("conv.crm_company_id")).
-		Select("company.id, company.name").Take(&company).Error
+	err := r.companyCandidateRequests(ctx, workspaceID).
+		Joins("JOIN crm_companies AS company ON company.workspace_id = conv.workspace_id AND company.id = conv.crm_company_id").
+		Where("conv.id = ? AND company.portal_default_role IS NOT NULL", conversationID).
+		Select("company.id, company.name, conv.crm_contact_id AS requester_id").Take(&shared).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -314,14 +317,14 @@ func (r *CustomerPortalRepository) ConversationCompanyAudience(ctx context.Conte
 	}
 	var members int64
 	err = r.db.WithContext(ctx).Raw(`SELECT count(*) FROM crm_contacts AS member JOIN crm_companies AS company ON company.workspace_id = member.workspace_id AND company.id = @company
-		WHERE member.id IN (`+companyContactsSQL+`) AND member.portal_access = @allowed
+		WHERE member.id IN (`+companyContactsSQL+`) AND member.id <> @requester AND member.portal_access = @allowed
 		AND COALESCE(member.portal_role, company.portal_default_role) = @member`,
-		map[string]any{"workspace": workspaceID, "company": company.ID, "allowed": model.PortalAccessAllowed, "member": model.PortalRoleMember}).
+		map[string]any{"workspace": workspaceID, "company": shared.ID, "requester": shared.RequesterID, "allowed": model.PortalAccessAllowed, "member": model.PortalRoleMember}).
 		Scan(&members).Error
 	if err != nil {
 		return nil, err
 	}
-	return &PortalCompanyAudience{CompanyID: company.ID, CompanyName: company.Name, Members: members}, nil
+	return &PortalCompanyAudience{CompanyID: shared.ID, CompanyName: shared.Name, Members: members}, nil
 }
 
 // RecentAuditEventExists reports whether the identity recorded eventType for

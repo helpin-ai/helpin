@@ -97,7 +97,8 @@ func TestCustomerPortalCompanyPostgres(t *testing.T) {
 	privacyCheck(t, db, `SELECT portal_access IS NULL FROM crm_contacts WHERE id = ?`, outsider)
 
 	audience, err := repo.ConversationCompanyAudience(ctx, ws, bobConv)
-	if err != nil || audience == nil || audience.CompanyID != acme || audience.Members != 3 {
+	// Alice and Carol, but not Bob, who asked.
+	if err != nil || audience == nil || audience.CompanyID != acme || audience.Members != 2 {
 		t.Fatalf("audience = %+v, %v", audience, err)
 	}
 	if err := repo.SetContactPortalRole(ctx, ws, carol, stringPointer(model.PortalRoleRequester)); err != nil {

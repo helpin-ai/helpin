@@ -18,16 +18,17 @@ vi.mock('@tanstack/react-router', () => ({
   useRouterState: ({ select }: { select: (state: { location: { pathname: string } }) => string }) =>
     select({ location: { pathname: mocks.pathname } }),
   Outlet: () => mocks.outlet?.() ?? <div data-testid="portal-content">Portal content</div>,
-  Link: () => null,
+  Link: ({ children }: { children?: React.ReactNode }) => <a href="/portal">{children}</a>,
 }))
 vi.mock('@/lib/services/customerPortalService', () => ({
   CustomerPortalApiError: class extends Error {
     constructor(public status: number, message: string) { super(message) }
   },
   customerPortalService: mocks,
+  customerPortalSocketUrl: () => 'ws://portal.test/ws',
 }))
 
-import { CustomerPortalCallback, CustomerPortalProvider } from '../CustomerPortal'
+import { CustomerPortalCallback, CustomerPortalHome, CustomerPortalProvider } from '../CustomerPortal'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
@@ -131,5 +132,56 @@ describe('CustomerPortalProvider', () => {
     await settle()
     await settle()
     expect(container.textContent).toContain('This link is no longer valid')
+  })
+
+  it('lets a company member switch between their own and company requests', async () => {
+    window.sessionStorage.clear()
+    mocks.pathname = '/portal/acme'
+    mocks.configuration.mockResolvedValue(config)
+    mocks.session.mockResolvedValue({
+      ...customer,
+      companies: [{ id: 'co-acme', name: 'Acme Corp', role: 'member' }, { id: 'co-other', name: 'Other', role: 'requester' }],
+    })
+    mocks.requests.mockImplementation(async (_slug: string, _filter: string, scope: { kind: string; companyId?: string }) =>
+      scope.kind === 'company'
+        ? [{ reference: 'bob', subject: 'Company outage', status: 'active', last_activity_at: null, own: false, requested_by: 'Bob Roe' }]
+        : [{ reference: 'mine', subject: 'My invoice', status: 'active', last_activity_at: null }])
+    mocks.outlet = () => <CustomerPortalHome />
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    await act(async () => root.render(<CustomerPortalProvider slug="acme" />))
+    await settle()
+    await settle()
+    expect(container.textContent).toContain('Your requests')
+    expect(container.textContent).toContain('My invoice')
+    const tabs = Array.from(container.querySelectorAll('[role="tab"]')).map((tab) => tab.textContent)
+    expect(tabs).toEqual(['My requests', 'Acme Corp'])
+
+    const companyTab = Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]')).find((tab) => tab.textContent === 'Acme Corp')!
+    await act(async () => companyTab.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 })))
+    await settle()
+    expect(mocks.requests).toHaveBeenLastCalledWith('acme', 'all', { kind: 'company', companyId: 'co-acme' })
+    expect(container.textContent).toContain('Acme Corp requests')
+    expect(container.textContent).toContain('Company outage')
+    expect(container.textContent).toContain('Asked by Bob Roe')
+    expect(container.textContent).not.toContain('My invoice')
+  })
+
+  it('shows no company tabs to a requester', async () => {
+    window.sessionStorage.clear()
+    mocks.pathname = '/portal/acme'
+    mocks.configuration.mockResolvedValue(config)
+    mocks.session.mockResolvedValue({ ...customer, companies: [{ id: 'co-acme', name: 'Acme Corp', role: 'requester' }] })
+    mocks.requests.mockResolvedValue([])
+    mocks.outlet = () => <CustomerPortalHome />
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    await act(async () => root.render(<CustomerPortalProvider slug="acme" />))
+    await settle()
+    await settle()
+    expect(container.querySelector('[role="tab"]')).toBeNull()
+    expect(mocks.requests).toHaveBeenCalledWith('acme', 'all', { kind: 'mine' })
   })
 })

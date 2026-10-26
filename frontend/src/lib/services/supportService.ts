@@ -26,6 +26,9 @@ import type {
   SupportInstallationResponse,
   SupportInboxSettings,
   CustomerPortalAccessSummary,
+  CustomerPortalCompanyAccess,
+  CustomerPortalCompanyAudience,
+  CustomerPortalRole,
   CustomerPortalContactAccess,
   CustomerPortalContactAccessValue,
   SupportRoutingUsageStatus,
@@ -375,6 +378,16 @@ export const supportService = {
     api.get<CustomerPortalContactAccess>(`/support/inbox/portal/contacts/${encodeURIComponent(contactId)}/access${qs(workspaceId)}`),
   setContactPortalAccess: (workspaceId: string, contactId: string, portalAccess: CustomerPortalContactAccessValue | null) =>
     api.put<CustomerPortalContactAccess>(`/support/inbox/portal/contacts/${encodeURIComponent(contactId)}/access${qs(workspaceId)}`, { portal_access: portalAccess }),
+  setContactPortalRole: (workspaceId: string, contactId: string, portalRole: CustomerPortalRole | null) =>
+    api.put<CustomerPortalContactAccess>(`/support/inbox/portal/contacts/${encodeURIComponent(contactId)}/role${qs(workspaceId)}`, { portal_role: portalRole }),
+  getCompanyPortalAccess: (workspaceId: string, companyId: string) =>
+    api.get<CustomerPortalCompanyAccess>(`/support/inbox/portal/companies/${encodeURIComponent(companyId)}${qs(workspaceId)}`),
+  setCompanyPortalRole: (workspaceId: string, companyId: string, defaultRole: CustomerPortalRole | null) =>
+    api.put<CustomerPortalCompanyAccess>(`/support/inbox/portal/companies/${encodeURIComponent(companyId)}${qs(workspaceId)}`, { default_role: defaultRole }),
+  allowCompanyPortalContacts: (workspaceId: string, companyId: string) =>
+    api.post<{ allowed: number; company: CustomerPortalCompanyAccess }>(`/support/inbox/portal/companies/${encodeURIComponent(companyId)}/allow-contacts${qs(workspaceId)}`, {}),
+  getConversationPortalAudience: (workspaceId: string, conversationId: string) =>
+    api.get<{ company: CustomerPortalCompanyAudience | null }>(`/support/inbox/conversations/${encodeURIComponent(conversationId)}/portal-audience${qs(workspaceId)}`),
   resendPortalConfirmation: (workspaceId: string, conversationId: string) =>
     api.post<void>(`/support/inbox/conversations/${encodeURIComponent(conversationId)}/portal-confirmation${qs(workspaceId)}`, {}),
   /**
