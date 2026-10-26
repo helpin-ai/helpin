@@ -3,7 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useSupportEmailRoutes, useSupportEmailSenders } from '@/hooks/queries/useSupport';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { getInboxForwardingRoutes, getInboxSenderAddress, isSenderVerified } from './teamInboxEmailSetup';
+import { getInboxForwardingRoutes, getInboxSenderAddress, isSenderVerified } from './inboxEmailRouting';
 
 function StatusBadge({ tone, children }: { tone: 'success' | 'warning'; children: ReactNode }) {
   const className = tone === 'success'

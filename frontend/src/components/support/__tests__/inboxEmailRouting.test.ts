@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { SupportEmailRoute, SupportEmailSender } from '@/lib/pmTypes';
-import { getInboxForwardingRoutes, getInboxSenderAddress, isSenderVerified } from '../teamInboxEmailSetup';
+import { getInboxForwardingRoutes, getInboxSenderAddress, isSenderVerified } from '../inboxEmailRouting';
 
 function route(overrides: Partial<SupportEmailRoute>): SupportEmailRoute {
   return {
