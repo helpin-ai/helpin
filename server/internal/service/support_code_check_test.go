@@ -159,7 +159,7 @@ func TestSupportCodeCheckResultPostsOneCardForTheTeam(t *testing.T) {
 		t.Fatalf("code check not recognised: %v %q", ok, runID)
 	}
 	for range 2 {
-		chat.postSupportCodeCheckCard(ctx, plan, "conv", runID, check)
+		chat.fillSupportCodeCheckCard(ctx, plan, "conv", runID, check)
 	}
 	history, err := chat.messageRepo.ListForSupportAI(ctx, "ws", "conv", true)
 	if err != nil {
@@ -179,5 +179,65 @@ func TestSupportCodeCheckResultPostsOneCardForTheTeam(t *testing.T) {
 	}
 	if !supportCodeCheckedThisTurn(history) {
 		t.Fatal("a handoff now would start a second code check")
+	}
+}
+
+func TestSupportCodeCheckCardRunsThenFillsInPlace(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		check  supportCodeCheck
+		status string
+		text   string
+	}{
+		{name: "findings", check: parseSupportInvestigationReport(supportCodeCheckTestReport), status: supportCodeCheckDone, text: "50 columns"},
+		{name: "did not finish", check: supportCodeCheck{Status: supportCodeCheckFailed, Found: supportCodeCheckUnfinishedFinding}, status: supportCodeCheckFailed, text: "didn't finish"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			chat, commands, _, _ := setupSupportCodeCheckTest(t)
+			commands.supportAIService.messageRepo = chat.messageRepo
+			plan := &model.CommandBarPlanRecord{ID: "plan", WorkspaceID: "ws"}
+			commands.postSupportCodeCheckRunning(ctx, "ws", "conv", plan.ID, "child-run", "Does the CSV export include the Notes column by default? Check acme/app export code.")
+			running, err := chat.messageRepo.GetByID(ctx, supportCodeCheckCardID("ws", plan.ID))
+			if err != nil || running == nil || supportCodeCheckCardStatus(running.Metadata) != supportCodeCheckRunning {
+				t.Fatalf("running card = %+v, %v", running, err)
+			}
+			if !strings.Contains(running.Metadata, `"focus":"Does the CSV export include the Notes column by default?"`) || !strings.Contains(running.Metadata, `"phase":"before_reply"`) {
+				t.Fatalf("running card metadata = %s", running.Metadata)
+			}
+			for range 2 {
+				chat.fillSupportCodeCheckCard(ctx, plan, "conv", "child-run", tt.check)
+			}
+			filled, err := chat.messageRepo.GetByID(ctx, running.ID)
+			if err != nil || filled == nil || supportCodeCheckCardStatus(filled.Metadata) != tt.status || !strings.Contains(filled.Content, tt.text) {
+				t.Fatalf("filled card = %+v, %v", filled, err)
+			}
+			history, err := chat.messageRepo.ListForSupportAI(ctx, "ws", "conv", true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cards := 0
+			for _, message := range history {
+				if strings.Contains(message.Metadata, `"code_check"`) {
+					cards++
+				}
+			}
+			if cards != 1 {
+				t.Fatalf("cards = %d, want the running card filled in place", cards)
+			}
+		})
+	}
+}
+
+func TestSupportCodeCheckFocusKeepsOnlyAPlainQuestion(t *testing.T) {
+	for in, want := range map[string]string{
+		"Does the CSV export include the Notes column by default? Check acme/app.": "Does the CSV export include the Notes column by default?",
+		"Why are posts saved as drafts after approval\nRepo: acme/app":             "Why are posts saved as drafts after approval",
+		"Check reports/export.go buildColumns for include_notes.":                  "",
+		"": "",
+	} {
+		if got := supportCodeCheckFocus(in); got != want {
+			t.Errorf("supportCodeCheckFocus(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

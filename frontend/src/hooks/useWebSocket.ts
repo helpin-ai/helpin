@@ -7,7 +7,7 @@ import { buildWorkspaceWebSocketUrl } from '@helpin-ai/support-core'
 export interface WSEvent {
   event_id?: string
   sent_at?: string
-  action: 'created' | 'updated' | 'deleted' | 'moved' | 'reordered' | 'typing_started' | 'typing_stopped' | 'viewing_started' | 'viewing_stopped' | 'editing_updated' | 'editing_stopped' | 'visitor_online' | 'visitor_offline'
+  action: 'created' | 'updated' | 'deleted' | 'moved' | 'reordered' | 'typing_started' | 'typing_stopped' | 'viewing_started' | 'viewing_stopped' | 'editing_updated' | 'editing_stopped' | 'visitor_online' | 'visitor_offline' | 'ai_thinking_started' | 'ai_thinking_stopped'
   entity: string
   entity_id: string
   workspace_id: string

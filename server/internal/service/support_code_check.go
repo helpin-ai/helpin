@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -28,6 +29,7 @@ const (
 	supportCodeCheckPhaseBeforeReply  = "before_reply"
 	supportCodeCheckEvidenceTitle     = "Confirmed product behavior"
 	supportCodeCheckUnfinishedFinding = "No cause found: the code check did not finish."
+	supportCodeCheckUnfinishedMessage = "The code check didn't finish, so it has no findings."
 )
 
 // supportCodeCheckTools is the code check's read-only scope: repository reads
@@ -242,28 +244,113 @@ func supportCodeCheckEvidence(plan *model.CommandBarPlanRecord, check supportCod
 	}}
 }
 
-// postSupportCodeCheckCard adds the code-check card to the conversation once,
-// so the team sees what the AI checked whether it replies or hands off.
-func (s *SupportChatService) postSupportCodeCheckCard(ctx context.Context, plan *model.CommandBarPlanRecord, conversationID, runID string, check supportCodeCheck) {
-	if s.messageRepo == nil || plan == nil || check.Status != supportCodeCheckDone {
+// supportCodeCheckCardID is shared by the running card and its findings, so
+// the findings fill the card in place.
+func supportCodeCheckCardID(workspaceID, planID string) string {
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte("helpin:code-check:"+workspaceID+":"+planID)).String()
+}
+
+func newSupportCodeCheckCard(workspaceID, conversationID, planID, runID string, check supportCodeCheck, now time.Time) *model.SupportMessage {
+	check.Phase = supportCodeCheckPhaseBeforeReply
+	metadata, _ := json.Marshal(map[string]any{"code_check": check, "code_check_phase": supportCodeCheckPhaseBeforeReply, "agent_run_id": runID, "plan_id": planID})
+	return &model.SupportMessage{ID: supportCodeCheckCardID(workspaceID, planID), WorkspaceID: workspaceID, ConversationID: conversationID, SenderType: "agent", SenderDisplayName: strPtr("Code check"), MessageType: "note", IsInternal: true, Content: renderSupportCodeCheckContent(check), Metadata: string(metadata), CreatedAt: now, UpdatedAt: now}
+}
+
+// supportCodeCheckFocus is the first sentence of the AI's launch instructions,
+// which the rules make the customer's question in plain words. Anything that
+// reads like code stays off the card.
+func supportCodeCheckFocus(instructions string) string {
+	text := strings.TrimSpace(instructions)
+	if line, _, found := strings.Cut(text, "\n"); found {
+		text = line
+	}
+	runes := []rune(text)
+	for i, r := range runes {
+		if (r == '?' || r == '.' || r == '!') && (i == len(runes)-1 || runes[i+1] == ' ') {
+			text = string(runes[:i+1])
+			break
+		}
+	}
+	text = strings.TrimSpace(text)
+	if text == "" || utf8.RuneCountInString(text) > 200 || strings.ContainsAny(text, "/_`{}") || strings.Contains(text, "::") {
+		return ""
+	}
+	return text
+}
+
+// postSupportCodeCheckRunning shows the team the check while it runs.
+func (s *InternalCommandService) postSupportCodeCheckRunning(ctx context.Context, workspaceID, conversationID, planID, runID, instructions string) {
+	ai := s.supportAIService
+	if ai == nil || ai.messageRepo == nil {
 		return
 	}
-	id := uuid.NewSHA1(uuid.NameSpaceOID, []byte("helpin:code-check:"+plan.WorkspaceID+":"+plan.ID)).String()
-	if existing, err := s.messageRepo.GetByID(ctx, id); err != nil || existing != nil {
+	card := newSupportCodeCheckCard(workspaceID, conversationID, planID, runID, supportCodeCheck{Status: supportCodeCheckRunning, Focus: supportCodeCheckFocus(instructions)}, time.Now().UTC())
+	if err := ai.messageRepo.Create(ctx, card); err != nil {
+		slog.WarnContext(ctx, "support code check: post running card failed", "workspace_id", workspaceID, "plan_id", planID, "error", err)
 		return
+	}
+	if ai.wsPublisher != nil {
+		ai.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, card, "ai:investigation"))
+	}
+}
+
+// fillSupportCodeCheckCard fills the running card with the findings, or with
+// the reason there are none. A card that is already filled stays as it is.
+func (s *SupportChatService) fillSupportCodeCheckCard(ctx context.Context, plan *model.CommandBarPlanRecord, conversationID, runID string, check supportCodeCheck) {
+	if s.messageRepo == nil || plan == nil {
+		return
+	}
+	if check.Status == supportCodeCheckFailed {
+		check.Message = supportCodeCheckUnfinishedMessage
 	}
 	if check.Task != nil && check.Task.Key != "" {
 		check.Task.ID = s.supportCodeCheckTaskID(ctx, plan.WorkspaceID, check.Task.Key)
 	}
-	metadata, _ := json.Marshal(map[string]any{"code_check": check, "code_check_phase": supportCodeCheckPhaseBeforeReply, "agent_run_id": runID, "plan_id": plan.ID})
-	note := &model.SupportMessage{ID: id, WorkspaceID: plan.WorkspaceID, ConversationID: conversationID, SenderType: "agent", SenderDisplayName: strPtr("Code check"), MessageType: "note", IsInternal: true, Content: renderSupportCodeCheckContent(check), Metadata: string(metadata), CreatedAt: time.Now().UTC()}
-	if err := s.messageRepo.Create(ctx, note); err != nil {
-		slog.WarnContext(ctx, "support code check: post card failed", "workspace_id", plan.WorkspaceID, "plan_id", plan.ID, "error", err)
+	card := newSupportCodeCheckCard(plan.WorkspaceID, conversationID, plan.ID, runID, check, time.Now().UTC())
+	existing, err := s.messageRepo.GetByID(ctx, card.ID)
+	if err != nil {
+		slog.WarnContext(ctx, "support code check: load card failed", "workspace_id", plan.WorkspaceID, "plan_id", plan.ID, "error", err)
 		return
 	}
-	if s.supportAIService != nil && s.supportAIService.wsPublisher != nil {
-		s.supportAIService.wsPublisher.Publish(websocket.SupportMessageEvent(plan.WorkspaceID, note, "ai:investigation"))
+	action := "created"
+	switch {
+	case existing != nil:
+		if supportCodeCheckCardStatus(existing.Metadata) != supportCodeCheckRunning {
+			return
+		}
+		filled, err := s.messageRepo.FillNote(ctx, plan.WorkspaceID, existing.ConversationID, card.ID, card.Content, card.Metadata)
+		if err != nil || !filled {
+			slog.WarnContext(ctx, "support code check: fill card failed", "workspace_id", plan.WorkspaceID, "plan_id", plan.ID, "error", err)
+			return
+		}
+		card.ConversationID, card.CreatedAt, action = existing.ConversationID, existing.CreatedAt, "updated"
+	case check.Status != supportCodeCheckDone:
+		// Nothing was shown while it ran, so an empty result needs no card.
+		return
+	default:
+		if err := s.messageRepo.Create(ctx, card); err != nil {
+			slog.WarnContext(ctx, "support code check: post card failed", "workspace_id", plan.WorkspaceID, "plan_id", plan.ID, "error", err)
+			return
+		}
 	}
+	if s.supportAIService == nil || s.supportAIService.wsPublisher == nil {
+		return
+	}
+	event := websocket.SupportMessageEvent(plan.WorkspaceID, card, "ai:investigation")
+	if action == "updated" {
+		event = websocket.SupportMessageUpdatedEvent(plan.WorkspaceID, card, "ai:investigation")
+	}
+	s.supportAIService.wsPublisher.Publish(event)
+}
+
+func supportCodeCheckCardStatus(metadata string) string {
+	var card struct {
+		CodeCheck struct {
+			Status string `json:"status"`
+		} `json:"code_check"`
+	}
+	_ = json.Unmarshal([]byte(metadata), &card)
+	return card.CodeCheck.Status
 }
 
 // replaceChildRunSummaries swaps each child summary in a result block.

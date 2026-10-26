@@ -613,6 +613,9 @@ func (s *InternalCommandService) executeDockLaunch(ctx context.Context, meta mod
 	for _, run := range resp.Runs {
 		runIDs = append(runIDs, run.ID)
 	}
+	if codeCheck && len(runIDs) > 0 {
+		s.postSupportCodeCheckRunning(ctx, meta.WorkspaceID, derefString(supportConversationID), resp.PlanID, runIDs[0], steps[0].Instructions)
+	}
 	return mustJSON(map[string]interface{}{
 		"plan_id":  resp.PlanID,
 		"status":   "started",

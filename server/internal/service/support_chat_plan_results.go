@@ -83,7 +83,7 @@ func (s *SupportChatService) notifySupportPlanSettled(ctx context.Context, plan 
 	// The team sees the code check even when a person took over meanwhile.
 	if conv != nil {
 		if check, runID, ok := s.supportPlanCodeCheck(ctx, plan); ok {
-			s.postSupportCodeCheckCard(ctx, plan, conv.ID, runID, check)
+			s.fillSupportCodeCheckCard(ctx, plan, conv.ID, runID, check)
 		}
 	}
 	if conv == nil || supportPlanDeliveryBlocked(conv) || (conv.AIResumedAt != nil && !plan.CreatedAt.After(*conv.AIResumedAt)) {

@@ -44,7 +44,8 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
 import { getSupportReceiptStatus, getInitial, isAIActiveConversation, type SupportReceiptStatus } from './helpers';
 import { TranslatedMessageBubble } from './TranslatedMessageBubble';
-import { foldedSupportAICardIds } from './supportAIActivityModel';
+import { foldedSupportAICardIds, getSupportCodeCheck } from './supportAIActivityModel';
+import { AIThinkingBubble } from './AIThinkingBubble';
 import { CREATE_SUPPORT_TASK_EVENT } from './supportAICardActions';
 import { useJoinedMessagePosition } from './useJoinedMessagePosition';
 import { EmptyState } from './EmptyState';
@@ -642,6 +643,7 @@ export function MessageThread({
   const { data: mergeHistory } = useConversationMerges(workspaceId, conversationId);
   const groupedMessages = useMemo(() => groupSupportTimeline(messages, mergeHistory ?? []), [messages, mergeHistory]);
   const foldedAICardIds = useMemo(() => foldedSupportAICardIds(messages), [messages]);
+  const codeCheckRunning = useMemo(() => messages.some((message) => getSupportCodeCheck(message)?.status === 'running'), [messages]);
 
   const visibleGroupedMessages = groupedMessages;
 
@@ -1247,6 +1249,7 @@ export function MessageThread({
           )}
           <TypingIndicatorBar conversationId={conversationId} />
           <AgentTypingBubble conversationId={conversationId} workspaceId={workspaceId} />
+          <AIThinkingBubble conversationId={conversationId} hidden={codeCheckRunning} />
           <div ref={messagesEndRef} />
         </div>
       </ScrollArea>
