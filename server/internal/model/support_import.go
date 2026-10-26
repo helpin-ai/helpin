@@ -41,10 +41,15 @@ type SupportImportJob struct {
 	Error            string          `json:"error" gorm:"not null;default:''"`
 	PayloadEncrypted string          `json:"-" gorm:"not null"`
 	LockedUntil      *time.Time      `json:"-" gorm:"type:timestamptz"`
-	StartedBy        string          `json:"started_by" gorm:"type:uuid;not null"`
-	CompletedAt      *time.Time      `json:"completed_at,omitempty" gorm:"type:timestamptz"`
-	CreatedAt        time.Time       `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt        time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+	// LeaseToken names the worker holding the lease; a worker writes progress
+	// only while it still holds it.
+	LeaseToken string `json:"-" gorm:"not null;default:''"`
+	// Attempts counts failed tries of the current page in a row.
+	Attempts    int        `json:"-" gorm:"type:integer;not null;default:0"`
+	StartedBy   string     `json:"started_by" gorm:"type:uuid;not null"`
+	CompletedAt *time.Time `json:"completed_at,omitempty" gorm:"type:timestamptz"`
+	CreatedAt   time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt   time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (SupportImportJob) TableName() string { return "support_import_jobs" }
@@ -58,10 +63,10 @@ type SupportImportFailure struct {
 // SupportImportRecord maps an imported conversation to its source, so a
 // conversation is imported once however often an import runs.
 type SupportImportRecord struct {
-	WorkspaceID    string    `json:"workspace_id" gorm:"type:uuid;primaryKey"`
-	Source         string    `json:"source" gorm:"primaryKey"`
-	ExternalID     string    `json:"external_id" gorm:"primaryKey"`
-	ConversationID string    `json:"conversation_id" gorm:"type:uuid;not null"`
+	WorkspaceID    string `json:"workspace_id" gorm:"type:uuid;primaryKey"`
+	Source         string `json:"source" gorm:"primaryKey"`
+	ExternalID     string `json:"external_id" gorm:"primaryKey"`
+	ConversationID string `json:"conversation_id" gorm:"type:uuid;not null"`
 	// JobID is the import that created the record.
 	JobID     *string   `json:"job_id,omitempty" gorm:"type:uuid"`
 	CreatedAt time.Time `json:"created_at" gorm:"type:timestamptz;not null"`

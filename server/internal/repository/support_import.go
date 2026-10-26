@@ -67,20 +67,47 @@ func (r *SupportImportRepository) HasActiveJob(ctx context.Context, workspaceID,
 	return count > 0, err
 }
 
-// UpdateJob writes fields of a job.
-func (r *SupportImportRepository) UpdateJob(ctx context.Context, jobID string, fields map[string]any) error {
+// SaveLeased writes fields of a job while the worker still holds its lease.
+// It reports false when the lease was lost to another worker.
+func (r *SupportImportRepository) SaveLeased(ctx context.Context, jobID, leaseToken string, fields map[string]any) (bool, error) {
 	fields["updated_at"] = time.Now().UTC()
-	if err := r.db.WithContext(ctx).Model(&model.SupportImportJob{}).Where("id = ?", jobID).Updates(fields).Error; err != nil {
-		return fmt.Errorf("update support import job: %w", err)
+	result := r.db.WithContext(ctx).Model(&model.SupportImportJob{}).Where("id = ? AND lease_token = ?", jobID, leaseToken).Updates(fields)
+	if result.Error != nil {
+		return false, fmt.Errorf("update support import job: %w", result.Error)
 	}
-	return nil
+	return result.RowsAffected > 0, nil
 }
 
-// CancelJob stops a pending or running job.
+// ExtendLease keeps a running job leased to the worker. It reports false when
+// the job was cancelled or another worker took it over.
+func (r *SupportImportRepository) ExtendLease(ctx context.Context, jobID, leaseToken string, until time.Time) (bool, error) {
+	return r.updateRunning(ctx, jobID, leaseToken, map[string]any{"locked_until": until})
+}
+
+// FinishJob ends a running job and deletes its stored credentials. A job
+// cancelled meanwhile stays cancelled.
+func (r *SupportImportRepository) FinishJob(ctx context.Context, jobID, leaseToken, status, message string, at time.Time) (bool, error) {
+	return r.updateRunning(ctx, jobID, leaseToken, map[string]any{
+		"status": status, "error": message, "completed_at": at, "locked_until": nil, "payload_encrypted": "",
+	})
+}
+
+func (r *SupportImportRepository) updateRunning(ctx context.Context, jobID, leaseToken string, fields map[string]any) (bool, error) {
+	fields["updated_at"] = time.Now().UTC()
+	result := r.db.WithContext(ctx).Model(&model.SupportImportJob{}).
+		Where("id = ? AND lease_token = ? AND status = ?", jobID, leaseToken, model.SupportImportStatusRunning).Updates(fields)
+	if result.Error != nil {
+		return false, fmt.Errorf("update support import job: %w", result.Error)
+	}
+	return result.RowsAffected > 0, nil
+}
+
+// CancelJob stops a pending or running job and deletes its stored
+// credentials. A page in progress still saves its counts.
 func (r *SupportImportRepository) CancelJob(ctx context.Context, workspaceID, jobID string, at time.Time) error {
 	result := r.db.WithContext(ctx).Model(&model.SupportImportJob{}).
 		Where("workspace_id = ? AND id = ? AND status IN ?", workspaceID, jobID, []string{model.SupportImportStatusPending, model.SupportImportStatusRunning}).
-		Updates(map[string]any{"status": model.SupportImportStatusCancelled, "completed_at": at, "locked_until": nil, "updated_at": at})
+		Updates(map[string]any{"status": model.SupportImportStatusCancelled, "completed_at": at, "locked_until": nil, "payload_encrypted": "", "updated_at": at})
 	if result.Error != nil {
 		return fmt.Errorf("cancel support import job: %w", result.Error)
 	}
@@ -90,12 +117,13 @@ func (r *SupportImportRepository) CancelJob(ctx context.Context, workspaceID, jo
 	return nil
 }
 
-// ClaimJob leases the oldest job that is waiting or whose lease ran out.
-func (r *SupportImportRepository) ClaimJob(ctx context.Context, now, leaseUntil time.Time) (*model.SupportImportJob, error) {
+// ClaimJob leases the waiting job that was worked on least recently, so
+// imports in different workspaces take turns page by page.
+func (r *SupportImportRepository) ClaimJob(ctx context.Context, now, leaseUntil time.Time, leaseToken string) (*model.SupportImportJob, error) {
 	var claimed *model.SupportImportJob
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		query := tx.Where("status IN ? AND (locked_until IS NULL OR locked_until < ?)",
-			[]string{model.SupportImportStatusPending, model.SupportImportStatusRunning}, now).Order("created_at")
+			[]string{model.SupportImportStatusPending, model.SupportImportStatusRunning}, now).Order("updated_at, created_at")
 		if tx.Dialector.Name() == "postgres" {
 			query = query.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
 		}
@@ -107,11 +135,12 @@ func (r *SupportImportRepository) ClaimJob(ctx context.Context, now, leaseUntil 
 		if err != nil {
 			return err
 		}
-		if err := tx.Model(&model.SupportImportJob{}).Where("id = ?", job.ID).
-			Updates(map[string]any{"status": model.SupportImportStatusRunning, "locked_until": leaseUntil, "updated_at": now}).Error; err != nil {
+		if err := tx.Model(&model.SupportImportJob{}).Where("id = ?", job.ID).Updates(map[string]any{
+			"status": model.SupportImportStatusRunning, "locked_until": leaseUntil, "lease_token": leaseToken, "updated_at": now,
+		}).Error; err != nil {
 			return err
 		}
-		job.Status, job.LockedUntil = model.SupportImportStatusRunning, &leaseUntil
+		job.Status, job.LockedUntil, job.LeaseToken = model.SupportImportStatusRunning, &leaseUntil, leaseToken
 		claimed = &job
 		return nil
 	})
@@ -176,6 +205,15 @@ func (r *SupportImportRepository) ImportConversation(ctx context.Context, record
 		if len(messages) > 0 {
 			if err := tx.CreateInBatches(messages, 200).Error; err != nil {
 				return fmt.Errorf("create imported messages: %w", err)
+			}
+			// Message triggers add each message to the projection the
+			// conversation was created with; restore the computed state.
+			if err := tx.Model(&model.SupportConversation{}).Where("id = ?", conversation.ID).UpdateColumns(map[string]any{
+				"unanswered_customer_message_count": conversation.UnansweredCustomerMessageCount,
+				"customer_awaiting_response":        conversation.CustomerAwaitingResponse,
+				"needs_human_reply":                 conversation.NeedsHumanReply,
+			}).Error; err != nil {
+				return fmt.Errorf("set imported conversation state: %w", err)
 			}
 		}
 		for _, tagID := range tagIDs {

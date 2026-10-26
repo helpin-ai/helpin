@@ -77,6 +77,7 @@ describe('IntercomImportWizard', () => {
 
   it('shows the API error for a rejected token', async () => {
     service.previewDocs.mockResolvedValue({ data: null, error: 'Intercom rejected the access token; check it and its region' })
+    service.previewConversations.mockResolvedValue({ data: null, error: 'Intercom rejected the access token; check it and its region' })
     act(() => setInput(container.querySelector('#intercom-token')!, 'bad'))
     await act(async () => {
       container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
@@ -84,5 +85,38 @@ describe('IntercomImportWizard', () => {
     await flush()
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('rejected the access token')
     expect(container.textContent).not.toContain('Start import')
+  })
+
+  it('offers the part the token can read when the other is refused', async () => {
+    service.previewDocs.mockResolvedValue({ data: null, error: 'the access token is missing a permission this import needs' })
+    act(() => setInput(container.querySelector('#intercom-token')!, 'token-2'))
+    await act(async () => {
+      container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+    await flush()
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+    expect(container.textContent).toContain('42 conversations')
+    expect(container.querySelector('[data-testid="intercom-docs-unavailable"]')?.textContent).toContain('missing a permission')
+    expect([...container.querySelectorAll('button')].some((button) => button.textContent === 'Start import')).toBe(true)
+  })
+
+  it('keeps the count for the latest date when answers arrive out of order', async () => {
+    act(() => setInput(container.querySelector('#intercom-token')!, 'token-3'))
+    await act(async () => {
+      container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+    await flush()
+    let resolveSlow: (value: unknown) => void = () => {}
+    service.previewConversations
+      .mockReturnValueOnce(new Promise((resolve) => { resolveSlow = resolve }))
+      .mockResolvedValueOnce({ data: { workspace_name: 'Acme', conversations: 7 }, error: null })
+    const date = container.querySelector('#intercom-since') as HTMLInputElement
+    act(() => setInput(date, '2025-01-01'))
+    act(() => setInput(date, '2026-01-01'))
+    await flush()
+    await act(async () => resolveSlow({ data: { workspace_name: 'Acme', conversations: 900 }, error: null }))
+    await flush()
+    expect(container.textContent).toContain('7 conversations')
+    expect(container.textContent).not.toContain('900 conversations')
   })
 })

@@ -2062,3 +2062,15 @@ func (s SupportInboxSettings) EffectivePortalAccessMode() string {
 	}
 	return SupportPortalAccessModeApprovedContacts
 }
+
+// IsImported reports whether the message was copied from another help desk.
+// Imported history stays out of live work such as tagging and translation.
+func (m SupportMessage) IsImported() bool {
+	if !strings.Contains(m.Metadata, "imported_from") {
+		return false
+	}
+	var meta struct {
+		ImportedFrom string `json:"imported_from"`
+	}
+	return json.Unmarshal([]byte(m.Metadata), &meta) == nil && meta.ImportedFrom != ""
+}

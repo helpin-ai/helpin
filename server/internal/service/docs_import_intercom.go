@@ -73,8 +73,11 @@ func (s *DocsImportService) intercomClient(token, region string) (*intercom.Clie
 
 // intercomAccessError turns API errors into caller-fixable messages.
 func intercomAccessError(err error) error {
-	if errors.Is(err, intercom.ErrUnauthorized) {
+	switch {
+	case errors.Is(err, intercom.ErrUnauthorized):
 		return fmt.Errorf("%w: Intercom rejected the access token; check it and its region", ErrIntercomImportInvalid)
+	case errors.Is(err, intercom.ErrForbidden):
+		return fmt.Errorf("%w: the access token is missing a permission this import needs", ErrIntercomImportInvalid)
 	}
 	return err
 }
@@ -121,6 +124,11 @@ func (s *DocsImportService) StartIntercom(ctx context.Context, req model.Interco
 	if _, err := client.Me(ctx); err != nil {
 		return "", intercomAccessError(err)
 	}
+	if req.NewSpaceName == nil || strings.TrimSpace(*req.NewSpaceName) == "" {
+		if err := s.checkIntercomTargetSpace(ctx, workspaceID, strings.TrimSpace(*req.TargetSpaceID)); err != nil {
+			return "", err
+		}
+	}
 	if s.temporalClient == nil {
 		return "", fmt.Errorf("docs import worker is not configured")
 	}
@@ -138,10 +146,6 @@ func (s *DocsImportService) StartIntercom(ctx context.Context, req model.Interco
 		spaceID = space.ID
 	} else {
 		spaceID = strings.TrimSpace(*req.TargetSpaceID)
-		space, err := s.spaceSvc.GetUnfiltered(ctx, spaceID)
-		if err != nil || space == nil || space.WorkspaceID != workspaceID {
-			return "", fmt.Errorf("%w: the space was not found", ErrIntercomImportInvalid)
-		}
 	}
 	stored := model.DocsImportStartRequest{APIKey: req.AccessToken, IntercomRegion: req.Region, TargetSpaceID: &spaceID, ImportStatus: req.ImportStatus}
 	payload, err := json.Marshal(stored)
@@ -176,6 +180,26 @@ func (s *DocsImportService) StartIntercom(ctx context.Context, req model.Interco
 		}
 	}
 	return job.ID, nil
+}
+
+// checkIntercomTargetSpace accepts an existing space of the workspace that
+// can publish to the Help Center and has no import running.
+func (s *DocsImportService) checkIntercomTargetSpace(ctx context.Context, workspaceID, spaceID string) error {
+	space, err := s.spaceSvc.GetUnfiltered(ctx, spaceID)
+	if err != nil || space == nil || space.WorkspaceID != workspaceID {
+		return fmt.Errorf("%w: the space was not found", ErrIntercomImportInvalid)
+	}
+	if space.Type != model.SpaceTypeExternalCapable {
+		return fmt.Errorf("%w: choose a space that can publish to the Help Center", ErrIntercomImportInvalid)
+	}
+	active, err := s.importRepo.HasActiveInSpace(ctx, workspaceID, spaceID)
+	if err != nil {
+		return err
+	}
+	if active {
+		return fmt.Errorf("%w: an import into this space is already running", ErrIntercomImportInvalid)
+	}
+	return nil
 }
 
 // intercomCollectionTarget is the Helpin collection an Intercom collection
@@ -217,6 +241,48 @@ func intercomURLPath(rawURL string) string {
 		return ""
 	}
 	return parsed.Path
+}
+
+// matchIntercomCollection finds the collection an earlier run imported: the
+// same name under the same parent, with the slug or a suffixed form of it. A
+// collection that only shares a slug is a different collection, and each
+// collection is matched to one source at most.
+func matchIntercomCollection(existing []model.DocsCollection, claimed map[string]bool, slug, name string, parentID *string) (model.DocsCollection, bool) {
+	for _, collection := range existing {
+		if claimed[collection.ID] || !importSlugVariant(collection.Slug, slug) ||
+			!strings.EqualFold(strings.TrimSpace(collection.Name), strings.TrimSpace(name)) ||
+			derefString(collection.ParentCollectionID) != derefString(parentID) {
+			continue
+		}
+		return collection, true
+	}
+	return model.DocsCollection{}, false
+}
+
+// importSlugVariant reports whether slug is base or base with a number
+// suffix that uniqueImportSlug added.
+func importSlugVariant(slug, base string) bool {
+	if slug == base {
+		return true
+	}
+	suffix, ok := strings.CutPrefix(slug, base+"-")
+	if !ok || suffix == "" {
+		return false
+	}
+	_, err := strconv.Atoi(suffix)
+	return err == nil
+}
+
+// uniqueImportSlug suffixes slug until no collection in the space uses it.
+func uniqueImportSlug(slug string, taken map[string]bool) string {
+	if !taken[slug] {
+		return slug
+	}
+	for n := 2; ; n++ {
+		if candidate := fmt.Sprintf("%s-%d", slug, n); !taken[candidate] {
+			return candidate
+		}
+	}
 }
 
 // intercomCollectionsInOrder sorts collections so parents come first.
@@ -282,22 +348,24 @@ func (s *DocsImportService) runIntercomImport(ctx context.Context, jobID string,
 		s.failJob(ctx, jobID, fmt.Sprintf("list existing collections: %v", err))
 		return nil
 	}
-	existingBySlug := make(map[string]model.DocsCollection, len(existing))
+	slugs := make(map[string]bool, len(existing))
 	for _, collection := range existing {
-		existingBySlug[collection.Slug] = collection
+		slugs[collection.Slug] = true
 	}
 	targets := map[string]intercomCollectionTarget{}
+	claimed := map[string]bool{}
 	collectionsCreated, redirectsCreated := 0, 0
 	for _, source := range intercomCollectionsInOrder(collections) {
-		slug := intercomSlug(source.URL, source.Name)
-		collection, ok := existingBySlug[slug]
-		if !ok {
-			var parentID *string
-			if source.ParentID != nil {
-				if parent, ok := targets[*source.ParentID]; ok {
-					parentID = &parent.id
-				}
+		var parentID *string
+		if source.ParentID != nil {
+			if parent, ok := targets[*source.ParentID]; ok {
+				parentID = &parent.id
 			}
+		}
+		slug := intercomSlug(source.URL, source.Name)
+		collection, ok := matchIntercomCollection(existing, claimed, slug, source.Name, parentID)
+		if !ok {
+			slug = uniqueImportSlug(slug, slugs)
 			var description *string
 			if text := strings.TrimSpace(source.Description); text != "" {
 				description = &text
@@ -313,9 +381,11 @@ func (s *DocsImportService) runIntercomImport(ctx context.Context, jobID string,
 				return nil
 			}
 			collection = *created
-			existingBySlug[slug] = collection
+			existing = append(existing, collection)
+			slugs[collection.Slug] = true
 			collectionsCreated++
 		}
+		claimed[collection.ID] = true
 		targets[source.ID] = intercomCollectionTarget{id: collection.ID, slug: collection.Slug}
 		if sourcePath := intercomURLPath(source.URL); sourcePath != "" {
 			canonical := buildDocsHelpcenterCollectionCanonicalPath(nil, "", collection.Slug, collection.PublicID)
@@ -454,16 +524,39 @@ func (s *DocsImportService) importIntercomArticle(
 	if err != nil {
 		return nil, fmt.Errorf("create document for article %s: %w", article.ID, err)
 	}
-	content, err := json.Marshal(converted.Doc)
+	stats, err := s.fillIntercomArticle(ctx, article, collection, workspaceID, document.ID, html, converted.Doc, warnings, userID, mode)
+	if err != nil {
+		// Without its checkpoint the article is imported again on the next
+		// run, so remove the partial document rather than leave a duplicate.
+		if deleteErr := s.documentSvc.Delete(context.WithoutCancel(ctx), document.ID); deleteErr != nil {
+			s.logger.Error("delete partially imported article", "article_id", article.ID, "document_id", document.ID, "error", deleteErr)
+		}
+		return nil, err
+	}
+	return stats, nil
+}
+
+// fillIntercomArticle writes an imported article's content, help center
+// entry, redirect and publication, and stores its checkpoint last.
+func (s *DocsImportService) fillIntercomArticle(
+	ctx context.Context,
+	article intercom.Article,
+	collection *intercomCollectionTarget,
+	workspaceID, documentID, html string,
+	doc any,
+	warnings []docsimport.Warning,
+	userID, mode string,
+) (*articleStats, error) {
+	content, err := json.Marshal(doc)
 	if err != nil {
 		return nil, fmt.Errorf("marshal content for article %s: %w", article.ID, err)
 	}
-	saved, err := s.contentSvc.Save(ctx, document.ID, json.RawMessage(content), userID)
+	saved, err := s.contentSvc.Save(ctx, documentID, json.RawMessage(content), userID)
 	if err != nil {
 		return nil, fmt.Errorf("save content for article %s: %w", article.ID, err)
 	}
 	slug := intercomSlug(article.URL, article.Title)
-	hcArticle, err := s.helpcenterSvc.CreateArticle(ctx, &model.DocsHelpcenterArticle{DocumentID: document.ID, Slug: slug})
+	hcArticle, err := s.helpcenterSvc.CreateArticle(ctx, &model.DocsHelpcenterArticle{DocumentID: documentID, Slug: slug})
 	if err != nil {
 		return nil, fmt.Errorf("create help center article for %s: %w", article.ID, err)
 	}
@@ -485,14 +578,14 @@ func (s *DocsImportService) importIntercomArticle(
 	}
 	publish := mode == "published" || (mode == "match_source" && article.State == "published")
 	if publish {
-		if _, err := s.documentSvc.Publish(ctx, document.ID); err != nil {
+		if _, err := s.documentSvc.Publish(ctx, documentID); err != nil {
 			return nil, fmt.Errorf("publish imported article internally %s: %w", article.ID, err)
 		}
 		externalSlug := slug
 		if hcArticle != nil {
 			externalSlug = hcArticle.Slug
 		}
-		if err := s.helpcenterSvc.PublishExternally(ctx, document.ID, externalSlug, nil); err != nil {
+		if err := s.helpcenterSvc.PublishExternally(ctx, documentID, externalSlug, nil); err != nil {
 			return nil, fmt.Errorf("publish imported article externally %s: %w", article.ID, err)
 		}
 		stats.Published = true

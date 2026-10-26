@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -11,6 +11,7 @@ import { useDocsSpaces } from '@/hooks/queries'
 import { useWorkspaceAccess } from '@/hooks/queries/useSession'
 import { useInboxScopes } from '@/hooks/queries/useSupport'
 import { Loading01Icon } from '@/lib/icons'
+import { unwrap } from '@/lib/queryUtils'
 import { docsImportService } from '@/lib/services/docsImportService'
 import {
   intercomImportService,
@@ -54,6 +55,9 @@ export function IntercomImportWizard({ workspaceId }: { workspaceId: string }) {
   const [checking, setChecking] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [docsPreview, setDocsPreview] = useState<IntercomDocsPreview | null>(null)
+  const [docsError, setDocsError] = useState<string | null>(null)
+  const [conversationsError, setConversationsError] = useState<string | null>(null)
+  const recountSeq = useRef(0)
   const [conversationsPreview, setConversationsPreview] = useState<IntercomConversationsPreview | null>(null)
   const [importDocs, setImportDocs] = useState(true)
   const [importConversations, setImportConversations] = useState(true)
@@ -77,19 +81,23 @@ export function IntercomImportWizard({ workspaceId }: { workspaceId: string }) {
       canImportConversations ? intercomImportService.previewConversations(workspaceId, token.trim(), region, since) : Promise.resolve(null),
     ])
     setChecking(false)
-    const failure = docs?.error ?? conversations?.error
-    if (failure) {
-      setError(failure)
-      return
-    }
+    // Each part is checked on its own: a token may read conversations but
+    // not articles, or the other way round.
     setDocsPreview(docs?.data ?? null)
     setConversationsPreview(conversations?.data ?? null)
+    setDocsError(docs?.error ?? null)
+    setConversationsError(conversations?.error ?? null)
+    if (!docs?.data && !conversations?.data) {
+      setError(docs?.error ?? conversations?.error ?? 'Intercom could not be reached.')
+    }
   }
 
   const recount = async (value: string) => {
     setSince(value)
     if (!canImportConversations || !value) return
+    const seq = ++recountSeq.current
     const response = await intercomImportService.previewConversations(workspaceId, token.trim(), region, value)
+    if (seq !== recountSeq.current) return
     if (response.data) setConversationsPreview(response.data)
     else if (response.error) toast.error(response.error)
   }
@@ -216,6 +224,12 @@ export function IntercomImportWizard({ workspaceId }: { workspaceId: string }) {
             </section>
           ) : null}
 
+          {!docsPreview && docsError ? (
+            <p className="rounded-lg border border-border p-4 text-sm text-muted-foreground" data-testid="intercom-docs-unavailable">
+              <span className="font-medium text-foreground">Help Center</span> cannot be imported with this token: {docsError}
+            </p>
+          ) : null}
+
           {conversationsPreview ? (
             <section className="space-y-3 rounded-lg border border-border p-4">
               <label className="flex items-start gap-3">
@@ -223,7 +237,7 @@ export function IntercomImportWizard({ workspaceId }: { workspaceId: string }) {
                 <span>
                   <span className="block text-sm font-medium">Conversations</span>
                   <span className="block text-sm text-muted-foreground">
-                    {plural(conversationsPreview.conversations, 'conversation', 'conversations')} with their replies, internal notes and tags. Attachments and assignments are not copied.
+                    {plural(conversationsPreview.conversations, 'conversation', 'conversations')} with their replies, internal notes and tags. Attachments are listed by name; files and assignments are not copied.
                   </span>
                 </span>
               </label>
@@ -251,6 +265,12 @@ export function IntercomImportWizard({ workspaceId }: { workspaceId: string }) {
             </section>
           ) : null}
 
+          {!conversationsPreview && conversationsError ? (
+            <p className="rounded-lg border border-border p-4 text-sm text-muted-foreground" data-testid="intercom-conversations-unavailable">
+              <span className="font-medium text-foreground">Conversations</span> cannot be imported with this token: {conversationsError}
+            </p>
+          ) : null}
+
           <div className="flex justify-end">
             <Button
               onClick={() => void start()}
@@ -273,13 +293,13 @@ function percent(done: number, total: number): number {
 function IntercomImportProgress({ workspaceId, started }: { workspaceId: string; started: Started }) {
   const docsJob = useQuery({
     queryKey: ['intercom-import', workspaceId, 'docs', started.docsJobId],
-    queryFn: async () => (await docsImportService.getStatus(workspaceId, started.docsJobId!)).data ?? null,
+    queryFn: async () => unwrap(await docsImportService.getStatus(workspaceId, started.docsJobId!)),
     enabled: Boolean(started.docsJobId),
     refetchInterval: (query) => (query.state.data && ['done', 'failed', 'interrupted'].includes(query.state.data.status) ? false : 3000),
   })
   const conversationJob = useQuery({
     queryKey: ['intercom-import', workspaceId, 'conversations', started.conversationJobId],
-    queryFn: async () => (await intercomImportService.listConversationImports(workspaceId)).data?.find((job) => job.id === started.conversationJobId) ?? null,
+    queryFn: async () => (unwrap(await intercomImportService.listConversationImports(workspaceId)) ?? []).find((job) => job.id === started.conversationJobId) ?? null,
     enabled: Boolean(started.conversationJobId),
     refetchInterval: (query) => (query.state.data && ['done', 'failed', 'cancelled'].includes(query.state.data.status) ? false : 3000),
   })
@@ -305,6 +325,8 @@ function IntercomImportProgress({ workspaceId, started }: { workspaceId: string;
           <Progress value={docs ? percent(docs.completed + docs.failed, docs.total) : 0} />
           {docs?.status === 'done' ? <p className="text-sm text-muted-foreground">Done. {docs.completed} imported{docs.failed ? `, ${docs.failed} failed` : ''}.</p> : null}
           {docs?.status === 'failed' ? <p className="text-sm text-destructive">The Help Center import failed. See Import history for details.</p> : null}
+          {docs?.status === 'interrupted' ? <p className="text-sm text-muted-foreground">The Help Center import was stopped. Articles imported so far stay.</p> : null}
+          {docsJob.isError ? <p className="text-sm text-destructive">The import status could not be loaded.</p> : null}
         </section>
       ) : null}
       {started.conversationJobId ? (
@@ -329,6 +351,7 @@ function IntercomImportProgress({ workspaceId, started }: { workspaceId: string;
           ) : null}
           {conversations?.status === 'failed' ? <p className="text-sm text-destructive">{conversations.error || 'The conversation import failed.'}</p> : null}
           {conversations?.status === 'cancelled' ? <p className="text-sm text-muted-foreground">Stopped. Conversations imported so far stay.</p> : null}
+          {conversationJob.isError ? <p className="text-sm text-destructive">The import status could not be loaded.</p> : null}
           {conversations && conversations.failures.length > 0 ? (
             <details className="text-xs text-muted-foreground">
               <summary className="cursor-pointer">Show failures</summary>

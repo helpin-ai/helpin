@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +18,9 @@ import (
 )
 
 func strp(value string) *string { return &value }
+
+// longIntercomTag is longer than the tag names an import creates.
+var longIntercomTag = "Customer escalations " + strings.Repeat("x", 70)
 
 func TestIntercomConversationImportPostgres(t *testing.T) {
 	db := openSupportOpsPostgres(t)
@@ -52,7 +56,9 @@ func TestIntercomConversationImportPostgres(t *testing.T) {
 	}{ID: "u1"})
 	closed.Tags.Tags = append(closed.Tags.Tags, struct {
 		Name string `json:"name"`
-	}{Name: "Billing"})
+	}{Name: "Billing"}, struct {
+		Name string `json:"name"`
+	}{Name: longIntercomTag})
 	closed.Statistics = &struct {
 		LastCloseAt *int64 `json:"last_close_at"`
 	}{LastCloseAt: &closedAt}
@@ -66,7 +72,11 @@ func TestIntercomConversationImportPostgres(t *testing.T) {
 	open.Parts.Parts = []intercom.ConversationPart{
 		{ID: "p4", PartType: "comment", Body: strp("Yes, from Reports."), CreatedAt: at(40), Author: intercom.Author{Type: "bot", Name: "Fin"}},
 		{ID: "p5", PartType: "comment", Body: strp("Thanks, and PDF?"), CreatedAt: at(5), Author: intercom.Author{Type: "lead", Name: "Lee"}},
+		{ID: "p6", PartType: "comment", CreatedAt: at(4), Author: intercom.Author{Type: "lead", Name: "Lee"}, Attachments: []intercom.Attachment{{Name: "invoice.pdf"}}},
 	}
+	open.Tags.Tags = append(open.Tags.Tags, struct {
+		Name string `json:"name"`
+	}{Name: strings.ToUpper(longIntercomTag)})
 	empty := intercom.Conversation{ID: "903", State: "closed", CreatedAt: at(30), UpdatedAt: at(30)}
 	old := intercom.Conversation{ID: "900", State: "closed", CreatedAt: now.AddDate(-2, 0, 0).Unix(), Source: intercom.ConversationSource{Body: "Old"}}
 	fake.Conversations = []intercom.Conversation{old, closed, open, empty}
@@ -120,6 +130,26 @@ func TestIntercomConversationImportPostgres(t *testing.T) {
 		chat.LastPublicSenderType == nil || *chat.LastPublicSenderType != "customer" || chat.TeamLastSeenAt == nil {
 		t.Fatalf("open conversation: %+v", chat)
 	}
+	// The two customer messages after the bot reply are unanswered, counted
+	// once although message triggers also project them.
+	if chat.UnansweredCustomerMessageCount != 2 || !chat.NeedsHumanReply {
+		t.Fatalf("open conversation state: unanswered=%d needs_reply=%v", chat.UnansweredCustomerMessageCount, chat.NeedsHumanReply)
+	}
+	var attachmentOnly model.SupportMessage
+	db.Where("conversation_id = ? AND created_at = ?", chat.ID, time.Unix(at(4), 0)).Take(&attachmentOnly)
+	if attachmentOnly.Content != "(Attachment not imported: invoice.pdf)" {
+		t.Fatalf("attachment-only message: %q", attachmentOnly.Content)
+	}
+	// Imported history queues no AI tagging or translation work.
+	var tagJobs, liveJobs int64
+	db.Table("support_tag_jobs").Where("conversation_id IN ?", []string{refund.ID, chat.ID}).Count(&tagJobs)
+	db.Table("support_live_messages").Where("conversation_id IN ?", []string{refund.ID, chat.ID}).Count(&liveJobs)
+	if tagJobs != 0 || liveJobs != 0 {
+		t.Fatalf("imported history queued %d tag jobs and %d translations", tagJobs, liveJobs)
+	}
+	if finished.PayloadEncrypted != "" {
+		t.Fatal("a finished import kept its access token")
+	}
 	var messages []model.SupportMessage
 	db.Where("conversation_id = ?", refund.ID).Order("created_at").Find(&messages)
 	if len(messages) != 3 || messages[1].MessageType != "note" || !messages[1].IsInternal ||
@@ -133,8 +163,18 @@ func TestIntercomConversationImportPostgres(t *testing.T) {
 	}
 	var tags int64
 	db.Model(&model.SupportConversationTag{}).Where("conversation_id = ?", refund.ID).Count(&tags)
-	if tags != 1 {
+	if tags != 2 {
 		t.Fatalf("tags: %d", tags)
+	}
+	var longTags []model.SupportTag
+	db.Where("workspace_id = ? AND lower(name) LIKE 'customer escalations%'", workspaceID).Find(&longTags)
+	if len(longTags) != 1 || longTags[0].Name != truncateWebhookText(longIntercomTag, supportImportTagNameLimit) {
+		t.Fatalf("long tag: %+v", longTags)
+	}
+	// A later page finds the shortened tag instead of creating it again.
+	later := newIntercomConversationImporter(imports, nil, *job)
+	if id, err := later.tagID(ctx, longIntercomTag); err != nil || id != longTags[0].ID {
+		t.Fatalf("long tag on a later page: %q %v", id, err)
 	}
 	var events int64
 	db.Model(&model.WebhookEvent{}).Where("workspace_id = ?", workspaceID).Count(&events)
@@ -153,7 +193,8 @@ func TestIntercomConversationImportPostgres(t *testing.T) {
 
 	// A job that crashed after storing conversations but before saving its
 	// progress counts them as its own when it resumes.
-	mustExec(t, db, `UPDATE support_import_jobs SET status = 'running', cursor = '', imported = 0, skipped = 0, failed = 0, failures = '[]', locked_until = NULL WHERE id = ?`, job.ID)
+	mustExec(t, db, `UPDATE support_import_jobs SET status = 'running', cursor = '', imported = 0, skipped = 0, failed = 0, failures = '[]', locked_until = NULL,
+		payload_encrypted = ? WHERE id = ?`, job.PayloadEncrypted, job.ID)
 	if worked, err := imports.ProcessNext(ctx); err != nil || !worked {
 		t.Fatalf("resume: %v %v", worked, err)
 	}
@@ -192,5 +233,108 @@ func TestIntercomConversationImportPostgres(t *testing.T) {
 	}
 	if err := imports.Cancel(ctx, workspaceID, uuid.NewString()); err == nil {
 		t.Fatal("cancelling an unknown import succeeded")
+	}
+}
+
+func TestIntercomConversationImportRecoveryPostgres(t *testing.T) {
+	db := openSupportOpsPostgres(t)
+	ctx := context.Background()
+	workspaceID, userID := seedSupportOpsWorkspace(t, db)
+	mustExec(t, db, `DELETE FROM support_import_jobs`)
+	inbox := NewSupportInboxService(repository.NewSupportConversationRepository(db), repository.NewSupportMailboxRepository(db),
+		repository.NewSupportMessageRepository(db), nil, nil, repository.NewSupportInboxInstallationRepository(db), nil, nil, nil, nil, nil,
+		repository.NewUserRepository(db), nil, nil, nil)
+	fake := intercomtest.New()
+	defer fake.Close()
+	repo := repository.NewSupportImportRepository(db)
+	imports := NewSupportImportService(repo, inbox, []byte(strings.Repeat("i", 32)))
+	imports.SetIntercomBaseURL(fake.URL)
+	request := model.IntercomConversationImportRequest{AccessToken: intercomtest.Token}
+	get := func(id string) *model.SupportImportJob {
+		t.Helper()
+		job, err := repo.GetJob(ctx, workspaceID, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return job
+	}
+
+	// Intercom refusing the request stops the import at once.
+	refused, err := imports.Start(ctx, workspaceID, userID, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake.SearchStatus, fake.SearchFailures = http.StatusBadRequest, 1
+	if worked, err := imports.ProcessNext(ctx); !worked || err != nil {
+		t.Fatalf("refused page: %v %v", worked, err)
+	}
+	if job := get(refused.ID); job.Status != model.SupportImportStatusFailed || !strings.Contains(job.Error, "Search failed") || job.PayloadEncrypted != "" {
+		t.Fatalf("refused import: %+v", job)
+	}
+
+	// An unavailable API is retried later, then gives up.
+	flaky, err := imports.Start(ctx, workspaceID, userID, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake.SearchStatus, fake.SearchFailures = http.StatusServiceUnavailable, 6
+	if worked, err := imports.ProcessNext(ctx); !worked || err != nil {
+		t.Fatalf("flaky page: %v %v", worked, err)
+	}
+	job := get(flaky.ID)
+	if job.Status != model.SupportImportStatusRunning || job.Attempts != 1 || job.LockedUntil == nil || time.Until(*job.LockedUntil) < 50*time.Second {
+		t.Fatalf("retried import: %+v", job)
+	}
+	mustExec(t, db, `UPDATE support_import_jobs SET attempts = ?, locked_until = NULL WHERE id = ?`, supportImportMaxAttempts-1, flaky.ID)
+	fake.SearchFailures = 6
+	if worked, err := imports.ProcessNext(ctx); !worked || err != nil {
+		t.Fatalf("last try: %v %v", worked, err)
+	}
+	if job := get(flaky.ID); job.Status != model.SupportImportStatusFailed || job.PayloadEncrypted != "" {
+		t.Fatalf("given-up import: %+v", job)
+	}
+
+	// Only the worker holding the lease writes, and a cancel wins over the
+	// worker finishing.
+	leased, err := imports.Start(ctx, workspaceID, userID, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	claimed, err := repo.ClaimJob(ctx, now, now.Add(time.Minute), "lease-a")
+	if err != nil || claimed == nil || claimed.ID != leased.ID {
+		t.Fatalf("claim: %+v %v", claimed, err)
+	}
+	if held, err := repo.SaveLeased(ctx, leased.ID, "lease-b", map[string]any{"imported": 99}); err != nil || held {
+		t.Fatalf("a stale worker wrote progress: %v %v", held, err)
+	}
+	if err := imports.Cancel(ctx, workspaceID, leased.ID); err != nil {
+		t.Fatal(err)
+	}
+	if held, err := repo.SaveLeased(ctx, leased.ID, "lease-a", map[string]any{"imported": 3}); err != nil || !held {
+		t.Fatalf("the cancelled page's counts were not saved: %v %v", held, err)
+	}
+	if finished, err := repo.FinishJob(ctx, leased.ID, "lease-a", model.SupportImportStatusDone, "", now); err != nil || finished {
+		t.Fatalf("a cancelled import was finished: %v %v", finished, err)
+	}
+	if job := get(leased.ID); job.Status != model.SupportImportStatusCancelled || job.Imported != 3 || job.PayloadEncrypted != "" {
+		t.Fatalf("cancelled import: %+v", job)
+	}
+	if held, err := repo.ExtendLease(ctx, leased.ID, "lease-a", now.Add(time.Hour)); err != nil || held {
+		t.Fatalf("a cancelled import kept its lease: %v %v", held, err)
+	}
+
+	// Jobs take turns: the one worked on least recently goes first.
+	first, second := uuid.NewString(), uuid.NewString()
+	for _, id := range []string{first, second} {
+		if err := repo.CreateJob(ctx, &model.SupportImportJob{ID: id, WorkspaceID: workspaceID, Source: model.SupportImportSourceIntercom,
+			Status: model.SupportImportStatusRunning, Since: now, Failures: []byte("[]"), PayloadEncrypted: "x", StartedBy: userID}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mustExec(t, db, `UPDATE support_import_jobs SET updated_at = ? WHERE id = ?`, now.Add(-time.Minute), first)
+	mustExec(t, db, `UPDATE support_import_jobs SET updated_at = ?, created_at = ? WHERE id = ?`, now.Add(-time.Hour), now.Add(time.Minute), second)
+	if next, err := repo.ClaimJob(ctx, now, now.Add(time.Minute), "lease-c"); err != nil || next == nil || next.ID != second {
+		t.Fatalf("claimed %+v, want the job that waited longest", next)
 	}
 }

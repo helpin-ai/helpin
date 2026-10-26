@@ -26,6 +26,10 @@ var ErrUnauthorized = errors.New("intercom rejected the access token")
 // ErrNotFound means the requested object does not exist.
 var ErrNotFound = errors.New("intercom object not found")
 
+// ErrForbidden means the token is valid but lacks a permission the call
+// needs.
+var ErrForbidden = errors.New("the intercom access token lacks a permission")
+
 // Client calls the Intercom REST API with an access token.
 type Client struct {
 	baseURL string
@@ -115,8 +119,10 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 		switch {
 		case readErr != nil:
 			return fmt.Errorf("read intercom response: %w", readErr)
-		case response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden:
+		case response.StatusCode == http.StatusUnauthorized:
 			return ErrUnauthorized
+		case response.StatusCode == http.StatusForbidden:
+			return ErrForbidden
 		case response.StatusCode == http.StatusNotFound:
 			return ErrNotFound
 		case response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500:

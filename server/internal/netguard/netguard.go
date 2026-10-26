@@ -30,18 +30,25 @@ var _nonPublicRanges = []netip.Prefix{
 	netip.MustParsePrefix("240.0.0.0/4"),
 	netip.MustParsePrefix("fec0::/10"),
 	netip.MustParsePrefix("2001:db8::/32"),
+	// Local-use NAT64 (RFC 8215) translates to the operator's own IPv4
+	// space, and Teredo hides its IPv4 address; neither reaches a public
+	// webhook receiver.
+	netip.MustParsePrefix("64:ff9b:1::/48"),
+	netip.MustParsePrefix("2001::/32"),
 }
 
-// _nat64 and _sixToFour embed an IPv4 address that the network may reach.
+// _nat64, _siit and _sixToFour embed an IPv4 address that the network may
+// reach.
 var (
-	_nat64      = netip.MustParsePrefix("64:ff9b::/96")
-	_nat64Local = netip.MustParsePrefix("64:ff9b:1::/48")
-	_sixToFour  = netip.MustParsePrefix("2002::/16")
+	_nat64     = netip.MustParsePrefix("64:ff9b::/96")
+	_siit      = netip.MustParsePrefix("::ffff:0:0:0/96")
+	_sixToFour = netip.MustParsePrefix("2002::/16")
 )
 
 // IsNonPublicIP reports whether ip is private, loopback, link-local,
 // multicast, unspecified or another special-purpose address, including IPv6
-// forms that embed such an IPv4 address (NAT64, 6to4, IPv4-compatible).
+// forms that embed such an IPv4 address (NAT64, SIIT, 6to4,
+// IPv4-compatible).
 func IsNonPublicIP(ip net.IP) bool {
 	addr, ok := netip.AddrFromSlice(ip)
 	if !ok {
@@ -63,7 +70,7 @@ func nonPublicAddr(addr netip.Addr, depth int) bool {
 	if addr.Is6() && depth == 0 {
 		raw := addr.As16()
 		switch {
-		case _nat64.Contains(addr) || _nat64Local.Contains(addr):
+		case _nat64.Contains(addr) || _siit.Contains(addr):
 			return nonPublicAddr(netip.AddrFrom4([4]byte(raw[12:16])), depth+1)
 		case _sixToFour.Contains(addr):
 			return nonPublicAddr(netip.AddrFrom4([4]byte(raw[2:6])), depth+1)

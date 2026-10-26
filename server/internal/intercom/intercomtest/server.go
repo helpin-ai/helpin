@@ -27,7 +27,11 @@ type Server struct {
 	Contacts      map[string]intercom.Contact
 	// RateLimitNext answers the next N requests with 429.
 	RateLimitNext int
-	Requests      []string
+	// SearchStatus answers the next SearchFailures conversation searches
+	// with this status.
+	SearchStatus   int
+	SearchFailures int
+	Requests       []string
 }
 
 // New starts a fake with the given data.
@@ -63,6 +67,12 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodGet && r.URL.Path == "/articles":
 		writePage(w, r, s.Articles)
 	case r.Method == http.MethodPost && r.URL.Path == "/conversations/search":
+		if s.SearchFailures > 0 {
+			s.SearchFailures--
+			w.Header().Set("Retry-After", "1")
+			writeJSON(w, s.SearchStatus, map[string]any{"type": "error.list", "errors": []map[string]string{{"code": "failed", "message": "Search failed"}}})
+			return
+		}
 		s.search(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/conversations/"):
 		id := strings.TrimPrefix(r.URL.Path, "/conversations/")

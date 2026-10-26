@@ -132,6 +132,27 @@ func (r *DocsImportRepository) SetError(ctx context.Context, id, errMsg string) 
 	return nil
 }
 
+// HasActiveInSpace reports whether an import into the space is pending or
+// running.
+func (r *DocsImportRepository) HasActiveInSpace(ctx context.Context, workspaceID, spaceID string) (bool, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&model.DocsImportJob{}).
+		Where("workspace_id = ? AND space_id = ? AND status IN ?", workspaceID, spaceID, []string{model.DocsImportStatusPending, model.DocsImportStatusRunning}).
+		Count(&count).Error; err != nil {
+		return false, fmt.Errorf("check active docs imports: %w", err)
+	}
+	return count > 0, nil
+}
+
+// ClearPayload deletes the stored credentials of a job that has finished.
+func (r *DocsImportRepository) ClearPayload(ctx context.Context, id string) error {
+	if err := r.db.WithContext(ctx).Model(&model.DocsImportJob{}).Where("id = ?", id).
+		Updates(map[string]interface{}{"payload_encrypted": nil, "updated_at": time.Now()}).Error; err != nil {
+		return fmt.Errorf("clear docs import payload: %w", err)
+	}
+	return nil
+}
+
 // PrepareExecution stores the encrypted request and resets a job for workflow execution.
 func (r *DocsImportRepository) PrepareExecution(ctx context.Context, id, encryptedPayload, workflowID string) error {
 	updates := map[string]interface{}{

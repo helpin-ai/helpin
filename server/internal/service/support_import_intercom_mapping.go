@@ -52,31 +52,48 @@ func (m *intercomConversationImporter) loadTeammates(ctx context.Context) error 
 	return nil
 }
 
+// supportImportTagNameLimit is the longest tag name an import creates.
+const supportImportTagNameLimit = 60
+
 // tagID returns the workspace tag with this name, creating it when missing.
 func (m *intercomConversationImporter) tagID(ctx context.Context, name string) (string, error) {
-	name = strings.TrimSpace(name)
+	name = truncateWebhookText(strings.TrimSpace(name), supportImportTagNameLimit)
 	if name == "" || m.svc.inbox.tagRepo == nil {
 		return "", nil
 	}
+	key := strings.ToLower(name)
 	if m.tags == nil {
-		m.tags = map[string]string{}
-		tags, err := m.svc.inbox.tagRepo.ListByWorkspace(ctx, m.job.WorkspaceID)
-		if err != nil {
+		if err := m.loadTags(ctx); err != nil {
 			return "", err
 		}
-		for _, tag := range tags {
-			m.tags[strings.ToLower(tag.Name)] = tag.ID
-		}
 	}
-	if id, ok := m.tags[strings.ToLower(name)]; ok {
+	if id, ok := m.tags[key]; ok {
 		return id, nil
 	}
-	tag := &model.SupportTag{ID: uuid.NewString(), WorkspaceID: m.job.WorkspaceID, Name: truncateWebhookText(name, 60)}
+	tag := &model.SupportTag{ID: uuid.NewString(), WorkspaceID: m.job.WorkspaceID, Name: name}
 	if err := m.svc.inbox.tagRepo.Create(ctx, tag); err != nil {
+		// A teammate or another page may have created it meanwhile.
+		if loadErr := m.loadTags(ctx); loadErr == nil {
+			if id, ok := m.tags[key]; ok {
+				return id, nil
+			}
+		}
 		return "", fmt.Errorf("create tag %q: %w", name, err)
 	}
-	m.tags[strings.ToLower(name)] = tag.ID
+	m.tags[key] = tag.ID
 	return tag.ID, nil
+}
+
+func (m *intercomConversationImporter) loadTags(ctx context.Context) error {
+	tags, err := m.svc.inbox.tagRepo.ListByWorkspace(ctx, m.job.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	m.tags = make(map[string]string, len(tags))
+	for _, tag := range tags {
+		m.tags[strings.ToLower(tag.Name)] = tag.ID
+	}
+	return nil
 }
 
 func (m *intercomConversationImporter) contact(ctx context.Context, id string) (*intercom.Contact, error) {
@@ -165,8 +182,8 @@ func (m *intercomConversationImporter) importConversation(ctx context.Context, e
 	}
 
 	messages := make([]model.SupportMessage, 0, len(source.Parts.Parts)+1)
-	add := func(at int64, author intercom.Author, body string, internal bool) {
-		body = strings.TrimSpace(body)
+	add := func(at int64, author intercom.Author, body string, attachments []intercom.Attachment, internal bool) {
+		body = withAttachmentNames(strings.TrimSpace(body), attachments)
 		if body == "" {
 			return
 		}
@@ -182,17 +199,15 @@ func (m *intercomConversationImporter) importConversation(ctx context.Context, e
 		messages = append(messages, message)
 		conversation.ApplyMessageProjection(message)
 	}
-	add(source.CreatedAt, source.Source.Author, source.Source.Body, false)
+	add(source.CreatedAt, source.Source.Author, source.Source.Body, source.Source.Attachments, false)
 	for _, part := range source.Parts.Parts {
-		if part.Body == nil {
-			continue
-		}
+		body := derefString(part.Body)
 		switch part.PartType {
 		case "note":
-			add(part.CreatedAt, part.Author, *part.Body, true)
+			add(part.CreatedAt, part.Author, body, part.Attachments, true)
 		case "comment", "assignment", "open", "close", "snoozed", "away_mode_assignment", "default_assignment":
 			// Replies sent together with an action still reached the customer.
-			add(part.CreatedAt, part.Author, *part.Body, false)
+			add(part.CreatedAt, part.Author, body, part.Attachments, false)
 		}
 	}
 	if len(messages) == 0 {
@@ -227,6 +242,27 @@ func (m *intercomConversationImporter) importConversation(ctx context.Context, e
 	record := model.SupportImportRecord{WorkspaceID: m.job.WorkspaceID, Source: model.SupportImportSourceIntercom, ExternalID: externalID,
 		ConversationID: conversation.ID, JobID: &jobID, CreatedAt: m.svc.now()}
 	return m.svc.repo.ImportConversation(ctx, record, conversation, messages, tagIDs)
+}
+
+// withAttachmentNames lists a message's attachments after its text, since
+// the files themselves are not copied.
+func withAttachmentNames(body string, attachments []intercom.Attachment) string {
+	var names []string
+	for _, attachment := range attachments {
+		if name := strings.TrimSpace(attachment.Name); name != "" {
+			names = append(names, name)
+		} else {
+			names = append(names, "file")
+		}
+	}
+	if len(names) == 0 {
+		return body
+	}
+	note := "(Attachment not imported: " + strings.Join(names, ", ") + ")"
+	if body == "" {
+		return note
+	}
+	return body + "\n\n" + note
 }
 
 func isIntercomCustomer(authorType string) bool {

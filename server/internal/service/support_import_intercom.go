@@ -166,17 +166,22 @@ func (s *SupportImportService) Cancel(ctx context.Context, workspaceID, jobID st
 	return s.repo.CancelJob(ctx, workspaceID, jobID, s.now())
 }
 
-// ProcessNext imports one page of the oldest waiting job. It reports
+// supportImportMaxAttempts is how many times in a row a page may fail
+// before the import stops.
+const supportImportMaxAttempts = 8
+
+// ProcessNext imports one page of the job that waited longest. It reports
 // whether there was a job to work on.
 func (s *SupportImportService) ProcessNext(ctx context.Context) (bool, error) {
 	now := s.now()
-	job, err := s.repo.ClaimJob(ctx, now, now.Add(supportImportLease))
+	token := uuid.NewString()
+	job, err := s.repo.ClaimJob(ctx, now, now.Add(supportImportLease), token)
 	if err != nil || job == nil {
 		return false, err
 	}
 	finish := func(status, message string) error {
-		at := s.now()
-		return s.repo.UpdateJob(context.WithoutCancel(ctx), job.ID, map[string]any{"status": status, "error": message, "completed_at": at, "locked_until": nil})
+		_, err := s.repo.FinishJob(context.WithoutCancel(ctx), job.ID, token, status, message, s.now())
+		return err
 	}
 	raw, err := appcrypto.DecryptStringWithAAD(job.PayloadEncrypted, s.key, supportImportAAD(job.ID))
 	if err != nil {
@@ -195,12 +200,7 @@ func (s *SupportImportService) ProcessNext(ctx context.Context) (bool, error) {
 		if ctx.Err() != nil {
 			return true, nil // The lease returns the job after a restart.
 		}
-		if errors.Is(err, intercom.ErrUnauthorized) {
-			return true, finish(model.SupportImportStatusFailed, "Intercom rejected the access token.")
-		}
-		// A temporary failure: release the job and try again later.
-		retryAt := s.now().Add(time.Minute)
-		return true, s.repo.UpdateJob(ctx, job.ID, map[string]any{"locked_until": retryAt, "error": "Intercom could not be reached; retrying."})
+		return true, s.pageFailed(ctx, job, token, err)
 	}
 	ids := make([]string, 0, len(page.Conversations))
 	for _, ref := range page.Conversations {
@@ -211,12 +211,24 @@ func (s *SupportImportService) ProcessNext(ctx context.Context) (bool, error) {
 		return true, err
 	}
 	var failures []model.SupportImportFailure
-	_ = json.Unmarshal(job.Failures, &failures)
+	if err := json.Unmarshal(job.Failures, &failures); err != nil {
+		failures = nil
+	}
 	importer := newIntercomConversationImporter(s, client, *job)
 	imported, skipped, failed := 0, 0, 0
+	renewAt := s.now().Add(supportImportLease / 2)
 	for _, ref := range page.Conversations {
 		if ctx.Err() != nil {
 			return true, nil
+		}
+		if s.now().After(renewAt) {
+			// Rate limits can stretch a page; keep the lease, and stop when the
+			// import was cancelled or another worker took it over.
+			held, err := s.repo.ExtendLease(ctx, job.ID, token, s.now().Add(supportImportLease))
+			if err != nil || !held {
+				return true, err
+			}
+			renewAt = s.now().Add(supportImportLease / 2)
 		}
 		if jobID, ok := done[ref.ID]; ok {
 			// A resumed job finds its own conversations already stored.
@@ -242,26 +254,59 @@ func (s *SupportImportService) ProcessNext(ctx context.Context) (bool, error) {
 			slog.WarnContext(ctx, "intercom conversation import failed", "job_id", job.ID, "conversation", ref.ID, "error", err)
 		}
 	}
-	failuresJSON, _ := json.Marshal(failures)
-	if failures == nil {
+	failuresJSON, err := json.Marshal(failures)
+	if err != nil || failures == nil {
 		failuresJSON = json.RawMessage("[]")
 	}
 	fields := map[string]any{
 		"total": max(page.TotalCount, job.Imported+job.Skipped+job.Failed+imported+skipped+failed), "imported": job.Imported + imported,
-		"skipped": job.Skipped + skipped, "failed": job.Failed + failed, "failures": string(failuresJSON), "cursor": page.Next, "error": "",
+		"skipped": job.Skipped + skipped, "failed": job.Failed + failed, "failures": string(failuresJSON), "cursor": page.Next,
+		"error": "", "attempts": 0,
 	}
-	if page.Next == "" {
-		fields["status"], fields["completed_at"], fields["locked_until"] = model.SupportImportStatusDone, s.now(), nil
-	} else {
+	if page.Next != "" {
 		fields["locked_until"] = nil
 	}
-	// A cancel during the page wins over the progress update.
-	current, err := s.repo.GetJob(ctx, job.WorkspaceID, job.ID)
-	if err == nil && current.Status == model.SupportImportStatusCancelled {
-		delete(fields, "status")
-		delete(fields, "completed_at")
+	// Counts are saved even when the import was cancelled during the page.
+	// The last page keeps its lease until the job is finished.
+	held, err := s.repo.SaveLeased(ctx, job.ID, token, fields)
+	if err != nil || !held || page.Next != "" {
+		return true, err
 	}
-	return true, s.repo.UpdateJob(ctx, job.ID, fields)
+	return true, finish(model.SupportImportStatusDone, "")
+}
+
+// pageFailed retries a page that could not be listed, with growing delays,
+// and stops the import when retrying cannot help.
+func (s *SupportImportService) pageFailed(ctx context.Context, job *model.SupportImportJob, token string, err error) error {
+	switch {
+	case errors.Is(err, intercom.ErrUnauthorized):
+		return s.finishFailed(ctx, job, token, "Intercom rejected the access token.")
+	case errors.Is(err, intercom.ErrForbidden):
+		return s.finishFailed(ctx, job, token, "The access token cannot read conversations.")
+	}
+	var status *intercom.StatusError
+	if errors.As(err, &status) && status.Status >= 400 && status.Status < 500 && status.Status != 429 {
+		return s.finishFailed(ctx, job, token, "Intercom refused the request: "+truncateWebhookText(status.Message, 200))
+	}
+	attempts := job.Attempts + 1
+	if attempts >= supportImportMaxAttempts {
+		return s.finishFailed(ctx, job, token, "Intercom could not be reached; the import stopped after several tries.")
+	}
+	delay := time.Duration(1<<(attempts-1)) * time.Minute
+	if delay > 30*time.Minute {
+		delay = 30 * time.Minute
+	}
+	retryAt := s.now().Add(delay)
+	slog.WarnContext(ctx, "intercom conversation page failed", "job_id", job.ID, "attempt", attempts, "error", err)
+	_, saveErr := s.repo.SaveLeased(ctx, job.ID, token, map[string]any{
+		"locked_until": retryAt, "attempts": attempts, "error": "Intercom could not be reached; retrying.",
+	})
+	return saveErr
+}
+
+func (s *SupportImportService) finishFailed(ctx context.Context, job *model.SupportImportJob, token, message string) error {
+	_, err := s.repo.FinishJob(context.WithoutCancel(ctx), job.ID, token, model.SupportImportStatusFailed, message, s.now())
+	return err
 }
 
 // Run processes imports until ctx is cancelled.

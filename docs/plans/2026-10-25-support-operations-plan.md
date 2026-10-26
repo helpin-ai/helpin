@@ -171,3 +171,31 @@ the existing `sla_policies` entitlement, which Community grants by default.
 3. Browser tests on the dev environment with injected data: inbox, reports,
    settings, widget and portal flows.
 4. An independent review of the phase diff, fixes, and a re-run of 1-3.
+
+## Outcome
+
+All five phases shipped on `feat/support-operations`, each reviewed
+independently and fixed before the next. Deviations from the plan above:
+
+- **SLA semantics are stricter than first drafted.**
+  - Records snapshot their targets, and met or missed results never change.
+  - Targets wait while the AI owns a conversation.
+  - A policy that applies again, or whose conditions widen, never back-dates
+    breaches.
+  - See `docs/support-reports.md`.
+- **Public writes keep Helpin's MCP promise.** `helpin.support.write` still
+  never sends anything to customers. Replies and new conversations need the
+  new opt-in `helpin.support.reply` scope, which automation accounts get
+  only with "Allow sending replies".
+- **Webhooks** live under Settings → Webhooks (`support.admin`) and are
+  documented in `docs/support-webhooks.md`. Message events wait out a
+  reply's undo window. Endpoints turn off only after a day of continuous
+  failures.
+- **The Intercom import** covers the Help Center and conversations from one
+  wizard (`docs/support-imports.md`). Attachment files, assignments and
+  ratings are not copied. Imported history gets no SLA targets, sends no
+  webhooks and queues no AI tagging or translation. Access tokens are
+  deleted when an import ends.
+- **Image downloads during Docs imports**, and the external-image endpoint,
+  now reach only public addresses through `internal/netguard`, accept only
+  images, and stop at 25 MB.

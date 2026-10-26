@@ -152,18 +152,11 @@ func (s *DocsImportService) importExternalImageWithUploader(ctx context.Context,
 		return "", fmt.Errorf("download image: status %d", resp.StatusCode)
 	}
 
-	contentType := resp.Header.Get("Content-Type")
-	if idx := strings.Index(contentType, ";"); idx >= 0 {
-		contentType = strings.TrimSpace(contentType[:idx])
-	}
-	if contentType == "" {
-		contentType = mime.TypeByExtension(path.Ext(parsed.Path))
-	}
-	if !strings.HasPrefix(contentType, "image/") {
-		return "", fmt.Errorf("remote URL is not an image")
-	}
-
 	filename := path.Base(parsed.Path)
+	body, contentType, err := helpscout.ImageBody(resp, filename)
+	if err != nil {
+		return "", fmt.Errorf("download image: %w", err)
+	}
 	if filename == "" || filename == "." || filename == "/" {
 		filename = "image"
 		if exts, _ := mime.ExtensionsByType(contentType); len(exts) > 0 {
@@ -171,7 +164,7 @@ func (s *DocsImportService) importExternalImageWithUploader(ctx context.Context,
 		}
 	}
 
-	uploadedURL, err := uploader.UploadImage(ctx, workspaceID, filename, resp.Body, contentType)
+	uploadedURL, err := uploader.UploadImage(ctx, workspaceID, filename, body, contentType)
 	if err != nil {
 		return "", err
 	}

@@ -71,7 +71,26 @@ func (s *DocsImportService) executeStoredHelpScoutImport(ctx context.Context, im
 	}
 	heartbeat := func(processed int) { activity.RecordHeartbeat(ctx, processed) }
 	if job.Source == docsImportSourceIntercom {
-		return s.runIntercomImport(ctx, job.ID, req, *req.TargetSpaceID, job.WorkspaceID, job.StartedBy, heartbeat)
+		if err := s.runIntercomImport(ctx, job.ID, req, *req.TargetSpaceID, job.WorkspaceID, job.StartedBy, heartbeat); err != nil {
+			return err
+		}
+		s.clearFinishedPayload(ctx, job.ID)
+		return nil
 	}
 	return s.runImport(ctx, job.ID, req.APIKey, req, *req.TargetSpaceID, job.WorkspaceID, job.StartedBy, heartbeat)
+}
+
+// clearFinishedPayload deletes the access token of an import that finished;
+// a token that can read the whole help desk is kept only while it is needed.
+func (s *DocsImportService) clearFinishedPayload(ctx context.Context, jobID string) {
+	job, err := s.importRepo.GetByID(ctx, jobID)
+	if err != nil || job == nil {
+		return
+	}
+	if job.Status != model.DocsImportStatusDone && job.Status != model.DocsImportStatusFailed && job.Status != model.DocsImportStatusInterrupted {
+		return
+	}
+	if err := s.importRepo.ClearPayload(context.WithoutCancel(ctx), jobID); err != nil {
+		s.logger.Error("clear docs import payload", "job_id", jobID, "error", err)
+	}
 }

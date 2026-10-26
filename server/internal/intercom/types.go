@@ -2,15 +2,42 @@
 // Intercom REST API for imports.
 package intercom
 
-// Pages describes page-number pagination.
+import (
+	"encoding/json"
+	"fmt"
+	"net/url"
+	"strconv"
+)
+
+// Pages describes page-number and cursor pagination.
 type Pages struct {
-	Page       int `json:"page"`
-	PerPage    int `json:"per_page"`
-	TotalPages int `json:"total_pages"`
-	Next       *struct {
-		Page          int    `json:"page"`
-		StartingAfter string `json:"starting_after"`
-	} `json:"next"`
+	Page       int         `json:"page"`
+	PerPage    int         `json:"per_page"`
+	TotalPages int         `json:"total_pages"`
+	Next       *NextCursor `json:"next"`
+}
+
+// NextCursor points at the following page. Intercom sends it as an object;
+// older API versions send a URL instead, which is read the same way.
+type NextCursor struct {
+	Page          int    `json:"page"`
+	StartingAfter string `json:"starting_after"`
+}
+
+// UnmarshalJSON accepts the object form and the URL form.
+func (n *NextCursor) UnmarshalJSON(data []byte) error {
+	var link string
+	if json.Unmarshal(data, &link) == nil {
+		parsed, err := url.Parse(link)
+		if err != nil {
+			return fmt.Errorf("parse next page link: %w", err)
+		}
+		n.Page, _ = strconv.Atoi(parsed.Query().Get("page"))
+		n.StartingAfter = parsed.Query().Get("starting_after")
+		return nil
+	}
+	type plain NextCursor
+	return json.Unmarshal(data, (*plain)(n))
 }
 
 // Me is the admin the access token belongs to.
@@ -59,21 +86,29 @@ type Author struct {
 
 // ConversationSource is the message that started a conversation.
 type ConversationSource struct {
-	Type        string `json:"type"` // conversation, email, push, ...
-	ID          string `json:"id"`
-	DeliveredAs string `json:"delivered_as"`
-	Subject     string `json:"subject"`
-	Body        string `json:"body"`
-	Author      Author `json:"author"`
+	Type        string       `json:"type"` // conversation, email, push, ...
+	ID          string       `json:"id"`
+	DeliveredAs string       `json:"delivered_as"`
+	Subject     string       `json:"subject"`
+	Body        string       `json:"body"`
+	Author      Author       `json:"author"`
+	Attachments []Attachment `json:"attachments"`
+}
+
+// Attachment is a file sent with a message. Its URL expires, so imports keep
+// only the name.
+type Attachment struct {
+	Name string `json:"name"`
 }
 
 // ConversationPart is one event in a conversation.
 type ConversationPart struct {
-	ID        string  `json:"id"`
-	PartType  string  `json:"part_type"` // comment, note, assignment, close, open, ...
-	Body      *string `json:"body"`
-	CreatedAt int64   `json:"created_at"`
-	Author    Author  `json:"author"`
+	ID          string       `json:"id"`
+	PartType    string       `json:"part_type"` // comment, note, assignment, close, open, ...
+	Body        *string      `json:"body"`
+	CreatedAt   int64        `json:"created_at"`
+	Author      Author       `json:"author"`
+	Attachments []Attachment `json:"attachments"`
 }
 
 // Conversation is a conversation with its parts.
