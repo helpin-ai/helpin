@@ -100,7 +100,7 @@ export function MacroActionsEditor({
   const { data: tags = [] } = useSupportTags(workspaceId)
   const { data: members = [] } = useWorkspaceMembers(workspaceId)
   const { data: scopes } = useInboxScopes(workspaceId)
-  const activeMembers = members.filter((member) => member.user_id)
+  const activeMembers = members.filter((member) => member.user_id && member.role !== 'viewer')
   const patch = (next: Partial<SupportConversationActions>) => onChange({ ...value, ...next })
   const pick = <T extends string>(selected: string): T | undefined => (selected === NO_CHANGE ? undefined : (selected as T))
 

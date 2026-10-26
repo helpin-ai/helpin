@@ -31,8 +31,10 @@ type SupportSLAPolicy struct {
 	ID          string `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID string `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	Name        string `json:"name" gorm:"not null"`
-	Enabled     bool   `json:"enabled" gorm:"not null;default:true"`
-	Position    int    `json:"position" gorm:"type:integer;not null;default:0"`
+	// Boolean columns default to true in SQL only: a GORM default would
+	// turn a false value into true on insert.
+	Enabled  bool `json:"enabled" gorm:"not null"`
+	Position int  `json:"position" gorm:"type:integer;not null;default:0"`
 	// Empty condition lists match every conversation. MailboxIDs may hold
 	// "shared" for conversations without a team inbox.
 	Priorities           DocsStringArray `json:"priorities" gorm:"type:text[];not null;default:'{}'"`
@@ -46,14 +48,17 @@ type SupportSLAPolicy struct {
 	BusinessHours bool `json:"business_hours" gorm:"not null;default:false"`
 	// PauseWhileWaiting stops the resolution clock while the conversation is
 	// waiting on the customer or snoozed.
-	PauseWhileWaiting bool `json:"pause_while_waiting" gorm:"not null;default:true"`
+	PauseWhileWaiting bool `json:"pause_while_waiting" gorm:"not null"`
 	// ActiveSince is when the policy was last enabled. It applies only to
 	// conversations created after this, so enabling it never back-dates
 	// breaches onto older conversations.
 	ActiveSince time.Time `json:"active_since" gorm:"type:timestamptz;not null;default:now()"`
-	CreatedByID *string   `json:"created_by_id,omitempty" gorm:"type:uuid"`
-	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	// ConditionsChangedAt is when the conditions last changed. Conversations
+	// that start matching through that change are measured from then.
+	ConditionsChangedAt *time.Time `json:"conditions_changed_at,omitempty" gorm:"type:timestamptz"`
+	CreatedByID         *string    `json:"created_by_id,omitempty" gorm:"type:uuid"`
+	CreatedAt           time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt           time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (SupportSLAPolicy) TableName() string { return "support_sla_policies" }
@@ -78,12 +83,18 @@ type SupportConversationSLARecord struct {
 	TargetNextResponseMinutes  *int `json:"-" gorm:"type:integer"`
 	TargetResolutionMinutes    *int `json:"-" gorm:"type:integer"`
 	TargetBusinessHours        bool `json:"-" gorm:"not null;default:false"`
-	TargetPauseWhileWaiting    bool `json:"-" gorm:"not null;default:true"`
+	TargetPauseWhileWaiting    bool `json:"-" gorm:"not null"`
 	// AIInvolved marks conversations the AI handled first. Their clocks
 	// start at HumanSince, the handoff to the team; nil means the AI still
 	// owns the conversation or resolved it alone.
 	AIInvolved bool       `json:"-" gorm:"not null;default:false"`
 	HumanSince *time.Time `json:"-" gorm:"type:timestamptz"`
+	// AIHoldingSince is set while the AI answers again after a handoff; the
+	// team's targets wait until it hands back.
+	AIHoldingSince *time.Time `json:"-" gorm:"type:timestamptz"`
+	// TargetsFrom is the earliest time targets count from, set when a policy
+	// starts applying to a conversation that already existed.
+	TargetsFrom *time.Time `json:"-" gorm:"type:timestamptz"`
 
 	FirstResponseState      string     `json:"first_response_state" gorm:"not null;default:''"`
 	FirstResponseDueAt      *time.Time `json:"first_response_due_at,omitempty" gorm:"type:timestamptz"`
@@ -147,7 +158,9 @@ type SupportConversationSLAItem struct {
 // Summary converts the stored record to the API shape.
 func (r SupportConversationSLARecord) Summary() *SupportConversationSLA {
 	summary := &SupportConversationSLA{PolicyID: r.PolicyID, PolicyName: r.PolicyName, NextDueAt: r.NextDueAt, Breached: r.Breached,
-		AIHandling: r.AIInvolved && r.HumanSince == nil && r.DetachedAt == nil, Ended: r.DetachedAt != nil}
+		AIHandling: r.DetachedAt == nil && (r.AIHoldingSince != nil ||
+			r.AIInvolved && r.HumanSince == nil && (r.FirstResponseState == SupportSLAStatePaused || r.ResolutionState == SupportSLAStatePaused)),
+		Ended: r.DetachedAt != nil}
 	add := func(metric, state string, due, achieved, breached *time.Time) {
 		if state == "" {
 			return

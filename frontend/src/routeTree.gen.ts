@@ -61,6 +61,7 @@ import { Route as AuthenticatedWSlugSettingsWorkflowsRouteImport } from './route
 import { Route as AuthenticatedWSlugSettingsTeamsRouteImport } from './routes/_authenticated/w/$slug/settings/teams'
 import { Route as AuthenticatedWSlugSettingsTaskTemplatesRouteImport } from './routes/_authenticated/w/$slug/settings/task-templates'
 import { Route as AuthenticatedWSlugSettingsSystemStatusRouteImport } from './routes/_authenticated/w/$slug/settings/system-status'
+import { Route as AuthenticatedWSlugSettingsSupportWebhooksRouteImport } from './routes/_authenticated/w/$slug/settings/support-webhooks'
 import { Route as AuthenticatedWSlugSettingsSupportTranslationRouteImport } from './routes/_authenticated/w/$slug/settings/support-translation'
 import { Route as AuthenticatedWSlugSettingsSupportSlaRouteImport } from './routes/_authenticated/w/$slug/settings/support-sla'
 import { Route as AuthenticatedWSlugSettingsSupportAiAssistantRouteImport } from './routes/_authenticated/w/$slug/settings/support-ai-assistant'
@@ -425,6 +426,12 @@ const AuthenticatedWSlugSettingsSystemStatusRoute =
   AuthenticatedWSlugSettingsSystemStatusRouteImport.update({
     id: '/settings/system-status',
     path: '/settings/system-status',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedWSlugSettingsSupportWebhooksRoute =
+  AuthenticatedWSlugSettingsSupportWebhooksRouteImport.update({
+    id: '/settings/support-webhooks',
+    path: '/settings/support-webhooks',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugSettingsSupportTranslationRoute =
@@ -1013,6 +1020,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/settings/support-ai-assistant': typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
   '/w/$slug/settings/support-sla': typeof AuthenticatedWSlugSettingsSupportSlaRoute
   '/w/$slug/settings/support-translation': typeof AuthenticatedWSlugSettingsSupportTranslationRoute
+  '/w/$slug/settings/support-webhooks': typeof AuthenticatedWSlugSettingsSupportWebhooksRoute
   '/w/$slug/settings/system-status': typeof AuthenticatedWSlugSettingsSystemStatusRoute
   '/w/$slug/settings/task-templates': typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
   '/w/$slug/settings/teams': typeof AuthenticatedWSlugSettingsTeamsRoute
@@ -1141,6 +1149,7 @@ export interface FileRoutesByTo {
   '/w/$slug/settings/support-ai-assistant': typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
   '/w/$slug/settings/support-sla': typeof AuthenticatedWSlugSettingsSupportSlaRoute
   '/w/$slug/settings/support-translation': typeof AuthenticatedWSlugSettingsSupportTranslationRoute
+  '/w/$slug/settings/support-webhooks': typeof AuthenticatedWSlugSettingsSupportWebhooksRoute
   '/w/$slug/settings/system-status': typeof AuthenticatedWSlugSettingsSystemStatusRoute
   '/w/$slug/settings/task-templates': typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
   '/w/$slug/settings/teams': typeof AuthenticatedWSlugSettingsTeamsRoute
@@ -1276,6 +1285,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/settings/support-ai-assistant': typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
   '/_authenticated/w/$slug/settings/support-sla': typeof AuthenticatedWSlugSettingsSupportSlaRoute
   '/_authenticated/w/$slug/settings/support-translation': typeof AuthenticatedWSlugSettingsSupportTranslationRoute
+  '/_authenticated/w/$slug/settings/support-webhooks': typeof AuthenticatedWSlugSettingsSupportWebhooksRoute
   '/_authenticated/w/$slug/settings/system-status': typeof AuthenticatedWSlugSettingsSystemStatusRoute
   '/_authenticated/w/$slug/settings/task-templates': typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
   '/_authenticated/w/$slug/settings/teams': typeof AuthenticatedWSlugSettingsTeamsRoute
@@ -1413,6 +1423,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/support-ai-assistant'
     | '/w/$slug/settings/support-sla'
     | '/w/$slug/settings/support-translation'
+    | '/w/$slug/settings/support-webhooks'
     | '/w/$slug/settings/system-status'
     | '/w/$slug/settings/task-templates'
     | '/w/$slug/settings/teams'
@@ -1541,6 +1552,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/support-ai-assistant'
     | '/w/$slug/settings/support-sla'
     | '/w/$slug/settings/support-translation'
+    | '/w/$slug/settings/support-webhooks'
     | '/w/$slug/settings/system-status'
     | '/w/$slug/settings/task-templates'
     | '/w/$slug/settings/teams'
@@ -1675,6 +1687,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/settings/support-ai-assistant'
     | '/_authenticated/w/$slug/settings/support-sla'
     | '/_authenticated/w/$slug/settings/support-translation'
+    | '/_authenticated/w/$slug/settings/support-webhooks'
     | '/_authenticated/w/$slug/settings/system-status'
     | '/_authenticated/w/$slug/settings/task-templates'
     | '/_authenticated/w/$slug/settings/teams'
@@ -2099,6 +2112,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/system-status'
       fullPath: '/w/$slug/settings/system-status'
       preLoaderRoute: typeof AuthenticatedWSlugSettingsSystemStatusRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/settings/support-webhooks': {
+      id: '/_authenticated/w/$slug/settings/support-webhooks'
+      path: '/settings/support-webhooks'
+      fullPath: '/w/$slug/settings/support-webhooks'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsSupportWebhooksRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/settings/support-translation': {
@@ -2904,6 +2924,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugSettingsSupportAiAssistantRoute: typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
   AuthenticatedWSlugSettingsSupportSlaRoute: typeof AuthenticatedWSlugSettingsSupportSlaRoute
   AuthenticatedWSlugSettingsSupportTranslationRoute: typeof AuthenticatedWSlugSettingsSupportTranslationRoute
+  AuthenticatedWSlugSettingsSupportWebhooksRoute: typeof AuthenticatedWSlugSettingsSupportWebhooksRoute
   AuthenticatedWSlugSettingsSystemStatusRoute: typeof AuthenticatedWSlugSettingsSystemStatusRoute
   AuthenticatedWSlugSettingsTaskTemplatesRoute: typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
   AuthenticatedWSlugSettingsTeamsRoute: typeof AuthenticatedWSlugSettingsTeamsRoute
@@ -3002,6 +3023,8 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
     AuthenticatedWSlugSettingsSupportSlaRoute,
   AuthenticatedWSlugSettingsSupportTranslationRoute:
     AuthenticatedWSlugSettingsSupportTranslationRoute,
+  AuthenticatedWSlugSettingsSupportWebhooksRoute:
+    AuthenticatedWSlugSettingsSupportWebhooksRoute,
   AuthenticatedWSlugSettingsSystemStatusRoute:
     AuthenticatedWSlugSettingsSystemStatusRoute,
   AuthenticatedWSlugSettingsTaskTemplatesRoute:

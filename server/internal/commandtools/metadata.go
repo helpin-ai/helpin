@@ -872,6 +872,67 @@ var baseRuntimeTools = append(skillManagementTools, []RuntimeToolMetadata{
 		}, []string{"conversation_id", "subject"}),
 	},
 	{
+		CommandName: "support.set_conversation_status",
+		Alias:       "set_support_conversation_status",
+		Category:    "Support / Triage",
+		Description: "Change a support conversation's status: open, waiting_on_customer, resolved or spam. Resolving ends a snooze; customers may be asked to rate a resolved conversation.",
+		InputSchema: closedObjectSchema(map[string]any{
+			"conversation_id": optionalIDSchema("Support conversation ID."),
+			"status":          map[string]any{"type": "string", "enum": []string{"open", "waiting_on_customer", "resolved", "spam"}},
+		}, []string{"conversation_id", "status"}),
+	},
+	{
+		CommandName: "support.set_conversation_priority",
+		Alias:       "set_support_conversation_priority",
+		Category:    "Support / Triage",
+		Description: "Change a support conversation's priority. SLA policies that match the new priority apply to its open targets.",
+		InputSchema: closedObjectSchema(map[string]any{
+			"conversation_id": optionalIDSchema("Support conversation ID."),
+			"priority":        map[string]any{"type": "string", "enum": []string{"low", "medium", "high", "urgent"}},
+		}, []string{"conversation_id", "priority"}),
+	},
+	{
+		CommandName: "support.snooze_conversation",
+		Alias:       "snooze_support_conversation",
+		Category:    "Support / Triage",
+		Description: "Hide an open support conversation from the team's queues until a time. A customer reply wakes it earlier.",
+		InputSchema: closedObjectSchema(map[string]any{
+			"conversation_id": optionalIDSchema("Support conversation ID."),
+			"until":           map[string]any{"type": "string", "format": "date-time", "description": "RFC 3339 time between one minute and one year from now."},
+		}, []string{"conversation_id", "until"}),
+	},
+	{
+		CommandName: "support.unsnooze_conversation",
+		Alias:       "unsnooze_support_conversation",
+		Category:    "Support / Triage",
+		Description: "Return a snoozed support conversation to the team's queues now.",
+		InputSchema: requiredEntityIDSchema("conversation_id"),
+	},
+	{
+		CommandName: "support.reply_to_conversation",
+		Alias:       "reply_to_support_conversation",
+		Category:    "Support / Replies",
+		Description: "Send a public reply to the customer as the authenticated teammate. It is delivered like a reply from the inbox: in chat, by email, or both.",
+		InputSchema: closedObjectSchema(map[string]any{
+			"conversation_id": optionalIDSchema("Support conversation ID."),
+			"content":         map[string]any{"type": "string", "minLength": 1, "maxLength": 20000, "description": "Reply in Markdown."},
+			"delivery_mode":   map[string]any{"type": "string", "enum": []string{"chat_only", "chat_and_email", "email_only"}, "description": "Omit to deliver the way the inbox would by default."},
+		}, []string{"conversation_id", "content"}),
+	},
+	{
+		CommandName: "support.create_conversation",
+		Alias:       "create_support_conversation",
+		Category:    "Support / Replies",
+		Description: "Start a support conversation with a customer and email them the first message as the authenticated teammate.",
+		InputSchema: closedObjectSchema(map[string]any{
+			"customer_email": map[string]any{"type": "string", "format": "email", "maxLength": 320},
+			"customer_name":  map[string]any{"type": "string", "maxLength": 200},
+			"subject":        map[string]any{"type": "string", "minLength": 1, "maxLength": 500},
+			"content":        map[string]any{"type": "string", "minLength": 1, "maxLength": 20000, "description": "First message in Markdown."},
+			"inbox_id":       optionalIDSchema("Team inbox ID. Omit for the main inbox."),
+		}, []string{"customer_email", "subject", "content"}),
+	},
+	{
 		CommandName: "docs.write_document_content",
 		Alias:       "write_document_content",
 		Category:    "Docs",

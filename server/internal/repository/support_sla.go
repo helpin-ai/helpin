@@ -90,7 +90,8 @@ func (r *SupportSLARepository) SavePolicy(ctx context.Context, policy *model.Sup
 			"first_response_minutes": policy.FirstResponseMinutes, "next_response_minutes": policy.NextResponseMinutes,
 			"resolution_minutes": policy.ResolutionMinutes, "business_hours": policy.BusinessHours,
 			"pause_while_waiting": policy.PauseWhileWaiting, "active_since": policy.ActiveSince,
-			"updated_at": time.Now().UTC(),
+			"conditions_changed_at": policy.ConditionsChangedAt,
+			"updated_at":            time.Now().UTC(),
 		})
 	if result.Error != nil {
 		return fmt.Errorf("update SLA policy: %w", result.Error)
@@ -325,6 +326,16 @@ func (r *SupportSLARepository) SaveRecord(ctx context.Context, record *model.Sup
 	}).Create(record).Error
 	if err != nil {
 		return fmt.Errorf("save SLA record: %w", err)
+	}
+	return nil
+}
+
+// DelayWake moves a pending wake-up later, after a failed evaluation.
+func (r *SupportSLARepository) DelayWake(ctx context.Context, conversationID string, until time.Time) error {
+	if err := r.db.WithContext(ctx).Model(&model.SupportConversationSLARecord{}).
+		Where("conversation_id = ? AND wake_at IS NOT NULL AND wake_at < ?", conversationID, until).
+		Update("wake_at", until).Error; err != nil {
+		return fmt.Errorf("delay SLA wake-up: %w", err)
 	}
 	return nil
 }

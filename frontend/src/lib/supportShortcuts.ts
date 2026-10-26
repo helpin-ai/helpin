@@ -69,11 +69,23 @@ export function onSupportShortcut(handler: (detail: SupportShortcutDetail) => vo
   return () => window.removeEventListener(SUPPORT_SHORTCUT_EVENT, listener)
 }
 
-/** The neighbour of the current conversation in list order. */
-export function adjacentConversationId(ids: string[], currentId: string | null, direction: 'next' | 'previous'): string | null {
+/**
+ * The neighbour of the current conversation in list order. When the current
+ * conversation just left the list (resolved or snoozed), its place in the
+ * previous order decides where to continue.
+ */
+export function adjacentConversationId(ids: string[], currentId: string | null, direction: 'next' | 'previous', previousIds: string[] = []): string | null {
   if (ids.length === 0) return null
-  const index = currentId ? ids.indexOf(currentId) : -1
+  let index = currentId ? ids.indexOf(currentId) : -1
+  if (index === -1 && currentId) {
+    const previousIndex = previousIds.indexOf(currentId)
+    if (previousIndex !== -1) {
+      // The items after it moved up one place.
+      const nextIndex = direction === 'next' ? previousIndex : previousIndex - 1
+      return ids[Math.min(Math.max(nextIndex, 0), ids.length - 1)]
+    }
+  }
   if (index === -1) return direction === 'next' ? ids[0] : ids[ids.length - 1]
-  const nextIndex = direction === 'next' ? index + 1 : index - 1
-  return nextIndex >= 0 && nextIndex < ids.length ? ids[nextIndex] : null
+  index = direction === 'next' ? index + 1 : index - 1
+  return index >= 0 && index < ids.length ? ids[index] : null
 }

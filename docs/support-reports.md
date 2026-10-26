@@ -77,12 +77,19 @@ for a human, a teammate pausing the AI, or the first teammate reply,
 whichever comes first. If the AI resolves the conversation without a handoff,
 its targets are cancelled and stay out of hit rates.
 
+When a teammate hands a conversation back to the AI after the handoff:
+- the resolution clock pauses;
+- the open next-response cycle waits;
+- when the team takes the conversation back, that cycle starts again from
+  that moment.
+
 ### Results are final
 
 - A record keeps a snapshot of the targets the conversation started with.
   Editing a policy affects only conversations that start it afterwards.
-- A met target stays met, and a recorded breach stays recorded. Neither is
-  judged again, whatever happens to the policy.
+- A met target stays met, and a recorded breach stays recorded, even if a
+  message is deleted later. Neither is judged again, whatever happens to the
+  policy.
 - When a priority, inbox or channel change selects a different policy:
   - Recorded results carry over.
   - Targets still running are judged by the new policy from their original
@@ -91,7 +98,13 @@ its targets are cancelled and stay out of hit rates.
     result.
 - When no policy applies any more (the policy was disabled, deleted or stopped
   matching, or the workspace lost the SLA feature), running targets are
-  cancelled. The record stays, so reports keep its results.
+  cancelled. The record stays, so reports keep its results. A conversation
+  closed while no policy applies records nothing more.
+- When a policy applies again after none did, its targets count from that
+  moment, so a break in SLA tracking never back-dates breaches.
+- When a policy's conditions change, a conversation that starts matching
+  because of the change is measured from the time of the change. It picks up
+  the policy at its next update.
 - A policy applies only to conversations created after it was enabled.
   Re-enabling it moves that point forward.
 - Reopening a resolved conversation keeps its resolution result. Response

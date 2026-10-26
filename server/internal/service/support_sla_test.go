@@ -301,3 +301,62 @@ func TestSupportSLAWorkLease(t *testing.T) {
 		t.Fatalf("expired leases: %+v %v", expired, err)
 	}
 }
+
+func TestSupportSLAFalseSettingsPersist(t *testing.T) {
+	sla, db, workspaceID, userID, start := newSLATestService(t)
+	ctx := context.Background()
+	disabled, noPause := false, false
+	policy, err := sla.CreatePolicy(ctx, workspaceID, userID, model.SupportSLAPolicyRequest{Name: "Off", Enabled: &disabled, PauseWhileWaiting: &noPause, ResolutionMinutes: intPtr(60)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := sla.repo.GetPolicy(ctx, workspaceID, policy.ID)
+	if err != nil || stored.Enabled || stored.PauseWhileWaiting {
+		t.Fatalf("false settings saved as true: %+v %v", stored, err)
+	}
+	record := model.SupportConversationSLARecord{ConversationID: uuid.NewString(), WorkspaceID: workspaceID, PolicyID: &policy.ID, TargetResolutionMinutes: intPtr(60)}
+	for i := 0; i < 2; i++ {
+		if err := sla.repo.SaveRecord(ctx, &record); err != nil {
+			t.Fatal(err)
+		}
+		if got := slaRecord(t, db, record.ConversationID); got.TargetPauseWhileWaiting {
+			t.Fatalf("save %d stored pause_while_waiting as true", i+1)
+		}
+	}
+	_ = start
+}
+
+func TestSupportSLABroadenedConditionsDoNotBackdate(t *testing.T) {
+	sla, db, workspaceID, userID, start := newSLATestService(t)
+	ctx := context.Background()
+	policy, err := sla.CreatePolicy(ctx, workspaceID, userID, model.SupportSLAPolicyRequest{Name: "Urgent", Priorities: []string{"urgent"}, FirstResponseMinutes: intPtr(30)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversation := &model.SupportConversation{ID: uuid.NewString(), WorkspaceID: workspaceID, DisplayID: 1, Subject: "Help",
+		Status: model.SupportConversationStatusOpen, Priority: "medium", Channel: "widget", CreatedAt: start.Add(time.Second)}
+	if err := db.Create(conversation).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.NewSupportMessageRepository(db).Create(ctx, &model.SupportMessage{WorkspaceID: workspaceID, ConversationID: conversation.ID,
+		SenderType: "customer", MessageType: "reply", Content: "Hi", CreatedAt: start.Add(time.Second)}); err != nil {
+		t.Fatal(err)
+	}
+	processSLAAt(t, sla, workspaceID, conversation.ID, start.Add(time.Minute))
+	var count int64
+	db.Model(&model.SupportConversationSLARecord{}).Where("conversation_id = ?", conversation.ID).Count(&count)
+	if count != 0 {
+		t.Fatal("a medium conversation matched the urgent policy")
+	}
+	// Two hours later the policy is widened to every priority.
+	changedAt := start.Add(2 * time.Hour)
+	sla.now = func() time.Time { return changedAt }
+	if _, err := sla.UpdatePolicy(ctx, workspaceID, policy.ID, model.SupportSLAPolicyRequest{Name: "Urgent", FirstResponseMinutes: intPtr(30)}); err != nil {
+		t.Fatal(err)
+	}
+	processSLAAt(t, sla, workspaceID, conversation.ID, changedAt.Add(time.Minute))
+	record := slaRecord(t, db, conversation.ID)
+	if record.Breached || record.FirstResponseState != model.SupportSLAStatePending || !record.FirstResponseDueAt.Equal(changedAt.Add(30*time.Minute)) {
+		t.Fatalf("widened policy back-dated the target: %+v", record)
+	}
+}

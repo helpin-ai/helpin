@@ -39,6 +39,7 @@ import {
   ServerStack01Icon,
   UserSharingIcon,
   Timer01Icon,
+  WebhookIcon,
 } from '@hugeicons/core-free-icons';
 
 export type IconComponent = FC<{ className?: string; style?: CSSProperties }>;
@@ -78,6 +79,7 @@ const Autonomy = hi(SlidersHorizontalIcon);
 const ChatWidget = hi(BubbleChatIcon);
 const CustomerPortal = hi(Globe02Icon);
 const SLAPolicies = hi(Timer01Icon);
+const Webhooks = hi(WebhookIcon);
 const InboxesRouting = hi(Route01Icon);
 const Access = hi(Shield01Icon);
 const MCP = hi(PlugSocketIcon);
@@ -120,6 +122,7 @@ export type SettingsSection =
   | 'chat-general'
   | 'customer-portal'
   | 'support-sla'
+  | 'support-webhooks'
   | 'inboxes-routing';
 
 export type SettingsRouteSection = SettingsSection | 'ai-connections' | 'profile' | 'security' | 'notifications' | 'account' | 'git-connections';
@@ -394,6 +397,15 @@ const allSettingsSections: SettingsSectionMeta[] = [
     keywords: ['sla', 'service level', 'response time', 'targets', 'breach'],
     icon: SLAPolicies,
     group: 'Support',
+  },
+  {
+    id: 'support-webhooks',
+    label: 'Webhooks',
+    description: 'Send signed support events to your own systems as they happen.',
+    keywords: ['webhook', 'integration', 'events', 'callback', 'zapier', 'api'],
+    icon: Webhooks,
+    group: 'Support',
+    requiredPermission: 'support.admin',
   },
   {
     id: 'support-ai-assistant',

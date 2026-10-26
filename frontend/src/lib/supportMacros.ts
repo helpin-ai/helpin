@@ -62,3 +62,18 @@ export function compactMacroActions(actions: SupportConversationActions): Suppor
   if (actions.snooze_minutes) result.snooze_minutes = actions.snooze_minutes
   return result
 }
+
+function plainMacroText(text: string): string {
+  return text.replace(/[*_`#>~[\]()!|-]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase()
+}
+
+/** A short piece of a macro's inserted text that identifies it in the editor. */
+export function macroTextMarker(insertedText: string): string {
+  return plainMacroText(insertedText).slice(0, 40)
+}
+
+/** Whether the editor still holds the text a macro inserted. */
+export function macroTextPresent(editorText: string, marker: string): boolean {
+  if (!marker) return false
+  return plainMacroText(editorText).includes(marker)
+}

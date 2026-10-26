@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useState, memo, useEffect, type ReactNode, type UIEvent } from 'react';
+import { useMemo, useCallback, useState, memo, useEffect, useRef, type ReactNode, type UIEvent } from 'react';
 import {
   CheckmarkCircle02Icon,
   FilterHorizontalIcon,
@@ -348,11 +348,19 @@ export function ConversationList({
   }, [conversationListFilters.aiStates, conversationListFilters.mailboxIds, conversationListFilters.slaBreached, conversationListFilters.sort, conversationListFilters.states, navFilter, selectedMailboxId, userId]);
   const filteredConversations = useMemo(() => filterConversations(conversations), [conversations, filterConversations]);
 
-  // J and K move through the list in its current order.
+  // J and K move through the list in its current order. The previous order
+  // tells where to continue after the open conversation leaves the list.
+  const previousListIdsRef = useRef<string[]>([]);
+  const currentListIdsRef = useRef<string[]>([]);
+  useEffect(() => {
+    previousListIdsRef.current = currentListIdsRef.current;
+    currentListIdsRef.current = filteredConversations.map((conversation) => conversation.id);
+  }, [filteredConversations]);
   useEffect(() => onSupportShortcut((detail) => {
     if (detail.action !== 'next' && detail.action !== 'previous') return;
     detail.handled = true;
-    const id = adjacentConversationId(filteredConversations.map((conversation) => conversation.id), detail.conversationId, detail.action);
+    const ids = filteredConversations.map((conversation) => conversation.id);
+    const id = adjacentConversationId(ids, detail.conversationId, detail.action, previousListIdsRef.current);
     if (!id) return;
     handleSelect(id);
     requestAnimationFrame(() => {

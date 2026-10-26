@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compactMacroActions, describeMacroActions, hasMacroActions } from '../supportMacros'
+import { compactMacroActions, describeMacroActions, hasMacroActions, macroTextMarker, macroTextPresent } from '../supportMacros'
 
 describe('macro helpers', () => {
   it('detects whether a shortcut has actions', () => {
@@ -23,5 +23,18 @@ describe('macro helpers', () => {
 
   it('drops unset fields', () => {
     expect(compactMacroActions({ status: undefined, add_tag_ids: [], priority: 'high' })).toEqual({ priority: 'high' })
+  })
+})
+
+describe('macroTextPresent', () => {
+  it('finds the inserted text despite formatting and spacing', () => {
+    const marker = macroTextMarker('**Thanks!** I have asked billing to\n reissue the invoice.')
+    expect(macroTextPresent('Hi Ada, Thanks! I have asked billing to reissue the invoice. Best', marker)).toBe(true)
+  })
+
+  it('notices when the inserted text was deleted', () => {
+    const marker = macroTextMarker('I have asked billing to reissue the invoice.')
+    expect(macroTextPresent('Something else entirely', marker)).toBe(false)
+    expect(macroTextPresent('anything', '')).toBe(false)
   })
 })

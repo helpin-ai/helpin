@@ -252,6 +252,8 @@ export const queryKeys = {
     tags: (wsId: string) => ['support', wsId, 'tags'] as const,
     reportOverview: (wsId: string, params: unknown) => ['support', wsId, 'reports', 'overview', params] as const,
     slaPolicies: (wsId: string) => ['support', wsId, 'sla-policies'] as const,
+    webhooks: (wsId: string) => ['support', wsId, 'webhooks'] as const,
+    webhookDeliveries: (wsId: string, webhookId: string) => ['support', wsId, 'webhooks', webhookId, 'deliveries'] as const,
   },
 
   docs: {

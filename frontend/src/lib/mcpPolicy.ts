@@ -10,8 +10,12 @@ const MCP_WRITE_SCOPE_BY_TOOLSET: Readonly<Record<string, string>> = {
 // it is never added automatically when writes are enabled for a toolset.
 export const MCP_DOCS_PUBLISH_SCOPE = 'helpin.docs.publish';
 
+// Sending replies reaches customers, so it is granted only on purpose, like
+// publishing.
+export const MCP_SUPPORT_REPLY_SCOPE = 'helpin.support.reply';
+
 export function isMCPWriteScope(scope: string): boolean {
-  return scope.endsWith('.write') || scope === 'helpin.agents.run' || scope === MCP_DOCS_PUBLISH_SCOPE;
+  return scope.endsWith('.write') || scope === 'helpin.agents.run' || scope === MCP_DOCS_PUBLISH_SCOPE || scope === MCP_SUPPORT_REPLY_SCOPE;
 }
 
 export function hasMCPWriteScope(scopes: string[]): boolean {
@@ -22,7 +26,8 @@ export function hasMCPWriteGrant(scopes: string[], toolsets: string[]): boolean 
   return toolsets.some((toolset) => {
     const writeScope = MCP_WRITE_SCOPE_BY_TOOLSET[toolset];
     if (writeScope && scopes.includes(writeScope)) return true;
-    return toolset === 'docs' && scopes.includes(MCP_DOCS_PUBLISH_SCOPE);
+    return (toolset === 'docs' && scopes.includes(MCP_DOCS_PUBLISH_SCOPE))
+      || (toolset === 'support' && scopes.includes(MCP_SUPPORT_REPLY_SCOPE));
   });
 }
 
@@ -101,7 +106,15 @@ export function serviceAccountWriteScopes(policy: MCPServiceAccountPolicy, tools
  * allows, plus the allowed write scopes for the selected toolsets when the
  * account may update records.
  */
-export function serviceAccountScopes(policy: MCPServiceAccountPolicy, toolsets: string[], allowWrites: boolean): string[] {
+export function serviceAccountScopes(policy: MCPServiceAccountPolicy, toolsets: string[], allowWrites: boolean, allowReplies = false): string[] {
   const readScopes = policy.allowed_scopes.filter((scope) => !isMCPWriteScope(scope));
-  return allowWrites ? [...readScopes, ...serviceAccountWriteScopes(policy, toolsets)] : readScopes;
+  if (!allowWrites) return readScopes;
+  const scopes = [...readScopes, ...serviceAccountWriteScopes(policy, toolsets)];
+  if (allowReplies && canServiceAccountReply(policy, toolsets)) scopes.push(MCP_SUPPORT_REPLY_SCOPE);
+  return scopes;
+}
+
+/** Whether a new automation account may be allowed to send support replies. */
+export function canServiceAccountReply(policy: MCPServiceAccountPolicy, toolsets: string[]): boolean {
+  return !policy.enforce_read_only && toolsets.includes('support') && policy.allowed_scopes.includes(MCP_SUPPORT_REPLY_SCOPE);
 }

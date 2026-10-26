@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -14,7 +14,8 @@ import {
   type SLATargetDraft,
   type SLATargetUnit,
 } from '@/lib/supportSLAPolicyForm'
-import { cn } from '@/lib/utils'
+import { toggleListValue } from '@/lib/toggleListValue'
+import { SettingsPill } from '../SettingsPill'
 
 const PRIORITIES = [
   { value: 'urgent', label: 'Urgent' },
@@ -30,26 +31,6 @@ const CHANNELS = [
   { value: 'api', label: 'API' },
   { value: 'internal', label: 'Started by team' },
 ]
-
-function Pill({ selected, onClick, children }: { selected: boolean; onClick: () => void; children: ReactNode }) {
-  return (
-    <button
-      type="button"
-      aria-pressed={selected}
-      onClick={onClick}
-      className={cn(
-        'rounded-full border px-2.5 py-1 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary',
-        selected ? 'border-foreground bg-foreground text-background' : 'border-border text-muted-foreground hover:bg-muted',
-      )}
-    >
-      {children}
-    </button>
-  )
-}
-
-function toggle(list: string[], value: string): string[] {
-  return list.includes(value) ? list.filter((item) => item !== value) : [...list, value]
-}
 
 function TargetRow({
   id,
@@ -183,7 +164,7 @@ function SupportSLAPolicyForm({
           <div className="text-xs font-medium text-muted-foreground">Priority</div>
           <div className="flex flex-wrap gap-1.5">
             {PRIORITIES.map((option) => (
-              <Pill key={option.value} selected={draft.priorities.includes(option.value)} onClick={() => update({ priorities: toggle(draft.priorities, option.value) })}>{option.label}</Pill>
+              <SettingsPill key={option.value} selected={draft.priorities.includes(option.value)} onClick={() => update({ priorities: toggleListValue(draft.priorities, option.value) })}>{option.label}</SettingsPill>
             ))}
           </div>
         </div>
@@ -191,7 +172,7 @@ function SupportSLAPolicyForm({
           <div className="text-xs font-medium text-muted-foreground">Inbox</div>
           <div className="flex flex-wrap gap-1.5">
             {[{ id: 'shared', name: 'Main inbox' }, ...inboxes].map((inbox) => (
-              <Pill key={inbox.id} selected={draft.mailboxIds.includes(inbox.id)} onClick={() => update({ mailboxIds: toggle(draft.mailboxIds, inbox.id) })}>{inbox.name}</Pill>
+              <SettingsPill key={inbox.id} selected={draft.mailboxIds.includes(inbox.id)} onClick={() => update({ mailboxIds: toggleListValue(draft.mailboxIds, inbox.id) })}>{inbox.name}</SettingsPill>
             ))}
           </div>
         </div>
@@ -199,7 +180,7 @@ function SupportSLAPolicyForm({
           <div className="text-xs font-medium text-muted-foreground">Channel</div>
           <div className="flex flex-wrap gap-1.5">
             {CHANNELS.map((option) => (
-              <Pill key={option.value} selected={draft.channels.includes(option.value)} onClick={() => update({ channels: toggle(draft.channels, option.value) })}>{option.label}</Pill>
+              <SettingsPill key={option.value} selected={draft.channels.includes(option.value)} onClick={() => update({ channels: toggleListValue(draft.channels, option.value) })}>{option.label}</SettingsPill>
             ))}
           </div>
         </div>

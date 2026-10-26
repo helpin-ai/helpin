@@ -197,3 +197,92 @@ func TestDetachSupportSLARecord(t *testing.T) {
 		t.Fatalf("detached: %+v", detached)
 	}
 }
+
+func TestEvaluateSupportSLAReturnToAIPausesTargets(t *testing.T) {
+	policy := slaPolicy(nil, intPtr(30), intPtr(120))
+	targets := supportSLATargetsFromPolicy(policy)
+	clock := newSupportSLAClock(model.SupportInboxSettings{}, false)
+	open := slaConversation(model.SupportConversationStatusOpen)
+	handoff := timePtr(slaStart.Add(10 * time.Minute))
+	replies := []supportSLAReply{reply(0, "customer"), reply(15, "user"), reply(20, "customer")}
+	before := evaluateSupportSLA(supportSLAInput{Targets: targets, Conversation: open, Replies: replies, Clock: clock,
+		Now: slaStart.Add(21 * time.Minute), AIInvolved: true, HumanSince: handoff})
+	// A teammate hands the conversation back to the AI at 22m; the trigger
+	// evaluates it then, and the wake-up again much later.
+	handedBack := evaluateSupportSLA(supportSLAInput{Targets: targets, Conversation: open, Replies: replies, Clock: clock,
+		Now: slaStart.Add(22 * time.Minute), Previous: &before.Record, AIInvolved: true, HumanSince: handoff, AIOwnsNow: true})
+	holding := evaluateSupportSLA(supportSLAInput{Targets: targets, Conversation: open, Replies: replies, Clock: clock,
+		Now: slaStart.Add(200 * time.Minute), Previous: &handedBack.Record, AIInvolved: true, HumanSince: handoff, AIOwnsNow: true})
+	r := holding.Record
+	if len(holding.NewBreaches) != 0 || r.Breached || r.AIHoldingSince == nil || r.ResolutionState != model.SupportSLAStatePaused ||
+		r.NextResponseState != model.SupportSLAStatePaused || r.NextDueAt != nil {
+		t.Fatalf("targets ran while the AI answered again: %+v %v", r, holding.NewBreaches)
+	}
+	if summary := r.Summary(); summary == nil || !summary.AIHandling {
+		t.Fatalf("summary should say the AI is handling: %+v", summary)
+	}
+	// The team takes it back at 300m: the open cycle runs from then.
+	resumed := evaluateSupportSLA(supportSLAInput{Targets: targets, Conversation: open, Replies: replies, Clock: clock,
+		Now: slaStart.Add(300 * time.Minute), Previous: &r, AIInvolved: true, HumanSince: handoff, Resumed: true})
+	if len(resumed.NewBreaches) != 0 || resumed.Record.AIHoldingSince != nil ||
+		!resumed.Record.NextResponseDueAt.Equal(slaStart.Add(330*time.Minute)) || resumed.Record.NextResponseState != model.SupportSLAStatePending {
+		t.Fatalf("after the hand-back: %+v %v", resumed.Record, resumed.NewBreaches)
+	}
+	// Resolution excludes the time the AI held the conversation.
+	if !resumed.Record.ResolutionDueAt.Equal(slaStart.Add(408 * time.Minute)) || resumed.Record.ResolutionState != model.SupportSLAStatePending {
+		t.Fatalf("resolution due did not move past the AI hold: %v", resumed.Record.ResolutionDueAt)
+	}
+}
+
+func TestEvaluateSupportSLALateMessageAfterSwitchIsJudged(t *testing.T) {
+	clock := newSupportSLAClock(model.SupportInboxSettings{}, false)
+	open := slaConversation(model.SupportConversationStatusOpen)
+	replies := []supportSLAReply{reply(0, "customer"), reply(5, "user")}
+	before := evalSLAPolicy(slaPolicy(nil, intPtr(240), nil), open, replies, clock, slaStart.Add(20*time.Minute), nil)
+	urgent := slaPolicy(nil, intPtr(30), nil)
+	urgent.ID = "urgent"
+	switched := slaSwitch(urgent, open, replies, slaStart.Add(20*time.Minute), before.Record)
+	// A customer message stamped just before the switch commits afterwards.
+	late := append(append([]supportSLAReply{}, replies...), supportSLAReply{At: slaStart.Add(20*time.Minute - time.Second), SenderType: "customer"})
+	pending := evalSLAPolicy(urgent, open, late, clock, slaStart.Add(25*time.Minute), &switched.Record)
+	if pending.Record.Breached || pending.Record.NextResponseState != model.SupportSLAStatePending ||
+		!pending.Record.NextResponseDueAt.Equal(slaStart.Add(50*time.Minute)) {
+		t.Fatalf("late message before the switch: %+v", pending.Record)
+	}
+	overdue := evalSLAPolicy(urgent, open, late, clock, slaStart.Add(60*time.Minute), &pending.Record)
+	if !overdue.Record.Breached || overdue.Record.NextResponseBreaches != 1 || len(overdue.NewBreaches) != 1 {
+		t.Fatalf("the late cycle's breach was not recorded: %+v %v", overdue.Record, overdue.NewBreaches)
+	}
+}
+
+func TestEvaluateSupportSLAReattachStartsFresh(t *testing.T) {
+	clock := newSupportSLAClock(model.SupportInboxSettings{}, false)
+	open := slaConversation(model.SupportConversationStatusOpen)
+	replies := []supportSLAReply{reply(0, "customer")}
+	policy := slaPolicy(intPtr(60), nil, intPtr(240))
+	before := evalSLAPolicy(policy, open, replies, clock, slaStart.Add(10*time.Minute), nil)
+	detached := detachSupportSLARecord(before.Record, slaStart.Add(10*time.Minute))
+	reattachAt := slaStart.Add(72 * time.Hour)
+	again := evaluateSupportSLA(supportSLAInput{Targets: supportSLATargetsFromPolicy(policy), Conversation: open, Replies: replies, Clock: clock,
+		Now: reattachAt, Previous: &detached, Switched: true, AppliedAt: &reattachAt, TargetsFrom: &reattachAt})
+	if len(again.NewBreaches) != 0 || again.Record.Breached || !again.Record.FirstResponseDueAt.Equal(reattachAt.Add(time.Hour)) ||
+		!again.Record.ResolutionDueAt.Equal(reattachAt.Add(4*time.Hour)) {
+		t.Fatalf("re-attaching back-dated targets: %+v %v", again.Record, again.NewBreaches)
+	}
+}
+
+func TestEvaluateSupportSLADeletedMessageKeepsBreach(t *testing.T) {
+	clock := newSupportSLAClock(model.SupportInboxSettings{}, false)
+	open := slaConversation(model.SupportConversationStatusOpen)
+	policy := slaPolicy(nil, intPtr(30), nil)
+	replies := []supportSLAReply{reply(0, "customer"), reply(5, "user"), reply(10, "customer"), reply(90, "user")}
+	breached := evalSLAPolicy(policy, open, replies, clock, slaStart.Add(100*time.Minute), nil)
+	if breached.Record.NextResponseBreaches != 1 {
+		t.Fatalf("setup: %+v", breached.Record)
+	}
+	withoutMessage := []supportSLAReply{reply(0, "customer"), reply(5, "user"), reply(90, "user")}
+	after := evalSLAPolicy(policy, open, withoutMessage, clock, slaStart.Add(110*time.Minute), &breached.Record)
+	if after.Record.NextResponseBreaches != 1 || after.Record.NextResponseState != model.SupportSLAStateBreached {
+		t.Fatalf("deleting a message erased a recorded breach: %+v", after.Record)
+	}
+}

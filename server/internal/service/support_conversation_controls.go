@@ -133,7 +133,9 @@ func supportPriorityLabel(priority string) string {
 func (s *SupportInboxService) SnoozeConversation(ctx context.Context, workspaceID, conversationID string, until time.Time, actorID string) (*model.SupportConversation, error) {
 	now := time.Now().UTC()
 	until = until.UTC().Truncate(time.Second)
-	if until.Before(now.Add(supportSnoozeMinimum)) || until.After(now.Add(supportSnoozeMaximum)) {
+	// A few seconds of slack lets "snooze for one minute" pass after the
+	// time is rounded to the second and the request travels.
+	if until.Before(now.Add(supportSnoozeMinimum-5*time.Second)) || until.After(now.Add(supportSnoozeMaximum)) {
 		return nil, ErrSupportInvalidSnooze
 	}
 	conversation, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)

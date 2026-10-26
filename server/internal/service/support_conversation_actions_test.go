@@ -176,3 +176,59 @@ func TestApplyBulkReportsEachConversation(t *testing.T) {
 		t.Fatalf("limit: %v", err)
 	}
 }
+
+func TestSupportActionsReviewFixes(t *testing.T) {
+	f := newSupportActionsFixture(t)
+	conversationID := f.conversation(t, 1)
+	billing := f.tag(t, "Billing")
+
+	// IDs compare in canonical form, so the same tag cannot be added and
+	// removed by changing its case.
+	upper := strings.ToUpper(billing)
+	if _, err := NormalizeSupportConversationActions(model.SupportConversationActions{AddTagIDs: []string{billing}, RemoveTagIDs: []string{upper}}); err == nil {
+		t.Fatal("add and remove of the same tag in different case was accepted")
+	}
+	normalized, err := NormalizeSupportConversationActions(model.SupportConversationActions{AddTagIDs: []string{upper, billing}})
+	if err != nil || len(normalized.AddTagIDs) != 1 || normalized.AddTagIDs[0] != billing {
+		t.Fatalf("canonical tags: %+v %v", normalized.AddTagIDs, err)
+	}
+	if _, err := NormalizeSupportConversationActions(model.SupportConversationActions{AddTagIDs: []string{"urn:uuid:" + billing}}); err == nil {
+		t.Fatal("a non-standard UUID form was accepted")
+	}
+
+	// A one-minute snooze is accepted.
+	result := f.actions.Apply(f.ctx, f.workspaceID, conversationID, model.SupportConversationActions{SnoozeMinutes: intPtr(1)}, f.userID)
+	if result.Error != "" {
+		t.Fatalf("one-minute snooze: %+v", result)
+	}
+
+	// Oversized requests are refused before any work.
+	tooMany := make([]string, 2*model.SupportBulkActionLimit+1)
+	for i := range tooMany {
+		tooMany[i] = uuid.NewString()
+	}
+	if _, err := f.actions.ApplyBulk(f.ctx, f.workspaceID, model.SupportBulkActionRequest{ConversationIDs: tooMany, Actions: model.SupportConversationActions{Priority: strRef("high")}}, f.userID); !errors.Is(err, ErrSupportActionsInvalid) {
+		t.Fatalf("oversized bulk request: %v", err)
+	}
+
+	// Macros cannot reference tags, inboxes or teammates that do not exist.
+	for name, actions := range map[string]model.SupportConversationActions{
+		"missing tag":      {AddTagIDs: []string{uuid.NewString()}},
+		"missing inbox":    {MailboxID: strRef(uuid.NewString())},
+		"missing assignee": {AssignUserID: strRef(uuid.NewString())},
+	} {
+		if _, err := f.inbox.CreateCannedResponse(f.ctx, f.workspaceID, model.CannedResponseRequest{ShortCode: "!x-" + strings.ReplaceAll(name, " ", "-"), Actions: &actions}, f.userID); !errors.Is(err, ErrCannedResponseInvalid) {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+
+	// An action-only macro can be renamed without resending its actions.
+	macro, err := f.inbox.CreateCannedResponse(f.ctx, f.workspaceID, model.CannedResponseRequest{ShortCode: "!triage", Actions: &model.SupportConversationActions{Priority: strRef("high")}}, f.userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	renamed, err := f.inbox.UpdateCannedResponse(f.ctx, f.workspaceID, macro.ID, model.CannedResponseRequest{ShortCode: "!triage-high"})
+	if err != nil || renamed.ShortCode != "!triage-high" || renamed.Actions.Empty() {
+		t.Fatalf("rename action-only macro: %+v %v", renamed, err)
+	}
+}

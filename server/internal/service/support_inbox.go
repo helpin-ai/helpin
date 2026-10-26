@@ -84,10 +84,17 @@ type SupportInboxService struct {
 	supportEventRecorder         SupportEventRecorder
 	entitlementSvc               EntitlementPolicy
 	slaService                   *SupportSLAService
+	webhooks                     *WebhookService
 	routeDomain                  string
 }
 
 // SetSLAService attaches SLA status to listed and opened conversations.
+// SetWebhookService lets the inbox emit events the database cannot see.
+func (s *SupportInboxService) SetWebhookService(webhooks *WebhookService) *SupportInboxService {
+	s.webhooks = webhooks
+	return s
+}
+
 func (s *SupportInboxService) SetSLAService(slaService *SupportSLAService) *SupportInboxService {
 	s.slaService = slaService
 	return s

@@ -81,6 +81,12 @@ func (s *SupportInboxService) SubmitConversationCSAT(ctx context.Context, submis
 		return summary, nil
 	}
 	s.recordCSATTimelineEvent(ctx, conversation, saved, previous)
+	s.webhooks.Emit(ctx, conversation.WorkspaceID, model.WebhookEventCSATSubmitted, conversation.ID, map[string]any{
+		"csat": map[string]any{
+			"rating": saved.Rating, "comment": saved.Comment, "channel": saved.Channel,
+			"resolved_by": saved.ResolvedBy, "submitted_at": saved.SubmittedAt, "updated": previous != nil,
+		},
+	})
 	if s.wsPublisher != nil {
 		s.wsPublisher.Publish(websocket.Event{
 			Action: "updated", Entity: "support_conversation", EntityID: conversation.ID,

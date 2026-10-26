@@ -39,19 +39,40 @@ func invalidSupportActions(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrSupportActionsInvalid, fmt.Sprintf(format, args...))
 }
 
+// normalizeActionIDs validates IDs and returns them in canonical form
+// without duplicates, so equal IDs compare equal however they were written.
 func normalizeActionIDs(values []string, label string) ([]string, error) {
 	result := []string{}
+	seen := make(map[string]bool, len(values))
 	for _, value := range values {
 		value = strings.TrimSpace(value)
-		if value == "" || slices.Contains(result, value) {
+		if value == "" {
 			continue
 		}
-		if _, err := uuid.Parse(value); err != nil {
+		canonical, err := canonicalActionID(value)
+		if err != nil {
 			return nil, invalidSupportActions("%s %q is not an ID", label, value)
 		}
-		result = append(result, value)
+		if seen[canonical] {
+			continue
+		}
+		seen[canonical] = true
+		result = append(result, canonical)
 	}
 	return result, nil
+}
+
+// canonicalActionID accepts only the standard 36-character UUID form and
+// returns it in lower case.
+func canonicalActionID(value string) (string, error) {
+	if len(value) != 36 {
+		return "", errors.New("not a UUID")
+	}
+	parsed, err := uuid.Parse(value)
+	if err != nil {
+		return "", err
+	}
+	return parsed.String(), nil
 }
 
 // NormalizeSupportConversationActions validates and tidies a set of actions.
@@ -75,9 +96,11 @@ func NormalizeSupportConversationActions(actions model.SupportConversationAction
 	if actions.AssignUserID != nil {
 		assignee := strings.TrimSpace(*actions.AssignUserID)
 		if assignee != "" {
-			if _, err := uuid.Parse(assignee); err != nil {
+			canonical, err := canonicalActionID(assignee)
+			if err != nil {
 				return actions, invalidSupportActions("assignee is not a user ID")
 			}
+			assignee = canonical
 		}
 		actions.AssignUserID = &assignee
 	}
@@ -87,9 +110,11 @@ func NormalizeSupportConversationActions(actions model.SupportConversationAction
 			mailbox = "shared"
 		}
 		if mailbox != "shared" {
-			if _, err := uuid.Parse(mailbox); err != nil {
+			canonical, err := canonicalActionID(mailbox)
+			if err != nil {
 				return actions, invalidSupportActions("inbox is not an ID")
 			}
+			mailbox = canonical
 		}
 		actions.MailboxID = &mailbox
 	}
@@ -235,6 +260,10 @@ func (s *SupportConversationActionService) ApplyMacro(ctx context.Context, works
 // ApplyBulk runs one set of actions on up to model.SupportBulkActionLimit
 // conversations, reporting each result.
 func (s *SupportConversationActionService) ApplyBulk(ctx context.Context, workspaceID string, req model.SupportBulkActionRequest, actorID string) (*model.SupportBulkActionResponse, error) {
+	// Bound the work before looking at the IDs.
+	if len(req.ConversationIDs) > 2*model.SupportBulkActionLimit {
+		return nil, invalidSupportActions("choose at most %d conversations at a time", model.SupportBulkActionLimit)
+	}
 	ids, err := normalizeActionIDs(req.ConversationIDs, "conversation")
 	if err != nil {
 		return nil, err
@@ -255,7 +284,10 @@ func (s *SupportConversationActionService) ApplyBulk(ctx context.Context, worksp
 	response := &model.SupportBulkActionResponse{Results: make([]model.SupportActionResult, 0, len(ids))}
 	for _, id := range ids {
 		if ctx.Err() != nil {
-			return nil, ctx.Err()
+			// Report what already changed rather than failing the batch.
+			response.Results = append(response.Results, model.SupportActionResult{ConversationID: id, Applied: []string{}, Error: "The request was cancelled."})
+			response.Failed++
+			continue
 		}
 		result := s.Apply(ctx, workspaceID, id, actions, actorID)
 		if result.Error == "" {

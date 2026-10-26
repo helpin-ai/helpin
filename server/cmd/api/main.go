@@ -1658,6 +1658,11 @@ func main() {
 	supportSLAService := service.NewSupportSLAService(repository.NewSupportSLARepository(db), supportInboxService).
 		SetNotificationService(notificationService).SetEntitlementService(entitlementService)
 	supportInboxService.SetSLAService(supportSLAService)
+	webhookService := service.NewWebhookService(repository.NewWebhookRepository(db), supportInboxService, service.WebhookConfig{
+		EncryptionKey: resolveWebhookEncryptionKey(cfg), AllowPrivateNetworks: cfg.WebhooksAllowPrivateNetworks, AppBaseURL: cfg.AppBaseURL,
+	}).SetSLAService(supportSLAService)
+	supportInboxService.SetWebhookService(webhookService)
+	supportSLAService.SetWebhookService(webhookService)
 	supportInboxTriageService.SetEntitlementService(entitlementService)
 	agentService.SetEntitlementService(entitlementService)
 	ruleEngine.SetEntitlementService(entitlementService)
@@ -2011,9 +2016,10 @@ func main() {
 			pmCommentService,
 			jwtManager,
 		),
-		SupportReports: handler.NewSupportReportsHandler(service.NewSupportReportService(supportConversationRepo)),
-		SupportSLA:     handler.NewSupportSLAHandler(supportSLAService),
-		SupportActions: handler.NewSupportConversationActionsHandler(service.NewSupportConversationActionService(supportInboxService, supportTagService)),
+		SupportReports:  handler.NewSupportReportsHandler(service.NewSupportReportService(supportConversationRepo)),
+		SupportSLA:      handler.NewSupportSLAHandler(supportSLAService),
+		SupportWebhooks: handler.NewSupportWebhookHandler(webhookService),
+		SupportActions:  handler.NewSupportConversationActionsHandler(service.NewSupportConversationActionService(supportInboxService, supportTagService)),
 		SupportCoverage: handler.NewSupportCoverageHandler(
 			supportCoverageService,
 			supportEventService,
@@ -2156,6 +2162,7 @@ func main() {
 		for name, run := range map[string]func(context.Context){
 			"support snooze waker": func(ctx context.Context) { supportInboxService.RunSnoozeWaker(ctx, 30*time.Second) },
 			"support SLA worker":   func(ctx context.Context) { supportSLAService.Run(ctx, 5*time.Second) },
+			"support webhooks":     func(ctx context.Context) { webhookService.Run(ctx, 5*time.Second) },
 		} {
 			jobs.Add(1)
 			go func(name string, run func(context.Context)) {
@@ -2673,6 +2680,23 @@ func resolvePMImportEncryptionKey(cfg *config.Config) []byte {
 	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CRMEncryptionKey)); err != nil {
 		slog.Warn("invalid CRM_ENCRYPTION_KEY for PM import fallback (must be a 32-byte hex-encoded AES key)", "error", err)
 	} else if len(key) == 32 {
+		return key
+	}
+	return nil
+}
+
+// resolveWebhookEncryptionKey returns WEBHOOK_ENCRYPTION_KEY, or
+// CRM_ENCRYPTION_KEY when it is unset.
+func resolveWebhookEncryptionKey(cfg *config.Config) []byte {
+	if cfg == nil {
+		return nil
+	}
+	if key, err := decodeOptionalAES256HexKey(cfg.WebhookEncryptionKey); err != nil {
+		slog.Warn("invalid WEBHOOK_ENCRYPTION_KEY (must be a 32-byte hex-encoded AES key)", "error", err)
+	} else if len(key) == 32 {
+		return key
+	}
+	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CRMEncryptionKey)); err == nil && len(key) == 32 {
 		return key
 	}
 	return nil

@@ -1511,3 +1511,63 @@ export interface SupportMergeResult {
   affected_ids: string[];
   merges: SupportConversationMerge[];
 }
+
+export type WebhookEventType =
+  | 'conversation.created'
+  | 'conversation.status_changed'
+  | 'conversation.assigned'
+  | 'conversation.priority_changed'
+  | 'conversation.snoozed'
+  | 'message.created'
+  | 'sla.breached'
+  | 'csat.submitted';
+
+export interface WebhookEndpoint {
+  id: string;
+  workspace_id: string;
+  url: string;
+  description: string;
+  /** Subscribed events; empty means every event. */
+  events: WebhookEventType[];
+  /** Inboxes to send events for; empty means every inbox. */
+  mailbox_ids: string[];
+  secret_hint: string;
+  enabled: boolean;
+  disabled_reason: string;
+  failure_count: number;
+  last_success_at?: string | null;
+  last_failure_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WebhookEndpointInput {
+  url: string;
+  description: string;
+  events: WebhookEventType[];
+  mailbox_ids: string[];
+  enabled?: boolean;
+}
+
+/** Returned once when a webhook is created or its secret rotated. */
+export interface WebhookEndpointSecret {
+  endpoint: WebhookEndpoint;
+  secret: string;
+}
+
+export interface WebhookDelivery {
+  id: string;
+  endpoint_id: string;
+  event_id: string;
+  event_type: WebhookEventType | 'ping';
+  payload: unknown;
+  status: 'pending' | 'succeeded' | 'failed';
+  attempts: number;
+  next_attempt_at: string;
+  last_status_code?: number | null;
+  last_error: string;
+  last_attempt_at?: string | null;
+  duration_ms?: number | null;
+  delivered_at?: string | null;
+  created_at: string;
+}

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -177,6 +178,10 @@ func writeConversationActionsError(w http.ResponseWriter, err error) {
 
 // ApplyMacro handles POST /api/support/inbox/conversations/{id}/macros/{macroId}/apply.
 func (h *SupportConversationActionsHandler) ApplyMacro(w http.ResponseWriter, r *http.Request) {
+	if !isUUID(chi.URLParam(r, "id")) || !isUUID(chi.URLParam(r, "macroId")) {
+		writeError(w, http.StatusNotFound, "conversation or shortcut not found")
+		return
+	}
 	response, err := h.actions.ApplyMacro(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"), chi.URLParam(r, "macroId"), middleware.GetUserID(r.Context()))
 	if err != nil {
 		writeConversationActionsError(w, err)
@@ -187,6 +192,7 @@ func (h *SupportConversationActionsHandler) ApplyMacro(w http.ResponseWriter, r 
 
 // Bulk handles POST /api/support/inbox/conversations/bulk.
 func (h *SupportConversationActionsHandler) Bulk(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 	var req model.SupportBulkActionRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -198,4 +204,14 @@ func (h *SupportConversationActionsHandler) Bulk(w http.ResponseWriter, r *http.
 		return
 	}
 	writeJSON(w, http.StatusOK, response)
+}
+
+// isUUID reports whether value is a standard UUID, so malformed path IDs
+// answer 404 instead of reaching the database.
+func isUUID(value string) bool {
+	if len(value) != 36 {
+		return false
+	}
+	_, err := uuid.Parse(value)
+	return err == nil
 }

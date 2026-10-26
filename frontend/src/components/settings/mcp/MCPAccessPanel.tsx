@@ -40,7 +40,7 @@ import type {
   MCPServiceTokenSecret,
   UpdateMCPPolicyRequest,
 } from '@/lib/mcpTypes';
-import { ensureMCPWriteScopes, hasMCPWriteScope, serviceAccountScopes, serviceAccountWriteScopes } from '@/lib/mcpPolicy';
+import { canServiceAccountReply, ensureMCPWriteScopes, hasMCPWriteScope, serviceAccountScopes, serviceAccountWriteScopes } from '@/lib/mcpPolicy';
 import { cn } from '@/lib/utils';
 import { LINEAR_CARD_CLASS } from '@/components/settings/settingsConstants';
 
@@ -68,7 +68,8 @@ const SCOPE_LABELS: Record<string, string> = {
   'helpin.crm.read': 'Read CRM records',
   'helpin.crm.write': 'Create and update CRM records, including bulk import and notes',
   'helpin.support.read': 'Read support conversations',
-  'helpin.support.write': 'Assign, move, tag, and link support conversations (never sends replies)',
+  'helpin.support.write': 'Organize support conversations and add internal notes (never sends replies)',
+  'helpin.support.reply': 'Send replies and start conversations with customers',
   'helpin.agents.read': 'Read agents and runs',
   'helpin.agents.run': 'Start and cancel agent runs',
 };
@@ -557,10 +558,13 @@ export function CreateServiceAccountDialog({ open, onOpenChange, workspaceId, da
   const [description, setDescription] = useState('');
   const [toolsets, setToolsets] = useState(dashboard.policy.allowed_toolsets);
   const [allowWrites, setAllowWrites] = useState(false);
+  const [allowReplies, setAllowReplies] = useState(false);
   const writeScopes = useMemo(() => serviceAccountWriteScopes(dashboard.policy, toolsets), [dashboard.policy, toolsets]);
   const canWrite = writeScopes.length > 0;
   const grantsWrites = allowWrites && canWrite;
-  const scopes = useMemo(() => serviceAccountScopes(dashboard.policy, toolsets, grantsWrites), [dashboard.policy, toolsets, grantsWrites]);
+  const canReply = grantsWrites && canServiceAccountReply(dashboard.policy, toolsets);
+  const grantsReplies = allowReplies && canReply;
+  const scopes = useMemo(() => serviceAccountScopes(dashboard.policy, toolsets, grantsWrites, grantsReplies), [dashboard.policy, toolsets, grantsWrites, grantsReplies]);
   const writeAreas = writeScopes.map((scope) => TOOLSET_LABELS[scope.split('.')[1]] ?? scope).join(', ');
   const create = useCreateMCPServicePrincipal(workspaceId);
   const submit = async () => {
@@ -569,7 +573,7 @@ export function CreateServiceAccountDialog({ open, onOpenChange, workspaceId, da
       const result = await create.mutateAsync(request);
       onOpenChange(false);
       onSecret(result.secret);
-      setName(''); setDescription(''); setAllowWrites(false);
+      setName(''); setDescription(''); setAllowWrites(false); setAllowReplies(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not create automation account');
     }
@@ -595,6 +599,17 @@ export function CreateServiceAccountDialog({ open, onOpenChange, workspaceId, da
             </div>
             <Switch id="service-allow-writes" aria-describedby="service-allow-writes-description" checked={grantsWrites} disabled={!canWrite} onCheckedChange={setAllowWrites} />
           </div>
+          {canReply ? (
+            <div className="flex items-start justify-between gap-5">
+              <div>
+                <Label htmlFor="service-allow-replies">Allow sending replies</Label>
+                <p id="service-allow-replies-description" className="mt-1 text-sm text-muted-foreground">
+                  Reply to customers and start conversations by email, as you. Leave off for workflows that only organize conversations.
+                </p>
+              </div>
+              <Switch id="service-allow-replies" aria-describedby="service-allow-replies-description" checked={grantsReplies} onCheckedChange={setAllowReplies} />
+            </div>
+          ) : null}
           <p className="text-xs text-muted-foreground">The token inherits your current Helpin membership and can be revoked immediately.</p>
         </div>
         <DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={() => void submit()} disabled={!name.trim() || toolsets.length === 0 || scopes.length === 0 || create.isPending}>{create.isPending ? <Loading01Icon className="mr-2 h-4 w-4 animate-spin" /> : null}Create</Button></DialogFooter>

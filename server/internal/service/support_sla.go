@@ -35,6 +35,7 @@ type SupportSLAService struct {
 	inbox         *SupportInboxService
 	notifications *NotificationService
 	entitlements  EntitlementPolicy
+	webhooks      *WebhookService
 	now           func() time.Time
 }
 
@@ -45,6 +46,12 @@ func NewSupportSLAService(repo *repository.SupportSLARepository, inbox *SupportI
 // SetNotificationService enables breach notifications to the assignee.
 func (s *SupportSLAService) SetNotificationService(notifications *NotificationService) *SupportSLAService {
 	s.notifications = notifications
+	return s
+}
+
+// SetWebhookService emits sla.breached events.
+func (s *SupportSLAService) SetWebhookService(webhooks *WebhookService) *SupportSLAService {
+	s.webhooks = webhooks
 	return s
 }
 
@@ -181,6 +188,7 @@ func (s *SupportSLAService) UpdatePolicy(ctx context.Context, workspaceID, polic
 		return nil, err
 	}
 	wasEnabled := policy.Enabled
+	before := [3][]string{policy.Priorities, policy.MailboxIDs, policy.Channels}
 	if req.Enabled != nil {
 		policy.Enabled = *req.Enabled
 	}
@@ -189,6 +197,13 @@ func (s *SupportSLAService) UpdatePolicy(ctx context.Context, workspaceID, polic
 	}
 	if err := s.normalizePolicy(ctx, workspaceID, req, policy); err != nil {
 		return nil, err
+	}
+	after := [3][]string{policy.Priorities, policy.MailboxIDs, policy.Channels}
+	for i := range before {
+		if !sameSLAConditionValues(before[i], after[i]) {
+			policy.ConditionsChangedAt = timePtr(s.now())
+			break
+		}
 	}
 	if err := s.repo.SavePolicy(ctx, policy); err != nil {
 		return nil, err
@@ -351,11 +366,18 @@ func (s *SupportSLAService) evaluateConversation(ctx context.Context, batch *sup
 		}
 		switch {
 		case closed && previous != nil:
-			// Closed conversations finish with the targets they had.
+			// Closed conversations finish with the targets they had. A record
+			// without targets only stops waking and showing as due.
 			if !hasSnapshot {
-				return nil
+				if previous.WakeAt == nil && previous.NextDueAt == nil && !previous.Breached {
+					return nil
+				}
+				record := *previous
+				record.WakeAt, record.NextDueAt, record.Breached = nil, nil, false
+				changed = true
+				return repo.SaveRecord(ctx, &record)
 			}
-			in.Targets, in.AppliedAt = snapshot, previous.PolicyAppliedAt
+			in.Targets, in.AppliedAt, in.TargetsFrom = snapshot, previous.PolicyAppliedAt, previous.TargetsFrom
 		default:
 			policies, err := s.workspacePolicies(ctx, batch, workspaceID)
 			if err != nil {
@@ -376,11 +398,19 @@ func (s *SupportSLAService) evaluateConversation(ctx context.Context, batch *sup
 				changed = supportSLAVisibleChange(*previous, record)
 				return repo.SaveRecord(ctx, &record)
 			case hasSnapshot && snapshot.PolicyID == policy.ID:
-				in.Targets, in.AppliedAt = snapshot, previous.PolicyAppliedAt
+				in.Targets, in.AppliedAt, in.TargetsFrom = snapshot, previous.PolicyAppliedAt, previous.TargetsFrom
 			default:
 				in.Targets = supportSLATargetsFromPolicy(*policy)
-				if previous != nil {
-					in.Switched, in.AppliedAt = true, timePtr(now)
+				switch {
+				case previous != nil && previous.DetachedAt != nil:
+					// A policy applying again after none did starts from now,
+					// so a pause in SLA tracking never back-dates breaches.
+					in.Switched, in.AppliedAt, in.TargetsFrom = true, timePtr(now), timePtr(now)
+				case previous != nil:
+					in.Switched, in.AppliedAt, in.TargetsFrom = true, timePtr(now), previous.TargetsFrom
+				case policy.ConditionsChangedAt != nil && conversation.CreatedAt.Before(*policy.ConditionsChangedAt):
+					// The conversation matches through a later condition change.
+					in.AppliedAt, in.TargetsFrom = policy.ConditionsChangedAt, policy.ConditionsChangedAt
 				}
 			}
 		}
@@ -389,6 +419,7 @@ func (s *SupportSLAService) evaluateConversation(ctx context.Context, batch *sup
 			in.Replies = append(in.Replies, supportSLAReply{At: row.CreatedAt, SenderType: row.SenderType})
 		}
 		in.AIInvolved, in.HumanSince, in.AIOwnsNow = supportSLAHandoff(*conversation, inputs.Replies, previous, now)
+		in.Resumed = !in.Switched && previous != nil && previous.AIHoldingSince != nil && !in.AIOwnsNow
 		in.Clock = s.clockFor(ctx, batch, workspaceID, in.Targets.BusinessHours)
 		evaluation := evaluateSupportSLA(in)
 		changed = previous == nil || supportSLAVisibleChange(*previous, evaluation.Record)
@@ -437,6 +468,9 @@ func (s *SupportSLAService) announceBreach(ctx context.Context, breach *supportS
 			return fmt.Sprintf("SLA missed: %s target (%s).", summary, breach.record.PolicyName)
 		}, map[string]any{"metrics": breach.metrics, "policy_id": derefString(breach.record.PolicyID), "policy_name": breach.record.PolicyName})
 	}
+	s.webhooks.Emit(ctx, conversation.WorkspaceID, model.WebhookEventSLABreached, conversation.ID, map[string]any{
+		"sla": map[string]any{"metrics": breach.metrics, "policy_id": derefString(breach.record.PolicyID), "policy_name": breach.record.PolicyName},
+	})
 	if s.notifications == nil || closed {
 		return
 	}
@@ -530,8 +564,12 @@ func (s *SupportSLAService) ProcessQueue(ctx context.Context, limit int) (int, e
 		lease, wasClaimed := claimed[item.ConversationID]
 		if err := s.evaluateConversation(ctx, batch, item.WorkspaceID, item.ConversationID); err != nil {
 			slog.ErrorContext(ctx, "evaluate support SLA", "conversation_id", item.ConversationID, "error", err)
-			// Retry later rather than losing the evaluation.
+			// Retry later rather than losing the evaluation, and keep a failing
+			// conversation from holding up other due wake-ups.
 			retryCtx := context.WithoutCancel(ctx)
+			if delayErr := s.repo.DelayWake(retryCtx, item.ConversationID, s.now().Add(time.Minute)); delayErr != nil {
+				slog.ErrorContext(ctx, "delay support SLA wake-up", "conversation_id", item.ConversationID, "error", delayErr)
+			}
 			if requeueErr := s.repo.Enqueue(retryCtx, item.WorkspaceID, []string{item.ConversationID}, s.now().Add(time.Minute)); requeueErr != nil {
 				slog.ErrorContext(ctx, "requeue support SLA evaluation", "conversation_id", item.ConversationID, "error", requeueErr)
 			}
@@ -588,4 +626,16 @@ func (s *SupportSLAService) HydrateConversations(ctx context.Context, workspaceI
 		}
 	}
 	return nil
+}
+
+func sameSLAConditionValues(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for _, value := range a {
+		if !slices.Contains(b, value) {
+			return false
+		}
+	}
+	return true
 }

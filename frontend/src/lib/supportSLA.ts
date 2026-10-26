@@ -75,7 +75,7 @@ export function describeSLAItem(
     case 'pending':
       return item.due_at ? `${label}: due in ${formatSLARemaining(new Date(item.due_at).getTime() - now)}` : `${label}: running`
     case 'paused':
-      return context?.ai_handling ? `${label}: starts when the AI hands over` : `${label}: paused while waiting on the customer`
+      return context?.ai_handling ? `${label}: waits while the AI answers` : `${label}: paused while waiting on the customer`
     case 'achieved':
       return `${label}: met`
     case 'cancelled':

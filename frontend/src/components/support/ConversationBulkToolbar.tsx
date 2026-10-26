@@ -56,7 +56,7 @@ export function ConversationBulkToolbar({ workspaceId, userId, conversations, lo
   const PrimaryIcon = reopen ? ArrowTurnBackwardIcon : CheckmarkCircle02Icon;
   const { data: members = [] } = useWorkspaceMembers(workspaceId);
   const { data: tags = [] } = useSupportTags(workspaceId);
-  const assignees = members.filter((member) => member.user_id && member.user_id !== userId);
+  const assignees = members.filter((member) => member.user_id && member.role !== 'viewer' && member.user_id !== userId);
   const selectedTagIds = new Set(conversations.flatMap((conversation) => (conversation.tags ?? []).map((tag) => tag.id)));
   const removableTags = tags.filter((tag) => selectedTagIds.has(tag.id));
   const snoozable = conversations.some((conversation) => conversation.status !== 'resolved' && conversation.status !== 'spam' && !conversation.merged_into_id);

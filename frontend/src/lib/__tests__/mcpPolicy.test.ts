@@ -131,3 +131,20 @@ describe('service account scopes', () => {
     expect(serviceAccountWriteScopes(policy, ['context'])).toEqual([]);
   });
 });
+
+describe('support reply scope', () => {
+  const policy = { enforce_read_only: false, allowed_scopes: ['helpin.support.read', 'helpin.support.write', 'helpin.support.reply'] }
+
+  it('is a write scope that is only granted on purpose', () => {
+    expect(isMCPWriteScope('helpin.support.reply')).toBe(true)
+    expect(serviceAccountScopes(policy, ['support'], true)).not.toContain('helpin.support.reply')
+    expect(serviceAccountScopes(policy, ['support'], true, true)).toContain('helpin.support.reply')
+    expect(serviceAccountScopes(policy, ['support'], false, true)).not.toContain('helpin.support.reply')
+  })
+
+  it('needs the support toolset and a policy that allows it', () => {
+    expect(serviceAccountScopes(policy, ['pm'], true, true)).not.toContain('helpin.support.reply')
+    expect(serviceAccountScopes({ ...policy, allowed_scopes: ['helpin.support.write'] }, ['support'], true, true)).not.toContain('helpin.support.reply')
+    expect(serviceAccountScopes({ ...policy, enforce_read_only: true }, ['support'], true, true)).not.toContain('helpin.support.reply')
+  })
+})

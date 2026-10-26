@@ -160,29 +160,33 @@ type Config struct {
 	// HelpcenterCustomDomainTarget is where help center custom domains CNAME
 	// to (the custom domain ingress). It defaults to HelpcenterHostedDomain;
 	// empty turns custom domain verification off.
-	HelpcenterCustomDomainTarget      string
-	MobileAppBaseURL                  string
-	CLIEnabled                        bool
-	CLIModelGatewayEnabled            bool
-	CLIPublicBaseURL                  string
-	MCPServerEnabled                  bool
-	MCPOAuthEnabled                   bool
-	MCPServiceTokensEnabled           bool
-	MCPPMWriteEnabled                 bool
-	MCPDocsWriteEnabled               bool
-	MCPAgentRunEnabled                bool
-	MCPCRMEnabled                     bool
-	MCPSupportEnabled                 bool
-	MCPPublicBaseURL                  string
+	HelpcenterCustomDomainTarget string
+	MobileAppBaseURL             string
+	CLIEnabled                   bool
+	CLIModelGatewayEnabled       bool
+	CLIPublicBaseURL             string
+	MCPServerEnabled             bool
+	MCPOAuthEnabled              bool
+	MCPServiceTokensEnabled      bool
+	MCPPMWriteEnabled            bool
+	MCPDocsWriteEnabled          bool
+	MCPAgentRunEnabled           bool
+	MCPCRMEnabled                bool
+	MCPSupportEnabled            bool
+	MCPPublicBaseURL             string
 	// PublicAPIEnabled mounts the public REST API; it still requires MCP service tokens.
 	PublicAPIEnabled bool
 	// PublicAPIBaseURL is the externally reachable API origin advertised in the OpenAPI document.
-	PublicAPIBaseURL                  string
-	AIConnectionEncryptionKey         string
-	ChatGPTConnectionsEnabled         bool
-	ChatGPTClientID                   string
-	ExternalMCPEnabled                bool
-	ExternalMCPEncryptionKey          string
+	PublicAPIBaseURL          string
+	AIConnectionEncryptionKey string
+	ChatGPTConnectionsEnabled bool
+	ChatGPTClientID           string
+	ExternalMCPEnabled        bool
+	ExternalMCPEncryptionKey  string
+	// WebhookEncryptionKey encrypts webhook signing secrets; CRM_ENCRYPTION_KEY is the fallback.
+	WebhookEncryptionKey string
+	// WebhooksAllowPrivateNetworks lets webhooks reach private addresses and plain HTTP (self-hosted only).
+	WebhooksAllowPrivateNetworks      bool
 	ExternalMCPAllowedHosts           []string
 	ExternalMCPOAuthRedirectURL       string
 	ExternalMCPOAuthClientID          string
@@ -546,6 +550,8 @@ func Load() (*Config, error) {
 		ChatGPTClientID:                        strings.TrimSpace(os.Getenv("CHATGPT_OAUTH_CLIENT_ID")),
 		ExternalMCPEnabled:                     parseBoolEnv(os.Getenv("EXTERNAL_MCP_ENABLED")),
 		ExternalMCPEncryptionKey:               strings.TrimSpace(os.Getenv("EXTERNAL_MCP_ENCRYPTION_KEY")),
+		WebhookEncryptionKey:                   strings.TrimSpace(os.Getenv("WEBHOOK_ENCRYPTION_KEY")),
+		WebhooksAllowPrivateNetworks:           parseBoolEnv(os.Getenv("WEBHOOKS_ALLOW_PRIVATE_NETWORKS")),
 		ExternalMCPAllowedHosts:                parseCSV(firstNonEmpty(os.Getenv("EXTERNAL_MCP_ALLOWED_HOSTS"), "*") + "," + os.Getenv("EXTERNAL_MCP_ADDITIONAL_ALLOWED_HOSTS")),
 		ExternalMCPOAuthRedirectURL:            strings.TrimSpace(os.Getenv("EXTERNAL_MCP_OAUTH_REDIRECT_URL")),
 		ExternalMCPOAuthClientID:               strings.TrimSpace(os.Getenv("EXTERNAL_MCP_OAUTH_CLIENT_ID")),

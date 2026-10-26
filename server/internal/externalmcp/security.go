@@ -18,6 +18,8 @@ import (
 	"golang.org/x/net/publicsuffix"
 
 	mcpauth "github.com/helpin-ai/agent-runtime-go/mcpauth"
+
+	"github.com/helpin-ai/helpin/server/internal/netguard"
 )
 
 const maxResponseBytes = 1 << 20
@@ -237,17 +239,7 @@ func resolveAllowedHost(ctx context.Context, host string, allowLocal bool) ([]ne
 	return addrs, nil
 }
 
-func isNonPublicIP(ip net.IP) bool {
-	if ip == nil || !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() ||
-		ip.IsLinkLocalMulticast() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast() {
-		return true
-	}
-	// Go's IsPrivate intentionally excludes shared address space. It is still
-	// unsuitable for an Internet-only connector and can reach provider/VPC
-	// infrastructure in some deployments.
-	_, shared, _ := net.ParseCIDR("100.64.0.0/10")
-	return shared.Contains(ip)
-}
+func isNonPublicIP(ip net.IP) bool { return netguard.IsNonPublicIP(ip) }
 
 func isLocalHostname(host string) bool {
 	host = strings.ToLower(strings.TrimSpace(host))

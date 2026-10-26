@@ -50,7 +50,7 @@ describe('describeSLAItem', () => {
   })
 
   it('explains AI handling and policies that no longer apply', () => {
-    expect(describeSLAItem({ metric: 'first_response', state: 'paused' }, now, { ai_handling: true })).toBe('First response: starts when the AI hands over')
+    expect(describeSLAItem({ metric: 'first_response', state: 'paused' }, now, { ai_handling: true })).toBe('First response: waits while the AI answers')
     expect(describeSLAItem({ metric: 'resolution', state: 'cancelled' }, now, { ended: true })).toBe('Resolution: stopped, no policy applies')
     expect(describeSLAItem({ metric: 'first_response', state: 'breached', due_at: at(-90) }, now, { ended: true })).toBe('First response: missed')
   })

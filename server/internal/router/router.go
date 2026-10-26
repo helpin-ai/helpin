@@ -118,6 +118,7 @@ type Handlers struct {
 	SupportCoverage     *handler.SupportCoverageHandler
 	SupportReports      *handler.SupportReportsHandler
 	SupportSLA          *handler.SupportSLAHandler
+	SupportWebhooks     *handler.SupportWebhookHandler
 	SupportActions      *handler.SupportConversationActionsHandler
 	SupportInboxClear   *handler.SupportInboxClearHandler
 	PostmarkInbound     *handler.PostmarkInboundHandler
@@ -1259,6 +1260,17 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/sla-policies/reorder", h.SupportSLA.Reorder)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Put("/sla-policies/{policyId}", h.SupportSLA.Update)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Delete("/sla-policies/{policyId}", h.SupportSLA.Delete)
+					if h.SupportWebhooks != nil {
+						r.With(requirePerm(authorization.PermSupportAdmin)).Get("/webhooks", h.SupportWebhooks.List)
+						r.With(requirePerm(authorization.PermSupportAdmin)).Get("/webhooks/event-types", h.SupportWebhooks.EventTypes)
+						r.With(requirePerm(authorization.PermSupportAdmin)).Post("/webhooks", h.SupportWebhooks.Create)
+						r.With(requirePerm(authorization.PermSupportAdmin)).Put("/webhooks/{webhookId}", h.SupportWebhooks.Update)
+						r.With(requirePerm(authorization.PermSupportAdmin)).Delete("/webhooks/{webhookId}", h.SupportWebhooks.Delete)
+						r.With(requirePerm(authorization.PermSupportAdmin)).Post("/webhooks/{webhookId}/rotate-secret", h.SupportWebhooks.RotateSecret)
+						r.With(requirePerm(authorization.PermSupportAdmin)).Post("/webhooks/{webhookId}/test", h.SupportWebhooks.Test)
+						r.With(requirePerm(authorization.PermSupportAdmin)).Get("/webhooks/{webhookId}/deliveries", h.SupportWebhooks.Deliveries)
+						r.With(requirePerm(authorization.PermSupportAdmin)).Post("/webhooks/{webhookId}/deliveries/{deliveryId}/redeliver", h.SupportWebhooks.Redeliver)
+					}
 				}
 				if h.SupportReports != nil {
 					r.With(requirePerm(authorization.PermSupportRead)).Get("/reports/overview", h.SupportReports.Overview)

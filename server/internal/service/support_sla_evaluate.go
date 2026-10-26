@@ -128,6 +128,11 @@ type supportSLAInput struct {
 	AIInvolved bool
 	HumanSince *time.Time
 	AIOwnsNow  bool
+	// Resumed means the team took back a conversation the AI answered
+	// again after the handoff; cycles before now keep their results.
+	Resumed bool
+	// TargetsFrom is the earliest time any target counts from.
+	TargetsFrom *time.Time
 }
 
 // evaluateSupportSLA recomputes a conversation's SLA state. Only teammate
@@ -145,7 +150,7 @@ func evaluateSupportSLA(in supportSLAInput) supportSLAEvaluation {
 		TargetFirstResponseMinutes: targets.FirstResponseMinutes, TargetNextResponseMinutes: targets.NextResponseMinutes,
 		TargetResolutionMinutes: targets.ResolutionMinutes, TargetBusinessHours: targets.BusinessHours,
 		TargetPauseWhileWaiting: targets.PauseWhileWaiting,
-		AIInvolved:              in.AIInvolved, HumanSince: in.HumanSince,
+		AIInvolved:              in.AIInvolved, HumanSince: in.HumanSince, TargetsFrom: in.TargetsFrom,
 	}
 	sorted := slices.Clone(in.Replies)
 	slices.SortStableFunc(sorted, func(a, b supportSLAReply) int { return a.At.Compare(b.At) })
@@ -164,6 +169,13 @@ func evaluateSupportSLA(in supportSLAInput) supportSLAEvaluation {
 	state.aiOnly = in.AIInvolved && in.HumanSince == nil
 	state.aiHolding = in.AIOwnsNow && !state.closed
 	state.humanSince = in.HumanSince
+	state.targetsFrom = in.TargetsFrom
+	if state.aiHolding && in.HumanSince != nil {
+		record.AIHoldingSince = previous.AIHoldingSince
+		if record.AIHoldingSince == nil {
+			record.AIHoldingSince = timePtr(now)
+		}
+	}
 
 	if targets.FirstResponseMinutes != nil {
 		state.firstResponse(&record, previous, sorted, minutesDuration(targets.FirstResponseMinutes))
@@ -230,21 +242,23 @@ func keepSupportSLAResolution(record, previous *model.SupportConversationSLAReco
 }
 
 type supportSLAEvalState struct {
-	now, closeTime    time.Time
-	clock             supportSLAClock
-	resolved, closed  bool
-	aiOnly, aiHolding bool
-	humanSince        *time.Time
-	newBreaches       []string
-	openDue, wakeDue  []*time.Time
-	breachedNow       bool
+	now, closeTime          time.Time
+	clock                   supportSLAClock
+	resolved, closed        bool
+	aiOnly, aiHolding       bool
+	humanSince, targetsFrom *time.Time
+	newBreaches             []string
+	openDue, wakeDue        []*time.Time
+	breachedNow             bool
 }
 
 // start moves a clock start to the handoff when the AI handled the
 // conversation first.
 func (st *supportSLAEvalState) start(at time.Time) time.Time {
-	if st.humanSince != nil && st.humanSince.After(at) {
-		return *st.humanSince
+	for _, floor := range []*time.Time{st.humanSince, st.targetsFrom} {
+		if floor != nil && floor.After(at) {
+			at = *floor
+		}
 	}
 	return at
 }
@@ -351,12 +365,17 @@ func (st *supportSLAEvalState) nextResponse(record, previous *model.SupportConve
 	openMissed := waitingSince != nil && previous.NextResponseBreachedAt != nil && !previous.NextResponseBreachedAt.Before(*waitingSince)
 
 	appliedAt, carried := in.AppliedAt, previous.NextResponseCarriedBreaches
-	if in.Switched {
+	switch {
+	case in.Switched:
 		carried = previous.NextResponseBreaches
 		appliedAt = timePtr(st.now)
-		if waitingSince != nil && !openMissed {
+		if waitingSince != nil && !openMissed && in.TargetsFrom == nil {
 			appliedAt = waitingSince
 		}
+	case in.Resumed:
+		// The open cycle restarts now; earlier cycles keep their results.
+		carried = previous.NextResponseBreaches
+		appliedAt = timePtr(st.now)
 	}
 	record.PolicyAppliedAt = appliedAt
 
@@ -374,8 +393,17 @@ func (st *supportSLAEvalState) nextResponse(record, previous *model.SupportConve
 			}
 			continue
 		}
-		// The open cycle.
-		due := st.clock.Add(c.start, target)
+		// The open cycle. One that started before the current targets
+		// applied and was not missed yet runs from when they applied.
+		start := c.start
+		if !judged && !openMissed {
+			start, judged = *appliedAt, true
+		}
+		if st.aiHolding && !openMissed {
+			// The AI is answering; the team's clock waits for the hand-back.
+			continue
+		}
+		due := st.clock.Add(start, target)
 		missed := false
 		if judged {
 			end := st.now
@@ -396,7 +424,7 @@ func (st *supportSLAEvalState) nextResponse(record, previous *model.SupportConve
 				due = *previous.NextResponseBreachedAt
 			}
 		}
-		if st.closed || (st.aiHolding && !missed) {
+		if st.closed {
 			continue
 		}
 		record.NextResponseDueAt = timePtr(due)
@@ -407,6 +435,10 @@ func (st *supportSLAEvalState) nextResponse(record, previous *model.SupportConve
 	}
 	record.NextResponseCarriedBreaches = carried
 	record.NextResponseBreaches = carried + breaches
+	// A recorded breach stays recorded, even if a message is deleted later.
+	if !in.Switched && !in.Resumed && previous.NextResponseBreaches > record.NextResponseBreaches {
+		record.NextResponseBreaches = previous.NextResponseBreaches
+	}
 	record.NextResponseBreachedAt = lastBreachDue
 	switch {
 	case record.NextResponseDueAt != nil && !st.breachedNowFor(*record.NextResponseDueAt, openMissed):
@@ -449,7 +481,7 @@ func (st *supportSLAEvalState) resolution(record, previous *model.SupportConvers
 		return
 	}
 	pausedSeconds, pausedSince := previous.PausedSeconds, previous.PausedSince
-	pausedNow := targets.PauseWhileWaiting && !st.closed && supportSLAWaitingOnCustomer(conversation)
+	pausedNow := !st.closed && ((targets.PauseWhileWaiting && supportSLAWaitingOnCustomer(conversation)) || st.aiHolding)
 	if pausedSince != nil && !pausedNow {
 		end := st.now
 		if st.closed && st.closeTime.Before(st.now) {
