@@ -244,6 +244,7 @@ func (s *WebhookService) UpdateEndpoint(ctx context.Context, workspaceID, endpoi
 		if endpoint.Enabled {
 			endpoint.DisabledReason, endpoint.FailureCount = "", 0
 			fields["disabled_reason"], fields["failure_count"] = "", 0
+			fields["failing_since"] = nil
 		}
 	}
 	if err := s.repo.UpdateEndpoint(ctx, workspaceID, endpointID, fields); err != nil {
@@ -337,7 +338,8 @@ func (s *WebhookService) Redeliver(ctx context.Context, workspaceID, endpointID,
 	now := s.now()
 	again := &model.WebhookDelivery{
 		ID: uuid.NewString(), WorkspaceID: workspaceID, EndpointID: endpointID, EventID: original.EventID,
-		EventType: original.EventType, Payload: original.Payload, Status: model.WebhookDeliveryPending,
+		ConversationID: original.ConversationID,
+		EventType:      original.EventType, Payload: original.Payload, Status: model.WebhookDeliveryPending,
 		NextAttemptAt: now, CreatedAt: now,
 	}
 	if err := s.repo.CreateDelivery(ctx, again); err != nil {

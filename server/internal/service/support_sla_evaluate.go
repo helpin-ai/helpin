@@ -152,6 +152,11 @@ func evaluateSupportSLA(in supportSLAInput) supportSLAEvaluation {
 		TargetResolutionMinutes: targets.ResolutionMinutes, TargetBusinessHours: targets.BusinessHours,
 		TargetPauseWhileWaiting: targets.PauseWhileWaiting,
 		AIInvolved:              in.AIInvolved, HumanSince: in.HumanSince, TargetsFrom: in.TargetsFrom,
+		FirstResponsePausedSeconds: previous.FirstResponsePausedSeconds,
+	}
+	if previous.DetachedAt != nil && previous.FirstResponseAchievedAt == nil && previous.FirstResponseBreachedAt == nil {
+		// Reattached targets start from now; earlier holds are outside that clock.
+		record.FirstResponsePausedSeconds = 0
 	}
 	sorted := slices.Clone(in.Replies)
 	slices.SortStableFunc(sorted, func(a, b supportSLAReply) int { return a.At.Compare(b.At) })
@@ -303,7 +308,23 @@ func (st *supportSLAEvalState) firstResponse(record, previous *model.SupportConv
 		}
 		return
 	}
-	due := st.clock.Add(st.start(*firstCustomer), target)
+	if previous.FirstResponseBreachedAt == nil && previous.AIHoldingSince != nil && (!st.aiHolding || firstTeammate != nil) {
+		// Finish the hold at the reply or closure, even if evaluation runs
+		// later. The accumulated duration survives later evaluations and holds.
+		end := st.now
+		if firstTeammate != nil && firstTeammate.Before(end) {
+			end = *firstTeammate
+		}
+		if st.closed && st.closeTime.Before(end) {
+			end = st.closeTime
+		}
+		start := st.start(*previous.AIHoldingSince)
+		if firstCustomer.After(start) {
+			start = *firstCustomer
+		}
+		record.FirstResponsePausedSeconds += int64(st.clock.Between(start, end) / time.Second)
+	}
+	due := st.clock.Add(st.start(*firstCustomer), target+time.Duration(record.FirstResponsePausedSeconds)*time.Second)
 	record.FirstResponseDueAt = &due
 	missed := previous.FirstResponseBreachedAt != nil
 	switch {

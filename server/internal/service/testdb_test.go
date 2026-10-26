@@ -969,6 +969,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			target_next_response_minutes INTEGER, target_resolution_minutes INTEGER,
 			target_business_hours BOOLEAN NOT NULL DEFAULT 0, target_pause_while_waiting BOOLEAN NOT NULL DEFAULT 1,
 			ai_involved BOOLEAN NOT NULL DEFAULT 0, human_since DATETIME, ai_holding_since DATETIME, targets_from DATETIME, next_response_carried_breaches INTEGER NOT NULL DEFAULT 0,
+			first_response_paused_seconds INTEGER NOT NULL DEFAULT 0,
 			first_response_state TEXT NOT NULL DEFAULT '', first_response_due_at DATETIME, first_response_achieved_at DATETIME,
 			first_response_breached_at DATETIME, next_response_state TEXT NOT NULL DEFAULT '', next_response_due_at DATETIME,
 			next_response_breached_at DATETIME, next_response_breaches INTEGER NOT NULL DEFAULT 0,

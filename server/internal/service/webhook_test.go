@@ -308,12 +308,42 @@ func TestWebhookDeliveryRetriesAndDisables(t *testing.T) {
 	if _, err := f.service.UpdateEndpoint(ctx, f.workspaceID, endpoint.ID, model.WebhookEndpointRequest{URL: endpoint.URL, Enabled: &enabled}); err != nil {
 		t.Fatal(err)
 	}
-	if got := mustWebhookEndpoint(t, f, endpoint.ID); !got.Enabled || got.DisabledReason != "" || got.FailureCount != 0 {
+	if got := mustWebhookEndpoint(t, f, endpoint.ID); !got.Enabled || got.DisabledReason != "" || got.FailureCount != 0 || got.FailingSince != nil {
 		t.Fatalf("re-enabled endpoint: %+v", got)
 	}
 	again, err := f.service.Redeliver(ctx, f.workspaceID, endpoint.ID, delivery.ID)
 	if err != nil || again.EventID != delivery.EventID || again.Status != model.WebhookDeliveryPending {
 		t.Fatalf("redeliver: %+v %v", again, err)
+	}
+	if again.ConversationID == nil || *again.ConversationID != conversationID {
+		t.Fatalf("redelivery lost the conversation link needed by privacy cleanup: %+v", again)
+	}
+}
+
+func TestWebhookRedeliveryPrivacyCleanup(t *testing.T) {
+	f := newWebhookFixture(t)
+	ctx := context.Background()
+	endpoint, _ := f.endpoint(t, model.WebhookEndpointRequest{})
+	conversationID := f.conversation(t, nil)
+	f.service.Emit(ctx, f.workspaceID, model.WebhookEventCSATSubmitted, conversationID, map[string]any{"rating": 5})
+	f.process(t)
+	delivery := f.deliveries(t)[0]
+	// Resending a resend must retain the same cleanup scope too.
+	for range 2 {
+		again, err := f.service.Redeliver(ctx, f.workspaceID, endpoint.ID, delivery.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		delivery = *again
+	}
+	// Contact anonymization removes deliveries with this workspace/conversation
+	// predicate. No queued copy may survive it or reach the receiver afterward.
+	if err := f.db.Where("workspace_id = ? AND conversation_id IN ?", f.workspaceID, []string{conversationID}).Delete(&model.WebhookDelivery{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	f.process(t)
+	if got := f.deliveries(t); len(got) != 0 || f.receiver.count() != 1 {
+		t.Fatalf("redeliveries survived cleanup: deliveries=%d sends=%d", len(got), f.receiver.count())
 	}
 }
 
@@ -338,12 +368,21 @@ func TestWebhookAutoDisableAfterRepeatedFailures(t *testing.T) {
 	if got := mustWebhookEndpoint(t, f, endpoint.ID); got.Enabled || !strings.Contains(got.DisabledReason, "failing for a day") {
 		t.Fatalf("endpoint after a day of failures: %+v", got)
 	}
-	// A success ends the failure run.
-	f.receiver.status = http.StatusOK
+	// Re-enabling starts a new failure window even if requests still fail.
 	enabled := true
 	if _, err := f.service.UpdateEndpoint(ctx, f.workspaceID, endpoint.ID, model.WebhookEndpointRequest{URL: endpoint.URL, Enabled: &enabled}); err != nil {
 		t.Fatal(err)
 	}
+	for range webhookDisableAfterFailures {
+		if _, err := f.service.SendTest(ctx, f.workspaceID, endpoint.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := mustWebhookEndpoint(t, f, endpoint.ID); !got.Enabled || got.FailingSince == nil || !got.FailingSince.Equal(f.now) {
+		t.Fatalf("old failure window disabled a re-enabled endpoint: %+v", got)
+	}
+	// A success ends the new failure run.
+	f.receiver.status = http.StatusOK
 	if _, err := f.service.SendTest(ctx, f.workspaceID, endpoint.ID); err != nil {
 		t.Fatal(err)
 	}

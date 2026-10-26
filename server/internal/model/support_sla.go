@@ -100,6 +100,9 @@ type SupportConversationSLARecord struct {
 	FirstResponseDueAt      *time.Time `json:"first_response_due_at,omitempty" gorm:"type:timestamptz"`
 	FirstResponseAchievedAt *time.Time `json:"first_response_achieved_at,omitempty" gorm:"type:timestamptz"`
 	FirstResponseBreachedAt *time.Time `json:"first_response_breached_at,omitempty" gorm:"type:timestamptz"`
+	// FirstResponsePausedSeconds excludes finished AI holds from the first
+	// response clock (business seconds in business-hours mode).
+	FirstResponsePausedSeconds int64 `json:"-" gorm:"not null;default:0"`
 
 	NextResponseState      string     `json:"next_response_state" gorm:"not null;default:''"`
 	NextResponseDueAt      *time.Time `json:"next_response_due_at,omitempty" gorm:"type:timestamptz"`
