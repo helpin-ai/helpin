@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import DOMPurify from 'dompurify';
+import { useTheme } from 'next-themes';
 import {
   COLLAPSED_BODY_ATTR,
   COLLAPSE_HOST_ATTR,
@@ -14,20 +15,18 @@ interface EmailBodyRendererProps {
   html: string;
   collapsedByDefault?: boolean;
   constrainHeight?: boolean;
+  themeAware?: boolean;
 }
 
 interface EmailBodyFrameProps {
   srcDoc: string;
   collapsedByDefault: boolean;
   constrainHeight: boolean;
+  themed: boolean;
 }
 
-// Minimal iframe baseline. We want author stylesheets to win, so we only
-// set inherit-able defaults on the document root — email inline styles and
-// <style> blocks override for anything specific.
-// Email HTML is authored for light backgrounds. Force a white canvas inside
-// the iframe so author colors remain readable when the host app is in dark
-// mode (matches Gmail/Outlook behavior).
+// Original formatting uses a light canvas for authored email colors. The
+// default reading view overlays theme colors without changing email layout.
 export const EMAIL_BODY_IFRAME_STYLES = `
   *, *::before, *::after {
     box-sizing: border-box;
@@ -83,18 +82,61 @@ export const EMAIL_BODY_IFRAME_STYLES = `
   img { max-width: 100% !important; height: auto; }
 `;
 
-function buildSrcDoc(safeHtml: string): string {
+// Preserve layout and imagery; only presentation colors change in reading mode.
+const EMAIL_READING_STYLES = `
+  html[data-helpin-reading], html[data-helpin-reading] body {
+    background: transparent !important;
+    color: var(--email-text, #242424) !important;
+    color-scheme: var(--email-scheme, light);
+  }
+  :is(#helpin-email-reading, html[data-helpin-reading]) body :not(img, svg, svg *) {
+    color: inherit !important;
+    background-color: transparent !important;
+    background-image: none !important;
+    border-color: var(--email-border, #dedede) !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+  :is(#helpin-email-reading, html[data-helpin-reading]) body a,
+  :is(#helpin-email-reading, html[data-helpin-reading]) body a * {
+    color: var(--email-link, #3e63dd) !important;
+  }
+  :is(#helpin-email-reading, html[data-helpin-reading]) body pre,
+  :is(#helpin-email-reading, html[data-helpin-reading]) body code {
+    background-color: color-mix(in srgb, var(--email-text, #242424) 5%, transparent) !important;
+    border-radius: 4px;
+  }
+  :is(#helpin-email-reading, html[data-helpin-reading]) body pre code {
+    background-color: transparent !important;
+  }
+`;
+
+function readingHtml(safeHtml: string): string {
+  const doc = new DOMParser().parseFromString(safeHtml, 'text/html');
+  doc.querySelectorAll<HTMLElement>('[style]').forEach(element => {
+    if (element.closest('svg') || element.tagName === 'IMG') return;
+    // Inline !important declarations would otherwise override the reading sheet.
+    for (const property of Array.from(element.style)) {
+      if (/^(color|background.*|border.*color|text-shadow|box-shadow)$/.test(property)) {
+        element.style.removeProperty(property);
+      }
+    }
+  });
+  return doc.head.innerHTML + doc.body.innerHTML;
+}
+
+function buildSrcDoc(safeHtml: string, themed: boolean): string {
   // The sandbox blocks inline scripts (no allow-scripts) — any script from
   // the email author is neutralized. Author <style> blocks pass through.
   return `<!doctype html>
-<html>
+<html${themed ? ' data-helpin-reading="true"' : ''}>
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <base target="_blank" />
 <style>${EMAIL_BODY_IFRAME_STYLES}</style>
 </head>
-<body>${safeHtml}</body>
+<body>${themed ? readingHtml(safeHtml) : safeHtml}${themed ? `<style>${EMAIL_READING_STYLES}</style>` : ''}</body>
 </html>`;
 }
 
@@ -128,15 +170,28 @@ function hasCollapsibleContent(doc: Document): boolean {
   return doc.querySelector(COLLAPSIBLE_SELECTOR) !== null;
 }
 
-export function EmailBodyRenderer({ html, collapsedByDefault = true, constrainHeight = true }: EmailBodyRendererProps) {
+export function EmailBodyRenderer({ html, collapsedByDefault = true, constrainHeight = true, themeAware = false }: EmailBodyRendererProps) {
+  const [original, setOriginal] = useState(false);
+  const themed = themeAware && !original;
   const sanitized = useMemo(() => sanitize(html), [html]);
-  const srcDoc = useMemo(() => buildSrcDoc(sanitized), [sanitized]);
+  const srcDoc = useMemo(() => buildSrcDoc(sanitized, themed), [sanitized, themed]);
   const rendererKey = `${collapsedByDefault ? 'collapsed' : 'expanded'}:${constrainHeight ? 'constrained' : 'full'}:${srcDoc}`;
 
-  return <EmailBodyFrame key={rendererKey} srcDoc={srcDoc} collapsedByDefault={collapsedByDefault} constrainHeight={constrainHeight} />;
+  return (
+    <div className="min-w-0">
+      {themeAware && <div className="mb-1 flex justify-end">
+        <button type="button" aria-pressed={original} onClick={() => setOriginal(value => !value)}
+          className="rounded px-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          {original ? 'Use theme colors' : 'Original formatting'}
+        </button>
+      </div>}
+      <EmailBodyFrame key={rendererKey} srcDoc={srcDoc} themed={themed} collapsedByDefault={collapsedByDefault} constrainHeight={constrainHeight} />
+    </div>
+  );
 }
 
-function EmailBodyFrame({ srcDoc, collapsedByDefault, constrainHeight }: EmailBodyFrameProps) {
+function EmailBodyFrame({ srcDoc, collapsedByDefault, constrainHeight, themed }: EmailBodyFrameProps) {
+  const { resolvedTheme } = useTheme();
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [height, setHeight] = useState(40);
   const [ready, setReady] = useState(false);
@@ -178,6 +233,23 @@ function EmailBodyFrame({ srcDoc, collapsedByDefault, constrainHeight }: EmailBo
     };
   }, []);
 
+  const applyTheme = useCallback(() => {
+    const iframe = iframeRef.current;
+    if (!themed || !iframe?.contentDocument) return;
+    const host = window.getComputedStyle(iframe);
+    const root = iframe.contentDocument.documentElement;
+    root.style.setProperty('--email-text', host.color);
+    root.style.setProperty('--email-border', host.getPropertyValue('--border').trim() || '#dedede');
+    root.style.setProperty('--email-link', host.getPropertyValue(resolvedTheme === 'dark' ? '--brand-400' : '--brand-500').trim() || (resolvedTheme === 'dark' ? '#8aabff' : '#3e63dd'));
+    root.style.setProperty('--email-scheme', resolvedTheme === 'dark' ? 'dark' : 'light');
+  }, [resolvedTheme, themed]);
+
+  useEffect(() => {
+    // next-themes updates the host class in an effect; read its colors afterward.
+    const frame = requestAnimationFrame(applyTheme);
+    return () => cancelAnimationFrame(frame);
+  }, [applyTheme]);
+
   const handleLoad = useCallback(() => {
     const doc = iframeRef.current?.contentDocument;
     if (!doc || doc.URL === 'about:blank' || doc.readyState === 'loading') return;
@@ -188,6 +260,7 @@ function EmailBodyFrame({ srcDoc, collapsedByDefault, constrainHeight }: EmailBo
       return;
     }
     initializedDocumentRef.current = doc;
+    applyTheme();
     doc.querySelectorAll('a').forEach((a) => {
       a.setAttribute('target', '_blank');
       a.setAttribute('rel', 'noopener noreferrer nofollow');
@@ -205,7 +278,7 @@ function EmailBodyFrame({ srcDoc, collapsedByDefault, constrainHeight }: EmailBo
     setHasCollapsible(hasCollapsibleContent(doc));
     setReady(true);
     scheduleMeasure();
-  }, [collapsed, scheduleMeasure]);
+  }, [collapsed, scheduleMeasure, applyTheme]);
 
   useEffect(() => {
     if (ready) return;

@@ -957,7 +957,7 @@ export const MessageBubble = memo(function MessageBubble({
                     >
                       {hasEmailBody && !renderEmailBodyAsForwardedText ? (
                         <div className="-mx-1" data-chat-tone={isCustomer ? 'customer' : 'agent'}>
-                          <EmailBodyRenderer html={message.html_body ?? ''} collapsedByDefault />
+                          <EmailBodyRenderer themeAware html={message.html_body ?? ''} collapsedByDefault />
                         </div>
                       ) : (
                         visibleContent && (
