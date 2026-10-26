@@ -661,6 +661,7 @@ func (s *InternalCommandService) executeCreatePMTask(ctx context.Context, meta m
 			AssigneeID *string `json:"assignee_id"`
 			DueDate    *string `json:"due_date"`
 		} `json:"checklist_items"`
+		SupportConversationID string `json:"support_conversation_id"`
 	}
 	if err := json.Unmarshal(input, &req); err != nil {
 		return nil, fmt.Errorf("parse create task input: %w", err)
@@ -669,6 +670,12 @@ func (s *InternalCommandService) executeCreatePMTask(ctx context.Context, meta m
 	req.TeamID = strings.TrimSpace(req.TeamID)
 	if req.Name == "" || req.TeamID == "" {
 		return nil, errCommandInput("name and team_id are required")
+	}
+	conversationID := strings.TrimSpace(req.SupportConversationID)
+	if conversationID != "" {
+		if err := s.checkSupportTaskLink(ctx, meta, conversationID); err != nil {
+			return nil, err
+		}
 	}
 	if err := requireCommandAgentTeam(meta, &req.TeamID); err != nil {
 		return nil, err
@@ -729,7 +736,36 @@ func (s *InternalCommandService) executeCreatePMTask(ctx context.Context, meta m
 	if err != nil {
 		return nil, err
 	}
+	if conversationID != "" {
+		supportCtx := s.supportOperationalContext(ctx, meta)
+		if err := s.supportInboxService.LinkCreatedConversationTask(supportCtx, meta.WorkspaceID, conversationID, detail.Task.ID, fallbackActor(meta)); err != nil {
+			return nil, fmt.Errorf("task %s was created but not linked to the conversation: %w", detail.Task.TaskKey, err)
+		}
+	}
 	return mustJSON(compactCommandTask(detail)), nil
+}
+
+// checkSupportTaskLink requires the same access as linking a task to the
+// conversation, before a task is created for it.
+func (s *InternalCommandService) checkSupportTaskLink(ctx context.Context, meta model.InternalCommandContext, conversationID string) error {
+	if err := s.requireSupportOperationalServices(false); err != nil {
+		return err
+	}
+	linkDef, ok := s.Definition("support.link_conversation_task")
+	if !ok {
+		return fmt.Errorf("support task linking is not configured")
+	}
+	if err := s.authorizeCommandActor(meta, linkDef); err != nil {
+		return err
+	}
+	conversation, err := s.supportInboxService.loadConversationAccessible(s.supportOperationalContext(ctx, meta), meta.WorkspaceID, conversationID)
+	if err != nil {
+		return err
+	}
+	if conversation == nil {
+		return errCommandNotFound("support conversation")
+	}
+	return nil
 }
 
 func (s *InternalCommandService) executeGetPMTask(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {

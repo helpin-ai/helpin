@@ -91,4 +91,55 @@ describe('support image recovery', () => {
     expect(container.querySelector('img')?.getAttribute('src')).toBeNull();
     expect(fetchWithSessionAuth).not.toHaveBeenCalled();
   });
+
+  it('keeps a shown image when a refetch signs the same file again', async () => {
+    const image = container.querySelector('img')!;
+    await act(async () => image.dispatchEvent(new Event('load')));
+    await act(async () => root.render(<SupportAttachmentGallery workspaceId="workspace" conversationId="conversation" attachments={[{ ...attachment, url: 'https://storage.example.com/image.png?signed=2' }]} />));
+    expect(container.querySelector('img')).toBe(image);
+    expect(image.getAttribute('src')).toBe(attachment.url);
+    expect(image.className).not.toContain('invisible');
+    expect(container.querySelector('[role="status"]')).toBeNull();
+  });
+
+  it('retries with the newest signed link', async () => {
+    vi.mocked(fetchWithSessionAuth).mockResolvedValue({ ok: false, status: 503 } as Response);
+    await act(async () => root.render(<SupportAttachmentGallery workspaceId="workspace" conversationId="conversation" attachments={[{ ...attachment, url: 'https://storage.example.com/image.png?signed=2' }]} />));
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Preview image.png"]')!.click());
+    const preview = document.querySelector('[data-testid="support-attachment-lightbox"]')!;
+    await act(async () => preview.querySelector('img')!.dispatchEvent(new Event('error')));
+    const retry = Array.from(preview.querySelectorAll('button')).find(button => button.textContent === 'Retry')!;
+    await act(async () => retry.click());
+    expect(preview.querySelector('img')?.getAttribute('src')).toBe('https://storage.example.com/image.png?signed=2');
+  });
+
+  it('keeps loading a slow image when the authenticated copy fails', async () => {
+    vi.mocked(fetchWithSessionAuth).mockResolvedValue({ ok: false, status: 503 } as Response);
+    await act(async () => vi.advanceTimersByTime(8_000));
+    expect(fetchWithSessionAuth).toHaveBeenCalledTimes(1);
+    expect(container.textContent).not.toContain('Could not load image');
+    expect(container.querySelector('[role="status"]')?.getAttribute('title')).toBe('Loading image');
+    const image = container.querySelector('img')!;
+    expect(image.getAttribute('src')).toBe(attachment.url);
+    await act(async () => image.dispatchEvent(new Event('load')));
+    expect(image.className).not.toContain('invisible');
+  });
+
+  it('gives up on a stalled image once the authenticated copy also failed', async () => {
+    vi.mocked(fetchWithSessionAuth).mockResolvedValue({ ok: false, status: 503 } as Response);
+    await act(async () => vi.advanceTimersByTime(8_000));
+    await act(async () => vi.advanceTimersByTime(20_000));
+    expect(container.querySelector('[role="status"]')?.getAttribute('title')).toBe('Could not load image');
+  });
+
+  it('shows an image the browser already has without a spinner', async () => {
+    await act(async () => root.unmount());
+    vi.spyOn(HTMLImageElement.prototype, 'complete', 'get').mockReturnValue(true);
+    vi.spyOn(HTMLImageElement.prototype, 'naturalWidth', 'get').mockReturnValue(64);
+    root = createRoot(container);
+    await act(async () => root.render(<SupportAttachmentGallery workspaceId="workspace" conversationId="conversation" attachments={[attachment]} />));
+    expect(container.querySelector('img')?.className).not.toContain('invisible');
+    expect(container.querySelector('[role="status"]')).toBeNull();
+    vi.restoreAllMocks();
+  });
 });

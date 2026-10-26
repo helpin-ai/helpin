@@ -96,6 +96,14 @@ const (
 
 	// SystemEventSLABreached — an SLA target was missed. Admin-only.
 	SystemEventSLABreached SupportSystemEventType = "sla_breached"
+
+	// SystemEventTaskLinked — existing PM task linked to the conversation.
+	// Admin-only.
+	SystemEventTaskLinked SupportSystemEventType = "task_linked"
+
+	// SystemEventTaskUnlinked — PM task unlinked from the conversation.
+	// Admin-only.
+	SystemEventTaskUnlinked SupportSystemEventType = "task_unlinked"
 )
 
 // allSupportSystemEventTypes is the authoritative set of valid event types.
@@ -126,6 +134,8 @@ var allSupportSystemEventTypes = map[SupportSystemEventType]struct{}{
 	SystemEventSnoozed:                {},
 	SystemEventUnsnoozed:              {},
 	SystemEventSLABreached:            {},
+	SystemEventTaskLinked:             {},
+	SystemEventTaskUnlinked:           {},
 }
 
 // IsValidSupportSystemEventType reports whether s is a recognized event type.

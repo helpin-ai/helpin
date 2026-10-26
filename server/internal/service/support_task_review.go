@@ -12,10 +12,12 @@ import (
 // linkReviewedConversationTask retains canonical activity and realtime effects
 // while fencing both the source evidence and the chosen target at commit time.
 func (s *SupportInboxService) linkReviewedConversationTask(ctx context.Context, workspaceID, conversationID, taskID, actorID, sourceHash string, taskRevision time.Time) error {
-	if _, err := s.loadConversationAccessible(ctx, workspaceID, conversationID); err != nil {
+	conversation, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)
+	if err != nil {
 		return err
 	}
-	err := s.conversationRepo.LinkTaskReviewed(ctx, workspaceID, conversationID, taskID, func(conversation *model.SupportConversation, messages []model.SupportMessage, task *model.PMTask) error {
+	alreadyLinked := conversation != nil && derefString(conversation.LinkedTaskID) == taskID
+	err = s.conversationRepo.LinkTaskReviewed(ctx, workspaceID, conversationID, taskID, func(conversation *model.SupportConversation, messages []model.SupportMessage, task *model.PMTask) error {
 		_, currentHash := supportPMTriageEvidence(conversation, messages)
 		if conversation.AnonymizedAt != nil || currentHash != sourceHash || task.Archived || !task.UpdatedAt.Equal(taskRevision) || !canAccessTeam(ctx, task.TeamID) {
 			return ErrPMTriageStale
@@ -26,6 +28,9 @@ func (s *SupportInboxService) linkReviewedConversationTask(ctx context.Context, 
 		return err
 	}
 	s.publishReviewedTaskLink(ctx, workspaceID, conversationID, taskID, actorID)
+	if !alreadyLinked {
+		s.emitTaskLinkSystemMessage(ctx, workspaceID, conversationID, actorID, model.SystemEventTaskLinked, taskID)
+	}
 	return nil
 }
 

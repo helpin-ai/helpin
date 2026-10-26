@@ -1621,6 +1621,11 @@ func createTaskSchema() map[string]any {
 				"maxItems":    100,
 				"items":       checklistItemCreateSchema(),
 			},
+			"support_conversation_id": map[string]any{
+				"type":        "string",
+				"description": "Support conversation the task comes from. Pass it whenever you create a task for a support conversation: the task is linked to it, gets its contact and company links, and the conversation shows it was created. Do not call link_support_conversation_task afterwards.",
+				"minLength":   1,
+			},
 		},
 		"required":             []string{"name", "team_id"},
 		"additionalProperties": false,

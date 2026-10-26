@@ -12,9 +12,16 @@ interface SupportAttachmentImageProps {
 export function SupportAttachmentImage({ attachment, className, compact = false, loadFallback }: SupportAttachmentImageProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
+  const urlRef = useRef(attachment.url);
   const [nearViewport, setNearViewport] = useState(() => !compact || typeof IntersectionObserver === 'undefined');
   const [status, setStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
   const [attempt, setAttempt] = useState(0);
+
+  // A refetched thread can sign the same file again. Keep the newest link for
+  // retries without reloading an image that is already loading or shown.
+  useEffect(() => {
+    urlRef.current = attachment.url;
+  }, [attachment.url]);
 
   useEffect(() => {
     if (nearViewport || !containerRef.current) return;
@@ -32,8 +39,9 @@ export function SupportAttachmentImage({ attachment, className, compact = false,
     const image = imageRef.current;
     if (!nearViewport || !image) return;
     let active = true;
-    let recovering = false;
     let loadedSuccessfully = false;
+    let directFailed = false;
+    let recovery: 'none' | 'pending' | 'failed' | 'applied' = 'none';
     let timer: number;
     setStatus('loading');
 
@@ -46,28 +54,40 @@ export function SupportAttachmentImage({ attachment, className, compact = false,
       loadedSuccessfully = true;
       if (active) setStatus('ready');
     }
+    // A slow or failed storage request races an authenticated copy. A slow
+    // original keeps loading, so the image only fails once neither can arrive.
     function recover() {
       window.clearTimeout(timer);
-      if (!loadFallback || recovering) { fail(); return; }
-      recovering = true;
+      if (!loadFallback) { fail(); return; }
+      recovery = 'pending';
       void loadFallback(attachment.id).then(url => {
         if (!active || loadedSuccessfully) return;
+        recovery = 'applied';
         image!.src = url;
-        timer = window.setTimeout(fail, 8_000);
-      }).catch(fail);
+      }).catch(() => {
+        recovery = 'failed';
+        if (directFailed) fail();
+        else timer = window.setTimeout(fail, 20_000);
+      });
+    }
+    function errored() {
+      if (recovery === 'applied' || recovery === 'failed') { fail(); return; }
+      directFailed = true;
+      if (recovery === 'none') recover();
     }
 
     image.addEventListener('load', loaded);
-    image.addEventListener('error', recover);
-    image.src = attachment.url;
-    timer = window.setTimeout(recover, 8_000);
+    image.addEventListener('error', errored);
+    image.src = urlRef.current;
+    if (image.complete && image.naturalWidth > 0) loaded();
+    else timer = window.setTimeout(recover, 8_000);
     return () => {
       active = false;
       window.clearTimeout(timer);
       image.removeEventListener('load', loaded);
-      image.removeEventListener('error', recover);
+      image.removeEventListener('error', errored);
     };
-  }, [nearViewport, attachment.id, attachment.url, loadFallback, attempt]);
+  }, [nearViewport, attachment.id, loadFallback, attempt]);
 
   return (
     <div ref={containerRef} className={`relative flex items-center justify-center ${className}`} onClick={compact ? undefined : event => event.stopPropagation()}>

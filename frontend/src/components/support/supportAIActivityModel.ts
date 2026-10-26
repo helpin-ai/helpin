@@ -3,7 +3,7 @@ import type { SupportMessage } from '@/lib/pmTypes';
 export type AIActivity = 'pause' | 'return' | 'handoff';
 
 /** One "AI checked" line; source is set only when a tool call backs it. */
-export interface SupportHandoffCheck {
+interface SupportHandoffCheck {
   source?: string;
   finding?: string;
 }

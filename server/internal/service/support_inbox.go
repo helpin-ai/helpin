@@ -2653,79 +2653,6 @@ func (s *SupportInboxService) enrichSupportMessageLinksAsync(msg *model.SupportM
 	}()
 }
 
-// LinkConversationTask links a conversation to a task.
-func (s *SupportInboxService) LinkConversationTask(ctx context.Context, workspaceID, ticketID, taskID, actorID string) error {
-	trimmed := strings.TrimSpace(taskID)
-	if trimmed == "" {
-		return fmt.Errorf("task_id is required")
-	}
-	return s.UpdateConversationLinkedTask(ctx, workspaceID, ticketID, &trimmed, actorID)
-}
-
-// UpdateConversationLinkedTask sets or clears the PM task associated with a
-// support conversation and keeps the generic association table synchronized.
-func (s *SupportInboxService) UpdateConversationLinkedTask(ctx context.Context, workspaceID, ticketID string, taskID *string, actorID string) error {
-	if s.assocRepo == nil {
-		return fmt.Errorf("CRM association repository is unavailable")
-	}
-	ticket, err := s.loadConversationAccessible(ctx, workspaceID, ticketID)
-	if err != nil {
-		return err
-	}
-	if ticket == nil {
-		return fmt.Errorf("ticket not found")
-	}
-
-	var normalizedTaskID *string
-	if taskID != nil && strings.TrimSpace(*taskID) != "" {
-		trimmed := strings.TrimSpace(*taskID)
-		if s.taskService != nil {
-			task, err := s.taskService.GetByID(ctx, trimmed)
-			if err != nil || task == nil || task.Task.WorkspaceID != workspaceID {
-				return fmt.Errorf("task not found")
-			}
-		}
-		normalizedTaskID = &trimmed
-	}
-
-	ticket.LinkedTaskID = normalizedTaskID
-	if err := s.conversationRepo.Update(ctx, ticket); err != nil {
-		return err
-	}
-	existing, err := s.assocRepo.ListByObject(ctx, workspaceID, model.CRMObjectSupportConversation, ticketID)
-	if err != nil {
-		return err
-	}
-	for _, assoc := range existing {
-		otherType, otherID := otherAssociationSide(assoc, model.CRMObjectSupportConversation, ticketID)
-		if otherType == model.CRMObjectTask && (normalizedTaskID == nil || otherID != *normalizedTaskID) {
-			if err := s.assocRepo.Delete(ctx, assoc.ID); err != nil {
-				return err
-			}
-		}
-	}
-	if normalizedTaskID != nil {
-		assoc := &model.CRMAssociation{WorkspaceID: workspaceID, FromObjectType: model.CRMObjectSupportConversation, FromObjectID: ticketID, ToObjectType: model.CRMObjectTask, ToObjectID: *normalizedTaskID}
-		if err := s.assocRepo.Create(ctx, assoc); err != nil {
-			return err
-		}
-	}
-
-	if s.activitySvc != nil {
-		_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", ticketID, &actorID, "updated", strPtr("linked_task_id"), nil, normalizedTaskID, nil)
-	}
-
-	s.wsPublisher.Publish(websocket.Event{
-		Action:      "updated",
-		Entity:      "support_conversation",
-		EntityID:    ticketID,
-		WorkspaceID: workspaceID,
-		ActorID:     actorID,
-	})
-
-	return nil
-}
-
 // CreateTaskFromConversation summarizes a support conversation and creates a linked PM task.
 func (s *SupportInboxService) CreateTaskFromConversation(
 	ctx context.Context,
@@ -2847,7 +2774,7 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 	taskID := detail.Task.ID
 	if req.ReviewedDraft {
 		s.publishReviewedTaskLink(ctx, workspaceID, conversationID, taskID, actorID)
-	} else if err := s.LinkConversationTask(ctx, workspaceID, conversationID, taskID, actorID); err != nil {
+	} else if _, _, err := s.setConversationLinkedTask(ctx, workspaceID, conversationID, &taskID, actorID); err != nil {
 		return nil, err
 	}
 
@@ -2855,7 +2782,7 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 	if err != nil {
 		return nil, err
 	}
-	s.emitTaskCreatedSystemMessage(ctx, workspaceID, conversationID, actorID, taskID, detail.Task.TaskKey, detail.Task.Name)
+	s.emitTaskSystemMessage(ctx, workspaceID, conversationID, actorID, model.SystemEventTaskCreated, &detail.Task)
 
 	slog.InfoContext(ctx, "created task from support conversation",
 		"workspace_id", workspaceID,
@@ -4847,62 +4774,6 @@ func (s *SupportInboxService) emitEmailRecipientsUpdatedSystemMessage(ctx contex
 	}
 	if err := s.messageRepo.Create(ctx, msg); err != nil {
 		slog.ErrorContext(ctx, "create support email recipients system message", "workspace_id", workspaceID, "conversation_id", conversationID, "error", err)
-		return
-	}
-	if s.wsPublisher != nil {
-		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, msg, derefString(senderUserID)))
-	}
-}
-
-func (s *SupportInboxService) emitTaskCreatedSystemMessage(ctx context.Context, workspaceID, conversationID, actorUserID, taskID, taskKey, taskName string) {
-	if s.messageRepo == nil {
-		return
-	}
-	displayName := "A teammate"
-	if strings.TrimSpace(actorUserID) != "" {
-		if name := s.lookupUserName(ctx, actorUserID); strings.TrimSpace(name) != "" {
-			displayName = supportSystemFirstName(name)
-			if displayName == "" {
-				displayName = name
-			}
-		}
-	}
-	taskLabel := strings.TrimSpace(taskKey)
-	if taskLabel != "" && !strings.HasPrefix(taskLabel, "#") {
-		taskLabel = "#" + taskLabel
-	}
-	cleanTaskName := strings.Join(strings.Fields(strings.TrimSpace(taskName)), " ")
-	content := fmt.Sprintf("%s created task %s.", displayName, taskLabel)
-	if taskLabel == "" {
-		content = fmt.Sprintf("%s created a task.", displayName)
-	}
-	if cleanTaskName != "" {
-		if taskLabel != "" {
-			content = fmt.Sprintf("%s created task %s: %s.", displayName, taskLabel, cleanTaskName)
-		} else {
-			content = fmt.Sprintf("%s created task: %s.", displayName, cleanTaskName)
-		}
-	}
-	var senderUserID *string
-	if strings.TrimSpace(actorUserID) != "" {
-		senderUserID = &actorUserID
-	}
-	msg := &model.SupportMessage{
-		WorkspaceID:       workspaceID,
-		ConversationID:    conversationID,
-		SenderType:        "user",
-		SenderUserID:      senderUserID,
-		SenderDisplayName: &displayName,
-		Content:           content,
-		IsInternal:        true,
-		MessageType:       "system",
-		SystemEventType:   model.SupportSystemEventTypeStrPtr(model.SystemEventTaskCreated),
-	}
-	if metadata, err := json.Marshal(map[string]string{"task_id": strings.TrimSpace(taskID)}); err == nil {
-		msg.Metadata = string(metadata)
-	}
-	if err := s.messageRepo.Create(ctx, msg); err != nil {
-		slog.ErrorContext(ctx, "create support task created system message", "workspace_id", workspaceID, "conversation_id", conversationID, "error", err)
 		return
 	}
 	if s.wsPublisher != nil {

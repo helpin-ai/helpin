@@ -237,6 +237,13 @@ func (s *InternalCommandService) executeSupportReply(ctx context.Context, meta m
 	if content == "" {
 		return nil, errCommandInput("content is required")
 	}
+	if supportReplyIsPlaceholder(content) {
+		return mustJSON(map[string]any{
+			"status":      "rewrite_required",
+			"reason":      "placeholder_text",
+			"next_action": "Nothing was sent: the content is placeholder text, not a message. Write the actual customer-facing message and retry the same tool, or use escalate_to_human or skip_support_reply if no reply should be sent.",
+		}), nil
+	}
 	if disclosures := supportReplyInternalProcessDisclosures(content); len(disclosures) > 0 {
 		return mustJSON(map[string]any{
 			"status":      "rewrite_required",

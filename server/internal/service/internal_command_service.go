@@ -441,6 +441,7 @@ func (s *InternalCommandService) Execute(ctx context.Context, meta model.Interna
 			return nil, err
 		}
 	}
+	ctx = withCommandAgent(ctx, meta.AgentID)
 	output, err := def.Execute(ctx, meta, input)
 	if err != nil {
 		return nil, err

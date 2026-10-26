@@ -33,10 +33,87 @@ func TestAllowed(t *testing.T) {
 		{"query", "https://customer.example?", []string{"https://customer.example"}, false},
 		{"fragment", "https://customer.example#", []string{"https://customer.example"}, false},
 		{"ipv6", "http://[::1]:80", []string{"http://[::1]"}, true},
+		{"subdomain pattern", "https://app.customer.example", []string{"https://*.customer.example"}, true},
+		{"subdomain pattern nested", "https://a.b.customer.example", []string{"https://*.customer.example"}, true},
+		{"subdomain pattern canonical", "https://APP.customer.example:443", []string{"https://*.customer.example"}, true},
+		{"subdomain pattern excludes root", "https://customer.example", []string{"https://*.customer.example"}, false},
+		{"subdomain pattern lookalike", "https://evilcustomer.example", []string{"https://*.customer.example"}, false},
+		{"subdomain pattern suffix only", "https://customer.example.evil", []string{"https://*.customer.example"}, false},
+		{"subdomain pattern http", "http://app.customer.example", []string{"https://*.customer.example"}, false},
+		{"subdomain pattern port", "https://app.customer.example:8443", []string{"https://*.customer.example"}, false},
+		{"subdomain pattern same port", "https://app.customer.example:8443", []string{"https://*.customer.example:8443"}, true},
+		{"subdomain pattern missing", "", []string{"https://*.customer.example"}, false},
+		{"root and pattern", "https://customer.example", []string{"https://*.customer.example", "https://customer.example"}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := Allowed(tc.origin, tc.list); got != tc.want {
 				t.Fatalf("Allowed = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeEntry(t *testing.T) {
+	for _, tc := range []struct{ raw, want string }{
+		{"*", "*"},
+		{"https://customer.example", "https://customer.example"},
+		{"https://*.customer.example", "https://*.customer.example"},
+		{"HTTPS://*.Customer.Example:443", "https://*.customer.example"},
+		{"https://*.customer.example:8443", "https://*.customer.example:8443"},
+		{"https://*.acme.github.io", "https://*.acme.github.io"},
+		{"https://*.example.co.uk", "https://*.example.co.uk"},
+		{"tauri://localhost", "tauri://localhost"},
+	} {
+		t.Run(tc.raw, func(t *testing.T) {
+			got, err := NormalizeEntry(tc.raw)
+			if err != nil || got != tc.want {
+				t.Fatalf("NormalizeEntry(%q) = %q, %v; want %q", tc.raw, got, err, tc.want)
+			}
+		})
+	}
+	for _, raw := range []string{
+		"https://*.", "https://*", "http://*.customer.example", "*.customer.example",
+		"https://*.*.customer.example", "https://app.*.customer.example", "https://*customer.example",
+		"https://*.com", "https://*.co.uk", "https://*.github.io", "https://*.localhost",
+		"https://*.127.0.0.1", "https://*.[::1]", "https://*.customer.example/path",
+		"https://*.customer.example?", "https://user@*.customer.example", "**",
+	} {
+		t.Run(raw, func(t *testing.T) {
+			if got, err := NormalizeEntry(raw); err == nil {
+				t.Fatalf("accepted %q as %q", raw, got)
+			}
+		})
+	}
+}
+
+func TestWebsiteDefaults(t *testing.T) {
+	for _, tc := range []struct {
+		website string
+		want    []string
+	}{
+		{"https://www.customer.example/pricing", []string{"https://customer.example", "https://*.customer.example"}},
+		{"customer.example", []string{"https://customer.example", "https://*.customer.example"}},
+		{"HTTPS://WWW.Customer.Example", []string{"https://customer.example", "https://*.customer.example"}},
+		{"http://customer.example", []string{"http://customer.example", "https://*.customer.example"}},
+		{"https://acme.github.io", []string{"https://acme.github.io", "https://*.acme.github.io"}},
+		{"https://app.customer.example", []string{"https://app.customer.example", "https://*.app.customer.example"}},
+		{"https://github.io", []string{"https://github.io"}},
+		{"http://localhost:3000", []string{"http://localhost:3000"}},
+		{"https://customer.example:8443", []string{"https://customer.example:8443"}},
+		{"", nil},
+		{"   ", nil},
+		{"ftp://customer.example", nil},
+		{"https://", nil},
+	} {
+		t.Run(tc.website, func(t *testing.T) {
+			got := WebsiteDefaults(tc.website)
+			if len(got) != len(tc.want) {
+				t.Fatalf("WebsiteDefaults(%q) = %q, want %q", tc.website, got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Fatalf("WebsiteDefaults(%q) = %q, want %q", tc.website, got, tc.want)
+				}
 			}
 		})
 	}

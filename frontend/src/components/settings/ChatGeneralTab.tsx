@@ -22,7 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DEFAULT_PRIVACY_NOTICE_TEXT, getPrivacyPolicyURL, formatReplyTimeCopy, SPECIAL_NOTICE_MAX_LENGTH } from '@helpin-ai/shared';
 import { toast } from 'sonner';
-import { Shield01Icon, Copy01Icon, CodeIcon, Message01Icon, HelpCircleIcon, Image01Icon, Key01Icon, BotIcon, ArrowDown01Icon, StarIcon } from '@/lib/icons';
+import { Shield01Icon, Copy01Icon, CodeIcon, Message01Icon, HelpCircleIcon, Image01Icon, Key01Icon, BotIcon, ArrowDown01Icon, StarIcon, GlobeIcon } from '@/lib/icons';
 import { useChatSettings, useUpdateChatSettings, useRegenerateWidgetKey, useDocsSpaces } from '@/hooks/queries';
 import { useWorkspaceBilling } from '@edition';
 import { useSupportAgents, useSupportMailboxes } from '@/hooks/queries/useSupport';
@@ -151,9 +151,7 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
   const [forceVisitorIdentity, setForceVisitorIdentity] = useState(false);
 
   // Accordion state
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    () => new Set(['widget-settings']),
-  );
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set());
 
   const logoInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -170,6 +168,10 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
       const sortedHelpSpaceIds = sortHelpSpaceIds(s.widget_help_space_ids);
 
       setHydrated(true);
+      // A widget with no allowed websites cannot connect, so open that section.
+      if (!data.allowed_origins?.length) {
+        setExpandedSections(prev => new Set(prev).add('allowed-origins'));
+      }
 
       setRequireEmail(s.require_email_before_chat);
       setRequirePhone(s.require_phone_after_email);
@@ -910,9 +912,9 @@ function Dashboard() {
             <BotIcon className="h-4 w-4" />
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-medium">AI Assistant</p>
+            <p className="text-sm font-medium">AI assistant</p>
             <p className="mt-0.5 text-sm text-muted-foreground">
-              AI replies, internal notes, confidence, and handoff settings now live in AI Assistant.
+              AI replies, internal notes, confidence, and handoff settings now live in AI assistant.
             </p>
             <p className="mt-2 text-xs text-muted-foreground">
               Current mode: {aiEnabled && !aiAssistantEnableBlocker ? (aiResponseMode === 'ai_first' ? 'Reply directly' : 'Add internal note') : 'Off'}
@@ -967,19 +969,46 @@ function Dashboard() {
       <div className="flex flex-1 flex-col overflow-auto">
         <div className="flex-1 space-y-3 p-4">
         {saveIndicator}
-        {data && <WidgetOriginSettings key={workspaceId} workspaceId={workspaceId} installation={data} canManageSigningSecret={canManageSigningSecret} />}
+        {/* Allowed websites */}
+        {data && (
+          <div className={supportSectionClass}>
+            <button
+              type="button"
+              onClick={() => toggleSection('allowed-origins')}
+              aria-expanded={isExpanded('allowed-origins')}
+              className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
+            >
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <GlobeIcon className="h-4 w-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">Allowed websites</p>
+                <p className="text-sm text-muted-foreground">Where the widget can load, and how visitors are verified</p>
+              </div>
+              <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('allowed-origins') && 'rotate-180')} />
+            </button>
+            <div className="accordion-animate" data-open={isExpanded('allowed-origins')}>
+              <div>
+                <div className="border-t border-border px-6 py-6">
+                  <WidgetOriginSettings key={workspaceId} workspaceId={workspaceId} installation={data} canManageSigningSecret={canManageSigningSecret} />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         {/* Widget Installation */}
         <div className={supportSectionClass}>
           <button
             type="button"
             onClick={() => toggleSection('widget-installation')}
+            aria-expanded={isExpanded('widget-installation')}
             className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
           >
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
               <CodeIcon className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">2. Install the widget</p>
+              <p className="text-sm font-medium">Install the widget</p>
               <p className="text-sm text-muted-foreground">Embed the chat widget on your website</p>
             </div>
             <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('widget-installation') && 'rotate-180')} />
@@ -987,6 +1016,11 @@ function Dashboard() {
           <div className="accordion-animate" data-open={isExpanded('widget-installation')}>
             <div>
             <div className="border-t border-border px-6 py-6 space-y-4">
+              {data && !data.allowed_origins?.length && (
+                <p role="status" className="text-sm text-quiet-accent">
+                  Add your website under Allowed websites first, or the widget can't connect.
+                </p>
+              )}
               {!widgetKey ? (
                 <div className="flex flex-col items-center gap-3 py-6 text-center">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
@@ -1092,93 +1126,6 @@ function Dashboard() {
                 </>
               )}
             </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Identity Capture */}
-        <div className={supportSectionClass}>
-          <button
-            type="button"
-            onClick={() => toggleSection('identity-capture')}
-            className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
-          >
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-              <Message01Icon className="h-4 w-4" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">Contact details</p>
-              <p className="text-sm text-muted-foreground">Choose which contact details to ask for when visitors request human support.</p>
-            </div>
-            <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('identity-capture') && 'rotate-180')} />
-          </button>
-          <div className="accordion-animate" data-open={isExpanded('identity-capture')}>
-            <div>
-            <div className="border-t border-border px-6 py-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label className="text-sm">Ask for email before human support</Label>
-                  <p className="text-xs text-muted-foreground">Show an email prompt when visitors request a teammate. Visitors whose email is already known are not asked again.</p>
-                </div>
-                <Switch checked={requireEmail} onCheckedChange={setRequireEmail} />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label className="text-sm">Also ask for a phone number</Label>
-                  <p className="text-xs text-muted-foreground">Show an optional phone number prompt after the email step.</p>
-                </div>
-                <Switch checked={requirePhone} onCheckedChange={setRequirePhone} disabled={!requireEmail} />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label className="text-sm">Make email required</Label>
-                  <p className="text-xs text-muted-foreground">Visitors cannot skip the email step. When off, they can continue without email. Phone number remains optional.</p>
-                </div>
-                <Switch checked={forceVisitorIdentity} onCheckedChange={setForceVisitorIdentity} disabled={!requireEmail} />
-              </div>
-
-              <WelcomeMessageSettings
-                value={welcomeMessage}
-                aiFirst={aiFirst}
-                onChange={setWelcomeMessage}
-                onFocus={() => setPreviewInitialView('conversation')}
-              />
-            </div>
-            </div>
-          </div>
-        </div>
-
-        <div className={supportSectionClass}>
-          <button
-            type="button"
-            onClick={() => toggleSection('privacy')}
-            aria-expanded={isExpanded('privacy')}
-            className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
-          >
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-              <Shield01Icon className="h-4 w-4" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">Privacy notice</p>
-              <p className="text-sm text-muted-foreground">Link your privacy policy before visitors start chatting.</p>
-            </div>
-            <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('privacy') && 'rotate-180')} />
-          </button>
-          <div className="accordion-animate" data-open={isExpanded('privacy')}>
-            <div>
-              <div className="border-t border-border px-6 py-6">
-                <PrivacyNoticeSettings
-                  enabled={privacyNoticeEnabled}
-                  policyUrl={privacyPolicyUrl}
-                  text={privacyNoticeText}
-                  error={privacyNoticeError}
-                  onEnabledChange={setPrivacyNoticeEnabled}
-                  onPolicyUrlChange={setPrivacyPolicyUrl}
-                  onTextChange={setPrivacyNoticeText}
-                />
-              </div>
             </div>
           </div>
         </div>
@@ -1440,6 +1387,93 @@ function Dashboard() {
           </div>
         </div>
 
+        {/* Identity Capture */}
+        <div className={supportSectionClass}>
+          <button
+            type="button"
+            onClick={() => toggleSection('identity-capture')}
+            className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
+          >
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              <Message01Icon className="h-4 w-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">Contact details</p>
+              <p className="text-sm text-muted-foreground">Choose which contact details to ask for when visitors request human support.</p>
+            </div>
+            <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('identity-capture') && 'rotate-180')} />
+          </button>
+          <div className="accordion-animate" data-open={isExpanded('identity-capture')}>
+            <div>
+            <div className="border-t border-border px-6 py-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-sm">Ask for email before human support</Label>
+                  <p className="text-xs text-muted-foreground">Show an email prompt when visitors request a teammate. Visitors whose email is already known are not asked again.</p>
+                </div>
+                <Switch checked={requireEmail} onCheckedChange={setRequireEmail} />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-sm">Also ask for a phone number</Label>
+                  <p className="text-xs text-muted-foreground">Show an optional phone number prompt after the email step.</p>
+                </div>
+                <Switch checked={requirePhone} onCheckedChange={setRequirePhone} disabled={!requireEmail} />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-sm">Make email required</Label>
+                  <p className="text-xs text-muted-foreground">Visitors cannot skip the email step. When off, they can continue without email. Phone number remains optional.</p>
+                </div>
+                <Switch checked={forceVisitorIdentity} onCheckedChange={setForceVisitorIdentity} disabled={!requireEmail} />
+              </div>
+
+              <WelcomeMessageSettings
+                value={welcomeMessage}
+                aiFirst={aiFirst}
+                onChange={setWelcomeMessage}
+                onFocus={() => setPreviewInitialView('conversation')}
+              />
+            </div>
+            </div>
+          </div>
+        </div>
+
+        <div className={supportSectionClass}>
+          <button
+            type="button"
+            onClick={() => toggleSection('privacy')}
+            aria-expanded={isExpanded('privacy')}
+            className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
+          >
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              <Shield01Icon className="h-4 w-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">Privacy notice</p>
+              <p className="text-sm text-muted-foreground">Link your privacy policy before visitors start chatting.</p>
+            </div>
+            <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('privacy') && 'rotate-180')} />
+          </button>
+          <div className="accordion-animate" data-open={isExpanded('privacy')}>
+            <div>
+              <div className="border-t border-border px-6 py-6">
+                <PrivacyNoticeSettings
+                  enabled={privacyNoticeEnabled}
+                  policyUrl={privacyPolicyUrl}
+                  text={privacyNoticeText}
+                  error={privacyNoticeError}
+                  onEnabledChange={setPrivacyNoticeEnabled}
+                  onPolicyUrlChange={setPrivacyPolicyUrl}
+                  onTextChange={setPrivacyNoticeText}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Help Center */}
         <div className={supportSectionClass}>
           <button
@@ -1451,7 +1485,7 @@ function Dashboard() {
               <HelpCircleIcon className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">Help Center</p>
+              <p className="text-sm font-medium">Help center</p>
               <p className="text-sm text-muted-foreground">Select docs spaces for the widget Help tab</p>
             </div>
             <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('help-center') && 'rotate-180')} />
@@ -1674,7 +1708,7 @@ function Dashboard() {
                 <StarIcon className="h-4 w-4" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">Chat Features</p>
+                <p className="text-sm font-medium">Chat features</p>
                 <p className="text-sm text-muted-foreground">File uploads, satisfaction surveys, and fallback emails</p>
               </div>
               <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('chat-features') && 'rotate-180')} />

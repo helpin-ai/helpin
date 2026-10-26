@@ -742,6 +742,41 @@ describe('MessageBubble', () => {
     rendered.forEach((entry) => entry.cleanup())
   })
 
+  it('links linked and unlinked task events to their own task and names the agent', () => {
+    const base = {
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'user',
+      sender_display_name: 'Sarah Khan',
+      message_type: 'system',
+      is_internal: true,
+      created_at: '2026-06-12T09:00:00.000Z',
+      updated_at: '2026-06-12T09:00:00.000Z',
+    } as const
+    const linked = renderBubble({
+      ...base,
+      id: 'msg-task-linked',
+      content: 'Sarah linked task #ENG-124: Retry failed webhooks.',
+      system_event_type: 'task_linked',
+      metadata: JSON.stringify({ task_id: 'task-124', via_agent: 'Ask Agent' }),
+    }, undefined, { workspaceSlug: 'acme', linkedTaskId: 'task-123' })
+    const unlinked = renderBubble({
+      ...base,
+      id: 'msg-task-unlinked',
+      content: 'Sarah unlinked task #ENG-125: Old billing bug.',
+      system_event_type: 'task_unlinked',
+      metadata: JSON.stringify({ task_id: 'task-125' }),
+    }, undefined, { workspaceSlug: 'acme', linkedTaskId: 'task-123' })
+
+    expect(linked.container.querySelector('a')?.getAttribute('href')).toBe('/w/acme/pm/tasks/task-124')
+    expect(linked.container.querySelector('[data-task-created-title]')?.textContent).toBe('Retry failed webhooks')
+    expect(linked.container.querySelector('[data-task-via-agent]')?.textContent).toBe('via Ask Agent')
+    expect(unlinked.container.querySelector('a')?.getAttribute('href')).toBe('/w/acme/pm/tasks/task-125')
+    expect(unlinked.container.querySelector('[data-task-via-agent]')).toBeNull()
+    linked.cleanup()
+    unlinked.cleanup()
+  })
+
   it('uses canonical copy for historical AI escalation system events', () => {
     const message: SupportMessage = {
       id: 'msg-ai-escalated-legacy',

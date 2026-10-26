@@ -78,10 +78,12 @@ const ACTOR_LED_EVENTS = new Set([
   'reopened',
   'closed',
   'task_created',
+  'task_linked',
+  'task_unlinked',
 ]);
 
 /** Verbs that follow the leading actor name across the event phrasings. */
-const ACTOR_VERB = /^(.+?)\s+(?:joined|assigned|took|moved|resolved|reopened|closed|created)\b/;
+const ACTOR_VERB = /^(.+?)\s+(?:joined|assigned|took|moved|resolved|reopened|closed|created|linked|unlinked)\b/;
 
 function pushGroup(ranges: Range[], match: RegExpMatchArray | null, group: number): void {
   const indices = match?.indices?.[group];
@@ -167,9 +169,9 @@ export function toSupportSystemEventSegments(
     pushGroup(ranges, content.match(/\b(?:added|removed) tag\s+([^.]+?)\s*\.?\s*$/d), 1);
   }
 
-  // Task: "created task #KEY: Name.".
-  if (eventType === 'task_created') {
-    const task = content.match(/\bcreated task\s+(#[^:\s]+)(?::\s+(.+?))?\s*\.?\s*$/d);
+  // Task: "created/linked/unlinked task #KEY: Name.".
+  if (eventType === 'task_created' || eventType === 'task_linked' || eventType === 'task_unlinked') {
+    const task = content.match(/\b(?:created|linked|unlinked) task\s+(#[^:\s]+)(?::\s+(.+?))?\s*\.?\s*$/d);
     pushGroup(ranges, task, 1);
     pushGroup(ranges, task, 2);
   }
