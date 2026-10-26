@@ -103,11 +103,19 @@ Just checking in to see if you had a chance to review my last message.`,
 // parseSettings unmarshals the JSONB settings string, applying defaults for missing fields.
 func parseSettings(raw string) model.SupportInboxSettings {
 	defaults := model.DefaultSupportInboxSettings()
-	if raw == "" || raw == "{}" {
-		return defaults
+	// Existing installations without the timing field retain their handoff policy.
+	defaults.EmailCaptureTiming = ""
+	if raw == "" {
+		raw = "{}"
 	}
 	if err := json.Unmarshal([]byte(raw), &defaults); err != nil {
 		return model.DefaultSupportInboxSettings()
+	}
+	if defaults.EmailCaptureTiming == "" {
+		defaults.EmailCaptureTiming = "before_handoff"
+		if !defaults.RequireEmailBeforeChat {
+			defaults.EmailCaptureTiming = "never"
+		}
 	}
 	// Refresh saved copies of the original default while preserving custom messages.
 	if defaults.DelayedTeamReplyMessage == "Our team hasn’t been able to reply yet. You don’t need to keep this chat open. We’ll email you when someone responds." {
@@ -390,6 +398,17 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.ForceVisitorIdentity != nil {
 		current.ForceVisitorIdentity = *patch.ForceVisitorIdentity
 	}
+	if patch.EmailCaptureTiming != nil {
+		current.EmailCaptureTiming = *patch.EmailCaptureTiming
+		current.RequireEmailBeforeChat = current.EmailCaptureTiming != "never"
+	} else if patch.RequireEmailBeforeChat != nil {
+		// Older settings clients can still turn capture on/off without losing the timing.
+		if !*patch.RequireEmailBeforeChat {
+			current.EmailCaptureTiming = "never"
+		} else if current.EmailCaptureTiming == "never" {
+			current.EmailCaptureTiming = "before_handoff"
+		}
+	}
 	return current
 }
 
@@ -397,6 +416,11 @@ var hexColorRegex = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
 // validateSettings checks settings field constraints.
 func (s *SupportInboxService) validateSettings(ctx context.Context, workspaceID string, settings model.SupportInboxSettings) error {
+	switch settings.EmailCaptureTiming {
+	case "after_ai_reply", "before_handoff", "never":
+	default:
+		return fmt.Errorf("invalid email capture timing")
+	}
 	if settings.PrivacyNoticeEnabled {
 		policyURL, err := url.Parse(settings.PrivacyPolicyURL)
 		if err != nil || policyURL.Hostname() == "" || (policyURL.Scheme != "https" && policyURL.Scheme != "http") || policyURL.User != nil {

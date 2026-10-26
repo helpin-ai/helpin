@@ -10,6 +10,10 @@ package model
 type SupportSystemEventType = string
 
 const (
+	// SystemEventVisitorEmailRequested marks a chat waiting for required contact details.
+	SystemEventVisitorEmailRequested SupportSystemEventType = "visitor_email_requested"
+	// SystemEventVisitorEmailProvided marks successful visitor email capture.
+	SystemEventVisitorEmailProvided SupportSystemEventType = "visitor_email_provided"
 	// Internal teammate actions; never delivered to customers.
 	SystemEventAIPaused   SupportSystemEventType = "ai_paused"
 	SystemEventAIReturned SupportSystemEventType = "ai_returned"
@@ -93,6 +97,8 @@ const (
 // allSupportSystemEventTypes is the authoritative set of valid event types.
 // Kept private so callers go through IsValidSupportSystemEventType.
 var allSupportSystemEventTypes = map[SupportSystemEventType]struct{}{
+	SystemEventVisitorEmailRequested:  {},
+	SystemEventVisitorEmailProvided:   {},
 	SystemEventAIPaused:               {},
 	SystemEventAIReturned:             {},
 	SystemEventTeammateJoined:         {},

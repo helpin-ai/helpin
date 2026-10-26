@@ -177,6 +177,7 @@ export class WidgetManager {
   private originalDocumentTitle: string | null = null;
   private pageIsFocused = true;
   private preChatDone = false;
+  private waitingForEmail = false;
   private receivedMessageAudio: HTMLAudioElement | null = null;
   private receivedMessageAudioUnlocked = false;
   private sentMessageAudio: HTMLAudioElement | null = null;
@@ -292,6 +293,7 @@ export class WidgetManager {
       try { sessionStorage.removeItem(`helpin_pending_messages_${this.widgetKey}`); } catch { /* ignore */ }
     }
     this.preChatDone = false;
+    this.waitingForEmail = false;
 
     // 3. Reset in-memory state + unmount widget
     this.cleanup();
@@ -655,7 +657,7 @@ export class WidgetManager {
       openArticleRequest: this.openArticleRequest || undefined,
       onImageClick: (src: string, alt: string) => this.showImageLightbox(src, alt),
       onAnswerFeedback: (messageId: string, helpful: boolean) => this.handleAnswerFeedback(messageId, helpful),
-      queuedMessageCount: this.getVisiblePendingMessageCount(),
+      queuedMessageCount: this.waitingForEmail || this.requiresEmailForChat() ? 0 : this.getVisiblePendingMessageCount(),
       csatSubmitted: this.activeConversationId ? this.hasSubmittedCsat(this.activeConversationId) : false,
       onCsatSubmit: (rating: number, feedback?: string) => this.handleCsatSubmit(rating, feedback),
       onViewChange: (view: WidgetView) => {
@@ -907,6 +909,7 @@ export class WidgetManager {
   // ─── Message Handling ──────────────────────────────────────
 
   private resetActiveConversation(): void {
+    this.waitingForEmail = false;
     this.clearAIResponseStreams();
     this.activeConversationId = null;
     this.activeTeammate = undefined;
@@ -1364,7 +1367,15 @@ export class WidgetManager {
     } catch { /* storage may be unavailable */ }
   }
 
+  private requiresEmailForChat(): boolean {
+    return Boolean(this.widgetConfig?.features?.emailCaptureTiming === 'after_ai_reply'
+      && this.widgetConfig.features.forceIdentify
+      && !this.currentEmail && !this.config?.user?.email
+      && this.messages.some(message => message.role === 'ai' && !message.isInternal && message.aiProgressState !== 'checking' && !message.isStreaming));
+  }
+
   private flushPendingOutgoingMessages(): void {
+    if (this.waitingForEmail || this.requiresEmailForChat()) return;
     if (this.wsConnection?.readyState !== WebSocket.OPEN || this.connectionStatus !== 'connected') return;
 
     let selectedConversationId: string | undefined;
@@ -1601,7 +1612,7 @@ export class WidgetManager {
     }
   }
 
-  private async handleCaptureEmail(email: string): Promise<void> {
+  private async handleCaptureEmail(email: string, phone = ''): Promise<void> {
     if (!this.widgetKey || !this.anonymousId || !email) {
       throw new Error('Unable to save email without an active visitor.');
     }
@@ -1614,6 +1625,7 @@ export class WidgetManager {
         api_key: this.widgetKey,
         anonymous_id: this.anonymousId,
         email,
+        ...(phone ? { phone } : {}),
         source: 'widget_prechat',
       }),
     });
@@ -1623,6 +1635,8 @@ export class WidgetManager {
       throw new Error('Visitor session changed while saving email.');
     }
     this.currentEmail = email;
+    this.waitingForEmail = false;
+    this.flushPendingOutgoingMessages();
     persistIdentity(widgetKey, email, '');
     this.preChatDone = true;
     try { localStorage.setItem(`helpin_prechat_${this.widgetKey}`, '1'); } catch { /* storage may be unavailable */ }
@@ -1630,32 +1644,21 @@ export class WidgetManager {
     this.render();
   }
 
-  private handlePreChatSubmit(data: { phone: string; email: string }): void {
+  private async handlePreChatSubmit(data: { phone: string; email: string }): Promise<void> {
     if (data.email) {
-      this.triggerCallback('onUserEmailSupplied', data.email);
-      this.currentEmail = data.email;
-      // Persist identity so it survives page refresh
-      if (this.widgetKey) {
-        persistIdentity(this.widgetKey, data.email, '');
-      }
+      await this.handleCaptureEmail(data.email, data.phone);
+      const track = (globalThis as any).helpin?.track;
+      if (typeof track === 'function') track('lead', { email: data.email });
+      return;
     }
-
-    // Mark pre-chat as done so it doesn't reappear on reload.
+    // Optional capture may be skipped. Phone-only capture retains the existing WS path.
+    if (data.phone && this.wsConnection?.readyState === WebSocket.OPEN) {
+      this.wsSend('session:upgrade', { email: '', phone: data.phone, source: 'widget_prechat' });
+    }
     this.preChatDone = true;
     if (this.widgetKey) {
-      try { localStorage.setItem(`helpin_prechat_${this.widgetKey}`, '1'); } catch { /* ignore */ }
+      try { localStorage.setItem(`helpin_prechat_${this.widgetKey}`, '1'); } catch { /* storage may be unavailable */ }
     }
-
-    // Upgrade session via WS with source=prechat (even if email is empty — server handles skip)
-    if (this.wsConnection?.readyState === WebSocket.OPEN) {
-      this.wsSend('session:upgrade', { email: data.email || '', phone: data.phone || '', source: 'widget_prechat' });
-    }
-
-    // Fire lead tracking event to events pipeline (ClickHouse)
-    if (data.email && (globalThis as any).helpin?.track) {
-      (globalThis as any).helpin.track('lead', { email: data.email });
-    }
-
     this.render();
   }
 
@@ -1753,6 +1756,7 @@ export class WidgetManager {
   // ─── Conversation Switching ─────────────────────────────────
 
   private handleSelectConversation(conversationId: string): void {
+    this.waitingForEmail = false;
     this.clearAIResponseStreams();
     this.activeConversationId = conversationId;
     this.activeTeammate = this.conversations.find((conversation) => conversation.id === conversationId)?.activeTeammate;
@@ -2082,6 +2086,10 @@ export class WidgetManager {
       }
 
       case 'session:upgraded':
+        if (this.currentEmail || this.config?.user?.email) {
+          this.waitingForEmail = false;
+          this.flushPendingOutgoingMessages();
+        }
         this.render();
         break;
 
@@ -2333,6 +2341,16 @@ export class WidgetManager {
       }
 
       case 'connection:error':
+        if (data.data?.code === 'email_required') {
+          this.waitingForEmail = this.widgetConfig?.features?.emailCaptureTiming === 'after_ai_reply';
+          this.isAIThinking = false;
+          for (const pending of this.pendingOutgoingMessages) {
+            if (pending.conversationId === this.activeConversationId) pending.lastSentConnection = -1;
+          }
+          this.persistPendingOutgoingMessages();
+          this.render();
+          break;
+        }
         console.error('Widget server error:', data.data);
         break;
     }

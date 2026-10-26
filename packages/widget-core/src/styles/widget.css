@@ -4448,3 +4448,11 @@ a.helpin-source-item:focus-visible {
 .helpin-message-content a { unicode-bidi: isolate; }
 
 .helpin-conversation-merge-notice { font-size: 12px; line-height: 1.5; text-align: center; color: var(--helpin-text-secondary, #64748b); margin: 12px 16px; }
+
+/* Contact capture occupies the composer while preserving the conversation above. */
+.helpin-email-composer { flex-shrink: 0; border-top: 1px solid var(--helpin-border); padding: 16px; }
+.helpin-email-composer .helpin-human-contact-card { position: relative; margin: 0; }
+.helpin-email-composer .helpin-human-contact-card__heading { padding-right: 24px; }
+.helpin-email-dismiss { position: absolute; top: 12px; right: 12px; display: flex; padding: 4px; border: 0; border-radius: 6px; background: transparent; color: var(--helpin-text-secondary); cursor: pointer; }
+.helpin-email-dismiss:hover { background: var(--helpin-bg-secondary); }
+.helpin-email-error { color: var(--helpin-error, #dc2626); font-size: 13px; }
