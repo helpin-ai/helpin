@@ -18,6 +18,7 @@ import { Route as DemoRouteImport } from './routes/demo'
 import { Route as BillingPreviewRouteImport } from './routes/billing-preview'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as TeamReplyTokenRouteImport } from './routes/team-reply/$token'
 import { Route as SharedShareTokenRouteImport } from './routes/shared/$shareToken'
 import { Route as ShareShareTokenRouteImport } from './routes/share/$shareToken'
 import { Route as PortalSlugRouteImport } from './routes/portal/$slug'
@@ -187,6 +188,11 @@ const AuthenticatedRoute = AuthenticatedRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TeamReplyTokenRoute = TeamReplyTokenRouteImport.update({
+  id: '/team-reply/$token',
+  path: '/team-reply/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SharedShareTokenRoute = SharedShareTokenRouteImport.update({
@@ -944,6 +950,7 @@ export interface FileRoutesByFullPath {
   '/portal/$slug': typeof PortalSlugRouteWithChildren
   '/share/$shareToken': typeof ShareShareTokenRoute
   '/shared/$shareToken': typeof SharedShareTokenRoute
+  '/team-reply/$token': typeof TeamReplyTokenRoute
   '/github/installed': typeof AuthenticatedGithubInstalledRoute
   '/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
@@ -1078,6 +1085,7 @@ export interface FileRoutesByTo {
   '/join/$token': typeof JoinTokenRoute
   '/share/$shareToken': typeof ShareShareTokenRoute
   '/shared/$shareToken': typeof SharedShareTokenRoute
+  '/team-reply/$token': typeof TeamReplyTokenRoute
   '/github/installed': typeof AuthenticatedGithubInstalledRoute
   '/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/portal/$slug/callback': typeof PortalSlugCallbackRoute
@@ -1209,6 +1217,7 @@ export interface FileRoutesById {
   '/portal/$slug': typeof PortalSlugRouteWithChildren
   '/share/$shareToken': typeof ShareShareTokenRoute
   '/shared/$shareToken': typeof SharedShareTokenRoute
+  '/team-reply/$token': typeof TeamReplyTokenRoute
   '/_authenticated/github/installed': typeof AuthenticatedGithubInstalledRoute
   '/_authenticated/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/_authenticated/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
@@ -1347,6 +1356,7 @@ export interface FileRouteTypes {
     | '/portal/$slug'
     | '/share/$shareToken'
     | '/shared/$shareToken'
+    | '/team-reply/$token'
     | '/github/installed'
     | '/oauth/authorize'
     | '/w/$slug'
@@ -1481,6 +1491,7 @@ export interface FileRouteTypes {
     | '/join/$token'
     | '/share/$shareToken'
     | '/shared/$shareToken'
+    | '/team-reply/$token'
     | '/github/installed'
     | '/oauth/authorize'
     | '/portal/$slug/callback'
@@ -1611,6 +1622,7 @@ export interface FileRouteTypes {
     | '/portal/$slug'
     | '/share/$shareToken'
     | '/shared/$shareToken'
+    | '/team-reply/$token'
     | '/_authenticated/github/installed'
     | '/_authenticated/oauth/authorize'
     | '/_authenticated/w/$slug'
@@ -1746,6 +1758,7 @@ export interface RootRouteChildren {
   PortalSlugRoute: typeof PortalSlugRouteWithChildren
   ShareShareTokenRoute: typeof ShareShareTokenRoute
   SharedShareTokenRoute: typeof SharedShareTokenRoute
+  TeamReplyTokenRoute: typeof TeamReplyTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -1811,6 +1824,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/team-reply/$token': {
+      id: '/team-reply/$token'
+      path: '/team-reply/$token'
+      fullPath: '/team-reply/$token'
+      preLoaderRoute: typeof TeamReplyTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/shared/$shareToken': {
@@ -3117,6 +3137,7 @@ const rootRouteChildren: RootRouteChildren = {
   PortalSlugRoute: PortalSlugRouteWithChildren,
   ShareShareTokenRoute: ShareShareTokenRoute,
   SharedShareTokenRoute: SharedShareTokenRoute,
+  TeamReplyTokenRoute: TeamReplyTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -234,6 +234,8 @@ export const queryKeys = {
       ['support', wsId, 'conversations', conversationId, 'messages', messageId, 'info'] as const,
     installation: (wsId: string) => ['support', wsId, 'installation'] as const,
     portalAccess: (wsId: string) => ['support', wsId, 'portal-access'] as const,
+    /** The public team-reply page behind the link in AI emails. */
+    teamReply: (token: string) => ['support', 'team-reply', token] as const,
     attachmentPolicy: (wsId: string) => ['support', wsId, 'attachment-policy'] as const,
     portalContactAccess: (wsId: string, contactId: string) => ['support', wsId, 'portal-access', 'contact', contactId] as const,
     routingUsage: (wsId: string) => ['support', wsId, 'routing-usage'] as const,

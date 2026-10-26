@@ -32,10 +32,10 @@ function normalizePathname(pathname: string) {
 const isLogoutPath =
   typeof window !== 'undefined' && normalizePathname(window.location.pathname) === '/logout'
 
-// The customer portal is public and has its own session. Staff session checks
-// and developer tools never run there.
+// The customer portal and the team-reply page from AI emails are public
+// customer pages. Staff session checks and developer tools never run there.
 const isCustomerPortalPath =
-  typeof window !== 'undefined' && /^\/portal(\/|$)/.test(normalizePathname(window.location.pathname))
+  typeof window !== 'undefined' && /^\/(portal|team-reply)(\/|$)/.test(normalizePathname(window.location.pathname))
 
 if (isLogoutPath) {
   void clearClientSession().finally(() => {

@@ -240,6 +240,9 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 				replyChannel = model.SupportAIReplyChannel(conv, source)
 			}
 		}
+		if len(briefs) > 0 && briefs[0].CustomerNotified {
+			sendPublicHandoff = false
+		}
 		if sendPublicHandoff {
 			replyMsg = &model.SupportMessage{
 				WorkspaceID:       workspaceID,
