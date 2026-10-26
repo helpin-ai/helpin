@@ -1,4 +1,5 @@
 import { francAll } from 'franc-min';
+import { commonEnglishWords, sharedWords } from './commonEnglishWords';
 
 // Only unambiguous language codes; script variants keep manual Translate.
 const readingLanguageCodes: Record<string, string> = {
@@ -48,6 +49,7 @@ export function isMessageInReadingLanguage(content: string, readingLanguage: str
 export function isMessageInOtherLanguage(content: string, readingLanguage: string): boolean {
   const expected = readingLanguageCodes[normalizeReadingLanguage(readingLanguage)];
   if (!expected) return true;
+  if (isMostlyCommonWords(content, readingLanguage)) return false;
   const text = authoredText(content);
   return [text, ...text.split(/\n+/)].some(part => {
     const letters = part.match(/\p{L}/gu)?.length ?? 0;
@@ -59,6 +61,26 @@ export function isMessageInOtherLanguage(content: string, readingLanguage: strin
     // Short text only shows its script; longer text also shows its language.
     return letters >= 30 && ranked[1] < 0.8;
   });
+}
+
+// The detector is weakest on short text, where everyday words settle many
+// messages: each sentence must be mostly common English, ignoring words shared
+// with other languages and mixed-case names such as "TikTok". Only English has a
+// word list, so other reading languages return false.
+export function isMostlyCommonWords(content: string, readingLanguage: string): boolean {
+  if (normalizeReadingLanguage(readingLanguage) !== 'en') return false;
+  let found = 0;
+  for (const sentence of authoredText(content).split(/[.!?。！？\n]+/u)) {
+    const counted = (sentence.replaceAll('’', "'").match(/\p{L}+(?:'\p{L}+)*/gu) ?? [])
+      .filter(word => !/\p{Lu}/u.test(word.slice(1)))
+      .map(word => word.toLowerCase())
+      .filter(word => !sharedWords.has(word));
+    if (!counted.length) continue;
+    const english = counted.filter(word => commonEnglishWords.has(word)).length;
+    if (english / counted.length < 0.6) return false;
+    found += english;
+  }
+  return found > 0;
 }
 
 function authoredText(content: string): string {

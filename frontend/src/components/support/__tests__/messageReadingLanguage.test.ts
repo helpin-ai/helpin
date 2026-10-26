@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isMessageInOtherLanguage, isMessageInReadingLanguage } from '../messageReadingLanguage';
+import { isMessageInOtherLanguage, isMessageInReadingLanguage, isMostlyCommonWords } from '../messageReadingLanguage';
 
 const english = 'I can help you update your email address. Please open your account settings and select your profile.';
 const spanish = 'Puedes cambiar la dirección de correo electrónico desde la configuración de tu cuenta. Abre tu perfil para continuar.';
@@ -45,5 +45,18 @@ describe('message in another language', () => {
   });
   it('keeps manual translation for reading languages the local detector cannot check', () => {
     expect(isMessageInOtherLanguage(english, 'zh-Hans')).toBe(true);
+  });
+});
+
+describe('mostly common words', () => {
+  it.each(['Thanks, it is working now!', "I can't log in", 'still not working', 'Can I talk to a human?', 'Could you confirm your workspace name?', 'The TikTok upload is broken again'])('recognizes short English: %s', text => {
+    expect(isMostlyCommonWords(text, 'en')).toBe(true);
+    expect(isMostlyCommonWords(text, 'en-GB')).toBe(true);
+  });
+  it.each(['Hola', 'no me deja entrar', 'Ich bin in Berlin', 'on y va', 'Tak for hjælpen', 'mujhe help chahiye', 'please jaldi reply karein', 'account login nahi ho raha', '谢谢', 'OK', 'TikTok LinkedIn', '123456', `${english} ${spanish}`])('does not treat other or unclear text as English: %s', text => {
+    expect(isMostlyCommonWords(text, 'en')).toBe(false);
+  });
+  it('only has an English word list', () => {
+    expect(isMostlyCommonWords('Thanks, it is working now!', 'es')).toBe(false);
   });
 });

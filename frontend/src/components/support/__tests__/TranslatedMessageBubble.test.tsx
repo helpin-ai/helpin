@@ -100,6 +100,8 @@ it.each([
  ['en', 'customer', 'No puedo conectar mi cuenta de Instagram', 'Translate'],
  ['en', 'customer', 'مرحبا، أحتاج مساعدة', 'Translate'],
  ['es', 'customer', 'Thanks, it is working now!', 'Translate'],
+ ['', 'customer', 'Thanks, it is working now!', null],
+ ['', 'customer', 'mujhe help chahiye', 'Translate'],
 ])('in a conversation detected as %s, a %s message "%s" shows %s', async (detected, sender, content, expected) => {
  request.mockReset(); settings.detected = detected;
  const div = document.createElement('div'); const root = createRoot(div); const client = new QueryClient();
