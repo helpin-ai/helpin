@@ -60,6 +60,7 @@ export const CsatRating: FunctionComponent<CsatRatingProps> = ({ onSubmit }) => 
             role="radio"
             aria-checked={rating === value}
             aria-label={label}
+            data-rating-label={label}
           >
             {emoji}
           </button>

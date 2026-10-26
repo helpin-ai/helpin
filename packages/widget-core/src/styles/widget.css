@@ -3662,6 +3662,38 @@ a.helpin-source-item:focus-visible {
   transition: transform 0.16s, border-color 0.16s, background 0.16s;
 }
 
+/* Labels stay available to keyboard users without adding mobile copy. */
+.helpin-csat-emoji {
+  position: relative;
+}
+
+.helpin-csat-emoji::after {
+  content: attr(data-rating-label);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  padding: 6px 9px;
+  border-radius: 6px;
+  background: var(--helpin-fg);
+  color: var(--helpin-bg);
+  font: 500 11px/1.4 var(--helpin-font-sans);
+  white-space: nowrap;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.helpin-csat-emoji:focus-visible::after {
+  visibility: visible;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .helpin-csat-emoji:hover::after {
+    visibility: visible;
+  }
+}
+
 .helpin-csat-emoji:hover {
   transform: translateY(-2px);
   background: color-mix(in srgb, var(--helpin-primary) 9%, var(--helpin-card-bg));
