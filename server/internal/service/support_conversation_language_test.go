@@ -256,3 +256,27 @@ func TestTranslationConversationLanguageEstablishedByLiveWorker(t *testing.T) {
 		t.Fatalf("live detection drifted: %+v calls=%d %v", options, provider.calls, err)
 	}
 }
+
+func TestTranslationConversationLanguageDetectedOnceWhileTranslationOff(t *testing.T) {
+	env, c, provider := translationFixture(t)
+	ctx := context.Background()
+	s := env.service.supportInboxService
+	setTranslationWorkspaceSettings(t, env, c.WorkspaceID, func(settings *model.SupportInboxSettings) { settings.TranslationCustomerLanguage = "" })
+	if _, err := s.SetLiveTranslate(ctx, c.WorkspaceID, c.ID, false, ""); err != nil {
+		t.Fatal(err)
+	}
+	provider.responseLanguage = "en"
+	for i := 0; i < 2; i++ {
+		msg := &model.SupportMessage{ID: uuid.NewString(), WorkspaceID: c.WorkspaceID, ConversationID: c.ID, SenderType: "customer", MessageType: "reply", Content: "Please help me invite my team to the workspace."}
+		if err := env.messageRepo.Create(ctx, msg); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.processLiveMessage(ctx, &model.SupportLiveMessage{WorkspaceID: c.WorkspaceID, ConversationID: c.ID, MessageID: msg.ID, Revision: 2, TargetLanguage: "en"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	options, err := s.TranslationOptions(ctx, c.WorkspaceID, c.ID, "reader")
+	if err != nil || options.DetectedCustomerLanguage != "en" || provider.calls != 1 {
+		t.Fatalf("repeated detection while translation is off: %+v calls=%d %v", options, provider.calls, err)
+	}
+}
