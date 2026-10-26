@@ -1369,6 +1369,7 @@ type SupportInboxSettings struct {
 	AIPreRouterMode              string  `json:"ai_pre_router_mode"`      // "off" | "shadow" | "enabled"
 	AIMaxFollowups               int     `json:"ai_max_followups"`        // max stalled same-issue AI attempts before forced handoff (default: 5)
 	AIFollowUpEnabled            bool    `json:"ai_follow_up_enabled"`
+	AIEmailCodeCheckEnabled      bool    `json:"ai_email_code_check_enabled"` // check a connected repository before replying by email
 	AIFollowUpSecondDelayHours   int     `json:"ai_follow_up_second_delay_hours"`
 	AIFollowUpDelayHours         int     `json:"ai_follow_up_delay_hours"`
 	AIFollowUpCloseHours         int     `json:"ai_follow_up_close_hours"`
@@ -1596,6 +1597,7 @@ type UpdateInstallationSettingsRequest struct {
 	AIPreRouterMode                 *string                     `json:"ai_pre_router_mode,omitempty"`
 	AIMaxFollowups                  *int                        `json:"ai_max_followups,omitempty"`
 	AIFollowUpEnabled               *bool                       `json:"ai_follow_up_enabled,omitempty"`
+	AIEmailCodeCheckEnabled         *bool                       `json:"ai_email_code_check_enabled,omitempty"`
 	AIFollowUpSecondDelayHours      *int                        `json:"ai_follow_up_second_delay_hours,omitempty"`
 	AIFollowUpDelayHours            *int                        `json:"ai_follow_up_delay_hours,omitempty"`
 	AIFollowUpCloseHours            *int                        `json:"ai_follow_up_close_hours,omitempty"`

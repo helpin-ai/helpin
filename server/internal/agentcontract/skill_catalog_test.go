@@ -159,7 +159,7 @@ func TestEchoSystemPromptUsesScopedSupportResearch(t *testing.T) {
 		"configured knowledge sources",
 		"Do not launch web research",
 		"Do not launch repository research",
-		"send_support_progress acknowledgment, then call start_agent_run",
+		"on chat, send one brief send_support_progress acknowledgment; then call start_agent_run",
 		"After the child starts, end the runtime turn without another reply",
 		"required_confidence",
 		"best_possible_grounded_confidence",
@@ -935,5 +935,28 @@ func TestSupportWorkspaceResponsibilitiesReachEveryEcho(t *testing.T) {
 	}
 	if strings.Contains(skill.Instructions, "Every visitor turn") || strings.Contains(skill.Instructions, "## Turn contract") {
 		t.Fatal("workspace skill duplicates system mechanics")
+	}
+}
+
+// A saved prompt copied from an older default keeps its own text but must
+// carry only the current rules, never the old and new versions together.
+func TestEnsureSupportRuntimeDeliveryContractReplacesPreviousRules(t *testing.T) {
+	raw, err := supportRulesHistory.ReadFile("support_rules_history/2026-10-25.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := strings.TrimSpace(string(raw))
+	if previous == supportRequiredRules || !strings.HasPrefix(previous, "## Required support rules") {
+		t.Fatal("history must hold the earlier shipped rules")
+	}
+	saved := "Workspace intro.\n\n" + previous + "\n\nWorkspace tail."
+	for name, prompt := range map[string]string{"older copy": saved, "older and current copies": saved + "\n\n" + supportRequiredRules} {
+		got := EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, prompt)
+		if strings.Contains(got, previous) || strings.Count(got, supportRequiredRules) != 1 {
+			t.Fatalf("%s: rules not replaced exactly once", name)
+		}
+		if !strings.HasPrefix(got, "Workspace intro.") || !strings.Contains(got, "Workspace tail.") {
+			t.Fatalf("%s: workspace text lost", name)
+		}
 	}
 }

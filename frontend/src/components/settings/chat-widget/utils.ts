@@ -208,6 +208,7 @@ export function buildSettingsDraftFromServer(settings: SupportInboxSettings): Ch
     privacy_policy_url: rest.privacy_policy_url ?? '',
     privacy_notice_text: rest.privacy_notice_text || DEFAULT_PRIVACY_NOTICE_TEXT,
     ai_follow_up_enabled: rest.ai_follow_up_enabled ?? false,
+    ai_email_code_check_enabled: rest.ai_email_code_check_enabled ?? false,
     ai_follow_up_delay_hours: rest.ai_follow_up_delay_hours ?? 24,
     ai_follow_up_close_hours: rest.ai_follow_up_close_hours ?? 48,
     ai_follow_up_max_per_conversation: rest.ai_follow_up_max_per_conversation ?? 2,

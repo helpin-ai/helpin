@@ -1332,6 +1332,8 @@ export interface SupportInboxSettings {
   ai_reply_channels?: 'chat' | 'email' | 'both';
   ai_max_followups: number;
   ai_follow_up_enabled: boolean;
+  /** Lets the AI check a connected repository before replying by email. */
+  ai_email_code_check_enabled?: boolean;
   ai_follow_up_delay_hours: number;
   ai_follow_up_second_delay_hours: number;
   ai_follow_up_close_hours: number;

@@ -372,7 +372,7 @@ func TestSyncManagedSystemPromptForPresetMergesLegacyPlanningNotes(t *testing.T)
 }
 
 func TestPersistedEchoFallbackSnapshotUpgradesWithoutLosingCustomText(t *testing.T) {
-	for _, snapshot := range []string{"testdata/legacy_echo_prompt.txt", "testdata/echo_prompt_2026_10.txt"} {
+	for _, snapshot := range []string{"testdata/legacy_echo_prompt.txt", "testdata/echo_prompt_2026_10.txt", "testdata/echo_prompt_2026_10_26.txt"} {
 		t.Run(snapshot, func(t *testing.T) {
 			raw, err := os.ReadFile(snapshot)
 			if err != nil {

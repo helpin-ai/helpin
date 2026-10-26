@@ -188,6 +188,7 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 	var replyMsg *model.SupportMessage
 	var escalationSystemMsg *model.SupportMessage
 	escalationAlreadyMessaged := false
+	codeCheckedThisTurn := false
 	// Load with includeInternal=true so dedupe can see the new internal
 	// handoff system events (and the legacy ai_escalated rows that were
 	// public but are still recognized).
@@ -209,6 +210,7 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 			}
 		}
 		escalationAlreadyMessaged = hasEscalationMessageInHistory(recent)
+		codeCheckedThisTurn = supportCodeCheckedThisTurn(recent)
 	}
 
 	// 1. Create escalation messages — a customer-facing reply plus an
@@ -314,6 +316,10 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		}
 	}
 	investigation := newSupportInvestigation(conv, issueKey, brief, now)
+	if codeCheckedThisTurn {
+		// The team already has this message's code-check card.
+		investigation = nil
+	}
 	brief.InvestigationRequested = investigation != nil
 	note := buildSupportHandoffNote(conv, history, reason, brief, now)
 	messages := []*model.SupportMessage{replyMsg, escalationSystemMsg, note}

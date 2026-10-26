@@ -206,6 +206,9 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.AIFollowUpEnabled != nil {
 		current.AIFollowUpEnabled = *patch.AIFollowUpEnabled
 	}
+	if patch.AIEmailCodeCheckEnabled != nil {
+		current.AIEmailCodeCheckEnabled = *patch.AIEmailCodeCheckEnabled
+	}
 	if patch.AIFollowUpSecondDelayHours != nil {
 		current.AIFollowUpSecondDelayHours = *patch.AIFollowUpSecondDelayHours
 	}

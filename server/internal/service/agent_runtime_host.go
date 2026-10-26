@@ -618,6 +618,9 @@ func (s *AgentRuntimeHostService) ResolveTargetContext(ctx context.Context, req 
 			return nil, err
 		}
 		resp.Summary = runtimeSupportConversationSummary(conversation, workspace)
+		if s.supportCodeCheckAvailable(ctx, conversation) {
+			resp.Summary += "\n" + supportCodeCheckAvailableLine
+		}
 		resp.Target.Type = "support_conversation"
 		resp.Target.Display = &agentruntime.TargetDisplay{Title: conversation.Subject}
 		resp.Data = runtimeSupportConversationContextData(conversation)
@@ -1391,6 +1394,20 @@ func runtimeWorkspaceContextData(workspace *model.Workspace) map[string]interfac
 		data["company_product_context"] = companyProductContext
 	}
 	return data
+}
+
+// supportCodeCheckAvailable tells Echo whether this conversation may use the
+// code check before replying; the launch is checked again when it starts.
+func (s *AgentRuntimeHostService) supportCodeCheckAvailable(ctx context.Context, conversation *model.SupportConversation) bool {
+	if s == nil || s.supportRepo == nil || conversation == nil {
+		return false
+	}
+	db := s.supportRepo.DB()
+	installation, err := repository.NewSupportInboxInstallationRepository(db).GetByWorkspace(ctx, conversation.WorkspaceID)
+	if err != nil || installation == nil {
+		return false
+	}
+	return supportCodeCheckAvailable(ctx, db, effectiveSupportAISettings(parseSettings(installation.Settings), conversation), conversation)
 }
 
 func runtimeSupportConversationSummary(conversation *model.SupportConversation, workspace *model.Workspace) string {

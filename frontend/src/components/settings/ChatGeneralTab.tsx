@@ -122,6 +122,7 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
   const [aiReplyChannels, setAiReplyChannels] = useState<AIReplyChannels>('chat');
   const [aiResponseMode, setAiResponseMode] = useState(DEFAULT_CHAT_WIDGET_AI_RESPONSE_MODE);
   const [aiFollowUpEnabled, setAiFollowUpEnabled] = useState(true);
+  const [aiEmailCodeCheck, setAiEmailCodeCheck] = useState(false);
   const [aiFollowUpDelay, setAiFollowUpDelay] = useState(24);
   const [aiFollowUpClose, setAiFollowUpClose] = useState(1);
   const [aiFollowUpSecondDelay, setAiFollowUpSecondDelay] = useState(24);
@@ -196,6 +197,7 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
       setAiResponseMode(getChatWidgetAIResponseModeForUI(s.ai_response_mode));
       setAiReplyChannels(getAIReplyChannels(s.ai_reply_channels));
       setAiFollowUpEnabled(s.ai_follow_up_enabled ?? true);
+      setAiEmailCodeCheck(s.ai_email_code_check_enabled ?? false);
       setAiFollowUpDelay(s.ai_follow_up_delay_hours ?? 24);
       setAiFollowUpClose(s.ai_follow_up_close_hours ?? 1);
       setAiFollowUpSecondDelay(s.ai_follow_up_second_delay_hours ?? 24);
@@ -262,6 +264,7 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
     ai_reply_channels: aiReplyChannels,
     ai_max_followups: aiMaxFollowups,
     ai_follow_up_enabled: aiFollowUpEnabled,
+    ai_email_code_check_enabled: aiEmailCodeCheck,
     ai_follow_up_delay_hours: aiFollowUpDelay,
     ai_follow_up_close_hours: aiFollowUpClose,
     ai_follow_up_second_delay_hours: aiFollowUpSecondDelay,
@@ -779,6 +782,15 @@ function Dashboard() {
               <p id="ai-confidence-help" className="text-xs text-quiet-text-secondary">Higher confidence means fewer AI answers and more human handoffs.</p>
             </div>
           </div>
+          {aiReplyChannels !== 'chat' && (
+            <div className="flex items-start justify-between gap-4 border-t border-quiet-divider pt-5">
+              <div className="space-y-2">
+                <Label htmlFor="ai-email-code-check">Check the code before replying by email</Label>
+                <p id="ai-email-code-check-help" className="text-xs text-quiet-text-secondary">When help articles don't explain how something works, the AI checks your connected repository and answers only what it confirms. Otherwise it hands off with what it found.</p>
+              </div>
+              <Switch id="ai-email-code-check" aria-describedby="ai-email-code-check-help" checked={aiEmailCodeCheck} onCheckedChange={setAiEmailCodeCheck} />
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -801,7 +813,7 @@ function Dashboard() {
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-2">
                 <Label htmlFor="ai-talk-to-human">Show “Talk to Human”</Label>
-                <p className="text-xs text-quiet-text-secondary">Let customers request a teammate from the chat widget.</p>
+                <p className="text-xs text-quiet-text-secondary">Let customers ask for a teammate from the chat widget and from AI emails.</p>
               </div>
               <Switch id="ai-talk-to-human" checked={showTalkToHuman} onCheckedChange={setShowTalkToHuman} />
             </div>
