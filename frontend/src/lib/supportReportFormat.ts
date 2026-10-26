@@ -16,11 +16,15 @@ function startOfLocalDay(date: Date): Date {
 /**
  * The preset's period, from a local midnight to now. Ending at now (not the
  * end of today) keeps the comparison with the previous, equally long period
- * fair while today is still in progress.
+ * fair while today is still in progress. The end is rounded up to the next
+ * minute, so everything up to now is included and the period stays the same
+ * for the rest of the minute.
  */
 export function supportReportRange(preset: SupportReportRangePreset, now = new Date()): { from: Date; to: Date } {
   const to = new Date(now)
-  to.setSeconds(0, 0)
+  if (to.getSeconds() !== 0 || to.getMilliseconds() !== 0) {
+    to.setSeconds(60, 0)
+  }
   if (preset === 'month') {
     return { from: new Date(now.getFullYear(), now.getMonth(), 1), to }
   }

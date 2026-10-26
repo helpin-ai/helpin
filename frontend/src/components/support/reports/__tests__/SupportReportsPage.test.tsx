@@ -84,6 +84,24 @@ describe('SupportReportsPage', () => {
     container.remove()
   })
 
+  it('moves the period end forward when the tab regains focus', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date(2026, 9, 26, 7, 10, 30))
+      mockOverview.mockReturnValue({ data: report, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
+      act(() => root.render(<SupportReportsPage />))
+      const endOf = () => new Date((mockOverview.mock.calls.at(-1) as [string, { to: string }])[1].to)
+      expect(endOf()).toEqual(new Date(2026, 9, 26, 7, 11))
+
+      // A rating given in another tab a few minutes later.
+      vi.setSystemTime(new Date(2026, 9, 26, 7, 13, 39))
+      act(() => window.dispatchEvent(new Event('focus')))
+      expect(endOf()).toEqual(new Date(2026, 9, 26, 7, 14))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('shows headline metrics, trends, CSAT and teammates', () => {
     mockOverview.mockReturnValue({ data: report, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
     act(() => root.render(<SupportReportsPage />))
@@ -107,7 +125,8 @@ describe('SupportReportsPage', () => {
     const [, params] = mockOverview.mock.calls.at(-1) as [string, { from: string; to: string; mailboxIds: string[] }]
     expect(params.mailboxIds).toEqual([])
     expect(new Date(params.to).getTime() - new Date(params.from).getTime()).toBeGreaterThanOrEqual(29 * 86_400_000)
-    expect(new Date(params.to).getTime()).toBeLessThanOrEqual(Date.now())
+    expect(new Date(params.to).getTime()).toBeGreaterThanOrEqual(Date.now() - 1000)
+    expect(new Date(params.to).getTime()).toBeLessThanOrEqual(Date.now() + 60_000)
   })
 
   it('explains an empty CSAT period', () => {

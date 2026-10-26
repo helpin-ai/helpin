@@ -34,7 +34,7 @@ import { ReportDailyChart } from './ReportDailyChart'
 
 const ALL_INBOXES = 'all'
 const COLLAPSED_COMMENTS = 6
-const REPORT_REFRESH_MS = 5 * 60_000
+const REPORT_REFRESH_MS = 60_000
 
 function TrendText({ trend }: { trend: ReportTrend }) {
   if (!trend) return <span>No previous data</span>
@@ -87,11 +87,22 @@ export function SupportReportsPage() {
   const [showAllComments, setShowAllComments] = useState(false)
   const { data: scopes } = useInboxScopes(workspaceId)
 
-  // The period ends "now"; advance it every few minutes so the report stays current.
+  // The period ends "now"; advance it every minute and when the tab regains
+  // focus, so ratings and replies made meanwhile show up.
   const [now, setNow] = useState(() => new Date())
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), REPORT_REFRESH_MS)
-    return () => window.clearInterval(timer)
+    const advance = () => setNow(new Date())
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') advance()
+    }
+    const timer = window.setInterval(advance, REPORT_REFRESH_MS)
+    window.addEventListener('focus', advance)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', advance)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [])
   const params = useMemo(
     () => supportReportParams(preset, inbox === ALL_INBOXES ? [] : [inbox], now),

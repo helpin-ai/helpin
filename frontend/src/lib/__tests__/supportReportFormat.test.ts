@@ -18,6 +18,11 @@ describe('supportReportRange', () => {
     expect(from).toEqual(new Date(2026, 9, 19))
   })
 
+  it('rounds the end up to the next minute so the latest activity is included', () => {
+    const { to } = supportReportRange('7d', new Date(2026, 9, 25, 15, 30, 12))
+    expect(to).toEqual(new Date(2026, 9, 25, 15, 31))
+  })
+
   it('starts this month on the first', () => {
     expect(supportReportRange('month', now).from).toEqual(new Date(2026, 9, 1))
   })
