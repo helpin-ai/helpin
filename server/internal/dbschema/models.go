@@ -116,6 +116,8 @@ func AutoMigrationModels() []any {
 		&model.WebhookEndpoint{},
 		&model.WebhookEvent{},
 		&model.WebhookDelivery{},
+		&model.SupportImportJob{},
+		&model.SupportImportRecord{},
 		&model.SupportTranslation{},
 		&model.SupportTranslationPreference{},
 		&model.SupportTranslationConversation{},

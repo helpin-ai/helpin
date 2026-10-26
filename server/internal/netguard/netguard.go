@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"strings"
 	"time"
 )
@@ -15,25 +16,63 @@ import (
 // public Internet.
 var ErrNonPublicAddress = errors.New("host resolves to a non-public address")
 
-var _sharedAddressSpace = mustCIDR("100.64.0.0/10")
-
-func mustCIDR(raw string) *net.IPNet {
-	_, network, err := net.ParseCIDR(raw)
-	if err != nil {
-		panic(err)
-	}
-	return network
+// _nonPublicRanges are special-purpose ranges that Go's IP helpers do not
+// classify as private: shared address space, benchmarking, protocol
+// assignments, documentation, reserved, and deprecated site-local IPv6.
+var _nonPublicRanges = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("192.0.0.0/24"),
+	netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("198.51.100.0/24"),
+	netip.MustParsePrefix("203.0.113.0/24"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("fec0::/10"),
+	netip.MustParsePrefix("2001:db8::/32"),
 }
 
+// _nat64 and _sixToFour embed an IPv4 address that the network may reach.
+var (
+	_nat64      = netip.MustParsePrefix("64:ff9b::/96")
+	_nat64Local = netip.MustParsePrefix("64:ff9b:1::/48")
+	_sixToFour  = netip.MustParsePrefix("2002::/16")
+)
+
 // IsNonPublicIP reports whether ip is private, loopback, link-local,
-// multicast, unspecified or in shared address space (100.64.0.0/10), which
-// can reach provider infrastructure in some deployments.
+// multicast, unspecified or another special-purpose address, including IPv6
+// forms that embed such an IPv4 address (NAT64, 6to4, IPv4-compatible).
 func IsNonPublicIP(ip net.IP) bool {
-	if ip == nil || !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() ||
-		ip.IsLinkLocalMulticast() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast() {
+	addr, ok := netip.AddrFromSlice(ip)
+	if !ok {
 		return true
 	}
-	return _sharedAddressSpace.Contains(ip)
+	return nonPublicAddr(addr.Unmap(), 0)
+}
+
+func nonPublicAddr(addr netip.Addr, depth int) bool {
+	if !addr.IsValid() || !addr.IsGlobalUnicast() || addr.IsPrivate() || addr.IsLoopback() ||
+		addr.IsLinkLocalMulticast() || addr.IsLinkLocalUnicast() || addr.IsUnspecified() || addr.IsMulticast() {
+		return true
+	}
+	for _, prefix := range _nonPublicRanges {
+		if prefix.Contains(addr) {
+			return true
+		}
+	}
+	if addr.Is6() && depth == 0 {
+		raw := addr.As16()
+		switch {
+		case _nat64.Contains(addr) || _nat64Local.Contains(addr):
+			return nonPublicAddr(netip.AddrFrom4([4]byte(raw[12:16])), depth+1)
+		case _sixToFour.Contains(addr):
+			return nonPublicAddr(netip.AddrFrom4([4]byte(raw[2:6])), depth+1)
+		case [12]byte(raw[:12]) == [12]byte{}:
+			// IPv4-compatible ::a.b.c.d.
+			return nonPublicAddr(netip.AddrFrom4([4]byte(raw[12:16])), depth+1)
+		}
+	}
+	return false
 }
 
 // IsLocalHostname reports whether host names the local machine.

@@ -63,8 +63,17 @@ export function compactMacroActions(actions: SupportConversationActions): Suppor
   return result
 }
 
+/** Reduces Markdown or editor text to comparable words. */
 function plainMacroText(text: string): string {
-  return text.replace(/[*_`#>~[\]()!|-]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase()
+  return text
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1') // images keep their alt text
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1') // links keep their text
+    .replace(/^\s*(?:[-*+]|\d+[.)])\s+/gm, '') // list markers
+    .replace(/^\s*(?:#{1,6}|>)\s*/gm, '') // headings and quotes
+    .replace(/[*_`~|\\]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
 }
 
 /** A short piece of a macro's inserted text that identifies it in the editor. */

@@ -6803,6 +6803,7 @@
                 "properties": {
                   "content": {
                     "description": "Brief internal note in Markdown. Only new actionable information or explicitly requested content; no repeated summaries or unverified conclusions stated as facts.",
+                    "maxLength": 20000,
                     "minLength": 1,
                     "type": "string"
                   }

@@ -25,9 +25,14 @@ An endpoint receives every event unless it lists the ones it wants. It can
 also be limited to some inboxes.
 
 Some things never produce events:
-- imported history (anything created more than an hour before it is recorded);
+- imported history (conversations and messages copied by an import, or created
+  more than an hour before they are recorded);
 - anonymized conversations;
-- replies deleted within their undo window.
+- replies deleted within their undo window. Message events wait at least ten
+  seconds and until the reply's undo window ends.
+
+Deleting a customer's data also deletes queued events and logged deliveries
+about their conversations.
 
 ## Request
 
@@ -99,8 +104,9 @@ carries the same ID.
 - Each event is retried after 1 minute, 5 minutes, 30 minutes, 2 hours,
   6 hours and 15 hours, then marked failed: about a day in total.
 - An endpoint that answers `410 Gone` is turned off at once.
-- An endpoint is also turned off after 20 failed attempts in a row with no
-  success for a day.
+- An endpoint is also turned off when it has failed continuously for a day
+  (at least 20 attempts in a row). A burst of failures alone never turns it
+  off.
 - Turning an endpoint off fails its pending deliveries. Turning it back on
   clears its failure count; resend events from the delivery log if needed.
 - The delivery log keeps 30 days.
@@ -120,4 +126,5 @@ installations that deliver to their own network can set
 
 Signing secrets are encrypted with `WEBHOOK_ENCRYPTION_KEY`, or with
 `CRM_ENCRYPTION_KEY` when that is unset. Without either key, webhooks cannot
-be created.
+be created. A new secret takes effect at once, including for retries already
+queued, so update the receiver right after rotating.

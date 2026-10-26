@@ -23,6 +23,20 @@ func NewSupportWebhookHandler(webhooks *service.WebhookService) *SupportWebhookH
 	return &SupportWebhookHandler{webhooks: webhooks}
 }
 
+// webhookIDs reads the path IDs and answers 404 for malformed ones.
+func webhookIDs(w http.ResponseWriter, r *http.Request, names ...string) ([]string, bool) {
+	ids := make([]string, 0, len(names))
+	for _, name := range names {
+		id := chi.URLParam(r, name)
+		if !isUUID(id) {
+			writeError(w, http.StatusNotFound, "webhook not found")
+			return nil, false
+		}
+		ids = append(ids, id)
+	}
+	return ids, true
+}
+
 func writeWebhookError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, service.ErrWebhookInvalid):
@@ -73,7 +87,11 @@ func (h *SupportWebhookHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	endpoint, err := h.webhooks.UpdateEndpoint(r.Context(), getWorkspaceID(r), chi.URLParam(r, "webhookId"), req)
+	ids, ok := webhookIDs(w, r, "webhookId")
+	if !ok {
+		return
+	}
+	endpoint, err := h.webhooks.UpdateEndpoint(r.Context(), getWorkspaceID(r), ids[0], req)
 	if err != nil {
 		writeWebhookError(w, err)
 		return
@@ -83,7 +101,11 @@ func (h *SupportWebhookHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 // Delete handles DELETE /api/support/webhooks/{webhookId}.
 func (h *SupportWebhookHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	if err := h.webhooks.DeleteEndpoint(r.Context(), getWorkspaceID(r), chi.URLParam(r, "webhookId")); err != nil {
+	ids, ok := webhookIDs(w, r, "webhookId")
+	if !ok {
+		return
+	}
+	if err := h.webhooks.DeleteEndpoint(r.Context(), getWorkspaceID(r), ids[0]); err != nil {
 		writeWebhookError(w, err)
 		return
 	}
@@ -92,7 +114,11 @@ func (h *SupportWebhookHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 // RotateSecret handles POST /api/support/webhooks/{webhookId}/rotate-secret.
 func (h *SupportWebhookHandler) RotateSecret(w http.ResponseWriter, r *http.Request) {
-	rotated, err := h.webhooks.RotateSecret(r.Context(), getWorkspaceID(r), chi.URLParam(r, "webhookId"))
+	ids, ok := webhookIDs(w, r, "webhookId")
+	if !ok {
+		return
+	}
+	rotated, err := h.webhooks.RotateSecret(r.Context(), getWorkspaceID(r), ids[0])
 	if err != nil {
 		writeWebhookError(w, err)
 		return
@@ -102,7 +128,11 @@ func (h *SupportWebhookHandler) RotateSecret(w http.ResponseWriter, r *http.Requ
 
 // Test handles POST /api/support/webhooks/{webhookId}/test.
 func (h *SupportWebhookHandler) Test(w http.ResponseWriter, r *http.Request) {
-	delivery, err := h.webhooks.SendTest(r.Context(), getWorkspaceID(r), chi.URLParam(r, "webhookId"))
+	ids, ok := webhookIDs(w, r, "webhookId")
+	if !ok {
+		return
+	}
+	delivery, err := h.webhooks.SendTest(r.Context(), getWorkspaceID(r), ids[0])
 	if err != nil {
 		writeWebhookError(w, err)
 		return
@@ -112,8 +142,12 @@ func (h *SupportWebhookHandler) Test(w http.ResponseWriter, r *http.Request) {
 
 // Deliveries handles GET /api/support/webhooks/{webhookId}/deliveries.
 func (h *SupportWebhookHandler) Deliveries(w http.ResponseWriter, r *http.Request) {
+	ids, ok := webhookIDs(w, r, "webhookId")
+	if !ok {
+		return
+	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	deliveries, err := h.webhooks.ListDeliveries(r.Context(), getWorkspaceID(r), chi.URLParam(r, "webhookId"), limit)
+	deliveries, err := h.webhooks.ListDeliveries(r.Context(), getWorkspaceID(r), ids[0], limit)
 	if err != nil {
 		writeWebhookError(w, err)
 		return
@@ -123,7 +157,11 @@ func (h *SupportWebhookHandler) Deliveries(w http.ResponseWriter, r *http.Reques
 
 // Redeliver handles POST /api/support/webhooks/{webhookId}/deliveries/{deliveryId}/redeliver.
 func (h *SupportWebhookHandler) Redeliver(w http.ResponseWriter, r *http.Request) {
-	delivery, err := h.webhooks.Redeliver(r.Context(), getWorkspaceID(r), chi.URLParam(r, "webhookId"), chi.URLParam(r, "deliveryId"))
+	ids, ok := webhookIDs(w, r, "webhookId", "deliveryId")
+	if !ok {
+		return
+	}
+	delivery, err := h.webhooks.Redeliver(r.Context(), getWorkspaceID(r), ids[0], ids[1])
 	if err != nil {
 		writeWebhookError(w, err)
 		return

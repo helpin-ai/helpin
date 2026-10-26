@@ -58,16 +58,18 @@ type WebhookEndpoint struct {
 	// inbox); empty means every inbox.
 	MailboxIDs DocsStringArray `json:"mailbox_ids" gorm:"type:text[];not null;default:'{}'"`
 	// EncryptedSecret is the signing secret, encrypted at rest.
-	EncryptedSecret string     `json:"-" gorm:"not null"`
-	SecretHint      string     `json:"secret_hint" gorm:"not null;default:''"`
-	Enabled         bool       `json:"enabled" gorm:"not null"`
-	DisabledReason  string     `json:"disabled_reason" gorm:"not null;default:''"`
-	FailureCount    int        `json:"failure_count" gorm:"type:integer;not null;default:0"`
-	LastSuccessAt   *time.Time `json:"last_success_at,omitempty" gorm:"type:timestamptz"`
-	LastFailureAt   *time.Time `json:"last_failure_at,omitempty" gorm:"type:timestamptz"`
-	CreatedByID     *string    `json:"created_by_id,omitempty" gorm:"type:uuid"`
-	CreatedAt       time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt       time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	EncryptedSecret string `json:"-" gorm:"not null"`
+	SecretHint      string `json:"secret_hint" gorm:"not null;default:''"`
+	Enabled         bool   `json:"enabled" gorm:"not null"`
+	DisabledReason  string `json:"disabled_reason" gorm:"not null;default:''"`
+	FailureCount    int    `json:"failure_count" gorm:"type:integer;not null;default:0"`
+	// FailingSince is when the current run of failed attempts began.
+	FailingSince  *time.Time `json:"failing_since,omitempty" gorm:"type:timestamptz"`
+	LastSuccessAt *time.Time `json:"last_success_at,omitempty" gorm:"type:timestamptz"`
+	LastFailureAt *time.Time `json:"last_failure_at,omitempty" gorm:"type:timestamptz"`
+	CreatedByID   *string    `json:"created_by_id,omitempty" gorm:"type:uuid"`
+	CreatedAt     time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt     time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (WebhookEndpoint) TableName() string { return "webhook_endpoints" }
@@ -91,11 +93,13 @@ func (WebhookEvent) TableName() string { return "webhook_events" }
 
 // WebhookDelivery is one event sent, or to be sent, to one endpoint.
 type WebhookDelivery struct {
-	ID             string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID    string          `json:"workspace_id" gorm:"type:uuid;not null"`
-	EndpointID     string          `json:"endpoint_id" gorm:"type:uuid;not null;index:idx_webhook_deliveries_endpoint,priority:1"`
-	EventID        string          `json:"event_id" gorm:"type:uuid;not null"`
-	EventType      string          `json:"event_type" gorm:"not null"`
+	ID          string `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID string `json:"workspace_id" gorm:"type:uuid;not null"`
+	EndpointID  string `json:"endpoint_id" gorm:"type:uuid;not null;index:idx_webhook_deliveries_endpoint,priority:1"`
+	EventID     string `json:"event_id" gorm:"type:uuid;not null"`
+	EventType   string `json:"event_type" gorm:"not null"`
+	// ConversationID lets a customer's data deletion purge payloads.
+	ConversationID *string         `json:"conversation_id,omitempty" gorm:"type:uuid;index"`
 	Payload        json.RawMessage `json:"payload" gorm:"type:jsonb;not null"`
 	Status         string          `json:"status" gorm:"not null;default:'pending';index:idx_webhook_deliveries_due,priority:1"`
 	Attempts       int             `json:"attempts" gorm:"type:integer;not null;default:0"`
@@ -105,7 +109,7 @@ type WebhookDelivery struct {
 	LastAttemptAt  *time.Time      `json:"last_attempt_at,omitempty" gorm:"type:timestamptz"`
 	DurationMS     *int            `json:"duration_ms,omitempty" gorm:"type:integer"`
 	DeliveredAt    *time.Time      `json:"delivered_at,omitempty" gorm:"type:timestamptz"`
-	CreatedAt      time.Time       `json:"created_at" gorm:"type:timestamptz;not null;index:idx_webhook_deliveries_endpoint,priority:2"`
+	CreatedAt      time.Time       `json:"created_at" gorm:"type:timestamptz;not null;index:idx_webhook_deliveries_endpoint,priority:2;index:idx_webhook_deliveries_created_at"`
 }
 
 func (WebhookDelivery) TableName() string { return "webhook_deliveries" }

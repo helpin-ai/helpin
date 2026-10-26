@@ -76,6 +76,13 @@ var runtimeToolRiskLevels = map[string]string{
 	"insert_document_image":             RiskLevelRoutine,
 	"edit_document":                     RiskLevelRoutine,
 	"link_support_conversation_task":    RiskLevelRoutine,
+	"set_support_conversation_status":   RiskLevelRoutine,
+	"set_support_conversation_priority": RiskLevelRoutine,
+	"snooze_support_conversation":       RiskLevelRoutine,
+	"unsnooze_support_conversation":     RiskLevelRoutine,
+	// Customer-visible sends cannot be taken back.
+	"reply_to_support_conversation":     RiskLevelDestructive,
+	"create_support_conversation":       RiskLevelDestructive,
 	"link_support_conversation_contact": RiskLevelRoutine,
 	"link_crm_objects":                  RiskLevelRoutine,
 	"link_document_to_object":           RiskLevelRoutine, "ensure_epic_spec_doc": RiskLevelRoutine,
@@ -830,7 +837,7 @@ var baseRuntimeTools = append(skillManagementTools, []RuntimeToolMetadata{
 		Description: "Post a team-only note immediately; no customer delivery or status/AI-control change. Check existing conversation notes and linked-task context first. Write only when requested or when new actionable information is missing from both. Creating or linking a task alone needs no note. Use 1-3 short sentences or bullets unless more detail is requested. Include only the new finding, blocker, or next step; link existing details instead of repeating the thread, task, progress, or an unsolicited draft reply. Label hypotheses clearly: code behavior alone does not verify this customer's root cause. Attribute observations to their actual source. Omit secrets. A note does not replace a customer reply.",
 		InputSchema: closedObjectSchema(map[string]any{
 			"conversation_id": optionalIDSchema("Support conversation ID. Omit only when the run targets that conversation."),
-			"content":         map[string]any{"type": "string", "minLength": 1, "description": "Brief internal note in Markdown. Only new actionable information or explicitly requested content; no repeated summaries or unverified conclusions stated as facts."},
+			"content":         map[string]any{"type": "string", "minLength": 1, "maxLength": 20000, "description": "Brief internal note in Markdown. Only new actionable information or explicitly requested content; no repeated summaries or unverified conclusions stated as facts."},
 		}, []string{"content"}),
 	},
 	{

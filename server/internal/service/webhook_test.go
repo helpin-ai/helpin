@@ -128,14 +128,14 @@ func (f *webhookFixture) process(t *testing.T) {
 func TestValidateWebhookURL(t *testing.T) {
 	for raw, ok := range map[string]bool{
 		"https://hooks.example.com/helpin?token=abc": true,
-		"http://hooks.example.com/helpin":           false,
-		"https://localhost/hook":                    false,
-		"https://127.0.0.1/hook":                    false,
-		"https://10.1.2.3/hook":                     false,
-		"https://169.254.169.254/latest":            false,
-		"https://user:pass@hooks.example.com/":      false,
-		"ftp://hooks.example.com/":                  false,
-		"not a url":                                 false,
+		"http://hooks.example.com/helpin":            false,
+		"https://localhost/hook":                     false,
+		"https://127.0.0.1/hook":                     false,
+		"https://10.1.2.3/hook":                      false,
+		"https://169.254.169.254/latest":             false,
+		"https://user:pass@hooks.example.com/":       false,
+		"ftp://hooks.example.com/":                   false,
+		"not a url":                                  false,
 	} {
 		if _, err := ValidateWebhookURL(raw, false); (err == nil) != ok {
 			t.Errorf("ValidateWebhookURL(%q) = %v", raw, err)
@@ -322,12 +322,63 @@ func TestWebhookAutoDisableAfterRepeatedFailures(t *testing.T) {
 	ctx := context.Background()
 	f.receiver.status = http.StatusServiceUnavailable
 	endpoint, _ := f.endpoint(t, model.WebhookEndpointRequest{})
-	f.db.Model(&model.WebhookEndpoint{}).Where("id = ?", endpoint.ID).Update("failure_count", webhookDisableAfterFailures-1)
+	// A burst of failures on a new endpoint does not turn it off.
+	f.db.Model(&model.WebhookEndpoint{}).Where("id = ?", endpoint.ID).Update("failure_count", webhookDisableAfterFailures+5)
 	if _, err := f.service.SendTest(ctx, f.workspaceID, endpoint.ID); err != nil {
 		t.Fatal(err)
 	}
-	if got := mustWebhookEndpoint(t, f, endpoint.ID); got.Enabled || !strings.Contains(got.DisabledReason, "failed deliveries") {
-		t.Fatalf("endpoint after repeated failures: %+v", got)
+	if got := mustWebhookEndpoint(t, f, endpoint.ID); !got.Enabled || got.FailingSince == nil {
+		t.Fatalf("a burst turned the endpoint off: %+v", got)
+	}
+	// Failing for more than a day does.
+	f.db.Model(&model.WebhookEndpoint{}).Where("id = ?", endpoint.ID).Update("failing_since", f.now.Add(-25*time.Hour))
+	if _, err := f.service.SendTest(ctx, f.workspaceID, endpoint.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := mustWebhookEndpoint(t, f, endpoint.ID); got.Enabled || !strings.Contains(got.DisabledReason, "failing for a day") {
+		t.Fatalf("endpoint after a day of failures: %+v", got)
+	}
+	// A success ends the failure run.
+	f.receiver.status = http.StatusOK
+	enabled := true
+	if _, err := f.service.UpdateEndpoint(ctx, f.workspaceID, endpoint.ID, model.WebhookEndpointRequest{URL: endpoint.URL, Enabled: &enabled}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.SendTest(ctx, f.workspaceID, endpoint.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := mustWebhookEndpoint(t, f, endpoint.ID); got.FailingSince != nil || got.FailureCount != 0 {
+		t.Fatalf("after a success: %+v", got)
+	}
+}
+
+func TestWebhookWaitsOutTheUndoWindow(t *testing.T) {
+	f := newWebhookFixture(t)
+	ctx := context.Background()
+	f.endpoint(t, model.WebhookEndpointRequest{})
+	conversationID := f.conversation(t, nil)
+	undoUntil := f.now.Add(2 * time.Minute)
+	message := &model.SupportMessage{WorkspaceID: f.workspaceID, ConversationID: conversationID, SenderType: "user", MessageType: "reply", Content: "Wrong customer", CancellableUntil: &undoUntil}
+	if err := repository.NewSupportMessageRepository(f.db).Create(ctx, message); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.service.repo.InsertEvent(ctx, &model.WebhookEvent{ID: uuid.NewString(), WorkspaceID: f.workspaceID, EventType: model.WebhookEventMessageCreated,
+		ConversationID: &conversationID, MessageID: &message.ID, Data: json.RawMessage(`{}`), AvailableAt: f.now, CreatedAt: f.now}); err != nil {
+		t.Fatal(err)
+	}
+	f.process(t)
+	var event model.WebhookEvent
+	if err := f.db.Take(&event).Error; err != nil || !event.AvailableAt.After(undoUntil) || f.receiver.count() != 0 {
+		t.Fatalf("event inside the undo window: %+v %v sent=%d", event, err, f.receiver.count())
+	}
+	// The reply is undone; when the window passes nothing is sent.
+	f.db.Delete(message)
+	f.now = undoUntil.Add(2 * time.Second)
+	f.process(t)
+	var events int64
+	f.db.Model(&model.WebhookEvent{}).Count(&events)
+	if f.receiver.count() != 0 || events != 0 {
+		t.Fatalf("undone reply: sent=%d events=%d", f.receiver.count(), events)
 	}
 }
 
@@ -348,8 +399,17 @@ func TestWebhookTestEventAndInboxFilter(t *testing.T) {
 	f.process(t)
 	var sent []model.WebhookDelivery
 	f.db.Where("event_type = ?", model.WebhookEventCSATSubmitted).Find(&sent)
-	if len(sent) != 1 || !strings.Contains(string(sent[0].Payload), billing) {
+	if len(sent) != 1 || !strings.Contains(string(sent[0].Payload), billing) || sent[0].ConversationID == nil || *sent[0].ConversationID != billing {
 		t.Fatalf("inbox filter: %d deliveries", len(sent))
+	}
+	// After the inbox is archived the webhook can still be edited.
+	mustExec(t, f.db, `UPDATE support_mailboxes SET active = 0 WHERE id = ?`, mailbox)
+	off := false
+	if _, err := f.service.UpdateEndpoint(ctx, f.workspaceID, endpoint.ID, model.WebhookEndpointRequest{URL: endpoint.URL, MailboxIDs: []string{mailbox}, Enabled: &off}); err != nil {
+		t.Fatalf("turning off a webhook for an archived inbox: %v", err)
+	}
+	if _, err := f.service.UpdateEndpoint(ctx, f.workspaceID, endpoint.ID, model.WebhookEndpointRequest{URL: endpoint.URL, MailboxIDs: []string{uuid.NewString()}}); !errors.Is(err, ErrWebhookInvalid) {
+		t.Fatalf("an unknown inbox was accepted: %v", err)
 	}
 }
 

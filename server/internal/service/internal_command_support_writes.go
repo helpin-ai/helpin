@@ -55,7 +55,7 @@ func supportCommandError(err error) error {
 	switch {
 	case err == nil:
 		return nil
-	case errors.Is(err, repository.ErrSupportMergeNotFound), strings.HasSuffix(err.Error(), "not found"):
+	case errors.Is(err, repository.ErrSupportMergeNotFound), err.Error() == "conversation not found", err.Error() == "ticket not found":
 		return errCommandNotFound("conversation")
 	case errors.Is(err, repository.ErrSupportMerged):
 		return errCommandInput("the conversation was merged into another; act on that conversation instead")

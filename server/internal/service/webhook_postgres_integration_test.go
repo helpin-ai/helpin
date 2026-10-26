@@ -75,6 +75,8 @@ func TestWebhookTriggersPostgres(t *testing.T) {
 	if !strings.Contains(string(status.Data), `"from": "open"`) || !strings.Contains(string(status.Data), `"to": "resolved"`) {
 		t.Fatalf("status change data: %s", status.Data)
 	}
+	// Message events wait ten seconds for an undo deadline to appear.
+	webhooks.now = func() time.Time { return time.Now().UTC().Add(15 * time.Second) }
 	if _, err := webhooks.ProcessEvents(ctx, 100); err != nil {
 		t.Fatal(err)
 	}

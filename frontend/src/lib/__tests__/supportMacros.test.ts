@@ -32,6 +32,12 @@ describe('macroTextPresent', () => {
     expect(macroTextPresent('Hi Ada, Thanks! I have asked billing to reissue the invoice. Best', marker)).toBe(true)
   })
 
+  it('matches text that starts with a link or a list', () => {
+    expect(macroTextPresent('see our guide for steps.', macroTextMarker('see [our guide](https://help.example.com/a) for steps.'))).toBe(true)
+    expect(macroTextPresent('Open settings\nChoose Billing', macroTextMarker('1. Open settings\n2. Choose Billing'))).toBe(true)
+    expect(macroTextPresent('Heads up: it works', macroTextMarker('## Heads up: it works'))).toBe(true)
+  })
+
   it('notices when the inserted text was deleted', () => {
     const marker = macroTextMarker('I have asked billing to reissue the invoice.')
     expect(macroTextPresent('Something else entirely', marker)).toBe(false)

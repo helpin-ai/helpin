@@ -22,7 +22,8 @@ type supportSLAEvaluation struct {
 
 // supportSLAPolicyMatches reports whether policy applies to conversation.
 func supportSLAPolicyMatches(policy model.SupportSLAPolicy, conversation model.SupportConversation) bool {
-	if !policy.Enabled || conversation.CreatedAt.Before(policy.ActiveSince) {
+	// Imported history was answered elsewhere; it never carries targets.
+	if !policy.Enabled || conversation.CreatedAt.Before(policy.ActiveSince) || conversation.Source == model.SupportImportSourceIntercom {
 		return false
 	}
 	if len(policy.Priorities) > 0 && !slices.Contains([]string(policy.Priorities), conversation.Priority) {
@@ -435,9 +436,19 @@ func (st *supportSLAEvalState) nextResponse(record, previous *model.SupportConve
 	}
 	record.NextResponseCarriedBreaches = carried
 	record.NextResponseBreaches = carried + breaches
-	// A recorded breach stays recorded, even if a message is deleted later.
+	// A breach later than any recorded one is new, whatever the count says.
+	newerBreach := lastBreachDue != nil && (previous.NextResponseBreachedAt == nil || lastBreachDue.After(*previous.NextResponseBreachedAt))
+	// A recorded breach stays recorded, even if a message is deleted later;
+	// a new breach still adds to the count.
 	if !in.Switched && !in.Resumed && previous.NextResponseBreaches > record.NextResponseBreaches {
-		record.NextResponseBreaches = previous.NextResponseBreaches
+		total := previous.NextResponseBreaches
+		if newerBreach {
+			total++
+		}
+		// Keep the difference as carried breaches so later evaluations
+		// count from the recorded total.
+		record.NextResponseCarriedBreaches += total - record.NextResponseBreaches
+		record.NextResponseBreaches = total
 	}
 	record.NextResponseBreachedAt = lastBreachDue
 	switch {
@@ -450,8 +461,7 @@ func (st *supportSLAEvalState) nextResponse(record, previous *model.SupportConve
 	case len(cycles) > 0:
 		record.NextResponseState = model.SupportSLAStateAchieved
 	}
-	if record.NextResponseBreaches > previous.NextResponseBreaches && lastBreachDue != nil &&
-		(previous.NextResponseBreachedAt == nil || lastBreachDue.After(*previous.NextResponseBreachedAt)) {
+	if record.NextResponseBreaches > previous.NextResponseBreaches && newerBreach {
 		st.newBreaches = append(st.newBreaches, model.SupportSLAMetricNextResponse)
 	}
 }

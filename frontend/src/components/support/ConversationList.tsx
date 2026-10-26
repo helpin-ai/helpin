@@ -350,17 +350,26 @@ export function ConversationList({
 
   // J and K move through the list in its current order. The previous order
   // tells where to continue after the open conversation leaves the list.
-  const previousListIdsRef = useRef<string[]>([]);
-  const currentListIdsRef = useRef<string[]>([]);
+  // Remembers where conversations last were, so j/k continue from the place
+  // of one that left the list, even after later list updates.
+  const lastListIdsRef = useRef<string[]>([]);
+  const lastIndexRef = useRef(new Map<string, number>());
   useEffect(() => {
-    previousListIdsRef.current = currentListIdsRef.current;
-    currentListIdsRef.current = filteredConversations.map((conversation) => conversation.id);
+    const ids = filteredConversations.map((conversation) => conversation.id);
+    const positions = lastIndexRef.current;
+    lastListIdsRef.current.forEach((id, index) => {
+      if (!ids.includes(id)) positions.set(id, index);
+    });
+    ids.forEach((id) => positions.delete(id));
+    while (positions.size > 200) positions.delete(positions.keys().next().value as string);
+    lastListIdsRef.current = ids;
   }, [filteredConversations]);
   useEffect(() => onSupportShortcut((detail) => {
     if (detail.action !== 'next' && detail.action !== 'previous') return;
     detail.handled = true;
     const ids = filteredConversations.map((conversation) => conversation.id);
-    const id = adjacentConversationId(ids, detail.conversationId, detail.action, previousListIdsRef.current);
+    const lastIndex = detail.conversationId ? lastIndexRef.current.get(detail.conversationId) : undefined;
+    const id = adjacentConversationId(ids, detail.conversationId, detail.action, lastIndex);
     if (!id) return;
     handleSelect(id);
     requestAnimationFrame(() => {

@@ -7,9 +7,12 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
+
+	"github.com/helpin-ai/helpin/server/internal/netguard"
 )
 
 // ImageUploader abstracts S3 upload for testing.
@@ -166,6 +169,14 @@ func setAttr(n *html.Node, key, value string) {
 	n.Attr = append(n.Attr, html.Attribute{Key: key, Val: value})
 }
 
+// ImageHTTPClient downloads images named in imported content. It reaches only
+// public addresses, so imported HTML cannot make the server fetch internal
+// URLs.
+var ImageHTTPClient = &http.Client{
+	Timeout:   60 * time.Second,
+	Transport: &http.Transport{Proxy: nil, DialContext: netguard.DialContext(false), TLSHandshakeTimeout: 10 * time.Second},
+}
+
 // downloadAndUpload fetches an image from srcURL and uploads it via the uploader.
 func downloadAndUpload(ctx context.Context, srcURL string, uploader ImageUploader, workspaceID string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srcURL, nil)
@@ -173,7 +184,7 @@ func downloadAndUpload(ctx context.Context, srcURL string, uploader ImageUploade
 		return "", fmt.Errorf("create request for %q: %w", srcURL, err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := ImageHTTPClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("download image %q: %w", srcURL, err)
 	}

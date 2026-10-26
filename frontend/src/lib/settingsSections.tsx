@@ -318,9 +318,9 @@ const allSettingsSections: SettingsSectionMeta[] = [
   },
   {
     id: 'import',
-    keywords: ["csv", "export", "migrate"],
+    keywords: ["csv", "export", "migrate", "intercom", "helpscout", "shortcut"],
     label: 'Import & export',
-    description: 'Import data from Shortcut and other project management tools.',
+    description: 'Import projects, help centers and support conversations from other tools.',
     icon: ImportExport,
     group: 'Integrations & data',
   },

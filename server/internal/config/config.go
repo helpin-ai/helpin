@@ -186,7 +186,9 @@ type Config struct {
 	// WebhookEncryptionKey encrypts webhook signing secrets; CRM_ENCRYPTION_KEY is the fallback.
 	WebhookEncryptionKey string
 	// WebhooksAllowPrivateNetworks lets webhooks reach private addresses and plain HTTP (self-hosted only).
-	WebhooksAllowPrivateNetworks      bool
+	WebhooksAllowPrivateNetworks bool
+	// IntercomAPIBaseURL overrides the Intercom API host for imports (proxies and testing).
+	IntercomAPIBaseURL                string
 	ExternalMCPAllowedHosts           []string
 	ExternalMCPOAuthRedirectURL       string
 	ExternalMCPOAuthClientID          string
@@ -552,6 +554,7 @@ func Load() (*Config, error) {
 		ExternalMCPEncryptionKey:               strings.TrimSpace(os.Getenv("EXTERNAL_MCP_ENCRYPTION_KEY")),
 		WebhookEncryptionKey:                   strings.TrimSpace(os.Getenv("WEBHOOK_ENCRYPTION_KEY")),
 		WebhooksAllowPrivateNetworks:           parseBoolEnv(os.Getenv("WEBHOOKS_ALLOW_PRIVATE_NETWORKS")),
+		IntercomAPIBaseURL:                     strings.TrimRight(strings.TrimSpace(os.Getenv("INTERCOM_API_BASE_URL")), "/"),
 		ExternalMCPAllowedHosts:                parseCSV(firstNonEmpty(os.Getenv("EXTERNAL_MCP_ALLOWED_HOSTS"), "*") + "," + os.Getenv("EXTERNAL_MCP_ADDITIONAL_ALLOWED_HOSTS")),
 		ExternalMCPOAuthRedirectURL:            strings.TrimSpace(os.Getenv("EXTERNAL_MCP_OAUTH_REDIRECT_URL")),
 		ExternalMCPOAuthClientID:               strings.TrimSpace(os.Getenv("EXTERNAL_MCP_OAUTH_CLIENT_ID")),

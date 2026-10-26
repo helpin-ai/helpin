@@ -24,15 +24,20 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
-// webhookDeliveryLease hides a claimed delivery from other workers.
-const webhookDeliveryLease = 2 * time.Minute
+// webhookDeliveryLease hides a claimed delivery from other workers. It
+// outlasts a full pass: 50 deliveries, 8 at a time, 15 seconds each.
+const webhookDeliveryLease = 5 * time.Minute
 
 // webhookRetryDelays follow a failed attempt; together they span about a day.
 var webhookRetryDelays = []time.Duration{time.Minute, 5 * time.Minute, 30 * time.Minute, 2 * time.Hour, 6 * time.Hour, 15 * time.Hour}
 
-// webhookDisableAfterFailures consecutive failed attempts, with no success
-// for a day, turn an endpoint off.
-const webhookDisableAfterFailures = 20
+// webhookDisableAfterFailures consecutive failed attempts, failing for at
+// least webhookDisableAfterFailingFor, turn an endpoint off. A burst of
+// failures alone never does.
+const (
+	webhookDisableAfterFailures   = 20
+	webhookDisableAfterFailingFor = 24 * time.Hour
+)
 
 // webhookDeliveryRetention keeps the delivery log for 30 days.
 const webhookDeliveryRetention = 30 * 24 * time.Hour
@@ -109,14 +114,14 @@ type webhookBatch struct {
 func (s *WebhookService) ProcessEvents(ctx context.Context, limit int) (int, error) {
 	batch := &webhookBatch{endpoints: map[string][]model.WebhookEndpoint{}, slugs: map[string]string{}}
 	now := s.now()
-	return s.repo.DispatchEvents(ctx, now, limit, func(events []model.WebhookEvent) ([]model.WebhookDelivery, error) {
-		var deliveries []model.WebhookDelivery
+	return s.repo.DispatchEvents(ctx, now, limit, func(events []model.WebhookEvent) (repository.WebhookDispatch, error) {
+		dispatch := repository.WebhookDispatch{Deferred: map[string]time.Time{}}
 		for _, event := range events {
 			endpoints, ok := batch.endpoints[event.WorkspaceID]
 			if !ok {
 				var err error
 				if endpoints, err = s.repo.EnabledEndpoints(ctx, event.WorkspaceID); err != nil {
-					return nil, err
+					return dispatch, err
 				}
 				batch.endpoints[event.WorkspaceID] = endpoints
 			}
@@ -126,72 +131,83 @@ func (s *WebhookService) ProcessEvents(ctx context.Context, limit int) (int, err
 			if len(subscribed) == 0 {
 				continue
 			}
-			envelope, conversation, err := s.buildEnvelope(ctx, batch, event)
+			envelope, conversation, deferUntil, err := s.buildEnvelope(ctx, batch, event, now)
 			if err != nil {
-				return nil, err
+				return dispatch, err
+			}
+			if deferUntil != nil {
+				dispatch.Deferred[event.ID] = *deferUntil
+				continue
 			}
 			if envelope == nil {
 				continue // The conversation or message is gone.
 			}
 			payload, err := marshalWebhookEnvelope(*envelope)
 			if err != nil {
-				return nil, err
+				return dispatch, err
 			}
 			for _, endpoint := range subscribed {
 				if !webhookMailboxMatches(endpoint, conversation) {
 					continue
 				}
-				deliveries = append(deliveries, model.WebhookDelivery{
+				dispatch.Deliveries = append(dispatch.Deliveries, model.WebhookDelivery{
 					ID: uuid.NewString(), WorkspaceID: event.WorkspaceID, EndpointID: endpoint.ID, EventID: event.ID,
-					EventType: event.EventType, Payload: payload, Status: model.WebhookDeliveryPending,
+					EventType: event.EventType, ConversationID: event.ConversationID, Payload: payload, Status: model.WebhookDeliveryPending,
 					NextAttemptAt: now, CreatedAt: now,
 				})
 			}
 		}
-		return deliveries, nil
+		return dispatch, nil
 	})
 }
 
 // buildEnvelope loads the current conversation (and message) for an event.
-// It returns nil when they no longer exist or were anonymized.
-func (s *WebhookService) buildEnvelope(ctx context.Context, batch *webhookBatch, event model.WebhookEvent) (*model.WebhookEnvelope, *model.SupportConversation, error) {
+// It returns nil when they no longer exist or were anonymized, and a later
+// time when the message can still be undone.
+func (s *WebhookService) buildEnvelope(ctx context.Context, batch *webhookBatch, event model.WebhookEvent, now time.Time) (*model.WebhookEnvelope, *model.SupportConversation, *time.Time, error) {
 	data := map[string]any{}
 	if len(event.Data) > 0 {
 		if err := json.Unmarshal(event.Data, &data); err != nil {
 			slog.WarnContext(ctx, "skip webhook event with invalid data", "event_id", event.ID, "error", err)
-			return nil, nil, nil
+			return nil, nil, nil, nil
 		}
 	}
 	envelope := &model.WebhookEnvelope{ID: event.ID, Type: event.EventType, CreatedAt: event.CreatedAt.UTC(), WorkspaceID: event.WorkspaceID, Data: data}
 	if event.ConversationID == nil {
-		return envelope, nil, nil
+		return envelope, nil, nil, nil
 	}
 	conversation, err := s.inbox.conversationRepo.GetByID(ctx, event.WorkspaceID, *event.ConversationID, "", model.RoleOwner)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if conversation == nil || conversation.AnonymizedAt != nil {
-		return nil, nil, nil
+		return nil, nil, nil, nil
+	}
+	var message *model.SupportMessage
+	if event.MessageID != nil {
+		if message, err = s.inbox.messageRepo.GetByID(ctx, *event.MessageID); err != nil {
+			return nil, nil, nil, err
+		}
+		if message == nil || message.ConversationID != conversation.ID {
+			return nil, nil, nil, nil // Deleted inside its undo window.
+		}
+		if message.CancellableUntil != nil && message.CancellableUntil.After(now) {
+			until := message.CancellableUntil.Add(time.Second)
+			return nil, nil, &until, nil // The sender can still undo it.
+		}
 	}
 	snapshot, err := s.conversationSnapshot(ctx, batch, conversation)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	data["conversation"] = snapshot
-	if event.MessageID != nil {
-		message, err := s.inbox.messageRepo.GetByID(ctx, *event.MessageID)
-		if err != nil {
-			return nil, nil, err
-		}
-		if message == nil || message.ConversationID != conversation.ID {
-			return nil, nil, nil // Deleted inside its undo window.
-		}
+	if message != nil {
 		data["message"] = model.WebhookMessage{
 			ID: message.ID, SenderType: message.SenderType, SenderID: message.SenderUserID,
 			SenderName: message.SenderDisplayName, Content: message.Content, CreatedAt: message.CreatedAt.UTC(),
 		}
 	}
-	return envelope, conversation, nil
+	return envelope, conversation, nil, nil
 }
 
 func (s *WebhookService) conversationSnapshot(ctx context.Context, batch *webhookBatch, conversation *model.SupportConversation) (model.WebhookConversation, error) {
@@ -281,6 +297,13 @@ func (s *WebhookService) attempt(ctx context.Context, endpoint model.WebhookEndp
 	start := s.now()
 	statusCode, sendErr := s.send(ctx, endpoint, delivery)
 	if sendErr != nil && ctx.Err() != nil {
+		if !retry {
+			// A test send is not retried: record that it was interrupted.
+			outcome := repository.WebhookAttempt{At: start, Error: "The test was interrupted."}
+			if _, err := s.repo.RecordAttempt(context.WithoutCancel(ctx), delivery, outcome); err != nil {
+				slog.ErrorContext(ctx, "record webhook attempt", "delivery_id", delivery.ID, "error", err)
+			}
+		}
 		return
 	}
 	outcome := repository.WebhookAttempt{At: start, DurationMS: int(time.Since(start) / time.Millisecond), StatusCode: statusCode}
@@ -295,7 +318,7 @@ func (s *WebhookService) attempt(ctx context.Context, endpoint model.WebhookEndp
 		}
 	}
 	recordCtx := context.WithoutCancel(ctx)
-	failures, err := s.repo.RecordAttempt(recordCtx, delivery, outcome)
+	health, err := s.repo.RecordAttempt(recordCtx, delivery, outcome)
 	if err != nil {
 		slog.ErrorContext(ctx, "record webhook attempt", "delivery_id", delivery.ID, "error", err)
 		return
@@ -307,8 +330,8 @@ func (s *WebhookService) attempt(ctx context.Context, endpoint model.WebhookEndp
 	switch {
 	case statusCode != nil && *statusCode == http.StatusGone:
 		reason = "Turned off because the endpoint answered 410 Gone."
-	case failures >= webhookDisableAfterFailures && (endpoint.LastSuccessAt == nil || start.Sub(*endpoint.LastSuccessAt) > 24*time.Hour):
-		reason = fmt.Sprintf("Turned off after %d failed deliveries in a row.", failures)
+	case health.FailureCount >= webhookDisableAfterFailures && health.FailingSince != nil && start.Sub(*health.FailingSince) >= webhookDisableAfterFailingFor:
+		reason = fmt.Sprintf("Turned off after failing for a day (%d failed attempts in a row).", health.FailureCount)
 	}
 	if reason != "" {
 		if err := s.repo.DisableEndpoint(recordCtx, endpoint.ID, reason, start); err != nil {

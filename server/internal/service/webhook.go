@@ -134,6 +134,11 @@ func (s *WebhookService) normalize(ctx context.Context, workspaceID string, req 
 	mailboxes := model.DocsStringArray{}
 	if len(req.MailboxIDs) > 0 {
 		known := map[string]bool{"shared": true}
+		// Inboxes the endpoint already uses stay valid after archiving, so
+		// the endpoint can still be edited or turned off.
+		for _, id := range endpoint.MailboxIDs {
+			known[id] = true
+		}
 		if s.inbox != nil && s.inbox.mailboxRepo != nil {
 			active, err := s.inbox.mailboxRepo.ListByWorkspace(ctx, workspaceID, false)
 			if err != nil {

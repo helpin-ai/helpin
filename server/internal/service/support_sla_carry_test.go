@@ -229,7 +229,7 @@ func TestEvaluateSupportSLAReturnToAIPausesTargets(t *testing.T) {
 		t.Fatalf("after the hand-back: %+v %v", resumed.Record, resumed.NewBreaches)
 	}
 	// Resolution excludes the time the AI held the conversation.
-	if !resumed.Record.ResolutionDueAt.Equal(slaStart.Add(408 * time.Minute)) || resumed.Record.ResolutionState != model.SupportSLAStatePending {
+	if !resumed.Record.ResolutionDueAt.Equal(slaStart.Add(408*time.Minute)) || resumed.Record.ResolutionState != model.SupportSLAStatePending {
 		t.Fatalf("resolution due did not move past the AI hold: %v", resumed.Record.ResolutionDueAt)
 	}
 }
@@ -284,5 +284,28 @@ func TestEvaluateSupportSLADeletedMessageKeepsBreach(t *testing.T) {
 	after := evalSLAPolicy(policy, open, withoutMessage, clock, slaStart.Add(110*time.Minute), &breached.Record)
 	if after.Record.NextResponseBreaches != 1 || after.Record.NextResponseState != model.SupportSLAStateBreached {
 		t.Fatalf("deleting a message erased a recorded breach: %+v", after.Record)
+	}
+}
+
+func TestEvaluateSupportSLANewBreachAfterDeletionIsCounted(t *testing.T) {
+	clock := newSupportSLAClock(model.SupportInboxSettings{}, false)
+	open := slaConversation(model.SupportConversationStatusOpen)
+	policy := slaPolicy(nil, intPtr(30), nil)
+	replies := []supportSLAReply{reply(0, "customer"), reply(5, "user"), reply(10, "customer"), reply(90, "user"), reply(100, "customer"), reply(200, "user")}
+	twice := evalSLAPolicy(policy, open, replies, clock, slaStart.Add(210*time.Minute), nil)
+	if twice.Record.NextResponseBreaches != 2 {
+		t.Fatalf("setup: %+v", twice.Record)
+	}
+	// The first missed cycle's customer message is deleted; the count holds.
+	withoutFirst := []supportSLAReply{reply(0, "customer"), reply(5, "user"), reply(90, "user"), reply(100, "customer"), reply(200, "user")}
+	held := evalSLAPolicy(policy, open, withoutFirst, clock, slaStart.Add(220*time.Minute), &twice.Record)
+	if held.Record.NextResponseBreaches != 2 || len(held.NewBreaches) != 0 {
+		t.Fatalf("after deletion: %+v %v", held.Record, held.NewBreaches)
+	}
+	// A new cycle is missed: it is counted and announced.
+	more := append(withoutFirst, reply(210, "customer"))
+	missed := evalSLAPolicy(policy, open, more, clock, slaStart.Add(300*time.Minute), &held.Record)
+	if missed.Record.NextResponseBreaches != 3 || len(missed.NewBreaches) != 1 {
+		t.Fatalf("new breach after a deletion: %+v %v", missed.Record, missed.NewBreaches)
 	}
 }

@@ -30,19 +30,22 @@ import (
 
 // DocsImportService orchestrates help center article imports.
 type DocsImportService struct {
-	importRepo     *repository.DocsImportRepository
-	spaceSvc       *DocsSpaceService
-	collectionSvc  *DocsCollectionService
-	documentSvc    *DocsDocumentService
-	contentSvc     *DocsContentService
-	helpcenterSvc  *DocsHelpcenterService
-	redirectRepo   *repository.DocsRedirectRepository
-	s3Client       *storage.S3Client
-	llmProvider    llm.Provider
-	aiConversion   DocsImportAIConversionConfig
-	temporalClient tclient.Client
-	encryptionKey  []byte
-	logger         *slog.Logger
+	// intercomBaseURLOverride replaces the Intercom API host for every
+	// region (INTERCOM_API_BASE_URL).
+	intercomBaseURLOverride string
+	importRepo              *repository.DocsImportRepository
+	spaceSvc                *DocsSpaceService
+	collectionSvc           *DocsCollectionService
+	documentSvc             *DocsDocumentService
+	contentSvc              *DocsContentService
+	helpcenterSvc           *DocsHelpcenterService
+	redirectRepo            *repository.DocsRedirectRepository
+	s3Client                *storage.S3Client
+	llmProvider             llm.Provider
+	aiConversion            DocsImportAIConversionConfig
+	temporalClient          tclient.Client
+	encryptionKey           []byte
+	logger                  *slog.Logger
 }
 
 // SetTemporalClient enables durable HelpScout import execution through Temporal.
@@ -139,7 +142,7 @@ func (s *DocsImportService) importExternalImageWithUploader(ctx context.Context,
 		return "", fmt.Errorf("create image request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := helpscout.ImageHTTPClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("download image: %w", err)
 	}

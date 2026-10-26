@@ -119,6 +119,7 @@ type Handlers struct {
 	SupportReports      *handler.SupportReportsHandler
 	SupportSLA          *handler.SupportSLAHandler
 	SupportWebhooks     *handler.SupportWebhookHandler
+	SupportImports      *handler.SupportImportHandler
 	SupportActions      *handler.SupportConversationActionsHandler
 	SupportInboxClear   *handler.SupportInboxClearHandler
 	PostmarkInbound     *handler.PostmarkInboundHandler
@@ -1260,6 +1261,12 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermSupportAdmin)).Post("/sla-policies/reorder", h.SupportSLA.Reorder)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Put("/sla-policies/{policyId}", h.SupportSLA.Update)
 					r.With(requirePerm(authorization.PermSupportAdmin)).Delete("/sla-policies/{policyId}", h.SupportSLA.Delete)
+					if h.SupportImports != nil {
+						r.With(requirePerm(authorization.PermSupportAdmin)).Get("/imports", h.SupportImports.List)
+						r.With(requirePerm(authorization.PermSupportAdmin)).Post("/imports/intercom/preview", h.SupportImports.PreviewIntercom)
+						r.With(requirePerm(authorization.PermSupportAdmin)).Post("/imports/intercom", h.SupportImports.StartIntercom)
+						r.With(requirePerm(authorization.PermSupportAdmin)).Post("/imports/{importId}/cancel", h.SupportImports.Cancel)
+					}
 					if h.SupportWebhooks != nil {
 						r.With(requirePerm(authorization.PermSupportAdmin)).Get("/webhooks", h.SupportWebhooks.List)
 						r.With(requirePerm(authorization.PermSupportAdmin)).Get("/webhooks/event-types", h.SupportWebhooks.EventTypes)
@@ -1795,6 +1802,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsImport)).Get("/import/jobs", h.Docs.ImportListJobs)
 				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/helpscout/preview", h.Docs.ImportPreviewHelpscout)
 				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/helpscout/start", h.Docs.ImportStartHelpscout)
+				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/intercom/preview", h.Docs.ImportPreviewIntercom)
+				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/intercom/start", h.Docs.ImportStartIntercom)
 				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/nextra/preview", h.Docs.ImportPreviewNextra)
 				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/nextra/start", h.Docs.ImportStartNextra)
 				r.With(requirePerm(authorization.PermDocsImport)).Get("/import/{jobId}/status", h.Docs.ImportGetStatus)

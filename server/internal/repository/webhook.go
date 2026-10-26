@@ -113,11 +113,20 @@ func (r *WebhookRepository) InsertEvent(ctx context.Context, event *model.Webhoo
 	return nil
 }
 
+// WebhookDispatch is what one dispatch pass produced: deliveries to store,
+// and events to keep until a later time.
+type WebhookDispatch struct {
+	Deliveries []model.WebhookDelivery
+	// Deferred maps event IDs to when they become available again.
+	Deferred map[string]time.Time
+}
+
 // DispatchEvents locks up to limit available events, lets build turn them
 // into deliveries, then stores the deliveries and removes the events in one
 // transaction, so an event is delivered once even with several workers.
+// Deferred events stay queued until their new time.
 func (r *WebhookRepository) DispatchEvents(ctx context.Context, now time.Time, limit int,
-	build func(events []model.WebhookEvent) ([]model.WebhookDelivery, error)) (int, error) {
+	build func(events []model.WebhookEvent) (WebhookDispatch, error)) (int, error) {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -134,21 +143,30 @@ func (r *WebhookRepository) DispatchEvents(ctx context.Context, now time.Time, l
 		if len(events) == 0 {
 			return nil
 		}
-		deliveries, err := build(events)
+		dispatch, err := build(events)
 		if err != nil {
 			return err
 		}
-		if len(deliveries) > 0 {
-			if err := tx.CreateInBatches(deliveries, 200).Error; err != nil {
+		if len(dispatch.Deliveries) > 0 {
+			if err := tx.CreateInBatches(dispatch.Deliveries, 200).Error; err != nil {
 				return fmt.Errorf("create webhook deliveries: %w", err)
+			}
+		}
+		for id, at := range dispatch.Deferred {
+			if err := tx.Model(&model.WebhookEvent{}).Where("id = ?", id).Update("available_at", at).Error; err != nil {
+				return fmt.Errorf("defer webhook event: %w", err)
 			}
 		}
 		ids := make([]string, 0, len(events))
 		for _, event := range events {
-			ids = append(ids, event.ID)
+			if _, deferred := dispatch.Deferred[event.ID]; !deferred {
+				ids = append(ids, event.ID)
+			}
 		}
-		if err := tx.Where("id IN ?", ids).Delete(&model.WebhookEvent{}).Error; err != nil {
-			return fmt.Errorf("remove dispatched webhook events: %w", err)
+		if len(ids) > 0 {
+			if err := tx.Where("id IN ?", ids).Delete(&model.WebhookEvent{}).Error; err != nil {
+				return fmt.Errorf("remove dispatched webhook events: %w", err)
+			}
 		}
 		processed = len(events)
 		return nil
@@ -220,10 +238,16 @@ type WebhookAttempt struct {
 	NextAttemptAt *time.Time // nil when no retry follows
 }
 
+// WebhookEndpointHealth is an endpoint's run of failures after an attempt.
+type WebhookEndpointHealth struct {
+	FailureCount int
+	FailingSince *time.Time
+}
+
 // RecordAttempt stores an attempt's outcome on the delivery and its
-// endpoint and returns the endpoint's consecutive failure count.
-func (r *WebhookRepository) RecordAttempt(ctx context.Context, delivery model.WebhookDelivery, attempt WebhookAttempt) (int, error) {
-	failures := 0
+// endpoint and returns the endpoint's current run of failures.
+func (r *WebhookRepository) RecordAttempt(ctx context.Context, delivery model.WebhookDelivery, attempt WebhookAttempt) (WebhookEndpointHealth, error) {
+	var health WebhookEndpointHealth
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		fields := map[string]any{
 			"attempts": gorm.Expr("attempts + 1"), "last_status_code": attempt.StatusCode, "last_error": attempt.Error,
@@ -240,21 +264,20 @@ func (r *WebhookRepository) RecordAttempt(ctx context.Context, delivery model.We
 		if err := tx.Model(&model.WebhookDelivery{}).Where("id = ?", delivery.ID).Updates(fields).Error; err != nil {
 			return fmt.Errorf("record webhook attempt: %w", err)
 		}
-		endpointFields := map[string]any{"last_success_at": attempt.At, "failure_count": 0}
+		endpointFields := map[string]any{"last_success_at": attempt.At, "failure_count": 0, "failing_since": nil}
 		if !attempt.Succeeded {
-			endpointFields = map[string]any{"last_failure_at": attempt.At, "failure_count": gorm.Expr("failure_count + 1")}
+			endpointFields = map[string]any{"last_failure_at": attempt.At, "failure_count": gorm.Expr("failure_count + 1"),
+				"failing_since": gorm.Expr("COALESCE(failing_since, ?)", attempt.At)}
 		}
 		if err := tx.Model(&model.WebhookEndpoint{}).Where("id = ?", delivery.EndpointID).Updates(endpointFields).Error; err != nil {
 			return fmt.Errorf("record webhook endpoint health: %w", err)
 		}
-		var health struct{ FailureCount int }
-		if err := tx.Model(&model.WebhookEndpoint{}).Select("failure_count").Where("id = ?", delivery.EndpointID).Scan(&health).Error; err != nil {
+		if err := tx.Model(&model.WebhookEndpoint{}).Select("failure_count, failing_since").Where("id = ?", delivery.EndpointID).Scan(&health).Error; err != nil {
 			return fmt.Errorf("read webhook endpoint health: %w", err)
 		}
-		failures = health.FailureCount
 		return nil
 	})
-	return failures, err
+	return health, err
 }
 
 // DisableEndpoint turns an endpoint off with a reason and fails its pending

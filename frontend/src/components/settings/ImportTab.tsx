@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ShortcutImportWizard } from '@/components/pm/ShortcutImportWizard';
 import { HelpCenterImportSection } from '@/components/settings/HelpCenterImportSection';
 import { NextraImportWizard } from '@/components/settings/NextraImportWizard';
+import { IntercomImportWizard } from '@/components/settings/IntercomImportWizard';
 import { workspacesService } from '@/lib/services/workspacesService';
 import type { MemberWithUser } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
@@ -15,6 +16,7 @@ import jiraIcon from '@/assets/import/jira.svg';
 import linearIcon from '@/assets/import/linear.svg';
 import helpscoutIcon from '@/assets/import/helpscout.svg';
 import nextraIcon from '@/assets/import/nextra.svg';
+import intercomIcon from '@/assets/import/intercom.svg';
 
 const IMPORT_SOURCES = [
   {
@@ -106,6 +108,18 @@ export function ImportTab({ workspaceId, editable = true }: { workspaceId: strin
     );
   }
 
+  if (selected === 'intercom') {
+    return (
+      <div className="space-y-4">
+        <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground" onClick={() => setSelected(null)}>
+          <ArrowRight01Icon className="h-4 w-4 rotate-180" />
+          Back to sources
+        </Button>
+        <IntercomImportWizard workspaceId={workspaceId} />
+      </div>
+    );
+  }
+
   if (selected === 'nextra') {
     return (
       <div className="space-y-4">
@@ -156,6 +170,28 @@ export function ImportTab({ workspaceId, editable = true }: { workspaceId: strin
               )}
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* Support */}
+      <div className="space-y-4">
+        <h3 className="text-sm font-semibold">Support</h3>
+        <div className="overflow-hidden rounded-lg border border-border bg-card">
+          <button
+            type="button"
+            disabled={!editable}
+            onClick={() => setSelected('intercom')}
+            className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
+          >
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+              <img src={intercomIcon} alt="Intercom" className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">Intercom</p>
+              <p className="text-sm text-muted-foreground">Import your Help Center and past conversations with their replies, notes and tags.</p>
+            </div>
+            <ArrowRight01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+          </button>
         </div>
       </div>
 

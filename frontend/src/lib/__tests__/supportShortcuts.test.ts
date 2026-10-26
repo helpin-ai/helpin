@@ -47,9 +47,9 @@ describe('adjacentConversationId', () => {
     expect(adjacentConversationId(ids, 'a', 'previous')).toBeNull()
   })
   it('continues from the place of a conversation that just left the list', () => {
-    expect(adjacentConversationId(['a', 'c', 'd'], 'b', 'next', ['a', 'b', 'c', 'd'])).toBe('c')
-    expect(adjacentConversationId(['a', 'c', 'd'], 'b', 'previous', ['a', 'b', 'c', 'd'])).toBe('a')
-    expect(adjacentConversationId(['a', 'b'], 'c', 'next', ['a', 'b', 'c'])).toBe('b')
+    expect(adjacentConversationId(['a', 'c', 'd'], 'b', 'next', 1)).toBe('c')
+    expect(adjacentConversationId(['a', 'c', 'd'], 'b', 'previous', 1)).toBe('a')
+    expect(adjacentConversationId(['a', 'b'], 'c', 'next', 2)).toBe('b')
   })
   it('starts from an end when nothing in the list is open', () => {
     expect(adjacentConversationId(ids, null, 'next')).toBe('a')

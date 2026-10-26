@@ -517,7 +517,7 @@ func main() {
 			Model:        cfg.DocsImportAIConversionModel,
 			ArticleLimit: cfg.DocsImportAIConversionArticleLimit,
 		},
-	).SetTemporalClient(nil, resolvePMImportEncryptionKey(cfg))
+	).SetTemporalClient(nil, resolvePMImportEncryptionKey(cfg)).SetIntercomBaseURL(cfg.IntercomAPIBaseURL)
 	docsBlockService := service.NewDocsBlockService(docsBlockRepo, docsContentService, docsDocumentRepo)
 	docsBlockService.SetActivityService(pmActivityService)
 	supportCoverageService.SetDocsBlockService(docsBlockService)

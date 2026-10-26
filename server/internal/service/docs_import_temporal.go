@@ -69,7 +69,9 @@ func (s *DocsImportService) executeStoredHelpScoutImport(ctx context.Context, im
 		s.failJob(ctx, job.ID, "Docs import target space is missing")
 		return nil
 	}
-	return s.runImport(ctx, job.ID, req.APIKey, req, *req.TargetSpaceID, job.WorkspaceID, job.StartedBy, func(processed int) {
-		activity.RecordHeartbeat(ctx, processed)
-	})
+	heartbeat := func(processed int) { activity.RecordHeartbeat(ctx, processed) }
+	if job.Source == docsImportSourceIntercom {
+		return s.runIntercomImport(ctx, job.ID, req, *req.TargetSpaceID, job.WorkspaceID, job.StartedBy, heartbeat)
+	}
+	return s.runImport(ctx, job.ID, req.APIKey, req, *req.TargetSpaceID, job.WorkspaceID, job.StartedBy, heartbeat)
 }

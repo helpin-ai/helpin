@@ -1165,7 +1165,7 @@ func main() {
 			Model:        cfg.DocsImportAIConversionModel,
 			ArticleLimit: cfg.DocsImportAIConversionArticleLimit,
 		},
-	).SetTemporalClient(temporalClient, resolvePMImportEncryptionKey(cfg))
+	).SetTemporalClient(temporalClient, resolvePMImportEncryptionKey(cfg)).SetIntercomBaseURL(cfg.IntercomAPIBaseURL)
 	docsSpaceService.SetTranslationService(docsHelpcenterTranslationService)
 	docsCollectionService.SetTranslationService(docsHelpcenterTranslationService)
 	docsDocumentService.SetTranslationService(docsHelpcenterTranslationService)
@@ -1663,6 +1663,8 @@ func main() {
 	}).SetSLAService(supportSLAService)
 	supportInboxService.SetWebhookService(webhookService)
 	supportSLAService.SetWebhookService(webhookService)
+	supportImportService := service.NewSupportImportService(repository.NewSupportImportRepository(db), supportInboxService, resolvePMImportEncryptionKey(cfg)).
+		SetIntercomBaseURL(cfg.IntercomAPIBaseURL)
 	supportInboxTriageService.SetEntitlementService(entitlementService)
 	agentService.SetEntitlementService(entitlementService)
 	ruleEngine.SetEntitlementService(entitlementService)
@@ -2019,6 +2021,7 @@ func main() {
 		SupportReports:  handler.NewSupportReportsHandler(service.NewSupportReportService(supportConversationRepo)),
 		SupportSLA:      handler.NewSupportSLAHandler(supportSLAService),
 		SupportWebhooks: handler.NewSupportWebhookHandler(webhookService),
+		SupportImports:  handler.NewSupportImportHandler(supportImportService),
 		SupportActions:  handler.NewSupportConversationActionsHandler(service.NewSupportConversationActionService(supportInboxService, supportTagService)),
 		SupportCoverage: handler.NewSupportCoverageHandler(
 			supportCoverageService,
@@ -2163,6 +2166,7 @@ func main() {
 			"support snooze waker": func(ctx context.Context) { supportInboxService.RunSnoozeWaker(ctx, 30*time.Second) },
 			"support SLA worker":   func(ctx context.Context) { supportSLAService.Run(ctx, 5*time.Second) },
 			"support webhooks":     func(ctx context.Context) { webhookService.Run(ctx, 5*time.Second) },
+			"support imports":      func(ctx context.Context) { supportImportService.Run(ctx, 5*time.Second) },
 		} {
 			jobs.Add(1)
 			go func(name string, run func(context.Context)) {

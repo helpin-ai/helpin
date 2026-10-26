@@ -89,7 +89,6 @@ func slaPolicy(first, next, resolution *int) model.SupportSLAPolicy {
 	}
 }
 
-
 var slaStart = time.Date(2026, 10, 26, 10, 0, 0, 0, time.UTC)
 
 func slaConversation(status string) model.SupportConversation {

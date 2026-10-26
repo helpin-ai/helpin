@@ -31,8 +31,8 @@ type SupportSLAPolicy struct {
 	ID          string `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID string `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	Name        string `json:"name" gorm:"not null"`
-	// Boolean columns default to true in SQL only: a GORM default would
-	// turn a false value into true on insert.
+	// Boolean columns carry no default: a GORM default would turn a false
+	// value into true on insert, so the server always writes them.
 	Enabled  bool `json:"enabled" gorm:"not null"`
 	Position int  `json:"position" gorm:"type:integer;not null;default:0"`
 	// Empty condition lists match every conversation. MailboxIDs may hold

@@ -981,7 +981,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, url TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
 			events TEXT NOT NULL DEFAULT '{}', mailbox_ids TEXT NOT NULL DEFAULT '{}', encrypted_secret TEXT NOT NULL,
 			secret_hint TEXT NOT NULL DEFAULT '', enabled BOOLEAN NOT NULL DEFAULT 1, disabled_reason TEXT NOT NULL DEFAULT '',
-			failure_count INTEGER NOT NULL DEFAULT 0, last_success_at DATETIME, last_failure_at DATETIME, created_by_id TEXT,
+			failure_count INTEGER NOT NULL DEFAULT 0, failing_since DATETIME, last_success_at DATETIME, last_failure_at DATETIME, created_by_id TEXT,
 			created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE TABLE webhook_events (
@@ -989,7 +989,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			data TEXT NOT NULL DEFAULT '{}', available_at DATETIME NOT NULL, created_at DATETIME NOT NULL
 		)`,
 		`CREATE TABLE webhook_deliveries (
-			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, endpoint_id TEXT NOT NULL, event_id TEXT NOT NULL, event_type TEXT NOT NULL,
+			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, endpoint_id TEXT NOT NULL, event_id TEXT NOT NULL, event_type TEXT NOT NULL, conversation_id TEXT,
 			payload TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
 			next_attempt_at DATETIME NOT NULL, last_status_code INTEGER, last_error TEXT NOT NULL DEFAULT '', last_attempt_at DATETIME,
 			duration_ms INTEGER, delivered_at DATETIME, created_at DATETIME NOT NULL

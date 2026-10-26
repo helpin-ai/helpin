@@ -102,7 +102,12 @@ function SupportWebhookForm({
         <legend className="text-sm font-medium">Inboxes</legend>
         <p className="text-xs text-muted-foreground">Leave all unselected to send events from every inbox.</p>
         <div className="flex flex-wrap gap-1.5">
-          {[{ id: 'shared', name: 'Main inbox' }, ...inboxes].map((inbox) => (
+          {[
+            { id: 'shared', name: 'Main inbox' },
+            ...inboxes,
+            // Inboxes archived since they were chosen can still be removed.
+            ...(webhook?.mailbox_ids ?? []).filter((id) => id !== 'shared' && !inboxes.some((inbox) => inbox.id === id)).map((id) => ({ id, name: 'Archived inbox' })),
+          ].map((inbox) => (
             <SettingsPill key={inbox.id} selected={mailboxIds.includes(inbox.id)} onClick={() => setMailboxIds(toggleListValue(mailboxIds, inbox.id))}>{inbox.name}</SettingsPill>
           ))}
         </div>
