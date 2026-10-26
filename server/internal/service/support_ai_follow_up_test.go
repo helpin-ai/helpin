@@ -210,7 +210,7 @@ func TestSupportFollowUpLaunchUsesRestrictedAgentRuntime(t *testing.T) {
 	settings.AIAgentID = strPtr("agent-1")
 	episode := model.SupportAIFollowUp{ID: "episode", WorkspaceID: "ws-1", ConversationID: "conv-1", SourceMessageID: "source", RunID: "reserved-run", CloseHours: 48}
 	conv := &model.SupportConversation{ID: "conv-1", WorkspaceID: "ws-1"}
-	if err := svc.launch(context.Background(), episode, conv, settings, now); err != nil {
+	if err := svc.launch(context.Background(), episode, conv, settings, "chat", now); err != nil {
 		t.Fatal(err)
 	}
 	start := runtimeClient.startRunCalls[0]
