@@ -22,14 +22,7 @@ export function isMessageInReadingLanguage(content: string, readingLanguage: str
   // The local detector cannot distinguish regional/script variants.
   const expected = readingLanguageCodes[reading];
   if (!expected) return false;
-  const text = content
-    .replace(/```[\s\S]*?```/g, '')
-    .replace(/`[^`\n]*`/g, '')
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/https?:\/\/\S+|[\w.+-]+@[\w.-]+\.[a-z]{2,}/gi, '')
-    .replace(/^>.*$/gm, '')
-    .trim();
+  const text = authoredText(content);
   const letters = text.match(/\p{L}/gu)?.length ?? 0;
   if (letters < 30 || text.length > 8000) return false;
   const matches = (sample: string) => {
@@ -46,4 +39,33 @@ export function isMessageInReadingLanguage(content: string, readingLanguage: str
     const [best, next] = francAll(part, { minLength: 30 });
     return !best || best[0] === expected || best[0] === 'und' || best[1] - (next?.[1] ?? 0) < 0.05;
   });
+}
+
+// For a conversation already known to be in the reading language. Only clear
+// evidence counts: the detector often misreads short English lines and product
+// names, so a weak signal must not bring Translate back. Unknown reading
+// languages keep manual Translate available.
+export function isMessageInOtherLanguage(content: string, readingLanguage: string): boolean {
+  const expected = readingLanguageCodes[normalizeReadingLanguage(readingLanguage)];
+  if (!expected) return true;
+  const text = authoredText(content);
+  return [text, ...text.split(/\n+/)].some(part => {
+    const letters = part.match(/\p{L}/gu)?.length ?? 0;
+    if (!letters) return false;
+    // A language missing from the ranking is written in another script.
+    const score = francAll(part, { minLength: 1 }).find(([code]) => code === expected)?.[1] ?? 0;
+    // Short text only shows its script; longer text also shows its language.
+    return letters < 30 ? score === 0 : score < 0.8;
+  });
+}
+
+function authoredText(content: string): string {
+  return content
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/`[^`\n]*`/g, '')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/https?:\/\/\S+|[\w.+-]+@[\w.-]+\.[a-z]{2,}/gi, '')
+    .replace(/^>.*$/gm, '')
+    .trim();
 }
