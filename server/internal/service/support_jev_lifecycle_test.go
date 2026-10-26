@@ -472,15 +472,18 @@ func TestJevWaitingCustomerPreservesReminderSequence(t *testing.T) {
 	}
 }
 
-func TestJevHardHumanRequestRetainsPrecedence(t *testing.T) {
-	p := &lifecycleJev{choice: "continue", probability: .99}
+// A request for a person is judged in any language, not matched against an
+// English keyword list that also caught "connect me to my Facebook page".
+func TestJevJudgesHumanRequests(t *testing.T) {
+	p := &lifecycleJev{choice: "customer_requested_human", probability: .99}
 	chat, db, msg := setupJevChat(t, p)
-	msg.Content = "I want to speak to a real person"
+	msg.Content = "Je voudrais parler à une vraie personne"
 	mustExec(t, db, `UPDATE support_messages SET content=? WHERE id=?`, msg.Content, msg.ID)
 	if err := chat.HandleVisitorMessage(context.Background(), "ws", "conv", msg); err != nil {
 		t.Fatal(err)
 	}
-	if p.calls != 0 || !supportConversationHumanOwned(readControlConversation(t, db)) {
-		t.Fatal("explicit human request lost precedence")
+	conv := readControlConversation(t, db)
+	if p.calls != 1 || !supportConversationHumanOwned(conv) || conv.CustomerRequestedHumanAt == nil {
+		t.Fatalf("human request not handed off: calls=%d conv=%+v", p.calls, conv)
 	}
 }
