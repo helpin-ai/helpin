@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -1062,14 +1063,28 @@ func (s *SupportInboxService) SearchCannedResponses(ctx context.Context, workspa
 	return s.cannedResponseRepo.Search(ctx, workspaceID, query)
 }
 
-func normalizeCannedResponseRequest(req model.CannedResponseRequest) (model.CannedResponseRequest, error) {
+// normalizeCannedResponseRequest validates a shortcut. requireBody checks
+// that it inserts text or runs actions; updates check that after merging in
+// the stored actions.
+func normalizeCannedResponseRequest(req model.CannedResponseRequest, requireBody bool) (model.CannedResponseRequest, error) {
 	req.ShortCode = strings.TrimSpace(req.ShortCode)
 	req.Content = strings.TrimSpace(req.Content)
 	if req.Tag != nil {
 		tag := strings.TrimSpace(*req.Tag)
 		req.Tag = &tag
 	}
-	if req.ShortCode == "" || req.Content == "" {
+	if req.Actions != nil {
+		actions, err := NormalizeSupportConversationActions(*req.Actions)
+		if err != nil {
+			return req, fmt.Errorf("%w: %s", ErrCannedResponseInvalid, strings.TrimPrefix(err.Error(), ErrSupportActionsInvalid.Error()+": "))
+		}
+		req.Actions = &actions
+	}
+	if req.ShortCode == "" {
+		return req, fmt.Errorf("%w: shortcut and content are required", ErrCannedResponseInvalid)
+	}
+	// A macro with actions may insert no text.
+	if requireBody && req.Content == "" && (req.Actions == nil || req.Actions.Empty()) {
 		return req, fmt.Errorf("%w: shortcut and content are required", ErrCannedResponseInvalid)
 	}
 	if !strings.HasPrefix(req.ShortCode, "!") || strings.ContainsAny(req.ShortCode, " \t\r\n") {
@@ -1101,8 +1116,11 @@ func isDuplicateCannedResponseError(err error) bool {
 
 // CreateCannedResponse creates a new canned response.
 func (s *SupportInboxService) CreateCannedResponse(ctx context.Context, workspaceID string, req model.CannedResponseRequest, createdByID string) (*model.SupportCannedResponse, error) {
-	req, err := normalizeCannedResponseRequest(req)
+	req, err := normalizeCannedResponseRequest(req, true)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.validateMacroReferences(ctx, workspaceID, req.Actions); err != nil {
 		return nil, err
 	}
 	existing, err := s.cannedResponseRepo.GetByShortCode(ctx, workspaceID, req.ShortCode)
@@ -1120,6 +1138,9 @@ func (s *SupportInboxService) CreateCannedResponse(ctx context.Context, workspac
 		Tag:         *req.Tag,
 		CreatedByID: createdByID,
 	}
+	if req.Actions != nil {
+		response.Actions = *req.Actions
+	}
 	if err := s.cannedResponseRepo.Create(ctx, response); err != nil {
 		if isDuplicateCannedResponseError(err) {
 			return nil, ErrCannedResponseDuplicate
@@ -1131,8 +1152,11 @@ func (s *SupportInboxService) CreateCannedResponse(ctx context.Context, workspac
 
 // UpdateCannedResponse updates an existing canned response.
 func (s *SupportInboxService) UpdateCannedResponse(ctx context.Context, workspaceID, id string, req model.CannedResponseRequest) (*model.SupportCannedResponse, error) {
-	req, err := normalizeCannedResponseRequest(req)
+	req, err := normalizeCannedResponseRequest(req, false)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.validateMacroReferences(ctx, workspaceID, req.Actions); err != nil {
 		return nil, err
 	}
 	response, err := s.cannedResponseRepo.GetByID(ctx, workspaceID, id)
@@ -1153,6 +1177,12 @@ func (s *SupportInboxService) UpdateCannedResponse(ctx context.Context, workspac
 	response.ShortCode = req.ShortCode
 	response.Content = req.Content
 	response.Tag = *req.Tag
+	if req.Actions != nil {
+		response.Actions = *req.Actions
+	}
+	if response.Content == "" && response.Actions.Empty() {
+		return nil, fmt.Errorf("%w: shortcut and content are required", ErrCannedResponseInvalid)
+	}
 
 	if err := s.cannedResponseRepo.Update(ctx, response); err != nil {
 		if isDuplicateCannedResponseError(err) {
@@ -1161,6 +1191,52 @@ func (s *SupportInboxService) UpdateCannedResponse(ctx context.Context, workspac
 		return nil, fmt.Errorf("update canned response: %w", err)
 	}
 	return response, nil
+}
+
+// validateMacroReferences checks that a macro's tags, inbox and assignee
+// exist in the workspace, so it does not fail halfway when used. Inbox
+// access for the assignee is checked when the macro runs.
+func (s *SupportInboxService) validateMacroReferences(ctx context.Context, workspaceID string, actions *model.SupportConversationActions) error {
+	if actions == nil || actions.Empty() {
+		return nil
+	}
+	invalid := func(message string) error { return fmt.Errorf("%w: %s", ErrCannedResponseInvalid, message) }
+	if len(actions.AddTagIDs)+len(actions.RemoveTagIDs) > 0 && s.tagRepo != nil {
+		tags, err := s.tagRepo.ListByWorkspace(ctx, workspaceID)
+		if err != nil {
+			return err
+		}
+		known := make(map[string]bool, len(tags))
+		for _, tag := range tags {
+			known[tag.ID] = true
+		}
+		for _, id := range append(append([]string{}, actions.AddTagIDs...), actions.RemoveTagIDs...) {
+			if !known[id] {
+				return invalid("a tag in the actions no longer exists")
+			}
+		}
+	}
+	if actions.MailboxID != nil && *actions.MailboxID != "shared" && s.mailboxRepo != nil {
+		mailboxes, err := s.mailboxRepo.ListByWorkspace(ctx, workspaceID, false)
+		if err != nil {
+			return err
+		}
+		if !slices.ContainsFunc(mailboxes, func(mailbox model.SupportMailbox) bool { return mailbox.ID == *actions.MailboxID }) {
+			return invalid("the inbox in the actions does not exist")
+		}
+	}
+	if actions.AssignUserID != nil && *actions.AssignUserID != "" && s.workspaceRepo != nil {
+		members, err := s.workspaceRepo.ListSupportAssignableMembers(ctx, workspaceID, nil)
+		if err != nil {
+			return err
+		}
+		if !slices.ContainsFunc(members, func(member model.AssignableMember) bool {
+			return member.UserID != nil && *member.UserID == *actions.AssignUserID
+		}) {
+			return invalid("the assignee cannot be assigned support conversations")
+		}
+	}
+	return nil
 }
 
 // DeleteCannedResponse deletes a canned response.

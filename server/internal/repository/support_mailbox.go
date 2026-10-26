@@ -329,7 +329,7 @@ func (r *SupportMailboxRepository) CountScopes(ctx context.Context, workspaceID,
 			COALESCE(CAST(sc.mailbox_id AS TEXT), 'shared') AS scope_id,
 			SUM(CASE WHEN %s THEN 1 ELSE 0 END) AS total_count,
 			SUM(CASE WHEN %s AND (COALESCE(personal_state.unread_customer_message_count, 0) > 0 OR COALESCE(personal_state.manually_unread, false)) THEN 1 ELSE 0 END) AS unread_count,
-			SUM(CASE WHEN sc.needs_human_reply THEN 1 ELSE 0 END) AS needs_human_reply_count
+			SUM(CASE WHEN sc.needs_human_reply AND sc.snoozed_until IS NULL THEN 1 ELSE 0 END) AS needs_human_reply_count
 		`, humanCondition, humanCondition))
 
 	var rows []SupportInboxScopeCounts
@@ -358,7 +358,7 @@ func (r *SupportMailboxRepository) countLegacyScopes(ctx context.Context, worksp
 				  AND message.message_type = 'reply'
 				  AND message.created_at > COALESCE(conversation.team_last_seen_at, '1970-01-01 00:00:00')
 			)) AS unread_count,
-			COUNT(*) FILTER (WHERE conversation.needs_human_reply) AS needs_human_reply_count
+			COUNT(*) FILTER (WHERE conversation.needs_human_reply AND conversation.snoozed_until IS NULL) AS needs_human_reply_count
 		FROM support_conversations conversation
 		WHERE conversation.workspace_id = ? AND conversation.merged_into_id IS NULL
 		  AND (conversation.mailbox_id IS NULL OR conversation.mailbox_id IN ?)

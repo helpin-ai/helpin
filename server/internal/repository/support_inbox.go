@@ -951,14 +951,22 @@ func conversationHumanQueueCondition(alias string) string {
 }
 
 func conversationHumanInboxCondition(alias string) string {
-	return fmt.Sprintf("(%s.status IN ('%s', '%s') AND (%s OR %s.ai_state = 'escalated' OR %s.customer_requested_human_at IS NOT NULL))",
+	return fmt.Sprintf("(%s.status IN ('%s', '%s') AND %s.snoozed_until IS NULL AND (%s OR %s.ai_state = 'escalated' OR %s.customer_requested_human_at IS NOT NULL))",
 		alias,
 		model.SupportConversationStatusOpen,
 		model.SupportConversationStatusWaitingOnCustomer,
+		alias,
 		conversationHumanQueueCondition(alias),
 		alias,
 		alias,
 	)
+}
+
+// conversationSnoozedCondition matches conversations hidden from team queues
+// until their snooze ends.
+func conversationSnoozedCondition(alias string) string {
+	return fmt.Sprintf("(%[1]s.snoozed_until IS NOT NULL AND %[1]s.status NOT IN ('%[2]s', '%[3]s'))",
+		alias, model.SupportConversationStatusResolved, model.SupportConversationStatusSpam)
 }
 
 func applyConversationFlowState(query *gorm.DB, alias, flowState string) *gorm.DB {
@@ -1000,6 +1008,9 @@ type ConversationListParams struct {
 	TagIDs      []string
 	SystemTags  []string
 	AIFilters   []string
+	// SLA narrows to conversations with an overdue target ("breached") or
+	// any SLA target ("active").
+	SLA string
 }
 
 // ConversationRepositoryListParams adds resolved actor access data for repository queries.
@@ -1148,17 +1159,17 @@ func (r *SupportConversationRepository) applyMineFilter(query *gorm.DB, alias, u
 		userID,
 	}
 	args = append(args, mentionArgs...)
-	return query.Where(fmt.Sprintf(`(%s OR %s.status = ?) AND (
+	return query.Where(fmt.Sprintf(`(%s OR %s.status = ?) AND %s.snoozed_until IS NULL AND (
 		%s.assigned_user_id = ?
 		OR %s.opened_by_user_id = ?
 		OR %s
-	)`, conversationHumanInboxCondition(alias), alias, alias, alias, mentionCondition), args...)
+	)`, conversationHumanInboxCondition(alias), alias, alias, alias, alias, mentionCondition), args...)
 }
 
 // Waiting is a view of public teammate replies, not a status transition.
 // Retain explicitly waiting conversations for compatibility with existing workflows.
 func conversationWaitingOnCustomerCondition(alias string) string {
-	return fmt.Sprintf("(%[1]s.status = 'waiting_on_customer' OR (%[1]s.status = 'open' AND %[1]s.last_public_sender_type = 'user' AND NOT COALESCE(%[1]s.customer_awaiting_response, false)))", alias)
+	return fmt.Sprintf("(%[1]s.snoozed_until IS NULL AND (%[1]s.status = 'waiting_on_customer' OR (%[1]s.status = 'open' AND %[1]s.last_public_sender_type = 'user' AND NOT COALESCE(%[1]s.customer_awaiting_response, false))))", alias)
 }
 
 func (r *SupportConversationRepository) applyConversationListFilter(query *gorm.DB, alias, filter, userID string) *gorm.DB {
@@ -1171,6 +1182,8 @@ func (r *SupportConversationRepository) applyConversationListFilter(query *gorm.
 		return r.applyMineFilter(query, alias, userID)
 	case model.SupportConversationListFilterResolved:
 		return query.Where(fmt.Sprintf("%s.status = ?", alias), model.SupportConversationStatusResolved)
+	case model.SupportConversationListFilterSnoozed:
+		return query.Where(conversationSnoozedCondition(alias))
 	default:
 		return query
 	}
@@ -1345,6 +1358,10 @@ func (r *SupportConversationRepository) applyConversationListParams(query *gorm.
 	query = applyConversationFlowState(query, alias, params.FlowState)
 	query = r.applyConversationSearch(query, strings.TrimSpace(params.Search))
 	query = r.applyConversationListFilter(query, alias, params.Filter, params.UserID)
+	if !strings.EqualFold(strings.TrimSpace(params.Filter), model.SupportConversationListFilterSnoozed) {
+		// Snoozed conversations appear only in the Snoozed view until they wake.
+		query = query.Where("NOT " + conversationSnoozedCondition(alias))
+	}
 	query = r.applyConversationAssignmentFilter(query, alias, params.AssignedTo, params.UserID)
 	query = applyConversationTagFilters(query, alias, params.TagIDs, params.SystemTags)
 	query = applyConversationAIFilters(query, alias, params.AIFilters)
@@ -1354,7 +1371,13 @@ func (r *SupportConversationRepository) applyConversationListParams(query *gorm.
 		query = query.Where(fmt.Sprintf("%s.status = ?", alias), params.Status)
 	}
 	if params.Priority != "" {
-		query = query.Where(fmt.Sprintf("%s.priority = ?", alias), params.Priority)
+		query = query.Where(fmt.Sprintf("%s.priority IN ?", alias), compactStrings(strings.Split(params.Priority, ",")))
+	}
+	switch strings.ToLower(strings.TrimSpace(params.SLA)) {
+	case "breached":
+		query = query.Where(fmt.Sprintf("EXISTS (SELECT 1 FROM support_conversation_slas sla WHERE sla.conversation_id = %s.id AND sla.breached)", alias))
+	case "active":
+		query = query.Where(fmt.Sprintf("EXISTS (SELECT 1 FROM support_conversation_slas sla WHERE sla.conversation_id = %s.id AND sla.next_due_at IS NOT NULL)", alias))
 	}
 	if len(params.AIState) > 0 && params.AIState[0] != "" {
 		if params.AIState[0] == "any" {
@@ -1377,9 +1400,18 @@ const conversationActivityJoin = `LEFT JOIN support_messages list_activity ON li
     ORDER BY activity.created_at DESC, activity.id DESC LIMIT 1
 )`
 
+// SupportConversationSortSLA orders conversations by their next SLA due
+// time, overdue first; conversations without SLA targets come last.
+const SupportConversationSortSLA = "sla"
+
 func conversationListOrder(sortOrder string) string {
-	if strings.EqualFold(strings.TrimSpace(sortOrder), "oldest") {
+	switch strings.ToLower(strings.TrimSpace(sortOrder)) {
+	case "oldest":
 		return "COALESCE(list_activity.created_at, support_conversations.created_at) ASC"
+	case SupportConversationSortSLA:
+		return `(SELECT sla.next_due_at FROM support_conversation_slas sla
+			WHERE sla.conversation_id = support_conversations.id) ASC NULLS LAST,
+			COALESCE(list_activity.created_at, support_conversations.created_at) DESC`
 	}
 	return "COALESCE(list_activity.created_at, support_conversations.created_at) DESC"
 }
@@ -2560,6 +2592,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 		 AND personal_state.user_id = ?
 		WHERE sc.workspace_id = ?
 		  AND sc.status NOT IN ('resolved', 'spam')
+		  AND sc.snoozed_until IS NULL
 	`, unreadCondition, humanInboxCondition, unreadCondition, mineCondition, unreadCondition, unreadCondition, aiActiveCondition, unreadCondition, supportUnreadScopeCondition, unreadCondition, mineCondition, unreadCondition, humanInboxCondition, humanInboxCondition, mineCondition, aiActiveCondition, humanInboxCondition, mineCondition, aiActiveCondition)
 
 	args := []any{userID, workspaceID}
@@ -2627,7 +2660,7 @@ func (r *SupportConversationRepository) getLegacyUnreadStats(ctx context.Context
 			COUNT(*) FILTER (WHERE sc.needs_human_reply AND `+conversationWaitingOnCustomerCondition("sc")+`) AS waiting_needs_human_reply,
 			COUNT(*) FILTER (WHERE sc.needs_human_reply AND %s) AS ai_active_needs_human_reply
 		FROM support_conversations sc
-		WHERE sc.workspace_id = ? AND sc.status NOT IN ('resolved', 'spam')
+		WHERE sc.workspace_id = ? AND sc.status NOT IN ('resolved', 'spam') AND sc.snoozed_until IS NULL
 	`, unreadCondition, humanInboxCondition, unreadCondition, mineCondition,
 		unreadCondition, unreadCondition, aiActiveCondition, unreadCondition, supportUnreadScopeCondition,
 		unreadCondition, mineCondition, unreadCondition, humanInboxCondition,
@@ -3036,4 +3069,31 @@ func (r *SupportCannedResponseRepository) Delete(ctx context.Context, workspaceI
 		return fmt.Errorf("delete canned response: %w", err)
 	}
 	return nil
+}
+
+// ListDueSnoozes returns conversations whose snooze ended at or before now.
+func (r *SupportConversationRepository) ListDueSnoozes(ctx context.Context, now time.Time, limit int) ([]model.SupportConversation, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	var conversations []model.SupportConversation
+	err := r.db.WithContext(ctx).Model(&model.SupportConversation{}).
+		Where("snoozed_until IS NOT NULL AND snoozed_until <= ?", now).
+		Order("snoozed_until").Limit(limit).Find(&conversations).Error
+	if err != nil {
+		return nil, fmt.Errorf("list due support snoozes: %w", err)
+	}
+	return conversations, nil
+}
+
+// ClearSnooze wakes a conversation if it is still snoozed until the given
+// time, so concurrent wakers clear it once.
+func (r *SupportConversationRepository) ClearSnooze(ctx context.Context, workspaceID, conversationID string, snoozedUntil time.Time) (bool, error) {
+	result := r.db.WithContext(ctx).Model(&model.SupportConversation{}).
+		Where("id = ? AND workspace_id = ? AND snoozed_until = ?", conversationID, workspaceID, snoozedUntil).
+		Updates(map[string]any{"snoozed_until": nil, "snoozed_by_user_id": nil})
+	if result.Error != nil {
+		return false, fmt.Errorf("clear support snooze: %w", result.Error)
+	}
+	return result.RowsAffected > 0, nil
 }

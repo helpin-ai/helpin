@@ -93,7 +93,7 @@ func TestCoverageReanalysisIgnoresIncrementalCursor(t *testing.T) {
 	db := setupCoverageFindingUpsertTestDB(t)
 	for _, sql := range []string{
 		`CREATE TABLE support_coverage_analysis_runs (id TEXT PRIMARY KEY,workspace_id TEXT,window_start DATETIME,window_end DATETIME,cursor_started_at DATETIME,cursor_ended_at DATETIME,analyzer_version TEXT,status TEXT,conversation_cnt INTEGER,gap_count INTEGER,error_message TEXT,metadata TEXT,started_at DATETIME,completed_at DATETIME,created_at DATETIME,updated_at DATETIME)`,
-		`CREATE TABLE support_conversations (
+		`CREATE TABLE support_conversations (snoozed_until DATETIME, snoozed_by_user_id TEXT, 
             merged_into_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,id TEXT PRIMARY KEY,workspace_id TEXT,subject TEXT,status TEXT,updated_at DATETIME,resolved_at DATETIME)`,
 		`CREATE TABLE sample_data_items (entity_id TEXT)`,
 	} {

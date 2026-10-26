@@ -117,8 +117,77 @@ export interface SupportConversation {
   triage?: SupportConversationTriage | null;
   tags?: SupportTag[];
   system_tags?: SupportSystemTag[];
+  /** The customer's satisfaction rating once the conversation was rated. */
+  csat?: SupportConversationCSAT | null;
+  /** Hidden from team queues until this time, a customer reply, or a wake-up. */
+  snoozed_until?: string | null;
+  snoozed_by_user_id?: string | null;
+  sla?: SupportConversationSLA | null;
   created_at: string;
   updated_at: string;
+}
+
+export type SupportSLAMetric = 'first_response' | 'next_response' | 'resolution';
+export type SupportSLAState = 'pending' | 'paused' | 'achieved' | 'breached' | 'cancelled';
+
+export interface SupportConversationSLAItem {
+  metric: SupportSLAMetric;
+  state: SupportSLAState;
+  due_at?: string | null;
+  achieved_at?: string | null;
+  breached_at?: string | null;
+}
+
+export interface SupportConversationSLA {
+  policy_id?: string | null;
+  policy_name: string;
+  metrics: SupportConversationSLAItem[];
+  /** Earliest due time of a target still open, including overdue ones. */
+  next_due_at?: string | null;
+  /** An open target is overdue right now. */
+  breached: boolean;
+  /** The AI still owns the conversation; targets start at the handoff. */
+  ai_handling?: boolean;
+  /** No policy applies any more; open targets were stopped. */
+  ended?: boolean;
+}
+
+export interface SupportSLAPolicy {
+  id: string;
+  workspace_id: string;
+  name: string;
+  enabled: boolean;
+  position: number;
+  priorities: ConversationPriority[];
+  mailbox_ids: string[];
+  channels: string[];
+  first_response_minutes?: number | null;
+  next_response_minutes?: number | null;
+  resolution_minutes?: number | null;
+  business_hours: boolean;
+  pause_while_waiting: boolean;
+  active_since: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SupportSLAPolicyInput {
+  name: string;
+  enabled?: boolean;
+  priorities: string[];
+  mailbox_ids: string[];
+  channels: string[];
+  first_response_minutes?: number | null;
+  next_response_minutes?: number | null;
+  resolution_minutes?: number | null;
+  business_hours: boolean;
+  pause_while_waiting: boolean;
+}
+
+export interface SupportConversationCSAT {
+  rating: number;
+  comment?: string | null;
+  submitted_at: string;
 }
 
 export interface SupportConversationUserState {
@@ -448,12 +517,39 @@ export interface CreateSupportTriageRuleRequest {
   target_mailbox_id: string;
 }
 
+/** Changes a macro or bulk action applies to a conversation; unset fields are left alone. */
+export interface SupportConversationActions {
+  status?: 'open' | 'waiting_on_customer' | 'resolved';
+  priority?: ConversationPriority;
+  /** A teammate's user ID, or an empty string to unassign. */
+  assign_user_id?: string;
+  /** An inbox ID, or "shared" for the main inbox. */
+  mailbox_id?: string;
+  add_tag_ids?: string[];
+  remove_tag_ids?: string[];
+  snooze_minutes?: number;
+}
+
+export interface SupportActionResult {
+  conversation_id: string;
+  applied: string[];
+  error?: string;
+}
+
+export interface SupportBulkActionResponse {
+  results: SupportActionResult[];
+  succeeded: number;
+  failed: number;
+}
+
 export interface SupportCannedResponse {
   id: string;
   workspace_id: string;
   short_code: string;
   content: string;
   tag: string;
+  /** Actions that make this shortcut a macro. */
+  actions?: SupportConversationActions;
   created_by_id: string | null;
   created_at: string;
   updated_at: string;
@@ -464,6 +560,7 @@ export interface CreateCannedResponseRequest {
   content: string;
   tag?: string;
   title?: string;
+  actions?: SupportConversationActions;
 }
 
 export interface UpdateCannedResponseRequest {
@@ -471,6 +568,7 @@ export interface UpdateCannedResponseRequest {
   content: string;
   tag?: string;
   title?: string;
+  actions?: SupportConversationActions;
 }
 
 export interface UpdateSupportTriageRuleRequest {
@@ -634,6 +732,11 @@ export const SUPPORT_SYSTEM_EVENT_TYPES = [
   'tag_added',
   'tag_removed',
   'task_created',
+  'csat_rated',
+  'priority_changed',
+  'snoozed',
+  'unsnoozed',
+  'sla_breached',
   'task_linked',
   'task_unlinked',
 ] as const;
@@ -1414,4 +1517,64 @@ export interface SupportMergeResult {
   conversation_id: string;
   affected_ids: string[];
   merges: SupportConversationMerge[];
+}
+
+export type WebhookEventType =
+  | 'conversation.created'
+  | 'conversation.status_changed'
+  | 'conversation.assigned'
+  | 'conversation.priority_changed'
+  | 'conversation.snoozed'
+  | 'message.created'
+  | 'sla.breached'
+  | 'csat.submitted';
+
+export interface WebhookEndpoint {
+  id: string;
+  workspace_id: string;
+  url: string;
+  description: string;
+  /** Subscribed events; empty means every event. */
+  events: WebhookEventType[];
+  /** Inboxes to send events for; empty means every inbox. */
+  mailbox_ids: string[];
+  secret_hint: string;
+  enabled: boolean;
+  disabled_reason: string;
+  failure_count: number;
+  last_success_at?: string | null;
+  last_failure_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WebhookEndpointInput {
+  url: string;
+  description: string;
+  events: WebhookEventType[];
+  mailbox_ids: string[];
+  enabled?: boolean;
+}
+
+/** Returned once when a webhook is created or its secret rotated. */
+export interface WebhookEndpointSecret {
+  endpoint: WebhookEndpoint;
+  secret: string;
+}
+
+export interface WebhookDelivery {
+  id: string;
+  endpoint_id: string;
+  event_id: string;
+  event_type: WebhookEventType | 'ping';
+  payload: unknown;
+  status: 'pending' | 'succeeded' | 'failed';
+  attempts: number;
+  next_attempt_at: string;
+  last_status_code?: number | null;
+  last_error: string;
+  last_attempt_at?: string | null;
+  duration_ms?: number | null;
+  delivered_at?: string | null;
+  created_at: string;
 }

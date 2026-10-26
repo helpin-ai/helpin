@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SupportConversation } from '@/lib/pmTypes';
 import { supportService } from '@/lib/services/supportService';
-import { loadConversationSelection, runConversationBulkAction } from '../supportBulkActions';
+import { bulkActionRemovesFromList, loadConversationSelection, runConversationBulkAction } from '../supportBulkActions';
 
 vi.mock('@/lib/services/supportService', () => ({
   supportService: {
@@ -11,6 +11,7 @@ vi.mock('@/lib/services/supportService', () => ({
     moveConversation: vi.fn(),
     markConversationRead: vi.fn(),
     markConversationUnread: vi.fn(),
+    bulkConversationActions: vi.fn(),
   },
 }));
 
@@ -85,5 +86,41 @@ describe('support bulk actions', () => {
     await runConversationBulkAction('ws', Array.from({ length: 11 }, (_, index) => conversation(String(index))), { type: 'unread' });
     expect(peak).toBeLessThanOrEqual(4);
     expect(supportService.markConversationUnread).toHaveBeenCalledTimes(11);
+  });
+
+  it('sends assignment and other operations to the server in batches of 100', async () => {
+    vi.mocked(supportService.bulkConversationActions).mockImplementation(async (_ws, ids) => ({
+      data: { results: ids.map((id) => ({ conversation_id: id, applied: ['assignee'], ...(id === '7' ? { error: 'This member does not have access to this inbox.' } : {}) })), succeeded: 0, failed: 0 },
+      error: null,
+    }) as never);
+    const ids = Array.from({ length: 150 }, (_, index) => String(index));
+    const progress = vi.fn();
+    const result = await runConversationBulkAction('ws', ids.map(conversation), { type: 'operations', actions: { assign_user_id: 'u1' } }, progress);
+    expect(supportService.bulkConversationActions).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(supportService.bulkConversationActions).mock.calls[0][1]).toHaveLength(100);
+    expect(vi.mocked(supportService.bulkConversationActions).mock.calls[1][1]).toHaveLength(50);
+    expect(vi.mocked(supportService.bulkConversationActions).mock.calls[0][2]).toEqual({ assign_user_id: 'u1' });
+    expect(result.succeeded).toHaveLength(149);
+    expect(result.failed).toEqual([{ id: '7', error: 'This member does not have access to this inbox.' }]);
+    expect(progress).toHaveBeenLastCalledWith(150);
+  });
+
+  it('fails a whole batch when the request fails', async () => {
+    vi.mocked(supportService.bulkConversationActions)
+      .mockResolvedValueOnce({ data: null, error: 'Forbidden' } as never)
+      .mockRejectedValueOnce(new Error('Network unavailable'));
+    const first = await runConversationBulkAction('ws', ['1', '2'].map(conversation), { type: 'operations', actions: { priority: 'high' } });
+    expect(first.failed).toEqual([{ id: '1', error: 'Forbidden' }, { id: '2', error: 'Forbidden' }]);
+    const second = await runConversationBulkAction('ws', ['3'].map(conversation), { type: 'operations', actions: { priority: 'high' } });
+    expect(second.failed).toEqual([{ id: '3', error: 'Network unavailable' }]);
+  });
+
+  it('knows which actions take conversations out of the list', () => {
+    expect(bulkActionRemovesFromList({ type: 'operations', actions: { snooze_minutes: 60 } })).toBe(true);
+    expect(bulkActionRemovesFromList({ type: 'operations', actions: { mailbox_id: 'shared' } })).toBe(true);
+    expect(bulkActionRemovesFromList({ type: 'operations', actions: { priority: 'urgent' } })).toBe(false);
+    expect(bulkActionRemovesFromList({ type: 'status', status: 'open' })).toBe(false);
+    expect(bulkActionRemovesFromList({ type: 'status', status: 'resolved' })).toBe(true);
+    expect(bulkActionRemovesFromList({ type: 'read' })).toBe(false);
   });
 });

@@ -83,7 +83,30 @@ type SupportInboxService struct {
 	geoIPResolver                geoip.Resolver
 	supportEventRecorder         SupportEventRecorder
 	entitlementSvc               EntitlementPolicy
+	slaService                   *SupportSLAService
+	webhooks                     *WebhookService
 	routeDomain                  string
+}
+
+// SetSLAService attaches SLA status to listed and opened conversations.
+// SetWebhookService lets the inbox emit events the database cannot see.
+func (s *SupportInboxService) SetWebhookService(webhooks *WebhookService) *SupportInboxService {
+	s.webhooks = webhooks
+	return s
+}
+
+func (s *SupportInboxService) SetSLAService(slaService *SupportSLAService) *SupportInboxService {
+	s.slaService = slaService
+	return s
+}
+
+func (s *SupportInboxService) hydrateConversationSLA(ctx context.Context, workspaceID string, conversations []model.SupportConversation) {
+	if s.slaService == nil {
+		return
+	}
+	if err := s.slaService.HydrateConversations(ctx, workspaceID, conversations); err != nil {
+		slog.ErrorContext(ctx, "hydrate support conversation SLA", "error", err, "workspace_id", workspaceID)
+	}
 }
 
 func (s *SupportInboxService) SetDocsSearchRepository(docsSearchRepo *repository.DocsSearchRepository) {
@@ -1064,6 +1087,7 @@ func (s *SupportInboxService) SearchConversations(ctx context.Context, params Su
 		}
 	}
 	s.hydrateConversationTags(ctx, params.WorkspaceID, conversations)
+	s.hydrateConversationSLA(ctx, params.WorkspaceID, conversations)
 	for i := range resp.Data {
 		resp.Data[i].Conversation = conversations[i]
 	}
@@ -1115,6 +1139,7 @@ func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, par
 		}
 	}
 	s.hydrateConversationTags(ctx, params.WorkspaceID, conversations)
+	s.hydrateConversationSLA(ctx, params.WorkspaceID, conversations)
 
 	perPage := params.Pagination.PerPage
 	if perPage <= 0 {
@@ -1655,6 +1680,12 @@ func (s *SupportInboxService) GetConversation(ctx context.Context, workspaceID, 
 	s.hydrateConversationTags(ctx, workspaceID, hydrated)
 	ticket.Tags = hydrated[0].Tags
 	ticket.SystemTags = hydrated[0].SystemTags
+	if err := s.hydrateConversationCSAT(ctx, workspaceID, hydrated); err != nil {
+		slog.ErrorContext(ctx, "hydrate support conversation csat", "error", err, "workspace_id", workspaceID, "conversation_id", id)
+	}
+	ticket.CSAT = hydrated[0].CSAT
+	s.hydrateConversationSLA(ctx, workspaceID, hydrated)
+	ticket.SLA = hydrated[0].SLA
 	if s.followUpRepo != nil {
 		ticket.AIFollowUp, err = s.followUpRepo.Latest(ctx, workspaceID, id)
 		if err != nil {
@@ -1777,6 +1808,10 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 	ticket.Status = status
 
 	now := time.Now()
+	if status == model.SupportConversationStatusResolved || status == model.SupportConversationStatusSpam {
+		// Closing a conversation ends its snooze.
+		ticket.SnoozedUntil, ticket.SnoozedByUserID = nil, nil
+	}
 	switch status {
 	case model.SupportConversationStatusResolved:
 		ticket.ResolvedAt = &now
@@ -1876,6 +1911,12 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 
 	s.wsPublisher.Publish(buildSupportConversationStatusEvent(ticket, oldStatus, actorID))
 	s.refreshMergedVisitors(ctx, ticket)
+	// An open widget learns of the new status (and offers CSAT on resolve)
+	// without waiting for the visitor to reconnect. Merged groups were
+	// refreshed above.
+	if oldStatus != status && ticket.MergeRevision == 0 && ticket.AnonymousID != nil && strings.TrimSpace(*ticket.AnonymousID) != "" {
+		s.pushVisitorConversationsRefresh(ctx, workspaceID, *ticket.AnonymousID)
+	}
 
 	if oldStatus != status && status == model.SupportConversationStatusResolved {
 		s.trackProductEvent(ctx, ProductAnalyticsEvent{

@@ -99,7 +99,7 @@ func TestSupportSignalPostgresQueries(t *testing.T) {
 	defer tx.Rollback()
 	for _, q := range []string{
 		`CREATE TEMP TABLE support_conversations (id text,workspace_id text,crm_company_id text,created_at timestamptz,status text) ON COMMIT DROP`,
-		`CREATE TEMP TABLE support_messages (conversation_id text,created_at timestamptz,message_type text,metadata text) ON COMMIT DROP`,
+		`CREATE TEMP TABLE support_csat_responses (conversation_id text,submitted_at timestamptz,rating integer) ON COMMIT DROP`,
 	} {
 		if err := tx.Exec(q).Error; err != nil {
 			t.Fatal(err)
@@ -117,9 +117,9 @@ func TestSupportSignalPostgresQueries(t *testing.T) {
 	}
 	for _, f := range []struct {
 		days   int
-		rating string
-	}{{1, "1"}, {2, "2"}, {40, "4"}, {41, "5"}, {1, "invalid"}} {
-		if err := tx.Exec(`INSERT INTO support_messages VALUES ('0',?,'csat_survey',?)`, end.AddDate(0, 0, -f.days), `{"rating":"`+f.rating+`"}`).Error; err != nil {
+		rating int
+	}{{1, 1}, {2, 2}, {40, 4}, {41, 5}} {
+		if err := tx.Exec(`INSERT INTO support_csat_responses VALUES ('0',?,?)`, end.AddDate(0, 0, -f.days), f.rating).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -133,7 +133,7 @@ func TestSupportSignalPostgresQueries(t *testing.T) {
 			t.Fatalf("got %d candidates", len(rows))
 		}
 	})
-	t.Run("rating regex does not consume a parameter", func(t *testing.T) {
+	t.Run("csat deterioration reads stored ratings", func(t *testing.T) {
 		rows, err := repo.EvaluatePostgresSignalRule(context.Background(), model.CRMSignalRuleConfig{RuleKey: model.CRMSignalRuleSupportCSATDeterioration}, end.Add(-time.Hour), end)
 		if err != nil {
 			t.Fatal(err)

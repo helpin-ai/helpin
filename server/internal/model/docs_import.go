@@ -77,6 +77,26 @@ type DocsImportStartRequest struct {
 	TargetSpaceID         *string `json:"target_space_id"`
 	NewSpaceName          *string `json:"new_space_name"`
 	ImportStatus          string  `json:"import_status"`
+	// IntercomRegion selects the Intercom data center (us, eu or au) for
+	// Intercom imports, where APIKey is the access token.
+	IntercomRegion string `json:"intercom_region,omitempty"`
+}
+
+// IntercomDocsImportRequest previews or starts an Intercom Help Center import.
+type IntercomDocsImportRequest struct {
+	AccessToken   string  `json:"access_token"`
+	Region        string  `json:"region"`
+	TargetSpaceID *string `json:"target_space_id"`
+	NewSpaceName  *string `json:"new_space_name"`
+	ImportStatus  string  `json:"import_status"`
+}
+
+// IntercomDocsImportPreview summarizes an Intercom Help Center before import.
+type IntercomDocsImportPreview struct {
+	WorkspaceName     string `json:"workspace_name"`
+	Collections       int    `json:"collections"`
+	ArticlesPublished int    `json:"articles_published"`
+	ArticlesDraft     int    `json:"articles_draft"`
 }
 
 // DocsImportPreviewResponse is the response for a docs import preview.

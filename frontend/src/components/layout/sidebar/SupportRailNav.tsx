@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { InboxIcon, PlusSignIcon, BookOpen01Icon, LifebuoyIcon, MoreVerticalIcon, PencilEdit01Icon, ArchiveIcon, FileSearchIcon, Delete01Icon, UserGroupIcon, BotIcon } from '@/lib/icons';
+import { InboxIcon, PlusSignIcon, BookOpen01Icon, LifebuoyIcon, MoreVerticalIcon, PencilEdit01Icon, ArchiveIcon, FileSearchIcon, Delete01Icon, UserGroupIcon, BotIcon, ChartColumnIcon } from '@/lib/icons';
 import { StoredIcon } from '@/components/ui/icon-picker';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -19,6 +19,7 @@ type SupportNavFilter =
   | 'inbox'
   | 'mine'
   | 'waiting'
+  | 'snoozed'
   | 'resolved'
   | 'spam'
   | 'ai_active'
@@ -90,6 +91,7 @@ export function SupportRailNav({
 }: SupportRailNavProps) {
   const isOnCoverage = pathname.startsWith(`/w/${wsSlug}/support/coverage`);
   const isOnSearch = pathname.startsWith(`/w/${wsSlug}/support/search`);
+  const isOnReports = pathname.startsWith(`/w/${wsSlug}/support/reports`);
   const mailboxes = inboxScopes?.mailboxes ?? [];
   const aiStats = selectedMailboxId === 'all' ? (globalUnreadStats ?? unreadStats) : globalUnreadStats;
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -156,7 +158,7 @@ export function SupportRailNav({
             return (
               <SidebarMenuItem key={item.key}>
                 <SidebarMenuButton
-                  isActive={!isOnSearch && !isOnCoverage && !activeCustomViewId && navFilter === item.key && (item.key !== 'inbox' || selectedMailboxId === 'all')}
+                  isActive={!isOnSearch && !isOnCoverage && !isOnReports && !activeCustomViewId && navFilter === item.key && (item.key !== 'inbox' || selectedMailboxId === 'all')}
                   className={supportMenuRowClassName}
                   onClick={() => onNavFilterChange(item.key)}
                 >
@@ -187,7 +189,7 @@ export function SupportRailNav({
             return (
               <SidebarMenuItem key={item.key}>
                 <SidebarMenuButton
-                  isActive={!isOnSearch && !isOnCoverage && !activeCustomViewId && navFilter === item.key}
+                  isActive={!isOnSearch && !isOnCoverage && !isOnReports && !activeCustomViewId && navFilter === item.key}
                   className={supportMenuRowClassName}
                   onClick={() => onNavFilterChange(item.key)}
                 >
@@ -218,7 +220,7 @@ export function SupportRailNav({
         </SidebarGroupLabel>
         <SidebarMenu>
           {mailboxes.map((mailbox) => {
-            const isActiveMailbox = !isOnSearch && !isOnCoverage && !activeCustomViewId && selectedMailboxId === mailbox.id;
+            const isActiveMailbox = !isOnSearch && !isOnCoverage && !isOnReports && !activeCustomViewId && selectedMailboxId === mailbox.id;
             const isMenuOpen = openMenuId === mailbox.id;
 
             return (
@@ -318,7 +320,7 @@ export function SupportRailNav({
             </SidebarMenuItem>
           )}
           {customViews.map((view) => {
-            const isActive = !isOnSearch && !isOnCoverage && activeCustomViewId === view.id;
+            const isActive = !isOnSearch && !isOnCoverage && !isOnReports && activeCustomViewId === view.id;
             const isMenuOpen = openMenuId === view.id;
             const canModifyView = view.created_by === currentUserId || (view.is_shared && canManageSettings);
             const count = customViewCounts[view.id];
@@ -402,6 +404,16 @@ export function SupportRailNav({
               >
                 <FileSearchIcon className="h-4 w-4" />
                 <span className="min-w-0 truncate">Coverage Gaps</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                isActive={isOnReports}
+                className={supportMenuRowClassName}
+                onClick={() => onNavigate(`/w/${wsSlug}/support/reports`)}
+              >
+                <ChartColumnIcon className="h-4 w-4" />
+                <span className="min-w-0 truncate">Reports</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>

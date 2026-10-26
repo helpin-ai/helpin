@@ -168,7 +168,8 @@ func (s *SupportTagJobService) process(ctx context.Context, job model.SupportTag
 func supportTagJobEligible(job model.SupportTagJob, conversation *model.SupportConversation, message *model.SupportMessage, history []model.SupportMessage) bool {
 	if conversation == nil || conversation.AnonymizedAt != nil || conversation.WorkspaceID != job.WorkspaceID || conversation.ID != job.ConversationID ||
 		message == nil || message.DeletedAt.Valid || message.ID != job.MessageID || message.WorkspaceID != job.WorkspaceID || message.ConversationID != job.ConversationID ||
-		message.IsInternal || message.SenderType != "customer" || message.MessageType != "reply" || strings.TrimSpace(message.Content) == "" {
+		message.IsInternal || message.SenderType != "customer" || message.MessageType != "reply" || strings.TrimSpace(message.Content) == "" ||
+		message.IsImported() {
 		return false
 	}
 	for _, candidate := range history {

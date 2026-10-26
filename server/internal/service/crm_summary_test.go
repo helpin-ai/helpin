@@ -160,7 +160,7 @@ func TestCRMSummaryService_RefreshCompanySummaryNowGeneratesSparseAccountSummary
 		subject TEXT, body TEXT, occurred_at DATETIME NOT NULL, metadata BLOB
 	)`)
 	mustExecSummary(t, db, `CREATE TABLE pm_tasks (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, updated_at DATETIME NOT NULL)`)
-	mustExecSummary(t, db, `CREATE TABLE support_conversations (
+	mustExecSummary(t, db, `CREATE TABLE support_conversations (snoozed_until DATETIME, snoozed_by_user_id TEXT, 
             merged_into_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,
 		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, display_id INTEGER NOT NULL,
 		subject TEXT NOT NULL, status TEXT NOT NULL, priority TEXT, channel TEXT,

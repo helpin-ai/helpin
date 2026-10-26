@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useState, memo, useEffect, type ReactNode, type UIEvent } from 'react';
+import { useMemo, useCallback, useState, memo, useEffect, useRef, type ReactNode, type UIEvent } from 'react';
 import {
   CheckmarkCircle02Icon,
   FilterHorizontalIcon,
@@ -45,6 +45,7 @@ import { SupportTagBadge } from './SupportTagPicker';
 import { SupportInboxPanelHeader } from './SupportInboxPanelHeader';
 import { workspaceSidebarSafeInsetClassName } from '@/components/design-system/quiet';
 import { ConversationBulkToolbar } from './ConversationBulkToolbar';
+import { adjacentConversationId, onSupportShortcut } from '@/lib/supportShortcuts';
 import { useConversationSelection } from './useConversationSelection';
 
 const SkeletonRow = memo(function SkeletonRow() {
@@ -79,6 +80,11 @@ function emptyCopyForNavFilter(navFilter: string, searchQuery: string): { title:
       return {
         title: 'No waiting conversations',
         subtitle: 'Conversations waiting on a customer will appear here.',
+      };
+    case 'snoozed':
+      return {
+        title: 'Nothing snoozed',
+        subtitle: 'Snoozed conversations wait here until their time comes or the customer replies.',
       };
     case 'resolved':
       return {
@@ -117,6 +123,8 @@ function titleForView(navFilter: NavFilter): string {
       return 'Mine';
     case 'waiting':
       return 'Waiting';
+    case 'snoozed':
+      return 'Snoozed';
     case 'resolved':
       return 'Resolved';
     case 'spam':
@@ -335,9 +343,39 @@ export function ConversationList({
       sortOrder: conversationListFilters.sort,
       skipViewFilter: shouldSkipSidebarViewFilter,
       aiStates: conversationListFilters.aiStates,
+      slaBreached: conversationListFilters.slaBreached,
     });
-  }, [conversationListFilters.aiStates, conversationListFilters.mailboxIds, conversationListFilters.sort, conversationListFilters.states, navFilter, selectedMailboxId, userId]);
+  }, [conversationListFilters.aiStates, conversationListFilters.mailboxIds, conversationListFilters.slaBreached, conversationListFilters.sort, conversationListFilters.states, navFilter, selectedMailboxId, userId]);
   const filteredConversations = useMemo(() => filterConversations(conversations), [conversations, filterConversations]);
+
+  // J and K move through the list in its current order. The previous order
+  // tells where to continue after the open conversation leaves the list.
+  // Remembers where conversations last were, so j/k continue from the place
+  // of one that left the list, even after later list updates.
+  const lastListIdsRef = useRef<string[]>([]);
+  const lastIndexRef = useRef(new Map<string, number>());
+  useEffect(() => {
+    const ids = filteredConversations.map((conversation) => conversation.id);
+    const positions = lastIndexRef.current;
+    lastListIdsRef.current.forEach((id, index) => {
+      if (!ids.includes(id)) positions.set(id, index);
+    });
+    ids.forEach((id) => positions.delete(id));
+    while (positions.size > 200) positions.delete(positions.keys().next().value as string);
+    lastListIdsRef.current = ids;
+  }, [filteredConversations]);
+  useEffect(() => onSupportShortcut((detail) => {
+    if (detail.action !== 'next' && detail.action !== 'previous') return;
+    detail.handled = true;
+    const ids = filteredConversations.map((conversation) => conversation.id);
+    const lastIndex = detail.conversationId ? lastIndexRef.current.get(detail.conversationId) : undefined;
+    const id = adjacentConversationId(ids, detail.conversationId, detail.action, lastIndex);
+    if (!id) return;
+    handleSelect(id);
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-conversation-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'nearest' });
+    });
+  }), [filteredConversations, handleSelect]);
   const allLoadedSelected = filteredConversations.length > 0 && filteredConversations.every((conversation) => selection.items.has(conversation.id));
   const totalMatches = response?.pages[0]?.total;
   const handleToggleSelection = useCallback((id: string) => {
@@ -657,6 +695,7 @@ export function ConversationList({
           {selectionActive ? <ConversationBulkToolbar
             key={selectionScope}
             workspaceId={workspaceId}
+            userId={userId}
             conversations={[...selection.items.values()]}
             loadedCount={filteredConversations.length}
             allLoadedSelected={allLoadedSelected}
@@ -821,10 +860,19 @@ export function ConversationList({
                       </FilterPill>
                     ))}
                   </FilterSection>
+                  <FilterSection title="SLA">
+                    <FilterPill
+                      selected={Boolean(conversationListFilters.slaBreached)}
+                      onClick={() => setConversationListFilter('slaBreached', !conversationListFilters.slaBreached)}
+                    >
+                      Breached only
+                    </FilterPill>
+                  </FilterSection>
                   <FilterSection title="Sort">
                     {[
                       ['Newest', 'newest'],
                       ['Oldest', 'oldest'],
+                      ['Next SLA due', 'sla'],
                     ].map(([label, value]) => (
                       <FilterPill
                         key={value}

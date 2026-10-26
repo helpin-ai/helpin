@@ -85,6 +85,22 @@ const (
 	// Admin-only.
 	SystemEventTaskCreated SupportSystemEventType = "task_created"
 
+	// SystemEventCSATRated — the customer rated the resolved conversation.
+	// Admin-only; metadata carries the rating and optional comment.
+	SystemEventCSATRated SupportSystemEventType = "csat_rated"
+
+	// SystemEventPriorityChanged — a teammate changed the priority.
+	// Admin-only.
+	SystemEventPriorityChanged SupportSystemEventType = "priority_changed"
+
+	// SystemEventSnoozed / SystemEventUnsnoozed — a teammate snoozed the
+	// conversation, or the snooze ended. Admin-only.
+	SystemEventSnoozed   SupportSystemEventType = "snoozed"
+	SystemEventUnsnoozed SupportSystemEventType = "unsnoozed"
+
+	// SystemEventSLABreached — an SLA target was missed. Admin-only.
+	SystemEventSLABreached SupportSystemEventType = "sla_breached"
+
 	// SystemEventTaskLinked — existing PM task linked to the conversation.
 	// Admin-only.
 	SystemEventTaskLinked SupportSystemEventType = "task_linked"
@@ -119,6 +135,11 @@ var allSupportSystemEventTypes = map[SupportSystemEventType]struct{}{
 	SystemEventTagAdded:               {},
 	SystemEventTagRemoved:             {},
 	SystemEventTaskCreated:            {},
+	SystemEventCSATRated:              {},
+	SystemEventPriorityChanged:        {},
+	SystemEventSnoozed:                {},
+	SystemEventUnsnoozed:              {},
+	SystemEventSLABreached:            {},
 	SystemEventTaskLinked:             {},
 	SystemEventTaskUnlinked:           {},
 }

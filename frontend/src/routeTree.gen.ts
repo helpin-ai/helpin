@@ -53,6 +53,7 @@ import { Route as AuthenticatedWSlugDocsIndexRouteImport } from './routes/_authe
 import { Route as AuthenticatedWSlugCrmIndexRouteImport } from './routes/_authenticated/w/$slug/crm/index'
 import { Route as AuthenticatedWSlugAutomationIndexRouteImport } from './routes/_authenticated/w/$slug/automation/index'
 import { Route as AuthenticatedWSlugSupportSearchRouteImport } from './routes/_authenticated/w/$slug/support/search'
+import { Route as AuthenticatedWSlugSupportReportsRouteImport } from './routes/_authenticated/w/$slug/support/reports'
 import { Route as AuthenticatedWSlugSupportCoverageRouteImport } from './routes/_authenticated/w/$slug/support/coverage'
 import { Route as AuthenticatedWSlugSupportInboxRouteImport } from './routes/_authenticated/w/$slug/support/_inbox'
 import { Route as AuthenticatedWSlugSprintsSprintIdRouteImport } from './routes/_authenticated/w/$slug/sprints/$sprintId'
@@ -60,7 +61,9 @@ import { Route as AuthenticatedWSlugSettingsWorkflowsRouteImport } from './route
 import { Route as AuthenticatedWSlugSettingsTeamsRouteImport } from './routes/_authenticated/w/$slug/settings/teams'
 import { Route as AuthenticatedWSlugSettingsTaskTemplatesRouteImport } from './routes/_authenticated/w/$slug/settings/task-templates'
 import { Route as AuthenticatedWSlugSettingsSystemStatusRouteImport } from './routes/_authenticated/w/$slug/settings/system-status'
+import { Route as AuthenticatedWSlugSettingsSupportWebhooksRouteImport } from './routes/_authenticated/w/$slug/settings/support-webhooks'
 import { Route as AuthenticatedWSlugSettingsSupportTranslationRouteImport } from './routes/_authenticated/w/$slug/settings/support-translation'
+import { Route as AuthenticatedWSlugSettingsSupportSlaRouteImport } from './routes/_authenticated/w/$slug/settings/support-sla'
 import { Route as AuthenticatedWSlugSettingsSupportAiAssistantRouteImport } from './routes/_authenticated/w/$slug/settings/support-ai-assistant'
 import { Route as AuthenticatedWSlugSettingsServerRouteImport } from './routes/_authenticated/w/$slug/settings/server'
 import { Route as AuthenticatedWSlugSettingsRepositoriesRouteImport } from './routes/_authenticated/w/$slug/settings/repositories'
@@ -378,6 +381,12 @@ const AuthenticatedWSlugSupportSearchRoute =
     path: '/search',
     getParentRoute: () => AuthenticatedWSlugSupportRoute,
   } as any)
+const AuthenticatedWSlugSupportReportsRoute =
+  AuthenticatedWSlugSupportReportsRouteImport.update({
+    id: '/reports',
+    path: '/reports',
+    getParentRoute: () => AuthenticatedWSlugSupportRoute,
+  } as any)
 const AuthenticatedWSlugSupportCoverageRoute =
   AuthenticatedWSlugSupportCoverageRouteImport.update({
     id: '/coverage',
@@ -419,10 +428,22 @@ const AuthenticatedWSlugSettingsSystemStatusRoute =
     path: '/settings/system-status',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
+const AuthenticatedWSlugSettingsSupportWebhooksRoute =
+  AuthenticatedWSlugSettingsSupportWebhooksRouteImport.update({
+    id: '/settings/support-webhooks',
+    path: '/settings/support-webhooks',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
 const AuthenticatedWSlugSettingsSupportTranslationRoute =
   AuthenticatedWSlugSettingsSupportTranslationRouteImport.update({
     id: '/settings/support-translation',
     path: '/settings/support-translation',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedWSlugSettingsSupportSlaRoute =
+  AuthenticatedWSlugSettingsSupportSlaRouteImport.update({
+    id: '/settings/support-sla',
+    path: '/settings/support-sla',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugSettingsSupportAiAssistantRoute =
@@ -997,13 +1018,16 @@ export interface FileRoutesByFullPath {
   '/w/$slug/settings/repositories': typeof AuthenticatedWSlugSettingsRepositoriesRoute
   '/w/$slug/settings/server': typeof AuthenticatedWSlugSettingsServerRoute
   '/w/$slug/settings/support-ai-assistant': typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
+  '/w/$slug/settings/support-sla': typeof AuthenticatedWSlugSettingsSupportSlaRoute
   '/w/$slug/settings/support-translation': typeof AuthenticatedWSlugSettingsSupportTranslationRoute
+  '/w/$slug/settings/support-webhooks': typeof AuthenticatedWSlugSettingsSupportWebhooksRoute
   '/w/$slug/settings/system-status': typeof AuthenticatedWSlugSettingsSystemStatusRoute
   '/w/$slug/settings/task-templates': typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
   '/w/$slug/settings/teams': typeof AuthenticatedWSlugSettingsTeamsRoute
   '/w/$slug/settings/workflows': typeof AuthenticatedWSlugSettingsWorkflowsRoute
   '/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
   '/w/$slug/support/coverage': typeof AuthenticatedWSlugSupportCoverageRoute
+  '/w/$slug/support/reports': typeof AuthenticatedWSlugSupportReportsRoute
   '/w/$slug/support/search': typeof AuthenticatedWSlugSupportSearchRoute
   '/w/$slug/automation/': typeof AuthenticatedWSlugAutomationIndexRoute
   '/w/$slug/crm/': typeof AuthenticatedWSlugCrmIndexRoute
@@ -1123,13 +1147,16 @@ export interface FileRoutesByTo {
   '/w/$slug/settings/repositories': typeof AuthenticatedWSlugSettingsRepositoriesRoute
   '/w/$slug/settings/server': typeof AuthenticatedWSlugSettingsServerRoute
   '/w/$slug/settings/support-ai-assistant': typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
+  '/w/$slug/settings/support-sla': typeof AuthenticatedWSlugSettingsSupportSlaRoute
   '/w/$slug/settings/support-translation': typeof AuthenticatedWSlugSettingsSupportTranslationRoute
+  '/w/$slug/settings/support-webhooks': typeof AuthenticatedWSlugSettingsSupportWebhooksRoute
   '/w/$slug/settings/system-status': typeof AuthenticatedWSlugSettingsSystemStatusRoute
   '/w/$slug/settings/task-templates': typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
   '/w/$slug/settings/teams': typeof AuthenticatedWSlugSettingsTeamsRoute
   '/w/$slug/settings/workflows': typeof AuthenticatedWSlugSettingsWorkflowsRoute
   '/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
   '/w/$slug/support/coverage': typeof AuthenticatedWSlugSupportCoverageRoute
+  '/w/$slug/support/reports': typeof AuthenticatedWSlugSupportReportsRoute
   '/w/$slug/support/search': typeof AuthenticatedWSlugSupportSearchRoute
   '/w/$slug/automation': typeof AuthenticatedWSlugAutomationIndexRoute
   '/w/$slug/crm': typeof AuthenticatedWSlugCrmIndexRoute
@@ -1256,7 +1283,9 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/settings/repositories': typeof AuthenticatedWSlugSettingsRepositoriesRoute
   '/_authenticated/w/$slug/settings/server': typeof AuthenticatedWSlugSettingsServerRoute
   '/_authenticated/w/$slug/settings/support-ai-assistant': typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
+  '/_authenticated/w/$slug/settings/support-sla': typeof AuthenticatedWSlugSettingsSupportSlaRoute
   '/_authenticated/w/$slug/settings/support-translation': typeof AuthenticatedWSlugSettingsSupportTranslationRoute
+  '/_authenticated/w/$slug/settings/support-webhooks': typeof AuthenticatedWSlugSettingsSupportWebhooksRoute
   '/_authenticated/w/$slug/settings/system-status': typeof AuthenticatedWSlugSettingsSystemStatusRoute
   '/_authenticated/w/$slug/settings/task-templates': typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
   '/_authenticated/w/$slug/settings/teams': typeof AuthenticatedWSlugSettingsTeamsRoute
@@ -1264,6 +1293,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
   '/_authenticated/w/$slug/support/_inbox': typeof AuthenticatedWSlugSupportInboxRouteWithChildren
   '/_authenticated/w/$slug/support/coverage': typeof AuthenticatedWSlugSupportCoverageRoute
+  '/_authenticated/w/$slug/support/reports': typeof AuthenticatedWSlugSupportReportsRoute
   '/_authenticated/w/$slug/support/search': typeof AuthenticatedWSlugSupportSearchRoute
   '/_authenticated/w/$slug/automation/': typeof AuthenticatedWSlugAutomationIndexRoute
   '/_authenticated/w/$slug/crm/': typeof AuthenticatedWSlugCrmIndexRoute
@@ -1391,13 +1421,16 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/repositories'
     | '/w/$slug/settings/server'
     | '/w/$slug/settings/support-ai-assistant'
+    | '/w/$slug/settings/support-sla'
     | '/w/$slug/settings/support-translation'
+    | '/w/$slug/settings/support-webhooks'
     | '/w/$slug/settings/system-status'
     | '/w/$slug/settings/task-templates'
     | '/w/$slug/settings/teams'
     | '/w/$slug/settings/workflows'
     | '/w/$slug/sprints/$sprintId'
     | '/w/$slug/support/coverage'
+    | '/w/$slug/support/reports'
     | '/w/$slug/support/search'
     | '/w/$slug/automation/'
     | '/w/$slug/crm/'
@@ -1517,13 +1550,16 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/repositories'
     | '/w/$slug/settings/server'
     | '/w/$slug/settings/support-ai-assistant'
+    | '/w/$slug/settings/support-sla'
     | '/w/$slug/settings/support-translation'
+    | '/w/$slug/settings/support-webhooks'
     | '/w/$slug/settings/system-status'
     | '/w/$slug/settings/task-templates'
     | '/w/$slug/settings/teams'
     | '/w/$slug/settings/workflows'
     | '/w/$slug/sprints/$sprintId'
     | '/w/$slug/support/coverage'
+    | '/w/$slug/support/reports'
     | '/w/$slug/support/search'
     | '/w/$slug/automation'
     | '/w/$slug/crm'
@@ -1649,7 +1685,9 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/settings/repositories'
     | '/_authenticated/w/$slug/settings/server'
     | '/_authenticated/w/$slug/settings/support-ai-assistant'
+    | '/_authenticated/w/$slug/settings/support-sla'
     | '/_authenticated/w/$slug/settings/support-translation'
+    | '/_authenticated/w/$slug/settings/support-webhooks'
     | '/_authenticated/w/$slug/settings/system-status'
     | '/_authenticated/w/$slug/settings/task-templates'
     | '/_authenticated/w/$slug/settings/teams'
@@ -1657,6 +1695,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/sprints/$sprintId'
     | '/_authenticated/w/$slug/support/_inbox'
     | '/_authenticated/w/$slug/support/coverage'
+    | '/_authenticated/w/$slug/support/reports'
     | '/_authenticated/w/$slug/support/search'
     | '/_authenticated/w/$slug/automation/'
     | '/_authenticated/w/$slug/crm/'
@@ -2019,6 +2058,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugSupportSearchRouteImport
       parentRoute: typeof AuthenticatedWSlugSupportRoute
     }
+    '/_authenticated/w/$slug/support/reports': {
+      id: '/_authenticated/w/$slug/support/reports'
+      path: '/reports'
+      fullPath: '/w/$slug/support/reports'
+      preLoaderRoute: typeof AuthenticatedWSlugSupportReportsRouteImport
+      parentRoute: typeof AuthenticatedWSlugSupportRoute
+    }
     '/_authenticated/w/$slug/support/coverage': {
       id: '/_authenticated/w/$slug/support/coverage'
       path: '/coverage'
@@ -2068,11 +2114,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugSettingsSystemStatusRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
+    '/_authenticated/w/$slug/settings/support-webhooks': {
+      id: '/_authenticated/w/$slug/settings/support-webhooks'
+      path: '/settings/support-webhooks'
+      fullPath: '/w/$slug/settings/support-webhooks'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsSupportWebhooksRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
     '/_authenticated/w/$slug/settings/support-translation': {
       id: '/_authenticated/w/$slug/settings/support-translation'
       path: '/settings/support-translation'
       fullPath: '/w/$slug/settings/support-translation'
       preLoaderRoute: typeof AuthenticatedWSlugSettingsSupportTranslationRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/settings/support-sla': {
+      id: '/_authenticated/w/$slug/settings/support-sla'
+      path: '/settings/support-sla'
+      fullPath: '/w/$slug/settings/support-sla'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsSupportSlaRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/settings/support-ai-assistant': {
@@ -2791,6 +2851,7 @@ const AuthenticatedWSlugSupportInboxRouteWithChildren =
 interface AuthenticatedWSlugSupportRouteChildren {
   AuthenticatedWSlugSupportInboxRoute: typeof AuthenticatedWSlugSupportInboxRouteWithChildren
   AuthenticatedWSlugSupportCoverageRoute: typeof AuthenticatedWSlugSupportCoverageRoute
+  AuthenticatedWSlugSupportReportsRoute: typeof AuthenticatedWSlugSupportReportsRoute
   AuthenticatedWSlugSupportSearchRoute: typeof AuthenticatedWSlugSupportSearchRoute
 }
 
@@ -2800,6 +2861,8 @@ const AuthenticatedWSlugSupportRouteChildren: AuthenticatedWSlugSupportRouteChil
       AuthenticatedWSlugSupportInboxRouteWithChildren,
     AuthenticatedWSlugSupportCoverageRoute:
       AuthenticatedWSlugSupportCoverageRoute,
+    AuthenticatedWSlugSupportReportsRoute:
+      AuthenticatedWSlugSupportReportsRoute,
     AuthenticatedWSlugSupportSearchRoute: AuthenticatedWSlugSupportSearchRoute,
   }
 
@@ -2859,7 +2922,9 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugSettingsRepositoriesRoute: typeof AuthenticatedWSlugSettingsRepositoriesRoute
   AuthenticatedWSlugSettingsServerRoute: typeof AuthenticatedWSlugSettingsServerRoute
   AuthenticatedWSlugSettingsSupportAiAssistantRoute: typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
+  AuthenticatedWSlugSettingsSupportSlaRoute: typeof AuthenticatedWSlugSettingsSupportSlaRoute
   AuthenticatedWSlugSettingsSupportTranslationRoute: typeof AuthenticatedWSlugSettingsSupportTranslationRoute
+  AuthenticatedWSlugSettingsSupportWebhooksRoute: typeof AuthenticatedWSlugSettingsSupportWebhooksRoute
   AuthenticatedWSlugSettingsSystemStatusRoute: typeof AuthenticatedWSlugSettingsSystemStatusRoute
   AuthenticatedWSlugSettingsTaskTemplatesRoute: typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
   AuthenticatedWSlugSettingsTeamsRoute: typeof AuthenticatedWSlugSettingsTeamsRoute
@@ -2954,8 +3019,12 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
   AuthenticatedWSlugSettingsServerRoute: AuthenticatedWSlugSettingsServerRoute,
   AuthenticatedWSlugSettingsSupportAiAssistantRoute:
     AuthenticatedWSlugSettingsSupportAiAssistantRoute,
+  AuthenticatedWSlugSettingsSupportSlaRoute:
+    AuthenticatedWSlugSettingsSupportSlaRoute,
   AuthenticatedWSlugSettingsSupportTranslationRoute:
     AuthenticatedWSlugSettingsSupportTranslationRoute,
+  AuthenticatedWSlugSettingsSupportWebhooksRoute:
+    AuthenticatedWSlugSettingsSupportWebhooksRoute,
   AuthenticatedWSlugSettingsSystemStatusRoute:
     AuthenticatedWSlugSettingsSystemStatusRoute,
   AuthenticatedWSlugSettingsTaskTemplatesRoute:

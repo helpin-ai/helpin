@@ -9,13 +9,14 @@ import { BUILTIN_VIEW_LABELS, type ViewSelection } from './use-inbox-filters'
 
 /**
  * Builtin views in the exact order and grouping of the web sidebar:
- * Inbox · Mine · Waiting · Resolved · Spam (the "views" group), then
+ * Inbox · Mine · Waiting · Snoozed · Resolved · Spam (the "views" group), then
  * AI Handling · AI Resolved (the "ai" group).
  */
 export const BUILTIN_VIEW_ORDER: { navFilter: NavFilter; group: 'views' | 'ai' }[] = [
   { navFilter: 'inbox', group: 'views' },
   { navFilter: 'mine', group: 'views' },
   { navFilter: 'waiting', group: 'views' },
+  { navFilter: 'snoozed', group: 'views' },
   { navFilter: 'resolved', group: 'views' },
   { navFilter: 'spam', group: 'views' },
   { navFilter: 'ai_active', group: 'ai' },

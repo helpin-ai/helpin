@@ -31,6 +31,7 @@ const WORKSPACE_ROUTE_TITLES: Record<string, string> = {
   sprints: 'Sprints',
   support: 'Support',
   'support/coverage': 'Support Coverage',
+  'support/reports': 'Support Reports',
   'support/search': 'Support Search',
   tasks: 'Tasks',
   'team-goals': 'Team Goals',

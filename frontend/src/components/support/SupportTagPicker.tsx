@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { onSupportShortcut } from '@/lib/supportShortcuts';
 import { ArrowLeft02Icon, Cancel01Icon, Delete01Icon, Loading01Icon, PencilEdit01Icon, PlusSignIcon, Tag01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -420,6 +421,7 @@ export function SupportTagPicker({
   selectedTagIds,
   onSelectedTagIdsChange,
   className,
+  openOnShortcut = false,
 }: {
   workspaceId: string;
   conversationId?: string;
@@ -428,8 +430,20 @@ export function SupportTagPicker({
   selectedTagIds?: string[];
   onSelectedTagIdsChange?: (tagIds: string[]) => void;
   className?: string;
+  /** Opens on the T shortcut for conversationId while visible. */
+  openOnShortcut?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const shortcutTriggerRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!openOnShortcut || !conversationId) return;
+    return onSupportShortcut((detail) => {
+      if (detail.action !== 'tags' || detail.conversationId !== conversationId) return;
+      if (!shortcutTriggerRef.current?.offsetParent) return;
+      detail.handled = true;
+      if (!readOnly) setOpen(true);
+    });
+  }, [conversationId, openOnShortcut, readOnly]);
   const [manageOpen, setManageOpen] = useState(false);
   const [search, setSearch] = useState('');
   const { data: tags = [] } = useSupportTags(workspaceId);
@@ -502,6 +516,7 @@ export function SupportTagPicker({
       <Popover open={open} onOpenChange={(value) => { if (!readOnly) setOpen(value); if (!value) setSearch(''); }}>
         <PopoverTrigger asChild>
           <button
+            ref={shortcutTriggerRef}
             type="button"
             disabled={readOnly}
             className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent"

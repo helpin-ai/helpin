@@ -31,6 +31,12 @@ exports[`web support rulebook is importable and deterministic per view > view re
 }
 `;
 
+exports[`web support rulebook is importable and deterministic per view > view snoozed produces stable request filters 1`] = `
+{
+  "filter": "snoozed",
+}
+`;
+
 exports[`web support rulebook is importable and deterministic per view > view spam produces stable request filters 1`] = `
 {
   "status": "spam",

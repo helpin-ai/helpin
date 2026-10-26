@@ -76,6 +76,13 @@ var runtimeToolRiskLevels = map[string]string{
 	"insert_document_image":             RiskLevelRoutine,
 	"edit_document":                     RiskLevelRoutine,
 	"link_support_conversation_task":    RiskLevelRoutine,
+	"set_support_conversation_status":   RiskLevelRoutine,
+	"set_support_conversation_priority": RiskLevelRoutine,
+	"snooze_support_conversation":       RiskLevelRoutine,
+	"unsnooze_support_conversation":     RiskLevelRoutine,
+	// Customer-visible sends cannot be taken back.
+	"reply_to_support_conversation":     RiskLevelDestructive,
+	"create_support_conversation":       RiskLevelDestructive,
 	"link_support_conversation_contact": RiskLevelRoutine,
 	"link_crm_objects":                  RiskLevelRoutine,
 	"link_document_to_object":           RiskLevelRoutine, "ensure_epic_spec_doc": RiskLevelRoutine,
@@ -830,7 +837,7 @@ var baseRuntimeTools = append(skillManagementTools, []RuntimeToolMetadata{
 		Description: "Post a team-only note immediately; no customer delivery or status/AI-control change. Check existing conversation notes and linked-task context first. Write only when requested or when new actionable information is missing from both. Creating or linking a task alone needs no note. Use 1-3 short sentences or bullets unless more detail is requested. Include only the new finding, blocker, or next step; link existing details instead of repeating the thread, task, progress, or an unsolicited draft reply. Label hypotheses clearly: code behavior alone does not verify this customer's root cause. Attribute observations to their actual source. Omit secrets. A note does not replace a customer reply.",
 		InputSchema: closedObjectSchema(map[string]any{
 			"conversation_id": optionalIDSchema("Support conversation ID. Omit only when the run targets that conversation."),
-			"content":         map[string]any{"type": "string", "minLength": 1, "description": "Brief internal note in Markdown. Only new actionable information or explicitly requested content; no repeated summaries or unverified conclusions stated as facts."},
+			"content":         map[string]any{"type": "string", "minLength": 1, "maxLength": 20000, "description": "Brief internal note in Markdown. Only new actionable information or explicitly requested content; no repeated summaries or unverified conclusions stated as facts."},
 		}, []string{"content"}),
 	},
 	{
@@ -870,6 +877,67 @@ var baseRuntimeTools = append(skillManagementTools, []RuntimeToolMetadata{
 			"conversation_id": optionalIDSchema("Support conversation ID."),
 			"subject":         map[string]any{"type": "string", "minLength": 1, "maxLength": 500},
 		}, []string{"conversation_id", "subject"}),
+	},
+	{
+		CommandName: "support.set_conversation_status",
+		Alias:       "set_support_conversation_status",
+		Category:    "Support / Triage",
+		Description: "Change a support conversation's status: open, waiting_on_customer, resolved or spam. Resolving ends a snooze; customers may be asked to rate a resolved conversation.",
+		InputSchema: closedObjectSchema(map[string]any{
+			"conversation_id": optionalIDSchema("Support conversation ID."),
+			"status":          map[string]any{"type": "string", "enum": []string{"open", "waiting_on_customer", "resolved", "spam"}},
+		}, []string{"conversation_id", "status"}),
+	},
+	{
+		CommandName: "support.set_conversation_priority",
+		Alias:       "set_support_conversation_priority",
+		Category:    "Support / Triage",
+		Description: "Change a support conversation's priority. SLA policies that match the new priority apply to its open targets.",
+		InputSchema: closedObjectSchema(map[string]any{
+			"conversation_id": optionalIDSchema("Support conversation ID."),
+			"priority":        map[string]any{"type": "string", "enum": []string{"low", "medium", "high", "urgent"}},
+		}, []string{"conversation_id", "priority"}),
+	},
+	{
+		CommandName: "support.snooze_conversation",
+		Alias:       "snooze_support_conversation",
+		Category:    "Support / Triage",
+		Description: "Hide an open support conversation from the team's queues until a time. A customer reply wakes it earlier.",
+		InputSchema: closedObjectSchema(map[string]any{
+			"conversation_id": optionalIDSchema("Support conversation ID."),
+			"until":           map[string]any{"type": "string", "format": "date-time", "description": "RFC 3339 time between one minute and one year from now."},
+		}, []string{"conversation_id", "until"}),
+	},
+	{
+		CommandName: "support.unsnooze_conversation",
+		Alias:       "unsnooze_support_conversation",
+		Category:    "Support / Triage",
+		Description: "Return a snoozed support conversation to the team's queues now.",
+		InputSchema: requiredEntityIDSchema("conversation_id"),
+	},
+	{
+		CommandName: "support.reply_to_conversation",
+		Alias:       "reply_to_support_conversation",
+		Category:    "Support / Replies",
+		Description: "Send a public reply to the customer as the authenticated teammate. It is delivered like a reply from the inbox: in chat, by email, or both.",
+		InputSchema: closedObjectSchema(map[string]any{
+			"conversation_id": optionalIDSchema("Support conversation ID."),
+			"content":         map[string]any{"type": "string", "minLength": 1, "maxLength": 20000, "description": "Reply in Markdown."},
+			"delivery_mode":   map[string]any{"type": "string", "enum": []string{"chat_only", "chat_and_email", "email_only"}, "description": "Omit to deliver the way the inbox would by default."},
+		}, []string{"conversation_id", "content"}),
+	},
+	{
+		CommandName: "support.create_conversation",
+		Alias:       "create_support_conversation",
+		Category:    "Support / Replies",
+		Description: "Start a support conversation with a customer and email them the first message as the authenticated teammate.",
+		InputSchema: closedObjectSchema(map[string]any{
+			"customer_email": map[string]any{"type": "string", "format": "email", "maxLength": 320},
+			"customer_name":  map[string]any{"type": "string", "maxLength": 200},
+			"subject":        map[string]any{"type": "string", "minLength": 1, "maxLength": 500},
+			"content":        map[string]any{"type": "string", "minLength": 1, "maxLength": 20000, "description": "First message in Markdown."},
+			"inbox_id":       optionalIDSchema("Team inbox ID. Omit for the main inbox."),
+		}, []string{"customer_email", "subject", "content"}),
 	},
 	{
 		CommandName: "docs.write_document_content",

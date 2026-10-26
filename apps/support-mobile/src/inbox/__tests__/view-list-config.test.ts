@@ -25,7 +25,7 @@ const STATS: UnreadStats = {
 describe('builtin order + grouping', () => {
   test('matches the web sidebar order', () => {
     expect(BUILTIN_VIEW_ORDER.map((v) => v.navFilter)).toEqual(
-      ['inbox', 'mine', 'waiting', 'resolved', 'spam', 'ai_active', 'resolved_by_ai'])
+      ['inbox', 'mine', 'waiting', 'snoozed', 'resolved', 'spam', 'ai_active', 'resolved_by_ai'])
   })
   test('ai group is exactly the two AI views', () => {
     expect(BUILTIN_VIEW_ORDER.filter((v) => v.group === 'ai').map((v) => v.navFilter))

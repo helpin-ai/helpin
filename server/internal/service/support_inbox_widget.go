@@ -150,6 +150,9 @@ func (s *SupportInboxService) GetVisitorConversations(ctx context.Context, works
 		c.UpdatedAt = active.UpdatedAt
 	}
 	s.enrichWidgetConversationOwners(ctx, workspaceID, conversations)
+	if err := s.hydrateConversationCSAT(ctx, workspaceID, conversations); err != nil {
+		slog.ErrorContext(ctx, "hydrate widget conversation csat", "error", err, "workspace_id", workspaceID)
+	}
 	return conversations, nil
 }
 

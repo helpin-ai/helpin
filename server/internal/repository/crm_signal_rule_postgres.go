@@ -296,12 +296,11 @@ func (r *CRMSignalRepository) supportCSATCandidates(ctx context.Context, config 
 	}
 	err := r.db.WithContext(ctx).Raw(`
 		WITH ratings AS (
-			SELECT c.workspace_id, c.crm_company_id AS company_id, m.created_at,
-				CASE WHEN COALESCE(m.metadata::jsonb ->> 'rating','') ~ '^[0-9]+([.][0-9]+){0,1}$'
-					THEN (m.metadata::jsonb ->> 'rating')::numeric END AS rating
-			FROM support_messages m JOIN support_conversations c ON c.id = m.conversation_id
-			WHERE c.crm_company_id IS NOT NULL AND m.message_type = 'csat_survey'
-				AND m.created_at >= ? AND m.created_at < ?
+			SELECT c.workspace_id, c.crm_company_id AS company_id, r.submitted_at AS created_at,
+				r.rating::numeric AS rating
+			FROM support_csat_responses r JOIN support_conversations c ON c.id = r.conversation_id
+			WHERE c.crm_company_id IS NOT NULL
+				AND r.submitted_at >= ? AND r.submitted_at < ?
 		)
 		SELECT workspace_id, company_id,
 			AVG(rating) FILTER (WHERE created_at >= ?) AS recent_avg,

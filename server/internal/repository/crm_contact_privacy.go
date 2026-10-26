@@ -179,6 +179,15 @@ func (r *CRMContactRepository) DeleteAnonymizingSupport(ctx context.Context, wor
 				return err
 			}
 		}
+		// Queued webhook events and logged deliveries carry the customer's
+		// name, email and messages.
+		if len(conversationIDs) > 0 && tx.Migrator().HasTable(&model.WebhookDelivery{}) {
+			for _, table := range []any{&model.WebhookEvent{}, &model.WebhookDelivery{}} {
+				if err := tx.Where("workspace_id = ? AND conversation_id IN ?", workspaceID, conversationIDs).Delete(table).Error; err != nil {
+					return err
+				}
+			}
+		}
 		// The inbox projection trigger writes OLD/NEW row snapshots during the
 		// update above. Redact these after the marker, in the same transaction.
 		for _, column := range []string{"old_values", "new_values"} {

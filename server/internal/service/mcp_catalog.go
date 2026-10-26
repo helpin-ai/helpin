@@ -27,8 +27,13 @@ const (
 	MCPScopeCRMRead     = "helpin.crm.read"
 	MCPScopeCRMWrite    = "helpin.crm.write"
 	MCPScopeSupportRead = "helpin.support.read"
-	// MCPScopeSupportWrite allows organizing conversations (assign, move, tag, link, rename); it never sends replies.
+	// MCPScopeSupportWrite allows organizing conversations (assign, move, tag,
+	// link, rename, status, priority, snooze) and internal notes; it never
+	// sends anything to customers.
 	MCPScopeSupportWrite = "helpin.support.write"
+	// MCPScopeSupportReply allows sending replies and starting conversations
+	// with customers.
+	MCPScopeSupportReply = "helpin.support.reply"
 	MCPScopeAgentsRead   = "helpin.agents.read"
 	MCPScopeAgentsRun    = "helpin.agents.run"
 )
@@ -42,7 +47,7 @@ var (
 		MCPScopePMRead, MCPScopePMWrite,
 		MCPScopeDocsRead, MCPScopeDocsWrite, MCPScopeDocsPublish,
 		MCPScopeCRMRead, MCPScopeCRMWrite,
-		MCPScopeSupportRead, MCPScopeSupportWrite,
+		MCPScopeSupportRead, MCPScopeSupportWrite, MCPScopeSupportReply,
 		MCPScopeAgentsRead, MCPScopeAgentsRun,
 	}
 )

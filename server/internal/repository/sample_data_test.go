@@ -120,7 +120,7 @@ func sampleRemovalSchema() []string {
 		`CREATE TABLE pm_tasks (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, epic_id TEXT, team_id TEXT)`,
 		`CREATE TABLE pm_task_owners (task_id TEXT NOT NULL, user_id TEXT NOT NULL)`,
 		`CREATE TABLE pm_activity_log (id TEXT PRIMARY KEY, workspace_id TEXT, entity_type TEXT, entity_id TEXT)`,
-		`CREATE TABLE support_conversations (
+		`CREATE TABLE support_conversations (snoozed_until DATETIME, snoozed_by_user_id TEXT, 
             merged_into_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, linked_task_id TEXT, crm_contact_id TEXT)`,
 		`CREATE TABLE docs_spaces (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE docs_documents (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, space_id TEXT)`,
@@ -217,7 +217,7 @@ func TestSampleDataRepositoryDeleteEntityRejectsUnknownType(t *testing.T) {
 func TestEmailFallbackCandidatesExcludeSampleConversations(t *testing.T) {
 	db := setupSampleDataTestDB(t,
 		sampleDataItemsTestSchema,
-		`CREATE TABLE support_conversations (
+		`CREATE TABLE support_conversations (snoozed_until DATETIME, snoozed_by_user_id TEXT, 
             merged_into_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open', customer_email TEXT, email_unsubscribed BOOLEAN NOT NULL DEFAULT 0, contact_last_seen_at DATETIME)`,
 		`CREATE TABLE support_messages (
             origin_conversation_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, conversation_id TEXT NOT NULL, sender_type TEXT NOT NULL, message_type TEXT NOT NULL DEFAULT 'reply', system_event_type TEXT, sender_user_id TEXT, sender_agent_id TEXT, sender_display_name TEXT, sender_avatar_url TEXT, content TEXT NOT NULL DEFAULT '', is_internal BOOLEAN NOT NULL DEFAULT 0, metadata TEXT DEFAULT '{}', via_channel TEXT, email_notified_at DATETIME, email_read_at DATETIME, cancellable_until DATETIME, deleted_at DATETIME, created_at DATETIME, updated_at DATETIME)`,

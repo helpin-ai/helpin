@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -1164,7 +1165,7 @@ func main() {
 			Model:        cfg.DocsImportAIConversionModel,
 			ArticleLimit: cfg.DocsImportAIConversionArticleLimit,
 		},
-	).SetTemporalClient(temporalClient, resolvePMImportEncryptionKey(cfg))
+	).SetTemporalClient(temporalClient, resolvePMImportEncryptionKey(cfg)).SetIntercomBaseURL(cfg.IntercomAPIBaseURL)
 	docsSpaceService.SetTranslationService(docsHelpcenterTranslationService)
 	docsCollectionService.SetTranslationService(docsHelpcenterTranslationService)
 	docsDocumentService.SetTranslationService(docsHelpcenterTranslationService)
@@ -1656,6 +1657,16 @@ func main() {
 	setupService.SetEntitlementService(entitlementService)
 	pmImportService.SetEntitlementService(entitlementService)
 	supportInboxService.SetEntitlementService(entitlementService)
+	supportSLAService := service.NewSupportSLAService(repository.NewSupportSLARepository(db), supportInboxService).
+		SetNotificationService(notificationService).SetEntitlementService(entitlementService)
+	supportInboxService.SetSLAService(supportSLAService)
+	webhookService := service.NewWebhookService(repository.NewWebhookRepository(db), supportInboxService, service.WebhookConfig{
+		EncryptionKey: resolveWebhookEncryptionKey(cfg), AllowPrivateNetworks: cfg.WebhooksAllowPrivateNetworks, AppBaseURL: cfg.AppBaseURL,
+	}).SetSLAService(supportSLAService)
+	supportInboxService.SetWebhookService(webhookService)
+	supportSLAService.SetWebhookService(webhookService)
+	supportImportService := service.NewSupportImportService(repository.NewSupportImportRepository(db), supportInboxService, resolvePMImportEncryptionKey(cfg)).
+		SetIntercomBaseURL(cfg.IntercomAPIBaseURL)
 	supportInboxTriageService.SetEntitlementService(entitlementService)
 	agentService.SetEntitlementService(entitlementService)
 	ruleEngine.SetEntitlementService(entitlementService)
@@ -2010,6 +2021,11 @@ func main() {
 			pmCommentService,
 			jwtManager,
 		),
+		SupportReports:  handler.NewSupportReportsHandler(service.NewSupportReportService(supportConversationRepo)),
+		SupportSLA:      handler.NewSupportSLAHandler(supportSLAService),
+		SupportWebhooks: handler.NewSupportWebhookHandler(webhookService),
+		SupportImports:  handler.NewSupportImportHandler(supportImportService),
+		SupportActions:  handler.NewSupportConversationActionsHandler(service.NewSupportConversationActionService(supportInboxService, supportTagService)),
 		SupportCoverage: handler.NewSupportCoverageHandler(
 			supportCoverageService,
 			supportEventService,
@@ -2139,6 +2155,35 @@ func main() {
 			}
 		}()
 		behaviorProfileSync.Run(behaviorProfileCtx)
+	}()
+
+	// Wake snoozed conversations and keep SLA targets current. Both jobs are
+	// safe on several replicas: wake-ups are conditional updates and SLA work
+	// is claimed with SKIP LOCKED under a per-conversation lock.
+	supportOpsCtx, supportOpsCancel := context.WithCancel(context.Background())
+	supportOpsDone := make(chan struct{})
+	go func() {
+		defer close(supportOpsDone)
+		var jobs sync.WaitGroup
+		for name, run := range map[string]func(context.Context){
+			"support snooze waker": func(ctx context.Context) { supportInboxService.RunSnoozeWaker(ctx, 30*time.Second) },
+			"support SLA worker":   func(ctx context.Context) { supportSLAService.Run(ctx, 5*time.Second) },
+			"support webhooks":     func(ctx context.Context) { webhookService.Run(ctx, 5*time.Second) },
+			"support imports":      func(ctx context.Context) { supportImportService.Run(ctx, 5*time.Second) },
+		} {
+			jobs.Add(1)
+			go func(name string, run func(context.Context)) {
+				defer jobs.Done()
+				defer func() {
+					if recovered := recover(); recovered != nil {
+						observability.CaptureRecovered(recovered)
+						slog.Error("support background job stopped unexpectedly", "job", name)
+					}
+				}()
+				run(supportOpsCtx)
+			}(name, run)
+		}
+		jobs.Wait()
 	}()
 
 	// Re-check help center custom domains: pending ones hourly, live ones daily.
@@ -2408,6 +2453,7 @@ func main() {
 	commercialStateCancel()
 	usageBaselineCancel()
 	behaviorProfileCancel()
+	supportOpsCancel()
 	domainCheckCancel()
 	editionCancel()
 	select {
@@ -2444,6 +2490,11 @@ func main() {
 	case <-behaviorProfileDone:
 	case <-time.After(6 * time.Second):
 		slog.Warn("CRM behavior-profile synchronizer did not stop before shutdown timeout")
+	}
+	select {
+	case <-supportOpsDone:
+	case <-time.After(6 * time.Second):
+		slog.Warn("support snooze and SLA workers did not stop before shutdown timeout")
 	}
 	select {
 	case <-domainCheckDone:
@@ -2636,6 +2687,23 @@ func resolvePMImportEncryptionKey(cfg *config.Config) []byte {
 	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CRMEncryptionKey)); err != nil {
 		slog.Warn("invalid CRM_ENCRYPTION_KEY for PM import fallback (must be a 32-byte hex-encoded AES key)", "error", err)
 	} else if len(key) == 32 {
+		return key
+	}
+	return nil
+}
+
+// resolveWebhookEncryptionKey returns WEBHOOK_ENCRYPTION_KEY, or
+// CRM_ENCRYPTION_KEY when it is unset.
+func resolveWebhookEncryptionKey(cfg *config.Config) []byte {
+	if cfg == nil {
+		return nil
+	}
+	if key, err := decodeOptionalAES256HexKey(cfg.WebhookEncryptionKey); err != nil {
+		slog.Warn("invalid WEBHOOK_ENCRYPTION_KEY (must be a 32-byte hex-encoded AES key)", "error", err)
+	} else if len(key) == 32 {
+		return key
+	}
+	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CRMEncryptionKey)); err == nil && len(key) == 32 {
 		return key
 	}
 	return nil

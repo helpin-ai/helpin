@@ -200,7 +200,7 @@ Toolsets control which product-area tools are visible. Scopes control the author
 | `pm` | `helpin.pm.read` | `helpin.pm.write` |
 | `docs` | `helpin.docs.read` | `helpin.docs.write`; `helpin.docs.publish` for Help Center publishing |
 | `crm` | `helpin.crm.read` | `helpin.crm.write` |
-| `support` | `helpin.support.read` | `helpin.support.write` organizes conversations; replies are never sent through MCP |
+| `support` | `helpin.support.read` | `helpin.support.write` organizes conversations and adds internal notes; `helpin.support.reply` sends replies and starts conversations |
 | `agents` | `helpin.agents.read` | `helpin.agents.run` |
 
 The default workspace policy allows clients to request:
@@ -514,9 +514,16 @@ These tools expose existing Helpin commands that in-app agents already use, with
 | Labels and workflows | `list_pm_labels`, `list_team_workflows_with_stages` | `ensure_task_label` |
 | Members | `list_workspace_members` (`workspace.members.read`) | — |
 | CRM | `list_crm_companies`, `describe_crm_fields`, `list_crm_pipelines`, `list_crm_associations` | `add_crm_activity`, `update_crm_contact`, `update_crm_company`, `update_crm_deal`, `link_crm_objects`, `unlink_crm_association`, `set_primary_contact_company` |
-| Support | `list_support_inboxes`, `list_support_tags`, `list_support_assignees` | `assign_support_conversation`, `move_support_conversation`, `add_support_conversation_tag`, `remove_support_conversation_tag`, `link_support_conversation_task`, `link_support_conversation_contact`, `update_support_conversation_subject` (`helpin.support.write` + `support.edit`) |
+| Support | `list_support_inboxes`, `list_support_tags`, `list_support_assignees` | `assign_support_conversation`, `move_support_conversation`, `add_support_conversation_tag`, `remove_support_conversation_tag`, `link_support_conversation_task`, `link_support_conversation_contact`, `update_support_conversation_subject`, `set_support_conversation_status`, `set_support_conversation_priority`, `snooze_support_conversation`, `unsnooze_support_conversation`, `add_support_conversation_note` (`helpin.support.write` + `support.edit`); `reply_to_support_conversation`, `create_support_conversation` (`helpin.support.reply` + `support.edit`) |
 
-Not exposed: sending support replies, CRM enrichment, and deleting records.
+Customer-visible sends need `helpin.support.reply`. It is never granted with
+`helpin.support.write`: a workspace manager allows it under **Permissions**,
+and an automation account gets it only when **Allow sending replies** is on.
+Replies and notes are attributed to the authenticated person (for an
+automation account, the teammate who created it) and are delivered exactly as
+replies from the inbox.
+
+Not exposed: CRM enrichment and deleting records.
 
 ### 7.8 Help Center operations
 
@@ -838,9 +845,8 @@ Workspace policies, connections, service principals, audit events, and run attri
 The public v1 server does not expose:
 
 - deleting Helpin records
-- sending customer support replies
+- sending customer support replies without the explicit `helpin.support.reply` scope
 - creating a public support reply draft through the run-scoped internal draft contract
-- changing support conversation status (assignment, inbox moves, tags, links, and subject are available with `helpin.support.write`)
 - deleting documentation (archive and restore are available)
 - publishing without the explicit `helpin.docs.publish` scope and `docs.publish` permission
 - broad document-content replacement through `write_document_content` (use version-checked `edit_document` instead)

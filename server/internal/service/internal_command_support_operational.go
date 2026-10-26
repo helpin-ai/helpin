@@ -26,6 +26,7 @@ func (s *InternalCommandService) registerSupportOperationalCommands() {
 		{Name: "support.link_conversation_contact", Module: "support", Mutating: true, SupportedTargetTypes: supportCommandTargetTypes, Tool: mustCommandToolMetadata("support.link_conversation_contact"), Execute: s.executeSupportLinkConversationContact},
 		{Name: "support.update_conversation_subject", Module: "support", Mutating: true, SupportedTargetTypes: supportCommandTargetTypes, Tool: mustCommandToolMetadata("support.update_conversation_subject"), Execute: s.executeSupportUpdateConversationSubject},
 	}
+	definitions = append(definitions, s.supportWriteDefinitions()...)
 	for _, def := range definitions {
 		s.register(def)
 	}
