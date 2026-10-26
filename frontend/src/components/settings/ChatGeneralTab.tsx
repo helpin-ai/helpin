@@ -7,7 +7,7 @@ import { WidgetOriginSettings } from './chat-widget/WidgetOriginSettings';
 import { brandingDescription } from '@edition';
 import { AIReplyChannelsSelect, getAIReplyChannels, type AIReplyChannels } from './chat-widget/AIReplyChannelsSelect';
 import { AIFollowUpSettings } from './chat-widget/AIFollowUpSettings';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useSettingsAutosave } from '@/hooks/useSettingsAutosave';
 import { SettingsAutosaveGuard } from './SettingsAutosaveGuard';
 import { SettingsSaveBar } from './SettingsSaveBar';
@@ -162,71 +162,70 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
 
   const [hydrated, setHydrated] = useState(false);
 
-  useEffect(() => {
-    if (data?.settings && !billingLoading && !hydrated) {
-      const s = data.settings;
-      const normalizedSchedule = normalizeBusinessHoursSchedule(s.business_hours_schedule);
-      const sortedHelpSpaceIds = sortHelpSpaceIds(s.widget_help_space_ids);
+  // Load the saved settings into the form once, before the first paint.
+  if (data?.settings && !billingLoading && !hydrated) {
+    const s = data.settings;
+    const normalizedSchedule = normalizeBusinessHoursSchedule(s.business_hours_schedule);
+    const sortedHelpSpaceIds = sortHelpSpaceIds(s.widget_help_space_ids);
 
-      setHydrated(true);
-      // A widget with no allowed websites cannot connect, so open that section.
-      if (!data.allowed_origins?.length) {
-        setExpandedSections(prev => new Set(prev).add('allowed-origins'));
-      }
-
-      setRequireEmail(s.require_email_before_chat);
-      setRequirePhone(s.require_phone_after_email);
-      setWelcomeMessage(s.welcome_message);
-      setPrivacyNoticeEnabled(s.privacy_notice_enabled ?? false);
-      setPrivacyPolicyUrl(s.privacy_policy_url ?? '');
-      setPrivacyNoticeText(s.privacy_notice_text || DEFAULT_PRIVACY_NOTICE_TEXT);
-      setBrandColor(s.brand_color);
-      setShowBranding(canRemoveBranding ? s.show_branding : true);
-      setLauncherPosition(s.launcher_position);
-      setLauncherIcon(s.launcher_icon);
-      setColorScheme(s.color_scheme || 'light');
-      setButtonColor(s.button_color || '#000000');
-      setButtonIconColor(s.button_icon_color || '#FFFFFF');
-      setLogoUrl(s.logo_url || '');
-      setWidgetName(s.widget_name || '');
-      setWidgetAvatarUrl(s.widget_avatar_url || '');
-      setWidgetHelpSpaceIds(sortedHelpSpaceIds);
-      setAiEnabled(s.ai_enabled && isChatWidgetAIResponseModeActive(s.ai_response_mode));
-      setAiAgentId(s.ai_agent_id ?? NO_AGENT_VALUE);
-      setConfidenceThreshold(String(s.ai_confidence_threshold));
-      setAiResponseMode(getChatWidgetAIResponseModeForUI(s.ai_response_mode));
-      setAiReplyChannels(getAIReplyChannels(s.ai_reply_channels));
-      setAiFollowUpEnabled(s.ai_follow_up_enabled ?? true);
-      setAiEmailCodeCheck(s.ai_email_code_check_enabled ?? false);
-      setAiFollowUpDelay(s.ai_follow_up_delay_hours ?? 24);
-      setAiFollowUpClose(s.ai_follow_up_close_hours ?? 1);
-      setAiFollowUpSecondDelay(s.ai_follow_up_second_delay_hours ?? 24);
-      setAiMaxFollowups(s.ai_max_followups ?? DEFAULT_AI_HANDOFF_FOLLOWUPS);
-      setShowTalkToHuman(s.show_talk_to_human);
-      setEscalationMessage(s.escalation_message || 'Let me connect you with a team member who can help further.');
-      setEscalationMessageBusy(s.escalation_message_busy ?? '');
-      setEscalationMessageAfterHours(s.escalation_message_after_hours ?? '');
-      setDelayedTeamReplyMinutes(s.delayed_team_reply_minutes ?? DEFAULT_DELAYED_TEAM_REPLY_MINUTES);
-      setDelayedTeamReplyMessage(s.delayed_team_reply_message ?? DEFAULT_DELAYED_TEAM_REPLY_MESSAGE);
-      setDelayedTeamReplyMessageNoEmail(s.delayed_team_reply_message_no_email ?? DEFAULT_DELAYED_TEAM_REPLY_MESSAGE_NO_EMAIL);
-      setHandoffBehavior(s.handoff_behavior);
-      setHandoffTeamId(s.handoff_team_id);
-      setAiHandoffMailboxId(s.ai_handoff_mailbox_id);
-      setBusinessHoursEnabled(s.business_hours_enabled);
-      setTimezone(s.business_hours_timezone);
-      setSchedule(normalizedSchedule);
-      setOutsideMessage(s.outside_hours_message);
-      setReplyTimePreset(s.reply_time_preset ?? 'few_minutes');
-      setReplyTimeCustomMinutes(s.reply_time_custom_minutes ?? null);
-      setSpecialNoticeText(s.special_notice_text ?? '');
-      setEmailFallbackDelaySecs(s.email_fallback_delay_secs ?? DEFAULT_EMAIL_FALLBACK_DELAY_SECS);
-      setEmailFallbackFromName(s.email_fallback_from_name ?? '');
-      setEmailFallbackMaxDeliveryAgeMins(Math.round((s.email_fallback_max_delivery_age_secs ?? 600) / 60));
-      setCsatEnabled(s.csat_enabled);
-      setFileUploadsEnabled(s.file_uploads_enabled ?? true);
-      setForceVisitorIdentity(s.force_visitor_identity ?? false);
+    setHydrated(true);
+    // A widget with no allowed websites cannot connect, so open that section.
+    if (!data.allowed_origins?.length) {
+      setExpandedSections(prev => new Set(prev).add('allowed-origins'));
     }
-  }, [data, billingLoading, canRemoveBranding, hydrated]);
+
+    setRequireEmail(s.require_email_before_chat);
+    setRequirePhone(s.require_phone_after_email);
+    setWelcomeMessage(s.welcome_message);
+    setPrivacyNoticeEnabled(s.privacy_notice_enabled ?? false);
+    setPrivacyPolicyUrl(s.privacy_policy_url ?? '');
+    setPrivacyNoticeText(s.privacy_notice_text || DEFAULT_PRIVACY_NOTICE_TEXT);
+    setBrandColor(s.brand_color);
+    setShowBranding(canRemoveBranding ? s.show_branding : true);
+    setLauncherPosition(s.launcher_position);
+    setLauncherIcon(s.launcher_icon);
+    setColorScheme(s.color_scheme || 'light');
+    setButtonColor(s.button_color || '#000000');
+    setButtonIconColor(s.button_icon_color || '#FFFFFF');
+    setLogoUrl(s.logo_url || '');
+    setWidgetName(s.widget_name || '');
+    setWidgetAvatarUrl(s.widget_avatar_url || '');
+    setWidgetHelpSpaceIds(sortedHelpSpaceIds);
+    setAiEnabled(s.ai_enabled && isChatWidgetAIResponseModeActive(s.ai_response_mode));
+    setAiAgentId(s.ai_agent_id ?? NO_AGENT_VALUE);
+    setConfidenceThreshold(String(s.ai_confidence_threshold));
+    setAiResponseMode(getChatWidgetAIResponseModeForUI(s.ai_response_mode));
+    setAiReplyChannels(getAIReplyChannels(s.ai_reply_channels));
+    setAiFollowUpEnabled(s.ai_follow_up_enabled ?? true);
+    setAiEmailCodeCheck(s.ai_email_code_check_enabled ?? false);
+    setAiFollowUpDelay(s.ai_follow_up_delay_hours ?? 24);
+    setAiFollowUpClose(s.ai_follow_up_close_hours ?? 1);
+    setAiFollowUpSecondDelay(s.ai_follow_up_second_delay_hours ?? 24);
+    setAiMaxFollowups(s.ai_max_followups ?? DEFAULT_AI_HANDOFF_FOLLOWUPS);
+    setShowTalkToHuman(s.show_talk_to_human);
+    setEscalationMessage(s.escalation_message || 'Let me connect you with a team member who can help further.');
+    setEscalationMessageBusy(s.escalation_message_busy ?? '');
+    setEscalationMessageAfterHours(s.escalation_message_after_hours ?? '');
+    setDelayedTeamReplyMinutes(s.delayed_team_reply_minutes ?? DEFAULT_DELAYED_TEAM_REPLY_MINUTES);
+    setDelayedTeamReplyMessage(s.delayed_team_reply_message ?? DEFAULT_DELAYED_TEAM_REPLY_MESSAGE);
+    setDelayedTeamReplyMessageNoEmail(s.delayed_team_reply_message_no_email ?? DEFAULT_DELAYED_TEAM_REPLY_MESSAGE_NO_EMAIL);
+    setHandoffBehavior(s.handoff_behavior);
+    setHandoffTeamId(s.handoff_team_id);
+    setAiHandoffMailboxId(s.ai_handoff_mailbox_id);
+    setBusinessHoursEnabled(s.business_hours_enabled);
+    setTimezone(s.business_hours_timezone);
+    setSchedule(normalizedSchedule);
+    setOutsideMessage(s.outside_hours_message);
+    setReplyTimePreset(s.reply_time_preset ?? 'few_minutes');
+    setReplyTimeCustomMinutes(s.reply_time_custom_minutes ?? null);
+    setSpecialNoticeText(s.special_notice_text ?? '');
+    setEmailFallbackDelaySecs(s.email_fallback_delay_secs ?? DEFAULT_EMAIL_FALLBACK_DELAY_SECS);
+    setEmailFallbackFromName(s.email_fallback_from_name ?? '');
+    setEmailFallbackMaxDeliveryAgeMins(Math.round((s.email_fallback_max_delivery_age_secs ?? 600) / 60));
+    setCsatEnabled(s.csat_enabled);
+    setFileUploadsEnabled(s.file_uploads_enabled ?? true);
+    setForceVisitorIdentity(s.force_visitor_identity ?? false);
+  }
 
   const aiAssistantEnableBlocker = getChatWidgetAIAssistantEnableBlocker({
     aiAgentId,

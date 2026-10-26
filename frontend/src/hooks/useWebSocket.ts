@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useCallback, useState } from 'react'
 import { create } from 'zustand'
 import { API_BASE } from '@/lib/api'
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore'
@@ -74,11 +74,14 @@ export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot, onDocsP
   const activityDirtyRef = useRef(false)
   const lastActivitySampleAtRef = useRef(0)
   const onEventRef = useRef(onEvent)
-  onEventRef.current = onEvent
   const onSnapshotRef = useRef(onPresenceSnapshot)
-  onSnapshotRef.current = onPresenceSnapshot
   const onDocsSnapshotRef = useRef(onDocsPresenceSnapshot)
-  onDocsSnapshotRef.current = onDocsPresenceSnapshot
+  // Keep the latest handlers without reconnecting when they change.
+  useLayoutEffect(() => {
+    onEventRef.current = onEvent
+    onSnapshotRef.current = onPresenceSnapshot
+    onDocsSnapshotRef.current = onDocsPresenceSnapshot
+  })
   const [isConnected, setIsConnected] = useState(false)
 
   const send: WSSend = useCallback((type, data) => {
@@ -88,73 +91,77 @@ export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot, onDocsP
   }, [])
 
   const connect = useCallback(() => {
-    const url = getWSUrl(workspaceId)
-    if (!url) return
+    // open reconnects itself after a close, with backoff.
+    function open() {
+      const url = getWSUrl(workspaceId)
+      if (!url) return
 
-    const ws = new WebSocket(url)
-    wsRef.current = ws
+      const ws = new WebSocket(url)
+      wsRef.current = ws
 
-    ws.onopen = () => {
-      console.log('[ws] connected')
-      retriesRef.current = 0
-      setIsConnected(true)
-      const sendFn = (data: unknown) => {
-        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data))
-      }
-      useWSStore.setState({ send: sendFn })
-
-      // Start keepalive ping every 45s to refresh server-side presence keys.
-      pingIntervalRef.current = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          const active = activityDirtyRef.current
-          ws.send(JSON.stringify({ type: 'support:ping', data: active ? { active: true } : {} }))
-          activityDirtyRef.current = false
+      ws.onopen = () => {
+        console.log('[ws] connected')
+        retriesRef.current = 0
+        setIsConnected(true)
+        const sendFn = (data: unknown) => {
+          if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data))
         }
-      }, 45_000)
-    }
+        useWSStore.setState({ send: sendFn })
 
-    ws.onmessage = (e) => {
-      try {
-        const parsed = JSON.parse(e.data)
-        // Handle online visitors snapshot (sent on agent connect)
-        if (parsed.type === 'support:online_visitors' && parsed.data?.visitors) {
-          useSupportPresenceStore.getState().setOnlineVisitors(parsed.data.visitors as string[])
-        } else if (parsed.type === 'support:presence_snapshot' && parsed.data) {
-          const snapshot = parsed.data as PresenceSnapshot
-          onSnapshotRef.current?.(snapshot)
-        } else if (parsed.type === 'docs:presence_snapshot' && parsed.data) {
-          const snapshot = parsed.data as DocsPresenceSnapshot
-          onDocsSnapshotRef.current?.(snapshot)
-        } else if (parsed.action && parsed.entity) {
-          // Standard event (has action/entity fields)
-          const event = parsed as WSEvent
-          onEventRef.current(event)
+        // Start keepalive ping every 45s to refresh server-side presence keys.
+        pingIntervalRef.current = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            const active = activityDirtyRef.current
+            ws.send(JSON.stringify({ type: 'support:ping', data: active ? { active: true } : {} }))
+            activityDirtyRef.current = false
+          }
+        }, 45_000)
+      }
+
+      ws.onmessage = (e) => {
+        try {
+          const parsed = JSON.parse(e.data)
+          // Handle online visitors snapshot (sent on agent connect)
+          if (parsed.type === 'support:online_visitors' && parsed.data?.visitors) {
+            useSupportPresenceStore.getState().setOnlineVisitors(parsed.data.visitors as string[])
+          } else if (parsed.type === 'support:presence_snapshot' && parsed.data) {
+            const snapshot = parsed.data as PresenceSnapshot
+            onSnapshotRef.current?.(snapshot)
+          } else if (parsed.type === 'docs:presence_snapshot' && parsed.data) {
+            const snapshot = parsed.data as DocsPresenceSnapshot
+            onDocsSnapshotRef.current?.(snapshot)
+          } else if (parsed.action && parsed.entity) {
+            // Standard event (has action/entity fields)
+            const event = parsed as WSEvent
+            onEventRef.current(event)
+          }
+        } catch {
+          // ignore malformed messages
         }
-      } catch {
-        // ignore malformed messages
+      }
+
+      ws.onclose = () => {
+        console.log('[ws] disconnected')
+        wsRef.current = null
+        setIsConnected(false)
+        useWSStore.setState({ send: null })
+        if (pingIntervalRef.current) {
+          clearInterval(pingIntervalRef.current)
+          pingIntervalRef.current = null
+        }
+        // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s cap
+        const delay = Math.min(1000 * Math.pow(2, retriesRef.current), 30000)
+        retriesRef.current++
+        console.log(`[ws] reconnecting in ${delay}ms`)
+        timerRef.current = setTimeout(open, delay)
+      }
+
+      ws.onerror = () => {
+        // onclose will fire after this
+        ws.close()
       }
     }
-
-    ws.onclose = () => {
-      console.log('[ws] disconnected')
-      wsRef.current = null
-      setIsConnected(false)
-      useWSStore.setState({ send: null })
-      if (pingIntervalRef.current) {
-        clearInterval(pingIntervalRef.current)
-        pingIntervalRef.current = null
-      }
-      // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s cap
-      const delay = Math.min(1000 * Math.pow(2, retriesRef.current), 30000)
-      retriesRef.current++
-      console.log(`[ws] reconnecting in ${delay}ms`)
-      timerRef.current = setTimeout(connect, delay)
-    }
-
-    ws.onerror = () => {
-      // onclose will fire after this
-      ws.close()
-    }
+    open()
   }, [workspaceId])
 
   useEffect(() => {
