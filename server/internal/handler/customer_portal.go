@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
@@ -142,14 +143,22 @@ func (h *CustomerPortalHandler) Exchange(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, portalCustomer(identity))
 }
 
-// Session returns the signed-in customer.
+// Session returns the signed-in customer and the companies whose portal they
+// belong to. A failed company lookup degrades to a personal portal.
 func (h *CustomerPortalHandler) Session(w http.ResponseWriter, r *http.Request) {
 	access := h.authorized(w, r)
 	if access == nil {
 		return
 	}
+	response := portalCustomer(&access.Identity)
+	companies, err := h.portal.Companies(r.Context(), access)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "portal company lookup failed", "workspace_id", access.Workspace.ID, "portal_identity_id", access.Identity.ID, "error", err)
+		companies = []repository.PortalCompanyMembership{}
+	}
+	response["companies"] = companies
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, portalCustomer(&access.Identity))
+	writeJSON(w, http.StatusOK, response)
 }
 
 // Logout revokes the session and clears its cookie.
@@ -273,18 +282,35 @@ func (h *CustomerPortalHandler) Requests(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "invalid request status")
 		return
 	}
-	requests, err := h.portal.Requests(r.Context(), access, status)
+	query := r.URL.Query()
+	var requests []model.SupportPortalRequest
+	var err error
+	switch scope := query.Get("scope"); scope {
+	case "", service.PortalScopeMine:
+		requests, err = h.portal.Requests(r.Context(), access, status)
+	case service.PortalScopeCompany:
+		requests, err = h.portal.CompanyRequests(r.Context(), access, strings.TrimSpace(query.Get("company_id")), status)
+	default:
+		writeError(w, http.StatusBadRequest, service.ErrPortalScopeInvalid.Error())
+		return
+	}
 	if err != nil {
 		writePortalError(w, r, access.Workspace.ID, err, "unable to load requests")
 		return
 	}
 	response := make([]map[string]any, 0, len(requests))
 	for _, request := range requests {
-		response = append(response, map[string]any{
+		row := map[string]any{
 			"reference": request.Reference, "number": request.Number, "subject": request.Subject, "status": request.Status,
 			"last_activity_at": request.LastActivityAt, "last_message_preview": request.LastMessagePreview,
 			"last_message_from": request.LastMessageFrom, "unread": request.Unread,
-		})
+		}
+		if request.CompanyID != nil {
+			row["own"] = request.OwnerIdentityID == access.Identity.ID
+			row["requested_by"] = portalRequestedBy(request)
+			row["company"] = map[string]any{"id": *request.CompanyID, "name": request.CompanyName}
+		}
+		response = append(response, row)
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, response)
@@ -419,6 +445,23 @@ func writePortalError(w http.ResponseWriter, r *http.Request, workspaceID string
 func writePortalTemporarilyUnavailable(w http.ResponseWriter) {
 	w.Header().Set("Retry-After", "5")
 	writeError(w, http.StatusServiceUnavailable, "the support portal is temporarily unavailable; please try again")
+}
+
+// portalRequestedBy names who asked for a company request.
+func portalRequestedBy(request model.SupportPortalRequest) string {
+	for _, value := range []*string{request.RequesterName, request.RequesterEmail} {
+		if name := strings.TrimSpace(derefPortalString(value)); name != "" {
+			return name
+		}
+	}
+	return ""
+}
+
+func derefPortalString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func portalCustomer(identity *model.SupportPortalIdentity) map[string]any {

@@ -12,6 +12,9 @@ const (
 	SupportPortalAuditRequestReopened    = "request_reopened"
 	SupportPortalAuditVisibilityChanged  = "visibility_changed"
 	SupportPortalAuditConfirmationResent = "confirmation_resent"
+	// SupportPortalAuditCompanyRequestViewed records a colleague opening a
+	// request through company visibility.
+	SupportPortalAuditCompanyRequestViewed = "company_request_viewed"
 
 	SupportPortalActorCustomer = "customer"
 	SupportPortalActorUser     = "user"
@@ -25,7 +28,19 @@ const (
 	// Portal access modes decide who may sign in to the customer portal.
 	SupportPortalAccessModeApprovedContacts = "approved_contacts"
 	SupportPortalAccessModeAnyVerifiedEmail = "any_verified_email"
+
+	// Portal roles decide what a contact sees in a company that uses the
+	// portal: requesters see their own requests, members see every request
+	// from the company. A company's default role applies unless the contact
+	// has its own.
+	PortalRoleRequester = "requester"
+	PortalRoleMember    = "member"
 )
+
+// ValidPortalRole reports whether role is a portal role.
+func ValidPortalRole(role string) bool {
+	return role == PortalRoleRequester || role == PortalRoleMember
+}
 
 // SupportPortalIdentity is the stable customer identity used to authorize
 // portal requests in one workspace. Authentication providers can bind their
@@ -107,6 +122,14 @@ type SupportPortalRequest struct {
 	LastMessageContent    *string    `json:"-"`
 	LastVisibleSenderType *string    `json:"-"`
 	LastVisibleMessageAt  *time.Time `json:"-"`
+
+	// Company requests also carry who asked and for which company. The
+	// owner identity decides whether the viewer is the requester.
+	OwnerIdentityID string  `json:"-"`
+	RequesterName   *string `json:"-"`
+	RequesterEmail  *string `json:"-"`
+	CompanyID       *string `json:"-" gorm:"column:crm_company_id"`
+	CompanyName     *string `json:"-"`
 }
 
 // PortalRequestStatus exposes the customer-facing lifecycle. Open requests

@@ -120,7 +120,9 @@ func (s *CustomerPortalService) AccessSummary(ctx context.Context, workspaceID s
 
 // PortalContactAccess is a contact's portal decision for support admins.
 type PortalContactAccess struct {
-	PortalAccess        *string `json:"portal_access"`
+	PortalAccess *string `json:"portal_access"`
+	// PortalRole overrides the default role of the contact's companies.
+	PortalRole          *string `json:"portal_role"`
 	SharedEmailContacts int64   `json:"shared_email_contacts"`
 }
 
@@ -134,7 +136,7 @@ func (s *CustomerPortalService) ContactAccess(ctx context.Context, workspaceID, 
 	if err != nil {
 		return nil, err
 	}
-	return &PortalContactAccess{PortalAccess: detail.PortalAccess, SharedEmailContacts: detail.SharedEmailContacts}, nil
+	return &PortalContactAccess{PortalAccess: detail.PortalAccess, PortalRole: detail.PortalRole, SharedEmailContacts: detail.SharedEmailContacts}, nil
 }
 
 // SetContactAccess records a support admin's portal decision for a contact.

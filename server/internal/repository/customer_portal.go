@@ -131,6 +131,15 @@ func (r *CustomerPortalRepository) CreateRequest(ctx context.Context, draft Port
 	}
 	var reference string
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// As for new email conversations, an unambiguous CRM membership
+		// becomes the request's company, which shares it with colleagues.
+		if draft.CRMContactID != nil {
+			companyID, err := NewCRMAssociationRepository(tx).SingleCompanyForContact(ctx, draft.WorkspaceID, *draft.CRMContactID)
+			if err != nil {
+				return err
+			}
+			conversation.CRMCompanyID = companyID
+		}
 		if err := NewSupportConversationRepository(tx).Create(ctx, conversation); err != nil {
 			return err
 		}
@@ -256,10 +265,23 @@ func newPortalReference() (string, error) {
 // portal intake is never claimed here; only its own confirmation link can
 // publish it (see ClaimIntakeRequest).
 func (r *CustomerPortalRepository) AssociateVerifiedEmail(tx *gorm.DB, workspaceID, email, identityID string) error {
+	return r.publishCustomerConversations(tx, workspaceID, email, identityID, nil)
+}
+
+// publishCustomerConversations applies the AssociateVerifiedEmail rule to the
+// customer's conversations, or only to onlyIDs when it is not nil.
+func (r *CustomerPortalRepository) publishCustomerConversations(tx *gorm.DB, workspaceID, email, identityID string, onlyIDs []string) error {
 	email = strings.ToLower(strings.TrimSpace(email))
+	scope, scopeArgs := "", []any{}
+	if onlyIDs != nil {
+		if len(onlyIDs) == 0 {
+			return nil
+		}
+		scope, scopeArgs = " AND conv.id IN ?", []any{onlyIDs}
+	}
 	// An explicit visibility decision (including an opt-out) is never overwritten.
 	if err := tx.Exec(`UPDATE support_conversations AS conv SET portal_visible = true
-		WHERE conv.workspace_id = ? AND conv.portal_visible = false
+		WHERE conv.workspace_id = ? AND conv.portal_visible = false`+scope+`
 		AND conv.portal_visibility_changed_at IS NULL AND `+portalEligibleConversation+`
 		AND lower(conv.customer_email) = ?
 		AND ((conv.channel = 'email' AND conv.source = 'email'
@@ -273,7 +295,7 @@ func (r *CustomerPortalRepository) AssociateVerifiedEmail(tx *gorm.DB, workspace
 				WHERE other.workspace_id = conv.workspace_id AND other.conversation_id = conv.id
 				AND other.identity_trust = ? AND other.identity_verified_at IS NOT NULL
 				AND lower(trim(other.customer_email)) <> ?)))`,
-		workspaceID, email, model.IdentityTrustVerified, email, model.IdentityTrustVerified, email).Error; err != nil {
+		append(append([]any{workspaceID}, scopeArgs...), email, model.IdentityTrustVerified, email, model.IdentityTrustVerified, email)...).Error; err != nil {
 		return err
 	}
 	var ambiguousIDs []string
@@ -290,7 +312,11 @@ func (r *CustomerPortalRepository) AssociateVerifiedEmail(tx *gorm.DB, workspace
 		slog.Warn("portal continuity conflicting widget evidence", "workspace_id", workspaceID, "conversation_id", id, "identity_id", identityID)
 	}
 	var ids []string
-	if err := tx.Table("support_conversations AS conv").
+	unclaimed := tx.Table("support_conversations AS conv")
+	if onlyIDs != nil {
+		unclaimed = unclaimed.Where("conv.id IN ?", onlyIDs)
+	}
+	if err := unclaimed.
 		Joins("JOIN support_portal_identities AS identity ON identity.workspace_id = conv.workspace_id AND identity.id = ?", identityID).
 		Where("conv.workspace_id = ? AND lower(conv.customer_email) = ?", workspaceID, email).
 		Where(portalVisibleConversation).
@@ -367,13 +393,21 @@ func (r *CustomerPortalRepository) ownedRequests(ctx context.Context, workspaceI
 
 // ListRequests returns the identity's visible requests, newest activity first.
 func (r *CustomerPortalRepository) ListRequests(ctx context.Context, workspaceID, identityID, status string) ([]model.SupportPortalRequest, error) {
+	return r.listRequests(r.ownedRequests(ctx, workspaceID, identityID), "", status)
+}
+
+// listRequests projects a request query (refs, conv and identity aliases)
+// into list rows filtered by customer-facing status. extraColumns are added
+// to the selection.
+func (r *CustomerPortalRepository) listRequests(query *gorm.DB, extraColumns, status string) ([]model.SupportPortalRequest, error) {
 	var requests []model.SupportPortalRequest
-	query := r.ownedRequests(ctx, workspaceID, identityID).
+	query = query.
 		Joins("LEFT JOIN support_messages AS lm ON lm.id = " + r.lastPortalVisibleMessageSQL()).
 		Select(`refs.reference, conv.subject, conv.status, conv.created_at, conv.last_public_message_at, conv.resolved_at,
 			conv.display_id, conv.last_public_sender_type, conv.customer_awaiting_response, refs.customer_last_read_at,
+			refs.portal_identity_id AS owner_identity_id,
 			COALESCE(` + supportMetadataValueSQL(r.db, "lm", "merge_public_text") + `, lm.content) AS last_message_content,
-			lm.sender_type AS last_visible_sender_type, lm.created_at AS last_visible_message_at`)
+			lm.sender_type AS last_visible_sender_type, lm.created_at AS last_visible_message_at` + extraColumns)
 	// Customers never see snooze, so this mirrors the waiting rule without it.
 	waitingCondition := "(conv.status IN ('waiting_on_customer', 'waiting') OR (conv.status = 'open' AND conv.last_public_sender_type = 'user' AND NOT COALESCE(conv.customer_awaiting_response, false)))"
 	switch status {

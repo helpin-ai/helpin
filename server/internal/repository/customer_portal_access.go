@@ -32,6 +32,7 @@ const portalConflictEmailLimit = 20
 // contacts share its email.
 type PortalContactAccessDetail struct {
 	PortalAccess        *string
+	PortalRole          *string
 	Email               string
 	SharedEmailContacts int64
 }
@@ -86,13 +87,14 @@ func (r *CustomerPortalRepository) ContactPortalAccess(ctx context.Context, work
 	var contact struct {
 		Email        *string
 		PortalAccess *string
+		PortalRole   *string
 	}
-	err := r.db.WithContext(ctx).Table("crm_contacts").Select("email, portal_access").
+	err := r.db.WithContext(ctx).Table("crm_contacts").Select("email, portal_access, portal_role").
 		Where("workspace_id = ? AND id = ?", workspaceID, contactID).Take(&contact).Error
 	if err != nil {
 		return nil, err
 	}
-	detail := &PortalContactAccessDetail{PortalAccess: contact.PortalAccess, Email: NormalizePortalEmail(crmContactStringValue(contact.Email))}
+	detail := &PortalContactAccessDetail{PortalAccess: contact.PortalAccess, PortalRole: contact.PortalRole, Email: NormalizePortalEmail(crmContactStringValue(contact.Email))}
 	if detail.Email == "" {
 		return detail, nil
 	}

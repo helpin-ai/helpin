@@ -33,6 +33,11 @@ func TestCustomerPortalAdminRoutes(t *testing.T) {
 		{http.MethodGet, "/api/support/inbox/portal/contacts/c1/access"},
 		{http.MethodPut, "/api/support/inbox/portal/contacts/c1/access"},
 		{http.MethodPost, "/api/support/inbox/conversations/conv1/portal-confirmation"},
+		{http.MethodPut, "/api/support/inbox/portal/contacts/c1/role"},
+		{http.MethodGet, "/api/support/inbox/portal/companies/co1"},
+		{http.MethodPut, "/api/support/inbox/portal/companies/co1"},
+		{http.MethodPost, "/api/support/inbox/portal/companies/co1/allow-contacts"},
+		{http.MethodGet, "/api/support/inbox/conversations/conv1/portal-audience"},
 	} {
 		if !routes.Match(chi.NewRouteContext(), route.method, route.path) {
 			t.Errorf("%s %s is not registered", route.method, route.path)

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"html"
 	"log/slog"
+	"maps"
 	"net/mail"
 	"net/url"
 	"strings"
@@ -446,6 +447,15 @@ func (s *CustomerPortalService) AuthenticatePortalSocket(ctx context.Context, sl
 	if err != nil {
 		return nil, fmt.Errorf("list portal socket requests: %w", err)
 	}
+	companyIDs, err := s.memberCompanyIDs(ctx, access)
+	if err != nil {
+		return nil, fmt.Errorf("list portal socket companies: %w", err)
+	}
+	companyReferences, err := s.repo.CompanyRequestReferences(ctx, ws.ID, companyIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list portal socket company requests: %w", err)
+	}
+	maps.Copy(references, companyReferences)
 	return &model.PortalSocketGrant{WorkspaceID: ws.ID, IdentityID: access.Identity.ID, References: references}, nil
 }
 
