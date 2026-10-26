@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { act } from 'react'
+import { act, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { SupportReportOverview, SupportReportSummary } from '@/lib/supportReportTypes'
+import type { SupportReportOverview, SupportReportSummary, SupportReportTopic } from '@/lib/supportReportTypes'
 
 const mockOverview = vi.fn()
 const mockExport = vi.fn()
@@ -21,6 +21,12 @@ vi.mock('@/lib/services/supportReportsService', () => ({
 vi.mock('@/stores/workspaceStore', () => ({
   useWorkspaceStore: (selector: (state: unknown) => unknown) => selector({ currentWorkspace: { id: 'ws-1', slug: 'acme' } }),
 }))
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({ to, params, search, className, children }: { to: string; params: { slug: string }; search: Record<string, string | undefined>; className?: string; children: ReactNode }) => {
+    const query = new URLSearchParams(Object.entries(search).filter((entry): entry is [string, string] => entry[1] !== undefined))
+    return <a className={className} href={`${to.replace('$slug', params.slug)}?${query}`}>{children}</a>
+  },
+}))
 
 import { SupportReportsPage } from '../SupportReportsPage'
 
@@ -38,6 +44,16 @@ function summary(overrides: Partial<SupportReportSummary> = {}): SupportReportSu
   }
 }
 
+function topic(overrides: Partial<SupportReportTopic> = {}): SupportReportTopic {
+  const duration = { count: 0, median_seconds: null, p90_seconds: null }
+  return {
+    tag_id: '', name: '', color: null, conversations_created: 0, previous_conversations_created: 0, ai_involved: 0,
+    ai_resolution_rate: null, ai_handoff_rate: null, first_human_response: duration, resolution: duration,
+    csat_responses: 0, csat_average: null,
+    ...overrides,
+  }
+}
+
 const report: SupportReportOverview = {
   range: { from: '2026-10-01T00:00:00Z', to: '2026-10-08T00:00:00Z', previous_from: '2026-09-24T00:00:00Z', previous_to: '2026-10-01T00:00:00Z', timezone: 'UTC' },
   summary: summary({
@@ -49,10 +65,20 @@ const report: SupportReportOverview = {
     csat_responses: 3, csat_average: 4.3, csat_positive_rate: 0.6667,
   }),
   previous: summary({ conversations_created: 10, conversations_resolved: 9, first_human_response: { count: 4, median_seconds: 900, p90_seconds: 900 } }),
-  backlog: { open: 5, waiting_on_customer: 2, unassigned: 1 },
   daily: [
     { date: '2026-10-01', conversations_created: 3, conversations_resolved: 1, resolved_by_ai: 1, median_first_human_response_seconds: 300 },
     { date: '2026-10-02', conversations_created: 1, conversations_resolved: 2, resolved_by_ai: 0, median_first_human_response_seconds: null },
+  ],
+  // Billing and Login overlap: their rows add up to more than 12.
+  topics: [
+    topic({
+      tag_id: 'tag-billing', name: 'Billing', color: '#0f766e', conversations_created: 6, previous_conversations_created: 4,
+      ai_involved: 5, ai_resolution_rate: 0.4, ai_handoff_rate: 0.6,
+      first_human_response: { count: 3, median_seconds: 900, p90_seconds: 1800 },
+      resolution: { count: 4, median_seconds: 7200, p90_seconds: 9000 }, csat_responses: 2, csat_average: 4.5,
+    }),
+    topic({ tag_id: 'tag-login', name: 'Login', conversations_created: 5, previous_conversations_created: 5 }),
+    topic({ conversations_created: 3, previous_conversations_created: 1 }),
   ],
   channels: [{ channel: 'widget', conversations_created: 10, conversations_resolved: 7, first_human_response: { count: 5, median_seconds: 480, p90_seconds: 900 } }],
   teammates: [{ user_id: 'u1', name: 'Uma One', resolved: 4, replies_sent: 11, first_human_response: { count: 3, median_seconds: 420, p90_seconds: 600 }, csat_responses: 2, csat_average: 4.5 }],
@@ -116,7 +142,7 @@ describe('SupportReportsPage', () => {
     expect(text).toContain('4.3 / 5')
     expect(text).toContain('Great help')
     expect(text).toContain('Uma One')
-    expect(text).toContain('Open now 5')
+    expect(text).not.toContain('Open now')
     expect(text).toContain('First response80%4 met · 1 missed')
     expect(text).toContain('Resolution25%1 met · 3 missed')
     expect(container.querySelectorAll('[data-testid="report-day"]')).toHaveLength(2)
@@ -129,10 +155,62 @@ describe('SupportReportsPage', () => {
     expect(new Date(params.to).getTime()).toBeLessThanOrEqual(Date.now() + 60_000)
   })
 
+  it('puts the AI agent above the daily chart, followed by topics', () => {
+    mockOverview.mockReturnValue({ data: report, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
+    act(() => root.render(<SupportReportsPage />))
+    const titles = Array.from(container.querySelectorAll('section')).map((section) => section.firstElementChild?.textContent ?? '')
+    expect(titles.slice(0, 4)).toEqual(['Volume and speed', 'AI agent', 'Conversations per day', 'Topicsby conversation tag'])
+  })
+
+  it('shows topics by tag with links to their conversations', () => {
+    mockOverview.mockReturnValue({ data: report, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
+    act(() => root.render(<SupportReportsPage />))
+
+    const section = Array.from(container.querySelectorAll('section')).find((candidate) => candidate.firstElementChild?.textContent?.startsWith('Topics'))
+    const rows = Array.from(section?.querySelectorAll('tbody tr') ?? []).map((row) => Array.from(row.querySelectorAll('td')).map((cell) => cell.textContent))
+    expect(rows).toEqual([
+      ['Billing', '6+50% vs previous period', '50%', '40%', '60%', '15m', '2h', '4.5 (2)'],
+      // Unchanged volume shows no trend; topics without AI or ratings show dashes.
+      ['Login', '5', '42%', '—', '—', '—', '—', '—'],
+      ['No tag', '3+200% vs previous period', '25%', '—', '—', '—', '—', '—'],
+    ])
+    expect(container.textContent).toContain('Conversations with several tags count under each tag.')
+
+    const [, params] = mockOverview.mock.calls.at(-1) as [string, { from: string }]
+    const from = new Date(params.from)
+    const createdFrom = `${from.getFullYear()}-${String(from.getMonth() + 1).padStart(2, '0')}-${String(from.getDate()).padStart(2, '0')}`
+    const billing = Array.from(container.querySelectorAll('a')).find((link) => link.textContent === 'Billing')
+    expect(billing?.getAttribute('href')).toBe(`/w/acme/support/search?tag_ids=tag-billing&created_from=${createdFrom}`)
+  })
+
+  it('collapses long topic lists', () => {
+    const many = Array.from({ length: 10 }, (_, index) => topic({ tag_id: `tag-${index}`, name: `Topic ${index}`, conversations_created: 1 }))
+    mockOverview.mockReturnValue({ data: { ...report, topics: many }, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
+    act(() => root.render(<SupportReportsPage />))
+    const topicLinks = () => Array.from(container.querySelectorAll('a')).filter((link) => link.textContent?.startsWith('Topic '))
+    expect(topicLinks()).toHaveLength(8)
+    const showAll = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Show all 10 topics')
+    act(() => showAll?.click())
+    expect(topicLinks()).toHaveLength(10)
+  })
+
+  it('shows a day’s numbers in a tooltip on hover', () => {
+    Object.assign(globalThis, { ResizeObserver: class { observe() {} unobserve() {} disconnect() {} } })
+    mockOverview.mockReturnValue({ data: report, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
+    act(() => root.render(<SupportReportsPage />))
+    const [firstDay] = container.querySelectorAll('[data-testid="report-day"]')
+    act(() => { firstDay.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })) })
+    const stats = document.body.querySelector('[data-testid="report-day-stats"]')
+    expect(stats?.textContent).toBe('Created3Resolved1Resolved by AI1First response (team)5m')
+    act(() => { firstDay.parentElement?.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })) })
+    expect(document.body.querySelector('[data-testid="report-day-stats"]')).toBeNull()
+  })
+
   it('explains an empty CSAT period', () => {
     const emptySLA = { met: 0, missed: 0, hit_rate: null }
-    mockOverview.mockReturnValue({ data: { ...report, summary: summary(), teammates: [], channels: [], sla: { conversations: 0, first_response: emptySLA, next_response: emptySLA, resolution: emptySLA } }, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
+    mockOverview.mockReturnValue({ data: { ...report, summary: summary(), teammates: [], channels: [], topics: [topic({ conversations_created: 2 })], sla: { conversations: 0, first_response: emptySLA, next_response: emptySLA, resolution: emptySLA } }, isLoading: false, isFetching: false, error: null, refetch: vi.fn() })
     act(() => root.render(<SupportReportsPage />))
+    expect(container.textContent).toContain('None of the conversations in this period have tags.')
     expect(container.textContent).toContain('No ratings in this period')
     expect(container.querySelector('a[href="/w/acme/settings/support-sla"]')).not.toBeNull()
     expect(container.textContent).toContain('No teammate replies or resolutions in this period.')

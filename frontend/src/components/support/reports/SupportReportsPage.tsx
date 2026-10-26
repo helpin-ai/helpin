@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { format } from 'date-fns'
 import { toast } from 'sonner'
 import {
   QuietEmptyState,
@@ -31,6 +32,7 @@ import { getInitials } from '@/lib/initials'
 import { cn, timeAgo } from '@/lib/utils'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { ReportDailyChart } from './ReportDailyChart'
+import { ReportTopicsTable } from './ReportTopicsTable'
 
 const ALL_INBOXES = 'all'
 const COLLAPSED_COMMENTS = 6
@@ -138,6 +140,11 @@ export function SupportReportsPage() {
 
   const summary = report?.summary
   const previous = report?.previous
+  // The period always ends now, so a start date is enough to match it.
+  const topicSearchFilters = useMemo(
+    () => ({ created_from: format(new Date(params.from), 'yyyy-MM-dd'), mailbox_ids: inbox === ALL_INBOXES ? undefined : inbox }),
+    [params.from, inbox],
+  )
 
   return (
     <div className="min-h-full pb-16">
@@ -216,15 +223,6 @@ export function SupportReportsPage() {
                 }
               />
             </QuietMetricGrid>
-            <div className="mt-4 grid gap-2 text-[13px] text-quiet-text-tertiary sm:grid-cols-3">
-              <span>Open now <strong className="font-semibold text-quiet-text-primary tabular-nums">{report.backlog.open}</strong></span>
-              <span>Waiting on customer <strong className="font-semibold text-quiet-text-primary tabular-nums">{report.backlog.waiting_on_customer}</strong></span>
-              <span>Unassigned <strong className="font-semibold text-quiet-text-primary tabular-nums">{report.backlog.unassigned}</strong></span>
-            </div>
-          </QuietSection>
-
-          <QuietSection title="Conversations per day">
-            <ReportDailyChart days={report.daily} />
           </QuietSection>
 
           <QuietSection title="AI agent">
@@ -261,6 +259,19 @@ export function SupportReportsPage() {
                 description="Median, including AI replies"
               />
             </QuietMetricGrid>
+          </QuietSection>
+
+          <QuietSection title="Conversations per day">
+            <ReportDailyChart days={report.daily} />
+          </QuietSection>
+
+          <QuietSection title="Topics" count="by conversation tag">
+            <ReportTopicsTable
+              topics={report.topics}
+              totalCreated={summary.conversations_created}
+              workspaceSlug={workspaceSlug}
+              searchFilters={topicSearchFilters}
+            />
           </QuietSection>
 
           <QuietSection title="Customer satisfaction" count={summary.csat_responses ? `${summary.csat_responses} ratings` : undefined}>
