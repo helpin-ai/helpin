@@ -1,6 +1,6 @@
 import { useInboxScopes } from "@/hooks/queries/useSupport";
-import { QuietDropdown } from "@/components/design-system/quiet";
-import { useState } from "react";
+import { QuietDropdown, QuietStatusBadge } from "@/components/design-system/quiet";
+import { useState, type ComponentProps, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
@@ -29,11 +29,13 @@ import {
 import { supportMergeService } from "@/lib/services/supportMergeService";
 import { unwrapRequired } from "@/lib/queryUtils";
 import type {
+  ConversationStatus,
   SupportConversation,
   SupportConversationMerge,
 } from "@/lib/pmTypes";
 import { ConversationTranscript } from "./ConversationTranscript";
 import { ConversationPreviewHeading } from "./ConversationMergeDialog";
+import { STATUS_LABELS } from "./constants";
 import { formatMessageTime, getDayLabel } from "./helpers";
 
 export function ConversationMergeHistory({
@@ -281,36 +283,68 @@ function SharedHistoryEntry({
   );
 }
 
+const STATUS_BADGE_TONES: Record<ConversationStatus, ComponentProps<typeof QuietStatusBadge>["tone"]> = {
+  open: "current",
+  waiting_on_customer: "lifecycle",
+  resolved: "positive",
+  spam: "blocker",
+};
+
 export function ConversationHistoryDialog({
   workspaceId,
   conversation,
   mergeId,
+  actions,
   open,
   onOpenChange,
 }: {
   workspaceId: string;
   conversation: SupportConversation;
   mergeId?: string;
+  /**
+   * Buttons under the transcript, such as opening or merging the
+   * conversation. The header then shows "#ID - Subject" like the thread.
+   */
+  actions?: ReactNode;
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-[720px]">
-        <DialogHeader className="border-b px-6 py-5 text-left">
-          <DialogTitle>
-            {mergeId ? "Shared while merged" : "Original conversation"}
-          </DialogTitle>
-          <DialogDescription className="sr-only">
-            Read-only conversation history
-          </DialogDescription>
-          <div className="space-y-1 pt-2">
-            <ConversationPreviewHeading
-              conversation={conversation}
-              showCustomer
-            />
-          </div>
-        </DialogHeader>
+        {actions ? (
+          <DialogHeader className="border-b py-4 pl-6 pr-14 text-left">
+            <div className="flex min-w-0 items-center gap-2">
+              <DialogTitle className="min-w-0 truncate text-sm font-medium text-foreground">
+                <span className="font-semibold text-muted-foreground">#{conversation.display_id}</span>
+                <span className="mx-1 text-muted-foreground">-</span>
+                <span>{conversation.subject}</span>
+              </DialogTitle>
+              <QuietStatusBadge tone={STATUS_BADGE_TONES[conversation.status]} className="shrink-0">
+                {STATUS_LABELS[conversation.status]}
+              </QuietStatusBadge>
+            </div>
+            <DialogDescription className="truncate text-xs text-muted-foreground">
+              {conversation.customer_name || conversation.customer_email || "Visitor"} ·{" "}
+              {conversation.mailbox_name || "Shared Inbox"}
+            </DialogDescription>
+          </DialogHeader>
+        ) : (
+          <DialogHeader className="border-b px-6 py-5 text-left">
+            <DialogTitle>
+              {mergeId ? "Shared while merged" : "Original conversation"}
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              Read-only conversation history
+            </DialogDescription>
+            <div className="space-y-1 pt-2">
+              <ConversationPreviewHeading
+                conversation={conversation}
+                showCustomer
+              />
+            </div>
+          </DialogHeader>
+        )}
         <div className="h-[min(65dvh,650px)] min-h-0">
           {open && (
             <>
@@ -322,6 +356,9 @@ export function ConversationHistoryDialog({
             </>
           )}
         </div>
+        {actions && (
+          <DialogFooter className="border-t px-6 py-4">{actions}</DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );

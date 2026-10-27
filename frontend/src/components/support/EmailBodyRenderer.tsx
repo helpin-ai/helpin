@@ -15,6 +15,7 @@ interface EmailBodyRendererProps {
   html: string;
   collapsedByDefault?: boolean;
   constrainHeight?: boolean;
+  /** Shows the email in the app's theme colors instead of the sender's. */
   themeAware?: boolean;
 }
 
@@ -25,8 +26,8 @@ interface EmailBodyFrameProps {
   themed: boolean;
 }
 
-// Original formatting uses a light canvas for authored email colors. The
-// default reading view overlays theme colors without changing email layout.
+// Emails render on a light canvas for authored colors. Theme-aware surfaces
+// overlay theme colors without changing email layout.
 export const EMAIL_BODY_IFRAME_STYLES = `
   *, *::before, *::after {
     box-sizing: border-box;
@@ -171,21 +172,13 @@ function hasCollapsibleContent(doc: Document): boolean {
 }
 
 export function EmailBodyRenderer({ html, collapsedByDefault = true, constrainHeight = true, themeAware = false }: EmailBodyRendererProps) {
-  const [original, setOriginal] = useState(false);
-  const themed = themeAware && !original;
   const sanitized = useMemo(() => sanitize(html), [html]);
-  const srcDoc = useMemo(() => buildSrcDoc(sanitized, themed), [sanitized, themed]);
+  const srcDoc = useMemo(() => buildSrcDoc(sanitized, themeAware), [sanitized, themeAware]);
   const rendererKey = `${collapsedByDefault ? 'collapsed' : 'expanded'}:${constrainHeight ? 'constrained' : 'full'}:${srcDoc}`;
 
   return (
     <div className="min-w-0">
-      {themeAware && <div className="mb-1 flex justify-end">
-        <button type="button" aria-pressed={original} onClick={() => setOriginal(value => !value)}
-          className="rounded px-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-          {original ? 'Use theme colors' : 'Original formatting'}
-        </button>
-      </div>}
-      <EmailBodyFrame key={rendererKey} srcDoc={srcDoc} themed={themed} collapsedByDefault={collapsedByDefault} constrainHeight={constrainHeight} />
+      <EmailBodyFrame key={rendererKey} srcDoc={srcDoc} themed={themeAware} collapsedByDefault={collapsedByDefault} constrainHeight={constrainHeight} />
     </div>
   );
 }

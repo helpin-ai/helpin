@@ -295,6 +295,9 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.TriageDeduplicateFirstMessage != nil {
 		current.TriageDeduplicateFirstMessage = *patch.TriageDeduplicateFirstMessage
 	}
+	if patch.AIPriorityEnabled != nil {
+		current.AIPriorityEnabled = *patch.AIPriorityEnabled
+	}
 	if patch.BusinessHoursEnabled != nil {
 		current.BusinessHoursEnabled = *patch.BusinessHoursEnabled
 	}

@@ -12,8 +12,10 @@ import { nextCursor, unwrap, unwrapRequired } from '@/lib/queryUtils';
 import { isUpgradeRequiredError } from '@edition/errors';
 import {
   extractConversationListConversations,
+  findCachedConversation,
   getNextConversationIdAfterRemoval,
   isSupportConversationListQueryKey,
+  patchCachedConversation,
   patchConversationDetailPersonalRead,
   patchConversationDetailStatus,
   patchConversationPersonalReadInCache,
@@ -1388,14 +1390,21 @@ export function useAssignConversationUser(workspaceId: string) {
   return useMutation({
     mutationFn: ({ conversationId, userId }: { conversationId: string; userId: string | null }) =>
       supportService.assignConversationUser(workspaceId, conversationId, { user_id: userId }).then(unwrap),
-    onSuccess: (_data, variables) => {
+    onMutate: async ({ conversationId, userId }) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) });
+      const cached = findCachedConversation(queryClient, workspaceId, conversationId);
+      patchCachedConversation(queryClient, workspaceId, conversationId, { assigned_user_id: userId ?? undefined });
+      return cached ? { previous: cached.assigned_user_id } : undefined;
+    },
+    onError: (error: Error, { conversationId }, context) => {
+      if (context) patchCachedConversation(queryClient, workspaceId, conversationId, { assigned_user_id: context.previous });
+      toast.error('Failed to assign conversation', { description: error.message });
+    },
+    onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, variables.conversationId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
       invalidateSupportInboxViewCounts(queryClient, workspaceId);
-    },
-    onError: (error: Error) => {
-      toast.error('Failed to assign conversation', { description: error.message });
     },
   });
 }

@@ -20,6 +20,8 @@ type fakeJev struct {
 	err         error
 	states      []string
 	during      func()
+	// priority answers the priority question; empty means medium.
+	priority string
 }
 
 func (f *fakeJev) DecideMany(_ context.Context, state string, questions map[string]decision.Question) (*decision.Result, error) {
@@ -34,7 +36,12 @@ func (f *fakeJev) DecideMany(_ context.Context, state string, questions map[stri
 	r := &decision.Result{Model: decision.Model, InputTokens: 20, OutputTokens: 10, Answers: map[string]decision.Answer{}}
 	for name, q := range questions {
 		selected := "sales"
-		if name != "mailbox" {
+		switch {
+		case name == supportJevPriorityQuestionID && f.priority != "":
+			selected = f.priority
+		case name == supportJevPriorityQuestionID:
+			selected = model.SupportConversationPriorityMedium
+		case name != "mailbox":
 			selected = "yes"
 		}
 		ps := map[string]float64{}
@@ -52,7 +59,8 @@ func attachJev(t *testing.T, f *supportTriageTestFixture, provider *fakeJev, rou
 		t.Fatal(err)
 	}
 	tags := NewSupportTagService(repository.NewSupportTagRepository(f.db), f.conversationRepo, nil).SetMessageRepo(f.messageRepo)
-	svc, err := NewSupportJevService(SupportJevConfig{RoutingMode: routeMode, TagsMode: tagMode, RoutingThreshold: .9, TagThreshold: .95, HandoffThreshold: .95, FollowUpThreshold: .95, DailyLimit: 100}, provider, repository.NewSupportJevRepository(f.db), repository.NewAIExecutionUsageRepository(f.db), tags)
+	// Priority stays off here so tag tests count only tag decisions; see support_jev_priority_test.go.
+	svc, err := NewSupportJevService(SupportJevConfig{RoutingMode: routeMode, TagsMode: tagMode, PriorityMode: "off", RoutingThreshold: .9, TagThreshold: .95, HandoffThreshold: .95, FollowUpThreshold: .95, DailyLimit: 100}, provider, repository.NewSupportJevRepository(f.db), repository.NewAIExecutionUsageRepository(f.db), tags)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +247,7 @@ func TestJevTagInputExcludesInternalAndFutureMessages(t *testing.T) {
 	conv := f.createConversation(t, "pricing", "test@example.com", nil)
 	msg := f.createCustomerReply(t, conv.ID, "Pricing question")
 	history := []model.SupportMessage{*msg, {Content: "INTERNAL_SECRET", IsInternal: true, MessageType: "reply", CreatedAt: msg.CreatedAt}, {Content: "FUTURE_TEXT", MessageType: "reply", CreatedAt: msg.CreatedAt.Add(time.Hour)}}
-	if _, err := f.triageSvc.jev.selectConversationTags(f.ctx, f.workspaceID, conv.ID, msg, history); err != nil {
+	if _, err := f.triageSvc.jev.assessCustomerReply(f.ctx, f.workspaceID, conv.ID, msg, history, false); err != nil {
 		t.Fatal(err)
 	}
 	if len(p.states) != 1 || strings.Contains(p.states[0], "INTERNAL_SECRET") || strings.Contains(p.states[0], "FUTURE_TEXT") {

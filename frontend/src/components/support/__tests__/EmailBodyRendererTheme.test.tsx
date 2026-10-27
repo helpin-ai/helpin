@@ -10,26 +10,21 @@ const html = '<style>.branded{background:#fff;color:#111}</style><div class="bra
 let cleanup: (() => Promise<void>) | undefined;
 afterEach(async () => { await cleanup?.(); cleanup = undefined; });
 
-it('defaults to theme-aware reading and restores sanitized original formatting on request', async () => {
+it('shows theme-aware emails in theme colors only, with no formatting toggle', async () => {
  const container = document.createElement('div'); document.body.appendChild(container);
  const root = createRoot(container);
  cleanup = async () => { await act(async()=>root.unmount()); container.remove(); };
  await act(async()=>root.render(<EmailBodyRenderer themeAware html={html} />));
- const source = () => container.querySelector('iframe')!.getAttribute('srcdoc')!;
- const originalButton = () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Original formatting');
- expect(originalButton()).toBeTruthy();
- expect(source()).not.toContain('color: black !important');
- expect(source()).toContain('padding: 12px');
- expect(source()).toContain('data-helpin-quote="true"');
- expect(source()).toContain('https://example.com/logo.png');
- expect(source()).not.toContain('<script>');
- await act(async()=>originalButton()!.click());
- expect(source()).toContain('color: black !important');
- expect(source()).not.toContain('<script>');
- expect(container.textContent).toContain('Use theme colors');
+ const source = container.querySelector('iframe')!.getAttribute('srcdoc')!;
+ expect(source).not.toContain('color: black !important');
+ expect(source).toContain('padding: 12px');
+ expect(source).toContain('data-helpin-quote="true"');
+ expect(source).toContain('https://example.com/logo.png');
+ expect(source).not.toContain('<script>');
+ expect(container.querySelector('button')).toBeNull();
+ expect(container.textContent).not.toContain('Original formatting');
  expect(container.querySelector('iframe')!.getAttribute('sandbox')).not.toContain('allow-scripts');
 });
-
 
 it('preserves original formatting for callers outside support that do not opt in', async () => {
  const container = document.createElement('div'); document.body.appendChild(container);

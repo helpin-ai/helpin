@@ -1404,6 +1404,10 @@ type SupportInboxSettings struct {
 	TriageSkipSpamConversations   bool    `json:"triage_skip_spam_conversations"`
 	TriageDeduplicateFirstMessage bool    `json:"triage_deduplicate_first_message"`
 
+	// AIPriorityEnabled lets Helpin AI raise a conversation's priority from
+	// what customers describe. It never lowers priority or overrides a teammate.
+	AIPriorityEnabled bool `json:"ai_priority_enabled"`
+
 	// Business Hours
 	BusinessHoursEnabled  bool                        `json:"business_hours_enabled"`
 	BusinessHoursTimezone string                      `json:"business_hours_timezone"` // IANA
@@ -1530,6 +1534,7 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		TriageDailyBudget:              250,
 		TriageSkipSpamConversations:    true,
 		TriageDeduplicateFirstMessage:  true,
+		AIPriorityEnabled:              true,
 		BusinessHoursEnabled:           false,
 		BusinessHoursTimezone:          "America/New_York",
 		BusinessHoursSchedule: map[string]BusinessHoursDay{
@@ -1629,6 +1634,7 @@ type UpdateInstallationSettingsRequest struct {
 	TriageDailyBudget               *int                        `json:"triage_daily_budget,omitempty"`
 	TriageSkipSpamConversations     *bool                       `json:"triage_skip_spam_conversations,omitempty"`
 	TriageDeduplicateFirstMessage   *bool                       `json:"triage_deduplicate_first_message,omitempty"`
+	AIPriorityEnabled               *bool                       `json:"ai_priority_enabled,omitempty"`
 	BusinessHoursEnabled            *bool                       `json:"business_hours_enabled,omitempty"`
 	BusinessHoursTimezone           *string                     `json:"business_hours_timezone,omitempty"`
 	BusinessHoursSchedule           map[string]BusinessHoursDay `json:"business_hours_schedule,omitempty"`

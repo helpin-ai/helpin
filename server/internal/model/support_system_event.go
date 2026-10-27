@@ -89,7 +89,7 @@ const (
 	// Admin-only; metadata carries the rating and optional comment.
 	SystemEventCSATRated SupportSystemEventType = "csat_rated"
 
-	// SystemEventPriorityChanged — a teammate changed the priority.
+	// SystemEventPriorityChanged — a teammate or Helpin AI changed the priority.
 	// Admin-only.
 	SystemEventPriorityChanged SupportSystemEventType = "priority_changed"
 
