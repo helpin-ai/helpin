@@ -1,3 +1,4 @@
+import type { MouseEvent } from 'react';
 import { clearTaskSearchParam, useTaskPanelStore } from '@/stores/taskPanelStore';
 
 export interface TaskOverlayLocationLike {
@@ -59,6 +60,17 @@ export function openTaskRoute(
 
   useTaskPanelStore.getState().openTask(taskId);
   return undefined;
+}
+
+/**
+ * Opens the task drawer over the current page for a plain click on a task
+ * link. Modified clicks keep the link, so a new tab still gets the task page.
+ */
+export function openTaskPanelFromLink(event: MouseEvent, taskId: string) {
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  if (useTaskPanelStore.getState().shouldSuppressOpen(taskId)) return;
+  useTaskPanelStore.getState().openTask(taskId);
 }
 
 export function getTaskOverlayCloseBehavior(location: TaskOverlayLocationLike, slug: string) {

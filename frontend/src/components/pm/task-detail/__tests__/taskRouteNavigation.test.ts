@@ -4,6 +4,7 @@ import {
   getActiveTaskRoute,
   getTaskOverlayCloseBehavior,
   matchTaskRoute,
+  openTaskPanelFromLink,
   openTaskRoute,
 } from '../taskRouteNavigation';
 import { useTaskPanelStore } from '@/stores/taskPanelStore';
@@ -244,5 +245,20 @@ describe('taskRouteNavigation', () => {
     );
 
     expect(useTaskPanelStore.getState().taskId).toBe('task-456');
+  });
+
+  it('opens task links in the drawer only for plain left clicks', () => {
+    const click = (init: Partial<MouseEvent> = {}) => {
+      const event = { button: 0, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, preventDefault: vi.fn(), ...init };
+      openTaskPanelFromLink(event as never, 'task-789');
+      return event.preventDefault;
+    };
+
+    expect(click({ metaKey: true })).not.toHaveBeenCalled();
+    expect(click({ button: 1 })).not.toHaveBeenCalled();
+    expect(useTaskPanelStore.getState().taskId).toBeNull();
+
+    expect(click()).toHaveBeenCalled();
+    expect(useTaskPanelStore.getState().taskId).toBe('task-789');
   });
 });

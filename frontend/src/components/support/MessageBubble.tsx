@@ -34,6 +34,7 @@ import { cleanForwardedDisplayContent, hasForwardedHeaderMarker } from './forwar
 import { timeAgo } from '@/lib/utils';
 import { toast } from 'sonner';
 import { buildTaskPath } from '@/lib/pmTaskLinks';
+import { openTaskPanelFromLink } from '@/components/pm/task-detail/taskRouteNavigation';
 import { SupportLink } from './SupportLink';
 
 const MARKDOWN_REMARK_PLUGINS = [remarkGfm];
@@ -183,6 +184,7 @@ function renderSupportAuditSystemEventContent(
   eventType: string | undefined,
   content: string,
   taskHref?: string | null,
+  taskId?: string | null,
 ): ReactNode {
   if (eventType === 'assigned') {
     return renderAssignedSystemEventContent(content);
@@ -215,7 +217,7 @@ function renderSupportAuditSystemEventContent(
         <span data-task-created-event className="flex min-w-0 max-w-full items-center whitespace-nowrap">
           <span data-task-created-prefix className="mr-1 shrink-0">{prefix.trimEnd()}</span>
           {taskHref ? (
-            <a data-task-created-link href={taskHref} title={`${taskKey}${taskName ? `: ${taskName}` : ''}`} className="-mx-1 flex min-w-0 items-center rounded-md px-1 font-semibold text-foreground underline decoration-border underline-offset-2 transition-[color,background-color,text-decoration-color] duration-150 hover:bg-muted hover:text-primary hover:decoration-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+            <a data-task-created-link href={taskHref} onClick={taskId ? (event) => openTaskPanelFromLink(event, taskId) : undefined} title={`${taskKey}${taskName ? `: ${taskName}` : ''}`} className="-mx-1 flex min-w-0 items-center rounded-md px-1 font-semibold text-foreground underline decoration-border underline-offset-2 transition-[color,background-color,text-decoration-color] duration-150 hover:bg-muted hover:text-primary hover:decoration-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
               <strong className="shrink-0 font-semibold text-foreground">{taskKey}</strong>
               {taskName ? <><span className="shrink-0">:&nbsp;</span><strong data-task-created-title className="truncate font-semibold text-foreground">{taskName}</strong></> : null}
             </a>
@@ -688,7 +690,7 @@ export const MessageBubble = memo(function MessageBubble({
       : null;
     const viaAgent = isTaskEvent ? supportMetadataString(message.metadata, 'via_agent') : null;
     const taskHref = taskID && workspaceSlug ? buildTaskPath(workspaceSlug, taskID) : null;
-    const systemDisplayNode = renderSupportAuditSystemEventContent(eventType, systemDisplayContent, taskHref);
+    const systemDisplayNode = renderSupportAuditSystemEventContent(eventType, systemDisplayContent, taskHref, taskID);
 
     let isRoutingEvent: boolean;
     let stateEventKind: 'resolved' | 'reopened' | 'closed' | null;
