@@ -72,6 +72,7 @@ Workspaces that used the retired customer-reply mode were moved to private sugge
 While a customer writes a request, signed in or not, the portal suggests up to five published help center articles. They appear beside the form on wide screens and below the message on small ones. Articles open in a new tab, and the signed-in draft is kept for the browser tab.
 
 - **Search.** Suggestions use the same search as the help center and the Messenger's help tab: semantic retrieval over published articles, with a full-text fallback.
+- **Spaces.** Suggestions come only from the help spaces selected for the Messenger's Help tab. The same selection appears in the chat widget settings and in **Customer portal** settings, and changing it on either page changes both. With no space selected, the portal suggests nothing.
   - A result must share a keyword with the request or be close in meaning (similarity of at least 0.40). Unrelated requests get no suggestions.
   - Query embeddings are cached for an hour.
 - **Measurement.** Each form records the articles shown, the articles opened and the submission (`support_portal_intake_events`). **Reports → Portal self-service** shows:
