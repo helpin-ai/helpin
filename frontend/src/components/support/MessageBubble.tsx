@@ -203,6 +203,10 @@ function renderSupportAuditSystemEventContent(
     return renderBoldedSupportMatches(content, /(\b(?:added|removed) tag\s+)([^.]+)(\.)/g);
   }
 
+  if (eventType === 'priority_changed') {
+    return renderBoldedSupportMatches(content, /(\b(?:from|to)\s+)(Low|Medium|High|Urgent)((?=\s+to\s)|\.$)/g);
+  }
+
   if (eventType && SUPPORT_TASK_EVENT_TYPES.has(eventType)) {
     const taskMatch = content.match(/^(.*\b(?:created|linked|unlinked) task\s+)(#[^:\s]+)(?::\s+(.+))?(\.)$/);
     if (taskMatch) {

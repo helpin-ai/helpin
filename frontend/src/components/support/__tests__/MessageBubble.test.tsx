@@ -1802,3 +1802,17 @@ it('shows a priority raised by Helpin AI with the Ask Agent avatar', () => {
   expect(callout?.querySelector('.ask-agent-avatar')).not.toBeNull();
  } finally { rendered.cleanup(); }
 });
+
+it('bolds both priority levels in a priority change', () => {
+ const rendered = renderBubble({
+  id: 'priority-change', workspace_id: 'ws-1', conversation_id: 'conv-1',
+  sender_type: 'user', sender_display_name: 'Alex Morgan', message_type: 'system',
+  system_event_type: 'priority_changed', content: 'Alex changed the priority from Low to High.', is_internal: true,
+  created_at: '2026-10-27T10:00:00Z', updated_at: '2026-10-27T10:00:00Z',
+ });
+ try {
+  const callout = rendered.container.querySelector('[data-support-system-callout]');
+  expect(Array.from(callout?.querySelectorAll('strong') ?? []).map((node) => node.textContent)).toEqual(['Low', 'High']);
+  expect(callout?.textContent).toContain('Alex changed the priority from Low to High.');
+ } finally { rendered.cleanup(); }
+});
