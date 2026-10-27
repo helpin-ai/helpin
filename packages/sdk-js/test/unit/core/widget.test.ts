@@ -1847,6 +1847,25 @@ describe('WidgetManager', () => {
       expect(emailSpy).toHaveBeenCalledWith('visitor@example.com');
       expect((widget as any).preChatDone).toBe(true);
     });
+    it('holds queued messages behind required email and sends after confirmed capture', async () => {
+      const manager = widget as any;
+      manager.widgetKey = 'test-key';
+      manager.anonymousId = 'visitor-id';
+      manager.widgetConfig = { features: { emailCaptureTiming: 'after_ai_reply', forceIdentify: true } };
+      manager.messages = [{ id: 'answer', role: 'ai', content: 'Answer' }];
+      manager.activeConversationId = 'conv-1';
+      manager.connectionStatus = 'connected';
+      const sent: string[] = [];
+      manager.wsConnection = { readyState: WebSocket.OPEN, send: (payload: string) => sent.push(payload), close: vi.fn() };
+      manager.pendingOutgoingMessages = [{ id: 'queued', content: 'Next question', conversationId: 'conv-1', queuedAt: Date.now(), lastSentConnection: -1 }];
+      manager.flushPendingOutgoingMessages();
+      expect(sent).toEqual([]);
+      manager.handleWSMessage({type:'connection:error', data:{code:'email_required'}});
+      expect(manager.isAIThinking).toBe(false);
+      fetchMock.mockResolvedValueOnce({ok:true,json:async()=>({success:true})});
+      await manager.handleCaptureEmail('visitor@example.com');
+      expect(sent.map(frame=>JSON.parse(frame))).toContainEqual({type:'message:send',data:{content:'Next question'}});
+    });
     it('does not save a rejected identity locally', async () => {
       (widget as any).widgetKey = 'test-key';
       (widget as any).anonymousId = 'visitor-id';
@@ -1861,7 +1880,7 @@ describe('WidgetManager', () => {
   });
 
   describe('pre-chat and websocket event handling', () => {
-    it('persists pre-chat completion, upgrades the session, and tracks leads', () => {
+    it('persists pre-chat completion only after confirmed identity save and tracks leads', async () => {
       const sent: string[] = [];
       const track = vi.fn();
       (globalThis as any).helpin = { track };
@@ -1876,19 +1895,16 @@ describe('WidgetManager', () => {
         onclose: null,
       };
 
-      (widget as any).handlePreChatSubmit({ email: 'lead@example.com', phone: '+1234567890' });
+      (widget as any).anonymousId = 'visitor-id';
+      fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ success: true }) });
+      await (widget as any).handlePreChatSubmit({ email: 'lead@example.com', phone: '+1234567890' });
 
       expect(emailSpy).toHaveBeenCalledWith('lead@example.com');
       expect(localStorage.setItem).toHaveBeenCalledWith('helpin_prechat_test-key', '1');
       expect(track).toHaveBeenCalledWith('lead', { email: 'lead@example.com' });
-      expect(sent.map((frame) => JSON.parse(frame))).toContainEqual({
-        type: 'session:upgrade',
-        data: {
-          email: 'lead@example.com',
-          phone: '+1234567890',
-          source: 'widget_prechat',
-        },
-      });
+      expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/widget/identify'), expect.objectContaining({
+        body: JSON.stringify({ api_key: 'test-key', anonymous_id: 'visitor-id', email: 'lead@example.com', phone: '+1234567890', source: 'widget_prechat' }),
+      }));
       expect((widget as any).currentEmail).toBe('lead@example.com');
       expect((widget as any).preChatDone).toBe(true);
       expect((widget as any).messages).not.toEqual(

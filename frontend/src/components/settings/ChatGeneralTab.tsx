@@ -95,7 +95,7 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
   const [previewInitialView, setPreviewInitialView] = useState<'home' | 'conversation'>('home');
 
   // Identity state
-  const [requireEmail, setRequireEmail] = useState(true);
+  const [emailCaptureTiming, setEmailCaptureTiming] = useState<'after_ai_reply' | 'before_handoff' | 'never'>('after_ai_reply');
   const [requirePhone, setRequirePhone] = useState(false);
   const [welcomeMessage, setWelcomeMessage] = useState('');
   const [privacyNoticeEnabled, setPrivacyNoticeEnabled] = useState(false);
@@ -175,7 +175,7 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
         setExpandedSections(prev => new Set(prev).add('allowed-origins'));
       }
 
-      setRequireEmail(s.require_email_before_chat);
+      setEmailCaptureTiming(s.email_capture_timing ?? (s.require_email_before_chat ? 'before_handoff' : 'never'));
       setRequirePhone(s.require_phone_after_email);
       setWelcomeMessage(s.welcome_message);
       setPrivacyNoticeEnabled(s.privacy_notice_enabled ?? false);
@@ -240,7 +240,8 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
       ? 'Enter notice text to save your changes.'
       : undefined;
   const settingsDraft: ChatSettingsDraft = {
-    require_email_before_chat: requireEmail,
+    email_capture_timing: emailCaptureTiming,
+    require_email_before_chat: emailCaptureTiming !== 'never',
     require_phone_after_email: requirePhone,
     welcome_message: welcomeMessage,
     privacy_notice_enabled: privacyNoticeEnabled,
@@ -1396,36 +1397,39 @@ function Dashboard() {
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium">Contact details</p>
-              <p className="text-sm text-muted-foreground">Choose which contact details to ask for when visitors request human support.</p>
+              <p className="text-sm text-muted-foreground">Choose when visitors are asked for their contact details.</p>
             </div>
             <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('identity-capture') && 'rotate-180')} />
           </button>
           <div className="accordion-animate" data-open={isExpanded('identity-capture')}>
             <div>
             <div className="border-t border-border px-6 py-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label className="text-sm">Ask for email before human support</Label>
-                  <p className="text-xs text-muted-foreground">Show an email prompt when visitors request a teammate. Visitors whose email is already known are not asked again.</p>
-                </div>
-                <Switch checked={requireEmail} onCheckedChange={setRequireEmail} />
+              <div className="space-y-2">
+                <Label htmlFor="email-capture-timing">Ask for email</Label>
+                <Select value={emailCaptureTiming} onValueChange={(value) => setEmailCaptureTiming(value as typeof emailCaptureTiming)}>
+                  <SelectTrigger id="email-capture-timing"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="after_ai_reply">After first AI reply</SelectItem>
+                    <SelectItem value="before_handoff">Before handoff to a teammate</SelectItem>
+                    <SelectItem value="never">Don’t ask</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label className="text-sm">Also ask for a phone number</Label>
-                  <p className="text-xs text-muted-foreground">Show an optional phone number prompt after the email step.</p>
-                </div>
-                <Switch checked={requirePhone} onCheckedChange={setRequirePhone} disabled={!requireEmail} />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label className="text-sm">Make email required</Label>
-                  <p className="text-xs text-muted-foreground">Visitors cannot skip the email step. When off, they can continue without email. Phone number remains optional.</p>
-                </div>
-                <Switch checked={forceVisitorIdentity} onCheckedChange={setForceVisitorIdentity} disabled={!requireEmail} />
-              </div>
+              {emailCaptureTiming !== 'never' && (
+                <>
+                  <div className="flex items-center justify-between gap-4">
+                    <Label htmlFor="email-capture-required">Require email to continue</Label>
+                    <Switch id="email-capture-required" checked={forceVisitorIdentity} onCheckedChange={setForceVisitorIdentity} />
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <Label htmlFor="email-capture-phone">Also ask for a phone number</Label>
+                      <p className="text-xs text-muted-foreground">Optional, after the email step.</p>
+                    </div>
+                    <Switch id="email-capture-phone" checked={requirePhone} onCheckedChange={setRequirePhone} />
+                  </div>
+                </>
+              )}
 
               <WelcomeMessageSettings
                 value={welcomeMessage}

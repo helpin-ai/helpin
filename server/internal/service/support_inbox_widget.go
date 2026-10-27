@@ -181,6 +181,12 @@ func (s *SupportInboxService) UpgradeWidgetSession(ctx context.Context, sessionT
 	}
 
 	resolved := resolveWidgetIdentityPayload(identity)
+	if resolved.email != "" {
+		address, err := mail.ParseAddress(resolved.email)
+		if err != nil || address.Address != resolved.email {
+			return fmt.Errorf("invalid email address")
+		}
+	}
 
 	// Run all state changes in a single transaction
 	var contactID *string
@@ -275,6 +281,9 @@ func (s *SupportInboxService) UpgradeWidgetSession(ctx context.Context, sessionT
 
 	// Broadcast WebSocket events AFTER commit for each affected conversation
 	for _, convID := range updatedConvIDs {
+		if resolved.source == "widget_prechat" && resolved.email != "" {
+			publishEmailCollectionStatus(ctx, repository.NewSupportMessageRepository(db), s.wsPublisher, session.WorkspaceID, convID, model.SystemEventVisitorEmailProvided)
+		}
 		s.wsPublisher.Publish(websocket.Event{
 			Action:      "updated",
 			Entity:      "support_conversation",
@@ -310,6 +319,12 @@ func (s *SupportInboxService) IdentifyByAnonymousID(ctx context.Context, widgetK
 
 	workspaceID := inst.WorkspaceID
 	resolved := resolveWidgetIdentityPayload(identity)
+	if resolved.email != "" {
+		address, err := mail.ParseAddress(resolved.email)
+		if err != nil || address.Address != resolved.email {
+			return fmt.Errorf("invalid email address")
+		}
+	}
 
 	var contactID *string
 	var updatedConvIDs []string
@@ -390,6 +405,9 @@ func (s *SupportInboxService) IdentifyByAnonymousID(ctx context.Context, widgetK
 
 	// Broadcast after commit
 	for _, convID := range updatedConvIDs {
+		if resolved.source == "widget_prechat" && resolved.email != "" {
+			publishEmailCollectionStatus(ctx, repository.NewSupportMessageRepository(db), s.wsPublisher, inst.WorkspaceID, convID, model.SystemEventVisitorEmailProvided)
+		}
 		s.wsPublisher.Publish(websocket.Event{
 			Action:      "updated",
 			Entity:      "support_conversation",
@@ -695,6 +713,11 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 	session, err := s.GetWidgetSession(ctx, sessionToken)
 	if err != nil {
 		return nil, err
+	}
+	if session.ConversationID != nil {
+		if err := s.checkWidgetEmailRequirement(ctx, session.WorkspaceID, *session.ConversationID, derefString(session.CustomerEmail), false); err != nil {
+			return nil, err
+		}
 	}
 	initialConversationID := session.ConversationID
 	if s.attachmentService != nil && len(attachmentIDs) > 0 {
@@ -1182,15 +1205,16 @@ func (s *SupportInboxService) buildWidgetConfigResponse(ctx context.Context, ins
 			ButtonIconColor: settings.ButtonIconColor,
 		},
 		Features: model.WidgetConfigFeatures{
-			AIEnabled:         settings.AIEnabled,
-			AIFirst:           settings.AIEnabled && settings.AIResponseMode == "ai_first",
-			ShowTalkToHuman:   settings.ShowTalkToHuman,
-			EscalationMessage: settings.EscalationMessage,
-			FileUploads:       settings.FileUploadsEnabled,
-			PreChatForm:       settings.RequireEmailBeforeChat,
-			RequirePhone:      settings.RequirePhoneAfterEmail,
-			CSATRating:        settings.CSATEnabled,
-			ForceIdentify:     settings.ForceVisitorIdentity,
+			AIEnabled:          settings.AIEnabled,
+			AIFirst:            settings.AIEnabled && settings.AIResponseMode == "ai_first",
+			ShowTalkToHuman:    settings.ShowTalkToHuman,
+			EscalationMessage:  settings.EscalationMessage,
+			FileUploads:        settings.FileUploadsEnabled,
+			EmailCaptureTiming: settings.EmailCaptureTiming,
+			PreChatForm:        settings.EmailCaptureTiming != "never",
+			RequirePhone:       settings.RequirePhoneAfterEmail,
+			CSATRating:         settings.CSATEnabled,
+			ForceIdentify:      settings.ForceVisitorIdentity,
 		},
 		Availability:       buildWidgetAvailability(settings, now, hasOnlineAgent),
 		AvailableTeammates: s.listWidgetTeammates(ctx, inst.WorkspaceID, 5),

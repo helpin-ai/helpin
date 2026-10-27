@@ -43,7 +43,7 @@ interface ConversationViewProps {
   showPreChatForm?: boolean;
   contactCaptureCompleted?: boolean;
   onCaptureEmail?: (email: string) => Promise<void>;
-  onPreChatSubmit?: (data: { phone: string; email: string }) => void;
+  onPreChatSubmit?: (data: { phone: string; email: string }) => void | Promise<void>;
   onImageClick?: (src: string, alt: string) => void;
   onAnswerFeedback?: (messageId: string, helpful: boolean) => Promise<boolean>;
   connectionStatus?: 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
@@ -95,6 +95,11 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   );
   const [introCreatedAt] = useState(() => new Date().toISOString());
   const [preChatDone, setPreChatDone] = useState(false);
+  const emailDismissalKey = `helpin_email_dismissed_${config.workspaceId}_${conversationKey}`;
+  const readEmailDismissal = () => {
+    try { return sessionStorage.getItem(emailDismissalKey) === '1'; } catch { return false; }
+  };
+  const [emailDismissed, setEmailDismissed] = useState(readEmailDismissal);
   const [showHumanContactForm, setShowHumanContactForm] = useState(false);
   const uploads = useAttachmentUploads(conversationKey, onUploadAttachment);
   const { pendingAttachments } = uploads;
@@ -130,6 +135,12 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
       message.content.trim() === 'Let me connect you with a team member who can help further.'
     ),
   );
+  const emailTiming = config.features.emailCaptureTiming ?? (config.features.preChatForm ? 'before_handoff' : 'never');
+  const needsEmail = !transcriptEmail && !preChatDone;
+  const hasAIReply = messages.some(message => message.role === 'ai' && !message.isInternal && message.aiProgressState !== 'checking');
+  const showAIEmailForm = emailTiming === 'after_ai_reply' && needsEmail && hasAIReply && !isAIThinking
+    && (config.features.forceIdentify || (!emailDismissed && !contactCaptureCompleted));
+  const showEmailForm = showHumanContactForm || showAIEmailForm;
   const fileUploadsEnabled = Boolean(config.features?.fileUploads && onUploadAttachment);
   const composeDisabled = connectionStatus === 'connecting';
   const composePlaceholder = connectionStatus === 'failed'
@@ -158,14 +169,14 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   const delayedEmailCapture = delayedReplyIndex >= 0
     && messages[delayedReplyIndex].captureEmail === true
     && !messages.slice(delayedReplyIndex + 1).some((message) => message.role === 'agent');
-  const showEscalationEmailCapture = (nobodyAvailable || delayedEmailCapture)
+  const showEscalationEmailCapture = config.features.emailCaptureTiming !== 'never' && (nobodyAvailable || delayedEmailCapture)
     && Boolean(onCaptureEmail)
     && conversation?.status !== 'resolved'
     && conversation?.status !== 'closed'
     && !transcriptEmail
     && (delayedEmailCapture || !hasHumanReply)
     && (delayedEmailCapture || (!contactCaptureCompleted && !preChatDone))
-    && !showHumanContactForm
+    && !showEmailForm
     && emailCaptureStatus !== 'saved';
   const showTalkToHumanButton = Boolean(
     config.features?.showTalkToHuman &&
@@ -241,19 +252,21 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
     setEmailCaptureError('');
     setAutoExpandDismissed(false);
     setShowHumanContactForm(false);
+    setEmailDismissed(readEmailDismissal());
+    setPreChatDone(false);
     autoExpandedConversationRef.current = null;
   }, [conversationKey]);
 
   const requestHumanSupport = () => {
-    if (showPreChatForm && !preChatDone && onPreChatSubmit) {
+    if (emailTiming !== 'never' && needsEmail && onPreChatSubmit && (showPreChatForm || config.features.forceIdentify)) {
       setShowHumanContactForm(true);
       return;
     }
     onEscalateToHuman?.();
   };
 
-  const completeHumanSupportRequest = (data: { phone: string; email: string }) => {
-    onPreChatSubmit?.(data);
+  const completeHumanSupportRequest = async (data: { phone: string; email: string }) => {
+    await onPreChatSubmit?.(data);
     setPreChatDone(true);
     setShowHumanContactForm(false);
     onEscalateToHuman?.();
@@ -622,13 +635,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
           </span>
         </div>
       )}
-      {showHumanContactForm && (
-        <PreChatForm
-          config={config}
-          onSubmit={completeHumanSupportRequest}
-        />
-      )}
-      {showTalkToHumanButton && !showHumanContactForm && (
+      {showTalkToHumanButton && !showEmailForm && (
         <div className="helpin-talk-to-human">
           <button type="button" className="helpin-talk-to-human-btn" onClick={requestHumanSupport}>
             Talk to a person
@@ -669,7 +676,28 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
             : `${queuedMessageCount === 1 ? '1 message saved' : `${queuedMessageCount} messages saved`} — sending automatically when reconnected`}
         </div>
       )}
-      <ComposeBar
+      {showEmailForm ? (
+        <div className="helpin-email-composer">
+          <PreChatForm
+            config={config}
+            purpose={showHumanContactForm ? 'handoff' : 'chat'}
+            onDismiss={config.features.forceIdentify ? undefined : () => {
+              setEmailDismissed(true);
+              try { sessionStorage.setItem(emailDismissalKey, '1'); } catch { /* Storage may be unavailable. */ }
+              setShowHumanContactForm(false);
+            }}
+            onSubmit={async (data) => {
+              if (showHumanContactForm) {
+                await completeHumanSupportRequest(data);
+              } else {
+                if (onPreChatSubmit) await onPreChatSubmit(data);
+                else if (data.email && onCaptureEmail) await onCaptureEmail(data.email);
+                setPreChatDone(true);
+              }
+            }}
+          />
+        </div>
+      ) : <ComposeBar
         draftScope={conversationKey}
         notice={showPrivacyNotice && policyUrl ? (
           <PrivacyNotice
@@ -694,7 +722,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
         placeholder={composePlaceholder}
         workspaceId={config.workspaceId}
         workspaceName={config.workspaceName}
-      />
+      />}
 
       {lightboxImage && (
         <ImageLightbox

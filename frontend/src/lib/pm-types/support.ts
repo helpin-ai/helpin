@@ -727,6 +727,8 @@ export const SUPPORT_SYSTEM_EVENT_TYPES = [
   'reopened',
   'closed',
   'email_recipients_updated',
+  'visitor_email_requested',
+  'visitor_email_provided',
   'tag_added',
   'tag_removed',
   'task_created',
@@ -1319,6 +1321,7 @@ export interface SupportInboxSettings {
  translation_outgoing_enabled?: boolean;
  translation_customer_language?: string;
  default_agent_language?: string;
+  email_capture_timing: 'after_ai_reply' | 'before_handoff' | 'never';
   require_email_before_chat: boolean;
   require_phone_after_email: boolean;
   welcome_message: string;

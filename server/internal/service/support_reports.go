@@ -91,7 +91,7 @@ func (s *SupportReportService) Overview(ctx context.Context, req model.SupportRe
 	if err != nil {
 		return nil, err
 	}
-	backlog, err := s.conversations.CountReportBacklog(ctx, scope)
+	tags, err := s.conversations.ListReportTags(ctx, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -104,8 +104,8 @@ func (s *SupportReportService) Overview(ctx context.Context, req model.SupportRe
 		},
 		Summary:  summarizeSupportReport(facts, currentRatings, current),
 		Previous: summarizeSupportReport(facts, previousRatings, previous),
-		Backlog:  model.SupportReportBacklog{Open: backlog.Open, Waiting: backlog.Waiting, Unassigned: backlog.Unassigned},
 		Daily:    supportReportDaily(facts, current, location),
+		Topics:   supportReportTopics(facts, tags, currentRatings, current, previous),
 		Channels: supportReportChannels(facts, current),
 		CSAT:     supportReportCSATDetail(currentRatings),
 	}
@@ -504,7 +504,7 @@ var supportReportCSVHeader = []string{
 	"conversation_number", "subject", "channel", "inbox", "status", "priority", "assignee",
 	"customer_name", "customer_email", "created_at", "first_response_at", "first_response_seconds",
 	"first_human_response_at", "first_human_response_seconds", "resolved_at", "resolution_seconds",
-	"resolved_by", "ai_involved", "ai_resolution_type", "handed_off", "csat_rating", "csat_comment",
+	"resolved_by", "ai_involved", "ai_resolution_type", "handed_off", "csat_rating", "csat_comment", "tags",
 }
 
 // ExportConversationsCSV writes one row per conversation created in the period.
@@ -526,6 +526,11 @@ func (s *SupportReportService) ExportConversationsCSV(ctx context.Context, req m
 	for _, rating := range ratings {
 		ratingByConversation[rating.ConversationID] = rating
 	}
+	tags, err := s.conversations.ListReportTags(ctx, scope)
+	if err != nil {
+		return err
+	}
+	tagNames := supportReportTagNames(tags)
 	userIDs := []string{}
 	for _, fact := range facts {
 		if fact.AssignedUserID != nil {
@@ -586,6 +591,7 @@ func (s *SupportReportService) ExportConversationsCSV(ctx context.Context, req m
 			firstHumanAt, firstHumanSeconds, resolvedAt, resolutionSeconds,
 			resolvedBy, strconv.FormatBool(fact.AIReplyCount > 0), derefString(fact.AIResolutionType),
 			strconv.FormatBool(fact.AIReplyCount > 0 && supportReportHandedOff(fact)), csatRating, csatComment,
+			tagNames[fact.ID],
 		)
 		for i := range row {
 			row[i] = supportReportCSVCell(row[i])

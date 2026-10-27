@@ -1,17 +1,23 @@
 import { FunctionComponent } from 'preact';
 import { useState, useRef, useEffect } from 'preact/hooks';
 import type { WidgetConfig } from '../types';
-import { MailIcon, PhoneIcon } from './icons';
+import { MailIcon, PhoneIcon, XIcon } from './icons';
 
 interface PreChatFormProps {
   config: WidgetConfig;
-  onSubmit: (data: { phone: string; email: string }) => void;
+  onSubmit: (data: { phone: string; email: string }) => void | Promise<void>;
+  purpose?: 'chat' | 'handoff';
+  onDismiss?: () => void;
 }
 
 export const PreChatForm: FunctionComponent<PreChatFormProps> = ({
   config,
   onSubmit,
+  purpose = 'handoff',
+  onDismiss,
 }) => {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [step, setStep] = useState<'email' | 'phone' | 'done'>('email');
@@ -27,53 +33,54 @@ export const PreChatForm: FunctionComponent<PreChatFormProps> = ({
   const requirePhone = config.features?.requirePhone === true;
   const emailRequired = config.features?.forceIdentify === true;
   const isOnline = config.availability?.isOnline !== false;
-  const replyTimeText = config.availability?.replyTimeText || 'We typically reply in a few minutes';
-  const punctuatedReplyTimeText = /[.!?]$/.test(replyTimeText)
-    ? replyTimeText
-    : `${replyTimeText}.`;
-  const emailDescription = isOnline
-    ? `Where should we send their reply? ${punctuatedReplyTimeText}`
-    : 'Our team is currently offline. Leave your email and we’ll notify you when someone replies.';
-  const emailSubmitLabel = requirePhone
-    ? 'Continue'
+  const emailDescription = purpose === 'chat'
+    ? 'Continue chatting, and get replies by email if you leave.'
     : isOnline
-      ? 'Continue to human support'
-      : 'Send message and notify me';
+      ? 'Get replies from our team, even if you leave the chat.'
+      : 'Our team is currently offline. Leave your email and we’ll notify you when someone replies.';
+  const continueLabel = purpose === 'chat' ? 'Continue chatting' : 'Continue to human support';
+  const emailSubmitLabel = requirePhone ? 'Continue' : continueLabel;
 
+  const save = async (data: { phone: string; email: string }) => {
+    if (saving) return;
+    setSaving(true);
+    setError('');
+    try {
+      await onSubmit(data);
+      setStep('done');
+    } catch {
+      setError('Could not save your details. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
   const handleEmailSubmit = (e: Event) => {
     e.preventDefault();
-    if (!email.trim()) return;
-    if (requirePhone) {
-      setStep('phone');
-    } else {
-      onSubmit({ phone: '', email: email.trim() });
-      setStep('done');
-    }
+    if (!email.trim() || saving) return;
+    if (requirePhone) setStep('phone');
+    else void save({ phone: '', email: email.trim() });
   };
-
   const handleSkipEmail = () => {
-    if (requirePhone) {
-      setStep('phone');
-    } else {
-      onSubmit({ phone: '', email: '' });
-      setStep('done');
-    }
+    if (requirePhone) setStep('phone');
+    else void save({ phone: '', email: '' });
   };
-
   const handlePhoneSubmit = (e: Event) => {
     e.preventDefault();
-    onSubmit({ phone: phone.trim(), email: email.trim() });
-    setStep('done');
+    void save({ phone: phone.trim(), email: email.trim() });
   };
 
   if (step === 'done') return null;
 
   return (
-    <div className="helpin-human-contact-card" ref={formRef} role="region" aria-label="Talk to a person">
+    <div className="helpin-human-contact-card" ref={formRef} role="region" aria-label="Enter your email">
+      {onDismiss && !emailRequired && !saving && (
+        <button type="button" className="helpin-email-dismiss" aria-label="Dismiss email request" onClick={onDismiss}><XIcon size={16} /></button>
+      )}
+      {error && <p role="alert" className="helpin-email-error">{error}</p>}
       {step === 'email' && (
         <>
           <div className="helpin-human-contact-card__heading">
-            <span className="helpin-human-contact-card__title">Talk to a person</span>
+            <span className="helpin-human-contact-card__title">Enter your email</span>
             <span className="helpin-human-contact-card__description">{emailDescription}</span>
           </div>
           <form onSubmit={handleEmailSubmit} className="helpin-human-contact-form">
@@ -95,12 +102,12 @@ export const PreChatForm: FunctionComponent<PreChatFormProps> = ({
               type="submit"
               className="helpin-human-contact-primary"
               style={{ backgroundColor: brandColor }}
-              disabled={!email.trim()}
+              disabled={!email.trim() || saving}
             >
-              {emailSubmitLabel}
+              {saving ? 'Saving…' : emailSubmitLabel}
             </button>
           </form>
-          {!emailRequired && (
+          {!emailRequired && (!onDismiss || purpose === 'handoff') && (
             <button
               type="button"
               className="helpin-human-contact-secondary"
@@ -140,17 +147,16 @@ export const PreChatForm: FunctionComponent<PreChatFormProps> = ({
               type="submit"
               className="helpin-human-contact-primary"
               style={{ backgroundColor: brandColor }}
+              disabled={saving}
             >
-              Continue to human support
+              {saving ? 'Saving…' : continueLabel}
             </button>
           </form>
           <button
             type="button"
             className="helpin-human-contact-secondary"
-            onClick={() => {
-              onSubmit({ phone: '', email: email.trim() });
-              setStep('done');
-            }}
+            disabled={saving}
+            onClick={() => void save({ phone: '', email: email.trim() })}
           >
             Continue without phone
           </button>

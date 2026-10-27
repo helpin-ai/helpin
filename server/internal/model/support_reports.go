@@ -62,13 +62,6 @@ type SupportReportSLA struct {
 	Resolution    SupportReportSLATarget `json:"resolution"`
 }
 
-// SupportReportBacklog is the number of conversations open right now.
-type SupportReportBacklog struct {
-	Open       int `json:"open"`
-	Waiting    int `json:"waiting_on_customer"`
-	Unassigned int `json:"unassigned"`
-}
-
 // SupportReportDay is one calendar day in the report timezone.
 type SupportReportDay struct {
 	Date                      string `json:"date"`
@@ -84,6 +77,24 @@ type SupportReportChannel struct {
 	ConversationsCreated  int                   `json:"conversations_created"`
 	ConversationsResolved int                   `json:"conversations_resolved"`
 	FirstHumanResponse    SupportReportDuration `json:"first_human_response"`
+}
+
+// SupportReportTopic breaks the period down by conversation tag, with the
+// same rules as the headline summary. A conversation with several tags counts
+// under each; the row with an empty TagID holds conversations without a tag.
+type SupportReportTopic struct {
+	TagID                string                `json:"tag_id"`
+	Name                 string                `json:"name"`
+	Color                *string               `json:"color"`
+	ConversationsCreated int                   `json:"conversations_created"`
+	PreviousCreated      int                   `json:"previous_conversations_created"`
+	AIInvolved           int                   `json:"ai_involved"`
+	AIResolutionRate     *float64              `json:"ai_resolution_rate"`
+	AIHandoffRate        *float64              `json:"ai_handoff_rate"`
+	FirstHumanResponse   SupportReportDuration `json:"first_human_response"`
+	Resolution           SupportReportDuration `json:"resolution"`
+	CSATResponses        int                   `json:"csat_responses"`
+	CSATAverage          *float64              `json:"csat_average"`
 }
 
 // SupportReportTeammate is one teammate's activity in the period.
@@ -135,8 +146,8 @@ type SupportReportOverview struct {
 	Range     SupportReportRange      `json:"range"`
 	Summary   SupportReportSummary    `json:"summary"`
 	Previous  SupportReportSummary    `json:"previous"`
-	Backlog   SupportReportBacklog    `json:"backlog"`
 	Daily     []SupportReportDay      `json:"daily"`
+	Topics    []SupportReportTopic    `json:"topics"`
 	Channels  []SupportReportChannel  `json:"channels"`
 	Teammates []SupportReportTeammate `json:"teammates"`
 	CSAT      SupportReportCSAT       `json:"csat"`

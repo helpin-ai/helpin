@@ -55,7 +55,9 @@ func (s *SupportInboxService) detectCustomerLanguage(ctx context.Context, worksp
 	if err != nil {
 		return "", err
 	}
-	if language := supportReplyTarget(options); language != "" {
+	// A saved language is never replaced, so detecting again would only spend a
+	// model call. This also holds while outgoing translation is off.
+	if language := savedCustomerLanguage(options); language != "" {
 		return language, nil
 	}
 	if !options.Available {

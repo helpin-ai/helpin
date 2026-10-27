@@ -238,34 +238,27 @@ func (r *SupportConversationRepository) ListReportReplyCounts(ctx context.Contex
 	return rows, nil
 }
 
-// ReportBacklog counts conversations that are open right now.
-type ReportBacklog struct {
-	Open       int `json:"open"`
-	Waiting    int `json:"waiting_on_customer"`
-	Unassigned int `json:"unassigned"`
+// SupportReportTagLink is one tag on a conversation in a report.
+type SupportReportTagLink struct {
+	ConversationID string
+	TagID          string
+	Name           string
+	Color          *string
 }
 
-// CountReportBacklog counts the actor's open, waiting and unassigned
-// conversations, independent of the report period.
-func (r *SupportConversationRepository) CountReportBacklog(ctx context.Context, scope SupportReportScope) (ReportBacklog, error) {
-	query := r.db.WithContext(ctx).Table("support_conversations AS c").
-		Where("c.workspace_id = ? AND c.merged_into_id IS NULL AND c.status IN ?", scope.WorkspaceID,
-			[]string{model.SupportConversationStatusOpen, model.SupportConversationStatusWaitingOnCustomer})
-	query = r.applyMailboxAccess(query, "c", scope.WorkspaceMemberID, scope.Role)
-	query = r.applyMailboxScopes(query, "c", nil, scope.MailboxIDs)
-	if channels := compactStrings(scope.Channels); len(channels) > 0 {
-		query = query.Where("c.channel IN ?", channels)
-	}
-	var backlog ReportBacklog
-	err := query.Select(`
-		COALESCE(SUM(CASE WHEN c.status = 'open' THEN 1 ELSE 0 END), 0) AS open,
-		COALESCE(SUM(CASE WHEN c.status = 'waiting_on_customer' THEN 1 ELSE 0 END), 0) AS waiting,
-		COALESCE(SUM(CASE WHEN c.assigned_user_id IS NULL AND c.assigned_agent_id IS NULL THEN 1 ELSE 0 END), 0) AS unassigned`).
-		Scan(&backlog).Error
+// ListReportTags returns the tags on every conversation created or resolved
+// in the scope's window.
+func (r *SupportConversationRepository) ListReportTags(ctx context.Context, scope SupportReportScope) ([]SupportReportTagLink, error) {
+	var links []SupportReportTagLink
+	err := r.db.WithContext(ctx).Table("support_conversation_tags AS ct").
+		Joins("JOIN support_tags AS t ON t.id = ct.tag_id").
+		Select("ct.conversation_id, t.id AS tag_id, t.name, t.color").
+		Where("t.workspace_id = ? AND ct.conversation_id IN (?)", scope.WorkspaceID, r.reportCandidates(ctx, scope)).
+		Scan(&links).Error
 	if err != nil {
-		return backlog, fmt.Errorf("count support report backlog: %w", err)
+		return nil, fmt.Errorf("list support report tags: %w", err)
 	}
-	return backlog, nil
+	return links, nil
 }
 
 // SupportReportCSATRow is one rating with the conversation it belongs to.

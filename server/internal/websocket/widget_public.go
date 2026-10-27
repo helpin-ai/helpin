@@ -74,6 +74,10 @@ func (h *WidgetHandler) rememberConversationTeammates(client *Client, conversati
 func sendWidgetOperationError(ctx context.Context, conn *websocket.Conn, kind, code string, err error) {
 	slog.WarnContext(ctx, "widget operation failed", "code", code, "error", err)
 	message := "Something went wrong. Please try again."
+	if err != nil && err.Error() == "email is required" {
+		SendToClient(conn, kind, map[string]string{"code": "email_required", "message": "Enter your email to continue."})
+		return
+	}
 	switch code {
 	case "send_failed":
 		message = "We couldn't send your message. Please try again."

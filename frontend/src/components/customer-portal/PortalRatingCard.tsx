@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
 const RATINGS = [
@@ -40,25 +41,30 @@ export function PortalRatingCard({ current, saving, error, onSubmit }: PortalRat
     <section className="mt-6 border-t border-quiet-divider-strong pt-4" aria-labelledby="portal-rating-title">
       <h2 id="portal-rating-title" className="text-sm font-semibold text-quiet-text-primary">How was the support you received?</h2>
       <p className="mt-1 text-[13px] text-quiet-text-tertiary">Your rating goes to the team that handled this request.</p>
-      <div className="mt-3 flex flex-wrap gap-2" role="radiogroup" aria-label="Rate this request">
-        {RATINGS.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            role="radio"
-            aria-checked={rating === option.value}
-            aria-label={option.label}
-            title={option.label}
-            onClick={() => setRating(option.value)}
-            className={cn(
-              'flex h-11 w-11 items-center justify-center rounded-full border text-xl transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-quiet-text-primary',
-              rating === option.value ? 'border-quiet-text-primary bg-quiet-row-hover' : 'border-quiet-divider-strong hover:bg-quiet-row-hover',
-            )}
-          >
-            <span aria-hidden="true">{option.emoji}</span>
-          </button>
-        ))}
-      </div>
+      <TooltipProvider>
+        <div className="mt-3 flex flex-wrap gap-2" role="radiogroup" aria-label="Rate this request">
+          {RATINGS.map((option) => (
+            <Tooltip key={option.value}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={rating === option.value}
+                  aria-label={option.label}
+                  onClick={() => setRating(option.value)}
+                  className={cn(
+                    'flex h-11 w-11 items-center justify-center rounded-full border text-xl transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-quiet-text-primary',
+                    rating === option.value ? 'border-quiet-text-primary bg-quiet-row-hover' : 'border-quiet-divider-strong hover:bg-quiet-row-hover',
+                  )}
+                >
+                  <span aria-hidden="true">{option.emoji}</span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" sideOffset={8}>{option.label}</TooltipContent>
+            </Tooltip>
+          ))}
+        </div>
+      </TooltipProvider>
       {rating !== null ? (
         <form
           className="mt-3 space-y-2"

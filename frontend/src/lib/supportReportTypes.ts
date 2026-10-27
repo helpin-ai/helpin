@@ -40,6 +40,26 @@ export interface SupportReportChannel {
   first_human_response: SupportReportDuration
 }
 
+/**
+ * One tag's conversations, summarized like the headline numbers. A
+ * conversation with several tags counts under each; an empty tag_id is the
+ * row of conversations without a tag.
+ */
+export interface SupportReportTopic {
+  tag_id: string
+  name: string
+  color: string | null
+  conversations_created: number
+  previous_conversations_created: number
+  ai_involved: number
+  ai_resolution_rate: number | null
+  ai_handoff_rate: number | null
+  first_human_response: SupportReportDuration
+  resolution: SupportReportDuration
+  csat_responses: number
+  csat_average: number | null
+}
+
 export interface SupportReportTeammate {
   user_id: string
   name: string
@@ -72,8 +92,8 @@ export interface SupportReportOverview {
   range: { from: string; to: string; previous_from: string; previous_to: string; timezone: string }
   summary: SupportReportSummary
   previous: SupportReportSummary
-  backlog: { open: number; waiting_on_customer: number; unassigned: number }
   daily: SupportReportDay[]
+  topics: SupportReportTopic[]
   channels: SupportReportChannel[]
   teammates: SupportReportTeammate[]
   csat: {
