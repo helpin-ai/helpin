@@ -9,7 +9,14 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
-const supportTeammateAwayThreshold = 5 * time.Minute
+const (
+	// supportTeammateAwayThreshold is how long Automatic shows a teammate online after their last activity.
+	supportTeammateAwayThreshold = 5 * time.Minute
+	// supportTeammateActiveWindow is how long a teammate with Helpin open stays
+	// around after their last activity: a manual Online holds for this long, and
+	// a support responder counts as available to customers for this long.
+	supportTeammateActiveWindow = 15 * time.Minute
+)
 
 var ErrInvalidTeammateStatus = errors.New("invalid teammate status")
 

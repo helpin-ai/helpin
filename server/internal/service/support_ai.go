@@ -181,6 +181,8 @@ type SupportAIService struct {
 	mailboxRepo                    *repository.SupportMailboxRepository
 	workspaceRepo                  *repository.WorkspaceRepository
 	statusOverrideRepo             *repository.SupportTeammateStatusOverrideRepository
+	responderDirectory             *SupportResponderDirectory
+	sessionRepo                    *repository.SupportInboxSessionRepository
 	triageService                  *SupportInboxTriageService
 	linkPreviewService             SupportMessageLinkPreviewer
 	assignmentSystemMessageEmitter func(ctx context.Context, workspaceID, conversationID, targetUserID string)
@@ -265,6 +267,20 @@ func (s *SupportAIService) SetSupportRoutingDependencies(
 	s.workspaceRepo = workspaceRepo
 	s.presence = presence
 	s.statusOverrideRepo = statusOverrideRepo
+	return s
+}
+
+// SetSupportAvailabilitySources injects who answers customers and the widget
+// sessions that carry each customer's timezone.
+func (s *SupportAIService) SetSupportAvailabilitySources(
+	responderDirectory *SupportResponderDirectory,
+	sessionRepo *repository.SupportInboxSessionRepository,
+) *SupportAIService {
+	if s == nil {
+		return nil
+	}
+	s.responderDirectory = responderDirectory
+	s.sessionRepo = sessionRepo
 	return s
 }
 

@@ -80,12 +80,25 @@ func selectEscalationTemplate(s model.SupportInboxSettings, state string) string
 // business-hours timezone: "today at 5:00 PM PST", "tomorrow at 9:00 AM PST",
 // or "on Monday at 9:00 AM PST". Returns "" when next is nil.
 func humanizeNextOpen(next *time.Time, localNow time.Time) string {
+	return humanizeNextOpenClock(next, localNow, true)
+}
+
+// humanizeNextOpenForCustomer renders a next-open time on the customer's own
+// clock, so no zone name is shown: "tomorrow at 6:30 PM".
+func humanizeNextOpenForCustomer(next *time.Time, customerNow time.Time) string {
+	return humanizeNextOpenClock(next, customerNow, false)
+}
+
+func humanizeNextOpenClock(next *time.Time, localNow time.Time, showZone bool) string {
 	if next == nil {
 		return ""
 	}
 	t := next.In(localNow.Location())
-	zone, _ := t.Zone()
-	clock := t.Format("3:04 PM") + " " + zone
+	clock := t.Format("3:04 PM")
+	if showZone {
+		zone, _ := t.Zone()
+		clock += " " + zone
+	}
 	startOfDay := func(x time.Time) time.Time {
 		y, m, d := x.Date()
 		return time.Date(y, m, d, 0, 0, 0, 0, x.Location())

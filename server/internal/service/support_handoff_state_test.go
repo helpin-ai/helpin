@@ -1,10 +1,12 @@
 package service
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
 func TestResolveHandoffState(t *testing.T) {
@@ -96,5 +98,54 @@ func TestShortReplyTimePhrase(t *testing.T) {
 	}
 	if got := shortReplyTimePhrase("", nil); got != "" {
 		t.Fatalf("unknown preset must degrade to empty, got %q", got)
+	}
+}
+
+func TestHumanizeNextOpenForCustomer(t *testing.T) {
+	karachi, err := time.LoadLocation("Asia/Karachi")
+	if err != nil {
+		t.Fatalf("load location: %v", err)
+	}
+	// Monday 9:00 AM in New York is Monday 6:00 PM in Karachi.
+	nextOpen := time.Date(2026, 10, 26, 13, 0, 0, 0, time.UTC)
+	customerNow := time.Date(2026, 10, 24, 10, 0, 0, 0, time.UTC).In(karachi)
+
+	if got := humanizeNextOpenForCustomer(&nextOpen, customerNow); got != "on Monday at 6:00 PM" {
+		t.Fatalf("got %q, want %q", got, "on Monday at 6:00 PM")
+	}
+	if humanizeNextOpenForCustomer(nil, customerNow) != "" {
+		t.Fatal("nil should be empty")
+	}
+}
+
+func TestSupportAIServiceNextOpenForCustomer(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	workspaceID := "ws-next-open"
+	settings := model.DefaultSupportInboxSettings()
+	settings.BusinessHoursEnabled = true
+	settings.BusinessHoursTimezone = "America/New_York"
+	// Saturday 10:00 AM in New York; the team is back Monday at 9:00 AM.
+	now := time.Date(2026, 10, 24, 14, 0, 0, 0, time.UTC)
+	svc := &SupportAIService{sessionRepo: repository.NewSupportInboxSessionRepository(db)}
+
+	mustExec(t, db, `INSERT INTO support_widget_sessions (id, workspace_id, conversation_id, session_token, anonymous_id, timezone, expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"session-karachi", workspaceID, "conv-widget", "token-karachi", "anon-1", "Asia/Karachi", now.Add(time.Hour), now, now)
+
+	tests := []struct {
+		name           string
+		conversationID string
+		want           string
+	}{
+		{name: "widget reported the customer's timezone", conversationID: "conv-widget", want: "on Monday at 6:00 PM"},
+		{name: "customer timezone unknown", conversationID: "conv-email", want: "on Monday at 9:00 AM EDT"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			conv := &model.SupportConversation{ID: tt.conversationID, WorkspaceID: workspaceID}
+			if got := svc.nextOpenForCustomer(ctx, conv, settings, now); got != tt.want {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

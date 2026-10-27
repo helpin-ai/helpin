@@ -129,6 +129,7 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 			nil,
 			s.presence,
 			s.statusOverrideRepo,
+			s.responderDirectory,
 			supportRecipientSelectorInput{
 				WorkspaceID:          workspaceID,
 				MailboxID:            handoffMailboxID,
@@ -148,12 +149,15 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 	// Resolve the customer-facing handoff state and render the escalation message
 	// for that state. Computed outside the dedupe guard below so handoffState is
 	// persisted even when the customer-facing message is skipped.
-	// handoff_state must reflect real teammate presence (the same source the
-	// widget's pre-chat availability uses), NOT whether an assignee was selected:
-	// with HandoffBehavior "unassigned" (the default) selection is always nil even
-	// when a teammate is online. selection stays purely about routing/assignment.
-	hasAvailableTeammate := anySupportTeammateOnline(ctx, s.workspaceRepo, s.presence, s.statusOverrideRepo, workspaceID, now)
-	handoffState := resolveHandoffState(hasAvailableTeammate, availability.IsWithinOfficeHours)
+	// handoff_state must reflect whether a support responder is around (the same
+	// source the widget's pre-chat availability uses), NOT whether an assignee was
+	// selected: with HandoffBehavior "unassigned" (the default) selection is always
+	// nil even when a responder is around. selection stays purely about routing.
+	customerTeammates, err := resolveSupportCustomerTeammates(ctx, s.workspaceRepo, s.presence, s.statusOverrideRepo, s.responderDirectory, workspaceID, settings.BusinessHoursTimezone, now)
+	if err != nil {
+		slog.WarnContext(ctx, "resolve teammates available to customers failed; treating as unavailable", "error", err, "workspace_id", workspaceID, "conversation_id", conversationID)
+	}
+	handoffState := resolveHandoffState(customerTeammates.anyAvailable(), availability.IsWithinOfficeHours)
 
 	// Short phrase for the {reply_time} token. Do NOT use
 	// availability.WidgetAvailability.ReplyTimeText — that is full-sentence copy
@@ -163,15 +167,14 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		availability.WidgetAvailability.ReplyTimeMinutes,
 	)
 
-	// Next-open text (only meaningful for after_hours).
+	escalationTemplate := selectEscalationTemplate(settings, handoffState)
 	var nextOpenText string
-	if loc, err := time.LoadLocation(settings.BusinessHoursTimezone); err == nil {
-		localNow := now.In(loc)
-		nextOpenText = humanizeNextOpen(nextBusinessHoursStart(settings, localNow), localNow)
+	if strings.Contains(escalationTemplate, "{next_open}") {
+		nextOpenText = s.nextOpenForCustomer(ctx, conv, settings, now)
 	}
 
 	escalationContent := renderEscalationMessage(
-		selectEscalationTemplate(settings, handoffState),
+		escalationTemplate,
 		replyTime,
 		nextOpenText,
 	)
@@ -457,6 +460,41 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		"mailbox_selection_source", mailboxSelectionSource,
 	)
 	return nil
+}
+
+// nextOpenForCustomer says when business hours start again. It uses the
+// customer's own clock when their widget reported a timezone, and otherwise
+// the business-hours timezone with its zone name.
+func (s *SupportAIService) nextOpenForCustomer(ctx context.Context, conv *model.SupportConversation, settings model.SupportInboxSettings, now time.Time) string {
+	loc, err := time.LoadLocation(settings.BusinessHoursTimezone)
+	if err != nil {
+		return ""
+	}
+	nextOpen := nextBusinessHoursStart(settings, now.In(loc))
+	if customerLoc := s.customerLocation(ctx, conv); customerLoc != nil {
+		return humanizeNextOpenForCustomer(nextOpen, now.In(customerLoc))
+	}
+	return humanizeNextOpen(nextOpen, now.In(loc))
+}
+
+// customerLocation returns the timezone the customer's widget reported, or nil when it is unknown.
+func (s *SupportAIService) customerLocation(ctx context.Context, conv *model.SupportConversation) *time.Location {
+	if s.sessionRepo == nil || conv == nil {
+		return nil
+	}
+	session, err := s.sessionRepo.GetLatestByConversation(ctx, conv.WorkspaceID, conv.ID)
+	if err != nil {
+		slog.WarnContext(ctx, "load widget session for customer timezone", "error", err, "workspace_id", conv.WorkspaceID, "conversation_id", conv.ID)
+		return nil
+	}
+	if session == nil || session.Timezone == nil || strings.TrimSpace(*session.Timezone) == "" {
+		return nil
+	}
+	loc, err := time.LoadLocation(strings.TrimSpace(*session.Timezone))
+	if err != nil {
+		return nil
+	}
+	return loc
 }
 
 func (s *SupportAIService) publishVisitorConversationsRefresh(ctx context.Context, workspaceID, anonymousID string) {

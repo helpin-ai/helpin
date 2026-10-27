@@ -145,6 +145,7 @@ func ProcessSupportCustomerReplyNotification(
 		notifService.prefRepo,
 		notifService.presence,
 		notifService.statusOverrideRepo,
+		nil,
 		supportRecipientSelectorInput{
 			WorkspaceID:        conv.WorkspaceID,
 			MailboxID:          conv.MailboxID,

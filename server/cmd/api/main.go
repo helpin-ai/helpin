@@ -769,6 +769,8 @@ func main() {
 	supportInboxService.SetTaskService(pmTaskService)
 	supportInboxService.SetPresenceProvider(wsHub.Presence)
 	supportInboxService.SetStatusOverrideRepo(supportTeammateStatusOverrideRepo)
+	supportResponderDirectory := service.NewSupportResponderDirectory(supportMessageRepo)
+	supportInboxService.SetResponderDirectory(supportResponderDirectory)
 	supportInboxService.SetGeoIPResolver(geoIPResolver)
 	if geoIPResolver != nil {
 		if updated, err := supportInboxService.BackfillWidgetSessionGeo(context.Background(), 5000); err != nil {
@@ -1551,6 +1553,7 @@ func main() {
 	)
 	supportAIService.SetQueryExpansionTimeout(time.Duration(cfg.QueryExpansionTimeoutMS) * time.Millisecond)
 	supportAIService.SetSupportRoutingDependencies(workspaceRepo, wsHub.Presence, supportTeammateStatusOverrideRepo)
+	supportAIService.SetSupportAvailabilitySources(supportResponderDirectory, supportSessionRepo)
 	supportAIService.SetMailboxRepository(supportMailboxRepo)
 	supportAIService.SetTriageService(supportInboxTriageService)
 	supportAIService.SetLinkPreviewService(supportLinkPreviewService)
