@@ -1,9 +1,9 @@
 import { FunctionComponent } from 'preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import type { Message, Attachment, WidgetConfig } from '../types';
 import { renderMarkdown, sanitizeUrl } from '../utils/markdownRenderer';
 import { AskAgentAvatar } from './AskAgentAvatar';
-import { FileTextIcon, ThumbsDownIcon, ThumbsUpIcon } from './icons';
+import { ChevronDownIcon, FileTextIcon, ThumbsDownIcon, ThumbsUpIcon } from './icons';
 
 interface MessageBubbleProps {
   message: Message;
@@ -175,76 +175,27 @@ function MessageContent({ message }: { message: Message }) {
   );
 }
 
-function SourcePopover({ sources }: { sources: NonNullable<Message['sources']> }) {
-  const [open, setOpen] = useState(false);
-  const popoverRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
-      if (!popoverRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('touchstart', handlePointerDown);
-    document.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('touchstart', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [open]);
-
+/** The sources an AI answer used, listed inside its bubble and numbered when there are several. Web links open in a new window. */
+function SourceList({ id, sources }: { id: string; sources: NonNullable<Message['sources']> }) {
+  const List = sources.length > 1 ? 'ol' : 'ul';
   return (
-    <div
-      ref={popoverRef}
-      className={`helpin-sources-popover ${open ? 'is-open' : ''}`}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => {
-        if (!popoverRef.current?.contains(document.activeElement)) setOpen(false);
-      }}
-      onFocusIn={() => setOpen(true)}
-      onFocusOut={event => {
-        if (!popoverRef.current?.contains(event.relatedTarget as Node | null)) setOpen(false);
-      }}
-    >
-      <button
-        type="button"
-        className="helpin-message-sources-trigger"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        onClick={() => setOpen(true)}
-      >
-        Based on {formatSourceCount(sources.length)}
-      </button>
-
-      {open && (
-        <div className="helpin-sources-popover-card" role="dialog" aria-label="Sources">
-          <div className="helpin-sources-popover-list">
-            {sources.map((source, idx) => {
-              const url = source.url?.trim() || '';
-              const href = /^https?:\/\//i.test(url) ? sanitizeUrl(url) : '';
-              return href ? (
-                <a key={idx} className="helpin-source-item" href={href} target="_blank" rel="noopener noreferrer">
-                  {source.title}
-                </a>
-              ) : (
-                <div key={idx} className="helpin-source-item">{source.title}</div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
+    <List id={id} className="helpin-sources-list" aria-label="Sources">
+      {sources.map((source, idx) => {
+        const url = source.url?.trim() || '';
+        const href = /^https?:\/\//i.test(url) ? sanitizeUrl(url) : '';
+        return (
+          <li key={idx}>
+            {href ? (
+              <a className="helpin-source-item" href={href} target="_blank" rel="noopener noreferrer">
+                {source.title}
+              </a>
+            ) : (
+              <span className="helpin-source-item">{source.title}</span>
+            )}
+          </li>
+        );
+      })}
+    </List>
   );
 }
 
@@ -258,6 +209,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
   const [savedFeedback, setSavedFeedback] = useState<boolean | undefined>(undefined);
   const [feedbackPending, setFeedbackPending] = useState(false);
   const [feedbackError, setFeedbackError] = useState(false);
+  const [sourcesOpen, setSourcesOpen] = useState(false);
   const answerFeedback = message.answerFeedback ?? savedFeedback;
   if (message.isInternal || (message.systemEventType
     && !['teammate_joined', 'delayed_team_reply'].includes(message.systemEventType))) {
@@ -297,6 +249,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
     && !message.isStreaming
     && (Boolean(onAnswerFeedback) || message.answerFeedback !== undefined);
   const hasMeta = hasSources || showAnswerFeedback;
+  const sourcesListId = `helpin-sources-${message.id}`;
 
   const submitAnswerFeedback = async (helpful: boolean) => {
     if (feedbackPending || answerFeedback !== undefined || !onAnswerFeedback) return;
@@ -390,7 +343,16 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
                 {hasMeta && (
                   <div className="helpin-message-meta">
                     {hasSources && (
-                      <SourcePopover sources={message.sources!} />
+                      <button
+                        type="button"
+                        className="helpin-message-sources-trigger"
+                        aria-expanded={sourcesOpen}
+                        aria-controls={sourcesListId}
+                        onClick={() => setSourcesOpen(open => !open)}
+                      >
+                        {formatSourceCount(message.sources!.length)}
+                        <ChevronDownIcon size={12} strokeWidth={2.5} />
+                      </button>
                     )}
                     {showAnswerFeedback && (
                       <div className="helpin-answer-feedback" aria-live="polite">
@@ -423,6 +385,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
                     )}
                   </div>
                 )}
+                {hasSources && sourcesOpen && <SourceList id={sourcesListId} sources={message.sources!} />}
 
                 {hasLinkPreviews && message.linkPreviews && (
                   <LinkPreviews previews={message.linkPreviews} outgoing={false} />
