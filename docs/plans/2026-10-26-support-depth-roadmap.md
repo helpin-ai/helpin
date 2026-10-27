@@ -18,7 +18,7 @@ company accounts are the main reason a B2B buyer picks a portal over email.
 | # | Phase | Why this position | Status |
 |---|---|---|---|
 | 1 | Company portal and basic customer roles | Other B2B work depends on it: participants, company-tier SLAs, per-company reporting | **Built** on `feat/company-portal`; see [Customer portal access](../support-portal-access.md) |
-| 1b | Human-owned portal tickets and article suggestions at intake | Puts AI before the ticket and people after it; measures deflection | [Planned](2026-10-27-portal-intake-deflection-plan.md) |
+| 1b | Human-owned portal tickets and article suggestions at intake | Puts AI before the ticket and people after it; measures deflection | **Built** on `feat/company-portal`; see [the plan](2026-10-27-portal-intake-deflection-plan.md) |
 | 2 | Actionable SLAs | The reviewer's top priority. It also supplies the "next update by" commitment the portal shows customers | Outline |
 | 3 | Portal collaboration | Builds on phase 1 company membership | Outline |
 | 4 | Workload-aware assignment | Matters once a team has more than 3–4 agents | Outline |
@@ -95,7 +95,7 @@ Neither product has a self-serve customer admin. Both use two levels of visibili
   - `scope=company` on request lists;
   - admin routes for company access, contact role and bulk allow;
   - the live-update grant includes company requests;
-  - a conversation portal-audience route for teammates.
+  - a conversation portal-context route for teammates (originally portal-audience).
 - **App:**
   - a **Portal** tab on the company page, for support admins;
   - a role selector on the contact rail;

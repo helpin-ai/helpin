@@ -1871,6 +1871,7 @@ func main() {
 	// agent-independent auto-indexing.
 	helpcenterAISearchService.SetAutoIndexer(docsEmbeddingService)
 	customerPortalService.SetKnowledgeSearch(helpcenterAISearchService)
+	supportInboxService.SetKnowledgeSearch(helpcenterAISearchService)
 
 	requestLimiter := ratelimit.New(redisClient, ratelimit.Config{RequestsPerMinute: cfg.AuthenticatedRateLimit, ExpensivePerMinute: cfg.ExpensiveRateLimit})
 

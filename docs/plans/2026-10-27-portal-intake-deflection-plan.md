@@ -3,6 +3,16 @@
 Date: 2026-10-27. Branch: `feat/company-portal` (follows phase 1 of the
 [support depth roadmap](2026-10-26-support-depth-roadmap.md)).
 
+Status: built. Two changes from the plan, both found while testing against a
+live help center:
+
+- Semantic search had no relevance floor, so every request was shown the same
+  unrelated articles. Results now need a shared keyword or a similarity of at
+  least 0.40.
+- The teammate-facing route is `portal-context`, which combines the company
+  audience with the articles opened. It replaces the unreleased
+  `portal-audience` route.
+
 Customers reach the portal after self-service has not answered them. This
 phase changes two things:
 

@@ -61,6 +61,22 @@ People answer portal requests. **Settings → Customer portal → AI suggestions
 
 Workspaces that used the retired customer-reply mode were moved to private suggestions on October 27, 2026. Their open requests still waiting on AI went to the team queue.
 
+## Article suggestions while writing
+
+While a customer writes a request, signed in or not, the portal suggests up to five published help center articles. They appear beside the form on wide screens and below the message on small ones. Articles open in a new tab, and the signed-in draft is kept for the browser tab.
+
+- **Search.** Suggestions use the same search as the help center and the Messenger's help tab: semantic retrieval over published articles, with a full-text fallback.
+  - A result must share a keyword with the request or be close in meaning (similarity of at least 0.40). Unrelated requests get no suggestions.
+  - Query embeddings are cached for an hour.
+- **Measurement.** Each form records the articles shown, the articles opened and the submission (`support_portal_intake_events`). **Reports → Portal self-service** shows:
+  - forms where an article was opened and no request followed within 30 minutes (likely answered by an article);
+  - requests sent after reading;
+  - requests sent when nothing matched.
+- **For teammates.** The conversation sidebar lists the articles the customer opened before writing in.
+- **Coverage.** A request sent after the help center suggested nothing becomes a no-result signal in **Coverage gaps**.
+
+`GET /api/public/portal/{slug}/suggestions?q=` and `POST /api/public/portal/{slug}/suggestions/events` need no sign-in, because they only involve published articles. Both use the portal rate limiter.
+
 ## Limitations
 
 - Colleagues receive no email notifications for each other's requests. They follow them in the portal, where live updates cover company requests. Participants and CC managed from the portal are planned separately.
@@ -75,7 +91,7 @@ All routes require the `support.admin` permission unless noted otherwise:
 - `PUT /api/support/inbox/portal/companies/{companyId}` with `{"default_role": "requester" | "member" | null}`.
 - `POST /api/support/inbox/portal/companies/{companyId}/allow-contacts`: allows eligible contacts and returns how many changed.
 - `PUT /api/support/inbox/portal/contacts/{contactId}/role` with `{"portal_role": "requester" | "member" | null}`.
-- `GET /api/support/inbox/conversations/{id}/portal-audience` (requires `support.read` and mailbox access): the company and the number of colleagues who can read the conversation.
+- `GET /api/support/inbox/conversations/{id}/portal-context` (requires `support.read` and mailbox access): the company and the number of colleagues who can read the conversation, and the articles the customer opened before writing in.
 
 The portal API adds `companies` to the session response. It also adds `scope=company` (with an optional `company_id`) to `GET /api/public/portal/{slug}/requests`.
 

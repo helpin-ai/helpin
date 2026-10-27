@@ -82,10 +82,12 @@ type SupportInboxService struct {
 	taskService                  *PMTaskService
 	geoIPResolver                geoip.Resolver
 	supportEventRecorder         SupportEventRecorder
-	entitlementSvc               EntitlementPolicy
-	slaService                   *SupportSLAService
-	webhooks                     *WebhookService
-	routeDomain                  string
+	// knowledgeSearch is the shared public help center search.
+	knowledgeSearch publicKnowledgeSearch
+	entitlementSvc  EntitlementPolicy
+	slaService      *SupportSLAService
+	webhooks        *WebhookService
+	routeDomain     string
 }
 
 // SetSLAService attaches SLA status to listed and opened conversations.

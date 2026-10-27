@@ -1403,39 +1403,34 @@ func (s *SupportInboxService) SearchWidgetHelpArticles(ctx context.Context, widg
 		limit = 8
 	}
 
+	found, err := s.searchWidgetHelp(ctx, inst.WorkspaceID, locale, query, allowedSpaces, limit)
+	if err != nil {
+		return nil, err
+	}
 	results := make([]model.WidgetHelpSearchResult, 0, limit)
 	seen := make(map[string]struct{})
-	for _, space := range allowedSpaces {
+	for _, result := range found {
 		if len(results) >= limit {
 			break
 		}
-		spaceResults, err := s.docsSearchRepo.PublicSearch(ctx, inst.WorkspaceID, locale, query, space.Slug, limit)
-		if err != nil {
-			return nil, err
+		articleKey := buildDocsHelpcenterArticleKey(result.Slug, result.PublicID)
+		if articleKey == "" {
+			articleKey = result.ID
 		}
-		for _, result := range spaceResults {
-			if len(results) >= limit {
-				break
-			}
-			articleKey := buildDocsHelpcenterArticleKey(result.Slug, result.PublicID)
-			if articleKey == "" {
-				articleKey = result.ID
-			}
-			if _, ok := seen[articleKey]; ok {
-				continue
-			}
-			seen[articleKey] = struct{}{}
-			results = append(results, model.WidgetHelpSearchResult{
-				ID:             result.ID,
-				Title:          result.Title,
-				Slug:           result.Slug,
-				PublicID:       result.PublicID,
-				ArticleKey:     articleKey,
-				Excerpt:        result.Excerpt,
-				CollectionName: result.CollectionName,
-				SpaceName:      result.SpaceName,
-			})
+		if _, ok := seen[articleKey]; ok {
+			continue
 		}
+		seen[articleKey] = struct{}{}
+		results = append(results, model.WidgetHelpSearchResult{
+			ID:             result.ID,
+			Title:          result.Title,
+			Slug:           result.Slug,
+			PublicID:       result.PublicID,
+			ArticleKey:     articleKey,
+			Excerpt:        result.Excerpt,
+			CollectionName: result.CollectionName,
+			SpaceName:      result.SpaceName,
+		})
 	}
 
 	searchSourceSignal := model.SupportCoverageSourceSelfService
@@ -1459,6 +1454,56 @@ func (s *SupportInboxService) SearchWidgetHelpArticles(ctx context.Context, widg
 	})
 
 	return results, nil
+}
+
+// searchWidgetHelp searches the widget's allowed help center spaces with the
+// shared knowledge search, as the help center and portal do. Per-space full
+// text remains the floor: it runs when the shared search is not connected or
+// finds nothing in the allowed spaces, so results never regress.
+func (s *SupportInboxService) searchWidgetHelp(ctx context.Context, workspaceID, locale, query string, spaces []model.WidgetHelpSpace, limit int) ([]model.PublicSearchResultResponse, error) {
+	if s.knowledgeSearch != nil {
+		allowed := make(map[string]bool, len(spaces))
+		for _, space := range spaces {
+			allowed[space.Slug] = true
+		}
+		// Ask for the most results, since some may be in spaces the widget hides.
+		found, err := s.knowledgeSearch.Search(WithKnowledgeSurface(ctx, "widget_help"), workspaceID, locale, "", query, "", 20)
+		if err != nil {
+			return nil, err
+		}
+		results := make([]model.PublicSearchResultResponse, 0, len(found))
+		for _, result := range found {
+			if allowed[result.SpaceSlug] {
+				results = append(results, result)
+			}
+		}
+		if len(results) > 0 {
+			return results, nil
+		}
+	}
+	var results []model.PublicSearchResultResponse
+	for _, space := range spaces {
+		spaceResults, err := s.docsSearchRepo.PublicSearch(ctx, workspaceID, locale, query, space.Slug, limit)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, spaceResults...)
+	}
+	return results, nil
+}
+
+// publicKnowledgeSearch searches published help center articles; it is
+// implemented by HelpcenterAISearchService.
+type publicKnowledgeSearch interface {
+	Search(ctx context.Context, workspaceID, locale, fallbackLocale, query, spaceSlug string, limit int) ([]model.PublicSearchResultResponse, error)
+}
+
+// SetKnowledgeSearch connects the shared public knowledge search used by the
+// widget's help tab.
+func (s *SupportInboxService) SetKnowledgeSearch(search *HelpcenterAISearchService) {
+	if search != nil {
+		s.knowledgeSearch = search
+	}
 }
 
 // GetWidgetHelpArticle returns a widget-visible article with rendered HTML content.
