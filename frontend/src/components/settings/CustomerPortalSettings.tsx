@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useSettingsAutosave } from '@/hooks/useSettingsAutosave';
 import type { CustomerPortalAccessMode, CustomerPortalAccessSummary, SupportInboxSettings } from '@/lib/pmTypes';
 import { serializeQueryFilterGroup } from '@/lib/queryBuilder';
+import { HelpAssistantSetting } from './HelpAssistantSetting';
 import { HelpSpacesPicker } from './HelpSpacesPicker';
 import { toggleHelpSpaceId } from './helpSpaces';
 import { SettingsAutosaveGuard } from './SettingsAutosaveGuard';
@@ -203,6 +204,9 @@ function CustomerPortalSettingsEditor({ workspaceId, workspaceSlug, editable, in
         {!docsSpacesLoading && draft.widget_help_space_ids.length === 0 && (
           <p className="mt-3 text-sm text-muted-foreground">No help spaces selected — article suggestions are off.</p>
         )}
+        <div className="mt-5">
+          <HelpAssistantSetting workspaceId={workspaceId} editable={editable} />
+        </div>
       </section>
 
       <section className="border-b border-border/70 pb-7" aria-labelledby="portal-ai-heading">

@@ -1391,6 +1391,8 @@ export interface SupportInboxSettings {
   portal_requests_only: boolean;
   portal_anonymous_intake_enabled: boolean;
   portal_intake_enabled: boolean;
+  /** Ask AI help assistant on the help center and in the customer portal. */
+  help_assistant_enabled?: boolean;
   portal_access_mode?: CustomerPortalAccessMode;
   portal_ai_mode?: 'off' | 'internal_note';
   portal_ai_agent_id?: string | null;

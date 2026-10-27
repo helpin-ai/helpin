@@ -76,7 +76,7 @@ func (h *DocsHandler) PublicAssistantFeedback(w http.ResponseWriter, r *http.Req
 	}
 	asker := service.HelpAssistantAsker{WorkspaceID: cfg.WorkspaceID, Surface: model.HelpAssistantSurfaceHelpcenter, VisitorID: body.VisitorID}
 	err := h.helpAssistant.Feedback(r.Context(), asker, body.SessionID, chi.URLParam(r, "messageId"), body.Helpful)
-	writeHelpAssistant(w, r, http.StatusNoContent, nil, err)
+	writeHelpAssistant(w, r, http.StatusOK, map[string]bool{"saved": true}, err)
 }
 
 // AssistantAsk handles POST /public/portal/{slug}/assistant/messages. A valid
@@ -117,7 +117,7 @@ func (h *CustomerPortalHandler) AssistantFeedback(w http.ResponseWriter, r *http
 		return
 	}
 	err := h.assistant.Feedback(r.Context(), h.assistantAsker(r, ws, body.VisitorID), body.SessionID, chi.URLParam(r, "messageId"), body.Helpful)
-	writeHelpAssistant(w, r, http.StatusNoContent, nil, err)
+	writeHelpAssistant(w, r, http.StatusOK, map[string]bool{"saved": true}, err)
 }
 
 // assistantAsker identifies a portal asker. Only a valid portal session makes

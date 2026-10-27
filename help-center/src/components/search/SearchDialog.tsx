@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Search, Sparkles } from 'lucide-react'
+import { MessageSquare, Search, Sparkles } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 import {
   Dialog,
@@ -16,6 +16,7 @@ import {
   useAIAnswer,
 } from '@/components/AIAnswerCard'
 import { SearchResultItem } from './SearchResultItem'
+import { openAskAI } from '@/lib/askAI'
 
 interface SearchDialogProps {
   open: boolean
@@ -23,7 +24,7 @@ interface SearchDialogProps {
 }
 
 export function SearchDialog({ open, onClose }: SearchDialogProps) {
-  const { subdomain, locale, multilingualEnabled } = useDocsContext()
+  const { subdomain, locale, multilingualEnabled, config } = useDocsContext()
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -56,6 +57,11 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
   }
 
   const canAskAI = ai.enabled && normalizedQuery.length >= AI_ANSWER_MIN_QUERY_CHARS
+  const assistantEnabled = config.ai_assistant_enabled === true
+  const askAssistant = (question: string) => {
+    onClose()
+    openAskAI({ question })
+  }
 
   // Enter asks the AI inline when the query is long enough; shorter queries
   // fall through to the full results page.
@@ -113,6 +119,7 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
                 vote={ai.vote}
                 onFeedback={ai.sendFeedback}
                 onCitationClick={onClose}
+                onFollowUp={assistantEnabled ? () => askAssistant(normalizedQuery) : undefined}
               />
             </div>
           )}
@@ -146,6 +153,17 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
 
         {/* Full search page + AI answer entry point */}
         {normalizedQuery.length >= 2 && (
+          <>
+          {assistantEnabled && (
+            <button
+              type="button"
+              onClick={() => askAssistant(normalizedQuery)}
+              className="flex w-full items-center gap-2 border-t border-border px-4 py-2.5 text-left text-[13px] text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+            >
+              <MessageSquare size={14} className="shrink-0" />
+              <span className="min-w-0 truncate">Ask AI about &ldquo;{normalizedQuery}&rdquo;</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={openFullSearch}
@@ -163,6 +181,7 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
               </kbd>
             )}
           </button>
+          </>
         )}
       </DialogContent>
     </Dialog>

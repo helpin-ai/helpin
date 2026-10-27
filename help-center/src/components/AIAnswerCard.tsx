@@ -76,6 +76,8 @@ interface AIAnswerPanelProps {
   vote: 'up' | 'down' | null
   onFeedback: (isHelpful: boolean) => void
   onCitationClick?: () => void
+  /** Continues the question in the Ask AI conversation, when offered. */
+  onFollowUp?: () => void
   className?: string
 }
 
@@ -86,6 +88,7 @@ export function AIAnswerPanel({
   vote,
   onFeedback,
   onCitationClick,
+  onFollowUp,
   className,
 }: AIAnswerPanelProps) {
   const { enabledLocales } = useDocsContext()
@@ -208,6 +211,17 @@ export function AIAnswerPanel({
             {vote && <span>Thanks for the feedback.</span>}
           </div>
         </>
+      )}
+
+      {onFollowUp && state.phase === 'done' && (
+        <button
+          type="button"
+          onClick={onFollowUp}
+          className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-foreground underline-offset-2 hover:underline"
+        >
+          Ask a follow-up in Ask AI
+          <ArrowRight className="h-3 w-3" />
+        </button>
       )}
     </section>
   )

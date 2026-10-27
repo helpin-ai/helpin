@@ -33,6 +33,7 @@ import { HelpcenterLocalesCard } from '@/components/settings/helpcenter/Helpcent
 import { HelpcenterCustomDomainStatus, type HelpcenterDomainVerification } from '@/components/settings/helpcenter/HelpcenterCustomDomainStatus';
 import { HelpcenterTranslationsTable } from '@/components/settings/helpcenter/HelpcenterTranslationsTable';
 import { StickyFormFooter } from '@/components/settings/StickyFormFooter';
+import { HelpAssistantSetting } from '@/components/settings/HelpAssistantSetting';
 import { SortableFooterLinkRow, SortableHeaderLinkRow, SortableSocialLinkRow } from '@/components/settings/helpcenter/HelpcenterSortableRows';
 import {
   PlusSignIcon, InformationCircleIcon, ArrowDown01Icon, Cancel01Icon,
@@ -1720,6 +1721,7 @@ export function HelpcenterTab({
                     aria-label="AI answers in help center search"
                   />
                 </div>
+                <HelpAssistantSetting workspaceId={workspaceId} editable />
                 <div className="flex gap-3 rounded-lg border border-border/60 bg-muted/30 p-4 text-xs leading-relaxed text-muted-foreground">
                   <InformationCircleIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                   <p>

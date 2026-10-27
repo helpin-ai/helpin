@@ -2,10 +2,17 @@ import { lazy, Suspense, useState, useEffect, useCallback } from 'react'
 import { Outlet } from '@tanstack/react-router'
 import { TopBar } from './TopBar'
 import { useDocsContext } from '@/contexts/DocsContext'
+import { OPEN_ASK_AI_EVENT } from '@/lib/askAI'
+import type { AskAIRequest } from '@/components/assistant/AskAIPanel'
 
 const SearchDialog = lazy(async () => {
   const module = await import('@/components/search/SearchDialog')
   return { default: module.SearchDialog }
+})
+
+const AskAIPanel = lazy(async () => {
+  const module = await import('@/components/assistant/AskAIPanel')
+  return { default: module.AskAIPanel }
 })
 
 const WIDGET_SCRIPT_ID = 'helpin-widget'
@@ -60,7 +67,11 @@ function HelpCenterChatWidget() {
 }
 
 export function AppShell() {
+  const { config } = useDocsContext()
   const [searchOpen, setSearchOpen] = useState(false)
+  const assistantEnabled = config.ai_assistant_enabled === true
+  // null: closed. A request object: open, possibly with a question to ask.
+  const [askAI, setAskAI] = useState<AskAIRequest | null>(null)
 
   const openSearch = useCallback(() => setSearchOpen(true), [])
   const closeSearch = useCallback(() => setSearchOpen(false), [])
@@ -77,6 +88,28 @@ export function AppShell() {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
+  // Ask AI opens with Cmd+I / Ctrl+I, or from a page or the search dialog.
+  useEffect(() => {
+    if (!assistantEnabled) return
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'i') {
+        e.preventDefault()
+        setSearchOpen(false)
+        setAskAI((current) => current ?? {})
+      }
+    }
+    const onOpen = (e: Event) => {
+      setSearchOpen(false)
+      setAskAI({ ...((e as CustomEvent<AskAIRequest>).detail ?? {}) })
+    }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener(OPEN_ASK_AI_EVENT, onOpen)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener(OPEN_ASK_AI_EVENT, onOpen)
+    }
+  }, [assistantEnabled])
+
   // Allow child components (e.g. homepage) to open search via custom event
   useEffect(() => {
     const handler = () => setSearchOpen(true)
@@ -86,13 +119,18 @@ export function AppShell() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <TopBar onSearchClick={openSearch} />
+      <TopBar onSearchClick={openSearch} onAskAIClick={assistantEnabled ? () => setAskAI((current) => current ?? {}) : undefined} />
       <div className="flex-1">
         <Outlet />
       </div>
       {searchOpen && (
         <Suspense fallback={null}>
           <SearchDialog open onClose={closeSearch} />
+        </Suspense>
+      )}
+      {askAI && (
+        <Suspense fallback={null}>
+          <AskAIPanel request={askAI} onClose={() => setAskAI(null)} />
         </Suspense>
       )}
       <HelpCenterChatWidget />
