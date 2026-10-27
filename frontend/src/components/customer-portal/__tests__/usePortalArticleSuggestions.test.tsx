@@ -139,6 +139,25 @@ describe('usePortalArticleSuggestions', () => {
     await pause()
     expect(probe.current?.articles.map((item) => item.id)).toEqual(['a'])
   })
+
+  it('records completion only after the current text was successfully searched', async () => {
+    mocks.suggestions.mockResolvedValue({ articles: [], search_completed: true })
+    await type('Help')
+    expect(probe.current!.intake().search_completed).toBe(false)
+    await type('Export fails on Safari')
+    expect(probe.current!.intake().search_completed).toBe(false)
+    await pause()
+    expect(probe.current!.intake().search_completed).toBe(true)
+    await type('Export fails on Firefox')
+    expect(probe.current!.intake().search_completed).toBe(false)
+    mocks.suggestions.mockRejectedValueOnce(new Error('offline'))
+    await pause()
+    expect(probe.current!.intake().search_completed).toBe(false)
+    mocks.suggestions.mockResolvedValueOnce({ articles: [], search_completed: false })
+    await type('Export fails on Chrome')
+    await pause()
+    expect(probe.current!.intake().search_completed).toBe(false)
+  })
 })
 
 describe('newIntakeId', () => {

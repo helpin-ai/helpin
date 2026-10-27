@@ -190,7 +190,7 @@ func (r *CustomerPortalRepository) CreateRequest(ctx context.Context, draft Port
 			return err
 		}
 		if draft.Intake != nil {
-			if err := recordPortalIntakeEvent(tx, draft.WorkspaceID, draft.Intake.IntakeID, model.PortalIntakeEventSubmitted, draft.Intake.SuggestedArticleIDs, &conversation.ID); err != nil {
+			if err := recordPortalIntakeEvent(tx, draft.WorkspaceID, draft.Intake.IntakeID, model.PortalIntakeEventSubmitted, draft.Intake.SuggestedArticleIDs, &conversation.ID, draft.Intake.SearchCompleted); err != nil {
 				return err
 			}
 		}

@@ -71,7 +71,7 @@ func TestCreateRequestRecordsIntake(t *testing.T) {
 		t.Fatalf("malformed intake err = %v", err)
 	}
 
-	intake := &model.PortalIntake{IntakeID: uuid.NewString(), SuggestedArticleIDs: []string{suggested, opened}, OpenedArticleIDs: []string{opened}}
+	intake := &model.PortalIntake{IntakeID: uuid.NewString(), SuggestedArticleIDs: []string{suggested, opened}, OpenedArticleIDs: []string{opened}, SearchCompleted: true}
 	request, err := svc.CreateRequest(ctx, access, "Export fails", "On Safari", nil, intake)
 	if err != nil {
 		t.Fatal(err)
@@ -98,7 +98,7 @@ func TestCreateRequestRecordsIntake(t *testing.T) {
 	if err := db.Where("event_type = ?", model.PortalIntakeEventSubmitted).Take(&submitted).Error; err != nil {
 		t.Fatal(err)
 	}
-	if submitted.IntakeID != intake.IntakeID || submitted.ArticleCount != 2 || derefString(submitted.ConversationID) != conversationID {
+	if submitted.IntakeID != intake.IntakeID || submitted.ArticleCount != 2 || !submitted.SearchCompleted || derefString(submitted.ConversationID) != conversationID {
 		t.Fatalf("submitted event = %+v", submitted)
 	}
 	if len(recorder.events) != 0 {
@@ -123,7 +123,7 @@ func TestCreateRequestWithoutSuggestionsSignalsCoverageGap(t *testing.T) {
 	svc.inbox.SetSupportEventRecorder(recorder)
 	setPortalContact(t, db, ws.ID, "customer@example.com", portalAccess(model.PortalAccessAllowed))
 	access := signInPortal(t, svc, ws, issuePortalLink(t, db, ws.ID, "customer@example.com", time.Now().Add(-time.Hour)))
-	if _, err := svc.CreateRequest(ctx, access, "Webhook retries are missing", "We never see retries", nil, &model.PortalIntake{IntakeID: uuid.NewString()}); err != nil {
+	if _, err := svc.CreateRequest(ctx, access, "Webhook retries are missing", "We never see retries", nil, &model.PortalIntake{IntakeID: uuid.NewString(), SearchCompleted: true}); err != nil {
 		t.Fatal(err)
 	}
 	if len(recorder.events) != 1 {
@@ -144,6 +144,14 @@ func TestCreateRequestWithoutSuggestionsSignalsCoverageGap(t *testing.T) {
 	if len(recorder.events) != 1 {
 		t.Fatalf("a request without intake reported a gap: %+v", recorder.events)
 	}
+	// Skipped, failed, and still-pending searches carry an intake but no
+	// completion evidence. They must not be treated as empty search results.
+	if _, err := svc.CreateRequest(ctx, access, "Search never completed", "No search result", nil, &model.PortalIntake{IntakeID: uuid.NewString()}); err != nil {
+		t.Fatal(err)
+	}
+	if len(recorder.events) != 1 {
+		t.Fatalf("an incomplete search reported a gap: %+v", recorder.events)
+	}
 }
 
 func TestReportPortalIntake(t *testing.T) {
@@ -157,8 +165,8 @@ func TestReportPortalIntake(t *testing.T) {
 	}
 	add := func(intake, event string, articles int, at time.Time) {
 		t.Helper()
-		mustExec(t, db, `INSERT INTO support_portal_intake_events (id, workspace_id, intake_id, event_type, article_count, occurred_at) VALUES (?, 'ws', ?, ?, ?, ?)`,
-			uuid.NewString(), intake, event, articles, at)
+		mustExec(t, db, `INSERT INTO support_portal_intake_events (id, workspace_id, intake_id, event_type, article_count, search_completed, occurred_at) VALUES (?, 'ws', ?, ?, ?, ?, ?)`,
+			uuid.NewString(), intake, event, articles, intake == "nothing-found", at)
 	}
 	hour := func(h int) time.Time { return now.Add(time.Duration(-h) * time.Hour) }
 	// Deflected: shown, opened, never submitted.
@@ -170,6 +178,8 @@ func TestReportPortalIntake(t *testing.T) {
 	add("read-then-asked", "submitted", 2, hour(4).Add(5*time.Minute))
 	// Nothing found, submitted.
 	add("nothing-found", "submitted", 0, hour(3))
+	// A submission with no evidence of a successful search is unknown.
+	add("search-not-completed", "submitted", 0, hour(3))
 	// Opened moments ago: still inside the deflection window.
 	add("still-reading", "shown", 1, now.Add(-10*time.Minute))
 	add("still-reading", "opened", 1, now.Add(-5*time.Minute))

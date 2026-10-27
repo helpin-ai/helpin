@@ -166,6 +166,12 @@ func TestCustomerPortalIntakePostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// Only a completed empty search is a missing-article submission.
+	for _, completed := range []bool{false, true} {
+		if err := recordPortalIntakeEvent(db.WithContext(ctx), ws, uuid.NewString(), model.PortalIntakeEventSubmitted, nil, nil, completed); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := db.Exec(`INSERT INTO support_portal_intake_events (workspace_id, intake_id, event_type) VALUES (?, ?, 'clicked')`, ws, deflected).Error; err == nil {
 		t.Fatal("unknown intake event accepted")
 	}
@@ -174,7 +180,7 @@ func TestCustomerPortalIntakePostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := model.SupportReportPortalIntake{WithSuggestions: 2, Opened: 2, SubmittedAfterOpening: 1, LikelyDeflected: 1}
+	want := model.SupportReportPortalIntake{WithSuggestions: 2, Opened: 2, SubmittedAfterOpening: 1, LikelyDeflected: 1, SubmittedWithoutSuggestions: 1}
 	if summary == nil || *summary != want {
 		t.Fatalf("summary = %+v, want %+v", summary, want)
 	}

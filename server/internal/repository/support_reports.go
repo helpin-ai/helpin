@@ -396,7 +396,7 @@ func (r *SupportConversationRepository) ReportPortalIntake(ctx context.Context, 
 				MAX(CASE WHEN event_type = 'shown' THEN 1 ELSE 0 END) AS shown,
 				MAX(CASE WHEN event_type = 'opened' THEN 1 ELSE 0 END) AS opened,
 				MAX(CASE WHEN event_type = 'submitted' THEN 1 ELSE 0 END) AS submitted,
-				MAX(CASE WHEN event_type = 'submitted' AND article_count = 0 THEN 1 ELSE 0 END) AS submitted_without,
+				MAX(CASE WHEN event_type = 'submitted' AND search_completed = true AND article_count = 0 THEN 1 ELSE 0 END) AS submitted_without,
 				MAX(CASE WHEN event_type = 'opened' THEN occurred_at END) AS last_opened
 			FROM support_portal_intake_events
 			WHERE workspace_id = @workspace

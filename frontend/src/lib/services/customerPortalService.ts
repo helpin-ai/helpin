@@ -132,6 +132,7 @@ export interface CustomerPortalIntake {
   intake_id: string
   suggested_article_ids: string[]
   opened_article_ids: string[]
+  search_completed: boolean
 }
 
 export interface CreateCustomerPortalRequestInput {
@@ -230,7 +231,7 @@ export const customerPortalService = {
   suggestionEvent: (slug: string, event: { intake_id: string; event: 'shown' | 'opened'; article_ids: string[] }) =>
     portalRequest<void>(slug, '/suggestions/events', { method: 'POST', body: JSON.stringify(event) }),
   suggestions: (slug: string, text: string, signal?: AbortSignal) =>
-    portalRequest<{ articles: CustomerPortalArticleSuggestion[] }>(slug, `/suggestions?q=${encodeURIComponent(text)}`, { signal }),
+    portalRequest<{ articles: CustomerPortalArticleSuggestion[]; search_completed: boolean }>(slug, `/suggestions?q=${encodeURIComponent(text)}`, { signal }),
   requestDetail: (slug: string, reference: string) =>
     portalRequest<CustomerPortalRequestDetail>(slug, `/requests/${encodeURIComponent(reference)}`),
   reply: (slug: string, reference: string, content: string, attachment_ids: string[] = []) =>

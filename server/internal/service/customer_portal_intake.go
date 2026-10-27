@@ -62,7 +62,7 @@ func normalizePortalIntake(intake *model.PortalIntake) (*model.PortalIntake, err
 	if err != nil {
 		return nil, err
 	}
-	return &model.PortalIntake{IntakeID: intake.IntakeID, SuggestedArticleIDs: suggested, OpenedArticleIDs: opened}, nil
+	return &model.PortalIntake{IntakeID: intake.IntakeID, SuggestedArticleIDs: suggested, OpenedArticleIDs: opened, SearchCompleted: intake.SearchCompleted}, nil
 }
 
 // portalIntakeArticleIDs checks article ids are UUIDs, removes duplicates,
@@ -90,7 +90,7 @@ func portalIntakeArticleIDs(ids []string, limit int) ([]string, error) {
 // suggested nothing: the customer looked, found no article, and needed a
 // person. Coverage review turns these into missing-article gaps.
 func (s *CustomerPortalService) recordIntakeCoverageSignal(ws *PortalWorkspace, conversation *model.SupportConversation, intake *model.PortalIntake) {
-	if s.inbox == nil || intake == nil || len(intake.SuggestedArticleIDs) > 0 || conversation == nil {
+	if s.inbox == nil || intake == nil || !intake.SearchCompleted || len(intake.SuggestedArticleIDs) > 0 || conversation == nil {
 		return
 	}
 	s.inbox.recordSupportEvent(SupportEventInput{

@@ -39,7 +39,7 @@ import { pastedFiles, usePortalFileDrop } from './portalFileDrop'
 import { usePortalAttachmentUploads } from './usePortalAttachmentUploads'
 import { PortalArticleSuggestions } from './PortalArticleSuggestions'
 import { usePortalArticleSuggestions } from './usePortalArticleSuggestions'
-import { usePortalDraft } from './usePortalDraft'
+import { clearPortalDrafts, usePortalDraft } from './usePortalDraft'
 import {
   CustomerPortalApiError,
   customerPortalService,
@@ -281,6 +281,7 @@ export function CustomerPortalProvider({ slug }: { slug: string }) {
     try {
       await customerPortalService.signOut(slug)
     } finally {
+      clearPortalDrafts(slug)
       goToSignIn()
     }
   }, [goToSignIn, slug])
@@ -537,7 +538,8 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
   onCreated: (reference: string) => void
   handleSessionError: (error: unknown) => boolean
 }) {
-  const { draft, setDraft, clearDraft } = usePortalDraft(`${slug}.new-request`)
+  const { session } = usePortal()
+  const { draft, setDraft, clearDraft } = usePortalDraft(slug, session!.customer.id)
   const { subject, message } = draft
   const setSubject = (value: string) => setDraft({ subject: value, message })
   const setMessage = (value: string) => setDraft({ subject, message: value })

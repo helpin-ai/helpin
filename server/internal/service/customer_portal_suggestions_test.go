@@ -82,10 +82,29 @@ func TestSuggestArticlesGuards(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := svc.SuggestArticles(context.Background(), tt.ws, tt.text)
-			if err != nil || got == nil || len(got) != 0 {
+			if err != nil || got.Articles == nil || len(got.Articles) != 0 || got.SearchCompleted {
 				t.Fatalf("SuggestArticles = %v, %v; want an empty list", got, err)
 			}
 		})
+	}
+}
+
+func TestPortalSuggestionsWithoutHelpSpacesDoNotCompleteSearch(t *testing.T) {
+	db := newEmptySQLite(t)
+	if err := db.Exec(`CREATE TABLE docs_helpcenter_configs (id TEXT PRIMARY KEY, workspace_id TEXT, is_published BOOLEAN)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO docs_helpcenter_configs VALUES ('config', 'ws', true)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	svc := &CustomerPortalService{
+		knowledge: &HelpcenterAISearchService{},
+		inbox:     &SupportInboxService{docsHelpcenterRepo: repository.NewDocsHelpcenterRepository(db)},
+	}
+	ws := &PortalWorkspace{ID: "ws", Settings: model.SupportInboxSettings{PortalIntakeEnabled: true}}
+	got, err := svc.SuggestArticles(context.Background(), ws, "Export fails on Safari")
+	if err != nil || got.SearchCompleted || len(got.Articles) != 0 {
+		t.Fatalf("suggestions without help spaces = %+v, %v", got, err)
 	}
 }
 

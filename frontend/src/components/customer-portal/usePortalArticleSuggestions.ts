@@ -47,6 +47,7 @@ export function usePortalArticleSuggestions(slug: string, subject: string, messa
   const [debounced, setDebounced] = useState(text)
   const [result, setResult] = useState<{ text: string; articles: CustomerPortalArticleSuggestion[] }>({ text: '', articles: [] })
   const seen = useRef({ suggested: new Set<string>(), opened: new Set<string>(), lastShown: '' })
+  const completedSearch = useRef<string | null>(null)
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebounced(text), PORTAL_SUGGESTION_DEBOUNCE_MS)
@@ -55,6 +56,7 @@ export function usePortalArticleSuggestions(slug: string, subject: string, messa
 
   useEffect(() => {
     if (!portalSuggestionSearchable(debounced)) return undefined
+    completedSearch.current = null
     const controller = new AbortController()
     let current = true
     customerPortalService
@@ -62,6 +64,7 @@ export function usePortalArticleSuggestions(slug: string, subject: string, messa
       .then((response) => {
         // A response that lands after newer text was typed is stale.
         if (!current) return
+        completedSearch.current = response.search_completed ? debounced : null
         setResult({ text: debounced, articles: response.articles })
         const ids = response.articles.map((article) => article.id)
         ids.forEach((id) => seen.current.suggested.add(id))
@@ -91,7 +94,8 @@ export function usePortalArticleSuggestions(slug: string, subject: string, messa
     intake_id: intakeId,
     suggested_article_ids: [...seen.current.suggested].slice(0, 25),
     opened_article_ids: [...seen.current.opened].slice(0, 25),
-  }), [intakeId])
+    search_completed: searchable && completedSearch.current === text,
+  }), [intakeId, searchable, text])
 
   return {
     articles: searchable ? result.articles : [],

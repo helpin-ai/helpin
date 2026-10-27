@@ -14,10 +14,10 @@ import (
 
 // RecordIntakeEvent stores one step of writing a portal request.
 func (r *CustomerPortalRepository) RecordIntakeEvent(ctx context.Context, workspaceID, intakeID, eventType string, articleIDs []string, conversationID *string) error {
-	return recordPortalIntakeEvent(r.db.WithContext(ctx), workspaceID, intakeID, eventType, articleIDs, conversationID)
+	return recordPortalIntakeEvent(r.db.WithContext(ctx), workspaceID, intakeID, eventType, articleIDs, conversationID, false)
 }
 
-func recordPortalIntakeEvent(db *gorm.DB, workspaceID, intakeID, eventType string, articleIDs []string, conversationID *string) error {
+func recordPortalIntakeEvent(db *gorm.DB, workspaceID, intakeID, eventType string, articleIDs []string, conversationID *string, searchCompleted bool) error {
 	if articleIDs == nil {
 		articleIDs = []string{}
 	}
@@ -28,7 +28,8 @@ func recordPortalIntakeEvent(db *gorm.DB, workspaceID, intakeID, eventType strin
 	return db.Create(&model.SupportPortalIntakeEvent{
 		ID: uuid.NewString(), WorkspaceID: workspaceID, IntakeID: intakeID, EventType: eventType,
 		ArticleIDs: string(encoded), ArticleCount: len(articleIDs), ConversationID: conversationID,
-		OccurredAt: time.Now().UTC(),
+		SearchCompleted: searchCompleted,
+		OccurredAt:      time.Now().UTC(),
 	}).Error
 }
 

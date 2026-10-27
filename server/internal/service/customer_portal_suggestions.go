@@ -27,6 +27,12 @@ type PortalArticleSuggestion struct {
 	URL       string `json:"url"`
 }
 
+// PortalArticleSuggestions distinguishes completed searches from skipped ones.
+type PortalArticleSuggestions struct {
+	Articles        []PortalArticleSuggestion `json:"articles"`
+	SearchCompleted bool                      `json:"search_completed"`
+}
+
 // SetKnowledgeSearch connects the shared public knowledge search, which
 // suggests articles while customers write requests.
 func (s *CustomerPortalService) SetKnowledgeSearch(search *HelpcenterAISearchService) {
@@ -39,8 +45,8 @@ func (s *CustomerPortalService) SetKnowledgeSearch(search *HelpcenterAISearchSer
 // returns none, as does a portal that takes no requests, a workspace without
 // a published help center, or one with no help spaces selected. Only articles
 // with a public address are suggested, so every suggestion can be opened.
-func (s *CustomerPortalService) SuggestArticles(ctx context.Context, ws *PortalWorkspace, text string) ([]PortalArticleSuggestion, error) {
-	suggestions := []PortalArticleSuggestion{}
+func (s *CustomerPortalService) SuggestArticles(ctx context.Context, ws *PortalWorkspace, text string) (PortalArticleSuggestions, error) {
+	suggestions := PortalArticleSuggestions{Articles: []PortalArticleSuggestion{}}
 	query, ok := portalSuggestionQuery(text)
 	intake := ws.Settings.PortalIntakeEnabled || ws.Settings.PortalAnonymousIntakeEnabled
 	if !ok || !intake || s.knowledge == nil || s.inbox == nil || s.inbox.docsHelpcenterRepo == nil {
@@ -48,7 +54,7 @@ func (s *CustomerPortalService) SuggestArticles(ctx context.Context, ws *PortalW
 	}
 	cfg, err := s.inbox.docsHelpcenterRepo.GetConfig(ctx, ws.ID)
 	if err != nil {
-		return nil, err
+		return suggestions, err
 	}
 	if cfg == nil || !cfg.IsPublished {
 		return suggestions, nil
@@ -58,8 +64,12 @@ func (s *CustomerPortalService) SuggestArticles(ctx context.Context, ws *PortalW
 		return suggestions, err
 	}
 	results, err := s.inbox.searchWidgetHelp(ctx, "portal_intake", ws.ID, defaultHelpcenterLocale(cfg), query, spaces, portalSuggestionLimit)
-	if err != nil || len(results) == 0 {
+	if err != nil {
 		return suggestions, err
+	}
+	suggestions.SearchCompleted = true
+	if len(results) == 0 {
+		return suggestions, nil
 	}
 	if len(results) > portalSuggestionLimit {
 		results = results[:portalSuggestionLimit]
@@ -70,14 +80,14 @@ func (s *CustomerPortalService) SuggestArticles(ctx context.Context, ws *PortalW
 	}
 	urls, err := supportPublicArticleURLs(ctx, s.inbox.docsHelpcenterRepo, ws.ID, ids)
 	if err != nil {
-		return nil, err
+		return suggestions, err
 	}
 	for _, result := range results {
 		url := urls[result.ID]
 		if url == "" {
 			continue
 		}
-		suggestions = append(suggestions, PortalArticleSuggestion{
+		suggestions.Articles = append(suggestions.Articles, PortalArticleSuggestion{
 			ID: result.ID, Title: result.Title, SpaceName: result.SpaceName,
 			Snippet: portalSuggestionSnippet(result), URL: url,
 		})

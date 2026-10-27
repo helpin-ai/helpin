@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   exchangeMagicLink: vi.fn(),
   requests: vi.fn(),
   suggestions: vi.fn(),
+  signOut: vi.fn(),
   navigate: vi.fn(),
   outlet: null as (() => React.ReactNode) | null,
 }))
@@ -194,6 +195,26 @@ describe('CustomerPortalProvider', () => {
     expect(container.textContent).toContain('Related articles')
     const link = container.querySelector<HTMLAnchorElement>('a[href="https://help.example/export"]')
     expect(link?.target).toBe('_blank')
+  })
+
+  it('clears saved drafts when the customer signs out', async () => {
+    const key = 'helpin.portal.acme.1.new-request.draft'
+    window.sessionStorage.setItem(key, JSON.stringify({ subject: 'Private', message: 'Details' }))
+    mocks.pathname = '/portal/acme'
+    mocks.configuration.mockResolvedValue(config)
+    mocks.session.mockResolvedValue(customer)
+    mocks.requests.mockResolvedValue([])
+    mocks.signOut.mockResolvedValue(undefined)
+    mocks.outlet = () => <CustomerPortalHome />
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    await act(async () => root.render(<CustomerPortalProvider slug="acme" />))
+    await settle()
+    const button = Array.from(container.querySelectorAll('button')).find((item) => item.textContent === 'Sign out')!
+    await act(async () => button.click())
+    expect(mocks.signOut).toHaveBeenCalledWith('acme')
+    expect(window.sessionStorage.getItem(key)).toBeNull()
   })
 
   it('shows no company tabs to a requester', async () => {

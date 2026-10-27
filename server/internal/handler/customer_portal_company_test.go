@@ -216,7 +216,7 @@ func TestPortalHTTPSuggestionsShape(t *testing.T) {
 		if w.Code != tt.want {
 			t.Fatalf("%s: status %d %s", tt.path, w.Code, w.Body.String())
 		}
-		if tt.want == http.StatusOK && strings.TrimSpace(w.Body.String()) != `{"articles":[]}` {
+		if tt.want == http.StatusOK && strings.TrimSpace(w.Body.String()) != `{"articles":[],"search_completed":false}` {
 			t.Fatalf("%s: body %s", tt.path, w.Body.String())
 		}
 	}

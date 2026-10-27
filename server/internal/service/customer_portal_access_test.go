@@ -178,6 +178,31 @@ func TestCustomerPortalSessionRevokedWhenAccessChanges(t *testing.T) {
 			},
 		},
 		{
+			name: "any email contact changed", settings: portalSettingsAnyEmail, access: portalAccess(model.PortalAccessAllowed),
+			change: func(t *testing.T, _ *CustomerPortalService, db *gorm.DB, ws *PortalWorkspace, contactID string) *PortalWorkspace {
+				if err := db.Exec(`UPDATE crm_contacts SET email = 'moved@example.com' WHERE id = ?`, contactID).Error; err != nil {
+					t.Fatal(err)
+				}
+				return ws
+			},
+		},
+		{
+			name: "any email contact deleted", settings: portalSettingsAnyEmail, access: portalAccess(model.PortalAccessAllowed),
+			change: func(t *testing.T, _ *CustomerPortalService, db *gorm.DB, ws *PortalWorkspace, contactID string) *PortalWorkspace {
+				if err := db.Exec(`DELETE FROM crm_contacts WHERE id = ?`, contactID).Error; err != nil {
+					t.Fatal(err)
+				}
+				return ws
+			},
+		},
+		{
+			name: "any email duplicate contact", settings: portalSettingsAnyEmail, access: portalAccess(model.PortalAccessAllowed),
+			change: func(t *testing.T, _ *CustomerPortalService, db *gorm.DB, ws *PortalWorkspace, _ string) *PortalWorkspace {
+				setPortalContact(t, db, ws.ID, "customer@example.com", nil)
+				return ws
+			},
+		},
+		{
 			name: "switched to approved contacts", settings: portalSettingsAnyEmail, access: nil,
 			change: func(t *testing.T, svc *CustomerPortalService, db *gorm.DB, ws *PortalWorkspace, _ string) *PortalWorkspace {
 				return setPortalSettings(t, svc, db, ws, portalSettingsApproved)

@@ -284,7 +284,7 @@ func (h *CustomerPortalHandler) Suggestions(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	w.Header().Set("Cache-Control", "private, max-age=60")
-	writeJSON(w, http.StatusOK, map[string]any{"articles": suggestions})
+	writeJSON(w, http.StatusOK, suggestions)
 }
 
 // SuggestionEvent records that suggestions were shown, or one was opened,

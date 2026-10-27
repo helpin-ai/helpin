@@ -64,8 +64,8 @@ func (s *CustomerPortalService) eligibility(ctx context.Context, repo *repositor
 }
 
 // sessionStillAuthorized rechecks eligibility for a signed-in identity. In
-// approved-contacts mode the eligible contact must be the one this session
-// was issued for; a different match requires a fresh sign-in. The session,
+// either mode a bound contact must still be the one this session was issued
+// for; a different match requires a fresh sign-in. The session,
 // not the shared per-email identity, carries that contact, so a later
 // sign-in bound to another contact cannot revive an older session.
 func (s *CustomerPortalService) sessionStillAuthorized(ctx context.Context, ws *PortalWorkspace, session *model.PortalSession, identity *model.SupportPortalIdentity) (bool, error) {
@@ -73,7 +73,7 @@ func (s *CustomerPortalService) sessionStillAuthorized(ctx context.Context, ws *
 	if err != nil || !result.Eligible {
 		return false, err
 	}
-	if ws.Settings.EffectivePortalAccessMode() == model.SupportPortalAccessModeAnyVerifiedEmail {
+	if ws.Settings.EffectivePortalAccessMode() == model.SupportPortalAccessModeAnyVerifiedEmail && session.CRMContactID == nil {
 		return true, nil
 	}
 	return session.CRMContactID != nil && result.ContactID != nil && *session.CRMContactID == *result.ContactID, nil
