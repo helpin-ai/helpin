@@ -208,7 +208,7 @@ func TestCustomerPortalRateRequest(t *testing.T) {
 	setPortalContact(t, db, ws.ID, "customer@example.com", portalAccess(model.PortalAccessAllowed))
 	ws = setPortalSettings(t, svc, db, ws, `{"portal_enabled":true,"portal_intake_enabled":true,"csat_enabled":true}`)
 	access := signInPortal(t, svc, ws, issuePortalLink(t, db, ws.ID, "customer@example.com", time.Now().Add(-time.Hour)))
-	request, err := svc.CreateRequest(ctx, access, "Export broken", "Please help", nil)
+	request, err := svc.CreateRequest(ctx, access, "Export broken", "Please help", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

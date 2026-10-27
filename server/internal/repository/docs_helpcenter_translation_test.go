@@ -24,6 +24,7 @@ func setupDocsHelpcenterTranslationTestDB(t *testing.T) *gorm.DB {
 
 	stmts := []string{
 		`CREATE TABLE docs_spaces (
+			helpcenter_audience TEXT NOT NULL DEFAULT 'public',
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			team_id TEXT,
@@ -153,6 +154,7 @@ func setupDocsHelpcenterTranslationTestDB(t *testing.T) *gorm.DB {
 			updated_at DATETIME
 		)`,
 		`CREATE TABLE docs_helpcenter_articles (
+			customer_published_at DATETIME,
 			id TEXT PRIMARY KEY,
 			document_id TEXT NOT NULL UNIQUE,
 			public_id TEXT NOT NULL DEFAULT '',

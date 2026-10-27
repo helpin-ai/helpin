@@ -90,6 +90,8 @@ type DocsHandler struct {
 	supportEventRecorder service.SupportEventRecorder
 	supportWidgetConfig  supportWidgetConfigProvider
 	aiSearchSvc          *service.HelpcenterAISearchService
+	helpAssistant        *service.HelpAssistantService
+	supportRequestURL    func(ctx context.Context, workspaceID string) string
 	apiReferenceSvc      *service.DocsAPIReferenceService
 }
 
@@ -113,6 +115,12 @@ type publicHelpcenterConfigResponse struct {
 	PublicSDKURL    string `json:"public_sdk_url,omitempty"`
 	*model.DocsHelpcenterConfig
 	SupportWidgetKey *string `json:"support_widget_key,omitempty"`
+	// AIAssistantEnabled reports whether the help center offers the Ask AI
+	// help assistant.
+	AIAssistantEnabled bool `json:"ai_assistant_enabled"`
+	// SupportRequestURL is the customer portal's new-request form, where the
+	// help assistant hands visitors off; empty when the portal takes none.
+	SupportRequestURL string `json:"support_request_url,omitempty"`
 }
 
 type publicHelpcenterBootstrapResponse struct {
@@ -545,7 +553,7 @@ func (h *DocsHandler) UnpublishDocument(w http.ResponseWriter, r *http.Request) 
 
 	// If externally published, unpublish first.
 	art, _ := h.helpcenterSvc.GetArticle(r.Context(), docID)
-	if art != nil && art.PublicPublishedAt != nil {
+	if art.LivePublishedAt() != nil {
 		_ = h.helpcenterSvc.UnpublishExternally(r.Context(), docID)
 	}
 
@@ -563,7 +571,7 @@ func (h *DocsHandler) ArchiveDocument(w http.ResponseWriter, r *http.Request) {
 
 	// If externally published, unpublish first.
 	art, _ := h.helpcenterSvc.GetArticle(r.Context(), docID)
-	if art != nil && art.PublicPublishedAt != nil {
+	if art.LivePublishedAt() != nil {
 		_ = h.helpcenterSvc.UnpublishExternally(r.Context(), docID)
 	}
 
@@ -2166,21 +2174,14 @@ func (h *DocsHandler) PublicSearchArticles(w http.ResponseWriter, r *http.Reques
 	var results []model.PublicSearchResultResponse
 	var err error
 	if mode == "semantic" && h.aiSearchSvc != nil {
-		// Semantic retrieval over public chunks; empty results or errors fall
-		// back to full-text search so the search box never regresses.
-		results, err = h.aiSearchSvc.SemanticSearch(r.Context(), cfg.WorkspaceID, locale, publicAnswerFallbackLocale(cfg, locale), query, spaceSlug, limit)
-		if err != nil {
-			slog.WarnContext(r.Context(), "helpcenter semantic search failed; falling back to full-text",
-				"error", err, "workspace_id", cfg.WorkspaceID)
-			results = nil
-		}
-	}
-	if len(results) == 0 {
+		// Semantic retrieval with the shared full-text fallback.
+		results, err = h.aiSearchSvc.Search(r.Context(), cfg.WorkspaceID, locale, publicAnswerFallbackLocale(cfg, locale), query, spaceSlug, limit)
+	} else {
 		results, err = h.searchSvc.PublicSearch(r.Context(), cfg.WorkspaceID, locale, query, spaceSlug, limit)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
 	searchSourceSignal := model.SupportCoverageSourceSelfService

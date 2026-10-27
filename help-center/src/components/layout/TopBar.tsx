@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useQueries } from '@tanstack/react-query'
-import { Search, Moon, Sun } from 'lucide-react'
+import { Search, Moon, Sparkles, Sun } from 'lucide-react'
 import {
   useParams,
   useMatches,
@@ -29,6 +29,8 @@ import type { ArticleDetail, CollectionPage, NavItem, Space } from '@/lib/types'
 
 interface TopBarProps {
   onSearchClick: () => void
+  /** Opens Ask AI; absent when the help center does not offer it. */
+  onAskAIClick?: () => void
 }
 
 function unwrap<T>(res: { data: T | null; error: string | null }) {
@@ -90,7 +92,7 @@ function getRouteLoaderData(matches: Array<{ loaderData?: unknown }>) {
   return undefined
 }
 
-export function TopBar({ onSearchClick }: TopBarProps) {
+export function TopBar({ onSearchClick, onAskAIClick }: TopBarProps) {
   const headerRef = useRef<HTMLElement>(null)
   const leftContentRef = useRef<HTMLDivElement>(null)
   const rightContentRef = useRef<HTMLDivElement>(null)
@@ -536,6 +538,17 @@ export function TopBar({ onSearchClick }: TopBarProps) {
         ref={rightContentRef}
         className="flex w-max items-center justify-end justify-self-end gap-1"
       >
+        {onAskAIClick && (
+          <button
+            type="button"
+            onClick={onAskAIClick}
+            title="Ask AI (⌘I)"
+            className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <Sparkles size={14} className="shrink-0" style={{ color: config.brand_color || undefined }} />
+            <span className="hidden sm:inline">Ask AI</span>
+          </button>
+        )}
         {sortedLinks.length > 0 && (
           <nav className="hidden md:flex items-center gap-1">
             {sortedLinks.map((link, i) =>

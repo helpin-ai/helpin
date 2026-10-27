@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { ArrowReloadHorizontalIcon, ArrowRight01Icon } from '@/lib/icons'
 import type { CustomerPortalRequest } from '@/lib/services/customerPortalService'
 import { cn } from '@/lib/utils'
-import { requestNumber } from './portalRequestFormat'
+import { requestedBy, requestNumber } from './portalRequestFormat'
 import { formatPortalAbsoluteTime, formatPortalRelativeTime } from './portalTime'
 
 type RequestStatus = CustomerPortalRequest['status']
@@ -34,15 +34,16 @@ export function RequestStatusText({ status }: { status: RequestStatus }) {
   return <QuietStatusText tone={meta.tone}>{meta.label}</QuietStatusText>
 }
 
-function repliedBy(request: CustomerPortalRequest, supportName: string) {
-  if (request.last_message_from === 'customer') return 'You replied'
+function repliedBy(request: CustomerPortalRequest, supportName: string, company: boolean) {
+  // In a company list a colleague may have written the latest customer reply.
+  if (request.last_message_from === 'customer') return company ? 'Your team replied' : 'You replied'
   if (request.last_message_from === 'support') return `${supportName} replied`
   return null
 }
 
 function matchesSearch(request: CustomerPortalRequest, search: string) {
   if (!search) return true
-  const haystack = [request.subject, request.last_message_preview, requestNumber(request), request.number ? String(request.number) : '']
+  const haystack = [request.subject, request.last_message_preview, requestNumber(request), request.number ? String(request.number) : '', request.requested_by]
   return haystack.some((value) => value?.toLowerCase().includes(search))
 }
 
@@ -50,13 +51,15 @@ function matchesSearch(request: CustomerPortalRequest, search: string) {
  * PortalRequestTable lists the customer's requests the way My Work lists
  * tasks: filter pills with counts and a search in a hairline toolbar, then
  * collapsible status groups of table rows. Filtering happens here so counts,
- * groups and the status column always agree.
+ * groups and the status column always agree. A company list (companyName set)
+ * also says who asked for each request.
  */
-export function PortalRequestTable({ requests, slug, supportName, onRefresh }: {
+export function PortalRequestTable({ requests, slug, supportName, onRefresh, companyName }: {
   requests: CustomerPortalRequest[]
   slug: string
   supportName: string
   onRefresh: () => void
+  companyName?: string
 }) {
   const [filter, setFilter] = useState<RequestFilter>('all')
   const [search, setSearch] = useState('')
@@ -109,7 +112,11 @@ export function PortalRequestTable({ requests, slug, supportName, onRefresh }: {
       </div>
 
       {requests.length === 0 ? (
-        <QuietEmptyState title="No requests yet" description="Requests you send to support will appear here with their latest status." />
+        companyName ? (
+          <QuietEmptyState title="No company requests yet" description={`Requests anyone at ${companyName} sends to support will appear here with their latest status.`} />
+        ) : (
+          <QuietEmptyState title="No requests yet" description="Requests you send to support will appear here with their latest status." />
+        )
       ) : groups.length === 0 ? (
         <QuietEmptyState
           title="No matching requests"
@@ -126,13 +133,14 @@ export function PortalRequestTable({ requests, slug, supportName, onRefresh }: {
           slug={slug}
           supportName={supportName}
           now={now}
+          company={Boolean(companyName)}
         />
       ))}
     </div>
   )
 }
 
-function RequestGroup({ label, requests, initiallyCollapsed, showAll: searching, slug, supportName, now }: {
+function RequestGroup({ label, requests, initiallyCollapsed, showAll: searching, slug, supportName, now, company }: {
   label: string
   requests: CustomerPortalRequest[]
   initiallyCollapsed: boolean
@@ -140,6 +148,7 @@ function RequestGroup({ label, requests, initiallyCollapsed, showAll: searching,
   slug: string
   supportName: string
   now: number
+  company: boolean
 }) {
   const [collapsed, setCollapsed] = useState(initiallyCollapsed)
   const [showAll, setShowAll] = useState(false)
@@ -160,7 +169,7 @@ function RequestGroup({ label, requests, initiallyCollapsed, showAll: searching,
       {collapsed ? null : (
         <div className="pb-3">
           <ul className="divide-y divide-quiet-divider-light" aria-label={`${label} requests`}>
-            {visible.map((request) => <RequestRow key={request.reference} request={request} slug={slug} supportName={supportName} now={now} />)}
+            {visible.map((request) => <RequestRow key={request.reference} request={request} slug={slug} supportName={supportName} now={now} company={company} />)}
           </ul>
           {!searching && requests.length > PAGE_SIZE ? (
             <QuietTextAction onClick={() => setShowAll((value) => !value)} className="mt-3">
@@ -173,9 +182,9 @@ function RequestGroup({ label, requests, initiallyCollapsed, showAll: searching,
   )
 }
 
-function RequestRow({ request, slug, supportName, now }: { request: CustomerPortalRequest; slug: string; supportName: string; now: number }) {
+function RequestRow({ request, slug, supportName, now, company }: { request: CustomerPortalRequest; slug: string; supportName: string; now: number; company: boolean }) {
   const status = statusOf(request)
-  const who = repliedBy(request, supportName)
+  const who = repliedBy(request, supportName, company)
   const when = formatPortalRelativeTime(request.last_activity_at, now)
   const absolute = request.last_activity_at ? formatPortalAbsoluteTime(request.last_activity_at) : undefined
   const params = { slug, reference: request.reference }
@@ -196,6 +205,7 @@ function RequestRow({ request, slug, supportName, now }: { request: CustomerPort
         </Link>
         <div className="col-start-2 mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-quiet-text-tertiary">
           {request.unread ? <span className="shrink-0 font-semibold uppercase tracking-[0.03em] text-quiet-accent">New reply</span> : null}
+          {company ? <span className="shrink-0 font-medium text-quiet-text-secondary">Asked by {requestedBy(request)}</span> : null}
           {who ? <span className="shrink-0">{who}</span> : null}
           {request.last_message_preview ? <span className="min-w-0 flex-1 basis-40 truncate">{request.last_message_preview}</span> : null}
           <span className="flex w-full items-center gap-2 @min-[720px]:hidden">

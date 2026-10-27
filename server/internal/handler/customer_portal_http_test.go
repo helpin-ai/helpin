@@ -28,7 +28,10 @@ func TestPortalHTTPAuthorizationAndVisibility(t *testing.T) {
 		`CREATE TABLE workspaces (id TEXT PRIMARY KEY, slug TEXT)`,
 		`CREATE TABLE support_widget_installations (id TEXT PRIMARY KEY, workspace_id TEXT, settings TEXT, active BOOLEAN)`,
 		`CREATE TABLE support_portal_identities (id TEXT PRIMARY KEY, workspace_id TEXT, email TEXT, display_name TEXT, crm_contact_id TEXT)`,
-		`CREATE TABLE crm_contacts (id TEXT PRIMARY KEY, workspace_id TEXT, email TEXT, portal_access TEXT)`,
+		`CREATE TABLE crm_contacts (id TEXT PRIMARY KEY, workspace_id TEXT, first_name TEXT, last_name TEXT, email TEXT, portal_access TEXT, portal_role TEXT)`,
+		`CREATE TABLE crm_companies (id TEXT PRIMARY KEY, workspace_id TEXT, name TEXT, portal_default_role TEXT)`,
+		`CREATE TABLE crm_associations (id TEXT PRIMARY KEY, workspace_id TEXT, from_object_type TEXT, from_object_id TEXT, to_object_type TEXT, to_object_id TEXT)`,
+		`CREATE TABLE support_portal_company_members (workspace_id TEXT, crm_company_id TEXT, crm_contact_id TEXT, added_by_user_id TEXT, created_at DATETIME, PRIMARY KEY (crm_company_id, crm_contact_id))`,
 		`CREATE TABLE support_portal_sessions (id TEXT PRIMARY KEY, workspace_id TEXT, identity_id TEXT, crm_contact_id TEXT, token_hash TEXT, expires_at DATETIME, revoked_at DATETIME, reconciled_at DATETIME)`,
 		`CREATE TABLE support_conversations (snoozed_until DATETIME, snoozed_by_user_id TEXT, id TEXT PRIMARY KEY, workspace_id TEXT, display_id INTEGER, last_public_message_id TEXT, last_public_sender_type TEXT, customer_awaiting_response BOOLEAN, customer_email TEXT, subject TEXT, status TEXT, channel TEXT, source TEXT, portal_visible BOOLEAN, portal_visibility_changed_at DATETIME, primary_recipient_state TEXT, created_at DATETIME, last_public_message_at DATETIME, resolved_at DATETIME, anonymized_at DATETIME)`,
 		`CREATE TABLE support_portal_request_references (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, portal_identity_id TEXT, reference TEXT, customer_last_read_at DATETIME)`,
@@ -103,6 +106,9 @@ func TestPortalHTTPAuthorizationAndVisibility(t *testing.T) {
 		r.Get("/session", h.Session)
 		r.Get("/requests", h.Requests)
 		r.Get("/requests/{reference}", h.RequestDetail)
+		r.Get("/help", h.HelpArticles)
+		r.Get("/help/search", h.HelpSearch)
+		r.Get("/help/articles/{articleId}", h.HelpArticle)
 	})
 	for _, credential := range []struct {
 		name     string
@@ -116,9 +122,10 @@ func TestPortalHTTPAuthorizationAndVisibility(t *testing.T) {
 		{"portal cookie", func(r *http.Request) { r.AddCookie(&http.Cookie{Name: portalCookie, Value: secret}) }, true},
 	} {
 		t.Run(credential.name, func(t *testing.T) {
-			paths := []string{"/session", "/requests", "/requests/visible"}
+			// Help articles for signed-in customers need a portal session too.
+			paths := []string{"/session", "/requests", "/help", "/help/search?q=pricing", "/requests/visible", "/help/articles/any"}
 			if credential.allowed {
-				paths = paths[:2]
+				paths = paths[:4]
 			} // Detail success requires the full inbox projection schema.
 			for _, path := range paths {
 				r := httptest.NewRequest(http.MethodGet, "/api/public/portal/space-0"+path, nil)

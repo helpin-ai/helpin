@@ -82,10 +82,12 @@ type SupportInboxService struct {
 	taskService                  *PMTaskService
 	geoIPResolver                geoip.Resolver
 	supportEventRecorder         SupportEventRecorder
-	entitlementSvc               EntitlementPolicy
-	slaService                   *SupportSLAService
-	webhooks                     *WebhookService
-	routeDomain                  string
+	// knowledgeSearch is the shared public help center search.
+	knowledgeSearch publicKnowledgeSearch
+	entitlementSvc  EntitlementPolicy
+	slaService      *SupportSLAService
+	webhooks        *WebhookService
+	routeDomain     string
 }
 
 // SetSLAService attaches SLA status to listed and opened conversations.
@@ -2418,6 +2420,8 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 
 	if portalReply {
 		audit, _ := ctx.Value(portalReplyAuditKey{}).(portalReplyAudit)
+		// Company colleagues share requests, so each portal reply names its author.
+		msg.Metadata = withSupportMessageMetadataValue(msg.Metadata, "portal_identity_id", audit.IdentityID)
 		wasResolved := conv.Status == model.SupportConversationStatusWaitingOnCustomer || conv.Status == model.SupportConversationStatusResolved
 		updatedConv := *conv
 		err := s.conversationRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {

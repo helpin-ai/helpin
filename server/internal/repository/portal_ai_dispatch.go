@@ -2,13 +2,10 @@ package repository
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"gorm.io/gorm"
 )
-
-var ErrPortalAINoPendingCustomerMessage = errors.New("no unanswered portal customer message is available for AI")
 
 type PortalAIDispatch struct {
 	SourceMessageID string
@@ -29,47 +26,6 @@ func EnqueuePortalAIDispatch(ctx context.Context, tx *gorm.DB, workspaceID, conv
 	return tx.WithContext(ctx).Exec(`INSERT INTO support_portal_ai_dispatches
 		(source_message_id, workspace_id, conversation_id, mode_at_enqueue) VALUES (?, ?, ?, ?)
 		ON CONFLICT (source_message_id) DO NOTHING`, messageID, workspaceID, conversationID, mode).Error
-}
-
-// EnqueueLatestPortalCustomerMessage is used only for an explicit teammate
-// handoff of an existing request. Earlier AI-processed turns are not replayed.
-func EnqueueLatestPortalCustomerMessage(ctx context.Context, db *gorm.DB, workspaceID, conversationID, mode string) error {
-	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return EnqueueLatestPortalCustomerMessageTx(ctx, tx, workspaceID, conversationID, mode)
-	})
-}
-
-func EnqueueLatestPortalCustomerMessageTx(ctx context.Context, tx *gorm.DB, workspaceID, conversationID, mode string) error {
-	var candidate struct{ ID string }
-	if err := tx.Raw(`SELECT msg.id FROM support_messages AS msg
-			JOIN support_conversations AS conv ON conv.id = msg.conversation_id
-			WHERE conv.workspace_id = ? AND conv.id = ? AND conv.channel = 'portal'
-			AND conv.portal_visible = true AND conv.status = 'open'
-			AND msg.sender_type = 'customer' AND msg.message_type = 'reply'
-			AND msg.id = (SELECT latest.id FROM support_messages AS latest
-				WHERE latest.workspace_id = ? AND latest.conversation_id = ?
-				AND latest.sender_type = 'customer' AND latest.message_type = 'reply'
-				ORDER BY latest.created_at DESC, latest.id DESC LIMIT 1)
-			AND NOT EXISTS (SELECT 1 FROM ai_message_processing AS p WHERE p.source_message_id = msg.id)
-			AND NOT EXISTS (SELECT 1 FROM support_messages AS reply
-				WHERE reply.conversation_id = conv.id AND reply.created_at > msg.created_at
-				AND reply.sender_type <> 'customer' AND reply.message_type = 'reply' AND reply.is_internal = false)
-			LIMIT 1`, workspaceID, conversationID, workspaceID, conversationID).Scan(&candidate).Error; err != nil {
-		return err
-	}
-	if candidate.ID == "" {
-		return ErrPortalAINoPendingCustomerMessage
-	}
-	result := tx.WithContext(ctx).Exec(`INSERT INTO support_portal_ai_dispatches
-			(source_message_id, workspace_id, conversation_id, mode_at_enqueue) VALUES (?, ?, ?, ?)
-			ON CONFLICT (source_message_id) DO NOTHING`, candidate.ID, workspaceID, conversationID, mode)
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		return ErrPortalAINoPendingCustomerMessage
-	}
-	return nil
 }
 
 // ClaimDue leases a bounded batch across API replicas. Expired leases are

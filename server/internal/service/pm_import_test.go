@@ -1244,6 +1244,7 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			updated_at DATETIME
 		)`,
 		`CREATE TABLE docs_spaces (
+			helpcenter_audience TEXT NOT NULL DEFAULT 'public',
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			team_id TEXT,

@@ -863,6 +863,7 @@ func main() {
 			HandoffThreshold: cfg.JevHandoffThreshold, FollowUpThreshold: cfg.JevFollowUpThreshold,
 			RoutingMode: cfg.JevRoutingMode, TagsMode: cfg.JevTagsMode, WorkspaceIDs: strings.Split(cfg.JevWorkspaceIDs, ","),
 			RoutingThreshold: cfg.JevRoutingThreshold, TagThreshold: cfg.JevTagThreshold, DailyLimit: cfg.JevDailyLimit,
+			PriorityMode: cfg.JevPriorityMode, PriorityThreshold: cfg.JevPriorityThreshold,
 		}, jevClient, repository.NewSupportJevRepository(db), repository.NewAIExecutionUsageRepository(db), supportTagService)
 		if jevErr != nil {
 			fatalWithSentry("configure support Jev", jevErr)
@@ -871,7 +872,7 @@ func main() {
 		supportInboxTriageService.SetJevService(jevService)
 		supportJevService = jevService
 	}
-	supportTagJobs := service.NewSupportTagJobService(repository.NewSupportTagJobRepository(db), supportMessageRepo, supportConversationRepo, supportJevService, editionServices.Entitlements)
+	supportTagJobs := service.NewSupportTagJobService(repository.NewSupportTagJobRepository(db), supportMessageRepo, supportConversationRepo, supportInstallRepo, supportJevService, editionServices.Entitlements)
 
 	jevProductDecisions, jevProductErr := service.NewJevDecisionService(pmJevProvider, repository.NewJevDecisionRepository(db), repository.NewAIExecutionUsageRepository(db), cfg.JevProductPolicies, strings.Split(cfg.JevWorkspaceIDs, ","))
 	if jevProductErr != nil {
@@ -1173,6 +1174,7 @@ func main() {
 		},
 	).SetTemporalClient(temporalClient, resolvePMImportEncryptionKey(cfg)).SetIntercomBaseURL(cfg.IntercomAPIBaseURL)
 	docsSpaceService.SetTranslationService(docsHelpcenterTranslationService)
+	docsSpaceService.SetHelpcenterSync(docsHelpcenterService)
 	docsCollectionService.SetTranslationService(docsHelpcenterTranslationService)
 	docsDocumentService.SetTranslationService(docsHelpcenterTranslationService)
 	docsContentService.SetTranslationService(docsHelpcenterTranslationService)
@@ -1876,6 +1878,24 @@ func main() {
 	// Lazy chunk backfill for workspaces whose help center predates
 	// agent-independent auto-indexing.
 	helpcenterAISearchService.SetAutoIndexer(docsEmbeddingService)
+	// An explicitly configured answer model replaces the shared route default.
+	if strings.TrimSpace(cfg.HelpcenterAnswerModel) != "" {
+		helpcenterAISearchService.SetAnswerModelOverride(helpcenterAnswerProvider, helpcenterAnswerModel)
+	}
+	customerPortalService.SetKnowledgeSearch(helpcenterAISearchService)
+	supportInboxService.SetKnowledgeSearch(helpcenterAISearchService)
+	// Help assistant: answers help center and portal visitors in lightweight
+	// agent runs, from published articles in the visitor's audience.
+	helpAssistantService := service.NewHelpAssistantService(
+		repository.NewHelpAssistantRepository(db), agentService, supportInboxService,
+		docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsChunkRepo,
+		helpcenterAISearchService, supportRunEvidenceRepo,
+	)
+	commandService.SetHelpAssistant(helpAssistantService)
+	customerPortalService.SetHelpAssistant(helpAssistantService)
+	if runFinalizers != nil {
+		runFinalizers.SetHelpAssistant(helpAssistantService)
+	}
 
 	requestLimiter := ratelimit.New(redisClient, ratelimit.Config{RequestsPerMinute: cfg.AuthenticatedRateLimit, ExpensivePerMinute: cfg.ExpensiveRateLimit})
 
@@ -1907,6 +1927,7 @@ func main() {
 		AuthenticatedRateLimit:    middleware.AuthenticatedRateLimit(requestLimiter),
 		WidgetRateLimit:           middleware.WidgetRateLimit(redisClient),
 		HelpcenterAnswerRateLimit: middleware.HelpcenterAnswerRateLimit(redisClient),
+		HelpAssistantRateLimit:    middleware.HelpAssistantRateLimit(redisClient),
 		DemoReadOnly:              demoReadOnly,
 		Assets:                    handler.NewAssetHandler(s3Client),
 		Health:                    handler.NewHealthHandler(s3Client, geoIPResolver),
@@ -2071,6 +2092,11 @@ func main() {
 		handlers.Auth.SetSignupPolicy(instanceService)
 	}
 	handlers.Docs.SetHelpcenterAISearchService(helpcenterAISearchService)
+	handlers.Docs.SetHelpAssistant(helpAssistantService)
+	handlers.Docs.SetSupportRequestURL(customerPortalService.NewRequestURL)
+	if handlers.CustomerPortal != nil {
+		handlers.CustomerPortal.SetHelpAssistant(helpAssistantService)
+	}
 	handlers.Docs.SetAPIReferenceService(docsAPIReferenceService)
 
 	// Slug resolver adapts workspace repo for RBAC middleware.

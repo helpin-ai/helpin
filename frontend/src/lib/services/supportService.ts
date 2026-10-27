@@ -26,6 +26,9 @@ import type {
   SupportInstallationResponse,
   SupportInboxSettings,
   CustomerPortalAccessSummary,
+  CustomerPortalCompanyAccess,
+  CustomerPortalConversationContext,
+  CustomerPortalRole,
   CustomerPortalContactAccess,
   CustomerPortalContactAccessValue,
   SupportRoutingUsageStatus,
@@ -304,7 +307,7 @@ export const supportService = {
     `/support/inbox/conversations/${conversationId}/create-task${qs(workspaceId)}`,
     payload,
   ),
-  changeConversationAIControl: (workspaceId: string, conversationId: string, payload: { action: 'pause' | 'return' | 'run_now'; expected_version: number; confirm_human_request?: boolean }) =>
+  changeConversationAIControl: (workspaceId: string, conversationId: string, payload: { action: 'pause' | 'return'; expected_version: number; confirm_human_request?: boolean }) =>
     api.post<{ updated: boolean }>(`/support/inbox/conversations/${conversationId}/ai-control?workspace_id=${workspaceId}`, payload),
 
   assignConversationAgent: (workspaceId: string, conversationId: string, payload: AssignConversationAgentRequest) =>
@@ -375,6 +378,18 @@ export const supportService = {
     api.get<CustomerPortalContactAccess>(`/support/inbox/portal/contacts/${encodeURIComponent(contactId)}/access${qs(workspaceId)}`),
   setContactPortalAccess: (workspaceId: string, contactId: string, portalAccess: CustomerPortalContactAccessValue | null) =>
     api.put<CustomerPortalContactAccess>(`/support/inbox/portal/contacts/${encodeURIComponent(contactId)}/access${qs(workspaceId)}`, { portal_access: portalAccess }),
+  setContactPortalRole: (workspaceId: string, contactId: string, portalRole: CustomerPortalRole | null) =>
+    api.put<CustomerPortalContactAccess>(`/support/inbox/portal/contacts/${encodeURIComponent(contactId)}/role${qs(workspaceId)}`, { portal_role: portalRole }),
+  getCompanyPortalAccess: (workspaceId: string, companyId: string) =>
+    api.get<CustomerPortalCompanyAccess>(`/support/inbox/portal/companies/${encodeURIComponent(companyId)}${qs(workspaceId)}`),
+  setCompanyPortalRole: (workspaceId: string, companyId: string, defaultRole: CustomerPortalRole | null) =>
+    api.put<CustomerPortalCompanyAccess>(`/support/inbox/portal/companies/${encodeURIComponent(companyId)}${qs(workspaceId)}`, { default_role: defaultRole }),
+  addCompanyPortalDomainMembers: (workspaceId: string, companyId: string) =>
+    api.post<{ added: number; company: CustomerPortalCompanyAccess }>(`/support/inbox/portal/companies/${encodeURIComponent(companyId)}/members/from-domain${qs(workspaceId)}`, {}),
+  setCompanyPortalMember: (workspaceId: string, companyId: string, contactId: string, member: boolean) =>
+    api.put<CustomerPortalCompanyAccess>(`/support/inbox/portal/companies/${encodeURIComponent(companyId)}/members/${encodeURIComponent(contactId)}${qs(workspaceId)}`, { member }),
+  getConversationPortalContext: (workspaceId: string, conversationId: string) =>
+    api.get<CustomerPortalConversationContext>(`/support/inbox/conversations/${encodeURIComponent(conversationId)}/portal-context${qs(workspaceId)}`),
   resendPortalConfirmation: (workspaceId: string, conversationId: string) =>
     api.post<void>(`/support/inbox/conversations/${encodeURIComponent(conversationId)}/portal-confirmation${qs(workspaceId)}`, {}),
   /**

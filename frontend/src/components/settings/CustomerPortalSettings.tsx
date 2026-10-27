@@ -6,10 +6,14 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { useChatSettings, useCustomerPortalAccessSummary, useSupportAgents, useUpdateCustomerPortalSettings } from '@/hooks/queries/useSupport';
+import { useDocsSpaces } from '@/hooks/queries';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/design-system/quiet-dropdown-select';
 import { useSettingsAutosave } from '@/hooks/useSettingsAutosave';
 import type { CustomerPortalAccessMode, CustomerPortalAccessSummary, SupportInboxSettings } from '@/lib/pmTypes';
 import { serializeQueryFilterGroup } from '@/lib/queryBuilder';
+import { HelpAssistantSetting } from './HelpAssistantSetting';
+import { HelpSpacesPicker } from './HelpSpacesPicker';
+import { toggleHelpSpaceId } from './helpSpaces';
 import { SettingsAutosaveGuard } from './SettingsAutosaveGuard';
 import { SettingsSaveBar } from './SettingsSaveBar';
 import { SettingsSaveStatus } from './SettingsSaveStatus';
@@ -17,13 +21,18 @@ import { SettingsSaveStatus } from './SettingsSaveStatus';
 type PortalSettingsDraft = Pick<
   SupportInboxSettings,
   'portal_enabled' | 'portal_intake_enabled' | 'portal_anonymous_intake_enabled'
-> & { portal_access_mode: CustomerPortalAccessMode; portal_ai_mode: 'off' | 'internal_note' | 'ai_first'; portal_ai_agent_id: string };
+> & { widget_help_space_ids: string[] } & { portal_access_mode: CustomerPortalAccessMode; portal_ai_mode: 'off' | 'internal_note'; portal_ai_agent_id: string };
 
 const accessModes: { value: CustomerPortalAccessMode; label: string; description: string }[] = [
   {
     value: 'approved_contacts',
     label: 'Approved contacts',
     description: 'Only CRM contacts a support admin has allowed can sign in.',
+  },
+  {
+    value: 'company_members',
+    label: 'Company members only',
+    description: 'Only allowed contacts who are members of a company with company access turned on can sign in.',
   },
   {
     value: 'any_verified_email',
@@ -60,9 +69,11 @@ export function CustomerPortalSettings({ workspaceId, workspaceSlug, editable }:
     portal_enabled: settings.portal_enabled ?? false,
     portal_intake_enabled: settings.portal_intake_enabled ?? false,
     portal_anonymous_intake_enabled: settings.portal_anonymous_intake_enabled ?? false,
-    portal_access_mode: settings.portal_access_mode === 'any_verified_email' ? 'any_verified_email' : 'approved_contacts',
-    portal_ai_mode: settings.portal_ai_mode === 'ai_first' || settings.portal_ai_mode === 'internal_note' ? settings.portal_ai_mode : 'off',
+    portal_access_mode: settings.portal_access_mode === 'any_verified_email' || settings.portal_access_mode === 'company_members' ? settings.portal_access_mode : 'approved_contacts',
+    // The retired customer-reply mode became private suggestions on the server.
+    portal_ai_mode: settings.portal_ai_mode === 'off' || !settings.portal_ai_mode ? 'off' : 'internal_note',
     portal_ai_agent_id: settings.portal_ai_agent_id ?? '',
+    widget_help_space_ids: settings.widget_help_space_ids ?? [],
   };
   return <CustomerPortalSettingsEditor key={workspaceId} workspaceId={workspaceId} workspaceSlug={workspaceSlug} editable={editable} initialDraft={initialDraft} sharedAgentId={settings.ai_agent_id} />;
 }
@@ -77,6 +88,7 @@ function CustomerPortalSettingsEditor({ workspaceId, workspaceSlug, editable, in
   const update = useUpdateCustomerPortalSettings(workspaceId);
   const summary = useCustomerPortalAccessSummary(workspaceId, editable);
   const { data: supportAgents = [] } = useSupportAgents(workspaceId);
+  const { data: docsSpaces = [], isLoading: docsSpacesLoading } = useDocsSpaces(workspaceId);
   const [draft, setDraft] = useState<PortalSettingsDraft>(initialDraft);
 	const effectiveAgentId = draft.portal_ai_agent_id || sharedAgentId;
 
@@ -184,22 +196,39 @@ function CustomerPortalSettingsEditor({ workspaceId, workspaceSlug, editable, in
         )}
       </section>
 
+      <section className="border-b border-border/70 pb-7" aria-labelledby="portal-articles-heading">
+        <h2 id="portal-articles-heading" className="text-base font-semibold">Help articles</h2>
+        <p className="mt-1 mb-4 text-sm text-muted-foreground">While a customer writes a new request, the portal suggests articles from these spaces.</p>
+        <HelpSpacesPicker
+          spaces={docsSpaces}
+          loading={docsSpacesLoading}
+          selectedIds={draft.widget_help_space_ids}
+          disabled={!editable}
+          onToggle={(spaceId, enabled) => setDraft((current) => ({ ...current, widget_help_space_ids: toggleHelpSpaceId(current.widget_help_space_ids, spaceId, enabled) }))}
+        />
+        {!docsSpacesLoading && draft.widget_help_space_ids.length === 0 && (
+          <p className="mt-3 text-sm text-muted-foreground">No help spaces selected — article suggestions are off.</p>
+        )}
+        <div className="mt-5">
+          <HelpAssistantSetting workspaceId={workspaceId} editable={editable} />
+        </div>
+      </section>
+
       <section className="border-b border-border/70 pb-7" aria-labelledby="portal-ai-heading">
-        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Customer replies</p>
-        <h2 id="portal-ai-heading" className="mt-1 text-base font-semibold">AI replies</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Choose how a support agent helps with new portal requests. Chat and email AI settings are separate.</p>
+        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Team replies</p>
+        <h2 id="portal-ai-heading" className="mt-1 text-base font-semibold">AI suggestions</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Your team answers portal requests. A support agent can draft a private suggestion for the teammate. Chat and email AI settings are separate.</p>
         <div className="mt-5 grid gap-5 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="portal-ai-mode">Response mode</Label>
             <Select value={draft.portal_ai_mode} onValueChange={(value) => setDraft((current) => ({ ...current, portal_ai_mode: value as PortalSettingsDraft['portal_ai_mode'] }))}>
               <SelectTrigger id="portal-ai-mode" aria-label="Portal AI response mode" disabled={!editable}><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="off">Off — team replies</SelectItem>
+                <SelectItem value="off">Off</SelectItem>
                 <SelectItem value="internal_note" disabled={!effectiveAgentId}>Private suggestions</SelectItem>
-                <SelectItem value="ai_first" disabled={!effectiveAgentId}>Reply to customers</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">Private suggestions are generated for unassigned requests and stay in the team inbox. Customer replies are sent only after server checks pass.</p>
+            <p className="text-xs text-muted-foreground">Suggestions are drafted for unassigned requests and stay in the team inbox. Customers never see them.</p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="portal-ai-agent">Support agent</Label>
@@ -210,7 +239,7 @@ function CustomerPortalSettingsEditor({ workspaceId, workspaceSlug, editable, in
                 {supportAgents.map((agent) => <SelectItem key={agent.id} value={agent.id}>{agent.name}</SelectItem>)}
               </SelectContent>
             </Select>
-            {!effectiveAgentId && <p className="text-xs text-muted-foreground">Select a support agent before enabling AI replies.</p>}
+            {!effectiveAgentId && <p className="text-xs text-muted-foreground">Select a support agent before enabling AI suggestions.</p>}
           </div>
         </div>
       </section>

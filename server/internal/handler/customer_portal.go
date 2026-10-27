@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
@@ -24,7 +26,8 @@ const (
 // CustomerPortalHandler adapts the public slug-based portal contract to the
 // customer portal service. The session cookie is never exposed to scripts.
 type CustomerPortalHandler struct {
-	portal *service.CustomerPortalService
+	portal    *service.CustomerPortalService
+	assistant *service.HelpAssistantService
 }
 
 // NewCustomerPortalHandler creates the customer portal handler.
@@ -41,6 +44,8 @@ type portalRequestBody struct {
 	Subject       string   `json:"subject"`
 	Message       string   `json:"message"`
 	AttachmentIDs []string `json:"attachment_ids"`
+	// Intake is what the customer saw while writing; optional.
+	Intake *model.PortalIntake `json:"intake"`
 }
 
 // workspace resolves the enabled portal for the slug or writes a 404.
@@ -81,7 +86,9 @@ func (h *CustomerPortalHandler) Config(w http.ResponseWriter, r *http.Request) {
 	if ws == nil {
 		return
 	}
-	writeJSON(w, http.StatusOK, h.portal.Configuration(r.Context(), ws))
+	configuration := h.portal.Configuration(r.Context(), ws)
+	configuration.AssistantEnabled = h.assistant.Available(r.Context(), ws.ID)
+	writeJSON(w, http.StatusOK, configuration)
 }
 
 // HelpcenterPortal handles GET /api/hc/{subdomain}/portal: the help center
@@ -138,18 +145,39 @@ func (h *CustomerPortalHandler) Exchange(w http.ResponseWriter, r *http.Request)
 	}
 	clearPortalCookie(w, r, portalCookieRoot)
 	setPortalCookie(w, r, token, int(service.PortalSessionTTL/time.Second))
+	response := portalCustomer(identity)
+	// Answer like Session, so company views appear without a second request.
+	if access, err := h.portal.Authenticate(r.Context(), ws, token); err == nil {
+		response = h.portalSession(r, access)
+	} else {
+		slog.WarnContext(r.Context(), "portal session lookup after exchange failed", "workspace_id", ws.ID, "error", err)
+		response["companies"] = []repository.PortalCompanyMembership{}
+	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, portalCustomer(identity))
+	writeJSON(w, http.StatusOK, response)
 }
 
-// Session returns the signed-in customer.
+// Session returns the signed-in customer and the companies whose portal they
+// belong to. A failed company lookup degrades to a personal portal.
 func (h *CustomerPortalHandler) Session(w http.ResponseWriter, r *http.Request) {
 	access := h.authorized(w, r)
 	if access == nil {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, portalCustomer(&access.Identity))
+	writeJSON(w, http.StatusOK, h.portalSession(r, access))
+}
+
+// portalSession is the signed-in customer with their portal companies.
+func (h *CustomerPortalHandler) portalSession(r *http.Request, access *service.PortalAccess) map[string]any {
+	response := portalCustomer(&access.Identity)
+	companies, err := h.portal.Companies(r.Context(), access)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "portal company lookup failed", "workspace_id", access.Workspace.ID, "portal_identity_id", access.Identity.ID, "error", err)
+		companies = []repository.PortalCompanyMembership{}
+	}
+	response["companies"] = companies
+	return response
 }
 
 // Logout revokes the session and clears its cookie.
@@ -233,12 +261,58 @@ func (h *CustomerPortalHandler) CreateAnonymousRequest(w http.ResponseWriter, r 
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if err := h.portal.CreateAnonymousRequest(r.Context(), ws, portalBearer(r), body.Subject, body.Message, body.AttachmentIDs); err != nil {
+	if err := h.portal.CreateAnonymousRequest(r.Context(), ws, portalBearer(r), body.Subject, body.Message, body.AttachmentIDs, body.Intake); err != nil {
 		writePortalError(w, r, ws.ID, err, "unable to create request")
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusAccepted)
+}
+
+// Suggestions returns help center articles for a request being written. The
+// forms for signed-in and anonymous customers both use it; only a valid
+// session adds articles for signed-in customers. The portal rate limiter
+// bounds it.
+func (h *CustomerPortalHandler) Suggestions(w http.ResponseWriter, r *http.Request) {
+	ws := h.workspace(w, r)
+	if ws == nil {
+		return
+	}
+	suggestions, err := h.portal.SuggestArticles(r.Context(), ws, r.URL.Query().Get("q"), h.signedIn(r, ws))
+	if errors.Is(err, context.Canceled) {
+		// The portal cancels a search when the customer keeps typing.
+		return
+	}
+	if err != nil {
+		writePortalError(w, r, ws.ID, err, "unable to suggest articles")
+		return
+	}
+	// Signed-in customers also get articles for signed-in customers.
+	w.Header().Set("Cache-Control", "private, no-store")
+	writeJSON(w, http.StatusOK, suggestions)
+}
+
+// SuggestionEvent records that suggestions were shown, or one was opened,
+// while a request was written. Like suggestions it needs no sign-in.
+func (h *CustomerPortalHandler) SuggestionEvent(w http.ResponseWriter, r *http.Request) {
+	ws := h.workspace(w, r)
+	if ws == nil {
+		return
+	}
+	var body struct {
+		IntakeID   string   `json:"intake_id"`
+		Event      string   `json:"event"`
+		ArticleIDs []string `json:"article_ids"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.portal.RecordIntakeEvent(r.Context(), ws, body.IntakeID, body.Event, body.ArticleIDs); err != nil {
+		writePortalError(w, r, ws.ID, err, "unable to record the event")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // CreateRequest creates a request for the signed-in customer.
@@ -252,7 +326,7 @@ func (h *CustomerPortalHandler) CreateRequest(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	request, err := h.portal.CreateRequest(r.Context(), access, body.Subject, body.Message, body.AttachmentIDs)
+	request, err := h.portal.CreateRequest(r.Context(), access, body.Subject, body.Message, body.AttachmentIDs, body.Intake)
 	if err != nil {
 		writePortalError(w, r, access.Workspace.ID, err, "unable to create request")
 		return
@@ -273,18 +347,35 @@ func (h *CustomerPortalHandler) Requests(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "invalid request status")
 		return
 	}
-	requests, err := h.portal.Requests(r.Context(), access, status)
+	query := r.URL.Query()
+	var requests []model.SupportPortalRequest
+	var err error
+	switch scope := query.Get("scope"); scope {
+	case "", service.PortalScopeMine:
+		requests, err = h.portal.Requests(r.Context(), access, status)
+	case service.PortalScopeCompany:
+		requests, err = h.portal.CompanyRequests(r.Context(), access, strings.TrimSpace(query.Get("company_id")), status)
+	default:
+		writeError(w, http.StatusBadRequest, service.ErrPortalScopeInvalid.Error())
+		return
+	}
 	if err != nil {
 		writePortalError(w, r, access.Workspace.ID, err, "unable to load requests")
 		return
 	}
 	response := make([]map[string]any, 0, len(requests))
 	for _, request := range requests {
-		response = append(response, map[string]any{
+		row := map[string]any{
 			"reference": request.Reference, "number": request.Number, "subject": request.Subject, "status": request.Status,
 			"last_activity_at": request.LastActivityAt, "last_message_preview": request.LastMessagePreview,
 			"last_message_from": request.LastMessageFrom, "unread": request.Unread,
-		})
+		}
+		if request.CompanyID != nil {
+			row["own"] = request.OwnerIdentityID == access.Identity.ID
+			row["requested_by"] = portalRequestedBy(request)
+			row["company"] = map[string]any{"id": *request.CompanyID, "name": request.CompanyName}
+		}
+		response = append(response, row)
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, response)
@@ -408,7 +499,7 @@ func writePortalError(w http.ResponseWriter, r *http.Request, workspaceID string
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrPortalIntakeDisabled), errors.Is(err, service.ErrPortalAnonymousIntakeDisabled), errors.Is(err, service.ErrPortalAttachmentsUnavailable):
 		writeError(w, http.StatusForbidden, err.Error())
-	case errors.Is(err, service.ErrPortalRequestInvalid), errors.Is(err, service.ErrPortalReplyInvalid), errors.Is(err, service.ErrPortalAttachmentsInvalid), errors.Is(err, service.ErrPortalTooManyAttachments):
+	case errors.Is(err, service.ErrPortalRequestInvalid), errors.Is(err, service.ErrPortalReplyInvalid), errors.Is(err, service.ErrPortalIntakeInvalid), errors.Is(err, service.ErrPortalAttachmentsInvalid), errors.Is(err, service.ErrPortalTooManyAttachments):
 		writeError(w, http.StatusBadRequest, err.Error())
 	default:
 		slog.ErrorContext(r.Context(), "portal request failed", "workspace_id", workspaceID, "action", r.Method, "error", err)
@@ -419,6 +510,23 @@ func writePortalError(w http.ResponseWriter, r *http.Request, workspaceID string
 func writePortalTemporarilyUnavailable(w http.ResponseWriter) {
 	w.Header().Set("Retry-After", "5")
 	writeError(w, http.StatusServiceUnavailable, "the support portal is temporarily unavailable; please try again")
+}
+
+// portalRequestedBy names who asked for a company request.
+func portalRequestedBy(request model.SupportPortalRequest) string {
+	for _, value := range []*string{request.RequesterName, request.RequesterEmail} {
+		if name := strings.TrimSpace(derefPortalString(value)); name != "" {
+			return name
+		}
+	}
+	return ""
+}
+
+func derefPortalString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func portalCustomer(identity *model.SupportPortalIdentity) map[string]any {

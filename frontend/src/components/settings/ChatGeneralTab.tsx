@@ -16,6 +16,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { HelpSpacesPicker } from './HelpSpacesPicker';
+import { toggleHelpSpaceId } from './helpSpaces';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -354,14 +356,9 @@ function ChatGeneralSettings({ workspaceId, mode, canManageSigningSecret }: { wo
     }
   };
 
-  const externalDocsSpaces = docsSpaces.filter((space) => space.type === 'external_capable');
 
   const toggleHelpSpace = (spaceId: string, enabled: boolean) => {
-    setWidgetHelpSpaceIds((current) => (
-      enabled
-        ? current.includes(spaceId) ? current : [...current, spaceId]
-        : current.filter((id) => id !== spaceId)
-    ));
+    setWidgetHelpSpaceIds((current) => toggleHelpSpaceId(current, spaceId, enabled));
   };
 
 
@@ -1490,44 +1487,14 @@ function Dashboard() {
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium">Help center</p>
-              <p className="text-sm text-muted-foreground">Select docs spaces for the widget Help tab</p>
+              <p className="text-sm text-muted-foreground">Select docs spaces for the widget Help tab and portal suggestions</p>
             </div>
             <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('help-center') && 'rotate-180')} />
           </button>
           <div className="accordion-animate" data-open={isExpanded('help-center')}>
             <div>
-            <div className="border-t border-border px-6 py-6 space-y-4">
-              {docsSpacesLoading && (
-                <p className="text-sm text-muted-foreground">Loading available spaces...</p>
-              )}
-
-              {!docsSpacesLoading && externalDocsSpaces.length === 0 && (
-                <p className="text-sm text-muted-foreground">
-                  Create an external space in Docs to show articles in the widget.
-                </p>
-              )}
-
-              {!docsSpacesLoading && externalDocsSpaces.length > 0 && (
-                <div className="space-y-3">
-                  {externalDocsSpaces.map((space) => {
-                    const enabled = widgetHelpSpaceIds.includes(space.id);
-                    return (
-                      <div key={space.id} className="flex items-center justify-between gap-4 rounded-lg border p-4">
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium">{space.name}</p>
-                          <p className="text-xs text-muted-foreground">
-                            /{space.slug}
-                          </p>
-                        </div>
-                        <Switch
-                          checked={enabled}
-                          onCheckedChange={(checked) => toggleHelpSpace(space.id, checked)}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+            <div className="border-t border-border px-6 py-6">
+              <HelpSpacesPicker spaces={docsSpaces} loading={docsSpacesLoading} selectedIds={widgetHelpSpaceIds} onToggle={toggleHelpSpace} />
             </div>
             </div>
           </div>

@@ -61,6 +61,7 @@ func setupDocsRedirectTestDB(t *testing.T) *gorm.DB {
 			collection_id TEXT
 		)`,
 		`CREATE TABLE docs_helpcenter_articles (
+			customer_published_at DATETIME,
 			id TEXT PRIMARY KEY,
 			document_id TEXT NOT NULL UNIQUE,
 			public_id TEXT NOT NULL DEFAULT '',

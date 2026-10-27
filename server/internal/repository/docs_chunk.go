@@ -49,6 +49,19 @@ type DocsKnowledgeScopeFilter struct {
 	FullSpaceIDs  []string
 	CollectionIDs []string
 	DocumentIDs   []string
+	// CustomerAudience searches live articles of help center spaces for
+	// signed-in portal customers instead of internal and public content.
+	CustomerAudience bool
+}
+
+// chunkLivePredicate selects the chunks a search may return: published
+// internal docs and live public help center articles, or, for signed-in
+// portal customers, live articles of their spaces only.
+func chunkLivePredicate(filter DocsKnowledgeScopeFilter) string {
+	if filter.CustomerAudience {
+		return "(s.type = 'external_capable' AND s.helpcenter_audience = 'customers' AND ha.customer_published_at IS NOT NULL)"
+	}
+	return "(s.type = 'internal' OR (s.type = 'external_capable' AND ha.public_published_at IS NOT NULL))"
 }
 
 // NewDocsChunkRepository creates a new DocsChunkRepository.
@@ -129,7 +142,7 @@ func (r *DocsChunkRepository) ListSearchableExternalSpaceIDs(ctx context.Context
 		Joins("JOIN docs_documents d ON d.id = c.document_id AND d.workspace_id = c.workspace_id").
 		Joins("JOIN docs_helpcenter_articles ha ON ha.document_id = d.id").
 		Where("c.workspace_id = ?", workspaceID).
-		Where("s.type = ? AND s.deleted_at IS NULL", model.SpaceTypeExternalCapable).
+		Where("s.type = ? AND s.helpcenter_audience = ? AND s.deleted_at IS NULL", model.SpaceTypeExternalCapable, model.HelpcenterAudiencePublic).
 		Where("d.status = ? AND d.deleted_at IS NULL", model.DocStatusPublished).
 		Where("ha.public_published_at IS NOT NULL").
 		Pluck("c.space_id", &ids).Error; err != nil {
@@ -199,6 +212,21 @@ func (r *DocsChunkRepository) HybridSearchKnowledgeSources(
 ) ([]DocsChunkSearchResult, error) {
 	filter := BuildDocsKnowledgeScopeFilter(sources)
 	return r.hybridSearchWithScopeFilter(ctx, workspaceID, agentID, filter, query, queryEmbedding, embeddingModel, limit)
+}
+
+// HybridSearchCustomerSpaces searches live articles of help center spaces for
+// signed-in portal customers. Callers must have a portal session.
+func (r *DocsChunkRepository) HybridSearchCustomerSpaces(
+	ctx context.Context,
+	workspaceID string,
+	spaceIDs []string,
+	query string,
+	queryEmbedding string,
+	embeddingModel string,
+	limit int,
+) ([]DocsChunkSearchResult, error) {
+	filter := DocsKnowledgeScopeFilter{FullSpaceIDs: spaceIDs, CustomerAudience: true}
+	return r.hybridSearchWithScopeFilter(ctx, workspaceID, "", filter, query, queryEmbedding, embeddingModel, limit)
 }
 
 func (r *DocsChunkRepository) HybridSearchWithEmbeddingModel(
@@ -282,7 +310,7 @@ func (r *DocsChunkRepository) lexicalSearch(ctx context.Context, workspaceID, ag
 			Joins("LEFT JOIN docs_helpcenter_articles ha ON ha.document_id = d.id").
 			Where("c.workspace_id = ?", workspaceID).
 			Where("d.status = ? AND d.deleted_at IS NULL", model.DocStatusPublished).
-			Where("(s.type = ? OR (s.type = ? AND ha.public_published_at IS NOT NULL))", model.SpaceTypeInternal, model.SpaceTypeExternalCapable)
+			Where(chunkLivePredicate(filter))
 		if agentID != "" {
 			dbQuery = dbQuery.Where(`EXISTS (
 				SELECT 1 FROM agent_knowledge_sources aks
@@ -331,7 +359,7 @@ func (r *DocsChunkRepository) lexicalSearch(ctx context.Context, workspaceID, ag
 		  AND %s
 		  AND d.status = 'published'
 		  AND d.deleted_at IS NULL
-		  AND (s.type = 'internal' OR (s.type = 'external_capable' AND ha.public_published_at IS NOT NULL))
+		  AND %s
 		  %s
 		  AND (
 		    setweight(to_tsvector('english', COALESCE(c.title, '')), 'A') ||
@@ -339,7 +367,7 @@ func (r *DocsChunkRepository) lexicalSearch(ctx context.Context, workspaceID, ag
 		  ) @@ to_tsquery('english', ?)
 		ORDER BY lexical_score DESC, c.updated_at DESC
 		LIMIT ?
-	`, scopePredicate, agentPredicate)
+	`, scopePredicate, chunkLivePredicate(filter), agentPredicate)
 	var results []DocsChunkSearchResult
 	args := []any{tsQuery, workspaceID}
 	args = append(args, scopeArgs...)
@@ -379,7 +407,7 @@ func (r *DocsChunkRepository) vectorSearch(ctx context.Context, workspaceID, age
 		  AND %s
 		  AND d.status = 'published'
 		  AND d.deleted_at IS NULL
-		  AND (s.type = 'internal' OR (s.type = 'external_capable' AND ha.public_published_at IS NOT NULL))
+		  AND %s
 		  %s
 		  AND c.embedding_provider = ?
 		  AND c.embedding_model = ?
@@ -387,7 +415,7 @@ func (r *DocsChunkRepository) vectorSearch(ctx context.Context, workspaceID, age
 		  AND c.embedding_dimensions = ?
 		ORDER BY c.embedding <=> CAST(? AS vector) ASC
 		LIMIT ?
-	`, scopePredicate, agentPredicate)
+	`, scopePredicate, chunkLivePredicate(filter), agentPredicate)
 	var results []DocsChunkSearchResult
 	args := []any{queryEmbedding, workspaceID}
 	args = append(args, scopeArgs...)
@@ -561,7 +589,7 @@ func (r *DocsChunkRepository) PublicContentFingerprint(ctx context.Context, work
 		Joins("JOIN docs_documents d ON d.id = c.document_id AND d.workspace_id = c.workspace_id").
 		Joins("JOIN docs_helpcenter_articles ha ON ha.document_id = d.id").
 		Where("c.workspace_id = ?", workspaceID).
-		Where("s.type = ? AND s.deleted_at IS NULL", model.SpaceTypeExternalCapable).
+		Where("s.type = ? AND s.helpcenter_audience = ? AND s.deleted_at IS NULL", model.SpaceTypeExternalCapable, model.HelpcenterAudiencePublic).
 		Where("d.status = ? AND d.deleted_at IS NULL", model.DocStatusPublished).
 		Where("ha.public_published_at IS NOT NULL").
 		Order("c.document_id ASC, c.chunk_index ASC").

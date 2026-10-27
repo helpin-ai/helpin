@@ -170,7 +170,7 @@ func (r *DocsSpaceRepository) Restore(ctx context.Context, id string) (*model.Do
 func (r *DocsSpaceRepository) ListPublicByWorkspace(ctx context.Context, workspaceID string) ([]model.DocsSpace, error) {
 	var spaces []model.DocsSpace
 	if err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND type = ? AND deleted_at IS NULL", workspaceID, model.SpaceTypeExternalCapable).
+		Where("workspace_id = ? AND type = ? AND helpcenter_audience = ? AND deleted_at IS NULL", workspaceID, model.SpaceTypeExternalCapable, model.HelpcenterAudiencePublic).
 		Order("position ASC, created_at ASC").
 		Find(&spaces).Error; err != nil {
 		return nil, fmt.Errorf("list public docs spaces: %w", err)

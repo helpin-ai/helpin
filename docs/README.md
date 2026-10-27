@@ -27,6 +27,7 @@ guides below.
 - [How coding agents execute work](coding-agent-execution.md): repository workspaces and product delivery.
 - [Support execution through Agent Runtime](support-agent-runtime.md): support conversation processing and retained backend responsibilities.
 - [Support AI human control](support-ai-human-control.md): human control over support automation.
+- [Customer portal access](support-portal-access.md): who signs in to the customer portal, company accounts, and roles.
 - [Internal tools](internal-tools-framework.md): tool contracts and execution.
 - [Set up Agent Runtime locally](agent-runtime-local-setup.md): connect Helpin to the separate execution service.
 

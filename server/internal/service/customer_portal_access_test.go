@@ -35,6 +35,10 @@ func TestEvaluatePortalEligibility(t *testing.T) {
 		{"approved: one allowed and one unset", model.SupportPortalAccessModeApprovedContacts, []repository.PortalContactAccess{contact("a", nil), contact("b", allowed)}, true, "b"},
 		{"approved: two allowed", model.SupportPortalAccessModeApprovedContacts, []repository.PortalContactAccess{contact("a", allowed), contact("b", allowed)}, false, ""},
 		{"approved: allowed and blocked", model.SupportPortalAccessModeApprovedContacts, []repository.PortalContactAccess{contact("a", allowed), contact("b", blocked)}, false, ""},
+		{"company members: allowed member", model.SupportPortalAccessModeCompanyMembers, []repository.PortalContactAccess{{ID: "a", PortalAccess: allowed, CompanyMember: true}}, true, "a"},
+		{"company members: allowed without a company", model.SupportPortalAccessModeCompanyMembers, []repository.PortalContactAccess{contact("a", allowed)}, false, ""},
+		{"company members: member not allowed", model.SupportPortalAccessModeCompanyMembers, []repository.PortalContactAccess{{ID: "a", CompanyMember: true}}, false, ""},
+		{"company members: blocked member", model.SupportPortalAccessModeCompanyMembers, []repository.PortalContactAccess{{ID: "a", PortalAccess: blocked, CompanyMember: true}}, false, ""},
 		{"any email: no contact", model.SupportPortalAccessModeAnyVerifiedEmail, nil, true, ""},
 		{"any email: sole contact is bound", model.SupportPortalAccessModeAnyVerifiedEmail, []repository.PortalContactAccess{contact("a", nil)}, true, "a"},
 		{"any email: duplicates are not bound", model.SupportPortalAccessModeAnyVerifiedEmail, []repository.PortalContactAccess{contact("a", nil), contact("b", nil)}, true, ""},
@@ -59,7 +63,7 @@ func TestCustomerPortalAutoCreatedContactIsNotEligible(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.CreateAnonymousRequest(ctx, ws, token, "Help", "Please help", nil); err != nil {
+	if err := svc.CreateAnonymousRequest(ctx, ws, token, "Help", "Please help", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	var contacts int64
@@ -112,7 +116,7 @@ func TestCustomerPortalRebindRequiresFreshSignIn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.CreateRequest(ctx, access, "Help", "Please help", nil); err != nil {
+	if _, err := svc.CreateRequest(ctx, access, "Help", "Please help", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -178,6 +182,31 @@ func TestCustomerPortalSessionRevokedWhenAccessChanges(t *testing.T) {
 			},
 		},
 		{
+			name: "any email contact changed", settings: portalSettingsAnyEmail, access: portalAccess(model.PortalAccessAllowed),
+			change: func(t *testing.T, _ *CustomerPortalService, db *gorm.DB, ws *PortalWorkspace, contactID string) *PortalWorkspace {
+				if err := db.Exec(`UPDATE crm_contacts SET email = 'moved@example.com' WHERE id = ?`, contactID).Error; err != nil {
+					t.Fatal(err)
+				}
+				return ws
+			},
+		},
+		{
+			name: "any email contact deleted", settings: portalSettingsAnyEmail, access: portalAccess(model.PortalAccessAllowed),
+			change: func(t *testing.T, _ *CustomerPortalService, db *gorm.DB, ws *PortalWorkspace, contactID string) *PortalWorkspace {
+				if err := db.Exec(`DELETE FROM crm_contacts WHERE id = ?`, contactID).Error; err != nil {
+					t.Fatal(err)
+				}
+				return ws
+			},
+		},
+		{
+			name: "any email duplicate contact", settings: portalSettingsAnyEmail, access: portalAccess(model.PortalAccessAllowed),
+			change: func(t *testing.T, _ *CustomerPortalService, db *gorm.DB, ws *PortalWorkspace, _ string) *PortalWorkspace {
+				setPortalContact(t, db, ws.ID, "customer@example.com", nil)
+				return ws
+			},
+		},
+		{
 			name: "switched to approved contacts", settings: portalSettingsAnyEmail, access: nil,
 			change: func(t *testing.T, svc *CustomerPortalService, db *gorm.DB, ws *PortalWorkspace, _ string) *PortalWorkspace {
 				return setPortalSettings(t, svc, db, ws, portalSettingsApproved)
@@ -233,7 +262,7 @@ func TestCustomerPortalIntakeReceiptIsThrottled(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := svc.CreateAnonymousRequest(ctx, ws, token, "Help", "Please help", nil); err != nil {
+		if err := svc.CreateAnonymousRequest(ctx, ws, token, "Help", "Please help", nil, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -253,7 +282,7 @@ func TestCustomerPortalResendConfirmationPublishesOnlyThatRequest(t *testing.T) 
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := svc.CreateAnonymousRequest(ctx, ws, token, subject, "Please help", nil); err != nil {
+		if err := svc.CreateAnonymousRequest(ctx, ws, token, subject, "Please help", nil, nil); err != nil {
 			t.Fatal(err)
 		}
 		var conversation model.SupportConversation
@@ -456,5 +485,34 @@ func TestCustomerPortalAnonymousIntakeNeedsApplicationEmail(t *testing.T) {
 				t.Fatalf("enabling intake without application email: %v", err)
 			}
 		})
+	}
+}
+
+func TestCustomerPortalCompanyMembersOnlySignIn(t *testing.T) {
+	svc, db, sender, ws := setupCustomerPortalService(t)
+	ctx := context.Background()
+	ws = setPortalSettings(t, svc, db, ws, `{"portal_enabled":true,"portal_intake_enabled":true,"portal_access_mode":"company_members"}`)
+	contactID := setPortalContact(t, db, ws.ID, "solo@example.com", portalAccess(model.PortalAccessAllowed))
+
+	svc.RequestLink(ctx, ws, "solo@example.com")
+	if len(sender.sent) != 0 {
+		t.Fatalf("an allowed contact without a company got a sign-in link: %+v", sender.sent)
+	}
+
+	mustExec(t, db, `INSERT INTO crm_companies (id, workspace_id, display_id, name, portal_default_role) VALUES ('co-1', ?, 'CO-1', 'Acme', NULL)`, ws.ID)
+	mustExec(t, db, `INSERT INTO support_portal_company_members (workspace_id, crm_company_id, crm_contact_id) VALUES (?, 'co-1', ?)`, ws.ID, contactID)
+	svc.RequestLink(ctx, ws, "solo@example.com")
+	if len(sender.sent) != 0 {
+		t.Fatalf("a member of a company without company access got a sign-in link: %+v", sender.sent)
+	}
+
+	mustExec(t, db, `UPDATE crm_companies SET portal_default_role = 'requester' WHERE id = 'co-1'`)
+	svc.RequestLink(ctx, ws, "solo@example.com")
+	if len(sender.sent) != 1 {
+		t.Fatalf("a member of a company with company access got no sign-in link: %+v", sender.sent)
+	}
+	summary, err := svc.AccessSummary(ctx, ws.ID)
+	if err != nil || summary.AccessMode != model.SupportPortalAccessModeCompanyMembers || summary.AllowedContacts != 1 {
+		t.Fatalf("summary = %+v, %v", summary, err)
 	}
 }

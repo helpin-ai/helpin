@@ -1,6 +1,7 @@
-import type { InfiniteData } from '@tanstack/react-query';
+import type { InfiniteData, QueryClient } from '@tanstack/react-query';
 import { compareMessageOrder } from '@helpin-ai/shared';
 import type { ConversationListResponse, ConversationStatus, MessageSenderType, SupportConversation } from './pmTypes';
+import { queryKeys } from './queryKeys';
 
 export type SupportConversationListCache =
   | ConversationListResponse
@@ -368,9 +369,10 @@ function patchConversationForStatus(
   };
 }
 
-export function patchConversationStatusInCache(
+function updateConversationInListCache(
   current: SupportConversationListCache | undefined,
-  patch: SupportConversationStatusPatch,
+  conversationId: string,
+  update: (conversation: SupportConversation) => SupportConversation,
 ): SupportConversationListCache | undefined {
   if (!current) {
     return current;
@@ -384,12 +386,12 @@ export function patchConversationStatusInCache(
       }
       let pageChanged = false;
       const data = page.data.map((conversation) => {
-        if (conversation.id !== patch.conversationId) {
+        if (conversation.id !== conversationId) {
           return conversation;
         }
         pageChanged = true;
         changed = true;
-        return patchConversationForStatus(conversation, patch);
+        return update(conversation);
       });
       return pageChanged ? { ...page, data } : page;
     });
@@ -402,14 +404,21 @@ export function patchConversationStatusInCache(
 
   let changed = false;
   const data = current.data.map((conversation) => {
-    if (conversation.id !== patch.conversationId) {
+    if (conversation.id !== conversationId) {
       return conversation;
     }
     changed = true;
-    return patchConversationForStatus(conversation, patch);
+    return update(conversation);
   });
 
   return changed ? { ...current, data } : current;
+}
+
+export function patchConversationStatusInCache(
+  current: SupportConversationListCache | undefined,
+  patch: SupportConversationStatusPatch,
+): SupportConversationListCache | undefined {
+  return updateConversationInListCache(current, patch.conversationId, (conversation) => patchConversationForStatus(conversation, patch));
 }
 
 export function patchConversationDetailStatus(
@@ -420,4 +429,34 @@ export function patchConversationDetailStatus(
     return current;
   }
   return patchConversationForStatus(current, patch);
+}
+
+export type SupportConversationFieldsPatch = Partial<Pick<SupportConversation, 'priority' | 'assigned_user_id'>>;
+
+/** The conversation as cached by its detail query, or else by any loaded list. */
+export function findCachedConversation(queryClient: QueryClient, workspaceId: string, conversationId: string): SupportConversation | undefined {
+  const detail = queryClient.getQueryData<SupportConversation>(queryKeys.support.conversation(workspaceId, conversationId));
+  if (detail) return detail;
+  for (const [queryKey, data] of queryClient.getQueriesData<SupportConversationListCache>({ queryKey: queryKeys.support.conversations(workspaceId) })) {
+    if (!isSupportConversationListQueryKey(queryKey, workspaceId)) continue;
+    const found = extractConversationListConversations(data).find((conversation) => conversation.id === conversationId);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+/**
+ * Shows a teammate's change in the open conversation and every loaded list
+ * before the server answers. Callers refetch afterwards for derived fields.
+ */
+export function patchCachedConversation(queryClient: QueryClient, workspaceId: string, conversationId: string, fields: SupportConversationFieldsPatch): void {
+  const update = (conversation: SupportConversation): SupportConversation => ({ ...conversation, ...fields });
+  queryClient.setQueriesData<SupportConversationListCache>(
+    { predicate: (query) => isSupportConversationListQueryKey(query.queryKey, workspaceId) },
+    (current) => updateConversationInListCache(current, conversationId, update),
+  );
+  queryClient.setQueryData(
+    queryKeys.support.conversation(workspaceId, conversationId),
+    (current: SupportConversation | undefined) => (current?.id === conversationId ? update(current) : current),
+  );
 }

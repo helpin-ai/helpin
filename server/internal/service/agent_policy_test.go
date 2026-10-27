@@ -236,7 +236,8 @@ func TestListAgentPresetsUseProductDefaultRouting(t *testing.T) {
 	for _, preset := range presets {
 		usesFastOpenRouterDefault := preset.Key == model.AgentPresetEpicPlanner ||
 			preset.Key == model.AgentPresetDocumentationAgent ||
-			preset.Key == model.AgentPresetSupportAgent
+			preset.Key == model.AgentPresetSupportAgent ||
+			preset.Key == model.AgentPresetHelpAssistant
 		if usesFastOpenRouterDefault {
 			config, err := model.ParseAgentExecutionConfig(preset.ExecutionConfig)
 			if err != nil {
@@ -282,7 +283,7 @@ func TestListAgentPresetsUseProductDefaultRouting(t *testing.T) {
 			}
 			continue
 		}
-		if preset.Key == model.AgentPresetSupportAgent {
+		if preset.Key == model.AgentPresetSupportAgent || preset.Key == model.AgentPresetHelpAssistant {
 			if preset.Provider == nil || *preset.Provider != model.AgentModelProviderOpenRouter {
 				t.Errorf("preset %q provider = %+v, want openrouter", preset.Key, preset.Provider)
 			}

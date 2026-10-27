@@ -217,6 +217,15 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     default_invocation_mode: 'interactive',
     supported_modes: ['autonomous', 'interactive'],
   },
+  help_assistant: {
+    ...DEFAULT_PRESET_MODEL,
+    label: 'Help assistant',
+    default_role: 'Help assistant',
+    description: 'Answers help center and customer portal visitors from published help articles.',
+    runtime_kind: 'native_sdk',
+    default_invocation_mode: 'interactive',
+    supported_modes: ['interactive'],
+  },
   support_agent: {
     ...DEFAULT_PRESET_MODEL,
     label: 'Support Agent',

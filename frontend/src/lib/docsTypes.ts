@@ -4,6 +4,8 @@
 
 export type DocStatus = 'draft' | 'published' | 'archived';
 export type SpaceType = 'internal' | 'external_capable';
+/** Who can read an external space: everyone, or customers signed in to the portal. */
+export type HelpcenterAudience = 'public' | 'customers';
 
 export type DocsAPIReferenceSourceType = 'url' | 'upload';
 export type DocsAPIReferenceSyncStatus = 'ready' | 'failed';
@@ -76,6 +78,7 @@ export interface DocsSpace {
   icon?: string;
   visibility: SpaceVisibility;
   type: SpaceType;
+  helpcenter_audience?: HelpcenterAudience;
   default_review_days?: number;
   is_system: boolean;
   position: number;
@@ -675,6 +678,7 @@ export interface CreateDocsSpaceRequest {
   icon?: string;
   visibility: SpaceVisibility;
   type: SpaceType;
+  helpcenter_audience?: HelpcenterAudience;
   default_review_days?: number;
 }
 
@@ -683,6 +687,7 @@ export interface UpdateDocsSpaceRequest {
   slug?: string;
   icon?: string;
   type?: SpaceType;
+  helpcenter_audience?: HelpcenterAudience;
   visibility?: SpaceVisibility;
   default_review_days?: number;
   team_ids?: string[];

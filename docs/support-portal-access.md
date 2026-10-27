@@ -1,0 +1,120 @@
+# Customer portal access and company accounts
+
+This page explains who can sign in to the customer portal and which requests each customer sees, including the company accounts added in October 2026. Support admins manage these settings; the rules are enforced by the API on every request.
+
+## Who can sign in
+
+A customer signs in with an emailed link. Access is decided per CRM contact, matched by email (`lower(trim(email))`):
+
+- **Workspace setting.** **Settings → Customer portal** turns the portal on and chooses the access mode:
+  - **Approved contacts** (the default) needs exactly one contact with that email whose portal access is **Allowed**.
+  - **Company members only** also needs that contact to be a member of a company with company access turned on. Use it when only people at customer companies should use the portal; individual contacts who are allowed but belong to no such company cannot sign in.
+  - **Any verified email** admits anyone who proves their address.
+- **Contact decision.** A contact's portal access is **Allowed**, **Blocked**, or not set. A blocked contact denies the email in every mode.
+
+A session is bound to the contact it signed in as. Eligibility is checked again on every request, so blocking a contact, changing its email, or deleting it ends its sessions on their next request.
+
+## Personal and company requests
+
+By default, the portal is personal: customers see the requests they asked for. A company can also share its requests with its people.
+
+| Company setting | What its contacts see |
+|---|---|
+| Off (default) | Their own requests only |
+| Own requests only | Their own requests. Contacts given the **Member** role also see the company's requests. |
+| All company requests | Every request from the company. Contacts given the **Requester** role see only their own. |
+
+A contact's role overrides its companies' default in either direction. Members can open, follow, and reply to colleagues' requests. Only the requester can rate a request.
+
+Admins manage this on the company's **Portal** tab:
+
+- turn company access on and choose the default;
+- give or remove each contact's **company access**: only contacts with company access count as the company's people;
+- allow or block each contact's sign-in, and set each contact's role;
+- add every contact on the company's email domain at once.
+
+The contact page shows the same access and role.
+
+### What is shared
+
+Company visibility is deliberately conservative:
+
+- **Company access is never inferred.** A support admin gives each contact company access on the Portal tab.
+  - CRM contact–company links are created automatically: by email sync, the support inbox, meetings, and the Messenger, which accepts unverified identity claims by default. A link alone grants nothing.
+  - Giving company access also allows sign-in for a contact without a decision. A blocked contact stays blocked.
+  - Removing a CRM link does not remove company access; remove it on the Portal tab.
+- **Bulk adding needs a domain.** **Add contacts from acme.com** adds the company's linked contacts whose email is on the company's domain or a subdomain. It skips contacts that are blocked, that have no email, or whose email another contact also uses. Everyone else is added one by one.
+- **Sign-in still needs an Allowed decision**, even in any-verified-email mode.
+- **A request belongs to a company only through a member.** The request's conversation must name the company, and its requester must be an unblocked member of that company. A conversation linked to a company by email domain or by a Messenger claim alone is not shared.
+- **Hidden and erased conversations stay private.** Conversations hidden from the portal by a teammate, marked as spam, or anonymized for privacy are never shared.
+- **Colleagues' conversations are published on demand.** When a member opens their company's requests, published email and chat conversations from colleagues who have never signed in also appear. They must pass the same continuity checks as the colleague's own first sign-in.
+- **New portal requests take the requester's company** when the requester belongs to exactly one company, as new email conversations do. Otherwise a teammate sets the company in the conversation's details.
+
+### Attribution and audit
+
+- Portal replies record the portal identity that wrote them.
+  - The portal shows "You" or the colleague's name on each message.
+  - In the inbox, a colleague's reply carries their contact name, or their email if they have no name.
+- Read state stays the requester's. A colleague opening a request does not mark it read, and company lists show no unread marks.
+- Each time a member opens a colleague's request, the portal audit log records a `company_request_viewed` event. It records at most one per member and request each hour.
+- The conversation sidebar tells teammates how many colleagues besides the requester can read the conversation in the portal.
+
+## AI on portal requests
+
+People answer portal requests. **Settings → Customer portal → AI suggestions** is either off or **Private suggestions**: a support agent drafts a private note for the teammate on new unassigned requests. Customers never see it.
+- AI replies to customers are not available on the portal. The chat Messenger and email keep their own AI settings.
+- Teammates cannot hand a portal request to AI.
+- The portal never shows AI drafting as "Support is replying".
+
+Workspaces that used the retired customer-reply mode were moved to private suggestions on October 27, 2026. Their open requests still waiting on AI went to the team queue.
+
+## Article suggestions while writing
+
+While a customer writes a request, signed in or not, the portal suggests up to five published help center articles. They appear beside the form on wide screens and below the message on small ones. Articles open in a new tab, and the signed-in draft is kept for the browser tab.
+
+- **Search.** Suggestions use the same search as the help center and the Messenger's help tab: semantic retrieval over published articles, with a full-text fallback.
+- **Spaces.** Suggestions come only from the help spaces selected for the Messenger's Help tab. The same selection appears in the chat widget settings and in **Customer portal** settings, and changing it on either page changes both. With no space selected, the portal suggests nothing.
+  - A result must share a keyword with the request or be close in meaning (similarity of at least 0.40). Unrelated requests get no suggestions.
+  - Query embeddings are cached for an hour.
+- **Measurement.** Each form records the articles shown, the articles opened and the submission (`support_portal_intake_events`). **Reports → Portal self-service** shows:
+  - forms where an article was opened and no request followed within 30 minutes (likely answered by an article);
+  - requests sent after reading;
+  - requests sent when nothing matched.
+- **Signed-in customers** also get articles from help spaces for signed-in customers, listed first. These open in the portal, not on the help center.
+- **For teammates.** The conversation sidebar lists the articles the customer opened before writing in. An article for signed-in customers opens in Docs.
+- **Coverage.** A request sent after the help center suggested nothing becomes a no-result signal in **Coverage gaps**.
+
+`GET /api/public/portal/{slug}/suggestions?q=` and `POST /api/public/portal/{slug}/suggestions/events` need no sign-in. Without a valid session, suggestions include only public articles. Both use the portal rate limiter.
+
+## Help articles for signed-in customers
+
+A help center space can be limited to customers signed in to the portal. In Docs, edit the space and set **Readers** to **Signed-in customers**.
+
+- **Publishing works as usual.** Publishing an article in such a space makes it live in the portal only. It never appears on the public help center, in its search or AI answers, in sitemaps, in the chat widget or in Echo's answers. The widget's space picker does not offer these spaces.
+- **In the portal.** Signed-in customers see **Help articles** on the portal home page when the team shares at least one. The page lists articles by space and collection and searches them by meaning. Articles open at `/help/{article}` in the portal.
+- **Changing readers.** Switching a space between **Everyone** and **Signed-in customers** moves its live articles at once. Changing an external space to internal unpublishes its articles.
+- **Languages.** Customers read an article in their browser's language when a translation is published, and in the help center's default language otherwise.
+- **Not included.** Private articles cannot be limited to one company or role.
+
+The portal reads them through `GET /api/public/portal/{slug}/help`, `GET /api/public/portal/{slug}/help/search?q=` and `GET /api/public/portal/{slug}/help/articles/{id}`. All three need a portal session and return `Cache-Control: private, no-store`.
+
+## Limitations
+
+- Colleagues receive no email notifications for each other's requests. They follow them in the portal, where live updates cover company requests. Participants and CC managed from the portal are planned separately.
+- Customers cannot manage their colleagues' access. Support admins do.
+- A request has one company. Contacts of several companies see each company's requests on its own tab.
+
+## API
+
+All routes require the `support.admin` permission unless noted otherwise:
+
+- `GET /api/support/inbox/portal/companies/{companyId}`: the company's default role, its contacts with access, role, shared-email count and last sign-in, and how many of its requests members could see.
+- `PUT /api/support/inbox/portal/companies/{companyId}` with `{"default_role": "requester" | "member" | null}`.
+- `PUT /api/support/inbox/portal/companies/{companyId}/members/{contactId}` with `{"member": true | false}`: gives or removes company access.
+- `POST /api/support/inbox/portal/companies/{companyId}/members/from-domain`: gives company access to eligible contacts on the company's domain and returns how many were added.
+- `PUT /api/support/inbox/portal/contacts/{contactId}/role` with `{"portal_role": "requester" | "member" | null}`.
+- `GET /api/support/inbox/conversations/{id}/portal-context` (requires `support.read` and mailbox access): the company and the number of colleagues who can read the conversation, and the articles the customer opened before writing in.
+
+The portal API adds `companies` to the session response. It also adds `scope=company` (with an optional `company_id`) to `GET /api/public/portal/{slug}/requests`.
+
+The schema is in `server/internal/dbmigrate/sql/202610260004_support_portal_company_access.sql`. It adds `crm_companies.portal_default_role` and `crm_contacts.portal_role`. Membership lives in `support_portal_company_members` (`202610270003_support_portal_company_members.sql`).

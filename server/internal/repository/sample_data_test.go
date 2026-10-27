@@ -122,7 +122,9 @@ func sampleRemovalSchema() []string {
 		`CREATE TABLE pm_activity_log (id TEXT PRIMARY KEY, workspace_id TEXT, entity_type TEXT, entity_id TEXT)`,
 		`CREATE TABLE support_conversations (snoozed_until DATETIME, snoozed_by_user_id TEXT, 
             merged_into_id TEXT, merge_revision INTEGER NOT NULL DEFAULT 0,id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, linked_task_id TEXT, crm_contact_id TEXT)`,
-		`CREATE TABLE docs_spaces (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
+		`CREATE TABLE docs_spaces (
+			helpcenter_audience TEXT NOT NULL DEFAULT 'public',
+			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE docs_documents (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, space_id TEXT)`,
 		`CREATE TABLE docs_contents (document_id TEXT PRIMARY KEY)`,
 	}

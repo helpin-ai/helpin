@@ -607,7 +607,7 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 				wantProvider, wantModel = model.AgentModelProviderOpenRouter, defaultQuillAgentModel
 			case model.AgentPresetAskAgent:
 				wantProvider, wantModel = model.AgentModelProviderOpenRouter, defaultAskAgentModel
-			case model.AgentPresetSupportAgent:
+			case model.AgentPresetSupportAgent, model.AgentPresetHelpAssistant:
 				wantProvider, wantModel = model.AgentModelProviderOpenRouter, defaultFastOpenRouterAgentModel
 			case model.AgentPresetCommandAgent:
 				wantProvider, wantModel = model.AgentModelProviderOpenRouter, defaultCommandAgentModel

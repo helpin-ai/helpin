@@ -314,6 +314,9 @@ func (s *DocsHelpcenterService) PublishExternally(ctx context.Context, documentI
 	if space == nil || space.Type != model.SpaceTypeExternalCapable {
 		return fmt.Errorf("document must be in an external-capable space")
 	}
+	// Articles for signed-in customers never get public_published_at, which
+	// every public query requires, nor public search entries or redirects.
+	forCustomers := space.HelpcenterAudience == model.HelpcenterAudienceCustomers
 
 	// Ensure article extension exists.
 	art, err := s.hcRepo.GetArticle(ctx, documentID)
@@ -373,6 +376,9 @@ func (s *DocsHelpcenterService) PublishExternally(ctx context.Context, documentI
 	}
 	if _, err := s.publicationRepo.UpsertArticlePublication(ctx, publication); err != nil {
 		return err
+	}
+	if forCustomers {
+		return s.publishForCustomers(ctx, doc)
 	}
 	if err := s.rebuildArticleSearchEntries(ctx, publication); err != nil {
 		return err
@@ -455,6 +461,9 @@ func (s *DocsHelpcenterService) UnpublishExternally(ctx context.Context, documen
 		return err
 	}
 	if err := s.hcRepo.SetPublicPublishedAt(ctx, documentID, nil); err != nil {
+		return err
+	}
+	if err := s.hcRepo.SetCustomerPublishedAt(ctx, documentID, nil); err != nil {
 		return err
 	}
 	if s.searchRepo != nil {
@@ -584,7 +593,7 @@ func (s *DocsHelpcenterService) EnrichDocumentPublishState(ctx context.Context, 
 		doc.HCOGImageURL = art.OGImageURL
 		doc.HCOGImageAlt = art.OGImageAlt
 	}
-	if art == nil || art.PublicPublishedAt == nil {
+	if art.LivePublishedAt() == nil {
 		doc.HasUnpublishedChanges = false
 		doc.LivePublishedAt = nil
 		doc.LiveSlug = nil
@@ -602,7 +611,7 @@ func (s *DocsHelpcenterService) EnrichDocumentPublishState(ctx context.Context, 
 	}
 	if publication == nil {
 		doc.HasUnpublishedChanges = false
-		doc.LivePublishedAt = art.PublicPublishedAt
+		doc.LivePublishedAt = art.LivePublishedAt()
 		return nil
 	}
 	doc.LivePublishedAt = &publication.PublishedAt
@@ -1608,7 +1617,7 @@ func (s *DocsHelpcenterService) resolvePublicCollectionTranslationByCanonicalSlu
 		if err != nil {
 			return nil, "", false, err
 		}
-		if space == nil || space.Type != model.SpaceTypeExternalCapable {
+		if space == nil || space.Type != model.SpaceTypeExternalCapable || space.HelpcenterAudience != model.HelpcenterAudiencePublic {
 			return nil, "", false, fmt.Errorf("collection not found")
 		}
 		return s.resolvePublicCollectionTranslationByID(ctx, cfg, coll.ID, requestedLocale, func() error {
@@ -2646,10 +2655,16 @@ func (s *DocsHelpcenterService) getPublicCollectionUncached(ctx context.Context,
 	if coll == nil {
 		return nil, nil, "", nil
 	}
-	var spaceSlug string
-	if space, err := s.spaceRepo.GetByID(ctx, coll.SpaceID); err == nil && space != nil {
-		spaceSlug = space.Slug
+	space, err := s.spaceRepo.GetByID(ctx, coll.SpaceID)
+	if err != nil {
+		return nil, nil, "", err
 	}
+	// Only collections of public help center spaces are public.
+	if space == nil || space.DeletedAt != nil || space.Type != model.SpaceTypeExternalCapable ||
+		space.HelpcenterAudience != model.HelpcenterAudiencePublic {
+		return nil, nil, "", nil
+	}
+	spaceSlug := space.Slug
 	publicCollection := *coll
 	publicCollection.Icon = iconcatalog.ResolvePublicValue(coll.Icon, "folder")
 	return &publicCollection, articles, spaceSlug, nil

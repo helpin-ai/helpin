@@ -17,7 +17,7 @@ func SupportAIChannelEnabled(settings SupportInboxSettings, channel string) bool
 		channel = "chat"
 	}
 	if channel == "portal" {
-		return settings.PortalEnabled && (settings.PortalAIMode == "ai_first" || settings.PortalAIMode == "internal_note")
+		return settings.PortalAIDraftsEnabled()
 	}
 	if channel != "chat" && channel != "email" {
 		return false

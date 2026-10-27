@@ -1404,6 +1404,10 @@ type SupportInboxSettings struct {
 	TriageSkipSpamConversations   bool    `json:"triage_skip_spam_conversations"`
 	TriageDeduplicateFirstMessage bool    `json:"triage_deduplicate_first_message"`
 
+	// AIPriorityEnabled lets Helpin AI raise a conversation's priority from
+	// what customers describe. It never lowers priority or overrides a teammate.
+	AIPriorityEnabled bool `json:"ai_priority_enabled"`
+
 	// Business Hours
 	BusinessHoursEnabled  bool                        `json:"business_hours_enabled"`
 	BusinessHoursTimezone string                      `json:"business_hours_timezone"` // IANA
@@ -1451,6 +1455,9 @@ type SupportInboxSettings struct {
 	PortalEnabled                bool `json:"portal_enabled"`
 	PortalAnonymousIntakeEnabled bool `json:"portal_anonymous_intake_enabled"`
 	PortalIntakeEnabled          bool `json:"portal_intake_enabled"`
+	// HelpAssistantEnabled turns on the Ask AI help assistant on the help
+	// center and in the customer portal.
+	HelpAssistantEnabled bool `json:"help_assistant_enabled"`
 	// PortalAccessMode is SupportPortalAccessModeApprovedContacts or
 	// SupportPortalAccessModeAnyVerifiedEmail.
 	PortalAccessMode string `json:"portal_access_mode"`
@@ -1527,6 +1534,7 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		TriageDailyBudget:              250,
 		TriageSkipSpamConversations:    true,
 		TriageDeduplicateFirstMessage:  true,
+		AIPriorityEnabled:              true,
 		BusinessHoursEnabled:           false,
 		BusinessHoursTimezone:          "America/New_York",
 		BusinessHoursSchedule: map[string]BusinessHoursDay{
@@ -1626,6 +1634,7 @@ type UpdateInstallationSettingsRequest struct {
 	TriageDailyBudget               *int                        `json:"triage_daily_budget,omitempty"`
 	TriageSkipSpamConversations     *bool                       `json:"triage_skip_spam_conversations,omitempty"`
 	TriageDeduplicateFirstMessage   *bool                       `json:"triage_deduplicate_first_message,omitempty"`
+	AIPriorityEnabled               *bool                       `json:"ai_priority_enabled,omitempty"`
 	BusinessHoursEnabled            *bool                       `json:"business_hours_enabled,omitempty"`
 	BusinessHoursTimezone           *string                     `json:"business_hours_timezone,omitempty"`
 	BusinessHoursSchedule           map[string]BusinessHoursDay `json:"business_hours_schedule,omitempty"`
@@ -1645,6 +1654,7 @@ type UpdateInstallationSettingsRequest struct {
 	PortalEnabled                   *bool                       `json:"portal_enabled,omitempty"`
 	PortalAnonymousIntakeEnabled    *bool                       `json:"portal_anonymous_intake_enabled,omitempty"`
 	PortalIntakeEnabled             *bool                       `json:"portal_intake_enabled,omitempty"`
+	HelpAssistantEnabled            *bool                       `json:"help_assistant_enabled,omitempty"`
 	PortalAccessMode                *string                     `json:"portal_access_mode,omitempty"`
 	PortalAIMode                    *string                     `json:"portal_ai_mode,omitempty"`
 	PortalAIAgentID                 *string                     `json:"portal_ai_agent_id,omitempty"`
@@ -2064,8 +2074,9 @@ type SupportAIControlRequest struct {
 // EffectivePortalAccessMode returns the portal access mode, treating any
 // unknown value as the safer approved-contacts mode.
 func (s SupportInboxSettings) EffectivePortalAccessMode() string {
-	if s.PortalAccessMode == SupportPortalAccessModeAnyVerifiedEmail {
-		return SupportPortalAccessModeAnyVerifiedEmail
+	switch s.PortalAccessMode {
+	case SupportPortalAccessModeAnyVerifiedEmail, SupportPortalAccessModeCompanyMembers:
+		return s.PortalAccessMode
 	}
 	return SupportPortalAccessModeApprovedContacts
 }

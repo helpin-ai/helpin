@@ -970,6 +970,8 @@ export function DocsDocumentDetail({
   }, [createRepairVersion, docId, handleSave])
 
   const isExternalHelpCenter = space?.type === 'external_capable'
+  // Articles for signed-in customers are read in the portal; they have no public address.
+  const isCustomersOnly = isExternalHelpCenter && space?.helpcenter_audience === 'customers'
   const { data: helpcenterConfig } = useDocsHelpcenterConfig(wsId)
   const defaultLocale = localesConfig?.default_locale ?? 'en'
   const enabledLocales = localesConfig?.enabled_locales?.length
@@ -1351,7 +1353,7 @@ export function DocsDocumentDetail({
     const { token, subdomain, custom_domain } = res.data
     return buildHelpcenterPreviewUrlFromEnv({ subdomain, customDomain: custom_domain }, docId, token)
   }
-  const liveArticleUrl = isExternalHelpCenter && isPublished
+  const liveArticleUrl = isExternalHelpCenter && isPublished && !isCustomersOnly
     ? buildHelpcenterArticleUrl(helpcenterConfig, isSourceLocaleActive ? doc?.live_slug : activeTranslation?.live_slug, doc?.hc_public_id, activeLocale)
     : null
   const activeSlug = isSourceLocaleActive ? doc?.hc_slug : activeTranslationDraft.slug
@@ -1942,7 +1944,7 @@ export function DocsDocumentDetail({
                     'text-amber-600 dark:text-amber-400'
                   }`}>
                     {doc.status === 'published'
-                      ? `Published · ${isExternalHelpCenter ? 'help center' : 'internal'}`
+                      ? `Published · ${isCustomersOnly ? 'signed-in customers' : isExternalHelpCenter ? 'help center' : 'internal'}`
                       : doc.status === 'archived' ? 'Archived' : 'Draft'}
                   </span>
                 </div>
@@ -1963,7 +1965,7 @@ export function DocsDocumentDetail({
                     'text-amber-600 dark:text-amber-400'
                   }`}>
                     {activeTranslationStatus === 'published'
-                      ? `Published · ${isExternalHelpCenter ? 'help center' : 'internal'}`
+                      ? `Published · ${isCustomersOnly ? 'signed-in customers' : isExternalHelpCenter ? 'help center' : 'internal'}`
                       : activeTranslationStatus === 'needs_review' ? 'Needs review' : 'Draft'}
                   </span>
                 </div>

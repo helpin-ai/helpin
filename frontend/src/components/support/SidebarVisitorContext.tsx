@@ -3,7 +3,6 @@ import { useWorkspaceAccess } from '@/hooks/queries/useSession';
 import { ConversationMergeDialog } from './ConversationMergeDialog';
 import { ConversationHistoryDialog } from './ConversationMergeHistory';
 import { Button } from '@/components/ui/button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import type { VisitorOtherConversation } from '@/lib/pmTypes';
 import { Link } from '@tanstack/react-router';
 import {
@@ -12,7 +11,6 @@ import {
   Clock03Icon,
   GitMergeIcon,
   GlobeIcon,
-  MoreHorizontalIcon,
   OctagonXIcon,
   ChromeIcon,
   LaptopIcon,
@@ -32,7 +30,7 @@ import { useConversation, useVisitorContext } from '@/hooks/queries/useSupport';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { isSystemCRMCustomProperty } from '@/lib/crmCustomProperties';
 import type { ConversationStatus } from '@/lib/pmTypes';
-import { cn } from '@/lib/utils';
+import { cn, isPlainLeftClick } from '@/lib/utils';
 
 interface SidebarVisitorContextProps {
   workspaceId: string;
@@ -285,11 +283,13 @@ const RELATED_CONVERSATION_STATUS: Record<RelatedConversationState, { icon: Reac
   merged: { icon: GitMergeIcon, className: 'text-muted-foreground' },
 };
 
+// A row opens the conversation in a read-only preview with Open and Merge, so
+// the open thread stays put. Modified clicks still follow the link.
 function RelatedConversationRow({ workspaceId, currentId, conversation: c, slug }: { workspaceId: string; currentId: string; conversation: VisitorOtherConversation; slug: string }) {
-  const [action, setAction] = useState<'merge' | 'history' | null>(null);
+  const [action, setAction] = useState<'preview' | 'merge' | null>(null);
   const { data: access } = useWorkspaceAccess(workspaceId);
   const { data: source, error: sourceError } = useConversation(workspaceId, action ? c.id : null);
-  const { data: target, error: targetError } = useConversation(workspaceId, action === 'merge' ? currentId : null);
+  const { data: target, error: targetError } = useConversation(workspaceId, action ? currentId : null);
   const state: RelatedConversationState = c.merged_into_id ? 'merged' : c.status as ConversationStatus;
   const status = RELATED_CONVERSATION_STATUS[state] ?? RELATED_CONVERSATION_STATUS.open;
   const statusLabel = c.merged_into_id ? 'Merged' : STATUS_LABELS[c.status as ConversationStatus] ?? c.status;
@@ -303,14 +303,18 @@ function RelatedConversationRow({ workspaceId, currentId, conversation: c, slug 
       </span>
     </QuickTooltip>
     <span className={cn('min-w-0 flex-1 truncate', quietRelatedItemTitleClassName)}>{c.subject}</span>
-    <span className={cn('shrink-0 text-[10px] tabular-nums text-muted-foreground', canMerge && 'group-hover:invisible group-focus-within:invisible')}>#{c.display_id}</span>
+    <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">#{c.display_id}</span>
+  </>;
+  const close = (open: boolean) => { if (!open) setAction(null); };
+  const actions = c.merged_into_id ? undefined : <>
+    {canMerge && target && <Button variant="outline" onClick={() => setAction('merge')}>Merge</Button>}
+    <Button asChild><Link to="/w/$slug/support/$conversationId" params={{ slug, conversationId: c.id }} onClick={() => setAction(null)}>Open conversation</Link></Button>
   </>;
   return <div className="group relative flex items-center rounded-md text-xs transition-colors hover:bg-quiet-hover focus-within:bg-quiet-hover">
-    {c.merged_into_id ? <button type="button" className={rowContentClassName} onClick={() => setAction('history')}>{content}</button> : <Link to="/w/$slug/support/$conversationId" params={{ slug, conversationId: c.id }} className={rowContentClassName}>{content}</Link>}
-    {canMerge && <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" className="absolute right-0.5 top-1/2 h-6 w-6 -translate-y-1/2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100" aria-label={`Actions for conversation #${c.display_id}`}><MoreHorizontalIcon className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => setAction('merge')}>Merge into current conversation…</DropdownMenuItem></DropdownMenuContent></DropdownMenu>}
+    {c.merged_into_id ? <button type="button" className={rowContentClassName} onClick={() => setAction('preview')}>{content}</button> : <Link to="/w/$slug/support/$conversationId" params={{ slug, conversationId: c.id }} className={rowContentClassName} onClick={(event) => { if (!isPlainLeftClick(event)) return; event.preventDefault(); setAction('preview'); }}>{content}</Link>}
     {action && (sourceError || targetError) && <span role="alert" className="text-xs text-destructive">Could not open. <button onClick={() => setAction(null)}>Dismiss</button></span>}
-    {action && !sourceError && !targetError && (!source || (action === 'merge' && !target)) && <span role="status" className="pr-2 text-muted-foreground">Loading…</span>}
-    {source && target && action === 'merge' && <ConversationMergeDialog workspaceId={workspaceId} conversations={[source]} initialTarget={target} open onOpenChange={open => { if (!open) setAction(null); }} />}
-    {source && action === 'history' && <ConversationHistoryDialog workspaceId={workspaceId} conversation={source} open onOpenChange={open => { if (!open) setAction(null); }} />}
+    {action && !sourceError && !targetError && (!source || !target) && <span role="status" className="pr-2 text-muted-foreground">Loading…</span>}
+    {source && target && action === 'merge' && <ConversationMergeDialog workspaceId={workspaceId} conversations={[source]} initialTarget={target} open onOpenChange={close} />}
+    {source && target && action === 'preview' && <ConversationHistoryDialog workspaceId={workspaceId} conversation={source} actions={actions} open onOpenChange={close} />}
   </div>;
 }

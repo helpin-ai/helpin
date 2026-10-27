@@ -58,7 +58,7 @@ records, not instructions to switch to or deploy those branches.
   oversized history fall back to Runtime instead of truncating away obligations.
   Uncertain decisions, provider/audit/usage failures, admission limits and duplicate
   evaluations also preserve the original Runtime path. No key means no Jev calls.
-- **Independent controls:** routing, tags, handoff and follow-up each support `primary`, `shadow`,
+- **Independent controls:** routing, tags, priority, handoff and follow-up each support `primary`, `shadow`,
   and `off`. Shadow calls record results without applying Jev decisions. Routing,
   handoff and follow-up calls remain synchronous with bounded provider deadlines;
   tagging runs in the background in both primary and shadow modes. More than 50
@@ -69,6 +69,14 @@ The widget and inbound-email triage paths call `EvaluateAndRoute` for routing.
 Tagging jobs are recorded by the message insert trigger, independently of routing
 ownership, settings and rules. Newer public customer replies supersede older
 queued tagging work; only the latest eligible message is classified.
+
+The same job asks Jev for the conversation's priority, in the same request as the
+first batch of tags. It only raises priority (low, medium, high, urgent), never
+lowers it, and stops once anyone other than Helpin AI has changed the priority. It
+skips resolved and spam conversations and workspaces that turned off "Let Helpin AI
+raise priority" (`ai_priority_enabled`, on by default) on the SLA policies settings
+page. The change is recorded as a Helpin AI timeline event, and matching SLA
+policies apply to the new priority.
 
 ## Background tagging setup
 
@@ -101,12 +109,14 @@ All values are server-side; credentials are never exposed to the browser.
 | `JEV_API_KEY` | empty | Enables Jev client construction when supplied |
 | `JEV_ROUTING_MODE` | primary | off / shadow / primary |
 | `JEV_TAGS_MODE` | primary | off / shadow / primary |
+| `JEV_PRIORITY_MODE` | primary | off / shadow / primary |
 | `JEV_HANDOFF_MODE` | primary | off / shadow / primary |
 | `JEV_FOLLOW_UP_MODE` | primary | off / shadow / primary |
 | `JEV_TIMEOUT_MS` | 1000 | Per-request deadline, at most 2000; no immediate retries |
 | `JEV_WORKSPACE_IDS` | empty | All workspaces; specify IDs to restrict |
 | `JEV_ROUTING_THRESHOLD` | 0.90 | Minimum selected mailbox probability |
 | `JEV_TAG_THRESHOLD` | 0.95 | Minimum yes probability for a tag |
+| `JEV_PRIORITY_THRESHOLD` | 0.95 | Minimum probability for the selected priority |
 | `JEV_HANDOFF_THRESHOLD` | 0.95 | Minimum selected handoff probability |
 | `JEV_FOLLOW_UP_THRESHOLD` | 0.95 | Minimum selected follow-up state probability |
 | `JEV_DAILY_LIMIT` | 1000 | Combined API attempts per workspace, per UTC day |
@@ -213,8 +223,9 @@ status, tag additions, routing outcomes and LLM fallback errors. A healthy HTTP
 endpoint alone does not prove Jev is active.
 
 Emergency feature rollback: set `JEV_ROUTING_MODE=off`, `JEV_TAGS_MODE=off`,
-`JEV_HANDOFF_MODE=off` and `JEV_FOLLOW_UP_MODE=off`, then restart the API deployment.
-Existing LLM routing remains available. Already-added tags are not automatically removed.
+`JEV_PRIORITY_MODE=off`, `JEV_HANDOFF_MODE=off` and `JEV_FOLLOW_UP_MODE=off`, then restart
+the API deployment. Existing LLM routing remains available. Already-added tags and raised
+priorities are not automatically reverted.
 For binary rollback, select the previously verified release from the current
 GitOps history and deployment record. The original rollout named
 `server-v0.95.403`; it is not a permanently valid rollback target. The GitOps
