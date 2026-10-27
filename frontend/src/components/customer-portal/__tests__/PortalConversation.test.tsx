@@ -49,6 +49,19 @@ describe('PortalMessage', () => {
     expect(container.textContent).toContain('You')
   })
 
+  it('shows a colleague\'s message on the left under their name', async () => {
+    await render({ id: 'm4', sender_type: 'customer', sender_name: 'Bob Roe', from_you: false, created_at: new Date().toISOString(), content: 'Same issue here' })
+    expect(container.querySelector('li')?.className).not.toContain('justify-end')
+    expect(container.textContent).toContain('Bob Roe')
+    expect(container.textContent).not.toContain('You')
+  })
+
+  it('keeps the customer\'s own message on the right when marked', async () => {
+    await render({ id: 'm5', sender_type: 'customer', sender_name: 'Alice', from_you: true, created_at: new Date().toISOString(), content: 'Mine' })
+    expect(container.querySelector('li')?.className).toContain('justify-end')
+    expect(container.textContent).toContain('You')
+  })
+
   it('shows the agent name and avatar', async () => {
     await render({ id: 'm3', sender_type: 'user', sender_name: 'Priya', sender_avatar: 'https://avatars.example/priya.png', created_at: new Date().toISOString(), content: 'Hi' })
     expect(container.querySelector('img')?.getAttribute('src')).toBe('https://avatars.example/priya.png')

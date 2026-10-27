@@ -32,15 +32,19 @@ type portalEligibility struct {
 // one normalized email:
 //   - any blocked contact denies access in either mode;
 //   - approved-contacts mode needs exactly one allowed contact;
+//   - company-members mode also needs that contact to be a member of a
+//     company with company access turned on;
 //   - any-verified-email mode allows the rest and binds a sole contact.
 func evaluatePortalEligibility(mode string, contacts []repository.PortalContactAccess) portalEligibility {
 	var allowed []string
+	companyMember := false
 	for _, contact := range contacts {
 		switch derefString(contact.PortalAccess) {
 		case model.PortalAccessBlocked:
 			return portalEligibility{}
 		case model.PortalAccessAllowed:
 			allowed = append(allowed, contact.ID)
+			companyMember = contact.CompanyMember
 		}
 	}
 	if mode == model.SupportPortalAccessModeAnyVerifiedEmail {
@@ -49,7 +53,7 @@ func evaluatePortalEligibility(mode string, contacts []repository.PortalContactA
 		}
 		return portalEligibility{Eligible: true}
 	}
-	if len(allowed) != 1 {
+	if len(allowed) != 1 || (mode == model.SupportPortalAccessModeCompanyMembers && !companyMember) {
 		return portalEligibility{}
 	}
 	return portalEligibility{Eligible: true, ContactID: &allowed[0]}
@@ -64,8 +68,8 @@ func (s *CustomerPortalService) eligibility(ctx context.Context, repo *repositor
 }
 
 // sessionStillAuthorized rechecks eligibility for a signed-in identity. In
-// approved-contacts mode the eligible contact must be the one this session
-// was issued for; a different match requires a fresh sign-in. The session,
+// either mode a bound contact must still be the one this session was issued
+// for; a different match requires a fresh sign-in. The session,
 // not the shared per-email identity, carries that contact, so a later
 // sign-in bound to another contact cannot revive an older session.
 func (s *CustomerPortalService) sessionStillAuthorized(ctx context.Context, ws *PortalWorkspace, session *model.PortalSession, identity *model.SupportPortalIdentity) (bool, error) {
@@ -73,7 +77,7 @@ func (s *CustomerPortalService) sessionStillAuthorized(ctx context.Context, ws *
 	if err != nil || !result.Eligible {
 		return false, err
 	}
-	if ws.Settings.EffectivePortalAccessMode() == model.SupportPortalAccessModeAnyVerifiedEmail {
+	if ws.Settings.EffectivePortalAccessMode() == model.SupportPortalAccessModeAnyVerifiedEmail && session.CRMContactID == nil {
 		return true, nil
 	}
 	return session.CRMContactID != nil && result.ContactID != nil && *session.CRMContactID == *result.ContactID, nil
@@ -100,7 +104,7 @@ func (s *CustomerPortalService) AccessSummary(ctx context.Context, workspaceID s
 	if settings != nil {
 		mode = settings.EffectivePortalAccessMode()
 	}
-	counts, err := s.repo.AccessSummary(ctx, workspaceID)
+	counts, err := s.repo.AccessSummary(ctx, workspaceID, mode)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +124,9 @@ func (s *CustomerPortalService) AccessSummary(ctx context.Context, workspaceID s
 
 // PortalContactAccess is a contact's portal decision for support admins.
 type PortalContactAccess struct {
-	PortalAccess        *string `json:"portal_access"`
+	PortalAccess *string `json:"portal_access"`
+	// PortalRole overrides the default role of the contact's companies.
+	PortalRole          *string `json:"portal_role"`
 	SharedEmailContacts int64   `json:"shared_email_contacts"`
 }
 
@@ -134,7 +140,7 @@ func (s *CustomerPortalService) ContactAccess(ctx context.Context, workspaceID, 
 	if err != nil {
 		return nil, err
 	}
-	return &PortalContactAccess{PortalAccess: detail.PortalAccess, SharedEmailContacts: detail.SharedEmailContacts}, nil
+	return &PortalContactAccess{PortalAccess: detail.PortalAccess, PortalRole: detail.PortalRole, SharedEmailContacts: detail.SharedEmailContacts}, nil
 }
 
 // SetContactAccess records a support admin's portal decision for a contact.

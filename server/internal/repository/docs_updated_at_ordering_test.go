@@ -23,6 +23,7 @@ func setupDocsUpdatedAtOrderingTestDB(t *testing.T) *gorm.DB {
 
 	stmts := []string{
 		`CREATE TABLE docs_spaces (
+			helpcenter_audience TEXT NOT NULL DEFAULT 'public',
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			team_id TEXT,

@@ -191,6 +191,7 @@ func newInternalKnowledgeTestDB(t *testing.T) *gorm.DB {
 
 	statements := []string{
 		`CREATE TABLE docs_spaces (
+			helpcenter_audience TEXT NOT NULL DEFAULT 'public',
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			team_id TEXT,
@@ -248,6 +249,7 @@ func newInternalKnowledgeTestDB(t *testing.T) *gorm.DB {
 			updated_at DATETIME
 		)`,
 		`CREATE TABLE docs_helpcenter_articles (
+			customer_published_at DATETIME,
 			document_id TEXT PRIMARY KEY,
 			public_published_at DATETIME
 		)`,

@@ -48,8 +48,10 @@ func TestPortalPayloadOnlySignalsOwnCustomerVisibleActivity(t *testing.T) {
 		{"visitor typing", Event{Entity: "support_conversation", Action: "typing_started", EntityID: "conv-a", ActorID: "widget:s1"}, false, nil},
 		{"staff viewing", Event{Entity: "support_conversation", Action: "viewing_started", EntityID: "conv-a", ActorID: "user-1"}, false, nil},
 		{"targeted staff event", Event{Entity: "support_conversation", Action: "updated", EntityID: "conv-a", TargetUserID: "user-1"}, false, nil},
-		{"AI drafting", Event{Entity: SupportAIResponseStreamEntity, Action: "response_started", ParentID: "conv-a"}, false, &portalMessage{Type: "request:typing", Reference: "req_a", Typing: &on}},
-		{"AI done", Event{Entity: SupportAIResponseStreamEntity, Action: "response_completed", ParentID: "conv-a"}, false, &portalMessage{Type: "request:typing", Reference: "req_a", Typing: &off}},
+		// AI only drafts private suggestions on portal requests.
+		{"AI drafting", Event{Entity: SupportAIResponseStreamEntity, Action: "response_started", ParentID: "conv-a"}, false, nil},
+		{"AI progress", Event{Entity: SupportAIResponseStreamEntity, Action: "progress", ParentID: "conv-a"}, false, nil},
+		{"AI done", Event{Entity: SupportAIResponseStreamEntity, Action: "response_completed", ParentID: "conv-a"}, false, nil},
 		{"PM event", Event{Entity: "pm_task", Action: "updated", EntityID: "conv-a"}, false, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

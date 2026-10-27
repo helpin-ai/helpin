@@ -357,6 +357,9 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.PortalIntakeEnabled != nil {
 		current.PortalIntakeEnabled = *patch.PortalIntakeEnabled
 	}
+	if patch.HelpAssistantEnabled != nil {
+		current.HelpAssistantEnabled = *patch.HelpAssistantEnabled
+	}
 	if patch.PortalAccessMode != nil {
 		current.PortalAccessMode = strings.TrimSpace(*patch.PortalAccessMode)
 	}
@@ -1252,13 +1255,15 @@ func (s *SupportInboxService) DeleteCannedResponse(ctx context.Context, workspac
 var ErrPortalReplyDeliveryUnavailable = errors.New("requests without sign-in need outbound email: an application email sender for confirmations, plus Redis and the Postmark reply server so agents can reply")
 
 func (s *SupportInboxService) validatePortalSettings(ctx context.Context, workspaceID string, merged model.SupportInboxSettings, req model.UpdateInstallationSettingsRequest) error {
-	if merged.PortalAccessMode != model.SupportPortalAccessModeApprovedContacts && merged.PortalAccessMode != model.SupportPortalAccessModeAnyVerifiedEmail {
+	switch merged.PortalAccessMode {
+	case model.SupportPortalAccessModeApprovedContacts, model.SupportPortalAccessModeAnyVerifiedEmail, model.SupportPortalAccessModeCompanyMembers:
+	default:
 		return fmt.Errorf("unsupported portal access mode")
 	}
-	if merged.PortalAIMode != "off" && merged.PortalAIMode != "internal_note" && merged.PortalAIMode != "ai_first" {
-		return fmt.Errorf("portal_ai_mode must be off, internal_note, or ai_first")
+	if merged.PortalAIMode != model.SupportPortalAIModeOff && merged.PortalAIMode != model.SupportPortalAIModeInternalNote {
+		return fmt.Errorf("portal_ai_mode must be off or internal_note: people answer portal requests, and AI can only suggest replies privately")
 	}
-	if merged.PortalAIMode != "off" {
+	if merged.PortalAIMode != model.SupportPortalAIModeOff {
 		agentID := strings.TrimSpace(derefString(merged.PortalAIAgentID))
 		if agentID == "" {
 			agentID = strings.TrimSpace(derefString(merged.AIAgentID))

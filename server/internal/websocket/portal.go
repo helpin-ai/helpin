@@ -167,13 +167,8 @@ func portalPayload(scope *PortalScope, event Event, customerVisible bool) []byte
 		default:
 			return signal(event.EntityID, "request:changed", nil)
 		}
-	case SupportAIResponseStreamEntity:
-		switch event.Action {
-		case "response_started", "progress", "response_delta":
-			return signal(event.ParentID, "request:typing", &on)
-		case "response_completed":
-			return signal(event.ParentID, "request:typing", &off)
-		}
 	}
+	// AI never replies on the portal; its stream only drafts private
+	// suggestions, so it must not look like support typing.
 	return nil
 }

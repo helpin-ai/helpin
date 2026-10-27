@@ -16,6 +16,13 @@ vi.mock('@/hooks/queries/useSupport', () => ({
   useCustomerPortalAccessSummary: (_workspaceId: string, enabled: boolean) => (enabled ? mocks.summary() : { isLoading: false, isError: false }),
   useSupportAgents: () => ({ data: [{ id: 'echo', name: 'Echo' }] }),
 }));
+vi.mock('@/hooks/queries', () => ({
+  useDocsSpaces: () => ({ data: [
+    { id: 'space-public', name: 'Guides', slug: 'guides', type: 'external_capable' },
+    { id: 'space-internal', name: 'Runbooks', slug: 'runbooks', type: 'internal' },
+    { id: 'space-private', name: 'Customer guides', slug: 'customer-guides', type: 'external_capable', helpcenter_audience: 'customers' },
+  ], isLoading: false }),
+}));
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, search, className }: { children: React.ReactNode; search?: Record<string, string>; className?: string }) => (
     <a className={className} data-search={JSON.stringify(search ?? {})}>{children}</a>
@@ -59,6 +66,20 @@ afterEach(() => {
 });
 
 describe('CustomerPortalSettings', () => {
+  it('offers only private AI suggestions and keeps a retired customer-reply mode as suggestions', async () => {
+    mocks.query.mockReturnValue({
+      data: { settings: { portal_enabled: true, portal_ai_mode: 'ai_first', ai_agent_id: 'echo' } },
+      isError: false,
+      refetch: vi.fn(),
+    });
+    await act(async () => root.render(<CustomerPortalSettings workspaceId="ws" workspaceSlug="acme" editable />));
+    const trigger = container.querySelector<HTMLElement>('[aria-label="Portal AI response mode"]');
+    expect(trigger?.textContent).toContain('Private suggestions');
+    expect(container.textContent).toContain('Your team answers portal requests');
+    expect(container.textContent).toContain('Customers never see them');
+    expect(container.textContent).not.toContain('Reply to customers');
+  });
+
   it('saves only portal fields and keeps the current portal address visible', async () => {
     await act(async () => root.render(<CustomerPortalSettings workspaceId="workspace-1" workspaceSlug="acme" editable />));
     const link = container.querySelector<HTMLAnchorElement>('a[href$="/portal/acme"]');
@@ -78,8 +99,31 @@ describe('CustomerPortalSettings', () => {
       portal_access_mode: 'approved_contacts',
       portal_ai_mode: 'off',
       portal_ai_agent_id: '',
+      widget_help_space_ids: [],
     });
   });
+
+  it('shares the help space selection with the chat widget and says when suggestions are off', async () => {
+    await act(async () => root.render(<CustomerPortalSettings workspaceId="ws" workspaceSlug="acme" editable />));
+    expect(container.textContent).toContain('article suggestions are off');
+    expect(container.querySelector('[aria-label="Offer Runbooks to customers"]')).toBeNull()
+    // Spaces for signed-in customers never reach the anonymous widget.
+    expect(container.querySelector('[aria-label="Offer Customer guides to customers"]')).toBeNull()
+    expect(container.textContent).toContain('One space is for signed-in customers only.');
+    const toggle = container.querySelector<HTMLButtonElement>('[aria-label="Offer Guides to customers"]');
+    await act(async () => toggle?.click());
+    await act(async () => vi.advanceTimersByTimeAsync(2000));
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ widget_help_space_ids: ['space-public'] }));
+    expect(container.textContent).not.toContain('article suggestions are off');
+  });
+
+  it('offers sign-in for company members only', async () => {
+    mocks.query.mockReturnValue({ data: { settings: { portal_enabled: true, portal_access_mode: 'company_members' } }, isError: false, refetch: vi.fn() })
+    await act(async () => root.render(<CustomerPortalSettings workspaceId="ws" workspaceSlug="acme" editable />))
+    const radio = container.querySelector<HTMLInputElement>('#portal-access-company_members')
+    expect(radio?.checked).toBe(true)
+    expect(container.textContent).toContain('Only allowed contacts who are members of a company with company access turned on can sign in.')
+  })
 
   it('defaults to approved contacts and saves a changed access mode', async () => {
     await act(async () => root.render(<CustomerPortalSettings workspaceId="workspace-1" workspaceSlug="acme" editable />));

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"html"
 	"log/slog"
+	"maps"
 	"net/mail"
 	"net/url"
 	"strings"
@@ -72,6 +73,11 @@ type CustomerPortalService struct {
 	baseURL string
 	// helpcenterDomain, when set, serves portals on help centers at /requests.
 	helpcenterDomain string
+	// knowledge suggests help center articles while customers write.
+	knowledge *HelpcenterAISearchService
+	// assistant shows teammates the help assistant conversation behind a
+	// handed-off request.
+	assistant *HelpAssistantService
 }
 
 // NewCustomerPortalService creates the customer portal service. It registers
@@ -126,6 +132,9 @@ type PortalConfiguration struct {
 	// PublicURL is where this portal is served; the app's /portal path
 	// redirects there.
 	PublicURL string `json:"public_url"`
+	// AssistantEnabled reports whether the portal offers the Ask AI help
+	// assistant.
+	AssistantEnabled bool `json:"assistant_enabled"`
 }
 
 // PortalAttachmentPolicy is the upload rules the portal UI applies before
@@ -446,6 +455,15 @@ func (s *CustomerPortalService) AuthenticatePortalSocket(ctx context.Context, sl
 	if err != nil {
 		return nil, fmt.Errorf("list portal socket requests: %w", err)
 	}
+	companyIDs, err := s.memberCompanyIDs(ctx, access)
+	if err != nil {
+		return nil, fmt.Errorf("list portal socket companies: %w", err)
+	}
+	companyReferences, err := s.repo.CompanyRequestReferences(ctx, ws.ID, companyIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list portal socket company requests: %w", err)
+	}
+	maps.Copy(references, companyReferences)
 	return &model.PortalSocketGrant{WorkspaceID: ws.ID, IdentityID: access.Identity.ID, References: references}, nil
 }
 

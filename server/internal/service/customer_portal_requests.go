@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -27,6 +28,9 @@ type PortalMessage struct {
 	ViaChannel        string                    `json:"via_channel,omitempty"`
 	Attachments       []model.WidgetAttachment  `json:"attachments,omitempty"`
 	CreatedAt         time.Time                 `json:"created_at"`
+	// FromYou marks the signed-in customer's own messages; other customer
+	// messages are from colleagues at the same company.
+	FromYou bool `json:"from_you"`
 }
 
 // PortalRequestDetail is a customer-safe request with its public messages.
@@ -37,11 +41,14 @@ type PortalRequestDetail struct {
 	Status         string    `json:"status"`
 	LastActivityAt time.Time `json:"last_activity_at"`
 	CanReply       bool      `json:"can_reply"`
-	AIProcessing   bool      `json:"ai_processing"`
 	// CanRate is true when the customer may rate the resolved request.
 	CanRate  bool                      `json:"can_rate"`
 	CSAT     *model.SupportCSATSummary `json:"csat,omitempty"`
 	Messages []PortalMessage           `json:"messages"`
+	// Own is false for a colleague's request opened through company
+	// visibility; RequesterName then says who asked.
+	Own           bool    `json:"own"`
+	RequesterName *string `json:"requester_name,omitempty"`
 }
 
 type portalReplySourceKey struct{}
@@ -49,8 +56,10 @@ type portalReplyAuditKey struct{}
 type portalReplyAudit struct{ IdentityID, SessionID string }
 type portalReplyAIKey struct{}
 
+// portalAIQueueAllowed reports whether a new portal message gets a private
+// AI suggestion: drafts are on and nobody owns the request yet.
 func portalAIQueueAllowed(settings model.SupportInboxSettings, ownerID *string) bool {
-	if !settings.PortalEnabled || (settings.PortalAIMode != "ai_first" && settings.PortalAIMode != "internal_note") {
+	if !settings.PortalAIDraftsEnabled() {
 		return false
 	}
 	return ownerID == nil || strings.TrimSpace(*ownerID) == ""
@@ -110,7 +119,7 @@ func (s *CustomerPortalService) ConfirmAnonymousAttachment(ctx context.Context, 
 // the address owner exchanges the confirmation link sent here. An address
 // that may not use the portal gets a receipt without a link instead, and
 // agents reply by email. Submitting never grants portal access.
-func (s *CustomerPortalService) CreateAnonymousRequest(ctx context.Context, ws *PortalWorkspace, secret, subject, description string, attachmentIDs []string) error {
+func (s *CustomerPortalService) CreateAnonymousRequest(ctx context.Context, ws *PortalWorkspace, secret, subject, description string, attachmentIDs []string, intake *model.PortalIntake) error {
 	session, err := s.anonymousIntakeSession(ctx, ws, secret)
 	if err != nil {
 		return err
@@ -122,11 +131,14 @@ func (s *CustomerPortalService) CreateAnonymousRequest(ctx context.Context, ws *
 	if err := s.validateAttachments(ctx, ws, attachmentIDs, session.ID, ""); err != nil {
 		return err
 	}
+	if intake, err = normalizePortalIntake(intake); err != nil {
+		return err
+	}
 	draft, err := s.routeNewRequest(ctx, ws.ID, session.Email, nil)
 	if err != nil {
 		return err
 	}
-	draft.Subject, draft.Description, draft.AttachmentIDs = subject, description, attachmentIDs
+	draft.Subject, draft.Description, draft.AttachmentIDs, draft.Intake = subject, description, attachmentIDs, intake
 	var conversation *model.SupportConversation
 	err = s.repo.ConsumeIntakeSession(ctx, ws.ID, portalHash(secret), time.Now(), func(tx *gorm.DB, current *model.PortalIntakeSession) error {
 		draft.UploadSessionID = current.ID
@@ -138,6 +150,7 @@ func (s *CustomerPortalService) CreateAnonymousRequest(ctx context.Context, ws *
 		return err
 	}
 	s.publishNewRequest(ctx, conversation)
+	s.recordIntakeCoverageSignal(ws, conversation, intake)
 	result, err := s.eligibility(ctx, s.repo, ws, session.Email)
 	if err != nil {
 		slog.ErrorContext(ctx, "portal eligibility lookup failed", "workspace_id", ws.ID, "conversation_id", conversation.ID, "error", err)
@@ -175,7 +188,7 @@ func (s *CustomerPortalService) sendIntakeReceipt(ctx context.Context, ws *Porta
 }
 
 // CreateRequest creates a request owned by the signed-in identity.
-func (s *CustomerPortalService) CreateRequest(ctx context.Context, access *PortalAccess, subject, description string, attachmentIDs []string) (*model.SupportPortalRequest, error) {
+func (s *CustomerPortalService) CreateRequest(ctx context.Context, access *PortalAccess, subject, description string, attachmentIDs []string, intake *model.PortalIntake) (*model.SupportPortalRequest, error) {
 	if !access.Workspace.Settings.PortalIntakeEnabled {
 		return nil, ErrPortalIntakeDisabled
 	}
@@ -186,25 +199,25 @@ func (s *CustomerPortalService) CreateRequest(ctx context.Context, access *Porta
 	if err := s.validateAttachments(ctx, &access.Workspace, attachmentIDs, access.Session.ID, ""); err != nil {
 		return nil, err
 	}
+	if intake, err = normalizePortalIntake(intake); err != nil {
+		return nil, err
+	}
 	identity := access.Identity
 	draft, err := s.routeNewRequest(ctx, access.Workspace.ID, identity.Email, identity.DisplayName)
 	if err != nil {
 		return nil, err
 	}
 	draft.Identity = &identity
-	draft.Subject, draft.Description, draft.AttachmentIDs, draft.UploadSessionID = subject, description, attachmentIDs, access.Session.ID
+	draft.Subject, draft.Description, draft.AttachmentIDs, draft.UploadSessionID, draft.Intake = subject, description, attachmentIDs, access.Session.ID, intake
 	if portalAIQueueAllowed(access.Workspace.Settings, draft.OwnerID) {
 		draft.DispatchAIMode = access.Workspace.Settings.PortalAIMode
-	}
-	if draft.DispatchAIMode == "ai_first" {
-		flow := model.SupportConversationFlowStateAIHandling
-		draft.FlowState = &flow
 	}
 	conversation, request, err := s.repo.CreateRequest(ctx, draft)
 	if err != nil {
 		return nil, err
 	}
 	s.publishNewRequest(ctx, conversation)
+	s.recordIntakeCoverageSignal(&access.Workspace, conversation, intake)
 	return request, nil
 }
 
@@ -223,26 +236,30 @@ func (s *CustomerPortalService) Requests(ctx context.Context, access *PortalAcce
 	return s.repo.ListRequests(ctx, access.Workspace.ID, access.Identity.ID, status)
 }
 
-// RequestDetail returns a request the identity may read.
+// RequestDetail returns a request the session may read: its own, or a
+// colleague's through company visibility.
 func (s *CustomerPortalService) RequestDetail(ctx context.Context, access *PortalAccess, reference string) (*PortalRequestDetail, error) {
-	conv, err := s.repo.FindRequest(ctx, access.Workspace.ID, access.Identity.ID, reference)
+	request, err := s.findRequest(ctx, access, reference)
 	if err != nil {
 		return nil, err
 	}
-	if conv == nil {
+	if request == nil {
 		return nil, ErrPortalRequestNotFound
 	}
+	conv := request.Conversation
 	// Merged requests also show replies shared into them, as the chat widget does.
 	messages, err := s.inbox.ListPortalConversationMessages(ctx, access.Workspace.ID, conv.ID)
 	if err != nil {
 		return nil, err
 	}
 	assistant := s.assistantName(ctx, &access.Workspace)
-	detail := &PortalRequestDetail{Reference: reference, Number: conv.DisplayID, Subject: conv.Subject, Status: model.PortalRequestStatus(conv.Status, derefString(conv.LastPublicSenderType), conv.CustomerAwaitingResponse), LastActivityAt: conv.CreatedAt, CanReply: conv.AnonymizedAt == nil, Messages: []PortalMessage{}}
-	detail.AIProcessing = conv.FlowState != nil && *conv.FlowState == model.SupportConversationFlowStateAIHandling &&
-		!supportConversationHumanOwned(conv) && conv.LastCustomerMessageID != nil &&
-		conv.LastPublicMessageID != nil && *conv.LastPublicMessageID == *conv.LastCustomerMessageID
-	if access.Workspace.Settings.CSATEnabled && conv.AnonymizedAt == nil {
+	detail := &PortalRequestDetail{Reference: reference, Number: conv.DisplayID, Subject: conv.Subject, Status: model.PortalRequestStatus(conv.Status, derefString(conv.LastPublicSenderType), conv.CustomerAwaitingResponse), LastActivityAt: conv.CreatedAt, CanReply: conv.AnonymizedAt == nil, Messages: []PortalMessage{}, Own: request.Own}
+	if !request.Own {
+		detail.RequesterName = s.portalRequesterName(ctx, conv)
+		s.auditCompanyView(ctx, access, conv)
+	}
+	// Only the requester rates their request.
+	if request.Own && access.Workspace.Settings.CSATEnabled && conv.AnonymizedAt == nil {
 		canRate, err := s.inbox.conversationAcceptsCSAT(ctx, access.Workspace.ID, conv)
 		if err != nil {
 			return nil, err
@@ -257,12 +274,24 @@ func (s *CustomerPortalService) RequestDetail(ctx context.Context, access *Porta
 		}
 	}
 	avatars := s.portalSenderAvatars(ctx, access.Workspace.ID, messages)
+	authors := s.portalCustomerAuthors(ctx, access.Workspace.ID, messages)
+	// Only colleagues' unnamed messages need the requester's name.
+	requesterName := sync.OnceValue(func() *string {
+		if detail.RequesterName != nil {
+			return detail.RequesterName
+		}
+		return s.portalRequesterName(ctx, conv)
+	})
 	for i := range messages {
 		msg := &messages[i]
 		if !portalMessageVisible(msg) {
 			continue
 		}
 		public := projectPortalMessage(msg, assistant)
+		public.FromYou = portalMessageFromViewer(msg, &access.Identity, request.Own)
+		if msg.SenderType == "customer" && !public.FromYou && strings.TrimSpace(derefString(public.SenderName)) == "" {
+			public.SenderName = portalCustomerAuthorName(msg, authors, requesterName)
+		}
 		if public.SenderType == "user" && msg.SenderUserID != nil {
 			if avatar, ok := avatars[*msg.SenderUserID]; ok {
 				applyPortalSenderAvatar(&public, avatar)
@@ -273,10 +302,108 @@ func (s *CustomerPortalService) RequestDetail(ctx context.Context, access *Porta
 			detail.LastActivityAt = msg.CreatedAt
 		}
 	}
-	if err := s.repo.MarkRequestRead(ctx, access.Workspace.ID, access.Identity.ID, reference, time.Now().UTC()); err != nil {
-		slog.WarnContext(ctx, "portal request read state update failed", "workspace_id", access.Workspace.ID, "error", err)
+	if request.Own {
+		if err := s.repo.MarkRequestRead(ctx, access.Workspace.ID, access.Identity.ID, reference, time.Now().UTC()); err != nil {
+			slog.WarnContext(ctx, "portal request read state update failed", "workspace_id", access.Workspace.ID, "error", err)
+		}
 	}
 	return detail, nil
+}
+
+// portalRequesterName is how a colleague's request names who asked: the
+// requester's contact name, as in the company request list, else the
+// conversation's customer name or email.
+func (s *CustomerPortalService) portalRequesterName(ctx context.Context, conv *model.SupportConversation) *string {
+	if conv.CRMContactID != nil {
+		name, err := s.repo.ContactDisplayName(ctx, conv.WorkspaceID, *conv.CRMContactID)
+		if err != nil {
+			slog.WarnContext(ctx, "portal requester lookup failed", "workspace_id", conv.WorkspaceID, "error", err)
+		} else if name != "" {
+			return &name
+		}
+	}
+	for _, value := range []*string{conv.CustomerName, conv.CustomerEmail} {
+		if name := strings.TrimSpace(derefString(value)); name != "" {
+			return &name
+		}
+	}
+	return nil
+}
+
+// portalCustomerAuthors names the portal identities that wrote customer
+// messages. A failed lookup leaves colleagues' messages unnamed.
+func (s *CustomerPortalService) portalCustomerAuthors(ctx context.Context, workspaceID string, messages []model.SupportMessage) map[string]string {
+	seen := map[string]bool{}
+	var ids []string
+	for i := range messages {
+		if id := portalMessageAuthor(&messages[i]).PortalIdentityID; id != "" && !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	names, err := s.repo.PortalIdentityNames(ctx, workspaceID, ids)
+	if err != nil {
+		slog.WarnContext(ctx, "portal author lookup failed", "workspace_id", workspaceID, "error", err)
+		return nil
+	}
+	return names
+}
+
+// portalCustomerAuthorName names a customer message that carries no sender
+// name: its portal author, its email sender, or else the requester.
+func portalCustomerAuthorName(msg *model.SupportMessage, authors map[string]string, requesterName func() *string) *string {
+	author := portalMessageAuthor(msg)
+	switch {
+	case author.PortalIdentityID != "":
+		if name := authors[author.PortalIdentityID]; name != "" {
+			return &name
+		}
+		return nil
+	case strings.TrimSpace(author.EmailSender) != "":
+		email := strings.TrimSpace(author.EmailSender)
+		return &email
+	default:
+		return requesterName()
+	}
+}
+
+// portalMessageAuthorship is who wrote a customer message, as recorded in its
+// metadata: portal replies record their identity, inbound email its sender.
+type portalMessageAuthorship struct {
+	PortalIdentityID string `json:"portal_identity_id"`
+	EmailSender      string `json:"email_sender"`
+	Unreadable       bool   `json:"-"`
+}
+
+func portalMessageAuthor(msg *model.SupportMessage) portalMessageAuthorship {
+	var author portalMessageAuthorship
+	if msg.SenderType != "customer" || strings.TrimSpace(msg.Metadata) == "" {
+		return author
+	}
+	if err := json.Unmarshal([]byte(msg.Metadata), &author); err != nil {
+		return portalMessageAuthorship{Unreadable: true}
+	}
+	return author
+}
+
+// portalMessageFromViewer reports whether a customer message was written by
+// the signed-in customer. Portal replies record their identity and inbound
+// email records its sender; other customer messages belong to the requester.
+func portalMessageFromViewer(msg *model.SupportMessage, viewer *model.SupportPortalIdentity, own bool) bool {
+	if msg.SenderType != "customer" {
+		return false
+	}
+	author := portalMessageAuthor(msg)
+	switch {
+	case author.Unreadable:
+		return own
+	case author.PortalIdentityID != "":
+		return author.PortalIdentityID == viewer.ID
+	case strings.TrimSpace(author.EmailSender) != "":
+		return strings.EqualFold(strings.TrimSpace(author.EmailSender), strings.TrimSpace(viewer.Email))
+	default:
+		return own
+	}
 }
 
 // projectPortalMessage returns the customer-safe message. Every automated
@@ -361,6 +488,25 @@ func portalMessageVisible(msg *model.SupportMessage) bool {
 		(msg.SenderType == "customer" || msg.SenderType == "user" || msg.SenderType == "agent" || msg.SenderType == "ai")
 }
 
+// portalReplySenderName names a portal reply's author. The requester keeps
+// their identity name; a colleague's reply always carries a name, so agents
+// never mistake it for the requester's.
+func (s *CustomerPortalService) portalReplySenderName(ctx context.Context, access *PortalAccess, own bool) *string {
+	if own || strings.TrimSpace(derefString(access.Identity.DisplayName)) != "" {
+		return access.Identity.DisplayName
+	}
+	if access.Session.CRMContactID != nil {
+		name, err := s.repo.ContactDisplayName(ctx, access.Workspace.ID, *access.Session.CRMContactID)
+		if err != nil {
+			slog.WarnContext(ctx, "portal reply sender lookup failed", "workspace_id", access.Workspace.ID, "error", err)
+		} else if name != "" {
+			return &name
+		}
+	}
+	email := access.Identity.Email
+	return &email
+}
+
 // Reply appends a customer reply (text, files, or both), reopening a
 // resolved request, and returns the refreshed request.
 func (s *CustomerPortalService) Reply(ctx context.Context, access *PortalAccess, reference, content string, attachmentIDs []string) (*PortalRequestDetail, error) {
@@ -368,13 +514,14 @@ func (s *CustomerPortalService) Reply(ctx context.Context, access *PortalAccess,
 	if strings.TrimSpace(content) == "" && len(attachmentIDs) == 0 {
 		return nil, ErrPortalReplyInvalid
 	}
-	conv, err := s.repo.FindRequest(ctx, access.Workspace.ID, access.Identity.ID, reference)
+	request, err := s.findRequest(ctx, access, reference)
 	if err != nil {
 		return nil, err
 	}
-	if conv == nil {
+	if request == nil {
 		return nil, ErrPortalRequestNotFound
 	}
+	conv := request.Conversation
 	if conv.AnonymizedAt != nil {
 		return nil, ErrPortalReplyUnavailable
 	}
@@ -388,7 +535,7 @@ func (s *CustomerPortalService) Reply(ctx context.Context, access *PortalAccess,
 	}
 	if _, err := s.inbox.CreateConversationMessage(replyCtx, access.Workspace.ID, conv.ID, model.CreateMessageRequest{
 		Content: content, MessageType: "reply", AttachmentIDs: attachmentIDs,
-	}, "customer", nil, nil, access.Identity.DisplayName); err != nil {
+	}, "customer", nil, nil, s.portalReplySenderName(ctx, access, request.Own)); err != nil {
 		return nil, err
 	}
 	return s.RequestDetail(ctx, access, reference)
@@ -397,13 +544,18 @@ func (s *CustomerPortalService) Reply(ctx context.Context, access *PortalAccess,
 // RateRequest records the customer's rating of a resolved request and
 // returns the refreshed request.
 func (s *CustomerPortalService) RateRequest(ctx context.Context, access *PortalAccess, reference string, rating int, comment string) (*PortalRequestDetail, error) {
-	conv, err := s.repo.FindRequest(ctx, access.Workspace.ID, access.Identity.ID, reference)
+	request, err := s.findRequest(ctx, access, reference)
 	if err != nil {
 		return nil, err
 	}
-	if conv == nil {
+	if request == nil {
 		return nil, ErrPortalRequestNotFound
 	}
+	// Colleagues may follow and reply, but the rating is the requester's.
+	if !request.Own {
+		return nil, ErrSupportCSATUnavailable
+	}
+	conv := request.Conversation
 	if _, err := s.inbox.SubmitConversationCSAT(ctx, model.SupportCSATSubmission{
 		WorkspaceID: access.Workspace.ID, ConversationID: conv.ID,
 		Channel: model.SupportCSATChannelPortal, Rating: rating, Comment: comment,
@@ -447,14 +599,14 @@ func (s *CustomerPortalService) attachmentTarget(ctx context.Context, access *Po
 		}
 		return "", nil
 	}
-	conv, err := s.repo.FindRequest(ctx, access.Workspace.ID, access.Identity.ID, reference)
+	request, err := s.findRequest(ctx, access, reference)
 	if err != nil {
 		return "", err
 	}
-	if conv == nil || conv.AnonymizedAt != nil {
+	if request == nil || request.Conversation.AnonymizedAt != nil {
 		return "", ErrPortalRequestNotFound
 	}
-	return conv.ID, nil
+	return request.Conversation.ID, nil
 }
 
 func (s *CustomerPortalService) anonymousIntakeSession(ctx context.Context, ws *PortalWorkspace, secret string) (*model.PortalIntakeSession, error) {

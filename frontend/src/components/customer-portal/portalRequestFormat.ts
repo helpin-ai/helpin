@@ -4,3 +4,9 @@ import type { CustomerPortalRequest } from '@/lib/services/customerPortalService
 export function requestNumber(request: Pick<CustomerPortalRequest, 'number' | 'reference'>) {
   return request.number ? `#${request.number}` : request.reference
 }
+
+/** requestedBy names who asked for a company request. */
+export function requestedBy(request: CustomerPortalRequest) {
+  if (request.own) return 'You'
+  return request.requested_by || 'A colleague'
+}

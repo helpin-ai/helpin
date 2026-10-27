@@ -165,3 +165,33 @@ export function renderRobotsTxt(publicUrl) {
     `Sitemap: ${joinPublicUrl(publicUrl, '/sitemap.xml')}`,
   ].join('\n')
 }
+
+/**
+ * renderLlmsTxt lists a help center's public articles for AI tools, following
+ * the llms.txt convention: a title, a summary, then a section per space with
+ * links to its articles. It reads only the public help center, so articles for
+ * signed-in customers never appear.
+ */
+export function renderLlmsTxt({ publicUrl, config, spaces }) {
+  const multilingual = (config?.enabled_locales || []).length > 1
+  const locale = config?.default_locale || 'en'
+  const title = `${config?.brand_name || 'Help'} help center`
+  const summary = (config?.seo_description || `Help articles for ${config?.brand_name || 'this product'}.`).replace(/\s+/g, ' ').trim()
+  const lines = [`# ${title}`, '', `> ${summary}`, '']
+  for (const space of spaces) {
+    const articles = []
+    for (const collection of space.navigation || []) {
+      for (const article of collection.articles || []) {
+        const url = joinPublicUrl(publicUrl, buildSitemapPath({ multilingual, locale, kind: 'article', slug: article.slug, publicId: article.public_id }))
+        articles.push(`- [${markdownText(article.title)}](${url})${collection.name ? `: ${markdownText(collection.name)}` : ''}`)
+      }
+    }
+    if (articles.length === 0) continue
+    lines.push(`## ${markdownText(space.name)}`, '', ...articles, '')
+  }
+  return `${lines.join('\n').trimEnd()}\n`
+}
+
+function markdownText(value) {
+  return String(value ?? '').replace(/\s+/g, ' ').replace(/([[\]])/g, '\\$1').trim()
+}

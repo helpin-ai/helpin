@@ -34,7 +34,7 @@ func (r *DocsHelpcenterRepository) ListLiveArticleLinkTargets(ctx context.Contex
 		Select("p.document_id, p.locale, p.slug, ha.public_id, cfg.default_locale").
 		Joins("JOIN docs_documents d ON d.id = p.document_id").
 		Joins("JOIN docs_spaces ds ON ds.id = d.space_id AND ds.workspace_id = d.workspace_id").
-		Where("ds.type = ? AND ds.deleted_at IS NULL", model.SpaceTypeExternalCapable).
+		Where("ds.type = ? AND ds.helpcenter_audience = ? AND ds.deleted_at IS NULL", model.SpaceTypeExternalCapable, model.HelpcenterAudiencePublic).
 		Joins("JOIN docs_helpcenter_articles ha ON ha.document_id = p.document_id").
 		Joins("JOIN docs_helpcenter_configs cfg ON cfg.workspace_id = d.workspace_id").
 		Joins("LEFT JOIN docs_helpcenter_article_translations hat ON hat.document_id = p.document_id AND hat.locale = p.locale").

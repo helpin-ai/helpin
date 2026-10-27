@@ -386,6 +386,7 @@ func (r *DocsHelpcenterRepository) ListPublicSpaceTranslations(ctx context.Conte
 			AND st.published_at IS NOT NULL
 			AND s.deleted_at IS NULL
 			AND s.type = ?
+			AND s.helpcenter_audience = 'public'
 		`, workspaceID, locale, model.DocsHelpcenterTranslationStatusPublished, model.SpaceTypeExternalCapable).
 		Order("s.position ASC, s.created_at ASC").
 		Scan(&translations).Error; err != nil {
@@ -408,6 +409,7 @@ func (r *DocsHelpcenterRepository) GetPublicSpaceTranslationBySlug(ctx context.C
 			AND st.published_at IS NOT NULL
 			AND s.deleted_at IS NULL
 			AND s.type = ?
+			AND s.helpcenter_audience = 'public'
 		`, workspaceID, locale, slug, model.DocsHelpcenterTranslationStatusPublished, model.SpaceTypeExternalCapable).
 		First(&translation).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -477,6 +479,7 @@ func (r *DocsHelpcenterRepository) GetPublicCollectionTranslationByWorkspaceSlug
 			AND c.deleted_at IS NULL
 			AND s.deleted_at IS NULL
 			AND s.type = ?
+			AND s.helpcenter_audience = 'public'
 		`, workspaceID, locale, slug, model.DocsHelpcenterTranslationStatusPublished, model.SpaceTypeExternalCapable).
 		Limit(2).Find(&translations).Error; err != nil {
 		return nil, fmt.Errorf("get public collection translation by workspace slug: %w", err)
@@ -866,6 +869,7 @@ func (r *DocsHelpcenterRepository) ListPublicCollectionTranslationsByCollection(
 			AND c.deleted_at IS NULL
 			AND s.deleted_at IS NULL
 			AND s.type = ?
+			AND s.helpcenter_audience = 'public'
 		`, collectionID, model.DocsHelpcenterTranslationStatusPublished, model.SpaceTypeExternalCapable).
 		Order("ct.locale ASC").
 		Scan(&translations).Error; err != nil {
@@ -1177,14 +1181,15 @@ func (r *DocsHelpcenterRepository) ListCollectionAncestors(ctx context.Context, 
 	return chain, nil
 }
 
-// ListPublicDocumentsBySpace returns internally published + externally published docs for a help-center space.
+// ListPublicDocumentsBySpace returns the live articles of a help center space,
+// for either audience, for search indexing.
 func (r *DocsHelpcenterRepository) ListPublicDocumentsBySpace(ctx context.Context, workspaceID, spaceID string) ([]model.DocsDocument, error) {
 	var docs []model.DocsDocument
 	if err := r.db.WithContext(ctx).
 		Table("docs_documents d").
 		Select("d.*").
 		Joins("JOIN docs_helpcenter_articles ha ON ha.document_id = d.id").
-		Where("d.workspace_id = ? AND d.space_id = ? AND d.status = 'published' AND d.deleted_at IS NULL AND ha.public_published_at IS NOT NULL", workspaceID, spaceID).
+		Where("d.workspace_id = ? AND d.space_id = ? AND d.status = 'published' AND d.deleted_at IS NULL AND (ha.public_published_at IS NOT NULL OR ha.customer_published_at IS NOT NULL)", workspaceID, spaceID).
 		Order("d.updated_at DESC").
 		Scan(&docs).Error; err != nil {
 		return nil, fmt.Errorf("list public docs by space: %w", err)

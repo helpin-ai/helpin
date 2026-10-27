@@ -14,6 +14,8 @@ describe('portal paths', () => {
       ['/portal/acme/sign-in', '/sign-in'],
       ['/portal/acme/callback', '/callback'],
       ['/portal/acme/requests/req_1', '/req_1'],
+      ['/portal/acme/help', '/help'],
+      ['/portal/acme/help/hc_abc', '/help/hc_abc'],
     ]
     for (const [app, mounted] of pairs) {
       expect(portalMountedPath(app, 'acme')).toBe(mounted)

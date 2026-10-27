@@ -13,6 +13,7 @@ import { ErrorState } from '@/components/ErrorState'
 import { Sidebar, SidebarSkeleton } from '@/components/layout/Sidebar'
 import { MobileNav } from '@/components/navigation/MobileNav'
 import { getArticlePager } from '@/lib/navigation'
+import { ArticleActions } from '@/components/article/ArticleActions'
 
 interface ArticleRouteViewProps {
   locale: string
@@ -117,6 +118,7 @@ export function ArticleRouteView({
           pager={pager}
           multilingualEnabled={multilingualEnabled}
         >
+          <ArticleActions articleId={article.id} title={article.title} />
           <ArticleContent html={article.content_html} />
         </ArticleShell>
       </div>

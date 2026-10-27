@@ -495,6 +495,39 @@ func (s *AgentRuntimeHostService) ResolveTargetContext(ctx context.Context, req 
 		return resp, nil
 	}
 
+	// A help assistant run may only resolve its own turn.
+	if previewRun != nil && previewRun.TargetType == model.HelpAssistantTurnTarget && (target.Type != model.HelpAssistantTurnTarget || target.ID != previewRun.TargetID) {
+		return nil, ErrAgentRuntimeHostForbidden
+	}
+	if target.Type == model.HelpAssistantTurnTarget {
+		// The runtime resolves the target before Helpin maps its run ID; the
+		// run Helpin started is named in the metadata Helpin supplied.
+		if previewRun == nil && s.runRepo != nil {
+			if hostRunID := runtimeMetadataString("helpin_run_id", req.Target.Metadata, req.Metadata); hostRunID != "" {
+				previewRun, err = s.runRepo.GetByID(ctx, workspaceID, hostRunID)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+		if previewRun == nil || previewRun.TargetType != model.HelpAssistantTurnTarget || previewRun.TargetID != target.ID || previewRun.AgentID != callbackAgentID || previewRun.WorkspaceID != workspaceID {
+			return nil, ErrAgentRuntimeHostForbidden
+		}
+		resp.Summary = "Help assistant question"
+		resp.Data = map[string]interface{}{"target_type": target.Type, "target_id": target.ID}
+		if s.workspaceRepo != nil {
+			workspace, err := s.workspaceRepo.GetByID(ctx, workspaceID)
+			if err != nil {
+				return nil, err
+			}
+			if workspace != nil {
+				resp.Summary = "Help assistant question for " + workspace.Name
+				resp.Data["product_context"] = map[string]interface{}{"name": workspace.Name, "website_url": agentRuntimeHostString(workspace.WebsiteURL), "summary": agentRuntimeHostString(workspace.Description)}
+			}
+		}
+		return resp, nil
+	}
+
 	if target.Type == supportInvestigationTarget {
 		investigationRun := previewRun
 		if investigationRun == nil && s.runRepo != nil {

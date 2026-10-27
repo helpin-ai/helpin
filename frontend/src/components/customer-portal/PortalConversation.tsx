@@ -90,19 +90,22 @@ function SenderAvatar({ message }: { message: PortalMessageData }) {
 }
 
 /**
- * PortalMessage shows one message. The customer's messages sit on the right;
- * support and AI replies sit on the left with an avatar, as in chat.
+ * PortalMessage shows one message. The signed-in customer's messages sit on
+ * the right; support, AI and colleagues' replies sit on the left with an
+ * avatar, as in chat.
  */
 export function PortalMessage({ message, supportName }: { message: PortalMessageData; supportName: string }) {
   const fromCustomer = message.sender_type === 'customer'
-  const sender = fromCustomer ? 'You' : message.sender_name || supportName
+  // Older servers omit from_you; every customer message was then the viewer's.
+  const fromYou = fromCustomer && message.from_you !== false
+  const sender = fromYou ? 'You' : message.sender_name || (fromCustomer ? 'A colleague' : supportName)
   const time = (
     <time dateTime={message.created_at} title={formatPortalAbsoluteTime(message.created_at)}>
       {formatPortalRelativeTime(message.created_at)}
     </time>
   )
   const body = (
-    <div className={cn('rounded-xl px-4 py-3 text-[14px] leading-[1.7] text-quiet-text-primary', fromCustomer ? 'bg-quiet-row-hover' : 'bg-quiet-hover')}>
+    <div className={cn('rounded-xl px-4 py-3 text-[14px] leading-[1.7] text-quiet-text-primary', fromYou ? 'bg-quiet-row-hover' : 'bg-quiet-hover')}>
       {message.content ? <PortalMessageContent content={message.content} markdown={!fromCustomer} /> : null}
       {message.attachments?.length ? (
         <SupportAttachmentGallery
@@ -114,7 +117,7 @@ export function PortalMessage({ message, supportName }: { message: PortalMessage
     </div>
   )
 
-  if (fromCustomer) {
+  if (fromYou) {
     return (
       <li className="flex justify-end py-2.5">
         <div className="min-w-0 max-w-[85%]">

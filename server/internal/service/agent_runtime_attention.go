@@ -34,7 +34,7 @@ func interactionNeedsAttention(interaction model.AgentRunInteraction) bool {
 }
 
 func (s *AgentRuntimeProjectionService) syncInteractionAttention(ctx context.Context, run *model.AgentRun, interaction model.AgentRunInteraction) error {
-	if s.attentionNotifier == nil || run.TargetType == supportPreviewTarget {
+	if s.attentionNotifier == nil || run.TargetType == supportPreviewTarget || run.TargetType == model.HelpAssistantTurnTarget {
 		return nil
 	}
 	if isTerminalAgentRunStatus(run.Status) {

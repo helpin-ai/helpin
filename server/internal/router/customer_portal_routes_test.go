@@ -11,10 +11,13 @@ import (
 
 func TestCustomerPortalConfigRoutes(t *testing.T) {
 	routes := New(Handlers{CustomerPortal: &handler.CustomerPortalHandler{}}, auth.NewJWTManager("test-secret"), nil, nil, nil)
-	for _, path := range []string{"/api/public/portal/acme", "/api/public/portal/acme/"} {
+	for _, path := range []string{"/api/public/portal/acme", "/api/public/portal/acme/", "/api/public/portal/acme/suggestions"} {
 		if !routes.Match(chi.NewRouteContext(), http.MethodGet, path) {
 			t.Errorf("GET %s is not registered", path)
 		}
+	}
+	if !routes.Match(chi.NewRouteContext(), http.MethodPost, "/api/public/portal/acme/suggestions/events") {
+		t.Error("POST /api/public/portal/acme/suggestions/events is not registered")
 	}
 	for _, path := range []string{"/api/portal/auth/request-link", "/api/portal/auth/exchange", "/api/portal/auth/logout"} {
 		if routes.Match(chi.NewRouteContext(), http.MethodPost, path) {
@@ -33,6 +36,12 @@ func TestCustomerPortalAdminRoutes(t *testing.T) {
 		{http.MethodGet, "/api/support/inbox/portal/contacts/c1/access"},
 		{http.MethodPut, "/api/support/inbox/portal/contacts/c1/access"},
 		{http.MethodPost, "/api/support/inbox/conversations/conv1/portal-confirmation"},
+		{http.MethodPut, "/api/support/inbox/portal/contacts/c1/role"},
+		{http.MethodGet, "/api/support/inbox/portal/companies/co1"},
+		{http.MethodPut, "/api/support/inbox/portal/companies/co1"},
+		{http.MethodPost, "/api/support/inbox/portal/companies/co1/members/from-domain"},
+		{http.MethodPut, "/api/support/inbox/portal/companies/co1/members/c1"},
+		{http.MethodGet, "/api/support/inbox/conversations/conv1/portal-context"},
 	} {
 		if !routes.Match(chi.NewRouteContext(), route.method, route.path) {
 			t.Errorf("%s %s is not registered", route.method, route.path)

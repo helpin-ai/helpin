@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildSitemapPath,
   collectSitemapEntries,
+  renderLlmsTxt,
   renderRobotsTxt,
   renderSitemapXml,
   resolvePublicUrlParts,
@@ -77,5 +78,22 @@ describe('server SEO helpers', () => {
     expect(xml).toContain('<loc>https://acme.com/docs/articles/install-def456ab</loc>')
     expect(renderRobotsTxt(publicUrl)).toContain('Sitemap: https://acme.com/docs/sitemap.xml')
     expect(renderRobotsTxt(publicUrl)).toContain('Disallow: /docs/preview/')
+  })
+})
+
+describe('renderLlmsTxt', () => {
+  it('lists public articles by space with absolute links', () => {
+    const body = renderLlmsTxt({
+      publicUrl: resolvePublicUrlParts(hcContext, { ...config, public_url_mode: 'hosted_subdomain' }),
+      config: { ...config, brand_name: 'Acme', seo_description: 'Guides for Acme.' },
+      spaces: [
+        { name: 'Guides', navigation: [{ name: 'Billing', articles: [{ title: 'Export [CSV] reports', slug: 'export', public_id: 'abc' }] }] },
+        { name: 'Empty', navigation: [] },
+      ],
+    })
+    expect(body).toContain('# Acme help center\n\n> Guides for Acme.')
+    expect(body).toContain('## Guides')
+    expect(body).toMatch(/- \[Export \\\[CSV\\\] reports\]\(https:\/\/acme\.helpin\.center\/articles\/export-abc\): Billing/)
+    expect(body).not.toContain('## Empty')
   })
 })

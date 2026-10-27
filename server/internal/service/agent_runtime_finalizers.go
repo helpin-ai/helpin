@@ -72,6 +72,7 @@ type agentRunFinalizerSupportCoverageService interface {
 // idempotent (marker in output_summary or natural create-if-not-exists) and a
 // failing finalizer never blocks the others or the status projection.
 type AgentRunFinalizerService struct {
+	helpAssistant    *HelpAssistantService
 	runRepo          agentRuntimeProjectionRunRepository
 	agentRepo        agentRunFinalizerAgentRepository
 	taskRepo         agentRunFinalizerTaskRepository
@@ -225,6 +226,16 @@ func (s *AgentRunFinalizerService) FinalizeTerminalRun(ctx context.Context, run 
 	if isSupportInvestigationRun(run) {
 		if err := s.finalizeAgentStatus(ctx, run); err != nil {
 			slog.ErrorContext(ctx, "support investigation agent status finalizer failed", "run_id", run.ID, "error", err)
+		}
+		return
+	}
+	// A help assistant turn's only output is its answer, saved by its tools.
+	if run.TargetType == model.HelpAssistantTurnTarget {
+		if err := s.finalizeAgentStatus(ctx, run); err != nil {
+			slog.ErrorContext(ctx, "help assistant agent status finalizer failed", "run_id", run.ID, "error", err)
+		}
+		if err := s.helpAssistant.FinalizeRun(ctx, run); err != nil {
+			slog.ErrorContext(ctx, "help assistant turn finalizer failed", "run_id", run.ID, "error", err)
 		}
 		return
 	}
@@ -732,4 +743,10 @@ func runOutputSummaryFlag(summary json.RawMessage, key string) bool {
 	}
 	value, _ := body[key].(bool)
 	return value
+}
+
+// SetHelpAssistant closes help assistant turns whose run ended without an
+// answer.
+func (s *AgentRunFinalizerService) SetHelpAssistant(assistant *HelpAssistantService) {
+	s.helpAssistant = assistant
 }

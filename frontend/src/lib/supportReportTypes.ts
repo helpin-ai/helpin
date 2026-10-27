@@ -110,6 +110,18 @@ export interface SupportReportOverview {
     next_response: SupportReportSLATarget
     resolution: SupportReportSLATarget
   }
+  /** Workspace-wide reports only, when customers wrote portal requests in the period. */
+  portal_intake?: SupportReportPortalIntake
+  help_assistant?: SupportReportHelpAssistant
+}
+
+/** What customers did with help center articles suggested while writing portal requests. */
+export interface SupportReportPortalIntake {
+  with_suggestions: number
+  opened: number
+  submitted_after_opening: number
+  likely_deflected: number
+  submitted_without_suggestions: number
 }
 
 export interface SupportReportParams {
@@ -117,4 +129,17 @@ export interface SupportReportParams {
   to: string
   tz: string
   mailboxIds: string[]
+}
+
+/** Help assistant conversations in the report period. */
+export interface SupportReportHelpAssistant {
+  conversations: number
+  questions: number
+  answered: number
+  /** Questions the articles did not answer; the assistant offered support. */
+  handed_off: number
+  failed: number
+  helpful: number
+  not_helpful: number
+  unanswered: { question: string; asked_at: string }[]
 }

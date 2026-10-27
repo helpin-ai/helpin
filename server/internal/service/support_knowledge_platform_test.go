@@ -373,9 +373,13 @@ func TestAnswerTraceIncludesShadowComparisonMetadata(t *testing.T) {
 func TestDocsRetrievalEnforcesWorkspaceAgentAndEnabledLinkInSQL(t *testing.T) {
 	db := newTestDB(t)
 	for _, ddl := range []string{
-		`CREATE TABLE docs_spaces (id TEXT PRIMARY KEY, workspace_id TEXT, type TEXT)`,
+		`CREATE TABLE docs_spaces (
+			helpcenter_audience TEXT NOT NULL DEFAULT 'public',
+			id TEXT PRIMARY KEY, workspace_id TEXT, type TEXT)`,
 		`CREATE TABLE docs_documents (id TEXT PRIMARY KEY, workspace_id TEXT, space_id TEXT, status TEXT, deleted_at DATETIME)`,
-		`CREATE TABLE docs_helpcenter_articles (document_id TEXT, public_published_at DATETIME)`,
+		`CREATE TABLE docs_helpcenter_articles (
+			customer_published_at DATETIME,
+			document_id TEXT, public_published_at DATETIME)`,
 		`CREATE TABLE docs_chunks (id TEXT PRIMARY KEY, workspace_id TEXT, space_id TEXT, document_id TEXT, block_id TEXT, chunk_index INTEGER, section_key TEXT, heading_path TEXT, title TEXT, content TEXT, search_content TEXT, updated_at DATETIME)`,
 		`CREATE TABLE agent_knowledge_sources (id TEXT PRIMARY KEY, agent_id TEXT, scope_type TEXT DEFAULT 'space', space_id TEXT, collection_id TEXT, document_id TEXT, workspace_id TEXT, sync_status TEXT)`,
 	} {
@@ -444,9 +448,13 @@ func TestContentRetrievalEnforcesAgentSourceStatusAndPageValidityInSQL(t *testin
 func TestWorkspacePublicKnowledgeDiscoveryDoesNotRequireAgentLinks(t *testing.T) {
 	db := newTestDB(t)
 	for _, ddl := range []string{
-		`CREATE TABLE docs_spaces (id TEXT PRIMARY KEY, workspace_id TEXT, type TEXT, deleted_at DATETIME)`,
+		`CREATE TABLE docs_spaces (
+			helpcenter_audience TEXT NOT NULL DEFAULT 'public',
+			id TEXT PRIMARY KEY, workspace_id TEXT, type TEXT, deleted_at DATETIME)`,
 		`CREATE TABLE docs_documents (id TEXT PRIMARY KEY, workspace_id TEXT, space_id TEXT, status TEXT, deleted_at DATETIME)`,
-		`CREATE TABLE docs_helpcenter_articles (document_id TEXT, public_published_at DATETIME)`,
+		`CREATE TABLE docs_helpcenter_articles (
+			customer_published_at DATETIME,
+			document_id TEXT, public_published_at DATETIME)`,
 		`CREATE TABLE docs_chunks (id TEXT PRIMARY KEY, workspace_id TEXT, space_id TEXT, document_id TEXT, block_id TEXT, chunk_index INTEGER, section_key TEXT, heading_path TEXT, title TEXT, content TEXT, search_content TEXT, updated_at DATETIME)`,
 		`CREATE TABLE support_content_sources (id TEXT PRIMARY KEY, workspace_id TEXT, sync_status TEXT)`,
 		`CREATE TABLE support_content_pages (id TEXT PRIMARY KEY, workspace_id TEXT, content_source_id TEXT, http_status INTEGER)`,
