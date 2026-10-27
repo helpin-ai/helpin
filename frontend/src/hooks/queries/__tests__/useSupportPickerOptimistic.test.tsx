@@ -86,7 +86,8 @@ describe('support picker changes', () => {
     const client = await setup()
 
     await act(async () => { hooks!.priority.mutate({ conversationId: 'conv-1', priority: 'urgent' }) })
-    expect(cached(client, 'priority')).toEqual({ detail: 'urgent', infinite: 'urgent', page: 'urgent', untouched: 'medium' })
+    // onMutate is async; wait for the optimistic update instead of racing it.
+    await vi.waitFor(() => expect(cached(client, 'priority')).toEqual({ detail: 'urgent', infinite: 'urgent', page: 'urgent', untouched: 'medium' }))
 
     await act(async () => { response.resolve({ data: { ...conversation, priority: 'urgent' }, error: null, status: 200 }) })
     expect(cached(client, 'priority').detail).toBe('urgent')
@@ -106,7 +107,7 @@ describe('support picker changes', () => {
     const client = await setup()
 
     await act(async () => { hooks!.assign.mutate({ conversationId: 'conv-1', userId: null }) })
-    expect(cached(client, 'assigned_user_id')).toEqual({ detail: undefined, infinite: undefined, page: undefined, untouched: 'user-a' })
+    await vi.waitFor(() => expect(cached(client, 'assigned_user_id')).toEqual({ detail: undefined, infinite: undefined, page: undefined, untouched: 'user-a' }))
 
     await act(async () => { response.resolve({ data: { ...conversation, assigned_user_id: undefined }, error: null, status: 200 }) })
   })
