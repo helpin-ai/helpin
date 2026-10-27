@@ -1891,6 +1891,7 @@ func main() {
 		helpcenterAISearchService, supportRunEvidenceRepo,
 	)
 	commandService.SetHelpAssistant(helpAssistantService)
+	customerPortalService.SetHelpAssistant(helpAssistantService)
 	if runFinalizers != nil {
 		runFinalizers.SetHelpAssistant(helpAssistantService)
 	}
@@ -2091,6 +2092,7 @@ func main() {
 	}
 	handlers.Docs.SetHelpcenterAISearchService(helpcenterAISearchService)
 	handlers.Docs.SetHelpAssistant(helpAssistantService)
+	handlers.Docs.SetSupportRequestURL(customerPortalService.NewRequestURL)
 	if handlers.CustomerPortal != nil {
 		handlers.CustomerPortal.SetHelpAssistant(helpAssistantService)
 	}

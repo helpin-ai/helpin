@@ -48,6 +48,23 @@ func (s *CustomerPortalService) PublicURL(ctx context.Context, ws *PortalWorkspa
 	return s.address(ctx, ws.ID, ws.Slug).home()
 }
 
+// NewRequestURL is the portal's new-request form, wherever the portal is
+// served, or "" when the workspace's portal takes no requests.
+func (s *CustomerPortalService) NewRequestURL(ctx context.Context, workspaceID string) string {
+	if s == nil {
+		return ""
+	}
+	slug, err := s.repo.WorkspaceSlugByID(ctx, workspaceID)
+	if err != nil || slug == "" {
+		return ""
+	}
+	ws, err := s.ResolveWorkspace(ctx, slug)
+	if err != nil || (!ws.Settings.PortalIntakeEnabled && !ws.Settings.PortalAnonymousIntakeEnabled) {
+		return ""
+	}
+	return s.address(ctx, ws.ID, ws.Slug).home() + "/new"
+}
+
 // PortalRequestURL links to one request in the workspace's portal.
 func (s *CustomerPortalService) PortalRequestURL(ctx context.Context, workspaceID, slug, reference string) string {
 	address := s.address(ctx, workspaceID, slug)

@@ -311,6 +311,9 @@ type PortalConversationContext struct {
 type PortalIntakeContext struct {
 	OpenedArticles []PortalArticleSuggestion `json:"opened_articles"`
 	SuggestedCount int                       `json:"suggested_count"`
+	// Assistant is the help assistant conversation the customer had before
+	// writing in, when the assistant handed them off.
+	Assistant []HelpAssistantTranscriptTurn `json:"assistant,omitempty"`
 }
 
 // ConversationPortalContext returns the portal context of a conversation the
@@ -337,6 +340,13 @@ func (s *CustomerPortalService) ConversationPortalContext(ctx context.Context, w
 		return nil, err
 	}
 	result.Intake = &PortalIntakeContext{OpenedArticles: opened, SuggestedCount: len(intake.SuggestedArticleIDs)}
+	if intake.AssistantSessionID != "" && s.assistant != nil {
+		transcript, err := s.assistant.Transcript(ctx, workspaceID, intake.AssistantSessionID)
+		if err != nil {
+			return nil, err
+		}
+		result.Intake.Assistant = transcript
+	}
 	return result, nil
 }
 
@@ -361,7 +371,7 @@ func (s *CustomerPortalService) portalArticles(ctx context.Context, workspaceID 
 	}
 	// Articles for signed-in customers have no public address; teammates
 	// open them in Docs.
-	private, err := s.inbox.docsHelpcenterRepo.ListCustomerHelpArticles(ctx, workspaceID, defaultHelpcenterLocale(cfg))
+	private, err := s.inbox.docsHelpcenterRepo.ListCustomerHelpArticles(ctx, workspaceID, defaultHelpcenterLocale(cfg), "")
 	if err != nil {
 		return nil, err
 	}

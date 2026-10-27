@@ -186,7 +186,9 @@ func (s *HelpAssistantService) articleRefs(ctx context.Context, session *model.H
 	if len(documentIDs) == 0 {
 		return refs, nil
 	}
-	public, err := s.knowledge.PublicArticles(ctx, session.WorkspaceID, session.Locale, documentIDs)
+	base := s.baseLocale(ctx, session)
+	// Articles read in the session's language where translated, else the default.
+	public, err := s.knowledge.resolveArticleRefs(ctx, session.WorkspaceID, session.Locale, base, documentIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +202,7 @@ func (s *HelpAssistantService) articleRefs(ctx context.Context, session *model.H
 	if session.Audience != model.HelpcenterAudienceCustomers {
 		return refs, nil
 	}
-	private, err := s.hcRepo.ListCustomerHelpArticles(ctx, session.WorkspaceID, session.Locale)
+	private, err := s.hcRepo.ListCustomerHelpArticles(ctx, session.WorkspaceID, base, session.Locale)
 	if err != nil {
 		return nil, err
 	}
@@ -210,6 +212,16 @@ func (s *HelpAssistantService) articleRefs(ctx context.Context, session *model.H
 		}
 	}
 	return refs, nil
+}
+
+// baseLocale is the help center's default locale, or the session's when the
+// help center cannot be read.
+func (s *HelpAssistantService) baseLocale(ctx context.Context, session *model.HelpAssistantSession) string {
+	cfg, err := s.hcRepo.GetConfig(ctx, session.WorkspaceID)
+	if err != nil || cfg == nil {
+		return session.Locale
+	}
+	return defaultHelpcenterLocale(cfg)
 }
 
 func (s *HelpAssistantService) articleTitle(ctx context.Context, session *model.HelpAssistantSession, documentID string) string {
@@ -239,6 +251,11 @@ func (s *HelpAssistantService) ReadArticle(ctx context.Context, meta model.Inter
 	publication, err := s.publications.GetArticlePublication(ctx, documentID, session.Locale)
 	if err != nil {
 		return nil, err
+	}
+	if base := s.baseLocale(ctx, session); publication == nil && base != session.Locale {
+		if publication, err = s.publications.GetArticlePublication(ctx, documentID, base); err != nil {
+			return nil, err
+		}
 	}
 	if publication == nil {
 		return nil, fmt.Errorf("article not found; use an article_id from search_help")

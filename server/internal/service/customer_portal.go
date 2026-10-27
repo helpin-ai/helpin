@@ -75,6 +75,9 @@ type CustomerPortalService struct {
 	helpcenterDomain string
 	// knowledge suggests help center articles while customers write.
 	knowledge *HelpcenterAISearchService
+	// assistant shows teammates the help assistant conversation behind a
+	// handed-off request.
+	assistant *HelpAssistantService
 }
 
 // NewCustomerPortalService creates the customer portal service. It registers

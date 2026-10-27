@@ -65,7 +65,7 @@ func (s *CustomerPortalService) SuggestArticles(ctx context.Context, ws *PortalW
 		return suggestions, nil
 	}
 	if signedIn {
-		private, err := s.searchCustomerHelp(ctx, ws, "portal_intake", query, portalSuggestionLimit)
+		private, err := s.searchCustomerHelp(ctx, ws, "portal_intake", query, "", portalSuggestionLimit)
 		if err != nil {
 			return suggestions, err
 		}

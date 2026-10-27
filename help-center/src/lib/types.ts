@@ -72,6 +72,8 @@ export interface HelpCenterConfig {
   ai_answers_enabled?: boolean
   /** Whether the help center offers the Ask AI help assistant. */
   ai_assistant_enabled?: boolean
+  /** The customer portal's new-request form, where Ask AI hands visitors off. */
+  support_request_url?: string
   support_widget_key?: string | null
   seo_title: string | null
   seo_description: string | null

@@ -19,7 +19,8 @@ export function SidebarPortalContext({ workspaceId, conversation }: {
   if (!relevant || !data) return null;
   const company = data.company && data.company.members > 0 ? data.company : null;
   const opened = data.intake?.opened_articles ?? [];
-  if (!company && opened.length === 0) return null;
+  const assistant = data.intake?.assistant ?? [];
+  if (!company && opened.length === 0 && assistant.length === 0) return null;
 
   const people = company?.members === 1 ? '1 colleague' : `${company?.members} colleagues`;
   return (
@@ -50,6 +51,26 @@ export function SidebarPortalContext({ workspaceId, conversation }: {
             ))}
           </ul>
         </div>
+      ) : null}
+      {assistant.length > 0 ? (
+        <details className="mt-2 text-xs">
+          <summary className="cursor-pointer leading-5 text-muted-foreground hover:text-foreground">
+            Asked the help assistant first ({assistant.filter((turn) => turn.role === 'user').length} {assistant.filter((turn) => turn.role === 'user').length === 1 ? 'question' : 'questions'})
+          </summary>
+          <ol className="mt-2 space-y-2">
+            {assistant.map((turn, index) => (
+              <li key={index} className="min-w-0">
+                <p className="font-medium text-foreground">{turn.role === 'user' ? 'Customer' : 'Help assistant'}</p>
+                <p className="whitespace-pre-wrap break-words text-muted-foreground">
+                  {turn.status === 'failed' ? 'Could not answer.' : turn.content}
+                </p>
+                {turn.citations.length > 0 ? (
+                  <p className="mt-0.5 text-muted-foreground">Sources: {turn.citations.map((citation) => citation.title).join(', ')}</p>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+        </details>
       ) : null}
     </section>
   );

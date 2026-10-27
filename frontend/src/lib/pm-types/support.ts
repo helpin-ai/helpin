@@ -1533,6 +1533,8 @@ export interface CustomerPortalConversationContext {
   intake: {
     /** Public articles carry their help center url; articles for signed-in customers carry portal_article_id instead. */
     opened_articles: Array<{ id: string; title: string; space_name?: string; url?: string; portal_article_id?: string }>;
+    /** The help assistant conversation that handed the customer off, if any. */
+    assistant?: Array<{ role: 'user' | 'assistant'; content: string; status: string; citations: Array<{ article_id: string; title: string; url?: string }> }>;
     suggested_count: number;
   } | null;
 }

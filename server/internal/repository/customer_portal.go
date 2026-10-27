@@ -91,6 +91,18 @@ func (r *CustomerPortalRepository) WorkspaceBySlug(ctx context.Context, slug str
 	return &ws, nil
 }
 
+// WorkspaceSlugByID returns a workspace's public slug, or "" when there is none.
+func (r *CustomerPortalRepository) WorkspaceSlugByID(ctx context.Context, workspaceID string) (string, error) {
+	var slugs []string
+	if err := r.db.WithContext(ctx).Model(&model.Workspace{}).Where("id = ?", workspaceID).Limit(1).Pluck("slug", &slugs).Error; err != nil {
+		return "", err
+	}
+	if len(slugs) == 0 {
+		return "", nil
+	}
+	return slugs[0], nil
+}
+
 // CreateIntakeSession stores an anonymous intake capability.
 func (r *CustomerPortalRepository) CreateIntakeSession(ctx context.Context, session *model.PortalIntakeSession) error {
 	return r.db.WithContext(ctx).Create(session).Error

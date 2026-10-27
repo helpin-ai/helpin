@@ -154,6 +154,8 @@ export interface CustomerPortalIntake {
   suggested_article_ids: string[]
   opened_article_ids: string[]
   search_completed: boolean
+  /** The help assistant conversation that handed the customer off, if any. */
+  assistant_session_id?: string
 }
 
 export interface CreateCustomerPortalRequestInput {
@@ -214,6 +216,11 @@ export function customerPortalSocketUrl(slug: string) {
   return base.toString()
 }
 
+/** readerLocale is the customer's language, for reading translated articles. */
+function readerLocale() {
+  return encodeURIComponent(typeof navigator === 'undefined' ? '' : navigator.language)
+}
+
 /**
  * portalAssistantRequest returns a help assistant response in the result
  * shape the shared conversation controller expects, instead of throwing.
@@ -266,14 +273,15 @@ export const customerPortalService = {
     portalRequest<void>(slug, '/suggestions/events', { method: 'POST', body: JSON.stringify(event) }),
   suggestions: (slug: string, text: string, signal?: AbortSignal) =>
     portalRequest<{ articles: CustomerPortalArticleSuggestion[]; search_completed: boolean }>(slug, `/suggestions?q=${encodeURIComponent(text)}`, { signal }),
+  // Help articles are read in the customer's language where translated.
   helpArticles: (slug: string) =>
-    portalRequest<{ articles: CustomerPortalHelpArticle[] }>(slug, '/help').then((result) => result.articles),
+    portalRequest<{ articles: CustomerPortalHelpArticle[] }>(slug, `/help?locale=${readerLocale()}`).then((result) => result.articles),
   searchHelpArticles: (slug: string, query: string, signal?: AbortSignal) =>
-    portalRequest<{ articles: CustomerPortalHelpArticle[] }>(slug, `/help/search?q=${encodeURIComponent(query)}`, { signal }).then((result) => result.articles),
+    portalRequest<{ articles: CustomerPortalHelpArticle[] }>(slug, `/help/search?q=${encodeURIComponent(query)}&locale=${readerLocale()}`, { signal }).then((result) => result.articles),
   helpArticle: (slug: string, articleId: string) =>
-    portalRequest<CustomerPortalHelpArticleDetail>(slug, `/help/articles/${encodeURIComponent(articleId)}`),
+    portalRequest<CustomerPortalHelpArticleDetail>(slug, `/help/articles/${encodeURIComponent(articleId)}?locale=${readerLocale()}`),
   assistantAsk: (slug: string, body: { visitor_id: string; session_id?: string; message: string; page_article_id?: string }) =>
-    portalAssistantRequest<AssistantTurn>(slug, '/assistant/messages', { method: 'POST', body: JSON.stringify(body) }),
+    portalAssistantRequest<AssistantTurn>(slug, '/assistant/messages', { method: 'POST', body: JSON.stringify({ ...body, locale: navigator.language }) }),
   assistantSession: (slug: string, sessionId: string, visitorId: string) =>
     portalAssistantRequest<AssistantSessionView>(slug, `/assistant/sessions/${encodeURIComponent(sessionId)}?visitor_id=${encodeURIComponent(visitorId)}`),
   assistantFeedback: (slug: string, messageId: string, body: { visitor_id: string; session_id: string; helpful: boolean }) =>

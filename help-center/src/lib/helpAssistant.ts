@@ -50,11 +50,10 @@ export function storeAssistantSession(subdomain: string, sessionId: string | nul
 }
 
 export const helpAssistantService = {
-  ask: (subdomain: string, payload: { visitor_id: string; session_id?: string; message: string; page_article_id?: string }) =>
+  ask: (subdomain: string, payload: { visitor_id: string; session_id?: string; message: string; page_article_id?: string; locale?: string }) =>
     api.post<AssistantTurn>(`/hc/${subdomain}/assistant/messages`, payload),
   session: (subdomain: string, sessionId: string, visitorId: string) =>
     api.get<AssistantSession>(`/hc/${subdomain}/assistant/sessions/${encodeURIComponent(sessionId)}?visitor_id=${encodeURIComponent(visitorId)}`),
   feedback: (subdomain: string, messageId: string, payload: { visitor_id: string; session_id: string; helpful: boolean }) =>
     api.post<{ saved: boolean }>(`/hc/${subdomain}/assistant/messages/${encodeURIComponent(messageId)}/feedback`, payload),
-  portalSlug: (subdomain: string) => api.get<{ slug: string }>(`/hc/${subdomain}/portal`),
 }

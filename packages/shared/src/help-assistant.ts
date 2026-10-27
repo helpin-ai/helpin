@@ -66,6 +66,8 @@ export interface AssistantConversationState {
   busy: boolean;
   notice: string | null;
   turnsLeft: number | null;
+  /** The server's id for this conversation, once it has one. */
+  sessionId: string | null;
 }
 
 export const ASSISTANT_PENDING_LABEL = 'Searching the help articles…';
@@ -79,7 +81,7 @@ let localSequence = 0;
  * (it works with React's useSyncExternalStore) and call dispose when done.
  */
 export class AssistantConversation {
-  private state: AssistantConversationState = { messages: [], freshAnswerIds: new Set(), restoring: false, busy: false, notice: null, turnsLeft: null };
+  private state: AssistantConversationState = { messages: [], freshAnswerIds: new Set(), restoring: false, busy: false, notice: null, turnsLeft: null, sessionId: null };
   private listeners = new Set<() => void>();
   private sessionId: string | null = null;
   private generation = 0;
@@ -274,7 +276,7 @@ export class AssistantConversation {
   }
 
   private update(patch: Partial<AssistantConversationState>) {
-    const next = { ...this.state, ...patch };
+    const next = { ...this.state, ...patch, sessionId: this.sessionId };
     next.busy = next.messages.some((message) => message.status === 'pending');
     this.state = next;
     for (const listener of this.listeners) listener();

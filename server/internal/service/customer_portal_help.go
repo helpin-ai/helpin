@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
@@ -39,12 +40,12 @@ type PortalHelpArticleDetail struct {
 
 // HelpArticles lists the articles of help spaces for signed-in customers.
 // The caller must hold a portal session.
-func (s *CustomerPortalService) HelpArticles(ctx context.Context, ws *PortalWorkspace) ([]PortalHelpArticle, error) {
-	repo, locale, err := s.customerHelpSource(ctx, ws.ID)
+func (s *CustomerPortalService) HelpArticles(ctx context.Context, ws *PortalWorkspace, locale string) ([]PortalHelpArticle, error) {
+	repo, locales, err := s.customerHelpSource(ctx, ws.ID, locale)
 	if err != nil || repo == nil {
 		return []PortalHelpArticle{}, err
 	}
-	rows, err := repo.ListCustomerHelpArticles(ctx, ws.ID, locale)
+	rows, err := repo.ListCustomerHelpArticles(ctx, ws.ID, locales.base, locales.reader)
 	if err != nil {
 		return nil, err
 	}
@@ -58,8 +59,8 @@ func (s *CustomerPortalService) HelpArticles(ctx context.Context, ws *PortalWork
 // HelpArticle returns one article of a help space for signed-in customers,
 // rendered like a public help center article. The caller must hold a portal
 // session.
-func (s *CustomerPortalService) HelpArticle(ctx context.Context, ws *PortalWorkspace, publicID string) (*PortalHelpArticleDetail, error) {
-	repo, locale, err := s.customerHelpSource(ctx, ws.ID)
+func (s *CustomerPortalService) HelpArticle(ctx context.Context, ws *PortalWorkspace, publicID, locale string) (*PortalHelpArticleDetail, error) {
+	repo, locales, err := s.customerHelpSource(ctx, ws.ID, locale)
 	if err != nil {
 		return nil, err
 	}
@@ -67,14 +68,14 @@ func (s *CustomerPortalService) HelpArticle(ctx context.Context, ws *PortalWorks
 	if repo == nil || publicID == "" {
 		return nil, ErrPortalHelpArticleNotFound
 	}
-	row, err := repo.GetCustomerHelpArticle(ctx, ws.ID, locale, publicID)
+	row, err := repo.GetCustomerHelpArticle(ctx, ws.ID, locales.base, locales.reader, publicID)
 	if err != nil {
 		return nil, err
 	}
 	if row == nil {
 		return nil, ErrPortalHelpArticleNotFound
 	}
-	content, err := renderPublicArticleHTML(ctx, repo, ws.ID, locale, row.Content)
+	content, err := renderPublicArticleHTML(ctx, repo, ws.ID, row.Locale, row.Content)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +85,7 @@ func (s *CustomerPortalService) HelpArticle(ctx context.Context, ws *PortalWorks
 // SearchHelpArticles searches the help spaces for signed-in customers by
 // meaning, with keyword matching when embeddings are unavailable. The caller
 // must hold a portal session.
-func (s *CustomerPortalService) SearchHelpArticles(ctx context.Context, ws *PortalWorkspace, query string) ([]PortalHelpArticle, error) {
+func (s *CustomerPortalService) SearchHelpArticles(ctx context.Context, ws *PortalWorkspace, query, locale string) ([]PortalHelpArticle, error) {
 	query = strings.Join(strings.Fields(query), " ")
 	if runes := []rune(query); len(runes) > portalHelpQueryMax {
 		query = string(runes[:portalHelpQueryMax])
@@ -92,13 +93,13 @@ func (s *CustomerPortalService) SearchHelpArticles(ctx context.Context, ws *Port
 	if query == "" {
 		return []PortalHelpArticle{}, nil
 	}
-	return s.searchCustomerHelp(ctx, ws, "portal_help_search", query, portalHelpSearchLimit)
+	return s.searchCustomerHelp(ctx, ws, "portal_help_search", query, locale, portalHelpSearchLimit)
 }
 
 // searchCustomerHelp returns relevant articles of help spaces for signed-in
 // customers, best first, each with its best matching passage.
-func (s *CustomerPortalService) searchCustomerHelp(ctx context.Context, ws *PortalWorkspace, surface, query string, limit int) ([]PortalHelpArticle, error) {
-	repo, locale, err := s.customerHelpSource(ctx, ws.ID)
+func (s *CustomerPortalService) searchCustomerHelp(ctx context.Context, ws *PortalWorkspace, surface, query, locale string, limit int) ([]PortalHelpArticle, error) {
+	repo, locales, err := s.customerHelpSource(ctx, ws.ID, locale)
 	if err != nil || repo == nil || s.knowledge == nil {
 		return []PortalHelpArticle{}, err
 	}
@@ -110,7 +111,7 @@ func (s *CustomerPortalService) searchCustomerHelp(ctx context.Context, ws *Port
 	if err != nil || len(groups) == 0 {
 		return []PortalHelpArticle{}, err
 	}
-	rows, err := repo.ListCustomerHelpArticles(ctx, ws.ID, locale)
+	rows, err := repo.ListCustomerHelpArticles(ctx, ws.ID, locales.base, locales.reader)
 	if err != nil {
 		return nil, err
 	}
@@ -134,22 +135,45 @@ func (s *CustomerPortalService) searchCustomerHelp(ctx context.Context, ws *Port
 	return results, nil
 }
 
-// customerHelpSource returns the help center repository and the help center
-// default locale, or a nil repository when the workspace has no published
-// help center.
-func (s *CustomerPortalService) customerHelpSource(ctx context.Context, workspaceID string) (*repository.DocsHelpcenterRepository, string, error) {
+// helpLocales are the help center's default locale and the locale an
+// article is read in when translated.
+type helpLocales struct{ base, reader string }
+
+// customerHelpSource returns the help center repository and the locales to
+// read in, or a nil repository when the workspace has no published help
+// center. requested applies only when the help center offers it.
+func (s *CustomerPortalService) customerHelpSource(ctx context.Context, workspaceID, requested string) (*repository.DocsHelpcenterRepository, helpLocales, error) {
 	if s.inbox == nil || s.inbox.docsHelpcenterRepo == nil {
-		return nil, "", nil
+		return nil, helpLocales{}, nil
 	}
 	repo := s.inbox.docsHelpcenterRepo
 	cfg, err := repo.GetConfig(ctx, workspaceID)
 	if err != nil {
-		return nil, "", err
+		return nil, helpLocales{}, err
 	}
 	if cfg == nil || !cfg.IsPublished {
-		return nil, "", nil
+		return nil, helpLocales{}, nil
 	}
-	return repo, defaultHelpcenterLocale(cfg), nil
+	base := defaultHelpcenterLocale(cfg)
+	return repo, helpLocales{base: base, reader: readerHelpLocale(cfg, requested)}, nil
+}
+
+// readerHelpLocale picks the help center locale closest to a reader's
+// language ("de-AT" reads "de-AT", then "de"), or the default locale.
+func readerHelpLocale(cfg *model.DocsHelpcenterConfig, requested string) string {
+	requested = strings.ToLower(strings.TrimSpace(requested))
+	candidates := []string{requested}
+	if base, _, found := strings.Cut(requested, "-"); found {
+		candidates = append(candidates, base)
+	}
+	for _, candidate := range candidates {
+		for _, enabled := range cfg.EnabledLocales {
+			if candidate != "" && strings.EqualFold(enabled, candidate) {
+				return enabled
+			}
+		}
+	}
+	return defaultHelpcenterLocale(cfg)
 }
 
 func portalHelpArticle(row repository.CustomerHelpArticle) PortalHelpArticle {

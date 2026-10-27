@@ -91,6 +91,7 @@ type DocsHandler struct {
 	supportWidgetConfig  supportWidgetConfigProvider
 	aiSearchSvc          *service.HelpcenterAISearchService
 	helpAssistant        *service.HelpAssistantService
+	supportRequestURL    func(ctx context.Context, workspaceID string) string
 	apiReferenceSvc      *service.DocsAPIReferenceService
 }
 
@@ -117,6 +118,9 @@ type publicHelpcenterConfigResponse struct {
 	// AIAssistantEnabled reports whether the help center offers the Ask AI
 	// help assistant.
 	AIAssistantEnabled bool `json:"ai_assistant_enabled"`
+	// SupportRequestURL is the customer portal's new-request form, where the
+	// help assistant hands visitors off; empty when the portal takes none.
+	SupportRequestURL string `json:"support_request_url,omitempty"`
 }
 
 type publicHelpcenterBootstrapResponse struct {

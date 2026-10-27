@@ -15,7 +15,7 @@ It is off by default. Turn on **Ask AI help assistant** in **Settings → Help c
 
 The panel shows a progress label while the assistant works, then the answer with its **Sources**, copy, and helpful / not helpful buttons. A conversation is kept for the browser tab and holds up to 20 questions; **New chat** starts over. While the panel is open on the help center, the chat widget launcher is hidden.
 
-**Contact support** appears when the assistant could not answer. It opens the portal's new-request form, filled in with the question and the conversation. Without a portal it opens the chat widget, or shows the support email.
+**Contact support** appears when the assistant could not answer. It opens the portal's new-request form, filled in with the question and the conversation, wherever the portal is served. When the portal takes no requests it opens the chat widget, or shows the support email. The request links the conversation, so teammates find it in the conversation sidebar under **Asked the help assistant first**.
 
 ## What it can read
 
@@ -24,7 +24,7 @@ The panel shows a progress label while the assistant works, then the answer with
 | Help center visitor, or a portal visitor who is not signed in | Public help spaces |
 | Customer signed in to the portal | Public help spaces and [spaces for signed-in customers](support-portal-access.md#help-articles-for-signed-in-customers) |
 
-A conversation keeps the audience it started with: signing in starts a new conversation.
+A conversation keeps the audience it started with: signing in starts a new conversation. Articles are read in the visitor's language when a translation is published, and in the default language otherwise.
 
 The assistant's tools only read published content and reply:
 

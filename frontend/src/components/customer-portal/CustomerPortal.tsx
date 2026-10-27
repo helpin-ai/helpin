@@ -543,7 +543,7 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
   const { session } = usePortal()
   // A help assistant handoff opens this form with the conversation filled in.
   const [prefill] = useState(readRequestPrefill)
-  const { draft, setDraft, clearDraft } = usePortalDraft(slug, session!.customer.id, prefill)
+  const { draft, setDraft, clearDraft } = usePortalDraft(slug, session!.customer.id, prefill && { subject: prefill.subject, message: prefill.message })
   useEffect(() => {
     if (prefill) clearRequestPrefill()
   }, [prefill])
@@ -569,7 +569,7 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
         subject: subject.trim(),
         message: message.trim(),
         attachment_ids: uploads.attachmentIds,
-        intake: suggestions.intake(),
+        intake: { ...suggestions.intake(), assistant_session_id: prefill?.assistantSession },
       })
       uploads.clear()
       clearDraft()
@@ -606,7 +606,7 @@ function NewRequestForm({ slug, fileUploadsEnabled, policy, onCancel, onCreated,
 }
 
 /** readRequestPrefill reads a request filled in from the help assistant. */
-function readRequestPrefill(): { subject: string; message: string } | undefined {
+function readRequestPrefill(): { subject: string; message: string; assistantSession?: string } | undefined {
   const params = new URLSearchParams(window.location.search)
   // The router JSON-quotes values that would otherwise parse as JSON.
   const read = (key: string) => {
@@ -619,7 +619,8 @@ function readRequestPrefill(): { subject: string; message: string } | undefined 
   }
   const subject = read('subject').trim().slice(0, 200)
   const message = read('message').trim().slice(0, 8000)
-  return subject || message ? { subject, message } : undefined
+  const assistantSession = read('assistant_session').trim()
+  return subject || message ? { subject, message, assistantSession: /^[0-9a-f-]{36}$/i.test(assistantSession) ? assistantSession : undefined } : undefined
 }
 
 /** clearRequestPrefill drops the prefill from the address, so a reload starts from the saved draft. */
@@ -627,6 +628,7 @@ function clearRequestPrefill() {
   const url = new URL(window.location.href)
   url.searchParams.delete('subject')
   url.searchParams.delete('message')
+  url.searchParams.delete('assistant_session')
   window.history.replaceState(window.history.state, '', url.toString())
 }
 

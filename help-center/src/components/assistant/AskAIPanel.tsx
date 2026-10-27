@@ -5,7 +5,6 @@ import { useDocsContext } from '@/contexts/DocsContext'
 import { useHelpAssistant } from '@/hooks/useHelpAssistant'
 import { useRevealText } from '@/hooks/useRevealText'
 import { renderAnswerMarkdown } from '@/lib/answerMarkdown'
-import { helpAssistantService } from '@/lib/helpAssistant'
 import type { AssistantMessage } from '@/lib/types'
 
 /** A question to ask as the panel opens, optionally about the current article. */
@@ -28,7 +27,7 @@ function helpinWidget(): HelpinWidget | null {
  * sources, feedback, and a way to contact support.
  */
 export function AskAIPanel({ request, onClose }: { request: AskAIRequest | null; onClose: () => void }) {
-  const { config, subdomain, basepath } = useDocsContext()
+  const { config } = useDocsContext()
   const assistant = useHelpAssistant()
   const [draft, setDraft] = useState('')
   const [page, setPage] = useState<AskAIRequest | null>(null)
@@ -91,16 +90,16 @@ export function AskAIPanel({ request, onClose }: { request: AskAIRequest | null;
     }
   }
 
-  const contactSupport = async () => {
+  const contactSupport = () => {
     const question = [...assistant.messages].reverse().find((message) => message.role === 'user')?.content ?? ''
     const transcript = assistant.messages
       .filter((message) => message.status !== 'pending' && message.content)
       .map((message) => `${message.role === 'user' ? 'Me' : 'Help assistant'}: ${message.content}`)
       .join('\n\n')
-    const portal = await helpAssistantService.portalSlug(subdomain)
-    if (portal.data?.slug) {
+    if (config.support_request_url) {
       const params = new URLSearchParams({ subject: question.slice(0, 120), message: `${question}\n\n---\nI asked the help assistant first:\n\n${transcript}`.slice(0, 8000) })
-      window.location.assign(`${basepath}/requests/new?${params.toString()}`)
+      if (assistant.sessionId) params.set('assistant_session', assistant.sessionId)
+      window.location.assign(`${config.support_request_url}?${params.toString()}`)
       return
     }
     const widget = helpinWidget()
@@ -158,7 +157,7 @@ export function AskAIPanel({ request, onClose }: { request: AskAIRequest | null;
               <li key={message.id}>
                 {message.role === 'user'
                   ? <UserBubble text={message.content} />
-                  : <AssistantReply message={message} fresh={assistant.freshAnswerIds.has(message.id)} accent={accent} onFeedback={assistant.feedback} onRetry={assistant.retry} onContactSupport={() => void contactSupport()} />}
+                  : <AssistantReply message={message} fresh={assistant.freshAnswerIds.has(message.id)} accent={accent} onFeedback={assistant.feedback} onRetry={assistant.retry} onContactSupport={contactSupport} />}
               </li>
             ))}
           </ol>

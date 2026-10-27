@@ -77,7 +77,7 @@ function PortalAssistantPanel({ slug, onClose }: { slug: string; onClose: () => 
     void navigate({
       to: '/portal/$slug/new',
       params: { slug },
-      search: { subject: question.slice(0, 120), message: `${question}\n\n---\nI asked the help assistant first:\n\n${transcript}`.slice(0, 8000) } as never,
+      search: { subject: question.slice(0, 120), message: `${question}\n\n---\nI asked the help assistant first:\n\n${transcript}`.slice(0, 8000), ...(assistant.sessionId ? { assistant_session: assistant.sessionId } : {}) } as never,
     })
   }
 

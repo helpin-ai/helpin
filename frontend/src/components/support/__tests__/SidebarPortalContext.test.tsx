@@ -69,6 +69,17 @@ describe('SidebarPortalContext', () => {
     expect(link?.title).toBe('Renewal pricing (signed-in customers)');
   });
 
+  it('shows the help assistant conversation behind a handed-off request', async () => {
+    mocks.context.mockReturnValue({ data: { company: null, intake: { suggested_count: 0, opened_articles: [], assistant: [
+      { role: 'user', content: 'Can I get a refund?', status: 'answered', citations: [] },
+      { role: 'assistant', content: 'The team can help with refunds.', status: 'handed_off', citations: [{ article_id: 'd1', title: 'Billing' }] },
+    ] } } });
+    await render(portalRequest);
+    expect(container.querySelector('summary')?.textContent).toBe('Asked the help assistant first (1 question)');
+    expect(container.textContent).toContain('Can I get a refund?');
+    expect(container.textContent).toContain('Sources: Billing');
+  });
+
   it('stays hidden when there is nothing to tell', async () => {
     mocks.context.mockReturnValue({ data: { company: { company_id: 'acme', company_name: 'Acme', members: 0 }, intake: { suggested_count: 2, opened_articles: [] } } });
     await render(portalRequest);

@@ -74,7 +74,7 @@ describe('AskAIPanel', () => {
     expect(screen.getByText('How can I help?')).toBeTruthy()
 
     await ask('How do I export?')
-    expect(api.ask).toHaveBeenCalledWith('acme', { visitor_id: 'visitor-test-1', session_id: undefined, message: 'How do I export?', page_article_id: undefined })
+    expect(api.ask).toHaveBeenCalledWith('acme', { visitor_id: 'visitor-test-1', session_id: undefined, message: 'How do I export?', page_article_id: undefined, locale: 'en' })
     expect(screen.getByText('How do I export?')).toBeTruthy()
     expect(screen.getByRole('status').textContent).toContain('Searching the help articles')
 

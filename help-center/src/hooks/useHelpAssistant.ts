@@ -21,7 +21,7 @@ export function useHelpAssistant(): HelpAssistantState {
   const { subdomain, locale, multilingualEnabled } = useDocsContext()
   const conversation = useMemo(() => new AssistantConversation({
     visitorId: assistantVisitorId,
-    ask: (body) => helpAssistantService.ask(subdomain, body),
+    ask: (body) => helpAssistantService.ask(subdomain, { ...body, locale }),
     session: (sessionId, visitorId) => helpAssistantService.session(subdomain, sessionId, visitorId),
     feedback: (messageId, body) => helpAssistantService.feedback(subdomain, messageId, body),
     fallback: async (question) => {

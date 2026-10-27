@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   exchangeMagicLink: vi.fn(),
   requests: vi.fn(),
   suggestions: vi.fn(),
+  createRequest: vi.fn(),
   helpArticles: vi.fn(),
   signOut: vi.fn(),
   navigate: vi.fn(),
@@ -204,7 +205,7 @@ describe('CustomerPortalProvider', () => {
 
   it('fills in a request handed off from the help assistant, then clears the address', async () => {
     window.sessionStorage.clear()
-    window.history.replaceState(null, '', '/portal/acme/new?subject=Refund%20question&message=Can%20I%20get%20a%20refund%3F%0A%0AHelp%20assistant%3A%20The%20team%20can%20help.')
+    window.history.replaceState(null, '', '/portal/acme/new?assistant_session=11111111-1111-1111-1111-111111111111&subject=Refund%20question&message=Can%20I%20get%20a%20refund%3F%0A%0AHelp%20assistant%3A%20The%20team%20can%20help.')
     mocks.pathname = '/portal/acme/new'
     mocks.configuration.mockResolvedValue({ ...config, intake_enabled: true })
     mocks.session.mockResolvedValue(customer)
@@ -219,6 +220,12 @@ describe('CustomerPortalProvider', () => {
     expect(container.querySelector<HTMLInputElement>('#request-subject')?.value).toBe('Refund question')
     expect(container.querySelector<HTMLTextAreaElement>('#request-message')?.value).toContain('Help assistant: The team can help.')
     expect(window.location.search).toBe('')
+
+    // The request links the help assistant conversation for the team.
+    mocks.createRequest.mockResolvedValue({ reference: 'req_1' })
+    await act(async () => container.querySelector<HTMLFormElement>('form[aria-label="New request"]')!.requestSubmit())
+    await settle()
+    expect(mocks.createRequest).toHaveBeenCalledWith('acme', expect.objectContaining({ intake: expect.objectContaining({ assistant_session_id: '11111111-1111-1111-1111-111111111111' }) }))
   })
 
   it('clears saved drafts when the customer signs out', async () => {

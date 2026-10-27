@@ -62,7 +62,13 @@ func normalizePortalIntake(intake *model.PortalIntake) (*model.PortalIntake, err
 	if err != nil {
 		return nil, err
 	}
-	return &model.PortalIntake{IntakeID: intake.IntakeID, SuggestedArticleIDs: suggested, OpenedArticleIDs: opened, SearchCompleted: intake.SearchCompleted}, nil
+	sessionID := strings.TrimSpace(intake.AssistantSessionID)
+	if sessionID != "" {
+		if _, err := uuid.Parse(sessionID); err != nil {
+			return nil, ErrPortalIntakeInvalid
+		}
+	}
+	return &model.PortalIntake{IntakeID: intake.IntakeID, SuggestedArticleIDs: suggested, OpenedArticleIDs: opened, SearchCompleted: intake.SearchCompleted, AssistantSessionID: sessionID}, nil
 }
 
 // portalIntakeArticleIDs checks article ids are UUIDs, removes duplicates,

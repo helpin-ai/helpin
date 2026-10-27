@@ -86,6 +86,9 @@ type HelpAssistantAsker struct {
 	Surface          string
 	VisitorID        string
 	PortalIdentityID string
+	// Locale is the reader's language; articles are read in it where
+	// translated.
+	Locale string
 }
 
 func (a HelpAssistantAsker) audience() string {
@@ -228,7 +231,7 @@ func (s *HelpAssistantService) sessionFor(ctx context.Context, asker HelpAssista
 	}
 	locale := ""
 	if cfg, err := s.hcRepo.GetConfig(ctx, asker.WorkspaceID); err == nil && cfg != nil {
-		locale = defaultHelpcenterLocale(cfg)
+		locale = readerHelpLocale(cfg, asker.Locale)
 	}
 	session := &model.HelpAssistantSession{WorkspaceID: asker.WorkspaceID, Surface: asker.Surface, Audience: asker.audience(), VisitorID: asker.VisitorID, Locale: locale}
 	if asker.PortalIdentityID != "" {
@@ -411,4 +414,43 @@ func truncateRunes(text string, limit int) string {
 		return string(runes[:limit]) + "…"
 	}
 	return strings.TrimSpace(text)
+}
+
+// HelpAssistantTranscriptTurn is one message of a conversation, for teammates.
+type HelpAssistantTranscriptTurn struct {
+	Role      string                        `json:"role"`
+	Content   string                        `json:"content"`
+	Status    string                        `json:"status"`
+	Citations []model.HelpAssistantCitation `json:"citations"`
+}
+
+// Transcript returns a workspace's help assistant conversation for the team,
+// or none when the session does not exist in the workspace.
+func (s *HelpAssistantService) Transcript(ctx context.Context, workspaceID, sessionID string) ([]HelpAssistantTranscriptTurn, error) {
+	if _, err := uuid.Parse(sessionID); err != nil {
+		return nil, nil
+	}
+	session, err := s.repo.GetSession(ctx, workspaceID, sessionID)
+	if err != nil || session == nil {
+		return nil, err
+	}
+	messages, err := s.repo.ListMessages(ctx, session.ID)
+	if err != nil {
+		return nil, err
+	}
+	turns := make([]HelpAssistantTranscriptTurn, 0, len(messages))
+	for _, message := range messages {
+		if message.Status == model.HelpAssistantStatusPending {
+			continue
+		}
+		view := helpAssistantMessageView(message)
+		turns = append(turns, HelpAssistantTranscriptTurn{Role: view.Role, Content: view.Content, Status: view.Status, Citations: view.Citations})
+	}
+	return turns, nil
+}
+
+// SetHelpAssistant lets the portal show teammates the help assistant
+// conversation behind a handed-off request.
+func (s *CustomerPortalService) SetHelpAssistant(assistant *HelpAssistantService) {
+	s.assistant = assistant
 }

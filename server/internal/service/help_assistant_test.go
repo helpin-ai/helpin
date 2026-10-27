@@ -439,3 +439,77 @@ func TestHelpAssistantSearchFallsBackToKeywords(t *testing.T) {
 		t.Fatalf("cite a keyword result: %v", err)
 	}
 }
+
+func TestPortalIntakeCarriesTheAssistantSession(t *testing.T) {
+	intakeID := "55555555-5555-5555-5555-555555555555"
+	intake, err := normalizePortalIntake(&model.PortalIntake{IntakeID: intakeID, AssistantSessionID: " 11111111-1111-1111-1111-111111111111 "})
+	if err != nil || intake.AssistantSessionID != "11111111-1111-1111-1111-111111111111" {
+		t.Fatalf("intake = %+v, %v", intake, err)
+	}
+	if _, err := normalizePortalIntake(&model.PortalIntake{IntakeID: intakeID, AssistantSessionID: "not-a-session"}); !errors.Is(err, ErrPortalIntakeInvalid) {
+		t.Fatalf("invalid session error = %v", err)
+	}
+}
+
+func TestHelpAssistantTranscriptForTeammates(t *testing.T) {
+	ctx := context.Background()
+	db, assistant, meta, _ := helpToolsFixture(t, model.HelpcenterAudiencePublic)
+	mustExec(t, db, `INSERT INTO help_assistant_messages (session_id, workspace_id, role, content, status, created_at) VALUES ('11111111-1111-1111-1111-111111111111', ?, 'user', 'Can I get a refund?', 'answered', ?)`, audienceWorkspaceID, time.Now().UTC().Add(-time.Second))
+	if err := assistant.OfferContactSupport(ctx, meta, "The team can help with refunds."); err != nil {
+		t.Fatal(err)
+	}
+	turns, err := assistant.Transcript(ctx, audienceWorkspaceID, "11111111-1111-1111-1111-111111111111")
+	if err != nil || len(turns) != 2 || turns[0].Content != "Can I get a refund?" || turns[1].Status != model.HelpAssistantStatusHandedOff {
+		t.Fatalf("transcript = %+v, %v", turns, err)
+	}
+	for name, id := range map[string]string{"other workspace": "11111111-1111-1111-1111-111111111111", "malformed": "x"} {
+		workspace := audienceWorkspaceID
+		if name == "other workspace" {
+			workspace = "other"
+		}
+		if turns, err := assistant.Transcript(ctx, workspace, id); err != nil || len(turns) != 0 {
+			t.Errorf("%s: transcript = %+v, %v", name, turns, err)
+		}
+	}
+}
+
+func TestReaderHelpLocale(t *testing.T) {
+	cfg := &model.DocsHelpcenterConfig{DefaultLocale: "en", EnabledLocales: model.DocsStringArray{"en", "de", "pt-BR"}}
+	for requested, want := range map[string]string{"de": "de", "de-AT": "de", "pt-br": "pt-BR", "fr": "en", "": "en"} {
+		if got := readerHelpLocale(cfg, requested); got != want {
+			t.Errorf("readerHelpLocale(%q) = %q, want %q", requested, got, want)
+		}
+	}
+}
+
+func TestPortalHelpReadsTranslationsWhereTheyExist(t *testing.T) {
+	ctx := context.Background()
+	db, svc := setupAudienceTestDB(t)
+	if err := svc.PublishExternally(ctx, audienceDocumentID, "", audienceContent); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&model.DocsHelpcenterConfig{}).Where("workspace_id = ?", audienceWorkspaceID).Update("enabled_locales", model.DocsStringArray{"en", "de"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := db.Create(&model.DocsHelpcenterArticlePublication{ID: "pub-de", DocumentID: audienceDocumentID, WorkspaceID: audienceWorkspaceID, SpaceID: audienceSpaceID, Locale: "de", Title: "Verlängerungspreise", Slug: "preise",
+		Content: json.RawMessage(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Pro Vertrag verhandelt."}]}]}`), PublishedAt: now}).Error; err != nil {
+		t.Fatal(err)
+	}
+	portal := &CustomerPortalService{inbox: &SupportInboxService{docsHelpcenterRepo: repository.NewDocsHelpcenterRepository(db, false)}}
+	ws := &PortalWorkspace{ID: audienceWorkspaceID}
+
+	german, err := portal.HelpArticles(ctx, ws, "de-AT")
+	if err != nil || len(german) != 1 || german[0].Title != "Verlängerungspreise" {
+		t.Fatalf("German list = %+v, %v", german, err)
+	}
+	detail, err := portal.HelpArticle(ctx, ws, german[0].ID, "de")
+	if err != nil || !strings.Contains(detail.ContentHTML, "Pro Vertrag verhandelt.") {
+		t.Fatalf("German article = %+v, %v", detail, err)
+	}
+	// No French translation: the default language is shown.
+	french, err := portal.HelpArticles(ctx, ws, "fr")
+	if err != nil || len(french) != 1 || french[0].Title != "Renewal pricing" {
+		t.Fatalf("French list = %+v, %v", french, err)
+	}
+}

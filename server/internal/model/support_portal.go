@@ -217,4 +217,7 @@ type PortalIntake struct {
 	OpenedArticleIDs    []string `json:"opened_article_ids"`
 	// SearchCompleted means the final request text was successfully searched.
 	SearchCompleted bool `json:"search_completed"`
+	// AssistantSessionID is the help assistant conversation that handed the
+	// customer off to this request, if any.
+	AssistantSessionID string `json:"assistant_session_id,omitempty"`
 }

@@ -5,6 +5,7 @@ package handler
 // the answer. Responses are never cached or indexed.
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -17,6 +18,8 @@ import (
 
 type helpAssistantAskBody struct {
 	VisitorID string `json:"visitor_id"`
+	// Locale is the reader's language.
+	Locale string `json:"locale"`
 	service.HelpAssistantQuestion
 }
 
@@ -29,6 +32,12 @@ type helpAssistantFeedbackBody struct {
 // SetHelpAssistant wires the help assistant into the public help center.
 func (h *DocsHandler) SetHelpAssistant(assistant *service.HelpAssistantService) {
 	h.helpAssistant = assistant
+}
+
+// SetSupportRequestURL tells the help center where the help assistant hands
+// visitors off to the customer portal.
+func (h *DocsHandler) SetSupportRequestURL(resolve func(ctx context.Context, workspaceID string) string) {
+	h.supportRequestURL = resolve
 }
 
 // SetHelpAssistant wires the help assistant into the customer portal.
@@ -47,7 +56,7 @@ func (h *DocsHandler) PublicAssistantAsk(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	asker := service.HelpAssistantAsker{WorkspaceID: cfg.WorkspaceID, Surface: model.HelpAssistantSurfaceHelpcenter, VisitorID: body.VisitorID}
+	asker := service.HelpAssistantAsker{WorkspaceID: cfg.WorkspaceID, Surface: model.HelpAssistantSurfaceHelpcenter, VisitorID: body.VisitorID, Locale: body.Locale}
 	turn, err := h.helpAssistant.Ask(r.Context(), asker, body.HelpAssistantQuestion)
 	writeHelpAssistant(w, r, http.StatusOK, turn, err)
 }
@@ -91,7 +100,9 @@ func (h *CustomerPortalHandler) AssistantAsk(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	turn, err := h.assistant.Ask(r.Context(), h.assistantAsker(r, ws, body.VisitorID), body.HelpAssistantQuestion)
+	asker := h.assistantAsker(r, ws, body.VisitorID)
+	asker.Locale = body.Locale
+	turn, err := h.assistant.Ask(r.Context(), asker, body.HelpAssistantQuestion)
 	writeHelpAssistant(w, r, http.StatusOK, turn, err)
 }
 

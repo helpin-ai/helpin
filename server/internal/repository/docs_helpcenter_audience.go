@@ -69,43 +69,58 @@ type CustomerHelpArticle struct {
 	PublicID       string          `json:"id"`
 	Title          string          `json:"title"`
 	Excerpt        *string         `json:"excerpt,omitempty"`
+	Locale         string          `json:"locale"`
 	SpaceID        string          `json:"-"`
 	SpaceName      string          `json:"space_name"`
 	CollectionName *string         `json:"collection_name,omitempty"`
 	PublishedAt    time.Time       `json:"published_at"`
+	TranslatedAt   *time.Time      `json:"-"`
 	Content        json.RawMessage `json:"-"`
 }
 
-func (r *DocsHelpcenterRepository) customerHelpArticles(ctx context.Context, workspaceID, locale string) *gorm.DB {
+func (r *DocsHelpcenterRepository) customerHelpArticles(ctx context.Context, workspaceID, defaultLocale, locale string) *gorm.DB {
+	if locale == "" {
+		locale = defaultLocale
+	}
+	// A published translation in the reader's locale replaces the default
+	// publication; untranslated articles keep the default language.
 	return r.db.WithContext(ctx).Table("docs_documents AS d").
-		Select(`d.id AS document_id, ha.public_id, p.title, p.excerpt, s.id AS space_id, s.name AS space_name,
-			c.name AS collection_name, p.published_at`).
+		Select(customerHelpArticleColumns).
 		Joins("JOIN docs_spaces s ON s.id = d.space_id").
 		Joins("JOIN docs_helpcenter_articles ha ON ha.document_id = d.id").
-		Joins("JOIN docs_helpcenter_article_publications p ON p.document_id = d.id AND p.locale = ?", locale).
+		Joins("JOIN docs_helpcenter_article_publications p ON p.document_id = d.id AND p.locale = ?", defaultLocale).
+		Joins("LEFT JOIN docs_helpcenter_article_publications pl ON pl.document_id = d.id AND pl.locale = ? AND pl.locale <> p.locale", locale).
 		Joins("LEFT JOIN docs_collections c ON c.id = d.collection_id AND c.deleted_at IS NULL").
 		Where(customerHelpArticleGate, workspaceID)
 }
 
+const customerHelpArticleColumns = `d.id AS document_id, ha.public_id, COALESCE(pl.title, p.title) AS title,
+	COALESCE(pl.excerpt, p.excerpt) AS excerpt, COALESCE(pl.locale, p.locale) AS locale, s.id AS space_id,
+	s.name AS space_name, c.name AS collection_name, p.published_at, pl.published_at AS translated_at`
+
 // ListCustomerHelpArticles lists the live articles for signed-in portal
-// customers in the given locale, ordered by space, collection and position.
-func (r *DocsHelpcenterRepository) ListCustomerHelpArticles(ctx context.Context, workspaceID, locale string) ([]CustomerHelpArticle, error) {
+// customers, in locale where translated and otherwise in the default locale,
+// ordered by space, collection and position.
+func (r *DocsHelpcenterRepository) ListCustomerHelpArticles(ctx context.Context, workspaceID, defaultLocale, locale string) ([]CustomerHelpArticle, error) {
 	var articles []CustomerHelpArticle
-	if err := r.customerHelpArticles(ctx, workspaceID, locale).
-		Order("s.position ASC, s.created_at ASC, c.position ASC, d.position ASC, p.title ASC").
+	if err := r.customerHelpArticles(ctx, workspaceID, defaultLocale, locale).
+		Order("s.position ASC, s.created_at ASC, c.position ASC, d.position ASC, title ASC").
 		Scan(&articles).Error; err != nil {
 		return nil, fmt.Errorf("list customer help articles: %w", err)
+	}
+	for i := range articles {
+		articles[i].useTranslatedDate()
 	}
 	return articles, nil
 }
 
 // GetCustomerHelpArticle returns one live article for signed-in portal
-// customers with its published content, or nil when there is none.
-func (r *DocsHelpcenterRepository) GetCustomerHelpArticle(ctx context.Context, workspaceID, locale, publicID string) (*CustomerHelpArticle, error) {
+// customers with its published content, in locale where translated, or nil
+// when there is none.
+func (r *DocsHelpcenterRepository) GetCustomerHelpArticle(ctx context.Context, workspaceID, defaultLocale, locale, publicID string) (*CustomerHelpArticle, error) {
 	var articles []CustomerHelpArticle
-	if err := r.customerHelpArticles(ctx, workspaceID, locale).
-		Select(`d.id AS document_id, ha.public_id, p.title, p.excerpt, s.id AS space_id, s.name AS space_name,
-			c.name AS collection_name, p.published_at, p.content`).
+	if err := r.customerHelpArticles(ctx, workspaceID, defaultLocale, locale).
+		Select(customerHelpArticleColumns+", COALESCE(pl.content, p.content) AS content").
 		Where("ha.public_id = ?", publicID).Limit(1).
 		Scan(&articles).Error; err != nil {
 		return nil, fmt.Errorf("get customer help article: %w", err)
@@ -113,6 +128,7 @@ func (r *DocsHelpcenterRepository) GetCustomerHelpArticle(ctx context.Context, w
 	if len(articles) == 0 {
 		return nil, nil
 	}
+	articles[0].useTranslatedDate()
 	return &articles[0], nil
 }
 
@@ -128,4 +144,12 @@ func (r *DocsHelpcenterRepository) ListCustomerHelpSpaceIDs(ctx context.Context,
 		return nil, fmt.Errorf("list customer help spaces: %w", err)
 	}
 	return ids, nil
+}
+
+// useTranslatedDate reports a translation's publish time when the article is
+// read in translation.
+func (a *CustomerHelpArticle) useTranslatedDate() {
+	if a.TranslatedAt != nil {
+		a.PublishedAt = *a.TranslatedAt
+	}
 }

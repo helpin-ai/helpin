@@ -92,7 +92,8 @@ A help center space can be limited to customers signed in to the portal. In Docs
 - **Publishing works as usual.** Publishing an article in such a space makes it live in the portal only. It never appears on the public help center, in its search or AI answers, in sitemaps, in the chat widget or in Echo's answers. The widget's space picker does not offer these spaces.
 - **In the portal.** Signed-in customers see **Help articles** on the portal home page when the team shares at least one. The page lists articles by space and collection and searches them by meaning. Articles open at `/help/{article}` in the portal.
 - **Changing readers.** Switching a space between **Everyone** and **Signed-in customers** moves its live articles at once. Changing an external space to internal unpublishes its articles.
-- **Not included.** Private articles cannot be limited to one company or role, and they are shown in the help center's default language only.
+- **Languages.** Customers read an article in their browser's language when a translation is published, and in the help center's default language otherwise.
+- **Not included.** Private articles cannot be limited to one company or role.
 
 The portal reads them through `GET /api/public/portal/{slug}/help`, `GET /api/public/portal/{slug}/help/search?q=` and `GET /api/public/portal/{slug}/help/articles/{id}`. All three need a portal session and return `Cache-Control: private, no-store`.
 

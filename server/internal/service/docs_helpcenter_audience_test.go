@@ -142,7 +142,7 @@ func TestPublishInCustomerSpaceStaysOffPublicPaths(t *testing.T) {
 		t.Fatalf("widget spaces = %v, %v; want none", widgetSpaces, err)
 	}
 
-	private, err := hcRepo.GetCustomerHelpArticle(ctx, audienceWorkspaceID, "en", article.PublicID)
+	private, err := hcRepo.GetCustomerHelpArticle(ctx, audienceWorkspaceID, "en", "", article.PublicID)
 	if err != nil || private == nil || private.Title != "Renewal pricing" || len(private.Content) == 0 {
 		t.Fatalf("customer article = %+v, %v", private, err)
 	}
@@ -230,18 +230,18 @@ func TestPortalHelpArticlesForSignedInCustomers(t *testing.T) {
 	}
 	ws := &PortalWorkspace{ID: audienceWorkspaceID, Settings: model.SupportInboxSettings{PortalIntakeEnabled: true}}
 
-	articles, err := portal.HelpArticles(ctx, ws)
+	articles, err := portal.HelpArticles(ctx, ws, "")
 	if err != nil || len(articles) != 1 || articles[0].Title != "Renewal pricing" || articles[0].SpaceName != "Customer guides" {
 		t.Fatalf("help articles = %+v, %v", articles, err)
 	}
-	detail, err := portal.HelpArticle(ctx, ws, articles[0].ID)
+	detail, err := portal.HelpArticle(ctx, ws, articles[0].ID, "")
 	if err != nil || detail == nil || detail.ContentHTML == "" {
 		t.Fatalf("help article = %+v, %v", detail, err)
 	}
-	if _, err := portal.HelpArticle(ctx, ws, "missing"); !errors.Is(err, ErrPortalHelpArticleNotFound) {
+	if _, err := portal.HelpArticle(ctx, ws, "missing", ""); !errors.Is(err, ErrPortalHelpArticleNotFound) {
 		t.Fatalf("missing article error = %v", err)
 	}
-	found, err := portal.SearchHelpArticles(ctx, ws, "renewal pricing")
+	found, err := portal.SearchHelpArticles(ctx, ws, "renewal pricing", "")
 	if err != nil || len(found) != 1 || found[0].ID != articles[0].ID || found[0].Snippet == "" {
 		t.Fatalf("help search = %+v, %v", found, err)
 	}
@@ -266,7 +266,7 @@ func TestPortalHelpArticlesForSignedInCustomers(t *testing.T) {
 	if err := svc.UnpublishExternally(ctx, audienceDocumentID); err != nil {
 		t.Fatalf("unpublish: %v", err)
 	}
-	if articles, err := portal.HelpArticles(ctx, ws); err != nil || len(articles) != 0 {
+	if articles, err := portal.HelpArticles(ctx, ws, ""); err != nil || len(articles) != 0 {
 		t.Fatalf("help articles after unpublish = %+v, %v", articles, err)
 	}
 }

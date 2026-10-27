@@ -16,7 +16,7 @@ func (h *CustomerPortalHandler) HelpArticles(w http.ResponseWriter, r *http.Requ
 	if access == nil {
 		return
 	}
-	articles, err := h.portal.HelpArticles(r.Context(), &access.Workspace)
+	articles, err := h.portal.HelpArticles(r.Context(), &access.Workspace, r.URL.Query().Get("locale"))
 	if err != nil {
 		writePortalError(w, r, access.Workspace.ID, err, "unable to load help articles")
 		return
@@ -31,7 +31,7 @@ func (h *CustomerPortalHandler) HelpArticle(w http.ResponseWriter, r *http.Reque
 	if access == nil {
 		return
 	}
-	article, err := h.portal.HelpArticle(r.Context(), &access.Workspace, chi.URLParam(r, "articleId"))
+	article, err := h.portal.HelpArticle(r.Context(), &access.Workspace, chi.URLParam(r, "articleId"), r.URL.Query().Get("locale"))
 	if errors.Is(err, service.ErrPortalHelpArticleNotFound) {
 		writeError(w, http.StatusNotFound, "article not found")
 		return
@@ -50,7 +50,7 @@ func (h *CustomerPortalHandler) HelpSearch(w http.ResponseWriter, r *http.Reques
 	if access == nil {
 		return
 	}
-	articles, err := h.portal.SearchHelpArticles(r.Context(), &access.Workspace, r.URL.Query().Get("q"))
+	articles, err := h.portal.SearchHelpArticles(r.Context(), &access.Workspace, r.URL.Query().Get("q"), r.URL.Query().Get("locale"))
 	if errors.Is(err, context.Canceled) {
 		return
 	}
