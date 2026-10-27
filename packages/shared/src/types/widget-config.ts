@@ -49,6 +49,7 @@ export interface WidgetConfig {
     escalationMessage?: string;
     fileUploads: boolean;
     preChatForm: boolean;
+    emailCaptureTiming?: 'after_ai_reply' | 'before_handoff' | 'never';
     requirePhone: boolean;
     csatRating: boolean;
     forceIdentify: boolean;

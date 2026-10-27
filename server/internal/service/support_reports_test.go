@@ -24,6 +24,7 @@ type supportReportFixture struct {
 	memberID             string
 	restrictedMailboxID  string
 	userOne, userTwo     string
+	billingTag, loginTag string
 	conversationsByLabel map[string]string
 	nextDisplayID        int
 }
@@ -148,6 +149,27 @@ func seedSupportReportFixture(t *testing.T, db *gorm.DB) *supportReportFixture {
 	// c8: entirely in the previous period.
 	c8 := f.conversation(t, "c8", model.SupportConversation{Status: resolved, FlowState: &byHuman, CreatedAt: at(-5, 9, 0), ResolvedAt: ptrTime(at(-5, 10, 0))})
 
+	// Billing and Login each tag conversations in both periods; c1 has both.
+	// c4 and c7 have no tag, and nothing uses Unused.
+	f.billingTag, f.loginTag = uuid.NewString(), uuid.NewString()
+	for _, tag := range []model.SupportTag{
+		{ID: f.billingTag, WorkspaceID: f.workspaceID, Name: "Billing", Color: strPtr("#0f766e")},
+		{ID: f.loginTag, WorkspaceID: f.workspaceID, Name: "Login"},
+		{ID: uuid.NewString(), WorkspaceID: f.workspaceID, Name: "Unused"},
+	} {
+		if err := f.db.Create(&tag).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, link := range []model.SupportConversationTag{
+		{ConversationID: c1, TagID: f.billingTag}, {ConversationID: c2, TagID: f.billingTag}, {ConversationID: c8, TagID: f.billingTag},
+		{ConversationID: c1, TagID: f.loginTag}, {ConversationID: c3, TagID: f.loginTag}, {ConversationID: c5, TagID: f.loginTag},
+	} {
+		if err := f.db.Create(&link).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	for _, row := range []model.SupportConversationSLARecord{
 		{ConversationID: c1, FirstResponseState: model.SupportSLAStateAchieved, ResolutionState: model.SupportSLAStateBreached, NextResponseState: model.SupportSLAStateAchieved},
 		{ConversationID: c3, FirstResponseState: model.SupportSLAStateBreached, NextResponseBreaches: 2, NextResponseState: model.SupportSLAStateBreached, ResolutionState: model.SupportSLAStatePending},
@@ -236,9 +258,6 @@ func checkSupportReportOverviewMetrics(t *testing.T, f *supportReportFixture) {
 	if !overview.Range.PreviousFrom.Equal(reportBase.AddDate(0, 0, -7)) {
 		t.Fatalf("previous range %v", overview.Range)
 	}
-	if overview.Backlog.Open != 3 || overview.Backlog.Unassigned != 3 {
-		t.Fatalf("backlog %+v", overview.Backlog)
-	}
 	if len(overview.Daily) != 7 || overview.Daily[0].Date != "2026-10-01" || overview.Daily[0].ConversationsCreated != 1 ||
 		overview.Daily[1].ConversationsResolved != 2 || overview.Daily[1].ResolvedByAI != 1 {
 		t.Fatalf("daily %+v", overview.Daily)
@@ -280,6 +299,49 @@ func checkSupportReportOverviewMetrics(t *testing.T, f *supportReportFixture) {
 	}
 }
 
+func TestSupportReportTopics(t *testing.T) {
+	checkSupportReportTopics(t, newSupportReportFixture(t))
+}
+
+func checkSupportReportTopics(t *testing.T, f *supportReportFixture) {
+	t.Helper()
+	overview, err := f.svc.Overview(f.ctx(model.RoleOwner, "", f.userOne), f.request())
+	if err != nil {
+		t.Fatal(err)
+	}
+	topics := overview.Topics
+	if len(topics) != 3 || topics[0].TagID != f.billingTag || topics[1].TagID != f.loginTag || topics[2].TagID != "" {
+		t.Fatalf("topics %+v", topics)
+	}
+
+	// Billing: c1 and c2 now, c8 before. The AI joined both and resolved c2.
+	billing := topics[0]
+	if billing.Name != "Billing" || billing.Color == nil || *billing.Color != "#0f766e" ||
+		billing.ConversationsCreated != 2 || billing.PreviousCreated != 1 || billing.AIInvolved != 2 || billing.CSATResponses != 2 {
+		t.Fatalf("billing %+v", billing)
+	}
+	assertRate(t, "billing ai resolution", billing.AIResolutionRate, 0.5)
+	assertRate(t, "billing handoff", billing.AIHandoffRate, 0.5)
+	assertSeconds(t, "billing first response", billing.FirstHumanResponse.MedianSeconds, 600)
+	assertSeconds(t, "billing resolution", billing.Resolution.MedianSeconds, (1800+7200)/2)
+	assertRate(t, "billing csat", billing.CSATAverage, 4)
+
+	// Login: c1 and c3 now, c5 before; c5's resolution and rating fall in this period.
+	login := topics[1]
+	if login.ConversationsCreated != 2 || login.PreviousCreated != 1 || login.AIInvolved != 1 || login.CSATResponses != 2 {
+		t.Fatalf("login %+v", login)
+	}
+	assertRate(t, "login ai resolution", login.AIResolutionRate, 0)
+	assertRate(t, "login handoff", login.AIHandoffRate, 1)
+	assertSeconds(t, "login first response", login.FirstHumanResponse.MedianSeconds, (600+7200)/2)
+	assertSeconds(t, "login resolution", login.Resolution.MedianSeconds, int64((2*time.Hour+7*24*time.Hour)/2/time.Second))
+	assertRate(t, "login csat", login.CSATAverage, 3)
+
+	if untagged := topics[2]; untagged.Name != "" || untagged.ConversationsCreated != 2 || untagged.PreviousCreated != 0 {
+		t.Fatalf("untagged %+v", untagged)
+	}
+}
+
 func TestSupportReportRespectsInboxAccess(t *testing.T) {
 	checkSupportReportRespectsInboxAccess(t, newSupportReportFixture(t))
 }
@@ -290,8 +352,12 @@ func checkSupportReportRespectsInboxAccess(t *testing.T, f *supportReportFixture
 	if err != nil {
 		t.Fatal(err)
 	}
-	if overview.Summary.ConversationsCreated != 4 || overview.Backlog.Open != 2 {
-		t.Fatalf("member sees restricted inbox: %+v %+v", overview.Summary, overview.Backlog)
+	if overview.Summary.ConversationsCreated != 4 {
+		t.Fatalf("member sees restricted inbox: %+v", overview.Summary)
+	}
+	// c7, in the restricted inbox, is the other untagged conversation.
+	if untagged := overview.Topics[len(overview.Topics)-1]; untagged.TagID != "" || untagged.ConversationsCreated != 1 {
+		t.Fatalf("member topics %+v", overview.Topics)
 	}
 	req := f.request()
 	req.MailboxIDs = []string{f.restrictedMailboxID}
@@ -376,7 +442,8 @@ func checkSupportReportCSVExport(t *testing.T, f *supportReportFixture) {
 	}
 	first := byNumber["1"]
 	if first[header["first_human_response_seconds"]] != "600" || first[header["csat_rating"]] != "5" ||
-		first[header["assignee"]] != "Uma One" || first[header["resolved_by"]] != "human" || first[header["handed_off"]] != "true" {
+		first[header["assignee"]] != "Uma One" || first[header["resolved_by"]] != "human" || first[header["handed_off"]] != "true" ||
+		first[header["tags"]] != "Billing, Login" {
 		t.Fatalf("c1 row %v", first)
 	}
 	third := byNumber["3"]

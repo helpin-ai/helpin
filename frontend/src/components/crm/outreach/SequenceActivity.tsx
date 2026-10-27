@@ -481,6 +481,7 @@ function RecipientContent({
                     {format(new Date(delivery.updated_at), "MMM d, h:mm a")}
                   </summary>
                   <EmailBodyRenderer
+                    themeAware
                     html={delivery.body_html}
                     collapsedByDefault={false}
                   />

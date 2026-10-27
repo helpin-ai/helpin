@@ -127,6 +127,7 @@ func (s *SupportAIService) publishAIReply(
 	}
 
 	publishSupportAIMessageStream(s.wsPublisher, workspaceID, aiMsg, "ai:"+agentID)
+	s.recordRequiredEmailWait(ctx, workspaceID, conversationID, progressState)
 
 	if len(processingID) == 0 {
 		pending := "pending"

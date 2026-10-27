@@ -591,8 +591,7 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 				continue
 			}
 			if err := h.service.EscalateConversation(ctx, session.WorkspaceID, *session.ConversationID, "customer_requested"); err != nil {
-				slog.Error("widget ws: escalate failed", "error", err, "conversation_id", *session.ConversationID)
-				SendToClient(conn, "connection:error", map[string]string{"code": "escalate_failed", "message": "Failed to escalate to human"})
+				sendWidgetOperationError(ctx, conn, "connection:error", "escalate_failed", err)
 				continue
 			}
 			convs, _ := h.service.GetVisitorConversations(ctx, session.WorkspaceID, session.AnonymousID)

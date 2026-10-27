@@ -39,15 +39,14 @@ describe('PreChatForm', () => {
 
   it('explains why the email is useful and when the team replies', () => {
     const { container } = render(<PreChatForm config={mockConfig} onSubmit={() => {}} />);
-    expect(container.textContent).toContain('Talk to a person');
-    expect(container.textContent).toContain('Where should we send their reply?');
-    expect(container.textContent).toContain('We typically reply in a few minutes');
+    expect(container.textContent).toContain('Enter your email');
+    expect(container.textContent).toContain('Get replies from our team, even if you leave the chat.');
     expect(container.textContent).toContain('used only for this conversation');
   });
 
   it('renders the email prompt without duplicating workspace identity', () => {
     const { container } = render(<PreChatForm config={mockConfig} onSubmit={() => {}} />);
-    expect(container.textContent).toContain('Talk to a person');
+    expect(container.textContent).toContain('Enter your email');
     expect(container.textContent).not.toContain('Test Support');
   });
 
@@ -169,6 +168,18 @@ describe('PreChatForm', () => {
     const { getByText } = render(<PreChatForm config={offlineConfig} onSubmit={() => {}} />);
 
     expect(getByText(/currently offline/)).toBeTruthy();
-    expect(getByText('Send message and notify me')).toBeTruthy();
+    expect(getByText('Continue to human support')).toBeTruthy();
   });
+});
+
+it('keeps the email form open until saving succeeds and permits retry after failure', async () => {
+  const save = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(undefined);
+  const config = {...mockConfig, features: {...mockConfig.features, requirePhone: false, forceIdentify: true}};
+  const view = render(<PreChatForm config={config} purpose="chat" onSubmit={save} />);
+  fireEvent.input(view.getByPlaceholderText('you@example.com'), {target:{value:'visitor@example.com'}});
+  fireEvent.submit(view.container.querySelector('form')!);
+  await waitFor(()=>expect(view.getByRole('alert')).toBeTruthy());
+  expect(view.getByPlaceholderText('you@example.com')).toBeTruthy();
+  fireEvent.submit(view.container.querySelector('form')!);
+  await waitFor(()=>expect(view.queryByPlaceholderText('you@example.com')).toBeNull());
 });

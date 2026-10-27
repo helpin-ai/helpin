@@ -3662,6 +3662,38 @@ a.helpin-source-item:focus-visible {
   transition: transform 0.16s, border-color 0.16s, background 0.16s;
 }
 
+/* Labels stay available to keyboard users without adding mobile copy. */
+.helpin-csat-emoji {
+  position: relative;
+}
+
+.helpin-csat-emoji::after {
+  content: attr(data-rating-label);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  padding: 6px 9px;
+  border-radius: 6px;
+  background: var(--helpin-fg);
+  color: var(--helpin-bg);
+  font: 500 11px/1.4 var(--helpin-font-sans);
+  white-space: nowrap;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.helpin-csat-emoji:focus-visible::after {
+  visibility: visible;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .helpin-csat-emoji:hover::after {
+    visibility: visible;
+  }
+}
+
 .helpin-csat-emoji:hover {
   transform: translateY(-2px);
   background: color-mix(in srgb, var(--helpin-primary) 9%, var(--helpin-card-bg));
@@ -4460,3 +4492,11 @@ a.helpin-source-item:focus-visible {
 .helpin-message-content a { unicode-bidi: isolate; }
 
 .helpin-conversation-merge-notice { font-size: 12px; line-height: 1.5; text-align: center; color: var(--helpin-text-secondary, #64748b); margin: 12px 16px; }
+
+/* Contact capture occupies the composer while preserving the conversation above. */
+.helpin-email-composer { flex-shrink: 0; border-top: 1px solid var(--helpin-border); padding: 16px; }
+.helpin-email-composer .helpin-human-contact-card { position: relative; margin: 0; }
+.helpin-email-composer .helpin-human-contact-card__heading { padding-right: 24px; }
+.helpin-email-dismiss { position: absolute; top: 12px; right: 12px; display: flex; padding: 4px; border: 0; border-radius: 6px; background: transparent; color: var(--helpin-text-secondary); cursor: pointer; }
+.helpin-email-dismiss:hover { background: var(--helpin-bg-secondary); }
+.helpin-email-error { color: var(--helpin-error, #dc2626); font-size: 13px; }

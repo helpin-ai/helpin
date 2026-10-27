@@ -5,10 +5,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { expect, it, vi } from 'vitest';
 import { TranslatedMessageBubble } from '../TranslatedMessageBubble';
 const request = vi.hoisted(() => vi.fn());
-const settings = vi.hoisted(() => ({ reading: 'en' }));
+const settings = vi.hoisted(() => ({ reading: 'en', detected: '' }));
 vi.mock('@/hooks/queries/useSupportTranslation', () => ({
  requestSupportTranslation: request,
- useSupportTranslationOptions: () => ({data:{available:true,preference:{auto_translate_incoming:true,reading_language:settings.reading},languages:{en:'English',es:'Spanish'}}}),
+ useSupportTranslationOptions: () => ({data:{available:true,preference:{auto_translate_incoming:true,reading_language:settings.reading},conversation:{customer_language:'',translation_mode:'off'},detected_customer_language:settings.detected,languages:{en:'English',es:'Spanish'}}}),
 }));
 vi.mock('../MessageBubble',()=>({MessageBubble:({translationFooter,translationStatus,translatedContent,message}:{translationFooter:React.ReactNode;translationStatus?:React.ReactNode;translatedContent?:string;message:{content:string}})=><div><p>{translatedContent ?? message.content}</p><div data-footer>{translationFooter}</div><div data-status>{translationStatus}</div></div>}));
 (globalThis as unknown as {IS_REACT_ACT_ENVIRONMENT:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
@@ -91,4 +91,33 @@ it.each([
   if (sourceLanguage === 'en' && source === content) expect(div.querySelector('p')?.textContent).toBe(content);
   expect(request).not.toHaveBeenCalled();
  } finally { await act(async () => root.unmount()); client.clear(); }
+});
+
+
+it.each([
+ ['en', 'customer', 'Thanks, it is working now!', null],
+ ['en', 'ai', 'Thanks for reaching out!\n\nTo reconnect your Instagram account:\n\n1. Go to Settings > Social Accounts\n2. Click Reconnect next to Instagram', null],
+ ['en', 'customer', 'No puedo conectar mi cuenta de Instagram', 'Translate'],
+ ['en', 'customer', 'مرحبا، أحتاج مساعدة', 'Translate'],
+ ['es', 'customer', 'Thanks, it is working now!', 'Translate'],
+ ['', 'customer', 'Thanks, it is working now!', null],
+ ['', 'customer', 'mujhe help chahiye', 'Translate'],
+])('in a conversation detected as %s, a %s message "%s" shows %s', async (detected, sender, content, expected) => {
+ request.mockReset(); settings.detected = detected;
+ const div = document.createElement('div'); const root = createRoot(div); const client = new QueryClient();
+ try {
+  await act(async () => root.render(<QueryClientProvider client={client}><TranslatedMessageBubble workspaceId="w" message={{id:'conv',workspace_id:'w',conversation_id:'c',sender_type:sender,message_type:'reply',content,is_internal:false} as never}/></QueryClientProvider>));
+  expect(div.querySelector('button')?.textContent ?? null).toBe(expected);
+  expect(request).not.toHaveBeenCalled();
+ } finally { await act(async () => root.unmount()); client.clear(); settings.detected = ''; }
+});
+
+it('keeps a real display translation in a conversation detected as the reading language', async () => {
+ settings.detected = 'en';
+ const div = document.createElement('div'); const root = createRoot(div); const client = new QueryClient();
+ try {
+  await act(async () => root.render(<QueryClientProvider client={client}><TranslatedMessageBubble workspaceId="w" message={{id:'live',workspace_id:'w',conversation_id:'c',sender_type:'customer',message_type:'reply',content:'Hola',is_internal:false} as never} cachedTranslation={{source_message_id:'live',source_text:'Hola',source_language:'es',target_language:'en',translated_text:'Hello',status:'ready'} as never}/></QueryClientProvider>));
+  expect(div.querySelector('button')?.textContent).toBe('Show original');
+  expect(div.querySelector('p')?.textContent).toBe('Hello');
+ } finally { await act(async () => root.unmount()); client.clear(); settings.detected = ''; }
 });

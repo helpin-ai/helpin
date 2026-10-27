@@ -42,6 +42,7 @@ func TestSupportReportsPostgres(t *testing.T) {
 	db := openSupportOpsPostgres(t)
 	f := seedSupportReportFixture(t, db)
 	t.Run("metrics", func(t *testing.T) { checkSupportReportOverviewMetrics(t, f) })
+	t.Run("topics", func(t *testing.T) { checkSupportReportTopics(t, f) })
 	t.Run("inbox access", func(t *testing.T) { checkSupportReportRespectsInboxAccess(t, f) })
 	t.Run("timezone", func(t *testing.T) { checkSupportReportDailyUsesTimezone(t, f) })
 	t.Run("csv", func(t *testing.T) { checkSupportReportCSVExport(t, f) })

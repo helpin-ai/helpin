@@ -366,3 +366,44 @@ describe('delayed team reply contact capture', () => {
     expect(getByRole('textbox', { name: 'Email for reply notifications' })).toBeTruthy();
   });
 });
+
+describe('email collection after AI reply', () => {
+  const reply: Message = { id: 'answer', conversationId: 'conv', role: 'ai', content: 'Here is your answer.', isInternal: false, createdAt: new Date().toISOString() };
+  function emailConfig(required = false): WidgetConfig {
+    return { ...baseConfig, features: { ...baseConfig.features, emailCaptureTiming: 'after_ai_reply', preChatForm: true, forceIdentify: required } };
+  }
+  it('replaces the composer after a reply and restores it when optional capture is dismissed', () => {
+    const view = renderConversationView({ config: emailConfig(), messages: [reply] });
+    expect(view.queryByPlaceholderText('Ask a question...')).toBeNull();
+    fireEvent.click(view.getByRole('button', { name: 'Dismiss email request' }));
+    expect(view.getByPlaceholderText('Ask a question...')).toBeTruthy();
+  });
+  it('does not allow required capture to be dismissed', () => {
+    const view = renderConversationView({ config: emailConfig(true), messages: [reply] });
+    expect(view.getByPlaceholderText('you@example.com')).toBeTruthy();
+    expect(view.queryByRole('button', { name: 'Dismiss email request' })).toBeNull();
+    expect(view.queryByPlaceholderText('Ask a question...')).toBeNull();
+  });
+  it('does not prompt before a real AI reply or when email is known', () => {
+    const view = renderConversationView({ config: emailConfig(true), messages: [] });
+    expect(view.queryByPlaceholderText('you@example.com')).toBeNull();
+    view.unmount();
+    const known = renderConversationView({ config: emailConfig(true), messages: [reply], transcriptEmail: 'visitor@example.com' });
+    expect(known.queryByPlaceholderText('you@example.com')).toBeNull();
+  });
+});
+
+
+it('allows optional handoff without email while dismissal keeps AI chat open', async () => {
+  const handoff = vi.fn();
+  const save = vi.fn();
+  const config = {...baseConfig, features:{...baseConfig.features, preChatForm:true, emailCaptureTiming:'before_handoff' as const, showTalkToHuman:true}};
+  const view = render(<ConversationView config={config} messages={[{id:'ai',conversationId:'handoff',role:'ai',content:'Answer',isInternal:false,createdAt:new Date().toISOString()}]} onSendMessage={()=>{}} onBack={()=>{}} showPreChatForm onPreChatSubmit={save} onEscalateToHuman={handoff} />);
+  fireEvent.click(view.getByRole('button',{name:'Talk to a person'}));
+  fireEvent.click(view.getByRole('button',{name:'Dismiss email request'}));
+  expect(handoff).not.toHaveBeenCalled();
+  fireEvent.click(view.getByRole('button',{name:'Talk to a person'}));
+  fireEvent.click(view.getByRole('button',{name:'Continue without email'}));
+  await waitFor(()=>expect(handoff).toHaveBeenCalledOnce());
+  expect(save).toHaveBeenCalledWith({email:'',phone:''});
+});

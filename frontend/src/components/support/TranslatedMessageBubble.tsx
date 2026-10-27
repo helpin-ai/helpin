@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { QuietTextAction } from '@/components/design-system/quiet';
 import { requestSupportTranslation, useSupportTranslationOptions } from '@/hooks/queries/useSupportTranslation';
-import { isMessageInReadingLanguage, normalizeReadingLanguage } from './messageReadingLanguage';
+import { isMessageInOtherLanguage, isMessageInReadingLanguage, isMostlyCommonWords, normalizeReadingLanguage } from './messageReadingLanguage';
 import type { SupportTranslation } from '@/lib/pmTypes';
 import { MessageBubble, type MessageBubbleProps } from './MessageBubble';
 
@@ -31,9 +31,18 @@ export function TranslatedMessageBubble({ workspaceId, cachedTranslation, ...pro
   // artifacts must not reintroduce Translate for text already in the reading language.
   const sourceLanguage = result?.status === 'ready' ? normalizeReadingLanguage(result.source_language || '') : '';
   const hasSourceLanguage = !!sourceLanguage && sourceLanguage !== 'und';
+  // Once the conversation language is known to match, short or unclear text
+  // stays untranslated; only a message that clearly differs offers Translate.
+  const conversationLanguage = options?.conversation?.customer_language || options?.detected_customer_language || '';
+  const conversationInReadingLanguage = !!conversationLanguage &&
+    normalizeReadingLanguage(conversationLanguage) === normalizeReadingLanguage(language);
   const locallySame = useMemo(
-    () => eligible && !outgoing && !hasSourceLanguage && isMessageInReadingLanguage(message.content, language),
-    [eligible, outgoing, hasSourceLanguage, message.content, language],
+    () => eligible && !outgoing && !hasSourceLanguage && (conversationInReadingLanguage
+      ? !isMessageInOtherLanguage(message.content, language)
+      : isMessageInReadingLanguage(message.content, language) ||
+        // Everyday words never hide Translate in a conversation known to differ.
+        (!conversationLanguage && isMostlyCommonWords(message.content, language))),
+    [eligible, outgoing, hasSourceLanguage, conversationInReadingLanguage, conversationLanguage, message.content, language],
   );
   const same = (result?.status === 'ready' && result.translated_text === result.source_text) ||
     (!outgoing && (locallySame || (hasSourceLanguage && sourceLanguage === normalizeReadingLanguage(language))));

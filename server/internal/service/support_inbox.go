@@ -1345,6 +1345,11 @@ func (s *SupportInboxService) MarkConversationReadByVisitor(ctx context.Context,
 
 // EscalateConversation delegates to the AI service to escalate a conversation to a human agent.
 func (s *SupportInboxService) EscalateConversation(ctx context.Context, workspaceID, conversationID, reason string) error {
+	if reason == "customer_requested" {
+		if err := s.checkWidgetEmailRequirement(ctx, workspaceID, conversationID, "", true); err != nil {
+			return err
+		}
+	}
 	if s.supportAIService == nil {
 		return fmt.Errorf("ai service not configured")
 	}

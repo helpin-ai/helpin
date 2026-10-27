@@ -1504,6 +1504,37 @@
   border-top-color: rgba(15, 23, 42, 0.1);
 }
 
+/* Inbox reading surfaces retain their containing bubble's color family. */
+[data-support-message-list] .prose-chat pre,
+[data-support-message-list] .prose-chat :not(pre) > code {
+  color: inherit;
+  background: color-mix(in srgb, currentColor 5%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+}
+[data-support-message-list] .prose-chat pre code {
+  color: inherit;
+  background: transparent;
+  border: 0;
+}
+[data-support-message-list] .prose-chat .chat-markdown-table-wrap {
+  background: color-mix(in srgb, currentColor 3%, transparent);
+  border-color: color-mix(in srgb, currentColor 14%, transparent);
+}
+[data-support-message-list] .prose-chat th,
+[data-support-message-list] .prose-chat td {
+  border-color: color-mix(in srgb, currentColor 14%, transparent);
+}
+[data-support-message-list] .prose-chat th {
+  background: color-mix(in srgb, currentColor 6%, transparent);
+}
+[data-support-message-list] .prose-chat tr:nth-child(even) {
+  background: color-mix(in srgb, currentColor 3%, transparent);
+}
+[data-support-message-list] .prose-chat blockquote {
+  border-left-color: color-mix(in srgb, currentColor 22%, transparent);
+  background: color-mix(in srgb, currentColor 4%, transparent);
+}
+
 .accordion-animate {
   display: grid;
   grid-template-rows: 0fr;

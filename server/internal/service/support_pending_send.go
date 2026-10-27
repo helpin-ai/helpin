@@ -353,6 +353,12 @@ func supportReplyTarget(options *model.SupportTranslationOptions) string {
 	if !options.Preference.AutoTranslateOutgoing {
 		return ""
 	}
+	return savedCustomerLanguage(options)
+}
+
+// savedCustomerLanguage is the teammate's choice or the first clear detection.
+// Detection never replaces it, whether or not translation is on.
+func savedCustomerLanguage(options *model.SupportTranslationOptions) string {
 	if options.Conversation.CustomerLanguage != "" {
 		return options.Conversation.CustomerLanguage
 	}

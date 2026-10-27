@@ -1346,6 +1346,7 @@ type SupportInboxSettings struct {
 	TranslationEnabled          bool   `json:"translation_enabled"`
 	DefaultAgentLanguage        string `json:"default_agent_language"`
 	// Identity Capture
+	EmailCaptureTiming     string `json:"email_capture_timing"`
 	RequireEmailBeforeChat bool   `json:"require_email_before_chat"`
 	RequirePhoneAfterEmail bool   `json:"require_phone_after_email"`
 	WelcomeMessage         string `json:"welcome_message"`
@@ -1484,6 +1485,7 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		TranslationOutgoingEnabled:     true,
 		TranslationEnabled:             true,
 		DefaultAgentLanguage:           "en",
+		EmailCaptureTiming:             "after_ai_reply",
 		RequireEmailBeforeChat:         true,
 		RequirePhoneAfterEmail:         false,
 		WelcomeMessage:                 "Hi there! How can we help you today?",
@@ -1582,6 +1584,7 @@ type UpdateInstallationSettingsRequest struct {
 	DefaultAgentLanguage            *string                     `json:"default_agent_language,omitempty"`
 	AllowedOrigins                  *[]string                   `json:"allowed_origins,omitempty"`
 	IdentityVerificationMode        *string                     `json:"identity_verification_mode,omitempty"`
+	EmailCaptureTiming              *string                     `json:"email_capture_timing,omitempty"`
 	RequireEmailBeforeChat          *bool                       `json:"require_email_before_chat,omitempty"`
 	RequirePhoneAfterEmail          *bool                       `json:"require_phone_after_email,omitempty"`
 	WelcomeMessage                  *string                     `json:"welcome_message,omitempty"`
@@ -1811,15 +1814,16 @@ type WidgetConfigBranding struct {
 
 // WidgetConfigFeatures matches the widget-core WidgetConfig.features shape.
 type WidgetConfigFeatures struct {
-	AIEnabled         bool   `json:"aiEnabled"`
-	AIFirst           bool   `json:"aiFirst"`
-	ShowTalkToHuman   bool   `json:"showTalkToHuman"`
-	EscalationMessage string `json:"escalationMessage,omitempty"`
-	FileUploads       bool   `json:"fileUploads"`
-	PreChatForm       bool   `json:"preChatForm"`
-	RequirePhone      bool   `json:"requirePhone"`
-	CSATRating        bool   `json:"csatRating"`
-	ForceIdentify     bool   `json:"forceIdentify"`
+	AIEnabled          bool   `json:"aiEnabled"`
+	AIFirst            bool   `json:"aiFirst"`
+	ShowTalkToHuman    bool   `json:"showTalkToHuman"`
+	EscalationMessage  string `json:"escalationMessage,omitempty"`
+	FileUploads        bool   `json:"fileUploads"`
+	EmailCaptureTiming string `json:"emailCaptureTiming"`
+	PreChatForm        bool   `json:"preChatForm"`
+	RequirePhone       bool   `json:"requirePhone"`
+	CSATRating         bool   `json:"csatRating"`
+	ForceIdentify      bool   `json:"forceIdentify"`
 }
 
 // WidgetConfigAvailability matches the widget-core WidgetConfig.availability shape.

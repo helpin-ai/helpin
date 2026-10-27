@@ -115,7 +115,7 @@ func (s *SupportInboxService) processLiveMessage(ctx context.Context, job *model
 	if msg == nil || msg.DeletedAt.Valid || msg.IsImported() || (job.SourceHash != "" && translationHash(msg.Content) != job.SourceHash) {
 		return nil
 	}
-	if supportReplyTarget(options) == "" && meaningfulLanguageText(msg.Content) {
+	if savedCustomerLanguage(options) == "" && meaningfulLanguageText(msg.Content) {
 		// Establish once from customer-authored context, independently of each
 		// message's display translation and whether live translation is paused.
 		if _, err := s.detectCustomerLanguage(ctx, job.WorkspaceID, job.ConversationID); err != nil && !errors.Is(err, errCustomerLanguageUnknown) {
