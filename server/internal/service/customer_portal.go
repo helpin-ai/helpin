@@ -129,6 +129,9 @@ type PortalConfiguration struct {
 	// PublicURL is where this portal is served; the app's /portal path
 	// redirects there.
 	PublicURL string `json:"public_url"`
+	// AssistantEnabled reports whether the portal offers the Ask AI help
+	// assistant.
+	AssistantEnabled bool `json:"assistant_enabled"`
 }
 
 // PortalAttachmentPolicy is the upload rules the portal UI applies before

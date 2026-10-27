@@ -17,11 +17,15 @@ import (
 )
 
 const (
-	agentRuntimeName                   = "agent-runtime"
-	agentRuntimeExecutionModeDurable   = "durable"
-	agentRuntimeTurnCompleteOnFinish   = agentruntime.TurnPolicyCompleteOnFinish
-	agentRuntimeTurnPauseAfterAssist   = agentruntime.TurnPolicyPauseAfterAssist
-	agentRuntimeTurnCompletionExplicit = agentruntime.TurnCompletionExplicit
+	agentRuntimeName                 = "agent-runtime"
+	agentRuntimeExecutionModeDurable = "durable"
+	// agentRuntimeExecutionModeLightweight runs a turn in the Runtime API
+	// process, without Temporal. Help assistant turns use it: they are short,
+	// read-only and safe to lose, and must not take durable worker slots.
+	agentRuntimeExecutionModeLightweight = "lightweight"
+	agentRuntimeTurnCompleteOnFinish     = agentruntime.TurnPolicyCompleteOnFinish
+	agentRuntimeTurnPauseAfterAssist     = agentruntime.TurnPolicyPauseAfterAssist
+	agentRuntimeTurnCompletionExplicit   = agentruntime.TurnCompletionExplicit
 )
 
 type AgentRuntimeTargetRef = agentruntime.TargetRef

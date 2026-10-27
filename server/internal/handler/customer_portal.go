@@ -26,7 +26,8 @@ const (
 // CustomerPortalHandler adapts the public slug-based portal contract to the
 // customer portal service. The session cookie is never exposed to scripts.
 type CustomerPortalHandler struct {
-	portal *service.CustomerPortalService
+	portal    *service.CustomerPortalService
+	assistant *service.HelpAssistantService
 }
 
 // NewCustomerPortalHandler creates the customer portal handler.
@@ -85,7 +86,9 @@ func (h *CustomerPortalHandler) Config(w http.ResponseWriter, r *http.Request) {
 	if ws == nil {
 		return
 	}
-	writeJSON(w, http.StatusOK, h.portal.Configuration(r.Context(), ws))
+	configuration := h.portal.Configuration(r.Context(), ws)
+	configuration.AssistantEnabled = h.assistant.Available(r.Context(), ws.ID)
+	writeJSON(w, http.StatusOK, configuration)
 }
 
 // HelpcenterPortal handles GET /api/hc/{subdomain}/portal: the help center

@@ -20,6 +20,9 @@ const (
 	AgentPresetReviewAgent        = "review_agent"
 	AgentPresetCommandAgent       = "command_agent"
 	AgentPresetAskAgent           = "ask_agent"
+	// AgentPresetHelpAssistant answers help center and portal visitors from
+	// published help articles.
+	AgentPresetHelpAssistant = "help_assistant"
 	// AgentPresetResearcher is a legacy alias accepted for old command-agent rows.
 	AgentPresetResearcher = "researcher"
 

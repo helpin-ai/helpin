@@ -354,6 +354,9 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.PortalIntakeEnabled != nil {
 		current.PortalIntakeEnabled = *patch.PortalIntakeEnabled
 	}
+	if patch.HelpAssistantEnabled != nil {
+		current.HelpAssistantEnabled = *patch.HelpAssistantEnabled
+	}
 	if patch.PortalAccessMode != nil {
 		current.PortalAccessMode = strings.TrimSpace(*patch.PortalAccessMode)
 	}

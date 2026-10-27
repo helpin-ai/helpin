@@ -48,6 +48,7 @@ func (h *DocsHandler) publicHelpcenterConfigResponse(
 ) publicHelpcenterConfigResponse {
 	// The public never sees an unverified custom domain or verification detail.
 	resp := publicHelpcenterConfigResponse{DocsHelpcenterConfig: service.PublicHelpcenterConfig(cfg), PublicWidgetURL: h.publicWidgetURL, PublicSDKURL: h.publicSDKURL}
+	resp.AIAssistantEnabled = h.helpAssistant.Available(r.Context(), cfg.WorkspaceID)
 	if !cfg.ChatWidgetEnabled || h.supportWidgetConfig == nil {
 		return resp
 	}

@@ -1879,6 +1879,17 @@ func main() {
 	helpcenterAISearchService.SetAutoIndexer(docsEmbeddingService)
 	customerPortalService.SetKnowledgeSearch(helpcenterAISearchService)
 	supportInboxService.SetKnowledgeSearch(helpcenterAISearchService)
+	// Help assistant: answers help center and portal visitors in lightweight
+	// agent runs, from published articles in the visitor's audience.
+	helpAssistantService := service.NewHelpAssistantService(
+		repository.NewHelpAssistantRepository(db), agentService, supportInboxService,
+		docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsChunkRepo,
+		helpcenterAISearchService, supportRunEvidenceRepo,
+	)
+	commandService.SetHelpAssistant(helpAssistantService)
+	if runFinalizers != nil {
+		runFinalizers.SetHelpAssistant(helpAssistantService)
+	}
 
 	requestLimiter := ratelimit.New(redisClient, ratelimit.Config{RequestsPerMinute: cfg.AuthenticatedRateLimit, ExpensivePerMinute: cfg.ExpensiveRateLimit})
 
@@ -1910,6 +1921,7 @@ func main() {
 		AuthenticatedRateLimit:    middleware.AuthenticatedRateLimit(requestLimiter),
 		WidgetRateLimit:           middleware.WidgetRateLimit(redisClient),
 		HelpcenterAnswerRateLimit: middleware.HelpcenterAnswerRateLimit(redisClient),
+		HelpAssistantRateLimit:    middleware.HelpAssistantRateLimit(redisClient),
 		DemoReadOnly:              demoReadOnly,
 		Assets:                    handler.NewAssetHandler(s3Client),
 		Health:                    handler.NewHealthHandler(s3Client, geoIPResolver),
@@ -2074,6 +2086,10 @@ func main() {
 		handlers.Auth.SetSignupPolicy(instanceService)
 	}
 	handlers.Docs.SetHelpcenterAISearchService(helpcenterAISearchService)
+	handlers.Docs.SetHelpAssistant(helpAssistantService)
+	if handlers.CustomerPortal != nil {
+		handlers.CustomerPortal.SetHelpAssistant(helpAssistantService)
+	}
 	handlers.Docs.SetAPIReferenceService(docsAPIReferenceService)
 
 	// Slug resolver adapts workspace repo for RBAC middleware.

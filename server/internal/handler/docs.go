@@ -90,6 +90,7 @@ type DocsHandler struct {
 	supportEventRecorder service.SupportEventRecorder
 	supportWidgetConfig  supportWidgetConfigProvider
 	aiSearchSvc          *service.HelpcenterAISearchService
+	helpAssistant        *service.HelpAssistantService
 	apiReferenceSvc      *service.DocsAPIReferenceService
 }
 
@@ -113,6 +114,9 @@ type publicHelpcenterConfigResponse struct {
 	PublicSDKURL    string `json:"public_sdk_url,omitempty"`
 	*model.DocsHelpcenterConfig
 	SupportWidgetKey *string `json:"support_widget_key,omitempty"`
+	// AIAssistantEnabled reports whether the help center offers the Ask AI
+	// help assistant.
+	AIAssistantEnabled bool `json:"ai_assistant_enabled"`
 }
 
 type publicHelpcenterBootstrapResponse struct {

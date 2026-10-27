@@ -28,6 +28,9 @@ type Handlers struct {
 	// HelpcenterAnswerRateLimit guards the public AI answer endpoints
 	// (nil disables limiting, e.g. when Redis is not configured).
 	HelpcenterAnswerRateLimit func(http.Handler) http.Handler
+	// HelpAssistantRateLimit guards questions to the help assistant (nil
+	// disables limiting).
+	HelpAssistantRateLimit func(http.Handler) http.Handler
 
 	// DemoReadOnly rejects every non-read request made by the shared public demo
 	// viewer account (nil when the demo login is not configured).
@@ -139,6 +142,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 	helpcenterAnswerLimiter := h.HelpcenterAnswerRateLimit
 	if helpcenterAnswerLimiter == nil {
 		helpcenterAnswerLimiter = func(next http.Handler) http.Handler { return next }
+	}
+	helpAssistantLimiter := h.HelpAssistantRateLimit
+	if helpAssistantLimiter == nil {
+		helpAssistantLimiter = func(next http.Handler) http.Handler { return next }
 	}
 
 	// Global middleware (applied to all routes)
@@ -302,6 +309,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/search", h.Docs.PublicSearchArticles)
 			r.With(helpcenterAnswerLimiter).Post("/answer", h.Docs.PublicAnswerQuestion)
 			r.With(helpcenterAnswerLimiter).Post("/answer/{answerID}/feedback", h.Docs.PublicAnswerFeedback)
+			r.With(helpAssistantLimiter).Post("/assistant/messages", h.Docs.PublicAssistantAsk)
+			r.Get("/assistant/sessions/{sessionId}", h.Docs.PublicAssistantSession)
+			r.With(helpcenterAnswerLimiter).Post("/assistant/messages/{messageId}/feedback", h.Docs.PublicAssistantFeedback)
 
 			// Canonical collection + article routes
 			r.Get("/c/{collectionSlug}", h.Docs.PublicGetCollectionPage)
@@ -347,6 +357,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Post("/intake/requests", h.CustomerPortal.CreateAnonymousRequest)
 				r.Get("/suggestions", h.CustomerPortal.Suggestions)
 				r.Post("/suggestions/events", h.CustomerPortal.SuggestionEvent)
+				r.With(helpAssistantLimiter).Post("/assistant/messages", h.CustomerPortal.AssistantAsk)
+				r.Get("/assistant/sessions/{sessionId}", h.CustomerPortal.AssistantSession)
+				r.Post("/assistant/messages/{messageId}/feedback", h.CustomerPortal.AssistantFeedback)
 				r.Get("/help", h.CustomerPortal.HelpArticles)
 				r.Get("/help/search", h.CustomerPortal.HelpSearch)
 				r.Get("/help/articles/{articleId}", h.CustomerPortal.HelpArticle)
@@ -483,6 +496,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/search", h.Docs.PublicSearchArticles)
 			r.With(helpcenterAnswerLimiter).Post("/answer", h.Docs.PublicAnswerQuestion)
 			r.With(helpcenterAnswerLimiter).Post("/answer/{answerID}/feedback", h.Docs.PublicAnswerFeedback)
+			r.With(helpAssistantLimiter).Post("/assistant/messages", h.Docs.PublicAssistantAsk)
+			r.Get("/assistant/sessions/{sessionId}", h.Docs.PublicAssistantSession)
+			r.With(helpcenterAnswerLimiter).Post("/assistant/messages/{messageId}/feedback", h.Docs.PublicAssistantFeedback)
 
 			// Canonical collection + article routes
 			r.Get("/c/{collectionSlug}", h.Docs.PublicGetCollectionPage)

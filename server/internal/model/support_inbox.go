@@ -1451,6 +1451,9 @@ type SupportInboxSettings struct {
 	PortalEnabled                bool `json:"portal_enabled"`
 	PortalAnonymousIntakeEnabled bool `json:"portal_anonymous_intake_enabled"`
 	PortalIntakeEnabled          bool `json:"portal_intake_enabled"`
+	// HelpAssistantEnabled turns on the Ask AI help assistant on the help
+	// center and in the customer portal.
+	HelpAssistantEnabled bool `json:"help_assistant_enabled"`
 	// PortalAccessMode is SupportPortalAccessModeApprovedContacts or
 	// SupportPortalAccessModeAnyVerifiedEmail.
 	PortalAccessMode string `json:"portal_access_mode"`
@@ -1645,6 +1648,7 @@ type UpdateInstallationSettingsRequest struct {
 	PortalEnabled                   *bool                       `json:"portal_enabled,omitempty"`
 	PortalAnonymousIntakeEnabled    *bool                       `json:"portal_anonymous_intake_enabled,omitempty"`
 	PortalIntakeEnabled             *bool                       `json:"portal_intake_enabled,omitempty"`
+	HelpAssistantEnabled            *bool                       `json:"help_assistant_enabled,omitempty"`
 	PortalAccessMode                *string                     `json:"portal_access_mode,omitempty"`
 	PortalAIMode                    *string                     `json:"portal_ai_mode,omitempty"`
 	PortalAIAgentID                 *string                     `json:"portal_ai_agent_id,omitempty"`
