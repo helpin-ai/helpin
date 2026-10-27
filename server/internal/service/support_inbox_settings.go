@@ -1252,7 +1252,9 @@ func (s *SupportInboxService) DeleteCannedResponse(ctx context.Context, workspac
 var ErrPortalReplyDeliveryUnavailable = errors.New("requests without sign-in need outbound email: an application email sender for confirmations, plus Redis and the Postmark reply server so agents can reply")
 
 func (s *SupportInboxService) validatePortalSettings(ctx context.Context, workspaceID string, merged model.SupportInboxSettings, req model.UpdateInstallationSettingsRequest) error {
-	if merged.PortalAccessMode != model.SupportPortalAccessModeApprovedContacts && merged.PortalAccessMode != model.SupportPortalAccessModeAnyVerifiedEmail {
+	switch merged.PortalAccessMode {
+	case model.SupportPortalAccessModeApprovedContacts, model.SupportPortalAccessModeAnyVerifiedEmail, model.SupportPortalAccessModeCompanyMembers:
+	default:
 		return fmt.Errorf("unsupported portal access mode")
 	}
 	if merged.PortalAIMode != model.SupportPortalAIModeOff && merged.PortalAIMode != model.SupportPortalAIModeInternalNote {

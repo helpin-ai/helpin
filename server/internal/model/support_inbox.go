@@ -2068,8 +2068,9 @@ type SupportAIControlRequest struct {
 // EffectivePortalAccessMode returns the portal access mode, treating any
 // unknown value as the safer approved-contacts mode.
 func (s SupportInboxSettings) EffectivePortalAccessMode() string {
-	if s.PortalAccessMode == SupportPortalAccessModeAnyVerifiedEmail {
-		return SupportPortalAccessModeAnyVerifiedEmail
+	switch s.PortalAccessMode {
+	case SupportPortalAccessModeAnyVerifiedEmail, SupportPortalAccessModeCompanyMembers:
+		return s.PortalAccessMode
 	}
 	return SupportPortalAccessModeApprovedContacts
 }

@@ -1471,7 +1471,7 @@ export interface SupportTranslation {
  expires_at?: string;
 }
 
-export type CustomerPortalAccessMode = 'approved_contacts' | 'any_verified_email';
+export type CustomerPortalAccessMode = 'approved_contacts' | 'company_members' | 'any_verified_email';
 export type CustomerPortalContactAccessValue = 'allowed' | 'blocked';
 
 export interface CustomerPortalAccessSummary {

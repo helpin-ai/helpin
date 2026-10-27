@@ -14,6 +14,8 @@ import (
 type PortalContactAccess struct {
 	ID           string
 	PortalAccess *string
+	// CompanyMember reports membership of a company with company access on.
+	CompanyMember bool
 }
 
 // PortalAccessSummary counts contact portal decisions in a workspace.
@@ -28,6 +30,12 @@ type PortalAccessSummary struct {
 
 const portalConflictEmailLimit = 20
 
+// portalCompanyMemberSQL is true for a crm_contacts row that is a member of a
+// company with company access turned on.
+const portalCompanyMemberSQL = `EXISTS (SELECT 1 FROM support_portal_company_members pcm
+	JOIN crm_companies pco ON pco.id = pcm.crm_company_id
+	WHERE pcm.crm_contact_id = crm_contacts.id AND pco.portal_default_role IS NOT NULL)`
+
 // PortalContactAccessDetail is one contact's decision and how many other
 // contacts share its email.
 type PortalContactAccessDetail struct {
@@ -41,7 +49,7 @@ type PortalContactAccessDetail struct {
 // compared as lower(trim(email)).
 func (r *CustomerPortalRepository) ContactsForEmail(ctx context.Context, workspaceID, email string) ([]PortalContactAccess, error) {
 	var contacts []PortalContactAccess
-	err := r.db.WithContext(ctx).Table("crm_contacts").Select("id, portal_access").
+	err := r.db.WithContext(ctx).Table("crm_contacts").Select("id, portal_access, "+portalCompanyMemberSQL+" AS company_member").
 		Where("workspace_id = ? AND lower(trim(email)) = ?", workspaceID, NormalizePortalEmail(email)).
 		Order("id").Scan(&contacts).Error
 	return contacts, err
@@ -105,12 +113,14 @@ func (r *CustomerPortalRepository) ContactPortalAccess(ctx context.Context, work
 }
 
 // AccessSummary counts allowed contacts and conflicting emails.
-func (r *CustomerPortalRepository) AccessSummary(ctx context.Context, workspaceID string) (PortalAccessSummary, error) {
+func (r *CustomerPortalRepository) AccessSummary(ctx context.Context, workspaceID, mode string) (PortalAccessSummary, error) {
 	var summary PortalAccessSummary
 	db := r.db.WithContext(ctx)
-	if err := db.Table("crm_contacts").
-		Where("workspace_id = ? AND portal_access = ?", workspaceID, model.PortalAccessAllowed).
-		Count(&summary.AllowedContacts).Error; err != nil {
+	allowed := db.Table("crm_contacts").Where("workspace_id = ? AND portal_access = ?", workspaceID, model.PortalAccessAllowed)
+	if mode == model.SupportPortalAccessModeCompanyMembers {
+		allowed = allowed.Where(portalCompanyMemberSQL)
+	}
+	if err := allowed.Count(&summary.AllowedContacts).Error; err != nil {
 		return summary, err
 	}
 	conflicts := db.Table("crm_contacts").

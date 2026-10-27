@@ -30,6 +30,11 @@ const accessModes: { value: CustomerPortalAccessMode; label: string; description
     description: 'Only CRM contacts a support admin has allowed can sign in.',
   },
   {
+    value: 'company_members',
+    label: 'Company members only',
+    description: 'Only allowed contacts who are members of a company with company access turned on can sign in.',
+  },
+  {
     value: 'any_verified_email',
     label: 'Any verified email',
     description: 'Anyone who confirms their email address can sign in, unless blocked.',
@@ -64,7 +69,7 @@ export function CustomerPortalSettings({ workspaceId, workspaceSlug, editable }:
     portal_enabled: settings.portal_enabled ?? false,
     portal_intake_enabled: settings.portal_intake_enabled ?? false,
     portal_anonymous_intake_enabled: settings.portal_anonymous_intake_enabled ?? false,
-    portal_access_mode: settings.portal_access_mode === 'any_verified_email' ? 'any_verified_email' : 'approved_contacts',
+    portal_access_mode: settings.portal_access_mode === 'any_verified_email' || settings.portal_access_mode === 'company_members' ? settings.portal_access_mode : 'approved_contacts',
     // The retired customer-reply mode became private suggestions on the server.
     portal_ai_mode: settings.portal_ai_mode === 'off' || !settings.portal_ai_mode ? 'off' : 'internal_note',
     portal_ai_agent_id: settings.portal_ai_agent_id ?? '',

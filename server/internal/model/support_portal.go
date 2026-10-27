@@ -28,6 +28,9 @@ const (
 	// Portal access modes decide who may sign in to the customer portal.
 	SupportPortalAccessModeApprovedContacts = "approved_contacts"
 	SupportPortalAccessModeAnyVerifiedEmail = "any_verified_email"
+	// SupportPortalAccessModeCompanyMembers lets only allowed contacts sign
+	// in who are members of a company with company access turned on.
+	SupportPortalAccessModeCompanyMembers = "company_members"
 
 	// Portal AI modes. People answer portal requests; AI may only draft a
 	// private suggestion for the teammate.

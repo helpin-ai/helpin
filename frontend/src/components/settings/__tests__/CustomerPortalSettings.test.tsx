@@ -117,6 +117,14 @@ describe('CustomerPortalSettings', () => {
     expect(container.textContent).not.toContain('article suggestions are off');
   });
 
+  it('offers sign-in for company members only', async () => {
+    mocks.query.mockReturnValue({ data: { settings: { portal_enabled: true, portal_access_mode: 'company_members' } }, isError: false, refetch: vi.fn() })
+    await act(async () => root.render(<CustomerPortalSettings workspaceId="ws" workspaceSlug="acme" editable />))
+    const radio = container.querySelector<HTMLInputElement>('#portal-access-company_members')
+    expect(radio?.checked).toBe(true)
+    expect(container.textContent).toContain('Only allowed contacts who are members of a company with company access turned on can sign in.')
+  })
+
   it('defaults to approved contacts and saves a changed access mode', async () => {
     await act(async () => root.render(<CustomerPortalSettings workspaceId="workspace-1" workspaceSlug="acme" editable />));
     expect(container.querySelector<HTMLInputElement>('#portal-access-approved_contacts')?.checked).toBe(true);

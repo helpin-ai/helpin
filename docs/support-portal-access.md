@@ -8,8 +8,9 @@ A customer signs in with an emailed link. Access is decided per CRM contact, mat
 
 - **Workspace setting.** **Settings → Customer portal** turns the portal on and chooses the access mode:
   - **Approved contacts** (the default) needs exactly one contact with that email whose portal access is **Allowed**.
+  - **Company members only** also needs that contact to be a member of a company with company access turned on. Use it when only people at customer companies should use the portal; individual contacts who are allowed but belong to no such company cannot sign in.
   - **Any verified email** admits anyone who proves their address.
-- **Contact decision.** A contact's portal access is **Allowed**, **Blocked**, or not set. A blocked contact denies the email in either mode.
+- **Contact decision.** A contact's portal access is **Allowed**, **Blocked**, or not set. A blocked contact denies the email in every mode.
 
 A session is bound to the contact it signed in as. Eligibility is checked again on every request, so blocking a contact, changing its email, or deleting it ends its sessions on their next request.
 
